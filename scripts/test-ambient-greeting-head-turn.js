@@ -37,7 +37,7 @@ assert.match(
 );
 assert.match(
   ambient,
-  /if \(event\.faceMode === 'head'\) \{\s*applyGreetingHeadTurn\(event\.faceWalker, targetPosition\);/,
+  /if \(event\.faceMode === 'head'\) \{\s*event\.ownsNeck = applyGreetingHeadTurn\(event\.faceWalker, targetPosition\);/,
   'per-frame ambient facing must refresh the neck turn without turning a walking or seated NPC body',
 );
 assert.doesNotMatch(
@@ -52,6 +52,21 @@ assert.match(
 );
 assert.match(
   ambient,
+  /function greetingMayOwnNeck\(walker\) \{\s*return !state\.deps\?\.isDialogueOpen\?\.\(\) && !walker\?\._ambientLookActive;/,
+  'greeting head turns must yield the neck to dialogue staging and authored station lookAt',
+);
+assert.match(
+  ambient,
+  /function applyGreetingHeadTurn\(walker, targetPosition\) \{\s*if \(!greetingMayOwnNeck\(walker\)\) return false;/,
+  'greeting head turns must not write the neck while another system owns it',
+);
+assert.match(
+  ambient,
+  /event\?\.faceMode === 'head' && event\.ownsNeck \? event\.faceWalker\?\.neckJoint : null/,
+  'greeting disposal must only zero a neck the greeting still owns',
+);
+assert.match(
+  ambient,
   /function releaseGreetingHeadTurn\(event\)[\s\S]{0,320}neckJoint\.rotation\.y = 0/,
   'ambient greeting disposal must release the neck yaw it owns',
 );
@@ -61,7 +76,7 @@ assert.match(
   'Pixel Probe must report head-only greeting yaw on tapped NPCs for mobile debugging',
 );
 assert.match(loader, /player-body-transform-composer\.js\?v=20260927greetinghead1/, 'composer cache bust must ship');
-assert.match(index, /ambient-dialogue\.js\?v=20260927greetinghead2/, 'ambient greeting cache bust must ship');
+assert.match(index, /ambient-dialogue\.js\?v=20260927reviewfix1/, 'ambient greeting cache bust must ship');
 assert.match(index, /pixel-probe\.js\?v=20260927lichgreeting1/, 'combined greeting + lich Pixel Probe cache bust must ship');
 
 console.log('Ambient greeting head-turn checks passed.');

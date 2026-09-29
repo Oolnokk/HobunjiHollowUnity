@@ -66,6 +66,34 @@ class Element {
   addEventListener() {}
   remove() { this.isConnected = false; }
 }
+function testRaggedHoodFacingSemantics() {
+  const source = read('docs/js/clothing-weaving-system.js'); // Runs the production logical-role, palette, and facing helpers without loading the full weaving compositor.
+  const context = vm.createContext({}); // These helpers are pure apart from the default layer-role constant supplied below.
+  vm.runInContext('const DEFAULT_LAYER_ROLE = "__default";\n' + section(source, '  function patternRolesForLayers(', '  function weavingEntryForRole('), context);
+  const raggedConfig = JSON.parse(read('docs/config/cosmetics/ragged_hood.json')); // Real Ragged Hood metadata keeps both front/back rasters on the same base role.
+  const fineConfig = JSON.parse(read('docs/config/cosmetics/fine_hood.json')); // Real Fine Hood metadata provides the genuine base-plus-trim control case.
+  const anuriConfig = JSON.parse(read('docs/config/cosmetics/anuri_poncho.json')); // Positional non-hood back/front art guards against overgeneralizing the hood rule.
+  const collect = (cfg, variantKey = null) => { // Minimal descriptor builder feeds the same fields the pure helpers consume.
+    const parts = variantKey ? cfg.speciesVariants[variantKey].parts : cfg.parts; // Selects the species variant when the cosmetic authors one.
+    const palette = cfg.palette?.layers || {}; // Maps logical roles to dye channels A/B for trim detection.
+    const layers = []; // Collects authored raster descriptors in JSON order, matching production resolution.
+    for (const part of Object.values(parts || {})) for (const [layerName, layer] of Object.entries(part.layers || {})) {
+      layers.push({ slot: cfg.slot, layerName, role: layer.layerRole || null, paletteKey: palette[layer.layerRole] || layer.paletteColorKey || null });
+    }
+    return layers;
+  };
+  const raggedLayers = collect(raggedConfig, 'mao-ao_male'); // Used to verify alternate-view sprites collapse to one logical pattern role.
+  assert.deepEqual(Array.from(context.patternRolesForLayers(raggedLayers), entry => [entry.role, entry.key]), [['base', 'base']], 'Ragged Hood front/back sprites share one loom Base pattern control');
+  assert.equal(context.layersUseSecondaryDye(raggedLayers), false, 'Ragged Hood exposes no fake Trim dye');
+  assert.deepEqual(Array.from(context.iconLayersForView(raggedLayers, 'front'), layer => layer.layerName), ['front'], 'Ragged Hood front preview excludes rear art');
+  assert.deepEqual(Array.from(context.iconLayersForView(raggedLayers, 'behind'), layer => layer.layerName), ['back'], 'Ragged Hood flip uses only rear art');
+  const fineLayers = collect(fineConfig, 'mao-ao_male'); // Genuine two-role hood must retain both logical controls.
+  assert.deepEqual(Array.from(context.patternRolesForLayers(fineLayers), entry => entry.role), ['base', 'trim'], 'Fine Hood retains Base and Trim pattern controls');
+  assert.equal(context.layersUseSecondaryDye(fineLayers), true, 'Fine Hood retains its Trim dye');
+  const anuriLayers = collect(anuriConfig); // Non-hood back/front layers remain a composited sandwich rather than alternate views.
+  assert.equal(context.iconLayersForView(anuriLayers, 'front').length, anuriLayers.length, 'Anuri poncho back/front layers remain composited together');
+}
+
 async function testLoomInitialization() {
   const source = read('docs/js/clothing-weaving-system.js'); // Runs the real openLoom closure, including the submit handler.
   for (const failLoad of [false, true]) { // Missing layer data must also leave the saved weave untouched.
@@ -90,6 +118,8 @@ async function testLoomInitialization() {
       hasBehindView: async () => false, renderClothingLayers: async () => ({ canvas: null }),
       reweaveMaterialCost: () => 2, itemWeightUnits: () => 3, standardWeightFor: () => 3,
       clothingColorHex: () => '#ffffff', layerLabel: role => role,
+      patternRolesForLayers: layers => layers.length ? [{ role: layers[0].role || null, key: layers[0].role || 'base' }] : [], // Mirrors the production logical-role dependency needed by the extracted openLoom closure.
+      layersUseSecondaryDye: layers => layers.some(layer => layer?.paletteKey === 'B'), // Mirrors the production palette-B check used by loom trim controls.
       reweaveFromLoom(_item, _material, _dye, weaving) { submissions++; submittedWeave = weaving; },
     }); // Stubs rendering/material data while preserving the complete production initialization flow.
     vm.runInContext('function closeLoom() { loomOverlay?.remove(); loomOverlay = null; }\n' + section(source, '  function openLoom(', '  function craftFromLoom('), context);
@@ -138,7 +168,8 @@ function testWaterCadence() {
 (async () => {
   testInventoryWrites();
   await testIconCompletionOrder();
+  testRaggedHoodFacingSemantics();
   await testLoomInitialization();
   testWaterCadence();
-  console.log('Inventory settling, woven icon races, loom initialization, and water cadence regressions passed.');
+  console.log('Inventory settling, woven icon races, Ragged Hood loom semantics, loom initialization, and water cadence regressions passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

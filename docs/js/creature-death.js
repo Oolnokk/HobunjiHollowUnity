@@ -38,6 +38,19 @@
   // awayAngle (the direction the killing blow traveled), looking for a
   // tile the corpse can actually rest on — falls back to its own tile
   // if nothing nearby is valid (map edge, water, cliff face, ...).
+  // The tumble must not hop a wall: every point along the flight line has
+  // to be open ground too, or a body could land in the next room/vault
+  // (or inside rock) where it can never be reached or looted.
+  function _pathClear(fromX, fromY, toX, toY) {
+    const TILE = deps.TILE;
+    const steps = Math.max(1, Math.ceil(Math.hypot(toX - fromX, toY - fromY) / (TILE * 0.2)));
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      if (!deps.canOccupyAt(fromX + (toX - fromX) * t, fromY + (toY - fromY) * t, TILE * 0.2)) return false;
+    }
+    return true;
+  }
+
   function _findRestTile(c, awayAngle) {
     const TILE = deps.TILE;
     const startCol = Math.floor(c.x / TILE), startRow = Math.floor(c.y / TILE);
@@ -47,7 +60,7 @@
       const col = deps.clamp(Math.round(startCol + Math.cos(ang) * distTiles), 0, (c.areaCols || deps.COLS) - 1);
       const row = deps.clamp(Math.round(startRow + Math.sin(ang) * distTiles), 0, (c.areaRows || deps.ROWS) - 1);
       const cx = (col + 0.5) * TILE, cy = (row + 0.5) * TILE;
-      if (deps.canOccupyAt(cx, cy, TILE * 0.3)) return { x: cx, y: cy, col, row };
+      if (deps.canOccupyAt(cx, cy, TILE * 0.3) && _pathClear(c.x, c.y, cx, cy)) return { x: cx, y: cy, col, row };
     }
     return { x: (startCol + 0.5) * TILE, y: (startRow + 0.5) * TILE, col: startCol, row: startRow };
   }

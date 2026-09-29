@@ -54,7 +54,7 @@
   // lifecycle flag.
   function isSameYearTothalReplay() {
     const worldId = window.__hobunjiPlayerProfile?.worldId;
-    const currentYear = Number(window.CalendarSystem?.yearNumber?.());
+    const currentYear = Number(window.CalendarSystem?.tothalCycle?.());
     if (!worldId || !Number.isFinite(currentYear)) return false;
     try {
       const meta = JSON.parse(window.localStorage?.getItem('hobunjiSaveMeta') || 'null');
@@ -191,7 +191,7 @@
       removeVisual();
       recordDebug('same-year-rebuild-preserved', {
         mapId,
-        tothalYear: Number(window.CalendarSystem?.yearNumber?.()),
+        tothalYear: Number(window.CalendarSystem?.tothalCycle?.()),
       });
       return true;
     }

@@ -1089,12 +1089,10 @@
       // Zero-Footing transition — called only once applyHitStagger's own
       // spendFooting has already driven entity.footing to 0. Both the player
       // and any creature/bandit go fully prone here (immune to further
-      // Footing loss — see resource-system.js's spendFooting), matching each
-      // other exactly; they differ only in how they LEAVE prone: the player
-      // needs a dodge input once Footing reaches its full unshambled recovery
-      // target, while a creature/bandit's own AI does it automatically at that
-      // same target — see updateHostiles' `if (c.prone)` branch and
-      // proneRecoveryFootingTarget below.
+      // Footing loss — see resource-system.js's spendFooting), then
+      // automatically recover once Footing reaches the same full unshambled
+      // target — the player uses updateProneState's in-place recovery arc,
+      // while creature AI uses beginCreatureSomersaultRecovery below.
       // Creature planes use the same authored clips through
       // ImpactRagdollPlayback's quarter-turned body-only adapter; humanoid leg
       // channels remain player-only. Both kinds use a dedicated prone-throw
@@ -3144,6 +3142,7 @@
       }
 
       function furnitureBlocksMovementAt(area, x, z) {
+        if (window.AreaFootprintBlockers?.blocksPoint(area, x, z)) return true;
         if (_isZoneArea(area) && window.FoliageFurnitureRuntime?.blocksPoint(area, x, z)) return true;
         if (interiorFurnitureObjects.some(obj => obj.area === area && decorativeFurnitureBlocksPoint(obj, x, z))) return true;
         if (area === 'interior' && _derivedHearthMeshes.some(h => {
@@ -3210,6 +3209,9 @@
         const sampleY = blockedCenterY + dirY * radiusPx; // Same leading-edge sample on the world-Z/game-Y axis.
         const furniture = knockbackFurnitureDescriptorAt(sampleX, sampleY);
         if (furniture) return furniture;
+        // Sub-tile solid props (ruin door panels, pillars, coffins, walls
+        // registered through AreaFootprintBlockers) hit like stone.
+        if (window.AreaFootprintBlockers?.blocksPoint?.(currentArea, sampleX / TILE, sampleY / TILE)) return { kind: 'stone', label: 'Stone' };
 
         const cols = window.GridTileAccessors.getActiveCols(), rows = window.GridTileAccessors.getActiveRows();
         const col = Math.floor(sampleX / TILE), row = Math.floor(sampleY / TILE);
@@ -3336,6 +3338,7 @@
 
       function knockbackAirborneCanOccupyAt(wx, wy, radiusPx, air) {
         const originSurfaceY = air?.originSurfaceY;
+        if (window.AreaFootprintBlockers?.blocksBox(currentArea, wx / TILE, wy / TILE, radiusPx / TILE, null)) return false; // Sub-tile props collide airborne too.
         const cols = window.GridTileAccessors.getActiveCols(), rows = window.GridTileAccessors.getActiveRows();
         const samples = [ // Mirrors canOccupyAt's four-corner footprint while allowing lower terrain to pass beneath the airborne target.
           [wx - radiusPx, wy - radiusPx], [wx + radiusPx, wy - radiusPx],
@@ -3354,6 +3357,7 @@
             continue;
           }
           if (tileSpeedAt(sx, sy) !== null) continue;
+          if (_isBuildingArea(currentArea) || currentArea === 'interior') return false; // Interior walls are impassable tiles at floor height, never "lower terrain".
           const obstacleSurfaceY = tileSurfaceYInArea(tile, currentArea);
           if (obstacleSurfaceY >= originSurfaceY - KNOCKBACK_LEDGE_HEIGHT_EPSILON) return false; // Same/higher obstruction still collides and contributes a deficit.
         }
@@ -4731,7 +4735,7 @@
       // farm/interior, but corpses can settle in any area a creature dies in.
       function getCorpseObjectAt(col, row) {
         for (const c of corpseObjects) {
-          if (c.state !== 'corpse' || c.areaId !== currentArea) continue;
+          if (c.state !== 'corpse' || c.areaId !== currentArea || c.corpseLooted) continue; // corpseLooted: looted but kept (keepCorpseAfterLoot), e.g. revivable skeletons.
           if (c.corpseCol === col && c.corpseRow === row) return makeCorpseWorldObject(c);
         }
         return null;
@@ -4741,12 +4745,13 @@
       // off the corpse tile (especially in shoulder cam). Keep corpse loot
       // tied to the same nearby interaction target instead of dropping it on
       // a stale "No object here" result.
+      let _lastOfferedCorpseId = null; // Building-interior Loot button stickiness (see computeActionButtonsImpl).
       function getCorpseObjectForAction(action, col, row) {
         const exact = getCorpseObjectAt(col, row);
         if (exact || action !== 'obj_loot_corpse') return exact;
         let best = null, bestDist = Infinity;
         for (const c of corpseObjects) {
-          if (c.state !== 'corpse' || c.areaId !== currentArea) continue;
+          if (c.state !== 'corpse' || c.areaId !== currentArea || c.corpseLooted) continue;
           const dist = Math.hypot(c.x - player.x, c.y - player.y);
           const tileGap = Math.hypot((c.corpseCol ?? col) - col, (c.corpseRow ?? row) - row);
           if (dist > TILE * 2.25 || tileGap > 1.5 || dist >= bestDist) continue;
@@ -5456,6 +5461,10 @@
         return !!g[row]?.[col]?.incline;
       }
 
+      // Pinned-enemy collision escape (tryEnemyCollisionReposition and its
+      // tuning constants) now lives in js/enemy-collision-reposition.js.
+      window.EnemyCollisionReposition.init({ creatureCanEnterTile });
+
       function moveCreatureToward(c, tx, ty, speed, dt) {
         // A NaN/undefined target (e.g. a momentarily-gone companion master,
         // a stale reference) must never reach the position math below — dist
@@ -5473,13 +5482,30 @@
         const step = Math.min(dist, effectiveSpeed * dt);
         // Axis-separated so a creature turned back by a cliff face or river
         // slides along it instead of freezing outright (mirrors the player's
-        // collision in updateMovement).
+        // collision in updateMovement). A genuinely pinned chasing enemy then
+        // gets one short lateral/backoff escape attempt below.
         const prevX = c.x, prevY = c.y;
         const desiredX = c.x + nx * step, desiredY = c.y + ny * step;
-        if (creatureCanEnterTile(c.def, desiredX, c.y)) c.x = desiredX;
-        if (creatureCanEnterTile(c.def, c.x, desiredY)) c.y = desiredY;
-        const moved = Math.hypot(c.x - prevX, c.y - prevY);
-        c.vx = nx * effectiveSpeed; c.vy = ny * effectiveSpeed;
+        const canMoveX = creatureCanEnterTile(c.def, desiredX, c.y); // Used both to apply the normal X slide and to identify the blocking axis for escape diagnostics.
+        if (canMoveX) c.x = desiredX;
+        const canMoveY = creatureCanEnterTile(c.def, c.x, desiredY); // Used after X resolution so the ordinary axis-separated slide keeps its existing behavior.
+        if (canMoveY) c.y = desiredY;
+        const blockedX = Math.abs(desiredX - prevX) > 0.001 && !canMoveX; // Used below to detect a real collision rather than a zero-length axis request.
+        const blockedY = Math.abs(desiredY - prevY) > 0.001 && !canMoveY; // Used with blockedX to distinguish collision stalls from ordinary target arrival.
+        let moved = Math.hypot(c.x - prevX, c.y - prevY); // Used as the movement already achieved before deciding whether a collision escape is necessary.
+        let motionNX = nx, motionNY = ny; // Used for the reported velocity; replaced by the escape vector only when repositioning actually succeeds.
+        if ((blockedX || blockedY) && moved < step * window.EnemyCollisionReposition.MIN_MOVE_FRAC) {
+          const remainingStep = Math.max(0, step - moved); // Used to keep axis-slide plus escape movement within the original per-frame travel budget.
+          const reposition = window.EnemyCollisionReposition.tryReposition(c, nx, ny, remainingStep, blockedX, blockedY); // Used only for active combat chases; companions/passive travel keep their existing movement behavior.
+          if (reposition) {
+            moved = Math.hypot(c.x - prevX, c.y - prevY);
+            motionNX = reposition.nx;
+            motionNY = reposition.ny;
+          }
+        } else if (c._collisionRepositionDebug?.active) {
+          c._collisionRepositionDebug.active = false;
+        }
+        c.vx = motionNX * effectiveSpeed; c.vy = motionNY * effectiveSpeed;
         if (moved > 0) tickCreatureFootsteps(c, moved);
         return moved > 0;
       }
@@ -8134,50 +8160,14 @@
       // FIXED_LOCALE_LANDMARKS (Leaf & Pahu's House's fixed map anchor) now
       // lives in js/wilderness-map.js alongside the rest of the map system.
 
-      // Fetched once per page load and cached -- the locale JSON files rarely
-      // change mid-session, and every Tothal Shift needs the same list.
-      let _localeDefsPromise = null;
+      // loadStampableLocaleDefs now lives in js/stampable-locale-defs.js
+      // (window.StampableLocaleDefs), which also stamps ruin-entrance templates.
       function loadStampableLocaleDefs() {
-        if (_localeDefsPromise) return _localeDefsPromise;
-        _localeDefsPromise = (async () => {
-          // Local override (see docs/js/local-db-overrides.js): unlike the
-          // single-file databases above, locale-editor's workspace holds the
-          // FULL content of every locale it has loaded (not just an index),
-          // so an active 'locales' override supplies already-fetched docs
-          // directly and skips the index+per-file fetch below entirely.
-          if (window.LocalDBOverrides?.getSourceMode() === 'local') {
-            const override = window.LocalDBOverrides.getOverride('locales');
-            if (override?.locales) {
-              return override.locales.filter(e => e.category === 'great_fey_shrine' || e.category === 'story_poi');
-            }
-          }
-          try {
-            const idxRes = await fetch('config/locales/index.json');
-            if (!idxRes.ok) throw new Error(`HTTP ${idxRes.status}`);
-            const idx = await idxRes.json();
-            // Great Fey shrines + the Researcher's Tent are randomly stamped
-            // -- see the comment on FIXED_LOCALE_LANDMARKS above for why
-            // dwellings are excluded here.
-            const entries = (idx.locales || []).filter(e => e.category === 'great_fey_shrine' || e.category === 'story_poi');
-            const defs = [];
-            for (const entry of entries) {
-              try {
-                const r = await fetch(entry.file);
-                if (!r.ok) throw new Error(`HTTP ${r.status}`);
-                defs.push(await r.json());
-              } catch (e) { debugLog(`Tothal Shift: locale load failed for ${entry.file}: ${e.message}`, 'warn'); }
-            }
-            return defs;
-          } catch (e) {
-            debugLog('Tothal Shift: locale index load failed: ' + e.message, 'warn');
-            return [];
-          }
-        })();
-        return _localeDefsPromise;
+        return window.StampableLocaleDefs.load();
       }
 
       function currentTothalYear() {
-        return window.CalendarSystem.yearNumber(calendar.day);
+        return window.CalendarSystem.tothalCycle(calendar.day); // Monthly since the ruin-locale update; the name stays for save compatibility (lastTothalYear).
       }
 
       function _tothalWorldId() {
@@ -8652,7 +8642,7 @@
           window.BanditCombat?.loadGangConfig();
           window.BanditCombat?.loadCampLocaleDefs();
           await _evictStaleTothalZoneCaches(worldId, year);
-          let remainingLocales = localeDefs.slice();
+          let remainingLocales = window.RuinSites?.expandLocaleDefs?.(localeDefs, year, WildernessMapGenerator.zoneMapIds()) || localeDefs.slice(); // Ruin-entrance templates become rotated per-zone copies for this cycle (js/ruin-site-locales.js).
           for (const zoneId of WildernessMapGenerator.zoneMapIds()) {
             const seed = `${worldId}_tothal_y${year}_${zoneId}`;
             const preserved = TOTHAL_PRESERVED_TRANSITIONS[zoneId] || [];
@@ -8687,6 +8677,7 @@
 
             const localeInstances = workspace.localeInstances || [];
             window.LocaleCaveRuntime?.registerWorkspace?.(zoneId, workspace, localeDefs, merged.tiles); // Cached and new zones need the low-side tier and exterior GLB registry rebuilt.
+            window.RuinSites?.registerWorkspace?.(zoneId, workspace); // Cliff ruin entrances placed this cycle (js/ruin-sites.js).
             if (localeInstances.length) {
               const placedIds = new Set(localeInstances.map(inst => inst.localeId));
               remainingLocales = remainingLocales.filter(l => !placedIds.has(l.id));
@@ -9233,17 +9224,23 @@
         // the intentional footing-break launch. Input remains locked.
         if (player.proneThrowT > 0) advancePlayerProneThrow(dt);
         else { player.vx = 0; player.vy = 0; }
+        // Once Footing has refilled, use the same in-place recovery arc that
+        // the prone dodge input already used. Waiting for the dedicated throw
+        // (and any ledge fall it can become) prevents the roll from cancelling
+        // displacement that still has to resolve.
+        if (!(player.proneThrowT > 0) && !player._knockbackLedgeFall
+            && player.footing >= proneRecoveryFootingTarget(player)) {
+          beginSomersaultRecovery();
+        }
       }
 
-      // Somersault recovery — the dodge input's meaning while prone (see
-      // performDodge's own guard below): rolls the player back onto their
-      // feet via a procedurally coded arc (docs/js/combat/impact-ragdoll-
-      // playback.js's beginRecoveryArc — no authored blend exists for this
-      // transition). Requires Footing to refill to the actor's full
-      // unshambled recovery target, same eligibility a prone creature's own AI
-      // waits on before it auto-recovers (see
-      // updateHostiles' `if (c.prone)` branch/beginCreatureSomersaultRecovery)
-      // — the player's own recovery is just input-gated instead of automatic.
+      // Somersault recovery — the automatic get-up path while prone, with the
+      // dodge input still allowed to request the exact same transition on the
+      // eligible frame: rolls the player back onto their feet in place via a
+      // procedurally coded arc (docs/js/combat/impact-ragdoll-playback.js's
+      // beginRecoveryArc — no authored blend exists for this transition).
+      // Requires Footing to refill to the actor's full unshambled recovery
+      // target, matching the prone creature AI's own eligibility.
       // Returns false if not actually prone, already mid-roll, or not yet
       // eligible.
       const SOMERSAULT_RECOVERY_DUR_S = 0.5;
@@ -9263,9 +9260,9 @@
 
       function performDodge() {
         if (window.DevRandomRuinSimplePuzzles?.releaseActiveRope?.()) return true; // Dodge is the native rope jump-off input; release carries pendulum tangent instead of starting an evasive roll.
-        // While prone (0 Footing — see enterProneIfFootingDepleted), the
-        // dodge button somersaults the player back to standing instead of a
-        // normal evasive dodge.
+        // While prone, the automatic get-up owns the normal recovery. Keep
+        // dodge input routed to the same in-place recovery arc so an input on
+        // the exact eligible frame never starts an ordinary moving dodge.
         if (player.prone) return beginSomersaultRecovery();
         if (player.dodging || player.dodgeCooldownT > 0) return false;
         let dirX, dirY;
@@ -9338,6 +9335,8 @@
         // dodges remain ordinary evasive movement and cannot grab a nearby tree.
         const climb = window.ClimbSystem.getClimbTarget();
         if (climb && (climb.type === 'branchJumpDown' || dodgeInputIsForward())) { window.ClimbSystem.startClimb(climb); return; }
+        const worldClimb = window.ClimbSystem.getWorldClimbTarget?.(); // Non-grid ledges (ruins) climb from the same forward dodge.
+        if (worldClimb && dodgeInputIsForward()) { worldClimb.start(); return; }
         performDodge();
       }
 
@@ -10491,6 +10490,7 @@
         _zoneMesaMeshGroups.set(mapId, window.ZonePlateauMesa.buildZoneMesaMeshes(zScene, mapId, plateauMesas, zGrid));
 
         window.ZoneDenTotemFeatures.buildAnimalDenMeshes(zScene, zGrid, zoneData?.dens || [], mapId);
+        window.RuinSites?.buildZoneMeshes?.(zScene, zGrid, mapId); // Ruin entrances + burrow holes (authored furniture pieces).
         window.ZoneDenTotemFeatures.buildRootTotemMeshes(zScene, zGrid, zoneData?.rootTotems || [], mapId);
         _zoneWaterMeshes.set(mapId, []);
         _zoneGrassMeshes.set(mapId, null); // Streamed grass groups live under their owning runtime chunks.
@@ -15408,6 +15408,7 @@
               || _zoneReagentObjects.get(currentArea)?.get(col + ',' + row)
               || _zoneBerryObjects.get(currentArea)?.get(col + ',' + row)
               || _zoneTreasureObjects.get(currentArea)?.get(col + ',' + row)
+              || window.RuinSites?.objectAt?.(currentArea, col, row)
               || window.HobunjiCloudForestWildlife?.fruitObjectAt?.(currentArea, col, row)
               || null;
         }
@@ -17125,7 +17126,8 @@
         if (window.Mounts?.rideState === 'mounted') { window.Mounts.updateMountedMovement(dt); return; }
         if (player._knockbackLedgeFall) { advanceKnockbackLedgeFall(player, dt); return; }
         // Zero-Footing ragdoll/prone — see enterProneIfFootingDepleted above
-        // and performDodge below (the somersault-recovery trigger). Covers
+        // and updateProneState/beginSomersaultRecovery below (the automatic
+        // get-up once Footing refills; a dodge input requests the same arc). Covers
         // both the settled hold (ImpactRagdollPlayback.isHolding()) and the
         // recovery roll (player.somersaultRecovering) — both keep the player
         // fully out of normal movement/physics until recovery finishes and
@@ -17476,9 +17478,14 @@
       // of solid terrain / map edges), shared by the player and by creature
       // attacks that need to know when a forced movement (e.g. a pounce leap)
       // has run into something.
-      function canOccupyAt(wx, wy, radius) {
+      function canOccupyAt(wx, wy, radius, worldY = null) {
         const aC = window.GridTileAccessors.getActiveCols(), aR = window.GridTileAccessors.getActiveRows();
         if (wx - radius < 0 || wy - radius < 0 || wx + radius >= aC * TILE || wy + radius >= aR * TILE) return false;
+        // Sub-tile prop footprints (js/area-footprint-blockers.js) are tested
+        // against the whole square, not just its corners, so props narrower
+        // than the mover cannot slip between two corner samples. worldY is
+        // only passed by projectile sweeps, so shots can clear low props.
+        if (window.AreaFootprintBlockers?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE, worldY)) return false;
         return tileSpeedAt(wx - radius, wy - radius) !== null
             && tileSpeedAt(wx + radius, wy - radius) !== null
             && tileSpeedAt(wx - radius, wy + radius) !== null
@@ -17562,46 +17569,10 @@
         return null;
       }
 
-      // A fast forced move (combat lunge, knockback, dodge) recomputes its
-      // target position from total elapsed progress every frame rather than
-      // stepping a small fixed distance, so a single frame's jump can easily
-      // exceed one tile — e.g. Charged Breaker's ~7-tile lunge covers most of
-      // its distance in its very first frames (ease-out is fastest at t=0).
-      // Testing occupancy only at that frame's endpoint lets it tunnel clean
-      // through a one-tile-thick solid wall (a plateau's incline face)
-      // instead of stopping at it. Subdividing the straight line from the
-      // current position to the desired one into small steps and testing
-      // each one — same per-axis sliding behavior as a single check, just
-      // repeated — closes that gap for any of these forced moves.
-      // blockedX/blockedY report whether that axis was ever rejected during
-      // the sweep, so a caller (e.g. knockback) can zero out that axis's
-      // velocity exactly like the old single-check version did.
-      const COLLISION_SWEEP_STEP_PX = TILE * 0.25;
-      function sweptMove(curX, curY, desiredX, desiredY, canOccupyFn, stopOnBlock = false) {
-        const dx = desiredX - curX, dy = desiredY - curY;
-        const dist = Math.hypot(dx, dy);
-        if (dist < 0.001) return { x: curX, y: curY, blockedX: false, blockedY: false, blockedAt: null };
-        const steps = Math.max(1, Math.ceil(dist / COLLISION_SWEEP_STEP_PX));
-        const stepX = dx / steps, stepY = dy / steps;
-        let x = curX, y = curY, blockedX = false, blockedY = false;
-        let blockedAt = null; // First rejected center position; forced-movement collision uses it to classify the actual obstacle.
-        for (let i = 0; i < steps; i++) {
-          const nx = x + stepX, ny = y + stepY;
-          if (canOccupyFn(nx, y)) x = nx;
-          else {
-            blockedX = true;
-            if (!blockedAt) blockedAt = { x: nx, y };
-            if (stopOnBlock) break;
-          }
-          if (canOccupyFn(x, ny)) y = ny;
-          else {
-            blockedY = true;
-            if (!blockedAt) blockedAt = { x, y: ny };
-            if (stopOnBlock) break;
-          }
-        }
-        return { x, y, blockedX, blockedY, blockedAt };
-      }
+      // sweptMove (sub-stepped per-axis sliding move) now lives in
+      // js/swept-move.js (window.SweptMove).
+      window.SweptMove.init({ stepPx: TILE * 0.25 });
+      const sweptMove = window.SweptMove.sweptMove;
 
       function getKeyboardVector() {
         let x = 0;
@@ -18638,7 +18609,7 @@
         // registered in _buildingInteractables (e.g. the Alchemy Table,
         // and now sittable furniture — see the mapData.furniture loader).
         return currentArea === 'interior' ? getInteriorInteractableAt(_r.col, _r.row)
-          : (_isBuildingArea(currentArea) || currentArea === 'town') ? (_buildingInteractables.get(currentArea + ',' + _r.col + ',' + _r.row) || getWorldObjectAt(_r.col, _r.row))
+          : (_isBuildingArea(currentArea) || currentArea === 'town') ? (_buildingInteractables.get(currentArea + ',' + _r.col + ',' + _r.row) || getCorpseObjectForAction(action, _r.col, _r.row) || getWorldObjectAt(_r.col, _r.row))
           : getCorpseObjectForAction(action, _r.col, _r.row) || getWorldObjectAt(_r.col, _r.row);
       }
 
@@ -20111,6 +20082,7 @@
       const CAMERA_FLOOR_CLEARANCE = 0.2; // minimum height above ground the camera is ever allowed to settle at (see the floor guard below)
       const SEATED_CAMERA_WALL_CLEARANCE = 0.25; // gap kept between a seated camera and the detected wall face (used by occlusionSafeCameraPosition)
       const SEATED_CAMERA_MIN_DISTANCE = 0.04; // emergency near-target limit used when a chair is almost flush against a wall
+      const INTERIOR_CAMERA_WALL_CLEARANCE = 0.35; // gap kept between an interior (building-area) boom and the wall that pulled it in
       const SEATED_CAMERA_MIN_FRAMING_DISTANCE = 0.8; // closest useful third-person framing distance before the camera searches sideways for room
       let _seatedOcclusionDistance = null; // smoothed seated-camera distance used while an obstruction clears
       let _seatedOcclusionUpdatedAt = 0; // previous seated occlusion update time used to calculate smoothing delta
@@ -20141,13 +20113,22 @@
             const hits = _cameraOcclusionRaycaster.intersectObjects(obstacles, true);
             if (hits.length) {
               directHitDistance = hits[0].distance;
-              if (activeCameraMode === 'seated') {
+              const interiorStanding = activeCameraMode !== 'seated' && _isBuildingArea(currentArea);
+              if (activeCameraMode === 'seated' || interiorStanding) {
+                // Interiors (dens, shops, the Random Test Ruin) are tight and
+                // their boom is shorter than the outdoor 3-tile minimum below,
+                // so that minimum meant the boom never pulled in at all there.
+                // Standing interior cameras share the seated wall pull-in, but
+                // not its sideways search: that camera has no smoothing, so a
+                // swing would snap; it rises over the player instead (lift below).
+                //
                 // Never impose a minimum that lies beyond the wall. The old
                 // 0.85-tile minimum did exactly that for wall-backed chairs,
                 // leaving the camera embedded despite a correct ray hit.
+                const wallClearance = interiorStanding ? INTERIOR_CAMERA_WALL_CLEARANCE : SEATED_CAMERA_WALL_CLEARANCE;
                 desiredSafeDist = Math.min(dist, Math.max(
                   SEATED_CAMERA_MIN_DISTANCE,
-                  hits[0].distance - SEATED_CAMERA_WALL_CLEARANCE,
+                  hits[0].distance - wallClearance,
                 ));
 
                 // If the wall leaves too little room to frame the seated
@@ -20155,7 +20136,7 @@
                 // near plane. Search progressively around the chair instead;
                 // this produces an over-the-shoulder slide along the wall
                 // while preserving the user's pitch and target.
-                if (desiredSafeDist < SEATED_CAMERA_MIN_FRAMING_DISTANCE) {
+                if (!interiorStanding && desiredSafeDist < SEATED_CAMERA_MIN_FRAMING_DISTANCE) {
                   let best = { dir, safeDist: desiredSafeDist, offsetDeg: 0 };
                   for (const offsetDeg of [25, -25, 45, -45, 70, -70, 90, -90]) {
                     const a = THREE.MathUtils.degToRad(offsetDeg);
@@ -20172,7 +20153,7 @@
                     _cameraOcclusionRaycaster.far = dist;
                     const candidateHits = _cameraOcclusionRaycaster.intersectObjects(obstacles, true);
                     const candidateSafeDist = candidateHits.length
-                      ? Math.max(SEATED_CAMERA_MIN_DISTANCE, candidateHits[0].distance - SEATED_CAMERA_WALL_CLEARANCE)
+                      ? Math.max(SEATED_CAMERA_MIN_DISTANCE, candidateHits[0].distance - wallClearance)
                       : dist;
                     if (candidateSafeDist > best.safeDist) best = { dir: candidateDir, safeDist: candidateSafeDist, offsetDeg };
                     if (best.safeDist >= dist - 1e-4) break;
@@ -20187,7 +20168,11 @@
             }
           }
           let safeDist = desiredSafeDist;
-          if (activeCameraMode === 'seated') {
+          // Interior standing booms share the seated smoothing: a grazing ray
+          // that flickers between hitting and missing a wall edge otherwise
+          // pops the camera in and out under the reticle.
+          const interiorBoom = activeCameraMode !== 'seated' && _isBuildingArea(currentArea);
+          if (activeCameraMode === 'seated' || interiorBoom) {
             // Smooth toward the freshly raycast distance every frame. The old
             // direct assignment made the camera stick to whichever wall face
             // happened to win one raycast, then snap when that face changed.
@@ -20204,7 +20189,7 @@
               _seatedOcclusionDistance += (desiredSafeDist - _seatedOcclusionDistance) * alpha;
             }
             safeDist = window.FormatUtils.clamp(_seatedOcclusionDistance, SEATED_CAMERA_MIN_DISTANCE, dist);
-            _seatedCameraDebug = {
+            _seatedCameraDebug = interiorBoom ? null : {
               idealDistance: dist,
               directHitDistance,
               desiredDistance: desiredSafeDist,
@@ -20218,12 +20203,16 @@
             _seatedOcclusionUpdatedAt = 0;
             _seatedCameraDebug = null;
           }
-          if (safeDist < dist - 1e-4) {
+          // A side-searched direction must be applied even at full length.
+          if (safeDist < dist - 1e-4 || chosenSideOffsetDeg !== 0) {
             const shrink = window.FormatUtils.clamp(1 - safeDist / dist, 0, 1);
             // Side-sliding supplies seated clearance; lifting a billboard
             // avatar makes it edge-on to the camera and was responsible for
-            // the wall-only frozen view in the Pixel Probe report.
-            const lift = activeCameraMode === 'seated' ? 0 : shrink * dist * 0.5;
+            // the wall-only frozen view in the Pixel Probe report. Interior
+            // booms slide straight in along their own sightline too: a lift
+            // tips the view steeply down, so the smallest aim change swept the
+            // reticle's hit point across the floor or ceiling.
+            const lift = (activeCameraMode === 'seated' || interiorBoom) ? 0 : shrink * dist * 0.5;
             resultX = lookAtX + dir.x * safeDist;
             resultY = lookAtY + dir.y * safeDist + lift;
             resultZ = lookAtZ + dir.z * safeDist;
@@ -24823,6 +24812,22 @@
             const label = t.label || (t.target === 'exit_building' ? 'Exit' : 'Use');
             return [{ icon, label, action: 'use_spot', style: 'primary', allowed: true }];
           }
+          // Corpses settle in dens, mine floors and the test ruin too, but
+          // this early-return branch never asked for them, so indoor kills
+          // (skeletons, liches, bandits, den creatures) were never lootable.
+          // Only the exact aimed tile shows the button, so a nearby corpse
+          // cannot take over the attack slot mid-fight.
+          // Sticky: once shown, the same corpse stays offered while it is
+          // still within reach, so the button does not blink as the aim
+          // probe slides across a tile edge.
+          const corpseReticle = getReticleTile();
+          let aimedCorpse = getCorpseObjectAt(corpseReticle.col, corpseReticle.row);
+          if (!aimedCorpse && _lastOfferedCorpseId) {
+            const near = getCorpseObjectForAction('obj_loot_corpse', corpseReticle.col, corpseReticle.row);
+            if (near?.id === _lastOfferedCorpseId) aimedCorpse = near;
+          }
+          _lastOfferedCorpseId = aimedCorpse?.id || null;
+          if (aimedCorpse) return aimedCorpse.getButtons(corpseReticle);
           const devRuinActions = currentArea === 'map_i_dev_random_ruin'
             ? window.DevRandomRuinInteractions?.getActionButtons?.()
             : null; // Generated test-ruin interactions are ordinary building-interior context actions; when present they replace attacks/items in the same physical arch slots, exactly like NPC/furniture interactions.
@@ -27488,6 +27493,8 @@
           return avatarGroup;
         },
         worldSurfaceY: (x, y) => {
+          const exact = window.AreaFootprintBlockers?.surfaceYAt?.(currentArea, x / TILE, y / TILE); // True floor where an area's tiles are flat but its floor is not (ruin basins).
+          if (Number.isFinite(exact)) return exact;
           const grid = window.GridTileAccessors.getActiveGrid();
           const col = window.FormatUtils.clamp(Math.floor(x / TILE), 0, window.GridTileAccessors.getActiveCols() - 1);
           const row = window.FormatUtils.clamp(Math.floor(y / TILE), 0, window.GridTileAccessors.getActiveRows() - 1);
@@ -28246,6 +28253,7 @@
       });
 
       window.DevSpawner?.init({
+        corpseObjects, despawnCreature, // Random Test Ruin sanctum lich raises its fallen skeletons by replacing their corpses.
         getCurrentArea: () => currentArea,
         setCurrentArea: (v) => { currentArea = v; },
         getActiveScene: window.GridTileAccessors.getActiveScene,
@@ -28294,6 +28302,20 @@
         setRainPlaneSettings: window.RainPlanes.setSettings,
         isDevMode: () => s_devMode,
         regenerateWildernessLab,
+        getActiveCamera: () => camera, // Random Test Ruin anchors its interaction list at camera height.
+        // Adds a rolled loot bundle ({ itemKey: qty }) to the inventory and
+        // returns display parts; used by Random Test Ruin Dungeon Chests.
+        grantLoot: gained => {
+          const parts = [];
+          Object.entries(gained || {}).forEach(([key, qty]) => {
+            if (!(qty > 0)) return;
+            if (key === 'gold') inventory.gold = (inventory.gold || 0) + qty;
+            else inventory[key] = Math.min(99, (inventory[key] || 0) + qty);
+            parts.push(itemIconForKey(key) + '×' + qty);
+          });
+          if (parts.length) { window.HudUpdate.refreshItemScroll(); buildInventoryGrid(); refreshActionBar(); }
+          return parts;
+        },
       });
 
       window.MapLivePreviewRuntime?.init({
@@ -28867,6 +28889,27 @@
         getReagentPlantMaterial,
         refreshItemScroll: window.HudUpdate.refreshItemScroll,
         tileSurfaceYInArea,
+      });
+
+      window.StampableLocaleDefs?.init({ debugLog });
+      window.RuinSites?.init({
+        tothalWorldId: _tothalWorldId,
+        currentTothalYear,
+        calendar,
+        getCurrentArea: () => currentArea,
+        TILE,
+        NORMAL_TOP,
+        PLATEAU_UNIT,
+        TRENCH_TOP,
+        TileType,
+        _zoneScenes,
+        _zoneLayouts,
+        buildZoneScene,
+        enterZone,
+        findZoneFlatEmptyTiles,
+        recordWildernessChunkTileDelta,
+        showToast,
+        refreshActionBar,
       });
 
       window.WildTreasure?.init({

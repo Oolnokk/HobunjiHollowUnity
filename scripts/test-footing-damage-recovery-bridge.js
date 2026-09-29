@@ -7,6 +7,7 @@ const assert = require('assert');
 
 const modulePath = path.join(__dirname, '..', 'docs', 'js', 'footing-damage-recovery-bridge.js');
 const source = fs.readFileSync(modulePath, 'utf8');
+const gameSource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'game.js'), 'utf8'); // Used below to pin the automatic in-place prone get-up integration that consumes this bridge's faster recovery.
 
 let now = 1000;
 let lastTickOptions = null;
@@ -76,6 +77,14 @@ assert.strictEqual(player.footing, 73);
 assert.strictEqual(lastTickOptions.footingRegenPerSec, 3);
 assert.strictEqual(lastTickOptions.staminaRegenPerSec, 9);
 
+// Prone recovery uses the same authored/override rate at exactly 2x speed.
+player.prone = true;
+player.footing = 40;
+ResourceSystem.tick(player, 0.5, { footingRegenPerSec: 10 });
+assert.strictEqual(player.footing, 50);
+assert.strictEqual(lastTickOptions.footingRegenPerSec, 20);
+assert.strictEqual(context.window.HobunjiFootingDamageRecovery.proneRecoveryMultiplier, 2);
+
 // A hit while prone cannot refresh an already-expired recovery timer.
 player.prone = true;
 now = 5000;
@@ -95,7 +104,16 @@ const debug = context.window.HobunjiFootingDamageRecovery.getDebug(player);
 assert.strictEqual(debug.damageMultiplier, 2);
 assert.strictEqual(debug.recoveryDelaySeconds, 1.5);
 assert.strictEqual(debug.fullRecoverySeconds, 3);
+assert.strictEqual(debug.proneRecoveryMultiplier, 2);
 assert.strictEqual(debug.defaultFootingRegenPerSec, 100 / 3);
 assert.strictEqual(debug.lastFootingDamageAt, null);
+
+const proneStateStart = gameSource.indexOf('function updateProneState(dt)');
+const proneStateEnd = gameSource.indexOf('const SOMERSAULT_RECOVERY_DUR_S', proneStateStart);
+assert.ok(proneStateStart >= 0 && proneStateEnd > proneStateStart, 'game keeps a dedicated prone-state update block');
+const proneStateSource = gameSource.slice(proneStateStart, proneStateEnd);
+assert.ok(proneStateSource.includes('player.footing >= proneRecoveryFootingTarget(player)'), 'restored Footing automatically qualifies the player to get up');
+assert.ok(proneStateSource.includes('beginSomersaultRecovery();'), 'automatic prone recovery reuses the existing in-place somersault arc');
+assert.ok(proneStateSource.includes('!(player.proneThrowT > 0)') && proneStateSource.includes('!player._knockbackLedgeFall'), 'automatic get-up waits for prone throws and ledge falls to finish');
 
 console.log('Footing timing checks passed.');

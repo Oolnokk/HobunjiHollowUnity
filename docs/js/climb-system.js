@@ -241,6 +241,23 @@
   const CLIMB_HOP_ACTIVE_S = 0.32;
   const CLIMB_HOP_PAUSE_S  = 0.26;
   const CLIMB_HOP_BOUNCE_UNITS = 0.4;
+  // Non-grid climbables (Random Test Ruin ledges, ...) register a provider
+  // returning { start() } for the ledge the player faces, or null. game.js
+  // starts it from a forward dodge, exactly like a cliff (performContextAction).
+  const worldClimbProviders = new Set();
+  function registerWorldClimbProvider(provider) {
+    if (typeof provider !== 'function') return () => {};
+    worldClimbProviders.add(provider);
+    return () => worldClimbProviders.delete(provider);
+  }
+  function getWorldClimbTarget() {
+    if (deps?.player?.climbing) return null;
+    for (const provider of worldClimbProviders) {
+      try { const target = provider(); if (target?.start) return target; } catch (_) {}
+    }
+    return null;
+  }
+
   function startScriptedWorldClimb(config = {}) {
     const player = deps?.player;
     if (!player || player.climbing) return false;
@@ -254,7 +271,8 @@
     if (![endX,endY,startWorldY,endWorldY].every(Number.isFinite)) return false;
     player.climbing = true;
     player.climbElapsed = 0;
-    player.climbHopCount = Math.max(3, Math.min(12, Math.floor(Number(config.hopCount) || 3)));
+    const minHops = config.shortHops === true ? 2 : 3; // Short variant: ruin ledges climb in two hops.
+    player.climbHopCount = Math.max(minHops, Math.min(12, Math.floor(Number(config.hopCount) || minHops)));
     player.climbStartX = player.x;
     player.climbStartY = player.y;
     player.climbEndX = endX;
@@ -564,6 +582,7 @@
     getClimbTarget,
     getAimedNest,
     startClimb,
+    registerWorldClimbProvider, getWorldClimbTarget,
     startScriptedWorldClimb, // Reuses the cliff-climb hop lerp for authored non-grid climbs such as Random Test Ruin stone ladders.
     updateClimb,
     updateBranchMovement,

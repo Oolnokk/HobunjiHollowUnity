@@ -29,7 +29,7 @@ const context = {
     PerkSystem: { rank: () => 1 },
     CookingSystem: { openAtHearth() {} },
     AlchemySystem: { setCampfireBrewing() {} },
-    CalendarSystem: { yearNumber: () => tothalYear },
+    CalendarSystem: { yearNumber: () => tothalYear, tothalCycle: () => tothalYear },
     __hobunjiPlayerProfile: { worldId: 'world_test' },
     localStorage: { getItem: key => key === 'hobunjiSaveMeta' ? JSON.stringify(saveMeta) : null },
     __farmLog() {},

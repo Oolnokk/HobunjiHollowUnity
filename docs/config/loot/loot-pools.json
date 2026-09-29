@@ -127,6 +127,26 @@
         { "id": "combatManual", "kind": "generator", "generatorKey": "combatAbilityManual", "chance": 0.08, "conditions": {} },
         { "id": "clothing", "kind": "generator", "generatorKey": "treasureDyedClothing", "chance": 0.25, "conditions": {} }
       ]
+    },
+    "dungeonChest_tier1": {
+      "label": "Dungeon Chest — Tier 1 (Weathered)",
+      "note": "Rolled by Random Test Ruin Dungeon Chests (docs/js/dev-random-ruin-dungeon-chests.js). Intentionally empty until dungeon loot is authored.",
+      "entries": []
+    },
+    "dungeonChest_tier2": {
+      "label": "Dungeon Chest — Tier 2 (Iron-bound)",
+      "note": "Rolled by Random Test Ruin Dungeon Chests (docs/js/dev-random-ruin-dungeon-chests.js). Intentionally empty until dungeon loot is authored.",
+      "entries": []
+    },
+    "dungeonChest_tier3": {
+      "label": "Dungeon Chest — Tier 3 (Gilded)",
+      "note": "Rolled by Random Test Ruin Dungeon Chests (docs/js/dev-random-ruin-dungeon-chests.js). Intentionally empty until dungeon loot is authored.",
+      "entries": []
+    },
+    "dungeonChest_tier4": {
+      "label": "Dungeon Chest — Tier 4 (Ancient)",
+      "note": "Rolled by Random Test Ruin Dungeon Chests (docs/js/dev-random-ruin-dungeon-chests.js). Intentionally empty until dungeon loot is authored.",
+      "entries": []
     }
   }
 }

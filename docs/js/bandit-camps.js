@@ -1271,8 +1271,10 @@
           deps.getPackClothing().push(item);
           parts.push('👘 ' + item.label);
         }
-        deps.corpseObjects.delete(c);
-        deps.despawnCreature(c);
+        // keepCorpseAfterLoot: the body stays where it fell (e.g. a lich's
+        // skeletons it can raise again); it just stops being lootable.
+        if (c.keepCorpseAfterLoot) c.corpseLooted = true;
+        else { deps.corpseObjects.delete(c); deps.despawnCreature(c); }
         deps.refreshItemScroll();
         deps.buildInventoryGrid();
         deps.buildPackClothingSection();
@@ -1280,8 +1282,8 @@
         return {
           ok: true,
           message: parts.length
-            ? `Looted the ${c.def.label}: ${parts.join(' ')}`
-            : `The ${c.def.label} carried nothing.`,
+            ? `Looted the ${c.name || c.def.label}: ${parts.join(' ')}`
+            : `The ${c.name || c.def.label} carried nothing.`, // Minions/liches share this path; their own name, not the base 'Bandit' def label.
         };
       },
     };

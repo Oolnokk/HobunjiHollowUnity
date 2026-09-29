@@ -35,23 +35,34 @@ const audioSystem = read('docs/js/audio-system.js');
 
 const loadOrder = [
   'dynamic-surfaces.js',
-  'dev-random-ruin-hit-puzzles-loader.js',
+  'dev-random-ruin-config.js',
+  'furniture-decal-runtime.js',
+  'dev-random-ruin-furniture-pieces.js',
+  'dev-random-ruin-hit-puzzles.js',
   'dev-random-ruin-prototype-hooks.js',
+  'dev-random-ruin-solid-footprints.js',
   'dev-random-ruin-tile-occupancy.js',
   'dev-random-ruin-solvability.js',
   'dev-random-ruin-interior-map.js',
   'dev-random-ruin-motion-runtime.js',
+  'dev-random-ruin-dungeon-chests.js',
   'dev-random-ruin-simple-puzzles.js',
+  'dev-random-ruin-rope-rewards.js',
+  'dev-random-ruin-sanctum.js',
   'dev-random-ruin-interactions.js',
+  'dev-random-ruin-glyph-circuits.js',
   'dev-random-ruin-runtime-coverage.js',
 ].map(name => camera.indexOf(name));
-assert(/localStorage\.getItem\('hobunjiDevMode'\) === '1'/.test(camera) && /if \(!devMode/.test(camera), 'ruin runtime must only be injected in Dev Mode');
-assert(camera.includes('dev-random-ruin-interactions.js?v=20260929rowsignature1'), 'ruin interaction adapter must be cache-busted with the arch-priority/popup-list fix');
-assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260927interiorparity1'), 'simple puzzle interior-parity runtime must be cache-busted in the dev bootstrap');
+assert(!/if \(!devMode/.test(camera), 'ruin runtime loads for every player so wilderness ruin sites can generate ruins');
+assert(/if\(!devModeEnabled\(\)\)return;/.test(interior) && /if \(\(!devModeEnabled\(\)&&!opts\.site\)/.test(interior), 'dev Settings controls stay Dev Mode only; only ruin sites may generate outside Dev Mode');
+assert(camera.includes('dev-random-ruin-interactions.js?v=20260930rowsignature1'), 'ruin interaction adapter must be cache-busted with the arch-priority/popup-list fix');
+assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260929glowdecals1'), 'simple puzzle interior-parity runtime must be cache-busted in the dev bootstrap');
 assert(camera.includes('dev-random-ruin-wall-render-proxy.js?v=20260927geometry1'), 'native ruin render verifier must be cache-busted in the dev bootstrap');
-assert(gameIndex.includes('js/dev-random-ruin-bootstrap.js?v=20260929rowsignature1'), 'game page must load the updated ruin bootstrap');
-assert(gameIndex.includes('game.js?v=20260929livestockwalk1'), 'game page must load the normal-interior action/collision integration');
-assert(gameIndex.includes('js/climb-system.js?v=20260926ruinladder2'), 'game page must cache-bust the shared climb animation used by authored ruin ladders');
+assert(gameIndex.includes('js/dev-random-ruin-bootstrap.js?v=20260930rowsignature1'), 'game page must load the updated ruin bootstrap');
+assert(gameIndex.includes('game.js?v=20260930livestockwalk1'), 'game page must load the footprint-aware movement collision');
+assert(gameIndex.indexOf('js/area-footprint-blockers.js') >= 0 && gameIndex.indexOf('js/area-footprint-blockers.js') < gameIndex.indexOf('game.js?v='), 'sub-tile footprint registry must load before game.js');
+assert(game.includes('window.AreaFootprintBlockers?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE, worldY)'), 'canOccupyAt must test the whole mover square against prop footprints');
+assert(gameIndex.includes('js/climb-system.js?v=20260929config1'), 'game page must cache-bust the shared climb animation used by authored ruin ladders');
 assert(loadOrder.every(index => index >= 0), 'ruin bootstrap must load every Random Test Ruin runtime module');
 for (let i = 1; i < loadOrder.length; i++) {
   assert(loadOrder[i] > loadOrder[i - 1], 'Random Test Ruin runtime modules must preserve dependency order');
@@ -74,7 +85,7 @@ assert(interior.includes('spritePngSurface.makeMaterial(THREE,source.map||null')
 assert(interior.includes('remainingLitMaterials'), 'material diagnostics must explicitly count any lit material that escapes normalization');
 assert((cloudFog.match(/map_i_dev_random_ruin/g)||[]).length>=2, 'Random Test Ruin must opt into the shared den no-sky and den darkness/lantern classifications');
 assert(gameIndex.includes('js/cloud-forest-fog.js?v=20260926devruindark2'), 'test-ruin darkness override must be cache-busted in the game page');
-assert(camera.includes('dev-random-ruin-interior-map.js?v=20260927interiorparity1'), 'test-ruin generator/runtime changes must be cache-busted in the dev bootstrap');
+assert(camera.includes('dev-random-ruin-interior-map.js?v=20260929ruinsites1'), 'test-ruin generator/runtime changes must be cache-busted in the dev bootstrap');
 assert(interior.includes('Solvability.audit'), 'candidate ruins must run the pre-entry solvability audit');
 assert(interior.includes('MAX_SOLVABILITY_ATTEMPTS = 6'), 'unsolvable candidates must have a bounded deterministic retry budget');
 assert(interior.includes('getLastSolvabilityAudit'), 'rejected seed diagnostics must remain inspectable without devtools');
@@ -107,7 +118,7 @@ assert(game.includes("dispatchWorldInputClaim(actionId,'press','game-input')"), 
 assert(game.includes("dispatchWorldInputClaim(mouseAction,'press','desktop-mouse')"), 'desktop mouse weapon input must consult the same contextual claim registry');
 assert(game.includes("dispatchWorldInputClaim(physicalInputAction,'press','touch-arch')"), 'touch action-arch input must consult the same contextual claim registry');
 
-assert(interior.includes('m.manualFallback=true') && interior.includes("'Raise Stone Platform'"), 'moving daises must retain a manual traversal fallback even when a glyph also exists');
+assert(interior.includes('m.manualFallback=true') && interior.includes("'Raise Stone Platform'") && interior.includes("if(gated)continue;\n        m.manualFallback=true;"), 'only puzzle-free moving daises get a manual Raise/Lower control; puzzle-linked ones move only through their puzzle');
 assert(solvability.includes('manual lift fallback reachable'), 'pre-entry audit must understand the simple-mode lift fallback');
 assert(!debrisBootstrap.includes('runtimePuzzleBypass?1:'), 'disabled V50 puzzle families must leave mechanisms manual/closed rather than silently auto-solving them');
 assert(debrisBootstrap.includes('skip standalone editor startup in embedded gameplay runtime'), 'hidden gameplay V50 must skip standalone editor startup work that is irrelevant to generation');
@@ -149,7 +160,7 @@ assert(simplePuzzles.includes("anchorY=ceilingBase+wallHeight-.035"), 'rope anch
 assert(simplePuzzles.includes("dev_ruin_swing_rope_ceiling_mount_"), 'rope traversal must render an explicit ceiling attachment');
 assert(simplePuzzles.includes("inputAction:'dodge'") && simplePuzzles.includes("nativeInput:true"), 'rope jump-off prompt must advertise the canonical Dodge input without stealing an action slot');
 assert(simplePuzzles.includes("label:'Grab Rope'") && simplePuzzles.includes("point:candidate.grabPoint"), 'idle ropes must remain discoverable through the normal floating interaction list');
-assert(simplePuzzles.includes('function tryAutoGrabRope()') && simplePuzzles.includes('if(attachRope(rope)){rope.autoGrabCount++'), 'reaching the live rope grip must also auto-grab so input-slot contention can never make traversal inaccessible');
+assert(!simplePuzzles.includes('tryAutoGrabRope'), 'ropes are grabbed only through the Grab Rope prompt (which claims Action 1); proximity auto-grab caught players unintentionally');
 assert(simplePuzzles.includes('ROPE_BODY_RADIUS = 0.045') && simplePuzzles.includes('sharedCylinderGeometry(ROPE_BODY_RADIUS,ROPE_BODY_RADIUS,1,8)'), 'rope must render as a thick world-space cylinder rather than a one-pixel THREE.Line');
 assert(simplePuzzles.includes('sweptRopePoint') && simplePuzzles.includes('ropeBlockedAt') && simplePuzzles.includes('ROPE_ROUTE_SAMPLES'), 'rope generation, swinging, and release flight must use the shared interior occupancy instead of tunnelling through solids');
 assert(simplePuzzles.includes("String(door?.to)===String(hall.id)") && simplePuzzles.includes('approachAtMin'), 'safe-path reveal pedestal must derive the player-approach side from the actual room-to-hall doorway rather than always using the low-coordinate end');
@@ -171,7 +182,7 @@ assert(simplePuzzles.includes("recordModulePlacement('ceilingProjectileGlyph'"),
 assert(simplePuzzles.includes("recordModulePlacement('cyclingElevator'"), 'cycling elevators must exist as independent sunken-floor modules');
 assert(simplePuzzles.includes('buildSwappableHallwayModules'), 'generic hallway slots must be able to choose non-trap modules');
 assert(simplePuzzles.includes("recordModulePlacement('hallwayGlyphGate'"), 'the reusable ceiling glyph must also be eligible as a hallway replacement module');
-assert(simplePuzzles.includes("buildCyclingElevatorModule(context,room,{startActive:true"), 'cycling elevators must also be eligible as standalone traversal machinery');
+assert(simplePuzzles.includes("buildCyclingElevatorModule(context,room,{region:outermostSunkenRegionForRoom(context,room),ambientLift:true,startActive:true"), 'cycling elevators must also be eligible as standalone traversal machinery');
 assert(simplePuzzles.includes('installModularProjectileHook'), 'reusable canopies and ceiling glyphs must share one ranged-projectile collision seam');
 assert(simplePuzzles.includes('buildBalconyRopeElevatorComposer'), 'the long balcony/rope/elevator possibility must be composed from reusable modules');
 assert(simplePuzzles.includes('occludePoint') && simplePuzzles.includes('crossX') && simplePuzzles.includes('crossZ'), 'a composed balcony canopy must size itself from the real balcony-to-target ray rather than being decorative only');
@@ -269,7 +280,8 @@ assert(hooks.includes('moving-platform grounded child'), 'grounded moving-platfo
 assert(!hooks.includes('registerBlocker(`devruin-transit-door-'), 'transit doors must not retain a second object-wide blocker');
 assert(!hooks.includes('registerBlocker(`devruin-elevator-'), 'elevator objects must not retain object-wide blockers outside the Map snapshot');
 assert(interactions.includes("matchMedia?.('(pointer: coarse)')"), 'mobile ruin actions must recognize coarse-pointer desktop-view devices');
-assert(interactions.includes("source:'semantic-glyph'"), 'mobile glyph targets must expose ranged guidance/action');
+assert(!interactions.includes("source:'semantic-glyph'"), 'glyph targets are shot with the ordinary ranged input; the list must not add a generic "Fire <weapon>" row');
+assert(interactions.includes('window.RangedWeapons?.focusCandidates?.(candidates, 6)'), 'ruin interactions must use the shared reticle focus, listing only the aimed object\'s actions');
 assert(interior.includes('function getPlayerSupportY()') && interior.includes('getPlayerSupportY') && interior.includes('syncPlayerPresentationHeight:syncRuinPresentationHeight'), 'multi-level ruin presentation must expose one authoritative support height to the normal player renderer');
 assert(game.includes('window.DevRandomRuin?.getPlayerSupportY?.()') && game.includes('Number.isFinite(ruinStandY) ? ruinStandY'), 'game.js must consume ruin support before positioning body, shadow, resources, held equipment, and shoulder pets');
 assert(interior.includes('ruin.supportY=climbY') && interior.includes('ruin.lastAcceptedPx={x:deps.player.x,y:deps.player.y}'), 'ladder motion must advance the ruin step baseline so the landing cannot be rejected as an oversized step');
@@ -388,15 +400,7 @@ for (const asset of [
 ]) assert(treePaths.includes(asset), `embedded V50 tree must retain ${asset}`);
 assert.equal(embeddedTree.truncated, false, 'embedded V50 tree must be complete');
 
-const parts = [];
-for (let i = 1; i <= 9; i++) {
-  const id = String(i).padStart(2, '0');
-  const text = read(`docs/js/dev-random-ruin-hit-puzzles-runtime/part${id}.js`);
-  const match = text.match(/__devRuinHitParts\.push\('([^']*)'\);/);
-  assert(match, `hit-puzzle part ${id} must contain one base64 payload`);
-  parts.push(match[1]);
-}
-const hitSource = Buffer.from(parts.join(''), 'base64').toString('utf8');
+const hitSource = read('docs/js/dev-random-ruin-hit-puzzles.js');
 assert(hitSource.startsWith('// Dev Random Test Ruin'), 'decoded hit-puzzle source header must be intact');
 assert(hitSource.includes('window.DevRandomRuinHitPuzzles'), 'decoded hit runtime must export its public API');
 assert(hitSource.includes('debugActivateGlyph(object = null)') && hitSource.includes('return target ? activateGlyph(target) : false'), 'hit runtime diagnostics must exercise the same authoritative glyph state transition as real projectile hits');
@@ -412,4 +416,36 @@ new vm.Script(coverage, { filename: 'dev-random-ruin-runtime-coverage.js' });
 
 assert(audioSystem.includes("if ('preservesPitch' in snd) snd.preservesPitch = false"), 'pitched object SFX must disable browser pitch preservation so playbackRate changes are audible as actual pitch changes');
 assert(gameIndex.includes('js/audio-system.js?v=20260927pitchedsfx1'), 'pitched object-SFX fix must be cache-busted in the game page');
+const lootPools = JSON.parse(read('docs/config/loot/loot-pools.json')).pools;
+for (let tier = 1; tier <= 4; tier++) assert(Array.isArray(lootPools[`dungeonChest_tier${tier}`]?.entries), `Dungeon Chest tier ${tier} loot pool must exist (empty until authored)`);
+const ropeRewards = read('docs/js/dev-random-ruin-rope-rewards.js');
+assert(ropeRewards.includes("SimplePuzzles.registerComposer({ id:'ropeRewards'"), 'rope payoffs / lava basins must register as a simple-puzzle composer');
+assert(game.includes('grantLoot: gained =>'), 'DevSpawner deps must expose grantLoot for Dungeon Chests');
+new vm.Script(ropeRewards, { filename: 'dev-random-ruin-rope-rewards.js' });
+new vm.Script(read('docs/js/dev-random-ruin-dungeon-chests.js'), { filename: 'dev-random-ruin-dungeon-chests.js' });
+const sanctum = read('docs/js/dev-random-ruin-sanctum.js');
+const lich = read('docs/js/combat/combat-lich.js');
+assert(sanctum.includes("SP.registerComposer({\n    id:'sanctum'"), 'braziers / Great Door / boss sanctum must register as a simple-puzzle composer');
+assert(read('docs/js/dev-random-ruin-interior-map.js').includes('window.DevRandomRuinSanctum?.reserve?.(cols, rows)'), 'floor projection must reserve the sanctum wing in the ruin grid');
+assert(sanctum.includes('bgm_just_beyond_the_torchlight.ogg'), 'awakened Great Door must emit Just Beyond the Torchlight as its BGS');
+assert(lich.includes('allowArea:') && lich.includes('const allowedAreas = new Set([ARENA_ID])'), 'liches stay arena-confined unless an area opts in');
+assert(gameIndex.includes('js/combat/combat-lich.js?v=20260929merge1'), 'lich area opt-in must be cache-busted in the game page');
+new vm.Script(sanctum, { filename: 'dev-random-ruin-sanctum.js' });
+const ruinPieces = read('docs/js/dev-random-ruin-furniture-pieces.js');
+new vm.Script(ruinPieces, { filename: 'dev-random-ruin-furniture-pieces.js' });
+for (const key of ['ruinDoorSeal', 'ruinGlyphTarget', 'ruinGreatDoor', 'ruinBlueBrazierBowl', 'ruinStandingBrazier', 'ruinSanctumLadder', 'ruinSanctumCoffin', 'ruinDungeonChestT1', 'ruinDungeonChestT2', 'ruinDungeonChestT3', 'ruinDungeonChestT4', 'ruinRewardPlate', 'ruinDisplayPedestal', 'ruinDisplayCoffin']) {
+  const piece = JSON.parse(read(`docs/config/furniture-authored/${key}.json`));
+  assert(piece.schema === 'hobunji_furniture_authored_runtime.v1', `${key} must be an authored furniture piece`);
+  if (['ruinDoorSeal', 'ruinGlyphTarget', 'ruinGreatDoor'].includes(key)) assert(piece.decals?.some(decal => decal.glow?.off?.length && decal.glow?.on?.length), `${key} must carry state-glow decals`);
+  assert(ruinPieces.includes(`'${key}'`), `${key} must be placed by the ruin furniture-pieces module`);
+}
+assert(sanctum.includes("buildAuthoredDoor"), 'the sanctum Great Door must be built from ruinGreatDoor.json');
+assert(read('docs/js/furniture-decal-runtime.js').includes('function setGlowState'), 'decal runtime must expose per-state glow colours');
+const ruinConfig = JSON.parse(read('docs/config/random-ruin/ruin-config.json'));
+assert(ruinConfig.schema === 'hobunji_random_ruin_config.v1' && ruinConfig.sanctum?.boss && ruinConfig.moduleChances, 'ruin tuning lives in docs/config/random-ruin/ruin-config.json');
+new vm.Script(read('docs/js/dev-random-ruin-config.js'), { filename: 'dev-random-ruin-config.js' });
+assert(interactions.includes('registerWorldClimbProvider') && !interactions.includes("label:'Climb Up'"), 'ruin ledges climb from a forward dodge (ClimbSystem world-climb provider), not a listed prompt');
 console.log('Random Test Ruin integration static audit passed.');
+const interactionsSource = read('docs/js/dev-random-ruin-interactions.js');
+assert(interactionsSource.includes('function freeLandingNear') && interactionsSource.includes('if (top.blocked) top = freeLandingNear(ladder, top) || top;'), 'a prop filling the ladder head must not make the ladder unclimbable');
+assert(read('docs/js/locale-terrain-placement.js').includes('compiled.requiredPregate'), 'terrain-aware placement pre-gates required probes before the full-footprint floor scan');

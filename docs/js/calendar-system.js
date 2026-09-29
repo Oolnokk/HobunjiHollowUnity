@@ -81,7 +81,7 @@
     installTimePassageRuntime();
     debugLog('Sleep/Wait tap actions trigger on input release; hold selectors remain press-driven');
     debugLog(`calendar epoch ready: game day 1 = Waxingheat 1, ${FIRST_AOT_YEAR} AoT; Firstrise 1 begins each civil year`);
-    debugLog(`Tothal cycle ${yearNumber()} = ${aotYearNumber()} AoT; deterministic y${yearNumber()} seed preserved`);
+    debugLog(`Tothal cycle ${tothalCycle()} (monthly) in ${aotYearNumber()} AoT; deterministic y${tothalCycle()} seed`);
     debugLog(`natural clock target: ${TARGET_DAY_LENGTH_SECONDS}s per represented day (${NATURAL_TIME_WRITE_SCALE.toFixed(3)}x previous clock rate)`);
   }
 
@@ -106,14 +106,22 @@
     return positiveModulo(civilDayOffset(day), YEAR_LENGTH_DAYS) + 1;
   }
 
-  // IMPORTANT compatibility boundary: game.js's currentTothalYear() already
-  // calls CalendarSystem.yearNumber(), and performTothalShift() includes that
-  // result in `${worldId}_tothal_y${year}_${zoneId}`. Keep yearNumber() as a
-  // 1-based Tothal generation cycle so an existing cycle-1 world still
-  // rebuilds from seed y1 after this update. Because it uses the *new civil
-  // offset*, it now increments on Firstrise 1 exactly as requested.
+  // 1-based civil year cycle (increments on Firstrise 1). The Tothal seed
+  // cycle used to be this; it is now the monthly tothalCycle() below.
   function yearNumber(day = deps.calendar.day) {
     return Math.floor(civilDayOffset(day) / YEAR_LENGTH_DAYS) + 1;
+  }
+
+  // Tothal generation cycle: the wilderness (and everything seeded from it --
+  // locales, dens, camps, ruins) now reshuffles every civil month instead of
+  // every year. Raw day 1 is still cycle 1, so an untouched cycle-1 world
+  // keeps rebuilding from seed y1; months start on raw days 1, 29, 57, ...
+  function tothalCycle(day = deps.calendar.day) {
+    return Math.floor(civilDayOffset(day) / DAYS_PER_MONTH) - GAME_START_MONTH_INDEX + 1;
+  }
+
+  function nextTothalShiftDay(day = deps.calendar.day) {
+    return (tothalCycle(day)) * DAYS_PER_MONTH + 1;
   }
 
   // Player-facing era number. This is intentionally separate from the stable
@@ -899,7 +907,7 @@
   }
 
   function timeDebugSnapshot() {
-    const nextShiftDay = nextCivilYearStartDay(); // Raw day used by the next-Tothal-Shift debug fields below.
+    const nextShiftDay = nextTothalShiftDay(); // Raw day used by the next-Tothal-Shift debug fields below.
     const target = previewAfterHours(_selectedPassageHours); // Current modal selection used by the preview debug field below.
     return {
       rawDay: deps?.calendar?.day ?? null,
@@ -907,7 +915,7 @@
       shortDate: deps ? formatCalendarDate() : null,
       fullDateTime: deps ? formatCalendarDateTimeFull() : null,
       aotYear: deps ? aotYearNumber() : null,
-      tothalCycle: deps ? yearNumber() : null,
+      tothalCycle: deps ? tothalCycle() : null,
       civilDayOfYear: deps ? dayOfYear() : null,
       monthNumber: deps ? monthNumber() : null,
       monthName: deps ? monthName() : null,
@@ -917,7 +925,7 @@
       isFirstriseNewYear: deps ? isCivilYearStart() : null,
       nextTothalShiftRawDay: deps ? nextShiftDay : null,
       nextTothalShiftDate: deps ? formatCalendarDateFull(nextShiftDay) : null,
-      nextTothalSeedCycle: deps ? yearNumber(nextShiftDay) : null,
+      nextTothalSeedCycle: deps ? tothalCycle(nextShiftDay) : null,
       naturalClockTargetSecondsPerRepresentedDay: TARGET_DAY_LENGTH_SECONDS,
       naturalClockScale: NATURAL_TIME_WRITE_SCALE,
       modalKind: _timePassageKind,
@@ -950,7 +958,9 @@
     isInitialized,
     getHour,
     dayOfYear,
-    yearNumber, // Existing game.js Tothal integration: stable 1-based deterministic generation cycle, now rolling on Firstrise 1.
+    yearNumber, // Civil year cycle (1-based, rolls on Firstrise 1); drives the AoT era number.
+    tothalCycle, // Monthly 1-based Tothal generation cycle used by every wilderness reshuffle.
+    nextTothalShiftDay,
     aotYearNumber,
     weekOfYear,
     seasonCycleWeek,

@@ -182,7 +182,7 @@
     rock: '#6b6f76', river: '#2f6fb8', stream: '#4f9bd9', waterfall: '#bfe9f7',
     tilled: '#5a4327', raised: '#7a6248', trench: '#2a1f16', paddy: '#33628a', ramp: '#8f8460',
   };
-  const WMAP_LOCALE_COLORS = { dwelling: '#7fe89a', great_fey_shrine: '#c084fc', story_poi: '#6ec6f0', misc: '#f0f0f0' };
+  const WMAP_LOCALE_COLORS = { dwelling: '#7fe89a', great_fey_shrine: '#c084fc', story_poi: '#6ec6f0', ruin_entrance: '#e0b04a', ruin_hole: '#ff7a3d', misc: '#f0f0f0' }; // ruin_*: js/ruin-sites.js cliff entrances and burrow holes.
   let _waypointCacheWorldId = null; // Used to avoid parsing the full save-meta JSON on every 30 Hz compass update.
   let _waypointCache; // `undefined` means this world's waypoint has not been loaded yet; null means it has no waypoint.
   let _threatDiscoveryCacheWorldId = null; // Used with the year below so den/camp discoveries survive reloads without leaking across worlds or Shifts.

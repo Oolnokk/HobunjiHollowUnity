@@ -173,6 +173,37 @@ assert(slowAfter < 1 && slowAfter > 0.8, 'one Kanthic stack should slow but not 
 api.addGooSlow(player);
 assert(windowObject.Combat.getMovementSpeedMul() < slowAfter, 'goo slow stacks must compound');
 
+// Wildlife shares one def per species; goo slow must never write through it.
+const sharedWolfDef = { moveSpeed: 100, chaseSpeed: 140 };
+const wolfA = { id: 'wolf-a', areaId: 'map_dev_arena', health: 50, def: sharedWolfDef };
+const wolfB = { id: 'wolf-b', areaId: 'map_dev_arena', health: 50, def: sharedWolfDef };
+api.addGooSlow(wolfA);
+api.addGooSlow(wolfB);
+assert.equal(sharedWolfDef.moveSpeed, 100, 'goo slow must not mutate the shared species moveSpeed');
+assert.equal(sharedWolfDef.chaseSpeed, 140, 'goo slow must not mutate the shared species chaseSpeed');
+assert(wolfA.def.moveSpeed < 100 && wolfB.def.chaseSpeed < 140, 'each slowed creature is slowed through its own def overlay');
+const wolfC = { id: 'wolf-c', areaId: 'map_dev_arena', health: 50, def: sharedWolfDef };
+assert.equal(wolfC.def.moveSpeed, 100, 'an unslowed same-species creature keeps full speed');
+wolfA._kanthicGooSlow.until = 0;
+api.clearExpiredSlow(wolfA);
+wolfB._kanthicGooSlow.until = 0;
+api.clearExpiredSlow(wolfB);
+assert.equal(wolfA.def.moveSpeed, 100, 'expired slow restores the creature to species speed');
+assert.equal(wolfB.def.chaseSpeed, 140, 'overlapping slows never restore to an already-slowed base');
+const overlay = wolfA.def;
+api.addGooSlow(wolfA);
+assert.equal(wolfA.def, overlay, 'repeat slows reuse the same per-creature overlay');
+wolfA._kanthicGooSlow.until = 0;
+api.clearExpiredSlow(wolfA);
+const bandit = { id: 'bandit-slow', areaId: 'map_dev_arena', health: 50, isBandit: true, def: { moveSpeed: 90, chaseSpeed: 120 } };
+const banditDef = bandit.def;
+api.addGooSlow(bandit);
+assert.equal(bandit.def, banditDef, 'per-entity bandit defs are written in place');
+assert(bandit.def.moveSpeed < 90);
+bandit._kanthicGooSlow.until = 0;
+api.clearExpiredSlow(bandit);
+assert.equal(bandit.def.moveSpeed, 90, 'bandit speed restores exactly');
+
 const lichA = { id: 'lich-a', name: 'Kanthic Lich A', areaId: 'map_dev_arena', x: 0, y: 0, health: 100, enemyClass: 'harlyao-lich', isHarlyaoLich: true, lichType: 'kanthic', _lichCommand: 'approach' };
 const lichB = { id: 'lich-b', name: 'Kanthic Lich B', areaId: 'map_dev_arena', x: 128, y: 0, health: 100, enemyClass: 'harlyao-lich', isHarlyaoLich: true, lichType: 'kanthic', _lichCommand: 'flee' };
 hostileObjects.add(lichA);
@@ -329,15 +360,15 @@ for (const key of ['tothal', 'hronal', 'kanthic']) {
   assert(devSpawnerSource.includes(`harlyao-lich:${key}`), `Testing Arena must expose ${key} lich button`);
 }
 assert.match(devSpawnerSource, /startsWith\('harlyao-lich:'\)/);
-assert(indexSource.includes('js/combat/combat-lich.js?v=20260927hronalperf1'));
-assert(indexSource.includes('js/combat/combat-bandit.js?v=20260927hostilevisual1'));
-assert(indexSource.includes('js/dev-spawner.js?v=20260927hostilevisual1'));
-assert(indexSource.includes('game.js?v=20260927inputclaim1'));
-assert(indexSource.includes('js/combat/resource-system.js?v=20260927froststamina1'));
+assert(indexSource.includes('js/combat/combat-lich.js?v=20260929merge1'));
+assert(indexSource.includes('js/combat/combat-bandit.js?v=20260927reviewfix1'));
+assert(indexSource.includes('js/dev-spawner.js?v=20260927reviewfix1'));
+assert(indexSource.includes('game.js?v=20260930livestockwalk1'));
+assert(indexSource.includes('js/combat/resource-system.js?v=20260927reviewfix1'));
 assert(indexSource.includes('js/pixel-probe.js?v=20260927inputclaim1'));
 assert(indexSource.includes('js/portrait-utils.js?v=20260926hoodback2'));
 assert(indexSource.includes('js/procedural-leg-animation.js?v=20260926hover1'));
-assert(indexSource.includes('js/combat/combat-config-loader.js?v=20260927directreticle1'));
+assert(indexSource.includes('js/combat/combat-config-loader.js?v='));
 assert(pixelProbeSource.includes('window.HarlyaoLichCombat?.formatDebug?.()'), 'Pixel Probe must expose live lich diagnostics on mobile');
 assert(portraitSource.includes('const hoodBackLayers = []'), 'ragged hood rear layer must use the generic behind-head hood bucket');
 assert.match(portraitSource, /\(layer\.pos === 'back' \? hoodBackLayers : hoodLayers\)\.push/, 'hood compositor must route authored back layers separately from front layers');
@@ -360,7 +391,7 @@ assert.match(lichSource, /if \(entrancedGraceDisplay\(state\)\)[\s\S]{0,500}retu
 assert.match(lichSource, /syntheticDelta[\s\S]{0,300}resolveEntrancedMovement\(target, state, command, deps\.TILE \|\| 64/, 'completed dodge/lunge must resolve as exactly one synthetic tile');
 assert.match(lichSource, /liveEntrancedApplicators\(\)\.length === 0[\s\S]{0,120}clearEntrancedNow\(target\)/, 'last Kanthic death must immediately clear Entranced Health');
 assert.match(lichSource, /speedPxS: 96[\s\S]*maxAgeS: 8\.5[\s\S]*homingBlendPerS: 3\.2/, 'Tothal fog must remain slow, long-lived, and seeking');
-assert.match(lichSource, /registerFurnitureSfxSource\(ARENA_ID[\s\S]{0,300}TOTHAL_WIND_VOLUME/, 'Tothal fog must carry strong local wind through the existing BGS transport');
+assert.match(lichSource, /registerFurnitureSfxSource\((?:projectile\.areaId \|\| )?ARENA_ID[\s\S]{0,300}TOTHAL_WIND_VOLUME/, 'Tothal fog must carry strong local wind through the existing BGS transport');
 assert.match(lichSource, /projectilePower\(projectile\)[\s\S]{0,1000}mesh\.scale\.setScalar/, 'Tothal lifetime power must visibly shrink its fog ball');
 assert.match(lichSource, /frostbittenStamina.*\* power/, 'Tothal Frostbitten Stamina payload must weaken with projectile age');
 assert.match(lichSource, /WESTERN_SLOPE_SNOW_DEPTH_REFERENCE = 0\.22[\s\S]*PETROLEUM_SURFACE_DEPTH = WESTERN_SLOPE_SNOW_DEPTH_REFERENCE \/ 4/, 'Kanthic petroleum surface must be exactly one quarter of Western Slope snow height');
@@ -412,7 +443,7 @@ assert.match(handFrameSource, /const playerOwnedHolder = !ownedHolder[\s\S]*tool
 assert.match(handFrameSource, /holderAuthority: record\?\.avatarRoot\?\.userData\?\.proceduralHandToolHolder \? 'actor-owned-world-transform'/, 'hand diagnostics must identify actor-owned hostile transform authority');
 assert.match(handFrameSource, /proceduralHandToolKey[\s\S]*currentToolKey\(record\)/, 'hostile hand sync must use that hostile\'s weapon key rather than the player singleton stance');
 assert.match(combatBanditSource, /const resolvedRosterDyes = applyRosterDyesToProfile\(profile, roster\)/, 'lich visible portrait must explicitly reconcile its hood/bodywrap dye before rasterization');
-assert.match(lichSource, /if \(ability === 'summon'\) summonMinion\(lich\);[\s\S]*else firePrimary\(lich, target, \{ windupS, strikeS \}\);/, 'both summon and primary spell abilities must fire from the reused attack strike phase with exact cast timing available to Hronal');
+assert.match(lichSource, /if \(ability === 'summon'\) \{[\s\S]*?lichRaiseDead[\s\S]*?else summonMinion\(lich\);[\s\S]*else firePrimary\(lich, target, \{ windupS, strikeS \}\);/, 'both summon and primary spell abilities must fire from the reused attack strike phase with exact cast timing available to Hronal');
 assert.match(proceduralLegSource, /function applyHoverPose\(side, dt\)/, 'procedural leg system must own a real two-bone hover pose rather than post-rotating feet');
 assert.match(proceduralLegSource, /bendDegX = -31[\s\S]*solveTwoBoneLeg/, 'hover pose must keep visibly flexed dangling knees through the shared leg solver');
 assert.match(proceduralLegSource, /function setHoverMode\(enabled\)[\s\S]*function isHoverMode\(\)/, 'procedural leg handles must expose explicit hover ownership');

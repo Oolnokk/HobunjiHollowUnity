@@ -489,6 +489,14 @@
     return skillXpListenerInstalled;
   }
 
+  // Inventory keys are deleted when a stack reaches 0 (game.js's
+  // clampInventoryStack), so a missing key must read as 0 — a bare
+  // Number(undefined) is NaN and `NaN < cost` is false, which used to let a
+  // player with no bars smith and treat armor for free.
+  function inventoryCount(key) {
+    return Math.max(0, Number(deps?.inventory?.[key]) || 0);
+  }
+
   function makeCraftedItem(blueprintId, metalKey) {
     const blueprint = blueprintForId(blueprintId);
     if (!blueprint) return null;
@@ -528,11 +536,11 @@
     const laborGold = Number(blueprint.craftLaborGold) || DEFAULT_CRAFT_LABOR_GOLD;
     const metal = metalDef(metalKey);
     const barKey = deps.metalBarItemKey?.(metalKey);
-    if (!barKey || Number(deps.inventory?.[barKey]) < barCost) {
+    if (!barKey || inventoryCount(barKey) < barCost) {
       deps.showToast?.(`Not enough ${metal.label} bars.`, false);
       return false;
     }
-    if (Number(deps.inventory?.gold) < laborGold) {
+    if (inventoryCount('gold') < laborGold) {
       deps.showToast?.("Not enough gold for the smith's labor.", false);
       return false;
     }
@@ -540,9 +548,9 @@
     if (!gear) return false;
     if (!gear.clothing || typeof gear.clothing !== 'object') gear.clothing = {};
     if (!Array.isArray(gear.clothingItems)) gear.clothingItems = [];
-    deps.inventory[barKey] -= barCost;
+    deps.inventory[barKey] = inventoryCount(barKey) - barCost;
     deps.clampInventoryStack?.(barKey);
-    deps.inventory.gold -= laborGold;
+    deps.inventory.gold = inventoryCount('gold') - laborGold;
     const item = makeCraftedItem(blueprintId, metalKey);
     gear.clothingItems.push(item);
     gear.clothing[blueprint.slot] = item;
@@ -588,17 +596,18 @@
     const targetMetalKey = choice === 'resistant' ? item.metalKey : String(choice).slice('cosmetic:'.length);
     const targetMetal = metalDef(targetMetalKey);
     const barKey = deps.metalBarItemKey?.(targetMetalKey);
-    if (!barKey || Number(deps.inventory?.[barKey]) < TREATMENT_BAR_COST) {
+    if (!barKey || inventoryCount(barKey) < TREATMENT_BAR_COST) {
       deps.showToast?.(`Not enough ${targetMetal.label} bars.`, false);
       return false;
     }
-    if (Number(deps.inventory?.gold) < TREATMENT_LABOR_GOLD) {
+    if (inventoryCount('gold') < TREATMENT_LABOR_GOLD) {
       deps.showToast?.('Not enough gold.', false);
       return false;
     }
-    deps.inventory[barKey] -= TREATMENT_BAR_COST;
+    deps.inventory[barKey] = inventoryCount(barKey) - TREATMENT_BAR_COST;
     deps.clampInventoryStack?.(barKey);
-    deps.inventory.gold -= TREATMENT_LABOR_GOLD;
+    deps.inventory.gold = inventoryCount('gold') - TREATMENT_LABOR_GOLD;
+    refundTreatmentBar(item, active); // Replacing a treatment returns the old one's bar, same as clearing it does.
     const next = { mode: choice === 'resistant' ? 'resistant' : 'cosmetic', metalKey: targetMetalKey };
     return commitTreatment(item, next, choice === 'resistant'
       ? 'Applied a verdigris-resistant coat to the armor.'
@@ -643,17 +652,18 @@
       }),
       onSave: (patternData, sourceLibraryId) => {
         const barKey = deps.metalBarItemKey?.(item.metalKey);
-        if (!barKey || Number(deps.inventory?.[barKey]) < TREATMENT_BAR_COST) {
+        if (!barKey || inventoryCount(barKey) < TREATMENT_BAR_COST) {
           deps.showToast?.(`Not enough ${baseMetal.label} bars.`, false);
           return false;
         }
-        if (Number(deps.inventory?.gold) < TREATMENT_LABOR_GOLD) {
+        if (inventoryCount('gold') < TREATMENT_LABOR_GOLD) {
           deps.showToast?.('Not enough gold.', false);
           return false;
         }
-        deps.inventory[barKey] -= TREATMENT_BAR_COST;
+        deps.inventory[barKey] = inventoryCount(barKey) - TREATMENT_BAR_COST;
         deps.clampInventoryStack?.(barKey);
-        deps.inventory.gold -= TREATMENT_LABOR_GOLD;
+        deps.inventory.gold = inventoryCount('gold') - TREATMENT_LABOR_GOLD;
+        refundTreatmentBar(item, treatment(item)); // Replacing a treatment returns the old one's bar, same as clearing it does.
         return commitTreatment(item, {
           mode: 'pattern',
           metalKey: item.metalKey,
@@ -699,7 +709,8 @@
       for (const metalKey of (deps.VERDIGRIS_METAL_KEYS || [])) {
         const metal = metalDef(metalKey);
         const barKey = deps.metalBarItemKey(metalKey);
-        const ownedBars = Number(deps.inventory?.[barKey]) || 0;
+        const ownedBars = inventoryCount(barKey);
+        const affordable = ownedBars >= barCost && inventoryCount('gold') >= laborGold; // Mirrors craft()'s own checks so the button never offers an impossible recipe.
         const alreadyOwned = !!ownedForBlueprintMetal(blueprint.id, metalKey);
         const weight = weightForBlueprintMetal(blueprint.id, metalKey);
         const row = document.createElement('div');
@@ -711,7 +722,7 @@
             <div class="sh-desc">Approx. mass ~${weight.massKg.toFixed(2)} kg · ${weight.weightUnits.toFixed(2)} outfit-weight units · bars owned: ${ownedBars}${alreadyOwned ? ' — already smithed' : ''}</div>
             <div class="sh-price">${barCost} bars + ${laborGold}g</div>
           </div>
-          <button class="shop-buy-btn" data-metal-armor-blueprint="${blueprint.id}" data-metal-armor-metal="${metalKey}" ${alreadyOwned ? 'disabled' : ''}>${alreadyOwned ? 'Owned' : 'Smith'}</button>
+          <button class="shop-buy-btn" data-metal-armor-blueprint="${blueprint.id}" data-metal-armor-metal="${metalKey}" ${alreadyOwned || !affordable ? 'disabled' : ''}>${alreadyOwned ? 'Owned' : 'Smith'}</button>
         `;
         row.querySelector('[data-metal-armor-blueprint]')?.addEventListener('click', () => craft(blueprint.id, metalKey));
         list.appendChild(row);
@@ -867,6 +878,8 @@
       makeCraftedItem,
       treatmentSignature,
       isLegacySmithMetalItem,
+      craft,
+      applyTreatment,
     }),
   });
   window.__metalArmorDebug = debugSnapshot;

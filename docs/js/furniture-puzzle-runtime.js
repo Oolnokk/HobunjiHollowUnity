@@ -35,6 +35,7 @@
       const linkedLight = object.userData.mapEditorAux?.light; // Interior lamps use the same OFF/ON emission intensity as materials and particle emitters.
       object.userData.puzzleLight = linkedLight ? { light:linkedLight, intensity:Number(linkedLight.intensity) || 0 } : null;
       nodes.set(String(record.id), object);
+      window.FurnitureDecalRuntime?.setGlowState?.(object, puzzle.startsActive ? 1 : 0);
       applyMechanism(object, puzzle.startsActive ? 1 : 0);
     }
     maps.set(String(mapId), { nodes, wiring:api?.normalizeWiring(wiring) || [] });
@@ -85,6 +86,7 @@
     object.userData.puzzleEmission = emission;
     if (object.userData.puzzleLight) object.userData.puzzleLight.light.intensity = object.userData.puzzleLight.intensity * emission.intensity;
     object.userData.puzzleProgress = progress;
+    window.FurnitureDecalRuntime?.setGlowState?.(object, t); // Decals with OFF/ON glow colours follow the mechanism.
     const blocked = puzzle.blocksMovement && t < puzzle.motion.collisionOpenProgress;
     object.userData.blocksMovement = blocked;
     object.userData.puzzleCollision?.(blocked);
@@ -99,6 +101,7 @@
       for (const graph of maps.values()) for (const object of graph.nodes.values()) {
         const rateScale = Number(object.userData.puzzleEmission?.particleRateScale) || 0;
         for (const entry of object.userData.puzzleEmitterVisuals || []) entry.visual.update(dt, rateScale > 0, { rate:(Number(entry.record.rate) || 0) * rateScale });
+        window.FurnitureDecalRuntime?.updateGlow?.(object, now);
       }
       requestAnimationFrame(tick);
     }
@@ -125,6 +128,7 @@
     const activator = graph?.nodes.get(String(activatorId));
     if (!graph || activator?.userData?.furniturePuzzle?.role !== 'activator') return false;
     activator.userData.puzzleActive = !!active;
+    window.FurnitureDecalRuntime?.setGlowState?.(activator, active ? 1 : 0); // Activator decals show its own ON/OFF state.
     for (const wire of graph.wiring.filter(record => record.fromId === String(activatorId))) {
       const mechanism = graph.nodes.get(wire.toId);
       if (!mechanism) continue;

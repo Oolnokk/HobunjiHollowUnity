@@ -194,30 +194,54 @@
     const expectedTop = origin.y;
     const expectedBottom = origin.y - height;
     const candidates = [];
+    const lateral = new THREE.Vector3(-axis.z, 0, axis.x); // Along the ladder's wall: a prop right beside the top can hide the straight-out probes.
     for (const sign of [-1, 1]) {
-      for (const offset of [.34, .52, .72, .94, 1.16]) {
-        const x = origin.x + axis.x * offset * sign;
-        const z = origin.z + axis.z * offset * sign;
+      for (const [offset, side] of [[.34, 0], [.52, 0], [.72, 0], [.94, 0], [1.16, 0], [1.45, 0], [.72, .45], [.72, -.45], [1.16, .6], [1.16, -.6]]) {
+        const x = origin.x + axis.x * offset * sign + lateral.x * side;
+        const z = origin.z + axis.z * offset * sign + lateral.z * side;
         const support = DS.sampleSupport?.(x, z, { minY:expectedBottom - .65, maxY:expectedTop + .65, pad:.02 });
         if (!support || !Number.isFinite(Number(support.y))) continue;
         const blocker = DS.blockerAt?.(x, z, { radius:.18, actorHeight:1.25 }) || null;
-        candidates.push({ x, z, y:Number(support.y), supportId:support.id || null, blocked:!!blocker, offset, sign });
+        candidates.push({ x, z, y:Number(support.y), supportId:support.id || null, blocked:!!blocker, blockerId:blocker?.id || null, offset, sign });
       }
     }
     return { candidates, expectedTop, expectedBottom };
   }
 
+  // Nearest unblocked spot at the same floor height around a blocked landing.
+  function freeLandingNear(ladder, landing) {
+    const pos = worldPosition(ladder);
+    if (!pos) return null;
+    let best = null;
+    for (const radius of [.45, .7, .95, 1.2, 1.5, 1.8]) {
+      for (let i = 0; i < 16; i++) {
+        const a = i / 16 * Math.PI * 2, x = pos.x + Math.cos(a) * radius, z = pos.z + Math.sin(a) * radius;
+        const support = DS.sampleSupport?.(x, z, { minY:landing.y - .2, maxY:landing.y + .2, pad:.02 });
+        if (!support || Math.abs(Number(support.y) - landing.y) > .15) continue;
+        if (DS.blockerAt?.(x, z, { radius:.18, actorHeight:1.25 })) continue;
+        const d = (x - landing.x) ** 2 + (z - landing.z) ** 2;
+        if (!best || d < best.d) best = { x, z, y:Number(support.y), supportId:support.id || null, blocked:false, offset:radius, sign:landing.sign, d };
+      }
+      if (best) return best;
+    }
+    return null;
+  }
+
   function chooseLadderEndpoints(ladder) {
     const resolved = supportCandidatesForLadder(ladder);
     if (!resolved?.candidates?.length) return null;
-    const usable = resolved.candidates.filter(candidate => !candidate.blocked);
-    const pool = usable.length >= 2 ? usable : resolved.candidates;
-    const topSorted = [...pool].sort((a, b) => Math.abs(a.y - resolved.expectedTop) - Math.abs(b.y - resolved.expectedTop) || a.offset - b.offset);
-    const bottomSorted = [...pool].sort((a, b) => Math.abs(a.y - resolved.expectedBottom) - Math.abs(b.y - resolved.expectedBottom) || a.offset - b.offset);
+    // Unblocked landings first, but never let a blocked upper (or lower) side
+    // drop that side entirely: both endpoints used to come from the one clear
+    // side, collapse to the same height, and refuse the climb.
+    const rank = (list, targetY) => [...list].sort((a, b) => (a.blocked - b.blocked) || Math.abs(a.y - targetY) - Math.abs(b.y - targetY) || a.offset - b.offset);
+    const pool = resolved.candidates;
+    const topSorted = rank(pool, resolved.expectedTop).filter(candidate => Math.abs(candidate.y - resolved.expectedTop) < .45).concat(rank(pool, resolved.expectedTop));
+    const bottomSorted = rank(pool, resolved.expectedBottom).filter(candidate => Math.abs(candidate.y - resolved.expectedBottom) < .45).concat(rank(pool, resolved.expectedBottom));
     let top = topSorted[0] || null;
     let bottom = bottomSorted.find(candidate => !top || candidate.sign !== top.sign || Math.abs(candidate.y - top.y) > .15) || bottomSorted[0] || null;
     if (!top || !bottom) return null;
     if (top.y < bottom.y) [top, bottom] = [bottom, top];
+    if (top.blocked) top = freeLandingNear(ladder, top) || top; // e.g. a V50 display coffin filling a small dais right at the ladder head.
     if (Math.abs(top.y - bottom.y) < .12) return null;
     return { top, bottom };
   }
@@ -323,37 +347,137 @@
     return rows;
   }
 
-  function nearestGlyphGuidance() {
-    const owner = nearestOwnerForKind('glyph');
-    const player = playerWorldPosition(), point = owner && worldPosition(owner);
-    if (!owner || !player || !point) return null;
-    const distance = Math.hypot(point.x - player.x, point.z - player.z);
-    const itemKey = window.RangedWeapons?.equippedRangedKey?.() || null;
-    const range = itemKey && Number.isFinite(Number(deps?.TILE))
-      ? (window.RangedWeapons?.playerLockRangePx?.(itemKey) || deps.TILE * 7) / deps.TILE
-      : 7;
-    if (distance > range) return null;
-    return {
-      key:`glyph-guidance|${owner.id}`,
-      kind:'glyphTarget',
-      label:itemKey ? (window.RangedWeapons?.playerActionLabel?.(itemKey) || 'Shoot Glyph Target') : 'Equip Ranged Weapon',
-      touchIcon:'🎯',
-      owner,
-      distance,
-      onPress:() => {
-        if (!itemKey) return deps?.showToast?.('Equip a ranged weapon to strike this glyph.', false);
-        if (window.Combat?.deps?.getActiveTool?.() !== 'ranged') return deps?.showToast?.('Switch to your ranged weapon, aim at the glyph, then fire.', false);
-        window.RangedWeapons?.startPlayerAction?.(itemKey);
-      },
-      seenAt:performance.now(),
-      source:'semantic-glyph',
-    };
+  // Rows that are not aim targets: a swinging rope is caught by proximity,
+  // riding controls follow the player, and the exit is a spot, not an object.
+  const AMBIENT_KINDS = new Set(['ropegrab', 'roperelease', 'ropebrake', 'exit']);
+  const promptAnchor = new THREE.Object3D(); // One plain anchor (no scale/rotation) so the list sits at camera height beside what is aimed at, never at an object's pivot (door pivots sit at the top of the frame).
+  promptAnchor.name = 'dev_ruin_interaction_prompt_anchor';
+  let focusDebug = null;
+
+  // Ledge climbing: parity with the game's cliff climb (same scripted hop
+  // animation), for ruin ledges too tall to step onto (0.42u step limit) but
+  // within reach — e.g. a lowered V50 dais still stands ~1.5u proud.
+  const LEDGE_MIN_RISE = .44;
+  const LEDGE_MAX_RISE = 1.75;
+  const LEDGE_REACH = 1.35; // How far ahead of the player the ledge edge may be.
+  const cfg = (path, fallback) => window.DevRandomRuinConfig?.get?.(path, fallback) ?? fallback; // docs/config/random-ruin/ruin-config.json (climb.*).
+
+  function openAt(x, z, half = .2) {
+    const grid = GridTileAccessors.getActiveGrid?.();
+    const tile = grid?.[Math.floor(z)]?.[Math.floor(x)];
+    if (!tile || tile.type === 'rock') return false;
+    return !window.AreaFootprintBlockers?.blocksBox?.(GridTileAccessors.getCurrentArea?.(), x, z, half);
+  }
+
+  // facingOnly: the forward-dodge climb only takes a ledge the player faces
+  // (within ~50°), like cliffs.
+  function nearestLedge(options = {}) {
+    const player = playerWorldPosition();
+    const facing = Number(deps?.player?.angle);
+    if (!player || deps?.player?.climbing) return null;
+    const baseY = Number(window.DevRandomRuin?.getPlayerSupportY?.());
+    const floorY = Number.isFinite(baseY) ? baseY : player.y;
+    let best = null;
+    for (let i = 0; i < 16; i++) {
+      const angle = i * Math.PI / 8, dx = Math.cos(angle), dz = Math.sin(angle);
+      if (options.facingOnly && Number.isFinite(facing) && Math.abs(Math.atan2(Math.sin(angle - facing), Math.cos(angle - facing))) > cfg('climb.facingToleranceDeg', 50) * Math.PI / 180) continue;
+      for (let t = .25; t <= cfg('climb.ledgeReach', LEDGE_REACH); t += .1) {
+        const x = player.x + dx * t, z = player.z + dz * t;
+        const support = DS.sampleSupport?.(x, z, { minY:floorY - 8, maxY:floorY + cfg('climb.ledgeMaxRise', LEDGE_MAX_RISE) + .05, pad:.02 });
+        const rise = Number(support?.y) - floorY;
+        if (!(rise > .2)) { if (!openAt(x, z, .05) && t > .3) break; continue; } // Solid wall before any ledge: nothing to climb here.
+        if (rise < cfg('climb.ledgeMinRise', LEDGE_MIN_RISE) || rise > cfg('climb.ledgeMaxRise', LEDGE_MAX_RISE)) break; // A step (walkable) or a wall too tall to climb.
+        if (window.DevRandomRuinSimplePuzzles?.isNoClimbSurface?.(support.id)) break; // Rope platforms/balconies/vaults: reached only by rope.
+        if (/^devruin-mech-/.test(String(support.id || ''))) break; // Puzzle machinery (a raised dais the glyphs bring down, bridges, stairs) moves only through its puzzle.
+        const land = { x:x + dx * .45, z:z + dz * .45 };
+        const landSupport = DS.sampleSupport?.(land.x, land.z, { minY:floorY - 8, maxY:floorY + cfg('climb.ledgeMaxRise', LEDGE_MAX_RISE) + .05, pad:.02 });
+        if (!landSupport || Math.abs(Number(landSupport.y) - Number(support.y)) > .2 || !openAt(land.x, land.z)) break;
+        if (!best || t < best.t) best = { t, x, z, land, topY:Number(support.y), floorY, dx, dz, angle };
+        break;
+      }
+    }
+    return best;
+  }
+
+  window.ClimbSystem?.registerWorldClimbProvider?.(() => {
+    if (!inRuin()) return null;
+    const ledge = nearestLedge({ facingOnly:true });
+    return ledge ? { kind:'ruinLedge', ledge, start:() => climbLedge(ledge) } : null;
+  });
+
+  function climbLedge(ledge) {
+    if (!ledge || !deps?.player || !deps.TILE) return false;
+    const animated = window.ClimbSystem?.startScriptedWorldClimb?.({
+      endX:ledge.land.x * deps.TILE, endY:ledge.land.z * deps.TILE,
+      startWorldY:ledge.floorY, endWorldY:ledge.topY,
+      hopCount:cfg('climb.hops', 2), shortHops:true, // Ruin variant: a quick two-hop mantle.
+      facingAngle:ledge.angle,
+    });
+    if (!animated) return !!window.DevRandomRuin?.setPlayerWorldPoint?.({ x:ledge.land.x, y:ledge.topY, z:ledge.land.z }, { grounded:true });
+    return true;
+  }
+
+  function ownerBox(owner) {
+    if (!owner) return null;
+    try {
+      owner.updateWorldMatrix?.(true, true);
+      const box = new THREE.Box3().setFromObject(owner);
+      return box.isEmpty() ? null : box.expandByScalar(.12);
+    } catch (_) { return null; }
+  }
+
+  // Same reticle focus normal gameplay uses (climb branches, nests): the
+  // interaction ray picks one aimed object; only its actions are listed.
+  function focusRows(rows) {
+    const ambient = rows.filter(row => AMBIENT_KINDS.has(row.kind));
+    const aimed = rows.filter(row => !AMBIENT_KINDS.has(row.kind));
+    const owners = [...new Set(aimed.map(row => row.owner).filter(Boolean))];
+    const candidates = owners.map(owner => ({ type:'devRuinInteraction', id:owner.uuid || owner.id, data:owner, box:ownerBox(owner) })).filter(candidate => candidate.box);
+    let focus = candidates.length ? window.RangedWeapons?.focusCandidates?.(candidates, 6) || null : null;
+    // A control whose object sits inside another's box (a brazier on a dais
+    // pedestal) always lost to the bigger box the ray enters first; when the
+    // ray also reaches a nested candidate, that smaller one is the target.
+    if (focus?.candidate?.box) {
+      const outer = focus.candidate.box;
+      const nested = candidates.filter(candidate => candidate !== focus.candidate && outer.containsBox(candidate.box));
+      const inner = nested.length ? window.RangedWeapons.focusCandidates(nested, 6) : null;
+      if (inner) focus = inner;
+    }
+    let focusedOwner = focus?.candidate?.data || null;
+    const hasRay = !!window.RangedWeapons?.focusCandidates && candidates.length && focus !== null;
+    if (!focusedOwner && !window.RangedWeapons?.focusCandidates) { // No reticle system available: nearest object only.
+      focusedOwner = aimed.slice().sort((a, b) => a.distance - b.distance)[0]?.owner || null;
+    }
+    focusDebug = { candidates:candidates.length, focused:focusedOwner?.name || null, point:focus?.point ? { x:+focus.point.x.toFixed(2), y:+focus.point.y.toFixed(2), z:+focus.point.z.toFixed(2) } : null, hasRay:!!hasRay };
+    if (focusedOwner) window.DebugHitboxes?.noteInteractionFocus?.(focus);
+    const chosen = focusedOwner ? aimed.filter(row => row.owner === focusedOwner) : [];
+    placePromptAnchor(focusedOwner, focus?.point || null, chosen.length ? chosen : ambient);
+    return [...chosen, ...ambient];
+  }
+
+  function placePromptAnchor(owner, aimPoint, rows) {
+    const scene = activeScene();
+    if (!scene) return;
+    if (promptAnchor.parent !== scene) scene.add(promptAnchor);
+    const player = playerWorldPosition();
+    let x = aimPoint?.x, z = aimPoint?.z;
+    if (!Number.isFinite(x)) {
+      const box = ownerBox(owner || rows[0]?.owner);
+      if (box && player) { x = Math.max(box.min.x, Math.min(player.x, box.max.x)); z = Math.max(box.min.z, Math.min(player.z, box.max.z)); }
+      else if (player) { x = player.x; z = player.z; }
+    }
+    const floorY = Number(window.DevRandomRuin?.getPlayerSupportY?.()) || 0;
+    const camera = deps?.getActiveCamera?.();
+    const cameraY = camera?.getWorldPosition ? camera.getWorldPosition(new THREE.Vector3()).y : floorY + 1.5;
+    const y = Math.max(floorY + .9, Math.min(floorY + 2.4, cameraY)); // Camera level, kept within reach of the player's own body.
+    if (Number.isFinite(x) && Number.isFinite(z)) promptAnchor.position.set(x, y, z);
+    promptAnchor.updateMatrixWorld(true);
   }
 
   function currentRows(now = performance.now()) {
-    const rows = providerRows(now);
-    const glyph = nearestGlyphGuidance();
-    if (glyph) rows.push(glyph);
+    const rows = providerRows(now); // Contextual actions only: glyphs are shot with the ordinary ranged input, so no "Fire <weapon>" row is added near them.
+    // Ledges are climbed with a forward dodge (see the ClimbSystem world-climb
+    // provider below), like cliffs; no listed prompt.
     const ladderHit = nearestLadder();
     if (ladderHit && !rows.some(row => row.owner === ladderHit.ladder || row.kind === 'ladder')) {
       rows.push({
@@ -368,6 +492,8 @@
         source:'semantic-ladder',
       });
     }
+    const focusedRows=focusRows(rows);
+    rows.length=0;rows.push(...focusedRows);
     const slotActions=SLOT_ACTIONS; // Nearby world interactions own the ordinary five physical arch slots just like NPC/furniture context actions; attacks/items return as soon as the interaction leaves range.
     const touchButtonIds=TOUCH_BUTTON_IDS;
     const sorted=rows.sort((a, b) => b.priority - a.priority || a.distance - b.distance || b.seenAt - a.seenAt);
@@ -450,7 +576,7 @@
       style:index===0?'primary':'secondary',
       allowed:true,
       worldInteraction:true,
-      promptRoot:row.owner||lastAnchor||ruinRoot(),
+      promptRoot:promptAnchor, // Game.js's own popup pass anchors to the same camera-level point.
       inputAction:row.inputAction, // Normal refreshActionBar uses this exact semantic slot for popup glyph/color and physical arch placement.
       nativeInput:row.nativeInput===true, // Native Dodge rows stay in the floating list but are excluded from the five arch buttons.
     }));
@@ -460,7 +586,7 @@
     const popup=window.WorldPopupText;
     if(!popup?.syncInteractionPrompts)return;
     const buttons=actionButtonsFromRows(rows);
-    const root=rows[0]?.owner||lastAnchor||ruinRoot()||null;
+    const root=promptAnchor.parent?promptAnchor:(rows[0]?.owner||lastAnchor||ruinRoot()||null);
     const device=currentDevice();
     const promptInputs=buttons.map(button=>({
       actionId:button.inputAction||'',
@@ -493,11 +619,15 @@
     const rows=currentRows();
     const signature=rowSignature(rows);
     const changed=signature!==lastRowsSignature;
+    const hadRows=lastRows.length>0;
     lastRows=rows;
     lastRowsSignature=signature;
     lastAnchor=rows[0]?.owner||nearestOwnerForKind(rows[0]?.kind)||ruinRoot()||null;
     syncInputClaims(rows);
-    syncWorldPopup(rows); // Keep the floating interaction list live on the same proximity cadence as claims, even between ordinary action-bar rebuilds.
+    // Keep the floating list live while the ruin has rows, and clear it once
+    // when they go away. Syncing an empty list every frame wiped prompts the
+    // ordinary action bar owns (a corpse's Loot) and made them flicker.
+    if(rows.length||hadRows)syncWorldPopup(rows);
     if(changed&&requestActionBar)deps?.refreshActionBar?.(); // The normal action bar still owns the physical arch layout; direct popup sync is idempotent with its own WorldPopupText pass.
     return rows;
   }
@@ -519,6 +649,12 @@
   window.DevRandomRuinInteractions = Object.freeze({
     resolveInteractionOwner,
     climbStoneLadder:climbLadder, // Canonical authored-stone-ladder action; uses ClimbSystem's cliff-style hop animation.
+    debugLadders() { // Diagnostics: every stone ladder's support probes and the endpoints climbLadder would use.
+      prepareSemanticObjects(-Infinity);
+      return ladders.map(ladder => { const pos = worldPosition(ladder), r = supportCandidatesForLadder(ladder); return { name:ladder.name, pos, height:ladder.userData?.ladderHeight, expectedTop:r.expectedTop, expectedBottom:r.expectedBottom, candidates:(r.candidates || []).map(c => ({ x:c.x, z:c.z, sign:c.sign, offset:c.offset, y:+c.y.toFixed(2), blocked:c.blocked, blockerId:c.blockerId, supportId:c.supportId })), endpoints:chooseLadderEndpoints(ladder) }; });
+    },
+    nearestLedge, // Diagnostics: the ledge a forward dodge would climb (pass { facingOnly:true } for the dodge rule).
+    climbLedge,
     refresh:renderWorldList,
     getActionButtons() {
       return actionButtonsFromRows(refreshRows(false)); // Called from game.js's ordinary building-interior action provider path.
@@ -541,6 +677,8 @@
         ownerName:lastAnchor?.name || null,
         ownerKind:semanticKind(lastAnchor),
         worldPopupVisible:lastRows.length>0,
+        focus:focusDebug,
+        promptAnchor:{ x:+promptAnchor.position.x.toFixed(2), y:+promptAnchor.position.y.toFixed(2), z:+promptAnchor.position.z.toFixed(2) },
         inputClaims:window.WorldActionInputClaims?.snapshot?.()||null,
       };
     },

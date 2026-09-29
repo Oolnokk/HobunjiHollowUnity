@@ -27,12 +27,14 @@
   const PUZZLE_OPTIONS_STORAGE_KEY = 'hobunji.devRandomRuinPuzzleOptions.v2'; // v2 intentionally drops the fragile first-pass mechanisms from the shipped simple-puzzle defaults.
   const DARKNESS_SETTINGS_STORAGE_KEY = 'hobunji.devRandomRuinDarkness.v1'; // Used to persist the test-only darkness toggle and severity without changing real den lighting.
   const DEFAULT_DARKNESS_SETTINGS = Object.freeze({ enabled:false, severity:1 }); // Tests are bright by default; 1.0 restores the full authored den darkness when enabled.
-  const DEFAULT_PUZZLE_OPTIONS = Object.freeze({ pressurePlate:false, brazier:false, glyphObelisk:true, stackedObelisk:false, linkedCubePillars:false, nestedRoom:false, safePath:true, ropeSwing:true, hallwayTraps:true, maxPerRoom:0 }); // First playable pass keeps only the proven projectile activator from V50; the three parent-runtime families below are intentionally simple and non-locking.
+  const DEFAULT_PUZZLE_OPTIONS = Object.freeze({ pressurePlate:false, brazier:false, glyphObelisk:true, stackedObelisk:false, linkedCubePillars:false, nestedRoom:false, safePath:true, ropeSwing:true, hallwayTraps:true, lavaBasin:true, sanctum:true, maxPerRoom:0 }); // First playable pass keeps only the proven projectile activator from V50; the three parent-runtime families below are intentionally simple and non-locking.
   const PUZZLE_OPTION_ROWS = Object.freeze([ // Only the simple-mode families are user-facing; disabled V50 families remain false in the normalized payload.
     ['glyphObelisk','Projectile glyph targets'],
     ['safePath','Safe-path pressure grids'],
     ['ropeSwing','Rope swing traversal'],
     ['hallwayTraps','Alternating hallway fire / poison traps'],
+    ['lavaBasin','Deep lava basin rope rooms'],
+    ['sanctum','Blue braziers, Great Door and lich sanctum'],
   ]);
 
   let deps = null;
@@ -103,6 +105,33 @@
     return true;
   }
 
+  // Seals a mechanism shut until unlockMechanism(); its manual prompt reports
+  // why. Used by puzzle composers (e.g. a rope-platform pressure plate).
+  function lockMechanism(mechanismId, reason = 'Sealed.') {
+    const mechanism=ruin?.mechanisms?.get?.(String(mechanismId||''));
+    if(!mechanism)return false;
+    mechanism.lockReason=String(reason||'Sealed.');
+    mechanism.target=0;
+    mechanism.externalTarget=0;
+    return true;
+  }
+
+  function unlockMechanism(mechanismId, open = true) {
+    const mechanism=ruin?.mechanisms?.get?.(String(mechanismId||''));
+    if(!mechanism)return false;
+    mechanism.lockReason=null;
+    mechanism.target=open?1:0;
+    mechanism.externalTarget=open?1:0;
+    return true;
+  }
+
+  function mechanismInfo(mechanismId) {
+    const mechanism=ruin?.mechanisms?.get?.(String(mechanismId||''));
+    if(!mechanism)return null;
+    const data=mechanism.root?.userData||{};
+    return { id:mechanism.id, type:mechanism.type, root:mechanism.root, progress:mechanism.progress, locked:!!mechanism.lockReason, gated:!!mechanism.gated, externalTarget:mechanism.externalTarget??null, target:mechanism.target, signalLinked:!!(data.linkedCubePuzzleRoot||data.linkedPressurePlateRoot) };
+  }
+
   function presentationSnapshot() {
     const ring = deps?.player?._ringHud || null; // Used to expose resource-ring parity in the existing mobile/debug ruin snapshot.
     return {
@@ -115,6 +144,7 @@
     };
   }
 
+  let generationLabel=null; // Player-facing ruin name when a wilderness site generated it (null = dev Random Test Ruin).
   function devModeEnabled() {
     try { return localStorage.getItem('hobunjiDevMode') === '1'; } catch (_) { return false; }
   }
@@ -236,6 +266,13 @@
   };
 
   function captureDeps(injectedDeps) { deps = injectedDeps; installSettingsButton(); }
+  window.AreaFootprintBlockers?.registerSurface?.('dev-random-ruin-floor', {
+    area:MAP_ID,
+    enabled:() => !!ruin && floorHeights.size > 0,
+    // Shots fired up out of a basin used the flat tile height and stopped at
+    // an invisible floor at rim level; this returns the cell's true floor.
+    surfaceYAt:(x, z) => { const y = floorHeights.get(`${Math.floor((x - PAD) / floorCellSize)},${Math.floor((z - PAD) / floorCellSize)}`); return Number.isFinite(y) ? y : null; },
+  });
   const nativeDevInit = DevSpawner.init;
   DevSpawner.init = function (injectedDeps) {
     captureDeps(injectedDeps);
@@ -337,9 +374,13 @@
     const worldW = scaledWorldWidth(meta, 8);
     const worldD = scaledWorldDepth(meta, 8);
     const cs = worldCellSize(meta);
-    const cols = Math.max(6, Math.ceil(worldW) + PAD * 2);
-    const rows = Math.max(6, Math.ceil(worldD) + PAD * 2);
+    let cols = Math.max(6, Math.ceil(worldW) + PAD * 2);
+    let rows = Math.max(6, Math.ceil(worldD) + PAD * 2);
     const walkable = new Set();
+    // The boss sanctum wing (js/dev-random-ruin-sanctum.js) lives east of the
+    // V50 layout in the same grid, reached through the ruin's Great Door.
+    const sanctum = window.DevRandomRuinSanctum?.reserve?.(cols, rows) || null;
+    if (sanctum) { cols = sanctum.cols; rows = sanctum.rows; for (const key of sanctum.tiles) walkable.add(key); }
     for (const [c0, r0] of (meta.floorCells || [])) {
       const x0 = PAD + Number(c0) * cs, x1 = PAD + (Number(c0) + 1) * cs - 1e-6;
       const z0 = PAD + Number(r0) * cs, z1 = PAD + (Number(r0) + 1) * cs - 1e-6;
@@ -383,7 +424,38 @@
     DS.registerSurface({ id, scope:SCOPE, bounds:() => boundsFor(object), topY:() => boxFor(object)?.max.y ?? 0,
       enabled:() => object.visible !== false, priority });
   }
+  // A moving dais deck without whatever V50 grounded on it (the goal
+  // pedestal/coffin and its brazier): measuring the whole subtree put the
+  // walkable top at the pedestal's height, so a lowered dais could not be
+  // stepped onto.
+  const deckBox = new THREE.Box3(), deckPart = new THREE.Box3();
+  function deckBoxFor(platform) {
+    platform.updateWorldMatrix(true, true);
+    deckBox.makeEmpty();
+    const visit = node => {
+      if (node !== platform && node.userData?.groundedToMovingPlatform) return;
+      if (node.isMesh && node.geometry) {
+        if (!node.geometry.boundingBox) node.geometry.computeBoundingBox();
+        deckPart.copy(node.geometry.boundingBox).applyMatrix4(node.matrixWorld);
+        deckBox.union(deckPart);
+      }
+      for (const child of node.children || []) visit(child);
+    };
+    visit(platform);
+    return deckBox.isEmpty() ? boxFor(platform) : deckBox;
+  }
+  function registerDaisSurface(id, platform, priority) {
+    DS.registerSurface({ id, scope:SCOPE, bounds:() => { const b = deckBoxFor(platform); return b ? { minX:b.min.x,maxX:b.max.x,minZ:b.min.z,maxZ:b.max.z } : {minX:0,maxX:0,minZ:0,maxZ:0}; },
+      topY:() => deckBoxFor(platform)?.max.y ?? 0, enabled:() => platform.visible !== false, priority });
+  }
+  // Real floor height per V50 cell (basins, plateaus). Grid tiles stay flat
+  // (camera/presentation assume that), so this is published separately for
+  // projectile ground hits through AreaFootprintBlockers.surfaceYAt.
+  const floorHeights = new Map();
+  let floorCellSize = 1;
   function registerFloor(meta) {
+    floorHeights.clear();
+    floorCellSize = worldCellSize(meta);
     let floorMesh = null;
     ruin.localeRoot.traverse(o => { if (!floorMesh && o.userData?.wallBuilderRecipe === 'wallrecipe2.json') floorMesh = o; });
     const levels = floorMesh?.userData?.plateauModel?.levelByCell || {};
@@ -393,9 +465,11 @@
     const floorKeys = new Set((meta.floorCells || []).map(([c,r]) => `${c},${r}`));
     for (const [c0,r0] of (meta.floorCells || [])) {
       const c=Number(c0), r=Number(r0), key=`${c},${r}`;
+      const topY=(Number(meta.floorSurfaceY)||0) + Number(levels[key]||0)*step;
       DS.registerSurface({ id:`devruin-floor-${key}`, scope:SCOPE,
         bounds:{minX:originX+c*cs,maxX:originX+(c+1)*cs,minZ:originZ+r*cs,maxZ:originZ+(r+1)*cs},
-        topY:(Number(meta.floorSurfaceY)||0) + Number(levels[key]||0)*step, priority:1 });
+        topY, priority:1 });
+      floorHeights.set(key, topY);
     }
     for (let c=0;c<(Number(meta.gridCols)||0);c++) for (let r=0;r<(Number(meta.gridRows)||0);r++) {
       if (floorKeys.has(`${c},${r}`)) continue;
@@ -407,7 +481,6 @@
   function discoverRuntimeObjects() {
     ruin.mechanisms = new Map(); ruin.controls = []; ruin.activators = []; ruin.pushBlocks = []; ruin.transitDoors = []; ruin.transitDoorStates = [];
     const walls = []; // V50 wall meshes become boundary tiles instead of broad object AABBs.
-    const furnitureBlockers = []; // Solid authored objects are rasterized child-mesh by child-mesh.
     ruin.localeRoot.traverse(object => {
       const d = object.userData || {}, motion = d.previewMotion?.type;
       if (d.mechanismId && ['bridge','bridgeSequence','stoneDoor','movingDais','collapsingStairs'].includes(motion))
@@ -416,24 +489,20 @@
         ruin.activators.push(object);
         if (d.squarePillarHousing || d.hiddenActivatorMount === 'pillarNiche') {
           object.userData.blockerPurpose = object.userData.blockerPurpose || 'puzzle_target_pillar'; // A projectile target carved into a pillar does not make the pillar intangible.
-          furnitureBlockers.push(object);
         }
         if (d.activatorType === 'stackedObelisk' || d.activatorType === 'linkedCubePillars') {
           object.userData.interactive3D = true; // Tower activators are ordinary nearby world interactions, not click-only editor props.
           object.userData.devRuinInteractionType = d.activatorType; // Used by prompt diagnostics / semantic owner resolution.
           object.userData.blockerPurpose = 'puzzle_tower_' + d.activatorType; // Makes their authoritative occupancy source visible in Pixel Probe.
-          furnitureBlockers.push(object); // Rasterizes the actual child cubes/caps into the shared 2D collision snapshot; the Group AABB itself is never used.
         }
       }
       if (d.pushable && (motion === 'pushPuzzleBlock' || motion === 'elevatorPushBlock')) ruin.pushBlocks.push(object);
       if (d.transitDoor) ruin.transitDoors.push(object);
       if (d.ruinInteriorWall) walls.push(object);
-      // Elevator-well sockets are low rims + below-floor shaft walls. Treating them as ordinary 2D furniture blockers made otherwise-walkable moving daises inaccessible from the surrounding floor.
-      if (/ceiling support pillar|doorway flank pillar|sunken centerpiece|wall display artifice/i.test(String(d.interiorRuinRole||''))) furnitureBlockers.push(object);
     });
     for (const m of ruin.mechanisms.values()) {
       if (m.type === 'bridge' || m.type === 'bridgeSequence') registerSurface(`devruin-mech-${m.id}`,m.root,10);
-      else if (m.type === 'movingDais') registerSurface(`devruin-mech-${m.id}`,m.root.userData.movingDaisPlatform||m.root,12);
+      else if (m.type === 'movingDais') registerDaisSurface(`devruin-mech-${m.id}`,m.root.userData.movingDaisPlatform||m.root,12);
       else if (m.type === 'collapsingStairs') for (const tread of (m.root.userData.stairTreads||[])) registerSurface(`devruin-stair-${m.id}-${tread.id}`,tread,12);
     }
 
@@ -475,14 +544,20 @@
         m.root.userData.__devRuinPhysicalDoorBlocker=false; // The shared tile-occupancy blocker is the single collision authority for moving stone doors; progress only changes its door source state.
       }
       const gated=linkedMechanismIds.has(String(m.id))&&!m.root.userData?.runtimePuzzleBypass;
+      m.gated=gated; // Door seals: a puzzle-gated door shows locked (red) until its puzzle opens it.
       if(m.type==='movingDais'){
         const platform=m.root.userData?.movingDaisPlatform||m.root;
-        m.manualFallback=true; // Simplified ruins never make a lift depend exclusively on a possibly-hidden projectile target.
+        // A dais wired to a puzzle (glyphs, braziers, obelisks, cubes, plates)
+        // moves only through that puzzle: a direct Raise/Lower prompt let
+        // players skip it. Glyph targets are visible now, so the old manual
+        // fallback is kept only for daises with no puzzle at all.
+        if(gated)continue;
+        m.manualFallback=true;
         platform.userData.interactive3D=true;
         platform.userData.devRuinInteractionType='movingDais';
         ruin.controls.push({
           kind:'movingDais',object:platform,promptRoot:platform,range:2.1,touchIcon:'↕',priority:16,claimAction1:true,
-          label:()=>m.target>.5?'Lower Stone Platform':'Raise Stone Platform',
+          label:()=>{const raised=m.root.userData?.previewMotion?.startsRaised?m.progress<.5:m.progress>.5;return raised?'Lower Stone Platform':'Raise Stone Platform';}, // V50 daises that start raised run activation 1 = lowered.
           onPress:()=>{m.target=m.target>.5?0:1;},
         });
         continue;
@@ -493,8 +568,8 @@
         m.root.userData.devRuinInteractionType='stoneDoor';
         ruin.controls.push({
           kind:'stoneDoor',object:m.root,promptRoot:m.root,range:1.9,touchIcon:'✋',priority:18,claimAction1:true,
-          label:()=>m.target>.5?'Close Stone Door':'Open Stone Door',
-          onPress:()=>{m.target=m.target>.5?0:1;},
+          label:()=>m.lockReason?'Stone Door (Sealed)':m.target>.5?'Close Stone Door':'Open Stone Door',
+          onPress:()=>{if(m.lockReason){deps.showToast?.(m.lockReason,false);return;}m.target=m.target>.5?0:1;},
         });
       }
     }
@@ -510,7 +585,7 @@
     });
     for (const a of ruin.activators) {
       const type=a.userData.activatorType, m=ruin.mechanisms.get(a.userData.linkedMechanismId);
-      if (!m || ['linkedCubePillars','pressurePlate'].includes(type)) continue;
+      if (!m || ['linkedCubePillars','pressurePlate','glyphObelisk'].includes(type)) continue; // Glyphs are solved by shooting their glowing rune markers (js/dev-random-ruin-glyph-circuits.js); a 'DEV Trigger Glyph' prompt on every glyph gave the puzzle away and cluttered the interaction list.
       const topSegment = type === 'stackedObelisk' ? (a.userData?.rotatingSegments||[]).at(-1)?.segment : null; // Places the floating prompt above the cube stack instead of at its floor-level Group origin.
       ruin.controls.push({kind:type,object:a,promptRoot:topSegment||a,range:type==='stackedObelisk'?2.05:CONTROL_RANGE,touchIcon:type==='stackedObelisk'?'↻':'✋',label:type==='stackedObelisk'?'Turn Obelisk':type==='brazier'?'DEV Ignite Brazier':type==='glyphObelisk'?'DEV Trigger Glyph':'Activate '+type,
         onPress:()=>{m.target=m.target>.5?0:1;}});
@@ -523,10 +598,19 @@
     ruin.occupancy = TileOccupancy.create({
       mapId:MAP_ID, scope:SCOPE, cols:ruin.cols, rows:ruin.rows, floorSet:ruin.floorSet,
       grid:ruin.grid, solidType:(gridDeps?.TileType||deps?.TileType||{}).ROCK??'rock', // Stamps generated blockers into the same interior grid ordinary movement/AI/knockback already query.
-      walls, staticSolids:furnitureBlockers, mechanisms:ruin.mechanisms, transitDoors:ruin.transitDoors,
+      walls, solidRoots:[ruin.localeRoot], mechanisms:ruin.mechanisms, transitDoors:ruin.transitDoors,
       activators:ruin.activators, pushBlocks:ruin.pushBlocks,
       getPlayerPosition:() => ({ x:deps.player.x / deps.TILE, z:deps.player.y / deps.TILE }),
     });
+    // The pedestal/coffin riding a dais is excluded from the static scan
+    // (its ancestors are named as dais parts), so give it its own footprint:
+    // it stands on the deck and must not be walked through once up there.
+    for (const m of ruin.mechanisms.values()) {
+      if (m.type !== 'movingDais') continue;
+      for (const child of (m.root.userData?.movingDaisPlatform || m.root).children || []) {
+        if (child.userData?.groundedToMovingPlatform) ruin.occupancy.scanSolids(child, 'dais-feature');
+      }
+    }
   }
 
   function pushBlock(block) {
@@ -610,6 +694,7 @@
       });
     }
 
+    const replaced=new Map(); // Original V50 material -> its unlit replacement, so userData.decalMaterials keeps pointing at what actually renders.
     root.traverse(object=>{
       if(!object?.isMesh)return;
       totalMeshes++;
@@ -621,12 +706,20 @@
         }
         if(!isLitMaterial(material))return material;
         convertedMaterials++;
-        return makeUnlitMaterial(material,`dev_random_ruin_unlit_${object.name||'mesh'}_${index}`);
+        if(replaced.has(material))return replaced.get(material);
+        const unlit=makeUnlitMaterial(material,`dev_random_ruin_unlit_${object.name||'mesh'}_${index}`);
+        replaced.set(material,unlit);
+        return unlit;
       });
       if(Array.isArray(object.material))object.material=next;
       else if(next[0])object.material=next[0];
       if(next.some(material=>material?.userData?.devRandomRuinUnlitMaterial||material?.userData?.naturalSurfaceUnlit))object.userData=Object.assign({},object.userData,{devRandomRuinUnlitMaterial:true});
       object.castShadow=false; object.receiveShadow=false; // There are deliberately no real light/shadow semantics in this test scene.
+    });
+
+    root.traverse(node=>{ // V50 glyph/obelisk decal lists referenced the pre-conversion materials, so recolouring them changed nothing visible (decals rendered black).
+      const list=node.userData?.decalMaterials;
+      if(Array.isArray(list))node.userData.decalMaterials=list.map(material=>replaced.get(material)||material);
     });
 
     let remainingLitMaterials=0,legacyStoneMaterials=0;
@@ -693,8 +786,8 @@
 
     const spawn=spawnInsideEntrance(meta);
     const exitTile=[clamp(Math.floor(spawn.x),0,projected.cols-1),clamp(Math.floor(spawn.z),0,projected.rows-1)];
-    const mapData={schema:'hobunji_building_interior.v1',id:MAP_ID,name:`Random Test Ruin #${seed}`,cols:projected.cols,rows:projected.rows,
-      floor:projected.floor,colliders:[],furniture:[],vendorZones:[],exits:[{id:'exit_dev_random_ruin',label:'Leave Test Ruin',tiles:[exitTile],targetMap:'',spawnCol:0,spawnRow:0}],
+    const mapData={schema:'hobunji_building_interior.v1',id:MAP_ID,name:generationLabel||`Random Test Ruin #${seed}`,cols:projected.cols,rows:projected.rows,
+      floor:projected.floor,colliders:[],furniture:[],vendorZones:[],exits:[{id:'exit_dev_random_ruin',label:generationLabel?'Leave the Ruin':'Leave Test Ruin',tiles:[exitTile],targetMap:'',spawnCol:0,spawnRow:0}],
       wallStyle:'cavern', // Opts the session ruin into the game's existing combat-interior path so mobile receives Fire/Ammo/Potions and combat/reticle updates exactly like a den.
       devSessionOnly:true,devSeed:seed,devRuinTileScale:RUIN_TILE_SCALE,sourceGenerator:'HobunjiDebrisifierV50'};
     const occlusionMeshes=[]; // Normal map_i_* camera boom reads this array from _buildingScenes; generated walls must participate exactly like authored den/shop walls.
@@ -711,22 +804,29 @@
     return {scene,grid:projected.grid,cols:projected.cols,rows:projected.rows,mapData,wallStyle:'cavern',floorSet:projected.walkable,exits:mapData.exits,spawn,localeRoot:roots.localeRoot,particleRoot:roots.particleRoot,ceilingMesh,occlusionMeshes,ceilingCellCount:Number(ceilingMesh?.userData?.devRandomRuinCeilingCells)||0,ceilingY:Number(ceilingMesh?.userData?.devRandomRuinCeilingY)||null,denMaterialMeshCount:materialStats.stoneMeshes,unlitConvertedMaterialCount:materialStats.convertedMaterials,remainingLitMaterialCount:materialStats.remainingLitMaterials,legacyStoneMaterialCount:materialStats.legacyStoneMaterials,totalRuinMeshCount:materialStats.totalMeshes};
   }
 
-  async function generate(seed=randomSeed()) {
-    if (!devModeEnabled() || !deps || !buildingScenes) return false;
+  // opts.site: a wilderness ruin site (js/ruin-sites.js) is generating this
+  // ruin for ordinary play, so Dev Mode is not required; opts.returnAnchor is
+  // where the entrance exit puts the player back.
+  async function generate(seed=randomSeed(),opts={}) {
+    if ((!devModeEnabled()&&!opts.site) || !deps || !buildingScenes) return false;
+    generationLabel=opts.label||null;
     const requestedSeed=Number(seed)>>>0; // Seed the user/test requested before solvability-driven retries derive alternates.
     const button=document.getElementById('devRandomTestRuinBtn'); if(button){button.disabled=true;button.textContent='Generating…';}
     try {
-      if (deps.getCurrentArea?.() !== MAP_ID) returnAnchor={area:deps.getCurrentArea?.(),x:deps.player.x,y:deps.player.y};
+      if (deps.getCurrentArea?.() !== MAP_ID) returnAnchor=opts.returnAnchor||{area:deps.getCurrentArea?.(),x:deps.player.x,y:deps.player.y};
       clearRuntime(false);
       const puzzleOptions=readPuzzleGenerationOptions(); // Capture the user's simple-mode selection before booting the same-origin hidden tool; generation must not be able to fall back to defaults during iframe startup.
+      await window.DevRandomRuinConfig?.reload?.(); // docs/config/random-ruin/ruin-config.json; edits apply to the next ruin.
+      const cfg=(path,fallback)=>window.DevRandomRuinConfig?.get?.(path,fallback)??fallback;
+      const maxAttempts=Math.max(1,Math.round(cfg('generation.maxSolvabilityAttempts',MAX_SOLVABILITY_ATTEMPTS)));
       const api=await ensureGeneratorFrame();
       lastGenerationAudit={requestedSeed,acceptedSeed:null,attempts:[]};
 
-      for(let attempt=0;attempt<MAX_SOLVABILITY_ATTEMPTS;attempt++){
+      for(let attempt=0;attempt<maxAttempts;attempt++){
         if(attempt>0) clearRuntime(false);
         const candidateSeed=generationCandidateSeed(requestedSeed,attempt); // Deterministic retry seed so rejected layouts can be reproduced from diagnostics.
-        if(button) button.textContent=attempt?'Retrying '+(attempt+1)+'/'+MAX_SOLVABILITY_ATTEMPTS+'…':'Generating…';
-        const generated=await api.generateInteriorLocale({seed:'dev-'+candidateSeed.toString(36),size:'medium',density:62,roomMin:3,roomMax:6,puzzles:puzzleOptions});
+        if(button) button.textContent=attempt?'Retrying '+(attempt+1)+'/'+maxAttempts+'…':'Generating…';
+        const generated=await api.generateInteriorLocale({seed:'dev-'+candidateSeed.toString(36),size:cfg('generation.size','medium'),density:cfg('generation.density',62),roomMin:cfg('generation.roomMin',3),roomMax:cfg('generation.roomMax',6),puzzles:puzzleOptions});
         const meta=generated.locale?.meta?.interiorShell; if(!meta) throw new Error('V50 generated no interiorShell metadata.');
         api.snapMechanismState(0); api.pausePreviewLoop(); const roots=api.takePreviewRoots();
         const rec=makeMapRecord(candidateSeed,generated,roots,meta); buildingScenes.set(MAP_ID,rec);
@@ -744,12 +844,13 @@
         lastGenerationAudit.acceptedSeed=candidateSeed;
         await enterRuin(); updateBadge();
         const retryCount=attempt;
-        deps.showToast?.(retryCount?('Rejected '+retryCount+' unsolvable ruin'+(retryCount===1?'':'s')+'; entered #'+candidateSeed+'.'):('Entered Random Test Ruin #'+candidateSeed+' as '+MAP_ID+'.'),true);
+        if(opts.site) deps.showToast?.('You enter the '+(opts.label||'ruin').toLowerCase()+'.',true);
+        else deps.showToast?.(retryCount?('Rejected '+retryCount+' unsolvable ruin'+(retryCount===1?'':'s')+'; entered #'+candidateSeed+'.'):('Entered Random Test Ruin #'+candidateSeed+' as '+MAP_ID+'.'),true);
         return true;
       }
 
       const last=lastGenerationAudit.attempts[lastGenerationAudit.attempts.length-1];
-      throw new Error('No solvable ruin found in '+MAX_SOLVABILITY_ATTEMPTS+' attempts'+(last?.failures?.length?': '+last.failures[0]:'')+'.');
+      throw new Error('No solvable ruin found in '+maxAttempts+' attempts'+(last?.failures?.length?': '+last.failures[0]:'')+'.');
     } catch(error) { console.error('[Random Test Ruin interior]',error); deps.showToast?.('Random Test Ruin failed: '+error.message,false); clearRuntime(true); return false; }
     finally { if(button){button.disabled=false;button.textContent='Generate';} }
   }
@@ -783,7 +884,25 @@
       let target=deps.getActiveScene?.(); if(!target&&deps._isZoneArea?.(back.area)) target=deps.buildZoneScene?.(back.area)?.scene;
       clearRuinPresentationHeight();
       movePlayerObjectsTo(target); deps._snapCameraTarget?.(); deps.refreshActionBar?.();
-      clearRuntime(true); returnAnchor=null; deps.showToast?.('Left Random Test Ruin.',true);
+      clearRuntime(true); returnAnchor=null; deps.showToast?.(generationLabel?'You step back out of the ruin.':'Left Random Test Ruin.',true);
+      window.RuinSites?.onRuinLeft?.();
+    });
+  }
+
+  // Leaves through a caller-supplied destination instead of the entrance
+  // anchor (js/ruin-sites.js: the exit ladder surfaces somewhere random).
+  // `enter` must put the player into a built zone (game.js enterZone).
+  function exitTo(enter) {
+    if (!ruin || deps.getCurrentArea?.()!==MAP_ID) return;
+    const leaving=ruin;
+    return runSceneTransition(()=>{
+      if(!leaving||ruin!==leaving)return;
+      clearRuinPresentationHeight();
+      Promise.resolve(enter()).finally(()=>{ // enterZone may wait on an in-flight Tothal Shift; keep the ruin intact until the player has actually left it.
+        if(ruin===leaving)clearRuntime(true);
+        returnAnchor=null;
+        deps._snapCameraTarget?.(); deps.refreshActionBar?.();
+      });
     });
   }
 
@@ -884,6 +1003,10 @@
       else if(Number.isFinite(plateProgress)) m.progress=clamp(plateProgress,0,1);
       else m.progress+=clamp(m.target-m.progress,-dt*1.55,dt*1.55); // Ungated/manual doors use the same authored V50 progress animation.
       if(Math.abs(m.progress-m.target)<.001&&!linkedPlate&&!linkedSignal&&!hasExternalTarget)m.progress=m.target;
+      if(hasExternalTarget||m.manualFallback){ // V50's applyMechanismProgress animates from the linked signal/plate whenever one exists and ignores the progress passed in, so an external override (hallway glyph gate, ossuary chord) or a manual lift control must be written into that signal, or the mechanism never visibly moves and its collision stays put.
+        if(linkedSignal)linkedSignal.userData.solveProgress=m.progress;
+        else if(linkedPlate)linkedPlate.userData.weightProgress=m.progress;
+      }
       ruin.api.applyProgress(m.root,m.progress);
     }
     for(const a of ruin.activators){
@@ -895,7 +1018,7 @@
   DS.addBeforeRenderClient(()=>{if(!ruin)return;if(deps.getCurrentArea?.()!==MAP_ID)return;const now=performance.now(),dt=clamp((now-frameLastMs)/1000,0,.05);frameLastMs=now;updateTransitDoors(dt);updateMechanisms(dt);reconcilePlayer(now);});
 
   function updateBadge(){
-    if(!ruin)return;
+    if(!ruin||!devModeEnabled())return; // Diagnostics badge is for Dev Mode only; wilderness-site ruins are ordinary play.
     let b=document.getElementById('devRandomRuinBadge'); // Used as the existing mobile-visible Random Test Ruin diagnostic badge.
     if(!b){b=document.createElement('div');b.id='devRandomRuinBadge';b.style.cssText='position:fixed;left:10px;bottom:10px;z-index:65;padding:6px 9px;border:1px solid rgba(255,255,255,.2);border-radius:7px;background:rgba(12,14,12,.82);color:#ddd;font:11px monospace;pointer-events:none';document.body.appendChild(b);}
     const occupancy=ruin.occupancy?.snapshot?.(); // Used to retain the existing red/green/blue occupancy counts in the badge.
@@ -934,5 +1057,5 @@
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',installSettingsButton,{once:true});else installSettingsButton();
 
-  window.DevRandomRuin=Object.freeze({generate,reroll:()=>generate(randomSeed()),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,getInteractionControls:()=>ruin?ruin.controls.map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],getRuntimeContext:()=>ruin?{scene:ruin.scene,root:ruin.localeRoot,meta:ruin.meta,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,seed:ruin.seed,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getDarknessSettings,setPlayerWorldPoint,getPlayerSupportY,setMechanismTarget,syncPlayerPresentationHeight:syncRuinPresentationHeight,getState:()=>ruin?{mapId:MAP_ID,seed:ruin.seed,requestedSeed:ruin.requestedSeed,sourceSeed:ruin.sourceSeed,tileScale:RUIN_TILE_SCALE,wallStyle:ruin.wallStyle||null,darkness:getDarknessSettings(),materialStats:{cliffMeshes:ruin.denMaterialMeshCount||0,converted:ruin.unlitConvertedMaterialCount||0,remainingLit:ruin.remainingLitMaterialCount||0,legacyStone:ruin.legacyStoneMaterialCount||0,totalMeshes:ruin.totalRuinMeshCount||0,ceilingCells:ruin.ceilingCellCount||0,ceilingY:ruin.ceilingY??null,ceilingTextured:!!(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material:ruin.ceilingMesh?.material)?.map,ceilingNaturalSurface:(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material[0]:ruin.ceilingMesh?.material)?.userData?.naturalSurface||null,occlusionMeshes:ruin.occlusionMeshes?.length||0},rooms:ruin.meta.rooms?.length||0,controls:ruin.controls.length,mechanisms:[...ruin.mechanisms.values()].map(m=>({id:m.id,type:m.type,progress:m.progress,target:m.target,externalTarget:m.externalTarget??null})),transitDoors:(ruin.transitDoorStates||[]).map(state=>({id:state.door?.id||null,open:+state.open.toFixed(3),target:state.target,axis:state.crossingAxis,center:state.center?{x:+state.center.x.toFixed(3),z:+state.center.z.toFixed(3)}:null})),puzzleOptions:ruin.puzzleOptions,puzzleGeneration:ruin.puzzleGeneration,solvability:ruin.solvability,generationAttempt:ruin.generationAttempt,presentation:presentationSnapshot(),occupancy:ruin.occupancy?.snapshot?.(),dynamic:DS.debugSnapshot()}:null});
+  window.DevRandomRuin=Object.freeze({generate,reroll:()=>generate(randomSeed()),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,exitTo,getInteractionControls:()=>ruin?ruin.controls.map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],getRuntimeContext:()=>ruin?{scene:ruin.scene,root:ruin.localeRoot,meta:ruin.meta,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,seed:ruin.seed,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getDarknessSettings,getOcclusionMeshes:()=>ruin?.occlusionMeshes||null,setPlayerWorldPoint,getPlayerSupportY,setMechanismTarget,lockMechanism,unlockMechanism,mechanismInfo,syncPlayerPresentationHeight:syncRuinPresentationHeight,getState:()=>ruin?{mapId:MAP_ID,seed:ruin.seed,requestedSeed:ruin.requestedSeed,sourceSeed:ruin.sourceSeed,tileScale:RUIN_TILE_SCALE,wallStyle:ruin.wallStyle||null,darkness:getDarknessSettings(),materialStats:{cliffMeshes:ruin.denMaterialMeshCount||0,converted:ruin.unlitConvertedMaterialCount||0,remainingLit:ruin.remainingLitMaterialCount||0,legacyStone:ruin.legacyStoneMaterialCount||0,totalMeshes:ruin.totalRuinMeshCount||0,ceilingCells:ruin.ceilingCellCount||0,ceilingY:ruin.ceilingY??null,ceilingTextured:!!(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material:ruin.ceilingMesh?.material)?.map,ceilingNaturalSurface:(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material[0]:ruin.ceilingMesh?.material)?.userData?.naturalSurface||null,occlusionMeshes:ruin.occlusionMeshes?.length||0},rooms:ruin.meta.rooms?.length||0,controls:ruin.controls.length,mechanisms:[...ruin.mechanisms.values()].map(m=>({id:m.id,type:m.type,progress:m.progress,target:m.target,externalTarget:m.externalTarget??null})),transitDoors:(ruin.transitDoorStates||[]).map(state=>({id:state.door?.id||null,open:+state.open.toFixed(3),target:state.target,axis:state.crossingAxis,center:state.center?{x:+state.center.x.toFixed(3),z:+state.center.z.toFixed(3)}:null})),puzzleOptions:ruin.puzzleOptions,puzzleGeneration:ruin.puzzleGeneration,solvability:ruin.solvability,generationAttempt:ruin.generationAttempt,presentation:presentationSnapshot(),occupancy:ruin.occupancy?.snapshot?.(),dynamic:DS.debugSnapshot()}:null});
 })();

@@ -72,7 +72,7 @@
     const name = options.name || 'Minion'; // Display/roster name.
     const tier = Math.max(0, Math.round(Number(options.tier) || 0)); // Existing humanoid difficulty tier.
     const weaponShapes = Array.isArray(options.weaponShapePool) && options.weaponShapePool.length ? options.weaponShapePool : DEFAULT_WEAPON_SHAPES; // Validated again by BanditCombat.
-    const roster = rollRoster(speciesId, name); // Separation point: bandit clothing generation never runs.
+    const roster = options.roster || rollRoster(speciesId, name); // Separation point: bandit clothing generation never runs. A supplied roster re-creates a specific skeleton (a lich raising its fallen).
     const entity = await combat.makeEntity({
       ...baseConfig,
       speciesWeights: { [speciesId]: 1 },
