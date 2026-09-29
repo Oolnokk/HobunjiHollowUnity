@@ -412,6 +412,15 @@
     const owners = [...new Set(aimed.map(row => row.owner).filter(Boolean))];
     const candidates = owners.map(owner => ({ type:'devRuinInteraction', id:owner.uuid || owner.id, data:owner, box:ownerBox(owner) })).filter(candidate => candidate.box);
     let focus = candidates.length ? window.RangedWeapons?.focusCandidates?.(candidates, 6) || null : null;
+    // A control whose object sits inside another's box (a brazier on a dais
+    // pedestal) always lost to the bigger box the ray enters first; when the
+    // ray also reaches a nested candidate, that smaller one is the target.
+    if (focus?.candidate?.box) {
+      const outer = focus.candidate.box;
+      const nested = candidates.filter(candidate => candidate !== focus.candidate && outer.containsBox(candidate.box));
+      const inner = nested.length ? window.RangedWeapons.focusCandidates(nested, 6) : null;
+      if (inner) focus = inner;
+    }
     let focusedOwner = focus?.candidate?.data || null;
     const hasRay = !!window.RangedWeapons?.focusCandidates && candidates.length && focus !== null;
     if (!focusedOwner && !window.RangedWeapons?.focusCandidates) { // No reticle system available: nearest object only.

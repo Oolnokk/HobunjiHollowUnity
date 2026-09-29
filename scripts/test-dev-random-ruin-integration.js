@@ -51,10 +51,10 @@ const loadOrder = [
   'dev-random-ruin-runtime-coverage.js',
 ].map(name => camera.indexOf(name));
 assert(/localStorage\.getItem\('hobunjiDevMode'\) === '1'/.test(camera) && /if \(!devMode/.test(camera), 'ruin runtime must only be injected in Dev Mode');
-assert(camera.includes('dev-random-ruin-interactions.js?v=20260928climb1'), 'ruin interaction adapter must be cache-busted with the arch-priority/popup-list fix');
+assert(camera.includes('dev-random-ruin-interactions.js?v=20260929gateddais1'), 'ruin interaction adapter must be cache-busted with the arch-priority/popup-list fix');
 assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260929plates1'), 'simple puzzle interior-parity runtime must be cache-busted in the dev bootstrap');
 assert(camera.includes('dev-random-ruin-wall-render-proxy.js?v=20260927geometry1'), 'native ruin render verifier must be cache-busted in the dev bootstrap');
-assert(gameIndex.includes('js/dev-random-ruin-bootstrap.js?v=20260929plates1'), 'game page must load the updated ruin bootstrap');
+assert(gameIndex.includes('js/dev-random-ruin-bootstrap.js?v=20260929gateddais1'), 'game page must load the updated ruin bootstrap');
 assert(gameIndex.includes('game.js?v=20260929shotfloor1'), 'game page must load the footprint-aware movement collision');
 assert(gameIndex.indexOf('js/area-footprint-blockers.js') >= 0 && gameIndex.indexOf('js/area-footprint-blockers.js') < gameIndex.indexOf('game.js?v='), 'sub-tile footprint registry must load before game.js');
 assert(game.includes('window.AreaFootprintBlockers?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE, worldY)'), 'canOccupyAt must test the whole mover square against prop footprints');
@@ -81,7 +81,7 @@ assert(interior.includes('spritePngSurface.makeMaterial(THREE,source.map||null')
 assert(interior.includes('remainingLitMaterials'), 'material diagnostics must explicitly count any lit material that escapes normalization');
 assert((cloudFog.match(/map_i_dev_random_ruin/g)||[]).length>=2, 'Random Test Ruin must opt into the shared den no-sky and den darkness/lantern classifications');
 assert(gameIndex.includes('js/cloud-forest-fog.js?v=20260926devruindark2'), 'test-ruin darkness override must be cache-busted in the game page');
-assert(camera.includes('dev-random-ruin-interior-map.js?v=20260929shotfloor1'), 'test-ruin generator/runtime changes must be cache-busted in the dev bootstrap');
+assert(camera.includes('dev-random-ruin-interior-map.js?v=20260929gateddais1'), 'test-ruin generator/runtime changes must be cache-busted in the dev bootstrap');
 assert(interior.includes('Solvability.audit'), 'candidate ruins must run the pre-entry solvability audit');
 assert(interior.includes('MAX_SOLVABILITY_ATTEMPTS = 6'), 'unsolvable candidates must have a bounded deterministic retry budget');
 assert(interior.includes('getLastSolvabilityAudit'), 'rejected seed diagnostics must remain inspectable without devtools');
@@ -114,7 +114,7 @@ assert(game.includes("dispatchWorldInputClaim(actionId,'press','game-input')"), 
 assert(game.includes("dispatchWorldInputClaim(mouseAction,'press','desktop-mouse')"), 'desktop mouse weapon input must consult the same contextual claim registry');
 assert(game.includes("dispatchWorldInputClaim(physicalInputAction,'press','touch-arch')"), 'touch action-arch input must consult the same contextual claim registry');
 
-assert(interior.includes('m.manualFallback=true') && interior.includes("'Raise Stone Platform'"), 'moving daises must retain a manual traversal fallback even when a glyph also exists');
+assert(interior.includes('m.manualFallback=true') && interior.includes("'Raise Stone Platform'") && interior.includes("if(gated)continue;\n        m.manualFallback=true;"), 'only puzzle-free moving daises get a manual Raise/Lower control; puzzle-linked ones move only through their puzzle');
 assert(solvability.includes('manual lift fallback reachable'), 'pre-entry audit must understand the simple-mode lift fallback');
 assert(!debrisBootstrap.includes('runtimePuzzleBypass?1:'), 'disabled V50 puzzle families must leave mechanisms manual/closed rather than silently auto-solving them');
 assert(debrisBootstrap.includes('skip standalone editor startup in embedded gameplay runtime'), 'hidden gameplay V50 must skip standalone editor startup work that is irrelevant to generation');

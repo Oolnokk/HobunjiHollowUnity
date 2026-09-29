@@ -545,7 +545,12 @@
       const gated=linkedMechanismIds.has(String(m.id))&&!m.root.userData?.runtimePuzzleBypass;
       if(m.type==='movingDais'){
         const platform=m.root.userData?.movingDaisPlatform||m.root;
-        m.manualFallback=true; // Simplified ruins never make a lift depend exclusively on a possibly-hidden projectile target.
+        // A dais wired to a puzzle (glyphs, braziers, obelisks, cubes, plates)
+        // moves only through that puzzle: a direct Raise/Lower prompt let
+        // players skip it. Glyph targets are visible now, so the old manual
+        // fallback is kept only for daises with no puzzle at all.
+        if(gated)continue;
+        m.manualFallback=true;
         platform.userData.interactive3D=true;
         platform.userData.devRuinInteractionType='movingDais';
         ruin.controls.push({

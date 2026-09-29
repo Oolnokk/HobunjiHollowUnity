@@ -29,7 +29,7 @@
   const FIRE_BRIGHT = '#bfeaff', FIRE_COLOR = '#2f8dff';
   const DECAL_IDLE = 0x39424d, DECAL_LIT = 0x4fb6ff, DECAL_PULSE_LOW = 0x1c5a8f, DECAL_PULSE_HIGH = 0xb8ecff;
   const EXCLUDED_ITEM_LABELS = new Set(['Stone Idol']); // Decorative sunken-centerpiece fallback, not a puzzle goal.
-  const BRAZIER_RANGE = 1.5;
+  const BRAZIER_RANGE = 2.6; // Horizontal; reach is really decided by the reticle and the height check below, and a bowl on a pedestal mid-dais is ~2u from its edge.
   const PEDESTAL_HEIGHT_SCALE = .5;
   const BRAZIER_MAX_RISE = 1.35; // Bowl may sit at most this far above the player's feet: a pedestal still on a raised dais stays out of reach.
   const DOOR_WIDTH = 3.2, DOOR_MAX_HEIGHT = 3.4, DOOR_CLEAR_DEPTH = 2.8;
