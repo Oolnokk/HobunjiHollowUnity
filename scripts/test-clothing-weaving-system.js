@@ -190,7 +190,7 @@ for (const [variantKey, variant] of Object.entries(raggedHoodConfig.speciesVaria
   const hoodLayers = variant?.parts?.head?.layers || {}; // Used to keep every authored Ragged Hood front/back pair in the same pattern projection space.
   const frontLayer = hoodLayers.front; // Compared with backLayer for role, transform, and source-raster parity.
   const backLayer = hoodLayers.back; // Compared with frontLayer so rear art cannot silently get a different weave scale basis.
-  if (!frontLayer || !backLayer) continue;
+  assert(frontLayer && backLayer, `${variantKey} Ragged Hood must keep both authored front and rear pattern surfaces`);
   assert.equal(backLayer.layerRole, frontLayer.layerRole, `${variantKey} Ragged Hood front/back sprites keep the same logical weave role`);
   assert.deepEqual(backLayer.spriteStyle?.base?.xform?.head, frontLayer.spriteStyle?.base?.xform?.head, `${variantKey} Ragged Hood front/back sprites keep the same authored head transform`);
   const frontPath = 'docs/' + String(frontLayer.image?.url || '').replace(/^\.\//, ''); // Used below to read the actual front PNG dimensions.
