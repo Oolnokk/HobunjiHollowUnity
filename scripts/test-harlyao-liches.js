@@ -329,7 +329,7 @@ for (const key of ['tothal', 'hronal', 'kanthic']) {
   assert(devSpawnerSource.includes(`harlyao-lich:${key}`), `Testing Arena must expose ${key} lich button`);
 }
 assert.match(devSpawnerSource, /startsWith\('harlyao-lich:'\)/);
-assert(indexSource.includes('js/combat/combat-lich.js?v=20260929lichroom1'));
+assert(indexSource.includes('js/combat/combat-lich.js?v=20260929config1'));
 assert(indexSource.includes('js/combat/combat-bandit.js?v=20260927hostilevisual1'));
 assert(indexSource.includes('js/dev-spawner.js?v=20260927hostilevisual1'));
 assert(indexSource.includes('game.js?v=20260927inputclaim1'));
@@ -412,7 +412,7 @@ assert.match(handFrameSource, /const playerOwnedHolder = !ownedHolder[\s\S]*tool
 assert.match(handFrameSource, /holderAuthority: record\?\.avatarRoot\?\.userData\?\.proceduralHandToolHolder \? 'actor-owned-world-transform'/, 'hand diagnostics must identify actor-owned hostile transform authority');
 assert.match(handFrameSource, /proceduralHandToolKey[\s\S]*currentToolKey\(record\)/, 'hostile hand sync must use that hostile\'s weapon key rather than the player singleton stance');
 assert.match(combatBanditSource, /const resolvedRosterDyes = applyRosterDyesToProfile\(profile, roster\)/, 'lich visible portrait must explicitly reconcile its hood/bodywrap dye before rasterization');
-assert.match(lichSource, /if \(ability === 'summon'\) summonMinion\(lich\);[\s\S]*else firePrimary\(lich, target, \{ windupS, strikeS \}\);/, 'both summon and primary spell abilities must fire from the reused attack strike phase with exact cast timing available to Hronal');
+assert.match(lichSource, /if \(ability === 'summon'\) \{[\s\S]*?lichRaiseDead[\s\S]*?else summonMinion\(lich\);[\s\S]*else firePrimary\(lich, target, \{ windupS, strikeS \}\);/, 'both summon and primary spell abilities must fire from the reused attack strike phase with exact cast timing available to Hronal');
 assert.match(proceduralLegSource, /function applyHoverPose\(side, dt\)/, 'procedural leg system must own a real two-bone hover pose rather than post-rotating feet');
 assert.match(proceduralLegSource, /bendDegX = -31[\s\S]*solveTwoBoneLeg/, 'hover pose must keep visibly flexed dangling knees through the shared leg solver');
 assert.match(proceduralLegSource, /function setHoverMode\(enabled\)[\s\S]*function isHoverMode\(\)/, 'procedural leg handles must expose explicit hover ownership');

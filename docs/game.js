@@ -3211,6 +3211,9 @@
         const sampleY = blockedCenterY + dirY * radiusPx; // Same leading-edge sample on the world-Z/game-Y axis.
         const furniture = knockbackFurnitureDescriptorAt(sampleX, sampleY);
         if (furniture) return furniture;
+        // Sub-tile solid props (ruin door panels, pillars, coffins, walls
+        // registered through AreaFootprintBlockers) hit like stone.
+        if (window.AreaFootprintBlockers?.blocksPoint?.(currentArea, sampleX / TILE, sampleY / TILE)) return { kind: 'stone', label: 'Stone' };
 
         const cols = window.GridTileAccessors.getActiveCols(), rows = window.GridTileAccessors.getActiveRows();
         const col = Math.floor(sampleX / TILE), row = Math.floor(sampleY / TILE);
@@ -3337,6 +3340,7 @@
 
       function knockbackAirborneCanOccupyAt(wx, wy, radiusPx, air) {
         const originSurfaceY = air?.originSurfaceY;
+        if (window.AreaFootprintBlockers?.blocksBox(currentArea, wx / TILE, wy / TILE, radiusPx / TILE, null)) return false; // Sub-tile props collide airborne too.
         const cols = window.GridTileAccessors.getActiveCols(), rows = window.GridTileAccessors.getActiveRows();
         const samples = [ // Mirrors canOccupyAt's four-corner footprint while allowing lower terrain to pass beneath the airborne target.
           [wx - radiusPx, wy - radiusPx], [wx + radiusPx, wy - radiusPx],
@@ -3355,6 +3359,7 @@
             continue;
           }
           if (tileSpeedAt(sx, sy) !== null) continue;
+          if (_isBuildingArea(currentArea) || currentArea === 'interior') return false; // Interior walls are impassable tiles at floor height, never "lower terrain".
           const obstacleSurfaceY = tileSurfaceYInArea(tile, currentArea);
           if (obstacleSurfaceY >= originSurfaceY - KNOCKBACK_LEDGE_HEIGHT_EPSILON) return false; // Same/higher obstruction still collides and contributes a deficit.
         }
@@ -4742,6 +4747,7 @@
       // off the corpse tile (especially in shoulder cam). Keep corpse loot
       // tied to the same nearby interaction target instead of dropping it on
       // a stale "No object here" result.
+      let _lastOfferedCorpseId = null; // Building-interior Loot button stickiness (see computeActionButtonsImpl).
       function getCorpseObjectForAction(action, col, row) {
         const exact = getCorpseObjectAt(col, row);
         if (exact || action !== 'obj_loot_corpse') return exact;
@@ -9442,6 +9448,8 @@
         // dodges remain ordinary evasive movement and cannot grab a nearby tree.
         const climb = window.ClimbSystem.getClimbTarget();
         if (climb && (climb.type === 'branchJumpDown' || dodgeInputIsForward())) { window.ClimbSystem.startClimb(climb); return; }
+        const worldClimb = window.ClimbSystem.getWorldClimbTarget?.(); // Non-grid ledges (ruins) climb from the same forward dodge.
+        if (worldClimb && dodgeInputIsForward()) { worldClimb.start(); return; }
         performDodge();
       }
 
@@ -24915,8 +24923,17 @@
           // (skeletons, liches, bandits, den creatures) were never lootable.
           // Only the exact aimed tile shows the button, so a nearby corpse
           // cannot take over the attack slot mid-fight.
-          const aimedCorpse = getCorpseObjectAt(getReticleTile().col, getReticleTile().row);
-          if (aimedCorpse) return aimedCorpse.getButtons(getReticleTile());
+          // Sticky: once shown, the same corpse stays offered while it is
+          // still within reach, so the button does not blink as the aim
+          // probe slides across a tile edge.
+          const corpseReticle = getReticleTile();
+          let aimedCorpse = getCorpseObjectAt(corpseReticle.col, corpseReticle.row);
+          if (!aimedCorpse && _lastOfferedCorpseId) {
+            const near = getCorpseObjectForAction('obj_loot_corpse', corpseReticle.col, corpseReticle.row);
+            if (near?.id === _lastOfferedCorpseId) aimedCorpse = near;
+          }
+          _lastOfferedCorpseId = aimedCorpse?.id || null;
+          if (aimedCorpse) return aimedCorpse.getButtons(corpseReticle);
           const devRuinActions = currentArea === 'map_i_dev_random_ruin'
             ? window.DevRandomRuinInteractions?.getActionButtons?.()
             : null; // Generated test-ruin interactions are ordinary building-interior context actions; when present they replace attacks/items in the same physical arch slots, exactly like NPC/furniture interactions.

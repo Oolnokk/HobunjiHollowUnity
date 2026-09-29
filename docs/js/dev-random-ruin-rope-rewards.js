@@ -33,6 +33,7 @@
   const LIFT_RISE_MAX = .95;
   const LIFT_SECONDS = 2.2;
   const BALCONY_HEADROOM = 1.7;
+  const cfg = (path, fallback) => window.DevRandomRuinConfig?.get?.(path, fallback) ?? fallback; // docs/config/random-ruin/ruin-config.json; the constants above are the fallbacks.
 
   let basins = [];
   let payoffs = [];
@@ -82,7 +83,7 @@
   // The base follows the lowest floor under the footprint: a basin region can
   // contain a deeper nested pit, and a pillar starting at the region's own
   // level floated over it, leaving a lava-filled gap underneath.
-  function makePillar(kit, id, x, z, baseY, topY, size = PILLAR_SIZE) {
+  function makePillar(kit, id, x, z, baseY, topY, size = cfg('lavaBasin.pillarSize', PILLAR_SIZE)) {
     let floorY = baseY;
     const h = size * .5 - .05;
     for (const dx of [-h, 0, h]) for (const dz of [-h, 0, h]) {
@@ -243,7 +244,7 @@
     const pb = rope.endPlatform, pa = rope.startPlatform;
     const bounds = kit.roomBounds(context.meta, room);
     const skip = reason => { rejects.push(`payoff lift ${room.id}: ${reason}`); return null; };
-    const rise = Math.min(LIFT_RISE_MAX, ceilingLimit(context) - pb.topY - BALCONY_HEADROOM);
+    const rise = Math.min(cfg('lavaBasin.liftRiseMax', LIFT_RISE_MAX), ceilingLimit(context) - pb.topY - cfg('lavaBasin.balconyHeadroom', BALCONY_HEADROOM));
     if (rise < .6) return skip(`rise ${rise.toFixed(2)} too small`);
     const floorY = Number(pb.baseY) || 0;
     const topHigh = pb.topY + rise;
@@ -306,14 +307,14 @@
     const riding = !!(player && !kit.ownsPlayerMotion() && Math.abs(player.x - lift.x) <= lift.width * .5 - .06 && Math.abs(player.z - lift.z) <= lift.depth * .5 - .06 && Math.abs(player.y - previous) <= .26);
     if (riding) { lift.idle = 0; if (lift.target === 0) { lift.target = 1; if (!payoff.announced) { payoff.announced = true; kit.deps?.showToast?.('The platform shudders and rises toward a balcony.', true); } } }
     else { lift.idle += dt; if (lift.idle > 2.5) lift.target = 0; }
-    lift.progress += Math.max(-dt / LIFT_SECONDS, Math.min(dt / LIFT_SECONDS, lift.target - lift.progress));
+    lift.progress += Math.max(-dt / cfg('lavaBasin.liftSeconds', LIFT_SECONDS), Math.min(dt / cfg('lavaBasin.liftSeconds', LIFT_SECONDS), lift.target - lift.progress));
     payoff.place();
     if (riding && Math.abs(lift.topY - previous) > 1e-4) window.DevRandomRuin?.syncPlayerPresentationHeight?.(lift.topY);
   }
 
   function onStandaloneRope(kit, context, rope, room, rng) {
     if (!rope?.endPlatform?.mesh || !rope.startPlatform) return;
-    const order = forcedPayoff ? [forcedPayoff, 'chest'] : rng() < .34 ? ['plateDoor', 'lift', 'chest'] : rng() < .5 ? ['lift', 'chest'] : ['chest'];
+    const order = forcedPayoff ? [forcedPayoff, 'chest'] : rng() < cfg('ropePayoffs.plateDoorLiftOrChestChance', .34) ? ['plateDoor', 'lift', 'chest'] : rng() < cfg('ropePayoffs.liftOrChestChance', .5) ? ['lift', 'chest'] : ['chest'];
     let payoff = null;
     rejects.push(`payoff order ${room.id}: ${order.join('>')}`);
     for (const kind of order) {
@@ -406,7 +407,7 @@
     if (!launch) { note('no clear rim launch spot'); return null; }
     const pad = kit.createPlatform('dev_ruin_basin_launch_platform_' + room.id, launch.x, launch.z, rimY, 2.1, 2.1, .28);
     created.push({ kind:'platform', value:pad });
-    const pillarTop = rimY + PILLAR_RISE;
+    const pillarTop = rimY + cfg('lavaBasin.pillarRise', PILLAR_RISE);
     const nodes = [pad];
     let along = axis === 'x' ? launch.x : launch.z;
     const dir = entrySide < 0 ? 1 : -1;
@@ -426,7 +427,7 @@
         if (alongTry < alongMin + 1.5 || alongTry > alongMax - 1.5) continue;
         for (const cross of crossOptions) {
           const cx = axis === 'x' ? alongTry : cross, cz = axis === 'x' ? cross : alongTry;
-          blocker = window.DevRandomRuinTileOccupancy?.solidAt?.(cx, cz, PILLAR_SIZE * .5 + .1); // 2D on purpose: walking collision is 2D, so any prop under a pillar deck would block walking on it.
+          blocker = window.DevRandomRuinTileOccupancy?.solidAt?.(cx, cz, cfg('lavaBasin.pillarSize', PILLAR_SIZE) * .5 + .1); // 2D on purpose: walking collision is 2D, so any prop under a pillar deck would block walking on it.
           if (!blocker) { x = cx; z = cz; nextAlong = alongTry; break search; }
         }
       }
@@ -468,7 +469,7 @@
       }
     }
     for (const { pillar, wall, bx, bz } of walls) {
-      const top = Math.min(pillarTop + .35, ceilingLimit(context) - BALCONY_HEADROOM);
+      const top = Math.min(pillarTop + .35, ceilingLimit(context) - cfg('lavaBasin.balconyHeadroom', BALCONY_HEADROOM));
       if (top < rimY + .6) continue;
       const floorSupport = kit.sampleSupport(bx, bz);
       if (!floorSupport || !balconyDeckClear(kit, bx, bz, wall.normal, 2.6)) continue;
@@ -500,7 +501,7 @@
     const entrySide = (axis === 'x' ? entry.x - center.x : entry.z - center.z) < 0 ? -1 : 1;
     let layout = null;
     for (const side of [entrySide, -entrySide]) {
-      for (const spacing of ROPE_SPACING) {
+      for (const spacing of cfg('lavaBasin.ropeSpacing', ROPE_SPACING)) {
         layout = tryBasinLayout(kit, context, room, bounds, basinY, rimY, axis, side, spacing, rng);
         if (layout) break;
       }
@@ -573,17 +574,17 @@
       // last frame outside the basin put the return point right on the rim
       // edge at the already-dropping height, so the escape landed the player
       // at the foot of the pit wall.
-      const onLedge = !inside(basin.bounds, player, -SAFE_EDGE_MARGIN) && player.y >= basin.rimY - .12;
+      const onLedge = !inside(basin.bounds, player, -cfg('lavaBasin.safeEdgeMargin', SAFE_EDGE_MARGIN)) && player.y >= basin.rimY - .12;
       if (onPlatform || onLedge) basin.lastSafe = { x:player.x, z:player.z };
       return;
     }
     basin.inLavaFor += dt;
     if (now - basin.lastBurnAt > 900) {
       basin.lastBurnAt = now;
-      window.ResourceSystem?.addAffliction?.(kit.deps?.player, 'burningHealth', LAVA_BURN);
+      window.ResourceSystem?.addAffliction?.(kit.deps?.player, 'burningHealth', cfg('lavaBasin.lavaBurn', LAVA_BURN));
       kit.playLavaSizzle?.();
     }
-    if (basin.inLavaFor >= LAVA_ESCAPE_S) {
+    if (basin.inLavaFor >= cfg('lavaBasin.lavaEscapeSeconds', LAVA_ESCAPE_S)) {
       basin.inLavaFor = 0;
       basin.escapes++;
       const spot = basin.lastSafe || { x:basin.pad.x, z:basin.pad.z };

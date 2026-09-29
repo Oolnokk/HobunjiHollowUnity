@@ -1,0 +1,59 @@
+{
+  "schema": "hobunji_random_ruin_config.v1",
+  "_notes": "Tuning for the dev-only Random Test Ruin (Dev Mode > Settings > Random Test Ruin). Loaded by docs/js/dev-random-ruin-config.js before each generation; any value left out falls back to the built-in default. For quick experiments without editing this file: DevRandomRuinConfig.setOverride({ sanctum: { boss: { healthMult: 5 } } }) in the console (persists in localStorage; setOverride(null) clears it). Chances are 0..1 per generated ruin.",
+  "generation": {
+    "size": "medium",
+    "density": 62,
+    "roomMin": 3,
+    "roomMax": 6,
+    "maxSolvabilityAttempts": 6
+  },
+  "moduleChances": {
+    "balconyRopeElevator": 0.58,
+    "ropeRoomCanopy": 0.65,
+    "ossuaryChord": 0.55,
+    "chordPlates": 0.5,
+    "standaloneCanopy": 0.35,
+    "sarcophagi": 0.3,
+    "ambientLift": 0.38
+  },
+  "ambientLift": {
+    "size": 2.2,
+    "cycleSecondsMin": 7,
+    "cycleSecondsMax": 10,
+    "chestTier": 1
+  },
+  "ropePayoffs": {
+    "plateDoorLiftOrChestChance": 0.34,
+    "liftOrChestChance": 0.5
+  },
+  "lavaBasin": {
+    "pillarSize": 2.2,
+    "pillarRise": 0.62,
+    "ropeSpacing": [5.4, 5.0, 4.7],
+    "lavaEscapeSeconds": 0.45,
+    "lavaBurn": 16,
+    "safeEdgeMargin": 0.6,
+    "liftRiseMax": 0.95,
+    "liftSeconds": 2.2,
+    "balconyHeadroom": 1.7
+  },
+  "climb": {
+    "ledgeMinRise": 0.44,
+    "ledgeMaxRise": 1.75,
+    "ledgeReach": 1.35,
+    "facingToleranceDeg": 50,
+    "hops": 2
+  },
+  "sanctum": {
+    "pedestalHeightScale": 0.5,
+    "brazierRange": 2.6,
+    "brazierMaxRise": 1.35,
+    "safePathBraziers": true,
+    "door": { "width": 3.2, "maxHeight": 3.4 },
+    "boss": { "types": ["tothal", "hronal", "kanthic"], "tier": 2, "healthMult": 3, "wakeMs": 1400 },
+    "skeletons": { "count": 4, "tier": 1 },
+    "vault": { "chestCount": 3, "chestTier": 4, "chestScale": 1.5 },
+    "layout": { "arenaWidth": 14, "arenaDepth": 14, "vaultWidth": 7, "vaultDepth": 6 }
+  }
+}

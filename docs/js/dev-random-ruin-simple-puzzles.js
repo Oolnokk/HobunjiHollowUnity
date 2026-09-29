@@ -21,7 +21,8 @@
   const ROPE_GRAB_ABOVE_LAUNCH = .86; // Places the idle grip at reachable head/hand height over the launch platform instead of inheriting the destination height.
   const LAVA_TEXTURE_TILE = 4; // World units per lava texture repeat; matches MergedWaterRenderer's default water tiling.
   const LAVA_SURFACE_DEPTH = .82; // Shader depth mix: bright molten orange with visible flow pattern.
-  const AMBIENT_LIFT_SIZE = 2.2; // Standalone pit lift footprint; the rest of the pit floor stays open for its chest.
+  const AMBIENT_LIFT_SIZE = 2.2;
+  const cfg = (path, fallback) => window.DevRandomRuinConfig?.get?.(path, fallback) ?? fallback; // docs/config/random-ruin/ruin-config.json // Standalone pit lift footprint; the rest of the pit floor stays open for its chest.
   const COMPOUND_ELEVATOR_TOP_RISE = .88; // Balcony→rope→elevator compositions begin as a visibly elevated landing before the glyph starts the descent cycle.
   const GRID_WALL_CLEARANCE = 0.52; // Used by safe-path grids so every plate center clears the ruin player's 0.28u collision radius plus the authored wall thickness.
   const HALL_FIRE_BURNING = 18;
@@ -1246,7 +1247,7 @@
     if(options.ambientLift===true){
       // Standalone lift: a 2.2u platform at the end of the pit that meets
       // open rim floor, so it is the way back up from whatever waits below.
-      const size=Math.min(AMBIENT_LIFT_SIZE,regionWidth-.2,regionDepth-.2);
+      const size=Math.min(cfg('ambientLift.size',AMBIENT_LIFT_SIZE),regionWidth-.2,regionDepth-.2);
       if(size<1.5||Math.max(regionWidth,regionDepth)<size+2.2)return liftReject('pit too small');
       const ends=[
         {axis:'x',sign:-1,x:regionBounds.minX+.1+size*.5,z,rimX:regionBounds.minX-.45,rimZ:z},
@@ -1293,7 +1294,7 @@
       const far=liftEnd.axis==='x'
         ?{x:liftEnd.sign<0?regionBounds.maxX-.7:regionBounds.minX+.7,z,yaw:liftEnd.sign<0?-Math.PI/2:Math.PI/2}
         :{x,z:liftEnd.sign<0?regionBounds.maxZ-.7:regionBounds.minZ+.7,yaw:liftEnd.sign<0?Math.PI:0};
-      module.chest=window.DevRandomRuinDungeonChests?.create?.({id:module.id+'-chest',parent:state.group,x:far.x,y:lowerFloorY,z:far.z,tier:1,yaw:far.yaw})||null;
+      module.chest=window.DevRandomRuinDungeonChests?.create?.({id:module.id+'-chest',parent:state.group,x:far.x,y:lowerFloorY,z:far.z,tier:cfg('ambientLift.chestTier',1),yaw:far.yaw})||null;
       if(module.chest)state.elevatorChests.push(module.chest);
     }
     const surfaceId=module.id+'-surface';
@@ -1742,13 +1743,13 @@
       if(grid)recordModulePlacement('safePathGrid','hallway',grid.hallId,{mandatoryTraversal:true});
     }
     if(options.ropeSwing!==false){
-      let rope=rng()<.58?buildBalconyRopeElevatorComposer(context,rng,usedRooms):null; // Full balcony→rope→glyph→elevator chain is one possible composition, not a dedicated puzzle type.
+      let rope=rng()<cfg('moduleChances.balconyRopeElevator',.58)?buildBalconyRopeElevatorComposer(context,rng,usedRooms):null; // Full balcony→rope→glyph→elevator chain is one possible composition, not a dedicated puzzle type.
       if(!rope)rope=buildRopeSwing(context,rng,usedRooms);
       if(rope){
         recordModulePlacement('ropeTraverse','room',rope.roomId,{ceilingMounted:true});
         const alreadyComposed=state.ropeElevatorComposers.some(module=>module.rope===rope);
         const ropeRoom=(context.meta?.rooms||[]).find(room=>String(room.id)===String(rope.roomId));
-        if(!alreadyComposed&&ropeRoom&&rng()<.65)buildStoneCanopyModule(context,ropeRoom,rope.startPlatform); // Standalone rope rooms may independently roll architectural canopy cover.
+        if(!alreadyComposed&&ropeRoom&&rng()<cfg('moduleChances.ropeRoomCanopy',.65))buildStoneCanopyModule(context,ropeRoom,rope.startPlatform); // Standalone rope rooms may independently roll architectural canopy cover.
         if(!alreadyComposed&&ropeRoom){
           for(const composer of composers){ // A standalone rope's far platform gets a payoff (plate→door, chest, lift→balcony).
             try{composer.onStandaloneRope?.(kit,context,rope,ropeRoom,rng);}catch(error){console.warn('[Random Test Ruin] rope payoff failed',error);}
@@ -1758,20 +1759,20 @@
     }
     const freeRooms=shuffle(usableRoomCandidates(context).filter(room=>!usedRooms.has(room.id)),rng);
     const ossuaryIndex=freeRooms.findIndex(room=>roomDoorways(context,room).length===1); // A lock-in composer only claims a cul-de-sac room; standalone modules remain valid in rooms with arbitrary connectivity.
-    if(ossuaryIndex>=0&&rng()<.55){
+    if(ossuaryIndex>=0&&rng()<cfg('moduleChances.ossuaryChord',.55)){
       const [room]=freeRooms.splice(ossuaryIndex,1);usedRooms.add(room.id);buildOssuaryChordComposer(context,rng,room); // Compound encounter is wiring only; door, sarcophagi and chord plates remain separately recorded modules.
-    }else if(freeRooms.length&&rng()<.5){
+    }else if(freeRooms.length&&rng()<cfg('moduleChances.chordPlates',.5)){
       const room=freeRooms.shift();usedRooms.add(room.id);buildChordPlateSet(context,rng,{kind:'room',owner:room}); // Same four-note module can appear by itself with no skeleton encounter at all.
     }
-    if(freeRooms.length&&rng()<.35){
+    if(freeRooms.length&&rng()<cfg('moduleChances.standaloneCanopy',.35)){
       const room=freeRooms.shift();usedRooms.add(room.id);buildStoneCanopyModule(context,room); // Canopies may also appear as standalone architectural cover, independent of ropes.
     }
-    if(freeRooms.length&&rng()<.3){
+    if(freeRooms.length&&rng()<cfg('moduleChances.sarcophagi',.3)){
       const room=freeRooms.shift();usedRooms.add(room.id);buildSarcophagusSpawnerModule(context,rng,room,{tier:1,autoActivateRadius:2.5}); // Sarcophagus enemies can occur independently; entering their room wakes them without requiring musical plates or a lock door.
     }
     const liftRooms=freeRooms.filter(room=>outermostSunkenRegionForRoom(context,room)&&!state.cyclingElevators.some(elevator=>elevator.roomId===String(room.id))); // One lift per pit room.
-    if(liftRooms.length&&(rng()<.38||window.__devRuinForceAmbientLift===true)){ // The flag is a headless-test hook; rng() is still drawn first so seeds reproduce.
-      const cycleSeconds=7+rng()*3;
+    if(liftRooms.length&&(rng()<cfg('moduleChances.ambientLift',.38)||window.__devRuinForceAmbientLift===true)){ // The flag is a headless-test hook; rng() is still drawn first so seeds reproduce.
+      const cycleMin=cfg('ambientLift.cycleSecondsMin',7),cycleSeconds=cycleMin+rng()*Math.max(0,cfg('ambientLift.cycleSecondsMax',10)-cycleMin);
       for(const room of liftRooms){
         // Same elevator primitive as ambient traversal: a rim-to-floor lift with a chest below.
         if(!buildCyclingElevatorModule(context,room,{region:outermostSunkenRegionForRoom(context,room),ambientLift:true,startActive:true,cycleSeconds}))continue;

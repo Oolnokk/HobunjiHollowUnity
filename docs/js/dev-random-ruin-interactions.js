@@ -336,9 +336,7 @@
   const LEDGE_MIN_RISE = .44;
   const LEDGE_MAX_RISE = 1.75;
   const LEDGE_REACH = 1.35; // How far ahead of the player the ledge edge may be.
-  const ledgeOwner = new THREE.Object3D(); // Stand-in owner; its focus box is supplied per frame.
-  ledgeOwner.name = 'dev_ruin_ledge_climb_target';
-  let ledgeBox = null;
+  const cfg = (path, fallback) => window.DevRandomRuinConfig?.get?.(path, fallback) ?? fallback; // docs/config/random-ruin/ruin-config.json (climb.*).
 
   function openAt(x, z, half = .2) {
     const grid = GridTileAccessors.getActiveGrid?.();
@@ -347,23 +345,28 @@
     return !window.AreaFootprintBlockers?.blocksBox?.(GridTileAccessors.getCurrentArea?.(), x, z, half);
   }
 
-  function nearestLedge() {
+  // facingOnly: the forward-dodge climb only takes a ledge the player faces
+  // (within ~50°), like cliffs.
+  function nearestLedge(options = {}) {
     const player = playerWorldPosition();
+    const facing = Number(deps?.player?.angle);
     if (!player || deps?.player?.climbing) return null;
     const baseY = Number(window.DevRandomRuin?.getPlayerSupportY?.());
     const floorY = Number.isFinite(baseY) ? baseY : player.y;
     let best = null;
     for (let i = 0; i < 16; i++) {
       const angle = i * Math.PI / 8, dx = Math.cos(angle), dz = Math.sin(angle);
-      for (let t = .25; t <= LEDGE_REACH; t += .1) {
+      if (options.facingOnly && Number.isFinite(facing) && Math.abs(Math.atan2(Math.sin(angle - facing), Math.cos(angle - facing))) > cfg('climb.facingToleranceDeg', 50) * Math.PI / 180) continue;
+      for (let t = .25; t <= cfg('climb.ledgeReach', LEDGE_REACH); t += .1) {
         const x = player.x + dx * t, z = player.z + dz * t;
-        const support = DS.sampleSupport?.(x, z, { minY:floorY - 8, maxY:floorY + LEDGE_MAX_RISE + .05, pad:.02 });
+        const support = DS.sampleSupport?.(x, z, { minY:floorY - 8, maxY:floorY + cfg('climb.ledgeMaxRise', LEDGE_MAX_RISE) + .05, pad:.02 });
         const rise = Number(support?.y) - floorY;
         if (!(rise > .2)) { if (!openAt(x, z, .05) && t > .3) break; continue; } // Solid wall before any ledge: nothing to climb here.
-        if (rise < LEDGE_MIN_RISE || rise > LEDGE_MAX_RISE) break; // A step (walkable) or a wall too tall to climb.
+        if (rise < cfg('climb.ledgeMinRise', LEDGE_MIN_RISE) || rise > cfg('climb.ledgeMaxRise', LEDGE_MAX_RISE)) break; // A step (walkable) or a wall too tall to climb.
         if (window.DevRandomRuinSimplePuzzles?.isNoClimbSurface?.(support.id)) break; // Rope platforms/balconies/vaults: reached only by rope.
+        if (/^devruin-mech-/.test(String(support.id || ''))) break; // Puzzle machinery (a raised dais the glyphs bring down, bridges, stairs) moves only through its puzzle.
         const land = { x:x + dx * .45, z:z + dz * .45 };
-        const landSupport = DS.sampleSupport?.(land.x, land.z, { minY:floorY - 8, maxY:floorY + LEDGE_MAX_RISE + .05, pad:.02 });
+        const landSupport = DS.sampleSupport?.(land.x, land.z, { minY:floorY - 8, maxY:floorY + cfg('climb.ledgeMaxRise', LEDGE_MAX_RISE) + .05, pad:.02 });
         if (!landSupport || Math.abs(Number(landSupport.y) - Number(support.y)) > .2 || !openAt(land.x, land.z)) break;
         if (!best || t < best.t) best = { t, x, z, land, topY:Number(support.y), floorY, dx, dz, angle };
         break;
@@ -372,31 +375,25 @@
     return best;
   }
 
+  window.ClimbSystem?.registerWorldClimbProvider?.(() => {
+    if (!inRuin()) return null;
+    const ledge = nearestLedge({ facingOnly:true });
+    return ledge ? { kind:'ruinLedge', ledge, start:() => climbLedge(ledge) } : null;
+  });
+
   function climbLedge(ledge) {
     if (!ledge || !deps?.player || !deps.TILE) return false;
     const animated = window.ClimbSystem?.startScriptedWorldClimb?.({
       endX:ledge.land.x * deps.TILE, endY:ledge.land.z * deps.TILE,
       startWorldY:ledge.floorY, endWorldY:ledge.topY,
-      hopCount:Math.max(2, Math.ceil((ledge.topY - ledge.floorY) / .45) + 1),
+      hopCount:cfg('climb.hops', 2), shortHops:true, // Ruin variant: a quick two-hop mantle.
       facingAngle:ledge.angle,
     });
     if (!animated) return !!window.DevRandomRuin?.setPlayerWorldPoint?.({ x:ledge.land.x, y:ledge.topY, z:ledge.land.z }, { grounded:true });
     return true;
   }
 
-  function ledgeRow(now) {
-    const ledge = nearestLedge();
-    if (!ledge) { ledgeBox = null; return null; }
-    const cx = ledge.x + ledge.dx * .15, cz = ledge.z + ledge.dz * .15;
-    ledgeBox = new THREE.Box3(new THREE.Vector3(cx - .6, ledge.floorY, cz - .6), new THREE.Vector3(cx + .6, ledge.topY + .2, cz + .6)); // Aim at the ledge face/lip to climb it.
-    return {
-      key:'ledge-climb', kind:'ledgeclimb', label:'Climb Up', touchIcon:'🧗', owner:ledgeOwner,
-      distance:ledge.t, priority:6, onPress:() => climbLedge(nearestLedge() || ledge), seenAt:now, source:'semantic-ledge',
-    };
-  }
-
   function ownerBox(owner) {
-    if (owner === ledgeOwner) return ledgeBox ? ledgeBox.clone() : null;
     if (!owner) return null;
     try {
       owner.updateWorldMatrix?.(true, true);
@@ -455,8 +452,8 @@
 
   function currentRows(now = performance.now()) {
     const rows = providerRows(now); // Contextual actions only: glyphs are shot with the ordinary ranged input, so no "Fire <weapon>" row is added near them.
-    const ledge = ledgeRow(now);
-    if (ledge) rows.push(ledge);
+    // Ledges are climbed with a forward dodge (see the ClimbSystem world-climb
+    // provider below), like cliffs; no listed prompt.
     const ladderHit = nearestLadder();
     if (ladderHit && !rows.some(row => row.owner === ladderHit.ladder || row.kind === 'ladder')) {
       rows.push({
@@ -595,11 +592,15 @@
     const rows=currentRows();
     const signature=rowSignature(rows);
     const changed=signature!==lastRowsSignature;
+    const hadRows=lastRows.length>0;
     lastRows=rows;
     lastRowsSignature=signature;
     lastAnchor=rows[0]?.owner||nearestOwnerForKind(rows[0]?.kind)||ruinRoot()||null;
     syncInputClaims(rows);
-    syncWorldPopup(rows); // Keep the floating interaction list live on the same proximity cadence as claims, even between ordinary action-bar rebuilds.
+    // Keep the floating list live while the ruin has rows, and clear it once
+    // when they go away. Syncing an empty list every frame wiped prompts the
+    // ordinary action bar owns (a corpse's Loot) and made them flicker.
+    if(rows.length||hadRows)syncWorldPopup(rows);
     if(changed&&requestActionBar)deps?.refreshActionBar?.(); // The normal action bar still owns the physical arch layout; direct popup sync is idempotent with its own WorldPopupText pass.
     return rows;
   }
@@ -621,7 +622,7 @@
   window.DevRandomRuinInteractions = Object.freeze({
     resolveInteractionOwner,
     climbStoneLadder:climbLadder, // Canonical authored-stone-ladder action; uses ClimbSystem's cliff-style hop animation.
-    nearestLedge, // Diagnostics: the climbable ledge the "Climb Up" prompt would use.
+    nearestLedge, // Diagnostics: the ledge a forward dodge would climb (pass { facingOnly:true } for the dodge rule).
     climbLedge,
     refresh:renderWorldList,
     getActionButtons() {

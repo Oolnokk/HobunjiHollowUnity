@@ -801,14 +801,17 @@
       if (deps.getCurrentArea?.() !== MAP_ID) returnAnchor={area:deps.getCurrentArea?.(),x:deps.player.x,y:deps.player.y};
       clearRuntime(false);
       const puzzleOptions=readPuzzleGenerationOptions(); // Capture the user's simple-mode selection before booting the same-origin hidden tool; generation must not be able to fall back to defaults during iframe startup.
+      await window.DevRandomRuinConfig?.reload?.(); // docs/config/random-ruin/ruin-config.json; edits apply to the next ruin.
+      const cfg=(path,fallback)=>window.DevRandomRuinConfig?.get?.(path,fallback)??fallback;
+      const maxAttempts=Math.max(1,Math.round(cfg('generation.maxSolvabilityAttempts',MAX_SOLVABILITY_ATTEMPTS)));
       const api=await ensureGeneratorFrame();
       lastGenerationAudit={requestedSeed,acceptedSeed:null,attempts:[]};
 
-      for(let attempt=0;attempt<MAX_SOLVABILITY_ATTEMPTS;attempt++){
+      for(let attempt=0;attempt<maxAttempts;attempt++){
         if(attempt>0) clearRuntime(false);
         const candidateSeed=generationCandidateSeed(requestedSeed,attempt); // Deterministic retry seed so rejected layouts can be reproduced from diagnostics.
-        if(button) button.textContent=attempt?'Retrying '+(attempt+1)+'/'+MAX_SOLVABILITY_ATTEMPTS+'…':'Generating…';
-        const generated=await api.generateInteriorLocale({seed:'dev-'+candidateSeed.toString(36),size:'medium',density:62,roomMin:3,roomMax:6,puzzles:puzzleOptions});
+        if(button) button.textContent=attempt?'Retrying '+(attempt+1)+'/'+maxAttempts+'…':'Generating…';
+        const generated=await api.generateInteriorLocale({seed:'dev-'+candidateSeed.toString(36),size:cfg('generation.size','medium'),density:cfg('generation.density',62),roomMin:cfg('generation.roomMin',3),roomMax:cfg('generation.roomMax',6),puzzles:puzzleOptions});
         const meta=generated.locale?.meta?.interiorShell; if(!meta) throw new Error('V50 generated no interiorShell metadata.');
         api.snapMechanismState(0); api.pausePreviewLoop(); const roots=api.takePreviewRoots();
         const rec=makeMapRecord(candidateSeed,generated,roots,meta); buildingScenes.set(MAP_ID,rec);
@@ -831,7 +834,7 @@
       }
 
       const last=lastGenerationAudit.attempts[lastGenerationAudit.attempts.length-1];
-      throw new Error('No solvable ruin found in '+MAX_SOLVABILITY_ATTEMPTS+' attempts'+(last?.failures?.length?': '+last.failures[0]:'')+'.');
+      throw new Error('No solvable ruin found in '+maxAttempts+' attempts'+(last?.failures?.length?': '+last.failures[0]:'')+'.');
     } catch(error) { console.error('[Random Test Ruin interior]',error); deps.showToast?.('Random Test Ruin failed: '+error.message,false); clearRuntime(true); return false; }
     finally { if(button){button.disabled=false;button.textContent='Generate';} }
   }

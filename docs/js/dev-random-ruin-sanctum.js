@@ -31,8 +31,10 @@
   const EXCLUDED_ITEM_LABELS = new Set(['Stone Idol']); // Decorative sunken-centerpiece fallback, not a puzzle goal.
   const BRAZIER_RANGE = 2.6; // Horizontal; reach is really decided by the reticle and the height check below, and a bowl on a pedestal mid-dais is ~2u from its edge.
   const PEDESTAL_HEIGHT_SCALE = .5;
+  const cfg = (path, fallback) => window.DevRandomRuinConfig?.get?.(path, fallback) ?? fallback; // docs/config/random-ruin/ruin-config.json; the constants here are the fallbacks.
   const BRAZIER_MAX_RISE = 1.35; // Bowl may sit at most this far above the player's feet: a pedestal still on a raised dais stays out of reach.
-  const DOOR_WIDTH = 3.2, DOOR_MAX_HEIGHT = 3.4, DOOR_CLEAR_DEPTH = 2.8;
+  const DOOR_MAX_HEIGHT = 3.4, DOOR_CLEAR_DEPTH = 2.8;
+  let DOOR_WIDTH = 3.2; // Refreshed from sanctum.door.width at each build.
   const DOOR_WALL_OFFSET = .46; // Stands clear of the V50 wall's baseboard/moulding runs.
   const BOSS_TIER = 2;
   const BOSS_HEALTH_MULT = 3;
@@ -51,14 +53,27 @@
 
   // ─── Layout (pure; called by floorProjection before the ruin exists) ───
 
-  function planLayout(baseCols, baseRows) {
-    const rows = Math.max(baseRows, ARENA_D + 6);
+  // Room sizes from ruin-config.json (sanctum.layout), kept to whole even
+  // tiles so the passage and vault centre on a tile line.
+  const evenTiles = (value, fallback, min, max) => Math.max(min, Math.min(max, 2 * Math.round((Number(value) || fallback) / 2)));
+  function layoutDims() {
+    return {
+      aw:evenTiles(cfg('sanctum.layout.arenaWidth', ARENA_W), ARENA_W, 10, 30),
+      ad:evenTiles(cfg('sanctum.layout.arenaDepth', ARENA_D), ARENA_D, 10, 30),
+      vw:evenTiles(cfg('sanctum.layout.vaultWidth', VAULT_W), VAULT_W, 4, 16),
+      vd:evenTiles(cfg('sanctum.layout.vaultDepth', VAULT_D), VAULT_D, 4, 16),
+    };
+  }
+
+  function planLayout(baseCols, baseRows, dims = layoutDims()) {
+    const { aw, ad, vw, vd } = dims;
+    const rows = Math.max(baseRows, ad + 6);
     const x0 = baseCols + 1;
-    const z0 = Math.floor((rows - ARENA_D) / 2);
-    const zc = z0 + ARENA_D / 2; // Whole-tile line the passage and vault centre on.
-    const arena = { minX:x0, maxX:x0 + ARENA_W, minZ:z0, maxZ:z0 + ARENA_D };
+    const z0 = Math.floor((rows - ad) / 2);
+    const zc = z0 + ad / 2; // Whole-tile line the passage and vault centre on.
+    const arena = { minX:x0, maxX:x0 + aw, minZ:z0, maxZ:z0 + ad };
     const passage = { minX:arena.maxX, maxX:arena.maxX + PASSAGE_LEN, minZ:zc - PASSAGE_W / 2, maxZ:zc + PASSAGE_W / 2 };
-    const vault = { minX:passage.maxX, maxX:passage.maxX + VAULT_W, minZ:zc - VAULT_D / 2, maxZ:zc + VAULT_D / 2 };
+    const vault = { minX:passage.maxX, maxX:passage.maxX + vw, minZ:zc - vd / 2, maxZ:zc + vd / 2 };
     return { cols:vault.maxX + 3, rows, arena, passage, vault, zc };
   }
 
@@ -197,7 +212,9 @@
       // the pedestal (scaled from its base, so it stays grounded). The bowl's
       // holder undoes the parent scale below, so only its height changes.
       if ((parent.userData?.generatedDisplayType === 'displayPedestal' || parent.userData?.generatedDisplayType === 'stoneCoffin') && !parent.userData.devRuinPedestalHalved) { // Coffin altars too.
-        parent.scale.y *= PEDESTAL_HEIGHT_SCALE;
+        const pedestalScale = Math.max(.2, Math.min(1, cfg('sanctum.pedestalHeightScale', PEDESTAL_HEIGHT_SCALE)));
+        parent.scale.y *= pedestalScale;
+        parent.userData.devRuinPedestalScale = pedestalScale;
         parent.userData.devRuinPedestalHalved = true;
       }
       const holder = new THREE.Group();
@@ -215,7 +232,7 @@
       holder.userData.interactive3D = true;
       holder.userData.devRuinInteractionType = 'blueBrazier';
       brazier.control = {
-        kind:'blueBrazier', object:holder, promptRoot:holder, range:BRAZIER_RANGE, priority:21, claimAction1:true, touchIcon:'🔥',
+        kind:'blueBrazier', object:holder, promptRoot:holder, range:cfg('sanctum.brazierRange', BRAZIER_RANGE), priority:21, claimAction1:true, touchIcon:'🔥',
         label:'Ignite Brazier',
         onPress:() => igniteBrazier(brazier),
       };
@@ -229,7 +246,7 @@
     holder.userData.interactive3D = true;
     holder.userData.devRuinInteractionType = 'blueBrazier';
     brazier.control = {
-      kind:'blueBrazier', object:holder, promptRoot:holder, range:BRAZIER_RANGE, priority:21, claimAction1:true, touchIcon:'🔥',
+      kind:'blueBrazier', object:holder, promptRoot:holder, range:cfg('sanctum.brazierRange', BRAZIER_RANGE), priority:21, claimAction1:true, touchIcon:'🔥',
       label:'Ignite Brazier',
       onPress:() => igniteBrazier(brazier),
     };
@@ -280,7 +297,7 @@
     if (!player) return false;
     const p = worldPos(brazier.holder);
     const rise = p.y - player.y;
-    return rise <= BRAZIER_MAX_RISE && rise >= -.6;
+    return rise <= cfg('sanctum.brazierMaxRise', BRAZIER_MAX_RISE) && rise >= -.6;
   }
 
   function igniteBrazier(brazier) {
@@ -359,7 +376,7 @@
       if (nearDoor) { why.doorway++; continue; }
       const spawn = context.spawn || { x:0, z:0 };
       const ceiling = Number(context.meta?.wallHeight) || 3.6; // Monumental: sized to the ceiling, not to how much of a ruined wall survived.
-      return { x:c.x, z:c.z, normal:n.clone(), tangent:t.clone(), wall, spawnDistance:Math.hypot(c.x - spawn.x, c.z - spawn.z), height:Math.min(DOOR_MAX_HEIGHT, ceiling - .55) };
+      return { x:c.x, z:c.z, normal:n.clone(), tangent:t.clone(), wall, spawnDistance:Math.hypot(c.x - spawn.x, c.z - spawn.z), height:Math.min(cfg('sanctum.door.maxHeight', DOOR_MAX_HEIGHT), ceiling - .55) };
     }
     return null;
   }
@@ -666,16 +683,24 @@
 
     // Four stone coffins, two on each long wall, facing the arena centre.
     // Their Harlyao skeletons rise with the lich, and it raises them again.
-    s.coffins = [[arena.minX + 4.5, arena.minZ + 1.1, 1], [arena.minX + 9.5, arena.minZ + 1.1, 1], [arena.minX + 4.5, arena.maxZ - 1.1, -1], [arena.minX + 9.5, arena.maxZ - 1.1, -1]]
-      .map(([x, z, facing], index) => buildCoffin(kit, root, x, z, y0, facing, index));
+    const coffinCount = Math.max(0, Math.min(8, Math.round(cfg('sanctum.skeletons.count', 4))));
+    const perSide = Math.ceil(coffinCount / 2), span = arena.maxX - arena.minX;
+    s.coffins = Array.from({ length:coffinCount }, (_, i) => {
+      const north = i % 2 === 0, slot = Math.floor(i / 2);
+      const x = arena.minX + span * (slot + 1) / (perSide + 1);
+      return buildCoffin(kit, root, x, north ? arena.minZ + 1.1 : arena.maxZ - 1.1, y0, north ? 1 : -1, i);
+    });
 
     // Vault: three big chests along the far wall, ladder out on the east wall.
     const chestsApi = window.DevRandomRuinDungeonChests;
     s.vaultChests = [];
-    for (const [i, dz] of [-2, 0, 2].entries()) {
-      const chest = chestsApi?.create?.({ id:'sanctum-vault-' + i, parent:root, x:vault.maxX - 1.9, y:y0, z:zc + dz, tier:4, yaw:-Math.PI / 2 });
+    const chestCount = Math.max(0, Math.min(6, Math.round(cfg('sanctum.vault.chestCount', 3))));
+    const vaultDepth = vault.maxZ - vault.minZ;
+    for (let i = 0; i < chestCount; i++) {
+      const dz = chestCount > 1 ? (i / (chestCount - 1) - .5) * Math.min(vaultDepth - 2, chestCount * 1.4) : 0;
+      const chest = chestsApi?.create?.({ id:'sanctum-vault-' + i, parent:root, x:vault.maxX - 1.9, y:y0, z:zc + dz, tier:cfg('sanctum.vault.chestTier', 4), yaw:-Math.PI / 2 });
       if (!chest) continue;
-      chest.group.scale.setScalar(1.5);
+      chest.group.scale.setScalar(cfg('sanctum.vault.chestScale', 1.5));
       chest.control.range = 2;
       s.vaultChests.push(chest);
     }
@@ -722,7 +747,7 @@
   async function spawnSkeleton(coffin, roster = null, at = null) {
     const tile = deps?.TILE || 64, p = at || coffin.rise;
     const minion = await window.MinionCombat?.makeEntity?.({
-      speciesId:'harlyao-skeleton', name:'Harlyao Skeleton', tier:1, x:p.x * tile, y:p.z * tile, zoneId:MAP_ID, weaponMetalKey:'nativeCopper',
+      speciesId:'harlyao-skeleton', name:'Harlyao Skeleton', tier:cfg('sanctum.skeletons.tier', 1), x:p.x * tile, y:p.z * tile, zoneId:MAP_ID, weaponMetalKey:'nativeCopper',
       roster:roster || undefined,
       extra:{ homeX:p.x * tile, homeY:p.z * tile, state:'chase', keepCorpseAfterLoot:true, sanctumCoffin:coffin.index }, // Looting leaves the body for the lich to raise.
     });
@@ -763,7 +788,9 @@
   }
 
   function pickBossType(rng) {
-    const types = window.HarlyaoLichCombat?.TYPE_ORDER || ['tothal', 'hronal', 'kanthic'];
+    const known = window.HarlyaoLichCombat?.TYPE_ORDER || ['tothal', 'hronal', 'kanthic'];
+    const wanted = cfg('sanctum.boss.types', known).filter(type => known.includes(type));
+    const types = wanted.length ? wanted : known;
     return types[Math.floor(rng() * types.length) % types.length];
   }
 
@@ -793,7 +820,7 @@
       s.inSanctum = true;
       if (!s.boss && !s.bossDefeated && !s.bossPending) {
         s.bossPending = true;
-        setTimeout(() => spawnBoss(), BOSS_WAKE_MS);
+        setTimeout(() => spawnBoss(), cfg('sanctum.boss.wakeMs', BOSS_WAKE_MS));
         deps?.showToast?.('Blue flames gutter up around a vast chamber. Something stirs.', true);
       }
     });
@@ -813,10 +840,10 @@
     const { arena, zc } = s.layout;
     const x = (arena.minX + arena.maxX) / 2 + 2.5, z = zc;
     const tile = deps.TILE || 64;
-    const creature = await combat.makeEntity({ type:s.bossType, tier:BOSS_TIER, x:x * tile, y:z * tile });
+    const creature = await combat.makeEntity({ type:s.bossType, tier:cfg('sanctum.boss.tier', BOSS_TIER), x:x * tile, y:z * tile });
     s.bossPending = false;
     if (!creature || !s || deps?.getCurrentArea?.() !== MAP_ID) { creature?.avatarRef?.dispose?.(); return; }
-    const max = Math.round((Number(creature.maxHealth) || Number(creature.health) || 100) * BOSS_HEALTH_MULT);
+    const max = Math.round((Number(creature.maxHealth) || Number(creature.health) || 100) * cfg('sanctum.boss.healthMult', BOSS_HEALTH_MULT));
     creature.maxHealth = max;
     creature.health = max;
     creature.isRuinSanctumBoss = true;
@@ -866,9 +893,10 @@
 
   function build(kit) {
     const context = s.context;
+    DOOR_WIDTH = Math.max(2, Math.min(4.5, cfg('sanctum.door.width', 3.2)));
     s.built = true;
     s.braziers = buildBraziers(kit, context);
-    buildSafePathBraziers(kit);
+    if (cfg('sanctum.safePathBraziers', true)) buildSafePathBraziers(kit);
     const site = chooseDoorSite(kit, context, s.rng);
     if (!site) { s.rejects.push('no clear wall for the Great Door'); return; }
     s.door = buildGreatDoor(kit, context, site, s.braziers.length);
@@ -939,7 +967,7 @@
       const occlusion = window.DevRandomRuin?.getOcclusionMeshes?.();
       if (occlusion) for (const mesh of s.occluders) { const i = occlusion.indexOf(mesh); if (i >= 0) occlusion.splice(i, 1); }
       for (const object of s.hiddenDecor || []) object.visible = true;
-      for (const brazier of s.braziers) { const pedestal = brazier.plane?.parent; if (pedestal?.userData?.devRuinPedestalHalved) { pedestal.scale.y /= PEDESTAL_HEIGHT_SCALE; pedestal.userData.devRuinPedestalHalved = false; } }
+      for (const brazier of s.braziers) { const pedestal = brazier.plane?.parent; if (pedestal?.userData?.devRuinPedestalHalved) { pedestal.scale.y /= pedestal.userData.devRuinPedestalScale || PEDESTAL_HEIGHT_SCALE; pedestal.userData.devRuinPedestalHalved = false; } }
       for (const brazier of s.braziers) { brazier.holder.parent?.remove?.(brazier.holder); brazier.fire.emitter?.dispose?.(); if (brazier.plane) brazier.plane.visible = true; }
       s = null;
     },
@@ -958,6 +986,7 @@
     planLayout,
     igniteAll:() => { for (const brazier of s?.braziers || []) igniteBrazier(brazier); return !!s; }, // Diagnostics.
     enter:() => enterSanctum(),
+    debugShove:(entity, dirX, dirZ, speedPxS = 900) => { const t = deps?.TILE || 64; if (!entity) return false; deps?.damageCreature?.(entity, 1, entity.x - dirX * t, entity.y - dirZ * t, speedPxS, {}); return true; }, // Headless tests: a 1-damage hit from the opposite side.
     debugKillSkeleton:index => { const sk = s?.coffins?.[index]?.skeleton; if (!sk || !(sk.health > 0)) return false; deps?.damageCreature?.(sk, sk.health + 999, undefined, undefined, 0, {}); return true; }, // Headless tests.
     leave:() => leaveSanctum(),
     getState:() => s,

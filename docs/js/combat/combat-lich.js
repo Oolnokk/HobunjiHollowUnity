@@ -20,6 +20,7 @@
   const ENTRANCED_COMMAND_ANNOUNCE_MS = 750; // New commands first show "<enemy> commands you to ..." before the numeric grace countdown.
   const ENTRANCED_COMMAND_COUNTDOWN_MS = 3000; // Three one-second 3→2→1 beats during which Entranced neither damages nor naturally recovers.
   const ENTRANCED_COMMAND_GRACE_MS = ENTRANCED_COMMAND_ANNOUNCE_MS + ENTRANCED_COMMAND_COUNTDOWN_MS; // Full immunity/freeze interval around every initial or changed command.
+  const ENTRANCED_COMMAND_MIN_HOLD_MS = 10000; // Minimum time a command stays in force after its grace window ends.
   const PUDDLE_RADIUS_TILES = 0.82; // Kanthic misses make a gameplay hazard this far from the visual puddle center.
   const PUDDLE_LIFETIME_S = 9; // Short arena-readable lifetime before gasoline fades/disposes.
   const PUDDLE_TICK_S = 0.35; // Entranced buildup cadence while an actor remains inside gasoline.
@@ -1578,7 +1579,10 @@
     let desired = lich._lichCommand || 'approach'; // Hysteresis preserves current command inside the neutral distance band.
     if (hidden || distPx > tile * 5.4) desired = 'approach';
     else if (distPx < tile * 3.15) desired = 'flee';
-    if (desired !== lich._lichCommand && performance.now() - (lich._lichCommandChangedAt || 0) > 650) {
+    // A command holds for its grace window (announce + countdown) plus a
+    // further ENTRANCED_COMMAND_MIN_HOLD_MS before it may change; flipping
+    // every few hundred ms made Kanthic commands impossible to follow.
+    if (desired !== lich._lichCommand && performance.now() - (lich._lichCommandChangedAt || 0) > ENTRANCED_COMMAND_GRACE_MS + ENTRANCED_COMMAND_MIN_HOLD_MS) {
       lich._lichCommand = desired;
       lich._lichCommandChangedAt = performance.now();
       lastEvent = `command:${lich.id || lich.name}:${desired}`;
