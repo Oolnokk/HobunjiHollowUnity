@@ -8243,119 +8243,16 @@
         } catch {}
       }
 
-      // ── Livestock (belongs to the world itself, not any character) ─────
-      // [{ id, kind, col, row, releasedAt }] — released animals stay on the
-      // farm for whoever plays this world, unlike gear/inventory which is
-      // scoped to whichever character released them.
-      // Set only while updateAnimalMeshes is iterating this frame's animals
-      // (see below) — every farm-animal tick() reads this at least once
-      // (_farmAnimalBarnTick, plus the uumkao'ii dew check), so without a
-      // cache a farm with a handful of animals was re-parsing the entire
-      // save blob from localStorage hundreds of times per second, which
-      // reads as the whole game freezing. Left null the rest of the time so
-      // every other (infrequent — UI clicks, day-tick) caller still always
-      // gets a fresh read.
-      let _worldLivestockFrameCache = null;
-      function _loadWorldLivestock() {
-        if (_worldLivestockFrameCache) {
-          // A real DevTools recording named this whole function 682.9ms/11%
-          // self time despite the save blob measuring only ~91KB (far too
-          // small on its own to explain that), and an audit of every caller
-          // found no redundant repeated-in-a-loop calls. The remaining
-          // unknown is simply HOW OFTEN this runs the real parse below vs.
-          // hitting the cache -- this pair of counters answers that
-          // directly instead of guessing further.
-          window.PerfProfiler?.record('_loadWorldLivestock: cache hit', 0);
-          return _worldLivestockFrameCache;
-        }
-        const worldId = _tothalWorldId();
-        if (!worldId) return [];
-        const parseStart = performance.now();
-        try {
-          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
-          return (meta?.worlds || []).find(w => w.id === worldId)?.livestock ?? [];
-        } catch { return []; }
-        finally {
-          window.PerfProfiler?.record('_loadWorldLivestock: parse+find (cache miss)', performance.now() - parseStart);
-          // Neither the trough/computeActionButtons theory nor blob size
-          // panned out (2255+ misses recorded even while nowhere near a
-          // barn), so rather than keep guessing from call-site tracing,
-          // find the real caller directly: frame 0 of the stack is the
-          // literal string "Error", frame 1 is this function itself, so
-          // frame 2 is whoever actually called it.
-          if (window.PerfProfiler) {
-            const stack = new Error().stack || '';
-            const line = stack.split('\n')[2] || '';
-            const match = line.match(/([\w-]+\.js)(?:\?[^:()\s]*)?:(\d+):(\d+)/);
-            const callerLabel = match ? `${match[1]}:${match[2]}` : (line.trim().slice(0, 60) || 'unknown caller');
-            window.PerfProfiler.record('_loadWorldLivestock miss caller: ' + callerLabel, 0);
-          }
-        }
-      }
-
-      function _saveWorldLivestock(list) {
-        const worldId = _tothalWorldId();
-        if (!worldId) return;
-        try {
-          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
-          const world = (meta?.worlds || []).find(w => w.id === worldId);
-          if (!world) return;
-          world.livestock = list;
-          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
-        } catch {}
-      }
-
-      // ── Breeding pairs (world-scoped, same rationale as livestock) ─────
-      // [{ id, parentA, parentB, startedDay, progress }] — parentA/B are
-      // { source: 'world'|'stable', id, characterId? } refs (see
-      // js/farm-animals.js's resolveBreedingParent). Resolved hourly by
-      // window.FarmAnimals.tickBreedingProgress() (see updateCalendar/
-      // sleepInBed) — finer-grained than crop growth's once-a-morning tick.
-      function _loadWorldBreedingPairs() {
-        const worldId = _tothalWorldId();
-        if (!worldId) return [];
-        try {
-          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
-          return (meta?.worlds || []).find(w => w.id === worldId)?.breedingPairs ?? [];
-        } catch { return []; }
-      }
-
-      function _saveWorldBreedingPairs(list) {
-        const worldId = _tothalWorldId();
-        if (!worldId) return;
-        try {
-          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
-          const world = (meta?.worlds || []).find(w => w.id === worldId);
-          if (!world) return;
-          world.breedingPairs = list;
-          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
-        } catch {}
-      }
-
-      // ── Farm storage (single shared pool, world-scoped) ────────────────
-      // { [itemKey]: count } — same shape as inventory/nonGearInventory, but
-      // belongs to the farm itself so any owner or storage-permitted
-      // farmhand can deposit/withdraw regardless of who's currently playing.
-      function _loadWorldStorage() {
-        const worldId = _tothalWorldId();
-        if (!worldId) return {};
-        try {
-          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
-          return (meta?.worlds || []).find(w => w.id === worldId)?.storage ?? {};
-        } catch { return {}; }
-      }
-
-      function _saveWorldStorage(store) {
-        const worldId = _tothalWorldId();
-        if (!worldId) return;
-        try {
-          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
-          const world = (meta?.worlds || []).find(w => w.id === worldId);
-          if (!world) return;
-          world.storage = store;
-          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
-        } catch {}
-      }
+      // World-scoped livestock / breeding-pair / farm-storage save fields
+      // (and livestock's per-frame read cache) now live in
+      // js/world-meta-store.js (window.WorldMetaStore). These wrappers keep
+      // the old names every caller and init(deps) handoff already uses.
+      function _loadWorldLivestock() { return window.WorldMetaStore.loadLivestock(_tothalWorldId()); }
+      function _saveWorldLivestock(list) { window.WorldMetaStore.saveLivestock(_tothalWorldId(), list); }
+      function _loadWorldBreedingPairs() { return window.WorldMetaStore.loadBreedingPairs(_tothalWorldId()); }
+      function _saveWorldBreedingPairs(list) { window.WorldMetaStore.saveBreedingPairs(_tothalWorldId(), list); }
+      function _loadWorldStorage() { return window.WorldMetaStore.loadStorage(_tothalWorldId()); }
+      function _saveWorldStorage(store) { window.WorldMetaStore.saveStorage(_tothalWorldId(), store); }
 
       // Jubmir's daily trader stock/shop page now lives in
       // js/jubmir-shop.js (window.JubmirShop) — see its init(deps) call
@@ -15535,11 +15432,15 @@
         deliveryLog = deliveryLog.slice(0, 12);
         if (menuOpen) window.SupplyPage.render();
         // Tick sell crate clock
-        worldObjects.forEach(o => o.tick && o.tick(window.CalendarSystem.getHour()));
+        tickWorldObjects();
       }
 
+      // Farm livestock also sit in worldObjects (for tile occupancy/interaction)
+      // but their tick(dt) is their wander AI, already driven at 5 Hz by
+      // FarmAnimals.updateAnimalMeshes. Passing them the clock hour here fed
+      // e.g. dt=14 into that AI every 1/8 game-hour, wiping out station rests.
       function tickWorldObjects() {
-        worldObjects.forEach(o => o.tick && o.tick(window.CalendarSystem.getHour()));
+        worldObjects.forEach(o => { if (o.tick && o.type !== 'animal') o.tick(window.CalendarSystem.getHour()); });
       }
 
       // Supplies tab (Supply Box ordering + pending deliveries/sale log)
@@ -29094,7 +28995,7 @@
         setCameraMode: (v) => { if (v == null || v === (cameraConfig().defaultMode || 'default')) enterDefaultCameraMode(); else activeCameraMode = v; }, // Top-down is retired; restores that fall back to it land in Shoulder Cam.
         getCameraTarget: () => activeCameraTarget,
         setCameraTarget: (v) => { activeCameraTarget = v; },
-        setWorldLivestockFrameCache: (v) => { _worldLivestockFrameCache = v; },
+        setWorldLivestockFrameCache: (v) => window.WorldMetaStore.setLivestockFrameCache(v),
         refreshTroughVisual: (barnId, troughIndex) => window.FarmTroughs.refreshVisual(barnId, troughIndex),
       });
 

@@ -46,11 +46,11 @@ const loadOrder = [
   'dev-random-ruin-runtime-coverage.js',
 ].map(name => camera.indexOf(name));
 assert(/localStorage\.getItem\('hobunjiDevMode'\) === '1'/.test(camera) && /if \(!devMode/.test(camera), 'ruin runtime must only be injected in Dev Mode');
-assert(camera.includes('dev-random-ruin-interactions.js?v=20260927interactionpriority1'), 'ruin interaction adapter must be cache-busted with the arch-priority/popup-list fix');
+assert(camera.includes('dev-random-ruin-interactions.js?v=20260929rowsignature1'), 'ruin interaction adapter must be cache-busted with the arch-priority/popup-list fix');
 assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260927interiorparity1'), 'simple puzzle interior-parity runtime must be cache-busted in the dev bootstrap');
 assert(camera.includes('dev-random-ruin-wall-render-proxy.js?v=20260927geometry1'), 'native ruin render verifier must be cache-busted in the dev bootstrap');
-assert(gameIndex.includes('js/dev-random-ruin-bootstrap.js?v=20260927interiorparity1'), 'game page must load the updated ruin bootstrap');
-assert(gameIndex.includes('game.js?v=20260927interiorparity1'), 'game page must load the normal-interior action/collision integration');
+assert(gameIndex.includes('js/dev-random-ruin-bootstrap.js?v=20260929rowsignature1'), 'game page must load the updated ruin bootstrap');
+assert(gameIndex.includes('game.js?v=20260929livestockwalk1'), 'game page must load the normal-interior action/collision integration');
 assert(gameIndex.includes('js/climb-system.js?v=20260926ruinladder2'), 'game page must cache-bust the shared climb animation used by authored ruin ladders');
 assert(loadOrder.every(index => index >= 0), 'ruin bootstrap must load every Random Test Ruin runtime module');
 for (let i = 1; i < loadOrder.length; i++) {

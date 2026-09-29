@@ -80,7 +80,10 @@ window.SCRATCHBONES_CONFIG = {
         "radiusTiles": 6,
         "minTravelTiles": 3,
         "waitMinSeconds": 10,
-        "waitMaxSeconds": 15
+        "waitMaxSeconds": 15,
+        // Constant walking speed between tiles. The next hop is chosen before
+        // the animal settles on a tile, so a multi-tile trip reads as one walk.
+        "moveTilesPerSecond": 1.6
       },
       // Diet classification, used by barn troughs to decide which fodder
       // (plantFodder/meatFodder) a housed animal will actually eat —
