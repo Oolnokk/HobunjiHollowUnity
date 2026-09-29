@@ -55,10 +55,10 @@ const loadOrder = [
 ].map(name => camera.indexOf(name));
 assert(!/if \(!devMode/.test(camera), 'ruin runtime loads for every player so wilderness ruin sites can generate ruins');
 assert(/if\(!devModeEnabled\(\)\)return;/.test(interior) && /if \(\(!devModeEnabled\(\)&&!opts\.site\)/.test(interior), 'dev Settings controls stay Dev Mode only; only ruin sites may generate outside Dev Mode');
-assert(camera.includes('dev-random-ruin-interactions.js?v=20260929config1'), 'ruin interaction adapter must be cache-busted with the arch-priority/popup-list fix');
+assert(camera.includes('dev-random-ruin-interactions.js?v=20260930ladderfix1'), 'ruin interaction adapter must be cache-busted with the arch-priority/popup-list fix');
 assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260929glowdecals1'), 'simple puzzle interior-parity runtime must be cache-busted in the dev bootstrap');
 assert(camera.includes('dev-random-ruin-wall-render-proxy.js?v=20260927geometry1'), 'native ruin render verifier must be cache-busted in the dev bootstrap');
-assert(gameIndex.includes('js/dev-random-ruin-bootstrap.js?v=20260929ruinpieces1'), 'game page must load the updated ruin bootstrap');
+assert(gameIndex.includes('js/dev-random-ruin-bootstrap.js?v=20260930ladderfix1'), 'game page must load the updated ruin bootstrap');
 assert(gameIndex.includes('game.js?v=20260929ruinsites1'), 'game page must load the footprint-aware movement collision');
 assert(gameIndex.indexOf('js/area-footprint-blockers.js') >= 0 && gameIndex.indexOf('js/area-footprint-blockers.js') < gameIndex.indexOf('game.js?v='), 'sub-tile footprint registry must load before game.js');
 assert(game.includes('window.AreaFootprintBlockers?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE, worldY)'), 'canOccupyAt must test the whole mover square against prop footprints');
@@ -446,3 +446,6 @@ assert(ruinConfig.schema === 'hobunji_random_ruin_config.v1' && ruinConfig.sanct
 new vm.Script(read('docs/js/dev-random-ruin-config.js'), { filename: 'dev-random-ruin-config.js' });
 assert(interactions.includes('registerWorldClimbProvider') && !interactions.includes("label:'Climb Up'"), 'ruin ledges climb from a forward dodge (ClimbSystem world-climb provider), not a listed prompt');
 console.log('Random Test Ruin integration static audit passed.');
+const interactionsSource = read('docs/js/dev-random-ruin-interactions.js');
+assert(interactionsSource.includes('function freeLandingNear') && interactionsSource.includes('if (top.blocked) top = freeLandingNear(ladder, top) || top;'), 'a prop filling the ladder head must not make the ladder unclimbable');
+assert(read('docs/js/locale-terrain-placement.js').includes('compiled.requiredPregate'), 'terrain-aware placement pre-gates required probes before the full-footprint floor scan');

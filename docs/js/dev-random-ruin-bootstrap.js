@@ -35,7 +35,7 @@
   document.write('<script src="js/dev-random-ruin-simple-puzzles.js?v=20260929glowdecals1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-rope-rewards.js?v=20260929ruinpieces1"></scr' + 'ipt>'); // Registers rope payoffs + lava basins as a simple-puzzle composer.
   document.write('<script src="js/dev-random-ruin-sanctum.js?v=20260929ruinpieces1"></scr' + 'ipt>'); // Braziers, Great Door, boss sanctum + vault (simple-puzzle composer).
-  document.write('<script src="js/dev-random-ruin-interactions.js?v=20260929config1"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-interactions.js?v=20260930ladderfix1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-glyph-circuits.js?v=20260929glowdecals1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-runtime-coverage.js?v=20260923review1"></scr' + 'ipt>');
 })();

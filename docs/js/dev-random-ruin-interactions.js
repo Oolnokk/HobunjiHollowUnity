@@ -194,30 +194,54 @@
     const expectedTop = origin.y;
     const expectedBottom = origin.y - height;
     const candidates = [];
+    const lateral = new THREE.Vector3(-axis.z, 0, axis.x); // Along the ladder's wall: a prop right beside the top can hide the straight-out probes.
     for (const sign of [-1, 1]) {
-      for (const offset of [.34, .52, .72, .94, 1.16]) {
-        const x = origin.x + axis.x * offset * sign;
-        const z = origin.z + axis.z * offset * sign;
+      for (const [offset, side] of [[.34, 0], [.52, 0], [.72, 0], [.94, 0], [1.16, 0], [1.45, 0], [.72, .45], [.72, -.45], [1.16, .6], [1.16, -.6]]) {
+        const x = origin.x + axis.x * offset * sign + lateral.x * side;
+        const z = origin.z + axis.z * offset * sign + lateral.z * side;
         const support = DS.sampleSupport?.(x, z, { minY:expectedBottom - .65, maxY:expectedTop + .65, pad:.02 });
         if (!support || !Number.isFinite(Number(support.y))) continue;
         const blocker = DS.blockerAt?.(x, z, { radius:.18, actorHeight:1.25 }) || null;
-        candidates.push({ x, z, y:Number(support.y), supportId:support.id || null, blocked:!!blocker, offset, sign });
+        candidates.push({ x, z, y:Number(support.y), supportId:support.id || null, blocked:!!blocker, blockerId:blocker?.id || null, offset, sign });
       }
     }
     return { candidates, expectedTop, expectedBottom };
   }
 
+  // Nearest unblocked spot at the same floor height around a blocked landing.
+  function freeLandingNear(ladder, landing) {
+    const pos = worldPosition(ladder);
+    if (!pos) return null;
+    let best = null;
+    for (const radius of [.45, .7, .95, 1.2, 1.5, 1.8]) {
+      for (let i = 0; i < 16; i++) {
+        const a = i / 16 * Math.PI * 2, x = pos.x + Math.cos(a) * radius, z = pos.z + Math.sin(a) * radius;
+        const support = DS.sampleSupport?.(x, z, { minY:landing.y - .2, maxY:landing.y + .2, pad:.02 });
+        if (!support || Math.abs(Number(support.y) - landing.y) > .15) continue;
+        if (DS.blockerAt?.(x, z, { radius:.18, actorHeight:1.25 })) continue;
+        const d = (x - landing.x) ** 2 + (z - landing.z) ** 2;
+        if (!best || d < best.d) best = { x, z, y:Number(support.y), supportId:support.id || null, blocked:false, offset:radius, sign:landing.sign, d };
+      }
+      if (best) return best;
+    }
+    return null;
+  }
+
   function chooseLadderEndpoints(ladder) {
     const resolved = supportCandidatesForLadder(ladder);
     if (!resolved?.candidates?.length) return null;
-    const usable = resolved.candidates.filter(candidate => !candidate.blocked);
-    const pool = usable.length >= 2 ? usable : resolved.candidates;
-    const topSorted = [...pool].sort((a, b) => Math.abs(a.y - resolved.expectedTop) - Math.abs(b.y - resolved.expectedTop) || a.offset - b.offset);
-    const bottomSorted = [...pool].sort((a, b) => Math.abs(a.y - resolved.expectedBottom) - Math.abs(b.y - resolved.expectedBottom) || a.offset - b.offset);
+    // Unblocked landings first, but never let a blocked upper (or lower) side
+    // drop that side entirely: both endpoints used to come from the one clear
+    // side, collapse to the same height, and refuse the climb.
+    const rank = (list, targetY) => [...list].sort((a, b) => (a.blocked - b.blocked) || Math.abs(a.y - targetY) - Math.abs(b.y - targetY) || a.offset - b.offset);
+    const pool = resolved.candidates;
+    const topSorted = rank(pool, resolved.expectedTop).filter(candidate => Math.abs(candidate.y - resolved.expectedTop) < .45).concat(rank(pool, resolved.expectedTop));
+    const bottomSorted = rank(pool, resolved.expectedBottom).filter(candidate => Math.abs(candidate.y - resolved.expectedBottom) < .45).concat(rank(pool, resolved.expectedBottom));
     let top = topSorted[0] || null;
     let bottom = bottomSorted.find(candidate => !top || candidate.sign !== top.sign || Math.abs(candidate.y - top.y) > .15) || bottomSorted[0] || null;
     if (!top || !bottom) return null;
     if (top.y < bottom.y) [top, bottom] = [bottom, top];
+    if (top.blocked) top = freeLandingNear(ladder, top) || top; // e.g. a V50 display coffin filling a small dais right at the ladder head.
     if (Math.abs(top.y - bottom.y) < .12) return null;
     return { top, bottom };
   }
@@ -622,6 +646,10 @@
   window.DevRandomRuinInteractions = Object.freeze({
     resolveInteractionOwner,
     climbStoneLadder:climbLadder, // Canonical authored-stone-ladder action; uses ClimbSystem's cliff-style hop animation.
+    debugLadders() { // Diagnostics: every stone ladder's support probes and the endpoints climbLadder would use.
+      prepareSemanticObjects(-Infinity);
+      return ladders.map(ladder => { const pos = worldPosition(ladder), r = supportCandidatesForLadder(ladder); return { name:ladder.name, pos, height:ladder.userData?.ladderHeight, expectedTop:r.expectedTop, expectedBottom:r.expectedBottom, candidates:(r.candidates || []).map(c => ({ x:c.x, z:c.z, sign:c.sign, offset:c.offset, y:+c.y.toFixed(2), blocked:c.blocked, blockerId:c.blockerId, supportId:c.supportId })), endpoints:chooseLadderEndpoints(ladder) }; });
+    },
     nearestLedge, // Diagnostics: the ledge a forward dodge would climb (pass { facingOnly:true } for the dodge rule).
     climbLedge,
     refresh:renderWorldList,

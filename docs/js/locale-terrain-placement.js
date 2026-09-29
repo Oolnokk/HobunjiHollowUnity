@@ -353,6 +353,19 @@
     const placement = compiled.locale.placement || {}; // Locale placement settings still apply around new environmental constraints.
     if (!inSameEntrySector(context, anchorC, anchorR, compiled)) return { ok: false, reason: 'outside entry sector' };
 
+    // Cheap pre-gate: a required probe's terrain class and facing do not
+    // depend on the candidate floor, so check them before the full-footprint
+    // floor scan. Most anchors are not on a matching cliff at all, and this
+    // rejects them without touching every footprint cell (same outcome, far
+    // less work -- several rotated ruin-entrance copies per zone rely on it).
+    if (!compiled.requiredPregate) compiled.requiredPregate = [...compiled.probes.values()].filter(cell => cell.value.strength === 'required' && cell.value.terrain !== 'any');
+    for (const cell of compiled.requiredPregate) {
+      const worldC = anchorC + cell.c, worldR = anchorR + cell.r;
+      if (!terrainMatches(context, worldC, worldR, cell.value.terrain) || !facingMatches(context, worldC, worldR, cell.value.facing, cell.value.terrain)) {
+        return { ok: false, reason: `required ${cell.value.terrain} probe failed`, failAt: { c: worldC, r: worldR } };
+      }
+    }
+
     const floor = chooseLocaleFloor(context, compiled, anchorC, anchorR); // Candidate floor tier is needed before relative-height probes can be evaluated.
     if (floor.error) return { ok: false, reason: floor.error, floorTier: floor.tier };
     if (placement.requiresFlatGround !== false && floor.spread > 0.05) return { ok: false, reason: `ordinary footprint not flat (spread ${floor.spread.toFixed(2)})`, floorTier: floor.tier };
