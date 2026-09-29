@@ -14,7 +14,14 @@
   const RAY_ORIGIN_QUANTUM_WORLD = 0.02; // Used to treat tiny camera-origin jitter below two hundredths of a tile as the same aim input.
   const RAY_DIRECTION_QUANTUM = 0.001; // Used to treat sub-tenth-degree direction jitter as the same aim input.
   const ATTACK_ORIGIN_QUANTUM_WORLD = 0.02; // Used to invalidate aim only after the player/muzzle has moved materially in world space.
-  const SURFACE_NAME_IGNORE_RE = /(debug|helper|reticle|popup|particle|trail|ground[_ -]?shadow|outline)/i; // Used to exclude obvious non-world helper meshes.
+  const SURFACE_NAME_IGNORE_RE = /(debug|helper|reticle|popup|particle|trail|ground[_ -]?shadow|outline|projectile)/i; // Used to exclude obvious non-world helper meshes (incl. in-flight/embedded projectile planes).
+  // Ranged shots now converge from the offset held-weapon origin onto the first
+  // surface under the reticle. A surface this close to that origin turns the
+  // hand's sideways offset into a large yaw error (~20° at one tile), which is
+  // what made crossbow/thrown shots veer at particular camera angles whenever
+  // grass, a companion or the player's own gear sat just past the hand.
+  // Nearer hits are skipped for ranged targeting only; melee still uses them.
+  const RANGED_MIN_CONVERGENCE_WORLD = 2;
 
   let baseUpdate = null; // Preserves the ranged system's existing update before lightweight focus bookkeeping runs.
   let baseRangedInit = null; // Preserves RangedWeapons.init while replacing only its player aim ray.
@@ -209,6 +216,7 @@
     while (node) {
       if (SURFACE_NAME_IGNORE_RE.test(String(node.name || ''))) return true;
       if (node.userData?.interactionAimIgnore === true || node.userData?.debugOnly === true) return true;
+      if (node.userData?.isBillboard === true) return true; // Grass/weed/rain/popup billboards are purely cosmetic and never stop an attack.
       node = node.parent || null;
     }
     return false;
@@ -412,7 +420,10 @@
       const fallbackRayDistance = Math.max(0.5, alongToAttack + range);
       const minimumSurfaceDistance = Math.max(0, alongToAttack - SURFACE_BEFORE_PLAYER_PAD_WORLD);
       const hits = cachedSurfaceHits(ray, scene);
-      const hit = hits.find(candidate => candidate.distance >= minimumSurfaceDistance && candidate.distance <= fallbackRayDistance + 1e-4) || null;
+      const minimumConvergence = metadata.mode === 'ranged' ? RANGED_MIN_CONVERGENCE_WORLD : 0;
+      const hit = hits.find(candidate => candidate.distance >= minimumSurfaceDistance
+        && candidate.distance <= fallbackRayDistance + 1e-4
+        && (!minimumConvergence || Math.hypot(candidate.point.x - attackOrigin.x, candidate.point.z - attackOrigin.z) >= minimumConvergence)) || null;
       const point = hit?.point?.clone?.() || ray.origin.clone().addScaledVector(ray.direction, fallbackRayDistance);
       let direction = point.clone().sub(attackOrigin);
       if (direction.lengthSq() < 1e-8) direction = ray.direction.clone();
