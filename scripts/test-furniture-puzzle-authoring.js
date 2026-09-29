@@ -50,7 +50,7 @@ assert.match(puzzleEditor, /particleRateScale, opacity:1/, 'new OFF/ON states sh
 assert.match(puzzleEditor, /raw === '' \? fallback/, 'blank transition fields must retain identity defaults instead of coercing to zero');
 assert.match(puzzleEditor, /importRepoFurnitureBtn'\)\.onclick = \(\) => importRepoFurniture\(\)/, 'repository import button must dynamically invoke the puzzle-aware wrapper');
 assert.match(furnitureEditor, /FurniturePuzzleAuthorPreview/, 'editor particle loop should consume the puzzle preview rate multiplier');
-assert.match(furnitureEditor, /CURRENT_BUILD_FURNITURE_JSON = \['docs\/config\/furniture-authored\/woodenDoor\.json'\]/, 'Wooden Door must remain discoverable in a commit-pinned editor before it reaches main');
+assert.match(furnitureEditor, /CURRENT_BUILD_FURNITURE_JSON = \['docs\/config\/furniture-authored\/woodenDoor\.json'[^\]]*'docs\/config\/furniture-authored\/ruinGreatDoor\.json'\]/, 'Wooden Door and the ruin pieces must remain discoverable in a commit-pinned editor before it reaches main');
 assert.match(read('docs/js/furniture-puzzle-runtime.js'), /registerMap/);
 assert.match(read('docs/js/furniture-puzzle-runtime.js'), /particleRateScale/);
 const door = JSON.parse(read('docs/config/furniture-authored/woodenDoor.json'));

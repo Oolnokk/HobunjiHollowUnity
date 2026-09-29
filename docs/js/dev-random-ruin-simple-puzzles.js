@@ -1077,6 +1077,7 @@
         ()=>module.progress<.72,SCOPE);
     }
     state.lockDoors.push(module);
+    if(panel)window.DevRandomRuinFurniturePieces?.attachSeal?.(panel,()=>module.targetOpen||module.progress>.5?1:0); // ruinDoorSeal: red while the encounter holds it shut.
     setLockDoorOpen(module,options.startOpen!==false);
     recordModulePlacement('lockableStoneDoor','doorway',module.id,{roomId:String(room.id),reusesGeneratedDoor:!!generatedMechanismId,generatedMechanismId});
     return module;

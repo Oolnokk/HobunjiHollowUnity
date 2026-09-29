@@ -400,7 +400,44 @@
 
   // Door facing +Z in its own frame. Returns the door record; `decalCount`
   // decals ring the centre decal on the face.
+  // The Great Door (and its arena twin) is the authored furniture piece
+  // docs/config/furniture-authored/ruinGreatDoor.json: frame, sinking leaf,
+  // eight brazier seals and a centre seal, all editable in the Furniture
+  // Author. Scaled to the chosen door size; seals past decalCount hide.
+  function buildAuthoredDoor(kit, parent, decalCount, height, name) {
+    const piece = window.DevRandomRuinFurniturePieces?.build?.('ruinGreatDoor');
+    if (!piece) return null;
+    const data = window.AuthoredFurniture.peek('ruinGreatDoor');
+    const leafPart = (data.parts || []).find(part => part.id === 'leaf');
+    const authoredW = Number(leafPart?.transform?.sx) + .04 || 3.2, authoredH = Number(leafPart?.transform?.sy) || 3.1;
+    const group = new THREE.Group();
+    group.name = name;
+    piece.scale.set(DOOR_WIDTH / authoredW, height / authoredH, 1);
+    group.add(piece);
+    const passage = new THREE.Mesh(kit.sharedBoxGeometry(DOOR_WIDTH, height, DOOR_WALL_OFFSET), kit.makeBasic(0x020304));
+    passage.position.set(0, height / 2, -.14 - DOOR_WALL_OFFSET / 2); // Dark recess back to the wall once the leaf sinks.
+    passage.userData.devRuinFootprintIgnore = true;
+    group.add(passage);
+    const leafMesh = piece.userData.meshById?.get('leaf');
+    const leaf = new THREE.Group(); // Pivot so the sink offset composes with the authored leaf transform.
+    leaf.name = name + '_leaf';
+    if (leafMesh) { piece.add(leaf); leaf.add(leafMesh); }
+    const decalMeshes = piece.userData.authoredDecalMeshes || [];
+    const byId = id => decalMeshes.find(mesh => mesh.userData.decalId === id) || null;
+    const seals = decalMeshes.filter(mesh => /^seal_\d+$/.test(String(mesh.userData.decalId || ''))).sort((a, b) => Number(a.userData.decalId.slice(5)) - Number(b.userData.decalId.slice(5)));
+    // Evenly spaced authored slots for however many braziers this ruin has.
+    const used = [];
+    for (let i = 0; i < Math.min(decalCount, seals.length); i++) used.push(seals[Math.round(i * seals.length / Math.min(decalCount, seals.length)) % seals.length]);
+    seals.forEach(mesh => { mesh.visible = used.includes(mesh); mesh.userData.glowProgress = 0; });
+    const center = byId('seal_centre');
+    if (center) center.userData.glowProgress = 0;
+    parent.add(group);
+    return { group, leaf, passage, decals:used.map(mesh => ({ mesh, flashUntil:0 })), center, height, progress:0, authored:piece, dropLocal:authoredH + .05 };
+  }
+
   function buildDoorVisual(kit, parent, decalCount, height, name) {
+    const authored = buildAuthoredDoor(kit, parent, decalCount, height, name);
+    if (authored) return authored;
     const group = new THREE.Group();
     group.name = name;
     const postW = .36, depth = .42 + DOOR_WALL_OFFSET; // Frame reaches back to the wall it stands against.
@@ -515,14 +552,23 @@
 
   function updateDoorVisual(door, now, dt, allLit) {
     if (!door) return;
-    for (const [i, decal] of door.decals.entries()) {
+    if (door.authored) {
+      for (const [i, decal] of door.decals.entries()) {
+        const lit = door.returnDoor ? true : !!s.braziers[i]?.lit;
+        decal.mesh.userData.glowProgress = lit ? 1 : 0;
+      }
+      if (door.center) door.center.userData.glowProgress = allLit ? 1 : 0;
+      window.FurnitureDecalRuntime?.updateGlow?.(door.authored, now);
+      for (const decal of door.decals) if (decal.flashUntil > now) decal.mesh.material.color.lerp(new THREE.Color(0xffffff), (decal.flashUntil - now) / 900); // Brief white flash as a seal lights.
+    } else for (const [i, decal] of door.decals.entries()) {
       const brazier = door.returnDoor ? null : s.braziers[i];
       const lit = door.returnDoor ? true : !!brazier?.lit;
       const flash = decal.flashUntil > now ? (decal.flashUntil - now) / 900 : 0;
       decal.disc.material.color.setHex(lit ? DECAL_LIT : DECAL_IDLE);
       decal.glow.material.opacity = lit ? .35 + .5 * flash + .08 * Math.sin(now * .004 + i) : 0;
     }
-    if (allLit) {
+    if (door.authored) { /* Centre seal handled by its authored multi-colour ON glow above. */ }
+    else if (allLit) {
       const pulse = .5 + .5 * Math.sin(now * .0045);
       door.center.material.color.lerpColors(new THREE.Color(DECAL_PULSE_LOW), new THREE.Color(DECAL_PULSE_HIGH), pulse);
       door.centerGlow.material.opacity = .3 + .55 * pulse;
@@ -535,7 +581,7 @@
     if (door.state === 'opening' || door.state === 'open') {
       door.progress = Math.min(1, door.progress + dt / 2.6);
       const t = door.progress * door.progress * (3 - 2 * door.progress);
-      door.leaf.position.y = -t * (door.height + .05);
+      door.leaf.position.y = -t * (door.dropLocal ?? door.height + .05);
       door.leaf.visible = door.progress < .999;
       if (door.progress >= 1 && door.state === 'opening') {
         door.state = 'open';

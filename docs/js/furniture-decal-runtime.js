@@ -4,6 +4,7 @@
 
   const THREE = window.THREE; // Used to build the runtime decal plane and its surface-local transform.
   const authored = window.AuthoredFurniture; // Wrapped so every authored furniture build can receive its editable decals.
+  if (window.FurnitureDecalRuntime?.installed) return; // Loaded by several feature bootstraps; a second install would stack every decal twice.
   if (!THREE || !authored?.buildGroup) {
     window.FurnitureDecalRuntime = { installed: false, reason: 'missing THREE/AuthoredFurniture' };
     return;
@@ -306,6 +307,54 @@
     };
   }
 
+  // Optional state glow on any decal: { off:[hex…], on:[hex…], cycleSeconds,
+  // pulse }. The decal image is tinted by the current colour, so white
+  // artwork glows exactly that colour. Several colours per state cycle over
+  // cycleSeconds; the OFF→ON blend follows the owning furniture's puzzle
+  // progress (FurniturePuzzleRuntime) or an explicit setGlowState() from a
+  // script (the Random Test Ruin's doors and glyph targets).
+  const HEX = /^#[0-9a-f]{6}$/i;
+  function normalizeGlow(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const list = value => (Array.isArray(value) ? value : String(value || '').split(','))
+      .map(entry => String(entry).trim()).filter(entry => HEX.test(entry));
+    const off = list(raw.off), on = list(raw.on);
+    if (!off.length && !on.length) return null;
+    return {
+      off:off.length ? off : on.slice(0, 1),
+      on:on.length ? on : off.slice(0, 1),
+      cycleSeconds:Math.max(.05, finiteOr(raw.cycleSeconds, 1.2)),
+      pulse:clamp(finiteOr(raw.pulse, 0), 0, 1), // 0 = steady; 1 = breathes down to black.
+    };
+  }
+  const glowA = new THREE.Color(), glowB = new THREE.Color(), glowOn = new THREE.Color();
+  function paletteAt(colors, phase, out) {
+    if (colors.length === 1) return out.set(colors[0]);
+    const scaled = phase * colors.length, index = Math.floor(scaled) % colors.length;
+    glowA.set(colors[index]); glowB.set(colors[(index + 1) % colors.length]);
+    return out.copy(glowA).lerp(glowB, scaled - Math.floor(scaled));
+  }
+  function glowColor(glow, progress, now, out = new THREE.Color()) {
+    const phase = ((now / 1000) / glow.cycleSeconds) % 1;
+    paletteAt(glow.off, phase, out);
+    if (progress > 0) out.lerp(paletteAt(glow.on, phase, glowOn), clamp(progress, 0, 1));
+    if (glow.pulse > 0) out.multiplyScalar(1 - glow.pulse * .5 * (1 + Math.sin(phase * Math.PI * 2)));
+    return out;
+  }
+  function setGlowState(group, progress) {
+    if (group?.userData) group.userData.decalGlowProgress = clamp(Number(progress) || 0, 0, 1);
+  }
+  function updateGlow(group, now = performance.now()) {
+    const meshes = group?.userData?.glowDecalMeshes;
+    if (!meshes?.length) return 0;
+    const progress = Number(group.userData.decalGlowProgress) || 0;
+    for (const mesh of meshes) {
+      const own = Number(mesh.userData.glowProgress); // Optional per-decal state (e.g. one seal per brazier) overriding the furniture-wide state.
+      glowColor(mesh.userData.decalGlow, Number.isFinite(own) ? own : progress, now, mesh.material.color);
+    }
+    return meshes.length;
+  }
+
   function addDecal(group, data, record) {
     if (!record || record.visible === false || !hasVisualSource(record)) return null;
     const surface = matchingSurface(data, record);
@@ -354,6 +403,12 @@
     mesh.castShadow = false;
     mesh.receiveShadow = false;
     mesh.raycast = () => {};
+    const glow = normalizeGlow(record.glow);
+    if (glow) {
+      mesh.userData.decalGlow = glow;
+      material.color.set(glow.off[0]);
+      (group.userData.glowDecalMeshes ||= []).push(mesh);
+    }
 
     const halfU = spanU / 2;
     const halfV = spanV / 2;
@@ -392,6 +447,7 @@
 
   window.FurnitureDecalRuntime = {
     installed: true,
+    normalizeGlow, glowColor, setGlowState, updateGlow,
     settingsVersion: TANKAN_SETTINGS_VERSION,
     addDecals,
     resolvedImageSource,

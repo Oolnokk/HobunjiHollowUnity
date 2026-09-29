@@ -1,0 +1,545 @@
+{
+  "schema": "hobunji_furniture_authored_runtime.v1",
+  "key": "ruinGreatDoor",
+  "id": "ruinGreatDoor",
+  "name": "Ruin Great Door",
+  "sourceSchema": "hobunji_furniture_surface_author.v58",
+  "notes": "Random Test Ruin sanctum door. Brazier Seal N glows ON when brazier N is lit (unused seals are hidden); the Centre Seal cycles its ON colours once every brazier is lit. Leaf sinks into the floor when opened (puzzle motion parts).",
+  "footprint": {
+    "w": 1,
+    "d": 1
+  },
+  "tileBase": {
+    "visible": true,
+    "tileSize": 1,
+    "footprintW": 1,
+    "footprintD": 1,
+    "y": 0,
+    "gridOpacity": 0.55
+  },
+  "parts": [
+    {
+      "id": "post_left",
+      "kind": "box",
+      "name": "Left Post",
+      "transform": {
+        "x": -1.78,
+        "y": 1.7,
+        "z": -0.23,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.36,
+        "sy": 3.4,
+        "sz": 0.88
+      },
+      "color": "#7a746b",
+      "segments": 1,
+      "taperAxis": "y",
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "surfaceOpacity": 1,
+      "substanceColor": "#7a746b",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1,
+      "materialLighting": "unlit"
+    },
+    {
+      "id": "post_right",
+      "kind": "box",
+      "name": "Right Post",
+      "transform": {
+        "x": 1.78,
+        "y": 1.7,
+        "z": -0.23,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.36,
+        "sy": 3.4,
+        "sz": 0.88
+      },
+      "color": "#7a746b",
+      "segments": 1,
+      "taperAxis": "y",
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "surfaceOpacity": 1,
+      "substanceColor": "#7a746b",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1,
+      "materialLighting": "unlit"
+    },
+    {
+      "id": "lintel",
+      "kind": "box",
+      "name": "Lintel",
+      "transform": {
+        "x": 0,
+        "y": 3.5700000000000003,
+        "z": -0.23,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 4.12,
+        "sy": 0.34,
+        "sz": 0.94
+      },
+      "color": "#7a746b",
+      "segments": 1,
+      "taperAxis": "y",
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "surfaceOpacity": 1,
+      "substanceColor": "#7a746b",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1,
+      "materialLighting": "unlit"
+    },
+    {
+      "id": "leaf",
+      "kind": "box",
+      "name": "Door Leaf",
+      "transform": {
+        "x": 0,
+        "y": 1.55,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 3.16,
+        "sy": 3.1,
+        "sz": 0.26
+      },
+      "color": "#6f6a62",
+      "segments": 1,
+      "taperAxis": "y",
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "surfaceOpacity": 1,
+      "substanceColor": "#6f6a62",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1,
+      "materialLighting": "unlit"
+    }
+  ],
+  "recognizedSurfaces": [
+    {
+      "id": "leaf:surface:front",
+      "partId": "leaf",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        8,
+        9
+      ],
+      "area": 9.796000000000001,
+      "localCentroid": [
+        0,
+        0,
+        0.13
+      ],
+      "localNormal": [
+        0,
+        0,
+        1
+      ],
+      "basisU": [
+        1,
+        0,
+        0
+      ],
+      "basisV": [
+        0,
+        1,
+        0
+      ],
+      "bounds": {
+        "minU": -1.58,
+        "maxU": 1.58,
+        "minV": -1.55,
+        "maxV": 1.55
+      },
+      "label": "Front",
+      "role": "none"
+    }
+  ],
+  "decals": [
+    {
+      "id": "seal_0",
+      "name": "Brazier Seal 1",
+      "surfaceId": "leaf:surface:front",
+      "surfacePartId": "leaf",
+      "surfaceType": "vertical side",
+      "surfaceFaces": [
+        8,
+        9
+      ],
+      "imageSource": "../../../docs/assets/textures/decals/ruin_glyph_rune.png",
+      "imageName": "docs/assets/textures/decals/ruin_glyph_rune.png",
+      "offsetU": 3.3328995166668473e-17,
+      "offsetV": 0.6748387096774195,
+      "width": 0.09493670886075949,
+      "height": 0.0967741935483871,
+      "rotationDeg": 0,
+      "normalOffset": 0.004,
+      "opacity": 1,
+      "visible": true,
+      "glow": {
+        "off": [
+          "#39424d"
+        ],
+        "on": [
+          "#4fb6ff"
+        ],
+        "cycleSeconds": 2
+      }
+    },
+    {
+      "id": "seal_1",
+      "name": "Brazier Seal 2",
+      "surfaceId": "leaf:surface:front",
+      "surfacePartId": "leaf",
+      "surfaceType": "vertical side",
+      "surfaceFaces": [
+        8,
+        9
+      ],
+      "imageSource": "../../../docs/assets/textures/decals/ruin_glyph_rune.png",
+      "imageName": "docs/assets/textures/decals/ruin_glyph_rune.png",
+      "offsetU": 0.3848809062154626,
+      "offsetV": 0.5123302140776974,
+      "width": 0.09493670886075949,
+      "height": 0.0967741935483871,
+      "rotationDeg": 0,
+      "normalOffset": 0.004,
+      "opacity": 1,
+      "visible": true,
+      "glow": {
+        "off": [
+          "#39424d"
+        ],
+        "on": [
+          "#4fb6ff"
+        ],
+        "cycleSeconds": 2
+      }
+    },
+    {
+      "id": "seal_2",
+      "name": "Brazier Seal 3",
+      "surfaceId": "leaf:surface:front",
+      "surfacePartId": "leaf",
+      "surfaceType": "vertical side",
+      "surfaceFaces": [
+        8,
+        9
+      ],
+      "imageSource": "../../../docs/assets/textures/decals/ruin_glyph_rune.png",
+      "imageName": "docs/assets/textures/decals/ruin_glyph_rune.png",
+      "offsetU": 0.5443037974683544,
+      "offsetV": 0.1200000000000001,
+      "width": 0.09493670886075949,
+      "height": 0.0967741935483871,
+      "rotationDeg": 0,
+      "normalOffset": 0.004,
+      "opacity": 1,
+      "visible": true,
+      "glow": {
+        "off": [
+          "#39424d"
+        ],
+        "on": [
+          "#4fb6ff"
+        ],
+        "cycleSeconds": 2
+      }
+    },
+    {
+      "id": "seal_3",
+      "name": "Brazier Seal 4",
+      "surfaceId": "leaf:surface:front",
+      "surfacePartId": "leaf",
+      "surfaceType": "vertical side",
+      "surfaceFaces": [
+        8,
+        9
+      ],
+      "imageSource": "../../../docs/assets/textures/decals/ruin_glyph_rune.png",
+      "imageName": "docs/assets/textures/decals/ruin_glyph_rune.png",
+      "offsetU": 0.3848809062154626,
+      "offsetV": -0.2723302140776972,
+      "width": 0.09493670886075949,
+      "height": 0.0967741935483871,
+      "rotationDeg": 0,
+      "normalOffset": 0.004,
+      "opacity": 1,
+      "visible": true,
+      "glow": {
+        "off": [
+          "#39424d"
+        ],
+        "on": [
+          "#4fb6ff"
+        ],
+        "cycleSeconds": 2
+      }
+    },
+    {
+      "id": "seal_4",
+      "name": "Brazier Seal 5",
+      "surfaceId": "leaf:surface:front",
+      "surfacePartId": "leaf",
+      "surfaceType": "vertical side",
+      "surfaceFaces": [
+        8,
+        9
+      ],
+      "imageSource": "../../../docs/assets/textures/decals/ruin_glyph_rune.png",
+      "imageName": "docs/assets/textures/decals/ruin_glyph_rune.png",
+      "offsetU": 3.3328995166668473e-17,
+      "offsetV": -0.4348387096774192,
+      "width": 0.09493670886075949,
+      "height": 0.0967741935483871,
+      "rotationDeg": 0,
+      "normalOffset": 0.004,
+      "opacity": 1,
+      "visible": true,
+      "glow": {
+        "off": [
+          "#39424d"
+        ],
+        "on": [
+          "#4fb6ff"
+        ],
+        "cycleSeconds": 2
+      }
+    },
+    {
+      "id": "seal_5",
+      "name": "Brazier Seal 6",
+      "surfaceId": "leaf:surface:front",
+      "surfacePartId": "leaf",
+      "surfaceType": "vertical side",
+      "surfaceFaces": [
+        8,
+        9
+      ],
+      "imageSource": "../../../docs/assets/textures/decals/ruin_glyph_rune.png",
+      "imageName": "docs/assets/textures/decals/ruin_glyph_rune.png",
+      "offsetU": -0.3848809062154625,
+      "offsetV": -0.27233021407769725,
+      "width": 0.09493670886075949,
+      "height": 0.0967741935483871,
+      "rotationDeg": 0,
+      "normalOffset": 0.004,
+      "opacity": 1,
+      "visible": true,
+      "glow": {
+        "off": [
+          "#39424d"
+        ],
+        "on": [
+          "#4fb6ff"
+        ],
+        "cycleSeconds": 2
+      }
+    },
+    {
+      "id": "seal_6",
+      "name": "Brazier Seal 7",
+      "surfaceId": "leaf:surface:front",
+      "surfacePartId": "leaf",
+      "surfaceType": "vertical side",
+      "surfaceFaces": [
+        8,
+        9
+      ],
+      "imageSource": "../../../docs/assets/textures/decals/ruin_glyph_rune.png",
+      "imageName": "docs/assets/textures/decals/ruin_glyph_rune.png",
+      "offsetU": -0.5443037974683544,
+      "offsetV": 0.12000000000000004,
+      "width": 0.09493670886075949,
+      "height": 0.0967741935483871,
+      "rotationDeg": 0,
+      "normalOffset": 0.004,
+      "opacity": 1,
+      "visible": true,
+      "glow": {
+        "off": [
+          "#39424d"
+        ],
+        "on": [
+          "#4fb6ff"
+        ],
+        "cycleSeconds": 2
+      }
+    },
+    {
+      "id": "seal_7",
+      "name": "Brazier Seal 8",
+      "surfaceId": "leaf:surface:front",
+      "surfacePartId": "leaf",
+      "surfaceType": "vertical side",
+      "surfaceFaces": [
+        8,
+        9
+      ],
+      "imageSource": "../../../docs/assets/textures/decals/ruin_glyph_rune.png",
+      "imageName": "docs/assets/textures/decals/ruin_glyph_rune.png",
+      "offsetU": -0.38488090621546267,
+      "offsetV": 0.5123302140776974,
+      "width": 0.09493670886075949,
+      "height": 0.0967741935483871,
+      "rotationDeg": 0,
+      "normalOffset": 0.004,
+      "opacity": 1,
+      "visible": true,
+      "glow": {
+        "off": [
+          "#39424d"
+        ],
+        "on": [
+          "#4fb6ff"
+        ],
+        "cycleSeconds": 2
+      }
+    },
+    {
+      "id": "seal_centre",
+      "name": "Centre Seal",
+      "surfaceId": "leaf:surface:front",
+      "surfacePartId": "leaf",
+      "surfaceType": "vertical side",
+      "surfaceFaces": [
+        8,
+        9
+      ],
+      "imageSource": "../../../docs/assets/textures/decals/ruin_glyph_rune.png",
+      "imageName": "docs/assets/textures/decals/ruin_glyph_rune.png",
+      "offsetU": 0,
+      "offsetV": 0.1200000000000001,
+      "width": 0.20253164556962025,
+      "height": 0.2064516129032258,
+      "rotationDeg": 0,
+      "normalOffset": 0.004,
+      "opacity": 1,
+      "visible": true,
+      "glow": {
+        "off": [
+          "#39424d"
+        ],
+        "on": [
+          "#1c5a8f",
+          "#b8ecff"
+        ],
+        "cycleSeconds": 1.4
+      }
+    }
+  ],
+  "decalAuthoring": {
+    "version": 4
+  },
+  "puzzle": {
+    "role": "mechanism",
+    "behavior": "stoneDoor",
+    "blocksMovement": true,
+    "motion": {
+      "durationSeconds": 2.6,
+      "collisionOpenProgress": 0.8,
+      "parts": {
+        "leaf": {
+          "off": {
+            "x": 0,
+            "y": 1.55,
+            "z": 0
+          },
+          "on": {
+            "x": 0,
+            "y": -1.6,
+            "z": 0
+          }
+        }
+      }
+    }
+  }
+}

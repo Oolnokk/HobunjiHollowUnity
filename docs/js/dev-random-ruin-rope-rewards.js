@@ -135,6 +135,7 @@
     kit.group().add(frame);
     const door = { frame, panel, closedY:topY + .725, openY:topY - .72, progress:0, open:false };
     balcony.door = door;
+    window.DevRandomRuinFurniturePieces?.attachSeal?.(panel, () => (door.open ? 1 : 0)); // ruinDoorSeal: red until the pillar plates unlock the vault.
     window.DevRandomRuinTileOccupancy?.addSolidBox?.('devruin-vault-door-' + balcony.id,
       { cx:doorX, cz:doorZ, halfX:spanX * .5, halfZ:spanZ * .5 }, () => door.progress < .7, kit.SCOPE);
     door.rune = window.DevRandomRuinGlyphCircuits?.attachRune?.(kit.group(), new THREE.Vector3(doorX + n.x * .2, topY + 1.1, doorZ + n.z * .2), {

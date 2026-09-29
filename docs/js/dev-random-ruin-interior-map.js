@@ -129,7 +129,7 @@
     const mechanism=ruin?.mechanisms?.get?.(String(mechanismId||''));
     if(!mechanism)return null;
     const data=mechanism.root?.userData||{};
-    return { id:mechanism.id, type:mechanism.type, root:mechanism.root, progress:mechanism.progress, locked:!!mechanism.lockReason, signalLinked:!!(data.linkedCubePuzzleRoot||data.linkedPressurePlateRoot) };
+    return { id:mechanism.id, type:mechanism.type, root:mechanism.root, progress:mechanism.progress, locked:!!mechanism.lockReason, gated:!!mechanism.gated, externalTarget:mechanism.externalTarget??null, target:mechanism.target, signalLinked:!!(data.linkedCubePuzzleRoot||data.linkedPressurePlateRoot) };
   }
 
   function presentationSnapshot() {
@@ -543,6 +543,7 @@
         m.root.userData.__devRuinPhysicalDoorBlocker=false; // The shared tile-occupancy blocker is the single collision authority for moving stone doors; progress only changes its door source state.
       }
       const gated=linkedMechanismIds.has(String(m.id))&&!m.root.userData?.runtimePuzzleBypass;
+      m.gated=gated; // Door seals: a puzzle-gated door shows locked (red) until its puzzle opens it.
       if(m.type==='movingDais'){
         const platform=m.root.userData?.movingDaisPlatform||m.root;
         // A dais wired to a puzzle (glyphs, braziers, obelisks, cubes, plates)
@@ -692,6 +693,7 @@
       });
     }
 
+    const replaced=new Map(); // Original V50 material -> its unlit replacement, so userData.decalMaterials keeps pointing at what actually renders.
     root.traverse(object=>{
       if(!object?.isMesh)return;
       totalMeshes++;
@@ -703,12 +705,20 @@
         }
         if(!isLitMaterial(material))return material;
         convertedMaterials++;
-        return makeUnlitMaterial(material,`dev_random_ruin_unlit_${object.name||'mesh'}_${index}`);
+        if(replaced.has(material))return replaced.get(material);
+        const unlit=makeUnlitMaterial(material,`dev_random_ruin_unlit_${object.name||'mesh'}_${index}`);
+        replaced.set(material,unlit);
+        return unlit;
       });
       if(Array.isArray(object.material))object.material=next;
       else if(next[0])object.material=next[0];
       if(next.some(material=>material?.userData?.devRandomRuinUnlitMaterial||material?.userData?.naturalSurfaceUnlit))object.userData=Object.assign({},object.userData,{devRandomRuinUnlitMaterial:true});
       object.castShadow=false; object.receiveShadow=false; // There are deliberately no real light/shadow semantics in this test scene.
+    });
+
+    root.traverse(node=>{ // V50 glyph/obelisk decal lists referenced the pre-conversion materials, so recolouring them changed nothing visible (decals rendered black).
+      const list=node.userData?.decalMaterials;
+      if(Array.isArray(list))node.userData.decalMaterials=list.map(material=>replaced.get(material)||material);
     });
 
     let remainingLitMaterials=0,legacyStoneMaterials=0;

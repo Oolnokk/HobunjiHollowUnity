@@ -34,9 +34,9 @@
   const DECAL_IDLE = 0xff8a2a; // Unstruck glyph decals glow orange...
   const DECAL_ACTIVE = 0x4dff6e; // ...and green once struck.
   const HIT_FLASH_MS = 450;
-  const DEBUG_MARKERS_STORAGE_KEY = 'hobunji.devRandomRuinDebugMarkers.v1'; // Floating runes/pips are a debugging aid; the in-world decal/plate/door cues work without them.
-  let debugMarkers = true;
-  try { debugMarkers = localStorage.getItem(DEBUG_MARKERS_STORAGE_KEY) !== '0'; } catch (_) {} // White-hot flash fading to green on the frame a glyph is struck.
+  const DEBUG_MARKERS_STORAGE_KEY = 'hobunji.devRandomRuinDebugMarkers.v2'; // v2: defaults OFF now that plaques/seals carry the state in-world. // Floating runes/pips are a debugging aid; the in-world decal/plate/door cues work without them.
+  let debugMarkers = false;
+  try { debugMarkers = localStorage.getItem(DEBUG_MARKERS_STORAGE_KEY) === '1'; } catch (_) {} // White-hot flash fading to green on the frame a glyph is struck.
 
   let builtRoot = null;
   let fxGroup = null;
@@ -234,7 +234,21 @@
     mount.traverse(node => { for (const material of node.userData?.decalMaterials || []) materials.add(material); });
     const lights = [];
     mount.traverse(node => { if (node.userData?.glowLight) lights.push(node.userData.glowLight); });
-    return { materials:[...materials], lights };
+    return { materials:[...materials], lights, mount };
+  }
+
+  // Swap V50's placeholder decal meshes for authored ruinGlyphTarget plaques
+  // (docs/config/furniture-authored/ruinGlyphTarget.json) once that loads.
+  function mountPlaques(entry) {
+    const pieces = window.DevRandomRuinFurniturePieces;
+    if (entry.plaques || !pieces?.ready?.('ruinGlyphTarget')) return;
+    const materials = new Set(entry.decals.materials), meshes = [];
+    entry.decals.mount?.traverse?.(node => {
+      if (!node.isMesh) return;
+      const list = Array.isArray(node.material) ? node.material : [node.material];
+      if (list.some(material => materials.has(material))) meshes.push(node);
+    });
+    entry.plaques = pieces.mountGlyphPlaques(meshes, () => (entry.target.active ? 1 : 0), () => Math.max(0, 1 - (performance.now() - entry.hitAt) / HIT_FLASH_MS));
   }
 
   const decalColor = new THREE.Color(), white = new THREE.Color(0xffffff);
@@ -270,7 +284,8 @@
         const { target, marker } = entry;
         if (target.active && !entry.wasActive) entry.hitAt = now;
         entry.wasActive = !!target.active;
-        paintDecals(entry, now, pulse);
+        mountPlaques(entry);
+        paintDecals(entry, now, pulse); // Still drives the V50 glow lights (and the decals themselves if no plaque file loaded).
         if (target.active) active++;
         marker.material.map = target.active ? textures.runeLit : textures.rune;
         marker.material.color.copy(entry.stateColor); // Rune follows the decal: orange until struck, white flash, then green.
