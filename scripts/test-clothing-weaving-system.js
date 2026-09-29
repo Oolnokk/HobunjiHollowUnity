@@ -158,6 +158,10 @@ assert.equal(api.__test.signedMotifThicknessPx({ invert: false, motifThinPx: 4 }
 assert.equal(api.__test.signedMotifThicknessPx({ invert: true, motifThinPx: 4 }, false), -4, 'Pattern Editor inversion reverses source-space thickness polarity');
 assert.equal(api.__test.signedMotifThicknessPx({ invert: false, motifThinPx: 4 }, true), -4, 'loom color inversion reverses source-space thickness polarity too');
 assert.equal(api.__test.signedMotifThicknessPx({ invert: true, motifThinPx: 4 }, true), 4, 'double inversion restores the original source-space thickness polarity');
+const visibleMaskProbe = new Uint8Array([1, 0, 1, 0]); // Used to verify loom color inversion changes only the outline reference, not the saved/geometric motif mask.
+const visibleGarmentProbe = new Uint8Array([1, 1, 0, 1]); // Keeps the complement clipped to actual cloth pixels.
+assert.strictEqual(api.__test.visiblePatternMask(visibleMaskProbe, visibleGarmentProbe, false), visibleMaskProbe, 'ordinary weaving outlines the geometric motif mask directly');
+assert.deepEqual(Array.from(api.__test.visiblePatternMask(visibleMaskProbe, visibleGarmentProbe, true)), [0, 1, 0, 1], 'loom color inversion outlines the garment-clipped negative space that visibly carries the pattern dye');
 assert.equal(api.__test.scaledOutlineWidth(1, { motifScale: 0.1, frameScale: 0.1, meshScale: 0.4, usageScaleMultiplier: 0.1 }, 'woven-motif', 831, 523), 1, 'scaled-down clothing motifs keep the same 1px woven outline regardless of source image dimensions');
 assert.equal(api.__test.scaledOutlineWidth(1, { motifScale: 3, frameScale: 6, meshScale: 3.2, usageScaleMultiplier: 14 }, 'woven-motif', 3000, 2250), 1, 'large usage scaling alone does not thicken clothing outlines');
 assert.equal(api.__test.scaledOutlineWidth(1, { motifScale: 0.1, frameScale: 0.1, meshScale: 0.4, usageScaleMultiplier: 7 }, 'animal-surface-pattern', 3000, 2250), 6, 'Grehlr-sized animal art preserves the current 6-unit Color Pools outline');
@@ -689,6 +693,10 @@ assert.match(source, /applyPatternStackToTintedImage\(img, patterns, layerPatter
   'loom/front-behind preview composition passes the exact same color-inversion state into shared thickness resolution');
 assert.match(source, /buildPatternMask\(maskWidth, maskHeight, pattern, motif, swapPatternColors\)/,
   'every pattern slot resolves motif thickness from the same visual inversion state before front/back garment clipping');
+assert.match(source, /sourceClusterSeparatorMask = visiblePatternInversion\(patternDef, swapPatternColors\) \? null : buildMotifClusterSeparatorMask/,
+  'motif-island separation follows effective visual inversion rather than only the reusable pattern invert flag');
+assert.match(source, /outlineReferenceMask = visiblePatternMask\(combinedMask, garmentMask, swapPatternColors\)/,
+  'black-outline placement follows the region that visibly carries the pattern dye after loom color inversion');
 assert.match(source, /patternStackCanvasKey\(tinted, patterns, colorHex, prefix, \{ swapPatternColors \}\)/,
   'runtime cache keys include the inversion option so swapped and unswapped thickness rasters cannot alias');
 assert.match(source, /overpassOutlineWidth \* clearanceMultiplier/,
