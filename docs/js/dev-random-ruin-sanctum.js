@@ -196,7 +196,7 @@
       // V50 pedestals put the bowl out of a short character's reach; halve
       // the pedestal (scaled from its base, so it stays grounded). The bowl's
       // holder undoes the parent scale below, so only its height changes.
-      if (parent.userData?.generatedDisplayType === 'displayPedestal' && !parent.userData.devRuinPedestalHalved) {
+      if ((parent.userData?.generatedDisplayType === 'displayPedestal' || parent.userData?.generatedDisplayType === 'stoneCoffin') && !parent.userData.devRuinPedestalHalved) { // Coffin altars too.
         parent.scale.y *= PEDESTAL_HEIGHT_SCALE;
         parent.userData.devRuinPedestalHalved = true;
       }

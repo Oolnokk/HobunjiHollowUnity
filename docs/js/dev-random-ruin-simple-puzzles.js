@@ -957,6 +957,21 @@
     }
   }
 
+  // Four plate spots on fixed V50 floor cells at one height, clear of props:
+  // never on a dais, bridge, lift or other surface that moves.
+  function squareOnStaticFloor(points) {
+    let y=null;
+    for(const p of points){
+      for(const [dx,dz] of [[0,0],[-.3,-.3],[.3,-.3],[-.3,.3],[.3,.3]]){
+        const support=sampleSupport(p.x+dx,p.z+dz);
+        if(!support||!String(support.id||'').startsWith('devruin-floor-'))return false;
+        if(y==null)y=Number(support.y);else if(Math.abs(Number(support.y)-y)>.05)return false;
+      }
+      if(window.DevRandomRuinTileOccupancy?.blocksAt?.(p.x,p.z,.3)||window.DevRandomRuinTileOccupancy?.solidAt?.(p.x,p.z,.3))return false;
+    }
+    return true;
+  }
+
   function buildChordPlateSet(context, rng, slot, usedHallways = null) {
     if(!slot)return null;
     const isHallway=slot.kind==='hallway';
@@ -978,8 +993,22 @@
     }else{
       const bounds=slot.bounds||roomBounds(context.meta,owner); // Explicit bounds let the same plate-set module live inside generated micro-rooms as well as ordinary V50 rooms.
       const centerX=(bounds.minX+bounds.maxX)*.5,centerZ=(bounds.minZ+bounds.maxZ)*.5;
-      const d=Math.min(1.15,Math.max(.62,Math.min(bounds.maxX-bounds.minX,bounds.maxZ-bounds.minZ)*.28));
-      points.push({x:centerX-d,z:centerZ-d},{x:centerX+d,z:centerZ-d},{x:centerX-d,z:centerZ+d},{x:centerX+d,z:centerZ+d});
+      const w=bounds.maxX-bounds.minX,h=bounds.maxZ-bounds.minZ;
+      const d=Math.min(1.15,Math.max(.62,Math.min(w,h)*.28));
+      // The room centre is often V50's core dais or another moving surface;
+      // plates there stayed floating when it lowered. Try the centre, then
+      // quarter points, and keep the first square that is all static floor.
+      const square=(cx,cz)=>[{x:cx-d,z:cz-d},{x:cx+d,z:cz-d},{x:cx-d,z:cz+d},{x:cx+d,z:cz+d}];
+      const centres=[];
+      for(let cx=bounds.minX+d+.6;cx<=bounds.maxX-d-.6+1e-6;cx+=.5)for(let cz=bounds.minZ+d+.6;cz<=bounds.maxZ-d-.6+1e-6;cz+=.5)centres.push({cx,cz,dist:Math.hypot(cx-centerX,cz-centerZ)});
+      centres.sort((a,b)=>a.dist-b.dist); // Closest free square to the room centre wins.
+      let chosen=null;
+      for(const {cx,cz} of centres){
+        const candidate=square(cx,cz);
+        if(squareOnStaticFloor(candidate)){chosen=candidate;break;}
+      }
+      if(!chosen){recordModulePlacement('chordPlatesRejected','room',id,{reason:'no static floor square'});return null;}
+      points.push(...chosen);
     }
     const root=new THREE.Group();
     root.name='dev_ruin_chord_plates_'+id;
