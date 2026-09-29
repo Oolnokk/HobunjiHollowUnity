@@ -18,7 +18,7 @@ def part(pid, name, kind='box', x=0, y=0, z=0, sx=1, sy=1, sz=1, rx=0, ry=0, rz=
     record = {
         'id': pid, 'kind': kind, 'name': name,
         'transform': {'x': x, 'y': y, 'z': z, 'rx': rx, 'ry': ry, 'rz': rz, 'sx': sx, 'sy': sy, 'sz': sz},
-        'color': color, 'segments': 1, 'taperAxis': 'y', 'topScaleX': 1, 'topScaleZ': 1,
+        'color': color, 'segments': 1 if kind == 'box' else 18, 'taperAxis': 'y', 'topScaleX': 1, 'topScaleZ': 1,
         'bottomScaleX': 1, 'bottomScaleZ': 1, 'topSkewX': 0, 'topSkewZ': 0, 'innerScale': .68,
         'basinDepth': .18, 'liquidContainerId': None, 'liquidLevel': .5, 'wonkiness': 0,
         'materialRole': 'stone', 'materialTexture': texture, 'materialRotationDeg': 0,
@@ -158,4 +158,55 @@ piece('ruinBurrowHole', 'Ruin Burrow Hole',
        part('rail_right', 'Ladder Rail', x=.2, y=.35, z=-.18, sx=.06, sy=1.1, sz=.06, rx=-14, color='#7a5a3a', texture=None, materialRole='wood'),
        part('rung_a', 'Ladder Rung', x=0, y=.55, z=-.13, sx=.44, sy=.05, sz=.05, color='#8c6a45', texture=None, materialRole='wood'),
        part('rung_b', 'Ladder Rung', x=0, y=.25, z=-.2, sx=.44, sy=.05, sz=.05, color='#8c6a45', texture=None, materialRole='wood')])
+
+# ── Random Test Ruin props (previously built procedurally in the ruin modules) ─
+WOOD = '#5a3b22'; WOOD_LID = '#6b4728'
+bowl_parts = lambda y=0, s=1: [
+    part('bowl', 'Stone Bowl', kind='cylinder', x=0, y=y + .08 * s, z=0, sx=.46 * s, sy=.16 * s, sz=.46 * s, bottomScaleX=.42, bottomScaleZ=.42),
+    part('rim', 'Rim', kind='hoop', x=0, y=y + .155 * s, z=0, sx=.5 * s, sy=.045 * s, sz=.5 * s, color=STONE_LIGHT),
+    part('coals', 'Cold Coals', kind='disc', x=0, y=y + .158 * s, z=0, sx=.36 * s, sy=.01, sz=.36 * s, color='#141a24', texture=None)]
+piece('ruinBlueBrazierBowl', 'Ruin Blue Brazier Bowl',
+      'Stone bowl set on puzzle-goal pedestals and coffin altars. Striking it lights blue fire (fire is added by the sanctum runtime at the bowl centre).',
+      bowl_parts())
+piece('ruinStandingBrazier', 'Ruin Standing Brazier',
+      'Freestanding blue-fire brazier (safe-path exits, vault). Fire sits at the top of the bowl.',
+      [part('shaft', 'Shaft', kind='cylinder', x=0, y=.55, z=0, sx=.36, sy=1.1, sz=.36, topScaleX=.67, topScaleZ=.67)] + bowl_parts(.96, 1.5))
+rails = [part(f'rail_{n}', 'Ladder Rail', x=0, y=1.6, z=side * .3, sx=.08, sy=3.2, sz=.08, color='#6a5a48') for n, side in (('left', -1), ('right', 1))]
+rungs = [part(f'rung_{i}', 'Ladder Rung', x=0, y=round(.3 + i * .34, 3), z=0, sx=.06, sy=.06, sz=.6, color='#6a5a48') for i in range(9)]
+piece('ruinSanctumLadder', 'Ruin Exit Ladder',
+      'Treasure-vault exit ladder. Climbing it leaves the ruin (a wilderness site sends you somewhere random). Height is stretched to the room at runtime.',
+      rails + rungs + [part('shaft', 'Daylight Shaft', x=-.15, y=3.19, z=0, sx=.9, sy=.02, sz=.9, color='#000000', texture=None)])
+piece('ruinSanctumCoffin', 'Ruin Coffin',
+      'Lich-room coffin. The Lid part slides off when its skeleton rises (animated by the sanctum runtime from the lid rest position).',
+      [part('plinth', 'Plinth', x=0, y=.06, z=0, sx=1.66, sy=.12, sz=.96, color=STONE_DARK),
+       part('body', 'Body', x=0, y=.31, z=0, sx=1.5, sy=.62, sz=.8, color='#6d675f'),
+       part('lid', 'Lid', x=0, y=.69, z=0, sx=1.58, sy=.14, sz=.88)])
+TIERS = {1: ('Weathered', '#6b5a44', '#b8a78a'), 2: ('Iron-bound', '#7c858c', '#c9d6df'), 3: ('Gilded', '#d4a632', '#ffd66a'), 4: ('Ancient', '#6fd1c4', '#9ff5ff')}
+for tier, (label, band, glow) in TIERS.items():
+    wood = dict(texture=None, materialRole='wood')
+    piece(f'ruinDungeonChestT{tier}', f'{label} Dungeon Chest',
+          f'Tier {tier} dungeon chest (loot pool dungeonChest_tier{tier}). Lid, Lid Band and Lock swing open about the back edge of the body (hinge added by the chest runtime).',
+          [part('body', 'Body', x=0, y=.21, z=0, sx=.78, sy=.42, sz=.52, color=WOOD, **wood),
+           part('trim', 'Trim', x=0, y=.40, z=0, sx=.82, sy=.06, sz=.56, color=band, **wood),
+           part('band_left', 'Band', x=-.26, y=.22, z=0, sx=.07, sy=.44, sz=.56, color=band, **wood),
+           part('band_right', 'Band', x=.26, y=.22, z=0, sx=.07, sy=.44, sz=.56, color=band, **wood),
+           part('lid', 'Lid', x=0, y=.51, z=.01, sx=.8, sy=.16, sz=.54, color=WOOD_LID, **wood),
+           part('lid_band', 'Lid Band', x=0, y=.59, z=.01, sx=.82, sy=.05, sz=.56, color=band, **wood),
+           part('lock', 'Lock', x=0, y=.45, z=.29, sx=.12, sy=.14, sz=.04, color=glow, **wood)])
+piece('ruinRewardPlate', 'Ruin Reward Pressure Plate',
+      'Rope-payoff pressure plate. Sinks and turns its pressed colour when stepped on (runtime).',
+      [part('plate', 'Plate', x=0, y=.035, z=0, sx=.74, sy=.07, sz=.74, color='#b08a3c')])
+
+# ── Skins for V50's fixed-size display props (scaled to the V50 bounds) ─────
+piece('ruinDisplayPedestal', 'Ruin Display Pedestal',
+      "Skin for V50's generated display pedestal (puzzle goals carry a blue brazier bowl on top). Scaled at runtime to the pedestal V50 generated; the sanctum still halves its height so the bowl is in reach.",
+      [part('base', 'Base', x=0, y=.1, z=0, sx=1.1, sy=.2, sz=1.0, color=STONE_DARK),
+       part('shaft', 'Shaft', x=0, y=.6, z=0, sx=.74, sy=.8, sz=.66),
+       part('cap', 'Cap', x=0, y=1.1, z=0, sx=1.1, sy=.2, sz=1.0, color=STONE_LIGHT)])
+piece('ruinDisplayCoffin', 'Ruin Display Coffin',
+      "Skin for V50's generated stone-coffin display (coffin altars carry a blue brazier bowl on the lid). Scaled at runtime to the V50 coffin bounds.",
+      [part('plinth', 'Plinth', x=0, y=.1, z=0, sx=1.66, sy=.2, sz=1.02, color=STONE_DARK),
+       part('body', 'Body', x=0, y=.62, z=0, sx=1.5, sy=.84, sz=.86, color='#6d675f'),
+       part('lid', 'Lid', x=0, y=1.14, z=0, sx=1.6, sy=.2, sz=.96),
+       part('lid_ridge', 'Lid Ridge', x=0, y=1.28, z=0, sx=1.2, sy=.08, sz=.3, color=STONE_LIGHT)])
 print('wrote ruin-site furniture')

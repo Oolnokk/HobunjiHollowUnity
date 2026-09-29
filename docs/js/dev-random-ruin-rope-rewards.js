@@ -51,10 +51,12 @@
   // ─── Shared pieces ──────────────────────────────────────────────────────
 
   function makePlate(kit, id, x, y, z, onPress) {
-    const material = kit.makeBasic(PLATE_COLOR);
-    const mesh = new THREE.Mesh(kit.sharedBoxGeometry(.74, .07, .74), material);
+    const authored = window.DevRandomRuinFurniturePieces?.solid?.('ruinRewardPlate'); // docs/config/furniture-authored/ruinRewardPlate.json
+    const plateMesh = authored?.userData?.meshById?.get?.('plate');
+    const material = plateMesh?.material || kit.makeBasic(PLATE_COLOR);
+    const mesh = authored || new THREE.Mesh(kit.sharedBoxGeometry(.74, .07, .74), material);
     mesh.name = 'dev_ruin_reward_pressure_plate_' + id;
-    mesh.position.set(x, y + .035, z);
+    mesh.position.set(x, authored ? y : y + .035, z); // The authored plate's own part already sits .035 up.
     mesh.userData.devRandomRuinPressurePlate = true;
     kit.group().add(mesh);
     const plate = { id, x, y, z, mesh, material, pressed:false, onPress };
@@ -68,7 +70,7 @@
     if (plate.pressed || !player) return false;
     if (Math.abs(player.x - plate.x) > .4 || Math.abs(player.z - plate.z) > .4 || Math.abs(player.y - plate.y) > .35) return false;
     plate.pressed = true;
-    plate.mesh.position.y = plate.y + .005;
+    plate.mesh.position.y = plate.mesh.isGroup ? plate.y - .03 : plate.y + .005;
     plate.material.color.setHex(PLATE_PRESSED_COLOR);
     kit.playStoneUnlockKchunk?.();
     try { plate.onPress?.(plate); } catch (error) { console.warn('[Random Test Ruin] plate handler failed', error); }

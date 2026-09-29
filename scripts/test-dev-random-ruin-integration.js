@@ -58,7 +58,7 @@ assert(/if\(!devModeEnabled\(\)\)return;/.test(interior) && /if \(\(!devModeEnab
 assert(camera.includes('dev-random-ruin-interactions.js?v=20260929config1'), 'ruin interaction adapter must be cache-busted with the arch-priority/popup-list fix');
 assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260929glowdecals1'), 'simple puzzle interior-parity runtime must be cache-busted in the dev bootstrap');
 assert(camera.includes('dev-random-ruin-wall-render-proxy.js?v=20260927geometry1'), 'native ruin render verifier must be cache-busted in the dev bootstrap');
-assert(gameIndex.includes('js/dev-random-ruin-bootstrap.js?v=20260929ruinsites1'), 'game page must load the updated ruin bootstrap');
+assert(gameIndex.includes('js/dev-random-ruin-bootstrap.js?v=20260929ruinpieces1'), 'game page must load the updated ruin bootstrap');
 assert(gameIndex.includes('game.js?v=20260929ruinsites1'), 'game page must load the footprint-aware movement collision');
 assert(gameIndex.indexOf('js/area-footprint-blockers.js') >= 0 && gameIndex.indexOf('js/area-footprint-blockers.js') < gameIndex.indexOf('game.js?v='), 'sub-tile footprint registry must load before game.js');
 assert(game.includes('window.AreaFootprintBlockers?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE, worldY)'), 'canOccupyAt must test the whole mover square against prop footprints');
@@ -433,9 +433,10 @@ assert(gameIndex.includes('js/combat/combat-lich.js?v=20260929merge1'), 'lich ar
 new vm.Script(sanctum, { filename: 'dev-random-ruin-sanctum.js' });
 const ruinPieces = read('docs/js/dev-random-ruin-furniture-pieces.js');
 new vm.Script(ruinPieces, { filename: 'dev-random-ruin-furniture-pieces.js' });
-for (const key of ['ruinDoorSeal', 'ruinGlyphTarget', 'ruinGreatDoor']) {
+for (const key of ['ruinDoorSeal', 'ruinGlyphTarget', 'ruinGreatDoor', 'ruinBlueBrazierBowl', 'ruinStandingBrazier', 'ruinSanctumLadder', 'ruinSanctumCoffin', 'ruinDungeonChestT1', 'ruinDungeonChestT2', 'ruinDungeonChestT3', 'ruinDungeonChestT4', 'ruinRewardPlate', 'ruinDisplayPedestal', 'ruinDisplayCoffin']) {
   const piece = JSON.parse(read(`docs/config/furniture-authored/${key}.json`));
-  assert(piece.schema === 'hobunji_furniture_authored_runtime.v1' && piece.decals?.some(decal => decal.glow?.off?.length && decal.glow?.on?.length), `${key} must be an authored furniture piece with state-glow decals`);
+  assert(piece.schema === 'hobunji_furniture_authored_runtime.v1', `${key} must be an authored furniture piece`);
+  if (['ruinDoorSeal', 'ruinGlyphTarget', 'ruinGreatDoor'].includes(key)) assert(piece.decals?.some(decal => decal.glow?.off?.length && decal.glow?.on?.length), `${key} must carry state-glow decals`);
   assert(ruinPieces.includes(`'${key}'`), `${key} must be placed by the ruin furniture-pieces module`);
 }
 assert(sanctum.includes("buildAuthoredDoor"), 'the sanctum Great Door must be built from ruinGreatDoor.json');

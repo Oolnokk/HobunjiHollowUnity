@@ -176,7 +176,11 @@
 
   // ─── Braziers on the V50 puzzle goals ──────────────────────────────────
 
+  const authoredPiece = key => window.DevRandomRuinFurniturePieces?.solid?.(key) || null; // docs/config/furniture-authored/<key>.json; procedural fallback below until loaded.
+
   function stoneBowl(kit) {
+    const authored = authoredPiece('ruinBlueBrazierBowl');
+    if (authored) { authored.name = 'dev_ruin_blue_brazier_bowl'; return authored; }
     const group = new THREE.Group();
     group.name = 'dev_ruin_blue_brazier_bowl';
     const profile = [[.05, 0], [.12, .02], [.2, .07], [.24, .15], [.22, .16], [.17, .09], [0, .08]].map(([x, y]) => new THREE.Vector2(x, y));
@@ -203,6 +207,7 @@
 
   function buildBraziers(kit, context) {
     const braziers = [];
+    window.DevRandomRuinFurniturePieces?.skinDisplays?.(context.root, kit.SCOPE); // Authored pedestal/coffin skins (ruinDisplayPedestal / ruinDisplayCoffin) carry the collision of the V50 meshes they hide.
     for (const plane of findGoalSprites(context.root)) {
       const parent = plane.parent;
       if (!parent) continue;
@@ -637,6 +642,15 @@
   function standingBrazier(kit, root, x, z, y0) {
     const holder = new THREE.Group();
     holder.position.set(x, y0, z);
+    const authored = authoredPiece('ruinStandingBrazier');
+    if (authored) {
+      holder.add(authored);
+      const fire = createBlueFire(holder, 1.5);
+      fire.anchor.position.y = 1.23;
+      root.add(holder);
+      fire.holder = holder;
+      return fire;
+    }
     const shaft = stone(kit, kit.sharedCylinderGeometry ? kit.sharedCylinderGeometry(.12, .18, 1.1, 10) : new THREE.CylinderGeometry(.12, .18, 1.1, 10));
     shaft.position.y = .55;
     const bowl = stoneBowl(kit);
@@ -651,6 +665,20 @@
   }
 
   function buildLadder(kit, root, x, z, y0) {
+    const authored = authoredPiece('ruinSanctumLadder');
+    if (authored) {
+      authored.name = 'dev_ruin_sanctum_exit_ladder';
+      authored.scale.y = WALL_H / 3.2; // Authored at 3.2 tall; stretched to reach this room's ceiling.
+      const daylight = glowSprite(0xfff1c8, 1.1, .45);
+      daylight.position.set(-.15, 3.2 - .2 * 3.2 / WALL_H, 0);
+      daylight.scale.y /= authored.scale.y;
+      authored.add(daylight);
+      authored.position.set(x, y0, z);
+      root.add(authored);
+      authored.userData.interactive3D = true;
+      authored.userData.devRuinInteractionType = 'sanctumLadder';
+      return authored;
+    }
     const ladder = new THREE.Group();
     ladder.name = 'dev_ruin_sanctum_exit_ladder';
     const railGeo = kit.sharedBoxGeometry(.08, WALL_H, .08);
@@ -769,6 +797,15 @@
   }
 
   function buildCoffin(kit, root, x, z, y0, facing, index) {
+    const authored = authoredPiece('ruinSanctumCoffin');
+    if (authored) {
+      authored.name = 'dev_ruin_sanctum_coffin_' + index;
+      const lid = authored.userData.meshById?.get?.('lid');
+      if (lid) lid.userData.devRuinFootprintIgnore = true;
+      authored.position.set(x, y0, z);
+      root.add(authored);
+      return { index, group:authored, lid, lidRest:lid ? lid.position.clone() : null, x, z, facing, open:false, lidT:0, rise:{ x, z:z + facing * .95 } };
+    }
     const group = new THREE.Group();
     group.name = 'dev_ruin_sanctum_coffin_' + index;
     const body = stone(kit, kit.sharedBoxGeometry(1.5, .62, .8), 0x6d675f);
@@ -788,8 +825,9 @@
     for (const coffin of s?.coffins || []) {
       if (!coffin.open || coffin.lidT >= 1) continue;
       coffin.lidT = Math.min(1, coffin.lidT + dt * 1.6);
-      coffin.lid.position.set(0, .69 - coffin.lidT * .45, -coffin.facing * coffin.lidT * .75);
-      coffin.lid.rotation.x = -coffin.facing * coffin.lidT * .5;
+      const rest = coffin.lidRest || { x:0, y:.69, z:0 };
+      coffin.lid?.position.set(rest.x, rest.y - coffin.lidT * .45, rest.z - coffin.facing * coffin.lidT * .75);
+      if (coffin.lid) coffin.lid.rotation.x = -coffin.facing * coffin.lidT * .5;
     }
   }
 

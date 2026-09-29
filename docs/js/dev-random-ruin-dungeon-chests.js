@@ -61,11 +61,15 @@
   function create(options = {}) {
     const tier = clampTier(options.tier);
     const look = TIERS[tier];
-    const group = new THREE.Group();
+    const authored = window.DevRandomRuinFurniturePieces?.solid?.('ruinDungeonChestT' + tier); // docs/config/furniture-authored/ruinDungeonChestT1-4.json
+    const group = authored || new THREE.Group();
     group.name = 'dev_ruin_dungeon_chest_' + (options.id || chests.size);
     group.userData.devRuinDungeonChest = true;
     group.userData.interactive3D = true;
     group.userData.devRuinInteractionType = 'dungeonChest';
+    let hinge;
+    if (authored) hinge = window.DevRandomRuinFurniturePieces.pivotParts(group, ['lid', 'lid_band', 'lock'], new THREE.Vector3(0, .43, -.26), 'hinge');
+    else {
     const body = new THREE.Mesh(new THREE.BoxGeometry(.78, .42, .52), basic(0x5a3b22));
     body.position.y = .21;
     const trim = new THREE.Mesh(new THREE.BoxGeometry(.82, .06, .56), basic(look.band));
@@ -74,7 +78,7 @@
     bandL.position.set(-.26, .22, 0);
     const bandR = bandL.clone();
     bandR.position.x = .26;
-    const hinge = new THREE.Group(); // Pivot on the back edge so the lid swings open away from the player.
+    hinge = new THREE.Group(); // Pivot on the back edge so the lid swings open away from the player.
     hinge.position.set(0, .43, -.26);
     const lid = new THREE.Mesh(new THREE.BoxGeometry(.8, .16, .54), basic(0x6b4728));
     lid.position.set(0, .08, .27);
@@ -83,9 +87,11 @@
     const lock = new THREE.Mesh(new THREE.BoxGeometry(.12, .14, .04), basic(look.glow));
     lock.position.set(0, .02, .55);
     hinge.add(lid, lidBand, lock);
+    group.add(body, trim, bandL, bandR, hinge);
+    }
     const glow = halo(look.glow);
     glow.position.y = .5;
-    group.add(body, trim, bandL, bandR, hinge, glow);
+    group.add(glow);
     group.position.set(Number(options.x) || 0, Number(options.y) || 0, Number(options.z) || 0);
     group.rotation.y = Number(options.yaw) || 0;
     (options.parent || null)?.add?.(group);

@@ -8,6 +8,11 @@
 //                    projectile target face in place of V50's placeholder
 //                    inn-sign decals: OFF (orange) until struck, ON (green).
 //   ruinGreatDoor    the sanctum door (built by js/dev-random-ruin-sanctum.js).
+//   ruinBlueBrazierBowl, ruinStandingBrazier, ruinSanctumLadder,
+//   ruinSanctumCoffin, ruinDungeonChestT1-4, ruinRewardPlate
+//                    props the sanctum, chest and rope-payoff modules build
+//                    via solid(); each keeps its old procedural builder as a
+//                    fallback until the JSON has loaded.
 //
 // Glow colours, textures, sizes and positions all come from those files via
 // the shared decal glow support in js/furniture-decal-runtime.js; this module
@@ -20,7 +25,11 @@
   if (!window.THREE || !A?.load || !DS) return;
 
   const MAP_ID = 'map_i_dev_random_ruin';
-  const KEYS = ['ruinDoorSeal', 'ruinGlyphTarget', 'ruinGreatDoor'];
+  const KEYS = ['ruinDoorSeal', 'ruinGlyphTarget', 'ruinGreatDoor',
+    'ruinBlueBrazierBowl', 'ruinStandingBrazier', 'ruinSanctumLadder', 'ruinSanctumCoffin',
+    'ruinDungeonChestT1', 'ruinDungeonChestT2', 'ruinDungeonChestT3', 'ruinDungeonChestT4', 'ruinRewardPlate',
+    'ruinDisplayPedestal', 'ruinDisplayCoffin'];
+  const DISPLAY_SKINS = { displayPedestal:'ruinDisplayPedestal', stoneCoffin:'ruinDisplayCoffin' }; // V50 generatedDisplayType -> authored skin.
   for (const key of KEYS) A.load(key);
 
   const tracked = new Set(); // { group, state:() => 0..1, flash?:() => 0..1 }
@@ -36,6 +45,72 @@
     group.userData.ruinFurnitureKey = key;
     group.traverse(node => { node.userData.devRuinFootprintIgnore = true; }); // Visual overlays; collision stays with the piece they decorate.
     return group;
+  }
+
+  // Solid prop: keeps collision (the ruin's footprint scan sees its meshes).
+  function solid(key) {
+    const data = A.peek(key);
+    if (!data) return null;
+    const group = A.buildGroup(data);
+    group.userData.ruinFurnitureKey = key;
+    return group;
+  }
+
+  // Moves authored parts under a new pivot at `pivotPos` (group-local),
+  // keeping where they render. Used for chest hinges and similar.
+  function pivotParts(group, partIds, pivotPos, name = 'pivot') {
+    const pivot = new THREE.Group();
+    pivot.name = name;
+    pivot.position.copy(pivotPos);
+    group.add(pivot);
+    for (const id of partIds) {
+      const mesh = group.userData.meshById?.get?.(id);
+      if (!mesh) continue;
+      mesh.parent?.remove(mesh);
+      mesh.position.sub(pivotPos);
+      pivot.add(mesh);
+    }
+    return pivot;
+  }
+
+  // Bounds of an object's own meshes in its local frame (skips item sprites).
+  function localMeshBounds(object) {
+    object.updateWorldMatrix(true, true);
+    const inverse = new THREE.Matrix4().copy(object.matrixWorld).invert();
+    const box = new THREE.Box3(), part = new THREE.Box3(), matrix = new THREE.Matrix4();
+    const meshes = [];
+    object.traverse(node => {
+      if (!node.isMesh || node.userData?.isSurfaceItemSprite || !node.geometry) return;
+      if (!node.geometry.boundingBox) node.geometry.computeBoundingBox();
+      matrix.multiplyMatrices(inverse, node.matrixWorld);
+      box.union(part.copy(node.geometry.boundingBox).applyMatrix4(matrix));
+      meshes.push(node);
+    });
+    return { box, meshes };
+  }
+
+  // Replaces V50's generated display pedestals / stone coffins with their
+  // authored skins, scaled to the generated bounds. The V50 meshes are
+  // hidden (their collision comes from the skin via the next solid scan).
+  function skinDisplays(root, scope = 'dev-random-ruin-interior') {
+    const skins = [];
+    root?.traverse?.(object => {
+      const key = DISPLAY_SKINS[object.userData?.generatedDisplayType];
+      if (!key || object.userData.devRuinDisplaySkin || !ready(key)) return;
+      const { box, meshes } = localMeshBounds(object);
+      if (box.isEmpty() || !meshes.length) return;
+      const skin = solid(key);
+      const authored = new THREE.Box3().setFromObject(skin);
+      const size = box.getSize(new THREE.Vector3()), from = authored.getSize(new THREE.Vector3());
+      skin.scale.set(size.x / (from.x || 1), size.y / (from.y || 1), size.z / (from.z || 1));
+      skin.position.set((box.min.x + box.max.x) / 2, box.min.y - authored.min.y * skin.scale.y, (box.min.z + box.max.z) / 2);
+      for (const mesh of meshes) mesh.visible = false;
+      object.add(skin);
+      object.userData.devRuinDisplaySkin = skin;
+      skins.push(skin);
+    });
+    for (const skin of skins) window.DevRandomRuinTileOccupancy?.scanSolids?.(skin, scope); // Only the new skins; the rest of the ruin was scanned at generation.
+    return skins.length;
   }
 
   function track(group, state, flash = null) {
@@ -129,6 +204,7 @@
     if (root && root !== sealedRoot && ready('ruinDoorSeal') && window.GridTileAccessors?.getCurrentArea?.() === MAP_ID) {
       sealedRoot = root;
       sealRuinDoors(root);
+      skinDisplays(root); // Displays the sanctum composer did not already skin.
     }
     if (pendingSeals.length && ready('ruinDoorSeal')) for (const [panel, state] of pendingSeals.splice(0)) attachSeal(panel, state);
     const decals = window.FurnitureDecalRuntime;
@@ -142,7 +218,7 @@
   });
 
   window.DevRandomRuinFurniturePieces = Object.freeze({
-    KEYS, ready, build, track, attachSeal, mountGlyphPlaques,
+    KEYS, ready, build, solid, pivotParts, skinDisplays, track, attachSeal, mountGlyphPlaques,
     snapshot:() => ({
       loaded:Object.fromEntries(KEYS.map(key => [key, ready(key)])),
       tracked:[...tracked].map(entry => ({ key:entry.group.userData.ruinFurnitureKey, state:+Number(entry.state()).toFixed(2), inScene:inScene(entry.group) })),
