@@ -121,9 +121,10 @@ const sourceThicknessIndex = weaving.indexOf('const adjustedSrcMask = adjustMask
 const meshScaleIndex = weaving.indexOf('ctx.scale(meshScale, meshScale)', sourceThicknessIndex);
 const repeatMaskIndex = weaving.indexOf('const sampledMasks = []'); // Repeated motif instances still flatten into one final sampled mask per primary/overpass slot.
 const stackCombineIndex = weaving.indexOf('const combinedMask = new Uint8Array(sampledMasks[0])', repeatMaskIndex); // Slot masks are combined only after their source-pixel contour work and garment-cell sampling are complete.
-const sharedOutlineIndex = weaving.indexOf('buildPatternOutlineMask(combinedMask', stackCombineIndex); // The visible black outline is generated after the overpass has punched and recombined the two paint masks.
+const visibleOutlineReferenceIndex = weaving.indexOf('const outlineReferenceMask = visiblePatternMask(combinedMask, garmentMask, swapPatternColors)', stackCombineIndex); // Loom color inversion resolves the visually patterned side only after the geometric stack is complete.
+const sharedOutlineIndex = weaving.indexOf('buildPatternOutlineMask(outlineReferenceMask', visibleOutlineReferenceIndex); // The visible black outline is generated from that resolved visual region.
 assert(sourceThicknessIndex >= 0 && meshScaleIndex > sourceThicknessIndex, 'woven motif thinning/thickening must happen before whole-pattern mesh scaling');
-assert(repeatMaskIndex > meshScaleIndex && stackCombineIndex > repeatMaskIndex && sharedOutlineIndex > stackCombineIndex, 'repeated instances union into the two-slot stack before the shared final outline, with no second output-pixel thickness pass');
+assert(repeatMaskIndex > meshScaleIndex && stackCombineIndex > repeatMaskIndex && visibleOutlineReferenceIndex > stackCombineIndex && sharedOutlineIndex > visibleOutlineReferenceIndex, 'repeated instances union into the two-slot stack before visual inversion and the shared final outline, with no second output-pixel thickness pass');
 
 
 assert.doesNotMatch(weaving, /\berodeMask\b/, 'weaving module must not retain stale erodeMask references after the signed contour refactor');
