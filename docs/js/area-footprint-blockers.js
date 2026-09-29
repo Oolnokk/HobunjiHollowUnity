@@ -34,9 +34,30 @@
     return false;
   }
 
+  // Optional true-floor heights for areas whose grid tiles are flat but whose
+  // walkable floor is not (the Random Test Ruin's basins/plateaus). Only
+  // projectile ground hits consult this; grid-height readers are unchanged.
+  const surfaceProviders = new Map(); // id -> { area, surfaceYAt(x, z), enabled() }
+  function registerSurface(id, provider) {
+    if (!id || typeof provider?.surfaceYAt !== 'function') return () => {};
+    surfaceProviders.set(String(id), provider);
+    return () => surfaceProviders.delete(String(id));
+  }
+  function surfaceYAt(area, x, z) {
+    for (const provider of surfaceProviders.values()) {
+      if (provider.area != null && provider.area !== area) continue;
+      if (provider.enabled && !provider.enabled()) continue;
+      const y = provider.surfaceYAt(x, z);
+      if (Number.isFinite(y)) return y;
+    }
+    return null;
+  }
+
   window.AreaFootprintBlockers = Object.freeze({
     register,
     remove,
+    registerSurface,
+    surfaceYAt,
     blocksBox,
     blocksPoint:(area, x, z) => blocksBox(area, x, z, 0),
     providerIds:() => [...providers.keys()],

@@ -27575,6 +27575,8 @@
           return avatarGroup;
         },
         worldSurfaceY: (x, y) => {
+          const exact = window.AreaFootprintBlockers?.surfaceYAt?.(currentArea, x / TILE, y / TILE); // True floor where an area's tiles are flat but its floor is not (ruin basins).
+          if (Number.isFinite(exact)) return exact;
           const grid = window.GridTileAccessors.getActiveGrid();
           const col = window.FormatUtils.clamp(Math.floor(x / TILE), 0, window.GridTileAccessors.getActiveCols() - 1);
           const row = window.FormatUtils.clamp(Math.floor(y / TILE), 0, window.GridTileAccessors.getActiveRows() - 1);

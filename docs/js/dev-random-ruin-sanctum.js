@@ -30,6 +30,7 @@
   const DECAL_IDLE = 0x39424d, DECAL_LIT = 0x4fb6ff, DECAL_PULSE_LOW = 0x1c5a8f, DECAL_PULSE_HIGH = 0xb8ecff;
   const EXCLUDED_ITEM_LABELS = new Set(['Stone Idol']); // Decorative sunken-centerpiece fallback, not a puzzle goal.
   const BRAZIER_RANGE = 1.5;
+  const PEDESTAL_HEIGHT_SCALE = .5;
   const BRAZIER_MAX_RISE = 1.35; // Bowl may sit at most this far above the player's feet: a pedestal still on a raised dais stays out of reach.
   const DOOR_WIDTH = 3.2, DOOR_MAX_HEIGHT = 3.4, DOOR_CLEAR_DEPTH = 2.8;
   const DOOR_WALL_OFFSET = .46; // Stands clear of the V50 wall's baseboard/moulding runs.
@@ -192,6 +193,13 @@
       if (!parent) continue;
       const index = braziers.length; // Also this brazier's decal slot on the Great Door.
       plane.visible = false;
+      // V50 pedestals put the bowl out of a short character's reach; halve
+      // the pedestal (scaled from its base, so it stays grounded). The bowl's
+      // holder undoes the parent scale below, so only its height changes.
+      if (parent.userData?.generatedDisplayType === 'displayPedestal' && !parent.userData.devRuinPedestalHalved) {
+        parent.scale.y *= PEDESTAL_HEIGHT_SCALE;
+        parent.userData.devRuinPedestalHalved = true;
+      }
       const holder = new THREE.Group();
       holder.name = 'dev_ruin_blue_brazier_' + index;
       // The sprite floated .135 above the pedestal cap/coffin lid top.
@@ -852,6 +860,7 @@
       const occlusion = window.DevRandomRuin?.getOcclusionMeshes?.();
       if (occlusion) for (const mesh of s.occluders) { const i = occlusion.indexOf(mesh); if (i >= 0) occlusion.splice(i, 1); }
       for (const object of s.hiddenDecor || []) object.visible = true;
+      for (const brazier of s.braziers) { const pedestal = brazier.plane?.parent; if (pedestal?.userData?.devRuinPedestalHalved) { pedestal.scale.y /= PEDESTAL_HEIGHT_SCALE; pedestal.userData.devRuinPedestalHalved = false; } }
       for (const brazier of s.braziers) { brazier.holder.parent?.remove?.(brazier.holder); brazier.fire.emitter?.dispose?.(); if (brazier.plane) brazier.plane.visible = true; }
       s = null;
     },

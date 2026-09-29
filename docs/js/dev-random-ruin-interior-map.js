@@ -265,6 +265,13 @@
   };
 
   function captureDeps(injectedDeps) { deps = injectedDeps; installSettingsButton(); }
+  window.AreaFootprintBlockers?.registerSurface?.('dev-random-ruin-floor', {
+    area:MAP_ID,
+    enabled:() => !!ruin && floorHeights.size > 0,
+    // Shots fired up out of a basin used the flat tile height and stopped at
+    // an invisible floor at rim level; this returns the cell's true floor.
+    surfaceYAt:(x, z) => { const y = floorHeights.get(`${Math.floor((x - PAD) / floorCellSize)},${Math.floor((z - PAD) / floorCellSize)}`); return Number.isFinite(y) ? y : null; },
+  });
   const nativeDevInit = DevSpawner.init;
   DevSpawner.init = function (injectedDeps) {
     captureDeps(injectedDeps);
@@ -440,7 +447,14 @@
     DS.registerSurface({ id, scope:SCOPE, bounds:() => { const b = deckBoxFor(platform); return b ? { minX:b.min.x,maxX:b.max.x,minZ:b.min.z,maxZ:b.max.z } : {minX:0,maxX:0,minZ:0,maxZ:0}; },
       topY:() => deckBoxFor(platform)?.max.y ?? 0, enabled:() => platform.visible !== false, priority });
   }
+  // Real floor height per V50 cell (basins, plateaus). Grid tiles stay flat
+  // (camera/presentation assume that), so this is published separately for
+  // projectile ground hits through AreaFootprintBlockers.surfaceYAt.
+  const floorHeights = new Map();
+  let floorCellSize = 1;
   function registerFloor(meta) {
+    floorHeights.clear();
+    floorCellSize = worldCellSize(meta);
     let floorMesh = null;
     ruin.localeRoot.traverse(o => { if (!floorMesh && o.userData?.wallBuilderRecipe === 'wallrecipe2.json') floorMesh = o; });
     const levels = floorMesh?.userData?.plateauModel?.levelByCell || {};
@@ -450,9 +464,11 @@
     const floorKeys = new Set((meta.floorCells || []).map(([c,r]) => `${c},${r}`));
     for (const [c0,r0] of (meta.floorCells || [])) {
       const c=Number(c0), r=Number(r0), key=`${c},${r}`;
+      const topY=(Number(meta.floorSurfaceY)||0) + Number(levels[key]||0)*step;
       DS.registerSurface({ id:`devruin-floor-${key}`, scope:SCOPE,
         bounds:{minX:originX+c*cs,maxX:originX+(c+1)*cs,minZ:originZ+r*cs,maxZ:originZ+(r+1)*cs},
-        topY:(Number(meta.floorSurfaceY)||0) + Number(levels[key]||0)*step, priority:1 });
+        topY, priority:1 });
+      floorHeights.set(key, topY);
     }
     for (let c=0;c<(Number(meta.gridCols)||0);c++) for (let r=0;r<(Number(meta.gridRows)||0);r++) {
       if (floorKeys.has(`${c},${r}`)) continue;
