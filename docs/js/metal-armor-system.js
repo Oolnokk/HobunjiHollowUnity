@@ -85,6 +85,7 @@
   let lastTemperReason = null;
   let visualRefreshes = 0;
   const processedLayerUrlPromises = new Map(); // Used to reuse final metal/verdigris PNG data URLs across repeated world/dialogue portrait renders.
+  const iconDataUrlByCanvas = new WeakMap(); // ToolMetalRecolor returns the same cached canvas per visual state; re-encoding it to PNG on every gear/inventory rebuild was wasted work.
   const portraitResolutionDebug = new Map(); // Used by Pixel Probe to show whether an equipped metal cosmetic resolved to drawable portrait layers on the current species/gender.
 
   function clone(value) {
@@ -422,7 +423,9 @@
     img.dataset.clothingTintToken = token;
     window.ToolMetalRecolor.getRecoloredCanvas(sourceUrl, visualOptions(state)).then(canvas => {
       if (!canvas || img.dataset.clothingTintToken !== token) return;
-      img.src = canvas.toDataURL('image/png');
+      let url = iconDataUrlByCanvas.get(canvas);
+      if (!url) { url = canvas.toDataURL('image/png'); iconDataUrlByCanvas.set(canvas, url); }
+      img.src = url;
     }).catch(error => { lastError = String(error?.message || error); });
     return true;
   }

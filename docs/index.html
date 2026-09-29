@@ -128,7 +128,7 @@
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
   <script src="js/tool-metal-recolor.js?v=20260926metalarmor1"></script>
-  <script src="js/metal-armor-system.js?v=20260927reviewfix1"></script>
+  <script src="js/metal-armor-system.js?v=20260930pauldronverdigris1"></script>
   <script src="config/colors/config.js?v=20260924enghpalette2"></script>
   <script src="config/attachment-rig-profiles.js?v=20260924voorglarge1"></script>
   <link rel="stylesheet" href="style.css?v=20260927commandauras1">
@@ -300,7 +300,7 @@
   <script src="js/bounty-board.js?v=20260831spearheadexisting1"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20260930rangedconverge1"></script>
+  <script src="js/combat/combat-config-loader.js?v=20260930pauldronverdigris1"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -652,7 +652,7 @@
        window.EquipmentPanel directly (including at top-level, in
        window.__climbDebug) and calls window.EquipmentPanel.init(...)
        during its own setup. -->
-  <script src="js/equipment-panel.js?v=20260926metalarmor1"></script>
+  <script src="js/equipment-panel.js?v=20260930pauldronverdigris1"></script>
   <!-- Per-map terrain tile texture overrides (window.TerrainTileMaterials:
        resolveTileMat/resolveCliffMat/loadTerrainTileTexture) — must load
        before game.js, which calls window.TerrainTileMaterials.init(...) near

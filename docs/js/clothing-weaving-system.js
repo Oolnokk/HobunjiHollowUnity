@@ -514,7 +514,7 @@
         installPortraitHooks();
         const out = originalApply(playerData);
         const gear = gearInventory();
-        const equipped = CLOTHING_SLOTS.map(slot => gear?.clothing?.[slot]).filter(Boolean);
+        const equipped = Object.values(gear?.clothing || {}).filter(Boolean); // Every worn slot, not just loom-capable CLOTHING_SLOTS: the metal-armor marker is rebuilt from this list, so omitting pauldrons stripped their alloy/Temper and the world avatar fell back to clean default copper.
         return decorateAvatarDataWithWovenItems(out, equipped); // Shared with NPC wardrobe rendering so default/gifted NPC clothes use the exact same portrait marker and third-dye path as player gear.
       };
     }
@@ -593,11 +593,11 @@
       const item = items[index];
       if (item?.uid) cell.dataset.clothingUid = item.uid;
     });
-    const wornCells = [...document.querySelectorAll('.clothing-slot')].slice(0, CLOTHING_SLOTS.length);
-    wornCells.forEach((cell, index) => {
-      const item = gear.clothing?.[CLOTHING_SLOTS[index]];
+    for (const cell of document.querySelectorAll('.clothing-slot[data-clothing-slot]')) {
+      const item = gear.clothing?.[cell.dataset.clothingSlot]; // Keyed by the cell's own slot: EquipmentPanel also renders a pauldron cell, so index-matching against CLOTHING_SLOTS mislabeled the torso/overwear cells.
       if (item?.uid) cell.dataset.clothingUid = item.uid;
-    });
+      else delete cell.dataset.clothingUid;
+    }
   }
 
   function itemByUid(uid) {

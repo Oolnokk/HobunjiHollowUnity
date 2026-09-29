@@ -998,6 +998,7 @@
       const item = gearInventory?.clothing?.[slot];
       const cell = document.createElement('div');
       cell.className = 'inv-equip-slot clothing-slot' + (item ? ' occupied' : '');
+      cell.dataset.clothingSlot = slot; // ClothingWeavingSystem maps worn cells back to items by slot.
       const articleLabel = item ? clothingArticleLabel(item) : '';
       cell.setAttribute('title', slot + (item ? ': ' + articleLabel : ' (empty)'));
       if (item) {
