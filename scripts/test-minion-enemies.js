@@ -34,7 +34,7 @@ assert(indexSource.indexOf('combat-bandit.js?v=20260927reviewfix1') < indexSourc
 assert(indexSource.indexOf('combat-minion.js?v=20260929lichroom1') < indexSource.indexOf('dev-spawner.js?v=20260927reviewfix1'));
 assert(indexSource.includes('resource-system.js?v=20260927reviewfix1'));
 assert(indexSource.includes('combat-config-loader.js?v='));
-assert(indexSource.includes('game.js?v=20260929ruinsites1'));
+assert(indexSource.includes('game.js?v=20260930livestockwalk1'));
 
 const authoredDyes = [
   'dye:CLOTH:muted_red_orange', 'dye:CLOTH:dusty_red_orange', 'dye:CLOTH:dark_muted_red_orange',

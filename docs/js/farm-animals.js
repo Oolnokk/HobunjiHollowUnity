@@ -287,6 +287,10 @@
   }
 
   function _farmAnimalStepTowardBarn(animal, barn) {
+    // Same hop gate as station-wander. Without it barn homing hopped on
+    // every 5 Hz AI tick, far faster than the rendered walk, so the logical
+    // animal reached the barn (and hid) while its body was tiles behind.
+    if (!_farmAnimalNearTargetTile(animal, FARM_ANIMAL_HOP_CHAIN_TILES)) return;
     const cx = barn.col + barn.w / 2, cz = barn.row + barn.h / 2;
     const touchingBarn = animal.col >= barn.col - 1 && animal.col <= barn.col + barn.w
       && animal.row >= barn.row - 1 && animal.row <= barn.row + barn.h;
@@ -316,8 +320,38 @@
   const FARM_ANIMAL_WANDER_MIN_TRAVEL_TILES = Math.min(FARM_ANIMAL_WANDER_RADIUS_TILES, Math.max(1, Number(FARM_ANIMAL_WANDER_CONFIG.minTravelTiles) || 3));
   const FARM_ANIMAL_WANDER_WAIT_MIN_SEC = Math.max(0, Number(FARM_ANIMAL_WANDER_CONFIG.waitMinSeconds) || 10);
   const FARM_ANIMAL_WANDER_WAIT_MAX_SEC = Math.max(FARM_ANIMAL_WANDER_WAIT_MIN_SEC, Number(FARM_ANIMAL_WANDER_CONFIG.waitMaxSeconds) || 15);
-  const LIVESTOCK_LOOK_RANGE_TILES = 3.75;
+  const FARM_ANIMAL_MOVE_TILES_PER_SEC = Math.max(0.2, Number(FARM_ANIMAL_WANDER_CONFIG.moveTilesPerSecond) || 1.6);
+  // A hop is "done enough" to chain the next one once the rendered animal is
+  // this close to its current tile center. Must exceed one AI tick of travel
+  // (5 Hz, see performance-loop-optimizations.js) so the next hop is always
+  // chosen before the animal reaches the center and stops. Waiting for a full
+  // stop (the old 0.04 check against an exponential ease) made every tile its
+  // own start-decelerate-stop, so a multi-tile trip read as single-tile hops.
+  const FARM_ANIMAL_HOP_CHAIN_TILES = Math.max(0.45, FARM_ANIMAL_MOVE_TILES_PER_SEC * 0.25);
 
+  function _farmAnimalNearTargetTile(animal, epsilon) {
+    return Math.abs(animal.wx - (animal.targetCol + 0.5)) < epsilon
+      && Math.abs(animal.wz - (animal.targetRow + 0.5)) < epsilon;
+  }
+
+  // Constant-speed walk toward the current target tile center (replaces the
+  // per-frame `wx += (tx - wx) * dt * 4` ease-out, which decelerated to a near
+  // stop at every tile). Vertical placement keeps its easing.
+  function _farmAnimalMoveTowardTarget(animal, dt) {
+    const dx = animal.targetCol + 0.5 - animal.wx;
+    const dz = animal.targetRow + 0.5 - animal.wz;
+    const dist = Math.hypot(dx, dz);
+    const step = FARM_ANIMAL_MOVE_TILES_PER_SEC * Math.max(0, dt);
+    if (dist <= step || dist < 1e-6) {
+      animal.wx = animal.targetCol + 0.5;
+      animal.wz = animal.targetRow + 0.5;
+    } else {
+      animal.wx += dx / dist * step;
+      animal.wz += dz / dist * step;
+    }
+  }
+
+  const LIVESTOCK_LOOK_RANGE_TILES = 3.75;
   // Livestock use the same face-height contract as wild companions, but this
   // module owns a separate tile-space update loop (farm animals are not in
   // hostileObjects).  The game supplies the player's smoothed portrait face
@@ -435,15 +469,25 @@
       animal.wanderPhase = 'rest';
       return;
     }
-    // Only take the next hop once the previous one has actually finished
-    // lerping into place (same arrival epsilon update() uses for its own
-    // idle-facing check) — this, not a throttle/chance roll, is what
-    // stops a new decision from ever interrupting a hop mid-stride.
-    const arrived = Math.abs(animal.wx - (animal.targetCol + 0.5)) < 0.04
-      && Math.abs(animal.wz - (animal.targetRow + 0.5)) < 0.04;
-    if (!arrived) return;
-    if (_farmAnimalStepToward(animal, animal.wanderTargetCol, animal.wanderTargetRow, onStep, _tileTouchesAnyBarn, false)) {
-      animal._wanderPath = null;
+    // Chain the next hop once the current one is nearly finished (see
+    // FARM_ANIMAL_HOP_CHAIN_TILES) — early enough that the walk never stops
+    // mid-trip, late enough that a new decision can't yank the animal
+    // backwards across the tile it's still entering.
+    if (!_farmAnimalNearTargetTile(animal, FARM_ANIMAL_HOP_CHAIN_TILES)) return;
+    // Once a detour path exists, follow it to the end. Retrying the greedy
+    // hop first (as this used to) undid every detour step: the greedy hop
+    // stepped straight back toward the station, dropped the path, the next
+    // tick re-pathed forward again, and the animal ping-ponged between the
+    // same two tiles forever whenever anything sat between it and its
+    // station — the "only ever moves one tile" livestock bug.
+    if (animal._wanderPath && animal._wanderPath.length) {
+      const hop = animal._wanderPath[0];
+      if (_farmAnimalStepToward(animal, hop.col, hop.row, onStep, _tileTouchesAnyBarn, false)) {
+        animal._wanderPath.shift();
+        return;
+      }
+      animal._wanderPath = null; // Detour itself got blocked (e.g. another animal) — re-plan below.
+    } else if (_farmAnimalStepToward(animal, animal.wanderTargetCol, animal.wanderTargetRow, onStep, _tileTouchesAnyBarn, false)) {
       return;
     }
     // The direct/greedy hop is fully blocked (e.g. a barn now sits between
@@ -451,19 +495,14 @@
     // up on this station outright. Cheap: only runs once movement actually
     // stalls, and is bounded to a small local box since farm wander targets
     // are always nearby (see FARM_ANIMAL_WANDER_RADIUS_TILES).
-    if (!animal._wanderPath || !animal._wanderPath.length) {
-      const isWalkable = (c, r) => canSpawnAt(c, r) && !_tileTouchesAnyBarn(c, r);
-      const path = window.TilePathfinding?.findPath(animal.col, animal.row, animal.wanderTargetCol, animal.wanderTargetRow, isWalkable, {
-        bounds: window.TilePathfinding.boxAround(animal.col, animal.row, animal.wanderTargetCol, animal.wanderTargetRow, 5),
-      });
-      if (path && path.length) animal._wanderPath = path;
-    }
-    if (animal._wanderPath && animal._wanderPath.length) {
-      const hop = animal._wanderPath[0];
-      if (_farmAnimalStepToward(animal, hop.col, hop.row, onStep, _tileTouchesAnyBarn, false)) {
-        animal._wanderPath.shift();
-        return;
-      }
+    const isWalkable = (c, r) => canSpawnAt(c, r) && !_tileTouchesAnyBarn(c, r);
+    const path = window.TilePathfinding?.findPath(animal.col, animal.row, animal.wanderTargetCol, animal.wanderTargetRow, isWalkable, {
+      bounds: window.TilePathfinding.boxAround(animal.col, animal.row, animal.wanderTargetCol, animal.wanderTargetRow, 5),
+    });
+    if (path && path.length && _farmAnimalStepToward(animal, path[0].col, path[0].row, onStep, _tileTouchesAnyBarn, false)) {
+      path.shift();
+      animal._wanderPath = path;
+      return;
     }
     // Still nothing — give up on this station and rest briefly before
     // trying a new one, rather than spinning in place.
@@ -647,8 +686,7 @@
         const tile = grid[this.targetRow]?.[this.targetCol];
         const ty = tile ? deps.tileSurfaceY(tile.type) + (this.groundLift ?? this.halfHeight) : this.wy;
         const sp = Math.min(1, dt * 4);
-        this.wx += (tx - this.wx) * sp;
-        this.wz += (tz - this.wz) * sp;
+        _farmAnimalMoveTowardTarget(this, dt);
         this.wy += (ty - this.wy) * sp;
         this.wy += Math.sin(performance.now() / 420 + this.targetCol * 1.3) * 0.006;
         this.avatarRef.group.position.set(this.wx, this.wy, this.wz);
@@ -757,8 +795,7 @@
         const tile = grid[this.targetRow]?.[this.targetCol];
         const ty = tile ? deps.tileSurfaceY(tile.type) + (this.groundLift ?? this.halfHeight) : this.wy;
         const sp = Math.min(1, dt * 4);
-        this.wx += (tx - this.wx) * sp;
-        this.wz += (tz - this.wz) * sp;
+        _farmAnimalMoveTowardTarget(this, dt);
         this.wy += (ty - this.wy) * sp;
         this.wy += Math.sin(performance.now() / 420 + this.targetCol * 1.3) * 0.006;
         this.avatarRef.group.position.set(this.wx, this.wy, this.wz);

@@ -8,7 +8,7 @@ const vm = require('node:vm');
 const source = fs.readFileSync('docs/js/combat/ranged-camera-focus.js', 'utf8');
 const loader = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8');
 
-assert.match(loader, /ranged-camera-focus\.js\?v=20260928meleereticle1[\s\S]*HobunjiRangedCameraFocus\?\.version\) >= 12/, 'loader requires camera-focus v12 with frozen melee endpoint reuse');
+assert.match(loader, /ranged-camera-focus\.js\?v=20260930rangedconverge1[\s\S]*HobunjiRangedCameraFocus\?\.version\) >= 12/, 'loader requires camera-focus v12 with frozen melee endpoint reuse');
 assert.doesNotMatch(loader, /attack-camera-player-root/, 'obsolete player-root camera hook stays removed');
 assert.match(source, /change-driven-persistent-cache/, 'combat aim advertises persistent change-driven caching');
 assert.match(source, /intersectObject\(root, true, localHits\)/, 'scene roots remain isolated so one bad root cannot abort the frame');
@@ -433,6 +433,28 @@ assert.equal(perspectiveTarget.point.x, 6);
 assert.equal(windowStub.HobunjiRangedCameraFocus.aimPerformance().surfaceRaycasts, scansBeforePerspectivePoint + 1,
   'ranged re-init invalidates and resolves the reticle surface exactly once');
 assert.equal(windowStub.HobunjiRangedCameraFocus.snapshot().aimAlignment, 'ranged-reticle-first-surface+melee-frozen-reticle-then-perspective');
+
+// Ranged convergence starts at the offset held weapon, so the chosen surface
+// must be something a shot can meaningfully converge on: cosmetic billboards
+// (grass/rain/popups) never count, and nothing closer than the minimum
+// convergence distance may swing the shot sideways.
+{
+  const grassMesh = { isMesh: true, name: '', parent: null, visible: true, userData: { isBillboard: true }, material: { visible: true, opacity: 1 } };
+  const petMesh = { isMesh: true, name: 'dabinggi-hound_front_plane', parent: null, visible: true, material: { visible: true, opacity: 1 } };
+  const savedHits = sceneHits;
+  scene.children.push(grassMesh, petMesh);
+  sceneHits = [
+    { object: petMesh, distance: 3.2, point: new Vector3(3.2, 1, 3) }, // ~0.9 tiles past the held origin
+    { object: grassMesh, distance: 5, point: new Vector3(5, 1, 3) }, // far enough, but a grass billboard
+    { object: wallMesh, distance: 6, point: new Vector3(6, 3, 3) },
+  ];
+  windowStub.HobunjiRangedCameraFocus.invalidateAimTarget('test-ranged-convergence', true);
+  const convergeTarget = windowStub.HobunjiRangedCameraFocus.interactionAimTarget();
+  assert.equal(convergeTarget.surfaceName, 'farm-wall', 'ranged aim skips near-muzzle surfaces and cosmetic billboards');
+  scene.children.splice(scene.children.indexOf(grassMesh), 2);
+  sceneHits = savedHits;
+  windowStub.HobunjiRangedCameraFocus.invalidateAimTarget('test-ranged-convergence-restore', true);
+}
 
 activeTool = 'weapon';
 const meleePerspectiveTarget = windowStub.HobunjiRangedCameraFocus.interactionAimTarget();
