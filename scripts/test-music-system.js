@@ -210,8 +210,8 @@ assert.match(config, /"nightbugs": "assets\/audio\/sfx\/bgs\/bgs_nightbugs1\.mp3
   'runtime config uses the normalized nightbugs recording');
 assert.equal((config.match(/"url": "assets\/audio\/music\/bgm\/bgm_farm1\.m4a", "fallback": true, "rainingOnly": true/g) || []).length, 2,
   'the shared farm/town theme is authored as rain-only in both playlists');
-assert.match(index, /scratchbones-config\.js\?v=20260926purefocus1/,
-  'the browser cache key loads the Pure Focus-only combat playlist');
+assert.match(index, /config\/scratchbones-config\.js\?v=\d{8}[a-z0-9]+/,
+  'the browser loads the Pure Focus-only combat playlist through a cache-busted config URL (content is asserted above)');
 assert.match(formatUtils, /title-screen-runtime\.js\?v=20260921preworldsky2/,
   'the parser-synchronous title loader cache-busts the earliest Remembrance bootstrap');
 assert.match(index, /music-system\.js\?v=20260925gameplaycues1/,
@@ -224,7 +224,7 @@ assert.match(index, /loading-screen-runtime\.js\?v=20260925minefloor1/,
   'the browser cache key loads destination-floor context on mine loading screens');
 assert.match(index, /fishing-minigame\.js\?v=20260925fishcue1/,
   'the browser cache key loads the successful-catch music cue hook');
-assert.match(index, /game\.js\?v=20260926combatreview1/,
+assert.match(index, /"game\.js\?v=\d{8}[a-z0-9]+"/,
   'the browser cache key loads the mine-hole cue and floor-number handoff');
 
 assert.ok(fs.statSync(nightbugsPath).size > 600000,

@@ -35,15 +35,33 @@
     const forwardX = Math.cos(target.facing || 0);
     const forwardY = Math.sin(target.facing || 0);
     const behindDot = forwardX * (toPlayerX / dist) + forwardY * (toPlayerY / dist);
-    return {
+    const staminaForCondition = window.ResourceSystem?.getDepletionEquivalentCurrent?.(target, 'stamina') ?? target.stamina; // Used by Exhaust Cutter: the visible Stamina bar, including any affliction band extending past current.
+    const healthForCondition = window.ResourceSystem?.getDepletionEquivalentCurrent?.(target, 'health') ?? target.health; // Used by Mercy Spike: the visible Health bar (affliction bands inside current are never double-counted).
+    const conditions = {
       enemyStriking: enemyIsStriking(target),
       // True Exhausted (see resource-system.js's spendStamina) always
-      // counts, even if a Winded-Stamina-reduced effective max makes the
-      // plain 20%-of-max fallback threshold look full.
-      exhausted: !!target.exhaustion?.active || target.stamina <= target.maxStamina * 0.20,
+      // qualifies. ResourceSystem reads the visible bar length (affliction
+      // bands sit inside current, so they are not added on top); explicit max
+      // reducers stay real depletion because that helper caps at the live
+      // effective maximum.
+      exhausted: !!target.exhaustion?.active || staminaForCondition <= target.maxStamina * 0.20,
       behind: behindDot < -0.35,
-      lowHealth: target.health > 0 && target.health <= target.maxHealth * 0.30,
+      lowHealth: target.health > 0 && healthForCondition <= target.maxHealth * 0.30,
     };
+    if (window.Combat?.quickAttackData) {
+      window.Combat.quickAttackData.lastConditionCheck = { // Mobile-readable diagnostics for resource-gated Quick Attack readiness.
+        targetId: target.id || target.name || null,
+        rawStamina: Number(target.stamina) || 0,
+        staminaForCondition,
+        rawHealth: Number(target.health) || 0,
+        healthForCondition,
+        effectiveStaminaMax: window.ResourceSystem?.getEffectiveMax?.(target, 'stamina') ?? target.maxStamina,
+        effectiveHealthMax: window.ResourceSystem?.getEffectiveMax?.(target, 'health') ?? target.maxHealth,
+        exhausted: conditions.exhausted,
+        lowHealth: conditions.lowHealth,
+      };
+    }
+    return conditions;
   }
   window.Combat.getQuickAttackConditions = getConditions;
 

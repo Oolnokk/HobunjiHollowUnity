@@ -16,6 +16,10 @@ assert.doesNotMatch(source, /requestAnimationFrame\s*\(|setInterval\s*\(/,
   'reticle/lunge correction must piggyback existing combat ticks instead of adding another loop');
 assert.match(source, /rayBoxInterval\(ray, box\)/,
   'transient melee alignment uses an exact center-ray/Box3 test');
+assert.match(source, /nearestReticleHostileTarget[\s\S]{0,1800}source: 'screen-reticle-box3'/,
+  'lunge start freezes the nearest exact hostile Box3 point under the centered reticle');
+assert.match(source, /committedMeleeTarget:/,
+  'bridge exposes the frozen endpoint for strike collision to reuse');
 assert.match(source, /resolveSweptLungeEntry\(liveDeps\)/,
   'lunge range entry is checked across movement already completed this frame');
 assert.match(source, /LUNGE_CANCEL_RANGE_MULTIPLIER = 0\.5/,
@@ -51,9 +55,9 @@ for (const [name, sourceText] of [['combo', comboSource], ['quick', quickSource]
     `${name} must grant aerial chaining only after its real strike reports at least one enemy hit`);
 }
 assert(indexSource.includes('js/combat/combat-combo.js?v=20260927aerialchain1'));
-assert(indexSource.includes('js/combat/combat-quickattacks.js?v=20260927aerialchain1'));
+assert(indexSource.includes('js/combat/combat-quickattacks.js?v=20260927reviewfix1'));
 assert(indexSource.includes('js/combat/combat-charged-breaker.js?v=20260927aerialchain1'));
-assert(indexSource.includes('game.js?v=20260927inputclaim1'));
+assert(indexSource.includes('game.js?v=20260929merge1'));
 
 const player = {
   x: 0, y: 0, health: 100, facing: 0,
@@ -86,11 +90,14 @@ let lastProfileResistance = null; // Captures the effective upward-gravity resis
 let lastProfileAirAssist = false; // Captures the pitch-only airborne assist bit passed into the shared lunge profile.
 let lastProfileDirect = null; // Confirms forward/upward player attacks use the straight reticle-vector path, not the old ballistic blend.
 let perspectivePointY = 0.55; // Mutable shared aim height lets this regression exercise an elevated target without changing camera yaw.
+let perspectivePointZ = 0; // Mutable horizon depth exposes shoulder-camera parallax without changing the center-ray direction.
+let cameraRayOriginZ = 0; // Mutable camera shoulder offset used by the frozen-reticle lunge regression.
+let blockNativeLunge = false; // Simulates game.js refusing movement while the melee strike itself is still allowed to resolve.
 
 const perspectiveTarget = () => ({
-  point: { x: 10, y: perspectivePointY, z: 0 },
+  point: { x: 10, y: perspectivePointY, z: perspectivePointZ },
   cameraRay: {
-    origin: { x: 0, y: 0.5, z: 0 },
+    origin: { x: 0, y: 0.5, z: cameraRayOriginZ },
     direction: { x: 1, y: 0, z: 0 },
   },
 });
@@ -107,7 +114,7 @@ const deps = {
   getPlayerMeleeAimDirection: () => ({ x: 1, y: 0, z: 0 }),
   getPlayerMeleeAimPitch: () => 0,
   beginCombatLunge(distancePx, durationS, hopUnits = 0, hitTest = null) {
-    if (player.lunging) return;
+    if (blockNativeLunge || player.lunging) return false;
     player.lunging = true;
     player.lungeT = durationS;
     player.lungeDur = durationS;
@@ -177,6 +184,12 @@ const windowStub = {
         halfHeightWorld: 0.5,
       };
     },
+    beginStagedAction(options = {}) {
+      return {
+        options,
+        fire() { return options.onStrike?.(this); },
+      }; // Minimal core stand-in lets the bridge prove each staged strike owns the reticle snapshot from its immediately preceding lunge request.
+    },
     update() {
       nativeUpdateCalls++;
       nativeUpdateSawX = player.x;
@@ -216,6 +229,104 @@ baseAlignment = { ...baseAlignment, screenCorrectionRad: 0, deltaRad: 0 };
 step = windowStub.Combat.attackAlignmentStep(player, target, 0, { facing: 0 });
 assert.equal(step.eligible, false, 'pure vertical miss is not ranked as a fake zero-error autotarget');
 
+// Shoulder-camera parallax: the horizon point and a near enemy can lie on the
+// same camera ray but produce different player-origin directions. Freeze the
+// exact Box3 entry point at lunge start so movement commits to what the reticle
+// actually covered instead of the far 160-tile-style endpoint.
+cameraRayOriginZ = 1;
+perspectivePointZ = 1;
+perspectivePointY = 0.55;
+targetBox = {
+  min: { x: 2, y: 0, z: 0.8 },
+  max: { x: 2.4, y: 1, z: 1.2 },
+};
+deps.hostileObjects = [target];
+player.x = 0;
+player.y = 0;
+player.lunging = false;
+deps.beginCombatLunge(128, 0.4, 0, { rangePx: 64, halfConeRad: 0.25 });
+const committed = windowStub.HobunjiCombatCameraAlignment.committedMeleeTarget();
+assert(committed, 'lunge captures an exact reticle endpoint when the camera ray intersects a hostile Box3');
+assert.equal(committed.source, 'screen-reticle-box3');
+assert(Math.abs(committed.point.x - 2) < 1e-9, 'frozen endpoint is the near Box3 entry rather than the far horizon point');
+assert(Math.abs(committed.point.z - 1) < 1e-9, 'frozen endpoint stays on the shoulder camera center ray');
+assert(player.lungeDirY > 0.35, 'lunge ground direction converges strongly toward the near reticle point from the player origin');
+assert.equal(windowStub.HobunjiCombatCameraAlignment.debugSnapshot().lastLunge.targetSource, 'screen-reticle-box3');
+let firstStrikeTarget = null; // Captured inside the first staged strike to prove later attacks cannot replace its ownership.
+const firstStagedAction = windowStub.Combat.beginStagedAction({
+  onStrike: () => { firstStrikeTarget = windowStub.HobunjiCombatCameraAlignment.meleeHitTarget(); },
+});
+const frozenPoint = { ...committed.point };
+targetBox = {
+  min: { x: 2, y: 0, z: -3.2 },
+  max: { x: 2.4, y: 1, z: -2.8 },
+};
+const committedAfterMove = windowStub.HobunjiCombatCameraAlignment.committedMeleeTarget();
+assert(committedAfterMove, 'frozen endpoint remains available through the staged strike window');
+for (const axis of ['x', 'y', 'z']) {
+  assert(Math.abs(committedAfterMove.point[axis] - frozenPoint[axis]) < 1e-9,
+    `moving the enemy after attack start must not move frozen ${axis} or create homing`);
+}
+
+// A second attack can be requested while the previous movement lunge is still
+// flagged active (different attack modules have independent busy gates). Its
+// STRIKE target must refresh, while the old movement lunge keeps its own point.
+targetBox = {
+  min: { x: 3, y: 0, z: 0.8 },
+  max: { x: 3.4, y: 1, z: 1.2 },
+};
+deps.beginCombatLunge(128, 0.4, 0, { rangePx: 64, halfConeRad: 0.25 });
+const secondAttackCommit = windowStub.HobunjiCombatCameraAlignment.committedMeleeTarget();
+let secondStrikeTarget = null; // Captured only while the second staged strike executes.
+const secondStagedAction = windowStub.Combat.beginStagedAction({
+  onStrike: () => { secondStrikeTarget = windowStub.HobunjiCombatCameraAlignment.meleeHitTarget(); },
+});
+const activeOldLunge = windowStub.HobunjiCombatCameraAlignment.debugSnapshot().activeLungeReticleTarget;
+assert(secondAttackCommit && Math.abs(secondAttackCommit.point.x - 3) < 1e-9,
+  'a denied second movement lunge still refreshes the new strike endpoint');
+assert(activeOldLunge && Math.abs(activeOldLunge.point.x - frozenPoint.x) < 1e-9,
+  'refreshing strike aim cannot bend the older lunge that remains in flight');
+assert(Math.abs(windowStub.HobunjiCombatCameraAlignment.meleeHitTarget().point.x - frozenPoint.x) < 1e-9,
+  'outside a strike, native movement probes still resolve against the older active lunge endpoint');
+secondStagedAction.fire();
+assert(secondStrikeTarget && Math.abs(secondStrikeTarget.point.x - 3) < 1e-9,
+  'second staged strike resolves against its own frozen endpoint despite the older movement lunge');
+assert(Math.abs(windowStub.HobunjiCombatCameraAlignment.meleeHitTarget().point.x - frozenPoint.x) < 1e-9,
+  'after the second strike callback, movement-probe ownership returns to the older lunge');
+firstStagedAction.fire();
+assert(firstStrikeTarget && Math.abs(firstStrikeTarget.point.x - frozenPoint.x) < 1e-9,
+  'first staged strike retains its original endpoint even after a newer attack committed');
+
+// game.js also refuses a midair movement lunge after a miss/expired chain
+// window. The attack still swings, so it must receive fresh reticle aim rather
+// than inheriting the previous attack target.
+player.lunging = false;
+windowStub.Combat.update(0); // Mirrors the real frame boundary that releases the completed movement-lunge snapshot before another attack.
+assert.equal(windowStub.HobunjiCombatCameraAlignment.meleeHitTarget(), null,
+  'after movement and staged-strike ownership end, live melee aim no longer inherits the latest historical commit');
+blockNativeLunge = true;
+targetBox = {
+  min: { x: 4, y: 0, z: 0.8 },
+  max: { x: 4.4, y: 1, z: 1.2 },
+};
+deps.beginCombatLunge(128, 0.4, 0, { rangePx: 64, halfConeRad: 0.25 });
+const deniedMovementCommit = windowStub.HobunjiCombatCameraAlignment.committedMeleeTarget();
+let deniedStrikeTarget = null; // Proves denied movement still hands the fresh attack snapshot to its staged strike.
+const deniedStagedAction = windowStub.Combat.beginStagedAction({
+  onStrike: () => { deniedStrikeTarget = windowStub.HobunjiCombatCameraAlignment.meleeHitTarget(); },
+});
+assert.equal(player.lunging, false, 'fixture confirms native movement lunge was denied');
+assert(deniedMovementCommit && Math.abs(deniedMovementCommit.point.x - 4) < 1e-9,
+  'movement denial still commits the current attack reticle point for strike collision');
+assert.equal(windowStub.HobunjiCombatCameraAlignment.debugSnapshot().activeLungeReticleTarget, null,
+  'denied movement does not steal or fabricate an active-lunge endpoint');
+deniedStagedAction.fire();
+assert(deniedStrikeTarget && Math.abs(deniedStrikeTarget.point.x - 4) < 1e-9,
+  'denied movement attack still resolves its staged strike against the fresh reticle endpoint');
+blockNativeLunge = false;
+cameraRayOriginZ = 0;
+perspectivePointZ = 0;
+
 // Grounding is now determined only by pitch: forward/upward aim can leave the
 // ground regardless of whether an enemy is already horizontally inside the attack.
 perspectivePointY = 2.35; // ~10.2° upward from the player's 0.55 origin: below the old 12° leap threshold.
@@ -253,6 +364,9 @@ assert.equal(lastProfileDirect, 1, 'exactly forward aim still bypasses the groun
 assert.equal(player.lungeHopUnits, 0, 'direct reticle flight never synthesizes a hop');
 assert.equal(player.lungeVerticalTravelUnits, 0, 'exactly horizontal reticle aim has zero Y component by definition');
 assert.equal(deps.hostileObjects.length, 0, 'forward/upward direct-flight behavior is verified with no hostile available');
+const noHostileLungeTarget = windowStub.HobunjiCombatCameraAlignment.debugSnapshot().activeLungeReticleTarget;
+assert(noHostileLungeTarget && noHostileLungeTarget.source === 'shared-perspective-point',
+  'a no-hostile lunge still owns its frozen perspective fallback instead of borrowing a future attack target');
 
 player.lunging = false;
 lastProfileResistance = null;
@@ -273,8 +387,8 @@ deps.hostileObjects = [target]; // Restore the target only for the separate swep
 // the target beginning at world X 1.4, first cancel entry is player world X 0.9
 // = 57.6 logical pixels, long before the attempted endpoint at 128 px.
 targetBox = {
-  min: { x: 1.4, y: 0, z: -0.2 },
-  max: { x: 1.6, y: 1, z: 0.2 },
+  min: { x: 1.4, y: 0, z: 0.02 },
+  max: { x: 1.6, y: 1, z: 0.12 },
 };
 player.x = 0;
 player.y = 0;
@@ -307,6 +421,7 @@ assert.equal(player.lungeHitTest, null, 'hop lunge stops re-testing once its hor
 assert(nativeUpdateCalls >= 2, 'native Combat.update continues to run through the bridge');
 
 const debug = windowStub.HobunjiCombatCameraAlignment.debugSnapshot();
+assert.equal(debug.stagedActionCommitInstalled, true, 'staged strike ownership wrapper is installed');
 assert.equal(debug.exactReticleAlignmentInstalled, true);
 assert.equal(debug.combatUpdateSweepInstalled, true);
 assert(debug.reticleBoxHitCount >= 1);

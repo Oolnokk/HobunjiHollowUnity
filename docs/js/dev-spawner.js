@@ -356,6 +356,7 @@
       extra: { homeX: x, homeY: y, state: 'idle' },
     });
     if (!creature) { deps.showToast(`Could not spawn bandit "${rank}" — see console/log for details.`, false); return; }
+    if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) { window.BanditCombat?.discardEntity?.(creature); return; } // Portrait build is async too; drop it if the player left meanwhile.
     deps.hostileObjects.add(creature);
     _arenaSpawnedCreatures.add(creature);
     const msg = `[dev-arena] spawned bandit ${rank} tier ${tier} #${creature.id} (species=${creature.rosterRecord?.appearance?.speciesId}, mastery=${creature.banditMastery}, maxHealth=${creature.maxHealth}, attackDamage=${creature.def.attackDamage})`;
@@ -393,6 +394,7 @@
       extra: { homeX: x, homeY: y, state: 'idle', isPorakanekiHunter: true },
     });
     if (!creature) { deps.showToast('Could not spawn Porakaneki Hunter — see console/log for details.', false); return; }
+    if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) { window.BanditCombat?.discardEntity?.(creature); return; } // Portrait build is async too; drop it if the player left meanwhile.
     creature._porakanekiAggroRangePx = creature.def?.aggroRangePx ?? deps.TILE * 6;
     if (creature.def) creature.def.aggroRangePx = 0;
     deps.hostileObjects.add(creature);
@@ -423,7 +425,7 @@
       extra: { homeX: x, homeY: y, state: 'idle' },
     });
     if (!creature) { deps.showToast('Could not spawn Harlyao Skeleton Minion — see Debug log.', false); return; }
-    if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) { creature.avatarRef?.dispose?.(); return; } // Drops a late async spawn if the player left the arena.
+    if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) { window.BanditCombat?.discardEntity?.(creature); return; } // Drops a late async spawn if the player left the arena.
     deps.hostileObjects.add(creature);
     _arenaSpawnedCreatures.add(creature);
     const clothes = creature.rosterRecord?.equippedCosmetics?.join('+') || 'none'; // Copyable proof that the bandit headwear guarantee did not run.
@@ -444,7 +446,7 @@
     const y = deps.player.y + Math.sin(angle) * dist; // World Z-plane coordinate supplied to the lich constructor.
     const creature = await window.HarlyaoLichCombat.makeEntity({ type, tier, x, y }); // Dedicated class owns roster, dyes, spells, commands, puddles, and summoning.
     if (!creature) { deps.showToast(`Could not spawn ${type} Harlyao Lich — see Debug log.`, false); return; }
-    if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) { creature.avatarRef?.dispose?.(); return; } // Drops a late async spawn if the player left while its portrait rendered.
+    if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) { window.BanditCombat?.discardEntity?.(creature); return; } // Drops a late async spawn if the player left while its portrait rendered.
     deps.hostileObjects.add(creature);
     _arenaSpawnedCreatures.add(creature);
     const msg = `[dev-arena] spawned ${type} Harlyao Lich #${creature.id} (class=${creature.enemyClass}, dye=${creature.lichDyeId}, command=${creature._lichCommand}, hood=ragged_hood, overwear=tankan_bodywrap)`; // Mobile-copyable proof of type, class, matching dye, and forced outfit.

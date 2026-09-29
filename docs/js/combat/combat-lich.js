@@ -689,6 +689,7 @@
     erupt.particles = [];
     erupt.freeStoneSlots = [];
     erupt.stoneBatch?.parent?.remove?.(erupt.stoneBatch); // Shared stone geometry/material remain cached; only this lightweight instance container is removed.
+    erupt.stoneBatch?.dispose?.(); // Frees the per-eruption instanceMatrix GPU buffer; InstancedMesh.dispose never touches the shared geometry/material.
     erupt.stoneBatch = null;
     for (const visual of [erupt.ring, erupt.lava, erupt.lavaCore, erupt.lavaFountain, erupt.lavaFountainCore]) {
       if (!visual) continue;
@@ -1053,14 +1054,49 @@
     return added;
   }
 
+  // Wildlife shares its def object with every creature of the species
+  // (CREATURE_DB[key]), so writing speeds into it slowed the whole species and
+  // overlapping slows could restore to an already-slowed "base" permanently.
+  // Non-bandit targets get a per-creature prototype overlay instead (same
+  // pattern as wildlife-territorial.js); Bandit/Minion/Lich defs are already
+  // per-entity objects and are written directly.
+  function defInPrototypeChain(def, candidate) {
+    for (let d = def; d; d = Object.getPrototypeOf(d)) if (d === candidate) return true;
+    return false;
+  }
+
+  function enemySlowDef(target) {
+    if (!target?.def) return null;
+    if (target.isBandit) return target.def;
+    const existing = target._kanthicSlowDef; // Reused across slow episodes so the prototype chain never grows per hit.
+    if (existing && defInPrototypeChain(target.def, existing)) return existing;
+    const overlay = Object.create(target.def); // Per-creature layer; the shared species def stays untouched.
+    target.def = overlay;
+    target._kanthicSlowDef = overlay;
+    return overlay;
+  }
+
+  function restoreEnemySlowDef(target, state) {
+    const slowDef = state?.slowDef;
+    if (!slowDef || target === deps?.player) return;
+    if (slowDef === target._kanthicSlowDef) {
+      delete slowDef.moveSpeed; // Falls back through the overlay to the live species values.
+      delete slowDef.chaseSpeed;
+    } else if (Number.isFinite(state.baseMoveSpeed)) {
+      slowDef.moveSpeed = state.baseMoveSpeed;
+      slowDef.chaseSpeed = state.baseChaseSpeed;
+    }
+  }
+
   function addGooSlow(target) {
     const now = performance.now(); // Duration clock shared by player and hostile slow handling.
-    const state = target._kanthicGooSlow || { stacks: 0, until: 0, baseMoveSpeed: null, baseChaseSpeed: null }; // Runtime-only stacking state; base enemy speeds are captured once.
+    const state = target._kanthicGooSlow || { stacks: 0, until: 0, slowDef: null, baseMoveSpeed: null, baseChaseSpeed: null }; // Runtime-only stacking state; base enemy speeds are captured once per slow episode.
     state.stacks = Math.min(GOO_SLOW_MAX_STACKS, state.stacks + 1);
     state.until = now + GOO_SLOW_DURATION_MS;
-    if (target !== deps?.player && target.def) {
-      if (!Number.isFinite(state.baseMoveSpeed)) state.baseMoveSpeed = Number(target.def.moveSpeed) || 0;
-      if (!Number.isFinite(state.baseChaseSpeed)) state.baseChaseSpeed = Number(target.def.chaseSpeed) || state.baseMoveSpeed;
+    if (target !== deps?.player && target.def && !state.slowDef) {
+      state.slowDef = enemySlowDef(target);
+      state.baseMoveSpeed = Number(state.slowDef.moveSpeed) || 0;
+      state.baseChaseSpeed = Number(state.slowDef.chaseSpeed) || state.baseMoveSpeed;
     }
     target._kanthicGooSlow = state;
     applyEnemySlow(target);
@@ -1073,11 +1109,11 @@
   }
 
   function applyEnemySlow(target) {
-    const state = target?._kanthicGooSlow; // Captured authored enemy speeds restored exactly when the duration expires.
-    if (!state || target === deps?.player || !target.def || !Number.isFinite(state.baseMoveSpeed)) return;
+    const state = target?._kanthicGooSlow; // Captured enemy speeds restored exactly when the duration expires.
+    if (!state?.slowDef || target === deps?.player || !Number.isFinite(state.baseMoveSpeed)) return;
     const mul = slowMultiplier(target); // Current stack-derived movement multiplier.
-    target.def.moveSpeed = state.baseMoveSpeed * mul;
-    target.def.chaseSpeed = state.baseChaseSpeed * mul;
+    state.slowDef.moveSpeed = state.baseMoveSpeed * mul;
+    state.slowDef.chaseSpeed = state.baseChaseSpeed * mul;
   }
 
   function clearExpiredSlow(target) {
@@ -1086,20 +1122,14 @@
       if (state && target !== deps?.player) applyEnemySlow(target);
       return;
     }
-    if (target !== deps?.player && target.def && Number.isFinite(state.baseMoveSpeed)) {
-      target.def.moveSpeed = state.baseMoveSpeed;
-      target.def.chaseSpeed = state.baseChaseSpeed;
-    }
+    restoreEnemySlowDef(target, state);
     delete target._kanthicGooSlow;
   }
 
   function clearGooSlowNow(target) {
-    const state = target?._kanthicGooSlow; // Immediate arena-exit cleanup restores enemy authored speeds instead of waiting for the duration clock.
+    const state = target?._kanthicGooSlow; // Immediate arena-exit cleanup restores enemy speeds instead of waiting for the duration clock.
     if (!state) return;
-    if (target !== deps?.player && target.def && Number.isFinite(state.baseMoveSpeed)) {
-      target.def.moveSpeed = state.baseMoveSpeed;
-      target.def.chaseSpeed = state.baseChaseSpeed;
-    }
+    restoreEnemySlowDef(target, state);
     delete target._kanthicGooSlow;
   }
 
@@ -1553,8 +1583,7 @@
       });
       if (!minion) return;
       if (!isArena() || !isLiveActor(lich)) {
-        minion.avatarRef?.dispose?.();
-        minion.groundShadow?.parent?.remove?.(minion.groundShadow);
+        window.BanditCombat?.discardEntity?.(minion); // Full scene teardown: avatar, ground shadow, and weapon holders.
         return;
       }
       deps.hostileObjects?.add?.(minion);
@@ -1834,7 +1863,7 @@
     allowArea: areaId => { if (areaId) allowedAreas.add(String(areaId)); }, // Opt another area in (e.g. the Random Test Ruin's boss sanctum).
     disallowArea: areaId => { if (areaId && areaId !== ARENA_ID) allowedAreas.delete(String(areaId)); },
     installWrappers, makeEntity, rosterFor, rollDye,
-    updateLichAI, applyEntranced, addGooSlow, makeGasolinePuddle, makeEruptingEarth,
+    updateLichAI, applyEntranced, addGooSlow, clearExpiredSlow, makeGasolinePuddle, makeEruptingEarth,
     debugSnapshot,
     formatDebug() {
       const d = debugSnapshot(); // Compact status line intended for Pixel Probe/mobile-copyable diagnostics.

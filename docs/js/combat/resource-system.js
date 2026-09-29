@@ -90,7 +90,7 @@
   // reservation used by Minion-class undead.
   const AFFLICTIONS = {
     shamblingFooting: {
-      name: "Shambling Footing", resource: "footing", extend: "maxBack", priority: 105, recovers: false, immutable: true,
+      name: "Shambling Footing", resource: "footing", extend: "maxBack", priority: 105, recovers: false, immutable: true, reducesEffectiveMax: true,
       family: "control", tags: ["undead", "shambling"],
       desc: "Permanent reserved Footing carried by Minions; it cannot be added to, cleansed, reduced, or recovered. While prone, refilling all remaining unshambled Footing is enough to stand."
     },
@@ -105,7 +105,7 @@
       desc: "Converts Health into Bleeding buildup without damaging on application; during combat, ticks consume that buildup as lethal Health damage, while quiet/rested ticks heal instead."
     },
     congealedHealth: {
-      name: "Congealed Health", resource: "health", extend: "zero", priority: 50, recovers: false,
+      name: "Congealed Health", resource: "health", extend: "zero", priority: 50, recovers: false, reducesEffectiveMax: true,
       family: "damage", tags: ["physical", "blood"],
       desc: "Temporarily lowers effective Health max without reducing it below 1, then recovers its own points every tick."
     },
@@ -115,7 +115,7 @@
       desc: "Application only converts Stamina into Infected buildup; spending through it later deals lethal Health damage. Avoiding Stamina spend makes it recover much faster; it can also cause vomiting, adding Winded Stamina and Poisoned Health."
     },
     windedStamina: {
-      name: "Winded Stamina", resource: "stamina", extend: "zero", priority: 95, recovers: true,
+      name: "Winded Stamina", resource: "stamina", extend: "zero", priority: 95, recovers: true, reducesEffectiveMax: true,
       family: "control", tags: ["breath"],
       desc: "Lowers effective maximum Stamina and makes Exhausted easier to enter."
     },
@@ -198,9 +198,9 @@
       // hold, see impact-ragdoll-playback.js) before Footing starts
       // regenerating again — mirrors the authored impact clips' own
       // recoveryDelay (~1.35s) so the number reads as intentional rather
-      // than arbitrary. Regen resuming is what eventually lets the player's
-      // dodge input trigger the somersault recovery (see game.js's
-      // performDodge/updateProneState) — prone itself only clears there.
+      // than arbitrary. Regen resuming is what eventually lets game.js's
+      // updateProneState trigger the automatic in-place somersault recovery;
+      // prone itself only clears when that recovery arc completes.
       proneRecoveryDelayS: Number(cfg.proneRecoveryDelayS) || 1.5,
     };
   }
@@ -342,6 +342,42 @@
     }
     if (key === "footing") return getProneRecoveryFootingTarget(entity); // Standing usable max and prone recovery target share the same permanent Shambling reservation.
     return 0;
+  }
+
+  // Resource-threshold attacks (Exhaust Cutter / Mercy Spike) should read
+  // the bar the player actually sees. Affliction buildup never removes points
+  // from entity.health/stamina — its ring segments sit INSIDE [0, current]
+  // ("currentBack" always, "zero" whenever its amount <= current) — so it must
+  // never be added on top of current, or afflicted-but-low targets read as
+  // healthy. The only extra visible fill is a zero-based band that extends
+  // past current (applied while the pool was already lower), so the result is
+  // max(current, furthest non-cap band end). Explicit capacity reducers
+  // (Winded/Congealed/Wounded Health) stay excluded and the result is capped
+  // at the live effective maximum, so they can still make a target "low".
+  function getDepletionEquivalentCurrent(entity, resourceKey) {
+    if (!entity || (resourceKey !== "health" && resourceKey !== "stamina")) return 0;
+    const authoredMax = Math.max(0, Number(resourceKey === "health" ? entity.maxHealth : entity.maxStamina) || 0); // Used by Quick Attack thresholds, which have always been authored as fractions of the normal bar.
+    const rawCurrent = Math.max(0, Number(entity[resourceKey]) || 0); // Already includes any affliction-colored points that sit inside the fill.
+    const api = window.ResourceSystem; // Used at call time so later wrappers (drunken bands, amphibious Wounded Health) participate instead of being bypassed.
+    const effectiveMaxResolver = api?.getEffectiveMax || getEffectiveMax; // Used to preserve explicit max-reducing afflictions as real depletion for threshold attacks.
+    const liveEffectiveMax = Math.max(0, Number(effectiveMaxResolver(entity, resourceKey)) || 0); // Caps any band extension below the capacity the entity can currently use.
+    if (!(authoredMax > 0) || !(liveEffectiveMax > 0)) return 0;
+
+    const defs = api?.AFFLICTIONS || AFFLICTIONS; // Used below so afflictions installed after ResourceSystem startup are included automatically.
+    const getAmount = api?.getAffliction || getAffliction; // Used below so wrapped/custom affliction storage stays authoritative.
+    const getBox = api?.getSegmentBox || getSegmentBox; // Used below to read the same visual resource segments the rings actually draw.
+    let visibleEnd = rawCurrent; // Furthest filled point on the ring, whether normal-colored or affliction-colored.
+    for (const [id, def] of Object.entries(defs)) {
+      if (def?.resource !== resourceKey || def?.reducesEffectiveMax === true) continue;
+      if (!(Number(getAmount(entity, id)) > 0)) continue;
+      const box = getBox(entity, resourceKey, id);
+      if (!box) continue;
+      const left = clamp(Number(box.leftPoints) || 0, 0, authoredMax);
+      const right = clamp(left + Math.max(0, Number(box.widthPoints) || 0), 0, authoredMax);
+      if (right > visibleEnd) visibleEnd = right;
+    }
+
+    return round1(clamp(visibleEnd, 0, Math.min(authoredMax, liveEffectiveMax)));
   }
 
   function getLiveEffectiveHealthMax(entity) {
@@ -769,6 +805,7 @@
     removeAfflictionsByFamily,
     removeAfflictionsByTag,
     getEffectiveMax,
+    getDepletionEquivalentCurrent,
     getProneRecoveryFootingTarget,
     applyHealthAfflictionDamage,
     getExhaustionSpeed,

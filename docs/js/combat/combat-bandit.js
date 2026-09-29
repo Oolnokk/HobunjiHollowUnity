@@ -713,11 +713,13 @@
     const targetFacing = Number.isFinite(Number(targetPlayer.angle)) ? Number(targetPlayer.angle) : (Number(targetPlayer.facing) || 0); // Creatures use facing; the player uses angle.
     const forwardX = Math.cos(targetFacing), forwardY = Math.sin(targetFacing);
     const behindDot = forwardX * (dxBP / distBP) + forwardY * (dyBP / distBP);
+    const staminaForCondition = window.ResourceSystem?.getDepletionEquivalentCurrent?.(targetPlayer, 'stamina') ?? targetPlayer.stamina; // Mirrors the player's Exhaust Cutter semantics for enemy ability AI.
+    const healthForCondition = window.ResourceSystem?.getDepletionEquivalentCurrent?.(targetPlayer, 'health') ?? targetPlayer.health; // Mirrors the player's Mercy Spike semantics for enemy ability AI.
     return {
       enemyStriking: false,
-      exhausted: !!targetPlayer.exhaustion?.active || targetPlayer.stamina <= targetPlayer.maxStamina * 0.20,
+      exhausted: !!targetPlayer.exhaustion?.active || staminaForCondition <= targetPlayer.maxStamina * 0.20,
       behind: behindDot < -0.35,
-      lowHealth: targetPlayer.health > 0 && targetPlayer.health <= targetPlayer.maxHealth * 0.30,
+      lowHealth: targetPlayer.health > 0 && healthForCondition <= targetPlayer.maxHealth * 0.30,
     };
   }
 
@@ -2003,6 +2005,19 @@
     };
   }
 
+  // Removes everything makeBanditEntity added to the scene for an entity
+  // that never made it into hostileObjects (e.g. an async spawn that
+  // resolved after the player left the area). Disposing avatarRef alone
+  // left the ground shadow and weapon holders parked in the zone scene.
+  function discardBanditEntity(entity) {
+    if (!entity) return;
+    entity.avatarRef?.group?.parent?.remove?.(entity.avatarRef.group);
+    entity.groundShadow?.parent?.remove?.(entity.groundShadow);
+    entity._banditToolHolder?.parent?.remove?.(entity._banditToolHolder);
+    entity._banditRangedToolHolder?.parent?.remove?.(entity._banditRangedToolHolder);
+    entity.avatarRef?.dispose?.();
+  }
+
   async function makeBanditEntity(cfg, rank, tier, x, y, opts = {}) {
     const roster = opts.rosterOverride || await rollBanditRoster(cfg, rank, opts.nameOverride);
     if (opts.bodyColorsOverride && roster?.appearance) {
@@ -2125,6 +2140,7 @@
     loadGangConfig: loadBanditGangConfig,
     loadCampLocaleDefs: loadBanditCampLocaleDefs,
     makeEntity: makeBanditEntity,
+    discardEntity: discardBanditEntity, // Scene teardown for a built-but-never-registered entity (late async spawns).
     applyRosterDyesToProfile, // Shared/testable world-avatar dye reconciliation used by Bandits, Minions, and Liches.
     // Rolls a name the same way a fresh gang member's roster does (see
     // rollBanditRoster) — used standalone by game.js's generateBountyTask

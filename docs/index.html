@@ -128,7 +128,7 @@
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
   <script src="js/tool-metal-recolor.js?v=20260926metalarmor1"></script>
-  <script src="js/metal-armor-system.js?v=20260927temperxp1"></script>
+  <script src="js/metal-armor-system.js?v=20260927reviewfix1"></script>
   <script src="config/colors/config.js?v=20260924enghpalette2"></script>
   <script src="config/attachment-rig-profiles.js?v=20260924voorglarge1"></script>
   <link rel="stylesheet" href="style.css?v=20260927commandauras1">
@@ -239,7 +239,7 @@
   <link rel="stylesheet" href="onboarding.css?v=20260921preworldsky1">
   <script src="onboarding.js?v=20260926metalarmor1"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
-  <script src="js/combat/resource-system.js?v=20260927froststamina1"></script>
+  <script src="js/combat/resource-system.js?v=20260927reviewfix1"></script>
   <script src="js/combat/knockback-collision-impact.js?v=20260923ledge1"></script>
   <!-- Burning Health presentation: reuses the authored campfire fire emitter on afflicted player/enemy avatar roots. -->
   <script src="js/combat/burning-affliction-vfx.js?v=20260923burn1"></script>
@@ -258,7 +258,7 @@
   <script src="js/combat/combat-progression.js?v=20260712d"></script>
   <script src="js/combat/combat-input.js?v=20260924swimcombat2"></script>
   <script src="js/combat/combat-combo.js?v=20260927aerialchain1"></script>
-  <script src="js/combat/combat-quickattacks.js?v=20260927aerialchain1"></script>
+  <script src="js/combat/combat-quickattacks.js?v=20260927reviewfix1"></script>
   <script src="js/combat/combat-counter-shield.js?v=20260926combatreview1"></script>
   <script src="js/combat/combat-blink-dodge.js?v=20260918ninjery3"></script>
   <script src="js/combat/combat-charged-breaker.js?v=20260927aerialchain1"></script>
@@ -271,7 +271,7 @@
   <script src="js/area-footprint-blockers.js?v=20260929shotfloor1"></script>
   <!-- Sub-stepped sliding move extracted out of game.js; must load before game.js. -->
   <script src="js/swept-move.js?v=20260927footprints1"></script>
-  <script src="js/combat/ranged-weapons.js?v=20260927footprints1"></script>
+  <script src="js/combat/ranged-weapons.js?v=20260929merge1"></script>
   <script src="js/combat/ranged-hud-reticle.js?v=20260925dialogue3"></script>
   <script src="js/combat/melee-hud-reticle.js?v=20260926combatreview1"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
@@ -281,12 +281,12 @@
        (at fight time, not load time), so exact ordering against those two
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
-  <script src="js/combat/combat-bandit.js?v=20260927hostilevisual1"></script>
+  <script src="js/combat/combat-bandit.js?v=20260927reviewfix1"></script>
   <!-- Distinct Minion humanoid category: independent roster/dye/Shambling Footing rules over the shared BanditCombat executor. -->
   <script src="js/combat/combat-minion.js?v=20260929lichroom1"></script>
   <script src="js/combat/combat-enemy-dodge.js?v=20260926combatreview1"></script>
   <!-- Testing Arena-only Harlyao Lich class: wraps the final humanoid AI seam after enemy-dodge, owns elemental projectiles/puddles/Entranced commands, and summons ordinary Minions. -->
-  <script src="js/combat/combat-lich.js?v=20260929config1"></script>
+  <script src="js/combat/combat-lich.js?v=20260929merge1"></script>
   <!-- Bandit camps (zone adapter, tent props, camp lifecycle, companion
        perception, corpse loot) — window.BanditCamps. Calls
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
@@ -300,7 +300,7 @@
   <script src="js/bounty-board.js?v=20260831spearheadexisting1"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20260927directreticle1"></script>
+  <script src="js/combat/combat-config-loader.js?v=20260928meleereticle1"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -548,7 +548,11 @@
        its own setup, and reads window.DevSpawner.DEV_ARENA_ZONE_ID/
        .getArenaSpawnedCreatures() as deps for window.BanditCombatLog and
        window.BanditCamps at that same call-time point. -->
-  <script src="js/dev-spawner.js?v=20260927hostilevisual1"></script>
+  <!-- Pinned-enemy collision escape extracted out of game.js's
+       moveCreatureToward (window.EnemyCollisionReposition); must load before
+       game.js, which calls window.EnemyCollisionReposition.init(...). -->
+  <script src="js/enemy-collision-reposition.js?v=20260927reviewfix1"></script>
+  <script src="js/dev-spawner.js?v=20260927reviewfix1"></script>
   <!-- Furniture Placer panel (window.FurniturePlacer) — the discoverable,
        inventory-scoped furniture selector. Choosing Place arms the shared
        reticle-targeted gameplay placement mode and closes this panel so
@@ -2383,7 +2387,7 @@
   <script src="js/loading-screen-runtime.js?v=20260925minefloor1"></script>
   <!-- Secondary proximity dialogue: NPC chathead greetings, companion
        onomatopoeia, and reusable crowd cheer/jeer hooks. -->
-  <script src="js/ambient-dialogue.js?v=20260927greetinghead2"></script>
+  <script src="js/ambient-dialogue.js?v=20260927reviewfix1"></script>
   <script src="js/player-social-poses.js?v=20260810a"></script>
   <script src="js/player-chat.js?v=20260810a"></script>
   <!-- Spearfishing minigame + fishing FX particles (window.Fishing) — must
@@ -2495,7 +2499,7 @@
   <script src="js/banubu-cave-clouds.js?v=20260923cloudring3"></script>
   <!-- Shoulder Cam / Character View Pointer Lock (window.ShoulderCamPointerLock); game.js calls init(...) during setup. -->
   <script src="js/shoulder-cam-pointer-lock.js?v=20260925shouldercamonly1"></script>
-  <script src="game.js?v=20260929config1"></script>
+  <script src="game.js?v=20260929merge1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
