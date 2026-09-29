@@ -1,0 +1,149 @@
+{
+  "schema": "hobunji_furniture_authored_runtime.v1",
+  "key": "ruinGlyphTarget",
+  "id": "ruinGlyphTarget",
+  "name": "Ruin Glyph Target Plaque",
+  "sourceSchema": "hobunji_furniture_surface_author.v58",
+  "notes": "Random Test Ruin projectile target face: replaces V50's placeholder inn-sign decals on glyph obelisks. Glow OFF (orange, pulsing) = not yet struck, ON (green) = struck. Mounted on each target face at the size of the decal it replaces.",
+  "footprint": {
+    "w": 1,
+    "d": 1
+  },
+  "tileBase": {
+    "visible": true,
+    "tileSize": 1,
+    "footprintW": 1,
+    "footprintD": 1,
+    "y": 0,
+    "gridOpacity": 0.55
+  },
+  "parts": [
+    {
+      "id": "plaque",
+      "kind": "box",
+      "name": "Glyph Plaque",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.5,
+        "sy": 0.5,
+        "sz": 0.04
+      },
+      "color": "#6d675f",
+      "segments": 1,
+      "taperAxis": "y",
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "surfaceOpacity": 1,
+      "substanceColor": "#6d675f",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1,
+      "materialLighting": "unlit"
+    }
+  ],
+  "recognizedSurfaces": [
+    {
+      "id": "plaque:surface:front",
+      "partId": "plaque",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        8,
+        9
+      ],
+      "area": 0.25,
+      "localCentroid": [
+        0,
+        0,
+        0.02
+      ],
+      "localNormal": [
+        0,
+        0,
+        1
+      ],
+      "basisU": [
+        1,
+        0,
+        0
+      ],
+      "basisV": [
+        0,
+        1,
+        0
+      ],
+      "bounds": {
+        "minU": -0.25,
+        "maxU": 0.25,
+        "minV": -0.25,
+        "maxV": 0.25
+      },
+      "label": "Front",
+      "role": "none"
+    }
+  ],
+  "decals": [
+    {
+      "id": "rune",
+      "name": "Glyph Rune",
+      "surfaceId": "plaque:surface:front",
+      "surfacePartId": "plaque",
+      "surfaceType": "vertical side",
+      "surfaceFaces": [
+        8,
+        9
+      ],
+      "imageSource": "../../../docs/assets/textures/decals/ruin_glyph_rune.png",
+      "imageName": "docs/assets/textures/decals/ruin_glyph_rune.png",
+      "offsetU": 0,
+      "offsetV": 0,
+      "width": 0.9,
+      "height": 0.9,
+      "rotationDeg": 0,
+      "normalOffset": 0.004,
+      "opacity": 1,
+      "visible": true,
+      "glow": {
+        "off": [
+          "#ff8a2a"
+        ],
+        "on": [
+          "#4dff6e"
+        ],
+        "cycleSeconds": 1.6,
+        "pulse": 0.3
+      }
+    }
+  ],
+  "decalAuthoring": {
+    "version": 4
+  },
+  "puzzle": {
+    "role": "activator",
+    "behavior": "projectile",
+    "prompt": "Glyph target"
+  }
+}

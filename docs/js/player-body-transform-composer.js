@@ -189,26 +189,30 @@
   // Providers are still needed for visuals that intentionally live OUTSIDE the
   // player rig (for example a shoulder-pet root parented directly to the scene).
   // Descendants of playerMesh are skipped because they already inherit its delta.
-  function currentOwnedRoots() {
-    const roots = [];
-    const add = root => {
-      if (!root?.isObject3D || root.visible === false || roots.includes(root)) return;
+  function currentOwnedRootEntries() {
+    const entries = [];
+    const add = (root, kind = 'external', providerName = null) => {
+      if (!root?.isObject3D || root.visible === false || entries.some(entry => entry.root === root)) return;
       if (root !== playerMesh && isDescendantOf(root, playerMesh)) return;
-      if (roots.some(existing => isDescendantOf(root, existing))) return;
-      for (let i = roots.length - 1; i >= 0; i--) {
-        if (isDescendantOf(roots[i], root)) roots.splice(i, 1);
+      if (entries.some(existing => isDescendantOf(root, existing.root))) return;
+      for (let i = entries.length - 1; i >= 0; i--) {
+        if (isDescendantOf(entries[i].root, root)) entries.splice(i, 1);
       }
-      roots.push(root);
+      entries.push({ root, kind, providerName });
     };
 
-    add(playerMesh);
-    for (const provider of externalRootProviders.values()) {
+    add(playerMesh, 'player', 'player');
+    for (const [providerName, provider] of externalRootProviders) {
       let supplied = null;
       try { supplied = provider?.(); } catch (_) { supplied = null; }
       const list = Array.isArray(supplied) || supplied instanceof Set ? Array.from(supplied) : [supplied];
-      for (const root of list) add(root);
+      for (const root of list) add(root, 'external', providerName);
     }
-    return roots;
+    return entries;
+  }
+
+  function currentOwnedRoots() {
+    return currentOwnedRootEntries().map(entry => entry.root);
   }
 
   function channelQuaternion(channel) {
@@ -222,9 +226,14 @@
     ));
   }
 
-  function resolveDelta() {
+  function resolveDelta(targetKind = 'all') {
     const ordered = Array.from(channels.entries())
-      .filter(([, channel]) => channel && channel.enabled !== false)
+      .filter(([, channel]) => {
+        if (!channel || channel.enabled === false) return false;
+        if (targetKind === 'player' && channel.includePlayer === false) return false;
+        if (targetKind === 'external' && channel.includeExternal === false) return false;
+        return true;
+      })
       .sort((a, b) => finite(a[1].priority) - finite(b[1].priority) || a[0].localeCompare(b[0]));
 
     const rotation = new THREE.Quaternion();
@@ -245,6 +254,13 @@
       applied.push(name);
     }
     return { rotation, translation, applied };
+  }
+
+  function hasResolvedDelta(delta) {
+    return !!delta && (
+      Math.abs(delta.rotation.x) + Math.abs(delta.rotation.y) + Math.abs(delta.rotation.z) > 1e-8
+      || delta.translation.lengthSq() > 1e-12
+    );
   }
 
   function applyWorldDelta(root, pivotWorld, worldRotation, worldTranslation, undo) {
@@ -284,6 +300,8 @@
       mode: contribution.mode === 'override' ? 'override' : 'additive',
       translationMode: contribution.translationMode === 'override' ? 'override' : 'additive',
       enabled: contribution.enabled !== false,
+      includePlayer: contribution.includePlayer !== false,
+      includeExternal: contribution.includeExternal !== false,
       order: contribution.order || 'YXZ',
       rotation: contribution.rotation ? { ...contribution.rotation } : undefined,
       quaternion: contribution.quaternion?.isQuaternion ? contribution.quaternion.clone() : undefined,
@@ -358,28 +376,22 @@
       }; // Persisted below before temporary transforms are restored.
       if (playerMesh) {
         applyPlayerNeckYawLimit(renderDebug);
-        const delta = resolveDelta();
-        renderDebug.appliedOrder = delta.applied.slice();
-        const rotationMagnitude = Math.abs(delta.rotation.x) + Math.abs(delta.rotation.y) + Math.abs(delta.rotation.z);
-        const translationMagnitude = delta.translation.lengthSq();
-        if (rotationMagnitude > 1e-8 || translationMagnitude > 1e-12) {
-          // game.js has already resolved facing, attack/tool poses, and its
-          // ordinary movement bob by this point. Convert the local composer
-          // delta into world space from that FINAL base transform, pivot around
-          // the standing posterior/hip point, render, then restore immediately.
-          // Portrait material sides are deliberately untouched here: the
-          // transformed geometry and its existing THREE.FrontSide materials
-          // remain the authority on whether front or rear artwork is visible.
+        const bodyDelta = resolveDelta('player');
+        const externalDelta = resolveDelta('external');
+        renderDebug.appliedOrder = [...new Set([...bodyDelta.applied, ...externalDelta.applied])];
+        if (hasResolvedDelta(bodyDelta) || hasResolvedDelta(externalDelta)) {
           playerMesh.updateWorldMatrix?.(true, false);
           const baseWorldQuaternion = hierarchyWorldQuaternion(playerMesh);
           renderDebug.baseWorldEulerDeg = quaternionEulerDegrees(baseWorldQuaternion);
-          const worldRotation = baseWorldQuaternion.clone()
-            .multiply(delta.rotation)
-            .multiply(baseWorldQuaternion.clone().invert());
-          const worldTranslation = delta.translation.clone().applyQuaternion(baseWorldQuaternion);
           const pivotWorld = playerMesh.localToWorld(new THREE.Vector3(0, playerPosteriorY, 0));
-          for (const root of currentOwnedRoots()) {
-            applyWorldDelta(root, pivotWorld, worldRotation, worldTranslation, undo);
+          for (const entry of currentOwnedRootEntries()) {
+            const delta = entry.kind === 'player' ? bodyDelta : externalDelta;
+            if (!hasResolvedDelta(delta)) continue;
+            const worldRotation = baseWorldQuaternion.clone()
+              .multiply(delta.rotation)
+              .multiply(baseWorldQuaternion.clone().invert());
+            const worldTranslation = delta.translation.clone().applyQuaternion(baseWorldQuaternion);
+            applyWorldDelta(entry.root, pivotWorld, worldRotation, worldTranslation, undo);
           }
           renderDebug.composedWorldEulerDeg = quaternionEulerDegrees(hierarchyWorldQuaternion(playerMesh));
         }
@@ -443,7 +455,7 @@
   // ends up countering only playerMesh.rotation.y's pre-delta resting yaw
   // and the head renders off-target by whatever yaw a channel contributes.
   function resolvedYawDeltaRad() {
-    return new THREE.Euler().setFromQuaternion(resolveDelta().rotation, 'YXZ').y;
+    return new THREE.Euler().setFromQuaternion(resolveDelta('player').rotation, 'YXZ').y;
   }
 
   window.PlayerBodyTransformComposer = {
@@ -458,7 +470,7 @@
     getVisualRoots: () => currentOwnedRoots().slice(),
     hasVisibleHeldItem: () => !!playerMesh && Array.from(playerMesh.children || []).some(isHeldVisualRoot),
     getDebug() {
-      const delta = resolveDelta();
+      const delta = resolveDelta('player');
       const neckJoint = currentPlayerNeckJoint(); // Used below so the mobile/debug report can show the currently clamped local neck yaw without console access.
       return {
         playerAttached: !!playerMesh,
@@ -476,6 +488,8 @@
           priority: channel.priority,
           mode: channel.mode,
           enabled: channel.enabled !== false,
+          includePlayer: channel.includePlayer !== false,
+          includeExternal: channel.includeExternal !== false,
           rotation: channel.rotation || null,
           translation: channel.translation || null,
         })),

@@ -22,7 +22,9 @@ const hearth = JSON.parse(fs.readFileSync('docs/config/furniture-authored/hearth
 // Integration guards: keep the feature attached to the real movement/death/editor paths.
 assert.match(gameSource, /KnockbackCollisionImpact\?\.begin\?\.\(target, speedPxS, KNOCKBACK_DUR_S\)/,
   'ordinary knockback records its authored intended travel once when the shove starts');
-assert.match(gameSource, /function sweptMove\([^)]*stopOnBlock = false\)[\s\S]{0,1800}blockedAt/,
+const sweptMoveSource = fs.readFileSync('docs/js/swept-move.js', 'utf8'); // sweptMove was extracted out of game.js.
+assert.match(gameSource, /const sweptMove = window\.SweptMove\.sweptMove;/, 'game.js must keep using the extracted shared swept move');
+assert.match(sweptMoveSource, /function sweptMove\([^)]*stopOnBlock = false\)[\s\S]{0,1800}blockedAt/,
   'shared swept collision can stop forced movement at the first rejected position and expose that impact point');
 assert.match(gameSource, /function sweepKnockbackMotion[\s\S]{0,1800}tryStartKnockbackLedgeTransit/,
   'forced knockback owns a shared ledge-aware sweep before ordinary collision resolution');

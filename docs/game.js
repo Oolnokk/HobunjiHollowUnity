@@ -3142,6 +3142,7 @@
       }
 
       function furnitureBlocksMovementAt(area, x, z) {
+        if (window.AreaFootprintBlockers?.blocksPoint(area, x, z)) return true;
         if (_isZoneArea(area) && window.FoliageFurnitureRuntime?.blocksPoint(area, x, z)) return true;
         if (interiorFurnitureObjects.some(obj => obj.area === area && decorativeFurnitureBlocksPoint(obj, x, z))) return true;
         if (area === 'interior' && _derivedHearthMeshes.some(h => {
@@ -3208,6 +3209,9 @@
         const sampleY = blockedCenterY + dirY * radiusPx; // Same leading-edge sample on the world-Z/game-Y axis.
         const furniture = knockbackFurnitureDescriptorAt(sampleX, sampleY);
         if (furniture) return furniture;
+        // Sub-tile solid props (ruin door panels, pillars, coffins, walls
+        // registered through AreaFootprintBlockers) hit like stone.
+        if (window.AreaFootprintBlockers?.blocksPoint?.(currentArea, sampleX / TILE, sampleY / TILE)) return { kind: 'stone', label: 'Stone' };
 
         const cols = window.GridTileAccessors.getActiveCols(), rows = window.GridTileAccessors.getActiveRows();
         const col = Math.floor(sampleX / TILE), row = Math.floor(sampleY / TILE);
@@ -3334,6 +3338,7 @@
 
       function knockbackAirborneCanOccupyAt(wx, wy, radiusPx, air) {
         const originSurfaceY = air?.originSurfaceY;
+        if (window.AreaFootprintBlockers?.blocksBox(currentArea, wx / TILE, wy / TILE, radiusPx / TILE, null)) return false; // Sub-tile props collide airborne too.
         const cols = window.GridTileAccessors.getActiveCols(), rows = window.GridTileAccessors.getActiveRows();
         const samples = [ // Mirrors canOccupyAt's four-corner footprint while allowing lower terrain to pass beneath the airborne target.
           [wx - radiusPx, wy - radiusPx], [wx + radiusPx, wy - radiusPx],
@@ -3352,6 +3357,7 @@
             continue;
           }
           if (tileSpeedAt(sx, sy) !== null) continue;
+          if (_isBuildingArea(currentArea) || currentArea === 'interior') return false; // Interior walls are impassable tiles at floor height, never "lower terrain".
           const obstacleSurfaceY = tileSurfaceYInArea(tile, currentArea);
           if (obstacleSurfaceY >= originSurfaceY - KNOCKBACK_LEDGE_HEIGHT_EPSILON) return false; // Same/higher obstruction still collides and contributes a deficit.
         }
@@ -4729,7 +4735,7 @@
       // farm/interior, but corpses can settle in any area a creature dies in.
       function getCorpseObjectAt(col, row) {
         for (const c of corpseObjects) {
-          if (c.state !== 'corpse' || c.areaId !== currentArea) continue;
+          if (c.state !== 'corpse' || c.areaId !== currentArea || c.corpseLooted) continue; // corpseLooted: looted but kept (keepCorpseAfterLoot), e.g. revivable skeletons.
           if (c.corpseCol === col && c.corpseRow === row) return makeCorpseWorldObject(c);
         }
         return null;
@@ -4739,12 +4745,13 @@
       // off the corpse tile (especially in shoulder cam). Keep corpse loot
       // tied to the same nearby interaction target instead of dropping it on
       // a stale "No object here" result.
+      let _lastOfferedCorpseId = null; // Building-interior Loot button stickiness (see computeActionButtonsImpl).
       function getCorpseObjectForAction(action, col, row) {
         const exact = getCorpseObjectAt(col, row);
         if (exact || action !== 'obj_loot_corpse') return exact;
         let best = null, bestDist = Infinity;
         for (const c of corpseObjects) {
-          if (c.state !== 'corpse' || c.areaId !== currentArea) continue;
+          if (c.state !== 'corpse' || c.areaId !== currentArea || c.corpseLooted) continue;
           const dist = Math.hypot(c.x - player.x, c.y - player.y);
           const tileGap = Math.hypot((c.corpseCol ?? col) - col, (c.corpseRow ?? row) - row);
           if (dist > TILE * 2.25 || tileGap > 1.5 || dist >= bestDist) continue;
@@ -4967,7 +4974,8 @@
         return best;
       }
 
-      function respawnPlayer() {
+      function respawnPlayer(reason = 'death') {
+        if (window.DevRandomRuinSimplePuzzles?.respawnAtCheckpoint?.(reason)) return; // Session ruin checkpoints override every canonical death source before mine/totem/farm recovery while preserving the source for mobile diagnostics.
         if (window.TownMine?.floorFromMapId?.(currentArea)) {
           window.WildernessCampfire?.clearMineCampfireOnDeath?.(); // Mine death ends the one underground camp, while wilderness camps survive.
           _returnToFarmMeshes();
@@ -5613,8 +5621,10 @@
         // climbSurfaceY exists: it's mid-crossing through impassable incline
         // tiles, so a raw tile lookup would pop between the cliff base and
         // landing the instant the crossing tile flips underneath it.
+        const dynamicSurfaceY = Number(c.surfaceYOverride?.()); // Optional per-entity world-height authority for generated/moving interiors whose 2D gameplay grid intentionally has no elevation tiers.
         const ordinarySurfY = c.onBranch ? c.branchSurfaceY
           : c._climbLeap ? c._climbLeap.surfaceY
+          : Number.isFinite(dynamicSurfaceY) ? dynamicSurfaceY
           : (g[row]?.[col] ? tileSurfaceYInArea(g[row][col], c.areaId) : 0);
         const surfY = knockbackVisualSurfaceY(c, ordinarySurfY);
         const grp = c.avatarRef.group;
@@ -8150,50 +8160,14 @@
       // FIXED_LOCALE_LANDMARKS (Leaf & Pahu's House's fixed map anchor) now
       // lives in js/wilderness-map.js alongside the rest of the map system.
 
-      // Fetched once per page load and cached -- the locale JSON files rarely
-      // change mid-session, and every Tothal Shift needs the same list.
-      let _localeDefsPromise = null;
+      // loadStampableLocaleDefs now lives in js/stampable-locale-defs.js
+      // (window.StampableLocaleDefs), which also stamps ruin-entrance templates.
       function loadStampableLocaleDefs() {
-        if (_localeDefsPromise) return _localeDefsPromise;
-        _localeDefsPromise = (async () => {
-          // Local override (see docs/js/local-db-overrides.js): unlike the
-          // single-file databases above, locale-editor's workspace holds the
-          // FULL content of every locale it has loaded (not just an index),
-          // so an active 'locales' override supplies already-fetched docs
-          // directly and skips the index+per-file fetch below entirely.
-          if (window.LocalDBOverrides?.getSourceMode() === 'local') {
-            const override = window.LocalDBOverrides.getOverride('locales');
-            if (override?.locales) {
-              return override.locales.filter(e => e.category === 'great_fey_shrine' || e.category === 'story_poi');
-            }
-          }
-          try {
-            const idxRes = await fetch('config/locales/index.json');
-            if (!idxRes.ok) throw new Error(`HTTP ${idxRes.status}`);
-            const idx = await idxRes.json();
-            // Great Fey shrines + the Researcher's Tent are randomly stamped
-            // -- see the comment on FIXED_LOCALE_LANDMARKS above for why
-            // dwellings are excluded here.
-            const entries = (idx.locales || []).filter(e => e.category === 'great_fey_shrine' || e.category === 'story_poi');
-            const defs = [];
-            for (const entry of entries) {
-              try {
-                const r = await fetch(entry.file);
-                if (!r.ok) throw new Error(`HTTP ${r.status}`);
-                defs.push(await r.json());
-              } catch (e) { debugLog(`Tothal Shift: locale load failed for ${entry.file}: ${e.message}`, 'warn'); }
-            }
-            return defs;
-          } catch (e) {
-            debugLog('Tothal Shift: locale index load failed: ' + e.message, 'warn');
-            return [];
-          }
-        })();
-        return _localeDefsPromise;
+        return window.StampableLocaleDefs.load();
       }
 
       function currentTothalYear() {
-        return window.CalendarSystem.yearNumber(calendar.day);
+        return window.CalendarSystem.tothalCycle(calendar.day); // Monthly since the ruin-locale update; the name stays for save compatibility (lastTothalYear).
       }
 
       function _tothalWorldId() {
@@ -8771,7 +8745,7 @@
           window.BanditCombat?.loadGangConfig();
           window.BanditCombat?.loadCampLocaleDefs();
           await _evictStaleTothalZoneCaches(worldId, year);
-          let remainingLocales = localeDefs.slice();
+          let remainingLocales = window.RuinSites?.expandLocaleDefs?.(localeDefs, year, WildernessMapGenerator.zoneMapIds()) || localeDefs.slice(); // Ruin-entrance templates become rotated per-zone copies for this cycle (js/ruin-site-locales.js).
           for (const zoneId of WildernessMapGenerator.zoneMapIds()) {
             const seed = `${worldId}_tothal_y${year}_${zoneId}`;
             const preserved = TOTHAL_PRESERVED_TRANSITIONS[zoneId] || [];
@@ -8806,6 +8780,7 @@
 
             const localeInstances = workspace.localeInstances || [];
             window.LocaleCaveRuntime?.registerWorkspace?.(zoneId, workspace, localeDefs, merged.tiles); // Cached and new zones need the low-side tier and exterior GLB registry rebuilt.
+            window.RuinSites?.registerWorkspace?.(zoneId, workspace); // Cliff ruin entrances placed this cycle (js/ruin-sites.js).
             if (localeInstances.length) {
               const placedIds = new Set(localeInstances.map(inst => inst.localeId));
               remainingLocales = remainingLocales.filter(l => !placedIds.has(l.id));
@@ -9387,6 +9362,7 @@
       }
 
       function performDodge() {
+        if (window.DevRandomRuinSimplePuzzles?.releaseActiveRope?.()) return true; // Dodge is the native rope jump-off input; release carries pendulum tangent instead of starting an evasive roll.
         // While prone, the automatic get-up owns the normal recovery. Keep
         // dodge input routed to the same in-place recovery arc so an input on
         // the exact eligible frame never starts an ordinary moving dodge.
@@ -9455,12 +9431,15 @@
       }
 
       function performContextAction() {
+        if (window.DevRandomRuinSimplePuzzles?.releaseActiveRope?.()) return; // Rope traversal outranks climb/door context while attached.
         if (player.climbing || player.dodging) return;
         if (_pendingSpotTransition) { startSceneTransition(() => performTravel(_pendingSpotTransition)); return; }
         // Climbing is now the forward-dodge context action. Sideways/backward
         // dodges remain ordinary evasive movement and cannot grab a nearby tree.
         const climb = window.ClimbSystem.getClimbTarget();
         if (climb && (climb.type === 'branchJumpDown' || dodgeInputIsForward())) { window.ClimbSystem.startClimb(climb); return; }
+        const worldClimb = window.ClimbSystem.getWorldClimbTarget?.(); // Non-grid ledges (ruins) climb from the same forward dodge.
+        if (worldClimb && dodgeInputIsForward()) { worldClimb.start(); return; }
         performDodge();
       }
 
@@ -10614,6 +10593,7 @@
         _zoneMesaMeshGroups.set(mapId, window.ZonePlateauMesa.buildZoneMesaMeshes(zScene, mapId, plateauMesas, zGrid));
 
         window.ZoneDenTotemFeatures.buildAnimalDenMeshes(zScene, zGrid, zoneData?.dens || [], mapId);
+        window.RuinSites?.buildZoneMeshes?.(zScene, zGrid, mapId); // Ruin entrances + burrow holes (authored furniture pieces).
         window.ZoneDenTotemFeatures.buildRootTotemMeshes(zScene, zGrid, zoneData?.rootTotems || [], mapId);
         _zoneWaterMeshes.set(mapId, []);
         _zoneGrassMeshes.set(mapId, null); // Streamed grass groups live under their owning runtime chunks.
@@ -15531,6 +15511,7 @@
               || _zoneReagentObjects.get(currentArea)?.get(col + ',' + row)
               || _zoneBerryObjects.get(currentArea)?.get(col + ',' + row)
               || _zoneTreasureObjects.get(currentArea)?.get(col + ',' + row)
+              || window.RuinSites?.objectAt?.(currentArea, col, row)
               || window.HobunjiCloudForestWildlife?.fruitObjectAt?.(currentArea, col, row)
               || null;
         }
@@ -17596,9 +17577,14 @@
       // of solid terrain / map edges), shared by the player and by creature
       // attacks that need to know when a forced movement (e.g. a pounce leap)
       // has run into something.
-      function canOccupyAt(wx, wy, radius) {
+      function canOccupyAt(wx, wy, radius, worldY = null) {
         const aC = window.GridTileAccessors.getActiveCols(), aR = window.GridTileAccessors.getActiveRows();
         if (wx - radius < 0 || wy - radius < 0 || wx + radius >= aC * TILE || wy + radius >= aR * TILE) return false;
+        // Sub-tile prop footprints (js/area-footprint-blockers.js) are tested
+        // against the whole square, not just its corners, so props narrower
+        // than the mover cannot slip between two corner samples. worldY is
+        // only passed by projectile sweeps, so shots can clear low props.
+        if (window.AreaFootprintBlockers?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE, worldY)) return false;
         return tileSpeedAt(wx - radius, wy - radius) !== null
             && tileSpeedAt(wx + radius, wy - radius) !== null
             && tileSpeedAt(wx - radius, wy + radius) !== null
@@ -17682,46 +17668,10 @@
         return null;
       }
 
-      // A fast forced move (combat lunge, knockback, dodge) recomputes its
-      // target position from total elapsed progress every frame rather than
-      // stepping a small fixed distance, so a single frame's jump can easily
-      // exceed one tile — e.g. Charged Breaker's ~7-tile lunge covers most of
-      // its distance in its very first frames (ease-out is fastest at t=0).
-      // Testing occupancy only at that frame's endpoint lets it tunnel clean
-      // through a one-tile-thick solid wall (a plateau's incline face)
-      // instead of stopping at it. Subdividing the straight line from the
-      // current position to the desired one into small steps and testing
-      // each one — same per-axis sliding behavior as a single check, just
-      // repeated — closes that gap for any of these forced moves.
-      // blockedX/blockedY report whether that axis was ever rejected during
-      // the sweep, so a caller (e.g. knockback) can zero out that axis's
-      // velocity exactly like the old single-check version did.
-      const COLLISION_SWEEP_STEP_PX = TILE * 0.25;
-      function sweptMove(curX, curY, desiredX, desiredY, canOccupyFn, stopOnBlock = false) {
-        const dx = desiredX - curX, dy = desiredY - curY;
-        const dist = Math.hypot(dx, dy);
-        if (dist < 0.001) return { x: curX, y: curY, blockedX: false, blockedY: false, blockedAt: null };
-        const steps = Math.max(1, Math.ceil(dist / COLLISION_SWEEP_STEP_PX));
-        const stepX = dx / steps, stepY = dy / steps;
-        let x = curX, y = curY, blockedX = false, blockedY = false;
-        let blockedAt = null; // First rejected center position; forced-movement collision uses it to classify the actual obstacle.
-        for (let i = 0; i < steps; i++) {
-          const nx = x + stepX, ny = y + stepY;
-          if (canOccupyFn(nx, y)) x = nx;
-          else {
-            blockedX = true;
-            if (!blockedAt) blockedAt = { x: nx, y };
-            if (stopOnBlock) break;
-          }
-          if (canOccupyFn(x, ny)) y = ny;
-          else {
-            blockedY = true;
-            if (!blockedAt) blockedAt = { x, y: ny };
-            if (stopOnBlock) break;
-          }
-        }
-        return { x, y, blockedX, blockedY, blockedAt };
-      }
+      // sweptMove (sub-stepped per-axis sliding move) now lives in
+      // js/swept-move.js (window.SweptMove).
+      window.SweptMove.init({ stepPx: TILE * 0.25 });
+      const sweptMove = window.SweptMove.sweptMove;
 
       function getKeyboardVector() {
         let x = 0;
@@ -18758,7 +18708,7 @@
         // registered in _buildingInteractables (e.g. the Alchemy Table,
         // and now sittable furniture — see the mapData.furniture loader).
         return currentArea === 'interior' ? getInteriorInteractableAt(_r.col, _r.row)
-          : (_isBuildingArea(currentArea) || currentArea === 'town') ? (_buildingInteractables.get(currentArea + ',' + _r.col + ',' + _r.row) || getWorldObjectAt(_r.col, _r.row))
+          : (_isBuildingArea(currentArea) || currentArea === 'town') ? (_buildingInteractables.get(currentArea + ',' + _r.col + ',' + _r.row) || getCorpseObjectForAction(action, _r.col, _r.row) || getWorldObjectAt(_r.col, _r.row))
           : getCorpseObjectForAction(action, _r.col, _r.row) || getWorldObjectAt(_r.col, _r.row);
       }
 
@@ -20231,6 +20181,7 @@
       const CAMERA_FLOOR_CLEARANCE = 0.2; // minimum height above ground the camera is ever allowed to settle at (see the floor guard below)
       const SEATED_CAMERA_WALL_CLEARANCE = 0.25; // gap kept between a seated camera and the detected wall face (used by occlusionSafeCameraPosition)
       const SEATED_CAMERA_MIN_DISTANCE = 0.04; // emergency near-target limit used when a chair is almost flush against a wall
+      const INTERIOR_CAMERA_WALL_CLEARANCE = 0.35; // gap kept between an interior (building-area) boom and the wall that pulled it in
       const SEATED_CAMERA_MIN_FRAMING_DISTANCE = 0.8; // closest useful third-person framing distance before the camera searches sideways for room
       let _seatedOcclusionDistance = null; // smoothed seated-camera distance used while an obstruction clears
       let _seatedOcclusionUpdatedAt = 0; // previous seated occlusion update time used to calculate smoothing delta
@@ -20261,13 +20212,22 @@
             const hits = _cameraOcclusionRaycaster.intersectObjects(obstacles, true);
             if (hits.length) {
               directHitDistance = hits[0].distance;
-              if (activeCameraMode === 'seated') {
+              const interiorStanding = activeCameraMode !== 'seated' && _isBuildingArea(currentArea);
+              if (activeCameraMode === 'seated' || interiorStanding) {
+                // Interiors (dens, shops, the Random Test Ruin) are tight and
+                // their boom is shorter than the outdoor 3-tile minimum below,
+                // so that minimum meant the boom never pulled in at all there.
+                // Standing interior cameras share the seated wall pull-in, but
+                // not its sideways search: that camera has no smoothing, so a
+                // swing would snap; it rises over the player instead (lift below).
+                //
                 // Never impose a minimum that lies beyond the wall. The old
                 // 0.85-tile minimum did exactly that for wall-backed chairs,
                 // leaving the camera embedded despite a correct ray hit.
+                const wallClearance = interiorStanding ? INTERIOR_CAMERA_WALL_CLEARANCE : SEATED_CAMERA_WALL_CLEARANCE;
                 desiredSafeDist = Math.min(dist, Math.max(
                   SEATED_CAMERA_MIN_DISTANCE,
-                  hits[0].distance - SEATED_CAMERA_WALL_CLEARANCE,
+                  hits[0].distance - wallClearance,
                 ));
 
                 // If the wall leaves too little room to frame the seated
@@ -20275,7 +20235,7 @@
                 // near plane. Search progressively around the chair instead;
                 // this produces an over-the-shoulder slide along the wall
                 // while preserving the user's pitch and target.
-                if (desiredSafeDist < SEATED_CAMERA_MIN_FRAMING_DISTANCE) {
+                if (!interiorStanding && desiredSafeDist < SEATED_CAMERA_MIN_FRAMING_DISTANCE) {
                   let best = { dir, safeDist: desiredSafeDist, offsetDeg: 0 };
                   for (const offsetDeg of [25, -25, 45, -45, 70, -70, 90, -90]) {
                     const a = THREE.MathUtils.degToRad(offsetDeg);
@@ -20292,7 +20252,7 @@
                     _cameraOcclusionRaycaster.far = dist;
                     const candidateHits = _cameraOcclusionRaycaster.intersectObjects(obstacles, true);
                     const candidateSafeDist = candidateHits.length
-                      ? Math.max(SEATED_CAMERA_MIN_DISTANCE, candidateHits[0].distance - SEATED_CAMERA_WALL_CLEARANCE)
+                      ? Math.max(SEATED_CAMERA_MIN_DISTANCE, candidateHits[0].distance - wallClearance)
                       : dist;
                     if (candidateSafeDist > best.safeDist) best = { dir: candidateDir, safeDist: candidateSafeDist, offsetDeg };
                     if (best.safeDist >= dist - 1e-4) break;
@@ -20307,7 +20267,11 @@
             }
           }
           let safeDist = desiredSafeDist;
-          if (activeCameraMode === 'seated') {
+          // Interior standing booms share the seated smoothing: a grazing ray
+          // that flickers between hitting and missing a wall edge otherwise
+          // pops the camera in and out under the reticle.
+          const interiorBoom = activeCameraMode !== 'seated' && _isBuildingArea(currentArea);
+          if (activeCameraMode === 'seated' || interiorBoom) {
             // Smooth toward the freshly raycast distance every frame. The old
             // direct assignment made the camera stick to whichever wall face
             // happened to win one raycast, then snap when that face changed.
@@ -20324,7 +20288,7 @@
               _seatedOcclusionDistance += (desiredSafeDist - _seatedOcclusionDistance) * alpha;
             }
             safeDist = window.FormatUtils.clamp(_seatedOcclusionDistance, SEATED_CAMERA_MIN_DISTANCE, dist);
-            _seatedCameraDebug = {
+            _seatedCameraDebug = interiorBoom ? null : {
               idealDistance: dist,
               directHitDistance,
               desiredDistance: desiredSafeDist,
@@ -20338,12 +20302,16 @@
             _seatedOcclusionUpdatedAt = 0;
             _seatedCameraDebug = null;
           }
-          if (safeDist < dist - 1e-4) {
+          // A side-searched direction must be applied even at full length.
+          if (safeDist < dist - 1e-4 || chosenSideOffsetDeg !== 0) {
             const shrink = window.FormatUtils.clamp(1 - safeDist / dist, 0, 1);
             // Side-sliding supplies seated clearance; lifting a billboard
             // avatar makes it edge-on to the camera and was responsible for
-            // the wall-only frozen view in the Pixel Probe report.
-            const lift = activeCameraMode === 'seated' ? 0 : shrink * dist * 0.5;
+            // the wall-only frozen view in the Pixel Probe report. Interior
+            // booms slide straight in along their own sightline too: a lift
+            // tips the view steeply down, so the smallest aim change swept the
+            // reticle's hit point across the floor or ceiling.
+            const lift = (activeCameraMode === 'seated' || interiorBoom) ? 0 : shrink * dist * 0.5;
             resultX = lookAtX + dir.x * safeDist;
             resultY = lookAtY + dir.y * safeDist + lift;
             resultZ = lookAtZ + dir.z * safeDist;
@@ -23138,8 +23106,10 @@
         // updateClimb instead of a raw tile lookup, which would pop between
         // the cliff base and plateau top the instant the crossing tile
         // flips (see startClimb/updateClimb).
+        const ruinStandY = window.DevRandomRuin?.getPlayerSupportY?.(); // Used by the Random Test Ruin to feed dynamic multi-level support into the canonical body, shadow, resource-ring, held-equipment, and shoulder-pet render path.
         const ordinaryStandY = player.onBranch ? player.branchSurfaceY
           : player.climbing ? player.climbSurfaceY
+          : Number.isFinite(ruinStandY) ? ruinStandY
           : (_isZoneArea(currentArea) ? surfaceYAtWorld(currentArea, wx, wz) : tileSurfaceYInArea(tile, currentArea));
         const standY = knockbackVisualSurfaceY(player, ordinaryStandY);
         window.BurningAfflictionVfx?.syncEntity?.(player, playerMesh); // Burning Health uses the authored furniture flame emitter on the player's live avatar root.
@@ -24941,6 +24911,26 @@
             const label = t.label || (t.target === 'exit_building' ? 'Exit' : 'Use');
             return [{ icon, label, action: 'use_spot', style: 'primary', allowed: true }];
           }
+          // Corpses settle in dens, mine floors and the test ruin too, but
+          // this early-return branch never asked for them, so indoor kills
+          // (skeletons, liches, bandits, den creatures) were never lootable.
+          // Only the exact aimed tile shows the button, so a nearby corpse
+          // cannot take over the attack slot mid-fight.
+          // Sticky: once shown, the same corpse stays offered while it is
+          // still within reach, so the button does not blink as the aim
+          // probe slides across a tile edge.
+          const corpseReticle = getReticleTile();
+          let aimedCorpse = getCorpseObjectAt(corpseReticle.col, corpseReticle.row);
+          if (!aimedCorpse && _lastOfferedCorpseId) {
+            const near = getCorpseObjectForAction('obj_loot_corpse', corpseReticle.col, corpseReticle.row);
+            if (near?.id === _lastOfferedCorpseId) aimedCorpse = near;
+          }
+          _lastOfferedCorpseId = aimedCorpse?.id || null;
+          if (aimedCorpse) return aimedCorpse.getButtons(corpseReticle);
+          const devRuinActions = currentArea === 'map_i_dev_random_ruin'
+            ? window.DevRandomRuinInteractions?.getActionButtons?.()
+            : null; // Generated test-ruin interactions are ordinary building-interior context actions; when present they replace attacks/items in the same physical arch slots, exactly like NPC/furniture interactions.
+          if (devRuinActions?.length) return devRuinActions;
           const nest = window.DenNestSystem.currentAimedNest();
           if (nest) {
             const label = nest.liveBirth ? 'Hold to Take Baby' : 'Hold to Take Egg';
@@ -25230,7 +25220,7 @@
           || (interactionButton ? _worldInteractionPromptAnchor : null);
         const promptActionIds = ['action1', 'action2', 'action3', 'interact'];
         const promptInputs = btns.map((button, index) => { // Used by each floating row to render its rebound input and matching arch color independently.
-          const actionId = button.action === 'climb_branch' ? 'dodge' : (promptActionIds[index] || `action${index + 1}`); // Used to show Climb against its real Dodge binding instead of Action 1.
+          const actionId = button.inputAction || (button.action === 'climb_branch' ? 'dodge' : (promptActionIds[index] || `action${index + 1}`)); // Context providers may bind a row to an exact physical arch input; otherwise preserve the ordinary inferred slot mapping.
           const touchLabel = actionId === 'dodge' ? 'Dodge' : `Action ${index + 1}`; // Used when touch controls have no keyboard/controller glyph.
           return {
             actionId,
@@ -25275,7 +25265,7 @@
         // (e.g. no tool equipped), which is exactly the case a player
         // facing a tree is most likely to be in.
         const climbBtn = btns.find(b => b.action === 'climb_branch');
-        const nonClimbBtns = climbBtn ? btns.filter(b => b !== climbBtn) : btns;
+        const nonClimbBtns = btns.filter(b => b !== climbBtn && b.nativeInput !== true); // Native-input prompts (for example Dodge-to-jump-off a rope) stay in the floating list without stealing one of the five action-arch buttons.
         const first = nonClimbBtns.find(b => b.allowed && b.style !== 'secondary') || nonClimbBtns.find(b => b.allowed) || nonClimbBtns[0];
         if (first) activeAction = first.action;
         // The dodge button is climbing's only real trigger, so it's the
@@ -25294,7 +25284,8 @@
         // climb_branch is excluded from every arch slot below for the same
         // reason it's excluded from activeAction above — it still stays in
         // the full btns array so the 3D world-space prompt keeps working.
-        const isItemButton = b => b.action === 'consume_held_item' || b.action === 'consume_food_item' || b.action === 'play_instrument' || b.action.startsWith('alchemy_flask_') || b.action.startsWith('plant_')
+        const isItemButton = b => b.inputAction === 'itemAction1' || b.inputAction === 'itemAction2'
+          || b.action === 'consume_held_item' || b.action === 'consume_food_item' || b.action === 'play_instrument' || b.action.startsWith('alchemy_flask_') || b.action.startsWith('plant_')
           || b.action.startsWith('place_') || b.action.startsWith('spawn_') || b.action === 'harvest';
         const toolBtns = nonClimbBtns.filter(b => !isItemButton(b));
         const itemBtns = nonClimbBtns.filter(isItemButton);
@@ -25325,6 +25316,7 @@
             let _selectorHoldTimer = null, _selectorArcOpen = false, _selectorKind = null; // Ammo and potions both require a sustained original input and commit on its release.
             let _selectorDownX = 0, _selectorDownY = 0, _selectorMoved = false; // Used to keep normal touch jitter from selecting an arch entry before a Potion Select tap can resolve as bandaging.
             let _flaskGesture = false, _flaskCanceled = false; // Used by mobile hold-drag-release flask aiming.
+            let _claimedInputAction = null; // Physical arch input temporarily owned by a contextual world interaction; prevents the underlying weapon/tool action from firing on release.
             const DRAG_THRESH = 10;
             // Legacy behavior: holding+dragging an action button like a stick used to
             // keep re-firing the action every 120ms for as long as it stayed pushed off
@@ -25397,6 +25389,11 @@
               // Hold-to-dig/fill must start on press (not release) so the charge
               // can run for its full duration while the button stays held.
               const act = el.dataset.action;
+              const physicalInputAction=({btnAction1:'action1',btnAction2:'action2',btnAction3:'action3',btnItemAction1:'itemAction1',btnItemAction2:'itemAction2'})[el.id]||null;
+              if(physicalInputAction&&dispatchWorldInputClaim(physicalInputAction,'press','touch-arch')){
+                _claimedInputAction=physicalInputAction;
+                return;
+              }
               // Continuous world interactions use the same press-time selected
               // action contract as Drenkirra nests, so their frame timers can
               // begin immediately instead of waiting for pointer release.
@@ -25499,7 +25496,10 @@
               el.style.transition = 'transform 0.14s ease-out';
               el.style.transform  = 'translate(50%, 50%)';
               setTimeout(() => { el.style.transition = ''; el.style.transform = ''; }, 150);
-              if (_selectorKind) {
+              if (_claimedInputAction) {
+                dispatchWorldInputClaim(_claimedInputAction,ev.type==='pointercancel'?'cancel':'release','touch-arch');
+                _claimedInputAction=null;
+              } else if (_selectorKind) {
                 if (_selectorArcOpen) {
                   if (ev.type === 'pointercancel') window._desktopSelectionArc?.close();
                   else window._desktopSelectionArc?.releaseSelection();
@@ -26011,6 +26011,11 @@
         if (!button || button.allowed === false || button.action === toolActions.weapon[slot - 1]) return null;
         return { slot, button };
       }
+      function dispatchWorldInputClaim(actionId, phase = 'press', source = 'gameplay') {
+        const consumed=window.WorldActionInputClaims?.dispatch?.(actionId,phase,{source}); // Shared world interactions can temporarily own a physical action without teaching Combat about every door/rope/NPC system.
+        if(consumed&&actionId==='action1')actionHeldDown=false;
+        return consumed===true;
+      }
       const visibleWeaponContextPresses = new Set(); // Used to pair a context override's press/release without sending an unmatched release into Combat.input.
       const heldItemActionPresses = new Set(); // Pairs a holdToCommit action's press with its release even if the arch's displayed button changes mid-hold.
       const furniturePlacementActionPresses = new Set(); // Owns controller/keyboard placement confirms through release so a last-item placement cannot leak a release into weapon input.
@@ -26018,11 +26023,13 @@
       const potionAction3Press = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Tool Action 3 selector mirrors the normal held tool/item mode shift.
       const toolSelectPress = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Cross-input Tool Select tap/hold distinction.
       function potionSelectorAvailable(actionId) {
-        return actionId === 'action3' && heldMode === 'tool' && (activeTool === 'weapon' || activeTool === 'ranged')
+        return actionId === 'action3' && !window.WorldActionInputClaims?.hasClaim?.('action3')
+          && heldMode === 'tool' && (activeTool === 'weapon' || activeTool === 'ranged')
           && computeActionButtons().some(button => button.action === 'potion_select' && button.allowed);
       }
       function runInputAction(actionId, phase = 'press') {
         if (window.__mapEditorGizmoActive) return;
+        if(phase==='release'&&dispatchWorldInputClaim(actionId,'release','game-input'))return; // Pair a world-owned press even if the prompt disappears before button-up; never send an unmatched weapon release.
         if (actionId === 'toolSelect') {
           if (phase === 'release') {
             if (!toolSelectPress.down) return;
@@ -26081,7 +26088,7 @@
         // the second physical slot displays. World-context actions (including
         // the Bronzeworks Smithy) replace that slot and must remain usable
         // even while the ranged tool is equipped.
-        if ((actionId === 'action2' && heldMode === 'tool' && activeTool === 'ranged'
+        if ((actionId === 'action2' && !window.WorldActionInputClaims?.hasClaim?.('action2') && heldMode === 'tool' && activeTool === 'ranged'
           && actionButtonForPhysicalSlot(2)?.action === 'ammo_select') || rangedAmmoAction2Press.down) {
           if (phase === 'release') {
             if (!rangedAmmoAction2Press.down) return;
@@ -26129,6 +26136,7 @@
           return;
         }
         if (menuOpen || farmEditMode) return;
+        if(dispatchWorldInputClaim(actionId,'press','game-input'))return; // Explicit world claims outrank weapon/tool actions, but menus, selectors, fishing, and placement retain their higher-level ownership.
         if (actionId === 'interact') { runInteractAction(); return; }
         const visibleOverride = visibleActionOverrideForWeaponSlot(actionId); // Used so Loot/Harvest/other displayed context actions outrank the weapon normally bound to this slot.
         if (visibleOverride) {
@@ -26899,6 +26907,7 @@
             useActiveAction();
             return;
           }
+          if(mouseAction&&dispatchWorldInputClaim(mouseAction,'press','desktop-mouse'))return;
           if (heldMode === 'tool' && activeTool === 'weapon' && window.Combat?.input) {
             const weaponSlot = weaponActionSlot(mouseAction);
             const visibleOverride = weaponSlot ? visibleActionOverrideForWeaponSlot(mouseAction) : null;
@@ -26950,6 +26959,7 @@
           actionHeldDown = false;
           return;
         }
+        if(mouseAction&&dispatchWorldInputClaim(mouseAction,'release','desktop-mouse'))return;
         if (heldMode === 'tool' && activeTool === 'weapon' && window.Combat?.input) {
           const weaponSlot = weaponActionSlot(mouseAction);
           if (weaponSlot) {
@@ -27582,6 +27592,8 @@
           return avatarGroup;
         },
         worldSurfaceY: (x, y) => {
+          const exact = window.AreaFootprintBlockers?.surfaceYAt?.(currentArea, x / TILE, y / TILE); // True floor where an area's tiles are flat but its floor is not (ruin basins).
+          if (Number.isFinite(exact)) return exact;
           const grid = window.GridTileAccessors.getActiveGrid();
           const col = window.FormatUtils.clamp(Math.floor(x / TILE), 0, window.GridTileAccessors.getActiveCols() - 1);
           const row = window.FormatUtils.clamp(Math.floor(y / TILE), 0, window.GridTileAccessors.getActiveRows() - 1);
@@ -28340,6 +28352,7 @@
       });
 
       window.DevSpawner?.init({
+        corpseObjects, despawnCreature, // Random Test Ruin sanctum lich raises its fallen skeletons by replacing their corpses.
         getCurrentArea: () => currentArea,
         setCurrentArea: (v) => { currentArea = v; },
         getActiveScene: window.GridTileAccessors.getActiveScene,
@@ -28350,6 +28363,18 @@
         player,
         _snapCameraTarget,
         refreshActionBar,
+        getHeldMode: () => heldMode, // Random Test Ruin rope traversal snapshots only the currently drawn tool/weapon.
+        getActiveTool: () => activeTool,
+        getActiveAction: () => activeAction,
+        putAwayHeldEquipment,
+        restoreHeldToolSnapshot: snapshot => {
+          if (!snapshot?.tool || heldMode !== 'none') return false;
+          setActiveTool(snapshot.tool, { silent:true });
+          if (toolActions[snapshot.tool]?.includes(snapshot.action)) activeAction = snapshot.action;
+          refreshActionBar();
+          refreshWeaponSwitchBtn();
+          return true;
+        },
         showToast,
         closeMenu,
         EXTERIOR_ZONES,
@@ -28376,6 +28401,20 @@
         setRainPlaneSettings: window.RainPlanes.setSettings,
         isDevMode: () => s_devMode,
         regenerateWildernessLab,
+        getActiveCamera: () => camera, // Random Test Ruin anchors its interaction list at camera height.
+        // Adds a rolled loot bundle ({ itemKey: qty }) to the inventory and
+        // returns display parts; used by Random Test Ruin Dungeon Chests.
+        grantLoot: gained => {
+          const parts = [];
+          Object.entries(gained || {}).forEach(([key, qty]) => {
+            if (!(qty > 0)) return;
+            if (key === 'gold') inventory.gold = (inventory.gold || 0) + qty;
+            else inventory[key] = Math.min(99, (inventory[key] || 0) + qty);
+            parts.push(itemIconForKey(key) + '×' + qty);
+          });
+          if (parts.length) { window.HudUpdate.refreshItemScroll(); buildInventoryGrid(); refreshActionBar(); }
+          return parts;
+        },
       });
 
       window.MapLivePreviewRuntime?.init({
@@ -28664,7 +28703,7 @@
       window.PlayerVitals?.init({
         player, PLAYER_STAMINA_REGEN, PLAYER_HEALTH_REGEN, showToast,
         isPlayerInWater: () => isWaterSurfaceAt(player.x, player.y, window.GridTileAccessors.getActiveGrid()), // Burning extinguish follows permanent + visibly-wet dynamic water.
-        handlePlayerDeath: () => respawnPlayer(),
+        handlePlayerDeath: reason => respawnPlayer(reason),
       });
 
       window.ItemProcessing?.init({
@@ -28949,6 +28988,27 @@
         getReagentPlantMaterial,
         refreshItemScroll: window.HudUpdate.refreshItemScroll,
         tileSurfaceYInArea,
+      });
+
+      window.StampableLocaleDefs?.init({ debugLog });
+      window.RuinSites?.init({
+        tothalWorldId: _tothalWorldId,
+        currentTothalYear,
+        calendar,
+        getCurrentArea: () => currentArea,
+        TILE,
+        NORMAL_TOP,
+        PLATEAU_UNIT,
+        TRENCH_TOP,
+        TileType,
+        _zoneScenes,
+        _zoneLayouts,
+        buildZoneScene,
+        enterZone,
+        findZoneFlatEmptyTiles,
+        recordWildernessChunkTileDelta,
+        showToast,
+        refreshActionBar,
       });
 
       window.WildTreasure?.init({

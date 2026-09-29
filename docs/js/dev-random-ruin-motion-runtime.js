@@ -21,7 +21,8 @@
   let daises = [];
   let pushBlocks = [];
   let elevatorBlocks = [];
-  let repairedEgress = [];
+  let repairedEgress = []; // Kept for diagnostics compatibility; simplified mode no longer injects duplicate runtime ladders.
+  let authoredLadderCount = 0; // Counts the V50 stone ladders that now own all climb interaction/animation.
   let nearestElevatorBlock = null;
   let promptOwned = false;
   let controllerInteractDown = false;
@@ -76,6 +77,7 @@
     pushBlocks = [];
     elevatorBlocks = [];
     repairedEgress = [];
+    authoredLadderCount = 0;
 
     root.traverse(object => {
       const d = object.userData || {};
@@ -89,14 +91,15 @@
           lastTopY:box?.max.y ?? 0,
         });
       }
+      if (d.generatedAccessType === 'stoneLadder') authoredLadderCount++;
       if (d.pushable || motion === 'pushPuzzleBlock' || motion === 'elevatorPushBlock') {
         pushBlocks.push(object);
         if (motion === 'elevatorPushBlock' || d.ridesMovingDais) elevatorBlocks.push(object);
       }
     });
 
-    ensureSunkenEgress();
-    if (repairedEgress.length) setTimeout(() => window.DevRandomRuinPrototypeHooks?.rebuild?.(), 0);
+    // Do not synthesize recovery ladders here. The generated V50 stone ladders are the single visual/gameplay ladder type;
+    // layouts whose authored access is insufficient are rejected by the pre-entry solvability audit instead of patched with a second ladder style.
     updateBadge();
   }
 
@@ -363,11 +366,11 @@
     if (!badge || !root) return;
     const base = badge.dataset.motionBase || badge.textContent;
     badge.dataset.motionBase = base;
-    badge.textContent = `${base} · motion ${daises.length}/${elevatorBlocks.length} · egress +${repairedEgress.length}`;
+    badge.textContent = `${base} · motion ${daises.length}/${elevatorBlocks.length} · ladders ${authoredLadderCount}`;
   }
 
   function clear() {
-    root = null; meta = null; daises = []; pushBlocks = []; elevatorBlocks = []; repairedEgress = [];
+    root = null; meta = null; daises = []; pushBlocks = []; elevatorBlocks = []; repairedEgress = []; authoredLadderCount = 0;
     nearestElevatorBlock = null; controllerInteractDown = false;
     if (promptOwned) window.ActionPromptUI?.hideActionPrompt?.();
     promptOwned = false;
@@ -433,6 +436,7 @@
       pushBlocks:pushBlocks.length,
       elevatorBlocks:elevatorBlocks.length,
       repairedEgress:repairedEgress.map(entry => ({...entry})),
+      authoredLadders:authoredLadderCount,
     }),
     auditSeeds,
     rebuild:() => { const next = activeRoot(); if (next) discover(next); },

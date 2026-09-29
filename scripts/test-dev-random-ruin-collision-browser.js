@@ -18,12 +18,17 @@ const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.ht
   await page.waitForFunction(() => !!window.DevRandomRuin && !!window.DevRandomRuinTileOccupancy && !!window.DevRandomRuinCollisionPrecision, null, { timeout:30000 });
   await page.evaluate(() => window.HobunjiTitleScreen?.start?.());
   await page.waitForFunction(() => !window.HobunjiTitleScreen?.isActive?.(), null, { timeout:5000 });
-  assert.equal(await page.evaluate(() => window.DevRandomRuin.generate(0x5eed1234)), true, 'fixed ruin seed should generate');
+  const generated = await page.evaluate(async () => {
+    const ok = await window.DevRandomRuin.generate(0x5eed1234);
+    return { ok, audit:window.DevRandomRuin.getLastSolvabilityAudit?.() || null };
+  });
+  assert.equal(generated.ok, true, `fixed ruin seed should generate: ${JSON.stringify(generated.audit, null, 2)}`);
   await page.waitForFunction(() => window.GridTileAccessors?.getCurrentArea?.() === 'map_i_dev_random_ruin', null, { timeout:30000 });
   await page.waitForFunction(() => {
     const render = window.DevRandomRuinWallRenderProxy?.snapshot?.();
-    return render?.sourceDoorMeshes > 0 && render.doorProxyCount === render.sourceDoorMeshes
-      && render.sourceActivatorMeshes > 0 && render.activatorProxyCount === render.sourceActivatorMeshes;
+    return render?.sourceDoorMeshes > 0 && render.visibleDoorSources === render.sourceDoorMeshes
+      && render.sourceActivatorMeshes > 0 && render.visibleActivatorSources === render.sourceActivatorMeshes
+      && render.totalProxyCount === 0;
   }, null, { timeout:10000 });
 
   const result = await page.evaluate(() => {
@@ -93,17 +98,15 @@ const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.ht
   }
   assert.equal(result.probe.aggregateBlockers, 1, JSON.stringify(result.probe));
   assert.ok(result.render.sourceDoorMeshes > 0, JSON.stringify(result.render));
-  assert.equal(result.render.doorProxyCount, result.render.sourceDoorMeshes, JSON.stringify(result.render));
-  assert.equal(result.render.visibleDoorProxies, result.render.sourceDoorMeshes, JSON.stringify(result.render));
+  assert.equal(result.render.visibleDoorSources, result.render.sourceDoorMeshes, JSON.stringify(result.render));
   assert.ok(result.render.sourceDoorArchMeshes > 0, JSON.stringify(result.render));
-  assert.equal(result.render.visibleDoorArchProxies, result.render.sourceDoorArchMeshes, JSON.stringify(result.render));
+  assert.equal(result.render.visibleDoorArchSources, result.render.sourceDoorArchMeshes, JSON.stringify(result.render));
   assert.ok(result.render.normalizedDoorAssemblies > 0, JSON.stringify(result.render));
   assert.ok(result.render.sourceActivatorMeshes > 0, JSON.stringify(result.render));
-  assert.equal(result.render.activatorProxyCount, result.render.sourceActivatorMeshes, JSON.stringify(result.render));
-  assert.equal(result.render.visibleActivatorProxies, result.render.sourceActivatorMeshes, JSON.stringify(result.render));
-  assert.equal(result.render.allTransformSyncedProxies, result.render.totalProxyCount, JSON.stringify(result.render));
-  assert.equal(result.render.allInteractionRaycastDisabled, result.render.totalProxyCount, JSON.stringify(result.render));
-  assert.equal(result.render.allMainRealmMaterials, result.render.totalProxyCount, JSON.stringify(result.render));
+  assert.equal(result.render.visibleActivatorSources, result.render.sourceActivatorMeshes, JSON.stringify(result.render));
+  assert.equal(result.render.totalProxyCount, 0, JSON.stringify(result.render));
+  assert.equal(result.render.frustumCulledSources, result.render.nativeSourceMeshCount, JSON.stringify(result.render));
+  assert.equal(result.render.allNativeMainRealmMaterials, result.render.nativeSourceMeshCount, JSON.stringify(result.render));
 
   const probeText = await page.evaluate(async () => {
     const resultEl = document.getElementById('debugProbeResult');

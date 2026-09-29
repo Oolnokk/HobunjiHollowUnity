@@ -2,7 +2,8 @@
 //
 // Three elemental lich traditions reuse the Harlyao Skeleton portrait/wardrobe
 // and shared humanoid hostile shell, but own their spell AI/projectiles here.
-// Nothing in this file spawns outside map_dev_arena.
+// Nothing in this file spawns outside map_dev_arena or an area that opted in
+// through allowArea() (the Random Test Ruin's boss sanctum).
 (() => {
   'use strict';
 
@@ -19,6 +20,7 @@
   const ENTRANCED_COMMAND_ANNOUNCE_MS = 750; // New commands first show "<enemy> commands you to ..." before the numeric grace countdown.
   const ENTRANCED_COMMAND_COUNTDOWN_MS = 3000; // Three one-second 3→2→1 beats during which Entranced neither damages nor naturally recovers.
   const ENTRANCED_COMMAND_GRACE_MS = ENTRANCED_COMMAND_ANNOUNCE_MS + ENTRANCED_COMMAND_COUNTDOWN_MS; // Full immunity/freeze interval around every initial or changed command.
+  const ENTRANCED_COMMAND_MIN_HOLD_MS = 10000; // Minimum time a command stays in force after its grace window ends.
   const PUDDLE_RADIUS_TILES = 0.82; // Kanthic misses make a gameplay hazard this far from the visual puddle center.
   const PUDDLE_LIFETIME_S = 9; // Short arena-readable lifetime before gasoline fades/disposes.
   const PUDDLE_TICK_S = 0.35; // Entranced buildup cadence while an actor remains inside gasoline.
@@ -114,12 +116,19 @@
     return TYPE_DEFS[String(type || '').toLowerCase()] || TYPE_DEFS.tothal;
   }
 
+  const allowedAreas = new Set([ARENA_ID]); // Areas liches may exist in; the arena always, plus any area registered through allowArea().
+
+  function currentLichArea() {
+    const area = deps?.getCurrentArea?.();
+    return allowedAreas.has(area) ? area : null;
+  }
+
   function isArena() {
-    return deps?.getCurrentArea?.() === ARENA_ID;
+    return !!currentLichArea();
   }
 
   function isLiveActor(actor) {
-    return !!actor && Number(actor.health) > 0 && (!actor.areaId || actor.areaId === ARENA_ID);
+    return !!actor && Number(actor.health) > 0 && (!actor.areaId || actor.areaId === currentLichArea());
   }
 
   function rollDye(type) {
@@ -271,12 +280,13 @@
     if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
     const roster = rosterFor(def.id, options.gender); // Forced skeleton+raggedhood+bodywrap roster passed through the normal portrait builder.
     const tier = Math.max(0, Math.min(3, Math.round(Number(options.tier) || 0))); // Existing dev tier selector remains meaningful for lich base stats.
+    const areaId = currentLichArea(); // Spawn area; every spell/summon below follows its owner's area.
     const entity = await window.BanditCombat.makeEntity({
       ...cfg,
       speciesWeights: { 'harlyao-skeleton': 1 },
       rangedWeaponChanceByRank: { grunt: 0, lieutenant: 0, captain: 0 },
     }, 'lieutenant', tier, x, y, {
-      zoneId: ARENA_ID,
+      zoneId: areaId,
       rosterOverride: roster,
       enemyClass: CLASS_ID,
       nameOverride: def.label,
@@ -318,7 +328,7 @@
     const cols = actor.areaCols || grid[0]?.length || 1; // Bounds for safe ballistic ground lookup.
     const col = Math.max(0, Math.min(cols - 1, Math.floor(xPx / tile))); // Projectile grid column used for surface lookup.
     const row = Math.max(0, Math.min(rows - 1, Math.floor(yPx / tile))); // Projectile grid row used for surface lookup.
-    return deps.tileSurfaceYInArea?.(grid[row]?.[col], actor.areaId || ARENA_ID) || 0;
+    return deps.tileSurfaceYInArea?.(grid[row]?.[col], actor.areaId || currentLichArea() || ARENA_ID) || 0;
   }
 
   function targetCenter(actor) {
@@ -397,7 +407,7 @@
     const bgs = window.AudioSystem?.gameAudioConfig?.()?.bgs || {}; // Existing authored BGS recordings are reused instead of introducing a spell-only audio asset.
     const url = bgs.wind2 || bgs.wind1;
     if (!url || !window.Music?.registerFurnitureSfxSource) return null;
-    projectile.windSource = window.Music.registerFurnitureSfxSource(ARENA_ID, projectile.x / (deps.TILE || 64), projectile.y / (deps.TILE || 64), {
+    projectile.windSource = window.Music.registerFurnitureSfxSource(projectile.areaId || ARENA_ID, projectile.x / (deps.TILE || 64), projectile.y / (deps.TILE || 64), {
       url,
       rangeTiles: TOTHAL_WIND_RANGE_TILES,
       volume: TOTHAL_WIND_VOLUME,
@@ -459,7 +469,7 @@
     mesh.position.copy(velocity.start);
     lich.scene?.add?.(mesh);
     const projectile = {
-      type: def.id, owner: lich, target, mesh, areaId: ARENA_ID,
+      type: def.id, owner: lich, target, mesh, areaId: lich.areaId || currentLichArea() || ARENA_ID,
       x: velocity.start.x * deps.TILE, y: velocity.start.z * deps.TILE, worldY: velocity.start.y,
       prevX: velocity.start.x * deps.TILE, prevY: velocity.start.z * deps.TILE, prevWorldY: velocity.start.y,
       vx: velocity.vx, vy: velocity.vz, vyWorld: velocity.vyWorld,
@@ -1568,7 +1578,7 @@
       const y = lich.y + Math.sin(angle) * dist; // Summoned Minion world Z-plane coordinate.
       const minion = await window.MinionCombat.makeEntity({
         speciesId: 'harlyao-skeleton', name: 'Harlyao Skeleton', tier: lich.banditTier || 0,
-        x, y, zoneId: ARENA_ID, weaponMetalKey: 'nativeCopper',
+        x, y, zoneId: lich.areaId || currentLichArea() || ARENA_ID, weaponMetalKey: 'nativeCopper',
         extra: { homeX: x, homeY: y, state: 'chase', summonedByLichId: lich.id },
       });
       if (!minion) return;
@@ -1598,7 +1608,10 @@
     let desired = lich._lichCommand || 'approach'; // Hysteresis preserves current command inside the neutral distance band.
     if (hidden || distPx > tile * 5.4) desired = 'approach';
     else if (distPx < tile * 3.15) desired = 'flee';
-    if (desired !== lich._lichCommand && performance.now() - (lich._lichCommandChangedAt || 0) > 650) {
+    // A command holds for its grace window (announce + countdown) plus a
+    // further ENTRANCED_COMMAND_MIN_HOLD_MS before it may change; flipping
+    // every few hundred ms made Kanthic commands impossible to follow.
+    if (desired !== lich._lichCommand && performance.now() - (lich._lichCommandChangedAt || 0) > ENTRANCED_COMMAND_GRACE_MS + ENTRANCED_COMMAND_MIN_HOLD_MS) {
       lich._lichCommand = desired;
       lich._lichCommandChangedAt = performance.now();
       lastEvent = `command:${lich.id || lich.name}:${desired}`;
@@ -1645,7 +1658,12 @@
     lich._lichCastingAbility = ability; // Mobile diagnostics distinguish projectile and summon gestures while the shared staged action is active.
     const onStrike = () => {
       lich.telegraphState = 'strike';
-      if (ability === 'summon') summonMinion(lich);
+      if (ability === 'summon') {
+        // An owner can swap summoning for raising its own fallen dead (the
+        // Random Test Ruin sanctum lich raises its four coffin skeletons).
+        if (lich.lichRaiseDead?.raise) { lich.lichRaiseDead.raise(lich); lastEvent = `raise:${lich.id || lich.name}`; }
+        else summonMinion(lich);
+      }
       else firePrimary(lich, target, { windupS, strikeS });
     };
     const begin = window.Combat?.beginStagedAction;
@@ -1684,7 +1702,7 @@
       return { aimAngle, moving: false, handled: true };
     }
 
-    if (lich._lichSummonCooldownS <= 0) {
+    if (lich._lichSummonCooldownS <= 0 && (!lich.lichRaiseDead || lich.lichRaiseDead.canRaise?.(lich))) { // Raise-dead liches only cast when someone lies dead.
       if (beginLichCast(lich, target, 'summon')) {
         lich._lichSummonCooldownS = 12 + random() * 5;
         return { aimAngle, moving: false, handled: true };
@@ -1842,6 +1860,8 @@
 
   window.HarlyaoLichCombat = {
     CLASS_ID, ARENA_ID, TYPE_ORDER, TYPE_DEFS,
+    allowArea: areaId => { if (areaId) allowedAreas.add(String(areaId)); }, // Opt another area in (e.g. the Random Test Ruin's boss sanctum).
+    disallowArea: areaId => { if (areaId && areaId !== ARENA_ID) allowedAreas.delete(String(areaId)); },
     installWrappers, makeEntity, rosterFor, rollDye,
     updateLichAI, applyEntranced, addGooSlow, clearExpiredSlow, makeGasolinePuddle, makeEruptingEarth,
     debugSnapshot,

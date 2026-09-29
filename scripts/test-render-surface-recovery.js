@@ -39,7 +39,7 @@ assert.match(pixelProbe, /overlayExpected=/, 'Pixel Probe must report the expect
 
 const recoveryCacheKeys = {
   'weather-fx': '20260924texture-restore1',
-  'cloud-forest-fog': '20260924renderrecovery2',
+  'cloud-forest-fog': '20260926devruindark2',
 }; // Used below to ensure every recovery module ships with its current browser cache key.
 for (const [file, cacheKey] of Object.entries(recoveryCacheKeys)) {
   assert.match(index, new RegExp(`js/${file}\\.js\\?v=${cacheKey}`), `${file}.js cache-bust must ship the repair`);

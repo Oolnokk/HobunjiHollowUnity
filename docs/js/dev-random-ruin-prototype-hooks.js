@@ -121,7 +121,7 @@
     return control;
   }
 
-  function nearestSurfaceCandidate(x, z, currentY, preferUp) {
+  function nearestSurfaceCandidate(x, z, currentY, preferUp, targetY = null) {
     const samples = [];
     const tryPoint = (sx, sz) => {
       const high = DS.sampleSupport(sx, sz, { minY:currentY + 0.12, maxY:currentY + 4.5, pad:.03 });
@@ -132,9 +132,13 @@
     tryPoint(x, z);
     if (!samples.length) return null;
     const desired = samples.filter(item => preferUp ? item.delta > 0 : item.delta < 0);
-    const pool = desired.length ? desired : samples;
-    pool.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
-    return pool[0] || null;
+    if (!desired.length) return null;
+    desired.sort((a, b) => {
+      const aTarget = Number.isFinite(Number(targetY)) ? Math.abs(a.y - targetY) : Math.abs(a.delta);
+      const bTarget = Number.isFinite(Number(targetY)) ? Math.abs(b.y - targetY) : Math.abs(b.delta);
+      return aTarget - bTarget || Math.abs(a.delta) - Math.abs(b.delta);
+    });
+    return desired[0] || null;
   }
 
   function ladderSideSamples(ladder) {
@@ -163,24 +167,27 @@
     if (!p || !ladderBox) return false;
     const midY = (ladderBox.min.y + ladderBox.max.y) * .5;
     const preferUp = currentY <= midY;
+    const targetY = preferUp ? ladderBox.max.y : ladderBox.min.y;
     let best = null;
     for (const sample of ladderSideSamples(ladder)) {
-      const candidate = nearestSurfaceCandidate(sample.x, sample.z, currentY, preferUp);
+      const candidate = nearestSurfaceCandidate(sample.x, sample.z, currentY, preferUp, targetY);
       if (!candidate) continue;
       const horizontal = Math.hypot(sample.x - p.x, sample.z - p.z);
-      const score = Math.abs(candidate.delta) * 4 - horizontal;
-      if (!best || score > best.score) best = { ...candidate, score };
+      const score = Math.abs(candidate.y - targetY) * 4 + horizontal;
+      if (!best || score < best.score) best = { ...candidate, score };
     }
     if (!best) {
       deps.showToast?.('No valid landing surface was found for this ladder.', false);
       return false;
     }
-    deps.player.x = best.x * deps.TILE;
-    deps.player.y = best.z * deps.TILE;
-    deps.player.vx = 0;
-    deps.player.vy = 0;
-    if (deps.playerMesh?.position) deps.playerMesh.position.y = best.y;
-    deps._snapCameraTarget?.();
+    if (!window.DevRandomRuin?.setPlayerWorldPoint?.({ x:best.x, y:best.y, z:best.z }, { grounded:true })) {
+      deps.player.x = best.x * deps.TILE;
+      deps.player.y = best.z * deps.TILE;
+      deps.player.vx = 0;
+      deps.player.vy = 0;
+      if (deps.playerMesh?.position) deps.playerMesh.position.y = best.y;
+      deps._snapCameraTarget?.();
+    }
     deps.showToast?.(best.delta > 0 ? 'Climbed the stone ladder.' : 'Climbed down the stone ladder.', true);
     return true;
   }
@@ -240,29 +247,19 @@
   function installStoneLadder(ladder) {
     ladders.push(ladder);
     recordCount('stoneLadder');
-    recordHandled('stone ladders / recovery ladders');
-    addControl({ kind:'ladder', object:ladder, label:'Climb Stone Ladder', onPress:() => climbLadder(ladder) });
+    recordHandled('authored stone ladders (DevRandomRuinInteractions owns the single climb control)');
+    ladder.userData.interactive3D = true; // The semantic interaction layer supplies the standard popup and cliff-style climb animation.
   }
 
   function installTransitDoor(door) {
-    const state = {
-      root:door,
-      open:0,
-      targetOpen:0,
-      fullScaleY:Number(door.scale?.y) || 1,
-      openedFromSide:0,
-      openedAt:0,
-    };
-    door.userData.__devRuinTransitDoorState = state;
-    transitDoors.push(state);
     recordCount('transitDoor');
-    recordHandled('plain hallway transit doors');
-    recordPending('transit-door passage reset semantics (combat/puzzle reset audit, later batch)');
-    // The shared tile-occupancy snapshot owns this door's blocker. Keeping a
-    // second object-wide AABB here made the Map tab and gameplay disagree.
-    addControl({ kind:'transitDoor', object:door,
-      get label() { return state.targetOpen > .5 ? 'Close Stone Door' : 'Open Stone Door'; },
-      onPress:() => toggleTransitDoor(state) });
+    const baseState=door.userData?.__devRuinTransitDoorState;
+    if(baseState){
+      recordHandled('plain hallway transit doors (base interior adapter owns state, animation, prompt, and collision)');
+      door.userData.interactive3D=true;
+      return; // Never replace the base adapter's state object or add a second animation/control loop; that desynchronized visible door height from collision.
+    }
+    recordPending('transit door discovered before base interior adapter state was installed');
   }
 
   function installStaticDais(dais) {

@@ -6,6 +6,19 @@
 
   let previewLoopPaused = false;
 
+  function normalizeRuntimePuzzleOptions(raw = {}) {
+    const source = raw && typeof raw === 'object' ? raw : {}; // Used to safely normalize the parent game's persisted puzzle-generation payload.
+    return {
+      pressurePlate: source.pressurePlate !== false,
+      brazier: source.brazier !== false,
+      glyphObelisk: source.glyphObelisk !== false,
+      stackedObelisk: source.stackedObelisk !== false,
+      linkedCubePillars: source.linkedCubePillars !== false,
+      nestedRoom: source.nestedRoom !== false,
+      maxPerRoom: Math.max(0, Math.min(12, Math.floor(Number(source.maxPerRoom) || 0))),
+    };
+  }
+
   function cloneJson(value) {
     return value == null ? value : JSON.parse(JSON.stringify(value));
   }
@@ -139,6 +152,11 @@
     restorePreviewRoots();
     await loadRepoFurnitureLibrary();
 
+    const puzzleOptions = normalizeRuntimePuzzleOptions(options.puzzles); // Used by the embedded V50 patch while this one interior is generated.
+    window.__devRuinPuzzleOptions = puzzleOptions;
+    window.__devRuinPuzzleCounts = new Map(); // Used by the embedded patch to enforce the per-room top-level puzzle cap for this generation only.
+    window.__devRuinPuzzleClaimedMechanisms = new Set(); // Used to keep recursive/fallback activator creation from consuming a room slot twice.
+
     $('localeSeed').value = String(options.seed ?? 'dev-ruin');
     $('localeSize').value = options.size || 'medium';
     $('localeEnvironment').value = 'interior';
@@ -167,6 +185,11 @@
       status: $('localeStatus')?.textContent || '',
       runtimeWallPlanes: runtimeWallPlaneState(),
       runtimeHallways: hallwayState,
+      puzzleOptions: cloneJson(puzzleOptions),
+      puzzleGeneration:{
+        countsByRoom:Object.fromEntries(window.__devRuinPuzzleCounts || []),
+        claimedMechanisms:[...(window.__devRuinPuzzleClaimedMechanisms || [])],
+      },
       puzzleFurniture,
     };
   }
@@ -223,7 +246,12 @@
   }
 
   function applyProgress(root, progress) {
-    applyMechanismProgress(root, clamp(Number(progress) || 0, 0, 1));
+    const normalizedProgress = clamp(Number(progress) || 0, 0, 1); // Used by both the general V50 mechanism animation and direct leaf-activator visual synchronization.
+    applyMechanismProgress(root, normalizedProgress);
+    if (root?.userData?.activatorType === 'glyphObelisk' && root.userData?.decalMaterials) {
+      setDecalMaterialsProgress(root.userData.decalMaterials, normalizedProgress);
+      if (root.userData.glowLight) root.userData.glowLight.intensity = 3.2 * normalizedProgress;
+    }
   }
 
   function syncPressurePlates(root) {
@@ -361,6 +389,11 @@
       previewRootAttachedToTool: localePreviewRoot.parent === scene,
       runtimeWallPlanes: runtimeWallPlaneState(),
       runtimeHallways: runtimeHallwayState(),
+      puzzleOptions: cloneJson(window.__devRuinPuzzleOptions || null),
+      puzzleGeneration:{
+        countsByRoom:Object.fromEntries(window.__devRuinPuzzleCounts || []),
+        claimedMechanisms:[...(window.__devRuinPuzzleClaimedMechanisms || [])],
+      },
     };
   }
 

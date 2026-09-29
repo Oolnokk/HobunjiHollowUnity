@@ -31,6 +31,8 @@
        load before game.js, which calls window.InputBindings.init(...) and
        window.InputBindings.loadInputBindings() during its own setup. -->
   <script src="js/input-bindings.js?v=20260914transienttarget1"></script>
+  <!-- Shared contextual input-ownership registry. World interactions may explicitly claim Action 1/2/etc.; game.js consults it before combat/tool dispatch so one physical input has exactly one owner. -->
+  <script src="js/world-action-input-claims.js?v=20260927interactionpriority1"></script>
   <!-- Bottom-of-screen contextual action prompt extracted out of game.js;
        uses window.InputBindings.buttonLabel, so must load after it and
        before game.js, which calls window.ActionPromptUI.init(...). -->
@@ -190,9 +192,9 @@
   <!-- Procedural foliage / crop geometry -->
   <script src="js/foliage-generator.js?v=20260910review1"></script>
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
-  <script src="js/procedural-furniture.js?v=20260926banubusurface1"></script>
+  <script src="js/procedural-furniture.js?v=20260929glowdecals1"></script>
   <script src="js/furniture-puzzle-properties.js?v=20260922perpiece1"></script>
-  <script src="js/furniture-puzzle-runtime.js?v=20260922perpiece1"></script>
+  <script src="js/furniture-puzzle-runtime.js?v=20260929glowdecals1"></script>
   <!-- Loads the richer per-piece data authored by furniture-avatar-author (seat
        anchors, processing VFX/warps, livestock stomp points) on top of it -->
   <script src="js/authored-furniture-runtime.js?v=20260922twostate1"></script>
@@ -201,7 +203,7 @@
   <script src="js/terrain-preview.js?v=20260922ruinrebase1"></script>
   <script src="js/wilderness-map-generator.js?v=20260924localecollider1"></script>
   <!-- Terrain-aware authored locales inspect the finished wilderness and place against existing host terrain. Must load after WildernessMapGenerator so its wrapper installs in the game, not only in editor/tests. -->
-  <script src="js/locale-terrain-placement.js?v=20260924localecollider1"></script>
+  <script src="js/locale-terrain-placement.js?v=20260930ladderfix1"></script>
   <script src="js/foliage-furniture-renderer.js?v=20260816a"></script>
   <script src="js/foliage-furniture-runtime.js?v=20260816a"></script>
   <!-- Generic post-generation locale placement (window.TemporaryLocales) —
@@ -265,7 +267,11 @@
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
        projectiles. Loads before bandits so their dual loadouts can call it. -->
   <script src="js/nearby-volume-collision.js?v=20260827treecover2"></script>
-  <script src="js/combat/ranged-weapons.js?v=20260927reticleorigin1"></script>
+  <!-- Sub-tile prop footprints consulted by game.js canOccupyAt()/furnitureBlocksMovementAt(); must load before game.js. -->
+  <script src="js/area-footprint-blockers.js?v=20260929shotfloor1"></script>
+  <!-- Sub-stepped sliding move extracted out of game.js; must load before game.js. -->
+  <script src="js/swept-move.js?v=20260927footprints1"></script>
+  <script src="js/combat/ranged-weapons.js?v=20260929merge1"></script>
   <script src="js/combat/ranged-hud-reticle.js?v=20260925dialogue3"></script>
   <script src="js/combat/melee-hud-reticle.js?v=20260926combatreview1"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
@@ -277,16 +283,16 @@
        spawn. -->
   <script src="js/combat/combat-bandit.js?v=20260927reviewfix1"></script>
   <!-- Distinct Minion humanoid category: independent roster/dye/Shambling Footing rules over the shared BanditCombat executor. -->
-  <script src="js/combat/combat-minion.js?v=20260926shambling70"></script>
+  <script src="js/combat/combat-minion.js?v=20260929lichroom1"></script>
   <script src="js/combat/combat-enemy-dodge.js?v=20260926combatreview1"></script>
   <!-- Testing Arena-only Harlyao Lich class: wraps the final humanoid AI seam after enemy-dodge, owns elemental projectiles/puddles/Entranced commands, and summons ordinary Minions. -->
-  <script src="js/combat/combat-lich.js?v=20260927reviewfix1"></script>
+  <script src="js/combat/combat-lich.js?v=20260929merge1"></script>
   <!-- Bandit camps (zone adapter, tent props, camp lifecycle, companion
        perception, corpse loot) — window.BanditCamps. Calls
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
        must load after combat-bandit.js above, and before game.js, which
        calls window.BanditCamps.init(...) during its own setup. -->
-  <script src="js/bandit-camps.js?v=20260925denturnover1"></script>
+  <script src="js/bandit-camps.js?v=20260929lichroom1"></script>
   <!-- Bounty board (hunt a named bandit captain, destroy his camp) —
        window.BountyBoard. Reads window.BanditCamps/window.BanditCombat
        directly, so must load after both above, and before game.js, which
@@ -339,7 +345,7 @@
        load order relative to the other systems above doesn't matter;
        must load before game.js, which calls window.WildTreasure.init(...)
        during its own setup. -->
-  <script src="js/wild-treasure.js?v=20260925savecorrupt3"></script>
+  <script src="js/wild-treasure.js?v=20260929ruinsites1"></script>
   <!-- Farm livestock: barn AI, animal factories, harvest interaction,
        breeding (window.FarmAnimals) — self-contained aside from deps
        injected via init(), and reads window.DewVats at call time (already
@@ -369,13 +375,13 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20260925denturnover2&surfaceUv=20260924edgepreserve2"></script>
+  <script src="js/house-pieces.js?v=20260929ruinsites1&surfaceUv=20260924edgepreserve2"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.CreatureDeath.init(...) during
        its own setup. -->
-  <script src="js/creature-death.js?v=20260826death1"></script>
+  <script src="js/creature-death.js?v=20260929config1"></script>
   <!-- Sell Crate + Supply Box farm world objects (window.FarmCrates) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -407,7 +413,7 @@
        relative to the other systems above doesn't matter; must load before
        game.js, which calls window.CalendarSystem.init(...) during its own
        setup. -->
-  <script src="js/calendar-system.js?v=20260920startup1"></script>
+  <script src="js/calendar-system.js?v=20260929ruinsites1"></script>
   <!-- Resolves a map/interior's active alternate `layouts` entry (see
        docs/config/maps/map_i_temple.json's spirit_communion layout) against
        the current calendar time — window.MapLayoutSystem. Pure/stateless, no
@@ -450,13 +456,13 @@
        aside from deps injected via init(), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.ClimbSystem.init(...) during its own setup. -->
-  <script src="js/climb-system.js?v=20260925mountheading1"></script>
+  <script src="js/climb-system.js?v=20260929config1"></script>
   <!-- Wilderness fog-of-war, discovered-locale tracking, and map rendering
        (window.WildernessMap) — reads window.BanditCamps/window.BountyBoard
        at draw time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildernessMap.init(...) during its own setup. -->
-  <script src="js/wilderness-map.js?v=20260830mapwaypoint1"></script>
+  <script src="js/wilderness-map.js?v=20260929ruinsites1"></script>
   <script src="js/navigation-compass.js?v=20260830mapwaypoint1"></script>
   <!-- Dead-zone rotation math shared by player/NPC/creature PNG-plane
        avatars (window.PerpRotation) — self-contained aside from deps
@@ -519,7 +525,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20260925denbabyescape2"></script>
+  <script src="js/wildlife-spawn.js?v=20260929ruinsites1"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
@@ -560,7 +566,7 @@
        Mine floors, where player death destroys an underground camp.
        Self-contained aside from deps injected via init(); must load before game.js, which calls
        window.WildernessCampfire.init(...) during its own setup. -->
-  <script src="js/wilderness-campfire.js?v=20260925savecorrupt5"></script>
+  <script src="js/wilderness-campfire.js?v=20260929ruinsites1"></script>
   <!-- Per-tile grid water simulation (rain/absorption/flow/siltation) and
        the merged dynamic-water mesh renderer (window.WaterSystem). Must
        load before game.js — unusually early among these, in fact: game.js
@@ -595,7 +601,7 @@
   <!-- Player-centered white mist cylinders, shown only in the Southern
        Cloud Forest — see EXTERIOR_ZONES.map_southern_cloud_forest's
        fogDensity/vegCullRadiusTiles comments in game.js for why. -->
-  <script src="js/cloud-forest-fog.js?v=20260924renderrecovery2"></script>
+  <script src="js/cloud-forest-fog.js?v=20260926devruindark2"></script>
   <!-- Farm tab hub (header, grid glance, buildings list, processor status
        tiles, livestock roster + breeding, farm<->stable transfers, storage,
        farmhands) and the Stable tab (window.FarmPanel) — reads
@@ -710,7 +716,10 @@
        and its build*(...) functions lazily, from buildZoneScene, never
        synchronously during initial boot. -->
   <script src="js/locale-cave-runtime.js?v=20260923caveregistry1"></script>
-  <script src="js/zone-den-totem-features.js?v=20260926dz1"></script>
+  <script src="js/ruin-site-locales.js?v=20260929ruinsites1"></script>
+  <script src="js/stampable-locale-defs.js?v=20260929ruinsites1"></script>
+  <script src="js/ruin-sites.js?v=20260929ruinsites1"></script>
+  <script src="js/zone-den-totem-features.js?v=20260929glowdecals1"></script>
   <!-- Wilderness-zone grass and rich-foliage-patch billboards
        (window.ZoneGrassBillboards) — pure scene-graph generation, no
        other window.* system reads; must load before game.js, which calls
@@ -2337,7 +2346,7 @@
   <script src="js/mount-system.js?v=20260925mountheading1"></script>
   <!-- Footstep/one-shot SFX (window.AudioSystem) — must load before game.js,
        which calls window.AudioSystem.init(...) during its own setup. -->
-  <script src="js/audio-system.js?v=20260830flaskcues1"></script>
+  <script src="js/audio-system.js?v=20260927pitchedsfx1"></script>
   <!-- Semantic animal-call scheduler. Gameplay systems emit vocal intents;
        AudioSystem above remains the replaceable low-level renderer. -->
   <script src="js/animal-vocalizations.js?v=20260920startup2"></script>
@@ -2356,7 +2365,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20260927lichgreeting1"></script>
+  <script src="js/pixel-probe.js?v=20260927inputclaim1"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2478,7 +2487,7 @@
   <!-- Directional camera pitch policy is isolated from controller bindings/gameplay dispatch. -->
   <script src="js/camera-look-clamp.js?v=20260923review2"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20260925controllerauthority1"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20260930ladderfix1"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
@@ -2493,7 +2502,7 @@
   <script src="js/banubu-cave-clouds.js?v=20260923cloudring3"></script>
   <!-- Shoulder Cam / Character View Pointer Lock (window.ShoulderCamPointerLock); game.js calls init(...) during setup. -->
   <script src="js/shoulder-cam-pointer-lock.js?v=20260925shouldercamonly1"></script>
-  <script src="game.js?v=20260927reviewfix1"></script>
+  <script src="game.js?v=20260929ruinsites1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>

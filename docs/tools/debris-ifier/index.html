@@ -118,22 +118,32 @@
 <div class="debug" id="debug">Debris-ifier ready. Loading Three.js dependencies…</div>
 </div>
 
-<script>window.__debrisDeps=[];</script>
-<script src="https://unpkg.com/three@0.128.0/build/three.min.js" onerror="window.__debrisDeps.push('three.min.js failed')"></script>
-<script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js" onerror="window.__debrisDeps.push('OrbitControls failed')"></script>
-<script src="https://unpkg.com/three@0.128.0/examples/js/loaders/GLTFLoader.js" onerror="window.__debrisDeps.push('GLTFLoader failed')"></script>
-<script src="https://unpkg.com/three@0.128.0/examples/js/exporters/GLTFExporter.js" onerror="window.__debrisDeps.push('GLTFExporter failed')"></script>
+<script>
+window.__debrisDeps=[];
+window.__debrisBootErrors=[]; // Mobile/CI-visible dependency failures consumed by the parent Random Test Ruin loader.
+window.addEventListener('error',event=>{
+  const src=event?.target?.src||event?.target?.href||'';
+  const detail=src?String(src):String(event?.message||event?.error?.message||'unknown iframe runtime error'); // Used by the parent ruin loader to expose both network and source/API execution failures without desktop devtools.
+  window.__debrisBootErrors.push(detail);
+},true);
+window.addEventListener('unhandledrejection',event=>{
+  window.__debrisBootErrors.push('promise: '+String(event?.reason?.message||event?.reason||'unknown rejection'));
+});
+window.__debrisEmbeddedRuntime=new URLSearchParams(location.search).get('devRuntime')==='1'||new URLSearchParams(location.search).get('embedded')==='devRandomRuin';
+if(window.__debrisEmbeddedRuntime&&parent!==window&&parent.THREE){
+  // The hidden in-game generator needs the game's already-loaded Three.js realm,
+  // not a second renderer. Requiring WebGLRenderer here made headless/rewrapped
+  // game realms fall through to unpkg and could stall the iframe parser forever.
+  window.THREE=parent.THREE;
+  window.__debrisUsedParentThree=true; // Mobile/CI diagnostics prove hidden generation stayed entirely on local already-loaded dependencies.
+}else{
+  document.write('<script src="https://unpkg.com/three@0.128.0/build/three.min.js" onerror="window.__debrisDeps.push(\'three.min.js failed\')"><\/script>');
+  document.write('<script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js" onerror="window.__debrisDeps.push(\'OrbitControls failed\')"><\/script>');
+  document.write('<script src="https://unpkg.com/three@0.128.0/examples/js/loaders/GLTFLoader.js" onerror="window.__debrisDeps.push(\'GLTFLoader failed\')"><\/script>');
+  document.write('<script src="https://unpkg.com/three@0.128.0/examples/js/exporters/GLTFExporter.js" onerror="window.__debrisDeps.push(\'GLTFExporter failed\')"><\/script>');
+}
+</script>
 <script src="../../js/furniture-puzzle-properties.js?v=20260922perpiece1"></script>
-<script src="debrisifier-01.js"></script>
-<script src="debrisifier-02.js"></script>
-<script src="debrisifier-03.js"></script>
-<script src="debrisifier-04.js"></script>
-<script src="debrisifier-05.js"></script>
-<script src="debrisifier-06.js"></script>
-<script src="debrisifier-07.js"></script>
-<script src="debrisifier-08.js"></script>
-<script src="debrisifier-09.js"></script>
-<script src="debrisifier-10.js"></script>
-<script src="debrisifier-11.js"></script>
+<script src="debrisifier-01.js?v=20260927syncapi1"></script>
 </body>
 </html>

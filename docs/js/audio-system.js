@@ -767,12 +767,18 @@
     const rate = Math.max(0.3, pitch * (Number(cfgEntry.pitch) || 1) * (1 + (Math.random() * 2 - 1) * pitchVariance));
     const snd = createObjectSfxAudio(url);
     snd.playbackRate = rate;
+    if ('preservesPitch' in snd) snd.preservesPitch = false; // Pitched object cues (including musical ruin plates and lowered cave-collapse sounds) must actually change pitch instead of browser pitch-correction keeping every playback at the source note.
+    if ('webkitPreservesPitch' in snd) snd.webkitPreservesPitch = false;
+    if ('mozPreservesPitch' in snd) snd.mozPreservesPitch = false;
     if (preferReal && hasPlaceholder) {
       snd.addEventListener('error', () => {
         if (!deps.isRealMediaError(snd)) return;
         deps.markAudioUrlFailed(cfgEntry.url, 'object sfx load failed');
         const fallback = new Audio(pickPlaceholder());
         fallback.playbackRate = rate;
+        if ('preservesPitch' in fallback) fallback.preservesPitch = false;
+        if ('webkitPreservesPitch' in fallback) fallback.webkitPreservesPitch = false;
+        if ('mozPreservesPitch' in fallback) fallback.mozPreservesPitch = false;
         playSfxAudioElement(fallback, volume, gainBoost);
       }, { once: true });
     }

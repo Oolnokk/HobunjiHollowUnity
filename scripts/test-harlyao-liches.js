@@ -360,12 +360,12 @@ for (const key of ['tothal', 'hronal', 'kanthic']) {
   assert(devSpawnerSource.includes(`harlyao-lich:${key}`), `Testing Arena must expose ${key} lich button`);
 }
 assert.match(devSpawnerSource, /startsWith\('harlyao-lich:'\)/);
-assert(indexSource.includes('js/combat/combat-lich.js?v=20260927reviewfix1'));
+assert(indexSource.includes('js/combat/combat-lich.js?v=20260929merge1'));
 assert(indexSource.includes('js/combat/combat-bandit.js?v=20260927reviewfix1'));
 assert(indexSource.includes('js/dev-spawner.js?v=20260927reviewfix1'));
-assert(indexSource.includes('game.js?v=20260927reviewfix1'));
+assert(indexSource.includes('game.js?v=20260929ruinsites1'));
 assert(indexSource.includes('js/combat/resource-system.js?v=20260927reviewfix1'));
-assert(indexSource.includes('js/pixel-probe.js?v=20260927lichgreeting1'));
+assert(indexSource.includes('js/pixel-probe.js?v=20260927inputclaim1'));
 assert(indexSource.includes('js/portrait-utils.js?v=20260926hoodback2'));
 assert(indexSource.includes('js/procedural-leg-animation.js?v=20260926hover1'));
 assert(indexSource.includes('js/combat/combat-config-loader.js?v='));
@@ -391,7 +391,7 @@ assert.match(lichSource, /if \(entrancedGraceDisplay\(state\)\)[\s\S]{0,500}retu
 assert.match(lichSource, /syntheticDelta[\s\S]{0,300}resolveEntrancedMovement\(target, state, command, deps\.TILE \|\| 64/, 'completed dodge/lunge must resolve as exactly one synthetic tile');
 assert.match(lichSource, /liveEntrancedApplicators\(\)\.length === 0[\s\S]{0,120}clearEntrancedNow\(target\)/, 'last Kanthic death must immediately clear Entranced Health');
 assert.match(lichSource, /speedPxS: 96[\s\S]*maxAgeS: 8\.5[\s\S]*homingBlendPerS: 3\.2/, 'Tothal fog must remain slow, long-lived, and seeking');
-assert.match(lichSource, /registerFurnitureSfxSource\(ARENA_ID[\s\S]{0,300}TOTHAL_WIND_VOLUME/, 'Tothal fog must carry strong local wind through the existing BGS transport');
+assert.match(lichSource, /registerFurnitureSfxSource\((?:projectile\.areaId \|\| )?ARENA_ID[\s\S]{0,300}TOTHAL_WIND_VOLUME/, 'Tothal fog must carry strong local wind through the existing BGS transport');
 assert.match(lichSource, /projectilePower\(projectile\)[\s\S]{0,1000}mesh\.scale\.setScalar/, 'Tothal lifetime power must visibly shrink its fog ball');
 assert.match(lichSource, /frostbittenStamina.*\* power/, 'Tothal Frostbitten Stamina payload must weaken with projectile age');
 assert.match(lichSource, /WESTERN_SLOPE_SNOW_DEPTH_REFERENCE = 0\.22[\s\S]*PETROLEUM_SURFACE_DEPTH = WESTERN_SLOPE_SNOW_DEPTH_REFERENCE \/ 4/, 'Kanthic petroleum surface must be exactly one quarter of Western Slope snow height');
@@ -443,7 +443,7 @@ assert.match(handFrameSource, /const playerOwnedHolder = !ownedHolder[\s\S]*tool
 assert.match(handFrameSource, /holderAuthority: record\?\.avatarRoot\?\.userData\?\.proceduralHandToolHolder \? 'actor-owned-world-transform'/, 'hand diagnostics must identify actor-owned hostile transform authority');
 assert.match(handFrameSource, /proceduralHandToolKey[\s\S]*currentToolKey\(record\)/, 'hostile hand sync must use that hostile\'s weapon key rather than the player singleton stance');
 assert.match(combatBanditSource, /const resolvedRosterDyes = applyRosterDyesToProfile\(profile, roster\)/, 'lich visible portrait must explicitly reconcile its hood/bodywrap dye before rasterization');
-assert.match(lichSource, /if \(ability === 'summon'\) summonMinion\(lich\);[\s\S]*else firePrimary\(lich, target, \{ windupS, strikeS \}\);/, 'both summon and primary spell abilities must fire from the reused attack strike phase with exact cast timing available to Hronal');
+assert.match(lichSource, /if \(ability === 'summon'\) \{[\s\S]*?lichRaiseDead[\s\S]*?else summonMinion\(lich\);[\s\S]*else firePrimary\(lich, target, \{ windupS, strikeS \}\);/, 'both summon and primary spell abilities must fire from the reused attack strike phase with exact cast timing available to Hronal');
 assert.match(proceduralLegSource, /function applyHoverPose\(side, dt\)/, 'procedural leg system must own a real two-bone hover pose rather than post-rotating feet');
 assert.match(proceduralLegSource, /bendDegX = -31[\s\S]*solveTwoBoneLeg/, 'hover pose must keep visibly flexed dangling knees through the shared leg solver');
 assert.match(proceduralLegSource, /function setHoverMode\(enabled\)[\s\S]*function isHoverMode\(\)/, 'procedural leg handles must expose explicit hover ownership');
