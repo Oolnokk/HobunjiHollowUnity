@@ -436,6 +436,7 @@
       if (deps.canPlayerOccupy(deps.player.x, desiredY)) deps.player.y = desiredY;
       const tilePx = Math.max(1, Number(deps.TILE) || 64); // Converts the player's pixel-space hop displacement into the Three.js world-space X/Z used by the portrait mesh.
       spawnHopAfterimages((deps.player.x - startX) / tilePx, (deps.player.y - startY) / tilePx);
+      lastMoveAfterimageAtS = t; // The hop burst already owns this instant; delay the normal locomotion sampler so it cannot stack a redundant fourth portrait at the origin.
 
       // Never refuses for lack of stamina — overspending pushes into
       // Exhausted instead (see resource-system.js's spendStamina), same as
