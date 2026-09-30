@@ -148,6 +148,14 @@ assert.equal(debug.tuning.reversalDotThreshold, 0, 'opposite hemisphere is repre
 assert.equal(debug.tuning.passiveDrainBasePerS, 2.2, 'Blink diagnostics expose the authored passive stamina baseline');
 assert.equal(debug.tuning.passiveDrainQuantum, 0.1, 'Blink diagnostics expose the tenth-point carry quantum that prevents per-frame rounding loss');
 
+assert.equal(debug.afterimages.supported, false, 'Blink afterimages degrade safely when Three.js is unavailable in the isolated movement harness');
+assert.equal(debug.afterimages.active, 0, 'unsupported afterimage rendering never leaves phantom live records');
+assert.equal(debug.tuning.afterimageHopSamples, 3, 'Blink diagnostics expose the bounded hop-burst sample count');
+assert.equal(debug.tuning.afterimageMaxActive, 12, 'Blink diagnostics expose the hard cap that prevents an unbounded trail');
+assert.match(source, /source\.boneTransform\(i, vertex\)/, 'skinned portrait afterimages bake the live deformed vertices instead of sharing the moving player skeleton');
+assert.match(source, /material\.depthWrite = false/, 'afterimages do not punch new depth holes through the live portrait/world stack');
+assert.match(source, /geometry\.deleteAttribute\?\.\('skinIndex'\)/, 'baked afterimages strip skinning attributes after freezing the pose');
+
 registeredAbility.onHoldEnd();
 assert.equal(movementSpeedFn, null, 'ending Blink Dodge removes its movement-speed modifier');
 
