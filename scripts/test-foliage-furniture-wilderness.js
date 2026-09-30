@@ -44,7 +44,7 @@ assert(editor.includes('const DEFAULT_SEAT_NORMAL_OFFSET = 0.01'));
 assert(editor.includes('<label>Normal offset</label>'));
 assert(!editor.includes('SEAT_ANCHOR_LOCAL_Y'));
 assert(!/id="seatAnchorY"[^>]*readonly/.test(editor));
-assert(editor.includes('<script src="foliage-furniture-mode.js?v=20260816a"></script>'));
+assert(editor.includes('<script src="foliage-furniture-mode.js?v=20260930h3ecf303"></script>'));
 const renderer = read('docs/js/foliage-furniture-renderer.js').toString('utf8');
 assert(renderer.includes('opacity<=.001){mesh.visible=false'));
 

@@ -3845,6 +3845,7 @@
         if (furniturePlacementArmedKey) furnitureMoveArmedId = null;
         clearFurniturePlacementGhost();
         window.FurniturePlacer?.render();
+        refreshActionBar(); // Placement mode owns the mobile action arch immediately after the selector closes.
       }
       function getArmedFurniturePlacementKey() { return furniturePlacementArmedKey; }
       function armFurnitureMove(id) {
@@ -3852,6 +3853,7 @@
         if (furnitureMoveArmedId) furniturePlacementArmedKey = null;
         clearFurniturePlacementGhost();
         window.FurniturePlacer?.render();
+        refreshActionBar(); // Moving existing furniture uses the same visible Place/Cancel arch as new placement.
       }
       function getArmedFurnitureMoveId() { return furnitureMoveArmedId; }
 
@@ -16795,6 +16797,7 @@
         makeProcessingFurniture,
         unregisterChairNpcStation,
         makeDecorativeFurnitureMesh,
+        buildFurnitureVisual, // Side-effect-free live wall preview; inventory is consumed only on Action 1 commit.
         furnitureOwnerFields,
         decorativeFurnitureSize,
         registerSitWorldObject,
@@ -18643,8 +18646,18 @@
           else if (activeAction === 'fish_cancel') window.Fishing?.close();
           return;
         }
+        if (window.WallOrnamentPlacement?.isPlayerReticlePlacementActive?.()) {
+          if (activeAction === 'wall_place_cancel') window.WallOrnamentPlacement.handleGameplayAction('action2', 'press');
+          else if (activeAction === 'wall_place_confirm') window.WallOrnamentPlacement.handleGameplayAction('action1', 'press');
+          refreshActionBar(); // Wall confirm/cancel immediately restores the ordinary mobile arch.
+          return;
+        }
         if (furniturePlacementModeArmed()) {
-          const furniturePlacementReticle = getReticleTile(); // Used to commit placement to the same live aim tile shared by controller, mouse, keyboard, and the HUD.
+          if (activeAction === 'furniture_place_cancel') {
+            cancelFurniturePlacementMode(true);
+            return;
+          }
+          const furniturePlacementReticle = getReticleTile(); // Mobile Place uses the exact same reticle tile as controller, keyboard, and mouse.
           commitFurniturePlacementAt(furniturePlacementReticle.col, furniturePlacementReticle.row);
           return;
         }
@@ -19505,7 +19518,15 @@
         interiorScene.add(interiorFloorGroup);
 
         const panels = InteriorSceneBuilder.buildWallPanels(floorSet, exitSet, INTERIOR_WALL_HEIGHT);
-        interiorWallGroup = InteriorSceneBuilder.buildWallGroup(THREE, houseWallBuilder, panels, '', { usePlaceholder: true, unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } });
+        const houseWindowOpenings = window.HouseWindowLinkage?.getInteriorWallOpenings?.() || []; // Farmhouse openings must be applied even when this rebuild is triggered while the player is still outside.
+        interiorWallGroup = InteriorSceneBuilder.buildWallGroup(THREE, houseWallBuilder, panels, '', {
+          usePlaceholder: true,
+          unitMult: 0.5,
+          rockScale: 1.5,
+          preScale: [1, 1, 0.6],
+          brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 },
+          wallOpenings: houseWindowOpenings,
+        });
         _markOutline(interiorWallGroup);
         interiorScene.add(interiorWallGroup);
 
@@ -23877,6 +23898,7 @@
         isShoulderSurfEnabled: () => s_shoulderSurf,
         getActiveCameraMode: () => activeCameraMode,
         shoulderSurfMode: SHOULDER_SURF_MODE,
+        isUiBlockingPointerLock: () => !!(menuOpen || window.__mapEditorPanelOpen || window.FurniturePlacer?.isOpen?.() || window.__furniturePlacerPanelOpen || window._desktopSelectionArc?.entryMenuOpen?.()),
       });
       function cursorlessMouseAimRequested() { return window.ShoulderCamPointerLock.cursorlessMouseAimRequested(); }
       function requestShoulderSurfPointerLock() { window.ShoulderCamPointerLock.request(); }
@@ -23971,6 +23993,9 @@
           applyControllerCameraLook(dt);
           updateMeleeAttackAlignment(dt);
           updateMovement(dt);
+          if (window.WallOrnamentPlacement?.isPlayerReticlePlacementActive?.()) {
+            window.WallOrnamentPlacement.updatePlayerReticlePreview?.(); // Touch camera/movement retargets wall preview even without a connected controller.
+          }
           if (furniturePlacementModeArmed()) {
             const furniturePlacementReticle = getReticleTile(); // Used only while placement is armed to keep the ghost on the live gameplay reticle tile.
             showFurniturePlacementGhost(furniturePlacementReticle.col, furniturePlacementReticle.row);
@@ -24776,6 +24801,29 @@
         // js/music-minigame.js) and the close button lives in the overlay
         // itself — no action-bar buttons underneath it.
         if (window.MusicMinigame?.state?.active) return [];
+
+        // Reticle furniture placement owns Action 1/2 while armed. These
+        // explicit entries are essential on touch: keyboard/controller can
+        // invoke action1/action2 without visible DOM, while mobile can only
+        // press actions that this function actually populates into the arch.
+        if (window.WallOrnamentPlacement?.isPlayerReticlePlacementActive?.()) {
+          return [
+            { icon: '✓', label: 'Place', action: 'wall_place_confirm', style: 'primary', allowed: window.WallOrnamentPlacement.canConfirmPlayerReticlePlacement?.() !== false },
+            { icon: '✕', label: 'Cancel', action: 'wall_place_cancel', style: 'secondary', allowed: true },
+          ];
+        }
+        if (furniturePlacementModeArmed()) {
+          const placementReticle = getReticleTile(); // Shared tile used by preview, mobile Place, and physical Action 1.
+          const placementSpec = furniturePlacementSpec();
+          const placementValid = !!placementSpec && (placementSpec.kind === 'processing'
+            ? canPlaceFurnitureAt(placementReticle.col, placementReticle.row, placementSpec.ignoreObject)
+            : canPlaceDecorativeFurnitureAt(placementReticle.col, placementReticle.row, placementSpec.ignoreId, placementSpec.key, placementSpec.rotYDeg));
+          return [
+            { icon: '✓', label: furnitureMoveArmedId ? 'Move Here' : 'Place', action: 'furniture_place_confirm', style: 'primary', allowed: placementValid },
+            { icon: '✕', label: 'Cancel', action: 'furniture_place_cancel', style: 'secondary', allowed: true },
+          ];
+        }
+
         // NPC dialogue takes priority over tool use on touch controls and mirrors the primary-action keyboard path.
         if (nearbyNpcWalker && !farmEditMode) {
           const btns = [npcDialogueButton()];
@@ -25955,6 +26003,10 @@
           && computeActionButtons().some(button => button.action === 'potion_select' && button.allowed);
       }
       function runInputAction(actionId, phase = 'press') {
+        if (window.WallOrnamentPlacement?.handleGameplayAction?.(actionId, phase)) {
+          if (phase === 'press') refreshActionBar(); // Physical Action 1/2 must clear/rebuild the touch arch after wall confirm/cancel.
+          return;
+        }
         if (window.__mapEditorGizmoActive) return;
         if(phase==='release'&&dispatchWorldInputClaim(actionId,'release','game-input'))return; // Pair a world-owned press even if the prompt disappears before button-up; never send an unmatched weapon release.
         if (actionId === 'toolSelect') {
@@ -26037,10 +26089,15 @@
           if (actionId === 'action1') actionHeldDown = false;
           return;
         }
-        if (phase === 'press' && (actionId === 'action1' || actionId === 'interact') && furniturePlacementModeArmed()) {
+        if (phase === 'press' && furniturePlacementModeArmed() && (actionId === 'action1' || actionId === 'interact' || actionId === 'action2')) {
           furniturePlacementActionPresses.add(actionId);
+          if (actionId === 'action2') {
+            cancelFurniturePlacementMode(true); // Action 2 mirrors the visible mobile Cancel button.
+            return;
+          }
           if (actionId === 'action1') actionHeldDown = true;
-          useActiveAction();
+          const furniturePlacementReticle = getReticleTile(); // Physical confirm cannot inherit a blocked Cancel button as activeAction.
+          commitFurniturePlacementAt(furniturePlacementReticle.col, furniturePlacementReticle.row);
           return;
         }
         if (phase === 'release') {
@@ -26822,12 +26879,18 @@
       // button at all — actually takes effect.
       const desktopWeaponPointerSlots = new Map(); // Pairs each physical mouse button with the combat slot released below.
       const desktopHeldItemMousePresses = new Set(); // Pairs action1's direct-viewport-click press with its release for holdToCommit actions.
-      const desktopFurniturePlacementMousePresses = new Set(); // Owns mouse placement clicks through release without pointer capture, preserving ordinary mouse-look updates.
+      const desktopFurniturePlacementMousePresses = new Set(); // Owns ordinary floor-placement clicks through release.
+      const desktopWallFurnitureMousePresses = new Set(); // Owns reticle wall-placement Action 1/2 mouse presses through release.
       if (isDesktop) {
         threeContainer.addEventListener('contextmenu', (e) => e.preventDefault());
         threeContainer.addEventListener('pointerdown', (e) => {
           if (window.PixelProbe?.armed || menuOpen || farmEditMode || e.shiftKey || window.__mapEditorGizmoActive) return;
           const mouseAction = getActionForButton('desktop', 'Mouse' + e.button);
+          if (window.WallOrnamentPlacement?.isPlayerReticlePlacementActive?.() && (mouseAction === 'action1' || mouseAction === 'action2')) {
+            desktopWallFurnitureMousePresses.add(e.button);
+            runInputAction(mouseAction, 'press');
+            return;
+          }
           if (mouseAction === 'action1' && furniturePlacementModeArmed()) {
             desktopFurniturePlacementMousePresses.add(e.button);
             actionHeldDown = true;
@@ -26882,6 +26945,10 @@
           return;
         }
         const mouseAction = getActionForButton('desktop', 'Mouse' + e.button);
+        if (desktopWallFurnitureMousePresses.delete(e.button)) {
+          runInputAction(mouseAction, 'release');
+          return;
+        }
         if (desktopFurniturePlacementMousePresses.delete(e.button)) {
           actionHeldDown = false;
           return;
@@ -26935,6 +27002,7 @@
           window.HeldItemActionInput?.abort();
         }
         desktopFurniturePlacementMousePresses.clear();
+        desktopWallFurnitureMousePresses.clear();
       }, true);
 
       // Mouse-look: raycast cursor onto ground plane to get world position
@@ -26975,10 +27043,9 @@
           // from this handler) as well as ones opened by a held key like
           // 'c' below (which doesn't drag a mouse button, so nothing else
           // stops this handler from firing while it's up).
-          if (menuOpen || window._desktopSelectionArc?.entryMenuOpen?.()) return;
+          if (menuOpen || window._desktopSelectionArc?.entryMenuOpen?.() || window.FurniturePlacer?.isOpen?.() || window.__furniturePlacerPanelOpen) return;
           if (e.shiftKey) _shiftDragged = true; // disqualifies a subsequent Shift-release from reading as an auto-target tap
           if (rangedAmmoAction2Press.held) window._desktopSelectionArc?.movePointer(e.clientX, e.clientY);
-          if (furniturePlacementArmedKey || furnitureMoveArmedId) return;
           // While the Pixel Probe is armed, mouse movement should only ever
           // move the cursor toward the target pixel — not rotate the camera
           // (Shift+drag, below) or spin the character's facing via mouse-
@@ -27040,6 +27107,16 @@
       function furniturePlacementModeArmed() {
         return !!(furniturePlacementArmedKey || furnitureMoveArmedId)
           && (currentArea === 'farm' || currentArea === 'interior');
+      }
+      function cancelFurniturePlacementMode(showMessage = false) {
+        const wasArmed = furniturePlacementModeArmed(); // Used to avoid a misleading cancel toast when no placement session exists.
+        furniturePlacementArmedKey = null;
+        furnitureMoveArmedId = null;
+        clearFurniturePlacementGhost();
+        window.FurniturePlacer?.render();
+        if (showMessage && wasArmed) showToast('Furniture placement cancelled.', true);
+        refreshActionBar();
+        return wasArmed;
       }
       function commitFurniturePlacementAt(col, row) {
         if (!furniturePlacementModeArmed()) return false;
@@ -28583,6 +28660,7 @@
         getDecorativeFurnitureDefs: () => DECORATIVE_FURNITURE_DEFS,
         getProcessingFurnitureDefs: () => PROCESSING_FURNITURE_DEFS,
         inventory,
+        clampInventoryStack,
         hasFarmPermission,
         armFurniturePlacement,
         getArmedFurniturePlacementKey,
@@ -28598,6 +28676,9 @@
         esc: window.FormatUtils.esc,
         isPaused: () => paused,
         isDevMode: () => s_devMode,
+        refreshActionBar, // Selector-to-placement transitions must populate/clear the mobile action arch immediately.
+        suspendMouseCameraForUi: releaseShoulderSurfPointerLock,
+        resumeMouseCameraAfterUi: requestShoulderSurfPointerLock, // request() already no-ops unless cursorless aim is wanted.
       });
 
       window.WildernessCampfire?.init({

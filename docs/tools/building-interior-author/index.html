@@ -346,9 +346,15 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
 <script src="../../js/WallBuilder.js"></script>
 <script src="../../js/terrain-preview.js"></script>
-<script src="../../js/interior-scene-builder.js"></script>
+<script src="../../js/interior-scene-builder.js?v=20260926rebase1"></script>
 <script src="../../js/procedural-furniture.js"></script>
 <script src="../../js/interior-furniture-grid.js?v=20260917grid1"></script>
+<!-- These sidecars require Three.js and the editor's furniture builders above.
+     Static order avoids the old map-live-preview injection race and gives
+     nested tool pages the same wall/window runtime as the game. -->
+<script src="../../js/wall-ornament-placement.js?v=20260926rebase1"></script>
+<script src="../../js/daylight-window-runtime.js?v=20260926rebase1"></script>
+<script src="../../js/building-interior-wall-ornament-editor.js?v=20260922wall3"></script>
 
 <script>
 (function () {
@@ -1273,6 +1279,7 @@ scene3.fog=new THREE.Fog(0x0b0f16,14,35);
 
 var camera=new THREE.PerspectiveCamera(55,1,0.1,80);
 camera.position.set(6,7,12);
+window._bia3dWallContext={renderer:renderer,scene:scene3,camera:camera}; // Exact r128 instances for the wall-placement sidecar; render() is not available through WebGLRenderer.prototype in this build.
 
 var orbit=new THREE.OrbitControls(camera,canvas3);
 orbit.enableDamping=true; orbit.dampingFactor=0.12; orbit.target.set(6,0.5,5);
@@ -1405,8 +1412,13 @@ function rebuild3D(){
   var panels=InteriorSceneBuilder.buildWallPanels(floorSet,exitTileSet,WALL_H);
   if(panels.length){
     try{
-      previewGroup.add(InteriorSceneBuilder.buildWallGroup(THREE, wb, panels, interior.wallStyle, {usePlaceholder:!wbReady}));
-    } catch(e){ log('Wall build error: '+e.message,'warn'); previewGroup.add(InteriorSceneBuilder.buildFallbackBoxWalls(THREE, panels, 0x8b7055)); }
+      var wallGroup=InteriorSceneBuilder.buildWallGroup(THREE, wb, panels, interior.wallStyle, {usePlaceholder:!wbReady});
+      wallGroup.userData.biaInteriorWallGroup=true; previewGroup.add(wallGroup);
+    } catch(e){
+      log('Wall build error: '+e.message,'warn');
+      var fallbackWallGroup=InteriorSceneBuilder.buildFallbackBoxWalls(THREE, panels, 0x8b7055);
+      fallbackWallGroup.userData.biaInteriorWallGroup=true; previewGroup.add(fallbackWallGroup);
+    }
   }
 
   // Furniture — use real GLBs if cached, placeholder boxes otherwise

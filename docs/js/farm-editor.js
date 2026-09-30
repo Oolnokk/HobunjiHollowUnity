@@ -161,14 +161,90 @@
   // re-reads and re-applies the correctly-namespaced layout once the real
   // worldId is known (see the resync block there).
   const FARM_LAYOUT_KEY = 'hobunji_farm_layout_v3';
+  const LINKED_WINDOW_BACKUP_KEY = 'hobunji_farm_linked_window_backup_v1'; // Separate per-world safety copy survives older builds that rewrite layout.decor without recognizing linked windows.
+  const LINKED_WINDOW_KEYS = new Set(['simpleWindow', 'crossbarWindow', 'wideWindow']); // Current linked-window catalog; backup is intentionally narrow so ordinary deleted furniture never resurrects.
 
   function farmLayoutKey() {
     const worldId = (window.__hobunjiPlayerProfile || deps.getPlayerData())?.worldId;
     return worldId ? (FARM_LAYOUT_KEY + ':' + worldId) : FARM_LAYOUT_KEY;
   }
 
+  function linkedWindowBackupKey() {
+    const worldId = (window.__hobunjiPlayerProfile || deps.getPlayerData())?.worldId;
+    return worldId ? (LINKED_WINDOW_BACKUP_KEY + ':' + worldId) : LINKED_WINDOW_BACKUP_KEY;
+  }
+
+  function parseStoredJson(key) {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  }
+
+  function cloneDecorRecord(record) {
+    return record && typeof record === 'object' ? JSON.parse(JSON.stringify(record)) : null; // Detaches carried-forward records from parsed storage objects before mutation.
+  }
+
+  function decorRecordIdentity(record) {
+    if (record?.id) return 'id:' + record.id; // Stable runtime id is authoritative whenever present.
+    return ['fallback', record?.key || '', record?.area || 'farm', record?.col ?? '', record?.row ?? '', record?.rotYDeg ?? 0].join(':'); // Legacy id-less decor still gets deterministic de-duplication.
+  }
+
+  function isLinkedWindowPrimaryRecord(record) {
+    if (!record || record.derivedLinkedWindow) return false;
+    const link = record.wallPlacement?.houseWindowLink;
+    if (link?.role === 'derived') return false;
+    return LINKED_WINDOW_KEYS.has(record.key) || (link?.role === 'primary' && (!link.primaryId || link.primaryId === record.id)); // Includes current window keys plus future linked-window aliases carrying canonical metadata.
+  }
+
+  function appendMissingDecor(target, records, predicate = () => true) {
+    const seen = new Set((target || []).map(decorRecordIdentity)); // Existing live/current records always win over carried copies.
+    for (const record of records || []) {
+      if (!record || record.derivedLinkedWindow || !predicate(record)) continue;
+      const identity = decorRecordIdentity(record);
+      if (seen.has(identity)) continue;
+      const copy = cloneDecorRecord(record);
+      if (!copy) continue;
+      target.push(copy);
+      seen.add(identity);
+    }
+  }
+
+  function preserveUnknownDecorRecords(layout, previousLayout) {
+    appendMissingDecor(layout.decor, previousLayout?.decor, record => !deps.DECORATIVE_FURNITURE_DEFS?.[record.key]); // A build that cannot instantiate a newer decor type must carry its serialized record forward unchanged.
+  }
+
+  function readLinkedWindowBackup() {
+    const parsed = parseStoredJson(linkedWindowBackupKey());
+    return Array.isArray(parsed?.decor) ? parsed.decor : []; // Sidecar is deliberately tiny and contains only inventory-backed linked-window primaries.
+  }
+
+  function mergeLinkedWindowBackup(layout) {
+    if (!layout || layout.version !== 3) return layout;
+    layout.decor = Array.isArray(layout.decor) ? layout.decor : [];
+    appendMissingDecor(layout.decor, readLinkedWindowBackup(), isLinkedWindowPrimaryRecord); // Returning from an older branch rehydrates windows before normal FarmEditor restoration runs.
+    return layout;
+  }
+
+  function writeLinkedWindowBackup(layout, previousLayout) {
+    const decor = (layout?.decor || []).filter(isLinkedWindowPrimaryRecord).map(cloneDecorRecord).filter(Boolean);
+    if (decor.length) {
+      localStorage.setItem(linkedWindowBackupKey(), JSON.stringify({ version: 1, decor }));
+      return;
+    }
+    const previousWindows = (previousLayout?.decor || []).filter(isLinkedWindowPrimaryRecord); // A prior authoritative record distinguishes removal from an older build's omission.
+    const existingBackup = readLinkedWindowBackup();
+    if (!previousWindows.length && existingBackup.length) return; // Preserve the only surviving copy after an old-branch wipe or an early startup save.
+    const stillMounted = previousWindows.some(record => !!window.WallOrnamentPlacement?.getPlayerPlacement?.(record.id)); // Durable wall placement proves a transiently absent mesh still exists.
+    if (stillMounted) {
+      localStorage.setItem(linkedWindowBackupKey(), JSON.stringify({ version: 1, decor: previousWindows.map(cloneDecorRecord).filter(Boolean) }));
+      return;
+    }
+    localStorage.removeItem(linkedWindowBackupKey()); // Prior saved window plus no live record and no wall placement is the intentional-removal signal.
+  }
   function saveFarmLayout() {
     try {
+      const previousLayout = parseStoredJson(farmLayoutKey()); // Needed before rebuilding the object graph so unknown future decor can survive this save intact.
       const grid = deps.getGrid();
       const shippingBoxObject = deps.getShippingBoxObject();
       const supplyBoxObject = deps.getSupplyBoxObject();
@@ -191,10 +267,12 @@
         layout.furniture.push({ key: obj.furnitureKey, col: obj.col, row: obj.row, rotYDeg: obj.rotYDeg || 0, ...(job ? { job } : {}) });
       });
       deps.interiorFurnitureObjects.forEach(obj => {
+        if (obj.derivedLinkedWindow) return; // Opposite-side farmhouse windows are runtime derivatives; only the inventory-backed primary belongs in the authoritative decor save.
         layout.decor.push({ id: obj.id, key: obj.key, col: obj.col, row: obj.row, area: obj.area,
           rotYDeg: obj.rotYDeg || 0, ownerPieceId: obj.ownerPieceId || null,
           localCol: Number.isFinite(obj.localCol) ? obj.localCol : null,
-          localRow: Number.isFinite(obj.localRow) ? obj.localRow : null });
+          localRow: Number.isFinite(obj.localRow) ? obj.localRow : null,
+          wallPlacement: window.WallOrnamentPlacement?.getPlayerPlacement?.(obj.id) || null }); // Primary wall-space link is sufficient to deterministically regenerate the opposite-side peer after rebuild.
       });
       // Movable buildings — every house piece (starter + built/foundation
       // deeds) and every barn (foundation or built). Added as extra fields
@@ -222,7 +300,9 @@
       if (worldRoutes.length)      layout.routes      = worldRoutes;
       if (worldNpcPaths.length)    layout.npcPaths    = worldNpcPaths; // legacy compatibility
       if (worldTransitions.length) layout.transitions = worldTransitions;
+      preserveUnknownDecorRecords(layout, previousLayout); // Never erase serialized decor merely because this build does not know how to instantiate it.
       localStorage.setItem(farmLayoutKey(), JSON.stringify(layout));
+      writeLinkedWindowBackup(layout, previousLayout); // Window-aware builds maintain a second recovery copy that older branches do not know to overwrite.
       return true;
     } catch (error) {
       console.error('saveFarmLayout:', error);
@@ -233,8 +313,14 @@
 
   function loadFarmLayout() {
     try {
-      const raw = localStorage.getItem(farmLayoutKey());
-      return raw ? JSON.parse(raw) : null;
+      const storedLayout = parseStoredJson(farmLayoutKey());
+      const storedWindowIds = new Set((storedLayout?.decor || []).filter(isLinkedWindowPrimaryRecord).map(decorRecordIdentity));
+      const layout = mergeLinkedWindowBackup(storedLayout); // If an older build rewrote layout.decor without windows, restore their primaries from the untouched sidecar.
+      const linkedWindows = (layout?.decor || []).filter(isLinkedWindowPrimaryRecord).map(cloneDecorRecord).filter(Boolean);
+      const recoveredWindow = linkedWindows.some(record => !storedWindowIds.has(decorRecordIdentity(record)));
+      if (recoveredWindow) localStorage.setItem(farmLayoutKey(), JSON.stringify(layout)); // Self-heal the authoritative layout immediately so a later deliberate removal can be distinguished from the old-build omission.
+      if (linkedWindows.length) localStorage.setItem(linkedWindowBackupKey(), JSON.stringify({ version: 1, decor: linkedWindows })); // Merely opening a window-aware build seeds protection before the player visits another branch.
+      return layout;
     } catch { return null; }
   }
 
@@ -306,6 +392,10 @@
 
   function applyFarmLayoutObjects(layout) {
     if (!layout || layout.version !== 3) return;
+    // Repair extension-owned furniture definitions before saved decor is
+    // filtered. This keeps cloud/local farm-layout restores independent of
+    // whichever init wrapper happened to register daylight windows first.
+    window.DaylightWindowRuntime?.registerDecorDefs?.(deps.DECORATIVE_FURNITURE_DEFS);
     if (layout.objects?.sellCrate) {
       const [c, r] = layout.objects.sellCrate;
       const shippingBoxObject = deps.getShippingBoxObject();
@@ -337,18 +427,27 @@
         console.error('[farm-editor] failed to restore processing furniture', { key, col, row }, err);
       }
     });
-    (layout.decor || []).forEach(({ id, key, col, row, area, rotYDeg, ownerPieceId, localCol, localRow }) => {
+    (layout.decor || []).forEach(({ id, key, col, row, area, rotYDeg, ownerPieceId, localCol, localRow, derivedLinkedWindow, wallPlacement }) => {
       try {
+        if (derivedLinkedWindow) return; // One development build serialized peers directly; ignore those transitional duplicate records and regenerate from the primary instead.
         const def = deps.DECORATIVE_FURNITURE_DEFS[key];
         if (!def) return;
         const decorArea = area || 'farm';
         const targetScene = decorArea === 'interior' ? deps.getInteriorScene() : deps.getScene();
         const result = deps.makeDecorativeFurnitureMesh(col, row, key, targetScene, decorArea, rotYDeg || 0);
         const owner = decorArea === 'interior' && !ownerPieceId ? deps.furnitureOwnerFields(col, row) : {};
-        if (result) deps.interiorFurnitureObjects.push({ id: id || 'decor_' + Math.random().toString(36).slice(2, 10), key, col, row,
-          mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: decorArea, rotYDeg: rotYDeg || 0,
-          ownerPieceId: ownerPieceId || owner.ownerPieceId, localCol: Number.isFinite(localCol) ? localCol : owner.localCol,
-          localRow: Number.isFinite(localRow) ? localRow : owner.localRow });
+        let restoredObject = null; // Stable object reference lets the embedded wall backup be rehydrated before linked-window peer restoration runs.
+        if (result) {
+          restoredObject = { id: id || 'decor_' + Math.random().toString(36).slice(2, 10), key, col, row,
+            mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: decorArea, rotYDeg: rotYDeg || 0,
+            ownerPieceId: ownerPieceId || owner.ownerPieceId, localCol: Number.isFinite(localCol) ? localCol : owner.localCol,
+            localRow: Number.isFinite(localRow) ? localRow : owner.localRow };
+          deps.interiorFurnitureObjects.push(restoredObject);
+          if (wallPlacement) {
+            const pendingWallRestore = window.WallOrnamentPlacement?.setPlayerPlacement?.(restoredObject.id, wallPlacement, { notify: false, apply: true }); // Restores both transform and houseWindowLink without firing pair sync before house pieces finish loading.
+            pendingWallRestore?.catch?.(err => console.error('[farm-editor] failed to restore wall placement', { id: restoredObject.id, key }, err));
+          }
+        }
         if (result && decorArea === 'farm' && def.sit) {
           const size = deps.decorativeFurnitureSize(key, rotYDeg || 0);
           deps.registerSitWorldObject(key, col, row, size.fw, size.fd, rotYDeg || 0);

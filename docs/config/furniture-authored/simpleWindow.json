@@ -1,0 +1,25 @@
+{
+  "schema": "hobunji_furniture_authored_runtime.v1",
+  "key": "simpleWindow",
+  "id": "simpleWindow",
+  "name": "Simple Window",
+  "sourceSchema": "hobunji_furniture_surface_author.v58",
+  "authoringSourceSchema": "hobunji_furniture_surface_author.v58",
+  "notes": "Wall-mounted daylight window. The back pane surface is the wall attachment face; the front pane surface is a daylight aperture whose texture fill follows current outdoor lighting at runtime.",
+  "footprint": { "w": 1, "d": 1 },
+  "tileBase": { "visible": true, "tileSize": 1, "footprintW": 1, "footprintD": 1, "y": 0, "gridOpacity": 0.55 },
+  "surfaceRecognition": { "splitAngleDeg": 58, "colorCode": false, "selectSurfaces": false, "multiSelect": false },
+  "parts": [
+    { "id": "simple_window_pane", "kind": "box", "name": "Daylight Pane", "transform": { "x": 0, "y": 1.12, "z": 0, "rx": 0, "ry": 0, "rz": 0, "sx": 0.76, "sy": 0.96, "sz": 0.025 }, "color": "#dce9f4", "materialTexture": "wavy_surface.png", "textureTransparent": true, "materialFillEnabled": true, "materialFillColor": "#dce9f4" },
+    { "id": "simple_window_frame_l", "kind": "box", "name": "Left Frame", "transform": { "x": -0.43, "y": 1.12, "z": 0, "rx": 0, "ry": 0, "rz": 0, "sx": 0.10, "sy": 1.16, "sz": 0.08 }, "color": "#6a4c31", "materialTexture": "carved_smooth.png" },
+    { "id": "simple_window_frame_r", "kind": "box", "name": "Right Frame", "transform": { "x": 0.43, "y": 1.12, "z": 0, "rx": 0, "ry": 0, "rz": 0, "sx": 0.10, "sy": 1.16, "sz": 0.08 }, "color": "#6a4c31", "materialTexture": "carved_smooth.png" },
+    { "id": "simple_window_frame_t", "kind": "box", "name": "Top Frame", "transform": { "x": 0, "y": 1.65, "z": 0, "rx": 0, "ry": 0, "rz": 0, "sx": 0.76, "sy": 0.10, "sz": 0.08 }, "color": "#6a4c31", "materialTexture": "carved_smooth.png" },
+    { "id": "simple_window_frame_b", "kind": "box", "name": "Bottom Frame", "transform": { "x": 0, "y": 0.59, "z": 0, "rx": 0, "ry": 0, "rz": 0, "sx": 0.76, "sy": 0.10, "sz": 0.08 }, "color": "#6a4c31", "materialTexture": "carved_smooth.png" }
+  ],
+  "recognizedSurfaces": [
+    { "id": "simple_window_pane:surface:4", "partId": "simple_window_pane", "recognizedType": "vertical side", "faceIndices": [4, 5], "area": 0.7296, "localCentroid": [0, 0, -0.0125], "localNormal": [0, 0, -1], "basisU": [-1, 0, 0], "basisV": [0, 1, 0], "bounds": { "minU": -0.38, "maxU": 0.38, "minV": -0.48, "maxV": 0.48 }, "label": "Wall Attachment", "role": "wallAttachment" },
+    { "id": "simple_window_pane:surface:8", "partId": "simple_window_pane", "recognizedType": "vertical side", "faceIndices": [8, 9], "area": 0.7296, "localCentroid": [0, 0, 0.0125], "localNormal": [0, 0, 1], "basisU": [1, 0, 0], "basisV": [0, 1, 0], "bounds": { "minU": -0.38, "maxU": 0.38, "minV": -0.48, "maxV": 0.48 }, "label": "Daylight Pane", "role": "daylightWindow", "materialTexture": "wavy_surface.png", "textureTransparent": true, "materialFillEnabled": true, "materialFillColor": "#dce9f4", "materialMapping": "stretch", "daylightRadiusTiles": 2.6, "daylightStrength": 1 }
+  ],
+  "wallOrnament": { "version": 1, "attachmentSurfaceId": "simple_window_pane:surface:4", "surfacePartId": "simple_window_pane", "surfaceType": "vertical side", "surfaceFaces": [4, 5], "anchor": [0, 1.12, -0.0125], "normal": [0, 0, -1], "basisU": [-1, 0, 0], "basisV": [0, 1, 0], "previewWallAngleDeg": 0, "defaultNormalOffset": 0.01, "placementSpace": "wall-surface-uvn", "alignment": "attachment-normal-opposes-wall-normal" },
+  "daylightWindowAuthoring": { "version": 1, "role": "daylightWindow", "lightingModel": "interior-overlay-aperture", "surfaceTint": "live-outdoor-rgb-over-neutralized-texture" }
+}

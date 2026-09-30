@@ -45,7 +45,22 @@ const decorativeDefs = {
   chair: { itemKey: 'chairFurniture', icon: 'C', name: 'Chair', area: 'any' },
   houseStool: { itemKey: 'houseStoolFurniture', icon: 'T', name: 'House Stool', area: 'interior' },
 };
-const inventory = { chairFurniture: 1, houseStoolFurniture: 1 };
+const inventory = {
+  chairFurniture: 1,
+  houseStoolFurniture: 1,
+  simpleWindowFurniture: 1,
+  wideWindowFurniture: 1,
+  crossbarWindowFurniture: 1,
+};
+let windowCatalogRepairCalls = 0;
+context.window.DaylightWindowRuntime = {
+  registerDecorDefs(defs) {
+    windowCatalogRepairCalls += 1;
+    defs.simpleWindow ||= { itemKey: 'simpleWindowFurniture', icon: 'W', name: 'Simple Window', area: 'any', wallOrnament: true };
+    defs.wideWindow ||= { itemKey: 'wideWindowFurniture', icon: 'W', name: 'Wide Window', area: 'any', wallOrnament: true };
+    defs.crossbarWindow ||= { itemKey: 'crossbarWindowFurniture', icon: 'W', name: 'Crossbar Window', area: 'any', wallOrnament: true, playerFurnitureDisabled: true };
+  },
+};
 Object.values(processingDefs).forEach(def => { inventory[def.itemKey] = 1; });
 let currentArea = 'farm'; // Switched below to prove processors stay outdoor-only.
 let placedFurniture = [{ id: 'processor_agingBarrel_3_4', key: 'agingBarrel', placementKind: 'processing', col: 3, row: 4 }]; // Exercises processor management rows.
@@ -75,6 +90,10 @@ for (const def of Object.values(processingDefs)) {
   assert(renderedNames().some(html => html.includes(def.name)), `${def.name} is listed by the farm placement tool`);
 }
 assert(renderedNames().some(html => html.includes('House Stool')), 'ordinary interior furniture is also offered for outdoor farm placement');
+assert(windowCatalogRepairCalls > 0, 'Furniture Placer asks the daylight-window extension to repair its catalog at render time');
+assert(renderedNames().some(html => html.includes('Simple Window')), 'owned Simple Window appears in Available Furniture even when its definition was absent before render');
+assert(renderedNames().some(html => html.includes('Wide Window')), 'owned Wide Window appears in Available Furniture even when its definition was absent before render');
+assert(!renderedNames().some(html => html.includes('Crossbar Window')), 'disabled legacy Crossbar Window remains hidden even when present in inventory');
 const placedBarrelRow = elements.furniturePlacerList.children.find(row => row.innerHTML.includes('Aging Barrel') && row.innerHTML.includes('3, 4'));
 assert(placedBarrelRow, 'placed processors appear in the management list');
 assert.equal(placedBarrelRow.children.length, 3, 'placed processors receive move, rotate, and remove controls');
@@ -136,8 +155,17 @@ assert.match(gameSource,
   /if \(furniturePlacementModeArmed\(\)\) \{[\s\S]{0,420}getReticleTile\(\)[\s\S]{0,260}commitFurniturePlacementAt/,
   'gameplay furniture placement commits at the ordinary reticle tile');
 assert.match(gameSource,
-  /actionId === 'action1' \|\| actionId === 'interact'\)[\s\S]{0,140}furniturePlacementModeArmed/,
-  'controller/keyboard primary action and interact both confirm armed furniture placement');
+  /furniturePlacementModeArmed\(\)[\s\S]{0,1100}action: 'furniture_place_confirm'[\s\S]{0,420}action: 'furniture_place_cancel'/,
+  'armed furniture placement explicitly populates mobile Place and Cancel actions');
+assert.match(gameSource,
+  /furniturePlacementModeArmed\(\) && \(actionId === 'action1' \|\| actionId === 'interact' \|\| actionId === 'action2'\)/,
+  'controller/keyboard primary, interact, and cancel inputs are all claimed by armed furniture placement');
+assert.match(gameSource,
+  /actionId === 'action2'\)[\s\S]{0,180}cancelFurniturePlacementMode\(true\)/,
+  'physical Action 2 cancels furniture placement instead of leaking into the equipped tool');
+assert.match(gameSource,
+  /function cancelFurniturePlacementMode\(showMessage = false\)[\s\S]{0,700}refreshActionBar\(\)/,
+  'canceling placement clears the session and restores the ordinary action arch immediately');
 assert.match(gameSource,
   /mouseAction === 'action1' && furniturePlacementModeArmed\(\)/,
   'mouse primary action confirms placement without switching to a screen-position placement tool');
@@ -151,6 +179,15 @@ assert.match(actionArcSource,
 assert.match(actionArcSource,
   /id: 'furniture-placement'[\s\S]{0,320}FurniturePlacer\?\.open/,
   'utility wheel opens the normal furniture selector');
+assert.match(gameSource,
+  /if \(window\.WallOrnamentPlacement\?\.isPlayerReticlePlacementActive\?\.\(\)\)[\s\S]{0,800}wall_place_confirm[\s\S]{0,360}wall_place_cancel/,
+  'wall-reticle placement owns visible mobile Place and Cancel buttons before interior early returns');
+assert.match(gameSource,
+  /updatePlayerReticlePreview\?\.\(\); \/\/ Touch camera\/movement retargets wall preview/,
+  'active wall placement refreshes its reticle preview for touch even without a controller');
+assert.match(gameSource,
+  /refreshActionBar, \/\/ Selector-to-placement transitions must populate\/clear the mobile action arch immediately\./,
+  'FurniturePlacer receives the shared action-bar refresh hook');
 assert.match(indexSource,
   /id="furniturePlacerPanel"[^>]*data-ctrl-panel/,
   'furniture selector participates in universal controller navigation');

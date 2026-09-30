@@ -6,7 +6,7 @@ const root = path.resolve(__dirname, '..');
 const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
 const json = relative => JSON.parse(read(relative));
 
-function checkSign(relative, key, textureName) {
+function checkSign(relative, key, tankanText) {
   const data = json(relative); // Authored runtime record checked for editable sign geometry and decals.
   assert.equal(data.key, key);
   assert.equal(data.schema, 'hobunji_furniture_authored_runtime.v1');
@@ -15,11 +15,12 @@ function checkSign(relative, key, textureName) {
   assert.equal(data.tileBase?.footprintD, 1);
   assert.equal(data.repoFurniture?.uniformScaleFromOriginal, 0.8);
 
-  const parts = new Map(data.parts.map(part => [part.id, part])); // Stable part ids used to compare beam, board, and support geometry.
+  const parts = new Map(data.parts.map(part => [part.id, part])); // Stable part ids used to compare the wall-mounted beam and board geometry.
   const beam = parts.get('hanging_sign_post')?.transform;
   const board = parts.get('hanging_sign_board')?.transform;
   const post = parts.get('hanging_sign_support_post')?.transform;
-  assert(beam && board && post, `${key}: beam, board, and support post must all exist`);
+  assert(beam && board, `${key}: beam and board must both exist`);
+  assert(!post, `${key}: wall-mounted sign must not retain its old freestanding support post`);
 
   const beamMin = beam.x - beam.sx / 2;
   const beamMax = beam.x + beam.sx / 2;
@@ -28,10 +29,12 @@ function checkSign(relative, key, textureName) {
   const negativeOverhang = boardMin - beamMin; // Beam length beyond the hanging board on local -X.
   const positiveOverhang = beamMax - boardMax; // Beam length beyond the hanging board on local +X.
   assert(positiveOverhang > negativeOverhang, `${key}: +X must remain the longer beam overhang`);
-  assert(post.x > 0, `${key}: support post must stay on the longer +X side`);
-  assert(Math.abs((post.y + post.sy / 2) - (beam.y - beam.sy / 2)) < 1e-9, `${key}: post top must meet beam underside`);
   assert(beamMin >= -0.5 - 1e-9 && beamMax <= 0.5 + 1e-9, `${key}: horizontal beam must fit within one tile`);
   assert(Math.abs(beam.sx - 1) < 1e-9, `${key}: scaled beam should span exactly one tile`);
+  assert.equal(data.wallOrnament?.attachmentSurfaceId, 'hanging_sign_post:surface:6', `${key}: +X beam end must remain the authored wall attachment`);
+  assert.equal(data.wallOrnament?.surfacePartId, 'hanging_sign_post', `${key}: wall attachment must belong to the beam`);
+  assert.deepEqual(data.wallOrnament?.normal, [1, 0, 0], `${key}: attachment normal must point along local +X`);
+  assert.equal(data.repoFurniture?.placementMode, 'wall-ornament', `${key}: repository metadata must identify wall placement`);
 
   assert.equal(data.decals.length, 2, `${key}: both board faces need decals`);
   assert.deepEqual(new Set(data.decals.map(decal => decal.surfaceId)), new Set([
@@ -42,8 +45,11 @@ function checkSign(relative, key, textureName) {
     assert.equal(decal.width, 0.75);
     assert.equal(decal.height, 0.8);
     assert.equal(decal.opacity, 0.7);
-    assert.equal(decal.normalOffset, 0.003);
-    assert(decal.imageName.endsWith(textureName), `${key}: wrong decal texture`);
+    assert.equal(decal.normalOffset, 0);
+    assert.equal(decal.sourceType, 'tankanText', `${key}: sign must use editable Tankan text rather than a baked image`);
+    assert.equal(decal.tankanText, tankanText, `${key}: wrong Tankan sign text`);
+    assert.equal(decal.imageSource, null, `${key}: Tankan text must not retain a stale image source`);
+    assert.equal(decal.imageName, '', `${key}: Tankan text must not retain a stale image name`);
   }
 
   const surfaceById = new Map((data.recognizedSurfaces || []).map(surface => [surface.id, surface])); // Scaled face frames must keep runtime decal geometry proportional to the resized board.
@@ -57,8 +63,8 @@ function checkSign(relative, key, textureName) {
   }
 }
 
-checkSign('docs/config/furniture-authored/generalStoreSign.json', 'generalStoreSign', 'general_store_sign_text.png');
-checkSign('docs/config/furniture-authored/innSign.json', 'innSign', 'inn_sign_text.png');
+checkSign('docs/config/furniture-authored/generalStoreSign.json', 'generalStoreSign', 'General Store');
+checkSign('docs/config/furniture-authored/innSign.json', 'innSign', 'Inn');
 
 // The two business signs are ordinary town decor now (see docs/game.js's
 // DECORATIVE_FURNITURE_DEFS and the Map Editor's DECOR catalog) rather than

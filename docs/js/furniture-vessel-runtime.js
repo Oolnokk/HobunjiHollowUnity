@@ -281,6 +281,11 @@
     return group;
   }
 
+  function isDescendantOf(node, ancestor) {
+    for (let current = node; current; current = current.parent) if (current === ancestor) return true;
+    return false;
+  }
+
   function adoptAuthoredVisual(target, fallbackChildren, data, baseColor) {
     const authoredRuntime = window.AuthoredFurniture;
     if (!target || !data || !authoredRuntime?.buildGroup || target.userData?.authoredFurnitureUpgraded) return false;
@@ -290,12 +295,29 @@
     // Remove ONLY children that belonged to the original procedural fallback.
     // Callers are free to have attached lights, particle helpers, interaction
     // markers, etc. after buildFurnitureGroup returned; those must survive.
+    // A caller may also have re-parented the fallback deeper inside `target`
+    // (HouseWindowLinkage mounts a window's single visual root under its
+    // sheared wall-aperture group). That fallback is still stale and must go,
+    // and a one-for-one replacement takes over its parent and local
+    // transform — otherwise the authored copy lands unmounted on the root
+    // next to a leftover placeholder.
+    let adoptedSlot = null;
     for (const child of fallbackChildren) {
-      if (child?.parent !== target) continue;
-      target.remove(child);
+      const parent = child?.parent;
+      if (!parent || !isDescendantOf(parent, target)) continue;
+      if (parent !== target && fallbackChildren.length === 1 && replacement.children.length === 1) {
+        adoptedSlot = { parent, position: child.position.clone(), quaternion: child.quaternion.clone(), scale: child.scale.clone() };
+      }
+      parent.remove(child);
       disposeFallbackVisual(child);
     }
-    for (const child of [...replacement.children]) target.add(child);
+    for (const child of [...replacement.children]) {
+      if (!adoptedSlot) { target.add(child); continue; }
+      adoptedSlot.parent.add(child);
+      child.position.copy(adoptedSlot.position);
+      child.quaternion.copy(adoptedSlot.quaternion);
+      child.scale.copy(adoptedSlot.scale);
+    }
 
     target.name = replacement.name || target.name;
     Object.assign(target.userData, replacement.userData || {}, {

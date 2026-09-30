@@ -394,6 +394,11 @@
     }
     return { col, row, w, h };
   }
+  function getExteriorRenderRect(pieceId) {
+    const built = deps.getHousePieces().filter(piece => piece.stage === 'built'); // Uses the same neighboring rooms as the structure rebuild.
+    const entry = built.find(piece => piece.id === pieceId); // Identifies the rendered Highland body under a linked window.
+    return entry ? (entry._exteriorRenderRect || _renderRectFor(entry, _sameDirectionExtensions(built))) : null; // Reuses the last build's rectangle during player aiming.
+  }
   // A partial (not full-length) same-axis shared edge can't expand the whole
   // source rectangle without spilling past the neighbor — just the 1-tile-
   // deep shared run gets its own small bridging piece instead.
@@ -517,13 +522,15 @@
     _refreshArchitecturalFeatures(built);
     const exts = _sameDirectionExtensions(built);
     const crossGables = _crossGableConnections(built);
+    built.forEach(entry => { entry._exteriorRenderRect = _renderRectFor(entry, exts); }); // Every window sees the new geometry even if its owner builds later in this loop.
     for (const entry of built) {
       _disposeMesh(entry._mesh);
       const axis = _roofAxisDecision(entry, built);
-      const render = _renderRectFor(entry, exts);
+      const render = entry._exteriorRenderRect; // Window placement and the cut share this exact generated Highland footprint.
       const entrances = (entry.features || []).filter(f => f.type === 'entrance' && !f.invalid);
       const buildOpts = {
         axisOverride: axis, wallBuilder: deps.houseWallBuilder, wbUsePlaceholder: true, wbOpts: _wbDefaults,
+        windowCuts: window.HouseWindowLinkage?.getExteriorWindowCuts?.(render) || [], // Linked daylight windows subtract their full frame silhouettes before exterior WallBuilder bricks are generated.
         doorCuts: entrances.map(f => {
           const { col, row } = _featureGlobalTile(entry, f);
           return {
@@ -575,6 +582,7 @@
       _extensionProxyMeshes.push(mesh);
     });
     deps.onPieceGeometryChanged();
+    window.HouseWindowLinkage?.onHouseGeometryRebuilt?.(); // Whole-room moves keep paired window meshes aligned to their stable piece-local wall binding after the new exterior geometry exists.
   }
 
   function label(entry) {
@@ -1159,6 +1167,7 @@
     clearAll,
     getPieceRects,
     computeInteriorLayout,
+    getExteriorRenderRect,
     debugPieceFeatures,
   };
 })();

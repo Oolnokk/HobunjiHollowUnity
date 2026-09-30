@@ -17,7 +17,7 @@ assert.match(source, /state\?\.overcast/,
 assert.match(source, /function drawLanternMasksCompat\(activation = 1, preserveOutdoorWeatherTint = false\)/,
   'lantern masking must distinguish outdoor weather tint preservation from enclosed-area darkness clearing');
 assert.match(source, /drawLanternMasksCompat\(1\);\s*drawFurnitureLightMasksCompat\(\);/s,
-  'interiors, dens, and mines must keep the original full darkness-clearing behavior');
+  'dens and mines must keep the original full darkness-clearing behavior (ordinary rooms use the blended window atmosphere)');
 assert.match(source, /drawLanternMasksCompat\(currentOutdoorLanternActivation\(\), true\);\s*drawFurnitureLightMasksCompat\(true\);/s,
   'outdoor carried/watch and furniture lights must preserve the active weather tint');
 assert.match(source, /globalCompositeOperation = 'destination-out'/,

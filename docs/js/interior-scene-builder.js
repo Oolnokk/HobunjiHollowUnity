@@ -347,9 +347,9 @@
   }
 
   // Canvas tent interior walls use the same canvas.png as the exterior.
-  // Every derived boundary panel is its own cloth surface and receives a full
-  // 0..1 copy of the PNG, so long walls do not tile and neighboring walls do
-  // not share one continuous UV field.
+  // Every canonical boundary panel remains its own real PlaneGeometry so wall
+  // picking/debugging sees the same surface the player sees. PlaneGeometry's
+  // native 0..1 UVs also preserve main's one-full-canvas.png-per-wall stretch.
   function buildCanvasWalls(THREE, wallPanels) {
     return buildCanvasWallsWithColor(THREE, wallPanels, 0xcbb489);
   }
@@ -357,26 +357,28 @@
   function buildCanvasWallsWithColor(THREE, wallPanels, color) {
     const group = new THREE.Group();
     if (!wallPanels.length) return group;
-    const texture = canvasTexture(THREE); // Shared image; panel-local UVs below make each wall independently stretch it to fit.
+    const texture = canvasTexture(THREE); // Shared image; each PlaneGeometry owns a fresh 0..1 UV field.
     const mat = new THREE.MeshLambertMaterial({ color: 0xffffff, map: texture, side: THREE.DoubleSide });
-    const pos = [], uv = [], idx = []; let vi = 0;
     for (const panel of wallPanels) {
-      const [bl, br, tr, tl] = panelCornersFor(THREE, panel);
-      pos.push(bl.x, bl.y, bl.z, br.x, br.y, br.z, tr.x, tr.y, tr.z, tl.x, tl.y, tl.z);
-      uv.push(0, 0, 1, 0, 1, 1, 0, 1); // One complete canvas.png per inner wall panel.
-      idx.push(vi, vi + 1, vi + 2, vi, vi + 2, vi + 3);
-      vi += 4;
+      const width = Math.max(0.001, Number(panel?.width) || 0.001);
+      const height = Math.max(0.001, Number(panel?.height) || 0.001);
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), mat);
+      const rd = panel.rotationDeg || [0, 0, 0];
+      mesh.position.set(Number(panel.position?.[0]) || 0, (Number(panel.position?.[1]) || 0) + height / 2, Number(panel.position?.[2]) || 0);
+      mesh.rotation.set(THREE.MathUtils.degToRad(rd[0] || 0), THREE.MathUtils.degToRad(rd[1] || 0), THREE.MathUtils.degToRad(rd[2] || 0));
+      mesh.name = `InteriorCanvasWall_${panel.id || group.children.length}`;
+      mesh.receiveShadow = true;
+      mesh.userData.cameraObstacle = true;
+      mesh.userData.canvasSurfaceStretch = 'one-png-per-wall-panel';
+      mesh.userData.interiorWallPanelId = panel.id || null;
+      mesh.userData.interiorWallPlane = {
+        position: Array.isArray(panel.position) ? panel.position.slice(0, 3) : [0, 0, 0],
+        rotationDeg: Array.isArray(panel.rotationDeg) ? panel.rotationDeg.slice(0, 3) : [0, 0, 0],
+        width,
+        height,
+      };
+      group.add(mesh);
     }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-    geo.setIndex(idx);
-    geo.computeVertexNormals();
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.receiveShadow = true;
-    mesh.userData.cameraObstacle = true;
-    mesh.userData.canvasSurfaceStretch = 'one-png-per-wall-panel';
-    group.add(mesh);
     return group;
   }
 
@@ -400,21 +402,91 @@
     return g;
   }
 
+  function splitPanelForOpening(panel, opening, suffix) {
+    if (!panel || !opening || !Array.isArray(opening.center) || !Array.isArray(opening.normal)) return [panel];
+    const rotationDeg = Array.isArray(panel.rotationDeg) ? panel.rotationDeg : [0, 0, 0]; // Used to derive the panel's horizontal tangent/normal from its canonical yaw.
+    const yaw = (Number(rotationDeg[1]) || 0) * Math.PI / 180; // Converts canonical panel yaw into scalar X/Z basis math.
+    const tangent = [Math.cos(yaw), 0, -Math.sin(yaw)]; // Local panel +X in world space, used for opening horizontal coordinates.
+    const normal = [Math.sin(yaw), 0, Math.cos(yaw)]; // Local panel +Z in world space, used to reject openings on other walls.
+    const openingNormalLength = Math.hypot(Number(opening.normal[0]) || 0, Number(opening.normal[2]) || 0) || 1; // Prevents invalid imported zero normals.
+    const openingNormal = [(Number(opening.normal[0]) || 0) / openingNormalLength, 0, (Number(opening.normal[2]) || 0) / openingNormalLength]; // Normalized once for the wall-facing comparison.
+    if (Math.abs(normal[0] * openingNormal[0] + normal[2] * openingNormal[2]) < 0.8) return [panel];
+
+    const panelPosition = Array.isArray(panel.position) ? panel.position : [0, 0, 0]; // Floor-referenced center of the canonical wall panel.
+    const deltaX = (Number(opening.center[0]) || 0) - (Number(panelPosition[0]) || 0); // Opening offset used for panel-local U.
+    const deltaZ = (Number(opening.center[2]) || 0) - (Number(panelPosition[2]) || 0); // Opening offset used for panel-local U/depth.
+    const depth = deltaX * normal[0] + deltaZ * normal[2]; // Distance between opening center and this wall plane.
+    if (Math.abs(depth) > 0.35) return [panel];
+
+    const panelWidth = Math.max(0, Number(panel.width) || 0); // Canonical wall width used to clip the opening to this panel.
+    const panelHeight = Math.max(0, Number(panel.height) || 0); // Canonical wall height used to clip the opening vertically.
+    const centerU = deltaX * tangent[0] + deltaZ * tangent[2]; // Opening center measured from panel center along local +X.
+    const centerV = (Number(opening.center[1]) || 0) - (Number(panelPosition[1]) || 0); // Opening center measured from the panel floor.
+    const halfWidth = Math.max(0, Number(opening.width) || 0) * 0.5; // Half silhouette width used by the rectangular subtraction.
+    const halfHeight = Math.max(0, Number(opening.height) || 0) * 0.5; // Half silhouette height used by the rectangular subtraction.
+    const u0 = Math.max(-panelWidth * 0.5, centerU - halfWidth); // Clipped opening left edge in panel-local coordinates.
+    const u1 = Math.min(panelWidth * 0.5, centerU + halfWidth); // Clipped opening right edge in panel-local coordinates.
+    const v0 = Math.max(0, centerV - halfHeight); // Clipped opening bottom edge above the wall floor.
+    const v1 = Math.min(panelHeight, centerV + halfHeight); // Clipped opening top edge below the wall ceiling.
+    if (u1 - u0 <= 1e-4 || v1 - v0 <= 1e-4) return [panel];
+
+    const pieces = []; // Surviving wall rectangles around the aperture; these alone are sent to WallBuilder.
+    const pushPiece = (pieceU0, pieceU1, pieceV0, pieceV1, part) => {
+      const width = pieceU1 - pieceU0; // Sub-panel width used for its WallBuilder panel specification.
+      const height = pieceV1 - pieceV0; // Sub-panel height used for its WallBuilder panel specification.
+      if (width <= 1e-4 || height <= 1e-4) return;
+      const localCenterU = (pieceU0 + pieceU1) * 0.5; // Horizontal sub-panel center offset from the original panel center.
+      const localFloorV = pieceV0; // WallBuilder panel positions are floor-referenced, not vertically centered.
+      pieces.push(Object.assign({}, panel, {
+        id: `${panel.id || 'wall'}:opening:${suffix}:${part}`,
+        width,
+        height,
+        position: [
+          (Number(panelPosition[0]) || 0) + tangent[0] * localCenterU,
+          (Number(panelPosition[1]) || 0) + localFloorV,
+          (Number(panelPosition[2]) || 0) + tangent[2] * localCenterU,
+        ],
+      }));
+    };
+    pushPiece(-panelWidth * 0.5, u0, 0, panelHeight, 'left');
+    pushPiece(u1, panelWidth * 0.5, 0, panelHeight, 'right');
+    pushPiece(u0, u1, 0, v0, 'bottom');
+    pushPiece(u0, u1, v1, panelHeight, 'top');
+    return pieces;
+  }
+
+  function applyWallOpenings(wallPanels, wallOpenings) {
+    let panels = Array.isArray(wallPanels) ? wallPanels.slice() : []; // Working panel list is split once per requested opening without mutating the canonical source.
+    const openings = Array.isArray(wallOpenings) ? wallOpenings.filter(Boolean) : []; // Invalid/empty opening lists preserve the old wall path exactly.
+    openings.forEach((opening, index) => {
+      panels = panels.flatMap(panel => splitPanelForOpening(panel, opening, index)); // Re-splitting surviving rectangles supports multiple windows on one wall.
+    });
+    return panels;
+  }
+
   // wallStyle dispatch — brick (default, via WallBuilder) / cavern / canvas.
   // wbOpts defaults match game.js's INTERIOR_WALL_PANELS build() call exactly
   // (50% brick size, 4x density via rockScale, 60% depth, micro-jitter).
   const DEFAULT_WB_OPTS = { unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
 
+  function markInteriorWallSurfaceGroup(group) {
+    if (group?.userData) group.userData.interiorWallSurfaceGroup = true;
+    return group;
+  }
+
   function buildWallGroup(THREE, wallBuilder, wallPanels, wallStyle, wbOpts) {
-    if (!wallPanels || !wallPanels.length) return new THREE.Group();
-    if (wallStyle === 'cavern') return buildCavernWalls(THREE, wallPanels);
-    if (wallStyle === 'mine') return buildCavernWalls(THREE, wallPanels, { textureUrl: wbOpts?.mineTextureUrl || 'assets/textures/carved_smooth.png', color: 0x8a8d91, textureRepeat: .42 });
-    if (wallStyle === 'canvas') return buildCanvasWalls(THREE, wallPanels);
+    if (!wallPanels || !wallPanels.length) return markInteriorWallSurfaceGroup(new THREE.Group());
+    const buildOptions = Object.assign({}, DEFAULT_WB_OPTS, wbOpts); // Copy keeps house-window-only options from leaking into WallBuilder.
+    const renderPanels = applyWallOpenings(wallPanels, buildOptions.wallOpenings); // Silhouette holes are resolved before any brick/canvas/fallback geometry is created.
+    delete buildOptions.wallOpenings;
+    if (wallStyle === 'cavern') return markInteriorWallSurfaceGroup(buildCavernWalls(THREE, renderPanels));
+    if (wallStyle === 'mine') return markInteriorWallSurfaceGroup(buildCavernWalls(THREE, renderPanels, { textureUrl: buildOptions.mineTextureUrl || 'assets/textures/carved_smooth.png', color: 0x8a8d91, textureRepeat: .42 }));
+    if (wallStyle === 'canvas') return markInteriorWallSurfaceGroup(buildCanvasWalls(THREE, renderPanels));
     if (wallBuilder) {
-      try { return wallBuilder.build(wallPanels, Object.assign({}, DEFAULT_WB_OPTS, wbOpts)); }
+      try { return markInteriorWallSurfaceGroup(wallBuilder.build(renderPanels, buildOptions)); }
       catch (e) { console.warn('InteriorSceneBuilder.buildWallGroup: WallBuilder error, using fallback boxes: ' + e.message); }
     }
-    return buildFallbackBoxWalls(THREE, wallPanels);
+    return markInteriorWallSurfaceGroup(buildFallbackBoxWalls(THREE, renderPanels));
   }
 
   // wallStyle-aware floor material — boards.png-textured plank floor by
@@ -449,7 +521,7 @@
   }
 
   root.InteriorSceneBuilder = {
-    buildWallPanels, buildWallGroup, buildFloorMaterial,
+    buildWallPanels, buildWallGroup, buildFloorMaterial, applyWallOpenings,
     buildCavernWalls, buildCanvasWalls, buildFallbackBoxWalls, panelCornersFor,
     buildCarvedCavernMesh, buildCavernFloorMesh,
   };
