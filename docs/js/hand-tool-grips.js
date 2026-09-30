@@ -419,11 +419,14 @@
     return span?.enabled ? { enabled: true, startZ: numberOrZero(span.startZ), endZ: numberOrZero(span.endZ) } : null;
   }
 
+  const ANIMATION_POSE_PHASES = Object.freeze(['neutral', 'windup', 'midStrike', 'strike']); // Shared below by optional Mid Strike secondary-hand authoring/interpolation.
   const editorSecondaryPoses = {
     neutral: { enabled: false, percent: 50 },
     windup: { enabled: false, percent: 50 },
+    midStrike: { enabled: false, percent: 50 },
     strike: { enabled: false, percent: 50 },
   };
+  let editorMidStrikeGripAuthored = false; // Prevents a transform-only Mid Strike from silently changing the old two-hand path on export.
   let capturedMelee = null;
 
   function normalizeAnimationGrip(raw) {
@@ -436,7 +439,7 @@
   }
 
   function hasAnimationGripMetadata(poseSet) {
-    return ['neutral', 'windup', 'strike'].some(phase => poseSet?.[phase]?.secondaryGrip && typeof poseSet[phase].secondaryGrip === 'object');
+    return ANIMATION_POSE_PHASES.some(phase => poseSet?.[phase]?.secondaryGrip && typeof poseSet[phase].secondaryGrip === 'object');
   }
 
   function animationGripAt(progress, timing = {}, poseSet = {}, sequence = 'attack') {
@@ -447,9 +450,13 @@
     const hf = Math.max(sf, clamp01(timing.holdFrac ?? timing.hf ?? 0.68));
     const neutral = normalizeAnimationGrip(poseSet.neutral?.secondaryGrip);
     const windup = normalizeAnimationGrip(poseSet.windup?.secondaryGrip);
+    const midStrike = poseSet.midStrike?.secondaryGrip && typeof poseSet.midStrike.secondaryGrip === 'object'
+      ? normalizeAnimationGrip(poseSet.midStrike.secondaryGrip)
+      : null; // Transform-only Mid Strike poses do not alter the off-hand path unless secondary-grip metadata is explicitly authored.
     const strike = normalizeAnimationGrip(poseSet.strike?.secondaryGrip);
     const poseScale = clamp01(timing.poseScale ?? 1); // Used after a partial held release to keep the off-hand endpoint at the same amplitude as the weapon.
     const scaledWindup = lerpAnimationGrip(neutral, windup, poseScale); // Used as the effective partial Windup grip state.
+    const scaledMidStrike = midStrike ? lerpAnimationGrip(neutral, midStrike, poseScale) : null;
     const scaledStrike = lerpAnimationGrip(neutral, strike, poseScale); // Used as the effective partial Strike grip state.
     let result;
     if (sequence === 'load') {
@@ -463,7 +470,15 @@
       const poseT = global.Combat?.windupPoseProgress?.(rawWindupT, timing.windupSlowdown) ?? rawWindupT;
       result = lerpAnimationGrip(neutral, scaledWindup, poseT);
     }
-    else if (t <= sf) result = lerpAnimationGrip(scaledWindup, scaledStrike, (t - wf) / Math.max(1e-6, sf - wf));
+    else if (t <= sf) {
+      if (!scaledMidStrike) result = lerpAnimationGrip(scaledWindup, scaledStrike, (t - wf) / Math.max(1e-6, sf - wf));
+      else {
+        const mf = wf + (sf - wf) * 0.5; // Optional Mid Strike always bisects the existing strike interval.
+        result = t <= mf
+          ? lerpAnimationGrip(scaledWindup, scaledMidStrike, (t - wf) / Math.max(1e-6, mf - wf))
+          : lerpAnimationGrip(scaledMidStrike, scaledStrike, (t - mf) / Math.max(1e-6, sf - mf));
+      }
+    }
     else if (t <= hf) result = { ...scaledStrike };
     else result = lerpAnimationGrip(scaledStrike, neutral, (t - hf) / Math.max(1e-6, 1 - hf));
     return { ...result, source: 'animation-pose' };
@@ -481,6 +496,7 @@
     const poseSet = {
       neutral: { secondaryGrip: editorSecondaryPoses.neutral },
       windup: { secondaryGrip: editorSecondaryPoses.windup },
+      ...(document.getElementById('useMidStrike')?.checked && editorMidStrikeGripAuthored ? { midStrike: { secondaryGrip: editorSecondaryPoses.midStrike } } : {}),
       strike: { secondaryGrip: editorSecondaryPoses.strike },
     };
     return animationGripAt(progress, timing, poseSet, document.getElementById('playbackSequence')?.value || 'attack');
@@ -698,7 +714,11 @@
     let parsed;
     try { parsed = JSON.parse(view.value || '{}'); } catch (_) { return null; }
     if (!parsed.poses || typeof parsed.poses !== 'object') parsed.poses = {};
-    for (const phase of ['neutral', 'windup', 'strike']) {
+    for (const phase of ANIMATION_POSE_PHASES) {
+      if (phase === 'midStrike' && (!parsed.poses.midStrike || !editorMidStrikeGripAuthored)) {
+        if (parsed.poses.midStrike) delete parsed.poses.midStrike.secondaryGrip;
+        continue; // A transform-only Mid Strike must not gain off-hand semantics just because this extension is installed.
+      }
       if (!parsed.poses[phase] || typeof parsed.poses[phase] !== 'object') parsed.poses[phase] = {};
       parsed.poses[phase].secondaryGrip = { enabled: editorSecondaryPoses[phase].enabled === true, percent: clamp(editorSecondaryPoses[phase].percent, 0, 100) };
     }
@@ -713,7 +733,8 @@
   }
 
   function loadEditorAnimationGrip(dataObj) {
-    for (const phase of ['neutral', 'windup', 'strike']) {
+    editorMidStrikeGripAuthored = !!(dataObj?.poses?.midStrike?.secondaryGrip && typeof dataObj.poses.midStrike.secondaryGrip === 'object');
+    for (const phase of ANIMATION_POSE_PHASES) {
       const raw = dataObj?.poses?.[phase]?.secondaryGrip;
       editorSecondaryPoses[phase].enabled = raw?.enabled === true;
       editorSecondaryPoses[phase].percent = clamp(raw?.percent ?? 50, 0, 100);
@@ -744,12 +765,14 @@
     editorUi.scalePair.set(normalizeToolScale(entry?.toolScale));
     editorUi.spanEnabled.checked = span.enabled === true;
     editorUi.startPair.set(numberOrZero(span.startZ)); editorUi.endPair.set(numberOrZero(span.endZ));
-    for (const phase of ['neutral', 'windup', 'strike']) {
+    for (const phase of ANIMATION_POSE_PHASES) {
       const controls = editorUi.pose[phase];
       controls.enabled.checked = editorSecondaryPoses[phase].enabled === true;
       controls.percent.set(clamp(editorSecondaryPoses[phase].percent, 0, 100));
-      const canGrip = span.enabled === true;
+      const phaseAvailable = phase !== 'midStrike' || document.getElementById('useMidStrike')?.checked === true; // Mid controls remain visible but disabled until the optional pose exists.
+      const canGrip = span.enabled === true && phaseAvailable;
       controls.enabled.disabled = !canGrip; controls.percent.range.disabled = !canGrip; controls.percent.number.disabled = !canGrip;
+      if (controls.box) controls.box.style.opacity = phaseAvailable ? '1' : '0.45';
     }
     const state = editorAnimationGripState();
     const scaleLabel = `base scale ×${normalizeToolScale(entry?.toolScale).toFixed(2)}`;
@@ -808,15 +831,22 @@
     const startPair = editorFieldPair(spanFields, 'handSecondarySpanStartZ', 'Left-hand span start · tool Z position', 0, -1.5, 1.5, 0.01, value => mutate(() => { currentSpan().startZ = value; }));
     const endPair = editorFieldPair(spanFields, 'handSecondarySpanEndZ', 'Left-hand span end · tool Z position', 0, -1.5, 1.5, 0.01, value => mutate(() => { currentSpan().endZ = value; }));
     const pose = {};
-    for (const phase of ['neutral', 'windup', 'strike']) {
+    for (const phase of ANIMATION_POSE_PHASES) {
       const box = document.createElement('div');
       box.className = 'field';
-      box.innerHTML = `<label class="fieldRow" style="cursor:pointer"><input type="checkbox" id="handSecondaryAnim_${phase}_enabled" style="width:auto;margin-right:6px">${phase[0].toUpperCase() + phase.slice(1)} uses off hand</label><div id="handSecondaryAnim_${phase}_percent"></div>`;
+      const phaseLabel = phase === 'midStrike' ? 'Mid Strike' : phase[0].toUpperCase() + phase.slice(1); // Human-readable optional waypoint label in the off-hand panel.
+      box.innerHTML = `<label class="fieldRow" style="cursor:pointer"><input type="checkbox" id="handSecondaryAnim_${phase}_enabled" style="width:auto;margin-right:6px">${phaseLabel} uses off hand</label><div id="handSecondaryAnim_${phase}_percent"></div>`;
       animationFields.appendChild(box);
       const enabled = box.querySelector(`#handSecondaryAnim_${phase}_enabled`);
-      const percent = editorFieldPair(box.querySelector(`#handSecondaryAnim_${phase}_percent`), `handSecondaryAnim_${phase}_pct`, `${phase[0].toUpperCase() + phase.slice(1)} span %`, 50, 0, 100, 1, value => { editorSecondaryPoses[phase].percent = clamp(value, 0, 100); patchEditorJsonView(); syncEditorSpanUi(); });
-      enabled.addEventListener('change', () => { editorSecondaryPoses[phase].enabled = enabled.checked; patchEditorJsonView(); syncEditorSpanUi(); });
-      pose[phase] = { enabled, percent };
+      const percent = editorFieldPair(box.querySelector(`#handSecondaryAnim_${phase}_percent`), `handSecondaryAnim_${phase}_pct`, `${phaseLabel} span %`, 50, 0, 100, 1, value => {
+        if (phase === 'midStrike') editorMidStrikeGripAuthored = true;
+        editorSecondaryPoses[phase].percent = clamp(value, 0, 100); patchEditorJsonView(); syncEditorSpanUi();
+      });
+      enabled.addEventListener('change', () => {
+        if (phase === 'midStrike') editorMidStrikeGripAuthored = true;
+        editorSecondaryPoses[phase].enabled = enabled.checked; patchEditorJsonView(); syncEditorSpanUi();
+      });
+      pose[phase] = { box, enabled, percent };
     }
     spanEnabled.addEventListener('change', () => mutate(() => { currentSpan().enabled = spanEnabled.checked; }));
     editorUi = { scalePanel, scalePair, panel, spanEnabled, startPair, endPair, pose, status: panel.querySelector('#handSecondarySpanStatus') };
@@ -826,7 +856,7 @@
       syncEditorSpanUi();
       global.ProceduralHandFrameDriver?.syncNow?.();
     });
-    for (const id of ['scrub', 'windupFrac', 'strikeFrac', 'holdFrac', 'playbackSequence']) {
+    for (const id of ['scrub', 'windupFrac', 'strikeFrac', 'holdFrac', 'playbackSequence', 'useMidStrike']) {
       document.getElementById(id)?.addEventListener('input', syncEditorSpanUi); document.getElementById(id)?.addEventListener('change', syncEditorSpanUi);
     }
     document.addEventListener('input', event => { if (!event.target?.closest?.('#handSecondaryGripSpanPanel') && !event.target?.closest?.('#handToolScalePanel')) setTimeout(patchEditorJsonView, 0); }, true);
@@ -868,11 +898,12 @@
   }
 
   function editorSecondaryGripStateSnapshot() {
-    return clone(editorSecondaryPoses); // Undo/Redo needs hidden per-pose left-hand values even when another pose is selected.
+    return { ...clone(editorSecondaryPoses), __midStrikeAuthored: editorMidStrikeGripAuthored }; // Undo/Redo also preserves whether the optional midpoint owns off-hand metadata.
   }
 
   function restoreEditorSecondaryGripState(snapshot) {
-    for (const phase of ['neutral', 'windup', 'strike']) {
+    editorMidStrikeGripAuthored = snapshot?.__midStrikeAuthored === true;
+    for (const phase of ANIMATION_POSE_PHASES) {
       const raw = snapshot?.[phase] || {};
       editorSecondaryPoses[phase].enabled = raw.enabled === true;
       editorSecondaryPoses[phase].percent = clamp(raw.percent ?? 50, 0, 100);
@@ -890,6 +921,7 @@
     toolKeyFor, ensureTool, toolScaleForTool, normalizeGripContext, currentGripContext,
     authoredPrimaryGripForTool, primaryGripForTool, spinPivotOffsetForTool, secondaryGripSpanForTool, secondaryGripForTool,
     currentSecondaryGripAnimationState, animationGripAt, gripModeForTool, setGripMode, replace, mutate, saveLocal, loadLocal, clearLocal, applyPrimaryGripVisuals, debugForTool,
+    loadEditorAnimationGrip, // Action selection/import calls this so optional Mid Strike off-hand state cannot leak between animations.
     editorSecondaryGripStateSnapshot, restoreEditorSecondaryGripState,
     getDebug() {
       const snapshot = global.WeaponToolStances?.debugSnapshot?.() || null;

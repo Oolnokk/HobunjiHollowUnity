@@ -303,12 +303,16 @@
     const powerValue = Number(rawOpts.power);
     const power = Number.isFinite(powerValue) ? powerValue : 1;
     let windup;
+    let midStrike = null; // Optional authored waypoint used during the Windup→Strike segment; null preserves the legacy straight interpolation exactly.
     let strike;
 
     if (authoredPose) {
       const styleNeutral = ENGINE_NEUTRAL_POSES[anim] || ENGINE_NEUTRAL_POSES.thrust;
       const sourceNeutral = normalizePose(authoredPose.neutral, styleNeutral);
       windup = bakeAuthoredEndpoint(authoredPose.windup, sourceNeutral, power);
+      if (authoredPose.midStrike && typeof authoredPose.midStrike === 'object') {
+        midStrike = bakeAuthoredEndpoint(authoredPose.midStrike, sourceNeutral, power);
+      }
       strike = bakeAuthoredEndpoint(authoredPose.strike, sourceNeutral, power);
     } else {
       ({ windup, strike } = legacyProceduralEndpoints(anim, power));
@@ -321,6 +325,7 @@
     // without replacing its original direction with Forehand's accidental X.
     if (rawOpts.meleeSpacing !== false && anim !== 'ranged' && window.MeleePoseSpacing?.adjustEndpoint) {
       windup = window.MeleePoseSpacing.adjustEndpoint(windup, 'windup');
+      if (midStrike) midStrike = window.MeleePoseSpacing.adjustEndpoint(midStrike, 'midStrike');
       strike = window.MeleePoseSpacing.adjustEndpoint(strike, 'strike');
     }
 
@@ -337,6 +342,7 @@
         neutralMirrorSign: startNeutralSign,
         returnNeutralMirrorSign: returnNeutralSign,
         windup,
+        ...(midStrike ? { midStrike } : {}),
         strike,
       },
     };

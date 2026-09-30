@@ -189,9 +189,11 @@
       const attackAfflictions = window.CombatAttackEvents?.scaleAfflictions?.(attackContext.afflictionBonuses || effects.afflictions, attackContext.modifiers?.affliction || 1)
         || effects.afflictions;
 
-      // All quick attacks are aimed jabs — mirror the shovel's straight thrust.
+      const attackVisual = window.Combat.currentWeaponMeleeAnimation?.(deps, id)
+        || { anim: 'thrust', pose: null }; // Uses the equipped weapon's natural slash/thrust style while retaining thrust as the legacy fallback.
       deps.triggerWeaponSwingVisual(windupS + strikeS, {
-        anim: 'thrust',
+        anim: attackVisual.anim,
+        pose: attackVisual.pose,
         windupFrac: windupS / (windupS + strikeS),
         strikeFrac: 1,
         holdS: HOLD_S,

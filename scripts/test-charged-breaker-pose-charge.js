@@ -86,10 +86,10 @@ assert.match(stanceSource, /runtimeState\.combatPoseScale = visual\?\.poseScale 
   'hot hand/shoulder consumers receive the partial-release pose amplitude without allocating debug snapshots');
 assert.match(stanceSource, /runtimeState\.combatNeutralWeight = visual \? neutralWeightForVisual\(visual\) : null/,
   'shoulder fallback consumers receive the live neutral weight from runtime state');
-assert.match(shoulderSource, /scaledWindup = lerp\(poses\.neutral, poses\.windup, poseScale\)[\s\S]{0,250}scaledStrike = lerp\(poses\.neutral, poses\.strike, poseScale\)/,
-  'shoulder metadata Windup/Strike endpoints are sliced from Neutral by the same partial-release amplitude');
-assert.match(gripSource, /scaledWindup = lerpAnimationGrip\(neutral, windup, poseScale\)[\s\S]{0,250}scaledStrike = lerpAnimationGrip\(neutral, strike, poseScale\)/,
-  'secondary-grip Windup/Strike endpoints are sliced from Neutral by the same partial-release amplitude');
+assert.match(shoulderSource, /scaledWindup = lerp\(poses\.neutral, poses\.windup, poseScale\)[\s\S]{0,500}scaledMidStrike = poses\.midStrike \? lerp\(poses\.neutral, poses\.midStrike, poseScale\) : null[\s\S]{0,500}scaledStrike = lerp\(poses\.neutral, poses\.strike, poseScale\)/,
+  'shoulder metadata Windup/Mid Strike/Strike endpoints are sliced from Neutral by the same partial-release amplitude');
+assert.match(gripSource, /scaledWindup = lerpAnimationGrip\(neutral, windup, poseScale\)[\s\S]{0,500}scaledMidStrike = midStrike \? lerpAnimationGrip\(neutral, midStrike, poseScale\) : null[\s\S]{0,500}scaledStrike = lerpAnimationGrip\(neutral, strike, poseScale\)/,
+  'secondary-grip Windup/Mid Strike/Strike endpoints are sliced from Neutral by the same partial-release amplitude');
 assert.match(banditSource, /_banditSwingPower = cb\.POWER \|\| 1\.7;[\s\S]{0,180}_banditSwingPoseScale = chargeT/,
   'bandit Charged Breaker preserves the legacy heavy-attack identity power while storing sampled charge separately');
 assert.match(banditSource, /const power = \(c\._banditSwingPower \|\| 1\) \* poseScale/,

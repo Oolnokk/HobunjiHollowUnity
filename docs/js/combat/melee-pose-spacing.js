@@ -78,7 +78,11 @@
   });
 
   function adjustEndpoint(raw = {}, phase = 'windup') {
-    const delta = phase === 'strike' ? RANGE_DELTA.strike : RANGE_DELTA.windup;
+    const delta = phase === 'strike'
+      ? RANGE_DELTA.strike
+      : phase === 'midStrike'
+        ? (RANGE_DELTA.windup + RANGE_DELTA.strike) * 0.5
+        : RANGE_DELTA.windup; // Mid Strike inherits the midpoint of the endpoint calibration instead of being forced onto either end.
     const original = preYawHorizontalPoint(raw);
     const originalRange = Math.hypot(original.x, original.z);
     const targetRange = Math.max(0, originalRange + delta);
@@ -109,6 +113,7 @@
     return {
       ...pose,
       windup: adjustEndpoint(pose.windup || {}, 'windup'),
+      ...(pose.midStrike ? { midStrike: adjustEndpoint(pose.midStrike, 'midStrike') } : {}),
       strike: adjustEndpoint(pose.strike || {}, 'strike'),
     };
   }
