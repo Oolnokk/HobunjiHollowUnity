@@ -25,8 +25,18 @@
   let playerLifeT = 0;
   let playerLifePending = false;
   let playerCombatFrown = false; // Tracks whether the player's world portrait should use the temporary combat frown expression.
+  let playerCombatExpressionApplied = false; // True only after the current player avatar's live texture actually contains the combat frown.
+  let playerCombatFrownCache = null; // Current-generation pre-rendered frown canvas used to make combat entry synchronous when possible.
+  let playerCombatFrownCachePromise = null; // In-flight cache render for the current avatar generation; prevents duplicate portrait renders every frame.
+  let playerCombatFrownCacheGeneration = null; // Avatar generation paired with playerCombatFrownCache/playerCombatFrownCachePromise.
   const COMBAT_EXPRESSION_DURATION_MS = 86400000; // Long-lived temporary expression duration; combat exit clears it explicitly instead of relying on expiry.
-  const stats = { npcRefreshes: 0, npcDistanceSkips: 0, playerRefreshes: 0, playerCombatExpressionChanges: 0 };
+  const COMBAT_FROWN_COMPOSER = Object.freeze({ // Static pre-bake composer; avoids mutating the live dialogue/breathing expression state while warming the combat cache.
+    getExpression: () => 'frown',
+    getInterpolatedPoints: () => null,
+    getOverlayOnlyPoints: () => null,
+    getAnimData: () => null,
+  });
+  const stats = { npcRefreshes: 0, npcDistanceSkips: 0, playerRefreshes: 0, playerCombatExpressionChanges: 0, playerCombatCacheBuilds: 0, playerCombatCacheApplies: 0 };
 
   function init(injectedDeps) { deps = injectedDeps; }
 
@@ -80,11 +90,61 @@
     }).catch(() => {}).finally(() => { walker._portraitLifePending = false; });
   }
 
+  function copyPortraitCanvas(target, source) {
+    if (!target?.getContext || !source) return false;
+    const ctx = target.getContext('2d'); // Full-canvas copy keeps clothing, dyes, face, and current authored portrait composition intact.
+    ctx.clearRect(0, 0, target.width, target.height);
+    ctx.drawImage(source, 0, 0, target.width, target.height);
+    return true;
+  }
+
+  function applyCachedPlayerCombatFrown(avatar) {
+    if (!playerCombatFrown || !avatar || avatar.generation !== playerCombatFrownCacheGeneration || !playerCombatFrownCache) return false;
+    if (!copyPortraitCanvas(avatar.frontCanvas, playerCombatFrownCache)) return false;
+    if (!window.PNGPlaneAvatar?.refreshSinglePlaneAvatarModel?.(avatar.group, avatar.frontCanvas)) return false;
+    playerCombatExpressionApplied = true;
+    stats.playerCombatCacheApplies++;
+    return true;
+  }
+
+  function ensurePlayerCombatFrownCache(avatar) {
+    if (!avatar?.frontCanvas || !avatar?.profile || !window.NpcAvatarPreview) return null;
+    const generation = avatar.generation;
+    if (playerCombatFrownCacheGeneration === generation && playerCombatFrownCache) return playerCombatFrownCache;
+    if (playerCombatFrownCacheGeneration === generation && playerCombatFrownCachePromise) return null;
+
+    playerCombatFrownCacheGeneration = generation;
+    playerCombatFrownCache = null;
+    playerCombatExpressionApplied = false;
+    const scratch = document.createElement('canvas'); // Detached scratch means async portrait loads can never partially overwrite the live player texture.
+    scratch.width = avatar.frontCanvas.width;
+    scratch.height = avatar.frontCanvas.height;
+    stats.playerCombatCacheBuilds++;
+    playerCombatFrownCachePromise = window.NpcAvatarPreview.renderProfileToCanvas(scratch, avatar.profile, {
+      forceEyesOpen: true,
+      breathingComposer: COMBAT_FROWN_COMPOSER,
+      seatId: 'player-combat-frown-cache',
+    }).then(() => {
+      const current = deps?.getPlayerAvatar?.();
+      if (!current || current.generation !== generation || playerCombatFrownCacheGeneration !== generation) return null;
+      playerCombatFrownCache = scratch;
+      playerCombatFrownCachePromise = null;
+      if (playerCombatFrown) applyCachedPlayerCombatFrown(current); // Combat may have begun while the cache was rendering; apply before the next afterimage sample.
+      return scratch;
+    }).catch(() => {
+      if (playerCombatFrownCacheGeneration === generation) playerCombatFrownCachePromise = null;
+      return null;
+    });
+    return null;
+  }
+
   function tickPlayer(dt) {
     const cfg = config();
-    if (!deps || !cfg.enabled || playerLifePending) return;
+    if (!deps) return;
     const avatar = deps.getPlayerAvatar();
     if (!avatar.group?.userData?.frontTexture || !avatar.frontCanvas || !avatar.profile) return;
+    ensurePlayerCombatFrownCache(avatar); // Warm the current outfit/species frown before combat so the first dodge/lunge ghost can carry it synchronously.
+    if (!cfg.enabled || playerLifePending) return;
     playerLifeT += dt;
     if (playerLifeT < cfg.intervalS) return;
     playerLifeT = 0;
@@ -99,20 +159,33 @@
       const current = deps.getPlayerAvatar();
       if (generation !== current.generation) return;
       window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(current.group, current.frontCanvas);
+      if (playerCombatFrown) playerCombatExpressionApplied = true; // This completed render used the live composer, whose player seat is frowning during combat.
     }).catch(() => {}).finally(() => { playerLifePending = false; });
   }
 
   function setPlayerCombatExpression(active) {
     const next = !!active;
-    if (playerCombatFrown === next) return false;
     const composer = window.portraitBreathingComposer;
-    if (!composer) return false;
+    if (!composer || !deps) return false;
+    const avatar = deps.getPlayerAvatar?.();
+    if (playerCombatFrown === next) {
+      if (next && !playerCombatExpressionApplied && avatar) {
+        ensurePlayerCombatFrownCache(avatar);
+        applyCachedPlayerCombatFrown(avatar);
+      }
+      return false;
+    }
     playerCombatFrown = next;
+    playerCombatExpressionApplied = false;
     if (next) composer.setExpression?.('player', 'frown', COMBAT_EXPRESSION_DURATION_MS);
     else composer.clearExpression?.('player');
-    playerLifeT = Infinity; // Forces the next player portrait-life tick to upload the new mouth immediately instead of waiting for the normal breathing interval.
     stats.playerCombatExpressionChanges++;
-    if (!playerLifePending) tickPlayer(0); // Starts the refresh in this same combat frame when the renderer is idle; the normal frame loop remains the fallback.
+    if (avatar) {
+      ensurePlayerCombatFrownCache(avatar);
+      if (next) applyCachedPlayerCombatFrown(avatar); // Ready cache makes the live player frown synchronous before Combat.update samples a ghost this frame.
+    }
+    playerLifeT = Infinity; // Normal portrait-life render still follows so breathing/blinking continue with the correct expression.
+    if (!playerLifePending) tickPlayer(0);
     return true;
   }
 
@@ -122,6 +195,7 @@
     tickNpc,
     tickPlayer,
     setPlayerCombatExpression,
-    snapshot: () => ({ ...stats, playerCombatFrown, config: config() }),
+    isPlayerCombatExpressionApplied: () => !playerCombatFrown || playerCombatExpressionApplied,
+    snapshot: () => ({ ...stats, playerCombatFrown, playerCombatExpressionApplied, playerCombatFrownCacheGeneration, playerCombatFrownCacheReady: !!playerCombatFrownCache, config: config() }),
   };
 })();
