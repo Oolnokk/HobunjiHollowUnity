@@ -190,8 +190,9 @@ const studio = read('docs/tools/character-studio/index.html');
 assert(studio.includes("category: 'pauldron', tintKeys: ['PAULDRON']"), 'Character Studio keeps the pauldron dye channel for future non-metal pauldrons');
 
 const index = read('docs/index.html');
-assert(index.indexOf('js/tool-metal-recolor.js?v=20260926metalarmor1') < index.indexOf('js/metal-armor-system.js?v=20260927reviewfix1'), 'shared tool metal renderer loads before generic armor material bridge');
-assert(index.indexOf('js/metal-armor-system.js?v=20260927reviewfix1') < index.indexOf('onboarding.js?v=20260926metalarmor1'), 'generic metal-armor renderer loads before save/creator portraits');
+const metalArmorScriptAt = index.indexOf('js/metal-armor-system.js?v='); // Version-independent ordering guards; cache-bust revisions should not invalidate them.
+assert(metalArmorScriptAt > 0 && index.indexOf('js/tool-metal-recolor.js?v=') < metalArmorScriptAt, 'shared tool metal renderer loads before generic armor material bridge');
+assert(metalArmorScriptAt < index.indexOf('onboarding.js?v='), 'generic metal-armor renderer loads before save/creator portraits');
 
 const pixelProbe = read('docs/js/pixel-probe.js');
 assert(pixelProbe.includes('MetalArmorSystem?.diagnosticsText?.()'), 'Pixel Probe exposes phone-copyable Temper/material/weight diagnostics');

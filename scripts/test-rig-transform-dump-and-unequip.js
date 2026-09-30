@@ -16,7 +16,7 @@ const probe = fs.readFileSync('docs/js/pixel-probe.js', 'utf8');
 assert(game.includes("if (key === 'z')"), 'Z put-away shortcut is missing');
 assert(game.includes("heldMode = 'none'"), 'hands-free held mode is missing');
 assert(game.includes("heldMode !== 'tool' || activeTool !== 'weapon'"), 'hands-free mode can still route weapon input');
-assert(game.includes("actionId === 'action2' && heldMode === 'tool' && activeTool === 'ranged'"), 'hands-free mode can still route ranged ammo input');
+assert(/actionId === 'action2'(?: && [^\n]{0,80}?)? && heldMode === 'tool' && activeTool === 'ranged'/.test(game), 'hands-free mode can still route ranged ammo input'); // Tolerates extra claim guards (e.g. WorldActionInputClaims) between the action and held-mode checks.
 
 const outerArchOrder = ['btnWeaponSwitch', 'toolBtn', 'itemBtn', 'btnCallMount']
   .map((id) => index.indexOf(`id="${id}"`));

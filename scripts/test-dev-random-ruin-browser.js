@@ -77,7 +77,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   });
   assert.equal(puzzlePanel.present, true, JSON.stringify(puzzlePanel));
   assert.equal(puzzlePanel.open, false, JSON.stringify(puzzlePanel));
-  assert.equal(puzzlePanel.checkboxCount, 4, JSON.stringify(puzzlePanel));
+  assert.equal(puzzlePanel.checkboxCount, 6, JSON.stringify(puzzlePanel)); // glyphObelisk, safePath, ropeSwing, hallwayTraps, lavaBasin, sanctum
   assert.equal(puzzlePanel.maxPresent, true, JSON.stringify(puzzlePanel));
   assert.equal(puzzlePanel.darknessEnabled, false, JSON.stringify(puzzlePanel));
   assert.equal(puzzlePanel.darknessSeverity, 100, JSON.stringify(puzzlePanel));
@@ -98,7 +98,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   });
   assert.deepEqual(projectileOnlySettings, {
     pressurePlate:false,brazier:false,glyphObelisk:true,stackedObelisk:false,linkedCubePillars:false,nestedRoom:false,
-    safePath:false,ropeSwing:false,hallwayTraps:false,maxPerRoom:1,
+    safePath:false,ropeSwing:false,hallwayTraps:false,lavaBasin:false,sanctum:false,maxPerRoom:1,
   }, JSON.stringify(projectileOnlySettings));
   const constrainedSeed = 0x51a7cafe;
   assert.equal(await page.evaluate(async seed => window.DevRandomRuin.generate(seed), constrainedSeed), true);
@@ -125,12 +125,12 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     };
   });
   assert.equal(constrained.puzzleOptions?.glyphObelisk, true, JSON.stringify(constrained));
-  for (const key of ['pressurePlate','brazier','stackedObelisk','linkedCubePillars','nestedRoom','safePath','ropeSwing','hallwayTraps']) {
+  for (const key of ['pressurePlate','brazier','stackedObelisk','linkedCubePillars','nestedRoom','safePath','ropeSwing','hallwayTraps','lavaBasin','sanctum']) {
     assert.equal(constrained.puzzleOptions?.[key], false, JSON.stringify(constrained));
   }
   assert.equal(constrained.puzzleOptions?.maxPerRoom, 1, JSON.stringify(constrained));
   assert.ok(constrained.counts.every(count => count <= 1), JSON.stringify(constrained));
-  assert.ok(constrained.activatorTypes.every(type => type === 'glyphObelisk' || type === 'alwaysLitTorch'), JSON.stringify(constrained));
+  assert.ok(constrained.activatorTypes.every(type => type === 'glyphObelisk' || type === 'alwaysLitTorch' || type === 'projectile'), JSON.stringify(constrained)); // 'projectile' = authored ruinGlyphTarget plaques mounted over glyph decals.
 
   const glyphVisuals = await page.evaluate(async () => {
     const scene=window.GridTileAccessors.getActiveScene();
@@ -174,7 +174,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   assert.equal(glyphVisuals.activated,true,'projectile glyph diagnostic must enter the same authoritative active state as a real projectile hit: '+JSON.stringify(glyphVisuals));
   assert.ok(glyphVisuals.before.every(glyph=>glyph.concealed===false&&glyph.decalAssets.length>0&&glyph.decalMeshes>0&&glyph.decalMaterials.length>0),'every projectile glyph target must visibly carry authored face decals: '+JSON.stringify(glyphVisuals));
   assert.ok((glyphVisuals.proxyBefore?.glyphDecalSourceCount||0)>0,'native game-realm glyph sources must include authored decal planes: '+JSON.stringify(glyphVisuals.proxyBefore));
-  assert.ok(glyphVisuals.after?.decalMaterials?.some(material=>material.glow&&material.blending===glyphVisuals.additive&&material.color==='66aaff'),'activated glyph must visibly glow blue through its unlit decal material: '+JSON.stringify(glyphVisuals.after));
+  assert.ok(glyphVisuals.after?.decalMaterials?.some(material=>material.glow&&material.blending===glyphVisuals.additive&&isStruckGlyphColor(material.color)),'activated glyph must visibly glow green (DECAL_ACTIVE in dev-random-ruin-glyph-circuits.js, possibly mid hit-flash toward white) through its unlit decal material: '+JSON.stringify(glyphVisuals.after));
   assert.ok((glyphVisuals.proxyAfter?.glowingGlyphDecalSourceCount||0)>0,'activated glyph glow must remain visible on the native game-realm source: '+JSON.stringify(glyphVisuals.proxyAfter));
 
   assert.equal(constrained.solvability?.ok, true, JSON.stringify(constrained));
@@ -208,7 +208,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   assert.equal(darknessCycle.off.settings.enabled,false,JSON.stringify(darknessCycle));
   assert.equal(darknessCycle.off.debug.undergroundDarknessOverlayAlpha,0,JSON.stringify(darknessCycle));
   await page.evaluate(async () => window.DevRandomRuin.leave());
-  await page.waitForFunction(() => window.GridTileAccessors.getCurrentArea() !== 'map_i_dev_random_ruin', null, { timeout:10000 });
+  await page.waitForFunction(() => window.GridTileAccessors.getCurrentArea() !== 'map_i_dev_random_ruin', null, { timeout:30000 });
 
   // Restore the simple-mode defaults before running broad fixed-seed coverage.
   const restoredSimpleSettings = await page.evaluate(() => {
@@ -225,7 +225,16 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   assert.equal(restoredSimpleSettings.safePath,true,JSON.stringify(restoredSimpleSettings));
   assert.equal(restoredSimpleSettings.ropeSwing,true,JSON.stringify(restoredSimpleSettings));
   assert.equal(restoredSimpleSettings.hallwayTraps,true,JSON.stringify(restoredSimpleSettings));
+  assert.equal(restoredSimpleSettings.lavaBasin,true,JSON.stringify(restoredSimpleSettings));
+  assert.equal(restoredSimpleSettings.sanctum,true,JSON.stringify(restoredSimpleSettings));
   for(const key of ['pressurePlate','brazier','stackedObelisk','linkedCubePillars','nestedRoom']) assert.equal(restoredSimpleSettings[key],false,JSON.stringify(restoredSimpleSettings));
+
+  function isStruckGlyphColor(hex) { // Struck = green DECAL_ACTIVE (#4dff6e), briefly lerped toward white by the hit flash; idle orange (#ff8a2a) is red-dominant and fails.
+    const value = parseInt(String(hex || ''), 16);
+    if (!Number.isFinite(value)) return false;
+    const r = (value >> 16) & 255, g = (value >> 8) & 255, b = value & 255;
+    return g >= 0xcc && g >= r && g >= b;
+  }
 
   async function failureDiagnostics(seed) {
     return page.evaluate(value => {

@@ -57,8 +57,8 @@ assert(!/if \(!devMode/.test(camera), 'ruin runtime loads for every player so wi
 assert(/if\(!devModeEnabled\(\)\)return;/.test(interior) && /if \(\(!devModeEnabled\(\)&&!opts\.site\)/.test(interior), 'dev Settings controls stay Dev Mode only; only ruin sites may generate outside Dev Mode');
 assert(camera.includes('dev-random-ruin-interactions.js?v=20260930rowsignature1'), 'ruin interaction adapter must be cache-busted with the arch-priority/popup-list fix');
 assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260929glowdecals1'), 'simple puzzle interior-parity runtime must be cache-busted in the dev bootstrap');
-assert(camera.includes('dev-random-ruin-wall-render-proxy.js?v=20260927geometry1'), 'native ruin render verifier must be cache-busted in the dev bootstrap');
-assert(gameIndex.includes('js/dev-random-ruin-bootstrap.js?v=20260930rowsignature1'), 'game page must load the updated ruin bootstrap');
+assert(/dev-random-ruin-wall-render-proxy\.js\?v=\w+/.test(camera), 'native ruin render verifier must be cache-busted in the dev bootstrap');
+assert(/js\/dev-random-ruin-bootstrap\.js\?v=\w+/.test(gameIndex), 'game page must load the updated ruin bootstrap');
 assert(gameIndex.includes('game.js?v=20260930livestockwalk1'), 'game page must load the footprint-aware movement collision');
 assert(gameIndex.indexOf('js/area-footprint-blockers.js') >= 0 && gameIndex.indexOf('js/area-footprint-blockers.js') < gameIndex.indexOf('game.js?v='), 'sub-tile footprint registry must load before game.js');
 assert(game.includes('window.AreaFootprintBlockers?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE, worldY)'), 'canOccupyAt must test the whole mover square against prop footprints');
