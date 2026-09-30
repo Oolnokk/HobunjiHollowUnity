@@ -269,7 +269,7 @@
     pickActive = true;
     $('handPrimaryGripPick').classList.add('active');
     $('handPrimaryGripPick').textContent = 'Cancel pick';
-    $('handGripStatus').textContent = `Click the weapon where the RIGHT HAND should land. The blue marker will move there; the weapon will not move. Coordinates are stored before base scale ×${currentToolScale().toFixed(2)}.`;
+    $('handGripStatus').textContent = `Click the weapon where the RIGHT HAND should land. The blue marker will move there; the weapon will not move. Coordinates are stored before effective base + height scale ×${currentToolScale().toFixed(2)}.`;
     updatePrimaryMarker();
   });
   $('handPrimaryGripZero').addEventListener('click', () => {
