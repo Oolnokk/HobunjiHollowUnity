@@ -180,6 +180,42 @@ function harness() {
   assert.equal(oddclaw.combatTutorialSuspended, false);
   assert.equal(oddclaw.root.visible, true, 'leaving restores the ordinary named NPC');
 
+  const master = { x: 0, y: 0, angle: 0 }; // Player identity for the actual companion synchronization function.
+  const companions = new Set([{ master, stableRole: 'companion' }, { master: {}, stableRole: 'companion' }]); // Other owners must retain their companions.
+  let training = true, attackCancels = 0; // Exercise suppression and automatic restoration with the stable selection unchanged.
+  const syncStart = gameSource.indexOf('      function syncCompanionFromWhistle('); // Extract the real synchronization boundary.
+  const syncEnd = gameSource.indexOf('      // Mount ride logic', syncStart); // Next top-level section delimits the existing function.
+  const sync = vm.runInNewContext(gameSource.slice(syncStart, syncEnd) + '\nsyncCompanionFromWhistle', {
+    player: master, companionObjects: companions, cutscenePreviewActive: false, TILE: 32, currentArea: 'arena',
+    stable: [{ id: 'pet', kind: 'gar-wolf', name: 'My Hound' }], CREATURE_DB: { 'gar-wolf': {} }, equipmentSlots: {}, gearInventory: {},
+    despawnCompanions(owner, role) { for (const entity of companions) if (entity.master === owner && entity.stableRole === role) companions.delete(entity); },
+    makeCreatureEntity(kind, x, y, extra) { return { creatureKey: kind, areaId: 'arena', ...extra }; },
+    window: { CombatTutorial: { originalEquipment: () => training ? {} : null }, FarmPanel: { activeStableIdForRole: role => role === 'companion' ? 'pet' : null }, Combat: { animalAttacks: { cancel() { attackCancels++; } } } },
+  });
+  sync();
+  assert.equal(companions.size, 1, 'only the player combat companion is suppressed');
+  assert.equal(attackCancels, 1, 'pending animal attacks are cancelled');
+  sync(); assert.equal(companions.size, 1, 'stable/whistle sync cannot respawn the companion during training');
+  training = false; sync();
+  assert.equal([...companions].find(entity => entity.master === master).name, 'My Hound', 'the original stable choice returns after training');
+
+  const bountySource = fs.readFileSync('docs/js/bounty-board.js', 'utf8'); // Tests the naming wrapper that previously overwrote Oddclaw.
+  const namingStart = bountySource.indexOf('  function _applyOrdinaryBanditCulturalName('); // Function is reused intact beneath a stub cultural-name forge.
+  const namingEnd = bountySource.indexOf('  // Installs the shared', namingStart);
+  const preserveName = vm.runInNewContext(bountySource.slice(namingStart, namingEnd) + '\n_applyOrdinaryBanditCulturalName'); // No forge call should occur for an authored NPC.
+  const named = { name: 'Oddclaw', npcId: 'oddclaw_unumanuk' }; // Distinct from unnamed generated bandits.
+  preserveName(named, 'grunt', { rosterOverride: {} }, { generateCulturalIdentity() { throw new Error('must not rename authored NPC'); } });
+  assert.equal(named.name, 'Oddclaw');
+  const rangedSource = fs.readFileSync('docs/js/combat/ranged-weapons.js', 'utf8'); // Uses the actual target-label renderer.
+  const labelStart = rangedSource.indexOf('  function updateBanditAimLabel()');
+  const labelEnd = rangedSource.indexOf('  function update(dt)', labelStart);
+  let aimLabel = ''; // Captures the in-game text presented over the sparring partner.
+  vm.runInNewContext(rangedSource.slice(labelStart, labelEnd) + '\nupdateBanditAimLabel();', {
+    deps: { isWeaponAiming: () => true }, focusedHostile: () => ({ candidate: { data: { isBandit: true, name: 'Oddclaw', combatRoleLabel: 'Sparring Partner', avatarRef: { group: {} } } } }),
+    window: { WorldPopupText: { setAimLabel(group, text) { aimLabel = text; } } },
+  });
+  assert.equal(aimLabel, 'Oddclaw - Sparring Partner');
+
   const watch = JSON.parse(fs.readFileSync('docs/config/maps/map_i_watchhouse.json')); // Authored floor connectivity and reciprocal exits.
   const arena = JSON.parse(fs.readFileSync('docs/config/maps/map_i_watchhouse_arena.json'));
   assert.equal(watch.exits.find(exit => exit.id === 'exit_watch_training_stairs').targetMap, arena.id);

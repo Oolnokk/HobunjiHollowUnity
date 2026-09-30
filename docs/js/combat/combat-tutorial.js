@@ -287,7 +287,7 @@
     if ((!panel && visible) || (panel && panel.hidden === visible)) render();
   }
   function diagnosticsText() {
-    return `Spearhead combat tutorial\nQuest: ${session?.quest.id || 'none'}\nStep: ${step()?.id || 'none'}\nPartner: Oddclaw\nPhase: ${session?.phase || 'idle'}\nVerified actions: ${session?.hits || 0}/${step()?.count || 1}\nLoan weapon: ${deps?.equipment.weapon || 'none'}\nTried: ${[...(session?.tried || [])].join(', ')}\nLast error: ${lastError || 'none'}\nLatest change: Automatic dialogue-led lessons, no-progress coaching, Oddclaw humanoid sparring, and explicit melee/ranged loan slots.`;
+    return `Spearhead combat tutorial\nQuest: ${session?.quest.id || 'none'}\nStep: ${step()?.id || 'none'}\nPartner: Oddclaw\nPhase: ${session?.phase || 'idle'}\nVerified actions: ${session?.hits || 0}/${step()?.count || 1}\nLoan weapon: ${deps?.equipment.weapon || 'none'}\nTried: ${[...(session?.tried || [])].join(', ')}\nLast error: ${lastError || 'none'}\nLatest change: Combat companion suspended during training, Oddclaw - Sparring Partner label, and colored dialogue terms.`;
   }
   function init(injected) {
     deps = injected;

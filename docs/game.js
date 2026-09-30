@@ -8099,6 +8099,15 @@
         if (cutscenePreviewActive) return;
 
         for (const role of ['companion', 'shoulderPet']) {
+          if (master === player && role === 'companion' && window.CombatTutorial?.originalEquipment()) {
+            for (const companion of companionObjects) { // Cancel pending hits before removing the player's combat companion.
+              if (companion.master !== master || companion.stableRole !== role) continue;
+              window.Combat?.animalAttacks?.cancel(companion);
+              window.Combat?.telegraph?.cancel(companion);
+            }
+            despawnCompanions(master, role); // Stable selection is preserved; ordinary sync restores it when training ends.
+            continue;
+          }
           const activeId = window.FarmPanel.activeStableIdForRole(role);
           // The stable is the primary source of truth for "what's my active
           // X" — only species with a matching CREATURE_DB entry (and
@@ -28196,7 +28205,7 @@
             enemyClass: 'sparring-partner',
             defOverride: { label: 'Oddclaw', weaponKey: 'fishingspear', attackTag: 'sharp', rangedWeaponKey: null, maxHealth: 10000, attackDamage: 2, attackCooldownS: 2,
               banditAbilityLoadout: { tap1: 'pokeCombo', tap2: null, hold1: null, hold2: null }, lootPool: null, leashRangePx: TILE * 30 },
-            extra: { combatTutorialTarget: true, combatTutorialHostile: false, npcId: 'oddclaw_unumanuk' },
+            extra: { combatTutorialTarget: true, combatTutorialHostile: false, npcId: 'oddclaw_unumanuk', name: 'Oddclaw', combatRoleLabel: 'Sparring Partner' },
           });
           if (!target) return null;
           // Resolve again after the async build in case the ordinary NPC finished spawning meanwhile.

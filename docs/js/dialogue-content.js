@@ -41,6 +41,8 @@
   let _npcDialogueSequenceId = 0;
   let _npcDialogueTypeText  = '';
   let _npcDialogueTypeIndex = 0;
+  let _npcDialogueColorRuns = []; // Parsed color spans shared by partial reveals and skip-to-end.
+  let _npcDialogueVisibleCharacters = 0; // Number of plain-text characters revealed by the existing cadence.
   let _npcDialogueTypeUnits = []; // Syllable reveal queue consumed by _setNpcDialogueText().
   const _npcDlgState = new Map(); // npcId → {visitedSeqSlots:{seqId:[slotIdx,...]}, localNickname}
   const _dialogueTreeProviders = new Map(); // npcId → provider(rec), used by stateful systems that select an authored tree at interaction time.
@@ -605,7 +607,7 @@
     _npcDialogueSequenceId++;
     for (const timer of _npcDialogueTypeTimers) clearTimeout(timer);
     _npcDialogueTypeTimers = [];
-    if (showFullText && _npcDialogueTypeText) _npcDialogueTextEl.textContent = _npcDialogueTypeText;
+    if (showFullText && _npcDialogueTypeText) window.DialogueRichText.render(_npcDialogueTextEl, _npcDialogueColorRuns);
     _npcDialogueTypeText = '';
     _npcDialogueTypeIndex = 0;
     _npcDialogueTypeUnits = [];
@@ -624,12 +626,14 @@
   }
 
   function _setNpcDialogueText(text, node = null) {
-    const resolvedText = _wowDrunkifyNpcSpeech(text);
     stopNpcDialogueTypewriter(false);
+    _npcDialogueColorRuns = window.DialogueRichText.parse(_wowDrunkifyNpcSpeech(text));
+    const resolvedText = window.DialogueRichText.plain(_npcDialogueColorRuns); // Speech timing and mouth motion never count markup characters.
+    _npcDialogueVisibleCharacters = 0;
     _applyNpcDialogueLinePresentation(resolvedText, node);
     const cfg = npcDialogueTypewriterConfig();
     if (!cfg.enabled) {
-      _npcDialogueTextEl.textContent = resolvedText;
+      window.DialogueRichText.render(_npcDialogueTextEl, _npcDialogueColorRuns);
       window.portraitBreathingComposer?.scheduleYapSequence(
         dialogueSeatId(), resolvedText, npcDialoguePortraitConfig().yap || {}
       );
@@ -644,7 +648,8 @@
     for (const unit of _npcDialogueTypeUnits) {
       _npcDialogueTypeTimers.push(setTimeout(() => {
         if (sequenceId !== _npcDialogueSequenceId || !deps.getDialogueOpen()) return;
-        _npcDialogueTextEl.textContent += unit.text;
+        _npcDialogueVisibleCharacters += unit.text.length;
+        window.DialogueRichText.render(_npcDialogueTextEl, _npcDialogueColorRuns, _npcDialogueVisibleCharacters);
         _npcDialogueTypeIndex++;
       }, unit.revealAtMs));
       for (let index = 0; index < unit.vowels.length; index++) {

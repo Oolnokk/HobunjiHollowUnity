@@ -117,15 +117,30 @@ function renderNode(n,p,tree,colorIndex=0,isRelated=false,allColorIndexes=new Ma
   }else if(n.type==='choice')body=(n.choices||[]).map((c,i)=>`<div class="dChoice" data-choice-row="${i}" style="--split-color:${targetColor(c.next)}"><span class="dChoiceLabel">${esc(c.label||'Empty choice')}</span><span class="dChoiceTarget">${esc(c.next||'END')}</span></div>`).join('')||'<div class="dNodeText empty">No choices</div>';
   else if(n.type==='sequence')body=`<div class="dSeq">${(n.slots||[]).slice(0,6).map((s,i)=>`<div class="dSeqRow" style="--split-color:${targetColor(s.nodeId)}"><b>${i+1}.</b><span>${esc(s.nodeId||'unset')} · depth ${s.depth??0}</span></div>`).join('')||'<span class="dNodeText empty">No slots</span>'}</div>`;
   else if(n.type==='end')body='<div class="dNodeText empty">— end of conversation —</div>';
-  else body=`<div class="dNodeText${n.text?'':' empty'}">${esc(n.text||'No text')}</div>`;
+  else body=`<div class="dNodeText${n.text?'':' empty'}">${window.DialogueRichText.html(n.text||'No text')}</div>`;
   const splitter=displayType==='choice'||displayType==='sequence';const selected=state.nodeId===n.id;
   return `<div class="dNode ${density}${splitter?' splitter':''}${tree.entryNode===n.id?' entry':''}${selected?' selected':''}${isRelated?' related':''}" data-node-id="${esc(n.id)}" style="--node-accent:${state.settings.colorCodeNodes?branchColor(colorIndex):'var(--accent)'};left:${p.x}px;top:${p.y}px;width:${p.w}px;min-height:${p.h}px"><div class="dNodeHead"><span class="dNodeType type-${esc(displayType)}">${esc(displayType==='accessShop'?'access shop':displayType)}</span>${tree.entryNode===n.id?'<span class="entryTag">entry</span>':''}<span class="dNodeId">${esc(n.id)}</span></div><div class="dNodeBody">${body}</div></div>`;
 }
 function nodeTargetOptions(tree,current){return `<option value="">— END —</option>`+(tree.nodes||[]).map(n=>`<option value="${esc(n.id)}"${n.id===current?' selected':''}>${esc(n.id)} · ${esc(nodeDisplayType(n))}</option>`).join('')}
 function selectNode(id){state.nodeId=id;state.editorMode='node';state.nodeEditorOpen=true;renderGraph();syncAuthoringButtons();logEvent('Selected node',id)}
-function updateVisibleNodeText(nodeId,text,selector){const el=document.querySelector(`.dNode[data-node-id="${cssEscape(nodeId)}"] ${selector}`);if(el){el.textContent=text||'No text';el.classList.toggle('empty',!text)}}
+function updateVisibleNodeText(nodeId,text,selector){const el=document.querySelector(`.dNode[data-node-id="${cssEscape(nodeId)}"] ${selector}`);if(el){window.DialogueRichText.render(el,window.DialogueRichText.parse(text||'No text'));el.classList.toggle('empty',!text)}}
 function nodeTargetOptions(tree,current,excludeId=null){return `<option value="">— END —</option>`+(tree.nodes||[]).filter(n=>n.id!==excludeId).map(n=>`<option value="${esc(n.id)}"${n.id===current?' selected':''}>${esc(n.id)} · ${esc(nodeDisplayType(n))}</option>`).join('')}
 function insertAtCursor(textarea,value){const start=textarea.selectionStart??textarea.value.length,end=textarea.selectionEnd??textarea.value.length;textarea.value=textarea.value.slice(0,start)+value+textarea.value.slice(end);textarea.selectionStart=textarea.selectionEnd=start+value.length;textarea.dispatchEvent(new Event('input',{bubbles:true}));textarea.focus()}
 function buildTokenButtonsHtml(){const builtin=BUILT_IN_TOKENS.map(([token,hint])=>`<button type="button" class="tokenBtn" data-token="${esc(token)}" title="${esc(hint)}">${esc(token.replace(/[{}]/g,''))}</button>`).join('');const pools=(currentNpc()?.phrasePools||[]).map(p=>`<button type="button" class="tokenBtn poolTokenBtn" data-token="{{pool:${esc(p.name)}}}" title="Phrase pool: ${esc(p.name)}">pool: ${esc(p.name)}</button>`).join('');return builtin+pools}
 function wireTokenButtons(textarea,scope){scope.querySelectorAll('[data-token]').forEach(btn=>btn.addEventListener('click',()=>insertAtCursor(textarea,btn.dataset.token)))}
 function refreshGraphSubtitle(){const tree=currentTree();if(!tree)return;const auto=state.settings.routeStyle==='orthogonal'&&state.settings.autoArrangeOrthographic;$('graphTitle').textContent=tree.label||tree.id;$('graphSubtitle').textContent=`${tree.trigger||'interact'} · priority ${tree.priority||0} · ${conditionSummary(tree)}${auto?' · live orthographic layout':''}`}
+
+// Text-node color tools store portable markup in the ordinary dialogue text field.
+function buildDialogueColorToolsHtml(){return '<div class="tokenBtnRow"><label>Term color <input type="color" data-dialogue-color value="#8bd5ff" aria-label="Dialogue term color"></label><button type="button" data-color-selection>Color selection</button><button type="button" data-clear-color>Remove colors</button></div><div class="editorNote">Select a word or phrase, then choose Color selection. Colors preview on the graph and remain during dialogue reveal. Markup: [color=#8bd5ff]Defensive Hold[/color].</div>'}
+function wireDialogueColorTools(input,scope){
+  scope.querySelector('[data-color-selection]')?.addEventListener('click',()=>{
+    const color=scope.querySelector('[data-dialogue-color]').value; // The native picker supplies a validated hex color for the selected term.
+    const selected=input.value.slice(input.selectionStart,input.selectionEnd); // Reuses the editor's normal insertion/undo/save path.
+    if(!selected){input.focus();return;}
+    insertAtCursor(input,`[color=${color}]${selected}[/color]`);
+  });
+  scope.querySelector('[data-clear-color]')?.addEventListener('click',()=>{
+    input.value=window.DialogueRichText.plain(window.DialogueRichText.parse(input.value));
+    input.dispatchEvent(new Event('input',{bubbles:true}));input.focus();
+  });
+}

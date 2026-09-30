@@ -1697,9 +1697,9 @@
       window.WorldPopupText?.clearAimLabel?.();
       return;
     }
-    const rank = window.BanditCombat?.RANK_LABEL?.[bandit.banditRank] ||
+    const rank = bandit.combatRoleLabel || window.BanditCombat?.RANK_LABEL?.[bandit.banditRank] ||
       String(bandit.banditRank || 'bandit').replace(/\b\w/g, letter => letter.toUpperCase());
-    window.WorldPopupText?.setAimLabel?.(bandit.avatarRef.group, (bandit.name || 'Bandit') + ' · ' + rank);
+    window.WorldPopupText?.setAimLabel?.(bandit.avatarRef.group, (bandit.name || 'Bandit') + (bandit.combatRoleLabel ? ' - ' : ' · ') + rank);
   }
 
   function update(dt) { updatePlayerAction(dt); updateProjectiles(dt); updateAmmoDebuffs(); updateBanditAimLabel(); }

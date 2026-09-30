@@ -5,10 +5,10 @@
     { id: 'resources', title: 'Three resources', text: 'My son Oddclaw will be your sparring partner. We will take this one exercise at a time. Health keeps you alive. Stamina pays for attacks and dodges. Footing keeps you upright: losing it can stagger you or knock you prone. Watch the three ground rings. Training restores your original resources when you leave.', check: 'read' },
     { id: 'swing', title: 'Swing combo', weapon: 'hatchet', ability: 'swingCombo', slot: 'tap1', check: 'hit', count: 3, text: 'Aim at the Oddclaw and tap Weapon Action 1. Time successive taps to work through the three-hit swing combo. The reticle and your aim matter; the weapon must actually reach the target.' },
     { id: 'poke', title: 'Thrust combo', weapon: 'fishingspear', ability: 'pokeCombo', slot: 'tap1', check: 'hit', count: 3, text: 'This borrowed spear uses a thrust combo. Tap Weapon Action 1 and land three hits. Tap 1 always follows the weapon: you do not assign its combo in the Loadout tab.' },
-    { id: 'quick', title: 'Quick attacks', ability: 'opportunistJab', slot: 'tap2', check: 'hit', text: 'Tap Weapon Action 2 for Opportunist Jab. Quick attacks have useful conditions: this one rewards catching a striking enemy. You can still try its ordinary hit against our stationary sparring partner. Later we will practice those conditions.' },
-    { id: 'breaker', title: 'Charged Breaker', ability: 'chargedBreaker', slot: 'hold1', check: 'hit', text: 'Hold Weapon Action 1 to wind up Charged Breaker, then release to strike. Give the pose time to build before releasing. Watch the Stamina ring as you hold; this is a committed heavy strike, not repeated combo taps.' },
+    { id: 'quick', title: 'Quick attacks', ability: 'opportunistJab', slot: 'tap2', check: 'hit', text: 'Tap Weapon Action 2 for Opportunist Jab. A Quick Attack has useful conditions: this one rewards catching a striking enemy. You can still try its ordinary hit against our stationary sparring partner. Later we will practice those conditions.' },
+    { id: 'breaker', title: 'Charged Breaker', ability: 'chargedBreaker', slot: 'hold1', check: 'hit', text: 'Hold Weapon Action 1 to wind up Charged Breaker, then release to strike. Give the pose time to build before releasing. Watch the Stamina ring as you hold; this is a committed heavy strike, not repeated combo taps. This is an Offensive Hold.' },
     { id: 'flurry', title: 'Accelerating Flurry', ability: 'acceleratingFlurry', slot: 'hold1', check: 'hit', count: 3, text: 'Keep Weapon Action 1 held. Flurry strikes repeatedly and accelerates as you maintain it. Release to stop. Land three strikes; compare this sustained attack with Breaker’s single released strike.' },
-    { id: 'counter', title: 'Counter Shield', ability: 'counterShield', slot: 'hold2', check: 'block', hostile: true, text: 'Hold Weapon Action 2 to raise Counter Shield. Let Oddclaw attack: a successful block spends Stamina and triggers a counterattack. This defensive hold reacts to incoming attacks instead of charging a release.' },
+    { id: 'counter', title: 'Counter Shield', ability: 'counterShield', slot: 'hold2', check: 'block', hostile: true, text: 'Hold Weapon Action 2 to raise Counter Shield. Let Oddclaw attack: a successful block spends Stamina and triggers a counterattack. This is a Defensive Hold: it reacts to incoming attacks instead of charging a release.' },
     { id: 'blink', title: 'Blink Dodge', ability: 'blinkDodge', slot: 'hold2', check: 'blink', text: 'Hold Weapon Action 2, then move. Blink Dodge hops on fresh movement input, builds speed during uninterrupted movement, and can hop again on a sharp reversal. It does not attack. Make one hop.' },
     { id: 'dodge', title: 'Ordinary dodge', check: 'dodge', text: 'Release your weapon buttons, move away from the doorway, and use your normal Dodge / Context Action. Dodging costs Stamina and briefly avoids hits. You do not need a learned defensive hold to dodge.' },
     { id: 'lunge', title: 'Aim and distance', ability: 'swingCombo', slot: 'tap1', check: 'hit', text: 'Face and aim at Oddclaw, then land another combo hit. Attacks lunge along your aim; aiming upward changes the jump and distance. An airborne follow-up requires a previous hit. Reposition when a target is outside your weapon’s reach.' },
@@ -44,6 +44,20 @@
       { id: 'crossbow', title: 'Crossbow range', weapon: 'crossbow', check: 'rangedHit', text: 'Aim the borrowed crossbow at the sparring partner and use Weapon Action 1 to load/fire through its normal action cycle. Land a projectile hit. The projectile must reach the target; lining up the reticle alone is not a hit.' },
       { id: 'scatterbow', title: 'Scatterbow spread', weapon: 'scatterbow', check: 'rangedHit', text: 'Try the borrowed scatterbow and land a hit. Compare its spread with the crossbow and choose your distance carefully.' },
     ] });
+  }
+  const termColors = { // Shared colors reinforce the tutorial's resource and ability categories.
+    'Health': '#ff9292', 'Stamina': '#a5e894', 'Footing': '#8bd5ff',
+    'Defensive Hold': '#8bd5ff', 'Defensive': '#8bd5ff', 'Counter Shield': '#8bd5ff', 'Blink Dodge': '#8bd5ff',
+    'Offensive Hold': '#ffbb88', 'Offensive': '#ffbb88', 'Charged Breaker': '#ffbb88', 'Accelerating Flurry': '#ffbb88',
+    'Quick Attack': '#ffe394', 'Quick': '#ffe394', 'Opportunist Jab': '#ffe394', 'Exhaust Cutter': '#ffe394', 'Mercy Spike': '#ffe394', 'Backstab Flick': '#ffe394',
+    'Mastery': '#d7b4ff', 'Loadout': '#d7b4ff', 'Exhaustion': '#d7b4ff', 'Affliction': '#d7b4ff',
+  };
+  const termPattern = new RegExp('\\b(' + Object.keys(termColors).sort((a, b) => b.length - a.length).join('|') + ')(s?)\\b', 'gi'); // Longest names match first; plural forms keep the same meaning and color.
+  for (const quest of quests) for (const lesson of quest.steps) {
+    lesson.text = lesson.text.replace(termPattern, (match, term) => {
+      const key = Object.keys(termColors).find(label => label.toLowerCase() === term.toLowerCase()); // Case-insensitive prose retains its authored spelling.
+      return `[color=${termColors[key]}]${match}[/color]`;
+    });
   }
   window.CombatTutorialContent = { NPC_ID: 'spearhead_unumanuk', ARENA: 'map_i_watchhouse_arena', quests };
 })();
