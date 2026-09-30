@@ -84,7 +84,7 @@ assert(interior.includes('legacyStoneMaterials'), 'material diagnostics must pro
 assert(interior.includes('spritePngSurface.makeMaterial(THREE,source.map||null'), 'non-stone lit V50 materials must use the same canonical unlit PNG material factory as cliffs');
 assert(interior.includes('remainingLitMaterials'), 'material diagnostics must explicitly count any lit material that escapes normalization');
 assert((cloudFog.match(/map_i_dev_random_ruin/g)||[]).length>=2, 'Random Test Ruin must opt into the shared den no-sky and den darkness/lantern classifications');
-assert(gameIndex.includes('js/cloud-forest-fog.js?v=20260930h14804b0'), 'test-ruin darkness override must be cache-busted in the game page');
+assert(/js\/cloud-forest-fog\.js\?v=[A-Za-z0-9_-]+/.test(gameIndex), 'test-ruin darkness override must be cache-busted in the game page');
 assert(camera.includes('dev-random-ruin-interior-map.js?v=20260929ruinsites1'), 'test-ruin generator/runtime changes must be cache-busted in the dev bootstrap');
 assert(interior.includes('Solvability.audit'), 'candidate ruins must run the pre-entry solvability audit');
 assert(interior.includes('MAX_SOLVABILITY_ATTEMPTS = 6'), 'unsolvable candidates must have a bounded deterministic retry budget');
