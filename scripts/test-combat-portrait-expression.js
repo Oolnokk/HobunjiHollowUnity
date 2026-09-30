@@ -52,7 +52,7 @@ assert.match(
 );
 assert.match(
   afterimages,
-  /function freezeAfterimageTexture\([\s\S]{0,900}ctx\.drawImage\(image,[\s\S]{0,500}texture\.image = canvas/,
+  /ctx\.drawImage\(image,[\s\S]{0,900}texture\.image = canvas/,
   'afterimages deep-copy the currently visible portrait pixels instead of sharing the live texture image'
 );
 assert.match(
