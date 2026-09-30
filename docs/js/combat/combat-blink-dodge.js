@@ -184,7 +184,7 @@
     const source = findPlayerPortraitMesh();
     const scene = source && afterimageSceneFor(source);
     if (!THREE || !source || !scene) return false;
-    source.updateWorldMatrix?.(true, false);
+    source.updateWorldMatrix?.(true, true); // Refresh the portrait and its child bones now so the baked snapshot captures this update's neck/body pose rather than the prior render's matrices.
     const geometry = bakePortraitGeometry(source);
     if (!geometry) return false;
     const sourceMaterials = afterimageMaterialsOf(source);
@@ -206,9 +206,18 @@
     mesh.receiveShadow = false;
     mesh.renderOrder = Math.max(Number(source.renderOrder) || 0, 3);
     mesh.matrixAutoUpdate = false;
-    mesh.matrix.copy(source.matrixWorld);
-    mesh.matrix.elements[12] += Number(worldOffsetX) || 0;
-    mesh.matrix.elements[14] += Number(worldOffsetZ) || 0;
+    const worldMatrix = source.matrixWorld.clone(); // Frozen world transform of the rendered portrait before it is detached from the moving player hierarchy.
+    worldMatrix.elements[12] += Number(worldOffsetX) || 0;
+    worldMatrix.elements[14] += Number(worldOffsetZ) || 0;
+    scene.updateWorldMatrix?.(true, false);
+    if (scene.matrixWorld?.clone) {
+      const worldToScene = scene.matrixWorld.clone().invert(); // Converts the frozen world pose back into this scene's local space, including transformed/elevated interior scenes.
+      mesh.matrix.multiplyMatrices(worldToScene, worldMatrix);
+    } else {
+      mesh.matrix.copy(worldMatrix);
+    }
+    mesh.matrixWorldNeedsUpdate = true;
+    if (source.layers) mesh.layers.mask = source.layers.mask;
     scene.add(mesh);
 
     const baseOpacities = materials.map(material => material.opacity); // Used by updateBlinkAfterimages() so each sample preserves its hop-position strength while fading.
