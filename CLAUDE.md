@@ -4,6 +4,10 @@ The game is `docs/index.html` + `docs/game.js` (a single ~28k-line IIFE) plus
 feature modules under `docs/js/*.js` that are loaded before it. See
 `README.md` for the feature-level history/architecture notes.
 
+Read `AGENTS.md` too: its "Recurring mistakes" list, test-running rules, and
+cache-bust tooling (`node scripts/check-cache-busts.js --fix`) apply to every
+agent working here.
+
 ## `game.js` is being decoupled incrementally — keep pushing that forward
 
 `game.js` started as one monolithic closure and is being carved down over
