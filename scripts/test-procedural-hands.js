@@ -328,6 +328,103 @@ assert.match(handOutlineSource, /const expectsGlb = !!debug\.glb/, 'outline pari
 assert.match(handOutlineSource, /leftVisual\?\.userData\?\.handModelKey/, 'initial outline polling must distinguish the permanent left GLB from the temporary same-named fallback');
 assert.match(handOutlineSource, /rightVisual\?\.userData\?\.handModelKey/, 'initial outline polling must distinguish the permanent right GLB from the temporary same-named fallback');
 assert.doesNotMatch(handOutlineSource, /const leftLoaded = !!rig\.group\?\.getObjectByName\?\.\('left_hand_visual'\)/, 'same-named fallback presence must never terminate the initial GLB outline scan');
+
+{
+  // Behavioral regression for the actual bug: attach() exposes same-named fallback
+  // visuals immediately, then replaces them asynchronously with the permanent GLBs.
+  // The outline parity wrapper must keep polling through the fallback phase and hook
+  // the replacement meshes once handModelKey proves the real models are present.
+  const timeoutQueue = []; // Fake browser timer queue used to advance only the outline wrapper's bounded GLB poll.
+  class TestMatrix4 {
+    copy() { return this; }
+    clone() { return new TestMatrix4(); }
+  }
+  function node(name, options = {}) {
+    const value = {
+      name,
+      isMesh: !!options.isMesh,
+      userData: { ...(options.userData || {}) },
+      children: [],
+      parent: null,
+      material: null,
+      geometry: null,
+      layers: {
+        mask: 0,
+        enable(layer) { this.mask |= (1 << layer); },
+      },
+      add(child) {
+        child.parent = this;
+        this.children.push(child);
+        return this;
+      },
+      traverse(visitor) {
+        visitor(this);
+        for (const child of this.children) child.traverse(visitor);
+      },
+      getObjectByName(target) {
+        if (this.name === target) return this;
+        for (const child of this.children) {
+          const found = child.getObjectByName(target);
+          if (found) return found;
+        }
+        return null;
+      },
+    };
+    return value;
+  }
+  function visual(side, loaded) {
+    const root = node(`${side}_hand_visual`, {
+      userData: loaded ? { handModelKey: 'feline' } : {},
+    });
+    const mesh = node(`${side}_mesh`, { isMesh: true });
+    root.add(mesh);
+    return { root, mesh };
+  }
+
+  const leftSocket = node('left_hand_socket');
+  const rightSocket = node('right_hand_socket');
+  const leftCalibration = node('left_hand_calibration');
+  const rightCalibration = node('right_hand_calibration');
+  const leftFallback = visual('left', false);
+  const rightFallback = visual('right', false);
+  leftCalibration.add(leftFallback.root);
+  rightCalibration.add(rightFallback.root);
+  leftSocket.add(leftCalibration);
+  rightSocket.add(rightCalibration);
+  const rigGroup = node('test_hand_rig').add(leftSocket).add(rightSocket);
+  const rig = {
+    group: rigGroup,
+    getDebug() { return { glb: 'assets/models/hands/hand_feline.glb', loadError: null }; },
+    refreshModelProfile() {},
+    dispose() {},
+  };
+  const fakeHands = { attach() { return rig; } };
+  const outlineWindow = {
+    THREE: { Matrix4: TestMatrix4, BackSide: -1 },
+    ProceduralHandAttachments: fakeHands,
+    setTimeout(callback) { timeoutQueue.push(callback); return timeoutQueue.length; },
+  };
+  vm.runInNewContext(handOutlineSource, { window: outlineWindow }, { filename: 'procedural-hand-outline-parity-behavior.js' });
+
+  const attachedRig = fakeHands.attach();
+  assert.strictEqual(attachedRig, rig, 'outline wrapper must preserve the original hand rig');
+  assert.strictEqual(timeoutQueue.length, 1, 'same-named fallback hands must keep the initial GLB poll alive');
+  assert.strictEqual(attachedRig.getDebug().outlineInitialGlbReady, false, 'fallback hands must not report permanent GLB readiness');
+
+  const leftLoaded = visual('left', true);
+  const rightLoaded = visual('right', true);
+  leftCalibration.children = [];
+  rightCalibration.children = [];
+  leftCalibration.add(leftLoaded.root);
+  rightCalibration.add(rightLoaded.root);
+  timeoutQueue.shift()();
+
+  assert.strictEqual(timeoutQueue.length, 0, 'polling should stop as soon as both permanent GLBs have been observed');
+  assert.strictEqual(leftLoaded.mesh.userData.__hobunjiHandOutlineParity, true, 'replacement left GLB mesh must receive the outline matrix hook');
+  assert.strictEqual(rightLoaded.mesh.userData.__hobunjiHandOutlineParity, true, 'replacement right GLB mesh must receive the outline matrix hook');
+  assert.strictEqual(attachedRig.getDebug().outlineInitialGlbReady, true, 'diagnostics must confirm both permanent GLBs were hooked');
+  assert.strictEqual(attachedRig.getDebug().outlineInitialGlbWaitTimedOut, false, 'successful async replacement must not report a timeout');
+}
 assert.match(handOutlineSource, /return 'occluder-depth'/, 'the parrot body primitive depth replay must be recognized as a secondary hand render pass');
 assert.match(handOutlineSource, /lockedOccluderDepthDraws/, 'mobile diagnostics must confirm that the pre-shell hand depth replay uses the visible hand transform');
 assert.match(handOutlineSource, /passKind === 'shell'.*hobunjiShellIndex/s, 'only the shell pass may swap to the trimmed body-coloured hand index');
