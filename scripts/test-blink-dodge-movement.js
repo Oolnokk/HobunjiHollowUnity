@@ -151,7 +151,7 @@ assert.equal(debug.tuning.passiveDrainQuantum, 0.1, 'Blink diagnostics expose th
 assert.equal(debug.afterimages.supported, false, 'Blink afterimages degrade safely when Three.js is unavailable in the isolated movement harness');
 assert.equal(debug.afterimages.active, 0, 'unsupported afterimage rendering never leaves phantom live records');
 assert.equal(debug.tuning.afterimageHopSamples, 3, 'Blink diagnostics expose the bounded hop-burst sample count');
-assert.equal(debug.tuning.afterimageMaxActive, 12, 'Blink diagnostics expose the hard cap that prevents an unbounded trail');
+assert.equal(debug.tuning.afterimageMaxActive, 24, 'shared player/enemy trails expose the hard cap that prevents unbounded transient portrait meshes');
 assert.match(source, /source\.boneTransform\(i, vertex\)/, 'skinned portrait afterimages bake the live deformed vertices instead of sharing the moving player skeleton');
 assert.match(source, /material\.depthWrite = false/, 'afterimages do not punch new depth holes through the live portrait/world stack');
 assert.match(source, /geometry\.deleteAttribute\?\.\('skinIndex'\)/, 'baked afterimages strip skinning attributes after freezing the pose');
@@ -183,6 +183,10 @@ assert(Math.abs(motionDebug.lastLungeSampleAtMs - nowMs) < 1e-6, 'melee lunge re
 assert.equal(windowStub.HobunjiDodgeFeedback.getDebug().blink.tuning.afterimageForcedMoveIntervalS, 0.055, 'dodge/lunge trail cadence remains exposed for mobile tuning');
 assert.match(source, /spawnAfterimage\('dodge'\)/, 'ordinary dodge samples the actual rendered portrait');
 assert.match(source, /spawnAfterimage\('lunge'\)/, 'melee lunges sample the same frozen portrait path');
+assert.match(source, /spawnAfterimageForRoot\(entity\.avatarRef\.group, 'enemy-dodge'\)/, 'humanoid enemy dodges use the same portrait afterimage snapshotter');
+assert.match(source, /spawnAfterimageForRoot\(entity\.avatarRef\.group, 'enemy-lunge'\)/, 'humanoid enemy lunges use the same portrait afterimage snapshotter');
+assert.match(source, /window\.BanditCombat\?\.setCombatExpression\?\.\(entity, inCombat\)[\s\S]{0,1200}spawnAfterimageForRoot\(entity\.avatarRef\.group, 'enemy-dodge'\)/, 'enemy combat frown is applied before a dodge ghost snapshots the portrait texture');
+assert.match(source, /findPortraitMeshes[\s\S]{0,1800}score >= bestScore - 1/, 'afterimage discovery retains equivalent front and back portrait planes');
 assert.doesNotMatch(source, /defensiveHoldActive\) spawnAfterimage\('blink-dodge'\)/, 'ordinary dodge afterimages are no longer gated behind Blink Dodge being held');
 
 console.log('Blink Dodge movement regression tests passed');
