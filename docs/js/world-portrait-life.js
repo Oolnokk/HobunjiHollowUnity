@@ -24,7 +24,9 @@
   let deps = null;
   let playerLifeT = 0;
   let playerLifePending = false;
-  const stats = { npcRefreshes: 0, npcDistanceSkips: 0, playerRefreshes: 0 };
+  let playerCombatFrown = false; // Tracks whether the player's world portrait should use the temporary combat frown expression.
+  const COMBAT_EXPRESSION_DURATION_MS = 86400000; // Long-lived temporary expression duration; combat exit clears it explicitly instead of relying on expiry.
+  const stats = { npcRefreshes: 0, npcDistanceSkips: 0, playerRefreshes: 0, playerCombatExpressionChanges: 0 };
 
   function init(injectedDeps) { deps = injectedDeps; }
 
@@ -100,11 +102,26 @@
     }).catch(() => {}).finally(() => { playerLifePending = false; });
   }
 
+  function setPlayerCombatExpression(active) {
+    const next = !!active;
+    if (playerCombatFrown === next) return false;
+    const composer = window.portraitBreathingComposer;
+    if (!composer) return false;
+    playerCombatFrown = next;
+    if (next) composer.setExpression?.('player', 'frown', COMBAT_EXPRESSION_DURATION_MS);
+    else composer.clearExpression?.('player');
+    playerLifeT = Infinity; // Forces the next player portrait-life tick to upload the new mouth immediately instead of waiting for the normal breathing interval.
+    stats.playerCombatExpressionChanges++;
+    if (!playerLifePending) tickPlayer(0); // Starts the refresh in this same combat frame when the renderer is idle; the normal frame loop remains the fallback.
+    return true;
+  }
+
   window.WorldPortraitLife = {
     init,
     config,
     tickNpc,
     tickPlayer,
-    snapshot: () => ({ ...stats, config: config() }),
+    setPlayerCombatExpression,
+    snapshot: () => ({ ...stats, playerCombatFrown, config: config() }),
   };
 })();
