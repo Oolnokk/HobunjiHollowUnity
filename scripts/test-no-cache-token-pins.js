@@ -29,7 +29,6 @@ const GRANDFATHERED = {
   'test-blackout-travel-and-item-action.js': 1,
   'test-character-rig-scale.js': 3,
   'test-character-view-mode.js': 2,
-  'test-clothing-weaving-system.js': 4,
   'test-cloud-forest-fog-depth.js': 2,
   'test-combat-reticle-visibility.js': 2,
   'test-contextual-potion-selector.js': 2,

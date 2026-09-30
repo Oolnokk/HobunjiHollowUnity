@@ -121,9 +121,10 @@ const sourceThicknessIndex = weaving.indexOf('const adjustedSrcMask = adjustMask
 const meshScaleIndex = weaving.indexOf('ctx.scale(meshScale, meshScale)', sourceThicknessIndex);
 const repeatMaskIndex = weaving.indexOf('const sampledMasks = []'); // Repeated motif instances still flatten into one final sampled mask per primary/overpass slot.
 const stackCombineIndex = weaving.indexOf('const combinedMask = new Uint8Array(sampledMasks[0])', repeatMaskIndex); // Slot masks are combined only after their source-pixel contour work and garment-cell sampling are complete.
-const sharedOutlineIndex = weaving.indexOf('buildPatternOutlineMask(combinedMask', stackCombineIndex); // The visible black outline is generated after the overpass has punched and recombined the two paint masks.
+const visibleOutlineReferenceIndex = weaving.indexOf('const outlineReferenceMask = visiblePatternMask(combinedMask, garmentMask, swapPatternColors)', stackCombineIndex); // Loom color inversion resolves the visually patterned side only after the geometric stack is complete.
+const sharedOutlineIndex = weaving.indexOf('buildPatternOutlineMask(outlineReferenceMask', visibleOutlineReferenceIndex); // The visible black outline is generated from that resolved visual region.
 assert(sourceThicknessIndex >= 0 && meshScaleIndex > sourceThicknessIndex, 'woven motif thinning/thickening must happen before whole-pattern mesh scaling');
-assert(repeatMaskIndex > meshScaleIndex && stackCombineIndex > repeatMaskIndex && sharedOutlineIndex > stackCombineIndex, 'repeated instances union into the two-slot stack before the shared final outline, with no second output-pixel thickness pass');
+assert(repeatMaskIndex > meshScaleIndex && stackCombineIndex > repeatMaskIndex && visibleOutlineReferenceIndex > stackCombineIndex && sharedOutlineIndex > visibleOutlineReferenceIndex, 'repeated instances union into the two-slot stack before visual inversion and the shared final outline, with no second output-pixel thickness pass');
 
 
 assert.doesNotMatch(weaving, /\berodeMask\b/, 'weaving module must not retain stale erodeMask references after the signed contour refactor');
@@ -134,7 +135,8 @@ assert.match(weaving, /separator && paddedSeparatorData\[mi \+ 3\] > 16/, 'garme
 assert.match(weaving, /!clusterSeparatorMask\?\.\[p\] && offset\.d2 <= outward2/, 'outward outline growth skips intra-motif island separator pixels while expanding from motif boundaries');
 assert.match(weaving, /!allowedMask\[p\] \|\| clusterSeparatorMask\?\.\[p\]/, 'motif thickening cannot bridge two separate ink islands inside one motif instance');
 assert.match(weaving, /const adjustedSrcMask = adjustMaskThickness\(srcMask, sourceAllowedMask, srcSize, srcSize, sourceSignedThickness, sourceClusterSeparatorMask\)/, 'weaving measures signed contour thickness in rotated source-motif pixels');
-assert.match(weaving, /const sourceSignedThickness = \(patternDef\?\.invert \? -1 : 1\)/, 'inverted weaving reverses source morphology so positive values remain visibly thinner');
+assert.match(weaving, /const sourceSignedThickness = signedMotifThicknessPx\(patternDef, swapPatternColors\)/, 'woven thickness resolves through the shared visual-inversion helper before source morphology');
+assert.match(weaving, /return !!patternDef\?\.invert !== !!swapPatternColors/, 'Pattern Editor inversion and loom cloth↔pattern color inversion compose as XOR for visible thickness semantics');
 assert.doesNotMatch(weaving, /adjustMaskThickness\(patternMask, garmentMask/, 'weaving no longer performs coarse final-garment-pixel contour adjustment');
 assert.match(metalRecolor, /const adjustedSrcMask = adjustMaskThickness\(srcMask, sourceAllowedMask, srcSize, srcSize, patternDef\.motifThinPx/, 'metal authored patterns use the same pre-scale motif-pixel measurement');
 assert.doesNotMatch(metalRecolor, /adjustMaskThickness\(buildAuthoredClearedMask/, 'metal authored patterns no longer receive a second output-pixel contour pass');
