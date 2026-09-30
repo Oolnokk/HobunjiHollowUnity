@@ -64,6 +64,18 @@
     }
   }
 
+  // V50 placeholders that DevRandomRuinFurniturePieces swapped for authored
+  // furniture and hid on purpose (mountGlyphPlaques marks the decal,
+  // skinDisplays marks the display object). Their visibility is judged by
+  // the authored stand-in that renders in their place.
+  function renderedStandIn(mesh) {
+    if (mesh.userData?.devRuinGlyphPlaque) return mesh.userData.devRuinGlyphPlaque;
+    if (mesh.visible === false) {
+      for (let node = mesh.parent; node; node = node.parent) if (node.userData?.devRuinDisplaySkin) return node.userData.devRuinDisplaySkin;
+    }
+    return mesh;
+  }
+
   function collectRenderSources(root) {
     const candidates = new Map(); // One source mesh only; overlapping semantic tags resolve to the strongest structural kind.
     const rank = { activator:1, door:2, doorArch:3, wall:4 };
@@ -119,7 +131,7 @@
     const sources = collectRenderSources(root);
     const byKind = kind => sources.filter(source => source.kind === kind);
     const walls = byKind('wall'), doors = byKind('door'), arches = byKind('doorArch'), activators = byKind('activator');
-    const visibleCount = list => list.filter(source => sourceHierarchyVisible(source.mesh, root)).length;
+    const visibleCount = list => list.filter(source => sourceHierarchyVisible(renderedStandIn(source.mesh), root)).length;
     let normalizedDoorAssemblies = 0;
     root?.traverse?.(object => { if (object.userData?.devRuinDoorAssemblyNormalized) normalizedDoorAssemblies++; });
 

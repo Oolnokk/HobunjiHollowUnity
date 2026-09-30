@@ -783,11 +783,7 @@
 
   function pollController(control) {
     const raw = rawBindings()?.controller?.interact;
-    const index = String(raw || '').startsWith('Button') ? Number(String(raw).slice(6)) : NaN;
-    let down = false;
-    if (Number.isInteger(index)) {
-      for (const pad of navigator.getGamepads?.() || []) if (pad?.buttons?.[index]?.pressed) down = true;
-    }
+    const down = !!raw && !!window.ControllerInput?.frame?.()?.isDown?.(raw); // Shared per-frame snapshot: honors the active pad and menu/title suspension instead of polling every pad directly.
     if (down && !controllerInteractDown) control?.onPress?.();
     controllerInteractDown = down;
   }

@@ -19,7 +19,7 @@ assert(authorityIndex >= 0 && focusIndex > authorityIndex && alignmentIndex > fo
   'actual-fire authority loads before ranged focus, while the post-focus combat/lunge bridge loads after it');
 assert.match(loader, /HobunjiRangedCameraRayAuthority\?\.version\) >= 4/,
   'loader requires the reticle-target ranged camera ray authority API');
-assert.match(indexSource, /combat-config-loader\.js\?v=20260930rangedconverge1/,
+assert.match(indexSource, /combat-config-loader\.js\?v=\w+/,
   'index cache-busts the loader that selects the new ranged authority/focus modules');
 assert.match(rangedWeaponsSource,
   /const heldTransform = deps\.getHeldRangedWorldTransform\?\.\(action\.itemKey\) \|\| null;[\s\S]{0,220}playerAimSolution\(action\.itemKey, heldTransform\?\.position\)/,

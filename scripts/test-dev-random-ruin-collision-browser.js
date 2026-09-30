@@ -117,7 +117,7 @@ const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.ht
   });
   assert.match(probeText, /Random Test Ruin tile occupancy diagnostics/, probeText);
   assert.match(probeText, /aggregateGameplayBlockers=1/, probeText);
-  assert.match(probeText, /Puzzle render proxies: doors=/, probeText);
+  assert.match(probeText, /Native puzzle render: doors=/, probeText);
 
   if (errors.length) throw new Error(`Page errors: ${errors.join(' | ')}`);
   console.log(JSON.stringify(result, null, 2));

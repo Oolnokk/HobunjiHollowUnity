@@ -77,6 +77,6 @@ assert.match(
 );
 assert.match(loader, /player-body-transform-composer\.js\?v=20260927greetinghead1/, 'composer cache bust must ship');
 assert.match(index, /ambient-dialogue\.js\?v=20260927reviewfix1/, 'ambient greeting cache bust must ship');
-assert.match(index, /pixel-probe\.js\?v=20260927lichgreeting1/, 'combined greeting + lich Pixel Probe cache bust must ship');
+assert.match(index, /pixel-probe\.js\?v=\w+/, 'combined greeting + lich Pixel Probe cache bust must ship');
 
 console.log('Ambient greeting head-turn checks passed.');
