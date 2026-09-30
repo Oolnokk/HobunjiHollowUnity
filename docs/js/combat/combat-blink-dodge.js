@@ -42,6 +42,7 @@
   const BASE_DODGE_EXTRA_STAMINA_COST = 12; // Used on each ordinary dodge start; 18 + 12 = 30 total stamina.
   const BASE_DODGE_SOMERSAULT_DUR_S = 0.22; // Used by the prone-recovery roll playback so it ends with dodge movement.
   let baseDodgeWasActive = false; // Used by updateBaseDodgeEnhancements to detect only the rising edge of player.dodging.
+  let defensiveHoldActive = false; // Used by the shared iframe-miss seam so only near-hits dodged while Blink Dodge is actually held can trigger its Flourish.
   let iframeMissCount = 0; // Used by HobunjiDodgeFeedback.getDebug() to confirm iframe-hit attempts reached this shared combat seam.
   let lastIframeMissAtMs = null; // Used by HobunjiDodgeFeedback.getDebug() to timestamp the most recent visible miss popup.
 
@@ -70,6 +71,16 @@
           const player = injectedDeps.player;
           if (player && performance.now() < (Number(player.invulnUntil) || 0)) {
             showIframeMissPopup();
+            if (defensiveHoldActive) {
+              window.CombatAttackEvents?.defensive?.({
+                attacker: player,
+                weaponKey: injectedDeps.currentWeaponKey?.() || 'none',
+                abilityId: 'blinkDodge',
+                target: window.CombatAttackEvents?.resolveIncomingSource?.(args[1], args[2], injectedDeps) || null,
+                defensiveResult: 'nearHitDodge',
+                metadata: { incomingAmount: args[0], fromX: args[1], fromY: args[2] },
+              }); // damagePlayer reaching this existing iframe branch is the authoritative near-hit; no second proximity test is created.
+            }
             return;
           }
           return originalDamagePlayer.apply(this, args);
@@ -243,6 +254,7 @@
     function stopHold(message) {
       const wasActive = active; // Used to avoid duplicate end toasts if stamina already dropped the hold on a previous frame.
       active = false;
+      defensiveHoldActive = false;
       resetMovementInputState();
       passiveDrainCarry = 0;
       blinkRuntimeDebug.passiveDrainCarry = 0;
@@ -254,6 +266,7 @@
 
     function onHoldStart() {
       active = true;
+      defensiveHoldActive = true;
       resetMovementInputState();
       passiveDrainCarry = 0;
       nextZipAt = -99;
