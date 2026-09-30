@@ -85,7 +85,13 @@
 
   function currentToolKey() { return toolGrips.toolKeyFor(toolSelect.value); }
   function currentGripContext() { return toolGrips.normalizeGripContext?.($('handGripContextSelect')?.value || 'melee') || ($('handGripContextSelect')?.value === 'ranged' ? 'ranged' : 'melee'); }
-  function currentToolScale() { return Math.max(0.1, Number(toolGrips.toolScaleForTool?.(currentToolKey())) || 1); }
+  function currentToolScale() {
+    const speciesId = String(document.getElementById('avatarSpecies')?.value || '').trim(); // Selected preview identity used so grip markers/picking share the weapon's calculated-height scale.
+    const gender = String(document.getElementById('avatarGender')?.value || 'male').trim() || 'male';
+    const effective = Number(toolGrips.effectiveToolScaleForTool?.(currentToolKey(), speciesId, gender));
+    const base = Number(toolGrips.toolScaleForTool?.(currentToolKey()));
+    return Math.max(0.1, Number.isFinite(effective) && effective > 0 ? effective : (Number.isFinite(base) && base > 0 ? base : 1));
+  }
   function currentEntry() { return toolGrips.ensureTool(currentToolKey()); }
   function currentPrimaryField() { return currentGripContext() === 'ranged' ? 'rangedPrimaryGrip' : 'primaryGrip'; }
   function currentPrimary() { return currentEntry()?.[currentPrimaryField()] || null; }
