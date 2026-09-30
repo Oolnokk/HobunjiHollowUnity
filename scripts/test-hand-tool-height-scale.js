@@ -43,7 +43,7 @@ grips.mutate(data => {
   data.tools.hatchet.toolScale = 1.2;
   data.tools.hatchet.heightMultiplier = 0.5;
 });
-assert.equal(grips.effectiveToolScaleForTool('hatchet', 'engh-sho', 'male'), 1.8, 'height multiplier should blend between fixed and fully proportional size');
+assert.ok(Math.abs(grips.effectiveToolScaleForTool('hatchet', 'engh-sho', 'male') - 1.8) < 1e-12, 'height multiplier should blend between fixed and fully proportional size');
 
 const primary = grips.primaryGripForTool('hatchet', 'melee', { speciesId: 'engh-sho', gender: 'male' });
 assert.ok(Math.abs(primary.position.x - (-0.04 * 1.8)) < 1e-12, 'primary grip position should expand by the same effective scale as the weapon');
