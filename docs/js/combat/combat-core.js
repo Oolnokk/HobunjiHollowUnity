@@ -507,8 +507,23 @@
   // Shared held-windup curve. slowdown=0 is linear. Positive values produce a
   // logarithmic ease: brisk early motion that continuously loses speed as it
   // approaches Windup, while still reaching exactly 1 at the authored end.
+  const windupProgressTransforms = new Map(); // Used by paid held-action segments (currently Furious Charged Breaker) to accelerate the same visible windup clock instead of inventing a second charge timer.
+
+  function setWindupProgressTransform(owner, transform) {
+    const key = String(owner || '').trim(); // Stable owner lets one held action clear only its own progress transform.
+    if (!key) return false;
+    if (typeof transform === 'function') windupProgressTransforms.set(key, transform);
+    else windupProgressTransforms.delete(key);
+    return true;
+  }
+
   function windupPoseProgress(rawProgress, slowdown = 0) {
-    const t = THREE.MathUtils.clamp(Number(rawProgress) || 0, 0, 1);
+    let transformed = Number(rawProgress) || 0; // Raw renderer-owned progress remains the source; active transforms only advance that same clock.
+    for (const transform of windupProgressTransforms.values()) {
+      const next = Number(transform(transformed));
+      if (Number.isFinite(next)) transformed = next;
+    }
+    const t = THREE.MathUtils.clamp(transformed, 0, 1);
     const s = Math.max(0, Number(slowdown) || 0);
     if (s <= 1e-6) return t;
     return Math.log1p(s * t) / Math.log1p(s);
@@ -761,6 +776,7 @@
     debugMeleeColliders,
     meleeHit,
     meleeLungeProfile,
+    setWindupProgressTransform,
     windupPoseProgress,
     writeMeleeTrailRibbon,
     spawnMeleeTrail,
