@@ -231,7 +231,8 @@ Overpass → not set</div>
   function trimCoverageText() {
     const selected = selectedTrimCosmetic();
     if (!selected) return 'No garment selected.';
-    const variants = Object.keys(selected.config?.speciesVariants || {});
+    const authoredVariants = Object.keys(selected.config?.speciesVariants || {}); // Exact variant keys are the normal path; shared-sprite clothing gets one default mask.
+    const variants = authoredVariants.length ? authoredVariants : (selected.config?.parts ? ['default'] : []);
     const garment = trimManifest?.garments?.[$('trimGarment').value];
     const frontDone = variants.filter(key => !!garment?.variants?.[key]?.front);
     const missing = variants.filter(key => !garment?.variants?.[key]?.front);
@@ -429,7 +430,9 @@ Overpass → not set</div>
           const response = await fetch('../../config/cosmetics/' + String(entry.path || '').replace(/^\.\//, ''));
           if (!response.ok) return null;
           const config = await response.json();
-          return ['hat','hood','torso','overwear'].includes(config?.slot) && Object.keys(config?.speciesVariants || {}).length ? { entry, config } : null;
+          const hasVariantArt = Object.keys(config?.speciesVariants || {}).length > 0; // Per-species/gender clothing exposes each real variant separately.
+          const hasSharedArt = !!config?.parts; // Shared-sprite clothing still supports one `default` authored trim record.
+          return ['hat','hood','torso','overwear'].includes(config?.slot) && (hasVariantArt || hasSharedArt) ? { entry, config } : null;
         } catch (_) { return null; }
       }));
       for (const item of candidates.filter(Boolean)) trimCosmetics.set(item.entry.id, item);
