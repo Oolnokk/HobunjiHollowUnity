@@ -62,10 +62,14 @@ for (const [label, type] of Object.entries({ Sharp: sharpType, Blunt: bluntType 
 }
 
 const swingComboCost = attackValues.combo.swingCombo.reduce((sum, step) => sum + step.staminaCost, 0); // Full three-hit sweep combo cost before perks/buffs.
-const fullBreakerCost = breaker.CHARGE_DRAIN_PER_S * breaker.MAX_CHARGE_S + breaker.COST_MAX; // Worst-case full-charge stamina spend from hold start through release.
+const pokeComboCost = attackValues.combo.pokeCombo.reduce((sum, step) => sum + step.staminaCost, 0); // Full three-hit thrust combo cost used as the new heavy-cost reference.
+const fullBreakerCost = breaker.COST_MAX; // Full Windup pays exactly the authored single-attack maximum; time held at a fixed pose adds nothing.
 const standardStaminaBar = 100; // Ordinary player combat budget used by existing resource-system balance fixtures.
-assert.equal(fullBreakerCost, 34, 'full Charged Breaker should cost 34 stamina at authored maximum charge');
-assert(swingComboCost + fullBreakerCost <= standardStaminaBar, 'full combo -> Death Mark -> full Charged Breaker should fit inside one standard stamina bar');
+assert.equal(fullBreakerCost, 54, 'full Charged Breaker should cost 54 Stamina at authored maximum charge');
+assert.equal(fullBreakerCost, pokeComboCost, 'full Charged Breaker should cost as much as completing the full thrust combo');
+assert(fullBreakerCost < swingComboCost, 'full Charged Breaker should remain slightly cheaper than completing the full sweep combo');
+assert.equal('CHARGE_DRAIN_PER_S' in breaker, false, 'Charged Breaker must not retain a time-based hold drain knob');
+assert(swingComboCost + fullBreakerCost > standardStaminaBar, 'full sweep combo -> full Charged Breaker should require more than one untouched standard Stamina bar');
 
 const swingFinisherDamage = Math.round(nativeCopperCutDamage * attackValues.combo.swingCombo[2].damageMul); // Direct damage of the mark-granting third sweep hit.
 const oneMarkBreakerBonus = fullBreakerDamage * deathMarks[0] - fullBreakerDamage; // Extra heavy damage earned by successfully reaching the third combo hit.

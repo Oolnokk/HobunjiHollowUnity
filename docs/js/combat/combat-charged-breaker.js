@@ -12,10 +12,10 @@
   let MIN_READY_POSE = 0.48; // Used as the minimum visible Neutral→Windup interpolation required to release a real strike.
   let MAX_CHARGE_S = 4.0; // Used only to pace the visual Neutral→Windup journey; full pose and 100% charge are the same event.
   let WINDUP_SLOWDOWN = 25; // Used by Combat.windupPoseProgress; higher means a longer, slower final approach to Windup.
-  let CHARGE_DRAIN_PER_S = 4; // Legacy config field retained for authored-data compatibility; charge payment now follows the interruptible pose-cost curve below.
-  let COST_MIN = 12, COST_MAX = 18;
+  let COST_MIN = 24, COST_MAX = 54; // COST_MIN is the first releasable attack's total cost; COST_MAX is the exact full-Windup total cost.
   const FULL_CHARGE_POSE = 0.999; // Single full-charge threshold shared by glow, diagnostics, and Flourish qualification.
   const FURIOUS_PROGRESS_OWNER = 'charged-breaker-furious'; // Owns only this hold's temporary transform on Combat.windupPoseProgress.
+  const STAMINA_REGEN_BLOCK_SOURCE = 'charged-breaker-hold'; // Used to pause Stamina recovery for the entire active Charged Breaker hold stage.
 
   // Damage still rises with the pose charge, but this technique is now
   // deliberately centered on movement/control geometry rather than reach.
@@ -45,6 +45,10 @@
     active: false,
     heldSeconds: 0,
     poseCharge: 0,
+    staminaRegenBlocked: false,
+    staminaCostCommitted: 0,
+    staminaCostActual: 0,
+    staminaCostTarget: 0,
     lastRelease: null,
   }; // Used by mobile-friendly diagnostics without requiring console access.
 
@@ -132,11 +136,10 @@
 
   function chargeCostForPose(poseCharge, staminaCostMul = 1) {
     const pose = clamp01(poseCharge); // Visible pose percentage is the same progress axis used by the interruptible total-cost curve.
-    const ready = Math.max(0.0001, MIN_READY_POSE);
-    const rawCost = pose <= ready
-      ? COST_MIN * (pose / ready)
-      : lerp(COST_MIN, COST_MAX, (pose - ready) / Math.max(0.0001, 1 - ready));
-    return Math.max(0, rawCost * Math.max(0, Number(staminaCostMul) || 1));
+    if (pose < MIN_READY_POSE) return 0; // Nothing is owed until the pose could release a real strike.
+    const releasableT = clamp01((pose - MIN_READY_POSE) / Math.max(1e-6, 1 - MIN_READY_POSE)); // COST_MIN lands exactly at readiness and COST_MAX exactly at full Windup.
+    const mul = Number(staminaCostMul);
+    return Math.max(0, lerp(COST_MIN, COST_MAX, releasableT) * (Number.isFinite(mul) ? Math.max(0, mul) : 1));
   }
 
   function isFullChargePose(poseCharge) {
@@ -145,11 +148,54 @@
 
   function register() {
     let startedAt = -1;
-    let paidChargeCost = 0; // Tracks the cumulative effective Stamina cost already paid so releasing never charges the same progress twice.
+    let staminaCostCommitted = 0; // Authored (pre-global-modifier) portion of this hold's single cumulative cost already requested from ResourceSystem.
+    let paidChargeCost = 0; // Post-modifier Stamina/enhanced/debt actually consumed; diagnostics only, never compared against the authored target.
+    let staminaRegenBlocked = false; // Tracks ownership of Charged Breaker's composable hold-stage Stamina-regeneration blocker.
     let furiousRawProgressBonus = 0; // Added to the renderer's raw windup clock; grows only from segments actually funded by Furious Stamina.
+
+    function currentEffects() {
+      const deps = window.Combat.deps;
+      return window.CombatProgression?.getEffects(deps.currentWeaponKey(), 'chargedBreaker')
+        || { afflictions: {}, stats: {} };
+    }
+
+    function setHoldStaminaRegenBlocked(blocked) {
+      const next = !!blocked;
+      if (staminaRegenBlocked === next) return;
+      staminaRegenBlocked = next;
+      window.ResourceSystem?.setStaminaRegenBlocked?.(window.Combat.deps?.player, STAMINA_REGEN_BLOCK_SOURCE, next);
+      debugState.staminaRegenBlocked = next;
+    }
+
+    // Spends only the delta between the cost already committed and the
+    // cumulative cost implied by the visible pose, so holding at a fixed pose
+    // never drains and release never double-charges. Committed progress is
+    // tracked in authored units: ResourceSystem's perk/alchemy multipliers
+    // shrink what is actually consumed, and comparing against that would
+    // re-spend the same slice every update.
+    function commitStaminaCostToPose(poseCharge, effects, reason) {
+      const target = chargeCostForPose(poseCharge, 1 + (Number(effects?.stats?.staminaCostMul) || 0));
+      debugState.staminaCostTarget = target;
+      const delta = Math.max(0, target - staminaCostCommitted);
+      if (!(delta > 1e-6)) return null;
+      const payment = window.ResourceSystem?.spendStamina(
+        window.Combat.deps.player,
+        delta,
+        reason,
+        { actionKind: 'offensiveHeldCharge', abilityId: 'chargedBreaker' },
+      ) || null;
+      staminaCostCommitted = target;
+      paidChargeCost += payment
+        ? Math.max(0, Number(payment.enhancedPaid) || 0) + Math.max(0, Number(payment.spent) || 0) + Math.max(0, Number(payment.excess) || 0)
+        : delta; // Deterministic fallback for focused fixtures without ResourceSystem.
+      debugState.staminaCostCommitted = staminaCostCommitted;
+      debugState.staminaCostActual = paidChargeCost;
+      return payment;
+    }
 
     function onHoldStart() {
       startedAt = now();
+      staminaCostCommitted = 0;
       paidChargeCost = 0;
       furiousRawProgressBonus = 0;
       window.Combat.setWindupProgressTransform?.(FURIOUS_PROGRESS_OWNER, raw => raw + furiousRawProgressBonus);
@@ -162,10 +208,13 @@
         glowOverlayLevel: 0,
         glowFlareTier: 0,
         glowFlare: 0,
+        staminaCostCommitted: 0,
+        staminaCostActual: 0,
+        staminaCostTarget: 0,
       };
       const deps = window.Combat.deps;
-      const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), 'chargedBreaker')
-        || { afflictions: {}, stats: {} };
+      const effects = currentEffects();
+      setHoldStaminaRegenBlocked(true);
 
       setGlow(0);
       deps.showToast('Charged Breaker charging — release to strike.', true);
@@ -187,6 +236,7 @@
       const deps = window.Combat.deps;
       const poseCharge = poseChargeFromRuntime();
       window.Combat.setWindupProgressTransform?.(FURIOUS_PROGRESS_OWNER, null); // Capture the accelerated visible pose first, then release that exact authored partial pose.
+      setHoldStaminaRegenBlocked(false);
       debugState.active = false;
       debugState.heldSeconds = heldSeconds;
       debugState.poseCharge = poseCharge;
@@ -207,21 +257,8 @@
         return;
       }
 
-      const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), 'chargedBreaker')
-        || { afflictions: {}, stats: {} };
-      if (!forced) {
-        const targetPaid = chargeCostForPose(poseCharge, 1 + (effects.stats.staminaCostMul || 0)); // Interruptible total cost at the exact released pose.
-        const remainder = Math.max(0, targetPaid - paidChargeCost);
-        if (remainder > 0) {
-          const payment = window.ResourceSystem?.spendStamina(
-            deps.player,
-            remainder,
-            'Charged Breaker',
-            { actionKind: 'offensiveHeldCharge', abilityId: 'chargedBreaker' },
-          );
-          paidChargeCost += Math.max(0, Number(payment?.enhancedPaid || 0) + Number(payment?.spent || 0) + Number(payment?.excess || 0));
-        }
-      }
+      const effects = currentEffects();
+      if (!forced) commitStaminaCostToPose(poseCharge, effects, 'Charged Breaker'); // Only catches up if release lands between hold-update samples; no separate surcharge.
 
       // This slices the live authored pose at poseCharge and starts Strike
       // directly from there. No hidden remainder of the windup plays after
@@ -295,6 +332,8 @@
         lungePx,
         pitchDistanceResistance,
         directFlightStrength,
+        staminaCostCommitted,
+        staminaCostActual: paidChargeCost,
         forced: !!forced,
       };
 
@@ -377,22 +416,15 @@
       debugState.poseCharge = poseCharge;
       setGlow(poseCharge);
 
-      const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), 'chargedBreaker')
-        || { afflictions: {}, stats: {} };
-      const targetPaid = chargeCostForPose(poseCharge, 1 + (effects.stats.staminaCostMul || 0)); // One interruptible total cost: each newly reached slice is paid exactly once.
-      const segmentCost = Math.max(0, targetPaid - paidChargeCost);
-      if (segmentCost > 0) {
-        const payment = window.ResourceSystem?.spendStamina(
-          deps.player,
-          segmentCost,
-          'Charged Breaker (charging)',
-          { actionKind: 'offensiveHeldCharge', abilityId: 'chargedBreaker' },
-        ) || { tempoMultiplier: 1 };
-        paidChargeCost += Math.max(0, Number(payment.enhancedPaid || 0) + Number(payment.spent || 0) + Number(payment.excess || 0));
-        const tempo = Math.max(1, Number(payment.tempoMultiplier) || 1);
-        if (tempo > 1 && MAX_CHARGE_S > 0) {
-          furiousRawProgressBonus += Math.max(0, Number(dt) || 0) * (tempo - 1) / MAX_CHARGE_S; // Furious-funded time advances the SAME renderer windup clock; when funding ends this bonus stops growing immediately.
-        }
+      if (poseCharge < MIN_READY_POSE) {
+        debugState.staminaCostTarget = 0; // Pre-ready charging is free (regen stays paused by the hold).
+        return;
+      }
+
+      const payment = commitStaminaCostToPose(poseCharge, currentEffects(), 'Charged Breaker (charging)'); // One interruptible total cost: each newly reached slice is paid exactly once.
+      const tempo = Math.max(1, Number(payment?.tempoMultiplier) || 1);
+      if (tempo > 1 && MAX_CHARGE_S > 0) {
+        furiousRawProgressBonus += Math.max(0, Number(dt) || 0) * (tempo - 1) / MAX_CHARGE_S; // Furious-funded time advances the SAME renderer windup clock; when funding ends this bonus stops growing immediately.
       }
       const hasEnhancedStamina = (window.ResourceSystem?.getEnhancedResources?.(deps.player, 'stamina', { actionKind: 'offensiveHeldCharge' }) || []).length > 0;
       if (deps.player.stamina <= 0 && !hasEnhancedStamina) releaseNow(heldSeconds, true);
@@ -420,6 +452,8 @@
     FULL_CHARGE_POSE,
     MAX_CHARGE_S,
     WINDUP_SLOWDOWN,
+    COST_MIN,
+    COST_MAX,
     DAMAGE_MUL_MIN,
     DAMAGE_MUL_MAX,
     RANGE_MUL_MIN,
@@ -472,7 +506,6 @@
       const rawReadyT = MAX_CHARGE_S > 0 ? clamp01(cfg.MIN_READY_S / MAX_CHARGE_S) : 1;
       MIN_READY_POSE = window.Combat.windupPoseProgress?.(rawReadyT, WINDUP_SLOWDOWN) ?? rawReadyT;
     }
-    if (cfg.CHARGE_DRAIN_PER_S != null) CHARGE_DRAIN_PER_S = cfg.CHARGE_DRAIN_PER_S;
     if (cfg.COST_MIN != null) COST_MIN = cfg.COST_MIN;
     if (cfg.COST_MAX != null) COST_MAX = cfg.COST_MAX;
     if (cfg.DAMAGE_MUL_MIN != null) DAMAGE_MUL_MIN = cfg.DAMAGE_MUL_MIN;
@@ -505,6 +538,8 @@
       FULL_CHARGE_POSE,
       MAX_CHARGE_S,
       WINDUP_SLOWDOWN,
+      COST_MIN,
+      COST_MAX,
       DAMAGE_MUL_MIN,
       DAMAGE_MUL_MAX,
       RANGE_MUL_MIN,

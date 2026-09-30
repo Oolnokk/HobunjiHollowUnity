@@ -4,7 +4,7 @@
 
   const load = window.LocalDBOverrides
     ? window.LocalDBOverrides.loadDatabase('attackValues')
-    : fetch('config/combat/attack-values.json?v=20260917charge3').then(response => response.ok ? response.json() : null);
+    : fetch('config/combat/attack-values.json?v=20260928chargecost1').then(response => response.ok ? response.json() : null);
 
   window.__attackValuesConfigPromise = load.then(config => {
     if (!config) return null;

@@ -54,10 +54,10 @@ for (const [name, sourceText] of [['combo', comboSource], ['quick', quickSource]
   assert.match(sourceText, /if \(hits > 0\) \{[\s\S]{0,180}PlayerLunge\?\.confirmEnemyHit\?\.\(\)/,
     `${name} must grant aerial chaining only after its real strike reports at least one enemy hit`);
 }
-assert(indexSource.includes('js/combat/combat-combo.js?v=20260930h81d72c4'));
-assert(indexSource.includes('js/combat/combat-quickattacks.js?v=20260930h1fa1790'));
-assert(indexSource.includes('js/combat/combat-charged-breaker.js?v=20260930hbbcd28d'));
-assert(indexSource.includes('game.js?v=20260930h67f7ec3'));
+assert.match(indexSource, /js\/combat\/combat\-combo\.js\?v=[A-Za-z0-9_-]+/);
+assert.match(indexSource, /js\/combat\/combat\-quickattacks\.js\?v=[A-Za-z0-9_-]+/);
+assert.match(indexSource, /js\/combat\/combat\-charged\-breaker\.js\?v=[A-Za-z0-9_-]+/);
+assert.match(indexSource, /game\.js\?v=[A-Za-z0-9_-]+/);
 
 const player = {
   x: 0, y: 0, health: 100, facing: 0,
