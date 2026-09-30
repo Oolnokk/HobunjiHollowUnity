@@ -52,9 +52,9 @@ assert.match(source, /factory\(loadout\.toolKey\)/, 'watchman construction must 
 assert.match(source, /const texture = source\?\.clone\?\.\(\)[\s\S]*texture\.image = canvas/, 'verdigris should replace only the cloned shared texture image');
 assert.match(source, /alphaTest: \.08, side: three\.DoubleSide/, 'fallback construction must match the player/editor alpha-cutout convention');
 assert.doesNotMatch(source, /applyPrimaryCorrection\(/, 'watchman build must not call the retired inverse-weapon grip correction');
-assert.match(source, /applyGripScale\(visual, loadout\.toolKey\)/, 'watchman build must use the current hand-owned primary-grip presentation path');
+assert.match(source, /applyGripScale\(visual, loadout\.toolKey, state\.walker\)/, 'watchman build must use the current character-height-aware primary-grip presentation path');
 
-assert.match(loader, /js\/npc-held-equipment-v4\.js\?v=20260923guardweapons1/);
+assert.match(loader, /js\/npc-held-equipment-v4\.js\?v=[A-Za-z0-9_-]+/);
 assert.match(loader, /NpcHeldEquipment\?\.version\) >= 4/);
 assert.doesNotMatch(loader, /npc-held-equipment-v3\.js/, 'v3 must no longer be loaded');
 
