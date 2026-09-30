@@ -156,9 +156,46 @@
     return geometry;
   }
 
+  function freezeAfterimageTexture(sourceTexture) {
+    if (!sourceTexture?.clone || typeof document === 'undefined') return null;
+    const image = sourceTexture.image; // Portrait textures are canvas-backed variant images; copy those pixels so later live face/breathing refreshes cannot mutate this ghost.
+    const width = Number(image?.width || image?.videoWidth || image?.naturalWidth) || 0;
+    const height = Number(image?.height || image?.videoHeight || image?.naturalHeight) || 0;
+    if (!(width > 0 && height > 0)) return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext?.('2d');
+    if (!ctx?.drawImage) return null;
+    try { ctx.drawImage(image, 0, 0, width, height); }
+    catch (_) { return null; }
+    const texture = sourceTexture.clone(); // Retains UV flip/filter/wrap/color-space settings while replacing only the mutable pixel source.
+    texture.image = canvas;
+    texture.needsUpdate = true;
+    return texture;
+  }
+
   function cloneAfterimageMaterial(sourceMaterial, opacityScale = 1) {
     if (!sourceMaterial?.clone) return null;
     const material = sourceMaterial.clone();
+    const frozenTextures = [];
+    const textureCopies = new Map(); // Reuses one frozen clone if a material points map/alphaMap at the same underlying portrait texture.
+    for (const slot of ['map', 'alphaMap', 'emissiveMap']) {
+      const sourceTexture = sourceMaterial[slot];
+      if (!sourceTexture) continue;
+      let frozen = textureCopies.get(sourceTexture);
+      if (!frozen) {
+        frozen = freezeAfterimageTexture(sourceTexture);
+        if (!frozen) {
+          for (const texture of frozenTextures) texture?.dispose?.();
+          material.dispose?.();
+          return null;
+        }
+        textureCopies.set(sourceTexture, frozen);
+        frozenTextures.push(frozen);
+      }
+      material[slot] = frozen;
+    }
     const sourceOpacity = Number.isFinite(Number(sourceMaterial.opacity)) ? Number(sourceMaterial.opacity) : 1;
     material.name = `${sourceMaterial.name || 'avatar'}_blink_afterimage`;
     material.transparent = true;
@@ -167,7 +204,7 @@
     material.depthTest = true;
     if ('skinning' in material) material.skinning = false;
     material.needsUpdate = true;
-    return material;
+    return { material, frozenTextures };
   }
 
   function disposeAfterimage(record) {
@@ -176,6 +213,7 @@
       entry.mesh?.parent?.remove?.(entry.mesh);
       entry.geometry?.dispose?.();
       for (const material of entry.materials || []) material?.dispose?.();
+      for (const texture of entry.frozenTextures || []) texture?.dispose?.();
     }
     afterimageRuntimeDebug.disposed += 1;
     afterimageRuntimeDebug.active = blinkAfterimages.length;
@@ -199,12 +237,17 @@
       const geometry = bakePortraitGeometry(source);
       if (!geometry) continue;
       const sourceMaterials = afterimageMaterialsOf(source);
-      const materials = sourceMaterials.map(material => cloneAfterimageMaterial(material, opacityScale)); // Material clones retain the current live portrait map, so a combat frown already visible on the source is carried into the ghost.
-      if (!materials.length || materials.some(material => !material)) {
+      const clones = sourceMaterials.map(material => cloneAfterimageMaterial(material, opacityScale)); // Each clone deep-copies its portrait texture pixels so expression/breathing changes on the live actor cannot alter an existing ghost.
+      if (!clones.length || clones.some(clone => !clone?.material)) {
         geometry.dispose?.();
-        for (const material of materials) material?.dispose?.();
+        for (const clone of clones) {
+          clone?.material?.dispose?.();
+          for (const texture of clone?.frozenTextures || []) texture?.dispose?.();
+        }
         continue;
       }
+      const materials = clones.map(clone => clone.material);
+      const frozenTextures = clones.flatMap(clone => clone.frozenTextures || []);
 
       const assignedMaterial = Array.isArray(source.material) ? materials : materials[0];
       const mesh = new THREE.Mesh(geometry, assignedMaterial);
@@ -232,6 +275,7 @@
         mesh,
         geometry,
         materials,
+        frozenTextures,
         baseOpacities: materials.map(material => material.opacity),
         sourceName: source.name || source.type || null,
       });
@@ -253,6 +297,7 @@
   function spawnAfterimage(reason, worldOffsetX = 0, worldOffsetZ = 0, opacityScale = 1) {
     const portraits = findPlayerPortraitMeshes();
     if (!portraits.length) return false;
+    if (afterimageRuntimeDebug.playerCombatFrown && window.WorldPortraitLife?.isPlayerCombatExpressionApplied?.() === false) return false; // Never snapshot the player's pre-frown face during the brief cache/render handoff at combat entry.
     return spawnAfterimageForRoot(afterimagePlayerRoot(), reason, worldOffsetX, worldOffsetZ, opacityScale);
   }
 
