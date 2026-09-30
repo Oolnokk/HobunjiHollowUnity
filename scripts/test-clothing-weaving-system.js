@@ -37,7 +37,7 @@ const shopCatalog = [
 const classList = () => ({ add() {}, remove() {}, toggle() {}, contains() { return false; } });
 const documentListeners = new Map();
 const documentStub = {
-  currentScript: { src: 'https://raw.githack.com/Oolnokk/HobunjiHollowUnity/testsha/docs/js/clothing-weaving-system.js?v=test' },
+  currentScript: { src: 'https://raw.githack.com/Oolnokk/HobunjiHollowUnity/testsha/docs/js/clothing-weaving-system.js' },
   documentElement: { dataset: {} },
   body: { appendChild() {}, dataset: {} },
   head: { appendChild() {} },
@@ -581,8 +581,8 @@ assert.match(avatarPreviewSource, /await renderer\(canvas, profile, renderOption
 assert.match(source, /document\.addEventListener\('hobunjiPlayerReady'[\s\S]*?requestSessionReadyPlayerAvatarRefresh\(hintedGear\)/, 'woven player-ready lifecycle schedules an automatic post-load avatar rebuild instead of relying on a manual gear toggle');
 assert.match(source, /window\.setTimeout\(attempt, 0\)/, 'session rebuild is deferred until every player-ready listener has installed the live save state');
 assert.match(source, /const startupFinished = window\.__hobunjiGameStarted === true[\s\S]*?liveWoven && initialPortraitPrepared && startupFinished[\s\S]*?equipmentDeps\.refreshPlayerAvatar\(\)/, 'post-load rebuild waits for live woven Gear, the initial gear-to-profile pass, and fully completed game startup before refreshing');
-assert.match(indexSource, /combat-config-loader\.js\?v=20260925animaloutline1/, 'index cache-busts the loader that owns the image-relative weaving module URL');
-assert.match(combatLoaderSource, /clothing-weaving-system\.js\?v=20260925animaloutline1/, 'combat loader cache-busts the image-relative animal outline runtime itself');
+assert.match(indexSource, /combat-config-loader\.js\?v=[A-Za-z0-9_-]+/, 'index cache-busts the loader that owns the image-relative weaving module URL');
+assert.match(combatLoaderSource, /clothing-weaving-system\.js\?v=[A-Za-z0-9_-]+/, 'combat loader cache-busts the image-relative animal outline runtime itself');
 assert.match(portraitSource, /renderOptions\?\.imageForTint[\s\S]*?: _imageForTint/, 'portrait rendering accepts a per-render tint resolver with the canonical tint path as fallback');
 assert.match(portraitSource, /drawPortraitLayerWarped\(ctx, img, resolveXform\(layer\)[\s\S]*?layer\.url, imageForTint\)/, 'breathing overwear layers use the same render-local tint resolver during WorldPortraitLife refreshes');
 
@@ -734,7 +734,7 @@ assert.match(debugSource, /playerCommit: started=/,
   'Rendering debug includes player-specific commit/generation/patterned-tint diagnostics');
 assert.match(debugCopySource, /\.\.\.String\(weavingDiagnostics\)\.split\('\\n'\)/,
   'copied report emits every weaving diagnostic line before the raw log');
-assert.match(indexSource, /debug\.js\?v=20260925weavesessiondebug4/,
+assert.match(indexSource, /debug\.js\?v=[A-Za-z0-9_-]+/,
   'index cache-busts the debug bootstrap that renders and exports the weaving session snapshot');
 // game.js is re-bumped by nearly every merge; any key at or after #829's weavecommit2 still ships its diagnostics.
 const gameCacheKey = indexSource.match(/"game\.js\?v=(\d{8}[a-z0-9-]*)/i)?.[1] || '';

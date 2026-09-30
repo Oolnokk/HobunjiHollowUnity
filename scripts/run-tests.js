@@ -39,7 +39,6 @@ const KNOWN_BROKEN = new Set([
   'test-behavior-preserving-performance.js',
   'test-branch-reticle-interactions.js',
   'test-character-view-mode.js',
-  'test-clothing-weaving-system.js',
   'test-combat-sfx-wiring.js',
   'test-combo-strike-hold-pose-alignment.js',
   'test-dialogue-presentation.js',
