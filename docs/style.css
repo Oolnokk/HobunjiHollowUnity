@@ -1636,6 +1636,7 @@
       height: calc(6 * var(--row));
       display: flex;
       flex-direction: row;
+      align-items: stretch;
       align-self: flex-end;
       background: var(--glass-2);
       border: 1px solid var(--border-bright);
@@ -1694,13 +1695,14 @@
       padding: 12px 16px;
     }
 
-    /* Response Panel: inner-grid x:25 y:0 w:7 h:6; sub-grid 8×16.
-       Stacked options (rows 0-11 of sub-grid = 75%) + action row (25%). */
+    /* Responses share the full height of the sibling dialogue content.
+       Reserve 20% of the parent width, including the dividing border.
+       Stacked options use 75% of the height; the action row uses 25%. */
     #npcResponsePanel {
-      flex-shrink: 0;
-      width: calc(var(--interaction-choice-popup-cols) * var(--col));
-      height: calc(var(--interaction-choice-popup-rows) * var(--row));
-      align-self: flex-end;
+      flex: 0 0 20%;
+      min-width: 0;
+      box-sizing: border-box;
+      align-self: stretch;
       display: flex;
       flex-direction: column;
       border-left: 1px solid var(--border);
