@@ -91,7 +91,7 @@ const GRANDFATHERED = {
   'test-stable-animal-training-refinements.js': 3,
   'test-startup-asset-path-regressions.js': 2,
   'test-target-outline-alpha-cutout.js': 1,
-  'test-trust-dialogue-heart-scale.js': 3,
+  'test-trust-dialogue-heart-scale.js': 1,
   'test-wilderness-cliff-surface-parity.js': 2,
   'test-wilderness-map-load-recovery.js': 2,
 };
