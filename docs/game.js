@@ -23898,12 +23898,10 @@
         isShoulderSurfEnabled: () => s_shoulderSurf,
         getActiveCameraMode: () => activeCameraMode,
         shoulderSurfMode: SHOULDER_SURF_MODE,
+        isUiBlockingPointerLock: () => !!(menuOpen || window.__mapEditorPanelOpen || window.FurniturePlacer?.isOpen?.() || window.__furniturePlacerPanelOpen || window._desktopSelectionArc?.entryMenuOpen?.()),
       });
       function cursorlessMouseAimRequested() { return window.ShoulderCamPointerLock.cursorlessMouseAimRequested(); }
-      function requestShoulderSurfPointerLock() {
-        if (menuOpen || window.__mapEditorPanelOpen || window.FurniturePlacer?.isOpen?.() || window.__furniturePlacerPanelOpen || window._desktopSelectionArc?.entryMenuOpen?.()) return;
-        window.ShoulderCamPointerLock.request();
-      }
+      function requestShoulderSurfPointerLock() { window.ShoulderCamPointerLock.request(); }
       function releaseShoulderSurfPointerLock() { window.ShoulderCamPointerLock.release(); }
       // The Settings "Shoulder Cam" on/off toggle was removed with the top-down camera;
       // Shoulder Cam is always on (see s_shoulderSurf / defaultCameraModeKey()).
@@ -28680,7 +28678,7 @@
         isDevMode: () => s_devMode,
         refreshActionBar, // Selector-to-placement transitions must populate/clear the mobile action arch immediately.
         suspendMouseCameraForUi: releaseShoulderSurfPointerLock,
-        resumeMouseCameraAfterUi: () => { if (cursorlessMouseAimRequested()) requestShoulderSurfPointerLock(); },
+        resumeMouseCameraAfterUi: requestShoulderSurfPointerLock, // request() already no-ops unless cursorless aim is wanted.
       });
 
       window.WildernessCampfire?.init({

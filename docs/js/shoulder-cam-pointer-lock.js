@@ -9,7 +9,7 @@
 (() => {
   'use strict';
 
-  let deps = null; // { threeContainer, isDesktop, isCharacterViewEnabled(), getActiveCameraMode(), shoulderSurfMode, isShoulderSurfEnabled() } from game.js init.
+  let deps = null; // { threeContainer, isDesktop, isCharacterViewEnabled(), getActiveCameraMode(), shoulderSurfMode, isShoulderSurfEnabled(), isUiBlockingPointerLock() } from game.js init.
 
   function init(nextDeps) {
     deps = nextDeps || null;
@@ -28,6 +28,7 @@
 
   function request() {
     if (!cursorlessMouseAimRequested() || !deps.isDesktop || isActive()) return;
+    if (deps.isUiBlockingPointerLock?.()) return; // Menus and the furniture panel keep a free cursor.
     // Can reject (no transient user activation, or the browser's own
     // rate-limit on repeated requests) — that's fine, game.js's click-to-relock
     // handler gives the player another chance.

@@ -737,7 +737,8 @@
         ctx.globalCompositeOperation = 'source-over';
         ctx.fillStyle = `rgba(0,0,0,${darknessAlpha})`;
         ctx.fillRect(0, 0, rect.width, rect.height);
-        drawLanternMasksCompat(1); // Underground spaces retain their existing positional lantern gameplay/readability.
+        // Underground spaces retain their existing positional lantern gameplay/readability.
+        drawLanternMasksCompat(1);
         drawFurnitureLightMasksCompat();
       }
       if (sceneTransAlpha > 0) {
