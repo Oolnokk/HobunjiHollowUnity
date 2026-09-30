@@ -552,7 +552,6 @@ function refreshPreviewDebug() {
     'Latest: neck deformation weights the complete rectangular PNG plane, including transparent gaps and detached cosmetics.',
     `Neck preview: ${Math.round(neckPreviewStrength * 100)}% strength · ${(neckPreviewRadiusFrac * 100).toFixed(1)}% radius · ${neckWeightSummary}`,
     `Head vertex overlay: ${$('showHeadSkinVertices').checked ? `${headSkinVertexCount} unique weighted vertices shown` : 'hidden'}`,
-    `Pose orbit X/Z: ${currentSpeciesId}/${currentGender} ×${(window.HobunjiSpeciesPoseScale?.scaleForPose?.(currentPoseOrbitScale, currentArmLength) ?? currentPoseOrbitScale).toFixed(5)} · anatomy armLength=${currentArmLength.toFixed(3)}`,
     (() => { const h = window.HobunjiSpeciesPoseScale?.heightMetrics?.(currentSpeciesId, currentGender, currentAvatarModelHeight); return `Pose Y height: ×${(h?.heightRatio ?? 1).toFixed(5)} vs Mao'ao male · portraitH=${currentAvatarModelHeight.toFixed(4)} · rigY=×${(h?.rigScaleY ?? 1).toFixed(4)}`; })(),
     `Centroid used for X/Z orbit (rig local): (0, ${currentPoseCentroidY.toFixed(4)}, 0)`,
     `Authored holder local: (${lastAuthoredPose.x.toFixed(4)}, ${lastAuthoredPose.y.toFixed(4)}, ${lastAuthoredPose.z.toFixed(4)}) · raw rig: (${lastRawRigPose.x.toFixed(4)}, ${lastRawRigPose.y.toFixed(4)}, ${lastRawRigPose.z.toFixed(4)})`,
@@ -642,7 +641,6 @@ async function rebuildAvatar(speciesId, gender) {
   toolBase.position.set(toolMirrored ? -baseAttachX : baseAttachX, baseAttachY, 0);
   logDebug(`Avatar rebuilt: ${speciesId}/${gender} (prism ${w.toFixed(2)}x${h.toFixed(2)}, orbit ×${currentPoseOrbitScale.toFixed(5)}, arm ${currentArmLength.toFixed(3)}, centroidY ${currentPoseCentroidY.toFixed(3)}, base at ${toolBase.position.x.toFixed(2)}/${baseAttachY.toFixed(2)}${toolMirrored ? ', mirrored' : ''})`);
   refreshPreviewDebug();
-  refreshOrbitScaleStatus?.();
 }
 
 const SPECIES_LIST = [
