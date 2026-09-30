@@ -620,10 +620,16 @@ Overpass → not set</div>
   };
   $('editBtn').onclick = () => openEditor('primary', draft, loadedRepoId);
   $('editOverpassBtn').onclick = () => openEditor('overpass', overpassDraft, overpassLoadedRepoId);
+  $('editTrimBtn').onclick = () => openTrimEditor().catch(error => { debugState.lastError = error.message; $('trimStatus').textContent = error.message; });
+  $('trimGarment').onchange = () => { refreshTrimVariantOptions(); renderTrimPreview(); };
+  $('trimVariant').onchange = () => { syncTrimExportState(); $('trimCoverage').textContent = trimCoverageText(); renderTrimPreview(); };
+  $('trimView').onchange = () => { syncTrimExportState(); renderTrimPreview(); };
+  $('trimPreviewDye').onchange = () => renderTrimPreview();
+  $('trimColorB').oninput = () => renderTrimPreview();
   $('clearOverpassBtn').onclick = () => {
     overpassDraft = null; overpassLoadedRepoId = null; syncOverpassClearanceControl(3); // Clears only dev slot 2 and resets the pair gap to the legacy/current minimum.
     debugState.lastAction = 'cleared overpass';
-    refreshPreview(); syncExportState();
+    refreshPreview(); renderTrimPreview(); syncExportState();
     $('status').textContent = 'Overpass cleared; preview is primary-only.';
   };
   $('previewMode').onchange = () => {
@@ -635,8 +641,8 @@ Overpass → not set</div>
     syncPreviewModeControls();
     refreshPreview();
   };
-  $('baseColor').oninput = () => refreshPreview();
-  $('inkColor').oninput = () => refreshPreview();
+  $('baseColor').oninput = () => { refreshPreview(); renderTrimPreview(); };
+  $('inkColor').oninput = () => { refreshPreview(); renderTrimPreview(); };
   $('metalColor').oninput = () => refreshPreview();
   $('verdigrisColor').oninput = () => refreshPreview();
   $('patternName').oninput = syncExportState;
@@ -647,7 +653,7 @@ Overpass → not set</div>
       overpassLoadedRepoId = null; // A direct gap override makes slot 2 a modified dev copy rather than an untouched repo pattern.
     }
     debugState.lastAction = 'overpass clearance → ' + value.toFixed(2) + '×';
-    refreshPreview(); syncExportState();
+    refreshPreview(); renderTrimPreview(); syncExportState();
   };
 
   $('pngBtn').onclick = () => {
@@ -689,8 +695,28 @@ Overpass → not set</div>
     $('status').textContent = 'Copied overpass index entry.';
   };
 
+  $('trimPngBtn').onclick = () => {
+    const entry = trimDrafts.get(trimKey());
+    if (!entry?.pattern?.motifDataUrl) return;
+    dataUrlDownload(entry.pattern.motifDataUrl, String(entry.motifPng || trimAssetPath($('trimGarment').value, $('trimVariant').value, $('trimView').value)).split('/').pop());
+    $('trimStatus').textContent = 'Exported current trim PNG. Export the manifest too if this variant changed.';
+  };
+  $('trimAllPngBtn').onclick = () => {
+    let count = 0;
+    for (const entry of trimDrafts.values()) {
+      if (!entry?.pattern?.motifDataUrl) continue;
+      dataUrlDownload(entry.pattern.motifDataUrl, String(entry.motifPng).split('/').pop());
+      count++;
+    }
+    $('trimStatus').textContent = `Exported ${count} newly-authored trim PNG${count === 1 ? '' : 's'}.`;
+  };
+  $('trimManifestBtn').onclick = () => {
+    jsonDownload(trimManifest, 'clothing-trims.json');
+    $('trimStatus').textContent = 'Exported clothing-trims.json. Keep every listed motifPng at the path shown in the manifest.';
+  };
+
   window.__patternEditorDebug = () => ({ // Mobile-visible console substitute for checking the dev tool's two-slot state.
-    mostRecentChange: 'Dev Pattern Editor can preview/edit two same-color patterns; slot 2 punches a player/dev-authored 3×..12× black-outline-width invisible clearance through slot 1 before outlining.',
+    mostRecentChange: 'Dev Pattern Editor now also authors fixed per-garment/per-species-gender trim masks. Trim is locked non-tiling, renders above reusable patterns with its own outline, and runtime can color it from dye A/B/C.',
     previewMode: $('previewMode').value,
     weavingBackground: $('surfaceTexture').value,
     overpassClearanceMultiplier: clampOverpassClearance($('overpassClearance').value),
@@ -698,6 +724,15 @@ Overpass → not set</div>
     overpassLoaded: !!overpassDraft,
     primaryRepoId: loadedRepoId,
     overpassRepoId: overpassLoadedRepoId,
+    garmentTrim: {
+      garmentId: $('trimGarment').value || null,
+      variantKey: $('trimVariant').value || null,
+      view: $('trimView').value,
+      previewDyeSlot: $('trimPreviewDye').value,
+      currentDraft: trimDrafts.has(trimKey()),
+      sessionDraftCount: trimDrafts.size,
+      coverage: trimCoverageText(),
+    },
     ...debugState,
   });
 
@@ -705,6 +740,7 @@ Overpass → not set</div>
   syncPreviewModeControls();
   refreshPreview(null, null);
   renderLibrary().then(() => { $('status').textContent = 'Repo library ready. Choose Primary or Overpass on any entry.'; }).catch(error => { debugState.lastError = error.message; $('status').textContent = 'Repo library load failed: ' + error.message; });
+  loadTrimAuthoringData();
 })();
 </script>
 </body>
