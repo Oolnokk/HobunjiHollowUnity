@@ -118,7 +118,7 @@ jobs:
               await page.waitForFunction(() => window.GridTileAccessors.getCurrentArea() === 'map_i_dev_random_ruin', null, { timeout:30000 });
               await page.waitForFunction(() =>
                 !!window.__ruinSmokeRenderedCamera &&
-                window.DevRandomRuinWallRenderProxy.snapshot().rendererSubmittedProxies > 0,
+                window.DevRandomRuinWallRenderProxy.snapshot().nativeSourceMeshCount > 0,
               null, { timeout:30000 });
               await page.waitForTimeout(250);
 
@@ -153,12 +153,12 @@ jobs:
                 const renderer = window.__hobunjiGameRenderer;
                 const scene = window.GridTileAccessors.getActiveScene();
                 const camera = window.__ruinSmokeRenderedCamera;
-                const proxies = [];
+                const walls = [];
                 scene.traverse(object => {
-                  if (object.userData?.devRuinWallRenderProxy && object.isMesh) proxies.push(object);
+                  if (object.userData?.ruinInteriorWall === true && object.isMesh) walls.push(object);
                 });
-                if (!renderer || !scene || !camera || !proxies.length) {
-                  return { changedPixels:0, totalDelta:0, proxyCount:proxies.length, width:0, height:0 };
+                if (!renderer || !scene || !camera || !walls.length) {
+                  return { changedPixels:0, totalDelta:0, wallCount:walls.length, width:0, height:0 };
                 }
 
                 const gl = renderer.getContext();
@@ -173,14 +173,14 @@ jobs:
 
                 // Two synchronous renders keep camera, lighting, and animation
                 // state identical. Any changed pixels therefore come from the
-                // only state changed between them: the visible wall proxies.
+                // only state changed between them: the authoritative V50 walls.
                 renderer.render(scene, camera);
                 const withWalls = readFrame();
-                const priorVisibility = proxies.map(proxy => proxy.visible);
-                proxies.forEach(proxy => { proxy.visible = false; });
+                const priorVisibility = walls.map(wall => wall.visible);
+                walls.forEach(wall => { wall.visible = false; });
                 renderer.render(scene, camera);
                 const withoutWalls = readFrame();
-                proxies.forEach((proxy, index) => { proxy.visible = priorVisibility[index]; });
+                walls.forEach((wall, index) => { wall.visible = priorVisibility[index]; });
                 renderer.render(scene, camera);
 
                 let changedPixels = 0;
@@ -192,7 +192,7 @@ jobs:
                   totalDelta += delta;
                   if (delta > 3) changedPixels++;
                 }
-                return { changedPixels, totalDelta, proxyCount:proxies.length, width, height };
+                return { changedPixels, totalDelta, wallCount:walls.length, width, height };
               });
 
               console.log(JSON.stringify({ state, framebuffer }, null, 2));
@@ -201,26 +201,21 @@ jobs:
               assert.equal(state.wallSource.enabled, true, 'structural wall switch must be permanently enabled');
               assert.ok(state.wallSource.count > 0, 'V50 must generate wall source meshes');
               assert.equal(state.wallSource.meshVisible, state.wallSource.count, 'all source wall transforms must remain enabled');
-              assert.equal(state.wallRender.sourceWalls, state.wallSource.count, 'render proxy should cover every source wall');
-              assert.equal(state.wallRender.renderProxyCount, state.wallRender.sourceWalls, 'each source wall must have a parent-realm proxy');
-              assert.equal(state.wallRender.proxyRootAttached, true, 'wall proxies must be parented directly into the active game scene');
-              assert.equal(state.wallRender.transformSyncedProxies, state.wallRender.renderProxyCount, 'every wall proxy must have a finite copied world transform');
-              assert.equal(state.wallRender.proxyMaterialsVisible, state.wallRender.renderProxyCount, 'all wall proxy materials must render');
-              assert.ok(state.wallRender.geometryProbeHits > 0, 'rebuilt wall geometry must accept direct mesh intersection probes');
-              assert.ok(state.wallRender.rendererSubmittedProxies > 0, 'the gameplay renderer must submit wall proxy geometry for drawing');
-              assert.ok(state.wallRender.renderSubmitCount > 0, 'wall render submission counter must advance during gameplay');
-              assert.equal(framebuffer.proxyCount, state.wallRender.renderProxyCount, 'framebuffer probe must cover every wall proxy');
+              assert.equal(state.wallRender.sourceWalls, state.wallSource.count, 'native render verifier should cover every source wall');
+              assert.equal(state.wallRender.visibleWallSources, state.wallRender.sourceWalls, 'every authoritative source wall must remain visible');
+              assert.equal(state.wallRender.renderProxyCount, 0, 'direct-source rendering must allocate zero wall proxy meshes');
+              assert.equal(state.wallRender.totalProxyCount, 0, 'direct-source rendering must allocate zero duplicate puzzle meshes');
+              assert.equal(state.wallRender.frustumCulledSources, state.wallRender.nativeSourceMeshCount, 'all native structural/puzzle meshes must restore frustum culling');
+              assert.equal(state.wallRender.allNativeMainRealmMaterials, state.wallRender.nativeSourceMeshCount, 'all visible ruin source materials must belong to the game THREE realm');
+              assert.equal(framebuffer.wallCount, state.wallRender.sourceWalls, 'framebuffer probe must cover every authoritative wall source');
               assert.ok(framebuffer.width > 0 && framebuffer.height > 0, 'gameplay WebGL framebuffer must be readable');
-              assert.ok(framebuffer.changedPixels >= 32, `wall proxies must change visible framebuffer pixels: ${JSON.stringify(framebuffer)}`);
-              assert.ok(framebuffer.totalDelta > 0, `wall proxies must contribute framebuffer color: ${JSON.stringify(framebuffer)}`);
-              assert.equal(state.wallRender.raycastableProxies, 0, 'visual wall proxies must not participate in public interaction raycasts');
-              assert.equal(state.wallRender.interactionRaycastDisabled, state.wallRender.renderProxyCount, 'every visual wall proxy must leave V50 interactables unobscured');
-              assert.equal(state.wallRender.mainRealmMaterials, state.wallRender.renderProxyCount, 'visible wall materials must belong to the game THREE realm');
-              assert.equal(state.wallRender.sourceMaterialIsolation, state.wallRender.renderProxyCount, 'wall suppression must not hide V50 shared stone materials used by ladders, floors, and props');
+              assert.ok(framebuffer.changedPixels >= 32, `native wall sources must change visible framebuffer pixels: ${JSON.stringify(framebuffer)}`);
+              assert.ok(framebuffer.totalDelta > 0, `native wall sources must contribute framebuffer color: ${JSON.stringify(framebuffer)}`);
               assert.equal(state.obsoleteToggle, false, 'obsolete wall visibility setting must be removed');
               assert.equal(state.persistedToggle, null, 'persisted wall-off preference must be cleared');
 
               assert.equal(state.interactions.nativeProviderMode, true, 'ruin interactions should use direct runtime providers');
+              assert.equal(state.interactions.normalActionBarProvider, true, 'ruin interactions must feed the ordinary building-interior action bar');
               assert.equal(state.interactions.customPromptBridgeInstalled, false, 'ruin interactions must not wrap the custom ActionPromptUI');
               assert.ok(state.interactions.providerCount >= 2, 'base and prototype ruin controls should both feed the shared input list');
               assert.ok(state.interactions.rows.length > 0, 'spawn should expose at least the normal Leave Test Ruin interaction');

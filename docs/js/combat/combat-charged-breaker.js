@@ -12,8 +12,10 @@
   let MIN_READY_POSE = 0.48; // Used as the minimum visible Neutral→Windup interpolation required to release a real strike.
   let MAX_CHARGE_S = 4.0; // Used only to pace the visual Neutral→Windup journey; full pose and 100% charge are the same event.
   let WINDUP_SLOWDOWN = 25; // Used by Combat.windupPoseProgress; higher means a longer, slower final approach to Windup.
-  let CHARGE_DRAIN_PER_S = 4;
+  let CHARGE_DRAIN_PER_S = 4; // Legacy config field retained for authored-data compatibility; charge payment now follows the interruptible pose-cost curve below.
   let COST_MIN = 12, COST_MAX = 18;
+  const FULL_CHARGE_POSE = 0.999; // Single full-charge threshold shared by glow, diagnostics, and Flourish qualification.
+  const FURIOUS_PROGRESS_OWNER = 'charged-breaker-furious'; // Owns only this hold's temporary transform on Combat.windupPoseProgress.
 
   // Damage still rises with the pose charge, but this technique is now
   // deliberately centered on movement/control geometry rather than reach.
@@ -77,7 +79,7 @@
 
   function chargeGlowMilestones(poseCharge) {
     const t = clamp01(poseCharge);
-    const thresholds = [MIN_READY_POSE, 0.50, 0.999];
+    const thresholds = [MIN_READY_POSE, 0.50, FULL_CHARGE_POSE];
     for (let i = 0; i < thresholds.length; i++) {
       if (glowMilestonesHit[i] || t < thresholds[i]) continue;
       glowMilestonesHit[i] = true;
@@ -128,11 +130,29 @@
     window.Combat.weaponChargeGlow?.clear?.('chargedBreaker');
   }
 
+  function chargeCostForPose(poseCharge, staminaCostMul = 1) {
+    const pose = clamp01(poseCharge); // Visible pose percentage is the same progress axis used by the interruptible total-cost curve.
+    const ready = Math.max(0.0001, MIN_READY_POSE);
+    const rawCost = pose <= ready
+      ? COST_MIN * (pose / ready)
+      : lerp(COST_MIN, COST_MAX, (pose - ready) / Math.max(0.0001, 1 - ready));
+    return Math.max(0, rawCost * Math.max(0, Number(staminaCostMul) || 1));
+  }
+
+  function isFullChargePose(poseCharge) {
+    return clamp01(poseCharge) >= FULL_CHARGE_POSE;
+  }
+
   function register() {
     let startedAt = -1;
+    let paidChargeCost = 0; // Tracks the cumulative effective Stamina cost already paid so releasing never charges the same progress twice.
+    let furiousRawProgressBonus = 0; // Added to the renderer's raw windup clock; grows only from segments actually funded by Furious Stamina.
 
     function onHoldStart() {
       startedAt = now();
+      paidChargeCost = 0;
+      furiousRawProgressBonus = 0;
+      window.Combat.setWindupProgressTransform?.(FURIOUS_PROGRESS_OWNER, raw => raw + furiousRawProgressBonus);
       resetChargeGlowMilestones();
       debugState = {
         ...debugState,
@@ -166,6 +186,7 @@
       startedAt = -1;
       const deps = window.Combat.deps;
       const poseCharge = poseChargeFromRuntime();
+      window.Combat.setWindupProgressTransform?.(FURIOUS_PROGRESS_OWNER, null); // Capture the accelerated visible pose first, then release that exact authored partial pose.
       debugState.active = false;
       debugState.heldSeconds = heldSeconds;
       debugState.poseCharge = poseCharge;
@@ -178,7 +199,7 @@
       if (poseCharge < MIN_READY_POSE) {
         clearGlow();
         deps.cancelWeaponSwingHold();
-        const posePct = Math.round(poseCharge * 100);
+        const posePct = Math.floor(poseCharge * 100); // Floor so a just-short release never reads as meeting the requirement.
         const readyPct = Math.round(MIN_READY_POSE * 100);
         deps.showToast(forced
           ? `Charged Breaker fizzled at ${posePct}% pose: stamina ran out before ${readyPct}%.`
@@ -189,8 +210,17 @@
       const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), 'chargedBreaker')
         || { afflictions: {}, stats: {} };
       if (!forced) {
-        const cost = lerp(COST_MIN, COST_MAX, poseCharge) * (1 + (effects.stats.staminaCostMul || 0));
-        window.ResourceSystem?.spendStamina(deps.player, cost, 'Charged Breaker');
+        const targetPaid = chargeCostForPose(poseCharge, 1 + (effects.stats.staminaCostMul || 0)); // Interruptible total cost at the exact released pose.
+        const remainder = Math.max(0, targetPaid - paidChargeCost);
+        if (remainder > 0) {
+          const payment = window.ResourceSystem?.spendStamina(
+            deps.player,
+            remainder,
+            'Charged Breaker',
+            { actionKind: 'offensiveHeldCharge', abilityId: 'chargedBreaker' },
+          );
+          paidChargeCost += Math.max(0, Number(payment?.enhancedPaid || 0) + Number(payment?.spent || 0) + Number(payment?.excess || 0));
+        }
       }
 
       // This slices the live authored pose at poseCharge and starts Strike
@@ -201,21 +231,38 @@
 
       const baseAbil = deps.weaponAbility('cut')
         || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
-      const damage = Math.round(
-        baseAbil.damage * lerp(DAMAGE_MUL_MIN, DAMAGE_MUL_MAX, poseCharge)
-        * (1 + (effects.stats.damageMul || 0))
-      );
+      const baseDamage = baseAbil.damage * lerp(DAMAGE_MUL_MIN, DAMAGE_MUL_MAX, poseCharge)
+        * (1 + (effects.stats.damageMul || 0)); // Existing charge-scaled damage before cross-cutting enchantment modifiers.
       const rangePx = baseAbil.rangePx
         * lerp(RANGE_MUL_MIN, RANGE_MUL_MAX, poseCharge)
         * (1 + (effects.stats.rangeMul || 0));
       const halfConeDeg = lerp(HALF_CONE_DEG_MIN, HALF_CONE_DEG_MAX, poseCharge);
       const halfConeRad = halfConeDeg * Math.PI / 180;
-      const knockbackPxS = baseAbil.knockbackPxS
+      const baseKnockbackPxS = baseAbil.knockbackPxS
         * lerp(KNOCKBACK_MUL_MIN, KNOCKBACK_MUL_MAX, poseCharge)
         * (1 + (effects.stats.knockbackMul || 0));
-      const lungePx = deps.TILE
+      const baseLungePx = deps.TILE
         * lerp(LUNGE_TILE_MUL_MIN, LUNGE_TILE_MUL_MAX, poseCharge)
         * (1 + (effects.stats.lungeMul || 0));
+      const attackContext = window.CombatAttackEvents?.prepare?.({
+        attacker: deps.player,
+        weaponKey: deps.currentWeaponKey(),
+        abilityId: 'chargedBreaker',
+        damage: baseDamage,
+        afflictionBonuses: effects.afflictions,
+        knockbackPxS: baseKnockbackPxS,
+        rangePx,
+        halfConeRad,
+        lungePx: baseLungePx,
+        chargePercentage: poseCharge,
+        fullCharge: isFullChargePose(poseCharge),
+        metadata: { attackAngle: deps.player.angle, paidChargeCost },
+      }) || { modifiers: { damage: 1, footingDamage: 1, affliction: 1, knockback: 1, lunge: 1 }, afflictionBonuses: effects.afflictions };
+      const damage = Math.round((attackContext.damage ?? baseDamage) * (attackContext.modifiers?.damage || 1));
+      const knockbackPxS = (attackContext.knockbackPxS ?? baseKnockbackPxS) * (attackContext.modifiers?.knockback || 1);
+      const lungePx = baseLungePx * (attackContext.modifiers?.lunge || 1);
+      const attackAfflictions = window.CombatAttackEvents?.scaleAfflictions?.(attackContext.afflictionBonuses || effects.afflictions, attackContext.modifiers?.affliction || 1)
+        || effects.afflictions;
       const pitchDistanceResistance = lerp(
         LUNGE_GRAVITY_RESIST_MIN,
         LUNGE_GRAVITY_RESIST_MAX,
@@ -264,6 +311,7 @@
             deps.player.x, deps.player.y, deps.player.angle, rangePx, halfConeRad,
           ) || 0;
           let hits = 0, lastName = '';
+          const ordinaryHitTargets = new Set(); // Used after real charged-hit validity so Living Gust's widened region stays knockback-only.
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
             if (!window.Combat.meleeHit(deps.player, c, {
@@ -272,10 +320,21 @@
               yaw: deps.player.angle,
               pitch: deps.getPlayerMeleeAimPitch?.() || 0,
             })) continue;
+            const healthBefore = Math.max(0, Number(c.health) || 0); // Used by Mirrored Health for post-mitigation damage only.
             deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, {
+              abilityId: 'chargedBreaker', // Identifies the committed hit for authored training objectives.
               tag: deps.currentWeaponDamageType(),
               heavy: true,
-              afflictionBonuses: effects.afflictions,
+              footingDamageMultiplier: attackContext.modifiers?.footingDamage || 1,
+              afflictionBonuses: attackAfflictions,
+            });
+            ordinaryHitTargets.add(c);
+            window.CombatAttackEvents?.hit?.(attackContext, {
+              target: c,
+              actualDamage: Math.max(0, healthBefore - (Number(c.health) || 0)),
+              afflictionBonuses: attackAfflictions,
+              chargePercentage: poseCharge,
+              fullCharge: isFullChargePose(poseCharge),
             });
             deps.playWeaponHitSfx?.(
               deps.currentWeaponDamageType(), c.x, c.y, c.areaId, undefined, 'huge',
@@ -284,6 +343,7 @@
             lastName = c.def.label;
           }
 
+          window.EnchantmentSystem?.applyPeripheralGust?.(attackContext, ordinaryHitTargets);
           const pct = Math.round(poseCharge * 100);
           const msg = hits > 0
             ? `Charged Breaker (${pct}% pose charge): hit ${hits > 1 ? hits + ' creatures' : 'the ' + lastName}!`
@@ -291,7 +351,10 @@
               ? `Charged Breaker (${pct}% pose charge): cut ${vegetationCleared} vegetation tile${vegetationCleared === 1 ? '' : 's'} into mulch.`
               : `Charged Breaker (${pct}% pose charge) connects with nothing.`;
           deps.showToast(msg, hits > 0 || vegetationCleared > 0, true);
-          if (hits > 0) deps.awardWeaponMasteryXp();
+          if (hits > 0) {
+            window.PlayerLunge?.confirmEnemyHit?.(); // A real enemy hit grants the one-second slow-fall aerial follow-up window; misses grant nothing.
+            deps.awardWeaponMasteryXp();
+          }
         },
         onComplete: clearGlow,
         onCancel: clearGlow,
@@ -314,9 +377,25 @@
       debugState.poseCharge = poseCharge;
       setGlow(poseCharge);
 
-      const drain = Math.min(deps.player.stamina, CHARGE_DRAIN_PER_S * dt);
-      window.ResourceSystem?.spendStamina(deps.player, drain, 'Charged Breaker (charging)');
-      if (deps.player.stamina <= 0) releaseNow(heldSeconds, true);
+      const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), 'chargedBreaker')
+        || { afflictions: {}, stats: {} };
+      const targetPaid = chargeCostForPose(poseCharge, 1 + (effects.stats.staminaCostMul || 0)); // One interruptible total cost: each newly reached slice is paid exactly once.
+      const segmentCost = Math.max(0, targetPaid - paidChargeCost);
+      if (segmentCost > 0) {
+        const payment = window.ResourceSystem?.spendStamina(
+          deps.player,
+          segmentCost,
+          'Charged Breaker (charging)',
+          { actionKind: 'offensiveHeldCharge', abilityId: 'chargedBreaker' },
+        ) || { tempoMultiplier: 1 };
+        paidChargeCost += Math.max(0, Number(payment.enhancedPaid || 0) + Number(payment.spent || 0) + Number(payment.excess || 0));
+        const tempo = Math.max(1, Number(payment.tempoMultiplier) || 1);
+        if (tempo > 1 && MAX_CHARGE_S > 0) {
+          furiousRawProgressBonus += Math.max(0, Number(dt) || 0) * (tempo - 1) / MAX_CHARGE_S; // Furious-funded time advances the SAME renderer windup clock; when funding ends this bonus stops growing immediately.
+        }
+      }
+      const hasEnhancedStamina = (window.ResourceSystem?.getEnhancedResources?.(deps.player, 'stamina', { actionKind: 'offensiveHeldCharge' }) || []).length > 0;
+      if (deps.player.stamina <= 0 && !hasEnhancedStamina) releaseNow(heldSeconds, true);
     }
 
     function onHoldEnd() {
@@ -338,6 +417,7 @@
 
   window.Combat.chargedBreakerData = {
     MIN_READY_POSE,
+    FULL_CHARGE_POSE,
     MAX_CHARGE_S,
     WINDUP_SLOWDOWN,
     DAMAGE_MUL_MIN,
@@ -361,6 +441,8 @@
     // the real time required to reach the full Windup pose.
     WINDUP_S: MAX_CHARGE_S,
     holdSecondsForPoseCharge,
+    chargeCostForPose,
+    isFullChargePose,
   };
 
   window.Combat.chargedBreakerDebug = {
@@ -420,6 +502,7 @@
 
     Object.assign(window.Combat.chargedBreakerData, {
       MIN_READY_POSE,
+      FULL_CHARGE_POSE,
       MAX_CHARGE_S,
       WINDUP_SLOWDOWN,
       DAMAGE_MUL_MIN,
@@ -441,6 +524,8 @@
       POWER,
       WINDUP_S: MAX_CHARGE_S,
       holdSecondsForPoseCharge,
+      chargeCostForPose,
+      isFullChargePose,
     });
   };
 })();

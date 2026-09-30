@@ -348,6 +348,7 @@
       afflictionBonuses: { corrodedHealth: tuning.CORRODED_HEALTH_MULTIPLIER },
     }; // Used to make the projectile affliction-heavy while explicitly preserving zero default ranged Footing damage.
     if (targetEntry.kind === 'player') deps.damagePlayer?.(damage, projectile.prevX, projectile.prevY, tuning.KNOCKBACK_PX_S, options);
+    else if (window.CompanionOffense && deps.damageCreature) window.CompanionOffense.damageCreature(deps.damageCreature, creature, target, damage, projectile.prevX, projectile.prevY, tuning.KNOCKBACK_PX_S, options); // Companion drenkirra share Whistle/Sicced scaling.
     else deps.damageCreature?.(target, damage, projectile.prevX, projectile.prevY, tuning.KNOCKBACK_PX_S, options);
     state.lastResult = `HIT ${targetEntry.kind}`;
   }

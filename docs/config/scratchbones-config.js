@@ -80,7 +80,10 @@ window.SCRATCHBONES_CONFIG = {
         "radiusTiles": 6,
         "minTravelTiles": 3,
         "waitMinSeconds": 10,
-        "waitMaxSeconds": 15
+        "waitMaxSeconds": 15,
+        // Constant walking speed between tiles. The next hop is chosen before
+        // the animal settles on a tile, so a multi-tile trip reads as one walk.
+        "moveTilesPerSecond": 1.6
       },
       // Diet classification, used by barn troughs to decide which fodder
       // (plantFodder/meatFodder) a housed animal will actually eat —
@@ -115,6 +118,7 @@ window.SCRATCHBONES_CONFIG = {
     "inventory": {
       "clothingSprites": {
         "rugged_poncho": "assets/cosmetics/clothes/overwear/portrait/poncho1_mao_m.png",
+        "rounded_pauldron": "assets/cosmetics/clothes/pauldrons/rounded_pauldron_m.png",
         "fine_poncho": "assets/cosmetics/clothes/overwear/portrait/poncho1_mao_m.png",
         "fine_hood": "assets/cosmetics/clothes/hood/finehood-base_m.png",
         "facewrap": "assets/cosmetics/clothes/hood/facewrap_m.png",
@@ -951,6 +955,7 @@ window.SCRATCHBONES_CONFIG = {
         { "id": "bandolier1",       "label": "Bandolier",         "price": 40, "category": "torso",    "description": "A rugged leather bandolier.", "material": "leather" },
         { "id": "tankan_bodywrap",  "label": "Tankan Body Wrap",  "price": 60, "category": "overwear", "description": "A wrapped ceremonial bodywrap." },
         { "id": "rugged_poncho", "label": "Rugged Poncho", "price": 70, "category": "overwear", "description": "A reinforced poncho layered with a rugged body wrap.", "material": "cloth" },
+        { "id": "rounded_pauldron", "label": "Rounded Pauldrons", "price": 0, "category": "pauldron", "description": "Smith-forged shoulder armor whose color and patina come from its metal.", "material": "metal", "smithOnly": true, "dyeable": false },
         { "id": "fine_poncho", "label": "Fine Poncho", "price": 80, "category": "overwear", "description": "A finely trimmed cloth poncho.", "material": "cloth" },
         { "id": "fine_hood",        "label": "Fine Hood",         "price": 60, "category": "hood",     "description": "A finely crafted hood with trim." }
       ]
@@ -3522,7 +3527,6 @@ window.SCRATCHBONES_CONFIG = {
         // keeps authored special soundtracks such as Just Beyond the Torchlight
         // uninterrupted and leaves room for more opt-outs later.
         "combatBgm": [
-          { "url": "assets/audio/music/bgm/bgm_skirmish.m4a", "loop": true, "gaplessLoop": { "sourceSampleRate": 48000, "encoderDelaySamples": 2048, "paddingSamples": 745, "contentSamples": 1256727 } },
           { "url": "assets/audio/music/bgm/bgm_pure_focus.m4a", "loop": true, "gaplessLoop": { "sourceSampleRate": 44100, "encoderDelaySamples": 2048, "paddingSamples": 631, "contentSamples": 5667209 } }
         ],
         // Short musical stings fired by explicit gameplay milestones through

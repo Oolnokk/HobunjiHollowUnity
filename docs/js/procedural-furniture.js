@@ -191,6 +191,18 @@
     return true;
   }
 
+  // Authored surfaceOpacity < 1 makes the part body see-through (0 = fully
+  // hidden) while its decals, which are child meshes, stay visible — e.g. a
+  // lone glowing seal with no plate around it.
+  function applySurfaceOpacity(mat, part) {
+    const opacity = Number(part?.surfaceOpacity);
+    if (!Number.isFinite(opacity) || opacity >= 1) return;
+    mat.transparent = true;
+    mat.opacity = Math.max(0, opacity);
+    mat.depthWrite = opacity > .5;
+    if (opacity <= 0) mat.colorWrite = false;
+  }
+
   function buildPartMesh(part, baseColor) {
     let geo;
     const t = part.transform;
@@ -204,6 +216,7 @@
       geo = createTaperedBoxGeometry(part);
     }
     const mat = partMaterial(part, baseColor);
+    applySurfaceOpacity(mat, part);
     const mesh = new THREE.Mesh(geo, mat);
     mesh.castShadow = true;
     mesh.receiveShadow = true;

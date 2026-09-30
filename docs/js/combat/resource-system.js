@@ -85,11 +85,15 @@
   };
 
   // Footing (balance) lives as its own flat entity.footing/maxFooting pair,
-  // set up in initEntity/tick alongside health/stamina below — it has no
-  // afflictions of its own (see getRingFillFraction/spendFooting instead of
-  // this AFFLICTIONS map). woundedStamina/infectedStamina/shatteredStamina/
-  // windedStamina live on 'stamina'; the rest on 'health'.
+  // set up in initEntity/tick alongside health/stamina below. Most afflictions
+  // still target Health/Stamina; Shambling Footing is the permanent Footing
+  // reservation used by Minion-class undead.
   const AFFLICTIONS = {
+    shamblingFooting: {
+      name: "Shambling Footing", resource: "footing", extend: "maxBack", priority: 105, recovers: false, immutable: true, reducesEffectiveMax: true,
+      family: "control", tags: ["undead", "shambling"],
+      desc: "Permanent reserved Footing carried by Minions; it cannot be added to, cleansed, reduced, or recovered. While prone, refilling all remaining unshambled Footing is enough to stand."
+    },
     woundedStamina: {
       name: "Wounded Stamina", resource: "stamina", extend: "zero", priority: 55, recovers: true, punishedAction: "staminaSpend",
       family: "damage", tags: ["physical", "breath"],
@@ -101,7 +105,7 @@
       desc: "Converts Health into Bleeding buildup without damaging on application; during combat, ticks consume that buildup as lethal Health damage, while quiet/rested ticks heal instead."
     },
     congealedHealth: {
-      name: "Congealed Health", resource: "health", extend: "zero", priority: 50, recovers: false,
+      name: "Congealed Health", resource: "health", extend: "zero", priority: 50, recovers: false, reducesEffectiveMax: true,
       family: "damage", tags: ["physical", "blood"],
       desc: "Temporarily lowers effective Health max without reducing it below 1, then recovers its own points every tick."
     },
@@ -111,9 +115,19 @@
       desc: "Application only converts Stamina into Infected buildup; spending through it later deals lethal Health damage. Avoiding Stamina spend makes it recover much faster; it can also cause vomiting, adding Winded Stamina and Poisoned Health."
     },
     windedStamina: {
-      name: "Winded Stamina", resource: "stamina", extend: "zero", priority: 95, recovers: true,
+      name: "Winded Stamina", resource: "stamina", extend: "zero", priority: 95, recovers: true, reducesEffectiveMax: true,
       family: "control", tags: ["breath"],
       desc: "Lowers effective maximum Stamina and makes Exhausted easier to enter."
+    },
+    frostbittenStamina: {
+      name: "Frostbitten Stamina", resource: "stamina", extend: "zero", priority: 92, recovers: true, punishedAction: "staminaSpend",
+      family: "control", tags: ["cold", "frost"],
+      desc: "Cold-stiffened Stamina. Application only converts Stamina into Frostbitten buildup; spending through that frosted Stamina later deals the same amount as Footing damage."
+    },
+    entrancedHealth: {
+      name: "Entranced Health", resource: "health", extend: "currentBack", priority: 88, recovers: false,
+      family: "control", tags: ["mind", "entrancement"],
+      desc: "A referential command affliction. Moving against the latest entrancer's Approach/Flee command converts buildup into Health damage; obeying or standing still clears it quickly."
     },
     bruisedHealth: {
       name: "Bruised Health", resource: "health", extend: "currentBack", priority: 60, recovers: true,
@@ -134,8 +148,49 @@
       name: "Burning Health", resource: "health", extend: "currentBack", priority: 90, recovers: false,
       family: "damage", tags: ["fire", "physical"],
       desc: "Converts Health into Burning buildup without damaging on application; ticks consume that buildup as lethal Health damage. Roll dodges cool part of it; entering water extinguishes it completely."
+    },
+    kindlingHealth: {
+      name: "Kindling Health", resource: "health", extend: "currentBack", priority: 89, recovers: false,
+      family: "damage", tags: ["fire", "kindling"],
+      desc: "Slow-burning Health buildup from Living Flame. Additional Kindling can ignite the whole stack, and ordinary Burning always converts it into equivalent Burning Health."
+    },
+    furiousStamina: {
+      name: "Furious Stamina", resource: "stamina", extend: "currentBack", priority: 36, recovers: false, enhanced: true,
+      family: "enhanced", tags: ["enhanced", "fury"],
+      desc: "Enhanced Stamina. When it pays for an offensive Held attack, the portion it funds progresses at three times normal speed."
+    },
+    moralizedStamina: {
+      name: "Moralized Stamina", resource: "stamina", extend: "currentBack", priority: 35, recovers: false, enhanced: true,
+      family: "enhanced", tags: ["enhanced", "moralized"],
+      desc: "Enhanced Stamina worth three ordinary Stamina per point when paying costs or drains."
+    },
+    resoluteFooting: {
+      name: "Resolute Footing", resource: "footing", extend: "currentBack", priority: 35, recovers: false, enhanced: true,
+      family: "enhanced", tags: ["enhanced", "resolve"],
+      desc: "Enhanced Footing worth three ordinary Footing per point when absorbing loss."
+    },
+    resoluteHealth: {
+      name: "Resolute Health", resource: "health", extend: "currentBack", priority: 35, recovers: false, enhanced: true,
+      family: "enhanced", tags: ["enhanced", "resolve"],
+      desc: "Enhanced Health worth three ordinary Health per point when absorbing damage."
+    },
+    mirroredHealth: {
+      name: "Mirrored Health", resource: "health", extend: "currentBack", priority: 34, recovers: false, enhanced: true,
+      family: "enhanced", tags: ["enhanced", "mirror"],
+      desc: "Enhanced Health generated from actual damage dealt; it absorbs incoming Health loss before ordinary Health."
     }
   };
+
+  const ENHANCED_RESOURCE_DEFS = Object.freeze({
+    furiousStamina: Object.freeze({
+      resource: "stamina", conversionRate: 1, normalPriority: 5, beneficialPriority: 100, tempoMultiplier: 3,
+      benefitsTransaction: tx => tx?.actionKind === "offensiveHeldCharge" || tx?.actionKind === "offensiveHeldFlurry",
+    }),
+    moralizedStamina: Object.freeze({ resource: "stamina", conversionRate: 3, normalPriority: 50 }),
+    resoluteFooting: Object.freeze({ resource: "footing", conversionRate: 3, normalPriority: 50 }),
+    resoluteHealth: Object.freeze({ resource: "health", conversionRate: 3, normalPriority: 50 }),
+    mirroredHealth: Object.freeze({ resource: "health", conversionRate: 1, normalPriority: 30 }),
+  });
   const RECOVERING_AFFLICTIONS = Object.entries(AFFLICTIONS)
     .filter(([id, def]) => def.recovers && id !== "bleedingHealth" && id !== "poisonedHealth" && id !== "congealedHealth")
     .map(([id]) => id); // Avoids allocating and filtering the full affliction entry list on every entity maintenance tick.
@@ -184,9 +239,9 @@
       // hold, see impact-ragdoll-playback.js) before Footing starts
       // regenerating again — mirrors the authored impact clips' own
       // recoveryDelay (~1.35s) so the number reads as intentional rather
-      // than arbitrary. Regen resuming is what eventually lets the player's
-      // dodge input trigger the somersault recovery (see game.js's
-      // performDodge/updateProneState) — prone itself only clears there.
+      // than arbitrary. Regen resuming is what eventually lets game.js's
+      // updateProneState trigger the automatic in-place somersault recovery;
+      // prone itself only clears when that recovery arc completes.
       proneRecoveryDelayS: Number(cfg.proneRecoveryDelayS) || 1.5,
     };
   }
@@ -211,14 +266,60 @@
   }
 
   function getAffliction(entity, id) {
-    return entity.afflictions?.[id] ?? 0;
+    const locked = entity?._immutableAfflictions?.[id]; // Permanent afflictions stay gameplay-fixed even if outside code writes their display field.
+    return Number.isFinite(locked) ? locked : (entity.afflictions?.[id] ?? 0);
+  }
+
+  function maxAfflictionAmount(entity, def) {
+    if (def?.resource === "health") return entity?.maxHealth || 0; // Health afflictions clamp against Health.
+    if (def?.resource === "footing") return entity?.maxFooting || 0; // Footing afflictions clamp against Footing.
+    return entity?.maxStamina || 0; // Existing non-Health afflictions default to Stamina.
   }
 
   function setAffliction(entity, id, amount) {
     const def = AFFLICTIONS[id];
     if (!def) return;
-    const maxAmount = def.resource === "health" ? entity.maxHealth : entity.maxStamina;
-    entity.afflictions[id] = round1(clamp(amount, 0, maxAmount || 0));
+    const locked = entity?._immutableAfflictions?.[id]; // Makes ordinary add/remove/cleanse calls no-ops after an immutable amount is installed.
+    if (Number.isFinite(locked)) {
+      entity.afflictions ||= {};
+      entity.afflictions[id] = locked;
+      return;
+    }
+    entity.afflictions[id] = round1(clamp(amount, 0, maxAfflictionAmount(entity, def)));
+  }
+
+  function setImmutableAffliction(entity, id, amount) {
+    const def = AFFLICTIONS[id]; // Only explicitly immutable definitions may use this permanent-lock path.
+    if (!entity || !def?.immutable) return 0;
+    const locked = round1(clamp(amount, 0, maxAfflictionAmount(entity, def)));
+    entity.afflictions ||= {};
+    entity._immutableAfflictions ||= {}; // Runtime lock table used by get/set/add/remove and cap enforcement.
+    entity._immutableAfflictions[id] = locked;
+    entity.afflictions[id] = locked;
+    return locked;
+  }
+
+  function reassertImmutableAfflictions(entity) {
+    if (!entity?._immutableAfflictions) return;
+    entity.afflictions ||= {};
+    for (const [id, amount] of Object.entries(entity._immutableAfflictions)) {
+      const def = AFFLICTIONS[id];
+      if (!def?.immutable) continue;
+      const locked = round1(clamp(amount, 0, maxAfflictionAmount(entity, def)));
+      entity._immutableAfflictions[id] = locked;
+      entity.afflictions[id] = locked;
+    }
+  }
+
+  function convertKindlingToBurning(entity, reason = "ignited") {
+    const kindling = getAffliction(entity, "kindlingHealth"); // Existing Kindling amount moved one-for-one into the canonical Burning affliction.
+    if (!(kindling > 0)) return 0;
+    const beforeBurning = getAffliction(entity, "burningHealth");
+    setAffliction(entity, "kindlingHealth", 0);
+    setAffliction(entity, "burningHealth", beforeBurning + kindling);
+    const converted = round1(getAffliction(entity, "burningHealth") - beforeBurning);
+    if (converted > 0) window.EnchantmentSystem?.logEvent?.(`Kindling converted to Burning (${converted}, ${reason})`);
+    return converted;
   }
 
   function addAffliction(entity, id, amount) {
@@ -228,7 +329,17 @@
     if (family === "damage" && entity === player) amount *= window.AlchemySystem?.getIncomingDamageAfflictionMultiplier?.() || 1;
     const before = getAffliction(entity, id);
     setAffliction(entity, id, before + amount);
-    return round1(getAffliction(entity, id) - before);
+    const added = round1(getAffliction(entity, id) - before);
+
+    if (id === "burningHealth" && added > 0 && getAffliction(entity, "kindlingHealth") > 0) {
+      convertKindlingToBurning(entity, "ordinary Burning applied");
+    } else if (id === "kindlingHealth" && added > 0) {
+      const chance = clamp(Number(window.EnchantmentSystem?.TUNING?.LIVING_FLAME_KINDLING_CONVERSION_CHANCE) || 0.12, 0, 1);
+      if (getAffliction(entity, "kindlingHealth") > added && window.GameRandom.random() < chance) {
+        convertKindlingToBurning(entity, "spontaneous ignition");
+      }
+    }
+    return added;
   }
 
   function removeAffliction(entity, id, amount) {
@@ -273,20 +384,84 @@
   const removeAfflictionsByFamily = (entity, family, amount) => removeAfflictions(entity, afflictionIdsByFamily(family), amount);
   const removeAfflictionsByTag = (entity, tag, amount) => removeAfflictions(entity, afflictionIdsByTag(tag), amount);
 
+  // Equipment-style stat sources (trinkets first) register one provider
+  // instead of editing each max/regen formula. A provider returns a
+  // multiplier for (entity, key); keys: maxHealth, maxStamina, maxFooting,
+  // healthRegen, healthRegenInCombat, staminaRegen, footingRegen.
+  const statModifierProviders = new Set(); // Used by getEffectiveMax/tick to compose every registered stat source multiplicatively.
+
+  function registerStatModifierProvider(provider) {
+    if (typeof provider !== "function") return () => {};
+    statModifierProviders.add(provider);
+    return () => statModifierProviders.delete(provider);
+  }
+
+  function statModifier(entity, key) {
+    let mul = 1;
+    for (const provider of statModifierProviders) {
+      let value = 1;
+      try { value = Number(provider(entity, key)); } catch (_) { value = 1; }
+      if (Number.isFinite(value) && value > 0) mul *= value;
+    }
+    return mul;
+  }
+
+  function getProneRecoveryFootingTarget(entity) {
+    const player = window.Combat?.deps?.player; // Player-only Poise capacity participates in the same unshambled recovery target as ordinary Footing capacity.
+    const footingMul = (entity === player ? window.AlchemySystem?.getMaxFootingMultiplier?.() || 1 : 1) * statModifier(entity, "maxFooting"); // Full capacity before permanent Shambling Footing is reserved.
+    const fullFootingMax = Math.max(0, (entity?.maxFooting || 0) * footingMul);
+    return clamp(fullFootingMax - getAffliction(entity, "shamblingFooting"), 0, fullFootingMax); // Shambling's positive side: prone recovery only needs to refill the Footing that still exists.
+  }
+
   function getEffectiveMax(entity, key) {
     const player = window.Combat?.deps?.player; // Used to apply maximum-resource potion/perk buffs only to their consumer.
     const isPlayer = entity === player;
-    const staminaMul = isPlayer ? (window.AlchemySystem?.getMaxStaminaMultiplier?.() || 1) * (1 + (window.PerkSystem?.rank('combat', 'increaseStamina') || 0) * 0.08) : 1; // Used by Endurance / Increase Stamina.
-    const healthMul = isPlayer ? 1 + (window.PerkSystem?.rank('combat', 'increaseHealth') || 0) * 0.08 : 1; // Increase Health perk.
-    const footingMul = isPlayer ? window.AlchemySystem?.getMaxFootingMultiplier?.() || 1 : 1; // Used by Poise.
+    const staminaMul = (isPlayer ? (window.AlchemySystem?.getMaxStaminaMultiplier?.() || 1) * (1 + (window.PerkSystem?.rank('combat', 'increaseStamina') || 0) * 0.08) : 1) * statModifier(entity, "maxStamina"); // Used by Endurance / Increase Stamina / trinkets.
+    const healthMul = (isPlayer ? 1 + (window.PerkSystem?.rank('combat', 'increaseHealth') || 0) * 0.08 : 1) * statModifier(entity, "maxHealth"); // Increase Health perk / trinkets.
     if (key === "stamina") return clamp((entity.maxStamina || 0) * staminaMul - getAffliction(entity, "windedStamina"), 0, (entity.maxStamina || 0) * staminaMul);
     if (key === "health") {
       const fullHealthMax = Math.max(0, (entity.maxHealth || 0) * healthMul); // Used to keep capacity afflictions nonlethal without inventing Health on entities whose authored maximum is zero.
       const afflictedHealthMax = clamp(fullHealthMax - getAffliction(entity, "congealedHealth"), 0, fullHealthMax); // Used as the raw Congealed-Health-reduced capacity before the living-target floor.
       return fullHealthMax > 0 ? Math.max(Math.min(1, fullHealthMax), afflictedHealthMax) : 0;
     }
-    if (key === "footing") return (entity.maxFooting || 0) * footingMul;
+    if (key === "footing") return getProneRecoveryFootingTarget(entity); // Standing usable max and prone recovery target share the same permanent Shambling reservation.
     return 0;
+  }
+
+  // Resource-threshold attacks (Exhaust Cutter / Mercy Spike) should read
+  // the bar the player actually sees. Affliction buildup never removes points
+  // from entity.health/stamina — its ring segments sit INSIDE [0, current]
+  // ("currentBack" always, "zero" whenever its amount <= current) — so it must
+  // never be added on top of current, or afflicted-but-low targets read as
+  // healthy. The only extra visible fill is a zero-based band that extends
+  // past current (applied while the pool was already lower), so the result is
+  // max(current, furthest non-cap band end). Explicit capacity reducers
+  // (Winded/Congealed/Wounded Health) stay excluded and the result is capped
+  // at the live effective maximum, so they can still make a target "low".
+  function getDepletionEquivalentCurrent(entity, resourceKey) {
+    if (!entity || (resourceKey !== "health" && resourceKey !== "stamina")) return 0;
+    const authoredMax = Math.max(0, Number(resourceKey === "health" ? entity.maxHealth : entity.maxStamina) || 0); // Used by Quick Attack thresholds, which have always been authored as fractions of the normal bar.
+    const rawCurrent = Math.max(0, Number(entity[resourceKey]) || 0); // Already includes any affliction-colored points that sit inside the fill.
+    const api = window.ResourceSystem; // Used at call time so later wrappers (drunken bands, amphibious Wounded Health) participate instead of being bypassed.
+    const effectiveMaxResolver = api?.getEffectiveMax || getEffectiveMax; // Used to preserve explicit max-reducing afflictions as real depletion for threshold attacks.
+    const liveEffectiveMax = Math.max(0, Number(effectiveMaxResolver(entity, resourceKey)) || 0); // Caps any band extension below the capacity the entity can currently use.
+    if (!(authoredMax > 0) || !(liveEffectiveMax > 0)) return 0;
+
+    const defs = api?.AFFLICTIONS || AFFLICTIONS; // Used below so afflictions installed after ResourceSystem startup are included automatically.
+    const getAmount = api?.getAffliction || getAffliction; // Used below so wrapped/custom affliction storage stays authoritative.
+    const getBox = api?.getSegmentBox || getSegmentBox; // Used below to read the same visual resource segments the rings actually draw.
+    let visibleEnd = rawCurrent; // Furthest filled point on the ring, whether normal-colored or affliction-colored.
+    for (const [id, def] of Object.entries(defs)) {
+      if (def?.resource !== resourceKey || def?.reducesEffectiveMax === true) continue;
+      if (!(Number(getAmount(entity, id)) > 0)) continue;
+      const box = getBox(entity, resourceKey, id);
+      if (!box) continue;
+      const left = clamp(Number(box.leftPoints) || 0, 0, authoredMax);
+      const right = clamp(left + Math.max(0, Number(box.widthPoints) || 0), 0, authoredMax);
+      if (right > visibleEnd) visibleEnd = right;
+    }
+
+    return round1(clamp(visibleEnd, 0, Math.min(authoredMax, liveEffectiveMax)));
   }
 
   function getLiveEffectiveHealthMax(entity) {
@@ -308,13 +483,17 @@
 
   function applyHealthAfflictionDamage(entity, amount) {
     if (!(amount > 0) || !(entity?.health > 0)) return 0;
+    const enhanced = resolveEnhancedResourceTransaction(entity, "health", amount, { kind: "damage", source: "afflictionTick" }); // Enhanced Health absorbs DoT through the same transaction path as direct damage.
+    const remaining = enhanced.ordinaryRemaining;
+    if (!(remaining > 0)) return 0;
     const before = Number(entity.health) || 0; // Used to report actual Health lost when an already-applied DoT buildup ticks.
     const effectiveMax = getLiveEffectiveHealthMax(entity); // Used only as the current upper cap; DoT damage itself remains fully lethal down to zero.
-    entity.health = round1(clamp(before - amount, 0, effectiveMax));
+    entity.health = round1(clamp(before - remaining, 0, effectiveMax));
     return round1(before - entity.health);
   }
 
   function enforceCaps(entity) {
+    reassertImmutableAfflictions(entity); // Keeps permanent-affliction storage identical to its locked gameplay amount.
     if (entity.health > 0) applyHealthRecovery(entity, 0);
     else entity.health = round1(clamp(Number(entity.health) || 0, 0, getLiveEffectiveHealthMax(entity)));
     entity.stamina = entity.exhaustion.active
@@ -421,32 +600,105 @@
     return Number.isFinite(last) ? Math.max(0, nowMs() - last) : Infinity;
   }
 
-  function spendStamina(entity, amount, reason = "action") {
+  function enhancedResourcePriority(def, transaction) {
+    const beneficial = typeof def?.benefitsTransaction === "function" && def.benefitsTransaction(transaction); // Action-specific benefit may outrank general enhanced resources without any one-off Furious check.
+    return beneficial ? Number(def.beneficialPriority ?? def.normalPriority) || 0 : Number(def?.normalPriority) || 0;
+  }
+
+  function getEnhancedResources(entity, resourceKey, transaction = {}) {
+    return Object.entries(ENHANCED_RESOURCE_DEFS)
+      .filter(([id, def]) => def.resource === resourceKey && getAffliction(entity, id) > 0)
+      .map(([id, def]) => ({
+        id,
+        def,
+        amount: getAffliction(entity, id),
+        priority: enhancedResourcePriority(def, transaction),
+        benefitsTransaction: typeof def.benefitsTransaction === "function" && def.benefitsTransaction(transaction),
+      }))
+      .sort((a, b) => b.priority - a.priority || b.def.conversionRate - a.def.conversionRate);
+  }
+
+  function resolveEnhancedResourceTransaction(entity, resourceKey, amount, transaction = {}) {
+    const requested = Math.max(0, Number(amount) || 0); // Effective ordinary-resource points the transaction wants to pay/absorb.
+    let remaining = requested; // Effective amount left after each enhanced pool contributes through its conversion rate.
+    const consumed = []; // Detailed raw/effective contributions used by debug and offensive-Held tempo calculations.
+    let weightedTempo = 0; // Effective points multiplied by their own action tempo; ordinary remainder contributes at 1× below.
+
+    for (const entry of getEnhancedResources(entity, resourceKey, transaction)) {
+      if (!(remaining > 0)) break;
+      const rate = Math.max(0.0001, Number(entry.def.conversionRate) || 1);
+      const effectiveAvailable = entry.amount * rate;
+      const effectivePaid = Math.min(remaining, effectiveAvailable);
+      const rawConsumed = round1(effectivePaid / rate);
+      if (!(rawConsumed > 0)) continue;
+      const removed = removeAffliction(entity, entry.id, rawConsumed);
+      const actualEffectivePaid = Math.min(remaining, removed * rate);
+      if (!(actualEffectivePaid > 0)) continue;
+      const tempo = entry.benefitsTransaction ? Math.max(1, Number(entry.def.tempoMultiplier) || 1) : 1;
+      consumed.push({
+        id: entry.id,
+        rawConsumed: removed,
+        effectivePaid: round1(actualEffectivePaid),
+        conversionRate: rate,
+        tempoMultiplier: tempo,
+        benefitsTransaction: entry.benefitsTransaction,
+      });
+      remaining = Math.max(0, remaining - actualEffectivePaid);
+      weightedTempo += actualEffectivePaid * tempo;
+
+      if (entry.id === "moralizedStamina") {
+        window.EnchantmentSystem?.logEvent?.(`${removed} Moralized Stamina paid ${round1(actualEffectivePaid)} Stamina`);
+      } else if (entry.id === "furiousStamina" && tempo > 1) {
+        window.EnchantmentSystem?.logEvent?.(`Furious Stamina accelerated ${transaction.actionKind === "offensiveHeldCharge" ? "charge segment" : "flurry segment"} ×${tempo}`);
+      }
+    }
+
+    weightedTempo += remaining;
+    const enhancedPaid = round1(requested - remaining);
+    const tempoMultiplier = requested > 0 ? Math.max(1, weightedTempo / requested) : 1;
+    return {
+      resourceKey,
+      requested: round1(requested),
+      enhancedPaid,
+      ordinaryRemaining: round1(remaining),
+      consumed,
+      tempoMultiplier,
+    };
+  }
+
+  function addEnhancedResource(entity, id, amount, _options = {}) {
+    if (!ENHANCED_RESOURCE_DEFS[id]) return 0;
+    return addAffliction(entity, id, amount);
+  }
+
+  function spendStamina(entity, amount, reason = "action", transaction = {}) {
     entity.lastAttackAttemptAt = nowMs();
     if (entity === window.Combat?.deps?.player) {
       amount *= window.AlchemySystem?.getStaminaSpendMultiplier?.() || 1;
       amount *= 1 - Math.min(0.6, (window.PerkSystem?.rank('combat', 'reduceStaminaUse') || 0) * 0.08); // Reduce Stamina Use perk.
     }
-    if (!(amount > 0)) return { spent: 0, excess: 0 };
+    if (!(amount > 0)) return { spent: 0, excess: 0, enhancedPaid: 0, consumed: [], tempoMultiplier: 1 };
     recordPunishedAction(entity, "staminaSpend"); // Resets the avoidance bonus for Wounded/Infected/Shattered Stamina whenever the punished action is actually taken.
+    const enhanced = resolveEnhancedResourceTransaction(entity, "stamina", amount, { ...transaction, reason }); // Moralized/Furious participate before ordinary/black Stamina through one reusable transaction API.
+    const ordinaryCost = enhanced.ordinaryRemaining;
 
     if (entity.exhaustion.active) {
       entity.stamina = 0; // Reassert the invariant even if an external/load path injected stale regular Stamina since the previous tick.
-      entity.exhaustion.blackStamina = round1(clamp(entity.exhaustion.blackStamina - amount, 0, 100));
-      return { spent: 0, excess: amount };
+      entity.exhaustion.blackStamina = round1(clamp(entity.exhaustion.blackStamina - ordinaryCost, 0, 100));
+      return { spent: 0, excess: ordinaryCost, enhancedPaid: enhanced.enhancedPaid, consumed: enhanced.consumed, tempoMultiplier: enhanced.tempoMultiplier };
     }
 
     const before = entity.stamina;
-    const after = clamp(before - amount, 0, entity.maxStamina || 0);
+    const after = clamp(before - ordinaryCost, 0, entity.maxStamina || 0);
     const normalSpent = round1(before - after);
-    const excess = round1(amount - normalSpent);
+    const excess = round1(ordinaryCost - normalSpent);
     entity.stamina = after;
 
     if (normalSpent > 0) resolveSpentAfflictions(entity, after, before);
     if (excess > 0) enterExhausted(entity, excess, reason);
 
     enforceCaps(entity);
-    return { spent: normalSpent, excess };
+    return { spent: normalSpent, excess, enhancedPaid: enhanced.enhancedPaid, consumed: enhanced.consumed, tempoMultiplier: enhanced.tempoMultiplier };
   }
 
   // Balance loss from being hit (see game.js's damagePlayer/damageCreature,
@@ -460,8 +712,10 @@
     if (entity.prone) return 0;
     if (!(amount > 0) || !Number.isFinite(entity.footing)) return 0;
     if (entity === window.Combat?.deps?.player) amount *= 1 - Math.min(0.6, (window.PerkSystem?.rank('combat', 'increaseFootingResistance') || 0) * 0.08); // Increase Footing Resistance perk.
+    const enhanced = resolveEnhancedResourceTransaction(entity, "footing", amount, { kind: "loss", reason }); // Resolute Footing absorbs at its authored 3:1 effective value.
+    const ordinaryLoss = enhanced.ordinaryRemaining;
     const before = entity.footing;
-    entity.footing = round1(clamp(before - amount, 0, getEffectiveMax(entity, "footing")));
+    entity.footing = round1(clamp(before - ordinaryLoss, 0, getEffectiveMax(entity, "footing")));
     return round1(before - entity.footing);
   }
 
@@ -477,6 +731,9 @@
 
     const shatteredOverlap = consumeZeroBasedSpend(entity, "shatteredStamina", spendEnd, spendStart);
     if (shatteredOverlap > 0) addAffliction(entity, "bleedingHealth", shatteredOverlap * 1.6);
+
+    const frostbittenOverlap = consumeZeroBasedSpend(entity, "frostbittenStamina", spendEnd, spendStart); // Frostbitten Stamina converts only the spent overlap into equal Footing damage.
+    if (frostbittenOverlap > 0) spendFooting(entity, frostbittenOverlap, "spent Frostbitten Stamina");
   }
 
   function consumeZeroBasedSpend(entity, id, spendEnd, spendStart) {
@@ -516,8 +773,9 @@
       }
     }
 
+    const enhanced = resolveEnhancedResourceTransaction(entity, "health", finalDamage, { kind: "damage", reason: opts.reason || "damage" }); // Resolute/Mirrored Health absorb before ordinary Health through the shared enhanced transaction.
     const before = entity.health;
-    entity.health = round1(clamp(entity.health - finalDamage, 0, getEffectiveMax(entity, "health")));
+    entity.health = round1(clamp(entity.health - enhanced.ordinaryRemaining, 0, getEffectiveMax(entity, "health")));
     const lost = round1(before - entity.health);
 
     if (opts.afflictionBonuses) {
@@ -557,9 +815,10 @@
     const rest = getRestInfo(entity, cfg);
     const mul = rest.rested ? 2 : 1;
     const isPlayer = entity === window.Combat?.deps?.player; // Used to apply the consumer's central regeneration modifiers.
-    const staminaRate = (opts.staminaRegenPerSec ?? cfg.staminaRegenPerSec) * STAMINA_RECOVERY_MULTIPLIER * (isPlayer ? window.AlchemySystem?.getStaminaRegenMultiplier?.() || 1 : 1);
+    const staminaRate = (opts.staminaRegenPerSec ?? cfg.staminaRegenPerSec) * STAMINA_RECOVERY_MULTIPLIER * (isPlayer ? window.AlchemySystem?.getStaminaRegenMultiplier?.() || 1 : 1) * statModifier(entity, "staminaRegen");
     const healthRecoveryBlocked = opts.healthRecoveryBlocked === true; // Used by the shared combat-recovery policy to suppress automatic current-Health gains without disabling the rest of ResourceSystem maintenance.
-    const healthRate = healthRecoveryBlocked ? 0 : (opts.healthRegenPerSec ?? cfg.healthRegenPerSec) * (isPlayer ? window.AlchemySystem?.getHealthRegenMultiplier?.() || 1 : 1);
+    const healthRate = healthRecoveryBlocked ? 0 : (opts.healthRegenPerSec ?? cfg.healthRegenPerSec) * (isPlayer ? window.AlchemySystem?.getHealthRegenMultiplier?.() || 1 : 1)
+      * statModifier(entity, "healthRegen") * (rest.rested ? 1 : statModifier(entity, "healthRegenInCombat")); // In-combat = not yet rested (the same quietSeconds rule that doubles out-of-combat regen).
     const staminaRegenBlocked = isStaminaRegenBlocked(entity); // Used to pause both ordinary and Exhausted Stamina regeneration while any held-action blocker is active.
 
     if (entity.exhaustion.active) {
@@ -577,12 +836,13 @@
     entity.proneT = entity.prone ? (entity.proneT || 0) + dt : 0;
     const footingRegenGated = entity.prone && entity.proneT < cfg.proneRecoveryDelayS;
     if (!footingRegenGated && Number.isFinite(entity.footing)) {
-      const footingRate = opts.footingRegenPerSec ?? cfg.footingRegenPerSec;
+      const footingRate = (opts.footingRegenPerSec ?? cfg.footingRegenPerSec) * statModifier(entity, "footingRegen");
       entity.footing = round1(clamp(entity.footing + footingRate * mul * dt, 0, getEffectiveMax(entity, "footing")));
     }
 
     resolveBleedingTick(entity, dt, rest, cfg, healthRecoveryBlocked);
     resolveBurningTick(entity, dt, cfg);
+    resolveKindlingTick(entity, dt);
     resolvePoisonTick(entity, dt, cfg);
     resolveCongealedTick(entity, dt, rest, cfg, healthRecoveryBlocked);
     resolveGenericRecovery(entity, dt, rest, cfg);
@@ -608,6 +868,15 @@
     if (burning <= 0) return;
     const amount = Math.min(burning, cfg.burnTickPerSec * dt);
     removeAffliction(entity, "burningHealth", amount);
+    applyHealthAfflictionDamage(entity, amount);
+  }
+
+  function resolveKindlingTick(entity, dt) {
+    const kindling = getAffliction(entity, "kindlingHealth");
+    if (kindling <= 0) return;
+    const rate = Math.max(0, Number(window.EnchantmentSystem?.TUNING?.LIVING_FLAME_KINDLING_TICK_PER_SEC) || 0.75); // Living Flame owns the balance constant; ResourceSystem owns the actual Health-loss transaction.
+    const amount = Math.min(kindling, rate * Math.max(0, Number(dt) || 0));
+    removeAffliction(entity, "kindlingHealth", amount);
     applyHealthAfflictionDamage(entity, amount);
   }
 
@@ -676,12 +945,15 @@
   function getSegmentBox(entity, resourceKey, id) {
     const def = AFFLICTIONS[id];
     const max = maxFieldFor(entity, resourceKey);
-    const current = resourceKey === "health" ? entity.health : entity.stamina;
+    const current = resourceKey === "health" ? entity.health : resourceKey === "footing" ? entity.footing : entity.stamina;
     const amount = clamp(getAffliction(entity, id), 0, max || 0);
     let leftPoints = 0;
     let widthPoints = amount;
 
-    if (def.extend === "currentBack") {
+    if (def.extend === "maxBack") {
+      leftPoints = clamp((max || 0) - amount, 0, max || 0); // Footing reservations occupy the unavailable end of the ring.
+      widthPoints = clamp(amount, 0, max || 0);
+    } else if (def.extend === "currentBack") {
       const right = clamp(current, 0, max || 0);
       leftPoints = clamp(right - amount, 0, max || 0);
       widthPoints = clamp(right - leftPoints, 0, max || 0);
@@ -692,12 +964,16 @@
 
   window.ResourceSystem = {
     AFFLICTIONS,
+    ENHANCED_RESOURCE_DEFS,
+    registerStatModifierProvider,
+    statModifier,
     afflictionBonusesForTag,
     config: resourceSystemConfig,
     initEntity,
     getAffliction,
     addAffliction,
     removeAffliction,
+    setImmutableAffliction,
     afflictionHasTag,
     afflictionIdsByFamily,
     afflictionIdsByTag,
@@ -706,6 +982,8 @@
     removeAfflictionsByFamily,
     removeAfflictionsByTag,
     getEffectiveMax,
+    getDepletionEquivalentCurrent,
+    getProneRecoveryFootingTarget,
     applyHealthAfflictionDamage,
     getExhaustionSpeed,
     getAfflictionRecoveryMultiplier,
@@ -714,6 +992,10 @@
     isStaminaRegenBlocked,
     getStaminaRegenBlockers,
     restoreStamina,
+    getEnhancedResources,
+    resolveEnhancedResourceTransaction,
+    addEnhancedResource,
+    convertKindlingToBurning,
     spendStamina,
     spendFooting,
     applyDamage,

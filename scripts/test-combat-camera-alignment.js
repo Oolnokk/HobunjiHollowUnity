@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const source = fs.readFileSync('docs/js/combat/combat-camera-alignment-bridge.js', 'utf8');
+const coreSource = fs.readFileSync('docs/js/combat/combat-core.js', 'utf8'); // Confirms direct reticle flight exits before legacy diminished-vertical lunge math.
 const loader = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8');
 const game = fs.readFileSync('docs/game.js', 'utf8');
 const rangedFocus = fs.readFileSync('docs/js/combat/ranged-camera-focus.js', 'utf8');
@@ -20,8 +21,8 @@ const alignmentIndex = loader.indexOf('js/combat/combat-camera-alignment-bridge.
 const dualRoleIndex = loader.indexOf('js/combat/ranged-dual-role-anim-style.js?v=');
 assert(focusIndex >= 0 && alignmentIndex > focusIndex && dualRoleIndex > alignmentIndex,
   'camera authority bridge loads after ranged focus and before later ranged adapters');
-assert.match(loader, /HobunjiCombatCameraAlignment\?\.version\) >= 4/,
-  'loader requires the shared perspective-point bridge v4 API');
+assert.match(loader, /HobunjiCombatCameraAlignment\?\.version\) >= 6/,
+  'loader requires camera-alignment bridge v6 frozen melee endpoint API');
 assert.doesNotMatch(source, /setInterval\s*\(/, 'alignment bridge adds no polling interval');
 assert.doesNotMatch(source, /requestAnimationFrame\s*\(/, 'alignment bridge adds no animation-frame loop');
 assert.doesNotMatch(source, /\.update\s*=\s*function/, 'alignment bridge does not wrap a per-frame update');
@@ -93,12 +94,28 @@ assert.match(pixelProbe, /Point convergence errors: head=.*bodyYaw=.*melee=.*las
 assert.doesNotMatch(debugHitboxes, /requestAnimationFrame\s*\(|setInterval\s*\(/,
   'expanded ray debug adds no independent frame loop or polling timer');
 assert.match(game, /const aimDirection = currentPlayerMeleeAimDirection\(\);/,
-  'player lunge setup still has one shared aim-direction boundary for the bridge to correct');
+  'player lunge setup has one shared reticle-authored aim-direction boundary');
+assert.match(game, /function currentPlayerMeleeAimDirection\(\)[\s\S]{0,900}currentPlayerPerspectiveDirection\(meleeOrigin\)/,
+  'native melee aim is computed from the combat-body origin to the shared reticle point');
+assert.doesNotMatch(game, /function currentPlayerMeleeAimDirection\(\)[\s\S]{0,1200}focusedHostile\?\./,
+  'focused hostile lookup cannot replace melee reticle aim');
+assert.doesNotMatch(game, /const lungeTarget = \(activeTool === 'weapon'[\s\S]{0,700}LUNGE_HOMING_RATE/,
+  'player lunges cannot home toward an enemy after the reticle vector is committed');
+assert.match(game, /aimUsesDirectReticleFlight = aimPitch >= 0[\s\S]{0,550}aimUsesDirectReticleFlight \? 1 : \(hitTest\?\.directFlightStrength \|\| 0\)/,
+  'forward/upward native attacks force full direct flight along the reticle vector');
+assert.match(coreSource, /MAX_MELEE_AIM_PITCH_RAD = Math\.PI \/ 2/,
+  'melee reticle pitch must reach a true 90-degree vertical aim');
+assert.match(coreSource, /upwardDistanceScale = 1 - 0\.5 \* upwardPitchFraction/,
+  'forward/upward lunge total distance must lerp linearly from 1x at 0 degrees to 0.5x at 90 degrees');
+assert.match(coreSource, /if \(direct >= 0\.999 && pitch >= 0\)[\s\S]{0,1000}return[\s\S]{0,900}const distanceScaleAtAngle/,
+  'direct reticle flight exits before the legacy diminished-vertical ballistic math starts');
 
 // All combat adapters must accept the same finite point; authored attack range
 // limits reach/travel but must not create a second target endpoint.
-assert.match(rangedFocus, /function sharedPerspectiveAimTarget\(attackOrigin, metadata = \{\}\)/,
-  'ranged focus re-roots the shared point at pose/melee origins without reraycasting');
+assert.match(rangedFocus, /function rangedInteractionAimTarget[\s\S]{0,1100}resolveInteractionAimTarget\(rangeTiles, origin/,
+  'ranged focus resolves the actual reticle surface before its horizon fallback');
+assert.match(rangedFocus, /function meleeInteractionAimTarget[\s\S]{0,900}committedMeleeAimTarget\(origin[\s\S]{0,500}sharedPerspectiveAimTarget\(origin/,
+  'melee strike direction prefers the frozen lunge endpoint before the stable perspective fallback');
 assert.match(rangedWeapons, /alongMuzzle \+ def\.rangeTiles/,
   'ranged weapon fallback remains available outside shared shoulder aim');
 assert.equal((game.match(/getPlayerPerspectiveTarget: currentPlayerPerspectiveTarget/g) || []).length, 2,
@@ -201,8 +218,24 @@ const windowStub = {
   Combat: {
     init: focusLikeCombatInit,
     deps: null,
-    meleeLungeProfile(distancePx, pitch, hopUnits) {
-      return { distancePx, pitch, hopUnits };
+    beginStagedAction(options = {}) { return { options }; },
+    meleeLungeProfile(distancePx, pitch, hopUnits, lungeHeightUnits, pitchDistanceResistance, directFlightStrength, inRangeAirAssist) {
+      windowStub._lastProfile = { distancePx, pitch, hopUnits, lungeHeightUnits, pitchDistanceResistance, directFlightStrength, inRangeAirAssist };
+      if (directFlightStrength >= 0.999 && pitch >= 0) {
+        const upwardDistanceScale = 1 - 0.5 * Math.max(0, Math.min(1, pitch / (Math.PI / 2)));
+        return {
+          distancePx: distancePx * upwardDistanceScale * Math.cos(Math.abs(pitch)),
+          pitch,
+          hopUnits: 0,
+          lungeHeightUnits,
+          pitchDistanceResistance,
+          directFlightStrength: 1,
+          inRangeAirAssist,
+          upwardDistanceScale,
+          verticalTravelUnits: (distancePx / 64) * upwardDistanceScale * Math.sin(pitch),
+        };
+      }
+      return { distancePx, pitch, hopUnits, lungeHeightUnits, pitchDistanceResistance, directFlightStrength, inRangeAirAssist, verticalTravelUnits: 0 };
     },
   },
 };
@@ -210,7 +243,7 @@ const windowStub = {
 const context = { window: windowStub, Date, Math, console };
 vm.runInNewContext(source, context, { filename: 'combat-camera-alignment-bridge.js' });
 
-assert.equal(windowStub.HobunjiCombatCameraAlignment.version, 4);
+assert.equal(windowStub.HobunjiCombatCameraAlignment.version, 6);
 assert.equal(windowStub.HobunjiCombatCameraAlignment.debugSnapshot().updateMode,
   'initialization-only-no-frame-hook');
 
@@ -285,8 +318,23 @@ assert.equal(player.lungeDirX, 1, 'lunge horizontal X follows the centered camer
 assert.equal(player.lungeDirY, 0, 'lunge no longer follows a target-derived sideways direction');
 assert(Math.abs(player.lungeAimPitch - Math.atan2(1.6, 9)) < 1e-9,
   'lunge pitch uses verticality from its real origin to the shared point');
-assert.equal(player.lungeDistancePx, 128, 'camera authority does not change authored lunge distance');
-assert.equal(player.lungeHopUnits, 0.3, 'camera authority preserves authored lunge hop budget');
+const expectedPitch = Math.atan2(1.6, 9);
+const expectedUpwardDistanceScale = 1 - 0.5 * (expectedPitch / (Math.PI / 2));
+assert(Math.abs(player.lungeDistancePx - 128 * expectedUpwardDistanceScale * Math.cos(expectedPitch)) < 1e-9,
+  'forward/upward lunge horizontal travel is the XZ component of the angle-scaled 3D attack distance');
+assert.equal(player.lungeHopUnits, 0,
+  'direct reticle flight removes the old curved-hop contribution entirely');
+assert(Math.abs(player.lungeVerticalTravelUnits - 2 * expectedUpwardDistanceScale * Math.sin(expectedPitch)) < 1e-9,
+  'forward/upward lunge vertical travel is the Y component of the same angle-scaled 3D vector');
+assert.equal(windowStub._lastProfile.directFlightStrength, 1);
+assert.equal(player.lungeDirectFlightStrength, 1,
+  'forward/upward reticle attacks use full direct-flight authority');
+assert.equal(windowStub._lastProfile.pitchDistanceResistance, 1,
+  'forward/upward camera-authored lunge bypasses pitch grounding without consulting target/ledge state');
+assert.equal(windowStub._lastProfile.directFlightStrength, 1,
+  'bridge forces full direct flight rather than the legacy diminished-vertical model');
+assert.equal(windowStub._lastProfile.inRangeAirAssist, true,
+  'forward/upward camera-authored lunge marks the direct airborne path purely from aim pitch');
 
 const debug = windowStub.HobunjiCombatCameraAlignment.debugSnapshot();
 assert.equal(debug.rangedInitWrapped, true);
@@ -296,14 +344,15 @@ assert.equal(debug.perspectiveTargetDepsProvided, true, 'bridge preserved the sh
 assert.equal(debug.nativeMeleeDirectionRestored, true);
 assert.equal(debug.nativeMeleePitchRestored, true);
 assert.equal(debug.lungeAuthorityInstalled, true);
+assert.equal(debug.stagedActionCommitInstalled, true, 'staged melee strike ownership is installed once');
 assert.equal(debug.lungeAuthorityCount, 1);
-assert.equal(debug.movementAuthority, 'native-player-to-perspective-point-walk-and-lunge');
-assert.equal(debug.rangedAuthority, 'muzzle-to-shared-perspective-point');
+assert.equal(debug.movementAuthority, 'native-player-to-perspective-point-walk+frozen-reticle-lunge');
+assert.equal(debug.rangedAuthority, 'held-launch-origin-to-reticle-target');
 assertVector(debug.lastCameraRay.origin, { x: -4, y: 2.4, z: 3 }, 'debug reports true camera origin');
 assertVector(debug.lastLunge.targetPoint, { x: 11, y: 2.4, z: 3 }, 'debug reports the exact shared lunge endpoint');
 assert.equal(debug.lastLunge.targetSource, 'shared-perspective-point');
 assert.equal(debug.lastError, null);
-assert(logs.some(line => line.includes('shared perspective-point authority installed')),
+assert(logs.some(line => line.includes('frozen exact-reticle melee lunges/strikes')),
   'bridge installation is visible in the mobile in-game debug log');
 
 console.log('Shared perspective-point movement/combat alignment checks passed.');

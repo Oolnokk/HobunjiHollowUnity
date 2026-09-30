@@ -43,7 +43,7 @@
     postAttackTurnEasing: 'smoothstep',
   });
   let targetingConfig = { ...DEFAULT_TARGETING_CONFIG }; // Runtime tuning replaced by applyTargetingConfig after JSON load.
-  const MAX_MELEE_AIM_PITCH_RAD = THREE.MathUtils.degToRad(70);
+  const MAX_MELEE_AIM_PITCH_RAD = Math.PI / 2; // Melee can follow the reticle all the way to straight up/down; upward lunge distance is separately reduced below.
   const MELEE_LEAP_START_PITCH_RAD = THREE.MathUtils.degToRad(12);
   const activeMeleeTrails = []; // Transient pitched ribbons aged by updateMeleeTrails().
   const activeMeleeColliderDebug = new Map(); // Recent real pie-prism volumes drawn by Show Hitboxes.
@@ -433,31 +433,60 @@
   // Drenkirra leap can retain more than its horizontal attack distance.
   // pitchDistanceResistance is an attack-specific 0..1 stat: 0 preserves the
   // ordinary gravity/aim-angle loss, while 1 removes only that loss without
-  // erasing the attacker's authored vertical leap-height recovery.
-  function meleeLungeProfile(baseDistancePx, aimPitch = 0, baseHopUnits = 0, lungeHeightUnits = 1, pitchDistanceResistance = 0, directFlightStrength = 0) {
+  // erasing the attacker's authored vertical leap-height recovery. The camera
+  // alignment bridge now requests full air assist for every forward/upward
+  // player lunge; only below-forward pitch remains grounded by aim.
+  function meleeLungeProfile(baseDistancePx, aimPitch = 0, baseHopUnits = 0, lungeHeightUnits = 1, pitchDistanceResistance = 0, directFlightStrength = 0, inRangeAirAssist = false) {
     const pitch = THREE.MathUtils.clamp(Number(aimPitch) || 0, -MAX_MELEE_AIM_PITCH_RAD, MAX_MELEE_AIM_PITCH_RAD);
     const absPitch = Math.abs(pitch);
+    const baseDistance = Math.max(0, Number(baseDistancePx) || 0);
+    const baseDistanceWorld = baseDistance / (deps?.TILE || 64);
+    const heightUnits = Math.max(0, Number(lungeHeightUnits) || 0);
+    const resistance = THREE.MathUtils.clamp(Number(pitchDistanceResistance) || 0, 0, 1);
+    const direct = THREE.MathUtils.clamp(Number(directFlightStrength) || 0, 0, 1);
+    const straightHorizontalScale = Math.cos(absPitch); // A true 3D line uses authored distance as vector length, not ground-plane length.
+
+    if (direct >= 0.999 && pitch >= 0) {
+      const upwardPitchFraction = THREE.MathUtils.clamp(pitch / (Math.PI / 2), 0, 1);
+      const upwardDistanceScale = 1 - 0.5 * upwardPitchFraction; // Linear total-distance falloff: 0°=1.0x, 45°=0.75x, 90°=0.5x.
+      const directDistancePx = baseDistance * upwardDistanceScale;
+      const directDistanceWorld = baseDistanceWorld * upwardDistanceScale;
+      return {
+        pitch,
+        distanceScale: upwardDistanceScale * straightHorizontalScale,
+        pitchDistanceResistance: resistance,
+        appliedPitchDistanceResistance: 1,
+        inRangeAirAssist: !!inRangeAirAssist,
+        directFlightStrength: 1,
+        lungeHeightUnits: heightUnits,
+        upwardDistanceScale,
+        distancePx: directDistancePx * straightHorizontalScale,
+        verticalTravelUnits: directDistanceWorld * Math.sin(pitch), // XZ/Y are components of the same angle-scaled reticle vector.
+        leapT: 0,
+        hopUnits: 0,
+      }; // Forward/upward direct player flight exits before any legacy diminished-vertical/ballistic calculations can run.
+    }
+
     const distanceScaleAtAngle = THREE.MathUtils.clamp(1 - absPitch / (Math.PI / 2), 0, 1);
-    const leapT = THREE.MathUtils.clamp(
+    const naturalLeapT = THREE.MathUtils.clamp(
       (pitch - MELEE_LEAP_START_PITCH_RAD) / Math.max(1e-6, MAX_MELEE_AIM_PITCH_RAD - MELEE_LEAP_START_PITCH_RAD),
       0, 1,
     );
-    const baseDistanceWorld = Math.max(0, Number(baseDistancePx) || 0) / (deps?.TILE || 64);
-    const heightUnits = Math.max(0, Number(lungeHeightUnits) || 0);
+    const assistedPitchRatio = pitch >= 0
+      ? THREE.MathUtils.clamp(Math.sin(pitch) / Math.max(1e-6, Math.sin(MAX_MELEE_AIM_PITCH_RAD)), 0, 1)
+      : 0;
+    const forwardAirAssistFloor = inRangeAirAssist && pitch >= 0 ? 0.06 : 0;
+    const assistedLeapT = Math.sqrt(Math.max(assistedPitchRatio, forwardAirAssistFloor));
+    const leapT = inRangeAirAssist ? Math.max(naturalLeapT, assistedLeapT) : naturalLeapT;
     const heightToDistance = baseDistanceWorld > 1e-4 ? heightUnits / baseDistanceWorld : 0;
     const verticalRecovery = leapT * heightToDistance;
     const naturalScale = distanceScaleAtAngle + verticalRecovery;
     const noGravityLossScale = 1 + verticalRecovery;
-    const resistance = THREE.MathUtils.clamp(Number(pitchDistanceResistance) || 0, 0, 1);
-    const appliedResistance = pitch > 0 ? resistance : 0; // Used only for upward aim, where gravity/vertical travel is supposed to eat horizontal lunge distance.
-    // Interpolate the EXISTING upward-pitch loss toward its no-loss equivalent.
-    // Downward aim keeps the ordinary pitch-distance behavior unchanged.
+    const appliedResistance = pitch > 0 ? resistance : 0;
     const ballisticScale = THREE.MathUtils.clamp(
       naturalScale + (noGravityLossScale - naturalScale) * appliedResistance,
       0, 3.5,
-    );
-    const direct = THREE.MathUtils.clamp(Number(directFlightStrength) || 0, 0, 1);
-    const straightHorizontalScale = Math.cos(absPitch); // A true 3D line uses the authored distance as vector length, not ground-plane length.
+    ); // Legacy diminished-vertical model remains only for below-forward or explicitly partial-direct attacks.
     const distanceScale = THREE.MathUtils.lerp(ballisticScale, straightHorizontalScale, direct);
     const ballisticHopUnits = Math.max(0, Number(baseHopUnits) || 0) + leapT * heightUnits;
     return {
@@ -465,20 +494,36 @@
       distanceScale,
       pitchDistanceResistance: resistance,
       appliedPitchDistanceResistance: appliedResistance,
+      inRangeAirAssist: !!inRangeAirAssist,
       directFlightStrength: direct,
       lungeHeightUnits: heightUnits,
-      distancePx: Math.max(0, Number(baseDistancePx) || 0) * distanceScale,
-      verticalTravelUnits: baseDistanceWorld * Math.sin(pitch) * direct, // Signed world-Y leg of the same straight 3D vector.
+      distancePx: baseDistance * distanceScale,
+      verticalTravelUnits: baseDistanceWorld * Math.sin(pitch) * direct,
       leapT,
-      hopUnits: ballisticHopUnits * (1 - direct), // Direct flight progressively removes the curved hop; 1 is a pure line.
+      hopUnits: ballisticHopUnits * (1 - direct),
     };
   }
 
   // Shared held-windup curve. slowdown=0 is linear. Positive values produce a
   // logarithmic ease: brisk early motion that continuously loses speed as it
   // approaches Windup, while still reaching exactly 1 at the authored end.
+  const windupProgressTransforms = new Map(); // Used by paid held-action segments (currently Furious Charged Breaker) to accelerate the same visible windup clock instead of inventing a second charge timer.
+
+  function setWindupProgressTransform(owner, transform) {
+    const key = String(owner || '').trim(); // Stable owner lets one held action clear only its own progress transform.
+    if (!key) return false;
+    if (typeof transform === 'function') windupProgressTransforms.set(key, transform);
+    else windupProgressTransforms.delete(key);
+    return true;
+  }
+
   function windupPoseProgress(rawProgress, slowdown = 0) {
-    const t = THREE.MathUtils.clamp(Number(rawProgress) || 0, 0, 1);
+    let transformed = Number(rawProgress) || 0; // Raw renderer-owned progress remains the source; active transforms only advance that same clock.
+    for (const transform of windupProgressTransforms.values()) {
+      const next = Number(transform(transformed));
+      if (Number.isFinite(next)) transformed = next;
+    }
+    const t = THREE.MathUtils.clamp(transformed, 0, 1);
     const s = Math.max(0, Number(slowdown) || 0);
     if (s <= 1e-6) return t;
     return Math.log1p(s * t) / Math.log1p(s);
@@ -731,6 +776,7 @@
     debugMeleeColliders,
     meleeHit,
     meleeLungeProfile,
+    setWindupProgressTransform,
     windupPoseProgress,
     writeMeleeTrailRibbon,
     spawnMeleeTrail,
@@ -881,7 +927,8 @@
 
   RS.getEffectiveMax = function drunkenAwareEffectiveMax(entity, key) {
     if (key === "footing") {
-      return clamp((Number(entity?.maxFooting) || 0) - getDrunk(entity, DRUNK_FOOTING_ID), 0, Number(entity?.maxFooting) || 0);
+      const baseFootingMax = Math.max(0, Number(original.getEffectiveMax(entity, key)) || 0); // Includes ResourceSystem reservations such as permanent Shambling Footing.
+      return clamp(baseFootingMax - getDrunk(entity, DRUNK_FOOTING_ID), 0, baseFootingMax); // Drunken Footing stacks on top instead of replacing the Minion cap.
     }
     return original.getEffectiveMax(entity, key);
   };
@@ -950,8 +997,10 @@
     }
 
     const remaining = Math.max(0, finalDamage - convertible);
+    const enhanced = RS.resolveEnhancedResourceTransaction?.(entity, "health", remaining, { kind: "damage", reason: opts.reason || "damage" })
+      || { ordinaryRemaining: remaining }; // Drunken Health converts first, then Resolute/Mirrored Health absorb what would otherwise reach real Health.
     const before = Number(entity.health) || 0;
-    if (remaining > 0) entity.health = round1(clamp(before - remaining, 0, original.getEffectiveMax(entity, "health")));
+    if (enhanced.ordinaryRemaining > 0) entity.health = round1(clamp(before - enhanced.ordinaryRemaining, 0, original.getEffectiveMax(entity, "health")));
     const lost = round1(before - (Number(entity.health) || 0));
 
     if (opts.afflictionBonuses) {
@@ -968,10 +1017,10 @@
     return lost;
   };
 
-  RS.spendStamina = function drunkenAwareSpendStamina(entity, amount, reason) {
+  RS.spendStamina = function drunkenAwareSpendStamina(entity, amount, reason, transaction = {}) {
     const beforeHealth = Number(entity?.health) || 0;
     const beforeDrunk = getDrunk(entity, DRUNK_HEALTH_ID);
-    const result = original.spendStamina(entity, amount, reason);
+    const result = original.spendStamina(entity, amount, reason, transaction); // Preserve Enhanced Stamina eligibility/priority metadata through the alcohol compatibility wrapper.
     const directLost = Math.max(0, beforeHealth - (Number(entity?.health) || 0));
     if (directLost > 0 && beforeDrunk > 0) {
       const convertible = Math.min(directLost, beforeDrunk, availableBleedingCapacity(entity));

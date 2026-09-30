@@ -1,6 +1,7 @@
 // Debris-ifier V50 interior walls are structural geometry, not an optional
-// preview layer. Keep every generated wall mesh enabled for collision/source
-// transforms; the main-game render proxy owns the visible parent-realm draw.
+// preview layer. Embedded generation uses parent.THREE, so the generated wall
+// meshes themselves are now the visible game-realm drawables as well as the
+// authoritative collision/source transforms.
 (() => {
   'use strict';
 

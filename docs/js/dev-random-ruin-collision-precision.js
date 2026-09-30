@@ -67,10 +67,10 @@
     if (!data.occupancy && data.revision == null) {
       lines.push('Shared occupancy snapshot: unavailable');
     } else {
-      const render = window.DevRandomRuinWallRenderProxy?.snapshot?.() || null; // Parent-realm visibility counts make invisible puzzle parts diagnosable on mobile.
+      const render = window.DevRandomRuinWallRenderProxy?.snapshot?.() || null; // Direct-source visibility counts make missing puzzle parts diagnosable on mobile without rebuilding geometry.
       lines.push(`Snapshot revision: ${data.revision} aggregateGameplayBlockers=${data.aggregateBlockers}`);
       lines.push(`Tiles: redBlocked=${data.counts.blocked} greenActivators=${data.counts.causes} blueMechanisms=${data.counts.effects}`);
-      if (render) lines.push(`Puzzle render proxies: doors=${render.visibleDoorProxies}/${render.sourceDoorMeshes} arches=${render.visibleDoorArchProxies}/${render.sourceDoorArchMeshes} normalized=${render.normalizedDoorAssemblies} activators=${render.visibleActivatorProxies}/${render.sourceActivatorMeshes} submitted=${render.submittedDoorProxies + render.submittedActivatorProxies}`);
+      if (render) lines.push(`Native puzzle render: doors=${render.visibleDoorSources}/${render.sourceDoorMeshes} arches=${render.visibleDoorArchSources}/${render.sourceDoorArchMeshes} normalized=${render.normalizedDoorAssemblies} activators=${render.visibleActivatorSources}/${render.sourceActivatorMeshes} culled=${render.frustumCulledSources}/${render.nativeSourceMeshCount} proxies=${render.totalProxyCount}`);
       lines.push(`Player: ${data.player ? `${data.player.x.toFixed(3)},${data.player.z.toFixed(3)}` : 'unavailable'} tile=${data.playerTile || 'unknown'} sources=${data.blockedAtPlayer.join(',') || 'none'}`);
       lines.push(`Nearby red tiles: ${data.nearby.length ? data.nearby.map(entry => `${entry.tile}[${entry.sources.join(',')}]`).join(' | ') : 'none within 2 tiles'}`);
     }

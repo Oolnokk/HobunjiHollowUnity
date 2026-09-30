@@ -260,6 +260,29 @@
     return avatarRef;
   }
 
+  function applyRosterDyesToProfile(profile, roster) {
+    if (!profile || !roster) return {}; // Shared hostile portrait guard; callers still retain the untinted profile if no roster exists.
+    const accountCatalog = window.ScratchbonesAccount?.getDyeCatalog?.() || []; // Preferred live account catalog when it has finished initializing.
+    const configCatalog = window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || []; // Full authored fallback remains available even if the account shim momentarily reports an empty list.
+    const catalog = accountCatalog.length ? accountCatalog : configCatalog; // Same authored dye definitions the inventory/loot presentation uses.
+    const byId = new Map(catalog.map(dye => [dye?.id, dye])); // One lookup table avoids rescanning the full catalog for every clothing slot.
+    const bodyColors = { ...(profile.bodyColors || {}) }; // Clone so randomProfile's palette object is never mutated behind another consumer's back.
+    const resolved = {}; // Mobile/debug-readable proof of the exact dye id/hex baked into this hostile's world portrait.
+    for (const [tintSlot, dyeId] of Object.entries(roster.appliedDyes || {})) {
+      const dye = byId.get(dyeId);
+      if (!dye) continue;
+      const tint = { ...(dye.color || {}) }; // Preserve fitted legacy HSV/filter metadata for compatibility with existing portrait tint consumers.
+      if (dye.hex) {
+        tint.hex = dye.hex; // Absolute catalog color makes hostile rendering deterministic and identical to the inventory swatch.
+        tint.tintMode = 'hexShadeFill';
+      }
+      bodyColors[tintSlot] = tint;
+      resolved[tintSlot] = { dyeId, hex: dye.hex || null };
+    }
+    profile.bodyColors = bodyColors;
+    return resolved;
+  }
+
   async function buildBanditAvatar(roster) {
     if (!window.NpcAvatarPreview || !window.PNGPlaneAvatar) return null;
     await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' });
@@ -270,6 +293,7 @@
       appliedDyes: roster.appliedDyes,
     });
     if (!profile) return null;
+    const resolvedRosterDyes = applyRosterDyesToProfile(profile, roster); // Final world-avatar authority: visible pixels must use the same appliedDyes record that loot preserves.
     const avatarCfg = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
     const MODEL_W = avatarCfg.worldModelWidth ?? 0.9;
     const PORTRAIT_SIZE = avatarCfg.previewPortraitCanvasSize ?? 200;
@@ -282,7 +306,6 @@
     const backCanvas = document.createElement('canvas');
     backCanvas.width = backCanvas.height = PORTRAIT_SIZE;
     await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
-
     const portrait = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
       THREE, frontCanvas,
       {
@@ -386,6 +409,13 @@
     legsPivot.name = 'bandit_legs_pivot';
     legsPivot.position.y = -(modelHeight / 2);
     group.add(legsPivot);
+    const handsPivot = new THREE.Group(); // Floor-relative parent for procedural hands, matching the leg rig's center-anchored-hostile correction.
+    handsPivot.name = 'bandit_hands_pivot';
+    handsPivot.position.y = -(modelHeight / 2);
+    group.add(handsPivot);
+    portrait.position.set(0, -(modelHeight / 2), 0); // The original PNGPlaneAvatar root is now a metadata/hand-driver sentinel at the hostile's true floor origin.
+    portrait.userData.proceduralHandParent = handsPivot; // ProceduralHandFrameDriver attaches rendered hands to this visible hostile hierarchy instead of the discarded portrait assembly.
+    group.add(portrait); // Its front/back meshes were already extracted above, so parenting it enables hand discovery without double-rendering the portrait.
     // legsPivot's rotation.y is kept in sync with the same pngRot-derived
     // planeDelta the front/back planes use (see updateCreatureMesh), not
     // group's own free-tracking groupRot -- so the legs share whichever
@@ -401,6 +431,7 @@
 
     return {
       group, frontPlane: frontPivot, backPlane: backPivot, legsPivot, legs,
+      handsPivot, handRigAvatarRoot: portrait, resolvedRosterDyes,
       modelWidth, modelHeight,
       speciesId: portrait.userData?.speciesId || roster.appearance.speciesId,
       gender: portrait.userData?.gender || roster.appearance.gender,
@@ -427,14 +458,9 @@
         backNeckSkin?.weightedGeometry?.dispose();
         frontNeckSkin?.skeleton?.dispose?.();
         backNeckSkin?.skeleton?.dispose?.();
-        // `group` is a freshly built THREE.Group standing in as the avatar's
-        // rendered geometry (see the frontMesh/backMesh convention comment
-        // above), not the `portrait` object buildSinglePlaneAvatarModel
-        // returned. procedural-hand-frame-driver.js's hand rig (and anything
-        // chained onto ProceduralHandAttachments.attach) is registered
-        // against that original `portrait` avatarRoot, so disposing only
-        // `group` disposes the visible geometry but leaves the hand rig
-        // (and its sentinels/records) orphaned on every bandit death.
+        // The original portrait root is intentionally retained as the procedural-hand driver's registered avatarRoot.
+        // Dispose it explicitly first so its hand rig/sentinel are released before the converted visible hostile group.
+        portrait.parent?.remove?.(portrait);
         window.PNGPlaneAvatar.disposeAvatarModel?.(portrait);
         window.PNGPlaneAvatar.disposeAvatarModel?.(group);
       },
@@ -489,19 +515,26 @@
   // -- hoe is 'hoe' slot only, no dmgType at all) can be rolled here.
   // Recomputed fresh each call rather than cached at module load so a
   // shape added to deps.HELD_SHAPE_DEFS later is picked up automatically.
-  function banditWeaponShapeKeys() {
-    return Object.keys(deps.HELD_SHAPE_DEFS).filter(k => deps.HELD_SHAPE_DEFS[k].slots?.includes('weapon'));
+  function banditWeaponShapeKeys(cfg) {
+    const allWeaponShapes = Object.keys(deps.HELD_SHAPE_DEFS).filter(k => deps.HELD_SHAPE_DEFS[k].slots?.includes('weapon')); // Canonical fallback pool used by ordinary bandits exactly as before.
+    const configuredPool = Array.isArray(cfg?.weaponShapePool) ? cfg.weaponShapePool : null; // Optional caller-scoped subset used by special humanoid enemies such as arena Harlyao Skeletons.
+    if (!configuredPool?.length) return allWeaponShapes;
+    const allowed = new Set(configuredPool); // Used only for this selection pass so invalid/non-weapon shape ids are ignored safely.
+    const filtered = allWeaponShapes.filter(shapeKey => allowed.has(shapeKey)); // Final validated melee pool consumed by banditWeaponFor().
+    return filtered.length ? filtered : allWeaponShapes;
   }
   function banditWeaponFor(cfg, rank, tier) {
-    const shapeKeys = banditWeaponShapeKeys();
-    const shapeKey = shapeKeys[Math.floor(deps.rnd() * shapeKeys.length)];
-    const shape = deps.HELD_SHAPE_DEFS[shapeKey];
+    const shapeKeys = banditWeaponShapeKeys(cfg); // Caller-specific pool when supplied; otherwise the unchanged full weapon-slot pool.
+    const shapeKey = shapeKeys[Math.floor(deps.rnd() * shapeKeys.length)]; // Selected melee shape used for held rendering, attacks, and ability style.
+    const shape = deps.HELD_SHAPE_DEFS[shapeKey]; // Canonical shape metadata supplies damage type and animation semantics.
+    const configuredMetalKey = typeof cfg?.weaponMetalKey === 'string' && deps.METAL_DEFS[cfg.weaponMetalKey] ? cfg.weaponMetalKey : null; // Optional fixed material used by special callers; null preserves rank/tier metal rolling.
     const [minT, maxT] = cfg?.weaponMetalTierRangeByRank?.[rank] || [1, 2];
     const bonusT = tier;
     const maxMetalTier = Math.max(...deps.VERDIGRIS_METAL_KEYS.map(k => deps.METAL_DEFS[k].tier));
     const loT = deps.clamp(Math.round(minT), 1, maxMetalTier), hiT = deps.clamp(Math.round(maxT) + bonusT, loT, maxMetalTier);
     const tierPool = deps.VERDIGRIS_METAL_KEYS.filter(k => deps.METAL_DEFS[k].tier >= loT && deps.METAL_DEFS[k].tier <= hiT);
-    const metalKey = (tierPool.length ? tierPool : deps.VERDIGRIS_METAL_KEYS)[Math.floor(deps.rnd() * (tierPool.length || deps.VERDIGRIS_METAL_KEYS.length))];
+    const rolledMetalKey = (tierPool.length ? tierPool : deps.VERDIGRIS_METAL_KEYS)[Math.floor(deps.rnd() * (tierPool.length || deps.VERDIGRIS_METAL_KEYS.length))]; // Existing rank/tier material roll retained for ordinary bandits.
+    const metalKey = configuredMetalKey || rolledMetalKey; // Final material passed to item-key generation and damage scaling.
     const weaponKey = deps.craftedToolItemKey(shapeKey, metalKey);
     return { weaponKey, shapeKey, metalKey, dmgType: shape.dmgType || 'sharp', dmgMultiplier: deps.metalDmgMultiplier(metalKey) };
   }
@@ -680,11 +713,13 @@
     const targetFacing = Number.isFinite(Number(targetPlayer.angle)) ? Number(targetPlayer.angle) : (Number(targetPlayer.facing) || 0); // Creatures use facing; the player uses angle.
     const forwardX = Math.cos(targetFacing), forwardY = Math.sin(targetFacing);
     const behindDot = forwardX * (dxBP / distBP) + forwardY * (dyBP / distBP);
+    const staminaForCondition = window.ResourceSystem?.getDepletionEquivalentCurrent?.(targetPlayer, 'stamina') ?? targetPlayer.stamina; // Mirrors the player's Exhaust Cutter semantics for enemy ability AI.
+    const healthForCondition = window.ResourceSystem?.getDepletionEquivalentCurrent?.(targetPlayer, 'health') ?? targetPlayer.health; // Mirrors the player's Mercy Spike semantics for enemy ability AI.
     return {
       enemyStriking: false,
-      exhausted: !!targetPlayer.exhaustion?.active || targetPlayer.stamina <= targetPlayer.maxStamina * 0.20,
+      exhausted: !!targetPlayer.exhaustion?.active || staminaForCondition <= targetPlayer.maxStamina * 0.20,
       behind: behindDot < -0.35,
-      lowHealth: targetPlayer.health > 0 && targetPlayer.health <= targetPlayer.maxHealth * 0.30,
+      lowHealth: targetPlayer.health > 0 && healthForCondition <= targetPlayer.maxHealth * 0.30,
     };
   }
 
@@ -1732,6 +1767,13 @@
   }
 
   function updateBanditToolMesh(c) {
+    const handDriverRoot = c?.avatarRef?.handRigAvatarRoot; // Final pre-render hand driver reads this live holder/key selection after ordinary bandit pose logic decides melee vs ranged.
+    if (handDriverRoot?.userData) {
+      const useRanged = !!c._rangedMode && !!c._banditRangedToolHolder;
+      handDriverRoot.userData.proceduralHandToolHolder = useRanged ? c._banditRangedToolHolder : c._banditToolHolder;
+      handDriverRoot.userData.proceduralHandToolKey = useRanged ? c.def?.rangedWeaponKey : c.def?.weaponKey;
+      handDriverRoot.userData.proceduralHandGripContext = useRanged ? 'ranged' : 'melee';
+    }
     const holder = c._banditToolHolder;
     if (!holder) return;
     if (c._rangedMode) {
@@ -1963,6 +2005,19 @@
     };
   }
 
+  // Removes everything makeBanditEntity added to the scene for an entity
+  // that never made it into hostileObjects (e.g. an async spawn that
+  // resolved after the player left the area). Disposing avatarRef alone
+  // left the ground shadow and weapon holders parked in the zone scene.
+  function discardBanditEntity(entity) {
+    if (!entity) return;
+    entity.avatarRef?.group?.parent?.remove?.(entity.avatarRef.group);
+    entity.groundShadow?.parent?.remove?.(entity.groundShadow);
+    entity._banditToolHolder?.parent?.remove?.(entity._banditToolHolder);
+    entity._banditRangedToolHolder?.parent?.remove?.(entity._banditRangedToolHolder);
+    entity.avatarRef?.dispose?.();
+  }
+
   async function makeBanditEntity(cfg, rank, tier, x, y, opts = {}) {
     const roster = opts.rosterOverride || await rollBanditRoster(cfg, rank, opts.nameOverride);
     if (opts.bodyColorsOverride && roster?.appearance) {
@@ -2000,6 +2055,12 @@
     if (!banditToolHolder) window.__farmLog?.(`[bandits] tool holder failed to build for "${def.weaponKey}" -- toolTextures entry missing? (fallback: bandit renders unarmed)`, 'wildlife');
     const banditRangedToolHolder = def.rangedWeaponKey ? makeBanditToolHolder(targetScene, def.rangedWeaponKey) : null;
     if (banditRangedToolHolder) banditRangedToolHolder.visible = false;
+    const handDriverRoot = avatarRef.handRigAvatarRoot; // Original PNGPlaneAvatar root retained solely as the shared procedural-hand driver's identity/ownership record.
+    if (handDriverRoot?.userData) {
+      handDriverRoot.userData.proceduralHandToolHolder = banditToolHolder || null;
+      handDriverRoot.userData.proceduralHandToolKey = def.weaponKey || null;
+      handDriverRoot.userData.proceduralHandGripContext = 'melee';
+    }
 
     const groundShadow = deps.makeCharacterGroundShadow('bandit_ground_shadow');
     const shadowRadii = deps.creatureGroundShadowRadii(def);
@@ -2007,6 +2068,7 @@
     groundShadow.position.set(x / deps.TILE, surfY + deps.characterGroundShadowSurfaceOffset(), y / deps.TILE);
     targetScene.add(groundShadow);
 
+    const enemyClass = opts.enemyClass || opts.extra?.enemyClass || (opts.extra?.isPorakanekiHunter ? 'porakaneki-hunter' : 'bandit'); // Semantic hostile category layered over the shared humanoid combat implementation.
     const c = {
       id: 'bandit_' + rank + '_' + (performance.now() | 0) + '_' + Math.floor(deps.rnd() * 100000),
       creatureKey: 'bandit-' + rank, def, avatarRef, groundShadow,
@@ -2025,7 +2087,7 @@
       wanderTarget: null, wanderT: 0,
       homeX: x, homeY: y,
       scene: targetScene, areaGrid: targetGrid, areaCols: gridCols, areaRows: gridRows, areaId: deps.getCurrentArea(),
-      isBandit: true, banditRank: rank, banditTier: tier, banditMastery: mastery,
+      isBandit: true, enemyClass, banditRank: rank, banditTier: tier, banditMastery: mastery,
       banditWeaponMeshAttached: !!banditToolHolder,
       _banditToolHolder: banditToolHolder,
       _banditRangedToolHolder: banditRangedToolHolder,
@@ -2078,6 +2140,8 @@
     loadGangConfig: loadBanditGangConfig,
     loadCampLocaleDefs: loadBanditCampLocaleDefs,
     makeEntity: makeBanditEntity,
+    discardEntity: discardBanditEntity, // Scene teardown for a built-but-never-registered entity (late async spawns).
+    applyRosterDyesToProfile, // Shared/testable world-avatar dye reconciliation used by Bandits, Minions, and Liches.
     // Rolls a name the same way a fresh gang member's roster does (see
     // rollBanditRoster) — used standalone by game.js's generateBountyTask
     // when no live camp exists yet to adopt a captain's real identity from.

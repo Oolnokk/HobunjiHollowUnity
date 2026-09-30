@@ -100,6 +100,6 @@ assert(!fs.existsSync(path.join(root, 'docs/js/town-sign-furniture-runtime.js'))
 const zoneLoader = read('docs/js/zone-den-totem-features.js');
 assert(!zoneLoader.includes('TownSignFurnitureRuntime'), 'zone-den-totem-features.js must no longer load the retired town sign runtime');
 assert(!zoneLoader.includes('HOBUNJI_TOWN_SIGN_FURNITURE_CONFIG'), 'zone-den-totem-features.js must no longer load the retired town sign config');
-assert(zoneLoader.includes("ensureCompanionScript('FurnitureDecalRuntime', 'furniture-decal-runtime.js')"), 'FurnitureDecalRuntime (unrelated to the retired sign system) must still load');
+assert(zoneLoader.includes("ensureCompanionScript('FurnitureDecalRuntime', 'furniture-decal-runtime.js?v="), 'FurnitureDecalRuntime (unrelated to the retired sign system) must still load');
 
 console.log('town sign furniture checks passed');

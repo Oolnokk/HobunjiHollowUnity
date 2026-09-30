@@ -151,7 +151,7 @@
     deps.debugLog?.('Ranged update: friendly-fire actor cover, loaded-before-fire LOS repositioning, and same-frame hitbox/perp caches enabled.');
   }
 
-  function gear() { return deps?.getGearInventory?.() || null; }
+  function gear() { return window.CombatTutorial?.loanAmmo?.() || deps?.getGearInventory?.() || null; }
   function ensureAmmoState() {
     const g = gear();
     if (!g) return null;
@@ -178,7 +178,7 @@
     return out;
   }
 
-  function rangedMastery(itemKey) { return Math.max(0, Math.min(5, Number(deps?.toolMasteryLevel?.(itemKey)) || 0)); }
+  function rangedMastery(itemKey) { return Math.max(0, Math.min(5, Number(window.CombatTutorial?.loanRangedMastery?.() ?? deps?.toolMasteryLevel?.(itemKey)) || 0)); }
   function notifyAmmoChanged() {
     deps?.saveGearInventory?.();
     deps?.refreshActionBar?.();
@@ -486,12 +486,12 @@
       action.fired = true;
       setLoaded(action.itemKey, false);
       playRangedActionSfx(action.itemKey, 'fire');
-      const aim = playerAimSolution(action.itemKey);
+      const heldTransform = deps.getHeldRangedWorldTransform?.(action.itemKey) || null; // Single release-frame sample reused by both trajectory solving and projectile spawning.
+      const aim = playerAimSolution(action.itemKey, heldTransform?.position);
       const angle = aim?.angle ?? deps.getPlayerAimAngle();
       const pitch = aim?.pitch ?? deps.getPlayerAimPitch?.() ?? 0;
       const ammoPayload = playerAmmoPayload(action.itemKey);
       const heldTexture = action.def.rangedType === 'thrown' ? deps.getHeldRangedTexture?.(action.itemKey) || null : null;
-      const heldTransform = deps.getHeldRangedWorldTransform?.(action.itemKey) || null;
       const volley = spawnVolley(action.itemKey, deps.player.x, deps.player.y, angle, 'player', deps.player, ammoPayload, pitch, {
         damageScale: action.damageScale,
         textureSource: heldTexture,
@@ -771,7 +771,7 @@
       const x = THREE.MathUtils.lerp(p.prevX, p.x, t);
       const y = THREE.MathUtils.lerp(p.prevY, p.y, t);
       const worldY = THREE.MathUtils.lerp(p.prevWorldY, p.worldY, t);
-      const blocked = !deps.canOccupyAt(x, y, p.def.projectileRadiusPx);
+      const blocked = !deps.canOccupyAt(x, y, p.def.projectileRadiusPx, worldY); // worldY lets height-aware prop footprints (js/area-footprint-blockers.js) pass shots over low props.
       const grounded = worldY <= deps.worldSurfaceY(x, y) + 0.08;
       if (blocked || grounded) hi = t;
       else lo = t;
@@ -1032,7 +1032,21 @@
     return Number.isFinite(rendered) ? rendered : deps.worldSurfaceY(x, y);
   }
 
-  function playerProjectileOrigin() {
+  function projectileOriginFromPosition(rawPosition) {
+    const x = Number(rawPosition?.x); // Used below as the launch origin X when a live held-weapon transform is available.
+    const y = Number(rawPosition?.y); // Used below as the launch origin Y when a live held-weapon transform is available.
+    const z = Number(rawPosition?.z); // Used below as the launch origin Z when a live held-weapon transform is available.
+    return [x, y, z].every(Number.isFinite) ? new THREE.Vector3(x, y, z) : null;
+  }
+
+  function playerProjectileOrigin(itemKey = deps?.getEquippedRangedKey?.(), sourcePosition = null) {
+    const sampledOrigin = projectileOriginFromPosition(sourcePosition); // Reuses the exact release-frame position later handed to spawnProjectile.
+    if (sampledOrigin) return sampledOrigin;
+    try {
+      const heldPosition = deps?.getHeldRangedWorldTransform?.(itemKey)?.position; // Keeps non-release aim queries on the live held projectile origin when available.
+      const heldOrigin = projectileOriginFromPosition(heldPosition); // Converts the held plane's world position into the Vector3 language used by trajectory math.
+      if (heldOrigin) return heldOrigin;
+    } catch (_) { /* Fall through to the legacy center-height origin when the held visual is unavailable. */ }
     return new THREE.Vector3(
       deps.player.x / deps.TILE,
       ownerElevationY(deps.player, deps.player.x, deps.player.y) + 0.55,
@@ -1104,10 +1118,10 @@
     return meleeReachCheck(attacker, target, verticalAllowanceWorld).reachable;
   }
 
-  function playerAimSolution(itemKey = deps?.getEquippedRangedKey?.()) {
+  function playerAimSolution(itemKey = deps?.getEquippedRangedKey?.(), launchPosition = null) {
     const def = defFor(itemKey);
     if (!def || !deps?.player) return null;
-    const origin = playerProjectileOrigin();
+    const origin = playerProjectileOrigin(itemKey, launchPosition); // Uses the exact release-frame spawn point so the computed trajectory and visible projectile share one origin.
     let direction = null;
     let targetPoint = null;
     let reticleTarget = null;
@@ -1258,7 +1272,7 @@
       const c = nearest.creature;
       const healthBefore = Math.max(0, Number(c?.health) || 0); // Used after damage to detect the exact lethal ranged transition even though RangedWeapons owns its own damageCreature reference.
       playProjectileImpactSfx(p, nearest.interval.enter);
-      deps.damageCreature(c, damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, rangedItemKey: p.itemKey, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
+      deps.damageCreature(c, damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, rangedItemKey: p.itemKey, ammoId: p.ammoId, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
       applySpecialAmmoDebuff(c, p.specialAmmoId);
       const killed = healthBefore > 0 && Math.max(0, Number(c?.health) || 0) <= 0; // Used to route mastery only on kills, matching mastery-policy's combat progression contract.
       const masteryPolicy = window.HobunjiMasteryPolicy; // Used to bypass the absent production awardRangedMastery callback while retaining it as a compatibility fallback.
@@ -1283,7 +1297,7 @@
     playProjectileImpactSfx(p, nearest.interval.enter);
     if (nearest.kind === 'hostile') {
       friendlyFireHits++;
-      deps.damageCreature(nearest.actor, damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, rangedItemKey: p.itemKey, friendlyFire: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
+      deps.damageCreature(nearest.actor, damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, rangedItemKey: p.itemKey, ammoId: p.ammoId, friendlyFire: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
       applySpecialAmmoDebuff(nearest.actor, p.specialAmmoId);
       lastEvent = `friendly-fire:${p.owner?.id || 'enemy'}->${nearest.actor.id || nearest.actor.name || 'hostile'}`;
       return { kind: 'actor', t: nearest.interval.enter, actor: nearest.actor };
@@ -1392,7 +1406,7 @@
       p.mesh.position.set(p.x / deps.TILE, p.worldY, p.y / deps.TILE);
       updateProjectileVisual(p, dt);
 
-      const blockedAtTerrain = !deps.canOccupyAt(p.x, p.y, p.def.projectileRadiusPx);
+      const blockedAtTerrain = !deps.canOccupyAt(p.x, p.y, p.def.projectileRadiusPx, p.worldY);
       const groundedAtGround = p.worldY <= deps.worldSurfaceY(p.x, p.y) + 0.08;
       const sweptTerrainImpact = terrainImpactForStep(p, blockedAtTerrain, groundedAtGround);
       const hit = projectileHit(p, sweptTerrainImpact?.t ?? 1); // Ground/solid terrain caps the actor sweep so a curved shot cannot damage something behind the first terrain contact.
@@ -1656,7 +1670,7 @@
       const x = deps.player.x + horizontalDirX * distancePx;
       const y = deps.player.y + horizontalDirY * distancePx;
       const worldY = THREE.MathUtils.lerp(segment.start.y, segment.end.y, fraction);
-      if (!deps.canOccupyAt(x, y, def.projectileRadiusPx) || worldY <= deps.worldSurfaceY(x, y) + 0.08) return false;
+      if (!deps.canOccupyAt(x, y, def.projectileRadiusPx, worldY) || worldY <= deps.worldSurfaceY(x, y) + 0.08) return false;
     }
     return true;
   }
@@ -1683,9 +1697,9 @@
       window.WorldPopupText?.clearAimLabel?.();
       return;
     }
-    const rank = window.BanditCombat?.RANK_LABEL?.[bandit.banditRank] ||
+    const rank = bandit.combatRoleLabel || window.BanditCombat?.RANK_LABEL?.[bandit.banditRank] ||
       String(bandit.banditRank || 'bandit').replace(/\b\w/g, letter => letter.toUpperCase());
-    window.WorldPopupText?.setAimLabel?.(bandit.avatarRef.group, (bandit.name || 'Bandit') + ' · ' + rank);
+    window.WorldPopupText?.setAimLabel?.(bandit.avatarRef.group, (bandit.name || 'Bandit') + (bandit.combatRoleLabel ? ' - ' : ' · ') + rank);
   }
 
   function update(dt) { updatePlayerAction(dt); updateProjectiles(dt); updateAmmoDebuffs(); updateBanditAimLabel(); }

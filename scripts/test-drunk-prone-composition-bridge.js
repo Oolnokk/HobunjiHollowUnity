@@ -66,8 +66,11 @@ let pendingBanditEntity = null;
 let baseBanditAiCalls = 0;
 
 const ResourceSystem = {
+  getProneRecoveryFootingTarget(entity) {
+    return Math.max(0, (entity?.maxFooting || 0) - (entity?.afflictions?.shamblingFooting || 0)); // Production keeps permanent Shambling in the prone recovery target.
+  },
   getEffectiveMax(entity, key) {
-    if (key === 'footing') return (entity.maxFooting || 0) - (entity.afflictions?.drunkenFooting || 0);
+    if (key === 'footing') return Math.max(0, this.getProneRecoveryFootingTarget(entity) - (entity.afflictions?.drunkenFooting || 0));
     return 0;
   },
 };
@@ -157,6 +160,8 @@ vm.runInContext(source, context, { filename: modulePath });
   assert.match(source, /const RUN_STANCE_FRACTION = 0\.44/, 'run gait keeps a distinct airborne-overlap stance fraction');
   assert.match(source, /function playerRunBlend\(speedWorldUnitsPerSecond\)/, 'player locomotion has an explicit walk-to-run blend');
   assert.match(source, /banditState\.entity\?\.state === 'chase'/, 'non-animal hostiles enter run gait only during active chase/combat');
+assert.match(source, /const hoverMode = !!handle\.isHoverMode\?\.\(\)/, 'bandit gait wrapper must detect procedural hover ownership');
+assert.match(source, /effectiveSuppressed \|\| hoverMode/, 'run gait must yield while procedural hover is active');
   assert.match(source, /legLength \* \(1\.30 \+ 0\.60 \* Math\.sqrt\(speedRatio\)\)/, 'run stride scales directly from measured leg length');
   assert.match(source, /bendDegX = -\(5 \+ 23 \* pose\.swingWave\)/, 'run gait adds swing-phase knee flex instead of only stretching walk reach');
   assert.match(source, /debugLegBonesCheckbox/, 'Debug tab exposes the requested Leg Bone Debug checkbox');
@@ -165,12 +170,27 @@ vm.runInContext(source, context, { filename: modulePath });
   // Drunken Footing still caps standing entities.
   assert.strictEqual(ResourceSystem.getEffectiveMax(player, 'footing'), 70);
 
-  // Prone temporarily exposes the literal maximum so recovery can reach the
-  // threshold shared by player and hostile get-up logic.
+  // Ordinary drunken actors still recover to literal full Footing while prone
+  // because they have no permanent Shambling reservation.
   player.prone = true;
   assert.strictEqual(ResourceSystem.getEffectiveMax(player, 'footing'), 100);
   player.prone = false;
   assert.strictEqual(ResourceSystem.getEffectiveMax(player, 'footing'), 70);
+
+  // Shambling is intentionally beneficial while prone: only the unshambled
+  // remainder must refill, while temporary Drunken Footing is ignored.
+  const shamblingMinion = {
+    prone: false,
+    footing: 10,
+    maxFooting: 100,
+    afflictions: { drunkenFooting: 20, shamblingFooting: 70 },
+  };
+  assert.strictEqual(ResourceSystem.getProneRecoveryFootingTarget(shamblingMinion), 30);
+  assert.strictEqual(ResourceSystem.getEffectiveMax(shamblingMinion, 'footing'), 10);
+  shamblingMinion.prone = true;
+  assert.strictEqual(ResourceSystem.getEffectiveMax(shamblingMinion, 'footing'), 30);
+  shamblingMinion.prone = false;
+  assert.strictEqual(ResourceSystem.getEffectiveMax(shamblingMinion, 'footing'), 10);
 
   // Player leg updates inherit the prone state as suppression without changing
   // callers that already suppress for mounts/harvests.

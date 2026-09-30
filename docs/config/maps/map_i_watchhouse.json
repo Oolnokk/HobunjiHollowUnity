@@ -5,7 +5,22 @@
   "cols": 20,
   "rows": 20,
   "furniture": [
-    { "id": "f_watch_desk", "itemKey": "deskFurniture", "col": 9, "row": 10, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1, "gridRot": 180, "gridW": 2, "gridD": 1 },
+    {
+      "id": "f_watch_desk",
+      "itemKey": "deskFurniture",
+      "col": 9,
+      "row": 10,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1,
+      "gridRot": 180,
+      "gridW": 2,
+      "gridD": 1
+    },
     {
       "id": "f_watch_chair",
       "itemKey": "chairSimpleFurniture",
@@ -32,7 +47,22 @@
       "postSY": 1,
       "postSZ": 1
     },
-    { "id": "f_watch_bench", "itemKey": "benchFurniture", "col": 14, "row": 10, "rotY": 0, "postX": -0.5, "postY": 0, "postZ": -0.5, "postSX": 1, "postSY": 1, "postSZ": 1, "gridRot": 90, "gridW": 1, "gridD": 2 },
+    {
+      "id": "f_watch_bench",
+      "itemKey": "benchFurniture",
+      "col": 14,
+      "row": 10,
+      "rotY": 0,
+      "postX": -0.5,
+      "postY": 0,
+      "postZ": -0.5,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1,
+      "gridRot": 90,
+      "gridW": 1,
+      "gridD": 2
+    },
     {
       "id": "f_watch_cell_a_roll",
       "itemKey": "bedrollFurniture",
@@ -568,6 +598,42 @@
     [
       11,
       19
+    ],
+    [
+      2,
+      13
+    ],
+    [
+      2,
+      14
+    ],
+    [
+      2,
+      15
+    ],
+    [
+      3,
+      13
+    ],
+    [
+      3,
+      14
+    ],
+    [
+      3,
+      15
+    ],
+    [
+      4,
+      13
+    ],
+    [
+      4,
+      14
+    ],
+    [
+      4,
+      15
     ]
   ],
   "exits": [
@@ -591,6 +657,19 @@
       "targetMap": "",
       "spawnCol": 0,
       "spawnRow": 0
+    },
+    {
+      "id": "exit_watch_training_stairs",
+      "label": "Down to the Practice Arena",
+      "tiles": [
+        [
+          2,
+          14
+        ]
+      ],
+      "targetMap": "map_i_watchhouse_arena",
+      "spawnCol": 10,
+      "spawnRow": 16
     }
   ],
   "colliders": [],

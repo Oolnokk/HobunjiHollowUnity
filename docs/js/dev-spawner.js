@@ -190,6 +190,12 @@
   // real camp today, but reusing the existing rank/tier grid instead of a
   // bespoke single button gets tier variation for free.
   const DEV_SPAWN_PORAKANEKI_KEY = 'porakaneki:hunter';
+  const DEV_SPAWN_HARLYAO_SKELETON_KEY = 'harlyao-skeleton:enemy'; // Used by the species grid and spawn dispatcher to route skeleton enemies through the dedicated Minion class instead of CREATURE_DB.
+  const DEV_SPAWN_HARLYAO_LICH_KEYS = Object.freeze({ // Testing Arena-only spellcaster buttons routed through HarlyaoLichCombat rather than CREATURE_DB.
+    tothal: 'harlyao-lich:tothal',
+    hronal: 'harlyao-lich:hronal',
+    kanthic: 'harlyao-lich:kanthic',
+  });
 
   // Same species FoliageGenerator builds for a real wilderness zone's
   // SHRUB tiles (see game.js's _buildZoneFloorMeshes) — spawning them here
@@ -230,7 +236,14 @@
       });
       const porakanekiActive = DEV_SPAWN_PORAKANEKI_KEY === devSpawnSelectedKey ? ' fed-active' : '';
       const porakanekiBtn = `<button type="button" class="fed-btn${porakanekiActive}" data-species="${deps.esc(DEV_SPAWN_PORAKANEKI_KEY)}">🏹 Porakaneki Hunter</button>`;
-      grid.innerHTML = creatureBtns.concat(banditBtns).concat([porakanekiBtn]).join('');
+      const harlyaoSkeletonActive = DEV_SPAWN_HARLYAO_SKELETON_KEY === devSpawnSelectedKey ? ' fed-active' : ''; // Used to keep the skeleton button's selected state consistent with every other arena spawn option.
+      const harlyaoSkeletonBtn = `<button type="button" class="fed-btn${harlyaoSkeletonActive}" data-species="${deps.esc(DEV_SPAWN_HARLYAO_SKELETON_KEY)}">☠️ Harlyao Skeleton</button>`; // Added to the same species grid so it works on mobile/controller through the existing panel.
+      const lichBtns = Object.entries(DEV_SPAWN_HARLYAO_LICH_KEYS).map(([type, key]) => { // Three explicit arena buttons make each spell kit independently testable on mobile.
+        const active = key === devSpawnSelectedKey ? ' fed-active' : ''; // Selected styling uses the existing species-grid convention.
+        const label = type.charAt(0).toUpperCase() + type.slice(1); // Human-readable lich tradition shown on the button.
+        return `<button type="button" class="fed-btn${active}" data-species="${deps.esc(key)}">🜏 ${deps.esc(label)} Lich</button>`;
+      });
+      grid.innerHTML = creatureBtns.concat(banditBtns).concat([porakanekiBtn, harlyaoSkeletonBtn], lichBtns).join('');
     }
     const tierGrid = document.getElementById('devSpawnBanditTierGrid');
     if (tierGrid) {
@@ -343,6 +356,7 @@
       extra: { homeX: x, homeY: y, state: 'idle' },
     });
     if (!creature) { deps.showToast(`Could not spawn bandit "${rank}" — see console/log for details.`, false); return; }
+    if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) { window.BanditCombat?.discardEntity?.(creature); return; } // Portrait build is async too; drop it if the player left meanwhile.
     deps.hostileObjects.add(creature);
     _arenaSpawnedCreatures.add(creature);
     const msg = `[dev-arena] spawned bandit ${rank} tier ${tier} #${creature.id} (species=${creature.rosterRecord?.appearance?.speciesId}, mastery=${creature.banditMastery}, maxHealth=${creature.maxHealth}, attackDamage=${creature.def.attackDamage})`;
@@ -380,11 +394,62 @@
       extra: { homeX: x, homeY: y, state: 'idle', isPorakanekiHunter: true },
     });
     if (!creature) { deps.showToast('Could not spawn Porakaneki Hunter — see console/log for details.', false); return; }
+    if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) { window.BanditCombat?.discardEntity?.(creature); return; } // Portrait build is async too; drop it if the player left meanwhile.
     creature._porakanekiAggroRangePx = creature.def?.aggroRangePx ?? deps.TILE * 6;
     if (creature.def) creature.def.aggroRangePx = 0;
     deps.hostileObjects.add(creature);
     _arenaSpawnedCreatures.add(creature);
     const msg = `[dev-arena] spawned Porakaneki Hunter #${creature.id} (species=${creature.rosterRecord?.appearance?.speciesId}, maxHealth=${creature.maxHealth}) — neutral until provoked, attack it to test the hostile turn`;
+    window.__farmLog?.(msg, 'wildlife');
+    console.log(msg);
+    renderDevSpawnPanel();
+  }
+
+  // Harlyao Skeletons are Minions, not bandits. MinionCombat owns their
+  // clothing/dye/permanent-Footing rules while reusing the shared humanoid
+  // combat executor underneath.
+  async function spawnDevArenaHarlyaoSkeleton(tier) {
+    if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) return;
+    if (!window.MinionCombat?.makeEntity) { deps.showToast('Could not spawn Harlyao Skeleton — Minion class is unavailable.', false); return; }
+    const angle = Math.random() * Math.PI * 2; // Used with dist to place the Minion near, but not directly on top of, the player.
+    const dist = deps.TILE * (1.5 + Math.random() * 2.5); // Uses the same arena spawn ring as creatures/bandits.
+    const x = deps.player.x + Math.cos(angle) * dist; // World X passed to the Minion constructor.
+    const y = deps.player.y + Math.sin(angle) * dist; // World Y/Z-plane coordinate passed to the Minion constructor.
+    const creature = await window.MinionCombat.makeEntity({
+      speciesId: 'harlyao-skeleton',
+      name: 'Harlyao Skeleton',
+      tier,
+      x, y,
+      zoneId: DEV_ARENA_ZONE_ID,
+      weaponMetalKey: 'nativeCopper',
+      extra: { homeX: x, homeY: y, state: 'idle' },
+    });
+    if (!creature) { deps.showToast('Could not spawn Harlyao Skeleton Minion — see Debug log.', false); return; }
+    if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) { window.BanditCombat?.discardEntity?.(creature); return; } // Drops a late async spawn if the player left the arena.
+    deps.hostileObjects.add(creature);
+    _arenaSpawnedCreatures.add(creature);
+    const clothes = creature.rosterRecord?.equippedCosmetics?.join('+') || 'none'; // Copyable proof that the bandit headwear guarantee did not run.
+    const dyes = Object.entries(creature.avatarRef?.resolvedRosterDyes || {}).map(([slot, rec]) => `${slot}=${rec?.dyeId || '?'}@${rec?.hex || '?'}`).join('+') || 'none'; // Confirms the world portrait actually resolved the same dye metadata later preserved by loot.
+    const handRig = creature.avatarRef?.handRigAvatarRoot?.userData?.proceduralHandRig ? 'attached' : 'pending'; // Shared hostile hand-root state makes invisible-hand failures visible on mobile.
+    const msg = `[dev-arena] spawned Harlyao Skeleton Minion #${creature.id} (class=${creature.enemyClass}, gender=${creature.rosterRecord?.appearance?.gender || '?'}, clothes=${clothes}, dyes=${dyes}, hands=${handRig}, weapon=${creature.def?.weaponKey || 'none'}, ranged=${creature.def?.rangedWeaponKey || 'none'}, shambling=${creature.afflictions?.shamblingFooting || 0}/${creature.maxFooting || 0}, footing=${creature.footing || 0})`; // Mobile/debug-readable Minion spawn audit.
+    window.__farmLog?.(msg, 'wildlife');
+    console.log(msg);
+    renderDevSpawnPanel();
+  }
+
+  async function spawnDevArenaHarlyaoLich(type, tier) {
+    if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) return;
+    if (!window.HarlyaoLichCombat?.makeEntity) { deps.showToast('Could not spawn Harlyao Lich — lich combat class is unavailable.', false); return; }
+    const angle = Math.random() * Math.PI * 2; // Used with dist to place the lich on the standard arena spawn ring.
+    const dist = deps.TILE * (2.5 + Math.random() * 2); // Slightly farther than melee Minions so the ranged spell is immediately visible.
+    const x = deps.player.x + Math.cos(angle) * dist; // World X supplied to the lich constructor.
+    const y = deps.player.y + Math.sin(angle) * dist; // World Z-plane coordinate supplied to the lich constructor.
+    const creature = await window.HarlyaoLichCombat.makeEntity({ type, tier, x, y }); // Dedicated class owns roster, dyes, spells, commands, puddles, and summoning.
+    if (!creature) { deps.showToast(`Could not spawn ${type} Harlyao Lich — see Debug log.`, false); return; }
+    if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) { window.BanditCombat?.discardEntity?.(creature); return; } // Drops a late async spawn if the player left while its portrait rendered.
+    deps.hostileObjects.add(creature);
+    _arenaSpawnedCreatures.add(creature);
+    const msg = `[dev-arena] spawned ${type} Harlyao Lich #${creature.id} (class=${creature.enemyClass}, dye=${creature.lichDyeId}, command=${creature._lichCommand}, hood=ragged_hood, overwear=tankan_bodywrap)`; // Mobile-copyable proof of type, class, matching dye, and forced outfit.
     window.__farmLog?.(msg, 'wildlife');
     console.log(msg);
     renderDevSpawnPanel();
@@ -535,6 +600,10 @@
         spawnDevArenaBandit(devSpawnSelectedKey.slice('bandit:'.length), devSpawnBanditTier);
       } else if (devSpawnSelectedKey === DEV_SPAWN_PORAKANEKI_KEY) {
         spawnDevArenaPorakaneki(devSpawnBanditTier);
+      } else if (devSpawnSelectedKey === DEV_SPAWN_HARLYAO_SKELETON_KEY) {
+        spawnDevArenaHarlyaoSkeleton(devSpawnBanditTier);
+      } else if (devSpawnSelectedKey?.startsWith('harlyao-lich:')) {
+        spawnDevArenaHarlyaoLich(devSpawnSelectedKey.slice('harlyao-lich:'.length), devSpawnBanditTier);
       } else {
         spawnDevArenaCreature(devSpawnSelectedKey);
       }

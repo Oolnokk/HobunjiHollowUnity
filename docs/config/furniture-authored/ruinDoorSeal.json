@@ -1,0 +1,213 @@
+{
+  "schema": "hobunji_furniture_authored_runtime.v1",
+  "key": "ruinDoorSeal",
+  "id": "ruinDoorSeal",
+  "name": "Ruin Door Seal",
+  "sourceSchema": "hobunji_furniture_surface_author.v58",
+  "notes": "Random Test Ruin: one plain circle on each face of every stone door. Glow OFF (red) = locked, ON (white) = unlocked. The plate itself is invisible (surfaceOpacity 0).",
+  "footprint": {
+    "w": 1,
+    "d": 1
+  },
+  "tileBase": {
+    "visible": true,
+    "tileSize": 1,
+    "footprintW": 1,
+    "footprintD": 1,
+    "y": 0,
+    "gridOpacity": 0.55
+  },
+  "parts": [
+    {
+      "id": "seal_plate",
+      "kind": "box",
+      "name": "Seal Plate (invisible)",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.46,
+        "sy": 0.46,
+        "sz": 0.02
+      },
+      "color": "#7a746b",
+      "segments": 1,
+      "taperAxis": "y",
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "surfaceOpacity": 0,
+      "substanceColor": "#7a746b",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1,
+      "materialLighting": "unlit"
+    }
+  ],
+  "recognizedSurfaces": [
+    {
+      "id": "seal_plate:surface:front",
+      "partId": "seal_plate",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        8,
+        9
+      ],
+      "area": 0.2116,
+      "localCentroid": [
+        0,
+        0,
+        0.01
+      ],
+      "localNormal": [
+        0,
+        0,
+        1
+      ],
+      "basisU": [
+        1,
+        0,
+        0
+      ],
+      "basisV": [
+        0,
+        1,
+        0
+      ],
+      "bounds": {
+        "minU": -0.23,
+        "maxU": 0.23,
+        "minV": -0.23,
+        "maxV": 0.23
+      },
+      "label": "Front",
+      "role": "none"
+    },
+    {
+      "id": "seal_plate:surface:back",
+      "partId": "seal_plate",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        10,
+        11
+      ],
+      "area": 0.2116,
+      "localCentroid": [
+        0,
+        0,
+        -0.01
+      ],
+      "localNormal": [
+        0,
+        0,
+        -1
+      ],
+      "basisU": [
+        -1,
+        0,
+        0
+      ],
+      "basisV": [
+        0,
+        1,
+        0
+      ],
+      "bounds": {
+        "minU": -0.23,
+        "maxU": 0.23,
+        "minV": -0.23,
+        "maxV": 0.23
+      },
+      "label": "Back",
+      "role": "none"
+    }
+  ],
+  "decals": [
+    {
+      "id": "seal_front",
+      "name": "Seal \u2014 front",
+      "surfaceId": "seal_plate:surface:front",
+      "surfacePartId": "seal_plate",
+      "surfaceType": "vertical side",
+      "surfaceFaces": [
+        8,
+        9
+      ],
+      "imageSource": "../../../docs/assets/textures/decals/ruin_seal_circle.png",
+      "imageName": "docs/assets/textures/decals/ruin_seal_circle.png",
+      "offsetU": 0,
+      "offsetV": 0,
+      "width": 1,
+      "height": 1,
+      "rotationDeg": 0,
+      "normalOffset": 0.004,
+      "opacity": 1,
+      "visible": true,
+      "glow": {
+        "off": [
+          "#ff3b30"
+        ],
+        "on": [
+          "#ffffff"
+        ],
+        "cycleSeconds": 1.6,
+        "pulse": 0.15
+      }
+    },
+    {
+      "id": "seal_back",
+      "name": "Seal \u2014 back",
+      "surfaceId": "seal_plate:surface:back",
+      "surfacePartId": "seal_plate",
+      "surfaceType": "vertical side",
+      "surfaceFaces": [
+        10,
+        11
+      ],
+      "imageSource": "../../../docs/assets/textures/decals/ruin_seal_circle.png",
+      "imageName": "docs/assets/textures/decals/ruin_seal_circle.png",
+      "offsetU": 0,
+      "offsetV": 0,
+      "width": 1,
+      "height": 1,
+      "rotationDeg": 0,
+      "normalOffset": 0.004,
+      "opacity": 1,
+      "visible": true,
+      "glow": {
+        "off": [
+          "#ff3b30"
+        ],
+        "on": [
+          "#ffffff"
+        ],
+        "cycleSeconds": 1.6,
+        "pulse": 0.15
+      }
+    }
+  ],
+  "decalAuthoring": {
+    "version": 4
+  }
+}

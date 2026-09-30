@@ -689,6 +689,12 @@
     "icon": "👕",
     "cat": "clothing"
   },
+  "cosmetic:ragged_hood": {
+    "key": "cosmetic:ragged_hood",
+    "label": "Ragged Hood",
+    "icon": "👕",
+    "cat": "clothing"
+  },
   "cosmetic:fine_poncho": {
     "key": "cosmetic:fine_poncho",
     "label": "Fine Poncho",
@@ -710,6 +716,12 @@
   "cosmetic:rugged_poncho": {
     "key": "cosmetic:rugged_poncho",
     "label": "Rugged Poncho",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:rounded_pauldron": {
+    "key": "cosmetic:rounded_pauldron",
+    "label": "Rounded Pauldrons",
     "icon": "👕",
     "cat": "clothing"
   },

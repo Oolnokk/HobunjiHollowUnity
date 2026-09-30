@@ -34,6 +34,7 @@ const TANKAN_BASELINE = Object.freeze({
   opacity: 0.5,
 });
 let selectedDecalId = null;
+let glowPreviewOn = false; // Editor preview of a glow decal's OFF vs ON colour.
 let decalFileTargetSurfaceId = null;
 let tankanInputTimer = null; // Keeps mobile text entry responsive without rebuilding a texture on every keystroke synchronously.
 let cachedTankanBaselineLayout = null; // Anchors the pixel density of the UI-like text container to the normalized Hobunji Hollow reference.
@@ -407,6 +408,8 @@ function buildDecalMesh(record) {
     polygonOffsetFactor: -2,
     polygonOffsetUnits: -2,
   });
+  const previewGlow = record.glow && typeof record.glow === 'object' ? (glowPreviewOn ? (record.glow.on?.length ? record.glow.on : record.glow.off) : (record.glow.off?.length ? record.glow.off : record.glow.on)) : null;
+  if (previewGlow?.[0]) material.color.set(previewGlow[0]); // Preview the authored OFF/ON glow tint (first colour of the chosen state).
   const mesh = new THREE.Mesh(geometry, material);
   const textureKey = decalTextureKey(record);
   mesh.name = record.name || 'Furniture Decal';
@@ -626,6 +629,17 @@ function updateSelectedDecalFromUi({ recordHistory = true } = {}) {
   record.normalOffset = tankan ? finiteOr(dq('decalLift')?.value, 0) : Math.max(0.0002, finiteOr(dq('decalLift')?.value, 0.003));
   record.opacity = dclamp(dq('decalOpacity')?.value ?? (tankan ? TANKAN_BASELINE.opacity : 1), 0, 1);
   record.visible = dq('decalVisible')?.checked !== false;
+  if (dq('decalGlowEnabled')?.checked) {
+    const colors = id => String(dq(id)?.value || '').split(',').map(value => value.trim()).filter(value => /^#[0-9a-f]{6}$/i.test(value));
+    record.glow = {
+      off: colors('decalGlowOff'), on: colors('decalGlowOn'),
+      cycleSeconds: Math.max(0.05, finiteOr(dq('decalGlowCycle')?.value, 1.2)),
+      pulse: dclamp(dq('decalGlowPulse')?.value ?? 0, 0, 1),
+    };
+    if (!record.glow.off.length && !record.glow.on.length) record.glow.off = ['#ffffff'];
+  } else delete record.glow;
+  glowPreviewOn = dq('decalGlowPreview')?.value === 'on';
+  dq('decalGlowFields')?.classList.toggle('hidden', !record.glow);
   if (tankan) {
     record.tankanSettingsVersion = TANKAN_SETTINGS_VERSION;
     record.tankanText = dq('decalTankanText')?.value || '';
@@ -692,6 +706,14 @@ function renderDecalEditor() {
   dq('decalLift').value = record.normalOffset;
   dq('decalOpacity').value = record.opacity;
   dq('decalVisible').checked = record.visible !== false;
+  const glow = record.glow && typeof record.glow === 'object' ? record.glow : null;
+  if (dq('decalGlowEnabled')) dq('decalGlowEnabled').checked = !!glow;
+  dq('decalGlowFields')?.classList.toggle('hidden', !glow);
+  if (dq('decalGlowOff')) dq('decalGlowOff').value = (glow?.off || []).join(', ');
+  if (dq('decalGlowOn')) dq('decalGlowOn').value = (glow?.on || []).join(', ');
+  if (dq('decalGlowCycle')) dq('decalGlowCycle').value = glow?.cycleSeconds ?? 1.2;
+  if (dq('decalGlowPulse')) dq('decalGlowPulse').value = glow?.pulse ?? 0;
+  if (dq('decalGlowPreview')) dq('decalGlowPreview').value = glowPreviewOn ? 'on' : 'off';
   dq('decalTankanFields')?.classList.toggle('hidden', !tankan);
   if (dq('decalWidthLabel')) dq('decalWidthLabel').textContent = tankan ? 'Container width' : 'Width scale';
   if (dq('decalHeightLabel')) dq('decalHeightLabel').textContent = tankan ? 'Container height' : 'Height scale';
@@ -739,6 +761,13 @@ function installDecalUi() {
       <div class="g2"><div><label id="decalWidthLabel">Width scale</label><input id="decalWidth" type="number" min="0.001" step="0.02"></div><div><label id="decalHeightLabel">Height scale</label><input id="decalHeight" type="number" min="0.001" step="0.02"></div></div>
       <div class="g3"><div><label>Rotation°</label><input id="decalRotation" type="number" step="1"></div><div><label>Surface-lift offset</label><input id="decalLift" type="number" step="0.001"></div><div><label>Opacity</label><input id="decalOpacity" type="number" min="0" max="1" step="0.05"></div></div>
       <label class="row"><input id="decalVisible" type="checkbox"> Visible</label>
+      <hr><label class="row"><input id="decalGlowEnabled" type="checkbox"> State glow (puzzle OFF / ON)</label>
+      <div id="decalGlowFields" class="hidden">
+        <div class="muted tight">The decal image is tinted by these colours, so white artwork glows exactly them. Several colours per state (comma-separated #hex) cycle over the cycle time. In game the OFF→ON blend follows this furniture's puzzle state.</div>
+        <label>OFF colours</label><input id="decalGlowOff" type="text" placeholder="#ff3b30, #ff8a2a" spellcheck="false">
+        <label>ON colours</label><input id="decalGlowOn" type="text" placeholder="#ffffff" spellcheck="false">
+        <div class="g3"><div><label>Cycle seconds</label><input id="decalGlowCycle" type="number" min="0.05" step="0.1"></div><div><label>Pulse 0–1</label><input id="decalGlowPulse" type="number" min="0" max="1" step="0.05"></div><div><label>Preview</label><select id="decalGlowPreview"><option value="off">OFF</option><option value="on">ON</option></select></div></div>
+      </div>
       <div class="g2"><button id="centerFurnitureDecal">Center</button><button id="fitFurnitureDecal">Fit Surface</button></div>
       <div class="g2"><button id="duplicateFurnitureDecal">Duplicate</button><button id="deleteFurnitureDecal" class="bad">Delete</button></div>
     </div>`;
@@ -750,6 +779,9 @@ function installDecalUi() {
     const file = event.target?.files?.[0];
     if (file && decalFileTargetSurfaceId) addDecalFromFile(file, decalFileTargetSurfaceId);
   });
+  for (const id of ['decalGlowEnabled','decalGlowOff','decalGlowOn','decalGlowCycle','decalGlowPulse','decalGlowPreview']) {
+    dq(id)?.addEventListener('change', () => updateSelectedDecalFromUi({ recordHistory: true }));
+  }
   for (const id of ['decalName','decalOffsetU','decalOffsetV','decalWidth','decalHeight','decalRotation','decalLift','decalOpacity','decalVisible','decalTankanColumnSpacing','decalTankanGlyphAdvance','decalTankanGlyphSizeX','decalTankanGlyphSizeY','decalTankanColor']) {
     dq(id)?.addEventListener('change', () => updateSelectedDecalFromUi({ recordHistory: true }));
   }

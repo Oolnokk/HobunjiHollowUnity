@@ -148,7 +148,9 @@
     const blockedTerrainTiles = _treasureBlockedTerrainTiles(zi); // Used to keep the shared flat-empty picker from selecting non-diggable roads or waterways.
     const avoid = [...(deps._zoneReagentPersist.get(mapId)?.placements || []), ...(deps._zoneBerryPersist.get(mapId)?.placements || []), ...blockedTerrainTiles];
     const spots = deps.findZoneFlatEmptyTiles(mapId, targetCount, rng, avoid);
-    return spots.map(({ col, row }) => ({ col, row, found: false, loot: _rollTreasureLootBundle() }));
+    const holeChance = Number(window.RuinSites?.treasureHoleChance?.()) || 0; // Rare: the "treasure" is the roof of a buried ruin (js/ruin-sites.js).
+    const holeRng = deps._mbRng(deps._seedFromString(mapId + ':treasure-ruin-hole:' + weekIndex())); // Separate stream so loot rolls stay identical to before.
+    return spots.map(({ col, row }) => ({ col, row, found: false, loot: _rollTreasureLootBundle(), ...(holeRng() < holeChance ? { ruinHole: true } : {}) }));
   }
 
   // Saves created before blocked-terrain exclusion can already contain a
@@ -182,14 +184,27 @@
     return blocked.length;
   }
 
+  const TREASURE_CHEST_TEXTURE_PATH = 'assets/textures/crate_side.png'; // Used by every visible surface of buried/diggable treasure chests.
+  let treasureChestTexture = null; // Shared by treasure-chest body/lid materials so each chest does not load another copy.
+
+  function _treasureChestMaterial(color) {
+    const material = new THREE.MeshLambertMaterial({ color });
+    if (typeof THREE.TextureLoader !== 'function') return material;
+    if (!treasureChestTexture) treasureChestTexture = new THREE.TextureLoader().load(TREASURE_CHEST_TEXTURE_PATH);
+    material.map = treasureChestTexture;
+    material.needsUpdate = true;
+    return material;
+  }
+
   // Simple wood-and-band chest silhouette — same box+lid shape as
-  // game.js's makeSellCrate/makeSupplyBox, just its own wood/gold coloring.
+  // game.js's makeSellCrate/makeSupplyBox, now using the shared crate-side
+  // surface art while preserving its existing wood/gold tint distinction.
   function _buildTreasureChestMesh() {
     const group = new THREE.Group();
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.42, 0.44), new THREE.MeshLambertMaterial({ color: 0x6b4a2b }));
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.42, 0.44), _treasureChestMaterial(0x6b4a2b));
     body.position.y = 0.21;
     body.castShadow = true;
-    const lid = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.07, 0.46), new THREE.MeshLambertMaterial({ color: 0xcaa233 }));
+    const lid = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.07, 0.46), _treasureChestMaterial(0xcaa233));
     lid.position.y = 0.445;
     lid.castShadow = true;
     group.add(body, lid);
@@ -303,10 +318,22 @@
     if (!persisted || !zi) return;
     let objMap = deps._zoneTreasureObjects.get(mapId);
     if (!objMap) { objMap = new Map(); deps._zoneTreasureObjects.set(mapId, objMap); }
-    for (const placement of persisted.placements) {
-      if (placement.found || !placement._mesh) continue;
+    for (const placement of persisted.placements.slice()) {
+      if (placement.found) continue;
       const key = placement.col + ',' + placement.row;
       const isDug = zi.grid[placement.row]?.[placement.col]?.type === deps.TileType.TRENCH;
+      if (placement.ruinHole) {
+        // Digging it out opens a shaft into a fresh ruin instead of a chest.
+        // The hole's own lifetime (until cleared or the next Tothal Shift)
+        // lives in js/ruin-sites.js, not in this weekly treasure record.
+        if (isDug && window.RuinSites?.openHole) {
+          placement.found = true;
+          persisted.placements = persisted.placements.filter(entry => entry !== placement);
+          window.RuinSites.openHole(mapId, placement.col, placement.row);
+        }
+        continue;
+      }
+      if (!placement._mesh) continue;
       if (isDug && !objMap.has(key)) {
         objMap.set(key, _makeTreasureChestObject(mapId, placement.col, placement.row, placement, placement._mesh));
       } else if (!isDug && objMap.has(key)) {
@@ -336,7 +363,7 @@
     const groups = [];
     deps._zoneTreasureObjects.set(mapId, new Map());
     for (const placement of persisted.placements) {
-      if (placement.found) continue;
+      if (placement.found || placement.ruinHole) continue; // A ruin hole has no chest to show once dug.
       const { col, row } = placement;
       const mesh = _buildTreasureChestMesh();
       mesh.position.set(col + 0.5, _treasureChestBuriedY(mapId, col, row), row + 0.5);

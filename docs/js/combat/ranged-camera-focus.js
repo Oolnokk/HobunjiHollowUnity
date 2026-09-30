@@ -2,7 +2,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 10;
+  const VERSION = 12;
   const SHOULDER_MODE = 'shoulderSurf';
   const TIGHT_FOV_DEG = 34; // Optical zoom around the camera-center reticle ray; unlike changing shoulder distance this introduces no aim-point parallax.
   const FOCUS_EASE_PER_SEC = 9; // Used to ease ready optical zoom continuously without quantized Settings-control writes.
@@ -14,7 +14,14 @@
   const RAY_ORIGIN_QUANTUM_WORLD = 0.02; // Used to treat tiny camera-origin jitter below two hundredths of a tile as the same aim input.
   const RAY_DIRECTION_QUANTUM = 0.001; // Used to treat sub-tenth-degree direction jitter as the same aim input.
   const ATTACK_ORIGIN_QUANTUM_WORLD = 0.02; // Used to invalidate aim only after the player/muzzle has moved materially in world space.
-  const SURFACE_NAME_IGNORE_RE = /(debug|helper|reticle|popup|particle|trail|ground[_ -]?shadow|outline)/i; // Used to exclude obvious non-world helper meshes.
+  const SURFACE_NAME_IGNORE_RE = /(debug|helper|reticle|popup|particle|trail|ground[_ -]?shadow|outline|projectile)/i; // Used to exclude obvious non-world helper meshes (incl. in-flight/embedded projectile planes).
+  // Ranged shots now converge from the offset held-weapon origin onto the first
+  // surface under the reticle. A surface this close to that origin turns the
+  // hand's sideways offset into a large yaw error (~20° at one tile), which is
+  // what made crossbow/thrown shots veer at particular camera angles whenever
+  // grass, a companion or the player's own gear sat just past the hand.
+  // Nearer hits are skipped for ranged targeting only; melee still uses them.
+  const RANGED_MIN_CONVERGENCE_WORLD = 2;
 
   let baseUpdate = null; // Preserves the ranged system's existing update before lightweight focus bookkeeping runs.
   let baseRangedInit = null; // Preserves RangedWeapons.init while replacing only its player aim ray.
@@ -140,11 +147,18 @@
     return Number.isFinite(surface) ? surface : 0;
   }
 
-  function playerProjectileOrigin(deps = rangedAimDeps || combatDeps()) {
+  function playerProjectileOrigin(deps = rangedAimDeps || combatDeps(), itemKey = window.RangedWeapons?.equippedRangedKey?.()) {
     const THREE = three();
     const player = deps?.player;
     const tile = Number(deps?.TILE) || 64;
     if (!THREE?.Vector3 || !player) return null;
+    try {
+      const heldPosition = deps?.getHeldRangedWorldTransform?.(itemKey)?.position; // Uses the same live held-plane origin that the real projectile spawn samples at release.
+      const x = Number(heldPosition?.x), y = Number(heldPosition?.y), z = Number(heldPosition?.z);
+      if ([x, y, z].every(Number.isFinite)) return new THREE.Vector3(x, y, z);
+    } catch (error) {
+      noteAimError('player-projectile-origin', error);
+    }
     return new THREE.Vector3(
       (Number(player.x) || 0) / tile,
       playerWorldBaseY(deps) + 0.55,
@@ -202,6 +216,7 @@
     while (node) {
       if (SURFACE_NAME_IGNORE_RE.test(String(node.name || ''))) return true;
       if (node.userData?.interactionAimIgnore === true || node.userData?.debugOnly === true) return true;
+      if (node.userData?.isBillboard === true) return true; // Grass/weed/rain/popup billboards are purely cosmetic and never stop an attack.
       node = node.parent || null;
     }
     return false;
@@ -405,7 +420,10 @@
       const fallbackRayDistance = Math.max(0.5, alongToAttack + range);
       const minimumSurfaceDistance = Math.max(0, alongToAttack - SURFACE_BEFORE_PLAYER_PAD_WORLD);
       const hits = cachedSurfaceHits(ray, scene);
-      const hit = hits.find(candidate => candidate.distance >= minimumSurfaceDistance && candidate.distance <= fallbackRayDistance + 1e-4) || null;
+      const minimumConvergence = metadata.mode === 'ranged' ? RANGED_MIN_CONVERGENCE_WORLD : 0;
+      const hit = hits.find(candidate => candidate.distance >= minimumSurfaceDistance
+        && candidate.distance <= fallbackRayDistance + 1e-4
+        && (!minimumConvergence || Math.hypot(candidate.point.x - attackOrigin.x, candidate.point.z - attackOrigin.z) >= minimumConvergence)) || null;
       const point = hit?.point?.clone?.() || ray.origin.clone().addScaledVector(ray.direction, fallbackRayDistance);
       let direction = point.clone().sub(attackOrigin);
       if (direction.lengthSq() < 1e-8) direction = ray.direction.clone();
@@ -457,11 +475,17 @@
       if (!heldState().rangedOut) return null;
       const def = itemKey ? window.RangedWeapons?.config?.[itemKey] : null;
       const rangeTiles = Number(def?.rangeTiles);
-      const origin = playerProjectileOrigin(rangedAimDeps || combatDeps());
+      const origin = playerProjectileOrigin(rangedAimDeps || combatDeps(), itemKey);
       if (!itemKey || !origin || !Number.isFinite(rangeTiles) || rangeTiles <= 0) return null;
-      const sharedTarget = sharedPerspectiveAimTarget(origin, { mode: 'ranged', itemKey, rangeTiles }); // Keeps ranged pose/launch convergence on the same endpoint as the head and lunge.
-      if (sharedTarget) return sharedTarget;
-      return resolveInteractionAimTarget(rangeTiles, origin, { mode: 'ranged', itemKey, rangeTiles });
+      // Ranged shots must hit the first real surface under the center reticle,
+      // not merely converge toward the far perspective point used for stable
+      // head/body/lunge facing. Re-root that camera-ray surface point at the
+      // exact held projectile origin; if scene targeting is unavailable, fall
+      // back to the shared horizon point so non-world/bootstrap callers still
+      // receive a deterministic aim ray.
+      const reticleTarget = resolveInteractionAimTarget(rangeTiles, origin, { mode: 'ranged', itemKey, rangeTiles });
+      if (reticleTarget) return reticleTarget;
+      return sharedPerspectiveAimTarget(origin, { mode: 'ranged', itemKey, rangeTiles });
     } catch (error) {
       noteAimError('ranged-target', error);
       return null;
@@ -501,6 +525,35 @@
     }
   }
 
+  function committedMeleeAimTarget(attackOrigin, metadata = {}) {
+    try {
+      const committed = window.HobunjiCombatCameraAlignment?.meleeHitTarget?.(); // Bridge chooses the staged strike's snapshot first, the active movement-lunge snapshot second, and otherwise yields to live reticle aim.
+      const point = vectorFrom(committed?.point);
+      if (!point || !attackOrigin) return null;
+      let direction = point.clone().sub(attackOrigin); // Re-roots the frozen endpoint at the player's current collision origin without ever following the target actor.
+      if (direction.lengthSq() < 1e-8) return null;
+      direction.normalize();
+      const target = {
+        ...metadata,
+        source: committed.source || 'screen-reticle-box3',
+        maxRangeWorld: Number(metadata.rangeTiles) || 0,
+        rayOrigin: null,
+        rayDirection: null,
+        attackOrigin,
+        point,
+        direction,
+        rayDistance: Number(committed.rayDistance) || 0,
+        attackDistance: distanceBetween(attackOrigin, point),
+        surfaceName: committed.targetId || null,
+      };
+      lastResolvedAimTarget = plainAimTarget(target);
+      return target;
+    } catch (error) {
+      noteAimError('committed-melee-target', error);
+      return null;
+    }
+  }
+
   function meleeInteractionAimTarget() {
     try {
       const deps = combatDeps();
@@ -510,19 +563,17 @@
       const rangePx = currentMeleeRangePx();
       const tile = Number(deps.TILE) || 64;
       const rangeTiles = Math.max(0.05, rangePx / tile);
-      const sharedTarget = sharedPerspectiveAimTarget(origin, {
+      const metadata = {
         mode: 'melee',
         itemKey: deps.currentWeaponKey?.() || null,
         rangeTiles,
         rangePx,
-      }); // Uses attack reach only for collision; the visual target point itself remains common and range-independent.
+      };
+      const committedTarget = committedMeleeAimTarget(origin, metadata);
+      if (committedTarget) return committedTarget; // Lunge and strike share the exact attack-start Box3 point; no moving-target homing occurs.
+      const sharedTarget = sharedPerspectiveAimTarget(origin, metadata);
       if (sharedTarget) return sharedTarget;
-      return resolveInteractionAimTarget(rangeTiles, origin, {
-        mode: 'melee',
-        itemKey: deps.currentWeaponKey?.() || null,
-        rangeTiles,
-        rangePx,
-      });
+      return resolveInteractionAimTarget(rangeTiles, origin, metadata);
     } catch (error) {
       noteAimError('melee-target', error);
       return null;
@@ -619,14 +670,14 @@
     if (!rawMeleeHit && typeof window.Combat?.meleeHit === 'function') {
       rawMeleeHit = window.Combat.meleeHit.bind(window.Combat);
       window.Combat.meleeHit = function interactionTargetMeleeHit(attacker, targetActor, options = {}) {
-        if (attacker === deps.player) {
+        if (attacker === deps.player && !options?.direction) {
           try {
             const target = meleeInteractionAimTarget();
             if (target?.direction) options = { ...options, direction: plainVector(target.direction) };
           } catch (error) {
             noteAimError('melee-hit-direction', error);
           }
-        }
+        } // Explicit caller directions (notably the HUD readiness probe) stay live and are never replaced by an attack commit.
         return rawMeleeHit(attacker, targetActor, options);
       };
     }
@@ -831,9 +882,7 @@
       meleeAimInstalled,
       meleeRangeCaptureInstalled,
       cameraMutation: 'native-shoulder-fov-optical-zoom+native-combat-offsets',
-      aimAlignment: rawGetPlayerPerspectiveTarget
-        ? 'shared-perspective-point-native-camera'
-        : 'shared-3d-interaction-target-native-camera',
+      aimAlignment: 'ranged-reticle-first-surface+melee-frozen-reticle-then-perspective',
       aimUpdateMode: 'change-driven-persistent-cache',
       interactionAimTarget: lastResolvedAimTarget ? { ...lastResolvedAimTarget } : null,
       activeMeleeRange: activeMeleeRange ? { ...activeMeleeRange } : null,

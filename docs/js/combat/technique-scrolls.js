@@ -146,6 +146,8 @@
     rawLoadoutSerialize = serialize; rawLoadoutLoad = load;
     combat.abilities.listForCategories = cats => rawList(cats).filter(def => !isTechnique(def) || unlocked.has(def.id));
     combat.loadout.getSlot = slot => {
+      const training = window.CombatTutorial?.slotOverride?.(slot); // Runtime-only loan; excluded from unlocks, loadout serialization, and manuals.
+      if (training !== undefined) return training;
       const id = getSlot(slot); // Used as the underlying stored/default candidate.
       if (slot === 'tap1') return id;
       const key = combat.deps?.currentWeaponKey?.() || 'none'; // Used to inspect this exact weapon's explicit persisted slot choices.

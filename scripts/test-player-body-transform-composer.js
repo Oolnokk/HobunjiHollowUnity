@@ -36,6 +36,9 @@ assert.ok(
 
 assert.ok(composer.includes('setChannel'), 'composer exposes named transform channels');
 assert.ok(composer.includes('registerExternalRootProvider'), 'composer exposes body-bound attachment providers');
+assert.ok(composer.includes("includePlayer: contribution.includePlayer !== false"), 'composer channels can exclude the already-physically-moved player root');
+assert.ok(composer.includes("includeExternal: contribution.includeExternal !== false"), 'composer channels can independently carry scene-sibling body attachments');
+assert.ok(composer.includes("resolveDelta('external')"), 'render composition resolves external-root channels separately from the player body');
 assert.ok(composer.includes('currentOwnedRoots'), 'composer rediscovers current visual roots instead of pinning stale avatar objects');
 assert.ok(composer.includes('discoverAvatarBodyRoots'), 'composer recursively discovers nested player PNG visual roots');
 assert.ok(composer.includes('isDescendantOf'), 'composer can dedupe nested visual branches before applying a body delta');

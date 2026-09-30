@@ -16,14 +16,27 @@ class FakeGroup {
 }
 
 class FakeMesh {
-  constructor() {
+  constructor(geometry, material) {
+    this.geometry = geometry; // Used below to retain the production chest primitive alongside its material for visual assertions.
+    this.material = material; // Used below to verify both buried-chest surfaces receive the crate-side texture.
     this.position = { y: 0, set() {} }; // Used by the chest builder for body/lid placement and by ensureZone for mesh positioning.
     this.castShadow = false; // Used by the chest builder's ordinary visual setup.
   }
 }
 
 class FakeBoxGeometry {}
-class FakeMeshLambertMaterial {}
+class FakeMeshLambertMaterial {
+  constructor(options = {}) {
+    this.color = options.color; // Used to preserve the production material constructor contract while texture assignment is inspected.
+    this.map = null; // Used below to capture the texture installed by _treasureChestMaterial.
+    this.needsUpdate = false; // Used by the production helper after assigning the texture.
+  }
+}
+class FakeTextureLoader {
+  load(path) {
+    return { path }; // Used as the shared fake THREE.Texture returned to both buried-chest materials.
+  }
+}
 
 function createContext() {
   const context = { // Used as the browser-like global scope for the real wild-treasure module.
@@ -36,6 +49,7 @@ function createContext() {
       Mesh: FakeMesh,
       BoxGeometry: FakeBoxGeometry,
       MeshLambertMaterial: FakeMeshLambertMaterial,
+      TextureLoader: FakeTextureLoader,
     },
   };
   vm.createContext(context);
@@ -113,6 +127,11 @@ freshContext.window.WildTreasure.ensureZone(freshHarness.mapId);
 const freshState = freshContext.window.WildTreasure.serializeState()[freshHarness.mapId]; // Used to inspect the generated treasure coordinate.
 assert.equal(freshState.placements.length, 1, 'fresh scatter still creates the expected buried chest');
 assert.ok(freshHarness.treasurePersist.get(freshHarness.mapId).placements[0]._mesh, 'live treasure placement still keeps its runtime mesh for interaction');
+const freshChest = freshHarness.sceneAdds[0]; // Used to inspect the exact production group added for the freshly scattered buried chest.
+assert.equal(freshChest.children.length, 2, 'buried chest still renders the body and lid as its two visible surfaces');
+for (const surface of freshChest.children) {
+  assert.equal(surface.material?.map?.path, 'assets/textures/crate_side.png', 'every buried-chest surface uses crate_side.png');
+}
 assert.equal(Object.prototype.hasOwnProperty.call(freshState.placements[0], '_mesh'), false, 'serialized treasure state strips runtime Three.js meshes');
 assert.deepEqual(
   { col: freshState.placements[0].col, row: freshState.placements[0].row },

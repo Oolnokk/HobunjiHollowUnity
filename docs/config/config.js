@@ -47,8 +47,17 @@
         shatteredStamina: '#8c4ad9',
         poisonedHealth: '#37651c',
         burningHealth: '#ff5a1f',
+        frostbittenStamina: '#7edcff',
+        entrancedHealth: '#b746d9',
+        shamblingFooting: '#736f5f',
         drunkenFooting: '#000000',
-        drunkenHealth: '#ff4f9a'
+        drunkenHealth: '#ff4f9a',
+        kindlingHealth: '#ffb347',
+        furiousStamina: '#ff2f2f',
+        moralizedStamina: '#ffe066',
+        resoluteFooting: '#c0c8ff',
+        resoluteHealth: '#9fb4ff',
+        mirroredHealth: '#d8f4ff'
       }),
       neon: Object.freeze({
         minSourceSaturation: 0.12,

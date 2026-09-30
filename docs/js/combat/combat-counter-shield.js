@@ -645,7 +645,7 @@
       });
     }
 
-    function tryAbsorb(amount) {
+    function tryAbsorb(amount, fromX, fromY) {
       if (!active) return false;
       const deps = window.Combat.deps;
       const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), 'counterShield')
@@ -655,6 +655,15 @@
       window.ResourceSystem?.spendStamina(deps.player, staminaCost, 'Counter Shield block');
       deps.playCounterShieldBlockSfx?.(deps.player.x, deps.player.y, deps.getCurrentArea());
       deps.showToast(`Blocked! (-${Math.round(staminaCost)} stamina)`, true);
+      window.CombatTutorial?.observe?.('block', { abilityId: 'counterShield' });
+      window.CombatAttackEvents?.defensive?.({
+        attacker: deps.player,
+        weaponKey: deps.currentWeaponKey(),
+        abilityId: 'counterShield',
+        target: window.CombatAttackEvents?.resolveIncomingSource?.(fromX, fromY, deps) || null,
+        defensiveResult: 'block',
+        metadata: { incomingAmount: amount, fromX, fromY },
+      }); // The interceptor itself is the authoritative successful-block seam; enchantments do not reproduce collision checks.
       deps.spawnBurstEffect({ color: '#40ccff', rangePx: deps.TILE * 1.8 });
       triggerCounter(effects);
       return true;
@@ -669,10 +678,25 @@
       lastCounterAt = t;
       const baseAbil = deps.weaponAbility('cut')
         || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
-      const damage = Math.round(baseAbil.damage * COUNTER_DAMAGE_MUL * (1 + (effects.stats.damageMul || 0)));
+      const baseDamage = baseAbil.damage * COUNTER_DAMAGE_MUL * (1 + (effects.stats.damageMul || 0)); // Existing riposte payload before cross-cutting enchantment modifiers.
       const rangePx = baseAbil.rangePx * COUNTER_RANGE_MUL;
       const halfConeRad = COUNTER_HALF_CONE_DEG * Math.PI / 180;
-      const knockbackPxS = baseAbil.knockbackPxS * COUNTER_KNOCKBACK_MUL;
+      const baseKnockbackPxS = baseAbil.knockbackPxS * COUNTER_KNOCKBACK_MUL;
+      const attackContext = window.CombatAttackEvents?.prepare?.({
+        attacker: deps.player,
+        weaponKey: deps.currentWeaponKey(),
+        abilityId: 'counterShield',
+        damage: baseDamage,
+        afflictionBonuses: effects.afflictions,
+        knockbackPxS: baseKnockbackPxS,
+        rangePx,
+        halfConeRad,
+        metadata: { attackAngle: deps.player.angle },
+      }) || { modifiers: { damage: 1, footingDamage: 1, affliction: 1, knockback: 1 }, afflictionBonuses: effects.afflictions };
+      const damage = Math.round((attackContext.damage ?? baseDamage) * (attackContext.modifiers?.damage || 1));
+      const knockbackPxS = (attackContext.knockbackPxS ?? baseKnockbackPxS) * (attackContext.modifiers?.knockback || 1);
+      const attackAfflictions = window.CombatAttackEvents?.scaleAfflictions?.(attackContext.afflictionBonuses || effects.afflictions, attackContext.modifiers?.affliction || 1)
+        || effects.afflictions;
       const counterDurationS = COUNTER_WINDUP_S + COUNTER_STRIKE_S;
 
       deps.triggerWeaponSwingVisual(counterDurationS, {
@@ -680,7 +704,7 @@
         windupFrac: COUNTER_WINDUP_S / counterDurationS,
         strikeFrac: 1,
         holdS: COUNTER_HOLD_S,
-        afflictionIds: Object.keys(effects.afflictions),
+        afflictionIds: Object.keys(attackAfflictions),
         coneRangePx: rangePx,
         coneHalfConeRad: halfConeRad,
         coneAngle: deps.player.angle,
@@ -697,26 +721,37 @@
             deps.player.x, deps.player.y, deps.player.angle, rangePx, halfConeRad
           );
           let hits = 0, lastName = '';
+          const ordinaryHitTargets = new Set(); // Used by Living Gust after the riposte's real cone decides ordinary hits.
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
             if (!deps.inCone(
               deps.player.x, deps.player.y, deps.player.angle,
               c.x, c.y, rangePx, halfConeRad
             )) continue;
+            const healthBefore = Math.max(0, Number(c.health) || 0); // Used for Mirrored Health's post-mitigation award.
             deps.damageCreature(
               c, damage, deps.player.x, deps.player.y, knockbackPxS,
               {
+                abilityId: 'counterShield',
                 tag: deps.currentWeaponDamageType(),
                 category: 'defensiveHold',
-                afflictionBonuses: effects.afflictions,
+                footingDamageMultiplier: attackContext.modifiers?.footingDamage || 1,
+                afflictionBonuses: attackAfflictions,
               }
             );
+            ordinaryHitTargets.add(c);
+            window.CombatAttackEvents?.hit?.(attackContext, {
+              target: c,
+              actualDamage: Math.max(0, healthBefore - (Number(c.health) || 0)),
+              afflictionBonuses: attackAfflictions,
+            });
             deps.playWeaponHitSfx?.(
               deps.currentWeaponDamageType(), c.x, c.y, c.areaId, undefined, 'large'
             );
             hits++;
             lastName = c.def.label;
           }
+          window.EnchantmentSystem?.applyPeripheralGust?.(attackContext, ordinaryHitTargets);
           if (hits > 0) {
             deps.showToast(
               `Shield Counter Riposte: hit ${hits > 1 ? hits + ' creatures' : 'the ' + lastName}!`,

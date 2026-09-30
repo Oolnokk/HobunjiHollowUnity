@@ -81,7 +81,7 @@ const localStorage = {
 
 const windowStub = {
   __hobunjiPlayerProfile:{ worldId:'world-den-test', playerId:'player-den-test' },
-  CalendarSystem:{ yearNumber:()=>3 },
+  CalendarSystem:{ yearNumber:()=>3, tothalCycle:()=>3 },
   SCRATCHBONES_CONFIG:{ game:{ wildlife:{ nestClutch:{ min:2,max:4 } } } },
   CreatureGenetics:{
     SPECIES_ALIAS:{ 'gar-wolf':'gar-wolf', 'gar-wolf-den-mother':'gar-wolf' },

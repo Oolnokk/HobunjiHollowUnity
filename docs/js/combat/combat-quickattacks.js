@@ -9,9 +9,8 @@
 // verdict from whichever creature happened to be the auto-target.
 //
 // "enemyStriking" (Opportunist Jab's bonus) recognizes both the generic
-// enemy telegraph's strike stage and named modular animal attacks that expose
-// a committed strike window through Combat.animalAttacks.isStriking(). That
-// keeps Pounce's leap and future named attacks on the same condition path.
+// enemy telegraph's windup/strike stages and named modular animal attacks.
+// The legacy condition key stays stable for saved loadouts and readiness cues.
 (() => {
   "use strict";
   if (!window.Combat?.abilities) { console.error('combat-quickattacks.js requires combat-core.js + combat-loadout.js to load first'); return; }
@@ -20,8 +19,8 @@
 
   function enemyIsStriking(target) {
     if (!target) return false;
-    if (target.telegraphState === 'strike') return true;
-    return !!window.Combat.animalAttacks?.isStriking?.(target);
+    if (target.telegraphState === 'windup' || target.telegraphState === 'strike') return true;
+    return !!(window.Combat.animalAttacks?.isWindingUp?.(target) || window.Combat.animalAttacks?.isStriking?.(target));
   }
 
   // Shared source of truth for attack execution and readiness cues. The target
@@ -35,15 +34,35 @@
     const forwardX = Math.cos(target.facing || 0);
     const forwardY = Math.sin(target.facing || 0);
     const behindDot = forwardX * (toPlayerX / dist) + forwardY * (toPlayerY / dist);
-    return {
+    const staminaForCondition = window.ResourceSystem?.getDepletionEquivalentCurrent?.(target, 'stamina') ?? target.stamina; // Used by Exhaust Cutter: the visible Stamina bar, including any affliction band extending past current.
+    const healthForCondition = window.ResourceSystem?.getDepletionEquivalentCurrent?.(target, 'health') ?? target.health; // Used by Mercy Spike: the visible Health bar (affliction bands inside current are never double-counted).
+    const conditions = {
       enemyStriking: enemyIsStriking(target),
       // True Exhausted (see resource-system.js's spendStamina) always
-      // counts, even if a Winded-Stamina-reduced effective max makes the
-      // plain 20%-of-max fallback threshold look full.
-      exhausted: !!target.exhaustion?.active || target.stamina <= target.maxStamina * 0.20,
+      // qualifies. ResourceSystem reads the visible bar length (affliction
+      // bands sit inside current, so they are not added on top); explicit max
+      // reducers stay real depletion because that helper caps at the live
+      // effective maximum.
+      exhausted: !!target.exhaustion?.active || staminaForCondition <= target.maxStamina * 0.20,
       behind: behindDot < -0.35,
-      lowHealth: target.health > 0 && target.health <= target.maxHealth * 0.30,
+      lowHealth: target.health > 0 && healthForCondition <= target.maxHealth * 0.30,
     };
+    if (window.Combat?.quickAttackData) {
+      window.Combat.quickAttackData.lastConditionCheck = { // Mobile-readable diagnostics for resource-gated Quick Attack readiness.
+        targetId: target.id || target.name || null,
+        rawStamina: Number(target.stamina) || 0,
+        staminaForCondition,
+        rawHealth: Number(target.health) || 0,
+        healthForCondition,
+        effectiveStaminaMax: window.ResourceSystem?.getEffectiveMax?.(target, 'stamina') ?? target.maxStamina,
+        effectiveHealthMax: window.ResourceSystem?.getEffectiveMax?.(target, 'health') ?? target.maxHealth,
+        enemyStriking: conditions.enemyStriking,
+        attackWindow: target.telegraphState || target._animalAttack?.state?.stage || 'idle', // Mobile diagnostics expose the qualifying windup/strike phase.
+        exhausted: conditions.exhausted,
+        lowHealth: conditions.lowHealth,
+      };
+    }
+    return conditions;
   }
   window.Combat.getQuickAttackConditions = getConditions;
 
@@ -53,7 +72,7 @@
   // `quickAttacks.techniques` section can override them wholesale.
   const TECHNIQUES = {
     opportunistJab: { label: 'Opportunist Jab', condKey: 'enemyStriking', halfConeDeg: 16, rangeMul: 0.95,
-      base: { damageMul: 0.5, knockbackMul: 0.9 }, bonus: { damageMul: 3.2, knockbackMul: 1.9 }, bonusText: 'bonus: target was in strike stage' },
+      base: { damageMul: 0.5, knockbackMul: 0.9 }, bonus: { damageMul: 3.2, knockbackMul: 1.9 }, bonusText: 'bonus: target was winding up or striking' },
     exhaustCutter: { label: 'Exhaust Cutter', condKey: 'exhausted', halfConeDeg: 18, rangeMul: 1.0,
       base: { damageMul: 0.57, knockbackMul: 1.0 }, bonus: { damageMul: 3.1, knockbackMul: 2.0 }, bonusText: 'bonus: target stamina was empty' },
     backstabFlick: { label: 'Backstab Flick', condKey: 'behind', halfConeDeg: 39, rangeMul: 1.25,
@@ -153,6 +172,22 @@
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
       const rangePx = baseAbil.rangePx * def.rangeMul * RANGE_SCALE * (1 + (effects.stats.rangeMul || 0));
       const halfConeRad = def.halfConeDeg * Math.PI / 180;
+      const baseLungePx = deps.TILE * LUNGE_TILE_MUL * (1 + (effects.stats.lungeMul || 0)); // Existing Quick Attack lunge remains the base that Living Gust scales.
+      const attackContext = window.CombatAttackEvents?.prepare?.({
+        attacker: deps.player,
+        weaponKey: deps.currentWeaponKey(),
+        abilityId: id,
+        damage: baseAbil.damage * (1 + (effects.stats.damageMul || 0)),
+        afflictionBonuses: effects.afflictions,
+        knockbackPxS: baseAbil.knockbackPxS,
+        rangePx,
+        halfConeRad,
+        lungePx: baseLungePx,
+        metadata: { attackAngle: deps.player.angle },
+      }) || { modifiers: { damage: 1, footingDamage: 1, affliction: 1, knockback: 1, lunge: 1 }, afflictionBonuses: effects.afflictions };
+      const lungePx = baseLungePx * (attackContext.modifiers?.lunge || 1);
+      const attackAfflictions = window.CombatAttackEvents?.scaleAfflictions?.(attackContext.afflictionBonuses || effects.afflictions, attackContext.modifiers?.affliction || 1)
+        || effects.afflictions;
 
       // All quick attacks are aimed jabs — mirror the shovel's straight thrust.
       deps.triggerWeaponSwingVisual(windupS + strikeS, {
@@ -160,13 +195,13 @@
         windupFrac: windupS / (windupS + strikeS),
         strikeFrac: 1,
         holdS: HOLD_S,
-        afflictionIds: Object.keys(effects.afflictions),
-        afflictions: effects.afflictions,
+        afflictionIds: Object.keys(attackAfflictions),
+        afflictions: attackAfflictions,
         coneRangePx: rangePx,
         coneHalfConeRad: halfConeRad,
         coneAngle: deps.player.angle,
       });
-      deps.beginCombatLunge(deps.TILE * LUNGE_TILE_MUL * (1 + (effects.stats.lungeMul || 0)), windupS + strikeS, 0, { rangePx, halfConeRad });
+      deps.beginCombatLunge(lungePx, windupS + strikeS, 0, { rangePx, halfConeRad });
 
       busyAction = window.Combat.beginStagedAction({
         windupS,
@@ -175,6 +210,7 @@
         onStrike: () => {
           const vegetationCleared = deps.clearVegetationInAttackCone?.(deps.player.x, deps.player.y, deps.player.angle, rangePx, halfConeRad) || 0; // Used for accurate hit feedback when the cone only cuts growth.
           let hits = 0, lastName = '', conditionalHits = 0, conditionalText = '';
+          const ordinaryHitTargets = new Set(); // Used by Living Gust after real Quick Attack hit validity has already been resolved.
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
             if (!window.Combat.meleeHit(deps.player, c, {
@@ -190,14 +226,24 @@
             const hitConditions = getConditions(deps, c);
             const hitTech = buildTechnique(def, hitConditions);
             const conditionBonusUsed = hitTech.sourceText !== 'no condition bonus';
-            const damage = Math.round(baseAbil.damage * hitTech.damageMul * (1 + (effects.stats.damageMul || 0)));
-            const knockbackPxS = baseAbil.knockbackPxS * hitTech.knockbackMul;
+            const damage = Math.round(baseAbil.damage * hitTech.damageMul * (1 + (effects.stats.damageMul || 0)) * (attackContext.modifiers?.damage || 1));
+            const knockbackPxS = baseAbil.knockbackPxS * hitTech.knockbackMul * (attackContext.modifiers?.knockback || 1);
+            const healthBefore = Math.max(0, Number(c.health) || 0); // Used to expose actual post-mitigation Health damage rather than theoretical Quick Attack damage.
 
             deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, {
+              abilityId: id, conditionBonusUsed, // Identifies the committed hit for authored training objectives.
               tag: deps.currentWeaponDamageType(),
               category: 'quickAttack',
               consumeHealthVulnerability: conditionBonusUsed,
-              afflictionBonuses: effects.afflictions,
+              footingDamageMultiplier: attackContext.modifiers?.footingDamage || 1,
+              afflictionBonuses: attackAfflictions,
+            });
+            ordinaryHitTargets.add(c);
+            window.CombatAttackEvents?.hit?.(attackContext, {
+              target: c,
+              actualDamage: Math.max(0, healthBefore - (Number(c.health) || 0)),
+              afflictionBonuses: attackAfflictions,
+              quickConditionalBonus: conditionBonusUsed, // Exact source of truth used by the Quick Attack's own conditional payload/refund.
             });
             deps.playWeaponHitSfx?.(deps.currentWeaponDamageType(), c.x, c.y, c.areaId, undefined, conditionBonusUsed ? 'huge' : 'small');
             hits++;
@@ -207,6 +253,8 @@
               conditionalText ||= hitTech.sourceText;
             }
           }
+
+          window.EnchantmentSystem?.applyPeripheralGust?.(attackContext, ordinaryHitTargets);
 
           // One successful conditional is enough to earn one half-cost refund;
           // cleaving several qualifying creatures cannot multiply the refund.
@@ -222,7 +270,10 @@
           // silent: same reasoning as combat-combo.js — every swing already
           // has its own weapon swing/impact sfx.
           deps.showToast(msg, hits > 0 || vegetationCleared > 0, true);
-          if (hits > 0) deps.awardWeaponMasteryXp();
+          if (hits > 0) {
+            window.PlayerLunge?.confirmEnemyHit?.(); // A real enemy hit grants the one-second slow-fall aerial follow-up window; misses grant nothing.
+            deps.awardWeaponMasteryXp();
+          }
 
           // Mobile/headless-friendly latest-resolution snapshot. Existing
           // combat diagnostics can read this without needing browser devtools.
@@ -239,7 +290,7 @@
         data: {
           meleeThreat: window.Combat.playerMeleeThreat(rangePx, halfConeRad, {
             yaw: deps.player.angle,
-            lungePx: deps.TILE * LUNGE_TILE_MUL * (1 + (effects.stats.lungeMul || 0)),
+            lungePx,
             source: def.label,
           }),
         },

@@ -218,6 +218,7 @@
   // only sequentially-chosen levels are present; level 1 is always
   // choosable (gated by that tool's own mastery — see getLevelState below).
   let meta = {};
+  let preview = null; // Ephemeral upgrade comparison; deliberately excluded from serialization and persistence.
 
   function getUnlockedLevel(toolKey, abilityId) {
     const m = meta[toolKey]?.[abilityId];
@@ -271,6 +272,7 @@
   // spending anything if the level isn't choosable (wrong mastery/sequence)
   // or the player can't afford it.
   function choose(toolKey, abilityId, level, optionIndex) {
+    if (preview?.toolKey === toolKey) return false; // Do not spend motes or overwrite permanent choices while comparing a preview.
     const state = getLevelState(toolKey, abilityId, level);
     if (state !== 'chosen' && state !== 'available') return false;
     const weaponType = isWeaponTyped(abilityId) ? weaponTypeForTool(toolKey) : null;
@@ -290,9 +292,11 @@
   function getEffects(toolKey, abilityId) {
     const afflictions = {};
     const stats = {};
-    const m = meta[toolKey]?.[abilityId] || {};
+    const trial = preview?.toolKey === toolKey && preview.abilityId === abilityId ? preview : null; // Replace this row only; keep saved earlier choices as the comparison baseline.
+    const m = { ...(meta[toolKey]?.[abilityId] || {}), ...(trial ? { [trial.level]: trial.index } : {}) }; // Temporary map never writes into saved progression.
     for (const levelStr of Object.keys(m)) {
-      const option = getChosenOption(toolKey, abilityId, Number(levelStr));
+      if (trial && Number(levelStr) > trial.level) continue;
+      const option = trial && Number(levelStr) === trial.level ? getTree(abilityId, weaponTypeForTool(toolKey))?.[trial.level - 1]?.[trial.index] : getChosenOption(toolKey, abilityId, Number(levelStr));
       if (!option) continue;
       if (option.afflictions) {
         for (const [id, mul] of Object.entries(option.afflictions)) {
@@ -305,6 +309,13 @@
         }
       }
     }
+    // Immundanity weakens only effects granted by Weapon Mastery choices.
+    // Combat perks are added AFTER this pass so a magical weapon does not
+    // silently reduce unrelated perk/base-weapon stats.
+    const masteryPower = window.EnchantmentSystem?.getMasteryPowerMultiplier?.(toolKey) ?? 1; // Shared Immundanity calculation; never re-derived per ability.
+    for (const id of Object.keys(afflictions)) afflictions[id] *= masteryPower;
+    for (const key of Object.keys(stats)) stats[key] *= masteryPower;
+
     // Increase AoE / Increase Lunge Distance perks apply here so every
     // ability (which already reads stats.rangeMul/lungeMul off this same
     // returned object) picks them up uniformly.
@@ -313,9 +324,19 @@
     return { afflictions, stats };
   }
 
+  function beginPreview(toolKey, abilityId, level, index) {
+    const options = getTree(abilityId, weaponTypeForTool(toolKey))?.[level - 1]; // Validate preview data against the same catalog and actual weapon Mastery.
+    if (!Number.isInteger(level) || level < 1 || level > masteryLevel(toolKey) || !Number.isInteger(index) || !options?.[index]) return null;
+    const handle = { toolKey, abilityId, level, index }; // Ownership token prevents stale cleanup from clearing a newer preview.
+    preview = handle;
+    return handle;
+  }
+  function endPreview(handle) { if (preview === handle) preview = null; }
+
   function serialize() { return JSON.parse(JSON.stringify(meta)); }
 
   function load(saved) {
+    preview = null; // Character/profile changes cannot carry a temporary comparison into another save.
     meta = {};
     if (!saved || typeof saved !== 'object') return;
     for (const [toolKey, abilityMap] of Object.entries(saved)) {
@@ -373,5 +394,7 @@
     getChosenOption,
     choose,
     getEffects,
+    beginPreview,
+    endPreview,
   };
 })();

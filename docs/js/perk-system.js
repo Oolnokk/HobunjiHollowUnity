@@ -135,7 +135,28 @@
 
   function findPerk(skillKey, perkId) { return (TREES[skillKey] || []).find(p => p.id === perkId) || null; }
 
-  function rank(skillKey, perkId) { return ranks[skillKey]?.[perkId] || 0; }
+  // Purchased ranks are what the player spent points on; rank() is the
+  // effective value every consumer reads, which also includes bonus ranks
+  // from registered equipment sources (Harlyao trinkets — see
+  // js/trinket-system.js). Bonus ranks never cost or refund perk points and
+  // may exceed maxRank.
+  const bonusRankProviders = new Set(); // Used by rank() to add equipment-granted ranks without a second stat vocabulary.
+  function registerBonusRankProvider(provider) {
+    if (typeof provider !== 'function') return () => {};
+    bonusRankProviders.add(provider);
+    return () => bonusRankProviders.delete(provider);
+  }
+  function bonusRank(skillKey, perkId) {
+    let bonus = 0;
+    for (const provider of bonusRankProviders) {
+      let value = 0;
+      try { value = Number(provider(skillKey, perkId)); } catch (_) { value = 0; }
+      if (Number.isFinite(value) && value > 0) bonus += value;
+    }
+    return bonus;
+  }
+  function purchasedRank(skillKey, perkId) { return ranks[skillKey]?.[perkId] || 0; }
+  function rank(skillKey, perkId) { return purchasedRank(skillKey, perkId) + bonusRank(skillKey, perkId); }
 
   function totalRankCapacity(skillKey) {
     return (TREES[skillKey] || []).reduce((sum, perk) => sum + Math.max(0, Math.floor(Number(perk.maxRank) || 0)), 0);
@@ -176,16 +197,16 @@
 
   function increase(skillKey, perkId) {
     const perk = findPerk(skillKey, perkId);
-    if (!perk || pointsAvailable(skillKey) <= 0 || rank(skillKey, perkId) >= perk.maxRank) return false;
-    if (rank(skillKey, perkId) === 0 && tierLocked(skillKey, perk.tier)) return false;
-    ranks[skillKey][perkId] = rank(skillKey, perkId) + 1;
+    if (!perk || pointsAvailable(skillKey) <= 0 || purchasedRank(skillKey, perkId) >= perk.maxRank) return false;
+    if (purchasedRank(skillKey, perkId) === 0 && tierLocked(skillKey, perk.tier)) return false;
+    ranks[skillKey][perkId] = purchasedRank(skillKey, perkId) + 1;
     persist();
     render();
     return true;
   }
 
   function decrease(skillKey, perkId) {
-    if (rank(skillKey, perkId) <= 0) return false;
+    if (purchasedRank(skillKey, perkId) <= 0) return false;
     ranks[skillKey][perkId] -= 1;
     persist();
     render();
@@ -248,13 +269,14 @@
       const body = tiers.map(tier => {
         const locked = tierLocked(skillKey, tier);
         const perkRows = TREES[skillKey].filter(p => p.tier === tier).map(perk => {
-          const current = rank(skillKey, perk.id);
+          const current = purchasedRank(skillKey, perk.id);
+          const bonus = bonusRank(skillKey, perk.id); // Shown separately so equipment ranks never look like spent points.
           const maxed = current >= perk.maxRank;
           const rowLocked = locked && current === 0;
           return `<div class="perk-row${maxed ? ' maxed' : ''}${rowLocked ? ' locked' : ''}" data-perk="${perk.id}">
             <div class="perk-copy"><div class="perk-name">${perk.name}</div><div class="perk-desc">${current > 0 ? perk.desc(current) : `Rank 1: ${perk.desc(1)}`}</div></div>
             <button type="button" class="perk-btn" data-perk-action="dec" data-skill="${skillKey}" data-perk-id="${perk.id}" ${current <= 0 ? 'disabled' : ''}>−</button>
-            <span class="perk-rank">${current}/${perk.maxRank}</span>
+            <span class="perk-rank">${current}/${perk.maxRank}${bonus > 0 ? ` <span title="Bonus ranks from equipped trinkets">+${bonus}</span>` : ''}</span>
             <button type="button" class="perk-btn" data-perk-action="inc" data-skill="${skillKey}" data-perk-id="${perk.id}" ${(maxed || available <= 0 || rowLocked) ? 'disabled' : ''}>+</button>
           </div>`;
         }).join('');
@@ -286,7 +308,7 @@
   window.PerkSystem = {
     TREES,
     init, restore, serialize,
-    rank, totalRankCapacity, maxPointsForSkill, pointEntitlementAtLevel, pointsGrantedAtLevel,
+    rank, purchasedRank, bonusRank, registerBonusRankProvider, totalRankCapacity, maxPointsForSkill, pointEntitlementAtLevel, pointsGrantedAtLevel,
     pointsEarned, pointsSpent, pointsAvailable,
     increase, decrease, resetTree,
     combatDamageMultiplier,

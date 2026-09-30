@@ -56,6 +56,11 @@
     return !!(aa?.def?.isStriking?.(aa.state, c));
   }
 
+  function isWindingUp(c) {
+    const aa = c?._animalAttack; // Named attacks declare preparation windows without leaking private stage names to Quick Attacks.
+    return !!(aa?.def?.isWindingUp?.(aa.state, c));
+  }
+
   function cancel(c) {
     const aa = c._animalAttack;
     if (!aa) return;
@@ -64,7 +69,7 @@
     c.scaleY = 1;
   }
 
-  window.Combat.animalAttacks = { register, start, update, isBusy, isStriking, cancel };
+  window.Combat.animalAttacks = { register, start, update, isBusy, isStriking, isWindingUp, cancel };
 
   // ── Pounce ──────────────────────────────────────────────────────────
   //
@@ -220,6 +225,7 @@
         : deps.inCone(c.x, c.y, state.angle, ref.x, ref.y, state.rangePx, state.halfConeRad);
       if (!hit) continue;
       if (target.isPlayer) deps.damagePlayer(state.damage, c.x, c.y, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
+      else if (window.CompanionOffense) window.CompanionOffense.damageCreature(deps.damageCreature, c, ref, state.damage, c.x, c.y, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses }); // Whistle/Sicced empowerment for player companions; wild attackers pass through unchanged.
       else deps.damageCreature(ref, state.damage, c.x, c.y, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
       deps.playCreatureClawHit?.(c);
       return false; // hit landed; stop in place
@@ -239,6 +245,7 @@
     cancel: pounceCancel,
     additionalStaminaCost: pounceAdditionalStaminaCost,
     isStriking: state => state?.stage === 'leap',
+    isWindingUp: state => state?.stage === 'windup' || state?.stage === 'uncrouch',
   });
 
   // ── Guard Charge ────────────────────────────────────────────────────
@@ -296,6 +303,7 @@
       const dmgTag = c.def.attackTag || 'blunt';
       const afflictionBonuses = window.ResourceSystem?.afflictionBonusesForTag(dmgTag);
       if (target.isPlayer) deps.damagePlayer(0, c.x, c.y, GUARD_CHARGE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
+      else if (window.CompanionOffense) window.CompanionOffense.damageCreature(deps.damageCreature, c, ref, 0, c.x, c.y, GUARD_CHARGE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses }); // Scales the charge's affliction buildup for player companions.
       else deps.damageCreature(ref, 0, c.x, c.y, GUARD_CHARGE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
       deps.playCreatureClawHit?.(c);
       return false;

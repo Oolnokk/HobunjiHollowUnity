@@ -75,28 +75,48 @@
       ) || { afflictions: {}, stats: {} };
       const cost = (COST_BASE + count * COST_PER_STRIKE)
         * (1 + (effects.stats.staminaCostMul || 0));
-      window.ResourceSystem?.spendStamina(deps.player, cost, 'Accelerating Flurry');
-
+      const spendResult = window.ResourceSystem?.spendStamina(
+        deps.player,
+        cost,
+        'Accelerating Flurry',
+        { actionKind: 'offensiveHeldFlurry', abilityId: 'acceleratingFlurry' },
+      ) || { tempoMultiplier: 1 };
+      const fundedTempo = Math.max(1, Number(spendResult.tempoMultiplier) || 1); // Furious Stamina accelerates only the effective-cost portion it actually funded.
       const timeScale = 1 / (window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1);
-      const windupS = WINDUP_S * timeScale;
-      const strikeS = STRIKE_S * timeScale;
+      const windupS = WINDUP_S * timeScale / fundedTempo;
+      const strikeS = STRIKE_S * timeScale / fundedTempo;
       const dirSign = count % 2 === 0 ? -1 : 1;
 
       const baseAbil = deps.weaponAbility('cut')
         || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
-      const damage = Math.round(
-        baseAbil.damage * (DAMAGE_MUL_BASE + count * DAMAGE_MUL_PER_STRIKE)
-        * (1 + (effects.stats.damageMul || 0))
-      );
+      const baseDamage = baseAbil.damage * (DAMAGE_MUL_BASE + count * DAMAGE_MUL_PER_STRIKE)
+        * (1 + (effects.stats.damageMul || 0)); // Existing flurry scaling before cross-cutting enchantment modifiers.
       const rangePx = baseAbil.rangePx * (1 + (effects.stats.rangeMul || 0));
       const halfConeDeg = HALF_CONE_DEG_BASE
         + Math.min(HALF_CONE_DEG_MAX_GROWTH, count * HALF_CONE_DEG_GROWTH_PER_STRIKE);
       const halfConeRad = halfConeDeg * Math.PI / 180;
-      const knockbackPxS = baseAbil.knockbackPxS
+      const baseKnockbackPxS = baseAbil.knockbackPxS
         * (KNOCKBACK_MUL_BASE + count * KNOCKBACK_MUL_PER_STRIKE)
         * (1 + (effects.stats.knockbackMul || 0));
       const strikeAngle = deps.player.angle + dirSign * SIDE_OFFSET_DEG * Math.PI / 180;
       const strikeIndex = count + 1;
+      const attackContext = window.CombatAttackEvents?.prepare?.({
+        attacker: deps.player,
+        weaponKey: deps.currentWeaponKey(),
+        abilityId: 'acceleratingFlurry',
+        damage: baseDamage,
+        afflictionBonuses: effects.afflictions,
+        knockbackPxS: baseKnockbackPxS,
+        rangePx,
+        halfConeRad,
+        isFlurry: true,
+        flurryHitIndex: strikeIndex,
+        metadata: { attackAngle: strikeAngle, fundedTempo },
+      }) || { modifiers: { damage: 1, footingDamage: 1, affliction: 1, knockback: 1 }, afflictionBonuses: effects.afflictions };
+      const damage = Math.round((attackContext.damage ?? baseDamage) * (attackContext.modifiers?.damage || 1));
+      const knockbackPxS = (attackContext.knockbackPxS ?? baseKnockbackPxS) * (attackContext.modifiers?.knockback || 1);
+      const attackAfflictions = window.CombatAttackEvents?.scaleAfflictions?.(attackContext.afflictionBonuses || effects.afflictions, attackContext.modifiers?.affliction || 1)
+        || effects.afflictions;
       const dmgType = deps.currentWeaponDamageType();
       const impactSize = strikeIndex <= 2 ? 'small' : strikeIndex <= 5 ? 'medium' : 'large';
 
@@ -107,7 +127,7 @@
         strikeFrac: 1,
         pose: window.Combat.poses.SWEEP_POSE,
         holdS: HOLD_S,
-        afflictionIds: Object.keys(effects.afflictions),
+        afflictionIds: Object.keys(attackAfflictions),
         coneRangePx: rangePx,
         coneHalfConeRad: halfConeRad,
         coneAngle: strikeAngle,
@@ -122,21 +142,34 @@
             deps.player.x, deps.player.y, strikeAngle, rangePx, halfConeRad,
           );
           let hits = 0, lastName = '';
+          const ordinaryHitTargets = new Set(); // Used to keep Living Gust's widened cone knockback-only.
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
             if (!deps.inCone(
               deps.player.x, deps.player.y, strikeAngle, c.x, c.y, rangePx, halfConeRad,
             )) continue;
 
+            const healthBefore = Math.max(0, Number(c.health) || 0); // Used by Mirrored Health to reward only damage that truly landed.
             deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, {
+              abilityId: 'acceleratingFlurry', // Identifies the committed hit for authored training objectives.
               tag: dmgType,
               heavy: true,
-              afflictionBonuses: effects.afflictions,
+              footingDamageMultiplier: attackContext.modifiers?.footingDamage || 1,
+              afflictionBonuses: attackAfflictions,
+            });
+            ordinaryHitTargets.add(c);
+            window.CombatAttackEvents?.hit?.(attackContext, {
+              target: c,
+              actualDamage: Math.max(0, healthBefore - (Number(c.health) || 0)),
+              afflictionBonuses: attackAfflictions,
+              isFlurry: true,
+              flurryHitIndex: strikeIndex,
             });
             deps.playWeaponHitSfx?.(dmgType, c.x, c.y, c.areaId, undefined, impactSize);
             hits++;
             lastName = c.def.label;
           }
+          window.EnchantmentSystem?.applyPeripheralGust?.(attackContext, ordinaryHitTargets);
           if (hits > 0) {
             deps.showToast(
               `Flurry Strike ${strikeIndex}: hit ${hits > 1 ? hits + ' creatures' : 'the ' + lastName}!`,
@@ -157,7 +190,7 @@
       debugState.strikes = count;
       nextStrikeAt = now()
         + Math.max(NEXT_STRIKE_MIN_S, NEXT_STRIKE_BASE_S - count * NEXT_STRIKE_DECAY_PER_STRIKE)
-        * timeScale;
+        * timeScale / fundedTempo;
     }
 
     function onHoldStart() {

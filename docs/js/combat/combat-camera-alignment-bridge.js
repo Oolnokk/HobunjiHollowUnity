@@ -1,15 +1,16 @@
 // Initialization-only bridge that makes the actual camera/reticle ray the
 // authority for the one finite perspective point beneath the reticle. Walking
-// stays in game.js's native point-relative path; this module keeps attack lunges
-// converged on that same endpoint, preserves the unmodified camera ray, and
+// stays in game.js's native point-relative path; this module freezes each attack's
+// exact reticle endpoint (hostile Box3 when hit, perspective fallback otherwise), preserves the unmodified camera ray, and
 // piggybacks Combat.update for lunge-entry correction without adding a second
 // animation loop.
 (() => {
   'use strict';
 
-  const VERSION = 4;
+  const VERSION = 6;
   const EPSILON = 1e-8;
   const LUNGE_CANCEL_RANGE_MULTIPLIER = 0.5; // Used only by lunge stop tests; authored strike/hit reach remains full length.
+  const MELEE_RETICLE_COMMIT_PAD_MS = 450; // Keeps one frozen reticle endpoint alive through the staged strike without following a moving target.
   let rangedInitWrapped = false; // Exposed in debugSnapshot() to verify the ranged initialization boundary was patched once.
   let combatInitWrapped = false; // Exposed in debugSnapshot() to verify the combat initialization boundary was patched once.
   let cameraRayDepsProvided = false; // Exposed to verify ranged-camera-focus receives the true camera-origin ray through its compatibility dependency.
@@ -19,9 +20,15 @@
   let lungeAuthorityInstalled = false; // Records whether beginCombatLunge was wrapped so player displacement converges on the perspective point.
   let exactReticleAlignmentInstalled = false; // Records whether player attack alignment now releases only on a real center-ray Box3 intersection.
   let combatUpdateSweepInstalled = false; // Records whether the existing Combat.update tick carries the lunge-entry sweep.
-  let lungeAuthorityCount = 0; // Mobile-readable count of lunges corrected toward the shared perspective point.
+  let lungeAuthorityCount = 0; // Mobile-readable count of lunges corrected toward their frozen reticle endpoint.
   let reticleBoxHitCount = 0; // Mobile-readable count of exact target Box3 intersections accepted by transient melee alignment.
   let lungeEarlyStopCount = 0; // Mobile-readable count of lunges clamped to the first attack-volume entry point.
+  let committedMeleeReticleTarget = null; // Frozen exact Box3 or perspective-fallback endpoint most recently committed by a lunge-backed attack.
+  let activeLungeReticleTarget = null; // Frozen endpoint owned by the movement lunge that actually started, so a later denied lunge cannot retarget an older lunge in flight.
+  let pendingStagedMeleeCommit = null; // One same-stack handoff from beginCombatLunge to the staged player attack created immediately afterward.
+  let stagedStrikeContextActive = false; // True only while a staged player attack's onStrike callback is executing.
+  let activeStrikeReticleTarget = null; // Frozen endpoint owned by the staged strike currently resolving; null is a valid no-exact-target commit.
+  let stagedActionCommitInstalled = false; // Diagnostics prove staged strike ownership was installed exactly once.
   let lastCameraRay = null; // Mobile-readable snapshot of the true centered camera ray handed to ranged-camera-focus.
   let lastLunge = null; // Mobile-readable snapshot of the latest camera-authored lunge direction/profile.
   let lastLungeSweep = null; // Mobile-readable snapshot of the latest swept lunge range-entry correction.
@@ -112,6 +119,117 @@
     return normalizedRay(centeredCameraRay(rawInteractionRay, rawAimRay));
   }
 
+  function pointOnRay(ray, distance) {
+    const t = Math.max(0, Number(distance) || 0); // Used by exact Box3 targeting to convert the camera-ray entry distance into one frozen world-space endpoint.
+    return {
+      x: ray.origin.x + ray.direction.x * t,
+      y: ray.origin.y + ray.direction.y * t,
+      z: ray.origin.z + ray.direction.z * t,
+    };
+  }
+
+  function nearestReticleHostileTarget(liveDeps, rawInteractionRay, rawAimRay) {
+    const ray = exactReticleRay(liveDeps, rawInteractionRay, rawAimRay);
+    if (!ray) return null;
+    const currentArea = liveDeps?.getCurrentArea?.();
+    let best = null;
+    for (const target of liveDeps?.hostileObjects || []) {
+      if (!target || target.health <= 0 || target.areaId !== currentArea || target._denHidden) continue;
+      const box = window.RangedWeapons?.actorHitbox?.(target)?.box;
+      const interval = rayBoxInterval(ray, box);
+      if (!interval || (best && interval.enter >= best.rayDistance)) continue;
+      best = {
+        point: pointOnRay(ray, interval.enter),
+        rayDistance: interval.enter,
+        source: 'screen-reticle-box3',
+        targetId: target.id ?? target.creatureKey ?? target.def?.label ?? null,
+      }; // Nearest exact hostile Box3 on the centered camera ray wins; no angular approximation or actor-center homing is introduced.
+    }
+    return best;
+  }
+
+  function activeCommittedMeleeTarget() {
+    const target = committedMeleeReticleTarget;
+    if (!target) return null;
+    if (Date.now() <= target.expiresAt) return target;
+    committedMeleeReticleTarget = null;
+    return null;
+  }
+
+  function committedMeleeTargetSnapshot() {
+    const target = activeCommittedMeleeTarget(); // Reads expiry once so a debug snapshot cannot cross the expiry boundary between object fields.
+    return target ? { ...target, point: { ...target.point } } : null;
+  }
+
+  function activeLungeTarget() {
+    return activeLungeReticleTarget; // Movement lifetime, not wall-clock time, owns this snapshot; pausing mid-lunge must never make its aim silently expire.
+  }
+
+  function activeLungeTargetSnapshot() {
+    const target = activeLungeTarget(); // Keeps movement diagnostics separate from the newest attack's strike endpoint.
+    return target ? { ...target, point: { ...target.point } } : null;
+  }
+
+  function cloneReticleTarget(target) {
+    return target ? { ...target, point: { ...target.point } } : null;
+  }
+
+  function meleeHitTargetSnapshot() {
+    if (stagedStrikeContextActive) return cloneReticleTarget(activeStrikeReticleTarget); // A staged strike owns its attack-start snapshot, even if another movement lunge exists.
+    const lungeTarget = activeLungeTargetSnapshot();
+    if (lungeTarget) return lungeTarget; // Outside a strike, native per-frame lunge-stop probes stay tied to the movement lunge that actually started.
+    return null; // The latest commit is diagnostic only once its movement/strike owners are gone; live idle aim immediately returns to the current reticle.
+  }
+
+  function queuePendingCommitExpiry(pending) {
+    const clear = () => {
+      if (pendingStagedMeleeCommit === pending) pendingStagedMeleeCommit = null;
+    }; // The three lunge-backed player attacks create their staged action synchronously; anything left after this JS turn is stale.
+    if (typeof queueMicrotask === 'function') queueMicrotask(clear);
+    else Promise.resolve().then(clear);
+  }
+
+  function installStagedActionCommit() {
+    const combat = window.Combat;
+    const previousBegin = combat?.beginStagedAction;
+    if (!combat || typeof previousBegin !== 'function') return false;
+    if (previousBegin.__hobunjiMeleeReticleStagedCommit) {
+      stagedActionCommitInstalled = true;
+      return true;
+    }
+
+    function reticleCommittedStagedAction(options = {}) {
+      const pending = pendingStagedMeleeCommit;
+      pendingStagedMeleeCommit = null; // Exactly one staged action can claim the immediately preceding player lunge request.
+      if (!pending) return previousBegin.apply(this, arguments);
+
+      const rawStrike = options?.onStrike;
+      const strikeTarget = cloneReticleTarget(pending.target); // Captured now, never re-read from a moving enemy or a later attack.
+      const wrappedOptions = {
+        ...options,
+        onStrike: typeof rawStrike === 'function' ? function reticleCommittedStrike(...args) {
+          const previousContext = stagedStrikeContextActive;
+          const previousTarget = activeStrikeReticleTarget;
+          stagedStrikeContextActive = true;
+          activeStrikeReticleTarget = cloneReticleTarget(strikeTarget);
+          try {
+            return rawStrike.apply(this, args);
+          } finally {
+            activeStrikeReticleTarget = previousTarget;
+            stagedStrikeContextActive = previousContext;
+          }
+        } : rawStrike,
+      };
+      return previousBegin.call(this, wrappedOptions);
+    }
+
+    reticleCommittedStagedAction.__hobunjiMeleeReticleStagedCommit = true;
+    reticleCommittedStagedAction.__hobunjiPreviousBegin = previousBegin;
+    combat.beginStagedAction = reticleCommittedStagedAction;
+    stagedActionCommitInstalled = true;
+    return true;
+  }
+
   function installExactReticleAlignment(liveDeps, rawInteractionRay, rawAimRay) {
     const combat = window.Combat;
     const previousStep = combat?.attackAlignmentStep;
@@ -128,9 +246,11 @@
       const ray = exactReticleRay(liveDeps, rawInteractionRay, rawAimRay);
       if (!ray || !finiteBox(box)) return base;
 
-      const exactHit = !!rayBoxInterval(ray, box);
+      const exactInterval = rayBoxInterval(ray, box);
+      const exactHit = !!exactInterval;
+      const exactPoint = exactInterval ? pointOnRay(ray, exactInterval.enter) : null; // Returned for diagnostics and proves the accepted reticle hit has a concrete 3D endpoint.
       if (!base?.eligible) {
-        return { ...base, exactReticleHitboxIntersection: exactHit };
+        return { ...base, exactReticleHitboxIntersection: exactHit, exactReticlePoint: exactPoint };
       }
       const facing = Number(options?.facing ?? attacker?.facing) || 0;
       if (exactHit) {
@@ -143,6 +263,7 @@
           deltaRad: 0,
           reticleOverTarget: true,
           exactReticleHitboxIntersection: true,
+          exactReticlePoint: exactPoint,
           alignmentSource: 'screen-reticle-box3',
         };
       }
@@ -232,18 +353,47 @@
     function cameraAuthoredLunge(distancePx, durationS, hopUnits = 0, hitTest = null) {
       const player = liveDeps?.player;
       const wasLunging = !!player?.lunging;
+      const exactReticleTarget = player
+        ? nearestReticleHostileTarget(liveDeps, rawInteractionRay, rawAimRay)
+        : null; // Exact hostile Box3 point wins whenever the center reticle ray actually intersects one.
+      const fallbackPoint = exactReticleTarget ? null : perspectivePoint(liveDeps); // No-target attacks still freeze the same stable horizon point the old melee path used.
+      const pendingReticleTarget = exactReticleTarget || (fallbackPoint ? {
+        point: { ...fallbackPoint },
+        rayDistance: 0,
+        source: 'shared-perspective-point',
+        targetId: null,
+      } : null); // Every lunge-backed attack owns one frozen endpoint, so overlapping attacks can never lend their aim to each other.
+      const committedAt = Date.now(); // Shared timestamp keeps the strike target lifetime deterministic for this attack attempt.
+      committedMeleeReticleTarget = pendingReticleTarget ? {
+        ...pendingReticleTarget,
+        committedAt,
+        expiresAt: committedAt + Math.max(650, Math.max(0, Number(durationS) || 0) * 1000 + MELEE_RETICLE_COMMIT_PAD_MS),
+      } : null; // Always overwrite/clear the prior attack endpoint so denied lunges can never reuse stale aim.
+      const stagedCommit = {
+        target: cloneReticleTarget(committedMeleeReticleTarget),
+        committedAt,
+      }; // Handed to the staged strike created immediately after this lunge request, whether native movement starts or is denied.
+      pendingStagedMeleeCommit = stagedCommit;
+      queuePendingCommitExpiry(stagedCommit);
       const result = rawLunge.apply(this, arguments);
       if (!player || wasLunging || !player.lunging) return result;
 
       try {
-        const point = perspectivePoint(liveDeps); // Preferred endpoint shared with the head, body, melee, and ranged muzzle.
+        activeLungeReticleTarget = committedMeleeReticleTarget
+          ? { ...committedMeleeReticleTarget, point: { ...committedMeleeReticleTarget.point } }
+          : null; // Movement owns its own frozen copy; later attacks may refresh strike aim without bending this lunge.
+        const committedTarget = activeLungeTarget();
+        const point = committedTarget?.point || perspectivePoint(liveDeps); // Exact reticle/Box3 point wins; the stable horizon remains the no-target fallback.
         const tile = Number(liveDeps?.TILE) || 64; // Converts the player's logical pixel coordinates into the point's world units.
-        const baseY = Number(liveDeps?.getActorWorldY?.(player)); // Uses the same live player elevation supplied to ranged projectile origins.
-        const origin = {
-          x: (Number(player.x) || 0) / tile,
-          y: (Number.isFinite(baseY) ? baseY : 0) + 0.55,
-          z: (Number(player.y) || 0) / tile,
-        }; // Real lunge/body origin from which the shared point is viewed.
+        const baseY = Number(liveDeps?.getActorWorldY?.(player)); // Used only as a fallback before the player's combat portrait Box3 exists.
+        const combatCenter = window.RangedWeapons?.actorHitbox?.(player)?.center; // Matches combat-core's melee collider origin when the live hitbox is available.
+        const origin = [combatCenter?.x, combatCenter?.y, combatCenter?.z].every(Number.isFinite)
+          ? { x: combatCenter.x, y: combatCenter.y, z: combatCenter.z }
+          : {
+              x: (Number(player.x) || 0) / tile,
+              y: (Number.isFinite(baseY) ? baseY : 0) + 0.55,
+              z: (Number(player.y) || 0) / tile,
+            }; // The reticle vector must be computed from the same body origin the melee collider uses, never from the head.
         const ray = point ? null : centeredCameraRay(rawInteractionRay, rawAimRay); // Compatibility fallback for older callers without the point dependency.
         const dx = point ? point.x - origin.x : Number(ray?.direction?.x);
         const dy = point ? point.y - origin.y : Number(ray?.direction?.y);
@@ -263,13 +413,22 @@
         const dirX = nx / horizontal;
         const dirY = nz / horizontal;
         const pitch = Math.asin(Math.max(-1, Math.min(1, ny)));
+        const yaw = Math.atan2(dirY, dirX); // Same ground-plane heading the triggered attack volume uses.
+        const ungroundedByAim = pitch >= 0; // Forward/upward attacks use the committed 3D reticle ray itself; only below-forward aim keeps the old grounded/ballistic model.
+        const effectivePitchDistanceResistance = ungroundedByAim
+          ? 1
+          : (hitTest?.pitchDistanceResistance || 0);
+        const effectiveDirectFlightStrength = ungroundedByAim
+          ? 1
+          : (hitTest?.directFlightStrength || 0); // Direct=1 completely bypasses the old diminished-vertical/hop blend for ordinary forward/upward player attacks.
         const profile = window.Combat?.meleeLungeProfile?.(
           distancePx,
           pitch,
           hopUnits,
           player.lungeHeightUnits,
-          hitTest?.pitchDistanceResistance || 0,
-          hitTest?.directFlightStrength || 0,
+          effectivePitchDistanceResistance,
+          effectiveDirectFlightStrength,
+          ungroundedByAim,
         ) || { distancePx, hopUnits, pitch, verticalTravelUnits: 0, directFlightStrength: 0 };
 
         player.lungeDirX = dirX;
@@ -293,12 +452,17 @@
         lastLunge = {
           direction: { x: nx, y: ny, z: nz },
           targetPoint: point ? { ...point } : null,
-          targetSource: point ? 'shared-perspective-point' : 'camera-ray-fallback',
+          targetSource: committedTarget?.source || (point ? 'shared-perspective-point' : 'camera-ray-fallback'),
+          targetId: committedTarget?.targetId ?? null,
           pointErrorDeg: 0,
           pitchRad: player.lungeAimPitch,
           distancePx: player.lungeDistancePx,
           verticalTravelUnits: player.lungeVerticalTravelUnits,
           directFlightStrength: player.lungeDirectFlightStrength,
+          gravityBypassedForForwardOrUpwardAim: ungroundedByAim, // Mobile diagnostics expose the new pitch-only grounding rule directly.
+          effectivePitchDistanceResistance,
+          effectiveDirectFlightStrength,
+          inRangeAirAssist: !!profile.inRangeAirAssist,
           attackRangePx: Number(hitTest?.rangePx) || null,
           cancelRangePx: Number(player.lungeHitTest?.rangePx) || null,
         };
@@ -369,24 +533,41 @@
     });
     if (!base?.origin || !base?.direction) return null;
     const tile = Number(liveDeps?.TILE) || 64;
+    const origin = {
+      x: (Number(sampleX) || 0) / tile,
+      y: Number(base.origin.y) || 0,
+      z: (Number(sampleY) || 0) / tile,
+    }; // Logical lunge position replaces the render-frame-cached player X/Z.
+    const committedTarget = activeLungeTarget();
+    let direction = {
+      x: Number(base.direction.x) || 0,
+      y: Number(base.direction.y) || 0,
+      z: Number(base.direction.z) || 0,
+    };
+    let resolvedYaw = Number(base.yaw) || yaw;
+    let resolvedPitch = Number(base.pitch) || pitch;
+    if (committedTarget?.point) {
+      const dx = committedTarget.point.x - origin.x;
+      const dy = committedTarget.point.y - origin.y;
+      const dz = committedTarget.point.z - origin.z;
+      const length = Math.hypot(dx, dy, dz);
+      if (length > EPSILON) {
+        direction = { x: dx / length, y: dy / length, z: dz / length };
+        resolvedYaw = Math.atan2(direction.z, direction.x);
+        resolvedPitch = Math.asin(Math.max(-1, Math.min(1, direction.y)));
+      }
+    }
     return {
       ...base,
-      // Player X/Z are deliberately rebuilt from logical lunge coordinates.
-      // RangedWeapons caches portrait Box3s for a rendered frame, so reusing
-      // the cached player's horizontal center here would reintroduce the exact
-      // pre-move/post-move disagreement this sweep exists to remove.
-      origin: {
-        x: (Number(sampleX) || 0) / tile,
-        y: Number(base.origin.y) || 0,
-        z: (Number(sampleY) || 0) / tile,
-      },
-      direction: {
-        x: Number(base.direction.x) || 0,
-        y: Number(base.direction.y) || 0,
-        z: Number(base.direction.z) || 0,
-      },
-    };
+      origin,
+      direction,
+      yaw: resolvedYaw,
+      pitch: resolvedPitch,
+      horizontalRangeWorld: (Number(base.rangeWorld) || 0) * Math.cos(resolvedPitch),
+      verticalRiseWorld: (Number(base.rangeWorld) || 0) * Math.sin(resolvedPitch),
+    }; // Every sweep sample re-roots toward the frozen endpoint instead of drifting back to the old horizon direction.
   }
+
 
   function hostileInsideLungeAt(liveDeps, player, hitTest, sampleX, sampleY) {
     const collider = lungeColliderAt(liveDeps, player, hitTest, sampleX, sampleY);
@@ -437,6 +618,7 @@
     }
     player.lunging = false;
     player.lungeHopCurrent = 0;
+    activeLungeReticleTarget = null; // Fully stopped ground lunges no longer own movement aim.
     const area = liveDeps?.getCurrentArea?.();
     window.AudioSystem?.playHeavyLandingSfx?.(
       area,
@@ -448,6 +630,7 @@
     const player = liveDeps?.player;
     if (!player?.lunging) {
       lungeSweepAnchor = null;
+      activeLungeReticleTarget = null; // Natural lunge completion releases movement's frozen endpoint without touching the newest attack's strike target.
       return false;
     }
     const current = { x: Number(player.x) || 0, y: Number(player.y) || 0 };
@@ -568,6 +751,7 @@
         nativeMeleePitchRestored = true;
       }
       installCameraAuthoredLunge(liveDeps, rawInteractionRay, rawAimRay);
+      installStagedActionCommit();
       installExactReticleAlignment(liveDeps, rawInteractionRay, rawAimRay);
       installCombatUpdateSweep(liveDeps);
       return result;
@@ -584,7 +768,7 @@
     const rangedOk = installRangedInitBridge();
     const combatOk = installCombatInitBridge();
     if (rangedOk && combatOk) {
-      window.__farmLog?.('[combat-camera-alignment] shared perspective-point authority installed for ranged aim, exact melee reticle alignment, and attack lunges.', 'combat');
+      window.__farmLog?.('[combat-camera-alignment] shared camera authority installed for ranged reticle targeting and frozen exact-reticle melee lunges/strikes.', 'combat');
     }
     return rangedOk && combatOk;
   }
@@ -592,6 +776,9 @@
   window.HobunjiCombatCameraAlignment = {
     version: VERSION,
     install,
+    committedMeleeTarget: committedMeleeTargetSnapshot,
+    activeLungeTarget: activeLungeTargetSnapshot,
+    meleeHitTarget: meleeHitTargetSnapshot,
     debugSnapshot: () => ({
       version: VERSION,
       rangedInitWrapped,
@@ -601,6 +788,7 @@
       nativeMeleeDirectionRestored,
       nativeMeleePitchRestored,
       lungeAuthorityInstalled,
+      stagedActionCommitInstalled,
       exactReticleAlignmentInstalled,
       combatUpdateSweepInstalled,
       lungeAuthorityCount,
@@ -622,8 +810,12 @@
         stopped: { ...lastLungeSweep.stopped },
       } : null,
       lastError: lastError ? { ...lastError } : null,
-      movementAuthority: 'native-player-to-perspective-point-walk-and-lunge',
-      rangedAuthority: 'muzzle-to-shared-perspective-point',
+      committedMeleeReticleTarget: committedMeleeTargetSnapshot(),
+      activeLungeReticleTarget: activeLungeTargetSnapshot(),
+      stagedStrikeContextActive,
+      activeStrikeReticleTarget: stagedStrikeContextActive ? cloneReticleTarget(activeStrikeReticleTarget) : null,
+      movementAuthority: 'native-player-to-perspective-point-walk+frozen-reticle-lunge',
+      rangedAuthority: 'held-launch-origin-to-reticle-target',
       updateMode: 'initialization-only-no-frame-hook',
       lungeSweepMode: 'piggyback-existing-combat-update-no-independent-loop',
     }),

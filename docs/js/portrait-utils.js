@@ -246,6 +246,22 @@ function setPortraitAssetBase(base) {
   IMG_CACHE.clear();
 }
 
+function resolvePortraitAssetUrl(relPath) {
+  if (!relPath) return relPath;
+  const raw = String(relPath);
+  if (/^(?:data:|blob:|https?:|file:)/i.test(raw)) return raw; // Already self-contained/absolute: used by metal recolor data URLs and external authoring previews.
+  const ensureTrailingSlash = (base) => String(base || './assets/').replace(/\/?$/, '/');
+  const baseHref = (typeof document !== 'undefined' && document.baseURI)
+    || (typeof location !== 'undefined' && location.href)
+    || '';
+  const configuredBase = ensureTrailingSlash(_puAssetBase);
+  try {
+    return baseHref ? new URL(configuredBase + raw, baseHref).href : configuredBase + raw;
+  } catch (_) {
+    return configuredBase + raw;
+  }
+}
+
 function loadImg(relPath) {
   const cached = IMG_CACHE.get(relPath);
   // Fast path: image already resolved — return a pre-resolved promise so callers
@@ -274,7 +290,8 @@ function loadImg(relPath) {
     fallbackBase = localBase.replace('/assets/', '/docs/assets/');
   }
 
-  const candidateUrls = [
+  const directUrl = /^(?:data:|blob:|https?:|file:)/i.test(String(relPath || '')) ? String(relPath) : null; // Recolored metal layers arrive as data URLs and must never be prefixed with the portrait asset base.
+  const candidateUrls = directUrl ? [directUrl] : [
     localBase + relPath,
     fallbackBase ? fallbackBase + relPath : null,
   ];
@@ -986,10 +1003,11 @@ function getProfileSpriteXforms(profile) {
   const records = [];
   const hatIsUnderHood = hatLayersUnderHood(hat);
   const eyesLayerAboveUnderHoodHat = eyeAccessoryLayersAboveUnderHoodHat(eyes, hat);
-  const pushGroupRecords = (group) => {
+  const pushGroupRecords = (group, layerFilter = null) => {
     if (!group) return;
     const groupLayers = resolveOptionLayers(group, resolvedFighter);
     for (const layer of groupLayers) {
+      if (layerFilter && !layerFilter(layer)) continue;
       records.push(toRecord('cosmetic', layer, { group: group.id || null, hairSlot: group.hairSlot || null, pos: layer.pos || 'front' }));
     }
   };
@@ -1014,8 +1032,9 @@ function getProfileSpriteXforms(profile) {
     }
   }
   if (hairFront !== undefined) {
-    // Left side hairstyle before head
+    // Left-side hair and authored hood-back pieces belong behind the skull.
     pushGroupRecords(hairSideL);
+    pushGroupRecords(hood, layer => layer.pos === 'back');
     // Head
     if (headUrl) records.push({ part: 'head', url: headUrl, xform: getPortraitXformPreset('B') });
     // Facial hair and standard eyes after head, before ur-head. Tagged eye accessories
@@ -1032,7 +1051,7 @@ function getProfileSpriteXforms(profile) {
     // Hat (under hood), hood, pauldron, hat (over hood)
     if (hatIsUnderHood) pushGroupRecords(hat);
     if (eyesLayerAboveUnderHoodHat) pushGroupRecords(eyes);
-    pushGroupRecords(hood);
+    pushGroupRecords(hood, layer => layer.pos !== 'back');
     pushGroupRecords(pauldron);
     if (!hatIsUnderHood) pushGroupRecords(hat);
   } else {
@@ -1218,7 +1237,10 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const renderHeadSprite = !omitHeadSpriteAndCosmetics;
   const renderHeadCosmetics = !omitHeadSpriteAndCosmetics;
   const resolvedFighter = resolvePortraitFighter(fighter) || fighter;
+  const metalStateForGroup = (group) => window.MetalArmorSystem?.portraitStateForGroup?.(group, bodyColors) || null; // Material state is resolved from the literal equipped article/base cosmetic, never from the clothing slot.
   const opacityMaskLayer = resolvedFighter?.opacityMaskLayer || fighter?.opacityMaskLayer || null;
+  const fixedPortraitSlots = resolvedFighter?.fixedPortraitSlots || fighter?.fixedPortraitSlots || null; // Always-on structural art such as Harlyao Skeleton female hair, rendered in an existing slot without becoming a selectable cosmetic.
+  const baseBodyTintEnabled = resolvedFighter?.baseBodyTint !== false && fighter?.baseBodyTint !== false; // Species with authored final-color body art can still supply bodyColors solely to procedural hands/feet.
   let headUrl = renderHeadSprite ? (resolvedFighter?.headUrl || fighter?.headUrl) : null;
   const bodyLayerSource = resolvedFighter?.bodyLayers || fighter?.bodyLayers || [];
   const urLayerSource = renderHeadSprite ? (resolvedFighter?.urLayers || fighter?.urLayers || []) : [];
@@ -1246,7 +1268,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     const referenceHex = _dyeReferenceHexForSlot(slot, _tintSpeciesId);
     return shadeFillTintForBodyColor(bodyColors[slot], referenceHex);
   };
-  const tintA = tintFor('A');
+  const tintA = baseBodyTintEnabled ? tintFor('A') : { mode: 'none' };
 
   const baseLeftArmLayers = [];
   const baseTorsoLayers = [];
@@ -1259,7 +1281,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       : normalizedId.includes('armr') ? baseRightArmLayers
       : normalizedId.includes('torso') ? baseTorsoLayers
       : baseTorsoLayers;
-    const layerTint = tintFor(layer.tintSlot || 'A'); // Tint descriptor customized below only for base-torso grayscale preservation.
+    const layerTint = baseBodyTintEnabled ? tintFor(layer.tintSlot || 'A') : { mode: 'none' }; // Authored-color species bypass base-body recoloring while clothing and procedural extremities retain their normal tint paths.
     if (target === baseTorsoLayers && layerTint?.mode !== 'none') {
       layerTint.options = {
         ...(layerTint.options || getPortraitTintingConfig()),
@@ -1276,7 +1298,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       const target = group?.slot === 'torso' ? torsoClothingLayers : overwearLayers;
       const key = layer.paletteColorKey;
       const layerTintSlot = resolveLayerTintSlot(key, group.tintSlot);
-      target.push({ layer, tint: tintFor(layerTintSlot || 'A') });
+      target.push({ layer, tint: tintFor(layerTintSlot || 'A'), group, metalState: metalStateForGroup(group) });
     }
   }
 
@@ -1300,18 +1322,21 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const rightSideHairLayers = [];  // right-side hairstyle, drawn between head and facial hair
   const hatUnderLayers   = [];  // hat front when configured to render under hoods
   const elevatedEyeAccessoryLayers = []; // tagged eye accessories that render above under-hood hats
-  const hoodLayers    = [];  // hood — receives breathing warp
-  const pauldronLayers = []; // pauldron — static
+  const hoodBackLayers = []; // authored hood rear pieces — breathing-warped behind the skull instead of repainting over it.
+  const hoodLayers    = [];  // hood front/opening pieces — breathing-warped above the skull.
+  const pauldronLayers = []; // pauldron — static draw order
   const hatOverLayers    = [];  // hat front when hoodLayering=over (default)
 
   const pushToTarget = (group, target) => {
     if (!group || hiddenCosmeticGroups?.has(group)) return;
     const groupLayers = resolveOptionLayers(group, resolvedFighter);
+    const metalState = metalStateForGroup(group); // Resolved once so diagnostics can report a zero-layer metal cosmetic instead of silently disappearing.
+    window.MetalArmorSystem?.reportResolvedPortraitGroup?.(group, metalState, groupLayers.length);
     if (!groupLayers.length) return;
     for (const layer of groupLayers) {
       const key = layer.paletteColorKey;
       const layerTintSlot = resolveLayerTintSlot(key, group.tintSlot);
-      target.push({ layer, tint: tintFor(layerTintSlot), group });
+      target.push({ layer, tint: tintFor(layerTintSlot), group, metalState });
     }
   };
 
@@ -1324,7 +1349,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
         if (layer.pos === 'back') {
           const key = layer.paletteColorKey;
           const layerTintSlot = resolveLayerTintSlot(key, group.tintSlot);
-          preBackLayers.push({ layer, tint: tintFor(layerTintSlot), group });
+          preBackLayers.push({ layer, tint: tintFor(layerTintSlot), group, metalState: metalStateForGroup(group) });
         }
       }
     }
@@ -1340,11 +1365,20 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
         if (layer.pos !== 'back') {
           const key = layer.paletteColorKey;
           const layerTintSlot = resolveLayerTintSlot(key, hat.tintSlot);
-          (hatIsUnderHood ? hatUnderLayers : hatOverLayers).push({ layer, tint: tintFor(layerTintSlot), group: hat });
+          (hatIsUnderHood ? hatUnderLayers : hatOverLayers).push({ layer, tint: tintFor(layerTintSlot), group: hat, metalState: metalStateForGroup(hat) });
         }
       }
     }
-    pushToTarget(hood, hoodLayers);
+    if (hood) {
+      const groupLayers = resolveOptionLayers(hood, resolvedFighter); // Split authored back/front hood art so rear cloth cannot cover the face opening.
+      const metalState = metalStateForGroup(hood); // Shared material state retained for both halves of the same hood.
+      window.MetalArmorSystem?.reportResolvedPortraitGroup?.(hood, metalState, groupLayers.length);
+      for (const layer of groupLayers) {
+        const key = layer.paletteColorKey;
+        const layerTintSlot = resolveLayerTintSlot(key, hood.tintSlot);
+        (layer.pos === 'back' ? hoodBackLayers : hoodLayers).push({ layer, tint: tintFor(layerTintSlot), group: hood, metalState });
+      }
+    }
     pushToTarget(pauldron, pauldronLayers);
   } else if (renderHeadCosmetics) {
     // Legacy single-slot hair
@@ -1356,8 +1390,15 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       for (const layer of groupLayers) {
         const key = layer.paletteColorKey;
         const layerTintSlot = resolveLayerTintSlot(key, group.tintSlot);
-        (layer.pos === 'back' ? preBackLayers : frontHairLayers).push({ layer, tint: tintFor(layerTintSlot), group });
+        (layer.pos === 'back' ? preBackLayers : frontHairLayers).push({ layer, tint: tintFor(layerTintSlot), group, metalState: metalStateForGroup(group) });
       }
+    }
+  }
+  if (renderHeadCosmetics) {
+    const hoodIsWorn = !!hood && String(hood.id || '').toLowerCase() !== 'none'; // A selected hood/facewrap counts as occupied even if the structural layer itself is not a selectable hairstyle.
+    for (const fixedLayer of (fixedPortraitSlots?.pauldron || [])) { // Structural pauldron-slot layers append after equipped pauldron art unless their own visibility rule suppresses them.
+      if (fixedLayer?.hideWhenHood === true && hoodIsWorn) continue; // Generic fixed-layer rule used by Harlyao Skeleton female default hair so it never clips through a hood.
+      pauldronLayers.push({ layer: normalizePortraitLayerXform(fixedLayer), tint: { mode: 'none' }, group: null });
     }
   }
 
@@ -1372,6 +1413,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
 
   if (renderBehindView) {
     headUrl = _getBehindHeadUrl(speciesId, gender) || headUrl;
+    if (hoodBackLayers.length) hoodLayers.length = 0; // A hood with authored rear art (e.g. Ragged Hood) uses that rear piece alone from behind; drawing its front opening too would double-shade the cloth.
     const useBehindLayers = (layerList) => {
       for (const entry of layerList) {
         entry.layer = _cloneBehindLayer(entry.layer, entry.group, gender);
@@ -1380,7 +1422,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     [
       preBackLayers, torsoClothingLayers, overwearLayers, sideLeftLayers,
       rightSideHairLayers, facialHairLayers, frontHairLayers, eyesLayers,
-      elevatedEyeAccessoryLayers, hoodLayers, pauldronLayers, hatUnderLayers,
+      elevatedEyeAccessoryLayers, hoodBackLayers, hoodLayers, pauldronLayers, hatUnderLayers,
       hatOverLayers,
     ].forEach(useBehindLayers);
     // The base body (arms/torso) needs the same pre-flip as every cosmetic
@@ -1390,6 +1432,29 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       for (const entry of layerList) entry.layer = _behindFlippedLayer(entry.layer);
     };
     [baseLeftArmLayers, baseTorsoLayers, baseRightArmLayers].forEach(flipBehindLayers);
+  }
+
+  // Apply metal material pixels only after behind-view URL substitution, so a
+  // future metal garment with dedicated rear art is treated correctly too.
+  if (typeof window.MetalArmorSystem?.preparePortraitLayers === 'function') {
+    const cosmeticLayerLists = [
+      preBackLayers, torsoClothingLayers, overwearLayers, sideLeftLayers,
+      rightSideHairLayers, facialHairLayers, frontHairLayers, eyesLayers,
+      elevatedEyeAccessoryLayers, upperFaceLayers, hoodBackLayers, hoodLayers, pauldronLayers,
+      hatUnderLayers, hatOverLayers,
+    ];
+    for (const layerList of cosmeticLayerLists) {
+      for (const entry of layerList) {
+        if (!entry?.metalState || !entry?.layer?.url) continue;
+        try {
+          const prepared = await window.MetalArmorSystem.preparePortraitLayers([entry.layer], entry.metalState);
+          if (prepared?.[0]) entry.layer = prepared[0];
+          entry.tint = { mode: 'none' }; // ToolMetalRecolor already baked alloy color, patina, plating, and authored removal into the pixels.
+        } catch (error) {
+          console.warn('[portrait] metal armor preparation failed; using ordinary cosmetic tint fallback', error);
+        }
+      }
+    }
   }
   const isSnowgogglesLayer = ({ group }) => _textMatchesAny([group?.id, group?.originalId].filter(Boolean).join(' '), ['snowgoggles']);
   const behindSnowgogglesLayers = renderBehindView
@@ -1413,6 +1478,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     ...frontHairLayers.map(({ layer }) => layer.url),
     ...hatUnderLayers.map(({ layer }) => layer.url),
     ...(renderBehindView ? [] : elevatedEyeAccessoryLayers.map(({ layer }) => layer.url)),
+    ...hoodBackLayers.map(({ layer }) => layer.url),
     ...hoodLayers.map(({ layer }) => layer.url),
     ...pauldronLayers.map(({ layer }) => layer.url),
     ...hatOverLayers.map(({ layer }) => layer.url),
@@ -1571,7 +1637,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       torsoClothing: () => drawBreathingLayers(torsoClothingLayers),
       overwear:      () => drawBreathingLayers(overwearLayers),
       hatUnder:      () => drawEmoteLayers(hatUnderLayers),
-      hood:          () => drawBreathingLayers(hoodLayers),
+      hood:          () => { drawBreathingLayers(hoodBackLayers); drawBreathingLayers(hoodLayers); },
       pauldron:      () => drawEmoteLayers(pauldronLayers),
       hatOver:       () => drawEmoteLayers(hatOverLayers),
       snowgoggles:   () => drawEmoteLayers(behindSnowgogglesLayers),
@@ -1600,6 +1666,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   drawBreathingLayers(baseRightArmLayers);
   drawBreathingLayers(torsoClothingLayers);
   drawBreathingLayers(overwearLayers);
+  drawBreathingLayers(hoodBackLayers); // Rear hood cloth must sit behind the skull/head; front opening is drawn later with ordinary hood layers.
   const _beardBelowHead = _BEARD_BELOW_HEAD_SPECIES.has(String(speciesId || '').toLowerCase().replace(/_/g, '-'));
   drawEmoteLayers(sideLeftLayers);
   if (_beardBelowHead) drawEmoteLayers(facialHairLayers);
@@ -1702,7 +1769,7 @@ function portraitCategoryForEntry(entry) {
  * Extract portrait layer descriptors from a cosmetic JSON `parts` block.
  * paletteLayerMap (optional): maps layerRole names to palette color keys.
  */
-function _extractLayersFromParts(partsJson, paletteLayerMap) {
+function _extractLayersFromParts(partsJson, paletteLayerMap, allowNonPortraitAssets = false) {
   if (!partsJson || typeof partsJson !== 'object') return [];
   const layers = [];
   const head = partsJson.head;
@@ -1751,7 +1818,7 @@ function _extractLayersFromParts(partsJson, paletteLayerMap) {
       if (!partLayers || typeof partLayers !== 'object') continue;
       for (const [layerName, layer] of Object.entries(partLayers)) {
         const imgUrl = layer?.image?.url;
-        if (!imgUrl || !String(imgUrl).toLowerCase().includes('/portrait/')) continue;
+        if (!imgUrl || (!allowNonPortraitAssets && !String(imgUrl).toLowerCase().includes('/portrait/'))) continue; // Most clothing keeps portrait art in /portrait/; explicit portraitAssets configs may intentionally use another authored folder.
         const xf =
           layer?.spriteStyle?.base?.xform?.[partName] ||
           layer?.spriteStyle?.base?.xform?.head ||
@@ -1855,7 +1922,7 @@ function portraitVariantKeysForFighter(fighter, option) {
   const gender = String(fighter?.gender || '').trim().toLowerCase();
   if (!speciesId || !gender) return [];
   const otherGender = gender === 'male' ? 'female' : 'male';
-  const kind = (option?.slot === 'torso' || option?.slot === 'overwear') ? 'body' : 'head';
+  const kind = (option?.slot === 'torso' || option?.slot === 'overwear' || option?.slot === 'pauldron') ? 'body' : 'head';
   const candidates = [];
   const seenSpeciesGender = new Set();
   const pushCandidate = (candidateSpecies, candidateGender) => {
@@ -1907,14 +1974,15 @@ function portraitOptionFromJson(entry, json) {
   const paletteLayerMap = (json.palette && json.palette.layers) ? json.palette.layers : null;
 
   // Extract default layers from the top-level parts block.
-  const layers = _extractLayersFromParts(json.parts, paletteLayerMap);
+  const allowNonPortraitAssets = json.portraitAssets === true; // Explicit opt-in for cosmetics whose authored portrait PNGs live outside a literal /portrait/ folder.
+  const layers = _extractLayersFromParts(json.parts, paletteLayerMap, allowNonPortraitAssets);
 
   // Extract per-species-gender variant layers from the speciesVariants block.
   // Keys are "{speciesId}_{genderKey}" (e.g. "mao-ao_male", "kenkari_female").
   const variantLayers = {};
   if (json.speciesVariants && typeof json.speciesVariants === 'object') {
     for (const [variantKey, variantData] of Object.entries(json.speciesVariants)) {
-      const vLayers = _extractLayersFromParts(variantData && variantData.parts, paletteLayerMap);
+      const vLayers = _extractLayersFromParts(variantData && variantData.parts, paletteLayerMap, allowNonPortraitAssets);
       if (vLayers.length) variantLayers[variantKey] = vLayers;
     }
   }
@@ -2162,6 +2230,8 @@ async function loadPortraitCosmetics(configBase) {
               urLayers: (genderData.headUrLayers || []).map(l => ({ url: l.url, renderOrder: l.renderOrder })),
               headXform: genderData.headXform ? normalizePortraitLayerXform(genderData.headXform) : null,
               opacityMaskLayer: genderData.portraitOpacityMaskLayer ? normalizePortraitMaskLayer(genderData.portraitOpacityMaskLayer) : null,
+              baseBodyTint: genderData.baseBodyTint,
+              fixedPortraitSlots: genderData.fixedPortraitSlots || null,
             });
             FIGHTERS.push(fighter);
           }
@@ -2181,7 +2251,11 @@ async function loadPortraitCosmetics(configBase) {
               } : {}),
               ...(genderData.portraitOpacityMaskLayer ? {
                 opacityMaskLayer: normalizePortraitMaskLayer(genderData.portraitOpacityMaskLayer)
-              } : {})
+              } : {}),
+              ...(genderData.baseBodyTint != null ? { baseBodyTint: genderData.baseBodyTint !== false } : {}),
+              ...(genderData.fixedPortraitSlots && typeof genderData.fixedPortraitSlots === 'object'
+                ? { fixedPortraitSlots: genderData.fixedPortraitSlots }
+                : {})
             };
             if (genderData.allowedCosmetics) {
               allowedCosmeticsByFighter[fighter.id] = {
@@ -2240,7 +2314,9 @@ async function loadPortraitCosmetics(configBase) {
         ...(override.armLength != null ? { armLength: override.armLength } : {}),
         ...(override.headXform ? { headXform: override.headXform } : {}),
         ...(override.bodyLayers ? { bodyLayers: override.bodyLayers } : {}),
-        ...(override.opacityMaskLayer ? { opacityMaskLayer: override.opacityMaskLayer } : {})
+        ...(override.opacityMaskLayer ? { opacityMaskLayer: override.opacityMaskLayer } : {}),
+        ...(override.baseBodyTint != null ? { baseBodyTint: override.baseBodyTint } : {}),
+        ...(override.fixedPortraitSlots ? { fixedPortraitSlots: override.fixedPortraitSlots } : {})
       });
     });
   }
@@ -2292,6 +2368,10 @@ function randomColorFromRangeSeeded(range, rng) {
  * bodyColorRanges is optional (from species data); falls back to BODYCOLOR_LIMITS.
  */
 function randomBodyColorsSeeded(rng, bodyColorRanges) {
+  const fixedHex = typeof bodyColorRanges?.fixedHex === 'string' ? bodyColorRanges.fixedHex.trim() : ''; // Fixed species colors feed procedural extremities without exposing a randomized body palette.
+  if (/^#[0-9a-f]{6}$/i.test(fixedHex)) {
+    return { A: { hex: fixedHex }, B: { hex: fixedHex }, C: { hex: fixedHex } };
+  }
   const rh = (lo, hi) => lo + rng() * (hi - lo);
   function fallback(slot) {
     const lim = BODYCOLOR_LIMITS[slot];
@@ -2847,6 +2927,7 @@ async function preloadAllPortraitSprites(cosmeticsData) {
 }
 
 window.setPortraitConfig = setPortraitConfig;
+window.resolvePortraitAssetUrl = resolvePortraitAssetUrl; // Shared by material processors that must resolve source art through the same asset root as portrait rendering.
 window.getPortraitFighters = () => FIGHTERS;
 window.preloadAllPortraitSprites = preloadAllPortraitSprites;
 window.getPortraitXformPreset = getPortraitXformPreset;

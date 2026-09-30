@@ -174,10 +174,28 @@
       const returnS = (step.returnS || 0) * timeScale;
 
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
-      const damage = Math.round(baseAbil.damage * step.damageMul * (1 + (effects.stats.damageMul || 0)));
       const rangePx = baseAbil.rangePx * step.rangeMul * RANGE_SCALE * (1 + (effects.stats.rangeMul || 0));
       const halfConeRad = step.halfConeDeg * Math.PI / 180;
-      const knockbackPxS = baseAbil.knockbackPxS * step.knockbackMul * (1 + (effects.stats.knockbackMul || 0));
+      const baseLungePx = deps.TILE * step.lungeMul * LUNGE_SCALE * (1 + (effects.stats.lungeMul || 0)); // Existing lunge computation remains authoritative before cross-cutting attack modifiers.
+      const attackContext = window.CombatAttackEvents?.prepare?.({
+        attacker: deps.player,
+        weaponKey: deps.currentWeaponKey(),
+        abilityId: id,
+        damage: baseAbil.damage * step.damageMul * (1 + (effects.stats.damageMul || 0)),
+        afflictionBonuses: effects.afflictions,
+        knockbackPxS: baseAbil.knockbackPxS * step.knockbackMul * (1 + (effects.stats.knockbackMul || 0)),
+        rangePx,
+        halfConeRad,
+        lungePx: baseLungePx,
+        comboStep: comboStep + 1,
+        comboFinisher: isFinisher,
+        metadata: { attackAngle: deps.player.angle },
+      }) || { modifiers: { damage: 1, footingDamage: 1, affliction: 1, knockback: 1, lunge: 1 }, afflictionBonuses: effects.afflictions };
+      const damage = Math.round((attackContext.damage ?? baseAbil.damage * step.damageMul * (1 + (effects.stats.damageMul || 0))) * (attackContext.modifiers?.damage || 1));
+      const knockbackPxS = (attackContext.knockbackPxS ?? baseAbil.knockbackPxS * step.knockbackMul * (1 + (effects.stats.knockbackMul || 0))) * (attackContext.modifiers?.knockback || 1);
+      const lungePx = baseLungePx * (attackContext.modifiers?.lunge || 1);
+      const attackAfflictions = window.CombatAttackEvents?.scaleAfflictions?.(attackContext.afflictionBonuses || effects.afflictions, attackContext.modifiers?.affliction || 1)
+        || effects.afflictions;
 
       // returnS (set on a combo's final step) stretches the cosmetic swing's
       // tail so a finisher eases back to neutral instead of snapping — earlier
@@ -191,8 +209,8 @@
         power: step.power || 1,
         pose: step.pose,
         holdS: step.holdS || 0,
-        afflictionIds: Object.keys(effects.afflictions),
-        afflictions: effects.afflictions,
+        afflictionIds: Object.keys(attackAfflictions),
+        afflictions: attackAfflictions,
         coneRangePx: rangePx,
         coneHalfConeRad: halfConeRad,
         coneAngle: deps.player.angle,
@@ -203,7 +221,7 @@
       // early the moment a hostile is inside this step's own hit cone
       // instead of always covering the full lunge distance (see
       // game.js's beginCombatLunge/updateMovement).
-      deps.beginCombatLunge(deps.TILE * step.lungeMul * LUNGE_SCALE * (1 + (effects.stats.lungeMul || 0)), windupS + strikeS, 0, { rangePx, halfConeRad });
+      deps.beginCombatLunge(lungePx, windupS + strikeS, 0, { rangePx, halfConeRad });
 
       // The pose reaches its authored Strike endpoint only after BOTH the
       // windup and strike interpolation intervals. Firing gameplay impact at
@@ -219,6 +237,7 @@
         onStrike: () => {
           const vegetationCleared = deps.clearVegetationInAttackCone?.(deps.player.x, deps.player.y, deps.player.angle, rangePx, halfConeRad) || 0; // Used for accurate hit feedback when the cone only cuts growth.
           let hits = 0, lastName = '';
+          const ordinaryHitTargets = new Set(); // Used after the ordinary hit loop so Living Gust can affect only the widened peripheral cone without duplicating normal damage.
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
             if (!window.Combat.meleeHit(deps.player, c, {
@@ -227,9 +246,12 @@
               pitch: deps.getPlayerMeleeAimPitch?.() || 0,
             })) continue;
             const vulnerabilityBefore = isFinisher ? powerHitVulnerabilityTotal(c) : 0; // Used before this hit's own affliction payload can replace consumed buildup.
+            const healthBefore = Math.max(0, Number(c.health) || 0); // Used to report post-mitigation damage to Mirrored Health and other post-hit observers.
             deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, {
+              abilityId: id, // Identifies the committed hit for authored training objectives.
               tag: dmgType,
               heavy: step.heavy,
+              footingDamageMultiplier: attackContext.modifiers?.footingDamage || 1,
               // Only the combo's heavy finisher (Cleave/Long Lunge) leaves a
               // Death Mark on whatever it hits — see combat-death-mark.js's
               // applyDamageWithDeathMark, which reads this flag both to add
@@ -237,13 +259,22 @@
               // already on the target (so stacks can climb past 1).
               appliesDeathMark: step.heavy,
               consumeHealthVulnerability: isFinisher,
-              afflictionBonuses: effects.afflictions,
+              afflictionBonuses: attackAfflictions,
+            });
+            ordinaryHitTargets.add(c);
+            window.CombatAttackEvents?.hit?.(attackContext, {
+              target: c,
+              actualDamage: Math.max(0, healthBefore - (Number(c.health) || 0)),
+              afflictionBonuses: attackAfflictions,
+              comboStep: comboStep + 1,
+              comboFinisher: isFinisher,
             });
             const impactSize = isFinisher && vulnerabilityBefore > 0 ? 'huge' : ['small', 'medium', 'large'][comboStep]; // A finisher escalates only when it actually had vulnerability available to consume.
             deps.playWeaponHitSfx?.(dmgType, c.x, c.y, c.areaId, sfxPitch, impactSize);
             hits++;
             lastName = c.def.label;
           }
+          window.EnchantmentSystem?.applyPeripheralGust?.(attackContext, ordinaryHitTargets);
           const msg = hits > 0
             ? (hits > 1 ? `${step.name}: hit ${hits} creatures!` : `${step.name}: hit the ${lastName}!`)
             : vegetationCleared > 0
@@ -253,7 +284,10 @@
           // sfx — the generic confirm/error chime on top of that, on every
           // single hit or miss, was redundant and noisy.
           deps.showToast(msg, hits > 0 || vegetationCleared > 0, true);
-          if (hits > 0) deps.awardWeaponMasteryXp();
+          if (hits > 0) {
+            window.PlayerLunge?.confirmEnemyHit?.(); // A real enemy hit grants the one-second slow-fall aerial follow-up window; misses grant nothing.
+            deps.awardWeaponMasteryXp();
+          }
         },
         onComplete: () => { busyAction = null; },
         onCancel: () => { busyAction = null; },
@@ -261,7 +295,7 @@
           comboId: id, comboStep, sfxPitch,
           meleeThreat: window.Combat.playerMeleeThreat(rangePx, halfConeRad, {
             yaw: deps.player.angle,
-            lungePx: deps.TILE * step.lungeMul * LUNGE_SCALE * (1 + (effects.stats.lungeMul || 0)),
+            lungePx,
             source: step.name,
           }),
         },

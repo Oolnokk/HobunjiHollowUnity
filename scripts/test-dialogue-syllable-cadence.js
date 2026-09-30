@@ -73,11 +73,11 @@ const dialogueContent = read('docs/js/dialogue-content.js');
 const scratchbonesConfig = read('docs/config/scratchbones-config.js');
 assert.match(scratchbonesConfig, /\"syllablesPerSecond\": 10/, 'default dialogue reveal cadence stays at the faster 10 syllables per second');
 assert.match(dialogueContent, /syllablesPerSecond: finiteClamped\(cfg\.syllablesPerSecond, 10, 1, 20\)/, 'dialogue fallback matches the configured faster cadence');
-assert.match(dialogueContent, /_npcDialogueTextEl\.textContent \+= unit\.text/, 'NPC dialogue reveals a whole cadence unit per timer');
+assert.match(dialogueContent, /_npcDialogueVisibleCharacters \+= unit\.text\.length/, 'NPC dialogue reveals a whole cadence unit per timer');
 assert.match(dialogueContent, /_playNpcDialogueLetterSfx\(unit\.vowels\[index\]\)/, 'NPC dialogue plays exactly one tick for every vowel in a syllable');
 assert.match(dialogueContent, /portraitBreathingComposer\?\.triggerYap/, 'the same vowel reveal directly triggers one mouth yap');
 assert.doesNotMatch(dialogueContent, /while \(_npcDialogueTypeIndex < _npcDialogueTypeText\.length/, 'the regressed multi-character catch-up loop is removed');
-assert.match(dialogueContent, /setTimeout\(\(\) => \{[\s\S]{0,260}_npcDialogueTextEl\.textContent \+= unit\.text[\s\S]{0,80}\}, unit\.revealAtMs\)/, 'each NPC syllable receives an independent deadline from the sequence start');
+assert.match(dialogueContent, /setTimeout\(\(\) => \{[\s\S]{0,260}_npcDialogueVisibleCharacters \+= unit\.text\.length[\s\S]{0,240}\}, unit\.revealAtMs\)/, 'each NPC syllable receives an independent deadline from the sequence start');
 assert.doesNotMatch(dialogueContent, /nextUnit\.revealAtMs - unit\.revealAtMs/, 'NPC speech no longer chains the next delay from a late callback');
 
 const ambientDialogue = read('docs/js/ambient-dialogue.js');
@@ -96,6 +96,7 @@ assert.match(index, /portrait-breathing\.js\?v=20260831syllable4/);
 // revision still ships it, so don't pin one value (pinning left this test red on main since #788).
 const dialogueContentKey = index.match(/dialogue-content\.js\?v=(\d{8}[a-z0-9-]*)/i)?.[1] || '';
 assert(dialogueContentKey >= '20260831syllable4', `dialogue-content.js must ship the syllable cadence (found ${dialogueContentKey || 'none'})`);
-assert.match(index, /ambient-dialogue\.js\?v=20260831syllable4/);
+const ambientDialogueKey = index.match(/ambient-dialogue\.js\?v=(\d{8}[a-z0-9-]*)/i)?.[1] || '';
+assert(ambientDialogueKey >= '20260831syllable4', `ambient-dialogue.js must ship the syllable cadence (found ${ambientDialogueKey || 'none'})`);
 
 console.log('Dialogue syllable cadence test passed');

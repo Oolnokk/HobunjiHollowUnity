@@ -295,7 +295,7 @@
 
   function currentDenTurnoverIdentity() {
     const worldId = String(window.__hobunjiPlayerProfile?.worldId || window.__hobunjiPlayerProfile?.playerId || 'session'); // Used to isolate den ecology state between worlds/preview sessions.
-    const year = Number(window.CalendarSystem?.yearNumber?.() || 1); // Used so a new Tothal generation naturally discards last year's relocated den coordinates.
+    const year = Number(window.CalendarSystem?.tothalCycle?.() || 1); // Used so a new Tothal generation naturally discards last year's relocated den coordinates.
     return { worldId, year, key: `${worldId}|${year}` };
   }
 
