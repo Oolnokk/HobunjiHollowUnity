@@ -23,13 +23,16 @@ function harness() {
   const walker = { area, pause: 0, root: { position: { x: 8.5, z: 11.5 } }, transferToArea(next, pos) { this.area = next; this.root.position = { x: pos.c + 0.5, z: pos.r + 0.5 }; } }; // Real controller moves and restores this actor.
   const body = new Element(); // Captures the mobile panel and its enabled controls.
   const document = { body, head: new Element(), createElement: () => new Element(), addEventListener() {}, querySelector: () => null, getElementById: () => null }; // No browser-only dependency is needed for the state-machine tests.
-  const window = { Combat: { deps: { currentWeaponKey: () => equipment.weapon, currentComboAbilityId: () => equipment.weapon === 'fishingspear' ? 'pokeCombo' : 'swingCombo' }, input: { abortAllPresses() {} }, cancelAllStaged() {} }, DialogueContent: { registerTreeProvider() {}, registerNodeEnterHandler() {}, registerActionHandler() {} }, SkillSystem: { level: () => combatLevel }, dispatchEvent() {}, __hobunjiPlayerProfile: { characterId: 'test' } }; // Production modules attach to this namespace.
+  const window = { Combat: { deps: { toolMasteryLevel: () => mastery, weaponDamageTypeForTool: () => 'sharp', currentWeaponKey: () => equipment.weapon, currentComboAbilityId: () => equipment.weapon === 'fishingspear' ? 'pokeCombo' : 'swingCombo' }, input: { abortAllPresses() {} }, cancelAllStaged() {} }, DialogueContent: { registerTreeProvider() {}, registerNodeEnterHandler() {}, registerActionHandler() {} }, SkillSystem: { level: () => combatLevel }, dispatchEvent() {}, __hobunjiPlayerProfile: { characterId: 'test' } }; // Production modules attach to this namespace.
   const context = vm.createContext({ window, document, console, performance: { now: () => clock }, localStorage: { getItem: key => learned[key] || null, setItem: (key, value) => { learned[key] = value; } }, requestAnimationFrame: fn => fn(), CustomEvent: function () {}, Event: function () {}, MutationObserver: function () { this.observe = () => {}; } }); // Runtime API shims for the existing unlock module.
-  for (const path of ['combat-loadout', 'technique-scrolls', 'combat-tutorial-content', 'combat-tutorial']) vm.runInContext(fs.readFileSync(`docs/js/combat/${path}.js`, 'utf8'), context, { filename: path });
+  vm.runInContext(fs.readFileSync('docs/js/dialogue-templates.js', 'utf8'), context);
+  const rangedSource = fs.readFileSync('docs/js/combat/ranged-weapons.js', 'utf8'); // Real ammo choices feed generated preview stages.
+  vm.runInContext(rangedSource.slice(rangedSource.indexOf('  const BASIC_AMMO_EFFECTS'), rangedSource.indexOf('  const AUTHORED_FIRE_POSE')) + ';window.RangedWeapons = { BASIC_AMMO_EFFECTS, SPECIAL_AMMO_TYPES };', context);
+  for (const path of ['combat-loadout', 'technique-scrolls', 'combat-progression', 'combat-tutorial-content', 'combat-tutorial-mastery', 'combat-tutorial']) vm.runInContext(fs.readFileSync(`docs/js/combat/${path}.js`, 'utf8'), context, { filename: path });
   for (const [id, category] of Object.entries({ swingCombo: 'combo', pokeCombo: 'combo', opportunistJab: 'quickAttack', exhaustCutter: 'quickAttack', mercySpike: 'quickAttack', backstabFlick: 'quickAttack', chargedBreaker: 'offensiveHold', acceleratingFlurry: 'offensiveHold', counterShield: 'defensiveHold', blinkDodge: 'defensiveHold' })) window.Combat.abilities.register(id, { category, slotFamily: category === 'combo' || category === 'quickAttack' ? 'tap' : 'hold', label: id });
   const api = window.CombatTutorial; // Actual controller under test.
-  api.init({ getQuestProgress: () => progress, getArea: () => area, getGear: () => gear, equipment, toolDefs: { hatchet: { slots: ['weapon'] }, crossbow: { slots: ['ranged'] } }, mastery: () => mastery, save: () => { saves++; }, getWalker: () => walker, closeDialogue: () => { dialogue = false; }, openDialogue: async () => { dialogue = true; dialogueCount++; }, dialogueOpen: () => dialogue, toast() {}, capture: () => ({ equipmentSlots: { ...equipment }, activeTool: 'weapon' }), restore: original => { Object.assign(equipment, original.equipmentSlots); restores++; }, enterArena: async () => { if (failTravel) throw new Error('map unavailable'); area = window.CombatTutorialContent.ARENA; }, exitArena: async () => { area = 'map_i_watchhouse'; }, resetPractice() {}, equip: (key, slot) => { equipment[slot] = key; }, spawnTarget: lesson => { target = { lesson }; return spawnWait ? spawnWait.then(() => target) : target; }, removeTarget: () => { target = null; }, maintainTarget() {} });
-  return { setSpawnWait(value) { spawnWait = value; }, advance(ms) { for (let remaining = ms; remaining > 0; remaining -= 100) { clock += Math.min(100, remaining); api.update(); } }, get dialogueCount() { return dialogueCount; }, document, api, window, progress, gear, equipment, walker, body, setLevel: value => { combatLevel = value; }, setMastery: value => { mastery = value; }, setFailTravel: value => { failTravel = value; }, setArea: value => { area = value; }, get saves() { return saves; }, get restores() { return restores; }, get target() { return target; }, explain() { api.onNode({ combatTutorialPractice: true }, {}); dialogue = false; api.update(); }, finishStep() { const lesson = window.CombatTutorialContent.quests.find(q => q.id === api.debugSnapshot().quest).steps.find(s => s.id === api.debugSnapshot().step); this.explain(); for (let i = 0; i < (lesson.count || 1); i++) api.observe(lesson.check, { target, abilityId: lesson.ability }); return api.next(); } };
+  api.init({ getQuestProgress: () => progress, getArea: () => area, getGear: () => gear, equipment, toolDefs: { hatchet: { label: 'Test Hatchet', slots: ['weapon'], dmgType: 'sharp' }, crossbow: { label: 'Test Crossbow', slots: ['ranged'] } }, mastery: () => mastery, save: () => { saves++; }, getWalker: () => walker, closeDialogue: () => { dialogue = false; }, openDialogue: async () => { dialogue = true; dialogueCount++; }, dialogueOpen: () => dialogue, toast() {}, capture: () => ({ equipmentSlots: { ...equipment }, activeTool: 'weapon' }), restore: original => { Object.assign(equipment, original.equipmentSlots); restores++; }, enterArena: async () => { if (failTravel) throw new Error('map unavailable'); area = window.CombatTutorialContent.ARENA; }, exitArena: async () => { area = 'map_i_watchhouse'; }, resetPractice() {}, equip: (key, slot) => { equipment[slot] = key; }, spawnTarget: lesson => { target = { lesson }; return spawnWait ? spawnWait.then(() => target) : target; }, removeTarget: () => { target = null; }, maintainTarget() {} });
+  return { setSpawnWait(value) { spawnWait = value; }, advance(ms) { for (let remaining = ms; remaining > 0; remaining -= 100) { clock += Math.min(100, remaining); api.update(); } }, get dialogueCount() { return dialogueCount; }, document, api, window, progress, gear, equipment, walker, body, setLevel: value => { combatLevel = value; }, setMastery: value => { mastery = value; }, setFailTravel: value => { failTravel = value; }, setArea: value => { area = value; }, get saves() { return saves; }, get restores() { return restores; }, get target() { return target; }, explain() { api.onNode({ combatTutorialPractice: true }, {}); dialogue = false; api.update(); }, finishStep() { const lesson = api.debugSnapshot().steps.find(s => s.id === api.debugSnapshot().step); this.explain(); for (let i = 0; i < (lesson.count || 1); i++) api.observe(lesson.check, { target, abilityId: lesson.ability, ammoId: lesson.preview?.kind === 'specialAmmo' ? lesson.preview.optionId : 'basic' }); return api.next(); } };
 }
 (async () => {
   const h = harness(); // First-time player with no unlocked techniques and no Mastery.
@@ -93,9 +96,11 @@ function harness() {
   h.api.loanAmmo().specialAmmo = 0;
   assert.equal(h.gear.specialAmmo, 2, 'borrowed ammo never spends the real charges');
   await h.finishStep(); h.explain();
+  assert.equal(h.api.loanAmmo().rangedAmmoLoadouts.crossbow.basicEffects[1], 'bleedingHealth');
+  assert.equal(h.gear.rangedAmmoLoadouts.crossbow, undefined, 'ammo preview leaves saved weapon configuration untouched');
   h.api.hit(h.target, { abilityId: 'swingCombo' });
   assert.equal(h.api.debugSnapshot().hits, 0);
-  h.api.hit(h.target, { ranged: true });
+  h.api.hit(h.target, { ranged: true, ammoId: 'basic' });
   assert.equal(h.api.debugSnapshot().hits, 1, 'confirmed projectile hit completes ranged practice');
   h.setArea('town'); h.api.update();
   assert.equal(h.api.active(), false);
@@ -105,6 +110,41 @@ function harness() {
   assert.equal(await h.api.start('spearhead_basics', h.walker), false);
   assert.equal(h.api.originalEquipment(), null, 'failed map loads clean loans');
   assert.match(h.api.diagnosticsText(), /map unavailable/);
+
+  h.setFailTravel(false); h.setArea('map_i_watchhouse');
+  h.equipment.weapon = null;
+  assert.match(h.api.gate(h.window.CombatTutorialContent.quests.find(q => q.id === 'spearhead_mastery_1')), /Equip/, 'owned but unequipped mastery is insufficient');
+  h.equipment.weapon = 'hatchet';
+  assert.equal(await h.api.start('spearhead_mastery_1', h.walker), true);
+  assert.equal(h.api.debugSnapshot().weapon, 'hatchet');
+  assert.match(h.api.selectTree().nodes[0].text, /Test Hatchet/);
+  await h.finishStep();
+  const trial = h.api.debugSnapshot().preview; // Real progression API should expose the first choice without teaching or saving it.
+  assert.equal(trial.kind, 'melee');
+  assert.equal(h.window.CombatProgression.getChosenOption('hatchet', trial.ability, 1), null);
+  assert.ok(Object.keys(h.window.CombatProgression.getEffects('hatchet', trial.ability).afflictions).length);
+  await h.finishStep();
+  const alternate = h.api.debugSnapshot().preview; // The next exercise swaps to the alternative at the same rank.
+  assert.equal(alternate.index, 1);
+  assert.equal(h.window.CombatProgression.getChosenOption('hatchet', alternate.ability, 1), null);
+  await h.api.leave();
+  assert.equal(Object.keys(h.window.CombatProgression.getEffects('hatchet', alternate.ability).afflictions).length, 0, 'preview effects disappear on exit');
+  h.equipment.ranged = null;
+  assert.match(h.api.gate(h.window.CombatTutorialContent.quests.find(q => q.id === 'spearhead_ranged_1')), /Equip/);
+  h.equipment.ranged = 'crossbow';
+
+  h.progress.spearhead_ranged_1.status = 'completed'; h.setMastery(2);
+  assert.equal(await h.api.start('spearhead_ranged_2', h.walker), true);
+  await h.finishStep(); h.explain();
+  assert.equal(h.api.loanAmmo().rangedAmmoLoadouts.crossbow.activeAmmo, 'shrapnel');
+  h.api.hit(h.target, { ranged: true, ammoId: 'basic' });
+  assert.equal(h.api.debugSnapshot().hits, 0, 'special-ammo trial requires the previewed ammunition');
+  h.api.hit(h.target, { ranged: true, ammoId: 'shrapnel' });
+  assert.equal(h.api.debugSnapshot().hits, 1);
+  await h.api.next();
+  assert.equal(h.api.loanAmmo().rangedAmmoLoadouts.crossbow.activeAmmo, 'concussive');
+  await h.api.leave();
+  assert.equal(h.gear.rangedAmmoLoadouts.crossbow, undefined);
 
   const automatic = harness(); // Sequential training should never require the removed Next lesson button.
   await automatic.api.start('spearhead_basics', automatic.walker);
@@ -174,6 +214,11 @@ function harness() {
   assert.equal(sparring.x, 10.5 * 32);
   adapter.maintainTarget(sparring, { condition: 'lowHealth' });
   assert.equal(sparring.health, 2000, 'Mercy Spike receives the real low-health condition');
+  sparring.health = 72; sparring.afflictions = { bleedingHealth: 4 }; sparring.knockbackT = 0.2;
+  adapter.maintainTarget(sparring, { preview: { kind: 'melee' } });
+  assert.equal(sparring.health, 72, 'preview damage remains visible');
+  assert.equal(sparring.afflictions.bleedingHealth, 4, 'preview afflictions are not cleared each frame');
+  assert.equal(sparring.knockbackT, 0.2, 'preview knockback uses normal movement instead of being cancelled');
   adapter.removeTarget(sparring);
   assert.equal(hostiles.size, 0);
   assert.equal(disposed, true);

@@ -255,7 +255,7 @@
   <script src="js/combat/combat-enemy-telegraph.js?v=20260926combatreview1"></script>
   <script src="js/combat/combat-animal-attacks.js?v=20260825melee2-opportunist1"></script>
   <script src="js/combat/combat-loadout.js?v=20260925heldmode1"></script>
-  <script src="js/combat/combat-progression.js?v=20260712d"></script>
+  <script src="js/combat/combat-progression.js?v=20260712d-mastery1"></script>
   <script src="js/combat/combat-input.js?v=20260924swimcombat2"></script>
   <script src="js/combat/combat-combo.js?v=20260927aerialchain1-training1"></script>
   <script src="js/combat/combat-quickattacks.js?v=20260927reviewfix1-training1-opportunist1"></script>
@@ -271,7 +271,7 @@
   <script src="js/area-footprint-blockers.js?v=20260929shotfloor1"></script>
   <!-- Sub-stepped sliding move extracted out of game.js; must load before game.js. -->
   <script src="js/swept-move.js?v=20260927footprints1"></script>
-  <script src="js/combat/ranged-weapons.js?v=20260929merge1"></script>
+  <script src="js/combat/ranged-weapons.js?v=20260929merge1-tutorialrebase1"></script>
   <script src="js/combat/ranged-hud-reticle.js?v=20260925dialogue3"></script>
   <script src="js/combat/melee-hud-reticle.js?v=20260926combatreview1"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
@@ -300,7 +300,7 @@
   <script src="js/bounty-board.js?v=20260831spearheadexisting1-colors1"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20260930pauldronverdigris1"></script>
+  <script src="js/combat/combat-config-loader.js?v=20260930pauldronverdigris1-tutorialrebase1"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -2376,10 +2376,12 @@
   <!-- Authored world-space dialogue/cutscene cameras. Must load before DialogueContent/game.js. -->
   <script src="js/cinematic-camera-runtime.js?v=20260925reviewfix1"></script>
   <script src="js/dialogue-camera-framing.js?v=20260926a"></script>
+  <script src="js/dialogue-templates.js?v=20260929mastery1"></script>
   <script src="js/dialogue-rich-text.js?v=20260929colors1"></script>
-  <script src="js/dialogue-content.js?v=20260926staging1-colors1"></script>
-  <script src="js/combat/combat-tutorial-content.js?v=20260929oddclaw1-colors1-opportunist1"></script>
-  <script src="js/combat/combat-tutorial.js?v=20260929oddclaw1-colors1-opportunist1"></script>
+  <script src="js/dialogue-content.js?v=20260926staging1-colors1-mastery1"></script>
+  <script src="js/combat/combat-tutorial-content.js?v=20260929oddclaw1-colors1-opportunist1-mastery1"></script>
+  <script src="js/combat/combat-tutorial-mastery.js?v=20260929mastery1"></script>
+  <script src="js/combat/combat-tutorial.js?v=20260929oddclaw1-colors1-opportunist1-mastery1"></script>
   <script src="js/banubu-questline.js?v=20260925banubutransaction4"></script>
   <!-- World-space Float+ combat text and centered five-row reward lists. -->
   <script src="js/world-popup-text.js?v=20260924perf5"></script>
@@ -2506,7 +2508,7 @@
   <script src="js/banubu-cave-clouds.js?v=20260923cloudring3"></script>
   <!-- Shoulder Cam / Character View Pointer Lock (window.ShoulderCamPointerLock); game.js calls init(...) during setup. -->
   <script src="js/shoulder-cam-pointer-lock.js?v=20260925shouldercamonly1"></script>
-  <script src="game.js?v=20260930livestockwalk1"></script>
+  <script src="game.js?v=20260930livestockwalk1-tutorialrebase1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>

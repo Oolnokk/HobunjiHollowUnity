@@ -18,8 +18,7 @@
     if (quest.requires && state(quest.requires)?.status !== 'completed') return `Complete ${definition(quest.requires)?.title || quest.requires}`;
     if (quest.combat > (window.SkillSystem?.level?.('combat') || 0)) return `Combat level ${quest.combat}`;
     if (quest.mastery || quest.rangedMastery) {
-      const eligible = Object.keys(deps?.getGear()?.tools || {}).filter(key => deps.getGear().tools[key] && deps.toolDefs[key]?.slots?.includes(quest.rangedMastery ? 'ranged' : 'weapon')); // Only owned weapons of the lesson's family qualify.
-      if (!eligible.some(key => deps.mastery(key) >= (quest.mastery || quest.rangedMastery))) return `${quest.rangedMastery ? 'Ranged weapon' : 'Melee weapon'} Mastery ${quest.mastery || quest.rangedMastery}`;
+      return window.CombatTutorialMastery.gate(quest, deps);
     }
     return '';
   }
@@ -36,10 +35,7 @@
   function action(operation, extra = {}) { return { type: 'combatTutorial', operation, ...extra }; }
   function lessonText(lesson) {
     if (!lesson) return '';
-    const rank = session?.quest.mastery; // This lesson's newly relevant row, read from the same live progression catalog as Loadout.
-    const weaponType = deps.toolDefs[lesson.weapon]?.dmgType || 'sharp'; // Borrowed shape's authored damage family selects the correct row.
-    const options = rank && lesson.ability ? window.CombatProgression?.getTree?.(lesson.ability, weaponType)?.[rank - 1] : null; // No copied upgrade numbers to become stale after balancing.
-    return lesson.text + (options?.length ? ` At rank ${rank}, this technique offers: ${options.map(option => `${option.label}: ${option.desc}`).join('; ')}.` : '');
+    return lesson.text;
   }
   function selectTree() {
     if (bypassChat) { bypassChat = false; return null; }
@@ -52,7 +48,7 @@
     for (let page = 0; page * 4 < content.quests.length; page++) {
       const choices = content.quests.slice(page * 4, page * 4 + 4).map(quest => {
         const locked = gate(quest); // Checked again on accept, never trusted from the rendered menu.
-        return { label: `${quest.title.replace('Spearhead — ', '')}${locked ? ' — ' + locked : state(quest.id)?.status === 'completed' ? ' — Practice again' : state(quest.id)?.status === 'active' ? ' — Resume' : ' — Begin'}`, actions: [action('start', { questId: quest.id })] };
+        return { disabled: !!locked, label: `${quest.title.replace('Spearhead — ', '')}${locked ? ' — ' + locked : state(quest.id)?.status === 'completed' ? ' — Practice again' : state(quest.id)?.status === 'active' ? ' — Resume' : ' — Begin'}`, actions: [action('start', { questId: quest.id })] };
       });
       if ((page + 1) * 4 < content.quests.length) choices.push({ label: 'More lessons', next: `page${page + 1}` });
       choices.push({ label: 'Talk about something else', actions: [action('chat')] });
@@ -74,7 +70,7 @@
     window.RangedWeapons?.cancelPlayerAction?.();
   }
   async function start(questId, walker) {
-    const quest = definition(questId); // Validated authored quest, not arbitrary dialogue data.
+    let quest = definition(questId); // Validated authored quest, not arbitrary dialogue data.
     if (!deps || busy || session || !quest) return false;
     if (!window.TechniqueScrolls?.unlockAbility || quest.steps.some(lesson => lesson.ability && !window.Combat?.abilities?.get?.(lesson.ability))) { deps.toast('Combat techniques are still loading. Please try again.', false); return false; }
     const locked = gate(quest); // Prevents stale dialogue buttons bypassing a level/prerequisite gate.
@@ -82,15 +78,17 @@
     if (!walker?.root) { deps.toast('Spearhead is not ready. Talk to him again.', false); return false; }
     busy = true;
     try {
+      if (quest.mastery || quest.rangedMastery) quest = window.CombatTutorialMastery.build(quest, deps);
       deps.closeDialogue();
       stopActions();
       session = { quest, index: 0, hits: 0, phase: 'loading', lastProgressAt: now(), lastTickAt: now(), wrongHits: 0, ammo: { specialAmmo: 8, rangedAmmoLoadouts: {}, unlockedSpecialAmmo: ['shrapnel', 'concussive'] }, replay: state(quest.id)?.status === 'completed', tried: new Set(), original: deps.capture(), walker, actor: { area: walker.area, c: walker.root.position.x - 0.5, r: walker.root.position.z - 0.5, pause: walker.pause }, target: null };
+      session.ammoBaseline = JSON.parse(JSON.stringify(deps.getGear()?.rangedAmmoLoadouts?.[quest.weapon] || { basicEffects: {}, specialSlots: {}, activeAmmo: 'basic' })); // Private preview copy; permanent ammunition selections never change.
       // Resume at the saved card. Earlier verified exercises retain reward eligibility across reloads.
       if (!session.replay) {
         const previous = state(quest.id); // Unfinished sessions resume without persisting any temporary gear.
-        session.index = Math.max(0, Math.min(quest.steps.length, Math.trunc(Number(previous?.step) || 0)));
+        session.index = quest.signature && quest.signature !== previous?.progress?.trainingSignature ? 0 : Math.max(0, Math.min(quest.steps.length, Math.trunc(Number(previous?.step) || 0)));
         for (const lesson of quest.steps.slice(0, session.index)) if (lesson.ability) session.tried.add(lesson.ability);
-        deps.getQuestProgress()[quest.id] = { status: 'active', step: session.index, progress: { kind: 'story', provider: 'spearhead', npcId: content.NPC_ID, npcName: 'Spearhead', title: quest.title, icon: '⚔', detail: 'Practice beneath the watchhouse. Talk to Spearhead to resume after leaving.', hidden: false } };
+        deps.getQuestProgress()[quest.id] = { status: 'active', step: session.index, progress: { trainingSignature: quest.signature || null, kind: 'story', provider: 'spearhead', npcId: content.NPC_ID, npcName: 'Spearhead', title: quest.title, icon: '⚔', detail: 'Practice beneath the watchhouse. Talk to Spearhead to resume after leaving.', hidden: false } };
         saveProgress();
       }
       const starting = session; // Owns scene travel and the async humanoid build through cancellation.
@@ -119,6 +117,8 @@
   function prepareStep() {
     stopActions();
     deps.pauseTarget?.(session.target);
+    window.CombatProgression?.endPreview?.(session.previewHandle);
+    session.previewHandle = null;
     session.hits = 0;
     session.phase = 'explain';
     session.reminder = false;
@@ -128,17 +128,33 @@
     const lesson = step(); // An absent card means all practice is complete and the reward is pending.
     if (lesson) {
       deps.resetPractice();
-      deps.equip(lesson.weapon || 'hatchet', lesson.check === 'rangedHit' ? 'ranged' : 'weapon');
+      deps.equip(lesson.weapon || 'hatchet', lesson.equipSlot || (lesson.check === 'rangedHit' ? 'ranged' : 'weapon'));
+      applyPreview(lesson);
       deps.resetTarget?.(session.target, lesson);
     }
     saveProgress();
     render();
   }
+  function applyPreview(lesson) {
+    const preview = lesson.preview; // Each generated stage describes the same live upgrade option it explains.
+    if (!preview) return;
+    if (preview.kind === 'melee') {
+      session.previewHandle = window.CombatProgression.beginPreview(lesson.weapon, preview.ability, preview.rank, preview.index);
+      if (!session.previewHandle) throw new Error('This weapon no longer qualifies for the upgrade preview.');
+    } else {
+      const ammo = JSON.parse(JSON.stringify(session.ammoBaseline)); // Earlier saved choices form the baseline for each ammunition trial.
+      ammo.basicEffects ||= {}; ammo.specialSlots ||= {};
+      if (preview.kind === 'basicAmmo') { ammo.basicEffects[preview.rank] = preview.optionId; ammo.activeAmmo = 'basic'; }
+      else { ammo.specialSlots[preview.rank] = preview.optionId; ammo.activeAmmo = preview.optionId; }
+      session.ammo.rangedAmmoLoadouts[lesson.weapon] = ammo;
+      session.ammo.specialAmmo = 8;
+    }
+  }
   function onNode(node, context) {
     if (context.ended || !active() || !node?.combatTutorialPractice) return;
     session.phase = 'practice';
     const lesson = step(); // Reassert the lesson's slot after dialogue or a manual weapon switch.
-    if (lesson) deps.equip(lesson.weapon || 'hatchet', lesson.check === 'rangedHit' ? 'ranged' : 'weapon');
+    if (lesson) deps.equip(lesson.weapon || 'hatchet', lesson.equipSlot || (lesson.check === 'rangedHit' ? 'ranged' : 'weapon'));
     session.walker.pause = Infinity;
     session.lastProgressAt = now();
     session.lastTickAt = now();
@@ -150,6 +166,8 @@
     if (!active() || session.phase !== 'practice' || deps.dialogueOpen()) return false;
     const lesson = step(); // Events are emitted only at successful combat/defense commit points.
     if (!lesson || lesson.check !== kind || session.hits >= (lesson.count || 1)) return false;
+    if (session.quest.weapon && deps.equipment[session.quest.family] !== session.quest.weapon) return false;
+    if (lesson.preview && kind === 'rangedHit' && details.ammoId !== (lesson.preview.kind === 'specialAmmo' ? lesson.preview.optionId : 'basic')) return false;
     if (details.target && details.target !== session.target) return false;
     if (lesson.ability && details.abilityId && lesson.ability !== details.abilityId) return false;
     if (['hit', 'quickBonus', 'rangedHit'].includes(kind) && !details.target) return false;
@@ -162,7 +180,7 @@
   function hit(target, options = {}) {
     if (target !== session?.target) return;
     const before = session.hits; // Wrong attacks inform coaching without awarding progress.
-    if (options.ranged) observe('rangedHit', { target });
+    if (options.ranged) observe('rangedHit', { target, ammoId: options.ammoId });
     else if (options.abilityId) {
       observe('hit', { target, abilityId: options.abilityId });
       if (options.conditionBonusUsed) observe('quickBonus', { target, abilityId: options.abilityId });
@@ -178,7 +196,7 @@
       prepareStep();
       await deps.openDialogue(session.walker);
       return true;
-    } catch (error) { lastError = error.message; deps.toast(lastError, false); return false; }
+    } catch (error) { lastError = error.message; await leave(true); deps.toast(lastError, false); return false; }
     finally { busy = false; render(); }
   }
   async function finish(abilityId = null) {
@@ -202,6 +220,7 @@
     const ending = session; // Kept locally until cleanup has restored all temporary state.
     if (!ending) { if (returnUpstairs) await deps.exitArena(); return; }
     ending.phase = 'leaving';
+    window.CombatProgression?.endPreview?.(ending.previewHandle);
     deps.closeDialogue();
     stopActions();
     if (ending.target) deps.removeTarget(ending.target);
@@ -272,7 +291,7 @@
       session.lastTickAt = tick;
       if (deps.dialogueOpen() || document.hidden || elapsed > 2000) session.lastProgressAt += elapsed;
       if (!busy && !deps.dialogueOpen() && !document.hidden && step()) {
-        if (session.phase === 'practice' && session.hits >= (step().count || 1) && tick - session.lastProgressAt >= 700) void next();
+        if (session.phase === 'practice' && session.hits >= (step().count || 1) && tick - session.lastProgressAt >= (step()?.preview ? 2500 : 700)) void next();
         else if (session.phase === 'practice' && (tick - session.lastProgressAt >= 45000 || session.wrongHits >= 4 && tick - session.lastProgressAt >= 8000)) void explainAgain();
         else if (session.phase === 'explain' && tick - session.lastProgressAt >= 1500) void explainAgain();
       }
@@ -287,7 +306,7 @@
     if ((!panel && visible) || (panel && panel.hidden === visible)) render();
   }
   function diagnosticsText() {
-    return `Spearhead combat tutorial\nQuest: ${session?.quest.id || 'none'}\nStep: ${step()?.id || 'none'}\nPartner: Oddclaw\nPhase: ${session?.phase || 'idle'}\nVerified actions: ${session?.hits || 0}/${step()?.count || 1}\nLoan weapon: ${deps?.equipment.weapon || 'none'}\nTried: ${[...(session?.tried || [])].join(', ')}\nLast error: ${lastError || 'none'}\nLatest change: Opportunist Jab now rewards hits during enemy windup or strike; tutorial instructions updated.`;
+    return `Spearhead combat tutorial\nQuest: ${session?.quest.id || 'none'}\nStep: ${step()?.id || 'none'}\nPartner: Oddclaw\nPhase: ${session?.phase || 'idle'}\nVerified actions: ${session?.hits || 0}/${step()?.count || 1}\nPreview weapon: ${session?.quest.weapon || 'none'}\nPreview choice: ${step()?.preview ? step().title : 'none'}\nLoan weapon: ${deps?.equipment.weapon || 'none'}\nTried: ${[...(session?.tried || [])].join(', ')}\nLast error: ${lastError || 'none'}\nLatest change: Equipped-weapon Mastery gates, reusable context templates, and temporary previews of each upgrade choice.`;
   }
   function init(injected) {
     deps = injected;
@@ -305,6 +324,6 @@
     originalEquipment: () => session?.original || null,
     loanAmmo: () => active() ? session.ammo : null,
     loanRangedMastery: () => active() ? session.quest.rangedMastery || 1 : null,
-    debugSnapshot: () => ({ quest: session?.quest.id || null, step: step()?.id || null, phase: session?.phase || null, hits: session?.hits || 0, tried: [...(session?.tried || [])], lastError }),
+    debugSnapshot: () => ({ quest: session?.quest.id || null, step: step()?.id || null, phase: session?.phase || null, hits: session?.hits || 0, weapon: session?.quest.weapon || null, preview: step()?.preview || null, steps: session?.quest.steps || [], tried: [...(session?.tried || [])], lastError }),
   };
 })();

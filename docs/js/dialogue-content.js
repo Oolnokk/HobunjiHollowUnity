@@ -291,7 +291,7 @@
         return entry ? _resolveTokens(entry.text, npcRec, _depth + 1) : '';
       });
     }
-    return out;
+    return window.DialogueTemplates?.format(out, _dlgTree?.variables || {}) || out;
   }
 
   // A tree's (or phrase-pool entry's) conditions/excludeConditions are
@@ -454,6 +454,7 @@
       if (label) { label.textContent = ''; label.style.fontSize = ''; }
       el.classList.remove('dlg-opt-visible');
       el.onclick = null;
+      el.disabled = false;
     });
     choices.slice(0, 6).forEach((c, i) => {
       const el = optEls[i];
@@ -461,8 +462,9 @@
       const label = el.querySelector('.dlg-opt-label');
       if (label) label.textContent = _resolveTokens(c.label || '', _dlgNpcRec);
       el.classList.add('dlg-opt-visible');
+      el.disabled = !!c.disabled;
       el.onclick = () => {
-        if (!deps.getDialogueOpen()) return;
+        if (!deps.getDialogueOpen() || c.disabled) return;
         let skipNav = false;
         (c.actions || []).forEach(act => {
           if (act.type === 'setLocalNickname') {

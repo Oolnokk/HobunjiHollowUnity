@@ -33,17 +33,9 @@
       { id: 'movement', title: 'Make breathing room', ability: 'blinkDodge', slot: 'hold2', check: 'blink', text: 'Use Blink Dodge to move clear, then release it. A held stance can keep costing Stamina: let go when you need recovery.' },
     ] },
   ];
-  for (let rank = 1; rank <= 5; rank++) { // Each rank lesson appears at the actual five-rank progression boundary.
-    quests.push({ id: `spearhead_mastery_${rank}`, title: `Spearhead — Mastery ${rank}`, mastery: rank, requires: rank === 1 ? 'spearhead_basics' : `spearhead_mastery_${rank - 1}`, steps: [
-      { id: 'tree', title: `Mastery rank ${rank}`, check: 'read', text: `Mastery belongs to the individual weapon. Rank ${rank} opens row ${rank} of its technique trees only after earlier rows have been chosen. Choosing or changing this row costs ${rank} Mote${rank === 1 ? '' : 's'} of Prowess. A learned technique and an upgraded technique are different things. Look at your weapon’s Loadout tab after training; this lesson spends no motes.` },
-      { id: 'sharp', title: 'Sharp weapon practice', weapon: 'fishingspear', ability: 'chargedBreaker', slot: 'hold1', check: 'hit', text: 'Land Charged Breaker with the borrowed sharp spear. Sharp and blunt weapons can offer different upgrade effects for the same technique. Training does not change your own weapon’s upgrade choices.' },
-      { id: 'blunt', title: 'Blunt weapon practice', weapon: 'fishingmace', ability: 'acceleratingFlurry', slot: 'hold1', check: 'hit', count: 3, text: 'Now try Flurry with a blunt fishing mace. Land three strikes. Weapon style, damage type, the selected technique, and that weapon’s chosen upgrades all contribute to the result.' },
-    ] });
-    quests.push({ id: `spearhead_ranged_${rank}`, title: `Spearhead — Ranged Mastery ${rank}`, rangedMastery: rank, requires: rank === 1 ? 'spearhead_basics' : `spearhead_ranged_${rank - 1}`, steps: [
-      { id: 'ammo', title: rank % 2 ? 'Basic ammunition' : 'Special ammunition', check: 'read', text: rank % 2 ? `Ranged Mastery ${rank} opens a Basic Ammo choice. Basic effects are free once chosen and repeated choices can stack. This is a weapon’s mastery progression, separate from your broad Combat skill.` : `Ranged Mastery ${rank} opens a Special Ammo slot. Select your configured special ammunition with Weapon Action 2; firing special ammunition spends the weapon’s shared charges. Watch that resource before committing. This session lends ordinary ranged weapons without changing your saved ammo selections.` },
-      { id: 'crossbow', title: 'Crossbow range', weapon: 'crossbow', check: 'rangedHit', text: 'Aim the borrowed crossbow at the sparring partner and use Weapon Action 1 to load/fire through its normal action cycle. Land a projectile hit. The projectile must reach the target; lining up the reticle alone is not a hit.' },
-      { id: 'scatterbow', title: 'Scatterbow spread', weapon: 'scatterbow', check: 'rangedHit', text: 'Try the borrowed scatterbow and land a hit. Compare its spread with the crossbow and choose your distance carefully.' },
-    ] });
+  for (let rank = 1; rank <= 5; rank++) { // Runtime templates bind the equipped weapon and live upgrade choices on acceptance.
+    quests.push({ id: `spearhead_mastery_${rank}`, title: `Spearhead — Mastery ${rank}`, mastery: rank, requires: rank === 1 ? 'spearhead_basics' : `spearhead_mastery_${rank - 1}`, steps: [] });
+    quests.push({ id: `spearhead_ranged_${rank}`, title: `Spearhead — Ranged Mastery ${rank}`, rangedMastery: rank, requires: rank === 1 ? 'spearhead_basics' : `spearhead_ranged_${rank - 1}`, steps: [] });
   }
   const termColors = { // Shared colors reinforce the tutorial's resource and ability categories.
     'Health': '#ff9292', 'Stamina': '#a5e894', 'Footing': '#8bd5ff',

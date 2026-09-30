@@ -6108,7 +6108,7 @@
           grazingPreyByPatchFrame.set(c.grazingPatchId, patchPrey);
         }
         for (const c of currentHostilesFrame) {
-          if (c.combatTutorialTarget && !c.combatTutorialHostile) {
+          if (c.combatTutorialTarget && !c.combatTutorialHostile && !c.combatTutorialPreview) {
             updateCreatureMesh(c, dt, c.facing); // Stationary exercises keep the humanoid renderer and real hitboxes.
             if (c.isBandit) { window.BanditCombat.updateToolMesh(c); window.BanditCombat.updateTrailArc(c, dt); }
             continue;
@@ -6294,6 +6294,8 @@
             } else if (c.knockbackT <= 0) {
               if (!beginKnockbackLedgeFall(c)) window.KnockbackCollisionImpact?.cancel?.(c);
             }
+          } else if (c.combatTutorialTarget && !c.combatTutorialHostile) {
+            c.vx = 0; c.vy = 0; // Passive previews still run normal resource and swept knockback physics above.
           } else if (c.state === 'fleeing-low-health') {
             // Beelines home ignoring player/prey aggro (see the guards above)
             // until it settles, then starts its re-aggro cooldown — nothing
@@ -28225,18 +28227,26 @@
           target.telegraphState = null; target._banditLunging = false;
           target.vx = 0; target.vy = 0;
         },
-        resetTarget: target => {
+        resetTarget: (target, lesson) => {
           if (!target) return;
           target.x = 10.5 * TILE; target.y = 11.5 * TILE;
           target.facing = Math.PI / 2; target.state = 'idle';
           target.attackCooldownT = 1.5; target._banditComboIndex = 0;
+          target.knockbackT = 0; target.knockbackVX = 0; target.knockbackVY = 0;
+          target.prone = false; target.exhaustion = { active: false, blackStamina: 100 };
+          target.maxHealth = lesson?.preview ? 100 : 10000; target.health = target.maxHealth;
+          target.afflictions = {}; target._rangedAmmoDebuffs = {};
+          target.footing = target.maxFooting; target.stamina = target.maxStamina;
         },
         maintainTarget: (target, lesson) => {
-          target.health = lesson?.condition === 'lowHealth' ? 2000 : target.maxHealth;
-          target.afflictions = {}; target.footing = target.maxFooting; target.prone = false;
-          target.stamina = lesson?.condition === 'exhausted' ? 0 : target.maxStamina;
-          target.exhaustion = { active: lesson?.condition === 'exhausted', blackStamina: 100 };
-          if (!target.combatTutorialHostile) {
+          target.combatTutorialPreview = !!lesson?.preview; // Preserve real damage, afflictions and movement while comparing upgrade effects.
+          if (!lesson?.preview) {
+            target.health = lesson?.condition === 'lowHealth' ? 2000 : target.maxHealth; target.afflictions = {};
+            target.footing = target.maxFooting; target.prone = false;
+            target.stamina = lesson?.condition === 'exhausted' ? 0 : target.maxStamina;
+            target.exhaustion = { active: lesson?.condition === 'exhausted', blackStamina: 100 };
+          }
+          if (!target.combatTutorialHostile && !lesson?.preview) {
             target.knockbackT = 0; target.knockbackVX = 0; target.knockbackVY = 0;
             target.staggered = { active: false, endsAt: 0 };
           }
