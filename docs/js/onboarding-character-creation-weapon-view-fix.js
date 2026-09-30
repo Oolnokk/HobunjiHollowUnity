@@ -290,9 +290,11 @@
     });
   }
 
-  function applyPrimaryGripVisual(THREE, plane, choice, baseQuaternion) {
+  function applyPrimaryGripVisual(THREE, plane, choice, baseQuaternion, identity = null) {
     const grips = window.HobunjiHandToolGrips;
-    const scale = Number(grips?.toolScaleForTool?.(choice.shape)) || 1;
+    const scale = Number(grips?.effectiveToolScaleForTool?.(choice.shape, identity?.speciesId, identity?.gender))
+      || Number(grips?.toolScaleForTool?.(choice.shape))
+      || 1;
     plane.position.set(0, 0, 0); // Weapon preview remains owned by its authored stance; grip metadata moves the hand instead.
     plane.quaternion.copy(baseQuaternion);
     plane.scale.setScalar(scale);
@@ -375,7 +377,7 @@
     plane.rotation.x = -Math.PI / 2;
     if (choice.animStyle === 'sweep') plane.rotation.z = Math.PI / 2; // Runtime weapon-slot neutral compensation for sweep sprites.
     const baseQuaternion = plane.quaternion.clone();
-    applyPrimaryGripVisual(THREE, plane, choice, baseQuaternion);
+    applyPrimaryGripVisual(THREE, plane, choice, baseQuaternion, identity);
     holder.add(plane);
     holder.userData.toolPlane = plane;
     state.toolPlane = plane;
@@ -415,7 +417,9 @@
     const grips = window.HobunjiHandToolGrips;
     const primary = grips?.authoredPrimaryGripForTool?.(state.choice?.shape || '') || {};
     const primaryPosition = primary.position || {};
-    const toolScale = Number(grips?.toolScaleForTool?.(state.choice?.shape || '')) || 1;
+    const toolScale = Number(grips?.effectiveToolScaleForTool?.(state.choice?.shape || '', rig.speciesId, rig.gender))
+      || Number(grips?.toolScaleForTool?.(state.choice?.shape || ''))
+      || 1;
     socketPosition.add(new THREE.Vector3(
       (Number(primaryPosition.x) || 0) * toolScale,
       (Number(primaryPosition.y) || 0) * toolScale,
