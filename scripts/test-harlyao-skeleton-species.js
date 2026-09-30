@@ -223,7 +223,7 @@ assert.equal(enghExportProfile.bodyColors.A.hex, '#123456');
   }
 
   const runtimeBootstrapIndex = bootstrapSource.indexOf("harlyao-skeleton-species-runtime.js?v=20260927dyes1");
-  const scaleBootstrapIndex = bootstrapSource.indexOf("character-rig-scale.js?v=20260904i");
+  const scaleBootstrapIndex = bootstrapSource.indexOf("character-rig-scale.js?v=20260930hd251dd7");
   assert(runtimeBootstrapIndex >= 0 && scaleBootstrapIndex > runtimeBootstrapIndex,
     'Harlyao Skeleton rig inheritance must load before whole-rig scale installs profile defaults');
 

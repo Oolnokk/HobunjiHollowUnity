@@ -27,10 +27,9 @@
         || appearance.gender
         || options.profile?.gender
         || 'male',
-      age: options.age
-        ?? options.profile?.age
-        ?? options.npcRecord?.age
-        ?? 0,
+      age: typeof window.HobunjiCharacterRigScale?.ageFor === 'function'
+        ? window.HobunjiCharacterRigScale.ageFor(options) // Shared resolver: explicit age, then the NPC's authored appearance.aging.hunch.
+        : (options.age ?? options.profile?.age ?? options.npcRecord?.age ?? 0),
     };
   }
 
@@ -65,6 +64,7 @@
         gender: identity.gender,
         headScale: resolved.head,
         headOffsetY: resolved.offsetY,
+        age: identity.age, // Read back by HobunjiCharacterRigScale.ageFor when hands later reapply head compensation.
         bodyScaleX: resolved.x,
         bodyScaleY: resolved.y,
         source: 'PNGPlaneAvatar.buildSinglePlaneAvatarModel',

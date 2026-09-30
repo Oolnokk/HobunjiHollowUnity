@@ -309,7 +309,7 @@ assert.match(scaleBootstrapSource, /character-rig-scale-defaults\.js\?v=\d+\w*/,
   'shared bootstrap must load authored full-character defaults');
 assert.ok(scaleBootstrapSource.indexOf('character-rig-scale-defaults.js') < scaleBootstrapSource.indexOf('character-rig-scale.js'),
   'defaults must load before the runtime scale module');
-assert.match(scaleBootstrapSource, /character-rig-scale\.js\?v=20260904i/,
+assert.match(scaleBootstrapSource, /character-rig-scale\.js\?v=[A-Za-z0-9_-]+/,
   'bootstrap must cache-bust the runtime default hook');
 assert.match(scaleBootstrapSource, /character-scale-comparison-host-bridge\.js\?v=20260904j/,
   'bootstrap must cache-bust the rigScale round-trip host');

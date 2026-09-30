@@ -2814,6 +2814,15 @@
                               "h": 210,
                               "s": 75,
                               "l": 68
+                        },
+                        "aging": {
+                              "hunch": 0.13,
+                              "bodyColor": {
+                                    "preset": "old",
+                                    "amount": 70,
+                                    "desaturation": 65,
+                                    "brightening": 30
+                              }
                         }
                   },
                   "equippedCosmetics": [
@@ -3337,6 +3346,15 @@
                               "h": 210,
                               "s": 75,
                               "l": 68
+                        },
+                        "aging": {
+                              "hunch": 0.13,
+                              "bodyColor": {
+                                    "preset": "old",
+                                    "amount": 70,
+                                    "desaturation": 65,
+                                    "brightening": 30
+                              }
                         }
                   },
                   "equippedCosmetics": [
@@ -7334,6 +7352,15 @@
                               "h": 210,
                               "s": 75,
                               "l": 68
+                        },
+                        "aging": {
+                              "hunch": 0.07,
+                              "bodyColor": {
+                                    "preset": "mature",
+                                    "amount": 40,
+                                    "desaturation": 40,
+                                    "brightening": 14
+                              }
                         }
                   },
                   "equippedCosmetics": [
@@ -11854,6 +11881,15 @@
                               "h": 210,
                               "s": 75,
                               "l": 68
+                        },
+                        "aging": {
+                              "hunch": 0.3,
+                              "bodyColor": {
+                                    "preset": "old",
+                                    "amount": 70,
+                                    "desaturation": 65,
+                                    "brightening": 30
+                              }
                         }
                   },
                   "equippedCosmetics": [
