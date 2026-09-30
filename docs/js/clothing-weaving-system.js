@@ -2748,7 +2748,7 @@
     decorateAvatarDataWithWovenItems, // Reuses the player's woven portrait marker contract for NPC/default clothing without duplicating renderer internals.
     hasBehindView,
     iconSpriteForCosmetic,
-    hasWovenPattern: item => weavingHasAnyPattern(item?.weaving),
+    hasWovenPattern: item => weavingHasAnyDecoration(item?.weaving), // Compatibility API means "needs the fully-composited clothing path"; trim-only garments qualify too.
     hasAddedTrim: item => weavingHasOptionalTrim(item?.weaving),
     reweaveMaterialCost,
     debugSnapshot,
