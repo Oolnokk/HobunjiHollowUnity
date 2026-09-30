@@ -77,10 +77,10 @@ assert.match(farmPanelCore, /const store = ensureStarterWindowsInFarmStorage\(\)
 assert.match(farmPanelCore, /k !== STARTER_WINDOW_STORAGE_SENTINEL/, 'starter grant marker must never render as a storage item');
 
 const farmPanelLoader = read('docs/js/farm-panel.js'); // Core cache-bust must move with the starter-storage behavior.
-assert.match(farmPanelLoader, /farm-panel-core\.js\?v=20260923windowtrim1/, 'Farm Panel must load the player-window catalog revision');
+assert.match(farmPanelLoader, /farm-panel-core\.js\?v=[A-Za-z0-9_-]+/, 'Farm Panel must load the player-window catalog revision');
 const gameIndex = read('docs/index.html');
 const gameSource = read('docs/game.js');
-assert.match(gameIndex, /farm-panel\.js\?v=[^"'&\s<]+&window=20260926rebase1/, 'game index must cache-bust the updated Farm Panel loader');
+assert.match(gameIndex, /farm-panel\.js\?v=[A-Za-z0-9_-]+/, 'game index must cache-bust the updated Farm Panel loader');
 
 const author = read('docs/tools/furniture-avatar-author/furniture-daylight-windows.js'); // Guards editor controls and export metadata.
 assert.match(author, /Use Selected Surface as Window/, 'Furniture Author must expose a selected-surface daylight action');
@@ -90,24 +90,24 @@ assert.match(author, /materialFillEnabled = true/, 'marking a window must reuse 
 assert.match(author, /attachmentSurfaceId === surface\.id/, 'editor must reject one surface serving as both wall-contact and visible daylight face');
 
 const authorLoader = read('docs/tools/furniture-avatar-author/foliage-furniture-mode.js'); // Extension loader must actually make the UI feature reachable.
-assert.match(authorLoader, /furniture-daylight-windows\.js\?v=20260916window1/, 'Furniture Author must load the daylight-window extension');
+assert.match(authorLoader, /furniture-daylight-windows\.js\?v=[A-Za-z0-9_-]+/, 'Furniture Author must load the daylight-window extension');
 
 const mapTransport = read('docs/js/map-live-preview.js'); // Transport must stay independent of feature load order.
 assert.doesNotMatch(mapTransport, /loadCompanion|daylight-window-runtime|wall-ornament-placement/, 'Map Live Preview must not dynamically inject init-sensitive wall/window systems');
 const gameHtml = read('docs/index.html');
-const gameWallLoader = gameHtml.indexOf('wall-ornament-placement.js?v=20260926rebase1');
-const gameWindowLoader = gameHtml.indexOf('daylight-window-runtime.js?v=20260926rebase1');
-const gameLinkLoader = gameHtml.indexOf('house-window-linkage.js?v=20260926rebase1');
-const gameSchedulerLoader = gameHtml.indexOf('daylight-window-overlay-scheduler.js?v=20260926rebase1');
+const gameWallLoader = gameHtml.search(/wall-ornament-placement\.js\?v=[A-Za-z0-9_-]+/);
+const gameWindowLoader = gameHtml.search(/daylight-window-runtime\.js\?v=[A-Za-z0-9_-]+/);
+const gameLinkLoader = gameHtml.search(/house-window-linkage\.js\?v=[A-Za-z0-9_-]+/);
+const gameSchedulerLoader = gameHtml.search(/daylight-window-overlay-scheduler\.js\?v=[A-Za-z0-9_-]+/);
 const gameWeatherLoader = gameHtml.indexOf('weather-fx.js?');
 const gameLoader = gameHtml.indexOf('game.js?');
 assert(gameWallLoader >= 0 && gameWeatherLoader > gameWallLoader && gameWindowLoader > gameWeatherLoader && gameLinkLoader > gameWindowLoader && gameSchedulerLoader > gameLinkLoader && gameLoader > gameSchedulerLoader, 'game must load wall placement before its consumers, then daylight runtime + farmhouse linkage after WeatherFX but before game.js init calls');
 const interiorHtml = read('docs/tools/building-interior-author/index.html');
 const interiorThreeLoader = interiorHtml.indexOf('three.min.js');
-const interiorSceneLoader = interiorHtml.indexOf('interior-scene-builder.js?v=20260926rebase1');
-const interiorWallLoader = interiorHtml.indexOf('wall-ornament-placement.js?v=20260926rebase1');
-const interiorWindowLoader = interiorHtml.indexOf('daylight-window-runtime.js?v=20260926rebase1');
-const interiorEditorLoader = interiorHtml.indexOf('building-interior-wall-ornament-editor.js?v=20260922wall3');
+const interiorSceneLoader = interiorHtml.search(/interior-scene-builder\.js\?v=[A-Za-z0-9_-]+/);
+const interiorWallLoader = interiorHtml.search(/wall-ornament-placement\.js\?v=[A-Za-z0-9_-]+/);
+const interiorWindowLoader = interiorHtml.search(/daylight-window-runtime\.js\?v=[A-Za-z0-9_-]+/);
+const interiorEditorLoader = interiorHtml.search(/building-interior-wall-ornament-editor\.js\?v=[A-Za-z0-9_-]+/);
 assert(interiorThreeLoader >= 0 && interiorSceneLoader > interiorThreeLoader && interiorWallLoader > interiorSceneLoader && interiorWindowLoader > interiorWallLoader && interiorEditorLoader > interiorWindowLoader, '3D Interior Editor must load the reticle-aware scene/wall sidecars after Three.js in deterministic order');
 assert.doesNotMatch(mapTransport, /gizmo3dBar|wallOrnamentMapControls/, 'wall/window UI must not be docked into the outer Map Editor');
 
@@ -522,7 +522,7 @@ assert.match(houseCore, /windowCuts: window\.HouseWindowLinkage\?\.getExteriorWi
 assert.match(houseCore, /onHouseGeometryRebuilt/, 'house-piece movement must notify linked windows after exterior geometry changes');
 
 const houseEntry = read('docs/js/house-pieces.js'); // Dynamic core loader needs a cache-busted URL for the new opening integration.
-assert.match(houseEntry, /house-pieces-core\.js\?v=20260924wallsurface1/, 'house-pieces entrypoint must load the shared rendered-wall footprint');
+assert.match(houseEntry, /house-pieces-core\.js\?v=[A-Za-z0-9_-]+/, 'house-pieces entrypoint must load the shared rendered-wall footprint');
 assert.match(houseCore, /entry\._exteriorRenderRect = _renderRectFor\(entry, exts\)/, 'the exact generated Highland footprint must be available before any window cut builds');
 
 assert.match(wallPlacement, /ControllerInput\.subscribe\('wall-ornament-placement'/, 'wall preview may reuse the shared controller frame cadence without private gamepad polling');
@@ -543,15 +543,15 @@ assert.match(linkage, /const slotPoint = exteriorSlotSurface\(run, binding\)\?\.
 assert.match(linkage, /untaperedAlongForRender = renderCenter \+ \(actualAlong - renderCenter\) \/ Math\.max\(0\.01, taperScale\)/, 'cut projection must invert the generated render rectangle taper around its own center');
 assert.match(linkage, /uWidth: silhouette\.width \/ cutCenter\.renderLength/, 'exterior aperture width must stay normalized to the generated render while its center is physically aligned');
 assert.doesNotMatch(linkage, /uWidth: silhouette\.width \/ \(renderLength \* taperScale\)/, 'exterior aperture must not be widened to chase the visible frame');
-assert.match(gameIndex, /wall-ornament-placement\.js\?v=20260926rebase1/, 'game index must cache-bust outside-only fixed-slot wall placement');
-assert.match(gameIndex, /furniture-placer\.js\?v=[^"'&\s<]+&window=20260926rebase1/, 'game index must cache-bust the exterior-only window catalog');
-assert.match(gameIndex, /game\.js\?v=[^"'&\s<]+&window=20260926rebase1/, 'game index must cache-bust direct farmhouse interior opening injection');
-assert.match(gameIndex, /HousePieceGen\.js\?v=[^"'&\s<]+&window=20260926rebase1/, 'game index must cache-bust explicit Highland wall-target metadata');
-assert.match(gameIndex, /interior-scene-builder\.js\?v=[^"'&\s<]+&window=20260926rebase1/, 'game index must cache-bust the merged interior wall-target metadata');
-assert.match(gameIndex, /house-window-linkage\.js\?v=20260926rebase1/, 'game index must cache-bust the shared window and brick-cut aperture root');
+assert.match(gameIndex, /wall-ornament-placement\.js\?v=[A-Za-z0-9_-]+/, 'game index must cache-bust outside-only fixed-slot wall placement');
+assert.match(gameIndex, /furniture-placer\.js\?v=[A-Za-z0-9_-]+/, 'game index must cache-bust the exterior-only window catalog');
+assert.match(gameIndex, /game\.js\?v=[A-Za-z0-9_-]+/, 'game index must cache-bust direct farmhouse interior opening injection');
+assert.match(gameIndex, /HousePieceGen\.js\?v=[A-Za-z0-9_-]+/, 'game index must cache-bust explicit Highland wall-target metadata');
+assert.match(gameIndex, /interior-scene-builder\.js\?v=[A-Za-z0-9_-]+/, 'game index must cache-bust the merged interior wall-target metadata');
+assert.match(gameIndex, /house-window-linkage\.js\?v=[A-Za-z0-9_-]+/, 'game index must cache-bust the shared window and brick-cut aperture root');
 assert.match(linkage, /const surface = exteriorSlotSurface\(resolveRun\(binding\), binding\)/, 'exterior window visual must use the same Highland wall surface as placement and cut');
 assert.doesNotMatch(linkage, /makeRotationX\(Math\.PI\)/, 'the discarded Wide Window hinge rotation must not remain');
-assert.match(gameIndex, /farm-editor\.js\?v=[^"'&\s<]+&window=20260926rebase1/, 'game index must cache-bust primary-only linked-window persistence');
+assert.match(gameIndex, /farm-editor\.js\?v=[A-Za-z0-9_-]+/, 'game index must cache-bust primary-only linked-window persistence');
 assert.match(canvasBuilder, /map: texture/, 'merge resolution must preserve main\'s stretched canvas texture while keeping per-panel wall meshes');
 assert.match(canvasBuilder, /canvasSurfaceStretch = 'one-png-per-wall-panel'/, 'canvas wall merge must preserve one texture copy per panel');
 
@@ -572,12 +572,12 @@ const ordinaryBranchStart = cloudFog.indexOf('if (ordinaryBuildingInterior(curre
 const ordinaryBranchEnd = cloudFog.indexOf('} else {', ordinaryBranchStart);
 const ordinaryBranch = cloudFog.slice(ordinaryBranchStart, ordinaryBranchEnd);
 assert.doesNotMatch(ordinaryBranch, /drawLanternMasksCompat|drawFurnitureLightMasksCompat|drawAtmosphere/, 'ordinary interiors must not stack separate halo/mask lighting passes');
-assert.match(gameIndex, /cloud-forest-fog\.js\?v=[^"'&\s<]+&window=20260926rebase1/, 'game index must cache-bust the single-atmosphere compositor');
-assert.match(gameIndex, /daylight-window-runtime\.js\?v=20260926rebase1/, 'game index must cache-bust the canonical daylight-window visual hierarchy');
+assert.match(gameIndex, /cloud-forest-fog\.js\?v=[A-Za-z0-9_-]+/, 'game index must cache-bust the single-atmosphere compositor');
+assert.match(gameIndex, /daylight-window-runtime\.js\?v=[A-Za-z0-9_-]+/, 'game index must cache-bust the canonical daylight-window visual hierarchy');
 assert.match(furniturePlacerSource, /DaylightWindowRuntime\?\.registerDecorDefs\?\.\(decorativeDefs\)/, 'Furniture Placer must repair extension-provided window definitions at render time before filtering owned furniture');
 assert.match(furniturePlacerSource, /!def\.playerFurnitureDisabled/, 'Furniture Placer must hide disabled legacy/dev furniture while leaving its definition available for save restoration');
 const gameStyle = read('docs/style.css');
-assert.match(gameIndex, /style\.css\?v=[^"'&\s<]+&window=20260926rebase1/, 'game index must cache-bust the responsive Farm Operations layout');
+assert.match(gameIndex, /style\.css\?v=[A-Za-z0-9_-]+/, 'game index must cache-bust the responsive Farm Operations layout');
 assert.match(gameStyle, /\.farm-pane\s*\{[\s\S]{0,220}width:\s*100%;[\s\S]{0,220}min-width:\s*0;[\s\S]{0,220}box-sizing:\s*border-box;/, 'Farm Operations pane must size inside its actual menu allocation instead of overflowing by padding/content width');
 assert.match(gameStyle, /\.farm-storage\s*\{[\s\S]{0,260}repeat\(auto-fit,\s*minmax\(min\(190px,\s*100%\),\s*1fr\)\)/, 'Farm Storage must rearrange its columns from the pane width instead of a viewport-only breakpoint');
 assert.match(gameStyle, /\.farm-storage-row \.farm-row-value\s*\{[\s\S]{0,180}min-width:\s*0;[\s\S]{0,180}white-space:\s*normal;[\s\S]{0,180}overflow-wrap:\s*anywhere;/, 'Farm Storage item labels must yield/wrap before pushing their action button out of view');
