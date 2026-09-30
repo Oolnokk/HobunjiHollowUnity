@@ -9,7 +9,7 @@
 (() => {
   'use strict';
 
-  const providers = new Map(); // id -> { area, blocksBox(x, z, half), enabled() }
+  const providers = new Map(); // id -> { area, blocksBox(x, z, half, worldY, area), enabled() }
 
   function register(id, provider) {
     if (!id || typeof provider?.blocksBox !== 'function') return () => {};
@@ -29,7 +29,7 @@
     for (const provider of providers.values()) {
       if (provider.area != null && provider.area !== area) continue;
       if (provider.enabled && !provider.enabled()) continue;
-      if (provider.blocksBox(x, z, Math.max(0, Number(half) || 0), Number.isFinite(worldY) ? worldY : null)) return true;
+      if (provider.blocksBox(x, z, Math.max(0, Number(half) || 0), Number.isFinite(worldY) ? worldY : null, area)) return true; // area lets area-agnostic providers answer NPC queries for non-current areas.
     }
     return false;
   }

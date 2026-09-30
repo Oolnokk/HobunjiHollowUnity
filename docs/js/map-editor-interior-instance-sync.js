@@ -141,7 +141,7 @@
 
   function tilesFromInterior(mapData) {
     const tiles = {};
-    const gridCollision = window.InteriorFurnitureGrid?.mergedColliders?.(mapData, mapData?.furniture); // Used so the main Map Editor shows the same occupied-tile blockers gameplay derives from furniture footprints.
+    const gridCollision = window.InteriorFurnitureGrid?.mergedColliders?.(mapData, mapData?.furniture); // Used so conversion preserves only explicit tile colliders; furniture's post-transformed 2D bounds stay in buildingInteriorBase instead of being re-snapped to ROCK tiles.
     const effectiveColliders = Array.isArray(gridCollision?.colliders) ? gridCollision.colliders : (Array.isArray(mapData?.colliders) ? mapData.colliders : []);
     const colliderKeys = new Set();
     for (const cell of effectiveColliders) {

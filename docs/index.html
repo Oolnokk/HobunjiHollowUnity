@@ -275,7 +275,7 @@
        projectiles. Loads before bandits so their dual loadouts can call it. -->
   <script src="js/nearby-volume-collision.js?v=20260827treecover2"></script>
   <!-- Sub-tile prop footprints consulted by game.js canOccupyAt()/furnitureBlocksMovementAt(); must load before game.js. -->
-  <script src="js/area-footprint-blockers.js?v=20260929shotfloor1"></script>
+  <script src="js/area-footprint-blockers.js?v=20260930h84fcbf4"></script>
   <!-- Sub-stepped sliding move extracted out of game.js; must load before game.js. -->
   <script src="js/swept-move.js?v=20260927footprints1"></script>
   <script src="js/combat/ranged-weapons.js?v=20260929merge1-tutorialrebase1"></script>
@@ -433,8 +433,8 @@
        from loadBuildingScene/_loadTownFromWorkspace and its own live-swap
        check. -->
   <script src="js/map-layout-system.js?v=20260905layouts1"></script>
-  <!-- Gives interior furniture an authored tile footprint/quarter-turn transform and derives occupied-tile collision before the scene consumes the effective layout. -->
-  <script src="js/interior-furniture-grid.js?v=20260917grid1"></script>
+  <!-- Gives interior furniture a snapped placement footprint plus freeform post-transformed 2D collision bounds before the scene consumes the effective layout. -->
+  <script src="js/interior-furniture-grid.js?v=20260927postcollision2"></script>
   <!-- Keeps authored seat anchors/surfaces on the same post-placement transform as interior-editor furniture visuals. -->
   <script src="js/seat-surface-placement-transform.js?v=20260915seat1"></script>
   <!-- Relationships menu tab render (window.RelationshipsPanel) —
@@ -2397,7 +2397,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20260927inputclaim1"></script>
+  <script src="js/pixel-probe.js?v=20260930hcd1f297"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2542,7 +2542,7 @@
   <script src="js/shoulder-cam-pointer-lock.js?v=20260930hfc11b39"></script>
   <!-- Shared character-scoped hobunjiSaveMeta update step used by game.js's save* helpers. -->
   <script src="js/character-meta-save.js?v=20260930ench1"></script>
-  <script src="game.js?v=20260930h67f7ec3"></script>
+  <script src="game.js?v=20260930h6906f5f"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>

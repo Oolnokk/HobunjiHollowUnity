@@ -3160,6 +3160,14 @@
         const placed = interiorFurnitureObjects.find(obj => obj.area === currentArea && decorativeFurnitureBlocksPoint(obj, x, z));
         if (placed) return knockbackFurnitureDescriptor(placed.key, DECORATIVE_FURNITURE_DEFS[placed.key]?.name);
 
+        const buildingFurnitureBounds = _buildingScenes.get(currentArea)?.furnitureCollisionBounds || []; // Used to classify impacts on freeform authored-interior bounds after those bounds stop masquerading as ROCK tiles.
+        const buildingFurniture = buildingFurnitureBounds.find(bounds => window.InteriorFurnitureGrid?.boundsContainsPoint?.(bounds, x, z)); // Used only after a knockback collision, so a linear scan stays off ordinary movement frames.
+        if (buildingFurniture) {
+          const buildingFurnitureKey = getDecorativeFurnitureKeyByItemKey(buildingFurniture.itemKey) || getFurnitureKeyByItemKey(buildingFurniture.itemKey) || buildingFurniture.itemKey; // Uses the canonical catalogs instead of guessing from the item-key suffix; fixtures such as bonfireFurniture do not necessarily share the guessed runtime key.
+          const buildingFurnitureDef = DECORATIVE_FURNITURE_DEFS[buildingFurnitureKey] || PROCESSING_FURNITURE_DEFS[buildingFurnitureKey] || null; // Used to preserve hazard flags and the authored display name for collision effects.
+          return knockbackFurnitureDescriptor(buildingFurnitureKey, buildingFurnitureDef?.name);
+        }
+
         if (currentArea === 'interior') {
           const hearth = _derivedHearthMeshes.find(h => {
             const dx = x - h.cx, dz = z - h.cz;
@@ -9735,6 +9743,8 @@
       let _townBuildingGroups = [];    // { group, bldg, piece, wbOpts, wbGableOpts }[]
       const _buildingScenes = new Map(); // mapId → { scene, grid, cols, rows, transitions } | null
       window.HobunjiCacheAudit?.register('game.buildingScenes (loaded interiors)', () => _buildingScenes.size);
+      // Post-transformed authored-interior furniture collision now lives in js/interior-furniture-grid.js (installMovementBlocker), served through AreaFootprintBlockers.
+      window.InteriorFurnitureGrid?.installMovementBlocker?.(area => _buildingScenes.get(area)?.furnitureCollisionBounds);
       window.addEventListener('hobunji:key-item-granted', event => {
         const keyId = String(event?.detail?.id || ''); // Reveals already-loaded locale-cavern secret doors immediately after their world key persists.
         if (!keyId) return;
@@ -13605,11 +13615,12 @@
             const scX = f.postSX != null ? f.postSX : (f.postScale != null ? f.postScale : 1);
             const scY = f.postSY != null ? f.postSY : (f.postScale != null ? f.postScale : 1);
             const scZ = f.postSZ != null ? f.postSZ : (f.postScale != null ? f.postScale : 1);
-            const bx = (f.col + (def?.fw || 1) * 0.5) + (f.postX || 0);
+            const baseFootprint = window.InteriorFurnitureGrid?.footprintForItem?.(f.itemKey) || { w: def?.fw || 1, d: def?.fd || 1 }; // Shared with the editor/collision adapter so multi-cell processing furniture is centered on the same authored footprint as its transformed blocker.
+            const bx = (f.col + baseFootprint.w * 0.5) + (f.postX || 0);
             const floorSurfaceY = tileSurfaceYInArea(bGrid?.[f.row]?.[f.col], mapId); // Used to ground this furniture on the authored floor surface even when its footprint tile is also collision-solid.
             const authoredPostY = Number(f.postY) || 0; // Used to preserve intentional editor-authored stacking/lift above the floor.
             const by = floorSurfaceY + authoredPostY; // Final furniture root Y shared by the visual, light, and mobile grounding diagnostics below.
-            const bz = (f.row + (def?.fd || 1) * 0.5) + (f.postZ || 0);
+            const bz = (f.row + baseFootprint.d * 0.5) + (f.postZ || 0);
             const rotRad = THREE.MathUtils.degToRad(f.rotY || 0);
             let renderedFurniture = null;
             let furnitureSfxSource = null;
@@ -13932,9 +13943,10 @@
           // whole scene graph every frame in occlusionSafeCameraPosition.
           const occlusionMeshes = [];
           bScene.traverse(o => { if (o.userData?.cameraObstacle) occlusionMeshes.push(o); });
+          const furnitureCollisionBounds = Array.isArray(mapData._interiorFurnitureCollisionBounds) ? mapData._interiorFurnitureCollisionBounds : []; // Cached per loaded room so movement checks never rebuild post-transformed 2D rectangles per frame.
           window.BanubuCaveClouds?.validateCaveMaterials?.({ THREE, scene: bScene, mapData }); // Repairs malformed cave texture UV transforms once before Three.js renders the scene.
           window.CinematicCameraRuntime?.registerArea?.(mapId, mapData.cinematicCameras || []); // Cave/building cameras share this scene's local tile coordinate space.
-          const info = { scene: bScene, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config', name: mapData.name || mapId, wallStyle: mapData.wallStyle || '', entrySpots: mapData.entrySpots || {}, keyDoorGroups, mineFloor: mapData.mineFloor || null, minePlacementSafeTileCount: mapData.minePlacementSafeTileCount ?? null, disconnectedFloorTilesRemoved: mapData.disconnectedFloorTilesRemoved ?? 0, occlusionMeshes };
+          const info = { scene: bScene, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config', name: mapData.name || mapId, wallStyle: mapData.wallStyle || '', entrySpots: mapData.entrySpots || {}, keyDoorGroups, mineFloor: mapData.mineFloor || null, minePlacementSafeTileCount: mapData.minePlacementSafeTileCount ?? null, disconnectedFloorTilesRemoved: mapData.disconnectedFloorTilesRemoved ?? 0, occlusionMeshes, furnitureCollisionBounds };
           _buildingScenes.set(mapId, info);
           if (info.disconnectedFloorTilesRemoved > 0) window.__farmLog?.(`[cavern] ${mapId}: sealed ${info.disconnectedFloorTilesRemoved} unreachable floor tiles`, 'warn', mapData.wallStyle === 'mine' ? 'mine' : undefined);
           for (const w of npcWalkers) {
