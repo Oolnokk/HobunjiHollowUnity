@@ -12,8 +12,9 @@
 //
 // Compares the working tree against baseRef, so it is useful before committing.
 //
-// --fix rewrites each stale `<file>?v=<old>` reference (in docs/ and in
-// scripts/test-*.js, so tests that still pin a token keep passing) to a fresh
+// --fix rewrites each stale `<file>?v=<old>` reference (in docs/, and in
+// scripts/test-*.js where a test pins that same shipped token, so it keeps
+// passing; placeholder tokens in test fixtures are left untouched) to a fresh
 // token, then repeats: a loader whose references were just rewritten has
 // itself changed, so its own references get bumped on the next pass, all the
 // way up to index.html. Run it once after editing, instead of hand-bumping.
@@ -99,16 +100,20 @@ function freshToken(file) {
 }
 
 function bump(stale) {
-  const targets = listFiles('docs').concat(
-    fs.readdirSync('scripts').filter(name => /^test-.*\.js$/.test(name)).map(name => path.join('scripts', name))
-  );
-  for (const { changedFile } of stale) {
+  const docsFiles = listFiles('docs');
+  const testFiles = fs.readdirSync('scripts').filter(name => /^test-.*\.js$/.test(name)).map(name => path.join('scripts', name));
+  for (const { changedFile, refs } of stale) {
     const base = path.basename(changedFile);
     const token = freshToken(changedFile);
     const pattern = refPattern(base);
-    for (const file of targets) {
+    // Tests are only rewritten where they pin a token docs/ actually ships, so
+    // fixture URLs with placeholder tokens (e.g. `?v=test`) are left alone.
+    const shippedTokens = new Set(refs.map(ref => ref.token));
+    for (const file of docsFiles.concat(testFiles)) {
+      const isTest = !file.startsWith('docs' + path.sep);
       const text = fs.readFileSync(file, 'utf8');
-      const next = text.replace(pattern, `${base}?v=${token}`);
+      const next = text.replace(pattern, (match, oldToken) =>
+        isTest && !shippedTokens.has(oldToken) ? match : `${base}?v=${token}`);
       if (next !== text) fs.writeFileSync(file, next);
     }
     console.log(`  bumped ${changedFile} -> ?v=${token}`);
