@@ -286,8 +286,8 @@
     global.HobunjiAttackEditorHandGripMode?.syncForTool?.();
     global.ProceduralHandFrameDriver?.syncNow?.();
   });
-  $('avatarSpecies')?.addEventListener('change', refreshDirectStatus);
-  $('avatarGender')?.addEventListener('change', refreshDirectStatus);
+  $('avatarSpecies')?.addEventListener('change', syncFields);
+  $('avatarGender')?.addEventListener('change', syncFields);
   profileSelect.addEventListener('change', refreshDirectStatus);
   profiles.subscribe?.(refreshDirectStatus);
   toolGrips.subscribe?.(syncFields);
@@ -295,7 +295,7 @@
   $('handGripSave').addEventListener('click', () => {
     try {
       toolGrips.saveLocal();
-      $('handGripStatus').textContent = `${currentToolKey()} · ${currentGripContext().toUpperCase()}: grip + base-scale draft saved locally.`;
+      $('handGripStatus').textContent = `${currentToolKey()} · ${currentGripContext().toUpperCase()}: grip + base/height-scale draft saved locally.`;
     } catch (error) {
       $('handGripStatus').textContent = `Grip save failed: ${error?.message || error}`;
     }
@@ -303,7 +303,7 @@
   $('handGripCopy').addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText(JSON.stringify(toolGrips.clone(), null, 2));
-      $('handGripStatus').textContent = 'Copied held-item grip + base-scale JSON.';
+      $('handGripStatus').textContent = 'Copied held-item grip + base/height-scale JSON.';
     } catch (error) {
       $('handGripStatus').textContent = `Copy failed: ${error?.message || error}`;
     }
@@ -322,7 +322,11 @@
     get toolKey() { return currentToolKey(); },
     get toolScale() { return currentToolScale(); },
     get gripContext() { return currentGripContext(); },
-    get primaryGrip() { return toolGrips.primaryGripForTool(currentToolKey(), currentGripContext()); },
+    get primaryGrip() {
+      const speciesId = String($('avatarSpecies')?.value || '').trim(); // Debug getter mirrors the currently previewed character's effective weapon scale.
+      const gender = String($('avatarGender')?.value || 'male').trim() || 'male';
+      return toolGrips.primaryGripForTool(currentToolKey(), currentGripContext(), { speciesId, gender });
+    },
   });
 
   syncFields();
