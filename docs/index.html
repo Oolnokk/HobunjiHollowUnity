@@ -14,7 +14,7 @@
   <script src="js/GLTFLoader.js?v=20260712d"></script>
   <script src="js/WallBuilder.js?v=20260809a"></script>
   <script src="js/HousePieceGen.js?v=20260924facetag1&window=20260926rebase1"></script>
-  <script src="js/interior-scene-builder.js?v=20260926cavernfloorstretch1&window=20260926rebase1"></script>
+  <script src="js/interior-scene-builder.js?v=20260930globalground2&window=20260926rebase1"></script>
   <script src="js/building-door.js?v=20260725a"></script>
   <script src="js/tile-pathfinding.js?v=20260808a"></script>
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
@@ -716,7 +716,7 @@
        window.ZonePlateauMesa.buildPlateauMesa(...) lazily, whenever a
        zone with tiered plateaus is first built or a plateau-top tile
        changes at runtime — never synchronously during initial boot. -->
-  <script src="js/zone-plateau-mesa.js?v=20260807a"></script>
+  <script src="js/zone-plateau-mesa.js?v=20260930globalground2"></script>
   <!-- One world-UV texture-backed mesh per water surface group. Dynamic
        flood/trench meshes are rebuilt only when the water simulation ticks;
        wilderness waterways use the same builder through ZoneTerrainFeatures. -->
@@ -2371,7 +2371,7 @@
     <button class="fcv-continue" id="fcvContinueBtn">Continue</button>
   </div>
 
-  <script src="js/tool-icon-render.js?v=20260924replaycull1"></script>
+  <script src="js/tool-icon-render.js?v=20260930globalground2"></script>
   <script src="js/sprite-recolor.js?v=20260924perf5"></script>
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
        calls window.Mounts.init(...) during its own setup. -->
