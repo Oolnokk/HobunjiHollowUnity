@@ -19,6 +19,11 @@
   const MOVE_SPEED_BUILD_S = 1.5; // Used by onHoldUpdate() to reach the movement-speed ceiling during one uninterrupted input.
   const REVERSAL_DOT_THRESHOLD = 0; // Used by onHoldUpdate() so crossing into the opposite (>90°) input hemisphere counts as a reversal.
   const MOVE_INPUT_EPSILON = 0.001; // Used by movementInput() to reject stick noise and zero-length directions.
+  const AFTERIMAGE_LIFETIME_S = 0.28; // Used by updateBlinkAfterimages() to fade each frozen portrait quickly enough to read as motion, not a duplicate actor.
+  const AFTERIMAGE_MOVE_INTERVAL_S = 0.075; // Used by maybeSpawnMovementAfterimage() to sample continuous Blink locomotion without creating one mesh every frame.
+  const AFTERIMAGE_BASE_OPACITY = 0.34; // Used by cloneAfterimageMaterial() as the strongest alpha at spawn before the short fade.
+  const AFTERIMAGE_HOP_SAMPLES = 3; // Used by spawnHopAfterimages() to bridge the instantaneous Blink hop with frozen portraits along its traveled path.
+  const AFTERIMAGE_MAX_ACTIVE = 12; // Used by spawnAfterimage() to keep the transient portrait trail bounded on long holds.
 
   const blinkRuntimeDebug = { // Updated by the hold state machine and exposed through HobunjiDodgeFeedback for mobile-readable diagnostics.
     active: false,
@@ -45,8 +50,206 @@
   let defensiveHoldActive = false; // Used by the shared iframe-miss seam so only near-hits dodged while Blink Dodge is actually held can trigger its Flourish.
   let iframeMissCount = 0; // Used by HobunjiDodgeFeedback.getDebug() to confirm iframe-hit attempts reached this shared combat seam.
   let lastIframeMissAtMs = null; // Used by HobunjiDodgeFeedback.getDebug() to timestamp the most recent visible miss popup.
+  const blinkAfterimages = []; // Used by updateBlinkAfterimages() as the complete bounded set of live frozen portrait snapshots.
+  let cachedAfterimageRoot = null; // Used by findPlayerPortraitMesh() to avoid re-traversing an unchanged player rig every trail sample.
+  let cachedAfterimagePortrait = null; // Used with cachedAfterimageRoot as the current renderable player portrait source.
+  let lastMoveAfterimageAtS = -Infinity; // Used by maybeSpawnMovementAfterimage() to rate-limit normal Blink locomotion samples.
+  const afterimageRuntimeDebug = { // Updated by spawn/dispose paths and exposed through HobunjiDodgeFeedback for mobile-readable verification.
+    active: 0,
+    spawned: 0,
+    disposed: 0,
+    lastReason: null,
+    lastSourceName: null,
+    lastSpawnAtMs: null,
+    portraitFound: false,
+  };
 
   function now() { return performance.now() / 1000; }
+
+  function afterimageMaterialsOf(mesh) {
+    if (!mesh?.material) return [];
+    return (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).filter(Boolean);
+  }
+
+  function afterimagePlayerRoot() {
+    return window.PlayerBodyTransformComposer?.getPlayerMesh?.()
+      || window.Combat?.deps?.playerMesh
+      || window.ProceduralHandAttachments?.gameDeps?.playerMesh
+      || null;
+  }
+
+  function belongsToAfterimageRoot(object, root) {
+    for (let node = object; node; node = node.parent) if (node === root) return true;
+    return false;
+  }
+
+  function findPlayerPortraitMesh() {
+    const root = afterimagePlayerRoot();
+    if (!root?.traverse) {
+      cachedAfterimageRoot = null;
+      cachedAfterimagePortrait = null;
+      afterimageRuntimeDebug.portraitFound = false;
+      return null;
+    }
+    if (root === cachedAfterimageRoot && cachedAfterimagePortrait && belongsToAfterimageRoot(cachedAfterimagePortrait, root)) {
+      afterimageRuntimeDebug.portraitFound = true;
+      return cachedAfterimagePortrait;
+    }
+    let best = null;
+    let bestScore = -1;
+    root.traverse(object => {
+      if ((!object?.isMesh && !object?.isSkinnedMesh) || object.userData?.blinkAfterimage) return;
+      const materials = afterimageMaterialsOf(object);
+      if (!materials.length) return;
+      let score = 0;
+      for (const material of materials) {
+        const name = String(material?.name || '');
+        if (name.includes('npc_avatar_skinned_')) score += 8;
+        else if (name.includes('npc_avatar_')) score += 4;
+        if (material?.map) score += 1;
+      }
+      if (score > bestScore) {
+        best = object;
+        bestScore = score;
+      }
+    });
+    cachedAfterimageRoot = root;
+    cachedAfterimagePortrait = bestScore > 0 ? best : null;
+    afterimageRuntimeDebug.portraitFound = !!cachedAfterimagePortrait;
+    return cachedAfterimagePortrait;
+  }
+
+  function afterimageSceneFor(source) {
+    for (let node = source; node; node = node.parent) if (node.isScene) return node;
+    return window.GridTileAccessors?.getActiveScene?.() || null;
+  }
+
+  function bakePortraitGeometry(source) {
+    const THREE = window.THREE;
+    const sourceGeometry = source?.geometry;
+    if (!THREE || !sourceGeometry?.clone) return null;
+    const geometry = sourceGeometry.clone();
+    if (source.isSkinnedMesh && typeof source.boneTransform === 'function') {
+      const sourcePositions = sourceGeometry.getAttribute?.('position');
+      const bakedPositions = geometry.getAttribute?.('position');
+      if (!sourcePositions || !bakedPositions) return geometry;
+      source.skeleton?.update?.();
+      const vertex = new THREE.Vector3(); // Reused for every vertex while freezing this one afterimage's current skinned pose.
+      for (let i = 0; i < sourcePositions.count; i += 1) {
+        vertex.fromBufferAttribute(sourcePositions, i);
+        source.boneTransform(i, vertex);
+        bakedPositions.setXYZ(i, vertex.x, vertex.y, vertex.z);
+      }
+      bakedPositions.needsUpdate = true;
+      geometry.deleteAttribute?.('skinIndex');
+      geometry.deleteAttribute?.('skinWeight');
+      geometry.computeBoundingBox?.();
+      geometry.computeBoundingSphere?.();
+    }
+    return geometry;
+  }
+
+  function cloneAfterimageMaterial(sourceMaterial, opacityScale = 1) {
+    if (!sourceMaterial?.clone) return null;
+    const material = sourceMaterial.clone();
+    const sourceOpacity = Number.isFinite(Number(sourceMaterial.opacity)) ? Number(sourceMaterial.opacity) : 1;
+    material.name = `${sourceMaterial.name || 'avatar'}_blink_afterimage`;
+    material.transparent = true;
+    material.opacity = Math.max(0, Math.min(1, AFTERIMAGE_BASE_OPACITY * opacityScale * sourceOpacity));
+    material.depthWrite = false;
+    material.depthTest = true;
+    if ('skinning' in material) material.skinning = false;
+    material.needsUpdate = true;
+    return material;
+  }
+
+  function disposeAfterimage(record) {
+    if (!record) return;
+    record.mesh?.parent?.remove?.(record.mesh);
+    record.geometry?.dispose?.();
+    for (const material of record.materials || []) material?.dispose?.();
+    afterimageRuntimeDebug.disposed += 1;
+    afterimageRuntimeDebug.active = blinkAfterimages.length;
+  }
+
+  function trimAfterimagesToLimit() {
+    while (blinkAfterimages.length >= AFTERIMAGE_MAX_ACTIVE) {
+      const oldest = blinkAfterimages.shift();
+      disposeAfterimage(oldest);
+    }
+  }
+
+  function spawnAfterimage(reason, worldOffsetX = 0, worldOffsetZ = 0, opacityScale = 1) {
+    const THREE = window.THREE;
+    const source = findPlayerPortraitMesh();
+    const scene = source && afterimageSceneFor(source);
+    if (!THREE || !source || !scene) return false;
+    source.updateWorldMatrix?.(true, false);
+    const geometry = bakePortraitGeometry(source);
+    if (!geometry) return false;
+    const sourceMaterials = afterimageMaterialsOf(source);
+    const materials = sourceMaterials.map(material => cloneAfterimageMaterial(material, opacityScale));
+    if (!materials.length || materials.some(material => !material)) {
+      geometry.dispose?.();
+      for (const material of materials) material?.dispose?.();
+      return false;
+    }
+
+    trimAfterimagesToLimit();
+    const assignedMaterial = Array.isArray(source.material) ? materials : materials[0];
+    const mesh = new THREE.Mesh(geometry, assignedMaterial);
+    mesh.name = 'blink_dodge_afterimage';
+    mesh.userData.blinkAfterimage = true;
+    mesh.userData.noOutline = true;
+    mesh.frustumCulled = false;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    mesh.renderOrder = Math.max(Number(source.renderOrder) || 0, 3);
+    mesh.matrixAutoUpdate = false;
+    mesh.matrix.copy(source.matrixWorld);
+    mesh.matrix.elements[12] += Number(worldOffsetX) || 0;
+    mesh.matrix.elements[14] += Number(worldOffsetZ) || 0;
+    scene.add(mesh);
+
+    const baseOpacities = materials.map(material => material.opacity); // Used by updateBlinkAfterimages() so each sample preserves its hop-position strength while fading.
+    blinkAfterimages.push({ mesh, geometry, materials, baseOpacities, ageS: 0 });
+    afterimageRuntimeDebug.active = blinkAfterimages.length;
+    afterimageRuntimeDebug.spawned += 1;
+    afterimageRuntimeDebug.lastReason = reason;
+    afterimageRuntimeDebug.lastSourceName = source.name || source.type || null;
+    afterimageRuntimeDebug.lastSpawnAtMs = performance.now();
+    return true;
+  }
+
+  function spawnHopAfterimages(dxWorld, dzWorld) {
+    for (let i = 0; i < AFTERIMAGE_HOP_SAMPLES; i += 1) {
+      const fraction = i / AFTERIMAGE_HOP_SAMPLES; // Leaves the destination clear for the live player while bridging the instant hop from its origin.
+      spawnAfterimage('blink-hop', dxWorld * fraction, dzWorld * fraction, 1 - fraction * 0.35);
+    }
+  }
+
+  function maybeSpawnMovementAfterimage(input) {
+    if (!defensiveHoldActive || !input?.active) return;
+    const t = now();
+    if (t - lastMoveAfterimageAtS < AFTERIMAGE_MOVE_INTERVAL_S) return;
+    lastMoveAfterimageAtS = t;
+    spawnAfterimage('blink-move');
+  }
+
+  function updateBlinkAfterimages(dt) {
+    const safeDt = Math.max(0, Number(dt) || 0);
+    for (let i = blinkAfterimages.length - 1; i >= 0; i -= 1) {
+      const record = blinkAfterimages[i];
+      record.ageS += safeDt;
+      const fade = Math.max(0, 1 - record.ageS / AFTERIMAGE_LIFETIME_S);
+      for (let m = 0; m < record.materials.length; m += 1) record.materials[m].opacity = record.baseOpacities[m] * fade;
+      if (record.ageS >= AFTERIMAGE_LIFETIME_S) {
+        blinkAfterimages.splice(i, 1);
+        disposeAfterimage(record);
+      }
+    }
+    afterimageRuntimeDebug.active = blinkAfterimages.length;
+  }
 
   function showIframeMissPopup() {
     iframeMissCount += 1;
@@ -114,6 +317,7 @@
       // exits prone, just time-compressed to the ordinary dodge duration so
       // the visual roll does not lengthen the dodge or increase its travel.
       window.ImpactRagdollPlayback?.beginRecoveryArc(BASE_DODGE_SOMERSAULT_DUR_S);
+      if (defensiveHoldActive) spawnAfterimage('blink-dodge');
     }
     baseDodgeWasActive = dodging;
   }
@@ -127,6 +331,7 @@
     const enhancedUpdate = function enhancedCombatUpdate(dt) {
       originalUpdate(dt);
       updateBaseDodgeEnhancements();
+      updateBlinkAfterimages(dt);
     };
     enhancedUpdate.__hobunjiBaseDodgeEnhancements = true;
     window.Combat.update = enhancedUpdate;
@@ -223,10 +428,14 @@
 
       const stats = effects().stats; // Used for the existing Blink Dodge distance/cost/iframe/cooldown progression choices.
       const zipDistancePx = ZIP_DISTANCE_PX * (1 + (stats.zipDistanceMul || 0)); // Used as the one-hop displacement magnitude.
+      const startX = deps.player.x; // Used with startY to derive the actual collision-clamped hop displacement for the frozen afterimage burst.
+      const startY = deps.player.y; // Used with startX to derive the actual collision-clamped hop displacement for the frozen afterimage burst.
       const desiredX = deps.player.x + input.x * zipDistancePx; // Used by the existing axis-separated occupancy test.
       const desiredY = deps.player.y + input.y * zipDistancePx; // Used by the existing axis-separated occupancy test.
       if (deps.canPlayerOccupy(desiredX, deps.player.y)) deps.player.x = desiredX;
       if (deps.canPlayerOccupy(deps.player.x, desiredY)) deps.player.y = desiredY;
+      const tilePx = Math.max(1, Number(deps.TILE) || 64); // Converts the player's pixel-space hop displacement into the Three.js world-space X/Z used by the portrait mesh.
+      spawnHopAfterimages((deps.player.x - startX) / tilePx, (deps.player.y - startY) / tilePx);
 
       // Never refuses for lack of stamina — overspending pushes into
       // Exhausted instead (see resource-system.js's spendStamina), same as
@@ -259,6 +468,7 @@
       passiveDrainCarry = 0;
       blinkRuntimeDebug.passiveDrainCarry = 0;
       blinkRuntimeDebug.active = false;
+      lastMoveAfterimageAtS = -Infinity;
       window.ResourceSystem?.setStaminaRegenBlocked?.(window.Combat.deps?.player, STAMINA_REGEN_BLOCK_SOURCE, false);
       window.Combat.setMovementSpeedMul(null);
       if (wasActive && message) window.Combat.deps.showToast(message, false);
@@ -272,6 +482,7 @@
       nextZipAt = -99;
       blinkRuntimeDebug.passiveDrainCarry = 0;
       blinkRuntimeDebug.active = true;
+      lastMoveAfterimageAtS = -Infinity;
       window.ResourceSystem?.setStaminaRegenBlocked?.(window.Combat.deps?.player, STAMINA_REGEN_BLOCK_SOURCE, true);
       window.Combat.setMovementSpeedMul(speedMul);
       window.Combat.deps.showToast('Blink Dodge active: hop, build speed, reverse sharply to hop again.', true);
@@ -315,6 +526,7 @@
       speedBuildS = Math.min(MOVE_SPEED_BUILD_S, speedBuildS + Math.max(0, Number(dt) || 0));
       blinkRuntimeDebug.speedBuildS = speedBuildS;
       speedMul(); // Keeps the mobile debug snapshot current even before game.js asks Combat for this frame's movement multiplier.
+      maybeSpawnMovementAfterimage(input);
       spendPassiveDrain(deps, dt);
       if (deps.player.stamina <= 0) stopHold('Blink Dodge dropped: stamina empty.');
     }
@@ -339,6 +551,10 @@
         dodging: !!player?.dodging,
         blink: {
           ...blinkRuntimeDebug,
+          afterimages: {
+            ...afterimageRuntimeDebug,
+            supported: !!window.THREE,
+          },
           tuning: {
             speedBuildS: MOVE_SPEED_BUILD_S,
             maxSpeedMul: MOVE_SPEED_MAX_MUL,
@@ -346,6 +562,10 @@
             passiveDrainQuantum: PASSIVE_DRAIN_QUANTUM,
             reversalDotThreshold: REVERSAL_DOT_THRESHOLD,
             hopCooldownS: ZIP_COOLDOWN_S,
+            afterimageLifetimeS: AFTERIMAGE_LIFETIME_S,
+            afterimageMoveIntervalS: AFTERIMAGE_MOVE_INTERVAL_S,
+            afterimageHopSamples: AFTERIMAGE_HOP_SAMPLES,
+            afterimageMaxActive: AFTERIMAGE_MAX_ACTIVE,
           },
         },
       };
