@@ -323,6 +323,11 @@ assert.match(handSource, /const triangleMaxY = Math\.max\(position\.getY\(a\), p
 assert.match(handSource, /hobunjiShellIndexStorage/, 'the alternate shell index must remain owned by the cloned geometry for GPU cleanup');
 assert.match(handSource, /parrotBodyShellTrim: activeVisual/, 'mobile diagnostics must expose the source and retained body-shell triangle counts');
 assert.match(handOutlineSource, /hobunjiPortraitOccludedWingLayer === true\) return false/, 'portrait-occluded wing mesh must stay out of the held-object foreground replay');
+assert.match(handSource, /group\.userData\.handModelKey = modelKey/, 'permanent GLB hand visuals must retain a marker that distinguishes them from same-named fallbacks');
+assert.match(handOutlineSource, /const expectsGlb = !!debug\.glb/, 'outline parity should only wait for a permanent GLB when the hand profile actually configures one');
+assert.match(handOutlineSource, /leftVisual\?\.userData\?\.handModelKey/, 'initial outline polling must distinguish the permanent left GLB from the temporary same-named fallback');
+assert.match(handOutlineSource, /rightVisual\?\.userData\?\.handModelKey/, 'initial outline polling must distinguish the permanent right GLB from the temporary same-named fallback');
+assert.doesNotMatch(handOutlineSource, /const leftLoaded = !!rig\.group\?\.getObjectByName\?\.\('left_hand_visual'\)/, 'same-named fallback presence must never terminate the initial GLB outline scan');
 assert.match(handOutlineSource, /return 'occluder-depth'/, 'the parrot body primitive depth replay must be recognized as a secondary hand render pass');
 assert.match(handOutlineSource, /lockedOccluderDepthDraws/, 'mobile diagnostics must confirm that the pre-shell hand depth replay uses the visible hand transform');
 assert.match(handOutlineSource, /passKind === 'shell'.*hobunjiShellIndex/s, 'only the shell pass may swap to the trimmed body-coloured hand index');
