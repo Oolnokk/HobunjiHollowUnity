@@ -371,6 +371,83 @@ Overpass → not set</div>
     );
   }
 
+  async function openTrimEditor() {
+    const selected = selectedTrimCosmetic(), garmentId = $('trimGarment').value, variantKey = $('trimVariant').value, view = $('trimView').value;
+    if (!selected || !garmentId || !variantKey) return;
+    const openRevision = ++trimLoadRevision;
+    $('trimStatus').textContent = 'Loading authored trim…';
+    const initialPattern = await editableTrimPattern();
+    if (openRevision !== trimLoadRevision) return;
+    const { speciesId, gender } = parseVariantKey(variantKey);
+    window.PatternAuthoring.openEditor({
+      title: `Garment trim — ${garmentId} — ${variantKey} — ${view}`,
+      motifHint: 'Paint the fixed trim footprint for this exact garment variant. It never tiles and is not added to the reusable pattern library. In game it is rendered after ordinary weaving, with its own black separation outline.',
+      initialPattern,
+      forceTiling: false,
+      offloadCustomMotif: false,
+      renderPreview: patternData => {
+        const patterns = previewPatterns();
+        const weaving = patterns.length ? { patterns } : null;
+        return window.ClothingWeavingSystem.renderClothingLayers(garmentId, {
+          primaryHex: $('baseColor').value,
+          secondaryHex: $('trimColorB').value,
+          patternHex: $('inkColor').value,
+          weaving,
+          view,
+          speciesId,
+          gender,
+          trimPatternOverride: { ...patternData, tiling: false },
+          trimDyeSlotOverride: $('trimPreviewDye').value,
+        }).then(result => result.canvas);
+      },
+      onSave: async patternData => {
+        const pattern = { ...patternData, tiling: false };
+        const motifPng = trimAssetPath(garmentId, variantKey, view);
+        trimDrafts.set(trimKey(garmentId, variantKey, view), { pattern, motifPng });
+        const recordSet = ensureTrimRecordSet(garmentId, variantKey);
+        recordSet[view] = { motifPng, settings: cleanSettings(pattern) };
+        debugState.lastAction = `saved garment trim ${garmentId}/${variantKey}/${view}`;
+        refreshTrimVariantOptions();
+        await renderTrimPreview(pattern);
+        $('trimStatus').textContent = 'Trim draft saved in this editor session. Export its PNG plus the manifest before leaving the page.';
+        return true;
+      },
+    });
+  }
+
+  async function loadTrimAuthoringData() {
+    try {
+      const [indexResponse, manifestResponse] = await Promise.all([fetch('../../config/cosmetics/index.json'), fetch(CLOTHING_TRIM_MANIFEST_PATH)]);
+      if (!indexResponse.ok) throw new Error(`Cosmetics index HTTP ${indexResponse.status}`);
+      const index = await indexResponse.json();
+      trimManifest = manifestResponse.ok ? await manifestResponse.json() : { schema: 'hobunji_clothing_trim.v1', garments: {} };
+      trimManifest.schema ||= 'hobunji_clothing_trim.v1';
+      trimManifest.garments ||= {};
+      const candidates = await Promise.all((index.entries || []).map(async entry => {
+        try {
+          const response = await fetch('../../config/cosmetics/' + String(entry.path || '').replace(/^\.\//, ''));
+          if (!response.ok) return null;
+          const config = await response.json();
+          return ['hat','hood','torso','overwear'].includes(config?.slot) && Object.keys(config?.speciesVariants || {}).length ? { entry, config } : null;
+        } catch (_) { return null; }
+      }));
+      for (const item of candidates.filter(Boolean)) trimCosmetics.set(item.entry.id, item);
+      const select = $('trimGarment');
+      select.innerHTML = '';
+      for (const [id] of [...trimCosmetics.entries()].sort((a,b) => a[0].localeCompare(b[0]))) {
+        const option = document.createElement('option');
+        option.value = id;
+        option.textContent = id.replace(/_/g, ' ');
+        select.appendChild(option);
+      }
+      refreshTrimVariantOptions();
+      await renderTrimPreview();
+      $('trimStatus').textContent = trimCosmetics.size ? 'Garment trim authoring ready.' : 'No species-variant clothing definitions were found.';
+    } catch (error) {
+      debugState.lastError = error.message;
+      $('trimStatus').textContent = 'Garment trim authoring failed to load: ' + error.message;
+    }
+  }
   async function renderVerdigrisPreview(patterns) {
     return window.ToolMetalRecolor.getRecoloredCanvas(VERDIGRIS_PREVIEW_SPRITE, {
       targetHex: $('metalColor').value,
