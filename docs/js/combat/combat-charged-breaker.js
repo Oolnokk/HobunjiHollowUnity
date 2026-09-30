@@ -273,6 +273,7 @@
               pitch: deps.getPlayerMeleeAimPitch?.() || 0,
             })) continue;
             deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, {
+              abilityId: 'chargedBreaker', // Identifies the committed hit for authored training objectives.
               tag: deps.currentWeaponDamageType(),
               heavy: true,
               afflictionBonuses: effects.afflictions,

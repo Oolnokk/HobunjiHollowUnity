@@ -228,6 +228,7 @@
             })) continue;
             const vulnerabilityBefore = isFinisher ? powerHitVulnerabilityTotal(c) : 0; // Used before this hit's own affliction payload can replace consumed buildup.
             deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, {
+              abilityId: id, // Identifies the committed hit for authored training objectives.
               tag: dmgType,
               heavy: step.heavy,
               // Only the combo's heavy finisher (Cleave/Long Lunge) leaves a

@@ -212,6 +212,7 @@
             const knockbackPxS = baseAbil.knockbackPxS * hitTech.knockbackMul;
 
             deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, {
+              abilityId: id, conditionBonusUsed, // Identifies the committed hit for authored training objectives.
               tag: deps.currentWeaponDamageType(),
               category: 'quickAttack',
               consumeHealthVulnerability: conditionBonusUsed,

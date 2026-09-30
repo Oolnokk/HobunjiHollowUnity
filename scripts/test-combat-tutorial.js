@@ -1,0 +1,125 @@
+#!/usr/bin/env node
+'use strict';
+const assert = require('node:assert/strict'); // Assertions exercise the real quest, loadout, and unlock modules.
+const fs = require('node:fs'); // Reads production files and authored maps.
+const vm = require('node:vm'); // Isolates one character's runtime and save state.
+
+class Element {
+  constructor() { this.children = []; this.style = {}; this.dataset = {}; this.hidden = false; }
+  append(...children) { this.children.push(...children); }
+  appendChild(child) { this.append(child); }
+  replaceChildren(...children) { this.children = children; }
+  setAttribute() {}
+  addEventListener() {}
+  querySelector() { return null; }
+}
+function harness() {
+  const progress = {}; // Live world-member quest store, retained when a session is cancelled.
+  const learned = {}; // Real technique persistence is inspected through the shared in-memory localStorage.
+  const gear = { tools: { hatchet: true, crossbow: true }, rangedAmmoLoadouts: {}, specialAmmo: 2 }; // Only these weapons are actually owned.
+  const equipment = { weapon: 'hatchet', ranged: 'crossbow' }; // Borrowed spear/mace never enter gear.tools.
+  let area = 'map_i_watchhouse', dialogue = false, combatLevel = 0, mastery = 0, target = null, saves = 0, restores = 0, failTravel = false; // Harness-owned game closures.
+  const walker = { area, pause: 0, root: { position: { x: 8.5, z: 11.5 } }, transferToArea(next, pos) { this.area = next; this.root.position = { x: pos.c + 0.5, z: pos.r + 0.5 }; } }; // Real controller moves and restores this actor.
+  const body = new Element(); // Captures the mobile panel and its enabled controls.
+  const document = { body, head: new Element(), createElement: () => new Element(), addEventListener() {}, querySelector: () => null, getElementById: () => null }; // No browser-only dependency is needed for the state-machine tests.
+  const window = { Combat: { deps: { currentWeaponKey: () => equipment.weapon, currentComboAbilityId: () => equipment.weapon === 'fishingspear' ? 'pokeCombo' : 'swingCombo' }, input: { abortAllPresses() {} }, cancelAllStaged() {} }, DialogueContent: { registerTreeProvider() {}, registerNodeEnterHandler() {}, registerActionHandler() {} }, SkillSystem: { level: () => combatLevel }, dispatchEvent() {}, __hobunjiPlayerProfile: { characterId: 'test' } }; // Production modules attach to this namespace.
+  const context = vm.createContext({ window, document, console, localStorage: { getItem: key => learned[key] || null, setItem: (key, value) => { learned[key] = value; } }, requestAnimationFrame: fn => fn(), CustomEvent: function () {}, Event: function () {}, MutationObserver: function () { this.observe = () => {}; } }); // Runtime API shims for the existing unlock module.
+  for (const path of ['combat-loadout', 'technique-scrolls', 'combat-tutorial-content', 'combat-tutorial']) vm.runInContext(fs.readFileSync(`docs/js/combat/${path}.js`, 'utf8'), context, { filename: path });
+  for (const [id, category] of Object.entries({ swingCombo: 'combo', pokeCombo: 'combo', opportunistJab: 'quickAttack', exhaustCutter: 'quickAttack', mercySpike: 'quickAttack', backstabFlick: 'quickAttack', chargedBreaker: 'offensiveHold', acceleratingFlurry: 'offensiveHold', counterShield: 'defensiveHold', blinkDodge: 'defensiveHold' })) window.Combat.abilities.register(id, { category, slotFamily: category === 'combo' || category === 'quickAttack' ? 'tap' : 'hold', label: id });
+  const api = window.CombatTutorial; // Actual controller under test.
+  api.init({ getQuestProgress: () => progress, getArea: () => area, getGear: () => gear, equipment, toolDefs: { hatchet: { slots: ['weapon'] }, crossbow: { slots: ['ranged'] } }, mastery: () => mastery, save: () => { saves++; }, getWalker: () => walker, closeDialogue: () => { dialogue = false; }, openDialogue: async () => { dialogue = true; }, dialogueOpen: () => dialogue, toast() {}, capture: () => ({ equipmentSlots: { ...equipment }, activeTool: 'weapon' }), restore: original => { Object.assign(equipment, original.equipmentSlots); restores++; }, enterArena: async () => { if (failTravel) throw new Error('map unavailable'); area = window.CombatTutorialContent.ARENA; }, exitArena: async () => { area = 'map_i_watchhouse'; }, resetPractice() {}, equip: key => { equipment[['crossbow', 'scatterbow'].includes(key) ? 'ranged' : 'weapon'] = key; }, spawnTarget: lesson => { target = { lesson }; return target; }, removeTarget: () => { target = null; }, maintainTarget() {} });
+  return { api, window, progress, gear, equipment, walker, body, setLevel: value => { combatLevel = value; }, setMastery: value => { mastery = value; }, setFailTravel: value => { failTravel = value; }, setArea: value => { area = value; }, get saves() { return saves; }, get restores() { return restores; }, get target() { return target; }, explain() { api.onNode({ combatTutorialPractice: true }, {}); dialogue = false; api.update(); }, finishStep() { const lesson = window.CombatTutorialContent.quests.find(q => q.id === api.debugSnapshot().quest).steps.find(s => s.id === api.debugSnapshot().step); this.explain(); for (let i = 0; i < (lesson.count || 1); i++) api.observe(lesson.check, { target, abilityId: lesson.ability }); return api.next(); } };
+}
+(async () => {
+  const h = harness(); // First-time player with no unlocked techniques and no Mastery.
+  assert.equal(h.api.gate(h.window.CombatTutorialContent.quests[0]), '');
+  assert.equal(await h.api.start('spearhead_openings', h.walker), false, 'prerequisite cannot be bypassed');
+  assert.equal(await h.api.start('not_a_quest', h.walker), false);
+  assert.equal(await h.api.start('spearhead_basics', h.walker), true);
+  assert.equal(h.progress.spearhead_basics.status, 'active');
+  assert.equal(h.walker.area, 'map_i_watchhouse_arena');
+  assert.equal(await h.api.next(), false, 'cannot skip the explanation');
+  await h.finishStep();
+  assert.equal(h.api.debugSnapshot().step, 'swing');
+  h.explain();
+  h.api.hit({}, { abilityId: 'swingCombo' });
+  h.api.hit(h.target, { abilityId: 'pokeCombo' });
+  assert.equal(h.api.debugSnapshot().hits, 0, 'unrelated targets and wrong attacks do not count');
+  h.api.hit(h.target, { abilityId: 'swingCombo' });
+  assert.equal(await h.api.next(), false, 'one hit is not three');
+  h.api.hit(h.target, { abilityId: 'swingCombo' }); h.api.hit(h.target, { abilityId: 'swingCombo' });
+  assert.equal(await h.api.next(), true);
+  assert.equal(h.equipment.weapon, 'fishingspear');
+  assert.equal(h.gear.tools.fishingspear, undefined, 'loan is not owned');
+  assert.equal(h.api.originalEquipment().equipmentSlots.weapon, 'hatchet', 'save adapter sees original equipment');
+  await h.api.leave(true);
+  assert.equal(h.equipment.weapon, 'hatchet');
+  assert.equal(h.walker.area, 'map_i_watchhouse');
+  assert.equal(h.progress.spearhead_basics.step, 2, 'cancellation preserves completed exercises');
+  assert.equal(await h.api.start('spearhead_basics', h.walker), true);
+  assert.equal(h.api.debugSnapshot().step, 'poke');
+  while (h.api.debugSnapshot().step) {
+    if (h.api.debugSnapshot().step === 'breaker') {
+      assert.equal(h.window.Combat.loadout.getSlot('hold1'), 'chargedBreaker', 'real dispatch borrows the locked technique');
+      assert.equal(h.window.TechniqueScrolls.isUnlocked('chargedBreaker'), false, 'loan does not teach it');
+      assert.equal(h.window.Combat.loadout.serialize().fishingspear, undefined, 'loan does not save a per-weapon loadout');
+      assert.equal(h.window.Combat.loadout.setSlot('hold1', 'chargedBreaker'), false, 'loan is not an ownership bypass');
+    }
+    await h.finishStep();
+  }
+  assert.equal(await h.api.finish('mercySpike'), false, 'cannot claim an untried ability');
+  assert.equal(await h.api.finish(), false, 'cannot bypass an available reward');
+  assert.equal(await h.api.finish('chargedBreaker'), true);
+  assert.equal(h.window.TechniqueScrolls.isUnlocked('chargedBreaker'), true);
+  assert.equal(h.window.TechniqueScrolls.isUnlocked('acceleratingFlurry'), false);
+  assert.equal(h.progress.spearhead_basics.status, 'completed');
+  assert.equal(h.equipment.weapon, 'hatchet');
+  assert.equal(h.window.Combat.loadout.getSlot('hold1'), null, 'original empty loadout restored after reward');
+  assert.equal(await h.api.finish('counterShield'), false, 'double claiming cannot grant another reward');
+  assert.match(h.api.gate(h.window.CombatTutorialContent.quests[1]), /Combat level 2/);
+  h.setLevel(2);
+  assert.equal(await h.api.start('spearhead_openings', h.walker), true);
+  await h.finishStep(); h.explain();
+  h.api.hit(h.target, { abilityId: 'opportunistJab', conditionBonusUsed: false });
+  assert.equal(h.api.debugSnapshot().hits, 0, 'ordinary jab cannot satisfy the conditional practice');
+  h.api.hit(h.target, { abilityId: 'opportunistJab', conditionBonusUsed: true });
+  assert.equal(h.api.debugSnapshot().hits, 1);
+  await h.api.leave();
+  h.setMastery(1);
+  assert.equal(h.api.gate(h.window.CombatTutorialContent.quests.find(q => q.id === 'spearhead_mastery_1')), '');
+  assert.match(h.api.gate(h.window.CombatTutorialContent.quests.find(q => q.id === 'spearhead_mastery_2')), /Complete/);
+  assert.equal(await h.api.start('spearhead_ranged_1', h.walker), true);
+  h.api.loanAmmo().specialAmmo = 0;
+  assert.equal(h.gear.specialAmmo, 2, 'borrowed ammo never spends the real charges');
+  await h.finishStep(); h.explain();
+  h.api.hit(h.target, { abilityId: 'swingCombo' });
+  assert.equal(h.api.debugSnapshot().hits, 0);
+  h.api.hit(h.target, { ranged: true });
+  assert.equal(h.api.debugSnapshot().hits, 1, 'confirmed projectile hit completes ranged practice');
+  h.setArea('town'); h.api.update();
+  assert.equal(h.api.active(), false);
+  assert.equal(h.api.originalEquipment(), null, 'unexpected travel cleans loans');
+  assert.equal(h.equipment.ranged, 'crossbow');
+  h.setFailTravel(true);
+  assert.equal(await h.api.start('spearhead_basics', h.walker), false);
+  assert.equal(h.api.originalEquipment(), null, 'failed map loads clean loans');
+  assert.match(h.api.diagnosticsText(), /map unavailable/);
+
+  const watch = JSON.parse(fs.readFileSync('docs/config/maps/map_i_watchhouse.json')); // Authored floor connectivity and reciprocal exits.
+  const arena = JSON.parse(fs.readFileSync('docs/config/maps/map_i_watchhouse_arena.json'));
+  assert.equal(watch.exits.find(exit => exit.id === 'exit_watch_training_stairs').targetMap, arena.id);
+  assert.equal(arena.exits[0].targetMap, watch.id);
+  for (const map of [watch, arena]) {
+    const cells = new Set(map.floor.map(cell => cell.join(','))); // Flood fill proves stairs and all arena practice positions are reachable.
+    const seen = new Set();
+    const queue = [[10, 13]];
+    while (queue.length) {
+      const [x, y] = queue.pop();
+      const key = `${x},${y}`;
+      if (!cells.has(key) || seen.has(key)) continue;
+      seen.add(key); queue.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]);
+    }
+    for (const exit of map.exits) for (const tile of exit.tiles) assert.ok(seen.has(tile.join(',')), `${map.id}: exit is reachable`);
+  }
+  console.log('Combat tutorial: real unlock/loadout isolation, prerequisites, verified practice, resume, rewards, cancellation, ammo loans, map failure and connected exits passed.');
+})().catch(error => { console.error(error); process.exitCode = 1; });

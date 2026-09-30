@@ -1938,6 +1938,7 @@
       // landed a hit (see combat-*.js) — grows whichever tool is currently
       // equipped as the weapon.
       function awardWeaponMasteryXp() {
+        if (window.CombatTutorial?.active?.()) return; // Borrowed practice weapons cannot farm item Mastery.
         awardToolMasteryXp(equipmentSlots.weapon, MASTERY_XP_PER_COMBAT_HIT);
       }
 
@@ -2347,8 +2348,8 @@
           if (!meta || !window.__hobunjiPlayerProfile?.characterId) return;
           const ch = (meta.characters || []).find(c => c.id === window.__hobunjiPlayerProfile.characterId);
           if (ch) {
-            ch.equipmentSlots = { ...equipmentSlots };
-            ch.activeTool = activeTool;
+            ch.equipmentSlots = { ...(window.CombatTutorial?.originalEquipment?.()?.equipmentSlots || equipmentSlots) };
+            ch.activeTool = window.CombatTutorial?.originalEquipment?.()?.activeTool || activeTool;
             localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
           }
         } catch {}
@@ -4790,6 +4791,7 @@
       let lastMeleeHeightBlock = null; // Persistent mobile-readable record of the latest rejected cross-height weapon hit.
 
       function transitionCreatureToDeath(c, fromX = c?.x, fromY = c?.y) {
+        if (c?.combatTutorialTarget) { c.health = c.maxHealth; return false; } // Sparring partners never produce kills, corpses, or loot.
         if (!c || Number(c.health) > 0 || c._deathTransitionStarted) return false;
         c._deathTransitionStarted = true; // Prevents duplicate rewards/corpse creation when several lethal systems observe zero Health in one frame.
         // damageCreature's lethal branch returns before its "every hit cancels
@@ -4854,7 +4856,7 @@
           amount *= window.AlchemySystem?.getOutgoingDamageMultiplier?.() || 1;
           amount *= window.PerkSystem?.combatDamageMultiplier?.(dmgOpts) || 1; // Empower Raw Damage / Quick / Defensive / Heavy Attacks.
           amount = banditTryGuard(c, amount, player);
-          window.SkillSystem?.award?.('combat', window.SkillSystem?.XP_GAINS?.combatHit || 1, 'landed hit');
+          if (!c.combatTutorialTarget) window.SkillSystem?.award?.('combat', window.SkillSystem?.XP_GAINS?.combatHit || 1, 'landed hit');
         }
         const resourceDamage = environmentalImpact ? { health: amount, footing: 0 } : hitResourceDamage(amount, dmgOpts);
         const impactMultiplier = environmentalImpact ? 1 : (window.AlchemySystem?.getFootingDamageMultiplier?.() || 1) * (1 + (window.PerkSystem?.rank('combat', 'increaseFootingDamage') || 0) * 0.1); // Collision profiles are already authored at final strength.
@@ -4864,6 +4866,7 @@
         else c.health = Math.max(0, c.health - resourceDamage.health);
         const appliedImpactHealth = environmentalImpact ? Math.max(0, healthBeforeImpact - Math.max(0, Number(c.health) || 0)) : 0; // Captures lethal clamping instead of the requested raw amount.
         c.hitFlashT = 0.25;
+        if (c.combatTutorialTarget && !environmentalImpact) window.CombatTutorial?.hit?.(c, dmgOpts);
         spawnCreatureHitSpark(c);
         if (c.health <= 0) {
           const transitioned = transitionCreatureToDeath(c, fromX, fromY); // Shared with lethal resource ticks so every death reaches the corpse system once.
@@ -4976,6 +4979,11 @@
 
       function respawnPlayer(reason = 'death') {
         if (window.DevRandomRuinSimplePuzzles?.respawnAtCheckpoint?.(reason)) return; // Session ruin checkpoints override every canonical death source before mine/totem/farm recovery while preserving the source for mobile diagnostics.
+        if (window.CombatTutorial?.active?.()) {
+          window.CombatTutorial.leave(true);
+          showToast('Spearhead stops the exercise. Your progress is saved; talk to him to resume.', false);
+          return;
+        }
         if (window.TownMine?.floorFromMapId?.(currentArea)) {
           window.WildernessCampfire?.clearMineCampfireOnDeath?.(); // Mine death ends the one underground camp, while wilderness camps survive.
           _returnToFarmMeshes();
@@ -6095,6 +6103,10 @@
           grazingPreyByPatchFrame.set(c.grazingPatchId, patchPrey);
         }
         for (const c of currentHostilesFrame) {
+          if (c.combatTutorialTarget && !c.combatTutorialHostile) {
+            updateCreatureMesh(c, dt, c.facing); // Stationary exercises keep the existing creature renderer and real hitboxes.
+            continue;
+          }
           // Beastmaster pets stay in hostileObjects so player targeting and
           // damage can find them, but companionObjects owns their movement
           // and attacks so they can follow their bandit master.
@@ -9289,6 +9301,7 @@
         player.dodgeDirY = dirY;
         player.dodgeCooldownT = DODGE_COOLDOWN_S;
         player.invulnUntil = performance.now() + DODGE_IFRAME_MS;
+        window.CombatTutorial?.observe?.('dodge');
         return true;
       }
 
@@ -9837,7 +9850,7 @@
       // toolHolder/reticle scene wiring in enterBuilding below).
       function _isCavernBuildingArea(area) {
         return typeof area === 'string' && (
-          area.startsWith('map_i_den_') || !!window.TownMine?.floorFromMapId?.(area) ||
+          area === 'map_i_watchhouse_arena' || area.startsWith('map_i_den_') || !!window.TownMine?.floorFromMapId?.(area) ||
           window.CavernGenerator?.isLocaleCavernMapId?.(area) === true || _buildingScenes.get(area)?.wallStyle === 'cavern'
         );
       }
@@ -23905,6 +23918,7 @@
         const dt = Math.min(0.04, (now - lastTime) / 1000);
         lastTime = now;
         gameFrameSerial++;
+        window.CombatTutorial?.update?.(); // Simulation and scene cleanup share the existing gameLoop cadence.
 
         if (!gameStarted) {
           window.Music?.audioDebug('waiting for gameStarted before audio playback', 'audio-wait-game-started', 5000);
@@ -28105,6 +28119,86 @@
         WMAP_ZONE_LABELS,
         getQuestProgress: () => questProgress,
         inventory,
+      });
+
+      window.CombatTutorial?.init?.({
+        getQuestProgress: () => questProgress,
+        save: saveMemberWorldData,
+        getArea: () => currentArea,
+        getGear: () => gearInventory,
+        mastery: toolMasteryLevel,
+        toolDefs: TOOL_ITEM_DEFS,
+        equipment: equipmentSlots,
+        getWalker: () => _dialogueWalker || npcWalkers.find(walker => walker.rec?.id === 'spearhead_unumanuk'),
+        openDialogue: openNpcDialogue,
+        closeDialogue: closeNpcDialogue,
+        dialogueOpen: () => dialogueOpen,
+        toast: showToast,
+        capture: () => ({
+          equipmentSlots: { ...equipmentSlots }, activeTool, heldMode,
+          resources: structuredClone({ health: player.health, stamina: player.stamina, footing: player.footing, afflictions: player.afflictions, exhaustion: player.exhaustion, prone: player.prone, staggered: player.staggered }),
+        }),
+        restore: original => {
+          Object.assign(equipmentSlots, original.equipmentSlots);
+          Object.assign(player, structuredClone(original.resources));
+          player.vx = 0; player.vy = 0;
+          player.knockbackT = 0; player.dodging = false;
+          rebuildToolMeshes();
+          setActiveTool(original.activeTool, { silent: true });
+          heldMode = original.heldMode;
+          refreshActionBar();
+        },
+        enterArena: async () => {
+          if (!_buildingScenes.get('map_i_watchhouse_arena')) await loadBuildingScene('map_i_watchhouse_arena');
+          if (!_buildingScenes.get('map_i_watchhouse_arena') || _buildingScenes.get('map_i_watchhouse_arena').fallback) throw new Error('Practice arena map failed to load.');
+          await new Promise(resolve => startSceneTransition(() => { enterBuilding('map_i_watchhouse_arena', 10, 13); resolve(); }));
+        },
+        exitArena: async () => {
+          if (!_buildingScenes.get('map_i_watchhouse')) await loadBuildingScene('map_i_watchhouse');
+          await new Promise(resolve => startSceneTransition(() => { enterBuilding('map_i_watchhouse', 8, 12); resolve(); }));
+        },
+        resetPractice: () => {
+          player.health = player.maxHealth; player.stamina = player.maxStamina; player.footing = player.maxFooting;
+          player.afflictions = {}; player.exhaustion = { active: false, blackStamina: 100 };
+          player.prone = false; player.staggered = { active: false, endsAt: 0 };
+          player.knockbackT = 0; player.dodging = false; player.dodgeCooldownT = 0;
+          player.x = 10.5 * TILE; player.y = 13.5 * TILE;
+          player.vx = 0; player.vy = 0;
+          setPlayerFacingInstant(-Math.PI / 2);
+          _snapCameraTarget();
+        },
+        equip: key => {
+          if (!TOOL_ITEM_DEFS[key]) throw new Error('Unknown training weapon: ' + key);
+          const slot = TOOL_ITEM_DEFS[key].slots.includes('ranged') ? 'ranged' : 'weapon'; // Existing item definitions choose the correct action controls and renderer.
+          equipmentSlots[slot] = key;
+          rebuildToolMeshes();
+          setActiveTool(slot, { silent: true });
+        },
+        spawnTarget: lesson => {
+          const target = makeCreatureEntity('gar-wolf', 10.5 * TILE, 11.5 * TILE, { combatTutorialTarget: true, combatTutorialHostile: !!lesson.hostile }); // Real creature collider/AI supplies verified hits and defensive practice.
+          if (!target) return null;
+          target.def = { ...target.def, label: 'Sparring Hound', attackDamage: 2 };
+          target.maxHealth = 10000; target.health = lesson.condition === 'lowHealth' ? 2000 : 10000;
+          target.facing = Math.PI / 2;
+          hostileObjects.add(target);
+          return target;
+        },
+        maintainTarget: (target, lesson) => {
+          target.health = lesson?.condition === 'lowHealth' ? 2000 : target.maxHealth;
+          target.afflictions = {}; target.footing = target.maxFooting; target.prone = false;
+          target.stamina = lesson?.condition === 'exhausted' ? 0 : target.maxStamina;
+          target.exhaustion = { active: lesson?.condition === 'exhausted', blackStamina: 100 };
+          if (!target.combatTutorialHostile) {
+            target.knockbackT = 0; target.knockbackVX = 0; target.knockbackVY = 0;
+            target.staggered = { active: false, endsAt: 0 };
+          }
+        },
+        removeTarget: target => {
+          window.Combat?.telegraph?.cancel(target);
+          window.Combat?.animalAttacks?.cancel(target);
+          hostileObjects.delete(target);
+          despawnCreature(target);
+        },
       });
 
       window.BanubuQuestline?.init?.({

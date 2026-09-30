@@ -151,7 +151,7 @@
     deps.debugLog?.('Ranged update: friendly-fire actor cover, loaded-before-fire LOS repositioning, and same-frame hitbox/perp caches enabled.');
   }
 
-  function gear() { return deps?.getGearInventory?.() || null; }
+  function gear() { return window.CombatTutorial?.loanAmmo?.() || deps?.getGearInventory?.() || null; }
   function ensureAmmoState() {
     const g = gear();
     if (!g) return null;
@@ -178,7 +178,7 @@
     return out;
   }
 
-  function rangedMastery(itemKey) { return Math.max(0, Math.min(5, Number(deps?.toolMasteryLevel?.(itemKey)) || 0)); }
+  function rangedMastery(itemKey) { return Math.max(0, Math.min(5, Number(window.CombatTutorial?.loanRangedMastery?.() ?? deps?.toolMasteryLevel?.(itemKey)) || 0)); }
   function notifyAmmoChanged() {
     deps?.saveGearInventory?.();
     deps?.refreshActionBar?.();

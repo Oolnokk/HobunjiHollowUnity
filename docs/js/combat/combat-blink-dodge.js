@@ -226,6 +226,7 @@
       nextZipAt = t + ZIP_COOLDOWN_S * (1 + (stats.zipCooldownMul || 0));
 
       blinkRuntimeDebug.hopCount += 1;
+      window.CombatTutorial?.observe?.('blink', { abilityId: 'blinkDodge' });
       blinkRuntimeDebug.lastHopReason = reason;
       blinkRuntimeDebug.lastHopAtMs = performance.now();
       return true;

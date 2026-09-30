@@ -655,6 +655,7 @@
       window.ResourceSystem?.spendStamina(deps.player, staminaCost, 'Counter Shield block');
       deps.playCounterShieldBlockSfx?.(deps.player.x, deps.player.y, deps.getCurrentArea());
       deps.showToast(`Blocked! (-${Math.round(staminaCost)} stamina)`, true);
+      window.CombatTutorial?.observe?.('block', { abilityId: 'counterShield' });
       deps.spawnBurstEffect({ color: '#40ccff', rangePx: deps.TILE * 1.8 });
       triggerCounter(effects);
       return true;
