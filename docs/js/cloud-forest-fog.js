@@ -730,17 +730,12 @@
       || (isNoSkyArea(currentArea) && currentArea !== 'map_southern_cloud_forest');
 
     if (enclosed) {
-      const darknessAlpha = enclosedDarknessOverlayAlpha(currentArea); // Same baseline darkness authority as before.
-      if (ordinaryBuildingInterior(currentArea)) {
-        drawBlendedInteriorAtmosphere(darknessAlpha, rect); // Rooms use one color/brightness atmosphere blended from nearby windows and furniture lights.
-      } else {
-        ctx.globalCompositeOperation = 'source-over';
-        ctx.fillStyle = `rgba(0,0,0,${darknessAlpha})`;
-        ctx.fillRect(0, 0, rect.width, rect.height);
-        // Underground spaces retain their existing positional lantern gameplay/readability.
-        drawLanternMasksCompat(1);
-        drawFurnitureLightMasksCompat();
-      }
+      const darknessAlpha = enclosedDarknessOverlayAlpha(currentArea); // Enclosed spaces keep one stable darkness base; local masks reveal light without whole-room brightness churn.
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = `rgba(0,0,0,${darknessAlpha})`;
+      ctx.fillRect(0, 0, rect.width, rect.height);
+      drawLanternMasksCompat(1);
+      drawFurnitureLightMasksCompat();
       if (sceneTransAlpha > 0) {
         ctx.globalCompositeOperation = 'source-over';
         ctx.fillStyle = `rgba(0,0,0,${sceneTransAlpha})`;
