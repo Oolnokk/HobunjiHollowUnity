@@ -119,13 +119,15 @@
         || effects.afflictions;
       const dmgType = deps.currentWeaponDamageType();
       const impactSize = strikeIndex <= 2 ? 'small' : strikeIndex <= 5 ? 'medium' : 'large';
+      const attackVisual = window.Combat.currentWeaponMeleeAnimation?.(deps, 'acceleratingFlurry')
+        || { anim: 'sweep', pose: window.Combat.poses.SWEEP_POSE }; // Each flurry strike uses the equipped weapon's slash/thrust animation family.
 
       deps.triggerWeaponSwingVisual(windupS + strikeS, {
-        anim: 'sweep',
+        anim: attackVisual.anim,
         dirSign,
         windupFrac: windupS / (windupS + strikeS),
         strikeFrac: 1,
-        pose: window.Combat.poses.SWEEP_POSE,
+        pose: attackVisual.pose,
         holdS: HOLD_S,
         afflictionIds: Object.keys(attackAfflictions),
         coneRangePx: rangePx,

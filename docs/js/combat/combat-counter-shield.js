@@ -639,7 +639,7 @@
       deps.triggerWeaponHoldVisual(BLOCK_WINDUP_S + BLOCK_STRIKE_S, {
         anim: 'sweep',
         pose: BLOCK_POSE,
-        meleeSpacing: false, // Defensive raised-block stance is not an attack; the automatic thrust counter still receives normal melee spacing.
+        meleeSpacing: false, // Defensive raised-block stance is not an attack; the automatic counter still receives normal melee spacing.
         windupFrac: BLOCK_WINDUP_S / (BLOCK_WINDUP_S + BLOCK_STRIKE_S),
         strikeFrac: 1,
       });
@@ -698,9 +698,12 @@
       const attackAfflictions = window.CombatAttackEvents?.scaleAfflictions?.(attackContext.afflictionBonuses || effects.afflictions, attackContext.modifiers?.affliction || 1)
         || effects.afflictions;
       const counterDurationS = COUNTER_WINDUP_S + COUNTER_STRIKE_S;
+      const attackVisual = window.Combat.currentWeaponMeleeAnimation?.(deps, 'counterShield')
+        || { anim: 'thrust', pose: null }; // The riposte now has separate slash/thrust motion according to the equipped weapon.
 
       deps.triggerWeaponSwingVisual(counterDurationS, {
-        anim: 'thrust',
+        anim: attackVisual.anim,
+        pose: attackVisual.pose,
         windupFrac: COUNTER_WINDUP_S / counterDurationS,
         strikeFrac: 1,
         holdS: COUNTER_HOLD_S,

@@ -59,6 +59,9 @@
     return {
       neutral: normalize(raw.neutral?.shoulderAim || raw.neutral, IDLE),
       windup: normalize(raw.windup?.shoulderAim || raw.windup, ACTIVE),
+      midStrike: raw.midStrike?.shoulderAim && typeof raw.midStrike.shoulderAim === 'object'
+        ? normalize(raw.midStrike.shoulderAim, ACTIVE)
+        : null, // A transform-only Mid Strike does not bend the hand path unless hand-follow metadata is explicitly authored there.
       strike: normalize(raw.strike?.shoulderAim || raw.strike, ACTIVE),
     };
   }
@@ -66,12 +69,13 @@
     return {
       neutral: elbowPointFromPose(raw.neutral, side),
       windup: elbowPointFromPose(raw.windup, side),
+      midStrike: raw.midStrike ? elbowPointFromPose(raw.midStrike, side) : null, // Optional elbow waypoint follows the same midpoint timing as the weapon.
       strike: elbowPointFromPose(raw.strike, side),
     };
   }
 
   function hasAuthoredPoseAim(raw = {}) {
-    return ['neutral','windup','strike'].some(phase => {
+    return ['neutral','windup','midStrike','strike'].some(phase => {
       const pose = raw?.[phase];
       return (pose?.shoulderAim && typeof pose.shoulderAim === 'object')
         || (pose?.elbows && typeof pose.elbows === 'object')
@@ -87,6 +91,7 @@
     const poses = normalizePoseSet(poseSet);
     const poseScale = clamp01(timing.poseScale ?? 1); // Used after a partial held release to scale authored shoulder endpoints from Neutral by the same fraction as the weapon.
     const scaledWindup = lerp(poses.neutral, poses.windup, poseScale); // Used as the effective Windup shoulder state for the current release amplitude.
+    const scaledMidStrike = poses.midStrike ? lerp(poses.neutral, poses.midStrike, poseScale) : null; // Optional midpoint follows partial-charge amplitude too.
     const scaledStrike = lerp(poses.neutral, poses.strike, poseScale); // Used as the effective Strike shoulder state for the current release amplitude.
 
     if (sequence === 'load') {
@@ -103,7 +108,13 @@
       const poseT = global.Combat?.windupPoseProgress?.(rawWindupT, timing.windupSlowdown) ?? rawWindupT;
       return lerp(poses.neutral, scaledWindup, poseT);
     }
-    if (t <= sf) return lerp(scaledWindup, scaledStrike, (t - wf) / Math.max(1e-6, sf - wf));
+    if (t <= sf) {
+      if (!scaledMidStrike) return lerp(scaledWindup, scaledStrike, (t - wf) / Math.max(1e-6, sf - wf));
+      const mf = wf + (sf - wf) * 0.5; // Mid Strike has no separate timing knob; it bisects the existing strike segment.
+      return t <= mf
+        ? lerp(scaledWindup, scaledMidStrike, (t - wf) / Math.max(1e-6, mf - wf))
+        : lerp(scaledMidStrike, scaledStrike, (t - mf) / Math.max(1e-6, sf - mf));
+    }
     if (t <= hf) return { ...scaledStrike };
     return lerp(scaledStrike, poses.neutral, (t - hf) / Math.max(1e-6, 1 - hf));
   }
@@ -123,8 +134,10 @@
     const neutral = mirrorElbowPoint(poses.neutral, neutralSign);
     const returnNeutral = mirrorElbowPoint(poses.neutral, returnNeutralSign);
     const windup = mirrorElbowPoint(poses.windup, activeSign);
+    const midStrike = poses.midStrike ? mirrorElbowPoint(poses.midStrike, activeSign) : null; // Optional authored elbow waypoint in the same anatomical hand.
     const strike = mirrorElbowPoint(poses.strike, activeSign);
     const scaledWindup = lerpElbowPoint(neutral, windup, poseScale);
+    const scaledMidStrike = poses.midStrike ? lerpElbowPoint(neutral, midStrike, poseScale) : null;
     const scaledStrike = lerpElbowPoint(neutral, strike, poseScale);
     if (sequence === 'load') {
       if (t <= wf) return lerpElbowPoint(neutral, scaledWindup, t / Math.max(1e-6, wf));
@@ -140,7 +153,13 @@
       const poseT = global.Combat?.windupPoseProgress?.(rawWindupT, timing.windupSlowdown) ?? rawWindupT;
       return lerpElbowPoint(neutral, scaledWindup, poseT);
     }
-    if (t <= sf) return lerpElbowPoint(scaledWindup, scaledStrike, (t - wf) / Math.max(1e-6, sf - wf));
+    if (t <= sf) {
+      if (!scaledMidStrike) return lerpElbowPoint(scaledWindup, scaledStrike, (t - wf) / Math.max(1e-6, sf - wf));
+      const mf = wf + (sf - wf) * 0.5;
+      return t <= mf
+        ? lerpElbowPoint(scaledWindup, scaledMidStrike, (t - wf) / Math.max(1e-6, mf - wf))
+        : lerpElbowPoint(scaledMidStrike, scaledStrike, (t - mf) / Math.max(1e-6, sf - mf));
+    }
     if (t <= hf) return scaledStrike ? { ...scaledStrike } : null;
     return lerpElbowPoint(scaledStrike, returnNeutral, (t - hf) / Math.max(1e-6, 1 - hf));
   }

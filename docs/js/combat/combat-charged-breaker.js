@@ -167,11 +167,13 @@
       const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), 'chargedBreaker')
         || { afflictions: {}, stats: {} };
 
+      const attackVisual = window.Combat.currentWeaponMeleeAnimation?.(deps, 'chargedBreaker')
+        || { anim: 'sweep', pose: window.Combat.poses.SWEEP_POSE }; // Held windup and release now follow the equipped weapon's slash/thrust animation family.
       setGlow(0);
       deps.showToast('Charged Breaker charging — release to strike.', true);
       deps.triggerWeaponHoldVisual(MAX_CHARGE_S + STRIKE_S, {
-        anim: 'sweep',
-        pose: window.Combat.poses.SWEEP_POSE,
+        anim: attackVisual.anim,
+        pose: attackVisual.pose,
         windupFrac: MAX_CHARGE_S / (MAX_CHARGE_S + STRIKE_S),
         strikeFrac: 1,
         power: POWER,

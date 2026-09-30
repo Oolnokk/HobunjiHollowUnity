@@ -312,6 +312,23 @@
   // sweeping attack uses this same authored pose rather than each falling
   // back to updateToolMesh's older hardcoded default sweep arc.
   window.Combat.poses = { SWEEP_POSE };
+
+  const specialMeleeAnimationDebug = { lastResolved: null }; // Used by mobile diagnostics and regression tests to expose which visual style a special attack chose.
+  function currentWeaponMeleeAnimation(deps = window.Combat.deps, abilityId = null) {
+    const comboId = deps?.currentComboAbilityId?.() || 'swingCombo'; // Used to reuse the equipped weapon's existing sweep-vs-thrust classification.
+    const anim = comboId === 'pokeCombo' ? 'thrust' : 'sweep'; // Passed into the shared weapon animation runtime for Quick/Held special attacks.
+    const pose = anim === 'sweep' ? SWEEP_POSE : null; // Sweep uses the authored full pose; thrust intentionally uses the existing thrust renderer.
+    specialMeleeAnimationDebug.lastResolved = {
+      abilityId,
+      weaponKey: deps?.currentWeaponKey?.() || null,
+      comboId,
+      anim,
+      resolvedAt: Date.now(),
+    };
+    return { anim, pose };
+  }
+  window.Combat.currentWeaponMeleeAnimation = currentWeaponMeleeAnimation;
+  window.Combat.specialMeleeAnimationDebug = specialMeleeAnimationDebug;
   // Read-only data export — lets a non-player attacker (game.js's bandit AI)
   // deal damage using these exact same step numbers without this module
   // needing to know anything about who's swinging. onTap above stays the

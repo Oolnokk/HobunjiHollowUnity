@@ -732,6 +732,13 @@
     return { anim: isSweep ? 'sweep' : 'thrust', pose: isSweep ? window.Combat?.poses?.SWEEP_POSE : null };
   }
 
+  function banditSpecialMeleeAnimation(def, loadout = def?.banditAbilityLoadout) {
+    const comboId = loadout?.tap1; // Used to make special-attack motion follow the same authored poke/swing family as this bandit's ordinary combo.
+    if (comboId !== 'pokeCombo' && comboId !== 'swingCombo') return banditNaturalSwing(def);
+    const isThrust = comboId === 'pokeCombo'; // Selects the attack motion independently from the weapon's idle/render orientation.
+    return { anim: isThrust ? 'thrust' : 'sweep', pose: isThrust ? null : window.Combat?.poses?.SWEEP_POSE };
+  }
+
   // Ends the current staged action's telegraph tell and, if provided,
   // runs extra bookkeeping (retreat, cooldowns) once it's actually done
   // rather than the moment it's cancelled mid-flight.
@@ -739,17 +746,9 @@
     c._banditAction = null;
     c.telegraphState = null;
     if (!c._banditLunging) c._banditLungeHopCurrent = 0;
-    // Quick Attack and Charged Breaker both hardcode their OWN anim/
-    // pose regardless of the equipped weapon ('thrust'/null and
-    // 'sweep'/SWEEP_POSE respectively -- see fireBanditQuickAttack/
-    // fireBanditChargedBreaker's own comments) and, unlike
-    // fireBanditComboStep, nothing ever set these back afterward --
-    // once ANY bandit used either ability even once, its idle-between-
-    // attacks stance got stuck showing that ability's style forever
-    // (regardless of its real weapon) until a combo step happened to
-    // fire and correct it by coincidence. Reset unconditionally here so
-    // "idle" always means the weapon's own natural rest stance, not
-    // whatever the last-fired ability happened to want.
+    // Reassert the weapon's natural style after every action. Special attacks
+    // now use this same style too, but the unconditional reset still prevents
+    // interrupted/legacy actions from leaving a stale pose behind.
     const natural = banditNaturalSwing(c.def);
     c._banditSwingAnim = natural.anim;
     c._banditSwingPose = natural.pose;
@@ -981,7 +980,8 @@
     c.facing = aimAngle;
     c._banditAimPitch = window.Combat?.meleeAimSolution?.(c, targetPlayer, aimAngle, 0)?.pitch || 0; // Used by this enemy's leap, 3D hit cone, and pitched trail.
     c.telegraphState = 'windup';
-    c._banditSwingAnim = 'thrust'; c._banditSwingPose = null;
+    const attackVisual = banditSpecialMeleeAnimation(def, loadout); // Reuses the bandit's ordinary combo family so Quick Attacks no longer force one motion.
+    c._banditSwingAnim = attackVisual.anim; c._banditSwingPose = attackVisual.pose;
     c._banditSwingDirSign = 1; c._banditSwingPower = 1;
     c._banditSwingPoseScale = 1;
     beginBanditLunge(c, deps.TILE * (qa.LUNGE_TILE_MUL || 5.5), qa.WINDUP_S + qa.STRIKE_S, { rangePx, halfConeRad }, targetPlayer);
@@ -1032,8 +1032,9 @@
     c.facing = aimAngle;
     c._banditAimPitch = window.Combat?.meleeAimSolution?.(c, targetPlayer, aimAngle, 0)?.pitch || 0;
     c.telegraphState = 'windup';
-    c._banditSwingAnim = 'sweep';
-    c._banditSwingPose = window.Combat?.poses?.SWEEP_POSE;
+    const attackVisual = banditSpecialMeleeAnimation(def); // Charged Breaker keeps its heavy power while using the weapon's ordinary combo motion.
+    c._banditSwingAnim = attackVisual.anim;
+    c._banditSwingPose = attackVisual.pose;
     c._banditSwingDirSign = 1;
     c._banditSwingPower = cb.POWER || 1.7;
     c._banditSwingPoseScale = chargeT; // Used by updateBanditToolMesh to show the sampled partial pose without changing the legacy heavy-attack identity field.
@@ -1677,9 +1678,12 @@
   // ease across the way the player's longer toolSwingDur has room for.
   // The brief hold-then-freeze in updateBanditToolMesh below covers the
   // return instead.
-  function banditPoseLerp(progress, wf, windupV, strikeV, neutralV) {
+  function banditPoseLerp(progress, wf, windupV, strikeV, neutralV, midStrikeV = null) {
     if (progress <= wf) return neutralV + (windupV - neutralV) * (progress / Math.max(0.0001, wf));
-    return strikeV;
+    if (!Number.isFinite(midStrikeV)) return strikeV; // No optional waypoint means exact legacy bandit behavior: snap to/hold Strike after Windup.
+    const mf = wf + (1 - wf) * 0.5; // Bandits have no separate cosmetic SF/HF tail, so Mid Strike bisects their remaining staged-action time.
+    if (progress <= mf) return windupV + (midStrikeV - windupV) * ((progress - wf) / Math.max(0.0001, mf - wf));
+    return midStrikeV + (strikeV - midStrikeV) * ((progress - mf) / Math.max(0.0001, 1 - mf));
   }
 
   // How long the weapon keeps showing its last (strike) pose once
@@ -1883,9 +1887,12 @@
       const neutral = { ...styleNeutral, ...(pose.neutral || {}) };
       const chan = (ch, mirror = false) => {
         const w = (neutral[ch] + ((pose.windup?.[ch] ?? neutral[ch]) - neutral[ch]) * power) * (mirror ? dirSign : 1);
+        const m = pose.midStrike && Number.isFinite(Number(pose.midStrike?.[ch]))
+          ? (neutral[ch] + (Number(pose.midStrike[ch]) - neutral[ch]) * power) * (mirror ? dirSign : 1)
+          : null; // Optional waypoint; null keeps the old immediate post-windup Strike.
         const s = (neutral[ch] + ((pose.strike?.[ch] ?? neutral[ch]) - neutral[ch]) * power) * (mirror ? dirSign : 1);
         const n = neutral[ch] * (mirror ? dirSign : 1);
-        return banditPoseLerp(progress, wf, w, s, n);
+        return banditPoseLerp(progress, wf, w, s, n, m);
       };
       const x = chan('x', true), y = chan('y'), z = chan('z');
       const pitchRad = THREE.MathUtils.degToRad(chan('pitch'));

@@ -212,12 +212,17 @@ canvas{display:block;width:100%;height:100%}
         <label>Hold ends at <span id="holdFracVal">68%</span></label>
         <input id="holdFrac" type="range" min="0.03" max="1" step="0.01" value="0.68">
       </div>
-      <div class="help">Attack uses all three poses. Load skips Strike. Fire skips Windup. These controls only determine when the authored key poses are reached.</div>
+      <div class="help">Attack uses Neutral → Windup → optional Mid Strike → Strike. Load skips Strike. Fire skips Windup. Mid Strike has no extra timing control: it is always halfway through the existing Windup→Strike interval.</div>
     </details>
 
+    <div class="field" id="midStrikeToggleField">
+      <label class="fieldRow" style="cursor:pointer"><input id="useMidStrike" type="checkbox" style="width:auto;margin-right:6px">Use Mid Strike key pose</label>
+      <div class="help">Optional path waypoint for arcs such as overhead chops. Enabling starts at the exact Windup/Strike midpoint, so the motion stays unchanged until you edit it.</div>
+    </div>
     <div class="poseTabs" role="tablist" aria-label="Pose being edited">
       <button id="poseTabNeutral" class="poseTab" data-edit-phase="neutral"><span class="dot dotNeutral"></span> Neutral</button>
       <button id="poseTabWindup" class="poseTab active" data-edit-phase="windup"><span class="dot dotWindup"></span> Windup</button>
+      <button id="poseTabMidStrike" class="poseTab" data-edit-phase="midStrike" hidden><span class="dot dotStrike"></span> Mid Strike</button>
       <button id="poseTabStrike" class="poseTab" data-edit-phase="strike"><span class="dot dotStrike"></span> Strike</button>
     </div>
 
@@ -306,8 +311,8 @@ canvas{display:block;width:100%;height:100%}
      loaded by the game's Pixel Probe, so this editor's preview dump and an
      in-game character dump use the exact same code/format. -->
 <script src="../../js/transform-dump-utils.js?v=20260820a"></script>
-<script src="../../js/held-action-animations.js?v=20260930h3f6c30d"></script>
-<script src="../../js/combat/melee-pose-spacing.js?v=20260920spacing2"></script>
+<script src="../../js/held-action-animations.js?v=20260930midstrike1"></script>
+<script src="../../js/combat/melee-pose-spacing.js?v=20260930midstrike1"></script>
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -918,7 +923,7 @@ let anim = {
   },
 };
 
-const ATTACK_POSE_PHASES = Object.freeze(['neutral', 'windup', 'strike']);
+const ATTACK_POSE_PHASES = Object.freeze(['neutral', 'windup', 'midStrike', 'strike']);
 const ATTACK_POSE_SIDES = Object.freeze(['left', 'right']);
 function normalizedPoseElbow(point) {
   const x = Number(point?.x), y = Number(point?.y), z = Number(point?.z);
@@ -957,7 +962,9 @@ window.HobunjiAttackEditorPoseState = Object.freeze({
     return true;
   },
   snapshotPoseSet() {
-    return Object.fromEntries(ATTACK_POSE_PHASES.map(phase => [phase, clonePoseData(anim.poses[phase] || {})]));
+    return Object.fromEntries(ATTACK_POSE_PHASES
+      .filter(phase => phase !== 'midStrike' || !!anim.poses.midStrike)
+      .map(phase => [phase, clonePoseData(anim.poses[phase] || {})]));
   },
 });
 
@@ -1002,7 +1009,8 @@ function readElbowInputs(side) {
 
 function writeElbowPoseValue(phase, side, point) {
   const controls = window.HobunjiAttackEditorHandShoulderControls;
-  if (controls?.setElbowForPhase) return controls.setElbowForPhase(phase, side, point);
+  if (controls?.setElbowForPhase?.(phase, side, point) === true) return true;
+  if (!anim.poses[phase]) return false;
   anim.poses[phase].elbows ||= {};
   if (point) anim.poses[phase].elbows[side] = { ...point };
   else delete anim.poses[phase].elbows[side];
@@ -1091,6 +1099,8 @@ renderActivePosePanel();
 // for clarity/export inspection but no longer form an independent editing path.
 $('playbackSequence').addEventListener('change', () => {
   anim.sequence = $('playbackSequence').value;
+  if (anim.sequence !== 'attack' && editPhase === 'midStrike') selectEditPhase('strike');
+  syncMidStrikeUi();
   updateTimelineSegments();
   refreshJsonView();
 });
@@ -1178,13 +1188,16 @@ syncToolEndFlipUi();
 $('flipBtn').onclick = () => {
   anim.poses.neutral = flipPose(anim.poses.neutral);
   anim.poses.windup = flipPose(anim.poses.windup);
+  if (anim.poses.midStrike) anim.poses.midStrike = flipPose(anim.poses.midStrike);
   anim.poses.strike = flipPose(anim.poses.strike);
   window.HobunjiAttackEditorHandShoulderControls?.loadFromAnimationObject?.({ poses: anim.poses });
   toolMirrored = !toolMirrored;
   toolBase.position.x = toolMirrored ? -baseAttachX : baseAttachX;
   if (toolPlaneMesh) toolPlaneMesh.scale.x = toolMirrored ? -1 : 1;
+  syncMidStrikeUi();
   syncPosePanelFromState('neutral');
   syncPosePanelFromState('windup');
+  if (anim.poses.midStrike) syncPosePanelFromState('midStrike');
   syncPosePanelFromState('strike');
   refreshJsonView();
   logDebug(`Flipped animation across character midline (tool base now ${toolMirrored ? '-' : '+'}${Math.abs(baseAttachX).toFixed(2)})`);
@@ -1295,8 +1308,10 @@ function applyPreset(preset) {
     $('animName').value = anim.name;
   }
   anim.poses.neutral = { ...neutralPoseFor(preset.style), ...(preset.neutral || {}) };
-  anim.poses.windup = { ...preset.windup };
-  anim.poses.strike = { ...preset.strike };
+  anim.poses.windup = clonePoseData(preset.windup || {});
+  if (preset.midStrike) anim.poses.midStrike = clonePoseData(preset.midStrike);
+  else delete anim.poses.midStrike;
+  anim.poses.strike = clonePoseData(preset.strike || {});
   // The selected Action owns hand-follow and elbow pose fields too. Reload the
   // hand adapter every time so state from the previously selected Action cannot leak.
   window.HobunjiAttackEditorHandShoulderControls?.loadFromAnimationObject?.({ poses: anim.poses });
@@ -1331,6 +1346,7 @@ function applyPreset(preset) {
   updateTimelineSegments();
   syncPosePanelFromState('neutral');
   syncPosePanelFromState('windup');
+  if (anim.poses.midStrike) syncPosePanelFromState('midStrike');
   syncPosePanelFromState('strike');
   if (preset.toolKey) {
     $('toolSpriteSelect').value = preset.toolKey;
@@ -1380,8 +1396,14 @@ function poseAt(t) {
     const k = wf > 0 ? t / wf : 1;
     return { pose: lerpPose(neutral, anim.poses.windup, k), phase: 'windup' };
   } else if (t <= sf) {
-    const k = (sf - wf) > 0 ? (t - wf) / (sf - wf) : 1;
-    return { pose: lerpPose(anim.poses.windup, anim.poses.strike, k), phase: 'strike' };
+    const mid = anim.poses.midStrike;
+    if (!mid) {
+      const k = (sf - wf) > 0 ? (t - wf) / (sf - wf) : 1;
+      return { pose: lerpPose(anim.poses.windup, anim.poses.strike, k), phase: 'strike' };
+    }
+    const mf = wf + (sf - wf) * 0.5;
+    if (t <= mf) return { pose: lerpPose(anim.poses.windup, mid, (t - wf) / Math.max(0.0001, mf - wf)), phase: 'strike → midpoint' };
+    return { pose: lerpPose(mid, anim.poses.strike, (t - mf) / Math.max(0.0001, sf - mf)), phase: 'midpoint → strike' };
   } else if (t <= hf) {
     return { pose: { ...anim.poses.strike }, phase: 'hold' };
   } else {
@@ -1464,13 +1486,21 @@ const ACTION_DEFS = [
   { id: 'poke_step', group: 'Melee attacks', label: 'Step Thrust', statsPath: ['combo','pokeCombo',1], templateId: 'pickshovel_swing', practical: true },
   { id: 'poke_long', group: 'Melee attacks', label: 'Long Lunge', statsPath: ['combo','pokeCombo',2], templateId: 'pickshovel_swing', practical: true, usePower: true },
 
-  { id: 'quick_opportunist', group: 'Quick / held attacks', label: 'Opportunist Jab', statsPath: ['quickAttacks','techniques','opportunistJab'], templateId: 'pickshovel_swing', practical: true },
-  { id: 'quick_exhaust', group: 'Quick / held attacks', label: 'Exhaust Cutter', statsPath: ['quickAttacks','techniques','exhaustCutter'], templateId: 'pickshovel_swing', practical: true },
-  { id: 'quick_backstab', group: 'Quick / held attacks', label: 'Backstab Flick', statsPath: ['quickAttacks','techniques','backstabFlick'], templateId: 'pickshovel_swing', practical: true },
-  { id: 'quick_mercy', group: 'Quick / held attacks', label: 'Mercy Spike', statsPath: ['quickAttacks','techniques','mercySpike'], templateId: 'pickshovel_swing', practical: true },
-  { id: 'charged_breaker', group: 'Quick / held attacks', label: 'Charged Breaker', statsPath: ['chargedBreaker'], templateId: 'hatchet_swing', practical: true, usePower: true },
-  { id: 'flurry', group: 'Quick / held attacks', label: 'Accelerating Flurry', statsPath: ['flurry'], templateId: 'hatchet_swing', practical: true },
-  { id: 'counter_shield', group: 'Quick / held attacks', label: 'Counter Shield', statsPath: ['counterShield'], heldAnimationKey: 'counterShield', practical: true, toolKey: 'hatchet' },
+  { id: 'quick_opportunist', group: 'Quick / held attacks', label: 'Opportunist Jab — Thrust', statsPath: ['quickAttacks','techniques','opportunistJab'], templateId: 'pickshovel_swing', practical: true },
+  { id: 'quick_opportunist_slash', group: 'Quick / held attacks', label: 'Opportunist Jab — Slash', statsPath: ['quickAttacks','techniques','opportunistJab'], templateId: 'hatchet_swing', practical: true },
+  { id: 'quick_exhaust', group: 'Quick / held attacks', label: 'Exhaust Cutter — Thrust', statsPath: ['quickAttacks','techniques','exhaustCutter'], templateId: 'pickshovel_swing', practical: true },
+  { id: 'quick_exhaust_slash', group: 'Quick / held attacks', label: 'Exhaust Cutter — Slash', statsPath: ['quickAttacks','techniques','exhaustCutter'], templateId: 'hatchet_swing', practical: true },
+  { id: 'quick_backstab', group: 'Quick / held attacks', label: 'Backstab Flick — Thrust', statsPath: ['quickAttacks','techniques','backstabFlick'], templateId: 'pickshovel_swing', practical: true },
+  { id: 'quick_backstab_slash', group: 'Quick / held attacks', label: 'Backstab Flick — Slash', statsPath: ['quickAttacks','techniques','backstabFlick'], templateId: 'hatchet_swing', practical: true },
+  { id: 'quick_mercy', group: 'Quick / held attacks', label: 'Mercy Spike — Thrust', statsPath: ['quickAttacks','techniques','mercySpike'], templateId: 'pickshovel_swing', practical: true },
+  { id: 'quick_mercy_slash', group: 'Quick / held attacks', label: 'Mercy Spike — Slash', statsPath: ['quickAttacks','techniques','mercySpike'], templateId: 'hatchet_swing', practical: true },
+  { id: 'charged_breaker', group: 'Quick / held attacks', label: 'Charged Breaker — Slash', statsPath: ['chargedBreaker'], templateId: 'hatchet_swing', practical: true, usePower: true },
+  { id: 'charged_breaker_thrust', group: 'Quick / held attacks', label: 'Charged Breaker — Thrust', statsPath: ['chargedBreaker'], templateId: 'pickshovel_swing', practical: true, usePower: true },
+  { id: 'flurry', group: 'Quick / held attacks', label: 'Accelerating Flurry — Slash', statsPath: ['flurry'], templateId: 'hatchet_swing', practical: true },
+  { id: 'flurry_thrust', group: 'Quick / held attacks', label: 'Accelerating Flurry — Thrust', statsPath: ['flurry'], templateId: 'pickshovel_swing', practical: true },
+  { id: 'counter_shield', group: 'Quick / held attacks', label: 'Counter Shield — Guard', statsPath: ['counterShield'], heldAnimationKey: 'counterShield', practical: true, toolKey: 'hatchet' },
+  { id: 'counter_shield_riposte_thrust', group: 'Quick / held attacks', label: 'Counter Shield Riposte — Thrust', statsPath: ['counterShield'], templateId: 'pickshovel_swing', practical: true },
+  { id: 'counter_shield_riposte_slash', group: 'Quick / held attacks', label: 'Counter Shield Riposte — Slash', statsPath: ['counterShield'], templateId: 'hatchet_swing', practical: true },
   { id: 'weapon_throw', group: 'Quick / held attacks', label: 'Thrown Weapon — Spin Throw', heldAnimationKey: 'weaponThrowSpin', practical: true },
   { id: 'weapon_throw_spear', group: 'Quick / held attacks', label: 'Fishing Spear — Offset Spin Throw', heldAnimationKey: 'weaponThrowSpearSpin', practical: true, toolKey: 'fishingspear' },
   { id: 'flask_throw', group: 'Quick / held attacks', label: 'Flask — Overhead Throw', heldAnimationKey: 'throwFlask', practical: true, toolKey: 'bottle' },
@@ -1530,6 +1560,7 @@ function cloneAnimationTemplate(source = {}) {
     poses: undefined,
     neutral: clonePoseData(source.neutral ?? source.poses?.neutral ?? neutralPoseFor(source.style)),
     windup: clonePoseData(source.windup ?? source.poses?.windup ?? defaultPose(0,0,0,0,0,0)),
+    midStrike: (source.midStrike ?? source.poses?.midStrike) ? clonePoseData(source.midStrike ?? source.poses.midStrike) : null,
     strike: clonePoseData(source.strike ?? source.poses?.strike ?? defaultPose(0,0,0,0,0,0)),
   };
 }
@@ -1565,6 +1596,7 @@ function prepareTemplateForAction(action, entry) {
   const power = action.usePower ? Number(entry?.power ?? entry?.POWER ?? 1) : 1;
   if (Number.isFinite(power) && power !== 1 && source.style === 'sweep') {
     source.windup.bodyYaw = safeNum(source.windup.bodyYaw, 0) * power;
+    if (source.midStrike) source.midStrike.bodyYaw = safeNum(source.midStrike.bodyYaw, 0) * power;
     source.strike.bodyYaw = safeNum(source.strike.bodyYaw, 0) * power;
   }
   // Match the game: first finish this attack's own endpoint math, then apply
@@ -1573,11 +1605,13 @@ function prepareTemplateForAction(action, entry) {
   // Forehand X direction into unrelated poses.
   if (actionUsesMeleeSpacing(action) && window.MeleePoseSpacing?.adjustEndpoint) {
     source.windup = window.MeleePoseSpacing.adjustEndpoint(source.windup, 'windup');
+    if (source.midStrike) source.midStrike = window.MeleePoseSpacing.adjustEndpoint(source.midStrike, 'midStrike');
     source.strike = window.MeleePoseSpacing.adjustEndpoint(source.strike, 'strike');
   }
   if (action.mirror) {
     source.neutral = flipPose(source.neutral);
     source.windup = flipPose(source.windup);
+    if (source.midStrike) source.midStrike = flipPose(source.midStrike);
     source.strike = flipPose(source.strike);
   }
   // Each action starts from the same concrete preview tool as its runtime template.
@@ -1620,12 +1654,15 @@ function applyRuntimeTimingForAction(action, entry) {
   } else if (action.id.startsWith('quick_')) {
     const quick = attackValuesConfig?.quickAttacks || {};
     timing = runtimeSwingTiming(quick.WINDUP_S, quick.STRIKE_S, 0, quick.HOLD_S);
-  } else if (action.id === 'charged_breaker') {
+  } else if (action.id.startsWith('charged_breaker')) {
     const data = attackValuesConfig?.chargedBreaker || {};
     timing = runtimeSwingTiming(data.MAX_CHARGE_S, data.STRIKE_S, 0, data.HOLD_S);
-  } else if (action.id === 'flurry') {
+  } else if (action.id.startsWith('flurry')) {
     const data = attackValuesConfig?.flurry || {};
     timing = runtimeSwingTiming(data.WINDUP_S, data.STRIKE_S, 0, data.HOLD_S);
+  } else if (action.id.startsWith('counter_shield_riposte_')) {
+    const data = attackValuesConfig?.counterShield || {};
+    timing = runtimeSwingTiming(data.COUNTER_WINDUP_S, data.COUNTER_STRIKE_S, 0, data.COUNTER_HOLD_S);
   } else if (action.id === 'crossbow_load' || action.id === 'scatterbow_load') {
     timing = {
       durationS: Number(entry?.reloadDurationS) || anim.durationS,
@@ -1661,9 +1698,13 @@ function applySelectedAction({ play = true } = {}) {
   $('animName').value = action.label;
   anim.name = action.label;
   $('animStyle').value = anim.style;
+  syncMidStrikeUi();
+  const pairedStyle = /_(slash|thrust)$/.test(action.id) || action.id.startsWith('quick_') || action.id === 'charged_breaker' || action.id === 'flurry'; // Used to explain that paired motion variants share one gameplay effect.
   $('actionSourceHelp').textContent = action.practical === false
     ? 'Non-attack action: animation remains fully editable; practical attack effect is fixed at zero.'
-    : 'Gameplay attack: animation and practical effect below are both scoped to this selected action.';
+    : pairedStyle
+      ? 'Gameplay attack variant: Thrust and Slash have separate animation records while sharing this attack’s practical stats.'
+      : 'Gameplay attack: animation and practical effect below are both scoped to this selected action.';
   renderStatFields();
   updateHitboxWedge();
   selectEditPhase(editPhase);
@@ -1862,8 +1903,56 @@ let previewT = 0;
 let playing = true;
 
 function phasePreviewT(phase) {
-  return phase === 'neutral' ? 0 : phase === 'windup' ? anim.windupFrac : anim.strikeFrac;
+  if (phase === 'neutral') return 0;
+  if (phase === 'windup') return anim.windupFrac;
+  if (phase === 'midStrike') return anim.windupFrac + (anim.strikeFrac - anim.windupFrac) * 0.5;
+  return anim.strikeFrac;
 }
+function phaseLabel(phase) {
+  return phase === 'midStrike' ? 'Mid Strike' : phase[0].toUpperCase() + phase.slice(1);
+}
+function midpointPose(a, b) {
+  const pose = lerpPose(a, b, 0.5); // Starting waypoint lies exactly on the old straight path, so merely enabling it changes nothing.
+  const midpointPoint = (pa, pb) => {
+    if (!pa && !pb) return null;
+    const from = pa || { x: 0, y: 0, z: 0 }, to = pb || { x: 0, y: 0, z: 0 };
+    return { x: (Number(from.x) + Number(to.x)) * 0.5 || 0, y: (Number(from.y) + Number(to.y)) * 0.5 || 0, z: (Number(from.z) + Number(to.z)) * 0.5 || 0 };
+  };
+  // Shoulder-follow and secondary-grip metadata stay unauthored here. Their
+  // boolean semantics cannot represent a mathematical half-weight without
+  // changing the old hand path merely by enabling Mid Strike.
+  const elbows = {};
+  for (const side of ATTACK_POSE_SIDES) {
+    const point = midpointPoint(a?.elbows?.[side], b?.elbows?.[side]);
+    if (point) elbows[side] = point;
+  }
+  if (Object.keys(elbows).length) pose.elbows = elbows;
+  return pose;
+}
+function syncMidStrikeUi() {
+  const enabled = !!anim.poses.midStrike;
+  const allowed = anim.sequence === 'attack';
+  if ($('useMidStrike')) {
+    $('useMidStrike').checked = enabled;
+    $('useMidStrike').disabled = !allowed;
+  }
+  if ($('poseTabMidStrike')) $('poseTabMidStrike').hidden = !enabled || !allowed;
+  if ($('midStrikeToggleField')) $('midStrikeToggleField').style.opacity = allowed ? '1' : '0.55';
+}
+function setMidStrikeEnabled(enabled, { focus = true } = {}) {
+  if (enabled && anim.sequence === 'attack') {
+    if (!anim.poses.midStrike) anim.poses.midStrike = midpointPose(anim.poses.windup, anim.poses.strike);
+    window.HobunjiAttackEditorHandShoulderControls?.loadFromAnimationObject?.({ poses: anim.poses });
+    syncMidStrikeUi();
+    if (focus) selectEditPhase('midStrike');
+  } else {
+    if (editPhase === 'midStrike') selectEditPhase('strike');
+    delete anim.poses.midStrike;
+    syncMidStrikeUi();
+  }
+  refreshJsonView();
+}
+$('useMidStrike')?.addEventListener('change', event => setMidStrikeEnabled(event.currentTarget.checked));
 function focusPreviewOnPhase(phase) {
   playing = false;
   previewT = phasePreviewT(phase);
@@ -1872,12 +1961,12 @@ function focusPreviewOnPhase(phase) {
   updateTimelineMarker(previewT);
 }
 function selectEditPhase(phase, { focus = true } = {}) {
-  if (!['neutral', 'windup', 'strike'].includes(phase)) return;
+  if (!ATTACK_POSE_PHASES.includes(phase) || (phase === 'midStrike' && !anim.poses.midStrike)) return;
   editPhase = phase;
   document.querySelectorAll('[data-edit-phase]').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.editPhase === phase);
   });
-  $('editPhasePill').textContent = `editing: ${phase[0].toUpperCase() + phase.slice(1)}`;
+  $('editPhasePill').textContent = `editing: ${phaseLabel(phase)}`;
   renderActivePosePanel();
   if (focus) {
     focusPreviewOnPhase(phase);
@@ -1950,7 +2039,12 @@ function exportAnimObject() {
     holdFrac: anim.holdFrac,
     durationS: anim.durationS,
     toolEndFlip: anim.toolEndFlip === true,
-    poses: { neutral: { ...anim.poses.neutral }, windup: { ...anim.poses.windup }, strike: { ...anim.poses.strike } },
+    poses: {
+      neutral: clonePoseData(anim.poses.neutral),
+      windup: clonePoseData(anim.poses.windup),
+      ...(anim.poses.midStrike ? { midStrike: clonePoseData(anim.poses.midStrike) } : {}),
+      strike: clonePoseData(anim.poses.strike),
+    },
   };
   if (anim.spinRevolutions > 0 || anim.spinBasisDeg) {
     exported.spinBasisDeg = Number(anim.spinBasisDeg) || 0;
@@ -2034,11 +2128,13 @@ function loadAnimObject(data) {
   // Older exports predate the neutral pose becoming authorable — fall back to
   // this style's implicit rest pose, per channel, so they still load cleanly.
   const styleNeutral = neutralPoseFor(anim.style);
-  const n = data.poses?.neutral || {}, w = data.poses?.windup || {}, s = data.poses?.strike || {};
+  const n = data.poses?.neutral || {}, w = data.poses?.windup || {}, m = data.poses?.midStrike || null, st = data.poses?.strike || {};
   anim.poses.neutral = { ...defaultPose(safeNum(n.x, styleNeutral.x), safeNum(n.y, styleNeutral.y), safeNum(n.z, styleNeutral.z), safeNum(n.pitch, styleNeutral.pitch), safeNum(n.yaw, styleNeutral.yaw), safeNum(n.bodyYaw, styleNeutral.bodyYaw), safeNum(n.roll, styleNeutral.roll)), scale: Math.max(0.1, safeNum(n.scale, styleNeutral.scale ?? 1)) };
   anim.poses.windup = defaultPose(safeNum(w.x, 0), safeNum(w.y, 0), safeNum(w.z, 0), safeNum(w.pitch, 0), safeNum(w.yaw, 0), safeNum(w.bodyYaw, 0), safeNum(w.roll, 0));
-  anim.poses.strike = defaultPose(safeNum(s.x, 0), safeNum(s.y, 0), safeNum(s.z, 0), safeNum(s.pitch, 0), safeNum(s.yaw, 0), safeNum(s.bodyYaw, 0), safeNum(s.roll, 0));
-  for (const [phase, raw] of [['neutral', n], ['windup', w], ['strike', s]]) {
+  if (m && typeof m === 'object') anim.poses.midStrike = defaultPose(safeNum(m.x, 0), safeNum(m.y, 0), safeNum(m.z, 0), safeNum(m.pitch, 0), safeNum(m.yaw, 0), safeNum(m.bodyYaw, 0), safeNum(m.roll, 0));
+  else delete anim.poses.midStrike;
+  anim.poses.strike = defaultPose(safeNum(st.x, 0), safeNum(st.y, 0), safeNum(st.z, 0), safeNum(st.pitch, 0), safeNum(st.yaw, 0), safeNum(st.bodyYaw, 0), safeNum(st.roll, 0));
+  for (const [phase, raw] of [['neutral', n], ['windup', w], ...(m ? [['midStrike', m]] : []), ['strike', st]]) {
     if (raw?.shoulderAim && typeof raw.shoulderAim === 'object') anim.poses[phase].shoulderAim = { ...raw.shoulderAim };
     if (raw?.elbows && typeof raw.elbows === 'object') {
       const elbows = Object.fromEntries(ATTACK_POSE_SIDES
@@ -2061,6 +2157,8 @@ function loadAnimObject(data) {
   $('strikeFracVal').textContent = `${Math.round(anim.strikeFrac * 100)}%`;
   $('holdFracVal').textContent = `${Math.round(anim.holdFrac * 100)}%`;
   $('durationS').value = anim.durationS;
+  syncMidStrikeUi();
+  if (editPhase === 'midStrike' && !anim.poses.midStrike) editPhase = 'strike';
   renderActivePosePanel();
   selectEditPhase(editPhase);
   updateTimelineSegments();

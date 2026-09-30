@@ -21321,7 +21321,7 @@
       // "use the old proportional-to-what's-left hold" — see the HF
       // calculation in updateToolMesh below.
       let combatSwingHoldS = 0;
-      // Optional full 6-channel pose ({neutral,windup,strike}, each
+      // Optional full pose ({neutral,windup,optional midStrike,strike}, each
       // {x,y,z,pitch,yaw,bodyYaw}) authored in the attack-animation editor.
       // When set, updateToolMesh applies it generically instead of going
       // through anim's bespoke per-style formula — see the pose-driven
@@ -21596,6 +21596,7 @@
           ...pose,
           neutral: { ...pose.neutral },
           windup: { ...pose.windup },
+          midStrike: pose.midStrike ? { ...pose.midStrike } : pose.midStrike,
           strike: { ...pose.strike },
           returnNeutral: pose.returnNeutral ? { ...pose.returnNeutral } : pose.returnNeutral,
         };
@@ -21604,7 +21605,7 @@
         // with that same charge rather than snapping to the full-power arc.
         for (const key of ['x', 'y', 'z', 'pitch', 'yaw', 'roll', 'bodyYaw']) {
           const neutral = Number(next.neutral?.[key]) || 0;
-          for (const phase of ['windup', 'strike']) {
+          for (const phase of ['windup', 'midStrike', 'strike']) {
             const endpoint = Number(next[phase]?.[key]);
             if (Number.isFinite(endpoint)) next[phase][key] = neutral + (endpoint - neutral) * t;
           }
@@ -22032,9 +22033,11 @@
         const holdFrac = window.FormatUtils.clamp(Number(animation.holdFrac) || 0.78, strikeFrac, 0.99);
         const neutral = animation.poses?.neutral || {};
         const windup = animation.poses?.windup || neutral;
+        const midStrike = animation.poses?.midStrike || null; // Optional midpoint waypoint for authored curved strikes.
         const strike = animation.poses?.strike || windup;
         const channel = key => fourPhaseLerp(progress, windupFrac, strikeFrac, holdFrac,
-          Number(windup[key]) || 0, Number(strike[key]) || 0, Number(neutral[key]) || 0);
+          Number(windup[key]) || 0, Number(strike[key]) || 0, Number(neutral[key]) || 0, Number(neutral[key]) || 0,
+          midStrike && Number.isFinite(Number(midStrike[key])) ? Number(midStrike[key]) : null);
         return {
           x: channel('x'), y: channel('y'), z: channel('z'),
           pitch: channel('pitch'), yaw: channel('yaw'), roll: channel('roll'),
@@ -22310,14 +22313,20 @@
       // hold phase (sf→hf) dwells exactly at the strike value before easing
       // back to neutral, so an impact reads as a clean hit instead of
       // snapping straight into its recovery.
-      function fourPhaseLerp(progress, wf, sf, hf, windupV, strikeV, neutralV = 0, returnNeutralV = neutralV) {
-        if (progress <= wf) return neutralV + (windupV - neutralV) * (progress / wf);
-        if (progress <= sf) return windupV + (strikeV - windupV) * ((progress - wf) / (sf - wf));
+      function fourPhaseLerp(progress, wf, sf, hf, windupV, strikeV, neutralV = 0, returnNeutralV = neutralV, midStrikeV = null) {
+        if (progress <= wf) return neutralV + (windupV - neutralV) * (progress / Math.max(0.0001, wf));
+        if (Number.isFinite(midStrikeV) && sf > wf) {
+          const mf = wf + (sf - wf) * 0.5; // Mid Strike is deliberately timing-free: always halfway through the existing strike segment.
+          if (progress <= mf) return windupV + (midStrikeV - windupV) * ((progress - wf) / Math.max(0.0001, mf - wf));
+          if (progress <= sf) return midStrikeV + (strikeV - midStrikeV) * ((progress - mf) / Math.max(0.0001, sf - mf));
+        } else if (progress <= sf) {
+          return windupV + (strikeV - windupV) * ((progress - wf) / Math.max(0.0001, sf - wf));
+        }
         if (progress <= hf) return strikeV;
-        return strikeV + (returnNeutralV - strikeV) * ((progress - hf) / (1.0 - hf));
+        return strikeV + (returnNeutralV - strikeV) * ((progress - hf) / Math.max(0.0001, 1.0 - hf));
       }
 
-      function sequencedPoseLerp(progress, wf, sf, hf, windupV, strikeV, neutralV = 0, returnNeutralV = neutralV) {
+      function sequencedPoseLerp(progress, wf, sf, hf, windupV, strikeV, neutralV = 0, returnNeutralV = neutralV, midStrikeV = null) {
         if (combatSwingSequence === 'load') {
           if (progress <= wf) return neutralV + (windupV - neutralV) * (progress / Math.max(0.0001, wf));
           return windupV + (returnNeutralV - windupV) * ((progress - wf) / Math.max(0.0001, 1 - wf));
@@ -22327,7 +22336,7 @@
           if (progress <= hf) return strikeV;
           return strikeV + (returnNeutralV - strikeV) * ((progress - hf) / Math.max(0.0001, 1 - hf));
         }
-        return fourPhaseLerp(progress, wf, sf, hf, windupV, strikeV, neutralV, returnNeutralV);
+        return fourPhaseLerp(progress, wf, sf, hf, windupV, strikeV, neutralV, returnNeutralV, midStrikeV);
       }
 
       // Each tool style's natural at-rest pose (degrees for angle channels) —
@@ -22609,10 +22618,13 @@
           const scale = (ch, v) => neutral[ch] + ((v ?? neutral[ch]) - neutral[ch]) * power;
           const chan = (ch, mirror = false) => {
             const w = scale(ch, pose.windup?.[ch]) * (mirror ? sign : 1);
+            const m = pose.midStrike && Number.isFinite(Number(pose.midStrike?.[ch]))
+              ? scale(ch, pose.midStrike[ch]) * (mirror ? sign : 1)
+              : null; // Null is the compatibility signal: interpolate Windup→Strike exactly as older animations did.
             const s = scale(ch, pose.strike?.[ch]) * (mirror ? sign : 1);
             const n = neutral[ch] * (mirror ? sign : 1);
             const rn = returnNeutral[ch] * (mirror ? sign : 1);
-            return sequencedPoseLerp(progress, WF, SF, poseHoldFrac, w, s, n, rn);
+            return sequencedPoseLerp(progress, WF, SF, poseHoldFrac, w, s, n, rn, m);
           };
 
           // The hand attachment itself is part of a true midline flip. Keep it

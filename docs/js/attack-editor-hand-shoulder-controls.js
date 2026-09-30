@@ -10,12 +10,13 @@
   const profileSelect = document.getElementById('handProfileSelect');
   if (!profileSelect || global.HobunjiAttackEditorHandShoulderControls) return;
 
-  const PHASES = ['neutral', 'windup', 'strike'];
+  const PHASES = ['neutral', 'windup', 'midStrike', 'strike'];
   const AXES = ['grip', 'palmNormal']; // The only hand-local hinges permitted to aim the wrist toward its elbow.
   const SIDES = ['left', 'right'];
   const DEFAULTS = Object.freeze({
     neutral: Object.freeze({ grip: true, palmNormal: true }),
     windup: Object.freeze({ grip: false, palmNormal: true }),
+    midStrike: Object.freeze({ grip: false, palmNormal: true }), // Used only when the optional Mid Strike pose exists.
     strike: Object.freeze({ grip: false, palmNormal: true }),
   });
   const poseAim = Object.fromEntries(PHASES.map(phase => [phase, { ...DEFAULTS[phase] }])); // Parser-time fallback until the core editor pose state exists.
@@ -77,7 +78,7 @@
   followGroup.id = 'handShoulderFollowGroup';
   followGroup.innerHTML = `
     <div class="poseGroupHead"><span class="dot" style="background:#fb7185"></span>Hand elbow-targeting by animation pose</div>
-    <div class="help" style="margin-bottom:7px"><b>This rotates the HAND, never the weapon.</b> The wrist-facing side aims toward the pose-authored elbow. Elbow coordinates are edited in the active Neutral/Windup/Strike pose panel; there is no arm-length projection, reach clamp, joint-limit solve, or runtime midpoint calculation. The two checkboxes only choose which hand-local hinges may rotate.</div>
+    <div class="help" style="margin-bottom:7px"><b>This rotates the HAND, never the weapon.</b> The wrist-facing side aims toward the pose-authored elbow. Elbow coordinates are edited in the active Neutral/Windup/Mid Strike/Strike pose panel; there is no arm-length projection, reach clamp, joint-limit solve, or runtime midpoint calculation. The two checkboxes only choose which hand-local hinges may rotate.</div>
     ${PHASES.map(phase => `
       <div class="field" data-hand-shoulder-phase="${phase}">
         <label>${phase[0].toUpperCase() + phase.slice(1)} hand follow</label>
@@ -92,7 +93,7 @@
   previewGroup.className = 'poseGroup';
   previewGroup.innerHTML = `
     <div class="poseGroupHead"><span class="dot" style="background:#fb7185"></span>Arm-targeting preview</div>
-    <div class="help" style="margin-bottom:7px">Neutral defaults to both hinges. Windup and Strike default to the palm-normal hinge only. The three pose settings blend continuously with the animation.</div>
+    <div class="help" style="margin-bottom:7px">Neutral defaults to both hinges. Windup, optional Mid Strike, and Strike default to the palm-normal hinge only. Authored pose settings blend continuously with the animation.</div>
     <div class="field"><label class="fieldRow" style="cursor:pointer"><input id="handHideArmSpritesPreview" type="checkbox" style="width:auto;margin-right:6px">Hide arm sprites in preview</label></div>
     <div class="field"><label class="fieldRow" style="cursor:pointer"><input id="handShowPaperArmGuide" type="checkbox" style="width:auto;margin-right:6px">Show paper arm guide (upper arm + elbow + forearm)</label></div>
     <div class="help" id="handShoulderAimStatus">Preview helpers are not exported. The paper arm is diagnostic only and does not drive the hand.</div>
@@ -151,8 +152,14 @@
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return parsed;
     if (!parsed.poses || typeof parsed.poses !== 'object') parsed.poses = {};
     for (const phase of PHASES) {
+      const corePose = corePoseState()?.getPose?.(phase);
+      if (phase === 'midStrike' && !corePose && !parsed.poses.midStrike) continue; // Do not manufacture the optional keyframe merely because the hand extension is installed.
       if (!parsed.poses[phase] || typeof parsed.poses[phase] !== 'object') parsed.poses[phase] = {};
-      parsed.poses[phase].shoulderAim = { ...aimForPhase(phase) };
+      const writeAim = phase !== 'midStrike'
+        || (corePose?.shoulderAim && typeof corePose.shoulderAim === 'object')
+        || (parsed.poses.midStrike?.shoulderAim && typeof parsed.poses.midStrike.shoulderAim === 'object'); // Transform-only Mid Strike exports stay hand-path-neutral.
+      if (writeAim) parsed.poses[phase].shoulderAim = { ...aimForPhase(phase) };
+      else delete parsed.poses[phase].shoulderAim;
       const elbows = Object.fromEntries(SIDES
         .map(side => [side, elbowForPhase(phase, side)])
         .filter(([, point]) => point)
@@ -374,7 +381,10 @@
       for (const phase of PHASES) {
         poseAim[phase] = normalizeBooleanAim(parsed?.poses?.[phase]?.shoulderAim, DEFAULTS[phase]);
         poseElbows[phase] = normalizeElbows(parsed?.poses?.[phase] || {});
-        corePoseState()?.setShoulderAim?.(phase, poseAim[phase]);
+        if (phase === 'midStrike' && !parsed?.poses?.midStrike) continue; // Keep the optional core pose absent until the editor explicitly enables it.
+        const hasAuthoredAim = phase !== 'midStrike'
+          || (parsed?.poses?.midStrike?.shoulderAim && typeof parsed.poses.midStrike.shoulderAim === 'object');
+        if (hasAuthoredAim) corePoseState()?.setShoulderAim?.(phase, poseAim[phase]);
         for (const side of SIDES) corePoseState()?.setElbow?.(phase, side, poseElbows[phase][side]);
       }
       syncCheckboxes();

@@ -37,6 +37,12 @@ assert.match(editor, /const p = anim\.poses\[editPhase\]/, 'gizmo must edit the 
 assert.doesNotMatch(editor, /id="gizmoPhase"|\$\('gizmoPhase'\)/, 'separate gizmo phase selector must not return');
 assert.doesNotMatch(editor, /id="panelNeutral"|id="panelWindup"|id="panelStrike"/, 'three always-open pose panels must not return');
 assert.doesNotMatch(editor, /scrubNeutralBtn|scrubWindupBtn|scrubStrikeBtn/, 'separate scrub-to-pose buttons must not return');
+assert.match(editor, /id="useMidStrike"/, 'Attack Editor must expose an explicit optional Mid Strike toggle');
+assert.match(editor, /id="poseTabMidStrike"[^>]*data-edit-phase="midStrike"/, 'Mid Strike must be an editable key-pose tab when enabled');
+assert.match(editor, /phase === 'midStrike'\) return anim\.windupFrac \+ \(anim\.strikeFrac - anim\.windupFrac\) \* 0\.5/, 'Mid Strike must bisect the existing Windup→Strike interval rather than adding a second timing system');
+assert.match(editor, /\.\.\.\(anim\.poses\.midStrike \? \{ midStrike: clonePoseData\(anim\.poses\.midStrike\) \} : \{\}\)/, 'exports must omit Mid Strike unless it was explicitly enabled');
+assert.match(editor, /if \(m && typeof m === 'object'\) anim\.poses\.midStrike/, 'imports must restore optional Mid Strike data');
+assert.match(editor, /if \(!mid\)[\s\S]*lerpPose\(anim\.poses\.windup, anim\.poses\.strike, k\)/, 'animations without Mid Strike must preserve the original direct Windup→Strike interpolation');
 assert.match(editor, /js\/combat\/melee-pose-spacing\.js/, 'Attack Editor must load the exact shared melee spacing math used by gameplay');
 assert.match(editor, /actionUsesMeleeSpacing\(action\)[\s\S]*MeleePoseSpacing\?\.adjustEndpoint[\s\S]*if \(action\.mirror\)/, 'editor must apply shared spacing before Backhand mirroring so each attack keeps its own ray');
 assert.match(meleeSpacing, /const Y_LIFT = 0\.17/, 'shared melee spacing must retain the uploaded +0.17 Y calibration');

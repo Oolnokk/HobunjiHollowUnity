@@ -719,7 +719,7 @@ assert.match(shoulderAimSource, /armLengthBySide/, 'paper arm diagnostics must r
 assert.doesNotMatch(shoulderAimSource, /Math\.sqrt\(Math\.max\(0, segmentLength|bendRadius|overreach/, 'elbow pose must not be projected onto an IK solution or reach limit');
 assert.doesNotMatch(shoulderAimSource, /authored \* \(modelHeight \/ 0\.9\)/, 'concrete arm reach must not be scaled by model height a second time');
 
-assert.match(shoulderControlsSource, /const PHASES = \['neutral', 'windup', 'strike'\]/, 'Attack Editor must expose all three pose phases');
+assert.match(shoulderControlsSource, /const PHASES = \['neutral', 'windup', 'midStrike', 'strike'\]/, 'Attack Editor hand controls must support the optional Mid Strike pose');
 assert.match(shoulderControlsSource, /\[\['grip','Grip axis \(local X\)'\],\['palmNormal','Palm-normal axis \(local -Z\)'\]\]/, 'Attack Editor must expose the corrected directed palm-normal hinge');
 assert.match(shoulderControlsSource, /`handShoulderAim_\$\{phase\}_\$\{axis\}`/, 'Attack Editor must give each pose-axis checkbox a stable id');
 assert.match(shoulderControlsSource, /parsed\.poses\[phase\]\.shoulderAim = \{ \.\.\.aimForPhase\(phase\) \}/, 'per-pose hinge choices must serialize from the core pose-backed state');
