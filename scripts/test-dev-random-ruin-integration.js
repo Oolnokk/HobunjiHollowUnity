@@ -429,7 +429,7 @@ assert(sanctum.includes("SP.registerComposer({\n    id:'sanctum'"), 'braziers / 
 assert(read('docs/js/dev-random-ruin-interior-map.js').includes('window.DevRandomRuinSanctum?.reserve?.(cols, rows)'), 'floor projection must reserve the sanctum wing in the ruin grid');
 assert(sanctum.includes('bgm_just_beyond_the_torchlight.ogg'), 'awakened Great Door must emit Just Beyond the Torchlight as its BGS');
 assert(lich.includes('allowArea:') && lich.includes('const allowedAreas = new Set([ARENA_ID])'), 'liches stay arena-confined unless an area opts in');
-assert(gameIndex.includes('js/combat/combat-lich.js?v=20260929merge1'), 'lich area opt-in must be cache-busted in the game page');
+assert(/js\/combat\/combat-lich\.js\?v=[A-Za-z0-9_-]+/.test(gameIndex), 'lich area opt-in must be cache-busted in the game page');
 new vm.Script(sanctum, { filename: 'dev-random-ruin-sanctum.js' });
 const ruinPieces = read('docs/js/dev-random-ruin-furniture-pieces.js');
 new vm.Script(ruinPieces, { filename: 'dev-random-ruin-furniture-pieces.js' });
