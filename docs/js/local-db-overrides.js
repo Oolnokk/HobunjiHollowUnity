@@ -300,7 +300,10 @@
     if (!def) throw new Error('Unknown database id: ' + id);
     if (getSourceMode() === 'local') {
       const override = getOverride(id); // Used as the opted-in local source when one exists.
-      if (override) return override;
+      if (override) {
+        window.DevCompanion?.noteConfigAccess?.(def.repoPath, { kind: 'override', source: 'local-override', status: 'local', note: `${def.label} served from the local override instead of the repo file` }); // Dev Companion's config log would otherwise never see this read (no fetch happens).
+        return override;
+      }
     }
     const repoUrl = _docsResourceUrl(def.repoPath); // Resolve from local-db-overrides.js, not the current page, so nested docs/tools editors load the same repo database as docs/index.html.
     const resp = await fetch(repoUrl); // Used to fetch the repository source when no local override applies.

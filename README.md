@@ -162,6 +162,33 @@ materials in place once the config loads.
   which moves it to gear and teaches him its enchantments (Flourishes per
   enchantment × slot) so he can apply them to other weapons for more.
 
+## Dev Companion window
+
+Settings → **Dev Companion Window** (or `window.DevCompanion.open()`) opens
+`docs/tools/dev-companion/` as a second window tied to that one play session
+(a per-tab session id carried on a BroadcastChannel; it reconnects across the
+game tab's reloads and ignores other tabs).
+
+- **Quick Save / Quick Load** (`js/quick-save.js`): IndexedDB save states that
+  hold the whole save plus exact area/position/facing/doorway/time. Loading
+  reloads the game (so edited config is picked up), applies the snapshot at the
+  start of the next boot, auto-plays the same farmer/world, and places you on
+  the saved spot.
+- **Autosave pause** (`js/autosave-pause.js`): tab-scoped; blocks automatic
+  folder syncs and rolling recovery autosaves (explicit saves still work).
+  Quick load pauses it by default. A badge shows in-game while paused.
+- **Recovery backups**: one-click swap between the Save Recovery checkpoints,
+  going straight back into the game.
+- **Map Edit**: the in-game Map Edit panel's controls (plus numeric nudges);
+  while a companion is connected, the 🗺️ button drives the session from there.
+- **Live Config**: every config/JSON the game fetched (fetch wrapper + resource
+  timing, local DB overrides flagged), the map in use, and the dialogue node on
+  screen with the condition checks that chose its tree
+  (`ConditionRegistry.explainEntry`).
+
+Features plug in with `DevCompanion.registerCommand`,
+`registerStateProvider`, and `trace` (`js/dev-companion-bridge.js`).
+
 ## Future plans: multiplayer
 
 Eventual multiplayer support (one world-owner host + guest players joining

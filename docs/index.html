@@ -10,6 +10,10 @@
        genotype persistence and Porakaneki faction hooks can request it while
        the document parser is still loading the main module list. -->
   <script src="js/scene-ready-poller.js?v=20260920startup4"></script>
+  <!-- Dev Companion bridge (window.DevCompanion): session-tied channel to the
+       docs/tools/dev-companion window. Loaded before every config-fetching
+       module so its fetch() wrapper can log each config/JSON access. -->
+  <script src="js/dev-companion-bridge.js?v=20260930companion1"></script>
   <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
   <script src="js/GLTFLoader.js?v=20260712d"></script>
   <script src="js/WallBuilder.js?v=20260809a"></script>
@@ -216,7 +220,7 @@
   <script src="js/banubu-quest-content.js?v=20260925banubuvisual2"></script>
        editors save edited repo-tracked JSON into localStorage and have the
        game load that instead of the repo file when Local source is selected. -->
-  <script src="js/local-db-overrides.js?v=20260923banubuscale2"></script>
+  <script src="js/local-db-overrides.js?v=20260930hd662bf5"></script>
   <script>
     // species-pose-scaling parser-loads earlier for avatar consumers, then
     // re-resolves its config now that LocalDBOverrides knows the selected
@@ -230,14 +234,14 @@
   <!-- Shared condition-axis schema/evaluators (window.ConditionRegistry) —
        single source of truth for the dialogue system's and the Loot & Shop
        system's condition gating, also loaded by their respective dev tools. -->
-  <script src="js/condition-registry.js?v=20260930hc16d04c"></script>
+  <script src="js/condition-registry.js?v=20260930he9dd23b"></script>
   <!-- Optional local-folder save mirror (window.LocalSaveFolder) — self-contained,
        only reads/writes the same hobunjiSaveMeta localStorage key onboarding.js/
        game.js already use. See docs/js/local-save-folder.js. -->
-  <script src="js/local-save-folder.js?v=20260926metalarmor1"></script>
+  <script src="js/local-save-folder.js?v=20260930h6b53aa1"></script>
   <!-- Onboarding overlay -->
   <link rel="stylesheet" href="onboarding.css?v=20260921preworldsky1">
-  <script src="onboarding.js?v=20260930h2456789"></script>
+  <script src="onboarding.js?v=20260930h5dbefb6"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
   <script src="js/combat/resource-system.js?v=20260930h7347c6f"></script>
   <script src="js/combat/knockback-collision-impact.js?v=20260930h6c19d61"></script>
@@ -552,7 +556,7 @@
   <script src="js/map-live-preview.js?v=20260909a&window=20260926rebase1"></script>
   <!-- Wall-mounted furniture loads synchronously before game.js consumers initialize. -->
   <script src="js/wall-ornament-placement.js?v=20260926rebase1"></script>
-  <script src="js/map-live-preview-runtime.js?v=20260925banubukeycam1"></script>
+  <script src="js/map-live-preview-runtime.js?v=20260930haa68bf6"></script>
   <!-- Dev Tools: Testing Arena teleport + creature/bandit/foliage spawner
        panel (window.DevSpawner) — reads window.CreatureGenetics/
        window.CreatureGeneticsRender/window.BanditCombat/
@@ -1969,6 +1973,13 @@
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingDevMode"><span class="toggle-slider"></span></span>
           </label>
+          <div class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Dev Companion Window</div>
+              <div class="settings-desc">Opens a second window tied to this play session: quick save/load with exact position, one-click recovery-backup swapping, autosave pause, Map Edit controls, and a live list of the config/JSON (including the dialogue node on screen and the conditions that chose it) the game is using</div>
+            </div>
+            <button type="button" id="devCompanionOpenBtn" class="settings-small-btn">Open</button>
+          </div>
           <label class="settings-row" id="settingFlipPngPortraitsRow" hidden style="display:none">
             <div class="settings-label">
               <div class="settings-name">Flip PNG Character Portraits Sideways</div>
@@ -2409,7 +2420,7 @@
   <script src="js/dialogue-camera-framing.js?v=20260926a"></script>
   <script src="js/dialogue-templates.js?v=20260929mastery1"></script>
   <script src="js/dialogue-rich-text.js?v=20260929colors1"></script>
-  <script src="js/dialogue-content.js?v=20260930h3ea8434"></script>
+  <script src="js/dialogue-content.js?v=20260930h16e3b13"></script>
   <script src="js/combat/combat-tutorial-content.js?v=20260929oddclaw1-colors1-opportunist1-mastery1-goals1"></script>
   <script src="js/combat/combat-tutorial-mastery.js?v=20260929mastery1-goals1"></script>
   <script src="js/combat/combat-tutorial-partner.js?v=20260930partner1"></script>
@@ -2544,7 +2555,7 @@
   <script src="js/shoulder-cam-pointer-lock.js?v=20260930hfc11b39"></script>
   <!-- Shared character-scoped hobunjiSaveMeta update step used by game.js's save* helpers. -->
   <script src="js/character-meta-save.js?v=20260930ench1"></script>
-  <script src="game.js?v=20260930h0d3069d"></script>
+  <script src="game.js?v=20260930he082e12"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>

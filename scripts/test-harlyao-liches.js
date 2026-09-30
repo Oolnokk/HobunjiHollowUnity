@@ -363,7 +363,7 @@ assert.match(devSpawnerSource, /startsWith\('harlyao-lich:'\)/);
 assert(indexSource.includes('js/combat/combat-lich.js?v=20260929merge1'));
 assert(indexSource.includes('js/combat/combat-bandit.js?v=20260927reviewfix1'));
 assert(indexSource.includes('js/dev-spawner.js?v=20260927reviewfix1'));
-assert(indexSource.includes('game.js?v=20260930h0d3069d'));
+assert(indexSource.includes('game.js?v=20260930he082e12'));
 assert(indexSource.includes('js/combat/resource-system.js?v=20260930h7347c6f'));
 assert(indexSource.includes('js/pixel-probe.js?v=20260927inputclaim1'));
 assert(indexSource.includes('js/portrait-utils.js?v=20260926hoodback2'));

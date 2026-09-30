@@ -59,7 +59,7 @@ assert(camera.includes('dev-random-ruin-interactions.js?v=20260930rowsignature1'
 assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260929glowdecals1'), 'simple puzzle interior-parity runtime must be cache-busted in the dev bootstrap');
 assert(/dev-random-ruin-wall-render-proxy\.js\?v=\w+/.test(camera), 'native ruin render verifier must be cache-busted in the dev bootstrap');
 assert(/js\/dev-random-ruin-bootstrap\.js\?v=\w+/.test(gameIndex), 'game page must load the updated ruin bootstrap');
-assert(gameIndex.includes('game.js?v=20260930h0d3069d'), 'game page must load the footprint-aware movement collision');
+assert(gameIndex.includes('game.js?v=20260930he082e12'), 'game page must load the footprint-aware movement collision');
 assert(gameIndex.indexOf('js/area-footprint-blockers.js') >= 0 && gameIndex.indexOf('js/area-footprint-blockers.js') < gameIndex.indexOf('game.js?v='), 'sub-tile footprint registry must load before game.js');
 assert(game.includes('window.AreaFootprintBlockers?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE, worldY)'), 'canOccupyAt must test the whole mover square against prop footprints');
 assert(gameIndex.includes('js/climb-system.js?v=20260929config1'), 'game page must cache-bust the shared climb animation used by authored ruin ladders');

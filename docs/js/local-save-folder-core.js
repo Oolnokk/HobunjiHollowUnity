@@ -590,6 +590,10 @@
   async function _syncNowImpl({ automatic = false, force = false, snapshot = null, recoveryKind = 'auto' } = {}) {
     if (_state !== 'ready' || !_handle) return getStatus();
     if (automatic && !_autoSyncArmed) return getStatus();
+    if (automatic && window.HobunjiAutosavePause?.isPaused?.()) { // Dev Companion autosave pause freezes the canonical folder; explicit saves still pass.
+      window.HobunjiAutosavePause.noteBlocked?.('folder-autosync');
+      return getStatus();
+    }
 
     try {
       const saveSnapshot = normalizeSnapshot(snapshot || snapshotFromBrowser()); // Explicit manual/restore writes can pin the exact snapshot being committed.

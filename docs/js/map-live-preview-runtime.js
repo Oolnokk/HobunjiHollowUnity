@@ -16,6 +16,7 @@
   const pendingTransformRequests = new Map(); // requestId -> placement key; used to learn whether a live transform was persisted by the standalone Map Editor or remained runtime-only.
   let pendingDiffRequestId = ''; // Guards the one outstanding Copy Edit Diff request so late editor responses cannot overwrite a newer clipboard result.
   let diffRequestTimer = null; // Falls back to runtime-only edits when the editor is connected but does not answer a diff request.
+  let pendingDiffResolve = null; // Resolver for the outstanding collectEditDiff() promise.
   let cameraMarkerRoot = null; // Holds dev-only cinematic camera markers while the Map Edit session is open.
   let cameraMarkerArea = ''; // Used to rebuild camera markers only when the active room/locale changes.
   let cameraMarkerSignature = ''; // Used to detect authored camera-list changes without rebuilding markers on every panel refresh.
@@ -31,6 +32,7 @@
     deps = injectedDeps;
     endpoint = window.MapLivePreview.createEndpoint('game', handleMessage);
     bindUi();
+    registerCompanion();
     endpoint.send({ type: 'game-ready', map: currentDescriptor() });
     refreshVisibility();
     refreshPanel();
@@ -208,13 +210,19 @@
     refreshPanel();
   }
 
-  function togglePanel() {
+  // The Map Edit session (markers, mouse-look suppression, picker/gizmo) is
+  // separate from whether the in-game panel is drawn: with a Dev Companion
+  // window connected, the controls live there and the panel stays hidden.
+  function companionDriving() {
+    return !!window.DevCompanion?.isConnected?.();
+  }
+
+  function setSessionOpen(open, { showPanel = !companionDriving() } = {}) {
     const panel = document.getElementById('mapEditPanel');
     const button = document.getElementById('mapEditBtn');
-    if (!panel) return;
-    const open = panel.style.display !== 'flex';
-    panel.style.display = open ? 'flex' : 'none';
+    if (panel) panel.style.display = open && showPanel ? 'flex' : 'none';
     button?.classList.toggle('fed-open', open);
+    const wasOpen = !!window.__mapEditorPanelOpen;
     // Read by game.js's mousemove handler: mouse-driven camera rotation is
     // suppressed for the whole Map Edit session, not just while a placement
     // is actively selected (__mapEditorGizmoActive) — otherwise stray mouse
@@ -222,13 +230,25 @@
     // Click to Select attempt before anything is even selected yet.
     window.__mapEditorPanelOpen = open;
     if (open) {
-      syncCameraMarkers(true);
+      if (!wasOpen) syncCameraMarkers(true);
       refreshPanel();
     } else {
       disarmPicker();
       if (selectedPlacement) detachPlacement();
       clearCameraMarkers();
     }
+  }
+
+  function togglePanel() {
+    const panel = document.getElementById('mapEditPanel');
+    if (!panel) return;
+    if (companionDriving()) {
+      setSessionOpen(!window.__mapEditorPanelOpen, { showPanel: false });
+      window.DevCompanion.focusTab?.('map');
+      return;
+    }
+    const open = panel.style.display !== 'flex';
+    setSessionOpen(open, { showPanel: true });
   }
 
   function closePanel() {
@@ -716,7 +736,9 @@
       if (!pendingDiffRequestId || message.requestId !== pendingDiffRequestId) return;
       clearTimeout(diffRequestTimer);
       pendingDiffRequestId = '';
-      finishCopyEditDiff(message.status === 'applied' ? message.bundle : null, message.status === 'applied' ? '' : (message.reason || 'Map Editor diff was unavailable.'));
+      const resolve = pendingDiffResolve;
+      pendingDiffResolve = null;
+      resolve?.(buildEditDiffBundle(message.status === 'applied' ? message.bundle : null, message.status === 'applied' ? '' : (message.reason || 'Map Editor diff was unavailable.')));
       return;
     }
     if (message.type === 'reflect-request') handleReflect(message);
@@ -752,7 +774,7 @@
       }));
   }
 
-  function finishCopyEditDiff(editorBundle = null, note = '') {
+  function buildEditDiffBundle(editorBundle = null, note = '') {
     const descriptor = currentDescriptor({ includeSnapshot: false });
     const runtimeOnlyTransforms = runtimeOnlyTransformDiffs(); // Appended only for transforms the standalone workspace did not acknowledge, avoiding duplicate persisted edits.
     const bundle = {
@@ -773,35 +795,48 @@
       },
     };
     if (note) bundle._note = note;
-    const text = JSON.stringify(bundle, null, 2);
-    copyText(text)
-      .then(() => {
-        setStatus(`Copied edit diff: ${bundle.summary.editorChangedMaps} editor map(s), ${runtimeOnlyTransforms.length} runtime-only transform(s).`);
-        deps.showToast('Map Edit diff copied.', true);
-      })
-      .catch(() => deps.showToast(text, true));
+    return bundle;
   }
 
-  function copyEditDiff() {
+  // Resolves with the full diff bundle: the standalone editor's answer when it
+  // is connected (1.2s timeout), otherwise the runtime-only transform edits.
+  function collectEditDiff() {
     clearTimeout(diffRequestTimer);
-    const requestId = window.MapLivePreview.requestId('diff');
+    pendingDiffResolve?.(buildEditDiffBundle(null, 'Superseded by a newer diff request.'));
+    pendingDiffResolve = null;
     if (!editorConnected) {
-      finishCopyEditDiff(null, 'Standalone Map Editor is not connected; clipboard contains all in-game runtime-only transform edits available in this session.');
-      return;
+      return Promise.resolve(buildEditDiffBundle(null, 'Standalone Map Editor is not connected; clipboard contains all in-game runtime-only transform edits available in this session.'));
     }
+    const requestId = window.MapLivePreview.requestId('diff');
     pendingDiffRequestId = requestId;
     endpoint.send({ type: 'map-edit-diff-request', requestId });
     setStatus('Collecting complete Map Edit diff…');
-    diffRequestTimer = setTimeout(() => {
-      if (pendingDiffRequestId !== requestId) return;
-      pendingDiffRequestId = '';
-      finishCopyEditDiff(null, 'Standalone Map Editor did not answer the diff request; clipboard contains all in-game runtime-only transform edits available in this session.');
-    }, 1200);
+    return new Promise(resolve => {
+      pendingDiffResolve = resolve;
+      diffRequestTimer = setTimeout(() => {
+        if (pendingDiffRequestId !== requestId) return;
+        pendingDiffRequestId = '';
+        pendingDiffResolve = null;
+        resolve(buildEditDiffBundle(null, 'Standalone Map Editor did not answer the diff request; clipboard contains all in-game runtime-only transform edits available in this session.'));
+      }, 1200);
+    });
   }
 
-  function copyDebug() {
-    const descriptor = currentDescriptor();
-    const report = [
+  function copyEditDiff() {
+    collectEditDiff().then(bundle => {
+      const text = JSON.stringify(bundle, null, 2);
+      copyText(text)
+        .then(() => {
+          setStatus(`Copied edit diff: ${bundle.summary.editorChangedMaps} editor map(s), ${bundle.summary.runtimeOnlyTransforms} runtime-only transform(s).`);
+          deps.showToast('Map Edit diff copied.', true);
+        })
+        .catch(() => deps.showToast(text, true));
+    });
+  }
+
+  function debugReport() {
+    const descriptor = currentDescriptor({ includeSnapshot: false });
+    return [
       'Map Live Preview report',
       `area=${descriptor.area} map=${descriptor.mapId || '-'} layout=${descriptor.layoutId || 'default'} generated=${!!descriptor.generated}`,
       `devMode=${!!deps.isDevMode()} editorConnected=${editorConnected} pickerArmed=${armed} revision=${revision}`,
@@ -809,7 +844,129 @@
       `cinematicCameras=${cinematicCamerasForCurrentArea().length} markers=${cameraMarkerById.size} selected=${selectedPlacement?.ref?.kind || '-'}:${selectedPlacement?.ref?.id || '-'}`,
       `runtimeOnlyTransforms=${runtimeOnlyTransformDiffs().length}`,
     ].join('\n');
+  }
+
+  function copyDebug() {
+    const report = debugReport();
     copyText(report).then(() => deps.showToast('Map reflection debug copied.', true)).catch(() => deps.showToast(report, true));
+  }
+
+  // ── Dev Companion surface ───────────────────────────────────────────
+  // Everything the in-game Map Edit panel shows, as data, plus every control
+  // as a command — docs/tools/dev-companion renders its Map tab from these.
+  function selectionState() {
+    if (!selectedPlacement) return null;
+    const ref = selectedPlacement.ref;
+    const base = { kind: ref.kind, id: ref.id || null, key: ref.key || null, col: ref.col ?? null, row: ref.row ?? null, label: placementIdentity(ref), mode: transformControl?.mode || 'translate', dragging: !!window.__mapEditorGizmoDragging };
+    if (ref.kind === 'cinematicCamera') {
+      const camera = window.CinematicCameraRuntime?.cameraForId?.(ref.mapId || deps.getCurrentArea(), ref.id);
+      return { ...base, isCamera: true, cameraLabel: camera?.label || ref.id, position: camera ? roundedPoint(camera.position) : null, target: camera ? roundedPoint(camera.target) : null, targetNpcId: camera?.targetNpcId || null, stagePlayer: camera?.stagePlayer === true };
+    }
+    const { node, basePosition } = selectedPlacement;
+    return {
+      ...base,
+      isCamera: false,
+      offset: { x: +(node.position.x - basePosition.x).toFixed(3), y: +(node.position.y - basePosition.y).toFixed(3), z: +(node.position.z - basePosition.z).toFixed(3) },
+      yawDeg: +(node.rotation.y * 180 / Math.PI).toFixed(1),
+      scale: { x: +node.scale.x.toFixed(3), y: +node.scale.y.toFixed(3), z: +node.scale.z.toFixed(3) },
+    };
+  }
+
+  function getPanelState() {
+    if (!deps) return { available: false };
+    const descriptor = currentDescriptor({ includeSnapshot: false });
+    return {
+      available: true,
+      devMode: !!deps.isDevMode?.(),
+      area: descriptor.area,
+      mapId: descriptor.mapId,
+      name: descriptor.name || descriptor.mapId || null,
+      reason: descriptor.reason || null,
+      editable: !!descriptor.editable,
+      generated: !!descriptor.generated,
+      layoutId: descriptor.layoutId && descriptor.layoutId !== 'default' ? descriptor.layoutId : 'Base',
+      editorConnected,
+      sessionOpen: !!window.__mapEditorPanelOpen,
+      armed,
+      revision,
+      lastResult,
+      arena: deps.getCurrentArea?.() === deps.DEV_ARENA_ZONE_ID,
+      cameras: (window.__mapEditorPanelOpen ? cinematicCamerasForCurrentArea() : []).map(camera => ({ id: camera.id, label: camera.label || camera.id, selected: selectedPlacement?.ref?.kind === 'cinematicCamera' && selectedPlacement.ref.id === camera.id })),
+      selected: selectionState(),
+      runtimeOnlyTransforms: sessionTransformEdits.size ? runtimeOnlyTransformDiffs().length : 0,
+    };
+  }
+
+  function nudgeSelection({ dx = 0, dy = 0, dz = 0, dyaw = 0, dscale = 0, set = null } = {}) {
+    if (!selectedPlacement) return { ok: false, error: 'Nothing is selected.' };
+    const { node, basePosition, ref } = selectedPlacement;
+    if (ref.kind === 'cinematicCamera') {
+      if (dyaw || dscale || set?.yawDeg != null || set?.scale != null) return { ok: false, error: 'Cameras take position nudges only; use Rotate in the game view to re-aim.' };
+      setGizmoMode('translate');
+    }
+    if (set) {
+      if (set.offset && ref.kind !== 'cinematicCamera') {
+        node.position.set(basePosition.x + (Number(set.offset.x) || 0), basePosition.y + (Number(set.offset.y) || 0), basePosition.z + (Number(set.offset.z) || 0));
+      }
+      if (set.yawDeg != null && Number.isFinite(Number(set.yawDeg))) node.rotation.y = Number(set.yawDeg) * Math.PI / 180;
+      if (set.scale != null && Number.isFinite(Number(set.scale))) { const v = Math.max(0.05, Number(set.scale)); node.scale.set(v, v, v); }
+    }
+    node.position.x += Number(dx) || 0;
+    node.position.y += Number(dy) || 0;
+    node.position.z += Number(dz) || 0;
+    if (dyaw) node.rotation.y += (Number(dyaw) || 0) * Math.PI / 180;
+    if (dscale) {
+      const factor = Math.max(0.05, 1 + (Number(dscale) || 0));
+      node.scale.set(Math.max(0.05, node.scale.x * factor), Math.max(0.05, node.scale.y * factor), Math.max(0.05, node.scale.z * factor));
+    }
+    node.updateMatrixWorld?.(true);
+    sendPlacementTransform(true);
+    refreshTransformReadout();
+    refreshPanel();
+    return { ok: true, selected: selectionState() };
+  }
+
+  function runCompanionCommand(args = {}) {
+    const action = String(args.action || '');
+    switch (action) {
+      case 'session': setSessionOpen(args.open !== false, { showPanel: false }); return { ok: true };
+      case 'open-editor': openEditor(); return { ok: true };
+      case 'pick': {
+        if (!window.__mapEditorPanelOpen) setSessionOpen(true, { showPanel: false });
+        if (!currentDescriptor({ includeSnapshot: false }).editable) return { ok: false, error: currentDescriptor({ includeSnapshot: false }).reason || 'This area is not editable.' };
+        armPicker();
+        return { ok: true, note: 'Click/tap the object in the game window (Esc cancels).' };
+      }
+      case 'cancel-pick': disarmPicker(); return { ok: true };
+      case 'gizmo-mode': setGizmoMode(String(args.mode || 'translate')); refreshPanel(); return { ok: true };
+      case 'done': detachPlacement(); refreshPanel(); return { ok: true };
+      case 'select-camera': {
+        if (!window.__mapEditorPanelOpen) setSessionOpen(true, { showPanel: false });
+        selectCameraById(args.id);
+        return { ok: true };
+      }
+      case 'toggle-camera-stage': toggleSelectedCameraPlayerStage(); return { ok: true };
+      case 'nudge': return nudgeSelection(args);
+      case 'arena-spawner': deps.openArenaSpawner(); return { ok: true };
+      case 'diff': return collectEditDiff().then(bundle => ({ ok: true, text: JSON.stringify(bundle, null, 2), summary: bundle.summary }));
+      case 'debug': return { ok: true, text: debugReport() };
+      case 'show-panel': setSessionOpen(true, { showPanel: true }); return { ok: true };
+      default: return { ok: false, error: `Unknown map action "${action}".` };
+    }
+  }
+
+  function registerCompanion() {
+    const companion = window.DevCompanion;
+    if (!companion) return;
+    companion.registerCommand('map', runCompanionCommand);
+    companion.registerStateProvider('map', getPanelState);
+    // Hand the controls over when a companion connects mid-session, and give
+    // them back to the in-game panel if it goes away while a session is open.
+    companion.onConnectionChange?.(connected => {
+      const panel = document.getElementById('mapEditPanel');
+      if (!panel || !window.__mapEditorPanelOpen) return;
+      panel.style.display = connected ? 'none' : 'flex';
+    });
   }
 
   function bindUi() {
@@ -837,6 +994,9 @@
     closePanel,
     armPicker,
     disarmPicker,
+    setSessionOpen,
+    getPanelState,
+    runCompanionCommand,
     getDebugState: () => ({ editorConnected, armed, gizmoDragging: !!window.__mapEditorGizmoDragging, selectedPlacement: selectedPlacement?.ref || null, revision, runtimeOnlyTransforms: runtimeOnlyTransformDiffs(), lastResult, map: currentDescriptor() }),
   };
 })();

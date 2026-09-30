@@ -588,6 +588,12 @@
 
   async function saveAuto({ reason = 'timer' } = {}) {
     markHydrated();
+    if (window.HobunjiAutosavePause?.isPaused?.()) { // Dev Companion autosave pause keeps rolling recovery history at its pre-pause checkpoints.
+      autosavesSkipped++;
+      lastAction = 'autosave-skipped-paused';
+      window.HobunjiAutosavePause.noteBlocked?.('recovery-autosave');
+      return { ok: true, skipped: true, reason: 'paused' };
+    }
     if (!isHydrated()) {
       autosavesSkipped++;
       lastAction = 'autosave-skipped-not-hydrated';
@@ -759,6 +765,7 @@
       restoresApplied++;
       lastAction = `restored-${record.kind || 'checkpoint'}`;
       lastError = '';
+      window.HobunjiSessionPersistenceStartupGuard?.suppressExitFlush?.('recovery-restore'); // The pre-restore live game must not flush itself back over the restored save while the page unloads.
       setTimeout(() => location.reload(), 0);
       return { ok: true };
     } catch (error) {
@@ -789,11 +796,11 @@
     if (emergencyRecoveryImportActive) {
       return {
         choices: [
-          { record: readSlot('manual'), title: 'Manual Save', note: 'Imported recovery checkpoint; the stuck primary folder is not being read.', readError: '' },
-          { record: readSlot('campfire'), title: 'Campfire Save', note: 'Imported recovery checkpoint; the stuck primary folder is not being read.', readError: '' },
-          { record: readSlot('auto'), title: 'Latest Autosave', note: 'Imported recovery checkpoint; the stuck primary folder is not being read.', readError: '' },
-          { record: readSlot('autoPrevious'), title: 'Earlier Autosave', note: 'Imported recovery checkpoint; the stuck primary folder is not being read.', readError: '' },
-          { record: readSlot('preRestore'), title: 'Before Last Restore', note: 'Imported recovery checkpoint; the stuck primary folder is not being read.', readError: '' },
+          { slot: 'manual', record: readSlot('manual'), title: 'Manual Save', note: 'Imported recovery checkpoint; the stuck primary folder is not being read.', readError: '' },
+          { slot: 'campfire', record: readSlot('campfire'), title: 'Campfire Save', note: 'Imported recovery checkpoint; the stuck primary folder is not being read.', readError: '' },
+          { slot: 'auto', record: readSlot('auto'), title: 'Latest Autosave', note: 'Imported recovery checkpoint; the stuck primary folder is not being read.', readError: '' },
+          { slot: 'autoPrevious', record: readSlot('autoPrevious'), title: 'Earlier Autosave', note: 'Imported recovery checkpoint; the stuck primary folder is not being read.', readError: '' },
+          { slot: 'preRestore', record: readSlot('preRestore'), title: 'Before Last Restore', note: 'Imported recovery checkpoint; the stuck primary folder is not being read.', readError: '' },
         ],
         warnings: [emergencyRecoveryImportSummary || 'Imported recovery history is active. The primary folder has not been touched.'],
         imported: true,
@@ -822,12 +829,12 @@
     await Promise.all([mirrorPromise, currentPromise]); // Recovery history and the broken-current-save probe have the same bounded wait instead of blocking one another.
     return {
       choices: [
-        { record: currentFolder, title: 'Current Folder Save', note: 'The canonical save currently used by the folder-first workflow.', current: true, readError: currentReadError },
-        { record: readSlot('manual'), title: 'Manual Save', note: 'Only changes when you explicitly press the pause-menu manual save button.', readError: lastRecoveryReadErrors.manual || '' },
-        { record: readSlot('campfire'), title: 'Campfire Save', note: 'Only changes when you explicitly save at a campfire.', readError: lastRecoveryReadErrors.campfire || '' },
-        { record: readSlot('auto'), title: 'Latest Autosave', note: 'Latest good rolling checkpoint accepted by the integrity guard.', readError: lastRecoveryReadErrors.auto || '' },
-        { record: readSlot('autoPrevious'), title: 'Earlier Autosave', note: 'Older rolling checkpoint retained separately from the latest autosave.', readError: lastRecoveryReadErrors.autoPrevious || '' },
-        { record: readSlot('preRestore'), title: 'Before Last Restore', note: 'Safety copy of the canonical save immediately before the most recent recovery.', readError: lastRecoveryReadErrors.preRestore || '' },
+        { slot: 'current', record: currentFolder, title: 'Current Folder Save', note: 'The canonical save currently used by the folder-first workflow.', current: true, readError: currentReadError },
+        { slot: 'manual', record: readSlot('manual'), title: 'Manual Save', note: 'Only changes when you explicitly press the pause-menu manual save button.', readError: lastRecoveryReadErrors.manual || '' },
+        { slot: 'campfire', record: readSlot('campfire'), title: 'Campfire Save', note: 'Only changes when you explicitly save at a campfire.', readError: lastRecoveryReadErrors.campfire || '' },
+        { slot: 'auto', record: readSlot('auto'), title: 'Latest Autosave', note: 'Latest good rolling checkpoint accepted by the integrity guard.', readError: lastRecoveryReadErrors.auto || '' },
+        { slot: 'autoPrevious', record: readSlot('autoPrevious'), title: 'Earlier Autosave', note: 'Older rolling checkpoint retained separately from the latest autosave.', readError: lastRecoveryReadErrors.autoPrevious || '' },
+        { slot: 'preRestore', record: readSlot('preRestore'), title: 'Before Last Restore', note: 'Safety copy of the canonical save immediately before the most recent recovery.', readError: lastRecoveryReadErrors.preRestore || '' },
       ],
       warnings: [...new Set(warnings.filter(Boolean))],
     };
@@ -1047,6 +1054,54 @@
     panel.appendChild(close);
   }
 
+  // Lightweight (snapshot-free) recovery listing for the Dev Companion's
+  // backup swapper. Never probes a remembered-but-stale folder handle (same
+  // rule as openRecoveryModal); it falls back to the browser mirrors instead.
+  async function listRecoveryChoices() {
+    const needsReselect = recoveryHandleNeedsReselect();
+    const recovery = needsReselect
+      ? {
+          choices: [
+            { slot: 'manual', record: readSlot('manual'), title: 'Manual Save', note: 'Browser mirror.' },
+            { slot: 'campfire', record: readSlot('campfire'), title: 'Campfire Save', note: 'Browser mirror.' },
+            { slot: 'auto', record: readSlot('auto'), title: 'Latest Autosave', note: 'Browser mirror.' },
+            { slot: 'autoPrevious', record: readSlot('autoPrevious'), title: 'Earlier Autosave', note: 'Browser mirror.' },
+            { slot: 'preRestore', record: readSlot('preRestore'), title: 'Before Last Restore', note: 'Browser mirror.' },
+          ],
+          warnings: ['The save folder handle is from an earlier page session, so only the browser mirrors are listed. Open Save Recovery in the game and re-select the folder to read the folder copies.'],
+        }
+      : await recoveryChoices();
+    return {
+      warnings: recovery.warnings || [],
+      imported: !!recovery.imported,
+      needsReselect,
+      choices: recovery.choices.map(choice => ({
+        slot: choice.slot,
+        title: choice.title,
+        note: choice.note,
+        current: !!choice.current,
+        available: !!choice.record,
+        readError: choice.readError || '',
+        savedAt: choice.record?.savedAt || null,
+        reason: choice.record?.reason || null,
+        detail: choice.record ? recordDetail(choice.record) : (choice.readError ? `Could not read: ${choice.readError}` : 'No checkpoint yet.'),
+        active: choice.record?.active || null,
+      })),
+    };
+  }
+
+  async function restoreChoice(slot) {
+    if (slot === 'current') return { ok: false, error: 'The current folder save is already the live save.' };
+    if (!SLOT_KEYS[slot]) return { ok: false, error: `Unknown recovery slot "${slot}".` };
+    let record = readSlot(slot);
+    if (!recoveryHandleNeedsReselect() && folderRecoveryAvailable()) {
+      try { await syncRecoveryMirrorsFromFolder(); record = readSlot(slot) || record; } catch (_) {}
+    }
+    if (!record) return { ok: false, error: 'That recovery checkpoint is unavailable.' };
+    const result = await applyRecord(record);
+    return { ...result, active: record.active || null };
+  }
+
   function installMenuButtons() {
     const controls = document.querySelector('#menuPanel .mp-ctrls');
     if (!controls) return false;
@@ -1137,6 +1192,8 @@
     restoreLatestAuto: () => applyRecord(readSlot('auto')),
     restorePreviousAuto: () => applyRecord(readSlot('autoPrevious')),
     restorePreRestore: () => applyRecord(readSlot('preRestore')),
+    listRecoveryChoices,
+    restoreChoice,
     getStatus: () => ({
       manual: readSlot('manual'),
       campfire: readSlot('campfire'),

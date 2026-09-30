@@ -14086,6 +14086,7 @@
         if (area === 'town') return _townZone?.name || 'Hobunji Hollow — Town';
         if (area === 'farm') return 'Farm';
         if (_isBuildingArea(area)) return _buildingScenes.get(area)?.name || area;
+        if (EXTERIOR_ZONES[area]?.label) return EXTERIOR_ZONES[area].label;
         return area || '(unknown)';
       }
 
@@ -29778,7 +29779,12 @@
         // a cold boot has its own preconditions this isn't set up to satisfy.
         const _lastPos = playerData.lastPosition;
         const _resumeCampfire = window.WildernessCampfire?.serialize?.();
-        if (_lastPos && _isZoneArea(_lastPos.area) && _resumeCampfire?.mapId === _lastPos.area
+        // A Dev Companion quick load returns to the exact saved spot (any
+        // area) instead of the login spawn — see js/quick-save.js.
+        const _quickResumed = !window.__hobunjiCutscenePreview && await window.HobunjiQuickSave?.restoreResume?.(playerData);
+        if (_quickResumed) {
+          // Placement already applied.
+        } else if (_lastPos && _isZoneArea(_lastPos.area) && _resumeCampfire?.mapId === _lastPos.area
             && Number.isFinite(_lastPos.x) && Number.isFinite(_lastPos.y)) {
           await enterZone(_lastPos.area, Math.floor(_lastPos.x / TILE), Math.floor(_lastPos.y / TILE));
           // enterZone already placed the player at the tile center of the
@@ -29799,6 +29805,45 @@
         gameStarted = true;
         window.__hobunjiGameStarted = true;
       }
+
+      // Dev Companion quick save/load (exact-placement save states) now lives
+      // in js/quick-save.js; these are the live-state hooks it needs.
+      window.HobunjiQuickSave?.init({
+        player, TILE, calendar, showToast,
+        getCurrentArea: () => currentArea,
+        isZoneArea: _isZoneArea,
+        isBuildingArea: _isBuildingArea,
+        enterZone, enterTown, enterBuilding,
+        placeInFarmhouse: () => window.FarmhouseLoginSpawn?.placeInFarmhouse({
+          player, TILE, enterInterior,
+          setFacingAngle: angle => { facingAngle = angle; },
+        }),
+        waitForArea: area => window.CutscenePreviewHelpers.cutscenePreviewWaitForArea(area, 20000,
+          () => currentArea === area && !!_buildingScenes.get(area)),
+        setFacingAngle: angle => { facingAngle = angle; },
+        setFarmPlayerSave: value => { farmPlayerSave = value; },
+        snapCameraTarget: () => _snapCameraTarget(),
+        flushAll: () => {
+          saveMemberWorldData();
+          window.FarmEditor?.saveFarmLayout?.();
+          _saveWorldCalendar();
+        },
+        captureExactState: () => ({
+          area: currentArea,
+          areaLabel: mapDebugName(currentArea),
+          x: player.x, y: player.y, angle: player.angle, facingAngle,
+          returnPoint: farmPlayerSave ? { ...farmPlayerSave } : null,
+          calendar: { day: calendar.day, time01: calendar.time01, weather: calendar.weather },
+        }),
+        describeContext: () => ({
+          area: currentArea,
+          areaLabel: mapDebugName(currentArea),
+          dialogueOpen: !!dialogueOpen,
+          dialogueNpc: dialogueOpen ? (_dialogueWalker?.rec?.name || _dialogueWalker?.rec?.id || null) : null,
+          weekday: window.CalendarSystem?.currentWeekdayName?.() || null,
+          season: window.CalendarSystem?.currentSeason?.()?.name || null,
+        }),
+      });
 
       document.addEventListener('hobunjiPlayerReady', (e) => {
         _playerData = e.detail;
