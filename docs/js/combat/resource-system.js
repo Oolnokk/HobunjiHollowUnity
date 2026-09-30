@@ -148,8 +148,49 @@
       name: "Burning Health", resource: "health", extend: "currentBack", priority: 90, recovers: false,
       family: "damage", tags: ["fire", "physical"],
       desc: "Converts Health into Burning buildup without damaging on application; ticks consume that buildup as lethal Health damage. Roll dodges cool part of it; entering water extinguishes it completely."
+    },
+    kindlingHealth: {
+      name: "Kindling Health", resource: "health", extend: "currentBack", priority: 89, recovers: false,
+      family: "damage", tags: ["fire", "kindling"],
+      desc: "Slow-burning Health buildup from Living Flame. Additional Kindling can ignite the whole stack, and ordinary Burning always converts it into equivalent Burning Health."
+    },
+    furiousStamina: {
+      name: "Furious Stamina", resource: "stamina", extend: "currentBack", priority: 36, recovers: false, enhanced: true,
+      family: "enhanced", tags: ["enhanced", "fury"],
+      desc: "Enhanced Stamina. When it pays for an offensive Held attack, the portion it funds progresses at three times normal speed."
+    },
+    moralizedStamina: {
+      name: "Moralized Stamina", resource: "stamina", extend: "currentBack", priority: 35, recovers: false, enhanced: true,
+      family: "enhanced", tags: ["enhanced", "moralized"],
+      desc: "Enhanced Stamina worth three ordinary Stamina per point when paying costs or drains."
+    },
+    resoluteFooting: {
+      name: "Resolute Footing", resource: "footing", extend: "currentBack", priority: 35, recovers: false, enhanced: true,
+      family: "enhanced", tags: ["enhanced", "resolve"],
+      desc: "Enhanced Footing worth three ordinary Footing per point when absorbing loss."
+    },
+    resoluteHealth: {
+      name: "Resolute Health", resource: "health", extend: "currentBack", priority: 35, recovers: false, enhanced: true,
+      family: "enhanced", tags: ["enhanced", "resolve"],
+      desc: "Enhanced Health worth three ordinary Health per point when absorbing damage."
+    },
+    mirroredHealth: {
+      name: "Mirrored Health", resource: "health", extend: "currentBack", priority: 34, recovers: false, enhanced: true,
+      family: "enhanced", tags: ["enhanced", "mirror"],
+      desc: "Enhanced Health generated from actual damage dealt; it absorbs incoming Health loss before ordinary Health."
     }
   };
+
+  const ENHANCED_RESOURCE_DEFS = Object.freeze({
+    furiousStamina: Object.freeze({
+      resource: "stamina", conversionRate: 1, normalPriority: 5, beneficialPriority: 100, tempoMultiplier: 3,
+      benefitsTransaction: tx => tx?.actionKind === "offensiveHeldCharge" || tx?.actionKind === "offensiveHeldFlurry",
+    }),
+    moralizedStamina: Object.freeze({ resource: "stamina", conversionRate: 3, normalPriority: 50 }),
+    resoluteFooting: Object.freeze({ resource: "footing", conversionRate: 3, normalPriority: 50 }),
+    resoluteHealth: Object.freeze({ resource: "health", conversionRate: 3, normalPriority: 50 }),
+    mirroredHealth: Object.freeze({ resource: "health", conversionRate: 1, normalPriority: 30 }),
+  });
   const RECOVERING_AFFLICTIONS = Object.entries(AFFLICTIONS)
     .filter(([id, def]) => def.recovers && id !== "bleedingHealth" && id !== "poisonedHealth" && id !== "congealedHealth")
     .map(([id]) => id); // Avoids allocating and filtering the full affliction entry list on every entity maintenance tick.
@@ -270,6 +311,17 @@
     }
   }
 
+  function convertKindlingToBurning(entity, reason = "ignited") {
+    const kindling = getAffliction(entity, "kindlingHealth"); // Existing Kindling amount moved one-for-one into the canonical Burning affliction.
+    if (!(kindling > 0)) return 0;
+    const beforeBurning = getAffliction(entity, "burningHealth");
+    setAffliction(entity, "kindlingHealth", 0);
+    setAffliction(entity, "burningHealth", beforeBurning + kindling);
+    const converted = round1(getAffliction(entity, "burningHealth") - beforeBurning);
+    if (converted > 0) window.EnchantmentSystem?.logEvent?.(`Kindling converted to Burning (${converted}, ${reason})`);
+    return converted;
+  }
+
   function addAffliction(entity, id, amount) {
     if (!(amount > 0)) return 0;
     const family = AFFLICTIONS[id]?.family; // Used to apply Thickblood once at the central buildup path.
@@ -277,7 +329,17 @@
     if (family === "damage" && entity === player) amount *= window.AlchemySystem?.getIncomingDamageAfflictionMultiplier?.() || 1;
     const before = getAffliction(entity, id);
     setAffliction(entity, id, before + amount);
-    return round1(getAffliction(entity, id) - before);
+    const added = round1(getAffliction(entity, id) - before);
+
+    if (id === "burningHealth" && added > 0 && getAffliction(entity, "kindlingHealth") > 0) {
+      convertKindlingToBurning(entity, "ordinary Burning applied");
+    } else if (id === "kindlingHealth" && added > 0) {
+      const chance = clamp(Number(window.EnchantmentSystem?.TUNING?.LIVING_FLAME_KINDLING_CONVERSION_CHANCE) || 0.12, 0, 1);
+      if (getAffliction(entity, "kindlingHealth") > added && window.GameRandom.random() < chance) {
+        convertKindlingToBurning(entity, "spontaneous ignition");
+      }
+    }
+    return added;
   }
 
   function removeAffliction(entity, id, amount) {
@@ -399,9 +461,12 @@
 
   function applyHealthAfflictionDamage(entity, amount) {
     if (!(amount > 0) || !(entity?.health > 0)) return 0;
+    const enhanced = resolveEnhancedResourceTransaction(entity, "health", amount, { kind: "damage", source: "afflictionTick" }); // Enhanced Health absorbs DoT through the same transaction path as direct damage.
+    const remaining = enhanced.ordinaryRemaining;
+    if (!(remaining > 0)) return 0;
     const before = Number(entity.health) || 0; // Used to report actual Health lost when an already-applied DoT buildup ticks.
     const effectiveMax = getLiveEffectiveHealthMax(entity); // Used only as the current upper cap; DoT damage itself remains fully lethal down to zero.
-    entity.health = round1(clamp(before - amount, 0, effectiveMax));
+    entity.health = round1(clamp(before - remaining, 0, effectiveMax));
     return round1(before - entity.health);
   }
 
@@ -513,32 +578,105 @@
     return Number.isFinite(last) ? Math.max(0, nowMs() - last) : Infinity;
   }
 
-  function spendStamina(entity, amount, reason = "action") {
+  function enhancedResourcePriority(def, transaction) {
+    const beneficial = typeof def?.benefitsTransaction === "function" && def.benefitsTransaction(transaction); // Action-specific benefit may outrank general enhanced resources without any one-off Furious check.
+    return beneficial ? Number(def.beneficialPriority ?? def.normalPriority) || 0 : Number(def?.normalPriority) || 0;
+  }
+
+  function getEnhancedResources(entity, resourceKey, transaction = {}) {
+    return Object.entries(ENHANCED_RESOURCE_DEFS)
+      .filter(([id, def]) => def.resource === resourceKey && getAffliction(entity, id) > 0)
+      .map(([id, def]) => ({
+        id,
+        def,
+        amount: getAffliction(entity, id),
+        priority: enhancedResourcePriority(def, transaction),
+        benefitsTransaction: typeof def.benefitsTransaction === "function" && def.benefitsTransaction(transaction),
+      }))
+      .sort((a, b) => b.priority - a.priority || b.def.conversionRate - a.def.conversionRate);
+  }
+
+  function resolveEnhancedResourceTransaction(entity, resourceKey, amount, transaction = {}) {
+    const requested = Math.max(0, Number(amount) || 0); // Effective ordinary-resource points the transaction wants to pay/absorb.
+    let remaining = requested; // Effective amount left after each enhanced pool contributes through its conversion rate.
+    const consumed = []; // Detailed raw/effective contributions used by debug and offensive-Held tempo calculations.
+    let weightedTempo = 0; // Effective points multiplied by their own action tempo; ordinary remainder contributes at 1× below.
+
+    for (const entry of getEnhancedResources(entity, resourceKey, transaction)) {
+      if (!(remaining > 0)) break;
+      const rate = Math.max(0.0001, Number(entry.def.conversionRate) || 1);
+      const effectiveAvailable = entry.amount * rate;
+      const effectivePaid = Math.min(remaining, effectiveAvailable);
+      const rawConsumed = round1(effectivePaid / rate);
+      if (!(rawConsumed > 0)) continue;
+      const removed = removeAffliction(entity, entry.id, rawConsumed);
+      const actualEffectivePaid = Math.min(remaining, removed * rate);
+      if (!(actualEffectivePaid > 0)) continue;
+      const tempo = entry.benefitsTransaction ? Math.max(1, Number(entry.def.tempoMultiplier) || 1) : 1;
+      consumed.push({
+        id: entry.id,
+        rawConsumed: removed,
+        effectivePaid: round1(actualEffectivePaid),
+        conversionRate: rate,
+        tempoMultiplier: tempo,
+        benefitsTransaction: entry.benefitsTransaction,
+      });
+      remaining = Math.max(0, remaining - actualEffectivePaid);
+      weightedTempo += actualEffectivePaid * tempo;
+
+      if (entry.id === "moralizedStamina") {
+        window.EnchantmentSystem?.logEvent?.(`${removed} Moralized Stamina paid ${round1(actualEffectivePaid)} Stamina`);
+      } else if (entry.id === "furiousStamina" && tempo > 1) {
+        window.EnchantmentSystem?.logEvent?.(`Furious Stamina accelerated ${transaction.actionKind === "offensiveHeldCharge" ? "charge segment" : "flurry segment"} ×${tempo}`);
+      }
+    }
+
+    weightedTempo += remaining;
+    const enhancedPaid = round1(requested - remaining);
+    const tempoMultiplier = requested > 0 ? Math.max(1, weightedTempo / requested) : 1;
+    return {
+      resourceKey,
+      requested: round1(requested),
+      enhancedPaid,
+      ordinaryRemaining: round1(remaining),
+      consumed,
+      tempoMultiplier,
+    };
+  }
+
+  function addEnhancedResource(entity, id, amount, _options = {}) {
+    if (!ENHANCED_RESOURCE_DEFS[id]) return 0;
+    return addAffliction(entity, id, amount);
+  }
+
+  function spendStamina(entity, amount, reason = "action", transaction = {}) {
     entity.lastAttackAttemptAt = nowMs();
     if (entity === window.Combat?.deps?.player) {
       amount *= window.AlchemySystem?.getStaminaSpendMultiplier?.() || 1;
       amount *= 1 - Math.min(0.6, (window.PerkSystem?.rank('combat', 'reduceStaminaUse') || 0) * 0.08); // Reduce Stamina Use perk.
     }
-    if (!(amount > 0)) return { spent: 0, excess: 0 };
+    if (!(amount > 0)) return { spent: 0, excess: 0, enhancedPaid: 0, consumed: [], tempoMultiplier: 1 };
     recordPunishedAction(entity, "staminaSpend"); // Resets the avoidance bonus for Wounded/Infected/Shattered Stamina whenever the punished action is actually taken.
+    const enhanced = resolveEnhancedResourceTransaction(entity, "stamina", amount, { ...transaction, reason }); // Moralized/Furious participate before ordinary/black Stamina through one reusable transaction API.
+    const ordinaryCost = enhanced.ordinaryRemaining;
 
     if (entity.exhaustion.active) {
       entity.stamina = 0; // Reassert the invariant even if an external/load path injected stale regular Stamina since the previous tick.
-      entity.exhaustion.blackStamina = round1(clamp(entity.exhaustion.blackStamina - amount, 0, 100));
-      return { spent: 0, excess: amount };
+      entity.exhaustion.blackStamina = round1(clamp(entity.exhaustion.blackStamina - ordinaryCost, 0, 100));
+      return { spent: 0, excess: ordinaryCost, enhancedPaid: enhanced.enhancedPaid, consumed: enhanced.consumed, tempoMultiplier: enhanced.tempoMultiplier };
     }
 
     const before = entity.stamina;
-    const after = clamp(before - amount, 0, entity.maxStamina || 0);
+    const after = clamp(before - ordinaryCost, 0, entity.maxStamina || 0);
     const normalSpent = round1(before - after);
-    const excess = round1(amount - normalSpent);
+    const excess = round1(ordinaryCost - normalSpent);
     entity.stamina = after;
 
     if (normalSpent > 0) resolveSpentAfflictions(entity, after, before);
     if (excess > 0) enterExhausted(entity, excess, reason);
 
     enforceCaps(entity);
-    return { spent: normalSpent, excess };
+    return { spent: normalSpent, excess, enhancedPaid: enhanced.enhancedPaid, consumed: enhanced.consumed, tempoMultiplier: enhanced.tempoMultiplier };
   }
 
   // Balance loss from being hit (see game.js's damagePlayer/damageCreature,
@@ -552,8 +690,10 @@
     if (entity.prone) return 0;
     if (!(amount > 0) || !Number.isFinite(entity.footing)) return 0;
     if (entity === window.Combat?.deps?.player) amount *= 1 - Math.min(0.6, (window.PerkSystem?.rank('combat', 'increaseFootingResistance') || 0) * 0.08); // Increase Footing Resistance perk.
+    const enhanced = resolveEnhancedResourceTransaction(entity, "footing", amount, { kind: "loss", reason }); // Resolute Footing absorbs at its authored 3:1 effective value.
+    const ordinaryLoss = enhanced.ordinaryRemaining;
     const before = entity.footing;
-    entity.footing = round1(clamp(before - amount, 0, getEffectiveMax(entity, "footing")));
+    entity.footing = round1(clamp(before - ordinaryLoss, 0, getEffectiveMax(entity, "footing")));
     return round1(before - entity.footing);
   }
 
@@ -611,8 +751,9 @@
       }
     }
 
+    const enhanced = resolveEnhancedResourceTransaction(entity, "health", finalDamage, { kind: "damage", reason: opts.reason || "damage" }); // Resolute/Mirrored Health absorb before ordinary Health through the shared enhanced transaction.
     const before = entity.health;
-    entity.health = round1(clamp(entity.health - finalDamage, 0, getEffectiveMax(entity, "health")));
+    entity.health = round1(clamp(entity.health - enhanced.ordinaryRemaining, 0, getEffectiveMax(entity, "health")));
     const lost = round1(before - entity.health);
 
     if (opts.afflictionBonuses) {
@@ -678,6 +819,7 @@
 
     resolveBleedingTick(entity, dt, rest, cfg, healthRecoveryBlocked);
     resolveBurningTick(entity, dt, cfg);
+    resolveKindlingTick(entity, dt);
     resolvePoisonTick(entity, dt, cfg);
     resolveCongealedTick(entity, dt, rest, cfg, healthRecoveryBlocked);
     resolveGenericRecovery(entity, dt, rest, cfg);
@@ -703,6 +845,15 @@
     if (burning <= 0) return;
     const amount = Math.min(burning, cfg.burnTickPerSec * dt);
     removeAffliction(entity, "burningHealth", amount);
+    applyHealthAfflictionDamage(entity, amount);
+  }
+
+  function resolveKindlingTick(entity, dt) {
+    const kindling = getAffliction(entity, "kindlingHealth");
+    if (kindling <= 0) return;
+    const rate = Math.max(0, Number(window.EnchantmentSystem?.TUNING?.LIVING_FLAME_KINDLING_TICK_PER_SEC) || 0.75); // Living Flame owns the balance constant; ResourceSystem owns the actual Health-loss transaction.
+    const amount = Math.min(kindling, rate * Math.max(0, Number(dt) || 0));
+    removeAffliction(entity, "kindlingHealth", amount);
     applyHealthAfflictionDamage(entity, amount);
   }
 
@@ -790,6 +941,7 @@
 
   window.ResourceSystem = {
     AFFLICTIONS,
+    ENHANCED_RESOURCE_DEFS,
     afflictionBonusesForTag,
     config: resourceSystemConfig,
     initEntity,
@@ -815,6 +967,10 @@
     isStaminaRegenBlocked,
     getStaminaRegenBlockers,
     restoreStamina,
+    getEnhancedResources,
+    resolveEnhancedResourceTransaction,
+    addEnhancedResource,
+    convertKindlingToBurning,
     spendStamina,
     spendFooting,
     applyDamage,
