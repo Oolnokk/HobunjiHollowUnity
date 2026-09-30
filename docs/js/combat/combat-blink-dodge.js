@@ -21,6 +21,7 @@
   const MOVE_INPUT_EPSILON = 0.001; // Used by movementInput() to reject stick noise and zero-length directions.
   const AFTERIMAGE_LIFETIME_S = 0.28; // Used by updateBlinkAfterimages() to fade each frozen portrait quickly enough to read as motion, not a duplicate actor.
   const AFTERIMAGE_MOVE_INTERVAL_S = 0.075; // Used by maybeSpawnMovementAfterimage() to sample continuous Blink locomotion without creating one mesh every frame.
+  const AFTERIMAGE_FORCED_MOVE_INTERVAL_S = 0.055; // Used by updateForcedMovementAfterimages() for the denser short trails on ordinary dodges and melee lunges.
   const AFTERIMAGE_BASE_OPACITY = 0.34; // Used by cloneAfterimageMaterial() as the strongest alpha at spawn before the short fade.
   const AFTERIMAGE_HOP_SAMPLES = 3; // Used by spawnHopAfterimages() to bridge the instantaneous Blink hop with frozen portraits along its traveled path.
   const AFTERIMAGE_MAX_ACTIVE = 12; // Used by spawnAfterimage() to keep the transient portrait trail bounded on long holds.
@@ -54,6 +55,10 @@
   let cachedAfterimageRoot = null; // Used by findPlayerPortraitMesh() to avoid re-traversing an unchanged player rig every trail sample.
   let cachedAfterimagePortrait = null; // Used with cachedAfterimageRoot as the current renderable player portrait source.
   let lastMoveAfterimageAtS = -Infinity; // Used by maybeSpawnMovementAfterimage() to rate-limit normal Blink locomotion samples.
+  let lastDodgeAfterimageAtS = -Infinity; // Used by updateForcedMovementAfterimages() to rate-limit ordinary-dodge portrait snapshots independently of Blink locomotion.
+  let lastLungeAfterimageAtS = -Infinity; // Used by updateForcedMovementAfterimages() to rate-limit melee-lunge portrait snapshots independently of Dodge/Blink.
+  let dodgeAfterimageWasActive = false; // Used by updateForcedMovementAfterimages() to guarantee an immediate first ghost on each new ordinary dodge.
+  let lungeAfterimageWasActive = false; // Used by updateForcedMovementAfterimages() to guarantee an immediate first ghost on each new melee lunge.
   const afterimageRuntimeDebug = { // Updated by spawn/dispose paths and exposed through HobunjiDodgeFeedback for mobile-readable verification.
     active: 0,
     spawned: 0,
@@ -245,6 +250,27 @@
     spawnAfterimage('blink-move');
   }
 
+  function updateForcedMovementAfterimages() {
+    const player = window.Combat?.deps?.player;
+    if (!player) return;
+    const t = now(); // Shared timestamp keeps dodge/lunge sampling deterministic when both state flags change in one combat tick.
+    const dodging = !!player.dodging;
+    if (dodging && (!dodgeAfterimageWasActive || t - lastDodgeAfterimageAtS >= AFTERIMAGE_FORCED_MOVE_INTERVAL_S)) {
+      lastDodgeAfterimageAtS = t;
+      spawnAfterimage('dodge');
+    }
+    if (!dodging) lastDodgeAfterimageAtS = -Infinity;
+    dodgeAfterimageWasActive = dodging;
+
+    const lunging = !!player.lunging;
+    if (lunging && (!lungeAfterimageWasActive || t - lastLungeAfterimageAtS >= AFTERIMAGE_FORCED_MOVE_INTERVAL_S)) {
+      lastLungeAfterimageAtS = t;
+      spawnAfterimage('lunge');
+    }
+    if (!lunging) lastLungeAfterimageAtS = -Infinity;
+    lungeAfterimageWasActive = lunging;
+  }
+
   function updateBlinkAfterimages(dt) {
     const safeDt = Math.max(0, Number(dt) || 0);
     for (let i = blinkAfterimages.length - 1; i >= 0; i -= 1) {
@@ -326,7 +352,6 @@
       // exits prone, just time-compressed to the ordinary dodge duration so
       // the visual roll does not lengthen the dodge or increase its travel.
       window.ImpactRagdollPlayback?.beginRecoveryArc(BASE_DODGE_SOMERSAULT_DUR_S);
-      if (defensiveHoldActive) spawnAfterimage('blink-dodge');
     }
     baseDodgeWasActive = dodging;
   }
@@ -340,6 +365,7 @@
     const enhancedUpdate = function enhancedCombatUpdate(dt) {
       originalUpdate(dt);
       updateBaseDodgeEnhancements();
+      updateForcedMovementAfterimages();
       updateBlinkAfterimages(dt);
     };
     enhancedUpdate.__hobunjiBaseDodgeEnhancements = true;
@@ -574,6 +600,7 @@
             hopCooldownS: ZIP_COOLDOWN_S,
             afterimageLifetimeS: AFTERIMAGE_LIFETIME_S,
             afterimageMoveIntervalS: AFTERIMAGE_MOVE_INTERVAL_S,
+            afterimageForcedMoveIntervalS: AFTERIMAGE_FORCED_MOVE_INTERVAL_S,
             afterimageHopSamples: AFTERIMAGE_HOP_SAMPLES,
             afterimageMaxActive: AFTERIMAGE_MAX_ACTIVE,
           },
