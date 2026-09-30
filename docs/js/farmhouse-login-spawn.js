@@ -23,7 +23,7 @@
         if (feature.type !== 'entrance' || feature.invalid || !feature.hasDoorObj) continue;
         const door = parseTileKey(feature.doorTile);
         const approach = parseTileKey(feature.approachTile);
-        if (door && approach) return { pieceId: piece.id, door, approach };
+        if (door && approach) return { pieceId: piece.id, featureId: feature.id, door, approach };
       }
     }
     return null;
@@ -45,6 +45,7 @@
       player.angle = angle;
       deps.setFacingAngle?.(angle);
     }
+    if (front) global.HousePieces?.recordEnteredEntrance?.(front.pieceId, front.featureId);
     deps.enterInterior(front?.pieceId);
     return true;
   }

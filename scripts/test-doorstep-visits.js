@@ -204,6 +204,77 @@ function talkThrough(ctx, world, { naturalEnd }) {
   assert.equal(api.isDone('x'), true);
 }
 
+// ── Which door the visitor waits at: recorded entrance, then feet-in-tiles ──
+{
+  const ctx = makeContext();
+  ctx.run('docs/js/doorstep-visits.js');
+  const world = installWorld(ctx, { npcIds: ['friend'] });
+  const api = ctx.window.DoorstepVisits;
+  // One house, two entrances: south door A and east door B.
+  const A = { id: 'feat_south', type: 'entrance', side: 'south', doorTile: '20,6', approachTile: '20,7', hasDoorObj: true, invalid: false };
+  const B = { id: 'feat_east', type: 'entrance', side: 'east', doorTile: '34,4', approachTile: '35,4', hasDoorObj: true, invalid: false };
+  let entered = null;
+  ctx.window.HousePieces = {
+    debugPieceFeatures: () => [{ id: 'house', stage: 'built', features: [A, B] }],
+    lastEnteredEntrance: () => entered,
+  };
+  const playerTile = { c: 0, r: 0 };
+  api.init({ getPlayerTile: () => ({ ...playerTile }) });
+  api.registerProvider({
+    id: 'test', next: () => ({ key: 'test:door', npcId: 'friend', tree: { id: 't', nodes: [{ id: 'a', type: 'text', text: 'Hi.' }] } }),
+    onComplete: () => true,
+  });
+  const spawnSpot = () => {
+    const visitor = world.walkers.find(walker => walker._doorstepVisitor);
+    return visitor && { x: visitor.root.position.x, z: visitor.root.position.z };
+  };
+  const nearA = { x: 20.5, z: 9.5 };  // 3 tiles south of door A
+  const nearB = { x: 37.5, z: 4.5 };  // 3 tiles east of door B
+
+  // Recorded entrance wins even when the player is standing by the other door.
+  entered = { pieceId: 'house', featureId: 'feat_east' };
+  Object.assign(playerTile, { c: 20.5, r: 7.5 });
+  goOutside(ctx, world);
+  assert.deepEqual(spawnSpot(), nearB, 'visitor waits outside the entrance the player went in by');
+  entered = { pieceId: 'house', featureId: 'feat_south' };
+  Object.assign(playerTile, { c: 35.5, r: 4.5 });
+  goOutside(ctx, world);
+  assert.deepEqual(spawnSpot(), nearA, 'switching entrances moves the visitor with it');
+
+  // No record (legacy travel spot / teleport): nearest approach tile to the
+  // player's feet, in tile units. The old pixel-vs-tile comparison always
+  // picked the door with the largest coordinates (B) regardless of this.
+  entered = null;
+  Object.assign(playerTile, { c: 20.5, r: 7.5 });
+  goOutside(ctx, world);
+  assert.deepEqual(spawnSpot(), nearA, 'fallback picks the door nearest the player, not the largest coordinates');
+  Object.assign(playerTile, { c: 35.5, r: 4.5 });
+  goOutside(ctx, world);
+  assert.deepEqual(spawnSpot(), nearB);
+
+  // A recorded entrance that no longer exists (house rebuilt) falls back too.
+  entered = { pieceId: 'house', featureId: 'feat_demolished' };
+  Object.assign(playerTile, { c: 20.5, r: 7.5 });
+  goOutside(ctx, world);
+  assert.deepEqual(spawnSpot(), nearA, 'a stale recorded entrance falls back to proximity');
+}
+
+// ── HousePieces keeps the entrance record ────────────────────────────────
+{
+  const ctx = makeContext();
+  ctx.run('docs/js/house-pieces-core.js');
+  const pieces = ctx.window.HousePieces;
+  assert.equal(pieces.lastEnteredEntrance(), null);
+  pieces.recordEnteredEntrance('house', 'feat_east');
+  const record = pieces.lastEnteredEntrance();
+  assert.deepEqual({ ...record }, { pieceId: 'house', featureId: 'feat_east' });
+  record.featureId = 'mutated';
+  assert.equal(pieces.lastEnteredEntrance().featureId, 'feat_east', 'callers get a copy, not the live record');
+  const doorSource = read('docs/js/house-pieces-core.js');
+  assert(/recordEnteredEntrance\(entry\.id, f\.id\);\s*deps\.startSceneTransition\(\(\) => deps\.enterInterior\(entry\.id\)\)/.test(doorSource),
+    'each door Enter action records its entrance before entering');
+}
+
 // ── Weapon trust gifts are a provider; both BanditCombat hooks still run ──
 {
   const ctx = makeContext();
@@ -277,9 +348,11 @@ function talkThrough(ctx, world, { naturalEnd }) {
   ctx.run('docs/js/farmhouse-login-spawn.js');
   ctx.window.HousePieces = {
     debugPieceFeatures: () => [{ id: 'starter', stage: 'built', features: [
-      { type: 'entrance', side: 'south', doorTile: '27,6', approachTile: '27,7', hasDoorObj: true, invalid: false },
+      { id: 'feat_front', type: 'entrance', side: 'south', doorTile: '27,6', approachTile: '27,7', hasDoorObj: true, invalid: false },
     ] }],
   };
+  const recorded = [];
+  ctx.window.HousePieces.recordEnteredEntrance = (pieceId, featureId) => recorded.push({ pieceId, featureId });
   const player = { x: 0, y: 0, angle: 0 };
   let facing = null;
   const entered = [];
@@ -291,6 +364,7 @@ function talkThrough(ctx, world, { naturalEnd }) {
   assert.equal(ok, true);
   assert.deepEqual(entered, [{ pieceId: 'starter', x: 27.5, y: 7.5, angle: -Math.PI / 2 }], 'player stands on the approach tile facing the door before entering');
   assert.equal(facing, -Math.PI / 2);
+  assert.deepEqual(recorded, [{ pieceId: 'starter', featureId: 'feat_front' }], 'login records the front door as the entrance used');
 }
 
 // ── Wiring ───────────────────────────────────────────────────────────────

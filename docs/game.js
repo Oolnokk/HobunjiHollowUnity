@@ -28213,7 +28213,10 @@
       });
 
       window.CombatTutorialPartner?.init?.({ TILE });
-      window.DoorstepVisits?.init?.({ save: saveMemberWorldData });
+      window.DoorstepVisits?.init?.({
+        save: saveMemberWorldData,
+        getPlayerTile: () => ({ c: player.x / TILE, r: player.y / TILE }), // Feet position in the same tile units as HousePieces door tiles.
+      });
       window.CombatTutorial?.init?.({
         getQuestProgress: () => questProgress,
         save: saveMemberWorldData,

@@ -42,7 +42,7 @@
   let dialogueDeps = null; // DialogueContent's narrow adapters; used only for natural dialogue close integration.
   let scheduleDeps = null; // NpcScheduling adapters; authoritative live npcWalkers array.
   let runtimeDeps = null; // BanditCombat adapters; active scene/grid/player-face helpers already supplied by game.js.
-  let gameDeps = null; // DoorstepVisits.init({ save }) from game.js.
+  let gameDeps = null; // DoorstepVisits.init({ save, getPlayerTile }) from game.js.
   let activeVisit = null; // One visitor at a time.
   let lastArea = null;
   let lastSyncAt = 0;
@@ -131,19 +131,6 @@
     return parts.length === 2 && parts.every(Number.isFinite) ? { c: parts[0], r: parts[1] } : null;
   }
 
-  function playerTilePosition() {
-    // BanditCombat deliberately receives a read-only face target rather than
-    // the private player object. It is already expressed in scene/tile world
-    // coordinates (x/z), which is exactly what farmhouse door selection needs.
-    const face = runtimeDeps?.getPlayerFaceTarget?.();
-    const z = Number.isFinite(Number(face?.z)) ? Number(face.z) : Number(face?.y);
-    if (Number.isFinite(Number(face?.x)) && Number.isFinite(z)) return { c: Number(face.x), r: z };
-    const player = runtimeDeps?.player;
-    const tileSize = Math.max(1e-6, Number(runtimeDeps?.TILE) || 1);
-    if (!player || !Number.isFinite(player.x) || !Number.isFinite(player.y)) return null;
-    return { c: player.x / tileSize, r: player.y / tileSize };
-  }
-
   function exitDoorCandidates() {
     const groups = global.HousePieces?.debugPieceFeatures?.() || [];
     const candidates = [];
@@ -166,16 +153,24 @@
     return candidates;
   }
 
+  // Leaving the interior puts the player back where they stood to go in, so
+  // the door "just exited" is the entrance HousePieces recorded on the way in.
+  // Only entries that bypassed a door (legacy interior travel spots, debug
+  // teleports) or a since-removed entrance fall back to proximity, measured
+  // from the player's feet in tile units — the same units as door tiles.
   function doorJustExited() {
     const candidates = exitDoorCandidates();
     if (!candidates.length) return null;
-    const player = playerTilePosition();
-    if (!player) return candidates[0];
-    return candidates.slice().sort((a, b) => {
-      const aa = a.approach || a.door, bb = b.approach || b.door;
-      return Math.hypot(aa.c + 0.5 - player.c, aa.r + 0.5 - player.r)
-        - Math.hypot(bb.c + 0.5 - player.c, bb.r + 0.5 - player.r);
-    })[0];
+    const entered = global.HousePieces?.lastEnteredEntrance?.();
+    const recorded = entered && candidates.find(door => door.pieceId === entered.pieceId && door.id === entered.featureId);
+    if (recorded) return recorded;
+    const player = gameDeps?.getPlayerTile?.();
+    if (!Number.isFinite(player?.c) || !Number.isFinite(player?.r)) return candidates[0];
+    const distance = door => {
+      const spot = door.approach || door.door;
+      return Math.hypot(spot.c + 0.5 - player.c, spot.r + 0.5 - player.r);
+    };
+    return candidates.slice().sort((a, b) => distance(a) - distance(b))[0];
   }
 
   function occupiedByNpc(c, r) {

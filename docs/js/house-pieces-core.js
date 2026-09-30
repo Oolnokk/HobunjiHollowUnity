@@ -626,6 +626,7 @@
         getButtons() { return [{ icon: '🚪', label: 'Enter', action: 'obj_enter_house', style: 'primary', allowed: true }]; },
         onAction(action) {
           if (action === 'obj_enter_house') {
+            recordEnteredEntrance(entry.id, f.id);
             deps.startSceneTransition(() => deps.enterInterior(entry.id));
             return { ok: true, message: 'Entering the house…' };
           }
@@ -1128,6 +1129,19 @@
     return { floorSet, exitSet, doors, hearths };
   }
 
+  // Which entrance the player last went in by. Leaving the interior returns
+  // the player to where they stood when entering (game.js's farmPlayerSave),
+  // so this is also the door they come back out of — DoorstepVisits puts
+  // waiting visitors outside it. Recorded by each door's Enter action and by
+  // js/farmhouse-login-spawn.js for the login-inside-the-house case.
+  let _lastEnteredEntrance = null;
+  function recordEnteredEntrance(pieceId, featureId) {
+    _lastEnteredEntrance = pieceId && featureId ? { pieceId, featureId } : null;
+  }
+  function lastEnteredEntrance() {
+    return _lastEnteredEntrance ? { ..._lastEnteredEntrance } : null;
+  }
+
   // QA/console hook — inspects each piece's resolved architectural features
   // without needing to poke module-private fields directly.
   function debugPieceFeatures() {
@@ -1169,5 +1183,7 @@
     computeInteriorLayout,
     getExteriorRenderRect,
     debugPieceFeatures,
+    recordEnteredEntrance,
+    lastEnteredEntrance,
   };
 })();
