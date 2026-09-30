@@ -61,7 +61,7 @@ assert.doesNotMatch(grips, /function inverseTransform|function composePrimaryInv
 assert.match(grips, /position: \{ x: 0, y: 0, z: itemZ \* itemScale \}/, 'secondary hand span must also resolve directly in item space');
 assert.match(grips, /function heightMultiplierForTool/, 'held-item metadata must expose a per-weapon height multiplier');
 assert.match(grips, /const heightFactor = 1 \+ \(heightRatio - 1\) \* heightMultiplier/, 'effective weapon scale must blend calculated character-height ratio by the authored multiplier');
-assert.match(grips, /id="handToolHeightMultiplier"/, 'Attack Editor grip UI must expose the weapon height multiplier');
+assert.match(grips, /editorFieldPair\(scaleFields, 'handToolHeightMultiplier', 'Height multiplier'/, 'Attack Editor grip UI must expose the weapon height multiplier');
 assert.doesNotMatch(editor, /id="poseOrbitScale"|orbitScalesDownloadBtn|orbitScalesSaveOverrideBtn|orbitScalesClearOverrideBtn/, 'retired per-species weapon scale authoring controls must not remain in the Attack Editor');
 
 assert.match(direct, /id="handGripContextSelect"[\s\S]*Melee grip[\s\S]*Ranged grip/, 'grip UI must expose independent melee and ranged grip sets.');
