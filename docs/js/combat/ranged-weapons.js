@@ -151,7 +151,7 @@
     deps.debugLog?.('Ranged update: friendly-fire actor cover, loaded-before-fire LOS repositioning, and same-frame hitbox/perp caches enabled.');
   }
 
-  function gear() { return deps?.getGearInventory?.() || null; }
+  function gear() { return window.CombatTutorial?.loanAmmo?.() || deps?.getGearInventory?.() || null; }
   function ensureAmmoState() {
     const g = gear();
     if (!g) return null;
@@ -178,7 +178,7 @@
     return out;
   }
 
-  function rangedMastery(itemKey) { return Math.max(0, Math.min(5, Number(deps?.toolMasteryLevel?.(itemKey)) || 0)); }
+  function rangedMastery(itemKey) { return Math.max(0, Math.min(5, Number(window.CombatTutorial?.loanRangedMastery?.() ?? deps?.toolMasteryLevel?.(itemKey)) || 0)); }
   function notifyAmmoChanged() {
     deps?.saveGearInventory?.();
     deps?.refreshActionBar?.();
@@ -1272,7 +1272,7 @@
       const c = nearest.creature;
       const healthBefore = Math.max(0, Number(c?.health) || 0); // Used after damage to detect the exact lethal ranged transition even though RangedWeapons owns its own damageCreature reference.
       playProjectileImpactSfx(p, nearest.interval.enter);
-      deps.damageCreature(c, damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, rangedItemKey: p.itemKey, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
+      deps.damageCreature(c, damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, rangedItemKey: p.itemKey, ammoId: p.ammoId, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
       applySpecialAmmoDebuff(c, p.specialAmmoId);
       const killed = healthBefore > 0 && Math.max(0, Number(c?.health) || 0) <= 0; // Used to route mastery only on kills, matching mastery-policy's combat progression contract.
       const masteryPolicy = window.HobunjiMasteryPolicy; // Used to bypass the absent production awardRangedMastery callback while retaining it as a compatibility fallback.
@@ -1297,7 +1297,7 @@
     playProjectileImpactSfx(p, nearest.interval.enter);
     if (nearest.kind === 'hostile') {
       friendlyFireHits++;
-      deps.damageCreature(nearest.actor, damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, rangedItemKey: p.itemKey, friendlyFire: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
+      deps.damageCreature(nearest.actor, damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, rangedItemKey: p.itemKey, ammoId: p.ammoId, friendlyFire: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
       applySpecialAmmoDebuff(nearest.actor, p.specialAmmoId);
       lastEvent = `friendly-fire:${p.owner?.id || 'enemy'}->${nearest.actor.id || nearest.actor.name || 'hostile'}`;
       return { kind: 'actor', t: nearest.interval.enter, actor: nearest.actor };
@@ -1697,9 +1697,9 @@
       window.WorldPopupText?.clearAimLabel?.();
       return;
     }
-    const rank = window.BanditCombat?.RANK_LABEL?.[bandit.banditRank] ||
+    const rank = bandit.combatRoleLabel || window.BanditCombat?.RANK_LABEL?.[bandit.banditRank] ||
       String(bandit.banditRank || 'bandit').replace(/\b\w/g, letter => letter.toUpperCase());
-    window.WorldPopupText?.setAimLabel?.(bandit.avatarRef.group, (bandit.name || 'Bandit') + ' · ' + rank);
+    window.WorldPopupText?.setAimLabel?.(bandit.avatarRef.group, (bandit.name || 'Bandit') + (bandit.combatRoleLabel ? ' - ' : ' · ') + rank);
   }
 
   function update(dt) { updatePlayerAction(dt); updateProjectiles(dt); updateAmmoDebuffs(); updateBanditAimLabel(); }

@@ -129,6 +129,7 @@
             )) continue;
 
             deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, {
+              abilityId: 'acceleratingFlurry', // Identifies the committed hit for authored training objectives.
               tag: dmgType,
               heavy: true,
               afflictionBonuses: effects.afflictions,

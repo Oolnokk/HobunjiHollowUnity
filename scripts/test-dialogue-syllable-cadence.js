@@ -73,11 +73,11 @@ const dialogueContent = read('docs/js/dialogue-content.js');
 const scratchbonesConfig = read('docs/config/scratchbones-config.js');
 assert.match(scratchbonesConfig, /\"syllablesPerSecond\": 10/, 'default dialogue reveal cadence stays at the faster 10 syllables per second');
 assert.match(dialogueContent, /syllablesPerSecond: finiteClamped\(cfg\.syllablesPerSecond, 10, 1, 20\)/, 'dialogue fallback matches the configured faster cadence');
-assert.match(dialogueContent, /_npcDialogueTextEl\.textContent \+= unit\.text/, 'NPC dialogue reveals a whole cadence unit per timer');
+assert.match(dialogueContent, /_npcDialogueVisibleCharacters \+= unit\.text\.length/, 'NPC dialogue reveals a whole cadence unit per timer');
 assert.match(dialogueContent, /_playNpcDialogueLetterSfx\(unit\.vowels\[index\]\)/, 'NPC dialogue plays exactly one tick for every vowel in a syllable');
 assert.match(dialogueContent, /portraitBreathingComposer\?\.triggerYap/, 'the same vowel reveal directly triggers one mouth yap');
 assert.doesNotMatch(dialogueContent, /while \(_npcDialogueTypeIndex < _npcDialogueTypeText\.length/, 'the regressed multi-character catch-up loop is removed');
-assert.match(dialogueContent, /setTimeout\(\(\) => \{[\s\S]{0,260}_npcDialogueTextEl\.textContent \+= unit\.text[\s\S]{0,80}\}, unit\.revealAtMs\)/, 'each NPC syllable receives an independent deadline from the sequence start');
+assert.match(dialogueContent, /setTimeout\(\(\) => \{[\s\S]{0,260}_npcDialogueVisibleCharacters \+= unit\.text\.length[\s\S]{0,240}\}, unit\.revealAtMs\)/, 'each NPC syllable receives an independent deadline from the sequence start');
 assert.doesNotMatch(dialogueContent, /nextUnit\.revealAtMs - unit\.revealAtMs/, 'NPC speech no longer chains the next delay from a late callback');
 
 const ambientDialogue = read('docs/js/ambient-dialogue.js');

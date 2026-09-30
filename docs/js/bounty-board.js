@@ -144,7 +144,7 @@ window.BanditNameForge={sourceVersion:'khymeryyan-all-culture-name-forge-v7',gen
   }
 
   function _applyOrdinaryBanditCulturalName(entity, rank, opts, forge) {
-    if (!entity || rank === 'captain') return entity;
+    if (!entity || rank === 'captain' || opts?.rosterOverride || entity.npcId) return entity; // Authored NPC identities must survive the shared humanoid factory.
     try {
       const speciesId = entity.rosterRecord?.appearance?.speciesId;
       const gender = entity.rosterRecord?.appearance?.gender;
