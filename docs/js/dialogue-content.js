@@ -480,6 +480,7 @@
             // General Store for backward compatibility with any tree
             // authored before pools existed (bare {type:'openShop'}).
             const pool = deps.getWaresPools()[act.pool || 'generalStoreWares'];
+            window.GeneralStore?.requestPool?.(act.pool || 'generalStoreWares'); // Roaming sellers have no businessMaps; the General Store surface renders exactly this pool.
             if (pool) { deps.closeNpcDialogue(); deps.openMenu(pool.menuId); }
             skipNav = true;
           } else if (act.type === 'openCraftMenu') {

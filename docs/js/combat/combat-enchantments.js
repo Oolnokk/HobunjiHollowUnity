@@ -20,7 +20,7 @@
     ENCHANTMENT_POWER_PER_IMMUNDANITY,
     MASTERY_POWER_LOSS_PER_IMMUNDANITY,
 
-    SICCed_DURATION_S: 8, // Used as the transient target-lock lifetime for Sicced.
+    SICCED_DURATION_S: 8, // Used as the transient target-lock lifetime for Sicced.
     SICCED_COMPANION_POWER_BONUS: 0.60, // Multiplies the companion's complete offensive output against its active Sicced target.
 
     FURIOUS_STAMINA_AMOUNT: 14, // Enhanced Stamina granted by one Fury Flourish.
@@ -101,11 +101,16 @@
     }),
   });
 
-  let byWeapon = {}; // Persisted {weaponKey:{base:[id...],flourishes:{slotId:id}}}; load()/persist() are the sole writers outside equip helpers.
+  // Persisted as gearInventory.weaponEnchantments = {weaponKey:{base:[id...],flourishes:{slotId:id}}}
+  // (character-scoped, saved by game.js's saveGearInventory like toolPlating).
+  // fallbackByWeapon only backs isolated tests/tools that have no gear.
+  let fallbackByWeapon = {};
+  const fallbackUnlockHolder = {}; // Same role as fallbackByWeapon, for Garanki unlocks.
   const recentEvents = []; // Mobile-readable bounded enchantment event log shown in the Loadout panel.
   const siccedTargets = new Set(); // Runtime target refs whose Sicced duration has not yet expired.
   let currentSiccedTarget = null; // Most recently applied living Sicced target; companion AI is steered toward this one first.
   let lastUiWeaponKey = null; // Used only to avoid stale diagnostics when the equipped tool changes.
+  let lastLoggedSiccedTarget = null; // Used only to log automatic Sicced fallback retargets once.
   let initialized = false; // Prevents duplicate event listener installation.
 
   const nowMs = () => performance.now();
@@ -123,7 +128,7 @@
 
   function cleanWeaponState(raw) {
     const base = Array.isArray(raw?.base)
-      ? raw.base.filter(id => DEFINITIONS[id]?.type === 'Base').slice(0, BASE_LIMIT)
+      ? [...new Set(raw.base.filter(id => DEFINITIONS[id]?.type === 'Base'))].slice(0, BASE_LIMIT)
       : [];
     const flourishes = {};
     for (const slotId of window.Combat?.loadout?.SLOT_IDS || ['tap1','tap2','hold1','hold2']) {
@@ -133,39 +138,110 @@
     return { base, flourishes };
   }
 
+  function gear() {
+    return window.Combat?.deps?.getGearInventory?.() || null;
+  }
+
+  // Normalizes whatever gearInventory currently holds (old saves: nothing).
+  function store() {
+    const g = gear();
+    if (!g) return fallbackByWeapon;
+    if (!g.weaponEnchantments || typeof g.weaponEnchantments !== 'object' || Array.isArray(g.weaponEnchantments)) g.weaponEnchantments = {};
+    return g.weaponEnchantments;
+  }
+
   function stateFor(key = weaponKey(), create = false) {
-    if (!byWeapon[key] && create) byWeapon[key] = { base: [], flourishes: {} };
-    return byWeapon[key] || { base: [], flourishes: {} };
+    const all = store();
+    if (all[key]) all[key] = cleanWeaponState(all[key]);
+    if (!all[key] && create) all[key] = { base: [], flourishes: {} };
+    return all[key] || { base: [], flourishes: {} };
   }
 
   function serialize() {
-    return JSON.parse(JSON.stringify(byWeapon));
+    return JSON.parse(JSON.stringify(store()));
   }
 
+  // Replaces the whole weapon→enchantment map (tests / explicit imports).
   function load(saved) {
-    byWeapon = {};
+    const all = store();
+    for (const key of Object.keys(all)) delete all[key];
     if (saved && typeof saved === 'object') {
       for (const [key, raw] of Object.entries(saved)) {
         const clean = cleanWeaponState(raw);
-        if (clean.base.length || Object.keys(clean.flourishes).length) byWeapon[key] = clean;
+        if (clean.base.length || Object.keys(clean.flourishes).length) all[key] = clean;
       }
     }
     renderLoadoutUiIfPresent();
   }
 
   function persist() {
-    try {
-      const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
-      const characterId = window.__hobunjiPlayerProfile?.characterId;
-      if (!meta || !characterId) return;
-      const character = (meta.characters || []).find(entry => entry.id === characterId);
-      if (!character) return;
-      character.weaponEnchantments = serialize();
-      localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
-    } catch (_) {}
+    window.Combat?.deps?.saveGearInventory?.();
   }
 
+  // ── Garanki Gabu unlocks ────────────────────────────────────────
+  // gearInventory.enchantmentUnlocks = { base:{id:true}, flourish:{'id@slot':true} }.
+  // A Base enchantment unlocks by id; a Flourish unlocks per (id, loadout
+  // slot) permutation, so a Sicced tap1 relic does not also teach Sicced hold2.
+  function unlockStore() {
+    const target = gear() || fallbackUnlockHolder;
+    if (!target.enchantmentUnlocks || typeof target.enchantmentUnlocks !== 'object') target.enchantmentUnlocks = {};
+    const u = target.enchantmentUnlocks;
+    if (!u.base || typeof u.base !== 'object') u.base = {};
+    if (!u.flourish || typeof u.flourish !== 'object') u.flourish = {};
+    return u;
+  }
+
+  const flourishUnlockKey = (id, slotId) => `${id}@${slotId}`;
+
+  function isBaseUnlocked(id) {
+    return DEFINITIONS[id]?.type === 'Base' && unlockStore().base[id] === true;
+  }
+
+  function isFlourishUnlocked(id, slotId) {
+    return DEFINITIONS[id]?.type === 'Flourish' && unlockStore().flourish[flourishUnlockKey(id, slotId)] === true;
+  }
+
+  // Unlocks everything present on an enchantment state (e.g. an unbound
+  // relic). Returns the list of newly learned labels for the UI toast.
+  function unlockFromState(raw) {
+    const clean = cleanWeaponState(raw);
+    const u = unlockStore();
+    const learned = [];
+    for (const id of clean.base) {
+      if (u.base[id]) continue;
+      u.base[id] = true;
+      learned.push(DEFINITIONS[id].displayName);
+    }
+    for (const [slotId, id] of Object.entries(clean.flourishes)) {
+      const k = flourishUnlockKey(id, slotId);
+      if (u.flourish[k]) continue;
+      u.flourish[k] = true;
+      learned.push(`${DEFINITIONS[id].displayName} (${slotId.toUpperCase()} Flourish)`);
+    }
+    if (learned.length) {
+      persist();
+      logEvent(`Garanki learned: ${learned.join(', ')}`);
+    }
+    return learned;
+  }
+
+  function unlockedOptions() {
+    const u = unlockStore();
+    return {
+      base: Object.keys(u.base).filter(id => u.base[id] && DEFINITIONS[id]?.type === 'Base'),
+      flourish: Object.keys(u.flourish).filter(k => u.flourish[k]).map(k => {
+        const [id, slotId] = k.split('@');
+        return DEFINITIONS[id]?.type === 'Flourish' ? { id, slotId } : null;
+      }).filter(Boolean),
+    };
+  }
+
+  // Rejects rather than silently dropping: the caller learns a third Base
+  // enchantment is illegal instead of having one quietly vanish.
   function equipBase(key, slotIndex, enchantmentId) {
+    const current = stateFor(key).base;
+    if (enchantmentId && Math.floor(Number(slotIndex) || 0) >= BASE_LIMIT) return false;
+    if (enchantmentId && current.includes(enchantmentId) && current[Math.floor(Number(slotIndex) || 0)] !== enchantmentId) return false; // The same Base enchantment twice on one weapon is not a second enchantment.
     const index = Math.max(0, Math.min(BASE_LIMIT - 1, Math.floor(Number(slotIndex) || 0)));
     const def = DEFINITIONS[enchantmentId];
     if (enchantmentId && def?.type !== 'Base') return false;
@@ -180,6 +256,11 @@
     state.base = next.filter(Boolean).slice(0, BASE_LIMIT);
     persist();
     return true;
+  }
+
+  // Appends into the first free Base slot; false when both are taken.
+  function addBase(key, enchantmentId) {
+    return equipBase(key, stateFor(key).base.length, enchantmentId);
   }
 
   function setFlourish(key, slotId, enchantmentId) {
@@ -272,12 +353,16 @@
   function applySicced(event, def, power) {
     const target = event.target;
     if (!target || target.health <= 0) return;
-    target._siccedUntilMs = Math.max(Number(target._siccedUntilMs) || 0, nowMs() + TUNING.SICCed_DURATION_S * 1000);
+    target._siccedUntilMs = Math.max(Number(target._siccedUntilMs) || 0, nowMs() + TUNING.SICCED_DURATION_S * 1000);
     target._siccedCompanionPowerMul = 1 + TUNING.SICCED_COMPANION_POWER_BONUS * power;
     siccedTargets.add(target);
-    currentSiccedTarget = target;
-    enforceCompanionTargeting();
-    logEvent(`Applied Sicced to ${target.name || target.def?.label || 'enemy'}`);
+    currentSiccedTarget = target; // Newest application always becomes the exclusive target, even if an older Sicced enemy still lives.
+    lastLoggedSiccedTarget = target;
+    logEvent(`Applied Sicced to ${targetName(target)}`);
+  }
+
+  function targetName(target) {
+    return target?.name || target?.def?.label || target?.creatureKey || 'enemy';
   }
 
   function applyFury(event, def, power) {
@@ -416,6 +501,9 @@
         currentSiccedTarget = target;
       }
     }
+    if (currentSiccedTarget && currentSiccedTarget !== lastLoggedSiccedTarget) logEvent(`Companion retargeted Sicced enemy: ${targetName(currentSiccedTarget)}`);
+    if (!currentSiccedTarget && lastLoggedSiccedTarget) logEvent('No living Sicced enemy — companion AI resumes');
+    lastLoggedSiccedTarget = currentSiccedTarget;
     return currentSiccedTarget;
   }
 
@@ -428,21 +516,11 @@
     return Math.max(1, Number(target._siccedCompanionPowerMul) || 1);
   }
 
+  // Companion AI reads getCurrentSiccedTarget() every frame (game.js
+  // updateCompanions); this only exists for debug/tests that want the
+  // resolved target without waiting a frame.
   function enforceCompanionTargeting() {
-    const target = getCurrentSiccedTarget();
-    for (const companion of window.Combat?.deps?.companionObjects || []) {
-      if (!companion?.isCompanion || companion.health <= 0 || companion.stableRole === 'shoulderPet') continue;
-      if (target) {
-        const changed = companion.targetCreature !== target;
-        companion.targetCreature = target;
-        companion._siccedExclusiveTarget = target; // Read by combat modules/debugging without replacing normal targetCreature semantics.
-        if (changed) logEvent(`Companion retargeted Sicced enemy: ${target.name || target.def?.label || 'enemy'}`);
-      } else if (companion._siccedExclusiveTarget) {
-        if (companion.targetCreature === companion._siccedExclusiveTarget) companion.targetCreature = null;
-        delete companion._siccedExclusiveTarget;
-      }
-    }
-    return target;
+    return getCurrentSiccedTarget();
   }
 
   function applyPeripheralGust(context, ordinaryHitTargets = new Set()) {
@@ -528,6 +606,35 @@
     return select;
   }
 
+  function readOnlyValue(id) {
+    const el = document.createElement('div');
+    el.className = 'settings-desc';
+    const def = DEFINITIONS[id];
+    el.textContent = def ? `${def.icon || ''} ${def.displayName} · ${def.alignment}` : '— Empty —';
+    if (def) el.title = def.description;
+    return el;
+  }
+
+  function diagnosticsLines(key = weaponKey()) {
+    const state = stateFor(key);
+    const counts = planarCounts(key);
+    const attunement = window.TrinketSystem?.debugLines?.() || [];
+    return [
+      `Weapon: ${key}`,
+      `Base: ${state.base.map(id => `${id} (${DEFINITIONS[id]?.alignment})`).join(', ') || 'none'}`,
+      ...(window.Combat?.loadout?.SLOT_IDS || ['tap1','tap2','hold1','hold2']).map(slot => `${slot} Flourish: ${state.flourishes?.[slot] ? `${state.flourishes[slot]} (${DEFINITIONS[state.flourishes[slot]]?.alignment})` : '—'}`),
+      `Tothal ${counts.Tothal} · Hronal ${counts.Hronal} · Kanthic ${counts.Kanthic} · Ohthic ${counts.Ohthic}`,
+      `Immundanity: ${getWeaponImmundanity(key)}`,
+      `Enchantment power: ×${getEnchantmentPowerMultiplier(key).toFixed(2)}`,
+      `Mastery effects: ×${getMasteryPowerMultiplier(key).toFixed(2)}`,
+      `Sicced target: ${getCurrentSiccedTarget() ? targetName(getCurrentSiccedTarget()) : 'none'}`,
+      ...attunement,
+      '',
+      'Recent events:',
+      ...recentEvents.slice(-14).map(item => `• ${item.message}`),
+    ];
+  }
+
   function renderLoadoutUI(pane, key = weaponKey()) {
     if (!pane || typeof document === 'undefined') return;
     pane.querySelector('.enchantment-loadout-section')?.remove();
@@ -541,13 +648,21 @@
     section.appendChild(title);
 
     const state = stateFor(key);
+    const editable = !!window.Combat?.deps?.isDevMode?.(); // Players enchant through Garanki Gabu; dev mode edits freely for testing.
+    const summary = document.createElement('div');
+    summary.className = 'loadout-slot-combo-note';
+    summary.textContent = `Immundanity ${getWeaponImmundanity(key)} · Enchantment power ×${getEnchantmentPowerMultiplier(key).toFixed(2)} · Mastery effects ×${getMasteryPowerMultiplier(key).toFixed(2)}`
+      + (editable ? ' · [Dev] free editing' : ' · Garanki Gabu applies enchantments');
+    section.appendChild(summary);
     for (let i = 0; i < BASE_LIMIT; i++) {
       const row = document.createElement('div');
       row.className = 'loadout-slot';
       const label = document.createElement('div');
       label.className = 'settings-label';
       label.innerHTML = `<div class="settings-name">Base Enchantment ${i + 1}</div><div class="settings-desc">Applies to every qualifying hit made with this weapon.</div>`;
-      row.append(label, makeSelect('Base', state.base[i] || '', id => { equipBase(key, i, id); window.CombatLoadoutUI?.render?.(); }));
+      row.append(label, editable
+        ? makeSelect('Base', state.base[i] || '', id => { equipBase(key, i, id); window.CombatLoadoutUI?.render?.(); })
+        : readOnlyValue(state.base[i]));
       section.appendChild(row);
     }
 
@@ -558,29 +673,19 @@
       label.className = 'settings-label';
       const ability = window.Combat?.abilities?.get?.(window.Combat?.loadout?.getSlot?.(slotId));
       label.innerHTML = `<div class="settings-name">${slotId.toUpperCase()} Flourish · ${ability?.label || 'Empty'}</div><div class="settings-desc">${flourishTriggerText(slotId)}</div>`;
-      row.append(label, makeSelect('Flourish', state.flourishes?.[slotId] || '', id => { setFlourish(key, slotId, id); window.CombatLoadoutUI?.render?.(); }));
+      row.append(label, editable
+        ? makeSelect('Flourish', state.flourishes?.[slotId] || '', id => { setFlourish(key, slotId, id); window.CombatLoadoutUI?.render?.(); })
+        : readOnlyValue(state.flourishes?.[slotId]));
       section.appendChild(row);
     }
 
-    const counts = planarCounts(key);
     const imm = getWeaponImmundanity(key);
     const diagnostics = document.createElement('details');
     diagnostics.className = 'enchantment-debug';
     diagnostics.innerHTML = `<summary>Enchantments diagnostics · Immundanity ${imm}</summary>`;
     const pre = document.createElement('pre');
     pre.style.cssText = 'white-space:pre-wrap;font-size:10px;max-height:260px;overflow:auto;';
-    pre.textContent = [
-      `Weapon: ${key}`,
-      `Base: ${state.base.join(', ') || 'none'}`,
-      ...Object.entries(state.flourishes || {}).map(([slot,id]) => `${slot}: ${id}`),
-      `Tothal ${counts.Tothal} · Hronal ${counts.Hronal} · Kanthic ${counts.Kanthic} · Ohthic ${counts.Ohthic}`,
-      `Immundanity: ${imm}`,
-      `Enchantment power: ×${getEnchantmentPowerMultiplier(key).toFixed(2)}`,
-      `Mastery effects: ×${getMasteryPowerMultiplier(key).toFixed(2)}`,
-      '',
-      'Recent events:',
-      ...recentEvents.slice(-12).map(item => `• ${item.message}`),
-    ].join('\n');
+    pre.textContent = diagnosticsLines(key).join('\n');
     diagnostics.appendChild(pre);
     section.appendChild(diagnostics);
     pane.appendChild(section);
@@ -589,7 +694,7 @@
 
   function renderLoadoutUiIfPresent() {
     const pane = typeof document !== 'undefined' ? document.getElementById('combatLoadoutPane') : null;
-    if (pane && window.CombatLoadoutUI) renderLoadoutUI(pane, weaponKey());
+    if (pane && window.CombatLoadoutUI) window.CombatLoadoutUI.render(); // Full re-render keeps the enchantment section in its fixed position within the pane.
   }
 
   function debugSnapshot(key = weaponKey()) {
@@ -602,7 +707,8 @@
       immundanity: getWeaponImmundanity(key),
       enchantmentMultiplier: getEnchantmentPowerMultiplier(key),
       masteryMultiplier: getMasteryPowerMultiplier(key),
-      siccedTarget: getCurrentSiccedTarget()?.name || getCurrentSiccedTarget()?.def?.label || null,
+      siccedTarget: getCurrentSiccedTarget() ? targetName(getCurrentSiccedTarget()) : null,
+      unlocks: unlockedOptions(),
       recentEvents: recentEvents.slice(-16).map(entry => entry.message),
     };
   }
@@ -614,8 +720,13 @@
     window.CombatAttackEvents?.on?.('hit', onHit);
     window.CombatAttackEvents?.on?.('defensive', onDefensive);
     window.addEventListener?.('hobunji-burning-roll-cured', onBurningRollCured);
-    document?.addEventListener?.('hobunjiPlayerReady', event => load(event.detail?.weaponEnchantments));
-    if (window.__hobunjiPlayerProfile) load(window.__hobunjiPlayerProfile.weaponEnchantments);
+    // Sicced multiplies the companion's complete offensive output against
+    // its marked target through the shared aggregator, so it stacks with
+    // the Engraved Whistle (or anything else) without either knowing.
+    window.CompanionOffense?.registerProvider?.('sicced', (companion, target) => {
+      const mul = getCompanionTargetPowerMultiplier(companion, target);
+      return mul > 1 ? { damage: mul, footing: mul, affliction: mul } : null;
+    });
   }
 
   window.EnchantmentSystem = Object.freeze({
@@ -627,8 +738,16 @@
     serialize,
     load,
     persist,
+    isBaseUnlocked,
+    isFlourishUnlocked,
+    unlockFromState,
+    unlockedOptions,
+    cleanWeaponState,
+    diagnosticsLines,
+    getCompanionTargetPowerMultiplier,
     stateFor,
     equipBase,
+    addBase,
     setFlourish,
     activeDefinitions,
     hasBase,

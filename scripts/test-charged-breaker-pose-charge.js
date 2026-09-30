@@ -72,7 +72,7 @@ assert.match(flurrySource, /heldSeconds \/ GLOW_FULL_S/,
   'Accelerating Flurry glow growth remains linear in hold duration');
 assert.match(flurrySource, /overlayMode: 'linear'[\s\S]{0,180}overlayProgress: intensity[\s\S]{0,180}motionTrail: true/,
   'Accelerating Flurry continuously raises transparent over-layers and enables swing trails');
-assert.match(breakerSource, /thresholds = \[MIN_READY_POSE, 0\.50, 0\.999\]/,
+assert.match(breakerSource, /FULL_CHARGE_POSE = 0\.999[\s\S]*thresholds = \[MIN_READY_POSE, 0\.50, FULL_CHARGE_POSE\]/,
   'Charged Breaker flare milestones occur at readiness, 50%, and full pose charge');
 assert.match(breakerSource, /glowFlareQueue\.push\(i \+ 1\)/,
   'close Charged Breaker milestones are queued so the readiness and 50% flares cannot collapse into one flash');

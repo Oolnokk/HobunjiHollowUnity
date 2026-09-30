@@ -384,9 +384,31 @@
   const removeAfflictionsByFamily = (entity, family, amount) => removeAfflictions(entity, afflictionIdsByFamily(family), amount);
   const removeAfflictionsByTag = (entity, tag, amount) => removeAfflictions(entity, afflictionIdsByTag(tag), amount);
 
+  // Equipment-style stat sources (trinkets first) register one provider
+  // instead of editing each max/regen formula. A provider returns a
+  // multiplier for (entity, key); keys: maxHealth, maxStamina, maxFooting,
+  // healthRegen, healthRegenInCombat, staminaRegen, footingRegen.
+  const statModifierProviders = new Set(); // Used by getEffectiveMax/tick to compose every registered stat source multiplicatively.
+
+  function registerStatModifierProvider(provider) {
+    if (typeof provider !== "function") return () => {};
+    statModifierProviders.add(provider);
+    return () => statModifierProviders.delete(provider);
+  }
+
+  function statModifier(entity, key) {
+    let mul = 1;
+    for (const provider of statModifierProviders) {
+      let value = 1;
+      try { value = Number(provider(entity, key)); } catch (_) { value = 1; }
+      if (Number.isFinite(value) && value > 0) mul *= value;
+    }
+    return mul;
+  }
+
   function getProneRecoveryFootingTarget(entity) {
     const player = window.Combat?.deps?.player; // Player-only Poise capacity participates in the same unshambled recovery target as ordinary Footing capacity.
-    const footingMul = entity === player ? window.AlchemySystem?.getMaxFootingMultiplier?.() || 1 : 1; // Full capacity before permanent Shambling Footing is reserved.
+    const footingMul = (entity === player ? window.AlchemySystem?.getMaxFootingMultiplier?.() || 1 : 1) * statModifier(entity, "maxFooting"); // Full capacity before permanent Shambling Footing is reserved.
     const fullFootingMax = Math.max(0, (entity?.maxFooting || 0) * footingMul);
     return clamp(fullFootingMax - getAffliction(entity, "shamblingFooting"), 0, fullFootingMax); // Shambling's positive side: prone recovery only needs to refill the Footing that still exists.
   }
@@ -394,8 +416,8 @@
   function getEffectiveMax(entity, key) {
     const player = window.Combat?.deps?.player; // Used to apply maximum-resource potion/perk buffs only to their consumer.
     const isPlayer = entity === player;
-    const staminaMul = isPlayer ? (window.AlchemySystem?.getMaxStaminaMultiplier?.() || 1) * (1 + (window.PerkSystem?.rank('combat', 'increaseStamina') || 0) * 0.08) : 1; // Used by Endurance / Increase Stamina.
-    const healthMul = isPlayer ? 1 + (window.PerkSystem?.rank('combat', 'increaseHealth') || 0) * 0.08 : 1; // Increase Health perk.
+    const staminaMul = (isPlayer ? (window.AlchemySystem?.getMaxStaminaMultiplier?.() || 1) * (1 + (window.PerkSystem?.rank('combat', 'increaseStamina') || 0) * 0.08) : 1) * statModifier(entity, "maxStamina"); // Used by Endurance / Increase Stamina / trinkets.
+    const healthMul = (isPlayer ? 1 + (window.PerkSystem?.rank('combat', 'increaseHealth') || 0) * 0.08 : 1) * statModifier(entity, "maxHealth"); // Increase Health perk / trinkets.
     if (key === "stamina") return clamp((entity.maxStamina || 0) * staminaMul - getAffliction(entity, "windedStamina"), 0, (entity.maxStamina || 0) * staminaMul);
     if (key === "health") {
       const fullHealthMax = Math.max(0, (entity.maxHealth || 0) * healthMul); // Used to keep capacity afflictions nonlethal without inventing Health on entities whose authored maximum is zero.
@@ -793,9 +815,10 @@
     const rest = getRestInfo(entity, cfg);
     const mul = rest.rested ? 2 : 1;
     const isPlayer = entity === window.Combat?.deps?.player; // Used to apply the consumer's central regeneration modifiers.
-    const staminaRate = (opts.staminaRegenPerSec ?? cfg.staminaRegenPerSec) * STAMINA_RECOVERY_MULTIPLIER * (isPlayer ? window.AlchemySystem?.getStaminaRegenMultiplier?.() || 1 : 1);
+    const staminaRate = (opts.staminaRegenPerSec ?? cfg.staminaRegenPerSec) * STAMINA_RECOVERY_MULTIPLIER * (isPlayer ? window.AlchemySystem?.getStaminaRegenMultiplier?.() || 1 : 1) * statModifier(entity, "staminaRegen");
     const healthRecoveryBlocked = opts.healthRecoveryBlocked === true; // Used by the shared combat-recovery policy to suppress automatic current-Health gains without disabling the rest of ResourceSystem maintenance.
-    const healthRate = healthRecoveryBlocked ? 0 : (opts.healthRegenPerSec ?? cfg.healthRegenPerSec) * (isPlayer ? window.AlchemySystem?.getHealthRegenMultiplier?.() || 1 : 1);
+    const healthRate = healthRecoveryBlocked ? 0 : (opts.healthRegenPerSec ?? cfg.healthRegenPerSec) * (isPlayer ? window.AlchemySystem?.getHealthRegenMultiplier?.() || 1 : 1)
+      * statModifier(entity, "healthRegen") * (rest.rested ? 1 : statModifier(entity, "healthRegenInCombat")); // In-combat = not yet rested (the same quietSeconds rule that doubles out-of-combat regen).
     const staminaRegenBlocked = isStaminaRegenBlocked(entity); // Used to pause both ordinary and Exhausted Stamina regeneration while any held-action blocker is active.
 
     if (entity.exhaustion.active) {
@@ -813,7 +836,7 @@
     entity.proneT = entity.prone ? (entity.proneT || 0) + dt : 0;
     const footingRegenGated = entity.prone && entity.proneT < cfg.proneRecoveryDelayS;
     if (!footingRegenGated && Number.isFinite(entity.footing)) {
-      const footingRate = opts.footingRegenPerSec ?? cfg.footingRegenPerSec;
+      const footingRate = (opts.footingRegenPerSec ?? cfg.footingRegenPerSec) * statModifier(entity, "footingRegen");
       entity.footing = round1(clamp(entity.footing + footingRate * mul * dt, 0, getEffectiveMax(entity, "footing")));
     }
 
@@ -942,6 +965,8 @@
   window.ResourceSystem = {
     AFFLICTIONS,
     ENHANCED_RESOURCE_DEFS,
+    registerStatModifierProvider,
+    statModifier,
     afflictionBonusesForTag,
     config: resourceSystemConfig,
     initEntity,

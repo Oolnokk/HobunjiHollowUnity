@@ -161,6 +161,7 @@
         if (targetPanel === 'carpenterShop') window.CarpenterShop.render();
         if (targetPanel === 'jubmirShop') window.JubmirShop.render();
         if (targetPanel === 'metalCraftShop') window.MetalCraftShop.render();
+        if (targetPanel === 'garankiEnchanter') window.HarlyaoRelics?.render?.();
         if (targetPanel === 'alchemy') window.AlchemySystem.renderPanel();
         if (targetPanel === 'tasks') window.TasksPanel.render();
         if (targetPanel === 'relationships') window.RelationshipsPanel.render();
@@ -211,6 +212,7 @@
         if (id === 'carpenterShop') window.CarpenterShop.render();
         if (id === 'jubmirShop') window.JubmirShop.render();
         if (id === 'metalCraftShop') window.MetalCraftShop.render();
+        if (id === 'garankiEnchanter') window.HarlyaoRelics?.render?.();
         if (id === 'alchemy') window.AlchemySystem.renderPanel();
         if (id === 'tasks') window.TasksPanel.render();
         if (id === 'relationships') window.RelationshipsPanel.render();
@@ -2286,59 +2288,42 @@
         };
       }
 
+      // The shared "find this character in hobunjiSaveMeta, mutate, write
+      // back" step for the character-scoped saves below now lives in
+      // js/character-meta-save.js.
       function saveGearInventory() {
-        try {
-          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
-          if (!meta || !window.__hobunjiPlayerProfile?.characterId) return;
-          const ch = (meta.characters || []).find(c => c.id === window.__hobunjiPlayerProfile.characterId);
-          if (ch) { ch.gearInventory = gearInventory; localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta)); }
-        } catch {}
+        window.CharacterMetaSave.update(ch => { ch.gearInventory = gearInventory; });
       }
 
       function saveSkillProgress(snapshot) {
-        try {
-          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
-          if (!meta || !window.__hobunjiPlayerProfile?.characterId) return;
-          const character = (meta.characters || []).find(entry => entry.id === window.__hobunjiPlayerProfile.characterId); // Used to keep skill progression character-scoped across worlds.
-          if (!character) return;
+        // Character-scoped so skill progression follows the character across worlds.
+        window.CharacterMetaSave.update(character => {
           character.skillLevels = { ...snapshot.levels };
           character.skillExperience = { ...snapshot.experience };
-          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
           Object.assign(window.__hobunjiPlayerProfile, { skillLevels: character.skillLevels, skillExperience: character.skillExperience });
-        } catch {}
+        });
       }
 
       // Perk ranks are character-scoped, same as skill levels/XP above — a
       // Combat/Alchemy/Foraging/Fishing perk build follows the character
       // across worlds rather than staying behind with one farm.
       function savePerkProgress(snapshot) {
-        try {
-          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
-          if (!meta || !window.__hobunjiPlayerProfile?.characterId) return;
-          const character = (meta.characters || []).find(entry => entry.id === window.__hobunjiPlayerProfile.characterId);
-          if (!character) return;
+        window.CharacterMetaSave.update(character => {
           character.perkRanks = snapshot;
-          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
           Object.assign(window.__hobunjiPlayerProfile, { perkRanks: character.perkRanks });
-        } catch {}
+        });
       }
 
       // Persists the personal stable (companions) — mirrors saveGearInventory()'s
       // pattern exactly, since both are character-scoped and touch hobunjiSaveMeta
       // directly rather than round-tripping through onboarding.js.
       function saveStable() {
-        try {
-          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
-          if (!meta || !window.__hobunjiPlayerProfile?.characterId) return;
-          const ch = (meta.characters || []).find(c => c.id === window.__hobunjiPlayerProfile.characterId);
-          if (ch) {
-            ch.stable = stable;
-            ch.activeCompanionId = activeCompanionId;
-            ch.activeMountId = activeMountId;
-            ch.activeShoulderPetId = activeShoulderPetId;
-            localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
-          }
-        } catch {}
+        window.CharacterMetaSave.update(ch => {
+          ch.stable = stable;
+          ch.activeCompanionId = activeCompanionId;
+          ch.activeMountId = activeMountId;
+          ch.activeShoulderPetId = activeShoulderPetId;
+        });
       }
 
       // Persists which literal tool/weapon/whistle instance is equipped in
@@ -2348,16 +2333,10 @@
       // always fell back to the starter-gear defaults instead of whatever
       // was actually equipped/held last session.
       function saveEquipmentSlots() {
-        try {
-          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
-          if (!meta || !window.__hobunjiPlayerProfile?.characterId) return;
-          const ch = (meta.characters || []).find(c => c.id === window.__hobunjiPlayerProfile.characterId);
-          if (ch) {
-            ch.equipmentSlots = { ...(window.CombatTutorial?.originalEquipment?.()?.equipmentSlots || equipmentSlots) };
-            ch.activeTool = window.CombatTutorial?.originalEquipment?.()?.activeTool || activeTool;
-            localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
-          }
-        } catch {}
+        window.CharacterMetaSave.update(ch => {
+          ch.equipmentSlots = { ...(window.CombatTutorial?.originalEquipment?.()?.equipmentSlots || equipmentSlots) };
+          ch.activeTool = window.CombatTutorial?.originalEquipment?.()?.activeTool || activeTool;
+        });
       }
 
       // World object system handles sell+supply (see below)
@@ -7802,6 +7781,13 @@
               if (Math.hypot(h.x - master.x, h.y - master.y) <= ALERT_RANGE_PX) { target = h; break; }
             }
           }
+          // Sicced (weapon Flourish, js/combat/combat-enchantments.js) makes
+          // one living marked enemy the player companion's exclusive target,
+          // overriding the proximity pick above until no Sicced enemy lives.
+          if (!isBanditCompanion && master === player && c.stableRole === 'companion') {
+            const sicced = window.EnchantmentSystem?.getCurrentSiccedTarget?.();
+            if (sicced && sicced.health > 0 && sicced.areaId === currentArea) target = sicced;
+          }
 
           if (!target && window.Combat?.telegraph?.isBusy(c)) window.Combat.telegraph.cancel(c);
           if (!target && window.Combat?.animalAttacks?.isBusy(c)) window.Combat.animalAttacks.cancel(c);
@@ -7905,6 +7891,7 @@
                         if (target.health > 0 && Math.hypot(target.x - c.x, target.y - c.y) <= def.attackRangePx) {
                           const damageOptions = { tag: def.attackTag || 'sharp', afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) }; // Used by either faction's fallback bite damage route.
                           if (target === player) damagePlayer(def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions);
+                          else if (window.CompanionOffense) window.CompanionOffense.damageCreature(damageCreature, c, target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions); // Shared Whistle/Sicced companion empowerment (js/combat/companion-offense.js).
                           else damageCreature(target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions);
                           window.AudioSystem?.playCreatureClawHit(c);
                         }
@@ -18789,7 +18776,7 @@
           return;
         }
         if (activeAction === generalStoreAction()) {
-          if (nearbyNpcWalker && isGeneralStoreNpcOnDuty(nearbyNpcWalker) && !farmEditMode) { openMenu('generalStore'); return; }
+          if (nearbyNpcWalker && isGeneralStoreNpcOnDuty(nearbyNpcWalker) && !farmEditMode) { window.GeneralStore?.requestPoolForSeller?.(nearbyNpcWalker.rec?.id); openMenu('generalStore'); return; }
           showToast(generalStoreButtonConfig().noTargetMessage || 'The general store is not available right now.', false);
           return;
         }
@@ -21721,7 +21708,12 @@
       const _toolTexLoader = new THREE.TextureLoader();
       const toolTextures = {};
       const loadedToolTextures = {};
-      for (const [key, def] of Object.entries(TOOL_ITEM_DEFS)) {
+      // One loader path for every TOOL_ITEM_DEFS entry: boot-time keys
+      // below, and keys registered later at runtime (unbound Harlyao relic
+      // weapons, js/harlyao-relics.js) through ensureToolTexture().
+      function ensureToolTexture(key) {
+        const def = TOOL_ITEM_DEFS[key];
+        if (!def || toolTextures[key]) return toolTextures[key] || null;
         const tex = _toolTexLoader.load(def.sprite, (t) => {
           const img = t.image;
           def._imgW = img.naturalWidth  || img.width  || 1;
@@ -21748,7 +21740,9 @@
           loadedTex.minFilter = THREE.NearestFilter;
           loadedToolTextures[key] = loadedTex;
         }
+        return tex;
       }
+      for (const key of Object.keys(TOOL_ITEM_DEFS)) ensureToolTexture(key);
 
       // Swaps a crafted tool's in-hand mesh texture to its current metal/
       // verdigris/plating recolor — called once its base texture finishes
@@ -27969,6 +27963,7 @@
         buildPackClothingSection: window.EquipmentPanel.buildPackClothingSection,
         seededRandom: window.FormatUtils.seededRandom,
         clothingSpriteForCosmetic: window.EquipmentPanel.clothingSpriteForCosmetic,
+        itemLabel: key => ITEM_DEFS[key]?.label || key, // Barter (tradeCost) rows name the goods they ask for.
       });
 
       window.CarpenterShop?.init({
@@ -28928,6 +28923,24 @@
         calWeeks,
       });
 
+      // Harlyao relic weapons + Garanki Gabu's unbinding/enchanting panel
+      // now live in js/harlyao-relics.js.
+      window.HarlyaoRelics?.init({
+        TOOL_ITEM_DEFS,
+        ITEM_DEFS,
+        inventoryItems,
+        inventory,
+        getGearInventory: () => gearInventory,
+        saveGearInventory,
+        saveMemberWorldData,
+        ensureToolTexture,
+        showToast,
+        esc: window.FormatUtils.esc,
+        buildInventoryGrid,
+        buildEquipmentSlots: () => window.EquipmentPanel?.buildEquipmentSlots?.(),
+        isDevMode: () => s_devMode,
+      });
+
       window.JubmirShop?.init({
         tothalWorldId: _tothalWorldId,
         getShopStock: window.LootRolling.getShopStock,
@@ -29575,6 +29588,11 @@
         window.EquipmentPanel.ensureGearClothingCollection();
         window.DyeSystem.ensureCollection();
         window.PatternLibrary?.ensureCollection();
+        window.TrinketSystem?.ensureCollections?.(gearInventory); // Old saves gain empty trinket lists; nothing is dropped.
+        // Unbound Harlyao relic weapons re-enter TOOL_ITEM_DEFS (and bound
+        // ones get ITEM_DEFS rebuilt from their inventory keys) before the
+        // equipment-slot restore below reads them — see js/harlyao-relics.js.
+        window.HarlyaoRelics?.restore?.();
 
         // Personal stable — same lazy-seed pattern as the whistles block just
         // above: a character with no stable yet gets the starter dabinggi-hound

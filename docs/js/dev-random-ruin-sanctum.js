@@ -772,7 +772,7 @@
     const vaultDepth = vault.maxZ - vault.minZ;
     for (let i = 0; i < chestCount; i++) {
       const dz = chestCount > 1 ? (i / (chestCount - 1) - .5) * Math.min(vaultDepth - 2, chestCount * 1.4) : 0;
-      const chest = chestsApi?.create?.({ id:'sanctum-vault-' + i, parent:root, x:vault.maxX - 1.9, y:y0, z:zc + dz, tier:cfg('sanctum.vault.chestTier', 4), yaw:-Math.PI / 2 });
+      const chest = chestsApi?.create?.({ id:'sanctum-vault-' + i, parent:root, x:vault.maxX - 1.9, y:y0, z:zc + dz, tier:cfg('sanctum.vault.chestTier', 4), yaw:-Math.PI / 2, boss:true });
       if (!chest) continue;
       chest.group.scale.setScalar(cfg('sanctum.vault.chestScale', 1.5));
       chest.control.range = 2;

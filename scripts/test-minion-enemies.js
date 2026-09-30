@@ -32,9 +32,9 @@ assert.match(combatBanditSource, /portrait\.userData\.proceduralHandParent = han
 assert.match(devSource, /resolvedRosterDyes[\s\S]*hands=\$\{handRig\}/, 'Testing Arena Minion diagnostics must expose rendered dye resolution and hand attachment');
 assert(indexSource.indexOf('combat-bandit.js?v=20260927reviewfix1') < indexSource.indexOf('combat-minion.js?v=20260929lichroom1'));
 assert(indexSource.indexOf('combat-minion.js?v=20260929lichroom1') < indexSource.indexOf('dev-spawner.js?v=20260927reviewfix1'));
-assert(indexSource.includes('resource-system.js?v=20260927reviewfix1'));
+assert(indexSource.includes('resource-system.js?v=20260930h7347c6f'));
 assert(indexSource.includes('combat-config-loader.js?v='));
-assert(indexSource.includes('game.js?v=20260930livestockwalk1'));
+assert(indexSource.includes('game.js?v=20260930h7ae6528'));
 
 const authoredDyes = [
   'dye:CLOTH:muted_red_orange', 'dye:CLOTH:dusty_red_orange', 'dye:CLOTH:dark_muted_red_orange',

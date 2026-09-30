@@ -413,6 +413,7 @@
 
       pane.appendChild(card);
     }
+    window.EnchantmentSystem?.renderLoadoutUI?.(pane, toolKey); // Base/Flourish slots, planar alignment, Immundanity + diagnostics (js/combat/combat-enchantments.js).
     renderRangedLoadout(pane);
     restoreLoadoutControlFocus(pane, restoreFocusId);
   }

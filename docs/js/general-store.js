@@ -24,9 +24,32 @@
     return deps?.lootShopWorldState?.()?.maps || '';
   }
 
+  // A dialogue openShop names its exact pool. Roaming sellers (Jubmir-style
+  // traders, the Porakaneki chief) have no businessMaps, so the map lookup
+  // below cannot find them; this hint wins while the player is still on the
+  // map where the seller was talked to.
+  let requestedPool = null; // { poolId, mapId }
+  function requestPool(poolId) {
+    requestedPool = poolId ? { poolId: String(poolId), mapId: currentMapId() } : null;
+  }
+
+  // Contextual Shop button: resolve the pool this seller authors (first
+  // General-Store-surface pool listing them) so roaming sellers render their
+  // own goods instead of falling back to Funji's.
+  function requestPoolForSeller(npcId) {
+    const match = Object.entries(shopStock()).find(([, shop]) => shop?.menuId === 'generalStore'
+      && Array.isArray(shop?.dialogueAccess?.sellerIds) && shop.dialogueAccess.sellerIds.includes(npcId));
+    requestPool(match ? match[0] : null);
+    return match ? match[0] : null;
+  }
+
   function activeShopState() {
     const stock = shopStock();
     const mapId = currentMapId();
+    if (requestedPool && requestedPool.mapId === mapId && stock[requestedPool.poolId]?.menuId === 'generalStore') {
+      const poolId = requestedPool.poolId;
+      return { poolId, shop: stock[poolId], specialized: poolId !== DEFAULT_POOL_ID };
+    }
     const matchesMap = ([, shop]) => shop?.menuId === 'generalStore'
       && Array.isArray(shop?.dialogueAccess?.businessMaps)
       && shop.dialogueAccess.businessMaps.includes(mapId);
@@ -128,9 +151,32 @@
     window.AnimalGrowth?.ensureItemDef?.(deps); // Registers Growth Tonic from the animal-growth module when this shop exposes it.
   }
 
+  // Optional barter component: { itemKey: qty } consumed alongside price.
+  function tradeCostShortfall(item) {
+    return Object.entries(item?.tradeCost || {}).filter(([key, qty]) => (Number(deps.inventory[key]) || 0) < (Number(qty) || 0));
+  }
+
+  function tradeCostText(item) {
+    const parts = Object.entries(item?.tradeCost || {}).map(([key, qty]) => `${qty}× ${deps.itemLabel?.(key) || key}`);
+    return parts.join(', ');
+  }
+
   function buyGeneralStoreItem(item) {
     const gold = deps.inventory.gold || 0;
-    if (gold < item.price) { deps.showToast('Not enough ganang.', false); return; }
+    if (gold < (Number(item.price) || 0)) { deps.showToast('Not enough ganang.', false); return; }
+    if (tradeCostShortfall(item).length) { deps.showToast(`You need ${tradeCostText(item)} to trade for that.`, false); return; }
+    if (item.givesTrinket) {
+      // Trinkets are character gear (js/trinket-system.js), not world stacks.
+      if (!window.TrinketSystem?.DEFINITIONS?.[item.givesTrinket]) { deps.showToast('That trinket is not available.', false); return; }
+      deps.inventory.gold = gold - (Number(item.price) || 0);
+      for (const [key, qty] of Object.entries(item.tradeCost || {})) deps.inventory[key] = Math.max(0, (Number(deps.inventory[key]) || 0) - (Number(qty) || 0));
+      window.TrinketSystem.grant(item.givesTrinket, 'shop');
+      deps.showToast(`Got ${item.name}! Equip it from Inventory → Trinkets.`, true);
+      renderGeneralStorePage();
+      deps.buildInventoryGrid();
+      deps.saveMemberWorldData();
+      return;
+    }
     const grants = configuredGrants(item);
     if (!Object.keys(grants).length) {
       deps.showToast('That shop item has no configured inventory grant.', false);
@@ -139,6 +185,7 @@
 
     const qualityStars = configuredQualityStars(item); // Used for minimum-quality food staples without changing ordinary shop goods.
     deps.inventory.gold = gold - item.price;
+    for (const [key, qty] of Object.entries(item.tradeCost || {})) deps.inventory[key] = Math.max(0, (Number(deps.inventory[key]) || 0) - (Number(qty) || 0));
     Object.entries(grants).forEach(([key, value]) => addConfiguredGrant(key, value, qualityStars));
     deps.showToast('Bought ' + item.name + '!', true);
     renderGeneralStorePage();
@@ -156,14 +203,16 @@
     const world = deps.lootShopWorldState();
     goodsForShop(state).filter(item => window.ConditionRegistry.entryEligible(item, world)).forEach(item => {
       ensureConfiguredGoodsDefs(item);
+      const trinket = item.givesTrinket ? window.TrinketSystem?.DEFINITIONS?.[item.givesTrinket] : null; // Shows the Attunement cost before buying.
+      const trade = tradeCostText(item);
       const row = document.createElement('div');
       row.className = 'shop-row';
       row.innerHTML = `
         <div class="sh-icon">${item.icon}</div>
         <div class="sh-info">
-          <div class="sh-name">${deps.esc?.(item.name) || item.name}</div>
+          <div class="sh-name">${deps.esc?.(item.name) || item.name}${trinket ? ` <span title="Attunement cost">· Attunement ${trinket.attunementCost}</span>` : ''}</div>
           <div class="sh-desc">${deps.esc?.(item.desc) || item.desc}</div>
-          <div class="sh-price">${item.price}g each</div>
+          <div class="sh-price">${Number(item.price) > 0 ? `${item.price}g` : ''}${trade ? `${Number(item.price) > 0 ? ' + ' : ''}${deps.esc?.(trade) || trade}` : ''}${trinket ? '' : ' each'}</div>
         </div>
         <button class="shop-buy-btn" type="button">Buy</button>
       `;
@@ -302,7 +351,7 @@
     };
   }
 
-  window.GeneralStore = { init, render: renderGeneralStorePage, debugSnapshot };
+  window.GeneralStore = { init, render: renderGeneralStorePage, debugSnapshot, requestPool, requestPoolForSeller };
 })();
 
 // General Store is already loaded before game.js. Use that stable parser slot

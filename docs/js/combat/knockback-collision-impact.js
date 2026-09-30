@@ -163,10 +163,13 @@
     if (removed > 0 && typeof window.CustomEvent === 'function') {
       window.dispatchEvent?.(new CustomEvent('hobunji-burning-roll-cured', { detail: { entity, removed } })); // Living Flame reuses the exact amount ordinary roll-fire curing actually removed.
     }
+    window.ResourceSystem?.removeAffliction?.(entity, 'kindlingHealth', amount); // Kindling is fire too: the same roll cools it, but it never feeds the Living Flame Burning transfer above.
     return removed;
   }
 
   function extinguishInWater(entity) {
+    const kindling = window.ResourceSystem?.getAffliction?.(entity, 'kindlingHealth') || 0;
+    if (kindling > 0) window.ResourceSystem?.removeAffliction?.(entity, 'kindlingHealth', kindling);
     const burning = window.ResourceSystem?.getAffliction?.(entity, 'burningHealth') || 0;
     if (!(burning > 0)) return 0;
     return window.ResourceSystem?.removeAffliction?.(entity, 'burningHealth', burning) || 0;

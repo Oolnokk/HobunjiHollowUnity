@@ -130,23 +130,50 @@
     },
     "dungeonChest_tier1": {
       "label": "Dungeon Chest — Tier 1 (Weathered)",
-      "note": "Rolled by Random Test Ruin Dungeon Chests (docs/js/dev-random-ruin-dungeon-chests.js). Intentionally empty until dungeon loot is authored.",
-      "entries": []
+      "note": "Rolled by Harlyao ruin Dungeon Chests (docs/js/dev-random-ruin-dungeon-chests.js). trinket_<id> entries grant a gear trinket through TrinketSystem.claimLoot (docs/js/trinket-system.js) instead of an inventory stack. Tier 4 is also the boss-vault tier; those chests additionally roll a bound Harlyao relic weapon (docs/js/harlyao-relics.js).",
+      "entries": [
+        {"id": "trinket_harlyaoReachShard", "itemKey": "trinket_harlyaoReachShard", "min": 1, "max": 1, "chance": 0.08, "conditions": {}},
+        {"id": "trinket_harlyaoStridingBone", "itemKey": "trinket_harlyaoStridingBone", "min": 1, "max": 1, "chance": 0.08, "conditions": {}}
+      ]
     },
     "dungeonChest_tier2": {
       "label": "Dungeon Chest — Tier 2 (Iron-bound)",
-      "note": "Rolled by Random Test Ruin Dungeon Chests (docs/js/dev-random-ruin-dungeon-chests.js). Intentionally empty until dungeon loot is authored.",
-      "entries": []
+      "note": "Rolled by Harlyao ruin Dungeon Chests (docs/js/dev-random-ruin-dungeon-chests.js). trinket_<id> entries grant a gear trinket through TrinketSystem.claimLoot (docs/js/trinket-system.js) instead of an inventory stack. Tier 4 is also the boss-vault tier; those chests additionally roll a bound Harlyao relic weapon (docs/js/harlyao-relics.js).",
+      "entries": [
+        {"id": "trinket_harlyaoReachShard", "itemKey": "trinket_harlyaoReachShard", "min": 1, "max": 1, "chance": 0.06, "conditions": {}},
+        {"id": "trinket_harlyaoStridingBone", "itemKey": "trinket_harlyaoStridingBone", "min": 1, "max": 1, "chance": 0.06, "conditions": {}},
+        {"id": "trinket_harlyaoTopplingKnuckle", "itemKey": "trinket_harlyaoTopplingKnuckle", "min": 1, "max": 1, "chance": 0.06, "conditions": {}},
+        {"id": "trinket_harlyaoRootedAnklet", "itemKey": "trinket_harlyaoRootedAnklet", "min": 1, "max": 1, "chance": 0.06, "conditions": {}},
+        {"id": "trinket_harlyaoQuickFang", "itemKey": "trinket_harlyaoQuickFang", "min": 1, "max": 1, "chance": 0.05, "conditions": {}},
+        {"id": "trinket_harlyaoCrushingWeight", "itemKey": "trinket_harlyaoCrushingWeight", "min": 1, "max": 1, "chance": 0.05, "conditions": {}},
+        {"id": "trinket_harlyaoWardingPlate", "itemKey": "trinket_harlyaoWardingPlate", "min": 1, "max": 1, "chance": 0.05, "conditions": {}}
+      ]
     },
     "dungeonChest_tier3": {
       "label": "Dungeon Chest — Tier 3 (Gilded)",
-      "note": "Rolled by Random Test Ruin Dungeon Chests (docs/js/dev-random-ruin-dungeon-chests.js). Intentionally empty until dungeon loot is authored.",
-      "entries": []
+      "note": "Rolled by Harlyao ruin Dungeon Chests (docs/js/dev-random-ruin-dungeon-chests.js). trinket_<id> entries grant a gear trinket through TrinketSystem.claimLoot (docs/js/trinket-system.js) instead of an inventory stack. Tier 4 is also the boss-vault tier; those chests additionally roll a bound Harlyao relic weapon (docs/js/harlyao-relics.js).",
+      "entries": [
+        {"id": "trinket_harlyaoTopplingKnuckle", "itemKey": "trinket_harlyaoTopplingKnuckle", "min": 1, "max": 1, "chance": 0.06, "conditions": {}},
+        {"id": "trinket_harlyaoRootedAnklet", "itemKey": "trinket_harlyaoRootedAnklet", "min": 1, "max": 1, "chance": 0.06, "conditions": {}},
+        {"id": "trinket_harlyaoQuickFang", "itemKey": "trinket_harlyaoQuickFang", "min": 1, "max": 1, "chance": 0.06, "conditions": {}},
+        {"id": "trinket_harlyaoCrushingWeight", "itemKey": "trinket_harlyaoCrushingWeight", "min": 1, "max": 1, "chance": 0.06, "conditions": {}},
+        {"id": "trinket_harlyaoWardingPlate", "itemKey": "trinket_harlyaoWardingPlate", "min": 1, "max": 1, "chance": 0.06, "conditions": {}},
+        {"id": "trinket_harlyaoTirelessBead", "itemKey": "trinket_harlyaoTirelessBead", "min": 1, "max": 1, "chance": 0.05, "conditions": {}},
+        {"id": "trinket_harlyaoAfflictionCenser", "itemKey": "trinket_harlyaoAfflictionCenser", "min": 1, "max": 1, "chance": 0.05, "conditions": {}},
+        {"id": "trinket_harlyaoHexSigil", "itemKey": "trinket_harlyaoHexSigil", "min": 1, "max": 1, "chance": 0.05, "conditions": {}},
+        {"id": "trinket_harlyaoBloodPact", "itemKey": "trinket_harlyaoBloodPact", "min": 1, "max": 1, "chance": 0.04, "conditions": {}}
+      ]
     },
     "dungeonChest_tier4": {
       "label": "Dungeon Chest — Tier 4 (Ancient)",
-      "note": "Rolled by Random Test Ruin Dungeon Chests (docs/js/dev-random-ruin-dungeon-chests.js). Intentionally empty until dungeon loot is authored.",
-      "entries": []
+      "note": "Rolled by Harlyao ruin Dungeon Chests (docs/js/dev-random-ruin-dungeon-chests.js). trinket_<id> entries grant a gear trinket through TrinketSystem.claimLoot (docs/js/trinket-system.js) instead of an inventory stack. Tier 4 is also the boss-vault tier; those chests additionally roll a bound Harlyao relic weapon (docs/js/harlyao-relics.js).",
+      "entries": [
+        {"id": "trinket_harlyaoTirelessBead", "itemKey": "trinket_harlyaoTirelessBead", "min": 1, "max": 1, "chance": 0.1, "conditions": {}},
+        {"id": "trinket_harlyaoAfflictionCenser", "itemKey": "trinket_harlyaoAfflictionCenser", "min": 1, "max": 1, "chance": 0.1, "conditions": {}},
+        {"id": "trinket_harlyaoHexSigil", "itemKey": "trinket_harlyaoHexSigil", "min": 1, "max": 1, "chance": 0.1, "conditions": {}},
+        {"id": "trinket_harlyaoBloodPact", "itemKey": "trinket_harlyaoBloodPact", "min": 1, "max": 1, "chance": 0.08, "conditions": {}},
+        {"id": "trinket_harlyaoWarCrown", "itemKey": "trinket_harlyaoWarCrown", "min": 1, "max": 1, "chance": 0.06, "conditions": {}}
+      ]
     }
   }
 }
