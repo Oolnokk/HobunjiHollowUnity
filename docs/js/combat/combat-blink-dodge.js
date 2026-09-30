@@ -52,8 +52,8 @@
   let iframeMissCount = 0; // Used by HobunjiDodgeFeedback.getDebug() to confirm iframe-hit attempts reached this shared combat seam.
   let lastIframeMissAtMs = null; // Used by HobunjiDodgeFeedback.getDebug() to timestamp the most recent visible miss popup.
   const blinkAfterimages = []; // Used by updateBlinkAfterimages() as the complete bounded set of live frozen portrait snapshots.
-  let cachedAfterimageRoot = null; // Used by findPlayerPortraitMesh() to avoid re-traversing an unchanged player rig every trail sample.
-  let cachedAfterimagePortrait = null; // Used with cachedAfterimageRoot as the current renderable player portrait source.
+  const cachedAfterimagePortraits = new WeakMap(); // Root -> portrait meshes cache reused by player and humanoid-enemy trail samples without re-traversing unchanged rigs.
+  const enemyAfterimageMotion = new WeakMap(); // Enemy -> last dodge/lunge sample state used to rate-limit hostile portrait trails independently.
   let lastMoveAfterimageAtS = -Infinity; // Used by maybeSpawnMovementAfterimage() to rate-limit normal Blink locomotion samples.
   let lastDodgeAfterimageAtS = -Infinity; // Used by updateForcedMovementAfterimages() to rate-limit ordinary-dodge portrait snapshots independently of Blink locomotion.
   let lastLungeAfterimageAtS = -Infinity; // Used by updateForcedMovementAfterimages() to rate-limit melee-lunge portrait snapshots independently of Dodge/Blink.
@@ -67,6 +67,9 @@
     lastSourceName: null,
     lastSpawnAtMs: null,
     portraitFound: false,
+    enemySnapshots: 0,
+    enemyCombatants: 0,
+    playerCombatFrown: false,
   };
 
   function now() { return performance.now() / 1000; }
@@ -88,40 +91,39 @@
     return false;
   }
 
-  function findPlayerPortraitMesh() {
-    const root = afterimagePlayerRoot();
-    if (!root?.traverse) {
-      cachedAfterimageRoot = null;
-      cachedAfterimagePortrait = null;
-      afterimageRuntimeDebug.portraitFound = false;
-      return null;
+  function portraitMeshScore(object) {
+    if ((!object?.isMesh && !object?.isSkinnedMesh) || object.userData?.blinkAfterimage) return -1;
+    const materials = afterimageMaterialsOf(object);
+    if (!materials.length) return -1;
+    let score = 0;
+    for (const material of materials) {
+      const name = String(material?.name || '');
+      if (name.includes('npc_avatar_skinned_')) score += 8;
+      else if (name.includes('npc_avatar_')) score += 4;
+      if (material?.map) score += 1;
     }
-    if (root === cachedAfterimageRoot && cachedAfterimagePortrait && belongsToAfterimageRoot(cachedAfterimagePortrait, root)) {
-      afterimageRuntimeDebug.portraitFound = true;
-      return cachedAfterimagePortrait;
-    }
-    let best = null;
-    let bestScore = -1;
+    return score;
+  }
+
+  function findPortraitMeshes(root) {
+    if (!root?.traverse) return [];
+    const cached = cachedAfterimagePortraits.get(root);
+    if (cached?.length && cached.every(object => belongsToAfterimageRoot(object, root))) return cached;
+    const matches = [];
     root.traverse(object => {
-      if ((!object?.isMesh && !object?.isSkinnedMesh) || object.userData?.blinkAfterimage) return;
-      const materials = afterimageMaterialsOf(object);
-      if (!materials.length) return;
-      let score = 0;
-      for (const material of materials) {
-        const name = String(material?.name || '');
-        if (name.includes('npc_avatar_skinned_')) score += 8;
-        else if (name.includes('npc_avatar_')) score += 4;
-        if (material?.map) score += 1;
-      }
-      if (score > bestScore) {
-        best = object;
-        bestScore = score;
-      }
+      const score = portraitMeshScore(object);
+      if (score >= 4) matches.push({ object, score }); // Includes both front/back PNG portrait planes while excluding hands, weapons, shadows, and effect meshes.
     });
-    cachedAfterimageRoot = root;
-    cachedAfterimagePortrait = bestScore > 0 ? best : null;
-    afterimageRuntimeDebug.portraitFound = !!cachedAfterimagePortrait;
-    return cachedAfterimagePortrait;
+    const bestScore = matches.reduce((best, entry) => Math.max(best, entry.score), -1);
+    const portraits = matches.filter(entry => entry.score >= bestScore - 1).map(entry => entry.object); // Keeps equivalent front/back planes but drops lower-confidence incidental mapped meshes.
+    cachedAfterimagePortraits.set(root, portraits);
+    return portraits;
+  }
+
+  function findPlayerPortraitMeshes() {
+    const portraits = findPortraitMeshes(afterimagePlayerRoot());
+    afterimageRuntimeDebug.portraitFound = portraits.length > 0;
+    return portraits;
   }
 
   function afterimageSceneFor(source) {
@@ -170,9 +172,11 @@
 
   function disposeAfterimage(record) {
     if (!record) return;
-    record.mesh?.parent?.remove?.(record.mesh);
-    record.geometry?.dispose?.();
-    for (const material of record.materials || []) material?.dispose?.();
+    for (const entry of record.entries || []) {
+      entry.mesh?.parent?.remove?.(entry.mesh);
+      entry.geometry?.dispose?.();
+      for (const material of entry.materials || []) material?.dispose?.();
+    }
     afterimageRuntimeDebug.disposed += 1;
     afterimageRuntimeDebug.active = blinkAfterimages.length;
   }
@@ -184,55 +188,72 @@
     }
   }
 
-  function spawnAfterimage(reason, worldOffsetX = 0, worldOffsetZ = 0, opacityScale = 1) {
+  function spawnAfterimageForRoot(root, reason, worldOffsetX = 0, worldOffsetZ = 0, opacityScale = 1) {
     const THREE = window.THREE;
-    const source = findPlayerPortraitMesh();
-    const scene = source && afterimageSceneFor(source);
-    if (!THREE || !source || !scene) return false;
-    source.updateWorldMatrix?.(true, true); // Refresh the portrait and its child bones now so the baked snapshot captures this update's neck/body pose rather than the prior render's matrices.
-    const geometry = bakePortraitGeometry(source);
-    if (!geometry) return false;
-    const sourceMaterials = afterimageMaterialsOf(source);
-    const materials = sourceMaterials.map(material => cloneAfterimageMaterial(material, opacityScale));
-    if (!materials.length || materials.some(material => !material)) {
-      geometry.dispose?.();
-      for (const material of materials) material?.dispose?.();
-      return false;
+    const sources = findPortraitMeshes(root);
+    const scene = sources.length ? afterimageSceneFor(sources[0]) : null;
+    if (!THREE || !sources.length || !scene) return false;
+    const entries = [];
+    for (const source of sources) {
+      source.updateWorldMatrix?.(true, true); // Refresh each portrait plane and its child bones so the frozen snapshot carries the exact current pose/expression frame.
+      const geometry = bakePortraitGeometry(source);
+      if (!geometry) continue;
+      const sourceMaterials = afterimageMaterialsOf(source);
+      const materials = sourceMaterials.map(material => cloneAfterimageMaterial(material, opacityScale)); // Material clones retain the current live portrait map, so a combat frown already visible on the source is carried into the ghost.
+      if (!materials.length || materials.some(material => !material)) {
+        geometry.dispose?.();
+        for (const material of materials) material?.dispose?.();
+        continue;
+      }
+
+      const assignedMaterial = Array.isArray(source.material) ? materials : materials[0];
+      const mesh = new THREE.Mesh(geometry, assignedMaterial);
+      mesh.name = 'combat_portrait_afterimage';
+      mesh.userData.blinkAfterimage = true;
+      mesh.userData.noOutline = true;
+      mesh.frustumCulled = false;
+      mesh.castShadow = false;
+      mesh.receiveShadow = false;
+      mesh.renderOrder = Math.max(Number(source.renderOrder) || 0, 3);
+      mesh.matrixAutoUpdate = false;
+      const worldMatrix = source.matrixWorld.clone(); // Frozen world transform of this visible front/back plane before detaching it from the moving actor hierarchy.
+      worldMatrix.elements[12] += Number(worldOffsetX) || 0;
+      worldMatrix.elements[14] += Number(worldOffsetZ) || 0;
+      scene.updateWorldMatrix?.(true, false);
+      if (scene.matrixWorld?.clone) {
+        const worldToScene = scene.matrixWorld.clone().invert();
+        mesh.matrix.multiplyMatrices(worldToScene, worldMatrix);
+      } else {
+        mesh.matrix.copy(worldMatrix);
+      }
+      mesh.matrixWorldNeedsUpdate = true;
+      if (source.layers) mesh.layers.mask = source.layers.mask;
+      entries.push({
+        mesh,
+        geometry,
+        materials,
+        baseOpacities: materials.map(material => material.opacity),
+        sourceName: source.name || source.type || null,
+      });
     }
+    if (!entries.length) return false;
 
     trimAfterimagesToLimit();
-    const assignedMaterial = Array.isArray(source.material) ? materials : materials[0];
-    const mesh = new THREE.Mesh(geometry, assignedMaterial);
-    mesh.name = 'blink_dodge_afterimage';
-    mesh.userData.blinkAfterimage = true;
-    mesh.userData.noOutline = true;
-    mesh.frustumCulled = false;
-    mesh.castShadow = false;
-    mesh.receiveShadow = false;
-    mesh.renderOrder = Math.max(Number(source.renderOrder) || 0, 3);
-    mesh.matrixAutoUpdate = false;
-    const worldMatrix = source.matrixWorld.clone(); // Frozen world transform of the rendered portrait before it is detached from the moving player hierarchy.
-    worldMatrix.elements[12] += Number(worldOffsetX) || 0;
-    worldMatrix.elements[14] += Number(worldOffsetZ) || 0;
-    scene.updateWorldMatrix?.(true, false);
-    if (scene.matrixWorld?.clone) {
-      const worldToScene = scene.matrixWorld.clone().invert(); // Converts the frozen world pose back into this scene's local space, including transformed/elevated interior scenes.
-      mesh.matrix.multiplyMatrices(worldToScene, worldMatrix);
-    } else {
-      mesh.matrix.copy(worldMatrix);
-    }
-    mesh.matrixWorldNeedsUpdate = true;
-    if (source.layers) mesh.layers.mask = source.layers.mask;
-    scene.add(mesh);
-
-    const baseOpacities = materials.map(material => material.opacity); // Used by updateBlinkAfterimages() so each sample preserves its hop-position strength while fading.
-    blinkAfterimages.push({ mesh, geometry, materials, baseOpacities, ageS: 0 });
+    for (const entry of entries) scene.add(entry.mesh);
+    blinkAfterimages.push({ entries, ageS: 0, reason });
     afterimageRuntimeDebug.active = blinkAfterimages.length;
     afterimageRuntimeDebug.spawned += 1;
+    if (String(reason).startsWith('enemy-')) afterimageRuntimeDebug.enemySnapshots += 1;
     afterimageRuntimeDebug.lastReason = reason;
-    afterimageRuntimeDebug.lastSourceName = source.name || source.type || null;
+    afterimageRuntimeDebug.lastSourceName = entries.map(entry => entry.sourceName).filter(Boolean).join(', ') || null;
     afterimageRuntimeDebug.lastSpawnAtMs = performance.now();
     return true;
+  }
+
+  function spawnAfterimage(reason, worldOffsetX = 0, worldOffsetZ = 0, opacityScale = 1) {
+    const portraits = findPlayerPortraitMeshes();
+    if (!portraits.length) return false;
+    return spawnAfterimageForRoot(afterimagePlayerRoot(), reason, worldOffsetX, worldOffsetZ, opacityScale);
   }
 
   function spawnHopAfterimages(dxWorld, dzWorld) {
@@ -271,13 +292,67 @@
     lungeAfterimageWasActive = lunging;
   }
 
+  const ACTIVE_COMBAT_STATES = new Set(['attack', 'attacking', 'chase', 'chasing', 'aggro', 'patrol-chase', 'flee', 'fleeing', 'fleeing-low-health']); // Mirrors the established combat-health state vocabulary so portrait expressions follow the same engagement semantics.
+
+  function hostileIsInPlayerCombat(entity, player) {
+    if (!entity || entity.health <= 0 || entity.isCompanion || entity.master === player || entity._denHidden || entity.denDisplacedPrey) return false;
+    if (ACTIVE_COMBAT_STATES.has(String(entity.state || '').toLowerCase())) return true;
+    return !!(entity._banditAction || entity._rangedAction || entity._banditLunging || entity._enemyDodge || entity.telegraphState || entity.combatTutorialHostile);
+  }
+
+  function updateEnemyCombatPresentation() {
+    const deps = window.Combat?.deps;
+    const player = deps?.player;
+    const hostiles = deps?.hostileObjects;
+    if (!player || !hostiles) return;
+    const t = now();
+    let playerInCombat = false;
+    let enemyCombatants = 0;
+    for (const entity of hostiles) {
+      if (!entity) continue;
+      const inCombat = hostileIsInPlayerCombat(entity, player);
+      if (inCombat) {
+        playerInCombat = true;
+        enemyCombatants += 1;
+      }
+      if (entity.isBandit) window.BanditCombat?.setCombatExpression?.(entity, inCombat); // Bandit/Minion/Lich humanoids share this synchronous frown/resting portrait swap.
+      if (!entity.isBandit || entity.health <= 0 || !entity.avatarRef?.group) continue;
+
+      let motion = enemyAfterimageMotion.get(entity);
+      if (!motion) {
+        motion = { dodgeActive: false, lungeActive: false, lastDodgeAtS: -Infinity, lastLungeAtS: -Infinity };
+        enemyAfterimageMotion.set(entity, motion);
+      }
+      const dodging = !!(entity.dodging || entity._enemyDodge);
+      if (dodging && (!motion.dodgeActive || t - motion.lastDodgeAtS >= AFTERIMAGE_FORCED_MOVE_INTERVAL_S)) {
+        motion.lastDodgeAtS = t;
+        spawnAfterimageForRoot(entity.avatarRef.group, 'enemy-dodge');
+      }
+      if (!dodging) motion.lastDodgeAtS = -Infinity;
+      motion.dodgeActive = dodging;
+
+      const lunging = !!entity._banditLunging;
+      if (lunging && (!motion.lungeActive || t - motion.lastLungeAtS >= AFTERIMAGE_FORCED_MOVE_INTERVAL_S)) {
+        motion.lastLungeAtS = t;
+        spawnAfterimageForRoot(entity.avatarRef.group, 'enemy-lunge');
+      }
+      if (!lunging) motion.lastLungeAtS = -Infinity;
+      motion.lungeActive = lunging;
+    }
+    window.WorldPortraitLife?.setPlayerCombatExpression?.(playerInCombat);
+    afterimageRuntimeDebug.enemyCombatants = enemyCombatants;
+    afterimageRuntimeDebug.playerCombatFrown = playerInCombat;
+  }
+
   function updateBlinkAfterimages(dt) {
     const safeDt = Math.max(0, Number(dt) || 0);
     for (let i = blinkAfterimages.length - 1; i >= 0; i -= 1) {
       const record = blinkAfterimages[i];
       record.ageS += safeDt;
       const fade = Math.max(0, 1 - record.ageS / AFTERIMAGE_LIFETIME_S);
-      for (let m = 0; m < record.materials.length; m += 1) record.materials[m].opacity = record.baseOpacities[m] * fade;
+      for (const entry of record.entries || []) {
+        for (let m = 0; m < entry.materials.length; m += 1) entry.materials[m].opacity = entry.baseOpacities[m] * fade;
+      }
       if (record.ageS >= AFTERIMAGE_LIFETIME_S) {
         blinkAfterimages.splice(i, 1);
         disposeAfterimage(record);
@@ -365,6 +440,7 @@
     const enhancedUpdate = function enhancedCombatUpdate(dt) {
       originalUpdate(dt);
       updateBaseDodgeEnhancements();
+      updateEnemyCombatPresentation();
       updateForcedMovementAfterimages();
       updateBlinkAfterimages(dt);
     };
