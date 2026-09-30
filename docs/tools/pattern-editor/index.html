@@ -423,7 +423,8 @@ Overpass → not set</div>
       trimManifest = manifestResponse.ok ? await manifestResponse.json() : { schema: 'hobunji_clothing_trim.v1', garments: {} };
       trimManifest.schema ||= 'hobunji_clothing_trim.v1';
       trimManifest.garments ||= {};
-      const candidates = await Promise.all((index.entries || []).map(async entry => {
+      const indexEntries = Array.isArray(index) ? index : (index.entries || []); // cosmetics/index.json is currently a top-level array; object form remains accepted for forward compatibility.
+      const candidates = await Promise.all(indexEntries.map(async entry => {
         try {
           const response = await fetch('../../config/cosmetics/' + String(entry.path || '').replace(/^\.\//, ''));
           if (!response.ok) return null;
@@ -563,6 +564,7 @@ Overpass → not set</div>
           debugState.lastAction = 'saved primary';
         }
         await refreshPreview();
+        await renderTrimPreview(); // Fixed trim authoring preview must immediately reflect edits to its underlying reusable pattern(s).
         syncExportState();
         $('status').textContent = isOverpass
           ? 'Overpass ready. Its invisible authored clearance is visible only where it crosses the primary.'
@@ -588,6 +590,7 @@ Overpass → not set</div>
       debugState.lastAction = 'loaded primary ' + id;
     }
     await refreshPreview();
+    await renderTrimPreview(); // Shows this newly-loaded motif underneath any authored garment trim without requiring another UI nudge.
     syncExportState();
     $('status').textContent = 'Loaded ' + (entry?.label || id) + ' as ' + (slot === 'overpass' ? 'the overpass.' : 'the primary.');
   }
@@ -616,7 +619,7 @@ Overpass → not set</div>
   $('newBtn').onclick = () => {
     draft = null; loadedRepoId = null; overpassDraft = null; overpassLoadedRepoId = null; $('patternName').value = 'untitled_pattern'; syncOverpassClearanceControl(3);
     debugState.lastAction = 'new pattern pair';
-    refreshPreview(null, null); syncExportState(); openEditor('primary', null, null);
+    refreshPreview(null, null); renderTrimPreview(); syncExportState(); openEditor('primary', null, null);
   };
   $('editBtn').onclick = () => openEditor('primary', draft, loadedRepoId);
   $('editOverpassBtn').onclick = () => openEditor('overpass', overpassDraft, overpassLoadedRepoId);
