@@ -101,6 +101,7 @@
       tier,
       tierName:look.name,
       poolId:'dungeonChest_tier' + tier,
+      boss:options.boss === true, // Boss-vault chests also roll a bound Harlyao relic weapon (js/harlyao-relics.js).
       group, hinge, glow,
       opened:false,
       lidAngle:0,
@@ -119,7 +120,9 @@
     if (!chest || chest.opened) return false;
     chest.opened = true;
     const gained = window.LootRolling?.rollLootPool?.(chest.poolId) || {};
-    const parts = deps?.grantLoot?.(gained) || [];
+    const trinketParts = window.TrinketSystem?.claimLoot?.(gained, 'harlyaoRuin') || []; // trinket_<id> entries become gear, never inventory stacks.
+    const relicParts = chest.boss ? (window.HarlyaoRelics?.rollBossChestRelic?.(chest) || []) : [];
+    const parts = [...(deps?.grantLoot?.(gained) || []), ...trinketParts, ...relicParts];
     chest.loot = gained;
     const title = `${chest.tierName} Dungeon Chest`;
     deps?.showToast?.(parts.length ? `${title}: ${parts.join(', ')}` : `${title} — empty (loot pool ${chest.poolId} has no entries yet).`, true);

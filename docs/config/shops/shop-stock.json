@@ -132,7 +132,10 @@
             "kurraya": 1
           },
           "conditions": {}
-        }
+        },
+        {"key": "iconNaoung", "icon": "🗿", "name": "Icon of Nao'ung", "desc": "Trinket (Attunement 3). Maximum Health +25%; Health regenerates 2.5× faster while still in combat.", "price": 420, "givesTrinket": "iconNaoung", "conditions": {}},
+        {"key": "iconNarShangBo", "icon": "🪬", "name": "Icon of Nar-shang Bo", "desc": "Trinket (Attunement 3). Maximum Stamina +25%; Stamina regenerates 35% faster.", "price": 420, "givesTrinket": "iconNarShangBo", "conditions": {}},
+        {"key": "iconKruurenShai", "icon": "🗻", "name": "Icon of Kruuren-shai", "desc": "Trinket (Attunement 3). Maximum Footing +30%; Footing recovers 50% faster.", "price": 420, "givesTrinket": "iconKruurenShai", "conditions": {}}
       ],
       "clothingRotation": {
         "slots": 4,
@@ -371,7 +374,47 @@
           "key": "combatManualAcceleratingFlurry", "abilityId": "acceleratingFlurry", "icon": "📕", "name": "Accelerating Flurry Combat Manual",
           "desc": "An advanced manual that permanently teaches Accelerating Flurry.", "price": 160, "restockDays": 1, "maxPerRestock": 1, "conditions": {}
         }
+      
       ]
+    },
+    "porakanekiTrade": {
+      "label": "Porakaneki Trade",
+      "menuId": "generalStore",
+      "dialogueAccess": {
+        "sellerIds": [
+          "porakaneki_chief"
+        ],
+        "businessMaps": [],
+        "roaming": true
+      },
+      "goods": [
+        {
+          "key": "engravedWhistle",
+          "icon": "🪈",
+          "name": "Engraved Whistle",
+          "desc": "Trinket (Attunement 2). A carved hunting whistle: your animal companion hits 30% harder and builds afflictions 40% faster.",
+          "price": 60,
+          "tradeCost": {
+            "garWolfHide": 3,
+            "grehlrHide": 1
+          },
+          "givesTrinket": "engravedWhistle",
+          "conditions": {}
+        }
+      ]
+    },
+    "garankiEnchanting": {
+      "label": "Garanki Gabu's Unbinding & Enchanting",
+      "menuId": "garankiEnchanter",
+      "dialogueAccess": {
+        "sellerIds": [
+          "garanki_gabu"
+        ],
+        "businessMaps": [
+          "map_i_researchers_tent"
+        ]
+      },
+      "goods": []
     }
   }
 }

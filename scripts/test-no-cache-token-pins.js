@@ -40,7 +40,7 @@ const GRANDFATHERED = {
   'test-crop-sprite-art.js': 1,
   'test-dev-random-ruin-integration.js': 10,
   'test-dialogue-syllable-cadence.js': 1,
-  'test-drenkirra-vertical-aim.js': 2,
+  'test-drenkirra-vertical-aim.js': 1,
   'test-enemy-target-facing.js': 1,
   'test-entry-tunnel-door-furniture.js': 1,
   'test-entry-tunnel-wall-unmark.js': 1,

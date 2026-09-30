@@ -130,6 +130,38 @@ built-in defaults (`OUTLINE_RENDERING_DEFAULTS`) so rendering never blocks on
 the fetch, then `loadOutlineRenderingConfig()` overwrites the live uniforms/
 materials in place once the config loads.
 
+## Enchantments, Immundanity, Attunement, Harlyao relics
+
+- `docs/js/combat/combat-attack-events.js` — every player attack module
+  publishes one context (`prepare` → `hit` per target → `defensive` for real
+  blocks / iframe near-miss dodges). Cross-cutting systems read or scale that
+  context instead of re-deriving combo steps, Quick Attack bonuses, full
+  charge, flurry hits, or near-hit proximity.
+- `docs/js/combat/combat-enchantments.js` — data-driven Base (≤2 per weapon)
+  and Flourish (≤1 per loadout slot) enchantments, planar alignment,
+  Immundanity (`|Tothal−Hronal| + |Kanthic−Ohthic|`), enchantment/mastery
+  power multipliers, and all balance constants in `TUNING`. Stored in
+  `gearInventory.weaponEnchantments`; Garanki's unlocks in
+  `gearInventory.enchantmentUnlocks`.
+- `docs/js/combat/resource-system.js` — Enhanced Resources
+  (`ENHANCED_RESOURCE_DEFS`: conversion rate, priority, action-specific
+  benefit/tempo) resolved by one `resolveEnhancedResourceTransaction` used by
+  Stamina spending, Footing loss, direct damage and DoT ticks. Also the
+  stat-modifier provider hook trinkets use for max/regen.
+- `docs/js/combat/companion-offense.js` — one multiplicative aggregator for
+  companion damage/Footing/affliction (Engraved Whistle × Sicced).
+- `docs/js/trinket-system.js` — trinkets share an 8-point Attunement budget
+  (no slots). Definitions are data: `stats`, combat `perkRanks` (bonus ranks in
+  the existing perk tree), `companion`. Stored in `gearInventory.trinkets` /
+  `equippedTrinkets`. Town Icons sell at Funji's; Harlyao trinkets drop from
+  ruin dungeon chests (`trinket_<id>` loot entries); the Engraved Whistle is a
+  Porakaneki-chief barter (`tradeCost`).
+- `docs/js/harlyao-relics.js` — boss-vault chests can drop a *bound* Harlyao
+  Longsword/Broadsword with random, partial enchantments into the world
+  inventory. Garanki Gabu (researcher's tent, "Shop") unbinds it for a fee,
+  which moves it to gear and teaches him its enchantments (Flourishes per
+  enchantment × slot) so he can apply them to other weapons for more.
+
 ## Future plans: multiplayer
 
 Eventual multiplayer support (one world-owner host + guest players joining

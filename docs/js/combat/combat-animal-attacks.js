@@ -225,6 +225,7 @@
         : deps.inCone(c.x, c.y, state.angle, ref.x, ref.y, state.rangePx, state.halfConeRad);
       if (!hit) continue;
       if (target.isPlayer) deps.damagePlayer(state.damage, c.x, c.y, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
+      else if (window.CompanionOffense) window.CompanionOffense.damageCreature(deps.damageCreature, c, ref, state.damage, c.x, c.y, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses }); // Whistle/Sicced empowerment for player companions; wild attackers pass through unchanged.
       else deps.damageCreature(ref, state.damage, c.x, c.y, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
       deps.playCreatureClawHit?.(c);
       return false; // hit landed; stop in place
@@ -302,6 +303,7 @@
       const dmgTag = c.def.attackTag || 'blunt';
       const afflictionBonuses = window.ResourceSystem?.afflictionBonusesForTag(dmgTag);
       if (target.isPlayer) deps.damagePlayer(0, c.x, c.y, GUARD_CHARGE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
+      else if (window.CompanionOffense) window.CompanionOffense.damageCreature(deps.damageCreature, c, ref, 0, c.x, c.y, GUARD_CHARGE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses }); // Scales the charge's affliction buildup for player companions.
       else deps.damageCreature(ref, 0, c.x, c.y, GUARD_CHARGE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
       deps.playCreatureClawHit?.(c);
       return false;

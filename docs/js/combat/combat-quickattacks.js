@@ -172,6 +172,22 @@
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
       const rangePx = baseAbil.rangePx * def.rangeMul * RANGE_SCALE * (1 + (effects.stats.rangeMul || 0));
       const halfConeRad = def.halfConeDeg * Math.PI / 180;
+      const baseLungePx = deps.TILE * LUNGE_TILE_MUL * (1 + (effects.stats.lungeMul || 0)); // Existing Quick Attack lunge remains the base that Living Gust scales.
+      const attackContext = window.CombatAttackEvents?.prepare?.({
+        attacker: deps.player,
+        weaponKey: deps.currentWeaponKey(),
+        abilityId: id,
+        damage: baseAbil.damage * (1 + (effects.stats.damageMul || 0)),
+        afflictionBonuses: effects.afflictions,
+        knockbackPxS: baseAbil.knockbackPxS,
+        rangePx,
+        halfConeRad,
+        lungePx: baseLungePx,
+        metadata: { attackAngle: deps.player.angle },
+      }) || { modifiers: { damage: 1, footingDamage: 1, affliction: 1, knockback: 1, lunge: 1 }, afflictionBonuses: effects.afflictions };
+      const lungePx = baseLungePx * (attackContext.modifiers?.lunge || 1);
+      const attackAfflictions = window.CombatAttackEvents?.scaleAfflictions?.(attackContext.afflictionBonuses || effects.afflictions, attackContext.modifiers?.affliction || 1)
+        || effects.afflictions;
 
       // All quick attacks are aimed jabs — mirror the shovel's straight thrust.
       deps.triggerWeaponSwingVisual(windupS + strikeS, {
@@ -179,13 +195,13 @@
         windupFrac: windupS / (windupS + strikeS),
         strikeFrac: 1,
         holdS: HOLD_S,
-        afflictionIds: Object.keys(effects.afflictions),
-        afflictions: effects.afflictions,
+        afflictionIds: Object.keys(attackAfflictions),
+        afflictions: attackAfflictions,
         coneRangePx: rangePx,
         coneHalfConeRad: halfConeRad,
         coneAngle: deps.player.angle,
       });
-      deps.beginCombatLunge(deps.TILE * LUNGE_TILE_MUL * (1 + (effects.stats.lungeMul || 0)), windupS + strikeS, 0, { rangePx, halfConeRad });
+      deps.beginCombatLunge(lungePx, windupS + strikeS, 0, { rangePx, halfConeRad });
 
       busyAction = window.Combat.beginStagedAction({
         windupS,
@@ -194,6 +210,7 @@
         onStrike: () => {
           const vegetationCleared = deps.clearVegetationInAttackCone?.(deps.player.x, deps.player.y, deps.player.angle, rangePx, halfConeRad) || 0; // Used for accurate hit feedback when the cone only cuts growth.
           let hits = 0, lastName = '', conditionalHits = 0, conditionalText = '';
+          const ordinaryHitTargets = new Set(); // Used by Living Gust after real Quick Attack hit validity has already been resolved.
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
             if (!window.Combat.meleeHit(deps.player, c, {
@@ -209,15 +226,24 @@
             const hitConditions = getConditions(deps, c);
             const hitTech = buildTechnique(def, hitConditions);
             const conditionBonusUsed = hitTech.sourceText !== 'no condition bonus';
-            const damage = Math.round(baseAbil.damage * hitTech.damageMul * (1 + (effects.stats.damageMul || 0)));
-            const knockbackPxS = baseAbil.knockbackPxS * hitTech.knockbackMul;
+            const damage = Math.round(baseAbil.damage * hitTech.damageMul * (1 + (effects.stats.damageMul || 0)) * (attackContext.modifiers?.damage || 1));
+            const knockbackPxS = baseAbil.knockbackPxS * hitTech.knockbackMul * (attackContext.modifiers?.knockback || 1);
+            const healthBefore = Math.max(0, Number(c.health) || 0); // Used to expose actual post-mitigation Health damage rather than theoretical Quick Attack damage.
 
             deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, {
               abilityId: id, conditionBonusUsed, // Identifies the committed hit for authored training objectives.
               tag: deps.currentWeaponDamageType(),
               category: 'quickAttack',
               consumeHealthVulnerability: conditionBonusUsed,
-              afflictionBonuses: effects.afflictions,
+              footingDamageMultiplier: attackContext.modifiers?.footingDamage || 1,
+              afflictionBonuses: attackAfflictions,
+            });
+            ordinaryHitTargets.add(c);
+            window.CombatAttackEvents?.hit?.(attackContext, {
+              target: c,
+              actualDamage: Math.max(0, healthBefore - (Number(c.health) || 0)),
+              afflictionBonuses: attackAfflictions,
+              quickConditionalBonus: conditionBonusUsed, // Exact source of truth used by the Quick Attack's own conditional payload/refund.
             });
             deps.playWeaponHitSfx?.(deps.currentWeaponDamageType(), c.x, c.y, c.areaId, undefined, conditionBonusUsed ? 'huge' : 'small');
             hits++;
@@ -227,6 +253,8 @@
               conditionalText ||= hitTech.sourceText;
             }
           }
+
+          window.EnchantmentSystem?.applyPeripheralGust?.(attackContext, ordinaryHitTargets);
 
           // One successful conditional is enough to earn one half-cost refund;
           // cleaving several qualifying creatures cannot multiply the refund.
@@ -262,7 +290,7 @@
         data: {
           meleeThreat: window.Combat.playerMeleeThreat(rangePx, halfConeRad, {
             yaw: deps.player.angle,
-            lungePx: deps.TILE * LUNGE_TILE_MUL * (1 + (effects.stats.lungeMul || 0)),
+            lungePx,
             source: def.label,
           }),
         },

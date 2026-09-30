@@ -309,6 +309,13 @@
         }
       }
     }
+    // Immundanity weakens only effects granted by Weapon Mastery choices.
+    // Combat perks are added AFTER this pass so a magical weapon does not
+    // silently reduce unrelated perk/base-weapon stats.
+    const masteryPower = window.EnchantmentSystem?.getMasteryPowerMultiplier?.(toolKey) ?? 1; // Shared Immundanity calculation; never re-derived per ability.
+    for (const id of Object.keys(afflictions)) afflictions[id] *= masteryPower;
+    for (const key of Object.keys(stats)) stats[key] *= masteryPower;
+
     // Increase AoE / Increase Lunge Distance perks apply here so every
     // ability (which already reads stats.rangeMul/lungeMul off this same
     // returned object) picks them up uniformly.

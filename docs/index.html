@@ -123,13 +123,13 @@
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="debug.js?v=20260925weavesessiondebug4"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
-  <script src="config/config.js?v=20260926minion1"></script>
+  <script src="config/config.js?v=20260930h1b2e2e2"></script>
   <script src="config/scratchbones-config.js?v=20260930livestockwalk1"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
   <script src="js/tool-metal-recolor.js?v=20260926metalarmor1"></script>
   <script src="js/metal-armor-system.js?v=20260930pauldronverdigris1"></script>
-  <script src="config/colors/config.js?v=20260924enghpalette2"></script>
+  <script src="config/colors/config.js?v=20260930h1b2e2e2"></script>
   <script src="config/attachment-rig-profiles.js?v=20260924voorglarge1"></script>
   <link rel="stylesheet" href="style.css?v=20260927commandauras1-dialogue20">
   <link rel="stylesheet" href="cooking-ui.css?v=20260811a">
@@ -239,12 +239,12 @@
   <link rel="stylesheet" href="onboarding.css?v=20260921preworldsky1">
   <script src="onboarding.js?v=20260926metalarmor1"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
-  <script src="js/combat/resource-system.js?v=20260927reviewfix1"></script>
-  <script src="js/combat/knockback-collision-impact.js?v=20260923ledge1"></script>
+  <script src="js/combat/resource-system.js?v=20260930h7347c6f"></script>
+  <script src="js/combat/knockback-collision-impact.js?v=20260930h6c19d61"></script>
   <!-- Burning Health presentation: reuses the authored campfire fire emitter on afflicted player/enemy avatar roots. -->
   <script src="js/combat/burning-affliction-vfx.js?v=20260923burn1"></script>
   <script src="js/combat/resource-rings.js?v=20260809a"></script>
-  <script src="js/combat/combat-core.js?v=20260927upwarddistance1"></script>
+  <script src="js/combat/combat-core.js?v=20260930h5d10f96"></script>
   <script src="js/combat/enemy-search-ai.js?v=20260926combatreview1"></script>
   <!-- Stagger/Footing: authored 4-directional ragdoll blend clips + runtime
        playback onto the player's procedural rig and quarter-turned body-only
@@ -253,17 +253,24 @@
   <script src="js/combat/impact-blend-library.js?v=20260828b"></script>
   <script src="js/combat/impact-ragdoll-playback.js?v=20260828b"></script>
   <script src="js/combat/combat-enemy-telegraph.js?v=20260926combatreview1"></script>
-  <script src="js/combat/combat-animal-attacks.js?v=20260825melee2-opportunist1"></script>
+  <script src="js/combat/combat-animal-attacks.js?v=20260930h43f83e0"></script>
   <script src="js/combat/combat-loadout.js?v=20260925heldmode1"></script>
-  <script src="js/combat/combat-progression.js?v=20260712d-mastery1"></script>
+  <script src="js/combat/combat-progression.js?v=20260930hb5cfa03"></script>
+  <!-- Shared player-attack event context (prepare/hit/defensive) published by every
+       ability module; Enchantments and future cross-cutting systems observe it. -->
+  <script src="js/combat/combat-attack-events.js?v=20260930ench1"></script>
+  <!-- Shared companion offensive-stat aggregation (Engraved Whistle × Sicced). -->
+  <script src="js/combat/companion-offense.js?v=20260930ench1"></script>
   <script src="js/combat/combat-input.js?v=20260924swimcombat2"></script>
-  <script src="js/combat/combat-combo.js?v=20260927aerialchain1-training1"></script>
-  <script src="js/combat/combat-quickattacks.js?v=20260927reviewfix1-training1-opportunist1"></script>
-  <script src="js/combat/combat-counter-shield.js?v=20260928training1"></script>
-  <script src="js/combat/combat-blink-dodge.js?v=20260928training1"></script>
-  <script src="js/combat/combat-charged-breaker.js?v=20260927aerialchain1-training1-posepct1"></script>
-  <script src="js/combat/combat-flurry.js?v=20260928training1"></script>
-  <script src="js/combat/combat-loadout-ui.js?v=20260917controller1"></script>
+  <script src="js/combat/combat-combo.js?v=20260930h81d72c4"></script>
+  <script src="js/combat/combat-quickattacks.js?v=20260930h1fa1790"></script>
+  <script src="js/combat/combat-counter-shield.js?v=20260930h07cba2f"></script>
+  <script src="js/combat/combat-blink-dodge.js?v=20260930h2e6fcd3"></script>
+  <script src="js/combat/combat-charged-breaker.js?v=20260930hbbcd28d"></script>
+  <script src="js/combat/combat-flurry.js?v=20260930he6f6a0a"></script>
+  <script src="js/combat/combat-loadout-ui.js?v=20260930h75d45df"></script>
+  <!-- Weapon Enchantments + Immundanity (Base/Flourish, planar cancellation, Sicced/Fury/...). -->
+  <script src="js/combat/combat-enchantments.js?v=20260930ench1"></script>
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
        projectiles. Loads before bandits so their dual loadouts can call it. -->
   <script src="js/nearby-volume-collision.js?v=20260827treecover2"></script>
@@ -300,13 +307,15 @@
   <script src="js/bounty-board.js?v=20260831spearheadexisting1-colors1"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20260930pauldronverdigris1-tutorialrebase1"></script>
+  <script src="js/combat/combat-config-loader.js?v=20260930hdb3ec04"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
   <script src="js/effect-buff-bar.js?v=20260811a"></script>
   <script src="js/skill-system.js?v=20260927temperxp1"></script>
-  <script src="js/perk-system.js?v=20260902mineperks1"></script>
+  <script src="js/perk-system.js?v=20260930h4cddcbb"></script>
+  <!-- Trinkets + shared 8-point Attunement budget; registers stat/perk/companion providers. -->
+  <script src="js/trinket-system.js?v=20260930ench1"></script>
   <script src="js/cooking-data.js?v=20260811a"></script>
   <script src="js/food-processing.js?v=20260811a"></script>
   <script src="js/cooking-system.js?v=20260811b"></script>
@@ -408,6 +417,8 @@
        other systems above doesn't matter; must load before game.js, which
        calls window.JubmirShop.init(...) during its own setup. -->
   <script src="js/jubmir-shop.js?v=20260910manuals1"></script>
+  <!-- Bound Harlyao relic weapons + Garanki Gabu's unbinding/enchanting panel. -->
+  <script src="js/harlyao-relics.js?v=20260930ench1"></script>
   <!-- Khymeryyan civil calendar (day/week/month/year derivations + regional
        seasons) and the Calendar tab UI (window.CalendarSystem) —
        self-contained aside from deps injected via init(), so load order
@@ -477,7 +488,7 @@
        load order relative to the other systems above doesn't matter; must
        load before game.js, which calls window.GeneralStore.init(...)
        during its own setup. -->
-  <script src="js/general-store.js?v=20260807a"></script>
+  <script src="js/general-store.js?v=20260930h2bd80d0"></script>
   <!-- Carpenter's shop: barn plans + furniture blueprints
        (window.CarpenterShop) — self-contained aside from deps injected via
        init(), and reads window.ConditionRegistry at render time (already
@@ -652,7 +663,7 @@
        window.EquipmentPanel directly (including at top-level, in
        window.__climbDebug) and calls window.EquipmentPanel.init(...)
        during its own setup. -->
-  <script src="js/equipment-panel.js?v=20260930pauldronverdigris1"></script>
+  <script src="js/equipment-panel.js?v=20260930hcbe8cff"></script>
   <!-- Per-map terrain tile texture overrides (window.TerrainTileMaterials:
        resolveTileMat/resolveCliffMat/loadTerrainTileTexture) — must load
        before game.js, which calls window.TerrainTileMaterials.init(...) near
@@ -1465,6 +1476,19 @@
           <div id="metalCraftShopList" class="supply-list"></div>
         </div>
       </div><!-- /mpMetalCraftShop -->
+
+      <!-- ── Garanki Gabu's unbinding & enchanting pane (no tab button — opened
+           via Garanki's generated Shop dialogue, pool garankiEnchanting in
+           config/shops/shop-stock.json). See js/harlyao-relics.js. ────────── -->
+      <div class="mp-pane" id="mpGarankiEnchanter">
+        <div class="supply-top-row">
+          <div class="wallet-display"><div class="wallet-icon">💰</div><div class="wallet-label">Current gold</div><div class="wallet-amount" id="gkGoldDisplay">0<span class="wallet-unit">g</span></div></div>
+        </div>
+        <div class="menu-section supply-shop-section">
+          <div class="menu-section-title">Garanki Gabu — Unbinding &amp; Enchanting</div>
+          <div id="garankiEnchanterList" class="supply-list"></div>
+        </div>
+      </div><!-- /mpGarankiEnchanter -->
 
       <!-- ── Alchemy pane (no tab button — opened only via the Alchemy Table's
            interact prompt, same "openMenu-only" pattern as Supplies/Shipping) ── -->
@@ -2378,7 +2402,7 @@
   <script src="js/dialogue-camera-framing.js?v=20260926a"></script>
   <script src="js/dialogue-templates.js?v=20260929mastery1"></script>
   <script src="js/dialogue-rich-text.js?v=20260929colors1"></script>
-  <script src="js/dialogue-content.js?v=20260926staging1-colors1-mastery1"></script>
+  <script src="js/dialogue-content.js?v=20260930h3ea8434"></script>
   <script src="js/combat/combat-tutorial-content.js?v=20260929oddclaw1-colors1-opportunist1-mastery1-goals1"></script>
   <script src="js/combat/combat-tutorial-mastery.js?v=20260929mastery1-goals1"></script>
   <script src="js/combat/combat-tutorial-partner.js?v=20260930partner1"></script>
@@ -2494,7 +2518,7 @@
   <!-- Directional camera pitch policy is isolated from controller bindings/gameplay dispatch. -->
   <script src="js/camera-look-clamp.js?v=20260923review2"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20260930padauthority1"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20260930h55c5a38"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
@@ -2509,7 +2533,9 @@
   <script src="js/banubu-cave-clouds.js?v=20260923cloudring3"></script>
   <!-- Shoulder Cam / Character View Pointer Lock (window.ShoulderCamPointerLock); game.js calls init(...) during setup. -->
   <script src="js/shoulder-cam-pointer-lock.js?v=20260925shouldercamonly1"></script>
-  <script src="game.js?v=20260930livestockwalk1-tutorialrebase1-tutorialpartner1"></script>
+  <!-- Shared character-scoped hobunjiSaveMeta update step used by game.js's save* helpers. -->
+  <script src="js/character-meta-save.js?v=20260930ench1"></script>
+  <script src="game.js?v=20260930h7ae6528"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>

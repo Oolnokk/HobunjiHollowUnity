@@ -1061,6 +1061,7 @@
       sec.appendChild(empty);
     }
     window.WhistleEquip.build();
+    window.TrinketSystem?.renderEquipmentSection?.(sec); // Attunement-budget trinkets (js/trinket-system.js).
   }
 
   window.EquipmentPanel = {
