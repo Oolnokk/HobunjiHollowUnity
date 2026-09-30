@@ -59,7 +59,7 @@
     "RANGE_SCALE": 0.6, "LUNGE_TILE_MUL": 4.5,
     "techniques": {
       "opportunistJab": { "label": "Opportunist Jab", "condKey": "enemyStriking", "halfConeDeg": 16, "rangeMul": 0.95,
-        "base": { "damageMul": 0.5,  "knockbackMul": 0.9 }, "bonus": { "damageMul": 3.2, "knockbackMul": 1.9 }, "bonusText": "bonus: target was in strike stage" },
+        "base": { "damageMul": 0.5,  "knockbackMul": 0.9 }, "bonus": { "damageMul": 3.2, "knockbackMul": 1.9 }, "bonusText": "bonus: target was winding up or striking" },
       "exhaustCutter": { "label": "Exhaust Cutter", "condKey": "exhausted", "halfConeDeg": 18, "rangeMul": 1.0,
         "base": { "damageMul": 0.57, "knockbackMul": 1.0 }, "bonus": { "damageMul": 3.1, "knockbackMul": 2.0 }, "bonusText": "bonus: target stamina was empty" },
       "backstabFlick": { "label": "Backstab Flick", "condKey": "behind", "halfConeDeg": 39, "rangeMul": 1.25,

@@ -287,7 +287,7 @@
     if ((!panel && visible) || (panel && panel.hidden === visible)) render();
   }
   function diagnosticsText() {
-    return `Spearhead combat tutorial\nQuest: ${session?.quest.id || 'none'}\nStep: ${step()?.id || 'none'}\nPartner: Oddclaw\nPhase: ${session?.phase || 'idle'}\nVerified actions: ${session?.hits || 0}/${step()?.count || 1}\nLoan weapon: ${deps?.equipment.weapon || 'none'}\nTried: ${[...(session?.tried || [])].join(', ')}\nLast error: ${lastError || 'none'}\nLatest change: Combat companion suspended during training, Oddclaw - Sparring Partner label, and colored dialogue terms.`;
+    return `Spearhead combat tutorial\nQuest: ${session?.quest.id || 'none'}\nStep: ${step()?.id || 'none'}\nPartner: Oddclaw\nPhase: ${session?.phase || 'idle'}\nVerified actions: ${session?.hits || 0}/${step()?.count || 1}\nLoan weapon: ${deps?.equipment.weapon || 'none'}\nTried: ${[...(session?.tried || [])].join(', ')}\nLast error: ${lastError || 'none'}\nLatest change: Opportunist Jab now rewards hits during enemy windup or strike; tutorial instructions updated.`;
   }
   function init(injected) {
     deps = injected;

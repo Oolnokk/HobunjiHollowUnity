@@ -56,6 +56,11 @@
     return !!(aa?.def?.isStriking?.(aa.state, c));
   }
 
+  function isWindingUp(c) {
+    const aa = c?._animalAttack; // Named attacks declare preparation windows without leaking private stage names to Quick Attacks.
+    return !!(aa?.def?.isWindingUp?.(aa.state, c));
+  }
+
   function cancel(c) {
     const aa = c._animalAttack;
     if (!aa) return;
@@ -64,7 +69,7 @@
     c.scaleY = 1;
   }
 
-  window.Combat.animalAttacks = { register, start, update, isBusy, isStriking, cancel };
+  window.Combat.animalAttacks = { register, start, update, isBusy, isStriking, isWindingUp, cancel };
 
   // ── Pounce ──────────────────────────────────────────────────────────
   //
@@ -239,6 +244,7 @@
     cancel: pounceCancel,
     additionalStaminaCost: pounceAdditionalStaminaCost,
     isStriking: state => state?.stage === 'leap',
+    isWindingUp: state => state?.stage === 'windup' || state?.stage === 'uncrouch',
   });
 
   // ── Guard Charge ────────────────────────────────────────────────────

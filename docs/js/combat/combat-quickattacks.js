@@ -9,9 +9,8 @@
 // verdict from whichever creature happened to be the auto-target.
 //
 // "enemyStriking" (Opportunist Jab's bonus) recognizes both the generic
-// enemy telegraph's strike stage and named modular animal attacks that expose
-// a committed strike window through Combat.animalAttacks.isStriking(). That
-// keeps Pounce's leap and future named attacks on the same condition path.
+// enemy telegraph's windup/strike stages and named modular animal attacks.
+// The legacy condition key stays stable for saved loadouts and readiness cues.
 (() => {
   "use strict";
   if (!window.Combat?.abilities) { console.error('combat-quickattacks.js requires combat-core.js + combat-loadout.js to load first'); return; }
@@ -20,8 +19,8 @@
 
   function enemyIsStriking(target) {
     if (!target) return false;
-    if (target.telegraphState === 'strike') return true;
-    return !!window.Combat.animalAttacks?.isStriking?.(target);
+    if (target.telegraphState === 'windup' || target.telegraphState === 'strike') return true;
+    return !!(window.Combat.animalAttacks?.isWindingUp?.(target) || window.Combat.animalAttacks?.isStriking?.(target));
   }
 
   // Shared source of truth for attack execution and readiness cues. The target
@@ -57,6 +56,8 @@
         healthForCondition,
         effectiveStaminaMax: window.ResourceSystem?.getEffectiveMax?.(target, 'stamina') ?? target.maxStamina,
         effectiveHealthMax: window.ResourceSystem?.getEffectiveMax?.(target, 'health') ?? target.maxHealth,
+        enemyStriking: conditions.enemyStriking,
+        attackWindow: target.telegraphState || target._animalAttack?.state?.stage || 'idle', // Mobile diagnostics expose the qualifying windup/strike phase.
         exhausted: conditions.exhausted,
         lowHealth: conditions.lowHealth,
       };
@@ -71,7 +72,7 @@
   // `quickAttacks.techniques` section can override them wholesale.
   const TECHNIQUES = {
     opportunistJab: { label: 'Opportunist Jab', condKey: 'enemyStriking', halfConeDeg: 16, rangeMul: 0.95,
-      base: { damageMul: 0.5, knockbackMul: 0.9 }, bonus: { damageMul: 3.2, knockbackMul: 1.9 }, bonusText: 'bonus: target was in strike stage' },
+      base: { damageMul: 0.5, knockbackMul: 0.9 }, bonus: { damageMul: 3.2, knockbackMul: 1.9 }, bonusText: 'bonus: target was winding up or striking' },
     exhaustCutter: { label: 'Exhaust Cutter', condKey: 'exhausted', halfConeDeg: 18, rangeMul: 1.0,
       base: { damageMul: 0.57, knockbackMul: 1.0 }, bonus: { damageMul: 3.1, knockbackMul: 2.0 }, bonusText: 'bonus: target stamina was empty' },
     backstabFlick: { label: 'Backstab Flick', condKey: 'behind', halfConeDeg: 39, rangeMul: 1.25,

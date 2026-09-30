@@ -85,3 +85,18 @@ conditions = Combat.getQuickAttackConditions(deps, blackStamina);
 assert.equal(conditions.exhausted, true, 'true Exhausted state always enables Exhaust Cutter');
 
 console.log('quick attack resource-threshold checks passed');
+
+// Opportunist's wider window is shared by damage and readiness indicators.
+const opportunistTarget = makeTarget(); // Probe each real generic telegraph phase at impact time.
+for (const [stage, expected] of [['windup', true], ['strike', true], ['recover', false], [null, false]]) {
+  opportunistTarget.telegraphState = stage;
+  assert.equal(Combat.getQuickAttackConditions(deps, opportunistTarget).enemyStriking, expected, `Opportunist window: ${stage}`);
+}
+vm.runInContext(fs.readFileSync('docs/js/combat/combat-animal-attacks.js', 'utf8'), context);
+const namedAttack = { isWindingUp: state => state.stage === 'windup', isStriking: state => state.stage === 'leap' }; // A modular animal attack participates through its public phase hooks.
+for (const [stage, expected] of [['windup', true], ['leap', true], ['recover', false]]) {
+  opportunistTarget._animalAttack = { def: namedAttack, state: { stage } };
+  assert.equal(Combat.getQuickAttackConditions(deps, opportunistTarget).enemyStriking, expected, `Named animal attack: ${stage}`);
+}
+Combat.animalAttacks.cancel(opportunistTarget);
+assert.equal(Combat.getQuickAttackConditions(deps, opportunistTarget).enemyStriking, false, 'cancelled attacks do not grant the bonus');
