@@ -310,6 +310,7 @@
     let enemyCombatants = 0;
     for (const entity of hostiles) {
       if (!entity) continue;
+      if (entity.areaId && deps.getCurrentArea?.() && entity.areaId !== deps.getCurrentArea()) continue; // Off-area cached hostiles must not frown the player or emit invisible trail meshes.
       const inCombat = hostileIsInPlayerCombat(entity, player);
       if (inCombat) {
         playerInCombat = true;
