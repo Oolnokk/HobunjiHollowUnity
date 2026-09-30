@@ -1191,6 +1191,7 @@ $('flipBtn').onclick = () => {
   if (anim.poses.midStrike) anim.poses.midStrike = flipPose(anim.poses.midStrike);
   anim.poses.strike = flipPose(anim.poses.strike);
   window.HobunjiAttackEditorHandShoulderControls?.loadFromAnimationObject?.({ poses: anim.poses });
+  window.HobunjiHandToolGrips?.loadEditorAnimationGrip?.({ poses: anim.poses });
   toolMirrored = !toolMirrored;
   toolBase.position.x = toolMirrored ? -baseAttachX : baseAttachX;
   if (toolPlaneMesh) toolPlaneMesh.scale.x = toolMirrored ? -1 : 1;
@@ -1315,6 +1316,7 @@ function applyPreset(preset) {
   // The selected Action owns hand-follow and elbow pose fields too. Reload the
   // hand adapter every time so state from the previously selected Action cannot leak.
   window.HobunjiAttackEditorHandShoulderControls?.loadFromAnimationObject?.({ poses: anim.poses });
+  window.HobunjiHandToolGrips?.loadEditorAnimationGrip?.({ poses: anim.poses });
   anim.windupFrac = preset.windupFrac;
   anim.strikeFrac = preset.strikeFrac;
   // Presets predate holdFrac, so derive it the same way game.js's HF auto-
@@ -1943,6 +1945,7 @@ function setMidStrikeEnabled(enabled, { focus = true } = {}) {
   if (enabled && anim.sequence === 'attack') {
     if (!anim.poses.midStrike) anim.poses.midStrike = midpointPose(anim.poses.windup, anim.poses.strike);
     window.HobunjiAttackEditorHandShoulderControls?.loadFromAnimationObject?.({ poses: anim.poses });
+  window.HobunjiHandToolGrips?.loadEditorAnimationGrip?.({ poses: anim.poses });
     syncMidStrikeUi();
     if (focus) selectEditPhase('midStrike');
   } else {
@@ -2147,6 +2150,7 @@ function loadAnimObject(data) {
   // Restore them on every load path (file import, Undo/Redo, programmatic restore),
   // not only the file-input handler.
   window.HobunjiAttackEditorHandShoulderControls?.loadFromAnimationObject?.(data);
+  window.HobunjiHandToolGrips?.loadEditorAnimationGrip?.(data);
   $('animName').value = action.label;
   $('animStyle').value = anim.style;
   $('playbackSequence').value = anim.sequence;
