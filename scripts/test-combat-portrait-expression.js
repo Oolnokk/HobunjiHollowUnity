@@ -22,13 +22,28 @@ assert.match(
 );
 assert.match(
   portraitLife,
-  /function setPlayerCombatExpression\([\s\S]{0,520}setExpression\?\.\('player', 'frown'/,
-  'player combat state uses the existing portrait expression composer for frown'
+  /COMBAT_FROWN_COMPOSER[\s\S]{0,260}getExpression: \(\) => 'frown'/,
+  'player world portrait pre-bakes the authored frown with the normal portrait renderer'
 );
 assert.match(
   portraitLife,
-  /else composer\.clearExpression\?\.\('player'\)[\s\S]{0,240}playerLifeT = Infinity/,
-  'leaving combat clears the temporary player frown and immediately schedules a portrait refresh'
+  /ensurePlayerCombatFrownCache\(avatar\)[\s\S]{0,900}renderProfileToCanvas\(scratch, avatar\.profile,[\s\S]{0,260}breathingComposer: COMBAT_FROWN_COMPOSER/,
+  'player combat frown cache is warmed per current avatar generation before combat'
+);
+assert.match(
+  portraitLife,
+  /function setPlayerCombatExpression\([\s\S]{0,900}setExpression\?\.\('player', 'frown'[\s\S]{0,700}applyCachedPlayerCombatFrown\(avatar\)/,
+  'player combat state applies the prewarmed frown synchronously when the cache is ready'
+);
+assert.match(
+  portraitLife,
+  /expressionVersion !== playerCombatExpressionVersion/,
+  'an async portrait render started under an older combat expression cannot upload over the current face'
+);
+assert.match(
+  portraitLife,
+  /isPlayerCombatExpressionApplied: \(\) => !playerCombatFrown \|\| playerCombatExpressionApplied/,
+  'afterimage code can verify that the current player texture has actually received its combat frown'
 );
 assert.match(
   afterimages,
@@ -37,13 +52,28 @@ assert.match(
 );
 assert.match(
   afterimages,
-  /cloneAfterimageMaterial\(material, opacityScale\)[\s\S]{0,220}combat frown already visible on the source is carried into the ghost/,
-  'afterimage material snapshots intentionally retain the currently visible expression texture'
+  /function freezeAfterimageTexture\([\s\S]{0,900}ctx\.drawImage\(image,[\s\S]{0,500}texture\.image = canvas/,
+  'afterimages deep-copy the currently visible portrait pixels instead of sharing the live texture image'
+);
+assert.match(
+  afterimages,
+  /for \(const texture of entry\.frozenTextures \|\| \[\]\) texture\?\.dispose\?\.\(\)/,
+  'frozen afterimage textures are disposed with the transient ghost'
+);
+assert.match(
+  afterimages,
+  /isPlayerCombatExpressionApplied\?\.\(\) === false\) return false/,
+  'player ghosts are withheld during the brief combat-entry handoff until the frown is actually on the live texture'
 );
 assert.match(
   afterimages,
   /updateEnemyCombatPresentation\(\);[\s\S]{0,160}updateForcedMovementAfterimages\(\);/,
   'combat-expression state updates before player dodge/lunge afterimage sampling'
+);
+assert.match(
+  afterimages,
+  /return state === 'chase' \|\| state === 'searching'/,
+  'portrait combat state mirrors game.js isPlayerInCombat instead of treating wildlife patrol fights as player combat'
 );
 
 console.log('Combat portrait expression presentation regression tests passed');
