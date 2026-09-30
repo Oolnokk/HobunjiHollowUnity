@@ -981,8 +981,10 @@
     }
 
     const remaining = Math.max(0, finalDamage - convertible);
+    const enhanced = RS.resolveEnhancedResourceTransaction?.(entity, "health", remaining, { kind: "damage", reason: opts.reason || "damage" })
+      || { ordinaryRemaining: remaining }; // Drunken Health converts first, then Resolute/Mirrored Health absorb what would otherwise reach real Health.
     const before = Number(entity.health) || 0;
-    if (remaining > 0) entity.health = round1(clamp(before - remaining, 0, original.getEffectiveMax(entity, "health")));
+    if (enhanced.ordinaryRemaining > 0) entity.health = round1(clamp(before - enhanced.ordinaryRemaining, 0, original.getEffectiveMax(entity, "health")));
     const lost = round1(before - (Number(entity.health) || 0));
 
     if (opts.afflictionBonuses) {
@@ -999,10 +1001,10 @@
     return lost;
   };
 
-  RS.spendStamina = function drunkenAwareSpendStamina(entity, amount, reason) {
+  RS.spendStamina = function drunkenAwareSpendStamina(entity, amount, reason, transaction = {}) {
     const beforeHealth = Number(entity?.health) || 0;
     const beforeDrunk = getDrunk(entity, DRUNK_HEALTH_ID);
-    const result = original.spendStamina(entity, amount, reason);
+    const result = original.spendStamina(entity, amount, reason, transaction); // Preserve Enhanced Stamina eligibility/priority metadata through the alcohol compatibility wrapper.
     const directLost = Math.max(0, beforeHealth - (Number(entity?.health) || 0));
     if (directLost > 0 && beforeDrunk > 0) {
       const convertible = Math.min(directLost, beforeDrunk, availableBleedingCapacity(entity));
