@@ -159,7 +159,11 @@
   function coolBurningOnDodge(entity) {
     const amount = config().burningDodgeRecovery;
     if (!(amount > 0)) return 0;
-    return window.ResourceSystem?.removeAffliction?.(entity, 'burningHealth', amount) || 0;
+    const removed = window.ResourceSystem?.removeAffliction?.(entity, 'burningHealth', amount) || 0;
+    if (removed > 0 && typeof window.CustomEvent === 'function') {
+      window.dispatchEvent?.(new CustomEvent('hobunji-burning-roll-cured', { detail: { entity, removed } })); // Living Flame reuses the exact amount ordinary roll-fire curing actually removed.
+    }
+    return removed;
   }
 
   function extinguishInWater(entity) {
