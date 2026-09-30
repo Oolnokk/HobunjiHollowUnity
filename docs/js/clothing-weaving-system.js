@@ -1568,10 +1568,12 @@
   // layers: [{url, role}]. Shared by the plain (unpatterned) icon compositor
   // below and by renderClothingLayers' patterned per-layer renderer, so the
   // "what layers does this garment have" question is answered exactly once.
-  async function resolveIconLayers(baseCosmeticIdValue) {
+  async function resolveIconLayers(baseCosmeticIdValue, speciesIdOverride = null, genderOverride = null) {
     const id = String(baseCosmeticIdValue || '');
     if (!id) return [];
-    const { speciesId, gender } = playerSpeciesGender();
+    const playerVariant = playerSpeciesGender();
+    const speciesId = speciesIdOverride || playerVariant.speciesId; // Dev trim authoring can preview every existing variant without changing the active character.
+    const gender = genderOverride || playerVariant.gender; // Paired with speciesIdOverride for exact cosmetic-variant resolution.
     const cacheKey = `${id}|${speciesId}|${gender}`;
     if (!iconLayerPromises.has(cacheKey)) {
       iconLayerPromises.set(cacheKey, (async () => {
@@ -1649,7 +1651,7 @@
       colorA: clothingColorHex(item?.colorA),
       colorB: clothingColorHex(item?.colorB, clothingColorHex(item?.colorA)),
       colorC: clothingColorHex(item?.colorC),
-      weaving: weaving?.layers ? resolvedLayers : (weaving?.pattern || null),
+      weaving: weaving?.layers ? { layers: resolvedLayers, trim: weaving?.trim || null } : { pattern: weaving?.pattern || null, patterns: weaving?.patterns || null, trim: weaving?.trim || null },
     }; // Resolves library-backed motifs into the key so editing a saved pattern invalidates its icon without touching every garment instance.
     return JSON.stringify(visual);
   }
@@ -1660,7 +1662,7 @@
   // rebuilds only reuse a data URL and never composite patterns every frame.
   async function iconSpriteForCosmetic(item, fallbackSprite = null) {
     const id = baseCosmeticId(item);
-    if (id && weavingHasAnyPattern(item?.weaving)) {
+    if (id && weavingHasAnyDecoration(item?.weaving)) {
       const cacheKey = wovenIconVisualKey(item);
       if (!wovenIconDataUrlPromises.has(cacheKey)) {
         wovenIconDataUrlPromises.set(cacheKey, renderClothingLayers(id, {
@@ -1695,13 +1697,22 @@
   // one flat canvas. This is what actually lets a garment's base and trim
   // carry two different colors/motifs instead of one dye and one pattern
   // stamped uniformly across the whole merged silhouette.
-  async function renderClothingLayers(baseCosmeticIdValue, { primaryHex = null, secondaryHex = null, patternHex = '#ffffff', weaving = null, view = 'front' } = {}) {
-    const resolvedLayers = await resolveIconLayers(baseCosmeticIdValue); // Keeps all authored sprites available so view selection can distinguish an explicit hood rear layer from an ordinary layered garment.
+  async function renderClothingLayers(baseCosmeticIdValue, { primaryHex = null, secondaryHex = null, patternHex = '#ffffff', weaving = null, view = 'front', speciesId = null, gender = null, trimPatternOverride = undefined, trimDyeSlotOverride = undefined } = {}) {
+    const playerVariant = playerSpeciesGender();
+    const resolvedSpeciesId = speciesId || playerVariant.speciesId; // Pattern Editor passes an explicit species so authored trim can be positioned against every variant.
+    const resolvedGender = gender || playerVariant.gender; // Pattern Editor passes an explicit gender alongside the species override.
+    const resolvedLayers = await resolveIconLayers(baseCosmeticIdValue, resolvedSpeciesId, resolvedGender); // Keeps all authored sprites available so view selection can distinguish an explicit hood rear layer from an ordinary layered garment.
     const layers = iconLayersForView(resolvedLayers, view); // Ragged Hood becomes front-only in the normal preview and rear-only after flipping, while non-hood back/front layering remains unchanged.
     if (!layers.length) return { canvas: null, layers };
     const primaryColorHex = primaryHex || '#ffffff'; // Used as the ordinary base-layer color or, when swapped, as that layer's pattern color.
     const secondaryColorHex = secondaryHex || primaryColorHex; // Used as the ordinary trim-layer color or, when swapped, as that layer's pattern color.
-    const gender = view === 'behind' ? playerSpeciesGender().gender : null;
+    const behindGender = view === 'behind' ? resolvedGender : null;
+    const runtimeTrimPattern = weavingHasOptionalTrim(weaving)
+      ? await authoredTrimPatternForCosmetic(baseCosmeticIdValue, resolvedSpeciesId, resolvedGender, view)
+      : null; // Repo-owned geometry stays outside garment saves and is selected by the active species/gender/view.
+    const trimPattern = trimPatternOverride !== undefined ? trimPatternOverride : runtimeTrimPattern; // Dev authoring injects its unsaved draft here for exact live preview.
+    const trimDyeSlot = normalizeTrimDyeSlot(trimDyeSlotOverride !== undefined ? trimDyeSlotOverride : weaving?.trim?.dyeSlot); // Draft preview and saved garments share A/B/C coloring semantics.
+    const trimColorHex = trimDyeSlot === 'A' ? primaryColorHex : (trimDyeSlot === 'C' ? patternHex : secondaryColorHex); // Fixed trim reuses an existing garment dye; no fourth color channel is introduced.
     const rendered = [];
     for (const { url: frontUrl, role, paletteKey } of layers) {
       // Some layers swap to a dedicated "-back" sprite for the rear view,
@@ -1709,8 +1720,8 @@
       // trim), and others just reuse their front sprite — same three
       // outcomes the real 3D avatar's rear render picks between.
       let url = frontUrl;
-      if (gender) {
-        const behind = behindViewResultFor(frontUrl, baseCosmeticIdValue, gender);
+      if (behindGender) {
+        const behind = behindViewResultFor(frontUrl, baseCosmeticIdValue, behindGender);
         if (behind.changed && behind.url === null) continue; // Hidden from the back entirely.
         url = behind.url || frontUrl;
       }
@@ -1747,6 +1758,16 @@
       // pixels, which the pattern's shade-fill reads its light/dark variation
       // from, depend on which dye tinted it, not just its own url.
       if (patterns.length) img = await applyPatternStackToTintedImage(img, patterns, layerPatternHex, `layer:${url}:${tintValue}:swap${swapPatternColors ? 1 : 0}`, shadingSource, 'woven-motif');
+      if (trimPattern) {
+        img = await applyPatternStackToTintedImage(
+          img,
+          [{ ...trimPattern, tiling: false }],
+          trimColorHex,
+          `layer:${url}:${tintValue}:trim:${trimDyeSlot}:${JSON.stringify(normalizePatternStack(patterns))}`,
+          shadingSource,
+          'clothing-trim'
+        ); // Second pass deliberately sits above ordinary patterns and builds its own black outline/unmerge boundary.
+      }
       rendered.push(img);
     }
     if (!rendered.length) return { canvas: null, layers };
@@ -1766,14 +1787,14 @@
   // view" toggle is worth showing at all (most garments have no rear-
   // specific art and would just re-render the same front image, which
   // isn't worth a whole extra button for).
-  async function hasBehindView(baseCosmeticIdValue) {
-    const layers = await resolveIconLayers(baseCosmeticIdValue); // Full authored layer set is needed to detect a real hood back sprite before normal view filtering.
+  async function hasBehindView(baseCosmeticIdValue, speciesId = null, gender = null) {
+    const layers = await resolveIconLayers(baseCosmeticIdValue, speciesId, gender); // Full authored layer set is needed to detect a real hood back sprite before normal view filtering.
     const frontSignature = iconLayersForView(layers, 'front').map(layer => layer.url).join('|'); // Detects explicit Ragged-Hood-style front/rear art even when no replacement rule exists.
     const behindLayers = iconLayersForView(layers, 'behind'); // Supplies the rear-side candidates used both for the explicit-back check and replacement-rule fallback.
     const behindSignature = behindLayers.map(layer => layer.url).join('|'); // Compared to frontSignature so a dedicated rear sprite enables the loom flip control.
     if (frontSignature !== behindSignature) return true;
-    const { gender } = playerSpeciesGender();
-    return behindLayers.some(({ url }) => behindViewResultFor(url, baseCosmeticIdValue, gender).changed);
+    const resolvedGender = gender || playerSpeciesGender().gender;
+    return behindLayers.some(({ url }) => behindViewResultFor(url, baseCosmeticIdValue, resolvedGender).changed);
   }
 
   function hexRgb(hex) {
