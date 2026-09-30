@@ -168,6 +168,142 @@ Overpass → not set</div>
     for (const key of ['motifDataUrl','motifUrl','customMotifId','repoPatternId','repoPatternName']) delete out[key];
     return out;
   }
+  const CLOTHING_TRIM_MANIFEST_PATH = '../../config/patterns/clothing-trims.json'; // Dev-tool fetch path for the same manifest ClothingWeavingSystem reads at runtime.
+  const CLOTHING_TRIM_ASSET_DIR = 'assets/patterns/clothing-trims'; // Exported motif paths stay docs-root-relative for game and raw.githack builds.
+
+  function trimKey(garmentId = $('trimGarment').value, variantKey = $('trimVariant').value, view = $('trimView').value) {
+    return [garmentId, variantKey, view === 'behind' ? 'behind' : 'front'].join('|');
+  }
+
+  function selectedTrimCosmetic() { return trimCosmetics.get($('trimGarment').value) || null; }
+
+  function parseVariantKey(variantKey) {
+    const match = String(variantKey || '').match(/^(.*)_(male|female)$/);
+    return match ? { speciesId: match[1].replace(/_/g, '-'), gender: match[2] } : { speciesId: String(variantKey || 'mao-ao').replace(/_/g, '-'), gender: 'male' };
+  }
+
+  function trimAssetPath(garmentId, variantKey, view) {
+    const safe = value => String(value || '').toLowerCase().replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '');
+    return `${CLOTHING_TRIM_ASSET_DIR}/${safe(garmentId)}__${safe(variantKey)}__${view === 'behind' ? 'behind' : 'front'}.png`;
+  }
+
+  function trimRecord(garmentId = $('trimGarment').value, variantKey = $('trimVariant').value, view = $('trimView').value) {
+    return trimManifest?.garments?.[garmentId]?.variants?.[variantKey]?.[view === 'behind' ? 'behind' : 'front'] || null;
+  }
+
+  function ensureTrimRecordSet(garmentId, variantKey) {
+    trimManifest.garments ||= {};
+    trimManifest.garments[garmentId] ||= { variants: {} };
+    trimManifest.garments[garmentId].variants ||= {};
+    trimManifest.garments[garmentId].variants[variantKey] ||= {};
+    return trimManifest.garments[garmentId].variants[variantKey];
+  }
+
+  function currentTrimPatternForPreview() {
+    const draftEntry = trimDrafts.get(trimKey());
+    if (draftEntry?.pattern) return { ...draftEntry.pattern, tiling: false };
+    const record = trimRecord();
+    if (!record?.motifPng) return null;
+    return { ...(record.settings || {}), tiling: false, motifUrl: record.motifPng };
+  }
+
+  async function imageUrlToDataUrl(url) {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Trim motif HTTP ${response.status}`);
+    const blob = await response.blob();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error || new Error('Could not read trim motif'));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  async function editableTrimPattern() {
+    const draftEntry = trimDrafts.get(trimKey());
+    if (draftEntry?.pattern?.motifDataUrl) return { ...draftEntry.pattern, tiling: false };
+    const record = trimRecord();
+    if (!record?.motifPng) return null;
+    const motifDataUrl = await imageUrlToDataUrl('../../' + String(record.motifPng).replace(/^\.?\//, ''));
+    return { ...(record.settings || {}), tiling: false, motifDataUrl };
+  }
+
+  function trimCoverageText() {
+    const selected = selectedTrimCosmetic();
+    if (!selected) return 'No garment selected.';
+    const variants = Object.keys(selected.config?.speciesVariants || {});
+    const garment = trimManifest?.garments?.[$('trimGarment').value];
+    const frontDone = variants.filter(key => !!garment?.variants?.[key]?.front);
+    const missing = variants.filter(key => !garment?.variants?.[key]?.front);
+    const lines = [`Front coverage: ${frontDone.length}/${variants.length} species/gender variants.`];
+    if (missing.length) lines.push('Missing: ' + missing.join(', '));
+    else if (variants.length) lines.push('All existing variants have a front trim mask.');
+    return lines.join('\n');
+  }
+
+  function syncTrimExportState() {
+    const garmentId = $('trimGarment').value, variantKey = $('trimVariant').value, view = $('trimView').value;
+    const draftEntry = trimDrafts.get(trimKey(garmentId, variantKey, view));
+    const record = trimRecord(garmentId, variantKey, view);
+    $('trimPngBtn').disabled = !draftEntry?.pattern?.motifDataUrl;
+    $('trimAllPngBtn').disabled = ![...trimDrafts.values()].some(entry => !!entry?.pattern?.motifDataUrl);
+    $('trimManifestBtn').disabled = !trimCosmetics.size;
+    $('trimPaths').textContent = garmentId && variantKey
+      ? `Trim PNG → ${record?.motifPng || trimAssetPath(garmentId, variantKey, view)}\nManifest → config/patterns/clothing-trims.json`
+      : 'Trim asset → choose a garment and variant.';
+  }
+
+  function refreshTrimVariantOptions() {
+    const selected = selectedTrimCosmetic();
+    const select = $('trimVariant');
+    const previous = select.value;
+    select.innerHTML = '';
+    const variants = Object.keys(selected?.config?.speciesVariants || {});
+    for (const key of variants) {
+      const option = document.createElement('option');
+      option.value = key;
+      option.textContent = `${trimManifest?.garments?.[$('trimGarment').value]?.variants?.[key]?.front ? '✓ ' : ''}${key}`;
+      select.appendChild(option);
+    }
+    if (variants.includes(previous)) select.value = previous;
+    $('editTrimBtn').disabled = !variants.length;
+    $('trimCoverage').textContent = trimCoverageText();
+    syncTrimExportState();
+  }
+
+  async function renderTrimPreview(pattern = currentTrimPatternForPreview()) {
+    const selected = selectedTrimCosmetic();
+    const variantKey = $('trimVariant').value;
+    if (!selected || !variantKey) return;
+    const revision = ++trimLoadRevision;
+    const { speciesId, gender } = parseVariantKey(variantKey);
+    const patterns = previewPatterns(); // Loaded primary/overpass patterns remain underneath so authored trim overlap is visible.
+    const weaving = patterns.length ? { patterns } : null;
+    try {
+      const result = await window.ClothingWeavingSystem.renderClothingLayers($('trimGarment').value, {
+        primaryHex: $('baseColor').value,
+        secondaryHex: $('trimColorB').value,
+        patternHex: $('inkColor').value,
+        weaving,
+        view: $('trimView').value,
+        speciesId,
+        gender,
+        trimPatternOverride: pattern ? { ...pattern, tiling: false } : null,
+        trimDyeSlotOverride: $('trimPreviewDye').value,
+      });
+      if (revision !== trimLoadRevision) return;
+      const canvas = $('trimPreview'), ctx = canvas.getContext('2d');
+      if (!result.canvas) { canvas.width = canvas.height = 1; return; }
+      canvas.width = result.canvas.width; canvas.height = result.canvas.height;
+      ctx.imageSmoothingEnabled = false;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(result.canvas, 0, 0);
+      $('trimStatus').textContent = pattern ? 'Trim preview uses the real clothing compositor above any loaded primary/overpass patterns.' : 'No trim authored for this variant/view yet. The base garment is shown for reference.';
+    } catch (error) {
+      debugState.lastError = error.message;
+      $('trimStatus').textContent = 'Trim preview failed: ' + error.message;
+    }
+  }
 
   const previewTextureCache = new Map(); // Reuses decoded repo surface textures while the author changes pattern/tint settings.
   function loadPreviewTexture(filename) {
