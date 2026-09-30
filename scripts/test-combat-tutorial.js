@@ -32,7 +32,7 @@ function harness() {
   for (const [id, category] of Object.entries({ swingCombo: 'combo', pokeCombo: 'combo', opportunistJab: 'quickAttack', exhaustCutter: 'quickAttack', mercySpike: 'quickAttack', backstabFlick: 'quickAttack', chargedBreaker: 'offensiveHold', acceleratingFlurry: 'offensiveHold', counterShield: 'defensiveHold', blinkDodge: 'defensiveHold' })) window.Combat.abilities.register(id, { category, slotFamily: category === 'combo' || category === 'quickAttack' ? 'tap' : 'hold', label: id });
   const api = window.CombatTutorial; // Actual controller under test.
   api.init({ getQuestProgress: () => progress, getArea: () => area, getGear: () => gear, equipment, toolDefs: { hatchet: { label: 'Test Hatchet', slots: ['weapon'], dmgType: 'sharp' }, crossbow: { label: 'Test Crossbow', slots: ['ranged'] } }, mastery: () => mastery, save: () => { saves++; }, getWalker: () => walker, closeDialogue: () => { dialogue = false; }, openDialogue: async () => { dialogue = true; dialogueCount++; }, dialogueOpen: () => dialogue, toast() {}, capture: () => ({ equipmentSlots: { ...equipment }, activeTool: 'weapon' }), restore: original => { Object.assign(equipment, original.equipmentSlots); restores++; }, enterArena: async () => { if (failTravel) throw new Error('map unavailable'); area = window.CombatTutorialContent.ARENA; }, exitArena: async () => { area = 'map_i_watchhouse'; }, resetPractice() {}, equip: (key, slot) => { equipment[slot] = key; }, spawnTarget: lesson => { target = { lesson }; return spawnWait ? spawnWait.then(() => target) : target; }, removeTarget: () => { target = null; }, maintainTarget() {} });
-  return { setSpawnWait(value) { spawnWait = value; }, advance(ms) { for (let remaining = ms; remaining > 0; remaining -= 100) { clock += Math.min(100, remaining); api.update(); } }, get dialogueCount() { return dialogueCount; }, document, api, window, progress, gear, equipment, walker, body, setLevel: value => { combatLevel = value; }, setMastery: value => { mastery = value; }, setFailTravel: value => { failTravel = value; }, setArea: value => { area = value; }, get saves() { return saves; }, get restores() { return restores; }, get target() { return target; }, explain() { api.onNode({ combatTutorialPractice: true }, {}); dialogue = false; api.update(); }, finishStep() { const lesson = api.debugSnapshot().steps.find(s => s.id === api.debugSnapshot().step); this.explain(); for (let i = 0; i < (lesson.count || 1); i++) api.observe(lesson.check, { target, abilityId: lesson.ability, ammoId: lesson.preview?.kind === 'specialAmmo' ? lesson.preview.optionId : 'basic' }); return api.next(); } };
+  return { setSpawnWait(value) { spawnWait = value; }, advance(ms) { for (let remaining = ms; remaining > 0; remaining -= 100) { clock += Math.min(100, remaining); api.update(); } }, get dialogueCount() { return dialogueCount; }, closeDialogue() { dialogue = false; }, document, api, window, progress, gear, equipment, walker, body, setLevel: value => { combatLevel = value; }, setMastery: value => { mastery = value; }, setFailTravel: value => { failTravel = value; }, setArea: value => { area = value; }, get saves() { return saves; }, get restores() { return restores; }, get target() { return target; }, explain() { api.onNode({ combatTutorialPractice: true }, {}); dialogue = false; api.update(); }, finishStep() { const lesson = api.debugSnapshot().steps.find(s => s.id === api.debugSnapshot().step); this.explain(); for (let i = 0; i < (lesson.count || 1); i++) api.observe(lesson.check, { target, abilityId: lesson.ability, ammoId: lesson.preview?.kind === 'specialAmmo' ? lesson.preview.optionId : 'basic' }); return api.next(); } };
 }
 (async () => {
   const h = harness(); // First-time player with no unlocked techniques and no Mastery.
@@ -174,7 +174,31 @@ function harness() {
   for (let i = 0; i < 4; i++) automatic.api.hit(partner, { abilityId: 'swingCombo' });
   automatic.advance(8000); await new Promise(resolve => setImmediate(resolve));
   assert.equal(automatic.dialogueCount, beforeBackground + 1, 'repeated wrong attacks trigger an earlier reminder');
+  assert.match(automatic.api.selectTree().nodes[0].text, /^That was swingCombo\. This exercise needs pokeCombo\. Once more: /, 'the reminder names the wrong technique');
+  automatic.closeDialogue(); automatic.advance(1600);
+  assert.equal(automatic.api.debugSnapshot().phase, 'practice', 'closing an explanation early starts practice instead of reopening it');
+  assert.equal(automatic.dialogueCount, beforeBackground + 1);
   await automatic.api.leave();
+
+  const menu = harness(); // Future Mastery ranks stay out of the way until the previous rank is done.
+  const menuLabels = () => menu.api.selectTree().nodes.flatMap(node => node.choices.map(choice => choice.label));
+  assert.equal(menu.api.selectTree().nodes.length, 1, 'every offered lesson fits on one page');
+  assert.ok(menuLabels().some(label => /^Mastery 1 /.test(label)) && !menuLabels().some(label => /^Mastery 2 /.test(label)));
+  menu.progress.spearhead_mastery_1 = { status: 'completed', progress: {} };
+  assert.ok(menuLabels().some(label => /^Mastery 2 /.test(label)) && !menuLabels().some(label => /^Mastery 1 /.test(label)));
+
+  const talking = harness(); // Walking up to Spearhead mid-exercise is a request for help, not a finished step.
+  await talking.api.start('spearhead_basics', talking.walker);
+  await talking.finishStep(); talking.explain();
+  talking.api.hit(talking.target, { abilityId: 'swingCombo' });
+  assert.match(talking.api.selectTree().nodes[0].text, /^Of course\. /);
+  assert.equal(talking.api.debugSnapshot().phase, 'explain', 'talking pauses the exercise');
+  assert.equal(talking.api.debugSnapshot().hits, 1, 'talking keeps verified progress');
+  talking.explain();
+  talking.api.hit(talking.target, { abilityId: 'opportunistJab' });
+  talking.advance(100);
+  assert.match(talking.body.children[0].children.map(child => child.children?.map(line => line.textContent).join('|')).join(''), /That was opportunistJab\. This exercise needs swingCombo\./, 'the objective card names a wrong technique immediately');
+  await talking.api.leave();
 
   const travelling = harness(); // A slow avatar build must not strand borrowed state after the player walks out.
   let finishSpawn; // Resolves the deferred spawn after the area has changed.
@@ -192,12 +216,16 @@ function harness() {
   const adapterStart = gameSource.indexOf('        spawnTarget: async () => {'); // Limits the VM to the injected arena partner callbacks.
   const adapterSource = gameSource.slice(adapterStart, gameSource.indexOf('\n      });', adapterStart)); // Keeps spawn, pause, reset, maintain and removal together.
   const oddclaw = { rec: JSON.parse(fs.readFileSync('docs/config/npcs/hobunji-starter-npc-database.json')).npcs.find(npc => npc.id === 'oddclaw_unumanuk'), root: { visible: true } }; // Authored identity, appearance, and dyes must reach the shared combat renderer intact.
+  const partnerWindow = {}; // The extracted partner module supplies pause/reset/maintain to the adapter.
+  vm.runInNewContext(fs.readFileSync('docs/js/combat/combat-tutorial-partner.js', 'utf8'), { window: partnerWindow });
+  const partnerModule = partnerWindow.CombatTutorialPartner;
+  partnerModule.init({ TILE: 32 });
   const hostiles = new Set(); // Registration and cleanup use the ordinary combat collection.
   let spawnOptions, disposed = false, cancelled = 0; // Capture rendering/combat boundary effects without replacing adapter behavior.
   const adapter = vm.runInNewContext('({' + adapterSource + '})', {
     npcWalkers: [oddclaw], scheduledNpcRecords: new Map(), TILE: 32, structuredClone,
     hostileObjects: hostiles, despawnCreature() { disposed = true; },
-    window: { BanditCombat: { loadGangConfig: async () => ({}), makeEntity: async (config, rank, tier, x, y, options) => { spawnOptions = options; return { x, y, maxHealth: 10000, maxStamina: 100, ...options.extra }; } } },
+    window: { CombatTutorialPartner: partnerModule, BanditCombat: { loadGangConfig: async () => ({}), makeEntity: async (config, rank, tier, x, y, options) => { spawnOptions = options; return { x, y, maxHealth: 10000, maxStamina: 100, ...options.extra }; } } },
   }); // The live game supplies the actual bandit mesh, collision, animation, and combat executor.
   const sparring = await adapter.spawnTarget(); // Spawn exactly one named humanoid, not an animal with a renamed label.
   assert.equal(spawnOptions.rosterOverride.id, 'oddclaw_unumanuk');

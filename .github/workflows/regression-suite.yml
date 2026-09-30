@@ -32,6 +32,13 @@ jobs:
         run: |
           node -e "JSON.parse(require('fs').readFileSync('scripts/runtime-frame-ownership-exceptions.json', 'utf8'))"
           node -e "JSON.parse(require('fs').readFileSync('docs/config/loot/loot-pools.json', 'utf8'))"
+      - name: Cache-bust tokens moved with their files
+        # PR checkouts are the merge commit, so diffing against the base tip is
+        # exactly this PR's change. Fix locally with: node scripts/check-cache-busts.js --fix
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+          node scripts/check-cache-busts.js FETCH_HEAD
       - name: Regression tests
         # Slow tests only run on main / manual dispatch, not on every PR push.
         run: node scripts/run-tests.js ${{ github.event_name != 'pull_request' && '--all' || '' }}

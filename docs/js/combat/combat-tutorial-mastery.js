@@ -10,6 +10,7 @@
       id: '{{context:option.id}}', title: '{{context:option.label}}', weapon: '{{context:weapon}}',
       ability: { $value: 'option.ability' }, slot: { $value: 'option.slot' }, check: { $value: 'option.check' },
       count: { $value: 'option.count' }, hostile: { $value: 'option.hostile' }, preview: { $value: 'option.preview' },
+      goal: '{{context:option.instruction}}', hint: { $value: 'option.hint' },
       text: 'With your {{context:weaponName}}, try [color=#d7b4ff]{{context:option.label}}[/color] for [color=#ffe394]{{context:option.abilityName}}[/color]. {{context:option.desc}} {{context:option.instruction}} Compare this choice with the others. This is a temporary preview.',
     },
   };
@@ -43,7 +44,7 @@
         const check = ability === 'counterShield' ? 'block' : ability === 'blinkDodge' ? 'blink' : ability === 'opportunistJab' ? 'quickBonus' : 'hit'; // Preview completion uses the same real combat events as ordinary lessons.
         const instructions = { tap1: 'Tap Weapon Action 1 and land three hits on Oddclaw.', tap2: ability === 'opportunistJab' ? 'Tap Weapon Action 2 to catch Oddclaw during his windup or strike.' : 'Tap Weapon Action 2 and hit Oddclaw.', hold1: ability === 'acceleratingFlurry' ? 'Keep Weapon Action 1 held and land three hits.' : 'Hold Weapon Action 1 to wind up, then release and hit Oddclaw.', hold2: ability === 'blinkDodge' ? 'Hold Weapon Action 2 and move to perform a hop.' : ability === 'counterShield' ? 'Hold Weapon Action 2 and block Oddclaw’s attack.' : 'Hold Weapon Action 2 to use this technique and hit Oddclaw.' }; // Controls follow the player's actual slot assignment.
         for (const [index, option] of (row || []).entries()) options.push({ id: `${ability}_${index}`, label: option.label, desc: option.desc, ability, abilityName: window.Combat.abilities.get(ability)?.label || ability, slot, check,
-          count: slot === 'tap1' || ability === 'acceleratingFlurry' ? 3 : 1, hostile: check === 'block' || check === 'quickBonus', instruction: instructions[slot], preview: { kind: 'melee', rank, index, ability } });
+          count: slot === 'tap1' || ability === 'acceleratingFlurry' ? 3 : 1, hostile: check === 'block' || check === 'quickBonus', instruction: instructions[slot], hint: ability === 'opportunistJab' ? 'Watch for his windup, then strike before his blow lands.' : undefined, preview: { kind: 'melee', rank, index, ability } });
       }
     }
     if (!options.length) throw new Error('The equipped weapon’s upgrade choices are not ready.');

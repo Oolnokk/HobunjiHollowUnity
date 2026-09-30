@@ -28139,6 +28139,7 @@
         inventory,
       });
 
+      window.CombatTutorialPartner?.init?.({ TILE });
       window.CombatTutorial?.init?.({
         getQuestProgress: () => questProgress,
         save: saveMemberWorldData,
@@ -28175,15 +28176,19 @@
           if (!_buildingScenes.get('map_i_watchhouse')) await loadBuildingScene('map_i_watchhouse');
           await new Promise(resolve => startSceneTransition(() => { enterBuilding('map_i_watchhouse', 8, 12); resolve(); }));
         },
-        resetPractice: () => {
+        resetPractice: (gapTiles = 2) => { // Oddclaw stands at row 11.5; melee exercises start within reach.
           player.health = player.maxHealth; player.stamina = player.maxStamina; player.footing = player.maxFooting;
           player.afflictions = {}; player.exhaustion = { active: false, blackStamina: 100 };
           player.prone = false; player.staggered = { active: false, endsAt: 0 };
           player.knockbackT = 0; player.dodging = false; player.dodgeCooldownT = 0;
-          player.x = 10.5 * TILE; player.y = 13.5 * TILE;
+          player.x = 10.5 * TILE; player.y = (11.5 + gapTiles) * TILE;
           player.vx = 0; player.vy = 0;
           setPlayerFacingInstant(-Math.PI / 2);
           _snapCameraTarget();
+        },
+        faceTarget: target => { // Dialogue turns the player toward Spearhead; each exercise starts looking at Oddclaw instead.
+          if (!target) return;
+          setPlayerFacingInstant(Math.atan2(target.y - player.y, target.x - player.x), { clearLook: true, syncCamera: true });
         },
         equip: (key, slot) => {
           if (!TOOL_ITEM_DEFS[key]?.slots?.includes(slot)) throw new Error('Invalid training weapon/slot: ' + key + '/' + slot);
@@ -28220,37 +28225,10 @@
           hostileObjects.add(target);
           return target;
         },
-        pauseTarget: target => {
-          if (!target) return;
-          target.combatTutorialHostile = false;
-          target._banditAction?.cancel(); target._banditAction = null;
-          target.telegraphState = null; target._banditLunging = false;
-          target.vx = 0; target.vy = 0;
-        },
-        resetTarget: (target, lesson) => {
-          if (!target) return;
-          target.x = 10.5 * TILE; target.y = 11.5 * TILE;
-          target.facing = Math.PI / 2; target.state = 'idle';
-          target.attackCooldownT = 1.5; target._banditComboIndex = 0;
-          target.knockbackT = 0; target.knockbackVX = 0; target.knockbackVY = 0;
-          target.prone = false; target.exhaustion = { active: false, blackStamina: 100 };
-          target.maxHealth = lesson?.preview ? 100 : 10000; target.health = target.maxHealth;
-          target.afflictions = {}; target._rangedAmmoDebuffs = {};
-          target.footing = target.maxFooting; target.stamina = target.maxStamina;
-        },
-        maintainTarget: (target, lesson) => {
-          target.combatTutorialPreview = !!lesson?.preview; // Preserve real damage, afflictions and movement while comparing upgrade effects.
-          if (!lesson?.preview) {
-            target.health = lesson?.condition === 'lowHealth' ? 2000 : target.maxHealth; target.afflictions = {};
-            target.footing = target.maxFooting; target.prone = false;
-            target.stamina = lesson?.condition === 'exhausted' ? 0 : target.maxStamina;
-            target.exhaustion = { active: lesson?.condition === 'exhausted', blackStamina: 100 };
-          }
-          if (!target.combatTutorialHostile && !lesson?.preview) {
-            target.knockbackT = 0; target.knockbackVX = 0; target.knockbackVY = 0;
-            target.staggered = { active: false, endsAt: 0 };
-          }
-        },
+        // Oddclaw's pause/reset/per-frame lesson conditions now live in js/combat/combat-tutorial-partner.js
+        pauseTarget: window.CombatTutorialPartner?.pause,
+        resetTarget: window.CombatTutorialPartner?.reset,
+        maintainTarget: window.CombatTutorialPartner?.maintain,
         removeTarget: target => {
           target._banditAction?.cancel(); target._banditAction = null;
           window.RangedWeapons?.cancelBanditAction?.(target);
