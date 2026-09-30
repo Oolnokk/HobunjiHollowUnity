@@ -25,6 +25,7 @@
   let playerLifeT = 0;
   let playerLifePending = false;
   let playerCombatFrown = false; // Tracks whether the player's world portrait should use the temporary combat frown expression.
+  let playerCombatExpressionVersion = 0; // Incremented whenever combat expression intent changes so an older async breathing render cannot upload over the new face.
   let playerCombatExpressionApplied = false; // True only after the current player avatar's live texture actually contains the combat frown.
   let playerCombatFrownCache = null; // Current-generation pre-rendered frown canvas used to make combat entry synchronous when possible.
   let playerCombatFrownCachePromise = null; // In-flight cache render for the current avatar generation; prevents duplicate portrait renders every frame.
@@ -151,13 +152,14 @@
     const composer = window.portraitBreathingComposer;
     if (!composer || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
     const generation = avatar.generation; // A gear/cosmetic refresh mid-flight replaces the avatar; stale results are dropped below.
+    const expressionVersion = playerCombatExpressionVersion; // Paired with this render so a combat-state change can invalidate its eventual texture upload.
     playerLifePending = true;
     stats.playerRefreshes++;
     window.NpcAvatarPreview.renderProfileToCanvas(avatar.frontCanvas, avatar.profile, {
       breathingComposer: composer, seatId: 'player',
     }).then(() => {
       const current = deps.getPlayerAvatar();
-      if (generation !== current.generation) return;
+      if (generation !== current.generation || expressionVersion !== playerCombatExpressionVersion) return; // Stale neutral/frown canvas must never upload after combat state has flipped.
       window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(current.group, current.frontCanvas);
       if (playerCombatFrown) playerCombatExpressionApplied = true; // This completed render used the live composer, whose player seat is frowning during combat.
     }).catch(() => {}).finally(() => { playerLifePending = false; });
@@ -176,6 +178,7 @@
       return false;
     }
     playerCombatFrown = next;
+    playerCombatExpressionVersion += 1;
     playerCombatExpressionApplied = false;
     if (next) composer.setExpression?.('player', 'frown', COMBAT_EXPRESSION_DURATION_MS);
     else composer.clearExpression?.('player');
@@ -196,6 +199,6 @@
     tickPlayer,
     setPlayerCombatExpression,
     isPlayerCombatExpressionApplied: () => !playerCombatFrown || playerCombatExpressionApplied,
-    snapshot: () => ({ ...stats, playerCombatFrown, playerCombatExpressionApplied, playerCombatFrownCacheGeneration, playerCombatFrownCacheReady: !!playerCombatFrownCache, config: config() }),
+    snapshot: () => ({ ...stats, playerCombatFrown, playerCombatExpressionVersion, playerCombatExpressionApplied, playerCombatFrownCacheGeneration, playerCombatFrownCacheReady: !!playerCombatFrownCache, config: config() }),
   };
 })();
