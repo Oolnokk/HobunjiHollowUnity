@@ -116,6 +116,7 @@ async function flushPromises() {
   assert.equal(debug.playerCombatExpressionApplied, true, 'combat entry marks frown applied in the same call when cache is ready');
   assert.equal(refreshes.length, beforeCombatRefreshes + 1, 'combat entry performs one immediate texture upload');
   assert.equal(refreshes.at(-1), 'frown', 'immediate combat upload contains the authored frown');
+  await flushPromises(); // Let the same-frame live frown breathing render finish before constructing the stale-neutral race below.
 
   // Reproduce the real race: a neutral breathing render starts while combat
   // exits, then combat re-enters before that async render resolves. Its old
