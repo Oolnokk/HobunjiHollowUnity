@@ -1221,10 +1221,14 @@
       return false;
     }
     const hasPattern = weavingHasAnyPattern(weaving);
+    const hasTrim = weavingHasOptionalTrim(weaving);
+    const trimDyeSlot = normalizeTrimDyeSlot(weaving?.trim?.dyeSlot);
+    const needsDyeB = hasSecondary || (hasTrim && trimDyeSlot === 'B'); // Single-color garments may still carry a B-only optional trim color.
+    const needsDyeC = hasPattern || (hasTrim && trimDyeSlot === 'C'); // Trim can reuse the third dye channel even when no reusable pattern is woven.
     const dyeA = dyeById(state.dyeA);
-    const dyeB = hasSecondary ? dyeById(state.dyeB) : null;
-    const dyeC = hasPattern ? dyeById(state.dyeC) : null;
-    if (!dyeA || (hasSecondary && !dyeB) || (hasPattern && !dyeC)) {
+    const dyeB = needsDyeB ? dyeById(state.dyeB) : null;
+    const dyeC = needsDyeC ? dyeById(state.dyeC) : null;
+    if (!dyeA || (needsDyeB && !dyeB) || (needsDyeC && !dyeC)) {
       equipmentDeps?.showToast?.('Choose all required dyes.', false);
       return false;
     }
@@ -1246,12 +1250,12 @@
       colorA: window.DyeSystem.toClothingColor(dyeA),
       colorB: dyeB ? window.DyeSystem.toClothingColor(dyeB) : null,
       colorC: dyeC ? window.DyeSystem.toClothingColor(dyeC) : null,
-      articleDyeIds: [...new Set([state.dyeA, hasSecondary ? state.dyeB : null, hasPattern ? state.dyeC : null].filter(Boolean))],
+      articleDyeIds: [...new Set([state.dyeA, needsDyeB ? state.dyeB : null, needsDyeC ? state.dyeC : null].filter(Boolean))],
       sprite: bp.sprite || window.EquipmentPanel?.clothingSpriteForCosmetic?.(bp.baseCosmeticId) || null,
       sellPrice: 0,
       weaveMaterial: material.id,
       weightUnits,
-      weaving: hasPattern ? clone(weaving) : null, // { layers: { <role>: { pattern, patternLibraryId, patternLabel } } } — one pattern per layer; see weavingPatternForRole.
+      weaving: weavingHasAnyDecoration(weaving) ? clone(weaving) : null, // May contain reusable per-role patterns, fixed authored trim metadata, or both.
       craftedAt: Date.now(),
     };
     // Lands in the pack, not straight into permanent gear — the same place
@@ -1270,7 +1274,7 @@
     return true;
   }
 
-  function reweaveFromLoom(item, material, patternDye, weaving) {
+  function reweaveFromLoom(item, material, patternDye, weaving, secondaryDye = null) {
     const gear = gearInventory();
     if (!gear || !item || !material) return false;
     const cost = reweaveMaterialCost(item);
@@ -1280,16 +1284,25 @@
       return false;
     }
     const hasPattern = weavingHasAnyPattern(weaving);
-    if (hasPattern && !patternDye) {
-      equipmentDeps?.showToast?.('Choose a pattern dye first.', false);
+    const hasTrim = weavingHasOptionalTrim(weaving);
+    const trimDyeSlot = normalizeTrimDyeSlot(weaving?.trim?.dyeSlot);
+    const needsDyeC = hasPattern || (hasTrim && trimDyeSlot === 'C'); // Pattern ink and C-colored trim share the existing third garment dye.
+    const needsDyeB = hasTrim && trimDyeSlot === 'B'; // Reweaving may introduce B solely for added trim on a single-color article.
+    if (needsDyeC && !patternDye) {
+      equipmentDeps?.showToast?.('Choose dye C first.', false);
+      return false;
+    }
+    if (needsDyeB && !secondaryDye) {
+      equipmentDeps?.showToast?.('Choose dye B first.', false);
       return false;
     }
 
     inventory[material.itemKey] -= cost;
     equipmentDeps?.clampInventoryStack?.(material.itemKey);
-    item.weaving = hasPattern ? clone(weaving) : null;
-    item.colorC = hasPattern ? window.DyeSystem.toClothingColor(patternDye) : null;
-    if (hasPattern && patternDye?.id) item.articleDyeIds = [...new Set([...(item.articleDyeIds || []), patternDye.id].filter(Boolean))];
+    item.weaving = weavingHasAnyDecoration(weaving) ? clone(weaving) : null;
+    if (needsDyeB) item.colorB = window.DyeSystem.toClothingColor(secondaryDye);
+    item.colorC = needsDyeC ? window.DyeSystem.toClothingColor(patternDye) : null;
+    item.articleDyeIds = [...new Set([...(item.articleDyeIds || []), needsDyeB ? secondaryDye?.id : null, needsDyeC ? patternDye?.id : null].filter(Boolean))];
 
     const baseLabel = articleLabel(item);
     const primaryLabel = clothingColorLabel(item.colorA);
