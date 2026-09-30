@@ -1495,16 +1495,21 @@
     return { url: normalized, changed: normalized !== url };
   }
 
-  async function buildPortraitPatternMap(descriptors) {
+  async function buildPortraitPatternMap(descriptors, view = 'front') {
     const map = new Map();
+    const needsAuthoredTrim = (descriptors || []).some(descriptor => weavingHasOptionalTrim(descriptor?.weaving)); // Avoids the manifest fetch entirely for ordinary woven-only portraits.
+    const trimManifest = needsAuthoredTrim ? await clothingTrimConfig() : null;
     for (const descriptor of descriptors || []) {
-      if (!descriptor?.baseCosmeticId || !weavingHasAnyPattern(descriptor.weaving)) continue;
+      if (!descriptor?.baseCosmeticId || !weavingHasAnyDecoration(descriptor.weaving)) continue;
       try {
         const cfg = await cosmeticConfig(descriptor.baseCosmeticId);
         const paletteLayerMap = cfg?.palette?.layers && typeof cfg.palette.layers === 'object' ? cfg.palette.layers : null; // Used by runtime color swapping to choose the exact base-vs-trim dye for each sprite layer.
         for (const [url, role] of collectPatternImageUrls(cfg)) {
           const paletteKey = role && paletteLayerMap ? paletteLayerMap[role] : null; // Stored only in the transient portrait descriptor; it is not garment save data.
-          const entry = { ...descriptor, role, paletteKey };
+          const variantKey = weavingHasOptionalTrim(descriptor.weaving) ? variantKeyForSourceUrl(cfg, url) : null; // Connects this raster to its exact species/gender trim authoring record.
+          const trimPattern = variantKey ? authoredTrimPatternFromManifest(trimManifest, descriptor.baseCosmeticId, variantKey, view) : null;
+          if (!weavingPatternsForRole(descriptor.weaving, role).length && !trimPattern) continue; // Unsupported trim variants render as ordinary clothing instead of forcing the expensive woven gate.
+          const entry = { ...descriptor, role, paletteKey, trimPattern };
           map.set(url, entry);
           for (const behindUrl of behindViewUrlsFor(url, descriptor.baseCosmeticId)) map.set(behindUrl, entry);
         }
@@ -2481,24 +2486,23 @@
   function patternImageForTint(patternMap, baseTintResolver, onPatternPending, img, sourceKey, tint) {
     const descriptor = patternMap?.get(normalizeAssetPath(sourceKey));
     const patterns = descriptor ? weavingPatternsForRole(descriptor.weaving, descriptor.role) : []; // Render-local lookup: this map belongs only to the portrait currently being drawn.
-    const pattern = patterns[0] || null; // Compatibility name for the primary motif used by the existing dye-swap path.
-    if (!patterns.length) return baseTintResolver(img, sourceKey, tint);
+    const trimPattern = descriptor?.trimPattern && weavingHasOptionalTrim(descriptor.weaving) ? { ...descriptor.trimPattern, tiling: false } : null; // Repo trim geometry is fixed and is intentionally not a third reusable pattern slot.
+    if (!patterns.length && !trimPattern) return baseTintResolver(img, sourceKey, tint);
     portraitPatternStats.patternedTintCalls++;
-    const swapPatternColors = weavingSwapsPatternColorsForRole(descriptor.weaving, descriptor.role); // Runtime counterpart of the loom's independent base/trim swap checkbox.
+    const swapPatternColors = patterns.length > 0 && weavingSwapsPatternColorsForRole(descriptor.weaving, descriptor.role); // Trim alone never swaps the underlying cloth/pattern colors.
     const patternColorHex = resolvePatternHex(descriptor.colorC); // Third dye slot is the ordinary woven-ink color and becomes the sprite color when swapped.
     const clothColorHex = portraitClothHex(descriptor); // Exact saved A/B dye becomes the motif color when this layer is swapped.
-    const appliedTint = swapPatternColors ? portraitTintForHex(tint, patternColorHex) : tint; // Recolors the whole sprite before motif compositing, matching loom preview semantics.
+    const trimColorHex = trimColorHexForDescriptor(descriptor); // Fixed trim independently reuses A, B, or C after the ordinary weave pass.
+    const appliedTint = swapPatternColors ? portraitTintForHex(tint, patternColorHex) : tint;
     const tinted = baseTintResolver(img, sourceKey, appliedTint);
-    // _imageForTint is synchronous. Return cached patterned output when available;
-    // otherwise return the plain-tinted image only to this in-progress render while
-    // the owning wrapper tracks the compositor promise and redraws before resolving.
-    // tintKey folds in the actual base tint that produced `tinted`'s pixels,
-    // including a swapped pattern-color base, so cache entries cannot leak
-    // between normal and swapped layer renders.
     const tintKey = appliedTint?.mode === 'shadeFill' ? `shade:${(appliedTint.rgb || []).join(',')}` : appliedTint?.mode === 'hueSatFill' ? `huesat:${appliedTint.hue}:${appliedTint.sat}` : 'none';
-    const prefix = `runtime:${normalizeAssetPath(sourceKey)}:${tintKey}:swap${swapPatternColors ? 1 : 0}`; // Separates normal/swapped composites even when their dye values happen to match.
-    const colorHex = swapPatternColors ? clothColorHex : patternColorHex; // Motif color is the opposite member of the cloth↔pattern swap.
-    const fullKey = patternStackCanvasKey(tinted, patterns, colorHex, prefix);
+    const prefix = `runtime:${normalizeAssetPath(sourceKey)}:${tintKey}:swap${swapPatternColors ? 1 : 0}`;
+    const colorHex = swapPatternColors ? clothColorHex : patternColorHex;
+    const basePatternKey = patternStackCanvasKey(tinted, patterns, colorHex, prefix);
+    const trimSlot = normalizeTrimDyeSlot(descriptor?.weaving?.trim?.dyeSlot);
+    const fullKey = trimPattern
+      ? `${basePatternKey}|garment-trim:${trimSlot}:${trimColorHex}:${JSON.stringify(trimPattern)}`
+      : basePatternKey; // Final-cache key includes both passes so trim-only and woven+trim sprites never alias plain woven output.
     const cached = patternedCanvasCache.get(fullKey);
     if (cached) {
       portraitPatternStats.cacheHits++;
@@ -2507,12 +2511,27 @@
     portraitPatternStats.cacheMisses++;
     let pending = pendingPatternCanvasPromises.get(fullKey);
     if (!pending) {
-      pending = applyPatternStackToTintedImage(tinted, patterns, colorHex, prefix, img, 'woven-motif')
+      pending = (async () => {
+        let decorated = tinted;
+        if (patterns.length) decorated = await applyPatternStackToTintedImage(decorated, patterns, colorHex, prefix, img, 'woven-motif');
+        if (trimPattern) {
+          decorated = await applyPatternStackToTintedImage(
+            decorated,
+            [trimPattern],
+            trimColorHex,
+            `${prefix}:garment-trim:${trimSlot}:${JSON.stringify(normalizePatternStack(patterns))}`,
+            img,
+            'clothing-trim'
+          ); // Trim goes last so it overlaps reusable motifs and receives its own independent black outline.
+          patternedCanvasCache.set(fullKey, decorated); // The two-pass final is cached under one deterministic runtime key for the synchronous retry render.
+        }
+        return decorated;
+      })()
         .catch(error => { lastError = String(error?.message || error); throw error; })
         .finally(() => pendingPatternCanvasPromises.delete(fullKey));
       pendingPatternCanvasPromises.set(fullKey, pending);
     }
-    onPatternPending?.(pending); // The owning render waits and redraws this same canvas before resolving, so WorldPortraitLife never uploads the temporary plain fallback.
+    onPatternPending?.(pending);
     return tinted;
   }
 
@@ -2583,7 +2602,9 @@
     if (renderer.__clothingWeavingPattern) return renderer(canvas, profile, options); // The installed renderer wrapper will re-enter this helper with its unwrapped downstream renderer.
 
     const descriptors = profile?.bodyColors?.[CLOTHING_MARKER_KEY]; // Woven garment descriptors embedded into this portrait's transient bodyColors payload.
-    const patternMap = Array.isArray(descriptors) && descriptors.length ? await buildPortraitPatternMap(descriptors) : null; // Config/image lookup can overlap freely before any global compatibility ownership is needed.
+    const patternMap = Array.isArray(descriptors) && descriptors.length
+      ? await buildPortraitPatternMap(descriptors, options?.portraitView === 'behind' ? 'behind' : 'front')
+      : null; // Config/image lookup can overlap freely before any global compatibility ownership is needed; trim picks the matching authored front/rear mask.
     if (!patternMap?.size) {
       const releaseRead = await acquirePortraitReadGate(); // Ordinary portraits remain concurrent with each other, but never overlap a woven global-compatibility writer.
       try { return await renderer(canvas, profile, options); }
@@ -2693,7 +2714,7 @@
       mounted: mounted(),
       equippedWeight: stats.weightUnits,
       stats,
-      equipped: equippedOutfitItems().map(item => ({ uid: item.uid, article: articleLabel(item), slot: item.slot, material: item.weaveMaterial || 'standard', weightUnits: itemWeightUnits(item), woven: weavingHasAnyPattern(item.weaving) })),
+      equipped: equippedOutfitItems().map(item => ({ uid: item.uid, article: articleLabel(item), slot: item.slot, material: item.weaveMaterial || 'standard', weightUnits: itemWeightUnits(item), woven: weavingHasAnyPattern(item.weaving), addedTrim: weavingHasOptionalTrim(item.weaving) ? normalizeTrimDyeSlot(item.weaving.trim.dyeSlot) : null })),
       blueprints: currentBlueprints().map(bp => ({ id: bp.baseCosmeticId, slot: bp.slot, label: bp.label })),
       wool: { light: Number(equipmentDeps?.inventory?.[LIGHT_WOOL_KEY]) || 0, heavy: Number(equipmentDeps?.inventory?.[HEAVY_WOOL_KEY]) || 0 },
       portraitPatterns: { ...portraitPatternStats, cacheSize: patternedCanvasCache.size, pending: pendingPatternCanvasPromises.size, gateReaders: portraitGateReaders, gateWriterActive: portraitGateWriterActive, gateWaitingWriters: portraitGateWaitingWriters, gatePreferReaders: portraitGatePreferReaders }, // Mobile-visible counters expose cache behavior plus ordinary-vs-woven gate ownership without a console.
@@ -2706,6 +2727,10 @@
     openLoom,
     closeLoom,
     hasSecondaryDyeForItem,
+    hasAuthoredTrimForCosmetic: async (baseCosmeticIdValue, speciesId = null, gender = null, view = 'front') => {
+      const playerVariant = playerSpeciesGender();
+      return !!await authoredTrimPatternForCosmetic(baseCosmeticIdValue, speciesId || playerVariant.speciesId, gender || playerVariant.gender, view);
+    },
     isCraftableCloth,
     standardWeightFor,
     itemWeightUnits,
@@ -2724,9 +2749,10 @@
     hasBehindView,
     iconSpriteForCosmetic,
     hasWovenPattern: item => weavingHasAnyPattern(item?.weaving),
+    hasAddedTrim: item => weavingHasOptionalTrim(item?.weaving),
     reweaveMaterialCost,
     debugSnapshot,
-    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, applyPatternStackToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, resolveIconLayerUrls, patternRolesForLayers, layersUseSecondaryDye, iconLayersForView, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingPatternsForRole, normalizePatternStack, forcedOverpassPatternForWeaving, withForcedOverpass, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, weavingCarriesSavedPattern, gearHasEquippedWovenClothing, requestSessionReadyPlayerAvatarRefresh, decorateAvatarDataWithWovenItems, materializeWeavingLibrarySnapshots, docsRelativeUrl, standaloneAssetUrl, frameShapeFor, wovenIconVisualKey, reweaveMaterialCost, resolvedPatternMeshScale, buildMotifClusterSeparatorMask, adjustMaskThickness, buildPatternOutlineMask, scaledOutlineWidth, overpassClearanceMultiplier }),
+    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, applyPatternStackToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, resolveIconLayerUrls, patternRolesForLayers, layersUseSecondaryDye, iconLayersForView, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingPatternsForRole, normalizePatternStack, forcedOverpassPatternForWeaving, withForcedOverpass, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, weavingHasOptionalTrim, weavingHasAnyDecoration, normalizeTrimDyeSlot, clothingTrimConfig, authoredTrimPatternFromManifest, authoredTrimPatternForCosmetic, variantKeyForSourceUrl, trimColorHexForDescriptor, weavingCarriesSavedPattern, gearHasEquippedWovenClothing, requestSessionReadyPlayerAvatarRefresh, decorateAvatarDataWithWovenItems, materializeWeavingLibrarySnapshots, docsRelativeUrl, standaloneAssetUrl, frameShapeFor, wovenIconVisualKey, reweaveMaterialCost, resolvedPatternMeshScale, buildMotifClusterSeparatorMask, adjustMaskThickness, buildPatternOutlineMask, scaledOutlineWidth, overpassClearanceMultiplier }),
   });
   window.__clothingWeavingDebug = debugSnapshot;
 
