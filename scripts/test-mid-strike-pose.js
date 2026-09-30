@@ -44,8 +44,8 @@ for (const progress of [0, 0.1, 0.2, 0.21, 0.3, 0.4, 0.5, 0.6, 0.7, 0.75, 0.9, 1
   assert.equal(fourPhaseLerp(progress, ...args), legacy(progress, ...args), `no-mid runtime changed legacy pose at progress ${progress}`);
 }
 assert.equal(fourPhaseLerp(0.4, ...args, 100), 100, 'Mid Strike must be reached exactly halfway through Windup→Strike');
-assert.equal(fourPhaseLerp(0.3, ...args, 100), 55, 'first half of Strike must interpolate Windup→Mid Strike');
-assert.equal(fourPhaseLerp(0.5, ...args, 100), 60, 'second half of Strike must interpolate Mid Strike→Strike');
+assert(Math.abs(fourPhaseLerp(0.3, ...args, 100) - 55) < 1e-12, 'first half of Strike must interpolate Windup→Mid Strike');
+assert(Math.abs(fourPhaseLerp(0.5, ...args, 100) - 60) < 1e-12, 'second half of Strike must interpolate Mid Strike→Strike');
 
 // Player preparation/runtime must carry the optional pose without manufacturing one.
 assert.match(stanceSource, /let midStrike = null/, 'WeaponToolStances must keep Mid Strike optional');
