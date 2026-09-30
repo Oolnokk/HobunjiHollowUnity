@@ -117,8 +117,30 @@
     return !!object?.isMesh && hasAncestorFlag(object, 'hobunjiPathSurface');
   }
 
+  function materialMarksInteriorFloor(material) {
+    const materials = Array.isArray(material) ? material : [material]; // Used by isWalkableGroundSurface so multi-material floors receive the same held-object x-ray policy.
+    return materials.some(entry => entry?.userData?.hobunjiInteriorFloorMaterial === true);
+  }
+
+  function isWalkableGroundSurface(object) {
+    if (!object?.isMesh || object.isSkinnedMesh) return false;
+    const data = object.userData || {}; // Existing semantic floor tags are preferred over geometry/name heuristics.
+    if (data.hobunjiGroundSurface === true || data.cavernWalkableFloor === true) return true;
+    if (materialMarksInteriorFloor(object.material)) return true;
+
+    // Debrisifier V50 exposes its stepped/sunken ruin floor as one WallBuilder
+    // surface carrying a plateau model. Treat that authored walkable surface as
+    // ground too, including cells above/below the base floor elevation.
+    if (data.wallBuilderRecipe === 'wallrecipe2.json' && data.plateauModel?.levelByCell) return true;
+    return false;
+  }
+
   function isTerrainSurface(object) {
     if (!object?.isMesh || object.isSkinnedMesh) return false;
+
+    // Interior floors, generated ruin floors, and explicitly tagged walkable
+    // terrain are ground regardless of hierarchy or elevation.
+    if (isWalkableGroundSurface(object)) return true;
 
     // Spatial terrain chunks are generated only from whole-zone floor meshes.
     if (object.userData?.terrainRenderChunk === true || object.userData?.terrainRenderChunkSource === true) return true;
