@@ -921,6 +921,7 @@
     toolKeyFor, ensureTool, toolScaleForTool, normalizeGripContext, currentGripContext,
     authoredPrimaryGripForTool, primaryGripForTool, spinPivotOffsetForTool, secondaryGripSpanForTool, secondaryGripForTool,
     currentSecondaryGripAnimationState, animationGripAt, gripModeForTool, setGripMode, replace, mutate, saveLocal, loadLocal, clearLocal, applyPrimaryGripVisuals, debugForTool,
+    loadEditorAnimationGrip, // Action selection/import calls this so optional Mid Strike off-hand state cannot leak between animations.
     editorSecondaryGripStateSnapshot, restoreEditorSecondaryGripState,
     getDebug() {
       const snapshot = global.WeaponToolStances?.debugSnapshot?.() || null;
