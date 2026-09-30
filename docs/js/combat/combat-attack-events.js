@@ -24,6 +24,18 @@
     return SLOT_IDS.find(slotId => loadout[slotId] === abilityId) || null;
   }
 
+  function resolveIncomingSource(fromX, fromY, deps = window.Combat?.deps) {
+    if (!Number.isFinite(Number(fromX)) || !Number.isFinite(Number(fromY)) || !deps) return null;
+    let best = null; // Used to attribute an already-authoritative block/iframe miss to the attacking actor without inventing a second hit test.
+    let bestDistance = Infinity; // Used only to choose among living actors nearest the source coordinates supplied by damagePlayer.
+    for (const actor of deps.hostileObjects || []) {
+      if (!actor || actor.health <= 0 || actor.areaId !== deps.getCurrentArea?.()) continue;
+      const distance = Math.hypot((Number(actor.x) || 0) - Number(fromX), (Number(actor.y) || 0) - Number(fromY));
+      if (distance < bestDistance) { best = actor; bestDistance = distance; }
+    }
+    return best;
+  }
+
   function cloneAfflictions(source) {
     const out = {};
     for (const [id, value] of Object.entries(source || {})) {
@@ -123,6 +135,7 @@
     defensive,
     on,
     slotForAbility,
+    resolveIncomingSource,
     scaleAfflictions,
     currentWeaponKey,
   });
