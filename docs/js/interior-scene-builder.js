@@ -342,7 +342,10 @@
     }
 
     mesh.receiveShadow = true;
-    mesh.userData = Object.assign({}, mesh.userData, { cavernWalkableFloor: true });
+    mesh.userData = Object.assign({}, mesh.userData, {
+      cavernWalkableFloor: true,
+      hobunjiGroundSurface: true, // HeldObjectRenderOrder removes cavern floors from weapon depth occlusion just like exterior terrain.
+    });
     return mesh;
   }
 
