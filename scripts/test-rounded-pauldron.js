@@ -199,4 +199,4 @@ assert(pixelProbe.includes('MetalArmorSystem?.diagnosticsText?.()'), 'Pixel Prob
 
 console.log('OK: Metal armor is item/blueprint-driven across clothing slots; Rounded Pauldrons are the first smith recipe with cosmetic Temper, shared treatments, and density-derived weight.');
 
-assert(index.includes('js/npc-avatar-preview-utils.js?v=20260926metalarmor1'), 'live avatar profile builder cache is bumped with the pauldron integration');
+assert(index.includes('js/npc-avatar-preview-utils.js?v=20260930ha019a52'), 'live avatar profile builder cache is bumped with the pauldron integration');

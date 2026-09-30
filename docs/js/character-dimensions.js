@@ -191,7 +191,7 @@
   }
 
   // Composes every transform layer into floor-relative world numbers.
-  // options: { child, age, rigScale: {x,y,head,offsetY}, portraitScale, placementRatio }
+  // options: { child, age | npcRecord | profile, rigScale: {x,y,head,offsetY}, portraitScale, placementRatio }
   // (explicit values override the live config; otherwise everything is read live).
   function dimensionsFor(species, gender, options = {}) {
     const s = normalizeSpecies(species);
@@ -212,7 +212,8 @@
     const resolvedRig = rigApi?.scaleFor?.(s, g) || window.HobunjiCharacterRigScaleDefaults?.scaleFor?.(s, g) || { x: 1, y: 1, head: 1, offsetY: 0 };
     const rig = { ...resolvedRig, ...(options.rigScale || {}) };
     const rx = positive(rig.x, 1), ry = positive(rig.y, 1), head = positive(rig.head, 1);
-    const hunch = rigApi?.ageHunchFraction?.(options.age) || 0;
+    const age = rigApi?.ageFor ? rigApi.ageFor(options) : (Number(options.age) || 0); // Explicit age, else an NPC's authored appearance.aging.hunch (pass { npcRecord } or { profile }).
+    const hunch = rigApi?.ageHunchFraction?.(age) || 0;
     const headOffset = (Number(rig.offsetY) || 0) + hunch;
 
     // PNG row v -> floor-relative Y (png-plane-avatar.js handAttachY formula), then rig Y around floor.
@@ -257,7 +258,7 @@
       factors: {
         portraitScale, placementRatio: placement, portraitYOffsetPercent: (placement - 0.5) * 100,
         baseModelWidth: baseWidth, modelWidth, modelHeight,
-        rigScaleX: rx, rigScaleY: ry, headScale: head, headOffsetY: Number(rig.offsetY) || 0, ageHunch: hunch,
+        rigScaleX: rx, rigScaleY: ry, headScale: head, headOffsetY: Number(rig.offsetY) || 0, age, ageHunch: hunch,
         child: !!options.child,
       },
       pixels: m,

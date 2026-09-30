@@ -55,6 +55,32 @@
     return -Math.min(1, a) * MAX_AGE_HUNCH_FRACTION;
   };
 
+  // Single resolver for a character's age-hunch fraction. Explicit numeric
+  // `age` wins; otherwise the authored NPC aging block (appearance.aging.hunch,
+  // copied onto the portrait profile by NpcAvatarPreview.buildProfileFromNpcExport)
+  // is read from whichever of options/profile/npcRecord/appearance is present,
+  // and finally whatever the avatar root already resolved at build time. Every
+  // caller that reapplies head compensation must use this so a later pass never
+  // resets an aged NPC's hunch back to 0.
+  function ageFor(options = {}) {
+    const candidates = [
+      options.age,
+      options.profile?.age,
+      options.npcRecord?.age,
+      options.aging?.hunch,
+      options.profile?.aging?.hunch,
+      options.appearance?.aging?.hunch,
+      options.npcRecord?.appearance?.aging?.hunch,
+      options.profile?.appearance?.aging?.hunch,
+      options.avatarRoot?.userData?.hobunjiCharacterRigHeadRuntime?.age,
+    ];
+    for (const value of candidates) {
+      const n = Number(value);
+      if (value != null && Number.isFinite(n)) return Math.max(0, Math.min(1, n));
+    }
+    return 0;
+  }
+
   function defaultScaleFor(species, gender) {
     const transformed = transformSpecies(species); // Used so Rakakoan/Ghoul inherit their transform-equivalent Kenkari/Mao-ao authored defaults.
     const normalizedGender = normalizeGender(gender);
@@ -280,6 +306,7 @@
     maxOffsetFraction: MAX_OFFSET_FRACTION,
     maxAgeHunchFraction: MAX_AGE_HUNCH_FRACTION,
     ageHunchFraction,
+    ageFor,
     defaultScaleFor,
     profileFor,
     scaleFor,
@@ -301,10 +328,9 @@
       // therefore scales portrait + hands + already-attached feet exactly once.
       // The avatarRoot (carrying userData.neckRig) is already a descendant of
       // parent by this point, so the head-compensation lookup inside
-      // applyToParent finds it. No per-NPC age data exists in the shared game
-      // runtime yet, so age is left at its default (no extra hunch) here —
-      // pass options.age through once that data exists somewhere real.
-      applyToParent(parent, options.speciesId || options.profile?.speciesId || options.profile?.species, options.gender || options.profile?.gender, null, options.age ?? options.profile?.age ?? options.npcRecord?.age ?? 0);
+      // applyToParent finds it. Age comes from the NPC's authored aging block
+      // (see ageFor) so this reapplication keeps the build-time hunch.
+      applyToParent(parent, options.speciesId || options.profile?.speciesId || options.profile?.species, options.gender || options.profile?.gender, null, ageFor(options));
       return base(THREE, parent, options);
     };
     Object.assign(wrapped, base);
