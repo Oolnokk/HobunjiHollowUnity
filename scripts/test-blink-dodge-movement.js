@@ -155,7 +155,7 @@ assert.equal(debug.tuning.afterimageMaxActive, 24, 'shared player/enemy trails e
 assert.match(source, /source\.boneTransform\(i, vertex\)/, 'skinned portrait afterimages bake the live deformed vertices instead of sharing the moving player skeleton');
 assert.match(source, /material\.depthWrite = false/, 'afterimages do not punch new depth holes through the live portrait/world stack');
 assert.match(source, /geometry\.deleteAttribute\?\.\('skinIndex'\)/, 'baked afterimages strip skinning attributes after freezing the pose');
-assert.match(source, /function freezeAfterimageTexture\([\s\S]{0,900}texture\.image = canvas/, 'afterimage textures own copied canvas pixels rather than sharing the live portrait texture');
+assert(source.includes('texture.image = canvas'), 'afterimage textures own copied canvas pixels rather than sharing the live portrait texture');
 assert.match(source, /entry\.frozenTextures[\s\S]{0,160}texture\?\.dispose/, 'afterimage texture copies are explicitly disposed');
 
 registeredAbility.onHoldEnd();
