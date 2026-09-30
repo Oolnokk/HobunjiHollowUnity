@@ -224,9 +224,12 @@
     return grips()?.authoredPrimaryGripForTool?.(key) || { position: { x: 0, y: 0, z: 0 }, rotationDeg: { pitch: 0, yaw: 0, roll: 0 } };
   }
 
-  function gripScale(key) {
-    const n = Number(grips()?.toolScaleForTool?.(key));
-    return Number.isFinite(n) && n > 0 ? n : 1;
+  function gripScale(key, walker = null) {
+    const rig = walker ? rigFor(walker) : null; // Supplies species/gender to the shared calculated-height weapon scale when this NPC owns the visual.
+    const api = grips();
+    const effective = Number(api?.effectiveToolScaleForTool?.(key, rig?.speciesId, rig?.gender));
+    const base = Number(api?.toolScaleForTool?.(key));
+    return Number.isFinite(effective) && effective > 0 ? effective : (Number.isFinite(base) && base > 0 ? base : 1);
   }
 
   function gripQuaternion(frame) {
@@ -234,14 +237,19 @@
     return three ? new three.Quaternion().setFromEuler(new three.Euler(rad(r.pitch), rad(r.yaw), rad(r.roll), 'YXZ')) : null;
   }
 
-  function applyGripScale(visual, key) {
-    if (!visual || visual.userData?.npcGripKey === key) return;
-    visual.scale.setScalar(gripScale(key)); // Grip target moves the HAND; held-item position/rotation remain authored by the stance animation.
-    visual.userData = { ...(visual.userData || {}), npcGripKey: key };
+  function applyGripScale(visual, key, walker = null) {
+    if (!visual) return;
+    const scale = gripScale(key, walker); // Effective scale combines the item's base size with this NPC's calculated character-height ratio.
+    if (visual.userData?.npcGripKey === key && Math.abs((Number(visual.userData?.npcGripScale) || 0) - scale) < 0.0001) return;
+    visual.scale.setScalar(scale); // Grip target moves the HAND; held-item position/rotation remain authored by the stance animation.
+    visual.userData = { ...(visual.userData || {}), npcGripKey: key, npcGripScale: scale };
   }
 
-  function stationVisual(holder, key) {
-    if (holder?.userData?.npcGripVisualV4) return holder.userData.npcGripVisualV4;
+  function stationVisual(holder, key, walker = null) {
+    if (holder?.userData?.npcGripVisualV4) {
+      applyGripScale(holder.userData.npcGripVisualV4, key, walker);
+      return holder.userData.npcGripVisualV4;
+    }
     const three = T();
     if (!holder || !three) return null;
     const visual = new three.Group();
@@ -249,7 +257,7 @@
     for (const child of [...holder.children]) visual.add(child);
     holder.add(visual);
     holder.userData = { ...(holder.userData || {}), npcGripVisualV4: visual };
-    applyGripScale(visual, key);
+    applyGripScale(visual, key, walker);
     return visual;
   }
 
@@ -314,7 +322,7 @@
     const grip = primaryGrip(key); // Authored point/orientation ON the weapon where the right hand must land.
     const gripP = grip.position || {};
     const gripQ = gripQuaternion(grip);
-    const scale = gripScale(key);
+    const scale = gripScale(key, walker);
     socket.position.add(new (T().Vector3)(
       (Number(gripP.x) || 0) * scale,
       (Number(gripP.y) || 0) * scale,
@@ -429,10 +437,10 @@
       visual.name = `${state.walker.rec.id}_${loadout.toolKey}_visual`;
       visual.userData = { toolPlane: built.plane };
       visual.add(built.root);
-      applyGripScale(visual, loadout.toolKey); // Primary grip is hand-owned now; watchman weapon keeps the authored holder transform and only inherits intrinsic item scale.
+      applyGripScale(visual, loadout.toolKey, state.walker); // Primary grip is hand-owned now; watchman weapon keeps the authored holder transform and inherits base + calculated-height scale.
       const holder = new three.Group();
       holder.name = `${state.walker.rec.id}_${loadout.toolKey}_holder`;
-      holder.userData = { toolPlane: built.plane, npcWatchmanWeapon: true, toolKey: loadout.toolKey };
+      holder.userData = { toolPlane: built.plane, npcWatchmanWeapon: true, toolKey: loadout.toolKey, npcGripVisualV4: visual };
       holder.add(visual);
       parent.add(holder);
       if (built.plane) built.plane.name = `${state.walker.rec.id}_${loadout.toolKey}_plane`;
@@ -474,6 +482,7 @@
       const pose = watchmanPose(loadout);
       if (pose) setHolderPose(state, state.holder, pose);
       state.holder.visible = walker?.root?.visible !== false;
+      applyGripScale(state.holder.userData?.npcGripVisualV4, loadout.toolKey, walker);
       state.handsAttached = attachPrimaryHand(walker, state.holder, loadout.toolKey, `watchman:${loadout.toolKey}`);
       state.mode = 'watchman'; state.key = loadout.toolKey; state.loadout = loadout;
       return;
@@ -488,7 +497,7 @@
       state.mode = null; state.key = null; state.handsAttached = false;
       return;
     }
-    stationVisual(walker.stationToolMesh, key);
+    stationVisual(walker.stationToolMesh, key, walker);
     if (key === 'hoe') {
       const interval = Math.max(.2, Number(target?.toolIntervalSec) || 2);
       const actionTime = Math.max(0, Number(walker.stationToolT) || 0);
