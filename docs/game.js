@@ -401,6 +401,11 @@
         _npcDialogueEl.classList.add('open');
         _npcDialogueEl.setAttribute('aria-hidden', 'false');
 
+        if (rec?.id === 'spearhead_unumanuk' && window.CombatTutorial?.active()) {
+          window.DialogueContent?.beginNpcConversation(rec); // Automatic coaching must not be displaced by procedural requests.
+          return;
+        }
+
         // Task turn-in — checked before everything else (including a fresh
         // request/favor ask): if this NPC posted/asked a quest that's now
         // sitting ready in the player's log, offer to hand it over right
@@ -6104,7 +6109,8 @@
         }
         for (const c of currentHostilesFrame) {
           if (c.combatTutorialTarget && !c.combatTutorialHostile) {
-            updateCreatureMesh(c, dt, c.facing); // Stationary exercises keep the existing creature renderer and real hitboxes.
+            updateCreatureMesh(c, dt, c.facing); // Stationary exercises keep the humanoid renderer and real hitboxes.
+            if (c.isBandit) { window.BanditCombat.updateToolMesh(c); window.BanditCombat.updateTrailArc(c, dt); }
             continue;
           }
           // Beastmaster pets stay in hostileObjects so player targeting and
@@ -12660,6 +12666,7 @@
           // array or doing an O(n) `.includes()` check every iteration.
           for (let i = npcWalkers.length - 1; i >= 0; i--) {
             const w = npcWalkers[i];
+            if (w.combatTutorialSuspended) { w.root.visible = false; continue; } // Oddclaw's combat rig temporarily owns his presence.
             w.update(dt);
             if (npcWalkers[i] === w) _tickNpcPortraitLife(w, dt);
           }
@@ -12668,7 +12675,7 @@
         let closest = null, closestDist = npcMovementConfig().interactionRadiusTiles ?? 2.0;
         const px = player.x / TILE, pz = player.y / TILE;
         for (const w of npcWalkers) {
-          if (w.area !== currentArea) continue;
+          if (w.combatTutorialSuspended || w.area !== currentArea) continue;
           const d = Math.hypot(w.root.position.x - px, w.root.position.z - pz);
           if (d < closestDist) { closestDist = d; closest = w; }
         }
@@ -28167,21 +28174,53 @@
           setPlayerFacingInstant(-Math.PI / 2);
           _snapCameraTarget();
         },
-        equip: key => {
-          if (!TOOL_ITEM_DEFS[key]) throw new Error('Unknown training weapon: ' + key);
-          const slot = TOOL_ITEM_DEFS[key].slots.includes('ranged') ? 'ranged' : 'weapon'; // Existing item definitions choose the correct action controls and renderer.
+        equip: (key, slot) => {
+          if (!TOOL_ITEM_DEFS[key]?.slots?.includes(slot)) throw new Error('Invalid training weapon/slot: ' + key + '/' + slot);
+          // The exercise selects melee or ranged explicitly, including dual-purpose weapons.
           equipmentSlots[slot] = key;
           rebuildToolMeshes();
           setActiveTool(slot, { silent: true });
         },
-        spawnTarget: lesson => {
-          const target = makeCreatureEntity('gar-wolf', 10.5 * TILE, 11.5 * TILE, { combatTutorialTarget: true, combatTutorialHostile: !!lesson.hostile }); // Real creature collider/AI supplies verified hits and defensive practice.
+        spawnTarget: async () => {
+          const walker = npcWalkers.find(w => w.rec?.id === 'oddclaw_unumanuk'); // Preserve the named NPC's live wardrobe and ordinary schedule.
+          let record = walker?.rec || scheduledNpcRecords.get('oddclaw_unumanuk'); // Fall back to the same authored database if his scheduled walker is not loaded yet.
+          if (!record) {
+            const database = window.LocalDBOverrides ? await window.LocalDBOverrides.loadDatabase('npcDatabase') : await fetch('config/npcs/hobunji-starter-npc-database.json').then(response => response.json()); // Honors local NPC edits like the normal spawn path.
+            record = database.npcs?.find(npc => npc.id === 'oddclaw_unumanuk');
+          }
+          if (!record?.appearance) throw new Error('Oddclaw’s appearance is unavailable.');
+          const config = await window.BanditCombat.loadGangConfig(); // Reuses the shared humanoid renderer, hands, weapon poses and attack executor.
+          const target = await window.BanditCombat.makeEntity(config, 'grunt', 0, 10.5 * TILE, 11.5 * TILE, {
+            zoneId: 'map_i_watchhouse_arena',
+            rosterOverride: structuredClone(record),
+            enemyClass: 'sparring-partner',
+            defOverride: { label: 'Oddclaw', weaponKey: 'fishingspear', attackTag: 'sharp', rangedWeaponKey: null, maxHealth: 10000, attackDamage: 2, attackCooldownS: 2,
+              banditAbilityLoadout: { tap1: 'pokeCombo', tap2: null, hold1: null, hold2: null }, lootPool: null, leashRangePx: TILE * 30 },
+            extra: { combatTutorialTarget: true, combatTutorialHostile: false, npcId: 'oddclaw_unumanuk' },
+          });
           if (!target) return null;
-          target.def = { ...target.def, label: 'Sparring Hound', attackDamage: 2 };
-          target.maxHealth = 10000; target.health = lesson.condition === 'lowHealth' ? 2000 : 10000;
-          target.facing = Math.PI / 2;
+          // Resolve again after the async build in case the ordinary NPC finished spawning meanwhile.
+          target.trainingWalker = npcWalkers.find(w => w.rec?.id === 'oddclaw_unumanuk') || null;
+          if (target.trainingWalker) {
+            target.trainingWalkerVisible = target.trainingWalker.root.visible;
+            target.trainingWalker.combatTutorialSuspended = true;
+            target.trainingWalker.root.visible = false;
+          }
           hostileObjects.add(target);
           return target;
+        },
+        pauseTarget: target => {
+          if (!target) return;
+          target.combatTutorialHostile = false;
+          target._banditAction?.cancel(); target._banditAction = null;
+          target.telegraphState = null; target._banditLunging = false;
+          target.vx = 0; target.vy = 0;
+        },
+        resetTarget: target => {
+          if (!target) return;
+          target.x = 10.5 * TILE; target.y = 11.5 * TILE;
+          target.facing = Math.PI / 2; target.state = 'idle';
+          target.attackCooldownT = 1.5; target._banditComboIndex = 0;
         },
         maintainTarget: (target, lesson) => {
           target.health = lesson?.condition === 'lowHealth' ? 2000 : target.maxHealth;
@@ -28194,6 +28233,12 @@
           }
         },
         removeTarget: target => {
+          target._banditAction?.cancel(); target._banditAction = null;
+          window.RangedWeapons?.cancelBanditAction?.(target);
+          if (target.trainingWalker) {
+            target.trainingWalker.combatTutorialSuspended = false;
+            target.trainingWalker.root.visible = target.trainingWalkerVisible;
+          }
           window.Combat?.telegraph?.cancel(target);
           window.Combat?.animalAttacks?.cancel(target);
           hostileObjects.delete(target);

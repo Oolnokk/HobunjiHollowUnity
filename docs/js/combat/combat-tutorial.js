@@ -4,11 +4,12 @@
   const content = window.CombatTutorialContent; // Shared lesson definitions used by routing, Tasks, and diagnostics.
   let deps = null; // Live game closures injected once by game.js.
   let session = null; // Ephemeral loan, actor, resources, and practice state; deliberately excluded from saves.
-  let panel = null; // Mobile-friendly practice controls mounted only when needed.
+  let panel = null; // Compact help/exit controls; all lesson instructions live in NPC dialogue.
   let bypassChat = false; // Lets one ordinary Spearhead conversation pass through the provider.
   let busy = false; // Serializes scene changes and prevents double-clicked quest/reward actions.
   let lastError = ''; // Visible diagnostic text retained after failed setup.
 
+  function now() { return performance.now(); }
   function state(id) { return deps?.getQuestProgress?.()?.[id] || null; }
   function definition(id) { return content.quests.find(quest => quest.id === id); }
   function step() { return session?.quest.steps[session.index] || null; }
@@ -45,7 +46,7 @@
     if (active()) {
       const lesson = step(); // Current authored explanation always uses the real dialogue and cinematic camera.
       if (!lesson) return rewardTree();
-      return tree('spearhead_lesson', [textNode('start', lessonText(lesson), 'practice'), { id: 'practice', type: 'end', combatTutorialPractice: true }]);
+      return tree('spearhead_lesson', [textNode('start', `${session.reminder ? 'Let us try that again. ' : session.index > 0 && session.hits === 0 ? 'Good. Now, ' : ''}${lessonText(lesson)}`, 'practice'), { id: 'practice', type: 'end', combatTutorialPractice: true }]);
     }
     const nodes = []; // Four quests per page leaves room for navigation and normal conversation in the six-choice dialogue UI.
     for (let page = 0; page * 4 < content.quests.length; page++) {
@@ -83,7 +84,7 @@
     try {
       deps.closeDialogue();
       stopActions();
-      session = { quest, index: 0, hits: 0, phase: 'loading', ammo: { specialAmmo: 8, rangedAmmoLoadouts: {}, unlockedSpecialAmmo: ['shrapnel', 'concussive'] }, replay: state(quest.id)?.status === 'completed', tried: new Set(), original: deps.capture(), walker, actor: { area: walker.area, c: walker.root.position.x - 0.5, r: walker.root.position.z - 0.5, pause: walker.pause }, target: null };
+      session = { quest, index: 0, hits: 0, phase: 'loading', lastProgressAt: now(), lastTickAt: now(), wrongHits: 0, ammo: { specialAmmo: 8, rangedAmmoLoadouts: {}, unlockedSpecialAmmo: ['shrapnel', 'concussive'] }, replay: state(quest.id)?.status === 'completed', tried: new Set(), original: deps.capture(), walker, actor: { area: walker.area, c: walker.root.position.x - 0.5, r: walker.root.position.z - 0.5, pause: walker.pause }, target: null };
       // Resume at the saved card. Earlier verified exercises retain reward eligibility across reloads.
       if (!session.replay) {
         const previous = state(quest.id); // Unfinished sessions resume without persisting any temporary gear.
@@ -92,9 +93,19 @@
         deps.getQuestProgress()[quest.id] = { status: 'active', step: session.index, progress: { kind: 'story', provider: 'spearhead', npcId: content.NPC_ID, npcName: 'Spearhead', title: quest.title, icon: '⚔', detail: 'Practice beneath the watchhouse. Talk to Spearhead to resume after leaving.', hidden: false } };
         saveProgress();
       }
+      const starting = session; // Owns scene travel and the async humanoid build through cancellation.
       await deps.enterArena();
+      if (session !== starting) return false;
       walker.transferToArea(content.ARENA, { c: 8, r: 14 });
       walker.pause = Infinity;
+      const target = await deps.spawnTarget(); // Oddclaw remains present throughout the sequential lesson.
+      if (session !== starting || deps.getArea() !== content.ARENA) {
+        if (target) deps.removeTarget(target);
+        if (session === starting) await leave(false);
+        return false;
+      }
+      if (!target) throw new Error('Oddclaw could not join the practice.');
+      session.target = target;
       prepareStep();
       await deps.openDialogue(walker);
       return true;
@@ -107,18 +118,18 @@
   }
   function prepareStep() {
     stopActions();
-    if (session.target) deps.removeTarget(session.target);
-    session.target = null;
+    deps.pauseTarget?.(session.target);
     session.hits = 0;
     session.phase = 'explain';
+    session.reminder = false;
+    session.lastProgressAt = now();
+    session.lastTickAt = now();
+    session.wrongHits = 0;
     const lesson = step(); // An absent card means all practice is complete and the reward is pending.
     if (lesson) {
       deps.resetPractice();
-      deps.equip(lesson.weapon || 'hatchet');
-      if (['hit', 'quickBonus', 'block', 'rangedHit'].includes(lesson.check)) {
-        session.target = deps.spawnTarget(lesson);
-        if (!session.target) throw new Error('The sparring partner could not be created.');
-      }
+      deps.equip(lesson.weapon || 'hatchet', lesson.check === 'rangedHit' ? 'ranged' : 'weapon');
+      deps.resetTarget?.(session.target, lesson);
     }
     saveProgress();
     render();
@@ -126,31 +137,40 @@
   function onNode(node, context) {
     if (context.ended || !active() || !node?.combatTutorialPractice) return;
     session.phase = 'practice';
+    const lesson = step(); // Reassert the lesson's slot after dialogue or a manual weapon switch.
+    if (lesson) deps.equip(lesson.weapon || 'hatchet', lesson.check === 'rangedHit' ? 'ranged' : 'weapon');
     session.walker.pause = Infinity;
+    session.lastProgressAt = now();
+    session.lastTickAt = now();
+    session.wrongHits = 0;
     if (step()?.check === 'read') session.hits = 1;
     render();
   }
   function observe(kind, details = {}) {
     if (!active() || session.phase !== 'practice' || deps.dialogueOpen()) return false;
     const lesson = step(); // Events are emitted only at successful combat/defense commit points.
-    if (!lesson || lesson.check !== kind) return false;
+    if (!lesson || lesson.check !== kind || session.hits >= (lesson.count || 1)) return false;
     if (details.target && details.target !== session.target) return false;
     if (lesson.ability && details.abilityId && lesson.ability !== details.abilityId) return false;
     if (['hit', 'quickBonus', 'rangedHit'].includes(kind) && !details.target) return false;
     session.hits = Math.min(lesson.count || 1, session.hits + 1);
+    session.lastProgressAt = now();
+    session.wrongHits = 0;
     render();
     return true;
   }
   function hit(target, options = {}) {
     if (target !== session?.target) return;
+    const before = session.hits; // Wrong attacks inform coaching without awarding progress.
     if (options.ranged) observe('rangedHit', { target });
     else if (options.abilityId) {
       observe('hit', { target, abilityId: options.abilityId });
       if (options.conditionBonusUsed) observe('quickBonus', { target, abilityId: options.abilityId });
     }
+    if (active() && session.phase === 'practice' && !deps.dialogueOpen() && session.hits === before) session.wrongHits++;
   }
   async function next() {
-    if (busy || !active() || session.phase !== 'practice' || session.hits < (step()?.count || 1)) return false;
+    if (busy || !active() || !step() || session.phase !== 'practice' || session.hits < (step()?.count || 1)) return false;
     busy = true;
     try {
       if (step().ability) session.tried.add(step().ability);
@@ -198,55 +218,68 @@
     if (slot === 'tap1') return undefined;
     return step().slot === slot ? step().ability : null;
   }
+  async function explainAgain() {
+    if (busy || !active()) return;
+    busy = true;
+    session.reminder = true;
+    session.phase = 'explain';
+    session.lastProgressAt = now();
+    stopActions();
+    deps.pauseTarget?.(session.target);
+    try { await deps.openDialogue(session.walker); }
+    catch (error) { lastError = error.message; }
+    finally { busy = false; render(); }
+  }
   function render() {
     if (typeof document === 'undefined' || !deps) return;
     if (!panel) {
       panel = document.createElement('section');
       panel.id = 'combatTutorialPanel';
-      panel.setAttribute('aria-label', 'Combat training');
-      panel.style.cssText = 'position:fixed;left:50%;top:58px;transform:translateX(-50%);width:min(390px,88vw);max-height:35vh;overflow:auto;z-index:130;background:rgba(22,28,29,.94);color:#f6e8c6;border:1px solid #bdab7b;border-radius:10px;padding:10px;font:14px system-ui;box-shadow:0 3px 14px #0008;';
+      panel.setAttribute('aria-label', 'Training controls');
+      panel.style.cssText = 'position:fixed;right:12px;top:58px;z-index:130;display:flex;gap:6px;flex-wrap:wrap;max-width:90vw;';
       document.body.appendChild(panel);
       panel.addEventListener('pointerdown', event => event.stopPropagation());
       panel.addEventListener('pointerup', event => event.stopPropagation());
       panel.addEventListener('click', event => {
-        const operation = event.target.closest('button')?.dataset.operation; // Delegated controls survive per-step HUD updates.
-        if (operation === 'next') void next();
-        else if (operation === 'listen' && session && !busy) void deps.openDialogue(session.walker);
-        else if (operation === 'leave' && !busy) { busy = true; void leave(true).finally(() => { busy = false; }); }
-        else if (operation === 'reset' && session && !busy) { prepareStep(); void deps.openDialogue(session.walker); }
+        const operation = event.target.closest('button')?.dataset.operation; // Touch controls never require a separate progression button.
+        if (operation === 'listen') void explainAgain();
+        else if (operation === 'leave' && !busy) { busy = true; void leave(true).finally(() => { busy = false; render(); }); }
         else if (operation === 'debug') { const output = panel.querySelector('pre'); output.hidden = !output.hidden; output.textContent = diagnosticsText(); }
       });
     }
-    const visible = deps.getArea() === content.ARENA && !deps.dialogueOpen(); // Explanations use the existing dialogue instead of overlapping two panels.
+    const visible = deps.getArea() === content.ARENA && !deps.dialogueOpen(); // Only dialogue presents lesson text.
     panel.hidden = !visible;
+    panel.style.display = visible ? 'flex' : 'none';
     if (!visible) return;
-    const lesson = step(); // Authored strings are assigned with textContent below.
     panel.replaceChildren();
-    const title = document.createElement('strong');
-    title.textContent = session ? `${session.quest.title} · ${lesson?.title || 'Choose your reward'}` : 'Watchhouse practice arena';
-    panel.append(title);
-    const description = document.createElement('p');
-    description.style.margin = '6px 0';
-    description.textContent = session ? lesson ? `${lessonText(lesson)} (${session.hits}/${lesson.count || 1})` : 'Speak to Spearhead to finish this session.' : 'Training resumes by speaking with Spearhead upstairs. Borrowed equipment is never carried over from an earlier visit.';
-    panel.append(description);
-    const controls = session ? [['listen', lesson ? 'Hear explanation' : 'Choose reward'], ['next', 'Next lesson'], ['reset', 'Retry lesson'], ['leave', 'Leave training'], ['debug', 'Diagnostics']] : [['leave', 'Return upstairs'], ['debug', 'Diagnostics']];
+    const controls = session ? [['listen', 'Ask Spearhead'], ['leave', 'End training'], ['debug', 'Diagnostics']] : [['leave', 'Return upstairs']]; // Mobile help and exit remain accessible during practice.
     for (const [operation, label] of controls) {
-      const button = document.createElement('button'); // Large touch targets avoid requiring developer tools or keyboard input.
+      const button = document.createElement('button'); // Shared compact buttons, with comfortable touch targets.
       button.type = 'button'; button.textContent = label; button.dataset.operation = operation;
-      button.style.cssText = 'min-height:36px;margin:3px;padding:6px 10px;';
-      button.disabled = busy || operation === 'next' && (!lesson || session.phase !== 'practice' || session.hits < (lesson.count || 1)) || operation === 'reset' && !lesson;
+      button.style.cssText = 'min-height:40px;padding:6px 10px;';
+      button.disabled = busy;
       panel.append(button);
     }
-    const output = document.createElement('pre');
-    output.hidden = true; output.style.cssText = 'white-space:pre-wrap;font-size:11px;user-select:text;'; panel.append(output);
+    const output = document.createElement('pre'); // Opt-in diagnostics replace console-only troubleshooting on mobile.
+    output.hidden = true; output.style.cssText = 'white-space:pre-wrap;font-size:11px;user-select:text;background:#16201e;color:white;padding:8px;'; panel.append(output);
   }
   function update() {
     if (!deps) return;
     if (session && session.phase !== 'loading' && deps.getArea() !== content.ARENA && session.phase !== 'leaving') { void leave(false); return; }
     if (active()) {
+      const tick = now(); // Shared game-loop clock; background tabs and dialogue do not consume coaching time.
+      const elapsed = Math.max(0, tick - (session.lastTickAt || tick)); // Used to exclude pauses from the no-progress threshold.
+      session.lastTickAt = tick;
+      if (deps.dialogueOpen() || document.hidden || elapsed > 2000) session.lastProgressAt += elapsed;
+      if (!busy && !deps.dialogueOpen() && !document.hidden && step()) {
+        if (session.phase === 'practice' && session.hits >= (step().count || 1) && tick - session.lastProgressAt >= 700) void next();
+        else if (session.phase === 'practice' && (tick - session.lastProgressAt >= 45000 || session.wrongHits >= 4 && tick - session.lastProgressAt >= 8000)) void explainAgain();
+        else if (session.phase === 'explain' && tick - session.lastProgressAt >= 1500) void explainAgain();
+      }
       session.walker.pause = Infinity;
       if (session.target) {
         session.target.combatTutorialHostile = !!step()?.hostile && session.phase === 'practice' && !deps.dialogueOpen(); // Sparring pauses while Spearhead is explaining.
+        if (!session.target.combatTutorialHostile) deps.pauseTarget?.(session.target);
         deps.maintainTarget(session.target, step());
       }
     }
@@ -254,7 +287,7 @@
     if ((!panel && visible) || (panel && panel.hidden === visible)) render();
   }
   function diagnosticsText() {
-    return `Spearhead combat tutorial\nQuest: ${session?.quest.id || 'none'}\nStep: ${step()?.id || 'none'}\nPhase: ${session?.phase || 'idle'}\nVerified actions: ${session?.hits || 0}/${step()?.count || 1}\nLoan weapon: ${deps?.equipment.weapon || 'none'}\nTried: ${[...(session?.tried || [])].join(', ')}\nLast error: ${lastError || 'none'}\nLatest change: Watchhouse arena, level-gated training, temporary equipment and one learned technique per eligible session.`;
+    return `Spearhead combat tutorial\nQuest: ${session?.quest.id || 'none'}\nStep: ${step()?.id || 'none'}\nPartner: Oddclaw\nPhase: ${session?.phase || 'idle'}\nVerified actions: ${session?.hits || 0}/${step()?.count || 1}\nLoan weapon: ${deps?.equipment.weapon || 'none'}\nTried: ${[...(session?.tried || [])].join(', ')}\nLast error: ${lastError || 'none'}\nLatest change: Automatic dialogue-led lessons, no-progress coaching, Oddclaw humanoid sparring, and explicit melee/ranged loan slots.`;
   }
   function init(injected) {
     deps = injected;
