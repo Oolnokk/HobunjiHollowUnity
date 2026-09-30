@@ -3,7 +3,7 @@
 
   if (Number(window.ClothingWeavingSystem?.version) >= 1) return;
 
-  const VERSION = 1;
+  const VERSION = 2;
   const LIGHT_WOOL_KEY = 'lightWool'; // Used by loom recipes for low-weight cloth variants.
   const HEAVY_WOOL_KEY = 'puktukWool'; // Existing save-compatible Puktuk item key; presented in-game as Heavy Wool.
   const COMBAT_GRACE_MS = 6000; // Matches the game's quiet-period notion closely enough to limit movement burden to active combat.
@@ -55,6 +55,7 @@
   let stylesInjected = false; // Prevents duplicate loom modal CSS.
   let wasDodging = false; // Rising-edge tracker used to apply weight to an ordinary dodge exactly once.
   let cosmeticsIndexPromise = null; // Shared fetch for cosmetic id -> JSON path lookup.
+  let clothingTrimConfigPromise = null; // Loads the repo-authored garment-trim manifest shared by the loom, runtime portrait renderer, and dev editor.
   const cosmeticConfigPromises = new Map(); // Reuses per-article cosmetic JSON fetches for pattern layer lookup.
   const patternedCanvasCache = new Map(); // Reuses expensive pattern composites across repeated portrait renders.
   const wovenIconDataUrlPromises = new Map(); // Caches fully dyed + patterned inventory sprites by their visual state; rebuilt only when dyes/weaving/species/gender change.
@@ -190,6 +191,18 @@
     if (weaving.layers) return Object.keys(weaving.layers).some(role => weavingPatternsForRole(weaving, role).length > 0);
     return weavingPatternsForRole(weaving, null).length > 0;
   }
+  function normalizeTrimDyeSlot(value) {
+    const slot = String(value || '').trim().toUpperCase(); // Stored on a literal garment so its fixed trim can reuse any one of the existing A/B/C dye channels.
+    return slot === 'A' || slot === 'C' ? slot : 'B';
+  }
+
+  function weavingHasOptionalTrim(weaving) {
+    return !!weaving?.trim?.enabled; // Geometry is repo-authored per garment/variant; save data only records whether this garment uses it and which existing dye channel colors it.
+  }
+
+  function weavingHasAnyDecoration(weaving) {
+    return weavingHasAnyPattern(weaving) || weavingHasOptionalTrim(weaving); // Rendering/cache/session plumbing must also run for a trim-only garment.
+  }
 
   function materializeWeavingLibrarySnapshots(item) {
     const layers = item?.weaving?.layers; // Mutated in place so an owned reference-only garment becomes self-contained.
@@ -207,7 +220,7 @@
 
   function weavingCarriesSavedPattern(weaving) {
     if (!weaving) return false;
-    if (weavingHasAnyPattern(weaving)) return true;
+    if (weavingHasAnyDecoration(weaving)) return true;
     if (weaving.pattern || (Array.isArray(weaving.patterns) && weaving.patterns.length) || weaving.patternLibraryId || weaving.forcedOverpassPattern) return true;
     if (!weaving.layers || typeof weaving.layers !== 'object') return false;
     return Object.values(weaving.layers).some(entry => !!(
@@ -461,7 +474,7 @@
       const colorC = portraitClothingColor(item?.colorC);
       const cKey = thirdTintKey(item?.slot);
       if (cKey && colorC) colors[cKey] = colorC;
-      if (baseId && weavingHasAnyPattern(item?.weaving)) {
+      if (baseId && weavingHasAnyDecoration(item?.weaving)) {
         wovenDescriptors.push({
           uid: item.uid,
           slot: item.slot,
@@ -1347,6 +1360,62 @@
   // (window-scoped, non-strict top-level script) function the real renderer
   // itself calls to pick that substitute — reused here rather than
   // duplicating its rule table, which would drift out of sync with it.
+  async function clothingTrimConfig() {
+    if (!clothingTrimConfigPromise) {
+      clothingTrimConfigPromise = fetch(docsRelativeUrl('config/patterns/clothing-trims.json')).then(response => {
+        if (!response.ok) throw new Error('clothing trim config HTTP ' + response.status);
+        return response.json();
+      }).catch(error => {
+        lastError = String(error?.message || error);
+        return { schema: 'hobunji_clothing_trim.v1', garments: {} }; // Missing/invalid authoring data disables optional trim without breaking ordinary clothing.
+      });
+    }
+    return clothingTrimConfigPromise;
+  }
+
+  function authoredTrimPatternFromManifest(manifest, baseCosmeticIdValue, variantKey, view = 'front') {
+    const variants = manifest?.garments?.[String(baseCosmeticIdValue || '')]?.variants;
+    if (!variants || typeof variants !== 'object') return null;
+    const recordSet = variants[variantKey] || variants.default || null; // `default` remains available for future shared-sprite garments; the editor writes concrete species/gender keys.
+    if (!recordSet || typeof recordSet !== 'object') return null;
+    const desiredView = view === 'behind' ? 'behind' : 'front';
+    const record = recordSet[desiredView] || (desiredView === 'behind' ? recordSet.front : null); // A garment that truly reuses one raster on both sides may author only the front trim.
+    if (!record?.motifPng) return null;
+    return {
+      ...(record.settings && typeof record.settings === 'object' ? clone(record.settings) : {}),
+      tiling: false, // Repo trim masks are always one fixed garment-space overlay even if a hand-edited manifest says otherwise.
+      motifUrl: standaloneAssetUrl(record.motifPng),
+      __garmentTrimVariant: variantKey || 'default',
+      __garmentTrimView: recordSet[desiredView] ? desiredView : 'front',
+    };
+  }
+
+  async function authoredTrimPatternForCosmetic(baseCosmeticIdValue, speciesId, gender, view = 'front') {
+    const manifest = await clothingTrimConfig();
+    for (const key of speciesVariantKeyCandidates(speciesId, gender)) {
+      const pattern = authoredTrimPatternFromManifest(manifest, baseCosmeticIdValue, key, view);
+      if (pattern) return pattern;
+    }
+    return authoredTrimPatternFromManifest(manifest, baseCosmeticIdValue, 'default', view);
+  }
+
+  function variantKeyForSourceUrl(cfg, sourceUrl) {
+    const normalized = normalizeAssetPath(sourceUrl);
+    const paletteLayerMap = cfg?.palette?.layers && typeof cfg.palette.layers === 'object' ? cfg.palette.layers : null;
+    for (const [variantKey, variant] of Object.entries(cfg?.speciesVariants || {})) {
+      if (collectPatternImageUrls(variant, new Map(), paletteLayerMap).has(normalized)) return variantKey; // Source raster identifies the exact species/gender trim record during live portrait tinting.
+    }
+    if (collectPatternImageUrls(cfg?.parts, new Map(), paletteLayerMap).has(normalized)) return 'default';
+    return null;
+  }
+
+  function trimColorHexForDescriptor(descriptor) {
+    const slot = normalizeTrimDyeSlot(descriptor?.weaving?.trim?.dyeSlot); // The player chooses which already-saved dye channel drives the fixed overlay.
+    if (slot === 'A') return resolvePatternHex(descriptor?.colorA);
+    if (slot === 'C') return resolvePatternHex(descriptor?.colorC || descriptor?.colorA);
+    return resolvePatternHex(descriptor?.colorB || descriptor?.colorA);
+  }
+
   function behindViewUrlsFor(url, baseCosmeticId) {
     const getBehindUrl = window._getBehindLayerUrl;
     if (typeof getBehindUrl !== 'function') return [];
