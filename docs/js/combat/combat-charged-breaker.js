@@ -178,7 +178,7 @@
       if (poseCharge < MIN_READY_POSE) {
         clearGlow();
         deps.cancelWeaponSwingHold();
-        const posePct = Math.round(poseCharge * 100);
+        const posePct = Math.floor(poseCharge * 100); // Floor so a just-short release never reads as meeting the requirement.
         const readyPct = Math.round(MIN_READY_POSE * 100);
         deps.showToast(forced
           ? `Charged Breaker fizzled at ${posePct}% pose: stamina ran out before ${readyPct}%.`
