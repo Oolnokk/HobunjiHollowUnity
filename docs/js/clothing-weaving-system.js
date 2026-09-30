@@ -1424,7 +1424,7 @@
   function authoredTrimPatternFromManifest(manifest, baseCosmeticIdValue, variantKey, view = 'front') {
     const variants = manifest?.garments?.[String(baseCosmeticIdValue || '')]?.variants;
     if (!variants || typeof variants !== 'object') return null;
-    const recordSet = variants[variantKey] || variants.default || null; // `default` remains available for future shared-sprite garments; the editor writes concrete species/gender keys.
+    const recordSet = variants[variantKey] || null; // Callers search concrete species/gender aliases first, then explicitly request `default`; an early default here would hide a later exact alias.
     if (!recordSet || typeof recordSet !== 'object') return null;
     const desiredView = view === 'behind' ? 'behind' : 'front';
     const record = recordSet[desiredView] || (desiredView === 'behind' ? recordSet.front : null); // A garment that truly reuses one raster on both sides may author only the front trim.
