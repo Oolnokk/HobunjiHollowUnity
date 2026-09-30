@@ -24,7 +24,7 @@
   const AFTERIMAGE_FORCED_MOVE_INTERVAL_S = 0.055; // Used by updateForcedMovementAfterimages() for the denser short trails on ordinary dodges and melee lunges.
   const AFTERIMAGE_BASE_OPACITY = 0.34; // Used by cloneAfterimageMaterial() as the strongest alpha at spawn before the short fade.
   const AFTERIMAGE_HOP_SAMPLES = 3; // Used by spawnHopAfterimages() to bridge the instantaneous Blink hop with frozen portraits along its traveled path.
-  const AFTERIMAGE_MAX_ACTIVE = 12; // Used by spawnAfterimage() to keep the transient portrait trail bounded on long holds.
+  const AFTERIMAGE_MAX_ACTIVE = 24; // Shared cap sized for simultaneous player/enemy dodge-lunge bursts while still bounding transient portrait GPU objects.
 
   const blinkRuntimeDebug = { // Updated by the hold state machine and exposed through HobunjiDodgeFeedback for mobile-readable diagnostics.
     active: false,
