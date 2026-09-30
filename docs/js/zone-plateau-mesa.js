@@ -257,6 +257,7 @@
     // itself and the player — flagged so buildZoneScene can collect it
     // for the occlusion raycast.
     mesh.userData.cameraObstacle = true;
+    mesh.userData.hobunjiGroundSurface = true; // HeldObjectRenderOrder treats the entire raised mesa lid/skin as ground at every elevation.
 
     console.log(`%c[zone:${mapId}] plateau mesa built for group ${groupId}: ${W}x${D} tiles, top=${(BASE+elevOffset).toFixed(2)}, margin=${MARGIN_TILES} tile(s), stone faces=${stoneIdx.length / 6}`, 'color:#22c55e;font-weight:bold');
     return mesh;
