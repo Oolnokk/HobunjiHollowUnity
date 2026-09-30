@@ -11,7 +11,7 @@ const parentMatch = index.match(/js\/house-pieces\.js\?v=([^&"'\s<]+)&surfaceUv=
 assert(parentMatch, 'docs/index.html must load house-pieces.js with independent bootstrap and surface cache generations');
 const parentVersion = parentMatch[1]; // Used to prove unrelated HousePieces edits can refresh the bootstrap itself.
 const surfaceVersion = parentMatch[2]; // Used to prove the established natural-surface mapper generation remains pinned.
-assert.strictEqual(parentVersion, '20260929ruinsites1', 'house-pieces bootstrap must cache-bust the den-aware child loader');
+assert.match(parentVersion, /^[A-Za-z0-9_-]+$/, 'house-pieces bootstrap must carry its own cache-bust token for the den-aware child loader');
 assert.strictEqual(surfaceVersion, '20260924edgepreserve2', 'den turnover must not invalidate the established natural-surface UV generation');
 
 assert(
