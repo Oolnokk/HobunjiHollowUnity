@@ -337,12 +337,10 @@
     lungeAfterimageWasActive = lunging;
   }
 
-  const ACTIVE_COMBAT_STATES = new Set(['attack', 'attacking', 'chase', 'chasing', 'aggro', 'patrol-chase', 'flee', 'fleeing', 'fleeing-low-health']); // Mirrors the established combat-health state vocabulary so portrait expressions follow the same engagement semantics.
-
-  function hostileIsInPlayerCombat(entity, player) {
-    if (!entity || entity.health <= 0 || entity.isCompanion || entity.master === player || entity._denHidden || entity.denDisplacedPrey) return false;
-    if (ACTIVE_COMBAT_STATES.has(String(entity.state || '').toLowerCase())) return true;
-    return !!(entity._banditAction || entity._rangedAction || entity._banditLunging || entity._enemyDodge || entity.telegraphState || entity.combatTutorialHostile);
+  function hostileIsInPlayerCombat(entity) {
+    if (!entity || entity.health <= 0 || entity._denHidden || entity.denDisplacedPrey) return false;
+    const state = String(entity.state || '').toLowerCase();
+    return state === 'chase' || state === 'searching'; // Exact same engagement states as game.js isPlayerInCombat(), so wildlife-vs-wildlife patrol fights cannot make the player frown.
   }
 
   function updateEnemyCombatPresentation() {
@@ -356,7 +354,7 @@
     for (const entity of hostiles) {
       if (!entity) continue;
       if (entity.areaId && deps.getCurrentArea?.() && entity.areaId !== deps.getCurrentArea()) continue; // Off-area cached hostiles must not frown the player or emit invisible trail meshes.
-      const inCombat = hostileIsInPlayerCombat(entity, player);
+      const inCombat = hostileIsInPlayerCombat(entity);
       if (inCombat) {
         playerInCombat = true;
         enemyCombatants += 1;
