@@ -1389,6 +1389,7 @@
       minedRockState:    { ...(memberState.minedRockState || {}) },
       wildernessCampfireState: memberState.wildernessCampfireState || null,
       townMineState:     memberState.townMineState || null,
+      doorstepVisitState: { ...(memberState.doorstepVisitState || {}) },
       lastPosition:      memberState.lastPosition || null,
       isNewWorld,
     };
@@ -1753,6 +1754,7 @@
       playerData.minedRockState = { ...(memberState.minedRockState || {}) };
       playerData.wildernessCampfireState = memberState.wildernessCampfireState || null;
       playerData.townMineState = memberState.townMineState || null;
+      playerData.doorstepVisitState = { ...(memberState.doorstepVisitState || {}) };
       playerData.lastPosition = memberState.lastPosition || null;
       playerData.isNewWorld     = true;
     }

@@ -422,6 +422,7 @@
     });
   }
   window.CombatTutorial = { init, active, update, observe, hit, start, next, finish, leave, gate, selectTree, onNode, slotOverride, diagnosticsText,
+    questState: state, // Read by js/tutorial-unlock-visits.js to skip lessons the player already started.
     originalEquipment: () => session?.original || null,
     loanAmmo: () => active() ? session.ammo : null,
     loanRangedMastery: () => active() ? session.quest.rangedMastery || 1 : null,

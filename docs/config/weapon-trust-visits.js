@@ -19,11 +19,8 @@
     },
 
     visitor: {
-      farmhouseInteriorArea: 'interior',
-      farmhouseExteriorArea: 'farm',
-      preferredDistanceFromDoorTiles: 3,
-      nearestWalkableSearchRadiusTiles: 5,
-      oneVisitorPerHouseExit: true,
+      // Door placement / one-visitor-per-exit tuning is shared by every
+      // doorstep visit and lives in js/doorstep-visits.js.
       // Config order is queue order. A pending visitor remains at the front
       // until their trust dialogue reaches its natural end.
       queuePolicy: 'config-order',

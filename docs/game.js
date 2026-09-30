@@ -8436,11 +8436,12 @@
           member.felledTreeState = serializeZoneFelledTreeState();
           member.minedRockState = serializeZoneMinedRockState();
           member.townMineState = window.TownMine?.serialize?.() || null;
+          member.doorstepVisitState = window.DoorstepVisits?.serialize?.() || {};
           // Only ever consumed on the next boot if it lands in a wilderness
           // zone with a still-active campfire there (see spawnPlayerAvatar) —
           // saved unconditionally anyway since it's cheap and harmless
-          // otherwise; farm/town/interior/building sessions keep spawning at
-          // the farm's usual default exactly as before.
+          // otherwise; farm/town/interior/building sessions always start
+          // inside the farmhouse (see spawnPlayerAvatar).
           member.lastPosition = { area: currentArea, x: player.x, y: player.y, angle: player.angle };
           localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
         } catch {}
@@ -28212,6 +28213,10 @@
       });
 
       window.CombatTutorialPartner?.init?.({ TILE });
+      window.DoorstepVisits?.init?.({
+        save: saveMemberWorldData,
+        getPlayerTile: () => ({ c: player.x / TILE, r: player.y / TILE }), // Feet position in the same tile units as HousePieces door tiles.
+      });
       window.CombatTutorial?.init?.({
         getQuestProgress: () => questProgress,
         save: saveMemberWorldData,
@@ -29619,6 +29624,7 @@
         // per character.
         window.DialogueContent?.loadNpcRelationships(playerData);
         questProgress = { ...(playerData.questProgress || {}) };
+        window.DoorstepVisits?.restore?.(playerData.doorstepVisitState); // "Already told you" flags for farmhouse-door visitors (js/doorstep-visits.js).
         window.ProceduralTasks.maybeRefreshRequestPostings(); // makes sure requests exist even before the first day rollover
 
         // Alchemy: discovered reagent effects, still-active buffs/debuffs, and
@@ -29766,7 +29772,7 @@
         // always reset to the farm on reload — the same reason a campfire
         // used to be destroyed just for leaving its own map. Deliberately
         // narrower than "resume anywhere": farm/town/interior/building all
-        // keep spawning at the usual farm default, since only the
+        // start inside the farmhouse (the else branch below), since only the
         // wilderness-with-an-active-camp case is actually being asked for
         // here, and re-entering a building/cavern/NPC schedule context from
         // a cold boot has its own preconditions this isn't set up to satisfy.
@@ -29782,6 +29788,13 @@
           player.x = _lastPos.x; player.y = _lastPos.y;
           if (Number.isFinite(_lastPos.angle)) { player.angle = _lastPos.angle; facingAngle = _lastPos.angle; }
           _snapCameraTarget();
+        } else if (!window.__hobunjiCutscenePreview) {
+          // Every other login starts inside the farmhouse, with the door's
+          // exterior approach tile as the way back out (js/farmhouse-login-spawn.js).
+          window.FarmhouseLoginSpawn?.placeInFarmhouse({
+            player, TILE, enterInterior,
+            setFacingAngle: angle => { facingAngle = angle; },
+          });
         }
         gameStarted = true;
         window.__hobunjiGameStarted = true;
