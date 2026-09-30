@@ -3,6 +3,7 @@ const fs = require('fs');
 const vm = require('vm');
 
 const helperSource = fs.readFileSync('docs/js/species-pose-scaling.js', 'utf8');
+const handGripSource = fs.readFileSync('docs/js/hand-tool-grips.js', 'utf8'); // Weapon SIZE now uses per-weapon height influence; species pose-orbit data remains only for pose positioning.
 const sandbox = { window: {}, console };
 vm.runInNewContext(helperSource, sandbox, { filename: 'species-pose-scaling.js' });
 const api = sandbox.window.HobunjiSpeciesPoseScale;
@@ -126,19 +127,18 @@ assert.match(lifePreview, /transformPosePoint[\s\S]*rigScaleY: 1/, 'onboarding l
 assert.match(weaponPreview, /transformPosePoint[\s\S]*rigScaleY: 1/, 'onboarding weapon view must use the same full pose transform contract');
 assert.match(localDb, /speciesPoseOrbitScales/, 'local database override system must expose orbit-scale authoring for in-game testing');
 
-assert.match(editor, /id="poseOrbitScale"/, 'Attack Editor must expose a species+gender orbit scale field');
-assert.match(editor, /orbitScalesDownloadBtn/, 'Attack Editor must export the authored orbit-scale database');
-assert.match(editor, /setOverride\('speciesPoseOrbitScales'/, 'Attack Editor must save orbit scales as a testable local game override');
-assert.match(editor, /setScale\?\.\(\$\('avatarSpecies'\)\.value, \$\('avatarGender'\)\.value, value\)/, 'editor scale control must edit the selected species+gender only');
-assert.match(editor, /currentPoseOrbitScale/, 'editor preview and diagnostics must use the authored orbit value');
-assert.match(editor, /untransformPosePoint[\s\S]*currentAvatarModelHeight[\s\S]*currentPoseOrbitScale/, 'editor gizmo inverse must undo both horizontal orbit and rigger-height Y mapping');
-assert.match(editor, /transformPosePoint[\s\S]*currentAvatarModelHeight[\s\S]*currentPoseOrbitScale/, 'editor preview must apply horizontal orbit and rigger-height Y mapping');
+assert.doesNotMatch(editor, /id="poseOrbitScale"|orbitScalesDownloadBtn|orbitScalesSaveOverrideBtn|orbitScalesClearOverrideBtn/, 'Attack Editor must not expose retired per-species weapon-scale authoring controls');
+assert.doesNotMatch(editor, /setOverride\('speciesPoseOrbitScales'|setScale\?\.\(\$\('avatarSpecies'\)\.value, \$\('avatarGender'\)\.value/, 'Attack Editor must not author per-species weapon scale anymore');
+assert.match(editor, /character-dimensions\.js\?v=/, 'Attack Editor must load the calculated character-height service used by weapon sizing');
+assert.match(handGripSource, /'handToolHeightMultiplier', 'Height multiplier'/, 'Attack Editor held-item metadata UI must replace species scale authoring with a per-weapon height multiplier');
+assert.match(handGripSource, /effectiveToolScaleForTool/, 'held-item runtime must expose the shared base + calculated-height effective scale');
+assert.match(editor, /currentPoseOrbitScale/, 'editor may still consume legacy species pose-orbit data internally for pose POSITION mapping');
+assert.match(editor, /untransformPosePoint[\s\S]*currentAvatarModelHeight[\s\S]*currentPoseOrbitScale/, 'editor gizmo inverse must undo both horizontal pose orbit and rigger-height Y mapping');
+assert.match(editor, /transformPosePoint[\s\S]*currentAvatarModelHeight[\s\S]*currentPoseOrbitScale/, 'editor preview must apply internal pose-position mapping independently from weapon size');
 assert.match(editor, /characterBodyScaleRoot/, 'Attack Editor must keep CharacterRigScale on the body root instead of double-scaling the weapon hierarchy');
 assert.match(editor, /character-rig-scale\.js/, 'Attack Editor must load the actual whole-body scale runtime used by the visible preview');
 assert.match(editor, /HobunjiCharacterRigScale\?\.applyToParent\?\.\(characterBodyScaleRoot/, 'Attack Editor must visibly apply the same body scale its weapon-Y math assumes');
 assert.match(editor, /character-rig-scale-defaults\.js/, 'Attack Editor must consume the same character-rigger height defaults as Multi-Avatar Animation Author');
-assert.match(editor, /reloadFromDatabaseSource/, 'clearing a local orbit override must reload the selected source into live editor memory');
-assert.match(editor, /getSourceMode/, 'orbit override status must distinguish a stored override from an active Local-source override');
 
 assert.match(helperSource, /let loadGeneration = 0/, 'pose-orbit config loader must version concurrent source requests');
 assert.match(helperSource, /loaded && generation === loadGeneration/, 'only the newest repo\/LocalDB request may replace live orbit config');
