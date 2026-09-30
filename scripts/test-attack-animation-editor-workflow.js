@@ -42,6 +42,8 @@ assert.match(editor, /id="poseTabMidStrike"[^>]*data-edit-phase="midStrike"/, 'M
 assert.match(editor, /phase === 'midStrike'\) return anim\.windupFrac \+ \(anim\.strikeFrac - anim\.windupFrac\) \* 0\.5/, 'Mid Strike must bisect the existing Windup→Strike interval rather than adding a second timing system');
 assert.match(editor, /\.\.\.\(anim\.poses\.midStrike \? \{ midStrike: clonePoseData\(anim\.poses\.midStrike\) \} : \{\}\)/, 'exports must omit Mid Strike unless it was explicitly enabled');
 assert.match(editor, /if \(m && typeof m === 'object'\) anim\.poses\.midStrike/, 'imports must restore optional Mid Strike data');
+assert.match(editor, /HobunjiHandToolGrips\?\.loadEditorAnimationGrip\?\.\(\{ poses: anim\.poses \}\)/, 'action changes must reset private Mid Strike off-hand state instead of leaking it between animations');
+assert.match(editor, /HobunjiHandToolGrips\?\.loadEditorAnimationGrip\?\.\(data\)/, 'file imports must reload explicit Mid Strike off-hand metadata through the shared grip manager');
 assert.match(editor, /if \(!mid\)[\s\S]*lerpPose\(anim\.poses\.windup, anim\.poses\.strike, k\)/, 'animations without Mid Strike must preserve the original direct Windup→Strike interpolation');
 assert.match(editor, /js\/combat\/melee-pose-spacing\.js/, 'Attack Editor must load the exact shared melee spacing math used by gameplay');
 assert.match(editor, /actionUsesMeleeSpacing\(action\)[\s\S]*MeleePoseSpacing\?\.adjustEndpoint[\s\S]*if \(action\.mirror\)/, 'editor must apply shared spacing before Backhand mirroring so each attack keeps its own ray');
