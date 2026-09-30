@@ -265,7 +265,7 @@
       if (!entry || typeof entry !== 'object') continue;
       const fallbackEntry = DEFAULT_DATA.tools[toolKey] || {}; // Lets pre-scale local drafts inherit the new committed scale for that same shape.
       entry.toolScale = normalizeToolScale(entry.toolScale, fallbackEntry.toolScale ?? 1);
-    entry.heightMultiplier = normalizeHeightMultiplier(entry.heightMultiplier, fallbackEntry.heightMultiplier ?? 1);
+      entry.heightMultiplier = normalizeHeightMultiplier(entry.heightMultiplier, fallbackEntry.heightMultiplier ?? 1);
       entry.primaryGrip = normalizeTransform(entry.primaryGrip);
       if (previousPrimaryRotationPreset !== PRIMARY_ROTATION_PRESET) {
         entry.primaryGrip.position.x = HATCHET_PRIMARY_GRIP_EXAMPLE.x; // Hatchet's authored X belongs to the shared hand-on-item frame.
@@ -967,6 +967,8 @@
     },
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
   };
+
+  global.HobunjiCharacterDimensions?.subscribe?.(() => notify()); // Re-applies visible weapon scale + hand targets when asynchronous calculated-height measurements become ready.
 
   // This file loads before procedural-hand-attachments; intercept its assignment so
   // the very first editor/game rig receives the off-hand blend wrapper.
