@@ -159,4 +159,30 @@ assert.match(source, /geometry\.deleteAttribute\?\.\('skinIndex'\)/, 'baked afte
 registeredAbility.onHoldEnd();
 assert.equal(movementSpeedFn, null, 'ending Blink Dodge removes its movement-speed modifier');
 
+// The portrait effect is global presentation, not gated by the Blink hold itself:
+// ordinary dodge and melee-lunge state must drive the same sampler even in the
+// no-THREE unit harness (where rendering safely no-ops).
+player.dodging = true;
+nowMs += 16;
+windowStub.Combat.update(0.016);
+let motionDebug = windowStub.HobunjiDodgeFeedback.getDebug().blink.afterimages.motion;
+assert.equal(motionDebug.dodging, true, 'ordinary dodge activates the afterimage movement sampler without Blink being held');
+assert.equal(motionDebug.lunging, false);
+assert.equal(motionDebug.lastDodgeSampleAtMs, nowMs, 'ordinary dodge records an immediate first afterimage sample');
+
+player.dodging = false;
+nowMs += 16;
+windowStub.Combat.update(0.016);
+player.lunging = true;
+nowMs += 16;
+windowStub.Combat.update(0.016);
+motionDebug = windowStub.HobunjiDodgeFeedback.getDebug().blink.afterimages.motion;
+assert.equal(motionDebug.dodging, false);
+assert.equal(motionDebug.lunging, true, 'melee lunge activates the shared afterimage movement sampler');
+assert.equal(motionDebug.lastLungeSampleAtMs, nowMs, 'melee lunge records an immediate first afterimage sample');
+assert.equal(windowStub.HobunjiDodgeFeedback.getDebug().blink.tuning.afterimageForcedMoveIntervalS, 0.055, 'dodge/lunge trail cadence remains exposed for mobile tuning');
+assert.match(source, /spawnAfterimage\('dodge'\)/, 'ordinary dodge samples the actual rendered portrait');
+assert.match(source, /spawnAfterimage\('lunge'\)/, 'melee lunges sample the same frozen portrait path');
+assert.doesNotMatch(source, /defensiveHoldActive\) spawnAfterimage\('blink-dodge'\)/, 'ordinary dodge afterimages are no longer gated behind Blink Dodge being held');
+
 console.log('Blink Dodge movement regression tests passed');
