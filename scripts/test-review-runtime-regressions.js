@@ -112,8 +112,10 @@ async function testLoomInitialization() {
       ownedGlobalDyes: () => [dye], baseCosmeticId: () => 'tunic', articleLabel: () => 'Tunic',
       materialForReweaveItem: () => ({ id: 'light', itemKey: 'wool', label: 'Light Wool' }),
       dyeOptionHtml: () => '', patternLibraryEntries: () => [],
-      weavingHasAnyPattern: weaving => !!weaving?.layers, summarizeWeavingLabel: () => 'Saved',
+      weavingHasAnyPattern: weaving => !!weaving?.layers, weavingHasOptionalTrim: weaving => !!weaving?.trim?.enabled, summarizeWeavingLabel: () => 'Saved',
+      normalizeTrimDyeSlot: value => ['A','C'].includes(String(value || '').toUpperCase()) ? String(value).toUpperCase() : 'B', // Mirrors production trim channel normalization used by the extracted loom closure.
       weavingEntryForRole: (weaving, role) => weaving.layers[role], clone: value => JSON.parse(JSON.stringify(value)),
+      playerSpeciesGender: () => ({ speciesId: 'mao-ao', gender: 'male' }), authoredTrimPatternForCosmetic: async () => null, // Existing saved-pattern regression has no authored trim; these satisfy the new async support check.
       resolveIconLayers: () => new Promise(resolve => { finishLayers = resolve; }),
       hasBehindView: async () => false, renderClothingLayers: async () => ({ canvas: null }),
       reweaveMaterialCost: () => 2, itemWeightUnits: () => 3, standardWeightFor: () => 3,
