@@ -1,4 +1,4 @@
-// Final creator-only held-tool parity corrections: Kenkari prop size and idle sprite bases.
+// Final creator-only held-tool idle sprite-basis corrections.
 (() => {
   'use strict';
 
@@ -6,8 +6,6 @@
   if (window[PATCH_ID]) return;
 
   const WEAPON_FIX_ID = 'hobunjiOnboardingCharacterCreationWeaponViewFix'; // Owns the randomized starter choice/holder installed immediately before this patch.
-  const LIFE_PATCH_ID = 'hobunjiOnboardingCharacterCreationLifePreview'; // Supplies the current species/gender/model identity.
-  const KENKARI_TOOL_SCALE = 0.75; // Parrot-family creator prop correction; matches the authored 75% Kenkari raw-PNG character basis instead of dwarfing the hands with a full-size 0.5-world-unit prop.
   const HOE_BASIS_SHAPES = new Set(['hatchet']); // Hatchet should sit on the same visible idle sprite basis as the already-correct Hoe.
   const PICKSHOVEL_BASIS_SHAPES = new Set(['fishingspear']); // Fishing Spear should sit on the same visible idle sprite basis as the already-correct Pick-Shovel.
 
@@ -15,10 +13,6 @@
 
   function weaponFix() {
     return window[WEAPON_FIX_ID] || null;
-  }
-
-  function life() {
-    return window[LIFE_PATCH_ID]?.life || null;
   }
 
   function cancelSweepNeutralTwist(plane, shape) {
@@ -36,17 +30,6 @@
     return true;
   }
 
-  function applyKenkariPropScale(plane, speciesId) {
-    const species = String(speciesId || '').trim().toLowerCase().replace(/_/g, '-');
-    if (species !== 'kenkari' || !plane?.scale || !plane?.position) return 1;
-    // Primary-grip correction includes both a visual scale and a translated
-    // offset from the holder origin. Scale BOTH so the authored grip point stays
-    // at the procedural hand instead of shrinking the sprite away from its hand.
-    plane.scale.multiplyScalar(KENKARI_TOOL_SCALE);
-    plane.position.multiplyScalar(KENKARI_TOOL_SCALE);
-    return KENKARI_TOOL_SCALE;
-  }
-
   function updateStatus(extra = {}) {
     const status = window.HOBUNJI_ONBOARDING_REDESIGN_STATUS;
     if (!status || typeof status !== 'object') return;
@@ -58,17 +41,15 @@
     const plane = fix?.state?.toolPlane || null;
     if (!plane || plane === lastPlane) return;
     const choice = fix?.state?.choice || null;
-    const currentLife = life();
-    if (!choice || !currentLife?.model) return;
+    if (!choice) return;
 
     lastPlane = plane;
     const stanceBasisCorrected = cancelSweepNeutralTwist(plane, choice.shape);
-    const speciesScale = applyKenkariPropScale(plane, currentLife.speciesId);
     plane.updateMatrix?.();
     plane.updateMatrixWorld?.(true);
 
     updateStatus({
-      previewWeaponSpeciesScale: speciesScale,
+      previewWeaponScaleSource: 'calculated-character-height',
       previewWeaponIdleBasis: HOE_BASIS_SHAPES.has(choice.shape)
         ? 'hoe'
         : (PICKSHOVEL_BASIS_SHAPES.has(choice.shape) ? 'pickshovel' : choice.shape),
@@ -82,11 +63,10 @@
   }
 
   window[PATCH_ID] = Object.freeze({
-    kenkariToolScale: KENKARI_TOOL_SCALE,
     polishCurrentPlane,
   });
   window.RuntimeFrameScheduler.register('onboarding-character-creation-weapon-polish', frame, {
     owner: 'OnboardingCharacterCreationWeaponPolish',
-    description: 'Re-applies held-tool Kenkari scale and idle-sprite-basis corrections whenever the character creator preview\'s tool plane changes.',
+    description: 'Re-applies held-tool idle-sprite-basis corrections whenever the character creator preview\'s tool plane changes; weapon size comes from calculated character height.',
   });
 })();
