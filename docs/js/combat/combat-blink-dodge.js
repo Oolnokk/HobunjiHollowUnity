@@ -590,6 +590,12 @@
           afterimages: {
             ...afterimageRuntimeDebug,
             supported: !!window.THREE,
+            motion: {
+              dodging: dodgeAfterimageWasActive,
+              lunging: lungeAfterimageWasActive,
+              lastDodgeSampleAtMs: Number.isFinite(lastDodgeAfterimageAtS) ? lastDodgeAfterimageAtS * 1000 : null,
+              lastLungeSampleAtMs: Number.isFinite(lastLungeAfterimageAtS) ? lastLungeAfterimageAtS * 1000 : null,
+            },
           },
           tuning: {
             speedBuildS: MOVE_SPEED_BUILD_S,
