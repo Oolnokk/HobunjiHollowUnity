@@ -864,6 +864,9 @@
       previewRevision: 0, // Rejects stale asynchronous preview renders after garment/dye/view changes.
       layers: [], // Resolved [{url, role}] for the currently selected blueprint; refreshed whenever the blueprint changes.
       layerPatterns: {}, // role -> {pattern, patternId, patternLabel, swapPatternColors}. Sticky across blueprint switches; the swap flag belongs to this garment layer, not the reusable pattern.
+      trimAvailable: false, // Set after resolving whether this clothing piece has an authored trim mask for the current species/gender variant.
+      trimEnabled: weavingHasOptionalTrim(reweaveItem?.weaving), // Reweaving preserves the literal garment's optional authored trim toggle.
+      trimDyeSlot: normalizeTrimDyeSlot(reweaveItem?.weaving?.trim?.dyeSlot || 'B'), // Selects which existing garment dye channel colors the fixed trim overlay.
       reweaveSeededUid: null, // Used to hydrate existing saved patterns exactly once before the player starts editing them.
       previewView: 'front', // 'front' | 'behind' — reset to 'front' on every blueprint switch (see blueprintSelect.onchange) so a garment without behind art never gets stuck showing it.
     };
@@ -892,7 +895,9 @@
           ...(swapPatternColors ? { swapPatternColors: true } : {}),
         };
       }
-      return Object.keys(layers).length ? { layers } : null;
+      const weaving = Object.keys(layers).length ? { layers } : {}; // Fixed trim can exist without any reusable weaving pattern.
+      if (state.trimAvailable && state.trimEnabled) weaving.trim = { enabled: true, dyeSlot: normalizeTrimDyeSlot(state.trimDyeSlot) };
+      return Object.keys(weaving).length ? weaving : null;
     }
     const hasAnyLayerPattern = () => !!weavingFromState();
     const summarizePatterns = weaving => summarizeWeavingLabel(weaving) || 'None';
@@ -929,7 +934,8 @@
             <div class="loomcraft-card loomcraft-operation"><h3>Operation</h3><div class="loomcraft-field"><label>Craft new or reweave Gear clothing</label><select data-field="reweaveItem"><option value="">Craft new garment</option></select></div><div class="loomcraft-note">Reweaving edits the selected permanent Gear item in place. You can remove, swap, or custom-edit its woven pattern without replacing the garment.</div></div>
             <div class="loomcraft-card" data-craft-only><h3>Garment template</h3><div class="loomcraft-field"><label>Obtained cloth article</label><select data-field="blueprint"></select></div><div class="loomcraft-note">Obtaining an eligible article permanently teaches its loom template. The original article is never consumed.</div></div>
             <div class="loomcraft-card" data-craft-only><h3>Wool weight</h3><div class="loomcraft-row"><button type="button" class="loomcraft-material active" data-material="light">Light Wool</button><button type="button" class="loomcraft-material" data-material="heavy">Heavy Wool</button></div><div class="loomcraft-note" data-material-note></div></div>
-            <div class="loomcraft-card"><h3>${isReweave ? 'Pattern dye' : 'Default dyes'}</h3><div class="loomcraft-field" data-primary-field><label>Primary</label><select data-field="dyeA">${dyeOptionHtml(dyes, state.dyeA)}</select></div><div class="loomcraft-field" data-trim-field><label>Trim</label><select data-field="dyeB">${dyeOptionHtml(dyes, state.dyeB)}</select></div><div class="loomcraft-field" data-pattern-dye-field><label>Pattern (third dye slot)</label><select data-field="dyeC">${dyeOptionHtml(dyes, state.dyeC)}</select></div></div>
+            <div class="loomcraft-card"><h3>${isReweave ? 'Decoration dyes' : 'Default dyes'}</h3><div class="loomcraft-field" data-primary-field><label>Dye A — primary</label><select data-field="dyeA">${dyeOptionHtml(dyes, state.dyeA)}</select></div><div class="loomcraft-field" data-trim-field><label>Dye B — secondary</label><select data-field="dyeB">${dyeOptionHtml(dyes, state.dyeB)}</select></div><div class="loomcraft-field" data-pattern-dye-field><label>Dye C — pattern / third color</label><select data-field="dyeC">${dyeOptionHtml(dyes, state.dyeC)}</select></div></div>
+            <div class="loomcraft-card" data-optional-trim-card style="display:none"><h3>Added trim</h3><label class="loomcraft-pattern-swap"><input type="checkbox" data-field="trimEnabled"><span>Add this garment's authored trim</span></label><div class="loomcraft-field" data-trim-dye-slot-field><label>Color trim with</label><select data-field="trimDyeSlot"><option value="A">Dye A</option><option value="B">Dye B</option><option value="C">Dye C</option></select></div><div class="loomcraft-note">This is a fixed, clothing-specific, non-tiling overlay authored separately for each supported species/gender. It renders above woven patterns and receives its own black separation outline.</div></div>
             <div class="loomcraft-card"><h3>Weaving pattern</h3><div data-pattern-layers><span class="loomcraft-note">Loading…</span></div><div class="loomcraft-note">Uses the same saved/unlocked pattern library and authoring workflow as mastered-tool verdigris removal. Each layer's motif is baked into this crafted item; only its third dye color remains freely changeable afterward.</div></div>
           </div>
           <div><div class="loomcraft-card"><h3>Preview <button class="loomcraft-behindToggle" type="button" data-act="toggleBehindView" style="display:none">Behind view</button></h3><div class="loomcraft-preview" data-preview><span class="loomcraft-note">Loading preview…</span></div><div class="loomcraft-stats" data-stats></div></div><button class="loomcraft-craft" type="button" data-act="craft">Craft</button></div>
@@ -941,6 +947,9 @@
     const blueprintSelect = overlay.querySelector('[data-field="blueprint"]');
     const reweaveSelect = overlay.querySelector('[data-field="reweaveItem"]'); // Used to choose the literal Gear instance that will be edited in place.
     const patternLayersEl = overlay.querySelector('[data-pattern-layers]');
+    const optionalTrimCard = overlay.querySelector('[data-optional-trim-card]'); // Shown only when the selected garment has a repo-authored trim mask for this player variant.
+    const trimEnabledInput = overlay.querySelector('[data-field="trimEnabled"]'); // Writes the per-garment optional trim toggle into weaving.trim.
+    const trimDyeSlotSelect = overlay.querySelector('[data-field="trimDyeSlot"]'); // Chooses whether fixed trim reuses dye A, B, or C.
     for (const item of reweaveItems) {
       const option = document.createElement('option');
       option.value = item.uid;
@@ -975,7 +984,10 @@
     const hasSecondary = () => layersUseSecondaryDye(state.layers); // Shows Trim only when this garment actually has a palette-B cloth layer.
     const dyeById = id => window.DyeSystem?.getById?.(id) || dyes.find(dye => dye.id === id) || dyes[0];
     const selectedPrimaryHex = () => isReweave ? clothingColorHex(reweaveItem.colorA) : dyeById(state.dyeA)?.hex;
-    const selectedSecondaryHex = () => isReweave ? clothingColorHex(reweaveItem.colorB, selectedPrimaryHex()) : (hasSecondary() ? dyeById(state.dyeB)?.hex : null);
+    const selectedSecondaryHex = () => {
+      const trimUsesB = state.trimEnabled && normalizeTrimDyeSlot(state.trimDyeSlot) === 'B'; // Lets a normally single-color garment preview a newly-added B-colored trim during reweave.
+      return isReweave && !trimUsesB ? clothingColorHex(reweaveItem.colorB, selectedPrimaryHex()) : ((hasSecondary() || trimUsesB) ? dyeById(state.dyeB)?.hex : null);
+    };
     const selectedPatternHex = () => dyeById(state.dyeC)?.hex || clothingColorHex(reweaveItem?.colorC);
 
     async function openLayerPatternAuthor(role, roleKey) {
@@ -1020,14 +1032,30 @@
       state.layersReady = false;
       overlay.querySelector('[data-act="craft"]').disabled = true;
       const bp = selectedBlueprint();
-      let layers;
-      try { layers = await resolveIconLayers(bp.baseCosmeticId); } catch (error) { lastError = String(error?.message || error); layers = []; }
+      let layers, authoredTrim;
+      try {
+        const playerVariant = playerSpeciesGender(); // One current variant drives both layer resolution and trim support in the loom.
+        const resolved = await Promise.all([
+          resolveIconLayers(bp.baseCosmeticId),
+          authoredTrimPatternForCosmetic(bp.baseCosmeticId, playerVariant.speciesId, playerVariant.gender, 'front'),
+        ]);
+        layers = resolved[0];
+        authoredTrim = resolved[1];
+      } catch (error) {
+        lastError = String(error?.message || error);
+        layers = [];
+        authoredTrim = null;
+      }
       if (loomOverlay !== overlay || !patternLayersEl.isConnected || request !== state.layerRequest) return;
       if (isReweave && !layers.length) {
         patternLayersEl.textContent = 'Garment layers are unavailable. Reweaving is disabled to preserve your saved pattern.';
         return;
       }
       state.layers = layers.length ? layers : [{ url: bp.sprite || null, role: null }]; // Falls back to a single unlabeled slot so pattern authoring still works even if layer resolution comes up empty.
+      state.trimAvailable = !!authoredTrim || (isReweave && weavingHasOptionalTrim(reweaveItem?.weaving)); // Never silently drop a saved trim if its authored asset is temporarily unavailable.
+      optionalTrimCard.style.display = state.trimAvailable ? '' : 'none';
+      trimEnabledInput.checked = state.trimAvailable && !!state.trimEnabled;
+      trimDyeSlotSelect.value = normalizeTrimDyeSlot(state.trimDyeSlot);
       seedReweavePatternsFromItem();
       patternLayersEl.innerHTML = '';
       for (const { role, key } of patternRoles()) {
@@ -1106,11 +1134,14 @@
       const cost = isReweave ? reweaveMaterialCost(reweaveItem) : (WOOL_COST_BY_SLOT[bp.slot] || 1);
       const owned = Number(equipmentDeps?.inventory?.[material.itemKey]) || 0;
       const weight = isReweave ? itemWeightUnits(reweaveItem) : standardWeightFor(bp) * material.weightMul;
+      const hasPattern = weavingHasAnyPattern(weaving); // Reusable motifs still own normal pattern-dye semantics.
+      const hasTrim = weavingHasOptionalTrim(weaving); // Fixed garment trim may independently require dye B or C.
+      const trimDyeSlot = normalizeTrimDyeSlot(weaving?.trim?.dyeSlot);
       overlay.querySelector('[data-primary-field]').style.display = isReweave ? 'none' : '';
-      overlay.querySelector('[data-trim-field]').style.display = !isReweave && hasSecondary() ? '' : 'none';
-      overlay.querySelector('[data-pattern-dye-field]').style.display = weaving ? '' : 'none';
+      overlay.querySelector('[data-trim-field]').style.display = ((!isReweave && hasSecondary()) || (hasTrim && trimDyeSlot === 'B')) ? '' : 'none';
+      overlay.querySelector('[data-pattern-dye-field]').style.display = (hasPattern || (hasTrim && trimDyeSlot === 'C')) ? '' : 'none';
       overlay.querySelector('[data-material-note]').textContent = `${material.label}: ${owned} owned · ${cost} required${isReweave ? ' to reweave (half craft cost, rounded up)' : ''}.`;
-      overlay.querySelector('[data-stats]').textContent = `Weight: ${weight.toFixed(1)} units\nDefense: +${Math.round(weight * TUNING.defensePerUnit * 100)}%\nFooting resistance: +${Math.round(weight * TUNING.footingResistancePerUnit * 100)}%\nDodge efficacy: −${Math.round(weight * TUNING.dodgePenaltyPerUnit * 100)}%\nCombat movement: −${Math.round(weight * TUNING.combatMovePenaltyPerUnit * 100)}%\nPattern: ${summarizePatterns(weaving)}`;
+      overlay.querySelector('[data-stats]').textContent = `Weight: ${weight.toFixed(1)} units\nDefense: +${Math.round(weight * TUNING.defensePerUnit * 100)}%\nFooting resistance: +${Math.round(weight * TUNING.footingResistancePerUnit * 100)}%\nDodge efficacy: −${Math.round(weight * TUNING.dodgePenaltyPerUnit * 100)}%\nCombat movement: −${Math.round(weight * TUNING.combatMovePenaltyPerUnit * 100)}%\nPattern: ${summarizePatterns(weaving)}\nAdded trim: ${hasTrim ? 'Dye ' + trimDyeSlot : 'None'}`;
       const craft = overlay.querySelector('[data-act="craft"]');
       craft.textContent = isReweave ? `Reweave · ${cost} ${material.label}` : 'Craft';
       craft.disabled = !state.layersReady || owned < cost;
@@ -1149,6 +1180,8 @@
       const blueprintId = blueprintSelect.value; // Used after layer resolution to ignore a superseded template selection.
       state.blueprintId = blueprintId;
       state.previewView = 'front';
+      state.trimEnabled = false; // A fixed trim belongs to one clothing template; never carry its toggle across blueprint switches.
+      state.trimDyeSlot = 'B'; // New templates start on the conventional secondary-dye channel until the player chooses otherwise.
       await refreshPatternLayerControls(); // Layer initialization owns the follow-up preview refresh.
       if (!loomOverlay || state.blueprintId !== blueprintId) return;
     };
@@ -1165,9 +1198,11 @@
       };
     });
     for (const key of ['dyeA', 'dyeB', 'dyeC']) overlay.querySelector(`[data-field="${key}"]`).onchange = event => { state[key] = event.target.value; refreshPreview(); };
+    trimEnabledInput.onchange = () => { state.trimEnabled = state.trimAvailable && !!trimEnabledInput.checked; refreshPreview(); }; // Optional trim never appears on unsupported variants.
+    trimDyeSlotSelect.onchange = () => { state.trimDyeSlot = normalizeTrimDyeSlot(trimDyeSlotSelect.value); refreshPreview(); }; // Reuses A/B/C rather than inventing a fourth dye channel.
     overlay.querySelector('[data-act="craft"]').onclick = () => {
       if (loomOverlay !== overlay || !state.layersReady) return false;
-      if (isReweave) reweaveFromLoom(reweaveItem, selectedMaterial(), dyeById(state.dyeC), weavingFromState());
+      if (isReweave) reweaveFromLoom(reweaveItem, selectedMaterial(), dyeById(state.dyeC), weavingFromState(), dyeById(state.dyeB));
       else craftFromLoom(state, selectedBlueprint(), selectedMaterial(), dyeById, hasSecondary(), weavingFromState());
     };
     overlay.querySelector('.loomcraft-close').onclick = closeLoom;
