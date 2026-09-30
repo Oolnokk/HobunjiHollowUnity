@@ -22,6 +22,12 @@
   // `c` (health, x/y, _banditComboIndex, telegraphState, etc), not
   // module-private state, so it needed no changes.
   let deps = null;
+  const COMBAT_FROWN_COMPOSER = Object.freeze({ // Static portrait composer used once per humanoid hostile to pre-bake the combat mouth without touching global dialogue/expression state.
+    getExpression: () => 'frown',
+    getInterpolatedPoints: () => null,
+    getOverlayOnlyPoints: () => null,
+    getAnimData: () => null,
+  });
   function init(injectedDeps) { deps = injectedDeps; }
 
   // ── Bandit Gangs ──────────────────────────────────────────────────
@@ -303,6 +309,16 @@
     const frontCanvas = document.createElement('canvas');
     frontCanvas.width = frontCanvas.height = PORTRAIT_SIZE;
     await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, { forceEyesOpen: true });
+    const neutralFrontCanvas = document.createElement('canvas'); // Immutable neutral/resting source used to restore this enemy immediately when combat ends.
+    neutralFrontCanvas.width = neutralFrontCanvas.height = PORTRAIT_SIZE;
+    neutralFrontCanvas.getContext('2d').drawImage(frontCanvas, 0, 0);
+    const combatFrownCanvas = document.createElement('canvas'); // Pre-baked frown source used for synchronous combat entry and therefore available before an afterimage snapshots the live texture.
+    combatFrownCanvas.width = combatFrownCanvas.height = PORTRAIT_SIZE;
+    await window.NpcAvatarPreview.renderProfileToCanvas(combatFrownCanvas, profile, {
+      forceEyesOpen: true,
+      breathingComposer: COMBAT_FROWN_COMPOSER,
+      seatId: 'bandit-combat-frown',
+    });
     const backCanvas = document.createElement('canvas');
     backCanvas.width = backCanvas.height = PORTRAIT_SIZE;
     await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
@@ -431,7 +447,9 @@
 
     return {
       group, frontPlane: frontPivot, backPlane: backPivot, legsPivot, legs,
-      handsPivot, handRigAvatarRoot: portrait, resolvedRosterDyes,
+      handsPivot, handRigAvatarRoot: portrait, textureRoot: portrait, resolvedRosterDyes,
+      frontCanvas, backCanvas, neutralFrontCanvas, combatFrownCanvas, profile,
+      combatExpressionActive: false,
       modelWidth, modelHeight,
       speciesId: portrait.userData?.speciesId || roster.appearance.speciesId,
       gender: portrait.userData?.gender || roster.appearance.gender,
@@ -465,6 +483,27 @@
         window.PNGPlaneAvatar.disposeAvatarModel?.(group);
       },
     };
+  }
+
+  function copyBanditExpressionCanvas(target, source) {
+    if (!target?.getContext || !source) return false;
+    const ctx = target.getContext('2d'); // Live portrait canvas receives a complete pre-baked face in one synchronous draw before any movement afterimage can sample it.
+    ctx.clearRect(0, 0, target.width, target.height);
+    ctx.drawImage(source, 0, 0, target.width, target.height);
+    return true;
+  }
+
+  function setCombatExpression(entity, active) {
+    const avatarRef = entity?.avatarRef;
+    const next = !!active;
+    if (!avatarRef?.frontCanvas || avatarRef.combatExpressionActive === next) return false;
+    const source = next ? avatarRef.combatFrownCanvas : avatarRef.neutralFrontCanvas; // Combat uses frown; leaving combat restores the exact spawn portrait rather than assuming neutral authoring.
+    if (!copyBanditExpressionCanvas(avatarRef.frontCanvas, source)) return false;
+    const textureRoot = avatarRef.textureRoot || avatarRef.handRigAvatarRoot; // Original PNGPlaneAvatar root still owns the texture objects shared by the extracted visible hostile meshes.
+    if (!window.PNGPlaneAvatar?.refreshSinglePlaneAvatarModel?.(textureRoot, avatarRef.frontCanvas, { backCanvas: avatarRef.backCanvas })) return false;
+    avatarRef.combatExpressionActive = next;
+    entity._combatExpression = next ? 'frown' : 'rest'; // Mobile/debug-readable state proving the visible hostile portrait has switched.
+    return true;
   }
 
   // ── Combatant ─────────────────────────────────────────────────────
@@ -2141,6 +2180,7 @@
     loadCampLocaleDefs: loadBanditCampLocaleDefs,
     makeEntity: makeBanditEntity,
     discardEntity: discardBanditEntity, // Scene teardown for a built-but-never-registered entity (late async spawns).
+    setCombatExpression, // Synchronously swaps the live humanoid hostile portrait between its pre-baked resting and combat-frown canvases.
     applyRosterDyesToProfile, // Shared/testable world-avatar dye reconciliation used by Bandits, Minions, and Liches.
     // Rolls a name the same way a fresh gang member's roster does (see
     // rollBanditRoster) — used standalone by game.js's generateBountyTask
