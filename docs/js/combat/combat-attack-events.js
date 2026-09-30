@@ -52,6 +52,7 @@
       slotId: input.slotId || slotForAbility(abilityId),
       attackCategory: input.attackCategory || window.Combat?.abilities?.get?.(abilityId)?.category || null,
       target: input.target || null,
+      damage: Math.max(0, Number(input.damage) || 0), // Pre-hit outgoing Health payload; prepare listeners may scale it before the ordinary damage API runs.
       actualDamage: Math.max(0, Number(input.actualDamage) || 0),
       afflictionBonuses: cloneAfflictions(input.afflictionBonuses),
       footingDamage: Math.max(0, Number(input.footingDamage) || 0),
