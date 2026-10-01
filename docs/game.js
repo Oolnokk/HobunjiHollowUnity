@@ -25588,9 +25588,8 @@
                     }
                     window.Combat.input.pressEnd(_pressSlot);
                   }
-                } else if (_heldItemPress) {
-                  if (!pointerCanceled) window.HeldItemActionInput?.release();
-                } else if (!_drag || combatAimOwned) {
+                } else if (_heldItemPress) window.HeldItemActionInput?.release();
+                else if (!_drag || combatAimOwned) {
                   if (!pointerCanceled) _abtFire();
                 }
               }
