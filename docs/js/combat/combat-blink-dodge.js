@@ -19,6 +19,12 @@
   const MOVE_SPEED_BUILD_S = 1.5; // Used by onHoldUpdate() to reach the movement-speed ceiling during one uninterrupted input.
   const REVERSAL_DOT_THRESHOLD = 0; // Used by onHoldUpdate() so crossing into the opposite (>90°) input hemisphere counts as a reversal.
   const MOVE_INPUT_EPSILON = 0.001; // Used by movementInput() to reject stick noise and zero-length directions.
+  const AFTERIMAGE_LIFETIME_S = 0.28; // Used by updateBlinkAfterimages() to fade each frozen portrait quickly enough to read as motion, not a duplicate actor.
+  const AFTERIMAGE_MOVE_INTERVAL_S = 0.075; // Used by maybeSpawnMovementAfterimage() to sample continuous Blink locomotion without creating one mesh every frame.
+  const AFTERIMAGE_FORCED_MOVE_INTERVAL_S = 0.055; // Used by updateForcedMovementAfterimages() for the denser short trails on ordinary dodges and melee lunges.
+  const AFTERIMAGE_BASE_OPACITY = 0.34; // Used by cloneAfterimageMaterial() as the strongest alpha at spawn before the short fade.
+  const AFTERIMAGE_HOP_SAMPLES = 3; // Used by spawnHopAfterimages() to bridge the instantaneous Blink hop with frozen portraits along its traveled path.
+  const AFTERIMAGE_MAX_ACTIVE = 24; // Shared cap sized for simultaneous player/enemy dodge-lunge bursts while still bounding transient portrait GPU objects.
 
   const blinkRuntimeDebug = { // Updated by the hold state machine and exposed through HobunjiDodgeFeedback for mobile-readable diagnostics.
     active: false,
@@ -45,8 +51,359 @@
   let defensiveHoldActive = false; // Used by the shared iframe-miss seam so only near-hits dodged while Blink Dodge is actually held can trigger its Flourish.
   let iframeMissCount = 0; // Used by HobunjiDodgeFeedback.getDebug() to confirm iframe-hit attempts reached this shared combat seam.
   let lastIframeMissAtMs = null; // Used by HobunjiDodgeFeedback.getDebug() to timestamp the most recent visible miss popup.
+  const blinkAfterimages = []; // Used by updateBlinkAfterimages() as the complete bounded set of live frozen portrait snapshots.
+  const cachedAfterimagePortraits = new WeakMap(); // Root -> portrait meshes cache reused by player and humanoid-enemy trail samples without re-traversing unchanged rigs.
+  const enemyAfterimageMotion = new WeakMap(); // Enemy -> last dodge/lunge sample state used to rate-limit hostile portrait trails independently.
+  let lastMoveAfterimageAtS = -Infinity; // Used by maybeSpawnMovementAfterimage() to rate-limit normal Blink locomotion samples.
+  let lastDodgeAfterimageAtS = -Infinity; // Used by updateForcedMovementAfterimages() to rate-limit ordinary-dodge portrait snapshots independently of Blink locomotion.
+  let lastLungeAfterimageAtS = -Infinity; // Used by updateForcedMovementAfterimages() to rate-limit melee-lunge portrait snapshots independently of Dodge/Blink.
+  let dodgeAfterimageWasActive = false; // Used by updateForcedMovementAfterimages() to guarantee an immediate first ghost on each new ordinary dodge.
+  let lungeAfterimageWasActive = false; // Used by updateForcedMovementAfterimages() to guarantee an immediate first ghost on each new melee lunge.
+  const afterimageRuntimeDebug = { // Updated by spawn/dispose paths and exposed through HobunjiDodgeFeedback for mobile-readable verification.
+    active: 0,
+    spawned: 0,
+    disposed: 0,
+    lastReason: null,
+    lastSourceName: null,
+    lastSpawnAtMs: null,
+    portraitFound: false,
+    enemySnapshots: 0,
+    enemyCombatants: 0,
+    playerCombatFrown: false,
+  };
 
   function now() { return performance.now() / 1000; }
+
+  function afterimageMaterialsOf(mesh) {
+    if (!mesh?.material) return [];
+    return (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).filter(Boolean);
+  }
+
+  function afterimagePlayerRoot() {
+    return window.PlayerBodyTransformComposer?.getPlayerMesh?.()
+      || window.Combat?.deps?.playerMesh
+      || window.ProceduralHandAttachments?.gameDeps?.playerMesh
+      || null;
+  }
+
+  function belongsToAfterimageRoot(object, root) {
+    for (let node = object; node; node = node.parent) if (node === root) return true;
+    return false;
+  }
+
+  function portraitMeshScore(object) {
+    if ((!object?.isMesh && !object?.isSkinnedMesh) || object.userData?.blinkAfterimage) return -1;
+    const materials = afterimageMaterialsOf(object);
+    if (!materials.length) return -1;
+    let score = 0;
+    for (const material of materials) {
+      const name = String(material?.name || '');
+      if (name.includes('npc_avatar_skinned_')) score += 8;
+      else if (name.includes('npc_avatar_')) score += 4;
+      if (material?.map) score += 1;
+    }
+    return score;
+  }
+
+  function findPortraitMeshes(root) {
+    if (!root?.traverse) return [];
+    const cached = cachedAfterimagePortraits.get(root);
+    if (cached?.length && cached.every(object => belongsToAfterimageRoot(object, root))) return cached;
+    const matches = [];
+    root.traverse(object => {
+      const score = portraitMeshScore(object);
+      if (score >= 4) matches.push({ object, score }); // Includes both front/back PNG portrait planes while excluding hands, weapons, shadows, and effect meshes.
+    });
+    const bestScore = matches.reduce((best, entry) => Math.max(best, entry.score), -1);
+    const portraits = matches.filter(entry => entry.score >= bestScore - 1).map(entry => entry.object); // Keeps equivalent front/back planes but drops lower-confidence incidental mapped meshes.
+    cachedAfterimagePortraits.set(root, portraits);
+    return portraits;
+  }
+
+  function findPlayerPortraitMeshes() {
+    const portraits = findPortraitMeshes(afterimagePlayerRoot());
+    afterimageRuntimeDebug.portraitFound = portraits.length > 0;
+    return portraits;
+  }
+
+  function afterimageSceneFor(source) {
+    for (let node = source; node; node = node.parent) if (node.isScene) return node;
+    return window.GridTileAccessors?.getActiveScene?.() || null;
+  }
+
+  function bakePortraitGeometry(source) {
+    const THREE = window.THREE;
+    const sourceGeometry = source?.geometry;
+    if (!THREE || !sourceGeometry?.clone) return null;
+    const geometry = sourceGeometry.clone();
+    if (source.isSkinnedMesh && typeof source.boneTransform === 'function') {
+      const sourcePositions = sourceGeometry.getAttribute?.('position');
+      const bakedPositions = geometry.getAttribute?.('position');
+      if (!sourcePositions || !bakedPositions) return geometry;
+      source.skeleton?.update?.();
+      const vertex = new THREE.Vector3(); // Reused for every vertex while freezing this one afterimage's current skinned pose.
+      for (let i = 0; i < sourcePositions.count; i += 1) {
+        vertex.fromBufferAttribute(sourcePositions, i);
+        source.boneTransform(i, vertex);
+        bakedPositions.setXYZ(i, vertex.x, vertex.y, vertex.z);
+      }
+      bakedPositions.needsUpdate = true;
+      geometry.deleteAttribute?.('skinIndex');
+      geometry.deleteAttribute?.('skinWeight');
+      geometry.computeBoundingBox?.();
+      geometry.computeBoundingSphere?.();
+    }
+    return geometry;
+  }
+
+  function freezeAfterimageTexture(sourceTexture) {
+    if (!sourceTexture?.clone || typeof document === 'undefined') return null;
+    const image = sourceTexture.image; // Portrait textures are canvas-backed variant images; copy those pixels so later live face/breathing refreshes cannot mutate this ghost.
+    const width = Number(image?.width || image?.videoWidth || image?.naturalWidth) || 0;
+    const height = Number(image?.height || image?.videoHeight || image?.naturalHeight) || 0;
+    if (!(width > 0 && height > 0)) return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext?.('2d');
+    if (!ctx?.drawImage) return null;
+    try { ctx.drawImage(image, 0, 0, width, height); }
+    catch (_) { return null; }
+    const texture = sourceTexture.clone(); // Retains UV flip/filter/wrap/color-space settings while replacing only the mutable pixel source.
+    texture.image = canvas;
+    texture.needsUpdate = true;
+    return texture;
+  }
+
+  function cloneAfterimageMaterial(sourceMaterial, opacityScale = 1) {
+    if (!sourceMaterial?.clone) return null;
+    const material = sourceMaterial.clone();
+    const frozenTextures = [];
+    const textureCopies = new Map(); // Reuses one frozen clone if a material points map/alphaMap at the same underlying portrait texture.
+    for (const slot of ['map', 'alphaMap', 'emissiveMap']) {
+      const sourceTexture = sourceMaterial[slot];
+      if (!sourceTexture) continue;
+      let frozen = textureCopies.get(sourceTexture);
+      if (!frozen) {
+        frozen = freezeAfterimageTexture(sourceTexture);
+        if (!frozen) {
+          for (const texture of frozenTextures) texture?.dispose?.();
+          material.dispose?.();
+          return null;
+        }
+        textureCopies.set(sourceTexture, frozen);
+        frozenTextures.push(frozen);
+      }
+      material[slot] = frozen;
+    }
+    const sourceOpacity = Number.isFinite(Number(sourceMaterial.opacity)) ? Number(sourceMaterial.opacity) : 1;
+    material.name = `${sourceMaterial.name || 'avatar'}_blink_afterimage`;
+    material.transparent = true;
+    material.opacity = Math.max(0, Math.min(1, AFTERIMAGE_BASE_OPACITY * opacityScale * sourceOpacity));
+    material.depthWrite = false;
+    material.depthTest = true;
+    if ('skinning' in material) material.skinning = false;
+    material.needsUpdate = true;
+    return { material, frozenTextures };
+  }
+
+  function disposeAfterimage(record) {
+    if (!record) return;
+    for (const entry of record.entries || []) {
+      entry.mesh?.parent?.remove?.(entry.mesh);
+      entry.geometry?.dispose?.();
+      for (const material of entry.materials || []) material?.dispose?.();
+      for (const texture of entry.frozenTextures || []) texture?.dispose?.();
+    }
+    afterimageRuntimeDebug.disposed += 1;
+    afterimageRuntimeDebug.active = blinkAfterimages.length;
+  }
+
+  function trimAfterimagesToLimit() {
+    while (blinkAfterimages.length >= AFTERIMAGE_MAX_ACTIVE) {
+      const oldest = blinkAfterimages.shift();
+      disposeAfterimage(oldest);
+    }
+  }
+
+  function spawnAfterimageForRoot(root, reason, worldOffsetX = 0, worldOffsetZ = 0, opacityScale = 1) {
+    const THREE = window.THREE;
+    const sources = findPortraitMeshes(root);
+    const scene = sources.length ? afterimageSceneFor(sources[0]) : null;
+    if (!THREE || !sources.length || !scene) return false;
+    const entries = [];
+    for (const source of sources) {
+      source.updateWorldMatrix?.(true, true); // Refresh each portrait plane and its child bones so the frozen snapshot carries the exact current pose/expression frame.
+      const geometry = bakePortraitGeometry(source);
+      if (!geometry) continue;
+      const sourceMaterials = afterimageMaterialsOf(source);
+      const clones = sourceMaterials.map(material => cloneAfterimageMaterial(material, opacityScale)); // Each clone deep-copies its portrait texture pixels so expression/breathing changes on the live actor cannot alter an existing ghost.
+      if (!clones.length || clones.some(clone => !clone?.material)) {
+        geometry.dispose?.();
+        for (const clone of clones) {
+          clone?.material?.dispose?.();
+          for (const texture of clone?.frozenTextures || []) texture?.dispose?.();
+        }
+        continue;
+      }
+      const materials = clones.map(clone => clone.material);
+      const frozenTextures = clones.flatMap(clone => clone.frozenTextures || []);
+
+      const assignedMaterial = Array.isArray(source.material) ? materials : materials[0];
+      const mesh = new THREE.Mesh(geometry, assignedMaterial);
+      mesh.name = 'combat_portrait_afterimage';
+      mesh.userData.blinkAfterimage = true;
+      mesh.userData.noOutline = true;
+      mesh.frustumCulled = false;
+      mesh.castShadow = false;
+      mesh.receiveShadow = false;
+      mesh.renderOrder = Math.max(Number(source.renderOrder) || 0, 3);
+      mesh.matrixAutoUpdate = false;
+      const worldMatrix = source.matrixWorld.clone(); // Frozen world transform of this visible front/back plane before detaching it from the moving actor hierarchy.
+      worldMatrix.elements[12] += Number(worldOffsetX) || 0;
+      worldMatrix.elements[14] += Number(worldOffsetZ) || 0;
+      scene.updateWorldMatrix?.(true, false);
+      if (scene.matrixWorld?.clone) {
+        const worldToScene = scene.matrixWorld.clone().invert();
+        mesh.matrix.multiplyMatrices(worldToScene, worldMatrix);
+      } else {
+        mesh.matrix.copy(worldMatrix);
+      }
+      mesh.matrixWorldNeedsUpdate = true;
+      if (source.layers) mesh.layers.mask = source.layers.mask;
+      entries.push({
+        mesh,
+        geometry,
+        materials,
+        frozenTextures,
+        baseOpacities: materials.map(material => material.opacity),
+        sourceName: source.name || source.type || null,
+      });
+    }
+    if (!entries.length) return false;
+
+    trimAfterimagesToLimit();
+    for (const entry of entries) scene.add(entry.mesh);
+    blinkAfterimages.push({ entries, ageS: 0, reason });
+    afterimageRuntimeDebug.active = blinkAfterimages.length;
+    afterimageRuntimeDebug.spawned += 1;
+    if (String(reason).startsWith('enemy-')) afterimageRuntimeDebug.enemySnapshots += 1;
+    afterimageRuntimeDebug.lastReason = reason;
+    afterimageRuntimeDebug.lastSourceName = entries.map(entry => entry.sourceName).filter(Boolean).join(', ') || null;
+    afterimageRuntimeDebug.lastSpawnAtMs = performance.now();
+    return true;
+  }
+
+  function spawnAfterimage(reason, worldOffsetX = 0, worldOffsetZ = 0, opacityScale = 1) {
+    const portraits = findPlayerPortraitMeshes();
+    if (!portraits.length) return false;
+    if (afterimageRuntimeDebug.playerCombatFrown && window.WorldPortraitLife?.isPlayerCombatExpressionApplied?.() === false) return false; // Never snapshot the player's pre-frown face during the brief cache/render handoff at combat entry.
+    return spawnAfterimageForRoot(afterimagePlayerRoot(), reason, worldOffsetX, worldOffsetZ, opacityScale);
+  }
+
+  function spawnHopAfterimages(dxWorld, dzWorld) {
+    for (let i = 0; i < AFTERIMAGE_HOP_SAMPLES; i += 1) {
+      const fraction = i / AFTERIMAGE_HOP_SAMPLES; // Leaves the destination clear for the live player while bridging the instant hop from its origin.
+      spawnAfterimage('blink-hop', dxWorld * fraction, dzWorld * fraction, 1 - fraction * 0.35);
+    }
+  }
+
+  function maybeSpawnMovementAfterimage(input) {
+    if (!defensiveHoldActive || !input?.active) return;
+    const t = now();
+    if (t - lastMoveAfterimageAtS < AFTERIMAGE_MOVE_INTERVAL_S) return;
+    lastMoveAfterimageAtS = t;
+    spawnAfterimage('blink-move');
+  }
+
+  function updateForcedMovementAfterimages() {
+    const player = window.Combat?.deps?.player;
+    if (!player) return;
+    const t = now(); // Shared timestamp keeps dodge/lunge sampling deterministic when both state flags change in one combat tick.
+    const dodging = !!player.dodging;
+    if (dodging && (!dodgeAfterimageWasActive || t - lastDodgeAfterimageAtS >= AFTERIMAGE_FORCED_MOVE_INTERVAL_S)) {
+      lastDodgeAfterimageAtS = t;
+      spawnAfterimage('dodge');
+    }
+    if (!dodging) lastDodgeAfterimageAtS = -Infinity;
+    dodgeAfterimageWasActive = dodging;
+
+    const lunging = !!player.lunging;
+    if (lunging && (!lungeAfterimageWasActive || t - lastLungeAfterimageAtS >= AFTERIMAGE_FORCED_MOVE_INTERVAL_S)) {
+      lastLungeAfterimageAtS = t;
+      spawnAfterimage('lunge');
+    }
+    if (!lunging) lastLungeAfterimageAtS = -Infinity;
+    lungeAfterimageWasActive = lunging;
+  }
+
+  function hostileIsInPlayerCombat(entity) {
+    if (!entity || entity.health <= 0 || entity._denHidden || entity.denDisplacedPrey) return false;
+    const state = String(entity.state || '').toLowerCase();
+    return state === 'chase' || state === 'searching'; // Exact same engagement states as game.js isPlayerInCombat(), so wildlife-vs-wildlife patrol fights cannot make the player frown.
+  }
+
+  function updateEnemyCombatPresentation() {
+    const deps = window.Combat?.deps;
+    const player = deps?.player;
+    const hostiles = deps?.hostileObjects;
+    if (!player || !hostiles) return;
+    const t = now();
+    let playerInCombat = false;
+    let enemyCombatants = 0;
+    for (const entity of hostiles) {
+      if (!entity) continue;
+      if (entity.areaId && deps.getCurrentArea?.() && entity.areaId !== deps.getCurrentArea()) continue; // Off-area cached hostiles must not frown the player or emit invisible trail meshes.
+      const inCombat = hostileIsInPlayerCombat(entity);
+      if (inCombat) {
+        playerInCombat = true;
+        enemyCombatants += 1;
+      }
+      if (entity.isBandit) window.BanditCombat?.setCombatExpression?.(entity, inCombat); // Bandit/Minion/Lich humanoids share this synchronous frown/resting portrait swap.
+      if (!entity.isBandit || entity.health <= 0 || !entity.avatarRef?.group) continue;
+
+      let motion = enemyAfterimageMotion.get(entity);
+      if (!motion) {
+        motion = { dodgeActive: false, lungeActive: false, lastDodgeAtS: -Infinity, lastLungeAtS: -Infinity };
+        enemyAfterimageMotion.set(entity, motion);
+      }
+      const dodging = !!(entity.dodging || entity._enemyDodge);
+      if (dodging && (!motion.dodgeActive || t - motion.lastDodgeAtS >= AFTERIMAGE_FORCED_MOVE_INTERVAL_S)) {
+        motion.lastDodgeAtS = t;
+        spawnAfterimageForRoot(entity.avatarRef.group, 'enemy-dodge');
+      }
+      if (!dodging) motion.lastDodgeAtS = -Infinity;
+      motion.dodgeActive = dodging;
+
+      const lunging = !!entity._banditLunging;
+      if (lunging && (!motion.lungeActive || t - motion.lastLungeAtS >= AFTERIMAGE_FORCED_MOVE_INTERVAL_S)) {
+        motion.lastLungeAtS = t;
+        spawnAfterimageForRoot(entity.avatarRef.group, 'enemy-lunge');
+      }
+      if (!lunging) motion.lastLungeAtS = -Infinity;
+      motion.lungeActive = lunging;
+    }
+    window.WorldPortraitLife?.setPlayerCombatExpression?.(playerInCombat);
+    afterimageRuntimeDebug.enemyCombatants = enemyCombatants;
+    afterimageRuntimeDebug.playerCombatFrown = playerInCombat;
+  }
+
+  function updateBlinkAfterimages(dt) {
+    const safeDt = Math.max(0, Number(dt) || 0);
+    for (let i = blinkAfterimages.length - 1; i >= 0; i -= 1) {
+      const record = blinkAfterimages[i];
+      record.ageS += safeDt;
+      const fade = Math.max(0, 1 - record.ageS / AFTERIMAGE_LIFETIME_S);
+      for (const entry of record.entries || []) {
+        for (let m = 0; m < entry.materials.length; m += 1) entry.materials[m].opacity = entry.baseOpacities[m] * fade;
+      }
+      if (record.ageS >= AFTERIMAGE_LIFETIME_S) {
+        blinkAfterimages.splice(i, 1);
+        disposeAfterimage(record);
+      }
+    }
+    afterimageRuntimeDebug.active = blinkAfterimages.length;
+  }
 
   function showIframeMissPopup() {
     iframeMissCount += 1;
@@ -127,6 +484,9 @@
     const enhancedUpdate = function enhancedCombatUpdate(dt) {
       originalUpdate(dt);
       updateBaseDodgeEnhancements();
+      updateEnemyCombatPresentation();
+      updateForcedMovementAfterimages();
+      updateBlinkAfterimages(dt);
     };
     enhancedUpdate.__hobunjiBaseDodgeEnhancements = true;
     window.Combat.update = enhancedUpdate;
@@ -223,10 +583,15 @@
 
       const stats = effects().stats; // Used for the existing Blink Dodge distance/cost/iframe/cooldown progression choices.
       const zipDistancePx = ZIP_DISTANCE_PX * (1 + (stats.zipDistanceMul || 0)); // Used as the one-hop displacement magnitude.
+      const startX = deps.player.x; // Used with startY to derive the actual collision-clamped hop displacement for the frozen afterimage burst.
+      const startY = deps.player.y; // Used with startX to derive the actual collision-clamped hop displacement for the frozen afterimage burst.
       const desiredX = deps.player.x + input.x * zipDistancePx; // Used by the existing axis-separated occupancy test.
       const desiredY = deps.player.y + input.y * zipDistancePx; // Used by the existing axis-separated occupancy test.
       if (deps.canPlayerOccupy(desiredX, deps.player.y)) deps.player.x = desiredX;
       if (deps.canPlayerOccupy(deps.player.x, desiredY)) deps.player.y = desiredY;
+      const tilePx = Math.max(1, Number(deps.TILE) || 64); // Converts the player's pixel-space hop displacement into the Three.js world-space X/Z used by the portrait mesh.
+      spawnHopAfterimages((deps.player.x - startX) / tilePx, (deps.player.y - startY) / tilePx);
+      lastMoveAfterimageAtS = t; // The hop burst already owns this instant; delay the normal locomotion sampler so it cannot stack a redundant fourth portrait at the origin.
 
       // Never refuses for lack of stamina — overspending pushes into
       // Exhausted instead (see resource-system.js's spendStamina), same as
@@ -259,6 +624,7 @@
       passiveDrainCarry = 0;
       blinkRuntimeDebug.passiveDrainCarry = 0;
       blinkRuntimeDebug.active = false;
+      lastMoveAfterimageAtS = -Infinity;
       window.ResourceSystem?.setStaminaRegenBlocked?.(window.Combat.deps?.player, STAMINA_REGEN_BLOCK_SOURCE, false);
       window.Combat.setMovementSpeedMul(null);
       if (wasActive && message) window.Combat.deps.showToast(message, false);
@@ -272,6 +638,7 @@
       nextZipAt = -99;
       blinkRuntimeDebug.passiveDrainCarry = 0;
       blinkRuntimeDebug.active = true;
+      lastMoveAfterimageAtS = -Infinity;
       window.ResourceSystem?.setStaminaRegenBlocked?.(window.Combat.deps?.player, STAMINA_REGEN_BLOCK_SOURCE, true);
       window.Combat.setMovementSpeedMul(speedMul);
       window.Combat.deps.showToast('Blink Dodge active: hop, build speed, reverse sharply to hop again.', true);
@@ -315,6 +682,7 @@
       speedBuildS = Math.min(MOVE_SPEED_BUILD_S, speedBuildS + Math.max(0, Number(dt) || 0));
       blinkRuntimeDebug.speedBuildS = speedBuildS;
       speedMul(); // Keeps the mobile debug snapshot current even before game.js asks Combat for this frame's movement multiplier.
+      maybeSpawnMovementAfterimage(input);
       spendPassiveDrain(deps, dt);
       if (deps.player.stamina <= 0) stopHold('Blink Dodge dropped: stamina empty.');
     }
@@ -339,6 +707,16 @@
         dodging: !!player?.dodging,
         blink: {
           ...blinkRuntimeDebug,
+          afterimages: {
+            ...afterimageRuntimeDebug,
+            supported: !!window.THREE,
+            motion: {
+              dodging: dodgeAfterimageWasActive,
+              lunging: lungeAfterimageWasActive,
+              lastDodgeSampleAtMs: Number.isFinite(lastDodgeAfterimageAtS) ? lastDodgeAfterimageAtS * 1000 : null,
+              lastLungeSampleAtMs: Number.isFinite(lastLungeAfterimageAtS) ? lastLungeAfterimageAtS * 1000 : null,
+            },
+          },
           tuning: {
             speedBuildS: MOVE_SPEED_BUILD_S,
             maxSpeedMul: MOVE_SPEED_MAX_MUL,
@@ -346,6 +724,11 @@
             passiveDrainQuantum: PASSIVE_DRAIN_QUANTUM,
             reversalDotThreshold: REVERSAL_DOT_THRESHOLD,
             hopCooldownS: ZIP_COOLDOWN_S,
+            afterimageLifetimeS: AFTERIMAGE_LIFETIME_S,
+            afterimageMoveIntervalS: AFTERIMAGE_MOVE_INTERVAL_S,
+            afterimageForcedMoveIntervalS: AFTERIMAGE_FORCED_MOVE_INTERVAL_S,
+            afterimageHopSamples: AFTERIMAGE_HOP_SAMPLES,
+            afterimageMaxActive: AFTERIMAGE_MAX_ACTIVE,
           },
         },
       };
