@@ -751,7 +751,11 @@
     return !!(playerDamageInterceptor && playerDamageInterceptor(amount, fromX, fromY));
   }
   function setMovementSpeedMul(fn) { movementSpeedMul = fn; }
-  function getMovementSpeedMul() { return movementSpeedMul ? movementSpeedMul() : 1; }
+  function getMovementSpeedMul() {
+    const baseMul = movementSpeedMul ? movementSpeedMul() : 1; // Existing Blink/outfit/other movement policy remains the base.
+    const heavyMul = window.ResourceSystem?.timedDebuffModifier?.(deps?.player, "moveSpeed") ?? 1; // Heavy composes at the final player movement seam without touching movement input.
+    return baseMul * heavyMul;
+  }
 
   window.Combat = {
     init,
