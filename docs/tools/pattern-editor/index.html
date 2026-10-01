@@ -403,20 +403,153 @@ Overpass → not set</div>
     const selected = selectedTrimCosmetic(), garmentId = $('trimGarment').value, variantKey = $('trimVariant').value, view = $('trimView').value;
     if (!selected || !garmentId || !variantKey) return;
     const openRevision = ++trimLoadRevision;
-    $('trimStatus').textContent = 'Loading authored trim…';
-    const initialPattern = await editableTrimPattern();
-    if (openRevision !== trimLoadRevision) return;
+    $('trimStatus').textContent = 'Building direct-paint garment surface…';
     const { speciesId, gender } = parseVariantKey(variantKey);
-    window.PatternAuthoring.openEditor({
-      title: `Garment trim — ${garmentId} — ${variantKey} — ${view}`,
-      motifHint: 'Paint the fixed trim footprint for this exact garment variant. It never tiles and is not added to the reusable pattern library. In game it is rendered after ordinary weaving, with its own black separation outline.',
-      initialPattern,
-      forceTiling: false,
-      offloadCustomMotif: false,
-      renderPreview: patternData => {
-        const patterns = previewPatterns();
-        const weaving = patterns.length ? { patterns } : null;
-        return window.ClothingWeavingSystem.renderClothingLayers(garmentId, {
+    const patterns = previewPatterns(); // Existing reusable pattern(s) stay visible beneath the paint surface so trim can be placed around them directly.
+    const weaving = patterns.length ? { patterns } : null;
+    const baseResult = await window.ClothingWeavingSystem.renderClothingLayers(garmentId, {
+      primaryHex: $('baseColor').value,
+      secondaryHex: $('trimColorB').value,
+      patternHex: $('inkColor').value,
+      weaving,
+      view,
+      speciesId,
+      gender,
+      trimPatternOverride: null,
+    });
+    if (openRevision !== trimLoadRevision) return;
+    const baseCanvas = baseResult.canvas;
+    if (!baseCanvas) throw new Error('No garment sprite could be resolved for this variant/view.');
+    const width = baseCanvas.width, height = baseCanvas.height;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'trimPaintOverlay';
+    overlay.innerHTML = `
+      <div class="trimPaintPanel" role="dialog" aria-modal="true">
+        <div class="trimPaintHead"><div><h2>Paint trim directly — ${garmentId}</h2><div class="muted">${variantKey} · ${view} · ${width}×${height}px exact sprite-space mask</div></div><button type="button" class="secondary" data-trim-paint="close">✕</button></div>
+        <div class="trimPaintBody">
+          <div>
+            <div class="trimPaintTools">
+              <button type="button" data-trim-tool="brush" class="active">Brush</button>
+              <button type="button" data-trim-tool="eraser" class="secondary">Eraser</button>
+              <button type="button" data-trim-paint="undo" class="secondary">Undo</button>
+              <button type="button" data-trim-paint="redo" class="secondary">Redo</button>
+              <button type="button" data-trim-paint="clear" class="secondary">Clear</button>
+              <label>Brush <input data-trim-brush type="range" min="1" max="24" step="1" value="4"><span data-trim-brush-label>4px</span></label>
+              <label>Zoom <input data-trim-zoom type="range" min="1" max="8" step="1" value="2"><span data-trim-zoom-label>2×</span></label>
+            </div>
+            <div class="trimPaintScroller"><div class="trimPaintStage"><canvas data-trim-base></canvas><canvas class="trimPaintInk" data-trim-ink></canvas></div></div>
+            <div class="trimPaintNote">Paint directly on the visible garment. The mask is clipped to opaque garment pixels, so strokes outside the sprite are discarded. White is only the editing overlay; the player still chooses dye A, B, or C in the loom.</div>
+          </div>
+          <div>
+            <div class="muted" style="margin-bottom:6px"><b>Rendered result</b> — production trim compositor</div>
+            <div class="trimPaintResult"><canvas data-trim-result width="1" height="1"></canvas></div>
+            <div class="trimPaintNote" data-trim-result-status>Rendering current trim…</div>
+          </div>
+        </div>
+        <div class="trimPaintFoot"><div class="muted" data-trim-paint-status>Brush and eraser work in native sprite pixels.</div><div class="row"><button type="button" class="secondary" data-trim-paint="cancel">Cancel</button><button type="button" data-trim-paint="save">Save trim mask</button></div></div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    const baseLayer = overlay.querySelector('[data-trim-base]');
+    const paintCanvas = overlay.querySelector('[data-trim-ink]');
+    const resultCanvas = overlay.querySelector('[data-trim-result]');
+    const stage = overlay.querySelector('.trimPaintStage');
+    const saveBtn = overlay.querySelector('[data-trim-paint="save"]');
+    const undoBtn = overlay.querySelector('[data-trim-paint="undo"]');
+    const redoBtn = overlay.querySelector('[data-trim-paint="redo"]');
+    const statusEl = overlay.querySelector('[data-trim-paint-status]');
+    const resultStatus = overlay.querySelector('[data-trim-result-status]');
+    const brushInput = overlay.querySelector('[data-trim-brush]');
+    const zoomInput = overlay.querySelector('[data-trim-zoom]');
+    baseLayer.width = paintCanvas.width = width;
+    baseLayer.height = paintCanvas.height = height;
+    const baseCtx = baseLayer.getContext('2d');
+    const paintCtx = paintCanvas.getContext('2d', { willReadFrequently: true });
+    const resultCtx = resultCanvas.getContext('2d');
+    baseCtx.imageSmoothingEnabled = paintCtx.imageSmoothingEnabled = resultCtx.imageSmoothingEnabled = false;
+    baseCtx.drawImage(baseCanvas, 0, 0);
+
+    let brushMode = 'brush'; // Direct mask editor owns only footprint painting; all pattern placement transforms are intentionally absent.
+    let brushSize = Number(brushInput.value) || 4;
+    let drawing = false;
+    let lastPoint = null;
+    let closed = false;
+    let renderRevision = 0;
+    const undoStack = [];
+    const redoStack = [];
+    const UNDO_LIMIT = 30;
+
+    function normalizePaintRgb() {
+      const image = paintCtx.getImageData(0, 0, width, height);
+      for (let i = 0; i < image.data.length; i += 4) {
+        if (image.data[i + 3] > 16) image.data[i] = image.data[i + 1] = image.data[i + 2] = 255; // Exported trim PNG is an alpha mask; white keeps the editing overlay readable regardless of previous motif RGB.
+        else image.data[i] = image.data[i + 1] = image.data[i + 2] = image.data[i + 3] = 0;
+      }
+      paintCtx.putImageData(image, 0, 0);
+    }
+
+    function clipPaintToGarment() {
+      paintCtx.save();
+      paintCtx.globalCompositeOperation = 'destination-in';
+      paintCtx.drawImage(baseCanvas, 0, 0);
+      paintCtx.restore();
+      normalizePaintRgb();
+    }
+
+    function snapshot() {
+      try { return paintCtx.getImageData(0, 0, width, height); } catch (_) { return null; }
+    }
+
+    function hasInk() {
+      try {
+        const data = paintCtx.getImageData(0, 0, width, height).data;
+        for (let i = 3; i < data.length; i += 4) if (data[i] > 16) return true;
+      } catch (_) {}
+      return false;
+    }
+
+    function updateButtons() {
+      undoBtn.disabled = !undoStack.length;
+      redoBtn.disabled = !redoStack.length;
+      saveBtn.disabled = !hasInk();
+    }
+
+    function pushUndo() {
+      const state = snapshot();
+      if (!state) return;
+      undoStack.push(state);
+      if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+      redoStack.length = 0;
+      updateButtons();
+    }
+
+    function restore(state) {
+      if (!state) return;
+      paintCtx.clearRect(0, 0, width, height);
+      paintCtx.putImageData(state, 0, 0);
+      updateButtons();
+    }
+
+    function updateZoom() {
+      const zoom = Math.max(1, Number(zoomInput.value) || 1);
+      stage.style.width = `${width * zoom}px`;
+      stage.style.height = `${height * zoom}px`;
+      baseLayer.style.width = paintCanvas.style.width = '100%';
+      baseLayer.style.height = paintCanvas.style.height = '100%';
+      overlay.querySelector('[data-trim-zoom-label]').textContent = `${zoom}×`;
+    }
+
+    function currentPattern() {
+      return hasInk() ? { directMask: true, tiling: false, motifDataUrl: paintCanvas.toDataURL('image/png') } : null;
+    }
+
+    async function renderResult() {
+      const token = ++renderRevision;
+      resultStatus.textContent = 'Rendering current trim…';
+      try {
+        const pattern = currentPattern();
+        const rendered = await window.ClothingWeavingSystem.renderClothingLayers(garmentId, {
           primaryHex: $('baseColor').value,
           secondaryHex: $('trimColorB').value,
           patternHex: $('inkColor').value,
@@ -424,25 +557,121 @@ Overpass → not set</div>
           view,
           speciesId,
           gender,
-          trimPatternOverride: { ...patternData, tiling: false },
+          trimPatternOverride: pattern,
           trimDyeSlotOverride: $('trimPreviewDye').value,
-        }).then(result => result.canvas);
-      },
-      onSave: async patternData => {
-        const pattern = { ...patternData, tiling: false };
-        const motifPng = trimAssetPath(garmentId, variantKey, view);
-        trimDrafts.set(trimKey(garmentId, variantKey, view), { pattern, motifPng });
-        const recordSet = ensureTrimRecordSet(garmentId, variantKey);
-        recordSet[view] = { motifPng, settings: cleanSettings(pattern) };
-        debugState.lastAction = `saved garment trim ${garmentId}/${variantKey}/${view}`;
-        refreshTrimVariantOptions();
-        await renderTrimPreview(pattern);
-        $('trimStatus').textContent = 'Trim draft saved in this editor session. Export its PNG plus the manifest before leaving the page.';
-        return true;
-      },
-    });
-  }
+        });
+        if (closed || token !== renderRevision || !rendered.canvas) return;
+        resultCanvas.width = rendered.canvas.width; resultCanvas.height = rendered.canvas.height;
+        resultCtx.imageSmoothingEnabled = false;
+        resultCtx.clearRect(0, 0, resultCanvas.width, resultCanvas.height);
+        resultCtx.drawImage(rendered.canvas, 0, 0);
+        resultStatus.textContent = pattern ? `Exact ${width}×${height} direct mask · Dye ${$('trimPreviewDye').value} preview · independent black outline.` : 'No trim paint yet.';
+      } catch (error) {
+        if (closed || token !== renderRevision) return;
+        debugState.lastError = error.message;
+        resultStatus.textContent = 'Rendered result failed: ' + error.message;
+      }
+    }
 
+    const existingMask = await editableTrimMaskCanvas(width, height);
+    if (closed) return;
+    if (existingMask) {
+      paintCtx.drawImage(existingMask, 0, 0, width, height);
+      clipPaintToGarment();
+      statusEl.textContent = trimRecord()?.settings?.directMask === true || trimDrafts.get(trimKey())?.pattern?.directMask === true
+        ? 'Loaded existing direct trim mask.'
+        : 'Loaded and converted the previous positioned trim into an exact sprite-space mask.';
+    }
+
+    function pointFromEvent(event) {
+      const rect = paintCanvas.getBoundingClientRect();
+      return {
+        x: Math.max(0, Math.min(width, (event.clientX - rect.left) * width / rect.width)),
+        y: Math.max(0, Math.min(height, (event.clientY - rect.top) * height / rect.height)),
+      };
+    }
+
+    function strokeTo(point) {
+      paintCtx.globalCompositeOperation = brushMode === 'eraser' ? 'destination-out' : 'source-over';
+      paintCtx.strokeStyle = '#ffffff'; paintCtx.fillStyle = '#ffffff';
+      paintCtx.lineWidth = brushSize; paintCtx.lineCap = 'round'; paintCtx.lineJoin = 'round';
+      paintCtx.beginPath();
+      if (lastPoint) { paintCtx.moveTo(lastPoint.x, lastPoint.y); paintCtx.lineTo(point.x, point.y); paintCtx.stroke(); }
+      else { paintCtx.arc(point.x, point.y, brushSize / 2, 0, Math.PI * 2); paintCtx.fill(); }
+      lastPoint = point;
+      clipPaintToGarment();
+    }
+
+    paintCanvas.addEventListener('pointerdown', event => {
+      event.preventDefault();
+      pushUndo();
+      drawing = true; lastPoint = null;
+      try { paintCanvas.setPointerCapture?.(event.pointerId); } catch (_) {}
+      strokeTo(pointFromEvent(event));
+    });
+    paintCanvas.addEventListener('pointermove', event => { if (drawing) { event.preventDefault(); strokeTo(pointFromEvent(event)); } });
+    async function endStroke() {
+      if (!drawing) return;
+      drawing = false; lastPoint = null;
+      paintCtx.globalCompositeOperation = 'source-over';
+      updateButtons();
+      await renderResult();
+    }
+    paintCanvas.addEventListener('pointerup', endStroke);
+    paintCanvas.addEventListener('pointercancel', endStroke);
+    paintCanvas.addEventListener('pointerleave', event => { if (drawing && !paintCanvas.hasPointerCapture?.(event.pointerId)) endStroke(); });
+
+    overlay.querySelectorAll('[data-trim-tool]').forEach(button => {
+      button.onclick = () => {
+        brushMode = button.dataset.trimTool;
+        overlay.querySelectorAll('[data-trim-tool]').forEach(other => other.classList.toggle('active', other === button));
+      };
+    });
+    brushInput.oninput = () => { brushSize = Math.max(1, Number(brushInput.value) || 1); overlay.querySelector('[data-trim-brush-label]').textContent = `${brushSize}px`; };
+    zoomInput.oninput = updateZoom;
+    undoBtn.onclick = async () => {
+      if (!undoStack.length) return;
+      const current = snapshot(); if (current) redoStack.push(current);
+      restore(undoStack.pop());
+      await renderResult();
+    };
+    redoBtn.onclick = async () => {
+      if (!redoStack.length) return;
+      const current = snapshot(); if (current) undoStack.push(current);
+      restore(redoStack.pop());
+      await renderResult();
+    };
+    overlay.querySelector('[data-trim-paint="clear"]').onclick = async () => {
+      pushUndo();
+      paintCtx.clearRect(0, 0, width, height);
+      updateButtons();
+      await renderResult();
+    };
+
+    function close() { closed = true; overlay.remove(); }
+    overlay.querySelector('[data-trim-paint="close"]').onclick = close;
+    overlay.querySelector('[data-trim-paint="cancel"]').onclick = close;
+    overlay.addEventListener('pointerdown', event => { if (event.target === overlay) close(); });
+    saveBtn.onclick = async () => {
+      const pattern = currentPattern();
+      if (!pattern) return;
+      const motifPng = trimAssetPath(garmentId, variantKey, view);
+      trimDrafts.set(trimKey(garmentId, variantKey, view), { pattern, motifPng });
+      const recordSet = ensureTrimRecordSet(garmentId, variantKey);
+      recordSet[view] = { motifPng, settings: { directMask: true } }; // Placement is encoded entirely in PNG coordinates now; no frame/mesh transform can drift it.
+      debugState.lastAction = `painted direct garment trim ${garmentId}/${variantKey}/${view}`;
+      refreshTrimVariantOptions();
+      await renderTrimPreview(pattern);
+      $('trimStatus').textContent = 'Direct trim mask saved in this editor session. Export its PNG plus clothing-trims.json before leaving the page.';
+      close();
+    };
+
+    const suggestedZoom = Math.max(1, Math.min(8, Math.floor(520 / Math.max(width, height)) || 1));
+    zoomInput.value = String(suggestedZoom);
+    updateZoom();
+    updateButtons();
+    await renderResult();
+  }
   async function loadTrimAuthoringData() {
     try {
       const [indexResponse, manifestResponse] = await Promise.all([fetch('../../config/cosmetics/index.json'), fetch(CLOTHING_TRIM_MANIFEST_PATH)]);
