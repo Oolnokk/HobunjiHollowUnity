@@ -272,6 +272,14 @@ Overpass → not set</div>
     return trimDrafts.has(trimKey(garmentId, variantKey, view)) || !!trimRecord(garmentId, variantKey, view); // Drives replication controls without loading motif image bytes.
   }
 
+  function defaultTrimSourceVariant(garmentId = $('trimGarment').value, view = $('trimView').value) {
+    const variants = trimVariantKeys();
+    const authoredInManifest = variants.find(key => !!trimRecord(garmentId, key, view)); // Repo-authored masks are preferred masters; for the supplied Ragged Hood manifest this resolves to mao-ao_male/front.
+    if (authoredInManifest) return authoredInManifest;
+    const authoredDraft = variants.find(key => trimDrafts.has(trimKey(garmentId, key, view))); // Session-authored drafts become the next-best master before falling back to list order.
+    return authoredDraft || variants[0] || '';
+  }
+
   async function renderTrimBaseCanvas(garmentId, variantKey, view) {
     const { speciesId, gender } = parseVariantKey(variantKey);
     const result = await window.ClothingWeavingSystem.renderClothingLayers(garmentId, {
@@ -348,7 +356,7 @@ Overpass → not set</div>
 
   function refreshTrimReplicationControls() {
     const garmentId = $('trimGarment').value;
-    const sourceVariant = $('trimVariant').value;
+    const sourceVariant = $('trimVariant').value || defaultTrimSourceVariant(garmentId, $('trimView').value);
     const view = $('trimView').value;
     const select = $('trimReplicateTarget');
     const previous = select.value;
@@ -407,7 +415,10 @@ Overpass → not set</div>
       option.textContent = `${trimManifest?.garments?.[$('trimGarment').value]?.variants?.[key]?.front ? '✓ ' : ''}${key}`;
       select.appendChild(option);
     }
-    if (variants.includes(previous)) select.value = previous;
+    const preferredSource = defaultTrimSourceVariant($('trimGarment').value, $('trimView').value);
+    if (variants.includes(previous) && trimExists($('trimGarment').value, previous, $('trimView').value)) select.value = previous;
+    else if (variants.includes(preferredSource)) select.value = preferredSource;
+    else if (variants.includes(previous)) select.value = previous;
     $('editTrimBtn').disabled = !variants.length;
     $('trimCoverage').textContent = trimCoverageText();
     syncTrimExportState();
@@ -1250,7 +1261,7 @@ Overpass → not set</div>
   };
 
   window.__patternEditorDebug = () => ({ // Mobile-visible console substitute for checking the dev tool's two-slot state.
-    mostRecentChange: 'Garment trim can now be replicated from one authored species/gender variant to another or all missing variants by nearest-neighbor fitting between real garment opacity bounds, clipping to each destination silhouette, then editing the resulting ordinary draft.',
+    mostRecentChange: 'Garment trim replication now prefers an already-authored manifest variant as its master by default; the supplied Ragged Hood manifest therefore selects mao-ao_male/front automatically, then fits that master to other variants for cleanup.',
     previewMode: $('previewMode').value,
     weavingBackground: $('surfaceTexture').value,
     overpassClearanceMultiplier: clampOverpassClearance($('overpassClearance').value),
