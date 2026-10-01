@@ -251,14 +251,10 @@
     const grip = grips?.authoredPrimaryGripForTool?.(LICH_CAST_WEAPON_KEY, 'melee') || {};
     const gripPosition = grip.position || {}; // Authored point on the reference weapon where the right hand belongs.
     const gripRotation = grip.rotationDeg || {}; // Authored grip orientation on the reference weapon.
-    const gripScale = Number(grips?.effectiveToolScaleForTool?.(LICH_CAST_WEAPON_KEY, rig.speciesId, rig.gender))
-      || Number(grips?.toolScaleForTool?.(LICH_CAST_WEAPON_KEY))
-      || 1; // Same base + calculated-height scale used by visible held weapons.
-    socketPosition.add(new THREE.Vector3(
-      (Number(gripPosition.x) || 0) * gripScale,
-      (Number(gripPosition.y) || 0) * gripScale,
-      (Number(gripPosition.z) || 0) * gripScale,
-    ).applyQuaternion(socketQuaternion));
+    const gripScale = Number(grips?.toolScaleForTool?.(LICH_CAST_WEAPON_KEY)) || 1;
+    const gripTarget = grips?.itemPointToHolder?.(LICH_CAST_WEAPON_KEY, gripPosition, 'melee', { speciesId: rig.speciesId, gender: rig.gender })
+      || { x: (Number(gripPosition.x) || 0) * gripScale, y: (Number(gripPosition.y) || 0) * gripScale, z: (Number(gripPosition.z) || 0) * gripScale }; // Height scaling pivots on the grip, so the hand target is the same as a real held copy's.
+    socketPosition.add(new THREE.Vector3(gripTarget.x, gripTarget.y, gripTarget.z).applyQuaternion(socketQuaternion));
     socketQuaternion.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(
       THREE.MathUtils.degToRad(Number(gripRotation.pitch) || 0),
       THREE.MathUtils.degToRad(Number(gripRotation.yaw) || 0),

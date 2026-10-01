@@ -292,10 +292,12 @@
 
   function applyPrimaryGripVisual(THREE, plane, choice, baseQuaternion, identity = null) {
     const grips = window.HobunjiHandToolGrips;
-    const scale = Number(grips?.effectiveToolScaleForTool?.(choice.shape, identity?.speciesId, identity?.gender))
+    const placement = grips?.heldItemPlacementForTool?.(choice.shape, 'melee', identity) || null; // Base about the origin, calculated height about the grip.
+    const scale = Number(placement?.scale)
       || Number(grips?.toolScaleForTool?.(choice.shape))
       || 1;
-    plane.position.set(0, 0, 0); // Weapon preview remains owned by its authored stance; grip metadata moves the hand instead.
+    const offset = placement?.offset || { x: 0, y: 0, z: 0 };
+    plane.position.set(offset.x, offset.y, offset.z); // Weapon preview remains owned by its authored stance; grip metadata moves the hand instead.
     plane.quaternion.copy(baseQuaternion);
     plane.scale.setScalar(scale);
     return scale;
@@ -417,14 +419,10 @@
     const grips = window.HobunjiHandToolGrips;
     const primary = grips?.authoredPrimaryGripForTool?.(state.choice?.shape || '') || {};
     const primaryPosition = primary.position || {};
-    const toolScale = Number(grips?.effectiveToolScaleForTool?.(state.choice?.shape || '', rig.speciesId, rig.gender))
-      || Number(grips?.toolScaleForTool?.(state.choice?.shape || ''))
-      || 1;
-    socketPosition.add(new THREE.Vector3(
-      (Number(primaryPosition.x) || 0) * toolScale,
-      (Number(primaryPosition.y) || 0) * toolScale,
-      (Number(primaryPosition.z) || 0) * toolScale,
-    ).applyQuaternion(socketQuaternion)); // Blue/editor grip target semantics: move hand target, not the weapon.
+    const toolScale = Number(grips?.toolScaleForTool?.(state.choice?.shape || '')) || 1;
+    const target = grips?.itemPointToHolder?.(state.choice?.shape || '', primaryPosition, 'melee', { speciesId: rig.speciesId, gender: rig.gender })
+      || { x: (Number(primaryPosition.x) || 0) * toolScale, y: (Number(primaryPosition.y) || 0) * toolScale, z: (Number(primaryPosition.z) || 0) * toolScale };
+    socketPosition.add(new THREE.Vector3(target.x, target.y, target.z).applyQuaternion(socketQuaternion)); // Blue/editor grip target semantics: move hand target, not the weapon.
     socketQuaternion.multiply(quaternionFromAuthored(THREE, primary));
 
     const authored = handTransform();

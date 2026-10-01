@@ -85,6 +85,13 @@
 
   function currentToolKey() { return toolGrips.toolKeyFor(toolSelect.value); }
   function currentGripContext() { return toolGrips.normalizeGripContext?.($('handGripContextSelect')?.value || 'melee') || ($('handGripContextSelect')?.value === 'ranged' ? 'ranged' : 'melee'); }
+  function currentScaleIdentity() {
+    return {
+      speciesId: String(document.getElementById('avatarSpecies')?.value || '').trim(),
+      gender: String(document.getElementById('avatarGender')?.value || 'male').trim() || 'male',
+    };
+  }
+
   function currentToolScale() {
     const speciesId = String(document.getElementById('avatarSpecies')?.value || '').trim(); // Selected preview identity used so grip markers/picking share the weapon's calculated-height scale.
     const gender = String(document.getElementById('avatarGender')?.value || 'male').trim() || 'male';
@@ -113,8 +120,9 @@
     const primary = currentPrimary();
     const p = primary?.position || {};
     const r = primary?.rotationDeg || {};
-    const visualScale = currentToolScale(); // Marker lives beside toolHolder, so explicitly scale the unscaled authored target to the visible weapon size.
-    primaryMarker.position.set((Number(p.x) || 0) * visualScale, (Number(p.y) || 0) * visualScale, (Number(p.z) || 0) * visualScale);
+    const target = toolGrips.itemPointToHolder?.(currentToolKey(), p, currentGripContext(), currentScaleIdentity())
+      || { x: (Number(p.x) || 0) * currentToolScale(), y: (Number(p.y) || 0) * currentToolScale(), z: (Number(p.z) || 0) * currentToolScale() }; // Marker lives beside toolHolder: map the authored grip through the visible item's grip-anchored scale.
+    primaryMarker.position.set(target.x, target.y, target.z);
     const qYaw = new editorContext.THREE.Quaternion().setFromAxisAngle(new editorContext.THREE.Vector3(0, 1, 0), editorContext.THREE.MathUtils.degToRad(Number(r.yaw) || 0));
     const qPitch = new editorContext.THREE.Quaternion().setFromAxisAngle(new editorContext.THREE.Vector3(1, 0, 0), editorContext.THREE.MathUtils.degToRad(Number(r.pitch) || 0));
     const qRoll = new editorContext.THREE.Quaternion().setFromAxisAngle(new editorContext.THREE.Vector3(0, 0, 1), editorContext.THREE.MathUtils.degToRad(Number(r.roll) || 0));
@@ -156,9 +164,10 @@
       $('handGripStatus').textContent = 'No sprite plane hit. Click directly on the weapon handle, or cancel Pick.';
       return;
     }
-    const local = editorContext.toolHolder.worldToLocal(hit.point.clone());
-    const baseScale = currentToolScale(); // worldToLocal removes animation/toolHolder scale, but intrinsic held-item scale lives on the visual child and must be removed here to keep authored grip coordinates scale-independent.
-    local.multiplyScalar(1 / baseScale);
+    const holderPoint = editorContext.toolHolder.worldToLocal(hit.point.clone());
+    const baseScale = currentToolScale(); // worldToLocal removes animation/toolHolder scale; the visual child's grip-anchored item scale is removed below so authored grips stay scale-independent.
+    const local = toolGrips.holderPointToItem?.(currentToolKey(), holderPoint, currentGripContext(), currentScaleIdentity())
+      || { x: holderPoint.x / baseScale, y: holderPoint.y / baseScale, z: holderPoint.z / baseScale };
     mutateGrip('primaryGrip', primary => {
       primary.position.x = Number(local.x.toFixed(4));
       primary.position.y = Number(local.y.toFixed(4));

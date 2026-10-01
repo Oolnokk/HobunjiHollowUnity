@@ -1698,12 +1698,12 @@
   // isn't a one-line call into updateToolMesh is that updateToolMesh
   // hardcodes which entity it's posing for throughout.
   // Hostile weapons use the same base + calculated-height held-item scale as
-  // the player's (HobunjiHandToolGrips.effectiveToolScaleForTool), so the
+  // the player's (HobunjiHandToolGrips.heldItemPlacementForTool), so the
   // procedural hand's grip target -- which already expands by that scale --
   // lands on the visible weapon. Recomputed only when grip/height data changes.
   let banditWeaponScaleRevision = 0;
   let banditWeaponScaleSubscribed = false;
-  function syncBanditWeaponScale(c, holder, weaponKey) {
+  function syncBanditWeaponScale(c, holder, weaponKey, gripContext = 'melee') {
     const visual = holder?.children?.[0]; // makeToolPlaneMesh group; pose/spin transforms live on the holder and toolPlane instead.
     const grips = window.HobunjiHandToolGrips;
     if (!visual || !weaponKey || !grips?.effectiveToolScaleForTool) return;
@@ -1716,8 +1716,10 @@
     const group = c?.avatarRef?.group;
     const speciesId = c?.avatarRef?.speciesId || group?.userData?.speciesId || '';
     const gender = c?.avatarRef?.gender || group?.userData?.gender || 'male';
-    const scale = Number(grips.effectiveToolScaleForTool(weaponKey, speciesId, gender));
+    const placement = grips.heldItemPlacementForTool?.(weaponKey, gripContext, { speciesId, gender }); // Base size about the origin, height about the grip.
+    const scale = Number(placement?.scale ?? grips.effectiveToolScaleForTool(weaponKey, speciesId, gender));
     visual.scale.setScalar(Number.isFinite(scale) && scale > 0 ? scale : 1);
+    if (placement?.offset) visual.position.set(placement.offset.x, placement.offset.y, placement.offset.z); // Grip stays fixed under the hand.
     data.banditWeaponScaleKey = weaponKey;
     data.banditWeaponScaleRevision = banditWeaponScaleRevision;
     data.banditWeaponScale = visual.scale.x; // Mobile/debug readout of the applied effective scale.
@@ -1840,7 +1842,7 @@
       handDriverRoot.userData.proceduralHandGripContext = useRanged ? 'ranged' : 'melee';
     }
     syncBanditWeaponScale(c, c._banditToolHolder, c.def?.weaponKey);
-    syncBanditWeaponScale(c, c._banditRangedToolHolder, c.def?.rangedWeaponKey);
+    syncBanditWeaponScale(c, c._banditRangedToolHolder, c.def?.rangedWeaponKey, 'ranged');
     const holder = c._banditToolHolder;
     if (!holder) return;
     if (c._rangedMode) {

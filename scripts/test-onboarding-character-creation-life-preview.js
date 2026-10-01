@@ -28,7 +28,7 @@ assert.match(life, /WeaponToolStances\?\.poses\?\.heavyWeapon/, 'starter Hatchet
 assert.match(life, /x: -0\.03, y: 0\.27, z: 0\.02[\s\S]{0,100}pitch: -23, yaw: 104, bodyYaw: -15, roll: 89/, 'Heavy Weapon fallback must match weapon-tool-stances.js exactly');
 assert.match(life, /handAttachX/, 'weapon base must use the avatar\'s scanned runtime hand-attach X');
 assert.match(life, /handAttachY/, 'weapon base must use the avatar\'s scanned runtime hand-attach Y');
-assert.match(life, /effectiveToolScaleForTool\?\.\(STARTER_WEAPON_SHAPE, identity\.speciesId, identity\.gender\)/, 'weapon sprite must use the shared authored base scale plus calculated character-height multiplier');
+assert.match(life, /heldItemPlacementForTool\?\.\(STARTER_WEAPON_SHAPE, 'melee', identity\)/, 'weapon sprite must use the shared authored base scale plus calculated character-height multiplier');
 assert.match(life, /planeW = 0\.5 \* gripScale/, 'starter weapon plane must use gameplay/Attack Editor TOOL_MODEL_WIDTH');
 assert.match(life, /plane\.rotation\.x = -Math\.PI \/ 2/, 'starter weapon sprite must use the gameplay flat-in-XZ basis');
 assert.match(life, /proceduralHandRig/, 'starter weapon preview must reuse the existing procedural hand rig');

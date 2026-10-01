@@ -53,14 +53,14 @@ assert.match(held, /attack-editor-history\.js\?v=/, 'history must load with the 
 // Primary grip is now a hand target, never an inverse weapon correction.
 assert.match(grips, /grip authoring moves the RIGHT HAND to that frame and never inverse-moves the weapon/, 'grip contract must be explicit');
 assert.match(grips, /function primaryGripForTool\(value, context = currentGripContext\(\), identity = null\)/, 'runtime must return the authored primary hand target for the active melee/ranged grip set and optional character identity');
-assert.match(grips, /authored\.position\.x\) \* scale/, 'primary hand target must follow intrinsic weapon scale');
+assert.match(grips, /const target = itemPointToHolder\(value, authored\.position, context, identity\)/, 'primary hand target must follow the visible item through the shared grip-anchored mapping');
 assert.match(grips, /function applyEditorGripPresentation/, 'editor visual path should be presentation-only');
-assert.match(grips, /applyHeldItemScale\(visual, effectiveToolScaleForTool\(key, identity\.speciesId, identity\.gender\)\)/, 'editor grip presentation must apply the shared base + calculated-height weapon scale without translating/rotating the item');
+assert.match(grips, /applyHeldItemPlacement\(visual, key, currentGripContext\(\), editorScaleIdentity\(\)\)/, 'editor grip presentation must apply the shared grip-anchored base + calculated-height weapon placement');
 assert.doesNotMatch(grips, /function primaryGripForTool\(\) \{ return identityTransform\(\); \}/, 'old fixed-hand identity target must not return');
 assert.doesNotMatch(grips, /function inverseTransform|function composePrimaryInverseWithPoint/, 'dead inverse-weapon grip math must not remain after hand-target migration');
-assert.match(grips, /position: \{ x: 0, y: 0, z: itemZ \* itemScale \}/, 'secondary hand span must also resolve directly in item space');
+assert.match(grips, /position: itemPointToHolder\(value, \{ x: 0, y: 0, z: itemZ \}, context, identity\)/, 'secondary hand span must also resolve directly in item space through the grip-anchored mapping');
 assert.match(grips, /function heightMultiplierForTool/, 'held-item metadata must expose a per-weapon height multiplier');
-assert.match(grips, /const heightFactor = 1 \+ \(heightRatio - 1\) \* heightMultiplier/, 'effective weapon scale must blend calculated character-height ratio by the authored multiplier');
+assert.match(grips, /1 \+ \(heightRatio - 1\) \* heightMultiplier/, 'effective weapon scale must blend calculated character-height ratio by the authored multiplier');
 assert.match(grips, /editorFieldPair\(scaleFields, 'handToolHeightMultiplier', 'Height multiplier'/, 'Attack Editor grip UI must expose the weapon height multiplier');
 assert.doesNotMatch(editor, /id="poseOrbitScale"|orbitScalesDownloadBtn|orbitScalesSaveOverrideBtn|orbitScalesClearOverrideBtn/, 'retired per-species weapon scale authoring controls must not remain in the Attack Editor');
 
@@ -153,7 +153,7 @@ assert.match(panelUi, /attack-idle-stance-editor\.js\?v=20260919history1/, 'idle
 
 // The same hand-target contract must hold in non-player preview/NPC paths.
 assert.match(npcHeld, /Authored point\/orientation ON the weapon where the right hand must land/, 'NPC hands must consume the authored weapon target');
-assert.match(npcHeld, /effectiveToolScaleForTool/, 'NPC weapon visuals must receive the same base + calculated-height scale as player/editor weapons');
+assert.match(npcHeld, /heldItemPlacementForTool/, 'NPC weapon visuals must receive the same grip-anchored base + calculated-height placement as player/editor weapons');
 assert.match(onboarding, /Grip target semantics: move hand target, not the weapon|Blue\/editor grip target semantics: move hand target, not the weapon/, 'onboarding preview must follow the same hand-target contract');
 assert.match(onboarding, /socketPosition\.add\(new THREE\.Vector3/, 'onboarding hand socket must include authored grip position');
 

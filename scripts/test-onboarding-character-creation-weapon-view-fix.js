@@ -20,7 +20,7 @@ assert.match(source, /document\.addEventListener\('hobunjiPlayerReady', persistW
 assert.match(source, /rig\.useIdlePose = function onboardingWeaponOwnedIdle/, 'creator must claim the right hand during the hand driver pre-render idle pass');
 assert.match(source, /rig\.placeHandWorld\('right'/, 'weapon-owned idle must place the procedural right hand on the held-tool socket');
 assert.match(source, /authoredPrimaryGripForTool/, 'random weapon visual must reuse authored primary grip metadata');
-assert.match(source, /effectiveToolScaleForTool/, 'random weapon visual must combine authored base scale with calculated character height');
+assert.match(source, /heldItemPlacementForTool/, 'random weapon visual must combine authored base scale with calculated character height');
 assert.match(source, /heavyWeapon/, 'heavy starter tools must use the shared Heavy Weapon idle');
 assert.match(source, /lightWeapon/, 'light starter tools must use the shared Light Weapon idle');
 

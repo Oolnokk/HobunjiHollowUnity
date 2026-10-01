@@ -237,11 +237,19 @@
     return three ? new three.Quaternion().setFromEuler(new three.Euler(rad(r.pitch), rad(r.yaw), rad(r.roll), 'YXZ')) : null;
   }
 
+  function gripIdentity(walker) {
+    const rig = walker ? rigFor(walker) : null;
+    return { speciesId: rig?.speciesId || '', gender: rig?.gender || 'male' };
+  }
+
   function applyGripScale(visual, key, walker = null) {
     if (!visual) return;
-    const scale = gripScale(key, walker); // Effective scale combines the item's base size with this NPC's calculated character-height ratio.
+    const placement = grips()?.heldItemPlacementForTool?.(key, 'melee', gripIdentity(walker)); // Base size about the item origin, calculated-height size about the grip.
+    const scale = placement?.scale ?? gripScale(key, walker);
+    const offset = placement?.offset || { x: 0, y: 0, z: 0 };
     if (visual.userData?.npcGripKey === key && Math.abs((Number(visual.userData?.npcGripScale) || 0) - scale) < 0.0001) return;
     visual.scale.setScalar(scale); // Grip target moves the HAND; held-item position/rotation remain authored by the stance animation.
+    visual.position.set(offset.x, offset.y, offset.z); // Keeps the grip fixed while height scaling resizes the weapon around the hand.
     visual.userData = { ...(visual.userData || {}), npcGripKey: key, npcGripScale: scale };
   }
 
@@ -323,11 +331,9 @@
     const gripP = grip.position || {};
     const gripQ = gripQuaternion(grip);
     const scale = gripScale(key, walker);
-    socket.position.add(new (T().Vector3)(
-      (Number(gripP.x) || 0) * scale,
-      (Number(gripP.y) || 0) * scale,
-      (Number(gripP.z) || 0) * scale,
-    ).applyQuaternion(socket.quaternion));
+    const target = grips()?.itemPointToHolder?.(key, gripP, 'melee', gripIdentity(walker))
+      || { x: (Number(gripP.x) || 0) * scale, y: (Number(gripP.y) || 0) * scale, z: (Number(gripP.z) || 0) * scale }; // Grip-anchored: the hand lands on base * grip for every body height.
+    socket.position.add(new (T().Vector3)(target.x, target.y, target.z).applyQuaternion(socket.quaternion));
     if (gripQ) socket.quaternion.multiply(gripQ);
 
     const rightP = socket.position.clone().add(hand.position.clone().applyQuaternion(socket.quaternion));
