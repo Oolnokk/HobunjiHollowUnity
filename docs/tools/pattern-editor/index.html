@@ -192,6 +192,18 @@ Overpass → not set</div>
 
   function selectedTrimCosmetic() { return trimCosmetics.get($('trimGarment').value) || null; }
 
+  function defaultTrimManifestSelection() {
+    const garments = trimManifest?.garments || {};
+    for (const [garmentId, garment] of Object.entries(garments)) {
+      if (!trimCosmetics.has(garmentId)) continue;
+      for (const [variantKey, views] of Object.entries(garment?.variants || {})) {
+        if (views?.front) return { garmentId, variantKey, view: 'front' }; // Front is the normal/default authoring view when the supplied manifest already has one.
+        if (views?.behind) return { garmentId, variantKey, view: 'behind' };
+      }
+    }
+    return null;
+  }
+
   function trimVariantKeys(selected = selectedTrimCosmetic()) {
     const authored = Object.keys(selected?.config?.speciesVariants || {}); // Exact species/gender variants are preferred whenever the garment authors them.
     return authored.length ? authored : (selected?.config?.parts ? ['default'] : []); // Shared-sprite garments still get one direct mask instead of disappearing from the tool.
@@ -1012,7 +1024,16 @@ Overpass → not set</div>
         option.textContent = id.replace(/_/g, ' ');
         select.appendChild(option);
       }
+      const defaultSelection = defaultTrimManifestSelection(); // Startup should land on already-authored work, not whichever garment sorts first alphabetically.
+      if (defaultSelection) {
+        select.value = defaultSelection.garmentId;
+        $('trimView').value = defaultSelection.view;
+      }
       refreshTrimVariantOptions();
+      if (defaultSelection && trimVariantKeys().includes(defaultSelection.variantKey)) $('trimVariant').value = defaultSelection.variantKey;
+      refreshTrimReplicationControls();
+      syncTrimExportState();
+      $('trimCoverage').textContent = trimCoverageText();
       await renderTrimPreview();
       $('trimStatus').textContent = trimCosmetics.size ? 'Garment trim authoring ready.' : 'No species-variant clothing definitions were found.';
     } catch (error) {
@@ -1330,7 +1351,7 @@ Overpass → not set</div>
   };
 
   window.__patternEditorDebug = () => ({ // Mobile-visible console substitute for checking the dev tool's two-slot state.
-    mostRecentChange: 'Trim paint now includes an Undo-able Expand Existing operation that grows the current mask outward by an artist-selected number of native sprite pixels, never crosses transparent garment space, and switches to Eraser for cleanup.',
+    mostRecentChange: 'Pattern Editor startup now selects the first authored trim entry from clothing-trims.json before rendering; with the supplied manifest that means Ragged Hood → Front → mao-ao_male is the actual initial/default trim selection.',
     previewMode: $('previewMode').value,
     weavingBackground: $('surfaceTexture').value,
     overpassClearanceMultiplier: clampOverpassClearance($('overpassClearance').value),
