@@ -10,6 +10,8 @@ const controller = read('docs/js/controller-ui-nav.js');
 const game = read('docs/game.js');
 const pixelProbe = read('docs/js/pixel-probe.js');
 const heldRender = read('docs/js/held-object-render-order.js');
+const plateauMesa = read('docs/js/zone-plateau-mesa.js'); // Guards the semantic tag that makes elevated wilderness ground participate in the held overlay.
+const interiorBuilder = read('docs/js/interior-scene-builder.js'); // Guards cavern-floor registration for the same global held-object ground policy.
 const feetParity = read('docs/js/procedural-feet-outline-parity.js'); // Guards the explicit foot-only water-occlusion registration and transform parity.
 const gridSource = read('docs/js/grid-tile-accessors.js');
 const idleYaw = read('docs/js/weapon-idle-body-yaw-runtime.js');
@@ -65,6 +67,16 @@ assert.match(heldRender, /entry\.uniforms\?\.uGrassTex[\s\S]{0,180}entry\.unifor
   'grass fallback classification keys off the dedicated wind/grass shader uniforms rather than generic billboard tags');
 assert.match(heldRender, /return materialLooksLikeGrassBillboard\(object\.material\)/,
   'submerged grass material cannot survive in the non-ground depth replay and punch holes through held weapons');
+assert.match(heldRender, /data\.hobunjiGroundSurface === true \|\| data\.cavernWalkableFloor === true/,
+  'held x-ray recognizes semantically tagged walkable surfaces regardless of hierarchy or elevation');
+assert.match(heldRender, /hobunjiInteriorFloorMaterial === true/,
+  'ordinary authored building floors are removed from the held-object depth replay');
+assert.match(heldRender, /data\.wallBuilderRecipe === 'wallrecipe2\.json'[\s\S]{0,120}data\.plateauModel\?\.levelByCell/,
+  'generated stepped/sunken ruin floors participate in held-object x-ray');
+assert.match(plateauMesa, /mesh\.userData\.hobunjiGroundSurface = true/,
+  'raised wilderness mesa surfaces explicitly register as ground');
+assert.match(interiorBuilder, /cavernWalkableFloor: true,[\s\S]{0,120}hobunjiGroundSurface: true/,
+  'cavern walkable floors explicitly register as ground');
 assert.match(heldRender, /FOOT_WATER_MASK_LAYER = 26/,
   'procedural feet have a dedicated private stencil layer instead of sharing the weapon overlay');
 assert.match(heldRender, /function markWaterOccludedMesh\(mesh\)/,
