@@ -9,12 +9,14 @@
        injected long before game.js. Keep this near the top: livestock
        genotype persistence and Porakaneki faction hooks can request it while
        the document parser is still loading the main module list. -->
+  <!-- Must load before any save/localStorage writer: evicts browser recovery-checkpoint mirrors when the quota is full. -->
+  <script src="js/storage-quota-guard.js?v=20261001c7a40d56"></script>
   <script src="js/scene-ready-poller.js?v=20260920startup4"></script>
   <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
   <script src="js/GLTFLoader.js?v=20260712d"></script>
-  <script src="js/WallBuilder.js?v=20260809a"></script>
-  <script src="js/HousePieceGen.js?v=20260924facetag1&window=20260926rebase1"></script>
-  <script src="js/interior-scene-builder.js?v=20260926cavernfloorstretch1&window=20260926rebase1"></script>
+  <script src="js/WallBuilder.js?v=20261001h58ef7ab"></script>
+  <script src="js/HousePieceGen.js?v=20261001hbe2b612&window=20260926rebase1"></script>
+  <script src="js/interior-scene-builder.js?v=20260930globalground2&window=20260926rebase1"></script>
   <script src="js/building-door.js?v=20260725a"></script>
   <script src="js/tile-pathfinding.js?v=20260808a"></script>
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
@@ -99,6 +101,8 @@
        Loaded early since it has no deps of its own and any of those
        creation sites may run as soon as the game world starts building. -->
   <script src="js/furniture-light-registry.js?v=20260918perf1"></script>
+  <!-- Farmhouse interior renders flat; all its lighting comes from the 2D overlay (window.FarmhouseFlatLighting). -->
+  <script src="js/farmhouse-flat-lighting.js?v=20261001flat1"></script>
   <!-- Wilderness zone ground-visual refresh after a runtime tile edit and
        the daily felled-tree/mined-rock regrowth ticks that call back into
        it, extracted out of game.js. Must load before game.js, which calls
@@ -127,7 +131,7 @@
   <script src="config/scratchbones-config.js?v=20260930livestockwalk1"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
-  <script src="js/tool-metal-recolor.js?v=20260926metalarmor1"></script>
+  <script src="js/tool-metal-recolor.js?v=20261001c6751543"></script>
   <script src="js/metal-armor-system.js?v=20260930pauldronverdigris1"></script>
   <script src="config/colors/config.js?v=20260930h1b2e2e2"></script>
   <script src="config/attachment-rig-profiles.js?v=20260924voorglarge1"></script>
@@ -156,7 +160,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20260924shoulderocclusion1"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20260930h3f6c30d"></script>
+  <script src="js/held-action-animations.js?v=20261001cc4ca767"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
   <script src="js/character-action-locks.js?v=20260925metromix1"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
@@ -235,10 +239,10 @@
   <!-- Optional local-folder save mirror (window.LocalSaveFolder) — self-contained,
        only reads/writes the same hobunjiSaveMeta localStorage key onboarding.js/
        game.js already use. See docs/js/local-save-folder.js. -->
-  <script src="js/local-save-folder.js?v=20260926metalarmor1"></script>
+  <script src="js/local-save-folder.js?v=20261001c619ad88"></script>
   <!-- Onboarding overlay -->
   <link rel="stylesheet" href="onboarding.css?v=20260921preworldsky1">
-  <script src="onboarding.js?v=20260930h2456789"></script>
+  <script src="onboarding.js?v=20261001cc6ee547"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
   <script src="js/combat/resource-system.js?v=20260930h7347c6f"></script>
   <script src="js/combat/knockback-collision-impact.js?v=20260930h6c19d61"></script>
@@ -256,7 +260,7 @@
   <script src="js/combat/combat-enemy-telegraph.js?v=20260926combatreview1"></script>
   <script src="js/combat/combat-animal-attacks.js?v=20260930h43f83e0"></script>
   <script src="js/combat/combat-loadout.js?v=20260925heldmode1"></script>
-  <script src="js/combat/combat-progression.js?v=20260930hb5cfa03"></script>
+  <script src="js/combat/combat-progression.js?v=20261001c57b23ed"></script>
   <!-- Shared player-attack event context (prepare/hit/defensive) published by every
        ability module; Enchantments and future cross-cutting systems observe it. -->
   <script src="js/combat/combat-attack-events.js?v=20260930ench1"></script>
@@ -266,7 +270,7 @@
   <script src="js/combat/combat-combo.js?v=20260930h81d72c4"></script>
   <script src="js/combat/combat-quickattacks.js?v=20260930h1fa1790"></script>
   <script src="js/combat/combat-counter-shield.js?v=20260930h07cba2f"></script>
-  <script src="js/combat/combat-blink-dodge.js?v=20260930h2e6fcd3"></script>
+  <script src="js/combat/combat-blink-dodge.js?v=20260930afterimage4"></script>
   <script src="js/combat/combat-charged-breaker.js?v=20260930hbbcd28d"></script>
   <script src="js/combat/combat-flurry.js?v=20260930he6f6a0a"></script>
   <script src="js/combat/combat-loadout-ui.js?v=20260930h75d45df"></script>
@@ -289,12 +293,12 @@
        (at fight time, not load time), so exact ordering against those two
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
-  <script src="js/combat/combat-bandit.js?v=20260927reviewfix1"></script>
+  <script src="js/combat/combat-bandit.js?v=20261001cb09eb58"></script>
   <!-- Distinct Minion humanoid category: independent roster/dye/Shambling Footing rules over the shared BanditCombat executor. -->
   <script src="js/combat/combat-minion.js?v=20260929lichroom1"></script>
   <script src="js/combat/combat-enemy-dodge.js?v=20260926combatreview1"></script>
   <!-- Testing Arena-only Harlyao Lich class: wraps the final humanoid AI seam after enemy-dodge, owns elemental projectiles/puddles/Entranced commands, and summons ordinary Minions. -->
-  <script src="js/combat/combat-lich.js?v=20260929merge1"></script>
+  <script src="js/combat/combat-lich.js?v=20261001c7de02fd"></script>
   <!-- Bandit camps (zone adapter, tent props, camp lifecycle, companion
        perception, corpse loot) — window.BanditCamps. Calls
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
@@ -308,7 +312,7 @@
   <script src="js/bounty-board.js?v=20260831spearheadexisting1-colors1"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20260930hdb3ec04"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261001ce94eff3"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -598,9 +602,9 @@
        own setup. -->
   <script src="js/weather-fx.js?v=20260924texture-restore1"></script>
   <!-- Load after WeatherFX exists, but before game.js calls WeatherFX.init(), so daylight windows always capture the real overlay dependencies. -->
-  <script src="js/daylight-window-runtime.js?v=20260926rebase1"></script>
+  <script src="js/daylight-window-runtime.js?v=20261001h93863ee"></script>
   <!-- Farmhouse windows mirror one ordinary inventory-owned wall object across the exterior/interior 2x coordinate systems and expose their silhouettes to both wall builders. -->
-  <script src="js/house-window-linkage.js?v=20260926rebase1"></script>
+  <script src="js/house-window-linkage.js?v=20261001h24e25aa"></script>
   <script src="js/daylight-window-overlay-scheduler.js?v=20260926rebase1"></script>
   <!-- Three reusable, UV-scrolling rain sheets in the existing world renderer. -->
   <script src="js/rain-planes.js?v=20260809f"></script>
@@ -621,7 +625,7 @@
   <!-- Player-centered white mist cylinders, shown only in the Southern
        Cloud Forest — see EXTERIOR_ZONES.map_southern_cloud_forest's
        fogDensity/vegCullRadiusTiles comments in game.js for why. -->
-  <script src="js/cloud-forest-fog.js?v=20260930h14804b0"></script>
+  <script src="js/cloud-forest-fog.js?v=20261001windowglow1"></script>
   <!-- Farm tab hub (header, grid glance, buildings list, processor status
        tiles, livestock roster + breeding, farm<->stable transfers, storage,
        farmhands) and the Stable tab (window.FarmPanel) — reads
@@ -717,7 +721,7 @@
        window.ZonePlateauMesa.buildPlateauMesa(...) lazily, whenever a
        zone with tiered plateaus is first built or a plateau-top tile
        changes at runtime — never synchronously during initial boot. -->
-  <script src="js/zone-plateau-mesa.js?v=20260807a"></script>
+  <script src="js/zone-plateau-mesa.js?v=20260930globalground2"></script>
   <!-- One world-UV texture-backed mesh per water surface group. Dynamic
        flood/trench meshes are rebuilt only when the water simulation ticks;
        wilderness waterways use the same builder through ZoneTerrainFeatures. -->
@@ -757,7 +761,7 @@
   <script src="js/png-plane-outline-occluder.js?v=20260924perf1"></script>
   <!-- World-space avatar blink/breathing refresh with distance-scaled rates
        (window.WorldPortraitLife; game.js calls init and ticks it). -->
-  <script src="js/world-portrait-life.js?v=20260924perf1"></script>
+  <script src="js/world-portrait-life.js?v=20260930combatface2"></script>
 </head>
 <body>
   <!-- Game world -->
@@ -2372,7 +2376,7 @@
     <button class="fcv-continue" id="fcvContinueBtn">Continue</button>
   </div>
 
-  <script src="js/tool-icon-render.js?v=20260924replaycull1"></script>
+  <script src="js/tool-icon-render.js?v=20260930globalground2"></script>
   <script src="js/sprite-recolor.js?v=20260924perf5"></script>
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
        calls window.Mounts.init(...) during its own setup. -->
@@ -2411,15 +2415,15 @@
   <script src="js/dialogue-templates.js?v=20260929mastery1"></script>
   <script src="js/dialogue-rich-text.js?v=20260929colors1"></script>
   <script src="js/dialogue-content.js?v=20260930h3ea8434"></script>
-  <script src="js/combat/combat-tutorial-content.js?v=20260929oddclaw1-colors1-opportunist1-mastery1-goals1"></script>
+  <script src="js/combat/combat-tutorial-content.js?v=20261001cae883e8"></script>
   <script src="js/combat/combat-tutorial-mastery.js?v=20260929mastery1-goals1"></script>
   <script src="js/combat/combat-tutorial-partner.js?v=20260930partner1"></script>
-  <script src="js/combat/combat-tutorial.js?v=20260930h7dbab16"></script>
+  <script src="js/combat/combat-tutorial.js?v=20261001c7157451"></script>
   <script src="js/tutorial-unlock-visits.js?v=20260930doorstep1"></script>
   <script src="js/farmhouse-login-spawn.js?v=20260930doorstep1"></script>
   <script src="js/banubu-questline.js?v=20260925banubutransaction4"></script>
   <!-- World-space Float+ combat text and centered five-row reward lists. -->
-  <script src="js/world-popup-text.js?v=20260924perf5"></script>
+  <script src="js/world-popup-text.js?v=20260930promptfix1"></script>
   <!-- Quick Attack opportunity reticle needs WorldPopupText's avatar centroid
        helper at module evaluation time, so it belongs here rather than in the
        earlier combat-definition block. It still loads before game.js and
@@ -2528,7 +2532,7 @@
   <!-- Directional camera pitch policy is isolated from controller bindings/gameplay dispatch. -->
   <script src="js/camera-look-clamp.js?v=20260923review2"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20260930h55c5a38"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261001ca903fa1"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
@@ -2545,7 +2549,7 @@
   <script src="js/shoulder-cam-pointer-lock.js?v=20260930hfc11b39"></script>
   <!-- Shared character-scoped hobunjiSaveMeta update step used by game.js's save* helpers. -->
   <script src="js/character-meta-save.js?v=20260930ench1"></script>
-  <script src="game.js?v=20260930h0d3069d"></script>
+  <script src="game.js?v=20261001h0051aee"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>

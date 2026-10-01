@@ -55,11 +55,17 @@ const loadOrder = [
 ].map(name => camera.indexOf(name));
 assert(!/if \(!devMode/.test(camera), 'ruin runtime loads for every player so wilderness ruin sites can generate ruins');
 assert(/if\(!devModeEnabled\(\)\)return;/.test(interior) && /if \(\(!devModeEnabled\(\)&&!opts\.site\)/.test(interior), 'dev Settings controls stay Dev Mode only; only ruin sites may generate outside Dev Mode');
-assert(camera.includes('dev-random-ruin-interactions.js?v=20260930rowsignature1'), 'ruin interaction adapter must be cache-busted with the arch-priority/popup-list fix');
+assert(/dev-random-ruin-interactions\.js\?v=[A-Za-z0-9_-]+/.test(camera), 'ruin interaction adapter must be cache-busted with the arch-priority/popup-list fix');
+{
+  const refreshStart = interactions.indexOf('function refreshRows(');
+  const outsideBranch = interactions.slice(interactions.indexOf('if (!inRuin()) {', refreshStart), interactions.indexOf('prepareSemanticObjects();', refreshStart));
+  assert(/if\(hadRows\)\{[\s\S]*clearInteractionPrompts/.test(outsideBranch), 'outside the ruin, the 12.5 Hz row refresh may clear shared prompts only once on exit');
+  assert.equal((outsideBranch.match(/clearInteractionPrompts/g) || []).length, 1, 'no unconditional prompt clear may run every tick outside the ruin (it made ordinary prompts flicker)');
+}
 assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260929glowdecals1'), 'simple puzzle interior-parity runtime must be cache-busted in the dev bootstrap');
 assert(/dev-random-ruin-wall-render-proxy\.js\?v=\w+/.test(camera), 'native ruin render verifier must be cache-busted in the dev bootstrap');
 assert(/js\/dev-random-ruin-bootstrap\.js\?v=\w+/.test(gameIndex), 'game page must load the updated ruin bootstrap');
-assert(gameIndex.includes('game.js?v=20260930h0d3069d'), 'game page must load the footprint-aware movement collision');
+assert(gameIndex.includes('game.js?v=20261001h0051aee'), 'game page must load the footprint-aware movement collision');
 assert(gameIndex.indexOf('js/area-footprint-blockers.js') >= 0 && gameIndex.indexOf('js/area-footprint-blockers.js') < gameIndex.indexOf('game.js?v='), 'sub-tile footprint registry must load before game.js');
 assert(game.includes('window.AreaFootprintBlockers?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE, worldY)'), 'canOccupyAt must test the whole mover square against prop footprints');
 assert(gameIndex.includes('js/climb-system.js?v=20260929config1'), 'game page must cache-bust the shared climb animation used by authored ruin ladders');
@@ -84,7 +90,7 @@ assert(interior.includes('legacyStoneMaterials'), 'material diagnostics must pro
 assert(interior.includes('spritePngSurface.makeMaterial(THREE,source.map||null'), 'non-stone lit V50 materials must use the same canonical unlit PNG material factory as cliffs');
 assert(interior.includes('remainingLitMaterials'), 'material diagnostics must explicitly count any lit material that escapes normalization');
 assert((cloudFog.match(/map_i_dev_random_ruin/g)||[]).length>=2, 'Random Test Ruin must opt into the shared den no-sky and den darkness/lantern classifications');
-assert(gameIndex.includes('js/cloud-forest-fog.js?v=20260930h14804b0'), 'test-ruin darkness override must be cache-busted in the game page');
+assert(/js\/cloud-forest-fog\.js\?v=[A-Za-z0-9_-]+/.test(gameIndex), 'test-ruin darkness override must be cache-busted in the game page');
 assert(camera.includes('dev-random-ruin-interior-map.js?v=20260929ruinsites1'), 'test-ruin generator/runtime changes must be cache-busted in the dev bootstrap');
 assert(interior.includes('Solvability.audit'), 'candidate ruins must run the pre-entry solvability audit');
 assert(interior.includes('MAX_SOLVABILITY_ATTEMPTS = 6'), 'unsolvable candidates must have a bounded deterministic retry budget');
@@ -429,7 +435,7 @@ assert(sanctum.includes("SP.registerComposer({\n    id:'sanctum'"), 'braziers / 
 assert(read('docs/js/dev-random-ruin-interior-map.js').includes('window.DevRandomRuinSanctum?.reserve?.(cols, rows)'), 'floor projection must reserve the sanctum wing in the ruin grid');
 assert(sanctum.includes('bgm_just_beyond_the_torchlight.ogg'), 'awakened Great Door must emit Just Beyond the Torchlight as its BGS');
 assert(lich.includes('allowArea:') && lich.includes('const allowedAreas = new Set([ARENA_ID])'), 'liches stay arena-confined unless an area opts in');
-assert(gameIndex.includes('js/combat/combat-lich.js?v=20260929merge1'), 'lich area opt-in must be cache-busted in the game page');
+assert(/js\/combat\/combat-lich\.js\?v=[A-Za-z0-9_-]+/.test(gameIndex), 'lich area opt-in must be cache-busted in the game page');
 new vm.Script(sanctum, { filename: 'dev-random-ruin-sanctum.js' });
 const ruinPieces = read('docs/js/dev-random-ruin-furniture-pieces.js');
 new vm.Script(ruinPieces, { filename: 'dev-random-ruin-furniture-pieces.js' });

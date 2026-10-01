@@ -387,7 +387,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     assert.equal(active.simple.active, true, JSON.stringify(active.simple));
     assert.equal(active.simple.safeGrids.length, 1, 'simple mode should place one safe-path pressure grid: '+JSON.stringify(active.simple));
     assert.ok(active.simple.safeGrids[0]?.hallId && active.simple.safeGrids[0]?.mandatoryTraversal, 'safe-path pressure grid must occupy a mandatory hallway traversal: '+JSON.stringify(active.simple.safeGrids[0]));
-    assert.equal(active.simple.ropes.length, 1, 'simple mode should place one rope traversal: '+JSON.stringify(active.simple));
+    assert.ok(active.simple.ropes.length >= 1, 'simple mode should place at least one rope traversal; lava-basin layouts may author several linked ropes: '+JSON.stringify(active.simple));
     const swappableHallwayModules=active.simple.modules.filter(module=>module.slotKind==='hallway'&&['projectileHallwayTrap','chordPressurePlates','hallwayGlyphGate'].includes(module.type));
     assert.ok(swappableHallwayModules.length >= 1, 'simple mode should fill at least one generic hallway module slot: '+JSON.stringify(active.simple));
     assert.ok(active.simple.checkpoints.doorwayCount > 0, 'generated ruin should expose doorway checkpoints: '+JSON.stringify(active.simple.checkpoints));

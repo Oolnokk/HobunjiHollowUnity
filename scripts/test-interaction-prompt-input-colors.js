@@ -26,5 +26,9 @@ assert(popup.includes('INTERACTION_LIST_SCALE = 0.25'), 'interaction rows preser
 assert(popup.includes('INTERACTION_OBJECT_COLOR'), 'interaction object words use a separate color');
 assert(popup.includes('verbAfterToIndex'), 'labels such as Hold to Take Egg emphasize the actual action verb');
 assert(popup.includes('inputActionId: promptInput?.actionId'), 'interaction debug data preserves the semantic input ID');
+assert(popup.includes('INTERACTION_CLEAR_GRACE_MS = 120'), 'transient empty action refreshes receive a short anti-flicker grace window');
+assert(popup.includes('scheduleInteractionPromptClear()'), 'world prompt synchronization can defer only transient empty clears');
+assert(popup.includes("if (options.enabled === false) clearInteractionPrompts();"), 'explicitly disabled world prompts still clear immediately');
+assert(popup.includes('cancelInteractionPromptClear();'), 'a valid prompt refresh cancels any pending transient clear');
 
-console.log('interaction prompt color contracts: 9 checks passed');
+console.log('interaction prompt color + stability contracts: ok');

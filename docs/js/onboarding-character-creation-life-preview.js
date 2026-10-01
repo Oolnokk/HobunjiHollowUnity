@@ -308,13 +308,17 @@
     if (!texture || model !== life.model || !toolHolder.parent) return;
     const imageW = Math.max(1, Number(texture.image?.width) || 1);
     const imageH = Math.max(1, Number(texture.image?.height) || 1);
-    const gripScale = Number(window.HobunjiHandToolGrips?.toolScaleForTool?.(STARTER_WEAPON_SHAPE)) || 1;
-    const planeW = 0.5 * gripScale; // Runtime/Attack Editor TOOL_MODEL_WIDTH.
+    const placement = window.HobunjiHandToolGrips?.heldItemPlacementForTool?.(STARTER_WEAPON_SHAPE, 'melee', identity) || null; // Base about the origin, calculated height about the grip.
+    const gripScale = Number(placement?.scale)
+      || Number(window.HobunjiHandToolGrips?.toolScaleForTool?.(STARTER_WEAPON_SHAPE))
+      || 1;
+    const planeW = 0.5 * gripScale; // Runtime/Attack Editor TOOL_MODEL_WIDTH with the shared base + calculated-height scale.
     const planeH = planeW * (imageH / imageW);
     const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide });
     const plane = new THREE.Mesh(new THREE.PlaneGeometry(planeW, planeH), material);
     plane.name = 'OnboardingStarterHatchetNativeCopper';
     plane.rotation.x = -Math.PI / 2; // Same flat-in-XZ tool-sprite basis as gameplay.
+    if (placement?.offset) plane.position.set(placement.offset.x, placement.offset.y, placement.offset.z); // Grip stays fixed while the sprite resizes around the hand.
     toolHolder.add(plane);
     toolHolder.userData.toolPlane = plane; // Shared hand-grip helpers recognize this convention.
 

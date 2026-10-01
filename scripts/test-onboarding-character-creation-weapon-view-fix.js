@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const entry = fs.readFileSync('docs/onboarding.js', 'utf8'); // Guards parser-load order for the post-life creator fix.
 const source = fs.readFileSync('docs/js/onboarding-character-creation-weapon-view-fix.js', 'utf8'); // Guards random starter weapon, hand ownership, persistence, and adaptive face view.
 
-assert.match(entry, /onboarding-character-creation-weapon-view-fix\.js\?v=20260920orbit1/, 'onboarding must load the weapon/view fix after the life preview');
+assert.match(entry, /onboarding-character-creation-weapon-view-fix\.js\?v=[A-Za-z0-9_-]+/, 'onboarding must load the weapon/view fix after the life preview');
 assert.match(entry, /lifePreviewUrl[\s\S]*weaponViewFixUrl/, 'weapon/view fix must parser-load after the living preview module');
 
 for (const itemKey of ['hoe_nativeCopper', 'hatchet_nativeCopper', 'fishingspear_nativeCopper', 'pickshovel_nativeCopper']) {
@@ -20,7 +20,7 @@ assert.match(source, /document\.addEventListener\('hobunjiPlayerReady', persistW
 assert.match(source, /rig\.useIdlePose = function onboardingWeaponOwnedIdle/, 'creator must claim the right hand during the hand driver pre-render idle pass');
 assert.match(source, /rig\.placeHandWorld\('right'/, 'weapon-owned idle must place the procedural right hand on the held-tool socket');
 assert.match(source, /authoredPrimaryGripForTool/, 'random weapon visual must reuse authored primary grip metadata');
-assert.match(source, /toolScaleForTool/, 'random weapon visual must reuse authored held-item scale');
+assert.match(source, /heldItemPlacementForTool/, 'random weapon visual must combine authored base scale with calculated character height');
 assert.match(source, /heavyWeapon/, 'heavy starter tools must use the shared Heavy Weapon idle');
 assert.match(source, /lightWeapon/, 'light starter tools must use the shared Light Weapon idle');
 

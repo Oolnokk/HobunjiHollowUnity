@@ -223,10 +223,25 @@
   function waitForInitialGlbs(rig, rigState, attempt = 0) {
     if (!activeRigs.has(rig)) return;
     scanRig(rig, rigState);
-    const leftLoaded = !!rig.group?.getObjectByName?.('left_hand_visual');
-    const rightLoaded = !!rig.group?.getObjectByName?.('right_hand_visual');
-    const failed = !!rig.getDebug?.()?.loadError;
-    if ((leftLoaded && rightLoaded) || failed || attempt >= 150) return;
+
+    // attach() installs same-named fallback visuals synchronously, then swaps the
+    // real GLBs in asynchronously. Name presence alone therefore cannot mean the
+    // permanent meshes have been hooked; the GLB visual exposes handModelKey while
+    // the temporary fallback deliberately does not.
+    const debug = rig.getDebug?.() || {};
+    const expectsGlb = !!debug.glb;
+    const leftVisual = rig.group?.getObjectByName?.('left_hand_visual') || null;
+    const rightVisual = rig.group?.getObjectByName?.('right_hand_visual') || null;
+    const leftLoaded = !!leftVisual?.userData?.handModelKey;
+    const rightLoaded = !!rightVisual?.userData?.handModelKey;
+    const failed = !!debug.loadError;
+
+    rigState.initialGlbWaitAttempts = Math.max(rigState.initialGlbWaitAttempts, attempt + 1);
+    if (!expectsGlb || (leftLoaded && rightLoaded) || failed || attempt >= 150) {
+      rigState.initialGlbReady = leftLoaded && rightLoaded;
+      rigState.initialGlbWaitTimedOut = expectsGlb && !rigState.initialGlbReady && !failed && attempt >= 150;
+      return;
+    }
     global.setTimeout?.(() => waitForInitialGlbs(rig, rigState, attempt + 1), 100);
   }
 
@@ -243,6 +258,9 @@
       lockedShellDraws: 0, // Shell draws that reused the exact visible hand matrix.
       lockedMaterialIdDraws: 0, // Material-ID draws that reused the exact visible hand matrix.
       missedOutlineSnapshots: 0, // Outline draws without a recent visible matrix to reuse.
+      initialGlbWaitAttempts: 0, // Poll count used to verify the initial async fallback -> GLB replacement was actually observed.
+      initialGlbReady: false, // True once both permanent GLB visuals, rather than same-named fallbacks, have been scanned.
+      initialGlbWaitTimedOut: false, // Mobile-readable warning state when a configured GLB never replaces its fallback within the bounded poll.
     };
     activeRigs.add(rig);
     scanRig(rig, rigState);
@@ -273,6 +291,9 @@
           outlineLockedShellDraws: rigState.lockedShellDraws,
           outlineLockedMaterialIdDraws: rigState.lockedMaterialIdDraws,
           outlineMissedSnapshots: rigState.missedOutlineSnapshots,
+          outlineInitialGlbWaitAttempts: rigState.initialGlbWaitAttempts,
+          outlineInitialGlbReady: rigState.initialGlbReady,
+          outlineInitialGlbWaitTimedOut: rigState.initialGlbWaitTimedOut,
           outlineThicknessMultiplier: OUTLINE_THICKNESS_MULTIPLIER,
         };
       };

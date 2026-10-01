@@ -138,16 +138,6 @@ canvas{display:block;width:100%;height:100%}
       <div class="field"><label>Preview species</label><select id="avatarSpecies"></select></div>
       <div class="field"><label>Preview gender</label><select id="avatarGender"></select></div>
     </div>
-    <div class="field">
-      <label>Species/gender weapon orbit scale</label>
-      <input id="poseOrbitScale" type="number" min="0.10" max="3.00" step="0.01" value="1">
-    </div>
-    <div class="row">
-      <button id="orbitScalesDownloadBtn" class="secondary">⭳ Download orbit scales</button>
-      <button id="orbitScalesSaveOverrideBtn" class="secondary">💾 Save local override</button>
-      <button id="orbitScalesClearOverrideBtn" class="secondary">🗑 Clear override</button>
-    </div>
-    <div class="help" id="orbitScalesStatus">Weapon orbit scale is independent from anatomical arm length. 1.00 is Mao’ao-authored distance; smaller values pull all weapon poses closer to that species/gender’s centroid.</div>
     <div class="help">The selected Action owns the animation being edited. The sprite selector is only a visual preview choice for actions that can be performed with more than one weapon. Species/gender changes only the preview transform and never rewrite authored pose values.</div>
 
     <details class="advancedDetails">
@@ -302,11 +292,12 @@ canvas{display:block;width:100%;height:100%}
 <script src="../../js/npc-avatar-preview-utils.js"></script>
 <script src="../../js/png-plane-avatar.js?v=20260924perf1"></script>
 <script src="../../js/species-pose-scaling.js?v=20260920height2"></script>
+<script src="../../js/character-dimensions.js?v=20260930dims1"></script>
 <!-- Shared local-transform dump utility (window.HobunjiTransformDump) — also
      loaded by the game's Pixel Probe, so this editor's preview dump and an
      in-game character dump use the exact same code/format. -->
 <script src="../../js/transform-dump-utils.js?v=20260820a"></script>
-<script src="../../js/held-action-animations.js?v=20260930h3f6c30d"></script>
+<script src="../../js/held-action-animations.js?v=20261001cc4ca767"></script>
 <script src="../../js/combat/melee-pose-spacing.js?v=20260920spacing2"></script>
 <script type="module">
 import * as THREE from 'three';
@@ -561,7 +552,6 @@ function refreshPreviewDebug() {
     'Latest: neck deformation weights the complete rectangular PNG plane, including transparent gaps and detached cosmetics.',
     `Neck preview: ${Math.round(neckPreviewStrength * 100)}% strength · ${(neckPreviewRadiusFrac * 100).toFixed(1)}% radius · ${neckWeightSummary}`,
     `Head vertex overlay: ${$('showHeadSkinVertices').checked ? `${headSkinVertexCount} unique weighted vertices shown` : 'hidden'}`,
-    `Pose orbit X/Z: ${currentSpeciesId}/${currentGender} ×${(window.HobunjiSpeciesPoseScale?.scaleForPose?.(currentPoseOrbitScale, currentArmLength) ?? currentPoseOrbitScale).toFixed(5)} · anatomy armLength=${currentArmLength.toFixed(3)}`,
     (() => { const h = window.HobunjiSpeciesPoseScale?.heightMetrics?.(currentSpeciesId, currentGender, currentAvatarModelHeight); return `Pose Y height: ×${(h?.heightRatio ?? 1).toFixed(5)} vs Mao'ao male · portraitH=${currentAvatarModelHeight.toFixed(4)} · rigY=×${(h?.rigScaleY ?? 1).toFixed(4)}`; })(),
     `Centroid used for X/Z orbit (rig local): (0, ${currentPoseCentroidY.toFixed(4)}, 0)`,
     `Authored holder local: (${lastAuthoredPose.x.toFixed(4)}, ${lastAuthoredPose.y.toFixed(4)}, ${lastAuthoredPose.z.toFixed(4)}) · raw rig: (${lastRawRigPose.x.toFixed(4)}, ${lastRawRigPose.y.toFixed(4)}, ${lastRawRigPose.z.toFixed(4)})`,
@@ -625,7 +615,6 @@ async function rebuildAvatar(speciesId, gender) {
   currentPoseOrbitScale = Number.isFinite(cachedPoseOrbitScale) && cachedPoseOrbitScale > 0
     ? cachedPoseOrbitScale
     : (window.HobunjiSpeciesPoseScale?.resolveScale?.(speciesId, gender, currentArmLength) ?? 1);
-  if ($('poseOrbitScale')) $('poseOrbitScale').value = currentPoseOrbitScale.toFixed(4);
   const cachedCentroidY = Number(avatarModel.userData?.poseCentroidY); // Includes the portrait assembly's internal vertical offset.
   currentPoseCentroidY = Number.isFinite(cachedCentroidY) ? cachedCentroidY : h * (Number(avatarModel.userData?.portraitVerticalPlacementRatio) || 0.5);
   if (avatarModel.userData.handAttachX == null || avatarModel.userData.handAttachY == null) {
@@ -652,7 +641,6 @@ async function rebuildAvatar(speciesId, gender) {
   toolBase.position.set(toolMirrored ? -baseAttachX : baseAttachX, baseAttachY, 0);
   logDebug(`Avatar rebuilt: ${speciesId}/${gender} (prism ${w.toFixed(2)}x${h.toFixed(2)}, orbit ×${currentPoseOrbitScale.toFixed(5)}, arm ${currentArmLength.toFixed(3)}, centroidY ${currentPoseCentroidY.toFixed(3)}, base at ${toolBase.position.x.toFixed(2)}/${baseAttachY.toFixed(2)}${toolMirrored ? ', mirrored' : ''})`);
   refreshPreviewDebug();
-  refreshOrbitScaleStatus?.();
 }
 
 const SPECIES_LIST = [
@@ -685,63 +673,7 @@ $('avatarGender').addEventListener('change', () => {
   rebuildAvatar($('avatarSpecies').value, $('avatarGender').value).catch(e => logDebug('Avatar rebuild failed: ' + e.message));
 });
 
-function refreshOrbitScaleStatus() {
-  const status = window.LocalDBOverrides?.listStatuses?.().find(entry => entry.id === 'speciesPoseOrbitScales');
-  const sourceMode = window.LocalDBOverrides?.getSourceMode?.() || 'repo'; // Used to distinguish a stored override from one the game will actually load.
-  let sourceText = sourceMode === 'local' ? 'Local source selected' : 'Repo source selected';
-  if (status?.hasOverride) {
-    const savedText = `saved ${new Date(status.savedAt).toLocaleString()}`;
-    sourceText += sourceMode === 'local' ? ` · override ACTIVE (${savedText})` : ` · override stored but INACTIVE (${savedText})`;
-  } else {
-    sourceText += sourceMode === 'local' ? ' · no override saved, so repo fallback is active' : ' · repo config active';
-  }
-  $('orbitScalesStatus').textContent = `${currentSpeciesId}/${currentGender} weapon orbit ×${currentPoseOrbitScale.toFixed(4)} · anatomy armLength ${currentArmLength.toFixed(3)} · ${sourceText}.`;
-}
-$('poseOrbitScale').addEventListener('input', () => {
-  const value = Number($('poseOrbitScale').value);
-  if (!Number.isFinite(value) || value <= 0) return;
-  currentPoseOrbitScale = value;
-  window.HobunjiSpeciesPoseScale?.setScale?.($('avatarSpecies').value, $('avatarGender').value, value);
-  if (avatarModel?.userData) avatarModel.userData.poseOrbitScale = value;
-  refreshOrbitScaleStatus();
-  refreshPreviewDebug();
-  if (typeof anim !== 'undefined' && anim?.poses?.[editPhase]) applyPoseToRig(anim.poses[editPhase]);
-});
-$('orbitScalesDownloadBtn').addEventListener('click', () => {
-  const data = window.HobunjiSpeciesPoseScale?.getConfig?.();
-  if (!data) return;
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'species-pose-orbit-scales.json';
-  a.click();
-  URL.revokeObjectURL(a.href);
-  logDebug('Downloaded species-pose-orbit-scales.json.');
-});
-$('orbitScalesSaveOverrideBtn').addEventListener('click', () => {
-  const data = window.HobunjiSpeciesPoseScale?.getConfig?.();
-  if (!data || !window.LocalDBOverrides) return;
-  window.LocalDBOverrides.setOverride('speciesPoseOrbitScales', data);
-  refreshOrbitScaleStatus();
-  const active = window.LocalDBOverrides.getSourceMode?.() === 'local'; // Used only for the mobile-readable confirmation below.
-  logDebug(active
-    ? 'Saved species/gender pose orbit scales; Local source is selected so this override is active.'
-    : 'Saved species/gender pose orbit scales, but Repo source is selected so the stored override is currently inactive.');
-});
-$('orbitScalesClearOverrideBtn').addEventListener('click', async () => {
-  window.LocalDBOverrides?.clearOverride?.('speciesPoseOrbitScales');
-  try {
-    await window.HobunjiSpeciesPoseScale?.reloadFromDatabaseSource?.();
-    await rebuildAvatar($('avatarSpecies').value, $('avatarGender').value);
-    refreshOrbitScaleStatus();
-    logDebug('Cleared local species/gender pose orbit scale override and reloaded the selected source.');
-  } catch (error) {
-    refreshOrbitScaleStatus();
-    logDebug('Cleared local orbit override, but reloading the selected source failed: ' + (error?.message || error));
-  }
-});
 rebuildAvatar($('avatarSpecies').value, $('avatarGender').value)
-  .then(refreshOrbitScaleStatus)
   .catch(e => logDebug('Avatar rebuild failed: ' + e.message));
 
 // toolHolder is what the authored pose (pos+pitch+yaw+roll) actually drives.
@@ -2096,11 +2028,6 @@ async function restoreCoreHistoryState(snapshot) {
   if (snapshot.avatarGender) $('avatarGender').value = snapshot.avatarGender;
   if (speciesChanged) $('avatarSpecies').dispatchEvent(new Event('change', { bubbles: true }));
   else if (genderChanged) $('avatarGender').dispatchEvent(new Event('change', { bubbles: true }));
-  if (snapshot.poseOrbitScale != null && $('poseOrbitScale')) {
-    $('poseOrbitScale').value = String(snapshot.poseOrbitScale);
-    $('poseOrbitScale').dispatchEvent(new Event('input', { bubbles: true }));
-  }
-
   for (const [id, eventName] of [['neckStrength','input'], ['neckRadius','input']]) {
     if (snapshot[id] == null || !$(id)) continue;
     $(id).value = String(snapshot[id]);
@@ -2140,7 +2067,6 @@ window.HobunjiAttackEditorState = Object.freeze({
       toolMirrored,
       avatarSpecies: $('avatarSpecies').value,
       avatarGender: $('avatarGender').value,
-      poseOrbitScale: Number($('poseOrbitScale').value),
       neckStrength: Number($('neckStrength').value),
       neckRadius: Number($('neckRadius').value),
       showHeadSkinVertices: $('showHeadSkinVertices').checked,

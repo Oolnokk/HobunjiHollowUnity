@@ -324,9 +324,13 @@
     return { afflictions, stats };
   }
 
-  function beginPreview(toolKey, abilityId, level, index) {
-    const options = getTree(abilityId, weaponTypeForTool(toolKey))?.[level - 1]; // Validate preview data against the same catalog and actual weapon Mastery.
-    if (!Number.isInteger(level) || level < 1 || level > masteryLevel(toolKey) || !Number.isInteger(index) || !options?.[index]) return null;
+  // options.demonstration lets a teaching system (Spearhead's Afflictions
+  // lesson) show an upgrade the player has not earned yet on a borrowed
+  // weapon; ordinary previews still require the weapon's actual Mastery.
+  function beginPreview(toolKey, abilityId, level, index, options = {}) {
+    const choices = getTree(abilityId, weaponTypeForTool(toolKey))?.[level - 1]; // Validate preview data against the same catalog and actual weapon Mastery.
+    const masteryOk = options?.demonstration === true || level <= masteryLevel(toolKey);
+    if (!Number.isInteger(level) || level < 1 || !masteryOk || !Number.isInteger(index) || !choices?.[index]) return null;
     const handle = { toolKey, abilityId, level, index }; // Ownership token prevents stale cleanup from clearing a newer preview.
     preview = handle;
     return handle;

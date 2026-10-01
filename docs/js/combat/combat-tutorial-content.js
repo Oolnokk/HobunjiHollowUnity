@@ -14,7 +14,6 @@
     { id: 'lunge', title: 'Aim and distance', ability: 'swingCombo', slot: 'tap1', check: 'hit', startGap: 2.5, goal: 'Close the distance, then tap Weapon Action 1 to land a hit', text: 'Face and aim at Oddclaw, then land another combo hit. Attacks lunge along your aim; aiming upward changes the jump and distance. An airborne follow-up requires a previous hit. Reposition when a target is outside your weapon’s reach.' },
     { id: 'crossbow', title: 'Crossbow basics', weapon: 'crossbow', check: 'rangedHit', goal: 'Use Weapon Action 1 to load and fire; hit Oddclaw', text: 'Try a borrowed crossbow. Weapon Action 1 runs its normal load and fire cycle. Aim at Oddclaw and land a projectile hit. Your ranged slot is separate from your melee weapon. Later ranged Mastery lessons introduce ammunition choices.' },
     { id: 'scatterbow', title: 'Scatterbow basics', weapon: 'scatterbow', check: 'rangedHit', goal: 'Use Weapon Action 1 to fire; hit Oddclaw', text: 'Now fire the scatterbow at Oddclaw. Its spread makes distance matter. These are borrowed weapons: completing training returns your original equipment.' },
-    { id: 'afflictions', title: 'Afflictions and recovery', check: 'read', text: 'Colored buildup on a resource is an affliction, not another resource. Some effects lower the effective maximum; others damage you or punish spending that portion. The Compendium lists the live effects and their remedies. Exhaustion has its own Black Stamina: when that debt recovers to full, ordinary Stamina starts recovering from zero.' },
     { id: 'recovery', title: 'Recovery and loadouts', check: 'read', text: 'Stop spending Stamina to give it room to recover. Pushing past normal Stamina causes Exhaustion. If Footing reaches zero, you fall prone and recover before getting up. Afflicted portions of a resource are not automatically the same as having little remaining resource. Loadout choices are saved separately for each weapon: Tap 2 is Quick, Hold 1 Offensive, and Hold 2 Offensive or Defensive. Choose one technique you tried to keep permanently.' },
   ];
   const openings = [ // Conditional attacks revisited when the Combat skill improves.
@@ -24,8 +23,24 @@
     { id: 'mercy', title: 'Mercy Spike', ability: 'mercySpike', slot: 'tap2', check: 'quickBonus', condition: 'lowHealth', goal: 'Tap Weapon Action 2 to land Mercy Spike', text: 'The partner’s remaining Health is low for this exercise. Land Mercy Spike with Weapon Action 2. Training attacks cannot kill him.' },
     { id: 'back', title: 'Backstab Flick', ability: 'backstabFlick', slot: 'tap2', check: 'quickBonus', goal: 'Get behind Oddclaw, then tap Weapon Action 2', hint: 'Get fully behind his back before you strike.', text: 'Circle behind Oddclaw while he stands still and use Weapon Action 2. The bonus must trigger to finish this exercise.' },
   ];
+  // What each affliction a weapon can apply actually does, and why you would
+  // pick it. Two demonstrations preview a real rank-1 upgrade on a borrowed
+  // weapon (CombatProgression demonstration preview) so the buildup is visible.
+  const afflictions = [
+    { id: 'aff_read', title: 'Reading buildup', check: 'read', text: 'Colored buildup on a ring is an affliction. Health-side afflictions eat Health over time. Stamina-side afflictions punish the target for spending Stamina, or shrink how much it has. Your weapon decides which ones you can learn: sharp weapons cut, blunt weapons batter.' },
+    { id: 'aff_bleed', title: 'See it: Bleeding', weapon: 'hatchet', ability: 'swingCombo', slot: 'tap1', check: 'hit', count: 2,
+      preview: { kind: 'melee', rank: 1, index: 0, ability: 'swingCombo', demonstration: true },
+      goal: 'Land 2 hatchet hits and watch Oddclaw’s Health ring', text: 'This hatchet is lent with Opened Wound. Land two hits, then watch his Health ring: the red Bleeding Health drains him while the fight goes on.' },
+    { id: 'aff_sharp', title: 'Sharp choices', check: 'read', text: 'Bleeding Health: fast, steady damage in a long fight, but it heals back if the enemy gets away and rests. Poisoned Health: slower, never heals back on its own, and keeps working after the fight; pick it for enemies that flee or that you cannot finish. Wounded Stamina: hurts the enemy every time it attacks or dodges; best against aggressive enemies, weak against passive ones. Infected Stamina: like Wounded, and can also make them retch, leaving them winded and poisoned.' },
+    { id: 'aff_winded', title: 'See it: Winded', weapon: 'fishingmace', ability: 'swingCombo', slot: 'tap1', check: 'hit', count: 2,
+      preview: { kind: 'melee', rank: 1, index: 1, ability: 'swingCombo', demonstration: true },
+      goal: 'Land 2 mace hits and watch Oddclaw’s Stamina ring', text: 'This mace is lent with Winding Blows. Land two hits and watch his Stamina ring shrink: Winded Stamina lowers how much Stamina he can hold.' },
+    { id: 'aff_blunt', title: 'Blunt choices', check: 'read', text: 'Bruised Health: the next heavy hit deals bonus damage; pair it with Charged Breaker. Winded Stamina: less Stamina means the enemy exhausts sooner; pair it with Exhaust Cutter. Congealed Health: temporarily lowers the enemy’s maximum Health and recovers on its own, so press the advantage while it lasts. Shattered Stamina: spending through it makes the enemy start Bleeding, so it gives a blunt weapon a bleed.' },
+    { id: 'aff_choose', title: 'Choosing and surviving', check: 'read', text: 'Pick afflictions for how you fight: Health-side ones for damage, Stamina-side ones for control. Stacking one affliction makes it matter faster than spreading picks thin. When they are on you: stop spending Stamina to clear Stamina-side buildup, step into water to put out Burning, and use an Antidote for toxins. The Compendium lists every affliction and its remedy.' },
+  ];
   const quests = [ // Gates use permanent skill levels and actual owned-item Mastery, never food bonuses.
     { id: 'spearhead_basics', title: 'Spearhead — First Arms', combat: 0, steps: basics },
+    { id: 'spearhead_afflictions', title: 'Spearhead — Afflictions', combat: 0, requires: 'spearhead_basics', steps: afflictions },
     { id: 'spearhead_openings', title: 'Spearhead — Reading an Opening', combat: 2, requires: 'spearhead_basics', steps: openings },
     { id: 'spearhead_resources', title: 'Spearhead — Staying on Your Feet', combat: 5, requires: 'spearhead_basics', steps: [
       { id: 'afflictions', title: 'Buildup and remedies', check: 'read', text: 'Afflictions are buildup on resources. Damage, Control, Offensive Debuff, and Defensive Debuff families describe their role. Some reduce an effective maximum; others punish spending an afflicted portion. Consult the Compendium’s live affliction registry for each exact effect. Restorative potions remove matching families or tags; an Antidote targets toxins, not every injury.' },
@@ -33,9 +48,18 @@
       { id: 'movement', title: 'Make breathing room', ability: 'blinkDodge', slot: 'hold2', check: 'blink', goal: 'Hold Weapon Action 2 and move to hop clear', text: 'Use Blink Dodge to move clear, then release it. A held stance can keep costing Stamina: let go when you need recovery.' },
     ] },
   ];
-  for (let rank = 1; rank <= 5; rank++) { // Runtime templates bind the equipped weapon and live upgrade choices on acceptance.
-    quests.push({ id: `spearhead_mastery_${rank}`, title: `Spearhead — Mastery ${rank}`, mastery: rank, requires: rank === 1 ? 'spearhead_basics' : `spearhead_mastery_${rank - 1}`, steps: [] });
-    quests.push({ id: `spearhead_ranged_${rank}`, title: `Spearhead — Ranged Mastery ${rank}`, rangedMastery: rank, requires: rank === 1 ? 'spearhead_basics' : `spearhead_ranged_${rank - 1}`, steps: [] });
+  // Mastery comparison sessions (combat-tutorial-mastery.js generates their
+  // trials from the equipped weapon's live upgrade choices) are no longer in
+  // Spearhead's lesson menu. Other systems can still run one:
+  // CombatTutorial.start(CombatTutorialContent.masteryQuestTemplate(rank, { ranged }), walker).
+  function masteryQuestTemplate(rank, options = {}) {
+    const ranged = options.ranged === true;
+    const level = Math.max(1, Math.min(5, Math.trunc(Number(rank) || 1)));
+    const prefix = ranged ? 'spearhead_ranged_' : 'spearhead_mastery_';
+    const requires = level === 1 ? 'spearhead_basics' : `${prefix}${level - 1}`; // Same rank chain the menu used to enforce.
+    return ranged
+      ? { id: `${prefix}${level}`, title: `Spearhead — Ranged Mastery ${level}`, rangedMastery: level, requires, steps: [] }
+      : { id: `${prefix}${level}`, title: `Spearhead — Mastery ${level}`, mastery: level, requires, steps: [] };
   }
   const termColors = { // Shared colors reinforce the tutorial's resource and ability categories.
     'Health': '#ff9292', 'Stamina': '#a5e894', 'Footing': '#8bd5ff',
@@ -43,6 +67,8 @@
     'Offensive Hold': '#ffbb88', 'Offensive': '#ffbb88', 'Charged Breaker': '#ffbb88', 'Accelerating Flurry': '#ffbb88',
     'Quick Attack': '#ffe394', 'Quick': '#ffe394', 'Opportunist Jab': '#ffe394', 'Exhaust Cutter': '#ffe394', 'Mercy Spike': '#ffe394', 'Backstab Flick': '#ffe394',
     'Mastery': '#d7b4ff', 'Loadout': '#d7b4ff', 'Exhaustion': '#d7b4ff', 'Affliction': '#d7b4ff',
+    'Bleeding Health': '#ff7a7a', 'Poisoned Health': '#9be37a', 'Bruised Health': '#c79bff', 'Congealed Health': '#e0a0a0', 'Burning': '#ffae5c',
+    'Wounded Stamina': '#ffb38a', 'Infected Stamina': '#b9d36a', 'Winded Stamina': '#9fd8ff', 'Shattered Stamina': '#d0d0e0',
   };
   const termPattern = new RegExp('\\b(' + Object.keys(termColors).sort((a, b) => b.length - a.length).join('|') + ')(s?)\\b', 'gi'); // Longest names match first; plural forms keep the same meaning and color.
   for (const quest of quests) for (const lesson of quest.steps) {
@@ -51,5 +77,5 @@
       return `[color=${termColors[key]}]${match}[/color]`;
     });
   }
-  window.CombatTutorialContent = { NPC_ID: 'spearhead_unumanuk', ARENA: 'map_i_watchhouse_arena', quests };
+  window.CombatTutorialContent = { NPC_ID: 'spearhead_unumanuk', ARENA: 'map_i_watchhouse_arena', quests, masteryQuestTemplate };
 })();

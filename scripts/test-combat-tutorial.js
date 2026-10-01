@@ -80,7 +80,7 @@ function harness() {
   assert.equal(h.equipment.weapon, 'hatchet');
   assert.equal(h.window.Combat.loadout.getSlot('hold1'), null, 'original empty loadout restored after reward');
   assert.equal(await h.api.finish('counterShield'), false, 'double claiming cannot grant another reward');
-  assert.match(h.api.gate(h.window.CombatTutorialContent.quests[1]), /Combat level 2/);
+  assert.match(h.api.gate(h.window.CombatTutorialContent.quests.find(q => q.id === 'spearhead_openings')), /Combat level 2/);
   h.setLevel(2);
   assert.equal(await h.api.start('spearhead_openings', h.walker), true);
   await h.finishStep(); h.explain();
@@ -90,9 +90,9 @@ function harness() {
   assert.equal(h.api.debugSnapshot().hits, 1);
   await h.api.leave();
   h.setMastery(1);
-  assert.equal(h.api.gate(h.window.CombatTutorialContent.quests.find(q => q.id === 'spearhead_mastery_1')), '');
-  assert.match(h.api.gate(h.window.CombatTutorialContent.quests.find(q => q.id === 'spearhead_mastery_2')), /Complete/);
-  assert.equal(await h.api.start('spearhead_ranged_1', h.walker), true);
+  assert.equal(h.api.gate(h.window.CombatTutorialContent.masteryQuestTemplate(1)), '');
+  assert.match(h.api.gate(h.window.CombatTutorialContent.masteryQuestTemplate(2)), /Complete/);
+  assert.equal(await h.api.start(h.window.CombatTutorialContent.masteryQuestTemplate(1, { ranged: true }), h.walker), true);
   h.api.loanAmmo().specialAmmo = 0;
   assert.equal(h.gear.specialAmmo, 2, 'borrowed ammo never spends the real charges');
   await h.finishStep(); h.explain();
@@ -113,9 +113,9 @@ function harness() {
 
   h.setFailTravel(false); h.setArea('map_i_watchhouse');
   h.equipment.weapon = null;
-  assert.match(h.api.gate(h.window.CombatTutorialContent.quests.find(q => q.id === 'spearhead_mastery_1')), /Equip/, 'owned but unequipped mastery is insufficient');
+  assert.match(h.api.gate(h.window.CombatTutorialContent.masteryQuestTemplate(1)), /Equip/, 'owned but unequipped mastery is insufficient');
   h.equipment.weapon = 'hatchet';
-  assert.equal(await h.api.start('spearhead_mastery_1', h.walker), true);
+  assert.equal(await h.api.start(h.window.CombatTutorialContent.masteryQuestTemplate(1), h.walker), true);
   assert.equal(h.api.debugSnapshot().weapon, 'hatchet');
   assert.match(h.api.selectTree().nodes[0].text, /Test Hatchet/);
   await h.finishStep();
@@ -130,11 +130,11 @@ function harness() {
   await h.api.leave();
   assert.equal(Object.keys(h.window.CombatProgression.getEffects('hatchet', alternate.ability).afflictions).length, 0, 'preview effects disappear on exit');
   h.equipment.ranged = null;
-  assert.match(h.api.gate(h.window.CombatTutorialContent.quests.find(q => q.id === 'spearhead_ranged_1')), /Equip/);
+  assert.match(h.api.gate(h.window.CombatTutorialContent.masteryQuestTemplate(1, { ranged: true })), /Equip/);
   h.equipment.ranged = 'crossbow';
 
   h.progress.spearhead_ranged_1.status = 'completed'; h.setMastery(2);
-  assert.equal(await h.api.start('spearhead_ranged_2', h.walker), true);
+  assert.equal(await h.api.start(h.window.CombatTutorialContent.masteryQuestTemplate(2, { ranged: true }), h.walker), true);
   await h.finishStep(); h.explain();
   assert.equal(h.api.loanAmmo().rangedAmmoLoadouts.crossbow.activeAmmo, 'shrapnel');
   h.api.hit(h.target, { ranged: true, ammoId: 'basic' });
@@ -180,12 +180,22 @@ function harness() {
   assert.equal(automatic.dialogueCount, beforeBackground + 1);
   await automatic.api.leave();
 
-  const menu = harness(); // Future Mastery ranks stay out of the way until the previous rank is done.
+  const menu = harness(); // Mastery comparison sessions are no longer menu lessons; the Afflictions lesson is.
   const menuLabels = () => menu.api.selectTree().nodes.flatMap(node => node.choices.map(choice => choice.label));
   assert.equal(menu.api.selectTree().nodes.length, 1, 'every offered lesson fits on one page');
-  assert.ok(menuLabels().some(label => /^Mastery 1 /.test(label)) && !menuLabels().some(label => /^Mastery 2 /.test(label)));
-  menu.progress.spearhead_mastery_1 = { status: 'completed', progress: {} };
-  assert.ok(menuLabels().some(label => /^Mastery 2 /.test(label)) && !menuLabels().some(label => /^Mastery 1 /.test(label)));
+  assert.ok(!menuLabels().some(label => /Mastery/.test(label)), 'Mastery lessons are not offered in the menu');
+  assert.ok(menuLabels().some(label => /^Afflictions /.test(label)), 'the Afflictions lesson is offered');
+
+  const afflictionLesson = harness(); // Demonstrations preview a real upgrade on a borrowed weapon without any earned Mastery.
+  afflictionLesson.progress.spearhead_basics = { status: 'completed', progress: {} };
+  assert.equal(await afflictionLesson.api.start('spearhead_afflictions', afflictionLesson.walker), true);
+  await afflictionLesson.finishStep();
+  assert.equal(afflictionLesson.api.debugSnapshot().step, 'aff_bleed');
+  assert.equal(afflictionLesson.api.debugSnapshot().preview.demonstration, true);
+  assert.ok((afflictionLesson.window.CombatProgression.getEffects('hatchet', 'swingCombo').afflictions || {}).bleedingHealth > 0, 'Bleeding demonstration applies with zero Mastery');
+  assert.equal(afflictionLesson.window.CombatProgression.getChosenOption('hatchet', 'swingCombo', 1), null, 'demonstration never saves the upgrade');
+  await afflictionLesson.api.leave();
+  assert.equal(Object.keys(afflictionLesson.window.CombatProgression.getEffects('hatchet', 'swingCombo').afflictions || {}).length, 0, 'demonstration preview ends with the lesson');
 
   const talking = harness(); // Walking up to Spearhead mid-exercise is a request for help, not a finished step.
   await talking.api.start('spearhead_basics', talking.walker);

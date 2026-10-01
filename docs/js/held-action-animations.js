@@ -198,18 +198,18 @@
     new URL('config/hand-shoulder-points.js?v=20260818b', docsBase).href,
     new URL('config/hand-shoulder-pose-profiles.js?v=20260920localhinge1', docsBase).href,
     new URL('js/procedural-hand-foot-material-roles.js?v=20260821e', docsBase).href,
-    new URL('js/hand-tool-grips.js?v=20260921throwpivot2', docsBase).href,
+    new URL('js/hand-tool-grips.js?v=20261001c049eb2f', docsBase).href,
     new URL('js/hand-grip-modes.js?v=20260920palmflip1-rangedgrip1', docsBase).href,
     new URL('js/hand-shoulder-pose-runtime.js?v=20260920elbow5', docsBase).href,
     new URL('js/portrait-arm-cloud-mask.js?v=20260817a', docsBase).href,
     new URL('js/portrait-hand-shoulder-scan.js?v=20260818c', docsBase).href,
     new URL('js/portrait-hand-shoulder-scan-species.js?v=20260818a', docsBase).href,
     new URL('js/procedural-hand-attachments.js?v=20260920wristaxis1', docsBase).href,
-    new URL('js/procedural-hand-outline-parity.js?v=20260821f', docsBase).href,
+    new URL('js/procedural-hand-outline-parity.js?v=20260930a', docsBase).href,
     new URL('js/attachment-rig-latest-authored-snapshot.js?v=20260930h877c3d2', docsBase).href,
     new URL('js/procedural-hand-scale-free-world.js?v=20260924perf1', docsBase).href,
     new URL('js/procedural-hand-shoulder-aim.js?v=20260924perf1', docsBase).href,
-    new URL('js/procedural-hand-frame-driver.js?v=20260927hostilehands2', docsBase).href,
+    new URL('js/procedural-hand-frame-driver.js?v=20260930heightscale1', docsBase).href,
   ];
   if (isAttackEditor) {
     // The editor starts its first avatar rebuild immediately after these parser-time
@@ -220,7 +220,7 @@
     handScripts.push(new URL('js/attack-editor-hand-inverse-configurator.js?v=20260919handreview1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-mirror-toggle.js?v=20260817a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-grip-mode.js?v=20260919labels1-rangedgrip1', docsBase).href);
-    handScripts.push(new URL('js/attack-editor-hand-direct-attachments.js?v=20260919quatcal1-rangedgrip2', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-hand-direct-attachments.js?v=20261001c0bd7bbe', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-shoulder-controls.js?v=20260920posecore1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-idle-hand-parity.js?v=20260920localhinge1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-state-coherence.js?v=20260919handreview1', docsBase).href);
