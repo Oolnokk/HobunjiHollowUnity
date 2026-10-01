@@ -27,7 +27,7 @@
 (() => {
   'use strict';
   if (window.HeldObjectRenderOrder?.installed) return;
-  const src = 'js/held-object-render-order.js?v=20260930globalground1';
+  const src = 'js/held-object-render-order.js?v=20261001h0745138';
   if (document.readyState === 'loading' && document.currentScript) {
     document.write(`<script data-hobunji-held-render-order="1" src="${src}"><\/script>`);
     return;
@@ -46,7 +46,7 @@
 (() => {
   'use strict';
   if (window.ActionArchIcons?.installed || document.querySelector('script[data-action-arch-icons]')) return;
-  const src = 'js/action-arch-icons.js?v=20260915perf1';
+  const src = 'js/action-arch-icons.js?v=20261001hc4b55a0';
   if (document.readyState === 'loading' && document.currentScript) {
     document.write(`<script data-action-arch-icons="1" src="${src}"><\/script>`);
     return;

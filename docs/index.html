@@ -162,7 +162,7 @@
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
   <script src="js/held-action-animations.js?v=20261001cc4ca767"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
-  <script src="js/character-action-locks.js?v=20260925metromix1"></script>
+  <script src="js/character-action-locks.js?v=20261001hf0449d2"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
   <script src="js/npc-character-state.js?v=20260811a"></script>
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
@@ -239,7 +239,7 @@
   <!-- Optional local-folder save mirror (window.LocalSaveFolder) — self-contained,
        only reads/writes the same hobunjiSaveMeta localStorage key onboarding.js/
        game.js already use. See docs/js/local-save-folder.js. -->
-  <script src="js/local-save-folder.js?v=20261001c619ad88"></script>
+  <script src="js/local-save-folder.js?v=20261001h7bfe020"></script>
   <!-- Onboarding overlay -->
   <link rel="stylesheet" href="onboarding.css?v=20260921preworldsky1">
   <script src="onboarding.js?v=20261001cc6ee547"></script>
@@ -312,7 +312,7 @@
   <script src="js/bounty-board.js?v=20260831spearheadexisting1-colors1"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261001ce94eff3"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261001h9751780"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -480,7 +480,7 @@
        other systems above doesn't matter; must load before game.js, which
        calls window.WildernessMap.init(...) during its own setup. -->
   <script src="js/wilderness-map.js?v=20260929ruinsites1"></script>
-  <script src="js/navigation-compass.js?v=20260830mapwaypoint1"></script>
+  <script src="js/navigation-compass.js?v=20261001h4adf2e4"></script>
   <!-- Dead-zone rotation math shared by player/NPC/creature PNG-plane
        avatars (window.PerpRotation) — self-contained aside from deps
        injected via init(), so load order relative to the other systems
@@ -557,7 +557,7 @@
   <script src="js/map-live-preview.js?v=20260909a&window=20260926rebase1"></script>
   <!-- Wall-mounted furniture loads synchronously before game.js consumers initialize. -->
   <script src="js/wall-ornament-placement.js?v=20260926rebase1"></script>
-  <script src="js/map-live-preview-runtime.js?v=20260925banubukeycam1"></script>
+  <script src="js/map-live-preview-runtime.js?v=20261001h2cfbbf0"></script>
   <!-- Dev Tools: Testing Arena teleport + creature/bandit/foliage spawner
        panel (window.DevSpawner) — reads window.CreatureGenetics/
        window.CreatureGeneticsRender/window.BanditCombat/
@@ -744,6 +744,7 @@
   <script src="js/stampable-locale-defs.js?v=20260929ruinsites1"></script>
   <script src="js/ruin-sites.js?v=20260929ruinsites1"></script>
   <script src="js/zone-den-totem-features.js?v=20260929glowdecals1"></script>
+  <script src="js/transition-markers.js?v=20261001a"></script>
   <!-- Wilderness-zone grass and rich-foliage-patch billboards
        (window.ZoneGrassBillboards) — pure scene-graph generation, no
        other window.* system reads; must load before game.js, which calls
@@ -754,7 +755,7 @@
   <!-- Minecraft-style finite wilderness streaming: owns 16x16 runtime
        terrain/vegetation chunks while the Tothal generator remains owner of
        each zone's deterministic complete tile blueprint. -->
-  <script src="js/wilderness-chunks.js?v=20260924perf3"></script>
+  <script src="js/wilderness-chunks.js?v=20261001hc314933"></script>
   <!-- PNG-plane avatar outline occluders: registry of sprite-plane meshes on
        outline layer 4 plus the depth-only replay game.js runs before its
        outline passes (window.PngPlaneOutlineOccluder; game.js calls init). -->
@@ -2376,7 +2377,7 @@
     <button class="fcv-continue" id="fcvContinueBtn">Continue</button>
   </div>
 
-  <script src="js/tool-icon-render.js?v=20260930globalground2"></script>
+  <script src="js/tool-icon-render.js?v=20261001h924b68f"></script>
   <script src="js/sprite-recolor.js?v=20260924perf5"></script>
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
        calls window.Mounts.init(...) during its own setup. -->
@@ -2549,7 +2550,7 @@
   <script src="js/shoulder-cam-pointer-lock.js?v=20260930hfc11b39"></script>
   <!-- Shared character-scoped hobunjiSaveMeta update step used by game.js's save* helpers. -->
   <script src="js/character-meta-save.js?v=20260930ench1"></script>
-  <script src="game.js?v=20261001h0051aee"></script>
+  <script src="game.js?v=20261001hc02ecea"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>

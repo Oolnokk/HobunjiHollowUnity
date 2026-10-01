@@ -375,20 +375,6 @@
     classifyTree(scene);
   }
 
-  function sceneForObject(object) {
-    let node = object;
-    while (node?.parent) node = node.parent;
-    return node?.isScene ? node : null;
-  }
-
-  function ancestorsVisible(object, stopScene) {
-    for (let node = object; node; node = node.parent) {
-      if (node.visible === false) return false;
-      if (node === stopScene) return true;
-    }
-    return false;
-  }
-
   function collectVisible(registry, scene) {
     const result = [];
     for (const object of registry) {
@@ -396,14 +382,23 @@
         registry.delete(object);
         continue;
       }
-      const ownerScene = sceneForObject(object);
-      if (!ownerScene) {
+      // One upward walk finds both the owning scene and whether any ancestor
+      // (scene included) is hidden; this runs over four registries every
+      // world render, so separate scene-lookup and visibility walks would
+      // double the per-frame cost.
+      let node = object;
+      let visible = true;
+      for (;;) {
+        if (node.visible === false) visible = false;
+        if (!node.parent) break;
+        node = node.parent;
+      }
+      if (!node.isScene) {
         // Detached runtime meshes should not be kept alive by our iterable set.
         registry.delete(object);
         continue;
       }
-      if (ownerScene !== scene) continue;
-      if (!ancestorsVisible(object, scene)) continue;
+      if (node !== scene || !visible) continue;
       result.push(object);
     }
     return result;
