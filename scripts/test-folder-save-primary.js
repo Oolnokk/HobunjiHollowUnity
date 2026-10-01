@@ -130,7 +130,8 @@ assert(quitGuard.includes('if (!resetButton.disabled) resetButton.disabled = tru
 assert(quitGuard.includes("button.dataset.manualSaveBusy = '1'"), 'Manual Save busy feedback uses explicit local UI state');
 assert(quitGuard.includes("button.textContent = 'Saving…'"), 'Manual Save replaces its actual label while saving');
 assert(quitGuard.includes('startManualSaveBusyLabel(button)'), 'Manual Save busy feedback is driven from its click path instead of a global disabled observer');
-assert(quitGuard.includes('changedNodes.some(node => node?.nodeType === 1)'), 'menu observer reacts only to structural child changes, not its own text-label mutations');
+assert(/changedNodes\.some\(node => node\?\.nodeType === 1\b/.test(quitGuard), 'menu observer reacts only to structural child changes, not its own text-label mutations');
+assert(/changedNodes\.some\([^\n]*data-generic-hud-icon/.test(quitGuard), 'menu observer ignores generic-hud-icons swapping the compact ✕ label for an icon (it would re-label and loop every frame)');
 assert(quitGuard.includes('if (visibilityChange || structuralChange) scheduleMenuControlRelayout()'), 'menu mutations schedule a coalesced relayout instead of synchronously re-entering label measurement');
 assert(quitGuard.includes('menuControlRelayoutTimer = setTimeout'), 'rotation resize bursts are debounced until layout settles');
 assert(!quitGuard.includes('requestAnimationFrame('), 'menu resize handling does not create a direct RAF outside RuntimeFrameScheduler ownership');

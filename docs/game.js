@@ -10744,7 +10744,7 @@
         }
         // Don't fire a spot the player happens to spawn on
         _transitionLatch = travelAreaKey();
-        buildTransitionMarkers();
+        window.TransitionMarkers.buildTransitionMarkers();
         spawnScheduledNpcs().catch(e => console.warn('spawnScheduledNpcs failed:', e));
       }
 
@@ -10757,20 +10757,8 @@
         return area + ':' + Math.floor(player.x / TILE) + ',' + Math.floor(player.y / TILE);
       }
 
-      function buildTransitionMarkers() {
-        const _ringGeo = new THREE.RingGeometry(0.22, 0.36, 24);
-        const _ringMat = new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false });
-        for (const t of worldTransitions) {
-          const interior = t.area === 'interior';
-          const g = interior ? interiorGrid : grid;
-          const tile = g[t.row]?.[t.col];
-          if (!tile) continue;
-          const ring = new THREE.Mesh(_ringGeo, _ringMat);
-          ring.rotation.x = -Math.PI / 2;
-          ring.position.set(t.col + 0.5, tileSurfaceY(tile.type) + 0.02, t.row + 0.5);
-          (interior ? interiorScene : scene).add(ring);
-        }
-      }
+      // Transition-spot floor rings (buildTransitionMarkers) now live in
+      // js/transition-markers.js — call via window.TransitionMarkers.*.
 
       function checkTransitionSpots() {
         const area = _travelAreaOf(currentArea);
@@ -10785,8 +10773,15 @@
         const t = pool.find(x =>
           (_isBuildingArea(area) || _isZoneArea(area) || x.area === area) && x.col === pc && x.row === pr &&
           (!x.requiresKeyItem || !!window.KeyItemSystem?.has?.(x.requiresKeyItem)) &&
-          (x.target === 'building' ? !!x.targetMapId : x.target === 'zone' ? !!x.targetMapId : x.target === 'exit_building' ? true : (Number.isFinite(x.targetCol) && Number.isFinite(x.targetRow))));
-        if (t !== _pendingSpotTransition) { _pendingSpotTransition = t || null; refreshActionBar(); }
+          (x.target === 'building' ? !!x.targetMapId : x.target === 'zone' ? !!x.targetMapId : x.target === 'exit_building' ? true : (Number.isFinite(x.targetCol) && Number.isFinite(x.targetRow)))) || null;
+        _pendingSpotTransition = t;
+        // Deliberately once per frame, not only when the spot changes: nothing
+        // else re-resolves the action arch as the reticle moves or a tile/NPC
+        // under it changes, so the arch has always depended on this call
+        // (it used to happen by accident — find()'s undefined never equalled
+        // the stored null). refreshActionBar() is _lastBarKey-cached, so its
+        // no-change path must stay free of unconditional DOM writes.
+        refreshActionBar();
         // Farm interior exit fires automatically (legacy behaviour)
         if (t && area === 'interior') startSceneTransition(() => performTravel(t));
       }
@@ -25252,8 +25247,12 @@
         // icon otherwise.
         if (dodgeBtn) {
           const icon = dodgeBtn.querySelector('.abt-icon'), label = dodgeBtn.querySelector('.abt-label');
-          if (icon) icon.textContent = climbBtn ? climbBtn.icon : '💨';
-          if (label) label.textContent = climbBtn ? climbBtn.label : 'Dodge';
+          // Compare first: this runs every frame (see checkTransitionSpots), and an
+          // unconditional textContent write queues childList mutations that wake
+          // every action-arch MutationObserver (arch-button-labels, action-arch-icons...).
+          const dodgeIcon = climbBtn ? climbBtn.icon : '💨', dodgeLabel = climbBtn ? climbBtn.label : 'Dodge';
+          if (icon && icon.textContent !== dodgeIcon) icon.textContent = dodgeIcon;
+          if (label && label.textContent !== dodgeLabel) label.textContent = dodgeLabel;
         }
 
         if (!needsRebuild) return;
@@ -28840,6 +28839,12 @@
         buildMergedWaterMesh: window.WaterSystem.buildMergedWaterMesh,
       });
 
+      window.TransitionMarkers?.init({
+        interiorGrid, scene, interiorScene, tileSurfaceY,
+        getGrid: () => grid,
+        getWorldTransitions: () => worldTransitions,
+      });
+
       window.ZoneDenTotemFeatures?.init({
         NORMAL_TOP, PLATEAU_UNIT,
         markOutline: _markOutline,
@@ -29495,7 +29500,7 @@
       // Ensure a farm→town transition always exists even without map editor data
       if (!worldTransitions.some(t => t.target === 'town')) {
         worldTransitions.push({ id: 'sp_farm_to_town', label: 'To Town', area: 'farm', col: 17, row: 0, target: 'town', targetCol: 20, targetRow: 48 });
-        buildTransitionMarkers();
+        window.TransitionMarkers.buildTransitionMarkers();
       }
       // Load town layout from workspace config (authoritative source)
       window.Music?.loadAudioCueIndexes().then(() => window.Music?.resetAmbientCueTimer()).catch(() => window.Music?.resetAmbientCueTimer());

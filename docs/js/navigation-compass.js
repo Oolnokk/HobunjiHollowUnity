@@ -196,16 +196,32 @@
     return { targets: deduped, offAreaQuestTargets, offAreaWaypoint };
   }
 
-  function makeIndicator(className, text) {
+  // Indicator spans are reused across updates instead of replaceChildren() +
+  // createElement at 30 Hz: every rebuild queued childList mutations for each
+  // body-wide MutationObserver (15+ of them) even while the player stood still.
+  // Each property is compared before writing so an unchanged strip writes nothing.
+  function setIfChanged(target, key, value) {
+    if (target[key] !== value) target[key] = value;
+  }
+
+  function setStyleProperty(element, name, value) {
+    if (element.style.getPropertyValue(name) !== value) {
+      if (value) element.style.setProperty(name, value);
+      else element.style.removeProperty(name);
+    }
+  }
+
+  function indicatorAt(layer, index) {
+    const existing = layer.children[index];
+    if (existing) return existing;
     const element = document.createElement('span'); // Used as one reusable cardinal or target indicator in the strip.
-    element.className = className;
-    element.textContent = text;
+    layer.appendChild(element);
     return element;
   }
 
   function renderIndicators(layer, entries, heading, playerCol, playerRow) {
-    layer.replaceChildren();
     const debugMarkers = [];
+    let used = 0;
     for (const entry of entries) {
       const targetAngle = entry.angle ?? Math.atan2(entry.row - playerRow, entry.col - playerCol);
       const delta = angleDiff(targetAngle, heading);
@@ -213,19 +229,27 @@
       const leftPercent = 50 + delta / HALF_VIEW_RAD * 50;
       const edgeOpacity = Math.max(0.2, 1 - Math.pow(Math.abs(delta) / HALF_VIEW_RAD, 3));
       const distance = entry.angle == null ? Math.hypot(entry.col - playerCol, entry.row - playerRow) : null;
-      const indicator = makeIndicator(entry.angle == null ? 'nav-compass-marker' : 'nav-compass-cardinal', entry.symbol || entry.label);
-      indicator.style.left = `${leftPercent}%`;
-      indicator.style.opacity = String(edgeOpacity);
+      const indicator = indicatorAt(layer, used++);
+      setIfChanged(indicator, 'className', entry.angle == null ? 'nav-compass-marker' : 'nav-compass-cardinal');
+      setIfChanged(indicator, 'textContent', entry.symbol || entry.label);
+      setStyleProperty(indicator, 'left', `${leftPercent}%`);
+      setStyleProperty(indicator, 'opacity', String(edgeOpacity));
       if (distance != null) {
         const size = markerSize(distance);
-        indicator.style.setProperty('--nav-marker-size', `${size.toFixed(1)}px`);
-        indicator.style.color = entry.color;
-        indicator.title = `${entry.label} — ${distance.toFixed(distance < 10 ? 1 : 0)} tiles`;
-        indicator.setAttribute('aria-label', indicator.title);
+        const title = `${entry.label} — ${distance.toFixed(distance < 10 ? 1 : 0)} tiles`;
+        setStyleProperty(indicator, '--nav-marker-size', `${size.toFixed(1)}px`);
+        setStyleProperty(indicator, 'color', entry.color || '');
+        setIfChanged(indicator, 'title', title);
+        if (indicator.getAttribute('aria-label') !== title) indicator.setAttribute('aria-label', title);
         debugMarkers.push({ id: entry.id, source: entry.source, label: entry.label, distanceTiles: Number(distance.toFixed(1)), sizePx: Number(size.toFixed(1)), bearingDeg: Number((delta * 180 / Math.PI).toFixed(1)) });
+      } else {
+        setStyleProperty(indicator, '--nav-marker-size', '');
+        setStyleProperty(indicator, 'color', '');
+        setIfChanged(indicator, 'title', '');
+        if (indicator.hasAttribute('aria-label')) indicator.removeAttribute('aria-label');
       }
-      layer.appendChild(indicator);
     }
+    while (layer.children.length > used) layer.lastElementChild.remove();
     return debugMarkers;
   }
 
@@ -266,6 +290,6 @@
   window.NavigationCompass = Object.freeze({
     update,
     getDebug: () => ({ ...lastDebug, markers: lastDebug.markers.map(marker => ({ ...marker })) }),
-    _test: Object.freeze({ angleDiff, normalizeAngle, markerSize, headingFromDirection, headingFromCameraAzimuthDeg, currentHeading, collectTargets }),
+    _test: Object.freeze({ angleDiff, normalizeAngle, markerSize, headingFromDirection, headingFromCameraAzimuthDeg, currentHeading, collectTargets, renderIndicators }),
   });
 })();

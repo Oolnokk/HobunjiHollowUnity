@@ -152,10 +152,14 @@
         }
         if (record.type !== 'childList') continue;
         const changedNodes = [...record.addedNodes, ...record.removedNodes];
-        if (changedNodes.some(node => node?.nodeType === 1)) structuralChange = true;
+        if (changedNodes.some(node => node?.nodeType === 1 && !node.hasAttribute?.('data-generic-hud-icon'))) structuralChange = true;
       }
       // Ignore text-only childList mutations. labelMenuControls() changes button textContent itself,
       // and reacting to those mutations caused full/compact labels to toggle forever on narrow rotated screens.
+      // generic-hud-icons.js icon swaps are ignored for the same reason: it turns the compact Close
+      // label's ✕ into an <img data-generic-hud-icon>, and treating that as structural re-ran
+      // labelMenuControls(), whose textContent write removed the icon, which was re-inserted next
+      // frame -- a permanent per-frame loop that also woke every body-wide MutationObserver.
       if (visibilityChange) syncMenuOverlayControls();
       if (visibilityChange || structuralChange) scheduleMenuControlRelayout();
     });

@@ -332,7 +332,11 @@
       summary.replaceChildren(slotPair, toolStats, outfitStats);
       summary.classList.add('gear-summary-panel');
     }
-    owned.classList.add('gear-middle-inventory');
+    // classList.add() rewrites the class attribute even when the token is already
+    // present, and this module's own MutationObserver watches `class` under
+    // #mpInventory -- so an unconditional add re-queued refreshPresentation()
+    // on every frame forever. Only add it once.
+    if (!owned.classList.contains('gear-middle-inventory')) owned.classList.add('gear-middle-inventory');
     return { section, summary, owned };
   }
 
