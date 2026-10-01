@@ -188,8 +188,28 @@
       if (next) applyCachedPlayerCombatFrown(avatar); // Ready cache makes the live player frown synchronous before Combat.update samples a ghost this frame.
     }
     playerLifeT = Infinity; // Normal portrait-life render still follows so breathing/blinking continue with the correct expression.
-    if (!playerLifePending) tickPlayer(0);
+    if (!config().enabled) renderPlayerExpressionOnce(avatar); // Portrait life is off, so tickPlayer will never repaint; restore/apply the face with one static render.
+    else if (!playerLifePending) tickPlayer(0);
     return true;
+  }
+
+  function renderPlayerExpressionOnce(avatar) {
+    if (!avatar?.frontCanvas || !avatar.profile || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
+    const generation = avatar.generation;
+    const expressionVersion = playerCombatExpressionVersion;
+    const scratch = document.createElement('canvas'); // Detached so a stale render never partially overwrites the live texture.
+    scratch.width = avatar.frontCanvas.width;
+    scratch.height = avatar.frontCanvas.height;
+    window.NpcAvatarPreview.renderProfileToCanvas(scratch, avatar.profile, {
+      forceEyesOpen: true,
+      ...(playerCombatFrown ? { breathingComposer: COMBAT_FROWN_COMPOSER, seatId: 'player-combat-frown-cache' } : {}),
+    }).then(() => {
+      const current = deps?.getPlayerAvatar?.();
+      if (!current || current.generation !== generation || expressionVersion !== playerCombatExpressionVersion) return;
+      if (!copyPortraitCanvas(current.frontCanvas, scratch)) return;
+      window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(current.group, current.frontCanvas);
+      if (playerCombatFrown) playerCombatExpressionApplied = true;
+    }).catch(() => {});
   }
 
   window.WorldPortraitLife = {
