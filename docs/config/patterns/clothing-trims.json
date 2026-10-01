@@ -1,4 +1,17 @@
 {
   "schema": "hobunji_clothing_trim.v1",
-  "garments": {}
+  "garments": {
+    "ragged_hood": {
+      "variants": {
+        "mao-ao_male": {
+          "front": {
+            "motifPng": "assets/patterns/clothing-trims/ragged_hood__mao-ao_male__front.png",
+            "settings": {
+              "directMask": true
+            }
+          }
+        }
+      }
+    }
+  }
 }
