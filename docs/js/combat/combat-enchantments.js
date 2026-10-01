@@ -319,7 +319,7 @@
   function flourishQualifies(event) {
     switch (event.attackCategory) {
       case 'combo': return event.comboFinisher === true;
-      case 'quickAttack': return event.quickConditionalBonus === true;
+      case 'quickAttack': return event.quickBonusEffectProc === true;
       case 'offensiveHold':
         if (event.isFlurry) return true;
         return fullChargeThresholdSatisfied(event);
