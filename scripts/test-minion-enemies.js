@@ -33,9 +33,9 @@ assert.match(devSource, /resolvedRosterDyes[\s\S]*hands=\$\{handRig\}/, 'Testing
 const banditIndex = indexSource.indexOf('combat-bandit.js?v='); // Cache token may change whenever the shared humanoid renderer changes.
 assert(banditIndex >= 0 && banditIndex < indexSource.indexOf('combat-minion.js?v=20260929lichroom1'));
 assert(indexSource.indexOf('combat-minion.js?v=20260929lichroom1') < indexSource.indexOf('dev-spawner.js?v=20260927reviewfix1'));
-assert(indexSource.includes('resource-system.js?v=20260930h7347c6f'));
+assert(indexSource.includes('resource-system.js?v=20261001quickdebuff2'));
 assert(indexSource.includes('combat-config-loader.js?v='));
-assert(indexSource.includes('game.js?v=20261001hc02ecea'));
+assert(indexSource.includes('game.js?v=20261001quickdebuff2'));
 
 const authoredDyes = [
   'dye:CLOTH:muted_red_orange', 'dye:CLOTH:dusty_red_orange', 'dye:CLOTH:dark_muted_red_orange',
