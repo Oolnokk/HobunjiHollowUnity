@@ -191,6 +191,146 @@
     resoluteHealth: Object.freeze({ resource: "health", conversionRate: 3, normalPriority: 50 }),
     mirroredHealth: Object.freeze({ resource: "health", conversionRate: 1, normalPriority: 30 }),
   });
+  // Short-lived combat debuffs are deliberately separate from resource-ring
+  // afflictions: they change combat math for a duration without occupying
+  // Health/Stamina/Footing bar segments. Quick Attack mastery choices are the
+  // first author, but the API is generic so later systems can reuse it.
+  const TIMED_DEBUFFS = Object.freeze({
+    exposed: Object.freeze({
+      name: "Exposed", maxStacks: 5, maxModifier: 2,
+      modifiers: Object.freeze({ incomingDamage: 1.075 }),
+      desc: "Takes more direct Health damage per stack."
+    }),
+    sapped: Object.freeze({
+      name: "Sapped", maxStacks: 5, minModifier: 0.2,
+      modifiers: Object.freeze({ staminaRegen: 0.90 }),
+      desc: "Recovers Stamina more slowly per stack."
+    }),
+    unsteady: Object.freeze({
+      name: "Unsteady", maxStacks: 5, minModifier: 0.2,
+      modifiers: Object.freeze({ footingRegen: 0.90 }),
+      desc: "Recovers Footing more slowly per stack."
+    }),
+    reeling: Object.freeze({
+      name: "Reeling", maxStacks: 5, maxModifier: 3,
+      modifiers: Object.freeze({ knockbackTaken: 1.15 }),
+      desc: "Receives more knockback per stack."
+    }),
+    heavy: Object.freeze({
+      name: "Heavy", maxStacks: 5, minModifier: 0.25,
+      modifiers: Object.freeze({ moveSpeed: 0.925, dodgeLungeDistance: 0.925 }),
+      desc: "Moves more slowly and covers less distance with dodges and lunges per stack."
+    }),
+    sluggish: Object.freeze({
+      name: "Sluggish", maxStacks: 5, minModifier: 0.25,
+      modifiers: Object.freeze({ attackSpeed: 0.925 }),
+      desc: "Attacks more slowly per stack."
+    }),
+    brittle: Object.freeze({
+      name: "Brittle", maxStacks: 5, maxModifier: 2.5,
+      modifiers: Object.freeze({ footingDamageTaken: 1.10 }),
+      desc: "Receives more Footing damage per stack."
+    }),
+    taxed: Object.freeze({
+      name: "Taxed", maxStacks: 5, maxModifier: 2,
+      modifiers: Object.freeze({ staminaCost: 1.075 }),
+      desc: "Pays more Stamina for actions per stack."
+    }),
+    enfeebled: Object.freeze({
+      name: "Enfeebled", maxStacks: 5, minModifier: 0.25,
+      modifiers: Object.freeze({ outgoingDamage: 0.925 }),
+      desc: "Deals less direct damage per stack."
+    }),
+    inhibited: Object.freeze({
+      name: "Inhibited", maxStacks: 5, minModifier: 0.2,
+      modifiers: Object.freeze({ healingReceived: 0.90 }),
+      desc: "Receives less Health recovery per stack."
+    })
+  });
+
+  function timedDebuffStore(entity, create = false) {
+    if (!entity) return null;
+    if (!entity._timedCombatDebuffs && create) entity._timedCombatDebuffs = {}; // Runtime-only timed status state read by applyDamage()/tick() and mobile diagnostics.
+    return entity._timedCombatDebuffs || null;
+  }
+
+  function scaledTimedDebuffModifier(baseModifier, power = 1, stacks = 1, minModifier = 0.05, maxModifier = Infinity) {
+    const base = Number(baseModifier); // Per-stack authored multiplier converted into an additive distance from neutral below.
+    const scale = Math.max(0, Number.isFinite(Number(power)) ? Number(power) : 1); // Mastery/Immundanity strength scales each stack without changing the visible stack count.
+    const stackCount = Math.max(0, Number.isFinite(Number(stacks)) ? Number(stacks) : 1); // Used to make same-name stacks additive rather than multiplicative.
+    if (!Number.isFinite(base) || !(base > 0)) return 1;
+    const unclamped = 1 + (base - 1) * scale * stackCount; // Three -10% stacks resolve to -30%, not 0.9³.
+    return clamp(unclamped, Number.isFinite(Number(minModifier)) ? Number(minModifier) : 0.05, Number.isFinite(Number(maxModifier)) ? Number(maxModifier) : Infinity);
+  }
+
+  function cleanupTimedDebuffs(entity, atMs = nowMs()) {
+    const store = timedDebuffStore(entity);
+    if (!store) return;
+    for (const [id, entry] of Object.entries(store)) {
+      if (!(Number(entry?.expiresAtMs) > atMs)) delete store[id];
+    }
+    if (!Object.keys(store).length) delete entity._timedCombatDebuffs;
+  }
+
+  function applyTimedDebuff(entity, id, durationS, options = {}) {
+    const def = TIMED_DEBUFFS[id]; // Registry entry supplies stack cap, authored per-stack percentages, and safety clamps.
+    const duration = Math.max(0, Number(durationS) || 0); // Used to refresh the lifetime of the complete same-name stack.
+    if (!entity || !def || !(duration > 0)) return null;
+    const appliedAtMs = nowMs(); // Shared monotonic combat clock used to make the effect save-agnostic and immune to wall-clock changes.
+    cleanupTimedDebuffs(entity, appliedAtMs);
+    const store = timedDebuffStore(entity, true); // Runtime-only storage shared by combat/resource/movement consumers.
+    const previous = store[id]; // Existing active same-name entry contributes its stack count and strongest power.
+    const addedStacks = Math.max(1, Math.floor(Number(options.stacks) || 1)); // One successful application adds one stack unless an authored caller explicitly adds more.
+    const maxStacks = Math.max(1, Math.floor(Number(def.maxStacks) || 1)); // Hard cap keeps percentage debuffs readable and prevents pathological movement/timing values.
+    const stacks = Math.min(maxStacks, Math.max(0, Number(previous?.stacks) || 0) + addedStacks); // Same-name stacks add while the duration refreshes.
+    const incomingPower = Math.max(0, Number.isFinite(Number(options.power)) ? Number(options.power) : 1); // Current application strength after Immundanity/mastery scaling.
+    const power = Math.max(incomingPower, Number(previous?.power) || 0); // A weaker refresh never downgrades already-earned stacks.
+    const modifiers = Object.fromEntries(Object.entries(def.modifiers || {}).map(([key, value]) => [
+      key,
+      scaledTimedDebuffModifier(value, power, stacks, def.minModifier, def.maxModifier),
+    ])); // Materialized current percentages let every runtime consumer stay a cheap lookup.
+    const expiresAtMs = Math.max(Number(previous?.expiresAtMs) || 0, appliedAtMs + duration * 1000); // Every added stack refreshes the full authored window.
+    const entry = {
+      id,
+      name: def.name,
+      appliedAtMs,
+      expiresAtMs,
+      durationS: Math.max(duration, Number(previous?.durationS) || 0),
+      power,
+      stacks,
+      maxStacks,
+      modifiers,
+      source: options.source || previous?.source || null,
+    };
+    store[id] = entry;
+    return { ...entry, remainingS: Math.max(0, (expiresAtMs - appliedAtMs) / 1000) };
+  }
+
+  function getTimedDebuffs(entity) {
+    const atMs = nowMs();
+    cleanupTimedDebuffs(entity, atMs);
+    return Object.values(timedDebuffStore(entity) || {}).map(entry => ({
+      ...entry,
+      modifiers: { ...(entry.modifiers || {}) },
+      remainingS: Math.max(0, (Number(entry.expiresAtMs) - atMs) / 1000),
+    }));
+  }
+
+  function hasTimedDebuff(entity, id) {
+    cleanupTimedDebuffs(entity);
+    return !!timedDebuffStore(entity)?.[id];
+  }
+
+  function timedDebuffModifier(entity, key) {
+    cleanupTimedDebuffs(entity);
+    let multiplier = 1;
+    for (const entry of Object.values(timedDebuffStore(entity) || {})) {
+      const value = Number(entry?.modifiers?.[key]);
+      if (Number.isFinite(value) && value > 0) multiplier *= value;
+    }
+    return multiplier;
+  }
+
   const RECOVERING_AFFLICTIONS = Object.entries(AFFLICTIONS)
     .filter(([id, def]) => def.recovers && id !== "bleedingHealth" && id !== "poisonedHealth" && id !== "congealedHealth")
     .map(([id]) => id); // Avoids allocating and filtering the full affliction entry list on every entity maintenance tick.
@@ -248,6 +388,7 @@
 
   function initEntity(entity) {
     entity.afflictions = { ...defaultAfflictions(), ...(entity.afflictions || {}) };
+    if (Object.prototype.hasOwnProperty.call(entity, "_timedCombatDebuffs")) delete entity._timedCombatDebuffs; // Timed combat statuses are runtime-only and must never survive a fresh spawn/profile initialization.
     entity.exhaustion = { active: false, blackStamina: 100, ...(entity.exhaustion || {}) };
     if (entity.exhaustion.active) entity.stamina = 0; // Normalize stale saves/spawns before any action can observe regular Stamina during Black-Stamina debt.
     if (!Number.isFinite(entity.lastAttackAttemptAt)) entity.lastAttackAttemptAt = -1e9;
@@ -347,6 +488,14 @@
     const before = getAffliction(entity, id);
     setAffliction(entity, id, before - amount);
     return round1(before - getAffliction(entity, id));
+  }
+
+  function bleedOut(entity, amount, options = {}) {
+    const requested = Math.max(0, Number(amount) || 0); // Requested Bleeding Health conversion shown in Quick Attack diagnostics.
+    const available = getAffliction(entity, "bleedingHealth"); // Existing buildup is the only legal source; Bleedout never invents Bleeding.
+    const consumed = removeAffliction(entity, "bleedingHealth", Math.min(requested, available)); // Exact buildup removed before its normal gradual tick can resolve it.
+    const damage = consumed > 0 ? applyHealthAfflictionDamage(entity, consumed) : 0; // Realizes consumed Bleeding immediately through the same enhanced-Health-aware damage path as normal Bleeding ticks.
+    return { requested: round1(requested), available: round1(available), consumed: round1(consumed), damage: round1(damage), source: options.source || null };
   }
 
   function afflictionHasTag(id, tag) {
@@ -476,7 +625,8 @@
     const before = Number(entity.health) || 0; // Used to keep resource-tick recovery from resurrecting dead actors or rounding tiny living Health to zero.
     const effectiveMax = getLiveEffectiveHealthMax(entity); // Used so recovery and cap maintenance honor every installed maximum-Health reducer.
     const livingFloor = Math.min(before, effectiveMax); // Used to allow a lowered max-Health cap to reduce current Health while never reducing it further merely because recovery is rounded to tenths.
-    const target = clamp(before + Math.max(0, Number(amount) || 0), 0, effectiveMax); // Used as the unrounded recovery target before the living floor is reapplied.
+    const recoveryAmount = Math.max(0, Number(amount) || 0) * timedDebuffModifier(entity, "healingReceived"); // Inhibited scales recovery percentage without altering Health-affliction state.
+    const target = clamp(before + recoveryAmount, 0, effectiveMax); // Used as the unrounded recovery target before the living floor is reapplied.
     entity.health = clamp(round1(target), livingFloor, effectiveMax);
     return round1(entity.health - before);
   }
@@ -517,10 +667,11 @@
 
   function getExhaustionSpeed(entity) {
     const alchemySpeed = entity === window.Combat?.deps?.player ? window.AlchemySystem?.getAttackSpeedMultiplier?.() || 1 : 1; // Central Quickness/Frenzy timing hook.
-    if (!entity.exhaustion.active) return alchemySpeed;
-    const black = clamp(entity.exhaustion.blackStamina, 0, 100);
-    if (black >= 100) return alchemySpeed;
-    return clamp(black / 100, EXHAUSTION_SPEED_FLOOR, 1) * alchemySpeed;
+    const debuffSpeed = timedDebuffModifier(entity, "attackSpeed"); // Sluggish composes with exhaustion/alchemy instead of replacing either timing system.
+    if (!entity.exhaustion.active) return alchemySpeed * debuffSpeed;
+    const black = clamp(entity.exhaustion.blackStamina, 0, 100); // Existing Exhausted timing still supplies the resource-driven portion.
+    if (black >= 100) return alchemySpeed * debuffSpeed;
+    return clamp(black / 100, EXHAUSTION_SPEED_FLOOR, 1) * alchemySpeed * debuffSpeed;
   }
 
   // A tiny overspend (e.g. just barely tipping over your last sliver of
@@ -673,6 +824,7 @@
 
   function spendStamina(entity, amount, reason = "action", transaction = {}) {
     entity.lastAttackAttemptAt = nowMs();
+    amount *= timedDebuffModifier(entity, "staminaCost"); // Taxed raises the price of the action itself without altering the Stamina resource/affliction bands.
     if (entity === window.Combat?.deps?.player) {
       amount *= window.AlchemySystem?.getStaminaSpendMultiplier?.() || 1;
       amount *= 1 - Math.min(0.6, (window.PerkSystem?.rank('combat', 'reduceStaminaUse') || 0) * 0.08); // Reduce Stamina Use perk.
@@ -711,6 +863,7 @@
   function spendFooting(entity, amount, reason = "hit") {
     if (entity.prone) return 0;
     if (!(amount > 0) || !Number.isFinite(entity.footing)) return 0;
+    amount *= timedDebuffModifier(entity, "footingDamageTaken"); // Brittle amplifies percentage Footing loss without creating or consuming any Footing affliction.
     if (entity === window.Combat?.deps?.player) amount *= 1 - Math.min(0.6, (window.PerkSystem?.rank('combat', 'increaseFootingResistance') || 0) * 0.08); // Increase Footing Resistance perk.
     const enhanced = resolveEnhancedResourceTransaction(entity, "footing", amount, { kind: "loss", reason }); // Resolute Footing absorbs at its authored 3:1 effective value.
     const ordinaryLoss = enhanced.ordinaryRemaining;
@@ -764,7 +917,7 @@
     if (!(amount > 0)) return 0;
     entity.lastAttackReceivedAt = nowMs();
 
-    let finalDamage = amount;
+    let finalDamage = amount * timedDebuffModifier(entity, "incomingDamage"); // Exposed and future timed vulnerability effects amplify the actual incoming direct-damage transaction.
     if (opts.heavy) {
       const bonus = Math.min(getAffliction(entity, "bruisedHealth"), amount);
       if (bonus > 0) {
@@ -815,16 +968,17 @@
     const rest = getRestInfo(entity, cfg);
     const mul = rest.rested ? 2 : 1;
     const isPlayer = entity === window.Combat?.deps?.player; // Used to apply the consumer's central regeneration modifiers.
-    const staminaRate = (opts.staminaRegenPerSec ?? cfg.staminaRegenPerSec) * STAMINA_RECOVERY_MULTIPLIER * (isPlayer ? window.AlchemySystem?.getStaminaRegenMultiplier?.() || 1 : 1) * statModifier(entity, "staminaRegen");
+    const staminaRegenMultiplier = statModifier(entity, "staminaRegen") * timedDebuffModifier(entity, "staminaRegen"); // Used by both ordinary and Exhausted Stamina recovery so Sapped cannot be bypassed by entering black Stamina.
+    const staminaRate = (opts.staminaRegenPerSec ?? cfg.staminaRegenPerSec) * STAMINA_RECOVERY_MULTIPLIER * (isPlayer ? window.AlchemySystem?.getStaminaRegenMultiplier?.() || 1 : 1) * staminaRegenMultiplier;
     const healthRecoveryBlocked = opts.healthRecoveryBlocked === true; // Used by the shared combat-recovery policy to suppress automatic current-Health gains without disabling the rest of ResourceSystem maintenance.
     const healthRate = healthRecoveryBlocked ? 0 : (opts.healthRegenPerSec ?? cfg.healthRegenPerSec) * (isPlayer ? window.AlchemySystem?.getHealthRegenMultiplier?.() || 1 : 1)
-      * statModifier(entity, "healthRegen") * (rest.rested ? 1 : statModifier(entity, "healthRegenInCombat")); // In-combat = not yet rested (the same quietSeconds rule that doubles out-of-combat regen).
+      * statModifier(entity, "healthRegen") * timedDebuffModifier(entity, "healthRegen") * (rest.rested ? 1 : statModifier(entity, "healthRegenInCombat")); // In-combat = not yet rested (the same quietSeconds rule that doubles out-of-combat regen).
     const staminaRegenBlocked = isStaminaRegenBlocked(entity); // Used to pause both ordinary and Exhausted Stamina regeneration while any held-action blocker is active.
 
     if (entity.exhaustion.active) {
       entity.stamina = 0; // Black Stamina recovery owns the stamina channel until the debt is completely cleared.
       if (!staminaRegenBlocked) {
-        entity.exhaustion.blackStamina = round1(clamp(entity.exhaustion.blackStamina + cfg.exhaustionRegenPerSec * STAMINA_RECOVERY_MULTIPLIER * mul * dt, 0, 100));
+        entity.exhaustion.blackStamina = round1(clamp(entity.exhaustion.blackStamina + cfg.exhaustionRegenPerSec * STAMINA_RECOVERY_MULTIPLIER * staminaRegenMultiplier * mul * dt, 0, 100));
       }
       clearExhaustedIfFull(entity);
     } else if (!staminaRegenBlocked) {
@@ -836,7 +990,7 @@
     entity.proneT = entity.prone ? (entity.proneT || 0) + dt : 0;
     const footingRegenGated = entity.prone && entity.proneT < cfg.proneRecoveryDelayS;
     if (!footingRegenGated && Number.isFinite(entity.footing)) {
-      const footingRate = (opts.footingRegenPerSec ?? cfg.footingRegenPerSec) * statModifier(entity, "footingRegen");
+      const footingRate = (opts.footingRegenPerSec ?? cfg.footingRegenPerSec) * statModifier(entity, "footingRegen") * timedDebuffModifier(entity, "footingRegen");
       entity.footing = round1(clamp(entity.footing + footingRate * mul * dt, 0, getEffectiveMax(entity, "footing")));
     }
 
@@ -965,6 +1119,11 @@
   window.ResourceSystem = {
     AFFLICTIONS,
     ENHANCED_RESOURCE_DEFS,
+    TIMED_DEBUFFS,
+    applyTimedDebuff,
+    getTimedDebuffs,
+    hasTimedDebuff,
+    timedDebuffModifier,
     registerStatModifierProvider,
     statModifier,
     afflictionBonusesForTag,
@@ -973,6 +1132,8 @@
     getAffliction,
     addAffliction,
     removeAffliction,
+    bleedOut,
+    applyHealthRecovery,
     setImmutableAffliction,
     afflictionHasTag,
     afflictionIdsByFamily,
