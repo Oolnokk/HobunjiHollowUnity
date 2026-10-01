@@ -565,10 +565,12 @@ Overpass → not set</div>
               <label>Brush <input data-trim-brush type="range" min="1" max="24" step="1" value="4"><span data-trim-brush-label>4px</span></label>
               <label>Edge thickness <input data-trim-edge-thickness type="range" min="1" max="24" step="1" value="3"><span data-trim-edge-thickness-label>3px</span></label>
               <button type="button" data-trim-paint="generate-edge">Generate edge trim</button>
+              <label>Expand <input data-trim-expand-amount type="range" min="1" max="24" step="1" value="1"><span data-trim-expand-amount-label>1px</span></label>
+              <button type="button" data-trim-paint="expand-existing" class="secondary">Expand existing</button>
               <label>Zoom <input data-trim-zoom type="range" min="1" max="8" step="1" value="2"><span data-trim-zoom-label>2×</span></label>
             </div>
             <div class="trimPaintScroller"><div class="trimPaintStage"><canvas data-trim-base></canvas><canvas class="trimPaintInk" data-trim-ink></canvas></div></div>
-            <div class="trimPaintNote">Paint directly on the visible garment, or generate an inward edge band anywhere opaque garment pixels meet transparency. Edge generation replaces the current paint (Undo restores it), then switches to Eraser so unwanted borders can be removed. White is only the editing overlay; the player still chooses dye A, B, or C in the loom.</div>
+            <div class="trimPaintNote">Paint directly on the visible garment, generate an inward edge band from garment/transparency boundaries, or expand the current trim outward by a chosen number of native pixels. Generate replaces the current paint; Expand Existing preserves it and grows around it. Both are Undo-able and remain clipped to the garment. White is only the editing overlay; the player still chooses dye A, B, or C in the loom.</div>
           </div>
           <div>
             <div class="muted" style="margin-bottom:6px"><b>Rendered result</b> — production trim compositor</div>
@@ -593,6 +595,8 @@ Overpass → not set</div>
     const brushInput = overlay.querySelector('[data-trim-brush]');
     const edgeThicknessInput = overlay.querySelector('[data-trim-edge-thickness]'); // Controls how many native sprite-pixel layers the automatic inward edge band occupies.
     const generateEdgeBtn = overlay.querySelector('[data-trim-paint="generate-edge"]'); // Rebuilds the mask from the garment silhouette, then hands cleanup to the eraser.
+    const expandAmountInput = overlay.querySelector('[data-trim-expand-amount]'); // Controls how many native-pixel dilation layers are added around the current trim mask.
+    const expandExistingBtn = overlay.querySelector('[data-trim-paint="expand-existing"]'); // Grows current paint without replacing its existing footprint.
     const zoomInput = overlay.querySelector('[data-trim-zoom]');
     baseLayer.width = paintCanvas.width = width;
     baseLayer.height = paintCanvas.height = height;
@@ -651,9 +655,11 @@ Overpass → not set</div>
     }
 
     function updateButtons() {
+      const inkPresent = hasInk();
       undoBtn.disabled = !undoStack.length;
       redoBtn.disabled = !redoStack.length;
-      saveBtn.disabled = !hasInk();
+      saveBtn.disabled = !inkPresent;
+      expandExistingBtn.disabled = !inkPresent; // Expansion only makes sense when there is already authored/replicated/generated trim to grow.
     }
 
     function pushUndo() {
@@ -821,6 +827,53 @@ Overpass → not set</div>
       return paintedPixels;
     }
 
+    function expandExistingTrim(amount) {
+      const layers = Math.max(1, Math.round(amount));
+      const source = paintCtx.getImageData(0, 0, width, height).data;
+      let expanded = new Uint8Array(width * height);
+      for (let index = 0; index < expanded.length; index++) {
+        if (source[index * 4 + 3] > 16 && garmentMask[index]) expanded[index] = 1;
+      }
+      const beforeCount = expanded.reduce((total, value) => total + value, 0);
+      if (!beforeCount) return { beforeCount: 0, afterCount: 0, addedPixels: 0 };
+
+      for (let layer = 0; layer < layers; layer++) {
+        const next = expanded.slice();
+        let addedThisLayer = 0;
+        for (let y = 0; y < height; y++) {
+          for (let x = 0; x < width; x++) {
+            const index = y * width + x;
+            if (!expanded[index]) continue;
+            for (let oy = -1; oy <= 1; oy++) {
+              for (let ox = -1; ox <= 1; ox++) {
+                if (!ox && !oy) continue;
+                const nx = x + ox, ny = y + oy;
+                if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+                const neighbor = ny * width + nx;
+                if (!garmentMask[neighbor] || next[neighbor]) continue;
+                next[neighbor] = 1;
+                addedThisLayer++;
+              }
+            }
+          }
+        }
+        expanded = next;
+        if (!addedThisLayer) break;
+      }
+
+      const image = paintCtx.createImageData(width, height);
+      let afterCount = 0;
+      for (let index = 0; index < expanded.length; index++) {
+        if (!expanded[index]) continue;
+        const offset = index * 4;
+        image.data[offset] = image.data[offset + 1] = image.data[offset + 2] = image.data[offset + 3] = 255;
+        afterCount++;
+      }
+      paintCtx.clearRect(0, 0, width, height);
+      paintCtx.putImageData(image, 0, 0);
+      return { beforeCount, afterCount, addedPixels: Math.max(0, afterCount - beforeCount) };
+    }
+
     paintCanvas.addEventListener('pointerdown', event => {
       event.preventDefault();
       try { paintCanvas.setPointerCapture?.(event.pointerId); } catch (_) {}
@@ -865,6 +918,10 @@ Overpass → not set</div>
       const thickness = Math.max(1, Number(edgeThicknessInput.value) || 1);
       overlay.querySelector('[data-trim-edge-thickness-label]').textContent = `${thickness}px`;
     };
+    expandAmountInput.oninput = () => {
+      const amount = Math.max(1, Number(expandAmountInput.value) || 1);
+      overlay.querySelector('[data-trim-expand-amount-label]').textContent = `${amount}px`;
+    };
     generateEdgeBtn.onclick = async () => {
       const thickness = Math.max(1, Number(edgeThicknessInput.value) || 1);
       pushUndo();
@@ -872,6 +929,18 @@ Overpass → not set</div>
       setBrushMode('eraser');
       updateButtons();
       statusEl.textContent = `Generated a ${thickness}px inward trim along every garment/transparency edge (${paintedPixels} pixels). Erase the borders you do not want.`;
+      await renderResult();
+    };
+    expandExistingBtn.onclick = async () => {
+      if (!hasInk()) return;
+      const amount = Math.max(1, Number(expandAmountInput.value) || 1);
+      pushUndo();
+      const result = expandExistingTrim(amount);
+      setBrushMode('eraser');
+      updateButtons();
+      statusEl.textContent = result.addedPixels
+        ? `Expanded existing trim by ${amount}px, adding ${result.addedPixels} garment pixels. Eraser is selected for cleanup.`
+        : `Existing trim could not expand farther within this garment silhouette.`;
       await renderResult();
     };
     zoomInput.oninput = updateZoom;
@@ -1261,7 +1330,7 @@ Overpass → not set</div>
   };
 
   window.__patternEditorDebug = () => ({ // Mobile-visible console substitute for checking the dev tool's two-slot state.
-    mostRecentChange: 'Garment trim replication now prefers an already-authored manifest variant as its master by default; the supplied Ragged Hood manifest therefore selects mao-ao_male/front automatically, then fits that master to other variants for cleanup.',
+    mostRecentChange: 'Trim paint now includes an Undo-able Expand Existing operation that grows the current mask outward by an artist-selected number of native sprite pixels, never crosses transparent garment space, and switches to Eraser for cleanup.',
     previewMode: $('previewMode').value,
     weavingBackground: $('surfaceTexture').value,
     overpassClearanceMultiplier: clampOverpassClearance($('overpassClearance').value),
