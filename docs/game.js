@@ -25544,10 +25544,8 @@
                   _drag = true;
                   _stack.classList.add('drag-active');
                   if (!_combatAimRelease) {
-                    // Farm/tool drag-to-aim keeps the legacy fire-on-threshold
-                    // behavior. Combat aim is intentionally excluded: its hold
-                    // timer must survive the drag and release owns the shot/attack.
-                    if (_pressSlot) { window.Combat.input.cancelPress(_pressSlot); _pressSlot = null; }
+                    // Non-combat farm/tool drags retain the legacy fire-on-threshold
+                    // behavior. Combat press/hold state never enters this branch.
                     _resolveFire();
                     if (ABT_DRAG_REPEAT_FIRE) _rtimer = setInterval(_resolveFire, 120);
                   }
