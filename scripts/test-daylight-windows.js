@@ -559,21 +559,17 @@ assert.match(canvasBuilder, /canvasSurfaceStretch = 'one-png-per-wall-panel'/, '
 const overlayScheduler = read('docs/js/daylight-window-overlay-scheduler.js'); // Pane tint cadence must never alternate complete lighting compositions.
 assert.match(overlayScheduler, /setInterval\(updatePaneTint, PANE_TINT_MS\)/, 'pane tint may update independently at low frequency');
 assert.doesNotMatch(overlayScheduler, /baseDraw|daylightDraw|drawLightingOverlay\s*=|WINDOW_REDRAW_MS/, 'scheduler must not alternate base-only and window-composited overlay frames');
-const cloudFog = read('docs/js/cloud-forest-fog.js'); // Unified compositor owns exact darkness -> windows -> lights ordering.
-assert.match(cloudFog, /function sampleEnclosedAtmosphere\(\)/, 'ordinary interiors must sample one shared atmosphere from nearby light sources');
-assert.match(cloudFog, /sourceProximityWeight\(px, pz,[\s\S]{0,900}windowRuntime\?\.getActiveSources/, 'window contribution must be distance-weighted around the player');
-assert.match(cloudFog, /getObjectByName\?\.\('mine_player_torch'\)/, 'the carried lantern must feed the same atmosphere blend instead of disappearing indoors');
-assert.match(cloudFog, /walker\.rec\?\.tags\?\.includes\('watch'\)/, 'nearby Watch lantern carriers must feed the same atmosphere blend');
-assert.match(cloudFog, /lightingDeps\.getFurnitureLightSources\?\.\(\)/, 'furniture lights must feed the same atmosphere blend');
-assert.match(cloudFog, /rSum \+=.*weight[\s\S]*gSum \+=.*weight[\s\S]*bSum \+=.*weight/, 'source colors must be weight-averaged into one room color');
-assert.match(cloudFog, /enclosedAtmosphereSmoothed\.illumination \+=/, 'room atmosphere must ease over time rather than snap between nearby sources');
-assert.match(cloudFog, /drawBlendedInteriorAtmosphere\(darknessAlpha, rect\)/, 'ordinary buildings must draw the single blended atmosphere');
-assert.match(cloudFog, /Exactly one atmosphere layer for darkness \+ blended source color/, 'ordinary room lighting must be a single full-screen atmosphere layer');
-const ordinaryBranchStart = cloudFog.indexOf('if (ordinaryBuildingInterior(currentArea))');
-const ordinaryBranchEnd = cloudFog.indexOf('} else {', ordinaryBranchStart);
-const ordinaryBranch = cloudFog.slice(ordinaryBranchStart, ordinaryBranchEnd);
-assert.doesNotMatch(ordinaryBranch, /drawLanternMasksCompat|drawFurnitureLightMasksCompat|drawAtmosphere/, 'ordinary interiors must not stack separate halo/mask lighting passes');
-assert.match(gameIndex, /cloud-forest-fog\.js\?v=[A-Za-z0-9_-]+/, 'game index must cache-bust the single-atmosphere compositor');
+const cloudFog = read('docs/js/cloud-forest-fog.js'); // Shared compositor must keep enclosed rooms stable while local light masks reveal nearby sources.
+assert.match(cloudFog, /const darknessAlpha = enclosedDarknessOverlayAlpha\(currentArea\)/, 'enclosed interiors must retain the established darkness baseline');
+const enclosedBranchStart = cloudFog.indexOf('if (enclosed) {');
+const enclosedBranchEnd = cloudFog.indexOf('const { r, g, b, a } = getLightingState();', enclosedBranchStart);
+const enclosedBranch = cloudFog.slice(enclosedBranchStart, enclosedBranchEnd);
+assert.match(enclosedBranch, /drawLanternMasksCompat\(1\)/, 'ordinary interiors and underground spaces must retain the stable positional carried-lantern reveal');
+assert.match(enclosedBranch, /drawFurnitureLightMasksCompat\(\)/, 'ordinary interiors and underground spaces must retain stable positional furniture-light reveals');
+assert.doesNotMatch(enclosedBranch, /drawBlendedInteriorAtmosphere\(darknessAlpha, rect\)/, 'ordinary interiors must not use the whole-room smoothed atmosphere path that regressed farmhouse readability');
+assert.match(enclosedBranch, /if \(ordinaryBuildingInterior\(currentArea\)\) drawWindowLightMasks\(\)/, 'ordinary building interiors must keep daylight windows as positional light reveals; mines/dens stay window-free');
+assert.doesNotMatch(cloudFog, /function sampleEnclosedAtmosphere|function drawBlendedInteriorAtmosphere/, 'the retired whole-room atmosphere blend must not linger as dead code');
+assert.match(gameIndex, /cloud-forest-fog\.js\?v=[A-Za-z0-9_-]+/, 'game index must cache-bust the unified lighting compositor');
 assert.match(gameIndex, /daylight-window-runtime\.js\?v=[A-Za-z0-9_-]+/, 'game index must cache-bust the canonical daylight-window visual hierarchy');
 assert.match(furniturePlacerSource, /DaylightWindowRuntime\?\.registerDecorDefs\?\.\(decorativeDefs\)/, 'Furniture Placer must repair extension-provided window definitions at render time before filtering owned furniture');
 assert.match(furniturePlacerSource, /!def\.playerFurnitureDisabled/, 'Furniture Placer must hide disabled legacy/dev furniture while leaving its definition available for save restoration');

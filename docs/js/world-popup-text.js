@@ -15,6 +15,7 @@
   const INTERACTION_OBJECT_COLOR = '#FFB86C'; // Used for object/context words so the target is distinct from the verb and input hint.
   const INTERACTION_CONNECTOR_COLOR = '#B8C5C0'; // Used for grammatical glue such as “to,” “the,” and “of.”
   const INTERACTION_INPUT_FALLBACK_COLOR = '#B8C5C0'; // Used only for inputs that have no authored action-arch color.
+  const INTERACTION_CLEAR_GRACE_MS = 120; // Used by syncInteractionPrompts so one transient empty action-bar refresh cannot destroy and recreate every world prompt.
   const INTERACTION_CONNECTORS = new Set(['to', 'or', 'at', 'on', 'in', 'for', 'of', 'the', 'a', 'an']); // Used to keep grammatical glue visibly subordinate to the actionable words.
   const DEFAULTS = {
     assignments: {
@@ -32,7 +33,7 @@
   const PRIORITY = { skillXp: 0, masteryXp: 1, favor: 2, currency: 3, loot: 4 };
   const state = {
     deps: null, settings: DEFAULTS, active: [], sequence: 0, pending: [], flushQueued: false,
-    interactionSignature: '', conditionCallout: null, aimLabel: null,
+    interactionSignature: '', interactionClearTimer: null, conditionCallout: null, aimLabel: null,
     levelUpQueue: [], levelUpActive: null, levelUpTimer: null, // Serializes player progression announcements so simultaneous Skill/Mastery gains never overlap above the avatar.
   };
   let tankanFontPromise = null; // Used to load the existing Tankan OTF once before redrawing any persistent callout canvas.
@@ -412,13 +413,28 @@
     return false;
   }
 
+  function cancelInteractionPromptClear() {
+    if (state.interactionClearTimer == null) return;
+    clearTimeout(state.interactionClearTimer);
+    state.interactionClearTimer = null;
+  }
+
   function clearInteractionPrompts() {
+    cancelInteractionPromptClear();
     for (let index = state.active.length - 1; index >= 0; index--) {
       if (!state.active[index].interactionPrompt) continue;
       dispose(state.active[index]);
       state.active.splice(index, 1);
     }
     state.interactionSignature = '';
+  }
+
+  function scheduleInteractionPromptClear() {
+    if (state.interactionClearTimer != null) return;
+    state.interactionClearTimer = setTimeout(() => {
+      state.interactionClearTimer = null;
+      clearInteractionPrompts();
+    }, INTERACTION_CLEAR_GRACE_MS);
   }
 
   function setInteractionPrompts(root, prompts, options = {}) {
@@ -434,9 +450,10 @@
       }))
       .filter(prompt => prompt.label);
     if (!root || !entries.length) {
-      clearInteractionPrompts();
+      scheduleInteractionPromptClear();
       return [];
     }
+    cancelInteractionPromptClear();
     const signature = `${root.uuid || root.name || 'root'}|${entries.map(entry => `${entry.action}:${entry.inputActionId}:${entry.inputHint}:${entry.inputColor}:${entry.label}`).join('|')}`;
     if (signature === state.interactionSignature) return interactionListFor(root).map(event => event.sequence);
     clearInteractionPrompts();
@@ -509,7 +526,8 @@
     // consistent instead of silently switching UI modes by option count.
     const show = options.enabled !== false && worldInteractions.length > 0;
     if (!show || !options.root) {
-      clearInteractionPrompts();
+      if (options.enabled === false) clearInteractionPrompts();
+      else scheduleInteractionPromptClear();
       return [];
     }
     const promptKeys = options.promptKeys || ['E', 'Q', 'F3', 'F4', 'F5'];
@@ -653,6 +671,7 @@
   }
 
   function clear() {
+    cancelInteractionPromptClear();
     state.active.splice(0).forEach(dispose);
     state.pending.length = 0;
     state.levelUpQueue.length = 0;
@@ -679,6 +698,8 @@
     defaults: clone(DEFAULTS), storageKey: STORAGE_KEY,
     debugSnapshot: () => ({
       interactionSignature: state.interactionSignature,
+      interactionClearPending: state.interactionClearTimer != null,
+      interactionClearGraceMs: INTERACTION_CLEAR_GRACE_MS,
       interactionRows: state.active.filter(event => event.interactionPrompt).map(event => ({
         action: event.action, inputActionId: event.inputActionId, inputHint: event.inputHint,
         inputColor: event.inputColor, label: event.label,
