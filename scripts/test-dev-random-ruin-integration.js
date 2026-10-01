@@ -55,7 +55,13 @@ const loadOrder = [
 ].map(name => camera.indexOf(name));
 assert(!/if \(!devMode/.test(camera), 'ruin runtime loads for every player so wilderness ruin sites can generate ruins');
 assert(/if\(!devModeEnabled\(\)\)return;/.test(interior) && /if \(\(!devModeEnabled\(\)&&!opts\.site\)/.test(interior), 'dev Settings controls stay Dev Mode only; only ruin sites may generate outside Dev Mode');
-assert(camera.includes('dev-random-ruin-interactions.js?v=20260930rowsignature1'), 'ruin interaction adapter must be cache-busted with the arch-priority/popup-list fix');
+assert(/dev-random-ruin-interactions\.js\?v=[A-Za-z0-9_-]+/.test(camera), 'ruin interaction adapter must be cache-busted with the arch-priority/popup-list fix');
+{
+  const refreshStart = interactions.indexOf('function refreshRows(');
+  const outsideBranch = interactions.slice(interactions.indexOf('if (!inRuin()) {', refreshStart), interactions.indexOf('prepareSemanticObjects();', refreshStart));
+  assert(/if\(hadRows\)\{[\s\S]*clearInteractionPrompts/.test(outsideBranch), 'outside the ruin, the 12.5 Hz row refresh may clear shared prompts only once on exit');
+  assert.equal((outsideBranch.match(/clearInteractionPrompts/g) || []).length, 1, 'no unconditional prompt clear may run every tick outside the ruin (it made ordinary prompts flicker)');
+}
 assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260929glowdecals1'), 'simple puzzle interior-parity runtime must be cache-busted in the dev bootstrap');
 assert(/dev-random-ruin-wall-render-proxy\.js\?v=\w+/.test(camera), 'native ruin render verifier must be cache-busted in the dev bootstrap');
 assert(/js\/dev-random-ruin-bootstrap\.js\?v=\w+/.test(gameIndex), 'game page must load the updated ruin bootstrap');
