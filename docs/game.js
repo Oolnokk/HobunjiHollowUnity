@@ -5101,6 +5101,7 @@
       }
 
       function meleeAttackBodyFacingOverride() {
+        if (Number.isFinite(mobileArchCombatAim?.angle)) return mobileArchCombatAim.angle;
         const alignmentFacing = meleeAttackAlignment?.appliedFacing;
         if (Number.isFinite(alignmentFacing)) return alignmentFacing;
         return Number.isFinite(meleeAttackFacingCommit?.angle) ? meleeAttackFacingCommit.angle : null;
@@ -5286,7 +5287,9 @@
       }
 
       function requestMeleeAttackAlignment(runAttack) {
-        meleeAttackFacingCommit = null; // Every attack owns a fresh heading.
+        const manualArchFacing = Number(mobileArchCombatAim?.angle); // Keeps a touch-stick release heading as the fallback when auto-target finds no eligible enemy.
+        if (Number.isFinite(manualArchFacing)) commitMeleeAttackFacing(manualArchFacing);
+        else meleeAttackFacingCommit = null; // Every non-touch attack owns a fresh heading.
         meleeAttackAlignment?.cancel?.(); // End any older activation before the next activation is allowed to select.
         const target = acquireMeleeAttackTargetLock();
         if (!target) {
