@@ -19374,6 +19374,8 @@
       const _intFill = new THREE.PointLight(0xff8833, 0.35, 6);
       _intFill.position.set(3, 1.8, 2.5);  // centre of 6×5 main room, dim fallback so placed lamps/candles/hearths stand out
       interiorScene.add(_intFill);
+      // Flat albedo + overlay-only lights now live in js/farmhouse-flat-lighting.js.
+      window.FarmhouseFlatLighting?.install(interiorScene, { ambient: _intAmbient, key: _intKey, fill: _intFill });
 
       // WallBuilder instance — loads Roughbrick1.glb eagerly in background
       const houseWallBuilder = new WallBuilder({ glbBasePath: 'assets/models/' });

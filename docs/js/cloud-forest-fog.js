@@ -421,7 +421,7 @@
   let lastUnifiedLightingDraw = 0;
   const lightCamRight = new window.THREE.Vector3();
   const ambientWindowScratch = new window.THREE.Vector3(); // Reused for window world positions so the mask pass allocates nothing per source.
-  const windowMaskStats = { sources: 0, drawn: 0, daylight: 0 }; // Mobile QA readout for the daylight-window mask pass.
+  const windowMaskStats = { sources: 0, drawn: 0, glows: 0, daylight: 0 }; // Mobile QA readout for the daylight-window mask pass.
 
   function lightScreenRadius(x, z, y, tiles) {
     lightCamRight.setFromMatrixColumn(lightingDeps.camera.matrixWorld, 0);
@@ -599,39 +599,53 @@
   }
 
   // Daylight windows reveal the stable enclosed darkness locally, exactly like
-  // furniture lights do, scaled by how bright it currently is outdoors. This
-  // replaces the Sept 26 whole-room smoothed atmosphere blend, which shifted
-  // the brightness of the entire room as the player walked.
+  // furniture lights do: a spreading pool scaled by outdoor daylight, plus a
+  // tight non-spreading glow on the pane itself that persists at night so the
+  // window always reads as an opening to the outside.
+  const WINDOW_PANE_GLOW_RADIUS = 0.55; // World units; about the authored pane's half-diagonal.
+  const WINDOW_PANE_GLOW_STRENGTH = 0.85;
+
+  function drawWindowRevealCircle(ctx, center, radius, strength, clarity) {
+    const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, radius);
+    grad.addColorStop(0, `rgba(0,0,0,${strength})`);
+    grad.addColorStop(clarity, `rgba(0,0,0,${strength * 0.7})`);
+    grad.addColorStop(Math.min(1, clarity + 0.35), `rgba(0,0,0,${strength * 0.2})`);
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   function drawWindowLightMasks() {
     const runtime = window.DaylightWindowRuntime;
-    const sources = runtime?.getActiveSources?.(lightingDeps.getActiveScene?.()) || [];
+    const activeScene = lightingDeps.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.() || null; // Without a scene filter the farm-side exterior window would also reveal the interior overlay.
+    if (!activeScene) return;
+    const sources = runtime?.getActiveSources?.(activeScene) || [];
     windowMaskStats.sources = sources.length;
     windowMaskStats.drawn = 0;
+    windowMaskStats.glows = 0;
     if (!sources.length) { windowMaskStats.daylight = 0; return; }
-    const outdoor = runtime.currentOutdoorLighting?.() || getFullDayLighting();
+    const outdoor = getFullDayLighting(); // Same day/night + lunar state the windows' pane tint uses, without its debug-state round trip.
     const daylight = clamp01(1 - clamp01(outdoor.a)); // Outdoor overlay darkness alpha: night windows admit little light.
     windowMaskStats.daylight = daylight;
-    if (daylight <= 0.02) return;
     const ctx = lightingDeps.lctx;
     ctx.globalCompositeOperation = 'destination-out';
     for (const source of sources) {
       source.mesh?.getWorldPosition?.(ambientWindowScratch);
       const center = lightingDeps.worldToOverlay(ambientWindowScratch.x, ambientWindowScratch.y, ambientWindowScratch.z);
       if (!center.visible) continue;
+      const glowR = lightScreenRadius(ambientWindowScratch.x, ambientWindowScratch.z, ambientWindowScratch.y, WINDOW_PANE_GLOW_RADIUS);
+      if (glowR > 0) {
+        drawWindowRevealCircle(ctx, center, glowR, WINDOW_PANE_GLOW_STRENGTH, 0.55); // Pane glow: day and night, no spread.
+        windowMaskStats.glows += 1;
+      }
+      if (daylight <= 0.02) continue;
       const radiusTiles = Math.max(0.25, finiteOr(source.radiusTiles, 2.8));
       const shineR = lightScreenRadius(ambientWindowScratch.x, ambientWindowScratch.z, ambientWindowScratch.y, radiusTiles);
-      if (!(shineR > 0)) continue;
       const strength = Math.min(0.9, clamp01(source.strength) * daylight * 0.85);
-      if (!(strength > 0)) continue;
-      const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
-      grad.addColorStop(0, `rgba(0,0,0,${strength})`);
-      grad.addColorStop(0.35, `rgba(0,0,0,${strength * 0.7})`);
-      grad.addColorStop(0.7, `rgba(0,0,0,${strength * 0.2})`);
-      grad.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.arc(center.x, center.y, shineR, 0, Math.PI * 2);
-      ctx.fill();
+      if (!(shineR > 0) || !(strength > 0)) continue;
+      drawWindowRevealCircle(ctx, center, shineR, strength, 0.35); // Daylight pool spreading into the room.
       windowMaskStats.drawn += 1;
     }
     ctx.globalCompositeOperation = 'source-over';

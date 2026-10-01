@@ -368,6 +368,23 @@ async function runLinkedWindowReloadRegression() {
   assert(Math.abs(extendedSurface.center[2] - (renderCenter + (3.5 - renderCenter) * extendedCut.taperScale)) < 1e-9, 'furniture follows the expanded wall surface rather than the unextended room');
   delete farmRoundTripContext.HousePieces.getExteriorRenderRect;
 
+  // PlayerHouseElevation lifts the whole generated house mesh (and its cut
+  // holes) to the terrain; the exterior window must ride the same lift.
+  const liftedPiece = { id:'house_starter', col:2, row:2, w:4, h:3, _mesh:{ position:{ y:0.36 } } };
+  const liftedRun = Object.assign({}, projectionRun, { piece:liftedPiece });
+  const liftedCenter = farmRoundTripContext.HouseWindowLinkage.__test.farmWallPoint(liftedRun, 0.5, 0.5);
+  const flatCenter = farmRoundTripContext.HouseWindowLinkage.__test.farmWallPoint(projectionRun, 0.5, 0.5);
+  assert(Math.abs(liftedCenter[1] - (flatCenter[1] + 0.36)) < 1e-9, 'exterior window centre must include the terrain-elevated house lift');
+
+  // An entrance (and its protruding entry tunnel) owns its wall tile; a new
+  // window slot over it would sit behind tunnel bricks with no opening.
+  const savedHousePieces = roundTripHousePieces.splice(0);
+  roundTripHousePieces.push({ id:'house_starter', col:2, row:2, w:4, h:3, stage:'built', features:[{ type:'entrance', side:'east', lx:3, ly:1 }] });
+  const doorRun = { pieceId:'house_starter', side:'east', fixed:6, start:2, end:5 };
+  assert.equal(farmRoundTripContext.HouseWindowLinkage.__test.slotBlockedByWallFeature(doorRun, 3.5), true, 'slot covering the entrance tile must be refused');
+  assert.equal(farmRoundTripContext.HouseWindowLinkage.__test.slotBlockedByWallFeature(Object.assign({}, doorRun, { side:'west', fixed:2 }), 3.5), false, 'other walls stay available');
+  roundTripHousePieces.splice(0, roundTripHousePieces.length, ...savedHousePieces);
+
   const primary={ id:'decor_window_roundtrip', key:'simpleWindow', col:5, row:3, area:'farm', rotYDeg:90, mesh:makeNode('primary') };
   roundTripObjects.push(primary); farmScene.add(primary.mesh);
   assert.equal(farmRoundTripContext.FarmEditor.saveFarmLayout(), true, 'mounted window farm layout must serialize successfully');

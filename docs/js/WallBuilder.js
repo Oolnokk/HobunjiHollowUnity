@@ -511,6 +511,28 @@
     const perGlb = new Map();
     const tmpPos = new THREE.Vector3(), tmpQuat = new THREE.Quaternion(), tmpScale = new THREE.Vector3();
     const eps = 0.002;
+    // Optional world-space wall openings (window holes). A brick is dropped
+    // when its footprint reaches more than EXCLUDE_TUCK of its half-size into
+    // an opening; the remaining sliver tucks under the window frame.
+    const EXCLUDE_TUCK = 0.6;
+    const excludeZones = (Array.isArray(opts.excludeQuads) ? opts.excludeQuads : []).map(q => {
+      const [a, , , ] = q.map(c => new THREE.Vector3(c[0] || 0, c[1] || 0, c[2] || 0));
+      const top = new THREE.Vector3(q[1][0], q[1][1], q[1][2]), right = new THREE.Vector3(q[3][0], q[3][1], q[3][2]);
+      const U = right.sub(a), V = top.sub(a);
+      const n = new THREE.Vector3().crossVectors(U, V).normalize();
+      return { a, U, V, n, uLen: U.length(), vLen: V.length(), invU2: 1 / Math.max(1e-9, U.lengthSq()), invV2: 1 / Math.max(1e-9, V.lengthSq()) };
+    }).filter(z => z.uLen > 1e-6 && z.vLen > 1e-6);
+    const _exRel = new THREE.Vector3();
+    const intrudesOpening = (wp, halfU, halfV) => {
+      for (const z of excludeZones) {
+        _exRel.subVectors(wp, z.a);
+        if (Math.abs(_exRel.dot(z.n)) > Math.max(halfU, halfV) + 0.25) continue; // Different wall plane.
+        const s = _exRel.dot(z.U) * z.invU2, t = _exRel.dot(z.V) * z.invV2;
+        const hs = (halfU * EXCLUDE_TUCK) / z.uLen, ht = (halfV * EXCLUDE_TUCK) / z.vLen;
+        if (s + hs > 0 && s - hs < 1 && t + ht > 0 && t - ht < 1) return true;
+      }
+      return false;
+    };
 
     for (const p of panels) {
       const recipe = this.recipeLibrary.get(p.wallRecipeId || defaultId);
@@ -533,6 +555,13 @@
       applyWallPreRotationToMatrices(mats, preRot[0], preRot[1], preRot[2]);
 
       const [a, b, c, d] = panelCorners(p);
+      let modelHalf = null; // Local brick half-extents, only needed when openings must be excluded.
+      if (excludeZones.length) {
+        const geo = model.mesh.geometry;
+        if (!geo.boundingBox) geo.computeBoundingBox();
+        const bb = geo.boundingBox;
+        modelHalf = bb ? { x: (bb.max.x - bb.min.x) * 0.5, y: (bb.max.y - bb.min.y) * 0.5 } : { x: 0, y: 0 };
+      }
 
       for (const localM of mats) {
         const mLocal = postM.clone().multiply(localM);
@@ -554,6 +583,7 @@
           wp.addScaledVector(basis.u, jRng.range(-(brickJitter.shiftU || 0), brickJitter.shiftU || 0));
           wp.addScaledVector(basis.v, jRng.range(-(brickJitter.shiftV || 0), brickJitter.shiftV || 0));
         }
+        if (modelHalf && intrudesOpening(wp, modelHalf.x * Math.abs(tmpScale.x), modelHalf.y * Math.abs(tmpScale.y))) continue;
         const wm = new THREE.Matrix4().compose(wp, worldQ, tmpScale);
 
         if (!perGlb.has(resolvedName)) perGlb.set(resolvedName, { model, wms: [] });

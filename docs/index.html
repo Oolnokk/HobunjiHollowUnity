@@ -12,8 +12,8 @@
   <script src="js/scene-ready-poller.js?v=20260920startup4"></script>
   <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
   <script src="js/GLTFLoader.js?v=20260712d"></script>
-  <script src="js/WallBuilder.js?v=20260809a"></script>
-  <script src="js/HousePieceGen.js?v=20260924facetag1&window=20260926rebase1"></script>
+  <script src="js/WallBuilder.js?v=20261001h58ef7ab"></script>
+  <script src="js/HousePieceGen.js?v=20261001hbe2b612&window=20260926rebase1"></script>
   <script src="js/interior-scene-builder.js?v=20260930globalground2&window=20260926rebase1"></script>
   <script src="js/building-door.js?v=20260725a"></script>
   <script src="js/tile-pathfinding.js?v=20260808a"></script>
@@ -99,6 +99,8 @@
        Loaded early since it has no deps of its own and any of those
        creation sites may run as soon as the game world starts building. -->
   <script src="js/furniture-light-registry.js?v=20260918perf1"></script>
+  <!-- Farmhouse interior renders flat; all its lighting comes from the 2D overlay (window.FarmhouseFlatLighting). -->
+  <script src="js/farmhouse-flat-lighting.js?v=20261001flat1"></script>
   <!-- Wilderness zone ground-visual refresh after a runtime tile edit and
        the daily felled-tree/mined-rock regrowth ticks that call back into
        it, extracted out of game.js. Must load before game.js, which calls
@@ -598,9 +600,9 @@
        own setup. -->
   <script src="js/weather-fx.js?v=20260924texture-restore1"></script>
   <!-- Load after WeatherFX exists, but before game.js calls WeatherFX.init(), so daylight windows always capture the real overlay dependencies. -->
-  <script src="js/daylight-window-runtime.js?v=20260926rebase1"></script>
+  <script src="js/daylight-window-runtime.js?v=20261001h93863ee"></script>
   <!-- Farmhouse windows mirror one ordinary inventory-owned wall object across the exterior/interior 2x coordinate systems and expose their silhouettes to both wall builders. -->
-  <script src="js/house-window-linkage.js?v=20260926rebase1"></script>
+  <script src="js/house-window-linkage.js?v=20261001h24e25aa"></script>
   <script src="js/daylight-window-overlay-scheduler.js?v=20260926rebase1"></script>
   <!-- Three reusable, UV-scrolling rain sheets in the existing world renderer. -->
   <script src="js/rain-planes.js?v=20260809f"></script>
@@ -621,7 +623,7 @@
   <!-- Player-centered white mist cylinders, shown only in the Southern
        Cloud Forest — see EXTERIOR_ZONES.map_southern_cloud_forest's
        fogDensity/vegCullRadiusTiles comments in game.js for why. -->
-  <script src="js/cloud-forest-fog.js?v=20260930interiorfix1"></script>
+  <script src="js/cloud-forest-fog.js?v=20261001windowglow1"></script>
   <!-- Farm tab hub (header, grid glance, buildings list, processor status
        tiles, livestock roster + breeding, farm<->stable transfers, storage,
        farmhands) and the Stable tab (window.FarmPanel) — reads
@@ -2545,7 +2547,7 @@
   <script src="js/shoulder-cam-pointer-lock.js?v=20260930hfc11b39"></script>
   <!-- Shared character-scoped hobunjiSaveMeta update step used by game.js's save* helpers. -->
   <script src="js/character-meta-save.js?v=20260930ench1"></script>
-  <script src="game.js?v=20260930h0d3069d"></script>
+  <script src="game.js?v=20261001h0051aee"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
