@@ -566,8 +566,8 @@ assert.match(avatarPreviewSource, /await renderer\(canvas, profile, renderOption
 assert.match(source, /document\.addEventListener\('hobunjiPlayerReady'[\s\S]*?requestSessionReadyPlayerAvatarRefresh\(hintedGear\)/, 'woven player-ready lifecycle schedules an automatic post-load avatar rebuild instead of relying on a manual gear toggle');
 assert.match(source, /window\.setTimeout\(attempt, 0\)/, 'session rebuild is deferred until every player-ready listener has installed the live save state');
 assert.match(source, /const startupFinished = window\.__hobunjiGameStarted === true[\s\S]*?liveWoven && initialPortraitPrepared && startupFinished[\s\S]*?equipmentDeps\.refreshPlayerAvatar\(\)/, 'post-load rebuild waits for live woven Gear, the initial gear-to-profile pass, and fully completed game startup before refreshing');
-assert.match(indexSource, /combat-config-loader\.js\?v=20260930authoredtrim1/, 'index cache-busts the loader that owns the authored clothing trim runtime URL');
-assert.match(combatLoaderSource, /clothing-weaving-system\.js\?v=20260930authoredtrim1/, 'combat loader cache-busts the authored clothing trim runtime itself');
+assert.match(indexSource, /combat-config-loader\.js\?v=20260930directtrimpaint1/, 'index cache-busts the loader that owns the authored clothing trim runtime URL');
+assert.match(combatLoaderSource, /clothing-weaving-system\.js\?v=20260930directtrimpaint1/, 'combat loader cache-busts the authored clothing trim runtime itself');
 assert.match(portraitSource, /renderOptions\?\.imageForTint[\s\S]*?: _imageForTint/, 'portrait rendering accepts a per-render tint resolver with the canonical tint path as fallback');
 assert.match(portraitSource, /drawPortraitLayerWarped\(ctx, img, resolveXform\(layer\)[\s\S]*?layer\.url, imageForTint\)/, 'breathing overwear layers use the same render-local tint resolver during WorldPortraitLife refreshes');
 
@@ -730,9 +730,13 @@ assert.equal(clothingTrimManifest.schema, 'hobunji_clothing_trim.v1', 'repo owns
 assert.match(patternEditorSource, /Garment trim authoring/, 'Pattern Editor exposes the dedicated garment trim workspace');
 assert.match(patternEditorSource, /species\/gender variant/i, 'garment trim editor makes per-variant authoring explicit');
 assert.match(patternEditorSource, /trimCoverageText/, 'garment trim editor reports missing species/gender coverage instead of relying on a hard-coded list');
-assert.match(patternEditorSource, /forceTiling:\s*false/, 'garment trim editor opens PatternAuthoring with tiling locked off');
+assert.match(patternEditorSource, /Paint trim directly/, 'garment trim authoring opens an exact sprite-space paint workflow instead of the generic placement editor');
+assert.match(patternEditorSource, /directMask:\s*true/, 'garment trim saves exact pixel placement as a direct mask rather than frame\/mesh transforms');
+assert.match(patternEditorSource, /clipPaintToGarment/, 'direct trim strokes are clipped to the visible garment silhouette');
+assert.match(patternEditorSource, /Rendered result/, 'direct trim painting keeps a production-compositor result preview beside the paint surface');
 assert.match(patternEditorSource, /trimManifestBtn/, 'garment trim editor exports the shared manifest alongside authored PNG masks');
 assert.match(source, /'clothing-trim'/, 'runtime applies fixed garment trim through its own compositor pass and diagnostic label');
+assert.match(source, /patternDef\?\.directMask === true[\s\S]*?ctx\.drawImage\(motifImg, 0, 0, width, height\)/, 'direct garment trim maps its authored PNG straight into garment pixel coordinates before outlining');
 assert.match(source, /trimPatternOverride/, 'production clothing renderer accepts an unsaved trim draft so the dev editor previews the exact runtime path');
 assert.match(source, /weavingHasAnyDecoration/, 'trim-only clothing participates in rendering/session/cache plumbing without pretending to contain a reusable pattern');
 const diamondLatticeSource = 'basis: (w, h) => ({ u: { x: w / 2, y: h / 2 }, v: { x: w / 2, y: -h / 2 } })';
