@@ -527,7 +527,7 @@
     const power = projectilePower(projectile); // Tothal damage/knockback/Footing pressure/frost all decay with its shrinking lifetime; Kanthic remains full-strength.
     const hitX = projectile.prevX + (projectile.x - projectile.prevX) * t; // Pixel X impact origin passed to canonical knockback/damage.
     const hitY = projectile.prevY + (projectile.y - projectile.prevY) * t; // Pixel Z-plane impact origin passed to canonical knockback/damage.
-    const options = { tag: 'blunt', ranged: true, footingDamageMultiplier: (p.footingDamageMultiplier || 0) * power, afflictionBonuses: {} }; // Canonical damage path still owns knockback/stagger/prone transitions.
+    const options = { tag: 'blunt', ranged: true, footingDamageMultiplier: (p.footingDamageMultiplier || 0) * power, afflictionBonuses: {}, attacker: projectile.owner || null }; // Canonical damage path still owns knockback/stagger/prone transitions.
     const damage = (p.damage || 0) * power;
     const knockback = (p.knockbackPxS || 0) * power;
     if (actor === deps.player) deps.damagePlayer?.(damage, hitX, hitY, knockback, options);
