@@ -44,7 +44,7 @@ input,select{width:100%;background:#0d1621;border:1px solid rgba(255,255,255,.14
       <div id="library" class="library"><div class="muted">Loading…</div></div>
       <div class="trimAuthor">
         <h2>Garment trim authoring</h2>
-        <div class="muted" style="margin-bottom:8px">Author one fixed, non-tiling trim mask per garment species/gender variant. These masks are not reusable player patterns: the garment owns the geometry, while players only choose whether to add it and whether it uses dye A, B, or C.</div>
+        <div class="muted" style="margin-bottom:8px">Paint trim directly onto each garment species/gender sprite. The exported PNG is an exact sprite-space mask—not a repeating or repositioned pattern—while players only choose whether to add it and whether it uses dye A, B, or C.</div>
         <div class="fields" style="grid-template-columns:1fr">
           <label>Clothing piece<select id="trimGarment"><option value="">Loading clothing…</option></select></label>
           <label>Species / gender variant<select id="trimVariant"><option value="">Choose clothing first</option></select></label>
@@ -432,6 +432,7 @@ Overpass → not set</div>
             <div class="trimPaintTools">
               <button type="button" data-trim-tool="brush" class="active">Brush</button>
               <button type="button" data-trim-tool="eraser" class="secondary">Eraser</button>
+              <button type="button" data-trim-tool="pan" class="secondary">Pan</button>
               <button type="button" data-trim-paint="undo" class="secondary">Undo</button>
               <button type="button" data-trim-paint="redo" class="secondary">Redo</button>
               <button type="button" data-trim-paint="clear" class="secondary">Clear</button>
@@ -455,6 +456,7 @@ Overpass → not set</div>
     const paintCanvas = overlay.querySelector('[data-trim-ink]');
     const resultCanvas = overlay.querySelector('[data-trim-result]');
     const stage = overlay.querySelector('.trimPaintStage');
+    const scroller = overlay.querySelector('.trimPaintScroller'); // Pan mode moves this viewport so zoom remains practical on touch/mobile without painting accidental strokes.
     const saveBtn = overlay.querySelector('[data-trim-paint="save"]');
     const undoBtn = overlay.querySelector('[data-trim-paint="undo"]');
     const redoBtn = overlay.querySelector('[data-trim-paint="redo"]');
@@ -474,11 +476,17 @@ Overpass → not set</div>
     let brushSize = Number(brushInput.value) || 4;
     let drawing = false;
     let lastPoint = null;
+    let panStart = null; // Used only by the Pan tool; stores pointer origin plus current scroll offsets.
     let closed = false;
     let renderRevision = 0;
     const undoStack = [];
     const redoStack = [];
     const UNDO_LIMIT = 30;
+
+    function close() { closed = true; overlay.remove(); }
+    overlay.querySelector('[data-trim-paint="close"]').onclick = close;
+    overlay.querySelector('[data-trim-paint="cancel"]').onclick = close;
+    overlay.addEventListener('pointerdown', event => { if (event.target === overlay) close(); });
 
     function normalizePaintRgb() {
       const image = paintCtx.getImageData(0, 0, width, height);
@@ -604,26 +612,41 @@ Overpass → not set</div>
 
     paintCanvas.addEventListener('pointerdown', event => {
       event.preventDefault();
+      try { paintCanvas.setPointerCapture?.(event.pointerId); } catch (_) {}
+      if (brushMode === 'pan') {
+        panStart = { x: event.clientX, y: event.clientY, left: scroller.scrollLeft, top: scroller.scrollTop };
+        paintCanvas.style.cursor = 'grabbing';
+        return;
+      }
       pushUndo();
       drawing = true; lastPoint = null;
-      try { paintCanvas.setPointerCapture?.(event.pointerId); } catch (_) {}
       strokeTo(pointFromEvent(event));
     });
-    paintCanvas.addEventListener('pointermove', event => { if (drawing) { event.preventDefault(); strokeTo(pointFromEvent(event)); } });
-    async function endStroke() {
+    paintCanvas.addEventListener('pointermove', event => {
+      if (brushMode === 'pan' && panStart) {
+        event.preventDefault();
+        scroller.scrollLeft = panStart.left - (event.clientX - panStart.x);
+        scroller.scrollTop = panStart.top - (event.clientY - panStart.y);
+        return;
+      }
+      if (drawing) { event.preventDefault(); strokeTo(pointFromEvent(event)); }
+    });
+    async function endInteraction() {
+      if (panStart) { panStart = null; paintCanvas.style.cursor = brushMode === 'pan' ? 'grab' : 'crosshair'; return; }
       if (!drawing) return;
       drawing = false; lastPoint = null;
       paintCtx.globalCompositeOperation = 'source-over';
       updateButtons();
       await renderResult();
     }
-    paintCanvas.addEventListener('pointerup', endStroke);
-    paintCanvas.addEventListener('pointercancel', endStroke);
-    paintCanvas.addEventListener('pointerleave', event => { if (drawing && !paintCanvas.hasPointerCapture?.(event.pointerId)) endStroke(); });
+    paintCanvas.addEventListener('pointerup', endInteraction);
+    paintCanvas.addEventListener('pointercancel', endInteraction);
+    paintCanvas.addEventListener('pointerleave', event => { if ((drawing || panStart) && !paintCanvas.hasPointerCapture?.(event.pointerId)) endInteraction(); });
 
     overlay.querySelectorAll('[data-trim-tool]').forEach(button => {
       button.onclick = () => {
         brushMode = button.dataset.trimTool;
+        paintCanvas.style.cursor = brushMode === 'pan' ? 'grab' : 'crosshair';
         overlay.querySelectorAll('[data-trim-tool]').forEach(other => other.classList.toggle('active', other === button));
       };
     });
@@ -648,10 +671,6 @@ Overpass → not set</div>
       await renderResult();
     };
 
-    function close() { closed = true; overlay.remove(); }
-    overlay.querySelector('[data-trim-paint="close"]').onclick = close;
-    overlay.querySelector('[data-trim-paint="cancel"]').onclick = close;
-    overlay.addEventListener('pointerdown', event => { if (event.target === overlay) close(); });
     saveBtn.onclick = async () => {
       const pattern = currentPattern();
       if (!pattern) return;
@@ -978,7 +997,7 @@ Overpass → not set</div>
   };
 
   window.__patternEditorDebug = () => ({ // Mobile-visible console substitute for checking the dev tool's two-slot state.
-    mostRecentChange: 'Dev Pattern Editor now also authors fixed per-garment/per-species-gender trim masks. Trim is locked non-tiling, renders above reusable patterns with its own outline, and runtime can color it from dye A/B/C.',
+    mostRecentChange: 'Garment trim authoring now paints exact sprite-space masks directly on the selected species/gender garment, with silhouette clipping, zoom/pan, undo/redo, and a live production-compositor result preview.',
     previewMode: $('previewMode').value,
     weavingBackground: $('surfaceTexture').value,
     overpassClearanceMultiplier: clampOverpassClearance($('overpassClearance').value),
