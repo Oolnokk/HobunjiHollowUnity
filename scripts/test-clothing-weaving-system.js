@@ -727,6 +727,11 @@ assert.match(source, /pattern: clone\(pattern\),[\s\S]*patternLibraryId: entry\.
 assert.match(patternAuthorSource, /options\.offloadCustomMotif === false/, 'shared pattern authoring lets weaving opt out of auxiliary motif storage');
 assert.match(patternAuthorSource, /options\.forceTiling === false/, 'shared PatternAuthoring can lock garment-owned trim to one non-repeating overlay');
 assert.equal(clothingTrimManifest.schema, 'hobunji_clothing_trim.v1', 'repo owns one stable authored garment-trim manifest');
+assert.equal(clothingTrimManifest.garments?.ragged_hood?.variants?.['mao-ao_male']?.front?.motifPng, 'assets/patterns/clothing-trims/ragged_hood__mao-ao_male__front.png', 'supplied Ragged Hood Mao\'ao male front trim is the repo-authored master entry');
+assert.equal(clothingTrimManifest.garments?.ragged_hood?.variants?.['mao-ao_male']?.front?.settings?.directMask, true, 'supplied Ragged Hood master remains an exact direct mask');
+assert.match(patternEditorSource, /function defaultTrimSourceVariant\(/, 'trim authoring has one shared authored-master selection helper');
+assert.match(patternEditorSource, /authoredInManifest = variants\.find\(key => !!trimRecord\(garmentId, key, view\)\)/, 'manifest-authored variants are preferred over session drafts as replication masters');
+assert.match(patternEditorSource, /preferredSource = defaultTrimSourceVariant/, 'variant selection automatically moves to an authored master when the previous selection is not authored');
 assert.match(patternEditorSource, /Garment trim authoring/, 'Pattern Editor exposes the dedicated garment trim workspace');
 assert.match(patternEditorSource, /species\/gender variant/i, 'garment trim editor makes per-variant authoring explicit');
 assert.match(patternEditorSource, /trimCoverageText/, 'garment trim editor reports missing species/gender coverage instead of relying on a hard-coded list');
