@@ -162,6 +162,18 @@ assert.equal(sixUnitOutline[48 * outlineProbeSize + 8], 0, 'the doubled outline 
 assert.equal(api.__test.weavingSwapsPatternColorsForRole({ layers: { base: { pattern: {}, swapPatternColors: true }, trim: { pattern: {} } } }, 'base'), true, 'base layer can independently swap cloth and pattern colors');
 assert.equal(api.__test.weavingSwapsPatternColorsForRole({ layers: { base: { pattern: {}, swapPatternColors: true }, trim: { pattern: {} } } }, 'trim'), false, 'trim layer keeps its own independent swap state');
 assert.equal(api.__test.weavingSwapsPatternColorsForRole({ pattern: {} }, null), false, 'legacy single-pattern saves default to unswapped colors');
+assert.equal(api.__test.weavingHasOptionalTrim({ trim: { enabled: true, dyeSlot: 'C' } }), true, 'trim metadata is recognized without fabricating a reusable pattern');
+assert.equal(api.__test.weavingHasAnyDecoration({ trim: { enabled: true, dyeSlot: 'A' } }), true, 'trim-only garments enter the shared decorated render/save path');
+assert.equal(api.hasWovenPattern({ weaving: { trim: { enabled: true, dyeSlot: 'B' } } }), true, 'trim-only inventory icons are treated as fully composited so legacy tinting cannot wash them out');
+assert.equal(api.__test.normalizeTrimDyeSlot('a'), 'A', 'added trim can explicitly reuse dye A');
+assert.equal(api.__test.normalizeTrimDyeSlot('C'), 'C', 'added trim can explicitly reuse dye C');
+assert.equal(api.__test.normalizeTrimDyeSlot('invalid'), 'B', 'invalid/missing trim dye metadata safely falls back to dye B');
+const authoredTrimProbe = api.__test.authoredTrimPatternFromManifest({ garments: { tankan_tunic: { variants: { 'mao-ao_male': { front: { motifPng: 'assets/patterns/clothing-trims/probe.png', settings: { tiling: true, meshScale: 1.25 } } } } } } }, 'tankan_tunic', 'mao-ao_male', 'front');
+assert.equal(authoredTrimProbe.tiling, false, 'garment trim manifest records are forced non-tiling even if a hand-edited setting says otherwise');
+assert.equal(authoredTrimProbe.meshScale, 1.25, 'garment trim keeps the normal authored placement/scale settings');
+assert(authoredTrimProbe.motifUrl.endsWith('/docs/assets/patterns/clothing-trims/probe.png'), 'garment trim motif path resolves from the docs asset root');
+const authoredTrimBehindFallback = api.__test.authoredTrimPatternFromManifest({ garments: { tankan_tunic: { variants: { 'mao-ao_male': { front: { motifPng: 'assets/patterns/clothing-trims/probe.png', settings: {} } } } } } }, 'tankan_tunic', 'mao-ao_male', 'behind');
+assert.equal(authoredTrimBehindFallback.__garmentTrimView, 'front', 'rear rendering can intentionally reuse a variant front trim when no separate rear mask is authored');
 const raggedHoodConfig = JSON.parse(fs.readFileSync('docs/config/cosmetics/ragged_hood.json', 'utf8')); // Real garment fixture verifies its authored front/back rasters remain one logical base cloth role.
 const raggedHoodLayers = api.__test.resolveIconLayerUrls(raggedHoodConfig, 'mao-ao', 'male'); // Resolves the same species-specific layer descriptors consumed by loom and inventory previews.
 assert.deepEqual(Array.from(api.__test.patternRolesForLayers(raggedHoodLayers), entry => [entry.role, entry.key]), [['base', 'base']], 'Ragged Hood front/back sprites expose one shared Base pattern control');
@@ -523,6 +535,8 @@ const pixelProbeSource = fs.readFileSync('docs/js/pixel-probe.js', 'utf8'); // K
 const debugSource = fs.readFileSync('docs/debug.js', 'utf8'); // Keeps weaving session diagnostics visible in the mobile Debug > Rendering surface.
 const debugCopySource = fs.readFileSync('docs/game.js', 'utf8'); // Copy button owns the full mobile report header/raw-log export and player-avatar commit diagnostics.
 const patternAuthorSource = fs.readFileSync('docs/js/pattern-authoring.js', 'utf8'); // Used below to lock the normalized shared Pattern scale authoring range.
+const patternEditorSource = fs.readFileSync('docs/tools/pattern-editor/index.html', 'utf8'); // Guards fixed garment-trim authoring, variant coverage, and export wiring.
+const clothingTrimManifest = JSON.parse(fs.readFileSync('docs/config/patterns/clothing-trims.json', 'utf8')); // Empty is valid until an artist authors the first supported garment; schema is still regression-checked.
 const metalPatternSource = fs.readFileSync('docs/js/tool-metal-recolor.js', 'utf8'); // Used below to prevent weaving-only scale normalization from shrinking existing verdigris patterns.
 const equipmentPanelSource = fs.readFileSync('docs/js/equipment-panel.js', 'utf8'); // Guards the inventory icon handoff so woven composites are not tinted a second time.
 const inventoryUiSource = fs.readFileSync('docs/js/inventory-ui.js', 'utf8'); // Guards the one-shot async Pack icon refresh path; no per-frame pattern compositing.
@@ -552,8 +566,8 @@ assert.match(avatarPreviewSource, /await renderer\(canvas, profile, renderOption
 assert.match(source, /document\.addEventListener\('hobunjiPlayerReady'[\s\S]*?requestSessionReadyPlayerAvatarRefresh\(hintedGear\)/, 'woven player-ready lifecycle schedules an automatic post-load avatar rebuild instead of relying on a manual gear toggle');
 assert.match(source, /window\.setTimeout\(attempt, 0\)/, 'session rebuild is deferred until every player-ready listener has installed the live save state');
 assert.match(source, /const startupFinished = window\.__hobunjiGameStarted === true[\s\S]*?liveWoven && initialPortraitPrepared && startupFinished[\s\S]*?equipmentDeps\.refreshPlayerAvatar\(\)/, 'post-load rebuild waits for live woven Gear, the initial gear-to-profile pass, and fully completed game startup before refreshing');
-assert.match(indexSource, /combat-config-loader\.js\?v=20260925animaloutline1/, 'index cache-busts the loader that owns the image-relative weaving module URL');
-assert.match(combatLoaderSource, /clothing-weaving-system\.js\?v=20260925animaloutline1/, 'combat loader cache-busts the image-relative animal outline runtime itself');
+assert.match(indexSource, /combat-config-loader\.js\?v=20260930directtrimpaint1/, 'index cache-busts the loader that owns the authored clothing trim runtime URL');
+assert.match(combatLoaderSource, /clothing-weaving-system\.js\?v=20260930directtrimpaint1/, 'combat loader cache-busts the authored clothing trim runtime itself');
 assert.match(portraitSource, /renderOptions\?\.imageForTint[\s\S]*?: _imageForTint/, 'portrait rendering accepts a per-render tint resolver with the canonical tint path as fallback');
 assert.match(portraitSource, /drawPortraitLayerWarped\(ctx, img, resolveXform\(layer\)[\s\S]*?layer\.url, imageForTint\)/, 'breathing overwear layers use the same render-local tint resolver during WorldPortraitLife refreshes');
 
@@ -658,7 +672,7 @@ assert.match(metalPatternSource, /colorFillApi\(\)\.hsvValueFillPixels/,
   'tool metal and verdigris value-preserving fills use the same ColorFill module');
 assert.match(source, /sourceData: shadeSourceData,[\s\S]*?debugLabel,[\s\S]*?samplePredicate:[\s\S]*?garmentMask[\s\S]*?applyPredicate:/,
   'woven motif color samples the whole authored cloth/body region separately from the motif paint mask');
-assert.match(source, /applyPatternStackToTintedImage\(tinted, patterns, colorHex, prefix, img, 'woven-motif'\)/,
+assert.match(source, /applyPatternStackToTintedImage\((?:tinted|decorated), patterns, colorHex, prefix, img, 'woven-motif'\)/,
   'runtime woven portrait composition passes both optional pattern slots plus the original authored raster and clothing-only diagnostic label');
 assert.match(source, /overpassOutlineWidth \* clearanceMultiplier/,
   'shared compositor punches the primary with the authored overpass clearance multiplier');
@@ -711,6 +725,20 @@ assert.match(source, /offloadCustomMotif:\s*false/, 'loom keeps custom motif pix
 assert.match(source, /previewRevision/, 'loom preview has a revision guard for stale asynchronous renders');
 assert.match(source, /pattern: clone\(pattern\),[\s\S]*patternLibraryId: entry\.patternId/, 'library-backed garments retain provenance while embedding their own pattern snapshot');
 assert.match(patternAuthorSource, /options\.offloadCustomMotif === false/, 'shared pattern authoring lets weaving opt out of auxiliary motif storage');
+assert.match(patternAuthorSource, /options\.forceTiling === false/, 'shared PatternAuthoring can lock garment-owned trim to one non-repeating overlay');
+assert.equal(clothingTrimManifest.schema, 'hobunji_clothing_trim.v1', 'repo owns one stable authored garment-trim manifest');
+assert.match(patternEditorSource, /Garment trim authoring/, 'Pattern Editor exposes the dedicated garment trim workspace');
+assert.match(patternEditorSource, /species\/gender variant/i, 'garment trim editor makes per-variant authoring explicit');
+assert.match(patternEditorSource, /trimCoverageText/, 'garment trim editor reports missing species/gender coverage instead of relying on a hard-coded list');
+assert.match(patternEditorSource, /Paint trim directly/, 'garment trim authoring opens an exact sprite-space paint workflow instead of the generic placement editor');
+assert.match(patternEditorSource, /directMask:\s*true/, 'garment trim saves exact pixel placement as a direct mask rather than frame\/mesh transforms');
+assert.match(patternEditorSource, /clipPaintToGarment/, 'direct trim strokes are clipped to the visible garment silhouette');
+assert.match(patternEditorSource, /Rendered result/, 'direct trim painting keeps a production-compositor result preview beside the paint surface');
+assert.match(patternEditorSource, /trimManifestBtn/, 'garment trim editor exports the shared manifest alongside authored PNG masks');
+assert.match(source, /'clothing-trim'/, 'runtime applies fixed garment trim through its own compositor pass and diagnostic label');
+assert.match(source, /patternDef\?\.directMask === true[\s\S]*?ctx\.drawImage\(motifImg, 0, 0, width, height\)/, 'direct garment trim maps its authored PNG straight into garment pixel coordinates before outlining');
+assert.match(source, /trimPatternOverride/, 'production clothing renderer accepts an unsaved trim draft so the dev editor previews the exact runtime path');
+assert.match(source, /weavingHasAnyDecoration/, 'trim-only clothing participates in rendering/session/cache plumbing without pretending to contain a reusable pattern');
 const diamondLatticeSource = 'basis: (w, h) => ({ u: { x: w / 2, y: h / 2 }, v: { x: w / 2, y: -h / 2 } })';
 assert(source.includes(diamondLatticeSource), 'weaving uses the edge-sharing diamond lattice');
 assert(patternAuthorSource.includes(diamondLatticeSource), 'pattern authoring uses the same diamond lattice');
