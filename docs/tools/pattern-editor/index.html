@@ -437,10 +437,12 @@ Overpass → not set</div>
               <button type="button" data-trim-paint="redo" class="secondary">Redo</button>
               <button type="button" data-trim-paint="clear" class="secondary">Clear</button>
               <label>Brush <input data-trim-brush type="range" min="1" max="24" step="1" value="4"><span data-trim-brush-label>4px</span></label>
+              <label>Edge thickness <input data-trim-edge-thickness type="range" min="1" max="24" step="1" value="3"><span data-trim-edge-thickness-label>3px</span></label>
+              <button type="button" data-trim-paint="generate-edge">Generate edge trim</button>
               <label>Zoom <input data-trim-zoom type="range" min="1" max="8" step="1" value="2"><span data-trim-zoom-label>2×</span></label>
             </div>
             <div class="trimPaintScroller"><div class="trimPaintStage"><canvas data-trim-base></canvas><canvas class="trimPaintInk" data-trim-ink></canvas></div></div>
-            <div class="trimPaintNote">Paint directly on the visible garment. The mask is clipped to opaque garment pixels, so strokes outside the sprite are discarded. White is only the editing overlay; the player still chooses dye A, B, or C in the loom.</div>
+            <div class="trimPaintNote">Paint directly on the visible garment, or generate an inward edge band anywhere opaque garment pixels meet transparency. Edge generation replaces the current paint (Undo restores it), then switches to Eraser so unwanted borders can be removed. White is only the editing overlay; the player still chooses dye A, B, or C in the loom.</div>
           </div>
           <div>
             <div class="muted" style="margin-bottom:6px"><b>Rendered result</b> — production trim compositor</div>
@@ -463,6 +465,8 @@ Overpass → not set</div>
     const statusEl = overlay.querySelector('[data-trim-paint-status]');
     const resultStatus = overlay.querySelector('[data-trim-result-status]');
     const brushInput = overlay.querySelector('[data-trim-brush]');
+    const edgeThicknessInput = overlay.querySelector('[data-trim-edge-thickness]'); // Controls how many native sprite-pixel layers the automatic inward edge band occupies.
+    const generateEdgeBtn = overlay.querySelector('[data-trim-paint="generate-edge"]'); // Rebuilds the mask from the garment silhouette, then hands cleanup to the eraser.
     const zoomInput = overlay.querySelector('[data-trim-zoom]');
     baseLayer.width = paintCanvas.width = width;
     baseLayer.height = paintCanvas.height = height;
@@ -471,6 +475,9 @@ Overpass → not set</div>
     const resultCtx = resultCanvas.getContext('2d');
     baseCtx.imageSmoothingEnabled = paintCtx.imageSmoothingEnabled = resultCtx.imageSmoothingEnabled = false;
     baseCtx.drawImage(baseCanvas, 0, 0);
+    const garmentPixels = baseCtx.getImageData(0, 0, width, height).data; // Source silhouette used by both the pixel brush clip and automatic edge generator.
+    const garmentMask = new Uint8Array(width * height); // Native-pixel opacity map; avoids repeatedly alpha-multiplying the painted mask during pointer movement.
+    for (let pixel = 0; pixel < garmentMask.length; pixel++) garmentMask[pixel] = garmentPixels[pixel * 4 + 3] > 16 ? 1 : 0;
 
     let brushMode = 'brush'; // Direct mask editor owns only footprint painting; all pattern placement transforms are intentionally absent.
     let brushSize = Number(brushInput.value) || 4;
@@ -594,20 +601,98 @@ Overpass → not set</div>
     function pointFromEvent(event) {
       const rect = paintCanvas.getBoundingClientRect();
       return {
-        x: Math.max(0, Math.min(width, (event.clientX - rect.left) * width / rect.width)),
-        y: Math.max(0, Math.min(height, (event.clientY - rect.top) * height / rect.height)),
+        x: Math.max(0, Math.min(width - 1, Math.floor((event.clientX - rect.left) * width / rect.width))),
+        y: Math.max(0, Math.min(height - 1, Math.floor((event.clientY - rect.top) * height / rect.height))),
       };
     }
 
+    function stampBrush(point) {
+      const size = Math.max(1, Math.round(brushSize));
+      const start = -Math.floor(size / 2);
+      const end = start + size - 1;
+      const centerOffset = size % 2 === 0 ? 0.5 : 0;
+      const radius = size / 2;
+      const radiusSquared = radius * radius;
+      for (let dy = start; dy <= end; dy++) {
+        for (let dx = start; dx <= end; dx++) {
+          const sampleX = dx + centerOffset, sampleY = dy + centerOffset;
+          if (sampleX * sampleX + sampleY * sampleY > radiusSquared) continue;
+          const x = point.x + dx, y = point.y + dy;
+          if (x < 0 || y < 0 || x >= width || y >= height) continue;
+          const index = y * width + x;
+          if (brushMode === 'eraser') paintCtx.clearRect(x, y, 1, 1);
+          else if (garmentMask[index]) {
+            paintCtx.fillStyle = '#ffffff';
+            paintCtx.fillRect(x, y, 1, 1);
+          }
+        }
+      }
+    }
+
+    function walkLinePixels(from, to, callback) {
+      let x = from.x, y = from.y;
+      const dx = Math.abs(to.x - x), sx = x < to.x ? 1 : -1;
+      const dy = -Math.abs(to.y - y), sy = y < to.y ? 1 : -1;
+      let error = dx + dy;
+      while (true) {
+        callback({ x, y });
+        if (x === to.x && y === to.y) break;
+        const doubled = error * 2;
+        if (doubled >= dy) { error += dy; x += sx; }
+        if (doubled <= dx) { error += dx; y += sy; }
+      }
+    }
+
     function strokeTo(point) {
-      paintCtx.globalCompositeOperation = brushMode === 'eraser' ? 'destination-out' : 'source-over';
-      paintCtx.strokeStyle = '#ffffff'; paintCtx.fillStyle = '#ffffff';
-      paintCtx.lineWidth = brushSize; paintCtx.lineCap = 'round'; paintCtx.lineJoin = 'round';
-      paintCtx.beginPath();
-      if (lastPoint) { paintCtx.moveTo(lastPoint.x, lastPoint.y); paintCtx.lineTo(point.x, point.y); paintCtx.stroke(); }
-      else { paintCtx.arc(point.x, point.y, brushSize / 2, 0, Math.PI * 2); paintCtx.fill(); }
+      paintCtx.globalCompositeOperation = 'source-over';
+      if (lastPoint) walkLinePixels(lastPoint, point, stampBrush);
+      else stampBrush(point);
       lastPoint = point;
-      clipPaintToGarment();
+    }
+
+    function generateEdgeTrim(thickness) {
+      const layers = Math.max(1, Math.round(thickness));
+      let remaining = garmentMask.slice();
+      const edge = new Uint8Array(remaining.length);
+      const next = new Uint8Array(remaining.length);
+      for (let layer = 0; layer < layers; layer++) {
+        next.set(remaining);
+        let removed = 0;
+        for (let y = 0; y < height; y++) {
+          for (let x = 0; x < width; x++) {
+            const index = y * width + x;
+            if (!remaining[index]) continue;
+            let touchesTransparency = false;
+            for (let oy = -1; oy <= 1 && !touchesTransparency; oy++) {
+              for (let ox = -1; ox <= 1; ox++) {
+                if (!ox && !oy) continue;
+                const nx = x + ox, ny = y + oy;
+                if (nx < 0 || ny < 0 || nx >= width || ny >= height || !remaining[ny * width + nx]) {
+                  touchesTransparency = true;
+                  break;
+                }
+              }
+            }
+            if (!touchesTransparency) continue;
+            edge[index] = 1;
+            next[index] = 0;
+            removed++;
+          }
+        }
+        if (!removed) break;
+        remaining = next.slice();
+      }
+      const generated = paintCtx.createImageData(width, height);
+      let paintedPixels = 0;
+      for (let index = 0; index < edge.length; index++) {
+        if (!edge[index]) continue;
+        const offset = index * 4;
+        generated.data[offset] = generated.data[offset + 1] = generated.data[offset + 2] = generated.data[offset + 3] = 255;
+        paintedPixels++;
+      }
+      paintCtx.clearRect(0, 0, width, height);
+      paintCtx.putImageData(generated, 0, 0);
+      return paintedPixels;
     }
 
     paintCanvas.addEventListener('pointerdown', event => {
@@ -643,14 +728,26 @@ Overpass → not set</div>
     paintCanvas.addEventListener('pointercancel', endInteraction);
     paintCanvas.addEventListener('pointerleave', event => { if ((drawing || panStart) && !paintCanvas.hasPointerCapture?.(event.pointerId)) endInteraction(); });
 
-    overlay.querySelectorAll('[data-trim-tool]').forEach(button => {
-      button.onclick = () => {
-        brushMode = button.dataset.trimTool;
-        paintCanvas.style.cursor = brushMode === 'pan' ? 'grab' : 'crosshair';
-        overlay.querySelectorAll('[data-trim-tool]').forEach(other => other.classList.toggle('active', other === button));
-      };
-    });
+    function setBrushMode(mode) {
+      brushMode = ['brush', 'eraser', 'pan'].includes(mode) ? mode : 'brush';
+      paintCanvas.style.cursor = brushMode === 'pan' ? 'grab' : 'crosshair';
+      overlay.querySelectorAll('[data-trim-tool]').forEach(other => other.classList.toggle('active', other.dataset.trimTool === brushMode));
+    }
+    overlay.querySelectorAll('[data-trim-tool]').forEach(button => { button.onclick = () => setBrushMode(button.dataset.trimTool); });
     brushInput.oninput = () => { brushSize = Math.max(1, Number(brushInput.value) || 1); overlay.querySelector('[data-trim-brush-label]').textContent = `${brushSize}px`; };
+    edgeThicknessInput.oninput = () => {
+      const thickness = Math.max(1, Number(edgeThicknessInput.value) || 1);
+      overlay.querySelector('[data-trim-edge-thickness-label]').textContent = `${thickness}px`;
+    };
+    generateEdgeBtn.onclick = async () => {
+      const thickness = Math.max(1, Number(edgeThicknessInput.value) || 1);
+      pushUndo();
+      const paintedPixels = generateEdgeTrim(thickness);
+      setBrushMode('eraser');
+      updateButtons();
+      statusEl.textContent = `Generated a ${thickness}px inward trim along every garment/transparency edge (${paintedPixels} pixels). Erase the borders you do not want.`;
+      await renderResult();
+    };
     zoomInput.oninput = updateZoom;
     undoBtn.onclick = async () => {
       if (!undoStack.length) return;
@@ -997,7 +1094,7 @@ Overpass → not set</div>
   };
 
   window.__patternEditorDebug = () => ({ // Mobile-visible console substitute for checking the dev tool's two-slot state.
-    mostRecentChange: 'Garment trim authoring now paints exact sprite-space masks directly on the selected species/gender garment, with silhouette clipping, zoom/pan, undo/redo, and a live production-compositor result preview.',
+    mostRecentChange: 'Trim painting now uses deterministic native-pixel brush strokes, plus an undoable edge generator that grows inward from every garment/transparency boundary at an artist-selected thickness before eraser cleanup.',
     previewMode: $('previewMode').value,
     weavingBackground: $('surfaceTexture').value,
     overpassClearanceMultiplier: clampOverpassClearance($('overpassClearance').value),
