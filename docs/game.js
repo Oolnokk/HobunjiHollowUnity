@@ -16930,6 +16930,12 @@
         facingAngle = normalizedAngle;
         lastMoveAngle = normalizedAngle;
         player.angle = normalizedAngle;
+        mouseLookAngle = normalizedAngle;
+        controllerLookAngle = normalizedAngle;
+        if (activeCameraMode === SHOULDER_SURF_MODE) {
+          const baseAzimuthDeg = cameraModeConfig(SHOULDER_SURF_MODE).azimuthDeg ?? 0; // Keeps the screen-center reticle horizontally aligned with the arch-stick yaw in shoulder view.
+          cameraAzimuthOffsetDeg = wrapAzimuthDeg(-(normalizedAngle * 180 / Math.PI) - 90 - baseAzimuthDeg);
+        }
         lastMobileArchCombatAimEvent = { reason: 'aim', at: Date.now() };
         invalidateMobileArchAimPerspectiveCache();
       }
