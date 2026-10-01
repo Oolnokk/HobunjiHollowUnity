@@ -678,15 +678,31 @@
     };
   }
 
+  const NO_SCALE_IDENTITY = Object.freeze({ speciesId: '', gender: 'male' });
+  let runtimeIdentityCache = { playerMesh: null, node: null, rig: null }; // Avoids a per-frame playerMesh traverse while the same hand rig stays attached.
+
+  function nodeIsUnder(node, root) {
+    for (let current = node; current; current = current.parent) if (current === root) return true;
+    return false;
+  }
+
   function runtimePlayerScaleIdentity() {
     const playerMesh = global.ProceduralHandAttachments?.gameDeps?.playerMesh || null;
-    let identity = null; // Filled from the live player's portrait hand rig; avoids guessing from global save/profile names.
-    playerMesh?.traverse?.(node => {
-      if (identity) return;
-      const rig = node?.userData?.proceduralHandRig;
-      if (rig?.speciesId) identity = { speciesId: rig.speciesId, gender: rig.gender || 'male' };
-    });
-    return identity || { speciesId: '', gender: 'male' };
+    if (!playerMesh) return NO_SCALE_IDENTITY;
+    const cached = runtimeIdentityCache;
+    const cacheValid = cached.playerMesh === playerMesh && cached.rig
+      && cached.node?.userData?.proceduralHandRig === cached.rig && nodeIsUnder(cached.node, playerMesh);
+    if (!cacheValid) {
+      let found = null; // Filled from the live player's portrait hand rig; avoids guessing from global save/profile names.
+      playerMesh.traverse?.(node => {
+        if (found) return;
+        const rig = node?.userData?.proceduralHandRig;
+        if (rig?.speciesId) found = { node, rig };
+      });
+      runtimeIdentityCache = { playerMesh, node: found?.node || null, rig: found?.rig || null };
+    }
+    const rig = runtimeIdentityCache.rig;
+    return rig?.speciesId ? { speciesId: rig.speciesId, gender: rig.gender || 'male' } : NO_SCALE_IDENTITY;
   }
 
   function applyEditorGripPresentation() {
