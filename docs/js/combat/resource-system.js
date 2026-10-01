@@ -264,12 +264,19 @@
   }
 
   function cleanupTimedDebuffs(entity, atMs = nowMs()) {
-    const store = timedDebuffStore(entity);
-    if (!store) return;
-    for (const [id, entry] of Object.entries(store)) {
+    const store = timedDebuffStore(entity); // Existing runtime store; null is the steady-state path for almost every actor.
+    if (!store) return null;
+    let hasLive = false; // Tracks whether the object can stay attached without allocating Object.keys/Object.entries every frame.
+    for (const id in store) {
+      const entry = store[id]; // Current timed status checked against the shared monotonic combat clock.
       if (!(Number(entry?.expiresAtMs) > atMs)) delete store[id];
+      else hasLive = true;
     }
-    if (!Object.keys(store).length) delete entity._timedCombatDebuffs;
+    if (!hasLive) {
+      delete entity._timedCombatDebuffs;
+      return null;
+    }
+    return store;
   }
 
   function applyTimedDebuff(entity, id, durationS, options = {}) {
@@ -322,10 +329,14 @@
   }
 
   function timedDebuffModifier(entity, key) {
-    cleanupTimedDebuffs(entity);
-    let multiplier = 1;
-    for (const entry of Object.values(timedDebuffStore(entity) || {})) {
-      const value = Number(entry?.modifiers?.[key]);
+    const store = timedDebuffStore(entity); // Fast no-status path used by per-frame movement/combat loops.
+    if (!store) return 1;
+    const liveStore = cleanupTimedDebuffs(entity); // Expiration cleanup stays allocation-free and only scans actors that actually have timed statuses.
+    if (!liveStore) return 1;
+    let multiplier = 1; // Combined named-debuff multiplier returned to the shared stat choke point.
+    for (const id in liveStore) {
+      const entry = liveStore[id]; // Existing materialized modifier avoids rebuilding percentage math in hot loops.
+      const value = Number(entry?.modifiers?.[key]); // Only the requested stat key participates in this lookup.
       if (Number.isFinite(value) && value > 0) multiplier *= value;
     }
     return multiplier;
