@@ -676,11 +676,20 @@
 
     const reason = primaryReadError ? 'before-recovery-browser-fallback' : 'before-recovery'; // Diagnostics distinguish an ordinary safety copy from corruption recovery.
     const record = createRecord('pre-restore', snapshot, reason, savedAt);
-    writeSlot('preRestore', record);
+    const folderKeepsCopy = folderRecoveryAvailable() && !primaryReadError;
+    try {
+      writeSlot('preRestore', record);
+    } catch (error) {
+      // A full browser quota (even after HobunjiStorageQuota evicted the lower
+      // recovery mirrors) must not block a restore whose safety copy is about
+      // to be written to the folder; the in-memory record still drives rollback.
+      if (!folderKeepsCopy || !window.HobunjiStorageQuota?.isQuotaError?.(error)) throw error;
+      lastIntegrityWarning = 'Browser storage is full; the Before Last Restore copy was kept in the save folder only.';
+    }
 
     // Never replace the folder's existing Before Last Restore checkpoint with a browser fallback
     // when the canonical folder itself is corrupt; that older folder checkpoint is more trustworthy.
-    if (folderRecoveryAvailable() && !primaryReadError) await folderApi()?.writeRecoveryCheckpoint?.('preRestore', record);
+    if (folderKeepsCopy) await folderApi()?.writeRecoveryCheckpoint?.('preRestore', record);
     return record;
   }
 

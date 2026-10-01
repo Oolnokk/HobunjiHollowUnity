@@ -9,6 +9,8 @@
        injected long before game.js. Keep this near the top: livestock
        genotype persistence and Porakaneki faction hooks can request it while
        the document parser is still loading the main module list. -->
+  <!-- Must load before any save/localStorage writer: evicts browser recovery-checkpoint mirrors when the quota is full. -->
+  <script src="js/storage-quota-guard.js?v=20261001c7a40d56"></script>
   <script src="js/scene-ready-poller.js?v=20260920startup4"></script>
   <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
   <script src="js/GLTFLoader.js?v=20260712d"></script>
@@ -237,7 +239,7 @@
   <!-- Optional local-folder save mirror (window.LocalSaveFolder) — self-contained,
        only reads/writes the same hobunjiSaveMeta localStorage key onboarding.js/
        game.js already use. See docs/js/local-save-folder.js. -->
-  <script src="js/local-save-folder.js?v=20260926metalarmor1"></script>
+  <script src="js/local-save-folder.js?v=20261001c619ad88"></script>
   <!-- Onboarding overlay -->
   <link rel="stylesheet" href="onboarding.css?v=20260921preworldsky1">
   <script src="onboarding.js?v=20261001cc6ee547"></script>
