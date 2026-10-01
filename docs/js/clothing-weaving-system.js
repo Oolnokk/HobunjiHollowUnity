@@ -1993,6 +1993,18 @@
 
   function buildPatternMask(width, height, rawPatternDef, motifImg) {
     const patternDef = legacyFrameFields(rawPatternDef);
+    if (patternDef?.directMask === true) {
+      const canvas = Object.assign(document.createElement('canvas'), { width, height }); // Garment trim authoring uses an exact sprite-space alpha mask: no frame, centering, rotation, or mesh transform is allowed to move painted pixels afterward.
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(motifImg, 0, 0, width, height); // Authoring normally produces a same-size PNG; nearest-neighbor scaling is only a resilience fallback if an asset is later resized.
+      const pixels = ctx.getImageData(0, 0, width, height).data;
+      const directMask = new Uint8Array(width * height); // Used only to derive the same disconnected-island separator ordinary motifs receive before outline growth.
+      for (let p = 0, i = 3; p < directMask.length; p++, i += 4) if (pixels[i] > 16) directMask[p] = 1;
+      const separator = buildMotifClusterSeparatorMask(directMask, width, height);
+      canvas.__motifClusterSeparatorCanvas = separator ? maskCanvas(separator, width, height) : null;
+      return canvas;
+    }
     const canvas = Object.assign(document.createElement('canvas'), { width, height }), ctx = canvas.getContext('2d');
     const clusterSeparatorCanvas = Object.assign(document.createElement('canvas'), { width, height }); // Per-instance intra-motif watershed sampled alongside the ordinary alpha mask.
     const clusterSeparatorCtx = clusterSeparatorCanvas.getContext('2d');
