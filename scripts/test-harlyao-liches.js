@@ -360,7 +360,7 @@ for (const key of ['tothal', 'hronal', 'kanthic']) {
   assert(devSpawnerSource.includes(`harlyao-lich:${key}`), `Testing Arena must expose ${key} lich button`);
 }
 assert.match(devSpawnerSource, /startsWith\('harlyao-lich:'\)/);
-assert(indexSource.includes('js/combat/combat-lich.js?v=20260929merge1'));
+assert.match(indexSource, /js\/combat\/combat-lich\.js\?v=[A-Za-z0-9_-]+/);
 assert(indexSource.includes('js/combat/combat-bandit.js?v='), 'game must load combat-bandit with an explicit cache-bust token');
 assert(indexSource.includes('js/dev-spawner.js?v=20260927reviewfix1'));
 assert(indexSource.includes('game.js?v=20260930h0d3069d'));

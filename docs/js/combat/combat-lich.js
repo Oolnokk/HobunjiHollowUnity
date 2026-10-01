@@ -251,7 +251,9 @@
     const grip = grips?.authoredPrimaryGripForTool?.(LICH_CAST_WEAPON_KEY, 'melee') || {};
     const gripPosition = grip.position || {}; // Authored point on the reference weapon where the right hand belongs.
     const gripRotation = grip.rotationDeg || {}; // Authored grip orientation on the reference weapon.
-    const gripScale = Number(grips?.toolScaleForTool?.(LICH_CAST_WEAPON_KEY)) || 1; // Same tool-scale multiplier used by visible held weapons.
+    const gripScale = Number(grips?.effectiveToolScaleForTool?.(LICH_CAST_WEAPON_KEY, rig.speciesId, rig.gender))
+      || Number(grips?.toolScaleForTool?.(LICH_CAST_WEAPON_KEY))
+      || 1; // Same base + calculated-height scale used by visible held weapons.
     socketPosition.add(new THREE.Vector3(
       (Number(gripPosition.x) || 0) * gripScale,
       (Number(gripPosition.y) || 0) * gripScale,

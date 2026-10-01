@@ -3,8 +3,8 @@
 
 // Regression for the RAF-ownership migration of
 // onboarding-character-creation-weapon-polish.js: its self-perpetuating
-// frame() loop (re-applying Kenkari scale / idle-sprite-basis corrections
-// whenever the character creator preview's tool plane changes) becomes a
+// frame() loop (re-applying idle-sprite-basis corrections whenever the
+// character creator preview's tool plane changes) becomes a
 // single RuntimeFrameScheduler registration on the default phase, since it
 // mutates plane transforms directly rather than reading/writing a
 // PlayerBodyTransformComposer channel. This module is only ever
@@ -50,17 +50,16 @@ function buildFixture({ toolPlane = null } = {}) {
   assert.doesNotThrow(() => entry.fn(), 'the scheduler callback must tolerate no active tool plane');
 }
 
-// --- With a tool plane: the Kenkari scale correction applies once ----------
+// --- With a tool plane: no species-specific size correction remains ---------
 {
-  const plane = { scale: { multiplyScalar(f) { this._scale = (this._scale || 1) * f; } }, position: { multiplyScalar(f) { this._pos = (this._pos || 1) * f; } }, quaternion: null, updateMatrix() {}, updateMatrixWorld() {} };
+  const plane = { scale: { x: 1, y: 1, z: 1 }, position: { x: 0, y: 0, z: 0 }, quaternion: null, updateMatrix() {}, updateMatrixWorld() {} };
   const { registered, windowObject } = buildFixture({ toolPlane: plane });
   const entry = registered.get('onboarding-character-creation-weapon-polish');
-  entry.fn();
-  assert.equal(plane.scale._scale, 0.75, 'Kenkari prop scale correction applies to the current tool plane');
   const status = {};
   windowObject.HOBUNJI_ONBOARDING_REDESIGN_STATUS = status;
-  entry.fn();
-  assert.equal(plane.scale._scale, 0.75, 'once corrected, re-running the callback must not re-apply the scale to the same plane');
+  assert.doesNotThrow(() => entry.fn(), 'polish callback should tolerate a plane without quaternion helpers');
+  assert.deepEqual(plane.scale, { x: 1, y: 1, z: 1 }, 'creator polish must not apply a hardcoded species-specific weapon scale');
+  assert.equal(status.previewWeaponScaleSource, 'calculated-character-height', 'diagnostics should identify the shared calculated-height scale source');
 }
 
 console.log('onboarding character creation weapon polish scheduler migration passed');

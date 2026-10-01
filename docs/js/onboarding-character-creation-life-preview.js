@@ -308,8 +308,10 @@
     if (!texture || model !== life.model || !toolHolder.parent) return;
     const imageW = Math.max(1, Number(texture.image?.width) || 1);
     const imageH = Math.max(1, Number(texture.image?.height) || 1);
-    const gripScale = Number(window.HobunjiHandToolGrips?.toolScaleForTool?.(STARTER_WEAPON_SHAPE)) || 1;
-    const planeW = 0.5 * gripScale; // Runtime/Attack Editor TOOL_MODEL_WIDTH.
+    const gripScale = Number(window.HobunjiHandToolGrips?.effectiveToolScaleForTool?.(STARTER_WEAPON_SHAPE, identity.speciesId, identity.gender))
+      || Number(window.HobunjiHandToolGrips?.toolScaleForTool?.(STARTER_WEAPON_SHAPE))
+      || 1;
+    const planeW = 0.5 * gripScale; // Runtime/Attack Editor TOOL_MODEL_WIDTH with the shared base + calculated-height scale.
     const planeH = planeW * (imageH / imageW);
     const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide });
     const plane = new THREE.Mesh(new THREE.PlaneGeometry(planeW, planeH), material);

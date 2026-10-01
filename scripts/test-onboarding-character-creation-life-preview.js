@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const entry = fs.readFileSync('docs/onboarding.js', 'utf8'); // Guards that the post-redesign life module is actually parser-loaded.
 const life = fs.readFileSync('docs/js/onboarding-character-creation-life-preview.js', 'utf8'); // Guards runtime-life, view, Kasa, and starter-weapon contracts.
 
-assert.match(entry, /onboarding-character-creation-life-preview\.js\?v=20260920orbit1/, 'onboarding must load the creator life-preview module after the redesign');
+assert.match(entry, /onboarding-character-creation-life-preview\.js\?v=[A-Za-z0-9_-]+/, 'onboarding must load the creator life-preview module after the redesign');
 assert.match(entry, /coreUrl[\s\S]*redesignUrl[\s\S]*lifePreviewUrl/, 'creator life additions must load after onboarding core and integrated redesign');
 
 for (const dyeId of ['dye:CLOTH:brown', 'dye:CLOTH:dusty_yellow', 'dye:CLOTH:dusty_orange']) {
@@ -28,7 +28,7 @@ assert.match(life, /WeaponToolStances\?\.poses\?\.heavyWeapon/, 'starter Hatchet
 assert.match(life, /x: -0\.03, y: 0\.27, z: 0\.02[\s\S]{0,100}pitch: -23, yaw: 104, bodyYaw: -15, roll: 89/, 'Heavy Weapon fallback must match weapon-tool-stances.js exactly');
 assert.match(life, /handAttachX/, 'weapon base must use the avatar\'s scanned runtime hand-attach X');
 assert.match(life, /handAttachY/, 'weapon base must use the avatar\'s scanned runtime hand-attach Y');
-assert.match(life, /toolScaleForTool\?\.\(STARTER_WEAPON_SHAPE\)/, 'weapon sprite must use the shared authored hand-tool scale');
+assert.match(life, /effectiveToolScaleForTool\?\.\(STARTER_WEAPON_SHAPE, identity\.speciesId, identity\.gender\)/, 'weapon sprite must use the shared authored base scale plus calculated character-height multiplier');
 assert.match(life, /planeW = 0\.5 \* gripScale/, 'starter weapon plane must use gameplay/Attack Editor TOOL_MODEL_WIDTH');
 assert.match(life, /plane\.rotation\.x = -Math\.PI \/ 2/, 'starter weapon sprite must use the gameplay flat-in-XZ basis');
 assert.match(life, /proceduralHandRig/, 'starter weapon preview must reuse the existing procedural hand rig');

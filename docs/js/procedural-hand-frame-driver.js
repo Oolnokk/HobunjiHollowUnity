@@ -501,7 +501,8 @@
     try {
       const toolKey = currentToolKey(record);
       const gripContext = currentGripContext(record);
-      const primaryGrip = toolGrips.primaryGripForTool(toolKey, gripContext);
+      const scaleIdentity = { speciesId: record.speciesId, gender: record.gender }; // Used by grip targets so they expand with the same calculated-height weapon scale as the visible item.
+      const primaryGrip = toolGrips.primaryGripForTool(toolKey, gripContext, scaleIdentity);
       const primarySocket = toolSocketWorld(record, toolHolder, primaryGrip); // Raw target ON the weapon, before Grip Mode or per-GLB hand-model calibration.
       record.rig.placePaperHandGuideWorld?.(primarySocket.position, primarySocket.quaternion); // Locked reference stays on the raw target while Grip Mode + child calibration move the real hand.
       const primary = handSocketAfterGripMode(record, primarySocket);
@@ -509,7 +510,7 @@
       record.rig.placeHandWorld?.('right', primary.position, primary.quaternion, modelCalibration);
       ensureFallbackState(record).owners.right = 'primary-grip';
 
-      const secondaryGrip = toolGrips.secondaryGripForTool(toolKey, gripContext);
+      const secondaryGrip = toolGrips.secondaryGripForTool(toolKey, gripContext, scaleIdentity);
       if (secondaryGrip) {
         const secondary = handSocketAfterGripMode(record, toolSocketWorld(record, toolHolder, secondaryGrip));
         record.rig.placeHandWorld?.('left', secondary.position, secondary.quaternion, modelCalibration);
@@ -693,8 +694,8 @@
         handFromTool: global.HobunjiHandGripModes?.effectiveFrameForModel?.(modelKeyForRecord(record))
           || profiles.data?.models?.[modelKeyForRecord(record)]?.handFromTool
           || null,
-        primaryGrip: toolGrips.primaryGripForTool(record.lastToolKey),
-        secondaryGrip: toolGrips.secondaryGripForTool(record.lastToolKey) || null,
+        primaryGrip: toolGrips.primaryGripForTool(record.lastToolKey, toolGrips.currentGripContext?.(), { speciesId: record.speciesId, gender: record.gender }),
+        secondaryGrip: toolGrips.secondaryGripForTool(record.lastToolKey, toolGrips.currentGripContext?.(), { speciesId: record.speciesId, gender: record.gender }) || null,
         hand: record.rig?.getDebug?.() || null,
         hasPreRenderSentinel: !!record.syncSentinel,
       }));

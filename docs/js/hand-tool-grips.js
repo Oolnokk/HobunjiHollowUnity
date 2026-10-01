@@ -1,14 +1,17 @@
-// Held-item-local grip and base-scale authoring shared by gameplay and the Attack Animation Editor.
+// Held-item-local grip and scale authoring shared by gameplay and the Attack Animation Editor.
 // A primary grip is a target frame ON THE ITEM. The animation owns the item's transform;
 // grip authoring moves the RIGHT HAND to that frame and never inverse-moves the weapon.
 // Optional off-hand authoring is a Z span on the item; attack poses choose 0..100%
-// along that span and smoothly blend the left hand on/off it. Base toolScale belongs
-// to the item shape and also scales grip-point positions away from the item origin.
+// along that span and smoothly blend the left hand on/off it. Each shape has an authored
+// base toolScale plus a heightMultiplier that follows HobunjiCharacterDimensions relative
+// to Mao'ao male height; the same effective scale also expands grip-point positions.
 (function (global) {
   'use strict';
 
   const SCHEMA = 'hobunji_hand_tool_grips.v1';
   const LOCAL_KEY = 'hobunji.handToolGrips.v1';
+  const HEIGHT_REFERENCE_SPECIES = 'mao-ao'; // Baseline body used when turning calculated character height into a relative weapon scale.
+  const HEIGHT_REFERENCE_GENDER = 'male';
   const SECONDARY_GRIP_PRESET = 'animation-span-v1'; // Migrates old always-on secondary points into animation-gated Z spans.
   const PRIMARY_ROTATION_PRESET = 'hatchet-primary-xy-rotation-20260921-v3'; // Hatchet is the canonical right-hand grip example: propagate its X, Y, and rotation to every other tool, never its item-specific Z.
   const PRE_AUTHORED_RANGED_GRIP_PRESET = 'melee-ranged-split-20260920-v4-editor-authored'; // Previous committed split cloned melee into ranged; used only to migrate untouched old dagger defaults.
@@ -178,6 +181,13 @@
     return Math.max(0.1, Math.min(3, resolved));
   }
 
+  function normalizeHeightMultiplier(value, fallback = 1) {
+    const n = Number(value); // 0 ignores character height; 1 follows the full calculated-height ratio; values >1 exaggerate it.
+    const fb = Number(fallback);
+    const resolved = Number.isFinite(n) && n >= 0 ? n : (Number.isFinite(fb) && fb >= 0 ? fb : 1);
+    return Math.max(0, Math.min(3, resolved));
+  }
+
   function normalizeTransform(raw) {
     return {
       position: {
@@ -255,6 +265,7 @@
       if (!entry || typeof entry !== 'object') continue;
       const fallbackEntry = DEFAULT_DATA.tools[toolKey] || {}; // Lets pre-scale local drafts inherit the new committed scale for that same shape.
       entry.toolScale = normalizeToolScale(entry.toolScale, fallbackEntry.toolScale ?? 1);
+      entry.heightMultiplier = normalizeHeightMultiplier(entry.heightMultiplier, fallbackEntry.heightMultiplier ?? 1);
       entry.primaryGrip = normalizeTransform(entry.primaryGrip);
       if (previousPrimaryRotationPreset !== PRIMARY_ROTATION_PRESET) {
         entry.primaryGrip.position.x = HATCHET_PRIMARY_GRIP_EXAMPLE.x; // Hatchet's authored X belongs to the shared hand-on-item frame.
@@ -358,6 +369,7 @@
     const entry = data.tools[key];
     const fallbackEntry = DEFAULT_DATA.tools[key] || {}; // Used when older data does not yet carry the shape's base scale.
     entry.toolScale = normalizeToolScale(entry.toolScale, fallbackEntry.toolScale ?? 1);
+    entry.heightMultiplier = normalizeHeightMultiplier(entry.heightMultiplier, fallbackEntry.heightMultiplier ?? 1);
     entry.primaryGrip = normalizeTransform(entry.primaryGrip);
     entry.secondaryGripSpan = inferredSpan(entry);
     entry.secondaryGrip = disabledLegacySecondary();
@@ -377,14 +389,39 @@
     return normalizeToolScale(entry?.toolScale, DEFAULT_DATA.tools[key]?.toolScale ?? 1);
   }
 
+  function heightMultiplierForTool(value) {
+    const key = toolKeyFor(value);
+    const entry = key ? ensureTool(key) : null;
+    return normalizeHeightMultiplier(entry?.heightMultiplier, DEFAULT_DATA.tools[key]?.heightMultiplier ?? 1);
+  }
+
+  function characterHeightRatio(speciesId, gender) {
+    const dimensions = global.HobunjiCharacterDimensions;
+    if (!dimensions?.dimensionsFor || !speciesId) return 1;
+    const current = dimensions.dimensionsFor(speciesId, gender || 'male');
+    const reference = dimensions.dimensionsFor(HEIGHT_REFERENCE_SPECIES, HEIGHT_REFERENCE_GENDER);
+    const currentHeight = Number(current?.height);
+    const referenceHeight = Number(reference?.height);
+    if (!(currentHeight > 0) || !(referenceHeight > 0)) return 1;
+    return currentHeight / referenceHeight;
+  }
+
+  function effectiveToolScaleForTool(value, speciesId, gender) {
+    const baseScale = toolScaleForTool(value);
+    const heightMultiplier = heightMultiplierForTool(value);
+    const heightRatio = characterHeightRatio(speciesId, gender);
+    const heightFactor = 1 + (heightRatio - 1) * heightMultiplier;
+    return normalizeToolScale(baseScale * Math.max(0.05, heightFactor), baseScale);
+  }
+
   function authoredPrimaryGripForTool(value, context = currentGripContext()) {
     const entry = ensureTool(value);
     return normalizeTransform(entry?.[primaryGripFieldForContext(context)]);
   }
 
-  function primaryGripForTool(value, context = currentGripContext()) {
+  function primaryGripForTool(value, context = currentGripContext(), identity = null) {
     const authored = authoredPrimaryGripForTool(value, context); // Selected melee/ranged item-local frame the right hand must reach.
-    const scale = toolScaleForTool(value); // Grip coordinates are authored against the unscaled sprite and expand with its intrinsic size.
+    const scale = effectiveToolScaleForTool(value, identity?.speciesId, identity?.gender); // Grip coordinates expand by the exact same base+height scale as the visible item.
     return {
       position: {
         x: numberOrZero(authored.position.x) * scale,
@@ -505,14 +542,14 @@
 
   function currentSecondaryGripAnimationState() { return inAttackEditor() ? editorAnimationGripState() : runtimeAnimationGripState(); }
 
-  function secondaryGripForTool(value, context = currentGripContext()) {
+  function secondaryGripForTool(value, context = currentGripContext(), identity = null) {
     const span = secondaryGripSpanForTool(value, context);
     if (!span) return null;
     const state = currentSecondaryGripAnimationState();
     if (!(state.influence > 0.0001)) return null;
     const percent01 = clamp01(state.percent / 100);
     const itemZ = span.startZ + (span.endZ - span.startZ) * percent01;
-    const itemScale = toolScaleForTool(value); // The left-hand target lives directly in the same item-local frame as the primary target.
+    const itemScale = effectiveToolScaleForTool(value, identity?.speciesId, identity?.gender); // The left-hand target uses the same base+height scale as the visible item.
     return {
       enabled: true,
       influence: clamp01(state.influence),
@@ -634,12 +671,47 @@
     return visible || fallback;
   }
 
+  function editorScaleIdentity() {
+    return {
+      speciesId: String(document.getElementById('avatarSpecies')?.value || '').trim(),
+      gender: String(document.getElementById('avatarGender')?.value || 'male').trim() || 'male',
+    };
+  }
+
+  const NO_SCALE_IDENTITY = Object.freeze({ speciesId: '', gender: 'male' });
+  let runtimeIdentityCache = { playerMesh: null, node: null, rig: null }; // Avoids a per-frame playerMesh traverse while the same hand rig stays attached.
+
+  function nodeIsUnder(node, root) {
+    for (let current = node; current; current = current.parent) if (current === root) return true;
+    return false;
+  }
+
+  function runtimePlayerScaleIdentity() {
+    const playerMesh = global.ProceduralHandAttachments?.gameDeps?.playerMesh || null;
+    if (!playerMesh) return NO_SCALE_IDENTITY;
+    const cached = runtimeIdentityCache;
+    const cacheValid = cached.playerMesh === playerMesh && cached.rig
+      && cached.node?.userData?.proceduralHandRig === cached.rig && nodeIsUnder(cached.node, playerMesh);
+    if (!cacheValid) {
+      let found = null; // Filled from the live player's portrait hand rig; avoids guessing from global save/profile names.
+      playerMesh.traverse?.(node => {
+        if (found) return;
+        const rig = node?.userData?.proceduralHandRig;
+        if (rig?.speciesId) found = { node, rig };
+      });
+      runtimeIdentityCache = { playerMesh, node: found?.node || null, rig: found?.rig || null };
+    }
+    const rig = runtimeIdentityCache.rig;
+    return rig?.speciesId ? { speciesId: rig.speciesId, gender: rig.gender || 'male' } : NO_SCALE_IDENTITY;
+  }
+
   function applyEditorGripPresentation() {
     const context = global.HobunjiAttackEditorToolContext;
     const visual = context?.toolPlaneMesh || null;
     if (!visual) return;
     const key = toolKeyFor(context.toolKey || document.getElementById('toolSpriteSelect')?.value || '');
-    applyHeldItemScale(visual, toolScaleForTool(key));
+    const identity = editorScaleIdentity();
+    applyHeldItemScale(visual, effectiveToolScaleForTool(key, identity.speciesId, identity.gender));
   }
 
   function applyRuntimeGripPresentation() {
@@ -651,7 +723,8 @@
     const visual = (activeSlot && (deps?.toolMeshMap?.get?.(activeSlot) || deps?.toolMeshMap?.[activeSlot])) || visibleToolVisualUnder(holder);
     const itemKey = snapshot?.itemKey || snapshot?.shape || deps?.equipmentSlots?.[activeSlot] || '';
     if (!visual || !itemKey) return;
-    applyHeldItemScale(visual, toolScaleForTool(itemKey));
+    const identity = runtimePlayerScaleIdentity();
+    applyHeldItemScale(visual, effectiveToolScaleForTool(itemKey, identity.speciesId, identity.gender));
   }
 
   function applyPrimaryGripVisuals() {
@@ -742,6 +815,7 @@
     const spanField = secondaryGripSpanFieldForContext(gripContext);
     const span = entry?.[spanField] || { enabled: false, startZ: 0, endZ: 0 };
     editorUi.scalePair.set(normalizeToolScale(entry?.toolScale));
+    editorUi.heightPair.set(normalizeHeightMultiplier(entry?.heightMultiplier));
     editorUi.spanEnabled.checked = span.enabled === true;
     editorUi.startPair.set(numberOrZero(span.startZ)); editorUi.endPair.set(numberOrZero(span.endZ));
     for (const phase of ['neutral', 'windup', 'strike']) {
@@ -752,7 +826,12 @@
       controls.enabled.disabled = !canGrip; controls.percent.range.disabled = !canGrip; controls.percent.number.disabled = !canGrip;
     }
     const state = editorAnimationGripState();
-    const scaleLabel = `base scale ×${normalizeToolScale(entry?.toolScale).toFixed(2)}`;
+    const identity = editorScaleIdentity();
+    const baseScale = normalizeToolScale(entry?.toolScale);
+    const heightMultiplier = normalizeHeightMultiplier(entry?.heightMultiplier);
+    const heightRatio = characterHeightRatio(identity.speciesId, identity.gender);
+    const effectiveScale = effectiveToolScaleForTool(editorCurrentToolKey(), identity.speciesId, identity.gender);
+    const scaleLabel = `base ×${baseScale.toFixed(2)} · height multiplier ×${heightMultiplier.toFixed(2)} · body ratio ×${heightRatio.toFixed(3)} = effective ×${effectiveScale.toFixed(3)}`;
     editorUi.status.textContent = span.enabled
       ? `${editorCurrentToolKey() || 'held item'} · ${gripContext.toUpperCase()} grip · ${scaleLabel} · off-hand span Z ${numberOrZero(span.startZ).toFixed(2)} → ${numberOrZero(span.endZ).toFixed(2)} · animation influence ${Math.round(state.influence * 100)}% · span position ${Math.round(state.percent)}%`
       : `${editorCurrentToolKey() || 'held item'} · ${gripContext.toUpperCase()} grip · ${scaleLabel} · no off-hand span; animation secondary-hand settings are ignored.`;
@@ -781,11 +860,13 @@
     scalePanel.id = 'handToolScalePanel';
     scalePanel.innerHTML = `
       <div class="hr"></div>
-      <div class="poseGroupHead"><span class="dot" style="background:#60a5fa"></span>Held-item base scale</div>
-      <div class="help" style="margin-bottom:6px">This scale belongs to the weapon/tool shape and is exported with its grip metadata. The Neutral pose's Tool scale remains a separate animation multiplier and should normally stay at 1.00 for melee weapons.</div>
+      <div class="poseGroupHead"><span class="dot" style="background:#60a5fa"></span>Held-item scale</div>
+      <div class="help" style="margin-bottom:6px"><b>Base tool scale</b> is this weapon's authored size at the Mao'ao male reference height. <b>Height multiplier</b> controls how strongly calculated character height changes that size: 0 ignores height, 1 is fully proportional, and values above 1 exaggerate the difference. The Neutral pose's Tool scale remains a separate animation multiplier and should normally stay at 1.00 for melee weapons.</div>
       <div id="handToolScaleFields"></div>`;
     host.insertBefore(scalePanel, status);
-    const scalePair = editorFieldPair(scalePanel.querySelector('#handToolScaleFields'), 'handToolScale', 'Base tool scale', 1, 0.1, 3, 0.01, value => mutate(() => { ensureTool(editorCurrentToolKey()).toolScale = normalizeToolScale(value); }));
+    const scaleFields = scalePanel.querySelector('#handToolScaleFields');
+    const scalePair = editorFieldPair(scaleFields, 'handToolScale', 'Base tool scale', 1, 0.1, 3, 0.01, value => mutate(() => { ensureTool(editorCurrentToolKey()).toolScale = normalizeToolScale(value); }));
+    const heightPair = editorFieldPair(scaleFields, 'handToolHeightMultiplier', 'Height multiplier', 1, 0, 3, 0.01, value => mutate(() => { ensureTool(editorCurrentToolKey()).heightMultiplier = normalizeHeightMultiplier(value); }));
 
     const panel = document.createElement('div');
     panel.id = 'handSecondaryGripSpanPanel';
@@ -819,7 +900,7 @@
       pose[phase] = { enabled, percent };
     }
     spanEnabled.addEventListener('change', () => mutate(() => { currentSpan().enabled = spanEnabled.checked; }));
-    editorUi = { scalePanel, scalePair, panel, spanEnabled, startPair, endPair, pose, status: panel.querySelector('#handSecondarySpanStatus') };
+    editorUi = { scalePanel, scalePair, heightPair, panel, spanEnabled, startPair, endPair, pose, status: panel.querySelector('#handSecondarySpanStatus') };
 
     document.getElementById('toolSpriteSelect')?.addEventListener('change', () => setTimeout(syncEditorSpanUi, 0));
     document.getElementById('handGripContextSelect')?.addEventListener('change', () => {
@@ -850,15 +931,19 @@
     document.getElementById('loadPresetBtn')?.addEventListener('click', () => setTimeout(() => loadEditorAnimationGrip({}), 0));
 
     const topHelp = host.closest('.card')?.querySelector('.sectionTitle')?.nextElementSibling;
-    if (topHelp?.classList.contains('help')) topHelp.innerHTML = 'The <b>right hand stays authored</b> while the item moves around its primary grip point. Base scale is stored with that same held-item metadata. Weapons may also define an optional off-hand Z span; only animations whose poses enable the off hand use that span.';
+    if (topHelp?.classList.contains('help')) topHelp.innerHTML = 'The <b>right hand stays authored</b> while the item moves around its primary grip point. Base scale and calculated-height influence are stored with that same held-item metadata. Weapons may also define an optional off-hand Z span; only animations whose poses enable the off hand use that span.';
     syncEditorSpanUi(); patchEditorJsonView(); return true;
   }
 
   function debugForTool(value) {
     const toolKey = toolKeyFor(value); // Compact console-free snapshot shared by the editor and live game diagnostics.
+    const identity = inAttackEditor() ? editorScaleIdentity() : runtimePlayerScaleIdentity();
     return {
       toolKey,
       toolScale: toolScaleForTool(toolKey),
+      heightMultiplier: heightMultiplierForTool(toolKey),
+      heightRatio: characterHeightRatio(identity.speciesId, identity.gender),
+      effectiveToolScale: effectiveToolScaleForTool(toolKey, identity.speciesId, identity.gender),
       gripContext: currentGripContext(),
       primaryGrip: authoredPrimaryGripForTool(toolKey, currentGripContext()),
       secondaryGripSpan: secondaryGripSpanForTool(toolKey, currentGripContext()),
@@ -887,7 +972,7 @@
     get data() { return data; },
     get defaultData() { return normalizeData(DEFAULT_DATA); },
     clone: cleanClone,
-    toolKeyFor, ensureTool, toolScaleForTool, normalizeGripContext, currentGripContext,
+    toolKeyFor, ensureTool, toolScaleForTool, heightMultiplierForTool, characterHeightRatio, effectiveToolScaleForTool, normalizeGripContext, currentGripContext,
     authoredPrimaryGripForTool, primaryGripForTool, spinPivotOffsetForTool, secondaryGripSpanForTool, secondaryGripForTool,
     currentSecondaryGripAnimationState, animationGripAt, gripModeForTool, setGripMode, replace, mutate, saveLocal, loadLocal, clearLocal, applyPrimaryGripVisuals, debugForTool,
     editorSecondaryGripStateSnapshot, restoreEditorSecondaryGripState,
@@ -898,6 +983,8 @@
     },
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
   };
+
+  global.HobunjiCharacterDimensions?.subscribe?.(() => notify()); // Re-applies visible weapon scale + hand targets when asynchronous calculated-height measurements become ready.
 
   // This file loads before procedural-hand-attachments; intercept its assignment so
   // the very first editor/game rig receives the off-hand blend wrapper.
