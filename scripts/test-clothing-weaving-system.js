@@ -745,6 +745,11 @@ assert.match(patternEditorSource, /data-trim-edge-thickness/, 'trim painter expo
 assert.match(patternEditorSource, /function generateEdgeTrim\(thickness\)/, 'trim painter can derive an inward edge band from the garment opacity silhouette');
 assert.match(patternEditorSource, /setBrushMode\('eraser'\)/, 'automatic edge generation hands the generated mask directly to eraser cleanup');
 assert.match(patternEditorSource, /inward trim along every garment\/transparency edge/, 'trim painter reports generated edge thickness and cleanup guidance in its mobile-visible status');
+assert.match(patternEditorSource, /data-trim-expand-amount/, 'trim painter exposes a native-pixel expansion amount for existing paint');
+assert.match(patternEditorSource, /function expandExistingTrim\(amount\)/, 'trim painter can dilate the current authored mask without regenerating it from garment edges');
+assert.match(patternEditorSource, /if \(!garmentMask\[neighbor\] \|\| next\[neighbor\]\) continue/, 'existing-trim expansion cannot grow outside the opaque garment silhouette');
+assert.match(patternEditorSource, /expandExistingBtn\.disabled = !inkPresent/, 'Expand Existing is disabled until the current mask actually contains trim paint');
+assert.match(patternEditorSource, /Expanded existing trim by \$\{amount\}px/, 'Expand Existing reports the applied native-pixel growth in the mobile-visible status');
 assert.match(patternEditorSource, /trimReplicateTarget/, 'garment trim authoring exposes a target variant picker for cross-species replication');
 assert.match(patternEditorSource, /function opaqueCanvasBounds\(canvas\)/, 'trim replication measures real source and destination garment opacity bounds instead of assuming shared sprite coordinates');
 assert.match(patternEditorSource, /function fitTrimMaskToGarment\(sourceMask, sourceGarment, targetGarment\)/, 'trim replication uses one shared nearest-neighbor fit-and-clip helper');
