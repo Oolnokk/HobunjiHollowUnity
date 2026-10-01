@@ -732,6 +732,9 @@ assert.equal(clothingTrimManifest.garments?.ragged_hood?.variants?.['mao-ao_male
 assert.match(patternEditorSource, /function defaultTrimSourceVariant\(/, 'trim authoring has one shared authored-master selection helper');
 assert.match(patternEditorSource, /authoredInManifest = variants\.find\(key => !!trimRecord\(garmentId, key, view\)\)/, 'manifest-authored variants are preferred over session drafts as replication masters');
 assert.match(patternEditorSource, /preferredSource = defaultTrimSourceVariant/, 'variant selection automatically moves to an authored master when the previous selection is not authored');
+assert.match(patternEditorSource, /function defaultTrimManifestSelection\(\)/, 'Pattern Editor has one startup-selection helper driven by authored trim manifest entries');
+assert.match(patternEditorSource, /if \(views\?\.front\) return \{ garmentId, variantKey, view: 'front' \}/, 'startup selection prefers the authored front view when one exists');
+assert.match(patternEditorSource, /const defaultSelection = defaultTrimManifestSelection\(\)[\s\S]*?select\.value = defaultSelection\.garmentId[\s\S]*?\$\('trimView'\)\.value = defaultSelection\.view[\s\S]*?refreshTrimVariantOptions\(\)[\s\S]*?\$\('trimVariant'\)\.value = defaultSelection\.variantKey/, 'startup applies authored garment, view, and variant before rendering the trim preview');
 assert.match(patternEditorSource, /Garment trim authoring/, 'Pattern Editor exposes the dedicated garment trim workspace');
 assert.match(patternEditorSource, /species\/gender variant/i, 'garment trim editor makes per-variant authoring explicit');
 assert.match(patternEditorSource, /trimCoverageText/, 'garment trim editor reports missing species/gender coverage instead of relying on a hard-coded list');
