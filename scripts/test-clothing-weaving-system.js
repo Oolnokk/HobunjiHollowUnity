@@ -740,6 +740,13 @@ assert.match(patternEditorSource, /data-trim-edge-thickness/, 'trim painter expo
 assert.match(patternEditorSource, /function generateEdgeTrim\(thickness\)/, 'trim painter can derive an inward edge band from the garment opacity silhouette');
 assert.match(patternEditorSource, /setBrushMode\('eraser'\)/, 'automatic edge generation hands the generated mask directly to eraser cleanup');
 assert.match(patternEditorSource, /inward trim along every garment\/transparency edge/, 'trim painter reports generated edge thickness and cleanup guidance in its mobile-visible status');
+assert.match(patternEditorSource, /trimReplicateTarget/, 'garment trim authoring exposes a target variant picker for cross-species replication');
+assert.match(patternEditorSource, /function opaqueCanvasBounds\(canvas\)/, 'trim replication measures real source and destination garment opacity bounds instead of assuming shared sprite coordinates');
+assert.match(patternEditorSource, /function fitTrimMaskToGarment\(sourceMask, sourceGarment, targetGarment\)/, 'trim replication uses one shared nearest-neighbor fit-and-clip helper');
+assert.match(patternEditorSource, /ctx\.imageSmoothingEnabled = false;[\s\S]*?ctx\.drawImage\([\s\S]*?sourceBounds\.x[\s\S]*?targetBounds\.x/, 'cross-species trim fitting preserves pixel edges while mapping source garment bounds onto destination garment bounds');
+assert.match(patternEditorSource, /globalCompositeOperation = 'destination-in'[\s\S]*?ctx\.drawImage\(targetGarment, 0, 0\)/, 'replicated trim drafts are clipped back to the actual destination garment silhouette');
+assert.match(patternEditorSource, /trimReplicateAllBtn[\s\S]*?filter\(key => key !== sourceVariant && !trimExists\(garmentId, key, view\)\)/, 'bulk trim replication fills only missing species\/gender variants and leaves authored targets untouched');
+assert.match(patternEditorSource, /Replicate \+ edit target/, 'single-target trim replication explicitly continues into manual cleanup');
 assert.match(patternEditorSource, /Rendered result/, 'direct trim painting keeps a production-compositor result preview beside the paint surface');
 assert.match(patternEditorSource, /trimManifestBtn/, 'garment trim editor exports the shared manifest alongside authored PNG masks');
 assert.match(source, /'clothing-trim'/, 'runtime applies fixed garment trim through its own compositor pass and diagnostic label');
