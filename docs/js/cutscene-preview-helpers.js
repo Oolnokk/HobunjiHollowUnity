@@ -169,7 +169,7 @@
       const seatCol = seatTransform ? Math.floor(seatTransform.x) : Math.round(st.c); // Selects the floor tile beneath an authored seat for building-height lookup.
       const seatRow = seatTransform ? Math.floor(seatTransform.z) : Math.round(st.r); // Selects the floor tile beneath an authored seat for building-height lookup.
       const npcSurfY = deps.npcSurfaceY(area, seatCol, seatRow); // Keeps chairs on raised/interior surfaces while their local seat Y bends only the legs.
-      const actorRot = THREE.MathUtils.degToRad(seatTransform?.normalDeg ?? st.rotation); // Makes a seated actor face the chair's authored normal instead of an unrelated spawn angle.
+      const actorRot = seatTransform?.facingRad ?? THREE.MathUtils.degToRad(st.rotation); // Makes a seated actor face the chair's authored yaw while normalDeg remains reserved for seat-surface pitch/roll.
       entity.walker.rot = actorRot;
       entity.root.position.set(seatTransform?.x ?? (st.c + 0.5), npcSurfY, seatTransform?.z ?? (st.r + 0.5));
       entity.root.rotation.y = actorRot;
