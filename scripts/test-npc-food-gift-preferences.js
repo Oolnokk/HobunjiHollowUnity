@@ -23,15 +23,20 @@ const itemDefs = {
   puktukMeat: { label: 'Puktuk Meat', cat: 'ingredient', cookingCategories: ['meat'], tags: ['Meat'] },
   riverFish: { label: 'Northern River Fish', cat: 'ingredient', cookingCategories: ['fish'], tags: ['Fish'] },
   redberries: { label: 'Redberries', cat: 'ingredient', cookingCategories: ['berry', 'fruit'], tags: ['Fruit'] },
-  redberryWine: { label: 'Redberry Wine', cat: 'processed', tags: ['Processed', 'Wine', 'Aged'], ingredientKeys: ['redberries'] },
-  puktukStew: { label: 'Puktuk Stew', cat: 'food', isCookedFood: true, tags: ['Cooked Food'], ingredientKeys: ['puktukMeat'] },
-  puktukJerky: { label: 'Puktuk Jerky', cat: 'processed', tags: ['Processed', 'Smoked', 'Meat'], ingredientKeys: ['puktukMeat'] },
+  redberryWine: { label: 'Redberry Wine', cat: 'processed', tags: ['Processed', 'Wine', 'Aged'], ingredientKeys: ['redberries'], giftIngredientKeys: ['redberries'] },
+  puktukStew: { label: 'Puktuk Stew', cat: 'food', isCookedFood: true, tags: ['Cooked Food'], ingredientKeys: ['puktukMeat'], giftIngredientKeys: ['puktukMeat'] },
+  puktukJerky: { label: 'Puktuk Jerky', cat: 'processed', tags: ['Processed', 'Smoked', 'Meat'], ingredientKeys: ['puktukMeat'], giftIngredientKeys: ['puktukMeat'] },
+  garWolfMilk: { label: 'Gar-wolf Milk', cat: 'ingredient', cookingCategories: ['whiteMilk'], tags: ['Milk'] },
+  uumkaoiiWhiteDewMilk: { label: 'White Uumkao’ii Milk', cat: 'ingredient', cookingCategories: ['whiteMilk'], tags: ['Milk'] },
+  butter: { label: 'Butter', cat: 'processed', cookingCategories: ['butter'], tags: ['Processed', 'Butter', 'Dairy'], ingredientKeys: ['garWolfMilk'] },
 };
 
 const records = {
   engh: { id: 'engh', species: 'Engh-Sho', gifts: {} },
   maoao: { id: 'maoao', species: 'Mao’ao', gifts: {} },
   kenkari: { id: 'kenkari', species: 'Kenkari', gifts: {} },
+  rakakoan: { id: 'rakakoan', species: 'Rakakoan', gifts: {} },
+  ghoul: { id: 'ghoul', species: 'Ghoul', gifts: {} },
   pahu: { id: 'pahu', species: 'Tletingan', gifts: {} },
   hreesh: { id: 'hreesh', species: 'Engh-Sho', gifts: {} },
   tooth_hatayap: { id: 'tooth_hatayap', species: 'Tletingan', gifts: {} },
@@ -75,6 +80,8 @@ assert.equal(evaluate(records.engh, 'puktukMeat').score, 4, 'all Engh-Sho like t
 assert.equal(evaluate(records.engh, 'puktukMeat').tier, 'liked');
 assert.equal(evaluate(records.maoao, 'riverFish').score, 4, 'all Mao’ao like the Fish ingredient type');
 assert.equal(evaluate(records.kenkari, 'riverFish').score, 4, 'all Kenkari like the Fish ingredient type');
+assert.equal(evaluate(records.rakakoan, 'riverFish').score, 0, 'Rakakoan does not inherit Kenkari culture merely because some art/runtime systems alias them');
+assert.equal(evaluate(records.ghoul, 'riverFish').score, 0, 'Ghoul does not inherit Mao’ao culture merely because some art/runtime systems alias them');
 
 for (const id of ['pahu', 'hreesh', 'tooth_hatayap']) {
   const reaction = evaluate(records[id], 'redberryWine');
@@ -92,15 +99,26 @@ assert.equal(artisanFavorite.score, 12, 'artisan processing boosts a specific fa
 assert.equal(artisanFavorite.tier, 'loved', 'the artisan-boosted favorite reaches a loved reaction');
 assert.equal(artisanFavorite.foodContext.artisanTypes.includes('jerky'), true, 'smoked meat is classified as Jerky');
 
+const pooledFavorite = {
+  id: 'pooled_favorite',
+  species: 'Tletingan',
+  gifts: { foodLikes: { specificIngredients: ['garWolfMilk'] } },
+};
+const pooledButter = evaluate(pooledFavorite, 'butter');
+assert.equal(pooledButter.score, 0, 'pooled Butter does not pretend every stack came from whichever milk last rewrote generic ingredientKeys');
+assert.deepEqual(Array.from(pooledButter.foodContext.ingredientKeys), ['butter'], 'ambiguous pooled processed goods expose only their own identity to specific gift preferences');
+
 assert.equal(gifting.getPreferenceLabel('food:type:meat'), 'Meat');
 assert.equal(gifting.getPreferenceLabel('food:artisan:alcohol'), 'Alcohol');
 assert.equal(gifting.getPreferenceLabel('food:ingredient:puktukMeat'), 'Puktuk Meat');
 
-assert.match(cookingSource, /ingredientKeys:\s*selections\.map\(\(\{ selected \}\) => selected\.key\)/,
-  'cooked food persists its exact selected ingredient keys');
-assert.match(processingSource, /withSourceIngredientLineage\(modularOutputs, inputKey\)/,
-  'modular processed goods preserve their source ingredient lineage');
-assert.match(processingSource, /withSourceIngredientLineage\(\[single\], inputKey\)/,
-  'ordinary processed goods preserve their source ingredient lineage');
+assert.match(cookingSource, /giftIngredientKeys:\s*selections\.map\(\(\{ selected \}\) => selected\.key\)/,
+  'cooked food persists source-stable gift ingredient lineage');
+assert.doesNotMatch(processingSource, /withSourceIngredientLineage/,
+  'processed goods no longer receive unsafe blanket provenance');
+assert.match(processingSource, /giftIngredientKeys:\s*\[berryKey\]/,
+  'source-specific wine preserves its berry identity for gifting');
+assert.match(processingSource, /giftIngredientKeys:\s*\[inputKey\]/,
+  'source-specific processor outputs can preserve exact gift provenance');
 
 console.log('NPC food gift preference regression checks passed.');
