@@ -749,8 +749,8 @@ assert.match(patternEditorSource, /function stampBrush\(point\)/, 'outline trim 
 assert.match(patternEditorSource, /function walkLinePixels\(from, to, callback\)/, 'outline trim brush interpolates every native pixel between pointer samples so fast strokes cannot leave gaps');
 assert.doesNotMatch(patternEditorSource, /paintCtx\.lineWidth\s*=\s*brushSize/, 'outline trim brush no longer uses fractional canvas line rasterization');
 assert.doesNotMatch(patternEditorSource, /data-trim-edge-thickness/, 'outline-first trim authoring no longer exposes a competing pre-thickened edge generator');
-assert.match(patternEditorSource, /function buildInwardSilhouetteMap\(mask\)/, 'trim painter builds one shared silhouette contour and inward ownership map');
-assert.match(patternEditorSource, /boundaryMask\[index\] = 1;[\s\S]*?owner\[index\] = index;[\s\S]*?depth\[index\] = 0;/, 'opaque pixels touching transparency become one-pixel contour seeds');
+assert.match(patternEditorSource, /function buildInwardSilhouetteMap\(mask, width, height\)/, 'trim painter and replication share one silhouette contour and inward ownership map');
+assert.match(patternEditorSource, /boundaryMask\[index\] = 1;[\s\S]*?owner\[index\] = index;[\s\S]*?distance\[index\] = 0;/, 'first non-black garment pixels touching black, transparency, or sprite bounds become one-pixel contour seeds');
 assert.match(patternEditorSource, /else if \(silhouetteBoundaryMask\[index\]\)/, 'Outline Brush can paint only one-pixel silhouette contour sections');
 assert.match(patternEditorSource, /Outline Brush always authors exactly one contour pixel/, 'outline reach changes selection reach rather than authored trim thickness');
 assert.match(patternEditorSource, /function selectFullOutline\(\)/, 'full-outline shortcut selects the same one-pixel contour used by the brush');
