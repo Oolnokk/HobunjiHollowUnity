@@ -393,7 +393,8 @@
         recipeId: recipe.id,
         cookingCategories: [...(recipe.inventoryCategories || [])],
         foodEffects: effects, foodQuality: stars, cookingDefaultStars: stars,
-        ingredientKeys: selections.map(({ selected }) => selected.key), // Used by gifting to preserve the exact ingredients inside this cooked stack after save/reload.
+        ingredientKeys: selections.map(({ selected }) => selected.key), // Used by ordinary item-trait inheritance for this cooked stack.
+        giftIngredientKeys: selections.map(({ selected }) => selected.key), // Used by specific NPC food preferences; cooked stack identity is unique to this exact ingredient signature.
       });
       deps.inventory[key] = Math.min(99, (deps.inventory[key] || 0) + 1);
       recordItemQuality(key, stars, 1);
