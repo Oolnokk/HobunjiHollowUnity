@@ -393,6 +393,7 @@
         recipeId: recipe.id,
         cookingCategories: [...(recipe.inventoryCategories || [])],
         foodEffects: effects, foodQuality: stars, cookingDefaultStars: stars,
+        ingredientKeys: selections.map(({ selected }) => selected.key), // Used by gifting to preserve the exact ingredients inside this cooked stack after save/reload.
       });
       deps.inventory[key] = Math.min(99, (deps.inventory[key] || 0) + 1);
       recordItemQuality(key, stars, 1);
