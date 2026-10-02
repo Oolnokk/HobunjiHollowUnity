@@ -94,4 +94,91 @@ const storyIndex = indexSource.indexOf('<script src="js/opening-story-cutscene.j
 const onboardingIndex = indexSource.indexOf('<script>HobunjiOnboarding.init();</script>'); // Ensures the story listener exists before player-ready can fire.
 assert(gameIndex >= 0 && storyIndex > gameIndex && onboardingIndex > storyIndex, 'opening story script must load after game.js but before HobunjiOnboarding.init()');
 
-console.log('Opening story cutscene regression checks passed.');
+async function checkWorldOpeningProgress() {
+  function boot(initial = {}) {
+    const saved = new Map(Object.entries(initial)); // Models durable world progress shared across character sessions.
+    const queued = []; // Captures automatic startup jobs without starting them during eligibility assertions.
+    const calls = []; // Captures both real scene payloads and the dialogue-completion callback supplied to the runtime.
+    const events = {}; // Holds the fresh page's player-ready listener.
+    let finishMeeting = null; // Keeps the scene running while checking that completion persists at the final Continue.
+    const browser = {
+      window: {
+        __hobunjiGameStarted: true,
+        LocalDBOverrides: { loadDatabase: async () => npcDb },
+        AuthoredCutsceneRuntime: { run(scene, options) {
+          calls.push({ scene, options });
+          if (calls.length === 1) return Promise.resolve();
+          return new Promise(resolve => { finishMeeting = resolve; });
+        } },
+      },
+      document: { addEventListener: (type, handler) => { events[type] = handler; }, getElementById: () => null },
+      localStorage: { getItem: key => saved.get(key) || null, setItem: (key, value) => saved.set(key, value) },
+      queueMicrotask: callback => queued.push(callback),
+      performance, setTimeout, clearTimeout, requestAnimationFrame: callback => callback(), console,
+    }; // Provides an isolated browser session for each owner/farmhand/completion case.
+    vm.runInNewContext(storySource, browser);
+    return { saved, queued, calls, events, api: browser.window.OpeningStoryCutscene, finish: () => finishMeeting() };
+  }
+
+  const owner = { ...profile, isWorldOwner: true }; // Uses the same role flag onboarding sets for new and existing worlds.
+  const first = boot(); // An existing owner's world without progress must start even without creator-reload state.
+  const key = first.api.stateKey(owner); // Names the one completion flag shared by every character in this world.
+  assert.strictEqual(key, first.api.stateKey({ ...owner, characterId: 'another_character' }));
+  assert.notStrictEqual(key, first.api.stateKey({ ...owner, worldId: 'another_world' }));
+  first.events.hobunjiPlayerReady({ detail: owner });
+  assert.strictEqual(first.queued.length, 1, 'unfinished existing world auto-starts for its owner');
+  assert.strictEqual(first.saved.get(key), 'pending');
+  const playback = first.queued[0](); // Starts the complete story orchestration against the controlled runtime.
+  await new Promise(resolve => setImmediate(resolve));
+  assert.strictEqual(first.calls.length, 2, 'owner gets rescue followed by Hunundi meeting');
+  const finalStage = first.calls[1].scene.stages.find(stage => stage.id === 'meeting_hunundi_final'); // Identifies the actual authored final dialogue rather than assuming scene completion means success.
+  first.calls[1].options.onDialogueContinue({ id: 'meeting_hunundi_farm' });
+  assert.strictEqual(first.saved.get(key), 'pending', 'earlier dialogue cannot complete the opening');
+  assert.strictEqual(first.saved.get(key), 'pending', 'merely reaching the final dialogue leaves it pending');
+  first.calls[1].options.onDialogueContinue(finalStage);
+  assert.strictEqual(first.saved.get(key), 'complete', 'final Continue persists completion before the closing fade ends');
+  first.finish();
+  assert.strictEqual(await playback, true);
+
+  const completed = boot(Object.fromEntries(first.saved)); // Completion survives switching to another character in the same world.
+  completed.events.hobunjiPlayerReady({ detail: { ...owner, characterId: 'another_character' } });
+  assert.strictEqual(completed.queued.length, 0);
+  completed.events.hobunjiPlayerReady({ detail: { ...owner, worldId: 'another_world' } });
+  assert.strictEqual(completed.queued.length, 1, 'same character starts again in a new world');
+
+  const farmhand = boot({ [key]: 'pending' }); // Even an interrupted world cannot auto-start its protagonist story for a farmhand.
+  farmhand.events.hobunjiPlayerReady({ detail: { ...owner, isWorldOwner: false } });
+  assert.strictEqual(farmhand.queued.length, 0);
+  const legacy = boot({ ['hobunjiOpeningStory.v1:' + owner.characterId + ':' + owner.worldId]: 'complete' }); // Migrates already completed worlds from the previous storage format.
+  legacy.events.hobunjiPlayerReady({ detail: owner });
+  assert.strictEqual(legacy.queued.length, 0);
+  assert.strictEqual(legacy.saved.get(key), 'complete');
+
+  const interrupted = boot(); // A runtime that ends without final Continue must remain eligible on the next session.
+  interrupted.events.hobunjiPlayerReady({ detail: owner });
+  const interruptedPlayback = interrupted.queued[0](); // Resolves the scene without acknowledging its final dialogue.
+  await new Promise(resolve => setImmediate(resolve));
+  interrupted.finish();
+  assert.strictEqual(await interruptedPlayback, false);
+  assert.strictEqual(interrupted.saved.get(key), 'pending');
+
+  const stageStart = gameSource.indexOf('        function runStage(stageId) {'); // Executes the real dialogue stage wiring that reports Continue to the story.
+  const stageEnd = gameSource.indexOf('        function runMove(stage) {', stageStart); // Isolates this handler from unrelated movement dependencies.
+  let continued = 0; // Counts milestone notifications from genuine Continue inputs only.
+  const runtimeContext = {
+    running: true, dialogueOpen: false, payload: meeting, runtimeOptions: { onDialogueContinue: () => { continued++; } },
+    stagesById: new Map([[finalStage.id, finalStage]]), actorsById: new Map(), entities: new Map([[finalStage.speakerId, {}]]),
+    report() {}, openLine() { runtimeContext.dialogueOpen = true; },
+    getResolvedNext: () => '__end__', continueTo() { runtimeContext.running = false; },
+  }; // Supplies only the runtime surfaces needed by an actual talk card.
+  vm.runInNewContext(gameSource.slice(stageStart, stageEnd) + '\nrunStage("meeting_hunundi_final");', runtimeContext);
+  assert.strictEqual(continued, 0, 'displaying final dialogue cannot report completion');
+  runtimeContext.cutscenePreviewAdvance();
+  assert.strictEqual(continued, 1, 'Continue reports the displayed dialogue milestone');
+  runtimeContext.cutscenePreviewAdvance();
+  assert.strictEqual(continued, 1, 'stale Continue cannot report completion twice');
+}
+
+checkWorldOpeningProgress().then(() => {
+  console.log('Opening story cutscene regression checks passed.');
+}).catch(error => { console.error(error); process.exitCode = 1; });

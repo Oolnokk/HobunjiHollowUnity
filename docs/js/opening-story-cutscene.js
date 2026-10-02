@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const STATE_PREFIX = 'hobunjiOpeningStory.v1'; // Namespaces per-character/per-world opening progress so interrupted first boots can resume safely.
+  const STATE_PREFIX = 'hobunjiOpeningStory.v1'; // Namespaces world-scoped opening progress so interrupted sessions can retry safely.
   const NPC_DB_URL = 'config/npcs/hobunji-starter-npc-database.json'; // Supplies the same authored NPC records the normal scheduler uses.
   const REQUIRED_NPCS = Object.freeze(['jubmir', 'father_hunundi_hodu', 'spearhead_unumanuk', 'khannibarri_agent']); // Guards the two scenes against silently falling back to placeholder actors.
   const status = { // Mobile-readable state surfaced through debugSnapshot() and the existing in-game debug log.
@@ -11,18 +11,24 @@
     completed: false,
     lastScene: null,
     lastError: null,
-    latestChange: 'Opening story now chains the existing Gar-wolf rescue into Hunundi-room amnesia/Khannibarri exposition using the authored cutscene runtime.',
+    latestChange: 'Unfinished worlds now start the opening for their owner; completion is saved when Hunundi’s final dialogue is continued.',
   };
 
   function stateKey(profile) {
-    const characterId = String(profile?.characterId || 'unknown-character'); // Separates the same world between different playable characters.
-    const worldId = String(profile?.worldId || 'unknown-world'); // Separates the same character between different worlds.
-    return STATE_PREFIX + ':' + characterId + ':' + worldId;
+    const worldId = String(profile?.worldId || 'unknown-world'); // Each new world gets its own opening regardless of the owning character's prior worlds.
+    return STATE_PREFIX + ':' + worldId;
   }
 
   function readProgress(profile) {
     try {
-      return localStorage.getItem(stateKey(profile)) || '';
+      const progress = localStorage.getItem(stateKey(profile)); // Reads the world's shared completion flag before considering the previous character-scoped format.
+      if (progress) return progress;
+      const legacyKey = STATE_PREFIX + ':' + profile.characterId + ':' + profile.worldId; // Preserves completed openings recorded by the previous version for this world's owner.
+      if (localStorage.getItem(legacyKey) === 'complete') {
+        writeProgress(profile, 'complete');
+        return 'complete';
+      }
+      return '';
     } catch (_) {
       return '';
     }
@@ -232,11 +238,19 @@
       await runtime.run(rescue, { keepFadeOnFinish: true });
       status.phase = 'hunundi-room';
       status.lastScene = meeting.title;
-      await runtime.run(meeting, { keepFadeOnFinish: false });
+      let finalDialogueContinued = false; // Scene cleanup alone must not complete an opening that skipped its final dialogue.
+      await runtime.run(meeting, {
+        keepFadeOnFinish: false,
+        onDialogueContinue(stage) {
+          if (stage.id !== 'meeting_hunundi_final') return;
+          finalDialogueContinued = true;
+          status.pending = false;
+          status.completed = true;
+          if (!options.replay) writeProgress(profile, 'complete');
+        },
+      });
+      if (!finalDialogueContinued) throw new Error('Opening ended before Hunundi’s final dialogue was continued.');
       status.phase = 'complete';
-      status.pending = false;
-      status.completed = true;
-      if (!options.replay) writeProgress(profile, 'complete');
       log('opening sequence complete');
       return true;
     } catch (error) {
@@ -250,23 +264,17 @@
     }
   }
 
-  function shouldArmFromCreatorReload(profile) {
-    const handoff = window.hobunjiOnboardingCharacterCreationReloadHandoff; // Distinguishes a newly-created character's clean reload from ordinary save-select Play.
-    return !!handoff?.status?.resumed && !!profile?.characterId && !!profile?.worldId;
-  }
-
   function handlePlayerReady(event) {
     if (window.__hobunjiCutscenePreview) return;
-    const profile = event?.detail || window.__hobunjiPlayerProfile; // Uses the exact hydrated profile game.js receives on the same event.
-    if (!profile?.characterId || !profile?.worldId) return;
-    let progress = readProgress(profile); // Existing pending state survives a crash/reload; completed state prevents replay.
-    if (progress !== 'complete' && shouldArmFromCreatorReload(profile)) {
-      writeProgress(profile, 'pending');
-      progress = 'pending';
-    }
-    status.pending = progress === 'pending';
+    const profile = event?.detail || window.__hobunjiPlayerProfile; // Uses onboarding's authoritative owner role for the selected world.
+    if (!profile?.characterId || !profile?.worldId || profile.isWorldOwner !== true) return;
+    const progress = readProgress(profile); // Completion belongs to this world, including openings finished by the earlier version.
+    status.pending = progress !== 'complete';
     status.completed = progress === 'complete';
-    if (progress === 'pending') queueMicrotask(() => play(profile));
+    if (status.pending) {
+      writeProgress(profile, 'pending');
+      queueMicrotask(() => play(profile));
+    }
   }
 
   document.addEventListener('hobunjiPlayerReady', handlePlayerReady);

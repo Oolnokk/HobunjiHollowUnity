@@ -30444,7 +30444,11 @@
             return;
           }
           openLine(speakerEntity, speakerName, stage.text);
-          cutscenePreviewAdvance = () => continueTo(getResolvedNext(stage.id, stage.next));
+          cutscenePreviewAdvance = () => {
+            if (!running || !dialogueOpen) return;
+            runtimeOptions.onDialogueContinue?.(stage); // Lets authored stories persist milestones only when the player continues the displayed dialogue.
+            continueTo(getResolvedNext(stage.id, stage.next));
+          };
         }
 
         function runMove(stage) {
