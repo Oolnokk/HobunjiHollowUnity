@@ -158,8 +158,8 @@ lootContext.window.LootRolling.init({
 lootContext.window.LootRolling.loadLootShopConfig().then(() => {
   assert.deepEqual(
     contextualShopNpcIds,
-    ['furunji_funji', 'foroji_funji', 'kinami_kunji', 'kaboku_kunji', 'porakaneki_chief'],
-    'contextual Shop action inherits both Kunji sellers (and the Porakaneki trade chief) from shop-stock dialogueAccess',
+    ['furunji_funji', 'foroji_funji', 'kinami_kunji', 'kaboku_kunji'],
+    'contextual Shop action inherits both Kunji sellers from shop-stock dialogueAccess',
   );
   assert.equal(appliedShopStockCount, 1, 'shop stock still applies once after contextual seller synchronization');
   console.log('animal growth + configured shop tests passed');

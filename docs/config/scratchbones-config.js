@@ -12,6 +12,17 @@ window.SCRATCHBONES_CONFIG = {
   clothingLightOffset: 0,
 
   game: {
+    "socialRelationships": {
+      "porakanekiBarter": {
+        "mediumFavor": 4,
+        "largeFavor": 10,
+        "uniqueFavor": 10,
+        "animalChance": 0.35,
+        "uniqueChance": 0.20,
+        // Add itemKey or trinketId entries here to extend the high-favor return pool.
+        "uniqueRewards": [{ "trinketId": "engravedWhistle", "minFavor": 10 }]
+      }
+    },
     // Shared presentation settings for the Character Studio avatar editor.
     // Body-color ranges themselves remain species data under config/species.
     "avatarEditor": {
@@ -3652,6 +3663,14 @@ window.SCRATCHBONES_CONFIG = {
           "breakTree": {
             "url": "assets/audio/sfx/sfx_break_tree.mp3",
             "volume": 0.8,
+            "preload": true
+          },
+          "puzzleComplete": {
+            "url": "assets/audio/sfx/sfx_break_rock.mp3",
+            "volume": 0.8,
+            "pitch": 0.58,
+            "gainBoost": 1.45,
+            "generatedStoneKchunk": true,
             "preload": true
           },
           "breakRock": {

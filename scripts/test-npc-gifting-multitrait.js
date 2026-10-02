@@ -10,6 +10,7 @@ const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'docs/js/npc-gifting.js'), 'utf8');
 assert.doesNotThrow(() => new vm.Script(source, { filename: 'npc-gifting.js' }), 'npc-gifting.js must parse as JavaScript');
 
+const rapportAdjustments = []; // Positive accepted gifts now also grant a flat quarter of the daily Rapport maximum.
 const favorAdjustments = [];
 const toasts = [];
 const inventory = { mixedGift: 2 };
@@ -23,9 +24,8 @@ const windowStub = {
     getTraitLabel(id) { return id; },
   },
   NpcRapport: {
-    adjust() {
-      throw new Error('ordinary gifts must not be diverted into temporary Rapport');
-    },
+    config: { rapportMax: 100 },
+    adjust(npcId, amount, reason) { rapportAdjustments.push({ npcId, amount, reason }); },
   },
   DialogueContent: {
     adjustNpcFavor(npcId, amount, reason) {
@@ -78,6 +78,7 @@ assert.equal(accumulatedLikes.tier, 'loved', 'a sufficiently strong positive net
 const walker = { rec: { id: 'test_npc', name: 'Test NPC', gifts: prefs } };
 assert.equal(gifting.offerGift(walker), true, 'mixed gift is accepted');
 assert.deepEqual(favorAdjustments, [{ npcId: 'test_npc', amount: 4, reason: 'gift_liked' }], 'runtime applies the balanced permanent Favor result once, not once per winning trait');
+assert.deepEqual(rapportAdjustments, [{ npcId: 'test_npc', amount: 25, reason: 'gift_liked' }]);
 assert.equal(inventory.mixedGift, 1, 'accepted gift still consumes exactly one item');
 assert.match(toasts.at(-1), /is happy with the Mixed Gift/, 'dialogue/toast reflects the net liked verdict');
 

@@ -67,8 +67,11 @@
       return { deps, target, root, equipped, ready: false, conditions: null };
     }
     const conditions = getConditions(deps, target); // Exact combat evaluator, including modular animal strike stages such as Pounce's leap.
-    const ready = !!conditions[equipped.definition.condKey]; // Used to keep the reticle visible for the complete time this condition remains true.
-    return { deps, target, root, equipped, ready, conditions };
+    const conditionReady = !!conditions[equipped.definition.condKey]; // Raw opportunity state remains useful in mobile diagnostics even while the burst is cooling down.
+    const weaponKey = deps.currentWeaponKey?.() || 'none'; // Used to query the same per-weapon cooldown key combat-quickattacks.js commits after a successful proc.
+    const cooldownRemainingS = window.Combat.quickAttackData?.bonusEffectCooldownRemaining?.(weaponKey, equipped.attackId, equipped.definition) || 0;
+    const ready = conditionReady && cooldownRemainingS <= 0; // The reticle now means "the stronger bonus package will actually fire," not merely "the condition happens to match."
+    return { deps, target, root, equipped, ready, conditionReady, cooldownRemainingS, conditions };
   }
 
   function resolvedAfflictions(state) {
@@ -76,7 +79,7 @@
     const progression = weaponKey && state?.equipped?.attackId
       ? window.CombatProgression?.getEffects?.(weaponKey, state.equipped.attackId)
       : null;
-    const rawAfflictions = progression?.afflictions || state?.equipped?.definition?.afflictions || []; // Progression returns a keyed effect map while base definitions use arrays.
+    const rawAfflictions = progression?.quickBonusAfflictions || progression?.afflictions || state?.equipped?.definition?.afflictions || []; // Quick Attack mastery afflictions now live in the cooldown-gated bonus payload.
     const afflictions = Array.isArray(rawAfflictions)
       ? rawAfflictions
       : Object.entries(rawAfflictions || {}).filter(([, value]) => value === true || Number(value) > 0).map(([key]) => key);
@@ -390,15 +393,23 @@
     }
     const badge = ensureDebugBadge();
     if (!badge) return;
-    const afflictions = resolvedAfflictions(state);
+    const afflictions = resolvedAfflictions(state); // Existing affliction payload remains visible beside the new timed-debuff diagnostics.
+    const timedDebuffs = window.ResourceSystem?.getTimedDebuffs?.(state.target) || []; // Shows live stack counts on the currently inspected target for mobile testing.
+    const timedDebuffText = timedDebuffs.length ? timedDebuffs.map(entry => `${entry.name || entry.id}×${entry.stacks || 1} ${Number(entry.remainingS || 0).toFixed(1)}s`).join(', ') : '-'; // Compact target status line avoids requiring devtools.
+    const lastResolution = window.Combat.quickAttackData?.lastResolution || null; // Last proc exposes exact Bleedout consumption and applied stack counts even after the target changes.
+    const instantText = lastResolution?.appliedInstantEffects?.length ? lastResolution.appliedInstantEffects.map(entry => `${entry.id}:${entry.consumed ?? entry.damage ?? 0}`).join(', ') : '-'; // One-shot effects have no persistent target entry, so surface them from the resolution snapshot.
     badge.style.display = 'block';
     badge.textContent = [
       `Quick: ${state.equipped?.definition?.label || 'none'} (${state.equipped?.attackId || '-'})`,
       `Target: ${state.target?.def?.label || state.target?.name || (state.target ? 'hostile' : 'none')}`,
       `Bonus ready: ${state.ready ? 'YES' : 'no'}`,
+      `Condition matched: ${state.conditionReady ? 'YES' : 'no'}`,
+      `Cooldown: ${Number(state.cooldownRemainingS || 0).toFixed(2)}s`,
       `Condition: ${state.equipped?.definition?.condKey || '-'}`,
       `Condition state: ${state.conditions ? JSON.stringify(state.conditions) : '-'}`,
       `Afflictions: ${afflictions.length ? afflictions.join(', ') : '-'}`,
+      `Timed debuffs: ${timedDebuffText}`,
+      `Last instant: ${instantText}`,
       `Generic telegraph: ${state.target?.telegraphState || '-'}`,
       `Animal attack: ${state.target?._animalAttack?.id || '-'} / ${state.target?._animalAttack?.state?.stage || '-'}`,
       `Popup root: ${state.root ? 'yes' : 'no'}`,
@@ -417,7 +428,7 @@
       updateDebugBadge(getReadyState());
     },
     snapshot: () => ({
-      latestChange: 'Opportunity overlay follows the live target transform and self-hides when its condition ends.',
+      latestChange: 'Quick Attack timed debuffs now stack additively and the mobile badge shows live stacks plus instantaneous Bleedout results.',
       targetId: lastTarget?.id || null,
       visible: !!reticle?.sprite?.visible,
       lastFrameError,

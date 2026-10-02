@@ -22,7 +22,7 @@
     if (embeddedRuntime) {
       try {
         const request = new XMLHttpRequest(); // Used only by the hidden dev generator so the API bytes cannot be starved behind the live game's startup asset queue.
-        request.open('GET', 'debrisifier-v50-api.js', false);
+        request.open('GET', 'debrisifier-v50-api.js?v=20261002ruin-materials', false);
         request.send(null);
         const ok = (request.status >= 200 && request.status < 300) || (request.status === 0 && !!request.responseText);
         if (!ok) throw new Error(`V50 dev API HTTP ${request.status}`);
@@ -37,7 +37,7 @@
       return;
     }
     const api = document.createElement('script'); // Standalone editor usage keeps the ordinary external-script loader.
-    api.src = 'debrisifier-v50-api.js';
+    api.src = 'debrisifier-v50-api.js?v=20261002ruin-materials';
     api.onerror = () => fail('V50 dev API did not load.');
     document.head.appendChild(api);
   }

@@ -800,13 +800,30 @@
     calendar.rainStrength = activeWindow ? activeWindow.strength : 0;
   }
 
-  function setDebugWeather(mode = null) {
+  // `owner` says who forced the weather: the Testing Arena (default) clears its
+  // own override whenever the player is outside the arena, while the Dev
+  // Companion's override (for testing weather-gated content anywhere) stays
+  // until it is set back to natural. clearDebugWeather(owner) only clears an
+  // override that owner set.
+  let debugWeatherOwner = null;
+  function setDebugWeather(mode = null, owner = 'arena') {
     debugWeatherOverride = ['clear', 'rain', 'storm'].includes(mode) ? mode : null;
+    debugWeatherOwner = debugWeatherOverride ? String(owner || 'arena') : null;
     updateRainState();
+  }
+
+  function clearDebugWeather(owner = 'arena') {
+    if (!debugWeatherOverride || debugWeatherOwner !== owner) return false;
+    setDebugWeather(null);
+    return true;
   }
 
   function getDebugWeather() {
     return debugWeatherOverride;
+  }
+
+  function getDebugWeatherOwner() {
+    return debugWeatherOwner;
   }
 
   window.WeatherFX = {
@@ -822,7 +839,9 @@
     chooseWeatherForDay,
     updateRainState,
     setDebugWeather,
+    clearDebugWeather,
     getDebugWeather,
+    getDebugWeatherOwner,
     ensurePresentationSurface,
     getRenderRecoveryState,
     // Debug/QA only — the player lantern's current on-screen shine radius,

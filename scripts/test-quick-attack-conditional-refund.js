@@ -90,12 +90,12 @@ function runBackstabScenario(targetFacing) {
   assert(backstab, 'Backstab Flick should register');
   backstab.onTap();
 
-  return { Combat, player, target, damageCalls, lungeCalls, toasts };
+  return { Combat, player, target, damageCalls, lungeCalls, toasts, backstab };
 }
 
 const behind = runBackstabScenario(0); // Target faces east while the player stands west of it: player is behind.
 assert.strictEqual(behind.damageCalls.length, 1);
-assert.strictEqual(behind.damageCalls[0].damage, 36, 'actual struck target should receive Backstab Flick conditional damage');
+assert.strictEqual(behind.damageCalls[0].damage, 45, 'actual struck target should receive the stronger Backstab Flick conditional damage');
 assert.strictEqual(behind.damageCalls[0].options.consumeHealthVulnerability, true, 'conditional hit should consume power-hit vulnerability');
 assert.strictEqual(behind.player.stamina, 70, '60 stamina is spent and 30 is refunded after the correct conditional lands');
 assert.strictEqual(behind.lungeCalls[0], 32 * 4.5, 'quick-attack forward reach should be 4.5 tiles');
@@ -103,6 +103,20 @@ assert.match(behind.toasts[0], /refunded 30 stamina/);
 assert.strictEqual(behind.Combat.quickAttackData.lastResolution.conditionalHits, 1);
 assert.strictEqual(behind.Combat.quickAttackData.lastResolution.actualCost, 60);
 assert.strictEqual(behind.Combat.quickAttackData.lastResolution.refunded, 30);
+assert.strictEqual(behind.Combat.quickAttackData.lastResolution.bonusEffectProcs, 1);
+assert.strictEqual(behind.Combat.quickAttackData.lastResolution.cooldownRemainingS, 5);
+
+// The authored backstab condition still matches immediately afterward, but
+// the five-second bonus-effect cooldown must demote that repeat to the base
+// hit and suppress the refund/Flourish-facing proc flag.
+behind.backstab.onTap();
+assert.strictEqual(behind.damageCalls.length, 2);
+assert.strictEqual(behind.damageCalls[1].damage, 6, 'matching the condition during cooldown uses base Quick Attack damage');
+assert.strictEqual(behind.player.stamina, 10, 'cooling repeat spends its full 60-point commitment with no refund');
+assert.match(behind.toasts[1], /cooling down/);
+assert.strictEqual(behind.Combat.quickAttackData.lastResolution.conditionalHits, 1, 'raw condition remains true while cooling');
+assert.strictEqual(behind.Combat.quickAttackData.lastResolution.bonusEffectProcs, 0, 'cooling condition match does not proc the bonus package');
+assert.strictEqual(behind.Combat.quickAttackData.lastResolution.refunded, 0);
 
 const front = runBackstabScenario(Math.PI); // Target faces west toward the player: the player is in front, not behind.
 assert.strictEqual(front.damageCalls.length, 1);

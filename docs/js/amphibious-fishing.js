@@ -227,7 +227,7 @@
           })
         : deps.inCone(c.x, c.y, state.angle, ref.x, ref.y, state.rangePx, state.halfConeRad);
       if (!hit) continue;
-      const damageOpts = { tag: 'amphibiousFish', afflictionBonuses, amphibiousFish: true };
+      const damageOpts = { tag: 'amphibiousFish', afflictionBonuses, amphibiousFish: true, attacker: c };
       if (target.isPlayer) deps.damagePlayer(state.damage, c.x, c.y, FISH_LEAP_KNOCKBACK_PX_S, damageOpts);
       else deps.damageCreature(ref, state.damage, c.x, c.y, FISH_LEAP_KNOCKBACK_PX_S, damageOpts);
       deps.playCreatureClawHit?.(c);

@@ -1862,6 +1862,15 @@
         }
         _el = mountOnboardingOverlay();
         _showSaveSelect();
+        // Dev Companion quick load / backup swap: re-enter the same save
+        // without stopping at the save-select screen (js/quick-save.js).
+        const autoPlay = window.HobunjiQuickSave?.takeAutoPlay?.();
+        if (autoPlay && (meta.characters || []).some(c => c.id === autoPlay.characterId)
+            && worldsForCharacter(meta, autoPlay.characterId).some(w => w.id === autoPlay.worldId)) {
+          _selCharId = autoPlay.characterId;
+          _selWorldId = autoPlay.worldId;
+          _playSaveSelect();
+        }
         return;
       }
 

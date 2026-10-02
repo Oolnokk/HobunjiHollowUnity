@@ -17,7 +17,7 @@
   // renderRelationshipHearts, stopNpcDialogueTypewriter, hideChoiceButtons,
   // dialogueSeatId) instead.
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+  function init(injectedDeps) { deps = injectedDeps; _registerCompanionPanel(); }
 
   const _npcDialogueEl      = document.getElementById('npcDialogue');
   const _npcDialogueNameEl  = document.getElementById('npcDialogueName');
@@ -386,12 +386,142 @@
     }
   }
 
+  // ── Dev Companion trace ─────────────────────────────────────────────
+  // What the Dev Companion shows as "the dialogue on screen": which config
+  // the NPC record came from, the tree + node, and the condition checks that
+  // made this tree win (ConditionRegistry.explainEntry). Only built while a
+  // companion window is connected; dialogue transitions are rare events.
+  let _dlgTraceSelection = null; // Explanation of how the active tree was chosen.
+  const _dlgTracePools = []; // Pool entries resolved during the active conversation.
+
+  function _traceActive() {
+    return !!window.DevCompanion?.isConnected?.();
+  }
+
+  function _npcDatabaseSource() {
+    const overrides = window.LocalDBOverrides;
+    const local = overrides?.getSourceMode?.() === 'local' && overrides?.hasOverride?.('npcDatabase');
+    return local ? 'local override: npcDatabase (hobunji_local_db_override_v1_npcDatabase)' : 'config/npcs/hobunji-starter-npc-database.json';
+  }
+
+  function _explainSelection(entries, world, heard, picked) {
+    const registry = window.ConditionRegistry;
+    const unheardEligible = [];
+    const candidates = (entries || []).map(entry => {
+      const explained = registry.explainEntry ? registry.explainEntry(entry, world) : { eligible: registry.entryEligible(entry, world), checks: [] };
+      const wasHeard = (heard || []).includes(entry.id);
+      if (explained.eligible && !wasHeard) unheardEligible.push(entry.id);
+      return {
+        id: entry.id,
+        name: entry.name || entry.label || '',
+        eligible: explained.eligible,
+        specificity: explained.specificity ?? registry.entrySpecificity(entry),
+        priority: entry.priority || 0,
+        heard: wasHeard,
+        picked: entry === picked,
+        checks: explained.checks,
+      };
+    });
+    const reason = !picked ? 'No eligible entry'
+      : unheardEligible.length ? 'Most specific eligible entry not heard yet (specificity, then priority, then id)'
+      : 'Every eligible entry was already heard — picked at random among eligible entries';
+    return { world, candidates, reason };
+  }
+
+  function _traceDialogue(event, extra = {}) {
+    if (!_traceActive()) return;
+    const node = extra.node !== undefined ? extra.node : _dlgNode;
+    window.DevCompanion.trace('dialogue', {
+      event,
+      npc: _dlgNpcRec ? { id: _dlgNpcRec.id, name: _dlgNpcRec.name || _dlgNpcRec.id } : null,
+      source: _dlgTraceSelection?.source || _npcDatabaseSource(),
+      tree: _dlgTree ? { id: _dlgTree.id, name: _dlgTree.name || _dlgTree.label || '', entryNode: _dlgTree.entryNode, trigger: _dlgTree.trigger || 'interact', visibility: _dlgTree.visibility || 'any', nodeCount: (_dlgTree.nodes || []).length } : null,
+      node: node ? {
+        id: node.id || null,
+        type: node.type || 'line',
+        text: node.text || '',
+        resolvedText: extra.resolvedText ?? null, // Passed in, never re-resolved: {{pool:…}} tokens consume pool entries.
+        next: node.next || null,
+        cameraId: node.cameraId || null,
+        choices: (node.choices || []).map(choice => ({ label: choice.label || '', next: choice.next || null, disabled: !!choice.disabled, actions: (choice.actions || []).map(action => action.type) })),
+        raw: node,
+      } : null,
+      sequenceStack: _dlgSeqStack.map(frame => ({ seqNodeId: frame.seqNodeId, depthRemaining: frame.depthRemaining })),
+      selection: _dlgTraceSelection,
+      pools: _dlgTracePools.slice(-8),
+      ...extra.more,
+    });
+  }
+
+  // Conversation panel on the companion's "Now" tab: the NPC you're talking
+  // to (or last talked to) plus the state that steers which tree they pick —
+  // favor (relationship conditions) and what you've already heard (first vs
+  // returning, unheard-first ordering). Edits here are direct test overrides:
+  // no favor multipliers, spillover, or memory entries.
+  let _lastNpcRec = null;
+
+  function _favorPointsPerHeart() {
+    return Number(window.NpcFavorBalance?.heartsToFavorPoints?.(1)) || 1;
+  }
+
+  function _registerCompanionPanel() {
+    const companion = window.DevCompanion;
+    if (!companion?.registerPanel) return;
+    companion.registerPanel({
+      id: 'conversation',
+      title: '💬 Conversation state',
+      order: 10,
+      when: () => !!_lastNpcRec,
+      render: () => {
+        const rec = _lastNpcRec;
+        const st = getNpcDlgState(rec.id);
+        const hearts = (Number(st.favor) || 0) / _favorPointsPerHeart();
+        const trees = (rec.dialogueTrees || []).filter(t => (t.trigger || 'interact') === 'interact');
+        const heardTrees = trees.filter(t => (st.heardTrees || []).includes(t.id)).length;
+        return {
+          summary: `${rec.name || rec.id}${_dlgNpcRec === rec ? ' — talking now' : ' — last talked to'}`,
+          rows: [
+            ['Relationship', `${hearts.toFixed(2)} hearts (${Math.round(Number(st.favor) || 0)} favor)`],
+            ['Encounter', (st.heardTrees || []).length ? 'returning' : 'first'],
+            ['Trees heard', `${heardTrees} of ${trees.length}`],
+            ['Pool lines heard', String((st.heardPoolEntries || []).length)],
+          ],
+          actions: [
+            { id: 'favor', label: '−1 heart', args: { hearts: -1 }, group: 'Relationship' },
+            { id: 'favor', label: '+1 heart', args: { hearts: 1 }, group: 'Relationship' },
+            { id: 'reset-heard', label: 'Forget what was heard', title: 'Clears heard trees, pool lines and sequence progress for this NPC so tree selection starts over (encounter becomes "first").', group: 'Selection' },
+          ],
+          note: 'Test overrides: applied directly, saved with the game like normal progress. Quick load to undo.',
+        };
+      },
+      onAction: (action, args) => {
+        const rec = _lastNpcRec;
+        if (!rec) return { ok: false, error: 'No NPC yet.' };
+        const st = getNpcDlgState(rec.id);
+        if (action === 'favor') {
+          st.favor = Math.round(((Number(st.favor) || 0) + (Number(args.hearts) || 0) * _favorPointsPerHeart()) * 10) / 10;
+          return { ok: true };
+        }
+        if (action === 'reset-heard') {
+          st.heardTrees = [];
+          st.heardPoolEntries = [];
+          st.visitedSeqSlots = {};
+          return { ok: true };
+        }
+        return { ok: false, error: `Unknown action ${action}` };
+      },
+    });
+  }
+
   function _pickDialogueTree(rec) {
     const provider = _dialogueTreeProviders.get(String(rec?.id || '')); // Used to let a stateful feature choose one ordinary authored tree for this interaction.
     if (provider) {
       try {
         const provided = provider(rec); // Used as the already-routed tree; the provider owns its quest/state eligibility.
-        if (provided) return provided;
+        if (provided) {
+          if (_traceActive()) _dlgTraceSelection = { mode: 'provider', source: `tree provider registered for "${rec?.id}" (feature module), tree ${provided.id}`, reason: 'A feature-owned tree provider routed this interaction (quest/state logic), bypassing condition matching', world: _dlgWorldState(rec), candidates: [] };
+          return provided;
+        }
       } catch (error) {
         console.warn('[npc-dialogue] tree provider failed', rec?.id, error);
       }
@@ -404,7 +534,9 @@
     if (!all.length) return null;
     const world = _dlgWorldState(rec);
     const heard = getNpcDlgState(rec?.id).heardTrees || [];
-    return _pickBestEntry(all, world, heard);
+    const picked = _pickBestEntry(all, world, heard);
+    if (_traceActive()) _dlgTraceSelection = { mode: 'conditions', source: _npcDatabaseSource(), heard: heard.slice(), ..._explainSelection(all, world, heard, picked) };
+    return picked;
   }
 
   function _markDialogueTreeHeard(rec, tree) {
@@ -424,6 +556,10 @@
     const world = _dlgWorldState(rec);
     const st    = getNpcDlgState(rec?.id);
     const entry = _pickBestEntry(pool.entries, world, st.heardPoolEntries || []);
+    if (_traceActive()) {
+      _dlgTracePools.push({ poolId, poolName: pool.name || pool.id, npcId: rec?.id || null, pickedId: entry?.id || null, pickedText: entry?.text || '', ..._explainSelection(pool.entries, world, st.heardPoolEntries || [], entry) });
+      if (_dlgTracePools.length > 20) _dlgTracePools.splice(0, _dlgTracePools.length - 20);
+    }
     if (entry && !st.heardPoolEntries.includes(entry.id)) st.heardPoolEntries.push(entry.id);
     return entry;
   }
@@ -750,6 +886,7 @@
     if (node.cameraId && appliedDialogueCamera) deps?.refreshDialogueStaging?.(); // Mid-conversation authored camera swaps can introduce or remove player staging; re-evaluate blocking immediately.
     _dlgNode = node;
     _notifyDialogueNodeEnter(node); // Feature-owned world presentation tracks the same node transition the player actually sees.
+    if (node.type === 'end' || node.type === 'sequence' || node.type === 'visual') _traceDialogue('node');
 
     if (node.type === 'end') { deps.closeNpcDialogue(); return; }
 
@@ -772,6 +909,7 @@
 
     _setDialogueShellVisible(true);
     const text = _resolveTokens(node.text || '', _dlgNpcRec);
+    _traceDialogue('node', { resolvedText: text });
     _setNpcDialogueText(text, node);
     updateNpcDialoguePortrait(0);
 
@@ -836,6 +974,9 @@
   // bio/line fallback) — shared by plain NPCs and by the "Chat" branch
   // of the merchant shop/chat choice in game.js's openNpcDialogue.
   function _beginNpcConversation(rec) {
+    if (rec?.id) _lastNpcRec = rec;
+    _dlgTraceSelection = null;
+    _dlgTracePools.length = 0;
     const tree = _pickDialogueTree(rec);
     if (tree) {
       _markDialogueTreeHeard(rec, tree);
@@ -851,6 +992,7 @@
       hideChoiceButtons();
       _dialogueLines   = _npcDialogueLines(rec);
       _dialogueLineIdx = 0;
+      _traceDialogue('fallback-lines', { node: null, more: { fallbackLines: _dialogueLines.slice(0, 12), note: 'No dialogue tree was eligible, so the NPC record\'s plain bio/lines are shown.' } });
       _setNpcDialogueText(_dialogueLines[0]);
       updateNpcDialoguePortrait(0);
     }
@@ -891,7 +1033,9 @@
     _notifyDialogueNodeEnter(null, true); // Gives feature-owned presentation a deterministic cleanup point when dialogue closes early or normally.
     _dialogueLines = [];
     _dialogueLineIdx = 0;
+    if (_dlgNpcRec || _dlgTree) _traceDialogue('closed', { node: null });
     _dlgTree = null; _dlgNodeMap = null; _dlgNode = null; _dlgNpcRec = null; _dlgSeqStack = [];
+    _dlgTraceSelection = null;
   }
 
   // Primes flow state for one of game.js's synthetic pre-choice screens
@@ -901,7 +1045,9 @@
   // leftover tree/sequence state before renderDlgNode renders the
   // synthetic choice node itself.
   function beginSyntheticChoice(rec) {
+    if (rec?.id) _lastNpcRec = rec;
     _dlgNpcRec = rec; _dlgTree = null; _dlgNodeMap = null; _dlgSeqStack = [];
+    if (_traceActive()) _dlgTraceSelection = { mode: 'synthetic', source: 'game.js synthetic screen (task turn-in / favor / shop counter) — not an authored tree', reason: 'Built at runtime by openNpcDialogue, not from config', candidates: [] };
   }
 
   window.DialogueContent = {

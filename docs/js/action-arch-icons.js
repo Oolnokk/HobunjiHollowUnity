@@ -452,7 +452,9 @@
         if (child.classList?.contains('combat-hold-exponent')) child.remove();
       });
       const host = button.querySelector('.abt-icon');
-      if (host) host.style.visibility = '';
+      // Same loop as aria-label above: clearing an already-empty inline property
+      // still re-serializes the style attribute and queues a mutation record.
+      if (host && host.style.visibility) host.style.visibility = '';
     });
   }
 

@@ -249,7 +249,7 @@
     entry.base = _texLoader.load('assets/textures/' + filename, () => {
       entry.loaded = true;
       for (const clone of entry.pendingClones) {
-        clone.image = entry.base.image;
+        finishPartTexture(clone, entry.base.image);
         clone.format = entry.base.format;
         clone.needsUpdate = true;
       }
@@ -260,12 +260,37 @@
     _texCache.set(filename, entry);
     return entry;
   }
+  function finishPartTexture(texture, image) {
+    const fill = texture.userData.furnitureFill; // Authored fill settings retained while the PNG loads.
+    if (fill && typeof window.getShadeFillCanvas === 'function') {
+      const hex = fill.replace('#', ''); // Used to pass the furniture fill color to the shared adaptive shade-fill pipeline.
+      image = window.getShadeFillCanvas(image, `furniture:${texture.userData.furnitureTexture}:${fill}`, {
+        mode: 'shadeFill', rgb: [0, 2, 4].map(offset => parseInt(hex.slice(offset, offset + 2), 16)),
+        options: window.getPortraitTintingConfig?.(),
+      });
+    }
+    if (THREE.Source && texture.source) texture.source = new THREE.Source(image);
+    else texture.image = image;
+    texture.needsUpdate = true;
+  }
+
+  function makePartMaterial(part, baseColor) {
+    const material = partMaterial(part, baseColor); // Shared authored material factory for procedural ruin surfaces and furniture parts.
+    applySurfaceOpacity(material, part);
+    if (part.materialTexture) applyPartTexture(material, part);
+    return material;
+  }
+
   function applyPartTexture(mat, part) {
     const entry = texEntry(part.materialTexture);
     const tex = entry.base.clone();
     tex.needsUpdate = true;
     tex.rotation = (part.materialRotationDeg || 0) * DEG;
+    tex.userData.furnitureTexture = part.materialTexture;
+    tex.userData.furnitureFill = part.materialFillMode !== 'never' && part.materialFillEnabled && /^#[0-9a-f]{6}$/i.test(part.materialFillColor || '') ? part.materialFillColor : null;
     if (!entry.loaded) entry.pendingClones.add(tex);
+    else finishPartTexture(tex, entry.base.image);
+    tex.repeat.set(Math.max(.01, Number(part.materialRepeatU) || 1), Math.max(.01, Number(part.materialRepeatV) || 1));
     mat.map = tex;
     mat.color.set(0xffffff);
     mat.transparent = !!part.textureTransparent;
@@ -647,6 +672,7 @@ function campfireRecipe() {
   window.ProceduralFurniture = {
     buildFurnitureGroup,
     buildPartMesh,
+    makePartMaterial,
     shade,
     CATALOG,
   };

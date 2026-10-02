@@ -647,6 +647,17 @@
     const message = String(text || '').trim();
     if (!THREE || !root || !scene || !message || state.settings.enabled === false) return null;
     const mode = options.mode === 'overhead' ? 'overhead' : 'chathead';
+    if (window.DevCompanion?.isConnected?.()) { // Dev Companion "Now" tab: what was just said ambiently and which config it came from.
+      window.DevCompanion.trace('ambient', {
+        speakerId: options.speakerId || null,
+        text: message,
+        mode,
+        tone: options.tone || null,
+        greeting: !!options.greeting,
+        directedAtPlayer: !!options.directedAtPlayer,
+        source: options.traceSource || 'config/dialogue/ambient-dialogue.json',
+      });
+    }
     const textPart = textPlane(message);
     textPart.text = message;
     textPart.plane.scale.setScalar(state.settings.textWorldHeight);
@@ -856,6 +867,7 @@
       faceWalker: walker,
       faceTarget: target.root ? { root: target.root } : { x: target.x, z: target.z },
       faceMode: 'head', // Walking and seated greetings to either the player or another NPC preserve body/seat heading and use only the neck.
+      traceSource: override ? 'pending-request call-over line (procedural task)' : `config/dialogue/ambient-dialogue.json greeting template${lowFavorNickname ? ' + NPC "Nicknames" phrase pool (below +1 heart)' : ''}`,
     });
     return true;
   }

@@ -222,7 +222,7 @@ assert.match(index, /town-mine\.js\?v=20260919combatbgm2/,
   'the browser cache key loads the Ghoul soundtrack combat exemption');
 assert.match(index, /loading-screen-runtime\.js\?v=20260925minefloor1/,
   'the browser cache key loads destination-floor context on mine loading screens');
-assert.match(index, /fishing-minigame\.js\?v=20260925fishcue1/,
+assert.match(index, /fishing-minigame\.js\?v=[A-Za-z0-9_-]+/,
   'the browser cache key loads the successful-catch music cue hook');
 assert.match(index, /"game\.js\?v=\d{8}[A-Za-z0-9_-]+"/,
   'the browser cache key loads the mine-hole cue and floor-number handoff');

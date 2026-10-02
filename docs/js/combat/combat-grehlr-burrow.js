@@ -383,7 +383,7 @@
       const damageTag = creature.def.attackTag || 'sharp'; // Used to preserve the Grehlr's authored sharp affliction identity.
       const afflictionBonuses = window.ResourceSystem?.afflictionBonusesForTag?.(damageTag); // Used by the shared damage path to apply the species-consistent affliction.
       const damage = creature.def.attackDamage * tuning.DAMAGE_MULTIPLIER; // Used as the heavy emergence bite health/footing pressure.
-      const damageOptions = { tag: damageTag, afflictionBonuses }; // Used to route affliction and damage-type footing behavior through existing combat code.
+      const damageOptions = { tag: damageTag, afflictionBonuses, attacker: creature }; // Used to route affliction and damage-type footing behavior through existing combat code.
 
       if (state.targetKind === 'player') deps.damagePlayer?.(damage, sourceX, sourceY, tuning.KNOCKBACK_PX_S, damageOptions);
       else deps.damageCreature?.(target, damage, sourceX, sourceY, tuning.KNOCKBACK_PX_S, damageOptions);

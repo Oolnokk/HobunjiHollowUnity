@@ -785,6 +785,21 @@
     playSfxAudioElement(snd, volume, gainBoost);
   }
 
+  function playGeneratedStoneKchunk(volume = 1) {
+    const AudioCtx=window.AudioContext||window.webkitAudioContext; // Temporary procedural completion cue; intended to be replaced by a recorded stone kchunk asset later.
+    if(!AudioCtx)return false;
+    try{
+      const ctx=playGeneratedStoneKchunk._ctx||(playGeneratedStoneKchunk._ctx=new AudioCtx());
+      ctx.resume?.();
+      const now=ctx.currentTime,osc=ctx.createOscillator(),gain=ctx.createGain(),filter=ctx.createBiquadFilter();
+      osc.type='square';osc.frequency.setValueAtTime(92,now);osc.frequency.exponentialRampToValueAtTime(46,now+.18);
+      filter.type='lowpass';filter.frequency.value=520;
+      gain.gain.setValueAtTime(.0001,now);gain.gain.exponentialRampToValueAtTime(Math.max(.0001,.16*volume),now+.012);gain.gain.exponentialRampToValueAtTime(.0001,now+.24);
+      osc.connect(filter).connect(gain).connect(ctx.destination);osc.start(now);osc.stop(now+.25);
+      return true;
+    }catch(_){return false;}
+  }
+
   function playObjectSfxKey(key, volumeScale = 1, pitch = 1) {
     const cfgEntry = objectSfxConfig()[key]; // Resolves named UI/object/tool cues without leaking the config shape to gameplay systems.
     const preloaded = cfgEntry?.url ? objectSfxPreloads.get(cfgEntry.url) : null; // Used by the mobile-readable debug snapshot below.
@@ -797,6 +812,7 @@
       atMs: Math.round(performance.now()),
     };
     if (cfgEntry) playObjectSfx(cfgEntry, volumeScale, pitch);
+    if (cfgEntry?.generatedStoneKchunk && gameAudioConfig().enabled !== false && objectSfxConfig().enabled !== false && Number(gameAudioConfig().sfxVolume ?? 1) > 0) playGeneratedStoneKchunk(Math.max(0,Number(gameAudioConfig().sfxVolume ?? 1))*Math.max(0,Number(cfgEntry.volume ?? .8))*volumeScale);
   }
 
   // AlchemyFlasks emits semantic events and never imports AudioSystem. This

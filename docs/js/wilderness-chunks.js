@@ -595,7 +595,7 @@
     const text = formatResidencyAudit(lastResidencyAudit);
     window.__farmLog?.(text, issues.length ? 'warn' : 'info', 'chunks');
     const status = document.getElementById('wildernessChunkStatus');
-    if (status) status.textContent = text;
+    if (status && status.textContent !== text) status.textContent = text; // Unchanged text would still queue a childList mutation for every body-wide observer.
     return lastResidencyAudit;
   }
 
@@ -656,11 +656,13 @@
     if (!force && now - lastDebugRefreshAt < DEBUG_REFRESH_MS) return;
     lastDebugRefreshAt = now;
     const text = debugLines();
+    // Compare first: an unchanged textContent write still replaces the text node
+    // and wakes every body-wide MutationObserver on this periodic refresh.
     const status = document.getElementById('wildernessChunkStatus');
-    if (status) status.textContent = text;
+    if (status && status.textContent !== text) status.textContent = text;
     const overlay = document.getElementById('wildernessChunkDebugOverlay');
     if (overlay) {
-      overlay.textContent = text;
+      if (overlay.textContent !== text) overlay.textContent = text;
       overlay.style.display = debugVisible ? 'block' : 'none';
     }
   }

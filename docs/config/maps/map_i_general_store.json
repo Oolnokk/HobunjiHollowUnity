@@ -18,7 +18,12 @@
     { "id": "fmqflyhx9gput", "itemKey": "bookshelfFurniture", "col": 1, "row": 5, "rotY": 0, "postX": -0.5, "postY": 0, "postZ": 0, "postSX": 0.833333, "postSY": 1, "postSZ": 1, "gridRot": 180, "gridW": 3, "gridD": 1 },
     { "id": "fmqflyjsxciu5", "itemKey": "bookshelfFurniture", "col": 3, "row": 5, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1.25, "postSY": 1, "postSZ": 1 },
     { "id": "fmqfm0z7jep8i", "itemKey": "dresserFurniture", "col": 5, "row": 5, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1.25, "postSY": 0.9, "postSZ": 1 },
-    { "id": "fmqk10h7g0bzj", "itemKey": "tableSmallFurniture", "col": 1, "row": 7, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1.071857, "postSY": 1, "postSZ": 1, "gridRot": 0, "gridW": 7, "gridD": 1 }
+    { "id": "fmqk10h7g0bzj", "itemKey": "tableSmallFurniture", "col": 1, "row": 7, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1.071857, "postSY": 1, "postSZ": 1, "gridRot": 0, "gridW": 7, "gridD": 1 },
+    { "id": "devf_muqk5caux2xg", "itemKey": "wallTorchFurniture", "col": 1, "row": 10, "rotY": 175.61, "postX": 0.199, "postY": 0.233, "postZ": 0.288 },
+    { "id": "devf_muqk5o8abuff", "itemKey": "wallTorchFurniture", "col": 11, "row": 10, "rotY": 175.99, "postX": -0.225, "postY": 0.307, "postZ": 0.284 },
+    { "id": "devf_muqk616n61gm", "itemKey": "wallTorchFurniture", "col": 11, "row": 5, "rotY": -4.39, "postX": -0.027, "postY": 0.22, "postZ": -0.265 },
+    { "id": "devf_muqk6hzvk4fq", "itemKey": "wallTorchFurniture", "col": 14, "row": 2, "rotY": -4.39, "postX": -0.219, "postY": 0.311, "postZ": -0.274 },
+    { "id": "devf_muqk6ve9zdnk", "itemKey": "wallTorchFurniture", "col": 15, "row": 7, "rotY": 175.99, "postX": 0.379, "postY": 0.31, "postZ": 0.293 }
   ],
   "id": "map_i_general_store",
   "name": "Funji & Sons General Store",

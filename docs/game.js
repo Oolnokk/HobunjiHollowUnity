@@ -898,6 +898,8 @@
       const PRONE_THROW_CREATURE_MIN_PX_S = 480; // Gives animals/bandits a minimum throw at the existing hostile-bite scale.
 
       function applyKnockback(target, fromX, fromY, speedPxS) {
+        const reelingMul = window.ResourceSystem?.timedDebuffModifier?.(target, 'knockbackTaken') ?? 1; // Reeling scales the shared impulse before branch/free-plane collision handling diverges.
+        speedPxS *= reelingMul;
         if (target.onBranch) {
           window.KnockbackCollisionImpact?.cancel?.(target);
           // Knockback while standing on a branch is resolved along the
@@ -4838,6 +4840,8 @@
         // combat-counter-shield.js) -- safe to assume `player` is the guarded
         // captain's riposte target without needing a passed-in attacker.
         if (!environmentalImpact) {
+          const damageSource = dmgOpts?.attacker || (sourceNearPlayer ? player : null); // Explicit NPC attacker wins; ordinary player melee/ranged still resolves from its existing source position.
+          amount *= window.ResourceSystem?.timedDebuffModifier?.(damageSource, 'outgoingDamage') ?? 1; // Enfeebled reduces the attacker's direct damage without altering target affliction buildup rules.
           amount *= window.SkillSystem?.attackMultiplier?.() || 1;
           amount *= window.AlchemySystem?.getOutgoingDamageMultiplier?.() || 1;
           amount *= window.PerkSystem?.combatDamageMultiplier?.(dmgOpts) || 1; // Empower Raw Damage / Quick / Defensive / Heavy Attacks.
@@ -4913,7 +4917,11 @@
       function damagePlayer(amount, fromX, fromY, knockbackPxS = PLAYER_KNOCKBACK_PX_S, dmgOpts) {
         const environmentalImpact = dmgOpts?.environmentalImpact === true; // Collision Health damage cannot be countered or treated as a second incoming attack.
         if (!environmentalImpact && performance.now() < player.invulnUntil) return;
-        if (!environmentalImpact) amount *= window.SkillSystem?.damageTakenMultiplier?.() || 1;
+        if (!environmentalImpact) {
+          const attacker = dmgOpts?.attacker || null; // Enemy modules pass their owning actor when available so Enfeebled follows the source rather than the victim.
+          amount *= window.ResourceSystem?.timedDebuffModifier?.(attacker, 'outgoingDamage') ?? 1;
+          amount *= window.SkillSystem?.damageTakenMultiplier?.() || 1;
+        }
         const resourceDamage = environmentalImpact ? { health: amount, footing: 0 } : hitResourceDamage(amount, dmgOpts);
         // Lets a held defensive ability (Counter Shield) absorb the hit and
         // riposte instead of applying damage normally — only one hold
@@ -5471,7 +5479,8 @@
         if (dist < 1) { c.vx = 0; c.vy = 0; return false; }
         const directionMul = window.RangedWeapons?.movementDirectionMultiplier?.(c) || 1; // Disorient inverts normal movement AI at this shared choke point.
         const nx = dx / dist * directionMul, ny = dy / dist * directionMul;
-        const baseSpeed = speed * devGlobalSpeedMul;
+        const heavyMoveMul = window.ResourceSystem?.timedDebuffModifier?.(c, 'moveSpeed') ?? 1; // Heavy composes with global/swim/climb movement instead of mutating authored creature speeds.
+        const baseSpeed = speed * devGlobalSpeedMul * heavyMoveMul;
         const effectiveSpeed = isCreatureSwimming(c) ? baseSpeed * SWIM_SPEED_MUL : isCreatureClimbing(c) ? baseSpeed * CLIMB_SPEED_MUL : baseSpeed;
         const step = Math.min(dist, effectiveSpeed * dt);
         // Axis-separated so a creature turned back by a cliff face or river
@@ -6122,7 +6131,8 @@
           }
           window.AnimalVocalizations?.tickCreature?.(c, entityDt);
           const def = c.def;
-          c.attackCooldownT = Math.max(0, c.attackCooldownT - entityDt);
+          const attackSpeedMul = window.ResourceSystem?.timedDebuffModifier?.(c, 'attackSpeed') ?? 1; // Sluggish slows the shared hostile attack-cadence clock without slowing locomotion/AI simulation.
+          c.attackCooldownT = Math.max(0, c.attackCooldownT - entityDt * attackSpeedMul);
           const herdNight = !!c.herdKey && !!window.Music?.isNightTime?.(); // Used by open-air herd sleeping; unlike den packs these animals remain visible in a tight group.
           if (!herdNight && c._animalSleeping) {
             c._animalSleeping = false;
@@ -6422,7 +6432,7 @@
                         halfConeRad: attackHalfConeRad,
                         direction: enemyAim?.direction,
                       })) {
-                        damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S, { tag: attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(attackTag) });
+                        damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S, { tag: attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(attackTag), attacker: c });
                         window.AudioSystem?.playCreatureClawHit(c);
                       }
                       c.retreatT = JUMP_BACK_DUR_S;
@@ -7801,6 +7811,7 @@
             _clearCompanionTreasureCue(c, dt, 'treasure revealed, found, or area left');
           }
           if (!isBanditCompanion && !target && c.knockbackT <= 0 && !c.treasureCue && distToMaster <= FOLLOW_FAR_PX && _isZoneArea(currentArea)) {
+            window.RuinSites?.trackNearby?.(c, master, dt);
             const treasureHint = window.WildTreasure?.nearestBuriedPixelPos(currentArea, master.x, master.y);
             if (treasureHint && treasureHint.dist <= TREASURE_HINT_RANGE_PX) _startCompanionTreasureCue(c, treasureHint);
           }
@@ -9278,6 +9289,7 @@
       }
 
       function performDodge() {
+        if (window.Mounts?.rideState && window.Mounts.rideState !== 'none') return false; // Mounted movement owns cliff leaps; on-foot rolls cannot finish while riding.
         if (window.DevRandomRuinSimplePuzzles?.releaseActiveRope?.()) return true; // Dodge is the native rope jump-off input; release carries pendulum tangent instead of starting an evasive roll.
         // While prone, the automatic get-up owns the normal recovery. Keep
         // dodge input routed to the same in-place recovery arc so an input on
@@ -9373,6 +9385,8 @@
       // collider at the point the lunge stops, never overshot past it.
       function beginCombatLunge(distancePx, durationS, hopUnits = 0, hitTest = null) {
         if (durationS <= 0 || distancePx <= 0) return false;
+        const heavyDistanceMul = window.ResourceSystem?.timedDebuffModifier?.(player, 'dodgeLungeDistance') ?? 1; // Heavy shortens player attack lunges while preserving the attack's authored timing.
+        distancePx *= heavyDistanceMul;
         // Each combo/quick-attack/charged-breaker module tracks its own
         // "busy" gate independently, so tapping a *different* attack slot
         // while an earlier one's lunge is still in flight isn't blocked by
@@ -10744,7 +10758,7 @@
         }
         // Don't fire a spot the player happens to spawn on
         _transitionLatch = travelAreaKey();
-        buildTransitionMarkers();
+        window.TransitionMarkers.buildTransitionMarkers();
         spawnScheduledNpcs().catch(e => console.warn('spawnScheduledNpcs failed:', e));
       }
 
@@ -10757,20 +10771,8 @@
         return area + ':' + Math.floor(player.x / TILE) + ',' + Math.floor(player.y / TILE);
       }
 
-      function buildTransitionMarkers() {
-        const _ringGeo = new THREE.RingGeometry(0.22, 0.36, 24);
-        const _ringMat = new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false });
-        for (const t of worldTransitions) {
-          const interior = t.area === 'interior';
-          const g = interior ? interiorGrid : grid;
-          const tile = g[t.row]?.[t.col];
-          if (!tile) continue;
-          const ring = new THREE.Mesh(_ringGeo, _ringMat);
-          ring.rotation.x = -Math.PI / 2;
-          ring.position.set(t.col + 0.5, tileSurfaceY(tile.type) + 0.02, t.row + 0.5);
-          (interior ? interiorScene : scene).add(ring);
-        }
-      }
+      // Transition-spot floor rings (buildTransitionMarkers) now live in
+      // js/transition-markers.js — call via window.TransitionMarkers.*.
 
       function checkTransitionSpots() {
         const area = _travelAreaOf(currentArea);
@@ -10785,8 +10787,15 @@
         const t = pool.find(x =>
           (_isBuildingArea(area) || _isZoneArea(area) || x.area === area) && x.col === pc && x.row === pr &&
           (!x.requiresKeyItem || !!window.KeyItemSystem?.has?.(x.requiresKeyItem)) &&
-          (x.target === 'building' ? !!x.targetMapId : x.target === 'zone' ? !!x.targetMapId : x.target === 'exit_building' ? true : (Number.isFinite(x.targetCol) && Number.isFinite(x.targetRow))));
-        if (t !== _pendingSpotTransition) { _pendingSpotTransition = t || null; refreshActionBar(); }
+          (x.target === 'building' ? !!x.targetMapId : x.target === 'zone' ? !!x.targetMapId : x.target === 'exit_building' ? true : (Number.isFinite(x.targetCol) && Number.isFinite(x.targetRow)))) || null;
+        _pendingSpotTransition = t;
+        // Deliberately once per frame, not only when the spot changes: nothing
+        // else re-resolves the action arch as the reticle moves or a tile/NPC
+        // under it changes, so the arch has always depended on this call
+        // (it used to happen by accident — find()'s undefined never equalled
+        // the stored null). refreshActionBar() is _lastBarKey-cached, so its
+        // no-change path must stay free of unconditional DOM writes.
+        refreshActionBar();
         // Farm interior exit fires automatically (legacy behaviour)
         if (t && area === 'interior') startSceneTransition(() => performTravel(t));
       }
@@ -12680,6 +12689,10 @@
           const d = Math.hypot(w.root.position.x - px, w.root.position.z - pz);
           if (d < closestDist) { closestDist = d; closest = w; }
         }
+        if (window.NpcGifting?.isItemGiftable?.(getHeldGiftItem())) {
+          const hunter = window.PorakanekiCamps?.getNearbyGiftWalker?.(px, pz, closestDist); // Neutral procedural hunters reuse the existing gift action and dispatch target.
+          if (hunter) closest = hunter;
+        }
         nearbyNpcWalker = closest;
         if (previousNearbyNpcWalker !== nearbyNpcWalker) refreshActionBar();
       }
@@ -13598,7 +13611,10 @@
           const furnKeyByItemKey = {};
           for (const [key, def] of Object.entries(DECORATIVE_FURNITURE_DEFS)) { allFurnDefs[def.itemKey] = def; furnKeyByItemKey[def.itemKey] = key; }
           for (const [key, def] of Object.entries(PROCESSING_FURNITURE_DEFS)) { allFurnDefs[def.itemKey] = def; furnKeyByItemKey[def.itemKey] = key; }
-          for (const f of (mapData.furniture || [])) {
+          // Dev Companion map-furniture overlay (js/dev-map-furniture.js) merges in
+          // dev-placed/moved/removed pieces; returns the authored list untouched otherwise.
+          const buildingFurniture = window.DevMapFurniture?.mergeBuildingFurniture?.(mapId, mapData.furniture) || mapData.furniture || [];
+          for (const f of buildingFurniture) {
             const def = allFurnDefs[f.itemKey];
             const furnitureKey = furnKeyByItemKey[f.itemKey];
             if (furnitureKey === 'mineLadder') await window.AuthoredFurniture?.load?.('mineLadder'); // Used to guarantee the supplied ladder is ready on the safe room's first visit, not merely on later cached visits.
@@ -13614,8 +13630,14 @@
             const rotRad = THREE.MathUtils.degToRad(f.rotY || 0);
             let renderedFurniture = null;
             let furnitureSfxSource = null;
-            if (furnitureKey && window.ProceduralFurniture.CATALOG[furnitureKey]) {
-              const model = buildFurnitureVisual(furnitureKey, color);
+            // Alias defs (e.g. the inventory wall signs) render through their procKey,
+            // and pieces built by authored/patched builders (wall torch, windows,
+            // signs, doors) count even though they have no procedural CATALOG recipe —
+            // only a build with no geometry at all falls back to the placeholder box.
+            const renderKey = def?.procKey && def.procKey !== furnitureKey ? def.procKey : furnitureKey;
+            const builtModel = renderKey ? buildFurnitureVisual(renderKey, color) : null;
+            if (builtModel && (window.ProceduralFurniture.CATALOG[renderKey] || builtModel.children.length)) {
+              const model = builtModel;
               renderedFurniture = model;
               model.position.set(bx, by, bz);
               model.rotation.y = rotRad;
@@ -14086,6 +14108,7 @@
         if (area === 'town') return _townZone?.name || 'Hobunji Hollow — Town';
         if (area === 'farm') return 'Farm';
         if (_isBuildingArea(area)) return _buildingScenes.get(area)?.name || area;
+        if (EXTERIOR_ZONES[area]?.label) return EXTERIOR_ZONES[area].label;
         return area || '(unknown)';
       }
 
@@ -14854,6 +14877,26 @@
         };
       }
 
+      // Rebuilds the building the player is standing in from its (re-merged)
+      // map data, keeping residents and the player's exact spot. Shared by
+      // live Map Editor reflection and Dev Companion map-furniture edits.
+      // residentsOut receives the detached residents so a caller's own
+      // rollback can reattach them if the rebuild throws.
+      async function _rebuildBuildingSceneInPlace(areaId, residentsOut = []) {
+        if (currentArea !== areaId || !_isBuildingArea(areaId)) return false;
+        const playerBefore = { x: player.x, y: player.y, angle: player.angle, facingAngle };
+        const detachedResidents = _detachLivePreviewResidents(areaId);
+        residentsOut.push(...detachedResidents);
+        discardBuildingScene(areaId, { preserveResidents: true });
+        enterBuilding(areaId, playerBefore.x / TILE - 0.5, playerBefore.y / TILE - 0.5);
+        await waitForBuildingSceneReady(areaId);
+        if (!_buildingScenes.get(areaId)?.scene) throw new Error(`Timed out rebuilding ${areaId}.`);
+        _reattachLivePreviewResidents(_buildingScenes.get(areaId).scene, detachedResidents);
+        player.x = playerBefore.x; player.y = playerBefore.y; player.angle = playerBefore.angle; facingAngle = playerBefore.facingAngle;
+        _snapCameraTarget();
+        return true;
+      }
+
       async function _applyLiveMapReflection(request) {
         const incomingWorkspace = window.MapLivePreview.clone(request.workspace);
         const targetMap = incomingWorkspace?.maps?.find(map => map.id === request.mapId);
@@ -14904,14 +14947,7 @@
 
           if (_isBuildingArea(areaBefore)) {
             rebuiltArea = areaBefore;
-            detachedResidents = _detachLivePreviewResidents(areaBefore);
-            discardBuildingScene(areaBefore, { preserveResidents: true });
-            enterBuilding(areaBefore, playerBefore.x / TILE - 0.5, playerBefore.y / TILE - 0.5);
-            await waitForBuildingSceneReady(areaBefore);
-            if (!_buildingScenes.get(areaBefore)?.scene) throw new Error(`Timed out rebuilding ${areaBefore}.`);
-            _reattachLivePreviewResidents(_buildingScenes.get(areaBefore).scene, detachedResidents);
-            player.x = playerBefore.x; player.y = playerBefore.y; player.angle = playerBefore.angle; facingAngle = playerBefore.facingAngle;
-            _snapCameraTarget();
+            await _rebuildBuildingSceneInPlace(areaBefore, detachedResidents);
             return { applyMode: 'scene-rebuild', warnings: [] };
           }
 
@@ -17172,12 +17208,14 @@
           player.dodgeT -= dt;
           const minX = PLAYER_RADIUS, maxX = window.GridTileAccessors.getActiveCols() * TILE - PLAYER_RADIUS;
           const minY = PLAYER_RADIUS, maxY = window.GridTileAccessors.getActiveRows() * TILE - PLAYER_RADIUS;
-          const desiredX = window.FormatUtils.clamp(player.x + player.dodgeDirX * DODGE_SPEED_PX * dt, minX, maxX);
-          const desiredY = window.FormatUtils.clamp(player.y + player.dodgeDirY * DODGE_SPEED_PX * dt, minY, maxY);
+          const heavyDistanceMul = window.ResourceSystem?.timedDebuffModifier?.(player, 'dodgeLungeDistance') ?? 1; // Heavy reduces dodge travel over the unchanged dodge duration/iframe window.
+          const dodgeSpeedPx = DODGE_SPEED_PX * heavyDistanceMul; // Shared per-frame speed keeps position and reported velocity identical.
+          const desiredX = window.FormatUtils.clamp(player.x + player.dodgeDirX * dodgeSpeedPx * dt, minX, maxX);
+          const desiredY = window.FormatUtils.clamp(player.y + player.dodgeDirY * dodgeSpeedPx * dt, minY, maxY);
           const dodgeSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
           player.x = dodgeSwept.x; player.y = dodgeSwept.y;
-          player.vx = player.dodgeDirX * DODGE_SPEED_PX;
-          player.vy = player.dodgeDirY * DODGE_SPEED_PX;
+          player.vx = player.dodgeDirX * dodgeSpeedPx;
+          player.vy = player.dodgeDirY * dodgeSpeedPx;
           if (player.dodgeT <= 0) {
             player.dodging = false;
             player.vx = 0; player.vy = 0;
@@ -18645,6 +18683,10 @@
         if (window.Fishing?.state?.active) {
           if (activeAction === 'fish_primary') window.Fishing?.primaryAction();
           else if (activeAction === 'fish_cancel') window.Fishing?.close();
+          return;
+        }
+        if (window.DevMapFurniture?.isActive?.() && window.DevMapFurniture.handleArchAction(activeAction)) {
+          refreshActionBar();
           return;
         }
         if (window.WallOrnamentPlacement?.isPlayerReticlePlacementActive?.()) {
@@ -23999,6 +24041,7 @@
           if (window.WallOrnamentPlacement?.isPlayerReticlePlacementActive?.()) {
             window.WallOrnamentPlacement.updatePlayerReticlePreview?.(); // Touch camera/movement retargets wall preview even without a connected controller.
           }
+          if (window.DevMapFurniture?.isActive?.()) window.DevMapFurniture.update(); // Dev map-furniture ghost (throttled inside; floor previews only move with the reticle tile).
           if (furniturePlacementModeArmed()) {
             const furniturePlacementReticle = getReticleTile(); // Used only while placement is armed to keep the ghost on the live gameplay reticle tile.
             showFurniturePlacementGhost(furniturePlacementReticle.col, furniturePlacementReticle.row);
@@ -24809,6 +24852,8 @@
         // explicit entries are essential on touch: keyboard/controller can
         // invoke action1/action2 without visible DOM, while mobile can only
         // press actions that this function actually populates into the arch.
+        const devFurnitureButtons = window.DevMapFurniture?.actionButtons?.(); // Dev map-furniture placement owns the arch like the farm placer does.
+        if (devFurnitureButtons) return devFurnitureButtons;
         if (window.WallOrnamentPlacement?.isPlayerReticlePlacementActive?.()) {
           return [
             { icon: '✓', label: 'Place', action: 'wall_place_confirm', style: 'primary', allowed: window.WallOrnamentPlacement.canConfirmPlayerReticlePlacement?.() !== false },
@@ -24829,7 +24874,7 @@
 
         // NPC dialogue takes priority over tool use on touch controls and mirrors the primary-action keyboard path.
         if (nearbyNpcWalker && !farmEditMode) {
-          const btns = [npcDialogueButton()];
+          const btns = nearbyNpcWalker.isPorakanekiHunter ? [] : [npcDialogueButton()];
           // Smithy is deliberately inserted directly after Talk so it is
           // always Action 2 when either Bronzeworks smith is being faced.
           if (isSmithyNpcInBronzeworks(nearbyNpcWalker)) btns.push(smithyButton());
@@ -25252,8 +25297,12 @@
         // icon otherwise.
         if (dodgeBtn) {
           const icon = dodgeBtn.querySelector('.abt-icon'), label = dodgeBtn.querySelector('.abt-label');
-          if (icon) icon.textContent = climbBtn ? climbBtn.icon : '💨';
-          if (label) label.textContent = climbBtn ? climbBtn.label : 'Dodge';
+          // Compare first: this runs every frame (see checkTransitionSpots), and an
+          // unconditional textContent write queues childList mutations that wake
+          // every action-arch MutationObserver (arch-button-labels, action-arch-icons...).
+          const dodgeIcon = climbBtn ? climbBtn.icon : '💨', dodgeLabel = climbBtn ? climbBtn.label : 'Dodge';
+          if (icon && icon.textContent !== dodgeIcon) icon.textContent = dodgeIcon;
+          if (label && label.textContent !== dodgeLabel) label.textContent = dodgeLabel;
         }
 
         if (!needsRebuild) return;
@@ -26006,6 +26055,10 @@
           && computeActionButtons().some(button => button.action === 'potion_select' && button.allowed);
       }
       function runInputAction(actionId, phase = 'press') {
+        if (window.DevMapFurniture?.handleGameplayAction?.(actionId, phase)) {
+          if (phase === 'press') refreshActionBar();
+          return;
+        }
         if (window.WallOrnamentPlacement?.handleGameplayAction?.(actionId, phase)) {
           if (phase === 'press') refreshActionBar(); // Physical Action 1/2 must clear/rebuild the touch arch after wall confirm/cancel.
           return;
@@ -26889,7 +26942,7 @@
         threeContainer.addEventListener('pointerdown', (e) => {
           if (window.PixelProbe?.armed || menuOpen || farmEditMode || e.shiftKey || window.__mapEditorGizmoActive) return;
           const mouseAction = getActionForButton('desktop', 'Mouse' + e.button);
-          if (window.WallOrnamentPlacement?.isPlayerReticlePlacementActive?.() && (mouseAction === 'action1' || mouseAction === 'action2')) {
+          if ((window.WallOrnamentPlacement?.isPlayerReticlePlacementActive?.() || window.DevMapFurniture?.isActive?.()) && (mouseAction === 'action1' || mouseAction === 'action2')) {
             desktopWallFurnitureMousePresses.add(e.button);
             runInputAction(mouseAction, 'press');
             return;
@@ -27270,6 +27323,8 @@
           })),
         currentAreaOcclusionMeshCount: () => currentAreaOcclusionMeshes().length,
         enterZoneDebug: (mapId, col, row) => enterZone(mapId, col, row),
+        enterBuildingDebug: (mapId, col, row) => enterBuilding(mapId, col, row),
+        enterTownDebug: (col, row) => enterTown(col, row),
         setOutlines: (v) => { s_outlines = !!v; },
         playerNeckPivotInfo: () => {
           let avatarGroup = null;
@@ -28385,6 +28440,17 @@
         getItemDefs: () => ITEM_DEFS,
         getNpcRecordById: npcId => scheduledNpcRecords.get(npcId) || npcWalkers.find(walker => walker.rec?.id === npcId)?.rec || null, // Canonical live preference source used to reconcile saved learned gift tiers after authored data changes.
         getHeldGiftItem,
+        random: rnd,
+        getInventoryMax: key => inventoryItems.find(item => item.key === key)?.max ?? 99,
+        getPorakanekiRewardPools: () => {
+          const zone = EXTERIOR_ZONES[currentArea] || {}; // Uses live species overrides, including Puktuk and Voorg-Ass registration.
+          const species = [...new Set([...(zone.packSpecies || []), ...(zone.herbivoreSpecies || []), ...(zone.roamingHerdSpecies || []), ...(currentArea === 'map_southern_cloud_forest' ? ['drenkirra'] : [])])]; // Tree-nesting Drenkirra are native cloud-forest wildlife outside the den pools.
+          const livestockKinds = window.SCRATCHBONES_CONFIG?.game?.livestock?.itemKinds || {}; // Shared egg/baby inventory keys and domesticated species aliases.
+          const animals = Object.entries(livestockKinds).filter(([key, kind]) => !key.endsWith('Crate') && species.some(wild => (window.CreatureGenetics?.SPECIES_ALIAS?.[wild] || wild) === kind)).map(([itemKey, kind]) => ({ itemKey, kind })); // Preserve the canonical genotype shape used by FarmAnimals.
+          const fishZone = { map_northern_cliffs: 'northernCliffs', map_southern_cloud_forest: 'cloudForest', map_western_slope: 'westernSlope', map_eastern_mire: 'easternMire' }[currentArea]; // Mirrors authored wilderness fishing regions.
+          const meat = species.flatMap(kind => (window.LootRolling?.getLootPools?.()[CREATURE_DB[kind]?.lootPool]?.entries || []).filter(entry => entry.id === 'meat').map(entry => entry.itemKey)); // Meat comes from the actual native creature loot tables.
+          return { herbs: window.AlchemySystem?.reagentsForZone?.(currentArea) || [], fish: (FISH_DEFS[fishZone] || []).map(fish => fish.key), meat, animals };
+        },
         clearManualHeldItem,
         getGearInventory: () => gearInventory,
         saveGearInventory,
@@ -28557,6 +28623,31 @@
         showToast,
         DEV_ARENA_ZONE_ID: window.DevSpawner.DEV_ARENA_ZONE_ID,
         openArenaSpawner: () => window.DevSpawner.toggle(),
+      });
+
+      // Dev Companion map furniture (place any repo furniture in town/building
+      // interiors through a dev overlay) now lives in js/dev-map-furniture.js.
+      window.DevMapFurniture?.init({
+        getCurrentArea: () => currentArea,
+        isBuildingArea: _isBuildingArea,
+        isDevMode: () => s_devMode,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
+        camera,
+        playerMesh,
+        isActorRoot: node => npcWalkers.some(walker => walker.root === node || walker.avatarGroup === node),
+        getReticleTile,
+        buildFurnitureVisual,
+        decorativeFurnitureSize,
+        getDecorativeFurnitureDefs: () => DECORATIVE_FURNITURE_DEFS,
+        getProcessingFurnitureDefs: () => PROCESSING_FURNITURE_DEFS,
+        isTileWalkable: (area, col, row) => isNpcTileWalkable(area, col, row),
+        furnitureBaseY: (area, col, row) => area === 'town'
+          ? window.TownZoneBuildings.townFurnitureBaseY(col, row)
+          : tileSurfaceYInArea(npcGridForArea(area)?.[row]?.[col], area),
+        respawnTownFurniture: () => window.TownZoneBuildings.spawnTownDecorFurniture(),
+        rebuildBuildingInPlace: areaId => _rebuildBuildingSceneInPlace(areaId),
+        showToast,
+        refreshActionBar,
       });
 
       window.DenNestSystem?.init({
@@ -28838,6 +28929,12 @@
         terrainCategoryFor: _terrainCategoryFor,
         waterVertShader, waterFragShader,
         buildMergedWaterMesh: window.WaterSystem.buildMergedWaterMesh,
+      });
+
+      window.TransitionMarkers?.init({
+        interiorGrid, scene, interiorScene, tileSurfaceY,
+        getGrid: () => grid,
+        getWorldTransitions: () => worldTransitions,
       });
 
       window.ZoneDenTotemFeatures?.init({
@@ -29495,7 +29592,7 @@
       // Ensure a farm→town transition always exists even without map editor data
       if (!worldTransitions.some(t => t.target === 'town')) {
         worldTransitions.push({ id: 'sp_farm_to_town', label: 'To Town', area: 'farm', col: 17, row: 0, target: 'town', targetCol: 20, targetRow: 48 });
-        buildTransitionMarkers();
+        window.TransitionMarkers.buildTransitionMarkers();
       }
       // Load town layout from workspace config (authoritative source)
       window.Music?.loadAudioCueIndexes().then(() => window.Music?.resetAmbientCueTimer()).catch(() => window.Music?.resetAmbientCueTimer());
@@ -29780,7 +29877,12 @@
         // a cold boot has its own preconditions this isn't set up to satisfy.
         const _lastPos = playerData.lastPosition;
         const _resumeCampfire = window.WildernessCampfire?.serialize?.();
-        if (_lastPos && _isZoneArea(_lastPos.area) && _resumeCampfire?.mapId === _lastPos.area
+        // A Dev Companion quick load returns to the exact saved spot (any
+        // area) instead of the login spawn — see js/quick-save.js.
+        const _quickResumed = !window.__hobunjiCutscenePreview && await window.HobunjiQuickSave?.restoreResume?.(playerData);
+        if (_quickResumed) {
+          // Placement already applied.
+        } else if (_lastPos && _isZoneArea(_lastPos.area) && _resumeCampfire?.mapId === _lastPos.area
             && Number.isFinite(_lastPos.x) && Number.isFinite(_lastPos.y)) {
           await enterZone(_lastPos.area, Math.floor(_lastPos.x / TILE), Math.floor(_lastPos.y / TILE));
           // enterZone already placed the player at the tile center of the
@@ -29801,6 +29903,45 @@
         gameStarted = true;
         window.__hobunjiGameStarted = true;
       }
+
+      // Dev Companion quick save/load (exact-placement save states) now lives
+      // in js/quick-save.js; these are the live-state hooks it needs.
+      window.HobunjiQuickSave?.init({
+        player, TILE, calendar, showToast,
+        getCurrentArea: () => currentArea,
+        isZoneArea: _isZoneArea,
+        isBuildingArea: _isBuildingArea,
+        enterZone, enterTown, enterBuilding,
+        placeInFarmhouse: () => window.FarmhouseLoginSpawn?.placeInFarmhouse({
+          player, TILE, enterInterior,
+          setFacingAngle: angle => { facingAngle = angle; },
+        }),
+        waitForArea: area => window.CutscenePreviewHelpers.cutscenePreviewWaitForArea(area, 20000,
+          () => currentArea === area && !!_buildingScenes.get(area)),
+        setFacingAngle: angle => { facingAngle = angle; },
+        setFarmPlayerSave: value => { farmPlayerSave = value; },
+        snapCameraTarget: () => _snapCameraTarget(),
+        flushAll: () => {
+          saveMemberWorldData();
+          window.FarmEditor?.saveFarmLayout?.();
+          _saveWorldCalendar();
+        },
+        captureExactState: () => ({
+          area: currentArea,
+          areaLabel: mapDebugName(currentArea),
+          x: player.x, y: player.y, angle: player.angle, facingAngle,
+          returnPoint: farmPlayerSave ? { ...farmPlayerSave } : null,
+          calendar: { day: calendar.day, time01: calendar.time01, weather: calendar.weather },
+        }),
+        describeContext: () => ({
+          area: currentArea,
+          areaLabel: mapDebugName(currentArea),
+          dialogueOpen: !!dialogueOpen,
+          dialogueNpc: dialogueOpen ? (_dialogueWalker?.rec?.name || _dialogueWalker?.rec?.id || null) : null,
+          weekday: window.CalendarSystem?.currentWeekdayName?.() || null,
+          season: window.CalendarSystem?.currentSeason?.()?.name || null,
+        }),
+      });
 
       document.addEventListener('hobunjiPlayerReady', (e) => {
         _playerData = e.detail;
