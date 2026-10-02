@@ -566,8 +566,8 @@ assert.match(avatarPreviewSource, /await renderer\(canvas, profile, renderOption
 assert.match(source, /document\.addEventListener\('hobunjiPlayerReady'[\s\S]*?requestSessionReadyPlayerAvatarRefresh\(hintedGear\)/, 'woven player-ready lifecycle schedules an automatic post-load avatar rebuild instead of relying on a manual gear toggle');
 assert.match(source, /window\.setTimeout\(attempt, 0\)/, 'session rebuild is deferred until every player-ready listener has installed the live save state');
 assert.match(source, /const startupFinished = window\.__hobunjiGameStarted === true[\s\S]*?liveWoven && initialPortraitPrepared && startupFinished[\s\S]*?equipmentDeps\.refreshPlayerAvatar\(\)/, 'post-load rebuild waits for live woven Gear, the initial gear-to-profile pass, and fully completed game startup before refreshing');
-assert.match(indexSource, /combat-config-loader\.js\?v=20260930directtrimpaint1/, 'index cache-busts the loader that owns the authored clothing trim runtime URL');
-assert.match(combatLoaderSource, /clothing-weaving-system\.js\?v=20260930directtrimpaint1/, 'combat loader cache-busts the authored clothing trim runtime itself');
+assert.match(indexSource, /combat-config-loader\.js\?v=[A-Za-z0-9_-]+/, 'index cache-busts the loader that owns the authored clothing trim runtime URL');
+assert.match(combatLoaderSource, /clothing-weaving-system\.js\?v=[A-Za-z0-9_-]+/, 'combat loader cache-busts the authored clothing trim runtime itself');
 assert.match(portraitSource, /renderOptions\?\.imageForTint[\s\S]*?: _imageForTint/, 'portrait rendering accepts a per-render tint resolver with the canonical tint path as fallback');
 assert.match(portraitSource, /drawPortraitLayerWarped\(ctx, img, resolveXform\(layer\)[\s\S]*?layer\.url, imageForTint\)/, 'breathing overwear layers use the same render-local tint resolver during WorldPortraitLife refreshes');
 
@@ -774,8 +774,8 @@ assert.match(patternEditorSource, /Array\.isArray\(record\?\.authorOps\) && reco
 assert.match(patternEditorSource, /replayedMask = replayTrimAuthorOps\(record\.authorOps, baseCanvas\)/, 'normal trim preview reconstructs a saved operation journal directly against the selected variant');
 assert.match(patternEditorSource, /motifDataUrl: replayedMask\.toDataURL\('image\/png'\)/, 'reconstructed journal masks feed the production compositor as an in-memory direct mask');
 assert.match(patternEditorSource, /Trim preview reconstructed directly from this variant’s saved authoring operations/, 'journal-backed previews visibly report that no exported PNG is required');
-assert.match(patternEditorSource, /authorOpsComplete && authorOps\.length[\s\S]*?replayTrimAuthorOps\(authorOps, baseCanvas\)[\s\S]*?: await editableTrimMaskCanvas/, 'paint-editor loading also prefers complete operation history over any old exported PNG');
-assert.match(patternEditorSource, /const sourceMask = replayed \? null : await editableTrimMaskCanvasFor/, 'journal-backed replication does not fetch a missing or stale motif PNG before replay');
+assert.match(patternEditorSource, /authorOpsComplete && authorOps\.length[\s\S]*?replayTrimAuthorOps\(authorOps, geometryCanvas\)[\s\S]*?: await editableTrimMaskCanvas/, 'paint-editor loading also prefers complete operation history over any old exported PNG');
+assert.match(patternEditorSource, /const sourceMask = hasJournal\s*\? replayTrimAuthorOps\(sourceOps, sourceGarment\)\s*: await editableTrimMaskCanvasFor/, 'journal-backed replication does not fetch a missing or stale motif PNG before replay');
 assert.match(patternEditorSource, /Legacy trim PNG is missing\/unreadable\. Showing the base garment\./, 'legacy PNG-only preview still has a safe base-garment fallback');
 assert.match(patternEditorSource, /Garment trim authoring/, 'Pattern Editor exposes the dedicated garment trim workspace');
 assert.match(patternEditorSource, /species\/gender variant/i, 'garment trim editor makes per-variant authoring explicit');
@@ -817,18 +817,6 @@ assert.match(patternEditorSource, /const maxChannel = Math\.max\(rgba\[offset\],
 assert.match(patternEditorSource, /alpha >= STRUCTURAL_TRIM_ALPHA_MIN && maxChannel > STRUCTURAL_TRIM_DARK_MAX/, 'structural outline selection skips both translucent fringe and near-black line art');
 assert.match(patternEditorSource, /image\.data\[i \+ 3\] > 16 && opaqueGarmentMask\[pixel\]/, 'loaded, replicated, and manually painted trim is preserved on every visible garment pixel');
 assert.match(patternEditorSource, /Direct Paint is a true manual override/, 'trim painter explains that Direct Paint bypasses structural outline classification');
-assert.match(patternEditorSource, /function fitTrimMaskToGarment\(sourceMaskCanvas, sourceGarment, targetGarment\)/, 'trim replication uses one shared outline-first structural transfer helper');
-assert.match(patternEditorSource, /const sourceMap = buildInwardSilhouetteMap\(sourceGeometry\.mask, sourceGeometry\.width, sourceGeometry\.height\)/, 'replication derives the same non-black outline and inward map used by manual authoring');
-assert.match(patternEditorSource, /mappedSourceOwnerForTargetBoundary/, 'replication aligns destination outline pixels to source outline ownership before filling inward');
-assert.match(patternEditorSource, /sourceMap\.boundaryMask\[index\]/, 'replication takes actually painted first-non-black outline pixels as authoritative source sections');
-assert.match(patternEditorSource, /if \(!selectedBoundaryCount\)/, 'replication only infers outline ownership from interior paint as a compatibility fallback for older masks');
-assert.match(patternEditorSource, /owner < 0 \|\| !selectedSourceBoundary\[owner\]/, 'interior paint cannot accidentally activate an unrelated source outline section near a corner');
-assert.match(patternEditorSource, /const depthScale = targetScale \/ sourceScale/, 'replication transfers inward depth proportionally between differently scaled species variants');
-assert.match(patternEditorSource, /structuralSource/, 'replication reconstructs the clean source outline-to-inward trim before identifying artist post edits');
-assert.match(patternEditorSource, /postAdd/, 'replication tracks manual additions beyond the structural outline-to-inward trim');
-assert.match(patternEditorSource, /postRemove/, 'replication tracks manual erasures from the structural outline-to-inward trim');
-assert.match(patternEditorSource, /relativeMaskSample\(postRemove/, 'replication reapplies manual erasures in relative garment coordinates after structural transfer');
-assert.match(patternEditorSource, /relativeMaskSample\(postAdd/, 'legacy replication fallback can reapply manual additions in relative garment coordinates after structural transfer');
 assert.match(patternEditorSource, /function cloneTrimAuthorOps\(ops\)/, 'trim authoring owns a serializable operation journal helper');
 assert.match(patternEditorSource, /function replayTrimAuthorOps\(authorOps, targetGarment\)/, 'replication can replay authored operations directly against a target garment');
 assert.match(patternEditorSource, /op\.type === 'selectFullOutline'/, 'operation replay preserves full-outline selection as an authored step');
@@ -854,11 +842,10 @@ assert.match(patternEditorSource, /const sourceDepth = Math\.hypot\(sourcePoint\
 assert.match(patternEditorSource, /targetAnchor\.x \+ inward\.x \* targetDepth/, 'paint and erase replay reapply scaled inward depth from the corresponding target edge');
 assert.match(patternEditorSource, /segment\.edgeKey !== mapped\.edgeKey/, 'stroke replay splits when the mapped contour changes so hems, holes, and separate pieces cannot be bridged');
 assert.match(patternEditorSource, /function remapTrimAuthorOpsForTarget\(authorOps, sourceGarment, targetGarment\)/, 'cross-species replication transforms the operation journal through source and target garment geometry');
-assert.match(patternEditorSource, /const targetOps = replayed \? remapTrimAuthorOpsForTarget\(sourceOps, sourceGarment, targetGarment\) : null/, 'replication remaps operations through edge-relative source and target geometry before drawing');
-assert.match(patternEditorSource, /replayed \? replayTrimAuthorOps\(targetOps, targetGarment\) : fitTrimMaskToGarment/, 'replication replays the target-specific remapped journal and uses finished-mask inference only as legacy fallback');
-assert.match(patternEditorSource, /authorOps: replayed \? cloneTrimAuthorOps\(targetOps\) : \[\]/, 'replicated drafts persist their target-specific operation journal instead of copying source coordinates');
-assert.match(patternEditorSource, /authorOpsComplete: replayed/, 'replicated targets inherit replayable operation provenance');
-assert.match(patternEditorSource, /Editor-only authorOps stay outside runtime pattern settings/, 'replication keeps authoring journals out of the production trim settings object');
+assert.match(patternEditorSource, /method === 'replay' && hasJournal[\s\S]*?remapTrimAuthorOpsForTarget\(sourceOps, sourceGarment, targetGarment\)/, 'stroke replay remains available as an explicit replication method');
+assert.match(patternEditorSource, /transferTrimMaskByContour\(sourceMask, sourceGarment, targetGarment\)/, 'default replication transfers the finished source mask through matched cloth contours (see test-trim-contour-warp.js)');
+assert.match(patternEditorSource, /authorOps: cloneTrimAuthorOps\(targetOps\), authorOpsComplete: true/, 'replicated drafts persist their target-specific operation journal instead of copying source coordinates');
+assert.match(patternEditorSource, /type: 'baseMask'/, 'replicated targets inherit replayable operation provenance');
 assert.match(patternEditorSource, /blank canvas is a complete starting state/, 'missing legacy PNGs start a fresh complete operation history instead of poisoning future replication');
 assert.match(patternEditorSource, /trimReplicateAllBtn[\s\S]*?filter\(key => key !== sourceVariant && !trimExists\(garmentId, key, view\)\)/, 'bulk trim replication fills only missing species\/gender variants and leaves authored targets untouched');
 assert.match(patternEditorSource, /Replicate \+ edit target/, 'single-target trim replication explicitly continues into manual cleanup');

@@ -27,6 +27,7 @@ input,select{width:100%;background:#0d1621;border:1px solid rgba(255,255,255,.14
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
 <script src="../../js/sprite-recolor.js"></script>
 <script src="../../js/clothing-weaving-system.js?v=20261002trimoutline5"></script>
+<script src="../../js/trim-contour-warp.js?v=20261002contourwarp1"></script>
 <script src="../../js/tool-metal-recolor.js?v=20261001c6751543"></script>
 <script src="../../js/pattern-authoring.js?v=20260930garmenttrim1"></script>
 <script src="../../js/repo-pattern-library.js"></script>
@@ -60,8 +61,9 @@ input,select{width:100%;background:#0d1621;border:1px solid rgba(255,255,255,.14
           <button id="trimManifestBtn" class="secondary" disabled>Export trim manifest</button>
         </div>
         <div class="trimReplicate" style="margin-top:10px;padding-top:9px;border-top:1px solid rgba(255,255,255,.1)">
-          <div class="muted" style="margin-bottom:6px"><b>Replicate this variant</b> — replay this trim's recorded outline, inward-expansion, and cleanup operations against another species/gender variant's own first-non-black contour, then clean it up normally.</div>
+          <div class="muted" style="margin-bottom:6px"><b>Replicate this variant</b> — carry this trim onto another species/gender variant's own cloth contours, then clean it up normally. Contour warp transfers the finished mask along matching cloth edges and suits multi-piece garments; stroke replay re-runs the recorded operations and can suit simple single-piece garments.</div>
           <div class="row">
+            <select id="trimReplicateMethod" style="min-width:150px"><option value="contour" selected>Contour warp</option><option value="replay">Stroke replay</option></select>
             <select id="trimReplicateTarget" style="min-width:190px;flex:1"><option value="">Author a source trim first</option></select>
             <button id="trimReplicateBtn" class="secondary" disabled>Replicate + edit target</button>
             <button id="trimReplicateAllBtn" class="secondary" disabled>Replicate to all missing</button>
@@ -504,18 +506,18 @@ Overpass → not set</div>
     return authoredDraft || variants[0] || '';
   }
 
+  const TRIM_GEOMETRY_DYES = { primaryHex: '#9b8b73', secondaryHex: '#6f5544', patternHex: '#315c8f' }; // Editor default dyes, pinned so contours/bounds never depend on the preview colors chosen at the time.
+
   async function renderTrimBaseCanvas(garmentId, variantKey, view) {
     const { speciesId, gender } = parseVariantKey(variantKey);
     const result = await window.ClothingWeavingSystem.renderClothingLayers(garmentId, {
-      primaryHex: $('baseColor').value,
-      secondaryHex: $('trimColorB').value,
-      patternHex: $('inkColor').value,
+      ...TRIM_GEOMETRY_DYES,
       weaving: null,
       view,
       speciesId,
       gender,
       trimPatternOverride: null,
-    });
+    }); // Single geometry source for authoring, preview replay, and replication: no loaded patterns, fixed dyes.
     if (!result.canvas) throw new Error(`No garment sprite could be resolved for ${variantKey} / ${view}.`);
     return result.canvas;
   }
@@ -529,31 +531,6 @@ Overpass → not set</div>
     const alpha = new Uint8Array(width * height);
     for (let i = 0; i < alpha.length; i++) alpha[i] = rgba[i * 4 + 3] > 16 ? 1 : 0;
     return alpha;
-  }
-
-  function normalizedPoint(index, width, bounds) {
-    const x = index % width, y = Math.floor(index / width);
-    return {
-      x: bounds.width > 1 ? (x - bounds.x) / (bounds.width - 1) : 0.5,
-      y: bounds.height > 1 ? (y - bounds.y) / (bounds.height - 1) : 0.5,
-    };
-  }
-
-  function nearestBoundaryByNormalizedPoint(point, boundaryIndices, width, bounds) {
-    let best = -1, bestDistance = Infinity;
-    for (const index of boundaryIndices) {
-      const candidate = normalizedPoint(index, width, bounds);
-      const dx = candidate.x - point.x, dy = candidate.y - point.y;
-      const distance = dx * dx + dy * dy;
-      if (distance < bestDistance) { bestDistance = distance; best = index; }
-    }
-    return best;
-  }
-
-  function relativeMaskSample(mask, width, height, bounds, point) {
-    const x = Math.max(bounds.x, Math.min(bounds.x + bounds.width - 1, Math.round(bounds.x + point.x * Math.max(0, bounds.width - 1))));
-    const y = Math.max(bounds.y, Math.min(bounds.y + bounds.height - 1, Math.round(bounds.y + point.y * Math.max(0, bounds.height - 1))));
-    return mask[y * width + x] ? 1 : 0;
   }
 
   function connectedTrimRegions(mask, width, height) {
@@ -898,10 +875,16 @@ Overpass → not set</div>
       let mapped = targetAnchor;
       if (mode !== 'brush' && targetDepth > 0.001) {
         const inward = inwardNormalAtBoundary(targetRegion, targetAnchor.index, targetGeometry.width, targetGeometry.height);
-        mapped = nearestPixelInRegion(targetRegion, {
-          x: targetAnchor.x + inward.x * targetDepth,
-          y: targetAnchor.y + inward.y * targetDepth,
-        }, targetGeometry.width); // Paint/erase retain distance inward from the corresponding edge instead of retaining rectangular X/Y position.
+        const sourceInside = sourceRegion.pixels.includes(Math.round(sourcePoint.y) * sourceGeometry.width + Math.round(sourcePoint.x));
+        mapped = sourceInside
+          ? nearestPixelInRegion(targetRegion, {
+            x: targetAnchor.x + inward.x * targetDepth,
+            y: targetAnchor.y + inward.y * targetDepth,
+          }, targetGeometry.width) // Paint/erase retain distance inward from the corresponding edge instead of retaining rectangular X/Y position.
+          : {
+            x: Math.max(0, Math.min(targetGeometry.width - 1, Math.round(targetAnchor.x - inward.x * targetDepth))),
+            y: Math.max(0, Math.min(targetGeometry.height - 1, Math.round(targetAnchor.y - inward.y * targetDepth))),
+          }; // Samples on line art or past the hem stay outside the target edge; an unsigned depth would mirror them into the cloth.
       }
       return {
         point: { x: mapped.x, y: mapped.y },
@@ -1008,6 +991,11 @@ Overpass → not set</div>
         paint.fill(0);
         continue;
       }
+      if (op.type === 'baseMask') {
+        if (op.width !== geometry.width || op.height !== geometry.height) throw new Error(`Saved trim base mask is ${op.width}×${op.height} but this garment is ${geometry.width}×${geometry.height}; replicate it again.`);
+        paint = window.TrimContourWarp.decodeMaskRuns(op.runs, paint.length); // Replicated drafts start from their exact transferred pixels.
+        continue;
+      }
       if (op.type === 'selectFullOutline') {
         paint = inwardMap.boundaryMask.slice();
         continue;
@@ -1036,92 +1024,28 @@ Overpass → not set</div>
     return canvas;
   }
 
-  function fitTrimMaskToGarment(sourceMaskCanvas, sourceGarment, targetGarment) {
-    const sourceGeometry = canvasTrimGeometry(sourceGarment);
-    const targetGeometry = canvasTrimGeometry(targetGarment);
-    const sourceBounds = maskBounds(sourceGeometry.mask, sourceGeometry.width, sourceGeometry.height);
-    const targetBounds = maskBounds(targetGeometry.mask, targetGeometry.width, targetGeometry.height);
-    if (!sourceBounds || !targetBounds) throw new Error('Could not find non-black garment bounds for trim replication.');
+  function transferTrimMaskByContour(sourceMaskCanvas, sourceGarment, targetGarment) {
+    const warp = window.TrimContourWarp;
+    if (!warp?.warpTrimMask) throw new Error('Trim contour warp module is not loaded.');
+    const rgba = canvas => canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, canvas.width, canvas.height).data;
+    const { mask } = warp.warpTrimMask({
+      sourceRgba: rgba(sourceGarment),
+      sourceMask: maskAlphaArray(sourceMaskCanvas, sourceGarment.width, sourceGarment.height),
+      sourceWidth: sourceGarment.width,
+      sourceHeight: sourceGarment.height,
+      targetRgba: rgba(targetGarment),
+      targetWidth: targetGarment.width,
+      targetHeight: targetGarment.height,
+    }); // Finished-mask transfer in (region, contour position, signed depth) space; see js/trim-contour-warp.js.
+    return { width: targetGarment.width, height: targetGarment.height, mask };
+  }
 
-    const sourceMap = buildInwardSilhouetteMap(sourceGeometry.mask, sourceGeometry.width, sourceGeometry.height);
-    const targetMap = buildInwardSilhouetteMap(targetGeometry.mask, targetGeometry.width, targetGeometry.height);
-    const sourcePaint = maskAlphaArray(sourceMaskCanvas, sourceGeometry.width, sourceGeometry.height);
-
-    const selectedSourceBoundary = new Uint8Array(sourcePaint.length);
-    const sourceDepthByOwner = new Float32Array(sourcePaint.length);
-    let selectedBoundaryCount = 0;
-    for (let index = 0; index < sourcePaint.length; index++) {
-      if (!sourcePaint[index] || !sourceMap.boundaryMask[index]) continue;
-      selectedSourceBoundary[index] = 1; // Painted first-non-black contour pixels are authoritative; interior paint must not accidentally activate a different edge near corners.
-      selectedBoundaryCount++;
-    }
-    if (!selectedBoundaryCount) {
-      for (let index = 0; index < sourcePaint.length; index++) {
-        if (!sourcePaint[index] || !sourceGeometry.mask[index]) continue;
-        const owner = sourceMap.owner[index];
-        if (owner >= 0 && !selectedSourceBoundary[owner]) { selectedSourceBoundary[owner] = 1; selectedBoundaryCount++; } // Legacy fallback for masks authored before outline-first painting.
-      }
-    }
-    for (let index = 0; index < sourcePaint.length; index++) {
-      if (!sourcePaint[index] || !sourceGeometry.mask[index]) continue;
-      const owner = sourceMap.owner[index];
-      if (owner < 0 || !selectedSourceBoundary[owner]) continue;
-      if (sourceMap.distance[index] > sourceDepthByOwner[owner]) sourceDepthByOwner[owner] = sourceMap.distance[index];
-    }
-
-    const sourceBoundaryIndices = [];
-    for (let i = 0; i < sourceMap.boundaryMask.length; i++) if (sourceMap.boundaryMask[i]) sourceBoundaryIndices.push(i);
-    const targetBoundaryIndices = [];
-    for (let i = 0; i < targetMap.boundaryMask.length; i++) if (targetMap.boundaryMask[i]) targetBoundaryIndices.push(i);
-    if (!sourceBoundaryIndices.length || !targetBoundaryIndices.length) throw new Error('Could not derive non-black garment outlines for trim replication.');
-
-    const mappedSourceOwnerForTargetBoundary = new Int32Array(targetGeometry.mask.length); mappedSourceOwnerForTargetBoundary.fill(-1);
-    for (const targetBoundary of targetBoundaryIndices) {
-      const targetPoint = normalizedPoint(targetBoundary, targetGeometry.width, targetBounds);
-      mappedSourceOwnerForTargetBoundary[targetBoundary] = nearestBoundaryByNormalizedPoint(targetPoint, sourceBoundaryIndices, sourceGeometry.width, sourceBounds);
-    }
-
-    const sourceScale = Math.max(1, Math.min(sourceBounds.width, sourceBounds.height));
-    const targetScale = Math.max(1, Math.min(targetBounds.width, targetBounds.height));
-    const depthScale = targetScale / sourceScale; // Inward X is transferred proportionally after the non-black contours are aligned.
-    const structuralTarget = new Uint8Array(targetGeometry.mask.length);
-    for (let index = 0; index < structuralTarget.length; index++) {
-      if (!targetGeometry.mask[index]) continue;
-      const targetOwner = targetMap.owner[index];
-      if (targetOwner < 0) continue;
-      const sourceOwner = mappedSourceOwnerForTargetBoundary[targetOwner];
-      if (sourceOwner < 0 || !selectedSourceBoundary[sourceOwner]) continue;
-      const targetDepth = sourceDepthByOwner[sourceOwner] * depthScale;
-      if (targetMap.distance[index] <= targetDepth + 0.0001) structuralTarget[index] = 1;
-    }
-
-    // Reconstruct the same clean outline→inward model on the source so manual additions/erasures can be isolated as post edits.
-    const structuralSource = new Uint8Array(sourceGeometry.mask.length);
-    for (let index = 0; index < structuralSource.length; index++) {
-      if (!sourceGeometry.mask[index]) continue;
-      const owner = sourceMap.owner[index];
-      if (owner >= 0 && selectedSourceBoundary[owner] && sourceMap.distance[index] <= sourceDepthByOwner[owner] + 0.0001) structuralSource[index] = 1;
-    }
-    const postAdd = new Uint8Array(sourcePaint.length);
-    const postRemove = new Uint8Array(sourcePaint.length);
-    for (let i = 0; i < sourcePaint.length; i++) {
-      if (sourcePaint[i] && !structuralSource[i]) postAdd[i] = 1;
-      else if (!sourcePaint[i] && structuralSource[i]) postRemove[i] = 1;
-    }
-
-    // Apply those post edits after structural transfer, sampled in relative garment coordinates rather than raw source pixels.
-    for (let index = 0; index < structuralTarget.length; index++) {
-      if (!targetGeometry.mask[index]) continue;
-      const targetPoint = normalizedPoint(index, targetGeometry.width, targetBounds);
-      if (relativeMaskSample(postRemove, sourceGeometry.width, sourceGeometry.height, sourceBounds, targetPoint)) structuralTarget[index] = 0;
-      if (relativeMaskSample(postAdd, sourceGeometry.width, sourceGeometry.height, sourceBounds, targetPoint)) structuralTarget[index] = 1;
-    }
-
-    const canvas = Object.assign(document.createElement('canvas'), { width: targetGeometry.width, height: targetGeometry.height });
+  function trimMaskCanvas(width, height, mask) {
+    const canvas = Object.assign(document.createElement('canvas'), { width, height });
     const ctx = canvas.getContext('2d');
-    const image = ctx.createImageData(canvas.width, canvas.height);
-    for (let index = 0; index < structuralTarget.length; index++) {
-      if (!structuralTarget[index]) continue;
+    const image = ctx.createImageData(width, height);
+    for (let index = 0; index < mask.length; index++) {
+      if (!mask[index]) continue;
       const offset = index * 4;
       image.data[offset] = image.data[offset + 1] = image.data[offset + 2] = image.data[offset + 3] = 255;
     }
@@ -1129,7 +1053,7 @@ Overpass → not set</div>
     return canvas;
   }
 
-  async function replicateTrimVariant(sourceVariant, targetVariant) {
+  async function replicateTrimVariant(sourceVariant, targetVariant, method = 'contour') {
     const garmentId = $('trimGarment').value;
     const view = $('trimView').value;
     if (!garmentId || !sourceVariant || !targetVariant || sourceVariant === targetVariant) return null;
@@ -1138,20 +1062,29 @@ Overpass → not set</div>
       renderTrimBaseCanvas(garmentId, targetVariant, view),
     ]);
     const sourceOps = trimAuthorOpsFor(garmentId, sourceVariant, view);
-    const replayed = !!sourceOps?.length;
-    const sourceMask = replayed ? null : await editableTrimMaskCanvasFor(garmentId, sourceVariant, view, sourceGarment.width, sourceGarment.height); // Journal-backed replication never performs a pointless/misleading fetch for the exported PNG.
-    if (!sourceMask && !replayed) throw new Error(`Author or load a trim for ${sourceVariant} before replicating it.`);
-    const targetOps = replayed ? remapTrimAuthorOpsForTarget(sourceOps, sourceGarment, targetGarment) : null; // Complex garments remap each stroke through matching local cloth regions before replay.
-    const fitted = replayed ? replayTrimAuthorOps(targetOps, targetGarment) : fitTrimMaskToGarment(sourceMask, sourceGarment, targetGarment); // Operation replay is authoritative; pixel inference exists only for legacy trims with no journal.
+    const hasJournal = !!sourceOps?.length;
+    let fitted, targetOps;
+    if (method === 'replay' && hasJournal) {
+      targetOps = remapTrimAuthorOpsForTarget(sourceOps, sourceGarment, targetGarment); // Stroke replay: re-run each recorded operation through matched local cloth regions.
+      fitted = replayTrimAuthorOps(targetOps, targetGarment);
+    } else {
+      const sourceMask = hasJournal
+        ? replayTrimAuthorOps(sourceOps, sourceGarment)
+        : await editableTrimMaskCanvasFor(garmentId, sourceVariant, view, sourceGarment.width, sourceGarment.height); // Legacy PNG-only trims transfer the same way as journal-backed ones.
+      if (!sourceMask) throw new Error(`Author or load a trim for ${sourceVariant} before replicating it.`);
+      const transferred = transferTrimMaskByContour(sourceMask, sourceGarment, targetGarment);
+      targetOps = [{ type: 'baseMask', width: transferred.width, height: transferred.height, runs: window.TrimContourWarp.encodeMaskRuns(transferred.mask) }]; // Target journal starts from the exact transferred pixels; cleanup strokes append after it.
+      fitted = trimMaskCanvas(transferred.width, transferred.height, transferred.mask);
+    }
     const pattern = { directMask: true, tiling: false, motifDataUrl: fitted.toDataURL('image/png') };
     const motifPng = trimAssetPath(garmentId, targetVariant, view);
-    trimDrafts.set(trimKey(garmentId, targetVariant, view), { pattern, motifPng, authorOps: replayed ? cloneTrimAuthorOps(targetOps) : [], authorOpsComplete: replayed });
+    trimDrafts.set(trimKey(garmentId, targetVariant, view), { pattern, motifPng, authorOps: cloneTrimAuthorOps(targetOps), authorOpsComplete: true });
     const settings = { directMask: true };
     ensureTrimRecordSet(garmentId, targetVariant)[view] = {
       motifPng,
       settings,
-      ...(replayed ? { authorOps: cloneTrimAuthorOps(targetOps) } : {}),
-    }; // Replicated variants persist their target-specific remapped operation history, so reopening them reproduces the exact generated draft.
+      authorOps: cloneTrimAuthorOps(targetOps),
+    }; // Replicated variants persist a target-specific journal, so reopening them reproduces the exact generated draft.
     return pattern;
   }
 
@@ -1386,6 +1319,8 @@ Overpass → not set</div>
     if (openRevision !== trimLoadRevision) return;
     const baseCanvas = baseResult.canvas;
     if (!baseCanvas) throw new Error('No garment sprite could be resolved for this variant/view.');
+    const geometryCanvas = await renderTrimBaseCanvas(garmentId, variantKey, view); // Contours/bounds come from the same fixed-dye, pattern-free render used by preview replay and replication.
+    if (openRevision !== trimLoadRevision) return;
     const width = baseCanvas.width, height = baseCanvas.height;
 
     const overlay = document.createElement('div');
@@ -1444,7 +1379,7 @@ Overpass → not set</div>
     const resultCtx = resultCanvas.getContext('2d');
     baseCtx.imageSmoothingEnabled = paintCtx.imageSmoothingEnabled = resultCtx.imageSmoothingEnabled = false;
     baseCtx.drawImage(baseCanvas, 0, 0);
-    const garmentPixels = baseCtx.getImageData(0, 0, width, height).data; // Rendered garment raster used for both alpha-only manual painting and non-black structural contour detection.
+    const garmentPixels = geometryCanvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, width, height).data; // Geometry raster for alpha-only manual painting and non-black structural contour detection; the visible base above may carry patterns/dyes.
     const opaqueGarmentMask = opaqueGarmentMaskFromRgba(garmentPixels); // Direct Paint may touch every visible garment pixel, including pixels excluded from structural black-outline geometry.
     const garmentMask = trimableGarmentMaskFromRgba(garmentPixels); // Outline Brush/Expand Inward start on the first opaque non-black pixels inward from any black sprite outline.
 
@@ -1574,7 +1509,7 @@ Overpass → not set</div>
 
     const existingRecord = trimRecord();
     let existingMask = authorOpsComplete && authorOps.length
-      ? replayTrimAuthorOps(authorOps, baseCanvas)
+      ? replayTrimAuthorOps(authorOps, geometryCanvas)
       : await editableTrimMaskCanvas(width, height); // Complete operation journals are authoritative even if an older exported PNG also exists.
     if (closed) return;
     if (existingMask) {
@@ -2064,15 +1999,18 @@ Overpass → not set</div>
     const sourceVariant = $('trimVariant').value;
     const targetVariant = $('trimReplicateTarget').value;
     if (!sourceVariant || !targetVariant) return;
+    if (trimExists($('trimGarment').value, targetVariant, $('trimView').value)
+      && !window.confirm(`${targetVariant} already has a trim. Replace it with a replica of ${sourceVariant}?`)) return; // Hand-cleaned variants are never overwritten by a stray click.
+    const method = $('trimReplicateMethod').value;
     try {
       $('trimStatus').textContent = `Replicating ${sourceVariant} → ${targetVariant}…`;
-      const pattern = await replicateTrimVariant(sourceVariant, targetVariant);
+      const pattern = await replicateTrimVariant(sourceVariant, targetVariant, method);
       if (!pattern) return;
       $('trimVariant').value = targetVariant;
       refreshTrimVariantOptions();
       await renderTrimPreview(pattern);
       debugState.lastAction = `replicated garment trim ${sourceVariant} → ${targetVariant}`;
-      $('trimStatus').textContent = `Replicated ${sourceVariant} onto ${targetVariant} by replaying its authoring operations on the target contour. Opening the result for cleanup; Save trim mask when it looks right.`;
+      $('trimStatus').textContent = `Replicated ${sourceVariant} onto ${targetVariant} by ${method === 'replay' ? 'stroke replay' : 'contour warp'}. Opening the result for cleanup; Save trim mask when it looks right.`;
       await openTrimEditor();
     } catch (error) {
       debugState.lastError = error.message;
@@ -2085,15 +2023,16 @@ Overpass → not set</div>
     const view = $('trimView').value;
     const targets = trimVariantKeys().filter(key => key !== sourceVariant && !trimExists(garmentId, key, view));
     if (!sourceVariant || !targets.length) return;
+    const method = $('trimReplicateMethod').value;
     let replicated = 0;
     try {
       for (const targetVariant of targets) {
         $('trimStatus').textContent = `Replicating ${sourceVariant} → ${targetVariant} (${replicated + 1}/${targets.length})…`;
-        if (await replicateTrimVariant(sourceVariant, targetVariant)) replicated++;
+        if (await replicateTrimVariant(sourceVariant, targetVariant, method)) replicated++;
       }
       refreshTrimVariantOptions();
       debugState.lastAction = `replicated garment trim ${sourceVariant} to ${replicated} missing variants`;
-      $('trimStatus').textContent = `Created ${replicated} operation-replayed trim draft${replicated === 1 ? '' : 's'} from ${sourceVariant}. Existing authored variants were left untouched. Review variants as needed, then Export new PNGs + trim manifest.`;
+      $('trimStatus').textContent = `Created ${replicated} ${method === 'replay' ? 'stroke-replayed' : 'contour-warped'} trim draft${replicated === 1 ? '' : 's'} from ${sourceVariant}. Existing authored variants were left untouched. Review variants as needed, then Export new PNGs + trim manifest.`;
     } catch (error) {
       refreshTrimVariantOptions();
       debugState.lastError = error.message;
@@ -2195,7 +2134,7 @@ Overpass → not set</div>
   };
 
   window.__patternEditorDebug = () => ({ // Mobile-visible console substitute for checking the dev tool's two-slot state.
-    mostRecentChange: 'Cross-species trim replication is edge-relative inside matched cloth regions: each stroke sample anchors to the nearest source contour component, maps to the corresponding target contour, and reapplies its inward depth from that edge. Contour changes split strokes, so hems, holes, and separate pieces deform independently.',
+    mostRecentChange: 'Cross-species trim replication defaults to contour warp: the finished source mask is carried along matched cloth contours (region, arc-length position, signed depth) instead of replaying strokes, so erase/expand errors cannot compound on multi-piece garments. Stroke replay remains selectable and no longer mirrors off-cloth samples inward.',
     previewMode: $('previewMode').value,
     weavingBackground: $('surfaceTexture').value,
     overpassClearanceMultiplier: clampOverpassClearance($('overpassClearance').value),

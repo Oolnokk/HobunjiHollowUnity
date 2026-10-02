@@ -198,4 +198,11 @@ assert(ringPoint.x >= 9 && ringPoint.x <= 16 && ringPoint.y >= 6 && ringPoint.y 
 assert(!(ringPoint.x <= 3 || ringPoint.x >= 19 || ringPoint.y <= 3 || ringPoint.y >= 19),
   'inner-hole edge anchor does not collapse onto the target outer boundary');
 
+// Off-cloth samples (line art / past the hem) keep their side of the edge instead of being mirrored inward.
+const outsidePoint = normalizedPixel(5, 7, sourceBounds); // Two pixels below the upper source island (y 2..5), in empty space.
+const outsideRemapped = helpers.remapTrimAuthorOpsForTarget([{ type: 'stroke', mode: 'eraser', sizeNorm: 0.05, points: [outsidePoint] }], source, target);
+const outsidePx = denormalizedPixel(outsideRemapped[0].points[0], targetBounds);
+const outsideIndex = Math.round(outsidePx.y) * target.width + Math.round(outsidePx.x);
+assert(!targetGeometry.mask[outsideIndex], 'an eraser sample outside the source cloth stays outside the target cloth');
+
 console.log('trim edge-relative replay regression passed');
