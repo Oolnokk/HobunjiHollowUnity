@@ -767,9 +767,14 @@ assert.match(patternEditorSource, /trimReplicateTarget/, 'garment trim authoring
 assert.match(patternEditorSource, /function trimableGarmentMaskFromRgba\(rgba\)/, 'one shared trim geometry helper excludes pure-black sprite outlines');
 assert.match(patternEditorSource, /pureBlack = rgba\[offset\] === 0 && rgba\[offset \+ 1\] === 0 && rgba\[offset \+ 2\] === 0/, 'trim geometry identifies exact #000000 pixels independently from alpha');
 assert.match(patternEditorSource, /opaque && !pureBlack \? 1 : 0/, 'trim geometry moves inward past black outline pixels to the first opaque non-black cloth pixels');
+assert.match(patternEditorSource, /image\.data\[i \+ 3\] > 16 && garmentMask\[pixel\]/, 'loaded or replicated trim masks are normalized off pure-black line art as soon as they enter the paint editor');
+assert.match(patternEditorSource, /Exact black \(#000000\) sprite line art is ignored/, 'trim painter explains the black-outline inset rule in the authoring UI');
 assert.match(patternEditorSource, /function fitTrimMaskToGarment\(sourceMaskCanvas, sourceGarment, targetGarment\)/, 'trim replication uses one shared outline-first structural transfer helper');
 assert.match(patternEditorSource, /const sourceMap = buildInwardSilhouetteMap\(sourceGeometry\.mask, sourceGeometry\.width, sourceGeometry\.height\)/, 'replication derives the same non-black outline and inward map used by manual authoring');
 assert.match(patternEditorSource, /mappedSourceOwnerForTargetBoundary/, 'replication aligns destination outline pixels to source outline ownership before filling inward');
+assert.match(patternEditorSource, /sourceMap\.boundaryMask\[index\]/, 'replication takes actually painted first-non-black outline pixels as authoritative source sections');
+assert.match(patternEditorSource, /if \(!selectedBoundaryCount\)/, 'replication only infers outline ownership from interior paint as a compatibility fallback for older masks');
+assert.match(patternEditorSource, /owner < 0 \|\| !selectedSourceBoundary\[owner\]/, 'interior paint cannot accidentally activate an unrelated source outline section near a corner');
 assert.match(patternEditorSource, /const depthScale = targetScale \/ sourceScale/, 'replication transfers inward depth proportionally between differently scaled species variants');
 assert.match(patternEditorSource, /structuralSource/, 'replication reconstructs the clean source outline-to-inward trim before identifying artist post edits');
 assert.match(patternEditorSource, /postAdd/, 'replication tracks manual additions beyond the structural outline-to-inward trim');
