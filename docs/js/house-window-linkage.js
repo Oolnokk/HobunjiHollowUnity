@@ -458,7 +458,7 @@
       root.userData.houseWindowApertureRoot = apertureRoot;
       root.add(apertureRoot);
     }
-    const apertureMatrix = new THREE.Matrix4().set(widthScale, shearX, 0, anchor[0], 0, heightScale, 0, anchor[1], 0, shearZ, 1, anchor[2], 0, 0, 0, 1); // Maps the opening and its child geometry through the identical wall slope and midpoint taper.
+    const apertureMatrix = new THREE.Matrix4().set(widthScale, shearX * heightScale, 0, anchor[0], 0, heightScale, 0, anchor[1], 0, shearZ * heightScale, 1, anchor[2], 0, 0, 0, 1); // Maps the opening and its child geometry through the identical wall slope and midpoint taper; shear is per unit of world rise, so it scales with heightScale.
     apertureRoot.matrixAutoUpdate = false;
     apertureRoot.matrix.copy(apertureMatrix);
     apertureRoot.matrixWorldNeedsUpdate = true;
