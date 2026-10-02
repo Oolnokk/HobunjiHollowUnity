@@ -649,10 +649,43 @@ Overpass → not set</div>
 
     function buildInwardSilhouetteMap(mask) {
       const boundaryMask = new Uint8Array(mask.length); // One-pixel contour: any opaque garment pixel touching transparency or the sprite boundary.
-      const owner = new Int32Array(mask.length); owner.fill(-1); // Nearest contour-pixel index; used so expansion moves inward instead of spreading sideways along the outline.
-      const depth = new Int16Array(mask.length); depth.fill(-1); // Chebyshev-like inward layer number from the contour, with the outline itself at depth 0.
-      const queue = new Int32Array(mask.length);
-      let head = 0, tail = 0;
+      const owner = new Int32Array(mask.length); owner.fill(-1); // Nearest contour-pixel index; selected owners define which silhouette section may grow inward.
+      const distance = new Float32Array(mask.length); distance.fill(Infinity); // Octile distance from the contour: straight inward steps cost 1px, diagonals cost √2.
+      const heapIndex = [];
+      const heapDistance = [];
+
+      function heapPush(index, value) {
+        let at = heapIndex.length;
+        heapIndex.push(index); heapDistance.push(value);
+        while (at > 0) {
+          const parent = (at - 1) >> 1;
+          if (heapDistance[parent] <= value) break;
+          heapIndex[at] = heapIndex[parent]; heapDistance[at] = heapDistance[parent];
+          at = parent;
+        }
+        heapIndex[at] = index; heapDistance[at] = value;
+      }
+
+      function heapPop() {
+        if (!heapIndex.length) return null;
+        const index = heapIndex[0], value = heapDistance[0];
+        const lastIndex = heapIndex.pop(), lastDistance = heapDistance.pop();
+        if (heapIndex.length) {
+          let at = 0;
+          while (true) {
+            const left = at * 2 + 1, right = left + 1;
+            if (left >= heapIndex.length) break;
+            let child = left;
+            if (right < heapIndex.length && heapDistance[right] < heapDistance[left]) child = right;
+            if (heapDistance[child] >= lastDistance) break;
+            heapIndex[at] = heapIndex[child]; heapDistance[at] = heapDistance[child];
+            at = child;
+          }
+          heapIndex[at] = lastIndex; heapDistance[at] = lastDistance;
+        }
+        return { index, value };
+      }
+
       for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
           const index = y * width + x;
@@ -671,27 +704,32 @@ Overpass → not set</div>
           if (!isBoundary) continue;
           boundaryMask[index] = 1;
           owner[index] = index;
-          depth[index] = 0;
-          queue[tail++] = index;
+          distance[index] = 0;
+          heapPush(index, 0);
         }
       }
-      while (head < tail) {
-        const index = queue[head++];
-        const x = index % width, y = Math.floor(index / width);
+
+      const SQRT2 = Math.SQRT2;
+      while (heapIndex.length) {
+        const current = heapPop();
+        if (!current || current.value > distance[current.index] + 0.0001) continue;
+        const x = current.index % width, y = Math.floor(current.index / width);
         for (let oy = -1; oy <= 1; oy++) {
           for (let ox = -1; ox <= 1; ox++) {
             if (!ox && !oy) continue;
             const nx = x + ox, ny = y + oy;
             if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
             const neighbor = ny * width + nx;
-            if (!mask[neighbor] || depth[neighbor] !== -1) continue;
-            depth[neighbor] = depth[index] + 1;
-            owner[neighbor] = owner[index];
-            queue[tail++] = neighbor;
+            if (!mask[neighbor]) continue;
+            const candidate = current.value + (ox && oy ? SQRT2 : 1);
+            if (candidate + 0.0001 >= distance[neighbor]) continue;
+            distance[neighbor] = candidate;
+            owner[neighbor] = owner[current.index];
+            heapPush(neighbor, candidate);
           }
         }
       }
-      return { boundaryMask, owner, depth };
+      return { boundaryMask, owner, distance };
     }
     const inwardMap = buildInwardSilhouetteMap(garmentMask); // Shared contour topology keeps brush selection and Expand Inward mathematically consistent.
     const silhouetteBoundaryMask = inwardMap.boundaryMask;
@@ -906,7 +944,7 @@ Overpass → not set</div>
         if (source[index * 4 + 3] > 16 && garmentMask[index]) expanded[index] = 1; // Preserve any existing cleanup/artwork while rebuilding inward depth from its contour seeds.
         const sourceBoundary = inwardMap.owner[index];
         if (!garmentMask[index] || sourceBoundary < 0 || !selectedBoundary[sourceBoundary]) continue;
-        if (inwardMap.depth[index] <= layers) expanded[index] = 1; // Fill only the inward Voronoi column owned by a selected contour pixel, preventing lateral edge growth.
+        if (inwardMap.distance[index] <= layers + 0.0001) expanded[index] = 1; // Fill only the inward Voronoi column owned by a selected contour pixel, preventing lateral edge growth.
       }
 
       const image = paintCtx.createImageData(width, height);
