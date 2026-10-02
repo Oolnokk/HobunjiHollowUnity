@@ -62,6 +62,8 @@ for (const id of ['father_hunundi_hodu', 'jubmir', 'spearhead_unumanuk', 'khanni
 const hark = records.get('khannibarri_agent'); // Verifies the existing company-agent identity was promoted in place instead of duplicated.
 assert.strictEqual(hark.name, 'Surveyor Harkharash', 'existing khannibarri_agent must now be Surveyor Harkharash');
 assert.strictEqual(hark.homeId, 'inn', 'Harkharash must have a real temporary lodging identity instead of the old suggestion placeholder');
+assert.strictEqual(hark.scheduleHooks?.defaultStationId, 'station_k7m3q', 'Harkharash must use the authored general-store station after Hunundi lets him remain in town');
+assert(!hark.scheduleHooks?.defaultPosition, 'Harkharash must not fall back to the old town {0,0} placeholder spawn');
 
 const seatedAtStart = meeting.actors.filter(actor => actor.pose === 'sit'); // Confirms the four-person questioning starts with everyone actually seated.
 assert.strictEqual(seatedAtStart.length, 4, 'player, Hunundi, Jubmir, and Spearhead must begin seated');
