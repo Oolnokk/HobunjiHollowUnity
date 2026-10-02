@@ -51,7 +51,7 @@
       effects: { stats: { maxFooting: 1.30, footingRegen: 1.50 } },
     },
 
-    // ── Porakaneki trade ──────────────────────────────────────────────
+    // ── Porakaneki return gifts ──────────────────────────────────────────────
     engravedWhistle: {
       id: 'engravedWhistle', displayName: 'Engraved Whistle', icon: '🪈', attunementCost: 2,
       source: 'porakaneki', category: 'companion',

@@ -12,7 +12,7 @@ assert.match(config, /"smithyButton": \{[\s\S]{0,400}"npcIds": \["kzubug", "sloo
   'the Smithy action is limited to Kzubug and Sloomi in the Bronzeworks');
 assert.match(game, /function isSmithyNpcInBronzeworks\(walker\) \{[\s\S]{0,320}currentArea === \(cfg\.areaId \|\| 'map_i_smithy'\)[\s\S]{0,100}ids\.includes\(walker\?\.rec\?\.id \|\| ''\)/,
   'runtime availability checks both the active building and the faced NPC identity');
-assert.match(game, /const btns = \[npcDialogueButton\(\)\];[\s\S]{0,240}if \(isSmithyNpcInBronzeworks\(nearbyNpcWalker\)\) btns\.push\(smithyButton\(\)\);/,
+assert.match(game, /const btns = (?:nearbyNpcWalker\.isPorakanekiHunter \? \[\] : )?\[npcDialogueButton\(\)\];[\s\S]{0,240}if \(isSmithyNpcInBronzeworks\(nearbyNpcWalker\)\) btns\.push\(smithyButton\(\)\);/,
   'Smithy is inserted directly after Talk and therefore occupies Action 2');
 assert.match(game, /if \(activeAction === smithyAction\(\)\) \{[\s\S]{0,260}openMenu\('metalCraftShop'\); return;/,
   'using the action opens the existing metal craft shop menu');

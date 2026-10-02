@@ -21,6 +21,69 @@
   if (window.NpcGifting) return;
 
   let deps = null;
+  let lastBarterReward = null; // Shown in the existing mobile gift diagnostic log.
+  const BARTER_DEFAULTS = Object.freeze({ // Configurable favor thresholds and future unique gifts live beside the social rules.
+    mediumFavor: 4, largeFavor: 10, uniqueFavor: 10,
+    animalChance: 0.35, uniqueChance: 0.20,
+    uniqueRewards: [{ trinketId: 'engravedWhistle', minFavor: 10 }],
+  });
+
+  function isPorakaneki(walker) {
+    const rec = walker?.rec; // Named and procedural NPCs share this species/faction check.
+    return rec?.id === 'porakaneki_chief' || walker?.isPorakanekiHunter === true
+      || rec?.species === 'porakaneki' || rec?.appearance?.speciesId === 'porakaneki'
+      || rec?.tags?.includes('porakaneki');
+  }
+  function relationshipId(walker) {
+    return isPorakaneki(walker) ? 'porakaneki_chief' : walker?.rec?.id;
+  }
+  function preferenceRecord(walker) {
+    return isPorakaneki(walker) ? deps?.getNpcRecordById?.('porakaneki_chief') || walker.rec : walker.rec;
+  }
+  function barterTuning() {
+    return { ...BARTER_DEFAULTS, ...(window.SCRATCHBONES_CONFIG?.game?.socialRelationships?.porakanekiBarter || {}) };
+  }
+  function giftRapportAmount() {
+    const maximum = Number(window.NpcRapport?.config?.rapportMax); // Positive gifts always earn one quarter of the daily cap, independent of quality and favor magnitude.
+    return (Number.isFinite(maximum) ? Math.max(0, maximum) : 100) * 0.25;
+  }
+  function randomPick(list) {
+    return list[Math.min(list.length - 1, Math.floor((deps?.random?.() ?? Math.random()) * list.length))];
+  }
+  function rollBarterReward(favorGain, held) {
+    const tuning = barterTuning(); // All reward probabilities/tiers are evaluated once per accepted daily gift.
+    const pools = deps?.getPorakanekiRewardPools?.() || {}; // Uses the current region's existing reagent, fishing, wildlife, and loot definitions.
+    const rank = favorGain >= tuning.largeFavor ? 3 : favorGain >= tuning.mediumFavor ? 2 : 1; // Controls bundle size and guaranteed rare animal traits.
+    const quantity = rank * 5; // Small/medium/large bundles contain exactly 5/10/15 items.
+    const capacity = (key, qty) => !!deps.getItemDefs()[key] && (Number(deps.inventory[key]) || 0) - (held?.kind !== 'clothing' && held?.key === key ? 1 : 0) + qty <= (deps.getInventoryMax?.(key) ?? 99); // Projects space after consuming the gift so returned bundles are never truncated.
+    const unique = (Array.isArray(tuning.uniqueRewards) ? tuning.uniqueRewards : []).filter(entry =>
+      favorGain >= Math.max(Number(tuning.uniqueFavor) || 10, Number(entry.minFavor) || 0)
+      && (entry.trinketId ? !!window.TrinketSystem?.DEFINITIONS?.[entry.trinketId] : capacity(entry.itemKey, 1))); // New authored unique item/trinket entries automatically join the highest tier.
+    if (unique.length && (deps?.random?.() ?? Math.random()) < tuning.uniqueChance) {
+      return { ...randomPick(unique), quantity: 1, type: 'unique', rank };
+    }
+    const animals = (pools.animals || []).filter(entry => capacity(entry.itemKey, 1)); // Only regional egg/baby keys with room can be returned.
+    const bundles = ['herbs', 'fish', 'meat'].map(type => ({ type, keys: [...new Set(pools[type] || [])].filter(key => capacity(key, quantity)) })).filter(pool => pool.keys.length); // Pick a category first so large herb catalogs do not drown out fish/meat rewards.
+    if (animals.length && (!bundles.length || (deps?.random?.() ?? Math.random()) < tuning.animalChance)) {
+      const animal = randomPick(animals); // Regional species are resolved to the existing livestock genotype kind.
+      const genotype = window.CreatureGenetics?.makeRareGiftGenotype?.(animal.kind, rank); // Genetics owns palette constraints, expressed patterns, and rare coat traits.
+      if (genotype) return { ...animal, genotype, quantity: 1, type: 'animal', rank };
+    }
+    if (!bundles.length) return null;
+    const bundle = randomPick(bundles); // Every resource bundle contains one region-native item type.
+    return { itemKey: randomPick(bundle.keys), quantity, type: bundle.type, rank };
+  }
+  function grantBarterReward(reward, favorGain) {
+    if (reward.trinketId) window.TrinketSystem.grant(reward.trinketId, 'porakaneki_daily_gift');
+    else {
+      deps.inventory[reward.itemKey] = (Number(deps.inventory[reward.itemKey]) || 0) + reward.quantity;
+      if (reward.genotype) window.FarmAnimals?.queueItemGenotype?.(reward.itemKey, reward.genotype);
+    }
+    lastBarterReward = { ...reward, favorGain }; // Included in gift diagnostics and logged without requiring a console.
+    const label = reward.trinketId ? window.TrinketSystem.DEFINITIONS[reward.trinketId].displayName : deps.getItemDefs()[reward.itemKey]?.label || reward.itemKey; // Used by the visible return-gift toast.
+    deps.showToast?.(`In return: ${reward.quantity}× ${label}${reward.type === 'animal' ? ' with rare inherited traits' : ''}.`, true);
+    window.__farmLog?.(`[Porakaneki gift return] favor=${favorGain} tier=${reward.rank} reward=${reward.quantity}x ${label} genes=${JSON.stringify(reward.genotype || null)}`, 'info', 'social');
+  }
   function init(injectedDeps) {
     deps = injectedDeps;
     window.NpcFoodGiftPreferences?.init?.({ getItemDefs: injectedDeps?.getItemDefs }); // Shares only item-definition lookup with the extracted food preference runtime.
@@ -118,10 +181,10 @@
   }
 
   function isItemGiftable(held) {
-    if (!held) return false;
+    if (!held || !deps) return false;
     if (held.kind === 'clothing') return true;
     const def = itemDefFor(held);
-    return !!def && !def.noGift;
+    return !!def && !def.noGift && (Number(deps.inventory?.[held.key]) || 0) > 0;
   }
 
   function traitsForHeld(held) {
@@ -152,6 +215,9 @@
       foodScore: evaluation.foodScore,
       foodContext: evaluation.foodContext,
       matches: evaluation.matches,
+      favorDelta: evaluation.favorDelta,
+      positiveGiftRapport: evaluation.favorDelta > 0 ? giftRapportAmount() : 0,
+      lastBarterReward,
     } : { npcId: rec?.id || null, itemKey: null, error: 'No gift held' };
     window.__farmLog?.(`[NpcGifting] ${JSON.stringify(report)}`, 'info', 'social');
     return report;
@@ -209,11 +275,12 @@
 
   // Apply the already-balanced result once so relationship clamping cannot
   // make a mixed gift order-dependent near a minimum/maximum. Gifts change
-  // permanent Favor directly; temporary Rapport is reserved for short-lived
-  // social affinity such as drinks, dancing, music, and authored dialogue.
+  // permanent Favor directly and positive gifts add a quality-independent
+  // quarter of the daily Rapport cap.
   function applyGiftRelationshipDelta(npcId, evaluation) {
     const reason = 'gift_' + evaluation.tier;
     window.DialogueContent?.adjustNpcFavor?.(npcId, evaluation.favorDelta, reason);
+    if (evaluation.favorDelta > 0) window.NpcRapport?.adjust?.(npcId, giftRapportAmount(), reason);
   }
 
   // Only calls out a dislike/hate in the prompt when the player has
@@ -235,7 +302,7 @@
     const held = deps.getHeldGiftItem();
     if (!isItemGiftable(held)) return null;
     const traits = traitsForHeld(held);
-    const npcGifts = walker.rec.gifts || {};
+    const npcGifts = preferenceRecord(walker)?.gifts || {};
     const warning = warningSuffix(npcGifts, traits);
     const name = walker.rec.name || walker.rec.displayName || 'them';
     return {
@@ -249,17 +316,21 @@
   }
 
   function offerGift(walker) {
-    const npcId = walker?.rec?.id;
-    const held = deps.getHeldGiftItem();
+    const npcId = relationshipId(walker);
+    const held = deps?.getHeldGiftItem?.();
     if (!npcId || !isItemGiftable(held)) return false;
 
-    const evaluation = evaluateHeldGift(walker.rec, held); // Uses the same combined trait + food preference evaluator exposed to diagnostics/tests.
+    const evaluation = evaluateHeldGift(preferenceRecord(walker), held); // Uses the same combined trait + food preference evaluator exposed to diagnostics/tests.
     const tier = evaluation.tier;
     const name = walker.rec.name || walker.rec.displayName || 'They';
     const itemLabel = itemLabelFor(held);
     for (const preferenceTier of PREFERENCE_TIERS) {
       recordDiscoveredTraits(npcId, preferenceTier, evaluation.matches[preferenceTier]);
     }
+
+    const favorGain = Math.round(evaluation.favorDelta * (evaluation.favorDelta > 0 ? window.AlchemySystem?.getPositiveFavorMultiplier?.() || 1 : 1) * 10) / 10; // Mirrors DialogueContent's actual favor gain, including existing positive-favor buffs.
+    const barterReward = isPorakaneki(walker) ? rollBarterReward(favorGain, held) : null; // Preflight the promised return before consuming anything.
+    if (isPorakaneki(walker) && !barterReward) { deps.showToast?.('Make room for a Porakaneki return gift.', false); return false; }
 
     let kept = true;
     let keepNote = '';
@@ -298,15 +369,18 @@
       }
       deps.clearManualHeldItem?.();
     } else {
-      deps.inventory[held.key] = Math.max(0, (Number(deps.inventory[held.key]) || 0) - 1);
+      deps.inventory[held.key] = Math.max(0, (Number(deps.inventory?.[held.key]) || 0) - 1);
       deps.clampInventoryStack?.(held.key);
     }
+
+    window.NpcRapport?.markGiftedToday?.(npcId); // Persist the daily flag in the same save as consumption and the return item.
 
     const reactionMsg = kept
       ? `${name} ${TIER_VERBS[tier]} the ${itemLabel}.${keepNote}`
       : `${name} ${TIER_VERBS[tier]} the ${itemLabel}, but hands it back.${keepNote}`;
     deps.showToast?.(reactionMsg, tier !== 'hated');
-    debugGiftEvaluation(walker.rec, held); // Mirrors every completed reaction into the in-game/mobile debug log before the held stack changes.
+    if (kept && barterReward) grantBarterReward(barterReward, favorGain);
+    debugGiftEvaluation(preferenceRecord(walker), held); // Mirrors every completed reaction into the in-game/mobile debug log before the held stack changes.
     deps.refreshItemScroll?.();
     deps.buildInventoryGrid?.();
     deps.buildEquipmentSlots?.();
@@ -318,6 +392,9 @@
   window.NpcGifting = {
     init,
     isItemGiftable,
+    isPorakaneki,
+    relationshipId,
+    rollBarterReward,
     reactionTier,
     evaluateGiftReaction,
     getNpcGiftOfferAction,

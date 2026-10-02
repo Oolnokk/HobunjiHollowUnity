@@ -402,7 +402,7 @@
       status.state = 'script-element-unavailable';
       return false;
     }
-    const sourceUrl = new URL('../../js/creature-genetics.js?v=20260915-rig-picker-v1', global.location.href).href; // Commit-relative URL keeps RawGitHack test builds on one repository revision.
+    const sourceUrl = new URL('../../js/creature-genetics.js?v=20261002h5fdf0c4', global.location.href).href; // Commit-relative URL keeps RawGitHack test builds on one repository revision.
     script.src = sourceUrl;
     script.async = false;
     script.dataset ||= {};
