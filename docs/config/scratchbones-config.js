@@ -3665,6 +3665,14 @@ window.SCRATCHBONES_CONFIG = {
             "volume": 0.8,
             "preload": true
           },
+          "puzzleComplete": {
+            "url": "assets/audio/sfx/sfx_break_rock.mp3",
+            "volume": 0.8,
+            "pitch": 0.58,
+            "gainBoost": 1.45,
+            "generatedStoneKchunk": true,
+            "preload": true
+          },
           "breakRock": {
             "url": "assets/audio/sfx/sfx_break_rock.mp3",
             "volume": 0.8,

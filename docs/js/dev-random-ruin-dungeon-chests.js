@@ -31,7 +31,11 @@
   let haloTexture = null;
 
   function basic(color) {
-    return new THREE.MeshBasicMaterial({ color });
+    return window.ProceduralFurniture.makePartMaterial({materialTexture:'carved_smooth.png',materialLighting:'unlit',color:'#7a746b',materialFillMode:'never'});
+  }
+
+  function bronze() {
+    return window.ProceduralFurniture.makePartMaterial({materialTexture:'carved_smooth.png',materialLighting:'unlit',color:'#b08d57',materialFillEnabled:true,materialFillColor:'#b08d57',materialFillMode:'always'});
   }
 
   function halo(color) {
@@ -72,9 +76,9 @@
     else {
     const body = new THREE.Mesh(new THREE.BoxGeometry(.78, .42, .52), basic(0x5a3b22));
     body.position.y = .21;
-    const trim = new THREE.Mesh(new THREE.BoxGeometry(.82, .06, .56), basic(look.band));
+    const trim = new THREE.Mesh(new THREE.BoxGeometry(.82, .06, .56), bronze());
     trim.position.y = .40;
-    const bandL = new THREE.Mesh(new THREE.BoxGeometry(.07, .44, .56), basic(look.band));
+    const bandL = new THREE.Mesh(new THREE.BoxGeometry(.07, .44, .56), bronze());
     bandL.position.set(-.26, .22, 0);
     const bandR = bandL.clone();
     bandR.position.x = .26;
@@ -82,9 +86,9 @@
     hinge.position.set(0, .43, -.26);
     const lid = new THREE.Mesh(new THREE.BoxGeometry(.8, .16, .54), basic(0x6b4728));
     lid.position.set(0, .08, .27);
-    const lidBand = new THREE.Mesh(new THREE.BoxGeometry(.82, .05, .56), basic(look.band));
+    const lidBand = new THREE.Mesh(new THREE.BoxGeometry(.82, .05, .56), bronze());
     lidBand.position.set(0, .16, .27);
-    const lock = new THREE.Mesh(new THREE.BoxGeometry(.12, .14, .04), basic(look.glow));
+    const lock = new THREE.Mesh(new THREE.BoxGeometry(.12, .14, .04), bronze());
     lock.position.set(0, .02, .55);
     hinge.add(lid, lidBand, lock);
     group.add(body, trim, bandL, bandR, hinge);
