@@ -703,12 +703,26 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
 
   async function beginIntroduction(presetId = 'world-introduction') {
     state.introduction?.cancel();
-    const root = document.createElement('div'); // Dedicated mode of this loader contains only Roman text on black.
+    const root = document.createElement('div'); // Introduction copy and continuation controls share white Roman text on black.
     root.id = 'introductionLoadingScreen';
-    root.style.cssText = 'position:fixed;inset:0;z-index:2147483646;background:#000;color:#fff;display:flex;align-items:center;justify-content:center;padding:8vw;box-sizing:border-box;font:clamp(20px,4vw,38px)/1.6 KhymeryyanRoman,serif;text-align:center;white-space:pre-wrap;touch-action:manipulation';
-    root.setAttribute('role', 'button');
-    root.setAttribute('aria-live', 'polite');
-    root.tabIndex = 0;
+    root.style.cssText = 'position:fixed;inset:0;z-index:2147483646;background:#000;color:#fff;display:flex;flex-direction:column;gap:20px;align-items:center;justify-content:center;padding:8vw;box-sizing:border-box;font:clamp(20px,4vw,38px)/1.6 KhymeryyanRoman,serif;text-align:center;white-space:pre-wrap;touch-action:manipulation';
+    root.setAttribute('role', 'dialog');
+    root.setAttribute('aria-label', 'Introduction');
+    root.tabIndex = -1;
+    const stageText = document.createElement('div'); // Authored placeholder copy stays independent of live loading controls.
+    const readinessText = document.createElement('div'); // Announces when both required work and the minimum duration have finished.
+    readinessText.setAttribute('role', 'status');
+    readinessText.style.cssText = 'font-size:clamp(16px,3vw,22px)';
+    const continueButton = document.createElement('button'); // A real disabled/enabled button makes continuation discoverable on mobile and keyboard.
+    continueButton.type = 'button';
+    continueButton.textContent = 'Continue';
+    continueButton.disabled = true;
+    continueButton.style.cssText = 'min-height:48px;padding:10px 28px;background:#000;color:#fff;border:1px solid #fff;border-radius:4px;font:inherit;cursor:pointer';
+    const inputHint = document.createElement('div'); // Explicit input instructions appear when the button becomes usable.
+    inputHint.style.cssText = 'font-size:clamp(14px,2.5vw,18px)';
+    continueButton.style.opacity = '0.45';
+    readinessText.textContent = 'Loading…';
+    root.append(stageText, readinessText, continueButton, inputHint);
     document.body.appendChild(root);
     const inputLock = window.CharacterActionLocks?.acquire?.({ owner: 'introduction-loading', participants: [{ id: 'player', channels: ['movement', 'tools', 'actions'] }] }); // Covers stage one before the Director obtains its own action lock.
     let stages = [], startedAt = 0, stageIndex = -1, ready = false, cancelled = false; // Per-session stage clock and input gate never reuse old input.
@@ -717,10 +731,13 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
       if (!ready || cancelled || !continueStage) return;
       event?.preventDefault?.(); event?.stopImmediatePropagation?.();
       ready = false;
+      continueButton.disabled = true;
+      readinessText.textContent = 'Continuing…';
+      inputHint.textContent = '';
       const resolve = continueStage; continueStage = null; rejectStage = null; resolve(); // Consume this input exactly once.
     };
     const keydown = event => { if (['Enter', ' ', 'Space'].includes(event.key)) { event.preventDefault(); event.stopImmediatePropagation(); if (!event.repeat) accept(); } }; // Keyboard continuation matches dialogue; mobile taps the text surface.
-    root.addEventListener('click', accept);
+    continueButton.addEventListener('click', accept);
     document.addEventListener('keydown', keydown, true);
     unsubscribe = window.ControllerInput?.subscribe?.('introduction-loading', frame => {
       window.ControllerInput?.setOwner?.('introduction-loading');
@@ -730,7 +747,11 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
       start(index) {
         if (cancelled) throw new Error('Introduction loading cancelled');
         stageIndex = index; startedAt = nowMs(); ready = false;
-        root.textContent = String(stages[index]?.text || ''); // No ordinary lore, image, progress bar or prompt overlays this preset.
+        stageText.textContent = String(stages[index]?.text || '');
+        continueButton.disabled = true;
+        continueButton.style.opacity = '0.45';
+        readinessText.textContent = 'Loading…';
+        inputHint.textContent = 'Continue becomes available when this stage is ready.';
         state.introductionStage = index + 1;
         root.focus?.({ preventScroll: true });
       },
@@ -738,7 +759,14 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
         const minimum = Math.max(0, Number(stages[stageIndex]?.minimumSeconds) || 0) * 1000; // Each authored stage waits for both its work and minimum duration.
         await new Promise(resolve => setTimeout(resolve, Math.max(0, minimum - (nowMs() - startedAt))));
         if (cancelled) throw new Error('Introduction loading cancelled');
-        await new Promise((resolve, reject) => { continueStage = resolve; rejectStage = reject; ready = true; }); // Earlier taps are discarded; a fresh input is required.
+        await new Promise((resolve, reject) => {
+          continueStage = resolve; rejectStage = reject; ready = true; // Earlier taps are discarded; a fresh input is required.
+          continueButton.disabled = false;
+          continueButton.style.opacity = '1';
+          readinessText.textContent = 'Ready to continue.';
+          inputHint.textContent = 'Tap Continue · Enter / Space · controller A';
+          continueButton.focus?.({ preventScroll: true });
+        });
       },
       finish() {
         cancelled = true; ready = false;
@@ -747,7 +775,7 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
         if (state.introduction === session) { state.introduction = null; state.introductionStage = 0; finalizeHide(state.generation); }
       },
       cancel() { rejectStage?.(new Error('Introduction loading cancelled')); session.finish(); },
-      getDebug: () => ({ presetId, stage: stageIndex + 1, ready, minimumSeconds: stages[stageIndex]?.minimumSeconds, latestChange: 'Four-stage Roman introduction waits for assets, minimum durations and fresh input.' }),
+      getDebug: () => ({ presetId, stage: stageIndex + 1, ready, minimumSeconds: stages[stageIndex]?.minimumSeconds, latestChange: 'Introduction shows loading/readiness status and an enabled Continue button with input hints.' }),
     };
     state.introduction = session; // Claim foreground synchronously before config/fonts are fetched.
     try {

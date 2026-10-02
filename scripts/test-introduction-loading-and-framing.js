@@ -81,24 +81,30 @@ async function verifyAssetReadiness() {
 async function main() {
   await verifyAssetReadiness();
   let clock=0, subscriber=null, removed=false, unlocked=false;
-  const timers=[], listeners=new Map(), rootListeners=new Map();
-  const root={style:{},setAttribute(){},addEventListener:(name,fn)=>rootListeners.set(name,fn),remove:()=>{removed=true;},focus(){}};
+  const timers=[], listeners=new Map(), elements=[]; // Distinct DOM nodes exercise button and status transitions rather than a whole-screen click surrogate.
+  const createElement=()=>{ const events=new Map(); const el={style:{},children:[],events,setAttribute(){},addEventListener:(name,fn)=>events.set(name,fn),append(...children){this.children.push(...children);},remove:()=>{removed=true;},focus(){}}; elements.push(el); return el; };
   const state={generation:1};
-  const context={state,document:{createElement:()=>root,body:{appendChild(){}},addEventListener:(name,fn)=>listeners.set(name,fn),removeEventListener:name=>listeners.delete(name)},window:{CharacterActionLocks:{acquire:()=>({release:()=>{unlocked=true;}})},ControllerInput:{subscribe:(name,fn)=>{subscriber=fn;return()=>{subscriber=null;};},setOwner(){}}},nowMs:()=>clock,setTimeout:(fn,delay)=>{timers.push({fn,at:clock+delay});},ensureConfigLoaded:async()=>({entries:[preset]}),ensureFontsLoaded:async()=>true,finalizeHide(){} };
+  const context={state,document:{createElement,body:{appendChild(){}},addEventListener:(name,fn)=>listeners.set(name,fn),removeEventListener:name=>listeners.delete(name)},window:{CharacterActionLocks:{acquire:()=>({release:()=>{unlocked=true;}})},ControllerInput:{subscribe:(name,fn)=>{subscriber=fn;return()=>{subscriber=null;};},setOwner(){}}},nowMs:()=>clock,setTimeout:(fn,delay)=>{timers.push({fn,at:clock+delay});},ensureConfigLoaded:async()=>({entries:[preset]}),ensureFontsLoaded:async()=>true,finalizeHide(){} };
   vm.runInNewContext(loader.slice(loader.indexOf('  async function beginIntroduction('),loader.indexOf('  function callbackSource('))+'\napi=beginIntroduction;',context);
   const session=await context.api();
+  const [root,stageText,readinessText,continueButton,inputHint]=elements;
   for(let i=0;i<4;i++) {
     if(i)session.start(i);
-    assert.equal(root.textContent,preset.stages[i].text);
+    assert.equal(stageText.textContent,preset.stages[i].text);
+    assert.equal(continueButton.disabled,true);
+    assert.equal(readinessText.textContent,'Loading…');
     let continued=false;
     const done=session.complete().then(()=>{continued=true;});
-    rootListeners.get('click')();await Promise.resolve();assert.equal(continued,false,'early input cannot skip loading or minimum duration');
+    continueButton.events.get('click')();await Promise.resolve();assert.equal(continued,false,'early input cannot skip loading or minimum duration');
     clock+=2999;assert.equal(timers[0].at,clock+1);
     clock++;timers.shift().fn();await Promise.resolve();
     assert.equal(session.getDebug().ready,true);
+    assert.equal(continueButton.disabled,false);
+    assert.equal(readinessText.textContent,'Ready to continue.');
+    assert(inputHint.textContent.includes('Enter / Space'));
     if(i===1) subscriber({pressed:new Set(['Button0'])});
-    else rootListeners.get('click')();
-    await done;assert.equal(continued,true);
+    else continueButton.events.get('click')();
+    await done;assert.equal(continued,true);assert.equal(continueButton.disabled,true);
   }
   session.finish();assert(removed && unlocked);assert.equal(subscriber,null);assert.equal(listeners.size,0);assert.equal(state.introduction,null);
 
