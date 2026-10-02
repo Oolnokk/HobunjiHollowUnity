@@ -725,9 +725,9 @@ Overpass → not set</div>
       renderTrimBaseCanvas(garmentId, targetVariant, view),
     ]);
     const sourceOps = trimAuthorOpsFor(garmentId, sourceVariant, view);
-    const sourceMask = await editableTrimMaskCanvasFor(garmentId, sourceVariant, view, sourceGarment.width, sourceGarment.height);
-    if (!sourceMask && !sourceOps?.length) throw new Error(`Author or load a trim for ${sourceVariant} before replicating it.`);
     const replayed = !!sourceOps?.length;
+    const sourceMask = replayed ? null : await editableTrimMaskCanvasFor(garmentId, sourceVariant, view, sourceGarment.width, sourceGarment.height); // Journal-backed replication never performs a pointless/misleading fetch for the exported PNG.
+    if (!sourceMask && !replayed) throw new Error(`Author or load a trim for ${sourceVariant} before replicating it.`);
     const fitted = replayed ? replayTrimAuthorOps(sourceOps, targetGarment) : fitTrimMaskToGarment(sourceMask, sourceGarment, targetGarment); // Operation replay is authoritative; pixel inference exists only for legacy trims with no journal.
     const pattern = { directMask: true, tiling: false, motifDataUrl: fitted.toDataURL('image/png') };
     const motifPng = trimAssetPath(garmentId, targetVariant, view);
