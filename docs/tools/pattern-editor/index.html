@@ -1078,8 +1078,12 @@ Overpass → not set</div>
       clipPaintToGarment();
       if (!authorOpsComplete) statusEl.textContent = 'Loaded legacy PNG-only trim. Replication will use compatibility inference until this trim is cleared and reauthored as operations.';
       else statusEl.textContent = 'Loaded operation-authored trim; replication will replay these authoring steps on other variants.';
-    } else if (existingRecord?.motifPng) {
-      statusEl.textContent = 'Manifest entry exists but its trim PNG could not be loaded. Base garment is ready; start authoring operations here, then save/export.';
+    } else {
+      authorOps = [];
+      authorOpsComplete = true; // With no actual baseline pixels to preserve, the blank canvas is a complete starting state even if a stale manifest record names a missing PNG.
+      statusEl.textContent = existingRecord?.motifPng
+        ? 'Manifest entry exists but its trim PNG could not be loaded. This blank canvas now starts a fresh replayable operation history.'
+        : 'Blank trim canvas ready; authoring operations will be replayable across species.';
     }
 
     function pointFromEvent(event) {
