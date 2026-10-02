@@ -13,15 +13,22 @@ input,select{width:100%;background:#0d1621;border:1px solid rgba(255,255,255,.14
 .library{display:flex;flex-direction:column;gap:6px;max-height:440px;overflow:auto}.lib{display:flex;align-items:center;gap:7px;padding:8px;border:1px solid rgba(255,255,255,.1);border-radius:9px;background:rgba(255,255,255,.025);flex-wrap:wrap}.lib b{flex:1 1 120px;font-size:12px}.lib button{padding:6px 8px;font-size:11px}
 .previewWrap{display:grid;place-items:center;min-height:330px;border:1px solid rgba(255,255,255,.1);border-radius:12px;background:#060a0d;background-image:linear-gradient(45deg,rgba(255,255,255,.04) 25%,transparent 25%),linear-gradient(-45deg,rgba(255,255,255,.04) 25%,transparent 25%),linear-gradient(45deg,transparent 75%,rgba(255,255,255,.04) 75%),linear-gradient(-45deg,transparent 75%,rgba(255,255,255,.04) 75%);background-size:18px 18px;background-position:0 0,0 9px,9px -9px,-9px 0}
 #preview{max-width:100%;height:auto;image-rendering:pixelated}.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:10px}.fields label{font-size:11px;color:#9fb4cf}.fields input[type=color]{padding:2px;height:38px}
-#status{margin-top:8px;white-space:pre-wrap}.path{font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:#a9bed7;background:#0a1119;border-radius:8px;padding:8px;margin-top:8px}
+#status{margin-top:8px;white-space:pre-wrap}.path{font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:#a9bed7;background:#0a1119;border-radius:8px;padding:8px;margin-top:8px}.trimAuthor{margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,.12)}.trimAuthor h2{margin-bottom:8px}.trimPreviewWrap{display:grid;place-items:center;min-height:150px;margin-top:8px;border:1px solid rgba(255,255,255,.1);border-radius:10px;background:#060a0d}.trimPreviewWrap canvas{max-width:100%;max-height:220px;image-rendering:pixelated}.coverage{margin-top:7px;white-space:pre-wrap}
+.trimPaintOverlay{position:fixed;inset:0;z-index:9800;background:rgba(4,7,10,.9);display:flex;align-items:center;justify-content:center;padding:10px}.trimPaintPanel{width:min(1120px,100%);max-height:96vh;overflow:auto;background:#101a26;border:1px solid rgba(255,255,255,.16);border-radius:14px;box-shadow:0 22px 70px rgba(0,0,0,.65)}
+.trimPaintHead,.trimPaintFoot{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.1)}.trimPaintFoot{border-top:1px solid rgba(255,255,255,.1);border-bottom:0}.trimPaintHead h2{margin:0;font-size:15px}
+.trimPaintBody{display:grid;grid-template-columns:minmax(0,1fr) minmax(230px,340px);gap:12px;padding:12px}.trimPaintTools{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-bottom:9px}.trimPaintTools label{font-size:11px;color:#a9bed7}.trimPaintTools input[type=range]{width:130px;padding:0}.trimPaintTools .active{outline:2px solid #7fc7bc;background:#173b36}
+.trimPaintScroller{overflow:auto;max-height:68vh;border:1px solid rgba(255,255,255,.13);border-radius:10px;background-color:#111;background-image:linear-gradient(45deg,#222 25%,transparent 25%),linear-gradient(-45deg,#222 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#222 75%),linear-gradient(-45deg,transparent 75%,#222 75%);background-size:16px 16px;background-position:0 0,0 8px,8px -8px,-8px 0}
+.trimPaintStage{position:relative;transform-origin:top left;touch-action:none}.trimPaintStage canvas{position:absolute;inset:0;image-rendering:pixelated}.trimPaintInk{cursor:crosshair;touch-action:none;opacity:.72}
+.trimPaintResult{display:grid;place-items:center;min-height:220px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:#070b10}.trimPaintResult canvas{max-width:100%;max-height:360px;image-rendering:pixelated}
+.trimPaintNote{font-size:11px;line-height:1.45;color:#9fb4cf;margin-top:8px;white-space:pre-wrap}@media(max-width:760px){.trimPaintBody{grid-template-columns:1fr}.trimPaintResult{min-height:150px}}
 @media(max-width:760px){.grid{grid-template-columns:1fr}.fields{grid-template-columns:1fr 1fr}.fields label:first-child{grid-column:1/-1}.previewWrap{min-height:230px}}
 </style>
 <script src="../../js/scene-ready-poller.js"></script>
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
 <script src="../../js/sprite-recolor.js"></script>
-<script src="../../js/clothing-weaving-system.js?v=20260925animaloutline1"></script>
-<script src="../../js/tool-metal-recolor.js?v=20260924overpassgap1"></script>
-<script src="../../js/pattern-authoring.js?v=20260924overpassgap1"></script>
+<script src="../../js/clothing-weaving-system.js?v=20260930directtrimpaint1"></script>
+<script src="../../js/tool-metal-recolor.js?v=20261001c6751543"></script>
+<script src="../../js/pattern-authoring.js?v=20260930garmenttrim1"></script>
 <script src="../../js/repo-pattern-library.js"></script>
 </head>
 <body>
@@ -35,6 +42,27 @@ input,select{width:100%;background:#0d1621;border:1px solid rgba(255,255,255,.14
       <h2>Repo library</h2>
       <div class="muted" style="margin-bottom:8px">Loaded from <code>config/patterns/index.json</code>. Use any repo motif as the primary or as the overpass; each remains an independent reusable pattern.</div>
       <div id="library" class="library"><div class="muted">Loading…</div></div>
+      <div class="trimAuthor">
+        <h2>Garment trim authoring</h2>
+        <div class="muted" style="margin-bottom:8px">Paint trim directly onto each garment species/gender sprite. The exported PNG is an exact sprite-space mask—not a repeating or repositioned pattern—while players only choose whether to add it and whether it uses dye A, B, or C.</div>
+        <div class="fields" style="grid-template-columns:1fr">
+          <label>Clothing piece<select id="trimGarment"><option value="">Loading clothing…</option></select></label>
+          <label>Species / gender variant<select id="trimVariant"><option value="">Choose clothing first</option></select></label>
+          <label>Authored view<select id="trimView"><option value="front">Front / normal</option><option value="behind">Behind</option></select></label>
+          <label>Preview trim dye<select id="trimPreviewDye"><option value="A">Dye A</option><option value="B">Dye B</option><option value="C" selected>Dye C</option></select></label>
+          <label>Preview dye B<input id="trimColorB" type="color" value="#6f5544"></label>
+        </div>
+        <div class="trimPreviewWrap"><canvas id="trimPreview" width="1" height="1"></canvas></div>
+        <div class="row" style="margin-top:8px">
+          <button id="editTrimBtn" disabled>Paint trim on sprite…</button>
+          <button id="trimPngBtn" class="secondary" disabled>Export current PNG</button>
+          <button id="trimAllPngBtn" class="secondary" disabled>Export new PNGs</button>
+          <button id="trimManifestBtn" class="secondary" disabled>Export trim manifest</button>
+        </div>
+        <div id="trimCoverage" class="muted coverage">No garment selected.</div>
+        <div id="trimPaths" class="path">Trim asset → choose a garment and variant.</div>
+        <div id="trimStatus" class="muted" style="margin-top:7px">Loading clothing definitions…</div>
+      </div>
     </section>
     <section class="card">
       <h2>Current pattern</h2>
@@ -104,6 +132,10 @@ Overpass → not set</div>
   let overpassDraft = null; // Optional second pattern; rendered above primary with the shared Celtic-knot clearance behavior.
   let overpassLoadedRepoId = null; // Repo provenance for the dev-only overpass slot while it remains unmodified.
   const debugState = { lastAction: 'init', lastError: null }; // Exposed below so mobile/tool debugging can inspect the most recent dual-pattern editor action.
+  let trimManifest = { schema: 'hobunji_clothing_trim.v1', garments: {} }; // Mutable dev-tool copy exported as config/patterns/clothing-trims.json; runtime never receives motif data URLs.
+  const trimCosmetics = new Map(); // cosmeticId -> { entry, config }; populated from the repo index so variants come from real clothing metadata rather than a hard-coded species list.
+  const trimDrafts = new Map(); // garment|variant|view -> unsaved/exportable motif pixels + settings authored during this browser session.
+  let trimLoadRevision = 0; // Rejects stale async preview/editor image loads after the author switches garment/variant.
   const clampOverpassClearance = value => Math.max(3, Math.min(12, Number(value) || 3)); // Shared authored range: old fixed 3× gap through four times that width.
   function syncOverpassClearanceControl(value = overpassDraft?.overpassClearanceMultiplier) {
     const normalized = clampOverpassClearance(value); // Keeps repo loads, PatternAuthoring saves, and direct slider edits on one exact value.
@@ -142,6 +174,163 @@ Overpass → not set</div>
     const out = { ...pattern };
     for (const key of ['motifDataUrl','motifUrl','customMotifId','repoPatternId','repoPatternName']) delete out[key];
     return out;
+  }
+  const CLOTHING_TRIM_MANIFEST_PATH = '../../config/patterns/clothing-trims.json'; // Dev-tool fetch path for the same manifest ClothingWeavingSystem reads at runtime.
+  const CLOTHING_TRIM_ASSET_DIR = 'assets/patterns/clothing-trims'; // Exported motif paths stay docs-root-relative for game and raw.githack builds.
+
+  function trimKey(garmentId = $('trimGarment').value, variantKey = $('trimVariant').value, view = $('trimView').value) {
+    return [garmentId, variantKey, view === 'behind' ? 'behind' : 'front'].join('|');
+  }
+
+  function selectedTrimCosmetic() { return trimCosmetics.get($('trimGarment').value) || null; }
+
+  function trimVariantKeys(selected = selectedTrimCosmetic()) {
+    const authored = Object.keys(selected?.config?.speciesVariants || {}); // Exact species/gender variants are preferred whenever the garment authors them.
+    return authored.length ? authored : (selected?.config?.parts ? ['default'] : []); // Shared-sprite garments still get one direct mask instead of disappearing from the tool.
+  }
+
+  function parseVariantKey(variantKey) {
+    const match = String(variantKey || '').match(/^(.*)_(male|female)$/);
+    return match ? { speciesId: match[1].replace(/_/g, '-'), gender: match[2] } : { speciesId: String(variantKey || 'mao-ao').replace(/_/g, '-'), gender: 'male' };
+  }
+
+  function trimAssetPath(garmentId, variantKey, view) {
+    const safe = value => String(value || '').toLowerCase().replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '');
+    return `${CLOTHING_TRIM_ASSET_DIR}/${safe(garmentId)}__${safe(variantKey)}__${view === 'behind' ? 'behind' : 'front'}.png`;
+  }
+
+  function trimRecord(garmentId = $('trimGarment').value, variantKey = $('trimVariant').value, view = $('trimView').value) {
+    return trimManifest?.garments?.[garmentId]?.variants?.[variantKey]?.[view === 'behind' ? 'behind' : 'front'] || null;
+  }
+
+  function ensureTrimRecordSet(garmentId, variantKey) {
+    trimManifest.garments ||= {};
+    trimManifest.garments[garmentId] ||= { variants: {} };
+    trimManifest.garments[garmentId].variants ||= {};
+    trimManifest.garments[garmentId].variants[variantKey] ||= {};
+    return trimManifest.garments[garmentId].variants[variantKey];
+  }
+
+  function currentTrimPatternForPreview() {
+    const draftEntry = trimDrafts.get(trimKey());
+    if (draftEntry?.pattern) return { ...draftEntry.pattern, tiling: false };
+    const record = trimRecord();
+    if (!record?.motifPng) return null;
+    return { ...(record.settings || {}), tiling: false, motifUrl: record.motifPng };
+  }
+
+  async function imageUrlToDataUrl(url) {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Trim motif HTTP ${response.status}`);
+    const blob = await response.blob();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error || new Error('Could not read trim motif'));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  function loadImageElement(url) {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error('Could not load trim mask image.'));
+      image.src = url;
+    });
+  }
+
+  async function editableTrimMaskCanvas(width, height) {
+    const draftEntry = trimDrafts.get(trimKey());
+    let pattern = draftEntry?.pattern?.motifDataUrl ? { ...draftEntry.pattern, tiling: false } : null;
+    if (!pattern) {
+      const record = trimRecord();
+      if (!record?.motifPng) return null;
+      pattern = { ...(record.settings || {}), tiling: false, motifDataUrl: await imageUrlToDataUrl('../../' + String(record.motifPng).replace(/^\.?\//, '')) };
+    }
+    const motif = await loadImageElement(pattern.motifDataUrl);
+    const builder = window.ClothingWeavingSystem?.__test?.buildPatternMask;
+    if (typeof builder === 'function') return builder(width, height, pattern, motif); // This also migrates any pre-direct trim draft into its exact final garment-space footprint.
+    const fallback = Object.assign(document.createElement('canvas'), { width, height });
+    fallback.getContext('2d').drawImage(motif, 0, 0, width, height);
+    return fallback;
+  }
+
+  function trimCoverageText() {
+    const selected = selectedTrimCosmetic();
+    if (!selected) return 'No garment selected.';
+    const variants = trimVariantKeys(selected);
+    const garment = trimManifest?.garments?.[$('trimGarment').value];
+    const frontDone = variants.filter(key => !!garment?.variants?.[key]?.front);
+    const missing = variants.filter(key => !garment?.variants?.[key]?.front);
+    const lines = [`Front coverage: ${frontDone.length}/${variants.length} species/gender variants.`];
+    if (missing.length) lines.push('Missing: ' + missing.join(', '));
+    else if (variants.length) lines.push('All existing variants have a front trim mask.');
+    return lines.join('\n');
+  }
+
+  function syncTrimExportState() {
+    const garmentId = $('trimGarment').value, variantKey = $('trimVariant').value, view = $('trimView').value;
+    const draftEntry = trimDrafts.get(trimKey(garmentId, variantKey, view));
+    const record = trimRecord(garmentId, variantKey, view);
+    $('trimPngBtn').disabled = !draftEntry?.pattern?.motifDataUrl;
+    $('trimAllPngBtn').disabled = ![...trimDrafts.values()].some(entry => !!entry?.pattern?.motifDataUrl);
+    $('trimManifestBtn').disabled = !trimCosmetics.size;
+    $('trimPaths').textContent = garmentId && variantKey
+      ? `Trim PNG → ${record?.motifPng || trimAssetPath(garmentId, variantKey, view)}\nManifest → config/patterns/clothing-trims.json`
+      : 'Trim asset → choose a garment and variant.';
+  }
+
+  function refreshTrimVariantOptions() {
+    const selected = selectedTrimCosmetic();
+    const select = $('trimVariant');
+    const previous = select.value;
+    select.innerHTML = '';
+    const variants = trimVariantKeys(selected);
+    for (const key of variants) {
+      const option = document.createElement('option');
+      option.value = key;
+      option.textContent = `${trimManifest?.garments?.[$('trimGarment').value]?.variants?.[key]?.front ? '✓ ' : ''}${key}`;
+      select.appendChild(option);
+    }
+    if (variants.includes(previous)) select.value = previous;
+    $('editTrimBtn').disabled = !variants.length;
+    $('trimCoverage').textContent = trimCoverageText();
+    syncTrimExportState();
+  }
+
+  async function renderTrimPreview(pattern = currentTrimPatternForPreview()) {
+    const selected = selectedTrimCosmetic();
+    const variantKey = $('trimVariant').value;
+    if (!selected || !variantKey) return;
+    const revision = ++trimLoadRevision;
+    const { speciesId, gender } = parseVariantKey(variantKey);
+    const patterns = previewPatterns(); // Loaded primary/overpass patterns remain underneath so authored trim overlap is visible.
+    const weaving = patterns.length ? { patterns } : null;
+    try {
+      const result = await window.ClothingWeavingSystem.renderClothingLayers($('trimGarment').value, {
+        primaryHex: $('baseColor').value,
+        secondaryHex: $('trimColorB').value,
+        patternHex: $('inkColor').value,
+        weaving,
+        view: $('trimView').value,
+        speciesId,
+        gender,
+        trimPatternOverride: pattern ? { ...pattern, tiling: false } : null,
+        trimDyeSlotOverride: $('trimPreviewDye').value,
+      });
+      if (revision !== trimLoadRevision) return;
+      const canvas = $('trimPreview'), ctx = canvas.getContext('2d');
+      if (!result.canvas) { canvas.width = canvas.height = 1; return; }
+      canvas.width = result.canvas.width; canvas.height = result.canvas.height;
+      ctx.imageSmoothingEnabled = false;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(result.canvas, 0, 0);
+      $('trimStatus').textContent = pattern ? 'Trim preview uses the real clothing compositor above any loaded primary/overpass patterns.' : 'No trim authored for this variant/view yet. The base garment is shown for reference.';
+    } catch (error) {
+      debugState.lastError = error.message;
+      $('trimStatus').textContent = 'Trim preview failed: ' + error.message;
+    }
   }
 
   const previewTextureCache = new Map(); // Reuses decoded repo surface textures while the author changes pattern/tint settings.
@@ -210,6 +399,334 @@ Overpass → not set</div>
     );
   }
 
+  async function openTrimEditor() {
+    const selected = selectedTrimCosmetic(), garmentId = $('trimGarment').value, variantKey = $('trimVariant').value, view = $('trimView').value;
+    if (!selected || !garmentId || !variantKey) return;
+    const openRevision = ++trimLoadRevision;
+    $('trimStatus').textContent = 'Building direct-paint garment surface…';
+    const { speciesId, gender } = parseVariantKey(variantKey);
+    const patterns = previewPatterns(); // Existing reusable pattern(s) stay visible beneath the paint surface so trim can be placed around them directly.
+    const weaving = patterns.length ? { patterns } : null;
+    const baseResult = await window.ClothingWeavingSystem.renderClothingLayers(garmentId, {
+      primaryHex: $('baseColor').value,
+      secondaryHex: $('trimColorB').value,
+      patternHex: $('inkColor').value,
+      weaving,
+      view,
+      speciesId,
+      gender,
+      trimPatternOverride: null,
+    });
+    if (openRevision !== trimLoadRevision) return;
+    const baseCanvas = baseResult.canvas;
+    if (!baseCanvas) throw new Error('No garment sprite could be resolved for this variant/view.');
+    const width = baseCanvas.width, height = baseCanvas.height;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'trimPaintOverlay';
+    overlay.innerHTML = `
+      <div class="trimPaintPanel" role="dialog" aria-modal="true">
+        <div class="trimPaintHead"><div><h2>Paint trim directly — ${garmentId}</h2><div class="muted">${variantKey} · ${view} · ${width}×${height}px exact sprite-space mask</div></div><button type="button" class="secondary" data-trim-paint="close">✕</button></div>
+        <div class="trimPaintBody">
+          <div>
+            <div class="trimPaintTools">
+              <button type="button" data-trim-tool="brush" class="active">Brush</button>
+              <button type="button" data-trim-tool="eraser" class="secondary">Eraser</button>
+              <button type="button" data-trim-tool="pan" class="secondary">Pan</button>
+              <button type="button" data-trim-paint="undo" class="secondary">Undo</button>
+              <button type="button" data-trim-paint="redo" class="secondary">Redo</button>
+              <button type="button" data-trim-paint="clear" class="secondary">Clear</button>
+              <label>Brush <input data-trim-brush type="range" min="1" max="24" step="1" value="4"><span data-trim-brush-label>4px</span></label>
+              <label>Zoom <input data-trim-zoom type="range" min="1" max="8" step="1" value="2"><span data-trim-zoom-label>2×</span></label>
+            </div>
+            <div class="trimPaintScroller"><div class="trimPaintStage"><canvas data-trim-base></canvas><canvas class="trimPaintInk" data-trim-ink></canvas></div></div>
+            <div class="trimPaintNote">Paint directly on the visible garment. The mask is clipped to opaque garment pixels, so strokes outside the sprite are discarded. White is only the editing overlay; the player still chooses dye A, B, or C in the loom.</div>
+          </div>
+          <div>
+            <div class="muted" style="margin-bottom:6px"><b>Rendered result</b> — production trim compositor</div>
+            <div class="trimPaintResult"><canvas data-trim-result width="1" height="1"></canvas></div>
+            <div class="trimPaintNote" data-trim-result-status>Rendering current trim…</div>
+          </div>
+        </div>
+        <div class="trimPaintFoot"><div class="muted" data-trim-paint-status>Brush and eraser work in native sprite pixels.</div><div class="row"><button type="button" class="secondary" data-trim-paint="cancel">Cancel</button><button type="button" data-trim-paint="save">Save trim mask</button></div></div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    const baseLayer = overlay.querySelector('[data-trim-base]');
+    const paintCanvas = overlay.querySelector('[data-trim-ink]');
+    const resultCanvas = overlay.querySelector('[data-trim-result]');
+    const stage = overlay.querySelector('.trimPaintStage');
+    const scroller = overlay.querySelector('.trimPaintScroller'); // Pan mode moves this viewport so zoom remains practical on touch/mobile without painting accidental strokes.
+    const saveBtn = overlay.querySelector('[data-trim-paint="save"]');
+    const undoBtn = overlay.querySelector('[data-trim-paint="undo"]');
+    const redoBtn = overlay.querySelector('[data-trim-paint="redo"]');
+    const statusEl = overlay.querySelector('[data-trim-paint-status]');
+    const resultStatus = overlay.querySelector('[data-trim-result-status]');
+    const brushInput = overlay.querySelector('[data-trim-brush]');
+    const zoomInput = overlay.querySelector('[data-trim-zoom]');
+    baseLayer.width = paintCanvas.width = width;
+    baseLayer.height = paintCanvas.height = height;
+    const baseCtx = baseLayer.getContext('2d');
+    const paintCtx = paintCanvas.getContext('2d', { willReadFrequently: true });
+    const resultCtx = resultCanvas.getContext('2d');
+    baseCtx.imageSmoothingEnabled = paintCtx.imageSmoothingEnabled = resultCtx.imageSmoothingEnabled = false;
+    baseCtx.drawImage(baseCanvas, 0, 0);
+
+    let brushMode = 'brush'; // Direct mask editor owns only footprint painting; all pattern placement transforms are intentionally absent.
+    let brushSize = Number(brushInput.value) || 4;
+    let drawing = false;
+    let lastPoint = null;
+    let panStart = null; // Used only by the Pan tool; stores pointer origin plus current scroll offsets.
+    let closed = false;
+    let renderRevision = 0;
+    const undoStack = [];
+    const redoStack = [];
+    const UNDO_LIMIT = 30;
+
+    function close() { closed = true; overlay.remove(); }
+    overlay.querySelector('[data-trim-paint="close"]').onclick = close;
+    overlay.querySelector('[data-trim-paint="cancel"]').onclick = close;
+    overlay.addEventListener('pointerdown', event => { if (event.target === overlay) close(); });
+
+    function normalizePaintRgb() {
+      const image = paintCtx.getImageData(0, 0, width, height);
+      for (let i = 0; i < image.data.length; i += 4) {
+        if (image.data[i + 3] > 16) image.data[i] = image.data[i + 1] = image.data[i + 2] = 255; // Exported trim PNG is an alpha mask; white keeps the editing overlay readable regardless of previous motif RGB.
+        else image.data[i] = image.data[i + 1] = image.data[i + 2] = image.data[i + 3] = 0;
+      }
+      paintCtx.putImageData(image, 0, 0);
+    }
+
+    function clipPaintToGarment() {
+      paintCtx.save();
+      paintCtx.globalCompositeOperation = 'destination-in';
+      paintCtx.drawImage(baseCanvas, 0, 0);
+      paintCtx.restore();
+      normalizePaintRgb();
+    }
+
+    function snapshot() {
+      try { return paintCtx.getImageData(0, 0, width, height); } catch (_) { return null; }
+    }
+
+    function hasInk() {
+      try {
+        const data = paintCtx.getImageData(0, 0, width, height).data;
+        for (let i = 3; i < data.length; i += 4) if (data[i] > 16) return true;
+      } catch (_) {}
+      return false;
+    }
+
+    function updateButtons() {
+      undoBtn.disabled = !undoStack.length;
+      redoBtn.disabled = !redoStack.length;
+      saveBtn.disabled = !hasInk();
+    }
+
+    function pushUndo() {
+      const state = snapshot();
+      if (!state) return;
+      undoStack.push(state);
+      if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+      redoStack.length = 0;
+      updateButtons();
+    }
+
+    function restore(state) {
+      if (!state) return;
+      paintCtx.clearRect(0, 0, width, height);
+      paintCtx.putImageData(state, 0, 0);
+      updateButtons();
+    }
+
+    function updateZoom() {
+      const zoom = Math.max(1, Number(zoomInput.value) || 1);
+      stage.style.width = `${width * zoom}px`;
+      stage.style.height = `${height * zoom}px`;
+      baseLayer.style.width = paintCanvas.style.width = '100%';
+      baseLayer.style.height = paintCanvas.style.height = '100%';
+      overlay.querySelector('[data-trim-zoom-label]').textContent = `${zoom}×`;
+    }
+
+    function currentPattern() {
+      return hasInk() ? { directMask: true, tiling: false, motifDataUrl: paintCanvas.toDataURL('image/png') } : null;
+    }
+
+    async function renderResult() {
+      const token = ++renderRevision;
+      resultStatus.textContent = 'Rendering current trim…';
+      try {
+        const pattern = currentPattern();
+        const rendered = await window.ClothingWeavingSystem.renderClothingLayers(garmentId, {
+          primaryHex: $('baseColor').value,
+          secondaryHex: $('trimColorB').value,
+          patternHex: $('inkColor').value,
+          weaving,
+          view,
+          speciesId,
+          gender,
+          trimPatternOverride: pattern,
+          trimDyeSlotOverride: $('trimPreviewDye').value,
+        });
+        if (closed || token !== renderRevision || !rendered.canvas) return;
+        resultCanvas.width = rendered.canvas.width; resultCanvas.height = rendered.canvas.height;
+        resultCtx.imageSmoothingEnabled = false;
+        resultCtx.clearRect(0, 0, resultCanvas.width, resultCanvas.height);
+        resultCtx.drawImage(rendered.canvas, 0, 0);
+        resultStatus.textContent = pattern ? `Exact ${width}×${height} direct mask · Dye ${$('trimPreviewDye').value} preview · independent black outline.` : 'No trim paint yet.';
+      } catch (error) {
+        if (closed || token !== renderRevision) return;
+        debugState.lastError = error.message;
+        resultStatus.textContent = 'Rendered result failed: ' + error.message;
+      }
+    }
+
+    const existingMask = await editableTrimMaskCanvas(width, height);
+    if (closed) return;
+    if (existingMask) {
+      paintCtx.drawImage(existingMask, 0, 0, width, height);
+      clipPaintToGarment();
+      statusEl.textContent = trimRecord()?.settings?.directMask === true || trimDrafts.get(trimKey())?.pattern?.directMask === true
+        ? 'Loaded existing direct trim mask.'
+        : 'Loaded and converted the previous positioned trim into an exact sprite-space mask.';
+    }
+
+    function pointFromEvent(event) {
+      const rect = paintCanvas.getBoundingClientRect();
+      return {
+        x: Math.max(0, Math.min(width, (event.clientX - rect.left) * width / rect.width)),
+        y: Math.max(0, Math.min(height, (event.clientY - rect.top) * height / rect.height)),
+      };
+    }
+
+    function strokeTo(point) {
+      paintCtx.globalCompositeOperation = brushMode === 'eraser' ? 'destination-out' : 'source-over';
+      paintCtx.strokeStyle = '#ffffff'; paintCtx.fillStyle = '#ffffff';
+      paintCtx.lineWidth = brushSize; paintCtx.lineCap = 'round'; paintCtx.lineJoin = 'round';
+      paintCtx.beginPath();
+      if (lastPoint) { paintCtx.moveTo(lastPoint.x, lastPoint.y); paintCtx.lineTo(point.x, point.y); paintCtx.stroke(); }
+      else { paintCtx.arc(point.x, point.y, brushSize / 2, 0, Math.PI * 2); paintCtx.fill(); }
+      lastPoint = point;
+      clipPaintToGarment();
+    }
+
+    paintCanvas.addEventListener('pointerdown', event => {
+      event.preventDefault();
+      try { paintCanvas.setPointerCapture?.(event.pointerId); } catch (_) {}
+      if (brushMode === 'pan') {
+        panStart = { x: event.clientX, y: event.clientY, left: scroller.scrollLeft, top: scroller.scrollTop };
+        paintCanvas.style.cursor = 'grabbing';
+        return;
+      }
+      pushUndo();
+      drawing = true; lastPoint = null;
+      strokeTo(pointFromEvent(event));
+    });
+    paintCanvas.addEventListener('pointermove', event => {
+      if (brushMode === 'pan' && panStart) {
+        event.preventDefault();
+        scroller.scrollLeft = panStart.left - (event.clientX - panStart.x);
+        scroller.scrollTop = panStart.top - (event.clientY - panStart.y);
+        return;
+      }
+      if (drawing) { event.preventDefault(); strokeTo(pointFromEvent(event)); }
+    });
+    async function endInteraction() {
+      if (panStart) { panStart = null; paintCanvas.style.cursor = brushMode === 'pan' ? 'grab' : 'crosshair'; return; }
+      if (!drawing) return;
+      drawing = false; lastPoint = null;
+      paintCtx.globalCompositeOperation = 'source-over';
+      updateButtons();
+      await renderResult();
+    }
+    paintCanvas.addEventListener('pointerup', endInteraction);
+    paintCanvas.addEventListener('pointercancel', endInteraction);
+    paintCanvas.addEventListener('pointerleave', event => { if ((drawing || panStart) && !paintCanvas.hasPointerCapture?.(event.pointerId)) endInteraction(); });
+
+    overlay.querySelectorAll('[data-trim-tool]').forEach(button => {
+      button.onclick = () => {
+        brushMode = button.dataset.trimTool;
+        paintCanvas.style.cursor = brushMode === 'pan' ? 'grab' : 'crosshair';
+        overlay.querySelectorAll('[data-trim-tool]').forEach(other => other.classList.toggle('active', other === button));
+      };
+    });
+    brushInput.oninput = () => { brushSize = Math.max(1, Number(brushInput.value) || 1); overlay.querySelector('[data-trim-brush-label]').textContent = `${brushSize}px`; };
+    zoomInput.oninput = updateZoom;
+    undoBtn.onclick = async () => {
+      if (!undoStack.length) return;
+      const current = snapshot(); if (current) redoStack.push(current);
+      restore(undoStack.pop());
+      await renderResult();
+    };
+    redoBtn.onclick = async () => {
+      if (!redoStack.length) return;
+      const current = snapshot(); if (current) undoStack.push(current);
+      restore(redoStack.pop());
+      await renderResult();
+    };
+    overlay.querySelector('[data-trim-paint="clear"]').onclick = async () => {
+      pushUndo();
+      paintCtx.clearRect(0, 0, width, height);
+      updateButtons();
+      await renderResult();
+    };
+
+    saveBtn.onclick = async () => {
+      const pattern = currentPattern();
+      if (!pattern) return;
+      const motifPng = trimAssetPath(garmentId, variantKey, view);
+      trimDrafts.set(trimKey(garmentId, variantKey, view), { pattern, motifPng });
+      const recordSet = ensureTrimRecordSet(garmentId, variantKey);
+      recordSet[view] = { motifPng, settings: { directMask: true } }; // Placement is encoded entirely in PNG coordinates now; no frame/mesh transform can drift it.
+      debugState.lastAction = `painted direct garment trim ${garmentId}/${variantKey}/${view}`;
+      refreshTrimVariantOptions();
+      await renderTrimPreview(pattern);
+      $('trimStatus').textContent = 'Direct trim mask saved in this editor session. Export its PNG plus clothing-trims.json before leaving the page.';
+      close();
+    };
+
+    const suggestedZoom = Math.max(1, Math.min(8, Math.floor(520 / Math.max(width, height)) || 1));
+    zoomInput.value = String(suggestedZoom);
+    updateZoom();
+    updateButtons();
+    await renderResult();
+  }
+  async function loadTrimAuthoringData() {
+    try {
+      const [indexResponse, manifestResponse] = await Promise.all([fetch('../../config/cosmetics/index.json'), fetch(CLOTHING_TRIM_MANIFEST_PATH)]);
+      if (!indexResponse.ok) throw new Error(`Cosmetics index HTTP ${indexResponse.status}`);
+      const index = await indexResponse.json();
+      trimManifest = manifestResponse.ok ? await manifestResponse.json() : { schema: 'hobunji_clothing_trim.v1', garments: {} };
+      trimManifest.schema ||= 'hobunji_clothing_trim.v1';
+      trimManifest.garments ||= {};
+      const indexEntries = Array.isArray(index) ? index : (index.entries || []); // cosmetics/index.json is currently a top-level array; object form remains accepted for forward compatibility.
+      const candidates = await Promise.all(indexEntries.map(async entry => {
+        try {
+          const response = await fetch('../../config/cosmetics/' + String(entry.path || '').replace(/^\.\//, ''));
+          if (!response.ok) return null;
+          const config = await response.json();
+          const hasVariantArt = Object.keys(config?.speciesVariants || {}).length > 0; // Per-species/gender clothing exposes each real variant separately.
+          const hasSharedArt = !!config?.parts; // Shared-sprite clothing still supports one `default` authored trim record.
+          return ['hat','hood','torso','overwear'].includes(config?.slot) && (hasVariantArt || hasSharedArt) ? { entry, config } : null;
+        } catch (_) { return null; }
+      }));
+      for (const item of candidates.filter(Boolean)) trimCosmetics.set(item.entry.id, item);
+      const select = $('trimGarment');
+      select.innerHTML = '';
+      for (const [id] of [...trimCosmetics.entries()].sort((a,b) => a[0].localeCompare(b[0]))) {
+        const option = document.createElement('option');
+        option.value = id;
+        option.textContent = id.replace(/_/g, ' ');
+        select.appendChild(option);
+      }
+      refreshTrimVariantOptions();
+      await renderTrimPreview();
+      $('trimStatus').textContent = trimCosmetics.size ? 'Garment trim authoring ready.' : 'No species-variant clothing definitions were found.';
+    } catch (error) {
+      debugState.lastError = error.message;
+      $('trimStatus').textContent = 'Garment trim authoring failed to load: ' + error.message;
+    }
+  }
   async function renderVerdigrisPreview(patterns) {
     return window.ToolMetalRecolor.getRecoloredCanvas(VERDIGRIS_PREVIEW_SPRITE, {
       targetHex: $('metalColor').value,
@@ -325,6 +842,7 @@ Overpass → not set</div>
           debugState.lastAction = 'saved primary';
         }
         await refreshPreview();
+        await renderTrimPreview(); // Fixed trim authoring preview must immediately reflect edits to its underlying reusable pattern(s).
         syncExportState();
         $('status').textContent = isOverpass
           ? 'Overpass ready. Its invisible authored clearance is visible only where it crosses the primary.'
@@ -350,6 +868,7 @@ Overpass → not set</div>
       debugState.lastAction = 'loaded primary ' + id;
     }
     await refreshPreview();
+    await renderTrimPreview(); // Shows this newly-loaded motif underneath any authored garment trim without requiring another UI nudge.
     syncExportState();
     $('status').textContent = 'Loaded ' + (entry?.label || id) + ' as ' + (slot === 'overpass' ? 'the overpass.' : 'the primary.');
   }
@@ -378,14 +897,20 @@ Overpass → not set</div>
   $('newBtn').onclick = () => {
     draft = null; loadedRepoId = null; overpassDraft = null; overpassLoadedRepoId = null; $('patternName').value = 'untitled_pattern'; syncOverpassClearanceControl(3);
     debugState.lastAction = 'new pattern pair';
-    refreshPreview(null, null); syncExportState(); openEditor('primary', null, null);
+    refreshPreview(null, null); renderTrimPreview(); syncExportState(); openEditor('primary', null, null);
   };
   $('editBtn').onclick = () => openEditor('primary', draft, loadedRepoId);
   $('editOverpassBtn').onclick = () => openEditor('overpass', overpassDraft, overpassLoadedRepoId);
+  $('editTrimBtn').onclick = () => openTrimEditor().catch(error => { debugState.lastError = error.message; $('trimStatus').textContent = error.message; });
+  $('trimGarment').onchange = () => { refreshTrimVariantOptions(); renderTrimPreview(); };
+  $('trimVariant').onchange = () => { syncTrimExportState(); $('trimCoverage').textContent = trimCoverageText(); renderTrimPreview(); };
+  $('trimView').onchange = () => { syncTrimExportState(); renderTrimPreview(); };
+  $('trimPreviewDye').onchange = () => renderTrimPreview();
+  $('trimColorB').oninput = () => renderTrimPreview();
   $('clearOverpassBtn').onclick = () => {
     overpassDraft = null; overpassLoadedRepoId = null; syncOverpassClearanceControl(3); // Clears only dev slot 2 and resets the pair gap to the legacy/current minimum.
     debugState.lastAction = 'cleared overpass';
-    refreshPreview(); syncExportState();
+    refreshPreview(); renderTrimPreview(); syncExportState();
     $('status').textContent = 'Overpass cleared; preview is primary-only.';
   };
   $('previewMode').onchange = () => {
@@ -397,8 +922,8 @@ Overpass → not set</div>
     syncPreviewModeControls();
     refreshPreview();
   };
-  $('baseColor').oninput = () => refreshPreview();
-  $('inkColor').oninput = () => refreshPreview();
+  $('baseColor').oninput = () => { refreshPreview(); renderTrimPreview(); };
+  $('inkColor').oninput = () => { refreshPreview(); renderTrimPreview(); };
   $('metalColor').oninput = () => refreshPreview();
   $('verdigrisColor').oninput = () => refreshPreview();
   $('patternName').oninput = syncExportState;
@@ -409,7 +934,7 @@ Overpass → not set</div>
       overpassLoadedRepoId = null; // A direct gap override makes slot 2 a modified dev copy rather than an untouched repo pattern.
     }
     debugState.lastAction = 'overpass clearance → ' + value.toFixed(2) + '×';
-    refreshPreview(); syncExportState();
+    refreshPreview(); renderTrimPreview(); syncExportState();
   };
 
   $('pngBtn').onclick = () => {
@@ -451,8 +976,28 @@ Overpass → not set</div>
     $('status').textContent = 'Copied overpass index entry.';
   };
 
+  $('trimPngBtn').onclick = () => {
+    const entry = trimDrafts.get(trimKey());
+    if (!entry?.pattern?.motifDataUrl) return;
+    dataUrlDownload(entry.pattern.motifDataUrl, String(entry.motifPng || trimAssetPath($('trimGarment').value, $('trimVariant').value, $('trimView').value)).split('/').pop());
+    $('trimStatus').textContent = 'Exported current trim PNG. Export the manifest too if this variant changed.';
+  };
+  $('trimAllPngBtn').onclick = () => {
+    let count = 0;
+    for (const entry of trimDrafts.values()) {
+      if (!entry?.pattern?.motifDataUrl) continue;
+      dataUrlDownload(entry.pattern.motifDataUrl, String(entry.motifPng).split('/').pop());
+      count++;
+    }
+    $('trimStatus').textContent = `Exported ${count} newly-authored trim PNG${count === 1 ? '' : 's'}.`;
+  };
+  $('trimManifestBtn').onclick = () => {
+    jsonDownload(trimManifest, 'clothing-trims.json');
+    $('trimStatus').textContent = 'Exported clothing-trims.json. Keep every listed motifPng at the path shown in the manifest.';
+  };
+
   window.__patternEditorDebug = () => ({ // Mobile-visible console substitute for checking the dev tool's two-slot state.
-    mostRecentChange: 'Dev Pattern Editor can preview/edit two same-color patterns; slot 2 punches a player/dev-authored 3×..12× black-outline-width invisible clearance through slot 1 before outlining.',
+    mostRecentChange: 'Garment trim authoring now paints exact sprite-space masks directly on the selected species/gender garment, with silhouette clipping, zoom/pan, undo/redo, and a live production-compositor result preview.',
     previewMode: $('previewMode').value,
     weavingBackground: $('surfaceTexture').value,
     overpassClearanceMultiplier: clampOverpassClearance($('overpassClearance').value),
@@ -460,6 +1005,15 @@ Overpass → not set</div>
     overpassLoaded: !!overpassDraft,
     primaryRepoId: loadedRepoId,
     overpassRepoId: overpassLoadedRepoId,
+    garmentTrim: {
+      garmentId: $('trimGarment').value || null,
+      variantKey: $('trimVariant').value || null,
+      view: $('trimView').value,
+      previewDyeSlot: $('trimPreviewDye').value,
+      currentDraft: trimDrafts.has(trimKey()),
+      sessionDraftCount: trimDrafts.size,
+      coverage: trimCoverageText(),
+    },
     ...debugState,
   });
 
@@ -467,6 +1021,7 @@ Overpass → not set</div>
   syncPreviewModeControls();
   refreshPreview(null, null);
   renderLibrary().then(() => { $('status').textContent = 'Repo library ready. Choose Primary or Overpass on any entry.'; }).catch(error => { debugState.lastError = error.message; $('status').textContent = 'Repo library load failed: ' + error.message; });
+  loadTrimAuthoringData();
 })();
 </script>
 </body>

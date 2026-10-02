@@ -118,7 +118,7 @@
   const socialRenderBridge = new URL('social-action-r128-render-bridge.js?v=20260903social5', base).href;
   const npcAmbientMusicStimuliRuntime = new URL('npc-ambient-music-stimuli-runtime.js?v=20260903social10', base).href;
   const npcSocialInhibitionRuntime = new URL('npc-social-inhibition-runtime.js?v=20260903social9', base).href;
-  const socialDanceRuntime = new URL('social-action-dance-runtime.js?v=20260903social4', base).href;
+  const socialDanceRuntime = new URL('social-action-dance-runtime.js?v=20261001h78e7bf6', base).href;
   const socialBodyPlaneRuntime = new URL('social-action-body-plane-runtime.js?v=20260903social6', base).href;
   const socialCameraRuntime = new URL('social-action-camera-runtime.js?v=20260903social7', base).href;
   const npcDancePresentationRuntime = new URL('npc-dance-presentation-runtime.js?v=20260903social12', base).href;

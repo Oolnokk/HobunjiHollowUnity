@@ -7,9 +7,9 @@
 (() => {
   'use strict';
 
-  if (Number(window.HouseWindowLinkage?.version) >= 12) return;
+  if (Number(window.HouseWindowLinkage?.version) >= 13) return;
 
-  const VERSION = 12; // v12 parents the exterior window and exact cut guide to one wall-aligned aperture frame.
+  const VERSION = 13; // v13 lifts exterior windows with the terrain-elevated house mesh and refuses slots on entrance/chimney tiles; v12 parents the exterior window and exact cut guide to one wall-aligned aperture frame.
   const WINDOW_KEYS = new Set(['simpleWindow', 'crossbarWindow', 'wideWindow']); // Only authored daylight-window furniture participates.
   const PEER_SUFFIX = ':house-window-peer'; // Deterministic suffix lets a primary decor id regenerate the same opposite-side id after load.
   const INTERIOR_SCALE = 2; // HousePieces.computeInteriorLayout maps every exterior farm tile to a 2x2 interior footprint.
@@ -190,9 +190,14 @@
     ];
   }
 
+  function houseElevationY(piece) {
+    return finite(piece?._mesh?.position?.y); // PlayerHouseElevation lifts the whole generated house mesh (and its cut holes) to the terrain; exterior windows must ride the same lift.
+  }
+
   function farmWallPoint(run, u01, v01) {
     const piece = run?.piece || pieceById(run?.pieceId); // Owning room dimensions define the Highland body's 15% top taper.
     if (!piece || !run) return null;
+    const lift = houseElevationY(piece); // World Y of the house mesh's local floor.
     const canonicalAlong = run.start + (run.end - run.start) * u01; // Untapered floor-edge coordinate represented by the normalized link.
     const side = run.side; // Cardinal side chooses which farm axis is fixed versus along-wall.
     const render = renderRectForRun(run) || piece; // Neighbor extensions can shift the rendered wall center.
@@ -201,10 +206,11 @@
     const actualAlong = alongCenter + (canonicalAlong - alongCenter) * taperScale; // Reprojects normalized U onto the wall at the requested height.
     const inwardShift = piecePerpendicularLength(render, side) * (1 - taperScale) * 0.5; // Follows the generated wall rather than only the owning room.
     const fixed = run.fixed; // Untapered bottom-edge side coordinate.
-    if (side === 'north') return [actualAlong, v01 * EXTERIOR_WALL_HEIGHT, fixed + inwardShift];
-    if (side === 'south') return [actualAlong, v01 * EXTERIOR_WALL_HEIGHT, fixed - inwardShift];
-    if (side === 'west') return [fixed + inwardShift, v01 * EXTERIOR_WALL_HEIGHT, actualAlong];
-    return [fixed - inwardShift, v01 * EXTERIOR_WALL_HEIGHT, actualAlong];
+    const y = lift + v01 * EXTERIOR_WALL_HEIGHT;
+    if (side === 'north') return [actualAlong, y, fixed + inwardShift];
+    if (side === 'south') return [actualAlong, y, fixed - inwardShift];
+    if (side === 'west') return [fixed + inwardShift, y, actualAlong];
+    return [fixed - inwardShift, y, actualAlong];
   }
 
   function exteriorSlotSurface(run, binding) {
@@ -247,6 +253,20 @@
       spacing: EXTERIOR_SLOT_TILES,
       length,
     };
+  }
+
+  function slotBlockedByWallFeature(run, canonicalAlong) {
+    // Entrances (with their protruding entry tunnel) and chimneys own their wall
+    // tile; a window there would sit behind tunnel bricks with no real opening.
+    const half = EXTERIOR_SLOT_TILES * 0.5;
+    return builtPieces().some(piece => (piece.features || []).some(feature => {
+      if (!feature || feature.invalid || feature.side !== run.side) return false;
+      const col = finite(piece.col) + finite(feature.lx), row = finite(piece.row) + finite(feature.ly);
+      const along = run.side === 'north' || run.side === 'south' ? col : row;
+      const plane = run.side === 'north' ? row : run.side === 'south' ? row + 1 : run.side === 'west' ? col : col + 1;
+      if (Math.abs(plane - run.fixed) > 1e-5) return false;
+      return along + 1 > canonicalAlong - half + 1e-5 && along < canonicalAlong + half - 1e-5;
+    }));
   }
 
   function snapBindingToExteriorSlot(binding) {
@@ -308,9 +328,10 @@
         const normalCoord = run.side === 'north' || run.side === 'south' ? scaledZ : scaledX; // Canonical coordinate perpendicular to this wall.
         planeDistance = Math.abs(normalCoord - run.fixed);
       } else {
-        canonicalAlong = canonicalAlongFromFarmPoint(run, point, v01); // Undo Highland taper before normalizing U.
+        const runV01 = clamp((finite(point[1]) - houseElevationY(run.piece)) / EXTERIOR_WALL_HEIGHT, 0, 1); // Height on this room's (possibly terrain-lifted) wall.
+        canonicalAlong = canonicalAlongFromFarmPoint(run, point, runV01); // Undo Highland taper before normalizing U.
         const normalCoord = run.side === 'north' || run.side === 'south' ? finite(point[2]) : finite(point[0]); // Actual farm-space coordinate perpendicular to the side.
-        planeDistance = Math.abs(normalCoord - expectedFarmFixed(run, v01));
+        planeDistance = Math.abs(normalCoord - expectedFarmFixed(run, runV01));
       }
       const overflow = canonicalAlong < run.start ? run.start - canonicalAlong : canonicalAlong > run.end ? canonicalAlong - run.end : 0; // Rejects geometrically nearby perpendicular/corner walls.
       const score = planeDistance * 4 + overflow * 6 + normalPenalty * 0.15; // Plane/segment geometry dominates the normal hint.
@@ -371,6 +392,8 @@
     if (!isWindowKey(key) || farmDeps?.getCurrentArea?.() !== 'farm' || !rawPlacement) return null;
     const binding = bindingFromPlacement('farm', rawPlacement, key, null);
     if (!binding || exteriorSlotOccupied(binding, excludePrimaryId)) return null;
+    const run = resolveRun(binding); // New placements may not cover an entrance/chimney tile; already-saved windows still restore.
+    if (run && slotBlockedByWallFeature(run, run.start + (run.end - run.start) * binding.u01)) return null;
     return placementForArea('farm', binding, key, rawPlacement.baseTransform || null, rawPlacement.normalOffset);
   }
 
@@ -794,7 +817,7 @@
     debugSnapshot,
     isWindowKey,
     snapExteriorPlayerPlacement,
-    __test: Object.freeze({ buildBoundaryRuns, windowSilhouette, exteriorWindowSilhouette, exteriorTaperScale, exteriorSlotLayout, snapBindingToExteriorSlot, exteriorSlotId, bindingFromPlacement, resolveRun, farmWallPoint, exteriorSlotSurface, exteriorCutCenterForRender, EXTERIOR_HEIGHT_SCALE, EXTERIOR_SLOT_TILES, EXTERIOR_SLOT_V01, ensureWindowSelectionRoot, isObjectMeshSceneAttached }),
+    __test: Object.freeze({ slotBlockedByWallFeature, buildBoundaryRuns, windowSilhouette, exteriorWindowSilhouette, exteriorTaperScale, exteriorSlotLayout, snapBindingToExteriorSlot, exteriorSlotId, bindingFromPlacement, resolveRun, farmWallPoint, exteriorSlotSurface, exteriorCutCenterForRender, EXTERIOR_HEIGHT_SCALE, EXTERIOR_SLOT_TILES, EXTERIOR_SLOT_V01, ensureWindowSelectionRoot, isObjectMeshSceneAttached }),
   });
   window.__houseWindowLinkDebug = debugSnapshot;
 

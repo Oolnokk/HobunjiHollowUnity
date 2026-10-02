@@ -323,6 +323,108 @@ assert.match(handSource, /const triangleMaxY = Math\.max\(position\.getY\(a\), p
 assert.match(handSource, /hobunjiShellIndexStorage/, 'the alternate shell index must remain owned by the cloned geometry for GPU cleanup');
 assert.match(handSource, /parrotBodyShellTrim: activeVisual/, 'mobile diagnostics must expose the source and retained body-shell triangle counts');
 assert.match(handOutlineSource, /hobunjiPortraitOccludedWingLayer === true\) return false/, 'portrait-occluded wing mesh must stay out of the held-object foreground replay');
+assert.match(handSource, /group\.userData\.handModelKey = modelKey/, 'permanent GLB hand visuals must retain a marker that distinguishes them from same-named fallbacks');
+assert.match(handOutlineSource, /const expectsGlb = !!debug\.glb/, 'outline parity should only wait for a permanent GLB when the hand profile actually configures one');
+assert.match(handOutlineSource, /leftVisual\?\.userData\?\.handModelKey/, 'initial outline polling must distinguish the permanent left GLB from the temporary same-named fallback');
+assert.match(handOutlineSource, /rightVisual\?\.userData\?\.handModelKey/, 'initial outline polling must distinguish the permanent right GLB from the temporary same-named fallback');
+assert.doesNotMatch(handOutlineSource, /const leftLoaded = !!rig\.group\?\.getObjectByName\?\.\('left_hand_visual'\)/, 'same-named fallback presence must never terminate the initial GLB outline scan');
+
+{
+  // Behavioral regression for the actual bug: attach() exposes same-named fallback
+  // visuals immediately, then replaces them asynchronously with the permanent GLBs.
+  // The outline parity wrapper must keep polling through the fallback phase and hook
+  // the replacement meshes once handModelKey proves the real models are present.
+  const timeoutQueue = []; // Fake browser timer queue used to advance only the outline wrapper's bounded GLB poll.
+  class TestMatrix4 {
+    copy() { return this; }
+    clone() { return new TestMatrix4(); }
+  }
+  function node(name, options = {}) {
+    const value = {
+      name,
+      isMesh: !!options.isMesh,
+      userData: { ...(options.userData || {}) },
+      children: [],
+      parent: null,
+      material: null,
+      geometry: null,
+      layers: {
+        mask: 0,
+        enable(layer) { this.mask |= (1 << layer); },
+      },
+      add(child) {
+        child.parent = this;
+        this.children.push(child);
+        return this;
+      },
+      traverse(visitor) {
+        visitor(this);
+        for (const child of this.children) child.traverse(visitor);
+      },
+      getObjectByName(target) {
+        if (this.name === target) return this;
+        for (const child of this.children) {
+          const found = child.getObjectByName(target);
+          if (found) return found;
+        }
+        return null;
+      },
+    };
+    return value;
+  }
+  function visual(side, loaded) {
+    const root = node(`${side}_hand_visual`, {
+      userData: loaded ? { handModelKey: 'feline' } : {},
+    });
+    const mesh = node(`${side}_mesh`, { isMesh: true });
+    root.add(mesh);
+    return { root, mesh };
+  }
+
+  const leftSocket = node('left_hand_socket');
+  const rightSocket = node('right_hand_socket');
+  const leftCalibration = node('left_hand_calibration');
+  const rightCalibration = node('right_hand_calibration');
+  const leftFallback = visual('left', false);
+  const rightFallback = visual('right', false);
+  leftCalibration.add(leftFallback.root);
+  rightCalibration.add(rightFallback.root);
+  leftSocket.add(leftCalibration);
+  rightSocket.add(rightCalibration);
+  const rigGroup = node('test_hand_rig').add(leftSocket).add(rightSocket);
+  const rig = {
+    group: rigGroup,
+    getDebug() { return { glb: 'assets/models/hands/hand_feline.glb', loadError: null }; },
+    refreshModelProfile() {},
+    dispose() {},
+  };
+  const fakeHands = { attach() { return rig; } };
+  const outlineWindow = {
+    THREE: { Matrix4: TestMatrix4, BackSide: -1 },
+    ProceduralHandAttachments: fakeHands,
+    setTimeout(callback) { timeoutQueue.push(callback); return timeoutQueue.length; },
+  };
+  vm.runInNewContext(handOutlineSource, { window: outlineWindow }, { filename: 'procedural-hand-outline-parity-behavior.js' });
+
+  const attachedRig = fakeHands.attach();
+  assert.strictEqual(attachedRig, rig, 'outline wrapper must preserve the original hand rig');
+  assert.strictEqual(timeoutQueue.length, 1, 'same-named fallback hands must keep the initial GLB poll alive');
+  assert.strictEqual(attachedRig.getDebug().outlineInitialGlbReady, false, 'fallback hands must not report permanent GLB readiness');
+
+  const leftLoaded = visual('left', true);
+  const rightLoaded = visual('right', true);
+  leftCalibration.children = [];
+  rightCalibration.children = [];
+  leftCalibration.add(leftLoaded.root);
+  rightCalibration.add(rightLoaded.root);
+  timeoutQueue.shift()();
+
+  assert.strictEqual(timeoutQueue.length, 0, 'polling should stop as soon as both permanent GLBs have been observed');
+  assert.strictEqual(leftLoaded.mesh.userData.__hobunjiHandOutlineParity, true, 'replacement left GLB mesh must receive the outline matrix hook');
+  assert.strictEqual(rightLoaded.mesh.userData.__hobunjiHandOutlineParity, true, 'replacement right GLB mesh must receive the outline matrix hook');
+  assert.strictEqual(attachedRig.getDebug().outlineInitialGlbReady, true, 'diagnostics must confirm both permanent GLBs were hooked');
+  assert.strictEqual(attachedRig.getDebug().outlineInitialGlbWaitTimedOut, false, 'successful async replacement must not report a timeout');
+}
 assert.match(handOutlineSource, /return 'occluder-depth'/, 'the parrot body primitive depth replay must be recognized as a secondary hand render pass');
 assert.match(handOutlineSource, /lockedOccluderDepthDraws/, 'mobile diagnostics must confirm that the pre-shell hand depth replay uses the visible hand transform');
 assert.match(handOutlineSource, /passKind === 'shell'.*hobunjiShellIndex/s, 'only the shell pass may swap to the trimmed body-coloured hand index');
@@ -611,10 +713,10 @@ const hatchetGripScale = grips.toolScaleForTool('hatchet');
 assert.strictEqual(effectiveHatchetGrip.position.x, authoredHatchetGrip.position.x * hatchetGripScale, 'primary grip target X must scale with the visible weapon instead of moving the weapon back to the hand');
 assert.strictEqual(effectiveHatchetGrip.position.y, authoredHatchetGrip.position.y * hatchetGripScale, 'primary grip target Y must scale with the visible weapon');
 assert.strictEqual(effectiveHatchetGrip.position.z, authoredHatchetGrip.position.z * hatchetGripScale, 'primary grip target Z must scale with the visible weapon');
-assert.match(gripConfigSource, /function primaryGripForTool\(value, context = currentGripContext\(\)\)/, 'primary grip API must resolve an explicit melee/ranged context.');
+assert.match(gripConfigSource, /function primaryGripForTool\(value, context = currentGripContext\(\), identity = null\)/, 'primary grip API must resolve an explicit melee/ranged context plus optional character identity.');
 assert.match(gripConfigSource, /function spinPivotOffsetForTool\(value, angleRad, context = 'ranged'\)[\s\S]*return \{ x: x - rotatedX, y: 0, z: z - rotatedZ \}/, 'shared throw-spin pivot must translate the visual by P - R(P) around the authored primary grip.');
 assert.match(gripConfigSource, /primaryGripFieldForContext[\s\S]*rangedPrimaryGrip/, 'ranged primary grip must be stored independently from melee primaryGrip.');
-assert.match(driverSource, /const gripContext = currentGripContext\(record\)[\s\S]*primaryGripForTool\(toolKey, gripContext\)[\s\S]*secondaryGripForTool\(toolKey, gripContext\)/, 'runtime hand driver must switch both hands to the active actor\'s melee\/ranged grip metadata.');
+assert.match(driverSource, /const gripContext = currentGripContext\(record\)[\s\S]*const scaleIdentity = \{ speciesId: record\.speciesId, gender: record\.gender \}[\s\S]*primaryGripForTool\(toolKey, gripContext, scaleIdentity\)[\s\S]*secondaryGripForTool\(toolKey, gripContext, scaleIdentity\)/, 'runtime hand driver must switch both hands to the active actor\'s melee\/ranged grip metadata at the same character-height scale as the weapon.');
 assert.match(directEditorSource, /id="handGripContextSelect"[\s\S]*Melee grip[\s\S]*Ranged grip/, 'Attack Editor must expose an explicit Melee/Ranged grip-set selector.');
 assert.match(gripConfigSource, /grip authoring moves the RIGHT HAND to that frame and never inverse-moves the weapon/, 'shared grip contract must keep weapon animation authoritative');
 assert.doesNotMatch(gripConfigSource, /function primaryGripForTool\(\) \{ return identityTransform\(\); \}/, 'primary hand target must no longer be discarded at runtime');

@@ -27,12 +27,12 @@
 // sharp and blunt effects — unlike a shared-across-weapons design would.
 //
 // Ability modules read their unlocked bonuses via getEffects(toolKey,
-// abilityId), which merges every chosen level's afflictions (summed per-
-// affliction-id, each value a multiplier against the hit's own damage —
-// same convention resource-system.js's old tag-based sharpBleedMul/
-// bluntBruiseMul/etc. used) and stat bonuses (summed per stat key; each
-// ability module interprets only the stat keys relevant to it and ignores
-// the rest).
+// abilityId), which merges every chosen level's ordinary afflictions
+// (summed per-affliction-id, each value a multiplier against the hit's own
+// damage) and stat bonuses. Quick Attack affliction/debuff choices are
+// returned separately as quickBonusAfflictions/quickBonusDebuffs so their
+// condition + cooldown gate can own those burst effects without changing
+// Combo/Held/Flurry behavior.
 (() => {
   "use strict";
   if (!window.Combat) { console.error('combat-progression.js requires combat-core.js to load first'); return; }
@@ -160,15 +160,56 @@
     bruisedHealth: 'Bruised Health', windedStamina: 'Winded Stamina', congealedHealth: 'Congealed Health', shatteredStamina: 'Shattered Stamina',
   };
 
+  function quickDebuff(id, label, desc, durationS = 12) {
+    return { label, desc, quickBonusDebuff: { id, durationS } };
+  }
+
+  function quickInstantEffect(id, label, desc, amount) {
+    const effectAmount = Math.max(0, Number(amount) || 0); // Base payload is later scaled by mastery power and Quick Attack bonus-effect power.
+    return { label, desc, quickBonusInstantEffect: { id, amount: effectAmount } };
+  }
+
+  // Quick Attacks keep the same saved option indexes as their old generic
+  // weapon trees, but affliction picks are moved from "every hit" into the
+  // condition-bonus package. Existing character saves therefore migrate
+  // behavior without having their selected mastery rows remapped.
+  function quickAttackTree(levels) {
+    const tree = levels.map(level => level.map(option => {
+      const copy = { ...option, stat: option.stat ? { ...option.stat } : undefined };
+      if (!option.afflictions) return copy;
+      const names = Object.keys(option.afflictions).map(id => AFFLICTION_LABEL[id] || id).join(' + ');
+      delete copy.afflictions;
+      copy.quickBonusAfflictions = { ...option.afflictions };
+      copy.desc = `Successful condition-bonus procs apply ${names} as a burst; ordinary Quick Attack hits do not.`;
+      return copy;
+    }));
+    tree[2] = [
+      ...tree[2],
+      // Keep these first three appended indexes stable for saves created against the first cooldown-debuff implementation.
+      quickDebuff('exposed', 'Expose Opening', 'Adds a stack of Exposed: increased direct Health damage received. Stacks up to 5 and refreshes for 12 seconds.'),
+      quickDebuff('sapped', 'Sap Recovery', 'Adds a stack of Sapped: reduced Stamina recovery. Stacks up to 5 and refreshes for 12 seconds.'),
+      quickDebuff('unsteady', 'Break Balance', 'Adds a stack of Unsteady: reduced Footing recovery. Stacks up to 5 and refreshes for 12 seconds.'),
+      quickDebuff('reeling', 'Set Reeling', 'Adds a stack of Reeling: increased knockback received. Stacks up to 5 and refreshes for 12 seconds.'),
+      quickDebuff('heavy', 'Make Heavy', 'Adds a stack of Heavy: reduced movement speed and dodge/lunge distance. Stacks up to 5 and refreshes for 12 seconds.'),
+      quickDebuff('sluggish', 'Make Sluggish', 'Adds a stack of Sluggish: reduced attack speed. Stacks up to 5 and refreshes for 12 seconds.'),
+      quickDebuff('brittle', 'Make Brittle', 'Adds a stack of Brittle: increased Footing damage received. Stacks up to 5 and refreshes for 12 seconds.'),
+      quickDebuff('taxed', 'Tax Breath', 'Adds a stack of Taxed: increased Stamina costs. Stacks up to 5 and refreshes for 12 seconds.'),
+      quickDebuff('enfeebled', 'Enfeeble', 'Adds a stack of Enfeebled: reduced outgoing direct damage. Stacks up to 5 and refreshes for 12 seconds.'),
+      quickDebuff('inhibited', 'Inhibit Recovery', 'Adds a stack of Inhibited: reduced Health recovery received. Stacks up to 5 and refreshes for 12 seconds.'),
+      quickInstantEffect('bleedout', 'Bleedout', 'Instantly realizes up to 12 existing Bleeding Health as Health loss; it cannot create Bleeding.', 6),
+    ];
+    return tree;
+  }
+
   // Ability id -> { sharp: levels, blunt: levels } for weapon-typed
   // abilities, or a flat levels array for the one that isn't (Blink Dodge).
   const TREES = {
     swingCombo: { sharp: sharpTree(), blunt: bluntTree() },
     pokeCombo: { sharp: sharpTree(), blunt: bluntTree() },
-    opportunistJab: { sharp: sharpTree(), blunt: bluntTree() },
-    exhaustCutter: { sharp: exhaustCutterSharpTree(), blunt: bluntTree() },
-    backstabFlick: { sharp: sharpTree(), blunt: bluntTree() },
-    mercySpike: { sharp: mercySpikeSharpTree(), blunt: bluntTree() },
+    opportunistJab: { sharp: quickAttackTree(sharpTree()), blunt: quickAttackTree(bluntTree()) },
+    exhaustCutter: { sharp: quickAttackTree(exhaustCutterSharpTree()), blunt: quickAttackTree(bluntTree()) },
+    backstabFlick: { sharp: quickAttackTree(sharpTree()), blunt: quickAttackTree(bluntTree()) },
+    mercySpike: { sharp: quickAttackTree(mercySpikeSharpTree()), blunt: quickAttackTree(bluntTree()) },
     chargedBreaker: { sharp: sharpTree(), blunt: bluntTree() },
     acceleratingFlurry: { sharp: sharpTree(), blunt: bluntTree() },
     counterShield: {
@@ -286,12 +327,14 @@
     return true;
   }
 
-  // Merges every chosen level's afflictions (summed per id) and stat
-  // bonuses (summed per key) for one ability *on this tool* into a single
-  // flat object.
+  // Merges every chosen level's ordinary afflictions/stats plus the
+  // cooldown-gated Quick Attack bonus payloads for one ability *on this tool*.
   function getEffects(toolKey, abilityId) {
     const afflictions = {};
     const stats = {};
+    const quickBonusAfflictions = {}; // Used only by successful, cooldown-ready Quick Attack condition procs.
+    const quickBonusDebuffs = []; // Duration effects are applied by combat-quickattacks.js after the triggering hit resolves.
+    const quickBonusInstantEffects = []; // One-shot effects such as Bleedout resolve only on the same cooldown-ready condition proc.
     const trial = preview?.toolKey === toolKey && preview.abilityId === abilityId ? preview : null; // Replace this row only; keep saved earlier choices as the comparison baseline.
     const m = { ...(meta[toolKey]?.[abilityId] || {}), ...(trial ? { [trial.level]: trial.index } : {}) }; // Temporary map never writes into saved progression.
     for (const levelStr of Object.keys(m)) {
@@ -308,12 +351,22 @@
           stats[key] = (stats[key] || 0) + val;
         }
       }
+      if (option.quickBonusAfflictions) {
+        for (const [id, mul] of Object.entries(option.quickBonusAfflictions)) {
+          quickBonusAfflictions[id] = (quickBonusAfflictions[id] || 0) + mul;
+        }
+      }
+      if (option.quickBonusDebuff?.id) quickBonusDebuffs.push({ ...option.quickBonusDebuff });
+      if (option.quickBonusInstantEffect?.id) quickBonusInstantEffects.push({ ...option.quickBonusInstantEffect });
     }
     // Immundanity weakens only effects granted by Weapon Mastery choices.
     // Combat perks are added AFTER this pass so a magical weapon does not
     // silently reduce unrelated perk/base-weapon stats.
     const masteryPower = window.EnchantmentSystem?.getMasteryPowerMultiplier?.(toolKey) ?? 1; // Shared Immundanity calculation; never re-derived per ability.
     for (const id of Object.keys(afflictions)) afflictions[id] *= masteryPower;
+    for (const id of Object.keys(quickBonusAfflictions)) quickBonusAfflictions[id] *= masteryPower;
+    for (const debuff of quickBonusDebuffs) debuff.power = masteryPower;
+    for (const effect of quickBonusInstantEffects) effect.power = masteryPower;
     for (const key of Object.keys(stats)) stats[key] *= masteryPower;
 
     // Increase AoE / Increase Lunge Distance perks apply here so every
@@ -321,12 +374,16 @@
     // returned object) picks them up uniformly.
     stats.rangeMul = (stats.rangeMul || 0) + (window.PerkSystem?.rank('combat', 'increaseAoe') || 0) * 0.1;
     stats.lungeMul = (stats.lungeMul || 0) + (window.PerkSystem?.rank('combat', 'increaseLungeDistance') || 0) * 0.12;
-    return { afflictions, stats };
+    return { afflictions, stats, quickBonusAfflictions, quickBonusDebuffs, quickBonusInstantEffects };
   }
 
-  function beginPreview(toolKey, abilityId, level, index) {
-    const options = getTree(abilityId, weaponTypeForTool(toolKey))?.[level - 1]; // Validate preview data against the same catalog and actual weapon Mastery.
-    if (!Number.isInteger(level) || level < 1 || level > masteryLevel(toolKey) || !Number.isInteger(index) || !options?.[index]) return null;
+  // options.demonstration lets a teaching system (Spearhead's Afflictions
+  // lesson) show an upgrade the player has not earned yet on a borrowed
+  // weapon; ordinary previews still require the weapon's actual Mastery.
+  function beginPreview(toolKey, abilityId, level, index, options = {}) {
+    const choices = getTree(abilityId, weaponTypeForTool(toolKey))?.[level - 1]; // Validate preview data against the same catalog and actual weapon Mastery.
+    const masteryOk = options?.demonstration === true || level <= masteryLevel(toolKey);
+    if (!Number.isInteger(level) || level < 1 || !masteryOk || !Number.isInteger(index) || !choices?.[index]) return null;
     const handle = { toolKey, abilityId, level, index }; // Ownership token prevents stale cleanup from clearing a newer preview.
     preview = handle;
     return handle;

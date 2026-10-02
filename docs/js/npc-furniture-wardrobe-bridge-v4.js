@@ -352,7 +352,9 @@
     const original = api.syncInteractionPrompts.bind(api);
     api.syncInteractionPrompts = function syncInteractionPromptsWithoutNpcWardrobe(options = {}) {
       const buttons = Array.isArray(options.buttons) ? options.buttons : [];
-      return original({ ...options, buttons: buttons.filter(entry => actionId(entry) !== 'npc_open_wardrobe') });
+      const keep = buttons.map(entry => actionId(entry) !== 'npc_open_wardrobe');
+      const promptInputs = Array.isArray(options.promptInputs) ? options.promptInputs.filter((_, index) => keep[index]) : options.promptInputs; // promptInputs is indexed by button slot; filter both together so later rows keep their own glyph/color.
+      return original({ ...options, buttons: buttons.filter((_, index) => keep[index]), promptInputs });
     };
     api.__npcWardrobePromptFiltered = true;
     return true;

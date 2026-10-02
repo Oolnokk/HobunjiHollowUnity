@@ -27,7 +27,15 @@
   'use strict';
 
   const MODULE_SCRIPT_URL = typeof document !== 'undefined' ? (document.currentScript?.src || '') : ''; // Lets the exact runtime compositor run from nested docs/tools pages without changing asset semantics in-game.
-  const DOCS_BASE_URL = MODULE_SCRIPT_URL ? new URL('../', MODULE_SCRIPT_URL).href : ''; // creature-genetics-render.js lives in docs/js/, so ../ is the docs root.
+  // creature-genetics-render.js lives in docs/js/, so ../ is the docs root. Tool
+  // loaders that fetch this file and run it from a blob: URL (Animation Author,
+  // the docs/references previews) have no hierarchical base, and
+  // new URL('../', 'blob:...') throws; they rewrite asset paths themselves, so
+  // fall back to leaving paths unchanged.
+  const DOCS_BASE_URL = (() => {
+    if (!MODULE_SCRIPT_URL || /^(?:blob|data):/i.test(MODULE_SCRIPT_URL)) return '';
+    try { return new URL('../', MODULE_SCRIPT_URL).href; } catch { return ''; }
+  })();
   function docsUrl(path) {
     const value = String(path || '');
     if (!value || /^(?:data:|blob:|https?:)/i.test(value) || !DOCS_BASE_URL) return value;

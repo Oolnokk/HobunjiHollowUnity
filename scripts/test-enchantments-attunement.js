@@ -166,10 +166,12 @@ CAE.hit(CAE.prepare({ abilityId: 'swingCombo', comboStep: 3, comboFinisher: true
 assert.ok(moralized() > 0, '4. Combo Flourish fires on Combo III');
 assert.match(log(), /Combo Flourish triggered/);
 clearMoralized();
-CAE.hit(CAE.prepare({ abilityId: 'opportunistJab', quickConditionalBonus: false }), { target: enemy, actualDamage: 5 });
+CAE.hit(CAE.prepare({ abilityId: 'opportunistJab', quickConditionalBonus: false, quickBonusEffectProc: false }), { target: enemy, actualDamage: 5 });
 assert.equal(moralized(), 0, '5. Quick Attack without its conditional bonus cannot fire');
-CAE.hit(CAE.prepare({ abilityId: 'opportunistJab', quickConditionalBonus: true }), { target: enemy, actualDamage: 5 });
-assert.ok(moralized() > 0, '5. Quick Attack bonus qualifies');
+CAE.hit(CAE.prepare({ abilityId: 'opportunistJab', quickConditionalBonus: true, quickBonusEffectProc: false }), { target: enemy, actualDamage: 5 });
+assert.equal(moralized(), 0, '5. matching a Quick Attack condition during cooldown does not fire its Flourish');
+CAE.hit(CAE.prepare({ abilityId: 'opportunistJab', quickConditionalBonus: true, quickBonusEffectProc: true }), { target: enemy, actualDamage: 5 });
+assert.ok(moralized() > 0, '5. cooldown-ready Quick Attack bonus proc qualifies');
 clearMoralized();
 CAE.hit(CAE.prepare({ abilityId: 'chargedBreaker', chargePercentage: 0.9, fullCharge: false }), { target: enemy, actualDamage: 5 });
 assert.equal(moralized(), 0, '6. partial charge cannot fire');
@@ -198,6 +200,65 @@ assert.match(log(), /Defensive Flourish triggered on block/);
 clearMoralized();
 CAE.defensive({ attacker: player, abilityId: 'counterShield', defensiveResult: 'nearHitDodge', target: enemy });
 assert.ok(moralized() > 0, '8. near-hit dodge triggers the Defensive Flourish');
+
+// ── Quick Attack stackable percentage debuffs + Bleedout ──────────
+const quickSharpTree = context.CombatProgression.getTree('opportunistJab', 'sharp'); // Level-three options preserve the first cooldown-debuff indexes and append the broader pool.
+const quickDebuffIds = quickSharpTree[2].filter(option => option.quickBonusDebuff?.id).map(option => option.quickBonusDebuff.id); // Used to prove every authored percentage debuff is selectable.
+same(quickDebuffIds, ['exposed', 'sapped', 'unsteady', 'reeling', 'heavy', 'sluggish', 'brittle', 'taxed', 'enfeebled', 'inhibited'], 'Quick Attack level 3 exposes the complete stackable debuff pool with the original first three indexes preserved');
+const bleedoutChoice = quickSharpTree[2].find(option => option.quickBonusInstantEffect?.id === 'bleedout'); // Used to verify the one-shot alternative lives beside timed choices.
+assert.equal(bleedoutChoice?.quickBonusInstantEffect?.amount, 6, 'Bleedout authors six base points so the default 2× Quick bonus power realizes 12');
+
+const exposedTarget = makeEntity();
+const firstExpose = RS.applyTimedDebuff(exposedTarget, 'exposed', 12, { power: 2, source: 'test' }); // First stack establishes the refreshed stack window.
+assert.equal(firstExpose.stacks, 1);
+testNowMs += 5000;
+const secondExpose = RS.applyTimedDebuff(exposedTarget, 'exposed', 12, { power: 2, source: 'test' }); // A second cooldown-spaced proc must stack instead of replacing the first.
+assert.equal(secondExpose.stacks, 2);
+assert.equal(RS.applyDamage(exposedTarget, 10, {}), 13, 'two 2× Exposed stacks add to +30% direct damage rather than multiplying into compounding percentages');
+for (let i = 0; i < 5; i++) RS.applyTimedDebuff(exposedTarget, 'exposed', 12, { power: 2, source: 'test' });
+assert.equal(RS.getTimedDebuffs(exposedTarget)[0].stacks, 5, 'same-name debuffs cap at five stacks');
+testNowMs += 12001;
+assert.equal(RS.applyDamage(exposedTarget, 10, {}), 10, 'the refreshed timed stack expires on the combat clock');
+
+const modifierTarget = makeEntity({ health: 50, stamina: 100, footing: 100 }); // Exercises every non-regeneration percentage hook without needing game.js.
+RS.applyTimedDebuff(modifierTarget, 'reeling', 12, { power: 2 });
+RS.applyTimedDebuff(modifierTarget, 'heavy', 12, { power: 2 });
+RS.applyTimedDebuff(modifierTarget, 'sluggish', 12, { power: 2 });
+RS.applyTimedDebuff(modifierTarget, 'brittle', 12, { power: 2 });
+RS.applyTimedDebuff(modifierTarget, 'taxed', 12, { power: 2 });
+RS.applyTimedDebuff(modifierTarget, 'enfeebled', 12, { power: 2 });
+RS.applyTimedDebuff(modifierTarget, 'inhibited', 12, { power: 2 });
+assert.ok(Math.abs(RS.timedDebuffModifier(modifierTarget, 'knockbackTaken') - 1.3) < 1e-9, 'Reeling is +30% knockback at default Quick-bonus power');
+assert.ok(Math.abs(RS.timedDebuffModifier(modifierTarget, 'moveSpeed') - 0.85) < 1e-9, 'Heavy is -15% movement per default-power stack');
+assert.ok(Math.abs(RS.timedDebuffModifier(modifierTarget, 'dodgeLungeDistance') - 0.85) < 1e-9, 'Heavy unifies movement and dodge/lunge distance');
+assert.ok(Math.abs(RS.getExhaustionSpeed(modifierTarget) - 0.85) < 1e-9, 'Sluggish reduces central attack timing');
+assert.ok(Math.abs(RS.timedDebuffModifier(modifierTarget, 'outgoingDamage') - 0.85) < 1e-9, 'Enfeebled exposes a source-side direct-damage multiplier');
+RS.spendFooting(modifierTarget, 10, 'test');
+assert.equal(modifierTarget.footing, 88, 'Brittle increases 10 Footing damage to 12 at default Quick-bonus power');
+RS.spendStamina(modifierTarget, 20, 'test');
+assert.equal(modifierTarget.stamina, 77, 'Taxed increases a 20 Stamina action cost to 23 at default Quick-bonus power');
+RS.applyHealthRecovery(modifierTarget, 10);
+assert.equal(modifierTarget.health, 58, 'Inhibited reduces 10 Health recovery to 8 at default Quick-bonus power');
+
+const normalRecovery = makeEntity({ stamina: 0, footing: 0 });
+const slowedRecovery = makeEntity({ stamina: 0, footing: 0 });
+RS.applyTimedDebuff(slowedRecovery, 'sapped', 12, { power: 2 });
+RS.applyTimedDebuff(slowedRecovery, 'unsteady', 12, { power: 2 });
+RS.tick(normalRecovery, 0.25);
+RS.tick(slowedRecovery, 0.25);
+assert.ok(slowedRecovery.stamina < normalRecovery.stamina, 'Sapped reduces central Stamina recovery');
+assert.ok(slowedRecovery.footing < normalRecovery.footing, 'Unsteady reduces central Footing recovery');
+
+const bleedTarget = makeEntity({ health: 100 }); // Bleedout must consume existing buildup and never fabricate the missing remainder.
+RS.addAffliction(bleedTarget, 'bleedingHealth', 20);
+const bleedout = RS.bleedOut(bleedTarget, 12, { source: 'test' });
+assert.equal(bleedout.consumed, 12);
+assert.equal(bleedout.damage, 12);
+assert.equal(RS.getAffliction(bleedTarget, 'bleedingHealth'), 8);
+assert.equal(bleedTarget.health, 88);
+const shortBleedout = RS.bleedOut(bleedTarget, 20, { source: 'test' });
+assert.equal(shortBleedout.consumed, 8, 'Bleedout clamps to the Bleeding Health actually available');
+assert.equal(RS.getAffliction(bleedTarget, 'bleedingHealth'), 0);
 
 // ── 15: Moralized / Resolute 3:1 ──────────────────────────────────
 reset();

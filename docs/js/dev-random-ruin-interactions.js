@@ -610,9 +610,14 @@
       lastRows=[];
       lastAnchor=null;
       lastRowsSignature='';
-      window.WorldActionInputClaims?.clearClaims?.(INPUT_CLAIM_OWNER);
-      window.WorldPopupText?.clearInteractionPrompts?.();
-      if(hadRows&&requestActionBar)deps?.refreshActionBar?.();
+      // Only tear down once, on the way out of the ruin. This runs at 12.5 Hz
+      // everywhere; clearing every tick destroyed the ordinary action bar's
+      // prompts (farmhouse Exit, NPCs, furniture) and made them flicker.
+      if(hadRows){
+        window.WorldActionInputClaims?.clearClaims?.(INPUT_CLAIM_OWNER);
+        window.WorldPopupText?.clearInteractionPrompts?.();
+        if(requestActionBar)deps?.refreshActionBar?.();
+      }
       return [];
     }
     prepareSemanticObjects();

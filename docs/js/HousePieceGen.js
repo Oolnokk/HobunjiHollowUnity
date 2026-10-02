@@ -283,7 +283,7 @@
   function _cutFacesForOpenings(faces, openings) {
     if (!Array.isArray(openings) || !openings.length) return faces;
     var classified = _classifyBodyWalls(faces);
-    var changed = false, out = [];
+    var changed = false, out = [], openingQuads = [];
 
     function subtractRect(rect, cut) {
       var u0 = Math.max(rect.u0, cut.u0), u1 = Math.min(rect.u1, cut.u1);
@@ -318,7 +318,7 @@
         var vlo = Math.max(0, Math.min(1, vCenter - vHeight * 0.5));
         var vhi = Math.max(0, Math.min(1, vCenter + vHeight * 0.5));
         if (!startIsMin) { var flippedLo = 1 - hi, flippedHi = 1 - lo; lo = flippedLo; hi = flippedHi; }
-        if (hi - lo > 1e-5 && vhi - vlo > 1e-5) cuts.push({ u0: lo, u1: hi, v0: vlo, v1: vhi });
+        if (hi - lo > 1e-5 && vhi - vlo > 1e-5) cuts.push({ u0: lo, u1: hi, v0: vlo, v1: vhi, kind: opening.kind || 'window' });
       });
       if (!cuts.length) { out.push(f); continue; }
 
@@ -335,6 +335,14 @@
       var bottom = function (u) { return _lerp3(b0, b1, u); };
       var top = function (u) { return _lerp3(t0, t1, u); };
       var point = function (u, v) { return _lerp3(bottom(u), top(u), v); };
+      // Window holes are also handed to WallBuilder as brick exclusion zones:
+      // bricks are only centre-clamped to their own (possibly very thin)
+      // surviving panel, so without this the strips around a hole still
+      // grow full-size bricks across it.
+      cuts.forEach(function (cut) {
+        if (cut.kind === 'door') return;
+        openingQuads.push([point(cut.u0, cut.v0), point(cut.u0, cut.v1), point(cut.u1, cut.v1), point(cut.u1, cut.v0)]);
+      });
       rects.forEach(function (rect, rectIndex) {
         out.push(Object.assign({}, f, {
           id: String(f.id || i) + ':opening:' + rectIndex,
@@ -343,6 +351,7 @@
         }));
       });
     }
+    if (changed) out.openingQuads = openingQuads; // Read by buildGroup for WallBuilder brick exclusion.
     return changed ? out : faces;
   }
 
@@ -579,6 +588,7 @@
     if (Array.isArray(opts.windowCuts)) wallOpenings = wallOpenings.concat(opts.windowCuts);
     var cutFaces = _cutFacesForOpenings(faces, wallOpenings);
     var wallCut = cutFaces !== faces;
+    var openingQuads = (wallCut && cutFaces.openingQuads) || [];
     faces = cutFaces;
 
     var group = new THREE.Group();
@@ -601,7 +611,7 @@
                                      preScale: [1, 1, 0.6],
                                      brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
 
-      var wbGroup = opts.wallBuilder.build(bodyPanels, Object.assign({ usePlaceholder: wbUse }, wbExtra));
+      var wbGroup = opts.wallBuilder.build(bodyPanels, Object.assign({ usePlaceholder: wbUse, excludeQuads: openingQuads }, wbExtra));
       wbGroup.userData.isWallBricks = true;
       _markOutlineLayer(wbGroup);
       group.add(wbGroup);

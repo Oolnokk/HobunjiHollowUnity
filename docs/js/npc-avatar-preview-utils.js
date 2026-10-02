@@ -94,6 +94,83 @@
       mandatoryCosmeticSlotsByFighter, exclusiveCosmeticsByFighter);
   }
 
+  // Authored NPC aging (appearance.aging), ported from
+  // docs/references/HobunjiAvatarBodyAgingColorPreview-2.html (body color) and
+  // HobunjiAvatarPosturePreview-11.html (posture):
+  //   appearance.aging = { hunch: 0..1, bodyColor: { amount, desaturation, brightening } }
+  // bodyColor values are the reference tool's percentages. Only body slots
+  // A/B/C are aged; clothing and equipment dyes are untouched. `hunch` is the
+  // HobunjiCharacterRigScale age fraction (the neck-bone head drop the posture
+  // preview baked as pixels) and is read at avatar build time via ageFor().
+  const AGING_BODY_COLOR_PRESETS = Object.freeze({
+    mature: Object.freeze({ amount: 40, desaturation: 40, brightening: 14 }),
+    old: Object.freeze({ amount: 70, desaturation: 65, brightening: 30 }),
+    ancient: Object.freeze({ amount: 100, desaturation: 88, brightening: 48 }),
+  });
+  const AGING_BODY_SLOTS = ['A', 'B', 'C'];
+  const clampPercent = value => {
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 0;
+  };
+  const srgbToLinear = c => {
+    const v = Math.max(0, Math.min(1, Number(c) / 255));
+    return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  };
+  const linearToSrgb = c => {
+    const v = Math.max(0, Math.min(1, Number(c) || 0));
+    return (v <= 0.0031308 ? v * 12.92 : 1.055 * Math.pow(v, 1 / 2.4) - 0.055) * 255;
+  };
+  function mixLinear(from, to, t) {
+    return from.map((c, i) => linearToSrgb(srgbToLinear(c) + (srgbToLinear(to[i]) - srgbToLinear(c)) * t));
+  }
+
+  function normalizeBodyColorAging(raw) {
+    const source = typeof raw === 'string' ? AGING_BODY_COLOR_PRESETS[raw] : (raw?.preset ? { ...AGING_BODY_COLOR_PRESETS[raw.preset], ...raw } : raw);
+    if (!source || typeof source !== 'object') return null;
+    const amount = clampPercent(source.amount);
+    return amount > 0 ? { amount, desaturation: clampPercent(source.desaturation), brightening: clampPercent(source.brightening) } : null;
+  }
+
+  // Desaturates toward an equal-luminance gray, then brightens toward white,
+  // both mixed in linear-light RGB (exactly the reference tool's ageBodyColorHex).
+  function ageBodyColorRgb(rgb, settings) {
+    const aging = normalizeBodyColorAging(settings);
+    if (!aging || !Array.isArray(rgb)) return rgb;
+    const age = aging.amount / 100;
+    const luminance = 0.2126 * srgbToLinear(rgb[0]) + 0.7152 * srgbToLinear(rgb[1]) + 0.0722 * srgbToLinear(rgb[2]);
+    const gray = linearToSrgb(luminance);
+    const desaturated = mixLinear(rgb, [gray, gray, gray], age * aging.desaturation / 100);
+    return mixLinear(desaturated, [255, 255, 255], age * aging.brightening / 100).map(c => Math.max(0, Math.min(255, Math.round(c))));
+  }
+
+  const toHex = rgb => `#${rgb.map(c => Math.max(0, Math.min(255, Math.round(c))).toString(16).padStart(2, '0')).join('')}`;
+
+  // Resolves each body slot to the literal RGB the portrait renderer would tint
+  // with (same species swatch-base simulation as portrait-utils.js's
+  // bodySpriteTintForColor), ages it, and stores the result as a hex slot.
+  function applyBodyColorAging(profile, settings) {
+    const aging = normalizeBodyColorAging(settings);
+    if (!profile || !aging) return profile;
+    const resolveRgb = window._resolveTargetRgbColor;
+    const referenceHexFor = window._dyeReferenceHexForSlot;
+    if (typeof resolveRgb !== 'function' || typeof referenceHexFor !== 'function') return profile;
+    const speciesId = profile.fighter?.speciesId || '';
+    const next = { ...(profile.bodyColors || {}) };
+    const slots = {};
+    for (const slot of AGING_BODY_SLOTS) {
+      const descriptor = next[slot];
+      if (!descriptor) continue;
+      const rgb = resolveRgb(descriptor, referenceHexFor(slot, speciesId));
+      if (!rgb) continue;
+      const agedHex = toHex(ageBodyColorRgb([...rgb], aging));
+      next[slot] = { hex: agedHex };
+      slots[slot] = { originalHex: toHex(rgb), agedHex };
+    }
+    profile.bodyColors = next;
+    profile.agingBodyColorSlots = slots; // Diagnostics only.
+    return profile;
+  }
+
   function buildProfileFromNpcExport(npc) {
     const cosmetics = cosmeticsCache;
     if (!cosmetics || !npc?.appearance) return null;
@@ -192,6 +269,11 @@
         profile.bodyColors = nextBodyColors;
       }
     }
+    const aging = appearance.aging;
+    if (aging && typeof aging === 'object') {
+      profile.aging = { ...aging }; // Carried on the profile so avatar builders (HobunjiCharacterRigScale.ageFor) find the authored hunch.
+      applyBodyColorAging(profile, aging.bodyColor);
+    }
     return profile;
   }
 
@@ -217,6 +299,9 @@
     randomProfile,
     renderProfileToCanvas,
     normalizeNpcImport,
+    agingBodyColorPresets: AGING_BODY_COLOR_PRESETS,
+    ageBodyColorRgb,
+    applyBodyColorAging,
     seededRng,
   };
 

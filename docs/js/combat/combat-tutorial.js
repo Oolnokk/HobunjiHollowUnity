@@ -111,8 +111,12 @@
     window.Combat?.cancelAllStaged?.();
     window.RangedWeapons?.cancelPlayerAction?.();
   }
+  // questId may also be a quest object from another system -- e.g.
+  // CombatTutorialContent.masteryQuestTemplate(rank) for a Mastery comparison
+  // session (the generated trials from combat-tutorial-mastery.js) that is no
+  // longer listed in Spearhead's own lesson menu.
   async function start(questId, walker) {
-    let quest = definition(questId); // Validated authored quest, not arbitrary dialogue data.
+    let quest = questId && typeof questId === 'object' ? questId : definition(questId); // Validated authored quest, not arbitrary dialogue data.
     if (!deps || busy || session || !quest) return false;
     if (!window.TechniqueScrolls?.unlockAbility || quest.steps.some(lesson => lesson.ability && !window.Combat?.abilities?.get?.(lesson.ability))) { deps.toast('Combat techniques are still loading. Please try again.', false); return false; }
     const locked = gate(quest); // Prevents stale dialogue buttons bypassing a level/prerequisite gate.
@@ -184,7 +188,7 @@
     const preview = lesson.preview; // Each generated stage describes the same live upgrade option it explains.
     if (!preview) return;
     if (preview.kind === 'melee') {
-      session.previewHandle = window.CombatProgression.beginPreview(lesson.weapon, preview.ability, preview.rank, preview.index);
+      session.previewHandle = window.CombatProgression.beginPreview(lesson.weapon, preview.ability, preview.rank, preview.index, { demonstration: preview.demonstration === true });
       if (!session.previewHandle) throw new Error('This weapon no longer qualifies for the upgrade preview.');
     } else {
       const ammo = JSON.parse(JSON.stringify(session.ammoBaseline)); // Earlier saved choices form the baseline for each ammunition trial.

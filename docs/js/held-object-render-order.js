@@ -117,8 +117,30 @@
     return !!object?.isMesh && hasAncestorFlag(object, 'hobunjiPathSurface');
   }
 
+  function materialMarksInteriorFloor(material) {
+    const materials = Array.isArray(material) ? material : [material]; // Used by isWalkableGroundSurface so multi-material floors receive the same held-object x-ray policy.
+    return materials.some(entry => entry?.userData?.hobunjiInteriorFloorMaterial === true);
+  }
+
+  function isWalkableGroundSurface(object) {
+    if (!object?.isMesh || object.isSkinnedMesh) return false;
+    const data = object.userData || {}; // Existing semantic floor tags are preferred over geometry/name heuristics.
+    if (data.hobunjiGroundSurface === true || data.cavernWalkableFloor === true) return true;
+    if (materialMarksInteriorFloor(object.material)) return true;
+
+    // Debrisifier V50 exposes its stepped/sunken ruin floor as one WallBuilder
+    // surface carrying a plateau model. Treat that authored walkable surface as
+    // ground too, including cells above/below the base floor elevation.
+    if (data.wallBuilderRecipe === 'wallrecipe2.json' && data.plateauModel?.levelByCell) return true;
+    return false;
+  }
+
   function isTerrainSurface(object) {
     if (!object?.isMesh || object.isSkinnedMesh) return false;
+
+    // Interior floors, generated ruin floors, and explicitly tagged walkable
+    // terrain are ground regardless of hierarchy or elevation.
+    if (isWalkableGroundSurface(object)) return true;
 
     // Spatial terrain chunks are generated only from whole-zone floor meshes.
     if (object.userData?.terrainRenderChunk === true || object.userData?.terrainRenderChunkSource === true) return true;
@@ -353,20 +375,6 @@
     classifyTree(scene);
   }
 
-  function sceneForObject(object) {
-    let node = object;
-    while (node?.parent) node = node.parent;
-    return node?.isScene ? node : null;
-  }
-
-  function ancestorsVisible(object, stopScene) {
-    for (let node = object; node; node = node.parent) {
-      if (node.visible === false) return false;
-      if (node === stopScene) return true;
-    }
-    return false;
-  }
-
   function collectVisible(registry, scene) {
     const result = [];
     for (const object of registry) {
@@ -374,14 +382,23 @@
         registry.delete(object);
         continue;
       }
-      const ownerScene = sceneForObject(object);
-      if (!ownerScene) {
+      // One upward walk finds both the owning scene and whether any ancestor
+      // (scene included) is hidden; this runs over four registries every
+      // world render, so separate scene-lookup and visibility walks would
+      // double the per-frame cost.
+      let node = object;
+      let visible = true;
+      for (;;) {
+        if (node.visible === false) visible = false;
+        if (!node.parent) break;
+        node = node.parent;
+      }
+      if (!node.isScene) {
         // Detached runtime meshes should not be kept alive by our iterable set.
         registry.delete(object);
         continue;
       }
-      if (ownerScene !== scene) continue;
-      if (!ancestorsVisible(object, scene)) continue;
+      if (node !== scene || !visible) continue;
       result.push(object);
     }
     return result;

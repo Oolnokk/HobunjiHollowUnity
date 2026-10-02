@@ -23,7 +23,8 @@ assert.doesNotMatch(source, /\b(?:requestAnimationFrame|setInterval)\s*\(/, 'pla
 assert.match(source, /placeholderEnabled:\s*true/, 'placeholder registry is modular and enabled by default');
 assert.match(source, /LocalDBOverrides\?\.loadDatabase[\s\S]*?loadDatabase\('npcDatabase'\)/, 'placeholder eligibility uses the same post-override NPC database as the game');
 assert.match(source, /delete button\.dataset\.action/, 'suppression removes the semantic wardrobe action rather than merely hiding the button');
-assert.match(source, /buttons\.filter\(entry => actionId\(entry\) !== 'npc_open_wardrobe'\)/, 'world popup filtering removes old NPC-centered wardrobe rows');
+assert.match(source, /const keep = buttons\.map\(entry => actionId\(entry\) !== 'npc_open_wardrobe'\)/, 'world popup filtering removes old NPC-centered wardrobe rows');
+assert.match(source, /options\.promptInputs\.filter\(\(_, index\) => keep\[index\]\)/, 'world popup filtering keeps per-row prompt inputs aligned with the surviving buttons');
 assert.match(loader, /npc-furniture-wardrobe-bridge-v4\.js/, 'runtime loader uses registry-backed wardrobe v4');
 
 const seenPopupButtons = [];

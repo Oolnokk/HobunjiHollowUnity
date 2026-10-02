@@ -251,12 +251,10 @@
     const grip = grips?.authoredPrimaryGripForTool?.(LICH_CAST_WEAPON_KEY, 'melee') || {};
     const gripPosition = grip.position || {}; // Authored point on the reference weapon where the right hand belongs.
     const gripRotation = grip.rotationDeg || {}; // Authored grip orientation on the reference weapon.
-    const gripScale = Number(grips?.toolScaleForTool?.(LICH_CAST_WEAPON_KEY)) || 1; // Same tool-scale multiplier used by visible held weapons.
-    socketPosition.add(new THREE.Vector3(
-      (Number(gripPosition.x) || 0) * gripScale,
-      (Number(gripPosition.y) || 0) * gripScale,
-      (Number(gripPosition.z) || 0) * gripScale,
-    ).applyQuaternion(socketQuaternion));
+    const gripScale = Number(grips?.toolScaleForTool?.(LICH_CAST_WEAPON_KEY)) || 1;
+    const gripTarget = grips?.itemPointToHolder?.(LICH_CAST_WEAPON_KEY, gripPosition, 'melee', { speciesId: rig.speciesId, gender: rig.gender })
+      || { x: (Number(gripPosition.x) || 0) * gripScale, y: (Number(gripPosition.y) || 0) * gripScale, z: (Number(gripPosition.z) || 0) * gripScale }; // Height scaling pivots on the grip, so the hand target is the same as a real held copy's.
+    socketPosition.add(new THREE.Vector3(gripTarget.x, gripTarget.y, gripTarget.z).applyQuaternion(socketQuaternion));
     socketQuaternion.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(
       THREE.MathUtils.degToRad(Number(gripRotation.pitch) || 0),
       THREE.MathUtils.degToRad(Number(gripRotation.yaw) || 0),
@@ -529,7 +527,7 @@
     const power = projectilePower(projectile); // Tothal damage/knockback/Footing pressure/frost all decay with its shrinking lifetime; Kanthic remains full-strength.
     const hitX = projectile.prevX + (projectile.x - projectile.prevX) * t; // Pixel X impact origin passed to canonical knockback/damage.
     const hitY = projectile.prevY + (projectile.y - projectile.prevY) * t; // Pixel Z-plane impact origin passed to canonical knockback/damage.
-    const options = { tag: 'blunt', ranged: true, footingDamageMultiplier: (p.footingDamageMultiplier || 0) * power, afflictionBonuses: {} }; // Canonical damage path still owns knockback/stagger/prone transitions.
+    const options = { tag: 'blunt', ranged: true, footingDamageMultiplier: (p.footingDamageMultiplier || 0) * power, afflictionBonuses: {}, attacker: projectile.owner || null }; // Canonical damage path still owns knockback/stagger/prone transitions.
     const damage = (p.damage || 0) * power;
     const knockback = (p.knockbackPxS || 0) * power;
     if (actor === deps.player) deps.damagePlayer?.(damage, hitX, hitY, knockback, options);

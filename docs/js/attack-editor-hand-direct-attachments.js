@@ -85,7 +85,20 @@
 
   function currentToolKey() { return toolGrips.toolKeyFor(toolSelect.value); }
   function currentGripContext() { return toolGrips.normalizeGripContext?.($('handGripContextSelect')?.value || 'melee') || ($('handGripContextSelect')?.value === 'ranged' ? 'ranged' : 'melee'); }
-  function currentToolScale() { return Math.max(0.1, Number(toolGrips.toolScaleForTool?.(currentToolKey())) || 1); }
+  function currentScaleIdentity() {
+    return {
+      speciesId: String(document.getElementById('avatarSpecies')?.value || '').trim(),
+      gender: String(document.getElementById('avatarGender')?.value || 'male').trim() || 'male',
+    };
+  }
+
+  function currentToolScale() {
+    const speciesId = String(document.getElementById('avatarSpecies')?.value || '').trim(); // Selected preview identity used so grip markers/picking share the weapon's calculated-height scale.
+    const gender = String(document.getElementById('avatarGender')?.value || 'male').trim() || 'male';
+    const effective = Number(toolGrips.effectiveToolScaleForTool?.(currentToolKey(), speciesId, gender));
+    const base = Number(toolGrips.toolScaleForTool?.(currentToolKey()));
+    return Math.max(0.1, Number.isFinite(effective) && effective > 0 ? effective : (Number.isFinite(base) && base > 0 ? base : 1));
+  }
   function currentEntry() { return toolGrips.ensureTool(currentToolKey()); }
   function currentPrimaryField() { return currentGripContext() === 'ranged' ? 'rangedPrimaryGrip' : 'primaryGrip'; }
   function currentPrimary() { return currentEntry()?.[currentPrimaryField()] || null; }
@@ -107,8 +120,9 @@
     const primary = currentPrimary();
     const p = primary?.position || {};
     const r = primary?.rotationDeg || {};
-    const visualScale = currentToolScale(); // Marker lives beside toolHolder, so explicitly scale the unscaled authored target to the visible weapon size.
-    primaryMarker.position.set((Number(p.x) || 0) * visualScale, (Number(p.y) || 0) * visualScale, (Number(p.z) || 0) * visualScale);
+    const target = toolGrips.itemPointToHolder?.(currentToolKey(), p, currentGripContext(), currentScaleIdentity())
+      || { x: (Number(p.x) || 0) * currentToolScale(), y: (Number(p.y) || 0) * currentToolScale(), z: (Number(p.z) || 0) * currentToolScale() }; // Marker lives beside toolHolder: map the authored grip through the visible item's grip-anchored scale.
+    primaryMarker.position.set(target.x, target.y, target.z);
     const qYaw = new editorContext.THREE.Quaternion().setFromAxisAngle(new editorContext.THREE.Vector3(0, 1, 0), editorContext.THREE.MathUtils.degToRad(Number(r.yaw) || 0));
     const qPitch = new editorContext.THREE.Quaternion().setFromAxisAngle(new editorContext.THREE.Vector3(1, 0, 0), editorContext.THREE.MathUtils.degToRad(Number(r.pitch) || 0));
     const qRoll = new editorContext.THREE.Quaternion().setFromAxisAngle(new editorContext.THREE.Vector3(0, 0, 1), editorContext.THREE.MathUtils.degToRad(Number(r.roll) || 0));
@@ -150,9 +164,10 @@
       $('handGripStatus').textContent = 'No sprite plane hit. Click directly on the weapon handle, or cancel Pick.';
       return;
     }
-    const local = editorContext.toolHolder.worldToLocal(hit.point.clone());
-    const baseScale = currentToolScale(); // worldToLocal removes animation/toolHolder scale, but intrinsic held-item scale lives on the visual child and must be removed here to keep authored grip coordinates scale-independent.
-    local.multiplyScalar(1 / baseScale);
+    const holderPoint = editorContext.toolHolder.worldToLocal(hit.point.clone());
+    const baseScale = currentToolScale(); // worldToLocal removes animation/toolHolder scale; the visual child's grip-anchored item scale is removed below so authored grips stay scale-independent.
+    const local = toolGrips.holderPointToItem?.(currentToolKey(), holderPoint, currentGripContext(), currentScaleIdentity())
+      || { x: holderPoint.x / baseScale, y: holderPoint.y / baseScale, z: holderPoint.z / baseScale };
     mutateGrip('primaryGrip', primary => {
       primary.position.x = Number(local.x.toFixed(4));
       primary.position.y = Number(local.y.toFixed(4));
@@ -263,7 +278,7 @@
     pickActive = true;
     $('handPrimaryGripPick').classList.add('active');
     $('handPrimaryGripPick').textContent = 'Cancel pick';
-    $('handGripStatus').textContent = `Click the weapon where the RIGHT HAND should land. The blue marker will move there; the weapon will not move. Coordinates are stored before base scale ×${currentToolScale().toFixed(2)}.`;
+    $('handGripStatus').textContent = `Click the weapon where the RIGHT HAND should land. The blue marker will move there; the weapon will not move. Coordinates are stored before effective base + height scale ×${currentToolScale().toFixed(2)}.`;
     updatePrimaryMarker();
   });
   $('handPrimaryGripZero').addEventListener('click', () => {
@@ -280,8 +295,8 @@
     global.HobunjiAttackEditorHandGripMode?.syncForTool?.();
     global.ProceduralHandFrameDriver?.syncNow?.();
   });
-  $('avatarSpecies')?.addEventListener('change', refreshDirectStatus);
-  $('avatarGender')?.addEventListener('change', refreshDirectStatus);
+  $('avatarSpecies')?.addEventListener('change', syncFields);
+  $('avatarGender')?.addEventListener('change', syncFields);
   profileSelect.addEventListener('change', refreshDirectStatus);
   profiles.subscribe?.(refreshDirectStatus);
   toolGrips.subscribe?.(syncFields);
@@ -289,7 +304,7 @@
   $('handGripSave').addEventListener('click', () => {
     try {
       toolGrips.saveLocal();
-      $('handGripStatus').textContent = `${currentToolKey()} · ${currentGripContext().toUpperCase()}: grip + base-scale draft saved locally.`;
+      $('handGripStatus').textContent = `${currentToolKey()} · ${currentGripContext().toUpperCase()}: grip + base/height-scale draft saved locally.`;
     } catch (error) {
       $('handGripStatus').textContent = `Grip save failed: ${error?.message || error}`;
     }
@@ -297,7 +312,7 @@
   $('handGripCopy').addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText(JSON.stringify(toolGrips.clone(), null, 2));
-      $('handGripStatus').textContent = 'Copied held-item grip + base-scale JSON.';
+      $('handGripStatus').textContent = 'Copied held-item grip + base/height-scale JSON.';
     } catch (error) {
       $('handGripStatus').textContent = `Copy failed: ${error?.message || error}`;
     }
@@ -316,7 +331,11 @@
     get toolKey() { return currentToolKey(); },
     get toolScale() { return currentToolScale(); },
     get gripContext() { return currentGripContext(); },
-    get primaryGrip() { return toolGrips.primaryGripForTool(currentToolKey(), currentGripContext()); },
+    get primaryGrip() {
+      const speciesId = String($('avatarSpecies')?.value || '').trim(); // Debug getter mirrors the currently previewed character's effective weapon scale.
+      const gender = String($('avatarGender')?.value || 'male').trim() || 'male';
+      return toolGrips.primaryGripForTool(currentToolKey(), currentGripContext(), { speciesId, gender });
+    },
   });
 
   syncFields();

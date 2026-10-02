@@ -898,6 +898,8 @@
       const PRONE_THROW_CREATURE_MIN_PX_S = 480; // Gives animals/bandits a minimum throw at the existing hostile-bite scale.
 
       function applyKnockback(target, fromX, fromY, speedPxS) {
+        const reelingMul = window.ResourceSystem?.timedDebuffModifier?.(target, 'knockbackTaken') ?? 1; // Reeling scales the shared impulse before branch/free-plane collision handling diverges.
+        speedPxS *= reelingMul;
         if (target.onBranch) {
           window.KnockbackCollisionImpact?.cancel?.(target);
           // Knockback while standing on a branch is resolved along the
@@ -4838,6 +4840,8 @@
         // combat-counter-shield.js) -- safe to assume `player` is the guarded
         // captain's riposte target without needing a passed-in attacker.
         if (!environmentalImpact) {
+          const damageSource = dmgOpts?.attacker || (sourceNearPlayer ? player : null); // Explicit NPC attacker wins; ordinary player melee/ranged still resolves from its existing source position.
+          amount *= window.ResourceSystem?.timedDebuffModifier?.(damageSource, 'outgoingDamage') ?? 1; // Enfeebled reduces the attacker's direct damage without altering target affliction buildup rules.
           amount *= window.SkillSystem?.attackMultiplier?.() || 1;
           amount *= window.AlchemySystem?.getOutgoingDamageMultiplier?.() || 1;
           amount *= window.PerkSystem?.combatDamageMultiplier?.(dmgOpts) || 1; // Empower Raw Damage / Quick / Defensive / Heavy Attacks.
@@ -4913,7 +4917,11 @@
       function damagePlayer(amount, fromX, fromY, knockbackPxS = PLAYER_KNOCKBACK_PX_S, dmgOpts) {
         const environmentalImpact = dmgOpts?.environmentalImpact === true; // Collision Health damage cannot be countered or treated as a second incoming attack.
         if (!environmentalImpact && performance.now() < player.invulnUntil) return;
-        if (!environmentalImpact) amount *= window.SkillSystem?.damageTakenMultiplier?.() || 1;
+        if (!environmentalImpact) {
+          const attacker = dmgOpts?.attacker || null; // Enemy modules pass their owning actor when available so Enfeebled follows the source rather than the victim.
+          amount *= window.ResourceSystem?.timedDebuffModifier?.(attacker, 'outgoingDamage') ?? 1;
+          amount *= window.SkillSystem?.damageTakenMultiplier?.() || 1;
+        }
         const resourceDamage = environmentalImpact ? { health: amount, footing: 0 } : hitResourceDamage(amount, dmgOpts);
         // Lets a held defensive ability (Counter Shield) absorb the hit and
         // riposte instead of applying damage normally — only one hold
@@ -5471,7 +5479,8 @@
         if (dist < 1) { c.vx = 0; c.vy = 0; return false; }
         const directionMul = window.RangedWeapons?.movementDirectionMultiplier?.(c) || 1; // Disorient inverts normal movement AI at this shared choke point.
         const nx = dx / dist * directionMul, ny = dy / dist * directionMul;
-        const baseSpeed = speed * devGlobalSpeedMul;
+        const heavyMoveMul = window.ResourceSystem?.timedDebuffModifier?.(c, 'moveSpeed') ?? 1; // Heavy composes with global/swim/climb movement instead of mutating authored creature speeds.
+        const baseSpeed = speed * devGlobalSpeedMul * heavyMoveMul;
         const effectiveSpeed = isCreatureSwimming(c) ? baseSpeed * SWIM_SPEED_MUL : isCreatureClimbing(c) ? baseSpeed * CLIMB_SPEED_MUL : baseSpeed;
         const step = Math.min(dist, effectiveSpeed * dt);
         // Axis-separated so a creature turned back by a cliff face or river
@@ -6122,7 +6131,8 @@
           }
           window.AnimalVocalizations?.tickCreature?.(c, entityDt);
           const def = c.def;
-          c.attackCooldownT = Math.max(0, c.attackCooldownT - entityDt);
+          const attackSpeedMul = window.ResourceSystem?.timedDebuffModifier?.(c, 'attackSpeed') ?? 1; // Sluggish slows the shared hostile attack-cadence clock without slowing locomotion/AI simulation.
+          c.attackCooldownT = Math.max(0, c.attackCooldownT - entityDt * attackSpeedMul);
           const herdNight = !!c.herdKey && !!window.Music?.isNightTime?.(); // Used by open-air herd sleeping; unlike den packs these animals remain visible in a tight group.
           if (!herdNight && c._animalSleeping) {
             c._animalSleeping = false;
@@ -6422,7 +6432,7 @@
                         halfConeRad: attackHalfConeRad,
                         direction: enemyAim?.direction,
                       })) {
-                        damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S, { tag: attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(attackTag) });
+                        damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S, { tag: attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(attackTag), attacker: c });
                         window.AudioSystem?.playCreatureClawHit(c);
                       }
                       c.retreatT = JUMP_BACK_DUR_S;
@@ -9373,6 +9383,8 @@
       // collider at the point the lunge stops, never overshot past it.
       function beginCombatLunge(distancePx, durationS, hopUnits = 0, hitTest = null) {
         if (durationS <= 0 || distancePx <= 0) return false;
+        const heavyDistanceMul = window.ResourceSystem?.timedDebuffModifier?.(player, 'dodgeLungeDistance') ?? 1; // Heavy shortens player attack lunges while preserving the attack's authored timing.
+        distancePx *= heavyDistanceMul;
         // Each combo/quick-attack/charged-breaker module tracks its own
         // "busy" gate independently, so tapping a *different* attack slot
         // while an earlier one's lunge is still in flight isn't blocked by
@@ -10744,7 +10756,7 @@
         }
         // Don't fire a spot the player happens to spawn on
         _transitionLatch = travelAreaKey();
-        buildTransitionMarkers();
+        window.TransitionMarkers.buildTransitionMarkers();
         spawnScheduledNpcs().catch(e => console.warn('spawnScheduledNpcs failed:', e));
       }
 
@@ -10757,20 +10769,8 @@
         return area + ':' + Math.floor(player.x / TILE) + ',' + Math.floor(player.y / TILE);
       }
 
-      function buildTransitionMarkers() {
-        const _ringGeo = new THREE.RingGeometry(0.22, 0.36, 24);
-        const _ringMat = new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false });
-        for (const t of worldTransitions) {
-          const interior = t.area === 'interior';
-          const g = interior ? interiorGrid : grid;
-          const tile = g[t.row]?.[t.col];
-          if (!tile) continue;
-          const ring = new THREE.Mesh(_ringGeo, _ringMat);
-          ring.rotation.x = -Math.PI / 2;
-          ring.position.set(t.col + 0.5, tileSurfaceY(tile.type) + 0.02, t.row + 0.5);
-          (interior ? interiorScene : scene).add(ring);
-        }
-      }
+      // Transition-spot floor rings (buildTransitionMarkers) now live in
+      // js/transition-markers.js — call via window.TransitionMarkers.*.
 
       function checkTransitionSpots() {
         const area = _travelAreaOf(currentArea);
@@ -10785,8 +10785,15 @@
         const t = pool.find(x =>
           (_isBuildingArea(area) || _isZoneArea(area) || x.area === area) && x.col === pc && x.row === pr &&
           (!x.requiresKeyItem || !!window.KeyItemSystem?.has?.(x.requiresKeyItem)) &&
-          (x.target === 'building' ? !!x.targetMapId : x.target === 'zone' ? !!x.targetMapId : x.target === 'exit_building' ? true : (Number.isFinite(x.targetCol) && Number.isFinite(x.targetRow))));
-        if (t !== _pendingSpotTransition) { _pendingSpotTransition = t || null; refreshActionBar(); }
+          (x.target === 'building' ? !!x.targetMapId : x.target === 'zone' ? !!x.targetMapId : x.target === 'exit_building' ? true : (Number.isFinite(x.targetCol) && Number.isFinite(x.targetRow)))) || null;
+        _pendingSpotTransition = t;
+        // Deliberately once per frame, not only when the spot changes: nothing
+        // else re-resolves the action arch as the reticle moves or a tile/NPC
+        // under it changes, so the arch has always depended on this call
+        // (it used to happen by accident — find()'s undefined never equalled
+        // the stored null). refreshActionBar() is _lastBarKey-cached, so its
+        // no-change path must stay free of unconditional DOM writes.
+        refreshActionBar();
         // Farm interior exit fires automatically (legacy behaviour)
         if (t && area === 'interior') startSceneTransition(() => performTravel(t));
       }
@@ -17173,12 +17180,14 @@
           player.dodgeT -= dt;
           const minX = PLAYER_RADIUS, maxX = window.GridTileAccessors.getActiveCols() * TILE - PLAYER_RADIUS;
           const minY = PLAYER_RADIUS, maxY = window.GridTileAccessors.getActiveRows() * TILE - PLAYER_RADIUS;
-          const desiredX = window.FormatUtils.clamp(player.x + player.dodgeDirX * DODGE_SPEED_PX * dt, minX, maxX);
-          const desiredY = window.FormatUtils.clamp(player.y + player.dodgeDirY * DODGE_SPEED_PX * dt, minY, maxY);
+          const heavyDistanceMul = window.ResourceSystem?.timedDebuffModifier?.(player, 'dodgeLungeDistance') ?? 1; // Heavy reduces dodge travel over the unchanged dodge duration/iframe window.
+          const dodgeSpeedPx = DODGE_SPEED_PX * heavyDistanceMul; // Shared per-frame speed keeps position and reported velocity identical.
+          const desiredX = window.FormatUtils.clamp(player.x + player.dodgeDirX * dodgeSpeedPx * dt, minX, maxX);
+          const desiredY = window.FormatUtils.clamp(player.y + player.dodgeDirY * dodgeSpeedPx * dt, minY, maxY);
           const dodgeSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
           player.x = dodgeSwept.x; player.y = dodgeSwept.y;
-          player.vx = player.dodgeDirX * DODGE_SPEED_PX;
-          player.vy = player.dodgeDirY * DODGE_SPEED_PX;
+          player.vx = player.dodgeDirX * dodgeSpeedPx;
+          player.vy = player.dodgeDirY * dodgeSpeedPx;
           if (player.dodgeT <= 0) {
             player.dodging = false;
             player.vx = 0; player.vy = 0;
@@ -19375,6 +19384,8 @@
       const _intFill = new THREE.PointLight(0xff8833, 0.35, 6);
       _intFill.position.set(3, 1.8, 2.5);  // centre of 6×5 main room, dim fallback so placed lamps/candles/hearths stand out
       interiorScene.add(_intFill);
+      // Flat albedo + overlay-only lights now live in js/farmhouse-flat-lighting.js.
+      window.FarmhouseFlatLighting?.install(interiorScene, { ambient: _intAmbient, key: _intKey, fill: _intFill });
 
       // WallBuilder instance — loads Roughbrick1.glb eagerly in background
       const houseWallBuilder = new WallBuilder({ glbBasePath: 'assets/models/' });
@@ -25251,8 +25262,12 @@
         // icon otherwise.
         if (dodgeBtn) {
           const icon = dodgeBtn.querySelector('.abt-icon'), label = dodgeBtn.querySelector('.abt-label');
-          if (icon) icon.textContent = climbBtn ? climbBtn.icon : '💨';
-          if (label) label.textContent = climbBtn ? climbBtn.label : 'Dodge';
+          // Compare first: this runs every frame (see checkTransitionSpots), and an
+          // unconditional textContent write queues childList mutations that wake
+          // every action-arch MutationObserver (arch-button-labels, action-arch-icons...).
+          const dodgeIcon = climbBtn ? climbBtn.icon : '💨', dodgeLabel = climbBtn ? climbBtn.label : 'Dodge';
+          if (icon && icon.textContent !== dodgeIcon) icon.textContent = dodgeIcon;
+          if (label && label.textContent !== dodgeLabel) label.textContent = dodgeLabel;
         }
 
         if (!needsRebuild) return;
@@ -28839,6 +28854,12 @@
         buildMergedWaterMesh: window.WaterSystem.buildMergedWaterMesh,
       });
 
+      window.TransitionMarkers?.init({
+        interiorGrid, scene, interiorScene, tileSurfaceY,
+        getGrid: () => grid,
+        getWorldTransitions: () => worldTransitions,
+      });
+
       window.ZoneDenTotemFeatures?.init({
         NORMAL_TOP, PLATEAU_UNIT,
         markOutline: _markOutline,
@@ -29494,7 +29515,7 @@
       // Ensure a farm→town transition always exists even without map editor data
       if (!worldTransitions.some(t => t.target === 'town')) {
         worldTransitions.push({ id: 'sp_farm_to_town', label: 'To Town', area: 'farm', col: 17, row: 0, target: 'town', targetCol: 20, targetRow: 48 });
-        buildTransitionMarkers();
+        window.TransitionMarkers.buildTransitionMarkers();
       }
       // Load town layout from workspace config (authoritative source)
       window.Music?.loadAudioCueIndexes().then(() => window.Music?.resetAmbientCueTimer()).catch(() => window.Music?.resetAmbientCueTimer());

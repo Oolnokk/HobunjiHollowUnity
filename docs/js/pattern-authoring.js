@@ -236,6 +236,7 @@
     const cfg = { ...PATTERN_DEFAULTS, ...legacyFrameFields(options.initialPattern) };
     cfg.meshScale = clamp(Number(cfg.meshScale) || 1, PATTERN_SCALE_MIN, PATTERN_SCALE_MAX); // Keeps loaded/legacy values in the normalized Pattern scale range without migrating the saved number.
     cfg.overpassClearanceMultiplier = clamp(Number(cfg.overpassClearanceMultiplier) || OVERPASS_CLEARANCE_MIN, OVERPASS_CLEARANCE_MIN, OVERPASS_CLEARANCE_MAX); // Player-authored knot gap is always between the old 3× behavior and four times that amount.
+    if (options.forceTiling === false) cfg.tiling = false; // Garment-owned trim masks use this to stay one fixed, non-repeating authored overlay instead of becoming a reusable textile pattern.
     let closed = false;
     let brushMode = 'brush'; // 'brush' | 'eraser'
     let brushSize = 30;
@@ -268,7 +269,7 @@
           <div class="pa-col pa-leftCol">
             <div class="pa-card">
               <h3>Pattern settings</h3>
-              <div class="pa-check"><input type="checkbox" class="pa-in" data-field="tiling" ${cfg.tiling ? 'checked' : ''}><label>Repeat (tile the motif)</label></div>
+              <div class="pa-check"><input type="checkbox" class="pa-in" data-field="tiling" ${cfg.tiling ? 'checked' : ''} ${options.forceTiling === false ? 'disabled' : ''}><label>${options.forceTiling === false ? 'Repeat (locked off for garment trim)' : 'Repeat (tile the motif)'}</label></div>
               <div class="pa-check"><input type="checkbox" class="pa-in" data-field="invert" ${cfg.invert ? 'checked' : ''}><label>Invert pattern</label></div>
               <div class="pa-field"><label><span>Motif thinning / thickening</span><span class="pa-val" data-for="motifThinPx"></span></label><input type="range" class="pa-in" data-field="motifThinPx" min="-12" max="12" step="1" value="${cfg.motifThinPx}"></div>
               <p class="pa-hint">0 keeps the motif footprint unchanged. Move right / positive to thin inward; move left / negative to thicken outward. Units are pixels in the motif itself, before Pattern scale, frame scale, or mesh scale are applied; the black outline is drawn afterward.</p>
@@ -389,7 +390,7 @@
         motifDataUrl: hasMotifInk() ? sketchCanvas.toDataURL('image/png') : null,
         motifScale: Number(cfg.motifScale),
         motifRotationDeg: Number(cfg.motifRotationDeg),
-        tiling: !!cfg.tiling,
+        tiling: options.forceTiling === false ? false : !!cfg.tiling, // Some callers (authored garment trim) deliberately own one fixed overlay and may never serialize a tiled motif.
         invert: !!cfg.invert,
         motifThinPx: Number(cfg.motifThinPx) || 0,
         frameShape: FRAME_SHAPES[cfg.frameShape] ? cfg.frameShape : 'square',

@@ -123,7 +123,7 @@ assert.equal(windowObject.SCRATCHBONES_CONFIG.game.portrait.armOnlyOpacityMask.p
   assert(Math.abs(femaleScale.head - 0.7894736842105263 * 1.2) < 1e-12);
 
   const harlyaoBootstrapIndex = bootstrapSource.indexOf("harlyao-species-runtime.js?v=20260909a");
-  const scaleBootstrapIndex = bootstrapSource.indexOf("character-rig-scale.js?v=20260904i");
+  const scaleBootstrapIndex = bootstrapSource.indexOf("character-rig-scale.js?v=20260930hd251dd7");
   assert(harlyaoBootstrapIndex >= 0 && scaleBootstrapIndex > harlyaoBootstrapIndex,
     'Harlyao profile inheritance must load before whole-rig scale installs profile defaults');
 

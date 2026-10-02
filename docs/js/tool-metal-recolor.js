@@ -506,6 +506,17 @@
     return mask;
   }
 
+  // Like animal surface paint (clothing-weaving-system.js scaledOutlineWidth),
+  // the verdigris/motif border scales with the source raster's short side so
+  // small sprites (armor pauldrons, arrows) keep the same apparent line weight
+  // as the 450px-wide tool sprites the widths were authored on. Never scaled
+  // up, so tools and large world textures keep their established borders.
+  const OUTLINE_REFERENCE_SHORT_SIDE = 450; // Short side of the standard 450x1204 tool sprites.
+  function outlineRasterScale(width, height) {
+    const shortSide = Math.min(Number(width) || 0, Number(height) || 0);
+    return shortSide > 0 ? Math.min(1, shortSide / OUTLINE_REFERENCE_SHORT_SIDE) : 1;
+  }
+
   function buildOxidationOutlineMask(oxidationMask, metalMask, width, height, outlineWidth, centered = false) {
     const outline = new Uint8Array(oxidationMask.length);
     if (!outlineWidth) return outline;
@@ -536,7 +547,7 @@
       }
     }
 
-    const totalRadius = Math.max(1, (outlineWidth | 0) * 5);
+    const totalRadius = Math.max(1, Math.round((outlineWidth | 0) * 5 * outlineRasterScale(width, height)));
     const inwardRadius = centered ? Math.floor(totalRadius / 2) : 0; // Authored patterns move half of the old outward-only border onto the filled side.
     const outwardRadius = centered ? totalRadius - inwardRadius : totalRadius; // Procedural verdigris keeps its legacy outward-only border.
     for (let y = 0; y < height; y++) {
@@ -945,7 +956,7 @@
     rgbToHsv,
     hsvToRgb,
     SOURCE_HEX,
-    __test: Object.freeze({ adjustMaskThickness, scaledOutlineWidthForPattern, buildAuthoredClearedMask, buildOxidationOutlineMask, normalizeAuthoredPatterns, overpassClearanceMultiplier }),
+    __test: Object.freeze({ outlineRasterScale, adjustMaskThickness, scaledOutlineWidthForPattern, buildAuthoredClearedMask, buildOxidationOutlineMask, normalizeAuthoredPatterns, overpassClearanceMultiplier }),
   };
 
   debugLog({}, 'module loaded', {

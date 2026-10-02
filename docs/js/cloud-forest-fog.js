@@ -420,8 +420,8 @@
   let lightingDeps = null;
   let lastUnifiedLightingDraw = 0;
   const lightCamRight = new window.THREE.Vector3();
-  const ambientWindowScratch = new window.THREE.Vector3(); // Reused when sampling window distance so the room-atmosphere pass allocates nothing per source.
-  let enclosedAtmosphereSmoothed = { r: 0, g: 0, b: 0, illumination: 0, contributors: 0, windows: 0, furniture: 0, lanterns: 0 }; // Temporal smoothing prevents color snaps while crossing source falloff boundaries.
+  const ambientWindowScratch = new window.THREE.Vector3(); // Reused for window world positions so the mask pass allocates nothing per source.
+  const windowMaskStats = { sources: 0, drawn: 0, glows: 0, daylight: 0 }; // Mobile QA readout for the daylight-window mask pass.
 
   function lightScreenRadius(x, z, y, tiles) {
     lightCamRight.setFromMatrixColumn(lightingDeps.camera.matrixWorld, 0);
@@ -595,121 +595,60 @@
   }
 
   function ordinaryBuildingInterior(area) {
-    return area === 'interior' || !!lightingDeps?._isBuildingArea?.(area); // Mines/dens deliberately keep their existing local lantern masks.
+    return area === 'interior' || !!lightingDeps?._isBuildingArea?.(area); // Mines/dens deliberately keep their existing local lantern masks only.
   }
 
-  function sourceProximityWeight(px, pz, sx, sz, radius) {
-    const safeRadius = Math.max(0.25, finiteOr(radius, 0.25));
-    const distance = Math.hypot(finiteOr(sx, px) - px, finiteOr(sz, pz) - pz);
-    const inward = 1 - clamp01(distance / safeRadius);
-    return smoothstep01(inward); // Smooth derivative at both ends avoids visible atmosphere steps as the player walks.
+  // Daylight windows reveal the stable enclosed darkness locally, exactly like
+  // furniture lights do: a spreading pool scaled by outdoor daylight, plus a
+  // tight non-spreading glow on the pane itself that persists at night so the
+  // window always reads as an opening to the outside.
+  const WINDOW_PANE_GLOW_RADIUS = 0.55; // World units; about the authored pane's half-diagonal.
+  const WINDOW_PANE_GLOW_STRENGTH = 0.85;
+
+  function drawWindowRevealCircle(ctx, center, radius, strength, clarity) {
+    const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, radius);
+    grad.addColorStop(0, `rgba(0,0,0,${strength})`);
+    grad.addColorStop(clarity, `rgba(0,0,0,${strength * 0.7})`);
+    grad.addColorStop(Math.min(1, clarity + 0.35), `rgba(0,0,0,${strength * 0.2})`);
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
+    ctx.fill();
   }
 
-  function sampleEnclosedAtmosphere() {
-    const scene = lightingDeps.getActiveScene?.();
-    const px = finiteOr(lightingDeps.player?.x, 0) / Math.max(0.000001, finiteOr(lightingDeps.TILE, 1));
-    const pz = finiteOr(lightingDeps.player?.y, 0) / Math.max(0.000001, finiteOr(lightingDeps.TILE, 1));
-    let weightSum = 0, energySum = 0, rSum = 0, gSum = 0, bSum = 0;
-    let windows = 0, furniture = 0, lanterns = 0;
-
-    const carriedLantern = scene?.getObjectByName?.('mine_player_torch'); // The previous ordinary-interior compositor always gave the player a carried lantern mask; preserve that illumination as a blend contributor rather than dropping it.
-    const carriedColor = carriedLantern?.color;
-    const carriedWeight = 0.62;
-    const carriedR = carriedColor?.isColor ? carriedColor.r * 255 : 255;
-    const carriedG = carriedColor?.isColor ? carriedColor.g * 255 : 174;
-    const carriedB = carriedColor?.isColor ? carriedColor.b * 255 : 92;
-    rSum += carriedR * carriedWeight;
-    gSum += carriedG * carriedWeight;
-    bSum += carriedB * carriedWeight;
-    weightSum += carriedWeight;
-    energySum += carriedWeight * 0.72;
-    lanterns += 1;
-
-    const currentArea = lightingDeps.getCurrentArea?.();
-    for (const walker of (lightingDeps.npcWalkers || [])) {
-      if (walker?.area !== currentArea || !walker.rec?.tags?.includes('watch')) continue;
-      const wx = finiteOr(walker.root?.position?.x, px);
-      const wz = finiteOr(walker.root?.position?.z, pz);
-      const proximity = sourceProximityWeight(px, pz, wx, wz, Math.max(3.5, tuning.lantern.radiusTiles * 1.8));
-      const weight = proximity * 0.48;
-      if (!(weight > 0)) continue;
-      rSum += carriedR * weight;
-      gSum += carriedG * weight;
-      bSum += carriedB * weight;
-      weightSum += weight;
-      energySum += weight * 0.62;
-      lanterns += 1;
-    }
-
-    const windowRuntime = window.DaylightWindowRuntime;
-    const outdoor = windowRuntime?.currentOutdoorLighting?.() || getFullDayLighting(); // Windows contribute the actual outdoor sky/weather color.
-    windowRuntime?.updatePaneTint?.(outdoor);
-    for (const source of (windowRuntime?.getActiveSources?.(scene) || [])) {
-      source.mesh?.getWorldPosition?.(ambientWindowScratch);
-      const radius = Math.max(4.5, finiteOr(source.radiusTiles, 2.8) * 2.2); // Windows affect room ambience broadly, but only the player's nearby subset dominates color.
-      const proximity = sourceProximityWeight(px, pz, ambientWindowScratch.x, ambientWindowScratch.z, radius);
-      const weight = proximity * clamp01(source.strength) * 0.32; // Deliberately restrained versus actual lamps.
-      if (!(weight > 0)) continue;
-      rSum += Math.max(0, Math.min(255, finiteOr(outdoor.r, 255))) * weight;
-      gSum += Math.max(0, Math.min(255, finiteOr(outdoor.g, 255))) * weight;
-      bSum += Math.max(0, Math.min(255, finiteOr(outdoor.b, 255))) * weight;
-      weightSum += weight;
-      energySum += weight * 0.42;
-      windows += 1;
-    }
-
-    for (const light of (lightingDeps.getFurnitureLightSources?.() || [])) {
-      const radius = Math.max(0.5, finiteOr(light.distance, 2.5));
-      const proximity = sourceProximityWeight(px, pz, light.x, light.z, radius);
-      const intensity = Math.max(0, finiteOr(light.intensity, 1));
-      const weight = proximity * Math.min(1.35, 0.30 + intensity * 0.48);
-      if (!(weight > 0)) continue;
-      const color = light.color || {};
-      rSum += Math.max(0, Math.min(255, finiteOr(color.r, 255))) * weight;
-      gSum += Math.max(0, Math.min(255, finiteOr(color.g, 190))) * weight;
-      bSum += Math.max(0, Math.min(255, finiteOr(color.b, 120))) * weight;
-      weightSum += weight;
-      energySum += weight * 0.85;
-      furniture += 1;
-    }
-
-    const target = weightSum > 0
-      ? {
-          r: rSum / weightSum,
-          g: gSum / weightSum,
-          b: bSum / weightSum,
-          illumination: Math.min(0.82, 1 - Math.exp(-energySum * 0.72)),
-          contributors: windows + furniture + lanterns,
-          windows,
-          furniture,
-          lanterns,
-        }
-      : { r: 0, g: 0, b: 0, illumination: 0, contributors: 0, windows: 0, furniture: 0, lanterns: 0 };
-
-    const blend = 0.22; // ~100ms compositor cadence => visible atmosphere eases rather than snapping as influence weights move.
-    enclosedAtmosphereSmoothed.r += (target.r - enclosedAtmosphereSmoothed.r) * blend;
-    enclosedAtmosphereSmoothed.g += (target.g - enclosedAtmosphereSmoothed.g) * blend;
-    enclosedAtmosphereSmoothed.b += (target.b - enclosedAtmosphereSmoothed.b) * blend;
-    enclosedAtmosphereSmoothed.illumination += (target.illumination - enclosedAtmosphereSmoothed.illumination) * blend;
-    enclosedAtmosphereSmoothed.contributors = target.contributors;
-    enclosedAtmosphereSmoothed.windows = target.windows;
-    enclosedAtmosphereSmoothed.furniture = target.furniture;
-    enclosedAtmosphereSmoothed.lanterns = target.lanterns;
-    return enclosedAtmosphereSmoothed;
-  }
-
-  function drawBlendedInteriorAtmosphere(baseDarknessAlpha, rect) {
-    const atmosphere = sampleEnclosedAtmosphere();
-    const illumination = clamp01(atmosphere.illumination);
-    const alpha = clamp01(baseDarknessAlpha * (1 - illumination * 0.62)); // Nearby light reduces darkness globally without punching spatial holes in the overlay.
-    const tintScale = 0.06 + illumination * 0.16; // Source hue lives inside the same single atmosphere fill; it never becomes a separate glow layer.
-    const r = Math.round(Math.max(0, Math.min(255, atmosphere.r * tintScale)));
-    const g = Math.round(Math.max(0, Math.min(255, atmosphere.g * tintScale)));
-    const b = Math.round(Math.max(0, Math.min(255, atmosphere.b * tintScale)));
+  function drawWindowLightMasks() {
+    const runtime = window.DaylightWindowRuntime;
+    const activeScene = lightingDeps.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.() || null; // Without a scene filter the farm-side exterior window would also reveal the interior overlay.
+    if (!activeScene) return;
+    const sources = runtime?.getActiveSources?.(activeScene) || [];
+    windowMaskStats.sources = sources.length;
+    windowMaskStats.drawn = 0;
+    windowMaskStats.glows = 0;
+    if (!sources.length) { windowMaskStats.daylight = 0; return; }
+    const outdoor = getFullDayLighting(); // Same day/night + lunar state the windows' pane tint uses, without its debug-state round trip.
+    const daylight = clamp01(1 - clamp01(outdoor.a)); // Outdoor overlay darkness alpha: night windows admit little light.
+    windowMaskStats.daylight = daylight;
     const ctx = lightingDeps.lctx;
+    ctx.globalCompositeOperation = 'destination-out';
+    for (const source of sources) {
+      source.mesh?.getWorldPosition?.(ambientWindowScratch);
+      const center = lightingDeps.worldToOverlay(ambientWindowScratch.x, ambientWindowScratch.y, ambientWindowScratch.z);
+      if (!center.visible) continue;
+      const glowR = lightScreenRadius(ambientWindowScratch.x, ambientWindowScratch.z, ambientWindowScratch.y, WINDOW_PANE_GLOW_RADIUS);
+      if (glowR > 0) {
+        drawWindowRevealCircle(ctx, center, glowR, WINDOW_PANE_GLOW_STRENGTH, 0.55); // Pane glow: day and night, no spread.
+        windowMaskStats.glows += 1;
+      }
+      if (daylight <= 0.02) continue;
+      const radiusTiles = Math.max(0.25, finiteOr(source.radiusTiles, 2.8));
+      const shineR = lightScreenRadius(ambientWindowScratch.x, ambientWindowScratch.z, ambientWindowScratch.y, radiusTiles);
+      const strength = Math.min(0.9, clamp01(source.strength) * daylight * 0.85);
+      if (!(shineR > 0) || !(strength > 0)) continue;
+      drawWindowRevealCircle(ctx, center, shineR, strength, 0.35); // Daylight pool spreading into the room.
+      windowMaskStats.drawn += 1;
+    }
     ctx.globalCompositeOperation = 'source-over';
-    ctx.fillStyle = `rgba(${r},${g},${b},${alpha})`;
-    ctx.fillRect(0, 0, rect.width, rect.height); // Exactly one atmosphere layer for darkness + blended source color.
   }
 
   function drawUnifiedLightingOverlay() {
@@ -730,17 +669,13 @@
       || (isNoSkyArea(currentArea) && currentArea !== 'map_southern_cloud_forest');
 
     if (enclosed) {
-      const darknessAlpha = enclosedDarknessOverlayAlpha(currentArea); // Same baseline darkness authority as before.
-      if (ordinaryBuildingInterior(currentArea)) {
-        drawBlendedInteriorAtmosphere(darknessAlpha, rect); // Rooms use one color/brightness atmosphere blended from nearby windows and furniture lights.
-      } else {
-        ctx.globalCompositeOperation = 'source-over';
-        ctx.fillStyle = `rgba(0,0,0,${darknessAlpha})`;
-        ctx.fillRect(0, 0, rect.width, rect.height);
-        // Underground spaces retain their existing positional lantern gameplay/readability.
-        drawLanternMasksCompat(1);
-        drawFurnitureLightMasksCompat();
-      }
+      const darknessAlpha = enclosedDarknessOverlayAlpha(currentArea); // Enclosed spaces keep one stable darkness base; local masks reveal light without whole-room brightness churn.
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = `rgba(0,0,0,${darknessAlpha})`;
+      ctx.fillRect(0, 0, rect.width, rect.height);
+      drawLanternMasksCompat(1);
+      drawFurnitureLightMasksCompat();
+      if (ordinaryBuildingInterior(currentArea)) drawWindowLightMasks();
       if (sceneTransAlpha > 0) {
         ctx.globalCompositeOperation = 'source-over';
         ctx.fillStyle = `rgba(0,0,0,${sceneTransAlpha})`;
@@ -823,7 +758,7 @@
         moonIllumination: currentMoonIllumination(),
         lunarDarknessAddition: currentLunarDarknessAddition(),
         globalDarknessDelta: GLOBAL_DARKNESS_DELTA,
-        enclosedAtmosphere: { ...enclosedAtmosphereSmoothed }, // Shows the one blended room color/illumination and live contributor counts for mobile QA.
+        daylightWindowMasks: { ...windowMaskStats }, // Live window count, masks drawn, and outdoor daylight factor for mobile QA.
         configPath: ATMOSPHERE_CONFIG_PATH,
         tuning: {
           cloudForest: { ...tuning.cloudForest },

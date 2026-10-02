@@ -489,7 +489,7 @@
 
   function refreshTransformReadout() {
     const output = document.getElementById('mapEditGizmoTransform');
-    if (!output || !selectedPlacement) { if (output) output.textContent = ''; return; }
+    if (!output || !selectedPlacement) { setText(output, ''); return; }
     if (selectedPlacement.ref?.kind === 'cinematicCamera') {
       const areaId = selectedPlacement.ref.mapId || deps.getCurrentArea();
       const camera = window.CinematicCameraRuntime?.cameraForId?.(areaId, selectedPlacement.ref.id);
@@ -553,6 +553,14 @@
     window.__farmLog?.(`[map-live] ${text}`, ok ? 'info' : 'warn');
   }
 
+  // refreshPanel() runs every frame (refreshActionBar -> DevSpawner ->
+  // refreshVisibility), and textContent writes always replace the child text
+  // node, queueing a childList mutation for every body-wide MutationObserver
+  // even when the text is unchanged. Compare first.
+  function setText(element, text) {
+    if (element && element.textContent !== text) element.textContent = text;
+  }
+
   function refreshPanel() {
     const descriptor = deps ? currentDescriptor({ includeSnapshot: false }) : { editable: false };
     const name = document.getElementById('mapEditMapName');
@@ -560,19 +568,19 @@
     const connection = document.getElementById('mapEditConnection');
     const result = document.getElementById('mapEditLastResult');
     const generated = document.getElementById('mapEditGeneratedWarning');
-    if (name) name.textContent = descriptor.name || descriptor.mapId || descriptor.reason || 'No editable map';
-    if (layout) layout.textContent = descriptor.layoutId && descriptor.layoutId !== 'default' ? descriptor.layoutId : 'Base';
+    setText(name, descriptor.name || descriptor.mapId || descriptor.reason || 'No editable map');
+    setText(layout, descriptor.layoutId && descriptor.layoutId !== 'default' ? descriptor.layoutId : 'Base');
     if (connection) {
-      connection.textContent = editorConnected ? '● Map Editor connected' : '○ Map Editor not connected';
-      connection.classList.toggle('connected', editorConnected);
+      setText(connection, editorConnected ? '● Map Editor connected' : '○ Map Editor not connected');
+      if (connection.classList.contains('connected') !== editorConnected) connection.classList.toggle('connected', editorConnected);
     }
-    if (result) result.textContent = lastResult?.text || 'No live reflection yet.';
+    setText(result, lastResult?.text || 'No live reflection yet.');
     if (generated) generated.style.display = descriptor.generated ? '' : 'none';
     if (window.__mapEditorPanelOpen || armed || selectedPlacement?.ref?.kind === 'cinematicCamera') syncCameraMarkers();
     const gizmoSection = document.getElementById('mapEditGizmoSection');
     if (gizmoSection) gizmoSection.style.display = selectedPlacement ? '' : 'none';
     const gizmoLabel = document.getElementById('mapEditGizmoSelection');
-    if (gizmoLabel && selectedPlacement) gizmoLabel.textContent = `${selectedPlacement.ref.kind} · ${placementIdentity(selectedPlacement.ref)} · controls paused`;
+    if (gizmoLabel && selectedPlacement) setText(gizmoLabel, `${selectedPlacement.ref.kind} · ${placementIdentity(selectedPlacement.ref)} · controls paused`);
     const scaleButton = document.getElementById('mapEditGizmoScale');
     if (scaleButton) scaleButton.disabled = selectedPlacement?.ref?.kind === 'cinematicCamera';
     refreshCameraStageButton();

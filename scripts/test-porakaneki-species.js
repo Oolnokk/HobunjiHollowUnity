@@ -230,7 +230,7 @@ assert.equal(banditEntityConfigs.at(-1), regularBanditConfig, 'non-Porakaneki ba
   assert.equal(loadedCosmetics.forcedCosmeticsByFighter.porakaneki_male.hood, 'none');
 
   const porakanekiBootstrapIndex = bootstrapSource.indexOf('porakaneki-species-runtime.js?v=20260924poracolor2');
-  const scaleBootstrapIndex = bootstrapSource.indexOf('character-rig-scale.js?v=20260904i');
+  const scaleBootstrapIndex = bootstrapSource.indexOf('character-rig-scale.js?v=20260930hd251dd7');
   assert(porakanekiBootstrapIndex >= 0 && scaleBootstrapIndex > porakanekiBootstrapIndex,
     'Porakaneki profile inheritance must load before whole-rig scale installs profile defaults');
 
