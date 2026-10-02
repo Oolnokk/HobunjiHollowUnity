@@ -727,10 +727,32 @@ assert.match(source, /pattern: clone\(pattern\),[\s\S]*patternLibraryId: entry\.
 assert.match(patternAuthorSource, /options\.offloadCustomMotif === false/, 'shared pattern authoring lets weaving opt out of auxiliary motif storage');
 assert.match(patternAuthorSource, /options\.forceTiling === false/, 'shared PatternAuthoring can lock garment-owned trim to one non-repeating overlay');
 assert.equal(clothingTrimManifest.schema, 'hobunji_clothing_trim.v1', 'repo owns one stable authored garment-trim manifest');
-assert.equal(clothingTrimManifest.garments?.ragged_hood?.variants?.['mao-ao_male']?.front?.motifPng, 'assets/patterns/clothing-trims/ragged_hood__mao-ao_male__front.png', 'supplied Ragged Hood Mao\'ao male front trim is the repo-authored master entry');
-assert.equal(clothingTrimManifest.garments?.ragged_hood?.variants?.['mao-ao_male']?.front?.settings?.directMask, true, 'supplied Ragged Hood master remains an exact direct mask');
-assert.equal(clothingTrimManifest.garments?.ragged_hood?.variants?.['mao-ao_male']?.front?.authorOps?.length, 19, 'recovered Ragged Hood Mao\'ao male source journal is persisted in the repo manifest');
-assert.deepEqual(clothingTrimManifest.garments?.ragged_hood?.variants?.['mao-ao_male']?.front?.authorOps?.filter(op => op.type === 'expandInward').map(op => op.amount), [7, 10, 11, 12, 12], 'recovered source preserves the authored inward-expansion sequence');
+const raggedHoodTrimVariants = clothingTrimManifest.garments?.ragged_hood?.variants || {};
+const expectedRaggedHoodTrimOpCounts = {
+  'mao-ao_male': 30,
+  'mao-ao_female': 30,
+  'tletingan_male': 33,
+  'kenkari_male': 32,
+  'kenkari_female': 32,
+  'engh-sho_male': 32,
+  'engh-sho_female': 30,
+  'rakakoan_male': 31,
+  'rakakoan_female': 31,
+  'mashtzarr_male': 31,
+};
+assert.deepEqual(Object.keys(raggedHoodTrimVariants).sort(), Object.keys(expectedRaggedHoodTrimOpCounts).sort(), 'repo preserves all ten manually reviewed Ragged Hood front variants');
+const expectedRaggedHoodExpands = [7, 10, 11, 12, 12, 1, 4, 7, 9, 12, 13, 13, 14, 14];
+for (const [variantKey, expectedOps] of Object.entries(expectedRaggedHoodTrimOpCounts)) {
+  const front = raggedHoodTrimVariants[variantKey]?.front;
+  assert.equal(front?.motifPng, `assets/patterns/clothing-trims/ragged_hood__${variantKey}__front.png`, `${variantKey} keeps its own Ragged Hood direct-mask asset path`);
+  assert.equal(front?.settings?.directMask, true, `${variantKey} remains an exact Ragged Hood direct mask`);
+  assert.equal(front?.authorOps?.length, expectedOps, `${variantKey} preserves its manually reviewed Ragged Hood authoring journal`);
+  assert.deepEqual(front?.authorOps?.filter(op => op.type === 'expandInward').map(op => op.amount), expectedRaggedHoodExpands, `${variantKey} preserves the common authored inward-expansion sequence`);
+}
+const raggedHoodMasterOps = JSON.stringify(raggedHoodTrimVariants['mao-ao_male']?.front?.authorOps || []);
+for (const variantKey of ['tletingan_male', 'kenkari_male', 'kenkari_female', 'engh-sho_male', 'rakakoan_male', 'rakakoan_female', 'mashtzarr_male']) {
+  assert.notEqual(JSON.stringify(raggedHoodTrimVariants[variantKey]?.front?.authorOps || []), raggedHoodMasterOps, `${variantKey} retains variant-specific manual cleanup instead of being collapsed back to the Mao'ao master journal`);
+}
 assert.match(patternEditorSource, /function defaultTrimSourceVariant\(/, 'trim authoring has one shared authored-master selection helper');
 assert.match(patternEditorSource, /authoredInManifest = variants\.find\(key => !!trimRecord\(garmentId, key, view\)\)/, 'manifest-authored variants are preferred over session drafts as replication masters');
 assert.match(patternEditorSource, /preferredSource = defaultTrimSourceVariant/, 'variant selection automatically moves to an authored master when the previous selection is not authored');
