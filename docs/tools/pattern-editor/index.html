@@ -230,6 +230,9 @@ Overpass → not set</div>
     return `${CLOTHING_TRIM_ASSET_DIR}/${safe(garmentId)}__${safe(variantKey)}__${view === 'behind' ? 'behind' : 'front'}.png`;
   }
 
+  const STRUCTURAL_TRIM_ALPHA_MIN = 128; // Outline authoring ignores semi-transparent sprite fringe; Direct Paint intentionally uses the broader alpha-only mask below.
+  const STRUCTURAL_TRIM_DARK_MAX = 28; // Matches the production woven-cloth near-black cutoff so anti-aliased/dark line art is structural outline, not selectable cloth.
+
   function opaqueGarmentMaskFromRgba(rgba) {
     const mask = new Uint8Array(Math.floor((rgba?.length || 0) / 4)); // Manual Direct Paint uses only alpha membership and deliberately bypasses outline color classification.
     for (let pixel = 0; pixel < mask.length; pixel++) mask[pixel] = rgba[pixel * 4 + 3] > 16 ? 1 : 0;
@@ -237,13 +240,12 @@ Overpass → not set</div>
   }
 
   function trimableGarmentMaskFromRgba(rgba) {
-    const opaqueMask = opaqueGarmentMaskFromRgba(rgba);
-    const mask = opaqueMask.slice(); // Structural trim geometry: opaque cloth pixels count, exact black sprite-outline pixels do not.
+    const mask = new Uint8Array(Math.floor((rgba?.length || 0) / 4)); // Structural tools use solid-enough, non-near-black cloth; anti-aliased line art/fringe is skipped.
     for (let pixel = 0; pixel < mask.length; pixel++) {
-      if (!opaqueMask[pixel]) continue;
       const offset = pixel * 4;
-      const pureBlack = rgba[offset] === 0 && rgba[offset + 1] === 0 && rgba[offset + 2] === 0;
-      if (pureBlack) mask[pixel] = 0; // Skip black outlines of any thickness so contour detection starts on the first non-black garment pixels inward.
+      const alpha = rgba[offset + 3];
+      const maxChannel = Math.max(rgba[offset], rgba[offset + 1], rgba[offset + 2]);
+      mask[pixel] = alpha >= STRUCTURAL_TRIM_ALPHA_MIN && maxChannel > STRUCTURAL_TRIM_DARK_MAX ? 1 : 0;
     }
     return mask;
   }
@@ -1019,7 +1021,7 @@ Overpass → not set</div>
               <label>Zoom <input data-trim-zoom type="range" min="1" max="8" step="1" value="2"><span data-trim-zoom-label>2×</span></label>
             </div>
             <div class="trimPaintScroller"><div class="trimPaintStage"><canvas data-trim-base></canvas><canvas class="trimPaintInk" data-trim-ink></canvas></div></div>
-            <div class="trimPaintNote">Outline Brush selects one-pixel-wide sections of the first opaque non-black garment contour, and Expand Inward uses that same structural geometry. Direct Paint is a true manual override: it paints any opaque garment pixel, including pixels the black-outline detector excluded; only transparent background is protected. Eraser removes trim anywhere. Brush / Reach controls contour catch radius for Outline Brush and actual brush diameter for Direct Paint/Eraser. White is only the editing overlay; the player still chooses dye A, B, or C in the loom.</div>
+            <div class="trimPaintNote">Outline Brush selects one-pixel-wide sections of the first solid, non-near-black garment contour, and Expand Inward uses that same structural geometry. Near-black line art and semi-transparent sprite fringe are skipped. Direct Paint is a true manual override: it paints any visible garment pixel even when structural outline detection excluded it; only transparent background is protected. Eraser removes trim anywhere. Brush / Reach controls contour catch radius for Outline Brush and actual brush diameter for Direct Paint/Eraser. White is only the editing overlay; the player still chooses dye A, B, or C in the loom.</div>
           </div>
           <div>
             <div class="muted" style="margin-bottom:6px"><b>Rendered result</b> — production trim compositor</div>
@@ -1804,7 +1806,7 @@ Overpass → not set</div>
   };
 
   window.__patternEditorDebug = () => ({ // Mobile-visible console substitute for checking the dev tool's two-slot state.
-    mostRecentChange: 'Direct Paint is now a true manual override using the garment alpha mask rather than the non-black contour mask. It can paint any visible garment pixel—including pixels structural outline detection rejects—while Outline Brush/Expand Inward continue to ignore pure-black line art.',
+    mostRecentChange: 'Structural trim selection now ignores both near-black line art (max RGB <= 28) and semi-transparent fringe (alpha < 128), matching production woven-cloth darkness semantics. Direct Paint remains the alpha-only manual override.',
     previewMode: $('previewMode').value,
     weavingBackground: $('surfaceTexture').value,
     overpassClearanceMultiplier: clampOverpassClearance($('overpassClearance').value),
