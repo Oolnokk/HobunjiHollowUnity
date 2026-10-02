@@ -11,7 +11,7 @@
     completed: false,
     lastScene: null,
     lastError: null,
-    latestChange: 'Farm-tour choices now continue through valid col/row navigation hops; the real player stays hidden behind its stand-in, with a wide south-to-north farm shot that blends in after the first dialogue Continue.',
+    latestChange: 'Rescue animals use composed eyes and character head targeting; cutscenes follow facing deadzones and seat height, with a hidden surveyor doorway reveal and relocated office camera. Farm-tour choices now continue through valid col/row navigation hops; the real player stays hidden behind its stand-in, with a wide south-to-north farm shot that blends in after the first dialogue Continue.',
   };
 
   function stateKey(profile) {
@@ -94,13 +94,13 @@
     const playerName = String(profile?.nickname || 'Farmer'); // Names the player stand-in in dialogue without depending on unresolved template tokens.
     const actors = [ // Reuses the Director's existing Gar-wolf Rescue cast and blocking.
       { id: 'player', name: playerName, isPlayer: true, team: 'player', lc: 11, lr: 8, rotation: 270, pose: 'prone' },
-      { id: 'wolf1', name: 'Gar-wolf', creatureTypeId: 'gar-wolf', team: 'gar_wolves', lc: 10, lr: 7, rotation: 45, pose: 'standing' },
-      { id: 'wolf2', name: 'Gar-wolf', creatureTypeId: 'gar-wolf', team: 'gar_wolves', lc: 12, lr: 7, rotation: 270, pose: 'standing' },
-      { id: 'wolf3', name: 'Gar-wolf', creatureTypeId: 'gar-wolf', team: 'gar_wolves', lc: 11, lr: 6, rotation: 90, pose: 'standing' },
+      { id: 'wolf1', name: 'Gar-wolf', creatureTypeId: 'gar-wolf', team: 'gar_wolves', lookAtActorId: 'player', lc: 10, lr: 7, rotation: 45, pose: 'standing' },
+      { id: 'wolf2', name: 'Gar-wolf', creatureTypeId: 'gar-wolf', team: 'gar_wolves', lookAtActorId: 'player', lc: 12, lr: 7, rotation: 270, pose: 'standing' },
+      { id: 'wolf3', name: 'Gar-wolf', creatureTypeId: 'gar-wolf', team: 'gar_wolves', lookAtActorId: 'player', lc: 11, lr: 6, rotation: 90, pose: 'standing' },
       npcActor(records, { id: 'jubmir', name: 'Jubmir', npcId: 'jubmir', lc: 11, lr: 15, rotation: 0, pose: 'standing' }),
       npcActor(records, { id: 'spearhead', name: 'Spearhead', npcId: 'spearhead_unumanuk', lc: 16, lr: 0, rotation: 180, pose: 'standing' }),
-      { id: 'hound1', name: 'Dabinggi-hound', creatureTypeId: 'dabinggi-hound', team: 'dabinggi_hounds', lc: 9, lr: 15, rotation: 0, pose: 'standing' },
-      { id: 'hound2', name: 'Dabinggi-hound', creatureTypeId: 'dabinggi-hound', team: 'dabinggi_hounds', lc: 13, lr: 15, rotation: 0, pose: 'standing' },
+      { id: 'hound1', name: 'Dabinggi-hound', creatureTypeId: 'dabinggi-hound', team: 'dabinggi_hounds', lookAtActorId: 'player', lc: 9, lr: 15, rotation: 0, pose: 'standing' },
+      { id: 'hound2', name: 'Dabinggi-hound', creatureTypeId: 'dabinggi-hound', team: 'dabinggi_hounds', lookAtActorId: 'player', lc: 13, lr: 15, rotation: 0, pose: 'standing' },
     ];
     const stages = [ // Stable ids make the choice branches inspectable and regression-testable.
       { id: 'rescue_wolf1_growl', type: 'talk', speakerId: 'wolf1', text: 'Grrrr!', next: '__next__' },
@@ -167,7 +167,7 @@
       npcActor(records, { id: 'hunundi', name: 'Father Hunundi', npcId: 'father_hunundi_hodu', worldC: 11, worldR: 8, rotation: 180, pose: 'sit', seatTarget: seatTarget(11, 8, 0) }),
       npcActor(records, { id: 'jubmir', name: 'Jubmir', npcId: 'jubmir', worldC: 7, worldR: 9, rotation: 0, pose: 'sit', seatTarget: seatTarget(7, 9, 0) }),
       npcActor(records, { id: 'spearhead', name: 'Spearhead', npcId: 'spearhead_unumanuk', worldC: 9, worldR: 9, rotation: 0, pose: 'sit', seatTarget: seatTarget(9, 9, 0) }),
-      npcActor(records, { id: 'harkharash', name: 'Surveyor Harkhanash', npcId: 'khannibarri_agent', worldC: 11, worldR: 5, rotation: 180, pose: 'standing', seatTarget: seatTarget(9, 8, 0) }),
+      npcActor(records, { id: 'harkharash', name: 'Surveyor Harkhanash', npcId: 'khannibarri_agent', visible: false, worldC: 11, worldR: 5, rotation: 180, pose: 'standing', seatTarget: seatTarget(9, 8, 0) }),
     ];
     const stages = [ // The dialogue establishes amnesia, Nanjiri Farmstead, the Company's offer, regional isolation, and Spearhead's resolve in one room.
       { id: 'meeting_fade_in', type: 'fade', direction: 'in', duration: 0.8, next: '__next__' },
@@ -188,11 +188,11 @@
       { id: 'meeting_hunundi_answer', type: 'talk', speakerId: 'hunundi', text: "By getting well. We can worry about the rest after you've had a roof over your head for a few nights.", next: '__next__' },
       { id: 'meeting_knock', type: 'caption', speakerName: '', text: 'Knock. Knock.', next: '__next__' },
       { id: 'meeting_hunundi_door', type: 'talk', speakerId: 'hunundi', text: 'Hm? Come in.', next: '__next__' },
-      { id: 'meeting_hark_enter', type: 'move', actorId: 'harkharash', targetWorld: { c: 10, r: 7 }, speed: 'normal', next: '__next__' },
+      { id: 'meeting_hark_enter', type: 'move', visible: true, cameraMode: 'npcRelative', actorId: 'harkharash', targetWorld: { c: 10, r: 7 }, speed: 'normal', next: '__next__' },
       { id: 'meeting_hark_intro', type: 'talk', speakerId: 'harkharash', text: "Surveyor Harkhanash, the Imperial Khanibarri Mining Company. I'm looking for Father Hunundi — the nearest thing to a leader here, I'm told.", next: '__next__' },
       { id: 'meeting_hunundi_no_leader', type: 'talk', speakerId: 'hunundi', text: "I'm Father Hunundi. I help settle disputes; the Hollow isn't mine. Have a seat.", next: '__next__' },
       { id: 'meeting_hark_to_seat', type: 'move', actorId: 'harkharash', targetWorld: { c: 9, r: 8 }, speed: 'normal', next: '__next__' },
-      { id: 'meeting_hark_sit', type: 'animation', actorId: 'harkharash', animKind: 'none', resultPose: 'sit', duration: 0.35, next: '__next__' },
+      { id: 'meeting_hark_sit', type: 'animation', cameraMode: 'wall', actorId: 'harkharash', animKind: 'none', resultPose: 'sit', duration: 0.35, next: '__next__' },
       { id: 'meeting_hark_offer', type: 'talk', speakerId: 'harkharash', text: 'Our surveys found substantial ore beneath this valley. The Company would like to buy the settlement and the surrounding claims to extract it.', next: '__next__' },
       { id: 'meeting_hunundi_people', type: 'talk', speakerId: 'hunundi', text: "That is up to the townsfolk. Their families have lived here for generations. They won't give it up lightly.", next: '__next__' },
       { id: 'meeting_hark_practical', type: 'talk', speakerId: 'harkharash', text: 'With respect, Father, I was hoping the nearest thing to a leader might also be the nearest thing to a practical man.', next: '__next__' },

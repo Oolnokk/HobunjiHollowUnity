@@ -148,13 +148,13 @@
     return { kind: 'placeholder', root: group };
   }
 
-  const cutscenePreviewAngleToward = (from, to) => (((Math.atan2(to.r - from.r, to.c - from.c) * 180 / Math.PI + 90) % 360) + 360) % 360;
+  const cutscenePreviewAngleToward = (from, to) => (((-Math.atan2(to.r - from.r, to.c - from.c) * 180 / Math.PI + 90) % 360) + 360) % 360;
 
   function cutscenePreviewApplyState(entity, area, st) {
     const surfY = deps.npcSurfaceY(area, Math.round(st.c), Math.round(st.r));
     if (entity.kind === 'creature') {
       const c = entity.creature;
-      c.x = st.c * deps.TILE; c.y = st.r * deps.TILE;
+      c.x = (st.c + 0.5) * deps.TILE; c.y = (st.r + 0.5) * deps.TILE;
       c.avatarRef.group.position.set(st.c + 0.5, surfY + (c.groundLift ?? c.halfHeight), st.r + 0.5);
       c.avatarRef.group.rotation.y = THREE.MathUtils.degToRad(st.rotation);
       // Seeds groupRot/pngRot to match so cutsceneRotationTick's first
@@ -170,9 +170,11 @@
       const seatRow = seatTransform ? Math.floor(seatTransform.z) : Math.round(st.r); // Selects the floor tile beneath an authored seat for building-height lookup.
       const npcSurfY = deps.npcSurfaceY(area, seatCol, seatRow); // Keeps chairs on raised/interior surfaces while their local seat Y bends only the legs.
       const actorRot = seatTransform?.facingRad ?? THREE.MathUtils.degToRad(st.rotation); // Makes a seated actor face the chair's authored yaw while normalDeg remains reserved for seat-surface pitch/roll.
-      entity.walker.rot = actorRot;
-      entity.root.position.set(seatTransform?.x ?? (st.c + 0.5), npcSurfY, seatTransform?.z ?? (st.r + 0.5));
-      entity.root.rotation.y = actorRot;
+      if (!Number.isFinite(entity.walker.rot)) entity.walker.rot = actorRot;
+      const standingPosteriorY = Number(entity.walker.legs?.standingPosteriorY); // Normal schedule seating lowers the entire avatar to put its posterior on the seat.
+      const seatSink = seatTransform ? (Number.isFinite(standingPosteriorY) ? seatTransform.y - standingPosteriorY : -0.32) : 0;
+      entity.root.position.set(seatTransform?.x ?? (st.c + 0.5), npcSurfY + seatSink, seatTransform?.z ?? (st.r + 0.5));
+      entity.root.rotation.y = entity.walker.rot;
       entity.root.scale.setScalar(1);
       // Prone tips the flat portrait plane down onto its back instead of
       // just shrinking a standing figure — this walker is scripted

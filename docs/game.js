@@ -30232,7 +30232,7 @@
               // case that assignment above ever moves).
               const savedArea = currentArea;
               currentArea = area;
-              const creature = makeCreatureEntity(actor.creatureTypeId, (actor.worldC + 0.5) * TILE, (actor.worldR + 0.5) * TILE, { scene: targetScene, grid: targetGrid, cols: targetCols, rows: targetRows });
+              const creature = makeCreatureEntity(actor.creatureTypeId, (actor.worldC + 0.5) * TILE, (actor.worldR + 0.5) * TILE, { scene: targetScene, grid: targetGrid, cols: targetCols, rows: targetRows, genotype: window.CreatureGenetics.makeDefaultGenotype(actor.creatureTypeId) });
               currentArea = savedArea;
               if (creature) {
                 creature.avatarRef.group.rotation.y = THREE.MathUtils.degToRad(actor.rotation || 0);
@@ -30263,6 +30263,7 @@
             }
           } catch (e) { console.error('[cutscene preview] actor spawn failed for', actor.name, e); }
           if (!entity) entity = window.CutscenePreviewHelpers.cutscenePreviewMakePlaceholder(actor, area, targetScene);
+          entity.root.visible = actor.visible !== false; // Authored entrances keep the real rig hidden until its reveal stage.
           entities.set(actor.id, entity);
         }
 
@@ -30280,8 +30281,8 @@
         // reading a payload the Director tool has already fully resolved
         // to world tile coordinates (see its "Preview in game" handler).
         const actorsById  = new Map((payload.actors || []).map(a => [a.id, a]));
-        // Authored rotation, used exactly as given — no camera-visibility
-        // biasing. This is the single source of truth for every actor's
+        // Authored logical rotation remains separate from the rendered camera
+        // deadzone. This is the single source of truth for every actor's
         // rotation from here on, kept in sync with the mesh only through
         // applyState, so it can't drift out of sync with what's actually on
         // screen the way computing it twice would.
@@ -30483,6 +30484,16 @@
           if (!stage) { finish('Preview stopped — the next card could not be found.'); return; }
           report(`🎬 ${payload.title || 'Cutscene'} — ${stage.type}`, false);
 
+          if (stage.visible != null) { const actor = entities.get(stage.actorId); if (actor) actor.root.visible = stage.visible; } // Stage visibility controls doorway entrances and departures.
+          if (stage.cameraMode === 'npcRelative') {
+            cinematicCameraReady = false;
+            window.CinematicCameraRuntime?.deactivate?.();
+            activeCameraMode = dlgModeKey;
+            activeCameraTarget = { position: entities.get(stage.actorId)?.root.position }; // The existing NPC-relative dialogue shot follows the arriving walker.
+          } else if (stage.cameraMode === 'wall') {
+            cinematicCameraReady = true;
+            window.CinematicCameraRuntime?.activate?.(area, payload.cinematicCameraId, { reason: 'authored-cutscene', targetWalker: entities.get(stage.actorId)?.walker });
+          }
           if (stage.type === 'move') return runMove(stage);
           if (stage.type === 'animation') return runAnimation(stage);
           if (stage.type === 'turn') return runTurn(stage);
@@ -30790,20 +30801,20 @@
               // inverse of that same mapping (creatureAimAngleForGroupRot)
               // to land groupRot on the actual authored angle rather than
               // its mirror.
-              updateCreatureMesh(entity.creature, dt, creatureAimAngleForGroupRot(THREE.MathUtils.degToRad(targetDeg)));
+              const lookActor = entities.get(actorsById.get(actorId)?.lookAtActorId); // Authored animal attention reuses living-target head height, pitch and yaw.
+              const lookTarget = lookActor?.walker || lookActor?.creature;
+              const aim = lookTarget ? Math.atan2((lookActor.root.position.z * TILE) - entity.creature.y, (lookActor.root.position.x * TILE) - entity.creature.x) : creatureAimAngleForGroupRot(THREE.MathUtils.degToRad(targetDeg));
+              entity.creature.facing = aim;
+              updateCreatureMesh(entity.creature, dt, aim);
+              if (lookTarget) _updateCreatureHeadLookAtCombatTarget(entity.creature, lookTarget, dt);
               updateCreatureAnimFrame(entity.creature, dt, false);
               st.rotation = THREE.MathUtils.radToDeg(entity.creature.groupRot);
             } else {
-              // NPC/player/placeholder: the same idle "face player" ease
-              // real stationary NPCs use (see faceNpcDialogueParticipants's
-              // npcFacePlayerLerp) — a flat coin-plane avatar has no edge-on
-              // issue to dead-zone against, so there's nothing else this
-              // needs to run through.
-              const cfg = npcDialogueStagingConfig();
-              const current = THREE.MathUtils.degToRad(st.rotation);
-              const next = current + angleDiff(THREE.MathUtils.degToRad(targetDeg), current) * (cfg.npcFacePlayerLerp ?? 0.28);
-              st.rotation = THREE.MathUtils.radToDeg(next);
               applyState(actorId);
+              if (entity.walker) {
+                const seat = st.pose === 'sit' ? npcSeatTransformForTarget(st.seatTarget) : null; // Furniture facing remains logical; the portrait obeys the normal camera deadzone.
+                entity.walker.applyFacingDeadzone(seat ? -seat.facingRad + Math.PI / 2 : THREE.MathUtils.degToRad(targetDeg), npcDialogueStagingConfig().npcFacePlayerLerp ?? 0.28);
+              }
             }
           }
           requestAnimationFrame(cutsceneRotationTick);

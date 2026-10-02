@@ -21,9 +21,10 @@
     {
       "id": "f_tbhunundi_wardrobe",
       "itemKey": "wardrobeFurniture",
-      "col": 8,
-      "row": 6,
+      "col": 6,
+      "row": 8,
       "rotY": 0,
+      "gridRot": 90,
       "postX": 0,
       "postY": 0,
       "postZ": 0,
@@ -221,9 +222,9 @@
       "id": "hunundi_office_wall",
       "label": "Hunundi office wall camera",
       "position": {
-        "x": 12.8,
+        "x": 8.5,
         "y": 2.7,
-        "z": 9.8
+        "z": 6.1
       },
       "target": {
         "x": 0,
