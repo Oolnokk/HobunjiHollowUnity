@@ -266,14 +266,24 @@ Overpass → not set</div>
     if (!pattern) {
       const record = trimRecord(garmentId, variantKey, view);
       if (!record?.motifPng) return null;
-      pattern = { ...(record.settings || {}), tiling: false, motifDataUrl: await imageUrlToDataUrl('../../' + String(record.motifPng).replace(/^\.?\//, '')) };
+      try {
+        pattern = { ...(record.settings || {}), tiling: false, motifDataUrl: await imageUrlToDataUrl('../../' + String(record.motifPng).replace(/^\.?\//, '')) };
+      } catch (error) {
+        debugState.lastError = error.message; // A manifest entry may intentionally arrive before its PNG; authoring must still open on the base garment.
+        return null;
+      }
     }
-    const motif = await loadImageElement(pattern.motifDataUrl);
-    const builder = window.ClothingWeavingSystem?.__test?.buildPatternMask;
-    if (typeof builder === 'function') return builder(width, height, pattern, motif); // This also migrates any pre-direct trim draft into its exact final garment-space footprint.
-    const fallback = Object.assign(document.createElement('canvas'), { width, height });
-    fallback.getContext('2d').drawImage(motif, 0, 0, width, height);
-    return fallback;
+    try {
+      const motif = await loadImageElement(pattern.motifDataUrl);
+      const builder = window.ClothingWeavingSystem?.__test?.buildPatternMask;
+      if (typeof builder === 'function') return builder(width, height, pattern, motif); // This also migrates any pre-direct trim draft into its exact final garment-space footprint.
+      const fallback = Object.assign(document.createElement('canvas'), { width, height });
+      fallback.getContext('2d').drawImage(motif, 0, 0, width, height);
+      return fallback;
+    } catch (error) {
+      debugState.lastError = error.message;
+      return null;
+    }
   }
 
   async function editableTrimMaskCanvas(width, height) {
@@ -445,26 +455,44 @@ Overpass → not set</div>
     const { speciesId, gender } = parseVariantKey(variantKey);
     const patterns = previewPatterns(); // Loaded primary/overpass patterns remain underneath so authored trim overlap is visible.
     const weaving = patterns.length ? { patterns } : null;
+    const renderWithTrim = trimPatternOverride => window.ClothingWeavingSystem.renderClothingLayers($('trimGarment').value, {
+      primaryHex: $('baseColor').value,
+      secondaryHex: $('trimColorB').value,
+      patternHex: $('inkColor').value,
+      weaving,
+      view: $('trimView').value,
+      speciesId,
+      gender,
+      trimPatternOverride,
+      trimDyeSlotOverride: $('trimPreviewDye').value,
+    });
     try {
-      const result = await window.ClothingWeavingSystem.renderClothingLayers($('trimGarment').value, {
-        primaryHex: $('baseColor').value,
-        secondaryHex: $('trimColorB').value,
-        patternHex: $('inkColor').value,
-        weaving,
-        view: $('trimView').value,
-        speciesId,
-        gender,
-        trimPatternOverride: pattern ? { ...pattern, tiling: false } : null,
-        trimDyeSlotOverride: $('trimPreviewDye').value,
-      });
+      let result;
+      let missingTrimAsset = false;
+      try {
+        result = await renderWithTrim(pattern ? { ...pattern, tiling: false } : null);
+      } catch (error) {
+        if (!pattern) throw error;
+        debugState.lastError = error.message;
+        missingTrimAsset = true;
+        result = await renderWithTrim(null); // A bad/missing authored mask must never erase the otherwise valid garment viewport.
+      }
       if (revision !== trimLoadRevision) return;
       const canvas = $('trimPreview'), ctx = canvas.getContext('2d');
-      if (!result.canvas) { canvas.width = canvas.height = 1; return; }
+      if (!result.canvas) {
+        canvas.width = canvas.height = 1;
+        $('trimStatus').textContent = 'No garment sprite could be rendered for this variant/view.';
+        return;
+      }
       canvas.width = result.canvas.width; canvas.height = result.canvas.height;
       ctx.imageSmoothingEnabled = false;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(result.canvas, 0, 0);
-      $('trimStatus').textContent = pattern ? 'Trim preview uses the real clothing compositor above any loaded primary/overpass patterns.' : 'No trim authored for this variant/view yet. The base garment is shown for reference.';
+      $('trimStatus').textContent = missingTrimAsset
+        ? 'Authored trim entry found, but its PNG is missing/unreadable. Showing the base garment so you can paint or generate the mask.'
+        : pattern
+          ? 'Trim preview uses the real clothing compositor above any loaded primary/overpass patterns.'
+          : 'No trim authored for this variant/view yet. The base garment is shown for reference.';
     } catch (error) {
       debugState.lastError = error.message;
       $('trimStatus').textContent = 'Trim preview failed: ' + error.message;
@@ -732,14 +760,17 @@ Overpass → not set</div>
       }
     }
 
+    const existingRecord = trimRecord();
     const existingMask = await editableTrimMaskCanvas(width, height);
     if (closed) return;
     if (existingMask) {
       paintCtx.drawImage(existingMask, 0, 0, width, height);
       clipPaintToGarment();
-      statusEl.textContent = trimRecord()?.settings?.directMask === true || trimDrafts.get(trimKey())?.pattern?.directMask === true
+      statusEl.textContent = existingRecord?.settings?.directMask === true || trimDrafts.get(trimKey())?.pattern?.directMask === true
         ? 'Loaded existing direct trim mask.'
         : 'Loaded and converted the previous positioned trim into an exact sprite-space mask.';
+    } else if (existingRecord?.motifPng) {
+      statusEl.textContent = 'Manifest entry exists but its trim PNG could not be loaded. Base garment is ready; paint, generate edge trim, or replicate a valid mask, then save/export.';
     }
 
     function pointFromEvent(event) {
@@ -1351,7 +1382,7 @@ Overpass → not set</div>
   };
 
   window.__patternEditorDebug = () => ({ // Mobile-visible console substitute for checking the dev tool's two-slot state.
-    mostRecentChange: 'Pattern Editor startup now selects the first authored trim entry from clothing-trims.json before rendering; with the supplied manifest that means Ragged Hood → Front → mao-ao_male is the actual initial/default trim selection.',
+    mostRecentChange: 'Missing/unreadable authored trim PNGs no longer abort editor initialization or leave the preview blank: the Pattern Editor falls back to the base garment, completes viewport sizing, and reports that the manifest entry needs mask artwork.',
     previewMode: $('previewMode').value,
     weavingBackground: $('surfaceTexture').value,
     overpassClearanceMultiplier: clampOverpassClearance($('overpassClearance').value),
