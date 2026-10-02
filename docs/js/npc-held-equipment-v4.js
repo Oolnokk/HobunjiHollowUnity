@@ -95,6 +95,7 @@
     if (rec.body?.parent === rec.wrapper) rec.originalParent?.add?.(rec.body);
     if (rec.feet?.parent === rec.wrapper) rec.originalParent?.add?.(rec.feet);
     rec.wrapper.parent?.remove?.(rec.wrapper);
+    state.walker._heldBodyYawRad = 0;
     state.bodyYaw = null;
   }
 
@@ -119,8 +120,9 @@
   function applyBodyYaw(state, yawDeg) {
     const rec = ensureBodyYawWrapper(state);
     if (!rec) return false;
-    rec.yawDeg = Number(yawDeg) || 0;
+    rec.yawDeg = state.walker?._cinematicPose === 'sit' ? 0 : Number(yawDeg) || 0; // A resting weapon stance cannot turn the seated body/feet away from its chair.
     rec.wrapper.rotation.y = rad(rec.yawDeg);
+    state.walker._heldBodyYawRad = rec.wrapper.rotation.y; // Facing clamps consume the final stance yaw, not only the walker root.
     rec.wrapper.updateWorldMatrix?.(true, true);
     return true;
   }
@@ -129,6 +131,7 @@
     const rec = state?.bodyYaw;
     if (!rec) return;
     rec.yawDeg = 0;
+    state.walker._heldBodyYawRad = 0;
     rec.wrapper.rotation.y = 0;
     rec.wrapper.updateWorldMatrix?.(true, true);
   }

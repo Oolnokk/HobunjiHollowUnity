@@ -721,6 +721,7 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
     root.append(stageText, percentText, continueButton);
     document.body.appendChild(root);
     document.body.classList?.add('introduction-loading');
+    const introAudio = window.AudioSystem?.beginIntroductionMix?.(); // Foreground text owns the exclusive wind mix and releases it with the same session.
     const inputLock = window.CharacterActionLocks?.acquire?.({ owner: 'introduction-loading', participants: [{ id: 'player', channels: ['movement', 'tools', 'actions'] }] }); // Covers stage one before the Director obtains its own action lock.
     let stages = [], startedAt = 0, stageIndex = -1, ready = false, cancelled = false; // Per-session stage clock and input gate never reuse old input.
     let continueStage = null, rejectStage = null, unsubscribe = null; // Input subscription and outstanding stage wait are released on success/error.
@@ -735,7 +736,8 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
       continueButton.style.visibility = 'hidden';
       const resolve = continueStage; continueStage = null; rejectStage = null; resolve(); // Consume this input exactly once.
     };
-    const keydown = event => { if (['Enter', ' ', 'Space'].includes(event.key)) { event.preventDefault(); event.stopImmediatePropagation(); if (!event.repeat) accept(); } }; // Keyboard continuation matches dialogue; mobile taps the text surface.
+    const keydown = event => { introAudio?.retry?.(); if (['Enter', ' ', 'Space'].includes(event.key)) { event.preventDefault(); event.stopImmediatePropagation(); if (!event.repeat) accept(); } }; // Keyboard continuation matches dialogue; mobile taps the text surface.
+    root.addEventListener('pointerdown', () => introAudio?.retry?.()); // Autoplay-blocked mobile audio resumes on the first trusted touch, including an early tap.
     continueButton.addEventListener('click', accept);
     document.addEventListener('keydown', keydown, true);
     unsubscribe = window.ControllerInput?.subscribe?.('introduction-loading', frame => {
@@ -766,13 +768,14 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
       setProgress(percent) { percentText.textContent = `${Math.round(Math.max(0, Math.min(100, percent)))}%`; }, // Existing preparation owners report their actual readiness milestones.
       finish() {
         cancelled = true; ready = false;
+        introAudio?.finish?.();
         document.body.classList?.remove('introduction-loading');
         document.removeEventListener('keydown', keydown, true); unsubscribe?.(); inputLock?.release?.(); root.remove();
         if (window.ControllerInput?.owner === 'introduction-loading') window.ControllerInput.setOwner('gameplay');
         if (state.introduction === session) { state.introduction = null; state.introductionStage = 0; finalizeHide(state.generation); }
       },
       cancel() { const error = new Error('Introduction loading cancelled'); rejectCancellation(error); rejectStage?.(error); session.finish(); },
-      getDebug: () => ({ presetId, stage: stageIndex + 1, ready, minimumSeconds: stages[stageIndex]?.minimumSeconds, latestChange: 'Centered introduction text, quiet loading percentage and a prompt that appears after each delay. Early pages advance during loading; final reveal waits for assets.' }),
+      getDebug: () => ({ audio: introAudio?.debug?.(), presetId, stage: stageIndex + 1, ready, minimumSeconds: stages[stageIndex]?.minimumSeconds, latestChange: 'Centered introduction text, quiet loading percentage and a prompt that appears after each delay. Early pages advance during loading; final reveal waits for assets.' }),
     };
     state.introduction = session; // Claim foreground synchronously before config/fonts are fetched.
     try {

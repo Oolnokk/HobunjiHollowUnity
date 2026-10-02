@@ -9,6 +9,8 @@
   // — the few bgm-side helpers this module needs (isRealMediaError,
   // markAudioUrlFailed, audioUrlFailed) are passed in via deps instead.
   let deps = null;
+  const activeSfx = new Set(); // Intro audio cleanup stops one-shots and pooled voices already in flight.
+  let introductionMix = null; // Single owner restores audio settings after success/cancellation.
   const objectSfxPreloads = new Map(); // Retains eagerly loaded tool cues for low-latency clones in playObjectSfx.
   const combatSfxPreloads = new Map(); // URL -> bounded ready-element pool used so rapid combat cues cannot queue indefinitely.
   const animalVoicePreloads = new Map(); // Keeps species calls decoded/ready before a semantic vocal intent fires.
@@ -403,6 +405,7 @@
   // volume ceiling is exposed in diagnostics if an unusually quiet source
   // would require >1.0 after the normal footstep/master attenuation.
   function playRecordedFootstepClip(snd, url, surfaceKey, volume, gainMul = 1, heavy = false) {
+    trackActiveSfx(snd);
     const adjustedVolume = Math.max(0, volume * Math.max(0, Number(gainMul) || 0) * (heavy ? 1.15 : 1));
     const nativeVolume = Math.min(1, adjustedVolume);
     snd.volume = nativeVolume;
@@ -668,6 +671,7 @@
       * Math.max(0, Number(audioCfg.sfxVolume) || 1) * Math.max(0, volumeScale);
     if (volume <= 0.002) return null;
     const snd = acquireCombatSfxAudio(cfgEntry.url) || new Audio(cfgEntry.url);
+    trackActiveSfx(snd);
     const pitchVariance = Number(cfgEntry.pitchVarianceMul) || 0;
     snd.playbackRate = Math.max(0.3, pitch * (1 + (Math.random() * 2 - 1) * pitchVariance));
     if (snd._combatRequestedAt != null && !(Number(cfgEntry.gainBoost) > 1)) playPooledCombatSfx(snd, volume);
@@ -695,7 +699,7 @@
 
   function createObjectSfxAudio(url) {
     const preloaded = objectSfxPreloads.get(url); // Used to avoid a fresh network/decode start on the first tool strike.
-    return preloaded ? preloaded.cloneNode(true) : new Audio(url);
+    return trackActiveSfx(preloaded ? preloaded.cloneNode(true) : new Audio(url));
   }
 
   // Generic one-shot player for object/machine/UI interaction sfx (see
@@ -774,7 +778,8 @@
       snd.addEventListener('error', () => {
         if (!deps.isRealMediaError(snd)) return;
         deps.markAudioUrlFailed(cfgEntry.url, 'object sfx load failed');
-        const fallback = new Audio(pickPlaceholder());
+        if (gameAudioConfig().enabled === false) return;
+        const fallback = trackActiveSfx(new Audio(pickPlaceholder()));
         fallback.playbackRate = rate;
         if ('preservesPitch' in fallback) fallback.preservesPitch = false;
         if ('webkitPreservesPitch' in fallback) fallback.webkitPreservesPitch = false;
@@ -979,7 +984,7 @@
     if (distance > earshot) return false;
     const url = pool[Math.floor(Math.random() * pool.length)];
     const preload = animalVoicePreloads.get(url);
-    const snd = preload?.cloneNode?.(true) || new Audio(url);
+    const snd = trackActiveSfx(preload?.cloneNode?.(true) || new Audio(url));
     disablePitchPreservation(snd);
     const falloff = Math.max(0, 1 - distance / earshot);
     const baseVolume = Number.isFinite(Number(opts.volume)) ? Number(opts.volume) : 0.7;
@@ -1145,7 +1150,40 @@
     FOOTSTEP_PLAYER_STRIDE_PX = deps.TILE * 1.35;
   }
 
+  function trackActiveSfx(audio) {
+    activeSfx.add(audio);
+    audio.addEventListener?.('ended', () => activeSfx.delete(audio), { once: true });
+    return audio;
+  }
+
+  function beginIntroductionMix() {
+    introductionMix?.finish();
+    const config = gameAudioConfig(), hadEnabled = Object.prototype.hasOwnProperty.call(config, 'enabled'), enabled = config.enabled; // Restore the user's exact master preference/property on cleanup.
+    config.enabled = false;
+    const resumeMusic = window.Music?.beginQuietLoading?.(); // The existing mixer owns both native and gapless-buffer music transports.
+    window.HobunjiAmbientBgs?.silence?.();
+    window.EnvironmentalReverb?.stopAll?.();
+    for (const audio of activeSfx) audio.pause?.();
+    activeSfx.clear();
+    window.AnimalVoiceIndependentPlayback?.stopAll?.();
+    const context = window._footstepAudioCtx; // Pause synthesized/recorded Web Audio tails without routing the wind through the suspended context.
+    const resumeContext = context?.state === 'running';
+    if (resumeContext) context.suspend?.().catch?.(() => {});
+    const wind = typeof Audio === 'function' ? new Audio('assets/audio/sfx/bgs/bgs_wind2.mp3') : null; // Stronger existing wind recording is the intro's sole dry audio layer.
+    if (wind) { wind.loop = true; wind.volume = 1; wind.preload = 'auto'; wind.dataset.environmentalReverb = 'off'; }
+    let finished = false, lastError = null; // Exposed in the existing intro diagnostics; idempotent cleanup handles repeated cancellation.
+    const session = {
+      retry() { if (!finished && wind?.paused) { try { Promise.resolve(wind.play()).catch(error => { lastError = String(error); }); } catch (error) { lastError = String(error); } } },
+      finish() { if (finished) return; finished = true; wind?.pause(); if (hadEnabled) config.enabled = enabled; else delete config.enabled; resumeMusic?.(); if (resumeContext) context.resume?.().catch?.(() => {}); window.HobunjiAmbientBgs?.updateNow?.(); if (introductionMix === session) introductionMix = null; },
+      debug: () => ({ wind: wind?.src, playing: !!wind && !wind.paused, lastError, latestChange: 'Introduction mutes gameplay sound/music and plays the violent wind loop.' }),
+    };
+    introductionMix = session;
+    session.retry();
+    return session;
+  }
+
   window.AudioSystem = {
+    beginIntroductionMix,
     init(injectedDeps) {
       init(injectedDeps);
       initDerivedConstants();

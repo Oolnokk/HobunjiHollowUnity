@@ -18,26 +18,20 @@ const desktopHeight = points.camera.position.y; // Narrow phone displays retain 
 pointsContext.cameraContainerAspect=()=>9/16;
 vm.runInNewContext('phonePoints = openingFarmTourPoints();',pointsContext);
 assert(pointsContext.phonePoints.camera.position.y>desktopHeight);
-for (const [shot, aspect] of [[points.camera,16/9],[pointsContext.phonePoints.camera,9/16]]) {
-  const dy = shot.target.y - shot.position.y, dz = shot.target.z - shot.position.z; // Builds the north-facing camera basis from the authored shot.
-  const distance = Math.hypot(dy,dz), fy = dy/distance, fz = dz/distance;
-  const halfFov = Math.tan(shot.fovDeg*Math.PI/360); // All farm corners, including an eight-tile roof allowance, must project inside both screen dimensions.
-  for(const x of [0,36]) for(const z of [0,26]) for(const y of [0,8]) {
-    const relativeY = y-shot.position.y, relativeZ = z-shot.position.z;
-    const depth = relativeY*fy+relativeZ*fz;
-    const vertical = relativeY*(-fz)+relativeZ*fy;
-    assert(depth>0&&Math.abs(vertical)/depth<halfFov&&Math.abs(x-shot.position.x)/(depth*aspect)<halfFov,'wide shot contains the full farmhouse/yard envelope on desktop and phone');
-  }
-}
+assert.equal(desktopHeight,Math.max(26+8,36/(16/9)*.85+8)/2,'initial south camera is exactly half its former height');
+assert.equal(points.houseCamera.position.y,3);
+assert(points.houseCamera.position.z>points.houseCamera.target.z,'final facade shot looks head-on from outside the door');
+class V {constructor(x=0,y=0,z=0){Object.assign(this,{x,y,z});}set(x,y,z){Object.assign(this,{x,y,z});return this;}copy(v){Object.assign(this,v);return this;}add(v){this.x+=v.x;this.y+=v.y;this.z+=v.z;return this;}multiplyScalar(n){this.x*=n;this.y*=n;this.z*=n;return this;}}
 const ui = () => ({textContent:'',style:{},classList:{add(){},remove(){}},setAttribute(){}}); // Minimal dialogue elements; camera/movement state remains real.
 async function playChoice(index) {
   const scene = story.window.OpeningStoryCutscene.buildFarmTourScene(new Map(),{nickname:'Farmer'},points); // Both responses must enter the same successful navigation sequence.
+  const timers = []; // Arrival gates wait for the longer path without resetting the moving shot.
   const frames = []; // Runs bounded movement RAFs deterministically, without a browser or real-time waits.
   const visited = new Map(); // Captures every actual path hop consumed by the runner.
   let choices = [];
   let clock = 0;
   let activations = 0;
-  const context = {povShot:null,dialogueAddressedActorId:null,furniturePlayback:null,window:{},performance:{now:()=>clock},requestAnimationFrame:fn=>frames.push(fn),console,area:'farm',payload:scene,runtimeOptions:{},running:true,dialogueOpen:false,cinematicCameraReady:false,cutscenePreviewStageId:null,cutscenePreviewAdvance:null,cutscenePreviewDialogueSpeaker:null,_dialogueWalker:null,activeCameraMode:'initial',activeCameraTarget:null,idleCameraMode:'idle',idleCameraTarget:null,dlgModeKey:'dialogue',dlgModeKeyCreature:'creature',_npcDialogueNameEl:ui(),_npcDialogueHeartsEl:ui(),_npcDialogueEl:ui(),_arcContainerEl:ui(),report(){},isNpcTileWalkable:(_area,c,r)=>c>=0&&r>=0&&c<36&&r<26&&!(c===3&&r===2),externallyDrivenActorIds:new Set(),desiredFacingDeg:new Map(),stagesById:new Map(scene.stages.map(stage=>[stage.id,stage])),stageOrder:scene.stages.map(stage=>stage.id),actorsById:new Map(scene.actors.map(actor=>[actor.id,actor])),actorStates:new Map(scene.actors.map(actor=>[actor.id,{c:actor.worldC,r:actor.worldR,rotation:0}])),entities:new Map(scene.actors.map(actor=>[actor.id,{kind:'npc',walker:{},root:{position:{x:actor.worldC+.5,y:0,z:actor.worldR+.5}}}])),showChoiceOptions:options=>{choices=options;},finish(){context.running=false;}};
+  const context = {THREE:{Vector3:V},setTimeout:fn=>timers.push(fn),povShot:null,dialogueAddressedActorId:null,furniturePlayback:null,window:{},performance:{now:()=>clock},requestAnimationFrame:fn=>frames.push(fn),console,area:'farm',payload:scene,runtimeOptions:{},running:true,dialogueOpen:false,cinematicCameraReady:false,cutscenePreviewStageId:null,cutscenePreviewAdvance:null,cutscenePreviewDialogueSpeaker:null,_dialogueWalker:null,activeCameraMode:'initial',activeCameraTarget:null,idleCameraMode:'idle',idleCameraTarget:null,dlgModeKey:'dialogue',dlgModeKeyCreature:'creature',_npcDialogueNameEl:ui(),_npcDialogueHeartsEl:ui(),_npcDialogueEl:ui(),_arcContainerEl:ui(),report(){},isNpcTileWalkable:(_area,c,r)=>c>=0&&r>=0&&c<36&&r<26&&!(c===3&&r===2),externallyDrivenActorIds:new Set(),desiredFacingDeg:new Map(),stagesById:new Map(scene.stages.map(stage=>[stage.id,stage])),stageOrder:scene.stages.map(stage=>stage.id),actorsById:new Map(scene.actors.map(actor=>[actor.id,actor])),actorStates:new Map(scene.actors.map(actor=>[actor.id,{c:actor.worldC,r:actor.worldR,rotation:0}])),entities:new Map(scene.actors.map(actor=>[actor.id,{kind:'npc',rec:{id:actor.id},walker:{},root:{position:{x:actor.worldC+.5,y:0,z:actor.worldR+.5}}}])),showChoiceOptions:options=>{choices=options;},finish(){context.running=false;}};
   vm.runInNewContext(fs.readFileSync('docs/js/tile-pathfinding.js','utf8'),context);
   vm.runInNewContext(fs.readFileSync('docs/js/cinematic-camera-runtime.js','utf8'),context);
   const activate = context.window.CinematicCameraRuntime.activate; // Count transitions while retaining the real shared camera normalizer and activation timestamps.
@@ -49,6 +43,7 @@ async function playChoice(index) {
     if (!visited.has(id)) visited.set(id,[]);
     visited.get(id).push(tile);
     Object.assign(context.actorStates.get(id),{c:tile.col,r:tile.row});
+    Object.assign(context.entities.get(id).root.position,{x,y:0,z});
     return true;
   };
   vm.runInNewContext(select('        const getResolvedNext =','        const angleTowardState')+select('        async function openLine(','        function showChoiceOptions(')+select('        function continueTo(','        function runAnimation('),context);
@@ -61,14 +56,15 @@ async function playChoice(index) {
   assert.equal(activations,1,'first dialogue Continue activates the wide camera blend');
   assert.equal(context.window.CinematicCameraRuntime.activeRecord().camera.blendSeconds,1.25);
   choices[index].onClick();
-  for(let i=0;frames.length&&i<100;i++){clock+=16;frames.shift()();}
+  for(let i=0;(frames.length||timers.length)&&i<100;i++){clock+=16;if(frames.length)frames.shift()();else timers.shift()();}
   assert.equal(frames.length,0,'navigation terminates');
   assert.equal(context.cutscenePreviewStageId,'farm_house','both initial choices continue to the house dialogue');
   for(const [id,target] of [['spearhead',points.porch],['player',points.playerPorch]]) {
     const path = context.window.TilePathfinding.findPath(scene.actors.find(actor=>actor.id===id).worldC,scene.actors.find(actor=>actor.id===id).worldR,target.c,target.r,(c,r)=>context.isNpcTileWalkable('farm',c,r),{bounds:context.window.TilePathfinding.boxAround(0,0,target.c,target.r,8)});
     assert.deepEqual(JSON.parse(JSON.stringify(visited.get(id))),JSON.parse(JSON.stringify(path)),'every hop, including the first, is visited');
   }
-  assert.equal(activations,1,'later dialogue does not restart or replace the fixed wide shot');
+  assert.equal(activations,3,'wide shot, moving follow and final house view activate exactly once');
+  assert.equal(context.window.CinematicCameraRuntime.activeRecord().camera.id,'farm_introduction_house');
   context.cutscenePreviewAdvance(); await Promise.resolve();
   choices[0].onClick(); await Promise.resolve();
   assert.equal(context.cutscenePreviewStageId,'farm_tour_final');

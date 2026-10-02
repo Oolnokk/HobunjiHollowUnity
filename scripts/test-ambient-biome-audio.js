@@ -10,7 +10,7 @@ const SOURCE_PATH = path.join(ROOT, 'docs/js/ambient-biome-audio.js');
 const source = fs.readFileSync(SOURCE_PATH, 'utf8');
 
 const loaderSource = fs.readFileSync(path.join(ROOT, 'docs/js/input-settings-panel.js'), 'utf8');
-assert.match(loaderSource, /'js\/ambient-biome-audio\.js'/, 'input settings bootstrap should load the ambience helper after game initialization');
+assert.match(loaderSource, /'js\/ambient-biome-audio\.js\?v=[A-Za-z0-9_-]+'/, 'input settings bootstrap should load the ambience helper after game initialization');
 for (const fileName of ['bgs_nightbugs1.ogg', 'bgs_cloudforest.ogg', 'bgs_cloudforest_night.ogg', 'bgs_river.ogg']) {
   const oggPath = path.join(ROOT, 'docs/assets/audio/sfx/bgs', fileName);
   assert.equal(fs.existsSync(oggPath), true, `${fileName} should exist`);

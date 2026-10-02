@@ -47,7 +47,7 @@
        game.js; the stateful runCutscenePreview runner itself stays in
        game.js and calls into these. Must load before game.js. -->
   <script src="js/cutscene-furniture-runtime.js?v=20261002furniture1"></script>
-<script src="js/cutscene-preview-helpers.js?v=20261002hcb1dea1"></script>
+<script src="js/cutscene-preview-helpers.js?v=20261002h0817cc0"></script>
   <!-- Loot-pool/shop-stock config loading and item-quality rolling,
        extracted out of game.js. Must load before game.js, which calls
        window.LootRolling.init(...) and .loadLootShopConfig() during its
@@ -264,7 +264,7 @@
   <script src="js/combat/impact-ragdoll-playback.js?v=20261002hd4bb4ac"></script>
   <script src="js/combat/combat-enemy-telegraph.js?v=20260926combatreview1"></script>
   <script src="js/combat/combat-animal-attacks.js?v=20261001quickdebuff2"></script>
-  <script src="js/combat/combat-loadout.js?v=20261002h489e3bf"></script>
+  <script src="js/combat/combat-loadout.js?v=20261002h5d8b101"></script>
   <script src="js/combat/combat-progression.js?v=20261001quickdebuff2"></script>
   <!-- Shared player-attack event context (prepare/hit/defensive) published by every
        ability module; Enchantments and future cross-cutting systems observe it. -->
@@ -317,7 +317,7 @@
   <script src="js/bounty-board.js?v=20260831spearheadexisting1-colors1"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261002h2aa68a8"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261002hf75acd7"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -670,7 +670,7 @@
        render() during its own boot sequence (unlike its sibling panels,
        this one renders once at boot rather than lazily on first tab
        open). -->
-  <script src="js/input-settings-panel.js?v=20260925reticle2"></script>
+  <script src="js/input-settings-panel.js?v=20261002hd84e634"></script>
   <!-- Crafting tab (Inventory panel's Crafting sub-tab, window.CraftingPanel)
        — furniture blueprints plus discovered ore-to-bar recipes; pure DOM/state,
        must load before game.js, which injects inventory and metallurgy data. -->
@@ -2400,16 +2400,16 @@
   <script src="js/mount-system.js?v=20261002h1249b60"></script>
   <!-- Footstep/one-shot SFX (window.AudioSystem) — must load before game.js,
        which calls window.AudioSystem.init(...) during its own setup. -->
-  <script src="js/audio-system.js?v=20261002h53af5f3"></script>
+  <script src="js/audio-system.js?v=20261002h8664bae"></script>
   <!-- Semantic animal-call scheduler. Gameplay systems emit vocal intents;
        AudioSystem above remains the replaceable low-level renderer. -->
-  <script src="js/animal-vocalizations.js?v=20260920startup2"></script>
+  <script src="js/animal-vocalizations.js?v=20261002hc534530"></script>
   <!-- Background music/ambient cues/bgs/furniture-proximity SFX
        (window.Music) — wires its own DOM audio-unlock listeners at load
        time, and must load before game.js, which calls
        window.Music.init(...) during its own setup. Depends on
        window.AudioSystem (gameAudioConfig/playObjectSfx), so loads after it. -->
-  <script src="js/music-system.js?v=20260925gameplaycues1"></script>
+  <script src="js/music-system.js?v=20261002h62729f2"></script>
   <script src="js/audio-track-gain-settings.js?v=20260920trackgain2"></script>
   <!-- Shared local-transform dump utility (window.HobunjiTransformDump) —
        also loaded by the Attack Animation Editor, so a probed character's
@@ -2449,7 +2449,7 @@
   <!-- Lore loading-screen overlay, shown while a wilderness zone or mine
        floor rebuilds from scratch. Content authored via
        tools/loading-screen-editor/index.html. -->
-  <script src="js/loading-screen-runtime.js?v=20261002hb8d628c"></script>
+  <script src="js/loading-screen-runtime.js?v=20261002h12a412c"></script>
   <!-- Secondary proximity dialogue: NPC chathead greetings, companion
        onomatopoeia, and reusable crowd cheer/jeer hooks. -->
   <script src="js/ambient-dialogue.js?v=20261002h2d8f60c"></script>
@@ -2566,9 +2566,9 @@
   <script src="js/shoulder-cam-pointer-lock.js?v=20260930hfc11b39"></script>
   <!-- Shared character-scoped hobunjiSaveMeta update step used by game.js's save* helpers. -->
   <script src="js/character-meta-save.js?v=20260930ench1"></script>
-  <script src="game.js?v=20261002ha60a953"></script>
+  <script src="game.js?v=20261002h495ecd3"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
-  <script src="js/opening-story-cutscene.js?v=20261002h3380d23"></script>
+  <script src="js/opening-story-cutscene.js?v=20261002h1acabb3"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>

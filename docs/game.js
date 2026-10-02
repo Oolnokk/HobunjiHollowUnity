@@ -12020,9 +12020,10 @@
               if (this.animalAvatarRef.backPlane) this.animalAvatarRef.backPlane.rotation.y = planeDelta - Math.PI / 2;
               return;
             }
+            const stanceYaw = Number(this._heldBodyYawRad) || 0; // The portrait may also be turned by its held-weapon wrapper.
             this.rot = window.PerpRotation.clampedRotation(
-              this.perpState, this.rot, rawRot, window.PerpRotation.cameraRelativePerpsAtWorldPosition(root.position, camera.position) || cameraRelativePerps(), lerp,
-            );
+              this.perpState, this.rot + stanceYaw, rawRot + stanceYaw, window.PerpRotation.cameraRelativePerpsAtWorldPosition(root.position, camera.position) || cameraRelativePerps(), lerp,
+            ) - stanceYaw;
             root.rotation.y = this.rot;
             // The portrait plane obeys the camera-relative deadzone, but the
             // procedural feet must keep the NPC's exact logical facing.
@@ -20368,7 +20369,7 @@
         camera.fov = THREE.MathUtils.lerp(_cinematicCameraBlend.startFov, Number(shot.fovDeg) || 42, t);
         camera.aspect = cameraContainerAspect();
         camera.updateProjectionMatrix();
-        window.DialogueCameraFraming?.apply(camera, !!(shot.trackSpeaker || shot.targetNpcId || shot.targetProvider || shot.dialogueFraming));
+        window.DialogueCameraFraming?.apply(camera, shot.dialogueFraming !== false && !!(shot.trackSpeaker || shot.targetNpcId || shot.targetProvider || shot.dialogueFraming));
         return true;
       }
 
@@ -30391,7 +30392,13 @@
           if (!entity || !st) return true;
           if (entity.kind === 'npc' && entity.walker) {
             entity.walker.catchup = speedMul; // preview-scripted walkers are never schedule-driven, so catchup is free to repurpose as a speed dial
+            const beforeX = entity.root.position.x, beforeZ = entity.root.position.z; // Real displacement drives cutscene gait, including the shortened final step.
             const arrived = entity.walker.moveToward(tx, tz, dt);
+            entity.walker._moveSpeedTiles = dt > 0 ? Math.hypot(entity.root.position.x - beforeX, entity.root.position.z - beforeZ) / dt : 0;
+            entity.walker._lastUpdateDt = dt;
+            entity.root.position.y = npcSurfaceY(area, Math.floor(entity.root.position.x), Math.floor(entity.root.position.z));
+            entity.walker.legs?.update(dt, entity.walker._moveSpeedTiles, false);
+            window.NpcHeldEquipment?.updateCutsceneWalker?.(entity.walker);
             st.c = entity.root.position.x - 0.5;
             st.r = entity.root.position.z - 0.5;
             st.rotation = THREE.MathUtils.radToDeg(entity.walker.rot);
@@ -30467,7 +30474,7 @@
           dialogueOpen = true;
           _dialogueWalker = entity?.kind === 'npc' ? entity.walker : null; // Reuse the actual world walker so dialogue expression refreshes target the visible avatar, never a detached viewport portrait.
           cutscenePreviewDialogueSpeaker = entity || null;
-          if (povShot) { /* The procedural camera already follows its authored actor and gaze. */ }
+          if (povShot || (!cinematicCameraReady && window.CinematicCameraRuntime?.isActive?.())) { /* This stage's authored/procedural view remains live across dialogue. */ }
           else if (cinematicCameraReady && (payload.cinematicCamera || (payload.cinematicCameraId && entity?.walker))) {
             if (!payload.cinematicCamera || payload.cinematicCamera.trackSpeaker || window.CinematicCameraRuntime?.activeRecord?.()?.camera?.id !== payload.cinematicCamera.id) window.CinematicCameraRuntime?.activate?.(area, payload.cinematicCameraId || payload.cinematicCamera, { reason: 'authored-cutscene', targetWalker: entity?.walker });
           } else if (payload.widePlayerShots && entity?.rec?.id === 'player') {
@@ -30537,9 +30544,41 @@
           if (!stage) { finish('Preview stopped — the next card could not be found.'); return; }
           report(`🎬 ${payload.title || 'Cutscene'} — ${stage.type}`, false);
 
+          if (stage.waitForActors?.some(id => externallyDrivenActorIds.has(id))) { setTimeout(() => runStage(stageId), 25); return; } // The house shot starts after both walkers stop, even if their paths differ.
+          if (stage.spawnOutsideView) {
+            const actor = entities.get(stage.actorId), state = actorStates.get(stage.actorId), goal = stage.targetWorld; // Hidden entrance starts outside the preceding camera's frustum.
+            if (actor && state && goal) {
+              const probe = new THREE.Vector3(); // One setup scratch for candidate projection, never a per-frame allocation.
+              camera.updateMatrixWorld?.(true);
+              let spawn = null;
+              for (let radius = 2; radius <= 16 && !spawn; radius++) for (let dz = -radius; dz <= radius && !spawn; dz++) for (let dx = -radius; dx <= radius && !spawn; dx++) {
+                if (Math.max(Math.abs(dx), Math.abs(dz)) !== radius) continue;
+                const c = Math.round(goal.c + dx), r = Math.round(goal.r + dz); // Candidate floor tile must be legal for normal NPC movement.
+                if (!isNpcTileWalkable(area, c, r)) continue;
+                probe.set(c + .5, npcSurfaceY(area, c, r) + (actor.walker?.avatarHeight || 1) * .5, r + .5).project(camera);
+                if (Math.abs(probe.x) > 1.4 || Math.abs(probe.y) > 1.4 || probe.z > 1) spawn = { c, r };
+              }
+              if (spawn) { state.c = spawn.c; state.r = spawn.r; applyState(stage.actorId, 0); }
+            }
+          }
           if (stage.visible != null) { const actor = entities.get(stage.actorId); if (actor) actor.root.visible = stage.visible; } // Stage visibility controls doorway entrances and departures.
           if (povShot && (stage.type === 'talk' || stage.type === 'choice' || stage.cameraMode) && stage.cameraMode !== 'pov') { clearPovShot(); window.CinematicCameraRuntime?.deactivate?.(); }
-          if (stage.cameraMode === 'pov') {
+          if (stage.cameraMode === 'establishing') {
+            cinematicCameraReady = false;
+            window.CinematicCameraRuntime?.deactivate?.();
+            activeCameraMode = idleCameraMode; activeCameraTarget = idleCameraTarget;
+          } else if (stage.cameraMode === 'authored' || stage.cameraMode === 'follow') {
+            cinematicCameraReady = false;
+            if (stage.cameraMode === 'authored') window.CinematicCameraRuntime?.activate?.(area, stage.camera);
+            else {
+              const subjects = (stage.followActorIds || [stage.actorId]).map(id => entities.get(id)).filter(Boolean); // Live midpoint keeps both moving characters in frame.
+              const center = new THREE.Vector3(), position = new THREE.Vector3(); // Reused by the shared camera providers for this shot.
+              const targetProvider = () => { center.set(0, 0, 0); for (const actor of subjects) center.add(actor.root.position); center.multiplyScalar(1 / Math.max(1, subjects.length)); center.y += .6; return center; };
+              const offset = stage.cameraOffset || { x: 0, y: 5, z: 8 }; // Authored offset is relative to the followed midpoint.
+              const positionProvider = () => position.copy(targetProvider()).add(offset);
+              window.CinematicCameraRuntime?.activate?.(area, { id: `cutscene_follow_${subjects.map(actor => actor.rec?.id || '').join('_')}`, positionProvider, targetProvider, fovDeg: stage.fovDeg || 55, blendSeconds: stage.blendSeconds ?? 1.25, dialogueFraming: false });
+            }
+          } else if (stage.cameraMode === 'pov') {
             clearPovShot();
             const source = entities.get(stage.actorId || stage.speakerId); // View origin is the same face anchor used by dialogue and shoulder-style aiming.
             const target = entities.get(stage.targetActorId || stage.addressedActorId); // A live actor or authored world point drives both camera and neck.
@@ -30563,6 +30602,7 @@
           } else if (stage.cameraMode === 'npcRelative') {
             cinematicCameraReady = false;
             window.CinematicCameraRuntime?.deactivate?.();
+            window.SCRATCHBONES_CONFIG.game.camera.modes[dlgModeKey].distanceTiles = (baseDlgCfg.distanceTiles ?? 4.67) * (Number(stage.cameraDistanceMultiplier) || 1); // Surveyor shots use 70% of the normal character-relative distance.
             activeCameraMode = dlgModeKey;
             activeCameraTarget = { position: entities.get(stage.actorId)?.root.position }; // The existing NPC-relative dialogue shot follows the arriving walker.
           } else if (stage.cameraMode === 'wall') {
@@ -30973,7 +31013,8 @@
 
       function openingFarmTourPoints() {
         const entry = { c: Math.floor(player.x / TILE), r: Math.floor(player.y / TILE) }; // Starts where the owner actually entered the farm.
-        const rawPorch = window.FarmhouseLoginSpawn?.frontDoor?.()?.approach || entry; // Shares the live house-piece door/approach computation.
+        const front = window.FarmhouseLoginSpawn?.frontDoor?.(); // Supplies both the approach and door normal for the final facade view.
+        const rawPorch = front?.approach || entry; // Shares the live house-piece door/approach computation.
         const openNear = (point, exclude) => {
           for (let radius = 0; radius < 5; radius++) for (let dr = -radius; dr <= radius; dr++) for (let dc = -radius; dc <= radius; dc++) {
             const c = point.c + dc, r = point.r + dr; // Searches only ordinary walkable farm tiles and avoids actor overlap.
@@ -30986,11 +31027,14 @@
         const aspect = Math.max(.3, Number(cameraContainerAspect()) || 1); // Portrait/mobile screens need more height to retain the same full-yard width.
         const tourCamera = { // Uses the shared authored cinematic camera throughout dialogue and movement, facing north from the south edge.
           id: 'farm_introduction_south', label: 'Farm introduction south camera',
-          position: { x: COLS / 2, y: Math.max(ROWS + 8, COLS / aspect * .85 + 8), z: ROWS - .5 },
+          position: { x: COLS / 2, y: Math.max(ROWS + 8, COLS / aspect * .85 + 8) / 2, z: ROWS - .5 },
           target: { x: COLS / 2, y: 1, z: ROWS / 2 },
           fovDeg: 75, blendSeconds: 1.25, trackSpeaker: false, stagePlayer: false,
         };
-        return { entry, guide: openNear(entry, entry), porch, playerPorch: openNear(porch, porch), camera: tourCamera };
+        const outwardX = rawPorch.c - (front?.door?.c ?? rawPorch.c), outwardZ = rawPorch.r - (front?.door?.r ?? rawPorch.r - 1); // Actual farmhouse door orientation, including player-rotated house pieces.
+        const normalLength = Math.hypot(outwardX, outwardZ) || 1;
+        const houseCamera = { id: 'farm_introduction_house', position: { x: rawPorch.c + .5 + outwardX / normalLength * 8, y: 3, z: rawPorch.r + .5 + outwardZ / normalLength * 8 }, target: { x: (front?.door?.c ?? rawPorch.c) + .5, y: 1.7, z: (front?.door?.r ?? rawPorch.r - 1) + .5 }, fovDeg: 60, blendSeconds: 1.25, trackSpeaker: false }; // Head-on house view blends only after both walkers arrive.
+        return { entry, guide: openNear(entry, entry), porch, playerPorch: openNear(porch, porch), camera: tourCamera, houseCamera };
       }
 
       async function preloadOpeningMeeting(payload) {
@@ -31015,7 +31059,7 @@
         farmTourPoints: openingFarmTourPoints,
         run: (payload, options = {}) => runCutscenePreview(payload, { ...options, live: true }), // Plays Director-format payloads as real gameplay cinematics with cleanup/restoration.
         isActive: () => cutscenePreviewActive, // Gameplay HUD owners can check the director without allocating a debug snapshot.
-        debugSnapshot: () => ({ active: !!cutscenePreviewActive, currentArea, stageId: cutscenePreviewStageId, zoomPercent: cutscenePreviewZoomPercent, latestChange: 'Live camera bearings for player and actor deadzones; standing gaze follows prone head; continuous shots and cinematic boom; right shoulder Hunundi view; current-chunk-only rescue; hidden arch/reticles; quiet intro progress with independent page delays. Independent neck deadzones, panel-safe head framing, shoulder POV, focused varied wolf shots and staged asset loading. Prone pose blends smoothly; Spearhead uses town equipment; wider wolf shots; animated furniture and seated eye contact; Hunundi POV addresses the doorway surveyor; cutscenes hide actions and reticles.' }), // Mobile/debug-panel callers can inspect live cinematic ownership without a console.
+        debugSnapshot: () => ({ active: !!cutscenePreviewActive, currentArea, stageId: cutscenePreviewStageId, zoomPercent: cutscenePreviewZoomPercent, latestChange: 'Fight uses the rescue wide shot; Spearhead enters from outside the prior view; moving humanoids animate legs; final player stance yaw obeys body/neck deadzones; tighter surveyor shots and rear chair with departure hiding; lower farm camera, moving two-character follow shot and facade view after both arrivals; intro wind-only audio.' }), // Mobile/debug-panel callers can inspect live cinematic ownership without a console.
       });
 
       if (window.__hobunjiCutscenePreview) {

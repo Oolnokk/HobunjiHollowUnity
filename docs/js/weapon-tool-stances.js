@@ -651,6 +651,7 @@
   }
 
   function idleBodyYawSnapshot(target = {}) {
+    if (window.__hobunjiFurnitureDebug?.sitInteraction && window.__hobunjiFurnitureDebug.sitInteraction.phase !== 'out') { target.active = false; target.yawDeg = 0; target.reason = 'seated-body'; return target; }
     const heldMode = deps?.getHeldMode?.(); // EquipmentPanel/game inject this so holstered tools cannot leave an invisible weapon stance rotating the body.
     if (heldMode != null && heldMode !== 'tool') {
       target.active = false;

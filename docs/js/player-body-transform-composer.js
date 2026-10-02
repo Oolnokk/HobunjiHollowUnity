@@ -130,7 +130,7 @@
   // the body squares up. If that transient ever reads as an overtwist on
   // screen, clamp the locked branch here rather than reintroducing a second
   // aim authority upstream.
-  function applyPlayerNeckYawLimit(renderDebug) {
+  function applyPlayerNeckYawLimit(renderDebug, camera) {
     const neckJoint = currentPlayerNeckJoint();
     if (!neckJoint) return;
     const rawYaw = finite(neckJoint.rotation.y); // Game-authored local neck yaw inspected below before the visual physical limit is applied.
@@ -142,7 +142,7 @@
     const renderedYaw = perspectiveAimLocked
       ? requestedYaw
       : THREE.MathUtils.clamp(requestedYaw, -PLAYER_HEAD_MAX_YAW_RAD, PLAYER_HEAD_MAX_YAW_RAD); // Other head-turn sources retain the ordinary physical limit.
-    neckJoint.rotation.y = window.PerpRotation?.clampedNeckYaw?.(neckJoint, playerMesh?.position, renderedYaw, perspectiveAimLocked ? Math.PI : PLAYER_HEAD_MAX_YAW_RAD) ?? renderedYaw;
+    neckJoint.rotation.y = window.PerpRotation?.clampedNeckYaw?.(neckJoint, playerMesh?.position, renderedYaw, perspectiveAimLocked ? Math.PI : PLAYER_HEAD_MAX_YAW_RAD, camera?.position) ?? renderedYaw;
     renderDebug.neckYaw = {
       cameraDeadzone: neckJoint.userData?.cameraDeadzone?.pixelProbeDebug || null, // Mobile probe can compare the independent head clamp with body facing.
       rawDeg: THREE.MathUtils.radToDeg(rawYaw),
@@ -326,11 +326,41 @@
     return () => externalRootProviders.delete(String(name));
   }
 
+  let renderFacingState = {}; // Final body deadzone includes weapon/channel yaw after ordinary gameplay facing.
+  const renderFacingForward = new THREE.Vector3(); // Reused by final quaternion-to-yaw conversion.
+  const renderFacingUp = new THREE.Vector3(0, 1, 0); // World yaw axis for body and owned held visuals.
+  const renderFacingTranslation = new THREE.Vector3(); // Zero translation shared by the final yaw correction.
+  const renderFacingPivot = new THREE.Vector3(); // Reused posterior pivot for final facing correction.
+  const renderFacingRotation = new THREE.Quaternion(); // Reused collision-free billboard yaw delta.
+  function applyRenderedFacingDeadzone(camera, undo, renderDebug) {
+    const api = window.PerpRotation; // Shared hysteresis/clamp authority; unavailable in isolated editor fixtures.
+    if (!api?.perpClamp || !camera?.position || playerMesh?.visible === false) return;
+    const perps = api.cameraRelativePerpsAtWorldPosition(playerMesh.position, camera.position);
+    if (!perps) return;
+    renderFacingForward.set(0, 0, 1).applyQuaternion(hierarchyWorldQuaternion(playerMesh));
+    const rawYaw = Math.atan2(renderFacingForward.x, renderFacingForward.z); // Actual composed portrait direction, after every stance/animation channel.
+    const solved = api.perpClamp(renderFacingState, rawYaw, perps);
+    const correction = wrapSignedAngle(solved.effectiveTarget - rawYaw);
+    renderDebug.bodyDeadzone = { rawYaw, renderedYaw: solved.effectiveTarget, correction, latestChange: 'Final body clamp follows stance yaw; seated feet retain chair facing.' };
+    if (Math.abs(correction) < 1e-8) return;
+    renderFacingRotation.setFromAxisAngle(renderFacingUp, correction);
+    const pivot = playerMesh.localToWorld(renderFacingPivot.set(0, playerPosteriorY, 0)); // Same posterior pivot used by all composer-owned attachments.
+    for (const entry of currentOwnedRootEntries()) applyWorldDelta(entry.root, pivot, renderFacingRotation, renderFacingTranslation, undo);
+    if (playerLegRoot) {
+      const feetYaw = playerLegRoot.rotation.y; // Feet keep their logical heading while the flat body avoids an edge-on view.
+      playerLegRoot.rotation.y -= correction;
+      undo.push(() => { playerLegRoot.rotation.y = feetYaw; });
+    }
+    const neck = currentPlayerNeckJoint(); // Counter the body correction so physical neck limits operate on the original logical gaze.
+    if (neck) { const yaw = neck.rotation.y; neck.rotation.y -= correction; undo.push(() => { neck.rotation.y = yaw; }); }
+  }
+
   function registerPlayerRig(parent, handle) {
     playerMesh = parent?.isObject3D ? parent : null;
     playerLegRoot = handle?.group?.isObject3D ? handle.group : null;
     playerPosteriorY = finite(handle?.standingPosteriorY);
     playerNeckJointCache = null;
+    renderFacingState = {};
   }
 
   function unregisterPlayerRig(parent, handle) {
@@ -376,7 +406,6 @@
         neckYaw: null,
       }; // Persisted below before temporary transforms are restored.
       if (playerMesh) {
-        applyPlayerNeckYawLimit(renderDebug);
         const bodyDelta = resolveDelta('player');
         const externalDelta = resolveDelta('external');
         renderDebug.appliedOrder = [...new Set([...bodyDelta.applied, ...externalDelta.applied])];
@@ -398,6 +427,7 @@
         }
       }
 
+      if (playerMesh) { applyRenderedFacingDeadzone(camera, undo, renderDebug); applyPlayerNeckYawLimit(renderDebug, camera); } // Clamp after channels land, using the same live camera as this render.
       lastRenderDebug = renderDebug;
 
       try {

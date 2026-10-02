@@ -98,7 +98,7 @@
       { id: 'wolf2', name: 'Gar-wolf', creatureTypeId: 'gar-wolf', team: 'gar_wolves', lookAtActorId: 'player', lc: 13, lr: 9, rotation: 270, pose: 'standing' },
       { id: 'wolf3', name: 'Gar-wolf', creatureTypeId: 'gar-wolf', team: 'gar_wolves', lookAtActorId: 'player', lc: 11, lr: 6, rotation: 90, pose: 'standing' },
       npcActor(records, { id: 'jubmir', name: 'Jubmir', npcId: 'jubmir', lookAtActorId: 'player', lc: 11, lr: 15, rotation: 0, pose: 'standing' }),
-      npcActor(records, { id: 'spearhead', name: 'Spearhead', npcId: 'spearhead_unumanuk', lc: 16, lr: 0, rotation: 180, pose: 'standing' }),
+      npcActor(records, { id: 'spearhead', name: 'Spearhead', npcId: 'spearhead_unumanuk', visible: false, lc: 16, lr: 0, rotation: 180, pose: 'standing' }),
       { id: 'hound1', name: 'Dabinggi-hound', creatureTypeId: 'dabinggi-hound', team: 'dabinggi_hounds', lookAtActorId: 'player', lc: 9, lr: 15, rotation: 0, pose: 'standing' },
       { id: 'hound2', name: 'Dabinggi-hound', creatureTypeId: 'dabinggi-hound', team: 'dabinggi_hounds', lookAtActorId: 'player', lc: 13, lr: 15, rotation: 0, pose: 'standing' },
     ];
@@ -108,7 +108,7 @@
       { id: 'rescue_wolf3_growl', type: 'talk', speakerId: 'wolf3', text: 'Hreeeeech!!!', next: '__next__' },
       { id: 'rescue_hound1_run', type: 'move', actorId: 'hound1', targetLocal: { lc: 9, lr: 11 }, speed: 'fast', waitForArrival: false, next: '__next__' },
       { id: 'rescue_hound2_run', type: 'move', actorId: 'hound2', targetLocal: { lc: 13, lr: 11 }, speed: 'fast', next: '__next__' },
-      { id: 'rescue_combat', type: 'combat', duration: 3, participants: [
+      { id: 'rescue_combat', type: 'combat', cameraMode: 'establishing', duration: 3, participants: [
         { actorId: 'wolf1', combatOn: true, canLose: false },
         { actorId: 'wolf2', combatOn: true, canLose: false },
         { actorId: 'wolf3', combatOn: true, canLose: false },
@@ -134,7 +134,7 @@
       { id: 'rescue_player_step', type: 'move', actorId: 'player', targetLocal: { lc: 11, lr: 7 }, speed: 'slow', next: '__next__' },
       { id: 'rescue_collapse', type: 'animation', actorId: 'player', animKind: 'none', resultPose: 'prone', duration: 1, next: '__next__' },
       { id: 'rescue_oh_dear', type: 'talk', speakerId: 'jubmir', text: 'Oh dear.', next: '__next__' },
-      { id: 'rescue_spearhead_enter', type: 'move', actorId: 'spearhead', targetLocal: { lc: 16, lr: 4 }, speed: 'fast', next: '__next__' },
+      { id: 'rescue_spearhead_enter', type: 'move', actorId: 'spearhead', visible: true, spawnOutsideView: true, targetLocal: { lc: 16, lr: 4 }, speed: 'fast', next: '__next__' },
       { id: 'rescue_spearhead_line', type: 'talk', speakerId: 'spearhead', text: "What's all this then?", next: '__next__' },
       { id: 'rescue_jubmir_turn', type: 'turn', actorId: 'jubmir', mode: 'actor', targetActorId: 'spearhead', duration: 0.45, next: '__next__' },
       { id: 'rescue_jubmir_request', type: 'talk', speakerId: 'jubmir', addressedActorId: 'spearhead', text: "Spearhead — you can't imagine how glad I am to see you. Help me bring this stranger into town.", next: '__next__' },
@@ -159,7 +159,7 @@
   }
 
   function seatTarget(c, r, rotY) {
-    const furnitureId = ({ '11,8': 'f_tbhunundi_chair', '9,9': 'fmtst9ykgmqf0', '8,9': 'fmtsteb7xjq80', '7,9': 'f_tbhunundi_guest_chair_west', '9,8': 'f_tbhunundi_guest_chair_near' })[`${c},${r}`]; // Stable map instance binding keeps seated actors attached to animated furniture.
+    const furnitureId = ({ '11,8': 'f_tbhunundi_chair', '9,9': 'fmtst9ykgmqf0', '8,9': 'fmtsteb7xjq80', '7,9': 'f_tbhunundi_guest_chair_west', '9,6': 'f_tbhunundi_guest_chair_near' })[`${c},${r}`]; // Stable map instance binding keeps seated actors attached to animated furniture.
     return { pose: 'sit', furnitureKey: 'chairSimple', furnitureId, c, r, rotY, seatIndex: 0 }; // Mirrors the normal NPC schedule seat-target shape consumed by npcSeatTransformForTarget().
   }
 
@@ -170,7 +170,7 @@
       npcActor(records, { id: 'hunundi', name: 'Father Hunundi', npcId: 'father_hunundi_hodu', worldC: 11, worldR: 8, rotation: 180, pose: 'sit', seatTarget: seatTarget(11, 8, 0) }),
       npcActor(records, { id: 'jubmir', name: 'Jubmir', npcId: 'jubmir', worldC: 7, worldR: 9, rotation: 0, pose: 'sit', seatTarget: seatTarget(7, 9, 180) }),
       npcActor(records, { id: 'spearhead', name: 'Spearhead', npcId: 'spearhead_unumanuk', worldC: 9, worldR: 9, rotation: 0, pose: 'sit', seatTarget: seatTarget(9, 9, 180) }),
-      npcActor(records, { id: 'harkharash', name: 'Surveyor Harkhanash', npcId: 'khannibarri_agent', visible: false, worldC: 11, worldR: 5, rotation: 0, pose: 'standing', seatTarget: seatTarget(9, 8, 0) }),
+      npcActor(records, { id: 'harkharash', name: 'Surveyor Harkhanash', npcId: 'khannibarri_agent', visible: false, worldC: 11, worldR: 5, rotation: 0, pose: 'standing', seatTarget: seatTarget(9, 6, 0) }),
     ];
     const stages = [ // The dialogue establishes amnesia, Nanjiri Farmstead, the Company's offer, regional isolation, and Spearhead's resolve in one room.
       { id: 'meeting_fade_in', type: 'fade', direction: 'in', duration: 0.8, next: '__next__' },
@@ -196,7 +196,7 @@
       { id: 'meeting_hark_enter', type: 'animation', animKind: 'none', resultPose: 'standing', duration: 0.35, visible: true, cameraMode: 'npcRelative', actorId: 'harkharash', next: '__next__' },
       { id: 'meeting_hark_intro', type: 'talk', speakerId: 'harkharash', text: "Surveyor Harkhanash, the Imperial Khanibarri Mining Company. I'm looking for Father Hunundi — the nearest thing to a leader here, I'm told.", next: '__next__' },
       { id: 'meeting_hunundi_no_leader', type: 'talk', speakerId: 'hunundi', text: "I'm Father Hunundi. I help settle disputes; the Hollow isn't mine. Have a seat.", next: '__next__' },
-      { id: 'meeting_hark_to_seat', type: 'move', actorId: 'harkharash', targetWorld: { c: 9, r: 8 }, speed: 'normal', next: '__next__' },
+      { id: 'meeting_hark_to_seat', type: 'move', actorId: 'harkharash', targetWorld: { c: 9, r: 6 }, speed: 'normal', next: '__next__' },
       { id: 'meeting_hark_sit', type: 'animation', cameraMode: 'wall', actorId: 'harkharash', animKind: 'none', resultPose: 'sit', duration: 0.35, next: '__next__' },
       { id: 'meeting_hunundi_reseat', type: 'animation', actorId: 'hunundi', animKind: 'none', resultPose: 'sit', duration: 0.4, next: '__next__' },
       { id: 'meeting_hark_offer', type: 'talk', speakerId: 'harkharash', text: 'Our surveys found substantial ore beneath this valley. The Company would like to buy the settlement and the surrounding claims to extract it.', next: '__next__' },
@@ -214,13 +214,14 @@
       { id: 'meeting_hark_agrees', type: 'talk', speakerId: 'harkharash', text: "Very well. That's all I wanted — a fair hearing. I'll make my arrangements in town.", next: '__next__' },
       { id: 'meeting_hark_stand', type: 'animation', actorId: 'harkharash', animKind: 'none', resultPose: 'standing', duration: 0.25, next: '__next__' },
       { id: 'meeting_hark_leave', type: 'move', actorId: 'harkharash', targetWorld: { c: 11, r: 5 }, speed: 'normal', next: '__next__' },
+      { id: 'meeting_hark_hide', type: 'animation', actorId: 'harkharash', visible: false, animKind: 'none', resultPose: 'unchanged', duration: 0, next: '__next__' },
       { id: 'meeting_spearhead_home', type: 'talk', speakerId: 'spearhead', text: "I lost my first home to a dragon. I'm sure as stone not losing this one to those bronze-hungry monsters.", next: '__next__' },
       { id: 'meeting_hunundi_resume', type: 'talk', speakerId: 'hunundi', text: 'Well. As I was saying.', next: '__next__' },
       { id: 'meeting_hunundi_final', type: 'talk', speakerId: 'hunundi', text: "The Nanjiri Farmstead is yours to use. Rest first. Tomorrow, we'll see what sort of life you want to make of it.", next: '__next__' },
       { id: 'meeting_fade_out', type: 'fade', direction: 'out', duration: 0.8, next: '__end__' },
     ];
     for (const stage of stages) if (stage.speakerId) stage.addressedActorId = stage.speakerId === 'harkharash' ? 'hunundi' : (stage.id === 'meeting_hunundi_no_leader' || stage.id === 'meeting_hunundi_people' || stage.id === 'meeting_hunundi_invite' ? 'harkharash' : 'player');
-    for (const stage of stages) { if (stage.speakerId === 'hunundi' && stage.addressedActorId === 'harkharash') Object.assign(stage, { cameraMode: 'pov', actorId: 'hunundi', targetActorId: 'harkharash', fovDeg: 55, povBack: 0.4, povSide: -0.25, povHeight: 0.1 }); else if (stage.speakerId === 'harkharash') Object.assign(stage, { cameraMode: 'npcRelative', actorId: 'harkharash' }); else if (stage.type === 'talk' && stage.id !== 'meeting_hark_intro' && stage.id !== 'meeting_hunundi_door') stage.cameraMode = 'wall'; } // Hunundi directly addresses the surveyor from his own eye-level view.
+    for (const stage of stages) { if (stage.speakerId === 'hunundi' && stage.addressedActorId === 'harkharash') Object.assign(stage, { cameraMode: 'pov', actorId: 'hunundi', targetActorId: 'harkharash', fovDeg: 55, povBack: 0.4, povSide: -0.25, povHeight: 0.1 }); else if (stage.speakerId === 'harkharash') Object.assign(stage, { cameraMode: 'npcRelative', actorId: 'harkharash', cameraDistanceMultiplier: 0.7 }); else if (stage.type === 'talk' && stage.id !== 'meeting_hark_intro' && stage.id !== 'meeting_hunundi_door') stage.cameraMode = 'wall'; } // Hunundi directly addresses the surveyor from his own eye-level view.
     return {
       version: 6,
       title: "Father Hunundi's Room",
@@ -262,9 +263,9 @@
       stages: [
         { id: 'farm_intro', type: 'talk', speakerId: 'spearhead', text: "Here we are. Nanjiri Farmstead. It's been left to itself for a while, but there's good land under all this mess.", next: '__next__' },
         { id: 'farm_choice', type: 'choice', speakerId: 'player', text: 'What do you make of it?', options: [{ text: 'Where should I start?', next: '__next__' }, { text: 'It has possibilities.', next: '__next__' }] },
-        { id: 'farm_walk_guide', type: 'move', actorId: 'spearhead', targetWorld: { c: porch.c, r: porch.r }, speed: 'normal', navigate: true, waitForArrival: false, next: '__next__' },
+        { id: 'farm_walk_guide', type: 'move', cameraMode: 'follow', followActorIds: ['player', 'spearhead'], cameraOffset: { x: 0, y: 5, z: 8 }, fovDeg: 55, blendSeconds: 1.25, actorId: 'spearhead', targetWorld: { c: porch.c, r: porch.r }, speed: 'normal', navigate: true, waitForArrival: false, next: '__next__' },
         { id: 'farm_walk_player', type: 'move', actorId: 'player', targetWorld: { c: points.playerPorch.c, r: points.playerPorch.r }, speed: 'normal', navigate: true, next: '__next__' },
-        { id: 'farm_house', type: 'talk', speakerId: 'spearhead', text: "The house is a mess inside. Last time I checked, though, the bed was still intact. Get some rest before you try clearing everything out.", next: '__next__' },
+        { id: 'farm_house', type: 'talk', cameraMode: 'authored', camera: points.houseCamera, waitForActors: ['player', 'spearhead'], speakerId: 'spearhead', text: "The house is a mess inside. Last time I checked, though, the bed was still intact. Get some rest before you try clearing everything out.", next: '__next__' },
         { id: 'farm_reply', type: 'choice', speakerId: 'player', text: 'How do you answer?', options: [{ text: 'A bed sounds good.', next: '__next__' }, { text: 'Thank you for showing me.', next: '__next__' }] },
         { id: 'farm_tour_final', type: 'talk', speakerId: 'spearhead', text: "You've got a roof and room to start again. Take your time. I'll see you around the Hollow.", next: '__end__' },
       ],
