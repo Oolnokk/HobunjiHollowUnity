@@ -14,7 +14,7 @@
   const PEER_SUFFIX = ':house-window-peer'; // Deterministic suffix lets a primary decor id regenerate the same opposite-side id after load.
   const INTERIOR_SCALE = 2; // HousePieces.computeInteriorLayout maps every exterior farm tile to a 2x2 interior footprint.
   const EXTERIOR_WALL_HEIGHT = 1.4; // HousePieceGen Highland body height used to normalize vertical window placement.
-  const EXTERIOR_HEIGHT_SCALE = 1; // Exterior frame and brick opening retain the authored height around the attachment center.
+  const EXTERIOR_HEIGHT_SCALE = 0.5; // Exterior frame and brick opening are half the authored height (the farm exterior is drawn at half the interior scale), scaled around the unchanged attachment center.
   const EXTERIOR_SLOT_TILES = 2; // Fixed placement density: at most one window per two tiles of exposed exterior wall.
   const EXTERIOR_SLOT_V01 = 0.5; // Every exterior slot is vertically centered; aiming chooses only the horizontal slot.
   const INTERIOR_WALL_HEIGHT = 1.75; // Game interior wall height used to scale the same normalized vertical position indoors.
