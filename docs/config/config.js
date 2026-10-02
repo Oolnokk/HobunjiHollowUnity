@@ -50,6 +50,7 @@
         frostbittenStamina: '#7edcff',
         entrancedHealth: '#b746d9',
         shamblingFooting: '#736f5f',
+        tiredFooting: '#686d91',
         drunkenFooting: '#000000',
         drunkenHealth: '#ff4f9a',
         kindlingHealth: '#ffb347',
