@@ -20156,17 +20156,19 @@
       ],
       "events": [],
       "scheduleHooks": {
-        "defaultMapId": "hobunji_main_town",
-        "workBuildingId": "<suggestion: location — needs a company office/outpost built in town — the design doc establishes the company opens up shop in the village>",
+        "defaultMapId": "map_i_general_store",
+        "workBuildingId": "general_store",
         "shopHours": "",
-        "rules": [],
-        "defaultPosition": {
-          "area": "town",
-          "c": 0,
-          "r": 0
-        },
-        "contentIncomplete": true,
-        "contentIncompleteReason": "defaultPosition is a placeholder {0,0} — this NPC spawns (or falls back) to world origin whenever no schedule rule is active. Needs a real station."
+        "rules": [
+          {
+            "from": "00:00",
+            "to": "23:59",
+            "mapId": "map_i_general_store",
+            "stationId": "station_k7m3q",
+            "activity": "meeting residents about the Khannibarri offer"
+          }
+        ],
+        "defaultStationId": "station_k7m3q"
       },
       "loreBackground": "Surveyor Harkharash represents the Khannibarri Imperial Mining Company in Hobunji Hollow. He considers the village's shrinking trade route and surrounding dangers evidence that selling is practical rather than a tragedy. Father Hunundi refuses to decide for the settlement and instead allows Harkharash to remain in town and make the offer directly to its residents.",
       "questHooks": [
