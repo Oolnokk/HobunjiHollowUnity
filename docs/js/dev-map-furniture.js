@@ -22,6 +22,7 @@
   const DEG = Math.PI / 180;
   const WALL_PREVIEW_INTERVAL_MS = 100; // Wall raycasts are throttled; floor previews only update when the reticle tile changes.
   const WALL_MAX_DISTANCE = 14;
+  const WALL_CANDIDATE_REFRESH_MS = 2000;
   const DEFAULT_WALL_ATTACHMENT = Object.freeze({ version: 1, anchor: [0, 0, 0], normal: [0, 0, -1], defaultNormalOffset: 0.02, generic: true }); // Back face of the piece flush to the wall, origin at the aimed point.
 
   let deps = null;
@@ -250,7 +251,8 @@
     while (current) {
       if (current === session?.ghost || current === deps.playerMesh) return true;
       const name = String(current.name || '');
-      if (/^(authored|procedural)_furniture_/i.test(name) || current.userData?.mapEditorRef || current.userData?.wallOrnamentProxy) return true;
+      const refKind = current.userData?.mapEditorRef?.kind; // Buildings carry a Map Edit ref too, and their walls are exactly what we want to hit.
+      if (/^(authored|procedural)_furniture_/i.test(name) || (refKind && refKind !== 'building' && refKind !== 'tile') || current.userData?.wallOrnamentProxy) return true;
       if (deps.isActorRoot?.(current)) return true;
       current = current.parent;
     }
@@ -272,7 +274,9 @@
 
   function ensureWallCandidates() {
     const scene = deps.getActiveScene?.();
-    if (wallCandidates?.scene === scene) return wallCandidates.meshes;
+    // Town buildings swap placeholder pieces for their GLB models asynchronously,
+    // so the list is refreshed every couple of seconds while wall mode is armed.
+    if (wallCandidates?.scene === scene && performance.now() - wallCandidates.builtAt < WALL_CANDIDATE_REFRESH_MS) return wallCandidates.meshes;
     const tagged = [];
     const generic = [];
     scene?.traverse?.(node => { // Once per scene (and after rebuilds), never per frame.
@@ -283,16 +287,21 @@
       else if (node.geometry?.type !== 'PlaneGeometry') generic.push(node); // Sprite billboards (creatures, NPC parts) are planes; never wall targets.
     });
     const meshes = tagged.length ? tagged : generic; // Untagged scenes (rare) fall back to any solid vertical surface.
-    wallCandidates = { scene, meshes, tagged: tagged.length > 0 };
+    wallCandidates = { scene, meshes, tagged: tagged.length > 0, builtAt: performance.now() };
     return meshes;
   }
 
-  function wallHit() {
+  // `ray` ({origin:[x,y,z], target:[x,y,z]}) is a diagnostics override; gameplay
+  // always aims from the camera through the screen-center reticle.
+  function wallHit(ray = null) {
     const THREE = window.THREE;
-    if (!THREE || !deps.camera) return null;
+    if (!THREE || (!deps.camera && !ray)) return null;
     raycaster = raycaster || new THREE.Raycaster();
     ndcCenter = ndcCenter || new THREE.Vector2(0, 0);
-    raycaster.setFromCamera(ndcCenter, deps.camera);
+    if (ray) {
+      const origin = new THREE.Vector3(...ray.origin);
+      raycaster.set(origin, new THREE.Vector3(...ray.target).sub(origin).normalize());
+    } else raycaster.setFromCamera(ndcCenter, deps.camera);
     raycaster.far = 60;
     const hits = raycaster.intersectObjects(ensureWallCandidates(), false);
     const playerPos = deps.playerMesh?.position;
@@ -311,12 +320,15 @@
   }
 
   // Diagnostics: what the center ray hits and why a wall isn't accepted.
-  function debugWallProbe() {
+  function debugWallProbe(ray = null) {
     const THREE = window.THREE;
-    if (!THREE || !deps?.camera) return null;
+    if (!THREE || (!deps?.camera && !ray)) return null;
     const meshes = ensureWallCandidates();
     const probe = new THREE.Raycaster();
-    probe.setFromCamera(new THREE.Vector2(0, 0), deps.camera);
+    if (ray) {
+      const origin = new THREE.Vector3(...ray.origin);
+      probe.set(origin, new THREE.Vector3(...ray.target).sub(origin).normalize());
+    } else probe.setFromCamera(new THREE.Vector2(0, 0), deps.camera);
     const all = [];
     deps.getActiveScene?.()?.traverse?.(node => { if (node.isMesh) all.push(node); });
     const describe = hit => {
@@ -325,7 +337,14 @@
       while (current && chain.length < 4) { chain.push(current.name || current.type); current = current.parent; }
       return { chain: chain.join(' < '), distance: round(hit.distance, 2), normalY: normal ? round(normal.y, 2) : null, candidate: meshes.includes(hit.object) };
     };
-    return { candidates: meshes.length, sceneMeshes: all.length, hits: probe.intersectObjects(all, false).slice(0, 6).map(describe) };
+    const accepted = wallHit(ray);
+    return {
+      candidates: meshes.length,
+      taggedMode: !!wallCandidates?.tagged,
+      sceneMeshes: all.length,
+      accepted: accepted ? { point: [round(accepted.point.x), round(accepted.point.y), round(accepted.point.z)], normal: [round(accepted.normal.x), round(accepted.normal.z)] } : null,
+      hits: probe.intersectObjects(all, false).filter(hit => !/rain|grass/i.test(hit.object?.name || '') && !hit.object?.userData?.isBillboard).slice(0, 6).map(describe),
+    };
   }
 
   function wallPlacementFromHit(hit, attachment) {
