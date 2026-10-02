@@ -334,6 +334,69 @@ Overpass → not set</div>
     return { boundaryMask, owner, distance };
   }
 
+  function distanceFromSelectedContour(mask, boundaryMask, selectedBoundary, width, height) {
+    const distance = new Float32Array(mask.length); distance.fill(Infinity); // Shortest inward distance from any selected contour pixel; unlike single-owner Voronoi assignment, every selected edge can claim reachable interior.
+    const heapIndex = [], heapDistance = [];
+
+    function heapPush(index, value) {
+      let at = heapIndex.length;
+      heapIndex.push(index); heapDistance.push(value);
+      while (at > 0) {
+        const parent = (at - 1) >> 1;
+        if (heapDistance[parent] <= value) break;
+        heapIndex[at] = heapIndex[parent]; heapDistance[at] = heapDistance[parent];
+        at = parent;
+      }
+      heapIndex[at] = index; heapDistance[at] = value;
+    }
+
+    function heapPop() {
+      if (!heapIndex.length) return null;
+      const index = heapIndex[0], value = heapDistance[0];
+      const lastIndex = heapIndex.pop(), lastDistance = heapDistance.pop();
+      if (heapIndex.length) {
+        let at = 0;
+        while (true) {
+          const left = at * 2 + 1, right = left + 1;
+          if (left >= heapIndex.length) break;
+          let child = left;
+          if (right < heapIndex.length && heapDistance[right] < heapDistance[left]) child = right;
+          if (heapDistance[child] >= lastDistance) break;
+          heapIndex[at] = heapIndex[child]; heapDistance[at] = heapDistance[child];
+          at = child;
+        }
+        heapIndex[at] = lastIndex; heapDistance[at] = lastDistance;
+      }
+      return { index, value };
+    }
+
+    for (let index = 0; index < selectedBoundary.length; index++) {
+      if (!selectedBoundary[index] || !boundaryMask[index] || !mask[index]) continue;
+      distance[index] = 0;
+      heapPush(index, 0);
+    }
+
+    const SQRT2 = Math.SQRT2;
+    while (heapIndex.length) {
+      const current = heapPop();
+      if (!current || current.value > distance[current.index] + 0.0001) continue;
+      const x = current.index % width, y = Math.floor(current.index / width);
+      for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+        if (!ox && !oy) continue;
+        const nx = x + ox, ny = y + oy;
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+        const neighbor = ny * width + nx;
+        if (!mask[neighbor]) continue;
+        if (boundaryMask[neighbor] && !selectedBoundary[neighbor]) continue; // Never creep sideways through unselected outline sections; expansion may only leave selected contour seeds into the interior.
+        const candidate = current.value + (ox && oy ? SQRT2 : 1);
+        if (candidate + 0.0001 >= distance[neighbor]) continue;
+        distance[neighbor] = candidate;
+        heapPush(neighbor, candidate);
+      }
+    }
+    return distance;
+  }
+
   function trimRecord(garmentId = $('trimGarment').value, variantKey = $('trimVariant').value, view = $('trimView').value) {
     return trimManifest?.garments?.[garmentId]?.variants?.[variantKey]?.[view === 'behind' ? 'behind' : 'front'] || null;
   }
@@ -516,11 +579,11 @@ Overpass → not set</div>
       const layers = Math.max(1, Math.round(amount));
       const selectedBoundary = new Uint8Array(paint.length);
       for (let index = 0; index < paint.length; index++) if (paint[index] && inwardMap.boundaryMask[index]) selectedBoundary[index] = 1;
+      const selectedDistance = distanceFromSelectedContour(geometry.mask, inwardMap.boundaryMask, selectedBoundary, geometry.width, geometry.height);
       const expanded = paint.slice();
       for (let index = 0; index < expanded.length; index++) {
-        const owner = inwardMap.owner[index];
-        if (!geometry.mask[index] || owner < 0 || !selectedBoundary[owner]) continue;
-        if (inwardMap.distance[index] <= layers + 0.0001) expanded[index] = 1;
+        if (!geometry.mask[index] || selectedDistance[index] > layers + 0.0001) continue;
+        expanded[index] = 1; // Any selected inner/outer contour may claim this interior pixel; no permanent single-owner assignment can strand wedges between selected edges.
       }
       paint = expanded;
     };
@@ -1186,12 +1249,12 @@ Overpass → not set</div>
       }
       if (!selectedBoundaryCount) return { beforeCount, afterCount: beforeCount, addedPixels: 0, selectedBoundaryCount: 0 };
 
+      const selectedDistance = distanceFromSelectedContour(garmentMask, silhouetteBoundaryMask, selectedBoundary, width, height);
       const expanded = new Uint8Array(width * height);
       for (let index = 0; index < expanded.length; index++) {
-        if (source[index * 4 + 3] > 16 && garmentMask[index]) expanded[index] = 1; // Preserve any existing cleanup/artwork while rebuilding inward depth from its contour seeds.
-        const sourceBoundary = inwardMap.owner[index];
-        if (!garmentMask[index] || sourceBoundary < 0 || !selectedBoundary[sourceBoundary]) continue;
-        if (inwardMap.distance[index] <= layers + 0.0001) expanded[index] = 1; // Fill only the inward Voronoi column owned by a selected contour pixel, preventing lateral edge growth.
+        if (source[index * 4 + 3] > 16 && garmentMask[index]) expanded[index] = 1; // Preserve any existing cleanup/artwork before adding the newly requested inward band.
+        if (!garmentMask[index] || selectedDistance[index] > layers + 0.0001) continue;
+        expanded[index] = 1; // Union of all selected-contour inward fronts fills meeting regions instead of leaving pixels stranded under an unselected Voronoi owner.
       }
 
       const image = paintCtx.createImageData(width, height);
@@ -1690,7 +1753,7 @@ Overpass → not set</div>
   };
 
   window.__patternEditorDebug = () => ({ // Mobile-visible console substitute for checking the dev tool's two-slot state.
-    mostRecentChange: 'Trim replication now replays the recorded authoring journal in order—relative outline/eraser strokes, full-outline selection, and exact Expand Inward amounts—against each target variant’s own first-non-black contour. The journal is editor-only metadata beside runtime settings; finished-mask inference is legacy fallback only.',
+    mostRecentChange: 'Expand Inward now uses multi-source interior distance from every selected first-non-black contour pixel, in both live editing and replay. Selected inner/outer edges can meet and fill the space between them; unselected contour pixels remain traversal barriers so trim cannot creep sideways around the silhouette.'
     previewMode: $('previewMode').value,
     weavingBackground: $('surfaceTexture').value,
     overpassClearanceMultiplier: clampOverpassClearance($('overpassClearance').value),
