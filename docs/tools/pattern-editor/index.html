@@ -572,7 +572,9 @@ Overpass → not set</div>
         if (x < 0 || y < 0 || x >= geometry.width || y >= geometry.height) continue;
         const index = y * geometry.width + x;
         if (mode === 'eraser') paint[index] = 0;
-        else if (inwardMap.boundaryMask[index]) paint[index] = 1;
+        else if (mode === 'paint') {
+          if (geometry.mask[index]) paint[index] = 1; // Direct Paint mirrors direct erasure but remains clipped off transparent and exact-black sprite pixels.
+        } else if (inwardMap.boundaryMask[index]) paint[index] = 1;
       }
     };
 
@@ -618,7 +620,7 @@ Overpass → not set</div>
         continue;
       }
       if (op.type !== 'stroke' || !Array.isArray(op.points) || !op.points.length) continue;
-      const mode = op.mode === 'eraser' ? 'eraser' : 'brush';
+      const mode = op.mode === 'eraser' ? 'eraser' : (op.mode === 'paint' ? 'paint' : 'brush');
       const size = Math.max(1, Math.round(Math.max(0.001, Number(op.sizeNorm) || 0.001) * scale));
       const points = op.points.map(denormalizePoint);
       stamp(mode, points[0], size);
@@ -997,19 +999,20 @@ Overpass → not set</div>
           <div>
             <div class="trimPaintTools">
               <button type="button" data-trim-tool="brush" class="active">Outline brush</button>
+              <button type="button" data-trim-tool="paint" class="secondary">Direct paint</button>
               <button type="button" data-trim-tool="eraser" class="secondary">Eraser</button>
               <button type="button" data-trim-tool="pan" class="secondary">Pan</button>
               <button type="button" data-trim-paint="undo" class="secondary">Undo</button>
               <button type="button" data-trim-paint="redo" class="secondary">Redo</button>
               <button type="button" data-trim-paint="clear" class="secondary">Clear</button>
-              <label>Outline reach <input data-trim-brush type="range" min="1" max="24" step="1" value="4"><span data-trim-brush-label>4px</span></label>
+              <label>Brush / reach <input data-trim-brush type="range" min="1" max="24" step="1" value="4"><span data-trim-brush-label>4px</span></label>
               <button type="button" data-trim-paint="generate-edge">Select full outline</button>
               <label>Inward depth <input data-trim-expand-amount type="range" min="1" max="24" step="1" value="1"><span data-trim-expand-amount-label>1px</span></label>
               <button type="button" data-trim-paint="expand-existing" class="secondary">Expand inward</button>
               <label>Zoom <input data-trim-zoom type="range" min="1" max="8" step="1" value="2"><span data-trim-zoom-label>2×</span></label>
             </div>
             <div class="trimPaintScroller"><div class="trimPaintStage"><canvas data-trim-base></canvas><canvas class="trimPaintInk" data-trim-ink></canvas></div></div>
-            <div class="trimPaintNote">Start by painting one-pixel-wide sections of the garment outline. Exact black (#000000) sprite line art is ignored, so the selectable contour moves inward through any black border until it reaches the first opaque non-black garment pixels. Outline Reach only controls how easily the pointer catches nearby contour pixels; it never makes the selected outline thicker. Select Full Outline is a shortcut. Expand Inward grows only from those selected contour sections toward the garment interior, preserving the silhouette instead of ballooning sideways along the edge. Eraser still removes ordinary painted pixels. White is only the editing overlay; the player still chooses dye A, B, or C in the loom.</div>
+            <div class="trimPaintNote">Outline Brush selects one-pixel-wide sections of the first opaque non-black garment contour. Direct Paint paints ordinary filled pixels anywhere on the non-black garment, matching Eraser as a manual post-edit tool. Exact black (#000000) sprite line art is ignored by both. Brush / Reach controls contour catch radius for Outline Brush and actual brush diameter for Direct Paint/Eraser. Select Full Outline is a shortcut; Expand Inward grows selected contour sections toward the interior. White is only the editing overlay; the player still chooses dye A, B, or C in the loom.</div>
           </div>
           <div>
             <div class="muted" style="margin-bottom:6px"><b>Rendered result</b> — production trim compositor</div>
@@ -1017,7 +1020,7 @@ Overpass → not set</div>
             <div class="trimPaintNote" data-trim-result-status>Rendering current trim…</div>
           </div>
         </div>
-        <div class="trimPaintFoot"><div class="muted" data-trim-paint-status>Outline Brush selects one-pixel silhouette sections; Expand Inward adds controlled depth toward the garment center.</div><div class="row"><button type="button" class="secondary" data-trim-paint="cancel">Cancel</button><button type="button" data-trim-paint="save">Save trim mask</button></div></div>
+        <div class="trimPaintFoot"><div class="muted" data-trim-paint-status>Outline Brush selects contour sections; Direct Paint and Eraser make ordinary manual pixel edits.</div><div class="row"><button type="button" class="secondary" data-trim-paint="cancel">Cancel</button><button type="button" data-trim-paint="save">Save trim mask</button></div></div>
       </div>`;
     document.body.appendChild(overlay);
 
@@ -1227,7 +1230,11 @@ Overpass → not set</div>
           if (x < 0 || y < 0 || x >= width || y >= height) continue;
           const index = y * width + x;
           if (brushMode === 'eraser') paintCtx.clearRect(x, y, 1, 1);
-          else if (silhouetteBoundaryMask[index]) {
+          else if (brushMode === 'paint') {
+            if (!garmentMask[index]) continue;
+            paintCtx.fillStyle = '#ffffff';
+            paintCtx.fillRect(x, y, 1, 1); // Direct Paint fills arbitrary trimable garment pixels and is the positive counterpart to direct erasure.
+          } else if (silhouetteBoundaryMask[index]) {
             paintCtx.fillStyle = '#ffffff';
             paintCtx.fillRect(x, y, 1, 1); // Outline Brush always authors exactly one contour pixel regardless of pointer reach.
           }
@@ -1319,7 +1326,7 @@ Overpass → not set</div>
       drawing = true; lastPoint = null;
       currentStrokeOp = {
         type: 'stroke',
-        mode: brushMode === 'eraser' ? 'eraser' : 'brush',
+        mode: brushMode === 'eraser' ? 'eraser' : (brushMode === 'paint' ? 'paint' : 'brush'),
         sizeNorm: Math.max(1, brushSize) / sourceScale,
         points: [],
       };
@@ -1352,7 +1359,7 @@ Overpass → not set</div>
     paintCanvas.addEventListener('pointerleave', event => { if ((drawing || panStart) && !paintCanvas.hasPointerCapture?.(event.pointerId)) endInteraction(); });
 
     function setBrushMode(mode) {
-      brushMode = ['brush', 'eraser', 'pan'].includes(mode) ? mode : 'brush';
+      brushMode = ['brush', 'paint', 'eraser', 'pan'].includes(mode) ? mode : 'brush';
       paintCanvas.style.cursor = brushMode === 'pan' ? 'grab' : 'crosshair';
       overlay.querySelectorAll('[data-trim-tool]').forEach(other => other.classList.toggle('active', other.dataset.trimTool === brushMode));
     }
@@ -1790,7 +1797,7 @@ Overpass → not set</div>
   };
 
   window.__patternEditorDebug = () => ({ // Mobile-visible console substitute for checking the dev tool's two-slot state.
-    mostRecentChange: 'Expand Inward now distinguishes broad perimeter contour from contour-only thin cloth. Unselected outline pixels that border a true interior core still block sideways creep; 1–2px garment strips with no interior core are fillable so large inward expansions cannot leave permanent brown slivers.',
+    mostRecentChange: 'Direct Paint is restored beside Outline Brush and Eraser. It paints arbitrary non-black garment pixels, is recorded as explicit paint strokes in authorOps, and replays at relative garment scale across species without changing the meaning of existing outline-brush operations.',
     previewMode: $('previewMode').value,
     weavingBackground: $('surfaceTexture').value,
     overpassClearanceMultiplier: clampOverpassClearance($('overpassClearance').value),
