@@ -759,7 +759,9 @@ assert.doesNotMatch(patternEditorSource, /paintCtx\.lineWidth\s*=\s*brushSize/, 
 assert.doesNotMatch(patternEditorSource, /data-trim-edge-thickness/, 'outline-first trim authoring no longer exposes a competing pre-thickened edge generator');
 assert.match(patternEditorSource, /function buildInwardSilhouetteMap\(mask, width, height\)/, 'trim painter and replication share one silhouette contour and inward ownership map');
 assert.match(patternEditorSource, /boundaryMask\[index\] = 1;[\s\S]*?owner\[index\] = index;[\s\S]*?distance\[index\] = 0;/, 'first non-black garment pixels touching black, transparency, or sprite bounds become one-pixel contour seeds');
-assert.match(patternEditorSource, /else if \(silhouetteBoundaryMask\[index\]\)/, 'Outline Brush can paint only one-pixel silhouette contour sections');
+assert.match(patternEditorSource, /data-trim-tool="paint"/, 'trim painter exposes Direct Paint separately from Outline Brush and Eraser');
+assert.match(patternEditorSource, /brushMode === 'paint'[\s\S]*?garmentMask\[index\]/, 'Direct Paint fills arbitrary non-black garment pixels rather than contour pixels only');
+assert.match(patternEditorSource, /else if \(silhouetteBoundaryMask\[index\]\)/, 'Outline Brush remains restricted to one-pixel silhouette contour sections');
 assert.match(patternEditorSource, /Outline Brush always authors exactly one contour pixel/, 'outline reach changes selection reach rather than authored trim thickness');
 assert.match(patternEditorSource, /function selectFullOutline\(\)/, 'full-outline shortcut selects the same one-pixel contour used by the brush');
 assert.match(patternEditorSource, /data-trim-expand-amount/, 'trim painter exposes artist-controlled inward depth');
@@ -796,8 +798,11 @@ assert.match(patternEditorSource, /function cloneTrimAuthorOps\(ops\)/, 'trim au
 assert.match(patternEditorSource, /function replayTrimAuthorOps\(authorOps, targetGarment\)/, 'replication can replay authored operations directly against a target garment');
 assert.match(patternEditorSource, /op\.type === 'selectFullOutline'/, 'operation replay preserves full-outline selection as an authored step');
 assert.match(patternEditorSource, /op\.type === 'expandInward'/, 'operation replay preserves exact Expand Inward operations');
-assert.match(patternEditorSource, /op\.type !== 'stroke'/, 'operation replay handles recorded relative brush and eraser strokes');
-assert.match(patternEditorSource, /sizeNorm:[\s\S]*?brushSize[\s\S]*?sourceScale/, 'stroke journals store brush reach\/eraser size relative to the source garment scale');
+assert.match(patternEditorSource, /op\.type !== 'stroke'/, 'operation replay handles recorded relative trim strokes');
+assert.match(patternEditorSource, /op\.mode === 'paint' \? 'paint' : 'brush'/, 'operation replay preserves Direct Paint as a distinct stroke mode rather than converting it to Outline Brush');
+assert.match(patternEditorSource, /mode === 'paint'[\s\S]*?geometry\.mask\[index\][\s\S]*?paint\[index\] = 1/, 'replayed Direct Paint fills arbitrary trimable target pixels while remaining clipped to the non-black garment');
+assert.match(patternEditorSource, /mode: brushMode === 'eraser' \? 'eraser' : \(brushMode === 'paint' \? 'paint' : 'brush'\)/, 'stroke journal records Direct Paint explicitly alongside Outline Brush and Eraser');
+assert.match(patternEditorSource, /sizeNorm:[\s\S]*?brushSize[\s\S]*?sourceScale/, 'stroke journals store outline reach, direct-paint size, and eraser size relative to the source garment scale');
 assert.match(patternEditorSource, /recordStrokePoint\(point\)/, 'pointer stroke samples are recorded in authoring order for replay');
 assert.match(patternEditorSource, /authorOps = \[\{ type: 'selectFullOutline' \}\]/, 'Select Full Outline replaces the mask with a complete replayable journal baseline');
 assert.match(patternEditorSource, /authorOps\.push\(\{ type: 'expandInward', amount \}\)/, 'each successful inward expansion records its exact authored amount');
