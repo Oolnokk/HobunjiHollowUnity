@@ -104,6 +104,7 @@
     ['js/held-seed-desktop-capture.js?v=20260814a', () => !!window.HobunjiHeldSeedDesktopCapture],
     ['js/held-item-action-input.js?v=20260910a', () => !!window.HeldItemActionInput],
     ['js/alcohol-gameplay-bridge.js?v=20260918blackstamina1', () => !!window.HobunjiDrunkGameplayBridge],
+    ['js/tiredness-system.js?v=20261002sleep1', () => Number(window.TirednessSystem?.version) >= 1],
     ['config/npcs/food-gift-preferences.js?v=20261001foodgift1', () => Number(window.HobunjiNpcFoodGiftPreferences?.version) >= 1],
     ['js/npc-food-gift-preferences.js?v=20261001foodgift2', () => Number(window.NpcFoodGiftPreferences?.version) >= 1],
     ['js/npc-gifting.js?v=20261002h0eb6484', () => !!window.NpcGifting],
