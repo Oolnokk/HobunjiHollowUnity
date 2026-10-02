@@ -23,7 +23,21 @@
     try { console.warn(`[session-persistence] ${message}`); } catch (_) {}
   }
 
+  // Set just before an intentional reload that has already replaced the save
+  // (recovery restore, Dev Companion quick load): the live game in memory is
+  // now the OLD state, so its exit flushes must not write it back.
+  let exitFlushSuppressedReason = null;
+
+  function suppressExitFlush(reason = 'intentional-reload') {
+    exitFlushSuppressedReason = String(reason || 'intentional-reload');
+  }
+
   function guardEarlyExit(event) {
+    if (exitFlushSuppressedReason) {
+      reportBlockedExit(`${event?.type || 'exit'} (${exitFlushSuppressedReason})`);
+      event?.stopImmediatePropagation?.();
+      return;
+    }
     if (playerStateHydrated()) return;
     reportBlockedExit(event?.type || 'exit');
 
@@ -40,11 +54,14 @@
 
   window.HobunjiSessionPersistenceStartupGuard = {
     isHydrated: playerStateHydrated,
+    suppressExitFlush,
+    exitFlushSuppressed: () => exitFlushSuppressedReason,
     debugState: () => ({
       installed: true,
       hydrated: playerStateHydrated(),
       blockedExitFlushCount,
       lastBlockedEvent,
+      exitFlushSuppressedReason,
     }),
   };
 })();

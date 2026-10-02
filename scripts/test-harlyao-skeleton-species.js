@@ -93,7 +93,7 @@ assert.match(combatBanditSource, /bodyColors\[tintSlot\] = tint[\s\S]*resolved\[
 assert(combatBanditSource.includes("portrait.userData.proceduralHandParent = handsPivot"), 'shared hostile avatars must give the procedural hand driver a floor-relative visible parent');
 assert(combatBanditSource.includes('group.add(portrait)'), 'registered PNGPlaneAvatar hand root must remain parented so the attachment sweep can actually build hands');
 assert(combatBanditSource.includes('handRigAvatarRoot: portrait'), 'shared hostile avatar reference must expose the retained hand-driver root');
-assert(gameIndexSource.includes('js/dev-spawner.js?v=20260927reviewfix1'), 'Game entry point must cache-bust the current Testing Arena humanoid enemy spawner update');
+assert(gameIndexSource.includes('js/dev-spawner.js?v=20261002h6fca74b'), 'Game entry point must cache-bust the current Testing Arena humanoid enemy spawner update');
 assert(gameIndexSource.includes('js/combat/combat-minion.js?v=20260929lichroom1'), 'Game entry point must load the current Minion enemy category before the arena spawner');
 assert(gameIndexSource.includes('js/portrait-utils.js?v=20260926hoodback2'), 'Game entry point must cache-bust hood-aware female skeleton hair visibility');
 assert(gameIndexSource.includes('js/png-plane-avatar.js?v=20260926hskelhairalign1'), 'Game entry point must cache-bust the removal of the obsolete skeleton neck workaround');

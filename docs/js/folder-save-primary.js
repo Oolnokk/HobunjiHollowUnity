@@ -198,6 +198,18 @@
         return startupMode;
       }
 
+      // A Dev Companion quick load replaces the browser save at this exact
+      // point; pulling the folder afterward would undo it.
+      try {
+        const quick = await window.HobunjiQuickSave?.applyPendingBeforeOnboarding?.();
+        if (quick?.applied) {
+          startupMode = 'quick-load-applied';
+          return startupMode;
+        }
+      } catch (error) {
+        lastUiError = String(error?.message || error);
+      }
+
       const status = await waitForCoreStatus();
       if (!localSave.isSupported?.() || !status.folderName) {
         startupMode = 'browser-no-folder';

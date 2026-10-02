@@ -35,7 +35,7 @@
     if (deps.getCurrentArea() === DEV_ARENA_ZONE_ID) {
       const back = _devArenaReturnAnchor || { area: 'farm', x: (deps.COLS / 2) * deps.TILE, y: (deps.ROWS / 2) * deps.TILE };
       _devArenaReturnAnchor = null;
-      deps.setDebugWeather(null);
+      window.WeatherFX?.clearDebugWeather?.('arena'); // Leaves a Dev Companion weather override alone.
       deps.startSceneTransition(() => {
         const fromScene = deps.getActiveScene();
         if (fromScene) { fromScene.remove(deps.playerMesh); fromScene.remove(deps.playerGroundShadow); }
@@ -560,7 +560,7 @@
     // closed the panel again the instant Map Edit's button opened it via
     // DevSpawner.toggle(), making that button look completely broken.
     const spawnPanelAvailable = devMode && currentArea === DEV_ARENA_ZONE_ID;
-    if (!spawnPanelAvailable && deps.getDebugWeather()) deps.setDebugWeather(null);
+    if (!spawnPanelAvailable) window.WeatherFX?.clearDebugWeather?.('arena'); // Only the arena's own forced weather; a Dev Companion override stays.
     const farmBtn = document.getElementById('farmEditBtn');
     const spawnBtn = document.getElementById('devSpawnBtn');
     if (farmBtn) farmBtn.style.display = showFarmEdit ? '' : 'none';

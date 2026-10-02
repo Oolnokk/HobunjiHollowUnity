@@ -385,8 +385,8 @@
     return null;
   }
 
-  function fishingTimeOfDay() {
-    const h = deps.getHour();
+  function fishingTimeOfDay(hour = deps.getHour()) { // Optional hour lets callers (Dev Companion time skips) classify a future time with the same bands.
+    const h = hour;
     if (h < 8)  return 'dawn';
     if (h < 17) return 'day';
     if (h < 20) return 'dusk';

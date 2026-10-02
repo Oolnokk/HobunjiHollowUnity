@@ -162,6 +162,58 @@ materials in place once the config loads.
   which moves it to gear and teaches him its enchantments (Flourishes per
   enchantment × slot) so he can apply them to other weapons for more.
 
+## Dev Companion window
+
+Settings → **Dev Companion Window** (or `window.DevCompanion.open()`) opens
+`docs/tools/dev-companion/` as a second window tied to that one play session
+(a per-tab session id carried on a BroadcastChannel; it reconnects across the
+game tab's reloads and ignores other tabs).
+
+It is laid out around context: the header always shows who/where/when you are
+and what's active (conversation, Map Edit session, paused autosave) with
+⚡ Quick Save / ↺ Load buttons, and "Follow game" jumps to the tab that matches
+what just started.
+
+- **Now** — the dialogue on screen (or that just ended): node text/choices,
+  source config, and the condition checks that picked its tree
+  (`ConditionRegistry.explainEntry`); the last ambient line and its source;
+  and context panels contributed by game modules — *Conversation state*
+  (favor ±1 heart, forget heard trees) and *Time & weather* (skip to the next
+  dawn/day/dusk/night/weekday/season through the real hour-by-hour passage,
+  force clear/rain/storm) — the knobs dialogue conditions read.
+- **Saves** — quick saves for the current farmer/world (`js/quick-save.js`:
+  IndexedDB save states with exact area/position/facing/doorway/time; loading
+  reloads so edited config is picked up, applies the snapshot at the start of
+  the next boot, auto-plays the same save and restores placement), one-click
+  recovery-backup swaps, and the autosave pause (`js/autosave-pause.js`:
+  tab-scoped; blocks automatic folder syncs and rolling recovery autosaves).
+- **Map** — the in-game Map Edit panel's controls plus numeric nudges; while a
+  companion is connected the 🗺️ button drives the session from there. Shows
+  why it's unavailable (Dev Mode off / area not editable) instead of dead
+  buttons.
+  **Map › Furniture** (`js/dev-map-furniture.js`, Dev Mode, town + building
+  interiors): a searchable palette of every furniture piece in the repo
+  (wall-mountable pieces first). *Place* / *Wall* arm a piece; aim with the
+  reticle in the game — a green/red ghost shows whether it fits, Action 1
+  places (or mounts on the wall you're aiming at), Action 2 cancels, the
+  mobile arch shows Place/Cancel, and placement stays armed for repeats.
+  *Placed here* lists authored and dev-placed pieces with Move, Rotate 45°,
+  Remove/Restore/Revert and wall nudges (along/up/out). Pieces with authored
+  `wallOrnament` data mount by that face; anything else mounts by its back.
+  Edits live in a dev overlay (`localStorage`) merged into the map whenever it
+  builds (the room rebuilds in place after each change); *Copy changes*
+  exports patch-ready merged `furniture`/`decor` arrays for
+  `config/maps/<map>.json` and the town workspace, and the overlay is also
+  included in Map Edit's Copy Edit Diff. The Map Edit gizmo fine-tunes
+  dev-placed pieces too.
+- **Files** — every config/JSON the game has read (fetch wrapper + resource
+  timing) and which databases come from local editor overrides.
+
+Extending it (`js/dev-companion-bridge.js`): `registerPanel({ id, title,
+when, render, onAction })` adds a context panel to **Now** with no companion
+changes; `registerCommand`, `registerStateProvider` and `trace` are the lower
+level hooks the built-in tabs use.
+
 ## Future plans: multiplayer
 
 Eventual multiplayer support (one world-owner host + guest players joining
