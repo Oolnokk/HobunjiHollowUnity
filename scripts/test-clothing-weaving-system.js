@@ -758,7 +758,8 @@ assert.match(patternEditorSource, /data-trim-expand-amount/, 'trim painter expos
 assert.match(patternEditorSource, /function expandExistingTrim\(amount\)/, 'trim painter expands selected contour sections toward the garment interior');
 assert.match(patternEditorSource, /const sourceBoundary = inwardMap\.owner\[index\]/, 'inward expansion assigns interior pixels to their nearest silhouette contour source');
 assert.match(patternEditorSource, /!selectedBoundary\[sourceBoundary\]/, 'inward expansion excludes interior pixels owned by unselected outline sections');
-assert.match(patternEditorSource, /inwardMap\.depth\[index\] <= layers/, 'inward expansion stops at the requested contour depth');
+assert.match(patternEditorSource, /inwardMap\.distance\[index\] <= layers \+ 0\.0001/, 'inward expansion stops at the requested contour distance');
+assert.match(patternEditorSource, /const candidate = current\.value \+ \(ox && oy \? SQRT2 : 1\)/, 'nearest-contour ownership distinguishes straight inward pixels from diagonal neighbors instead of using an unweighted flood');
 assert.match(patternEditorSource, /preventing lateral edge growth/, 'inward expansion documents and guards against sideways silhouette growth');
 assert.match(patternEditorSource, /expandExistingBtn\.disabled = !inkPresent/, 'Expand Inward is disabled until the current mask contains trim paint');
 assert.match(patternEditorSource, /Expand Inward needs painted pixels on the one-pixel garment outline/, 'Expand Inward explains when a mask has no valid contour seeds');
