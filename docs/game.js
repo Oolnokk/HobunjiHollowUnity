@@ -29882,6 +29882,7 @@
         const previousCameraMode = activeCameraMode; // Restored with previousArea after live playback completes.
         const previousCameraTarget = activeCameraTarget; // Restored with the prior camera mode so gameplay resumes on the real player target.
         const liveLock = liveMode ? window.CharacterActionLocks?.acquire?.({ owner: 'authored-cutscene', reason: payload.title || 'story cutscene', participants: [{ id: 'player', channels: ['movement', 'tools', 'actions'] }] }) : null; // Prevents real-player input from mutating the hidden gameplay actor while stand-ins own the screen.
+        const hiddenLiveWalkers = []; // Saves visibility for scheduled NPCs whose canonical ids are represented by temporary cutscene stand-ins.
         let resolveCompletion = null; // Completed by finish() so live story code can await an interactive multi-card scene rather than merely its initial scheduling.
         const completionPromise = new Promise(resolve => { resolveCompletion = resolve; }); // Public completion signal used by sequential authored scenes.
         const report = (text, isError) => { if (!liveMode) window.CutscenePreviewHelpers.cutscenePreviewBanner(text, isError); }; // Keeps the Director's Exit Preview banner out of real story cinematics.
@@ -30063,6 +30064,14 @@
         activeCameraTarget = idleCameraTarget;
         updateCameraPosition();
 
+        if (liveMode) {
+          const cutsceneNpcIds = new Set((payload.actors || []).map(actor => actor.npcId).filter(Boolean)); // Canonical ids whose normal scheduled walkers must not appear behind their cinematic doubles.
+          for (const walker of npcWalkers) {
+            if (!cutsceneNpcIds.has(walker?.rec?.id) || !walker?.root) continue;
+            hiddenLiveWalkers.push({ walker, visible: walker.root.visible }); // Restored exactly on finish/error so schedules keep running without visual duplication.
+            walker.root.visible = false;
+          }
+        }
         const entities = new Map(); // actorId -> { kind:'npc'|'creature'|'placeholder', root, ... }
         for (const actor of (payload.actors || [])) {
           let entity = null;
@@ -30244,6 +30253,8 @@
               if (entity?.kind === 'creature' && entity.creature) despawnCreature(entity.creature);
               else entity?.root?.parent?.remove?.(entity.root);
             }
+            for (const hidden of hiddenLiveWalkers) if (hidden.walker?.root) hidden.walker.root.visible = hidden.visible; // Re-exposes the real scheduled NPCs after their cinematic doubles are gone.
+            hiddenLiveWalkers.length = 0;
             currentArea = previousArea;
             activeCameraMode = previousCameraMode;
             activeCameraTarget = previousCameraTarget;
@@ -30647,6 +30658,8 @@
           cutscenePreviewActive = false;
           cutscenePreviewZoomPercent = 100;
           cutscenePreviewDialogueSpeaker = null;
+          for (const hidden of hiddenLiveWalkers) if (hidden.walker?.root) hidden.walker.root.visible = hidden.visible; // Error paths must never strand a real NPC hidden after a failed stand-in spawn.
+          hiddenLiveWalkers.length = 0;
           releaseLiveLock();
           if (liveMode) {
             const fadeEl = window.CutscenePreviewHelpers.cutscenePreviewFadeEl(); // Ensures a failed live scene never leaves the real game permanently black.
