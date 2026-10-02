@@ -23,6 +23,8 @@
   const AFTERIMAGE_MOVE_INTERVAL_S = 0.075; // Used by maybeSpawnMovementAfterimage() to sample continuous Blink locomotion without creating one mesh every frame.
   const AFTERIMAGE_FORCED_MOVE_INTERVAL_S = 0.055; // Used by updateForcedMovementAfterimages() for the denser short trails on ordinary dodges and melee lunges.
   const AFTERIMAGE_BASE_OPACITY = 0.34; // Used by cloneAfterimageMaterial() as the strongest alpha at spawn before the short fade.
+  const AFTERIMAGE_REGULAR_INTENSITY_PER_TILE = 0.5; // Used by rolls and lunges; Blink hops retain full intensity per tile.
+  const afterimageTravelByActor = new WeakMap(); // Stores per-action traveled distance without allocating state every frame.
   const AFTERIMAGE_HOP_SAMPLES = 3; // Used by spawnHopAfterimages() to bridge the instantaneous Blink hop with frozen portraits along its traveled path.
   const AFTERIMAGE_MAX_ACTIVE = 24; // Shared cap sized for simultaneous player/enemy dodge-lunge bursts while still bounding transient portrait GPU objects.
 
@@ -73,6 +75,30 @@
   };
 
   function now() { return performance.now() / 1000; }
+
+  function distanceAfterimageIntensity(distanceTiles, blink = false) {
+    const distance = Number(distanceTiles); // Validated tile distance used by all character trail paths.
+    const intensity = Number.isFinite(distance) ? Math.max(0, distance) * (blink ? 1 : AFTERIMAGE_REGULAR_INTENSITY_PER_TILE) : 0; // Linear scale before the material's existing opacity clamp.
+    afterimageRuntimeDebug.lastDistanceTiles = Number.isFinite(distance) ? Math.max(0, distance) : 0;
+    afterimageRuntimeDebug.lastIntensityScale = intensity;
+    return intensity;
+  }
+
+  function updateAfterimageTravel(actor, dodging, lunging) {
+    let travel = afterimageTravelByActor.get(actor); // Persistent actor-local measurements shared by player/enemy sampling.
+    if (!travel) {
+      travel = { x: actor.x, y: actor.y, dodgeTiles: 0, lungeTiles: 0 };
+      afterimageTravelByActor.set(actor, travel);
+    }
+    const tilePx = Math.max(1, Number(window.Combat?.deps?.TILE) || 64); // Same pixel-to-tile conversion used by Blink hops.
+    const stepTiles = Math.hypot(Number(actor.x) - Number(travel.x), Number(actor.y) - Number(travel.y)) / tilePx; // Actual travel includes collision clamping rather than intended velocity.
+    const distance = Number.isFinite(stepTiles) ? stepTiles : 0; // Missing coordinates cannot poison future samples.
+    travel.dodgeTiles = dodging ? travel.dodgeTiles + distance : 0;
+    travel.lungeTiles = lunging ? travel.lungeTiles + distance : 0;
+    travel.x = actor.x;
+    travel.y = actor.y;
+    return travel;
+  }
 
   function afterimageMaterialsOf(mesh) {
     if (!mesh?.material) return [];
@@ -227,6 +253,7 @@
   }
 
   function spawnAfterimageForRoot(root, reason, worldOffsetX = 0, worldOffsetZ = 0, opacityScale = 1) {
+    if (!(opacityScale > 0) || !Number.isFinite(opacityScale)) return false; // Stationary or fully blocked actions produce no visible blur.
     const THREE = window.THREE;
     const sources = findPortraitMeshes(root);
     const scene = sources.length ? afterimageSceneFor(sources[0]) : null;
@@ -302,9 +329,10 @@
   }
 
   function spawnHopAfterimages(dxWorld, dzWorld) {
+    const intensity = distanceAfterimageIntensity(Math.hypot(dxWorld, dzWorld), true); // Blink keeps the original full-strength per-tile rate.
     for (let i = 0; i < AFTERIMAGE_HOP_SAMPLES; i += 1) {
       const fraction = i / AFTERIMAGE_HOP_SAMPLES; // Leaves the destination clear for the live player while bridging the instant hop from its origin.
-      spawnAfterimage('blink-hop', dxWorld * fraction, dzWorld * fraction, 1 - fraction * 0.35);
+      spawnAfterimage('blink-hop', dxWorld * fraction, dzWorld * fraction, (1 - fraction * 0.35) * intensity);
     }
   }
 
@@ -321,9 +349,10 @@
     if (!player) return;
     const t = now(); // Shared timestamp keeps dodge/lunge sampling deterministic when both state flags change in one combat tick.
     const dodging = !!player.dodging;
+    const travel = updateAfterimageTravel(player, dodging, !!player.lunging); // Measured every combat frame, independently of snapshot intervals.
     if (dodging && (!dodgeAfterimageWasActive || t - lastDodgeAfterimageAtS >= AFTERIMAGE_FORCED_MOVE_INTERVAL_S)) {
       lastDodgeAfterimageAtS = t;
-      spawnAfterimage('dodge');
+      spawnAfterimage('dodge', 0, 0, distanceAfterimageIntensity(travel.dodgeTiles));
     }
     if (!dodging) lastDodgeAfterimageAtS = -Infinity;
     dodgeAfterimageWasActive = dodging;
@@ -331,7 +360,7 @@
     const lunging = !!player.lunging;
     if (lunging && (!lungeAfterimageWasActive || t - lastLungeAfterimageAtS >= AFTERIMAGE_FORCED_MOVE_INTERVAL_S)) {
       lastLungeAfterimageAtS = t;
-      spawnAfterimage('lunge');
+      spawnAfterimage('lunge', 0, 0, distanceAfterimageIntensity(travel.lungeTiles));
     }
     if (!lunging) lastLungeAfterimageAtS = -Infinity;
     lungeAfterimageWasActive = lunging;
@@ -368,9 +397,10 @@
         enemyAfterimageMotion.set(entity, motion);
       }
       const dodging = !!(entity.dodging || entity._enemyDodge);
+      const travel = updateAfterimageTravel(entity, dodging, !!entity._banditLunging); // Enemy trails use the same actual-distance scale as the player.
       if (dodging && (!motion.dodgeActive || t - motion.lastDodgeAtS >= AFTERIMAGE_FORCED_MOVE_INTERVAL_S)) {
         motion.lastDodgeAtS = t;
-        spawnAfterimageForRoot(entity.avatarRef.group, 'enemy-dodge');
+        spawnAfterimageForRoot(entity.avatarRef.group, 'enemy-dodge', 0, 0, distanceAfterimageIntensity(travel.dodgeTiles));
       }
       if (!dodging) motion.lastDodgeAtS = -Infinity;
       motion.dodgeActive = dodging;
@@ -378,7 +408,7 @@
       const lunging = !!entity._banditLunging;
       if (lunging && (!motion.lungeActive || t - motion.lastLungeAtS >= AFTERIMAGE_FORCED_MOVE_INTERVAL_S)) {
         motion.lastLungeAtS = t;
-        spawnAfterimageForRoot(entity.avatarRef.group, 'enemy-lunge');
+        spawnAfterimageForRoot(entity.avatarRef.group, 'enemy-lunge', 0, 0, distanceAfterimageIntensity(travel.lungeTiles));
       }
       if (!lunging) motion.lastLungeAtS = -Infinity;
       motion.lungeActive = lunging;
@@ -591,6 +621,8 @@
       if (deps.canPlayerOccupy(deps.player.x, desiredY)) deps.player.y = desiredY;
       const tilePx = Math.max(1, Number(deps.TILE) || 64); // Converts the player's pixel-space hop displacement into the Three.js world-space X/Z used by the portrait mesh.
       spawnHopAfterimages((deps.player.x - startX) / tilePx, (deps.player.y - startY) / tilePx);
+      const travel = afterimageTravelByActor.get(deps.player); // Exclude the instantaneous hop from a concurrent ordinary roll/lunge's distance.
+      if (travel) { travel.x = deps.player.x; travel.y = deps.player.y; }
       lastMoveAfterimageAtS = t; // The hop burst already owns this instant; delay the normal locomotion sampler so it cannot stack a redundant fourth portrait at the origin.
 
       // Never refuses for lack of stamina — overspending pushes into
@@ -724,6 +756,8 @@
             passiveDrainQuantum: PASSIVE_DRAIN_QUANTUM,
             reversalDotThreshold: REVERSAL_DOT_THRESHOLD,
             hopCooldownS: ZIP_COOLDOWN_S,
+            afterimageIntensityPerTile: AFTERIMAGE_BASE_OPACITY * AFTERIMAGE_REGULAR_INTENSITY_PER_TILE,
+            blinkHopIntensityPerTile: AFTERIMAGE_BASE_OPACITY,
             afterimageLifetimeS: AFTERIMAGE_LIFETIME_S,
             afterimageMoveIntervalS: AFTERIMAGE_MOVE_INTERVAL_S,
             afterimageForcedMoveIntervalS: AFTERIMAGE_FORCED_MOVE_INTERVAL_S,
