@@ -19999,7 +19999,7 @@
     {
       "id": "khannibarri_agent",
       "name": "Surveyor Harkharash",
-      "homeId": "inn",
+      "homeId": "khannibarri_temporary_lodging",
       "species": "Mao-ao",
       "gender": "male",
       "ageBand": "adult",
@@ -20157,7 +20157,7 @@
       "events": [],
       "scheduleHooks": {
         "defaultMapId": "map_i_general_store",
-        "workBuildingId": "general_store",
+        "workBuildingId": "khannibarri_temporary_office",
         "shopHours": "",
         "rules": [
           {
