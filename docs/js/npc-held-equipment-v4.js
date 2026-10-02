@@ -67,6 +67,7 @@
   }
 
   function watchmanLoadoutFor(walker) {
+    if (walker?.area === 'interior' || String(walker?.area || '').startsWith('map_i_')) return null; // Town watchmen holster their normal patrol weapons indoors, including cinematic office stand-ins.
     const id = String(walker?.rec?.id || '').trim().toLowerCase();
     if (WATCHMEN[id]) return { ...WATCHMEN[id], matchedBy: 'id' };
     const name = String(walker?.rec?.name || '').trim().toLowerCase();
@@ -498,6 +499,7 @@
     }
 
     state.loadout = null;
+    if (state.holder) state.holder.visible = false; // An existing outdoor holder must disappear immediately on interior entry.
     const target = walker?.currentScheduleTarget || null;
     const key = normalizeToolKey(target?.toolKey || walker?.stationToolKey);
     if (!key || key === 'kurraya' || !walker?.stationToolMesh) {
@@ -599,6 +601,11 @@
         sharedPlaneFactoryReady: !!sharedToolFactory(),
         walkerState: walker?.state || null,
         area: walker?.area || null,
+        cinematicPose: walker?._cinematicPose || null,
+        posteriorY: walker?.legs?.standingPosteriorY ?? null,
+        actorRootY: walker?.root?.position?.y ?? null,
+        seatedLegs: walker?.legs?.getSeatedPoseDebug?.() || null,
+        latestChange: 'Indoor patrol weapons holstered; office diagnostics include anatomical hip, root height and seated IK.',
         lastUpdateAgeMs: state.lastUpdateAt == null ? null : Math.max(0, Math.round(performance.now() - state.lastUpdateAt)),
       });
     }

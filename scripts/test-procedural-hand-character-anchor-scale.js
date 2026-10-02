@@ -85,3 +85,23 @@ assert.match(source, /transformOrder: 'portrait binding -> body\/child scale \+ 
   'export metadata must explicitly keep deadzone rotation after portrait-bound attachment placement');
 
 console.log('Portrait-bound character anchor transform guards passed');
+
+// Debug/anchor resolution before actor construction must not turn derived zero placeholders into physical hips at floor level.
+const runtime = { ProceduralHandAttachments:{attach(){return null;}},location:{pathname:'/game/'},setInterval(){return 1;},clearInterval(){} }; // Isolate a fresh game boot from the earlier authoring fixture.
+runtime.window=runtime;
+vm.createContext(runtime);
+vm.runInContext(fs.readFileSync('docs/config/attachment-rig-profiles.js','utf8'),runtime);
+vm.runInContext(source,runtime);
+for(const species of ['tletingan','mao-ao','engh-sho','mashtzarr','mammakhbuur']) {
+  const rigProfile = runtime.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters[species+'::male']; // Same authored definitions used by the office cast and inherited surveyor rig.
+  const anatomy = rigProfile.anatomy, metrics = {modelHeight:.9*anatomy.portraitScale,currentScale:anatomy.portraitScale,adultScale:anatomy.portraitScale,placementRatio:anatomy.portraitVerticalPlacementRatio};
+  const expected = runtime.HOBUNJI_ATTACHMENT_RIG_MATH.characterPosteriorY(rigProfile.posteriorRule,metrics.modelHeight,metrics.modelHeight/2);
+  rigProfile.anchors.posterior.portraitBinding = {version:1,referencePortraitScale:anatomy.portraitScale,referencePlacementRatio:anatomy.portraitVerticalPlacementRatio,referenceModelHeight:metrics.modelHeight,referencePosition:{x:0,y:0,z:0}}; // Replay a previously poisoned binding, including older saves/debug inspections.
+  const resolved = runtime.HobunjiCharacterPortraitAnchorSpace.resolveAnchor(rigProfile,'posterior',metrics);
+  assert(Math.abs(resolved.y-expected)<1e-9,species+' resolves its derived posterior instead of binding the zero placeholder');
+  runtime.HobunjiCharacterPortraitAnchorSpace.mirrorPosteriorBindingToRule(rigProfile);
+  assert(Math.abs(runtime.HOBUNJI_ATTACHMENT_RIG_MATH.characterPosteriorY(rigProfile.posteriorRule,metrics.modelHeight,metrics.modelHeight/2)-expected)<1e-9,species+' hand debug cannot alter subsequent seating anatomy');
+}
+
+assert.strictEqual(runtime.HOBUNJI_TRANSFORM_SPECIES_ALIASES.mammakhbuur,'mashtzarr','surveyor inherits the full Mashtzarr rig calibration');
+console.log('Office species posterior migration and stale zero-binding recovery passed');
