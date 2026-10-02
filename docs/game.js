@@ -8873,6 +8873,7 @@
               foliagePatches: workspace.foliagePatches || [],
               wildernessFoliageFurniture: workspace.wildernessFoliageFurniture || [],
               ambushStations: workspace.ambushStations || [],
+              backgroundScenery: window.MapLivePreview.clone(workspace.maps?.find(m => m.id === zoneId && !m.isSubmap)?.backgroundScenery || null),
               localeInstances,
             });
             // A reshaped zone's dens are all new — forget any leftover pack/
@@ -10528,7 +10529,7 @@
         window.ZoneDenTotemFeatures.buildRootTotemMeshes(zScene, zGrid, zoneData?.rootTotems || [], mapId);
         _zoneWaterMeshes.set(mapId, []);
         _zoneGrassMeshes.set(mapId, null); // Streamed grass groups live under their owning runtime chunks.
-        window.BorderTerrain.buildZoneBorderTerrain(zScene, ZCOLS, ZROWS, mapId, 0, zGrid);
+        window.BorderTerrain.buildZoneBorderTerrain(zScene, ZCOLS, ZROWS, mapId, 0, zGrid, zoneData?.backgroundScenery || null);
 
         const toTownExit = zoneData?.toTownExit;
         const backToTown = (toTownExit || zdef) ? [{
@@ -13075,7 +13076,7 @@
             // path (WildernessMapGenerator) produces those (see
             // performTothalShift), so wild packs simply don't spawn here yet.
             const visualHeights = window.TerrainPreview?.buildMergedZoneGrid(ws, zoneMapId)?.visualHeights || new Map();
-            _zoneLayouts.set(zoneMapId, { cols: zm.cols, rows: zm.rows, tiles: zTiles, visualHeights, transitions: zTransitions, toTownExit, mesas, buildings: outBuildings, decor: outDecor, furniture: outFurniture, dens: [], foliagePatches: [], ambushStations: [] });
+            _zoneLayouts.set(zoneMapId, { cols: zm.cols, rows: zm.rows, tiles: zTiles, visualHeights, transitions: zTransitions, toTownExit, mesas, buildings: outBuildings, decor: outDecor, furniture: outFurniture, backgroundScenery: window.MapLivePreview.clone(zm.backgroundScenery || null), dens: [], foliagePatches: [], ambushStations: [] });
             console.log(`%c[zone:${zoneMapId}] loaded ${zm.cols}x${zm.rows}, tiles=${zTiles.length}, mesas=${mesas.length}, buildings=${outBuildings.length}, decor=${outDecor.length}, furniture=${outFurniture.length}, toTownExit=${toTownExit ? `(${toTownExit.col},${toTownExit.row})` : 'none (using placeholder)'}, zoneTransitions=${zTransitions.length}`, 'color:#22c55e;font-weight:bold');
           }
           const townM = resolvedMaps.find(m => m.id === 'map_hobunji_town');
@@ -14842,6 +14843,7 @@
           buildings: window.MapLivePreview.clone(layout.buildings || []),
           decor: window.MapLivePreview.clone(layout.decor || []),
           furniture: window.MapLivePreview.clone(layout.furniture || []),
+          backgroundScenery: window.MapLivePreview.clone(layout.backgroundScenery || null),
           routes: [], rivers: [], npcStations: [], layouts: [], entryPoints: [],
           liveGeneratedInstance: true,
         };
@@ -14863,6 +14865,7 @@
           buildings: window.MapLivePreview.clone(map.buildings || previous.buildings || []),
           decor: window.MapLivePreview.clone(map.decor || previous.decor || []),
           furniture: window.MapLivePreview.clone(map.furniture || previous.furniture || []),
+          backgroundScenery: window.MapLivePreview.clone(map.backgroundScenery || previous.backgroundScenery || null),
           livePreview: true,
         };
       }

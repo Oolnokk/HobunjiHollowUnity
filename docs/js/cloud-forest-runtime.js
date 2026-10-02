@@ -553,9 +553,9 @@
   function patchBorderTerrain(BT) {
     if (!BT?.buildZoneBorderTerrain || BT.__cloudForestRuntimeV2Border) return BT;
     const original = BT.buildZoneBorderTerrain;
-    BT.buildZoneBorderTerrain = function (scene, zcols, zrows, mapId, zoneBaseElev = 0, zGrid = null) {
+    BT.buildZoneBorderTerrain = function (scene, zcols, zrows, mapId, zoneBaseElev = 0, zGrid = null, backgroundScenery = null) {
       const before = new Set(scene?.children || scene?.items || []);
-      const result = original.call(this, scene, zcols, zrows, mapId, zoneBaseElev, zGrid);
+      const result = original.call(this, scene, zcols, zrows, mapId, zoneBaseElev, zGrid, backgroundScenery);
       if (mapId !== CLOUD_ID || !scene) return result;
       const collection = scene.children || scene.items || [];
       const added = collection.filter(obj => !before.has(obj));

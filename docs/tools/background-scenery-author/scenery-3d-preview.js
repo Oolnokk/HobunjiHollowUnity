@@ -355,15 +355,20 @@ parityPanelMute.textContent = '#hobunjiTerrainParityPanel{display:none!important
     const pathMat = new THREE.MeshStandardMaterial({ color:0x9f8357, roughness:1, metalness:0, side:THREE.DoubleSide });
     pathMat.userData.previewOwned = true;
 
+    const previewTileType={ GRASS:'grass', ROCK:'rock', PATH:'path', RAMP:'ramp', RIVER:'river', STREAM:'stream', WATERFALL:'waterfall', TRENCH:'trench', RAISED:'raised' }; // Shared with the real plateau builder used by the colossal mountain preview.
     const deps = {
       NORMAL_TOP:0,
-      PLATEAU_UNIT:1,
-      TileType:{ GRASS:'grass', PATH:'path' },
+      PLATEAU_UNIT:2.5,
+      TileType:previewTileType,
+      CARVED_TILE_TYPES:new Set([previewTileType.RIVER,previewTileType.STREAM,previewTileType.WATERFALL,previewTileType.TRENCH,previewTileType.RAISED]),
       clamp,
       getTownScene:()=>scene,
       getTownZone:()=>activeMap,
-      resolveTileMat:(_mapId,type)=>type==='grass' ? grassOrd : pathMat,
+      resolveTileMat:(_mapId,type)=>type==='grass' ? grassOrd : type==='rock' ? cliffOrd : pathMat,
       resolveCliffMat:()=>cliffOrd,
+      displaceZoneGeometry:geometry=>geometry,
+      ROCK_MOUND_CELLS_PER_TILE:6,
+      _zoneScenes:new Map(),_zoneLayouts:new Map(),_zoneMesaMeshGroups:new Map(),
       getGrassBillboardMat:()=>null,
       getGrassEnabled:()=>false,
       grassBladeGeo:null,
@@ -371,9 +376,20 @@ parityPanelMute.textContent = '#hobunjiTerrainParityPanel{display:none!important
       markOutline:()=>{},
     };
 
+    let horizonStats = null; // Used below to expose the exact low-poly landmark budget in the preview status line.
     try {
       BorderTerrain.init(deps);
+      window.ZonePlateauMesa?.init(deps);
       BorderTerrain.buildTownBorderTerrain();
+      horizonStats = BorderTerrain.buildColossalHorizonTerrain?.(
+        scene,
+        activeMap.cols,
+        activeMap.rows,
+        activeMap.id || activeMap.mapId || 'boundary_author_preview',
+        0,
+        null,
+        activeConfig.horizonTerrain
+      ) || null;
     } catch (error) {
       setStatus(`3D build failed: ${error.message}`);
       console.error(error);
@@ -396,13 +412,16 @@ parityPanelMute.textContent = '#hobunjiTerrainParityPanel{display:none!important
     const triangles = terrainRecords.reduce((sum,record)=>sum+(record.stats?.triangles||0),0);
     const textures = textureSummary(grassTexture, cliffTexture, grassPath, cliffPath);
     const baker = window.TerrainJigsawUV?.bakeMesh ? 'baker OK' : 'BAKER MISSING';
+    const horizonSummary = horizonStats?.enabled
+      ? ` · HORIZON ${horizonStats.kind} ${horizonStats.vertices}v/${horizonStats.triangles}t ${(horizonStats.effectiveHeightWorld ?? horizonStats.heightWorld)}u high ${horizonStats.side}${horizonStats.rows ? ` · G${horizonStats.mountainGranularity ?? '?'} shared ${horizonStats.fieldCols ?? '?'}×${horizonStats.fieldRows ?? '?'} plateau map / ${horizonStats.mountainLayers ?? 0} merged tiers / ${horizonStats.lockedTiles ?? 0} locks · ${(horizonStats.effectiveHeightStartWorld ?? horizonStats.heightStartWorld ?? '?')}→${(horizonStats.effectiveHeightEndWorld ?? horizonStats.heightEndWorld ?? '?')}u` : ''} · ${(horizonStats.overallScale ?? 1)}× whole / ${(horizonStats.spanScale ?? 1)}× span`
+      : ' · HORIZON off'; // Visible mobile diagnostic proves the authored landmark and its real runtime geometry budget reached the preview.
     if (!jigsawEnabled()) {
-      setStatus(`JIGSAW DISABLED · ${candidates} terrain candidate${candidates===1?'':'s'} · ${textures} · ${settingsSummary()} · ${baker} · author rev ${lastAuthorRevision}`);
+      setStatus(`JIGSAW DISABLED · ${candidates} terrain candidate${candidates===1?'':'s'} · ${textures} · ${settingsSummary()} · ${baker}${horizonSummary} · author rev ${lastAuthorRevision}`);
     } else if (!terrainRecords.length) {
       const why = failures.length ? ` · ${[...new Set(failures)].slice(0,3).join(' | ')}` : '';
-      setStatus(`JIGSAW ENABLED but 0 meshes baked (${candidates} candidates) · ${textures} · ${settingsSummary()} · ${baker}${why} · author rev ${lastAuthorRevision}`);
+      setStatus(`JIGSAW ENABLED but 0 meshes baked (${candidates} candidates) · ${textures} · ${settingsSummary()} · ${baker}${why}${horizonSummary} · author rev ${lastAuthorRevision}`);
     } else {
-      setStatus(`${terrainRecords.length}/${candidates} terrain meshes baked · ${islands} connected islands · ${triangles.toLocaleString()} triangles · ${textures} · ${settingsSummary()} · ${baker} · author rev ${lastAuthorRevision}`);
+      setStatus(`${terrainRecords.length}/${candidates} terrain meshes baked · ${islands} connected islands · ${triangles.toLocaleString()} triangles · ${textures} · ${settingsSummary()} · ${baker}${horizonSummary} · author rev ${lastAuthorRevision}`);
     }
   }
 
@@ -425,8 +444,17 @@ parityPanelMute.textContent = '#hobunjiTerrainParityPanel{display:none!important
   function fitCamera() {
     if (!activeMap || !camera) return;
     const depth = Math.max(6, Math.round(Number(activeConfig?.borderDepthTiles) || 18));
-    const center = new THREE.Vector3(activeMap.cols/2,1.35,activeMap.rows/2);
-    const radius = Math.max(activeMap.cols+depth*2,activeMap.rows+depth*2)*.62;
+    const horizon = activeConfig?.horizonTerrain; // Used to expand auto-fit far enough to include a colossal edge landmark.
+    const overallScale = horizon?.enabled ? Math.max(0.25, Number(horizon.overallScale) || 1) : 1; // Used to mirror runtime whole-landmark scale in the 3D preview camera.
+    const horizonReach = horizon?.enabled ? Math.max(0, Number(horizon.distanceWorld)||0) + Math.max(0, Number(horizon.depthWorld)||0) * overallScale : 0; // Used for the outward footprint while leaving authored edge clearance unscaled.
+    const horizontal = horizon?.side === 'north' || horizon?.side === 'south'; // Used to select the landmark's long map axis.
+    const axisLength = horizontal ? activeMap.cols : activeMap.rows; // Used to calculate full north/south or east/west overscan.
+    const horizonSpan = horizon?.enabled ? axisLength * Math.max(0.25, Number(horizon.spanScale) || 1) * overallScale : axisLength; // Used to fit multi-map-length horizon spans.
+    const width = horizontal ? Math.max(activeMap.cols, horizonSpan) : activeMap.cols + horizonReach; // Used as the fitted world width.
+    const length = horizontal ? activeMap.rows + horizonReach : Math.max(activeMap.rows, horizonSpan); // Used as the fitted world length.
+    const effectiveHeight = horizon?.enabled ? Math.max(0, Number(horizon.heightWorld)||0, Number(horizon.heightStartWorld)||0, Number(horizon.heightEndWorld)||0) * overallScale : 0; // Uses the tallest endpoint so a jagged start/end mountain profile cannot clip the preview.
+    const center = new THREE.Vector3(activeMap.cols/2,Math.max(1.35,effectiveHeight*.22),activeMap.rows/2);
+    const radius = Math.max(activeMap.cols+depth*2,activeMap.rows+depth*2,width+depth*2,length+depth*2,effectiveHeight*1.35)*.62;
     camera.position.set(center.x+radius*.72,center.y+radius*.55,center.z+radius*.88);
     camera.near = Math.max(.05,radius/800);
     camera.far = Math.max(300,radius*8);
@@ -518,6 +546,7 @@ parityPanelMute.textContent = '#hobunjiTerrainParityPanel{display:none!important
   $('preview3dWire')?.addEventListener('change',()=>applyVariant(viewMode==='protected'?'jigsaw':viewMode==='heatmap'?'heatmap':'ordinary'));
   $('preview3dFit')?.addEventListener('click',fitCamera);
   $('preview3dRebuild')?.addEventListener('click',()=>scheduleRebuild(0));
+  window.addEventListener('hobunji-background-scenery-author-change',()=>scheduleRebuild(25));
   window.addEventListener('hobunji-jigsaw-author-change',event=>{
     lastAuthorRevision = Number(event?.detail?.revision) || lastAuthorRevision;
     if (event?.detail?.reason === 'texture' || event?.detail?.reason === 'reset') {
