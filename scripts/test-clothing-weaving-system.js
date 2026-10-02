@@ -729,6 +729,8 @@ assert.match(patternAuthorSource, /options\.forceTiling === false/, 'shared Patt
 assert.equal(clothingTrimManifest.schema, 'hobunji_clothing_trim.v1', 'repo owns one stable authored garment-trim manifest');
 assert.equal(clothingTrimManifest.garments?.ragged_hood?.variants?.['mao-ao_male']?.front?.motifPng, 'assets/patterns/clothing-trims/ragged_hood__mao-ao_male__front.png', 'supplied Ragged Hood Mao\'ao male front trim is the repo-authored master entry');
 assert.equal(clothingTrimManifest.garments?.ragged_hood?.variants?.['mao-ao_male']?.front?.settings?.directMask, true, 'supplied Ragged Hood master remains an exact direct mask');
+assert.equal(clothingTrimManifest.garments?.ragged_hood?.variants?.['mao-ao_male']?.front?.authorOps?.length, 19, 'recovered Ragged Hood Mao\'ao male source journal is persisted in the repo manifest');
+assert.deepEqual(clothingTrimManifest.garments?.ragged_hood?.variants?.['mao-ao_male']?.front?.authorOps?.filter(op => op.type === 'expandInward').map(op => op.amount), [7, 10, 11, 12, 12], 'recovered source preserves the authored inward-expansion sequence');
 assert.match(patternEditorSource, /function defaultTrimSourceVariant\(/, 'trim authoring has one shared authored-master selection helper');
 assert.match(patternEditorSource, /authoredInManifest = variants\.find\(key => !!trimRecord\(garmentId, key, view\)\)/, 'manifest-authored variants are preferred over session drafts as replication masters');
 assert.match(patternEditorSource, /preferredSource = defaultTrimSourceVariant/, 'variant selection automatically moves to an authored master when the previous selection is not authored');
@@ -738,7 +740,13 @@ assert.match(patternEditorSource, /const defaultSelection = defaultTrimManifestS
 assert.match(patternEditorSource, /editableTrimMaskCanvasFor[\s\S]*?catch \(error\) \{[\s\S]*?return null;/, 'missing authored trim PNGs degrade to an empty editable mask instead of aborting trim-editor initialization');
 assert.match(patternEditorSource, /missingTrimAsset = true;[\s\S]*?result = await renderWithTrim\(null\)/, 'trim preview retries the same garment without trim when an authored mask asset cannot be rendered');
 assert.match(patternEditorSource, /Manifest entry exists but its trim PNG could not be loaded/, 'paint viewport reports missing manifest artwork while remaining usable');
-assert.match(patternEditorSource, /Authored trim entry found, but its PNG is missing\/unreadable\. Showing the base garment/, 'small trim preview reports its base-garment fallback instead of leaving a blank canvas');
+assert.match(patternEditorSource, /Array\.isArray\(record\?\.authorOps\) && record\.authorOps\.length\) return null/, 'journal-backed trim records bypass motifPng as the editor preview source');
+assert.match(patternEditorSource, /replayedMask = replayTrimAuthorOps\(record\.authorOps, baseCanvas\)/, 'normal trim preview reconstructs a saved operation journal directly against the selected variant');
+assert.match(patternEditorSource, /motifDataUrl: replayedMask\.toDataURL\('image\/png'\)/, 'reconstructed journal masks feed the production compositor as an in-memory direct mask');
+assert.match(patternEditorSource, /Trim preview reconstructed directly from this variant’s saved authoring operations/, 'journal-backed previews visibly report that no exported PNG is required');
+assert.match(patternEditorSource, /authorOpsComplete && authorOps\.length[\s\S]*?replayTrimAuthorOps\(authorOps, baseCanvas\)[\s\S]*?: await editableTrimMaskCanvas/, 'paint-editor loading also prefers complete operation history over any old exported PNG');
+assert.match(patternEditorSource, /const sourceMask = replayed \? null : await editableTrimMaskCanvasFor/, 'journal-backed replication does not fetch a missing or stale motif PNG before replay');
+assert.match(patternEditorSource, /Authored trim entry found, but its PNG is missing\/unreadable\. Showing the base garment/, 'legacy PNG-only preview still has a safe base-garment fallback');
 assert.match(patternEditorSource, /Garment trim authoring/, 'Pattern Editor exposes the dedicated garment trim workspace');
 assert.match(patternEditorSource, /species\/gender variant/i, 'garment trim editor makes per-variant authoring explicit');
 assert.match(patternEditorSource, /trimCoverageText/, 'garment trim editor reports missing species/gender coverage instead of relying on a hard-coded list');
