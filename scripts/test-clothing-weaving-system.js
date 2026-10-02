@@ -765,7 +765,9 @@ assert.match(patternEditorSource, /function selectFullOutline\(\)/, 'full-outlin
 assert.match(patternEditorSource, /data-trim-expand-amount/, 'trim painter exposes artist-controlled inward depth');
 assert.match(patternEditorSource, /function expandExistingTrim\(amount\)/, 'trim painter expands selected contour sections toward the garment interior');
 assert.match(patternEditorSource, /function distanceFromSelectedContour\(mask, boundaryMask, selectedBoundary, width, height\)/, 'inward expansion computes distance from the union of all actually selected contour sections');
-assert.match(patternEditorSource, /boundaryMask\[neighbor\] && !selectedBoundary\[neighbor\]/, 'multi-source inward expansion treats unselected outline pixels as traversal barriers instead of creeping sideways along the silhouette');
+assert.match(patternEditorSource, /const thinBoundary = new Uint8Array\(mask\.length\)/, 'inward expansion classifies contour-only thin cloth separately from broad perimeter');
+assert.match(patternEditorSource, /mask\[neighbor\] && !boundaryMask\[neighbor\]/, 'thin-contour detection looks for a true non-boundary garment core behind each outline pixel');
+assert.match(patternEditorSource, /boundaryMask\[neighbor\] && !selectedBoundary\[neighbor\] && !thinBoundary\[neighbor\]/, 'broad unselected outline remains a barrier while contour-only thin garment strips stay fillable');
 assert.match(patternEditorSource, /const selectedDistance = distanceFromSelectedContour\(garmentMask, silhouetteBoundaryMask, selectedBoundary, width, height\)/, 'live Expand Inward uses the selected-contour distance field rather than a permanent nearest-owner assignment');
 assert.match(patternEditorSource, /const selectedDistance = distanceFromSelectedContour\(geometry\.mask, inwardMap\.boundaryMask, selectedBoundary, geometry\.width, geometry\.height\)/, 'operation replay uses the same multi-source inward distance as live authoring');
 assert.match(patternEditorSource, /selectedDistance\[index\] > layers \+ 0\.0001/, 'inward expansion stops at the requested distance from any selected contour section');
