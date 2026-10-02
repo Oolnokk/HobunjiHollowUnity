@@ -54,6 +54,13 @@ const helperNames = [
   'matchTrimReplayRegions',
   'nearestTrimRegion',
   'nearestRegionBoundaryPoint',
+  'boundaryComponentsForRegion',
+  'trimBoundaryFeature',
+  'matchTrimBoundaryComponents',
+  'nearestBoundaryComponentAnchor',
+  'nearestPointOnBoundaryComponent',
+  'inwardNormalAtBoundary',
+  'nearestPixelInRegion',
   'normalizedXYInBounds',
   'remapTrimAuthorOpsForTarget',
 ];
@@ -110,8 +117,8 @@ const source = new CanvasStub(24, 24);
 const target = new CanvasStub(24, 24);
 fillRect(source, 2, 2, 8, 5);    // Upper source cloth island.
 fillRect(source, 5, 13, 17, 19); // Lower source cloth island.
-fillRect(target, 11, 1, 21, 5);  // Upper target island moves right and widens.
-fillRect(target, 1, 11, 11, 21); // Lower target island moves left and grows taller.
+fillRect(target, 11, 1, 21, 9);  // Upper target island moves right and becomes much taller.
+fillRect(target, 1, 12, 11, 22); // Lower target island moves left and grows taller.
 
 const sourceGeometry = helpers.canvasTrimGeometry(source);
 const targetGeometry = helpers.canvasTrimGeometry(target);
@@ -136,14 +143,16 @@ assert.equal(remapped.at(-1).type, 'expandInward', 'non-stroke authoring order e
 const paint = remapped.find(op => op.type === 'stroke' && op.mode === 'paint');
 assert(paint, 'region mapper retains Direct Paint operations');
 const paintPx = denormalizedPixel(paint.points[0], targetBounds);
-assert(paintPx.x >= 11 && paintPx.x <= 21 && paintPx.y >= 1 && paintPx.y <= 5,
+assert(paintPx.x >= 11 && paintPx.x <= 21 && paintPx.y >= 1 && paintPx.y <= 9,
   'upper source edit maps into the upper target cloth island rather than global garment coordinates');
+assert(paintPx.y <= 3.1,
+  'edge-relative replay keeps a point one pixel inward from the source top edge near the corresponding target edge instead of scaling its rectangular Y position through the much taller target region');
 
 const erasers = remapped.filter(op => op.type === 'stroke' && op.mode === 'eraser');
 assert.equal(erasers.length, 2, 'a stroke that crosses disconnected cloth regions is split instead of drawing a bridge through empty space');
 const erasePixels = erasers.map(op => denormalizedPixel(op.points[0], targetBounds));
-assert(erasePixels.some(p => p.x >= 11 && p.y <= 5), 'one eraser segment remains on the upper target island');
-assert(erasePixels.some(p => p.x <= 11 && p.y >= 11), 'one eraser segment remains on the lower target island');
+assert(erasePixels.some(p => p.x >= 11 && p.y <= 9), 'one eraser segment remains on the upper target island');
+assert(erasePixels.some(p => p.x <= 11 && p.y >= 12), 'one eraser segment remains on the lower target island');
 
 const brush = remapped.find(op => op.type === 'stroke' && op.mode === 'brush');
 assert(brush, 'region mapper retains Outline Brush operations');
@@ -162,4 +171,31 @@ assert(upperRegion.boundaryIndices.some(index => {
 assert.notEqual(erasers[0].sizeNorm, erasers[1].sizeNorm,
   'brush/eraser size scales independently with each matched cloth region rather than one whole-garment scale');
 
-console.log('trim region replay regression passed');
+// Inner contour / collar-hole regression: edge-relative replay must preserve which contour the edit belongs to.
+const ringSource = new CanvasStub(24, 24);
+const ringTarget = new CanvasStub(24, 24);
+fillRect(ringSource, 3, 3, 18, 18);
+fillRect(ringTarget, 2, 2, 20, 20);
+for (let y = 8; y <= 13; y++) for (let x = 8; x <= 13; x++) {
+  const i = (y * ringSource.width + x) * 4;
+  ringSource.pixels[i] = ringSource.pixels[i + 1] = ringSource.pixels[i + 2] = ringSource.pixels[i + 3] = 0;
+}
+for (let y = 7; y <= 14; y++) for (let x = 10; x <= 15; x++) {
+  const i = (y * ringTarget.width + x) * 4;
+  ringTarget.pixels[i] = ringTarget.pixels[i + 1] = ringTarget.pixels[i + 2] = ringTarget.pixels[i + 3] = 0;
+}
+const ringSourceGeometry = helpers.canvasTrimGeometry(ringSource);
+const ringTargetGeometry = helpers.canvasTrimGeometry(ringTarget);
+const ringSourceBounds = helpers.maskBounds(ringSourceGeometry.mask, ringSource.width, ringSource.height);
+const ringTargetBounds = helpers.maskBounds(ringTargetGeometry.mask, ringTarget.width, ringTarget.height);
+const innerEdgePoint = normalizedPixel(9, 7, ringSourceBounds); // Cloth pixel immediately above the source hole.
+const ringOps = [{ type: 'stroke', mode: 'brush', sizeNorm: 0.08, points: [innerEdgePoint] }];
+const ringRemapped = helpers.remapTrimAuthorOpsForTarget(ringOps, ringSource, ringTarget);
+assert.equal(ringRemapped.length, 1, 'single inner-contour stroke stays a single replay segment');
+const ringPoint = denormalizedPixel(ringRemapped[0].points[0], ringTargetBounds);
+assert(ringPoint.x >= 9 && ringPoint.x <= 16 && ringPoint.y >= 6 && ringPoint.y <= 15,
+  'inner-hole Outline Brush remaps to the target inner contour neighborhood rather than the outer garment hem');
+assert(!(ringPoint.x <= 3 || ringPoint.x >= 19 || ringPoint.y <= 3 || ringPoint.y >= 19),
+  'inner-hole edge anchor does not collapse onto the target outer boundary');
+
+console.log('trim edge-relative replay regression passed');
