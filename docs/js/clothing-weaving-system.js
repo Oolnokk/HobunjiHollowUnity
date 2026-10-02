@@ -2378,9 +2378,10 @@
     const active = renderable.map((pattern, index) => ({ pattern, motif: loaded[index] })).filter(entry => !!entry.motif).slice(0, 2);
     if (!active.length) return imageOrCanvas;
 
-    const pad = CELL_OFFSET_PAD;
+    const directMaskPass = active.length === 1 && active[0]?.pattern?.directMask === true; // Exact garment trim masks must bypass every generic repeating-pattern translation/scaling seam.
+    const pad = directMaskPass ? 0 : CELL_OFFSET_PAD;
     const maskWidth = width + pad * 2, maskHeight = height + pad * 2;
-    const patternCanvases = active.map(({ pattern, motif }) => buildPatternMask(maskWidth, maskHeight, pattern, motif)); // Each slot keeps its own frame/tiling/scale transform.
+    const patternCanvases = active.map(({ pattern, motif }) => buildPatternMask(maskWidth, maskHeight, pattern, motif)); // Direct mask receives exact sprite dimensions; reusable motifs retain padded work space.
     const out = Object.assign(document.createElement('canvas'), { width, height });
     const ctx = out.getContext('2d');
     ctx.drawImage(imageOrCanvas, 0, 0, width, height);
@@ -2399,10 +2400,10 @@
     const [r, g, b] = hexRgb(colorHex);
     const directShadeFill = window.ColorFill?.shadeFillPixels;
     const pixelCount = width * height;
-    const garmentMask = new Uint8Array(pixelCount); // Opaque, non-authored-outline cloth pixels — this pattern's equivalent of the tool's metalMask.
+    const garmentMask = new Uint8Array(pixelCount); // Reusable patterns avoid authored dark outlines; exact direct masks instead honor every opaque garment pixel selected by manual authoring.
     for (let p = 0, i = 0; i < base.data.length; i += 4, p++) {
       const maxChannel = Math.max(shadeSourceData[i], shadeSourceData[i + 1], shadeSourceData[i + 2]);
-      if (shadeSourceData[i + 3] > 8 && maxChannel > 28) garmentMask[p] = 1;
+      if (shadeSourceData[i + 3] > 8 && (directMaskPass || maxChannel > 28)) garmentMask[p] = 1;
     }
 
     const { labels: cellLabels } = labelPatternCells(garmentMask, width, height);
@@ -2417,8 +2418,8 @@
       for (let p = 0; p < pixelCount; p++) {
         if (!garmentMask[p]) continue;
         const x = p % width, y = (p / width) | 0;
-        const off = (cellLabels[p] % CELL_OFFSET_CYCLE) * CELL_OFFSET_STEP;
-        const mx = x + pad - off, my = y + pad - off;
+        const off = directMaskPass ? 0 : (cellLabels[p] % CELL_OFFSET_CYCLE) * CELL_OFFSET_STEP;
+        const mx = x + pad - off, my = y + pad - off; // Direct masks sample the exact authored (x,y); only reusable motifs receive per-cell visual variation.
         const mi = (my * maskWidth + mx) * 4;
         if (paddedMaskData[mi + 3] > 16) mask[p] = 1;
         if (separator && paddedSeparatorData[mi + 3] > 16) separator[p] = 1;
