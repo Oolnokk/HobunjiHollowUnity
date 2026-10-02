@@ -363,7 +363,7 @@ assert.match(devSpawnerSource, /startsWith\('harlyao-lich:'\)/);
 assert.match(indexSource, /js\/combat\/combat-lich\.js\?v=[A-Za-z0-9_-]+/);
 assert(indexSource.includes('js/combat/combat-bandit.js?v='), 'game must load combat-bandit with an explicit cache-bust token');
 assert.match(indexSource, /js\/dev-spawner\.js\?v=[A-Za-z0-9_-]+/);
-assert(indexSource.includes('game.js?v=20261002ha14363a'));
+assert(indexSource.includes('game.js?v=20261002he504b7e'));
 assert(indexSource.includes('js/combat/resource-system.js?v=20261001quickdebuff2'));
 assert(indexSource.includes('js/pixel-probe.js?v=20260927inputclaim1'));
 assert(indexSource.includes('js/portrait-utils.js?v=20260926hoodback2'));

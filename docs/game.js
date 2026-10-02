@@ -7811,6 +7811,7 @@
             _clearCompanionTreasureCue(c, dt, 'treasure revealed, found, or area left');
           }
           if (!isBanditCompanion && !target && c.knockbackT <= 0 && !c.treasureCue && distToMaster <= FOLLOW_FAR_PX && _isZoneArea(currentArea)) {
+            window.RuinSites?.trackNearby?.(c, master, dt);
             const treasureHint = window.WildTreasure?.nearestBuriedPixelPos(currentArea, master.x, master.y);
             if (treasureHint && treasureHint.dist <= TREASURE_HINT_RANGE_PX) _startCompanionTreasureCue(c, treasureHint);
           }
@@ -9288,6 +9289,7 @@
       }
 
       function performDodge() {
+        if (window.Mounts?.rideState && window.Mounts.rideState !== 'none') return false; // Mounted movement owns cliff leaps; on-foot rolls cannot finish while riding.
         if (window.DevRandomRuinSimplePuzzles?.releaseActiveRope?.()) return true; // Dodge is the native rope jump-off input; release carries pendulum tangent instead of starting an evasive roll.
         // While prone, the automatic get-up owns the normal recovery. Keep
         // dodge input routed to the same in-place recovery arc so an input on

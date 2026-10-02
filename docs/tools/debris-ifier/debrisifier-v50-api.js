@@ -6,6 +6,31 @@
 
   let previewLoopPaused = false;
 
+  // The recovered V50 source is immutable (verified by its SHA in regression
+  // tests). Its existing bridge owns these material overrides for all ruins.
+  createSharedRuinStoneMaterial = async function () {
+    const texture = (await processedRepoTexture(DEFAULT_TEXTURE_PATH, false)).clone(); // Same unfilled PNG used by the sanctum door and standing braziers.
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    texture.needsUpdate = true;
+    return new THREE.MeshBasicMaterial({ color:0xffffff, map:texture, side:THREE.DoubleSide });
+  };
+
+  applyFurniturePartTextureAsync = function (material, part) {
+    if (!part.materialTexture) return null;
+    const fill = part.materialFillMode !== 'never' && !!part.materialFillEnabled; // Honors the bronze furniture's authored adaptive shade-fill settings.
+    return processedRepoTexture(furnitureTexturePath(part.materialTexture), fill, part.materialFillColor || '#ffffff').then(base => {
+      const texture = base.clone(); // Independent rotation/sampling while retaining the processed image.
+      texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+      texture.center.set(.5, .5);
+      texture.rotation = (+part.materialRotationDeg || 0) * DEG;
+      texture.needsUpdate = true;
+      material.map = texture;
+      material.color.setHex(0xffffff);
+      material.needsUpdate = true;
+    });
+  };
+
+
   function normalizeRuntimePuzzleOptions(raw = {}) {
     const source = raw && typeof raw === 'object' ? raw : {}; // Used to safely normalize the parent game's persisted puzzle-generation payload.
     return {

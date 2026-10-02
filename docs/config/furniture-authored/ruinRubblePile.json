@@ -62,7 +62,10 @@
       "textureName": "",
       "textureTransparent": true,
       "textureTileSize": 1,
-      "materialLighting": "unlit"
+      "materialLighting": "unlit",
+      "materialFillMode": "never",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6
     },
     {
       "id": "block_1",
@@ -108,7 +111,10 @@
       "textureName": "",
       "textureTransparent": true,
       "textureTileSize": 1,
-      "materialLighting": "unlit"
+      "materialLighting": "unlit",
+      "materialFillMode": "never",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6
     },
     {
       "id": "block_2",
@@ -154,7 +160,10 @@
       "textureName": "",
       "textureTransparent": true,
       "textureTileSize": 1,
-      "materialLighting": "unlit"
+      "materialLighting": "unlit",
+      "materialFillMode": "never",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6
     },
     {
       "id": "block_3",
@@ -200,7 +209,10 @@
       "textureName": "",
       "textureTransparent": true,
       "textureTileSize": 1,
-      "materialLighting": "unlit"
+      "materialLighting": "unlit",
+      "materialFillMode": "never",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6
     },
     {
       "id": "block_4",
@@ -246,7 +258,10 @@
       "textureName": "",
       "textureTransparent": true,
       "textureTileSize": 1,
-      "materialLighting": "unlit"
+      "materialLighting": "unlit",
+      "materialFillMode": "never",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6
     },
     {
       "id": "block_5",
@@ -292,7 +307,10 @@
       "textureName": "",
       "textureTransparent": true,
       "textureTileSize": 1,
-      "materialLighting": "unlit"
+      "materialLighting": "unlit",
+      "materialFillMode": "never",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6
     },
     {
       "id": "block_6",
@@ -338,7 +356,10 @@
       "textureName": "",
       "textureTransparent": true,
       "textureTileSize": 1,
-      "materialLighting": "unlit"
+      "materialLighting": "unlit",
+      "materialFillMode": "never",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6
     }
   ],
   "recognizedSurfaces": [],

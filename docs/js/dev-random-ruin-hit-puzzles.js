@@ -352,7 +352,7 @@
     const state = mechanismSignals.get(target.mechanismId);
     const active = state?.glyphTargets.filter(entry => entry.active).length || 0;
     const required = state?.glyphRequired || target.required || 1;
-    if (state && active >= required) state.target = 1;
+    if (state && active >= required && state.target < 1) { state.target = 1; window.AudioSystem?.playObjectSfxKey?.('puzzleComplete'); }
     const circuit = target.circuitName ? `${target.circuitName} ` : '';
     devDeps?.showToast?.(active >= required ? `${circuit}glyph circuit complete (${active}/${required}) — its mechanism is moving.` : `${circuit}glyph struck (${active}/${required}).`, true);
     window.__farmLog?.(`[random-ruin-hit] projectile glyph ${target.id} ${active}/${required}`, 'world');
@@ -727,7 +727,7 @@
     if (carriedTorch.lit && !target.lit) {
       target.lit = true;
       const state = mechanismSignals.get(target.mechanismId);
-      if (state) state.target = 1;
+      if (state && state.target < 1) { state.target = 1; window.AudioSystem?.playObjectSfxKey?.('puzzleComplete'); }
       devDeps?.showToast?.(target.kind === 'brazier' ? 'Brazier lit.' : 'Ruin torch lit.', true);
       window.__farmLog?.(`[random-ruin-hit] lit ${target.kind} ${target.id}`, 'world');
       return true;

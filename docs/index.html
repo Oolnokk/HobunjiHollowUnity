@@ -26,7 +26,7 @@
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
        extracted out of game.js; must load before game.js and before every
        other module whose init(deps) is handed window.FormatUtils.clamp/esc. -->
-  <script src="js/format-utils.js?v=20260924perf1"></script>
+  <script src="js/format-utils.js?v=20261002h714941a"></script>
   <!-- Movement virtual-joystick handlers extracted out of game.js; uses
        window.FormatUtils.clamp, so must load after it and before game.js. -->
   <script src="js/virtual-joystick.js?v=20260902mod1"></script>
@@ -132,7 +132,7 @@
   <script src="debug.js?v=20260925weavesessiondebug4"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20260930h1b2e2e2"></script>
-  <script src="config/scratchbones-config.js?v=20261002h2913d86"></script>
+  <script src="config/scratchbones-config.js?v=20261002h12b6f76"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
   <script src="js/tool-metal-recolor.js?v=20261001c6751543"></script>
@@ -201,7 +201,7 @@
   <!-- Procedural foliage / crop geometry -->
   <script src="js/foliage-generator.js?v=20260910review1"></script>
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
-  <script src="js/procedural-furniture.js?v=20260929glowdecals1"></script>
+  <script src="js/procedural-furniture.js?v=20261002h3f4c557"></script>
   <script src="js/furniture-puzzle-properties.js?v=20260922perpiece1"></script>
   <script src="js/furniture-puzzle-runtime.js?v=20260929glowdecals1"></script>
   <!-- Loads the richer per-piece data authored by furniture-avatar-author (seat
@@ -274,7 +274,7 @@
   <script src="js/combat/combat-combo.js?v=20260930h81d72c4"></script>
   <script src="js/combat/combat-quickattacks.js?v=20261001quickdebuff2"></script>
   <script src="js/combat/combat-counter-shield.js?v=20260930h07cba2f"></script>
-  <script src="js/combat/combat-blink-dodge.js?v=20260930afterimage4"></script>
+  <script src="js/combat/combat-blink-dodge.js?v=20261002h2d08879"></script>
   <script src="js/combat/combat-charged-breaker.js?v=20260930hbbcd28d"></script>
   <script src="js/combat/combat-flurry.js?v=20260930he6f6a0a"></script>
   <script src="js/combat/combat-loadout-ui.js?v=20260930h75d45df"></script>
@@ -386,7 +386,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmTroughs.init(...) during its own setup. -->
-  <script src="js/farm-troughs.js?v=20260924perf1"></script>
+  <script src="js/farm-troughs.js?v=20261002h691f6b4"></script>
   <!-- Modular player house (window.HousePieces) — barn-shaped foundation/
        build/demolish pipeline for house-piece deeds bought from the
        Carpenter, replacing the old singular Highland House GLB. Depends on
@@ -746,9 +746,9 @@
        and its build*(...) functions lazily, from buildZoneScene, never
        synchronously during initial boot. -->
   <script src="js/locale-cave-runtime.js?v=20260923caveregistry1"></script>
-  <script src="js/ruin-site-locales.js?v=20260929ruinsites1"></script>
+  <script src="js/ruin-site-locales.js?v=20261002hb4d3f2d"></script>
   <script src="js/stampable-locale-defs.js?v=20260929ruinsites1"></script>
-  <script src="js/ruin-sites.js?v=20260929ruinsites1"></script>
+  <script src="js/ruin-sites.js?v=20261002h49fbfb2"></script>
   <script src="js/zone-den-totem-features.js?v=20260929glowdecals1"></script>
   <script src="js/transition-markers.js?v=20261001a"></script>
   <!-- Wilderness-zone grass and rich-foliage-patch billboards
@@ -2394,10 +2394,10 @@
   <script src="js/sprite-recolor.js?v=20261001quickdebuff2"></script>
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
        calls window.Mounts.init(...) during its own setup. -->
-  <script src="js/mount-system.js?v=20260925mountheading1"></script>
+  <script src="js/mount-system.js?v=20261002h1249b60"></script>
   <!-- Footstep/one-shot SFX (window.AudioSystem) — must load before game.js,
        which calls window.AudioSystem.init(...) during its own setup. -->
-  <script src="js/audio-system.js?v=20260927pitchedsfx1"></script>
+  <script src="js/audio-system.js?v=20261002h53af5f3"></script>
   <!-- Semantic animal-call scheduler. Gameplay systems emit vocal intents;
        AudioSystem above remains the replaceable low-level renderer. -->
   <script src="js/animal-vocalizations.js?v=20260920startup2"></script>
@@ -2546,7 +2546,7 @@
   <!-- Directional camera pitch policy is isolated from controller bindings/gameplay dispatch. -->
   <script src="js/camera-look-clamp.js?v=20260923review2"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261001ca903fa1"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261002h53ae607"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
@@ -2563,7 +2563,7 @@
   <script src="js/shoulder-cam-pointer-lock.js?v=20260930hfc11b39"></script>
   <!-- Shared character-scoped hobunjiSaveMeta update step used by game.js's save* helpers. -->
   <script src="js/character-meta-save.js?v=20260930ench1"></script>
-  <script src="game.js?v=20261002ha14363a"></script>
+  <script src="game.js?v=20261002he504b7e"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>

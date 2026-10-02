@@ -647,6 +647,7 @@
   function isLegacyV50StoneMaterial(material, sharedStoneMaterial) {
     if(!material)return false;
     if(material===sharedStoneMaterial)return true;
+    if(materialTextureIdentity(material).includes('fill_b08d57'))return false;
     if(materialTextureIdentity(material).includes('carved_smooth'))return true;
     return material.color?.isColor && material.color.getHex?.()===0x545039; // V50's authored RUIN_STONE_FILL fallback when the texture identity is unavailable.
   }
@@ -677,7 +678,7 @@
   }
 
   function applyUnlitRuinMaterials(root) {
-    const natural=window.NaturalSurfaceMaterials; // Stone takes the exact cliffs path: fresh carved_smooth PNG body-tinted to the canonical #808080, then rendered white/unlit.
+    const natural=window.NaturalSurfaceMaterials; // Stone uses the exact unfilled authored brazier/door PNG through the shared furniture material factory.
     if(!root?.traverse)return {stoneMeshes:0,convertedMaterials:0,remainingLitMaterials:0,legacyStoneMaterials:0,totalMeshes:0};
     let sourceStoneMaterial=null;
     root.traverse(object=>{if(sourceStoneMaterial||!object?.isMesh||!object.userData?.ruinInteriorWall)return;sourceStoneMaterial=Array.isArray(object.material)?object.material[0]:object.material;});
@@ -688,8 +689,9 @@
         if(!object?.isMesh)return;
         const materials=Array.isArray(object.material)?object.material:[object.material];
         if(!materials.length||!materials.every(material=>isLegacyV50StoneMaterial(material,sourceStoneMaterial)))return;
-        natural.naturalizeMesh(object,'cliffs'); // Do not reuse V50's dark carved_smooth.png_fill_545039 texture; rebuild through the same config/tint path as world cliffs.
-        object.userData=Object.assign({},object.userData,{devRandomRuinDenMaterial:true,devRandomRuinCliffMaterial:true,devRandomRuinUnlitMaterial:true});
+        object.material=window.ProceduralFurniture.makePartMaterial({materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#7a746b'});
+        window.HobunjiSurfaceStretchUV?.mapMesh?.(object,{label:'ruin-stone',maxPatchWorldSize:6});
+        object.userData=Object.assign({},object.userData,{devRandomRuinDenMaterial:true,devRandomRuinStoneMaterial:true,devRandomRuinUnlitMaterial:true});
         stoneMeshes++;
       });
     }
@@ -701,8 +703,8 @@
       const list=Array.isArray(object.material)?object.material:[object.material];
       const next=list.map((material,index)=>{
         if(isLegacyV50StoneMaterial(material,sourceStoneMaterial) && typeof natural?.naturalizeMesh==='function') {
-          // Multi-material stone slots cannot use naturalizeMesh without replacing sibling slots.
-          // Preserve those rare mixed meshes as unlit below; all ordinary single-material V50 stone has already been rebuilt as cliffs above.
+          object.userData.devRandomRuinStoneMaterial=true;
+          return window.ProceduralFurniture.makePartMaterial({materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#7a746b'});
         }
         if(!isLitMaterial(material))return material;
         convertedMaterials++;
@@ -727,7 +729,7 @@
       if(!object?.isMesh)return;
       for(const material of (Array.isArray(object.material)?object.material:[object.material])){
         if(isLitMaterial(material))remainingLitMaterials++;
-        if(isLegacyV50StoneMaterial(material,sourceStoneMaterial) && material?.userData?.naturalSurface!=='cliffs')legacyStoneMaterials++;
+        if(isLegacyV50StoneMaterial(material,sourceStoneMaterial) && !object.userData?.devRandomRuinStoneMaterial)legacyStoneMaterials++;
       }
     });
     return {stoneMeshes,convertedMaterials,remainingLitMaterials,legacyStoneMaterials,totalMeshes};
@@ -756,7 +758,8 @@
     mesh.userData.devRandomRuinCeiling=true;
     mesh.userData.devRandomRuinCeilingCells=cells.length;
     mesh.userData.devRandomRuinCeilingY=ceilingY;
-    window.NaturalSurfaceMaterials?.naturalizeMesh?.(mesh,'cliffs'); // Reuses carved_smooth.png + the canonical #808080 cliff tint/mapping instead of inventing a ruin-only texture path.
+    mesh.material=window.ProceduralFurniture.makePartMaterial({materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#7a746b'});
+    window.HobunjiSurfaceStretchUV?.mapMesh?.(mesh,{label:'ruin-ceiling',maxPatchWorldSize:6});
     if(Array.isArray(mesh.material))mesh.material=mesh.material.map(material=>material?.clone?.()||material);
     else if(mesh.material?.clone)mesh.material=mesh.material.clone(); // NaturalSurfaceMaterials caches cliff materials; isolate this ceiling before changing culling so ordinary cliffs stay untouched.
     for(const material of (Array.isArray(mesh.material)?mesh.material:[mesh.material])){
@@ -778,7 +781,7 @@
     // Scale only the horizontal plane: V50's half-unit cell becomes one full game-world unit while floor/elevation heights stay authored.
     roots.localeRoot.scale.x*=RUIN_TILE_SCALE; roots.localeRoot.scale.z*=RUIN_TILE_SCALE;
     roots.localeRoot.position.set(PAD+scaledWorldWidth(meta)/2,0,PAD+scaledWorldDepth(meta)/2);
-    const materialStats=applyUnlitRuinMaterials(roots.localeRoot); // Stone uses NaturalSurfaceMaterials('cliffs'); any remaining V50 lit material is demoted through the same character-PNG unlit factory.
+    const materialStats=applyUnlitRuinMaterials(roots.localeRoot); // Stone uses the authored furniture PNG; remaining V50 lit materials use the canonical unlit factory.
     roots.localeRoot.name=`dev_v50_ruin_${seed}`; scene.add(roots.localeRoot);
     const ceilingMesh=buildTexturedCeiling(meta); // Gives the rope mounts and support pillars a real visible stone ceiling at the exact wall-top datum they already target.
     if(ceilingMesh)scene.add(ceilingMesh);
@@ -1057,5 +1060,5 @@
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',installSettingsButton,{once:true});else installSettingsButton();
 
-  window.DevRandomRuin=Object.freeze({generate,reroll:()=>generate(randomSeed()),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,exitTo,getInteractionControls:()=>ruin?ruin.controls.map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],getRuntimeContext:()=>ruin?{scene:ruin.scene,root:ruin.localeRoot,meta:ruin.meta,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,seed:ruin.seed,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getDarknessSettings,getOcclusionMeshes:()=>ruin?.occlusionMeshes||null,setPlayerWorldPoint,getPlayerSupportY,setMechanismTarget,lockMechanism,unlockMechanism,mechanismInfo,syncPlayerPresentationHeight:syncRuinPresentationHeight,getState:()=>ruin?{mapId:MAP_ID,seed:ruin.seed,requestedSeed:ruin.requestedSeed,sourceSeed:ruin.sourceSeed,tileScale:RUIN_TILE_SCALE,wallStyle:ruin.wallStyle||null,darkness:getDarknessSettings(),materialStats:{cliffMeshes:ruin.denMaterialMeshCount||0,converted:ruin.unlitConvertedMaterialCount||0,remainingLit:ruin.remainingLitMaterialCount||0,legacyStone:ruin.legacyStoneMaterialCount||0,totalMeshes:ruin.totalRuinMeshCount||0,ceilingCells:ruin.ceilingCellCount||0,ceilingY:ruin.ceilingY??null,ceilingTextured:!!(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material:ruin.ceilingMesh?.material)?.map,ceilingNaturalSurface:(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material[0]:ruin.ceilingMesh?.material)?.userData?.naturalSurface||null,occlusionMeshes:ruin.occlusionMeshes?.length||0},rooms:ruin.meta.rooms?.length||0,controls:ruin.controls.length,mechanisms:[...ruin.mechanisms.values()].map(m=>({id:m.id,type:m.type,progress:m.progress,target:m.target,externalTarget:m.externalTarget??null})),transitDoors:(ruin.transitDoorStates||[]).map(state=>({id:state.door?.id||null,open:+state.open.toFixed(3),target:state.target,axis:state.crossingAxis,center:state.center?{x:+state.center.x.toFixed(3),z:+state.center.z.toFixed(3)}:null})),puzzleOptions:ruin.puzzleOptions,puzzleGeneration:ruin.puzzleGeneration,solvability:ruin.solvability,generationAttempt:ruin.generationAttempt,presentation:presentationSnapshot(),occupancy:ruin.occupancy?.snapshot?.(),dynamic:DS.debugSnapshot()}:null});
+  window.DevRandomRuin=Object.freeze({generate,reroll:()=>generate(randomSeed()),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,exitTo,getInteractionControls:()=>ruin?ruin.controls.map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],getRuntimeContext:()=>ruin?{scene:ruin.scene,root:ruin.localeRoot,meta:ruin.meta,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,seed:ruin.seed,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getDarknessSettings,getOcclusionMeshes:()=>ruin?.occlusionMeshes||null,setPlayerWorldPoint,getPlayerSupportY,setMechanismTarget,lockMechanism,unlockMechanism,mechanismInfo,syncPlayerPresentationHeight:syncRuinPresentationHeight,getState:()=>ruin?{mapId:MAP_ID,seed:ruin.seed,requestedSeed:ruin.requestedSeed,sourceSeed:ruin.sourceSeed,tileScale:RUIN_TILE_SCALE,wallStyle:ruin.wallStyle||null,darkness:getDarknessSettings(),materialStats:{stoneMeshes:ruin.denMaterialMeshCount||0,cliffMeshes:ruin.denMaterialMeshCount||0,converted:ruin.unlitConvertedMaterialCount||0,remainingLit:ruin.remainingLitMaterialCount||0,legacyStone:ruin.legacyStoneMaterialCount||0,totalMeshes:ruin.totalRuinMeshCount||0,ceilingCells:ruin.ceilingCellCount||0,ceilingY:ruin.ceilingY??null,ceilingTextured:!!(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material:ruin.ceilingMesh?.material)?.map,ceilingMaterialTexture:ruin.ceilingMesh?.material?.map?.userData?.furnitureTexture||null,ceilingNaturalSurface:(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material[0]:ruin.ceilingMesh?.material)?.userData?.naturalSurface||null,occlusionMeshes:ruin.occlusionMeshes?.length||0},rooms:ruin.meta.rooms?.length||0,controls:ruin.controls.length,mechanisms:[...ruin.mechanisms.values()].map(m=>({id:m.id,type:m.type,progress:m.progress,target:m.target,externalTarget:m.externalTarget??null})),transitDoors:(ruin.transitDoorStates||[]).map(state=>({id:state.door?.id||null,open:+state.open.toFixed(3),target:state.target,axis:state.crossingAxis,center:state.center?{x:+state.center.x.toFixed(3),z:+state.center.z.toFixed(3)}:null})),puzzleOptions:ruin.puzzleOptions,puzzleGeneration:ruin.puzzleGeneration,solvability:ruin.solvability,generationAttempt:ruin.generationAttempt,presentation:presentationSnapshot(),occupancy:ruin.occupancy?.snapshot?.(),dynamic:DS.debugSnapshot()}:null});
 })();

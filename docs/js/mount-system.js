@@ -455,6 +455,8 @@
       mountRideState = 'none'; mountRideEntity = null;
       return;
     }
+    deps.player.dodging = false; // Recover stale on-foot roll state before mounted cliff checks.
+    deps.player.dodgeT = 0;
     const currentArea = deps.getCurrentArea();
     if (!mountAllowedInArea(currentArea)) {
       // Covers rushing, mounting, mounted, and dismissing states alike; no

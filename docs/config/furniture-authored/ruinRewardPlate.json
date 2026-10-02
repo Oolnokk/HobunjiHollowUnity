@@ -47,13 +47,13 @@
       "liquidContainerId": null,
       "liquidLevel": 0.5,
       "wonkiness": 0,
-      "materialRole": "stone",
+      "materialRole": "metal",
       "materialTexture": "carved_smooth.png",
       "materialRotationDeg": 0,
       "materialCapTexture": null,
       "materialCapRotationDeg": 0,
-      "materialFillEnabled": false,
-      "materialFillColor": null,
+      "materialFillEnabled": true,
+      "materialFillColor": "#b08d57",
       "surfaceOpacity": 1,
       "substanceColor": "#b08a3c",
       "substanceFillOpacity": 0,
@@ -62,7 +62,10 @@
       "textureName": "",
       "textureTransparent": true,
       "textureTileSize": 1,
-      "materialLighting": "unlit"
+      "materialLighting": "unlit",
+      "materialFillMode": "always",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6
     }
   ],
   "recognizedSurfaces": [],
