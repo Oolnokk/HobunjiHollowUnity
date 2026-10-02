@@ -596,21 +596,20 @@ Overpass → not set</div>
         <div class="trimPaintBody">
           <div>
             <div class="trimPaintTools">
-              <button type="button" data-trim-tool="brush" class="active">Brush</button>
+              <button type="button" data-trim-tool="brush" class="active">Outline brush</button>
               <button type="button" data-trim-tool="eraser" class="secondary">Eraser</button>
               <button type="button" data-trim-tool="pan" class="secondary">Pan</button>
               <button type="button" data-trim-paint="undo" class="secondary">Undo</button>
               <button type="button" data-trim-paint="redo" class="secondary">Redo</button>
               <button type="button" data-trim-paint="clear" class="secondary">Clear</button>
-              <label>Brush <input data-trim-brush type="range" min="1" max="24" step="1" value="4"><span data-trim-brush-label>4px</span></label>
-              <label>Edge thickness <input data-trim-edge-thickness type="range" min="1" max="24" step="1" value="3"><span data-trim-edge-thickness-label>3px</span></label>
-              <button type="button" data-trim-paint="generate-edge">Generate edge trim</button>
-              <label>Expand <input data-trim-expand-amount type="range" min="1" max="24" step="1" value="1"><span data-trim-expand-amount-label>1px</span></label>
-              <button type="button" data-trim-paint="expand-existing" class="secondary">Expand existing</button>
+              <label>Outline reach <input data-trim-brush type="range" min="1" max="24" step="1" value="4"><span data-trim-brush-label>4px</span></label>
+              <button type="button" data-trim-paint="generate-edge">Select full outline</button>
+              <label>Inward depth <input data-trim-expand-amount type="range" min="1" max="24" step="1" value="1"><span data-trim-expand-amount-label>1px</span></label>
+              <button type="button" data-trim-paint="expand-existing" class="secondary">Expand inward</button>
               <label>Zoom <input data-trim-zoom type="range" min="1" max="8" step="1" value="2"><span data-trim-zoom-label>2×</span></label>
             </div>
             <div class="trimPaintScroller"><div class="trimPaintStage"><canvas data-trim-base></canvas><canvas class="trimPaintInk" data-trim-ink></canvas></div></div>
-            <div class="trimPaintNote">Paint directly on the visible garment, generate an inward edge band from garment/transparency boundaries, or expand the current trim outward by a chosen number of native pixels. Generate replaces the current paint; Expand Existing preserves it and grows around it. Both are Undo-able and remain clipped to the garment. White is only the editing overlay; the player still chooses dye A, B, or C in the loom.</div>
+            <div class="trimPaintNote">Start by painting one-pixel-wide sections of the garment outline. Outline Reach only controls how easily the pointer catches nearby contour pixels; it never makes the selected outline itself thicker. Select Full Outline is a shortcut. Expand Inward then grows only from those selected contour sections toward the garment interior, preserving the silhouette instead of ballooning sideways along the edge. Eraser still removes ordinary painted pixels. White is only the editing overlay; the player still chooses dye A, B, or C in the loom.</div>
           </div>
           <div>
             <div class="muted" style="margin-bottom:6px"><b>Rendered result</b> — production trim compositor</div>
@@ -618,7 +617,7 @@ Overpass → not set</div>
             <div class="trimPaintNote" data-trim-result-status>Rendering current trim…</div>
           </div>
         </div>
-        <div class="trimPaintFoot"><div class="muted" data-trim-paint-status>Brush and eraser work in native sprite pixels.</div><div class="row"><button type="button" class="secondary" data-trim-paint="cancel">Cancel</button><button type="button" data-trim-paint="save">Save trim mask</button></div></div>
+        <div class="trimPaintFoot"><div class="muted" data-trim-paint-status>Outline Brush selects one-pixel silhouette sections; Expand Inward adds controlled depth toward the garment center.</div><div class="row"><button type="button" class="secondary" data-trim-paint="cancel">Cancel</button><button type="button" data-trim-paint="save">Save trim mask</button></div></div>
       </div>`;
     document.body.appendChild(overlay);
 
@@ -632,11 +631,10 @@ Overpass → not set</div>
     const redoBtn = overlay.querySelector('[data-trim-paint="redo"]');
     const statusEl = overlay.querySelector('[data-trim-paint-status]');
     const resultStatus = overlay.querySelector('[data-trim-result-status]');
-    const brushInput = overlay.querySelector('[data-trim-brush]');
-    const edgeThicknessInput = overlay.querySelector('[data-trim-edge-thickness]'); // Controls how many native sprite-pixel layers the automatic inward edge band occupies.
-    const generateEdgeBtn = overlay.querySelector('[data-trim-paint="generate-edge"]'); // Rebuilds the mask from the garment silhouette, then hands cleanup to the eraser.
-    const expandAmountInput = overlay.querySelector('[data-trim-expand-amount]'); // Controls how many native-pixel dilation layers are added around the current trim mask.
-    const expandExistingBtn = overlay.querySelector('[data-trim-paint="expand-existing"]'); // Grows current paint without replacing its existing footprint.
+    const brushInput = overlay.querySelector('[data-trim-brush]'); // Pointer reach for selecting one-pixel contour sections; it does not control trim thickness.
+    const generateEdgeBtn = overlay.querySelector('[data-trim-paint="generate-edge"]'); // Selects the complete one-pixel garment/transparency contour as a shortcut.
+    const expandAmountInput = overlay.querySelector('[data-trim-expand-amount]'); // Controls how many inward contour-distance layers are included from selected outline seeds.
+    const expandExistingBtn = overlay.querySelector('[data-trim-paint="expand-existing"]'); // Converts selected contour sections into silhouette-following inward bands.
     const zoomInput = overlay.querySelector('[data-trim-zoom]');
     baseLayer.width = paintCanvas.width = width;
     baseLayer.height = paintCanvas.height = height;
@@ -645,9 +643,58 @@ Overpass → not set</div>
     const resultCtx = resultCanvas.getContext('2d');
     baseCtx.imageSmoothingEnabled = paintCtx.imageSmoothingEnabled = resultCtx.imageSmoothingEnabled = false;
     baseCtx.drawImage(baseCanvas, 0, 0);
-    const garmentPixels = baseCtx.getImageData(0, 0, width, height).data; // Source silhouette used by both the pixel brush clip and automatic edge generator.
-    const garmentMask = new Uint8Array(width * height); // Native-pixel opacity map; avoids repeatedly alpha-multiplying the painted mask during pointer movement.
+    const garmentPixels = baseCtx.getImageData(0, 0, width, height).data; // Source silhouette used by outline selection, inward expansion, and clipping.
+    const garmentMask = new Uint8Array(width * height); // Native-pixel opacity map; all trim geometry derives from this exact rendered garment silhouette.
     for (let pixel = 0; pixel < garmentMask.length; pixel++) garmentMask[pixel] = garmentPixels[pixel * 4 + 3] > 16 ? 1 : 0;
+
+    function buildInwardSilhouetteMap(mask) {
+      const boundaryMask = new Uint8Array(mask.length); // One-pixel contour: any opaque garment pixel touching transparency or the sprite boundary.
+      const owner = new Int32Array(mask.length); owner.fill(-1); // Nearest contour-pixel index; used so expansion moves inward instead of spreading sideways along the outline.
+      const depth = new Int16Array(mask.length); depth.fill(-1); // Chebyshev-like inward layer number from the contour, with the outline itself at depth 0.
+      const queue = new Int32Array(mask.length);
+      let head = 0, tail = 0;
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const index = y * width + x;
+          if (!mask[index]) continue;
+          let isBoundary = false;
+          for (let oy = -1; oy <= 1 && !isBoundary; oy++) {
+            for (let ox = -1; ox <= 1; ox++) {
+              if (!ox && !oy) continue;
+              const nx = x + ox, ny = y + oy;
+              if (nx < 0 || ny < 0 || nx >= width || ny >= height || !mask[ny * width + nx]) {
+                isBoundary = true;
+                break;
+              }
+            }
+          }
+          if (!isBoundary) continue;
+          boundaryMask[index] = 1;
+          owner[index] = index;
+          depth[index] = 0;
+          queue[tail++] = index;
+        }
+      }
+      while (head < tail) {
+        const index = queue[head++];
+        const x = index % width, y = Math.floor(index / width);
+        for (let oy = -1; oy <= 1; oy++) {
+          for (let ox = -1; ox <= 1; ox++) {
+            if (!ox && !oy) continue;
+            const nx = x + ox, ny = y + oy;
+            if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+            const neighbor = ny * width + nx;
+            if (!mask[neighbor] || depth[neighbor] !== -1) continue;
+            depth[neighbor] = depth[index] + 1;
+            owner[neighbor] = owner[index];
+            queue[tail++] = neighbor;
+          }
+        }
+      }
+      return { boundaryMask, owner, depth };
+    }
+    const inwardMap = buildInwardSilhouetteMap(garmentMask); // Shared contour topology keeps brush selection and Expand Inward mathematically consistent.
+    const silhouetteBoundaryMask = inwardMap.boundaryMask;
 
     let brushMode = 'brush'; // Direct mask editor owns only footprint painting; all pattern placement transforms are intentionally absent.
     let brushSize = Number(brushInput.value) || 4;
@@ -796,9 +843,9 @@ Overpass → not set</div>
           if (x < 0 || y < 0 || x >= width || y >= height) continue;
           const index = y * width + x;
           if (brushMode === 'eraser') paintCtx.clearRect(x, y, 1, 1);
-          else if (garmentMask[index]) {
+          else if (silhouetteBoundaryMask[index]) {
             paintCtx.fillStyle = '#ffffff';
-            paintCtx.fillRect(x, y, 1, 1);
+            paintCtx.fillRect(x, y, 1, 1); // Outline Brush always authors exactly one contour pixel regardless of pointer reach.
           }
         }
       }
@@ -825,42 +872,11 @@ Overpass → not set</div>
       lastPoint = point;
     }
 
-    function generateEdgeTrim(thickness) {
-      const layers = Math.max(1, Math.round(thickness));
-      let remaining = garmentMask.slice();
-      const edge = new Uint8Array(remaining.length);
-      const next = new Uint8Array(remaining.length);
-      for (let layer = 0; layer < layers; layer++) {
-        next.set(remaining);
-        let removed = 0;
-        for (let y = 0; y < height; y++) {
-          for (let x = 0; x < width; x++) {
-            const index = y * width + x;
-            if (!remaining[index]) continue;
-            let touchesTransparency = false;
-            for (let oy = -1; oy <= 1 && !touchesTransparency; oy++) {
-              for (let ox = -1; ox <= 1; ox++) {
-                if (!ox && !oy) continue;
-                const nx = x + ox, ny = y + oy;
-                if (nx < 0 || ny < 0 || nx >= width || ny >= height || !remaining[ny * width + nx]) {
-                  touchesTransparency = true;
-                  break;
-                }
-              }
-            }
-            if (!touchesTransparency) continue;
-            edge[index] = 1;
-            next[index] = 0;
-            removed++;
-          }
-        }
-        if (!removed) break;
-        remaining = next.slice();
-      }
+    function selectFullOutline() {
       const generated = paintCtx.createImageData(width, height);
       let paintedPixels = 0;
-      for (let index = 0; index < edge.length; index++) {
-        if (!edge[index]) continue;
+      for (let index = 0; index < silhouetteBoundaryMask.length; index++) {
+        if (!silhouetteBoundaryMask[index]) continue;
         const offset = index * 4;
         generated.data[offset] = generated.data[offset + 1] = generated.data[offset + 2] = generated.data[offset + 3] = 255;
         paintedPixels++;
@@ -873,35 +889,24 @@ Overpass → not set</div>
     function expandExistingTrim(amount) {
       const layers = Math.max(1, Math.round(amount));
       const source = paintCtx.getImageData(0, 0, width, height).data;
-      let expanded = new Uint8Array(width * height);
-      for (let index = 0; index < expanded.length; index++) {
-        if (source[index * 4 + 3] > 16 && garmentMask[index]) expanded[index] = 1;
+      const selectedBoundary = new Uint8Array(width * height);
+      let selectedBoundaryCount = 0;
+      let beforeCount = 0;
+      for (let index = 0; index < selectedBoundary.length; index++) {
+        if (source[index * 4 + 3] <= 16) continue;
+        beforeCount++;
+        if (!silhouetteBoundaryMask[index]) continue;
+        selectedBoundary[index] = 1;
+        selectedBoundaryCount++;
       }
-      const beforeCount = expanded.reduce((total, value) => total + value, 0);
-      if (!beforeCount) return { beforeCount: 0, afterCount: 0, addedPixels: 0 };
+      if (!selectedBoundaryCount) return { beforeCount, afterCount: beforeCount, addedPixels: 0, selectedBoundaryCount: 0 };
 
-      for (let layer = 0; layer < layers; layer++) {
-        const next = expanded.slice();
-        let addedThisLayer = 0;
-        for (let y = 0; y < height; y++) {
-          for (let x = 0; x < width; x++) {
-            const index = y * width + x;
-            if (!expanded[index]) continue;
-            for (let oy = -1; oy <= 1; oy++) {
-              for (let ox = -1; ox <= 1; ox++) {
-                if (!ox && !oy) continue;
-                const nx = x + ox, ny = y + oy;
-                if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
-                const neighbor = ny * width + nx;
-                if (!garmentMask[neighbor] || next[neighbor]) continue;
-                next[neighbor] = 1;
-                addedThisLayer++;
-              }
-            }
-          }
-        }
-        expanded = next;
-        if (!addedThisLayer) break;
+      const expanded = new Uint8Array(width * height);
+      for (let index = 0; index < expanded.length; index++) {
+        if (source[index * 4 + 3] > 16 && garmentMask[index]) expanded[index] = 1; // Preserve any existing cleanup/artwork while rebuilding inward depth from its contour seeds.
+        const sourceBoundary = inwardMap.owner[index];
+        if (!garmentMask[index] || sourceBoundary < 0 || !selectedBoundary[sourceBoundary]) continue;
+        if (inwardMap.depth[index] <= layers) expanded[index] = 1; // Fill only the inward Voronoi column owned by a selected contour pixel, preventing lateral edge growth.
       }
 
       const image = paintCtx.createImageData(width, height);
@@ -914,7 +919,7 @@ Overpass → not set</div>
       }
       paintCtx.clearRect(0, 0, width, height);
       paintCtx.putImageData(image, 0, 0);
-      return { beforeCount, afterCount, addedPixels: Math.max(0, afterCount - beforeCount) };
+      return { beforeCount, afterCount, addedPixels: Math.max(0, afterCount - beforeCount), selectedBoundaryCount };
     }
 
     paintCanvas.addEventListener('pointerdown', event => {
@@ -957,21 +962,16 @@ Overpass → not set</div>
     }
     overlay.querySelectorAll('[data-trim-tool]').forEach(button => { button.onclick = () => setBrushMode(button.dataset.trimTool); });
     brushInput.oninput = () => { brushSize = Math.max(1, Number(brushInput.value) || 1); overlay.querySelector('[data-trim-brush-label]').textContent = `${brushSize}px`; };
-    edgeThicknessInput.oninput = () => {
-      const thickness = Math.max(1, Number(edgeThicknessInput.value) || 1);
-      overlay.querySelector('[data-trim-edge-thickness-label]').textContent = `${thickness}px`;
-    };
     expandAmountInput.oninput = () => {
       const amount = Math.max(1, Number(expandAmountInput.value) || 1);
       overlay.querySelector('[data-trim-expand-amount-label]').textContent = `${amount}px`;
     };
     generateEdgeBtn.onclick = async () => {
-      const thickness = Math.max(1, Number(edgeThicknessInput.value) || 1);
       pushUndo();
-      const paintedPixels = generateEdgeTrim(thickness);
-      setBrushMode('eraser');
+      const paintedPixels = selectFullOutline();
+      setBrushMode('brush');
       updateButtons();
-      statusEl.textContent = `Generated a ${thickness}px inward trim along every garment/transparency edge (${paintedPixels} pixels). Erase the borders you do not want.`;
+      statusEl.textContent = `Selected the complete one-pixel garment outline (${paintedPixels} contour pixels). Erase unwanted sections, or Expand Inward to add thickness.`;
       await renderResult();
     };
     expandExistingBtn.onclick = async () => {
@@ -981,9 +981,11 @@ Overpass → not set</div>
       const result = expandExistingTrim(amount);
       setBrushMode('eraser');
       updateButtons();
-      statusEl.textContent = result.addedPixels
-        ? `Expanded existing trim by ${amount}px, adding ${result.addedPixels} garment pixels. Eraser is selected for cleanup.`
-        : `Existing trim could not expand farther within this garment silhouette.`;
+      statusEl.textContent = !result.selectedBoundaryCount
+        ? 'Expand Inward needs painted pixels on the one-pixel garment outline. Use Outline Brush or Select Full Outline first.'
+        : result.addedPixels
+          ? `Expanded ${result.selectedBoundaryCount} selected outline pixels inward by ${amount}px, adding ${result.addedPixels} interior pixels while preserving the silhouette. Eraser is selected for cleanup.`
+          : 'Those selected outline sections already reach this inward depth or have no more garment interior to fill.';
       await renderResult();
     };
     zoomInput.oninput = updateZoom;
@@ -1382,7 +1384,7 @@ Overpass → not set</div>
   };
 
   window.__patternEditorDebug = () => ({ // Mobile-visible console substitute for checking the dev tool's two-slot state.
-    mostRecentChange: 'Missing/unreadable authored trim PNGs no longer abort editor initialization or leave the preview blank: the Pattern Editor falls back to the base garment, completes viewport sizing, and reports that the manifest entry needs mask artwork.',
+    mostRecentChange: 'Trim authoring now begins as one-pixel outline-section selection. Outline Brush only paints garment/transparency contour pixels, while Expand Inward follows a nearest-contour ownership map so selected sections grow toward the garment interior without spreading sideways along the silhouette.',
     previewMode: $('previewMode').value,
     weavingBackground: $('surfaceTexture').value,
     overpassClearanceMultiplier: clampOverpassClearance($('overpassClearance').value),
