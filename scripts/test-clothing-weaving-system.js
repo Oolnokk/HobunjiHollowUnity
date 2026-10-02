@@ -735,6 +735,10 @@ assert.match(patternEditorSource, /preferredSource = defaultTrimSourceVariant/, 
 assert.match(patternEditorSource, /function defaultTrimManifestSelection\(\)/, 'Pattern Editor has one startup-selection helper driven by authored trim manifest entries');
 assert.match(patternEditorSource, /if \(views\?\.front\) return \{ garmentId, variantKey, view: 'front' \}/, 'startup selection prefers the authored front view when one exists');
 assert.match(patternEditorSource, /const defaultSelection = defaultTrimManifestSelection\(\)[\s\S]*?select\.value = defaultSelection\.garmentId[\s\S]*?\$\('trimView'\)\.value = defaultSelection\.view[\s\S]*?refreshTrimVariantOptions\(\)[\s\S]*?\$\('trimVariant'\)\.value = defaultSelection\.variantKey/, 'startup applies authored garment, view, and variant before rendering the trim preview');
+assert.match(patternEditorSource, /editableTrimMaskCanvasFor[\s\S]*?catch \(error\) \{[\s\S]*?return null;/, 'missing authored trim PNGs degrade to an empty editable mask instead of aborting trim-editor initialization');
+assert.match(patternEditorSource, /missingTrimAsset = true;[\s\S]*?result = await renderWithTrim\(null\)/, 'trim preview retries the same garment without trim when an authored mask asset cannot be rendered');
+assert.match(patternEditorSource, /Manifest entry exists but its trim PNG could not be loaded/, 'paint viewport reports missing manifest artwork while remaining usable');
+assert.match(patternEditorSource, /Authored trim entry found, but its PNG is missing\/unreadable\. Showing the base garment/, 'small trim preview reports its base-garment fallback instead of leaving a blank canvas');
 assert.match(patternEditorSource, /Garment trim authoring/, 'Pattern Editor exposes the dedicated garment trim workspace');
 assert.match(patternEditorSource, /species\/gender variant/i, 'garment trim editor makes per-variant authoring explicit');
 assert.match(patternEditorSource, /trimCoverageText/, 'garment trim editor reports missing species/gender coverage instead of relying on a hard-coded list');
