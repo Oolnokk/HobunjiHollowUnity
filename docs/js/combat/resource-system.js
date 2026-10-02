@@ -94,6 +94,11 @@
       family: "control", tags: ["undead", "shambling"],
       desc: "Permanent reserved Footing carried by Minions; it cannot be added to, cleansed, reduced, or recovered. While prone, refilling all remaining unshambled Footing is enough to stand."
     },
+    tiredFooting: {
+      name: "Tiredness", resource: "footing", extend: "maxBack", priority: 102, recovers: false, reducesEffectiveMax: true,
+      family: "fatigue", tags: ["sleep", "fatigue", "tiredness"],
+      desc: "Sleep debt reserves Footing after eighteen waking hours. It reaches the whole remaining Footing bar after twenty-four waking hours and only sleeping removes it."
+    },
     woundedStamina: {
       name: "Wounded Stamina", resource: "stamina", extend: "zero", priority: 55, recovers: true, punishedAction: "staminaSpend",
       family: "damage", tags: ["physical", "breath"],
@@ -566,11 +571,16 @@
     return mul;
   }
 
+  function getFullFootingCapacity(entity) {
+    const player = window.Combat?.deps?.player; // Player-only Poise capacity participates in the same authored Footing capacity used by Tiredness.
+    const footingMul = (entity === player ? window.AlchemySystem?.getMaxFootingMultiplier?.() || 1 : 1) * statModifier(entity, "maxFooting"); // Full capacity before Shambling/Tiredness reserve any of the bar.
+    return Math.max(0, (entity?.maxFooting || 0) * footingMul);
+  }
+
   function getProneRecoveryFootingTarget(entity) {
-    const player = window.Combat?.deps?.player; // Player-only Poise capacity participates in the same unshambled recovery target as ordinary Footing capacity.
-    const footingMul = (entity === player ? window.AlchemySystem?.getMaxFootingMultiplier?.() || 1 : 1) * statModifier(entity, "maxFooting"); // Full capacity before permanent Shambling Footing is reserved.
-    const fullFootingMax = Math.max(0, (entity?.maxFooting || 0) * footingMul);
-    return clamp(fullFootingMax - getAffliction(entity, "shamblingFooting"), 0, fullFootingMax); // Shambling's positive side: prone recovery only needs to refill the Footing that still exists.
+    const fullFootingMax = getFullFootingCapacity(entity); // Shared pre-affliction capacity keeps Tiredness proportional even while Poise/trinkets change the bar.
+    const reserved = getAffliction(entity, "shamblingFooting") + getAffliction(entity, "tiredFooting"); // Both permanent Shambling and sleep debt reserve the back of Footing.
+    return clamp(fullFootingMax - reserved, 0, fullFootingMax); // Prone recovery only needs to refill the Footing that still exists after both reservations.
   }
 
   function getEffectiveMax(entity, key) {
@@ -1155,6 +1165,7 @@
     removeAfflictionsByTag,
     getEffectiveMax,
     getDepletionEquivalentCurrent,
+    getFullFootingCapacity,
     getProneRecoveryFootingTarget,
     applyHealthAfflictionDamage,
     getExhaustionSpeed,
