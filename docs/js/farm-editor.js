@@ -573,5 +573,6 @@
     toggleFarmEditMode, farmEditorSetBrush, applyFarmEditBrush,
     farmLayoutKey, saveFarmLayout, loadFarmLayout, applyFarmLayoutToGrid,
     cleanupLegacyFarmEntranceRoad, applyFarmLayoutObjects,
+    getInteriorFurnitureObjects: () => deps?.interiorFurnitureObjects || [], // Used by home-recovery systems to locate the player's actual placed bed without duplicating farm-layout storage.
   };
 })();
