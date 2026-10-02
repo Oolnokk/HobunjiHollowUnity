@@ -279,6 +279,19 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
           </div>
         </div>
 
+        <div class="section" style="--sec:#ffc75c">
+          <div class="sect-head"><b>Cinematic Cameras</b></div>
+          <label><input type="checkbox" id="showCinematicCameras" checked> Show camera markers</label>
+          <select id="cinematicCameraSelect"></select>
+          <label>Label</label><input id="cinematicCameraLabel">
+          <label>Position X / Y / Z</label><div class="row"><input id="cinematicCameraX" type="number" step=".1"><input id="cinematicCameraY" type="number" step=".1"><input id="cinematicCameraZ" type="number" step=".1"></div>
+          <label>Aim X / Y / Z (speaker offset when tracking)</label><div class="row"><input id="cinematicCameraTX" type="number" step=".1"><input id="cinematicCameraTY" type="number" step=".1"><input id="cinematicCameraTZ" type="number" step=".1"></div>
+          <label>Field of view</label><input id="cinematicCameraFov" type="number" min="10" max="100">
+          <label><input id="cinematicCameraTrack" type="checkbox"> Track current speaker</label>
+          <label><input id="cinematicCameraDialogue" type="checkbox"> Use for dialogue</label>
+          <div class="row"><button id="addCinematicCamera">+ New</button><button id="applyCinematicCamera">Apply</button><button id="deleteCinematicCamera" class="bad">Delete</button></div>
+        </div>
+
         <!-- ENTRY POINTS (Entry mode only) — named drop-spots for MapLayoutSystem's
              pickEntryPoint (see docs/js/map-layout-system.js). Always base-level,
              never per-layout: a room's physical entry points don't change just
@@ -413,7 +426,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
      below so the Materials tab's 3D preview matches the live game's recolor exactly
      (see loadTerrainTileTexture in game.js). No THREE dependency of its own. -->
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
-<script src="../../js/portrait-utils.js?v=20260923colorfill7"></script>
+<script src="../../js/portrait-utils.js?v=20261002hfa4d559"></script>
 <script src="../../js/local-db-overrides.js"></script>
 <script src="../../js/repo-picker.js"></script>
 <script src="../../js/interior-furniture-grid.js?v=20260917grid1"></script>
@@ -645,6 +658,7 @@ function buildingInteriorToWorkspaceMap(mapData, entry = {}) {
     npcPaths: Array.isArray(mapData.npcPaths) ? mapData.npcPaths : [],
     transitions,
     objects: {}, furniture: [], decor: (mapData.furniture || []).map(decorRecord), buildings: [], npcStations: Array.isArray(mapData.npcStations) ? mapData.npcStations : [],
+    cinematicCameras: JSON.parse(JSON.stringify(mapData.cinematicCameras || [])), // Shared runtime camera records survive interior editing.
     entryPoints: JSON.parse(JSON.stringify(mapData.entryPoints || [])),
     layouts: (mapData.layouts || []).map(layout => {
       const out = JSON.parse(JSON.stringify(layout));
@@ -702,6 +716,7 @@ function buildBuildingInteriorMapV1(m) {
   };
   base.furniture = (m.decor || []).map(furnitureRecord);
   base.puzzleWiring = window.FurniturePuzzleProperties.normalizeWiring(m.puzzleWiring);
+  base.cinematicCameras = JSON.parse(JSON.stringify(m.cinematicCameras || [])); // Export edited positions and speaker-tracking rules.
   base.entryPoints = JSON.parse(JSON.stringify(m.entryPoints || []));
   base.layouts = (m.layouts || []).map(layout => {
     const out = JSON.parse(JSON.stringify(layout));
@@ -1457,6 +1472,43 @@ function redo() {
   if (undoStack.length > 40) undoStack.shift();
   if (replaceMapFromSnapshot(redoStack.pop())) setStatus('Redid.');
 }
+
+// Cameras are map-level records, shared with the live locale dialogue camera runtime.
+function renderCinematicCameraPanel() {
+  const select = $('cinematicCameraSelect'); // Keeps selection when switching or undoing maps.
+  const cameras = activeMap().cinematicCameras || []; // Uses the same array exported to the game.
+  const previous = select.value;
+  select.replaceChildren(...cameras.map(camera => new Option(camera.label || camera.id, camera.id)));
+  if (cameras.some(camera => camera.id === previous)) select.value = previous;
+  const camera = cameras.find(camera => camera.id === select.value);
+  for (const [field, value] of Object.entries({Label: camera?.label || '', X: camera?.position?.x || 0, Y: camera?.position?.y || 0, Z: camera?.position?.z || 0, TX: camera?.target?.x || 0, TY: camera?.target?.y || 0, TZ: camera?.target?.z || 0, Fov: camera?.fovDeg || 55})) $('cinematicCamera' + field).value = value;
+  $('cinematicCameraTrack').checked = camera?.trackSpeaker === true;
+  $('cinematicCameraDialogue').checked = camera?.useForDialogue !== false;
+}
+$('cinematicCameraSelect').addEventListener('change', renderCinematicCameraPanel);
+$('showCinematicCameras').addEventListener('change', () => { draw(); refreshPreview(); });
+$('addCinematicCamera').addEventListener('click', () => {
+  pushUndo();
+  const map = activeMap(); // New cameras start above the center of the authored room.
+  map.cinematicCameras ||= [];
+  const camera = {id: uid('camera'), label: 'Wall camera', position: {x: map.cols / 2, y: 3, z: map.rows - 1}, target: {x: 0, y: 0, z: 0}, trackSpeaker: true, useForDialogue: true, stagePlayer: false, fovDeg: 55};
+  map.cinematicCameras.push(camera);
+  renderCinematicCameraPanel(); $('cinematicCameraSelect').value = camera.id; renderCinematicCameraPanel();
+  draw(); refreshPreview(); saveWorkspace();
+});
+$('applyCinematicCamera').addEventListener('click', () => {
+  const camera = (activeMap().cinematicCameras || []).find(item => item.id === $('cinematicCameraSelect').value); // Applies fields only to the chosen map camera.
+  if (!camera) return;
+  const number = field => Number($('cinematicCamera' + field).value); // Rejects invalid numeric edits before mutating history.
+  if (!['X','Y','Z','TX','TY','TZ','Fov'].every(field => Number.isFinite(number(field)))) return;
+  pushUndo();
+  Object.assign(camera, {label: $('cinematicCameraLabel').value, position: {x:number('X'), y:number('Y'), z:number('Z')}, target: {x:number('TX'), y:number('TY'), z:number('TZ')}, fovDeg: clamp(number('Fov'),10,100), trackSpeaker: $('cinematicCameraTrack').checked, useForDialogue: $('cinematicCameraDialogue').checked});
+  renderCinematicCameraPanel(); draw(); refreshPreview(); saveWorkspace();
+});
+$('deleteCinematicCamera').addEventListener('click', () => {
+  pushUndo(); activeMap().cinematicCameras = (activeMap().cinematicCameras || []).filter(camera => camera.id !== $('cinematicCameraSelect').value);
+  renderCinematicCameraPanel(); draw(); refreshPreview(); saveWorkspace();
+});
 
 // ── Building panel ────────────────────────────────────────────────────────────
 let _selectedBuildingId = null;
@@ -3212,6 +3264,11 @@ function draw() {
       ctx.font = `${Math.floor(z*0.5)}px system-ui`;
     }
   });
+  if ($('showCinematicCameras').checked) for (const camera of m.cinematicCameras || []) {
+    const p = w2s(camera.position.x, camera.position.z); // Position is authored in tile-world coordinates, without a tile-center offset.
+    ctx.save(); ctx.fillStyle = '#ffc75c'; ctx.fillRect(p.x - 5, p.y - 4, 10, 8);
+    ctx.font = '11px system-ui'; ctx.fillText(camera.label || camera.id, p.x + 8, p.y); ctx.restore();
+  }
   if (_liveSelection && _liveSelection.expiresAt > performance.now()) {
     const p = w2s(_liveSelection.col + 0.5, _liveSelection.row + 0.5);
     const pulse = 0.38 + 0.12 * Math.sin(performance.now() / 90);
@@ -3984,7 +4041,9 @@ function safeRebuild3D() {
 }
 
 let _3dBuildGeneration = 0;
+let _previewCameraMat = null; // Reused camera-marker material follows the editor's persistent overlay-material ownership.
 function rebuild3D() {
+  if (!_previewCameraMat && window.THREE) _previewCameraMat = new THREE.MeshBasicMaterial({color: 0xffc75c});
   if (!three3d) return;
   _3dDirty = false;
   const myGen = ++_3dBuildGeneration;
@@ -4137,6 +4196,12 @@ function rebuild3D() {
   // fetch/parse/build failure.
   spawnPreviewBuildings(group, merged, myGen);
   spawnPreviewPlacements(group, merged);
+  if ($('showCinematicCameras').checked) for (const camera of activeMap().cinematicCameras || []) {
+    const offset = mapWorldInfo(activeMap()); // Carries camera positions through nested map preview offsets.
+    const marker = new THREE.Mesh(new THREE.BoxGeometry(.35,.25,.5), _previewCameraMat);
+    marker.position.set(camera.position.x + offset.offsetC, camera.position.y, camera.position.z + offset.offsetR);
+    group.add(marker);
+  }
 
   three3d.controls.target.set(merged.cols/2, 0, merged.rows/2);
   three3d.camera.lookAt(three3d.controls.target);
@@ -4357,7 +4422,7 @@ function runQuickCheck() {
 }
 
 function setStatus(msg) { $('statusPill').textContent = msg; }
-function updateAll() { syncViewOffset(); renderMapList(); fillSettings(); renderPalette(); renderPlateauGroupList(); renderEntryPointsPanel(); renderLayoutsPanel(); refreshPreview(); updateBrushPill(); refreshBuildingDetection(); draw(); saveWorkspace(); }
+function updateAll() { syncViewOffset(); renderMapList(); fillSettings(); renderPalette(); renderPlateauGroupList(); renderEntryPointsPanel(); renderCinematicCameraPanel(); renderLayoutsPanel(); refreshPreview(); updateBrushPill(); refreshBuildingDetection(); draw(); saveWorkspace(); }
 
 // ── Game bridge: hobunji_farm_layout_v3 ──────────────────────────────────────
 function buildFarmLayoutV3() {

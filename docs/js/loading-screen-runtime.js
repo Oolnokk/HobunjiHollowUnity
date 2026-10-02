@@ -300,6 +300,7 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
   }
 
   function pickEntry(entries) {
+    entries = entries.filter(entry => entry.mode !== 'introduction'); // World-opening presets never appear in ordinary boot/travel rotation.
     if (!entries.length) return null;
     let pool = entries;
     if (entries.length > 1 && state.lastEntryId) pool = entries.filter(entry => entry.id !== state.lastEntryId);
@@ -649,6 +650,7 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
   // starts fading, so the browser gets frames to paint it before the expensive
   // world-map callback runs at the black midpoint.
   async function show(options = {}) {
+    if (state.introduction) return; // The opening preset owns the foreground through map/boot loader races.
     const reason = typeof options === 'string' ? options : (options?.reason || 'map-change');
     const contextText = typeof options === 'string' ? '' : (options?.contextText || ''); // Used by mine-floor loads to identify the destination without replacing the normal loading tip.
     const myGeneration = showImmediate(reason, contextText);
@@ -682,6 +684,7 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
   }
 
   function hide(reason = 'map-ready') {
+    if (state.introduction) return Promise.resolve(); // Ordinary map completion cannot dismiss a staged introduction.
     if (!state.generation) return Promise.resolve();
     const generation = state.generation; // Used to make a delayed five-second hide harmless if a newer world transition starts first.
     state.reason = reason;
@@ -696,6 +699,92 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
       state.hideWaiters.push({ generation, resolve });
       state.hideTimer = setTimeout(() => finalizeHide(generation), wait);
     });
+  }
+
+  async function beginIntroduction(presetId = 'world-introduction') {
+    state.introduction?.cancel();
+    const root = document.createElement('div'); // Introduction copy and continuation controls share white Roman text on black.
+    root.id = 'introductionLoadingScreen';
+    root.style.cssText = 'position:fixed;inset:0;z-index:2147483646;background:#000;color:#fff;display:flex;flex-direction:column;gap:20px;align-items:center;justify-content:center;padding:8vw;box-sizing:border-box;font:clamp(20px,4vw,38px)/1.6 KhymeryyanRoman,serif;text-align:center;white-space:pre-wrap;touch-action:manipulation';
+    root.setAttribute('role', 'dialog');
+    root.setAttribute('aria-label', 'Introduction');
+    root.tabIndex = -1;
+    const stageText = document.createElement('div'); // Authored placeholder copy stays independent of live loading controls.
+    const percentText = document.createElement('div'); // Quiet progress stays at the bottom, separate from centered story copy.
+    percentText.style.cssText = 'position:absolute;bottom:5vh;font-size:14px;opacity:.65';
+    percentText.textContent = '0%';
+    const continueButton = document.createElement('button'); // An accessible text-only prompt appears only when a fresh input can advance.
+    continueButton.type = 'button';
+    continueButton.textContent = 'Continue · Enter / Space · controller A';
+    continueButton.disabled = true;
+    continueButton.style.cssText = 'position:absolute;bottom:12vh;min-height:48px;padding:10px 20px;background:transparent;color:#fff;border:0;font:18px KhymeryyanRoman,serif;cursor:pointer;visibility:hidden';
+    root.append(stageText, percentText, continueButton);
+    document.body.appendChild(root);
+    document.body.classList?.add('introduction-loading');
+    const introAudio = window.AudioSystem?.beginIntroductionMix?.(); // Foreground text owns the exclusive wind mix and releases it with the same session.
+    const inputLock = window.CharacterActionLocks?.acquire?.({ owner: 'introduction-loading', participants: [{ id: 'player', channels: ['movement', 'tools', 'actions'] }] }); // Covers stage one before the Director obtains its own action lock.
+    let stages = [], startedAt = 0, stageIndex = -1, ready = false, cancelled = false; // Per-session stage clock and input gate never reuse old input.
+    let continueStage = null, rejectStage = null, unsubscribe = null; // Input subscription and outstanding stage wait are released on success/error.
+    let rejectCancellation; // Cancellation also releases a final page still awaiting asset preparation.
+    const cancellation = new Promise((_, reject) => { rejectCancellation = reject; });
+    cancellation.catch(() => {});
+    const accept = event => {
+      if (!ready || cancelled || !continueStage) return;
+      event?.preventDefault?.(); event?.stopImmediatePropagation?.();
+      ready = false;
+      continueButton.disabled = true;
+      continueButton.style.visibility = 'hidden';
+      const resolve = continueStage; continueStage = null; rejectStage = null; resolve(); // Consume this input exactly once.
+    };
+    const keydown = event => { introAudio?.retry?.(); if (['Enter', ' ', 'Space'].includes(event.key)) { event.preventDefault(); event.stopImmediatePropagation(); if (!event.repeat) accept(); } }; // Keyboard continuation matches dialogue; mobile taps the text surface.
+    root.addEventListener('pointerdown', () => introAudio?.retry?.()); // Autoplay-blocked mobile audio resumes on the first trusted touch, including an early tap.
+    continueButton.addEventListener('click', accept);
+    document.addEventListener('keydown', keydown, true);
+    unsubscribe = window.ControllerInput?.subscribe?.('introduction-loading', frame => {
+      window.ControllerInput?.setOwner?.('introduction-loading');
+      if (frame.pressed?.has('Button0')) { frame.pressed.delete('Button0'); accept(); }
+    }, 1000);
+    const session = {
+      start(index) {
+        if (cancelled) throw new Error('Introduction loading cancelled');
+        stageIndex = index; startedAt = nowMs(); ready = false;
+        stageText.textContent = String(stages[index]?.text || '');
+        continueButton.disabled = true;
+        continueButton.style.visibility = 'hidden';
+        state.introductionStage = index + 1;
+        root.focus?.({ preventScroll: true });
+      },
+      async complete(requiredWork = Promise.resolve()) {
+        const minimum = Math.max(0, Number(stages[stageIndex]?.minimumSeconds) || 0) * 1000; // Each authored stage waits for both its work and minimum duration.
+        await Promise.race([cancellation, Promise.all([requiredWork, new Promise(resolve => setTimeout(resolve, Math.max(0, minimum - (nowMs() - startedAt))))])]);
+        if (cancelled) throw new Error('Introduction loading cancelled');
+        await new Promise((resolve, reject) => {
+          continueStage = resolve; rejectStage = reject; ready = true; // Earlier taps are discarded; a fresh input is required.
+          continueButton.disabled = false;
+          continueButton.style.visibility = 'visible';
+          continueButton.focus?.({ preventScroll: true });
+        });
+      },
+      setProgress(percent) { percentText.textContent = `${Math.round(Math.max(0, Math.min(100, percent)))}%`; }, // Existing preparation owners report their actual readiness milestones.
+      finish() {
+        cancelled = true; ready = false;
+        introAudio?.finish?.();
+        document.body.classList?.remove('introduction-loading');
+        document.removeEventListener('keydown', keydown, true); unsubscribe?.(); inputLock?.release?.(); root.remove();
+        if (window.ControllerInput?.owner === 'introduction-loading') window.ControllerInput.setOwner('gameplay');
+        if (state.introduction === session) { state.introduction = null; state.introductionStage = 0; finalizeHide(state.generation); }
+      },
+      cancel() { const error = new Error('Introduction loading cancelled'); rejectCancellation(error); rejectStage?.(error); session.finish(); },
+      getDebug: () => ({ audio: introAudio?.debug?.(), presetId, stage: stageIndex + 1, ready, minimumSeconds: stages[stageIndex]?.minimumSeconds, latestChange: 'Centered introduction text, quiet loading percentage and a prompt that appears after each delay. Early pages advance during loading; final reveal waits for assets.' }),
+    };
+    state.introduction = session; // Claim foreground synchronously before config/fonts are fetched.
+    try {
+      const [config] = await Promise.all([ensureConfigLoaded(), ensureFontsLoaded()]); // Font loading settles before the first placeholder appears.
+      stages = config.entries?.find(entry => entry.id === presetId)?.stages || [];
+      if (stages.length !== 4) throw new Error('Introduction preset must contain four stages');
+      session.start(0);
+      return session;
+    } catch (error) { session.cancel(); throw error; }
   }
 
   function callbackSource(callback) {
@@ -823,12 +912,14 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
     installed: true,
     show,
     hide,
+    beginIntroduction,
     setProgress,
     shouldLoadForTransition,
     installTransitionHook,
     getProgress: () => state.progress,
     getDebug: () => ({
       visible: state.visible,
+      introduction: state.introduction?.getDebug() || null,
       generation: state.generation,
       reason: state.reason,
       progress: state.progress,

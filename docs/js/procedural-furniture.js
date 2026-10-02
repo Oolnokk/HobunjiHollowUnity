@@ -674,6 +674,7 @@ function campfireRecipe() {
     buildFurnitureGroup,
     buildPartMesh,
     makePartMaterial,
+    latestChange: 'Fixed textured furniture startup crashes on Three.js r128 by initializing clone metadata.',
     shade,
     CATALOG,
   };

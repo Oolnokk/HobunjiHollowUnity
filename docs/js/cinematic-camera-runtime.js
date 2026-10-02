@@ -46,6 +46,7 @@
       position,
       target,
       targetNpcId,
+      trackSpeaker: camera.trackSpeaker === true, // A fixed authored shot can follow the live cutscene/dialogue speaker instead of one permanent NPC.
       targetNpcPoint,
       targetAnchorId: String(camera.targetAnchorId || ''),
       fovDeg: Math.max(10, Math.min(120, finite(camera.fovDeg, 42))),
@@ -93,7 +94,7 @@
   function resolvedTargetForCamera(areaId, cameraId) {
     const camera = cameraForId(areaId, cameraId); // Used by the in-game Map Edit camera marker so NPC-relative authored targets can be shown in their real world-space location.
     if (!camera) return null;
-    const record = { areaId: String(areaId || ''), camera, targetWalker: null, lastResolvedTarget: null }; // Temporary resolver context; unlike active dialogue state it has no playback side effects.
+    const record = { areaId: String(areaId || ''), camera, targetWalker: active?.areaId === areaId && active?.camera.id === camera.id ? active.targetWalker : null, lastResolvedTarget: null }; // Temporary resolver context; unlike active dialogue state it has no playback side effects.
     return resolvedTargetFor(camera, record);
   }
 
@@ -110,6 +111,14 @@
       ? normalizeCamera(cameraId, 0)
       : cameraForId(areaId, cameraId);
     if (!camera) return null;
+    const samePoint = (a, b) => a?.x === b?.x && a?.y === b?.y && a?.z === b?.z; // Compare authored transforms only on activation, never per frame.
+    const samePosition = active && (camera.positionProvider && active.camera.positionProvider || samePoint(active.camera.position, camera.position));
+    const sameTarget = active && (camera.targetProvider && active.camera.targetProvider || samePoint(active.camera.target, camera.target));
+    if (active?.areaId === String(areaId || '') && active.camera.id === camera.id && active.camera.fovDeg === camera.fovDeg && samePosition && sameTarget) {
+      active.camera = camera;
+      active.targetWalker = options.targetWalker || active.targetWalker;
+      return active; // Same physical shot: update its live target without restarting the blend.
+    }
     active = {
       areaId: String(areaId || ''),
       camera,
@@ -131,8 +140,9 @@
 
   function targetWalkerFor(camera, record = active) {
     const npcId = String(camera?.targetNpcId || '');
-    if (!npcId) return null;
     const direct = record?.targetWalker;
+    if (camera?.trackSpeaker && direct) return direct;
+    if (!npcId) return null;
     if (direct && walkerNpcId(direct) === npcId) return direct;
     return deps?.getNpcWalker?.(npcId, record?.areaId || deps?.getCurrentArea?.()) || null;
   }
@@ -153,7 +163,8 @@
 
   function resolvedTargetFor(camera, record = active) {
     if (!camera) return null;
-    if (!camera.targetNpcId) return { ...camera.target };
+    if (typeof camera.targetProvider === 'function') return camera.targetProvider(); // Procedural POV shots share the authored camera owner while following a live actor/point.
+    if (!camera.targetNpcId && !camera.trackSpeaker) return { ...camera.target };
     const walker = targetWalkerFor(camera, record);
     const anchor = camera.targetNpcPoint === 'root'
       ? npcRootWorldPoint(walker)
@@ -383,6 +394,7 @@
     activeCamera,
     activeRecord,
     resolvedTarget,
+    resolvedPosition: () => active?.camera?.positionProvider?.() || active?.camera?.position,
     shouldStagePlayer,
     currentPlayerStage,
     isActive,

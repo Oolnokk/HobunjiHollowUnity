@@ -552,7 +552,7 @@
     const bodyYaw = Number.isFinite(Number(walker.rot)) ? Number(walker.rot) : (Number(walker.root.rotation?.y) || 0); // Current locomotion/seat yaw stays authoritative while the head turns independently.
     const requestedYaw = shortestYawDelta(targetYaw, bodyYaw); // Unclamped local neck yaw is retained for diagnostics and the shared-limit decision.
     const maxYaw = playerHeadMaxYawRad(); // Same ±65° physical yaw limit currently used by the player's ordinary head turn.
-    const renderedYaw = Math.max(-maxYaw, Math.min(maxYaw, requestedYaw)); // Prevents greeting glances from twisting farther than the player's head can.
+    const renderedYaw = window.PerpRotation?.clampedNeckYaw?.(neckJoint, walker.root.position, Math.max(-maxYaw, Math.min(maxYaw, requestedYaw)), maxYaw) ?? Math.max(-maxYaw, Math.min(maxYaw, requestedYaw)); // Prevents greeting glances from twisting farther than the player's head can.
     neckJoint.rotation.y = renderedYaw;
     state.lastFacingDebug = {
       speakerId: String(walker.rec?.id || ''),

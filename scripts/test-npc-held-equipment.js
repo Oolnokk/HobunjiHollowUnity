@@ -228,6 +228,15 @@ function makeRuntimeWalker(id, name) {
   assert.equal(watchmanHolders.length, 2, 'both watch guards must add their weapon holders to the live scene');
   assert.deepEqual(watchmanHolders.map(holder => holder.userData.toolKey).sort(), ['fishingspear', 'hatchet']);
 
+  spearhead.area = 'map_i_temple_basement_hunundi'; // Exercise the same real actor used in the office, including an already-created outdoor spear.
+  spearhead.update(1/60);
+  const indoor = runtimeWindow.NpcHeldEquipment.debugSnapshot('spearhead_unumanuk');
+  assert.equal(indoor.holderVisible,false,'Spearhead holsters the existing spear indoors');
+  assert.equal(indoor.rightHandOwner,null,'right hand returns to ordinary free-hand posing');
+  assert.equal(indoor.handsAttached,false);assert.equal(indoor.bodyYawDeg,0);
+  spearhead.area = 'farm'; // The farm tour and rescue still use the outdoor spear/stance.
+  spearhead.update(1/60);
+  assert.equal(runtimeWindow.NpcHeldEquipment.debugSnapshot('spearhead_unumanuk').holderVisible,true);
   console.log('npc-held-equipment v4 player-parity + live watchman holder regression: ok');
 })().catch(error => {
   console.error(error);

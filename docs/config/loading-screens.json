@@ -1,5 +1,5 @@
 {
-  "version": 5,
+  "version": 6,
   "selectedId": "sample",
   "settings": {
     "scriptSide": "left",
@@ -21,6 +21,30 @@
       "image": "",
       "lore": "",
       "script": "HOBUNJI HOLLOW"
+    },
+    {
+      "id": "world-introduction",
+      "name": "New-world introduction",
+      "mode": "introduction",
+      "oncePerWorld": true,
+      "stages": [
+        {
+          "text": "stage 1: Something something something something",
+          "minimumSeconds": 3
+        },
+        {
+          "text": "stage 2: something something something something something.",
+          "minimumSeconds": 3
+        },
+        {
+          "text": "stage 3: something something something something.",
+          "minimumSeconds": 3
+        },
+        {
+          "text": "stage 4: something something something.",
+          "minimumSeconds": 3
+        }
+      ]
     }
   ]
 }

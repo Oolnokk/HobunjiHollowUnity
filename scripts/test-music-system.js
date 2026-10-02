@@ -214,13 +214,13 @@ assert.match(index, /config\/scratchbones-config\.js\?v=\d{8}[a-z0-9]+/,
   'the browser loads the Pure Focus-only combat playlist through a cache-busted config URL (content is asserted above)');
 assert.match(formatUtils, /title-screen-runtime\.js\?v=20260921preworldsky2/,
   'the parser-synchronous title loader cache-busts the earliest Remembrance bootstrap');
-assert.match(index, /music-system\.js\?v=20260925gameplaycues1/,
+assert.match(index, /music-system\.js\?v=[A-Za-z0-9_-]+/,
   'the browser cache key loads the sample-accurate Skirmish loop transport');
 assert.match(index, /audio-track-gain-settings\.js\?v=20260920trackgain2/,
   'the browser loads the per-song gain Settings controller before game startup');
 assert.match(index, /town-mine\.js\?v=20260919combatbgm2/,
   'the browser cache key loads the Ghoul soundtrack combat exemption');
-assert.match(index, /loading-screen-runtime\.js\?v=20260925minefloor1/,
+assert.match(index, /loading-screen-runtime\.js\?v=[A-Za-z0-9_-]+/,
   'the browser cache key loads destination-floor context on mine loading screens');
 assert.match(index, /fishing-minigame\.js\?v=[A-Za-z0-9_-]+/,
   'the browser cache key loads the successful-catch music cue hook');

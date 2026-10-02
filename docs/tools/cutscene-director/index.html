@@ -610,6 +610,7 @@
 <script src="../../js/panel-ui.js"></script>
 </head>
 <body>
+<dialog id="runtimeSettingsDialog" style="width:min(90vw,700px);background:var(--panel);color:var(--ink);border:2px solid var(--line)"><h3 id="runtimeSettingsTitle"></h3><textarea id="runtimeSettingsText" rows="18" style="width:100%"></textarea><div class="row"><button id="runtimeSettingsApply">Apply</button><button id="runtimeSettingsCancel">Cancel</button></div></dialog>
 <div id="shell">
   <header class="header">
     <div>
@@ -620,6 +621,7 @@
       <button id="exportBtn">Save JSON</button>
       <button id="importBtn">Open JSON</button>
       <button id="exampleBtn">Example</button>
+      <button id="sceneSettingsBtn">Cinematic settings</button>
       <input id="importFile" class="hidden" type="file" accept=".json,application/json">
     </div>
   </header>
@@ -650,6 +652,7 @@
                 <option value="">— none —</option>
                 <option value="map_northern_cliffs">Northern Cliffs</option>
                 <option value="map_southern_cloud_forest">Southern Cloud Forest</option>
+                <option value="map_opening_cloud_forest">Opening Cloud Forest mini-wilderness</option>
                 <option value="map_western_slope">Western Slope</option>
                 <option value="map_eastern_mire">Eastern Mire</option>
               </select></label>
@@ -742,9 +745,10 @@
                 <label>Starting pose
                   <select id="actorPoseSelect">
                     <option value="standing">Standing</option>
-                    <option value="prone">Prone</option>
+                    <option value="prone">Prone</option><option value="sit">Seated</option>
                   </select>
                 </label>
+                <label>Chair binding<select id="actorSeatSelect"></select></label><button id="actorRuntimeBtn">Seat, gaze and entrance settings</button>
                 <label>Team (combat AI only fights opposing teams — leave blank to sit combat out)
                   <input id="actorTeamInput" maxlength="24" placeholder="e.g. gar_wolves">
                 </label>
@@ -776,6 +780,7 @@
                 <button data-add-stage="turn"><span class="big-icon">↻</span><span>Turn in place</span></button>
                 <button data-add-stage="combat"><span class="big-icon">⚔️</span><span>Combat</span></button>
                 <button data-add-stage="fade"><span class="big-icon">⬛</span><span>Fade</span></button>
+                <button data-add-stage="caption"><span>Caption</span></button><button data-add-stage="furniture"><span>Furniture transform</span></button><button data-add-stage="camera"><span>Camera / POV</span></button>
                 <button data-add-stage="zoom"><span class="big-icon">🔍</span><span>Zoom</span></button>
               </div>
             </div>
@@ -876,7 +881,8 @@
 <script src="../../js/GLTFLoader.js?v=20260712l"></script>
 <script src="../../js/WallBuilder.js?v=20261002h9f31e27"></script>
 <script src="../../js/HousePieceGen.js?v=20261001hbe2b612"></script>
-<script src="../../js/procedural-furniture.js?v=20261002h29ecd90"></script>
+<script src="../../js/cutscene-furniture-runtime.js?v=20261002furniture1"></script>
+<script src="../../js/procedural-furniture.js?v=20261002h71a5c5d"></script>
 <script src="../../js/foliage-generator.js?v=20260712l"></script>
 <script src="../../js/terrain-preview.js?v=20260712l"></script>
 <script src="../../js/interior-scene-builder.js?v=20260930globalground2"></script>
@@ -895,7 +901,7 @@
   }
 </script>
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
-<script src="../../js/portrait-utils.js?v=20260923colorfill7"></script>
+<script src="../../js/portrait-utils.js?v=20261002hfa4d559"></script>
 <script src="../../js/portrait-breathing.js?v=20260712l"></script>
 <script src="../../js/npc-avatar-preview-utils.js?v=20260930ha019a52"></script>
 <script src="../../js/png-plane-avatar.js?v=20260712l"></script>
@@ -922,7 +928,7 @@
   const CREATURE_DB_URL = "../../config/creatures/hobunji-creature-bestiary.json";
   const ASSET_BASE = "../../";
   const ACTOR_COLORS = ["#3d7dd8","#d55353","#9b65d6","#3ca66f","#d48c38","#d45b9a","#5f9caa","#8a795f"];
-  const STAGE_TYPES = new Set(["move","talk","choice","animation","turn","combat","fade","zoom"]);
+  const STAGE_TYPES = new Set(["move","talk","choice","animation","turn","combat","fade","zoom","caption","furniture","camera"]);
   const EMOTE_NAMES = ["laugh","disgust","love","alarmed","curious"];
   const DEFAULT_COLS = 24, DEFAULT_ROWS = 16;
   // Mirrors docs/tools/map-editor/index.html's TILE_INFO exactly so the 2D
@@ -1158,7 +1164,21 @@
     return { c: clamp(Math.round(Number(a.c)||0),-2000,2000), r: clamp(Math.round(Number(a.r)||0),-2000,2000), rotationDeg: normalizeAnchorRotation(a.rotationDeg) };
   }
 
+  function editRuntimeSettings(title, fields, apply) {
+    const dialog = document.getElementById('runtimeSettingsDialog'); // In-page settings remain usable on mobile, with full multiline scene/actor data.
+    document.getElementById('runtimeSettingsTitle').textContent = title;
+    document.getElementById('runtimeSettingsText').value = JSON.stringify(fields,null,2);
+    document.getElementById('runtimeSettingsApply').onclick = () => { try { apply(JSON.parse(document.getElementById('runtimeSettingsText').value)); dialog.close(); } catch(error) { toast(`Invalid settings: ${error.message}`); } };
+    document.getElementById('runtimeSettingsCancel').onclick = () => dialog.close();
+    dialog.showModal();
+  }
   function normalizeProject(raw) {
+    if (raw && !Array.isArray(raw.points) && Array.isArray(raw.actors)) {
+      raw = JSON.parse(JSON.stringify(raw)); // Shipping Director-format cutscenes become editable point-based projects without discarding runtime fields.
+      raw.points = raw.actors.map(actor => ({ id: `start_${actor.id}`, name: `${actor.name || actor.id} start`, lc: actor.lc ?? actor.worldC ?? 0, lr: actor.lr ?? actor.worldR ?? 0 }));
+      raw.actors.forEach(actor => { actor.startPointId = `start_${actor.id}`; });
+      for (const stage of raw.stages || []) if (stage.type === 'move') { const target = stage.targetLocal || stage.targetWorld || {}; stage.pointId = `point_${stage.id}`; raw.points.push({ id: stage.pointId, name: stage.id, lc: target.lc ?? target.c ?? 0, lr: target.lr ?? target.r ?? 0, facing: target.facing }); }
+    }
     if (!raw || !Array.isArray(raw.points)) return buildRescueExample();
     // Points are stored in the scene's own local grid — see "Scene
     // placement" (state.project.anchor) — not raw map tiles, so a scene's
@@ -1183,6 +1203,7 @@
 
     const pointIds = new Set(points.map(p => p.id));
     const actors = (Array.isArray(raw.actors) ? raw.actors : []).map((actor,index) => ({
+      ...actor,
       id:String(actor.id || uid("actor")), name:String(actor.name || `Character ${index+1}`).slice(0,24),
       color:/^#[0-9a-f]{6}$/i.test(actor.color || "") ? actor.color : ACTOR_COLORS[index % ACTOR_COLORS.length],
       npcId: actor.npcId ? String(actor.npcId) : null,
@@ -1191,7 +1212,7 @@
       creatureTypeId: (!actor.npcId && actor.creatureTypeId) ? String(actor.creatureTypeId) : null,
       team: String(actor.team || "").slice(0,24),
       startPointId:pointIds.has(actor.startPointId) ? actor.startPointId : points[0].id,
-      rotation:normalizeAngle(actor.rotation), pose:actor.pose === "prone" ? "prone" : "standing",
+      rotation:normalizeAngle(actor.rotation), pose:["prone","sit"].includes(actor.pose) ? actor.pose : "standing",
       combatOn:Boolean(actor.combatOn), canLose:Boolean(actor.canLose),
       // The game previewer's actual player character, not a stand-in — its
       // avatar is built from whoever's actually running the preview (see
@@ -1208,20 +1229,21 @@
     const stages = (Array.isArray(raw.stages) ? raw.stages : []).map(stage => {
       const type = STAGE_TYPES.has(stage.type) ? stage.type : "talk";
       const id = String(stage.id || uid("stage"));
-      if (type === "move") return { id, type, actorId:actorIds.has(stage.actorId)?stage.actorId:firstActorId, pointId:pointIds.has(stage.pointId)?stage.pointId:firstPointId, speed:["slow","normal","fast"].includes(stage.speed)?stage.speed:"normal", waitForArrival:stage.waitForArrival!==false, next:String(stage.next||"__next__") };
-      if (type === "talk") return { id, type, speakerId:actorIds.has(stage.speakerId)?stage.speakerId:firstActorId, text:String(stage.text||"Dialogue").slice(0,2500), next:String(stage.next||"__next__") };
-      if (type === "choice") return { id, type, speakerId:actorIds.has(stage.speakerId)?stage.speakerId:firstActorId, text:String(stage.text||"What do you choose?").slice(0,2500),
+      if (["furniture","camera","caption"].includes(type)) return { ...stage, id, type, duration: Math.max(0, Number(stage.duration) || 0), next: String(stage.next || "__next__") };
+      if (type === "move") return { ...stage, id, type, actorId:actorIds.has(stage.actorId)?stage.actorId:firstActorId, pointId:pointIds.has(stage.pointId)?stage.pointId:firstPointId, speed:["slow","normal","fast"].includes(stage.speed)?stage.speed:"normal", waitForArrival:stage.waitForArrival!==false, next:String(stage.next||"__next__") };
+      if (type === "talk") return { ...stage, id, type, speakerId:actorIds.has(stage.speakerId)?stage.speakerId:firstActorId, text:String(stage.text||"Dialogue").slice(0,2500), next:String(stage.next||"__next__") };
+      if (type === "choice") return { ...stage, id, type, speakerId:actorIds.has(stage.speakerId)?stage.speakerId:firstActorId, text:String(stage.text||"What do you choose?").slice(0,2500),
         options: Array.isArray(stage.options) && stage.options.length ? stage.options.map(o => ({ text:String(o.text||"Choice").slice(0,300), next:String(o.next||"__next__") })) : [{text:"Choice 1",next:"__next__"},{text:"Choice 2",next:"__end__"}] };
-      if (type === "animation") return { id, type, actorId:actorIds.has(stage.actorId)?stage.actorId:firstActorId, animationName:String(stage.animationName||"animation").slice(0,80),
+      if (type === "animation") return { ...stage, id, type, actorId:actorIds.has(stage.actorId)?stage.actorId:firstActorId, animationName:String(stage.animationName||"animation").slice(0,80),
         animKind: ["none","breathing","emote"].includes(stage.animKind) ? stage.animKind : "none",
         emoteName: EMOTE_NAMES.includes(stage.emoteName) ? stage.emoteName : EMOTE_NAMES[0],
-        resultPose: stage.resultPose==="prone"?"prone":stage.resultPose==="standing"?"standing":"unchanged", duration:clamp(Number(stage.duration)||1,0,30), next:String(stage.next||"__next__") };
-      if (type === "turn") return { id, type, actorId:actorIds.has(stage.actorId)?stage.actorId:firstActorId, mode:stage.mode==="angle"?"angle":"actor", targetActorId:actorIds.has(stage.targetActorId)?stage.targetActorId:firstActorId, angle:normalizeAngle(stage.angle), duration:clamp(Number(stage.duration)||.4,0,10), next:String(stage.next||"__next__") };
-      if (type === "combat") return { id, type, duration:clamp(Number(stage.duration)||10,0,300),
+        resultPose: ["prone","standing","sit"].includes(stage.resultPose) ? stage.resultPose : "unchanged", duration:clamp(Number(stage.duration)||1,0,30), next:String(stage.next||"__next__") };
+      if (type === "turn") return { ...stage, id, type, actorId:actorIds.has(stage.actorId)?stage.actorId:firstActorId, mode:stage.mode==="angle"?"angle":"actor", targetActorId:actorIds.has(stage.targetActorId)?stage.targetActorId:firstActorId, angle:normalizeAngle(stage.angle), duration:clamp(Number(stage.duration)||.4,0,10), next:String(stage.next||"__next__") };
+      if (type === "combat") return { ...stage, id, type, duration:clamp(Number(stage.duration)||10,0,300),
         participants: Array.isArray(stage.participants) ? stage.participants.filter(i=>actorIds.has(i.actorId)).map(i=>({actorId:i.actorId,combatOn:Boolean(i.combatOn),canLose:Boolean(i.canLose)})) : actors.map(a=>({actorId:a.id,combatOn:false,canLose:a.canLose})),
         next:String(stage.next||"__next__"), lossNext:String(stage.lossNext||"__end__") };
-      if (type === "zoom") return { id, type, percent:clamp(Number(stage.percent)||100,10,500), duration:clamp(Number(stage.duration)??0.6,0,10), next:String(stage.next||"__next__") };
-      return { id, type:"fade", direction: stage.direction==="in"?"in":"out", duration:clamp(Number(stage.duration)||1,0,10), next:String(stage.next||"__next__") };
+      if (type === "zoom") return { ...stage, id, type, percent:clamp(Number(stage.percent)||100,10,500), duration:clamp(Number(stage.duration)??0.6,0,10), next:String(stage.next||"__next__") };
+      return { ...stage, id, type:"fade", direction: stage.direction==="in"?"in":"out", duration:clamp(Number(stage.duration)||1,0,10), next:String(stage.next||"__next__") };
     });
 
     // Pre-anchor exports stored the captured camera as absolute world
@@ -1233,7 +1255,7 @@
       : null;
 
     return {
-      version: 6, title:String(raw.title||"Cutscene").slice(0,80), mapId:String(raw.mapId||""),
+      ...raw, version: 6, title:String(raw.title||"Cutscene").slice(0,80), mapId:String(raw.mapId||""),
       anchor: normalizeAnchor(raw.anchor), camera3d,
       points, actors, stages
     };
@@ -1305,8 +1327,8 @@
       ? state.project.actors.map(a => `<option value="${escapeHtml(a.id)}" ${a.id===selectedId?"selected":""}>${escapeHtml(a.name)}</option>`).join("")
       : `<option value="">No characters</option>`;
   }
-  function stageName(type) { return { move:"Move", talk:"Talk", choice:"Choice", animation:"Animation", turn:"Turn in place", combat:"Combat", fade:"Fade", zoom:"Zoom" }[type] || "Stage"; }
-  function stageIcon(type) { return { move:"👣", talk:"💬", choice:"🔀", animation:"🎞️", turn:"↻", combat:"⚔️", fade:"⬛", zoom:"🔍" }[type] || "•"; }
+  function stageName(type) { return { move:"Move", talk:"Talk", choice:"Choice", animation:"Animation", turn:"Turn in place", combat:"Combat", fade:"Fade", zoom:"Zoom", furniture:"Furniture transform", camera:"Camera / POV", caption:"Caption" }[type] || "Stage"; }
+  function stageIcon(type) { return { move:"👣", talk:"💬", choice:"🔀", animation:"🎞️", turn:"↻", combat:"⚔️", fade:"⬛", zoom:"🔍", furniture:"🪑", camera:"🎥", caption:"📝" }[type] || "•"; }
   function stageLabel(stage, index = stageIndex(stage.id)) { return `${index+1}. ${stageIcon(stage.type)} ${stageName(stage.type)}`; }
 
   function nextSelectHtml(selectedValue, currentStageId) {
@@ -1430,6 +1452,7 @@
   const WILDERNESS_ZONES = [
     { id: "map_northern_cliffs", name: "Northern Cliffs" },
     { id: "map_southern_cloud_forest", name: "Southern Cloud Forest" },
+    { id: "map_opening_cloud_forest", name: "Opening Cloud Forest mini-wilderness" },
     { id: "map_western_slope", name: "Western Slope" },
     { id: "map_eastern_mire", name: "Eastern Mire" },
   ];
@@ -1452,6 +1475,8 @@
       tiles: new Map(), floorSet: new Set(), zGrid: null, buildings: [],
     };
     state.project.mapId = zone.id;
+    if (zone.id === 'map_opening_cloud_forest') { state.project.miniWilderness ||= { sourceZoneId:'map_southern_cloud_forest', chunksPerSide:4 }; state.project.localeId ||= 'locale_opening_rescue'; } // Preserve imported mini-map size/seed while enabling the same generation path in Game Preview.
+    else delete state.project.miniWilderness;
     els.mapLoadStatus.textContent = `Using "${zone.name}" (procedurally generated) — editing on a blank ${DEFAULT_COLS}×${DEFAULT_ROWS} practice grid; the real terrain generates and this scene is placed on it live in the previewer.`;
     els.mapStatusPill.textContent = `Map: ${zone.name} (wilderness)`;
     els.mapSelect.value = "";
@@ -1829,8 +1854,10 @@
           if (!group.children.length) continue; // unknown recipe — skip rather than show nothing useful
           const fw = 1, fd = 1;
           group.position.set((f.col||0)+fw/2+(f.postX||0), f.postY||0, (f.row||0)+fd/2+(f.postZ||0));
-          group.rotation.y = THREE.MathUtils.degToRad(f.rotY||0);
+          group.rotation.y = THREE.MathUtils.degToRad((f.gridRot||0)+(f.rotY||0));
           group.scale.set(f.postSX??1, f.postSY??1, f.postSZ??1);
+          group.userData.cutsceneFurnitureId = f.id;
+          group.updateMatrix();
           three.buildingsGroup.add(group);
         } catch (e) { /* best-effort per docs/game.js's own furniture pass */ }
       }
@@ -2069,6 +2096,8 @@
     if (!three || !cam) return;
     const worldPos = localToWorld(cam.localPos.x, cam.localPos.z);
     const worldTarget = localToWorld(cam.localTarget.x, cam.localTarget.z);
+    three.camera.fov = Number(cam.fovDeg) || 42;
+    three.camera.updateProjectionMatrix();
     three.camera.position.set(worldPos.c, cam.localPos.y, worldPos.r);
     three.controls.target.set(worldTarget.c, cam.localTarget.y, worldTarget.r);
     three.camera.lookAt(three.controls.target);
@@ -2132,6 +2161,7 @@
     const actors = state.project.actors.map(actor => {
       const pt = pointById(actor.startPointId);
       const base = {
+        ...actor,
         id: actor.id, name: actor.name, color: actor.color, rotation: actor.rotation, pose: actor.pose, team: actor.team || "",
         npcId: actor.npcId || null, npcRecord: actor.npcId ? (npcById(actor.npcId) || null) : null,
         creatureTypeId: actor.creatureTypeId || null, isPlayer: Boolean(actor.isPlayer),
@@ -2152,17 +2182,18 @@
     if (state.project.camera3d) {
       const cam = state.project.camera3d;
       if (isWilderness) {
-        camera3d = { localPos: { ...cam.localPos }, localTarget: { ...cam.localTarget } };
+        camera3d = { ...cam, localPos: { ...cam.localPos }, localTarget: { ...cam.localTarget } };
       } else {
         const worldPos = localToWorld(cam.localPos.x, cam.localPos.z);
         const worldTarget = localToWorld(cam.localTarget.x, cam.localTarget.z);
         camera3d = {
+          ...cam,
           worldPos: { x: worldPos.c, y: cam.localPos.y, z: worldPos.r },
           worldTarget: { x: worldTarget.c, y: cam.localTarget.y, z: worldTarget.r },
         };
       }
     }
-    const payload = { title: state.project.title, mapId: state.mapMeta.id, actors, stages, camera3d };
+    const payload = { ...state.project, title: state.project.title, mapId: state.mapMeta.id, actors, stages, camera3d };
     if (isWilderness) { payload.wilderness = true; payload.footprint = computeLocalFootprint(); }
     return { payload };
   }
@@ -2717,6 +2748,7 @@
       els.actorStartSelect.innerHTML = pointSelectHtml(actor.startPointId);
       els.actorRotationInput.value = actor.rotation;
       els.actorPoseSelect.value = actor.pose;
+      $('actorSeatSelect').innerHTML = '<option value="">No chair</option>' + (state.mapMeta.furniture || []).map(piece => `<option value="${escapeHtml(piece.id)}" ${piece.id === actor.seatTarget?.furnitureId ? 'selected' : ''}>${escapeHtml(piece.itemKey)} (${piece.col}, ${piece.row})</option>`).join('');
       els.actorTeamInput.value = actor.team || "";
       els.actorCombatInput.checked = actor.combatOn;
       els.actorCanLoseInput.checked = actor.canLose;
@@ -2820,6 +2852,14 @@
         <label><input id="editWaitForArrival" type="checkbox" ${stage.waitForArrival!==false?"checked":""}> Wait for arrival before continuing</label>
         <p class="tip">Uncheck to start the next card immediately — this actor keeps walking in the background. Use this to send several actors off at once instead of one at a time.</p>
         <label>After moving<select id="editNext">${nextSelectHtml(stage.next,stage.id)}</select></label>`;
+    } else if (stage.type === 'furniture') {
+      fields = `<label>Furniture instance<select id="editFurniture">${(state.mapMeta.furniture || []).map(piece => `<option value="${escapeHtml(piece.id)}" ${piece.id === stage.furnitureId ? 'selected' : ''}>${escapeHtml(piece.itemKey)} (${piece.col}, ${piece.row})</option>`).join('')}</select></label>
+        ${['translation','rotationDeg','scale'].map(kind => `<div class="row">${['x','y','z'].map(axis => `<label>${kind === 'translation' ? 'Move' : kind === 'rotationDeg' ? 'Rotate degrees' : 'Scale'} ${axis}<input data-transform-kind="${kind}" data-transform-axis="${axis}" type="number" step=".1" value="${Number(stage.transform?.[kind]?.[axis]) || (kind === 'scale' ? 1 : 0)}"></label>`).join('')}</div>`).join('')}
+        <p class="tip">Transforms are relative to the map pose. Each card blends from the piece's current transform; seated actors follow their bound chair.</p><label>Blend seconds<input id="editDuration" type="number" min="0" step=".1" value="${stage.duration || 0}"></label><label>Then<select id="editNext">${nextSelectHtml(stage.next,stage.id)}</select></label>`;
+    } else if (stage.type === 'camera') {
+      fields = `<label>View<select id="editCameraMode"><option value="establishing" ${stage.cameraMode === 'establishing' ? 'selected' : ''}>Establishing shot</option><option value="follow" ${stage.cameraMode === 'follow' ? 'selected' : ''}>Follow actors</option><option value="authored" ${stage.cameraMode === 'authored' ? 'selected' : ''}>Authored camera record</option><option value="wall" ${stage.cameraMode === 'wall' ? 'selected' : ''}>Scene cinematic camera</option><option value="npcRelative" ${stage.cameraMode === 'npcRelative' ? 'selected' : ''}>NPC relative</option><option value="pov" ${stage.cameraMode === 'pov' ? 'selected' : ''}>Character POV</option></select></label><label>Viewing character<select id="editActor">${actorSelectHtml(stage.actorId)}</select></label><label>Look at character<select id="editTargetActor">${actorSelectHtml(stage.targetActorId)}</select></label><label>Hold seconds<input id="editDuration" type="number" min="0" step=".1" value="${stage.duration || 0}"></label><label>Then<select id="editNext">${nextSelectHtml(stage.next,stage.id)}</select></label>`;
+    } else if (stage.type === 'caption') {
+      fields = `<label>Caption<textarea id="editText">${escapeHtml(stage.text || '')}</textarea></label><label>Then<select id="editNext">${nextSelectHtml(stage.next,stage.id)}</select></label>`;
     } else if (stage.type === "talk") {
       fields = `
         <label>Who talks?<select id="editSpeaker">${actorSelectHtml(stage.speakerId)}</select></label>
@@ -2853,7 +2893,7 @@
           <label>Emote<select id="editEmoteName">${EMOTE_NAMES.map(n=>`<option value="${n}" ${stage.emoteName===n?"selected":""}>${n}</option>`).join("")}</select></label>
         </div>
         <div class="tip">This game has no general-purpose idle/walk/attack animation database yet — only the portrait breathing cycle and its emote overlays exist as live data. "None" is the honest default for anything else (creature actors, custom moves); it still holds for the given duration and can change the actor's pose.</div>
-        <label>Pose after animation<select id="editResultPose">
+        <label>Pose after animation<select id="editResultPose"><option value="sit" ${stage.resultPose==="sit"?"selected":""}>Seated</option>
           <option value="unchanged" ${stage.resultPose==="unchanged"?"selected":""}>Leave pose unchanged</option>
           <option value="standing" ${stage.resultPose==="standing"?"selected":""}>Standing</option>
           <option value="prone" ${stage.resultPose==="prone"?"selected":""}>Prone</option>
@@ -2906,17 +2946,28 @@
     els.stageEditor.innerHTML = `<div class="editor-fields">
       <div class="editor-title"><span class="round-icon">${stageIcon(stage.type)}</span><div><strong>${escapeHtml(stageLabel(stage,index))}</strong><div style="color:var(--muted)">${stageName(stage.type)} card</div></div></div>
       ${fields}
+      <details><summary>Camera, gaze, entrance and navigation</summary>
+      <label>Addressed character<select id="editAddressedActor"><option value="">Default player</option>${actorSelectHtml(stage.addressedActorId)}</select></label>
+      <label>Camera switch<select id="editCameraSwitch"><option value="">Keep/default</option>${['wall','npcRelative','pov','establishing','follow','authored'].map(mode => `<option ${stage.cameraMode === mode ? 'selected' : ''}>${mode}</option>`).join('')}</select></label>
+      <label>Visibility on this card<select id="editVisible"><option value="">Keep</option><option value="true" ${stage.visible === true ? 'selected' : ''}>Reveal</option><option value="false" ${stage.visible === false ? 'selected' : ''}>Hide</option></select></label>
+      <label><input id="editNavigate" type="checkbox" ${stage.navigate ? 'checked' : ''}> Navigate around obstacles</label>
+      <label>Additional runtime fields (JSON)<textarea id="editRuntimeFields">${escapeHtml(JSON.stringify(stage,null,2))}</textarea></label><button id="applyRuntimeFields">Apply runtime fields</button><p class="tip">Use targetWorld for a POV point of interest; povBack, povSide and povHeight for shoulder offsets; blendSeconds/fovDeg for camera framing, and actorId/targetActorId for POV bindings. Follow shots accept followActorIds and cameraOffset; authored shots accept a camera record; waitForActors waits for movement to stop, and spawnOutsideView reveals an actor outside the preceding shot.</p></details>
     </div>`;
     bindStageEditor(stage);
   }
 
   function bindStageEditor(stage) {
     const bindSelect = (id, property, transform=v=>v) => { const el = $(id); if (!el) return; el.addEventListener("change", () => { stage[property] = transform(el.value); changed(`${stageName(stage.type)} card updated.`); }); };
+    bindSelect("editFurniture","furnitureId"); bindSelect("editCameraMode","cameraMode"); bindSelect("editCameraSwitch","cameraMode"); bindSelect("editAddressedActor","addressedActorId");
     bindSelect("editActor","actorId"); bindSelect("editPoint","pointId"); bindSelect("editSpeaker","speakerId");
     bindSelect("editSpeed","speed"); bindSelect("editNext","next"); bindSelect("editLossNext","lossNext");
     bindSelect("editResultPose","resultPose"); bindSelect("editTurnMode","mode"); bindSelect("editTargetActor","targetActorId");
     bindSelect("editFadeDirection","direction"); bindSelect("editAnimKind","animKind"); bindSelect("editEmoteName","emoteName");
 
+    els.stageEditor.querySelectorAll('[data-transform-kind]').forEach(input => input.addEventListener('change', () => { stage.transform ||= {}; stage.transform[input.dataset.transformKind] ||= {}; stage.transform[input.dataset.transformKind][input.dataset.transformAxis] = Number(input.value) || 0; changed('Furniture transform updated.'); }));
+    $('editVisible')?.addEventListener('change', event => { if (!event.target.value) delete stage.visible; else stage.visible = event.target.value === 'true'; changed('Entrance visibility updated.'); });
+    $('editNavigate')?.addEventListener('change', event => { stage.navigate = event.target.checked; saveLocal(); });
+    $('applyRuntimeFields')?.addEventListener('click', () => { try { const fields = JSON.parse($('editRuntimeFields').value); Object.assign(stage,fields,{id:stage.id,type:stage.type}); changed('Runtime fields updated.'); } catch (error) { toast(`Invalid JSON: ${error.message}`); } });
     const waitForArrival = $("editWaitForArrival"); if (waitForArrival) waitForArrival.addEventListener("change", () => { stage.waitForArrival = waitForArrival.checked; changed("Move card updated."); });
     const text = $("editText"); if (text) text.addEventListener("input", () => { stage.text = text.value; saveLocal(); renderStageListSummaryOnly(); });
     const animationName = $("editAnimationName"); if (animationName) animationName.addEventListener("input", () => { stage.animationName = animationName.value; saveLocal(); renderStageListSummaryOnly(); });
@@ -2956,6 +3007,9 @@
     if (!firstActor) { toast("Add a character first."); switchScreen("characters"); return; }
     let stage;
     if (type === "move") stage = { id:uid("stage"), type, actorId:firstActor.id, pointId:firstPoint.id, speed:"normal", waitForArrival:true, next:"__next__" };
+    else if (type === 'furniture') stage = { id: uid('stage'), type, furnitureId: state.mapMeta.furniture?.[0]?.id || '', transform: {}, duration: 1, next: '__next__' };
+    else if (type === 'camera') stage = { id: uid('stage'), type, cameraMode: 'pov', actorId: firstActor.id, targetActorId: state.project.actors[1]?.id || firstActor.id, duration: 1, next: '__next__' };
+    else if (type === 'caption') stage = { id: uid('stage'), type, text: 'Caption', next: '__next__' };
     else if (type === "talk") stage = { id:uid("stage"), type, speakerId:firstActor.id, text:"Type the dialogue here.", next:"__next__" };
     else if (type === "choice") stage = { id:uid("stage"), type, speakerId:firstActor.id, text:"How do you answer?", options:[{text:"First answer",next:"__next__"},{text:"Second answer",next:"__end__"}] };
     else if (type === "animation") stage = { id:uid("stage"), type, actorId:firstActor.id, animationName:"animation", animKind:"none", emoteName:EMOTE_NAMES[0], resultPose:"unchanged", duration:1, next:"__next__" };
@@ -3020,6 +3074,8 @@
 
   function resetPreview(showToast=false) {
     state.preview.running = false;
+    state.preview.furniture?.restore();
+    state.preview.pov = null;
     state.preview.currentStageId = null;
     state.preview.token += 1;
     clearTimeout(state.preview.timer);
@@ -3073,6 +3129,8 @@
     state.preview.zoomPercent = 100;
     state.preview.zoomBaseDistance = state.three ? state.three.camera.position.distanceTo(state.three.controls.target) : null;
     if (state.three) state.three.controls.enabled = false;
+    state.preview.furniture = window.CutsceneFurnitureRuntime?.create(state.three.scene);
+    for (const transform of state.project.furnitureTransforms || []) state.preview.furniture?.set({ ...transform, duration: 0 });
     state.preview.running = true;
     state.preview.currentStageId = state.project.stages[0]?.id || null;
     const token = state.preview.token;
@@ -3083,6 +3141,8 @@
   }
 
   function finishPreview(message="Scene finished.") {
+    state.preview.furniture?.restore();
+    state.preview.pov = null;
     state.preview.running = false;
     state.preview.currentStageId = null;
     if (state.three) state.three.controls.enabled = true;
@@ -3106,6 +3166,11 @@
     const index = stageIndex(stage.id);
     els.playStatusPill.textContent = `Playing card ${index+1}: ${stageName(stage.type)}`;
     log(`Playing ${stageLabel(stage,index)}.`);
+    if (stage.cameraMode === 'pov') state.preview.pov = stage;
+    else if (stage.cameraMode || stage.type === 'talk' || stage.type === 'choice') state.preview.pov = null;
+    if (stage.visible != null) { const actor = state.actorObjects.get(stage.actorId); if (actor) actor.root.visible = stage.visible; }
+    if (stage.type === 'furniture') { state.preview.furniture?.set(stage); state.preview.timer = setTimeout(() => continueTo(getResolvedNext(stage.id, stage.next), token), Math.max(0, Number(stage.duration) || 0) * 1000); return; }
+    if (stage.type === 'camera') { state.preview.timer = setTimeout(() => continueTo(getResolvedNext(stage.id, stage.next), token), Math.max(0, Number(stage.duration) || 0) * 1000); return; }
     if (stage.type === "move") return runMoveStage(stage, token);
     if (stage.type === "animation") return runAnimationStage(stage, token);
     if (stage.type === "turn") return runTurnStage(stage, token);
@@ -3164,7 +3229,13 @@
     if (!state.preview.running) return;
     const now = performance.now();
     const dt = Math.min(0.05, (now - toolRotLastT) / 1000);
+    const animationDt = Math.max(0, (now - toolRotLastT) / 1000); // Preview furniture/pose durations remain independent of render frame rate.
     toolRotLastT = now;
+    state.preview.furniture?.update(animationDt);
+    if (state.preview.pov && state.three) {
+      const shot = state.preview.pov, source = state.actorObjects.get(shot.actorId || shot.speakerId), target = state.actorObjects.get(shot.targetActorId || shot.addressedActorId); // Same authored POV binding used by the in-game preview.
+      if (source) { state.three.camera.position.copy(source.root.position); state.three.camera.position.y += source.avatarHeight * .85; state.three.controls.target.copy(target?.root.position || state.three.controls.target); if (target) state.three.controls.target.y += target.avatarHeight * .85; state.three.camera.lookAt(state.three.controls.target); }
+    }
     for (const [actorId, st] of state.preview.actorStates) {
       if (state.preview.externallyDriven.has(actorId)) continue;
       const targetDeg = state.preview.desiredFacingDeg.get(actorId);
@@ -3692,10 +3763,17 @@
     els.actorColorInput.addEventListener("input", () => { const a = actorById(state.selectedActorId); if (!a) return; a.color = els.actorColorInput.value; changed(""); });
     els.actorStartSelect.addEventListener("change", () => { const a = actorById(state.selectedActorId); if (!a) return; a.startPointId = els.actorStartSelect.value; changed(`${a.name}'s starting point changed.`); });
     els.actorRotationInput.addEventListener("change", () => { const a = actorById(state.selectedActorId); if (!a) return; a.rotation = normalizeAngle(els.actorRotationInput.value); changed(`${a.name}'s starting rotation changed.`); });
-    els.actorPoseSelect.addEventListener("change", () => { const a = actorById(state.selectedActorId); if (!a) return; a.pose = els.actorPoseSelect.value==="prone"?"prone":"standing"; changed(`${a.name}'s starting pose changed.`); });
+    $('actorSeatSelect').addEventListener('change', event => { const actor = actorById(state.selectedActorId); const piece = state.mapMeta.furniture?.find(f => f.id === event.target.value); if (!actor) return; actor.seatTarget = piece ? { pose: 'sit', furnitureKey: String(piece.itemKey).replace(/Furniture$/, ''), furnitureId: piece.id, c: piece.col, r: piece.row, rotY: (piece.gridRot || 0) + (piece.rotY || 0), seatIndex: 0 } : null; changed('Chair binding updated.'); });
+    $('actorRuntimeBtn').addEventListener('click', () => { const actor = actorById(state.selectedActorId); if (!actor) return; editRuntimeSettings('Seat, gaze and entrance settings', { seatTarget: actor.seatTarget || null, lookAtActorId: actor.lookAtActorId || '', visible: actor.visible !== false }, fields => { Object.assign(actor,fields); changed('Actor runtime settings updated.'); }); });
+    els.actorPoseSelect.addEventListener("change", () => { const a = actorById(state.selectedActorId); if (!a) return; a.pose = els.actorPoseSelect.value; changed(`${a.name}'s starting pose changed.`); });
     els.actorTeamInput.addEventListener("input", () => { const a = actorById(state.selectedActorId); if (!a) return; a.team = els.actorTeamInput.value.slice(0,24); saveLocal(); renderStages(); });
     els.actorCombatInput.addEventListener("change", () => { const a = actorById(state.selectedActorId); if (!a) return; a.combatOn = els.actorCombatInput.checked; changed(`${a.name}'s starting combat switch changed.`); });
     els.actorCanLoseInput.addEventListener("change", () => { const a = actorById(state.selectedActorId); if (!a) return; a.canLose = els.actorCanLoseInput.checked; changed(`${a.name}'s Can Lose switch changed.`); });
+    $('sceneSettingsBtn').addEventListener('click', () => {
+      const fields = {}; // Scene-level runtime controls preserve authored locale/camera/furniture metadata through imports and exports.
+      for (const key of ['camera3d','localeId','cinematicCameraId','cinematicCamera','cinematicCameraFromStageId','cameraTargetActorId','widePlayerShots','creatureDialogueDistanceMultiplier','creatureDialogueFovDeg','randomCreatureDialogueAngles','furnitureTransforms']) if (state.project[key] != null) fields[key] = state.project[key];
+      editRuntimeSettings('Cinematic settings: cameras, FOV, locale and initial furniture transforms', fields, values => { Object.assign(state.project, values); changed('Cinematic settings updated.'); });
+    });
     els.actorIsPlayerInput.addEventListener("change", () => {
       const a = actorById(state.selectedActorId); if (!a) return;
       a.isPlayer = els.actorIsPlayerInput.checked;

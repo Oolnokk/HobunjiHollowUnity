@@ -88,7 +88,7 @@
     node.position.set(Number(camera.position?.x) || 0, Number(camera.position?.y) || 0, Number(camera.position?.z) || 0);
     if (target.distanceToSquared(node.position) > 1e-8) node.lookAt(target);
     node.userData.cameraTargetDistance = Math.max(0.25, node.position.distanceTo(target));
-    if (camera.targetNpcId && targetResolved) {
+    if ((camera.targetNpcId || camera.trackSpeaker) && targetResolved) {
       node.userData.cameraTargetBase = new THREE.Vector3(
         target.x - (Number(camera.target?.x) || 0),
         target.y - (Number(camera.target?.y) || 0),
@@ -165,7 +165,7 @@
   function syncCameraMarkers(force = false) {
     const cameras = cinematicCamerasForCurrentArea();
     renderCameraList(cameras);
-    const shouldShow = !!(window.__mapEditorPanelOpen || armed || selectedPlacement?.ref?.kind === 'cinematicCamera');
+    const shouldShow = document.getElementById('mapEditShowCameras')?.checked !== false && !!(window.__mapEditorPanelOpen || armed || selectedPlacement?.ref?.kind === 'cinematicCamera');
     if (!shouldShow || !cameras.length) {
       if (!shouldShow || !cameras.length) clearCameraMarkers();
       return;
@@ -420,7 +420,7 @@
       const direction = new THREE.Vector3(0, 0, 1).applyQuaternion(node.quaternion).normalize(); // Object3D.lookAt points +Z toward the camera target.
       const targetWorld = node.position.clone().addScaledVector(direction, selectedPlacement.cameraTargetDistance || 1);
       let target = targetWorld;
-      if (camera.targetNpcId) {
+      if (camera.targetNpcId || camera.trackSpeaker) {
         const liveResolved = runtime.resolvedTargetForCamera?.(areaId, ref.id); // Refreshes the NPC face base during a drag so breathing/pose motion cannot stale the face-relative conversion.
         const base = liveResolved && [liveResolved.x, liveResolved.y, liveResolved.z].every(Number.isFinite)
           ? new THREE.Vector3(liveResolved.x - (Number(camera.target?.x) || 0), liveResolved.y - (Number(camera.target?.y) || 0), liveResolved.z - (Number(camera.target?.z) || 0))
@@ -983,6 +983,7 @@
     document.getElementById('mapEditOpenBtn')?.addEventListener('click', () => openEditor());
     document.getElementById('mapEditPickBtn')?.addEventListener('click', armPicker);
     document.getElementById('mapEditCopyDiffBtn')?.addEventListener('click', copyEditDiff);
+    document.getElementById('mapEditShowCameras')?.addEventListener('change', () => syncCameraMarkers(true));
     document.getElementById('mapEditCameraStagePlayerBtn')?.addEventListener('click', toggleSelectedCameraPlayerStage);
     document.getElementById('mapEditDebugBtn')?.addEventListener('click', copyDebug);
     document.getElementById('mapEditGizmoTranslate')?.addEventListener('click', () => setGizmoMode('translate'));

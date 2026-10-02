@@ -358,6 +358,7 @@
     // recovery (detach the visible sprite rather than leaving it frozen
     // mid-update) and its own error snapshot for the mobile debug readout,
     // so this catch stays even though the scheduler has an outer one too.
+    if (window.AuthoredCutsceneRuntime?.isActive?.()) { detachReticle(); return; } // The director suppresses combat HUD throughout dialogue and action cards.
     try {
       syncReadyTarget(nowMs);
       lastFrameError = null;

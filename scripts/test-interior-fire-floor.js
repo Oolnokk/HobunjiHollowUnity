@@ -282,8 +282,12 @@ assert.deepStrictEqual([movedStation.col, movedStation.row, movedStation.rotY], 
 
 assert.strictEqual(hunundiRoom.id, 'map_i_temple_basement_hunundi',
   'uploaded Father Hunundi room must replace the existing repo map under its canonical id');
-assert.strictEqual(hunundiRoom.furniture.length, 7,
-  'updated Father Hunundi room must retain all seven uploaded furniture records');
+assert.strictEqual(hunundiRoom.furniture.length, 9,
+  'Father Hunundi room must retain the seven uploaded pieces plus two opening-cutscene guest chairs');
+assert(hunundiRoom.furniture.some(piece => piece.id === 'f_tbhunundi_guest_chair_west' && piece.itemKey === 'chairSimpleFurniture' && piece.col === 7 && piece.row === 9 && piece.gridRot === 180),
+  'Hunundi opening meeting needs the west guest chair used by Jubmir');
+assert(hunundiRoom.furniture.some(piece => piece.id === 'f_tbhunundi_guest_chair_near' && piece.itemKey === 'chairSimpleFurniture' && piece.col === 9 && piece.row === 6 && piece.gridRot === 0),
+  'Hunundi opening meeting needs the near guest chair used by Harkharash');
 assert(hunundiRoom.furniture.some(piece => piece.id === 'fmtst9ykgmqf0' && piece.itemKey === 'chairSimpleFurniture' && piece.col === 9 && piece.row === 9 && Number(piece.rotY || 0) === 0 && piece.gridRot === 180),
   'updated Father Hunundi room must retain the first added chair in its grid-native 180° representation');
 assert(hunundiRoom.furniture.some(piece => piece.id === 'fmtsteb7xjq80' && piece.itemKey === 'chairSimpleFurniture' && piece.col === 8 && piece.row === 9 && Number(piece.rotY || 0) === 0 && piece.gridRot === 180),

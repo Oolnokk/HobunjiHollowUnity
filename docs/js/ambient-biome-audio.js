@@ -365,6 +365,7 @@
   window.HobunjiAmbientBgs = {
     installed: true,
     updateNow,
+    silence() { for (const layer of layers.values()) layer.audio.pause?.(); }, // Intro loading keeps the persistent layers parked until their normal mixer resumes.
     debugSnapshot,
     dispose,
   };
