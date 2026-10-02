@@ -15,7 +15,7 @@ const edges=wolves.map((a,i)=>cross(a,wolves[(i+1)%wolves.length],player)); // A
 assert(edges.every(n=>n>0)||edges.every(n=>n<0));
 assert.equal(rescue.cameraTargetActorId,player.id);
 assert.equal(rescue.widePlayerShots,true);
-assert(rescue.camera3d.fovDeg>=60);
+assert(rescue.camera3d.fovDeg>=45 && rescue.camera3d.fovDeg<=55);
 assert.equal(rescue.camera3d.localTarget.x,player.lc+.5);
 assert.equal(rescue.camera3d.localTarget.z,player.lr+.5);
 // All five cinematic seat targets resolve through the real game authority, with map grid rotations preserved.

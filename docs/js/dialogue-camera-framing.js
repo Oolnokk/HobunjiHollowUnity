@@ -40,7 +40,37 @@
   }
 
   function init(injectedDeps) {
-    deps = injectedDeps || {};
+    deps = { ...deps, ...injectedDeps };
+    if (injectedDeps?.viewport) initLayout(injectedDeps);
+  }
+
+  let viewport = null, panel = null, dirty = true, ndcY = 0; // Cached layout avoids reading rectangles every render frame.
+  let observer = null; // One observer follows viewport and dialogue-panel size changes, including mobile wrapping.
+  let lastOpen = false; // Opening/closing dialogue invalidates placement without a layout read every frame.
+  function initLayout(elements) {
+    observer?.disconnect();
+    viewport = elements.viewport; panel = elements.panel;
+    if (typeof ResizeObserver === 'function') {
+      observer = new ResizeObserver(() => { dirty = true; });
+      if (viewport) observer.observe(viewport);
+      if (panel) observer.observe(panel);
+    }
+    window.addEventListener?.('resize', invalidate);
+    dirty = true;
+  }
+  function invalidate() { dirty = true; }
+  function targetNdcY(viewportRect, panelRect) {
+    const height = Number(viewportRect?.height); // Target is halfway from viewport top to the panel top, expressed in projection coordinates.
+    if (!(height > 0)) return 0;
+    const visibleHeight = Math.max(0, Math.min(height, Number(panelRect?.top) - Number(viewportRect.top)));
+    return 1 - visibleHeight / height;
+  }
+  function apply(camera, enabled = true) {
+    const open = enabled && !!panel?.classList?.contains('open'); // Only visible dialogue reserves screen space.
+    if (open !== lastOpen) { dirty = true; lastOpen = open; }
+    if (!open) return;
+    if (dirty) { ndcY = targetNdcY(viewport.getBoundingClientRect(), panel.getBoundingClientRect()); dirty = false; }
+    camera.rotateX(-Math.atan(ndcY * Math.tan(camera.fov * Math.PI / 360))); // Pitch down so the tracked head rises into the unobscured region.
   }
 
   function finite(value, fallback) {
@@ -138,10 +168,11 @@
   }
 
   function debugSnapshot() {
-    if (!session) return { active: false };
+    if (!session) return { active: false, ndcY, latestChange: 'Shared normal/cinematic dialogue head framing centers above the live panel.' };
     const deg = r => (Number.isFinite(r) ? r * 180 / Math.PI : null);
     return {
       active: true,
+      ndcY,
       entryAzimuthDeg: deg(session.entryAzimuthRad),
       currentAzimuthDeg: deg(session.currentAzimuthRad),
       targetAzimuthDeg: deg(session.lastTarget),
@@ -156,6 +187,7 @@
     isActive,
     update,
     followAlpha,
+    apply, invalidate, targetNdcY,
     requiredSideAngleRad,
     targetAzimuthRad,
     debugSnapshot,

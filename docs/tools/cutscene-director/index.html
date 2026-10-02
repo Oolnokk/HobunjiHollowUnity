@@ -2947,7 +2947,7 @@
       <label>Camera switch<select id="editCameraSwitch"><option value="">Keep/default</option>${['wall','npcRelative','pov'].map(mode => `<option ${stage.cameraMode === mode ? 'selected' : ''}>${mode}</option>`).join('')}</select></label>
       <label>Visibility on this card<select id="editVisible"><option value="">Keep</option><option value="true" ${stage.visible === true ? 'selected' : ''}>Reveal</option><option value="false" ${stage.visible === false ? 'selected' : ''}>Hide</option></select></label>
       <label><input id="editNavigate" type="checkbox" ${stage.navigate ? 'checked' : ''}> Navigate around obstacles</label>
-      <label>Additional runtime fields (JSON)<textarea id="editRuntimeFields">${escapeHtml(JSON.stringify(stage,null,2))}</textarea></label><button id="applyRuntimeFields">Apply runtime fields</button><p class="tip">Use targetWorld for a POV point of interest, blendSeconds/fovDeg for camera framing, and actorId/targetActorId for POV bindings.</p></details>
+      <label>Additional runtime fields (JSON)<textarea id="editRuntimeFields">${escapeHtml(JSON.stringify(stage,null,2))}</textarea></label><button id="applyRuntimeFields">Apply runtime fields</button><p class="tip">Use targetWorld for a POV point of interest; povBack, povSide and povHeight for shoulder offsets; blendSeconds/fovDeg for camera framing, and actorId/targetActorId for POV bindings.</p></details>
     </div>`;
     bindStageEditor(stage);
   }
@@ -3767,7 +3767,7 @@
     els.actorCanLoseInput.addEventListener("change", () => { const a = actorById(state.selectedActorId); if (!a) return; a.canLose = els.actorCanLoseInput.checked; changed(`${a.name}'s Can Lose switch changed.`); });
     $('sceneSettingsBtn').addEventListener('click', () => {
       const fields = {}; // Scene-level runtime controls preserve authored locale/camera/furniture metadata through imports and exports.
-      for (const key of ['camera3d','localeId','cinematicCameraId','cinematicCamera','cinematicCameraFromStageId','cameraTargetActorId','widePlayerShots','creatureDialogueDistanceMultiplier','creatureDialogueFovDeg','furnitureTransforms']) if (state.project[key] != null) fields[key] = state.project[key];
+      for (const key of ['camera3d','localeId','cinematicCameraId','cinematicCamera','cinematicCameraFromStageId','cameraTargetActorId','widePlayerShots','creatureDialogueDistanceMultiplier','creatureDialogueFovDeg','randomCreatureDialogueAngles','furnitureTransforms']) if (state.project[key] != null) fields[key] = state.project[key];
       editRuntimeSettings('Cinematic settings: cameras, FOV, locale and initial furniture transforms', fields, values => { Object.assign(state.project, values); changed('Cinematic settings updated.'); });
     });
     els.actorIsPlayerInput.addEventListener("change", () => {

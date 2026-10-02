@@ -4332,7 +4332,7 @@
       // species' plain (uncolored) sprite — see setCreatureFrame below.
       const _genotypeTexCache = { front: new Map(), back: new Map() };
       window.HobunjiCacheAudit?.register('game.genotypeTexCache', () => _genotypeTexCache.front.size);
-      const _genotypeTexPending = new Set();
+      const _genotypeTexPending = new Map(); // Frame-key promises allow scene preparation to await the existing compositor.
       // Every key this function has ever logged a "kicking off compose" line
       // for — so a creature stuck retrying every tick (see
       // updateCreatureAnimFrame's needsRetry loop) logs its request/failure
@@ -4377,12 +4377,11 @@
         const failedAt = _genotypeTexFailedAt.get(key);
         if (failedAt && performance.now() - failedAt < 3000) return null;
         if (!_genotypeTexPending.has(key)) {
-          _genotypeTexPending.add(key);
           if (!_genotypeTexLogged.has(key)) {
             _genotypeTexLogged.add(key);
             window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): cache miss, sig="${sig}" blink=${blinkShut} — kicking off composeFrame`, 'wildlife');
           }
-          renderer.composeFrame(kind, frame, genotype, blinkShut).then(canvas => {
+          _genotypeTexPending.set(key, renderer.composeFrame(kind, frame, genotype, blinkShut).then(canvas => {
             _genotypeTexPending.delete(key);
             if (!canvas) {
               _genotypeTexFailedAt.set(key, performance.now());
@@ -4402,7 +4401,7 @@
             _genotypeTexPending.delete(key);
             _genotypeTexFailedAt.set(key, performance.now());
             window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): composeFrame THREW for sig="${sig}" — ${err?.stack || err}`, 'error');
-          });
+          }));
         }
         return null;
       }
@@ -11222,7 +11221,7 @@
         if (direction.lengthSq() < 1e-8) return false;
         const yawDeg = Math.max(-maxYawDeg, Math.min(maxYawDeg, Math.atan2(direction.x, direction.z) * 180 / Math.PI));
         const pitchDeg = Math.max(-maxPitchDeg, Math.min(maxPitchDeg, -Math.atan2(direction.y, Math.max(.0001, horizontal)) * 180 / Math.PI));
-        neckJoint.rotation.set(pitchDeg * Math.PI / 180, yawDeg * Math.PI / 180, 0);
+        neckJoint.rotation.set(pitchDeg * Math.PI / 180, window.PerpRotation.clampedNeckYaw?.(neckJoint, selfRootPosition, yawDeg * Math.PI / 180, maxYawDeg * Math.PI / 180, camera.position) ?? yawDeg * Math.PI / 180, 0);
         return true;
       }
 
@@ -20050,32 +20049,15 @@
 
       function dialoguePortraitCameraAim(modeCfg, tx, tz, distance, baseAngle) {
         if (!modeCfg.alignToDialoguePortraitCenters) return null;
-        if (cutscenePreviewActive) {
-          const y = cutscenePreviewSpeakerCenterY(cutscenePreviewDialogueSpeaker);
-          return y == null ? null : { cameraY: y, lookY: y, targetX: tx, targetZ: tz };
-        }
-        if (!_dialogueWalker?.root) return null;
-        const playerCenter = portraitAvatarCenterWorldPosition(playerMesh);
-        const npcCenter = portraitAvatarCenterWorldPosition(_dialogueWalker.root);
-        if (!playerCenter || !npcCenter) return null;
-        const minDistance = modeCfg.portraitCenterMinDistanceTiles ?? 0.001;
-        const portraitDistance = Math.max(
-          minDistance,
-          Math.hypot(npcCenter.x - playerCenter.x, npcCenter.z - playerCenter.z),
-        );
-        const rawPortraitPitch = Math.atan2(npcCenter.y - playerCenter.y, portraitDistance);
-        const maxUpwardPitch = THREE.MathUtils.degToRad(modeCfg.maxUpwardPortraitPitchDeg ?? 0);
-        const portraitPitch = Math.min(rawPortraitPitch, maxUpwardPitch);
-        const cameraY = rawPortraitPitch > maxUpwardPitch
-          ? (playerCenter.y + npcCenter.y) / 2
-          : playerCenter.y;
-        const cameraHorizontalDistance = Math.cos(baseAngle) * distance;
-        return {
-          cameraY,
-          lookY: cameraY + Math.tan(portraitPitch) * cameraHorizontalDistance,
-          targetX: tx,
-          targetZ: tz,
-        };
+        const entity = cutscenePreviewActive ? cutscenePreviewDialogueSpeaker : null; // Cinematic doubles and real NPCs share the same live face resolver.
+        const face = entity?.walker ? _npcFaceWorldPosition(entity.walker)
+          : entity?.creature ? window.CreatureHeadCache?.getHeadWorld?.(entity.creature, 'animal')
+          : (!cutscenePreviewActive && _dialogueWalker ? _npcFaceWorldPosition(_dialogueWalker) : null); // Named animals and humanoids use authored/skinned face positions.
+        if (!face && !entity) return null;
+        const creatureUnits = entity?.creature ? TILE : 1; // Creature head-cache x/z are pixels; humanoid face coordinates already use scene tiles.
+        const y = Number(face?.y ?? face?.worldY ?? cutscenePreviewSpeakerCenterY(entity)); // Creature cache worldY is an absolute head height.
+        if (!Number.isFinite(y)) return null;
+        return { cameraY: y + Math.sin(baseAngle) * distance, lookY: y, targetX: Number.isFinite(face?.x) ? face.x / creatureUnits : tx, targetZ: Number.isFinite(face?.z) ? face.z / creatureUnits : tz };
       }
 
       // Every mesh worth pulling the camera in front of, for whatever area is
@@ -20330,6 +20312,7 @@
         }
         return floor;
       }
+      window.DialogueCameraFraming?.init({ viewport: threeContainer, panel: _npcDialogueEl }); // Shared live panel geometry drives dialogue-safe head composition.
       let _cinematicCameraBlend = null; // Outgoing pose used to blend authored dialogue/cutscene camera changes instead of snapping.
       const _cinematicDesiredPosition = new THREE.Vector3(); // Reused every frame while a cinematic shot is active to avoid per-frame allocation.
       const _cinematicDesiredTarget = new THREE.Vector3();
@@ -20378,6 +20361,7 @@
         camera.fov = THREE.MathUtils.lerp(_cinematicCameraBlend.startFov, Number(shot.fovDeg) || 42, t);
         camera.aspect = cameraContainerAspect();
         camera.updateProjectionMatrix();
+        window.DialogueCameraFraming?.apply(camera, !!(shot.trackSpeaker || shot.targetNpcId || shot.targetProvider || shot.dialogueFraming));
         return true;
       }
 
@@ -20463,6 +20447,7 @@
         camera.fov = modeCfg.fovDeg ?? 42;
         camera.aspect = cameraContainerAspect();
         camera.updateProjectionMatrix();
+        window.DialogueCameraFraming?.apply(camera, !!portraitAim);
       }
       updateCameraPosition();
 
@@ -29973,6 +29958,35 @@
         characterGroundShadowSurfaceOffset, npcSeatTransformForTarget, _zoneScenes, _zoneLayouts,
       });
 
+      async function prepareCutsceneAssets(entities, targetScene) {
+        const jobs = []; // Await the authoritative genotype cache for every idle/run and blink frame used by this cast.
+        for (const entity of entities.values()) {
+          const c = entity.creature, kind = c && (window.CreatureGenetics.SPECIES_ALIAS[c.creatureKey] || c.creatureKey); // Shared alias matches normal animated texture playback.
+          if (!c?.genotype || !window.CreatureGeneticsRender?.SPECIES?.[kind]) continue;
+          for (const frame of ['idle', ...(c.def.sprites.run || []).map((_, i) => 'run' + (i + 1))]) for (const blink of [false, true]) {
+            _getGenotypeTextures(kind, frame, c.genotype, blink);
+            const key = `${kind}|${frame}|${window.CreatureGeneticsRender.genotypeSignature(kind, c.genotype)}|${blink ? 'b' : 'o'}`; // Same cache key as normal gameplay, no duplicate asset pipeline.
+            jobs.push(Promise.resolve(_genotypeTexPending.get(key)).then(() => {
+              if (!_genotypeTexCache.front.has(key)) throw new Error('Introduction animal texture failed: ' + key);
+            }));
+          }
+        }
+        await Promise.all(jobs);
+        for (const entity of entities.values()) if (entity.creature) updateCreatureAnimFrame(entity.creature, 0, false);
+        const materials = new Set(); // Single setup scan captures streamed terrain, furniture and actor material maps.
+        targetScene.traverse(node => { for (const material of (Array.isArray(node.material) ? node.material : [node.material])) if (material) materials.add(material); });
+        const started = performance.now(); // A failed texture load reports an error rather than revealing half-loaded scenery.
+        while ([...materials].some(material => Object.values(material).some(value => value?.isTexture && (!value.image || (value.image.complete === false))))) {
+          if (performance.now() - started > 45000) throw new Error('Introduction scene textures did not finish loading.');
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+        const textures = new Set([...materials].flatMap(material => Object.values(material).filter(value => value?.isTexture))); // Upload each settled texture once while the introduction still covers the viewport.
+        await Promise.all([...textures].map(texture => texture.image?.decode?.()));
+        for (const texture of textures) renderer.initTexture?.(texture);
+        updateCameraPosition();
+        await renderer.compileAsync?.(targetScene, camera); // Warm shaders while the black introduction surface still owns the screen.
+      }
+
       async function runCutscenePreview(payload, runtimeOptions = {}) {
         const liveMode = runtimeOptions.live === true; // Switches the Director's existing stage engine from disposable preview semantics to a gameplay-safe authored cutscene.
         const previousArea = currentArea; // Restored after a live cutscene so its temporary scene swap never strands normal gameplay on the cinematic map.
@@ -29981,6 +29995,7 @@
         const liveLock = liveMode ? window.CharacterActionLocks?.acquire?.({ owner: 'authored-cutscene', reason: payload.title || 'story cutscene', participants: [{ id: 'player', channels: ['movement', 'tools', 'actions'] }] }) : null; // Prevents real-player input from mutating the hidden gameplay actor while stand-ins own the screen.
         let povShot = null; // Current actor-eye camera binding, including the source avatar visibility to restore.
         const clearPovShot = () => { if (povShot?.source?.walker?.avatarGroup) povShot.source.walker.avatarGroup.visible = povShot.visible; povShot = null; };
+        let releaseCinematicRegion = null; // Wilderness residency pin is released by the existing scene cleanup owner.
         let furniturePlayback = null; // Shared Director/game transform session restores map furniture on finish or failure.
         const entities = new Map(); // Temporary cinematic actor rigs also belong to the setup-failure cleanup path.
         const previousBuildingMapId = _currentBuildingMapId; // Restores building context as well as the active area.
@@ -29999,7 +30014,7 @@
         document.body?.classList.add('authored-cutscene'); // One presentation claim hides gameplay controls across every cinematic card.
         const previousLeaveDisplay = cutsceneLeaveButton?.style.display; // Restores the original Leave-button presentation on success/error.
         if (cutsceneLeaveButton) cutsceneLeaveButton.style.display = 'none';
-        const releaseLiveLock = () => { liveLock?.release?.(); document.body?.classList.remove('authored-cutscene'); clearPovShot(); if (cutsceneLeaveButton) cutsceneLeaveButton.style.display = previousLeaveDisplay; }; // Shared cleanup for normal completion and pre-stage load failures.
+        const releaseLiveLock = () => { releaseCinematicRegion?.(); liveLock?.release?.(); document.body?.classList.remove('authored-cutscene'); clearPovShot(); if (cutsceneLeaveButton) cutsceneLeaveButton.style.display = previousLeaveDisplay; }; // Shared cleanup for normal completion and pre-stage load failures.
         const restoreLiveGameplay = () => {
           if (!liveMode) return;
           if (runtimeOptions.placePlayerAtFinalPosition && currentArea === previousArea) {
@@ -30075,6 +30090,7 @@
               checkTothalShift();
               await window.CutscenePreviewHelpers.cutscenePreviewWaitForArea(area, 20000, () => _zoneLayouts.has(area));
             }
+            if (window.TreeAssetLibrary?.getMode?.() === 'baked') await window.TreeAssetLibrary.preload(); // Settle GLB variants before any tree geometry is built for the intro.
             buildZoneScene(area);
             const fp = payload.footprint || {};
             const fw = Math.max(1, Math.ceil(fp.w || 6)), fh = Math.max(1, Math.ceil(fp.h || 6));
@@ -30092,6 +30108,7 @@
               return;
             }
             const offsetC = anchor.col - (fp.originC || 0), offsetR = anchor.row - (fp.originR || 0);
+            releaseCinematicRegion = window.WildernessChunks?.pinCinematicRegion?.(area, { minCol: anchor.col, minRow: anchor.row, maxCol: anchor.col + fw, maxRow: anchor.row + fh }); // Build the whole shot footprint before actors appear, and keep streaming there.
             for (const a of (payload.actors || [])) {
               a.worldC = (a.lc || 0) + offsetC;
               a.worldR = (a.lr || 0) + offsetR;
@@ -30138,6 +30155,7 @@
         // loaded yet. spawnPlayerAvatar's own boot-time call (game.js
         // ~19883) races this function rather than reliably beating it, so
         // this waits on the same shared cache/promise explicitly.
+        await runtimeOptions.onEnvironmentReady?.(); // Introduction stage two finishes only after real terrain and trees are ready.
         await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' });
 
         const targetScene = sceneForNpcArea(area);
@@ -30283,6 +30301,7 @@
           if (entity.walker) await window.NpcHeldEquipment?.attachCutsceneWalker?.(entity.walker);
         }
 
+        await runtimeOptions.onActorsReady?.(); // Stage three owns canonical portrait, gear and actor spawning.
         furniturePlayback = window.CutsceneFurnitureRuntime?.create?.(targetScene);
         for (const transform of payload.furnitureTransforms || []) furniturePlayback?.set({ ...transform, duration: 0 });
         if (payload.cameraTargetActorId && entities.get(payload.cameraTargetActorId)?.root) idleCameraTarget = entities.get(payload.cameraTargetActorId).root; // Wide rescue framing follows the actual cinematic player, including its collapse/step.
@@ -30453,6 +30472,10 @@
             activeCameraTarget = idleCameraTarget;
           } else if (!options.preserveCamera) {
             activeCameraMode = entity?.kind === 'creature' ? dlgModeKeyCreature : dlgModeKey;
+            if (entity?.kind === 'creature' && payload.randomCreatureDialogueAngles) {
+              const yaw = THREE.MathUtils.radToDeg(entity.creature.groupRot || 0); // Creature forward uses the same world yaw as its live rig.
+              window.SCRATCHBONES_CONFIG.game.camera.modes[dlgModeKeyCreature].azimuthDeg = yaw + (Math.random() < .5 ? -1 : 1) * (25 + Math.random() * 35); // New three-quarter angle per line avoids flat side-on silhouettes.
+            }
             activeCameraTarget = { position: (entity || entities.values().next().value)?.root.position || new THREE.Vector3() };
           }
           _npcDialogueNameEl.textContent = speakerName;
@@ -30461,6 +30484,7 @@
           if (_dialogueWalker?.profile && window.NpcAvatarPreview) {
             await window.DialogueContent?.renderNpcDialoguePortrait(); // Updates the visible world avatar only.
           }
+          window.DialogueCameraFraming?.invalidate();
           _npcDialogueEl.classList.add('open');
           _npcDialogueEl.setAttribute('aria-hidden', 'false');
           window.DialogueContent?.hideChoiceButtons();
@@ -30520,9 +30544,17 @@
             if (source?.walker) {
               const eyePoint = new THREE.Vector3(), targetPoint = new THREE.Vector3(); // Reused by this shot's providers and actor-head solve.
               const targetProvider = () => targetPoint.copy(target?.walker ? (_npcFaceWorldPosition(target.walker) || _dialogueEyeWorldPosition(target.root.position, target.walker.avatarHeight)) : target?.root?.position || targetPoint.set(Number.isFinite(Number(stage.targetWorld?.c)) ? Number(stage.targetWorld.c) + .5 : 0, Number.isFinite(Number(stage.targetWorld?.y)) ? Number(stage.targetWorld.y) : .8, Number.isFinite(Number(stage.targetWorld?.r)) ? Number(stage.targetWorld.r) + .5 : 0));
-              const positionProvider = () => eyePoint.copy(_npcFaceWorldPosition(source.walker) || _dialogueEyeWorldPosition(source.root.position, source.walker.avatarHeight));
+              const positionProvider = () => {
+                eyePoint.copy(_npcFaceWorldPosition(source.walker) || _dialogueEyeWorldPosition(source.root.position, source.walker.avatarHeight));
+                const gaze = targetProvider(), yaw = Math.atan2(gaze.x - eyePoint.x, gaze.z - eyePoint.z); // The shoulder rig follows the live target, independently of body facing.
+                const back = Number(stage.povBack) || 0, side = Number(stage.povSide) || 0; // Optional shoulder offsets preserve the source character in frame.
+                eyePoint.x += -Math.sin(yaw) * back + Math.cos(yaw) * side;
+                eyePoint.z += -Math.cos(yaw) * back - Math.sin(yaw) * side;
+                eyePoint.y += Number(stage.povHeight) || 0;
+                return eyePoint;
+              };
               povShot = { source, visible: source.walker.avatarGroup.visible, targetProvider };
-              source.walker.avatarGroup.visible = false;
+              source.walker.avatarGroup.visible = Number(stage.povBack) > 0 ? povShot.visible : false;
               cinematicCameraReady = false;
               window.CinematicCameraRuntime?.activate?.(area, { id: `cutscene_pov_${stage.id}`, position: positionProvider(), target: targetProvider(), positionProvider, targetProvider, fovDeg: Number(stage.fovDeg) || 65, blendSeconds: Number(stage.blendSeconds) || .35 });
             }
@@ -30877,6 +30909,10 @@
         }
         cutsceneRotationTick();
 
+        if (runtimeOptions.onReady) {
+          await prepareCutsceneAssets(entities, targetScene); // Stage four settles animal animation textures, decoded images and shader compilation.
+          await runtimeOptions.onReady();
+        }
         if (!stageOrder.length) { finish(liveMode ? 'Cutscene stopped — this scene has no cards.' : 'Preview stopped — this scene has no cards.'); return completionPromise; }
         report(`🎬 ${payload.title || 'Cutscene Preview'}`, false);
         runStage(stageOrder[0]);
@@ -30948,12 +30984,29 @@
         return { entry, guide: openNear(entry, entry), porch, playerPorch: openNear(porch, porch), camera: tourCamera };
       }
 
+      async function preloadOpeningMeeting(payload) {
+        const area = normalizeNpcArea(payload.mapId), temporary = new Map(); // Meeting scenery/portraits warm during the introduction, before either scene is revealed.
+        await loadBuildingScene(area);
+        await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' });
+        try {
+          for (const actor of payload.actors || []) {
+            if (!actor.npcRecord) continue;
+            const walker = await makeNpcWalker(actor.npcRecord, { area, c: actor.worldC, r: actor.worldR }); // Same profile compositor and rig builder as playback.
+            if (walker) { walker.root.visible = false; temporary.set(actor.id, { walker }); }
+          }
+          await prepareCutsceneAssets(temporary, sceneForNpcArea(area));
+        } finally {
+          for (const { walker } of temporary.values()) { walker.legs?.dispose?.(); window.PNGPlaneAvatar?.disposeAvatarModel?.(walker.avatarGroup); walker.root.parent?.remove(walker.root); }
+        }
+      }
+
       window.AuthoredCutsceneRuntime = Object.freeze({
+        preloadOpeningMeeting,
         placeOutsideTemple: placeOpeningPlayerOutsideTemple,
         farmTourPoints: openingFarmTourPoints,
         run: (payload, options = {}) => runCutscenePreview(payload, { ...options, live: true }), // Plays Director-format payloads as real gameplay cinematics with cleanup/restoration.
         isActive: () => cutscenePreviewActive, // Gameplay HUD owners can check the director without allocating a debug snapshot.
-        debugSnapshot: () => ({ active: !!cutscenePreviewActive, currentArea, stageId: cutscenePreviewStageId, zoomPercent: cutscenePreviewZoomPercent, latestChange: 'Prone pose blends smoothly; Spearhead uses town equipment; wider wolf shots; animated furniture and seated eye contact; Hunundi POV addresses the doorway surveyor; cutscenes hide actions and reticles.' }), // Mobile/debug-panel callers can inspect live cinematic ownership without a console.
+        debugSnapshot: () => ({ active: !!cutscenePreviewActive, currentArea, stageId: cutscenePreviewStageId, zoomPercent: cutscenePreviewZoomPercent, latestChange: 'Independent neck deadzones, panel-safe head framing, shoulder POV, focused varied wolf shots and staged asset loading. Prone pose blends smoothly; Spearhead uses town equipment; wider wolf shots; animated furniture and seated eye contact; Hunundi POV addresses the doorway surveyor; cutscenes hide actions and reticles.' }), // Mobile/debug-panel callers can inspect live cinematic ownership without a console.
       });
 
       if (window.__hobunjiCutscenePreview) {

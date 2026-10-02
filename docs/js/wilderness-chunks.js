@@ -486,6 +486,19 @@
     return zones.get(mapId)?.prime(col, row) || null;
   }
 
+  const cinematicRegions = new Map(); // Temporary scripted scenes pin streaming to their own footprint, independent of the hidden player.
+  function pinCinematicRegion(mapId, bounds) {
+    const controller = zones.get(mapId); // Uses the existing chunk builder/disposal owner rather than a second terrain renderer.
+    if (!controller) return () => {};
+    const region = { ...bounds, col: (bounds.minCol + bounds.maxCol) / 2, row: (bounds.minRow + bounds.maxRow) / 2 }; // Center holds streamed neighborhood residency throughout playback.
+    cinematicRegions.set(mapId, region);
+    controller.prime(region.col, region.row);
+    for (let cz = Math.max(0, tileToChunk(bounds.minRow) - 1); cz <= Math.min(controller.maxCz, tileToChunk(bounds.maxRow) + 1); cz++) {
+      for (let cx = Math.max(0, tileToChunk(bounds.minCol) - 1); cx <= Math.min(controller.maxCx, tileToChunk(bounds.maxCol) + 1); cx++) controller.load(cx, cz);
+    }
+    return () => { if (cinematicRegions.get(mapId) === region) cinematicRegions.delete(mapId); }; // Completion/error returns streaming to the live player.
+  }
+
   function rebuildZone(mapId, col = null, row = null) {
     return zones.get(mapId)?.rebuild(col, row) || 0;
   }
@@ -501,7 +514,8 @@
     const player = deps.player;
     for (const controller of zones.values()) {
       if (controller === active && player) {
-        controller.updateActive(player.x / deps.TILE, player.y / deps.TILE, dt);
+        const region = cinematicRegions.get(controller.mapId); // Scripted loading/playback has priority over gameplay coordinates.
+        controller.updateActive(region?.col ?? player.x / deps.TILE, region?.row ?? player.y / deps.TILE, dt);
       } else {
         controller.updateInactive(dt);
       }
@@ -701,6 +715,7 @@
     createZone,
     destroyZone,
     primeZone,
+    pinCinematicRegion,
     rebuildZone,
     attachObject,
     update,

@@ -12,7 +12,7 @@ assert(meeting.stages.findIndex(s=>s.id==='meeting_hunundi_rise')<meeting.stages
 assert(meeting.stages.findIndex(s=>s.id==='meeting_hunundi_reseat')>meeting.stages.findIndex(s=>s.id==='meeting_hark_sit'));
 assert.equal(meeting.furnitureTransforms[0].transform.rotationDeg.y,-90);
 assert.equal(meeting.stages.find(s=>s.id==='meeting_hunundi_no_leader').cameraMode,'pov');
-assert(story.window.OpeningStoryCutscene.buildRescueScene(new Map(),{}).creatureDialogueDistanceMultiplier>1);
+assert(story.window.OpeningStoryCutscene.buildRescueScene(new Map(),{}).randomCreatureDialogueAngles===true);
 // Shipping game-format scenes survive the editor's normalization and game-preview export.
 const edit={clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),normalizeAngle:n=>Number(n)||0,uid:()=> 'generated',ACTOR_COLORS:['#123456'],EMOTE_NAMES:['laugh'],STAGE_TYPES:new Set(['move','talk','choice','animation','turn','combat','fade','zoom','caption','furniture','camera'])};
 const normalStart=editor.indexOf('  function normalizeAnchorRotation('),normalEnd=editor.indexOf('  function saveLocal()',normalStart);

@@ -11,7 +11,7 @@
     completed: false,
     lastScene: null,
     lastError: null,
-    latestChange: 'Hunundi POV camera/head targeting and cinematic HUD suppression. Smooth combat-prone transitions, wider wolf shots, town Spearhead equipment, animated office furniture, Hunundi doorway blocking and seated conversational eye contact. Rescue shots center on the player with wider framing and surrounding wolves; combat prone pose, real equipped gear, correct chair anchors/rotations and locked cutscene dialogue. Rescue animals use composed eyes and character head targeting; cutscenes follow facing deadzones and seat height, with a hidden surveyor doorway reveal and relocated office camera. Farm-tour choices now continue through valid col/row navigation hops; the real player stays hidden behind its stand-in, with a wide south-to-north farm shot that blends in after the first dialogue Continue.',
+    latestChange: 'Four-stage intro loading preset; independent neck deadzones; panel-safe head framing; Hunundi shoulder POV; focused randomized wolf shots. Hunundi POV camera/head targeting and cinematic HUD suppression. Smooth combat-prone transitions, wider wolf shots, town Spearhead equipment, animated office furniture, Hunundi doorway blocking and seated conversational eye contact. Rescue shots center on the player with wider framing and surrounding wolves; combat prone pose, real equipped gear, correct chair anchors/rotations and locked cutscene dialogue. Rescue animals use composed eyes and character head targeting; cutscenes follow facing deadzones and seat height, with a hidden surveyor doorway reveal and relocated office camera. Farm-tour choices now continue through valid col/row navigation hops; the real player stays hidden behind its stand-in, with a wide south-to-north farm shot that blends in after the first dialogue Continue.',
   };
 
   function stateKey(profile) {
@@ -150,9 +150,9 @@
       localeId: 'locale_opening_rescue',
       wilderness: true,
       footprint: { originC: 0, originR: 0, w: 17, h: 18 },
-      creatureDialogueDistanceMultiplier: 1.5, creatureDialogueFovDeg: 55,
+      creatureDialogueDistanceMultiplier: 0.9, creatureDialogueFovDeg: 48, randomCreatureDialogueAngles: true,
       cameraTargetActorId: 'player', widePlayerShots: true, // Establishing and player-choice shots stay centered on the injured character.
-      camera3d: { fovDeg: 65, localPos: { x: 3.5, y: 8, z: 19.5 }, localTarget: { x: 3.5, y: 0.3, z: 9.5 } },
+      camera3d: { fovDeg: 52, localPos: { x: 3.5, y: 4, z: 16.5 }, localTarget: { x: 3.5, y: 0.3, z: 9.5 } },
       actors,
       stages,
     };
@@ -220,7 +220,7 @@
       { id: 'meeting_fade_out', type: 'fade', direction: 'out', duration: 0.8, next: '__end__' },
     ];
     for (const stage of stages) if (stage.speakerId) stage.addressedActorId = stage.speakerId === 'harkharash' ? 'hunundi' : (stage.id === 'meeting_hunundi_no_leader' || stage.id === 'meeting_hunundi_people' || stage.id === 'meeting_hunundi_invite' ? 'harkharash' : 'player');
-    for (const stage of stages) { if (stage.speakerId === 'hunundi' && stage.addressedActorId === 'harkharash') Object.assign(stage, { cameraMode: 'pov', actorId: 'hunundi', targetActorId: 'harkharash', fovDeg: 65 }); else if (stage.type === 'talk' && stage.id !== 'meeting_hark_intro' && stage.id !== 'meeting_hunundi_door') stage.cameraMode = 'wall'; } // Hunundi directly addresses the surveyor from his own eye-level view.
+    for (const stage of stages) { if (stage.speakerId === 'hunundi' && stage.addressedActorId === 'harkharash') Object.assign(stage, { cameraMode: 'pov', actorId: 'hunundi', targetActorId: 'harkharash', fovDeg: 55, povBack: 1.3, povSide: 0.7, povHeight: 0.1 }); else if (stage.type === 'talk' && stage.id !== 'meeting_hark_intro' && stage.id !== 'meeting_hunundi_door') stage.cameraMode = 'wall'; } // Hunundi directly addresses the surveyor from his own eye-level view.
     return {
       version: 6,
       title: "Father Hunundi's Room",
@@ -302,14 +302,23 @@
     showBootCover();
     log('starting opening sequence');
 
+    let introduction = null; // Loading preset is scoped to this world opening and always released on failure.
     try {
+      introduction = await window.LoadingScreenRuntime?.beginIntroduction?.();
       const runtime = await waitForGameRuntime(); // Uses the game-owned live wrapper around the existing Director stage engine.
       const records = await loadNpcRecords(); // Resolves Jubmir/Hunundi/Spearhead/Harkhanash from the authoritative database.
       const rescue = buildRescueScene(records, profile); // Scene one preserves the already-authored Gar-wolf rescue blocking.
       const meeting = buildHunundiMeetingScene(records, profile); // Scene two uses Hunundi's real bedroom/study map and chair transforms.
+      await introduction?.complete();
+      introduction?.start(1);
       status.phase = 'rescue';
       status.lastScene = rescue.title;
-      await runtime.run(rescue, { keepFadeOnFinish: true });
+      await runtime.run(rescue, {
+        keepFadeOnFinish: true,
+        async onEnvironmentReady() { await introduction?.complete(); introduction?.start(2); },
+        async onActorsReady() { await runtime.preloadOpeningMeeting?.(meeting); await introduction?.complete(); introduction?.start(3); },
+        async onReady() { await introduction?.complete(); introduction?.finish(); introduction = null; },
+      });
       status.phase = 'hunundi-room';
       status.lastScene = meeting.title;
       let finalDialogueContinued = false; // Scene cleanup alone must not complete an opening that skipped its final dialogue.
@@ -335,6 +344,7 @@
       clearBootCover();
       return false;
     } finally {
+      introduction?.cancel();
       status.running = false;
     }
   }

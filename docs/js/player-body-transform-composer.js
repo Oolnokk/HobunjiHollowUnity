@@ -138,15 +138,16 @@
     const seated = sitState?.phase === 'active';
     const outsideLookRange = seated && Math.abs(rawYaw) > PLAYER_HEAD_MAX_YAW_RAD; // Used below to switch from looking at the camera to following its facing direction.
     const requestedYaw = outsideLookRange ? wrapSignedAngle(rawYaw + Math.PI) : rawYaw; // Seated out-of-range target is the camera-facing direction, not the camera position.
-    const perspectiveAimLocked = neckJoint.userData?.hobunjiPerspectiveAimLocked === true; // Shoulder aim uses an exact shared endpoint and must survive this final render boundary.
+    const perspectiveAimLocked = neckJoint.userData?.hobunjiPerspectiveAimLocked === true; // Shoulder aim keeps its shared logical endpoint; the rendered head additionally obeys the camera deadzone.
     const renderedYaw = perspectiveAimLocked
       ? requestedYaw
       : THREE.MathUtils.clamp(requestedYaw, -PLAYER_HEAD_MAX_YAW_RAD, PLAYER_HEAD_MAX_YAW_RAD); // Other head-turn sources retain the ordinary physical limit.
-    neckJoint.rotation.y = renderedYaw;
+    neckJoint.rotation.y = window.PerpRotation?.clampedNeckYaw?.(neckJoint, playerMesh?.position, renderedYaw, perspectiveAimLocked ? Math.PI : PLAYER_HEAD_MAX_YAW_RAD) ?? renderedYaw;
     renderDebug.neckYaw = {
+      cameraDeadzone: neckJoint.userData?.cameraDeadzone?.pixelProbeDebug || null, // Mobile probe can compare the independent head clamp with body facing.
       rawDeg: THREE.MathUtils.radToDeg(rawYaw),
       requestedDeg: THREE.MathUtils.radToDeg(requestedYaw),
-      renderedDeg: THREE.MathUtils.radToDeg(renderedYaw),
+      renderedDeg: THREE.MathUtils.radToDeg(neckJoint.rotation.y),
       maxDeg: PLAYER_HEAD_MAX_YAW_DEG,
       seated,
       perspectiveAimLocked,

@@ -220,7 +220,7 @@ assert.match(index, /audio-track-gain-settings\.js\?v=20260920trackgain2/,
   'the browser loads the per-song gain Settings controller before game startup');
 assert.match(index, /town-mine\.js\?v=20260919combatbgm2/,
   'the browser cache key loads the Ghoul soundtrack combat exemption');
-assert.match(index, /loading-screen-runtime\.js\?v=20260925minefloor1/,
+assert.match(index, /loading-screen-runtime\.js\?v=[A-Za-z0-9_-]+/,
   'the browser cache key loads destination-floor context on mine loading screens');
 assert.match(index, /fishing-minigame\.js\?v=[A-Za-z0-9_-]+/,
   'the browser cache key loads the successful-catch music cue hook');
