@@ -154,10 +154,10 @@
   function buildHunundiMeetingScene(records, profile) {
     const playerName = String(profile?.nickname || 'Farmer'); // Keeps the player actor label consistent with the newly-created character.
     const actors = [ // Every participant is a real authored NPC/player avatar; no custom placeholder people are used.
-      { id: 'player', name: playerName, isPlayer: true, worldC: 8, worldR: 9, rotation: 0, pose: 'sit', seatTarget: seatTarget(8, 9, 180) },
+      { id: 'player', name: playerName, isPlayer: true, worldC: 8, worldR: 9, rotation: 0, pose: 'sit', seatTarget: seatTarget(8, 9, 0) },
       npcActor(records, { id: 'hunundi', name: 'Father Hunundi', npcId: 'father_hunundi_hodu', worldC: 11, worldR: 8, rotation: 180, pose: 'sit', seatTarget: seatTarget(11, 8, 0) }),
-      npcActor(records, { id: 'jubmir', name: 'Jubmir', npcId: 'jubmir', worldC: 7, worldR: 9, rotation: 0, pose: 'sit', seatTarget: seatTarget(7, 9, 180) }),
-      npcActor(records, { id: 'spearhead', name: 'Spearhead', npcId: 'spearhead_unumanuk', worldC: 9, worldR: 9, rotation: 0, pose: 'sit', seatTarget: seatTarget(9, 9, 180) }),
+      npcActor(records, { id: 'jubmir', name: 'Jubmir', npcId: 'jubmir', worldC: 7, worldR: 9, rotation: 0, pose: 'sit', seatTarget: seatTarget(7, 9, 0) }),
+      npcActor(records, { id: 'spearhead', name: 'Spearhead', npcId: 'spearhead_unumanuk', worldC: 9, worldR: 9, rotation: 0, pose: 'sit', seatTarget: seatTarget(9, 9, 0) }),
       npcActor(records, { id: 'harkharash', name: 'Surveyor Harkharash', npcId: 'khannibarri_agent', worldC: 11, worldR: 5, rotation: 180, pose: 'standing', seatTarget: seatTarget(9, 8, 0) }),
     ];
     const stages = [ // The dialogue establishes amnesia, Nanjiri Farmstead, Khannibarri's offer, regional isolation, and Spearhead's resolve in one room.
