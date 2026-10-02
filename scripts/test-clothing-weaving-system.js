@@ -760,7 +760,7 @@ assert.doesNotMatch(patternEditorSource, /data-trim-edge-thickness/, 'outline-fi
 assert.match(patternEditorSource, /function buildInwardSilhouetteMap\(mask, width, height\)/, 'trim painter and replication share one silhouette contour and inward ownership map');
 assert.match(patternEditorSource, /boundaryMask\[index\] = 1;[\s\S]*?owner\[index\] = index;[\s\S]*?distance\[index\] = 0;/, 'first non-black garment pixels touching black, transparency, or sprite bounds become one-pixel contour seeds');
 assert.match(patternEditorSource, /data-trim-tool="paint"/, 'trim painter exposes Direct Paint separately from Outline Brush and Eraser');
-assert.match(patternEditorSource, /brushMode === 'paint'[\s\S]*?garmentMask\[index\]/, 'Direct Paint fills arbitrary non-black garment pixels rather than contour pixels only');
+assert.match(patternEditorSource, /brushMode === 'paint'[\s\S]*?opaqueGarmentMask\[index\]/, 'Direct Paint uses alpha-only garment membership and can override structural black-outline exclusions');
 assert.match(patternEditorSource, /else if \(silhouetteBoundaryMask\[index\]\)/, 'Outline Brush remains restricted to one-pixel silhouette contour sections');
 assert.match(patternEditorSource, /Outline Brush always authors exactly one contour pixel/, 'outline reach changes selection reach rather than authored trim thickness');
 assert.match(patternEditorSource, /function selectFullOutline\(\)/, 'full-outline shortcut selects the same one-pixel contour used by the brush');
@@ -800,7 +800,7 @@ assert.match(patternEditorSource, /op\.type === 'selectFullOutline'/, 'operation
 assert.match(patternEditorSource, /op\.type === 'expandInward'/, 'operation replay preserves exact Expand Inward operations');
 assert.match(patternEditorSource, /op\.type !== 'stroke'/, 'operation replay handles recorded relative trim strokes');
 assert.match(patternEditorSource, /op\.mode === 'paint' \? 'paint' : 'brush'/, 'operation replay preserves Direct Paint as a distinct stroke mode rather than converting it to Outline Brush');
-assert.match(patternEditorSource, /mode === 'paint'[\s\S]*?geometry\.mask\[index\][\s\S]*?paint\[index\] = 1/, 'replayed Direct Paint fills arbitrary trimable target pixels while remaining clipped to the non-black garment');
+assert.match(patternEditorSource, /mode === 'paint'[\s\S]*?geometry\.opaqueMask\[index\][\s\S]*?paint\[index\] = 1/, 'replayed Direct Paint uses alpha-only target membership and preserves manual overrides excluded by structural contour detection');
 assert.match(patternEditorSource, /mode: brushMode === 'eraser' \? 'eraser' : \(brushMode === 'paint' \? 'paint' : 'brush'\)/, 'stroke journal records Direct Paint explicitly alongside Outline Brush and Eraser');
 assert.match(patternEditorSource, /sizeNorm:[\s\S]*?brushSize[\s\S]*?sourceScale/, 'stroke journals store outline reach, direct-paint size, and eraser size relative to the source garment scale');
 assert.match(patternEditorSource, /recordStrokePoint\(point\)/, 'pointer stroke samples are recorded in authoring order for replay');
@@ -819,6 +819,20 @@ assert.match(patternEditorSource, /Rendered result/, 'direct trim painting keeps
 assert.match(patternEditorSource, /trimManifestBtn/, 'garment trim editor exports the shared manifest alongside authored PNG masks');
 assert.match(source, /'clothing-trim'/, 'runtime applies fixed garment trim through its own compositor pass and diagnostic label');
 assert.match(source, /patternDef\?\.directMask === true[\s\S]*?ctx\.drawImage\(motifImg, 0, 0, width, height\)/, 'direct garment trim maps its authored PNG straight into garment pixel coordinates before outlining');
+assert.equal(api.__test.exactDirectMaskPass([{ pattern: { directMask: true } }]), true, 'single direct-mask trim pass is detected as exact sprite-space rendering');
+assert.equal(api.__test.exactDirectMaskPass([{ pattern: {} }]), false, 'ordinary woven pattern does not enter the exact direct-mask path');
+assert.equal(api.__test.patternWorkPad(true), 0, 'direct trim masks use zero compositor work padding and therefore cannot be rescaled by padded mask construction');
+assert.equal(api.__test.patternWorkPad(false), 15, 'ordinary woven motifs retain their existing 15px cell-offset work padding');
+assert.equal(api.__test.patternCellOffset(3, true), 0, 'direct trim masks never receive the generic disconnected-cell pattern shift');
+assert.equal(api.__test.patternCellOffset(3, false), 15, 'ordinary woven patterns retain the existing third-cell 15px phase shift');
+assert.equal(api.__test.patternGarmentPixelEligible(255, 0, true), true, 'manual direct trim can target an opaque raw-black/near-black source pixel');
+assert.equal(api.__test.patternGarmentPixelEligible(255, 28, true), true, 'direct trim eligibility ignores the generic near-black cutoff');
+assert.equal(api.__test.patternGarmentPixelEligible(255, 28, false), false, 'ordinary woven motifs still preserve authored near-black outlines');
+assert.equal(api.__test.patternGarmentPixelEligible(255, 29, false), true, 'ordinary woven motifs still begin immediately above the existing darkness threshold');
+assert.equal(api.__test.patternGarmentPixelEligible(0, 255, true), false, 'direct trim still cannot paint transparent background');
+assert.match(source, /const directMaskPass = exactDirectMaskPass\(active\)[\s\S]*?const pad = patternWorkPad\(directMaskPass\)/, 'production compositor routes exact masks through the zero-padding helper');
+assert.match(source, /const off = patternCellOffset\(cellLabels\[p\], directMaskPass\)/, 'production sampling routes exact masks through zero per-cell offset');
+assert.match(source, /patternGarmentPixelEligible\(shadeSourceData\[i \+ 3\], maxChannel, directMaskPass\)/, 'production trim eligibility uses alpha-only direct-mask semantics instead of the generic darkness gate');
 assert.match(source, /trimPatternOverride/, 'production clothing renderer accepts an unsaved trim draft so the dev editor previews the exact runtime path');
 assert.match(source, /weavingHasAnyDecoration/, 'trim-only clothing participates in rendering/session/cache plumbing without pretending to contain a reusable pattern');
 const diamondLatticeSource = 'basis: (w, h) => ({ u: { x: w / 2, y: h / 2 }, v: { x: w / 2, y: -h / 2 } })';
