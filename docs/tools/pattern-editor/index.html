@@ -556,6 +556,203 @@ Overpass → not set</div>
     return mask[y * width + x] ? 1 : 0;
   }
 
+  function connectedTrimRegions(mask, width, height) {
+    const labels = new Int32Array(mask.length); labels.fill(-1); // Structural cloth islands let complex garments replay edits in local shape-space instead of one global rectangle.
+    const regions = [];
+    const stack = [];
+    const neighbors = [[-1,-1],[0,-1],[1,-1],[-1,0],[1,0],[-1,1],[0,1],[1,1]];
+    for (let start = 0; start < mask.length; start++) {
+      if (!mask[start] || labels[start] >= 0) continue;
+      const id = regions.length;
+      let minX = width, minY = height, maxX = -1, maxY = -1, sumX = 0, sumY = 0;
+      const pixels = [];
+      labels[start] = id;
+      stack.push(start);
+      while (stack.length) {
+        const index = stack.pop();
+        pixels.push(index);
+        const x = index % width, y = Math.floor(index / width);
+        if (x < minX) minX = x; if (x > maxX) maxX = x;
+        if (y < minY) minY = y; if (y > maxY) maxY = y;
+        sumX += x; sumY += y;
+        for (const [ox, oy] of neighbors) {
+          const nx = x + ox, ny = y + oy;
+          if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+          const next = ny * width + nx;
+          if (!mask[next] || labels[next] >= 0) continue;
+          labels[next] = id;
+          stack.push(next);
+        }
+      }
+      const boundaryIndices = [];
+      for (const index of pixels) {
+        const x = index % width, y = Math.floor(index / width);
+        let boundary = false;
+        for (const [ox, oy] of neighbors) {
+          const nx = x + ox, ny = y + oy;
+          if (nx < 0 || ny < 0 || nx >= width || ny >= height || labels[ny * width + nx] !== id) { boundary = true; break; }
+        }
+        if (boundary) boundaryIndices.push(index);
+      }
+      regions.push({
+        id,
+        area: pixels.length,
+        pixels,
+        boundaryIndices,
+        bounds: { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 },
+        centroid: { x: sumX / Math.max(1, pixels.length), y: sumY / Math.max(1, pixels.length) },
+      });
+    }
+    return { labels, regions };
+  }
+
+  function trimRegionFeature(region, garmentBounds) {
+    const gw = Math.max(1, garmentBounds?.width || 1), gh = Math.max(1, garmentBounds?.height || 1);
+    return {
+      x: ((region.centroid.x - (garmentBounds?.x || 0)) / Math.max(1, gw - 1)),
+      y: ((region.centroid.y - (garmentBounds?.y || 0)) / Math.max(1, gh - 1)),
+      w: region.bounds.width / gw,
+      h: region.bounds.height / gh,
+      area: region.area / Math.max(1, gw * gh),
+      aspect: region.bounds.width / Math.max(1, region.bounds.height),
+    };
+  }
+
+  function matchTrimReplayRegions(sourceRegions, targetRegions, sourceBounds, targetBounds) {
+    const matches = new Map();
+    if (!sourceRegions.length || !targetRegions.length) return matches;
+    const unused = new Set(targetRegions.map(region => region.id));
+    const orderedSource = [...sourceRegions].sort((a, b) => b.area - a.area); // Match the dominant cloth pieces first so tiny anti-aliased islands cannot steal their target.
+    const targetById = new Map(targetRegions.map(region => [region.id, region]));
+    const cost = (source, target) => {
+      const a = trimRegionFeature(source, sourceBounds), b = trimRegionFeature(target, targetBounds);
+      const position = (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
+      const size = (a.w - b.w) ** 2 + (a.h - b.h) ** 2;
+      const area = Math.log(Math.max(1e-6, a.area) / Math.max(1e-6, b.area));
+      const aspect = Math.log(Math.max(1e-6, a.aspect) / Math.max(1e-6, b.aspect));
+      return position * 6 + size * 3 + area * area * 0.35 + aspect * aspect * 0.2;
+    };
+    for (const source of orderedSource) {
+      const candidates = unused.size ? [...unused].map(id => targetById.get(id)).filter(Boolean) : targetRegions;
+      let best = null, bestCost = Infinity;
+      for (const target of candidates) {
+        const candidateCost = cost(source, target);
+        if (candidateCost < bestCost) { bestCost = candidateCost; best = target; }
+      }
+      if (!best) continue;
+      matches.set(source.id, best.id);
+      if (unused.size) unused.delete(best.id);
+    }
+    return matches;
+  }
+
+  function nearestTrimRegion(point, layout, width) {
+    const ix = Math.round(point.x), iy = Math.round(point.y);
+    if (ix >= 0 && iy >= 0 && ix < width) {
+      const index = iy * width + ix;
+      const label = index >= 0 && index < layout.labels.length ? layout.labels[index] : -1;
+      if (label >= 0) return layout.regions[label] || null;
+    }
+    let best = null, bestDistance = Infinity;
+    for (const region of layout.regions) {
+      const b = region.bounds;
+      const dx = point.x < b.x ? b.x - point.x : point.x > b.x + b.width - 1 ? point.x - (b.x + b.width - 1) : 0;
+      const dy = point.y < b.y ? b.y - point.y : point.y > b.y + b.height - 1 ? point.y - (b.y + b.height - 1) : 0;
+      const centroidDx = point.x - region.centroid.x, centroidDy = point.y - region.centroid.y;
+      const distance = dx * dx + dy * dy + (centroidDx * centroidDx + centroidDy * centroidDy) * 0.0025;
+      if (distance < bestDistance) { bestDistance = distance; best = region; }
+    }
+    return best;
+  }
+
+  function nearestRegionBoundaryPoint(region, point, width) {
+    let best = null, bestDistance = Infinity;
+    for (const index of region?.boundaryIndices || []) {
+      const x = index % width, y = Math.floor(index / width);
+      const dx = x - point.x, dy = y - point.y;
+      const distance = dx * dx + dy * dy;
+      if (distance < bestDistance) { bestDistance = distance; best = { x, y }; }
+    }
+    return best || point;
+  }
+
+  function normalizedXYInBounds(point, bounds) {
+    return {
+      x: bounds.width > 1 ? (point.x - bounds.x) / (bounds.width - 1) : 0.5,
+      y: bounds.height > 1 ? (point.y - bounds.y) / (bounds.height - 1) : 0.5,
+    };
+  }
+
+  function remapTrimAuthorOpsForTarget(authorOps, sourceGarment, targetGarment) {
+    if (!sourceGarment || !targetGarment) return cloneTrimAuthorOps(authorOps);
+    const sourceGeometry = canvasTrimGeometry(sourceGarment), targetGeometry = canvasTrimGeometry(targetGarment);
+    const sourceBounds = maskBounds(sourceGeometry.mask, sourceGeometry.width, sourceGeometry.height);
+    const targetBounds = maskBounds(targetGeometry.mask, targetGeometry.width, targetGeometry.height);
+    if (!sourceBounds || !targetBounds) return cloneTrimAuthorOps(authorOps);
+
+    const sourceLayout = connectedTrimRegions(sourceGeometry.mask, sourceGeometry.width, sourceGeometry.height);
+    const targetLayout = connectedTrimRegions(targetGeometry.mask, targetGeometry.width, targetGeometry.height);
+    const matches = matchTrimReplayRegions(sourceLayout.regions, targetLayout.regions, sourceBounds, targetBounds);
+    const targetById = new Map(targetLayout.regions.map(region => [region.id, region]));
+    const sourceScale = Math.max(1, Math.min(sourceBounds.width, sourceBounds.height));
+    const targetScale = Math.max(1, Math.min(targetBounds.width, targetBounds.height));
+
+    const sourcePixel = point => ({
+      x: sourceBounds.x + Number(point?.x || 0) * Math.max(0, sourceBounds.width - 1),
+      y: sourceBounds.y + Number(point?.y || 0) * Math.max(0, sourceBounds.height - 1),
+    });
+
+    const mapPoint = (point, mode) => {
+      const sourcePoint = sourcePixel(point);
+      const sourceRegion = nearestTrimRegion(sourcePoint, sourceLayout, sourceGeometry.width);
+      const targetRegion = sourceRegion ? targetById.get(matches.get(sourceRegion.id)) : null;
+      if (!sourceRegion || !targetRegion) {
+        const fallback = {
+          x: targetBounds.x + Number(point?.x || 0) * Math.max(0, targetBounds.width - 1),
+          y: targetBounds.y + Number(point?.y || 0) * Math.max(0, targetBounds.height - 1),
+        };
+        return { point: fallback, sourceRegion: null, targetRegion: null, regionKey: -1 };
+      }
+      const local = normalizedXYInBounds(sourcePoint, sourceRegion.bounds);
+      let mapped = {
+        x: targetRegion.bounds.x + local.x * Math.max(0, targetRegion.bounds.width - 1),
+        y: targetRegion.bounds.y + local.y * Math.max(0, targetRegion.bounds.height - 1),
+      };
+      if (mode === 'brush') mapped = nearestRegionBoundaryPoint(targetRegion, mapped, targetGeometry.width); // Outline strokes stay on the corresponding local contour instead of drifting into another cloth island.
+      return { point: mapped, sourceRegion, targetRegion, regionKey: targetRegion.id };
+    };
+
+    const remapped = [];
+    for (const op of Array.isArray(authorOps) ? authorOps : []) {
+      if (!op || typeof op !== 'object' || op.type !== 'stroke' || !Array.isArray(op.points) || !op.points.length) {
+        remapped.push(JSON.parse(JSON.stringify(op)));
+        continue;
+      }
+      const mappedPoints = op.points.map(point => mapPoint(point, op.mode));
+      let segment = null;
+      for (const mapped of mappedPoints) {
+        if (!segment || segment.regionKey !== mapped.regionKey) {
+          if (segment?.points.length) remapped.push(segment.op);
+          const sourceRegionScale = mapped.sourceRegion ? Math.max(1, Math.min(mapped.sourceRegion.bounds.width, mapped.sourceRegion.bounds.height)) : sourceScale;
+          const targetRegionScale = mapped.targetRegion ? Math.max(1, Math.min(mapped.targetRegion.bounds.width, mapped.targetRegion.bounds.height)) : targetScale;
+          const sourceBrushPx = Math.max(0.001, Number(op.sizeNorm) || 0.001) * sourceScale;
+          const targetBrushPx = sourceBrushPx * (targetRegionScale / sourceRegionScale);
+          segment = {
+            regionKey: mapped.regionKey,
+            points: [],
+            op: { ...op, sizeNorm: targetBrushPx / targetScale, points: [] },
+          };
+        }
+        const normalized = normalizedXYInBounds(mapped.point, targetBounds);
+        const previous = segment.op.points[segment.op.points.length - 1];
+        if (!previous || Math.abs(previous.x - normalized.x) > 0.0001 || Math.abs(previous.y - normalized.y) > 0.0001) segment.op.points.push(normalized);
+        segment.points.push(normalized);
+      }
+      if (segment?.op.points.length) remapped.push(segment.op); // Splitting at cloth-region changes prevents Bresenham interpolation from drawing a fake bridge between disconnected garment pieces.
+    }
+    return remapped;
+  }
+
   function replayTrimAuthorOps(authorOps, targetGarment) {
     const geometry = canvasTrimGeometry(targetGarment);
     const bounds = maskBounds(geometry.mask, geometry.width, geometry.height);
@@ -753,16 +950,17 @@ Overpass → not set</div>
     const replayed = !!sourceOps?.length;
     const sourceMask = replayed ? null : await editableTrimMaskCanvasFor(garmentId, sourceVariant, view, sourceGarment.width, sourceGarment.height); // Journal-backed replication never performs a pointless/misleading fetch for the exported PNG.
     if (!sourceMask && !replayed) throw new Error(`Author or load a trim for ${sourceVariant} before replicating it.`);
-    const fitted = replayed ? replayTrimAuthorOps(sourceOps, targetGarment) : fitTrimMaskToGarment(sourceMask, sourceGarment, targetGarment); // Operation replay is authoritative; pixel inference exists only for legacy trims with no journal.
+    const targetOps = replayed ? remapTrimAuthorOpsForTarget(sourceOps, sourceGarment, targetGarment) : null; // Complex garments remap each stroke through matching local cloth regions before replay.
+    const fitted = replayed ? replayTrimAuthorOps(targetOps, targetGarment) : fitTrimMaskToGarment(sourceMask, sourceGarment, targetGarment); // Operation replay is authoritative; pixel inference exists only for legacy trims with no journal.
     const pattern = { directMask: true, tiling: false, motifDataUrl: fitted.toDataURL('image/png') };
     const motifPng = trimAssetPath(garmentId, targetVariant, view);
-    trimDrafts.set(trimKey(garmentId, targetVariant, view), { pattern, motifPng, authorOps: replayed ? cloneTrimAuthorOps(sourceOps) : [], authorOpsComplete: replayed });
+    trimDrafts.set(trimKey(garmentId, targetVariant, view), { pattern, motifPng, authorOps: replayed ? cloneTrimAuthorOps(targetOps) : [], authorOpsComplete: replayed });
     const settings = { directMask: true };
     ensureTrimRecordSet(garmentId, targetVariant)[view] = {
       motifPng,
       settings,
-      ...(replayed ? { authorOps: cloneTrimAuthorOps(sourceOps) } : {}),
-    }; // Editor-only authorOps stay outside runtime pattern settings.
+      ...(replayed ? { authorOps: cloneTrimAuthorOps(targetOps) } : {}),
+    }; // Replicated variants persist their target-specific remapped operation history, so reopening them reproduces the exact generated draft.
     return pattern;
   }
 
@@ -1806,7 +2004,7 @@ Overpass → not set</div>
   };
 
   window.__patternEditorDebug = () => ({ // Mobile-visible console substitute for checking the dev tool's two-slot state.
-    mostRecentChange: 'Structural trim selection now ignores both near-black line art (max RGB <= 28) and semi-transparent fringe (alpha < 128), matching production woven-cloth darkness semantics. Direct Paint remains the alpha-only manual override.',
+    mostRecentChange: 'Cross-species trim replication is now region-aware: legacy/global authorOps are recovered on the source garment, assigned to connected structural cloth regions, mapped through matching target-region bounds, and outline strokes snap to that local target contour. Region changes split strokes so complex multi-part garments cannot bridge or distort across pieces.',
     previewMode: $('previewMode').value,
     weavingBackground: $('surfaceTexture').value,
     overpassClearanceMultiplier: clampOverpassClearance($('overpassClearance').value),
