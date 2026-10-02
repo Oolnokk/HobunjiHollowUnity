@@ -616,7 +616,7 @@
   function discoveredGiftTraitsHtml(npcId) {
     const found = window.NpcGifting?.getDiscoveredGiftTraits?.(npcId);
     if (!found) return '';
-    const label = id => deps.esc(window.ItemTraits?.getTraitLabel?.(id) || id);
+    const label = id => deps.esc(window.NpcGifting?.getPreferenceLabel?.(id) || window.ItemTraits?.getTraitLabel?.(id) || id);
     const group = (ids, color) => ids.length
       ? `<span style="color:${color}">${ids.map(label).join(', ')}</span>` : '';
     const parts = [
