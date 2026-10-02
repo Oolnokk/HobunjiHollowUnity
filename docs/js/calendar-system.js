@@ -383,7 +383,10 @@
         .time-passage-date-value{font-family:inherit;font-size:clamp(12px,2.7vw,15px);line-height:1.45;overflow-wrap:anywhere}
         .time-passage-arrow{align-self:center;font-size:26px;opacity:.72}
         .time-passage-live{display:none;min-height:72px;width:100%;align-items:center;justify-content:center;text-align:center;padding:8px 12px;font-family:inherit;font-size:clamp(18px,4.6vw,29px);line-height:1.3;overflow-wrap:anywhere}
+        .time-passage-question{display:none;margin:18px auto 8px;max-width:560px;text-align:center;font-size:clamp(18px,4.3vw,28px);line-height:1.35}
         .time-passage-duration{margin:18px 0 8px;text-align:center}
+        .time-passage-backdrop.sleep-confirmation .time-passage-question{display:block}
+        .time-passage-backdrop.sleep-confirmation .time-passage-duration{display:none}
         .time-passage-hours{font-size:clamp(25px,6vw,42px);line-height:1;margin-bottom:12px}
         .time-passage-slider-row{display:grid;grid-template-columns:48px 1fr 48px;align-items:center;gap:10px}
         .time-passage-slider{width:100%;accent-color:#d8b36e}
@@ -415,6 +418,7 @@
           <div class="time-passage-date-card"><span class="time-passage-date-label">After</span><div class="time-passage-date-value" id="timePassagePreview"></div></div>
         </div>
         <div class="time-passage-live" id="timePassageLive" aria-live="polite"></div>
+        <div class="time-passage-question" id="timePassageQuestion"></div>
         <div class="time-passage-duration">
           <div class="time-passage-hours" id="timePassageHours">1 hour</div>
           <div class="time-passage-slider-row">
@@ -447,6 +451,7 @@
       current: backdrop.querySelector('#timePassageCurrent'),
       preview: backdrop.querySelector('#timePassagePreview'),
       live: backdrop.querySelector('#timePassageLive'),
+      question: backdrop.querySelector('#timePassageQuestion'),
       hours: backdrop.querySelector('#timePassageHours'),
       slider: backdrop.querySelector('#timePassageSlider'),
       minus: backdrop.querySelector('#timePassageMinus'),
@@ -491,27 +496,47 @@
     _timePassageLock = null;
   }
 
-  function openTimePassage(kind = 'wait') {
+  function sleepHoursUntilTomorrow(time01 = deps?.calendar?.time01 ?? 0) {
+    const normalized = positiveModulo(Number(time01) || 0, 1); // Current within-day position used to land sleep exactly on the next represented morning.
+    const remaining = (1 - normalized) * activeClockHours(); // At morning (time01=0), "tomorrow" correctly means one full represented day rather than zero hours.
+    return remaining > 0.0001 ? remaining : activeClockHours();
+  }
+
+  function passageHoursForKind(kind = _timePassageKind) {
+    return kind === 'sleep' ? sleepHoursUntilTomorrow() : _selectedPassageHours; // Sleep has a fixed next-morning target; seated Wait retains its authored selector.
+  }
+
+  function openTimePassage(kind = 'wait', options = {}) {
     buildTimePassageUi();
     if (!_timePassageUi?.backdrop) return false;
     _timePassageKind = kind === 'sleep' ? 'sleep' : 'wait';
-    _selectedPassageHours = _timePassageKind === 'sleep' ? 8 : 1;
+    _selectedPassageHours = _timePassageKind === 'sleep' ? sleepHoursUntilTomorrow() : 1;
     _timePassageUi.backdrop.classList.remove('transitioning');
+    _timePassageUi.backdrop.classList.toggle('sleep-confirmation', _timePassageKind === 'sleep');
     setSelectedPassageHours(_selectedPassageHours);
     _timePassageUi.title.textContent = _timePassageKind === 'sleep' ? 'Sleep' : 'Wait';
+    if (_timePassageUi.question) {
+      _timePassageUi.question.textContent = _timePassageKind === 'sleep'
+        ? `Do you wish to sleep till tomorrow, ${formatCalendarDateFull(deps.calendar.day + 1)}?`
+        : '';
+    }
     _timePassageUi.backdrop.classList.add('open');
     acquireTimePassageLock();
     refreshTimePassagePreview();
     clearInterval(_passagePreviewTimer);
     _passagePreviewTimer = setInterval(refreshTimePassagePreview, 250);
-    requestAnimationFrame(() => _timePassageUi.slider.focus({ preventScroll: true }));
-    debugLog(`opened ${_timePassageKind} menu at ${formatCalendarDateTimeFull()}`);
+    requestAnimationFrame(() => {
+      const focusTarget = _timePassageKind === 'sleep' ? _timePassageUi.confirm : _timePassageUi.slider; // Sleep is a yes/no confirmation; Wait remains a duration picker.
+      focusTarget?.focus?.({ preventScroll: true });
+      if (options.autoConfirm && _timePassageKind === 'sleep') _timePassageUi.confirm?.click?.(); // Forced Tiredness pass-out reuses the exact same confirmation/Day Review interception path without waiting for input.
+    });
+    debugLog(`opened ${_timePassageKind} menu at ${formatCalendarDateTimeFull()}${options.forced ? ' (forced)' : ''}`);
     return true;
   }
 
   function closeTimePassageMenu(options = {}) {
     if (!_timePassageUi) return;
-    _timePassageUi.backdrop.classList.remove('open', 'transitioning');
+    _timePassageUi.backdrop.classList.remove('open', 'transitioning', 'sleep-confirmation');
     clearInterval(_passagePreviewTimer);
     _passagePreviewTimer = 0;
     if (!options.keepLock) releaseTimePassageLock();
@@ -519,19 +544,23 @@
   }
 
   function setSelectedPassageHours(value) {
-    _selectedPassageHours = Math.max(1, Math.min(MAX_PASSAGE_HOURS, Math.round(Number(value) || 1)));
+    _selectedPassageHours = _timePassageKind === 'sleep'
+      ? sleepHoursUntilTomorrow()
+      : Math.max(1, Math.min(MAX_PASSAGE_HOURS, Math.round(Number(value) || 1)));
     if (_timePassageUi) {
-      _timePassageUi.slider.value = String(_selectedPassageHours);
-      _timePassageUi.hours.textContent = `${_selectedPassageHours} ${_selectedPassageHours === 1 ? 'hour' : 'hours'}`;
-      const verb = _timePassageKind === 'sleep' ? 'Sleep' : 'Wait'; // Used in the confirm button's contextual label.
-      _timePassageUi.confirm.textContent = `${verb} ${_selectedPassageHours} ${_selectedPassageHours === 1 ? 'hour' : 'hours'}`;
+      _timePassageUi.slider.value = String(Math.max(1, Math.min(MAX_PASSAGE_HOURS, Math.round(_selectedPassageHours))));
+      const displayHours = Math.max(0, _selectedPassageHours); // Sleep may end on a partial hour so its hidden progress value is not forced through the Wait slider's integer clamp.
+      _timePassageUi.hours.textContent = displayHours < 1 ? '<1 hour' : `${Math.ceil(displayHours)} ${Math.ceil(displayHours) === 1 ? 'hour' : 'hours'}`;
+      _timePassageUi.confirm.textContent = _timePassageKind === 'sleep'
+        ? 'Sleep till tomorrow'
+        : `Wait ${_selectedPassageHours} ${_selectedPassageHours === 1 ? 'hour' : 'hours'}`;
     }
     refreshTimePassagePreview();
   }
 
   function refreshTimePassagePreview() {
     if (!_timePassageUi || !_timePassageUi.backdrop.classList.contains('open') || _timePassageUi.backdrop.classList.contains('transitioning')) return;
-    const target = previewAfterHours(_selectedPassageHours); // Used to render the live target date/time card.
+    const target = previewAfterHours(passageHoursForKind()); // Sleep always previews next morning; Wait previews the selected duration.
     _timePassageUi.current.textContent = formatCalendarDateTimeFull(deps.calendar.day, deps.calendar.time01);
     _timePassageUi.preview.textContent = formatCalendarDateTimeFull(target.day, target.time01);
   }
@@ -541,13 +570,14 @@
     const verb = _timePassageKind === 'sleep' ? 'Sleeping' : 'Waiting'; // Used as the Skyrim-style progress title while the world is fully black.
     _timePassageUi.title.textContent = `${verb}…`;
     _timePassageUi.live.textContent = formatCalendarDateTimeFull(deps.calendar.day, deps.calendar.time01);
-    _timePassageUi.hours.textContent = `${remainingHours} ${remainingHours === 1 ? 'hour' : 'hours'}`;
+    const shown = Math.max(0, Math.ceil((Number(remainingHours) || 0) - 0.0001)); // Fractional final sleep step still displays a clean whole-hour countdown.
+    _timePassageUi.hours.textContent = `${shown} ${shown === 1 ? 'hour' : 'hours'}`;
   }
 
   async function confirmTimePassage() {
     if (!_timePassageKind || !_timePassageUi) return;
     const kind = _timePassageKind; // Captured because the shared modal state is cleared after transition completion.
-    const hours = _selectedPassageHours; // Captured so the selected duration cannot change during the iris transition.
+    const hours = passageHoursForKind(kind); // Sleep resolves its exact next-morning duration at confirmation; Wait uses the selected duration.
     _timePassageUi.confirm.disabled = true;
     _timePassageUi.backdrop.classList.add('transitioning');
     clearInterval(_passagePreviewTimer);
@@ -562,7 +592,8 @@
           detail: { kind, hours, day: deps.calendar.day, time01: deps.calendar.time01 },
         }));
       });
-      debugLog(`${kind} advanced ${hours}h -> ${formatCalendarDateTimeFull()}`);
+      if (kind === 'sleep') finishSleepWake();
+      debugLog(`${kind} advanced ${hours.toFixed?.(2) ?? hours}h -> ${formatCalendarDateTimeFull()}`);
     } catch (error) {
       debugLog(`${kind} failed: ${error?.message || error}`, 'error');
     } finally {
@@ -575,20 +606,23 @@
   }
 
   async function advanceBySelectedHours(hours, onHourTick) {
-    const totalHours = Math.max(1, Math.min(MAX_PASSAGE_HOURS, Math.round(Number(hours) || 1))); // Used to keep the fully-black progress loop bounded to the selector's legal duration.
-    let tickDurationMs = TIME_PASSAGE_FIRST_TICK_MS; // Current visual hold duration; multiplied by 0.8 after every displayed hour.
-    onHourTick?.(totalHours); // Shows the starting time and complete remaining count for the full first one-second tick.
-    for (let elapsed = 1; elapsed <= totalHours; elapsed++) {
+    const totalHours = Math.max(0.01, Math.min(activeClockHours(), Number(hours) || 1)); // Wait remains <=16h through its selector; fixed Sleep may span the full represented day.
+    let tickDurationMs = TIME_PASSAGE_FIRST_TICK_MS; // Current visual hold duration; multiplied by 0.8 after every displayed step.
+    let remainingHours = totalHours; // Decremented in <=1h chunks so a fractional current clock still lands exactly at next morning.
+    onHourTick?.(remainingHours);
+    while (remainingHours > 0.0001) {
       await delayMs(tickDurationMs);
-      await advanceOnePassageHour();
-      const remainingHours = totalHours - elapsed; // Used as the direct countdown value instead of an elapsed/total fraction.
+      const stepHours = Math.min(1, remainingHours); // Final sleep step may be fractional when the player goes to bed between whole hours.
+      await advanceOnePassageHour(stepHours);
+      remainingHours = Math.max(0, remainingHours - stepHours);
       onHourTick?.(remainingHours);
       tickDurationMs *= TIME_PASSAGE_TICK_DECAY;
     }
   }
 
-  async function advanceOnePassageHour() {
-    const target = previewAfterHours(1); // Exact next-hour state used after any private game.js day rollover completes.
+  async function advanceOnePassageHour(stepHours = 1) {
+    const safeStepHours = Math.max(0.0001, Math.min(1, Number(stepHours) || 1)); // Shared exact step size used by Sleep's fractional final step and ordinary one-hour Wait/dev steps.
+    const target = previewAfterHours(safeStepHours); // Exact next-step state used after any private game.js day rollover completes.
     if (target.day === deps.calendar.day) {
       setTime01Raw(target.time01);
       return;
@@ -598,7 +632,7 @@
     // crosses the represented 22:00→next-day-06:00 boundary. This keeps crop,
     // weather, Tothal, livestock, respawn, and procedural daily systems in
     // step with the visible Skyrim-style hourly count.
-    setTime01Raw(deps.calendar.time01 + 1 / activeClockHours());
+    setTime01Raw(deps.calendar.time01 + safeStepHours / activeClockHours());
     const timeoutAt = performance.now() + 1800; // Used to fail visibly instead of holding complete black forever if the private rollover loop stops.
     while ((deps.calendar.day < target.day || deps.calendar.time01 >= 1) && performance.now() < timeoutAt) {
       await new Promise(resolve => setTimeout(resolve, 30)); // Condition-wait for game.js's private day-rollover to finish, not genuine per-frame work.
@@ -705,7 +739,13 @@
     }
     if (Number.isFinite(player.maxHealth)) player.health = player.maxHealth;
     if (Number.isFinite(player.maxStamina)) player.stamina = player.maxStamina;
-    window.ResourceSystem?.enforceCaps?.(player); // Prevents sleep restoration from exposing regular Stamina while Black Stamina debt is still active.
+    window.TirednessSystem?.recoverFromSleep?.(player); // Tiredness is intentionally sleep-only; clearing it here also refills the Footing capacity it had reserved.
+    window.ResourceSystem?.enforceCaps?.(player); // Prevents sleep restoration from exposing regular Stamina/Footing while unrelated capacity debt is still active.
+  }
+
+  function finishSleepWake() {
+    window.AudioSystem?.playOneShotSfx?.({ url: 'assets/audio/sfx/sfx_drenkirra2.ogg', volume: 1 }, 1, 1.08); // Drenkirra morning call is the game's rooster-crow equivalent after the iris reopens.
+    window.TirednessSystem?.afterWake?.(); // Forced pass-out recovery delays its explanatory toast until the player can see the farmhouse again.
   }
 
   function persistCalendarSnapshot() {
@@ -1014,7 +1054,7 @@
       naturalClockTargetSecondsPerRepresentedDay: TARGET_DAY_LENGTH_SECONDS,
       naturalClockScale: NATURAL_TIME_WRITE_SCALE,
       modalKind: _timePassageKind,
-      selectedHours: _selectedPassageHours,
+      selectedHours: _timePassageKind === 'sleep' ? sleepHoursUntilTomorrow() : _selectedPassageHours,
       preview: deps ? formatCalendarDateTimeFull(target.day, target.time01) : null,
       seatedWaitReady: isSeatedReady(),
       sleepTargetReady: !!findSleepActionButton(),
@@ -1069,7 +1109,11 @@
     isCivilYearStart,
     nextCivilYearStartDay,
     previewAfterHours,
+    activeClockHours,
+    sleepHoursUntilTomorrow,
+    passageHoursForKind,
     openTimePassage,
+    finishSleepWake,
     devAdvanceHours,
     copyTimeDebug,
     timeDebugSnapshot,
