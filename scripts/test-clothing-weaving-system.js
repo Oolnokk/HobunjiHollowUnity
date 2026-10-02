@@ -777,11 +777,13 @@ assert.match(patternEditorSource, /Any selected inner\/outer contour may claim t
 assert.match(patternEditorSource, /expandExistingBtn\.disabled = !inkPresent/, 'Expand Inward is disabled until the current mask contains trim paint');
 assert.match(patternEditorSource, /Expand Inward needs painted pixels on the one-pixel garment outline/, 'Expand Inward explains when a mask has no valid contour seeds');
 assert.match(patternEditorSource, /trimReplicateTarget/, 'garment trim authoring exposes a target variant picker for cross-species replication');
-assert.match(patternEditorSource, /function trimableGarmentMaskFromRgba\(rgba\)/, 'one shared trim geometry helper excludes pure-black sprite outlines');
-assert.match(patternEditorSource, /pureBlack = rgba\[offset\] === 0 && rgba\[offset \+ 1\] === 0 && rgba\[offset \+ 2\] === 0/, 'trim geometry identifies exact #000000 pixels independently from alpha');
-assert.match(patternEditorSource, /opaque && !pureBlack \? 1 : 0/, 'trim geometry moves inward past black outline pixels to the first opaque non-black cloth pixels');
-assert.match(patternEditorSource, /image\.data\[i \+ 3\] > 16 && garmentMask\[pixel\]/, 'loaded or replicated trim masks are normalized off pure-black line art as soon as they enter the paint editor');
-assert.match(patternEditorSource, /Exact black \(#000000\) sprite line art is ignored/, 'trim painter explains the black-outline inset rule in the authoring UI');
+assert.match(patternEditorSource, /function opaqueGarmentMaskFromRgba\(rgba\)/, 'manual Direct Paint owns a separate alpha-only garment mask');
+assert.match(patternEditorSource, /function trimableGarmentMaskFromRgba\(rgba\)/, 'structural trim geometry owns a separate non-black contour mask');
+assert.match(patternEditorSource, /const opaqueMask = opaqueGarmentMaskFromRgba\(rgba\)/, 'structural contour detection starts from the same visible garment alpha before excluding line art');
+assert.match(patternEditorSource, /pureBlack = rgba\[offset\] === 0 && rgba\[offset \+ 1\] === 0 && rgba\[offset \+ 2\] === 0/, 'structural trim geometry identifies exact #000000 pixels independently from alpha');
+assert.match(patternEditorSource, /if \(pureBlack\) mask\[pixel\] = 0/, 'structural outline detection moves inward past exact-black line art without restricting Direct Paint');
+assert.match(patternEditorSource, /image\.data\[i \+ 3\] > 16 && opaqueGarmentMask\[pixel\]/, 'loaded, replicated, and manually painted trim is preserved on every opaque garment pixel');
+assert.match(patternEditorSource, /Direct Paint is a true manual override/, 'trim painter explains that Direct Paint bypasses structural black-outline classification');
 assert.match(patternEditorSource, /function fitTrimMaskToGarment\(sourceMaskCanvas, sourceGarment, targetGarment\)/, 'trim replication uses one shared outline-first structural transfer helper');
 assert.match(patternEditorSource, /const sourceMap = buildInwardSilhouetteMap\(sourceGeometry\.mask, sourceGeometry\.width, sourceGeometry\.height\)/, 'replication derives the same non-black outline and inward map used by manual authoring');
 assert.match(patternEditorSource, /mappedSourceOwnerForTargetBoundary/, 'replication aligns destination outline pixels to source outline ownership before filling inward');
