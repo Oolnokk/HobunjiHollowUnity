@@ -857,9 +857,30 @@ assert.equal(api.__test.patternGarmentPixelEligible(255, 28, true), true, 'direc
 assert.equal(api.__test.patternGarmentPixelEligible(255, 28, false), false, 'ordinary woven motifs still preserve authored near-black outlines');
 assert.equal(api.__test.patternGarmentPixelEligible(255, 29, false), true, 'ordinary woven motifs still begin immediately above the existing darkness threshold');
 assert.equal(api.__test.patternGarmentPixelEligible(0, 255, true), false, 'direct trim still cannot paint transparent background');
+assert.equal(api.__test.directTrimOutlineSurfacePixelEligible(255, 29), true, 'generated trim border may live on solid cloth immediately above the near-black threshold');
+assert.equal(api.__test.directTrimOutlineSurfacePixelEligible(255, 28), false, 'generated trim border cannot treat authored near-black line art as ordinary cloth');
+assert.equal(api.__test.directTrimOutlineSurfacePixelEligible(127, 255), false, 'generated trim border ignores semi-transparent anti-aliased fringe');
+assert.equal(api.__test.directTrimAuthoredOutlinePixel(255, 0), true, 'opaque authored black line art is recognized as an existing garment border');
+assert.equal(api.__test.directTrimAuthoredOutlinePixel(100, 120), true, 'semi-transparent anti-aliased fringe is also treated as existing authored border');
+assert.equal(api.__test.directTrimAuthoredOutlinePixel(255, 29), false, 'solid normal cloth does not suppress the generated trim separator');
+{
+  const width = 5, height = 3;
+  const generated = new Uint8Array(width * height);
+  const authored = new Uint8Array(width * height);
+  generated[1 * width + 2] = 1; // Would become a duplicate line directly beside the authored border.
+  generated[1 * width + 3] = 1; // Legitimate interior trim separation farther into the cloth.
+  authored[1 * width + 1] = 1;
+  const filtered = api.__test.suppressGeneratedOutlineAgainstAuthoredOutline(generated, authored, width, height);
+  assert.equal(filtered[1 * width + 2], 0, 'trim compositor removes a generated black line immediately beside the garment authored outline');
+  assert.equal(filtered[1 * width + 3], 1, 'trim compositor preserves the interior black separation line away from the garment outline');
+}
 assert.match(source, /const directMaskPass = exactDirectMaskPass\(active\)[\s\S]*?const pad = patternWorkPad\(directMaskPass\)/, 'production compositor routes exact masks through the zero-padding helper');
 assert.match(source, /const off = patternCellOffset\(cellLabels\[p\], directMaskPass\)/, 'production sampling routes exact masks through zero per-cell offset');
 assert.match(source, /patternGarmentPixelEligible\(shadeSourceData\[i \+ 3\], maxChannel, directMaskPass\)/, 'production trim eligibility uses alpha-only direct-mask semantics instead of the generic darkness gate');
+assert.match(source, /directTrimOutlineSurfacePixelEligible\(shadeSourceData\[i \+ 3\], maxChannel\)/, 'production direct trim builds a stricter solid non-near-black surface specifically for generated outline geometry');
+assert.match(source, /directTrimAuthoredOutlinePixel\(shadeSourceData\[i \+ 3\], maxChannel\)/, 'production direct trim identifies the sprite existing dark\/anti-aliased border separately from trim fill');
+assert.match(source, /outlinePatternMask = new Uint8Array\(combinedMask\.length\)/, 'generated direct-trim outline seeds are restricted to structural cloth even though trim color may cover broader alpha-only pixels');
+assert.match(source, /suppressGeneratedOutlineAgainstAuthoredOutline\(outlineMask, directAuthoredOutlineMask, width, height\)/, 'final direct-trim border removes pixels touching the existing authored garment outline to prevent a doubled black edge');
 assert.match(source, /trimPatternOverride/, 'production clothing renderer accepts an unsaved trim draft so the dev editor previews the exact runtime path');
 assert.match(source, /weavingHasAnyDecoration/, 'trim-only clothing participates in rendering/session/cache plumbing without pretending to contain a reusable pattern');
 const diamondLatticeSource = 'basis: (w, h) => ({ u: { x: w / 2, y: h / 2 }, v: { x: w / 2, y: -h / 2 } })';
