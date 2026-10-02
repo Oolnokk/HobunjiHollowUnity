@@ -29884,7 +29884,7 @@
         const liveLock = liveMode ? window.CharacterActionLocks?.acquire?.({ owner: 'authored-cutscene', reason: payload.title || 'story cutscene', participants: [{ id: 'player', channels: ['movement', 'tools', 'actions'] }] }) : null; // Prevents real-player input from mutating the hidden gameplay actor while stand-ins own the screen.
         let resolveCompletion = null; // Completed by finish() so live story code can await an interactive multi-card scene rather than merely its initial scheduling.
         const completionPromise = new Promise(resolve => { resolveCompletion = resolve; }); // Public completion signal used by sequential authored scenes.
-        const report = (text, isError) => { if (!liveMode) report(text, isError); }; // Keeps the Director's Exit Preview banner out of real story cinematics.
+        const report = (text, isError) => { if (!liveMode) window.CutscenePreviewHelpers.cutscenePreviewBanner(text, isError); }; // Keeps the Director's Exit Preview banner out of real story cinematics.
         const releaseLiveLock = () => { liveLock?.release?.(); }; // Shared cleanup for normal completion and pre-stage load failures.
         cutscenePreviewActive = true;
         cutscenePreviewZoomPercent = 100;
