@@ -141,7 +141,7 @@
     "function": "animateIrisRadius",
     "reason": "Classic eased-tween RAF loop (self-continuing at line 670) that runs only until progress t reaches 1, then resolves and stops - a bounded, self-terminating UI animation for the sleep/wait iris transition.",
     "migrationStage": "not-planned",
-    "line": 673
+    "line": 758
   },
   {
     "file": "docs/js/combat/combat-input.js",

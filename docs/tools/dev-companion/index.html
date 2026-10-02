@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Hobunji Dev Companion</title>
-<link rel="stylesheet" href="dev-companion.css?v=20260930companion1">
+<link rel="stylesheet" href="dev-companion.css?v=20261002context1">
 </head>
 <body>
 <div id="shell">
@@ -12,155 +12,145 @@
     <div class="head-row">
       <span id="connDot" class="dot" title="Game session connection"></span>
       <strong id="connText">Waiting for the game…</strong>
-      <span id="sessionId" class="muted mono"></span>
+      <span class="spacer"></span>
+      <label class="mini-check" title="Jump to the tab that matches what you're doing in the game (a conversation starts → Now, a Map Edit session starts → Map)"><input type="checkbox" id="followContext" checked> Follow game</label>
     </div>
-    <div id="sessionLine" class="muted">No play session yet — open this window from the game (Settings → Dev Companion Window).</div>
+    <div id="contextChips" class="chips"><span class="muted small-text">Open this window from the game: Settings → Dev Companion Window.</span></div>
     <div class="head-actions">
-      <button type="button" id="quickSaveBtn" class="primary" title="Quick save (Alt+S)">⚡ Quick Save</button>
-      <button type="button" id="quickLoadBtn" class="primary" title="Quick load the latest quick save for this farmer/world (Alt+L)">↺ Quick Load</button>
+      <button type="button" id="quickSaveBtn" class="primary" title="Quick save: the whole save plus exact position, facing and time (Alt+S)">⚡ Quick Save</button>
+      <button type="button" id="quickLoadBtn" class="primary load" title="Quick load (Alt+L)">↺ Quick Load</button>
       <label class="switch" title="Stop automatic writes to the save folder and recovery autosaves for this game tab">
-        <input type="checkbox" id="autosaveToggle">
-        <span>Autosave paused</span>
+        <input type="checkbox" id="autosaveToggle"><span>Autosave paused</span>
       </label>
     </div>
     <div id="toast" class="toast" hidden></div>
   </header>
 
   <nav id="tabs" role="tablist">
-    <button type="button" role="tab" data-tab="live" class="active">Live Config</button>
-    <button type="button" role="tab" data-tab="saves">Saves</button>
-    <button type="button" role="tab" data-tab="map">Map Edit</button>
-    <button type="button" role="tab" data-tab="history">History</button>
+    <button type="button" role="tab" data-tab="now">Now<span class="badge" data-badge="now"></span></button>
+    <button type="button" role="tab" data-tab="saves">Saves<span class="badge" data-badge="saves"></span></button>
+    <button type="button" role="tab" data-tab="map">Map<span class="badge" data-badge="map"></span></button>
+    <button type="button" role="tab" data-tab="files">Files<span class="badge" data-badge="files"></span></button>
   </nav>
 
   <main id="panes">
-    <!-- LIVE CONFIG -->
-    <section class="pane active" data-pane="live">
-      <div class="card" id="dialogueCard">
-        <div class="card-title">💬 Dialogue on screen <span id="dialogueAge" class="muted"></span></div>
-        <div id="dialogueBody" class="muted">No dialogue yet. Talk to an NPC in the game.</div>
-      </div>
-      <div class="card">
-        <div class="card-title">🗺️ Map in use</div>
-        <div id="mapInUse" class="muted">—</div>
-      </div>
-      <div class="card">
-        <div class="card-title">🗃️ Database source
-          <span class="spacer"></span>
-          <select id="dbSourceSelect" title="Which copy of the editable databases the game loads on its next boot">
-            <option value="repo">Repo files</option>
-            <option value="local">Local editor overrides</option>
-          </select>
-        </div>
-        <div id="overridesBody" class="muted">—</div>
-      </div>
-      <div class="card">
-        <div class="card-title">📄 Config / JSON accessed <span id="configCount" class="muted"></span>
-          <span class="spacer"></span>
-          <input type="search" id="configFilter" placeholder="Filter…">
-        </div>
-        <table class="grid" id="configTable">
-          <thead><tr><th>File</th><th>How</th><th>Hits</th><th>Last</th><th>Status</th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
+    <!-- NOW: whatever the game is doing right now, plus tools that only apply to it -->
+    <section class="pane" data-pane="now">
+      <div id="nowEmpty" class="empty">Talk to an NPC to see the dialogue node on screen, its config, and why it was chosen.</div>
+      <div class="card" id="dialogueCard" hidden></div>
+      <div class="card slim" id="ambientCard" hidden></div>
+      <div id="panelHost"></div>
+      <details class="card slim" id="historyCard">
+        <summary>Event history <span id="historyCount" class="muted"></span></summary>
+        <div id="historyList" class="list"></div>
+      </details>
     </section>
 
     <!-- SAVES -->
     <section class="pane" data-pane="saves">
       <div class="card">
-        <div class="card-title">⚡ Quick saves
-          <span class="spacer"></span>
-          <button type="button" id="quickRefreshBtn" class="small">Refresh</button>
-        </div>
-        <div class="muted small-text">Quick saves hold the whole save plus your exact area, position, facing and time. Loading reloads the game (so edited config/dialogue is picked up) and drops you back on the same spot.</div>
-        <label class="check"><input type="checkbox" id="pauseOnLoad" checked> Pause autosave when quick-loading (keeps the rewind out of your real save)</label>
+        <div class="card-title">⚡ Quick saves <span id="quickScope" class="muted"></span></div>
         <div id="quickList" class="list"></div>
+        <details id="quickOtherWrap" hidden><summary id="quickOtherSummary"></summary><div id="quickOtherList" class="list"></div></details>
+        <label class="check"><input type="checkbox" id="pauseOnLoad" checked> Pause autosave when quick-loading</label>
       </div>
       <div class="card">
-        <div class="card-title">🛟 Recovery backups
-          <span class="spacer"></span>
-          <button type="button" id="manualSaveBtn" class="small">Manual Save now</button>
-          <button type="button" id="recoveryRefreshBtn" class="small">Refresh</button>
+        <div class="card-title">🛟 Recovery backups <span class="spacer"></span>
+          <button type="button" id="manualSaveBtn" class="small">Manual save now</button>
         </div>
-        <div class="muted small-text">The same checkpoints as Save Recovery. Restoring keeps the current save as “Before Last Restore”, reloads, and goes straight back into this farmer/world.</div>
-        <label class="check"><input type="checkbox" id="skipRestoreConfirm"> Swap without confirming</label>
         <div id="recoveryWarnings" class="warn small-text"></div>
         <div id="recoveryList" class="list"></div>
+        <label class="check"><input type="checkbox" id="skipRestoreConfirm"> Swap without confirming</label>
       </div>
-      <div class="card">
-        <div class="card-title">💾 Save status</div>
-        <div id="saveStatus" class="muted mono small-text">—</div>
-      </div>
+      <details class="card slim">
+        <summary>Save system status</summary>
+        <div id="saveStatus" class="mono small-text pre"></div>
+      </details>
     </section>
 
-    <!-- MAP EDIT -->
+    <!-- MAP -->
     <section class="pane" data-pane="map">
-      <div class="card">
-        <div class="card-title">🗺️ Map Edit
-          <span class="spacer"></span>
-          <button type="button" id="mapSessionBtn" class="small">Start session</button>
-        </div>
-        <div id="mapSummary" class="muted">—</div>
-        <div class="btn-row">
-          <button type="button" data-map="open-editor">Open Map Editor</button>
-          <button type="button" data-map="pick" id="mapPickBtn">🎯 Click to Select</button>
-          <button type="button" data-map="diff">📋 Copy Edit Diff</button>
-          <button type="button" data-map="debug">Copy Reflection Debug</button>
-        </div>
-        <div id="mapWarn" class="warn small-text"></div>
-      </div>
-      <div class="card" id="mapSelectionCard" hidden>
-        <div class="card-title">Selected transform <span class="spacer"></span><span id="mapSelLabel" class="muted mono"></span></div>
-        <div id="mapSelReadout" class="mono small-text"></div>
-        <div class="btn-row">
-          <button type="button" data-gizmo="translate">Move</button>
-          <button type="button" data-gizmo="rotate">Rotate</button>
-          <button type="button" data-gizmo="scale" id="mapScaleBtn">Scale</button>
-          <button type="button" data-map="done">Done</button>
-        </div>
-        <div class="nudge">
-          <label>Step <input type="number" id="nudgeStep" value="0.1" step="0.05" min="0.01"></label>
+      <div id="mapGate" class="empty" hidden></div>
+      <div id="mapMain" hidden>
+        <div class="card">
+          <div class="card-title"><span id="mapTitle">Map Edit</span><span class="spacer"></span>
+            <button type="button" id="mapSessionBtn" class="small">Start session</button>
+          </div>
+          <div id="mapSummary" class="small-text muted"></div>
           <div class="btn-row">
-            <button type="button" data-nudge="dx:-1">X−</button><button type="button" data-nudge="dx:1">X+</button>
-            <button type="button" data-nudge="dy:-1">Y−</button><button type="button" data-nudge="dy:1">Y+</button>
-            <button type="button" data-nudge="dz:-1">Z−</button><button type="button" data-nudge="dz:1">Z+</button>
+            <button type="button" data-map="pick" id="mapPickBtn">🎯 Click to Select</button>
+            <button type="button" data-map="open-editor">Open Map Editor</button>
+            <button type="button" data-map="diff">📋 Copy Edit Diff</button>
+            <button type="button" data-map="debug" class="ghost">Debug</button>
           </div>
-          <div class="btn-row" id="nudgeRotScale">
-            <button type="button" data-nudge="dyaw:-15">Yaw −15°</button><button type="button" data-nudge="dyaw:15">Yaw +15°</button>
-            <button type="button" data-nudge="dscale:-0.1">Scale −10%</button><button type="button" data-nudge="dscale:0.1">Scale +10%</button>
+          <div id="mapWarn" class="warn small-text"></div>
+          <div id="mapLastResult" class="muted small-text"></div>
+        </div>
+        <div class="card" id="mapSelectionCard" hidden>
+          <div class="card-title">Selected <span id="mapSelLabel" class="muted mono"></span><span class="spacer"></span>
+            <button type="button" data-map="done" class="small">Done</button>
           </div>
-          <div class="set-row" id="setRow">
-            <label>Offset X <input type="number" step="0.05" id="setX"></label>
-            <label>Y <input type="number" step="0.05" id="setY"></label>
-            <label>Z <input type="number" step="0.05" id="setZ"></label>
-            <label>Yaw° <input type="number" step="1" id="setYaw"></label>
-            <label>Scale <input type="number" step="0.05" min="0.05" id="setScale"></label>
-            <button type="button" id="setApplyBtn" class="small">Apply</button>
+          <div id="mapSelReadout" class="mono small-text"></div>
+          <div class="btn-row">
+            <button type="button" data-gizmo="translate" class="small">Move</button>
+            <button type="button" data-gizmo="rotate" class="small">Rotate</button>
+            <button type="button" data-gizmo="scale" class="small" id="mapScaleBtn">Scale</button>
+            <button type="button" data-map="toggle-camera-stage" id="mapCameraStageBtn" class="small" hidden>Player repositioning: Off</button>
+          </div>
+          <div class="nudge">
+            <div class="btn-row">
+              <label class="inline">Step <input type="number" id="nudgeStep" value="0.1" step="0.05" min="0.01"></label>
+              <button type="button" data-nudge="dx:-1" class="small">X−</button><button type="button" data-nudge="dx:1" class="small">X+</button>
+              <button type="button" data-nudge="dy:-1" class="small">Y−</button><button type="button" data-nudge="dy:1" class="small">Y+</button>
+              <button type="button" data-nudge="dz:-1" class="small">Z−</button><button type="button" data-nudge="dz:1" class="small">Z+</button>
+            </div>
+            <div class="btn-row" id="nudgeRotScale">
+              <button type="button" data-nudge="dyaw:-15" class="small">Yaw −15°</button><button type="button" data-nudge="dyaw:15" class="small">Yaw +15°</button>
+              <button type="button" data-nudge="dscale:-0.1" class="small">Scale −10%</button><button type="button" data-nudge="dscale:0.1" class="small">Scale +10%</button>
+            </div>
+            <details id="setRow"><summary>Exact values</summary>
+              <div class="set-row">
+                <label>Offset X <input type="number" step="0.05" id="setX"></label>
+                <label>Y <input type="number" step="0.05" id="setY"></label>
+                <label>Z <input type="number" step="0.05" id="setZ"></label>
+                <label>Yaw° <input type="number" step="1" id="setYaw"></label>
+                <label>Scale <input type="number" step="0.05" min="0.05" id="setScale"></label>
+                <button type="button" id="setApplyBtn" class="small">Apply</button>
+              </div>
+            </details>
           </div>
         </div>
-        <button type="button" data-map="toggle-camera-stage" id="mapCameraStageBtn" hidden>Player repositioning: Off</button>
-        <div class="muted small-text">Gameplay controls stay paused until Done (or Esc in the game). Drag the gizmo in the game window, or nudge here.</div>
-      </div>
-      <div class="card" id="mapCamerasCard" hidden>
-        <div class="card-title">🎥 Cinematic cameras</div>
-        <div id="mapCameraList" class="btn-row"></div>
-      </div>
-      <div class="card" id="mapArenaCard" hidden>
-        <div class="card-title">Testing Arena</div>
-        <button type="button" data-map="arena-spawner">🐾 Creature Spawner</button>
-      </div>
-      <div class="card">
-        <div class="card-title">Latest bridge result</div>
-        <div id="mapLastResult" class="muted small-text">—</div>
+        <div class="card slim" id="mapCamerasCard" hidden>
+          <div class="card-title">🎥 Cinematic cameras</div>
+          <div id="mapCameraList" class="btn-row"></div>
+        </div>
+        <div class="card slim" id="mapArenaCard" hidden>
+          <button type="button" data-map="arena-spawner">🐾 Testing Arena creature spawner</button>
+        </div>
       </div>
     </section>
 
-    <!-- HISTORY -->
-    <section class="pane" data-pane="history">
+    <!-- FILES -->
+    <section class="pane" data-pane="files">
+      <div class="card slim">
+        <div class="card-title">Database source <span class="spacer"></span>
+          <select id="dbSourceSelect" title="Which copy of the editable databases the game loads on its next boot">
+            <option value="repo">Repo files</option>
+            <option value="local">Local editor overrides</option>
+          </select>
+        </div>
+        <div id="overridesSummary" class="small-text muted"></div>
+        <details id="overridesDetails"><summary>Per-database</summary><div id="overridesBody"></div></details>
+      </div>
       <div class="card">
-        <div class="card-title">🧾 Trace history <span class="spacer"></span><button type="button" id="historyClearBtn" class="small">Clear</button></div>
-        <div id="historyList" class="list"></div>
+        <div class="card-title">Config / JSON the game has read <span id="configCount" class="muted"></span><span class="spacer"></span>
+          <label class="mini-check"><input type="checkbox" id="configRecent"> last 60s</label>
+          <input type="search" id="configFilter" placeholder="Filter…">
+        </div>
+        <table class="grid" id="configTable">
+          <thead><tr><th title="Paths under config/ are shown without the prefix">File</th><th>Hits</th><th>Last</th><th>Status</th></tr></thead>
+          <tbody></tbody>
+        </table>
       </div>
     </section>
   </main>
@@ -174,6 +164,6 @@
   </form>
 </dialog>
 
-<script src="dev-companion.js?v=20260930companion1"></script>
+<script src="dev-companion.js?v=20261002context1"></script>
 </body>
 </html>

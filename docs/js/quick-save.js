@@ -122,12 +122,13 @@
     };
   }
 
+  // Same clock the HUD shows (the represented day spans only the active
+  // hours, so time01 is not a 24h fraction).
   function describeTime(calendar) {
     if (!calendar) return '';
-    const minutes = Math.round((Number(calendar.time01) || 0) * 24 * 60);
-    const hh = String(Math.floor(minutes / 60) % 24).padStart(2, '0');
-    const mm = String(minutes % 60).padStart(2, '0');
-    return `Day ${calendar.day ?? '?'} ${hh}:${mm}`;
+    const cal = window.CalendarSystem;
+    const clock = cal?.formatClockTime && cal?.getHour ? cal.formatClockTime(cal.getHour(Number(calendar.time01) || 0)) : '';
+    return `Day ${calendar.day ?? '?'}${clock ? ` ${clock}` : ''}`;
   }
 
   // ── Quick save ──────────────────────────────────────────────────────

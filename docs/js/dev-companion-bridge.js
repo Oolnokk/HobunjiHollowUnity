@@ -55,7 +55,6 @@
   let configSeq = 0;
   let lastHeartbeatAt = 0;
   let stateTimer = null;
-  let lastStateSignature = '';
   let channel = null;
 
   function clone(value) {
@@ -191,14 +190,25 @@
     return fn(args || {});
   }
 
+  // Sends only the providers whose output changed since the last push (the
+  // companion merges partial updates); `force` resends everything, e.g. when a
+  // companion (re)connects.
+  const lastProviderSignatures = new Map();
   function pushState(force = false) {
     if (!isConnected() && !force) return;
     const state = collectState();
-    let signature = '';
-    try { signature = JSON.stringify(state); } catch (_) {}
-    if (!force && signature && signature === lastStateSignature) return;
-    lastStateSignature = signature;
-    send({ type: 'state', state });
+    const changedState = {};
+    let changedCount = 0;
+    for (const [key, value] of Object.entries(state)) {
+      let signature = '';
+      try { signature = JSON.stringify(value); } catch (_) {}
+      if (!force && signature && lastProviderSignatures.get(key) === signature) continue;
+      lastProviderSignatures.set(key, signature);
+      changedState[key] = value;
+      changedCount++;
+    }
+    if (!changedCount) return;
+    send({ type: 'state', state: changedState, partial: !force });
   }
 
   function ensureStateTimer() {
@@ -226,7 +236,6 @@
     lastHeartbeatAt = Date.now();
     if (message.type === 'companion-hello' || !wasConnected) {
       send(helloPayload());
-      lastStateSignature = '';
       pushState(true);
       send({ type: 'config-access', entries: [...configLog.values()].map(clone), full: true });
       send({ type: 'trace-snapshot', latest: [...traceLatest.values()], history: traceHistory.slice(-60) });
@@ -244,7 +253,7 @@
         reply = { type: 'reply', requestId: message.requestId, ok: false, error: String(error?.message || error) };
       }
       send(reply);
-      pushState(true);
+      pushState(false);
     }
   }
 
@@ -346,6 +355,57 @@
     return { ok: true, mode: api.getSourceMode(), note: 'Takes effect on the next load — quick save + quick load to keep your spot.' };
   });
 
+  // ── Context panels ──────────────────────────────────────────────────
+  // A module adds a small, context-aware tool to the companion's "Now" tab
+  // without the companion knowing anything about it:
+  //   registerPanel({
+  //     id, title, order?,               // order: lower renders first
+  //     when: () => bool,                // shown only while this is true
+  //     render: () => ({ summary?, rows?: [[label, value]], note?,
+  //                      actions?: [{ id, label, title?, confirm?, active?, group? }] }),
+  //     onAction: (actionId, args) => result,
+  //   })
+  // render() runs at the state poll rate while a companion is connected, so
+  // it must be cheap (read state, don't compute).
+  const panels = new Map();
+  function registerPanel(spec) {
+    if (!spec?.id || typeof spec.render !== 'function') return false;
+    panels.set(String(spec.id), spec);
+    return true;
+  }
+  registerStateProvider('panels', () => {
+    const out = [];
+    for (const spec of panels.values()) {
+      try {
+        if (spec.when && !spec.when()) continue;
+        const body = spec.render() || {};
+        out.push({ id: spec.id, title: spec.title || spec.id, order: Number(spec.order) || 0, ...body });
+      } catch (error) {
+        out.push({ id: spec.id, title: spec.title || spec.id, order: Number(spec.order) || 0, note: `Panel failed: ${String(error?.message || error)}` });
+      }
+    }
+    return out.sort((a, b) => a.order - b.order);
+  });
+  registerCommand('panel-action', async args => {
+    const spec = panels.get(String(args.panel || ''));
+    if (!spec?.onAction) throw new Error(`Panel "${args.panel}" has no actions.`);
+    const result = await spec.onAction(String(args.action || ''), args.args || {});
+    return result ?? { ok: true };
+  });
+
+  // Dev Mode is the game's own Settings checkbox; flipping it through its
+  // change event keeps game.js the single owner of s_devMode.
+  registerCommand('dev-mode', args => {
+    const box = document.getElementById('settingDevMode');
+    if (!box) return { ok: false, error: 'Dev Mode setting not found.' };
+    const next = args.enabled == null ? !box.checked : !!args.enabled;
+    if (box.checked !== next) {
+      box.checked = next;
+      box.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    return { ok: true, enabled: box.checked };
+  });
+
   registerCommand('ping', () => ({ ok: true, at: Date.now() }));
   registerStateProvider('bridge', () => ({ sessionId, pageLoadId, bootedAt, configCount: configLog.size }));
 
@@ -358,6 +418,7 @@
     onConnectionChange(listener) { if (typeof listener === 'function') connectionListeners.add(listener); return () => connectionListeners.delete(listener); },
     registerCommand,
     registerStateProvider,
+    registerPanel,
     runCommand,
     collectState,
     pushState: () => pushState(true),

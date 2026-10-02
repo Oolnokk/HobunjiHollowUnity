@@ -252,14 +252,9 @@
   }
 
   function closePanel() {
-    const panel = document.getElementById('mapEditPanel');
-    if (panel) panel.style.display = 'none';
-    document.getElementById('mapEditBtn')?.classList.remove('fed-open');
-    window.__mapEditorPanelOpen = false;
-    disarmPicker();
-    if (selectedPlacement) detachPlacement();
-    clearCameraMarkers();
+    setSessionOpen(false);
   }
+
 
   function ensureTransformControl() {
     if (transformControl || !THREE.TransformControls) return transformControl;

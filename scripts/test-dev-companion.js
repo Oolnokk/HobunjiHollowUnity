@@ -221,6 +221,31 @@ function makeContext(extra = {}) {
     bridge.trace('dialogue', { event: 'node' });
     await new Promise(resolve => setTimeout(resolve, 5));
     assert.ok(received.some(m => m.type === 'trace' && m.record.channel === 'dialogue'));
+
+    // Context panels: shown only while when() holds, actions routed back to the module.
+    let visible = false;
+    let acted = null;
+    bridge.registerPanel({ id: 'ctx', title: 'Ctx', when: () => visible, render: () => ({ summary: 'hi', actions: [{ id: 'go', label: 'Go' }] }), onAction: (action, args) => { acted = [action, args.n]; return { ok: true }; } });
+    const panelsNow = () => JSON.parse(JSON.stringify(bridge.collectState().panels));
+    assert.deepEqual(panelsNow(), [], 'a panel is hidden while its context does not apply');
+    visible = true;
+    assert.equal(panelsNow()[0].summary, 'hi');
+    received.length = 0;
+    companion.postMessage(envelope({ type: 'command', requestId: 'r2', name: 'panel-action', args: { panel: 'ctx', action: 'go', args: { n: 3 } } }));
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.deepEqual(acted, ['go', 3]);
+    const partial = received.find(m => m.type === 'state');
+    assert.ok(partial?.partial, 'after a command only changed providers are sent');
+    assert.ok('panels' in partial.state && !('probe' in partial.state), 'unchanged providers are not resent');
+  }
+
+  // ── Calendar time skips use the same time-of-day bands as conditions ─
+  {
+    const fishing = read('js/fishing-minigame.js');
+    assert.match(fishing, /function fishingTimeOfDay\(hour = deps\.getHour\(\)\)/);
+    const calendar = read('js/calendar-system.js');
+    assert.match(calendar, /registerPanel\(\{\s*id: 'time-weather'/);
+    assert.match(read('js/dialogue-content.js'), /id: 'conversation'/);
   }
 
   console.log('test-dev-companion: ok');

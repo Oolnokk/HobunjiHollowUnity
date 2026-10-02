@@ -17,7 +17,7 @@
   // renderRelationshipHearts, stopNpcDialogueTypewriter, hideChoiceButtons,
   // dialogueSeatId) instead.
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+  function init(injectedDeps) { deps = injectedDeps; _registerCompanionPanel(); }
 
   const _npcDialogueEl      = document.getElementById('npcDialogue');
   const _npcDialogueNameEl  = document.getElementById('npcDialogueName');
@@ -450,6 +450,66 @@
       selection: _dlgTraceSelection,
       pools: _dlgTracePools.slice(-8),
       ...extra.more,
+    });
+  }
+
+  // Conversation panel on the companion's "Now" tab: the NPC you're talking
+  // to (or last talked to) plus the state that steers which tree they pick —
+  // favor (relationship conditions) and what you've already heard (first vs
+  // returning, unheard-first ordering). Edits here are direct test overrides:
+  // no favor multipliers, spillover, or memory entries.
+  let _lastNpcRec = null;
+
+  function _favorPointsPerHeart() {
+    return Number(window.NpcFavorBalance?.heartsToFavorPoints?.(1)) || 1;
+  }
+
+  function _registerCompanionPanel() {
+    const companion = window.DevCompanion;
+    if (!companion?.registerPanel) return;
+    companion.registerPanel({
+      id: 'conversation',
+      title: '💬 Conversation state',
+      order: 10,
+      when: () => !!_lastNpcRec,
+      render: () => {
+        const rec = _lastNpcRec;
+        const st = getNpcDlgState(rec.id);
+        const hearts = (Number(st.favor) || 0) / _favorPointsPerHeart();
+        const trees = (rec.dialogueTrees || []).filter(t => (t.trigger || 'interact') === 'interact');
+        const heardTrees = trees.filter(t => (st.heardTrees || []).includes(t.id)).length;
+        return {
+          summary: `${rec.name || rec.id}${_dlgNpcRec === rec ? ' — talking now' : ' — last talked to'}`,
+          rows: [
+            ['Relationship', `${hearts.toFixed(2)} hearts (${Math.round(Number(st.favor) || 0)} favor)`],
+            ['Encounter', (st.heardTrees || []).length ? 'returning' : 'first'],
+            ['Trees heard', `${heardTrees} of ${trees.length}`],
+            ['Pool lines heard', String((st.heardPoolEntries || []).length)],
+          ],
+          actions: [
+            { id: 'favor', label: '−1 heart', args: { hearts: -1 }, group: 'Relationship' },
+            { id: 'favor', label: '+1 heart', args: { hearts: 1 }, group: 'Relationship' },
+            { id: 'reset-heard', label: 'Forget what was heard', title: 'Clears heard trees, pool lines and sequence progress for this NPC so tree selection starts over (encounter becomes "first").', group: 'Selection' },
+          ],
+          note: 'Test overrides: applied directly, saved with the game like normal progress. Quick load to undo.',
+        };
+      },
+      onAction: (action, args) => {
+        const rec = _lastNpcRec;
+        if (!rec) return { ok: false, error: 'No NPC yet.' };
+        const st = getNpcDlgState(rec.id);
+        if (action === 'favor') {
+          st.favor = Math.round(((Number(st.favor) || 0) + (Number(args.hearts) || 0) * _favorPointsPerHeart()) * 10) / 10;
+          return { ok: true };
+        }
+        if (action === 'reset-heard') {
+          st.heardTrees = [];
+          st.heardPoolEntries = [];
+          st.visitedSeqSlots = {};
+          return { ok: true };
+        }
+        return { ok: false, error: `Unknown action ${action}` };
+      },
     });
   }
 
@@ -914,6 +974,7 @@
   // bio/line fallback) — shared by plain NPCs and by the "Chat" branch
   // of the merchant shop/chat choice in game.js's openNpcDialogue.
   function _beginNpcConversation(rec) {
+    if (rec?.id) _lastNpcRec = rec;
     _dlgTraceSelection = null;
     _dlgTracePools.length = 0;
     const tree = _pickDialogueTree(rec);
@@ -984,6 +1045,7 @@
   // leftover tree/sequence state before renderDlgNode renders the
   // synthetic choice node itself.
   function beginSyntheticChoice(rec) {
+    if (rec?.id) _lastNpcRec = rec;
     _dlgNpcRec = rec; _dlgTree = null; _dlgNodeMap = null; _dlgSeqStack = [];
     if (_traceActive()) _dlgTraceSelection = { mode: 'synthetic', source: 'game.js synthetic screen (task turn-in / favor / shop counter) — not an authored tree', reason: 'Built at runtime by openNpcDialogue, not from config', candidates: [] };
   }

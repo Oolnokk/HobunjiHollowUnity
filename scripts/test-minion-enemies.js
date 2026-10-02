@@ -32,7 +32,7 @@ assert.match(combatBanditSource, /portrait\.userData\.proceduralHandParent = han
 assert.match(devSource, /resolvedRosterDyes[\s\S]*hands=\$\{handRig\}/, 'Testing Arena Minion diagnostics must expose rendered dye resolution and hand attachment');
 const banditIndex = indexSource.indexOf('combat-bandit.js?v='); // Cache token may change whenever the shared humanoid renderer changes.
 assert(banditIndex >= 0 && banditIndex < indexSource.indexOf('combat-minion.js?v=20260929lichroom1'));
-assert(indexSource.indexOf('combat-minion.js?v=20260929lichroom1') < indexSource.indexOf('dev-spawner.js?v=20260927reviewfix1'));
+assert(indexSource.indexOf('combat-minion.js?v=20260929lichroom1') < indexSource.indexOf('dev-spawner.js?v=20261002h6fca74b'));
 assert(indexSource.includes('resource-system.js?v=20261001quickdebuff2'));
 assert(indexSource.includes('combat-config-loader.js?v='));
 assert(indexSource.includes('game.js?v=20261002h5a484f1'));

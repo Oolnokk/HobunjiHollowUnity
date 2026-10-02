@@ -169,25 +169,35 @@ Settings → **Dev Companion Window** (or `window.DevCompanion.open()`) opens
 (a per-tab session id carried on a BroadcastChannel; it reconnects across the
 game tab's reloads and ignores other tabs).
 
-- **Quick Save / Quick Load** (`js/quick-save.js`): IndexedDB save states that
-  hold the whole save plus exact area/position/facing/doorway/time. Loading
-  reloads the game (so edited config is picked up), applies the snapshot at the
-  start of the next boot, auto-plays the same farmer/world, and places you on
-  the saved spot.
-- **Autosave pause** (`js/autosave-pause.js`): tab-scoped; blocks automatic
-  folder syncs and rolling recovery autosaves (explicit saves still work).
-  Quick load pauses it by default. A badge shows in-game while paused.
-- **Recovery backups**: one-click swap between the Save Recovery checkpoints,
-  going straight back into the game.
-- **Map Edit**: the in-game Map Edit panel's controls (plus numeric nudges);
-  while a companion is connected, the 🗺️ button drives the session from there.
-- **Live Config**: every config/JSON the game fetched (fetch wrapper + resource
-  timing, local DB overrides flagged), the map in use, and the dialogue node on
-  screen with the condition checks that chose its tree
-  (`ConditionRegistry.explainEntry`).
+It is laid out around context: the header always shows who/where/when you are
+and what's active (conversation, Map Edit session, paused autosave) with
+⚡ Quick Save / ↺ Load buttons, and "Follow game" jumps to the tab that matches
+what just started.
 
-Features plug in with `DevCompanion.registerCommand`,
-`registerStateProvider`, and `trace` (`js/dev-companion-bridge.js`).
+- **Now** — the dialogue on screen (or that just ended): node text/choices,
+  source config, and the condition checks that picked its tree
+  (`ConditionRegistry.explainEntry`); the last ambient line and its source;
+  and context panels contributed by game modules — *Conversation state*
+  (favor ±1 heart, forget heard trees) and *Time & weather* (skip to the next
+  dawn/day/dusk/night/weekday/season through the real hour-by-hour passage,
+  force clear/rain/storm) — the knobs dialogue conditions read.
+- **Saves** — quick saves for the current farmer/world (`js/quick-save.js`:
+  IndexedDB save states with exact area/position/facing/doorway/time; loading
+  reloads so edited config is picked up, applies the snapshot at the start of
+  the next boot, auto-plays the same save and restores placement), one-click
+  recovery-backup swaps, and the autosave pause (`js/autosave-pause.js`:
+  tab-scoped; blocks automatic folder syncs and rolling recovery autosaves).
+- **Map** — the in-game Map Edit panel's controls plus numeric nudges; while a
+  companion is connected the 🗺️ button drives the session from there. Shows
+  why it's unavailable (Dev Mode off / area not editable) instead of dead
+  buttons.
+- **Files** — every config/JSON the game has read (fetch wrapper + resource
+  timing) and which databases come from local editor overrides.
+
+Extending it (`js/dev-companion-bridge.js`): `registerPanel({ id, title,
+when, render, onAction })` adds a context panel to **Now** with no companion
+changes; `registerCommand`, `registerStateProvider` and `trace` are the lower
+level hooks the built-in tabs use.
 
 ## Future plans: multiplayer
 
