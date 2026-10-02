@@ -547,7 +547,7 @@ assert.match(source, /portraitGateWaitingWriters/, 'waiting woven portraits bloc
 assert.match(source, /portraitGatePreferReaders = portraitGateReaderWaiters\.length > 0/, 'each woven writer yields to already-waiting ordinary portraits before another woven writer starts');
 assert.match(source, /const compatibilityTint = function clothingPatternImageForTint/, 'the pre-817 global tint compatibility entry point is restored for portrait code that bypasses renderOptions.imageForTint');
 assert.match(source, /if \(!map\) return portraitBaseTintResolver\(img, sourceKey, tint\)/, 'global tint behavior stays canonical outside an actively owned woven portrait render');
-assert.match(source, /const patternMap = Array\.isArray\(descriptors\)[\s\S]*?buildPortraitPatternMap\(descriptors\)/, 'each woven portrait render builds its own descriptor map');
+assert.match(source, /const patternMap = Array\.isArray\(descriptors\)[\s\S]*?buildPortraitPatternMap\(descriptors,/, 'each woven portrait render builds its own descriptor map with the current portrait-view argument');
 assert.match(source, /patternImageForTint\(patternMap, baseTintResolver, pending => pendingBuilds\.add\(pending\), img, sourceKey, tint\)/, 'the woven tint resolver closes over that render-local descriptor map and reports this render\'s cache misses');
 assert.match(source, /await Promise\.allSettled\(\[\.\.\.pendingBuilds\]\)/, 'woven portrait renders wait for missing pattern composites before returning their canvas');
 assert.match(source, /if \(!patternMap\?\.size\)[\s\S]*?acquirePortraitReadGate\(\)/, 'ordinary portraits acquire the shared side of the portrait gate');
@@ -746,7 +746,7 @@ assert.match(patternEditorSource, /motifDataUrl: replayedMask\.toDataURL\('image
 assert.match(patternEditorSource, /Trim preview reconstructed directly from this variant’s saved authoring operations/, 'journal-backed previews visibly report that no exported PNG is required');
 assert.match(patternEditorSource, /authorOpsComplete && authorOps\.length[\s\S]*?replayTrimAuthorOps\(authorOps, baseCanvas\)[\s\S]*?: await editableTrimMaskCanvas/, 'paint-editor loading also prefers complete operation history over any old exported PNG');
 assert.match(patternEditorSource, /const sourceMask = replayed \? null : await editableTrimMaskCanvasFor/, 'journal-backed replication does not fetch a missing or stale motif PNG before replay');
-assert.match(patternEditorSource, /Authored trim entry found, but its PNG is missing\/unreadable\. Showing the base garment/, 'legacy PNG-only preview still has a safe base-garment fallback');
+assert.match(patternEditorSource, /Legacy trim PNG is missing\/unreadable\. Showing the base garment\./, 'legacy PNG-only preview still has a safe base-garment fallback');
 assert.match(patternEditorSource, /Garment trim authoring/, 'Pattern Editor exposes the dedicated garment trim workspace');
 assert.match(patternEditorSource, /species\/gender variant/i, 'garment trim editor makes per-variant authoring explicit');
 assert.match(patternEditorSource, /trimCoverageText/, 'garment trim editor reports missing species/gender coverage instead of relying on a hard-coded list');
