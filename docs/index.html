@@ -126,7 +126,7 @@
        js/wild-berries.js also read from it via their own init() calls
        further down game.js. Doesn't touch the DOM (see player-vitals.js's
        comment above and the plan notes on that bug class). -->
-  <script src="js/item-processing.js?v=20260902mod1"></script>
+  <script src="js/item-processing.js?v=20261001foodgift2"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="debug.js?v=20260925weavesessiondebug4"></script>
@@ -316,7 +316,7 @@
   <script src="js/bounty-board.js?v=20260831spearheadexisting1-colors1"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261001quickdebuff2"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261001foodgift2"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -326,8 +326,8 @@
   <!-- Trinkets + shared 8-point Attunement budget; registers stat/perk/companion providers. -->
   <script src="js/trinket-system.js?v=20260930ench1"></script>
   <script src="js/cooking-data.js?v=20260811a"></script>
-  <script src="js/food-processing.js?v=20260811a"></script>
-  <script src="js/cooking-system.js?v=20260811b"></script>
+  <script src="js/food-processing.js?v=20261001foodgift2"></script>
+  <script src="js/cooking-system.js?v=20261001foodgift2"></script>
   <script src="js/key-item-system.js?v=20260918banubu1"></script>
   <!-- Alchemy (reagent/effect defs, potion brewing, shared timed effects) —
        window.AlchemySystem. Self-contained aside from deps injected via
@@ -452,7 +452,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.RelationshipsPanel.init(...) during its own setup. -->
-  <script src="js/relationships-panel.js?v=20260915perf1"></script>
+  <script src="js/relationships-panel.js?v=20261001foodgift1"></script>
   <!-- Debug hitbox/collider overlay, Settings → Dev Tools → Show Hitboxes
        (window.DebugHitboxes) — self-contained aside from deps injected via
        init(), so load order relative to the other systems above doesn't

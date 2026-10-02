@@ -391,6 +391,7 @@
       tags: ['Processed', 'Oil', 'Nut'],
       desc: `${oil.label} pressed in a squeezing vat.`,
       ingredientKeys: [inputKey],
+      giftIngredientKeys: [inputKey], // Source-specific output key makes this provenance safe for NPC gift preferences.
       spriteIcon: 'jar_liquid.png',
       spriteColor: oil.color,
       spriteMode: 'keyed',
@@ -411,6 +412,7 @@
       tags: ['Processed', 'Lard', 'Rendered Fat', 'Meat'],
       desc: `Cooking fat rendered from ${String(input?.label || inputKey).toLowerCase()} in a squeezing vat.`,
       ingredientKeys: [inputKey],
+      giftIngredientKeys: [inputKey], // Source-specific output key makes this provenance safe for NPC gift preferences.
       spriteIcon: 'jar_liquid.png',
       spriteColor: 0xE8D6AA,
       spriteMode: 'keyed',
@@ -429,6 +431,7 @@
       tags: ['Processed', 'Oil', 'Fish'],
       desc: `Cooking oil pressed from ${String(input?.label || inputKey).toLowerCase()} in a squeezing vat.`,
       ingredientKeys: [inputKey],
+      giftIngredientKeys: [inputKey], // Source-specific output key makes this provenance safe for NPC gift preferences.
       spriteIcon: 'jar_liquid.png',
       spriteColor: 0x8DA7A6,
       spriteMode: 'keyed',

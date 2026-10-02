@@ -1,10 +1,10 @@
 // NPC Gifting — lets the player hand whatever they're holding (a bag item
 // via the wheel, or clothing via the new inventory "Hold" button, see
-// game.js's getHeldGiftItem) to a nearby NPC. Reactions are driven entirely
+// game.js's getHeldGiftItem) to a nearby NPC. Ordinary reactions are driven
 // by item TRAITS (js/item-traits.js) matched against each NPC's
-// gifts.{loved,liked,disliked,hated} trait-id lists (config/npcs/
-// hobunji-starter-npc-database.json) — never by specific item keys, per
-// design: an NPC likes "Hot" colors or "Ore", not "the bronze pickaxe".
+// gifts.{loved,liked,disliked,hated} trait-id lists. Food adds a second,
+// data-driven layer: broad ingredient-type likes, artisan-good likes, and
+// specific ingredient likes can contribute alongside those ordinary traits.
 //
 // Wired into the existing interaction-popup/action-bar system the same way
 // alcohol-gameplay-bridge.js's npc_offer_alcohol_swig already is (see
@@ -21,7 +21,10 @@
   if (window.NpcGifting) return;
 
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+  function init(injectedDeps) {
+    deps = injectedDeps;
+    window.NpcFoodGiftPreferences?.init?.({ getItemDefs: injectedDeps?.getItemDefs }); // Shares only item-definition lookup with the extracted food preference runtime.
+  }
 
   // Per-NPC gift-preference traits the player has actually learned about by
   // gifting them something and seeing the reaction — separate from
@@ -43,7 +46,9 @@
   }
 
   function canonicalGiftPreferences(npcId) {
-    return deps?.getNpcRecordById?.(npcId)?.gifts || null; // Uses the same live NPC record as gifting so saved discoveries cannot outlive a changed authored preference tier.
+    const rec = deps?.getNpcRecordById?.(npcId); // Used to rebuild both ordinary trait preferences and current food-like defaults for discovery reconciliation.
+    if (!rec) return null;
+    return window.NpcFoodGiftPreferences?.compiledGiftPreferencesForRecord?.(rec) || rec.gifts || null;
   }
 
   function reconcileDiscoveredBucket(npcId, bucket) {
@@ -101,6 +106,7 @@
     hated: 'is upset by',
   };
 
+
   function itemDefFor(held) {
     if (held.kind === 'clothing') return null; // Clothing isn't in ITEM_DEFS — see js/equipment-panel.js.
     return held.def || deps.getItemDefs()[held.key] || null;
@@ -123,6 +129,34 @@
     return window.ItemTraits?.computeItemTraits(held.key, null) || [];
   }
 
+
+  function getPreferenceLabel(id) {
+    return window.NpcFoodGiftPreferences?.getPreferenceLabel?.(id) || window.ItemTraits?.getTraitLabel?.(id) || id;
+  }
+
+  function evaluateHeldGift(rec, held) {
+    const traits = traitsForHeld(held); // Used to preserve the original item-trait reaction alongside food-specific scoring.
+    if (held?.kind === 'clothing') return { ...evaluateGiftReaction(rec?.gifts || {}, traits), traits, foodContext: null, foodScore: 0 };
+    const foodContext = window.NpcFoodGiftPreferences?.foodPreferenceContextForItem?.(held?.key, itemDefFor(held)) || null; // Extracted runtime owns ingredient lineage/artisan classification.
+    const foodEvaluation = window.NpcFoodGiftPreferences?.evaluateFoodLikes?.(rec, foodContext) || null; // Extracted runtime returns only the additive food contribution.
+    return { ...evaluateGiftReaction(rec?.gifts || {}, traits, foodEvaluation), traits, foodContext, foodScore: Number(foodEvaluation?.score) || 0 };
+  }
+
+  function debugGiftEvaluation(rec, held = deps?.getHeldGiftItem?.()) {
+    const evaluation = held ? evaluateHeldGift(rec, held) : null; // Used by the mobile-visible farm log and direct diagnostics calls.
+    const report = evaluation ? {
+      npcId: rec?.id || null,
+      itemKey: held?.key || held?.instance?.cosmeticId || null,
+      tier: evaluation.tier,
+      score: evaluation.score,
+      foodScore: evaluation.foodScore,
+      foodContext: evaluation.foodContext,
+      matches: evaluation.matches,
+    } : { npcId: rec?.id || null, itemKey: null, error: 'No gift held' };
+    window.__farmLog?.(`[NpcGifting] ${JSON.stringify(report)}`, 'info', 'social');
+    return report;
+  }
+
   function matchedTrait(list, traits) {
     return (list || []).find(t => traits.includes(t));
   }
@@ -137,7 +171,7 @@
   // loved/hated authoring remains ±10 per trait. The final dialogue verdict
   // is based on the NET score, so mixed gifts can cancel or outweigh one
   // another instead of one disliked/hated trait automatically winning.
-  function evaluateGiftReaction(npcGifts, traits) {
+  function evaluateGiftReaction(npcGifts, traits, foodEvaluation = null) {
     const matches = { loved: [], liked: [], disliked: [], hated: [] };
     let score = 0;
     let matchedCount = 0;
@@ -145,6 +179,11 @@
       matches[tier] = matchedTraits(npcGifts?.[tier], traits);
       matchedCount += matches[tier].length;
       score += matches[tier].length * TIER_FAVOR[tier];
+    }
+    if (foodEvaluation?.matches?.length) {
+      matches.liked = [...new Set([...matches.liked, ...foodEvaluation.matches])];
+      matchedCount += foodEvaluation.matches.length;
+      score += Number(foodEvaluation.score) || 0;
     }
 
     let tier = 'neutral';
@@ -214,9 +253,7 @@
     const held = deps.getHeldGiftItem();
     if (!npcId || !isItemGiftable(held)) return false;
 
-    const traits = traitsForHeld(held);
-    const npcGifts = walker.rec.gifts || {};
-    const evaluation = evaluateGiftReaction(npcGifts, traits);
+    const evaluation = evaluateHeldGift(walker.rec, held); // Uses the same combined trait + food preference evaluator exposed to diagnostics/tests.
     const tier = evaluation.tier;
     const name = walker.rec.name || walker.rec.displayName || 'They';
     const itemLabel = itemLabelFor(held);
@@ -269,6 +306,7 @@
       ? `${name} ${TIER_VERBS[tier]} the ${itemLabel}.${keepNote}`
       : `${name} ${TIER_VERBS[tier]} the ${itemLabel}, but hands it back.${keepNote}`;
     deps.showToast?.(reactionMsg, tier !== 'hated');
+    debugGiftEvaluation(walker.rec, held); // Mirrors every completed reaction into the in-game/mobile debug log before the held stack changes.
     deps.refreshItemScroll?.();
     deps.buildInventoryGrid?.();
     deps.buildEquipmentSlots?.();
@@ -288,5 +326,8 @@
     serializeDiscoveredPrefs,
     restoreDiscoveredPrefs,
     reconcileAllDiscoveredPrefs,
+    getPreferenceLabel,
+    evaluateHeldGift,
+    debugGiftEvaluation,
   };
 })();
