@@ -490,13 +490,16 @@
   function pinCinematicRegion(mapId, bounds) {
     const controller = zones.get(mapId); // Uses the existing chunk builder/disposal owner rather than a second terrain renderer.
     if (!controller) return () => {};
-    const region = { ...bounds, col: (bounds.minCol + bounds.maxCol) / 2, row: (bounds.minRow + bounds.maxRow) / 2 }; // Center holds streamed neighborhood residency throughout playback.
+    const region = { ...bounds, col: bounds.focusCol ?? (bounds.minCol + bounds.maxCol) / 2, row: bounds.focusRow ?? (bounds.minRow + bounds.maxRow) / 2 }; // Player focus chooses the one chunk held during playback.
     cinematicRegions.set(mapId, region);
-    controller.prime(region.col, region.row);
-    for (let cz = Math.max(0, tileToChunk(bounds.minRow) - 1); cz <= Math.min(controller.maxCz, tileToChunk(bounds.maxRow) + 1); cz++) {
-      for (let cx = Math.max(0, tileToChunk(bounds.minCol) - 1); cx <= Math.min(controller.maxCx, tileToChunk(bounds.maxCol) + 1); cx++) controller.load(cx, cz);
-    }
-    return () => { if (cinematicRegions.get(mapId) === region) cinematicRegions.delete(mapId); }; // Completion/error returns streaming to the live player.
+    controller.cancelStaged();
+    controller.queue.clear();
+    controller.centerCx = clamp(tileToChunk(region.col), 0, controller.maxCx);
+    controller.centerCz = clamp(tileToChunk(region.row), 0, controller.maxCz);
+    for (const [key, record] of controller.loaded) if (record.cx !== controller.centerCx || record.cz !== controller.centerCz) controller.unload(key);
+    controller.load(controller.centerCx, controller.centerCz); // Only the player's current chunk is resident throughout the rescue.
+    controller.inactiveSeconds = 0;
+    return () => { if (cinematicRegions.get(mapId) === region) { cinematicRegions.delete(mapId); controller.centerCx = controller.centerCz = null; } }; // Completion/error returns streaming to the live player.
   }
 
   function rebuildZone(mapId, col = null, row = null) {
@@ -515,7 +518,8 @@
     for (const controller of zones.values()) {
       if (controller === active && player) {
         const region = cinematicRegions.get(controller.mapId); // Scripted loading/playback has priority over gameplay coordinates.
-        controller.updateActive(region?.col ?? player.x / deps.TILE, region?.row ?? player.y / deps.TILE, dt);
+        if (region) controller.inactiveSeconds = 0; // A cinematic pin never enqueues or stages neighboring chunks.
+        else controller.updateActive(player.x / deps.TILE, player.y / deps.TILE, dt);
       } else {
         controller.updateInactive(dt);
       }

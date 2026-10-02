@@ -111,6 +111,14 @@
       ? normalizeCamera(cameraId, 0)
       : cameraForId(areaId, cameraId);
     if (!camera) return null;
+    const samePoint = (a, b) => a?.x === b?.x && a?.y === b?.y && a?.z === b?.z; // Compare authored transforms only on activation, never per frame.
+    const samePosition = active && (camera.positionProvider && active.camera.positionProvider || samePoint(active.camera.position, camera.position));
+    const sameTarget = active && (camera.targetProvider && active.camera.targetProvider || samePoint(active.camera.target, camera.target));
+    if (active?.areaId === String(areaId || '') && active.camera.id === camera.id && active.camera.fovDeg === camera.fovDeg && samePosition && sameTarget) {
+      active.camera = camera;
+      active.targetWalker = options.targetWalker || active.targetWalker;
+      return active; // Same physical shot: update its live target without restarting the blend.
+    }
     active = {
       areaId: String(areaId || ''),
       camera,

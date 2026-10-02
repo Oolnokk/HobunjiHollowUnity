@@ -54,12 +54,13 @@ vm.runInNewContext(game.slice(game.indexOf('      function dialoguePortraitCamer
 assert.equal(faceContext.aim.targetX,12.5);assert.equal(faceContext.aim.targetZ,18.75);assert.equal(faceContext.aim.lookY,1.2);
 
 const chunks=read('docs/js/wilderness-chunks.js'), loads=[];
-const controller={mapId:'forest',maxCx:20,maxCz:20,prime(c,r){this.focus={c,r};},load(cx,cz){loads.push([cx,cz]);},updateActive(c,r){this.focus={c,r};}};
-const chunkContext={zones:new Map([['forest',controller]]),tileToChunk:n=>Math.floor(n/16),deps:{getCurrentArea:()=> 'forest',isZoneArea:()=>true,player:{x:900,y:900},TILE:1},refreshDebugText(){}};
+const controller={mapId:'forest',maxCx:20,maxCz:20,queue:new Map([['neighbor',{}]]),loaded:new Map([['old',{cx:0,cz:0}]]),cancelStaged(){this.cancelled=true;},unload(key){this.loaded.delete(key);},prime(c,r){this.focus={c,r};},load(cx,cz){loads.push([cx,cz]);},updateActive(c,r){this.focus={c,r};}};
+const chunkContext={zones:new Map([['forest',controller]]),tileToChunk:n=>Math.floor(n/16),deps:{getCurrentArea:()=> 'forest',isZoneArea:()=>true,player:{x:900,y:900},TILE:1},clamp:(n,min,max)=>Math.max(min,Math.min(max,n)),refreshDebugText(){}};
 const pinStart=chunks.indexOf('  const cinematicRegions'),pinEnd=chunks.indexOf('  function rebuildZone',pinStart);
 vm.runInNewContext(chunks.slice(pinStart,pinEnd)+chunks.slice(chunks.indexOf('  function update(dt)'),chunks.indexOf('  function snapshot()'))+'\nrelease=pinCinematicRegion("forest",{minCol:32,minRow:48,maxCol:49,maxRow:66}); update(0);',chunkContext);
-assert.equal(controller.focus.c,40.5);assert.equal(controller.focus.r,57);
-assert.equal(loads.length,16,'whole scene footprint and its surrounding trees are built before reveal');
+assert.equal(controller.centerCx,2);assert.equal(controller.centerCz,3);
+assert.equal(loads.length,1,'only the current chunk is built before reveal');
+assert.equal(controller.queue.size,0);assert.equal(controller.loaded.size,0);assert(controller.cancelled);
 vm.runInNewContext('release();update(0);',chunkContext);
 assert.equal(controller.focus.c,900,'cleanup returns streaming to gameplay coordinates');
 
@@ -78,6 +79,12 @@ async function verifyAssetReadiness() {
   await assert.rejects(context.prepare(entities,{traverse(){}}),/Introduction animal texture failed/,'failed required character assets stop reveal');
 }
 
+// Temporary player doubles must clamp against their own live camera bearing, not gameplay azimuth.
+const facingStart=game.indexOf('          applyFacingDeadzone(rawRot'),facingEnd=game.indexOf('          resetRouteState()',facingStart);
+const facingContext={window:rotation.window,root:{position:{x:0,z:0},rotation:{y:0}},camera:{position:{x:5,z:0}},cameraRelativePerps:()=>[Math.PI/2,-Math.PI/2]};
+vm.runInNewContext('walker={rot:0,perpState:{},'+game.slice(facingStart,facingEnd)+'};walker.applyFacingDeadzone(0,1);',facingContext);
+assert(Math.abs(facingContext.walker.rot)>=40*Math.PI/180-1e-8,'the temporary player avoids the actual view deadzone');
+
 async function main() {
   await verifyAssetReadiness();
   let clock=0, subscriber=null, removed=false, unlocked=false;
@@ -87,21 +94,24 @@ async function main() {
   const context={state,document:{createElement,body:{appendChild(){}},addEventListener:(name,fn)=>listeners.set(name,fn),removeEventListener:name=>listeners.delete(name)},window:{CharacterActionLocks:{acquire:()=>({release:()=>{unlocked=true;}})},ControllerInput:{subscribe:(name,fn)=>{subscriber=fn;return()=>{subscriber=null;};},setOwner(){}}},nowMs:()=>clock,setTimeout:(fn,delay)=>{timers.push({fn,at:clock+delay});},ensureConfigLoaded:async()=>({entries:[preset]}),ensureFontsLoaded:async()=>true,finalizeHide(){} };
   vm.runInNewContext(loader.slice(loader.indexOf('  async function beginIntroduction('),loader.indexOf('  function callbackSource('))+'\napi=beginIntroduction;',context);
   const session=await context.api();
-  const [root,stageText,readinessText,continueButton,inputHint]=elements;
+  const [root,stageText,percentText,continueButton]=elements;
+  let releaseAssets;const pendingAssets=new Promise(resolve=>{releaseAssets=resolve;});
   for(let i=0;i<4;i++) {
     if(i)session.start(i);
     assert.equal(stageText.textContent,preset.stages[i].text);
     assert.equal(continueButton.disabled,true);
-    assert.equal(readinessText.textContent,'Loading…');
+    assert.equal(continueButton.style.visibility,'hidden');
     let continued=false;
-    const done=session.complete().then(()=>{continued=true;});
+    const done=session.complete(i===3?pendingAssets:undefined).then(()=>{continued=true;});
     continueButton.events.get('click')();await Promise.resolve();assert.equal(continued,false,'early input cannot skip loading or minimum duration');
     clock+=2999;assert.equal(timers[0].at,clock+1);
-    clock++;timers.shift().fn();await Promise.resolve();
+    clock++;timers.shift().fn();for(let tick=0;tick<5;tick++)await Promise.resolve();
+    if(i===3){assert.equal(session.getDebug().ready,false,'the final page alone still waits for required assets');releaseAssets();for(let tick=0;tick<8;tick++)await Promise.resolve();}
     assert.equal(session.getDebug().ready,true);
     assert.equal(continueButton.disabled,false);
-    assert.equal(readinessText.textContent,'Ready to continue.');
-    assert(inputHint.textContent.includes('Enter / Space'));
+    assert.equal(continueButton.style.visibility,'visible');
+    assert(continueButton.textContent.includes('Enter / Space'));
+    session.setProgress((i+1)*25);assert.equal(percentText.textContent,`${(i+1)*25}%`);
     if(i===1) subscriber({pressed:new Set(['Button0'])});
     else continueButton.events.get('click')();
     await done;assert.equal(continued,true);assert.equal(continueButton.disabled,true);
@@ -110,10 +120,13 @@ async function main() {
 
   // Execute real opening orchestration: all readiness hooks finish before scene one reveals.
   const order=[], records=['jubmir','father_hunundi_hodu','spearhead_unumanuk','khannibarri_agent'].map(id=>({id}));
-  const story={window:{__hobunjiGameStarted:true,LoadingScreenRuntime:{beginIntroduction:async()=>({complete:async()=>order.push('continue'),start:i=>order.push('stage'+i),finish:()=>order.push('reveal'),cancel(){}})},LocalDBOverrides:{loadDatabase:async()=>({npcs:records})},AuthoredCutsceneRuntime:{preloadOpeningMeeting:async()=>order.push('meeting-assets'),run:async(payload,options)=>{if(payload.title==='Rescue'){order.push('terrain');await options.onEnvironmentReady();order.push('actors');await options.onActorsReady();order.push('textures-shaders');await options.onReady();order.push('rescue');}else options.onDialogueContinue({id:'meeting_hunundi_final'});},placeOutsideTemple:async()=>{}}},document:{addEventListener(){}},performance:{now:()=>0},localStorage:{setItem(){},getItem(){return null;}}};
+  const story={window:{__hobunjiGameStarted:true,LoadingScreenRuntime:{beginIntroduction:async()=>({setProgress(){},complete:async work=>{await work;order.push('continue');},start:i=>order.push('stage'+i),finish:()=>order.push('reveal'),cancel(){}})},LocalDBOverrides:{loadDatabase:async()=>({npcs:records})},AuthoredCutsceneRuntime:{preloadOpeningMeeting:async()=>order.push('meeting-assets'),run:async(payload,options)=>{if(payload.title==='Rescue'){order.push('terrain');await options.onEnvironmentReady();order.push('actors');await options.onActorsReady();order.push('textures-shaders');await options.onReady();order.push('rescue');}else options.onDialogueContinue({id:'meeting_hunundi_final'});},placeOutsideTemple:async()=>{}}},document:{addEventListener(){}},performance:{now:()=>0},localStorage:{setItem(){},getItem(){return null;}}};
   vm.runInNewContext(read('docs/js/opening-story-cutscene.js'),story);
   assert.equal(await story.window.OpeningStoryCutscene.play({characterId:'c',worldId:'w'}),true);
-  assert.deepEqual(order,['continue','stage1','terrain','continue','stage2','actors','meeting-assets','continue','stage3','textures-shaders','continue','reveal','rescue']);
+  assert(order.indexOf('terrain') < order.indexOf('reveal'));
+  assert(order.indexOf('textures-shaders') < order.indexOf('reveal'));
+  assert.equal(order.filter(step=>step==='continue').length,4);
+  assert.deepEqual(order.filter(step=>step.startsWith('stage')),['stage1','stage2','stage3']);
   console.log('Independent neck deadzones, panel-safe projection, pinned terrain and four fresh-input introduction gates passed');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

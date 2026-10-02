@@ -97,7 +97,7 @@
       { id: 'wolf1', name: 'Gar-wolf', creatureTypeId: 'gar-wolf', team: 'gar_wolves', lookAtActorId: 'player', lc: 9, lr: 9, rotation: 45, pose: 'standing' },
       { id: 'wolf2', name: 'Gar-wolf', creatureTypeId: 'gar-wolf', team: 'gar_wolves', lookAtActorId: 'player', lc: 13, lr: 9, rotation: 270, pose: 'standing' },
       { id: 'wolf3', name: 'Gar-wolf', creatureTypeId: 'gar-wolf', team: 'gar_wolves', lookAtActorId: 'player', lc: 11, lr: 6, rotation: 90, pose: 'standing' },
-      npcActor(records, { id: 'jubmir', name: 'Jubmir', npcId: 'jubmir', lc: 11, lr: 15, rotation: 0, pose: 'standing' }),
+      npcActor(records, { id: 'jubmir', name: 'Jubmir', npcId: 'jubmir', lookAtActorId: 'player', lc: 11, lr: 15, rotation: 0, pose: 'standing' }),
       npcActor(records, { id: 'spearhead', name: 'Spearhead', npcId: 'spearhead_unumanuk', lc: 16, lr: 0, rotation: 180, pose: 'standing' }),
       { id: 'hound1', name: 'Dabinggi-hound', creatureTypeId: 'dabinggi-hound', team: 'dabinggi_hounds', lookAtActorId: 'player', lc: 9, lr: 15, rotation: 0, pose: 'standing' },
       { id: 'hound2', name: 'Dabinggi-hound', creatureTypeId: 'dabinggi-hound', team: 'dabinggi_hounds', lookAtActorId: 'player', lc: 13, lr: 15, rotation: 0, pose: 'standing' },
@@ -137,7 +137,7 @@
       { id: 'rescue_spearhead_enter', type: 'move', actorId: 'spearhead', targetLocal: { lc: 16, lr: 4 }, speed: 'fast', next: '__next__' },
       { id: 'rescue_spearhead_line', type: 'talk', speakerId: 'spearhead', text: "What's all this then?", next: '__next__' },
       { id: 'rescue_jubmir_turn', type: 'turn', actorId: 'jubmir', mode: 'actor', targetActorId: 'spearhead', duration: 0.45, next: '__next__' },
-      { id: 'rescue_jubmir_request', type: 'talk', speakerId: 'jubmir', text: "Spearhead — you can't imagine how glad I am to see you. Help me bring this stranger into town.", next: '__next__' },
+      { id: 'rescue_jubmir_request', type: 'talk', speakerId: 'jubmir', addressedActorId: 'spearhead', text: "Spearhead — you can't imagine how glad I am to see you. Help me bring this stranger into town.", next: '__next__' },
       { id: 'rescue_spearhead_rush', type: 'move', actorId: 'spearhead', targetLocal: { lc: 12, lr: 8 }, speed: 'fast', next: '__next__' },
       { id: 'rescue_fade_out', type: 'fade', direction: 'out', duration: 1.2, next: '__end__' },
     ];
@@ -220,7 +220,7 @@
       { id: 'meeting_fade_out', type: 'fade', direction: 'out', duration: 0.8, next: '__end__' },
     ];
     for (const stage of stages) if (stage.speakerId) stage.addressedActorId = stage.speakerId === 'harkharash' ? 'hunundi' : (stage.id === 'meeting_hunundi_no_leader' || stage.id === 'meeting_hunundi_people' || stage.id === 'meeting_hunundi_invite' ? 'harkharash' : 'player');
-    for (const stage of stages) { if (stage.speakerId === 'hunundi' && stage.addressedActorId === 'harkharash') Object.assign(stage, { cameraMode: 'pov', actorId: 'hunundi', targetActorId: 'harkharash', fovDeg: 55, povBack: 1.3, povSide: 0.7, povHeight: 0.1 }); else if (stage.type === 'talk' && stage.id !== 'meeting_hark_intro' && stage.id !== 'meeting_hunundi_door') stage.cameraMode = 'wall'; } // Hunundi directly addresses the surveyor from his own eye-level view.
+    for (const stage of stages) { if (stage.speakerId === 'hunundi' && stage.addressedActorId === 'harkharash') Object.assign(stage, { cameraMode: 'pov', actorId: 'hunundi', targetActorId: 'harkharash', fovDeg: 55, povBack: 0.4, povSide: -0.25, povHeight: 0.1 }); else if (stage.speakerId === 'harkharash') Object.assign(stage, { cameraMode: 'npcRelative', actorId: 'harkharash' }); else if (stage.type === 'talk' && stage.id !== 'meeting_hark_intro' && stage.id !== 'meeting_hunundi_door') stage.cameraMode = 'wall'; } // Hunundi directly addresses the surveyor from his own eye-level view.
     return {
       version: 6,
       title: "Father Hunundi's Room",
@@ -305,19 +305,28 @@
     let introduction = null; // Loading preset is scoped to this world opening and always released on failure.
     try {
       introduction = await window.LoadingScreenRuntime?.beginIntroduction?.();
+      let resolveAssetsReady; // Final page alone waits for all streamed terrain, actors, textures and shaders.
+      const assetsReady = new Promise(resolve => { resolveAssetsReady = resolve; });
+      const loadingPages = introduction ? (async () => {
+        for (let index = 0; index < 4; index++) {
+          if (index) introduction.start(index);
+          await introduction.complete(index === 3 ? assetsReady : undefined);
+        }
+        introduction.finish(); introduction = null;
+      })() : Promise.resolve(); // Page delays run independently while preparation continues behind black.
+      loadingPages.catch(() => {}); // Setup failure cancels the input wait through the normal cleanup path.
       const runtime = await waitForGameRuntime(); // Uses the game-owned live wrapper around the existing Director stage engine.
       const records = await loadNpcRecords(); // Resolves Jubmir/Hunundi/Spearhead/Harkhanash from the authoritative database.
       const rescue = buildRescueScene(records, profile); // Scene one preserves the already-authored Gar-wolf rescue blocking.
       const meeting = buildHunundiMeetingScene(records, profile); // Scene two uses Hunundi's real bedroom/study map and chair transforms.
-      await introduction?.complete();
-      introduction?.start(1);
+      introduction?.setProgress(15);
       status.phase = 'rescue';
       status.lastScene = rescue.title;
       await runtime.run(rescue, {
         keepFadeOnFinish: true,
-        async onEnvironmentReady() { await introduction?.complete(); introduction?.start(2); },
-        async onActorsReady() { await runtime.preloadOpeningMeeting?.(meeting); await introduction?.complete(); introduction?.start(3); },
-        async onReady() { await introduction?.complete(); introduction?.finish(); introduction = null; },
+        async onEnvironmentReady() { introduction?.setProgress(45); },
+        async onActorsReady() { await runtime.preloadOpeningMeeting?.(meeting); introduction?.setProgress(75); },
+        async onReady() { introduction?.setProgress(100); resolveAssetsReady(); await loadingPages; },
       });
       status.phase = 'hunundi-room';
       status.lastScene = meeting.title;

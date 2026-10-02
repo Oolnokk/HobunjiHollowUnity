@@ -13,6 +13,8 @@ assert(meeting.stages.findIndex(s=>s.id==='meeting_hunundi_reseat')>meeting.stag
 assert.equal(meeting.furnitureTransforms[0].transform.rotationDeg.y,-90);
 assert.equal(meeting.stages.find(s=>s.id==='meeting_hunundi_no_leader').cameraMode,'pov');
 assert(story.window.OpeningStoryCutscene.buildRescueScene(new Map(),{}).randomCreatureDialogueAngles===true);
+for(const stage of meeting.stages.filter(s=>s.speakerId==='harkharash'))assert.equal(stage.cameraMode,'npcRelative');
+const hunundiShot=meeting.stages.find(s=>s.cameraMode==='pov');assert.equal(hunundiShot.povBack,.4);assert(hunundiShot.povSide<0);
 // Shipping game-format scenes survive the editor's normalization and game-preview export.
 const edit={clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),normalizeAngle:n=>Number(n)||0,uid:()=> 'generated',ACTOR_COLORS:['#123456'],EMOTE_NAMES:['laugh'],STAGE_TYPES:new Set(['move','talk','choice','animation','turn','combat','fade','zoom','caption','furniture','camera'])};
 const normalStart=editor.indexOf('  function normalizeAnchorRotation('),normalEnd=editor.indexOf('  function saveLocal()',normalStart);
@@ -55,10 +57,21 @@ const actor={kind:'npc',root:{position:new V()},walker:{avatarHeight:1,neckJoint
 actor.walker.root = actor.root;
 const st={pose:'sit',rotation:0,proneBlend:1,poseTransition:{from:1,to:0,elapsed:0,duration:1}};
 let aimed=0,equipment=0,povAimed=0;
-const tick={running:true,performance:{now:()=>500},cutsceneRotLastT:0,furniturePlayback:null,povShot:{source:actor,targetProvider:()=>new V(2,1,1)},_aimNeckAtWorldPoint(_neck,_root,_height,_target,_yaw,pitch){if(pitch===60)povAimed++;else aimed++;},_npcFaceWorldPosition:walker=>walker.root?.position || new V(),externallyDrivenActorIds:new Set(),actorStates:new Map([['actor',st]]),entities:new Map([['actor',actor]]),desiredFacingDeg:new Map(),THREE:{MathUtils:{degToRad:n=>n*Math.PI/180}},applyState(){},resolveActorSeat:()=>({facingRad:0}),cutscenePreviewDialogueSpeaker:speaker,dialogueAddressedActorId:'actor',_aimNeckAtEyeContact(){aimed++;},npcDialogueStagingConfig:()=>({}),window:{NpcHeldEquipment:{updateCutsceneWalker(){equipment++;}}},requestAnimationFrame(){}};
+const tick={actorsById:new Map(),running:true,performance:{now:()=>500},cutsceneRotLastT:0,furniturePlayback:null,povShot:{source:actor,targetProvider:()=>new V(2,1,1)},_aimNeckAtWorldPoint(_neck,_root,_height,_target,_yaw,pitch){if(pitch===60)povAimed++;else aimed++;},_npcFaceWorldPosition:walker=>walker.root?.position || new V(),externallyDrivenActorIds:new Set(),actorStates:new Map([['actor',st]]),entities:new Map([['actor',actor]]),desiredFacingDeg:new Map(),THREE:{MathUtils:{degToRad:n=>n*Math.PI/180}},applyState(){},resolveActorSeat:()=>({facingRad:0}),cutscenePreviewDialogueSpeaker:speaker,dialogueAddressedActorId:'actor',_aimNeckAtEyeContact(){aimed++;},npcDialogueStagingConfig:()=>({}),window:{NpcHeldEquipment:{updateCutsceneWalker(){equipment++;}}},requestAnimationFrame(){}};
 const tickStart=game.indexOf('        function cutsceneRotationTick()'),tickEnd=game.indexOf('\n        cutsceneRotationTick();',tickStart);
 vm.runInNewContext(game.slice(tickStart,tickEnd)+'\ncutsceneRotationTick();',tick);
-assert.equal(st.proneBlend,.5);assert.equal(aimed,1);assert.equal(equipment,1);assert.equal(povAimed,1);
+assert.equal(st.proneBlend,.5);assert.equal(aimed,0);assert.equal(equipment,1);assert.equal(povAimed,1);
+// Standing Jubmir reads the downed head after all actor poses update, even when he precedes the player in map order.
+speaker.walker.root=speaker.root;speaker.walker.neckJoint={};speaker.walker.applyFacingDeadzone=()=>{};
+tick.povShot=null;tick.actorStates=new Map([['jubmir',{pose:'standing',rotation:0}],['player',st]]);
+tick.entities=new Map([['jubmir',speaker],['player',actor]]);tick.actorsById=new Map([['jubmir',{lookAtActorId:'player'}]]);
+tick.cutscenePreviewDialogueSpeaker=speaker;tick.dialogueAddressedActorId='player';
+let posedHeadY=1, jubmirTargetY;
+tick.applyState=id=>{if(id==='player')posedHeadY=.2;};
+tick._npcFaceWorldPosition=walker=>new V(0,walker===actor.walker?posedHeadY:1,0);
+tick._aimNeckAtWorldPoint=(neck,root,height,target)=>{if(neck===speaker.walker.neckJoint)jubmirTargetY=target.y;};
+vm.runInNewContext(game.slice(tickStart,tickEnd)+'\ncutsceneRotationTick();',tick);
+assert.equal(jubmirTargetY,.2,'Jubmir looks down at the current prone head, not standing-height fallback');
 // Procedural camera providers remain live through the canonical camera authority.
 const cameras={window:{},performance:{now:()=>0}};
 vm.runInNewContext(read('docs/js/cinematic-camera-runtime.js'),cameras);
@@ -66,6 +79,11 @@ const origin=new V(1,2,3),target=new V(4,2,6);
 cameras.window.CinematicCameraRuntime.activate('office',{id:'pov',positionProvider:()=>origin,targetProvider:()=>target});
 origin.x=2;target.z=7;
 assert.equal(cameras.window.CinematicCameraRuntime.resolvedPosition().x,2);
+const originalRecord=cameras.window.CinematicCameraRuntime.activeRecord();
+cameras.performance.now=()=>500;
+cameras.window.CinematicCameraRuntime.activate('office',{id:'pov',positionProvider:()=>origin,targetProvider:()=>target});
+assert.equal(cameras.window.CinematicCameraRuntime.activeRecord(),originalRecord,'same view retains its blend record');
+assert.equal(originalRecord.activatedAt,0);
 assert.equal(cameras.window.CinematicCameraRuntime.resolvedTarget().z,7);
 // Execute the actual POV camera card, including visibility restoration and live actor providers.
 actor.walker.avatarGroup = {visible:true};
@@ -87,3 +105,13 @@ const hudStart=game.indexOf('      function updateReticleMesh()'),hudEnd=game.in
 vm.runInNewContext(game.slice(hudStart,hudEnd)+'}\nupdateReticleMesh();',hud);
 assert(meshes.every(mesh=>!mesh.visible));
 console.log('Director round-trip, furniture interpolation/restoration, smooth poses, gaze, equipment cadence, procedural POV and HUD suppression passed');
+
+// Execute the authored shot path: its interpolated position must pass through the existing camera boom.
+V.prototype.lerpVectors=function(a,b,t){return this.copy(a).lerp(b,t);};
+let boomCalls=0;
+const shot={id:'wall',position:{x:8,y:2,z:0},target:{x:0,y:1,z:0},blendSeconds:0,fovDeg:50};
+const shotCamera={position:new V(10,2,0),fov:55,lookAt(){},updateProjectionMatrix(){}};
+const boomContext={window:{CinematicCameraRuntime:{activeRecord:()=>({areaId:'office',camera:shot,activatedAt:0}),resolvedPosition:()=>shot.position,resolvedTarget:()=>shot.target},FormatUtils:{clamp:(v,a,b)=>Math.max(a,Math.min(b,v))}},performance:{now:()=>0},camera:shotCamera,_cinematicCameraBlend:null,_lastCameraLookPoint:new V(),_cinematicDesiredPosition:new V(),_cinematicDesiredTarget:new V(),_cinematicLookTarget:new V(),THREE:{MathUtils:{lerp:(a,b,t)=>a+(b-a)*t}},cameraContainerAspect:()=>1,occlusionSafeCameraPosition(x,y,z,ix,iy,iz){boomCalls++;assert.equal(ix,8);return{x:2,y:iy,z:iz};}};
+const boomStart=game.indexOf('      function applyAuthoredCinematicCamera()'),boomEnd=game.indexOf('      // threeContainer',boomStart);
+vm.runInNewContext(game.slice(boomStart,boomEnd)+'\napplyAuthoredCinematicCamera();',boomContext);
+assert.equal(boomCalls,1);assert.equal(shotCamera.position.x,2,'cinematic shots render at the collision-safe boom position');

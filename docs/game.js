@@ -9659,10 +9659,10 @@
       // Player portrait perps. The ordinary follow cameras look at the player,
       // so the camera azimuth IS the camera→player bearing. The dialogue
       // camera instead orbits the NPC (js/dialogue-camera-framing.js) with
-      // the player well off-axis, so there the real camera→player bearing is
-      // used or the dead zone would guard the wrong angles.
+      // the player well off-axis. Every mode uses the actual camera→player
+      // bearing so cinematic, shoulder and seated views guard the right angles.
       function playerCameraPerps() {
-        if (dialogueOpen && activeCameraMode === npcDialogueCameraMode() && playerMesh) {
+        if (playerMesh) {
           const perps = window.PerpRotation.cameraRelativePerpsAtWorldPosition(playerMesh.position, camera.position);
           if (perps) return perps;
         }
@@ -11177,6 +11177,7 @@
           if (_finiteNpcFacePoint(animalFace)) return animalFace;
         }
 
+        walker.root.updateWorldMatrix?.(true, true); // Resolve this frame's root, chair and prone-pivot transforms before sampling the skinned head.
         const rig = walker.avatarGroup?.userData?.neckRig;
         const centroid = rig?.headCentroidPx;
         if (rig?.available && centroid && window.PNGPlaneAvatar?.resolveSkinnedPixelWorldPosition) {
@@ -11184,6 +11185,10 @@
           if (_finiteNpcFacePoint(skinnedFace)) return skinnedFace;
         }
 
+        if (walker.neckJoint?.getWorldPosition) {
+          const head = walker.neckJoint.getWorldPosition(walker._faceWorldScratch ||= new THREE.Vector3()); // The bone follows seating and the combat prone pivot even when the source has no centroid.
+          if (_finiteNpcFacePoint(head)) return head;
+        }
         if (!Number.isFinite(Number(walker.avatarHeight))) return null;
         return _dialogueEyeWorldPosition(walker.root.position, walker.avatarHeight);
       }
@@ -12016,7 +12021,7 @@
               return;
             }
             this.rot = window.PerpRotation.clampedRotation(
-              this.perpState, this.rot, rawRot, cameraRelativePerps(), lerp,
+              this.perpState, this.rot, rawRot, window.PerpRotation.cameraRelativePerpsAtWorldPosition(root.position, camera.position) || cameraRelativePerps(), lerp,
             );
             root.rotation.y = this.rot;
             // The portrait plane obeys the camera-relative deadzone, but the
@@ -20199,7 +20204,7 @@
                   chosenSideOffsetDeg = best.offsetDeg;
                 }
               } else {
-                desiredSafeDist = Math.min(dist, Math.max(3, hits[0].distance - 0.6));
+                desiredSafeDist = Math.min(dist, Math.max(cutscenePreviewActive ? SEATED_CAMERA_MIN_DISTANCE : 3, hits[0].distance - 0.6));
               }
             }
           }
@@ -20248,7 +20253,7 @@
             // booms slide straight in along their own sightline too: a lift
             // tips the view steeply down, so the smallest aim change swept the
             // reticle's hit point across the floor or ceiling.
-            const lift = (activeCameraMode === 'seated' || interiorBoom) ? 0 : shrink * dist * 0.5;
+            const lift = (activeCameraMode === 'seated' || interiorBoom || cutscenePreviewActive) ? 0 : shrink * dist * 0.5;
             resultX = lookAtX + dir.x * safeDist;
             resultY = lookAtY + dir.y * safeDist + lift;
             resultZ = lookAtZ + dir.z * safeDist;
@@ -20356,6 +20361,8 @@
         );
         camera.position.lerpVectors(_cinematicCameraBlend.startPosition, desiredPosition, t);
         const lookTarget = _cinematicLookTarget.copy(_cinematicCameraBlend.startTarget).lerp(desiredTarget, t);
+        const safePosition = occlusionSafeCameraPosition(lookTarget.x, lookTarget.y, lookTarget.z, camera.position.x, camera.position.y, camera.position.z); // Authored and procedural shots share the gameplay boom.
+        camera.position.set(safePosition.x, safePosition.y, safePosition.z);
         camera.lookAt(lookTarget);
         _lastCameraLookPoint.copy(lookTarget);
         camera.fov = THREE.MathUtils.lerp(_cinematicCameraBlend.startFov, Number(shot.fovDeg) || 42, t);
@@ -23172,18 +23179,11 @@
           playerMesh.rotation.y = playerFacing;
           if (playerLegs?.group) playerLegs.group.rotation.y = 0;
         } else if (sitInteraction && sitInteraction.phase !== 'out') {
-          // Seated: the body stays pinned to the chair's own facing — no
-          // perpClamp/dead-zone tracking of the camera at all (unlike the
-          // general branch below), since the camera can freely orbit all
-          // the way around while seated and a dead zone that's allowed to
-          // chase a continuously-rotating camera would drag the whole body
-          // around with it. Only the head is meant to turn as the camera
-          // moves (see updateSitInteraction's neck-bone tracking) — pinning
-          // the body here is what makes that "camera doesn't rotate your
-          // body" contract actually hold.
-          playerFacing = -facingAngle + Math.PI / 2;
+          const chairFacing = -facingAngle + Math.PI / 2; // Logical chair direction remains fixed while the flat portrait avoids the camera deadzone.
+          player.perpState ||= {};
+          playerFacing = window.PerpRotation.clampedRotation(player.perpState, playerFacing, chairFacing, playerCameraPerps(), 0.18);
           playerMesh.rotation.y = playerFacing;
-          if (playerLegs?.group) playerLegs.group.rotation.y = 0;
+          if (playerLegs?.group) playerLegs.group.rotation.y = chairFacing - playerFacing;
         } else if (mountRideEntity && mountRideState !== 'rushingIn' && mountRideState !== 'rushingOut') {
           // Glued to a mount (same guard as mountSeatLift above): track the
           // mount's own PNG-plane rotation (c.pngRot, kept current every
@@ -30012,9 +30012,11 @@
         const report = (text, isError) => { if (!liveMode) window.CutscenePreviewHelpers.cutscenePreviewBanner(text, isError); }; // Keeps the Director's Exit Preview banner out of real story cinematics.
         const cutsceneLeaveButton = document.getElementById('npcDialogueLeave'); // Hide the normal conversation exit while the director owns dialogue.
         document.body?.classList.add('authored-cutscene'); // One presentation claim hides gameplay controls across every cinematic card.
+        reticleMesh.visible = reticleCircleMesh.visible = reticleRingMesh.visible = reticleWavyGroup.visible = false; // Interiors may skip reticle updates, so hide existing meshes before the first frame.
+        clearTargetHighlights();
         const previousLeaveDisplay = cutsceneLeaveButton?.style.display; // Restores the original Leave-button presentation on success/error.
         if (cutsceneLeaveButton) cutsceneLeaveButton.style.display = 'none';
-        const releaseLiveLock = () => { releaseCinematicRegion?.(); liveLock?.release?.(); document.body?.classList.remove('authored-cutscene'); clearPovShot(); if (cutsceneLeaveButton) cutsceneLeaveButton.style.display = previousLeaveDisplay; }; // Shared cleanup for normal completion and pre-stage load failures.
+        const releaseLiveLock = () => { releaseCinematicRegion?.(); liveLock?.release?.(); document.body?.classList.remove('authored-cutscene'); _arcContainerEl?.classList.remove('arc-hidden'); clearPovShot(); if (cutsceneLeaveButton) cutsceneLeaveButton.style.display = previousLeaveDisplay; }; // Shared cleanup for normal completion and pre-stage load failures.
         const restoreLiveGameplay = () => {
           if (!liveMode) return;
           if (runtimeOptions.placePlayerAtFinalPosition && currentArea === previousArea) {
@@ -30091,10 +30093,11 @@
               await window.CutscenePreviewHelpers.cutscenePreviewWaitForArea(area, 20000, () => _zoneLayouts.has(area));
             }
             if (window.TreeAssetLibrary?.getMode?.() === 'baked') await window.TreeAssetLibrary.preload(); // Settle GLB variants before any tree geometry is built for the intro.
-            buildZoneScene(area);
             const fp = payload.footprint || {};
             const fw = Math.max(1, Math.ceil(fp.w || 6)), fh = Math.max(1, Math.ceil(fp.h || 6));
             const locale = payload.localeId ? (_zoneLayouts.get(area)?.localeInstances || []).find(instance => instance.localeId === payload.localeId) : null; // Prefer the reserved authored story clearing already stamped by the Tothal generator.
+            const localPlayer = (payload.actors || []).find(actor => actor.isPlayer); // Chooses the real shot focus before any synchronous chunk is built.
+            buildZoneScene(area, locale ? locale.x + (localPlayer?.lc || 0) : null, locale ? locale.y + (localPlayer?.lr || 0) : null);
             const anchor = locale ? { col: locale.x, row: locale.y } : window.CutscenePreviewHelpers.findZonePlacementFootprint(area, fw, fh);
             if (anchor && payload.localeId && !locale) { // Cached older worlds can adopt a clear site without regenerating any existing terrain or destroying camps.
               const layout = _zoneLayouts.get(area);
@@ -30108,7 +30111,7 @@
               return;
             }
             const offsetC = anchor.col - (fp.originC || 0), offsetR = anchor.row - (fp.originR || 0);
-            releaseCinematicRegion = window.WildernessChunks?.pinCinematicRegion?.(area, { minCol: anchor.col, minRow: anchor.row, maxCol: anchor.col + fw, maxRow: anchor.row + fh }); // Build the whole shot footprint before actors appear, and keep streaming there.
+            releaseCinematicRegion = window.WildernessChunks?.pinCinematicRegion?.(area, { minCol: anchor.col, minRow: anchor.row, maxCol: anchor.col + fw, maxRow: anchor.row + fh, focusCol: anchor.col + ((payload.actors || []).find(actor => actor.isPlayer)?.lc || 0), focusRow: anchor.row + ((payload.actors || []).find(actor => actor.isPlayer)?.lr || 0) }); // Keep only the cinematic player's current chunk resident.
             for (const a of (payload.actors || [])) {
               a.worldC = (a.lc || 0) + offsetC;
               a.worldR = (a.lr || 0) + offsetR;
@@ -30501,9 +30504,8 @@
           cutscenePreviewDialogueSpeaker = null;
           _npcDialogueEl.classList.remove('open');
           _npcDialogueEl.setAttribute('aria-hidden', 'true');
-          _arcContainerEl?.classList.remove('arc-hidden');
-          activeCameraMode = idleCameraMode;
-          activeCameraTarget = idleCameraTarget;
+          // Keep the current shot through the next line; action cards select their own views.
+          // The body presentation claim keeps the arch hidden until scene cleanup.
         }
 
         function showChoiceOptions(options) {
@@ -30556,7 +30558,7 @@
               povShot = { source, visible: source.walker.avatarGroup.visible, targetProvider };
               source.walker.avatarGroup.visible = Number(stage.povBack) > 0 ? povShot.visible : false;
               cinematicCameraReady = false;
-              window.CinematicCameraRuntime?.activate?.(area, { id: `cutscene_pov_${stage.id}`, position: positionProvider(), target: targetProvider(), positionProvider, targetProvider, fovDeg: Number(stage.fovDeg) || 65, blendSeconds: Number(stage.blendSeconds) || .35 });
+              window.CinematicCameraRuntime?.activate?.(area, { id: `cutscene_pov_${stage.actorId || stage.speakerId}_${stage.targetActorId || stage.addressedActorId}_${stage.povBack || 0}_${stage.povSide || 0}_${stage.povHeight || 0}_${stage.fovDeg || 65}`, position: positionProvider(), target: targetProvider(), positionProvider, targetProvider, fovDeg: Number(stage.fovDeg) || 65, blendSeconds: Number(stage.blendSeconds) || .35 });
             }
           } else if (stage.cameraMode === 'npcRelative') {
             cinematicCameraReady = false;
@@ -30565,7 +30567,7 @@
             activeCameraTarget = { position: entities.get(stage.actorId)?.root.position }; // The existing NPC-relative dialogue shot follows the arriving walker.
           } else if (stage.cameraMode === 'wall') {
             cinematicCameraReady = true;
-            window.CinematicCameraRuntime?.activate?.(area, payload.cinematicCameraId, { reason: 'authored-cutscene', targetWalker: entities.get(stage.actorId)?.walker });
+            window.CinematicCameraRuntime?.activate?.(area, payload.cinematicCameraId, { reason: 'authored-cutscene', targetWalker: entities.get(stage.actorId || stage.speakerId)?.walker });
           }
           if (stage.type === 'camera') { setTimeout(() => continueTo(getResolvedNext(stage.id, stage.next)), Math.max(0, Number(stage.duration) || 0) * 1000); return; }
           if (stage.type === 'furniture') { furniturePlayback?.set(stage); setTimeout(() => continueTo(getResolvedNext(stage.id, stage.next)), Math.max(0, Number(stage.duration) || 0) * 1000); return; }
@@ -30860,7 +30862,6 @@
           const dt = Math.min(0.05, animationDt);
           cutsceneRotLastT = now;
           furniturePlayback?.update(animationDt);
-          if (povShot) { const walker = povShot.source.walker; _aimNeckAtWorldPoint(walker.neckJoint, walker.root.position, walker.avatarHeight, povShot.targetProvider(), 85, 60, walker); }
           for (const [actorId, st] of actorStates) {
             if (externallyDrivenActorIds.has(actorId)) { window.NpcHeldEquipment?.updateCutsceneWalker?.(entities.get(actorId)?.walker); continue; }
             const entity = entities.get(actorId);
@@ -30899,11 +30900,19 @@
               if (entity.walker) {
                 const seat = st.pose === 'sit' ? resolveActorSeat(st) : null; // Furniture facing remains logical; the portrait obeys the normal camera deadzone.
                 window.NpcHeldEquipment?.updateCutsceneWalker?.(entity.walker);
-                const gaze = entity === cutscenePreviewDialogueSpeaker ? entities.get(dialogueAddressedActorId) : cutscenePreviewDialogueSpeaker; // Speakers address their authored target, while seated listeners follow whoever talks.
                 entity.walker.applyFacingDeadzone(seat ? -seat.facingRad + Math.PI / 2 : THREE.MathUtils.degToRad(targetDeg), npcDialogueStagingConfig().npcFacePlayerLerp ?? 0.28);
-                if (st.pose === 'sit' && gaze?.walker && gaze !== entity) _aimNeckAtWorldPoint(entity.walker.neckJoint, entity.root.position, entity.walker.avatarHeight, _npcFaceWorldPosition(gaze.walker) || _dialogueEyeWorldPosition(gaze.root.position, gaze.walker.avatarHeight), 85, 45, entity.walker, _npcFaceWorldPosition(entity.walker));
               }
             }
+          }
+          // Resolve gaze after every actor's pose settles, including the prone head pivot.
+          for (const [actorId, entity] of entities) {
+            const walker = entity.walker; // Standing and seated doubles use the same neck authority, including the player.
+            if (!walker || externallyDrivenActorIds.has(actorId)) continue;
+            const authoredTarget = entities.get(actorsById.get(actorId)?.lookAtActorId);
+            const gaze = entity === cutscenePreviewDialogueSpeaker ? entities.get(dialogueAddressedActorId) : authoredTarget || cutscenePreviewDialogueSpeaker;
+            const target = povShot?.source === entity ? povShot.targetProvider() : gaze?.walker && gaze !== entity ? _npcFaceWorldPosition(gaze.walker) : null;
+            if (target) _aimNeckAtWorldPoint(walker.neckJoint, entity.root.position, walker.avatarHeight, target, 85, 60, walker, _npcFaceWorldPosition(walker));
+            else if (walker.neckJoint && !(actorStates.get(actorId)?.proneBlend > 0)) walker.neckJoint.rotation.y = window.PerpRotation.clampedNeckYaw?.(walker.neckJoint, entity.root.position, 0, 85 * Math.PI / 180, camera.position) ?? 0;
           }
           requestAnimationFrame(cutsceneRotationTick);
         }
@@ -31006,7 +31015,7 @@
         farmTourPoints: openingFarmTourPoints,
         run: (payload, options = {}) => runCutscenePreview(payload, { ...options, live: true }), // Plays Director-format payloads as real gameplay cinematics with cleanup/restoration.
         isActive: () => cutscenePreviewActive, // Gameplay HUD owners can check the director without allocating a debug snapshot.
-        debugSnapshot: () => ({ active: !!cutscenePreviewActive, currentArea, stageId: cutscenePreviewStageId, zoomPercent: cutscenePreviewZoomPercent, latestChange: 'Independent neck deadzones, panel-safe head framing, shoulder POV, focused varied wolf shots and staged asset loading. Prone pose blends smoothly; Spearhead uses town equipment; wider wolf shots; animated furniture and seated eye contact; Hunundi POV addresses the doorway surveyor; cutscenes hide actions and reticles.' }), // Mobile/debug-panel callers can inspect live cinematic ownership without a console.
+        debugSnapshot: () => ({ active: !!cutscenePreviewActive, currentArea, stageId: cutscenePreviewStageId, zoomPercent: cutscenePreviewZoomPercent, latestChange: 'Live camera bearings for player and actor deadzones; standing gaze follows prone head; continuous shots and cinematic boom; right shoulder Hunundi view; current-chunk-only rescue; hidden arch/reticles; quiet intro progress with independent page delays. Independent neck deadzones, panel-safe head framing, shoulder POV, focused varied wolf shots and staged asset loading. Prone pose blends smoothly; Spearhead uses town equipment; wider wolf shots; animated furniture and seated eye contact; Hunundi POV addresses the doorway surveyor; cutscenes hide actions and reticles.' }), // Mobile/debug-panel callers can inspect live cinematic ownership without a console.
       });
 
       if (window.__hobunjiCutscenePreview) {
