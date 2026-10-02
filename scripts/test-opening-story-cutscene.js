@@ -61,7 +61,8 @@ for (const id of ['father_hunundi_hodu', 'jubmir', 'spearhead_unumanuk', 'khanni
 }
 const hark = records.get('khannibarri_agent'); // Verifies the existing company-agent identity was promoted in place instead of duplicated.
 assert.strictEqual(hark.name, 'Surveyor Harkharash', 'existing khannibarri_agent must now be Surveyor Harkharash');
-assert.strictEqual(hark.homeId, 'inn', 'Harkharash must have a real temporary lodging identity instead of the old suggestion placeholder');
+assert.strictEqual(hark.homeId, 'khannibarri_temporary_lodging', 'Harkharash must have a real temporary lodging identity without joining the inn household spillover circle');
+assert.strictEqual(hark.scheduleHooks?.workBuildingId, 'khannibarri_temporary_office', 'Harkharash must not join the general-store coworker spillover circle merely because he uses it as a temporary office');
 assert.strictEqual(hark.scheduleHooks?.defaultStationId, 'station_k7m3q', 'Harkharash must use the authored general-store station after Hunundi lets him remain in town');
 assert(!hark.scheduleHooks?.defaultPosition, 'Harkharash must not fall back to the old town {0,0} placeholder spawn');
 
