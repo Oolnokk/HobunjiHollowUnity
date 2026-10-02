@@ -22,7 +22,7 @@
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
        extracted out of game.js; must load before game.js and before every
        other module whose init(deps) is handed window.FormatUtils.clamp/esc. -->
-  <script src="js/format-utils.js?v=20260924perf1"></script>
+  <script src="js/format-utils.js?v=20261002h714941a"></script>
   <!-- Movement virtual-joystick handlers extracted out of game.js; uses
        window.FormatUtils.clamp, so must load after it and before game.js. -->
   <script src="js/virtual-joystick.js?v=20260902mod1"></script>
@@ -382,7 +382,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmTroughs.init(...) during its own setup. -->
-  <script src="js/farm-troughs.js?v=20260924perf1"></script>
+  <script src="js/farm-troughs.js?v=20261002h691f6b4"></script>
   <!-- Modular player house (window.HousePieces) — barn-shaped foundation/
        build/demolish pipeline for house-piece deeds bought from the
        Carpenter, replacing the old singular Highland House GLB. Depends on
@@ -740,9 +740,9 @@
        and its build*(...) functions lazily, from buildZoneScene, never
        synchronously during initial boot. -->
   <script src="js/locale-cave-runtime.js?v=20260923caveregistry1"></script>
-  <script src="js/ruin-site-locales.js?v=20260929ruinsites1"></script>
+  <script src="js/ruin-site-locales.js?v=20261002hb4d3f2d"></script>
   <script src="js/stampable-locale-defs.js?v=20260929ruinsites1"></script>
-  <script src="js/ruin-sites.js?v=20260929ruinsites1"></script>
+  <script src="js/ruin-sites.js?v=20261002h49fbfb2"></script>
   <script src="js/zone-den-totem-features.js?v=20260929glowdecals1"></script>
   <script src="js/transition-markers.js?v=20261001a"></script>
   <!-- Wilderness-zone grass and rich-foliage-patch billboards
@@ -2381,7 +2381,7 @@
   <script src="js/sprite-recolor.js?v=20261001quickdebuff2"></script>
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
        calls window.Mounts.init(...) during its own setup. -->
-  <script src="js/mount-system.js?v=20260925mountheading1"></script>
+  <script src="js/mount-system.js?v=20261002h1249b60"></script>
   <!-- Footstep/one-shot SFX (window.AudioSystem) — must load before game.js,
        which calls window.AudioSystem.init(...) during its own setup. -->
   <script src="js/audio-system.js?v=20260927pitchedsfx1"></script>
@@ -2550,7 +2550,7 @@
   <script src="js/shoulder-cam-pointer-lock.js?v=20260930hfc11b39"></script>
   <!-- Shared character-scoped hobunjiSaveMeta update step used by game.js's save* helpers. -->
   <script src="js/character-meta-save.js?v=20260930ench1"></script>
-  <script src="game.js?v=20261002h960fd67"></script>
+  <script src="game.js?v=20261002ha404f8f"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
