@@ -2250,6 +2250,10 @@
     return Number(alpha) > 8 && (directMaskPass || Number(maxChannel) > 28); // Manual direct masks honor every opaque source pixel; woven motifs still preserve near-black authored outlines.
   }
 
+  function directTrimOutlineSurfacePixelEligible(alpha, maxChannel) {
+    return Number(alpha) >= 128 && Number(maxChannel) > 28; // Trim's generated black border only lives on solid non-near-black cloth, so it cannot draw a second line immediately beside the sprite's authored dark outline/fringe.
+  }
+
   function patternCellOffset(cellLabel, directMaskPass) {
     return directMaskPass ? 0 : (Math.max(0, Number(cellLabel) || 0) % CELL_OFFSET_CYCLE) * CELL_OFFSET_STEP; // Exact masks never receive decorative per-cell phase shifts.
   }
@@ -2417,9 +2421,11 @@
     const directShadeFill = window.ColorFill?.shadeFillPixels;
     const pixelCount = width * height;
     const garmentMask = new Uint8Array(pixelCount); // Reusable patterns avoid authored dark outlines; exact direct masks instead honor every opaque garment pixel selected by manual authoring.
+    const directOutlineSurfaceMask = directMaskPass ? new Uint8Array(pixelCount) : null; // Direct trim color may cover any opaque pixel, but its generated black separator must not duplicate existing dark sprite outlines.
     for (let p = 0, i = 0; i < base.data.length; i += 4, p++) {
       const maxChannel = Math.max(shadeSourceData[i], shadeSourceData[i + 1], shadeSourceData[i + 2]);
       if (patternGarmentPixelEligible(shadeSourceData[i + 3], maxChannel, directMaskPass)) garmentMask[p] = 1;
+      if (directOutlineSurfaceMask && directTrimOutlineSurfacePixelEligible(shadeSourceData[i + 3], maxChannel)) directOutlineSurfaceMask[p] = 1;
     }
 
     const { labels: cellLabels } = labelPatternCells(garmentMask, width, height);
@@ -2485,7 +2491,13 @@
     });
 
     const outlineWidth = scaledOutlineWidth(PATTERN_OUTLINE_WIDTH, active[0]?.pattern, debugLabel, width, height);
-    const outlineMask = buildPatternOutlineMask(combinedMask, garmentMask, width, height, outlineWidth, combinedSeparator);
+    const outlineGarmentMask = directOutlineSurfaceMask || garmentMask;
+    let outlinePatternMask = combinedMask;
+    if (directOutlineSurfaceMask) {
+      outlinePatternMask = new Uint8Array(combinedMask.length);
+      for (let p = 0; p < combinedMask.length; p++) if (combinedMask[p] && directOutlineSurfaceMask[p]) outlinePatternMask[p] = 1; // A manually painted dark source pixel may still receive trim color, but never becomes a seed for an extra generated black border.
+    }
+    const outlineMask = buildPatternOutlineMask(outlinePatternMask, outlineGarmentMask, width, height, outlineWidth, combinedSeparator);
     for (let p = 0, i = 0; i < base.data.length; i += 4, p++) {
       if (!outlineMask[p]) continue;
       base.data[i] = 0; base.data[i + 1] = 0; base.data[i + 2] = 0;
@@ -2781,7 +2793,7 @@
     hasAddedTrim: item => weavingHasOptionalTrim(item?.weaving),
     reweaveMaterialCost,
     debugSnapshot,
-    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, applyPatternStackToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, resolveIconLayerUrls, patternRolesForLayers, layersUseSecondaryDye, iconLayersForView, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingPatternsForRole, normalizePatternStack, forcedOverpassPatternForWeaving, withForcedOverpass, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, weavingHasOptionalTrim, weavingHasAnyDecoration, normalizeTrimDyeSlot, clothingTrimConfig, authoredTrimPatternFromManifest, authoredTrimPatternForCosmetic, variantKeyForSourceUrl, trimColorHexForDescriptor, weavingCarriesSavedPattern, gearHasEquippedWovenClothing, requestSessionReadyPlayerAvatarRefresh, decorateAvatarDataWithWovenItems, materializeWeavingLibrarySnapshots, docsRelativeUrl, standaloneAssetUrl, frameShapeFor, wovenIconVisualKey, reweaveMaterialCost, resolvedPatternMeshScale, buildMotifClusterSeparatorMask, adjustMaskThickness, buildPatternOutlineMask, scaledOutlineWidth, overpassClearanceMultiplier, exactDirectMaskPass, patternWorkPad, patternGarmentPixelEligible, patternCellOffset }),
+    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, applyPatternStackToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, resolveIconLayerUrls, patternRolesForLayers, layersUseSecondaryDye, iconLayersForView, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingPatternsForRole, normalizePatternStack, forcedOverpassPatternForWeaving, withForcedOverpass, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, weavingHasOptionalTrim, weavingHasAnyDecoration, normalizeTrimDyeSlot, clothingTrimConfig, authoredTrimPatternFromManifest, authoredTrimPatternForCosmetic, variantKeyForSourceUrl, trimColorHexForDescriptor, weavingCarriesSavedPattern, gearHasEquippedWovenClothing, requestSessionReadyPlayerAvatarRefresh, decorateAvatarDataWithWovenItems, materializeWeavingLibrarySnapshots, docsRelativeUrl, standaloneAssetUrl, frameShapeFor, wovenIconVisualKey, reweaveMaterialCost, resolvedPatternMeshScale, buildMotifClusterSeparatorMask, adjustMaskThickness, buildPatternOutlineMask, scaledOutlineWidth, overpassClearanceMultiplier, exactDirectMaskPass, patternWorkPad, patternGarmentPixelEligible, directTrimOutlineSurfacePixelEligible, patternCellOffset }),
   });
   window.__clothingWeavingDebug = debugSnapshot;
 
