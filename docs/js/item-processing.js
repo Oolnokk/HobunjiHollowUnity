@@ -185,6 +185,13 @@
     return null;
   }
 
+  function withSourceIngredientLineage(outputs, inputKey) {
+    return (outputs || []).map(output => {
+      const ingredientKeys = output?.ingredientKeys?.length ? [...new Set(output.ingredientKeys)] : [inputKey]; // Used by food gifting so processed goods remember the raw ingredient they came from.
+      return { ...output, ingredientKeys };
+    });
+  }
+
   // Wraps getProcessingOutput in an array, except for the one recipe that
   // jointly produces two items from a single input in a single action:
   // squeezing raw Uumkao'ii dew into both Milk and Curds at once.
@@ -196,15 +203,15 @@
       const color = dewColorMatch;
       const properLabel = color.charAt(0).toUpperCase() + color.slice(1);
       const dewColorHex = input.spriteColor;
-      return [
+      return withSourceIngredientLineage([
         { key: dewMilkKey(color), icon: '🥛', label: properLabel + " Uumkao'ii Milk", cat: 'processed', sellPrice: Math.max(6, (input.sellPrice || 6) + 3), tags: ['Processed', 'Milk', "Uumkao'ii", 'Squeezed', 'Not Animal Milk'], desc: 'Milk squeezed from ' + input.label.toLowerCase() + '.', spriteIcon: 'jar_liquid.png', spriteColor: dewColorHex, spriteMode: 'keyed' },
         { key: dewCurdsKey(color), icon: '🧀', label: properLabel + " Uumkao'ii Curds", cat: 'processed', sellPrice: Math.max(6, (input.sellPrice || 6) + 4), tags: ['Processed', 'Curds', "Uumkao'ii", 'Squeezed', 'Not Dairy'], desc: 'Curds squeezed from ' + input.label.toLowerCase() + '.', spriteIcon: 'cheese.png', spriteColor: dewColorHex, spriteMode: 'direct' },
-      ];
+      ], inputKey);
     }
     const modularOutputs = window.HobunjiFoodProcessing?.getProcessingOutputs?.(methodId, inputKey, input); // Used for decoupled nut-oil, lard, and fish-oil vat recipes.
-    if (modularOutputs?.length) return modularOutputs;
+    if (modularOutputs?.length) return withSourceIngredientLineage(modularOutputs, inputKey);
     const single = getProcessingOutput(methodId, inputKey);
-    return single ? [single] : null;
+    return single ? withSourceIngredientLineage([single], inputKey) : null;
   }
 
   // World-object placement items whose only "held" action is being set
