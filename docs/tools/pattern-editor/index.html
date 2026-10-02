@@ -230,13 +230,20 @@ Overpass → not set</div>
     return `${CLOTHING_TRIM_ASSET_DIR}/${safe(garmentId)}__${safe(variantKey)}__${view === 'behind' ? 'behind' : 'front'}.png`;
   }
 
+  function opaqueGarmentMaskFromRgba(rgba) {
+    const mask = new Uint8Array(Math.floor((rgba?.length || 0) / 4)); // Manual Direct Paint uses only alpha membership and deliberately bypasses outline color classification.
+    for (let pixel = 0; pixel < mask.length; pixel++) mask[pixel] = rgba[pixel * 4 + 3] > 16 ? 1 : 0;
+    return mask;
+  }
+
   function trimableGarmentMaskFromRgba(rgba) {
-    const mask = new Uint8Array(Math.floor((rgba?.length || 0) / 4)); // Shared trim geometry: opaque cloth pixels count, exact black sprite-outline pixels do not.
+    const opaqueMask = opaqueGarmentMaskFromRgba(rgba);
+    const mask = opaqueMask.slice(); // Structural trim geometry: opaque cloth pixels count, exact black sprite-outline pixels do not.
     for (let pixel = 0; pixel < mask.length; pixel++) {
+      if (!opaqueMask[pixel]) continue;
       const offset = pixel * 4;
-      const opaque = rgba[offset + 3] > 16;
       const pureBlack = rgba[offset] === 0 && rgba[offset + 1] === 0 && rgba[offset + 2] === 0;
-      mask[pixel] = opaque && !pureBlack ? 1 : 0; // Skip black outlines of any thickness so contour detection starts on the first non-black garment pixels inward.
+      if (pureBlack) mask[pixel] = 0; // Skip black outlines of any thickness so contour detection starts on the first non-black garment pixels inward.
     }
     return mask;
   }
@@ -244,7 +251,7 @@ Overpass → not set</div>
   function canvasTrimGeometry(canvas) {
     const width = canvas.width, height = canvas.height;
     const rgba = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, width, height).data;
-    return { width, height, mask: trimableGarmentMaskFromRgba(rgba) };
+    return { width, height, mask: trimableGarmentMaskFromRgba(rgba), opaqueMask: opaqueGarmentMaskFromRgba(rgba) };
   }
 
   function maskBounds(mask, width, height) {
@@ -573,7 +580,7 @@ Overpass → not set</div>
         const index = y * geometry.width + x;
         if (mode === 'eraser') paint[index] = 0;
         else if (mode === 'paint') {
-          if (geometry.mask[index]) paint[index] = 1; // Direct Paint mirrors direct erasure but remains clipped off transparent and exact-black sprite pixels.
+          if (geometry.opaqueMask[index]) paint[index] = 1; // Direct Paint is a true manual override: any visible garment pixel may be painted, even if structural black-outline detection excluded it.
         } else if (inwardMap.boundaryMask[index]) paint[index] = 1;
       }
     };
@@ -631,7 +638,7 @@ Overpass → not set</div>
     const ctx = canvas.getContext('2d');
     const image = ctx.createImageData(canvas.width, canvas.height);
     for (let index = 0; index < paint.length; index++) {
-      if (!paint[index] || !geometry.mask[index]) continue;
+      if (!paint[index] || !geometry.opaqueMask[index]) continue;
       const offset = index * 4;
       image.data[offset] = image.data[offset + 1] = image.data[offset + 2] = image.data[offset + 3] = 255;
     }
@@ -1012,7 +1019,7 @@ Overpass → not set</div>
               <label>Zoom <input data-trim-zoom type="range" min="1" max="8" step="1" value="2"><span data-trim-zoom-label>2×</span></label>
             </div>
             <div class="trimPaintScroller"><div class="trimPaintStage"><canvas data-trim-base></canvas><canvas class="trimPaintInk" data-trim-ink></canvas></div></div>
-            <div class="trimPaintNote">Outline Brush selects one-pixel-wide sections of the first opaque non-black garment contour. Direct Paint paints ordinary filled pixels anywhere on the non-black garment, matching Eraser as a manual post-edit tool. Exact black (#000000) sprite line art is ignored by both. Brush / Reach controls contour catch radius for Outline Brush and actual brush diameter for Direct Paint/Eraser. Select Full Outline is a shortcut; Expand Inward grows selected contour sections toward the interior. White is only the editing overlay; the player still chooses dye A, B, or C in the loom.</div>
+            <div class="trimPaintNote">Outline Brush selects one-pixel-wide sections of the first opaque non-black garment contour, and Expand Inward uses that same structural geometry. Direct Paint is a true manual override: it paints any opaque garment pixel, including pixels the black-outline detector excluded; only transparent background is protected. Eraser removes trim anywhere. Brush / Reach controls contour catch radius for Outline Brush and actual brush diameter for Direct Paint/Eraser. White is only the editing overlay; the player still chooses dye A, B, or C in the loom.</div>
           </div>
           <div>
             <div class="muted" style="margin-bottom:6px"><b>Rendered result</b> — production trim compositor</div>
@@ -1046,9 +1053,9 @@ Overpass → not set</div>
     const resultCtx = resultCanvas.getContext('2d');
     baseCtx.imageSmoothingEnabled = paintCtx.imageSmoothingEnabled = resultCtx.imageSmoothingEnabled = false;
     baseCtx.drawImage(baseCanvas, 0, 0);
-    const garmentPixels = baseCtx.getImageData(0, 0, width, height).data; // Rendered garment raster used to distinguish trimable cloth from transparency and pure-black line art.
-    const garmentMask = trimableGarmentMaskFromRgba(garmentPixels); // Outline Brush starts on the first opaque non-black pixels inward from any black sprite outline.
-
+    const garmentPixels = baseCtx.getImageData(0, 0, width, height).data; // Rendered garment raster used for both alpha-only manual painting and non-black structural contour detection.
+    const opaqueGarmentMask = opaqueGarmentMaskFromRgba(garmentPixels); // Direct Paint may touch every visible garment pixel, including pixels excluded from structural black-outline geometry.
+    const garmentMask = trimableGarmentMaskFromRgba(garmentPixels); // Outline Brush/Expand Inward start on the first opaque non-black pixels inward from any black sprite outline.
 
     const inwardMap = buildInwardSilhouetteMap(garmentMask, width, height); // Same black-skipping contour topology drives authoring and cross-species replication.
     const silhouetteBoundaryMask = inwardMap.boundaryMask;
@@ -1080,7 +1087,7 @@ Overpass → not set</div>
       const image = paintCtx.getImageData(0, 0, width, height);
       for (let pixel = 0; pixel < garmentMask.length; pixel++) {
         const i = pixel * 4;
-        if (image.data[i + 3] > 16 && garmentMask[pixel]) image.data[i] = image.data[i + 1] = image.data[i + 2] = image.data[i + 3] = 255; // Loaded/replicated trim is kept only on opaque non-black cloth pixels.
+        if (image.data[i + 3] > 16 && opaqueGarmentMask[pixel]) image.data[i] = image.data[i + 1] = image.data[i + 2] = image.data[i + 3] = 255; // Saved/manual trim is clipped only to visible garment alpha; structural tools themselves still avoid black outlines.
         else image.data[i] = image.data[i + 1] = image.data[i + 2] = image.data[i + 3] = 0;
       }
       paintCtx.putImageData(image, 0, 0);
@@ -1231,9 +1238,9 @@ Overpass → not set</div>
           const index = y * width + x;
           if (brushMode === 'eraser') paintCtx.clearRect(x, y, 1, 1);
           else if (brushMode === 'paint') {
-            if (!garmentMask[index]) continue;
+            if (!opaqueGarmentMask[index]) continue;
             paintCtx.fillStyle = '#ffffff';
-            paintCtx.fillRect(x, y, 1, 1); // Direct Paint fills arbitrary trimable garment pixels and is the positive counterpart to direct erasure.
+            paintCtx.fillRect(x, y, 1, 1); // Direct Paint fills any visible garment pixel; it intentionally bypasses the non-black contour classifier as the positive counterpart to direct erasure.
           } else if (silhouetteBoundaryMask[index]) {
             paintCtx.fillStyle = '#ffffff';
             paintCtx.fillRect(x, y, 1, 1); // Outline Brush always authors exactly one contour pixel regardless of pointer reach.
@@ -1797,7 +1804,7 @@ Overpass → not set</div>
   };
 
   window.__patternEditorDebug = () => ({ // Mobile-visible console substitute for checking the dev tool's two-slot state.
-    mostRecentChange: 'Direct Paint is restored beside Outline Brush and Eraser. It paints arbitrary non-black garment pixels, is recorded as explicit paint strokes in authorOps, and replays at relative garment scale across species without changing the meaning of existing outline-brush operations.',
+    mostRecentChange: 'Direct Paint is now a true manual override using the garment alpha mask rather than the non-black contour mask. It can paint any visible garment pixel—including pixels structural outline detection rejects—while Outline Brush/Expand Inward continue to ignore pure-black line art.',
     previewMode: $('previewMode').value,
     weavingBackground: $('surfaceTexture').value,
     overpassClearanceMultiplier: clampOverpassClearance($('overpassClearance').value),
