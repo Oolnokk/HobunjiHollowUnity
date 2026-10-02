@@ -105,6 +105,7 @@
     ['js/held-item-action-input.js?v=20260910a', () => !!window.HeldItemActionInput],
     ['js/alcohol-gameplay-bridge.js?v=20260918blackstamina1', () => !!window.HobunjiDrunkGameplayBridge],
     ['config/npcs/food-gift-preferences.js?v=20261001foodgift1', () => Number(window.HobunjiNpcFoodGiftPreferences?.version) >= 1],
+    ['js/npc-food-gift-preferences.js?v=20261001foodgift1', () => Number(window.NpcFoodGiftPreferences?.version) >= 1],
     ['js/npc-gifting.js?v=20261001foodgift1', () => !!window.NpcGifting],
     ['js/favor-heart-balance.js?v=20260917points3', () => Number(window.NpcFavorBalance?.version) >= 1],
     ['config/npcs/clothing-patterns.js?v=20260924npcweave1', () => Number(window.HobunjiNpcClothingPatterns?.version) >= 1],
