@@ -147,10 +147,24 @@
     };
   }
 
+  // Once a dev-placed piece has been committed to the repo map (same id now
+  // in the authored list), drop it from the overlay so it isn't drawn twice.
+  function pruneCommitted(mapId, authoredLists) {
+    const store = readStore();
+    const entry = store.maps[mapId];
+    if (!entry?.added?.length) return entry;
+    const authoredIds = new Set(authoredLists.flat().map(record => record?.id).filter(Boolean));
+    const kept = entry.added.filter(record => !authoredIds.has(record.id));
+    if (kept.length === entry.added.length) return entry;
+    entry.added = kept;
+    writeStore(store);
+    return entry;
+  }
+
   function mergeBuildingFurniture(mapId, authored) {
     const list = Array.isArray(authored) ? authored : [];
     authoredByMap.set(mapId, { kind: 'building', furniture: list.map(item => ({ ...item })) });
-    const entry = readStore().maps[mapId];
+    const entry = pruneCommitted(mapId, [list]);
     if (!entry) return list;
     const removed = new Set(entry.removed || []);
     return list
@@ -163,7 +177,7 @@
     const decor = Array.isArray(townMap?.decor) ? townMap.decor : [];
     const furniture = Array.isArray(townMap?.furniture) ? townMap.furniture : [];
     authoredByMap.set(TOWN_ID, { kind: 'town', decor: decor.map(item => ({ ...item })), furniture: furniture.map(item => ({ ...item })) });
-    const entry = readStore().maps[TOWN_ID];
+    const entry = pruneCommitted(TOWN_ID, [decor, furniture]);
     if (!entry) return { decor, furniture };
     const removed = new Set(entry.removed || []);
     const keep = list => list.filter(record => !removed.has(authoredRef(record))).map(record => applyEdits(record, entry));

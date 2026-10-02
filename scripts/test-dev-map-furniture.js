@@ -119,6 +119,13 @@ const plain = value => JSON.parse(JSON.stringify(value));
   assert.ok(shop.mergedFurniture.some(f => f.id === 'devf_b') && !shop.mergedFurniture.some(f => 'devOverlay' in f), 'export strips runtime-only flags');
   assert.deepEqual(townExport.mergedDecor.map(d => d.key), ['bench', 'chair']);
 
+  // A dev piece committed to the repo map (its id now authored) leaves the overlay.
+  area = 'map_i_shop';
+  const committed = plain(api.mergeBuildingFurniture('map_i_shop', [...authored, { id: 'devf_b', itemKey: 'chairItem', col: 2, row: 2, rotY: 0, postX: 0.5, postY: 0, postZ: -0.25 }]));
+  assert.equal(committed.filter(f => f.id === 'devf_b').length, 1, 'committed piece is drawn once');
+  assert.equal(JSON.parse(store.get('hobunji_dev_map_furniture_v1')).maps.map_i_shop.added.length, 0, 'and pruned from the overlay');
+  area = 'town';
+
   // Discard clears only the current map.
   await api.discardMap();
   assert.equal(townRespawns, 1, 'discarding on the town respawns its furniture');
