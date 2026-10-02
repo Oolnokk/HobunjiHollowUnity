@@ -219,6 +219,110 @@ Overpass → not set</div>
     return `${CLOTHING_TRIM_ASSET_DIR}/${safe(garmentId)}__${safe(variantKey)}__${view === 'behind' ? 'behind' : 'front'}.png`;
   }
 
+  function trimableGarmentMaskFromRgba(rgba) {
+    const mask = new Uint8Array(Math.floor((rgba?.length || 0) / 4)); // Shared trim geometry: opaque cloth pixels count, exact black sprite-outline pixels do not.
+    for (let pixel = 0; pixel < mask.length; pixel++) {
+      const offset = pixel * 4;
+      const opaque = rgba[offset + 3] > 16;
+      const pureBlack = rgba[offset] === 0 && rgba[offset + 1] === 0 && rgba[offset + 2] === 0;
+      mask[pixel] = opaque && !pureBlack ? 1 : 0; // Skip black outlines of any thickness so contour detection starts on the first non-black garment pixels inward.
+    }
+    return mask;
+  }
+
+  function canvasTrimGeometry(canvas) {
+    const width = canvas.width, height = canvas.height;
+    const rgba = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, width, height).data;
+    return { width, height, mask: trimableGarmentMaskFromRgba(rgba) };
+  }
+
+  function maskBounds(mask, width, height) {
+    let minX = width, minY = height, maxX = -1, maxY = -1;
+    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+      if (!mask[y * width + x]) continue;
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
+    }
+    return maxX >= minX && maxY >= minY
+      ? { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 }
+      : null;
+  }
+
+  function buildInwardSilhouetteMap(mask, width, height) {
+    const boundaryMask = new Uint8Array(mask.length); // One-pixel contour begins at the first non-black garment pixels touching black/transparent space.
+    const owner = new Int32Array(mask.length); owner.fill(-1); // Nearest contour-pixel index used by both authoring and replication.
+    const distance = new Float32Array(mask.length); distance.fill(Infinity); // Octile inward distance: straight costs 1px; diagonal costs √2.
+    const heapIndex = [], heapDistance = [];
+
+    function heapPush(index, value) {
+      let at = heapIndex.length;
+      heapIndex.push(index); heapDistance.push(value);
+      while (at > 0) {
+        const parent = (at - 1) >> 1;
+        if (heapDistance[parent] <= value) break;
+        heapIndex[at] = heapIndex[parent]; heapDistance[at] = heapDistance[parent];
+        at = parent;
+      }
+      heapIndex[at] = index; heapDistance[at] = value;
+    }
+
+    function heapPop() {
+      if (!heapIndex.length) return null;
+      const index = heapIndex[0], value = heapDistance[0];
+      const lastIndex = heapIndex.pop(), lastDistance = heapDistance.pop();
+      if (heapIndex.length) {
+        let at = 0;
+        while (true) {
+          const left = at * 2 + 1, right = left + 1;
+          if (left >= heapIndex.length) break;
+          let child = left;
+          if (right < heapIndex.length && heapDistance[right] < heapDistance[left]) child = right;
+          if (heapDistance[child] >= lastDistance) break;
+          heapIndex[at] = heapIndex[child]; heapDistance[at] = heapDistance[child];
+          at = child;
+        }
+        heapIndex[at] = lastIndex; heapDistance[at] = lastDistance;
+      }
+      return { index, value };
+    }
+
+    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+      const index = y * width + x;
+      if (!mask[index]) continue;
+      let isBoundary = false;
+      for (let oy = -1; oy <= 1 && !isBoundary; oy++) for (let ox = -1; ox <= 1; ox++) {
+        if (!ox && !oy) continue;
+        const nx = x + ox, ny = y + oy;
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height || !mask[ny * width + nx]) { isBoundary = true; break; }
+      }
+      if (!isBoundary) continue;
+      boundaryMask[index] = 1;
+      owner[index] = index;
+      distance[index] = 0;
+      heapPush(index, 0);
+    }
+
+    const SQRT2 = Math.SQRT2;
+    while (heapIndex.length) {
+      const current = heapPop();
+      if (!current || current.value > distance[current.index] + 0.0001) continue;
+      const x = current.index % width, y = Math.floor(current.index / width);
+      for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+        if (!ox && !oy) continue;
+        const nx = x + ox, ny = y + oy;
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+        const neighbor = ny * width + nx;
+        if (!mask[neighbor]) continue;
+        const candidate = current.value + (ox && oy ? SQRT2 : 1);
+        if (candidate + 0.0001 >= distance[neighbor]) continue;
+        distance[neighbor] = candidate;
+        owner[neighbor] = owner[current.index];
+        heapPush(neighbor, candidate);
+      }
+    }
+    return { boundaryMask, owner, distance };
+  }
+
   function trimRecord(garmentId = $('trimGarment').value, variantKey = $('trimVariant').value, view = $('trimView').value) {
     return trimManifest?.garments?.[garmentId]?.variants?.[variantKey]?.[view === 'behind' ? 'behind' : 'front'] || null;
   }
@@ -318,41 +422,118 @@ Overpass → not set</div>
     return result.canvas;
   }
 
-  function opaqueCanvasBounds(canvas) {
-    const width = canvas.width, height = canvas.height;
-    const data = canvas.getContext('2d').getImageData(0, 0, width, height).data;
-    let minX = width, minY = height, maxX = -1, maxY = -1;
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        if (data[(y * width + x) * 4 + 3] <= 16) continue;
-        if (x < minX) minX = x; if (x > maxX) maxX = x;
-        if (y < minY) minY = y; if (y > maxY) maxY = y;
-      }
-    }
-    return maxX >= minX && maxY >= minY
-      ? { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 }
-      : null;
+  function maskAlphaArray(canvas, width = canvas.width, height = canvas.height) {
+    const scratch = Object.assign(document.createElement('canvas'), { width, height });
+    const ctx = scratch.getContext('2d', { willReadFrequently: true });
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(canvas, 0, 0, width, height);
+    const rgba = ctx.getImageData(0, 0, width, height).data;
+    const alpha = new Uint8Array(width * height);
+    for (let i = 0; i < alpha.length; i++) alpha[i] = rgba[i * 4 + 3] > 16 ? 1 : 0;
+    return alpha;
   }
 
-  function fitTrimMaskToGarment(sourceMask, sourceGarment, targetGarment) {
-    const sourceBounds = opaqueCanvasBounds(sourceGarment);
-    const targetBounds = opaqueCanvasBounds(targetGarment);
-    if (!sourceBounds || !targetBounds) throw new Error('Could not find opaque garment bounds for trim replication.');
-    const canvas = Object.assign(document.createElement('canvas'), { width: targetGarment.width, height: targetGarment.height });
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(
-      sourceMask,
-      sourceBounds.x, sourceBounds.y, sourceBounds.width, sourceBounds.height,
-      targetBounds.x, targetBounds.y, targetBounds.width, targetBounds.height
-    );
-    ctx.globalCompositeOperation = 'destination-in';
-    ctx.drawImage(targetGarment, 0, 0);
-    ctx.globalCompositeOperation = 'source-over';
-    const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    for (let i = 0; i < image.data.length; i += 4) {
-      if (image.data[i + 3] > 16) image.data[i] = image.data[i + 1] = image.data[i + 2] = image.data[i + 3] = 255;
-      else image.data[i] = image.data[i + 1] = image.data[i + 2] = image.data[i + 3] = 0;
+  function normalizedPoint(index, width, bounds) {
+    const x = index % width, y = Math.floor(index / width);
+    return {
+      x: bounds.width > 1 ? (x - bounds.x) / (bounds.width - 1) : 0.5,
+      y: bounds.height > 1 ? (y - bounds.y) / (bounds.height - 1) : 0.5,
+    };
+  }
+
+  function nearestBoundaryByNormalizedPoint(point, boundaryIndices, width, bounds) {
+    let best = -1, bestDistance = Infinity;
+    for (const index of boundaryIndices) {
+      const candidate = normalizedPoint(index, width, bounds);
+      const dx = candidate.x - point.x, dy = candidate.y - point.y;
+      const distance = dx * dx + dy * dy;
+      if (distance < bestDistance) { bestDistance = distance; best = index; }
+    }
+    return best;
+  }
+
+  function relativeMaskSample(mask, width, height, bounds, point) {
+    const x = Math.max(bounds.x, Math.min(bounds.x + bounds.width - 1, Math.round(bounds.x + point.x * Math.max(0, bounds.width - 1))));
+    const y = Math.max(bounds.y, Math.min(bounds.y + bounds.height - 1, Math.round(bounds.y + point.y * Math.max(0, bounds.height - 1))));
+    return mask[y * width + x] ? 1 : 0;
+  }
+
+  function fitTrimMaskToGarment(sourceMaskCanvas, sourceGarment, targetGarment) {
+    const sourceGeometry = canvasTrimGeometry(sourceGarment);
+    const targetGeometry = canvasTrimGeometry(targetGarment);
+    const sourceBounds = maskBounds(sourceGeometry.mask, sourceGeometry.width, sourceGeometry.height);
+    const targetBounds = maskBounds(targetGeometry.mask, targetGeometry.width, targetGeometry.height);
+    if (!sourceBounds || !targetBounds) throw new Error('Could not find non-black garment bounds for trim replication.');
+
+    const sourceMap = buildInwardSilhouetteMap(sourceGeometry.mask, sourceGeometry.width, sourceGeometry.height);
+    const targetMap = buildInwardSilhouetteMap(targetGeometry.mask, targetGeometry.width, targetGeometry.height);
+    const sourcePaint = maskAlphaArray(sourceMaskCanvas, sourceGeometry.width, sourceGeometry.height);
+
+    const selectedSourceBoundary = new Uint8Array(sourcePaint.length);
+    const sourceDepthByOwner = new Float32Array(sourcePaint.length);
+    for (let index = 0; index < sourcePaint.length; index++) {
+      if (!sourcePaint[index] || !sourceGeometry.mask[index]) continue;
+      const owner = sourceMap.owner[index];
+      if (owner < 0) continue;
+      selectedSourceBoundary[owner] = 1; // Even if the literal outline seed was erased later, painted inward pixels still identify the contour section that authored them.
+      if (sourceMap.distance[index] > sourceDepthByOwner[owner]) sourceDepthByOwner[owner] = sourceMap.distance[index];
+    }
+
+    const sourceBoundaryIndices = [];
+    for (let i = 0; i < sourceMap.boundaryMask.length; i++) if (sourceMap.boundaryMask[i]) sourceBoundaryIndices.push(i);
+    const targetBoundaryIndices = [];
+    for (let i = 0; i < targetMap.boundaryMask.length; i++) if (targetMap.boundaryMask[i]) targetBoundaryIndices.push(i);
+    if (!sourceBoundaryIndices.length || !targetBoundaryIndices.length) throw new Error('Could not derive non-black garment outlines for trim replication.');
+
+    const mappedSourceOwnerForTargetBoundary = new Int32Array(targetGeometry.mask.length); mappedSourceOwnerForTargetBoundary.fill(-1);
+    for (const targetBoundary of targetBoundaryIndices) {
+      const targetPoint = normalizedPoint(targetBoundary, targetGeometry.width, targetBounds);
+      mappedSourceOwnerForTargetBoundary[targetBoundary] = nearestBoundaryByNormalizedPoint(targetPoint, sourceBoundaryIndices, sourceGeometry.width, sourceBounds);
+    }
+
+    const sourceScale = Math.max(1, Math.min(sourceBounds.width, sourceBounds.height));
+    const targetScale = Math.max(1, Math.min(targetBounds.width, targetBounds.height));
+    const depthScale = targetScale / sourceScale; // Inward X is transferred proportionally after the non-black contours are aligned.
+    const structuralTarget = new Uint8Array(targetGeometry.mask.length);
+    for (let index = 0; index < structuralTarget.length; index++) {
+      if (!targetGeometry.mask[index]) continue;
+      const targetOwner = targetMap.owner[index];
+      if (targetOwner < 0) continue;
+      const sourceOwner = mappedSourceOwnerForTargetBoundary[targetOwner];
+      if (sourceOwner < 0 || !selectedSourceBoundary[sourceOwner]) continue;
+      const targetDepth = sourceDepthByOwner[sourceOwner] * depthScale;
+      if (targetMap.distance[index] <= targetDepth + 0.0001) structuralTarget[index] = 1;
+    }
+
+    // Reconstruct the same clean outline→inward model on the source so manual additions/erasures can be isolated as post edits.
+    const structuralSource = new Uint8Array(sourceGeometry.mask.length);
+    for (let index = 0; index < structuralSource.length; index++) {
+      if (!sourceGeometry.mask[index]) continue;
+      const owner = sourceMap.owner[index];
+      if (owner >= 0 && selectedSourceBoundary[owner] && sourceMap.distance[index] <= sourceDepthByOwner[owner] + 0.0001) structuralSource[index] = 1;
+    }
+    const postAdd = new Uint8Array(sourcePaint.length);
+    const postRemove = new Uint8Array(sourcePaint.length);
+    for (let i = 0; i < sourcePaint.length; i++) {
+      if (sourcePaint[i] && !structuralSource[i]) postAdd[i] = 1;
+      else if (!sourcePaint[i] && structuralSource[i]) postRemove[i] = 1;
+    }
+
+    // Apply those post edits after structural transfer, sampled in relative garment coordinates rather than raw source pixels.
+    for (let index = 0; index < structuralTarget.length; index++) {
+      if (!targetGeometry.mask[index]) continue;
+      const targetPoint = normalizedPoint(index, targetGeometry.width, targetBounds);
+      if (relativeMaskSample(postRemove, sourceGeometry.width, sourceGeometry.height, sourceBounds, targetPoint)) structuralTarget[index] = 0;
+      if (relativeMaskSample(postAdd, sourceGeometry.width, sourceGeometry.height, sourceBounds, targetPoint)) structuralTarget[index] = 1;
+    }
+
+    const canvas = Object.assign(document.createElement('canvas'), { width: targetGeometry.width, height: targetGeometry.height });
+    const ctx = canvas.getContext('2d');
+    const image = ctx.createImageData(canvas.width, canvas.height);
+    for (let index = 0; index < structuralTarget.length; index++) {
+      if (!structuralTarget[index]) continue;
+      const offset = index * 4;
+      image.data[offset] = image.data[offset + 1] = image.data[offset + 2] = image.data[offset + 3] = 255;
     }
     ctx.putImageData(image, 0, 0);
     return canvas;
@@ -643,95 +824,11 @@ Overpass → not set</div>
     const resultCtx = resultCanvas.getContext('2d');
     baseCtx.imageSmoothingEnabled = paintCtx.imageSmoothingEnabled = resultCtx.imageSmoothingEnabled = false;
     baseCtx.drawImage(baseCanvas, 0, 0);
-    const garmentPixels = baseCtx.getImageData(0, 0, width, height).data; // Source silhouette used by outline selection, inward expansion, and clipping.
-    const garmentMask = new Uint8Array(width * height); // Native-pixel opacity map; all trim geometry derives from this exact rendered garment silhouette.
-    for (let pixel = 0; pixel < garmentMask.length; pixel++) garmentMask[pixel] = garmentPixels[pixel * 4 + 3] > 16 ? 1 : 0;
+    const garmentPixels = baseCtx.getImageData(0, 0, width, height).data; // Rendered garment raster used to distinguish trimable cloth from transparency and pure-black line art.
+    const garmentMask = trimableGarmentMaskFromRgba(garmentPixels); // Outline Brush starts on the first opaque non-black pixels inward from any black sprite outline.
 
-    function buildInwardSilhouetteMap(mask) {
-      const boundaryMask = new Uint8Array(mask.length); // One-pixel contour: any opaque garment pixel touching transparency or the sprite boundary.
-      const owner = new Int32Array(mask.length); owner.fill(-1); // Nearest contour-pixel index; selected owners define which silhouette section may grow inward.
-      const distance = new Float32Array(mask.length); distance.fill(Infinity); // Octile distance from the contour: straight inward steps cost 1px, diagonals cost √2.
-      const heapIndex = [];
-      const heapDistance = [];
 
-      function heapPush(index, value) {
-        let at = heapIndex.length;
-        heapIndex.push(index); heapDistance.push(value);
-        while (at > 0) {
-          const parent = (at - 1) >> 1;
-          if (heapDistance[parent] <= value) break;
-          heapIndex[at] = heapIndex[parent]; heapDistance[at] = heapDistance[parent];
-          at = parent;
-        }
-        heapIndex[at] = index; heapDistance[at] = value;
-      }
-
-      function heapPop() {
-        if (!heapIndex.length) return null;
-        const index = heapIndex[0], value = heapDistance[0];
-        const lastIndex = heapIndex.pop(), lastDistance = heapDistance.pop();
-        if (heapIndex.length) {
-          let at = 0;
-          while (true) {
-            const left = at * 2 + 1, right = left + 1;
-            if (left >= heapIndex.length) break;
-            let child = left;
-            if (right < heapIndex.length && heapDistance[right] < heapDistance[left]) child = right;
-            if (heapDistance[child] >= lastDistance) break;
-            heapIndex[at] = heapIndex[child]; heapDistance[at] = heapDistance[child];
-            at = child;
-          }
-          heapIndex[at] = lastIndex; heapDistance[at] = lastDistance;
-        }
-        return { index, value };
-      }
-
-      for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-          const index = y * width + x;
-          if (!mask[index]) continue;
-          let isBoundary = false;
-          for (let oy = -1; oy <= 1 && !isBoundary; oy++) {
-            for (let ox = -1; ox <= 1; ox++) {
-              if (!ox && !oy) continue;
-              const nx = x + ox, ny = y + oy;
-              if (nx < 0 || ny < 0 || nx >= width || ny >= height || !mask[ny * width + nx]) {
-                isBoundary = true;
-                break;
-              }
-            }
-          }
-          if (!isBoundary) continue;
-          boundaryMask[index] = 1;
-          owner[index] = index;
-          distance[index] = 0;
-          heapPush(index, 0);
-        }
-      }
-
-      const SQRT2 = Math.SQRT2;
-      while (heapIndex.length) {
-        const current = heapPop();
-        if (!current || current.value > distance[current.index] + 0.0001) continue;
-        const x = current.index % width, y = Math.floor(current.index / width);
-        for (let oy = -1; oy <= 1; oy++) {
-          for (let ox = -1; ox <= 1; ox++) {
-            if (!ox && !oy) continue;
-            const nx = x + ox, ny = y + oy;
-            if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
-            const neighbor = ny * width + nx;
-            if (!mask[neighbor]) continue;
-            const candidate = current.value + (ox && oy ? SQRT2 : 1);
-            if (candidate + 0.0001 >= distance[neighbor]) continue;
-            distance[neighbor] = candidate;
-            owner[neighbor] = owner[current.index];
-            heapPush(neighbor, candidate);
-          }
-        }
-      }
-      return { boundaryMask, owner, distance };
-    }
-    const inwardMap = buildInwardSilhouetteMap(garmentMask); // Shared contour topology keeps brush selection and Expand Inward mathematically consistent.
+    const inwardMap = buildInwardSilhouetteMap(garmentMask, width, height); // Same black-skipping contour topology drives authoring and cross-species replication.
     const silhouetteBoundaryMask = inwardMap.boundaryMask;
 
     let brushMode = 'brush'; // Direct mask editor owns only footprint painting; all pattern placement transforms are intentionally absent.
@@ -752,8 +849,9 @@ Overpass → not set</div>
 
     function normalizePaintRgb() {
       const image = paintCtx.getImageData(0, 0, width, height);
-      for (let i = 0; i < image.data.length; i += 4) {
-        if (image.data[i + 3] > 16) image.data[i] = image.data[i + 1] = image.data[i + 2] = 255; // Exported trim PNG is an alpha mask; white keeps the editing overlay readable regardless of previous motif RGB.
+      for (let pixel = 0; pixel < garmentMask.length; pixel++) {
+        const i = pixel * 4;
+        if (image.data[i + 3] > 16 && garmentMask[pixel]) image.data[i] = image.data[i + 1] = image.data[i + 2] = image.data[i + 3] = 255; // Loaded/replicated trim is kept only on opaque non-black cloth pixels.
         else image.data[i] = image.data[i + 1] = image.data[i + 2] = image.data[i + 3] = 0;
       }
       paintCtx.putImageData(image, 0, 0);
@@ -1422,7 +1520,7 @@ Overpass → not set</div>
   };
 
   window.__patternEditorDebug = () => ({ // Mobile-visible console substitute for checking the dev tool's two-slot state.
-    mostRecentChange: 'Trim authoring now begins as one-pixel outline-section selection. Outline Brush only paints garment/transparency contour pixels, while Expand Inward follows a nearest-contour ownership map so selected sections grow toward the garment interior without spreading sideways along the silhouette.',
+    mostRecentChange: 'Trim geometry now ignores exact-black sprite outlines everywhere. Authoring starts on the first non-black contour inward, and Replicate/Replicate All align those contours first, transfer inward depth proportionally, then reapply source additions/erasures as relative-scale post edits.',
     previewMode: $('previewMode').value,
     weavingBackground: $('surfaceTexture').value,
     overpassClearanceMultiplier: clampOverpassClearance($('overpassClearance').value),
