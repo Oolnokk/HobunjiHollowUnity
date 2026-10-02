@@ -756,11 +756,12 @@ assert.match(patternEditorSource, /Outline Brush always authors exactly one cont
 assert.match(patternEditorSource, /function selectFullOutline\(\)/, 'full-outline shortcut selects the same one-pixel contour used by the brush');
 assert.match(patternEditorSource, /data-trim-expand-amount/, 'trim painter exposes artist-controlled inward depth');
 assert.match(patternEditorSource, /function expandExistingTrim\(amount\)/, 'trim painter expands selected contour sections toward the garment interior');
-assert.match(patternEditorSource, /const sourceBoundary = inwardMap\.owner\[index\]/, 'inward expansion assigns interior pixels to their nearest silhouette contour source');
-assert.match(patternEditorSource, /!selectedBoundary\[sourceBoundary\]/, 'inward expansion excludes interior pixels owned by unselected outline sections');
-assert.match(patternEditorSource, /inwardMap\.distance\[index\] <= layers \+ 0\.0001/, 'inward expansion stops at the requested contour distance');
-assert.match(patternEditorSource, /const candidate = current\.value \+ \(ox && oy \? SQRT2 : 1\)/, 'nearest-contour ownership distinguishes straight inward pixels from diagonal neighbors instead of using an unweighted flood');
-assert.match(patternEditorSource, /preventing lateral edge growth/, 'inward expansion documents and guards against sideways silhouette growth');
+assert.match(patternEditorSource, /function distanceFromSelectedContour\(mask, boundaryMask, selectedBoundary, width, height\)/, 'inward expansion computes distance from the union of all actually selected contour sections');
+assert.match(patternEditorSource, /boundaryMask\[neighbor\] && !selectedBoundary\[neighbor\]/, 'multi-source inward expansion treats unselected outline pixels as traversal barriers instead of creeping sideways along the silhouette');
+assert.match(patternEditorSource, /const selectedDistance = distanceFromSelectedContour\(garmentMask, silhouetteBoundaryMask, selectedBoundary, width, height\)/, 'live Expand Inward uses the selected-contour distance field rather than a permanent nearest-owner assignment');
+assert.match(patternEditorSource, /const selectedDistance = distanceFromSelectedContour\(geometry\.mask, inwardMap\.boundaryMask, selectedBoundary, geometry\.width, geometry\.height\)/, 'operation replay uses the same multi-source inward distance as live authoring');
+assert.match(patternEditorSource, /selectedDistance\[index\] > layers \+ 0\.0001/, 'inward expansion stops at the requested distance from any selected contour section');
+assert.match(patternEditorSource, /Any selected inner\/outer contour may claim this interior pixel/, 'replay explicitly allows selected inner and outer edges to meet without leaving Voronoi-owner wedges');
 assert.match(patternEditorSource, /expandExistingBtn\.disabled = !inkPresent/, 'Expand Inward is disabled until the current mask contains trim paint');
 assert.match(patternEditorSource, /Expand Inward needs painted pixels on the one-pixel garment outline/, 'Expand Inward explains when a mask has no valid contour seeds');
 assert.match(patternEditorSource, /trimReplicateTarget/, 'garment trim authoring exposes a target variant picker for cross-species replication');
