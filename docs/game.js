@@ -13605,7 +13605,10 @@
           const furnKeyByItemKey = {};
           for (const [key, def] of Object.entries(DECORATIVE_FURNITURE_DEFS)) { allFurnDefs[def.itemKey] = def; furnKeyByItemKey[def.itemKey] = key; }
           for (const [key, def] of Object.entries(PROCESSING_FURNITURE_DEFS)) { allFurnDefs[def.itemKey] = def; furnKeyByItemKey[def.itemKey] = key; }
-          for (const f of (mapData.furniture || [])) {
+          // Dev Companion map-furniture overlay (js/dev-map-furniture.js) merges in
+          // dev-placed/moved/removed pieces; returns the authored list untouched otherwise.
+          const buildingFurniture = window.DevMapFurniture?.mergeBuildingFurniture?.(mapId, mapData.furniture) || mapData.furniture || [];
+          for (const f of buildingFurniture) {
             const def = allFurnDefs[f.itemKey];
             const furnitureKey = furnKeyByItemKey[f.itemKey];
             if (furnitureKey === 'mineLadder') await window.AuthoredFurniture?.load?.('mineLadder'); // Used to guarantee the supplied ladder is ready on the safe room's first visit, not merely on later cached visits.
@@ -13621,8 +13624,14 @@
             const rotRad = THREE.MathUtils.degToRad(f.rotY || 0);
             let renderedFurniture = null;
             let furnitureSfxSource = null;
-            if (furnitureKey && window.ProceduralFurniture.CATALOG[furnitureKey]) {
-              const model = buildFurnitureVisual(furnitureKey, color);
+            // Alias defs (e.g. the inventory wall signs) render through their procKey,
+            // and pieces built by authored/patched builders (wall torch, windows,
+            // signs, doors) count even though they have no procedural CATALOG recipe —
+            // only a build with no geometry at all falls back to the placeholder box.
+            const renderKey = def?.procKey && def.procKey !== furnitureKey ? def.procKey : furnitureKey;
+            const builtModel = renderKey ? buildFurnitureVisual(renderKey, color) : null;
+            if (builtModel && (window.ProceduralFurniture.CATALOG[renderKey] || builtModel.children.length)) {
+              const model = builtModel;
               renderedFurniture = model;
               model.position.set(bx, by, bz);
               model.rotation.y = rotRad;
@@ -14862,6 +14871,26 @@
         };
       }
 
+      // Rebuilds the building the player is standing in from its (re-merged)
+      // map data, keeping residents and the player's exact spot. Shared by
+      // live Map Editor reflection and Dev Companion map-furniture edits.
+      // residentsOut receives the detached residents so a caller's own
+      // rollback can reattach them if the rebuild throws.
+      async function _rebuildBuildingSceneInPlace(areaId, residentsOut = []) {
+        if (currentArea !== areaId || !_isBuildingArea(areaId)) return false;
+        const playerBefore = { x: player.x, y: player.y, angle: player.angle, facingAngle };
+        const detachedResidents = _detachLivePreviewResidents(areaId);
+        residentsOut.push(...detachedResidents);
+        discardBuildingScene(areaId, { preserveResidents: true });
+        enterBuilding(areaId, playerBefore.x / TILE - 0.5, playerBefore.y / TILE - 0.5);
+        await waitForBuildingSceneReady(areaId);
+        if (!_buildingScenes.get(areaId)?.scene) throw new Error(`Timed out rebuilding ${areaId}.`);
+        _reattachLivePreviewResidents(_buildingScenes.get(areaId).scene, detachedResidents);
+        player.x = playerBefore.x; player.y = playerBefore.y; player.angle = playerBefore.angle; facingAngle = playerBefore.facingAngle;
+        _snapCameraTarget();
+        return true;
+      }
+
       async function _applyLiveMapReflection(request) {
         const incomingWorkspace = window.MapLivePreview.clone(request.workspace);
         const targetMap = incomingWorkspace?.maps?.find(map => map.id === request.mapId);
@@ -14912,14 +14941,7 @@
 
           if (_isBuildingArea(areaBefore)) {
             rebuiltArea = areaBefore;
-            detachedResidents = _detachLivePreviewResidents(areaBefore);
-            discardBuildingScene(areaBefore, { preserveResidents: true });
-            enterBuilding(areaBefore, playerBefore.x / TILE - 0.5, playerBefore.y / TILE - 0.5);
-            await waitForBuildingSceneReady(areaBefore);
-            if (!_buildingScenes.get(areaBefore)?.scene) throw new Error(`Timed out rebuilding ${areaBefore}.`);
-            _reattachLivePreviewResidents(_buildingScenes.get(areaBefore).scene, detachedResidents);
-            player.x = playerBefore.x; player.y = playerBefore.y; player.angle = playerBefore.angle; facingAngle = playerBefore.facingAngle;
-            _snapCameraTarget();
+            await _rebuildBuildingSceneInPlace(areaBefore, detachedResidents);
             return { applyMode: 'scene-rebuild', warnings: [] };
           }
 
@@ -18655,6 +18677,10 @@
         if (window.Fishing?.state?.active) {
           if (activeAction === 'fish_primary') window.Fishing?.primaryAction();
           else if (activeAction === 'fish_cancel') window.Fishing?.close();
+          return;
+        }
+        if (window.DevMapFurniture?.isActive?.() && window.DevMapFurniture.handleArchAction(activeAction)) {
+          refreshActionBar();
           return;
         }
         if (window.WallOrnamentPlacement?.isPlayerReticlePlacementActive?.()) {
@@ -24009,6 +24035,7 @@
           if (window.WallOrnamentPlacement?.isPlayerReticlePlacementActive?.()) {
             window.WallOrnamentPlacement.updatePlayerReticlePreview?.(); // Touch camera/movement retargets wall preview even without a connected controller.
           }
+          if (window.DevMapFurniture?.isActive?.()) window.DevMapFurniture.update(); // Dev map-furniture ghost (throttled inside; floor previews only move with the reticle tile).
           if (furniturePlacementModeArmed()) {
             const furniturePlacementReticle = getReticleTile(); // Used only while placement is armed to keep the ghost on the live gameplay reticle tile.
             showFurniturePlacementGhost(furniturePlacementReticle.col, furniturePlacementReticle.row);
@@ -24819,6 +24846,8 @@
         // explicit entries are essential on touch: keyboard/controller can
         // invoke action1/action2 without visible DOM, while mobile can only
         // press actions that this function actually populates into the arch.
+        const devFurnitureButtons = window.DevMapFurniture?.actionButtons?.(); // Dev map-furniture placement owns the arch like the farm placer does.
+        if (devFurnitureButtons) return devFurnitureButtons;
         if (window.WallOrnamentPlacement?.isPlayerReticlePlacementActive?.()) {
           return [
             { icon: '✓', label: 'Place', action: 'wall_place_confirm', style: 'primary', allowed: window.WallOrnamentPlacement.canConfirmPlayerReticlePlacement?.() !== false },
@@ -26020,6 +26049,10 @@
           && computeActionButtons().some(button => button.action === 'potion_select' && button.allowed);
       }
       function runInputAction(actionId, phase = 'press') {
+        if (window.DevMapFurniture?.handleGameplayAction?.(actionId, phase)) {
+          if (phase === 'press') refreshActionBar();
+          return;
+        }
         if (window.WallOrnamentPlacement?.handleGameplayAction?.(actionId, phase)) {
           if (phase === 'press') refreshActionBar(); // Physical Action 1/2 must clear/rebuild the touch arch after wall confirm/cancel.
           return;
@@ -26903,7 +26936,7 @@
         threeContainer.addEventListener('pointerdown', (e) => {
           if (window.PixelProbe?.armed || menuOpen || farmEditMode || e.shiftKey || window.__mapEditorGizmoActive) return;
           const mouseAction = getActionForButton('desktop', 'Mouse' + e.button);
-          if (window.WallOrnamentPlacement?.isPlayerReticlePlacementActive?.() && (mouseAction === 'action1' || mouseAction === 'action2')) {
+          if ((window.WallOrnamentPlacement?.isPlayerReticlePlacementActive?.() || window.DevMapFurniture?.isActive?.()) && (mouseAction === 'action1' || mouseAction === 'action2')) {
             desktopWallFurnitureMousePresses.add(e.button);
             runInputAction(mouseAction, 'press');
             return;
@@ -27284,6 +27317,8 @@
           })),
         currentAreaOcclusionMeshCount: () => currentAreaOcclusionMeshes().length,
         enterZoneDebug: (mapId, col, row) => enterZone(mapId, col, row),
+        enterBuildingDebug: (mapId, col, row) => enterBuilding(mapId, col, row),
+        enterTownDebug: (col, row) => enterTown(col, row),
         setOutlines: (v) => { s_outlines = !!v; },
         playerNeckPivotInfo: () => {
           let avatarGroup = null;
@@ -28571,6 +28606,31 @@
         showToast,
         DEV_ARENA_ZONE_ID: window.DevSpawner.DEV_ARENA_ZONE_ID,
         openArenaSpawner: () => window.DevSpawner.toggle(),
+      });
+
+      // Dev Companion map furniture (place any repo furniture in town/building
+      // interiors through a dev overlay) now lives in js/dev-map-furniture.js.
+      window.DevMapFurniture?.init({
+        getCurrentArea: () => currentArea,
+        isBuildingArea: _isBuildingArea,
+        isDevMode: () => s_devMode,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
+        camera,
+        playerMesh,
+        isActorRoot: node => npcWalkers.some(walker => walker.root === node || walker.avatarGroup === node),
+        getReticleTile,
+        buildFurnitureVisual,
+        decorativeFurnitureSize,
+        getDecorativeFurnitureDefs: () => DECORATIVE_FURNITURE_DEFS,
+        getProcessingFurnitureDefs: () => PROCESSING_FURNITURE_DEFS,
+        isTileWalkable: (area, col, row) => isNpcTileWalkable(area, col, row),
+        furnitureBaseY: (area, col, row) => area === 'town'
+          ? window.TownZoneBuildings.townFurnitureBaseY(col, row)
+          : tileSurfaceYInArea(npcGridForArea(area)?.[row]?.[col], area),
+        respawnTownFurniture: () => window.TownZoneBuildings.spawnTownDecorFurniture(),
+        rebuildBuildingInPlace: areaId => _rebuildBuildingSceneInPlace(areaId),
+        showToast,
+        refreshActionBar,
       });
 
       window.DenNestSystem?.init({

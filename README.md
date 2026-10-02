@@ -191,6 +191,21 @@ what just started.
   companion is connected the 🗺️ button drives the session from there. Shows
   why it's unavailable (Dev Mode off / area not editable) instead of dead
   buttons.
+  **Map › Furniture** (`js/dev-map-furniture.js`, Dev Mode, town + building
+  interiors): a searchable palette of every furniture piece in the repo
+  (wall-mountable pieces first). *Place* / *Wall* arm a piece; aim with the
+  reticle in the game — a green/red ghost shows whether it fits, Action 1
+  places (or mounts on the wall you're aiming at), Action 2 cancels, the
+  mobile arch shows Place/Cancel, and placement stays armed for repeats.
+  *Placed here* lists authored and dev-placed pieces with Move, Rotate 45°,
+  Remove/Restore/Revert and wall nudges (along/up/out). Pieces with authored
+  `wallOrnament` data mount by that face; anything else mounts by its back.
+  Edits live in a dev overlay (`localStorage`) merged into the map whenever it
+  builds (the room rebuilds in place after each change); *Copy changes*
+  exports patch-ready merged `furniture`/`decor` arrays for
+  `config/maps/<map>.json` and the town workspace, and the overlay is also
+  included in Map Edit's Copy Edit Diff. The Map Edit gizmo fine-tunes
+  dev-placed pieces too.
 - **Files** — every config/JSON the game has read (fetch wrapper + resource
   timing) and which databases come from local editor overrides.
 

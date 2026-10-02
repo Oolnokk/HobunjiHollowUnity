@@ -555,13 +555,15 @@
        calls window.TownZoneBuildings.init(...) during its own setup (and
        reads window.TownZoneBuildings.loadHousePieceFaceTexture as one of
        window.FarmBuildings' own init deps, at that same call-time point). -->
-  <script src="js/town-zone-buildings.js?v=20260909livepreview1"></script>
+  <script src="js/town-zone-buildings.js?v=20261002h8bac730"></script>
   <!-- Same-origin live Map Editor transport + runtime bridge. Loaded before
        game.js so its private scene state can be injected during setup. -->
   <script src="js/map-live-preview.js?v=20260909a&window=20260926rebase1"></script>
   <!-- Wall-mounted furniture loads synchronously before game.js consumers initialize. -->
   <script src="js/wall-ornament-placement.js?v=20260926rebase1"></script>
   <script src="js/map-live-preview-runtime.js?v=20261002hd80c184"></script>
+  <!-- Dev Companion map furniture: palette + reticle placement (floor and wall) into town/building interiors via a dev overlay. -->
+  <script src="js/dev-map-furniture.js?v=20261002devfurniture1"></script>
   <!-- Dev Tools: Testing Arena teleport + creature/bandit/foliage spawner
        panel (window.DevSpawner) — reads window.CreatureGenetics/
        window.CreatureGeneticsRender/window.BanditCombat/

@@ -120,6 +120,23 @@
             </details>
           </div>
         </div>
+        <div class="card" id="furnitureCard" hidden>
+          <div class="card-title">🪑 Furniture <span id="furnitureCounts" class="muted small-text"></span><span class="spacer"></span>
+            <button type="button" id="furnitureExportBtn" class="small" title="Copy patch-ready JSON for the map files">Copy changes</button>
+          </div>
+          <div id="furnitureArmed" class="armed-bar" hidden></div>
+          <div class="btn-row">
+            <input type="search" id="furnitureSearch" placeholder="Search all furniture…">
+            <label class="mini-check" title="Only pieces with an authored wall face (signs, torches, windows). Any piece can still be wall-mounted by its back."><input type="checkbox" id="furnitureWallOnly"> wall pieces</label>
+          </div>
+          <div id="furniturePalette" class="palette"></div>
+          <details id="furniturePlacedWrap"><summary id="furniturePlacedSummary">Placed here</summary><div id="furniturePlaced" class="list"></div></details>
+          <div class="btn-row">
+            <label class="mini-check" title="Skip walkability and overlap checks"><input type="checkbox" id="furnitureFree"> free placement</label>
+            <span class="spacer"></span>
+            <button type="button" id="furnitureDiscardBtn" class="small danger">Discard this map's changes</button>
+          </div>
+        </div>
         <div class="card slim" id="mapCamerasCard" hidden>
           <div class="card-title">🎥 Cinematic cameras</div>
           <div id="mapCameraList" class="btn-row"></div>

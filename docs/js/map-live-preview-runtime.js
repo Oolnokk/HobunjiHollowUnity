@@ -535,6 +535,10 @@
       const layoutId = selectedPlacement.ref.layoutId || descriptor.layoutId || 'default';
       const selection = { kind: selectedPlacement.ref.kind, id: selectedPlacement.ref.id, key: selectedPlacement.ref.key, col: selectedPlacement.ref.col, row: selectedPlacement.ref.row };
       const transform = placementTransform();
+      if (String(selection.id || '').startsWith('devf_') && window.DevMapFurniture?.applyGizmoTransform?.(selection.id, transform)) {
+        setStatus('Dev-placed furniture updated in the map-furniture overlay.'); // The standalone Map Editor has never seen overlay pieces.
+        return;
+      }
       rememberPlacementTransform(requestId, mapId, layoutId, selection, transform);
       endpoint.send({ type: 'placement-transform', requestId, mapId, layoutId, selection, transform });
     };
@@ -791,6 +795,7 @@
       },
       mapEditor: editorBundle,
       runtimeOnlyTransforms,
+      devMapFurniture: window.DevMapFurniture?.exportChanges?.() || null, // Dev Companion placements live in their own overlay; included so one copy carries every in-game edit.
       summary: {
         editorChanged: !!editorBundle?.summary?.changed,
         editorChangedMaps: Number(editorBundle?.summary?.changedMaps) || 0,

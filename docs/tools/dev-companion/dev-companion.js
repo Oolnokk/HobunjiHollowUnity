@@ -33,6 +33,7 @@
     history: [],
     quickSlots: [],
     recovery: null,
+    furnitureCatalog: null,
     activeTab: 'now',
   };
   const pending = new Map(); // requestId → {resolve, reject, timer}
@@ -265,6 +266,7 @@
     renderNow();
     renderSaveStatus();
     renderMap();
+    renderFurniture();
     renderOverrides();
     followContext();
   }
@@ -633,6 +635,107 @@
     $('mapArenaCard').hidden = !map.arena;
   }
 
+  // ── Map › Furniture (js/dev-map-furniture.js) ───────────────────────
+  async function ensureFurnitureCatalog() {
+    if (state.furnitureCatalog) return;
+    const result = await run('furniture-catalog', {}, { quiet: true });
+    if (result?.items) { state.furnitureCatalog = result.items; renderPalette(); }
+  }
+
+  function furnitureCommand(action, args = {}, okText = '') {
+    return run('furniture', { action, ...args }, { okText, timeoutMs: LONG_COMMAND_TIMEOUT_MS }).then(result => {
+      if (result?.message) toast(result.message);
+      return result;
+    });
+  }
+
+  function renderPalette() {
+    const box = $('furniturePalette');
+    const items = state.furnitureCatalog;
+    if (!items) { box.replaceChildren(el('div', { class: 'muted small-text', text: 'Loading furniture…' })); return; }
+    const query = ($('furnitureSearch').value || '').trim().toLowerCase();
+    const wallOnly = $('furnitureWallOnly').checked;
+    const armedKey = state.game.furniture?.armed?.moveRef ? null : state.game.furniture?.armed?.key;
+    const matches = items.filter(item => (!wallOnly || item.wall) && (!query || item.name.toLowerCase().includes(query) || item.key.toLowerCase().includes(query)));
+    box.replaceChildren(...(matches.length ? matches.map(item => el('div', { class: 'pal-row' + (item.key === armedKey ? ' armed' : '') },
+      el('span', { class: 'pal-icon', text: item.icon }),
+      el('span', { class: 'pal-name', title: `${item.key}${item.itemKey ? ` · ${item.itemKey}` : ''} · ${item.fw}×${item.fd}`, text: item.name }),
+      item.wall ? el('span', { class: 'tag', title: 'Has an authored wall face', text: 'wall' }) : null,
+      item.kind === 'processing' ? el('span', { class: 'tag', text: 'station' }) : null,
+      button('Place', () => furnitureCommand('arm', { key: item.key, mode: 'floor' })),
+      item.kind === 'processing' ? null : button('Wall', () => furnitureCommand('arm', { key: item.key, mode: 'wall' }), { title: item.wall ? 'Mount on a wall' : 'Mount on a wall by its back face' }),
+    )) : [el('div', { class: 'muted small-text', text: 'No furniture matches.' })]));
+  }
+
+  function placedRow(piece) {
+    const tags = [
+      piece.source === 'overlay' ? el('span', { class: 'tag new', text: 'new' }) : null,
+      piece.edited ? el('span', { class: 'tag edited', text: 'edited' }) : null,
+      piece.removed ? el('span', { class: 'tag removed', text: 'removed' }) : null,
+      piece.wall ? el('span', { class: 'tag', text: 'wall' }) : null,
+    ];
+    const actions = piece.removed
+      ? [button('Restore', () => furnitureCommand('restore', { ref: piece.ref }))]
+      : [
+          button('Move', () => furnitureCommand('move', { ref: piece.ref, wall: piece.wall }), { title: piece.wall ? 'Remount on a wall' : 'Move to another tile' }),
+          piece.wall ? null : button('Rotate 45°', () => furnitureCommand('rotate', { ref: piece.ref, degrees: 45 })),
+          button('Remove', () => furnitureCommand('remove', { ref: piece.ref }), { cls: 'small danger' }),
+          piece.edited ? button('Revert', () => furnitureCommand('restore', { ref: piece.ref }), { title: 'Back to its authored placement' }) : null,
+        ];
+    const row = el('div', { class: 'row' },
+      el('div', { class: 'row-head' }, el('span', { text: piece.icon }), el('span', { class: 'row-title', text: piece.name }), ...tags, el('span', { class: 'spacer' }), ...actions),
+      el('div', { class: 'row-sub', text: `${piece.col}, ${piece.row}${piece.rotY ? ` · ${piece.rotY}°` : ''}` }));
+    if (piece.wall && !piece.removed) {
+      const nudge = (label, args) => button(label, () => furnitureCommand('nudge-wall', { ref: piece.ref, ...args }));
+      row.append(el('div', { class: 'group' }, el('span', { class: 'group-label', text: 'Nudge' }),
+        nudge('◀', { du: -0.05 }), nudge('▶', { du: 0.05 }), nudge('▲', { dv: 0.05 }), nudge('▼', { dv: -0.05 }), nudge('out', { dn: 0.01 }), nudge('in', { dn: -0.01 })));
+    }
+    return row;
+  }
+
+  function renderFurniture() {
+    const furniture = state.game.furniture;
+    const card = $('furnitureCard');
+    const map = state.game.map;
+    // Shown wherever furniture can be placed; Map's own gate already explains Dev Mode / non-editable areas.
+    const show = !!furniture && !!map?.available && map.devMode && map.editable && (furniture.available || !!furniture.reason);
+    card.hidden = !show;
+    if (!show || !changed('furniture', { furniture, connected: state.connected })) return;
+    if (!furniture.available) {
+      $('furnitureArmed').hidden = false;
+      $('furnitureArmed').replaceChildren(el('span', { class: 'muted', text: furniture.reason }));
+      return;
+    }
+    ensureFurnitureCatalog();
+    const counts = furniture.counts || {};
+    const changes = (counts.added || 0) + (counts.edited || 0) + (counts.removed || 0);
+    $('furnitureCounts').textContent = changes ? `${counts.added} new · ${counts.edited} edited · ${counts.removed} removed` : '';
+    $('furnitureExportBtn').disabled = !state.connected || !furniture.totalMapsChanged;
+    $('furnitureDiscardBtn').hidden = !changes;
+    $('furnitureFree').checked = !!furniture.freePlacement;
+
+    const armedBar = $('furnitureArmed');
+    const armed = furniture.armed;
+    armedBar.hidden = !armed;
+    if (armed) {
+      const item = state.furnitureCatalog?.find(entry => entry.key === armed.key);
+      armedBar.replaceChildren(
+        el('strong', { text: `${armed.moveRef ? 'Moving' : 'Placing'} ${item?.name || armed.key}${armed.mode === 'wall' ? ' on a wall' : ''}` }),
+        el('span', { class: armed.valid ? 'ok' : 'warn', text: armed.valid ? '● fits here' : (armed.mode === 'wall' ? '○ aim at a wall' : '○ blocked here') }),
+        el('span', { class: 'spacer' }),
+        button(armed.mode === 'wall' ? 'Mount here' : 'Place here', () => furnitureCommand('confirm'), { disabled: !armed.valid }),
+        armed.mode === 'floor' ? button('⟳ 45°', () => furnitureCommand('rotate-armed', { degrees: 45 })) : null,
+        button('Cancel', () => furnitureCommand('cancel'), { cls: 'small ghost' }),
+        el('div', { class: 'muted small-text', style: 'flex-basis:100%', text: `In the game: aim with the reticle · Action 1 ${armed.mode === 'wall' ? 'mounts' : 'places'} · Action 2 cancels.${armed.generic ? ' No authored wall face — it mounts by its back.' : ''}` }),
+      );
+    }
+    renderPalette();
+    const placed = furniture.placed || [];
+    $('furniturePlacedSummary').textContent = `Placed here (${placed.filter(piece => !piece.removed).length})`;
+    const sorted = placed.slice().sort((a, b) => (b.source === 'overlay') - (a.source === 'overlay') || (b.edited || b.removed) - (a.edited || a.removed));
+    $('furniturePlaced').replaceChildren(...sorted.map(placedRow));
+  }
+
   // ── Files ───────────────────────────────────────────────────────────
   function renderOverrides() {
     const overrides = state.game.overrides;
@@ -694,6 +797,16 @@
   $('historyCard').addEventListener('toggle', renderHistory);
   $('dbSourceSelect').addEventListener('change', event => run('db-source', { mode: event.target.value }, { okText: 'Applies on the next load — Quick Save then Quick Load keeps your spot.' }));
   $('mapSessionBtn').addEventListener('click', () => run('map', { action: 'session', open: !state.game.map?.sessionOpen }));
+  $('furnitureSearch').addEventListener('input', renderPalette);
+  $('furnitureWallOnly').addEventListener('change', renderPalette);
+  $('furnitureFree').addEventListener('change', event => furnitureCommand('free', { enabled: event.target.checked }));
+  $('furnitureExportBtn').addEventListener('click', async () => {
+    const result = await furnitureCommand('export');
+    if (result?.text) copyOrShow('Map furniture changes', result.text);
+  });
+  $('furnitureDiscardBtn').addEventListener('click', () => {
+    if (confirm('Discard every dev furniture change on this map? Authored furniture comes back exactly as in the repo.')) furnitureCommand('discard', {}, 'Map furniture changes discarded.');
+  });
 
   document.addEventListener('click', async event => {
     const mapButton = event.target.closest('[data-map]');

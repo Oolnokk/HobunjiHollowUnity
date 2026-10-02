@@ -168,8 +168,11 @@
     }
     _townDecorFurnitureGroups = [];
     if (!townScene || !townMap) return;
-    const decorDefs = townMap.decor || [];
-    const furnitureDefs = townMap.furniture || [];
+    // Dev Companion map-furniture overlay (js/dev-map-furniture.js) merges in
+    // dev-placed/moved/removed pieces; the authored lists pass through otherwise.
+    const merged = window.DevMapFurniture?.mergeTownLists?.(townMap) || null;
+    const decorDefs = merged?.decor || townMap.decor || [];
+    const furnitureDefs = merged?.furniture || townMap.furniture || [];
     if (!decorDefs.length && !furnitureDefs.length) return;
     if (typeof window.ProceduralFurniture === 'undefined') {
       deps.debugLog('ProceduralFurniture not loaded — skipping town decor/furniture', 'warn');
@@ -225,6 +228,11 @@
       group.userData.mapEditorAux = { sfxSource: sfxSource || null, sfxOffsetX: sfxSource ? sfxSource.x - group.position.x : 0, sfxOffsetZ: sfxSource ? sfxSource.z - group.position.z : 0 };
     }
     deps.debugLog(`spawnTownDecorFurniture: built ${decorDefs.length} decor + ${furnitureDefs.length} furniture props`);
+  }
+
+  // Root Y town decor/furniture is placed at before its postY offset.
+  function townFurnitureBaseY(col, row) {
+    return deps.NORMAL_TOP + _tileVisualHeight(deps.getTownZone(), col, row);
   }
 
   function spawnTownBuildings() {
@@ -579,6 +587,7 @@
     loadHousePieceFaceTexture,
     spawnTownBuildings,
     spawnTownDecorFurniture,
+    townFurnitureBaseY,
     spawnZoneBuildings,
     spawnZoneDecorFurniture,
   };
