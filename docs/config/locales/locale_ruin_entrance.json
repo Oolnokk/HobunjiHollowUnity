@@ -514,7 +514,7 @@
       "ruinRubblePile"
     ],
     "debrisChance": 0.75,
-    "copiesPerZone": 3,
+    "copiesPerZone": 5,
     "notes": "Runtime layout (js/ruin-sites.js): each ruinSlot becomes a target pillar, a debris piece or nothing, seeded per site; targetPillars slots are always target pillars. copiesPerZone rotated copies are tried per zone (each costs ~1s of placement search during the background Tothal Shift); excludeZones skips zones whose terrain never offers a fitting cliff.",
     "excludeZones": [
       "map_southern_cloud_forest"

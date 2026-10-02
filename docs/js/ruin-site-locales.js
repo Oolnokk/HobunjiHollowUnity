@@ -103,13 +103,13 @@
     const out = [];
     for (const def of defs || []) {
       if (def?.category !== CATEGORY) { out.push(def); continue; }
-      const perZone = Math.max(0, Math.min(4, Math.round(Number(def.ruinSite?.copiesPerZone ?? 2))));
+      const perZone = Math.max(0, Math.min(8, Math.round(Number(def.ruinSite?.copiesPerZone ?? 5))));
       const excluded = new Set(def.ruinSite?.excludeZones || []);
       (zoneIds || []).forEach((zoneId, zoneIndex) => {
         if (excluded.has(zoneId)) return;
         const start = hashString(`${worldId}|${cycle}|${zoneId}`) % 4;
         for (let k = 0; k < perZone; k++) {
-          const facing = FACINGS[(start + k) % 4]; // Distinct facings per zone widen the set of cliffs a copy can fit.
+          const facing = FACINGS[(start + k) % 4]; // Cycle through cardinal facings so all five copies can seek suitable cliffs.
           const copy = rotateToFacing(def, facing);
           copy.id = `${def.id}_c${cycle}_${zoneIndex + 1}_${k + 1}`;
           copy.templateId = def.id;
