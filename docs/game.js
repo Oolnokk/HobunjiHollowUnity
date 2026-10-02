@@ -29957,14 +29957,25 @@
 
       window.CutscenePreviewHelpers.init({
         TILE, TileType, isSolid, npcSurfaceY, sceneForNpcArea, npcGridForArea,
-        characterGroundShadowSurfaceOffset, _zoneScenes, _zoneLayouts,
+        characterGroundShadowSurfaceOffset, npcSeatTransformForTarget, _zoneScenes, _zoneLayouts,
       });
 
-      async function runCutscenePreview(payload) {
+      async function runCutscenePreview(payload, runtimeOptions = {}) {
+        const liveMode = runtimeOptions.live === true; // Switches the Director's existing stage engine from disposable preview semantics to a gameplay-safe authored cutscene.
+        const previousArea = currentArea; // Restored after a live cutscene so its temporary scene swap never strands normal gameplay on the cinematic map.
+        const previousCameraMode = activeCameraMode; // Restored with previousArea after live playback completes.
+        const previousCameraTarget = activeCameraTarget; // Restored with the prior camera mode so gameplay resumes on the real player target.
+        const liveLock = liveMode ? window.CharacterActionLocks?.acquire?.({ owner: 'authored-cutscene', reason: payload.title || 'story cutscene', participants: [{ id: 'player', channels: ['movement', 'tools', 'actions'] }] }) : null; // Prevents real-player input from mutating the hidden gameplay actor while stand-ins own the screen.
+        const hiddenLiveWalkers = []; // Saves visibility for scheduled NPCs whose canonical ids are represented by temporary cutscene stand-ins.
+        let resolveCompletion = null; // Completed by finish() so live story code can await an interactive multi-card scene rather than merely its initial scheduling.
+        const completionPromise = new Promise(resolve => { resolveCompletion = resolve; }); // Public completion signal used by sequential authored scenes.
+        const report = (text, isError) => { if (!liveMode) window.CutscenePreviewHelpers.cutscenePreviewBanner(text, isError); }; // Keeps the Director's Exit Preview banner out of real story cinematics.
+        const releaseLiveLock = () => { liveLock?.release?.(); }; // Shared cleanup for normal completion and pre-stage load failures.
         cutscenePreviewActive = true;
         cutscenePreviewZoomPercent = 100;
-        window.CutscenePreviewHelpers.cutscenePreviewBanner(`🎬 ${payload.title || 'Cutscene Preview'} — loading…`, false);
+        report(`🎬 ${payload.title || 'Cutscene Preview'} — loading…`, false);
 
+        try {
         const area = normalizeNpcArea(payload.mapId);
         if (_isBuildingArea(area)) {
           try { await loadBuildingScene(area); } catch (e) { console.error(e); }
@@ -30004,8 +30015,10 @@
             const fw = Math.max(1, Math.ceil(fp.w || 6)), fh = Math.max(1, Math.ceil(fp.h || 6));
             const anchor = window.CutscenePreviewHelpers.findZonePlacementFootprint(area, fw, fh);
             if (!anchor) {
-              window.CutscenePreviewHelpers.cutscenePreviewBanner(`Could not find a clear ${fw}×${fh} spot for this scene on "${payload.mapId}".`, true);
+              const placementError = new Error(`Could not find a clear ${fw}×${fh} spot for this scene on "${payload.mapId}".`); // Stops the live opening before actors are spawned onto blocked wilderness terrain.
+              report(placementError.message, true);
               cutscenePreviewActive = false;
+              if (liveMode) throw placementError;
               return;
             }
             const offsetC = anchor.col - (fp.originC || 0), offsetR = anchor.row - (fp.originR || 0);
@@ -30034,12 +30047,17 @@
               payload.camera3d.worldTarget = { x: targetX, y: payload.camera3d.localTarget.y + targetElevY, z: targetZ };
             }
             debugLog(`[cutscene preview] wilderness placement: ${payload.mapId} footprint ${fw}x${fh} anchored at (${anchor.col},${anchor.row})`);
-          } catch (e) { console.error('[cutscene preview] wilderness zone placement failed:', e); }
+          } catch (e) {
+            console.error('[cutscene preview] wilderness zone placement failed:', e);
+            if (liveMode) throw e;
+          }
         }
         const ready = await window.CutscenePreviewHelpers.cutscenePreviewWaitForArea(area, 20000);
         if (!ready) {
-          window.CutscenePreviewHelpers.cutscenePreviewBanner(`Could not load map "${payload.mapId}" for preview.`, true);
+          const loadError = new Error(`Could not load map "${payload.mapId}" for cutscene playback.`); // Carries a concrete map failure to live story orchestration instead of silently advancing to the next scene.
+          report(loadError.message, true);
           cutscenePreviewActive = false;
+          if (liveMode) throw loadError;
           return;
         }
         currentArea = area; // switches the whole game's render/active-scene target to the cutscene's map
@@ -30130,6 +30148,14 @@
         activeCameraTarget = idleCameraTarget;
         updateCameraPosition();
 
+        if (liveMode) {
+          const cutsceneNpcIds = new Set((payload.actors || []).map(actor => actor.npcId).filter(Boolean)); // Canonical ids whose normal scheduled walkers must not appear behind their cinematic doubles.
+          for (const walker of npcWalkers) {
+            if (!cutsceneNpcIds.has(walker?.rec?.id) || !walker?.root) continue;
+            hiddenLiveWalkers.push({ walker, visible: walker.root.visible }); // Restored exactly on finish/error so schedules keep running without visual duplication.
+            walker.root.visible = false;
+          }
+        }
         const entities = new Map(); // actorId -> { kind:'npc'|'creature'|'placeholder', root, ... }
         for (const actor of (payload.actors || [])) {
           let entity = null;
@@ -30198,7 +30224,7 @@
         // applyState, so it can't drift out of sync with what's actually on
         // screen the way computing it twice would.
         const actorStates = new Map((payload.actors || []).map(a =>
-          [a.id, { c: a.worldC, r: a.worldR, rotation: a.rotation || 0, pose: a.pose || 'standing', combatOn: false, canLose: false }]
+          [a.id, { c: a.worldC, r: a.worldR, rotation: a.rotation || 0, pose: a.pose || 'standing', seatTarget: a.seatTarget || null, combatOn: false, canLose: false }]
         ));
         // actorId -> desired facing in degrees: what each actor is currently
         // trying to face (set at spawn from its raw authored rotation, and
@@ -30300,21 +30326,46 @@
         };
 
         const finish = message => {
+          if (!running) return;
           running = false;
+          if (dialogueOpen) closeLine();
           cutscenePreviewActive = false;
-          cutscenePreviewZoomPercent = 100; // never leak an authored zoom into normal gameplay afterward
+          cutscenePreviewZoomPercent = 100; // Never leak an authored zoom into normal gameplay afterward.
           cutscenePreviewDialogueSpeaker = null;
-          enterDefaultCameraMode();
-          activeCameraTarget = null;
-          window.CutscenePreviewHelpers.cutscenePreviewBanner(message || `🎬 ${payload.title || 'Cutscene'} — finished.`, false);
+          if (liveMode) {
+            for (const entity of entities.values()) { // Removes only the temporary stand-ins spawned by this authored run; scheduled/live NPC walkers are separate objects.
+              if (entity?.kind === 'creature' && entity.creature) despawnCreature(entity.creature);
+              else entity?.root?.parent?.remove?.(entity.root);
+            }
+            for (const hidden of hiddenLiveWalkers) if (hidden.walker?.root) hidden.walker.root.visible = hidden.visible; // Re-exposes the real scheduled NPCs after their cinematic doubles are gone.
+            hiddenLiveWalkers.length = 0;
+            currentArea = previousArea;
+            activeCameraMode = previousCameraMode;
+            activeCameraTarget = previousCameraTarget;
+            updateCameraPosition();
+            const fadeEl = window.CutscenePreviewHelpers.cutscenePreviewFadeEl(); // Bridges hidden map restoration back into visible gameplay without a one-frame room/farm flash.
+            if (!runtimeOptions.keepFadeOnFinish) {
+              fadeEl.style.transitionDuration = '0.55s';
+              requestAnimationFrame(() => { fadeEl.style.opacity = '0'; });
+            }
+            releaseLiveLock();
+            window.__farmLog?.('[cutscene] finished live authored scene "' + (payload.title || 'Cutscene') + '"', 'info');
+          } else {
+            enterDefaultCameraMode();
+            activeCameraTarget = null;
+            report(message || `🎬 ${payload.title || 'Cutscene'} — finished.`, false);
+          }
+          resolveCompletion?.({ ok: true, title: payload.title || 'Cutscene', restoredArea: previousArea });
         };
 
-        async function openLine(entity, speakerName, text) {
+        async function openLine(entity, speakerName, text, options = {}) {
           dialogueOpen = true;
           _dialogueWalker = entity?.kind === 'npc' ? entity.walker : null; // Reuse the actual world walker so dialogue expression refreshes target the visible avatar, never a detached viewport portrait.
           cutscenePreviewDialogueSpeaker = entity || null;
-          activeCameraMode = entity?.kind === 'creature' ? dlgModeKeyCreature : dlgModeKey;
-          activeCameraTarget = { position: (entity || entities.values().next().value)?.root.position || new THREE.Vector3() };
+          if (!options.preserveCamera) {
+            activeCameraMode = entity?.kind === 'creature' ? dlgModeKeyCreature : dlgModeKey;
+            activeCameraTarget = { position: (entity || entities.values().next().value)?.root.position || new THREE.Vector3() };
+          }
           _npcDialogueNameEl.textContent = speakerName;
           if (_npcDialogueHeartsEl) _npcDialogueHeartsEl.textContent = '';
           _arcContainerEl?.classList.add('arc-hidden');
@@ -30367,7 +30418,7 @@
           if (!running) return;
           const stage = stagesById.get(stageId);
           if (!stage) { finish('Preview stopped — the next card could not be found.'); return; }
-          window.CutscenePreviewHelpers.cutscenePreviewBanner(`🎬 ${payload.title || 'Cutscene'} — ${stage.type}`, false);
+          report(`🎬 ${payload.title || 'Cutscene'} — ${stage.type}`, false);
 
           if (stage.type === 'move') return runMove(stage);
           if (stage.type === 'animation') return runAnimation(stage);
@@ -30378,7 +30429,12 @@
 
           const speakerActor  = actorsById.get(stage.speakerId);
           const speakerEntity = entities.get(stage.speakerId);
-          const speakerName   = speakerActor?.name || 'Someone';
+          const speakerName   = speakerActor?.name || stage.speakerName || 'Someone';
+          if (stage.type === 'caption') {
+            openLine(null, stage.speakerName || '', stage.text, { preserveCamera: true }).then(() => showChoiceOptions([]));
+            cutscenePreviewAdvance = () => continueTo(getResolvedNext(stage.id, stage.next));
+            return;
+          }
           if (!speakerEntity) { continueTo(getResolvedNext(stage.id, stage.next)); return; }
           if (stage.type === 'choice') {
             openLine(speakerEntity, speakerName, stage.text).then(() => {
@@ -30680,10 +30736,36 @@
         }
         cutsceneRotationTick();
 
-        if (!stageOrder.length) { finish('Preview stopped — this scene has no cards.'); return; }
-        window.CutscenePreviewHelpers.cutscenePreviewBanner(`🎬 ${payload.title || 'Cutscene Preview'}`, false);
+        if (!stageOrder.length) { finish(liveMode ? 'Cutscene stopped — this scene has no cards.' : 'Preview stopped — this scene has no cards.'); return completionPromise; }
+        report(`🎬 ${payload.title || 'Cutscene Preview'}`, false);
         runStage(stageOrder[0]);
+        return completionPromise;
+        } catch (error) {
+          cutscenePreviewActive = false;
+          cutscenePreviewZoomPercent = 100;
+          cutscenePreviewDialogueSpeaker = null;
+          for (const hidden of hiddenLiveWalkers) if (hidden.walker?.root) hidden.walker.root.visible = hidden.visible; // Error paths must never strand a real NPC hidden after a failed stand-in spawn.
+          hiddenLiveWalkers.length = 0;
+          if (liveMode) {
+            currentArea = previousArea; // Mirrors successful cleanup so a load/setup failure cannot strand normal gameplay on the cinematic area.
+            activeCameraMode = previousCameraMode;
+            activeCameraTarget = previousCameraTarget;
+            updateCameraPosition();
+          }
+          releaseLiveLock();
+          if (liveMode) {
+            const fadeEl = window.CutscenePreviewHelpers.cutscenePreviewFadeEl(); // Ensures a failed live scene never leaves the real game permanently black.
+            fadeEl.style.transitionDuration = '0.35s';
+            requestAnimationFrame(() => { fadeEl.style.opacity = '0'; });
+          }
+          throw error;
+        }
       }
+
+      window.AuthoredCutsceneRuntime = Object.freeze({
+        run: (payload, options = {}) => runCutscenePreview(payload, { ...options, live: true }), // Plays Director-format payloads as real gameplay cinematics with cleanup/restoration.
+        debugSnapshot: () => ({ active: !!cutscenePreviewActive, currentArea, zoomPercent: cutscenePreviewZoomPercent }), // Mobile/debug-panel callers can inspect live cinematic ownership without a console.
+      });
 
       if (window.__hobunjiCutscenePreview) {
         runCutscenePreview(window.__hobunjiCutscenePreview).catch(err => {
