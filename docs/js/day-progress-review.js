@@ -469,15 +469,19 @@
     const hours = document.getElementById('timePassageHours'); // Existing remaining-hour count updated after each review-aware hour.
     if (title) title.textContent = `${kind === 'sleep' ? 'Sleeping' : 'Waiting'}…`;
     if (live) live.textContent = calendarApi?.formatCalendarDateTimeFull?.(calendarDeps?.calendar?.day, calendarDeps?.calendar?.time01) || '';
-    if (hours) hours.textContent = `${remainingHours} ${remainingHours === 1 ? 'hour' : 'hours'}`;
+    if (hours) {
+      const shown = Math.max(0, Math.ceil((Number(remainingHours) || 0) - 0.0001)); // Mirrors CalendarSystem's clean countdown while Sleep finishes a fractional final hour.
+      hours.textContent = `${shown} ${shown === 1 ? 'hour' : 'hours'}`;
+    }
   }
 
-  async function advanceOnePassageHour(kind) {
-    const calendar = calendarDeps?.calendar; // Shared calendar state advanced by exactly one represented hour.
+  async function advanceOnePassageHour(kind, stepHours = 1) {
+    const calendar = calendarDeps?.calendar; // Shared calendar state advanced by one or the fractional final represented hour.
     if (!calendar || !calendarApi?.previewAfterHours) return;
-    const startDay = finiteNumber(calendar.day, 1); // Raw simulation day before this passage hour.
-    const startTime = finiteNumber(calendar.time01, 0); // Normalized clock position before this passage hour.
-    const target = calendarApi.previewAfterHours(1, startDay, startTime); // CalendarSystem's own exact one-hour destination.
+    const safeStepHours = Math.max(0.0001, Math.min(1, finiteNumber(stepHours, 1))); // Sleep can end between whole-hour ticks while Wait keeps using exact one-hour steps.
+    const startDay = finiteNumber(calendar.day, 1); // Raw simulation day before this passage step.
+    const startTime = finiteNumber(calendar.time01, 0); // Normalized clock position before this passage step.
+    const target = calendarApi.previewAfterHours(safeStepHours, startDay, startTime); // CalendarSystem's exact destination keeps review-aware passage aligned with its own sleep target.
     const fromHour = representedHour(startTime); // Continuous starting hour; player-facing getHour() wraps 24:00 to 0:00.
     const toHour = target.day === startDay ? representedHour(target.time01) : fromHour; // Same-raw-day target hour; raw rollover at 06:00 is not a civil midnight.
 
@@ -490,7 +494,7 @@
       return;
     }
 
-    calendar.time01 = startTime + 1 / activeClockHours();
+    calendar.time01 = startTime + safeStepHours / activeClockHours();
     const timeoutAt = performance.now() + 1800; // Same visible-failure bound used by CalendarSystem's private passage runner.
     while ((finiteNumber(calendar.day, startDay) < target.day || finiteNumber(calendar.time01, 0) >= 1) && performance.now() < timeoutAt) {
       await new Promise(resolve => setTimeout(resolve, 30)); // Condition-wait for game.js's private day-rollover to finish, not genuine per-frame work.
@@ -500,13 +504,15 @@
   }
 
   async function advancePassageHours(kind, totalHours) {
-    const hours = Math.max(1, Math.round(finiteNumber(totalHours, 1))); // Selected sleep/wait duration advanced one represented hour at a time.
-    let tickDurationMs = PASSAGE_FIRST_TICK_MS; // Current black-screen hold duration shortened after each displayed hour.
-    renderPassageTick(kind, hours);
-    for (let elapsed = 1; elapsed <= hours; elapsed++) {
+    const hours = Math.max(0.01, Math.min(activeClockHours(), finiteNumber(totalHours, 1))); // Sleep may span the complete represented day; Wait remains bounded by its selector upstream.
+    let tickDurationMs = PASSAGE_FIRST_TICK_MS; // Current black-screen hold duration shortened after each displayed step.
+    let remaining = hours; // Decremented by <=1h so a fractional sleep target can still stop exactly at morning.
+    renderPassageTick(kind, remaining);
+    while (remaining > 0.0001) {
       await delayMs(tickDurationMs);
-      await advanceOnePassageHour(kind);
-      const remaining = hours - elapsed; // Remaining selected hours displayed after this completed tick.
+      const stepHours = Math.min(1, remaining); // Final step is fractional only when the starting clock was between whole hours.
+      await advanceOnePassageHour(kind, stepHours);
+      remaining = Math.max(0, remaining - stepHours);
       renderPassageTick(kind, remaining);
       tickDurationMs *= PASSAGE_TICK_DECAY;
     }
@@ -517,7 +523,8 @@
     if (!player) return;
     if (Number.isFinite(player.maxHealth)) player.health = player.maxHealth;
     if (Number.isFinite(player.maxStamina)) player.stamina = player.maxStamina;
-    window.ResourceSystem?.enforceCaps?.(player); // Prevents sleep restoration from exposing regular Stamina while Black Stamina debt is still active.
+    window.TirednessSystem?.recoverFromSleep?.(player); // Review-aware Sleep must clear the same sleep-only debt as CalendarSystem's direct path.
+    window.ResourceSystem?.enforceCaps?.(player); // Prevents sleep restoration from exposing regular Stamina/Footing while unrelated capacity debt is still active.
   }
 
   function persistCalendarSnapshot() {
@@ -560,8 +567,10 @@
     const debug = calendarApi.timeDebugSnapshot?.() || {}; // Existing modal state supplies the selected sleep/wait kind and duration.
     const kind = debug.modalKind === 'sleep' ? 'sleep' : debug.modalKind === 'wait' ? 'wait' : null; // Active passage kind required before taking over Confirm.
     if (!kind) return;
-    const slider = document.getElementById('timePassageSlider'); // Existing duration input remains the single source of truth for selected hours.
-    const selectedHours = Math.max(1, Math.round(finiteNumber(slider?.value ?? debug.selectedHours, 1))); // Current selected duration captured before transition begins.
+    const slider = document.getElementById('timePassageSlider'); // Wait continues reading its visible duration input; fixed Sleep deliberately ignores this now-hidden control.
+    const selectedHours = kind === 'sleep'
+      ? Math.max(0.01, finiteNumber(calendarApi.passageHoursForKind?.('sleep') ?? debug.selectedHours, 1))
+      : Math.max(1, Math.round(finiteNumber(slider?.value ?? debug.selectedHours, 1))); // Current duration captured before transition begins.
     const confirm = document.getElementById('timePassageConfirm'); // Existing Confirm button disabled during the review-aware passage run.
     const cancel = document.getElementById('timePassageCancel'); // Existing Cancel listener reused afterward for private timer/lock cleanup.
     const backdrop = document.querySelector?.('.time-passage-backdrop'); // Existing passage modal switched into its normal transitioning presentation.
@@ -582,7 +591,8 @@
           detail: { kind, hours: selectedHours, day: calendarDeps.calendar.day, time01: calendarDeps.calendar.time01 },
         }));
       });
-      log(`${kind} advanced ${selectedHours}h with midnight review gate`);
+      if (kind === 'sleep') calendarApi.finishSleepWake?.();
+      log(`${kind} advanced ${selectedHours.toFixed?.(2) ?? selectedHours}h with midnight review gate`);
     } catch (error) {
       log(`${kind} passage failed: ${error?.message || error}`, 'error');
     } finally {
