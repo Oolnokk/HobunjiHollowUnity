@@ -30677,6 +30677,12 @@
           cutscenePreviewDialogueSpeaker = null;
           for (const hidden of hiddenLiveWalkers) if (hidden.walker?.root) hidden.walker.root.visible = hidden.visible; // Error paths must never strand a real NPC hidden after a failed stand-in spawn.
           hiddenLiveWalkers.length = 0;
+          if (liveMode) {
+            currentArea = previousArea; // Mirrors successful cleanup so a load/setup failure cannot strand normal gameplay on the cinematic area.
+            activeCameraMode = previousCameraMode;
+            activeCameraTarget = previousCameraTarget;
+            updateCameraPosition();
+          }
           releaseLiveLock();
           if (liveMode) {
             const fadeEl = window.CutscenePreviewHelpers.cutscenePreviewFadeEl(); // Ensures a failed live scene never leaves the real game permanently black.
