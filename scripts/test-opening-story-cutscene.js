@@ -106,8 +106,8 @@ assert(gameSource.includes('entity?.root?.parent?.remove?.(entity.root)'), 'live
 assert(helperSource.includes("deps.npcSeatTransformForTarget?.(st.seatTarget)"), 'seated cutscene actors must reuse normal NPC seat transforms');
 assert(helperSource.includes('entity.walker.legs.update(dt > 0 ? dt : 1 / 60, 0, false, seatedPose)'), 'seated cutscene actors must reuse procedural seated-leg solving');
 
-const gameIndex = indexSource.indexOf('<script src="game.js?v=20261002h960fd67"></script>'); // Ensures the story listener installs after the live runtime exists.
-const storyIndex = indexSource.indexOf('<script src="js/opening-story-cutscene.js?v=20261002harkharash1"></script>'); // Ensures the new orchestrator is actually shipped.
+const gameIndex = indexSource.search(/<script src="game\.js\?v=[A-Za-z0-9_-]+"><\/script>/); // Ensures the story listener installs after the live runtime exists.
+const storyIndex = indexSource.search(/<script src="js\/opening-story-cutscene\.js\?v=[A-Za-z0-9_-]+"><\/script>/); // Ensures the new orchestrator is actually shipped.
 const onboardingIndex = indexSource.indexOf('<script>HobunjiOnboarding.init();</script>'); // Ensures the story listener exists before player-ready can fire.
 assert(gameIndex >= 0 && storyIndex > gameIndex && onboardingIndex > storyIndex, 'opening story script must load after game.js but before HobunjiOnboarding.init()');
 

@@ -103,6 +103,7 @@
       { id: 'hound2', name: 'Dabinggi-hound', creatureTypeId: 'dabinggi-hound', team: 'dabinggi_hounds', lookAtActorId: 'player', lc: 13, lr: 15, rotation: 0, pose: 'standing' },
     ];
     const stages = [ // Stable ids make the choice branches inspectable and regression-testable.
+      { id: 'rescue_fade_in', type: 'fade', direction: 'in', duration: 0.8, next: '__next__' },
       { id: 'rescue_wolf1_growl', type: 'talk', speakerId: 'wolf1', text: 'Grrrr!', next: '__next__' },
       { id: 'rescue_wolf2_growl', type: 'talk', speakerId: 'wolf2', text: 'Hrrrr!!!', next: '__next__' },
       { id: 'rescue_wolf3_growl', type: 'talk', speakerId: 'wolf3', text: 'Hreeeeech!!!', next: '__next__' },

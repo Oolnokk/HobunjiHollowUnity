@@ -24,7 +24,7 @@
     "function": "runMove",
     "reason": "Steps a previewed cutscene actor toward its move target every frame and stops rescheduling once advanceActorToward reports arrival or the preview's running flag clears.",
     "migrationStage": "not-planned",
-    "line": 30579
+    "line": 30709
   },
   {
     "file": "docs/game.js",
@@ -33,7 +33,7 @@
     "function": "runFade",
     "reason": "Defers writing the fade element's target opacity to the next paint so the CSS transition actually animates instead of jumping instantly; runs once per fade stage.",
     "migrationStage": "not-planned",
-    "line": 30781
+    "line": 30865
   },
   {
     "file": "docs/game.js",
@@ -42,7 +42,7 @@
     "function": "runZoom",
     "reason": "Eases the preview camera's zoom toward a target percentage over the stage's authored duration and stops once t reaches 1.",
     "migrationStage": "not-planned",
-    "line": 30794
+    "line": 30884
   },
   {
     "file": "docs/game.js",
@@ -619,5 +619,14 @@
     "reason": "A smoothstep requestAnimationFrame loop runs only while one mechanism moves toward its target and stops at t=1; its revision token cancels superseded re-toggle animations.",
     "migrationStage": "not-planned",
     "line": 118
+  },
+  {
+    "file": "docs/js/opening-story-cutscene.js",
+    "owner": "OpeningStoryCutscene",
+    "classification": "one-shot",
+    "function": "clearBootCover",
+    "reason": "Defers clearing the startup cover opacity to the next paint once the opening scene is ready; it never reschedules.",
+    "migrationStage": "not-planned",
+    "line": 63
   }
 ]
