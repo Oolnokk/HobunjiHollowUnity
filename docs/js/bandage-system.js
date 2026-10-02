@@ -16,7 +16,7 @@
   const BANDAGE_LOOP_SFX_KEY = 'bandageLoop'; // Resolves the authored rolling loop through the shared combat-SFX config.
   const DEFAULT_LOOP_OVERLAP_MS = 120; // Starts each loop slightly early so adjacent recordings cross over instead of hard-seaming.
   const AFFLICTION_CLEANSE_RATIO = 0.2; // Bandages remove ordinary affliction buildup at one fifth of their Health-heal output; full-Health cleansing uses the same curve as virtual healing.
-  const BANDAGE_AFFLICTION_EXCLUSIONS = new Set(['drunkenHealth', 'drunkenFooting']); // Keeps both alcohol-specific buildup bands untouched while ordinary afflictions are cleansed.
+  const BANDAGE_AFFLICTION_EXCLUSIONS = new Set(['drunkenHealth', 'drunkenFooting', 'tiredFooting']); // Keeps both alcohol-specific buildup bands untouched while ordinary afflictions are cleansed.
 
   const state = {
     active: false,
