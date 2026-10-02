@@ -62,7 +62,10 @@
       "textureName": "",
       "textureTransparent": true,
       "textureTileSize": 1,
-      "materialLighting": "unlit"
+      "materialLighting": "unlit",
+      "materialFillMode": "never",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6
     },
     {
       "id": "stub",
@@ -108,7 +111,10 @@
       "textureName": "",
       "textureTransparent": true,
       "textureTileSize": 1,
-      "materialLighting": "unlit"
+      "materialLighting": "unlit",
+      "materialFillMode": "never",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6
     },
     {
       "id": "chip_a",
@@ -154,7 +160,10 @@
       "textureName": "",
       "textureTransparent": true,
       "textureTileSize": 1,
-      "materialLighting": "unlit"
+      "materialLighting": "unlit",
+      "materialFillMode": "never",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6
     },
     {
       "id": "chip_b",
@@ -200,7 +209,10 @@
       "textureName": "",
       "textureTransparent": true,
       "textureTileSize": 1,
-      "materialLighting": "unlit"
+      "materialLighting": "unlit",
+      "materialFillMode": "never",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6
     }
   ],
   "recognizedSurfaces": [],

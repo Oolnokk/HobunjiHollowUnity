@@ -62,7 +62,10 @@
       "textureName": "",
       "textureTransparent": true,
       "textureTileSize": 1,
-      "materialLighting": "unlit"
+      "materialLighting": "unlit",
+      "materialFillMode": "never",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6
     },
     {
       "id": "body",
@@ -108,7 +111,10 @@
       "textureName": "",
       "textureTransparent": true,
       "textureTileSize": 1,
-      "materialLighting": "unlit"
+      "materialLighting": "unlit",
+      "materialFillMode": "never",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6
     },
     {
       "id": "lid",
@@ -154,7 +160,10 @@
       "textureName": "",
       "textureTransparent": true,
       "textureTileSize": 1,
-      "materialLighting": "unlit"
+      "materialLighting": "unlit",
+      "materialFillMode": "never",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6
     },
     {
       "id": "lid_ridge",
@@ -200,7 +209,10 @@
       "textureName": "",
       "textureTransparent": true,
       "textureTileSize": 1,
-      "materialLighting": "unlit"
+      "materialLighting": "unlit",
+      "materialFillMode": "never",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6
     }
   ],
   "recognizedSurfaces": [],

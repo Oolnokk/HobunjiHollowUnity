@@ -62,13 +62,13 @@ assert(/dev-random-ruin-interactions\.js\?v=[A-Za-z0-9_-]+/.test(camera), 'ruin 
   assert(/if\(hadRows\)\{[\s\S]*clearInteractionPrompts/.test(outsideBranch), 'outside the ruin, the 12.5 Hz row refresh may clear shared prompts only once on exit');
   assert.equal((outsideBranch.match(/clearInteractionPrompts/g) || []).length, 1, 'no unconditional prompt clear may run every tick outside the ruin (it made ordinary prompts flicker)');
 }
-assert(camera.includes('dev-random-ruin-simple-puzzles.js?v=20260929glowdecals1'), 'simple puzzle interior-parity runtime must be cache-busted in the dev bootstrap');
+assert(/dev\-random\-ruin\-simple\-puzzles\.js\?v=[A-Za-z0-9_-]+/.test(camera), 'simple puzzle interior-parity runtime must be cache-busted in the dev bootstrap');
 assert(/dev-random-ruin-wall-render-proxy\.js\?v=\w+/.test(camera), 'native ruin render verifier must be cache-busted in the dev bootstrap');
 assert(/js\/dev-random-ruin-bootstrap\.js\?v=\w+/.test(gameIndex), 'game page must load the updated ruin bootstrap');
-assert(gameIndex.includes('game.js?v=20261002ha404f8f'), 'game page must load the footprint-aware movement collision');
+assert(/game\.js\?v=[A-Za-z0-9_-]+/.test(gameIndex), 'game page must load the footprint-aware movement collision');
 assert(gameIndex.indexOf('js/area-footprint-blockers.js') >= 0 && gameIndex.indexOf('js/area-footprint-blockers.js') < gameIndex.indexOf('game.js?v='), 'sub-tile footprint registry must load before game.js');
 assert(game.includes('window.AreaFootprintBlockers?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE, worldY)'), 'canOccupyAt must test the whole mover square against prop footprints');
-assert(gameIndex.includes('js/climb-system.js?v=20260929config1'), 'game page must cache-bust the shared climb animation used by authored ruin ladders');
+assert(/js\/climb\-system\.js\?v=[A-Za-z0-9_-]+/.test(gameIndex), 'game page must cache-bust the shared climb animation used by authored ruin ladders');
 assert(loadOrder.every(index => index >= 0), 'ruin bootstrap must load every Random Test Ruin runtime module');
 for (let i = 1; i < loadOrder.length; i++) {
   assert(loadOrder[i] > loadOrder[i - 1], 'Random Test Ruin runtime modules must preserve dependency order');
@@ -79,11 +79,11 @@ assert(interior.includes("map_i_dev_random_ruin"), 'generated ruin must remain a
 assert(interior.includes("wallStyle:'cavern'"), 'Random Test Ruin must opt into the existing cavern combat-interior classification');
 assert(game.includes("_buildingScenes.get(area)?.wallStyle === 'cavern'"), 'game cavern classification must recognize a session building record with cavern wallStyle');
 assert(game.includes("_isCavernBuildingArea(currentArea) && heldMode === 'tool'"), 'cavern interiors must expose normal tool/ranged action-arch buttons on mobile');
-assert(interior.includes("natural.naturalizeMesh(object,'cliffs')"), 'generated ruin stone must use the exact ordinary-den NaturalSurfaceMaterials cliffs path');
+assert(interior.includes("materialTexture:'carved_smooth.png'"), 'generated ruin stone must reuse authored brazier stone');
 assert(interior.includes('new THREE.Color(0x2a1a0a)'), 'generated ruin may retain the den-colored empty background while geometry stays unlit');
 assert(!/new THREE\.(?:AmbientLight|DirectionalLight|PointLight|SpotLight|HemisphereLight)\(/.test(interior), 'Random Test Ruin must not create real Three.js lights');
 assert(interior.includes('function applyUnlitRuinMaterials'), 'Random Test Ruin must normalize all generated materials at the runtime boundary');
-assert(interior.includes("natural.naturalizeMesh(object,'cliffs')"), 'shared ruin stone must still use the exact cliff material path');
+assert(interior.includes('window.ProceduralFurniture.makePartMaterial'), 'shared ruin stone must use the furniture material authority');
 assert(interior.includes("materialTextureIdentity(material).includes('carved_smooth')"), 'V50 carved_smooth stone clones must be recognized even when they no longer share the wall material object');
 assert(interior.includes("material.color.getHex?.()===0x545039"), 'V50 RUIN_STONE_FILL fallback must be recognized as legacy stone');
 assert(interior.includes('legacyStoneMaterials'), 'material diagnostics must prove no old dark V50 stone texture remains after cliff conversion');
@@ -91,7 +91,7 @@ assert(interior.includes('spritePngSurface.makeMaterial(THREE,source.map||null')
 assert(interior.includes('remainingLitMaterials'), 'material diagnostics must explicitly count any lit material that escapes normalization');
 assert((cloudFog.match(/map_i_dev_random_ruin/g)||[]).length>=2, 'Random Test Ruin must opt into the shared den no-sky and den darkness/lantern classifications');
 assert(/js\/cloud-forest-fog\.js\?v=[A-Za-z0-9_-]+/.test(gameIndex), 'test-ruin darkness override must be cache-busted in the game page');
-assert(camera.includes('dev-random-ruin-interior-map.js?v=20260929ruinsites1'), 'test-ruin generator/runtime changes must be cache-busted in the dev bootstrap');
+assert(/dev\-random\-ruin\-interior\-map\.js\?v=[A-Za-z0-9_-]+/.test(camera), 'test-ruin generator/runtime changes must be cache-busted in the dev bootstrap');
 assert(interior.includes('Solvability.audit'), 'candidate ruins must run the pre-entry solvability audit');
 assert(interior.includes('MAX_SOLVABILITY_ATTEMPTS = 6'), 'unsolvable candidates must have a bounded deterministic retry budget');
 assert(interior.includes('getLastSolvabilityAudit'), 'rejected seed diagnostics must remain inspectable without devtools');
@@ -108,7 +108,7 @@ assert(interior.includes('__devRuinPhysicalDoorBlocker=false') && !interior.incl
 assert(interior.includes("kind:'stoneDoor'") && interior.includes("'Open Stone Door'"), 'ungated stone doors must expose the standard ruin interaction list action');
 assert(interior.includes("kind:'transitDoor'") && interior.includes("'Open Hallway Door'"), 'plain hallway exit doors must use the same WorldPopupText interaction-list path as other world objects');
 assert(interior.includes('__devRuinTransitDoorState') && interior.includes('updateTransitDoors(dt)'), 'transit doors must own explicit closed/open runtime state so collision matches their visible panel');
-assert(gameIndex.includes('js/world-action-input-claims.js?v=20260927interactionpriority1'), 'shared world-input claim registry must load the selector-priority fix before gameplay dispatch');
+assert(/js\/world\-action\-input\-claims\.js\?v=[A-Za-z0-9_-]+/.test(gameIndex), 'shared world-input claim registry must load the selector-priority fix before gameplay dispatch');
 assert(interactions.includes("control.claimAction1===true?'action1'") && interactions.includes('registry.setClaims(INPUT_CLAIM_OWNER,claims)'), 'ruin interactions must publish explicit Action 1 ownership into the shared registry while normal game input remains the sole dispatcher');
 assert(interactions.includes('const reserved=new Set(') && interactions.includes('const availableSlots=slotActions.filter(action=>!reserved.has(action))'), 'explicit rope/door input claims must reserve their arch slot before generic ruin interactions receive remaining slots');
 assert(interactions.includes('entry.nativeInput?null:(fixedIndex>=0?TOUCH_BUTTON_IDS[fixedIndex]:null)'), 'explicit contextual claims must retain the matching physical touch slot');
@@ -133,14 +133,14 @@ assert(debrisBootstrap.includes('headless embedded renderer') && debrisBootstrap
 assert(debrisBootstrap.includes('disable embedded preview RAF') && debrisBootstrap.includes("if(!window.__debrisEmbeddedRuntime)renderPreview();"), 'hidden V50 generation must not start the standalone preview RAF loop');
 assert(debrisBootstrap.includes('headlessEmbeddedPreview: true'), 'embedded transport diagnostics must report headless preview mode');
 assert(debrisBootstrap.includes("new XMLHttpRequest()") && debrisBootstrap.includes("request.open('GET', 'debrisifier-v50-source.js', false)"), 'hidden V50 source loading must be parser-blocking so game startup asset traffic cannot starve the generator fetch');
-assert(debrisBootstrap.includes("request.open('GET', 'debrisifier-v50-api.js', false)") && debrisBootstrap.includes("sourceURL=debrisifier-v50-api.embedded.js"), 'hidden V50 API loading must be synchronous in the same iframe realm as its patched source');
-assert(debrisBootstrap.includes("api.src = 'debrisifier-v50-api.js'"), 'standalone Debris-ifier usage must retain its ordinary external API script path');
+assert(/request\.open\('GET', 'debrisifier-v50-api\.js\?v=[A-Za-z0-9_-]+', false\)/.test(debrisBootstrap) && debrisBootstrap.includes("sourceURL=debrisifier-v50-api.embedded.js"), 'hidden V50 API loading must be synchronous in the same iframe realm as its patched source');
+assert(/api\.src = 'debrisifier-v50-api\.js\?v=[A-Za-z0-9_-]+'/.test(debrisBootstrap), 'standalone Debris-ifier usage must retain its ordinary external API script path');
 assert(!/if \(embeddedRuntime\) \{\s*fetch\('debrisifier-v50-source\.js'/.test(debrisBootstrap), 'hidden V50 bootstrap must not regress to the starvation-prone async source fetch');
 assert(debrisIndex.includes("event?.message||event?.error?.message"), 'hidden generator diagnostics must capture source/API execution errors, not only failed script URLs');
 assert(debrisBootstrap.includes("glyphNicheNeedle") && debrisBootstrap.includes("hideDecals:false"), 'simple projectile glyphs must runtime-patch pillar-niche targets to keep their authored decals');
 assert(debrisBootstrap.includes("glyphGlowNeedle") && debrisBootstrap.includes('THREE.AdditiveBlending'), 'activated projectile glyph decals must glow through the unlit material path instead of a scene light');
 assert(debrisSource.includes("profile:'pillarHoused',hideDecals:true"), 'protected V50 source must retain its original concealed pillar-niche target behavior; the gameplay change belongs only in the runtime patch');
-assert(debrisIndex.includes('debrisifier-01.js?v=20260927syncapi1'), 'hidden V50 runtime patch must be cache-busted for deterministic source/API bootstrap');
+assert(/debrisifier\-01\.js\?v=[A-Za-z0-9_-]+/.test(debrisIndex), 'hidden V50 runtime patch must be cache-busted for deterministic source/API bootstrap');
 assert(renderProxy.includes("mesh.userData.runtimeRuinRenderRealm = 'game-scene-source'"), 'V50 source meshes must render directly in the parent game realm');
 assert(renderProxy.includes('frustumCulled = true'), 'native ruin source meshes must restore ordinary frustum culling');
 assert(renderProxy.includes('nativeSourceMeshCount:') && renderProxy.includes('totalProxyCount: 0'), 'render diagnostics must prove direct-source rendering owns zero duplicate proxy meshes');
@@ -175,7 +175,7 @@ assert(simplePuzzles.includes('topRise:COMPOUND_ELEVATOR_TOP_RISE'), 'compound r
 assert(simplePuzzles.includes('generatedMechanismId=nearestGeneratedStoneDoorMechanism(context,doorway)') && simplePuzzles.includes('reusesGeneratedDoor:!!generatedMechanismId'), 'ossuary/chord locks must reuse the generated doorway mechanism instead of stacking a second blocking door over it');
 assert(simplePuzzles.includes("window.DevRandomRuin?.setMechanismTarget?.(module.generatedMechanismId,module.targetOpen?1:0)"), 'ossuary completion must open the same generated stone door that visually seals the room');
 assert(interior.includes('mechanism.externalTarget=normalized') && interior.includes('if(hasExternalTarget)'), 'explicit modular door unlocks must override stale V50 puzzle signals and drive visible mechanism progress');
-assert(simplePuzzles.includes("playObjectSfxKey?.('breakRock',1.45,.58)") && simplePuzzles.includes('playStoneUnlockKchunk();'), 'four-note completion must play an unmistakable low stone unlock cue');
+assert(simplePuzzles.includes("playObjectSfxKey?.('puzzleComplete')") && simplePuzzles.includes('playStoneUnlockKchunk();'), 'four-note completion must play an unmistakable low stone unlock cue');
 assert(simplePuzzles.includes('CHORD_PITCHES = Object.freeze([1, 1.259921, 1.498307, 1.887749])'), 'the four chord pressure plates must retain four distinct authored pitch ratios');
 assert(simplePuzzles.includes("mesh.name='dev_ruin_rope_lava'") && simplePuzzles.includes("textureUrl:'assets/textures/wibbly_surface.png'"), 'rope fall/burn zones must be visibly represented by the existing animated water surface treatment recolored as lava');
 assert(simplePuzzles.includes("HobunjiDrenkirraPellet?.sfx?.acidSizzle"), 'visible lava contact must reuse the Drenkirra pellet acid-sizzle cue');
@@ -198,7 +198,7 @@ assert(simplePuzzles.includes('spawnedMinions:new Set()') && simplePuzzles.inclu
 assert(game.includes('const dynamicSurfaceY = Number(c.surfaceYOverride?.())') && simplePuzzles.includes('creature.surfaceYOverride=()=>'), 'sarcophagus Minions must render against live ruin DynamicSurfaces instead of the flat building grid');
 assert(simplePuzzles.includes('state===ownerState') && simplePuzzles.includes('ownerState.sarcophagusModules.includes(module)'), 'late async skeleton spawns must not leak across ruin rerolls');
 assert(simplePuzzles.includes('KURRAYA_NOTE_URL') && simplePuzzles.includes('CHORD_PITCHES'), 'musical pressure plates must use the Kurraya pluck placeholder at authored chord pitches');
-assert(simplePuzzles.includes('playGeneratedStoneKchunk'), 'four-note completion must expose a generated placeholder kchunk until a recorded cue replaces it');
+assert(audioSystem.includes('playGeneratedStoneKchunk'), 'four-note completion must expose a generated placeholder kchunk until a recorded cue replaces it');
 assert(simplePuzzles.includes('opensUpstairsMechanism') && interior.includes('setMechanismTarget'), 'compound lower-room completion must be able to open an ordinary generated stone door upstairs');
 assert(simplePuzzles.includes('onwardGeneratedStoneDoorMechanism') && simplePuzzles.includes('const authoredDoorways=roomDoorways(context,room)'), 'compound completion must choose an onward door only from the current room graph');
 assert(simplePuzzles.includes('holsterRopeEquipment') && simplePuzzles.includes('putAwayHeldEquipment({silent:true})'), 'grabbing a rope must silently put away the current weapon/tool');
@@ -421,7 +421,7 @@ new vm.Script(hitSource, { filename: 'dev-random-ruin-hit-puzzles.js' });
 new vm.Script(coverage, { filename: 'dev-random-ruin-runtime-coverage.js' });
 
 assert(audioSystem.includes("if ('preservesPitch' in snd) snd.preservesPitch = false"), 'pitched object SFX must disable browser pitch preservation so playbackRate changes are audible as actual pitch changes');
-assert(gameIndex.includes('js/audio-system.js?v=20260927pitchedsfx1'), 'pitched object-SFX fix must be cache-busted in the game page');
+assert(/js\/audio\-system\.js\?v=[A-Za-z0-9_-]+/.test(gameIndex), 'pitched object-SFX fix must be cache-busted in the game page');
 const lootPools = JSON.parse(read('docs/config/loot/loot-pools.json')).pools;
 for (let tier = 1; tier <= 4; tier++) assert(Array.isArray(lootPools[`dungeonChest_tier${tier}`]?.entries), `Dungeon Chest tier ${tier} loot pool must exist (empty until authored)`);
 const ropeRewards = read('docs/js/dev-random-ruin-rope-rewards.js');

@@ -48,7 +48,7 @@
       "liquidLevel": 0.5,
       "wonkiness": 0,
       "materialRole": "stone",
-      "materialTexture": null,
+      "materialTexture": "carved_smooth.png",
       "materialRotationDeg": 0,
       "materialCapTexture": null,
       "materialCapRotationDeg": 0,
@@ -62,7 +62,10 @@
       "textureName": "",
       "textureTransparent": true,
       "textureTileSize": 1,
-      "materialLighting": "unlit"
+      "materialLighting": "unlit",
+      "materialFillMode": "never",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6
     },
     {
       "id": "rim",
@@ -108,7 +111,10 @@
       "textureName": "",
       "textureTransparent": true,
       "textureTileSize": 1,
-      "materialLighting": "unlit"
+      "materialLighting": "unlit",
+      "materialFillMode": "never",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6
     },
     {
       "id": "rail_left",
