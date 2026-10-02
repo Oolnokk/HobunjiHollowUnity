@@ -60,7 +60,9 @@
       "postSZ": 1
     },
     { "id": "fmtst9ykgmqf0", "itemKey": "chairSimpleFurniture", "col": 9, "row": 9, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1, "gridRot": 180, "gridW": 1, "gridD": 1 },
-    { "id": "fmtsteb7xjq80", "itemKey": "chairSimpleFurniture", "col": 8, "row": 9, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1, "gridRot": 180, "gridW": 1, "gridD": 1 }
+    { "id": "fmtsteb7xjq80", "itemKey": "chairSimpleFurniture", "col": 8, "row": 9, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1, "gridRot": 180, "gridW": 1, "gridD": 1 },
+    { "id": "f_tbhunundi_guest_chair_west", "itemKey": "chairSimpleFurniture", "col": 7, "row": 9, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1, "gridRot": 180, "gridW": 1, "gridD": 1 },
+    { "id": "f_tbhunundi_guest_chair_near", "itemKey": "chairSimpleFurniture", "col": 9, "row": 8, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1, "gridRot": 0, "gridW": 1, "gridD": 1 }
   ],
   "floor": [
     [
