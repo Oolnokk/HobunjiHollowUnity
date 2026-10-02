@@ -471,11 +471,23 @@ Overpass → not set</div>
 
     const selectedSourceBoundary = new Uint8Array(sourcePaint.length);
     const sourceDepthByOwner = new Float32Array(sourcePaint.length);
+    let selectedBoundaryCount = 0;
+    for (let index = 0; index < sourcePaint.length; index++) {
+      if (!sourcePaint[index] || !sourceMap.boundaryMask[index]) continue;
+      selectedSourceBoundary[index] = 1; // Painted first-non-black contour pixels are authoritative; interior paint must not accidentally activate a different edge near corners.
+      selectedBoundaryCount++;
+    }
+    if (!selectedBoundaryCount) {
+      for (let index = 0; index < sourcePaint.length; index++) {
+        if (!sourcePaint[index] || !sourceGeometry.mask[index]) continue;
+        const owner = sourceMap.owner[index];
+        if (owner >= 0 && !selectedSourceBoundary[owner]) { selectedSourceBoundary[owner] = 1; selectedBoundaryCount++; } // Legacy fallback for masks authored before outline-first painting.
+      }
+    }
     for (let index = 0; index < sourcePaint.length; index++) {
       if (!sourcePaint[index] || !sourceGeometry.mask[index]) continue;
       const owner = sourceMap.owner[index];
-      if (owner < 0) continue;
-      selectedSourceBoundary[owner] = 1; // Even if the literal outline seed was erased later, painted inward pixels still identify the contour section that authored them.
+      if (owner < 0 || !selectedSourceBoundary[owner]) continue;
       if (sourceMap.distance[index] > sourceDepthByOwner[owner]) sourceDepthByOwner[owner] = sourceMap.distance[index];
     }
 
