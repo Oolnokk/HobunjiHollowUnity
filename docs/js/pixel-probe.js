@@ -962,6 +962,8 @@
     if (metalArmorDiagnostics) lines.push(metalArmorDiagnostics);
     const mammakhbuurDebug = window.HobunjiMammakhbuurSpecies?.debugSnapshot?.(); // Copies the new species' size/placement and fallback contract on mobile.
     if (mammakhbuurDebug) lines.push('Mammakhbuur: ' + JSON.stringify(mammakhbuurDebug));
+    const cutsceneDebug = window.AuthoredCutsceneRuntime?.debugSnapshot?.(); // Copies the active stage and latest runner fixes while a live scene is paused.
+    if (cutsceneDebug) lines.push('Cutscene: ' + JSON.stringify(cutsceneDebug));
     const openingDebug = window.OpeningStoryCutscene?.debugSnapshot?.(); // Story phase and wilderness-gate status remain visible without a console.
     if (openingDebug) lines.push('Opening: ' + JSON.stringify(openingDebug));
     const harlyaoSkeletonDebugLine = window.HobunjiHarlyaoSkeletonSpecies?.formatDebug?.(); // Keeps the NPC-only skeleton bridge's rig/extremity/cosmetic status copyable from the mobile Pixel Probe without DevTools.

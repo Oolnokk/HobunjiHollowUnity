@@ -11,7 +11,7 @@
     completed: false,
     lastScene: null,
     lastError: null,
-    latestChange: 'Cloud Forest rescue, speaker-tracking office camera, player dialogue choices, temple arrival and Spearhead farm tour; world exits unlock on the final farm-tour Continue.',
+    latestChange: 'Farm-tour choices now continue through valid col/row navigation hops; the real player stays hidden behind its stand-in, with a wide south-to-north farm shot that blends in after the first dialogue Continue.',
   };
 
   function stateKey(profile) {
@@ -244,6 +244,8 @@
     const porch = points.porch; // Shared farmhouse door resolver supplies the final stop instead of a hardcoded house coordinate.
     return {
       version: 6, title: 'Nanjiri Farmstead', mapId: 'farm',
+      cinematicCameraFromStageId: 'farm_choice', // Continuing Spearhead's opening line begins the south-side camera lerp.
+      cinematicCamera: points.camera, // Keeps the shared south-to-north wide shot through choices and the walk to the farmhouse.
       actors: [
         { id: 'player', name: profile?.nickname || 'Farmer', isPlayer: true, worldC: entry.c, worldR: entry.r, pose: 'standing' },
         npcActor(records, { id: 'spearhead', name: 'Spearhead', npcId: 'spearhead_unumanuk', worldC: points.guide.c, worldR: points.guide.r, pose: 'standing' }),

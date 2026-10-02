@@ -29962,6 +29962,7 @@
       //      off-screen and untouched, for the whole preview.
       // ══════════════════════════════════════════════════════════════════
 
+      let cutscenePreviewStageId = null; // Exposes the current stage in the existing mobile Pixel Probe cutscene debug snapshot.
       let cutscenePreviewAdvance = null; // set while a talk/choice line is showing
 
       window.CutscenePreviewHelpers.init({
@@ -29981,6 +29982,9 @@
         const previousToolParent = toolHolder.parent; // Held tools live at scene level and must return with the actual player.
         const previousToolPosition = toolHolder.position.clone(); // Restores the pre-cinematic scene-space held-tool pose.
         const previousToolQuaternion = toolHolder.quaternion.clone(); // Restores the pre-cinematic held-tool orientation.
+        const hiddenLivePlayerNodes = liveMode && (payload.actors || []).some(actor => actor.isPlayer)
+          ? [playerMesh, playerGroundShadow, toolHolder, heldItemHolder].map(node => ({ node, visible: node.visible })) : []; // Preserves the real player's avatar, shadow and scene-level held visuals while a stand-in owns presentation.
+        for (const hidden of hiddenLivePlayerNodes) hidden.node.visible = false;
         const hiddenLiveWalkers = []; // Saves visibility for scheduled NPCs whose canonical ids are represented by temporary cutscene stand-ins.
         let resolveCompletion = null; // Completed by finish() so live story code can await an interactive multi-card scene rather than merely its initial scheduling.
         const completionPromise = new Promise(resolve => { resolveCompletion = resolve; }); // Public completion signal used by sequential authored scenes.
@@ -30016,6 +30020,7 @@
           playerMesh.updateMatrixWorld(true);
           toolHolder.updateMatrixWorld(true);
           window.ProceduralHandFrameDriver?.syncNow?.();
+          for (const hidden of hiddenLivePlayerNodes) hidden.node.visible = hidden.visible; // Normal completion and setup failures restore each node's original visibility.
         }; // One cleanup path releases procedural rigs and restores player-owned transforms on success and setup failure.
         cutscenePreviewActive = true;
         cutscenePreviewZoomPercent = 100;
@@ -30261,9 +30266,10 @@
           entities.set(actor.id, entity);
         }
 
-        if (payload.cinematicCameraId) {
+        let cinematicCameraReady = !payload.cinematicCameraFromStageId; // Optional stage gate preserves the first dialogue angle before easing into a fixed establishing shot.
+        if (cinematicCameraReady && (payload.cinematicCameraId || payload.cinematicCamera)) {
           const speaker = entities.get((payload.stages || []).find(stage => stage.type === 'talk')?.speakerId); // Gives the opening fade the same wall shot as later dialogue.
-          window.CinematicCameraRuntime?.activate?.(area, payload.cinematicCameraId, { reason: 'authored-cutscene', targetWalker: speaker?.walker });
+          window.CinematicCameraRuntime?.activate?.(area, payload.cinematicCameraId || payload.cinematicCamera, { reason: 'authored-cutscene', targetWalker: speaker?.walker });
         }
 
         // ── Stage engine ──────────────────────────────────────────────
@@ -30415,8 +30421,8 @@
           dialogueOpen = true;
           _dialogueWalker = entity?.kind === 'npc' ? entity.walker : null; // Reuse the actual world walker so dialogue expression refreshes target the visible avatar, never a detached viewport portrait.
           cutscenePreviewDialogueSpeaker = entity || null;
-          if (payload.cinematicCameraId && entity?.walker) {
-            window.CinematicCameraRuntime?.activate?.(area, payload.cinematicCameraId, { reason: 'authored-cutscene', targetWalker: entity.walker });
+          if (cinematicCameraReady && (payload.cinematicCamera || (payload.cinematicCameraId && entity?.walker))) {
+            if (!payload.cinematicCamera || payload.cinematicCamera.trackSpeaker || window.CinematicCameraRuntime?.activeRecord?.()?.camera?.id !== payload.cinematicCamera.id) window.CinematicCameraRuntime?.activate?.(area, payload.cinematicCameraId || payload.cinematicCamera, { reason: 'authored-cutscene', targetWalker: entity?.walker });
           } else if (!options.preserveCamera) {
             activeCameraMode = entity?.kind === 'creature' ? dlgModeKeyCreature : dlgModeKey;
             activeCameraTarget = { position: (entity || entities.values().next().value)?.root.position || new THREE.Vector3() };
@@ -30472,6 +30478,8 @@
         function runStage(stageId) {
           if (!running) return;
           const stage = stagesById.get(stageId);
+          cutscenePreviewStageId = stageId;
+          if (stageId === payload.cinematicCameraFromStageId) cinematicCameraReady = true; // The farm's first Continue selects its choice card and starts the wide-shot blend.
           if (!stage) { finish('Preview stopped — the next card could not be found.'); return; }
           report(`🎬 ${payload.title || 'Cutscene'} — ${stage.type}`, false);
 
@@ -30515,7 +30523,7 @@
           const tx = goal.c + 0.5, tz = goal.r + 0.5;
           const navigation = stage.navigate ? window.TilePathfinding?.findPath(Math.round(st.c), Math.round(st.r), goal.c, goal.r,
             (c, r) => isNpcTileWalkable(area, c, r), { bounds: window.TilePathfinding.boxAround(Math.round(st.c), Math.round(st.r), goal.c, goal.r, 8) }) : null; // Farm tours use the existing NPC grid authority to walk around furnishings and obstacles.
-          let waypoint = navigation?.length > 1 ? 1 : 0; // Advances through the ordinary path without adding a new frame driver.
+          let waypoint = 0; // TilePathfinding excludes the start tile, so the first returned col/row hop must be visited.
           let lastT = performance.now();
           let arrivedAlready = false;
           externallyDrivenActorIds.add(stage.actorId); // advanceActorToward below owns rotation until arrival
@@ -30551,7 +30559,7 @@
             const dt = Math.min(0.05, (now - lastT) / 1000);
             lastT = now;
             const node = navigation?.[waypoint]; // Authored wilderness blocking remains a direct move; opted-in tours follow the path.
-            const arrived = advanceActorToward(stage.actorId, node ? node.c + 0.5 : tx, node ? node.r + 0.5 : tz, dt, speedMul);
+            const arrived = advanceActorToward(stage.actorId, node ? node.col + 0.5 : tx, node ? node.row + 0.5 : tz, dt, speedMul);
             if (arrived) {
               if (navigation && waypoint < navigation.length - 1) waypoint++;
               else { onArrive(); return; }
@@ -30861,14 +30869,21 @@
           throw new Error('Farm introduction has no nearby walkable stop.');
         };
         const porch = openNear(rawPorch); // Keeps the guide clear of later player-authored junk and house walls.
-        return { entry, guide: openNear(entry, entry), porch, playerPorch: openNear(porch, porch) };
+        const aspect = Math.max(.3, Number(cameraContainerAspect()) || 1); // Portrait/mobile screens need more height to retain the same full-yard width.
+        const tourCamera = { // Uses the shared authored cinematic camera throughout dialogue and movement, facing north from the south edge.
+          id: 'farm_introduction_south', label: 'Farm introduction south camera',
+          position: { x: COLS / 2, y: Math.max(ROWS + 8, COLS / aspect * .85 + 8), z: ROWS - .5 },
+          target: { x: COLS / 2, y: 1, z: ROWS / 2 },
+          fovDeg: 75, blendSeconds: 1.25, trackSpeaker: false, stagePlayer: false,
+        };
+        return { entry, guide: openNear(entry, entry), porch, playerPorch: openNear(porch, porch), camera: tourCamera };
       }
 
       window.AuthoredCutsceneRuntime = Object.freeze({
         placeOutsideTemple: placeOpeningPlayerOutsideTemple,
         farmTourPoints: openingFarmTourPoints,
         run: (payload, options = {}) => runCutscenePreview(payload, { ...options, live: true }), // Plays Director-format payloads as real gameplay cinematics with cleanup/restoration.
-        debugSnapshot: () => ({ active: !!cutscenePreviewActive, currentArea, zoomPercent: cutscenePreviewZoomPercent }), // Mobile/debug-panel callers can inspect live cinematic ownership without a console.
+        debugSnapshot: () => ({ active: !!cutscenePreviewActive, currentArea, stageId: cutscenePreviewStageId, zoomPercent: cutscenePreviewZoomPercent, latestChange: 'Farm-tour movement consumes every TilePathfinding col/row hop; gameplay player visuals stay hidden until cinematic cleanup.' }), // Mobile/debug-panel callers can inspect live cinematic ownership without a console.
       });
 
       if (window.__hobunjiCutscenePreview) {
