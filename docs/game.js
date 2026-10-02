@@ -532,6 +532,7 @@
       // (window.DialogueContent).
 
       function closeNpcDialogue() {
+        if (cutscenePreviewActive) return; // Only the director may advance/close cinematic dialogue; Leave, Escape and controller cancel share this authority.
         dialogueOpen = false;
         window.CinematicCameraRuntime?.endDialogue?.();
         window.DialogueCameraFraming?.end?.();
@@ -29989,7 +29990,10 @@
         let resolveCompletion = null; // Completed by finish() so live story code can await an interactive multi-card scene rather than merely its initial scheduling.
         const completionPromise = new Promise(resolve => { resolveCompletion = resolve; }); // Public completion signal used by sequential authored scenes.
         const report = (text, isError) => { if (!liveMode) window.CutscenePreviewHelpers.cutscenePreviewBanner(text, isError); }; // Keeps the Director's Exit Preview banner out of real story cinematics.
-        const releaseLiveLock = () => { liveLock?.release?.(); }; // Shared cleanup for normal completion and pre-stage load failures.
+        const cutsceneLeaveButton = document.getElementById('npcDialogueLeave'); // Hide the normal conversation exit while the director owns dialogue.
+        const previousLeaveDisplay = cutsceneLeaveButton?.style.display; // Restores the original Leave-button presentation on success/error.
+        if (cutsceneLeaveButton) cutsceneLeaveButton.style.display = 'none';
+        const releaseLiveLock = () => { liveLock?.release?.(); if (cutsceneLeaveButton) cutsceneLeaveButton.style.display = previousLeaveDisplay; }; // Shared cleanup for normal completion and pre-stage load failures.
         const restoreLiveGameplay = () => {
           if (!liveMode) return;
           if (runtimeOptions.placePlayerAtFinalPosition && currentArea === previousArea) {
@@ -30027,6 +30031,8 @@
         report(`🎬 ${payload.title || 'Cutscene Preview'} — loading…`, false);
 
         try {
+        await window.ImpactBlendLibrary?.load?.(); // The rescue's held combat pose must be ready before the initial actor-pose pass.
+        await Promise.all((payload.actors || []).filter(actor => actor.seatTarget).map(actor => window.AuthoredFurniture?.load?.(actor.seatTarget.furnitureKey))); // Ensure synchronous seat lookups have real authored anchors, including slow mobile startup.
         const area = normalizeNpcArea(payload.mapId);
         if (_isBuildingArea(area)) {
           try { await loadBuildingScene(area); } catch (e) { console.error(e); }
@@ -30185,7 +30191,7 @@
           const angleFromGroundDeg = Math.asin(window.FormatUtils.clamp(dy / distance, -1, 1)) * 180 / Math.PI;
           const azimuthDeg = Math.atan2(dx, dz) * 180 / Math.PI;
           const shotModeKey = 'cutscenePreviewShot';
-          window.SCRATCHBONES_CONFIG.game.camera.modes[shotModeKey] = { distanceTiles: distance, angleFromGroundDeg, azimuthDeg, fovDeg: 42, followLerp: 1, targetYOffsetTiles: 0 };
+          window.SCRATCHBONES_CONFIG.game.camera.modes[shotModeKey] = { distanceTiles: distance, angleFromGroundDeg, azimuthDeg, fovDeg: Number(payload.camera3d.fovDeg) || 42, followLerp: 1, targetYOffsetTiles: 0 };
           idleCameraMode = shotModeKey;
           idleCameraTarget = { position: new THREE.Vector3(t.x, t.y, t.z) };
           camTargetX = t.x; camTargetY = t.y; camTargetZ = t.z; // instant cut, not a slow lerp in from the farm spawn
@@ -30246,7 +30252,7 @@
               // NPC database, so it gets a real PNG-plane avatar instead of
               // the generic placeholder every other freeform actor falls
               // back to.
-              const playerProfile = _playerData || window.__hobunjiPlayerProfile;
+              const playerProfile = window.EquipmentPanel.applyGearClothingToPlayerData(_playerData || window.__hobunjiPlayerProfile); // Uses the same equipped clothing/dye overlay as the live player avatar.
               const fakeRec = {
                 id: 'player', name: actor.name || 'Player',
                 appearance: playerProfile?.appearance,
@@ -30267,6 +30273,8 @@
           entities.set(actor.id, entity);
         }
 
+        if (payload.cameraTargetActorId && entities.get(payload.cameraTargetActorId)?.root) idleCameraTarget = entities.get(payload.cameraTargetActorId).root; // Wide rescue framing follows the actual cinematic player, including its collapse/step.
+        activeCameraTarget = idleCameraTarget;
         let cinematicCameraReady = !payload.cinematicCameraFromStageId; // Optional stage gate preserves the first dialogue angle before easing into a fixed establishing shot.
         if (cinematicCameraReady && (payload.cinematicCameraId || payload.cinematicCamera)) {
           const speaker = entities.get((payload.stages || []).find(stage => stage.type === 'talk')?.speakerId); // Gives the opening fade the same wall shot as later dialogue.
@@ -30331,7 +30339,7 @@
           }
           return path;
         };
-        const applyState = actorId => { const entity = entities.get(actorId), st = actorStates.get(actorId); if (entity && st) window.CutscenePreviewHelpers.cutscenePreviewApplyState(entity, area, st); };
+        const applyState = (actorId, dt) => { const entity = entities.get(actorId), st = actorStates.get(actorId); if (entity && st) window.CutscenePreviewHelpers.cutscenePreviewApplyState(entity, area, st, dt); };
 
         // Per-frame travel toward a tile-center target, reusing the real
         // game's own locomotion instead of the discrete grid-hop stepping
@@ -30408,13 +30416,13 @@
               fadeEl.style.transitionDuration = '0.55s';
               requestAnimationFrame(() => { fadeEl.style.opacity = '0'; });
             }
-            releaseLiveLock();
             window.__farmLog?.('[cutscene] finished live authored scene "' + (payload.title || 'Cutscene') + '"', 'info');
           } else {
             enterDefaultCameraMode();
             activeCameraTarget = null;
             report(message || `🎬 ${payload.title || 'Cutscene'} — finished.`, false);
           }
+          releaseLiveLock();
           resolveCompletion?.({ ok: true, title: payload.title || 'Cutscene', restoredArea: previousArea });
         };
 
@@ -30424,6 +30432,9 @@
           cutscenePreviewDialogueSpeaker = entity || null;
           if (cinematicCameraReady && (payload.cinematicCamera || (payload.cinematicCameraId && entity?.walker))) {
             if (!payload.cinematicCamera || payload.cinematicCamera.trackSpeaker || window.CinematicCameraRuntime?.activeRecord?.()?.camera?.id !== payload.cinematicCamera.id) window.CinematicCameraRuntime?.activate?.(area, payload.cinematicCameraId || payload.cinematicCamera, { reason: 'authored-cutscene', targetWalker: entity?.walker });
+          } else if (payload.widePlayerShots && entity?.rec?.id === 'player') {
+            activeCameraMode = idleCameraMode;
+            activeCameraTarget = idleCameraTarget;
           } else if (!options.preserveCamera) {
             activeCameraMode = entity?.kind === 'creature' ? dlgModeKeyCreature : dlgModeKey;
             activeCameraTarget = { position: (entity || entities.values().next().value)?.root.position || new THREE.Vector3() };
@@ -30810,7 +30821,7 @@
               updateCreatureAnimFrame(entity.creature, dt, false);
               st.rotation = THREE.MathUtils.radToDeg(entity.creature.groupRot);
             } else {
-              applyState(actorId);
+              applyState(actorId, dt);
               if (entity.walker) {
                 const seat = st.pose === 'sit' ? npcSeatTransformForTarget(st.seatTarget) : null; // Furniture facing remains logical; the portrait obeys the normal camera deadzone.
                 entity.walker.applyFacingDeadzone(seat ? -seat.facingRad + Math.PI / 2 : THREE.MathUtils.degToRad(targetDeg), npcDialogueStagingConfig().npcFacePlayerLerp ?? 0.28);
@@ -30894,7 +30905,7 @@
         placeOutsideTemple: placeOpeningPlayerOutsideTemple,
         farmTourPoints: openingFarmTourPoints,
         run: (payload, options = {}) => runCutscenePreview(payload, { ...options, live: true }), // Plays Director-format payloads as real gameplay cinematics with cleanup/restoration.
-        debugSnapshot: () => ({ active: !!cutscenePreviewActive, currentArea, stageId: cutscenePreviewStageId, zoomPercent: cutscenePreviewZoomPercent, latestChange: 'Farm-tour movement consumes every TilePathfinding col/row hop; gameplay player visuals stay hidden until cinematic cleanup.' }), // Mobile/debug-panel callers can inspect live cinematic ownership without a console.
+        debugSnapshot: () => ({ active: !!cutscenePreviewActive, currentArea, stageId: cutscenePreviewStageId, zoomPercent: cutscenePreviewZoomPercent, latestChange: 'Centered wide rescue shots, surrounding wolves and combat prone pose; current gear clothing, canonical chair anchors/rotations and animated knees; Leave/Escape blocked during cutscenes.' }), // Mobile/debug-panel callers can inspect live cinematic ownership without a console.
       });
 
       if (window.__hobunjiCutscenePreview) {

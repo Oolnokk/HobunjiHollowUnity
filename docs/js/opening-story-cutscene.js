@@ -11,7 +11,7 @@
     completed: false,
     lastScene: null,
     lastError: null,
-    latestChange: 'Rescue animals use composed eyes and character head targeting; cutscenes follow facing deadzones and seat height, with a hidden surveyor doorway reveal and relocated office camera. Farm-tour choices now continue through valid col/row navigation hops; the real player stays hidden behind its stand-in, with a wide south-to-north farm shot that blends in after the first dialogue Continue.',
+    latestChange: 'Rescue shots center on the player with wider framing and surrounding wolves; combat prone pose, real equipped gear, correct chair anchors/rotations and locked cutscene dialogue. Rescue animals use composed eyes and character head targeting; cutscenes follow facing deadzones and seat height, with a hidden surveyor doorway reveal and relocated office camera. Farm-tour choices now continue through valid col/row navigation hops; the real player stays hidden behind its stand-in, with a wide south-to-north farm shot that blends in after the first dialogue Continue.',
   };
 
   function stateKey(profile) {
@@ -94,8 +94,8 @@
     const playerName = String(profile?.nickname || 'Farmer'); // Names the player stand-in in dialogue without depending on unresolved template tokens.
     const actors = [ // Reuses the Director's existing Gar-wolf Rescue cast and blocking.
       { id: 'player', name: playerName, isPlayer: true, team: 'player', lc: 11, lr: 8, rotation: 270, pose: 'prone' },
-      { id: 'wolf1', name: 'Gar-wolf', creatureTypeId: 'gar-wolf', team: 'gar_wolves', lookAtActorId: 'player', lc: 10, lr: 7, rotation: 45, pose: 'standing' },
-      { id: 'wolf2', name: 'Gar-wolf', creatureTypeId: 'gar-wolf', team: 'gar_wolves', lookAtActorId: 'player', lc: 12, lr: 7, rotation: 270, pose: 'standing' },
+      { id: 'wolf1', name: 'Gar-wolf', creatureTypeId: 'gar-wolf', team: 'gar_wolves', lookAtActorId: 'player', lc: 9, lr: 9, rotation: 45, pose: 'standing' },
+      { id: 'wolf2', name: 'Gar-wolf', creatureTypeId: 'gar-wolf', team: 'gar_wolves', lookAtActorId: 'player', lc: 13, lr: 9, rotation: 270, pose: 'standing' },
       { id: 'wolf3', name: 'Gar-wolf', creatureTypeId: 'gar-wolf', team: 'gar_wolves', lookAtActorId: 'player', lc: 11, lr: 6, rotation: 90, pose: 'standing' },
       npcActor(records, { id: 'jubmir', name: 'Jubmir', npcId: 'jubmir', lc: 11, lr: 15, rotation: 0, pose: 'standing' }),
       npcActor(records, { id: 'spearhead', name: 'Spearhead', npcId: 'spearhead_unumanuk', lc: 16, lr: 0, rotation: 180, pose: 'standing' }),
@@ -150,23 +150,24 @@
       localeId: 'locale_opening_rescue',
       wilderness: true,
       footprint: { originC: 0, originR: 0, w: 17, h: 18 },
-      camera3d: { localPos: { x: 3, y: 3.5, z: 16 }, localTarget: { x: 3, y: 0.6, z: 8 } },
+      cameraTargetActorId: 'player', widePlayerShots: true, // Establishing and player-choice shots stay centered on the injured character.
+      camera3d: { fovDeg: 65, localPos: { x: 3.5, y: 8, z: 19.5 }, localTarget: { x: 3.5, y: 0.3, z: 9.5 } },
       actors,
       stages,
     };
   }
 
   function seatTarget(c, r, rotY) {
-    return { pose: 'sit', furnitureKey: 'chairSimpleFurniture', c, r, rotY, seatIndex: 0 }; // Mirrors the normal NPC schedule seat-target shape consumed by npcSeatTransformForTarget().
+    return { pose: 'sit', furnitureKey: 'chairSimple', c, r, rotY, seatIndex: 0 }; // Mirrors the normal NPC schedule seat-target shape consumed by npcSeatTransformForTarget().
   }
 
   function buildHunundiMeetingScene(records, profile) {
     const playerName = String(profile?.nickname || 'Farmer'); // Keeps the player actor label consistent with the newly-created character.
     const actors = [ // Every participant is a real authored NPC/player avatar; no custom placeholder people are used.
-      { id: 'player', name: playerName, isPlayer: true, worldC: 8, worldR: 9, rotation: 0, pose: 'sit', seatTarget: seatTarget(8, 9, 0) },
+      { id: 'player', name: playerName, isPlayer: true, worldC: 8, worldR: 9, rotation: 0, pose: 'sit', seatTarget: seatTarget(8, 9, 180) },
       npcActor(records, { id: 'hunundi', name: 'Father Hunundi', npcId: 'father_hunundi_hodu', worldC: 11, worldR: 8, rotation: 180, pose: 'sit', seatTarget: seatTarget(11, 8, 0) }),
-      npcActor(records, { id: 'jubmir', name: 'Jubmir', npcId: 'jubmir', worldC: 7, worldR: 9, rotation: 0, pose: 'sit', seatTarget: seatTarget(7, 9, 0) }),
-      npcActor(records, { id: 'spearhead', name: 'Spearhead', npcId: 'spearhead_unumanuk', worldC: 9, worldR: 9, rotation: 0, pose: 'sit', seatTarget: seatTarget(9, 9, 0) }),
+      npcActor(records, { id: 'jubmir', name: 'Jubmir', npcId: 'jubmir', worldC: 7, worldR: 9, rotation: 0, pose: 'sit', seatTarget: seatTarget(7, 9, 180) }),
+      npcActor(records, { id: 'spearhead', name: 'Spearhead', npcId: 'spearhead_unumanuk', worldC: 9, worldR: 9, rotation: 0, pose: 'sit', seatTarget: seatTarget(9, 9, 180) }),
       npcActor(records, { id: 'harkharash', name: 'Surveyor Harkhanash', npcId: 'khannibarri_agent', visible: false, worldC: 11, worldR: 5, rotation: 180, pose: 'standing', seatTarget: seatTarget(9, 8, 0) }),
     ];
     const stages = [ // The dialogue establishes amnesia, Nanjiri Farmstead, the Company's offer, regional isolation, and Spearhead's resolve in one room.

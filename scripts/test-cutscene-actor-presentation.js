@@ -23,6 +23,7 @@ helper.cutscenePreviewApplyState(entity,'office',{c:9,r:8,rotation:0,pose:'sit',
 assert.equal(entity.root.position.y,1.5);
 assert.equal(entity.root.rotation.y,0.7); // Pose refresh cannot undo the facing deadzone.
 assert.equal(walker.legs.last[3].seatY,0.4);
+assert(walker.legs.last[0] > 0); // A zero-time update never bends the knees.
 const creature = {avatarRef:{group:{position:vector(),rotation:{},scale:vector()}},halfHeight:1};
 helper.cutscenePreviewApplyState({kind:'creature',creature},'forest',{c:3,r:9,rotation:0});
 assert.equal(creature.x,112);

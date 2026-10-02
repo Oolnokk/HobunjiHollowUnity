@@ -150,7 +150,7 @@
 
   const cutscenePreviewAngleToward = (from, to) => (((-Math.atan2(to.r - from.r, to.c - from.c) * 180 / Math.PI + 90) % 360) + 360) % 360;
 
-  function cutscenePreviewApplyState(entity, area, st) {
+  function cutscenePreviewApplyState(entity, area, st, dt = 1 / 60) {
     const surfY = deps.npcSurfaceY(area, Math.round(st.c), Math.round(st.r));
     if (entity.kind === 'creature') {
       const c = entity.creature;
@@ -176,23 +176,8 @@
       entity.root.position.set(seatTransform?.x ?? (st.c + 0.5), npcSurfY + seatSink, seatTransform?.z ?? (st.r + 0.5));
       entity.root.rotation.y = entity.walker.rot;
       entity.root.scale.setScalar(1);
-      // Prone tips the flat portrait plane down onto its back instead of
-      // just shrinking a standing figure — this walker is scripted
-      // entirely by the director (pause:Infinity, see the actor-spawn
-      // loop) and never dialogue-staged (guarded by cutscenePreviewActive
-      // in beginNpcDialogueStaging/faceNpcDialogueParticipants), so
-      // nothing else re-asserts a standing transform over this pose.
-      const avatarGroup = entity.walker.avatarGroup; // Drives the same portrait root for standing, sitting, and prone authored poses.
-      if (avatarGroup) {
-        const avatarHeight = avatarGroup.userData?.portraitModelHeight || 1; // Restores the ordinary floor-relative portrait center outside the prone pose.
-        if (st.pose === 'prone') {
-          avatarGroup.rotation.x = Math.PI / 2;
-          avatarGroup.position.y = avatarHeight * 0.06;
-        } else {
-          avatarGroup.rotation.x = 0;
-          avatarGroup.position.y = avatarHeight / 2;
-        }
-      }
+      if (st.pose === 'prone') window.ImpactRagdollPlayback?.holdHumanoidProne?.(entity.walker); // Reuses the exact combat knockdown tail, including torso and both recorded leg poses.
+      else window.ImpactRagdollPlayback?.clearHumanoidProne?.(entity.walker);
       if (seatTransform && entity.walker.legs) {
         const seatedPose = { // Feeds the normal procedural-leg seated solver so cutscene chairs do not leave standing legs through the furniture.
           seatY: seatTransform.y,
@@ -200,8 +185,8 @@
           footprintHalfDepth: seatTransform.footprintHalfDepth,
           anchorZ: seatTransform.anchorZ,
         };
-        entity.walker.legs.update(0, 0, false, seatedPose);
-      }
+        entity.walker.legs.update(dt > 0 ? dt : 1 / 60, 0, false, seatedPose);
+      } else if (st.pose !== 'prone') entity.walker.legs?.update(dt > 0 ? dt : 1 / 60, 0, false);
     } else {
       entity.root.position.set(st.c + 0.5, surfY, st.r + 0.5);
       entity.root.rotation.y = THREE.MathUtils.degToRad(st.rotation);

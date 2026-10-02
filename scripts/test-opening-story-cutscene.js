@@ -104,7 +104,7 @@ assert(gameSource.includes("stage.type === 'caption'"), 'runtime must support no
 assert(gameSource.includes('seatTarget: a.seatTarget || null'), 'runtime state must preserve authored seat targets');
 assert(gameSource.includes('entity?.root?.parent?.remove?.(entity.root)'), 'live cutscenes must remove temporary NPC/player stand-ins on completion');
 assert(helperSource.includes("st.pose === 'sit' ? deps.npcSeatTransformForTarget?.(st.seatTarget)"), 'seated cutscene actors must reuse normal NPC seat transforms');
-assert(helperSource.includes('entity.walker.legs.update(0, 0, false, seatedPose)'), 'seated cutscene actors must reuse procedural seated-leg solving');
+assert(helperSource.includes('entity.walker.legs.update(dt > 0 ? dt : 1 / 60, 0, false, seatedPose)'), 'seated cutscene actors must reuse procedural seated-leg solving');
 
 const gameIndex = indexSource.indexOf('<script src="game.js?v=20261002h960fd67"></script>'); // Ensures the story listener installs after the live runtime exists.
 const storyIndex = indexSource.indexOf('<script src="js/opening-story-cutscene.js?v=20261002harkharash1"></script>'); // Ensures the new orchestrator is actually shipped.
