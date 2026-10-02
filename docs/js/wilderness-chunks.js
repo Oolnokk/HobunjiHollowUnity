@@ -496,8 +496,10 @@
     controller.queue.clear();
     controller.centerCx = clamp(tileToChunk(region.col), 0, controller.maxCx);
     controller.centerCz = clamp(tileToChunk(region.row), 0, controller.maxCz);
-    for (const [key, record] of controller.loaded) if (record.cx !== controller.centerCx || record.cz !== controller.centerCz) controller.unload(key);
-    controller.load(controller.centerCx, controller.centerCz); // Only the player's current chunk is resident throughout the rescue.
+    for (const [key, record] of controller.loaded) if (!bounds.loadWholeMap && (record.cx !== controller.centerCx || record.cz !== controller.centerCz)) controller.unload(key);
+    if (bounds.loadWholeMap) { // Small isolated cinematic maps keep their whole stage and surrounding forest ready; no neighboring world zone is loaded.
+      for (let cz = 0; cz <= controller.maxCz; cz++) for (let cx = 0; cx <= controller.maxCx; cx++) controller.load(cx, cz);
+    } else controller.load(controller.centerCx, controller.centerCz); // Only the player's current chunk is resident throughout the rescue.
     controller.inactiveSeconds = 0;
     return () => { if (cinematicRegions.get(mapId) === region) { cinematicRegions.delete(mapId); controller.centerCx = controller.centerCz = null; } }; // Completion/error returns streaming to the live player.
   }

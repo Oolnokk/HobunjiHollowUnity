@@ -64,7 +64,7 @@ assert.strictEqual(rescue.stages[0].type, 'fade', 'rescue must release its start
 assert.strictEqual(fadeEl.style.opacity, '0', 'first rescue stage must reveal the wilderness');
 assert.strictEqual(fadeNext, 'rescue_wolf1_growl', 'fade must advance to the rescue dialogue');
 
-assert.strictEqual(rescue.mapId, 'map_southern_cloud_forest', 'rescue must occur in the Cloud Forest wilderness');
+assert.strictEqual(rescue.mapId, 'map_opening_cloud_forest', 'rescue must occur in the Cloud Forest wilderness');
 assert.strictEqual(rescue.wilderness, true, 'rescue must use generated-wilderness placement');
 assert(rescue.actors.some(actor => actor.npcId === 'jubmir' && actor.npcRecord?.id === 'jubmir'), 'rescue must use the authored Jubmir NPC');
 assert(rescue.actors.some(actor => actor.npcId === 'spearhead_unumanuk' && actor.npcRecord?.id === 'spearhead_unumanuk'), 'rescue must use the authored Spearhead NPC');

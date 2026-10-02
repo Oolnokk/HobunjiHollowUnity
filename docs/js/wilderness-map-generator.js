@@ -3287,6 +3287,14 @@
       }
     }
     if (!spot) spot = randomFreeArea(paddedW, paddedH, { filter: placementFilter }, 2500);
+    if (!spot && settings.requiredLocaleId === locale.id) {
+      spot = { x: Math.floor((settings.width - paddedW) / 2), y: Math.floor((settings.height - paddedH) / 2) }; // Required miniature stage carves a central clearing when natural terrain has no large flat site.
+      for (let y = spot.y; y < spot.y + paddedH; y++) for (let x = spot.x; x < spot.x + paddedW; x++) {
+        const tile = tileAt(x, y); // Reuse the normal tile grid and export/fold path; remove only terrain inside the required footprint plus its buffer.
+        Object.assign(tile, { elevation: 0, height: 0, water: false, waterfall: false, terrain: 'grass', ramp: false, navRamp: false, cliffSkirt: false, borderEscarpment: false, distantBoundaryLandscape: false, plateauGroupId: null, plateauRing: false, plateauInterior: false, path: false, invisiblePath: false, designReserve: false, occupiedBy: null });
+      }
+      logDebug(`required locale clearing carved: ${locale.id} at (${spot.x},${spot.y})`);
+    }
     if (!spot) { warn(`locale ${locale.id}: no valid ${paddedW}x${paddedH} clearing found`); return null; }
 
     const anchorX = spot.x + clearance - bbox.minC;
@@ -8478,6 +8486,8 @@
     generateWorkspace,
     generateZoneWorkspace,
     defaultSettings,
+    zoneSettings: zoneMapId => ({ ...ZONE_CONFIG[zoneMapId] }), // Mini-wilderness callers reuse biome settings without mutating the shared preset.
+    generationTileScale: GENERATION_TILE_SCALE, // Shared size conversion replaces the lab's hard-coded export multiplier.
     zoneMapIds: () => Object.keys(ZONE_CONFIG),
     hashSeed,
     makeRng,

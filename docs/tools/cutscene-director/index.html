@@ -652,6 +652,7 @@
                 <option value="">— none —</option>
                 <option value="map_northern_cliffs">Northern Cliffs</option>
                 <option value="map_southern_cloud_forest">Southern Cloud Forest</option>
+                <option value="map_opening_cloud_forest">Opening Cloud Forest mini-wilderness</option>
                 <option value="map_western_slope">Western Slope</option>
                 <option value="map_eastern_mire">Eastern Mire</option>
               </select></label>
@@ -1451,6 +1452,7 @@
   const WILDERNESS_ZONES = [
     { id: "map_northern_cliffs", name: "Northern Cliffs" },
     { id: "map_southern_cloud_forest", name: "Southern Cloud Forest" },
+    { id: "map_opening_cloud_forest", name: "Opening Cloud Forest mini-wilderness" },
     { id: "map_western_slope", name: "Western Slope" },
     { id: "map_eastern_mire", name: "Eastern Mire" },
   ];
@@ -1473,6 +1475,8 @@
       tiles: new Map(), floorSet: new Set(), zGrid: null, buildings: [],
     };
     state.project.mapId = zone.id;
+    if (zone.id === 'map_opening_cloud_forest') { state.project.miniWilderness ||= { sourceZoneId:'map_southern_cloud_forest', chunksPerSide:4 }; state.project.localeId ||= 'locale_opening_rescue'; } // Preserve imported mini-map size/seed while enabling the same generation path in Game Preview.
+    else delete state.project.miniWilderness;
     els.mapLoadStatus.textContent = `Using "${zone.name}" (procedurally generated) — editing on a blank ${DEFAULT_COLS}×${DEFAULT_ROWS} practice grid; the real terrain generates and this scene is placed on it live in the previewer.`;
     els.mapStatusPill.textContent = `Map: ${zone.name} (wilderness)`;
     els.mapSelect.value = "";

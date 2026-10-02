@@ -932,11 +932,11 @@
   "connectors": [],
   "placement": {
     "allowedZones": [
-      "map_southern_cloud_forest"
+      "map_opening_cloud_forest"
     ],
     "requiresFlatGround": true,
     "clearanceTiles": 1,
-    "sameSectorAsEntry": true
+    "sameSectorAsEntry": false
   },
   "tags": [
     "opening",

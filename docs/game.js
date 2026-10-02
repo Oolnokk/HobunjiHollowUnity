@@ -1611,6 +1611,8 @@
           audioIndex: 'general',
         },
       };
+      EXTERIOR_ZONES.map_opening_cloud_forest = { ...EXTERIOR_ZONES.map_southern_cloud_forest, label: 'Cloud Forest Rescue', cloudForest: true, packSpecies: [], herbivoreSpecies: [], temporary: true }; // Isolated cinematic map shares Cloud Forest presentation without ambient encounters.
+      EXTERIOR_ZONES.map_southern_cloud_forest.cloudForest = true; // One biome flag serves both the world zone and its introductory mini-wilderness.
       function _isZoneArea(area) { return typeof area === 'string' && (!!EXTERIOR_ZONES[area] || _zoneLayouts.has(area)); }
 
       // Used by input polling; supports both keyboard and touch joystick.
@@ -8922,14 +8924,14 @@
       // regenerateWildernessLabInPlace) gives a new layout each time rather
       // than rebuilding the same one, the way a real Tothal Shift would for
       // a new year.
-      function regenerateWildernessLab(chunksPerSide = 1, seedOverride = null) {
+      function regenerateWildernessLab(chunksPerSide = 1, seedOverride = null, options = {}) {
         if (typeof WildernessMapGenerator === 'undefined' || typeof TerrainPreview === 'undefined') {
           debugLog('[wilderness-lab] generator not loaded', 'warn');
           return false;
         }
-        const mapId = 'map_wilderness_lab';
+        const mapId = options.mapId || 'map_wilderness_lab'; // Optional cinematic destination retains the existing dev-lab default.
         const chunkTiles = window.WildernessChunks?.constants?.CHUNK_TILES || 16;
-        const exportScale = 2; // WildernessMapGenerator's own GENERATION_TILE_SCALE post-layout upscale (generated width/height double on export).
+        const exportScale = WildernessMapGenerator.generationTileScale || 2; // WildernessMapGenerator's own GENERATION_TILE_SCALE post-layout upscale (generated width/height double on export).
         const side = Math.max(1, Math.min(8, Math.round(Number(chunksPerSide) || 1)));
         const internalSize = Math.max(4, Math.round((side * chunkTiles) / exportScale));
         // seedOverride lets a caller (see window.__regenerateWildernessLab from
@@ -8943,10 +8945,11 @@
           // Reuses map_northern_cliffs' terrain preset/boundary settings so
           // the lab's terrain is representative of a real zone's generated
           // plateaus/cliffs rather than the flatter 'custom' default.
+          const biome = options.sourceZoneId ? WildernessMapGenerator.zoneSettings(options.sourceZoneId) : { entrySide: 'south', preset: 'cliffs', boundaryMode: 'followMapHeight', boundaryCliffBoost: 5 }; // Reuse the actual biome preset, including forest density and terrain shape.
           workspace = WildernessMapGenerator.generateWorkspace(seed, {
-            width: internalSize, height: internalSize,
-            entrySide: 'south', preset: 'cliffs', boundaryMode: 'followMapHeight', boundaryCliffBoost: 5,
+            ...biome, width: internalSize, height: internalSize, locales: options.locales || [], requiredLocaleId: options.requiredLocaleId,
           });
+          if (options.requiredLocaleId && !workspace.localeInstances?.some(instance => instance.localeId === options.requiredLocaleId)) throw new Error('Required cinematic locale could not be placed: ' + options.requiredLocaleId);
           merged = TerrainPreview.buildMergedZoneGrid(workspace, workspace.maps[0].id);
         } catch (e) {
           debugLog(`[wilderness-lab] generation failed: ${e.message}`, 'warn');
@@ -8959,7 +8962,7 @@
           mesas: merged.mesas, buildings: merged.buildings || [], decor: [], furniture: [],
           dens: workspace.animalDens || [], rootTotems: workspace.rootTotems || [],
           foliagePatches: workspace.foliagePatches || [], wildernessFoliageFurniture: workspace.wildernessFoliageFurniture || [],
-          ambushStations: workspace.ambushStations || [], localeInstances: [],
+          ambushStations: workspace.ambushStations || [], localeInstances: workspace.localeInstances || [],
         });
         if (EXTERIOR_ZONES[mapId] && workspace.entry) {
           EXTERIOR_ZONES[mapId].entryCol = workspace.entry.col;
@@ -10196,9 +10199,9 @@
               // (fruitBush/mushroomPatch/unknown/hand-authored data with no
               // floraKind at all — which also covers every other zone that
               // has no dedicated tree species).
-              const isTreeZone = mapId === 'map_northern_cliffs' || mapId === 'map_southern_cloud_forest';
+              const isTreeZone = mapId === 'map_northern_cliffs' || EXTERIOR_ZONES[mapId]?.cloudForest;
               const isCrownedPine = isTreeZone && mapId === 'map_northern_cliffs' && (tile.floraKind === 'copse' || !tile.floraKind);
-              const isShadewood   = isTreeZone && mapId === 'map_southern_cloud_forest' && (tile.floraKind === 'copse' || !tile.floraKind);
+              const isShadewood   = isTreeZone && EXTERIOR_ZONES[mapId]?.cloudForest && (tile.floraKind === 'copse' || !tile.floraKind);
               const isBush   = tile.floraKind === 'bush';
               const isStump  = tile.floraKind === 'beehive';
               const vegGroup = isCrownedPine ? window.FoliageGenerator.buildCrownedPineMesh(c, r)
@@ -10361,7 +10364,7 @@
         // toggle if it's already been switched off this session, so
         // (re)entering the zone doesn't silently re-enable the mist the
         // player just turned off.
-        const initialFogDensity = (mapId === 'map_southern_cloud_forest' && !s_cloudForestFog) ? 0 : (zdef?.fogDensity ?? 0.018);
+        const initialFogDensity = (zdef?.cloudForest && !s_cloudForestFog) ? 0 : (zdef?.fogDensity ?? 0.018);
         zScene.fog = new THREE.FogExp2(fogColor, initialFogDensity);
         zScene.add(new THREE.AmbientLight(0xfff0e0, 0.7));
         const sun = new THREE.DirectionalLight(0xffeedd, 1.1);
@@ -20604,7 +20607,7 @@
         // where vegetation pops in/out sits inside the mist uniformly in
         // every direction instead of only character-forward.
         const radialCullRadius = s_cloudForestWideCull
-          ? (currentArea === 'map_southern_cloud_forest' ? s_cloudForestCullRadiusTiles : EXTERIOR_ZONES[currentArea]?.vegCullRadiusTiles)
+          ? (EXTERIOR_ZONES[currentArea]?.cloudForest ? s_cloudForestCullRadiusTiles : EXTERIOR_ZONES[currentArea]?.vegCullRadiusTiles)
           : null;
         let viewX = 0, viewZ = 1, rightX = 1, rightZ = 0, forwardRange = 0, rearRange = 0, halfWidth = 0;
         if (!radialCullRadius) {
@@ -28149,7 +28152,7 @@
         TILE,
         getPlayerGroundY: _playerGroundY,
         getActiveScene: window.GridTileAccessors.getActiveScene,
-        isCloudForestArea: () => currentArea === 'map_southern_cloud_forest',
+        isCloudForestArea: () => !!EXTERIOR_ZONES[currentArea]?.cloudForest,
       });
 
       window.FarmPanel?.init({
@@ -29996,6 +29999,7 @@
         const liveLock = liveMode ? window.CharacterActionLocks?.acquire?.({ owner: 'authored-cutscene', reason: payload.title || 'story cutscene', participants: [{ id: 'player', channels: ['movement', 'tools', 'actions'] }] }) : null; // Prevents real-player input from mutating the hidden gameplay actor while stand-ins own the screen.
         let povShot = null; // Current actor-eye camera binding, including the source avatar visibility to restore.
         const clearPovShot = () => { if (povShot?.source?.walker?.avatarGroup) povShot.source.walker.avatarGroup.visible = povShot.visible; povShot = null; };
+        let temporaryWildernessArea = null; // A generated mini-wilderness is disposed after its actors and gameplay hierarchy are restored.
         let releaseCinematicRegion = null; // Wilderness residency pin is released by the existing scene cleanup owner.
         let furniturePlayback = null; // Shared Director/game transform session restores map furniture on finish or failure.
         const entities = new Map(); // Temporary cinematic actor rigs also belong to the setup-failure cleanup path.
@@ -30017,7 +30021,7 @@
         clearTargetHighlights();
         const previousLeaveDisplay = cutsceneLeaveButton?.style.display; // Restores the original Leave-button presentation on success/error.
         if (cutsceneLeaveButton) cutsceneLeaveButton.style.display = 'none';
-        const releaseLiveLock = () => { releaseCinematicRegion?.(); liveLock?.release?.(); document.body?.classList.remove('authored-cutscene'); _arcContainerEl?.classList.remove('arc-hidden'); clearPovShot(); if (cutsceneLeaveButton) cutsceneLeaveButton.style.display = previousLeaveDisplay; }; // Shared cleanup for normal completion and pre-stage load failures.
+        const releaseLiveLock = () => { releaseCinematicRegion?.(); if (temporaryWildernessArea && liveMode) { _disposeZoneScene(temporaryWildernessArea); _zoneLayouts.delete(temporaryWildernessArea); temporaryWildernessArea = null; } liveLock?.release?.(); document.body?.classList.remove('authored-cutscene'); _arcContainerEl?.classList.remove('arc-hidden'); clearPovShot(); if (cutsceneLeaveButton) cutsceneLeaveButton.style.display = previousLeaveDisplay; }; // Shared cleanup for normal completion and pre-stage load failures.
         const restoreLiveGameplay = () => {
           if (!liveMode) return;
           if (runtimeOptions.placePlayerAtFinalPosition && currentArea === previousArea) {
@@ -30088,7 +30092,16 @@
           // which map, and where on it — can only be resolved here, against
           // real generated terrain, not authored ahead of time.
           try {
-            if (_tothalShiftPromise) await _tothalShiftPromise;
+            if (payload.miniWilderness) {
+              if (!EXTERIOR_ZONES[area]?.temporary) throw new Error('Mini-wilderness scenes require an isolated temporary map.');
+              temporaryWildernessArea = area;
+              const localeDefs = await loadStampableLocaleDefs(); // Same Locale Editor definitions used by normal wilderness generation.
+              const locale = localeDefs.find(def => def.id === payload.localeId); // Fail before revealing an unstamped rescue scene.
+              if (!locale) throw new Error('Missing introductory locale: ' + payload.localeId);
+              const mini = payload.miniWilderness; // Director payload keeps biome, seed and chunk size editable.
+              const generated = regenerateWildernessLab(mini.chunksPerSide || 4, mini.seed || 'opening_' + (_playerData?.worldId || 'world'), { mapId: area, sourceZoneId: mini.sourceZoneId, locales: [locale], requiredLocaleId: payload.localeId });
+              if (!generated) throw new Error('Could not generate the introductory Cloud Forest mini-wilderness.');
+            } else if (_tothalShiftPromise) await _tothalShiftPromise;
             if (!_zoneLayouts.has(area)) {
               checkTothalShift();
               await window.CutscenePreviewHelpers.cutscenePreviewWaitForArea(area, 20000, () => _zoneLayouts.has(area));
@@ -30112,7 +30125,7 @@
               return;
             }
             const offsetC = anchor.col - (fp.originC || 0), offsetR = anchor.row - (fp.originR || 0);
-            releaseCinematicRegion = window.WildernessChunks?.pinCinematicRegion?.(area, { minCol: anchor.col, minRow: anchor.row, maxCol: anchor.col + fw, maxRow: anchor.row + fh, focusCol: anchor.col + ((payload.actors || []).find(actor => actor.isPlayer)?.lc || 0), focusRow: anchor.row + ((payload.actors || []).find(actor => actor.isPlayer)?.lr || 0) }); // Keep only the cinematic player's current chunk resident.
+            releaseCinematicRegion = window.WildernessChunks?.pinCinematicRegion?.(area, { minCol: anchor.col, minRow: anchor.row, maxCol: anchor.col + fw, maxRow: anchor.row + fh, loadWholeMap: !!payload.miniWilderness, focusCol: anchor.col + ((payload.actors || []).find(actor => actor.isPlayer)?.lc || 0), focusRow: anchor.row + ((payload.actors || []).find(actor => actor.isPlayer)?.lr || 0) }); // Miniature maps retain the full stage; ordinary wilderness cards retain only the cinematic player's current chunk.
             for (const a of (payload.actors || [])) {
               a.worldC = (a.lc || 0) + offsetC;
               a.worldR = (a.lr || 0) + offsetR;
@@ -31059,7 +31072,7 @@
         farmTourPoints: openingFarmTourPoints,
         run: (payload, options = {}) => runCutscenePreview(payload, { ...options, live: true }), // Plays Director-format payloads as real gameplay cinematics with cleanup/restoration.
         isActive: () => cutscenePreviewActive, // Gameplay HUD owners can check the director without allocating a debug snapshot.
-        debugSnapshot: () => ({ active: !!cutscenePreviewActive, currentArea, stageId: cutscenePreviewStageId, zoomPercent: cutscenePreviewZoomPercent, latestChange: 'Fight uses the rescue wide shot; Spearhead enters from outside the prior view; moving humanoids animate legs; final player stance yaw obeys body/neck deadzones; tighter surveyor shots and rear chair with departure hiding; lower farm camera, moving two-character follow shot and facade view after both arrivals; intro wind-only audio.' }), // Mobile/debug-panel callers can inspect live cinematic ownership without a console.
+        debugSnapshot: () => ({ active: !!cutscenePreviewActive, currentArea, stageId: cutscenePreviewStageId, zoomPercent: cutscenePreviewZoomPercent, latestChange: 'Rescue now uses a temporary generated Cloud Forest mini-wilderness with the authored locale and full mini-map residency; cleaned up after playback. Fight uses the rescue wide shot; Spearhead enters from outside the prior view; moving humanoids animate legs; final player stance yaw obeys body/neck deadzones; tighter surveyor shots and rear chair with departure hiding; lower farm camera, moving two-character follow shot and facade view after both arrivals; intro wind-only audio.' }), // Mobile/debug-panel callers can inspect live cinematic ownership without a console.
       });
 
       if (window.__hobunjiCutscenePreview) {

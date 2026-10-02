@@ -63,6 +63,11 @@ assert.equal(loads.length,1,'only the current chunk is built before reveal');
 assert.equal(controller.queue.size,0);assert.equal(controller.loaded.size,0);assert(controller.cancelled);
 vm.runInNewContext('release();update(0);',chunkContext);
 assert.equal(controller.focus.c,900,'cleanup returns streaming to gameplay coordinates');
+loads.length=0;
+vm.runInNewContext('release=pinCinematicRegion("forest",{minCol:0,minRow:0,maxCol:64,maxRow:64,loadWholeMap:true});update(0);',chunkContext);
+assert.equal(loads.length,(controller.maxCx+1)*(controller.maxCz+1),'isolated miniature preloads every chunk exactly once');
+vm.runInNewContext('release();update(0);',chunkContext);
+assert.equal(controller.focus.c,900,'mini-map cleanup returns streaming to gameplay');
 
 async function verifyAssetReadiness() {
   const calls = [], texture = {isTexture:true,image:{complete:true,decode:async()=>calls.push('decode')}}; // A decoded scene texture must reach the GPU before readiness completes.

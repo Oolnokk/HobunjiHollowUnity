@@ -11,7 +11,7 @@
     completed: false,
     lastScene: null,
     lastError: null,
-    latestChange: 'Four-stage intro loading preset; independent neck deadzones; panel-safe head framing; Hunundi shoulder POV; focused randomized wolf shots. Hunundi POV camera/head targeting and cinematic HUD suppression. Smooth combat-prone transitions, wider wolf shots, town Spearhead equipment, animated office furniture, Hunundi doorway blocking and seated conversational eye contact. Rescue shots center on the player with wider framing and surrounding wolves; combat prone pose, real equipped gear, correct chair anchors/rotations and locked cutscene dialogue. Rescue animals use composed eyes and character head targeting; cutscenes follow facing deadzones and seat height, with a hidden surveyor doorway reveal and relocated office camera. Farm-tour choices now continue through valid col/row navigation hops; the real player stays hidden behind its stand-in, with a wide south-to-north farm shot that blends in after the first dialogue Continue.',
+    latestChange: 'Rescue locale now lives in an isolated generated Cloud Forest mini-wilderness; shared chunk/terrain scale, fully preloaded and disposed on exit. Four-stage intro loading preset; independent neck deadzones; panel-safe head framing; Hunundi shoulder POV; focused randomized wolf shots. Hunundi POV camera/head targeting and cinematic HUD suppression. Smooth combat-prone transitions, wider wolf shots, town Spearhead equipment, animated office furniture, Hunundi doorway blocking and seated conversational eye contact. Rescue shots center on the player with wider framing and surrounding wolves; combat prone pose, real equipped gear, correct chair anchors/rotations and locked cutscene dialogue. Rescue animals use composed eyes and character head targeting; cutscenes follow facing deadzones and seat height, with a hidden surveyor doorway reveal and relocated office camera. Farm-tour choices now continue through valid col/row navigation hops; the real player stays hidden behind its stand-in, with a wide south-to-north farm shot that blends in after the first dialogue Continue.',
   };
 
   function stateKey(profile) {
@@ -146,7 +146,8 @@
     return {
       version: 6,
       title: 'Rescue',
-      mapId: 'map_southern_cloud_forest',
+      mapId: 'map_opening_cloud_forest',
+      miniWilderness: { sourceZoneId: 'map_southern_cloud_forest', chunksPerSide: 4 }, // Same generated mini-map path as the Wilderness Chunk Lab, using the Cloud Forest biome.
       localeId: 'locale_opening_rescue',
       wilderness: true,
       footprint: { originC: 0, originR: 0, w: 17, h: 18 },
