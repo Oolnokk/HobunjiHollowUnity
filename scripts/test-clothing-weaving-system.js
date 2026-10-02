@@ -791,10 +791,11 @@ assert.match(patternEditorSource, /recordStrokePoint\(point\)/, 'pointer stroke 
 assert.match(patternEditorSource, /authorOps = \[\{ type: 'selectFullOutline' \}\]/, 'Select Full Outline replaces the mask with a complete replayable journal baseline');
 assert.match(patternEditorSource, /authorOps\.push\(\{ type: 'expandInward', amount \}\)/, 'each successful inward expansion records its exact authored amount');
 assert.match(patternEditorSource, /authorOps = \[\{ type: 'clear' \}\]/, 'Clear establishes a fresh complete replayable history');
-assert.match(patternEditorSource, /settings\.authorOps = cloneTrimAuthorOps\(authorOps\)/, 'saved trim manifest entries persist complete operation journals');
+assert.match(patternEditorSource, /authorOpsComplete \? \{ authorOps: cloneTrimAuthorOps\(authorOps\) \} : \{\}/, 'saved trim manifest entries persist complete operation journals beside runtime settings');
 assert.match(patternEditorSource, /snapshot\(\)[\s\S]*?authorOps: cloneTrimAuthorOps\(authorOps\)/, 'undo snapshots preserve operation history alongside mask pixels');
 assert.match(patternEditorSource, /replayed \? replayTrimAuthorOps\(sourceOps, targetGarment\) : fitTrimMaskToGarment/, 'replication prefers operation replay and uses finished-mask inference only as legacy fallback');
 assert.match(patternEditorSource, /authorOpsComplete: replayed/, 'replicated targets inherit replayable operation provenance');
+assert.match(patternEditorSource, /Editor-only authorOps stay outside runtime pattern settings/, 'replication keeps authoring journals out of the production trim settings object');
 assert.match(patternEditorSource, /blank canvas is a complete starting state/, 'missing legacy PNGs start a fresh complete operation history instead of poisoning future replication');
 assert.match(patternEditorSource, /trimReplicateAllBtn[\s\S]*?filter\(key => key !== sourceVariant && !trimExists\(garmentId, key, view\)\)/, 'bulk trim replication fills only missing species\/gender variants and leaves authored targets untouched');
 assert.match(patternEditorSource, /Replicate \+ edit target/, 'single-target trim replication explicitly continues into manual cleanup');
