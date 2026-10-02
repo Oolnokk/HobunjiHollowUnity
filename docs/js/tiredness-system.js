@@ -148,6 +148,7 @@
 
   function queuePassout() {
     if (passoutActive || awakeHours < PASS_OUT_HOURS) return false;
+    if (window.CalendarSystem?.timeDebugSnapshot?.()?.modalKind) return false; // Seated Wait still counts as waking time, but forced sleep waits until that existing passage has finished instead of nesting two iris transitions.
     passoutActive = true;
     pendingPassoutWake = true;
     passoutCount += 1;
