@@ -336,6 +336,20 @@ Overpass → not set</div>
 
   function distanceFromSelectedContour(mask, boundaryMask, selectedBoundary, width, height) {
     const distance = new Float32Array(mask.length); distance.fill(Infinity); // Shortest inward distance from any selected contour pixel; unlike single-owner Voronoi assignment, every selected edge can claim reachable interior.
+    const thinBoundary = new Uint8Array(mask.length); // Boundary pixels with no adjacent non-boundary garment core are thin cloth, not a perimeter wall; wide expansion is allowed to consume them.
+    for (let index = 0; index < boundaryMask.length; index++) {
+      if (!boundaryMask[index] || !mask[index]) continue;
+      const x = index % width, y = Math.floor(index / width);
+      let touchesInteriorCore = false;
+      for (let oy = -1; oy <= 1 && !touchesInteriorCore; oy++) for (let ox = -1; ox <= 1; ox++) {
+        if (!ox && !oy) continue;
+        const nx = x + ox, ny = y + oy;
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+        const neighbor = ny * width + nx;
+        if (mask[neighbor] && !boundaryMask[neighbor]) { touchesInteriorCore = true; break; }
+      }
+      thinBoundary[index] = touchesInteriorCore ? 0 : 1;
+    }
     const heapIndex = [], heapDistance = [];
 
     function heapPush(index, value) {
@@ -387,7 +401,7 @@ Overpass → not set</div>
         if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
         const neighbor = ny * width + nx;
         if (!mask[neighbor]) continue;
-        if (boundaryMask[neighbor] && !selectedBoundary[neighbor]) continue; // Never creep sideways through unselected outline sections; expansion may only leave selected contour seeds into the interior.
+        if (boundaryMask[neighbor] && !selectedBoundary[neighbor] && !thinBoundary[neighbor]) continue; // Broad unselected perimeter remains a wall; contour-only thin cloth has no interior behind it, so inward expansion may consume it instead of stranding brown slivers.
         const candidate = current.value + (ox && oy ? SQRT2 : 1);
         if (candidate + 0.0001 >= distance[neighbor]) continue;
         distance[neighbor] = candidate;
@@ -1776,7 +1790,7 @@ Overpass → not set</div>
   };
 
   window.__patternEditorDebug = () => ({ // Mobile-visible console substitute for checking the dev tool's two-slot state.
-    mostRecentChange: 'Trim preview and paint-editor loading now treat saved authorOps as authoritative and reconstruct the mask directly from the operation journal. Exported motif PNGs are no longer required for editor preview; they remain runtime/export artifacts.',
+    mostRecentChange: 'Expand Inward now distinguishes broad perimeter contour from contour-only thin cloth. Unselected outline pixels that border a true interior core still block sideways creep; 1–2px garment strips with no interior core are fillable so large inward expansions cannot leave permanent brown slivers.',
     previewMode: $('previewMode').value,
     weavingBackground: $('surfaceTexture').value,
     overpassClearanceMultiplier: clampOverpassClearance($('overpassClearance').value),
