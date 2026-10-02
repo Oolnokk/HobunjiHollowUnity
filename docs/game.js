@@ -3703,50 +3703,12 @@
         return { ok: true, message: `${def?.icon || '🪑'} ${def?.name || 'Furniture'} rotated 45°.` };
       }
 
-      function refreshFarmFurnitureSurfaceElevation() {
-        let decorative = 0; // Count returned to runtime/mobile diagnostics after re-grounding existing outdoor decor.
-        for (const obj of interiorFurnitureObjects) {
-          if (obj?.area !== 'farm' || !obj.mesh?.position) continue;
-          const def = DECORATIVE_FURNITURE_DEFS[obj.key];
-          const { fw, fd } = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0);
-          const centerX = obj.col + fw * 0.5; // Existing decor center resampled whenever the house/barn footprint changes.
-          const centerZ = obj.row + fd * 0.5; // Existing decor center paired with centerX for the refreshed heightfield.
-          const surfaceY = farmSurfaceYAtWorld(centerX, centerZ); // New live surface after a nearby building move/build/demolish.
-          obj.mesh.position.y = surfaceY;
-          if (obj.light?.position) obj.light.position.y = surfaceY + (def?.light?.height || 0.6);
-          decorative++;
-        }
-        let processing = 0; // Count returned with decorative so diagnostics cover both outdoor furniture registries.
-        for (const obj of processingFurnitureObjects) {
-          if (!obj?.mesh?.position) continue;
-          obj.mesh.position.y = farmSurfaceYAtWorld(obj.col + 0.5, obj.row + 0.5);
-          processing++;
-        }
-        return { decorative, processing };
-      }
-
-      function farmFurnitureSurfaceElevationDebug() {
-        const decorate = obj => {
-          const size = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0); // Current rotated footprint locates the real rendered anchor.
-          const x = obj.col + size.fw * 0.5; // Debug X for comparing actual mesh Y with the shared farm surface.
-          const z = obj.row + size.fd * 0.5; // Debug Z paired with x for the same comparison.
-          return { id: obj.id, key: obj.key, col: obj.col, row: obj.row, actualY: obj.mesh?.position?.y ?? null, targetY: farmSurfaceYAtWorld(x, z) };
-        };
-        return {
-          samplerReady: typeof window.HobunjiFarmSubtleElevation?.sampleHeightAt === 'function',
-          decorative: interiorFurnitureObjects.filter(obj => obj?.area === 'farm').map(decorate),
-          processing: [...processingFurnitureObjects].map(obj => ({
-            id: obj.id, key: obj.furnitureKey, col: obj.col, row: obj.row,
-            actualY: obj.mesh?.position?.y ?? null,
-            targetY: farmSurfaceYAtWorld(obj.col + 0.5, obj.row + 0.5),
-          })),
-        };
-      }
-
-      window.HobunjiFurnitureSurfaceElevation = Object.freeze({
-        surfaceYAt: farmSurfaceYAtWorld,
-        refresh: refreshFarmFurnitureSurfaceElevation,
-        getDebug: farmFurnitureSurfaceElevationDebug,
+      // Outdoor furniture re-grounding (refresh/debug, exposed as
+      // window.HobunjiFurnitureSurfaceElevation) now lives in
+      // js/farm-furniture-surface-elevation.js.
+      window.FarmFurnitureSurfaceElevation.init({
+        interiorFurnitureObjects, processingFurnitureObjects, DECORATIVE_FURNITURE_DEFS,
+        decorativeFurnitureSize, farmSurfaceYAtWorld,
       });
 
       function transformFurnitureWithHousePiece(pieceId, oldRect, newRect, rotateClockwise) {

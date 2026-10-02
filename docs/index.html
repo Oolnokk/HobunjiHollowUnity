@@ -18,7 +18,7 @@
   <script src="js/dev-companion-bridge.js?v=20260930companion1"></script>
   <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
   <script src="js/GLTFLoader.js?v=20260712d"></script>
-  <script src="js/WallBuilder.js?v=20261001h58ef7ab"></script>
+  <script src="js/WallBuilder.js?v=20261002h9f31e27"></script>
   <script src="js/HousePieceGen.js?v=20261001hbe2b612&window=20260926rebase1"></script>
   <script src="js/interior-scene-builder.js?v=20260930globalground2&window=20260926rebase1"></script>
   <script src="js/building-door.js?v=20260725a"></script>
@@ -201,7 +201,7 @@
   <!-- Procedural foliage / crop geometry -->
   <script src="js/foliage-generator.js?v=20260910review1"></script>
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
-  <script src="js/procedural-furniture.js?v=20261002h3f4c557"></script>
+  <script src="js/procedural-furniture.js?v=20261002h29ecd90"></script>
   <script src="js/furniture-puzzle-properties.js?v=20260922perpiece1"></script>
   <script src="js/furniture-puzzle-runtime.js?v=20260929glowdecals1"></script>
   <!-- Loads the richer per-piece data authored by furniture-avatar-author (seat
@@ -577,6 +577,7 @@
        moveCreatureToward (window.EnemyCollisionReposition); must load before
        game.js, which calls window.EnemyCollisionReposition.init(...). -->
   <script src="js/enemy-collision-reposition.js?v=20260927reviewfix1"></script>
+  <script src="js/farm-furniture-surface-elevation.js?v=20261002hwinlift1"></script>
   <script src="js/dev-spawner.js?v=20261002h6fca74b"></script>
   <!-- Furniture Placer panel (window.FurniturePlacer) — the discoverable,
        inventory-scoped furniture selector. Choosing Place arms the shared
@@ -610,7 +611,7 @@
   <!-- Load after WeatherFX exists, but before game.js calls WeatherFX.init(), so daylight windows always capture the real overlay dependencies. -->
   <script src="js/daylight-window-runtime.js?v=20261001h93863ee"></script>
   <!-- Farmhouse windows mirror one ordinary inventory-owned wall object across the exterior/interior 2x coordinate systems and expose their silhouettes to both wall builders. -->
-  <script src="js/house-window-linkage.js?v=20261001h24e25aa"></script>
+  <script src="js/house-window-linkage.js?v=20261002ha9cb88c"></script>
   <script src="js/daylight-window-overlay-scheduler.js?v=20260926rebase1"></script>
   <!-- Three reusable, UV-scrolling rain sheets in the existing world renderer. -->
   <script src="js/rain-planes.js?v=20260809f"></script>
@@ -2563,7 +2564,7 @@
   <script src="js/shoulder-cam-pointer-lock.js?v=20260930hfc11b39"></script>
   <!-- Shared character-scoped hobunjiSaveMeta update step used by game.js's save* helpers. -->
   <script src="js/character-meta-save.js?v=20260930ench1"></script>
-  <script src="game.js?v=20261002he504b7e"></script>
+  <script src="game.js?v=20261002h57fad00"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>

@@ -220,7 +220,6 @@ assert.match(furniturePlacerSource, /filter\(obj => !obj\?\.derivedLinkedWindow\
 const linkage = read('docs/js/house-window-linkage.js'); // Farmhouse-specific pairing stays isolated from the generic daylight and wall runtimes.
 assert.match(linkage, /const INTERIOR_SCALE = 2/, 'linked windows must honor the farmhouse 2x interior coordinate scale');
 assert.match(linkage, /const BODY_TOP_SCALE = 0\.85/, 'outside counterpart mapping must honor the Highland wall taper');
-assert.match(linkage, /const EXTERIOR_HEIGHT_SCALE = 1\b/, 'farm exterior window and brick opening must retain the authored height');
 assert.match(linkage, /function exteriorWindowSilhouette/, 'exterior frame and brick opening must share one scaled silhouette calculation');
 assert.match(linkage, /const EXTERIOR_SLOT_TILES = 2/, 'window placement density must be exactly one fixed slot per two exterior wall tiles');
 assert.match(linkage, /const EXTERIOR_SLOT_V01 = 0\.5/, 'all player window slots must use one fixed mid-wall height');
@@ -341,6 +340,11 @@ async function runLinkedWindowReloadRegression() {
   };
   farmRoundTripContext.FarmEditor.init(deps);
 
+  const linkTest = farmRoundTripContext.HouseWindowLinkage.__test;
+  assert.equal(linkTest.EXTERIOR_HEIGHT_SCALE, 0.5, 'farm exterior window and brick opening are half the authored height');
+  const fullSilhouette = linkTest.windowSilhouette('wideWindow'), exteriorSilhouette = linkTest.exteriorWindowSilhouette('wideWindow');
+  assert.ok(Math.abs(exteriorSilhouette.height - fullSilhouette.height * 0.5) < 1e-9, 'exterior cut/frame height is half the interior height');
+  assert.ok(Math.abs((exteriorSilhouette.minY + exteriorSilhouette.maxY) - (fullSilhouette.minY + fullSilhouette.maxY)) < 1e-9, 'halving keeps the window centered on its attachment point');
   const threeTileSlots = farmRoundTripContext.HouseWindowLinkage.__test.exteriorSlotLayout({ start:2, end:5 });
   assert.equal(threeTileSlots.count, 1, 'three tiles of exposed wall permit exactly one window');
   assert.equal(threeTileSlots.firstCenter, 3.5, 'the single slot on an odd-length wall must be centered');

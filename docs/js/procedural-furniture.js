@@ -261,7 +261,7 @@
     return entry;
   }
   function finishPartTexture(texture, image) {
-    const fill = texture.userData.furnitureFill; // Authored fill settings retained while the PNG loads.
+    const fill = texture.userData?.furnitureFill; // Authored fill settings retained while the PNG loads.
     if (fill && typeof window.getShadeFillCanvas === 'function') {
       const hex = fill.replace('#', ''); // Used to pass the furniture fill color to the shared adaptive shade-fill pipeline.
       image = window.getShadeFillCanvas(image, `furniture:${texture.userData.furnitureTexture}:${fill}`, {
@@ -286,6 +286,7 @@
     const tex = entry.base.clone();
     tex.needsUpdate = true;
     tex.rotation = (part.materialRotationDeg || 0) * DEG;
+    tex.userData = Object.assign({}, tex.userData); // three.js r128 Textures have no userData field; give each clone its own.
     tex.userData.furnitureTexture = part.materialTexture;
     tex.userData.furnitureFill = part.materialFillMode !== 'never' && part.materialFillEnabled && /^#[0-9a-f]{6}$/i.test(part.materialFillColor || '') ? part.materialFillColor : null;
     if (!entry.loaded) entry.pendingClones.add(tex);
