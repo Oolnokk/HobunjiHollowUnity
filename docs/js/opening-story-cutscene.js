@@ -11,7 +11,7 @@
     completed: false,
     lastScene: null,
     lastError: null,
-    latestChange: 'Unfinished worlds now start the opening for their owner; completion is saved when Hunundi’s final dialogue is continued.',
+    latestChange: 'Cloud Forest rescue, speaker-tracking office camera, player dialogue choices, temple arrival and Spearhead farm tour; world exits unlock on the final farm-tour Continue.',
   };
 
   function stateKey(profile) {
@@ -141,13 +141,16 @@
       { id: 'rescue_spearhead_rush', type: 'move', actorId: 'spearhead', targetLocal: { lc: 12, lr: 8 }, speed: 'fast', next: '__next__' },
       { id: 'rescue_fade_out', type: 'fade', direction: 'out', duration: 1.2, next: '__end__' },
     ];
+    for (const actor of actors) { actor.lc -= 8; actor.lr += 1; }
+    for (const stage of stages) if (stage.targetLocal) { stage.targetLocal.lc -= 8; stage.targetLocal.lr += 1; }
     return {
       version: 6,
       title: 'Rescue',
-      mapId: 'map_northern_cliffs',
+      mapId: 'map_southern_cloud_forest',
+      localeId: 'locale_opening_rescue',
       wilderness: true,
-      footprint: { originC: 8, originR: -1, w: 17, h: 18 },
-      camera3d: { localPos: { x: 11, y: 3.5, z: 15 }, localTarget: { x: 11, y: 0.6, z: 7 } },
+      footprint: { originC: 0, originR: 0, w: 17, h: 18 },
+      camera3d: { localPos: { x: 3, y: 3.5, z: 16 }, localTarget: { x: 3, y: 0.6, z: 8 } },
       actors,
       stages,
     };
@@ -164,20 +167,20 @@
       npcActor(records, { id: 'hunundi', name: 'Father Hunundi', npcId: 'father_hunundi_hodu', worldC: 11, worldR: 8, rotation: 180, pose: 'sit', seatTarget: seatTarget(11, 8, 0) }),
       npcActor(records, { id: 'jubmir', name: 'Jubmir', npcId: 'jubmir', worldC: 7, worldR: 9, rotation: 0, pose: 'sit', seatTarget: seatTarget(7, 9, 0) }),
       npcActor(records, { id: 'spearhead', name: 'Spearhead', npcId: 'spearhead_unumanuk', worldC: 9, worldR: 9, rotation: 0, pose: 'sit', seatTarget: seatTarget(9, 9, 0) }),
-      npcActor(records, { id: 'harkharash', name: 'Surveyor Harkharash', npcId: 'khannibarri_agent', worldC: 11, worldR: 5, rotation: 180, pose: 'standing', seatTarget: seatTarget(9, 8, 0) }),
+      npcActor(records, { id: 'harkharash', name: 'Surveyor Harkhanash', npcId: 'khannibarri_agent', worldC: 11, worldR: 5, rotation: 180, pose: 'standing', seatTarget: seatTarget(9, 8, 0) }),
     ];
-    const stages = [ // The dialogue establishes amnesia, Nanjiri Farmstead, Khannibarri's offer, regional isolation, and Spearhead's resolve in one room.
+    const stages = [ // The dialogue establishes amnesia, Nanjiri Farmstead, the Company's offer, regional isolation, and Spearhead's resolve in one room.
       { id: 'meeting_fade_in', type: 'fade', direction: 'in', duration: 0.8, next: '__next__' },
       { id: 'meeting_hunundi_where', type: 'talk', speakerId: 'hunundi', text: 'Easy now. Jubmir tells me you remember your name. Do you remember where you came from?', next: '__next__' },
       { id: 'meeting_player_where', type: 'choice', speakerId: 'player', text: 'You search your memory.', options: [
         { text: "I don't know.", next: 'meeting_spearhead_family' },
-        { text: "I can't remember anything before the cliffs.", next: 'meeting_spearhead_family' },
+        { text: "Nothing before the forest.", next: 'meeting_spearhead_family' },
       ] },
       { id: 'meeting_spearhead_family', type: 'talk', speakerId: 'spearhead', text: 'Family? A village? A trade? Anything we can use to work backward?', next: '__next__' },
-      { id: 'meeting_player_nothing', type: 'talk', speakerId: 'player', text: "Nothing. I know my name, but when I reach for anything else there's just... nothing.", next: '__next__' },
+      { id: 'meeting_player_nothing', type: 'choice', speakerId: 'player', text: 'Can you recall anything?', options: [{ text: 'Only my name.', next: '__next__' }, { text: 'Nothing else.', next: '__next__' }] },
       { id: 'meeting_jubmir_belongings', type: 'talk', speakerId: 'jubmir', text: "You weren't carrying anything that told us much, either. Nothing with a name, a crest, or a place on it.", next: '__next__' },
       { id: 'meeting_hunundi_kind', type: 'talk', speakerId: 'hunundi', text: "Then we won't force an answer your mind isn't ready to give. What you need first is somewhere safe to recover.", next: '__next__' },
-      { id: 'meeting_hunundi_farm', type: 'talk', speakerId: 'hunundi', text: "The old Nanjiri Farmstead has been abandoned for some time. It needs work, but the house still stands and the land is good. You could live there, if you'd like.", next: '__next__' },
+      { id: 'meeting_hunundi_farm', type: 'talk', speakerId: 'hunundi', text: "Nanjiri Farmstead is abandoned, but the house still stands and the land is good. You could live there.", next: '__next__' },
       { id: 'meeting_player_farm', type: 'choice', speakerId: 'player', text: 'How do you answer?', options: [
         { text: 'You would let a stranger have a farm?', next: 'meeting_hunundi_answer' },
         { text: "I don't know how to repay you.", next: 'meeting_hunundi_answer' },
@@ -186,16 +189,16 @@
       { id: 'meeting_knock', type: 'caption', speakerName: '', text: 'Knock. Knock.', next: '__next__' },
       { id: 'meeting_hunundi_door', type: 'talk', speakerId: 'hunundi', text: 'Hm? Come in.', next: '__next__' },
       { id: 'meeting_hark_enter', type: 'move', actorId: 'harkharash', targetWorld: { c: 10, r: 7 }, speed: 'normal', next: '__next__' },
-      { id: 'meeting_hark_intro', type: 'talk', speakerId: 'harkharash', text: "Good evening. Surveyor Harkharash, Khannibarri Imperial Mining Company. I'm looking for the town's leader. I was told Father Hunundi was the closest thing Hobunji Hollow had.", next: '__next__' },
-      { id: 'meeting_hunundi_no_leader', type: 'talk', speakerId: 'hunundi', text: "I'm Father Hunundi. People come to me when something needs settling, but that doesn't make the Hollow mine. Sit, if you've come all this way.", next: '__next__' },
+      { id: 'meeting_hark_intro', type: 'talk', speakerId: 'harkharash', text: "Surveyor Harkhanash, the Imperial Khanibarri Mining Company. I'm looking for Father Hunundi — the nearest thing to a leader here, I'm told.", next: '__next__' },
+      { id: 'meeting_hunundi_no_leader', type: 'talk', speakerId: 'hunundi', text: "I'm Father Hunundi. I help settle disputes; the Hollow isn't mine. Have a seat.", next: '__next__' },
       { id: 'meeting_hark_to_seat', type: 'move', actorId: 'harkharash', targetWorld: { c: 9, r: 8 }, speed: 'normal', next: '__next__' },
       { id: 'meeting_hark_sit', type: 'animation', actorId: 'harkharash', animKind: 'none', resultPose: 'sit', duration: 0.35, next: '__next__' },
-      { id: 'meeting_hark_offer', type: 'talk', speakerId: 'harkharash', text: 'Our surveys indicate a very substantial ore body beneath this valley. Extraction on the scale justified by the deposit would require the land Hobunji Hollow presently occupies. Khannibarri would like to purchase the settlement and the relevant surrounding claims.', next: '__next__' },
-      { id: 'meeting_hunundi_people', type: 'talk', speakerId: 'hunundi', text: "Something like that is up to the townsfolk, not me. And I think you'll find it takes quite a lot of convincing to make people give up a place their families have called home for generations.", next: '__next__' },
+      { id: 'meeting_hark_offer', type: 'talk', speakerId: 'harkharash', text: 'Our surveys found substantial ore beneath this valley. The Company would like to buy the settlement and the surrounding claims to extract it.', next: '__next__' },
+      { id: 'meeting_hunundi_people', type: 'talk', speakerId: 'hunundi', text: "That is up to the townsfolk. Their families have lived here for generations. They won't give it up lightly.", next: '__next__' },
       { id: 'meeting_hark_practical', type: 'talk', speakerId: 'harkharash', text: 'With respect, Father, I was hoping the nearest thing to a leader might also be the nearest thing to a practical man.', next: '__next__' },
-      { id: 'meeting_hark_trade', type: 'talk', speakerId: 'harkharash', text: "Fewer Slagothim traders are willing to make this journey every year. They say there's a ghost army in the mountains. Ghosts. I don't put much stock in that sort of thing, but there's no reasoning peasants and Slagothim out of a superstition once they've taken to it.", next: '__next__' },
+      { id: 'meeting_hark_trade', type: 'talk', speakerId: 'harkharash', text: "Fewer Slagothim traders come each year. They talk of a ghost army in the mountains. There's no reasoning peasants and Slagothim out of superstition.", next: '__next__' },
       { id: 'meeting_hark_bandits', type: 'talk', speakerId: 'harkharash', text: "And even if one indulges the ghosts, the bandit clans are real enough. So is the barbarian war. Every road to this place becomes less attractive by the season.", next: '__next__' },
-      { id: 'meeting_hark_leverage', type: 'talk', speakerId: 'harkharash', text: 'Khannibarri can give every villager a cut of the sale. Enough to move out of the mountains and start living in the 12th century with the rest of the continent.', next: '__next__' },
+      { id: 'meeting_hark_leverage', type: 'talk', speakerId: 'harkharash', text: 'The Company can give every villager a cut of the sale. Enough to move out of the mountains and start living in the 12th century with the rest of the continent.', next: '__next__' },
       { id: 'meeting_spearhead_stand', type: 'animation', actorId: 'spearhead', animKind: 'none', resultPose: 'standing', duration: 0.25, next: '__next__' },
       { id: 'meeting_spearhead_step', type: 'move', actorId: 'spearhead', targetWorld: { c: 8, r: 8 }, speed: 'fast', next: '__next__' },
       { id: 'meeting_spearhead_turn', type: 'turn', actorId: 'spearhead', mode: 'actor', targetActorId: 'harkharash', duration: 0.25, next: '__next__' },
@@ -214,10 +217,70 @@
       version: 6,
       title: "Father Hunundi's Room",
       mapId: 'map_i_temple_basement_hunundi',
-      camera3d: { worldPos: { x: 10.5, y: 3.0, z: 13.2 }, worldTarget: { x: 9.7, y: 0.8, z: 8.3 } },
+      cinematicCameraId: 'hunundi_office_wall',
       actors,
       stages,
     };
+  }
+
+  function tourKey(profile) {
+    return stateKey(profile) + ':farm-tour'; // Farm introduction and exit permissions belong to the same world as the rescue.
+  }
+
+  function tourComplete(profile) {
+    try { return localStorage.getItem(tourKey(profile)) === 'complete'; } catch (_) { return false; }
+  }
+
+  function needsTempleArrival(profile) {
+    return profile?.isWorldOwner === true && !tourComplete(profile);
+  }
+
+  function canEnterWilderness(profile = window.__hobunjiPlayerProfile) {
+    return profile?.isWorldOwner !== true || tourComplete(profile);
+  }
+
+  function buildFarmTourScene(records, profile, points) {
+    const entry = points.entry; // Current farm arrival tile; the real player remains parked here during the authored tour.
+    const porch = points.porch; // Shared farmhouse door resolver supplies the final stop instead of a hardcoded house coordinate.
+    return {
+      version: 6, title: 'Nanjiri Farmstead', mapId: 'farm',
+      actors: [
+        { id: 'player', name: profile?.nickname || 'Farmer', isPlayer: true, worldC: entry.c, worldR: entry.r, pose: 'standing' },
+        npcActor(records, { id: 'spearhead', name: 'Spearhead', npcId: 'spearhead_unumanuk', worldC: points.guide.c, worldR: points.guide.r, pose: 'standing' }),
+      ],
+      stages: [
+        { id: 'farm_intro', type: 'talk', speakerId: 'spearhead', text: "Here we are. Nanjiri Farmstead. It's been left to itself for a while, but there's good land under all this mess.", next: '__next__' },
+        { id: 'farm_choice', type: 'choice', speakerId: 'player', text: 'What do you make of it?', options: [{ text: 'Where should I start?', next: '__next__' }, { text: 'It has possibilities.', next: '__next__' }] },
+        { id: 'farm_walk_guide', type: 'move', actorId: 'spearhead', targetWorld: { c: porch.c, r: porch.r }, speed: 'normal', navigate: true, waitForArrival: false, next: '__next__' },
+        { id: 'farm_walk_player', type: 'move', actorId: 'player', targetWorld: { c: points.playerPorch.c, r: points.playerPorch.r }, speed: 'normal', navigate: true, next: '__next__' },
+        { id: 'farm_house', type: 'talk', speakerId: 'spearhead', text: "The house is a mess inside. Last time I checked, though, the bed was still intact. Get some rest before you try clearing everything out.", next: '__next__' },
+        { id: 'farm_reply', type: 'choice', speakerId: 'player', text: 'How do you answer?', options: [{ text: 'A bed sounds good.', next: '__next__' }, { text: 'Thank you for showing me.', next: '__next__' }] },
+        { id: 'farm_tour_final', type: 'talk', speakerId: 'spearhead', text: "You've got a roof and room to start again. Take your time. I'll see you around the Hollow.", next: '__end__' },
+      ],
+    };
+  }
+
+  async function onFarmEntered(profile = window.__hobunjiPlayerProfile) {
+    if (profile?.isWorldOwner !== true || tourComplete(profile) || readProgress(profile) !== 'complete' || status.running) return false;
+    status.running = true;
+    status.phase = 'farm-tour';
+    try {
+      const runtime = await waitForGameRuntime(); // Tour uses the same live stage engine, input lock and cleanup as the opening.
+      const records = await loadNpcRecords(); // Reuses canonical Spearhead and the selected player appearance.
+      await runtime.run(buildFarmTourScene(records, profile, runtime.farmTourPoints()), {
+        placePlayerAtFinalPosition: true, // The owner resumes beside the house after walking there during the tour.
+        onDialogueContinue(stage) {
+          if (stage.id === 'farm_tour_final') localStorage.setItem(tourKey(profile), 'complete');
+        },
+      });
+      status.phase = tourComplete(profile) ? 'farm-tour-complete' : 'farm-tour-interrupted';
+      return tourComplete(profile);
+    } catch (error) {
+      status.lastError = error?.message || String(error);
+      status.phase = 'error';
+      log('farm introduction failed: ' + status.lastError, 'error');
+      return false;
+    } finally { status.running = false; }
   }
 
   async function play(profile, options = {}) {
@@ -230,7 +293,7 @@
 
     try {
       const runtime = await waitForGameRuntime(); // Uses the game-owned live wrapper around the existing Director stage engine.
-      const records = await loadNpcRecords(); // Resolves Jubmir/Hunundi/Spearhead/Harkharash from the authoritative database.
+      const records = await loadNpcRecords(); // Resolves Jubmir/Hunundi/Spearhead/Harkhanash from the authoritative database.
       const rescue = buildRescueScene(records, profile); // Scene one preserves the already-authored Gar-wolf rescue blocking.
       const meeting = buildHunundiMeetingScene(records, profile); // Scene two uses Hunundi's real bedroom/study map and chair transforms.
       status.phase = 'rescue';
@@ -250,8 +313,9 @@
         },
       });
       if (!finalDialogueContinued) throw new Error('Opening ended before Hunundi’s final dialogue was continued.');
+      await runtime.placeOutsideTemple?.();
       status.phase = 'complete';
-      log('opening sequence complete');
+      log('opening sequence complete; awaiting the farm introduction');
       return true;
     } catch (error) {
       status.phase = 'error';
@@ -283,7 +347,8 @@
     buildRescueScene,
     buildHunundiMeetingScene,
     play: (profile = window.__hobunjiPlayerProfile) => play(profile, { replay: true }),
-    debugSnapshot: () => ({ ...status }),
+    debugSnapshot: () => ({ ...status, farmTourComplete: tourComplete(window.__hobunjiPlayerProfile), wildernessUnlocked: canEnterWilderness() }),
     stateKey,
+    tourKey, needsTempleArrival, canEnterWilderness, onFarmEntered, buildFarmTourScene,
   });
 })();

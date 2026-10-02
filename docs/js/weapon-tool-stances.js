@@ -707,6 +707,7 @@
     getRuntimeState,
     debugSnapshot,
     lastHolderMatrixWorld: () => lastBakedHolderMatrixWorld ? lastBakedHolderMatrixWorld.clone() : null,
+    invalidateHolderMatrixWorld: () => { lastBakedHolderMatrixWorld = null; }, // Map/cinematic handoffs discard world-space sockets from the outgoing scene.
     poses: idleStances,
   };
 })();

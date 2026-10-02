@@ -268,6 +268,16 @@
     },
   };
 
+  SPECIES_DATA.mammakhbuur = JSON.parse(JSON.stringify(SPECIES_DATA.mashtzarr));
+  SPECIES_DATA.mammakhbuur.label = 'Mammakhbuur';
+  SPECIES_DATA.mammakhbuur.genders = ['male', 'female'];
+  SPECIES_DATA.mammakhbuur.female = JSON.parse(JSON.stringify(SPECIES_DATA.mashtzarr.female || SPECIES_DATA.mashtzarr.male));
+  for (const gender of SPECIES_DATA.mammakhbuur.genders) {
+    const authored = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.species?.mashtzarr?.[gender]; // Creator uses the matching donor gender's existing cosmetic choices.
+    if (authored?.slots) SPECIES_DATA.mammakhbuur[gender].slots = JSON.parse(JSON.stringify(authored.slots));
+    SPECIES_DATA.mammakhbuur[gender].colorOptions = bodyPalette('mashtzarr', gender);
+  }
+
   // Clothing slots for collections tab (mirrors scratchbones shop catalog categories)
   const CLOTHING_SLOTS = [
     { key: 'hat',      label: '🎩 Hat',      category: 'hat' },

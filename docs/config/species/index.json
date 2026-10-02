@@ -49,6 +49,11 @@
       "speciesId": "mashtzarr",
       "label": "Mashtzarr",
       "path": "./mashtzarr.json"
+    },
+    {
+      "speciesId": "mammakhbuur",
+      "label": "Mammakhbuur",
+      "path": "./mammakhbuur.json"
     }
   ]
 }

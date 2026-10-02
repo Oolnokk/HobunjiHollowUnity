@@ -152,7 +152,7 @@
       window.SCRATCHBONES_CONFIG.game.assets.portrait.configBase = './config/';
     }
   </script>
-  <script src="js/portrait-utils.js?v=20260926hoodback2"></script>
+  <script src="js/portrait-utils.js?v=20261002hfa4d559"></script>
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20260930ha019a52"></script>
   <script src="js/png-plane-avatar.js?v=20260926hskelhairalign1"></script>
@@ -164,7 +164,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20260924shoulderocclusion1"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261001cc4ca767"></script>
+  <script src="js/held-action-animations.js?v=20261002h089354c"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
   <script src="js/character-action-locks.js?v=20261002h69592ed"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
@@ -263,7 +263,7 @@
   <script src="js/combat/impact-ragdoll-playback.js?v=20260828b"></script>
   <script src="js/combat/combat-enemy-telegraph.js?v=20260926combatreview1"></script>
   <script src="js/combat/combat-animal-attacks.js?v=20261001quickdebuff2"></script>
-  <script src="js/combat/combat-loadout.js?v=20260925heldmode1"></script>
+  <script src="js/combat/combat-loadout.js?v=20261002h489e3bf"></script>
   <script src="js/combat/combat-progression.js?v=20261001quickdebuff2"></script>
   <!-- Shared player-attack event context (prepare/hit/defensive) published by every
        ability module; Enchantments and future cross-cutting systems observe it. -->
@@ -950,6 +950,7 @@
       </div>
       <div class="fed-section" id="mapEditCameraSection" style="display:none;">
         <div class="fed-label">Cinematic cameras</div>
+        <label><input type="checkbox" id="mapEditShowCameras" checked> Show cinematic cameras</label>
         <div class="fed-grid" id="mapEditCameraList"></div>
         <button class="fed-action-btn" id="mapEditCameraStagePlayerBtn" style="display:none;margin-top:7px">Player repositioning: Off</button>
         <div class="map-edit-detail">Gold camera markers are visible only during Map Edit. Tap a name or use Click to Select, then Move/Rotate the real runtime shot. Player repositioning is off by default for cinematic cameras.</div>
@@ -2417,7 +2418,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20260927inputclaim1"></script>
+  <script src="js/pixel-probe.js?v=20261002ha819ebe"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2425,7 +2426,7 @@
        openNpcDialogue/closeNpcDialogue (camera/staging/save) stay in
        game.js and call into this module. -->
   <!-- Authored world-space dialogue/cutscene cameras. Must load before DialogueContent/game.js. -->
-  <script src="js/cinematic-camera-runtime.js?v=20260925reviewfix1"></script>
+  <script src="js/cinematic-camera-runtime.js?v=20261002h08966d9"></script>
   <script src="js/dialogue-camera-framing.js?v=20260926a"></script>
   <script src="js/dialogue-templates.js?v=20260929mastery1"></script>
   <script src="js/dialogue-rich-text.js?v=20260929colors1"></script>
@@ -2564,9 +2565,9 @@
   <script src="js/shoulder-cam-pointer-lock.js?v=20260930hfc11b39"></script>
   <!-- Shared character-scoped hobunjiSaveMeta update step used by game.js's save* helpers. -->
   <script src="js/character-meta-save.js?v=20260930ench1"></script>
-  <script src="game.js?v=20261002h779c27c"></script>
+  <script src="game.js?v=20261002hb01bf4e"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
-  <script src="js/opening-story-cutscene.js?v=20261002h11dfae1"></script>
+  <script src="js/opening-story-cutscene.js?v=20261002he8eed93"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>

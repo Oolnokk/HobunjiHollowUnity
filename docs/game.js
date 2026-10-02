@@ -10748,6 +10748,7 @@
         else pool = area === 'town' ? worldTownTransitions : worldTransitions;
         const t = pool.find(x =>
           (_isBuildingArea(area) || _isZoneArea(area) || x.area === area) && x.col === pc && x.row === pr &&
+          (x.target !== 'zone' || window.OpeningStoryCutscene?.canEnterWilderness?.(_playerData) !== false) &&
           (!x.requiresKeyItem || !!window.KeyItemSystem?.has?.(x.requiresKeyItem)) &&
           (x.target === 'building' ? !!x.targetMapId : x.target === 'zone' ? !!x.targetMapId : x.target === 'exit_building' ? true : (Number.isFinite(x.targetCol) && Number.isFinite(x.targetRow)))) || null;
         _pendingSpotTransition = t;
@@ -10820,6 +10821,7 @@
         _snapCameraTarget();
         _transitionLatch = travelAreaKey();
         if (t.target !== 'building' && t.target !== 'exit_building') logMapSwap('travel', currentArea, { target: t.target || 'farm' });
+        if (currentArea === 'farm') queueMicrotask(() => window.OpeningStoryCutscene?.onFarmEntered?.());
       }
 
 
@@ -14278,6 +14280,10 @@
 
       // ── Exterior zones (Northern Cliffs / Southern Cloud Forest) ──────
       async function enterZone(mapId, defaultCol, defaultRow) {
+        if (!cutscenePreviewActive && window.OpeningStoryCutscene?.canEnterWilderness?.() === false) {
+          showToast('Visit your farm with Spearhead before heading into the wilderness.', true);
+          return;
+        }
         // A Tothal Shift in progress is about to replace this zone's layout —
         // wait for it so the player lands on the freshly reshaped map instead
         // of whatever was cached (or authored) a moment before the shift.
@@ -15415,6 +15421,7 @@
           toScene.add(reticleRingMesh);
           toScene.add(reticleWavyGroup);
           refreshActionBar();
+          if (currentArea === 'farm') queueMicrotask(() => window.OpeningStoryCutscene?.onFarmEntered?.());
         });
       }
 
@@ -29844,6 +29851,8 @@
         const _quickResumed = !window.__hobunjiCutscenePreview && await window.HobunjiQuickSave?.restoreResume?.(playerData);
         if (_quickResumed) {
           // Placement already applied.
+        } else if (!window.__hobunjiCutscenePreview && window.OpeningStoryCutscene?.needsTempleArrival?.(playerData)) {
+          await placeOpeningPlayerOutsideTemple();
         } else if (_lastPos && _isZoneArea(_lastPos.area) && _resumeCampfire?.mapId === _lastPos.area
             && Number.isFinite(_lastPos.x) && Number.isFinite(_lastPos.y)) {
           await enterZone(_lastPos.area, Math.floor(_lastPos.x / TILE), Math.floor(_lastPos.y / TILE));
@@ -29966,11 +29975,48 @@
         const previousCameraMode = activeCameraMode; // Restored with previousArea after live playback completes.
         const previousCameraTarget = activeCameraTarget; // Restored with the prior camera mode so gameplay resumes on the real player target.
         const liveLock = liveMode ? window.CharacterActionLocks?.acquire?.({ owner: 'authored-cutscene', reason: payload.title || 'story cutscene', participants: [{ id: 'player', channels: ['movement', 'tools', 'actions'] }] }) : null; // Prevents real-player input from mutating the hidden gameplay actor while stand-ins own the screen.
+        const entities = new Map(); // Temporary cinematic actor rigs also belong to the setup-failure cleanup path.
+        const previousBuildingMapId = _currentBuildingMapId; // Restores building context as well as the active area.
+        const previousPlayerParent = playerMesh.parent; // Real player hierarchy stays independent of temporary cinematic stand-ins.
+        const previousToolParent = toolHolder.parent; // Held tools live at scene level and must return with the actual player.
+        const previousToolPosition = toolHolder.position.clone(); // Restores the pre-cinematic scene-space held-tool pose.
+        const previousToolQuaternion = toolHolder.quaternion.clone(); // Restores the pre-cinematic held-tool orientation.
         const hiddenLiveWalkers = []; // Saves visibility for scheduled NPCs whose canonical ids are represented by temporary cutscene stand-ins.
         let resolveCompletion = null; // Completed by finish() so live story code can await an interactive multi-card scene rather than merely its initial scheduling.
         const completionPromise = new Promise(resolve => { resolveCompletion = resolve; }); // Public completion signal used by sequential authored scenes.
         const report = (text, isError) => { if (!liveMode) window.CutscenePreviewHelpers.cutscenePreviewBanner(text, isError); }; // Keeps the Director's Exit Preview banner out of real story cinematics.
         const releaseLiveLock = () => { liveLock?.release?.(); }; // Shared cleanup for normal completion and pre-stage load failures.
+        const restoreLiveGameplay = () => {
+          if (!liveMode) return;
+          if (runtimeOptions.placePlayerAtFinalPosition && currentArea === previousArea) {
+            const finalPlayer = entities.get('player'); // Transfers the live farm-tour stand-in's final scene position to the real player.
+            if (finalPlayer?.root) {
+              player.x = finalPlayer.root.position.x * TILE; player.y = finalPlayer.root.position.z * TILE;
+              player.angle = Math.PI / 2 - finalPlayer.root.rotation.y; facingAngle = player.angle;
+              playerMesh.position.copy(finalPlayer.root.position);
+            }
+          }
+          for (const entity of entities.values()) {
+            if (entity?.kind === 'creature' && entity.creature) despawnCreature(entity.creature);
+            else {
+              entity.walker?.legs?.dispose?.();
+              if (entity.walker?.avatarGroup) window.PNGPlaneAvatar?.disposeAvatarModel?.(entity.walker.avatarGroup);
+              entity?.root?.parent?.remove?.(entity.root);
+            }
+          }
+          entities.clear();
+          currentArea = previousArea; // Hand synchronization must resolve the restored gameplay scene.
+          window.CinematicCameraRuntime?.deactivate?.();
+          _currentBuildingMapId = previousBuildingMapId;
+          previousPlayerParent?.add(playerMesh);
+          previousToolParent?.add(toolHolder);
+          toolHolder.position.copy(previousToolPosition);
+          toolHolder.quaternion.copy(previousToolQuaternion);
+          window.WeaponToolStances?.invalidateHolderMatrixWorld?.();
+          playerMesh.updateMatrixWorld(true);
+          toolHolder.updateMatrixWorld(true);
+          window.ProceduralHandFrameDriver?.syncNow?.();
+        }; // One cleanup path releases procedural rigs and restores player-owned transforms on success and setup failure.
         cutscenePreviewActive = true;
         cutscenePreviewZoomPercent = 100;
         report(`🎬 ${payload.title || 'Cutscene Preview'} — loading…`, false);
@@ -30013,7 +30059,12 @@
             buildZoneScene(area);
             const fp = payload.footprint || {};
             const fw = Math.max(1, Math.ceil(fp.w || 6)), fh = Math.max(1, Math.ceil(fp.h || 6));
-            const anchor = window.CutscenePreviewHelpers.findZonePlacementFootprint(area, fw, fh);
+            const locale = payload.localeId ? (_zoneLayouts.get(area)?.localeInstances || []).find(instance => instance.localeId === payload.localeId) : null; // Prefer the reserved authored story clearing already stamped by the Tothal generator.
+            const anchor = locale ? { col: locale.x, row: locale.y } : window.CutscenePreviewHelpers.findZonePlacementFootprint(area, fw, fh);
+            if (anchor && payload.localeId && !locale) { // Cached older worlds can adopt a clear site without regenerating any existing terrain or destroying camps.
+              const layout = _zoneLayouts.get(area);
+              if (layout) { layout.localeInstances ||= []; layout.localeInstances.push({ localeId: payload.localeId, name: 'Cloud Forest Rescue Clearing', x: anchor.col, y: anchor.row, w: fw, h: fh }); }
+            }
             if (!anchor) {
               const placementError = new Error(`Could not find a clear ${fw}×${fh} spot for this scene on "${payload.mapId}".`); // Stops the live opening before actors are spawned onto blocked wilderness terrain.
               report(placementError.message, true);
@@ -30156,7 +30207,7 @@
             walker.root.visible = false;
           }
         }
-        const entities = new Map(); // actorId -> { kind:'npc'|'creature'|'placeholder', root, ... }
+        // entities is owned by both successful and failed live cleanup.
         for (const actor of (payload.actors || [])) {
           let entity = null;
           try {
@@ -30208,6 +30259,11 @@
           } catch (e) { console.error('[cutscene preview] actor spawn failed for', actor.name, e); }
           if (!entity) entity = window.CutscenePreviewHelpers.cutscenePreviewMakePlaceholder(actor, area, targetScene);
           entities.set(actor.id, entity);
+        }
+
+        if (payload.cinematicCameraId) {
+          const speaker = entities.get((payload.stages || []).find(stage => stage.type === 'talk')?.speakerId); // Gives the opening fade the same wall shot as later dialogue.
+          window.CinematicCameraRuntime?.activate?.(area, payload.cinematicCameraId, { reason: 'authored-cutscene', targetWalker: speaker?.walker });
         }
 
         // ── Stage engine ──────────────────────────────────────────────
@@ -30333,10 +30389,7 @@
           cutscenePreviewZoomPercent = 100; // Never leak an authored zoom into normal gameplay afterward.
           cutscenePreviewDialogueSpeaker = null;
           if (liveMode) {
-            for (const entity of entities.values()) { // Removes only the temporary stand-ins spawned by this authored run; scheduled/live NPC walkers are separate objects.
-              if (entity?.kind === 'creature' && entity.creature) despawnCreature(entity.creature);
-              else entity?.root?.parent?.remove?.(entity.root);
-            }
+            restoreLiveGameplay();
             for (const hidden of hiddenLiveWalkers) if (hidden.walker?.root) hidden.walker.root.visible = hidden.visible; // Re-exposes the real scheduled NPCs after their cinematic doubles are gone.
             hiddenLiveWalkers.length = 0;
             currentArea = previousArea;
@@ -30362,7 +30415,9 @@
           dialogueOpen = true;
           _dialogueWalker = entity?.kind === 'npc' ? entity.walker : null; // Reuse the actual world walker so dialogue expression refreshes target the visible avatar, never a detached viewport portrait.
           cutscenePreviewDialogueSpeaker = entity || null;
-          if (!options.preserveCamera) {
+          if (payload.cinematicCameraId && entity?.walker) {
+            window.CinematicCameraRuntime?.activate?.(area, payload.cinematicCameraId, { reason: 'authored-cutscene', targetWalker: entity.walker });
+          } else if (!options.preserveCamera) {
             activeCameraMode = entity?.kind === 'creature' ? dlgModeKeyCreature : dlgModeKey;
             activeCameraTarget = { position: (entity || entities.values().next().value)?.root.position || new THREE.Vector3() };
           }
@@ -30458,6 +30513,9 @@
           const speedMul = stage.speed === 'slow' ? 0.6 : stage.speed === 'fast' ? 1.85 : 1;
           const waitForArrival = stage.waitForArrival !== false;
           const tx = goal.c + 0.5, tz = goal.r + 0.5;
+          const navigation = stage.navigate ? window.TilePathfinding?.findPath(Math.round(st.c), Math.round(st.r), goal.c, goal.r,
+            (c, r) => isNpcTileWalkable(area, c, r), { bounds: window.TilePathfinding.boxAround(Math.round(st.c), Math.round(st.r), goal.c, goal.r, 8) }) : null; // Farm tours use the existing NPC grid authority to walk around furnishings and obstacles.
+          let waypoint = navigation?.length > 1 ? 1 : 0; // Advances through the ordinary path without adding a new frame driver.
           let lastT = performance.now();
           let arrivedAlready = false;
           externallyDrivenActorIds.add(stage.actorId); // advanceActorToward below owns rotation until arrival
@@ -30492,8 +30550,12 @@
             const now = performance.now();
             const dt = Math.min(0.05, (now - lastT) / 1000);
             lastT = now;
-            const arrived = advanceActorToward(stage.actorId, tx, tz, dt, speedMul);
-            if (arrived) { onArrive(); return; }
+            const node = navigation?.[waypoint]; // Authored wilderness blocking remains a direct move; opted-in tours follow the path.
+            const arrived = advanceActorToward(stage.actorId, node ? node.c + 0.5 : tx, node ? node.r + 0.5 : tz, dt, speedMul);
+            if (arrived) {
+              if (navigation && waypoint < navigation.length - 1) waypoint++;
+              else { onArrive(); return; }
+            }
             requestAnimationFrame(step);
           };
           requestAnimationFrame(step);
@@ -30751,6 +30813,7 @@
           for (const hidden of hiddenLiveWalkers) if (hidden.walker?.root) hidden.walker.root.visible = hidden.visible; // Error paths must never strand a real NPC hidden after a failed stand-in spawn.
           hiddenLiveWalkers.length = 0;
           if (liveMode) {
+            restoreLiveGameplay();
             currentArea = previousArea; // Mirrors successful cleanup so a load/setup failure cannot strand normal gameplay on the cinematic area.
             activeCameraMode = previousCameraMode;
             activeCameraTarget = previousCameraTarget;
@@ -30766,7 +30829,44 @@
         }
       }
 
+      async function placeOpeningPlayerOutsideTemple() {
+        if (!townGrid) await window.CutscenePreviewHelpers.cutscenePreviewWaitForArea('__townGrid__', 15000, () => !!townGrid);
+        buildTownScene();
+        let entrance = worldTownTransitions.find(spot => spot.targetMapId === 'map_i_temple'); // Uses the live authored town door if its piece is already loaded.
+        if (!entrance) {
+          const building = (_townZone?.buildings || []).find(record => /temple/i.test(record.label || '') || /temple/.test(record.pieceFile || '')); // Finds the same town building the renderer uses.
+          if (!building) throw new Error('The town has no authored temple building.');
+          const response = await fetch(building.pieceFile); // Uses the existing authored piece door resolver, including building rotation.
+          if (!response.ok) throw new Error('Temple piece could not be loaded.');
+          const piece = await response.json(); // Supplies the canonical door footprint rather than an approximate wall position.
+          const door = window.BuildingDoor.doorWorldFromBuilding(window.BuildingDoor.resolveDoorEntrance(piece), building.gridX, building.gridZ, building.rotationDeg || building.rotation || 0, townGrid.length - 1);
+          entrance = { col: door.col, row: door.row };
+        }
+        const approach = [[1,0],[-1,0],[0,1],[0,-1]].map(([dc,dr]) => ({ col: entrance.col + dc, row: entrance.row + dr })).find(point => townGrid[point.row]?.[point.col] && !isSolid(townGrid[point.row][point.col].type)); // Stands outside the door trigger on a real walkable tile.
+        if (!approach) throw new Error('Temple door has no walkable approach.');
+        enterTown(approach.col, approach.row);
+        _transitionLatch = travelAreaKey();
+        window.WeaponToolStances?.invalidateHolderMatrixWorld?.();
+      }
+
+      function openingFarmTourPoints() {
+        const entry = { c: Math.floor(player.x / TILE), r: Math.floor(player.y / TILE) }; // Starts where the owner actually entered the farm.
+        const rawPorch = window.FarmhouseLoginSpawn?.frontDoor?.()?.approach || entry; // Shares the live house-piece door/approach computation.
+        const openNear = (point, exclude) => {
+          for (let radius = 0; radius < 5; radius++) for (let dr = -radius; dr <= radius; dr++) for (let dc = -radius; dc <= radius; dc++) {
+            const c = point.c + dc, r = point.r + dr; // Searches only ordinary walkable farm tiles and avoids actor overlap.
+            if (exclude?.c === c && exclude?.r === r) continue;
+            if (grid[r]?.[c] && !isSolid(grid[r][c].type) && !grid[r][c].incline && !getWorldObjectAt(c, r)) return { c, r };
+          }
+          throw new Error('Farm introduction has no nearby walkable stop.');
+        };
+        const porch = openNear(rawPorch); // Keeps the guide clear of later player-authored junk and house walls.
+        return { entry, guide: openNear(entry, entry), porch, playerPorch: openNear(porch, porch) };
+      }
+
       window.AuthoredCutsceneRuntime = Object.freeze({
+        placeOutsideTemple: placeOpeningPlayerOutsideTemple,
+        farmTourPoints: openingFarmTourPoints,
         run: (payload, options = {}) => runCutscenePreview(payload, { ...options, live: true }), // Plays Director-format payloads as real gameplay cinematics with cleanup/restoration.
         debugSnapshot: () => ({ active: !!cutscenePreviewActive, currentArea, zoomPercent: cutscenePreviewZoomPercent }), // Mobile/debug-panel callers can inspect live cinematic ownership without a console.
       });

@@ -47,7 +47,24 @@ const profile = { nickname: 'Test Farmer', characterId: 'char_test', worldId: 'w
 const rescue = api.buildRescueScene(records, profile); // Materializes the first scene without triggering runtime side effects.
 const meeting = api.buildHunundiMeetingScene(records, profile); // Materializes the second scene against the same canonical NPC records.
 
-assert.strictEqual(rescue.mapId, 'map_northern_cliffs', 'rescue must occur in the Northern Cliffs wilderness');
+// Execute the game-owned fade stage against the boot cover, before any dialogue can wait for input.
+const fadeEl = { style: { opacity: '1' } }; // Models showBootCover() hiding the newly loaded wilderness.
+const fadeStart = gameSource.indexOf('        function runFade(stage) {'); // Reads the same stage handler the live runtime executes.
+const fadeEnd = gameSource.indexOf('        function runZoom(stage) {', fadeStart); // Ends at the next stage handler rather than pinning source lines.
+let fadeNext = null; // Records completion so the rescue cannot stop at its cover-release stage.
+vm.runInNewContext(gameSource.slice(fadeStart, fadeEnd) + '\nrunFade(stage);', {
+  window: { CutscenePreviewHelpers: { cutscenePreviewFadeEl: () => fadeEl } },
+  stage: rescue.stages[0],
+  requestAnimationFrame: callback => callback(),
+  setTimeout: callback => callback(),
+  getResolvedNext: () => rescue.stages[1].id,
+  continueTo: next => { fadeNext = next; },
+});
+assert.strictEqual(rescue.stages[0].type, 'fade', 'rescue must release its startup cover before dialogue');
+assert.strictEqual(fadeEl.style.opacity, '0', 'first rescue stage must reveal the wilderness');
+assert.strictEqual(fadeNext, 'rescue_wolf1_growl', 'fade must advance to the rescue dialogue');
+
+assert.strictEqual(rescue.mapId, 'map_southern_cloud_forest', 'rescue must occur in the Cloud Forest wilderness');
 assert.strictEqual(rescue.wilderness, true, 'rescue must use generated-wilderness placement');
 assert(rescue.actors.some(actor => actor.npcId === 'jubmir' && actor.npcRecord?.id === 'jubmir'), 'rescue must use the authored Jubmir NPC');
 assert(rescue.actors.some(actor => actor.npcId === 'spearhead_unumanuk' && actor.npcRecord?.id === 'spearhead_unumanuk'), 'rescue must use the authored Spearhead NPC');
@@ -60,19 +77,19 @@ for (const id of ['father_hunundi_hodu', 'jubmir', 'spearhead_unumanuk', 'khanni
   assert(meeting.actors.some(actor => actor.npcId === id && actor.npcRecord?.id === id), 'meeting must embed canonical NPC ' + id);
 }
 const hark = records.get('khannibarri_agent'); // Verifies the existing company-agent identity was promoted in place instead of duplicated.
-assert.strictEqual(hark.name, 'Surveyor Harkharash', 'existing khannibarri_agent must now be Surveyor Harkharash');
-assert.strictEqual(hark.homeId, 'khannibarri_temporary_lodging', 'Harkharash must have a real temporary lodging identity without joining the inn household spillover circle');
-assert.strictEqual(hark.scheduleHooks?.workBuildingId, 'khannibarri_temporary_office', 'Harkharash must not join the general-store coworker spillover circle merely because he uses it as a temporary office');
-assert.strictEqual(hark.scheduleHooks?.defaultStationId, 'station_k7m3q', 'Harkharash must use the authored general-store station after Hunundi lets him remain in town');
-assert(!hark.scheduleHooks?.defaultPosition, 'Harkharash must not fall back to the old town {0,0} placeholder spawn');
+assert.strictEqual(hark.name, 'Surveyor Harkhanash', 'existing khannibarri_agent must now be Surveyor Harkhanash');
+assert.strictEqual(hark.homeId, 'khannibarri_temporary_lodging', 'Harkhanash must have a real temporary lodging identity without joining the inn household spillover circle');
+assert.strictEqual(hark.scheduleHooks?.workBuildingId, 'khannibarri_temporary_office', 'Harkhanash must not join the general-store coworker spillover circle merely because he uses it as a temporary office');
+assert.strictEqual(hark.scheduleHooks?.defaultStationId, 'station_k7m3q', 'Harkhanash must use the authored general-store station after Hunundi lets him remain in town');
+assert(!hark.scheduleHooks?.defaultPosition, 'Harkhanash must not fall back to the old town {0,0} placeholder spawn');
 
 const seatedAtStart = meeting.actors.filter(actor => actor.pose === 'sit'); // Confirms the four-person questioning starts with everyone actually seated.
 assert.strictEqual(seatedAtStart.length, 4, 'player, Hunundi, Jubmir, and Spearhead must begin seated');
-assert(meeting.stages.some(stage => stage.id === 'meeting_hark_sit' && stage.resultPose === 'sit'), 'Hunundi must invite Harkharash to a real seated pose');
-assert(meeting.stages.some(stage => stage.type === 'caption' && stage.text === 'Knock. Knock.'), 'door knock must be conveyed before Harkharash enters');
-assert(meeting.stages.some(stage => /12th century/.test(stage.text || '')), 'Harkharash must make the authored twelfth-century insult');
-assert(meeting.stages.some(stage => /ghost army/i.test(stage.text || '') && /Slagothim/.test(stage.text || '')), 'Harkharash must explain the Slagothim/ghost-army trade collapse');
-assert(meeting.stages.some(stage => /bandit clans/i.test(stage.text || '') && /barbarian war/i.test(stage.text || '')), 'Harkharash must cite both bandit clans and the barbarian war');
+assert(meeting.stages.some(stage => stage.id === 'meeting_hark_sit' && stage.resultPose === 'sit'), 'Hunundi must invite Harkhanash to a real seated pose');
+assert(meeting.stages.some(stage => stage.type === 'caption' && stage.text === 'Knock. Knock.'), 'door knock must be conveyed before Harkhanash enters');
+assert(meeting.stages.some(stage => /12th century/.test(stage.text || '')), 'Harkhanash must make the authored twelfth-century insult');
+assert(meeting.stages.some(stage => /ghost army/i.test(stage.text || '') && /Slagothim/.test(stage.text || '')), 'Harkhanash must explain the Slagothim/ghost-army trade collapse');
+assert(meeting.stages.some(stage => /bandit clans/i.test(stage.text || '') && /barbarian war/i.test(stage.text || '')), 'Harkhanash must cite both bandit clans and the barbarian war');
 assert(meeting.stages.some(stage => (stage.text || '') === "I lost my first home to a dragon. I'm sure as stone not losing this one to those bronze-hungry monsters."), 'Spearhead must end the company visit with the user-authored dragon/home line');
 assert(meeting.stages.some(stage => /Nanjiri Farmstead/.test(stage.text || '')), 'Hunundi must offer the player Nanjiri Farmstead');
 

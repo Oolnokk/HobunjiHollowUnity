@@ -1083,10 +1083,11 @@ const _MOUTH_SPECIES_MAP = {
   'tletingan':{ sprite: 'tletingan',gendered: true,   masked: false },
   'kenkari':   { sprite: 'kenkari',   gendered: false, masked: true  },
   'rakakoan':  { sprite: 'kenkari',   gendered: false, masked: true  },
+  'mammakhbuur': { sprite: 'mashtz', gendered: true, masked: true },
   'mashtzarr': { sprite: 'mashtz',    gendered: true,  masked: true  },
 };
 
-const _BEARD_BELOW_HEAD_SPECIES = new Set(['mashtzarr']);
+const _BEARD_BELOW_HEAD_SPECIES = new Set(['mashtzarr', 'mammakhbuur']);
 
 /**
  * Returns the relative path to the mouth expression sprite, or null.
@@ -1498,7 +1499,21 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     // one layer, not blank the whole portrait. Once the file shows up at its
     // expected path, this starts drawing it with no further code changes.
     const settled = await Promise.allSettled(
-      _allUrls.map(async (url) => [url, await loadImg(url)])
+      _allUrls.map(async (url) => {
+        try { return [url, await loadImg(url)]; }
+        catch (error) {
+          if (url === headUrl) {
+            for (const fallbackUrl of (resolvedFighter?.headFallbackUrls || fighter?.headFallbackUrls || [])) {
+              try {
+                const image = await loadImg(fallbackUrl); // Cache the temporary donor under the requested head for this page session.
+                IMG_CACHE.set(url, image);
+                return [url, image];
+              } catch (_) {}
+            }
+          }
+          throw error;
+        }
+      })
     );
     imgMap = new Map();
     for (const result of settled) {
@@ -2226,6 +2241,7 @@ async function loadPortraitCosmetics(configBase) {
               armLength: Number.isFinite(Number(genderData.armLength)) ? Number(genderData.armLength) : null, // Legacy species-file reach fallback; PNGPlaneAvatar replaces this with attachment-rig-derived anatomy when that shared rig is available.
               label: `${sourceData.label || entry.label} (${genderKey === 'male' ? 'M' : 'F'})`,
               headUrl: genderData.headSprite,
+              headFallbackUrls: genderData.headFallbackUrls || [],
               bodyLayers: genderData.portraitBodyLayers.map(l => ({ ...normalizePortraitLayerXform(l), xformPreset: 'B' })),
               urLayers: (genderData.headUrLayers || []).map(l => ({ url: l.url, renderOrder: l.renderOrder })),
               headXform: genderData.headXform ? normalizePortraitLayerXform(genderData.headXform) : null,
@@ -2244,6 +2260,7 @@ async function loadPortraitCosmetics(configBase) {
               ...(fighterPortraitOverrides[fighter.id] || {}),
               gender: genderKey,
               speciesId,
+              headFallbackUrls: genderData.headFallbackUrls || [],
               ...(Number.isFinite(Number(genderData.armLength)) ? { armLength: Number(genderData.armLength) } : {}), // Preserve the legacy fallback on pre-existing fighters; runtime avatar anatomy still prefers the attachment-rig-derived reach.
               ...(genderData.headXform ? { headXform: genderData.headXform } : {}),
               ...(Array.isArray(genderData.portraitBodyLayers) ? {

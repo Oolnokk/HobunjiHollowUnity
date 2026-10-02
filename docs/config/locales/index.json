@@ -100,6 +100,13 @@
       "name": "Sealed Ruin",
       "category": "ruin_entrance",
       "singleton": false
+    },
+    {
+      "id": "locale_opening_rescue",
+      "file": "config/locales/locale_opening_rescue.json",
+      "name": "Cloud Forest Rescue Clearing",
+      "category": "story_poi",
+      "singleton": true
     }
   ]
 }

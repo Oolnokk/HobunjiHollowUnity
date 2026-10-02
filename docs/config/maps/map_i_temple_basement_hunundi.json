@@ -215,5 +215,28 @@
   ],
   "npcPaths": [],
   "entryPoints": [],
-  "layouts": []
+  "layouts": [],
+  "cinematicCameras": [
+    {
+      "id": "hunundi_office_wall",
+      "label": "Hunundi office wall camera",
+      "position": {
+        "x": 12.8,
+        "y": 2.7,
+        "z": 9.8
+      },
+      "target": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "trackSpeaker": true,
+      "useForDialogue": true,
+      "stagePlayer": false,
+      "fadePets": true,
+      "fovDeg": 55,
+      "blendSeconds": 0.35,
+      "targetNpcId": "father_hunundi_hodu"
+    }
+  ]
 }
