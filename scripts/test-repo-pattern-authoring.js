@@ -121,9 +121,11 @@ const sourceThicknessIndex = weaving.indexOf('const adjustedSrcMask = adjustMask
 const meshScaleIndex = weaving.indexOf('ctx.scale(meshScale, meshScale)', sourceThicknessIndex);
 const repeatMaskIndex = weaving.indexOf('const sampledMasks = []'); // Repeated motif instances still flatten into one final sampled mask per primary/overpass slot.
 const stackCombineIndex = weaving.indexOf('const combinedMask = new Uint8Array(sampledMasks[0])', repeatMaskIndex); // Slot masks are combined only after their source-pixel contour work and garment-cell sampling are complete.
-const sharedOutlineIndex = weaving.indexOf('buildPatternOutlineMask(combinedMask', stackCombineIndex); // The visible black outline is generated after the overpass has punched and recombined the two paint masks.
+const sharedOutlineIndex = weaving.indexOf('let outlineMask = buildPatternOutlineMask(', stackCombineIndex); // The one visible black-outline pass still happens after overpass recombination; direct trim may substitute stricter outline masks before this call.
+const directOutlineSuppressionIndex = weaving.indexOf('suppressGeneratedOutlineAgainstAuthoredOutline(outlineMask', sharedOutlineIndex); // Direct trim may filter that one final outline against existing sprite line art, but never generates a second outline pass.
 assert(sourceThicknessIndex >= 0 && meshScaleIndex > sourceThicknessIndex, 'woven motif thinning/thickening must happen before whole-pattern mesh scaling');
 assert(repeatMaskIndex > meshScaleIndex && stackCombineIndex > repeatMaskIndex && sharedOutlineIndex > stackCombineIndex, 'repeated instances union into the two-slot stack before the shared final outline, with no second output-pixel thickness pass');
+assert(directOutlineSuppressionIndex > sharedOutlineIndex, 'direct trim suppresses duplicate edge pixels only after the shared final outline is built; it does not introduce a second outline generator');
 
 
 assert.doesNotMatch(weaving, /\berodeMask\b/, 'weaving module must not retain stale erodeMask references after the signed contour refactor');
