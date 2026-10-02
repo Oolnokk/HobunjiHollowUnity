@@ -44,9 +44,9 @@
     // Porakaneki temporary locales can clear ordinary procedural shrub/rock clutter and relax only their own placement margins when dense wilderness would otherwise prevent any camp from existing.
     ['PorakanekiCampPlacementPolicy', 'porakaneki-camp-placement-policy.js?v=20260924chunkecology2'],
     // Porakaneki camp network: distance/hysteresis LOD, shared den-to-den hunting parties, planner-owned destinations, shared hostile-loop locomotion/rendering, and seasonal chief migration.
-    ['PorakanekiCamps', 'porakaneki-camps-runtime.js?v=20260929ruinsites1'],
+    ['PorakanekiCamps', 'porakaneki-camps-runtime.js?v=20261002ha9ed963'],
     // Keeps neutral Porakaneki off companion target lists, classifies self-defense vs initiated kills, applies Omgurku rivalry favor, and composes the faction rename into NPC database loads.
-    ['PorakanekiFactionRules', 'porakaneki-faction-rules.js?v=20260924chunkecology1'],
+    ['PorakanekiFactionRules', 'porakaneki-faction-rules.js?v=20261002h478c6d7'],
     // Map-only locale proxies: chief camp is always known; each little camp gets its own independent discovery identity through the existing wilderness-map fog/discovery system.
     ['PorakanekiMapMarkers', 'porakaneki-map-markers.js?v=20260912a'],
     // Draws one all-distance serpentine spectral locator at the army chunk; once soldiers are visible it follows their actual formation centroid.

@@ -155,7 +155,7 @@ materials in place once the config loads.
   the existing perk tree), `companion`. Stored in `gearInventory.trinkets` /
   `equippedTrinkets`. Town Icons sell at Funji's; Harlyao trinkets drop from
   ruin dungeon chests (`trinket_<id>` loot entries); the Engraved Whistle is a
-  Porakaneki-chief barter (`tradeCost`).
+  Porakaneki daily-gift return (high Favor gains can roll unique rewards).
 - `docs/js/harlyao-relics.js` — boss-vault chests can drop a *bound* Harlyao
   Longsword/Broadsword with random, partial enchantments into the world
   inventory. Garanki Gabu (researcher's tent, "Shop") unbinds it for a fee,

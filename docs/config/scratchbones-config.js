@@ -12,6 +12,17 @@ window.SCRATCHBONES_CONFIG = {
   clothingLightOffset: 0,
 
   game: {
+    "socialRelationships": {
+      "porakanekiBarter": {
+        "mediumFavor": 4,
+        "largeFavor": 10,
+        "uniqueFavor": 10,
+        "animalChance": 0.35,
+        "uniqueChance": 0.20,
+        // Add itemKey or trinketId entries here to extend the high-favor return pool.
+        "uniqueRewards": [{ "trinketId": "engravedWhistle", "minFavor": 10 }]
+      }
+    },
     // Shared presentation settings for the Character Studio avatar editor.
     // Body-color ranges themselves remain species data under config/species.
     "avatarEditor": {

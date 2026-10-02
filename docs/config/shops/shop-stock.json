@@ -377,32 +377,6 @@
       
       ]
     },
-    "porakanekiTrade": {
-      "label": "Porakaneki Trade",
-      "menuId": "generalStore",
-      "dialogueAccess": {
-        "sellerIds": [
-          "porakaneki_chief"
-        ],
-        "businessMaps": [],
-        "roaming": true
-      },
-      "goods": [
-        {
-          "key": "engravedWhistle",
-          "icon": "🪈",
-          "name": "Engraved Whistle",
-          "desc": "Trinket (Attunement 2). A carved hunting whistle: your animal companion hits 30% harder and builds afflictions 40% faster.",
-          "price": 60,
-          "tradeCost": {
-            "garWolfHide": 3,
-            "grehlrHide": 1
-          },
-          "givesTrinket": "engravedWhistle",
-          "conditions": {}
-        }
-      ]
-    },
     "garankiEnchanting": {
       "label": "Garanki Gabu's Unbinding & Enchanting",
       "menuId": "garankiEnchanter",

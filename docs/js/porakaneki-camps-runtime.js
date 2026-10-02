@@ -623,6 +623,24 @@
     return (camp?.props || []).filter(prop => prop.type === 'tent').map(prop => ({ col: prop.x + (prop.w || 1) * 0.5, row: prop.y + (prop.h || 1) * 0.5 }));
   }
 
+  function getNearbyGiftWalker(x, z, radius = 2) {
+    if (window.NpcRapport?.canGiftToday?.('porakaneki_chief') === false) return null;
+    let closest = null; // Reuses cached hunter proxies so the action bar does not refresh every frame.
+    let distance = radius; // The nearest named NPC already limits this search radius.
+    for (const camp of activeCamps(currentZoneState())) for (const hunter of camp.hunters) {
+      const entity = hunter.entity; // Only living, visible, neutral residents can accept a gift.
+      if (!entity || entity.health <= 0 || entity._porakanekiPlannerControlled !== true || entity._chunkCombatTarget || !entity.avatarRef?.group?.visible || entity.areaId !== currentArea()) continue;
+      const nextDistance = Math.hypot(entity.x / combatDeps.TILE - x, entity.y / combatDeps.TILE - z); // Matches named NPC interaction distances.
+      if (nextDistance >= distance) continue;
+      distance = nextDistance;
+      entity._porakanekiGiftWalker ||= { rec: { ...entity.rosterRecord, id: hunter.id, name: 'Porakaneki Hunter', species: 'porakaneki' }, isPorakanekiHunter: true }; // Cached interaction-only proxy shares the actual hunter root.
+      entity._porakanekiGiftWalker.root = entity.avatarRef.group;
+      entity._porakanekiGiftWalker.area = entity.areaId;
+      closest = entity._porakanekiGiftWalker;
+    }
+    return closest;
+  }
+
   function chiefWalker() {
     const id = cfg?.reputation?.npcId || 'porakaneki_chief';
     return schedulingDeps?.npcWalkers?.find?.(walker => walker?.rec?.id === id) || null;
@@ -690,6 +708,9 @@
     return true;
   }
   function favor() { initializeReputation(); return num(relationshipState()?.favor, 0); }
+  function peacefulRapport() {
+    return num(window.NpcRapport?.get?.(cfg?.reputation?.npcId || 'porakaneki_chief'), 0) > 0;
+  }
   function adjustFavor(amount, reason) {
     const relation = relationshipState();
     if (!relation || !amount) return favor();
@@ -755,7 +776,7 @@
     const currentFavor = favor();
     const zoneState = currentZoneState();
     const camps = activeCamps(zoneState);
-    if (!zoneState || !combatDeps?.player || currentFavor >= 0 || currentFavor <= num(rep.attackOnSightFavor, -5)) {
+    if (!zoneState || !combatDeps?.player || peacefulRapport() || currentFavor >= 0 || currentFavor <= num(rep.attackOnSightFavor, -5)) {
       for (const camp of camps) resetCampWarning(camp);
       return;
     }
@@ -1439,7 +1460,7 @@
     const entity = hunter.entity;
     if (!entity || entity.health <= 0) return;
     hunter.x = entity.x / combatDeps.TILE; hunter.y = entity.y / combatDeps.TILE;
-    if (favor() <= num(cfg?.reputation?.attackOnSightFavor, -5) || campProvoked(hunter.camp)) {
+    if ((!peacefulRapport() && favor() <= num(cfg?.reputation?.attackOnSightFavor, -5)) || campProvoked(hunter.camp)) {
       entity._chunkCombatTarget = null;
       makeHostile(entity);
       return;
@@ -1692,7 +1713,8 @@
       season: currentSeasonName(),
       chiefZoneId: state.chiefZoneId,
       favor: relation ? num(relation.favor, 0) : null,
-      attackOnSight: !!relation && !!cfg && num(relation.favor, 0) <= num(cfg.reputation?.attackOnSightFavor, -5),
+      rapport: num(window.NpcRapport?.get?.(cfg?.reputation?.npcId || 'porakaneki_chief'), 0),
+      attackOnSight: !!relation && !!cfg && !peacefulRapport() && num(relation.favor, 0) <= num(cfg.reputation?.attackOnSightFavor, -5),
       chunkSizeTiles: chunkSizeTiles(),
       fullSimulationRadiusTiles: fullSimulationRadiusTiles(),
       fullSimulationReleaseRadiusTiles: fullSimulationReleaseRadiusTiles(),
@@ -1717,6 +1739,7 @@
 
   window.PorakanekiCamps = Object.freeze({
     version: 8,
+    getNearbyGiftWalker,
     update,
     ensureWorldCamps,
     ensureCampStamp: ensureWorldCamps,
@@ -1730,7 +1753,7 @@
     formatDebug: () => {
       const d = debugSnapshot();
       const zoneBits = Object.entries(d.zones).map(([zoneId, z]) => `${zoneId}:${z.smallCampCount}${z.chiefActive ? '+CHIEF' : ''}`).join(' ');
-      return `Porakaneki camps: v8 ticks=${d.updateTicks} owner=${d.tickOwner} season=${d.season} chief=${d.chiefZoneId || '-'} area=${d.currentArea || '-'} small=${d.totalSmallCamps} active=${d.totalActiveCamps} residents=${d.totalGeneratedResidents} favor=${d.favor ?? '-'} AOS=${d.attackOnSight} lod=${d.fullSimulationRadiusTiles}/${d.fullSimulationReleaseRadiusTiles} player=${d.playerTile ? `${d.playerTile.col},${d.playerTile.row}` : '-'} ecology=${d.ecology.chunk || '-'}:${d.ecology.porakaneki}/${d.ecology.bandits}/${d.ecology.predators}/${d.ecology.prey} targets=${d.ecology.humanoidTargets}/${d.ecology.predatorTargets} mats=${d.materializations} coarse=${d.coarseTicks} greet=${d.greetings} kills=${d.kills} zones=[${zoneBits}] reason=${d.lastReason}`;
+      return `Porakaneki camps: v8 ticks=${d.updateTicks} owner=${d.tickOwner} season=${d.season} chief=${d.chiefZoneId || '-'} area=${d.currentArea || '-'} small=${d.totalSmallCamps} active=${d.totalActiveCamps} residents=${d.totalGeneratedResidents} favor=${d.favor ?? '-'} rapport=${d.rapport} AOS=${d.attackOnSight} lod=${d.fullSimulationRadiusTiles}/${d.fullSimulationReleaseRadiusTiles} player=${d.playerTile ? `${d.playerTile.col},${d.playerTile.row}` : '-'} ecology=${d.ecology.chunk || '-'}:${d.ecology.porakaneki}/${d.ecology.bandits}/${d.ecology.predators}/${d.ecology.prey} targets=${d.ecology.humanoidTargets}/${d.ecology.predatorTargets} mats=${d.materializations} coarse=${d.coarseTicks} greet=${d.greetings} kills=${d.kills} zones=[${zoneBits}] reason=${d.lastReason}`;
     },
     __test: Object.freeze({ MIN_HUNTING_CAMPS_PER_ZONE, isSleepingHour, chunkOf, streamChunkSizeTiles, streamChunkKeysForSite, streamChunkOfTile, ecologyRole, nearestEcologyTarget, activePlayerChunkEcology, updateChunkEcology, fullSimulationRadiusTiles, fullSimulationReleaseRadiusTiles, simulationDistanceToPlayer, weaponRoll, currentSeasonName, desiredChiefZone, smallCampCountForZone, smallResidentCount, denExteriorPoint, chooseNextPartyDen, ensureHuntingParty, updateHuntingParty, speakOverheadFromHunter, speakOverheadFromWalker, markOutline }),
   });

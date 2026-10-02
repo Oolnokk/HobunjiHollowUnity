@@ -51,6 +51,7 @@
     if (typeof value === 'string') return canonicalizeString(value);
     if (!value || typeof value !== 'object' || seen.has(value)) return value;
     seen.add(value);
+    if (value.id === PORAKANEKI_CHIEF_ID) value.name = 'Chief Nakaraka of the Pakapohi Porakaneki'; // Keeps locally saved NPC database overrides aligned with the authored chief name.
     if (Array.isArray(value)) {
       for (let i = 0; i < value.length; i++) value[i] = canonicalizeNpcDatabaseInPlace(value[i], seen);
       return value;

@@ -11,7 +11,7 @@ assert.match(indexSource, /js\/character-action-locks\.js\?v=[^"']+/,
   'game must statically load the interaction-lock primitive that bootstraps animal chathead framing');
 assert.match(actionLocksSource, /animal-chathead-frame\.js\?v=[A-Za-z0-9_-]+/,
   'the interaction-lock bootstrap must dynamically load animal chathead framing early, before FarmAnimals/DialogueContent/game.js');
-assert.match(authorSource, /<script src="\.\.\/\.\.\/js\/animal-chathead-frame\.js\?v=20260901a"><\/script>/,
+assert.match(authorSource, /<script src="\.\.\/\.\.\/js\/animal-chathead-frame\.js\?v=[A-Za-z0-9_-]+"><\/script>/,
   'Animation Author must load the shared animal chathead framing helper');
 assert.match(authorSource, /chatheadFrame: normalizedAnimalChatheadFrameV1543\(profile\.chatheadFrame\)/,
   'attachment-rig normalization must preserve creature chathead frames across import/export');

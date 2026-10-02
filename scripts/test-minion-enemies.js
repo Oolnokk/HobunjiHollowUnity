@@ -35,7 +35,7 @@ assert(banditIndex >= 0 && banditIndex < indexSource.indexOf('combat-minion.js?v
 assert(indexSource.indexOf('combat-minion.js?v=20260929lichroom1') < indexSource.indexOf('dev-spawner.js?v=20261002h6fca74b'));
 assert(indexSource.includes('resource-system.js?v=20261001quickdebuff2'));
 assert(indexSource.includes('combat-config-loader.js?v='));
-assert(indexSource.includes('game.js?v=20261002h5a484f1'));
+assert(indexSource.includes('game.js?v=20261002ha14363a'));
 
 const authoredDyes = [
   'dye:CLOTH:muted_red_orange', 'dye:CLOTH:dusty_red_orange', 'dye:CLOTH:dark_muted_red_orange',

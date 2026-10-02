@@ -132,7 +132,7 @@
   <script src="debug.js?v=20260925weavesessiondebug4"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20260930h1b2e2e2"></script>
-  <script src="config/scratchbones-config.js?v=20260930livestockwalk1"></script>
+  <script src="config/scratchbones-config.js?v=20261002h2913d86"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
   <script src="js/tool-metal-recolor.js?v=20261001c6751543"></script>
@@ -166,7 +166,7 @@
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
   <script src="js/held-action-animations.js?v=20261001cc4ca767"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
-  <script src="js/character-action-locks.js?v=20261001hf0449d2"></script>
+  <script src="js/character-action-locks.js?v=20261002h69592ed"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
   <script src="js/npc-character-state.js?v=20260811a"></script>
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
@@ -188,7 +188,7 @@
        doesn't itself depend on it (each reads genotype data, not each
        other), but they're a matched pair. -->
   <script src="js/voorg-ass-registration.js?v=20260923baseanchor1"></script> <!-- Shared Voorg-Ass creature/renderer/herd registration used by the three scripts below. -->
-  <script src="js/creature-genetics.js?v=20260923baseanchor1"></script>
+  <script src="js/creature-genetics.js?v=20261002h5fdf0c4"></script>
   <!-- Creature genotype recolor + pattern-overlay compositing. -->
   <script src="js/creature-genetics-render.js?v=20260930h6b34ce7"></script>
   <!-- Shared per-frame "where is this creature/character's head" cache — see
@@ -316,7 +316,7 @@
   <script src="js/bounty-board.js?v=20260831spearheadexisting1-colors1"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261001foodgift2"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261002hf41d4ac"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -324,7 +324,7 @@
   <script src="js/skill-system.js?v=20260927temperxp1"></script>
   <script src="js/perk-system.js?v=20260930h4cddcbb"></script>
   <!-- Trinkets + shared 8-point Attunement budget; registers stat/perk/companion providers. -->
-  <script src="js/trinket-system.js?v=20260930ench1"></script>
+  <script src="js/trinket-system.js?v=20261002hf79dffc"></script>
   <script src="js/cooking-data.js?v=20260811a"></script>
   <script src="js/food-processing.js?v=20261001foodgift2"></script>
   <script src="js/cooking-system.js?v=20261001foodgift2"></script>
@@ -394,7 +394,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20260930h94ca2bd&surfaceUv=20260924edgepreserve2"></script>
+  <script src="js/house-pieces.js?v=20261002h2476032&surfaceUv=20260924edgepreserve2"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -2563,7 +2563,7 @@
   <script src="js/shoulder-cam-pointer-lock.js?v=20260930hfc11b39"></script>
   <!-- Shared character-scoped hobunjiSaveMeta update step used by game.js's save* helpers. -->
   <script src="js/character-meta-save.js?v=20260930ench1"></script>
-  <script src="game.js?v=20261002h5a484f1"></script>
+  <script src="game.js?v=20261002ha14363a"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
