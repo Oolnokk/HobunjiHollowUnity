@@ -60,7 +60,7 @@ input,select{width:100%;background:#0d1621;border:1px solid rgba(255,255,255,.14
           <button id="trimManifestBtn" class="secondary" disabled>Export trim manifest</button>
         </div>
         <div class="trimReplicate" style="margin-top:10px;padding-top:9px;border-top:1px solid rgba(255,255,255,.1)">
-          <div class="muted" style="margin-bottom:6px"><b>Replicate this variant</b> — fit the current trim from this garment's opaque bounds onto another species/gender garment, clip it to that silhouette, then clean it up normally.</div>
+          <div class="muted" style="margin-bottom:6px"><b>Replicate this variant</b> — replay this trim's recorded outline, inward-expansion, and cleanup operations against another species/gender variant's own first-non-black contour, then clean it up normally.</div>
           <div class="row">
             <select id="trimReplicateTarget" style="min-width:190px;flex:1"><option value="">Author a source trim first</option></select>
             <button id="trimReplicateBtn" class="secondary" disabled>Replicate + edit target</button>
@@ -1630,7 +1630,7 @@ Overpass → not set</div>
       refreshTrimVariantOptions();
       await renderTrimPreview(pattern);
       debugState.lastAction = `replicated garment trim ${sourceVariant} → ${targetVariant}`;
-      $('trimStatus').textContent = `Replicated ${sourceVariant} onto ${targetVariant}. Opening the fitted draft for cleanup; Save trim mask when it looks right.`;
+      $('trimStatus').textContent = `Replicated ${sourceVariant} onto ${targetVariant} by replaying its authoring operations on the target contour. Opening the result for cleanup; Save trim mask when it looks right.`;
       await openTrimEditor();
     } catch (error) {
       debugState.lastError = error.message;
@@ -1651,7 +1651,7 @@ Overpass → not set</div>
       }
       refreshTrimVariantOptions();
       debugState.lastAction = `replicated garment trim ${sourceVariant} to ${replicated} missing variants`;
-      $('trimStatus').textContent = `Created ${replicated} fitted editable trim draft${replicated === 1 ? '' : 's'} from ${sourceVariant}. Existing authored variants were left untouched. Review variants as needed, then Export new PNGs + trim manifest.`;
+      $('trimStatus').textContent = `Created ${replicated} operation-replayed trim draft${replicated === 1 ? '' : 's'} from ${sourceVariant}. Existing authored variants were left untouched. Review variants as needed, then Export new PNGs + trim manifest.`;
     } catch (error) {
       refreshTrimVariantOptions();
       debugState.lastError = error.message;
