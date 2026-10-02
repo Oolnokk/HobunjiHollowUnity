@@ -57,7 +57,7 @@ for (const [name, sourceText] of [['combo', comboSource], ['quick', quickSource]
 assert(indexSource.includes('js/combat/combat-combo.js?v=20260930h81d72c4'));
 assert(indexSource.includes('js/combat/combat-quickattacks.js?v=20261001quickdebuff2'));
 assert(indexSource.includes('js/combat/combat-charged-breaker.js?v=20260930hbbcd28d'));
-assert(indexSource.includes('game.js?v=20261001quickdebuff2'));
+assert(indexSource.includes('game.js?v=20261002h960fd67'));
 
 const player = {
   x: 0, y: 0, health: 100, facing: 0,

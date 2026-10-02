@@ -12687,6 +12687,10 @@
           const d = Math.hypot(w.root.position.x - px, w.root.position.z - pz);
           if (d < closestDist) { closestDist = d; closest = w; }
         }
+        if (window.NpcGifting?.isItemGiftable?.(getHeldGiftItem())) {
+          const hunter = window.PorakanekiCamps?.getNearbyGiftWalker?.(px, pz, closestDist); // Neutral procedural hunters reuse the existing gift action and dispatch target.
+          if (hunter) closest = hunter;
+        }
         nearbyNpcWalker = closest;
         if (previousNearbyNpcWalker !== nearbyNpcWalker) refreshActionBar();
       }
@@ -24838,7 +24842,7 @@
 
         // NPC dialogue takes priority over tool use on touch controls and mirrors the primary-action keyboard path.
         if (nearbyNpcWalker && !farmEditMode) {
-          const btns = [npcDialogueButton()];
+          const btns = nearbyNpcWalker.isPorakanekiHunter ? [] : [npcDialogueButton()];
           // Smithy is deliberately inserted directly after Talk so it is
           // always Action 2 when either Bronzeworks smith is being faced.
           if (isSmithyNpcInBronzeworks(nearbyNpcWalker)) btns.push(smithyButton());
@@ -28398,6 +28402,17 @@
         getItemDefs: () => ITEM_DEFS,
         getNpcRecordById: npcId => scheduledNpcRecords.get(npcId) || npcWalkers.find(walker => walker.rec?.id === npcId)?.rec || null, // Canonical live preference source used to reconcile saved learned gift tiers after authored data changes.
         getHeldGiftItem,
+        random: rnd,
+        getInventoryMax: key => inventoryItems.find(item => item.key === key)?.max ?? 99,
+        getPorakanekiRewardPools: () => {
+          const zone = EXTERIOR_ZONES[currentArea] || {}; // Uses live species overrides, including Puktuk and Voorg-Ass registration.
+          const species = [...new Set([...(zone.packSpecies || []), ...(zone.herbivoreSpecies || []), ...(zone.roamingHerdSpecies || []), ...(currentArea === 'map_southern_cloud_forest' ? ['drenkirra'] : [])])]; // Tree-nesting Drenkirra are native cloud-forest wildlife outside the den pools.
+          const livestockKinds = window.SCRATCHBONES_CONFIG?.game?.livestock?.itemKinds || {}; // Shared egg/baby inventory keys and domesticated species aliases.
+          const animals = Object.entries(livestockKinds).filter(([key, kind]) => !key.endsWith('Crate') && species.some(wild => (window.CreatureGenetics?.SPECIES_ALIAS?.[wild] || wild) === kind)).map(([itemKey, kind]) => ({ itemKey, kind })); // Preserve the canonical genotype shape used by FarmAnimals.
+          const fishZone = { map_northern_cliffs: 'northernCliffs', map_southern_cloud_forest: 'cloudForest', map_western_slope: 'westernSlope', map_eastern_mire: 'easternMire' }[currentArea]; // Mirrors authored wilderness fishing regions.
+          const meat = species.flatMap(kind => (window.LootRolling?.getLootPools?.()[CREATURE_DB[kind]?.lootPool]?.entries || []).filter(entry => entry.id === 'meat').map(entry => entry.itemKey)); // Meat comes from the actual native creature loot tables.
+          return { herbs: window.AlchemySystem?.reagentsForZone?.(currentArea) || [], fish: (FISH_DEFS[fishZone] || []).map(fish => fish.key), meat, animals };
+        },
         clearManualHeldItem,
         getGearInventory: () => gearInventory,
         saveGearInventory,

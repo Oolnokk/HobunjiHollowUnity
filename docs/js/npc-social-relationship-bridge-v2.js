@@ -173,12 +173,12 @@
     giftingPatched = true;
     const getAction = gifting.getNpcGiftOfferAction.bind(gifting); // Existing gift eligibility remains authoritative before the daily gate.
     gifting.getNpcGiftOfferAction = (walker, ...args) => {
-      const id = String(walker?.rec?.id || '');
+      const id = String(gifting.relationshipId?.(walker) || walker?.rec?.id || '');
       return id && !canGiftToday(id) ? null : getAction(walker, ...args);
     };
     const offerGift = gifting.offerGift.bind(gifting); // Existing gift code remains authoritative for its authored permanent Favor delta and reaction.
     gifting.offerGift = function (walker, ...args) {
-      const id = String(walker?.rec?.id || '');
+      const id = String(gifting.relationshipId?.(walker) || walker?.rec?.id || '');
       if (!id || !canGiftToday(id)) { window.__farmLog?.(`${walker?.rec?.name || 'They'} already received a gift today.`); return false; }
       const result = offerGift(walker, ...args);
       if (result) {
