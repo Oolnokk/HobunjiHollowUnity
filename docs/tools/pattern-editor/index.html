@@ -197,7 +197,7 @@ Overpass → not set</div>
   function trimAuthorOpsFor(garmentId, variantKey, view) {
     const draftEntry = trimDrafts.get(trimKey(garmentId, variantKey, view));
     if (draftEntry?.authorOpsComplete && Array.isArray(draftEntry.authorOps)) return cloneTrimAuthorOps(draftEntry.authorOps);
-    const recordOps = trimRecord(garmentId, variantKey, view)?.settings?.authorOps;
+    const recordOps = trimRecord(garmentId, variantKey, view)?.authorOps;
     return Array.isArray(recordOps) ? cloneTrimAuthorOps(recordOps) : null;
   }
 
@@ -669,8 +669,11 @@ Overpass → not set</div>
     const motifPng = trimAssetPath(garmentId, targetVariant, view);
     trimDrafts.set(trimKey(garmentId, targetVariant, view), { pattern, motifPng, authorOps: replayed ? cloneTrimAuthorOps(sourceOps) : [], authorOpsComplete: replayed });
     const settings = { directMask: true };
-    if (replayed) settings.authorOps = cloneTrimAuthorOps(sourceOps);
-    ensureTrimRecordSet(garmentId, targetVariant)[view] = { motifPng, settings };
+    ensureTrimRecordSet(garmentId, targetVariant)[view] = {
+      motifPng,
+      settings,
+      ...(replayed ? { authorOps: cloneTrimAuthorOps(sourceOps) } : {}),
+    }; // Editor-only authorOps stay outside runtime pattern settings.
     return pattern;
   }
 
@@ -950,7 +953,7 @@ Overpass → not set</div>
     const garmentBounds = maskBounds(garmentMask, width, height); // Relative operation coordinates use non-black garment bounds so replay scales cleanly across species.
     const sourceScale = Math.max(1, Math.min(garmentBounds?.width || width, garmentBounds?.height || height));
     const draftEntryAtOpen = trimDrafts.get(trimKey(garmentId, variantKey, view));
-    const recordOpsAtOpen = trimRecord(garmentId, variantKey, view)?.settings?.authorOps;
+    const recordOpsAtOpen = trimRecord(garmentId, variantKey, view)?.authorOps;
     let authorOps = draftEntryAtOpen?.authorOpsComplete ? cloneTrimAuthorOps(draftEntryAtOpen.authorOps) : (Array.isArray(recordOpsAtOpen) ? cloneTrimAuthorOps(recordOpsAtOpen) : []);
     let authorOpsComplete = !!draftEntryAtOpen?.authorOpsComplete || Array.isArray(recordOpsAtOpen); // False for old PNG-only masks; those retain compatibility fallback replication until reauthored from scratch.
     let currentStrokeOp = null; // Built from pointer samples and committed at pointer-up so replay preserves actual operation order.
@@ -1313,8 +1316,11 @@ Overpass → not set</div>
       trimDrafts.set(trimKey(garmentId, variantKey, view), { pattern, motifPng, authorOps: cloneTrimAuthorOps(authorOps), authorOpsComplete });
       const recordSet = ensureTrimRecordSet(garmentId, variantKey);
       const settings = { directMask: true };
-      if (authorOpsComplete) settings.authorOps = cloneTrimAuthorOps(authorOps); // Dev metadata is ignored by runtime rendering but lets future replication replay the exact authoring sequence.
-      recordSet[view] = { motifPng, settings }; // Placement is encoded entirely in PNG coordinates now; no frame/mesh transform can drift it.
+      recordSet[view] = {
+        motifPng,
+        settings,
+        ...(authorOpsComplete ? { authorOps: cloneTrimAuthorOps(authorOps) } : {}),
+      }; // Editor-only operation metadata stays beside settings so production trim rendering never carries it through the compositor/cache.
       debugState.lastAction = `painted direct garment trim ${garmentId}/${variantKey}/${view}`;
       refreshTrimVariantOptions();
       refreshTrimReplicationControls();
@@ -1684,7 +1690,7 @@ Overpass → not set</div>
   };
 
   window.__patternEditorDebug = () => ({ // Mobile-visible console substitute for checking the dev tool's two-slot state.
-    mostRecentChange: 'Trim replication now replays the recorded authoring journal in order—relative outline/eraser strokes, full-outline selection, and exact Expand Inward amounts—against each target variant’s own first-non-black contour. Finished-mask inference is legacy fallback only.',
+    mostRecentChange: 'Trim replication now replays the recorded authoring journal in order—relative outline/eraser strokes, full-outline selection, and exact Expand Inward amounts—against each target variant’s own first-non-black contour. The journal is editor-only metadata beside runtime settings; finished-mask inference is legacy fallback only.',
     previewMode: $('previewMode').value,
     weavingBackground: $('surfaceTexture').value,
     overpassClearanceMultiplier: clampOverpassClearance($('overpassClearance').value),
