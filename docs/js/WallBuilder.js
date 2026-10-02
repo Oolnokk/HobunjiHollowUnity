@@ -511,27 +511,69 @@
     const perGlb = new Map();
     const tmpPos = new THREE.Vector3(), tmpQuat = new THREE.Quaternion(), tmpScale = new THREE.Vector3();
     const eps = 0.002;
-    // Optional world-space wall openings (window holes). A brick is dropped
-    // when its footprint reaches more than EXCLUDE_TUCK of its half-size into
-    // an opening; the remaining sliver tucks under the window frame.
-    const EXCLUDE_TUCK = 0.6;
+    // Optional world-space wall openings (window holes). Bricks that reach
+    // into an opening are trimmed back to its edge (scaled down along that
+    // one axis and shifted so their far side stays put) instead of being
+    // deleted, so the courses above/below and the columns beside a window
+    // close neatly against the frame the way the interior wall strips do.
+    // A brick that would keep less than DISPLACE_MIN_KEEP of its size is
+    // dropped instead.
+    const DISPLACE_MIN_KEEP = 0.3;
     const excludeZones = (Array.isArray(opts.excludeQuads) ? opts.excludeQuads : []).map(q => {
-      const [a, , , ] = q.map(c => new THREE.Vector3(c[0] || 0, c[1] || 0, c[2] || 0));
-      const top = new THREE.Vector3(q[1][0], q[1][1], q[1][2]), right = new THREE.Vector3(q[3][0], q[3][1], q[3][2]);
-      const U = right.sub(a), V = top.sub(a);
+      // q = [bottom-left, top-left, top-right, bottom-right] on the wall face.
+      const a = new THREE.Vector3(q[0][0] || 0, q[0][1] || 0, q[0][2] || 0);
+      const U = new THREE.Vector3(q[3][0], q[3][1], q[3][2]).sub(a), V = new THREE.Vector3(q[1][0], q[1][1], q[1][2]).sub(a);
       const n = new THREE.Vector3().crossVectors(U, V).normalize();
-      return { a, U, V, n, uLen: U.length(), vLen: V.length(), invU2: 1 / Math.max(1e-9, U.lengthSq()), invV2: 1 / Math.max(1e-9, V.lengthSq()) };
-    }).filter(z => z.uLen > 1e-6 && z.vLen > 1e-6);
-    const _exRel = new THREE.Vector3();
-    const intrudesOpening = (wp, halfU, halfV) => {
+      const uu = U.dot(U), uv = U.dot(V), vv = V.dot(V), det = uu * vv - uv * uv;
+      if (U.length() <= 1e-6 || V.length() <= 1e-6 || Math.abs(det) < 1e-12) return null;
+      const zone = { a, U, V, n, uLen: U.length(), vLen: V.length(), Un: U.clone().normalize(), Vn: V.clone().normalize(), uu, uv, vv, det };
+      // Tapered wall holes are trapezoids: the right edge runs from s=1 at
+      // the sill to s=topRightS at the lintel in this (U,V) basis.
+      zone.topRightS = toZoneST(zone, new THREE.Vector3(q[2][0], q[2][1], q[2][2])).s;
+      return zone;
+    }).filter(Boolean);
+    function toZoneST(z, point) {
+      const rel = point.clone().sub(z.a), ru = rel.dot(z.U), rv = rel.dot(z.V);
+      return { s: (ru * z.vv - rv * z.uv) / z.det, t: (rv * z.uu - ru * z.uv) / z.det, depth: rel.dot(z.n) };
+    }
+    // World-space offsets [lo, hi] of a brick's footprint along `axisDir`,
+    // given its local bbox extent on the matching model axis.
+    const footprint = (localMin, localMax, scale, sign) => sign > 0
+      ? [localMin * Math.abs(scale), localMax * Math.abs(scale)]
+      : [-localMax * Math.abs(scale), -localMin * Math.abs(scale)];
+    // Mutates wp/scale so the brick no longer overlaps any opening; returns
+    // false when the brick should be dropped.
+    const displaceFromOpenings = (wp, scale, basis, bb) => {
       for (const z of excludeZones) {
-        _exRel.subVectors(wp, z.a);
-        if (Math.abs(_exRel.dot(z.n)) > Math.max(halfU, halfV) + 0.25) continue; // Different wall plane.
-        const s = _exRel.dot(z.U) * z.invU2, t = _exRel.dot(z.V) * z.invV2;
-        const hs = (halfU * EXCLUDE_TUCK) / z.uLen, ht = (halfV * EXCLUDE_TUCK) / z.vLen;
-        if (s + hs > 0 && s - hs < 1 && t + ht > 0 && t - ht < 1) return true;
+        const st = toZoneST(z, wp);
+        const su = basis.u.dot(z.Un) >= 0 ? 1 : -1, sv = basis.v.dot(z.Vn) >= 0 ? 1 : -1;
+        const fu = footprint(bb.minX, bb.maxX, scale.x, su), fv = footprint(bb.minY, bb.maxY, scale.y, sv);
+        if (Math.abs(st.depth) > Math.max(fu[1] - fu[0], fv[1] - fv[0]) + 0.25) continue; // Different wall plane.
+        const s0 = st.s + fu[0] / z.uLen, s1 = st.s + fu[1] / z.uLen;
+        const t0 = st.t + fv[0] / z.vLen, t1 = st.t + fv[1] / z.vLen;
+        const sRight = 1 + (z.topRightS - 1) * Math.max(0, Math.min(1, st.t));
+        if (!(s1 > 0 && s0 < sRight && t1 > 0 && t0 < 1)) continue;
+        const sSpan = s1 - s0, tSpan = t1 - t0;
+        const options = [
+          { axis: 'u', lo: s0, hi: 0, keep: -s0 / sSpan },
+          { axis: 'u', lo: sRight, hi: s1, keep: (s1 - sRight) / sSpan },
+          { axis: 'v', lo: t0, hi: 0, keep: -t0 / tSpan },
+          { axis: 'v', lo: 1, hi: t1, keep: (t1 - 1) / tSpan },
+        ];
+        let best = options[0];
+        for (const o of options) if (o.keep > best.keep) best = o;
+        if (best.keep < DISPLACE_MIN_KEEP) return false;
+        const isU = best.axis === 'u';
+        const len = isU ? z.uLen : z.vLen, center = isU ? st.s : st.t;
+        const lo = (best.lo - center) * len, hi = (best.hi - center) * len; // New footprint, world offsets from the old centre.
+        const localMin = isU ? bb.minX : bb.minY, localMax = isU ? bb.maxX : bb.maxY;
+        const sign = isU ? su : sv;
+        const newAbs = (hi - lo) / Math.max(1e-9, localMax - localMin);
+        const shift = sign > 0 ? lo - localMin * newAbs : lo + localMax * newAbs;
+        wp.addScaledVector(isU ? z.Un : z.Vn, shift);
+        if (isU) scale.x = Math.sign(scale.x || 1) * newAbs; else scale.y = Math.sign(scale.y || 1) * newAbs;
       }
-      return false;
+      return true;
     };
 
     for (const p of panels) {
@@ -555,12 +597,12 @@
       applyWallPreRotationToMatrices(mats, preRot[0], preRot[1], preRot[2]);
 
       const [a, b, c, d] = panelCorners(p);
-      let modelHalf = null; // Local brick half-extents, only needed when openings must be excluded.
+      let modelBounds = null; // Local brick bbox, only needed when bricks must be displaced around openings.
       if (excludeZones.length) {
         const geo = model.mesh.geometry;
         if (!geo.boundingBox) geo.computeBoundingBox();
         const bb = geo.boundingBox;
-        modelHalf = bb ? { x: (bb.max.x - bb.min.x) * 0.5, y: (bb.max.y - bb.min.y) * 0.5 } : { x: 0, y: 0 };
+        modelBounds = bb ? { minX: bb.min.x, maxX: bb.max.x, minY: bb.min.y, maxY: bb.max.y } : { minX: 0, maxX: 0, minY: 0, maxY: 0 };
       }
 
       for (const localM of mats) {
@@ -583,7 +625,7 @@
           wp.addScaledVector(basis.u, jRng.range(-(brickJitter.shiftU || 0), brickJitter.shiftU || 0));
           wp.addScaledVector(basis.v, jRng.range(-(brickJitter.shiftV || 0), brickJitter.shiftV || 0));
         }
-        if (modelHalf && intrudesOpening(wp, modelHalf.x * Math.abs(tmpScale.x), modelHalf.y * Math.abs(tmpScale.y))) continue;
+        if (modelBounds && !displaceFromOpenings(wp, tmpScale, basis, modelBounds)) continue;
         const wm = new THREE.Matrix4().compose(wp, worldQ, tmpScale);
 
         if (!perGlb.has(resolvedName)) perGlb.set(resolvedName, { model, wms: [] });
