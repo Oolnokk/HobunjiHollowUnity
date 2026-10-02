@@ -30274,12 +30274,14 @@
           resolveCompletion?.({ ok: true, title: payload.title || 'Cutscene', restoredArea: previousArea });
         };
 
-        async function openLine(entity, speakerName, text) {
+        async function openLine(entity, speakerName, text, options = {}) {
           dialogueOpen = true;
           _dialogueWalker = entity?.kind === 'npc' ? entity.walker : null; // Reuse the actual world walker so dialogue expression refreshes target the visible avatar, never a detached viewport portrait.
           cutscenePreviewDialogueSpeaker = entity || null;
-          activeCameraMode = entity?.kind === 'creature' ? dlgModeKeyCreature : dlgModeKey;
-          activeCameraTarget = { position: (entity || entities.values().next().value)?.root.position || new THREE.Vector3() };
+          if (!options.preserveCamera) {
+            activeCameraMode = entity?.kind === 'creature' ? dlgModeKeyCreature : dlgModeKey;
+            activeCameraTarget = { position: (entity || entities.values().next().value)?.root.position || new THREE.Vector3() };
+          }
           _npcDialogueNameEl.textContent = speakerName;
           if (_npcDialogueHeartsEl) _npcDialogueHeartsEl.textContent = '';
           _arcContainerEl?.classList.add('arc-hidden');
@@ -30345,7 +30347,7 @@
           const speakerEntity = entities.get(stage.speakerId);
           const speakerName   = speakerActor?.name || stage.speakerName || 'Someone';
           if (stage.type === 'caption') {
-            openLine(null, stage.speakerName || '', stage.text).then(() => showChoiceOptions([]));
+            openLine(null, stage.speakerName || '', stage.text, { preserveCamera: true }).then(() => showChoiceOptions([]));
             cutscenePreviewAdvance = () => continueTo(getResolvedNext(stage.id, stage.next));
             return;
           }
