@@ -10,6 +10,8 @@
 (function (global) {
   'use strict';
 
+  let runtimeDeps = null; // Captured from the normal login placement call; reused by Tiredness pass-out recovery so it enters the farmhouse through the same private game transition.
+
   function parseTileKey(key) {
     const parts = String(key || '').split(',').map(Number);
     return parts.length === 2 && parts.every(Number.isFinite) ? { c: parts[0], r: parts[1] } : null;
@@ -32,6 +34,7 @@
   // deps: { player, TILE, enterInterior(pieceId), setFacingAngle(angle) }
   function placeInFarmhouse(deps) {
     const { player, TILE } = deps || {};
+    if (deps?.player && typeof deps.enterInterior === 'function') runtimeDeps = deps; // Retains the already-authorized game.js interior handoff for later pass-out recovery.
     if (!player || typeof deps.enterInterior !== 'function') return false;
     const front = frontDoor();
     if (front) {
@@ -50,5 +53,50 @@
     return true;
   }
 
-  global.FarmhouseLoginSpawn = Object.freeze({ placeInFarmhouse, frontDoor });
+  function findHomeBed() {
+    const furniture = global.FarmEditor?.getInteriorFurnitureObjects?.() || []; // Live player-placed interior registry; this follows moved/replaced beds instead of assuming starter coordinates.
+    return furniture.find(object => object?.area === 'interior' && ['basicBedFurniture', 'doubleBedFurniture', 'bedrollFurniture'].includes(String(object?.key || ''))) || null;
+  }
+
+  function bedFootprint(key, rotationDeg = 0) {
+    const base = key === 'doubleBedFurniture' ? { fw: 2, fd: 2 } : key === 'bedrollFurniture' ? { fw: 1, fd: 2 } : { fw: 1, fd: 2 }; // Used only to center the recovered player over the actual placed bed.
+    const quarterTurn = Math.abs(Math.round((Number(rotationDeg) || 0) / 90)) % 2 === 1;
+    return quarterTurn ? { fw: base.fd, fd: base.fw } : base;
+  }
+
+  function movePlayerOntoBed(deps = runtimeDeps) {
+    const player = deps?.player; // Existing player reference captured from game.js; moved only after the farmhouse interior has been entered.
+    const bed = findHomeBed();
+    if (!player || !bed) return false;
+    const tile = Number(deps?.TILE) || 1; // Same world-space tile scale used by placeInFarmhouse above.
+    const footprint = bedFootprint(bed.key, bed.rotYDeg);
+    player.x = (Number(bed.col) + footprint.fw / 2) * tile;
+    player.y = (Number(bed.row) + footprint.fd / 2) * tile;
+    player.vx = 0;
+    player.vy = 0;
+    deps?._snapCameraTarget?.();
+    return true;
+  }
+
+  function returnToFarmhouse(options = {}) {
+    if (!runtimeDeps) return false;
+    const entered = placeInFarmhouse(runtimeDeps);
+    if (!entered) return false;
+    if (options.atBed !== false) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => movePlayerOntoBed(runtimeDeps)); // Interior furniture is already restored in normal play; two frames also covers a just-built scene before placing the player.
+      });
+    }
+    return true;
+  }
+
+  function debugSnapshot() {
+    const bed = findHomeBed();
+    return {
+      runtimeReady: !!runtimeDeps,
+      homeBed: bed ? { id: bed.id || null, key: bed.key || null, col: bed.col, row: bed.row, rotYDeg: bed.rotYDeg || 0 } : null,
+    };
+  }
+
+  global.FarmhouseLoginSpawn = Object.freeze({ placeInFarmhouse, frontDoor, returnToFarmhouse, movePlayerOntoBed, debugSnapshot });
 })(window);
