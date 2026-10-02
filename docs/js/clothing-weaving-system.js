@@ -2238,6 +2238,22 @@
   const CELL_OFFSET_CYCLE = 4; // Keeps the offset bounded/subtle no matter how many disconnected cells a sprite has — cycles back to 0 rather than drifting further with every extra cell.
   const CELL_OFFSET_PAD = CELL_OFFSET_STEP * (CELL_OFFSET_CYCLE - 1);
 
+  function exactDirectMaskPass(active) {
+    return Array.isArray(active) && active.length === 1 && active[0]?.pattern?.directMask === true; // Exact trim pass is intentionally separate from generic motif transforms.
+  }
+
+  function patternWorkPad(directMaskPass) {
+    return directMaskPass ? 0 : CELL_OFFSET_PAD; // Direct sprite-space masks must never be resized by generic motif padding.
+  }
+
+  function patternGarmentPixelEligible(alpha, maxChannel, directMaskPass) {
+    return Number(alpha) > 8 && (directMaskPass || Number(maxChannel) > 28); // Manual direct masks honor every opaque source pixel; woven motifs still preserve near-black authored outlines.
+  }
+
+  function patternCellOffset(cellLabel, directMaskPass) {
+    return directMaskPass ? 0 : (Math.max(0, Number(cellLabel) || 0) % CELL_OFFSET_CYCLE) * CELL_OFFSET_STEP; // Exact masks never receive decorative per-cell phase shifts.
+  }
+
   // Finds each disconnected "cell" of a garment mask — a region enclosed by
   // transparency or by the near-black authored outline, both of which are
   // already excluded from garmentMask and so act as a flood-fill barrier for
@@ -2378,8 +2394,8 @@
     const active = renderable.map((pattern, index) => ({ pattern, motif: loaded[index] })).filter(entry => !!entry.motif).slice(0, 2);
     if (!active.length) return imageOrCanvas;
 
-    const directMaskPass = active.length === 1 && active[0]?.pattern?.directMask === true; // Exact garment trim masks must bypass every generic repeating-pattern translation/scaling seam.
-    const pad = directMaskPass ? 0 : CELL_OFFSET_PAD;
+    const directMaskPass = exactDirectMaskPass(active); // Exact garment trim masks must bypass every generic repeating-pattern translation/scaling seam.
+    const pad = patternWorkPad(directMaskPass);
     const maskWidth = width + pad * 2, maskHeight = height + pad * 2;
     const patternCanvases = active.map(({ pattern, motif }) => buildPatternMask(maskWidth, maskHeight, pattern, motif)); // Direct mask receives exact sprite dimensions; reusable motifs retain padded work space.
     const out = Object.assign(document.createElement('canvas'), { width, height });
@@ -2403,7 +2419,7 @@
     const garmentMask = new Uint8Array(pixelCount); // Reusable patterns avoid authored dark outlines; exact direct masks instead honor every opaque garment pixel selected by manual authoring.
     for (let p = 0, i = 0; i < base.data.length; i += 4, p++) {
       const maxChannel = Math.max(shadeSourceData[i], shadeSourceData[i + 1], shadeSourceData[i + 2]);
-      if (shadeSourceData[i + 3] > 8 && (directMaskPass || maxChannel > 28)) garmentMask[p] = 1;
+      if (patternGarmentPixelEligible(shadeSourceData[i + 3], maxChannel, directMaskPass)) garmentMask[p] = 1;
     }
 
     const { labels: cellLabels } = labelPatternCells(garmentMask, width, height);
@@ -2418,7 +2434,7 @@
       for (let p = 0; p < pixelCount; p++) {
         if (!garmentMask[p]) continue;
         const x = p % width, y = (p / width) | 0;
-        const off = directMaskPass ? 0 : (cellLabels[p] % CELL_OFFSET_CYCLE) * CELL_OFFSET_STEP;
+        const off = patternCellOffset(cellLabels[p], directMaskPass);
         const mx = x + pad - off, my = y + pad - off; // Direct masks sample the exact authored (x,y); only reusable motifs receive per-cell visual variation.
         const mi = (my * maskWidth + mx) * 4;
         if (paddedMaskData[mi + 3] > 16) mask[p] = 1;
@@ -2765,7 +2781,7 @@
     hasAddedTrim: item => weavingHasOptionalTrim(item?.weaving),
     reweaveMaterialCost,
     debugSnapshot,
-    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, applyPatternStackToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, resolveIconLayerUrls, patternRolesForLayers, layersUseSecondaryDye, iconLayersForView, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingPatternsForRole, normalizePatternStack, forcedOverpassPatternForWeaving, withForcedOverpass, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, weavingHasOptionalTrim, weavingHasAnyDecoration, normalizeTrimDyeSlot, clothingTrimConfig, authoredTrimPatternFromManifest, authoredTrimPatternForCosmetic, variantKeyForSourceUrl, trimColorHexForDescriptor, weavingCarriesSavedPattern, gearHasEquippedWovenClothing, requestSessionReadyPlayerAvatarRefresh, decorateAvatarDataWithWovenItems, materializeWeavingLibrarySnapshots, docsRelativeUrl, standaloneAssetUrl, frameShapeFor, wovenIconVisualKey, reweaveMaterialCost, resolvedPatternMeshScale, buildMotifClusterSeparatorMask, adjustMaskThickness, buildPatternOutlineMask, scaledOutlineWidth, overpassClearanceMultiplier }),
+    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, applyPatternStackToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, resolveIconLayerUrls, patternRolesForLayers, layersUseSecondaryDye, iconLayersForView, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingPatternsForRole, normalizePatternStack, forcedOverpassPatternForWeaving, withForcedOverpass, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, weavingHasOptionalTrim, weavingHasAnyDecoration, normalizeTrimDyeSlot, clothingTrimConfig, authoredTrimPatternFromManifest, authoredTrimPatternForCosmetic, variantKeyForSourceUrl, trimColorHexForDescriptor, weavingCarriesSavedPattern, gearHasEquippedWovenClothing, requestSessionReadyPlayerAvatarRefresh, decorateAvatarDataWithWovenItems, materializeWeavingLibrarySnapshots, docsRelativeUrl, standaloneAssetUrl, frameShapeFor, wovenIconVisualKey, reweaveMaterialCost, resolvedPatternMeshScale, buildMotifClusterSeparatorMask, adjustMaskThickness, buildPatternOutlineMask, scaledOutlineWidth, overpassClearanceMultiplier, exactDirectMaskPass, patternWorkPad, patternGarmentPixelEligible, patternCellOffset }),
   });
   window.__clothingWeavingDebug = debugSnapshot;
 
