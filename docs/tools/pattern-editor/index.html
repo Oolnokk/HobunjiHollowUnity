@@ -413,6 +413,7 @@ Overpass → not set</div>
     const draftEntry = trimDrafts.get(trimKey());
     if (draftEntry?.pattern) return { ...draftEntry.pattern, tiling: false };
     const record = trimRecord();
+    if (Array.isArray(record?.authorOps) && record.authorOps.length) return null; // Operation journals are the editor source of truth; renderTrimPreview reconstructs them instead of depending on an exported PNG.
     if (!record?.motifPng) return null;
     return { ...(record.settings || {}), tiling: false, motifUrl: record.motifPng };
   }
@@ -813,33 +814,52 @@ Overpass → not set</div>
 
   async function renderTrimPreview(pattern = currentTrimPatternForPreview()) {
     const selected = selectedTrimCosmetic();
+    const garmentId = $('trimGarment').value;
     const variantKey = $('trimVariant').value;
+    const view = $('trimView').value;
     if (!selected || !variantKey) return;
     const revision = ++trimLoadRevision;
     const { speciesId, gender } = parseVariantKey(variantKey);
     const patterns = previewPatterns(); // Loaded primary/overpass patterns remain underneath so authored trim overlap is visible.
     const weaving = patterns.length ? { patterns } : null;
-    const renderWithTrim = trimPatternOverride => window.ClothingWeavingSystem.renderClothingLayers($('trimGarment').value, {
+    const renderWithTrim = trimPatternOverride => window.ClothingWeavingSystem.renderClothingLayers(garmentId, {
       primaryHex: $('baseColor').value,
       secondaryHex: $('trimColorB').value,
       patternHex: $('inkColor').value,
       weaving,
-      view: $('trimView').value,
+      view,
       speciesId,
       gender,
       trimPatternOverride,
       trimDyeSlotOverride: $('trimPreviewDye').value,
     });
     try {
+      const draftEntry = trimDrafts.get(trimKey(garmentId, variantKey, view));
+      const record = trimRecord(garmentId, variantKey, view);
+      let effectivePattern = pattern;
+      let replayedAuthorOps = false;
+      if (!draftEntry?.pattern && Array.isArray(record?.authorOps) && record.authorOps.length) {
+        const baseCanvas = await renderTrimBaseCanvas(garmentId, variantKey, view);
+        const replayedMask = replayTrimAuthorOps(record.authorOps, baseCanvas);
+        effectivePattern = {
+          ...(record.settings || {}),
+          directMask: true,
+          tiling: false,
+          motifDataUrl: replayedMask.toDataURL('image/png'),
+        };
+        replayedAuthorOps = true; // A manifest-only journal previews exactly like a session draft; motifPng is only the eventual exported runtime asset.
+      }
+      if (revision !== trimLoadRevision) return;
+
       let result;
       let missingTrimAsset = false;
       try {
-        result = await renderWithTrim(pattern ? { ...pattern, tiling: false } : null);
+        result = await renderWithTrim(effectivePattern ? { ...effectivePattern, tiling: false } : null);
       } catch (error) {
-        if (!pattern) throw error;
+        if (!effectivePattern) throw error;
         debugState.lastError = error.message;
         missingTrimAsset = true;
-        result = await renderWithTrim(null); // A bad/missing authored mask must never erase the otherwise valid garment viewport.
+        result = await renderWithTrim(null); // A bad legacy mask must never erase the otherwise valid garment viewport.
       }
       if (revision !== trimLoadRevision) return;
       const canvas = $('trimPreview'), ctx = canvas.getContext('2d');
@@ -852,11 +872,13 @@ Overpass → not set</div>
       ctx.imageSmoothingEnabled = false;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(result.canvas, 0, 0);
-      $('trimStatus').textContent = missingTrimAsset
-        ? 'Authored trim entry found, but its PNG is missing/unreadable. Showing the base garment so you can paint or generate the mask.'
-        : pattern
-          ? 'Trim preview uses the real clothing compositor above any loaded primary/overpass patterns.'
-          : 'No trim authored for this variant/view yet. The base garment is shown for reference.';
+      $('trimStatus').textContent = replayedAuthorOps
+        ? 'Trim preview reconstructed directly from this variant’s saved authoring operations; no exported PNG is required for editor preview.'
+        : missingTrimAsset
+          ? 'Legacy trim PNG is missing/unreadable. Showing the base garment.'
+          : effectivePattern
+            ? 'Trim preview uses the real clothing compositor above any loaded primary/overpass patterns.'
+            : 'No trim authored for this variant/view yet. The base garment is shown for reference.';
     } catch (error) {
       debugState.lastError = error.message;
       $('trimStatus').textContent = 'Trim preview failed: ' + error.message;
@@ -1136,8 +1158,9 @@ Overpass → not set</div>
     }
 
     const existingRecord = trimRecord();
-    let existingMask = await editableTrimMaskCanvas(width, height);
-    if (!existingMask && authorOpsComplete && authorOps.length) existingMask = replayTrimAuthorOps(authorOps, baseCanvas); // Operation journal can reconstruct a mask even when its exported PNG is missing.
+    let existingMask = authorOpsComplete && authorOps.length
+      ? replayTrimAuthorOps(authorOps, baseCanvas)
+      : await editableTrimMaskCanvas(width, height); // Complete operation journals are authoritative even if an older exported PNG also exists.
     if (closed) return;
     if (existingMask) {
       paintCtx.drawImage(existingMask, 0, 0, width, height);
@@ -1753,7 +1776,7 @@ Overpass → not set</div>
   };
 
   window.__patternEditorDebug = () => ({ // Mobile-visible console substitute for checking the dev tool's two-slot state.
-    mostRecentChange: 'Expand Inward now uses multi-source interior distance from every selected first-non-black contour pixel, in both live editing and replay. Selected inner/outer edges can meet and fill the space between them; unselected contour pixels remain traversal barriers so trim cannot creep sideways around the silhouette.',
+    mostRecentChange: 'Trim preview and paint-editor loading now treat saved authorOps as authoritative and reconstruct the mask directly from the operation journal. Exported motif PNGs are no longer required for editor preview; they remain runtime/export artifacts.',
     previewMode: $('previewMode').value,
     weavingBackground: $('surfaceTexture').value,
     overpassClearanceMultiplier: clampOverpassClearance($('overpassClearance').value),
