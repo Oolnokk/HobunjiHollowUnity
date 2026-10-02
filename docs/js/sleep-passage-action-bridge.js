@@ -1,11 +1,11 @@
 (() => {
   'use strict';
 
-  if (Number(window.HobunjiSleepPassageActionBridge?.version) >= 1) return;
+  if (Number(window.HobunjiSleepPassageActionBridge?.version) >= 2) return;
 
   const ACTION_BUTTON_IDS = Object.freeze(['btnAction1', 'btnAction2', 'btnAction3', 'btnItemAction1', 'btnItemAction2']); // Existing action-bar slots searched for the live Sleep interaction.
   const KEY_CODE_BY_LABEL = Object.freeze({ E: 'KeyE', Q: 'KeyQ', F3: 'F3', F4: 'F4' }); // Mirrors game.js DESK_KEYS without assuming Sleep always occupies Action 1.
-  const CHANGE_SUMMARY = 'Restored farmhouse beds to the shared Sleep passage UI for every displayed desktop action key, blocking legacy whole-day sleep.'; // Mobile-visible diagnostics summary.
+  const CHANGE_SUMMARY = 'Bed Sleep now routes every input into the fixed next-morning confirmation and shared iris passage, blocking the legacy whole-day sleep path.'; // Mobile-visible diagnostics summary.
 
   let armedKeyCode = null; // Non-E Sleep key held until release so the shared passage still opens on release like CalendarSystem tap actions.
   let interceptedKeyboardCount = 0; // Diagnostic count of legacy keyboard sleeps prevented by this bridge.
@@ -90,7 +90,7 @@
     const button = sleepButton();
     return {
       installed: true,
-      version: 1,
+      version: 2,
       changeSummary: CHANGE_SUMMARY,
       sleepButtonId: button?.id || null,
       sleepKeyCode: displayedKeyCode(button),
