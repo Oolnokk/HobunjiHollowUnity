@@ -26,8 +26,8 @@
   function normalizeSpeciesId(value) {
     const compact = normalizeToken(value).replace(/-/g, ''); // Used to collapse display spellings and legacy ids onto one species preference key.
     if (compact === 'enghsho') return 'engh-sho';
-    if (compact === 'maoao' || compact === 'ghoul') return 'mao-ao';
-    if (compact === 'kenkari' || compact === 'rakakoan') return 'kenkari';
+    if (compact === 'maoao') return 'mao-ao';
+    if (compact === 'kenkari') return 'kenkari';
     return normalizeToken(value);
   }
 
@@ -90,7 +90,7 @@
     function visit(sourceKey, sourceDef, remainingDepth) {
       if (!sourceKey || visited.has(sourceKey)) return;
       visited.add(sourceKey);
-      const children = Array.isArray(sourceDef?.ingredientKeys) ? sourceDef.ingredientKeys.filter(Boolean) : [];
+      const children = Array.isArray(sourceDef?.giftIngredientKeys) ? sourceDef.giftIngredientKeys.filter(Boolean) : []; // Only source-stable provenance is safe for specific gift preferences; generic ingredientKeys may describe a shared stack's most recent processor input.
       if (!children.length || remainingDepth <= 0) {
         lineage.add(sourceKey);
         return;
