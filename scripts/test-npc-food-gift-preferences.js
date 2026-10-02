@@ -10,11 +10,13 @@ const root = path.resolve(__dirname, '..');
 const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
 
 const configSource = read('docs/config/npcs/food-gift-preferences.js');
+const foodRuntimeSource = read('docs/js/npc-food-gift-preferences.js');
 const giftingSource = read('docs/js/npc-gifting.js');
 const cookingSource = read('docs/js/cooking-system.js');
 const processingSource = read('docs/js/item-processing.js');
 
 assert.doesNotThrow(() => new vm.Script(configSource, { filename: 'food-gift-preferences.js' }));
+assert.doesNotThrow(() => new vm.Script(foodRuntimeSource, { filename: 'npc-food-gift-preferences.js' }));
 assert.doesNotThrow(() => new vm.Script(giftingSource, { filename: 'npc-gifting.js' }));
 
 const itemDefs = {
@@ -55,6 +57,7 @@ const windowStub = {
 
 const context = vm.createContext({ window: windowStub, console });
 vm.runInContext(configSource, context, { filename: 'food-gift-preferences.js' });
+vm.runInContext(foodRuntimeSource, context, { filename: 'npc-food-gift-preferences.js' });
 vm.runInContext(giftingSource, context, { filename: 'npc-gifting.js' });
 
 const gifting = windowStub.NpcGifting;
