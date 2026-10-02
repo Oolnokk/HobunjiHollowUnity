@@ -19257,19 +19257,19 @@
             },
             {
                   "id": "khannibarri_agent",
-                  "name": "<suggestion: name — the Khannibarri Imperial Mining Company's local representative isn't named in the design doc>",
-                  "homeId": "<suggestion: location — needs a company office/outpost built in town — the design doc establishes the company opens up shop in the village>",
-                  "species": "<suggestion: species — not specified — possibly a non-native species to mark them as outsiders/colonial presence>",
-                  "gender": "<suggestion: gender — not specified>",
+                  "name": "Surveyor Harkharash",
+                  "homeId": "khannibarri_temporary_lodging",
+                  "species": "Mao-ao",
+                  "gender": "male",
                   "ageBand": "adult",
-                  "role": "antagonist / mining company agent",
+                  "role": "surveyor / mining company representative",
                   "tags": [
                         "khannibarri",
                         "antagonist",
                         "jojamart_analog",
                         "trade_shortage"
                   ],
-                  "bio": "Local face of the Khannibarri Imperial Mining Company, the predatory corporate antagonist (this game's Jojamart/Joja Corp analogue) that moves in during the Trade Shortage crisis. <suggestion: personality — design doc establishes the company's role but not this individual's voice/manner — oily corporate charm? cold bureaucrat? true believer?>",
+                  "bio": "Surveyor Harkharash is the Khannibarri Imperial Mining Company's local representative. He arrives while the injured player is being questioned in Father Hunundi's room, looking for whoever can speak for Hobunji Hollow. He argues that the ore beneath the settlement makes a company buyout sensible, and treats the village's isolation, the feared ghost army, bandit clans, and the barbarian war as leverage for persuading residents to sell.",
                   "portrait": {
                         "asset": "",
                         "avatarKey": ""
@@ -19360,7 +19360,7 @@
                   "dialogueTrees": [
                         {
                               "id": "tree_khannibarri_agent_fallback",
-                              "label": "<suggestion: name — the Khannibarri Imperial Mining Company's local representative isn't named in the design doc>'s General Chat",
+                              "label": "Surveyor Harkharash's General Chat",
                               "trigger": "interact",
                               "priority": 0,
                               "entryNode": "n_khannibarri_agent_fallback_1",
@@ -19402,7 +19402,7 @@
                                                 "x": 60,
                                                 "y": 80
                                           },
-                                          "text": "{{pool:Khannibarri Agent Greetings}}",
+                                          "text": "{{pool:Harkharash Greetings}}",
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
@@ -19413,32 +19413,34 @@
                   ],
                   "events": [],
                   "scheduleHooks": {
-                        "defaultMapId": "hobunji_main_town",
-                        "workBuildingId": "<suggestion: location — needs a company office/outpost built in town — the design doc establishes the company opens up shop in the village>",
+                        "defaultMapId": "map_i_general_store",
+                        "workBuildingId": "khannibarri_temporary_office",
                         "shopHours": "",
-                        "rules": [],
-                        "defaultPosition": {
-                              "area": "town",
-                              "c": 0,
-                              "r": 0
-                        },
-                        "contentIncomplete": true,
-                        "contentIncompleteReason": "defaultPosition is a placeholder {0,0} — this NPC spawns (or falls back) to world origin whenever no schedule rule is active. Needs a real station."
+                        "rules": [
+                              {
+                                    "from": "00:00",
+                                    "to": "23:59",
+                                    "mapId": "map_i_general_store",
+                                    "stationId": "station_k7m3q",
+                                    "activity": "meeting residents about the Khannibarri offer"
+                              }
+                        ],
+                        "defaultStationId": "station_k7m3q"
                   },
-                  "loreBackground": "Represents the Khannibarri Imperial Mining Company, which exploits the Trade Shortage to gain a foothold in the village, undercutting local trade and eventually expressing interest in the Infested Old Mine after the <suggestion: plot detail — the village elder is the one who tips them off about the old mine — confirm whether this agent is the one who receives that tip, or a separate company official>. <suggestion: plot design — the full arc of the company's takeover attempt, what the player can do to resist/undermine it, and how it resolves>",
+                  "loreBackground": "Surveyor Harkharash represents the Khannibarri Imperial Mining Company in Hobunji Hollow. He considers the village's shrinking trade route and surrounding dangers evidence that selling is practical rather than a tragedy. Father Hunundi refuses to decide for the settlement and instead allows Harkharash to remain in town and make the offer directly to its residents.",
                   "questHooks": [
-                        "<suggestion: quest design — an early quest establishing the Trade Shortage and the company's arrival as a 'solution'>",
-                        "<suggestion: quest design — a late-game questline where the player can sabotage, expose, or drive out the company>",
-                        "<suggestion: quest design — ties to the Infested Old Mine — does the company try to claim/exploit it once its existence becomes known?>"
+                        "Opening story: Harkharash presents Khannibarri's offer to buy Hobunji Hollow after company surveys identify a major ore body beneath the settlement.",
+                        "Father Hunundi permits Harkharash to remain in town and try to persuade residents individually, making him the persistent local face of the company.",
+                        "Later Trade Value/company progression can replace this placeholder follow-up without changing the stable khannibarri_agent NPC id."
                   ],
                   "phrasePools": [
                         {
                               "id": "pool_khannibarri_agent_greetings",
-                              "name": "Khannibarri Agent Greetings",
+                              "name": "Harkharash Greetings",
                               "entries": [
                                     {
                                           "id": "pe_khannibarri_agent_greeting_1",
-                                          "text": "A productive morning, {{pool:Khannibarri Agent Nicknames}}. Shall we discuss opportunity?",
+                                          "text": "A productive morning, {{pool:Harkharash Nicknames}}. Shall we discuss opportunity?",
                                           "conditions": {
                                                 "weekdays": [],
                                                 "seasons": [],
@@ -19472,7 +19474,7 @@
                                     },
                                     {
                                           "id": "pe_khannibarri_agent_greeting_2",
-                                          "text": "Welcome, {{pool:Khannibarri Agent Nicknames}}. Khannibarri values proactive partners.",
+                                          "text": "Welcome, {{pool:Harkharash Nicknames}}. Khannibarri values proactive partners.",
                                           "conditions": {
                                                 "weekdays": [],
                                                 "seasons": [],
@@ -19506,7 +19508,7 @@
                                     },
                                     {
                                           "id": "pe_khannibarri_agent_greeting_3",
-                                          "text": "Working late, {{pool:Khannibarri Agent Nicknames}}? Admirable. Potentially billable.",
+                                          "text": "Working late, {{pool:Harkharash Nicknames}}? Admirable. Potentially billable.",
                                           "conditions": {
                                                 "weekdays": [],
                                                 "seasons": [],
@@ -19575,7 +19577,7 @@
                         },
                         {
                               "id": "pool_khannibarri_agent_nicknames",
-                              "name": "Khannibarri Agent Nicknames",
+                              "name": "Harkharash Nicknames",
                               "entries": [
                                     {
                                           "id": "pe_khannibarri_agent_nickname_1",
