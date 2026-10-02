@@ -11,7 +11,7 @@
     completed: false,
     lastScene: null,
     lastError: null,
-    latestChange: 'Rescue shots center on the player with wider framing and surrounding wolves; combat prone pose, real equipped gear, correct chair anchors/rotations and locked cutscene dialogue. Rescue animals use composed eyes and character head targeting; cutscenes follow facing deadzones and seat height, with a hidden surveyor doorway reveal and relocated office camera. Farm-tour choices now continue through valid col/row navigation hops; the real player stays hidden behind its stand-in, with a wide south-to-north farm shot that blends in after the first dialogue Continue.',
+    latestChange: 'Hunundi POV camera/head targeting and cinematic HUD suppression. Smooth combat-prone transitions, wider wolf shots, town Spearhead equipment, animated office furniture, Hunundi doorway blocking and seated conversational eye contact. Rescue shots center on the player with wider framing and surrounding wolves; combat prone pose, real equipped gear, correct chair anchors/rotations and locked cutscene dialogue. Rescue animals use composed eyes and character head targeting; cutscenes follow facing deadzones and seat height, with a hidden surveyor doorway reveal and relocated office camera. Farm-tour choices now continue through valid col/row navigation hops; the real player stays hidden behind its stand-in, with a wide south-to-north farm shot that blends in after the first dialogue Continue.',
   };
 
   function stateKey(profile) {
@@ -150,6 +150,7 @@
       localeId: 'locale_opening_rescue',
       wilderness: true,
       footprint: { originC: 0, originR: 0, w: 17, h: 18 },
+      creatureDialogueDistanceMultiplier: 1.5, creatureDialogueFovDeg: 55,
       cameraTargetActorId: 'player', widePlayerShots: true, // Establishing and player-choice shots stay centered on the injured character.
       camera3d: { fovDeg: 65, localPos: { x: 3.5, y: 8, z: 19.5 }, localTarget: { x: 3.5, y: 0.3, z: 9.5 } },
       actors,
@@ -158,7 +159,8 @@
   }
 
   function seatTarget(c, r, rotY) {
-    return { pose: 'sit', furnitureKey: 'chairSimple', c, r, rotY, seatIndex: 0 }; // Mirrors the normal NPC schedule seat-target shape consumed by npcSeatTransformForTarget().
+    const furnitureId = ({ '11,8': 'f_tbhunundi_chair', '9,9': 'fmtst9ykgmqf0', '8,9': 'fmtsteb7xjq80', '7,9': 'f_tbhunundi_guest_chair_west', '9,8': 'f_tbhunundi_guest_chair_near' })[`${c},${r}`]; // Stable map instance binding keeps seated actors attached to animated furniture.
+    return { pose: 'sit', furnitureKey: 'chairSimple', furnitureId, c, r, rotY, seatIndex: 0 }; // Mirrors the normal NPC schedule seat-target shape consumed by npcSeatTransformForTarget().
   }
 
   function buildHunundiMeetingScene(records, profile) {
@@ -168,7 +170,7 @@
       npcActor(records, { id: 'hunundi', name: 'Father Hunundi', npcId: 'father_hunundi_hodu', worldC: 11, worldR: 8, rotation: 180, pose: 'sit', seatTarget: seatTarget(11, 8, 0) }),
       npcActor(records, { id: 'jubmir', name: 'Jubmir', npcId: 'jubmir', worldC: 7, worldR: 9, rotation: 0, pose: 'sit', seatTarget: seatTarget(7, 9, 180) }),
       npcActor(records, { id: 'spearhead', name: 'Spearhead', npcId: 'spearhead_unumanuk', worldC: 9, worldR: 9, rotation: 0, pose: 'sit', seatTarget: seatTarget(9, 9, 180) }),
-      npcActor(records, { id: 'harkharash', name: 'Surveyor Harkhanash', npcId: 'khannibarri_agent', visible: false, worldC: 11, worldR: 5, rotation: 180, pose: 'standing', seatTarget: seatTarget(9, 8, 0) }),
+      npcActor(records, { id: 'harkharash', name: 'Surveyor Harkhanash', npcId: 'khannibarri_agent', visible: false, worldC: 11, worldR: 5, rotation: 0, pose: 'standing', seatTarget: seatTarget(9, 8, 0) }),
     ];
     const stages = [ // The dialogue establishes amnesia, Nanjiri Farmstead, the Company's offer, regional isolation, and Spearhead's resolve in one room.
       { id: 'meeting_fade_in', type: 'fade', direction: 'in', duration: 0.8, next: '__next__' },
@@ -188,12 +190,15 @@
       ] },
       { id: 'meeting_hunundi_answer', type: 'talk', speakerId: 'hunundi', text: "By getting well. We can worry about the rest after you've had a roof over your head for a few nights.", next: '__next__' },
       { id: 'meeting_knock', type: 'caption', speakerName: '', text: 'Knock. Knock.', next: '__next__' },
+      { id: 'meeting_hunundi_rise', type: 'animation', actorId: 'hunundi', animKind: 'none', resultPose: 'standing', duration: 0.35, next: '__next__' },
+      { id: 'meeting_hunundi_face_door', type: 'turn', actorId: 'hunundi', mode: 'actor', targetActorId: 'harkharash', duration: 0.4, next: '__next__' },
       { id: 'meeting_hunundi_door', type: 'talk', speakerId: 'hunundi', text: 'Hm? Come in.', next: '__next__' },
-      { id: 'meeting_hark_enter', type: 'move', visible: true, cameraMode: 'npcRelative', actorId: 'harkharash', targetWorld: { c: 10, r: 7 }, speed: 'normal', next: '__next__' },
+      { id: 'meeting_hark_enter', type: 'animation', animKind: 'none', resultPose: 'standing', duration: 0.35, visible: true, cameraMode: 'npcRelative', actorId: 'harkharash', next: '__next__' },
       { id: 'meeting_hark_intro', type: 'talk', speakerId: 'harkharash', text: "Surveyor Harkhanash, the Imperial Khanibarri Mining Company. I'm looking for Father Hunundi — the nearest thing to a leader here, I'm told.", next: '__next__' },
       { id: 'meeting_hunundi_no_leader', type: 'talk', speakerId: 'hunundi', text: "I'm Father Hunundi. I help settle disputes; the Hollow isn't mine. Have a seat.", next: '__next__' },
       { id: 'meeting_hark_to_seat', type: 'move', actorId: 'harkharash', targetWorld: { c: 9, r: 8 }, speed: 'normal', next: '__next__' },
       { id: 'meeting_hark_sit', type: 'animation', cameraMode: 'wall', actorId: 'harkharash', animKind: 'none', resultPose: 'sit', duration: 0.35, next: '__next__' },
+      { id: 'meeting_hunundi_reseat', type: 'animation', actorId: 'hunundi', animKind: 'none', resultPose: 'sit', duration: 0.4, next: '__next__' },
       { id: 'meeting_hark_offer', type: 'talk', speakerId: 'harkharash', text: 'Our surveys found substantial ore beneath this valley. The Company would like to buy the settlement and the surrounding claims to extract it.', next: '__next__' },
       { id: 'meeting_hunundi_people', type: 'talk', speakerId: 'hunundi', text: "That is up to the townsfolk. Their families have lived here for generations. They won't give it up lightly.", next: '__next__' },
       { id: 'meeting_hark_practical', type: 'talk', speakerId: 'harkharash', text: 'With respect, Father, I was hoping the nearest thing to a leader might also be the nearest thing to a practical man.', next: '__next__' },
@@ -214,10 +219,13 @@
       { id: 'meeting_hunundi_final', type: 'talk', speakerId: 'hunundi', text: "The Nanjiri Farmstead is yours to use. Rest first. Tomorrow, we'll see what sort of life you want to make of it.", next: '__next__' },
       { id: 'meeting_fade_out', type: 'fade', direction: 'out', duration: 0.8, next: '__end__' },
     ];
+    for (const stage of stages) if (stage.speakerId) stage.addressedActorId = stage.speakerId === 'harkharash' ? 'hunundi' : (stage.id === 'meeting_hunundi_no_leader' || stage.id === 'meeting_hunundi_people' || stage.id === 'meeting_hunundi_invite' ? 'harkharash' : 'player');
+    for (const stage of stages) { if (stage.speakerId === 'hunundi' && stage.addressedActorId === 'harkharash') Object.assign(stage, { cameraMode: 'pov', actorId: 'hunundi', targetActorId: 'harkharash', fovDeg: 65 }); else if (stage.type === 'talk' && stage.id !== 'meeting_hark_intro' && stage.id !== 'meeting_hunundi_door') stage.cameraMode = 'wall'; } // Hunundi directly addresses the surveyor from his own eye-level view.
     return {
       version: 6,
       title: "Father Hunundi's Room",
       mapId: 'map_i_temple_basement_hunundi',
+      furnitureTransforms: [{ furnitureId: 'f_tbhunundi_chair', transform: { rotationDeg: { y: -90 } } }],
       cinematicCameraId: 'hunundi_office_wall',
       actors,
       stages,

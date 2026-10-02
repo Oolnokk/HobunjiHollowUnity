@@ -20359,10 +20359,11 @@
           ? window.FormatUtils.clamp((performance.now() - _cinematicCameraBlend.startedAt) / durationMs, 0, 1)
           : 1;
         const t = rawT * rawT * (3 - 2 * rawT);
+        const shotPosition = window.CinematicCameraRuntime?.resolvedPosition?.() || shot.position; // Procedural actor POV cameras follow live head position through the shared cinematic blend.
         const desiredPosition = _cinematicDesiredPosition.set(
-          Number(shot.position?.x) || 0,
-          Number(shot.position?.y) || 0,
-          Number(shot.position?.z) || 0
+          Number(shotPosition?.x) || 0,
+          Number(shotPosition?.y) || 0,
+          Number(shotPosition?.z) || 0
         );
         const resolvedTarget = window.CinematicCameraRuntime?.resolvedTarget?.();
         const desiredTarget = _cinematicDesiredTarget.set(
@@ -23285,6 +23286,7 @@
 
       // ── Update reticle ────────────────────────────────────────────
       function updateReticleMesh() {
+        if (cutscenePreviewActive) { reticleMesh.visible = reticleCircleMesh.visible = reticleRingMesh.visible = reticleWavyGroup.visible = false; clearTargetHighlights(); return; } // The director owns presentation during dialogue and intervening action cards.
         const reticle = getReticleTile();
         const tile    = window.GridTileAccessors.getActiveGrid()[reticle.row]?.[reticle.col];
         if (!tile) {
@@ -29977,6 +29979,9 @@
         const previousCameraMode = activeCameraMode; // Restored with previousArea after live playback completes.
         const previousCameraTarget = activeCameraTarget; // Restored with the prior camera mode so gameplay resumes on the real player target.
         const liveLock = liveMode ? window.CharacterActionLocks?.acquire?.({ owner: 'authored-cutscene', reason: payload.title || 'story cutscene', participants: [{ id: 'player', channels: ['movement', 'tools', 'actions'] }] }) : null; // Prevents real-player input from mutating the hidden gameplay actor while stand-ins own the screen.
+        let povShot = null; // Current actor-eye camera binding, including the source avatar visibility to restore.
+        const clearPovShot = () => { if (povShot?.source?.walker?.avatarGroup) povShot.source.walker.avatarGroup.visible = povShot.visible; povShot = null; };
+        let furniturePlayback = null; // Shared Director/game transform session restores map furniture on finish or failure.
         const entities = new Map(); // Temporary cinematic actor rigs also belong to the setup-failure cleanup path.
         const previousBuildingMapId = _currentBuildingMapId; // Restores building context as well as the active area.
         const previousPlayerParent = playerMesh.parent; // Real player hierarchy stays independent of temporary cinematic stand-ins.
@@ -29991,9 +29996,10 @@
         const completionPromise = new Promise(resolve => { resolveCompletion = resolve; }); // Public completion signal used by sequential authored scenes.
         const report = (text, isError) => { if (!liveMode) window.CutscenePreviewHelpers.cutscenePreviewBanner(text, isError); }; // Keeps the Director's Exit Preview banner out of real story cinematics.
         const cutsceneLeaveButton = document.getElementById('npcDialogueLeave'); // Hide the normal conversation exit while the director owns dialogue.
+        document.body?.classList.add('authored-cutscene'); // One presentation claim hides gameplay controls across every cinematic card.
         const previousLeaveDisplay = cutsceneLeaveButton?.style.display; // Restores the original Leave-button presentation on success/error.
         if (cutsceneLeaveButton) cutsceneLeaveButton.style.display = 'none';
-        const releaseLiveLock = () => { liveLock?.release?.(); if (cutsceneLeaveButton) cutsceneLeaveButton.style.display = previousLeaveDisplay; }; // Shared cleanup for normal completion and pre-stage load failures.
+        const releaseLiveLock = () => { liveLock?.release?.(); document.body?.classList.remove('authored-cutscene'); clearPovShot(); if (cutsceneLeaveButton) cutsceneLeaveButton.style.display = previousLeaveDisplay; }; // Shared cleanup for normal completion and pre-stage load failures.
         const restoreLiveGameplay = () => {
           if (!liveMode) return;
           if (runtimeOptions.placePlayerAtFinalPosition && currentArea === previousArea) {
@@ -30007,12 +30013,14 @@
           for (const entity of entities.values()) {
             if (entity?.kind === 'creature' && entity.creature) despawnCreature(entity.creature);
             else {
+              window.NpcHeldEquipment?.detachCutsceneWalker?.(entity.walker);
               entity.walker?.legs?.dispose?.();
               if (entity.walker?.avatarGroup) window.PNGPlaneAvatar?.disposeAvatarModel?.(entity.walker.avatarGroup);
               entity?.root?.parent?.remove?.(entity.root);
             }
           }
           entities.clear();
+          furniturePlayback?.restore();
           currentArea = previousArea; // Hand synchronization must resolve the restored gameplay scene.
           window.CinematicCameraRuntime?.deactivate?.();
           _currentBuildingMapId = previousBuildingMapId;
@@ -30180,7 +30188,8 @@
           alignToDialoguePortraitCenters: true,
           targetYOffsetTiles: 0.08,
           angleFromGroundDeg: Math.min(baseDlgCfg.angleFromGroundDeg ?? 10.64, 6),
-          distanceTiles: (baseDlgCfg.distanceTiles ?? 4.67) * 0.78,
+          distanceTiles: (baseDlgCfg.distanceTiles ?? 4.67) * (Number(payload.creatureDialogueDistanceMultiplier) || 0.78),
+          fovDeg: Number(payload.creatureDialogueFovDeg) || baseDlgCfg.fovDeg,
         };
 
         let idleCameraMode, idleCameraTarget;
@@ -30271,8 +30280,11 @@
           if (!entity) entity = window.CutscenePreviewHelpers.cutscenePreviewMakePlaceholder(actor, area, targetScene);
           entity.root.visible = actor.visible !== false; // Authored entrances keep the real rig hidden until its reveal stage.
           entities.set(actor.id, entity);
+          if (entity.walker) await window.NpcHeldEquipment?.attachCutsceneWalker?.(entity.walker);
         }
 
+        furniturePlayback = window.CutsceneFurnitureRuntime?.create?.(targetScene);
+        for (const transform of payload.furnitureTransforms || []) furniturePlayback?.set({ ...transform, duration: 0 });
         if (payload.cameraTargetActorId && entities.get(payload.cameraTargetActorId)?.root) idleCameraTarget = entities.get(payload.cameraTargetActorId).root; // Wide rescue framing follows the actual cinematic player, including its collapse/step.
         activeCameraTarget = idleCameraTarget;
         let cinematicCameraReady = !payload.cinematicCameraFromStageId; // Optional stage gate preserves the first dialogue angle before easing into a fixed establishing shot.
@@ -30295,7 +30307,7 @@
         // applyState, so it can't drift out of sync with what's actually on
         // screen the way computing it twice would.
         const actorStates = new Map((payload.actors || []).map(a =>
-          [a.id, { c: a.worldC, r: a.worldR, rotation: a.rotation || 0, pose: a.pose || 'standing', seatTarget: a.seatTarget || null, combatOn: false, canLose: false }]
+          [a.id, { c: a.worldC, r: a.worldR, rotation: a.rotation || 0, pose: a.pose || 'standing', seatTarget: a.seatTarget || null, proneBlend: a.pose === 'prone' ? 1 : 0, combatOn: false, canLose: false }]
         ));
         // actorId -> desired facing in degrees: what each actor is currently
         // trying to face (set at spawn from its raw authored rotation, and
@@ -30339,7 +30351,8 @@
           }
           return path;
         };
-        const applyState = (actorId, dt) => { const entity = entities.get(actorId), st = actorStates.get(actorId); if (entity && st) window.CutscenePreviewHelpers.cutscenePreviewApplyState(entity, area, st, dt); };
+        const resolveActorSeat = st => { const baseline = npcSeatTransformForTarget(st.seatTarget); return furniturePlayback?.seat(st.seatTarget?.furnitureId, baseline) || baseline; }; // Chair-bound actors track interpolated furniture yaw and anchor position.
+        const applyState = (actorId, dt) => { const entity = entities.get(actorId), st = actorStates.get(actorId); if (entity && st) window.CutscenePreviewHelpers.cutscenePreviewApplyState(entity, area, st, dt, resolveActorSeat(st)); };
 
         // Per-frame travel toward a tile-center target, reusing the real
         // game's own locomotion instead of the discrete grid-hop stepping
@@ -30422,15 +30435,18 @@
             activeCameraTarget = null;
             report(message || `🎬 ${payload.title || 'Cutscene'} — finished.`, false);
           }
+          if (!liveMode) { furniturePlayback?.restore(); for (const entity of entities.values()) window.NpcHeldEquipment?.detachCutsceneWalker?.(entity.walker); }
           releaseLiveLock();
           resolveCompletion?.({ ok: true, title: payload.title || 'Cutscene', restoredArea: previousArea });
         };
 
+        let dialogueAddressedActorId = null; // Seated speakers look at the addressed actor; listeners look at the current speaker.
         async function openLine(entity, speakerName, text, options = {}) {
           dialogueOpen = true;
           _dialogueWalker = entity?.kind === 'npc' ? entity.walker : null; // Reuse the actual world walker so dialogue expression refreshes target the visible avatar, never a detached viewport portrait.
           cutscenePreviewDialogueSpeaker = entity || null;
-          if (cinematicCameraReady && (payload.cinematicCamera || (payload.cinematicCameraId && entity?.walker))) {
+          if (povShot) { /* The procedural camera already follows its authored actor and gaze. */ }
+          else if (cinematicCameraReady && (payload.cinematicCamera || (payload.cinematicCameraId && entity?.walker))) {
             if (!payload.cinematicCamera || payload.cinematicCamera.trackSpeaker || window.CinematicCameraRuntime?.activeRecord?.()?.camera?.id !== payload.cinematicCamera.id) window.CinematicCameraRuntime?.activate?.(area, payload.cinematicCameraId || payload.cinematicCamera, { reason: 'authored-cutscene', targetWalker: entity?.walker });
           } else if (payload.widePlayerShots && entity?.rec?.id === 'player') {
             activeCameraMode = idleCameraMode;
@@ -30496,7 +30512,21 @@
           report(`🎬 ${payload.title || 'Cutscene'} — ${stage.type}`, false);
 
           if (stage.visible != null) { const actor = entities.get(stage.actorId); if (actor) actor.root.visible = stage.visible; } // Stage visibility controls doorway entrances and departures.
-          if (stage.cameraMode === 'npcRelative') {
+          if (povShot && (stage.type === 'talk' || stage.type === 'choice' || stage.cameraMode) && stage.cameraMode !== 'pov') { clearPovShot(); window.CinematicCameraRuntime?.deactivate?.(); }
+          if (stage.cameraMode === 'pov') {
+            clearPovShot();
+            const source = entities.get(stage.actorId || stage.speakerId); // View origin is the same face anchor used by dialogue and shoulder-style aiming.
+            const target = entities.get(stage.targetActorId || stage.addressedActorId); // A live actor or authored world point drives both camera and neck.
+            if (source?.walker) {
+              const eyePoint = new THREE.Vector3(), targetPoint = new THREE.Vector3(); // Reused by this shot's providers and actor-head solve.
+              const targetProvider = () => targetPoint.copy(target?.walker ? (_npcFaceWorldPosition(target.walker) || _dialogueEyeWorldPosition(target.root.position, target.walker.avatarHeight)) : target?.root?.position || targetPoint.set(Number.isFinite(Number(stage.targetWorld?.c)) ? Number(stage.targetWorld.c) + .5 : 0, Number.isFinite(Number(stage.targetWorld?.y)) ? Number(stage.targetWorld.y) : .8, Number.isFinite(Number(stage.targetWorld?.r)) ? Number(stage.targetWorld.r) + .5 : 0));
+              const positionProvider = () => eyePoint.copy(_npcFaceWorldPosition(source.walker) || _dialogueEyeWorldPosition(source.root.position, source.walker.avatarHeight));
+              povShot = { source, visible: source.walker.avatarGroup.visible, targetProvider };
+              source.walker.avatarGroup.visible = false;
+              cinematicCameraReady = false;
+              window.CinematicCameraRuntime?.activate?.(area, { id: `cutscene_pov_${stage.id}`, position: positionProvider(), target: targetProvider(), positionProvider, targetProvider, fovDeg: Number(stage.fovDeg) || 65, blendSeconds: Number(stage.blendSeconds) || .35 });
+            }
+          } else if (stage.cameraMode === 'npcRelative') {
             cinematicCameraReady = false;
             window.CinematicCameraRuntime?.deactivate?.();
             activeCameraMode = dlgModeKey;
@@ -30505,6 +30535,8 @@
             cinematicCameraReady = true;
             window.CinematicCameraRuntime?.activate?.(area, payload.cinematicCameraId, { reason: 'authored-cutscene', targetWalker: entities.get(stage.actorId)?.walker });
           }
+          if (stage.type === 'camera') { setTimeout(() => continueTo(getResolvedNext(stage.id, stage.next)), Math.max(0, Number(stage.duration) || 0) * 1000); return; }
+          if (stage.type === 'furniture') { furniturePlayback?.set(stage); setTimeout(() => continueTo(getResolvedNext(stage.id, stage.next)), Math.max(0, Number(stage.duration) || 0) * 1000); return; }
           if (stage.type === 'move') return runMove(stage);
           if (stage.type === 'animation') return runAnimation(stage);
           if (stage.type === 'turn') return runTurn(stage);
@@ -30512,6 +30544,7 @@
           if (stage.type === 'fade') return runFade(stage);
           if (stage.type === 'zoom') return runZoom(stage);
 
+          dialogueAddressedActorId = stage.addressedActorId || 'player';
           const speakerActor  = actorsById.get(stage.speakerId);
           const speakerEntity = entities.get(stage.speakerId);
           const speakerName   = speakerActor?.name || stage.speakerName || 'Someone';
@@ -30614,8 +30647,13 @@
               } catch (e) {}
             }, 120);
           }
+          if (stage.resultPose === 'prone' || (stage.resultPose === 'standing' && (st.proneBlend > 0 || st.pose === 'prone'))) {
+            st.poseTransition = { from: st.proneBlend ?? (st.pose === 'prone' ? 1 : 0), to: stage.resultPose === 'prone' ? 1 : 0, elapsed: 0, duration: Math.max(.001, Number(stage.duration) || 0) }; // Existing actor ticker blends combat pose over the animation card's authored duration.
+            st.pose = stage.resultPose;
+          }
           setTimeout(() => {
             if (!running) return;
+            if (st.poseTransition) { st.proneBlend = st.poseTransition.to; st.poseTransition = null; }
             if (breathTimer) clearInterval(breathTimer);
             if (stage.resultPose !== 'unchanged') st.pose = stage.resultPose;
             applyState(stage.actorId);
@@ -30786,12 +30824,16 @@
         function cutsceneRotationTick() {
           if (!running) return;
           const now = performance.now();
-          const dt = Math.min(0.05, (now - cutsceneRotLastT) / 1000);
+          const animationDt = Math.max(0, (now - cutsceneRotLastT) / 1000); // Authored pose/furniture durations remain correct at low phone frame rates.
+          const dt = Math.min(0.05, animationDt);
           cutsceneRotLastT = now;
+          furniturePlayback?.update(animationDt);
+          if (povShot) { const walker = povShot.source.walker; _aimNeckAtWorldPoint(walker.neckJoint, walker.root.position, walker.avatarHeight, povShot.targetProvider(), 85, 60, walker); }
           for (const [actorId, st] of actorStates) {
-            if (externallyDrivenActorIds.has(actorId)) continue;
+            if (externallyDrivenActorIds.has(actorId)) { window.NpcHeldEquipment?.updateCutsceneWalker?.(entities.get(actorId)?.walker); continue; }
             const entity = entities.get(actorId);
             if (!entity) continue;
+            if (st.poseTransition) { const motion = st.poseTransition; motion.elapsed += animationDt; const t = Math.min(1, motion.elapsed / motion.duration); st.proneBlend = motion.from + (motion.to - motion.from) * t * t * (3 - 2 * t); } // Same ticker owns all in-progress humanoid pose interpolation.
             const targetDeg = desiredFacingDeg.get(actorId) ?? st.rotation;
             if (entity.kind === 'creature' && entity.creature) {
               // The exact same function real wild/companion creatures are
@@ -30823,8 +30865,11 @@
             } else {
               applyState(actorId, dt);
               if (entity.walker) {
-                const seat = st.pose === 'sit' ? npcSeatTransformForTarget(st.seatTarget) : null; // Furniture facing remains logical; the portrait obeys the normal camera deadzone.
+                const seat = st.pose === 'sit' ? resolveActorSeat(st) : null; // Furniture facing remains logical; the portrait obeys the normal camera deadzone.
+                window.NpcHeldEquipment?.updateCutsceneWalker?.(entity.walker);
+                const gaze = entity === cutscenePreviewDialogueSpeaker ? entities.get(dialogueAddressedActorId) : cutscenePreviewDialogueSpeaker; // Speakers address their authored target, while seated listeners follow whoever talks.
                 entity.walker.applyFacingDeadzone(seat ? -seat.facingRad + Math.PI / 2 : THREE.MathUtils.degToRad(targetDeg), npcDialogueStagingConfig().npcFacePlayerLerp ?? 0.28);
+                if (st.pose === 'sit' && gaze?.walker && gaze !== entity) _aimNeckAtWorldPoint(entity.walker.neckJoint, entity.root.position, entity.walker.avatarHeight, _npcFaceWorldPosition(gaze.walker) || _dialogueEyeWorldPosition(gaze.root.position, gaze.walker.avatarHeight), 85, 45, entity.walker, _npcFaceWorldPosition(entity.walker));
               }
             }
           }
@@ -30840,6 +30885,8 @@
           cutscenePreviewActive = false;
           cutscenePreviewZoomPercent = 100;
           cutscenePreviewDialogueSpeaker = null;
+          furniturePlayback?.restore();
+          for (const entity of entities.values()) window.NpcHeldEquipment?.detachCutsceneWalker?.(entity.walker);
           for (const hidden of hiddenLiveWalkers) if (hidden.walker?.root) hidden.walker.root.visible = hidden.visible; // Error paths must never strand a real NPC hidden after a failed stand-in spawn.
           hiddenLiveWalkers.length = 0;
           if (liveMode) {
@@ -30905,7 +30952,8 @@
         placeOutsideTemple: placeOpeningPlayerOutsideTemple,
         farmTourPoints: openingFarmTourPoints,
         run: (payload, options = {}) => runCutscenePreview(payload, { ...options, live: true }), // Plays Director-format payloads as real gameplay cinematics with cleanup/restoration.
-        debugSnapshot: () => ({ active: !!cutscenePreviewActive, currentArea, stageId: cutscenePreviewStageId, zoomPercent: cutscenePreviewZoomPercent, latestChange: 'Centered wide rescue shots, surrounding wolves and combat prone pose; current gear clothing, canonical chair anchors/rotations and animated knees; Leave/Escape blocked during cutscenes.' }), // Mobile/debug-panel callers can inspect live cinematic ownership without a console.
+        isActive: () => cutscenePreviewActive, // Gameplay HUD owners can check the director without allocating a debug snapshot.
+        debugSnapshot: () => ({ active: !!cutscenePreviewActive, currentArea, stageId: cutscenePreviewStageId, zoomPercent: cutscenePreviewZoomPercent, latestChange: 'Prone pose blends smoothly; Spearhead uses town equipment; wider wolf shots; animated furniture and seated eye contact; Hunundi POV addresses the doorway surveyor; cutscenes hide actions and reticles.' }), // Mobile/debug-panel callers can inspect live cinematic ownership without a console.
       });
 
       if (window.__hobunjiCutscenePreview) {

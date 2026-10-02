@@ -558,9 +558,10 @@
     states.delete(state);
   }
 
+  const cinematicWalkers = new Set(); // Temporary director actors share town loadouts and cadence, but survive normal schedule rescans until detached.
   function scan() {
     installDebug();
-    const walkers = liveWalkers();
+    const walkers = [...liveWalkers(), ...cinematicWalkers];
     if (!walkers.length) return;
     const live = new Set(walkers);
     for (const walker of live) wrapWalker(walker);
@@ -611,6 +612,9 @@
   window.NpcHeldEquipment = {
     version: VERSION,
     liveWalkers,
+    async attachCutsceneWalker(walker) { cinematicWalkers.add(walker); const state = wrapWalker(walker); const loadout = watchmanLoadoutFor(walker); if (state && loadout) await buildWatchman(state, loadout); },
+    updateCutsceneWalker(walker) { const state = stateByWalker.get(walker); if (state) updateState(state); },
+    detachCutsceneWalker(walker) { cinematicWalkers.delete(walker); const state = stateByWalker.get(walker); if (state) { disposeState(state); stateByWalker.delete(walker); } },
     debugSnapshot: snapshot,
     rescan() { scan(); return snapshot(); },
   };

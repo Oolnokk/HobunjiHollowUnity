@@ -103,7 +103,7 @@ assert(gameSource.includes("owner: 'authored-cutscene'"), 'live cutscenes must l
 assert(gameSource.includes("stage.type === 'caption'"), 'runtime must support non-character caption beats such as the door knock');
 assert(gameSource.includes('seatTarget: a.seatTarget || null'), 'runtime state must preserve authored seat targets');
 assert(gameSource.includes('entity?.root?.parent?.remove?.(entity.root)'), 'live cutscenes must remove temporary NPC/player stand-ins on completion');
-assert(helperSource.includes("st.pose === 'sit' ? deps.npcSeatTransformForTarget?.(st.seatTarget)"), 'seated cutscene actors must reuse normal NPC seat transforms');
+assert(helperSource.includes("deps.npcSeatTransformForTarget?.(st.seatTarget)"), 'seated cutscene actors must reuse normal NPC seat transforms');
 assert(helperSource.includes('entity.walker.legs.update(dt > 0 ? dt : 1 / 60, 0, false, seatedPose)'), 'seated cutscene actors must reuse procedural seated-leg solving');
 
 const gameIndex = indexSource.indexOf('<script src="game.js?v=20261002h960fd67"></script>'); // Ensures the story listener installs after the live runtime exists.
@@ -183,6 +183,7 @@ async function checkWorldOpeningProgress() {
   const stageEnd = gameSource.indexOf('        function runMove(stage) {', stageStart); // Isolates this handler from unrelated movement dependencies.
   let continued = 0; // Counts milestone notifications from genuine Continue inputs only.
   const runtimeContext = {
+    povShot: null, dialogueAddressedActorId: null, furniturePlayback: null, window: {},
     running: true, dialogueOpen: false, payload: meeting, runtimeOptions: { onDialogueContinue: () => { continued++; } },
     stagesById: new Map([[finalStage.id, finalStage]]), actorsById: new Map(), entities: new Map([[finalStage.speakerId, {}]]),
     report() {}, openLine() { runtimeContext.dialogueOpen = true; },

@@ -155,6 +155,7 @@
 
   function resolvedTargetFor(camera, record = active) {
     if (!camera) return null;
+    if (typeof camera.targetProvider === 'function') return camera.targetProvider(); // Procedural POV shots share the authored camera owner while following a live actor/point.
     if (!camera.targetNpcId && !camera.trackSpeaker) return { ...camera.target };
     const walker = targetWalkerFor(camera, record);
     const anchor = camera.targetNpcPoint === 'root'
@@ -385,6 +386,7 @@
     activeCamera,
     activeRecord,
     resolvedTarget,
+    resolvedPosition: () => active?.camera?.positionProvider?.() || active?.camera?.position,
     shouldStagePlayer,
     currentPlayerStage,
     isActive,

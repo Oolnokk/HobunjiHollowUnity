@@ -46,7 +46,8 @@
   <!-- Cutscene Director preview standalone helpers extracted out of
        game.js; the stateful runCutscenePreview runner itself stays in
        game.js and calls into these. Must load before game.js. -->
-  <script src="js/cutscene-preview-helpers.js?v=20261002hcb1dea1"></script>
+  <script src="js/cutscene-furniture-runtime.js?v=20261002furniture1"></script>
+<script src="js/cutscene-preview-helpers.js?v=20261002hcb1dea1"></script>
   <!-- Loot-pool/shop-stock config loading and item-quality rolling,
        extracted out of game.js. Must load before game.js, which calls
        window.LootRolling.init(...) and .loadLootShopConfig() during its
@@ -260,7 +261,7 @@
        animal planes. Must load after the procedural leg module and after
        resource-system.js/combat-core.js. -->
   <script src="js/combat/impact-blend-library.js?v=20260828b"></script>
-  <script src="js/combat/impact-ragdoll-playback.js?v=20261002hc6ab6fa"></script>
+  <script src="js/combat/impact-ragdoll-playback.js?v=20261002hd4bb4ac"></script>
   <script src="js/combat/combat-enemy-telegraph.js?v=20260926combatreview1"></script>
   <script src="js/combat/combat-animal-attacks.js?v=20261001quickdebuff2"></script>
   <script src="js/combat/combat-loadout.js?v=20261002h489e3bf"></script>
@@ -316,7 +317,7 @@
   <script src="js/bounty-board.js?v=20260831spearheadexisting1-colors1"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261002trimoutline5"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261002h7da882a"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -2426,7 +2427,7 @@
        openNpcDialogue/closeNpcDialogue (camera/staging/save) stay in
        game.js and call into this module. -->
   <!-- Authored world-space dialogue/cutscene cameras. Must load before DialogueContent/game.js. -->
-  <script src="js/cinematic-camera-runtime.js?v=20261002h08966d9"></script>
+  <script src="js/cinematic-camera-runtime.js?v=20261002h9a42b83"></script>
   <script src="js/dialogue-camera-framing.js?v=20260926a"></script>
   <script src="js/dialogue-templates.js?v=20260929mastery1"></script>
   <script src="js/dialogue-rich-text.js?v=20260929colors1"></script>
@@ -2444,7 +2445,7 @@
        helper at module evaluation time, so it belongs here rather than in the
        earlier combat-definition block. It still loads before game.js and
        registers in RuntimeFrameScheduler's pre-game phase. -->
-  <script src="js/combat/quick-attack-bonus-indicator.js?v=20261001quickdebuff2"></script>
+  <script src="js/combat/quick-attack-bonus-indicator.js?v=20261002ha7e9886"></script>
   <!-- Lore loading-screen overlay, shown while a wilderness zone or mine
        floor rebuilds from scratch. Content authored via
        tools/loading-screen-editor/index.html. -->
@@ -2565,9 +2566,9 @@
   <script src="js/shoulder-cam-pointer-lock.js?v=20260930hfc11b39"></script>
   <!-- Shared character-scoped hobunjiSaveMeta update step used by game.js's save* helpers. -->
   <script src="js/character-meta-save.js?v=20260930ench1"></script>
-  <script src="game.js?v=20261002h4c9fa8b"></script>
+  <script src="game.js?v=20261002hfaf8a94"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
-  <script src="js/opening-story-cutscene.js?v=20261002h9f2fe16"></script>
+  <script src="js/opening-story-cutscene.js?v=20261002h6f1c9f7"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>

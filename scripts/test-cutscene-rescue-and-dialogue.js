@@ -51,7 +51,7 @@ const dialogue={cutscenePreviewActive:true,dialogueOpen:true}; // No other depen
 vm.runInNewContext(game.slice(closeStart,closeEnd)+'\ncloseNpcDialogue();',dialogue);
 assert.equal(dialogue.dialogueOpen,true);
 // Execute the combat module's held-prone adapter against the actual authored knockdown tail.
-class Quaternion {constructor(x=0,y=0,z=0,w=1){Object.assign(this,{x,y,z,w});}copy(q){Object.assign(this,q);return this;}clone(){return new Quaternion(this.x,this.y,this.z,this.w);}identity(){return this.copy(new Quaternion());}setFromAxisAngle(){return this;}invert(){return this;}}
+class Quaternion {constructor(x=0,y=0,z=0,w=1){Object.assign(this,{x,y,z,w});}copy(q){Object.assign(this,q);return this;}slerp(q,t){for(const axis of ["x","y","z","w"])this[axis]+=(q[axis]-this[axis])*t;return this;}clone(){return new Quaternion(this.x,this.y,this.z,this.w);}identity(){return this.copy(new Quaternion());}setFromAxisAngle(){return this;}invert(){return this;}}
 class Vector {constructor(x=0,y=0,z=0){Object.assign(this,{x,y,z});}}
 class Group {constructor(){this.position=new Vector();this.quaternion=new Quaternion();this.userData={};this.children=[];}add(node){if(node.parent)node.parent.children=node.parent.children.filter(c=>c!==node);this.children.push(node);node.parent=this;}}
 const bank=JSON.parse(read('docs/config/animations/spinthrow-blend-v1.json')); // Exact bank combat holds on zero Footing.
