@@ -165,9 +165,14 @@
       c.groundShadow?.position.set(st.c + 0.5, surfY + deps.characterGroundShadowSurfaceOffset(), st.r + 0.5);
       c.avatarRef.group.scale.setScalar(st.pose === 'prone' ? 0.6 : 1);
     } else if (entity.kind === 'npc') {
-      entity.walker.rot = THREE.MathUtils.degToRad(st.rotation);
-      entity.root.position.set(st.c + 0.5, surfY, st.r + 0.5);
-      entity.root.rotation.y = entity.walker.rot;
+      const seatTransform = st.pose === 'sit' ? deps.npcSeatTransformForTarget?.(st.seatTarget) : null; // Reuses the exact normal-NPC furniture seat anchor for authored seated cutscene actors.
+      const seatCol = seatTransform ? Math.floor(seatTransform.x) : Math.round(st.c); // Selects the floor tile beneath an authored seat for building-height lookup.
+      const seatRow = seatTransform ? Math.floor(seatTransform.z) : Math.round(st.r); // Selects the floor tile beneath an authored seat for building-height lookup.
+      const npcSurfY = deps.npcSurfaceY(area, seatCol, seatRow); // Keeps chairs on raised/interior surfaces while their local seat Y bends only the legs.
+      const actorRot = seatTransform?.facingRad ?? THREE.MathUtils.degToRad(st.rotation); // Makes a seated actor face the chair's authored yaw while normalDeg remains reserved for seat-surface pitch/roll.
+      entity.walker.rot = actorRot;
+      entity.root.position.set(seatTransform?.x ?? (st.c + 0.5), npcSurfY, seatTransform?.z ?? (st.r + 0.5));
+      entity.root.rotation.y = actorRot;
       entity.root.scale.setScalar(1);
       // Prone tips the flat portrait plane down onto its back instead of
       // just shrinking a standing figure — this walker is scripted
@@ -175,9 +180,9 @@
       // loop) and never dialogue-staged (guarded by cutscenePreviewActive
       // in beginNpcDialogueStaging/faceNpcDialogueParticipants), so
       // nothing else re-asserts a standing transform over this pose.
-      const avatarGroup = entity.walker.avatarGroup;
+      const avatarGroup = entity.walker.avatarGroup; // Drives the same portrait root for standing, sitting, and prone authored poses.
       if (avatarGroup) {
-        const avatarHeight = avatarGroup.userData?.portraitModelHeight || 1;
+        const avatarHeight = avatarGroup.userData?.portraitModelHeight || 1; // Restores the ordinary floor-relative portrait center outside the prone pose.
         if (st.pose === 'prone') {
           avatarGroup.rotation.x = Math.PI / 2;
           avatarGroup.position.y = avatarHeight * 0.06;
@@ -185,6 +190,15 @@
           avatarGroup.rotation.x = 0;
           avatarGroup.position.y = avatarHeight / 2;
         }
+      }
+      if (seatTransform && entity.walker.legs) {
+        const seatedPose = { // Feeds the normal procedural-leg seated solver so cutscene chairs do not leave standing legs through the furniture.
+          seatY: seatTransform.y,
+          normalDeg: seatTransform.normalDeg,
+          footprintHalfDepth: seatTransform.footprintHalfDepth,
+          anchorZ: seatTransform.anchorZ,
+        };
+        entity.walker.legs.update(0, 0, false, seatedPose);
       }
     } else {
       entity.root.position.set(st.c + 0.5, surfY, st.r + 0.5);
