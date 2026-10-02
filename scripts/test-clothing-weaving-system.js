@@ -753,6 +753,14 @@ const raggedHoodMasterOps = JSON.stringify(raggedHoodTrimVariants['mao-ao_male']
 for (const variantKey of ['tletingan_male', 'kenkari_male', 'kenkari_female', 'engh-sho_male', 'rakakoan_male', 'rakakoan_female', 'mashtzarr_male']) {
   assert.notEqual(JSON.stringify(raggedHoodTrimVariants[variantKey]?.front?.authorOps || []), raggedHoodMasterOps, `${variantKey} retains variant-specific manual cleanup instead of being collapsed back to the Mao'ao master journal`);
 }
+const ruggedPonchoTrimVariants = clothingTrimManifest.garments?.rugged_poncho?.variants || {};
+assert.deepEqual(Object.keys(ruggedPonchoTrimVariants), ['mao-ao_male'], 'Rugged Poncho keeps only the uploaded Mao\'ao male master so Replicate All can regenerate every target with region-aware replay');
+const ruggedPonchoMaster = ruggedPonchoTrimVariants['mao-ao_male']?.front;
+assert.equal(ruggedPonchoMaster?.settings?.directMask, true, 'Rugged Poncho master remains an exact direct mask');
+assert.equal(ruggedPonchoMaster?.authorOps?.length, 61, 'Rugged Poncho master preserves the full complex uploaded operation journal');
+assert.equal(ruggedPonchoMaster?.authorOps?.filter(op => op.type === 'stroke' && op.mode === 'paint').length, 32, 'Rugged Poncho master preserves all direct-paint cleanup operations');
+assert.equal(ruggedPonchoMaster?.authorOps?.filter(op => op.type === 'stroke' && op.mode === 'eraser').length, 22, 'Rugged Poncho master preserves all direct-erasure cleanup operations');
+assert.deepEqual(ruggedPonchoMaster?.authorOps?.filter(op => op.type === 'expandInward').map(op => op.amount), [1, 3, 4, 7, 7, 1], 'Rugged Poncho master preserves its authored inward-expansion sequence');
 assert.match(patternEditorSource, /function defaultTrimSourceVariant\(/, 'trim authoring has one shared authored-master selection helper');
 assert.match(patternEditorSource, /authoredInManifest = variants\.find\(key => !!trimRecord\(garmentId, key, view\)\)/, 'manifest-authored variants are preferred over session drafts as replication masters');
 assert.match(patternEditorSource, /preferredSource = defaultTrimSourceVariant/, 'variant selection automatically moves to an authored master when the previous selection is not authored');
@@ -836,7 +844,14 @@ assert.match(patternEditorSource, /authorOps\.push\(\{ type: 'expandInward', amo
 assert.match(patternEditorSource, /authorOps = \[\{ type: 'clear' \}\]/, 'Clear establishes a fresh complete replayable history');
 assert.match(patternEditorSource, /authorOpsComplete \? \{ authorOps: cloneTrimAuthorOps\(authorOps\) \} : \{\}/, 'saved trim manifest entries persist complete operation journals beside runtime settings');
 assert.match(patternEditorSource, /snapshot\(\)[\s\S]*?authorOps: cloneTrimAuthorOps\(authorOps\)/, 'undo snapshots preserve operation history alongside mask pixels');
-assert.match(patternEditorSource, /replayed \? replayTrimAuthorOps\(sourceOps, targetGarment\) : fitTrimMaskToGarment/, 'replication prefers operation replay and uses finished-mask inference only as legacy fallback');
+assert.match(patternEditorSource, /function connectedTrimRegions\(mask, width, height\)/, 'complex trim replay discovers disconnected structural cloth regions before remapping strokes');
+assert.match(patternEditorSource, /function matchTrimReplayRegions\(sourceRegions, targetRegions, sourceBounds, targetBounds\)/, 'complex trim replay matches source cloth regions to target cloth regions instead of scaling one global rectangle');
+assert.match(patternEditorSource, /function remapTrimAuthorOpsForTarget\(authorOps, sourceGarment, targetGarment\)/, 'cross-species replication transforms the operation journal through source and target garment geometry');
+assert.match(patternEditorSource, /if \(mode === 'brush'\) mapped = nearestRegionBoundaryPoint/, 'outline-brush replay snaps to the corresponding target-region contour');
+assert.match(patternEditorSource, /Splitting at cloth-region changes prevents Bresenham interpolation/, 'region-aware replay prevents one stroke from bridging disconnected garment pieces');
+assert.match(patternEditorSource, /const targetOps = replayed \? remapTrimAuthorOpsForTarget\(sourceOps, sourceGarment, targetGarment\) : null/, 'replication remaps operations through source and target region geometry before drawing');
+assert.match(patternEditorSource, /replayed \? replayTrimAuthorOps\(targetOps, targetGarment\) : fitTrimMaskToGarment/, 'replication replays the target-specific remapped journal and uses finished-mask inference only as legacy fallback');
+assert.match(patternEditorSource, /authorOps: replayed \? cloneTrimAuthorOps\(targetOps\) : \[\]/, 'replicated drafts persist their target-specific operation journal instead of copying source coordinates');
 assert.match(patternEditorSource, /authorOpsComplete: replayed/, 'replicated targets inherit replayable operation provenance');
 assert.match(patternEditorSource, /Editor-only authorOps stay outside runtime pattern settings/, 'replication keeps authoring journals out of the production trim settings object');
 assert.match(patternEditorSource, /blank canvas is a complete starting state/, 'missing legacy PNGs start a fresh complete operation history instead of poisoning future replication');
