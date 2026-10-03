@@ -58,6 +58,7 @@ function box(){const geo=new Geometry();geo.setAttribute('position',new Attribut
 const pattern={slot:'carpet',mode:'cloth',selector:'top',patternId:'rune-a',palette:['#b7a185','#315b67'],scale:1}; // Used on real fixture triangles and restored overrides.
 (async()=>{
   assert.equal(api.normalize({scale:NaN}).scale,1);
+  assert.equal(api.normalize({mode:"engraving",opacity:0}).engravingCoreOpacity,0,"zero opacity must still hide the entire carving");
   assert.equal(api.normalize({scale:-3}).scale,.05);
   assert.equal(api.normalize({opacity:Infinity}).opacity,1);
   assert.equal(api.normalize({palette:['invalid']}).palette[0],'#b7a185');
@@ -106,6 +107,7 @@ const pattern={slot:'carpet',mode:'cloth',selector:'top',patternId:'rune-a',pale
     masked.geometry.setAttribute('uv',new Attribute([0,0,1,1,1,0,0,0,0,1,1,1,0,0,1,0,1,1],2));masked.material.map=baseTexture;
     api.applyPart(masked,{patternSurfaces:[{...pattern,mode}]});
     const layer=masked.children[0],compiled={uniforms:{},vertexShader:'#include <begin_vertex>',fragmentShader:'#include <alphatest_fragment>'}; // Execute the actual compile and render hooks for all modes.
+    if(mode==='engraving')assert.equal(layer.material.opacity,1,'baked stroke/core alpha must not be halved again');
     layer.material.onBeforeCompile(compiled);layer.onBeforeRender();
     assert.strictEqual(compiled.uniforms.patternBackingMap.value,baseTexture);assert.equal(compiled.uniforms.patternBackingEnabled.value,1);
     assert.equal(compiled.uniforms.patternBackingTransform.value.elements[6],.25);assert.equal(compiled.uniforms.patternBackingSize.value.x,32);

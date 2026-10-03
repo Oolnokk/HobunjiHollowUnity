@@ -12,6 +12,7 @@
     <label>Pattern tile size <input id="fpScale" type="number" min="0.05" max="20" step="0.05" value="1"></label>
     <label>Base dye <input id="fpBase" type="color" value="#b7a185"></label>
     <label>Pattern dye <input id="fpDye" type="color" value="#315b67"></label>
+    <label>Engraving core opacity <input id="fpCoreOpacity" type="number" min="0" max="1" step="0.05" value="0.85"></label>
     <button id="fpAuthor" type="button">Choose / draw pattern</button>
     <label>Export name <input id="fpExportName" value="Furniture pattern"></label>
     <label><input id="fpCollectible" type="checkbox" checked>Collectible ruin pattern</label>
@@ -43,7 +44,7 @@
     const { part, surface } = target(); // Surface-local geometry keeps glass/engraving away from frames or neighboring faces.
     if (!part) return null;
     const record = api.normalize({ ...currentRecord(), slot: currentRecord()?.slot || surface?.id || input('fpSlot').value || 'surface', mode: input('fpMode').value, opacity: input('fpMode').value === 'glass' ? .8 : input('fpMode').value === 'engraving' ? .5 : 1,
-      random: input('fpRandom').checked, scale: input('fpScale').value, palette: [input('fpBase').value, input('fpDye').value],
+      engravingCoreOpacity: input('fpCoreOpacity').value || .85, random: input('fpRandom').checked, scale: input('fpScale').value, palette: [input('fpBase').value, input('fpDye').value],
       ...(surface ? { normal: surface.localNormal.toArray(), localCentroid: surface.localCentroid.toArray(), dimensions: [part.transform.sx,part.transform.sy,part.transform.sz] } : {}) });
     if (surface && ['cylinder','disc','legRound','barrel','cup','sphere'].includes(part.kind) && surface.faceIndices.length > 2) {
       record.selector = surface.recognizedType === 'upward top' ? 'top' : surface.recognizedType === 'underside' ? 'bottom' : 'sides'; // Curved recognized groups wrap their entire cap/side instead of clipping to one averaged normal.
@@ -66,6 +67,7 @@
     if (record) {
       input('fpSlot').value = record.slot;
       input('fpMode').value = record.mode;
+      input('fpCoreOpacity').value = record.engravingCoreOpacity ?? .85;
       input('fpScale').value = record.scale; input('fpRandom').checked = !!record.random;
       input('fpBase').value = record.palette?.[0] || '#b7a185'; input('fpDye').value = record.palette?.[1] || '#315b67';
     }
@@ -118,6 +120,8 @@
         const failed=pending.find(overlay=>overlay.userData.furniturePattern.status!=='ready'); // Visible modal errors remain usable without mobile devtools.
         if(failed)throw new Error(failed.userData.furniturePattern.status);
         render();
+        const engraving=pending[0]?.userData.furniturePattern.engraving; // Show the actual uploaded atlas's coverage and effective opacity, including disappearing cores on very thin motifs.
+        if(engraving)return {status:`Stroke ${Math.round(engraving.strokeOpacity*100)}%; core ${Math.round(engraving.coreOpacity*100)}%. Core pixels: ${engraving.corePixels}; soft stroke pixels: ${engraving.strokePixels}. Drag to rotate; pinch to zoom.`};
       },
       dispose(){if(disposed)return;disposed=true;generation++;observer.disconnect();controls?.removeEventListener('change',render);controls?.dispose();clearDraft();previewRenderer.dispose();previewRenderer.forceContextLoss();viewport.remove();},
     };

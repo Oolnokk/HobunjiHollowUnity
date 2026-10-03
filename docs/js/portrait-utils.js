@@ -769,8 +769,10 @@ function makeSpritePngUnlitMaterial(THREE, texture, debugName, overrides = {}) {
 }
 
 // Carvings retain the authored stroke but darken only a thinner core inside it.
-function carveSpritePngCanvas(canvas, coreCanvas = null) {
+function carveSpritePngCanvas(canvas, coreCanvas = null, options = {}) {
   const ctx = canvas.getContext('2d'), image = ctx.getImageData(0, 0, canvas.width, canvas.height); // Original coverage defines the full authored stroke.
+  const strokeOpacity = Number.isFinite(options.strokeOpacity) ? Math.max(0,Math.min(1,options.strokeOpacity)) : .65, coreOpacity = Number.isFinite(options.coreOpacity) ? Math.max(strokeOpacity,Math.min(1,options.coreOpacity)) : .95; // Furniture supplies final opacities; sign callers retain their existing material opacity.
+  let corePixels=0,strokePixels=0; // Preview diagnostics distinguish an absent core from a subtle contrast difference.
   const alpha = new Uint8Array(canvas.width * canvas.height); // Immutable coverage supports sign-text erosion without expanding onto the backing surface.
   for (let p = 0; p < alpha.length; p++) alpha[p] = image.data[p * 4 + 3];
   const core = coreCanvas?.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data; // Motifs supply the canonical source-space thinning pass; text uses a two-pixel inset.
@@ -784,9 +786,11 @@ function carveSpritePngCanvas(canvas, coreCanvas = null) {
       if(nx>=0&&ny>=0&&nx<canvas.width&&ny<canvas.height)coverage=Math.min(coverage,alpha[ny*canvas.width+nx]/Math.max(1,alpha[p]));
     }
     image.data[i] = 20; image.data[i + 1] = 16; image.data[i + 2] = 12;
-    image.data[i + 3] = Math.round(alpha[p] * (.65 + .30 * coverage));
+    image.data[i + 3] = Math.round(alpha[p] * (strokeOpacity + (coreOpacity-strokeOpacity) * coverage));
+    if(coverage>.5)corePixels++;else strokePixels++;
   }
   ctx.putImageData(image, 0, 0);
+  canvas.engravingDiagnostics={strokeOpacity,coreOpacity,corePixels,strokePixels}; // Read only on completed composition, never from a permanent frame loop.
   return canvas;
 }
 

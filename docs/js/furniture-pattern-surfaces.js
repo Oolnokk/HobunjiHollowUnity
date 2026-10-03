@@ -16,6 +16,7 @@
       selector: String(record.selector || 'all'),
       scale: Math.max(.05, Math.min(20, finite(record.scale, 1))),
       palette: [hex(record.palette?.[0], '#b7a185'), hex(record.palette?.[1], '#315b67')],
+      engravingCoreOpacity: Number(record.opacity) === 0 ? 0 : Math.max(0,Math.min(1,finite(record.engravingCoreOpacity,.85))), // Core opacity is independent of the softer restored stroke.
       opacity: Math.max(0, Math.min(1, finite(record.opacity, record.mode === 'glass' ? .8 : record.mode === 'engraving' ? .5 : 1))),
     };
   }
@@ -53,7 +54,7 @@
     if (!pattern) throw new Error(`Pattern unavailable: ${record.patternId || 'custom'}`);
     const compositor = window.ClothingWeavingSystem?.applyPatternStackToTintedImage; // Canonical tiling, inversion, thickness and overpass implementation.
     if (!compositor) throw new Error('The weaving pattern renderer has not loaded');
-    const key = JSON.stringify([record.mode, record.palette, pattern, size]); // Scale/opacity belong to placement rather than the reusable tile pixels.
+    const key = JSON.stringify([record.mode, record.palette, pattern, size, record.mode === 'engraving' ? [record.opacity,record.engravingCoreOpacity] : null]); // Scale/opacity belong to placement rather than the reusable tile pixels.
     if (tileCache.has(key)) return tileCache.get(key);
     const pending = (async () => {
       const canvas = document.createElement('canvas'); // Solid dyed base provides the same opaque eligibility mask as cloth.
@@ -70,7 +71,7 @@
       engraving.width = canvas.width; engraving.height = canvas.height;
       engraving.getContext('2d').drawImage(result, 0, 0);
       const core = await compositor(canvas, [{...pattern,motifThinPx:finite(pattern.motifThinPx,0)+2,renderRasterScale:size[2] || 1}], record.palette[1], `furniture-core:${key}`, shading, 'woven-motif', {inkOnly:true,cache:false}); // Exactly the authoring slider's two-source-pixel thinning, including inversion and frame/mesh transforms.
-      return window.HobunjiSpritePngSurface.carveCanvas(engraving,core);
+      return window.HobunjiSpritePngSurface.carveCanvas(engraving,core,{strokeOpacity:.65*Math.min(.5,record.opacity),coreOpacity:record.engravingCoreOpacity});
     })();
     tileCache.set(key, pending);
     if (tileCache.size > 24) tileCache.delete(tileCache.keys().next().value);
@@ -226,8 +227,8 @@
       const complete = surfaceGeometry(mesh, record, part);
       if (!complete) continue;
       for(const {geometry,index:materialIndex} of splitSurfaceMaterials(complete)) {
-      const material = png?.makeMaterial?.(THREE, null, 'furniture-pattern', { side: THREE.DoubleSide, transparent: record.mode === 'engraving' || record.opacity < 1, depthWrite: record.mode !== 'engraving' && record.opacity >= 1, opacity: record.mode === 'engraving' ? Math.min(.5,record.opacity) : record.opacity, alphaTest: record.mode === 'engraving' ? .001 : png?.alphaTest?.() })
-        || new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, transparent: record.mode === 'engraving' || record.opacity < 1, depthWrite: record.mode !== 'engraving' && record.opacity >= 1, opacity: record.mode === 'engraving' ? Math.min(.5,record.opacity) : record.opacity, alphaTest: record.mode === 'engraving' ? .001 : png?.alphaTest?.() });
+      const material = png?.makeMaterial?.(THREE, null, 'furniture-pattern', { side: THREE.DoubleSide, transparent: record.mode === 'engraving' || record.opacity < 1, depthWrite: record.mode !== 'engraving' && record.opacity >= 1, opacity: record.mode === 'engraving' ? 1 : record.opacity, alphaTest: record.mode === 'engraving' ? .001 : png?.alphaTest?.() })
+        || new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, transparent: record.mode === 'engraving' || record.opacity < 1, depthWrite: record.mode !== 'engraving' && record.opacity >= 1, opacity: record.mode === 'engraving' ? 1 : record.opacity, alphaTest: record.mode === 'engraving' ? .001 : png?.alphaTest?.() });
       const overlay = new THREE.Mesh(geometry, material); // Surface child inherits furniture transforms and existing disposal lifecycle.
       overlay.name = `pattern:${record.slot}`;
       overlay.visible = false; // Keep the furniture's authored base visible until its composed tile is ready.

@@ -422,7 +422,7 @@
       previewStatus.textContent = 'Rendering preview…';
       try {
         const rendered = previewController ? await previewController.update(data) : await renderFn(data);
-        if (previewController) { if (!closed && token === previewToken) previewStatus.textContent = options.previewHint || ''; return; }
+        if (previewController) { if (!closed && token === previewToken) previewStatus.textContent = rendered?.status || options.previewHint || ''; return; }
         if (closed || token !== previewToken || !rendered) return;
         previewCanvas.width = rendered.width;
         previewCanvas.height = rendered.height;

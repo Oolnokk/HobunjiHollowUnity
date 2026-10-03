@@ -31,5 +31,10 @@ for(const file of ['repo-pattern-library','pattern-library','portrait-utils'])vm
  const full={width:5,height:5,getContext:()=>({getImageData:()=>({data:original}),putImageData(){}})},core={getContext:()=>({getImageData:()=>({data:thinned})})}; // Original shape remains untouched; only core opacity changes.
  window.HobunjiSpritePngSurface.carveCanvas(full,core);
  assert.equal(original[(2*5+2)*4+3],242);assert.equal(original[3],166);
+ const finalPixels=new Uint8ClampedArray(5*5*4); // Final furniture opacity is baked once, rather than halved again by the WebGL material.
+ for(let p=0;p<25;p++)finalPixels[p*4+3]=255;
+ const finalCanvas={width:5,height:5,getContext:()=>({getImageData:()=>({data:finalPixels}),putImageData(){}})};
+ window.HobunjiSpritePngSurface.carveCanvas(finalCanvas,core,{strokeOpacity:.325,coreOpacity:.85});
+ assert.equal(finalPixels[3],83);assert.equal(finalPixels[(2*5+2)*4+3],217);assert.equal(finalCanvas.engravingDiagnostics.corePixels,1);assert.equal(finalCanvas.engravingDiagnostics.strokePixels,24);
  console.log('Furniture exports, collectible ownership/reload and translucent inner carving rims passed.');
 })().catch(error=>{console.error(error);process.exitCode=1;});
