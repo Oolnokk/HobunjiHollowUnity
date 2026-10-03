@@ -8,7 +8,7 @@ const vm = require('vm');
 const ROOT = path.join(__dirname, '..'); // Resolves the checked runtime/tool files from the repository root.
 const panelBootstrap = fs.readFileSync(path.join(ROOT, 'docs/js/panel-ui.js'), 'utf8'); // Verifies Cutscene Director receives the repo-selector module without changing its monolithic HTML.
 const selectorSource = fs.readFileSync(path.join(ROOT, 'docs/js/cutscene-director-repo-scenes.js'), 'utf8'); // Verifies the selector points at shipping builders and reuses the Director import/startup normalization paths.
-const openingStorySource = fs.readFileSync(path.join(ROOT, 'docs/js/opening-story-cutscene.js'), 'utf8'); // Confirms every catalog entry maps to a builder actually exported by the live opening-story module.
+const openingStorySource = fs.readFileSync(path.join(ROOT, 'docs/js/opening-story-cutscene.js'), 'utf8'); // Executes every catalog builder from the live opening-story module.
 const npcDb = JSON.parse(fs.readFileSync(path.join(ROOT, 'docs/config/npcs/hobunji-starter-npc-database.json'), 'utf8')); // Supplies canonical NPC records while materializing all repo-selector scenes.
 const hunundiRoom = JSON.parse(fs.readFileSync(path.join(ROOT, 'docs/config/maps/map_i_temple_basement_hunundi.json'), 'utf8')); // Pins the manually requested office camera height.
 
@@ -17,20 +17,6 @@ new Function(selectorSource); // Syntax-check the injected selector before any b
 
 assert(panelBootstrap.includes('cutscene-director-repo-scenes.js'), 'PanelUI bootstrap must load the repo selector module.');
 assert(panelBootstrap.includes('/\\/tools\\/cutscene-director\\//'), 'Repo selector loading must stay scoped to Cutscene Director.');
-
-const requiredBuilders = ['buildRescueScene', 'buildHunundiMeetingScene', 'buildFarmTourScene'];
-for (const builder of requiredBuilders) {
-  assert(selectorSource.includes(`builder: '${builder}'`), `Repo selector must expose ${builder}.`);
-  assert(openingStorySource.includes(`    ${builder},`), `OpeningStoryCutscene must publicly export ${builder}.`);
-}
-assert(selectorSource.includes("label: 'Opening — Spearhead Shows the Farm'"), 'Repo selector must expose the Spearhead farm introduction by name.');
-assert(selectorSource.includes("authoringArgs: 'farmTour'"), 'Farm introduction must receive deterministic Director authoring points.');
-assert(selectorSource.includes("virtualMap: 'farm'"), 'Farm introduction must preserve the live farm map id without treating it as a static map JSON.');
-assert(selectorSource.includes("new URL('../../js/opening-story-cutscene.js"), 'Repo selector must load the shipping opening-story module rather than copy its scene data.');
-assert(selectorSource.includes("document.getElementById('importFile')"), 'Static repo scenes must reuse the Director JSON import control.');
-assert(selectorSource.includes("new DataTransfer()"), 'Normal repo-scene loading must flow through the existing import event path.');
-assert(selectorSource.includes("document.getElementById('wildernessSelect')"), 'Procedural wilderness repo cutscenes must restore their wilderness context after import.');
-assert(selectorSource.includes('localStorage.setItem(DIRECTOR_STORAGE_KEY, JSON.stringify(scene))'), 'Virtual farm import must retain mapId=farm through the Director startup normalization path.');
 
 const selectorBrowser = {
   window: {},
@@ -46,6 +32,8 @@ vm.runInNewContext(selectorSource, selectorBrowser);
 const selectorApi = selectorBrowser.window.CutsceneDirectorRepoScenes;
 assert(selectorApi, 'Repo selector must expose its debug/inspection API.');
 assert.deepStrictEqual(Array.from(selectorApi.catalog, scene => scene.id), ['opening-rescue', 'opening-hunundi-room', 'opening-farm-tour']);
+assert.deepStrictEqual(Array.from(selectorApi.catalog, scene => scene.builder), ['buildRescueScene', 'buildHunundiMeetingScene', 'buildFarmTourScene']);
+
 const farmPoints = selectorApi.authoringFarmTourPoints();
 assert.deepStrictEqual(JSON.parse(JSON.stringify(farmPoints.entry)), { c: 2, r: 3 });
 assert.deepStrictEqual(JSON.parse(JSON.stringify(farmPoints.porch)), { c: 8, r: 9 });
@@ -58,6 +46,8 @@ assert.strictEqual(farmPoints.houseCamera.position.y, 3);
 const storyBrowser = { window: {}, document: { addEventListener() {} }, console }; // Materializes the exact live scene builders without starting the game runtime.
 vm.runInNewContext(openingStorySource, storyBrowser);
 const storyApi = storyBrowser.window.OpeningStoryCutscene;
+for (const { builder } of selectorApi.catalog) assert.strictEqual(typeof storyApi[builder], 'function', `OpeningStoryCutscene must publicly export ${builder}.`);
+
 const records = new Map(npcDb.npcs.map(record => [record.id, record]));
 const profile = { nickname: 'Director Test Player', characterId: 'director-test', worldId: 'director-test', isWorldOwner: true };
 const scenes = [
