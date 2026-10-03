@@ -225,7 +225,7 @@
 
   window.CutsceneDirectorRepoScenes = Object.freeze({
     catalog: REPO_SCENES.map(({ id, label, builder }) => Object.freeze({ id, label, builder })),
-    authoringFarmTourPoints: () => structuredClone(authoringFarmTourPoints()),
+    authoringFarmTourPoints: () => JSON.parse(JSON.stringify(authoringFarmTourPoints())),
     build: buildRepoScene,
     load: loadRepoScene,
   }); // Mobile/debug callers can inspect repo-authored scenes and the deterministic farm fixture without DevTools source spelunking.
