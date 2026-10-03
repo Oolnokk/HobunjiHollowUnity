@@ -10,6 +10,13 @@ class Vector3 {
   negate(){this.x=-this.x;this.y=-this.y;this.z=-this.z;return this;}
   normalize(){const n=Math.hypot(this.x,this.y,this.z)||1;this.x/=n;this.y/=n;this.z/=n;return this;}
   toArray(){return [this.x,this.y,this.z];}
+  clone(){return new Vector3(this.x,this.y,this.z);}
+  copy(v){Object.assign(this,{x:v.x,y:v.y,z:v.z});return this;}
+  set(x,y,z){Object.assign(this,{x,y,z});return this;}
+  sub(v){this.x-=v.x;this.y-=v.y;this.z-=v.z;return this;}
+  addScaledVector(v,n){this.x+=v.x*n;this.y+=v.y*n;this.z+=v.z*n;return this;}
+  lengthSq(){return this.x*this.x+this.y*this.y+this.z*this.z;}
+  length(){return Math.sqrt(this.lengthSq());}
   dot(b){return this.x*b.x+this.y*b.y+this.z*b.z;}
 }
 class Attribute {constructor(array,itemSize){this.array=Float32Array.from(array);this.itemSize=itemSize;this.count=this.array.length/itemSize;}}
@@ -30,6 +37,8 @@ class Mesh {
   add(child){child.parent=this;this.children.push(child);}
   remove(child){this.children=this.children.filter(c=>c!==child);child.parent=null;}
   traverse(fn){fn(this);for(const child of this.children)child.traverse?.(fn);}
+  clone(){const copy=new Mesh(this.geometry,this.material);copy.userData={...this.userData};for(const child of this.children)copy.add(child.clone());return copy;}
+  updateMatrixWorld(){}
 }
 const THREE={Vector3,BufferGeometry:Geometry,Float32BufferAttribute:Attribute,Mesh,MeshBasicMaterial:Material,DoubleSide:2,RepeatWrapping:1000}; // Enough Three API to execute actual triangle selection and instance lifecycle.
 const definitions=[{id:'rune-a',pattern:{motifDataUrl:'data:a'}},{id:'rune-b',pattern:{motifDataUrl:'data:b'}}]; // Deterministic unlockable catalog fixture.
@@ -113,11 +122,32 @@ const pattern={slot:'carpet',mode:'cloth',selector:'top',patternId:'rune-a',pale
   const authorPart = {id:'editor-rug',kind:'box',transform:{sx:2,sy:.1,sz:3},patternSurfaces:[{...pattern}]}; // Existing default slot must be edited, not doubled on the selected face.
   const editorState = {parts:[authorPart]},surface={id:'editor-rug:surface:top',partId:'editor-rug',localNormal:new Vector3(0,1,0),localCentroid:new Vector3(0,.05,0),faceIndices:[0,1]}; // Canonical base-editor selection fixture.
   let windowMarks=0; // Verifies glass authoring invokes the actual exported daylight-author API.
-  const editorWindow = {FurniturePatternSurfaces:api, FurnitureDaylightWindowAuthor:{markSelectedAsWindow(){windowMarks++;}}};
-  const editorDocument = {createElement:()=>({}),getElementById:element}; // UI controls use the same IDs as the production author extension.
-  vm.runInNewContext(fs.readFileSync('docs/tools/furniture-avatar-author/furniture-patterns.js','utf8'),{window:editorWindow,document:editorDocument,THREE,state:editorState,selectedSurface:()=>surface,selectedPart:()=>authorPart,root:mesh,rebuildFurnitureMeshes(){},rebuildAll(){},queueUndoHistory(){},log(){}});
+  let modalOptions=null; // Captures the production author() wiring into PatternAuthoring rather than testing an unattached helper.
+  const editorWindow = {RepoPatternLibrary:{preloadEditable:async()=>{},listCached:()=>[],getCachedEditableById:()=>null},PatternAuthoring:{openEditor:options=>{modalOptions=options;}},FurniturePatternSurfaces:api, FurnitureDaylightWindowAuthor:{markSelectedAsWindow(){windowMarks++;}}};
+  const editorDocument = {createElement:()=>({style:{},appendChild(){},remove(){}}),getElementById:element}; // UI controls use the same IDs as the production author extension.
+  let previewRenders=0,previewDisposed=0,contextLosses=0,controlsDisposed=0,observerDisconnected=0; // Isolated renderer and interaction resources must be released exactly once.
+  class PreviewRenderer {constructor(){this.domElement={style:{}};}setPixelRatio(){}setSize(){}render(){previewRenders++;}dispose(){previewDisposed++;}forceContextLoss(){contextLosses++;}}
+  class PreviewScene extends Mesh {constructor(){super();this.background=null;}}
+  class PreviewBounds {setFromObject(){return this;}getCenter(v){return v.set(0,0,0);}getSize(v){return v.set(2,1,3);}}
+  class PreviewColor {clone(){return this;}}
+  class PreviewControls {constructor(){this.target=new Vector3();}update(){}addEventListener(){}removeEventListener(){}dispose(){controlsDisposed++;}}
+  class PreviewObserver {observe(){}disconnect(){observerDisconnected++;}}
+  const previewCamera={position:new Vector3(3,2,3),fov:50,clone(){return {...this,position:this.position.clone()};},lookAt(){},updateProjectionMatrix(){}}; // Camera starts from the existing furniture editor view.
+  Object.assign(THREE,{WebGLRenderer:PreviewRenderer,Scene:PreviewScene,Box3:PreviewBounds,Color:PreviewColor});
+  mesh.userData.type='part';mesh.userData.id=authorPart.id; // Real editor meshes use this selection identity.
+  const previewScene=new PreviewScene(); // Lighting can be inherited without copying avatars or selection gizmos.
+  vm.runInNewContext(fs.readFileSync('docs/tools/furniture-avatar-author/furniture-patterns.js','utf8'),{window:editorWindow,document:editorDocument,THREE,state:editorState,selectedSurface:()=>surface,selectedPart:()=>authorPart,root:mesh,scene:previewScene,camera:previewCamera,renderer:{},orbit:{target:new Vector3()},OrbitControls:PreviewControls,ResizeObserver:PreviewObserver,rebuildFurnitureMeshes(){},rebuildAll(){},queueUndoHistory(){},log(){}});
   editorWindow.FurniturePatternAuthor.refresh();element('fpMode').value='glass';element('fpApply').onclick();
   assert.equal(authorPart.patternSurfaces.length,1,'editing a default face slot must not create an overlapping duplicate');
   assert.equal(authorPart.patternSurfaces[0].mode,'glass');assert.equal(authorPart.patternSurfaces[0].opacity,.8);assert.equal(windowMarks,1);
+  await element('fpAuthor').onclick();
+  assert(modalOptions.mountPreview&&!modalOptions.renderPreview,'furniture authoring must mount the actual 3D preview instead of a flat tile');
+  const mounted=modalOptions.mountPreview({replaceChildren(){}}); // Production mount borrows the source assembly's materials and geometry.
+  const originalMaterial=mesh.material,originalGeometry=mesh.geometry; // Closing a preview must leave editor-owned resources alive.
+  await mounted.update({motifDataUrl:'data:a'});await mounted.update({motifDataUrl:'data:b',meshRotationDeg:40});
+  assert(previewRenders>=3,'draft updates must render the actual scene');
+  mounted.dispose();mounted.dispose();
+  assert.equal(previewDisposed,1);assert.equal(contextLosses,1);assert.equal(controlsDisposed,1);assert.equal(observerDisconnected,1);
+  assert(!originalMaterial.disposed&&!originalGeometry.disposed,'source furniture resources must survive preview close');
   console.log('Furniture pattern normalization, clipping, scale, cache, overrides, wind, ruin unlocks and daylight integration passed.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

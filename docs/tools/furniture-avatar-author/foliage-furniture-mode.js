@@ -24,9 +24,9 @@
     await loadClassicScript('../../js/motif-store.js?v=20260920patterns1');
     await loadClassicScript('../../js/pattern-library.js?v=20261003h0ad42ee');
     await loadClassicScript('../../js/repo-pattern-library.js?v=20261003hf072713');
-    await loadClassicScript('../../js/pattern-authoring.js?v=20260924overpassgap1');
+    await loadClassicScript('../../js/pattern-authoring.js?v=20261003hd424efe');
     await loadClassicScript('../../js/clothing-weaving-system.js?v=20261003h25b5015');
-    await loadClassicScript('../../js/furniture-pattern-surfaces.js?v=20261003h4020e40');
-    await loadClassicScript('furniture-patterns.js?v=20261003h81028f5');
+    await loadClassicScript('../../js/furniture-pattern-surfaces.js?v=20261003hf805a52');
+    await loadClassicScript('furniture-patterns.js?v=20261003h68ba1e4');
   })().catch(error => console.error('[Furniture Author Extensions]', error));
 })();

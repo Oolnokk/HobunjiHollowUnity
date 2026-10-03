@@ -71,16 +71,69 @@
     }
     input('fpDebug').textContent = JSON.stringify({ selectedPart: target().part?.id || null, selectedSurface: target().surface?.id || null, patterns: api.debug(root) }, null, 2);
   }
+  function mountFurniturePreview(container, partId, record) {
+    const previewRenderer = new THREE.WebGLRenderer({antialias:true,alpha:false}); // One isolated context for the open modal; rendered only on changes.
+    previewRenderer.setPixelRatio(Math.min(2,window.devicePixelRatio || 1));
+    previewRenderer.outputEncoding=renderer.outputEncoding; previewRenderer.toneMapping=renderer.toneMapping; previewRenderer.toneMappingExposure=renderer.toneMappingExposure;
+    const previewScene = new THREE.Scene(); // Current furniture and the editor's lighting share their actual visual definitions.
+    previewScene.background=scene.background?.clone?.() || new THREE.Color('#11191e');
+    for(const child of scene.children) if(child.isLight) previewScene.add(child.clone());
+    const furniture = root.clone(true); // Geometry/materials/textures are borrowed; preview cleanup must never dispose editor resources.
+    previewScene.add(furniture);
+    const previewCamera = camera.clone(); // Retain the current viewing direction while fitting the complete furniture assembly.
+    const bounds = new THREE.Box3().setFromObject(furniture), center = bounds.getCenter(new THREE.Vector3()), size = bounds.getSize(new THREE.Vector3()); // Complete piece bounds anchor the mobile orbit target.
+    const direction = camera.position.clone().sub(orbit?.target || center).normalize(); // Starts from the user's existing authoring angle.
+    if(direction.lengthSq()<.001)direction.set(1,.8,1).normalize();
+    const distance = Math.max(.5,size.length()) / Math.sin(previewCamera.fov*Math.PI/360); // Conservative sphere fit remains visible in the narrow modal.
+    previewCamera.position.copy(center).addScaledVector(direction,distance); previewCamera.near=.01; previewCamera.far=Math.max(100,distance*10); previewCamera.lookAt(center);
+    const viewport = document.createElement('div'); // Dedicated mount replaces the shared editor's flat image canvas.
+    viewport.style.cssText='width:100%;height:min(280px,40vh);min-height:180px;touch-action:none;position:relative';
+    previewRenderer.domElement.style.cssText='width:100%;height:100%;max-width:none;max-height:none;display:block;touch-action:none';
+    container.replaceChildren(viewport); viewport.appendChild(previewRenderer.domElement);
+    const controls = OrbitControls ? new OrbitControls(previewCamera,previewRenderer.domElement) : null; // Existing mouse/touch camera controls provide orbit and pinch zoom.
+    if(controls){controls.target.copy(center);controls.enableDamping=false;controls.update();}
+    let disposed=false, generation=0, overlays=[]; // Draft changes own only their newly constructed pattern overlays.
+    const render = () => { if(!disposed)previewRenderer.render(previewScene,previewCamera); }; // No additional permanent RAF loop.
+    const resize = () => { if(disposed)return;const width=Math.max(1,viewport.clientWidth),height=Math.max(1,viewport.clientHeight);previewRenderer.setSize(width,height,false);previewCamera.aspect=width/height;previewCamera.updateProjectionMatrix();render(); }; // CSS layout determines a sharp responsive viewport.
+    controls?.addEventListener('change',render);
+    const observer = new ResizeObserver(resize); // Refit the canvas when the modal layout changes on mobile.
+    observer.observe(viewport); resize();
+    const clearDraft = () => { for(const overlay of overlays){overlay.parent?.remove(overlay);overlay.geometry.dispose();overlay.material.dispose();}overlays=[]; }; // Only materials created by applyPart are owned by this preview.
+    const selected = []; // Preserve other surfaces and parts while replacing the selected slot's saved decoration.
+    furniture.traverse(node=>{if(node.userData?.type==='part'&&node.userData.id===partId)selected.push(node);});
+    for(const node of selected)for(const child of [...node.children])if(child.userData?.furniturePattern?.slot===record.slot)node.remove(child); // Detached clones borrow the original resources and are never disposed.
+    const part = state.parts.find(part=>part.id===partId); // Same geometry recipe, wind settings and surface metadata as the edited piece.
+    return {
+      async update(pattern) {
+        if(disposed)return;
+        const request=++generation; // Ignore asynchronous work from a superseded draft.
+        clearDraft();
+        for(const node of selected){const previous=new Set(node.children);api.applyPart(node,{...part,patternSurfaces:[{...record,patternId:null,pattern}]});for(const child of node.children)if(!previous.has(child))overlays.push(child);}
+        previewScene.updateMatrixWorld(true);
+        for(const overlay of overlays)overlay.onBeforeRender?.(); // Resolve world-scale atlas sizing before waiting for pixels.
+        const pending=[...overlays]; // Async edits cannot change this generation's readiness/error checks.
+        await Promise.all(pending.map(overlay=>overlay.userData.patternReady));
+        if(disposed||request!==generation)return;
+        if(!pending.length)throw new Error('The selected furniture surface could not be previewed.');
+        const failed=pending.find(overlay=>overlay.userData.furniturePattern.status!=='ready'); // Visible modal errors remain usable without mobile devtools.
+        if(failed)throw new Error(failed.userData.furniturePattern.status);
+        render();
+      },
+      dispose(){if(disposed)return;disposed=true;generation++;observer.disconnect();controls?.removeEventListener('change',render);controls?.dispose();clearDraft();previewRenderer.dispose();previewRenderer.forceContextLoss();viewport.remove();},
+    };
+  }
   async function author() {
     const record = settings(); // Snapshot protects the modal preview from later selection changes.
     if (!record) { log('Select a surface or furniture piece first.', 'warn'); return; }
+    const partId = target().part.id; // The modal always previews the piece selected when it opened.
     try {
       await window.RepoPatternLibrary.preloadEditable();
       const entries = window.RepoPatternLibrary.listCached(); // Same repo motifs used by NPC clothes/paint, alongside existing saved/unlocked patterns.
       window.PatternAuthoring.openEditor({ title: 'Furniture surface pattern', initialPattern: await api.editablePattern(record),
         library: { readOnly: true, list: () => [...entries, ...(window.PatternLibrary?.listAvailable?.() || [])],
           get: id => window.RepoPatternLibrary.getCachedEditableById(id) || window.PatternLibrary?.getById?.(id) },
-        renderPreview: pattern => api.renderTile(record, pattern),
+        mountPreview: container => mountFurniturePreview(container,partId,record),
+        previewHint: 'Drag to rotate. Pinch or scroll to zoom. Draft changes appear on the selected surface.',
         onSave: async (pattern, id) => commit({ ...record, patternId: id || null, pattern: await api.editablePattern({pattern}) }) });
     } catch (error) { log(`Furniture patterns: ${error.message}`, 'error'); }
   }

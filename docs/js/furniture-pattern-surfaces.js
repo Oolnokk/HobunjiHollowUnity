@@ -189,7 +189,7 @@
       let generation = 0; // Discard stale atlas loads if an instance is resized again before composition finishes.
       overlay.userData.refreshPatternAtlas = size => {
         const request = ++generation; // Each rescale owns one asynchronous atlas generation.
-        renderTile(record, null, size).then(canvas => {
+        overlay.userData.patternReady = renderTile(record, null, size).then(canvas => { // Preview callers can await the exact atlas uploaded by this surface.
           if (disposed || request !== generation) return;
           releaseTexture(ownedTexture); ownedTexture = retainTexture(canvas);
           material.map = ownedTexture.texture; material.needsUpdate = true;
