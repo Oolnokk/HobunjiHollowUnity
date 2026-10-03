@@ -6,11 +6,14 @@
   const REPO_SCENES = Object.freeze([
     Object.freeze({ id: 'opening-rescue', label: 'Opening — Cloud Forest Rescue', builder: 'buildRescueScene', wilderness: true }),
     Object.freeze({ id: 'opening-hunundi-room', label: "Opening — Father Hunundi's Room", builder: 'buildHunundiMeetingScene', wilderness: false }),
+    Object.freeze({ id: 'opening-farm-tour', label: 'Opening — Spearhead Shows the Farm', builder: 'buildFarmTourScene', authoringArgs: 'farmTour', virtualMap: 'farm' }),
   ]); // Used by the injected selector and the public debug surface so the Director always loads shipping scene builders instead of copied JSON.
-  const STORY_SCRIPT_URL = new URL('../../js/opening-story-cutscene.js?v=20261003repo-selector1', location.href).href; // Used to load the same authored builders the live opening sequence calls.
+  const REQUIRED_STORY_BUILDERS = Object.freeze(REPO_SCENES.map(scene => scene.builder)); // Used by story-module readiness checks so every visible selector entry is guaranteed callable.
+  const STORY_SCRIPT_URL = new URL('../../js/opening-story-cutscene.js?v=20261003repo-selector2', location.href).href; // Used to load the same authored builders the live opening sequence calls.
   const NPC_DB_URL = new URL('../../config/npcs/hobunji-starter-npc-database.json', location.href).href; // Used to supply canonical NPC records to those builders.
-  const DIRECTOR_STORAGE_KEY = 'hobunjiCutsceneDirector.v1'; // Used only by the no-DataTransfer fallback to hand a built repo scene back through the Director's existing startup path.
+  const DIRECTOR_STORAGE_KEY = 'hobunjiCutsceneDirector.v1'; // Used by reload-based imports that still pass through the Director's startup normalizeProject path.
   const PENDING_WILDERNESS_KEY = 'hobunjiCutsceneDirector.repoWilderness.v1'; // Used after fallback reload to restore a procedural-wilderness scene with the Director's existing wilderness controls.
+  const PENDING_VIRTUAL_MAP_KEY = 'hobunjiCutsceneDirector.repoVirtualMap.v1'; // Used after farm-tour reload to explain that the Director is intentionally using its blank authoring grid while Game Preview supplies the live farm.
   let storyPromise = null; // Shared by repeated selector loads so the authored story module is fetched once.
   let npcRecordsPromise = null; // Shared by repeated selector loads so the canonical NPC database is fetched once.
 
@@ -24,7 +27,7 @@
     notify.timer = setTimeout(() => {
       toast.classList.remove('show');
       toast.style.borderColor = '';
-    }, 2600);
+    }, 3200);
   }
 
   function loadScriptOnce(src) {
@@ -44,13 +47,15 @@
     });
   }
 
+  function assertStoryApi(api) {
+    const missing = REQUIRED_STORY_BUILDERS.filter(name => typeof api?.[name] !== 'function'); // Keeps the selector catalog and live story module from silently drifting apart.
+    if (missing.length) throw new Error(`Opening-story builders unavailable: ${missing.join(', ')}`);
+    return api;
+  }
+
   async function ensureStoryApi() {
-    if (window.OpeningStoryCutscene?.buildRescueScene && window.OpeningStoryCutscene?.buildHunundiMeetingScene) return window.OpeningStoryCutscene;
-    storyPromise ||= loadScriptOnce(STORY_SCRIPT_URL).then(() => {
-      const api = window.OpeningStoryCutscene;
-      if (!api?.buildRescueScene || !api?.buildHunundiMeetingScene) throw new Error('Opening-story builders are unavailable after the repo module loaded.');
-      return api;
-    });
+    if (window.OpeningStoryCutscene) return assertStoryApi(window.OpeningStoryCutscene);
+    storyPromise ||= loadScriptOnce(STORY_SCRIPT_URL).then(() => assertStoryApi(window.OpeningStoryCutscene));
     return storyPromise;
   }
 
@@ -74,13 +79,38 @@
     }; // Builders currently only need the player label, while stable ids keep future profile-aware authoring deterministic.
   }
 
+  function authoringFarmTourPoints() {
+    const cols = 36, rows = 26, aspect = 16 / 9; // Mirrors the current shipping farm-tour regression fixture so repo authoring is deterministic instead of depending on a particular save's moved farmhouse.
+    const entry = { c: 2, r: 3 }; // Used as the player's representative farm arrival tile in the Director-only authoring fixture.
+    const guide = { c: 3, r: 3 }; // Used as Spearhead's adjacent starting tile in the Director-only authoring fixture.
+    const porch = { c: 8, r: 9 }; // Used as Spearhead's representative farmhouse approach tile for editing movement/camera stages.
+    const playerPorch = { c: 7, r: 9 }; // Used as the player's neighboring farmhouse stop so both walkers remain separately inspectable.
+    const camera = {
+      id: 'farm_introduction_south', label: 'Farm introduction south camera',
+      position: { x: cols / 2, y: Math.max(rows + 8, cols / aspect * .85 + 8) / 2, z: rows - .5 },
+      target: { x: cols / 2, y: 1, z: rows / 2 },
+      fovDeg: 75, blendSeconds: 1.25, trackSpeaker: false, stagePlayer: false,
+    }; // Matches openingFarmTourPoints()' current wide south-to-north camera math at the desktop authoring aspect.
+    const houseCamera = {
+      id: 'farm_introduction_house',
+      position: { x: porch.c + .5, y: 3, z: porch.r + 8.5 },
+      target: { x: porch.c + .5, y: 1.7, z: porch.r - .5 },
+      fovDeg: 60, blendSeconds: 1.25, trackSpeaker: false,
+    }; // Represents a north-facing farmhouse door; live gameplay still rebuilds this camera from the player's actual rotated farmhouse door normal.
+    return { entry, guide, porch, playerPorch, camera, houseCamera };
+  }
+
+  function authoringArgsFor(entry) {
+    if (entry.authoringArgs === 'farmTour') return [authoringFarmTourPoints()];
+    return [];
+  }
+
   async function buildRepoScene(sceneId) {
     const entry = REPO_SCENES.find(scene => scene.id === sceneId);
     if (!entry) throw new Error(`Unknown repo cutscene: ${sceneId}`);
     const [api, records] = await Promise.all([ensureStoryApi(), loadNpcRecords()]);
     const builder = api[entry.builder];
-    if (typeof builder !== 'function') throw new Error(`Repo cutscene builder "${entry.builder}" is unavailable.`);
-    const scene = builder(records, authoringProfile());
+    const scene = builder(records, authoringProfile(), ...authoringArgsFor(entry));
     if (!scene?.actors?.length || !scene?.stages?.length) throw new Error(`${entry.label} did not produce a valid scene.`);
     return { entry, scene };
   }
@@ -103,6 +133,13 @@
     if (!importInput) throw new Error('The Director import control is unavailable.');
     const isWilderness = Boolean(entry.wilderness || scene.wilderness); // Used to avoid sending procedural map ids through the static-map loader during JSON import.
     const importScene = isWilderness ? { ...scene, mapId: '' } : scene; // Wilderness context is restored immediately afterward through the Director's real Use Wilderness Zone control.
+
+    if (entry.virtualMap) {
+      localStorage.setItem(DIRECTOR_STORAGE_KEY, JSON.stringify(scene)); // Startup still runs normalizeProject(), while preserving mapId='farm' for authoritative Game Preview.
+      localStorage.setItem(PENDING_VIRTUAL_MAP_KEY, entry.virtualMap);
+      location.reload();
+      return;
+    }
 
     if (typeof DataTransfer === 'function' && typeof File === 'function') {
       const transfer = new DataTransfer(); // Reuses the Director's tested JSON import path instead of duplicating its private normalization/state logic.
@@ -173,16 +210,25 @@
     selectWildernessAfterImport(mapId);
   }
 
+  function restoreVirtualMapNotice() {
+    const mapId = localStorage.getItem(PENDING_VIRTUAL_MAP_KEY);
+    if (!mapId) return;
+    localStorage.removeItem(PENDING_VIRTUAL_MAP_KEY);
+    setTimeout(() => notify(`${mapId === 'farm' ? 'Farm tour' : mapId} loaded on the Director practice grid; Preview in game uses the live ${mapId} map.`), 120);
+  }
+
   function init() {
     injectSelector();
     restoreFallbackWilderness();
+    restoreVirtualMapNotice();
   }
 
   window.CutsceneDirectorRepoScenes = Object.freeze({
     catalog: REPO_SCENES.map(({ id, label, builder }) => Object.freeze({ id, label, builder })),
+    authoringFarmTourPoints: () => structuredClone(authoringFarmTourPoints()),
     build: buildRepoScene,
     load: loadRepoScene,
-  }); // Mobile/debug callers can inspect what repo-authored scenes the Director exposes without DevTools source spelunking.
+  }); // Mobile/debug callers can inspect repo-authored scenes and the deterministic farm fixture without DevTools source spelunking.
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });
   else init();
