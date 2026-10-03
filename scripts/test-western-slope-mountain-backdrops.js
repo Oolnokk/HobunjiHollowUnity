@@ -6,19 +6,38 @@ const vm = require('vm');
 
 const source = fs.readFileSync('docs/js/western-slope-mountain-backdrops.js', 'utf8'); // Production backdrop module exercised by the THREE shim below.
 const environmentBootstrap = fs.readFileSync('docs/js/environment-surface-runtime.js', 'utf8'); // Existing environment compatibility slot must load the backdrop module before game boot.
+const author = fs.readFileSync('docs/tools/background-scenery-author/author.js', 'utf8'); // Background author must synchronously load the mountain integration before its first map resolve.
+const mountainAuthor = fs.readFileSync('docs/tools/background-scenery-author/mountain-backdrop-author.js', 'utf8'); // Additive tool integration exposes real PNGs and transform controls.
 
-assert.match(environmentBootstrap, /western-slope-mountain-backdrops\.js\?v=20261003a/, 'environment bootstrap must load the Western Slope mountain module');
+assert.match(environmentBootstrap, /western-slope-mountain-backdrops\.js\?v=20261003b/, 'environment bootstrap must load the Western Slope mountain module');
 assert.match(source, /const WESTERN_SLOPE_ID = 'map_western_slope'/, 'module must remain scoped to Western Slope');
 assert.match(source, /MIN_WIDTH_MULTIPLIER = 2\.75/, 'every layer must stay wider than the wilderness footprint');
 assert.match(source, /WEST_LAYER_GAP_MULTIPLIER = 0\.85/, 'deep backdrop spacing must remain explicit and map-scaled');
+assert.match(source, /AUTHOR_STORAGE_KEY = 'hobunjiWesternSlopeMountainBackdrops\.v1'/, 'runtime and author tool must share the same local transform override key');
+assert.match(author, /western-slope-mountain-backdrops\.js\?v=20261003author2/, 'Background Scenery Author must load the runtime transform contract before authoring');
+assert.match(author, /mountain-backdrop-author\.js\?v=20261003author2/, 'Background Scenery Author must load its mountain UI/preview bridge');
+assert.match(mountainAuthor, /Mountain backdrop layers/, 'author bridge must expose mountain transform controls');
+assert.match(mountainAuthor, /mountainPosX/, 'author bridge must expose position controls');
+assert.match(mountainAuthor, /mountainRotY/, 'author bridge must expose rotation controls');
+assert.match(mountainAuthor, /mountainScaleZ/, 'author bridge must expose scale controls');
+assert.match(mountainAuthor, /assetBase:\s*'\.\.\/\.\.\/'/, '3D author preview must resolve the real repository PNGs from the tool directory');
+assert.match(mountainAuthor, /Frame mountains/, 'author bridge must provide a camera fit for the gargantuan westward stack');
 
+function transformSlot(defaults = { x: 0, y: 0, z: 0 }) {
+  return {
+    ...defaults,
+    set(x, y, z) { this.x = x; this.y = y; this.z = z; },
+  };
+}
 class Node3D {
   constructor() {
     this.children = [];
     this.parent = null;
     this.userData = {};
-    this.position = { x: 0, y: 0, z: 0, set: (x, y, z) => Object.assign(this.position, { x, y, z }) };
-    this.rotation = { x: 0, y: 0, z: 0 };
+    this.visible = true;
+    this.position = transformSlot();
+    this.rotation = transformSlot();
+    this.scale = transformSlot({ x: 1, y: 1, z: 1 });
   }
   add(object) {
     if (object.parent) object.parent.remove(object);
@@ -69,8 +88,17 @@ class TextureLoader {
   }
 }
 
-const THREE = { Group, PlaneGeometry, MeshBasicMaterial, Mesh, TextureLoader, FrontSide: 'front' };
-const window = { THREE };
+const localStorageData = new Map();
+const localStorage = {
+  getItem(key) { return localStorageData.has(key) ? localStorageData.get(key) : null; },
+  setItem(key, value) { localStorageData.set(key, String(value)); },
+  removeItem(key) { localStorageData.delete(key); },
+};
+const THREE = {
+  Group, PlaneGeometry, MeshBasicMaterial, Mesh, TextureLoader, FrontSide: 'front',
+  MathUtils: { degToRad: degrees => degrees * Math.PI / 180 },
+};
+const window = { THREE, localStorage };
 window.BorderTerrain = {
   buildZoneBorderTerrain(scene, cols, rows, mapId) {
     scene.borderBuilds = (scene.borderBuilds || 0) + 1;
@@ -97,7 +125,8 @@ vm.runInNewContext(source, {
 });
 
 (async () => {
-  assert(window.WesternSlopeMountainBackdrops?.installed, 'public backdrop API missing');
+  const api = window.WesternSlopeMountainBackdrops;
+  assert(api?.installed, 'public backdrop API missing');
 
   const unrelatedScene = new Group();
   window.BorderTerrain.buildZoneBorderTerrain(unrelatedScene, 200, 200, 'map_cloud_forest');
@@ -107,7 +136,7 @@ vm.runInNewContext(source, {
 
   const scene = new Group();
   window.BorderTerrain.buildZoneBorderTerrain(scene, 200, 200, 'map_western_slope');
-  await window.WesternSlopeMountainBackdrops.attach(scene, 200, 200, 'map_western_slope');
+  await api.attach(scene, 200, 200, 'map_western_slope');
 
   const root = scene.getObjectByName('WesternSlopeMountainBackdrops');
   assert(root, 'Western Slope backdrop root missing');
@@ -123,6 +152,18 @@ vm.runInNewContext(source, {
   assert(pixelScales.every(value => Math.abs(value - pixelScales[0]) < 1e-10), 'all mountain PNGs must use the exact same world-units-per-pixel scale');
   assert.deepEqual(root.children.map(mesh => mesh.renderOrder), [-101, -102, -103], 'farthest transparent layer must render before nearer layers');
   assert(root.children.every(mesh => mesh.material.depthWrite === false && mesh.material.fog === false), 'background planes must not write depth or inherit near-ground fog');
+
+  const authored = api.readAuthorConfig();
+  authored.layers[0].transform.position = [-40, 180, 95];
+  authored.layers[0].transform.rotationDeg = [4, 82, -2];
+  authored.layers[0].transform.scale = [1.2, 0.85, 1];
+  authored.layers[1].visible = false;
+  api.saveAuthorConfig(authored);
+  api.applyAuthorConfigToGroup(root, 200, 200, api.readAuthorConfig());
+  assert.deepEqual([root.children[0].position.x, root.children[0].position.y, root.children[0].position.z], [-40, 180, 95], 'editor-authored position must reach the live plane');
+  assert(Math.abs(root.children[0].rotation.y - (82 * Math.PI / 180)) < 1e-9, 'editor-authored Y rotation must reach the live plane');
+  assert.deepEqual([root.children[0].scale.x, root.children[0].scale.y, root.children[0].scale.z], [1.2, 0.85, 1], 'editor-authored scale must reach the live plane');
+  assert.equal(root.children[1].visible, false, 'per-layer visibility must be authorable');
 
   window.BorderTerrain.buildZoneBorderTerrain(scene, 200, 200, 'map_western_slope');
   await Promise.resolve();
@@ -143,6 +184,7 @@ vm.runInNewContext(source, {
   assert.equal(debug.completedBuilds, 1, 'debug snapshot must count the completed stack');
   assert.equal(debug.disposedBuilds, 1, 'debug snapshot must count lifecycle cleanup');
   assert.equal(debug.lastLayout.length, 3, 'debug snapshot must expose all authored layer transforms');
+  assert.deepEqual(debug.lastLayout[0].position, [-40, 180, 95], 'debug snapshot must expose the author-edited transform');
 
   console.log('Western Slope mountain backdrop checks passed.');
 })().catch(error => {
