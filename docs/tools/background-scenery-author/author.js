@@ -1,8 +1,4 @@
 'use strict';
-if (document.readyState === 'loading') {
-  document.write('<script src="../../js/western-slope-mountain-backdrops.js?v=20261003author2"><\/script>');
-  document.write('<script src="mountain-backdrop-author.js?v=20261003author2"><\/script>');
-}
 const $ = id => document.getElementById(id);
 const Core = window.BackgroundScenery;
 const canvas = $('canvas'), ctx = canvas.getContext('2d');
