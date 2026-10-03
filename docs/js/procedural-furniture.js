@@ -206,7 +206,9 @@
   function buildPartMesh(part, baseColor) {
     let geo;
     const t = part.transform;
-    if (part.kind === 'sphere') {
+    if (part.kind === 'banner') {
+      geo = new THREE.PlaneGeometry(Math.max(.01, t.sx || 1), Math.max(.01, t.sy || 1), 12, 16);
+    } else if (part.kind === 'sphere') {
       geo = new THREE.SphereGeometry(0.5 * Math.max(t.sx, t.sy, t.sz), 16, 10);
     } else if (part.kind === 'hoop') {
       geo = createHoopGeometry(part);
@@ -226,6 +228,10 @@
     if (part.materialTexture) applyPartTexture(mat, part);
     applyAuthoredSurfaceMapping(mesh, part); // Must run after the final primitive geometry exists; material assignment above remains authoritative.
     if (part.depthWrite === false) mat.depthWrite = false; // Background/firebox planes may stay opaque visually without hiding later transparent VFX.
+    mesh.userData ||= {};
+    mesh.userData.authoredPart = part; // Pattern placement/instance edits use the same immutable authored definition.
+    window.FurniturePatternSurfaces?.applyPart?.(mesh, part);
+    if (part.kind === 'banner') { mat.visible = false; mesh.castShadow = false; } // Patterned child is the visible wind-warped fabric.
     return mesh;
   }
 
@@ -669,6 +675,12 @@ function campfireRecipe() {
   CATALOG.mineLadder = [
     box(0, .65, 0, .6, 1.3, .12, .85),
   ];
+
+  CATALOG.hangingBanner = [
+    {id:'banner-post',kind:'box',name:'Banner post',color:'#8b6540',transform:{x:-.7,y:1.05,z:0,sx:.1,sy:2.1,sz:.12}},
+    {id:'banner-beam',kind:'box',name:'Banner beam',color:'#8b6540',transform:{x:0,y:2.1,z:0,sx:1.4,sy:.1,sz:.12}},
+    {id:'banner-cloth',kind:'banner',name:'Wind banner',bannerWindStrength:.1,transform:{x:0,y:1.45,z:.08,sx:1.2,sy:1.2,sz:.01},patternSurfaces:[{slot:'banner',mode:'cloth',patternId:'omgurku_knot',scale:1,palette:['#b7a185','#315b67']}]},
+  ]; // Generic authored recipe is also used while the richer JSON is loading.
 
   window.ProceduralFurniture = {
     buildFurnitureGroup,

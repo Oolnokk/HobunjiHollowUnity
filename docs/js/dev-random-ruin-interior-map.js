@@ -844,6 +844,7 @@
           continue;
         }
 
+        window.FurniturePatternSurfaces?.decorateRuin?.(ruin.localeRoot, candidateSeed);
         lastGenerationAudit.acceptedSeed=candidateSeed;
         await enterRuin(); updateBadge();
         const retryCount=attempt;

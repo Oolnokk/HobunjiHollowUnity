@@ -2460,6 +2460,7 @@
         campfire:      { itemKey: 'campfireKitFurniture',   icon: '🔥', name: 'Campfire Kit',         price: 15, fw: 1, fd: 1, color: 0x6d3e20, area: 'any', desc: 'A portable campfire kit. Select it, aim at open ground anywhere in the wild, and use Action 1 to make camp.', customPlace: true },
         loom:          { itemKey: 'loomFurniture',          icon: '🧶', name: 'Small Loom',           modelFile: 'loom_small.glb',               price: 45, fw: 1, fd: 2, color: 0x8a6a3a, area: 'interior', desc: 'A small loom for weaving cloth.' },
         nightstand:    { itemKey: 'nightstandFurniture',    icon: '🕯️', name: 'Nightstand',           modelFile: 'nightstand.glb',               price: 18, fw: 1, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A small bedside table.', light: { color: 0xffaa44, intensity: 0.5, distance: 4, height: 0.5 } },
+        hangingBanner: { itemKey:'hangingBannerFurniture',icon:'🎏',name:'Hanging Banner',price:25,fw:2,fd:1,color:0x8b6540,area:'any',desc:'Patterned cloth suspended from a wooden beam; its free edge moves with the wind.' },
         rug:           { itemKey: 'rugFurniture',           icon: '🧶', name: 'Woven Rug',            modelFile: 'rug_woven_small.glb',          price: 22, fw: 2, fd: 2, color: 0x8a5a3a, area: 'interior', walkable: true, desc: 'A small decorative woven rug.' },
         standingLamp:  { itemKey: 'standingLampFurniture',  icon: '💡', name: 'Bronze Standing Lamp', modelFile: 'standing_lamp_bronze.glb',     price: 28, fw: 1, fd: 1, color: 0xb87333, area: 'interior', desc: 'A tall bronze oil lamp.', light: { color: 0xffc266, intensity: 0.9, distance: 6, height: 1.3 } },
         statue:        { itemKey: 'statueFurniture',        icon: '🗿', name: 'Weathered Statue',     modelFile: 'statue_weathered.glb',         price: 30, fw: 1, fd: 1, color: 0x54585e, area: 'any',      desc: 'A weathered stone statue, worn by time.' },
@@ -2529,7 +2530,7 @@
         'pestle', 'squeezer', 'handMill', 'dryingRack', 'smoker', 'agingBarrel', 'agingVase',
         'basicBed', 'doubleBed', 'bedroll', 'bookshelf', 'bucket', 'candleTable',
         'chest', 'crateStack', 'copperBarrel', 'desk', 'dresser', 'hearth', 'loom',
-        'nightstand', 'rug', 'standingLamp', 'statue', 'tableLong', 'tableRound',
+        'nightstand', 'rug', 'hangingBanner', 'standingLamp', 'statue', 'tableLong', 'tableRound',
         'tableSmall', 'wardrobe', 'washTub', 'counter', 'alchemyTable', 'bulletinBoard',
         'feedGrinder', 'trough', 'campfire', 'mineLadder', 'stonePedestal',
         // Town business signs, placed as ordinary map_hobunji_town decor
@@ -13609,6 +13610,7 @@
             // only a build with no geometry at all falls back to the placeholder box.
             const renderKey = def?.procKey && def.procKey !== furnitureKey ? def.procKey : furnitureKey;
             const builtModel = renderKey ? buildFurnitureVisual(renderKey, color) : null;
+            window.FurniturePatternSurfaces?.applyOverrides?.(builtModel, f.patternOverrides);
             if (builtModel && (window.ProceduralFurniture.CATALOG[renderKey] || builtModel.children.length)) {
               const model = builtModel;
               renderedFurniture = model;
@@ -28729,6 +28731,13 @@
           ...interiorFurnitureObjects.filter(o => o.area === currentArea).map(o => ({ ...o, placementKind: 'decorative' })),
           ...(currentArea === 'farm' ? [...processingFurnitureObjects].map(o => ({ ...o, key: o.furnitureKey, area: 'farm', placementKind: 'processing' })) : []),
         ],
+        editFurniturePattern: id => {
+          const obj = interiorFurnitureObjects.find(entry => entry.id === id && entry.area === currentArea); // Edits the authoritative placed record, including persistent per-instance scale.
+          if (obj) window.FurniturePatternSurfaces?.editInstance?.(obj, overrides => {
+            for (const peer of interiorFurnitureObjects) if (peer.linkedWindowPrimaryId === obj.id) { peer.patternOverrides = overrides; window.FurniturePatternSurfaces?.applyOverrides?.(peer.mesh, overrides); }
+            window.FarmEditor.saveFarmLayout();
+          });
+        },
         removeFurniture: id => processingFurnitureById(id) ? removeProcessingFurniture(id) : removeDecorativeFurniture(id),
         rotateFurniture: (id, degrees) => processingFurnitureById(id) ? rotateProcessingFurniture(id, degrees) : rotateDecorativeFurniture(id, degrees),
         showToast,

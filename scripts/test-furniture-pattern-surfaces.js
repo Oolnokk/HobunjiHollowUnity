@@ -1,0 +1,104 @@
+'use strict';
+const assert = require('assert'); // Behavior assertions run without browser/network dependencies.
+const fs = require('fs'), vm = require('vm'); // Loads the production surface renderer and editor handlers.
+
+class Vector3 {
+  constructor(x=0,y=0,z=0){Object.assign(this,{x,y,z});}
+  fromBufferAttribute(a,i){this.x=a.array[i*a.itemSize];this.y=a.array[i*a.itemSize+1];this.z=a.array[i*a.itemSize+2];return this;}
+  subVectors(a,b){this.x=a.x-b.x;this.y=a.y-b.y;this.z=a.z-b.z;return this;}
+  cross(b){const x=this.y*b.z-this.z*b.y,y=this.z*b.x-this.x*b.z,z=this.x*b.y-this.y*b.x;Object.assign(this,{x,y,z});return this;}
+  negate(){this.x=-this.x;this.y=-this.y;this.z=-this.z;return this;}
+  normalize(){const n=Math.hypot(this.x,this.y,this.z)||1;this.x/=n;this.y/=n;this.z/=n;return this;}
+  toArray(){return [this.x,this.y,this.z];}
+  dot(b){return this.x*b.x+this.y*b.y+this.z*b.z;}
+}
+class Attribute {constructor(array,itemSize){this.array=Float32Array.from(array);this.itemSize=itemSize;this.count=this.array.length/itemSize;}}
+class Geometry {
+  constructor(){this.attributes={};this.userData={};}
+  getAttribute(name){return this.attributes[name];}
+  setAttribute(name,a){this.attributes[name]=a;return this;}
+  computeVertexNormals(){}
+  dispose(){this.disposed=true;}
+}
+class Material {
+  constructor(options){Object.assign(this,options);this.listeners={};}
+  addEventListener(name,fn){this.listeners[name]=fn;}
+  dispose(){this.listeners.dispose?.();this.disposed=true;}
+}
+class Mesh {
+  constructor(geometry,material){this.geometry=geometry;this.material=material;this.userData={};this.children=[];this.isMesh=true;this.matrixWorld={elements:[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]};}
+  add(child){child.parent=this;this.children.push(child);}
+  remove(child){this.children=this.children.filter(c=>c!==child);child.parent=null;}
+  traverse(fn){fn(this);for(const child of this.children)child.traverse?.(fn);}
+}
+const THREE={Vector3,BufferGeometry:Geometry,Float32BufferAttribute:Attribute,Mesh,MeshBasicMaterial:Material,DoubleSide:2,RepeatWrapping:1000}; // Enough Three API to execute actual triangle selection and instance lifecycle.
+const definitions=[{id:'rune-a',pattern:{motifDataUrl:'data:a'}},{id:'rune-b',pattern:{motifDataUrl:'data:b'}}]; // Deterministic unlockable catalog fixture.
+const owned=new Set(); // Tracks actual unlock calls; entering/decorating cannot change it.
+const canvases=[]; // Records shade references and shared compositor use.
+const document={createElement(){const result={width:0,height:0,fill:null,getContext(){return {fillStyle:'',fillRect(){result.fill=this.fillStyle;},drawImage(source){result.fill=source.fill;}};}};canvases.push(result);return result;}};
+let compositeCount=0; // Proves repeated instances reuse one pending tile build.
+const window={THREE,PatternLibrary:{getById:id=>definitions.find(d=>d.id===id)?.pattern,getCatalog:()=>definitions,unlock:id=>{if(owned.has(id))return false;owned.add(id);return true;}},
+  ClothingWeavingSystem:{async applyPatternStackToTintedImage(canvas,patterns,dye,key,shade){compositeCount++;assert.equal(shade.fill,'#c0c0c0','authored white must not be used as the shade-fill source');return canvas;}},
+  HobunjiSpritePngSurface:{makeMaterial:(_T,_tex,_name,options)=>new Material(options),makeCanvasTexture:(_T,canvas)=>({canvas,dispose(){this.disposed=true;}})}};
+vm.runInNewContext(fs.readFileSync('docs/js/furniture-pattern-surfaces.js','utf8'),{window,document,performance:{now:()=>1000},console});
+const api=window.FurniturePatternSurfaces; // Public production API used by furniture, ruin generation, and editor preview.
+function box(){const geo=new Geometry();geo.setAttribute('position',new Attribute([-1,.05,-1.5, 1,.05,1.5, 1,.05,-1.5, -1,.05,-1.5, -1,.05,1.5, 1,.05,1.5, -1,-.05,1.5, 1,-.05,1.5, 1,.05,1.5],3));return new Mesh(geo,new Material({}));}
+const pattern={slot:'carpet',mode:'cloth',selector:'top',patternId:'rune-a',palette:['#b7a185','#315b67'],scale:1}; // Used on real fixture triangles and restored overrides.
+(async()=>{
+  assert.equal(api.normalize({scale:NaN}).scale,1);
+  assert.equal(api.normalize({scale:-3}).scale,.05);
+  assert.equal(api.normalize({opacity:Infinity}).opacity,1);
+  assert.equal(api.normalize({palette:['invalid']}).palette[0],'#b7a185');
+  const part={id:'rug',transform:{sx:2,sy:.1,sz:3},patternSurfaces:[pattern]},mesh=box(); // Top and side fixture tests exact face clipping.
+  mesh.userData.authoredPart=part;
+  api.applyPart(mesh,part);
+  const overlay=mesh.children[0]; // Pattern child should contain only the two upward-facing triangles.
+  assert.equal(overlay.geometry.getAttribute('position').count,6);
+  assert.equal(part.patternSurfaces[0].scale,1,'shared authored records remain immutable');
+  const uv=overlay.geometry.getAttribute('uv'); // World scale adjusts UV density only when dimensions change.
+  overlay.onBeforeRender();const original=Float32Array.from(uv.array);
+  overlay.matrixWorld.elements[0]=3;overlay.matrixWorld.elements[10]=2;overlay.onBeforeRender();
+  assert.equal(uv.array[0],original[0]*3);assert.equal(uv.array[1],original[1]*2);
+  uv.needsUpdate=false;overlay.onBeforeRender();assert.equal(uv.needsUpdate,false,'unchanged frames must not rewrite UV buffers');
+  await Promise.all([api.renderTile(pattern),api.renderTile({...pattern,scale:3})]);
+  assert.equal(compositeCount,1,'tile cache ignores per-instance geometric scale');
+  await Promise.resolve();assert.equal(api.debug(mesh)[0].status,'ready');
+  api.applyOverrides(mesh,{rug:[{...pattern,scale:2}]});
+  assert.equal(mesh.children.length,1);assert.equal(overlay.material.disposed,true);assert.equal(overlay.geometry.disposed,true);
+  assert.equal(api.debug(mesh)[0].scale,2);assert.equal(part.patternSurfaces[0].scale,1);
+  const cold=box();cold.userData.authoredPart=part;api.applyOverrides(cold,JSON.parse(JSON.stringify(mesh.userData.patternOverrides)));
+  assert.equal(api.debug(cold)[0].scale,2,'serialized overrides survive cold restoration');
+  const banner=box();api.applyPart(banner,{kind:'banner',transform:{sy:2},patternSurfaces:[{...pattern,selector:'all'}]});
+  const shader={uniforms:{},vertexShader:'#include <begin_vertex>'};banner.children[0].material.onBeforeCompile(shader);banner.children[0].onBeforeRender();
+  assert(shader.vertexShader.includes('hanging'));assert.equal(shader.uniforms.bannerTime.value,1);
+  const root=box();root.name='Ruin wall';root.userData.ruinInteriorWall=true;
+  const child=box();child.name='wall section';root.add(child);
+  const first=api.decorateRuin(root,27),second=api.decorateRuin(root,27);
+  assert.deepEqual([...first],[...second]);assert.equal(owned.size,0,'visiting/decorating a ruin must not unlock motifs');
+  assert(api.unlockRuin(root).length>0);assert.equal(api.unlockRuin(root).length,0,'completion unlocks are idempotent');
+  const glass=box(),pane=box();glass.userData.authoredPart={id:'pane'};pane.userData.daylightWindowSource={surfaceId:'pane:surface:front'};pane.material.visible=true;glass.add(pane);
+  api.applyPart(glass,{patternSurfaces:[{...pattern,slot:'pane:surface:front',mode:'glass'}]});
+  await api.renderTile({...pattern,mode:'glass'});await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(pane.material.visible,false,'plain daylight pane must not cover the glass pattern');
+  assert.equal(pane.userData.daylightWindowSource.patternMeshes.length,1);
+  api.applyOverrides(glass,{pane:[]});assert.equal(pane.material.visible,true,'removing glass restores the existing pane');
+  const sharedRecord={...pattern,palette:['#ab9981','#52796f']},sharedA=box(),sharedB=box(); // Different furniture may share one immutable GPU tile.
+  api.applyPart(sharedA,{patternSurfaces:[sharedRecord]});api.applyPart(sharedB,{patternSurfaces:[sharedRecord]});
+  await api.renderTile(sharedRecord);await new Promise(resolve=>setImmediate(resolve));
+  const texture=sharedA.children[0].material.map; // Disposing one surface must leave the other surface's shared texture alive.
+  assert.strictEqual(texture,sharedB.children[0].material.map);
+  sharedA.children[0].material.dispose();texture.dispose();assert(!texture.disposed);
+  sharedB.children[0].material.dispose();assert(texture.disposed);
+  const elements = new Map(); // Minimal editor DOM retains actual handler functions rather than asserting source text.
+  const element = id => { if (!elements.has(id)) elements.set(id,{value:'',checked:false,parentElement:{appendChild(){}},style:{}}); return elements.get(id); };
+  const authorPart = {id:'editor-rug',kind:'box',transform:{sx:2,sy:.1,sz:3},patternSurfaces:[{...pattern}]}; // Existing default slot must be edited, not doubled on the selected face.
+  const editorState = {parts:[authorPart]},surface={id:'editor-rug:surface:top',partId:'editor-rug',localNormal:new Vector3(0,1,0),localCentroid:new Vector3(0,.05,0),faceIndices:[0,1]}; // Canonical base-editor selection fixture.
+  let windowMarks=0; // Verifies glass authoring invokes the actual exported daylight-author API.
+  const editorWindow = {FurniturePatternSurfaces:api, FurnitureDaylightWindowAuthor:{markSelectedAsWindow(){windowMarks++;}}};
+  const editorDocument = {createElement:()=>({}),getElementById:element}; // UI controls use the same IDs as the production author extension.
+  vm.runInNewContext(fs.readFileSync('docs/tools/furniture-avatar-author/furniture-patterns.js','utf8'),{window:editorWindow,document:editorDocument,THREE,state:editorState,selectedSurface:()=>surface,selectedPart:()=>authorPart,root:mesh,rebuildFurnitureMeshes(){},rebuildAll(){},queueUndoHistory(){},log(){}});
+  editorWindow.FurniturePatternAuthor.refresh();element('fpMode').value='glass';element('fpApply').onclick();
+  assert.equal(authorPart.patternSurfaces.length,1,'editing a default face slot must not create an overlapping duplicate');
+  assert.equal(authorPart.patternSurfaces[0].mode,'glass');assert.equal(authorPart.patternSurfaces[0].opacity,.8);assert.equal(windowMarks,1);
+  console.log('Furniture pattern normalization, clipping, scale, cache, overrides, wind, ruin unlocks and daylight integration passed.');
+})().catch(error=>{console.error(error);process.exitCode=1;});

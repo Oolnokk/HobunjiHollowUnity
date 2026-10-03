@@ -269,7 +269,7 @@
       deps.interiorFurnitureObjects.forEach(obj => {
         if (obj.derivedLinkedWindow) return; // Opposite-side farmhouse windows are runtime derivatives; only the inventory-backed primary belongs in the authoritative decor save.
         layout.decor.push({ id: obj.id, key: obj.key, col: obj.col, row: obj.row, area: obj.area,
-          rotYDeg: obj.rotYDeg || 0, ownerPieceId: obj.ownerPieceId || null,
+          patternOverrides: obj.patternOverrides || null, rotYDeg: obj.rotYDeg || 0, ownerPieceId: obj.ownerPieceId || null,
           localCol: Number.isFinite(obj.localCol) ? obj.localCol : null,
           localRow: Number.isFinite(obj.localRow) ? obj.localRow : null,
           wallPlacement: window.WallOrnamentPlacement?.getPlayerPlacement?.(obj.id) || null }); // Primary wall-space link is sufficient to deterministically regenerate the opposite-side peer after rebuild.
@@ -427,7 +427,7 @@
         console.error('[farm-editor] failed to restore processing furniture', { key, col, row }, err);
       }
     });
-    (layout.decor || []).forEach(({ id, key, col, row, area, rotYDeg, ownerPieceId, localCol, localRow, derivedLinkedWindow, wallPlacement }) => {
+    (layout.decor || []).forEach(({ id, key, col, row, area, rotYDeg, ownerPieceId, localCol, localRow, derivedLinkedWindow, wallPlacement, patternOverrides }) => {
       try {
         if (derivedLinkedWindow) return; // One development build serialized peers directly; ignore those transitional duplicate records and regenerate from the primary instead.
         const def = deps.DECORATIVE_FURNITURE_DEFS[key];
@@ -442,6 +442,8 @@
             mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: decorArea, rotYDeg: rotYDeg || 0,
             ownerPieceId: ownerPieceId || owner.ownerPieceId, localCol: Number.isFinite(localCol) ? localCol : owner.localCol,
             localRow: Number.isFinite(localRow) ? localRow : owner.localRow };
+          restoredObject.patternOverrides = patternOverrides || null;
+          window.FurniturePatternSurfaces?.applyOverrides?.(restoredObject.mesh, patternOverrides);
           deps.interiorFurnitureObjects.push(restoredObject);
           if (wallPlacement) {
             const pendingWallRestore = window.WallOrnamentPlacement?.setPlayerPlacement?.(restoredObject.id, wallPlacement, { notify: false, apply: true }); // Restores both transform and houseWindowLink without firing pair sync before house pieces finish loading.

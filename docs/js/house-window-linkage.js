@@ -551,6 +551,8 @@
       derivedLinkedWindow: true,
       linkedWindowPrimaryId: primaryObject.id,
     }; // Synthetic marker is consumed by FarmEditor.saveFarmLayout so this half never serializes as a second owned item.
+    peer.patternOverrides = primaryObject.patternOverrides || null; // Both sides display the same persistent stained-glass pattern.
+    window.FurniturePatternSurfaces?.applyOverrides?.(peer.mesh, peer.patternOverrides);
     result.mesh.userData.houseWindowDerived = true;
     farmDeps.interiorFurnitureObjects.push(peer);
     return peer;
