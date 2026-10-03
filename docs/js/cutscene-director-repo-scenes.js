@@ -101,19 +101,21 @@
   function handSceneToDirector(entry, scene) {
     const importInput = document.getElementById('importFile');
     if (!importInput) throw new Error('The Director import control is unavailable.');
+    const isWilderness = Boolean(entry.wilderness || scene.wilderness); // Used to avoid sending procedural map ids through the static-map loader during JSON import.
+    const importScene = isWilderness ? { ...scene, mapId: '' } : scene; // Wilderness context is restored immediately afterward through the Director's real Use Wilderness Zone control.
 
     if (typeof DataTransfer === 'function' && typeof File === 'function') {
       const transfer = new DataTransfer(); // Reuses the Director's tested JSON import path instead of duplicating its private normalization/state logic.
-      const file = new File([JSON.stringify(scene, null, 2)], `${entry.id}.json`, { type: 'application/json' });
+      const file = new File([JSON.stringify(importScene, null, 2)], `${entry.id}.json`, { type: 'application/json' });
       transfer.items.add(file);
       importInput.files = transfer.files;
       importInput.dispatchEvent(new Event('change', { bubbles: true }));
-      if (entry.wilderness || scene.wilderness) selectWildernessAfterImport(scene.mapId);
+      if (isWilderness) selectWildernessAfterImport(scene.mapId);
       return;
     }
 
-    localStorage.setItem(DIRECTOR_STORAGE_KEY, JSON.stringify(scene)); // Older browsers fall back to the Director's normal startup autosave path.
-    if (entry.wilderness || scene.wilderness) localStorage.setItem(PENDING_WILDERNESS_KEY, scene.mapId || '');
+    localStorage.setItem(DIRECTOR_STORAGE_KEY, JSON.stringify(importScene)); // Older browsers fall back to the Director's normal startup autosave path.
+    if (isWilderness) localStorage.setItem(PENDING_WILDERNESS_KEY, scene.mapId || '');
     location.reload();
   }
 
