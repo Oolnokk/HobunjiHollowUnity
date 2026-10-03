@@ -786,6 +786,7 @@
       label:'Climb Out of the Ruin',
       onPress:() => {
         if (window.RuinSites?.completeActiveRuin?.()) return; // Wilderness site: surface somewhere random and spend the entrance.
+        window.FurniturePatternSurfaces?.unlockRuin?.(window.DevRandomRuin?.getRuntimeContext?.()?.root);
         deps?.showToast?.('You climb the ladder up into daylight.', true); window.DevRandomRuin?.leave?.();
       },
     };

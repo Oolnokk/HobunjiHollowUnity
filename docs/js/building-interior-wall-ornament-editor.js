@@ -13,7 +13,7 @@
 
   const DEG = Math.PI / 180;
   const DEFAULT_WALL_HEIGHT = 1.75; // Matches the interior runtime/editor fallback height; a per-map wallHeight still wins.
-  const RUNTIME_FURNITURE_BRIDGE_URL = '../../js/building-interior-runtime-furniture.js?v=20260908b';
+  const RUNTIME_FURNITURE_BRIDGE_URL = '../../js/building-interior-runtime-furniture.js?v=20261003h895c44f';
   const PRESETS = Object.freeze({
     innSign: Object.freeze({ key: 'innSign', itemKey: 'innSignFurniture', label: 'Inn Sign', color: 0x765536, fw: 1, fd: 1 }),
     generalStoreSign: Object.freeze({ key: 'generalStoreSign', itemKey: 'generalStoreSignFurniture', label: 'General Store Sign', color: 0x765536, fw: 1, fd: 1 }),

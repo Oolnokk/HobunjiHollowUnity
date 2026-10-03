@@ -78,7 +78,7 @@
   function resolvedPatternMeshScale(patternDef) {
     const normalizedScale = clamp(finite(patternDef?.meshScale, 1), PATTERN_SCALE_MIN, PATTERN_SCALE_MAX); // Reusable pattern's authored normalized scale: 1.00 renders at the former physical 0.25.
     const usageScaleMultiplier = clamp(finite(patternDef?.usageScaleMultiplier, 1), 0.1, 20); // Transient purpose-specific multiplier; animal paint currently uses 7–14× while reusable pattern JSON remains unchanged.
-    return normalizedScale * PATTERN_SCALE_REFERENCE * usageScaleMultiplier;
+    return normalizedScale * PATTERN_SCALE_REFERENCE * usageScaleMultiplier * clamp(finite(patternDef?.renderRasterScale,1),.001,1); // Transient atlas downsampling preserves world motif density on large mobile surfaces.
   }
 
   function baseCosmeticId(item) {
@@ -2383,7 +2383,7 @@
   // retain the same apparent line weight. Motif scaling does not affect it.
   function scaledOutlineWidth(defaultWidth, _rawPattern, debugLabel = 'woven-motif', sourceWidth = 0, sourceHeight = 0) {
     const baseWidth = Math.max(1, finite(defaultWidth, 1)); // Used unchanged by clothing and as the non-animal fallback.
-    if (debugLabel !== 'animal-surface-pattern') return baseWidth;
+    if (debugLabel !== 'animal-surface-pattern') return baseWidth * clamp(finite(_rawPattern?.renderRasterScale,1),.001,1); // Downsample the atlas border along with its motif geometry.
     const widthPx = Math.max(0, finite(sourceWidth, 0)); // Used with sourceHeight to resolve the source raster's short side.
     const heightPx = Math.max(0, finite(sourceHeight, 0)); // Used with sourceWidth to resolve the source raster's short side.
     const shortSidePx = widthPx > 0 && heightPx > 0 ? Math.min(widthPx, heightPx) : 0; // Drives animal line weight independently of motif scale.
@@ -2404,14 +2404,14 @@
     return motifDataUrl ? { ...pattern, motifDataUrl } : pattern;
   }
 
-  async function applyPatternStackToTintedImage(imageOrCanvas, rawPatterns, colorHex, cachePrefix = '', shadingSource = null, debugLabel = 'woven-motif') {
+  async function applyPatternStackToTintedImage(imageOrCanvas, rawPatterns, colorHex, cachePrefix = '', shadingSource = null, debugLabel = 'woven-motif', options = {}) {
     const patterns = normalizePatternStack(rawPatterns);
     if (!imageOrCanvas || !patterns.length) return imageOrCanvas;
     const renderable = patterns.filter(pattern => !!(pattern?.motifDataUrl || pattern?.motifUrl || pattern?.customMotifId));
     if (!renderable.length) return imageOrCanvas;
     const width = imageOrCanvas.naturalWidth || imageOrCanvas.width || 1, height = imageOrCanvas.naturalHeight || imageOrCanvas.height || 1;
-    const key = patternStackCanvasKey(imageOrCanvas, renderable, colorHex, cachePrefix);
-    if (patternedCanvasCache.has(key)) return patternedCanvasCache.get(key);
+    const key = patternStackCanvasKey(imageOrCanvas, renderable, colorHex, cachePrefix) + (options.inkOnly ? ":ink" : "");
+    if (options.cache !== false && patternedCanvasCache.has(key)) return patternedCanvasCache.get(key);
 
     const motifUrls = await Promise.all(renderable.map(async pattern =>
       pattern.motifDataUrl || pattern.motifUrl || await window.MotifStore?.loadMotif?.(pattern.customMotifId)
@@ -2503,6 +2503,17 @@
       }
     }
 
+    if (options.inkOnly) {
+      for (let p = 0; p < pixelCount; p++) {
+        const i = p * 4; // Preserve canonical inversion, frame, thickness, island separation and overpass masks without a colored backing or exterior border.
+        base.data[i] = base.data[i + 1] = base.data[i + 2] = 0;
+        base.data[i + 3] = combinedMask[p] && !combinedSeparator?.[p] ? 255 : 0;
+      }
+      ctx.putImageData(base, 0, 0);
+      if (options.cache !== false) patternedCanvasCache.set(key, out);
+      return out;
+    }
+
     if (typeof directShadeFill !== 'function') throw new Error('ColorFill unavailable during woven pattern composition');
     directShadeFill(base.data, [r, g, b], {
       sourceData: shadeSourceData,
@@ -2529,7 +2540,7 @@
     }
 
     ctx.putImageData(base, 0, 0);
-    patternedCanvasCache.set(key, out);
+    if (options.cache !== false) patternedCanvasCache.set(key, out);
     return out;
   }
 

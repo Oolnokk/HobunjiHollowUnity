@@ -327,6 +327,7 @@
       pendingAuthoredFurnitureKey: null,
     });
     target.updateMatrixWorld?.(true);
+    window.FurniturePatternSurfaces?.applyOverrides?.(target, target.userData?.patternOverrides); // Instance decorations survive asynchronous replacement of the procedural placeholder.
     window.InteriorFireFloorRuntime?.onAuthoredFurnitureReady?.(target, data, data.key || target.userData?.authoredFurnitureKey); // Reattaches part-bound ambient VFX only after the real authored mesh map exists.
     return true;
   }
