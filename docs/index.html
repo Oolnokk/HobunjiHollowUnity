@@ -153,7 +153,7 @@
       window.SCRATCHBONES_CONFIG.game.assets.portrait.configBase = './config/';
     }
   </script>
-  <script src="js/portrait-utils.js?v=20261002hfa4d559"></script>
+  <script src="js/portrait-utils.js?v=20261003hd2c88b1"></script>
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20260930ha019a52"></script>
   <script src="js/png-plane-avatar.js?v=20260926hskelhairalign1"></script>
@@ -208,7 +208,7 @@
   <!-- Loads the richer per-piece data authored by furniture-avatar-author (seat
        anchors, processing VFX/warps, livestock stomp points) on top of it -->
   <script src="js/authored-furniture-runtime.js?v=20260922twostate1"></script>
-  <script src="js/furniture-pattern-surfaces.js?v=20261003patterns1"></script>
+  <script src="js/furniture-pattern-surfaces.js?v=20261003h4020e40"></script>
   <!-- Shared plateau/ramp fold math (Map Editor preview + Tothal Shift) and the
        headless Wilderness Map Generator core (Tothal Shift wilderness reroll) -->
   <script src="js/terrain-preview.js?v=20260922ruinrebase1"></script>
@@ -318,7 +318,7 @@
   <script src="js/bounty-board.js?v=20260831spearheadexisting1-colors1"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261002h9b3629d"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261003hbec542d"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -526,12 +526,12 @@
        offers (today: metal-craft-shop.js's verdigris-removal patterns).
        Needs init(deps) from game.js, so must load before it, same as
        dye-system.js. -->
-  <script src="js/pattern-library.js?v=20260912a"></script>
+  <script src="js/pattern-library.js?v=20261003h0ad42ee"></script>
   <!-- Dev-mode Settings exporter for the active character's saved PatternLibrary entries. -->
   <script src="js/pattern-library-dev-export.js?v=20260920export1"></script>
   <!-- Repo-authored reusable patterns (JSON + motif PNG). Runtime animal/NPC
        paint can reference a small repoPatternId instead of embedding motif bytes. -->
-  <script src="js/repo-pattern-library.js?v=20260920repo1"></script>
+  <script src="js/repo-pattern-library.js?v=20261003hf072713"></script>
   <!-- Banubu Color Pools: max-level Stable animal paint UI + cave pool visuals.
        Uses PatternAuthoring/PatternLibrary now; the shared weaving compositor
        is resolved at interaction/render time after combat-config-loader loads it. -->
@@ -752,7 +752,7 @@
   <script src="js/ruin-site-locales.js?v=20261002hb4d3f2d"></script>
   <script src="js/stampable-locale-defs.js?v=20260929ruinsites1"></script>
   <script src="js/ruin-sites.js?v=20261003h12be717"></script>
-  <script src="js/zone-den-totem-features.js?v=20260929glowdecals1"></script>
+  <script src="js/zone-den-totem-features.js?v=20261003h7c00660"></script>
   <script src="js/transition-markers.js?v=20261001a"></script>
   <!-- Wilderness-zone grass and rich-foliage-patch billboards
        (window.ZoneGrassBillboards) — pure scene-graph generation, no
@@ -2550,7 +2550,7 @@
   <!-- Directional camera pitch policy is isolated from controller bindings/gameplay dispatch. -->
   <script src="js/camera-look-clamp.js?v=20260923review2"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261003h1745910"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261003h98e19f5"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their

@@ -34,11 +34,12 @@ class Mesh {
 const THREE={Vector3,BufferGeometry:Geometry,Float32BufferAttribute:Attribute,Mesh,MeshBasicMaterial:Material,DoubleSide:2,RepeatWrapping:1000}; // Enough Three API to execute actual triangle selection and instance lifecycle.
 const definitions=[{id:'rune-a',pattern:{motifDataUrl:'data:a'}},{id:'rune-b',pattern:{motifDataUrl:'data:b'}}]; // Deterministic unlockable catalog fixture.
 const owned=new Set(); // Tracks actual unlock calls; entering/decorating cannot change it.
+const sizes=[]; // Atlas extents verify density independently of normalized geometry UVs.
 const canvases=[]; // Records shade references and shared compositor use.
 const document={createElement(){const result={width:0,height:0,fill:null,getContext(){return {fillStyle:'',fillRect(){result.fill=this.fillStyle;},drawImage(source){result.fill=source.fill;}};}};canvases.push(result);return result;}};
 let compositeCount=0; // Proves repeated instances reuse one pending tile build.
 const window={THREE,PatternLibrary:{getById:id=>definitions.find(d=>d.id===id)?.pattern,getCatalog:()=>definitions,unlock:id=>{if(owned.has(id))return false;owned.add(id);return true;}},
-  ClothingWeavingSystem:{async applyPatternStackToTintedImage(canvas,patterns,dye,key,shade){compositeCount++;assert.equal(shade.fill,'#c0c0c0','authored white must not be used as the shade-fill source');return canvas;}},
+  ClothingWeavingSystem:{async applyPatternStackToTintedImage(canvas,patterns,dye,key,shade){compositeCount++;sizes.push([canvas.width,canvas.height]);assert(!patterns[0].usageScaleMultiplier || patterns[0].usageScaleMultiplier <= 1,"no furniture-only fourfold magnification");assert.equal(shade.fill,'#c0c0c0','authored white must not be used as the shade-fill source');return canvas;}},
   HobunjiSpritePngSurface:{makeMaterial:(_T,_tex,_name,options)=>new Material(options),makeCanvasTexture:(_T,canvas)=>({canvas,dispose(){this.disposed=true;}})}};
 vm.runInNewContext(fs.readFileSync('docs/js/furniture-pattern-surfaces.js','utf8'),{window,document,performance:{now:()=>1000},console});
 const api=window.FurniturePatternSurfaces; // Public production API used by furniture, ruin generation, and editor preview.
@@ -49,6 +50,23 @@ const pattern={slot:'carpet',mode:'cloth',selector:'top',patternId:'rune-a',pale
   assert.equal(api.normalize({scale:-3}).scale,.05);
   assert.equal(api.normalize({opacity:Infinity}).opacity,1);
   assert.equal(api.normalize({palette:['invalid']}).palette[0],'#b7a185');
+  const curvedGeo=new Geometry(),ring=[]; // Eight connected cylinder panels expose projection discontinuities at changing face directions.
+  for(let segment=0;segment<8;segment++) {
+    const p=[Math.cos(segment*Math.PI/4),Math.sin(segment*Math.PI/4)],q=[Math.cos((segment+1)*Math.PI/4),Math.sin((segment+1)*Math.PI/4)]; // Adjacent panels deliberately duplicate their shared edge vertices.
+    ring.push(p[0],-1,p[1],q[0],1,q[1],q[0],-1,q[1],p[0],-1,p[1],p[0],1,p[1],q[0],1,q[1]);
+  }
+  curvedGeo.setAttribute('position',new Attribute(ring,3));
+  const curvedMesh=new Mesh(curvedGeo,new Material({})); // Runtime hooks must maintain shared UVs through non-uniform resizing.
+  api.applyPart(curvedMesh,{kind:'cylinder',patternSurfaces:[{...pattern,selector:'sides'}]});
+  const curvedOverlay=curvedMesh.children[0]; curvedOverlay.matrixWorld.elements[0]=2;curvedOverlay.onBeforeRender();
+  const positions=curvedOverlay.geometry.getAttribute('position').array,curvedUv=curvedOverlay.geometry.getAttribute('uv').array,edges=new Map(); // Every join except the one closing unwrap seam must be continuous.
+  for(let i=0;i<positions.length;i+=3) {
+    const x=positions[i],z=positions[i+2]; // Back/front side projection changes are the original visible plane-separation failure.
+    if(x>.99&&Math.abs(z)<.01) continue;
+    const key=[x,positions[i+1],z].map(n=>n.toFixed(4)).join(','),u=curvedUv[i/3*2];
+    if(edges.has(key)) assert(Math.abs(edges.get(key)-u)<1e-6,'adjacent curved panels must share the same pattern phase');
+    edges.set(key,u);
+  }
   const part={id:'rug',transform:{sx:2,sy:.1,sz:3},patternSurfaces:[pattern]},mesh=box(); // Top and side fixture tests exact face clipping.
   mesh.userData.authoredPart=part;
   api.applyPart(mesh,part);
@@ -58,10 +76,11 @@ const pattern={slot:'carpet',mode:'cloth',selector:'top',patternId:'rune-a',pale
   const uv=overlay.geometry.getAttribute('uv'); // World scale adjusts UV density only when dimensions change.
   overlay.onBeforeRender();const original=Float32Array.from(uv.array);
   overlay.matrixWorld.elements[0]=3;overlay.matrixWorld.elements[10]=2;overlay.onBeforeRender();
-  assert.equal(uv.array[0],original[0]*3);assert.equal(uv.array[1],original[1]*2);
+  assert.deepEqual([...uv.array],[...original],"UVs cover one complete atlas after resizing; image extent changes instead of repeating a crop");
   uv.needsUpdate=false;overlay.onBeforeRender();assert.equal(uv.needsUpdate,false,'unchanged frames must not rewrite UV buffers');
   await Promise.all([api.renderTile(pattern),api.renderTile({...pattern,scale:3})]);
-  assert.equal(compositeCount,1,'tile cache ignores per-instance geometric scale');
+  assert.equal(sizes.filter(size=>size[0]===256&&size[1]===256).length,1,'preview tile cache ignores per-instance geometric scale');
+  assert(sizes.some(size=>size[0]===512&&size[1]===768),'first atlas covers the whole 2 by 3 surface');
   await Promise.resolve();assert.equal(api.debug(mesh)[0].status,'ready');
   api.applyOverrides(mesh,{rug:[{...pattern,scale:2}]});
   assert.equal(mesh.children.length,1);assert.equal(overlay.material.disposed,true);assert.equal(overlay.geometry.disposed,true);

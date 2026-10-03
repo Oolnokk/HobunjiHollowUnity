@@ -16,7 +16,7 @@
       selector: String(record.selector || 'all'),
       scale: Math.max(.05, Math.min(20, finite(record.scale, 1))),
       palette: [hex(record.palette?.[0], '#b7a185'), hex(record.palette?.[1], '#315b67')],
-      opacity: Math.max(0, Math.min(1, finite(record.opacity, record.mode === 'glass' ? .8 : 1))),
+      opacity: Math.max(0, Math.min(1, finite(record.opacity, record.mode === 'glass' ? .8 : record.mode === 'engraving' ? .5 : 1))),
     };
   }
 
@@ -46,38 +46,33 @@
     return {...pattern,motifDataUrl:canvas.toDataURL('image/png')};
   }
 
-  async function renderTile(raw, patternOverride) {
+  async function renderTile(raw, patternOverride, size = [TILE_PX, TILE_PX]) {
     const record = normalize(raw); // Validation is shared by the author preview and runtime.
     if (!patternOverride && !resolvePattern(record)) await window.RepoPatternLibrary?.load?.();
     const pattern = patternOverride || resolvePattern(record); // Never mutate a shared library definition.
     if (!pattern) throw new Error(`Pattern unavailable: ${record.patternId || 'custom'}`);
     const compositor = window.ClothingWeavingSystem?.applyPatternStackToTintedImage; // Canonical tiling, inversion, thickness and overpass implementation.
     if (!compositor) throw new Error('The weaving pattern renderer has not loaded');
-    const key = JSON.stringify([record.mode, record.palette, pattern]); // Scale/opacity belong to placement rather than the reusable tile pixels.
+    const key = JSON.stringify([record.mode, record.palette, pattern, size]); // Scale/opacity belong to placement rather than the reusable tile pixels.
     if (tileCache.has(key)) return tileCache.get(key);
     const pending = (async () => {
       const canvas = document.createElement('canvas'); // Solid dyed base provides the same opaque eligibility mask as cloth.
-      canvas.width = canvas.height = TILE_PX;
+      canvas.width = size[0]; canvas.height = size[1];
       const ctx = canvas.getContext('2d'); // Neutral gray is eligible for shade-fill; authored white is intentionally protected by ColorFill.
-      ctx.fillStyle = '#c0c0c0'; ctx.fillRect(0, 0, TILE_PX, TILE_PX);
+      ctx.fillStyle = '#c0c0c0'; ctx.fillRect(0, 0, canvas.width, canvas.height);
       const shading = document.createElement('canvas'); // Separate pre-tint reference required by the canonical compositor.
-      shading.width = shading.height = TILE_PX;
+      shading.width = canvas.width; shading.height = canvas.height;
       shading.getContext('2d').drawImage(canvas, 0, 0);
-      ctx.fillStyle = record.palette[0]; ctx.fillRect(0, 0, TILE_PX, TILE_PX);
-      const result = await compositor(canvas, [{ ...pattern, usageScaleMultiplier: finite(pattern.usageScaleMultiplier, 1) * 4 }], record.palette[1], `furniture:${key}`, shading); // Shared renderer supplies all motif borders and inversion behavior.
+      ctx.fillStyle = record.palette[0]; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      const result = await compositor(canvas, [{...pattern,renderRasterScale:size[2] || 1}], record.palette[1], `furniture:${key}`, shading, 'woven-motif', {inkOnly: record.mode === 'engraving', cache:false}); // Use authored settings without an extra purpose-specific magnification.
       if (record.mode !== 'engraving') return result;
-      const engraving = document.createElement('canvas'); // Keep the stone PNG visible between etched strokes.
-      engraving.width = engraving.height = TILE_PX;
-      const engravingCtx = engraving.getContext('2d'); // Copy prevents changes to the weaving compositor's cached canvas.
-      engravingCtx.drawImage(result, 0, 0);
-      const pixels = engravingCtx.getImageData(0, 0, TILE_PX, TILE_PX); // Strip only the flat backing dye, retaining ink and black separators.
-      const base = record.palette[0].slice(1).match(/../g).map(value => parseInt(value, 16)); // Known validated RGB backing.
-      for (let i = 0; i < pixels.data.length; i += 4) if (base.every((channel, index) => pixels.data[i + index] === channel)) pixels.data[i + 3] = 0;
-      engravingCtx.putImageData(pixels, 0, 0);
-      return engraving;
+      const engraving = document.createElement('canvas'); // Never mutate the compositor's cached mask.
+      engraving.width = canvas.width; engraving.height = canvas.height;
+      engraving.getContext('2d').drawImage(result, 0, 0);
+      return window.HobunjiSpritePngSurface.carveCanvas(engraving);
     })();
     tileCache.set(key, pending);
-    if (tileCache.size > 128) tileCache.delete(tileCache.keys().next().value);
+    if (tileCache.size > 24) tileCache.delete(tileCache.keys().next().value);
     try { return await pending; }
     catch (error) { tileCache.delete(key); throw error; }
   }
@@ -102,7 +97,10 @@
     if (!position) return null;
     const indices = source.index; // Both imported indexed geometry and editor triangle soup are supported.
     const count = indices ? indices.count : position.count;
-    const vertices = [], uvs = [], axes = []; // Temporary arrays exist only during construction, never per frame.
+    const vertices = [], uvs = [], axes = [], weights = []; // Temporary arrays exist only during construction, never per frame.
+    const bounds = {x:0,z:0}; // Dimensions of the actual source geometry anchor the continuous side unwrap.
+    for (let i=0;i<position.count;i++) { bounds.x=Math.max(bounds.x,Math.abs(position.array[i*3])); bounds.z=Math.max(bounds.z,Math.abs(position.array[i*3+2])); }
+    const curved = ['cylinder','disc','legRound','barrel','cup','sphere'].includes(part.kind); // Curved side groups use angular coordinates rather than switching box planes.
     const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(); // Reused triangle scratch vectors.
     const edge = new THREE.Vector3(), normal = new THREE.Vector3(); // Reused normal computation for selection and offset.
     for (let first = 0; first + 2 < count; first += 3) {
@@ -115,11 +113,21 @@
         const center = record.localCentroid.map((value, axis) => value * finite(part.transform?.[['sx','sy','sz'][axis]], record.dimensions[axis]) / Math.max(.001, record.dimensions[axis])); // Keep the authored face plane attached during piece resizing.
         if (Math.abs(normal.dot(a) - normal.x * center[0] - normal.y * center[1] - normal.z * center[2]) > .02) continue;
       }
-      const axis = Math.abs(normal.y) >= Math.max(Math.abs(normal.x), Math.abs(normal.z)) ? 'y' : Math.abs(normal.x) >= Math.abs(normal.z) ? 'x' : 'z'; // Stable box projection uses actual local dimensions, not normalized bounds.
+      const direction = record.normal || [normal.x,normal.y,normal.z]; // Selected planar faces share one projection even when individual triangles are slightly tilted.
+      const axis = record.selector === 'sides' ? 'z' : Math.abs(direction[1]) >= Math.max(Math.abs(direction[0]), Math.abs(direction[2])) ? 'y' : Math.abs(direction[0]) >= Math.abs(direction[2]) ? 'x' : 'z'; // Stable box projection uses actual local dimensions, not normalized bounds.
+      const angles = [a,b,c].map(point => (Math.atan2(point.z / (bounds.z || 1), point.x / (bounds.x || 1)) + Math.PI*2) % (Math.PI*2)); // Shared edge vertices keep identical coordinates; only the back closing seam is unwrapped.
+      if (Math.max(...angles)-Math.min(...angles)>Math.PI) for(let i=0;i<3;i++) if(angles[i]<Math.PI) angles[i]+=Math.PI*2;
+      let vertex = 0; // Associates triangle vertices with their seam-corrected angle.
       for (const point of [a, b, c]) {
-        vertices.push(point.x + normal.x * .003, point.y + normal.y * .003, point.z + normal.z * .003);
-        uvs.push((axis === 'x' ? point.z : point.x) / record.scale, (axis === 'y' ? -point.z : point.y) / record.scale);
-        axes.push(axis === 'x' ? 2 : 0, axis === 'y' ? 2 : 1);
+        vertices.push(point.x, point.y, point.z); // Polygon offset prevents z-fighting without opening cracks between neighboring triangle planes.
+        let u = axis === 'x' ? point.z : point.x; // Default planar mapping is continuous across the selected face.
+        let ux=axis === 'x' ? 0 : point.x, uz=axis === 'x' ? point.z : 0; // Linear coordinates let non-uniform resizing preserve the side perimeter.
+        if (record.selector === 'sides' && curved) u = angles[vertex] * Math.sqrt((bounds.x*bounds.x+bounds.z*bounds.z)/2);
+        else if (record.selector === 'sides') { ux=normal.z > .7 ? point.x : normal.x > .7 ? bounds.x : normal.z < -.7 ? 2*bounds.x-point.x : 3*bounds.x; uz=normal.z > .7 ? 0 : normal.x > .7 ? bounds.z-point.z : normal.z < -.7 ? 2*bounds.z : 3*bounds.z+point.z; u=ux+uz; } // One perimeter coordinate continues around rectangular pillars.
+        uvs.push(u / record.scale, (axis === 'y' ? -point.z : point.y) / record.scale);
+        vertex++;
+        axes.push(record.selector === 'sides' && curved ? 3 : axis === 'x' ? 2 : 0, axis === 'y' ? 2 : 1);
+        weights.push(ux/record.scale,uz/record.scale); // U axis may depend on both X and Z for a continuous box-side unwrap.
       }
     }
     if (!vertices.length) return null;
@@ -129,6 +137,8 @@
     geometry.computeVertexNormals();
     geometry.userData.patternBaseUvs = new Float32Array(uvs);
     geometry.userData.patternUvAxes = new Uint8Array(axes);
+    geometry.userData.patternUvWeights = new Float32Array(weights);
+    geometry.userData.patternSideRadii = [bounds.x,bounds.z];
     return geometry;
   }
 
@@ -137,7 +147,7 @@
     if (!entry) {
       const THREE = window.THREE, png = window.HobunjiSpritePngSurface; // Canonical PNG texture creation remains authoritative.
       const texture = png?.makeCanvasTexture?.(THREE, canvas, 'furniture-pattern') || new THREE.CanvasTexture(canvas);
-      texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+      texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping; // Full surface atlas must never repeat an arbitrary crop of a rotated lattice.
       entry = {canvas,texture,refs:0};
       const dispose = texture.dispose.bind(texture); // External generic mesh cleanup cannot destroy a tile still used by other furniture.
       texture.dispose = () => { if (!entry.refs) dispose(); };
@@ -161,8 +171,8 @@
       const record = normalize(raw); // Copy per-instance settings; authored recipes remain immutable.
       const geometry = surfaceGeometry(mesh, record, part);
       if (!geometry) continue;
-      const material = png?.makeMaterial?.(THREE, null, 'furniture-pattern', { side: THREE.DoubleSide, transparent: record.mode === 'engraving' || record.opacity < 1, depthWrite: record.mode !== 'engraving' && record.opacity >= 1, opacity: record.opacity })
-        || new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, transparent: record.mode === 'engraving' || record.opacity < 1, depthWrite: record.mode !== 'engraving' && record.opacity >= 1, opacity: record.opacity });
+      const material = png?.makeMaterial?.(THREE, null, 'furniture-pattern', { side: THREE.DoubleSide, transparent: record.mode === 'engraving' || record.opacity < 1, depthWrite: record.mode !== 'engraving' && record.opacity >= 1, opacity: record.mode === 'engraving' ? Math.min(.5,record.opacity) : record.opacity, alphaTest: record.mode === 'engraving' ? .001 : png?.alphaTest?.() })
+        || new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, transparent: record.mode === 'engraving' || record.opacity < 1, depthWrite: record.mode !== 'engraving' && record.opacity >= 1, opacity: record.mode === 'engraving' ? Math.min(.5,record.opacity) : record.opacity, alphaTest: record.mode === 'engraving' ? .001 : png?.alphaTest?.() });
       const overlay = new THREE.Mesh(geometry, material); // Surface child inherits furniture transforms and existing disposal lifecycle.
       overlay.name = `pattern:${record.slot}`;
       overlay.visible = false; // Keep the furniture's authored base visible until its composed tile is ready.
@@ -176,14 +186,18 @@
       let ownedTexture = null; // Material disposal releases exactly one reference to a shared GPU tile.
       let disposed = false; // Prevents asynchronous tile completion from reviving disposed preview/world objects.
       material.addEventListener?.('dispose', () => { if (disposed) return; disposed = true; releaseTexture(ownedTexture); });
-      renderTile(record).then(canvas => {
-        if (disposed) return;
-        ownedTexture = retainTexture(canvas);
-        material.map = ownedTexture.texture; material.needsUpdate = true;
-        overlay.visible = true;
-        overlay.userData.furniturePattern.status = 'ready';
-        if (record.mode === 'glass') syncGlass(mesh);
-      }).catch(error => { if (!disposed) { overlay.visible = false; overlay.userData.furniturePattern.status = error.message; } });
+      let generation = 0; // Discard stale atlas loads if an instance is resized again before composition finishes.
+      overlay.userData.refreshPatternAtlas = size => {
+        const request = ++generation; // Each rescale owns one asynchronous atlas generation.
+        renderTile(record, null, size).then(canvas => {
+          if (disposed || request !== generation) return;
+          releaseTexture(ownedTexture); ownedTexture = retainTexture(canvas);
+          material.map = ownedTexture.texture; material.needsUpdate = true;
+          overlay.visible = true; overlay.userData.furniturePattern.status = 'ready';
+          if (record.mode === 'glass') syncGlass(mesh);
+        }).catch(error => { if (!disposed && request === generation) { overlay.visible = false; overlay.userData.furniturePattern.status = error.message; } });
+      };
+      overlay.onBeforeRender(); // Build the first atlas while invisible; later render hooks react only to resizing.
     }
     return mesh;
   }
@@ -208,7 +222,19 @@
       for (let axis = 0; axis < 3; axis++) lengths[axis] = Math.hypot(matrix[axis * 4], matrix[axis * 4 + 1], matrix[axis * 4 + 2]);
       if (Math.abs(lengths[0]-previous[0]) < 1e-6 && Math.abs(lengths[1]-previous[1]) < 1e-6 && Math.abs(lengths[2]-previous[2]) < 1e-6) return;
       const uv = mesh.geometry.getAttribute('uv'); // Resample only when the furniture was resized; ordinary frames do no buffer writes.
-      for (let i = 0; i < base.length; i++) uv.array[i] = base[i] * lengths[axes[i]];
+      const weights=mesh.geometry.userData.patternUvWeights,radii=mesh.geometry.userData.patternSideRadii; // Source unwrap metadata is immutable across resizes.
+      lengths[3]=Math.hypot(radii[0]*lengths[0],radii[1]*lengths[2])/Math.max(.001,Math.hypot(...radii)); // Elliptical side mapping retains one consistent circumference scale.
+      let minU=Infinity,maxU=-Infinity,minV=Infinity,maxV=-Infinity; // Atlas spans the whole selected surface, so no triangle samples a separately repeated preview.
+      for (let i = 0; i < base.length; i++) {
+        uv.array[i] = i%2 || axes[i] === 3 ? base[i] * lengths[axes[i]] : weights[i]*lengths[0]+weights[i+1]*lengths[2];
+        if(i%2) {minV=Math.min(minV,uv.array[i]);maxV=Math.max(maxV,uv.array[i]);}
+        else {minU=Math.min(minU,uv.array[i]);maxU=Math.max(maxU,uv.array[i]);}
+      }
+      const width=Math.max(.001,maxU-minU),height=Math.max(.001,maxV-minV); // World dimensions determine pixel extent while authored meshScale determines motif density.
+      const density=Math.min(TILE_PX,1024/Math.max(width,height)); // Bound mobile GPU allocation while preserving aspect and pattern size.
+      const size=[Math.max(1,Math.ceil(width*density)),Math.max(1,Math.ceil(height*density)),density/TILE_PX]; // One atlas per actual surface extent.
+      for(let i=0;i<base.length;i+=2) {uv.array[i]=(uv.array[i]-minU)/width;uv.array[i+1]=(uv.array[i+1]-minV)/height;}
+      mesh.userData.refreshPatternAtlas?.(size);
       uv.needsUpdate = true;
       for (let axis = 0; axis < 3; axis++) previous[axis] = lengths[axis];
     };
@@ -234,7 +260,7 @@
 
   function decorateRuin(root, seed) {
     if (!root) return [];
-    const catalog = window.PatternLibrary?.getCatalog?.() || []; // Engravings grant exactly the reusable catalog motif rendered on the ruin.
+    const catalog = [...(window.PatternLibrary?.getCatalog?.() || []), ...(window.RepoPatternLibrary?.listCached?.() || []).filter(entry=>entry.collectible)]; // Engravings grant exactly the reusable catalog motif rendered on the ruin.
     const ids = new Set(), meshes = []; // Collect first so adding overlay children cannot extend traversal.
     root.traverse(node => { if (node.isMesh && !node.userData?.furniturePattern) meshes.push(node); });
     for (let index = 0; index < meshes.length; index++) {

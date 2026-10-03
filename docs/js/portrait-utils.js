@@ -768,12 +768,30 @@ function makeSpritePngUnlitMaterial(THREE, texture, debugName, overrides = {}) {
   return new THREE.MeshBasicMaterial(spritePngMaterialOptions(THREE, texture, debugName, overrides));
 }
 
+// Dark translucent ink and a stronger inner rim share the same carve appearance.
+function carveSpritePngCanvas(canvas) {
+  const ctx = canvas.getContext('2d'), image = ctx.getImageData(0, 0, canvas.width, canvas.height); // Read once; the original alpha mask remains immutable during edge detection.
+  const alpha = new Uint8Array(canvas.width * canvas.height); // Source coverage preserves antialiased glyph edges.
+  for (let p = 0; p < alpha.length; p++) alpha[p] = image.data[p * 4 + 3];
+  for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
+    const p = y * canvas.width + x, i = p * 4; // Only darken inside ink; never expand a painted outline onto the backing surface.
+    if (!alpha[p]) continue;
+    const edge = (x > 0 && alpha[p - 1] < alpha[p] / 2) || (x + 1 < canvas.width && alpha[p + 1] < alpha[p] / 2)
+      || (y > 0 && alpha[p - canvas.width] < alpha[p] / 2) || (y + 1 < canvas.height && alpha[p + canvas.width] < alpha[p] / 2);
+    image.data[i] = 20; image.data[i + 1] = 16; image.data[i + 2] = 12;
+    image.data[i + 3] = Math.round(alpha[p] * (edge ? .95 : .65));
+  }
+  ctx.putImageData(image, 0, 0);
+  return canvas;
+}
+
 window.HobunjiSpritePngSurface = {
   tintForBodyColor: bodySpriteTintForColor,
   tintBodyCanvas: getBodyTintedCanvas,
   normalizeSurfaceTone: normalizeAuthoredSurfacePngTone,
   tintSurfaceCanvas: getSurfaceTintedCanvas,
   configureTexture: configureSpritePngTexture,
+  carveCanvas: carveSpritePngCanvas,
   makeCanvasTexture: makeSpritePngCanvasTexture,
   materialOptions: spritePngMaterialOptions,
   makeMaterial: makeSpritePngUnlitMaterial,

@@ -366,7 +366,7 @@ assert.match(indexSource, /js\/dev-spawner\.js\?v=[A-Za-z0-9_-]+/);
 assert.match(indexSource, /game\.js\?v=[A-Za-z0-9_-]+/);
 assert(indexSource.includes('js/combat/resource-system.js?v=20261001quickdebuff2'));
 assert.match(indexSource, /js\/pixel-probe\.js\?v=[A-Za-z0-9_-]+/);
-assert(indexSource.includes('js/portrait-utils.js?v=20261002hfa4d559'));
+assert(/js\/portrait\-utils\.js\?v=[A-Za-z0-9_-]+/.test(indexSource));
 assert(indexSource.includes('js/procedural-leg-animation.js?v=20260926hover1'));
 assert(indexSource.includes('js/combat/combat-config-loader.js?v='));
 assert(pixelProbeSource.includes('window.HarlyaoLichCombat?.formatDebug?.()'), 'Pixel Probe must expose live lich diagnostics on mobile');

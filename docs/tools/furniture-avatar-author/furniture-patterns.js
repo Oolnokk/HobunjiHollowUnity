@@ -13,6 +13,11 @@
     <label>Base dye <input id="fpBase" type="color" value="#b7a185"></label>
     <label>Pattern dye <input id="fpDye" type="color" value="#315b67"></label>
     <button id="fpAuthor" type="button">Choose / draw pattern</button>
+    <label>Export name <input id="fpExportName" value="Furniture pattern"></label>
+    <label><input id="fpCollectible" type="checkbox" checked>Collectible ruin pattern</label>
+    <button id="fpPng" type="button">Export motif PNG</button>
+    <button id="fpJson" type="button">Export pattern JSON</button>
+    <p id="fpExportHelp">Export both files, then add the pattern to the repository library to use it as a ruin collectible.</p>
     <button id="fpApply" type="button">Apply settings</button>
     <button id="fpClear" type="button">Clear selected pattern</button>
     <button id="fpCarpet" type="button">Add carpet</button>
@@ -37,7 +42,7 @@
   function settings() {
     const { part, surface } = target(); // Surface-local geometry keeps glass/engraving away from frames or neighboring faces.
     if (!part) return null;
-    const record = api.normalize({ ...currentRecord(), slot: currentRecord()?.slot || surface?.id || input('fpSlot').value || 'surface', mode: input('fpMode').value, opacity: input('fpMode').value === 'glass' ? .8 : 1,
+    const record = api.normalize({ ...currentRecord(), slot: currentRecord()?.slot || surface?.id || input('fpSlot').value || 'surface', mode: input('fpMode').value, opacity: input('fpMode').value === 'glass' ? .8 : input('fpMode').value === 'engraving' ? .5 : 1,
       random: input('fpRandom').checked, scale: input('fpScale').value, palette: [input('fpBase').value, input('fpDye').value],
       ...(surface ? { normal: surface.localNormal.toArray(), localCentroid: surface.localCentroid.toArray(), dimensions: [part.transform.sx,part.transform.sy,part.transform.sz] } : {}) });
     if (surface && ['cylinder','disc','legRound','barrel','cup','sphere'].includes(part.kind) && surface.faceIndices.length > 2) {
@@ -79,6 +84,19 @@
         onSave: async (pattern, id) => commit({ ...record, patternId: id || null, pattern: await api.editablePattern({pattern}) }) });
     } catch (error) { log(`Furniture patterns: ${error.message}`, 'error'); }
   }
+  async function exportPattern(kind) {
+    try {
+      const record = currentRecord(); // Export the saved ink and author settings for the selected slot.
+      if (!record) throw new Error('Choose or draw a pattern first.');
+      const payload = await window.RepoPatternLibrary.exportDefinition(await api.editablePattern(record), input('fpExportName').value, input('fpCollectible').checked); // Shared repo schema supports decorative and collectible patterns.
+      const anchor = document.createElement('a'); // Separate mobile-friendly download buttons avoid collapsed simultaneous downloads.
+      const url = kind === 'png' ? payload.motifDataUrl : URL.createObjectURL(new Blob([JSON.stringify(payload.json,null,2)+'\n'],{type:'application/json'})); // JSON references the original ink PNG.
+      anchor.href=url; anchor.download=kind === 'png' ? payload.motifFile : payload.jsonFile;
+      document.body.appendChild(anchor); anchor.click(); anchor.remove();
+      if(kind === 'json') setTimeout(()=>URL.revokeObjectURL(url),1000);
+      input('fpExportHelp').textContent = `PNG → docs/assets/patterns/${payload.motifFile}; JSON → docs/config/patterns/${payload.jsonFile}. Add to docs/config/patterns/index.json: ${JSON.stringify(payload.indexEntry)}`;
+    } catch(error) { log(`Pattern export: ${error.message}`,'error'); }
+  }
   function addCarpet() {
     const part = pushPart('box', { name: 'Patterned carpet', color: '#b7a185', transform: { x:0,y:.02,z:0,rx:0,ry:0,rz:0,sx:2,sy:.03,sz:2 },
       patternSurfaces: [{ slot:'carpet', mode:'cloth', selector:'top', patternId:'omgurku_knot', scale:1, palette:['#b7a185','#315b67'] }] }); // Added to existing furniture rather than replacing it.
@@ -91,6 +109,7 @@
       patternSurfaces:[{slot:'banner',mode:'cloth',patternId:'omgurku_knot',scale:1,palette:['#b7a185','#315b67']}] }); // Top edge attaches to the horizontal beam; shader warps only the hanging fabric.
     state.selectedType='part'; state.selectedId=part.id; rebuildAll(); queueUndoHistory('add banner');
   }
+  input('fpPng').onclick=()=>exportPattern('png'); input('fpJson').onclick=()=>exportPattern('json');
   input('fpAuthor').onclick=author;
   input('fpApply').onclick=()=>commit(settings());
   input('fpClear').onclick=()=>{ const {part}=target(), record=currentRecord(); if(part&&record) { part.patternSurfaces=part.patternSurfaces.filter(entry=>entry!==record); rebuildFurnitureMeshes(); queueUndoHistory('clear furniture pattern'); } };

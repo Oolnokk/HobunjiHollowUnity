@@ -844,6 +844,7 @@
           continue;
         }
 
+        await window.RepoPatternLibrary?.load?.(); // Author-exported collectible definitions must be ready before deterministic ruin selection.
         window.FurniturePatternSurfaces?.decorateRuin?.(ruin.localeRoot, candidateSeed);
         lastGenerationAudit.acceptedSeed=candidateSeed;
         await enterRuin(); updateBadge();
