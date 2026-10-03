@@ -7,8 +7,11 @@
   const core = new URL('./panel-ui-core.js?v=20261002hd2ada93', src).href; // Used as the unchanged historical PanelUI implementation expected synchronously by existing tools.
   const mapEditorTextureFix = new URL('./map-editor-terrain-texture-fix.js?v=20260914terrain4', src).href; // Used only on Map Editor to preserve async preview materials and redraw after PNG loads.
   const terrainParity = new URL('./tool-terrain-preview-parity.js?v=20260914terrain4', src).href; // Used to install shared game-material/UV parity and unstretched-pixel scale controls in terrain tools.
+  const isCutsceneDirector = /\/tools\/cutscene-director\//.test(location.pathname); // Used to keep repo-scene authoring hooks isolated to the Cutscene Director iframe.
+  const cutsceneRepoScenes = new URL('./cutscene-director-repo-scenes.js?v=20261003repo-selector5', src).href; // Used only by Cutscene Director to load shipping repo cutscene builders into its existing JSON import path.
+  const cutsceneRepoTag = isCutsceneDirector ? `<script src="${cutsceneRepoScenes}"></script>` : '';
   if (document.readyState === 'loading') {
-    document.write(`<script src="${core}"></script><script src="${mapEditorTextureFix}"></script><script src="${terrainParity}"></script>`);
+    document.write(`<script src="${core}"></script><script src="${mapEditorTextureFix}"></script><script src="${terrainParity}"></script>${cutsceneRepoTag}`);
     return;
   }
   const coreScript = document.createElement('script'); // Used only by rare late/dynamic PanelUI loads where document.write would replace the page.
@@ -20,6 +23,11 @@
       const parityScript = document.createElement('script'); // Used to preserve core -> Map Editor fix -> parity ordering outside normal parser-time loading.
       parityScript.src = terrainParity;
       (document.head || document.documentElement).appendChild(parityScript);
+      if (isCutsceneDirector) {
+        const repoScript = document.createElement('script'); // Used by late-loaded Director pages to install the same repo-scene selector as the normal parser-time path.
+        repoScript.src = cutsceneRepoScenes;
+        (document.head || document.documentElement).appendChild(repoScript);
+      }
     }, { once: true });
     (document.head || document.documentElement).appendChild(fixScript);
   }, { once: true });
