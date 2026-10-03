@@ -20,11 +20,16 @@ for(const file of ['repo-pattern-library','pattern-library','portrait-utils'])vm
  assert.equal(window.PatternLibrary.getById('collectible').meshRotationDeg,27);
  const saved=JSON.parse(JSON.stringify(gear)); window.PatternLibrary.init({getGearInventory:()=>saved});
  assert(window.PatternLibrary.getById('collectible').motifUrl.endsWith('motif_collectible.png'),'reload keeps collectible ownership and repository ink reference');
- const pixels=new Uint8ClampedArray(7*7*4); // A solid stroke has an inner basin/rim while its backing remains transparent.
+ const pixels=new Uint8ClampedArray(7*7*4); // A solid stroke has an thinned dark core while its backing remains transparent.
  for(let y=1;y<6;y++)for(let x=1;x<6;x++)pixels[(y*7+x)*4+3]=255;
  const canvas={width:7,height:7,getContext:()=>({getImageData:()=>({data:pixels}),putImageData(){}})}; // Read/write fixture executes the canonical pixel helper without a browser.
  window.HobunjiSpritePngSurface.carveCanvas(canvas);
- assert.equal(pixels[3],0);assert.equal(pixels[(3*7+3)*4+3],166);assert.equal(pixels[(1*7+1)*4+3],242);
+ assert.equal(pixels[3],0);assert.equal(pixels[(3*7+3)*4+3],242);assert.equal(pixels[(1*7+1)*4+3],166);
  assert.equal(pixels[(3*7+3)*4],20);assert.equal(pixels[(3*7+3)*4+1],16);assert.equal(pixels[(3*7+3)*4+2],12);
+ const original=new Uint8ClampedArray(5*5*4),thinned=new Uint8ClampedArray(5*5*4); // Explicit core masks use canonical transformed motif pixels, not a second output-space edge detector.
+ for(let p=0;p<25;p++)original[p*4+3]=255;thinned[(2*5+2)*4+3]=255;
+ const full={width:5,height:5,getContext:()=>({getImageData:()=>({data:original}),putImageData(){}})},core={getContext:()=>({getImageData:()=>({data:thinned})})}; // Original shape remains untouched; only core opacity changes.
+ window.HobunjiSpritePngSurface.carveCanvas(full,core);
+ assert.equal(original[(2*5+2)*4+3],242);assert.equal(original[3],166);
  console.log('Furniture exports, collectible ownership/reload and translucent inner carving rims passed.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

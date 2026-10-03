@@ -26,7 +26,7 @@
     await loadClassicScript('../../js/repo-pattern-library.js?v=20261003hf072713');
     await loadClassicScript('../../js/pattern-authoring.js?v=20261003hd424efe');
     await loadClassicScript('../../js/clothing-weaving-system.js?v=20261003h25b5015');
-    await loadClassicScript('../../js/furniture-pattern-surfaces.js?v=20261003hf805a52');
+    await loadClassicScript('../../js/furniture-pattern-surfaces.js?v=20261003hb954d46');
     await loadClassicScript('furniture-patterns.js?v=20261003h68ba1e4');
   })().catch(error => console.error('[Furniture Author Extensions]', error));
 })();

@@ -768,18 +768,23 @@ function makeSpritePngUnlitMaterial(THREE, texture, debugName, overrides = {}) {
   return new THREE.MeshBasicMaterial(spritePngMaterialOptions(THREE, texture, debugName, overrides));
 }
 
-// Dark translucent ink and a stronger inner rim share the same carve appearance.
-function carveSpritePngCanvas(canvas) {
-  const ctx = canvas.getContext('2d'), image = ctx.getImageData(0, 0, canvas.width, canvas.height); // Read once; the original alpha mask remains immutable during edge detection.
-  const alpha = new Uint8Array(canvas.width * canvas.height); // Source coverage preserves antialiased glyph edges.
+// Carvings retain the authored stroke but darken only a thinner core inside it.
+function carveSpritePngCanvas(canvas, coreCanvas = null) {
+  const ctx = canvas.getContext('2d'), image = ctx.getImageData(0, 0, canvas.width, canvas.height); // Original coverage defines the full authored stroke.
+  const alpha = new Uint8Array(canvas.width * canvas.height); // Immutable coverage supports sign-text erosion without expanding onto the backing surface.
   for (let p = 0; p < alpha.length; p++) alpha[p] = image.data[p * 4 + 3];
+  const core = coreCanvas?.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data; // Motifs supply the canonical source-space thinning pass; text uses a two-pixel inset.
   for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
-    const p = y * canvas.width + x, i = p * 4; // Only darken inside ink; never expand a painted outline onto the backing surface.
+    const p = y * canvas.width + x, i = p * 4; // Dark basins lie inside the original stroke, with softer restored edge pixels.
     if (!alpha[p]) continue;
-    const edge = (x > 0 && alpha[p - 1] < alpha[p] / 2) || (x + 1 < canvas.width && alpha[p + 1] < alpha[p] / 2)
-      || (y > 0 && alpha[p - canvas.width] < alpha[p] / 2) || (y + 1 < canvas.height && alpha[p + canvas.width] < alpha[p] / 2);
+    let coverage = core ? core[i+3] / 255 : 1; // Preserve anti-aliasing of the separately thinned motif core.
+    if (!core) for(let oy=-2;oy<=2;oy++)for(let ox=-2;ox<=2;ox++) {
+      if(ox*ox+oy*oy>4)continue;
+      const nx=x+ox,ny=y+oy; // Canvas clipping is not a motif boundary; only actual transparent pixels thin the text.
+      if(nx>=0&&ny>=0&&nx<canvas.width&&ny<canvas.height)coverage=Math.min(coverage,alpha[ny*canvas.width+nx]/Math.max(1,alpha[p]));
+    }
     image.data[i] = 20; image.data[i + 1] = 16; image.data[i + 2] = 12;
-    image.data[i + 3] = Math.round(alpha[p] * (edge ? .95 : .65));
+    image.data[i + 3] = Math.round(alpha[p] * (.65 + .30 * coverage));
   }
   ctx.putImageData(image, 0, 0);
   return canvas;

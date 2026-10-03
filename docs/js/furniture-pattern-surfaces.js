@@ -69,7 +69,8 @@
       const engraving = document.createElement('canvas'); // Never mutate the compositor's cached mask.
       engraving.width = canvas.width; engraving.height = canvas.height;
       engraving.getContext('2d').drawImage(result, 0, 0);
-      return window.HobunjiSpritePngSurface.carveCanvas(engraving);
+      const core = await compositor(canvas, [{...pattern,motifThinPx:finite(pattern.motifThinPx,0)+2,renderRasterScale:size[2] || 1}], record.palette[1], `furniture-core:${key}`, shading, 'woven-motif', {inkOnly:true,cache:false}); // Exactly the authoring slider's two-source-pixel thinning, including inversion and frame/mesh transforms.
+      return window.HobunjiSpritePngSurface.carveCanvas(engraving,core);
     })();
     tileCache.set(key, pending);
     if (tileCache.size > 24) tileCache.delete(tileCache.keys().next().value);
@@ -97,13 +98,14 @@
     if (!position) return null;
     const indices = source.index; // Both imported indexed geometry and editor triangle soup are supported.
     const count = indices ? indices.count : position.count;
-    const vertices = [], uvs = [], axes = [], weights = []; // Temporary arrays exist only during construction, never per frame.
+    const vertices = [], uvs = [], axes = [], weights = [], baseUvs = [], materialIds = []; // Temporary arrays exist only during construction, never per frame.
     const bounds = {x:0,z:0}; // Dimensions of the actual source geometry anchor the continuous side unwrap.
     for (let i=0;i<position.count;i++) { bounds.x=Math.max(bounds.x,Math.abs(position.array[i*3])); bounds.z=Math.max(bounds.z,Math.abs(position.array[i*3+2])); }
     const curved = ['cylinder','disc','legRound','barrel','cup','sphere'].includes(part.kind); // Curved side groups use angular coordinates rather than switching box planes.
     const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(); // Reused triangle scratch vectors.
     const edge = new THREE.Vector3(), normal = new THREE.Vector3(); // Reused normal computation for selection and offset.
     for (let first = 0; first + 2 < count; first += 3) {
+      const materialIndex = source.groups?.find(group=>first>=group.start&&first<group.start+group.count)?.materialIndex || 0; // Each overlay triangle retains its underlying surface material.
       a.fromBufferAttribute(position, indices ? indices.getX(first) : first);
       b.fromBufferAttribute(position, indices ? indices.getX(first + 1) : first + 1);
       c.fromBufferAttribute(position, indices ? indices.getX(first + 2) : first + 2);
@@ -119,6 +121,8 @@
       if (Math.max(...angles)-Math.min(...angles)>Math.PI) for(let i=0;i<3;i++) if(angles[i]<Math.PI) angles[i]+=Math.PI*2;
       let vertex = 0; // Associates triangle vertices with their seam-corrected angle.
       for (const point of [a, b, c]) {
+        const sourceIndex = indices ? indices.getX(first+vertex) : first+vertex, sourceUv = source.getAttribute('uv'); // Texture masking uses original PNG coordinates, independently of motif atlas coordinates.
+        baseUvs.push(sourceUv?.array[sourceIndex*2] || 0,sourceUv?.array[sourceIndex*2+1] || 0); materialIds.push(materialIndex);
         vertices.push(point.x, point.y, point.z); // Polygon offset prevents z-fighting without opening cracks between neighboring triangle planes.
         let u = axis === 'x' ? point.z : point.x; // Default planar mapping is continuous across the selected face.
         let ux=axis === 'x' ? 0 : point.x, uz=axis === 'x' ? point.z : 0; // Linear coordinates let non-uniform resizing preserve the side perimeter.
@@ -134,12 +138,62 @@
     const geometry = new THREE.BufferGeometry(); // Each instance owns its overlay geometry and material.
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
     geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geometry.setAttribute('patternBaseSurfaceUv',new THREE.Float32BufferAttribute(baseUvs,2));
+    geometry.userData.patternMaterialIds=materialIds;
     geometry.computeVertexNormals();
     geometry.userData.patternBaseUvs = new Float32Array(uvs);
     geometry.userData.patternUvAxes = new Uint8Array(axes);
     geometry.userData.patternUvWeights = new Float32Array(weights);
     geometry.userData.patternSideRadii = [bounds.x,bounds.z];
     return geometry;
+  }
+
+  function splitSurfaceMaterials(geometry) {
+    const ids = [...new Set(geometry.userData.patternMaterialIds)]; // Source material groups may use different PNGs within the same selected surface.
+    if(ids.length===1)return [{geometry,index:ids[0]}];
+    const atlas = geometry.userData; // All partitions share full-surface bounds, preserving pattern phase across material/plane joins.
+    const result = ids.map(index=>{
+      const positions=[],uvs=[],baseUvs=[],base=[],axes=[],weights=[]; // Construction-only arrays contain this source material's triangles.
+      for(let vertex=0;vertex<atlas.patternMaterialIds.length;vertex++)if(atlas.patternMaterialIds[vertex]===index) {
+        positions.push(...geometry.getAttribute('position').array.slice(vertex*3,vertex*3+3));
+        uvs.push(...geometry.getAttribute('uv').array.slice(vertex*2,vertex*2+2));baseUvs.push(...geometry.getAttribute('patternBaseSurfaceUv').array.slice(vertex*2,vertex*2+2));
+        base.push(...atlas.patternBaseUvs.slice(vertex*2,vertex*2+2));axes.push(...atlas.patternUvAxes.slice(vertex*2,vertex*2+2));weights.push(...atlas.patternUvWeights.slice(vertex*2,vertex*2+2));
+      }
+      const part = new window.THREE.BufferGeometry(); // Each overlay owns only its partition geometry.
+      part.setAttribute('position',new window.THREE.Float32BufferAttribute(positions,3));part.setAttribute('uv',new window.THREE.Float32BufferAttribute(uvs,2));part.setAttribute('patternBaseSurfaceUv',new window.THREE.Float32BufferAttribute(baseUvs,2));part.computeVertexNormals();
+      part.userData={patternBaseUvs:new Float32Array(base),patternUvAxes:new Uint8Array(axes),patternUvWeights:new Float32Array(weights),patternSideRadii:atlas.patternSideRadii,patternAtlas:atlas};
+      return {geometry:part,index};
+    });
+    geometry.dispose();return result;
+  }
+
+  function installBlackTextureMask(overlay, source, materialIndex) {
+    const THREE=window.THREE, uniforms={map:{value:null},enabled:{value:0},transform:{value:new THREE.Matrix3()},size:{value:new THREE.Vector2(1,1)}}; // Shared with this overlay's shader; original texture transforms stay authoritative.
+    const compile=overlay.material.onBeforeCompile,key=overlay.material.customProgramCacheKey?.bind(overlay.material); // Preserve banner wind and the canonical PNG material pipeline.
+    overlay.material.onBeforeCompile=shader=>{
+      compile?.call(overlay.material,shader);
+      shader.uniforms.patternBackingMap=uniforms.map;shader.uniforms.patternBackingEnabled=uniforms.enabled;shader.uniforms.patternBackingTransform=uniforms.transform;shader.uniforms.patternBackingSize=uniforms.size;
+      shader.vertexShader='attribute vec2 patternBaseSurfaceUv; varying vec2 patternBackingUv;\n'+shader.vertexShader;
+      shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\npatternBackingUv = patternBaseSurfaceUv;');
+      shader.fragmentShader='uniform sampler2D patternBackingMap; uniform float patternBackingEnabled; uniform mat3 patternBackingTransform; uniform vec2 patternBackingSize; varying vec2 patternBackingUv;\n'+shader.fragmentShader;
+      shader.fragmentShader=shader.fragmentShader.replace('#include <alphatest_fragment>',`#include <alphatest_fragment>
+        if(patternBackingEnabled > 0.5) {
+          vec2 backingUv=(patternBackingTransform*vec3(patternBackingUv,1.0)).xy;
+          backingUv=(floor(backingUv*patternBackingSize)+0.5)/patternBackingSize;
+          vec4 backing=texture2D(patternBackingMap,backingUv,-100.0);
+          if(backing.a > 0.0 && max(backing.r,max(backing.g,backing.b)) < 0.000001) discard;
+        }`); // Nearest source texel at base mip: pure black fully masks every pattern mode; transparent black never masks.
+    };
+    overlay.material.customProgramCacheKey=()=>`${key?.() || ''}:black-backing-mask-v1`;
+    const before=overlay.onBeforeRender; // Update late-loaded/replaced base maps without rebuilding geometry or sampling CPU pixels per frame.
+    overlay.onBeforeRender=function(renderer,scene,camera,geometry,overlayMaterial,group){
+      before?.call(this,renderer,scene,camera,geometry,overlayMaterial,group);
+      const material=Array.isArray(source.material)?source.material[materialIndex]:source.material,map=material?.map; // Resolve the actual material currently used by this furniture face.
+      const image=map?.image,width=image?.naturalWidth || image?.width,height=image?.naturalHeight || image?.height; // Loader completion activates masking automatically.
+      uniforms.enabled.value=map&&width&&height?1:0;uniforms.map.value=map || null;
+      if(uniforms.enabled.value){if(map.matrixAutoUpdate)map.updateMatrix();uniforms.transform.value.copy(map.matrix);uniforms.size.value.set(width,height);}
+      overlay.userData.furniturePattern.blackTextureMask=!!uniforms.enabled.value;
+    };
   }
 
   function retainTexture(canvas) {
@@ -169,8 +223,9 @@
     const THREE = window.THREE, png = window.HobunjiSpritePngSurface; // Reuses the canonical canvas texture and unlit surface factories.
     for (const raw of records) {
       const record = normalize(raw); // Copy per-instance settings; authored recipes remain immutable.
-      const geometry = surfaceGeometry(mesh, record, part);
-      if (!geometry) continue;
+      const complete = surfaceGeometry(mesh, record, part);
+      if (!complete) continue;
+      for(const {geometry,index:materialIndex} of splitSurfaceMaterials(complete)) {
       const material = png?.makeMaterial?.(THREE, null, 'furniture-pattern', { side: THREE.DoubleSide, transparent: record.mode === 'engraving' || record.opacity < 1, depthWrite: record.mode !== 'engraving' && record.opacity >= 1, opacity: record.mode === 'engraving' ? Math.min(.5,record.opacity) : record.opacity, alphaTest: record.mode === 'engraving' ? .001 : png?.alphaTest?.() })
         || new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, transparent: record.mode === 'engraving' || record.opacity < 1, depthWrite: record.mode !== 'engraving' && record.opacity >= 1, opacity: record.mode === 'engraving' ? Math.min(.5,record.opacity) : record.opacity, alphaTest: record.mode === 'engraving' ? .001 : png?.alphaTest?.() });
       const overlay = new THREE.Mesh(geometry, material); // Surface child inherits furniture transforms and existing disposal lifecycle.
@@ -182,6 +237,7 @@
       material.polygonOffset = true; material.polygonOffsetFactor = -1; material.polygonOffsetUnits = -1;
       if (part.kind === 'banner') installBannerWind(overlay, part);
       retainPatternScale(overlay);
+      installBlackTextureMask(overlay,mesh,materialIndex);
       mesh.add(overlay);
       let ownedTexture = null; // Material disposal releases exactly one reference to a shared GPU tile.
       let disposed = false; // Prevents asynchronous tile completion from reviving disposed preview/world objects.
@@ -198,6 +254,7 @@
         }).catch(error => { if (!disposed && request === generation) { overlay.visible = false; overlay.userData.furniturePattern.status = error.message; } });
       };
       overlay.onBeforeRender(); // Build the first atlas while invisible; later render hooks react only to resizing.
+      }
     }
     return mesh;
   }
@@ -224,12 +281,13 @@
       const uv = mesh.geometry.getAttribute('uv'); // Resample only when the furniture was resized; ordinary frames do no buffer writes.
       const weights=mesh.geometry.userData.patternUvWeights,radii=mesh.geometry.userData.patternSideRadii; // Source unwrap metadata is immutable across resizes.
       lengths[3]=Math.hypot(radii[0]*lengths[0],radii[1]*lengths[2])/Math.max(.001,Math.hypot(...radii)); // Elliptical side mapping retains one consistent circumference scale.
-      let minU=Infinity,maxU=-Infinity,minV=Infinity,maxV=-Infinity; // Atlas spans the whole selected surface, so no triangle samples a separately repeated preview.
-      for (let i = 0; i < base.length; i++) {
-        uv.array[i] = i%2 || axes[i] === 3 ? base[i] * lengths[axes[i]] : weights[i]*lengths[0]+weights[i+1]*lengths[2];
-        if(i%2) {minV=Math.min(minV,uv.array[i]);maxV=Math.max(maxV,uv.array[i]);}
-        else {minU=Math.min(minU,uv.array[i]);maxU=Math.max(maxU,uv.array[i]);}
+      const atlas=mesh.geometry.userData.patternAtlas || mesh.geometry.userData; // Partitions share the original full selected-surface extent.
+      let minU=Infinity,maxU=-Infinity,minV=Infinity,maxV=-Infinity;
+      for(let i=0;i<atlas.patternBaseUvs.length;i++) {
+        const value=i%2 || atlas.patternUvAxes[i]===3 ? atlas.patternBaseUvs[i]*lengths[atlas.patternUvAxes[i]] : atlas.patternUvWeights[i]*lengths[0]+atlas.patternUvWeights[i+1]*lengths[2]; // Non-uniform scale retains continuous coordinates across all source materials.
+        if(i%2){minV=Math.min(minV,value);maxV=Math.max(maxV,value);}else{minU=Math.min(minU,value);maxU=Math.max(maxU,value);}
       }
+      for(let i=0;i<base.length;i++)uv.array[i]=i%2 || axes[i]===3 ? base[i]*lengths[axes[i]] : weights[i]*lengths[0]+weights[i+1]*lengths[2];
       const width=Math.max(.001,maxU-minU),height=Math.max(.001,maxV-minV); // World dimensions determine pixel extent while authored meshScale determines motif density.
       const density=Math.min(TILE_PX,1024/Math.max(width,height)); // Bound mobile GPU allocation while preserving aspect and pattern size.
       const size=[Math.max(1,Math.ceil(width*density)),Math.max(1,Math.ceil(height*density)),density/TILE_PX]; // One atlas per actual surface extent.

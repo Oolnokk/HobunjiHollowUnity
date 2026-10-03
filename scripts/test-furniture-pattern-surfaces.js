@@ -40,7 +40,9 @@ class Mesh {
   clone(){const copy=new Mesh(this.geometry,this.material);copy.userData={...this.userData};for(const child of this.children)copy.add(child.clone());return copy;}
   updateMatrixWorld(){}
 }
-const THREE={Vector3,BufferGeometry:Geometry,Float32BufferAttribute:Attribute,Mesh,MeshBasicMaterial:Material,DoubleSide:2,RepeatWrapping:1000}; // Enough Three API to execute actual triangle selection and instance lifecycle.
+class Matrix3 {constructor(){this.elements=[1,0,0,0,1,0,0,0,1];}copy(other){this.elements=[...other.elements];return this;}} // Shader uniforms borrow the source PNG's real transform.
+class Vector2 {constructor(x=0,y=0){this.set(x,y);}set(x,y){this.x=x;this.y=y;return this;}}
+const THREE={Matrix3,Vector2,Vector3,BufferGeometry:Geometry,Float32BufferAttribute:Attribute,Mesh,MeshBasicMaterial:Material,DoubleSide:2,RepeatWrapping:1000}; // Enough Three API to execute actual triangle selection and instance lifecycle.
 const definitions=[{id:'rune-a',pattern:{motifDataUrl:'data:a'}},{id:'rune-b',pattern:{motifDataUrl:'data:b'}}]; // Deterministic unlockable catalog fixture.
 const owned=new Set(); // Tracks actual unlock calls; entering/decorating cannot change it.
 const sizes=[]; // Atlas extents verify density independently of normalized geometry UVs.
@@ -97,8 +99,32 @@ const pattern={slot:'carpet',mode:'cloth',selector:'top',patternId:'rune-a',pale
   const cold=box();cold.userData.authoredPart=part;api.applyOverrides(cold,JSON.parse(JSON.stringify(mesh.userData.patternOverrides)));
   assert.equal(api.debug(cold)[0].scale,2,'serialized overrides survive cold restoration');
   const banner=box();api.applyPart(banner,{kind:'banner',transform:{sy:2},patternSurfaces:[{...pattern,selector:'all'}]});
-  const shader={uniforms:{},vertexShader:'#include <begin_vertex>'};banner.children[0].material.onBeforeCompile(shader);banner.children[0].onBeforeRender();
+  const shader={uniforms:{},vertexShader:'#include <begin_vertex>',fragmentShader:'#include <alphatest_fragment>'};banner.children[0].material.onBeforeCompile(shader);banner.children[0].onBeforeRender();
   assert(shader.vertexShader.includes('hanging'));assert.equal(shader.uniforms.bannerTime.value,1);
+  for(const mode of ['cloth','glass','engraving']) {
+    const masked=box(),baseTexture={image:{width:32,height:16},matrix:new Matrix3(),matrixAutoUpdate:true,updateMatrix(){this.matrix.elements[6]=.25;}}; // Source texture coordinates are separate from the motif atlas.
+    masked.geometry.setAttribute('uv',new Attribute([0,0,1,1,1,0,0,0,0,1,1,1,0,0,1,0,1,1],2));masked.material.map=baseTexture;
+    api.applyPart(masked,{patternSurfaces:[{...pattern,mode}]});
+    const layer=masked.children[0],compiled={uniforms:{},vertexShader:'#include <begin_vertex>',fragmentShader:'#include <alphatest_fragment>'}; // Execute the actual compile and render hooks for all modes.
+    layer.material.onBeforeCompile(compiled);layer.onBeforeRender();
+    assert.strictEqual(compiled.uniforms.patternBackingMap.value,baseTexture);assert.equal(compiled.uniforms.patternBackingEnabled.value,1);
+    assert.equal(compiled.uniforms.patternBackingTransform.value.elements[6],.25);assert.equal(compiled.uniforms.patternBackingSize.value.x,32);
+    assert.deepEqual([...layer.geometry.getAttribute('patternBaseSurfaceUv').array],[0,0,1,1,1,0,0,0,0,1,1,1]);
+    assert(compiled.fragmentShader.includes('discard'),'opaque black texels must cut out the pattern, including opaque cloth');
+    masked.material.map=null;layer.onBeforeRender();assert.equal(compiled.uniforms.patternBackingEnabled.value,0);
+    masked.material.map=baseTexture;layer.onBeforeRender();assert.equal(compiled.uniforms.patternBackingEnabled.value,1,'late-loaded/replaced backing maps must activate the same mask');
+  }
+  const grouped=box();grouped.geometry.groups=[{start:0,count:3,materialIndex:0},{start:3,count:3,materialIndex:1},{start:6,count:3,materialIndex:0}]; // A selected face may span several PNG material groups.
+  const firstMap={image:{width:8,height:8},matrix:new Matrix3()},secondMap={image:{width:16,height:16},matrix:new Matrix3()};
+  grouped.material=[new Material({map:firstMap}),new Material({map:secondMap})];api.applyPart(grouped,{patternSurfaces:[pattern]});
+  assert.equal(grouped.children.length,2);
+  const joined=new Map(); // Shared vertices retain a single atlas phase across the PNG material boundary.
+  for(let index=0;index<2;index++) {
+    const layer=grouped.children[index],compiled={uniforms:{},vertexShader:'#include <begin_vertex>',fragmentShader:'#include <alphatest_fragment>'};
+    layer.material.onBeforeCompile(compiled);layer.onBeforeRender();assert.strictEqual(compiled.uniforms.patternBackingMap.value,index===0?firstMap:secondMap);
+    const pos=layer.geometry.getAttribute('position').array,uv=layer.geometry.getAttribute('uv').array;
+    for(let vertex=0;vertex<pos.length/3;vertex++){const key=[...pos.slice(vertex*3,vertex*3+3)].join(','),value=[...uv.slice(vertex*2,vertex*2+2)];if(joined.has(key))assert.deepEqual(joined.get(key),value);joined.set(key,value);}
+  }
   const root=box();root.name='Ruin wall';root.userData.ruinInteriorWall=true;
   const child=box();child.name='wall section';root.add(child);
   const first=api.decorateRuin(root,27),second=api.decorateRuin(root,27);
