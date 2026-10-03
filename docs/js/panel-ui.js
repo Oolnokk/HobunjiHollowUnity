@@ -8,7 +8,7 @@
   const mapEditorTextureFix = new URL('./map-editor-terrain-texture-fix.js?v=20260914terrain4', src).href; // Used only on Map Editor to preserve async preview materials and redraw after PNG loads.
   const terrainParity = new URL('./tool-terrain-preview-parity.js?v=20260914terrain4', src).href; // Used to install shared game-material/UV parity and unstretched-pixel scale controls in terrain tools.
   const isCutsceneDirector = /\/tools\/cutscene-director\//.test(location.pathname); // Used to keep repo-scene authoring hooks isolated to the Cutscene Director iframe.
-  const cutsceneRepoScenes = new URL('./cutscene-director-repo-scenes.js?v=20261003repo-selector2', src).href; // Used only by Cutscene Director to load shipping repo cutscene builders into its existing JSON import path.
+  const cutsceneRepoScenes = new URL('./cutscene-director-repo-scenes.js?v=20261003repo-selector3', src).href; // Used only by Cutscene Director to load shipping repo cutscene builders into its existing JSON import path.
   const cutsceneRepoTag = isCutsceneDirector ? `<script src="${cutsceneRepoScenes}"></script>` : '';
   if (document.readyState === 'loading') {
     document.write(`<script src="${core}"></script><script src="${mapEditorTextureFix}"></script><script src="${terrainParity}"></script>${cutsceneRepoTag}`);
