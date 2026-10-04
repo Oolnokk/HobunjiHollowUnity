@@ -182,6 +182,11 @@
       row.className = 'farm-row' + (isMoveArmed ? ' selected' : '');
       const locationLabel = wallMounted ? 'Wall mounted' : `${obj.col}, ${obj.row}`; // Keeps the list meaningful after a wall gizmo moves the visual away from the source tile center.
       row.innerHTML = `<span class="farm-row-icon">${def.icon}</span><span class="farm-row-name">${deps.esc(def.name)}</span><span class="farm-note">${locationLabel}</span>`;
+      if (obj.key === 'rug' || obj.key === 'hangingBanner' || window.HouseWindowLinkage?.isWindowKey?.(obj.key)) {
+        const patternBtn = document.createElement('button'); // Ordinary ownership/permission checks from this panel govern pattern edits too.
+        patternBtn.textContent = 'Pattern'; patternBtn.onclick = () => deps.editFurniturePattern?.(obj.id);
+        row.appendChild(patternBtn);
+      }
       if (wallCapable) {
         const moveBtn = document.createElement('button');
         moveBtn.className = 'settings-small-btn';

@@ -206,7 +206,9 @@
   function buildPartMesh(part, baseColor) {
     let geo;
     const t = part.transform;
-    if (part.kind === 'sphere') {
+    if (part.kind === 'banner') {
+      geo = new THREE.PlaneGeometry(Math.max(.01, t.sx || 1), Math.max(.01, t.sy || 1), 12, 16);
+    } else if (part.kind === 'sphere') {
       geo = new THREE.SphereGeometry(0.5 * Math.max(t.sx, t.sy, t.sz), 16, 10);
     } else if (part.kind === 'hoop') {
       geo = createHoopGeometry(part);
@@ -226,6 +228,10 @@
     if (part.materialTexture) applyPartTexture(mat, part);
     applyAuthoredSurfaceMapping(mesh, part); // Must run after the final primitive geometry exists; material assignment above remains authoritative.
     if (part.depthWrite === false) mat.depthWrite = false; // Background/firebox planes may stay opaque visually without hiding later transparent VFX.
+    mesh.userData ||= {};
+    mesh.userData.authoredPart = part; // Pattern placement/instance edits use the same immutable authored definition.
+    window.FurniturePatternSurfaces?.applyPart?.(mesh, part);
+    if (part.kind === 'banner') { mat.visible = false; mesh.castShadow = false; } // Patterned child is the visible wind-warped fabric.
     return mesh;
   }
 
@@ -670,7 +676,16 @@ function campfireRecipe() {
     box(0, .65, 0, .6, 1.3, .12, .85),
   ];
 
+  function hangingSignSupportPart(id = 'hanging_sign_post') {
+    return {id,kind:'beam',name:'Horizontal Sign Post',color:'#60452c',materialRole:'wood',materialTexture:'carved_smooth.png',transform:{x:0,y:1.72,z:0,rx:0,ry:0,rz:0,sx:1.25,sy:.14,sz:.14},topScaleX:1,topScaleZ:1,bottomScaleX:1,bottomScaleZ:1,wonkiness:.01}; // Shared by the animation-tab sign and banner preset, returning an independent recipe.
+  }
+  CATALOG.hangingBanner = [
+    hangingSignSupportPart(),
+    {id:'banner-cloth',kind:'banner',name:'Wind banner',bannerWindStrength:.1,transform:{x:-.0863,y:1.0539,z:0,rx:0,ry:0,rz:0,sx:.7,sy:1.1922,sz:.01},patternSurfaces:[{slot:'banner',mode:'cloth',patternId:'omgurku_knot',scale:1,palette:['#b7a185','#315b67']}]}, // Replaces the sign and ropes; cloth top is flush with the shared beam underside at Y=1.65.
+  ];
+
   window.ProceduralFurniture = {
+    hangingSignSupportPart,
     buildFurnitureGroup,
     buildPartMesh,
     makePartMaterial,

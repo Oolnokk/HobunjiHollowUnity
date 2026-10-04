@@ -360,6 +360,7 @@
     const previewCanvas = overlay.querySelector('.pa-preview');
     const previewCtx = previewCanvas.getContext('2d');
     const previewStatus = overlay.querySelector('.pa-previewStatus');
+    const previewController = options.mountPreview?.(previewCanvas.parentElement); // Optional caller-owned interactive surface; image previews retain their existing path.
     const behindToggleBtn = overlay.querySelector('[data-act="toggleBehindView"]');
     if (typeof options.renderPreviewBehind === 'function') behindToggleBtn.style.display = '';
 
@@ -413,14 +414,15 @@
     async function runPreview() {
       const data = currentPatternData();
       const renderFn = previewView === 'behind' ? options.renderPreviewBehind : options.renderPreview;
-      if (!data.motifDataUrl || typeof renderFn !== 'function') {
+      if (!data.motifDataUrl || typeof renderFn !== 'function' && !previewController) {
         previewStatus.textContent = data.motifDataUrl ? 'Rendering preview…' : 'Draw a motif to preview.';
         return;
       }
       const token = ++previewToken;
       previewStatus.textContent = 'Rendering preview…';
       try {
-        const rendered = await renderFn(data);
+        const rendered = previewController ? await previewController.update(data) : await renderFn(data);
+        if (previewController) { if (!closed && token === previewToken) previewStatus.textContent = rendered?.status || options.previewHint || ''; return; }
         if (closed || token !== previewToken || !rendered) return;
         previewCanvas.width = rendered.width;
         previewCanvas.height = rendered.height;
@@ -430,7 +432,7 @@
         previewStatus.textContent = '';
       } catch (err) {
         if (closed || token !== previewToken) return;
-        previewStatus.textContent = 'Preview failed — see console.';
+        previewStatus.textContent = `Preview failed: ${err.message || err}`;
         console.error('[PatternAuthoring] preview render failed', err);
       }
     }
@@ -917,6 +919,7 @@
       if (closed) return;
       closed = true;
       window.clearTimeout(previewTimer);
+      previewController?.dispose?.(); // Release caller-owned WebGL resources on save, cancel, Escape, or backdrop close.
       overlay.remove();
       document.removeEventListener('keydown', onKeydown);
     }

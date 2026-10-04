@@ -52,7 +52,20 @@
       "textureName": "",
       "textureTransparent": true,
       "textureTileSize": 1,
-      "tint": 1
+      "tint": 1,
+      "patternSurfaces": [
+        {
+          "slot": "carpet",
+          "selector": "top",
+          "mode": "cloth",
+          "patternId": "omgurku_knot",
+          "scale": 1,
+          "palette": [
+            "#8b6540",
+            "#d7ac6a"
+          ]
+        }
+      ]
     }
   ],
   "seatAnchors": [],

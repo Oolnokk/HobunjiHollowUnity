@@ -37,6 +37,7 @@
     return {
       id,
       label,
+      collectible: raw.collectible === true || indexEntry?.collectible === true, // Explicit opt-in keeps decorative clothing motifs out of ruin rewards.
       file: String(indexEntry?.file || ''),
       motifPng,
       pattern: {
@@ -77,6 +78,7 @@
       label: entry.label,
       name: entry.label,
       source: 'repo',
+      collectible: entry.collectible,
       removable: false,
       file: entry.file,
       motifPng: entry.motifPng,
@@ -138,6 +140,16 @@
     return pattern ? clone(pattern) : null;
   }
 
+  async function exportDefinition(pattern, name = 'Untitled pattern', collectible = false) {
+    const id = String(name).trim().toLowerCase().replace(/[’']/g,'').replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'') || 'untitled_pattern'; // Same repo naming convention as Pattern Editor.
+    const settings = clone(pattern || {}); // Runtime references are excluded from portable settings.
+    const motifDataUrl = settings.motifDataUrl || (settings.customMotifId && await window.MotifStore?.loadMotif?.(settings.customMotifId)) || (settings.motifUrl && await imageToDataUrl(settings.motifUrl)); // Export original motif ink, never the furniture's colored preview.
+    if (!motifDataUrl) throw new Error('Choose or draw a pattern first.');
+    for (const key of ['motifDataUrl','motifUrl','customMotifId','repoPatternId','repoPatternName']) delete settings[key];
+    const motifFile = `motif_${id}.png`, jsonFile = `pattern_${id}.json`; // PNG and JSON names match the existing repository library contract.
+    return {id, motifFile, jsonFile, motifDataUrl, json:{schema:'hobunji_pattern.v1',id,name,motifPng:`assets/patterns/${motifFile}`,collectible:!!collectible,settings}, indexEntry:{id,name,file:`config/patterns/${jsonFile}`,collectible:!!collectible}};
+  }
+
   function clearCache() {
     loadPromise = null;
     entries = [];
@@ -146,6 +158,7 @@
   }
 
   window.RepoPatternLibrary = Object.freeze({
+    exportDefinition,
     load,
     listCached,
     getById,

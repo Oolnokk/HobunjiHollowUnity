@@ -226,6 +226,7 @@
     for (const source of registeredSources) {
       const material = source.mesh?.material; // Each pane owns a material so opacity/debug can vary independently later.
       if (material?.color) { material.color.copy(tint); material.needsUpdate = true; }
+      for (const pattern of source.patternMeshes || []) pattern.material?.color?.copy?.(tint); // Stained glass shares the same outdoor tint/aperture rather than a second lighting source.
     }
   }
 

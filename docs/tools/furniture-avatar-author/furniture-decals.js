@@ -325,6 +325,7 @@ function buildTankanDecalTexture(record) {
   return Promise.resolve(layout.ensureFontLoaded?.()).then(() => {
     const result = layout.createCanvas(record.tankanText, tankanRenderOptions(record));
     if (!result?.canvas) throw new Error('Could not create Tankan-script canvas.');
+    window.HobunjiSpritePngSurface?.carveCanvas?.(result.canvas); // Preview uses the runtime carving appearance.
     const texture = configureDecalTexture(new THREE.CanvasTexture(result.canvas));
     texture.userData = { ...(texture.userData || {}), tankanLayout: result.layout || null };
     return { map: texture, alphaMap: null, layout: result.layout || null };

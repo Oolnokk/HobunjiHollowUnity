@@ -454,6 +454,7 @@
     debug.lastExit = { visit, exit, at:Date.now() };
     activeVisit = null;
     if (!exit) return false;
+    window.FurniturePatternSurfaces?.unlockRuin?.(R.getRuntimeContext?.()?.root);
     R.exitTo(() => Promise.resolve(deps.enterZone(exit.zoneId, exit.col ?? undefined, exit.row ?? undefined)).then(() => {
       const zi = deps._zoneScenes?.get?.(visit.zoneId);
       if (zi) buildZoneMeshes(zi.scene, zi.grid, visit.zoneId); // Spent door becomes rubble / hole fills in right away.
