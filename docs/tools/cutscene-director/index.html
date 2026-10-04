@@ -612,6 +612,12 @@
 <script src="../../js/panel-ui.js"></script>
 </head>
 <body>
+<dialog id="sceneExportDialog" aria-labelledby="sceneExportTitle" style="width:min(90vw,700px);max-height:85vh;overflow:auto;background:var(--panel);color:var(--text);border:2px solid var(--line)">
+  <h3 id="sceneExportTitle">Save scene JSON</h3>
+  <p id="sceneExportStatus" role="status"></p>
+  <div class="row" style="flex-wrap:wrap;margin-bottom:12px"><a id="sceneExportDownload" style="color:var(--accent);padding:10px">Download JSON</a><button id="sceneExportCopy">Copy JSON</button><button id="sceneExportShare" hidden>Share JSON</button><button id="sceneExportClose">Close</button></div>
+  <label>Scene JSON<textarea id="sceneExportText" rows="12" readonly spellcheck="false" style="width:100%;font-family:monospace"></textarea></label>
+</dialog>
 <dialog id="runtimeSettingsDialog" style="width:min(90vw,700px);background:var(--panel);color:var(--ink);border:2px solid var(--line)"><h3 id="runtimeSettingsTitle"></h3><textarea id="runtimeSettingsText" rows="18" style="width:100%"></textarea><div class="row"><button id="runtimeSettingsApply">Apply</button><button id="runtimeSettingsCancel">Cancel</button></div></dialog>
 <div id="shell">
   <header class="header">
@@ -3556,14 +3562,52 @@
   }
 
   function exportProject() {
-    const safeTitle = (state.project.title||"cutscene").replace(/[^a-z0-9_-]+/gi,"_");
-    const blob = new Blob([JSON.stringify(state.project,null,2)], { type:"application/json" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url; anchor.download = `${safeTitle}.json`; anchor.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-    log("Scene JSON downloaded.");
-    toast("Scene saved as JSON.");
+    const safeTitle = (state.project.title || "cutscene").replace(/[^a-z0-9_-]+/gi, "_"); // Filename shared by download and mobile file sharing.
+    const filename = `${safeTitle}.json`; // Preserves the importable .json extension.
+    const text = JSON.stringify(state.project, null, 2) + "\n"; // A complete snapshot remains available even if downloads are blocked.
+    const dialog = $("sceneExportDialog"), output = $("sceneExportText"), status = $("sceneExportStatus"); // Mobile-readable export and recovery controls.
+    const anchor = $("sceneExportDownload"), share = $("sceneExportShare"); // Connected download link and optional native file-sharing action.
+    const blob = new Blob([text], { type: "application/json" }); // Same bytes for download, share and copy.
+    let url = null; // Retained until after this save panel closes, so retrying download remains possible.
+    output.value = text;
+    status.textContent = "If the download does not appear, use Download JSON, Copy JSON, or select the text below.";
+    anchor.hidden = true;
+    share.hidden = true;
+    $("sceneExportCopy").onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(text);
+        status.textContent = "Scene JSON copied. Paste it into a file or send it here.";
+        log("Scene JSON copied to clipboard.");
+      } catch (error) {
+        output.focus(); output.select(); output.setSelectionRange(0, output.value.length);
+        status.textContent = "Clipboard access is unavailable. The complete JSON is selected; use your device’s Copy command.";
+        log(`JSON clipboard fallback: ${error.message}`, "WARN");
+      }
+    };
+    try {
+      if (typeof File === "function" && typeof navigator.share === "function" && typeof navigator.canShare === "function") {
+        const file = new File([text], filename, { type: "application/json" }); // Native share sheets can save the exact JSON file on supported phones.
+        if (navigator.canShare({ files: [file] })) {
+          share.hidden = false;
+          share.onclick = async () => {
+            try { await navigator.share({ files: [file] }); status.textContent = "Scene JSON shared."; log("Scene JSON shared."); }
+            catch (error) { status.textContent = error.name === "AbortError" ? "Sharing cancelled. Your JSON is still available below." : `Sharing failed: ${error.message}. Use Copy JSON or Download JSON.`; }
+          };
+        }
+      }
+    } catch (error) { log(`JSON file sharing unavailable: ${error.message}`, "WARN"); }
+    dialog.onclose = () => { if (url) { const retiredUrl = url; url = null; setTimeout(() => URL.revokeObjectURL(retiredUrl), 60000); } }; // Gives slow downloads time to acquire their bytes; never revoke the active panel's retry link.
+    $("sceneExportClose").onclick = () => dialog.close();
+    dialog.showModal();
+    try {
+      url = URL.createObjectURL(blob);
+      anchor.href = url; anchor.download = filename; anchor.hidden = false;
+      anchor.click(); // The link is already in the document; keep the original click's browser activation.
+      log(`JSON download requested: ${filename}. Copy/share fallback is available in the save panel.`);
+    } catch (error) {
+      status.textContent = `Download could not start: ${error.message}. Use Copy JSON or the text below.`;
+      log(`JSON download error: ${error.message}`, "ERROR");
+    }
   }
 
   async function importProject(file) {

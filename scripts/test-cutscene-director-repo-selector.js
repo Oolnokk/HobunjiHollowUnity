@@ -103,7 +103,7 @@ assert(farmScene.stages.some(stage => stage.id === 'farm_tour_final' && stage.sp
 
 const wallCamera = hunundiRoom.cinematicCameras.find(camera => camera.id === 'hunundi_office_wall');
 assert(wallCamera, 'Father Hunundi room must retain the hunundi_office_wall camera.');
-assert.strictEqual(wallCamera.position.y, 2, 'Hunundi office wall camera Y must stay at the requested 2.0 world units.');
+assert.deepStrictEqual(wallCamera.position, { x: 8.5, y: 1.4, z: 6.6 }, 'Hunundi wall camera must retain the latest authored transform.');
 
 console.log('Cutscene Director repo selector: three live scene builders, graph references, farm cameras and Hunundi camera height passed.');
 

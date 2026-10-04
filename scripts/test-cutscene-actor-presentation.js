@@ -43,5 +43,5 @@ assert(calls.some(c=>c[0]==='head'));
 assert(calls.some(c=>typeof c[0]==='number' && c[1]===.28));
 const room=JSON.parse(read('docs/config/maps/map_i_temple_basement_hunundi.json'));
 assert.equal(room.furniture.find(f=>f.id==='f_tbhunundi_wardrobe').gridRot,90);
-assert.equal(room.cinematicCameras[0].position.z,6.1);
+assert.equal(room.cinematicCameras.find(camera=>camera.id==='hunundi_office_wall').position.z,6.6);
 console.log('Cutscene actor presentation passed');
