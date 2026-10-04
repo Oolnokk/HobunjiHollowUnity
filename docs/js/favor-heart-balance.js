@@ -1,10 +1,10 @@
 (() => {
   'use strict';
 
-  if (Number(window.NpcFavorBalance?.version) >= 3) return;
+  if (Number(window.NpcFavorBalance?.version) >= 4) return;
 
   const FAVOR_POINTS_PER_HEART = 40; // Used everywhere Favor XP is converted into permanent relationship-heart progress.
-  const MAX_GIFT_FAVOR_POINTS = 10; // Used to cap one physical gift at one loved-gift unit before quality scaling.
+  const MAX_GIFT_FAVOR_POINTS = null; // Gifts intentionally have no per-item Favor cap; every matched trait contributes before quality scaling.
   const POINT_PRECISION = 10000; // Used to preserve fractional spillover/quality Favor without floating-point noise.
   const DIALOGUE_INSTALL_FLAG = '__npcFavorBalanceDialogueInstallArmed'; // Used to avoid stacking duplicate DialogueContent lazy-install setters.
   const TASKS_INSTALL_FLAG = '__npcFavorBalanceTasksInstallArmed'; // Used to avoid stacking duplicate ProceduralTasks lazy-patch setters.
@@ -67,7 +67,7 @@
   }
 
   function balancedGiftPoints(points) {
-    return clamp(finite(points, 0), -MAX_GIFT_FAVOR_POINTS, MAX_GIFT_FAVOR_POINTS) * giftQualityMultiplier();
+    return finite(points, 0) * giftQualityMultiplier();
   }
 
   function formatCompact(value) {
@@ -194,7 +194,7 @@
   }
 
   function install() {
-    if (Number(window.NpcFavorBalance?.version) >= 3) return true;
+    if (Number(window.NpcFavorBalance?.version) >= 4) return true;
 
     const dialogue = window.DialogueContent; // Used as the authoritative relationship state/mutation surface once dialogue-content.js exists.
     const gifting = window.NpcGifting; // Used to preserve gift quality scaling around the existing gifting flow.
@@ -276,7 +276,7 @@
     }
 
     window.NpcFavorBalance = Object.freeze({
-      version: 3,
+      version: 4,
       storageUnit: 'favor-points',
       favorPointsPerHeart: FAVOR_POINTS_PER_HEART,
       maxGiftFavorPoints: MAX_GIFT_FAVOR_POINTS,
