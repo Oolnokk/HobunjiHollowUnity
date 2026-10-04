@@ -13,8 +13,6 @@
   let activeMap = null; // Map currently resolved by the Background Scenery Author; used by controls and preview injection.
   let activeConfig = null; // Same resolved config object held by author.js, so edits flow into normal map/scenery export.
   let previewDeps = null; // Captured from scenery-3d-preview's BorderTerrain.init call so its private THREE scene can receive the mountain stack.
-  let previewCamera = null; // Captured through the renderer wrapper below so mountains can be framed without changing scenery-3d-preview's private API.
-  let previewControls = null; // Captured OrbitControls instance paired with previewCamera.
   let selectedLayer = 0; // Zero-based authored mountain layer selected by the sidebar transform controls.
   let resolvedLayout = null; // Latest fully resolved transform/size layout returned by the runtime module.
   let lastAutoFramedScene = null; // Prevents rebuilds from constantly stealing the user's preview camera.
@@ -83,7 +81,7 @@
         config,
         assetBase: '../../',
       }).then(root => {
-        if (!root) return;
+        if (!root || scene !== previewDeps?.getTownScene?.() || map !== activeMap) return;
         resolvedLayout = Backdrops.applyAuthorConfigToGroup(root, map.cols, map.rows, config);
         syncUi();
         if (lastAutoFramedScene !== scene) {
@@ -96,29 +94,6 @@
       });
       return result;
     };
-  }
-
-  // scenery-3d-preview keeps its camera/controls private. Capture the live
-  // instances through prototype methods it calls every frame, which also works
-  // when this module is loaded after the preview constructed them.
-  const nativeRendererRender = THREE.WebGLRenderer?.prototype?.render;
-  if (typeof nativeRendererRender === 'function' && !nativeRendererRender.__mountainAuthorTracking) {
-    const trackedRender = function mountainAuthorTrackedRender(scene, camera, ...rest) {
-      if (camera?.isCamera) previewCamera = camera;
-      return nativeRendererRender.call(this, scene, camera, ...rest);
-    };
-    trackedRender.__mountainAuthorTracking = true;
-    THREE.WebGLRenderer.prototype.render = trackedRender;
-  }
-
-  const nativeControlsUpdate = THREE.OrbitControls?.prototype?.update;
-  if (typeof nativeControlsUpdate === 'function' && !nativeControlsUpdate.__mountainAuthorTracking) {
-    const trackedUpdate = function mountainAuthorTrackedControlsUpdate(...args) {
-      previewControls = this;
-      return nativeControlsUpdate.apply(this, args);
-    };
-    trackedUpdate.__mountainAuthorTracking = true;
-    THREE.OrbitControls.prototype.update = trackedUpdate;
   }
 
   function activeRoot() {
@@ -136,7 +111,7 @@
       const raw = rawVector?.[axis];
       const resolved = Number(resolvedVector?.[axis]);
       const fallback = Number(fallbackVector?.[axis]);
-      const value = Number.isFinite(Number(raw)) ? Number(raw)
+      const value = raw != null && raw !== '' && Number.isFinite(Number(raw)) ? Number(raw)
         : Number.isFinite(resolved) ? resolved
         : Number.isFinite(fallback) ? fallback : 0;
       input.value = Number(value.toFixed(3));
@@ -245,7 +220,8 @@
 
   function frameMountains() {
     const root = activeRoot();
-    const camera = previewCamera;
+    const camera = window.BackgroundSceneryPreview?.getCamera();
+    const previewControls = window.BackgroundSceneryPreview?.getControls(); // Used to update the orbit target and zoom limits after fitting.
     if (!root || !camera || !activeMap) return false;
     root.updateMatrixWorld?.(true);
     const box = new THREE.Box3().setFromObject(root); // Used to include the gargantuan authored planes in the camera fit.

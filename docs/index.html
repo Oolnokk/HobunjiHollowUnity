@@ -76,7 +76,7 @@
        window.FarmEditor.init(...) very early (right after
        createInitialGrid(), before loading any saved farm layout) and
        window.FarmEditor.loadFarmLayout()/etc. immediately after. -->
-  <script src="js/farm-editor.js?v=20260902mod1&window=20260926rebase1"></script>
+  <script src="js/farm-editor.js?v=20261003h9d1bbfb&window=20260926rebase1"></script>
   <!-- Terrain/path tile geometry builders, extracted out of game.js. Must
        load before game.js, which calls window.TerrainGeometry.init(...)
        partway through its own setup (after camTargetX/pathWallBuilder/
@@ -153,7 +153,7 @@
       window.SCRATCHBONES_CONFIG.game.assets.portrait.configBase = './config/';
     }
   </script>
-  <script src="js/portrait-utils.js?v=20261002hfa4d559"></script>
+  <script src="js/portrait-utils.js?v=20261003he8efec4"></script>
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20260930ha019a52"></script>
   <script src="js/png-plane-avatar.js?v=20260926hskelhairalign1"></script>
@@ -202,12 +202,13 @@
   <!-- Procedural foliage / crop geometry -->
   <script src="js/foliage-generator.js?v=20260910review1"></script>
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
-  <script src="js/procedural-furniture.js?v=20261002h29ecd90"></script>
+  <script src="js/procedural-furniture.js?v=20261004hbcc407f"></script>
   <script src="js/furniture-puzzle-properties.js?v=20260922perpiece1"></script>
   <script src="js/furniture-puzzle-runtime.js?v=20260929glowdecals1"></script>
   <!-- Loads the richer per-piece data authored by furniture-avatar-author (seat
        anchors, processing VFX/warps, livestock stomp points) on top of it -->
   <script src="js/authored-furniture-runtime.js?v=20260922twostate1"></script>
+  <script src="js/furniture-pattern-surfaces.js?v=20261003hfbe7570"></script>
   <!-- Shared plateau/ramp fold math (Map Editor preview + Tothal Shift) and the
        headless Wilderness Map Generator core (Tothal Shift wilderness reroll) -->
   <script src="js/terrain-preview.js?v=20260922ruinrebase1"></script>
@@ -317,7 +318,7 @@
   <script src="js/bounty-board.js?v=20260831spearheadexisting1-colors1"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261002h9b3629d"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261003hbec542d"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -518,19 +519,19 @@
        definition; used today by metal-craft-shop.js's authored
        verdigris-removal pattern service, meant to be reused later by a
        weaving/dye system. No deps injection, so load order doesn't matter. -->
-  <script src="js/pattern-authoring.js?v=20260924overpassgap1"></script>
+  <script src="js/pattern-authoring.js?v=20261003h8825bc4"></script>
   <!-- Character-saved pattern library (window.PatternLibrary) — the
        player's own saved motifs plus a small unlockable premade catalog,
        reusable across whatever pattern-authoring.js sessions the game
        offers (today: metal-craft-shop.js's verdigris-removal patterns).
        Needs init(deps) from game.js, so must load before it, same as
        dye-system.js. -->
-  <script src="js/pattern-library.js?v=20260912a"></script>
+  <script src="js/pattern-library.js?v=20261003h0ad42ee"></script>
   <!-- Dev-mode Settings exporter for the active character's saved PatternLibrary entries. -->
   <script src="js/pattern-library-dev-export.js?v=20260920export1"></script>
   <!-- Repo-authored reusable patterns (JSON + motif PNG). Runtime animal/NPC
        paint can reference a small repoPatternId instead of embedding motif bytes. -->
-  <script src="js/repo-pattern-library.js?v=20260920repo1"></script>
+  <script src="js/repo-pattern-library.js?v=20261003hf072713"></script>
   <!-- Banubu Color Pools: max-level Stable animal paint UI + cave pool visuals.
        Uses PatternAuthoring/PatternLibrary now; the shared weaving compositor
        is resolved at interaction/render time after combat-config-loader loads it. -->
@@ -587,7 +588,7 @@
        inventory consumption stays in the existing game placement functions.
        Must load before game.js, which calls window.FurniturePlacer.init(...)
        during its own setup. -->
-  <script src="js/furniture-placer.js?v=20260918utilityplacement1&window=20260926rebase1"></script>
+  <script src="js/furniture-placer.js?v=20261003hd2a4ac0&window=20260926rebase1"></script>
   <!-- Player-craftable persistent campfire (window.WildernessCampfire) —
        only one at a time; survives map changes/saves and also works on Town
        Mine floors, where player death destroys an underground camp.
@@ -610,12 +611,12 @@
        own setup. -->
   <script src="js/weather-fx.js?v=20261002hbfac6cf"></script>
   <!-- Load after WeatherFX exists, but before game.js calls WeatherFX.init(), so daylight windows always capture the real overlay dependencies. -->
-  <script src="js/daylight-window-runtime.js?v=20261001h93863ee"></script>
+  <script src="js/daylight-window-runtime.js?v=20261003h54727ce"></script>
   <!-- Farmhouse windows mirror one ordinary inventory-owned wall object across the exterior/interior 2x coordinate systems and expose their silhouettes to both wall builders. -->
-  <script src="js/house-window-linkage.js?v=20261002ha9cb88c"></script>
+  <script src="js/house-window-linkage.js?v=20261003h3c29655"></script>
   <script src="js/daylight-window-overlay-scheduler.js?v=20260926rebase1"></script>
   <!-- Three reusable, UV-scrolling rain sheets in the existing world renderer. -->
-  <script src="js/rain-planes.js?v=20260809f"></script>
+  <script src="js/rain-planes.js?v=20261004h3026377"></script>
   <!-- Tile-driven environment surface overlay (window.EnvironmentSurfaceMicroPlateau)
        — owns both Western Slope's permanent snow and seasonal Coldmuck
        slush on every other outdoor zone, reading tile height straight from
@@ -750,8 +751,8 @@
   <script src="js/locale-cave-runtime.js?v=20260923caveregistry1"></script>
   <script src="js/ruin-site-locales.js?v=20261002hb4d3f2d"></script>
   <script src="js/stampable-locale-defs.js?v=20260929ruinsites1"></script>
-  <script src="js/ruin-sites.js?v=20261002h49fbfb2"></script>
-  <script src="js/zone-den-totem-features.js?v=20260929glowdecals1"></script>
+  <script src="js/ruin-sites.js?v=20261003h12be717"></script>
+  <script src="js/zone-den-totem-features.js?v=20261003h7c00660"></script>
   <script src="js/transition-markers.js?v=20261001a"></script>
   <!-- Wilderness-zone grass and rich-foliage-patch billboards
        (window.ZoneGrassBillboards) — pure scene-graph generation, no
@@ -2419,7 +2420,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261002h9d63543"></script>
+  <script src="js/pixel-probe.js?v=20261003h7bb5f47"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2549,7 +2550,7 @@
   <!-- Directional camera pitch policy is isolated from controller bindings/gameplay dispatch. -->
   <script src="js/camera-look-clamp.js?v=20260923review2"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261002h53ae607"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261003h98e19f5"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
@@ -2566,7 +2567,7 @@
   <script src="js/shoulder-cam-pointer-lock.js?v=20260930hfc11b39"></script>
   <!-- Shared character-scoped hobunjiSaveMeta update step used by game.js's save* helpers. -->
   <script src="js/character-meta-save.js?v=20260930ench1"></script>
-  <script src="game.js?v=20261002he436558"></script>
+  <script src="game.js?v=20261003h7e2eb09"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261002h1a0061f"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

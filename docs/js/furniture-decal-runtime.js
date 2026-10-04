@@ -229,6 +229,7 @@
       return Promise.resolve(layout.ensureFontLoaded?.()).then(() => layout);
     }).then(layout => {
       const rendered = layout.renderToCanvas(canvas, record.tankanText, tankanRenderOptions(record));
+      window.HobunjiSpritePngSurface?.carveCanvas?.(canvas); // Same dark inner rim as furniture engravings, retaining the sign's authored opacity.
       texture.userData = { ...(texture.userData || {}), tankanLayout: rendered || null };
       texture.needsUpdate = true;
     }).catch(error => {

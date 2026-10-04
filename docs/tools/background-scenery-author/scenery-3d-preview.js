@@ -204,6 +204,7 @@ parityPanelMute.textContent = '#hobunjiTerrainParityPanel{display:none!important
 
   function disposeScene() {
     if (!scene) return;
+    window.WesternSlopeMountainBackdrops?.detach(activeMap?.id);
     const seenGeometry = new Set();
     const seenMaterial = new Set();
     for (const record of terrainRecords) {
@@ -534,6 +535,13 @@ parityPanelMute.textContent = '#hobunjiTerrainParityPanel{display:none!important
   $('canvas')?.addEventListener('pointercancel',()=>scheduleRebuild(30));
   for (const id of ['addPoint','deletePoint','resetPoints','removeOrphan']) $(id)?.addEventListener('click',()=>scheduleRebuild(20));
   window.addEventListener('resize',resizeRenderer);
+
+  // Used by author panels to frame and inspect this preview without patching THREE.
+  window.BackgroundSceneryPreview = Object.freeze({
+    getScene: () => scene,
+    getCamera: () => camera,
+    getControls: () => controls,
+  });
 
   relabelModeUi();
   setView('2d');

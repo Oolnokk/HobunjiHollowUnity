@@ -120,7 +120,7 @@ function renderAnimationUi(){renderAnimationList();renderAnimationEditor();const
 
 function loadHangingSignPreset(){
   clearFurniture();state.tileBase.footprintW=1;state.tileBase.footprintD=1;
-  const post=pushPart('beam',{id:'hanging_sign_post',name:'Horizontal Sign Post',color:'#60452c',materialRole:'wood',materialTexture:'carved_smooth.png',transform:{x:0,y:1.72,z:0,rx:0,ry:0,rz:0,sx:1.25,sy:.14,sz:.14},topScaleX:1,topScaleZ:1,bottomScaleX:1,bottomScaleZ:1,wonkiness:.01});
+  const post=pushPart('beam',window.ProceduralFurniture.hangingSignSupportPart()); // Banner and sign presets use the same support dimensions, material and placement.
   const board=pushPart('box',{id:'hanging_sign_board',name:'Hanging Store / Tavern Board',color:'#765536',materialRole:'wood',materialTexture:'boards.png',materialRotationDeg:90,transform:{x:-.0863,y:.97,z:0,rx:0,ry:0,rz:0,sx:.7,sy:1.1922,sz:.08},topScaleX:1,topScaleZ:1,bottomScaleX:1,bottomScaleZ:1,wonkiness:.012});
   state.pieceAnimations=[normalizeAnimation({
     id:'hanging_sign_wind_swing',name:'Hanging Sign Wind Swing',type:'windSwing',enabled:true,anchorPartId:post.id,drivenPartId:board.id,

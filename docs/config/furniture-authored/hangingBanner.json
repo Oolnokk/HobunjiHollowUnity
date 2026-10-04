@@ -1,0 +1,64 @@
+{
+  "schema": "hobunji_furniture_authored_runtime.v1",
+  "key": "hangingBanner",
+  "name": "Hanging Banner",
+  "footprint": {
+    "w": 2,
+    "d": 1
+  },
+  "parts": [
+    {
+      "id": "hanging_sign_post",
+      "kind": "beam",
+      "name": "Horizontal Sign Post",
+      "color": "#60452c",
+      "materialRole": "wood",
+      "materialTexture": "carved_smooth.png",
+      "transform": {
+        "x": 0,
+        "y": 1.72,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 1.25,
+        "sy": 0.14,
+        "sz": 0.14
+      },
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "wonkiness": 0.01
+    },
+    {
+      "id": "banner-cloth",
+      "kind": "banner",
+      "name": "Wind banner",
+      "bannerWindStrength": 0.1,
+      "transform": {
+        "x": -0.0863,
+        "y": 1.0539,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.7,
+        "sy": 1.1922,
+        "sz": 0.01
+      },
+      "patternSurfaces": [
+        {
+          "slot": "banner",
+          "mode": "cloth",
+          "patternId": "omgurku_knot",
+          "scale": 1,
+          "palette": [
+            "#b7a185",
+            "#315b67"
+          ]
+        }
+      ]
+    }
+  ]
+}

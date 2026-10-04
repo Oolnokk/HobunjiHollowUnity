@@ -26,7 +26,7 @@
   'use strict';
 
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+  function init(injectedDeps) { deps = injectedDeps; window.RepoPatternLibrary?.load?.().catch(error=>console.warn('[PatternLibrary] collectible library unavailable',error)); }
 
   function gearInventory() { return deps?.getGearInventory?.() || null; }
 
@@ -157,7 +157,10 @@
     return catalogCache;
   }
   function catalogById(id) {
-    return getCatalog().find(entry => entry.id === id) || null;
+    const builtin = getCatalog().find(entry => entry.id === id); // Preserve existing reward IDs and their ownership.
+    if (builtin) return builtin;
+    const entry = window.RepoPatternLibrary?.listCached?.().find(entry => entry.id === id && entry.collectible); // Only author-designated collectibles are unlockable.
+    return entry ? {...entry,pattern:window.RepoPatternLibrary.getCachedById(id)} : null;
   }
   function owns(patternId) {
     ensureCollection();
@@ -178,7 +181,7 @@
   function unlockedCatalogEntries() {
     ensureCollection();
     const ids = gearInventory()?.unlockedPatternIds || [];
-    return getCatalog().filter(entry => ids.includes(entry.id));
+    return [...getCatalog(),...(window.RepoPatternLibrary?.listCached?.() || []).filter(entry=>entry.collectible)].filter(entry => ids.includes(entry.id));
   }
 
   // ── Combined listing for the pattern-authoring "Library" picker ─────

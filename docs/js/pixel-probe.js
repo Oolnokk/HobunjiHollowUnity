@@ -1237,6 +1237,8 @@
       if (animalSurface) lines.push(`Color fill animal pattern: shade#${animalSurface.sequence || '-'} sample=${animalSurface.sampledCount} apply=${animalSurface.appliedCount} peak=${animalSurface.peak} splitMask=${animalSurface.separateSampleMask ? 'yes' : 'no'} source=${animalSurface.externalSource ? 'original' : 'current'}`);
     }
     lines.push(pxBuf ? `Raw color under cursor: rgba(${pxBuf[0]},${pxBuf[1]},${pxBuf[2]},${pxBuf[3]})` : 'Raw color under cursor: (readback failed)');
+    const furniturePatterns = window.FurniturePatternSurfaces?.debug?.(deps.getActiveScene?.()) || []; // Surface IDs/palettes/scales remain inspectable from mobile.
+    if (furniturePatterns.length) lines.push('Furniture patterns: ' + JSON.stringify(furniturePatterns));
     const furniturePuzzles = window.FurniturePuzzleRuntime?.debug?.() || []; // Mobile-visible OFF/ON transform and dynamic-collision diagnostics.
     if (furniturePuzzles.length) {
       const puzzleSummary = furniturePuzzles.map(map => `${map.mapId}:${map.nodes.map(node => `${node.id}[${node.role}/${node.behavior} ${Math.round(node.progress * 100)}% ${node.blocked ? 'blocked' : 'open'}]`).join(',') || 'none'} wires=${map.wires}`).join(' | ');

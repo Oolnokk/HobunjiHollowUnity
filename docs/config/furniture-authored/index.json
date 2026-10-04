@@ -220,6 +220,10 @@
     {
       "key": "woodenDoor",
       "file": "config/furniture-authored/woodenDoor.json"
+    },
+    {
+      "key": "hangingBanner",
+      "file": "config/furniture-authored/hangingBanner.json"
     }
   ]
 }

@@ -6,22 +6,34 @@ const vm = require('vm');
 
 const source = fs.readFileSync('docs/js/western-slope-mountain-backdrops.js', 'utf8'); // Production backdrop module exercised by the THREE shim below.
 const environmentBootstrap = fs.readFileSync('docs/js/environment-surface-runtime.js', 'utf8'); // Existing environment compatibility slot must load the backdrop module before game boot.
-const author = fs.readFileSync('docs/tools/background-scenery-author/author.js', 'utf8'); // Background author must synchronously load the mountain integration before its first map resolve.
+const author = fs.readFileSync('docs/tools/background-scenery-author/index.html', 'utf8'); // Background author must synchronously load the mountain integration before its first map resolve.
 const mountainAuthor = fs.readFileSync('docs/tools/background-scenery-author/mountain-backdrop-author.js', 'utf8'); // Additive tool integration exposes real PNGs and transform controls.
 
-assert.match(environmentBootstrap, /western-slope-mountain-backdrops\.js\?v=20261003b/, 'environment bootstrap must load the Western Slope mountain module');
+assert.match(environmentBootstrap, /western-slope-mountain-backdrops\.js\?v=[A-Za-z0-9_-]+/, 'environment bootstrap must load the Western Slope mountain module');
 assert.match(source, /const WESTERN_SLOPE_ID = 'map_western_slope'/, 'module must remain scoped to Western Slope');
 assert.match(source, /MIN_WIDTH_MULTIPLIER = 2\.75/, 'every layer must stay wider than the wilderness footprint');
 assert.match(source, /WEST_LAYER_GAP_MULTIPLIER = 0\.85/, 'deep backdrop spacing must remain explicit and map-scaled');
 assert.match(source, /AUTHOR_STORAGE_KEY = 'hobunjiWesternSlopeMountainBackdrops\.v1'/, 'runtime and author tool must share the same local transform override key');
-assert.match(author, /western-slope-mountain-backdrops\.js\?v=20261003author2/, 'Background Scenery Author must load the runtime transform contract before authoring');
-assert.match(author, /mountain-backdrop-author\.js\?v=20261003author2/, 'Background Scenery Author must load its mountain UI/preview bridge');
+assert.match(author, /western-slope-mountain-backdrops\.js\?v=[A-Za-z0-9_-]+/, 'Background Scenery Author must load the runtime transform contract before authoring');
+assert.match(author, /mountain-backdrop-author\.js\?v=[A-Za-z0-9_-]+/, 'Background Scenery Author must load its mountain UI/preview bridge');
 assert.match(mountainAuthor, /Mountain backdrop layers/, 'author bridge must expose mountain transform controls');
 assert.match(mountainAuthor, /mountainPosX/, 'author bridge must expose position controls');
 assert.match(mountainAuthor, /mountainRotY/, 'author bridge must expose rotation controls');
 assert.match(mountainAuthor, /mountainScaleZ/, 'author bridge must expose scale controls');
 assert.match(mountainAuthor, /assetBase:\s*'\.\.\/\.\.\/'/, '3D author preview must resolve the real repository PNGs from the tool directory');
 assert.match(mountainAuthor, /Frame mountains/, 'author bridge must provide a camera fit for the gargantuan westward stack');
+
+// Execute the author field formatter: unset coordinates must display resolved defaults,
+// so editing rotation cannot accidentally snap all three positions to zero.
+const inputs = Object.fromEntries(['x', 'y', 'z'].map(id => [id, { dataset: {} }])); // Fake number inputs consumed by the production formatter.
+const formatterSource = mountainAuthor.slice(mountainAuthor.indexOf('  function displayVector('), mountainAuthor.indexOf('  function syncUi(')); // Only this pure UI formatter needs a DOM shim.
+const formatterContext = { $: id => inputs[id] }; // Supplies the formatter's element lookup.
+vm.createContext(formatterContext);
+vm.runInContext(formatterSource, formatterContext);
+formatterContext.displayVector(['x','y','z'], [null,null,null], [-194,160,100], [0,0,0]);
+assert.deepEqual(Object.values(inputs).map(input => input.value), [-194,160,100], 'automatic coordinates must retain resolved positions');
+formatterContext.displayVector(['x','y','z'], [0,-4,12], [-194,160,100], [0,0,0]);
+assert.deepEqual(Object.values(inputs).map(input => input.value), [0,-4,12], 'explicit zero and negative positions must survive');
 
 function transformSlot(defaults = { x: 0, y: 0, z: 0 }) {
   return {
