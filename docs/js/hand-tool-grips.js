@@ -15,6 +15,8 @@
   const DEFAULT_HEIGHT_MULTIPLIER = 0.5; // Half of the calculated-height difference reaches weapon size unless a shape authors otherwise.
   const HEIGHT_MULTIPLIER_PRESET = 'height-multiplier-0.5-v1'; // One-time migration of drafts saved when every shape defaulted to 1.
   const SECONDARY_GRIP_PRESET = 'animation-span-v1'; // Migrates old always-on secondary points into animation-gated Z spans.
+  const MANUAL_MELEE_SPAN_PRESET = 'manual-handle-spans-20261004-v1'; // Updates the six inspected handle ranges in older saved drafts once.
+  const MANUAL_MELEE_SPAN_TOOLS = new Set(['plainssword', 'bshuakauitl', 'fishingspear', 'pickshovel', 'hoe', 'hatchet']); // Limits that migration to the manually inspected weapons.
   const PRIMARY_ROTATION_PRESET = 'hatchet-primary-xy-rotation-20260921-v3'; // Hatchet is the canonical right-hand grip example: propagate its X, Y, and rotation to every other tool, never its item-specific Z.
   const PRE_AUTHORED_RANGED_GRIP_PRESET = 'melee-ranged-split-20260920-v4-editor-authored'; // Previous committed split cloned melee into ranged; used only to migrate untouched old dagger defaults.
   const PRE_END_FLIP_DAGGER_RANGED_PRESET = 'melee-ranged-split-20260920-v5-authored-values'; // Previous authored dagger used ranged Z -0.30 before Tool End Flip's visible-axis correction changed the needed hand target.
@@ -46,6 +48,7 @@
   const DEFAULT_DATA = {
     schema: SCHEMA,
     secondaryGripPreset: SECONDARY_GRIP_PRESET,
+    manualMeleeSpanPreset: MANUAL_MELEE_SPAN_PRESET,
     primaryRotationPreset: PRIMARY_ROTATION_PRESET,
     rangedGripPreset: RANGED_GRIP_PRESET,
     heightMultiplierPreset: HEIGHT_MULTIPLIER_PRESET,
@@ -53,7 +56,7 @@
       hatchet: {
         primaryGrip: { position: { x: -0.04, y: -0.04, z: -0.0106 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         gripMode: null,
-        secondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
+        secondaryGripSpan: { enabled: true, startZ: 0.1, endZ: 0.2 }, // Lower haft, above the hatchet head; primary Z is -0.0106.
         toolScale: 1,
         rangedPrimaryGrip: { position: { x: -0.04, y: -0.04, z: -0.0106 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         rangedSecondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
@@ -62,7 +65,7 @@
       hoe: {
         primaryGrip: { position: { x: -0.04, y: -0.04, z: 0 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         gripMode: null,
-        secondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
+        secondaryGripSpan: { enabled: true, startZ: 0.16, endZ: 0.48 }, // Lower shaft between the central primary grip and hoe head.
         toolScale: 1,
         rangedPrimaryGrip: { position: { x: -0.04, y: -0.04, z: 0 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         rangedSecondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
@@ -72,15 +75,15 @@
         toolScale: 1.3,
         primaryGrip: { position: { x: -0.04, y: -0.04, z: 0.14 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         gripMode: null,
-        secondaryGripSpan: { enabled: true, startZ: -0.23, endZ: -0.16 },
+        secondaryGripSpan: { enabled: true, startZ: -0.25, endZ: 0.02 }, // Bare shaft between the two wrapped ends, above primary Z 0.14.
         rangedPrimaryGrip: { position: { x: -0.04, y: -0.04, z: 0.14 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
-        rangedSecondaryGripSpan: { enabled: true, startZ: -0.23, endZ: -0.16 },
+        rangedSecondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
         rangedGripMode: null,
       },
       pickshovel: {
         primaryGrip: { position: { x: -0.04, y: -0.04, z: 0 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         gripMode: null,
-        secondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
+        secondaryGripSpan: { enabled: true, startZ: -0.3, endZ: -0.12 }, // Upper bare shaft, clear of the top blade and central primary grip.
         toolScale: 1,
         rangedPrimaryGrip: { position: { x: -0.04, y: -0.04, z: 0 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         rangedSecondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
@@ -99,9 +102,9 @@
         toolScale: 1.3,
         primaryGrip: { position: { x: -0.04, y: -0.04, z: -0.2672 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         gripMode: null,
-        secondaryGripSpan: { enabled: true, startZ: -0.54, endZ: -0.39 },
+        secondaryGripSpan: { enabled: true, startZ: -0.54, endZ: -0.39 }, // Existing range sits inside the short wrapped handle, clear of the blade.
         rangedPrimaryGrip: { position: { x: -0.04, y: -0.04, z: -0.2672 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
-        rangedSecondaryGripSpan: { enabled: true, startZ: -0.54, endZ: -0.39 },
+        rangedSecondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
         rangedGripMode: null,
       },
       dagger: {
@@ -135,9 +138,9 @@
         toolScale: 1.15,
         primaryGrip: { position: { x: -0.04, y: -0.04, z: 0 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         gripMode: null,
-        secondaryGripSpan: { enabled: true, startZ: -0.5, endZ: -0.16 },
+        secondaryGripSpan: { enabled: true, startZ: -0.46, endZ: -0.16 }, // Rear shaft and wrapping, leaving space from the butt and primary Z 0.
         rangedPrimaryGrip: { position: { x: 0.04, y: -0.04, z: 0 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
-        rangedSecondaryGripSpan: { enabled: true, startZ: -0.5, endZ: -0.16 },
+        rangedSecondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
         rangedGripMode: null,
       },
       fishingmace: {
@@ -258,9 +261,11 @@
     const next = clone(raw || DEFAULT_DATA);
     const previousPrimaryRotationPreset = next.primaryRotationPreset; // Missing/older marker means saved grip rotations need the new authoritative weapon table once.
     const previousRangedGripPreset = next.rangedGripPreset; // Missing marker identifies drafts created before melee/ranged grip separation.
+    const resetManualMeleeSpans = next.manualMeleeSpanPreset !== MANUAL_MELEE_SPAN_PRESET; // Old local drafts receive the manual ranges without changing primary grips or scales.
     const resetHeightMultipliers = next.heightMultiplierPreset !== HEIGHT_MULTIPLIER_PRESET; // Drafts from the all-1.0 default era adopt the 0.5 default once.
     next.schema = SCHEMA;
     next.secondaryGripPreset = SECONDARY_GRIP_PRESET;
+    next.manualMeleeSpanPreset = MANUAL_MELEE_SPAN_PRESET;
     next.primaryRotationPreset = PRIMARY_ROTATION_PRESET;
     next.rangedGripPreset = RANGED_GRIP_PRESET;
     next.heightMultiplierPreset = HEIGHT_MULTIPLIER_PRESET;
@@ -292,6 +297,10 @@
         primaryGrip: entry.rangedPrimaryGrip,
       });
       entry.rangedGripMode = normalizeGripMode(entry.rangedGripMode ?? entry.gripMode);
+      if (resetManualMeleeSpans && MANUAL_MELEE_SPAN_TOOLS.has(toolKey)) {
+        entry.secondaryGripSpan = clone(fallbackEntry.secondaryGripSpan);
+        entry.rangedSecondaryGripSpan = clone(fallbackEntry.rangedSecondaryGripSpan);
+      }
       if (toolKey === 'dagger') {
         const ranged = entry.rangedPrimaryGrip;
         const rr = ranged?.rotationDeg || {};
