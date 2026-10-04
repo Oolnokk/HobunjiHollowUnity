@@ -228,6 +228,7 @@ window.FurnitureDaylightWindowAuthor = {
   version: DW_VERSION,
   role: DW_ROLE,
   refresh: renderDaylightUi,
+  markSelectedAsWindow,
   debugSnapshot: () => ({ selectedSurfaceId: selectedDaylightSurface()?.id || null, windows: JSON.parse(JSON.stringify(ensureDaylightState())) }),
 };
 })();
