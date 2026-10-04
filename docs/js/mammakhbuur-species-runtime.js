@@ -39,7 +39,7 @@
       const gender = String(value || '').trim().toLowerCase();
       return gender === 'f' ? 'female' : gender === 'm' ? 'male' : gender;
     };
-    const inComparison = () => document?.body?.dataset?.animationAuthorMode === SCALE_COMPARE_MODE; // Prevents comparison-specific behavior leaking into Multi, Single, or Rig modes.
+    const inComparison = () => typeof document !== 'undefined' && document.body?.dataset?.animationAuthorMode === SCALE_COMPARE_MODE; // Prevents comparison-specific behavior leaking into Multi, Single, or Rig modes.
 
     const baseTransformSpeciesId = window.hobunjiTransformSpeciesId; // Preserves the repository's normal Mammakhbuur→Mashtzarr transform alias outside Full Character Scale.
     if (typeof baseTransformSpeciesId === 'function' && !baseTransformSpeciesId.__mammakhbuurScaleCompareWrapped) {
