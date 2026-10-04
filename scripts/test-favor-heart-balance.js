@@ -78,11 +78,12 @@ const windowStub = {
 vm.runInNewContext(source, { window: windowStub, console, Date, Map, Math, Number, Object, Array, String });
 const balance = windowStub.NpcFavorBalance;
 assert(balance, 'NpcFavorBalance installs');
-assert.equal(balance.version, 3, 'v3 installs the Favor-points storage model');
+assert.equal(balance.version, 4, 'v4 installs the uncapped Favor-points storage model');
 assert.equal(balance.storageUnit, 'favor-points', 'Favor is stored as Favor points, not fractional hearts');
 assert.equal(balance.debugSnapshot().installedVia, 'direct', 'normal dependency-ready load records a direct install');
 assert.equal(balance.favorPointsPerHeart, 40, 'forty Favor points equal one heart');
 assert.equal(balance.favorPointsToHearts(10), 0.25, 'ten Favor points equal one quarter heart');
+assert.equal(balance.maxGiftFavorPoints, null, 'physical gifts have no per-item Favor cap');
 assert.equal(balance.maxRapportOvernightHearts(100, 0.10), 0.25, '100/100 Rapport settles to ten Favor = one quarter heart');
 assert.equal(balance.giftQualityMultiplierForStars(5), 1, 'five-star gift keeps full value');
 assert.equal(balance.giftQualityMultiplierForStars(3), 0.6, 'three-star gift keeps sixty percent value');
@@ -107,9 +108,10 @@ assert.deepEqual(
   'relationship debug reports both raw Favor XP and derived heart progress'
 );
 
-// Multiple matching loved traits cannot make one physical gift worth more than one loved gift.
+// Every matched loved trait contributes to the same physical gift with no per-item Favor cap.
 NpcGifting.offerGift({ rec: { id: 'multitrait' }, giftScore: 30 });
-assert.equal(rawState('multitrait').favor, 10, 'multi-trait gift is capped at ten Favor points before quality scaling');
+assert.equal(rawState('multitrait').favor, 30, 'multi-trait gift keeps the full thirty Favor points before quality scaling');
+assert.equal(rewards.at(-1)?.text, '+30 Favor', 'multi-trait gift displays the full uncapped Favor award');
 
 // Make the remaining physical egg a three-star unit, then verify the same loved result scales down.
 qualityBuckets.egg[5] = 0;
@@ -119,7 +121,7 @@ assert.equal(rawState('quality').favor, 6, 'three-star loved gift stores six Fav
 assert.equal(rewards.at(-1)?.text, '+6 Favor', 'three-star quality scales the visible Favor-point award');
 assert.equal(inventory.egg, 0, 'quality bookkeeping still consumes one inventory unit per gift');
 
-// NpcRapport already mutates state.favor by point deltas; v3 deliberately leaves that point-space mutation alone.
+// NpcRapport already mutates state.favor by point deltas; v4 deliberately leaves that point-space mutation alone.
 const rapportState = DialogueContent.getNpcDlgState('rapport_npc');
 rapportState.favor = rapportState.favor + 10;
 assert.equal(rawState('rapport_npc').favor, 10, 'direct +10 Rapport rollover remains ten Favor points');
@@ -183,7 +185,7 @@ const lateWindow = {
 vm.runInNewContext(source, { window: lateWindow, console, Date, Map, Math, Number, Object, Array, String });
 assert.equal(lateWindow.NpcFavorBalance, undefined, 'balance waits instead of silently giving up when DialogueContent is not loaded yet');
 lateWindow.DialogueContent = lateDialogue;
-assert.equal(lateWindow.NpcFavorBalance?.version, 3, 'publishing DialogueContent synchronously installs the deferred Favor-point hooks');
+assert.equal(lateWindow.NpcFavorBalance?.version, 4, 'publishing DialogueContent synchronously installs the deferred Favor-point hooks');
 assert.equal(lateWindow.NpcFavorBalance.debugSnapshot().installedVia, 'dialogue-assignment', 'debug state records the deferred dependency path');
 lateDialogue.adjustNpcFavor('late_hreesh', 10, 'gift_loved');
 assert.equal(lateRawState('late_hreesh').favor, 10, 'late-installed balance still stores +10 as ten Favor points');
@@ -227,7 +229,7 @@ Object.defineProperty(chainedWindow, 'DialogueContent', {
 vm.runInNewContext(source, { window: chainedWindow, console, Date, Map, Math, Number, Object, Array, String });
 assert.equal(chainedWindow.NpcFavorBalance, undefined, 'pre-existing DialogueContent accessor still leaves Favor balance waiting for the real API');
 chainedWindow.DialogueContent = chainedDialogue;
-assert.equal(chainedWindow.NpcFavorBalance?.version, 3, 'Favor balance chains through a pre-existing DialogueContent accessor and installs');
+assert.equal(chainedWindow.NpcFavorBalance?.version, 4, 'Favor balance chains through a pre-existing DialogueContent accessor and installs');
 chainedRawState('chained_hreesh').favor = 12.2;
 const chainedHearts = chainedDialogue.renderRelationshipHearts({ id: 'chained_hreesh', relationship: true });
 assert.match(chainedHearts, /width:30\.5%/, 'chained browser hook uses 12.2 Favor as 30.5% of one heart instead of twelve hearts');
