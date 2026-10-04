@@ -83,6 +83,11 @@
     if (!world?.farmStarterBuildings?.length) return;
     const pending = []; // Failed placements remain pending; never silently discard starter buildings.
     for (const key of world.farmStarterBuildings) {
+      if (key === 'barnMedium' || key === 'barnIncubatorSmall') {
+        const result = key === 'barnMedium' ? window.FarmBuildings.ensureStarterBarn('medium','starter_barnMedium') : window.BarnIncubator.ensureStarterIncubator('starter_barnMedium','small'); // Completed Ranch facilities use existing barn/addition authorities.
+        if (!result.ok) { pending.push(key); lastError = result.message; }
+        continue;
+      }
       if (buildings.some(entry => entry.id === 'starter_' + key)) continue;
       const definition = catalog[key]; // Authored starter building chosen at world creation.
       let location = null; // First clear rectangle discovered near the farmhouse.
@@ -224,7 +229,7 @@
     button('Close', () => modal.remove());
     const debug = document.createElement('details'); // Mobile-readable state; contains the most recent feature change.
     const heading = document.createElement('summary'); heading.textContent = 'Production diagnostics'; debug.append(heading);
-    const text = document.createElement('pre'); text.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere'; text.textContent = JSON.stringify({ mostRecentChange: 'Farm settings now load before onboarding; day-one water simulation no longer reads the live grid before initialization.', worldTime: now(), building: serialize().find(record => record.id === id), lastError }, null, 2); debug.append(text); panel.append(debug);
+    const text = document.createElement('pre'); text.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere'; text.textContent = JSON.stringify({ mostRecentChange: 'Starting facilities arrive completed, including the Ranch medium barn and attached one-slot incubator.', worldTime: now(), building: serialize().find(record => record.id === id), lastError }, null, 2); debug.append(text); panel.append(debug);
     modal.append(panel); document.body.append(modal);
   }
   function connectedCrops(entry, grid) {

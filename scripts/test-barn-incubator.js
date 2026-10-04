@@ -224,4 +224,13 @@ assert.deepEqual(anchors.map(point => point.anchorName), ['incubatorBaby1', 'inc
 const roofSection = piece.roof.crossGableSections[0];
 assert(Math.abs(roofSection.roofHeight - 1.19 * 0.75) < 1e-9, 'authored incubator roof spine rise is exactly 25% lower than the normal Highland barn rise');
 
+assert.equal(B.removeIncubator(placed.addition.id,false).ok,true);
+const plansBeforeStarter = JSON.stringify(inventory); // Completed starter addition must not consume a plan or material.
+const starter = B.ensureStarterIncubator(barn.id,'small'); // Runs the actual free starter installation and normal wall validation.
+assert.equal(starter.ok,true);
+assert.equal(starter.addition.slots.length,1);
+assert.equal(starter.addition.tier,'small');
+assert.equal(JSON.stringify(inventory),plansBeforeStarter);
+assert.equal(B.ensureStarterIncubator(barn.id,'small').addition.id,starter.addition.id,'retry preserves the existing starter addition');
+assert.equal(B.getState().barns[barn.id].additions.length,1,'starter installation is idempotent');
 console.log('barn incubator tests passed');

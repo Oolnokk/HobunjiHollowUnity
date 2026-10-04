@@ -47,7 +47,7 @@ const settings=context.FarmWorldSettings, production=context.FarmProduction; // 
 for(let i=0;i<100;i++) assert(!/iron/i.test(settings.randomName()),'random lore-friendly names avoid iron');
 assert.equal(settings.normalize({wood:'#ff0000',stone:'#00ff00',specialization:'bogus'}).wood,'#7d7355');
 const world=settings.initializeWorld({id:'world',ownerCharacterId:'owner',label:'',storage:{growthTonic:4}}, {specialization:'rancher'}); // Fresh world construction gets exactly the requested package.
-assert.equal(world.storage.barnPlanMedium,1);assert.equal(world.storage.barnIncubatorSmallPlan,1);assert.equal(world.storage.voorgAssBaby,1);assert.equal(world.storage.mootBaby,1);assert.equal(world.farmStarterBuildings[0],'fodderMillSmall');
+assert.equal(world.storage.barnPlanMedium,undefined);assert.equal(world.storage.barnIncubatorSmallPlan,undefined);assert.equal(world.storage.voorgAssBaby,1);assert.equal(world.storage.mootBaby,1);assert.deepEqual(Array.from(world.farmStarterBuildings),['barnMedium','barnIncubatorSmall','fodderMillSmall']);
 const smoke=settings.initializeWorld({id:'smoke',storage:{}},{specialization:'preserver'}); // One shared smokehouse accepts either raw meat or fish.
 assert.deepEqual(Array.from(smoke.farmStarterBuildings),['smokehouseSmall','jerkyDryerSmall']);
 world.farmStarterBuildings=[];values.set('hobunjiSaveMeta',JSON.stringify({worlds:[world]}));
@@ -95,5 +95,21 @@ assert(saves>0,'queue and tank mutations checkpoint the world layout');
 for(const definition of Object.values(context.FARM_SPECIALIZATIONS_CONFIG.buildings)){
  const asset=JSON.parse(fs.readFileSync('docs/config/furniture-authored/'+definition.key+'.json'));assert.equal(asset.footprint.w,definition.w);assert(asset.parts.length>=10);
  if(definition.family.endsWith('Mill')||definition.family==='windmill')assert.equal(asset.parts.filter(part=>part.kind==='glb').length,4);
+}
+// Completed barn starters use the existing placement authority without consuming plans or construction materials.
+{
+ const records = []; // Live regular barns created by the actual starter API.
+ const starterGrid = Array.from({length:50},()=>Array.from({length:60},()=>({type:'grass',crop:''}))); // Clear new-world farm.
+ const starterContext = {window:{}}; // Isolated barn module with rendering stubbed at its public seam.
+ vm.createContext(starterContext);
+ vm.runInContext(fs.readFileSync('docs/js/farm-buildings.js','utf8'),starterContext);
+ const barns = starterContext.window.FarmBuildings; // Actual placement/record authority.
+ barns.init({TileType:tileTypes,COLS:60,ROWS:50,getGrid:()=>starterGrid,getHousePieceRects:()=>[],worldObjects:new Map(),getFarmBuildings:()=>records,getBarnTiers:()=>({medium:{}}),recomputeWater(){},markTileDirty(){}});
+ barns.spawnEntry=()=>{};
+ const starter = barns.ensureStarterBarn('medium','starter_barnMedium'); // No inventory or currency seam is supplied.
+ assert.equal(starter.ok,true);assert.equal(starter.entry.stage,'built');assert.equal(starter.entry.w,4);assert.equal(starter.entry.h,5);
+ assert.equal(barns.ensureStarterBarn('medium','starter_barnMedium').entry,starter.entry);assert.equal(records.length,1);
+ for(const row of starterGrid)for(const tile of row)tile.type=tileTypes.TILLED;
+ assert.equal(barns.ensureStarterBarn('medium','another_starter').ok,false,'blocked placement keeps grants pending rather than spawning through obstacles');
 }
 console.log('Farm settings, starters, queues, quality, persistence, permissions, tier assets and actual silo water flow passed.');

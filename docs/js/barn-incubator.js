@@ -66,11 +66,11 @@
     return state;
   }
 
-  function saveState(reason = null) {
+  function saveState(reason = null, saveMember = true) { // Starter grants occur before member inventory hydration and only checkpoint addition state.
     if (!state) loadState();
     localStorage.setItem(storageKey(), JSON.stringify(state));
     if (reason) lastDebugChange = reason;
-    buildingDeps?.saveMemberWorldData?.();
+    if (saveMember) buildingDeps?.saveMemberWorldData?.();
   }
 
   function barnState(barnId, create = true) {
@@ -263,6 +263,22 @@
       if (validatePlacement(barn, entry.candidate, ignoreAdditionId).ok) return entry.candidate;
     }
     return null;
+  }
+
+  function ensureStarterIncubator(barnId, tier = 'small') {
+    const barn = barnById(barnId); // The completed starter barn owns its attached incubator.
+    if (!barn || !CONFIG.tiers[tier]) return { ok:false, message:'Starter barn or incubator tier unavailable.' };
+    const id = barnId + '_starter_incubator'; // Stable identity survives retries without duplicating additions.
+    const existing = additionsForBarn(barnId).find(addition => addition.id === id); // Existing queues/babies are preserved on reload.
+    if (existing) return { ok:true, addition:existing };
+    if (additionsForBarn(barnId).length >= CONFIG.addition.maxPerBarn) return { ok:false, message:'Starter barn has no free addition slot.' };
+    const placement = candidatePlacementsForBarn(barn,tier).find(candidate => validatePlacement(barn,candidate).ok); // Attach along an actually clear wall using the ordinary collision authority.
+    if (!placement) return { ok:false, message:'No clear wall for the starter incubator.' };
+    const addition = normalizeAddition({id,type:CONFIG.addition.id,tier,...placement,slots:makeSlots(tier)}); // Fully installed one-slot addition; no purchased plan is granted or consumed.
+    barnState(barnId).additions.push(addition);
+    saveState('Installed completed starter incubator on '+barnId+'.',false);
+    rebuildExteriorAll();
+    return { ok:true, addition };
   }
 
   function placeIncubator(barnId, placement) {
@@ -1519,6 +1535,7 @@
     openIncubatorMenu,
     candidatePlacementsForBarn,
     placeIncubator,
+    ensureStarterIncubator,
     selectTier: tier => { if (CONFIG.tiers?.[tier]) selectedTier = tier; },
     moveIncubator,
     removeIncubator,

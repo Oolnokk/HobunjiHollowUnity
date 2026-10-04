@@ -525,6 +525,22 @@
     _registerFootprint(entry);
   }
 
+  function ensureStarterBarn(tier, id) {
+    const existing = deps.getFarmBuildings().find(entry => entry.id === id); // Deterministic starter identity makes interrupted grants/reloads safe.
+    if (existing) return { ok:true, entry:existing };
+    if (!deps.getBarnTiers()[tier]) return { ok:false, message:'Unknown starter barn tier.' };
+    const definition = _pieceDef(tier); // Reuse authored barn footprint and regular farm occupancy validation.
+    for (let row = 7; row + definition.h < deps.ROWS; row++) for (let col = 20; col + definition.w < deps.COLS; col++) {
+      if (!canPlaceAt(col,row,definition.w,definition.h)) continue;
+      const entry = { id, kind:'barn', tier, col, row, w:definition.w, h:definition.h, stage:'built' }; // Completed structure uses normal barn serialization and interaction paths.
+      deps.getFarmBuildings().push(entry);
+      clearFootprint(col,row,entry.w,entry.h);
+      window.FarmBuildings.spawnEntry(entry);
+      return { ok:true, entry };
+    }
+    return { ok:false, message:'No clear ground for the starter barn.' };
+  }
+
   function placePlan(tier, col, row) {
     if (!deps.hasFarmPermission('alterFarm')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can build here." };
     const tierDef = deps.getBarnTiers()[tier];
@@ -642,6 +658,7 @@
     label,
     spawnEntry,
     placePlan,
+    ensureStarterBarn,
     demolish,
     move,
     clearAll,

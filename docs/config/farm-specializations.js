@@ -27,11 +27,11 @@
       yellowberrySeeds: 24, whiteberrySeeds: 24, blackberrySeeds: 24, blackMustardSeed: 24, greenMustardSeed: 24,
     }, description: 'Grow crops, turn harvests into ingredients, and expand a productive farm. Suits players who enjoy industry, expansion, or cooking their own unique dishes with different combinations of buffs.',
       starterDescription: 'Starts with a small rainwater silo, compost bin and windmill, plus a generous seed stock in farm storage.' },
-    rancher: { label: 'Ranch', buildings: ['fodderMillSmall'], storage: {
-      barnPlanMedium: 1, barnIncubatorSmallPlan: 1, plantFodder: 99, meatFodder: 99,
+    rancher: { label: 'Ranch', buildings: ['barnMedium', 'barnIncubatorSmall', 'fodderMillSmall'], storage: {
+      plantFodder: 99, meatFodder: 99,
       uumkaoiiEgg: 1, fertileDrenkirraEgg: 1, voorgAssBaby: 1, mootBaby: 1,
     }, description: 'Raise animals and experiment with breeding unique variants of wild species for livestock and adventuring companions. Suits players who love wildlife, discovery, and finding out what the next generation might become.',
-      starterDescription: 'Starts with medium barn and one-slot incubator plans, a small fodder mill, fodder, two fertile eggs, a baby Voorg-ass and a baby Moot placeholder.' },
+      starterDescription: 'Starts with a completed medium barn with a one-slot incubator attached, a small fodder mill, fodder, two fertile eggs, a baby Voorg-ass and a baby Moot placeholder.' },
     preserver: { label: 'Smokery', buildings: ['smokehouseSmall', 'jerkyDryerSmall'], storage: {},
       description: 'Fish, explore the wilderness, and turn meat and fish into profitable preserved goods. Suits players who want to make the most of their adventures: queue a batch, head back into the wild, and let the buildings work without keeping you in the orbit of civilization.',
       starterDescription: 'Starts with a small smokehouse that accepts meat or fish and a small jerky dryer.' },
