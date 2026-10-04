@@ -4,9 +4,27 @@
   const ID = 'mammakhbuur'; // Shared species identity for player/NPC appearance, scale and attachment registries.
   const DONOR = 'mashtzarr'; // Authored cosmetic, palette, hand/foot and anatomy authority.
   const clone = value => JSON.parse(JSON.stringify(value)); // Copies donor data so edits never mutate Mashtzarr definitions.
+  const withoutFrontHair = genderData => { // Mammakhbuur do not expose or retain any front-hair cosmetic, while every other Mashtzarr cosmetic remains inherited.
+    const data = clone(genderData || {});
+    if (Array.isArray(data.slots)) data.slots = data.slots.filter(slot => slot?.slot !== 'hairFront');
+    data.defaultCosmetics = { ...(data.defaultCosmetics || {}) };
+    delete data.defaultCosmetics.hairFront;
+    data.forcedCosmetics = { ...(data.forcedCosmetics || {}), hairFront: null }; // Blocks stale saved front-hair selections from rendering on existing Mammakhbuur NPCs.
+    return data;
+  };
   const config = window.SCRATCHBONES_CONFIG?.game; // All installed aliases use the existing runtime registries.
   const appearance = config?.appearanceEditor; // Adds the species to the ordinary editor and creator palette registries.
-  if (appearance?.species?.[DONOR]) appearance.species[ID] = { ...clone(appearance.species[DONOR]), label: 'Mammakhbuur', parentSpecies: DONOR, genders: ['male', 'female'] };
+  if (appearance?.species?.[DONOR]) {
+    const donorSpecies = clone(appearance.species[DONOR]);
+    appearance.species[ID] = {
+      ...donorSpecies,
+      label: 'Mammakhbuur',
+      parentSpecies: DONOR,
+      genders: ['male', 'female'],
+      male: withoutFrontHair(donorSpecies.male),
+      female: withoutFrontHair(donorSpecies.female || donorSpecies.male),
+    };
+  }
   if (appearance?.bodyPalettes?.[DONOR]) appearance.bodyPalettes[ID] = clone(appearance.bodyPalettes[DONOR]);
   const characters = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters; // Same profile library consumed by hands, feet, posterior and rig tools.
   for (const gender of ['male', 'female']) {
@@ -133,9 +151,10 @@
       rigWidthMultiplier: 1,
       headScaleMultiplier: 1,
       verticalPlacementMultiplier: 1,
+      frontHairOptions: 0,
       fullCharacterScaleDistinctIdentity: !!fullScaleAdapter,
       fullCharacterScaleRepresentativeFallback: fullScaleAdapter ? 'mashtzarr-same-gender-preview-only' : null,
-      latestChange: 'Mammakhbuur use Mashtzarr anatomy with only 5% extra whole-rig height; Animation Author Full Character Scale keeps Mammakhbuur separately visible beside Mashtzarr.',
+      latestChange: 'Mammakhbuur inherit Mashtzarr anatomy and non-front-hair cosmetics, with front hair disabled for both genders; Animation Author Full Character Scale keeps Mammakhbuur separately visible beside Mashtzarr.',
     }),
   });
 })();
