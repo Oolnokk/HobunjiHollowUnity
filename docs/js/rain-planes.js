@@ -630,10 +630,10 @@ if (window.HobunjiSkyDome && window.RainPlanes) {
 // blocking avoids another game.js integration point while still giving snow/slush the
 // live scene, current-area, season, and outdoor-state getters it needs.
 if (!window.EnvironmentSurfaceRuntime) {
-  if (document.readyState === 'loading') document.write('<script src="js/environment-surface-runtime.js?v=20260912a"></scr' + 'ipt>');
+  if (document.readyState === 'loading') document.write('<script src="js/environment-surface-runtime.js?v=20261004hefbf13b"></scr' + 'ipt>');
   else {
     const surfaceScript = document.createElement('script'); // Late-load fallback used only when rain-planes.js is evaluated after initial parsing.
-    surfaceScript.src = 'js/environment-surface-runtime.js?v=20260912a';
+    surfaceScript.src = 'js/environment-surface-runtime.js?v=20261004hefbf13b';
     surfaceScript.async = false;
     document.head.appendChild(surfaceScript);
   }
