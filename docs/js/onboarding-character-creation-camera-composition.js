@@ -12,7 +12,9 @@
   const MAO_AO_MALE_RUNTIME_Y = 1.125; // Canonical Full Character Scale Y for Mao'ao male; used only as a fallback.
   const FACE_NECK_OFFSET = 0.13; // Matches the existing species-aware face-view center above the neck joint.
 
-  const yawOffsets = new WeakMap(); // Stores only the delta needed to turn each preview root from its existing default to exactly +10°.
+  const CAMERA_X = 1.55; // Shared camera position and azimuth for the resting front view.
+  const CAMERA_Z = 2.75; // Shared camera position and azimuth for the resting front view.
+  const FALLBACK_REST_YAW = -0.18; // Matches the creator baseline when an older cached redesign is still loading.
   let rendererWrapped = false; // Diagnostic state for the onboarding-only WebGLRenderer hook.
   let active = true; // Flips false once character creation hands off, so the permanent renderer patch and RAF loop stop doing real work.
   let sharedFaceCamera = null; // One reused PerspectiveCamera for syncFaceViewOrigin's per-frame projection instead of allocating a new one every frame.
@@ -36,18 +38,15 @@
 
   function yawOffsetFor(root) {
     if (!root?.rotation) return 0;
-    if (!yawOffsets.has(root)) {
-      // Preserve drag behavior: the redesign still owns root.rotation.y; this patch
-      // adds only the fixed delta required to make its first/resting view exactly +10°.
-      yawOffsets.set(root, deg(TARGET_PREVIEW_YAW_DEG) - Number(root.rotation.y || 0));
-    }
-    return yawOffsets.get(root) || 0;
+    const restYaw = Number(root.userData?.onboardingRestYaw); // Explicit resting rotation; never inferred from a temporary render or a user's drag.
+    const baseline = Number.isFinite(restYaw) ? restYaw : FALLBACK_REST_YAW; // Retains drag deltas even when composition installs after the first interaction.
+    return Math.atan2(CAMERA_X, CAMERA_Z) + deg(TARGET_PREVIEW_YAW_DEG) - baseline;
   }
 
   function applyCamera(camera) {
     if (!camera?.position || typeof camera.lookAt !== 'function') return;
     const midY = maoAoMidBodyY();
-    camera.position.set(1.55, midY, 2.75);
+    camera.position.set(CAMERA_X, midY, CAMERA_Z);
     camera.lookAt(0, midY, 0); // Eye and target share Y: no residual top-down angle.
     camera.updateMatrixWorld?.(true);
   }
@@ -147,6 +146,7 @@
     const status = window.HOBUNJI_ONBOARDING_REDESIGN_STATUS;
     if (status && typeof status === 'object') {
       status.previewRestYawDeg = TARGET_PREVIEW_YAW_DEG;
+      status.previewFacingBasis = 'front, relative to preview camera'; // Existing in-page diagnostics describe the corrected resting orientation.
       status.cameraEyeBasis = "mao-ao male mid-body";
       status.cameraEyeY = maoAoMidBodyY();
       status.cameraTopDownAngle = 0;

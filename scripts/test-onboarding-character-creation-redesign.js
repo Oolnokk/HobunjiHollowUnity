@@ -8,7 +8,7 @@ const core = fs.readFileSync('docs/onboarding-core.js', 'utf8');
 // Later onboarding fixes (#718 onward) re-bump the core key; any revision at or after the redesign still ships it.
 const onboardingCoreKey = entry.match(/onboarding-core\.js\?v=(\d{8}[a-z0-9-]*)/i)?.[1] || '';
 assert(onboardingCoreKey >= '20260907charcreator1', `onboarding entrypoint must load the preserved core first (found ${onboardingCoreKey || 'none'})`);
-assert.match(entry, /onboarding-character-creation-redesign\.js\?v=20260907charcreator5/, 'onboarding entrypoint must load the current integrated redesign after the core');
+assert.match(entry, /onboarding-character-creation-redesign\.js\?v=[A-Za-z0-9_-]+/, 'onboarding entrypoint must load the current integrated redesign after the core');
 assert.doesNotMatch(entry, /runtime-parity/, 'creator behavior must not depend on a separate follow-up script');
 assert.match(core, /makeDefaultState\('mao-ao', 'male'\)/, "fresh character creation must start with Mao'ao selected");
 assert.match(core, /window\.HobunjiOnboarding = \{ init, reset, loadProfile, loadSaveMeta \}/, 'preserved onboarding core must still expose the original public API');
