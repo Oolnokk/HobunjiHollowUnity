@@ -4,6 +4,8 @@
   const STATE_PREFIX = 'hobunjiOpeningStory.v1'; // Namespaces world-scoped opening progress so interrupted sessions can retry safely.
   const NPC_DB_URL = 'config/npcs/hobunji-starter-npc-database.json'; // Supplies the same authored NPC records the normal scheduler uses.
   const REQUIRED_NPCS = Object.freeze(['jubmir', 'father_hunundi_hodu', 'spearhead_unumanuk', 'khannibarri_agent']); // Guards the two scenes against silently falling back to placeholder actors.
+  const OPENING_RUNTIME_TIMEOUT_MS = 120000; // Gives slow mobile cold boots four times the old runtime-start window before surfacing a retry instead of falling through into town.
+  const STARTUP_RETRY_DELAYS_MS = Object.freeze([350, 900]); // Used only for rescue setup failures that occur before the wilderness is revealed.
   const status = { // Mobile-readable state surfaced through debugSnapshot() and the existing in-game debug log.
     phase: 'idle',
     pending: false,
@@ -11,7 +13,10 @@
     completed: false,
     lastScene: null,
     lastError: null,
-    latestChange: 'Rescue locale now lives in an isolated generated Cloud Forest mini-wilderness; shared chunk/terrain scale, fully preloaded and disposed on exit. Four-stage intro loading preset; independent neck deadzones; panel-safe head framing; Hunundi shoulder POV; focused randomized wolf shots. Hunundi POV camera/head targeting and cinematic HUD suppression. Smooth combat-prone transitions, wider wolf shots, town Spearhead equipment, animated office furniture, Hunundi doorway blocking and seated conversational eye contact. Rescue shots center on the player with wider framing and surrounding wolves; combat prone pose, real equipped gear, correct chair anchors/rotations and locked cutscene dialogue. Rescue animals use composed eyes and character head targeting; cutscenes follow facing deadzones and seat height, with a hidden surveyor doorway reveal and relocated office camera. Farm-tour choices now continue through valid col/row navigation hops; the real player stays hidden behind its stand-in, with a wide south-to-north farm shot that blends in after the first dialogue Continue.',
+    runtimeWaitMs: 0,
+    setupAttempts: 0,
+    startupRetries: 0,
+    latestChange: 'New-world startup now tolerates slow mobile runtime initialization, retries transient rescue setup failures before reveal, and blocks the normal town fallback with an on-screen Retry if the required opening still cannot load. Rescue locale remains the isolated generated Cloud Forest mini-wilderness; all prior cinematic, farm-tour, camera, seating, equipment and dialogue behavior is preserved.',
   };
 
   function stateKey(profile) {
@@ -48,6 +53,49 @@
     window.__farmLog?.('[opening-story] ' + message, level);
   }
 
+  function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms)); // Shared startup polling/retry delay keeps the slow-mobile path deterministic and testable.
+  }
+
+  function clearStartupFailure() {
+    document.getElementById('openingStoryStartupFailure')?.remove(); // Removes the mobile-visible retry surface once a fresh attempt begins or succeeds.
+  }
+
+  function showStartupFailure(profile, message) {
+    clearStartupFailure();
+    const root = document.createElement('div'); // Full-screen failure surface prevents an unfinished opening from exposing the ordinary town spawn underneath.
+    root.id = 'openingStoryStartupFailure';
+    Object.assign(root.style, {
+      position: 'fixed', inset: '0', zIndex: '1000000', display: 'grid', placeItems: 'center',
+      background: '#000', color: '#fff', padding: '24px', textAlign: 'center', fontFamily: 'serif',
+    });
+    const panel = document.createElement('div'); // Compact panel stays readable on narrow mobile screens without relying on developer tools.
+    panel.style.maxWidth = '34rem';
+    const title = document.createElement('div'); // Human-readable heading explains that startup stopped intentionally rather than silently spawning in town.
+    title.textContent = 'The opening scene could not finish loading.';
+    title.style.fontSize = '1.15rem';
+    title.style.marginBottom = '0.75rem';
+    const detail = document.createElement('div'); // Technical detail is visible in-game so mobile reports can identify the failing startup stage.
+    detail.textContent = String(message || 'Unknown opening-scene startup error.');
+    detail.style.opacity = '0.72';
+    detail.style.fontSize = '0.82rem';
+    detail.style.marginBottom = '1rem';
+    const retry = document.createElement('button'); // Retry starts the same required opening again after the failed runtime has completed its cleanup.
+    retry.type = 'button';
+    retry.textContent = 'Retry';
+    retry.style.padding = '0.65rem 1.2rem';
+    retry.style.font = 'inherit';
+    retry.addEventListener('click', () => {
+      retry.disabled = true;
+      clearStartupFailure();
+      showBootCover();
+      setTimeout(() => { void play(profile); }, 0);
+    });
+    panel.append(title, detail, retry);
+    root.append(panel);
+    document.body?.appendChild(root);
+  }
+
   function showBootCover() {
     const fadeEl = window.CutscenePreviewHelpers?.cutscenePreviewFadeEl?.(); // Reuses the cutscene fade surface so the farmhouse never flashes before the rescue opens.
     if (!fadeEl) return null;
@@ -57,19 +105,21 @@
   }
 
   function clearBootCover() {
-    const fadeEl = document.getElementById('cutscenePreviewFade'); // Releases the shared fade if startup fails before the runtime takes ownership.
+    const fadeEl = document.getElementById('cutscenePreviewFade'); // Releases the shared fade only for optional replay failures; required openings stay covered until retry/success.
     if (!fadeEl) return;
     fadeEl.style.transitionDuration = '0.35s';
     requestAnimationFrame(() => { fadeEl.style.opacity = '0'; });
   }
 
   async function waitForGameRuntime(timeoutMs = 30000) {
-    const start = performance.now(); // Bounds startup polling on damaged/partial pages instead of hanging forever.
-    while (performance.now() - start < timeoutMs) {
+    const start = performance.now(); // Tracks how long startup spends waiting so slow-device reports are visible through debugSnapshot().
+    while (true) {
+      const elapsed = performance.now() - start; // Updated each poll and copied into status for the in-game mobile diagnostics.
+      status.runtimeWaitMs = Math.max(0, Math.round(elapsed));
       if (window.__hobunjiGameStarted && window.AuthoredCutsceneRuntime?.run) return window.AuthoredCutsceneRuntime;
-      await new Promise(resolve => setTimeout(resolve, 100));
+      if (timeoutMs > 0 && elapsed >= timeoutMs) throw new Error(`Timed out waiting ${Math.round(timeoutMs / 1000)}s for the authored cutscene runtime.`);
+      await delay(100);
     }
-    throw new Error('Timed out waiting for the authored cutscene runtime.');
   }
 
   async function loadNpcRecords() {
@@ -302,6 +352,10 @@
     status.running = true;
     status.phase = 'loading';
     status.lastError = null;
+    status.runtimeWaitMs = 0;
+    status.setupAttempts = 0;
+    status.startupRetries = 0;
+    clearStartupFailure();
     showBootCover();
     log('starting opening sequence');
 
@@ -318,19 +372,36 @@
         introduction.finish(); introduction = null;
       })() : Promise.resolve(); // Page delays run independently while preparation continues behind black.
       loadingPages.catch(() => {}); // Setup failure cancels the input wait through the normal cleanup path.
-      const runtime = await waitForGameRuntime(); // Uses the game-owned live wrapper around the existing Director stage engine.
+      const runtime = await waitForGameRuntime(OPENING_RUNTIME_TIMEOUT_MS); // Slow mobile cold boots get a longer window; a true failure stays on the opening cover instead of falling through into town.
       const records = await loadNpcRecords(); // Resolves Jubmir/Hunundi/Spearhead/Harkhanash from the authoritative database.
       const rescue = buildRescueScene(records, profile); // Scene one preserves the already-authored Gar-wolf rescue blocking.
       const meeting = buildHunundiMeetingScene(records, profile); // Scene two uses Hunundi's real bedroom/study map and chair transforms.
       introduction?.setProgress(15);
       status.phase = 'rescue';
       status.lastScene = rescue.title;
-      await runtime.run(rescue, {
-        keepFadeOnFinish: true,
-        async onEnvironmentReady() { introduction?.setProgress(45); },
-        async onActorsReady() { await runtime.preloadOpeningMeeting?.(meeting); introduction?.setProgress(75); },
-        async onReady() { introduction?.setProgress(100); resolveAssetsReady(); await loadingPages; },
-      });
+      let rescueReady = false; // Once onReady completes, the scene has crossed the reveal boundary and must never be silently replayed after a later runtime error.
+      let rescueComplete = false; // The setup loop exits only after the live rescue runner finishes normally.
+      while (!rescueComplete) {
+        status.setupAttempts += 1;
+        try {
+          await runtime.run(rescue, {
+            keepFadeOnFinish: true,
+            async onEnvironmentReady() { introduction?.setProgress(45); },
+            async onActorsReady() { await runtime.preloadOpeningMeeting?.(meeting); introduction?.setProgress(75); },
+            async onReady() { rescueReady = true; introduction?.setProgress(100); resolveAssetsReady(); await loadingPages; },
+          });
+          rescueComplete = true;
+        } catch (error) {
+          const retryIndex = status.setupAttempts - 1; // Maps the failed setup attempt to the authored backoff delay below.
+          const canRetryBeforeReveal = !rescueReady && retryIndex < STARTUP_RETRY_DELAYS_MS.length; // Only pre-reveal failures are safe to repeat automatically.
+          if (!canRetryBeforeReveal) throw error;
+          status.startupRetries += 1;
+          status.lastError = error?.message || String(error);
+          log(`rescue setup attempt ${status.setupAttempts} failed before reveal; retrying: ${status.lastError}`, 'warn');
+          showBootCover();
+          await delay(STARTUP_RETRY_DELAYS_MS[retryIndex]);
+        }
+      }
       status.phase = 'hunundi-room';
       status.lastScene = meeting.title;
       let finalDialogueContinued = false; // Scene cleanup alone must not complete an opening that skipped its final dialogue.
@@ -346,14 +417,22 @@
       });
       if (!finalDialogueContinued) throw new Error('Opening ended before Hunundi’s final dialogue was continued.');
       await runtime.placeOutsideTemple?.();
+      clearStartupFailure();
       status.phase = 'complete';
       log('opening sequence complete; awaiting the farm introduction');
       return true;
     } catch (error) {
-      status.phase = 'error';
       status.lastError = error?.message || String(error);
+      const requiredOpeningStillPending = !options.replay && readProgress(profile) !== 'complete'; // Required fresh-world openings may never reveal ordinary town gameplay as an error fallback.
+      status.phase = requiredOpeningStillPending ? 'blocked' : 'error';
+      status.pending = requiredOpeningStillPending;
       log('opening sequence failed: ' + status.lastError, 'error');
-      clearBootCover();
+      if (requiredOpeningStillPending) {
+        showBootCover();
+        showStartupFailure(profile, status.lastError);
+      } else {
+        clearBootCover();
+      }
       return false;
     } finally {
       introduction?.cancel();
