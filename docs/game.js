@@ -13207,7 +13207,7 @@
       // fill-level mesh registry, and the open-trough panel) lives in
       // window.FarmTroughs — see docs/js/farm-troughs.js.
       function synthesizeBarnInteriorMapData(mapId) {
-        return window.FarmTroughs.synthesizeBarnInteriorMapData(mapId);
+        return window.FarmTroughs.synthesizeConnectedBarnInteriorMapData(mapId);
       }
 
       async function buildMineLadderMesh() {
@@ -17861,6 +17861,7 @@
         window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.crop || 6, `harvested ${data.label}`);
         const msg = `Harvested ${window.LootRolling.starRatingText(stars)} ${data.emoji} ${data.label}${amount > 1 ? ` ×${amount}` : ''}!`;
         tile.crop = CropType.NONE;
+        tile.fertilized = false; // Fertilizer is consumed by this harvest, never carried into the next planting.
         tile.cropAge = 0;
         tile.cropReady = false;
         tile.stress = '';
@@ -24641,6 +24642,7 @@
       // in js/weather-fx.js — call via window.WeatherFX.*.
 
       function tickCropDay() {
+        window.FarmProduction?.irrigate(grid, calendar, RAIN_RATE, true); // Analytic irrigation handles sleep/day skips before crops evaluate their water.
         for (let row = 0; row < ROWS; row++) {
           for (let col = 0; col < COLS; col++) {
             const tile = grid[row][col];
@@ -24651,7 +24653,7 @@
             tile.stress = ditchStress || (mul < 0.15 ? (tile.water < data.idealMin ? 'too dry' : 'waterlogged')
                         : mul < 0.6  ? (tile.water < data.idealMin ? 'dry'     : 'too wet')
                         : '');
-            tile.cropAge += mul;
+            tile.cropAge += mul * (tile.fertilized ? 1.25 : 1); // Compost improves one crop cycle without overriding water stress.
             tile.cropReady = tile.cropAge >= data.growDays;
           }
         }
@@ -29624,9 +29626,15 @@
       resizeCanvas();
       refreshActionBar();
       window.HudUpdate.refreshItemScroll();
+      window.FarmWorldSettings.init({ getPlayerData: () => _playerData, isFarmOwner, showToast, debugLog });
+      window.FarmProduction.init({ getPlayerData: () => _playerData, calendar, inventory, ITEM_DEFS, cropData, COLS, ROWS, TileType, MAX_WATER,
+        scene, worldObjects, hasFarmPermission, isFarmOwner, showToast, debugLog, getGrid: () => grid,
+        loadStorage: _loadWorldStorage, saveStorage: _saveWorldStorage, consumeInput: consumeProcessingInput,
+        surfaceY: farmSurfaceYAtWorld, markOutline: _markOutline,
+        saveFarmLayout: window.FarmEditor.saveFarmLayout, saveMemberWorldData });
       try { initWorldObjects(); } catch(e) { console.error('initWorldObjects:', e); }
       // Apply saved object positions and furniture after world objects are created
-      try { window.FarmEditor.applyFarmLayoutObjects(window.FarmEditor.loadFarmLayout()); } catch(e) { console.error('applyFarmLayoutObjects:', e); }
+      try { window.FarmEditor.applyFarmLayoutObjects(window.FarmEditor.loadFarmLayout()); window.FarmProduction.load(window.FarmEditor.loadFarmLayout()?.productionBuildings || []); } catch(e) { console.error('applyFarmLayoutObjects:', e); }
       // Transition spots + shared NPC routes from the map editor
       try { initWorldTravel(window.FarmEditor.loadFarmLayout()); } catch(e) { console.error('initWorldTravel:', e); }
       // Ensure a farm→town transition always exists even without map editor data
@@ -29704,7 +29712,8 @@
         }
         const _worldLayout = window.FarmEditor.loadFarmLayout();
         if (_worldLayout) window.FarmEditor.applyFarmLayoutToGrid(_worldLayout, { refreshVisuals: true });
-        window.FarmEditor.applyFarmLayoutObjects(_worldLayout); // repositions again if THIS world saved custom crate positions
+        window.FarmEditor.applyFarmLayoutObjects(_worldLayout);
+        window.FarmProduction.load(_worldLayout?.productionBuildings || []); // repositions again if THIS world saved custom crate positions
         // Seed a starter bed in the farmhouse for a brand-new world — sleepInBed()
         // (see getInteriorInteractableAt) needs somewhere to sleep, and a fresh
         // player has no bed item in inventory yet to buy+place one themselves.

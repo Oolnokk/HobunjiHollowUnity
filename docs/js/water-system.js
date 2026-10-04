@@ -240,6 +240,8 @@
       }
     }
 
+    if (!decayOnly && targetGrid === deps.getGrid()) window.FarmProduction?.irrigate(targetGrid, calendar, deps.RAIN_RATE); // Meter tank water into connected farm trenches before ordinary flow.
+
     // Pass 2: cross-tile flow — process south→north for southward bias
     const dirs = [
       { dc:  0, dr:  1 },  // south

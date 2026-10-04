@@ -119,6 +119,7 @@
       list.appendChild(row);
     });
 
+    window.FarmProduction?.renderShop(list, deps);
     const additions = Object.entries(_barnAdditions()).filter(([, def]) => window.ConditionRegistry.entryEligible(def, world));
     if (additions.length) {
       const additionHdr = document.createElement('div');

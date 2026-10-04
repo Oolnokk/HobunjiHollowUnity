@@ -68,6 +68,26 @@
     return { schema: 'hobunji_building_interior.v1', id: mapId, name: (BARN_TIERS[barn.tier]?.label || 'Barn') + ' Interior', cols, rows, exits, colliders: [], vendorZones: [], floor, furniture, npcStations: [] };
   }
 
+  function synthesizeConnectedBarnInteriorMapData(mapId) {
+    const rooms = window.FarmBuildings.connectedBarnRooms(mapId.slice('map_i_barn_'.length)); // Connected little/medium barns act as rooms while retaining their own trough assignments.
+    if (rooms.length < 2) return window.FarmTroughs.synthesizeBarnInteriorMapData(mapId);
+    const maps = rooms.map(barn => ({ barn, map: window.FarmTroughs.synthesizeBarnInteriorMapData('map_i_barn_' + barn.id) })).filter(entry => entry.map); // Includes each room's existing incubator additions.
+    const originCol = Math.min(...maps.map(entry => entry.barn.col - (entry.map.farmBarnOriginShift?.col || 0) / 2)); // Union origin accounts for west/north incubator wings.
+    const originRow = Math.min(...maps.map(entry => entry.barn.row - (entry.map.farmBarnOriginShift?.row || 0) / 2)); // Interior cells use the established two-cells-per-farm-tile scale.
+    const merged = { ...maps[0].map, id: mapId, name: 'Connected Barn Rooms', cols:0, rows:0, floor:[], furniture:[], exits:[], npcStations:[], farmBarnRoomOffsets:{} }; // One contiguous floor union produces no internal wall collisions.
+    for (const { barn, map } of maps) {
+      const col = (barn.col - originCol) * 2 - (map.farmBarnOriginShift?.col || 0), row = (barn.row - originRow) * 2 - (map.farmBarnOriginShift?.row || 0); // Room-local map to merged interior coordinates.
+      merged.farmBarnRoomOffsets[barn.id] = { col, row };
+      merged.cols = Math.max(merged.cols, col + map.cols); merged.rows = Math.max(merged.rows, row + map.rows);
+      merged.floor.push(...map.floor.map(([x,z]) => [x+col,z+row]));
+      merged.furniture.push(...map.furniture.map(item => ({ ...item, id:item.id + '_' + barn.id, col:item.col+col,row:item.row+row })));
+      merged.exits.push(...map.exits.map(exit => ({ ...exit, id:exit.id+'_'+barn.id,tiles:(exit.tiles||[]).map(([x,z])=>[x+col,z+row]) })));
+    }
+    window.BarnIncubator?.setInteriorRoomOffsets?.(mapId, merged.farmBarnRoomOffsets);
+    return merged;
+  }
+
+
   // Recomputes and applies a trough's "Fodder Fill Level" liquidSurface
   // part (see trough.json) from its live contents — level = filled slots /
   // TROUGH_CAPACITY, colored green (plant-only), pink (meat-only), or brown
@@ -356,6 +376,7 @@
   window.FarmTroughs = {
     init,
     synthesizeBarnInteriorMapData,
+    synthesizeConnectedBarnInteriorMapData,
     registerMesh,
     refreshVisual,
     troughSlotCount,
@@ -376,7 +397,7 @@
   'use strict';
   if (window.LivestockNursery) return;
   const nurserySrc = 'js/livestock-nursery.js?v=20260917harvest1';
-  const bridgeSrc = 'js/livestock-nursery-install-bridge.js?v=20261002h4cd3b64';
+  const bridgeSrc = 'js/livestock-nursery-install-bridge.js?v=20261004h6b5ae9e';
 
   if (document.readyState === 'loading') {
     document.write(`<script src="${nurserySrc}"><\/script>`);

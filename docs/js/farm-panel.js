@@ -5,7 +5,7 @@
   // training is rendered here directly instead of post-processing whatever
   // markup the core renderer happened to create. During ordinary index.html
   // parsing this keeps the core synchronous, just like the former single file.
-  const CORE_SRC = 'js/farm-panel-core.js?v=20260923windowtrim1';
+  const CORE_SRC = 'js/farm-panel-core.js?v=20261004hd11e2e2';
 
   let stableDeps = null;
   let expandedStableId = null;

@@ -529,6 +529,7 @@
       const render = entry._exteriorRenderRect; // Window placement and the cut share this exact generated Highland footprint.
       const entrances = (entry.features || []).filter(f => f.type === 'entrance' && !f.invalid);
       const buildOpts = {
+        farmNaturalColors: window.FarmWorldSettings?.current(),
         axisOverride: axis, wallBuilder: deps.houseWallBuilder, wbUsePlaceholder: true, wbOpts: _wbDefaults,
         windowCuts: window.HouseWindowLinkage?.getExteriorWindowCuts?.(render) || [], // Linked daylight windows subtract their full frame silhouettes before exterior WallBuilder bricks are generated.
         doorCuts: entrances.map(f => {
@@ -547,11 +548,13 @@
         const { col, row } = _featureGlobalTile(entry, f);
         if (f.type === 'entrance') {
           const tunnel = HousePieceGen.buildEntryTunnelGroup(THREE, col, row, f.side, {
+            farmNaturalColors: window.FarmWorldSettings?.current(),
             wallBuilder: deps.houseWallBuilder, wbUsePlaceholder: true, wbOpts: _wbDefaults, ..._faceMats(),
           });
           entry._mesh.add(tunnel);
         } else if (f.type === 'chimney') {
           const chimney = HousePieceGen.buildChimneyGroup(THREE, col, row, {
+            farmNaturalColors: window.FarmWorldSettings?.current(),
             wallBuilder: deps.houseWallBuilder, wbUsePlaceholder: true, wbOpts: _wbDefaults, ..._faceMats(),
           });
           entry._mesh.add(chimney);
@@ -566,6 +569,7 @@
       const rect = _partialExtensionRect(e, built);
       if (!rect || rect.w <= 0 || rect.h <= 0) return;
       const mesh = HousePieceGen.buildGroup(THREE, rect.col, rect.col + rect.w - 1, rect.row, rect.row + rect.h - 1, {
+        farmNaturalColors: window.FarmWorldSettings?.current(),
         axisOverride: e.axis, wallBuilder: deps.houseWallBuilder, wbUsePlaceholder: true, wbOpts: _wbDefaults, ..._faceMats(),
       });
       deps.scene.add(mesh);
@@ -575,6 +579,7 @@
       const piece = _crossGablePiece(join, built);
       if (!piece) return;
       const mesh = HousePieceGen.buildGroupFromPiece(THREE, piece, 0, 0, {
+        farmNaturalColors: window.FarmWorldSettings?.current(),
         wallBuilder: null, ..._faceMats(),
       });
       mesh.userData.generatedCrossGable = true;
