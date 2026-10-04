@@ -224,7 +224,7 @@
     button('Close', () => modal.remove());
     const debug = document.createElement('details'); // Mobile-readable state; contains the most recent feature change.
     const heading = document.createElement('summary'); heading.textContent = 'Production diagnostics'; debug.append(heading);
-    const text = document.createElement('pre'); text.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere'; text.textContent = JSON.stringify({ mostRecentChange: 'World farm specializations, tiered persistent production queues and natural building colors.', worldTime: now(), building: serialize().find(record => record.id === id), lastError }, null, 2); debug.append(text); panel.append(debug);
+    const text = document.createElement('pre'); text.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere'; text.textContent = JSON.stringify({ mostRecentChange: 'Farm settings now load before onboarding; day-one water simulation no longer reads the live grid before initialization.', worldTime: now(), building: serialize().find(record => record.id === id), lastError }, null, 2); debug.append(text); panel.append(debug);
     modal.append(panel); document.body.append(modal);
   }
   function connectedCrops(entry, grid) {

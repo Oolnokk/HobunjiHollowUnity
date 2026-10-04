@@ -248,6 +248,8 @@
   <script src="js/local-save-folder.js?v=20261002h1b411a3"></script>
   <!-- Onboarding overlay -->
   <link rel="stylesheet" href="onboarding.css?v=20260921preworldsky1">
+  <script src="config/farm-specializations.js?v=20261004farm1"></script>
+  <script src="js/farm-world-settings.js?v=20261004farm1"></script>
   <script src="onboarding.js?v=20261004h57cf5fa"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
   <script src="js/combat/resource-system.js?v=20261001quickdebuff2"></script>
@@ -372,9 +374,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmAnimals.init(...) during its own setup. -->
-  <script src="config/farm-specializations.js?v=20261004farm1"></script>
-  <script src="js/farm-world-settings.js?v=20261004farm1"></script>
-  <script src="js/farm-production.js?v=20261004farm1"></script>
+  <script src="js/farm-production.js?v=20261004h120d988"></script>
   <script src="js/world-meta-store.js?v=20260930livestockwalk1"></script>
   <script src="js/farm-animals.js?v=20260930livestockwalk1"></script>
   <!-- Farm buildings: barn placement/construction/demolition
@@ -605,7 +605,7 @@
        createInitialGrid() call (which itself calls recomputeWater()
        synchronously to settle day-one water levels), well before most of
        the other window.<Namespace>.init(...) calls below. -->
-  <script src="js/water-system.js?v=20261004hb6fcbc8"></script>
+  <script src="js/water-system.js?v=20261004h2a2b524"></script>
   <!-- Weather rolling, day/night + weather lighting overlay, and trench
        water particle/paddy ripple FX (window.WeatherFX) — reads
        window.CalendarSystem at call time (already global by then), so load

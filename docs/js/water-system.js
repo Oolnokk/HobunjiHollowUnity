@@ -240,7 +240,7 @@
       }
     }
 
-    if (!decayOnly && targetGrid === deps.getGrid()) window.FarmProduction?.irrigate(targetGrid, calendar, deps.RAIN_RATE); // Meter tank water into connected farm trenches before ordinary flow.
+    if (!decayOnly) window.FarmProduction?.irrigate(targetGrid, calendar, deps.RAIN_RATE); // Production owns the farm-grid gate; initial terrain generation must not read the still-uninitialized live grid.
 
     // Pass 2: cross-tile flow — process south→north for southward bias
     const dirs = [

@@ -2,6 +2,25 @@
 const assert = require('node:assert/strict'); // Behavior assertions use the actual runtime modules.
 const fs = require('node:fs'); // Loads the same authored configuration as the browser.
 const vm = require('node:vm'); // Isolated world with deterministic inventory/calendar/storage.
+// Exercise the actual HTML/entrypoint ordering without creating a WebGL renderer.
+{
+ const html = fs.readFileSync('docs/index.html','utf8'); // Production page determines which farm dependencies are available before onboarding.
+ const startup = { console, URL, location:{href:'https://example.test/docs/index.html'} }; // Parser-time browser globals used by the existing onboarding loader.
+ startup.window = startup;
+ startup.document = { currentScript:{src:'https://example.test/docs/onboarding.js'}, write(markup) { // Follow the core script generated synchronously by document.write.
+   for (const match of markup.matchAll(/<script src="([^"]+)"/g)) {
+     const file = new URL(match[1]).pathname.replace(/^\/docs\//,'docs/'); // Same sibling URL resolution used in deployment.
+     if (file === 'docs/onboarding-core.js') vm.runInContext(fs.readFileSync(file,'utf8'), startup, {filename:file});
+   }
+ } };
+ vm.createContext(startup);
+ for (const match of html.matchAll(/<script[^>]+src="([^"]+)"/g)) {
+   const file = 'docs/'+match[1].split('?')[0]; // Honor classic script order up to the onboarding entrypoint.
+   if (['docs/config/farm-specializations.js','docs/js/farm-world-settings.js','docs/onboarding.js'].includes(file)) vm.runInContext(fs.readFileSync(file,'utf8'),startup,{filename:file});
+   if (file === 'docs/onboarding.js') break;
+ }
+ assert.equal(typeof startup.HobunjiOnboarding.init,'function','onboarding initializes with farm settings already loaded');
+}
 const values = new Map(); // Browser localStorage stand-in shared by settings and saved state.
 const inventory = { needlegrain: 8, rawMeat: 4, rawFish: 4, meal: 2 }; // Queue inputs, including invalid quantities/tags.
 const itemDefs = { needlegrain: {label:'Needlegrain',tags:['Grain'],cat:'crop'}, rawMeat:{label:'Uumkao Meat',tags:['Meat'],sellPrice:8}, rawFish:{label:'Fish',tags:['Fish'],sellPrice:7}, meal:{label:'Meal',tags:['Food','Meal'],cat:'meal'} }; // Live recipe database for actual resolver execution.
@@ -21,6 +40,9 @@ context.AuthoredFurniture={load:async()=>({parts:[]}),buildGroup:emptyMesh};
 vm.createContext(context);
 const load = file=>vm.runInContext(fs.readFileSync(file,'utf8'),context,{filename:file}); // Executes real source, without assertions against source text.
 load('docs/config/farm-specializations.js');load('docs/js/farm-world-settings.js');load('docs/js/item-processing.js');load('docs/js/farm-production.js');load('docs/js/water-system.js');
+// Day-one terrain generation supplies a provisional grid before the live grid binding exists.
+context.WaterSystem.init({TileType:tileTypes,clamp:(value,min,max)=>Math.max(min,Math.min(max,value)),calendar,getGrid:()=>{throw new ReferenceError('live grid is not initialized');},getTownGrid:()=>null,ROWS:20,COLS:20,MAX_WATER:3,RAIN_RATE:.02,isSolid:()=>false,markTileDirty(){}});
+assert.doesNotThrow(()=>context.WaterSystem.recomputeWater(false,grid,20,20),'startup water simulation must not request the live farm grid');
 const settings=context.FarmWorldSettings, production=context.FarmProduction; // Actual exported authorities.
 for(let i=0;i<100;i++) assert(!/iron/i.test(settings.randomName()),'random lore-friendly names avoid iron');
 assert.equal(settings.normalize({wood:'#ff0000',stone:'#00ff00',specialization:'bogus'}).wood,'#7d7355');
