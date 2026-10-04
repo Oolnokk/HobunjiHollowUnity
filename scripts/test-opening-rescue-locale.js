@@ -38,8 +38,10 @@ assert.equal(layouts.get('map_southern_cloud_forest').sentinel,true,'mini genera
 assert.equal(disposed.length,5);
 assert.equal(generator.zoneSettings('map_southern_cloud_forest').preset,'greatBasin');
 assert.equal(generator.generationTileScale,2);
-const cleanup = { temporaryWildernessArea:rescue.mapId, liveMode:true, releaseCinematicRegion(){}, liveLock:null, _disposeZoneScene:id=>disposed.push(id), _zoneLayouts:layouts, document:{body:{classList:{remove(){}}}}, _arcContainerEl:null, clearPovShot(){}, cutsceneLeaveButton:null }; // Execute the exact finish/failure cleanup used by the cinematic runtime.
+let cameraRestores = 0;
+const cleanup = { restorePreviewCameras:()=>cameraRestores++, temporaryWildernessArea:rescue.mapId, liveMode:true, releaseCinematicRegion(){}, liveLock:null, _disposeZoneScene:id=>disposed.push(id), _zoneLayouts:layouts, document:{body:{classList:{remove(){}}}}, _arcContainerEl:null, clearPovShot(){}, cutsceneLeaveButton:null }; // Execute the exact finish/failure cleanup used by the cinematic runtime.
 vm.runInNewContext(game.slice(game.indexOf('        const releaseLiveLock ='),game.indexOf('        const restoreLiveGameplay ='))+'\nreleaseLiveLock();releaseLiveLock();',cleanup);
+assert.equal(cameraRestores,1,'temporary camera overrides restore once on completion or failure');
 assert(!layouts.has(rescue.mapId),'cleanup releases temporary terrain data');
 assert.equal(disposed.length,6,'temporary scene disposal is idempotent');
 assert.equal(layouts.get('map_southern_cloud_forest').sentinel,true,'cleanup preserves the normal world zone');

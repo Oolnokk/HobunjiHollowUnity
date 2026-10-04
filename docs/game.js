@@ -20418,58 +20418,17 @@
         return floor;
       }
       window.DialogueCameraFraming?.init({ viewport: threeContainer, panel: _npcDialogueEl }); // Shared live panel geometry drives dialogue-safe head composition.
-      let _cinematicCameraBlend = null; // Outgoing pose used to blend authored dialogue/cutscene camera changes instead of snapping.
-      const _cinematicDesiredPosition = new THREE.Vector3(); // Reused every frame while a cinematic shot is active to avoid per-frame allocation.
-      const _cinematicDesiredTarget = new THREE.Vector3();
-      const _cinematicLookTarget = new THREE.Vector3();
       // Where the camera was ACTUALLY looking last frame. Cinematic blends
       // start from this rather than camTargetX/Y/Z: camTargetY is ground
       // height (the portrait/targetYOffset look height is added later), so
       // blending from it dipped the view toward the floor before rising back
       // up to the NPC's face on every authored dialogue shot.
       const _lastCameraLookPoint = new THREE.Vector3(camTargetX, camTargetY, camTargetZ);
+      // Authored camera interpolation now lives in the shared camera runtime, also used by the Director.
+      const cinematicBlend = window.CinematicCameraRuntime.createBlendController({ camera, lookPoint: _lastCameraLookPoint, safePosition: occlusionSafeCameraPosition, aspect: cameraContainerAspect, framing: (view, shot) => window.DialogueCameraFraming?.apply(view, shot.dialogueFraming !== false && !!(shot.trackSpeaker || shot.targetNpcId || shot.targetProvider || shot.dialogueFraming)) }); // Retains one blend clock across consecutive lines of the same shot.
       function applyAuthoredCinematicCamera() {
-        const record = window.CinematicCameraRuntime?.activeRecord?.();
-        const shot = record?.camera;
-        if (!shot || window.__mapEditorOrbitActive) { _cinematicCameraBlend = null; return false; }
-        const blendKey = `${record.areaId}:${shot.id}:${record.activatedAt}`;
-        if (!_cinematicCameraBlend || _cinematicCameraBlend.key !== blendKey) {
-          _cinematicCameraBlend = {
-            key: blendKey,
-            startedAt: performance.now(),
-            startPosition: camera.position.clone(),
-            startTarget: _lastCameraLookPoint.clone(),
-            startFov: camera.fov,
-          };
-        }
-        const durationMs = Math.max(0, Number(shot.blendSeconds) || 0) * 1000;
-        const rawT = durationMs > 0
-          ? window.FormatUtils.clamp((performance.now() - _cinematicCameraBlend.startedAt) / durationMs, 0, 1)
-          : 1;
-        const t = rawT * rawT * (3 - 2 * rawT);
-        const shotPosition = window.CinematicCameraRuntime?.resolvedPosition?.() || shot.position; // Procedural actor POV cameras follow live head position through the shared cinematic blend.
-        const desiredPosition = _cinematicDesiredPosition.set(
-          Number(shotPosition?.x) || 0,
-          Number(shotPosition?.y) || 0,
-          Number(shotPosition?.z) || 0
-        );
-        const resolvedTarget = window.CinematicCameraRuntime?.resolvedTarget?.();
-        const desiredTarget = _cinematicDesiredTarget.set(
-          Number(resolvedTarget?.x ?? shot.target?.x) || 0,
-          Number(resolvedTarget?.y ?? shot.target?.y) || 0,
-          Number(resolvedTarget?.z ?? shot.target?.z) || 0
-        );
-        camera.position.lerpVectors(_cinematicCameraBlend.startPosition, desiredPosition, t);
-        const lookTarget = _cinematicLookTarget.copy(_cinematicCameraBlend.startTarget).lerp(desiredTarget, t);
-        const safePosition = occlusionSafeCameraPosition(lookTarget.x, lookTarget.y, lookTarget.z, camera.position.x, camera.position.y, camera.position.z); // Authored and procedural shots share the gameplay boom.
-        camera.position.set(safePosition.x, safePosition.y, safePosition.z);
-        camera.lookAt(lookTarget);
-        _lastCameraLookPoint.copy(lookTarget);
-        camera.fov = THREE.MathUtils.lerp(_cinematicCameraBlend.startFov, Number(shot.fovDeg) || 42, t);
-        camera.aspect = cameraContainerAspect();
-        camera.updateProjectionMatrix();
-        window.DialogueCameraFraming?.apply(camera, shot.dialogueFraming !== false && !!(shot.trackSpeaker || shot.targetNpcId || shot.targetProvider || shot.dialogueFraming));
-        return true;
+        if (window.__mapEditorOrbitActive) { cinematicBlend.reset(); return false; }
+        return cinematicBlend.apply();
       }
 
       // threeContainer's client size, re-read only after it may have changed.
@@ -30121,6 +30080,7 @@
         const clearPovShot = () => { if (povShot?.source?.walker?.avatarGroup) povShot.source.walker.avatarGroup.visible = povShot.visible; povShot = null; };
         let temporaryWildernessArea = null; // A generated mini-wilderness is disposed after its actors and gameplay hierarchy are restored.
         let releaseCinematicRegion = null; // Wilderness residency pin is released by the existing scene cleanup owner.
+        let restorePreviewCameras = null; // Restores authored map definitions after temporary Director overrides.
         let furniturePlayback = null; // Shared Director/game transform session restores map furniture on finish or failure.
         const entities = new Map(); // Temporary cinematic actor rigs also belong to the setup-failure cleanup path.
         const previousBuildingMapId = _currentBuildingMapId; // Restores building context as well as the active area.
@@ -30141,7 +30101,7 @@
         clearTargetHighlights();
         const previousLeaveDisplay = cutsceneLeaveButton?.style.display; // Restores the original Leave-button presentation on success/error.
         if (cutsceneLeaveButton) cutsceneLeaveButton.style.display = 'none';
-        const releaseLiveLock = () => { releaseCinematicRegion?.(); if (temporaryWildernessArea && liveMode) { _disposeZoneScene(temporaryWildernessArea); _zoneLayouts.delete(temporaryWildernessArea); temporaryWildernessArea = null; } liveLock?.release?.(); document.body?.classList.remove('authored-cutscene'); _arcContainerEl?.classList.remove('arc-hidden'); clearPovShot(); if (cutsceneLeaveButton) cutsceneLeaveButton.style.display = previousLeaveDisplay; }; // Shared cleanup for normal completion and pre-stage load failures.
+        const releaseLiveLock = () => { restorePreviewCameras?.(); restorePreviewCameras = null; releaseCinematicRegion?.(); if (temporaryWildernessArea && liveMode) { _disposeZoneScene(temporaryWildernessArea); _zoneLayouts.delete(temporaryWildernessArea); temporaryWildernessArea = null; } liveLock?.release?.(); document.body?.classList.remove('authored-cutscene'); _arcContainerEl?.classList.remove('arc-hidden'); clearPovShot(); if (cutsceneLeaveButton) cutsceneLeaveButton.style.display = previousLeaveDisplay; }; // Shared cleanup for normal completion and pre-stage load failures.
         const restoreLiveGameplay = () => {
           if (!liveMode) return;
           if (runtimeOptions.placePlayerAtFinalPosition && currentArea === previousArea) {
@@ -30443,6 +30403,7 @@
         for (const transform of payload.furnitureTransforms || []) furniturePlayback?.set({ ...transform, duration: 0 });
         if (payload.cameraTargetActorId && entities.get(payload.cameraTargetActorId)?.root) idleCameraTarget = entities.get(payload.cameraTargetActorId).root; // Wide rescue framing follows the actual cinematic player, including its collapse/step.
         activeCameraTarget = idleCameraTarget;
+        if (payload.cinematicCameras?.length) { const cameras = window.CinematicCameraRuntime.camerasForArea(area); window.CinematicCameraRuntime.registerArea(area, payload.cinematicCameras); restorePreviewCameras = () => { window.CinematicCameraRuntime.deactivate(); window.CinematicCameraRuntime.registerArea(area, cameras); }; } // Director camera overrides apply to this preview.
         let cinematicCameraReady = !payload.cinematicCameraFromStageId; // Optional stage gate preserves the first dialogue angle before easing into a fixed establishing shot.
         if (cinematicCameraReady && (payload.cinematicCameraId || payload.cinematicCamera)) {
           const speaker = entities.get((payload.stages || []).find(stage => stage.type === 'talk')?.speakerId); // Gives the opening fade the same wall shot as later dialogue.
@@ -30575,6 +30536,8 @@
           if (!running) return;
           running = false;
           if (dialogueOpen) closeLine();
+          for (const actor of entities.values()) if (actor.rec?.id === 'banubu') window.BanubuQuestline?.onDialogueNode?.(null,{npc:actor.rec,walker:actor.walker,ended:true});
+          window.CinematicCameraRuntime?.deactivate?.();
           cutscenePreviewActive = false;
           cutscenePreviewZoomPercent = 100; // Never leak an authored zoom into normal gameplay afterward.
           cutscenePreviewDialogueSpeaker = null;
@@ -30615,9 +30578,9 @@
             activeCameraTarget = idleCameraTarget;
           } else if (!options.preserveCamera) {
             activeCameraMode = entity?.kind === 'creature' ? dlgModeKeyCreature : dlgModeKey;
-            if (entity?.kind === 'creature' && payload.randomCreatureDialogueAngles) {
+            if (entity?.kind === 'creature' && payload.randomCreatureDialogueAngles && activeCameraTarget?.position !== entity.root.position) {
               const yaw = THREE.MathUtils.radToDeg(entity.creature.groupRot || 0); // Creature forward uses the same world yaw as its live rig.
-              window.SCRATCHBONES_CONFIG.game.camera.modes[dlgModeKeyCreature].azimuthDeg = yaw + (Math.random() < .5 ? -1 : 1) * (25 + Math.random() * 35); // New three-quarter angle per line avoids flat side-on silhouettes.
+              window.SCRATCHBONES_CONFIG.game.camera.modes[dlgModeKeyCreature].azimuthDeg = yaw + (Math.random() < .5 ? -1 : 1) * (25 + Math.random() * 35); // New three-quarter angle when the speaking creature changes avoids flat side-on silhouettes.
             }
             activeCameraTarget = { position: (entity || entities.values().next().value)?.root.position || new THREE.Vector3() };
           }
@@ -30641,7 +30604,7 @@
           window.portraitBreathingComposer?.clearExpression(window.DialogueContent?.dialogueSeatId());
           window.portraitBreathingComposer?.setDefaultExpression(window.DialogueContent?.dialogueSeatId(), null);
           _dialogueWalker = null;
-          cutscenePreviewDialogueSpeaker = null;
+          // Preserve the last speaker anchor until the next card chooses a new shot.
           _npcDialogueEl.classList.remove('open');
           _npcDialogueEl.setAttribute('aria-hidden', 'true');
           // Keep the current shot through the next line; action cards select their own views.
@@ -30695,7 +30658,8 @@
             }
           }
           if (stage.visible != null) { const actor = entities.get(stage.actorId); if (actor) actor.root.visible = stage.visible; } // Stage visibility controls doorway entrances and departures.
-          if (povShot && (stage.type === 'talk' || stage.type === 'choice' || stage.cameraMode) && stage.cameraMode !== 'pov') { clearPovShot(); window.CinematicCameraRuntime?.deactivate?.(); }
+          if (povShot && stage.cameraMode && stage.cameraMode !== 'pov') { clearPovShot(); window.CinematicCameraRuntime?.deactivate?.(); }
+          if (stage.cameraId && !stage.cameraMode) { cinematicCameraReady = false; window.CinematicCameraRuntime?.activate?.(area, stage.cameraId, { reason: 'authored-cutscene', targetWalker: entities.get(stage.speakerId || stage.actorId)?.walker }); }
           if (stage.cameraMode === 'establishing') {
             cinematicCameraReady = false;
             window.CinematicCameraRuntime?.deactivate?.();
@@ -30709,7 +30673,7 @@
               const targetProvider = () => { center.set(0, 0, 0); for (const actor of subjects) center.add(actor.root.position); center.multiplyScalar(1 / Math.max(1, subjects.length)); center.y += .6; return center; };
               const offset = stage.cameraOffset || { x: 0, y: 5, z: 8 }; // Authored offset is relative to the followed midpoint.
               const positionProvider = () => position.copy(targetProvider()).add(offset);
-              window.CinematicCameraRuntime?.activate?.(area, { id: `cutscene_follow_${subjects.map(actor => actor.rec?.id || '').join('_')}`, positionProvider, targetProvider, fovDeg: stage.fovDeg || 55, blendSeconds: stage.blendSeconds ?? 1.25, dialogueFraming: false });
+              window.CinematicCameraRuntime?.activate?.(area, { id: `cutscene_follow_${subjects.map(actor => actor.rec?.id || '').join('_')}`, shotKey: JSON.stringify([stage.followActorIds || [stage.actorId], offset]), positionProvider, targetProvider, fovDeg: stage.fovDeg || 55, blendSeconds: stage.blendSeconds ?? 1.25, dialogueFraming: false });
             }
           } else if (stage.cameraMode === 'pov') {
             clearPovShot();
@@ -30730,7 +30694,7 @@
               povShot = { source, visible: source.walker.avatarGroup.visible, targetProvider };
               source.walker.avatarGroup.visible = Number(stage.povBack) > 0 ? povShot.visible : false;
               cinematicCameraReady = false;
-              window.CinematicCameraRuntime?.activate?.(area, { id: `cutscene_pov_${stage.actorId || stage.speakerId}_${stage.targetActorId || stage.addressedActorId}_${stage.povBack || 0}_${stage.povSide || 0}_${stage.povHeight || 0}_${stage.fovDeg || 65}`, position: positionProvider(), target: targetProvider(), positionProvider, targetProvider, fovDeg: Number(stage.fovDeg) || 65, blendSeconds: Number(stage.blendSeconds) || .35 });
+              window.CinematicCameraRuntime?.activate?.(area, { id: `cutscene_pov_${stage.actorId || stage.speakerId}_${stage.targetActorId || stage.addressedActorId}_${stage.povBack || 0}_${stage.povSide || 0}_${stage.povHeight || 0}_${stage.fovDeg || 65}`, shotKey: JSON.stringify(stage.targetWorld || null), position: positionProvider(), target: targetProvider(), positionProvider, targetProvider, fovDeg: Number(stage.fovDeg) || 65, blendSeconds: stage.blendSeconds == null ? .35 : Math.max(0, Number(stage.blendSeconds) || 0) });
             }
           } else if (stage.cameraMode === 'npcRelative') {
             cinematicCameraReady = false;
@@ -30740,8 +30704,9 @@
             activeCameraTarget = { position: entities.get(stage.actorId)?.root.position }; // The existing NPC-relative dialogue shot follows the arriving walker.
           } else if (stage.cameraMode === 'wall') {
             cinematicCameraReady = true;
-            window.CinematicCameraRuntime?.activate?.(area, payload.cinematicCameraId, { reason: 'authored-cutscene', targetWalker: entities.get(stage.actorId || stage.speakerId)?.walker });
+            window.CinematicCameraRuntime?.activate?.(area, payload.cinematicCamera || payload.cinematicCameraId, { reason: 'authored-cutscene', targetWalker: entities.get(stage.actorId || stage.speakerId)?.walker });
           }
+          if (stage.banubuPresentation) { const actor = entities.get(stage.speakerId || stage.actorId); if (actor?.walker) window.BanubuQuestline?.onDialogueNode?.({ id:stage.id, banubuPresentation:stage.banubuPresentation }, { npc:actor.rec, walker:actor.walker }); } // Director previews retain authored Banubu visuals without quest transaction nodes.
           if (stage.type === 'camera') { setTimeout(() => continueTo(getResolvedNext(stage.id, stage.next)), Math.max(0, Number(stage.duration) || 0) * 1000); return; }
           if (stage.type === 'furniture') { furniturePlayback?.set(stage); setTimeout(() => continueTo(getResolvedNext(stage.id, stage.next)), Math.max(0, Number(stage.duration) || 0) * 1000); return; }
           if (stage.type === 'move') return runMove(stage);
