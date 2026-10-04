@@ -13,6 +13,7 @@ assert.match(dual, /record\.material\.visible = false/, 'original weapon materia
 assert.match(dual, /makeTranslation\(0, -DUPLICATE_SEPARATION, 0\)/, 'main duplicate uses one side of the plane-local axis that maps to weapon-parent local Z');
 assert.match(dual, /offRoot\.position\.set\(0, DUPLICATE_SEPARATION \* influence, 0\)/, 'offhand duplicate uses the equal opposite offset');
 assert.match(dual, /delayedParentMatrix[\s\S]*MAIN_HAND_LAG_MS/, 'main root replays a delayed copy of original transforms');
+assert.match(dual, /current\.plane\.updateWorldMatrix\?\.\(true, false\)[\s\S]*current\.offRoot\.updateMatrixWorld\?\.\(true\)[\s\S]*current\.mainRoot\.updateMatrixWorld\?\.\(true\)/, 'duplicate world matrices are current before either hand reads its weapon socket');
 assert.match(dual, /transformSocketForHand/, 'dual visual layer exposes per-hand socket transforms');
 assert.match(driver, /transformSocketForHand\?\.\(record, 'right'/, 'right hand follows the lagged main duplicate');
 assert.match(driver, /transformSocketForHand\?\.\(record, 'left'/, 'left hand follows the offhand duplicate');
@@ -23,4 +24,4 @@ assert.match(grips, /if \(dual\.checked\) editorSecondaryPoses\[phase\]\.enabled
 assert.match(grips, /if \(enabled\.checked\) editorSecondaryPoses\[phase\]\.dualWield = false/, 'editor 2H switches off Dual Wield');
 assert(held.includes('dual-wield-weapon-visuals.js'), 'held-action bootstrap loads dual-wield visuals');
 assert.match(editor, /loadEditorAnimationGrip\?\.\(\{ sequence: preset\.sequence \|\| 'attack', poses: anim\.poses \}\)/, 'switching Actions reloads per-attack hand-mode metadata');
-console.log('dual wield: hidden parent, opposite duplicate offsets, main-hand lag, per-hand sockets, default 2H, and mutually exclusive editor mode PASS');
+console.log('dual wield: hidden parent, opposite duplicate offsets, main-hand lag, live per-hand sockets, default 2H, and mutually exclusive editor mode PASS');
