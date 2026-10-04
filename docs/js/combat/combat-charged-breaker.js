@@ -398,6 +398,15 @@
       if (deps.player.stamina <= 0 && !hasEnhancedStamina) releaseNow(heldSeconds, true);
     }
 
+    function onHoldCancel() {
+      if (startedAt < 0) return;
+      startedAt = -1;
+      debugState.active = false;
+      window.Combat.setWindupProgressTransform?.(FURIOUS_PROGRESS_OWNER, null);
+      clearGlow();
+      window.Combat.deps.cancelWeaponSwingHold();
+    }
+
     function onHoldEnd() {
       if (startedAt < 0) return;
       releaseNow(now() - startedAt, false);
@@ -410,6 +419,7 @@
       onHoldStart,
       onHoldUpdate,
       onHoldEnd,
+      onHoldCancel,
     });
   }
 

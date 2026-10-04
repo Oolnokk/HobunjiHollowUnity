@@ -5074,12 +5074,14 @@
       }
 
       function meleeAttackBodyFacingOverride() {
+        if (Number.isFinite(mobileArchCombatAim?.angle)) return mobileArchCombatAim.angle;
         const alignmentFacing = meleeAttackAlignment?.appliedFacing;
         if (Number.isFinite(alignmentFacing)) return alignmentFacing;
         return Number.isFinite(meleeAttackFacingCommit?.angle) ? meleeAttackFacingCommit.angle : null;
       }
 
       function currentMeleeAimAngle() {
+        if (Number.isFinite(mobileArchCombatAim?.angle)) return mobileArchCombatAim.angle;
         return activeCameraMode === SHOULDER_SURF_MODE ? mouseLookAngle
           : controllerLookActive ? controllerLookAngle
           : (isDesktop && mouseLookActive) ? mouseLookAngle
@@ -5169,6 +5171,7 @@
       }
 
       function currentPlayerAimAngle() {
+        if (Number.isFinite(mobileArchCombatAim?.angle)) return mobileArchCombatAim.angle;
         if (activeCameraMode === SHOULDER_SURF_MODE) return shoulderPerspectiveFacingAngle();
         const target = findAutoTarget();
         return target ? Math.atan2(target.y - player.y, target.x - player.x) : player.angle;
@@ -5257,7 +5260,9 @@
       }
 
       function requestMeleeAttackAlignment(runAttack) {
-        meleeAttackFacingCommit = null; // Every attack owns a fresh heading.
+        const manualArchFacing = mobileArchCombatAim?.angle; // Keeps a touch-stick release heading as the fallback when auto-target finds no eligible enemy.
+        if (Number.isFinite(manualArchFacing)) commitMeleeAttackFacing(manualArchFacing);
+        else meleeAttackFacingCommit = null; // Every non-touch attack owns a fresh heading.
         meleeAttackAlignment?.cancel?.(); // End any older activation before the next activation is allowed to select.
         const target = acquireMeleeAttackTargetLock();
         if (!target) {
@@ -16919,6 +16924,81 @@
       let cardinalHoldTimer = 0;
       let lastMoveAngle = -Math.PI / 2;
       let targetAimAngle = -Math.PI / 2;
+      let mobileArchCombatAim = null; // Live action-arch stick yaw used by ranged fire and melee hold/tap aiming until their release contract is complete.
+      let lastMobileArchCombatAimEvent = { reason: 'not-used', at: 0 }; // Exposed in the mobile-copyable debug snapshot so touch-input failures can be diagnosed without DevTools.
+
+      function invalidateMobileArchAimPerspectiveCache() {
+        // currentPlayerPerspectiveTarget is memoized per render frame. Touch events can
+        // arrive between frame callbacks, so explicitly invalidate it whenever the
+        // action-arch stick changes aim or releases ownership.
+        _cachedPerspectiveTargetAt = -1;
+      }
+
+      function setMobileArchCombatAim(pointerId, angle, action, slot = null) {
+        const normalizedAngle = angleDiff(Number(angle), 0); // Shared world-space yaw consumed by body, melee and ranged aim while this touch owns the arch stick.
+        if (!Number.isFinite(normalizedAngle)) return;
+        mobileArchCombatAim = {
+          pointerId,
+          angle: normalizedAngle,
+          action: action || null,
+          slot: Number(slot) || null,
+          tool: activeTool,
+          released: false,
+        };
+        targetAimAngle = normalizedAngle;
+        facingAngle = normalizedAngle;
+        lastMoveAngle = normalizedAngle;
+        player.angle = normalizedAngle;
+        mouseLookAngle = normalizedAngle;
+        controllerLookAngle = normalizedAngle;
+        if (activeCameraMode === SHOULDER_SURF_MODE) {
+          const baseAzimuthDeg = cameraModeConfig(SHOULDER_SURF_MODE).azimuthDeg ?? 0; // Keeps the screen-center reticle horizontally aligned with the arch-stick yaw in shoulder view.
+          cameraAzimuthOffsetDeg = wrapAzimuthDeg(-(normalizedAngle * 180 / Math.PI) - 90 - baseAzimuthDeg);
+        }
+        lastMobileArchCombatAimEvent = { reason: 'aim', at: Date.now() };
+        invalidateMobileArchAimPerspectiveCache();
+      }
+
+      function clearMobileArchCombatAim(pointerId = null, reason = 'cleared') {
+        if (!mobileArchCombatAim) return;
+        if (pointerId != null && mobileArchCombatAim.pointerId !== pointerId) return;
+        mobileArchCombatAim = null;
+        lastMobileArchCombatAimEvent = { reason, at: Date.now() };
+        invalidateMobileArchAimPerspectiveCache();
+      }
+
+      function releaseMobileArchCombatAim(pointerId) {
+        if (!mobileArchCombatAim || mobileArchCombatAim.pointerId !== pointerId) return;
+        mobileArchCombatAim.released = true;
+        lastMobileArchCombatAimEvent = { reason: 'released', at: Date.now() };
+        // Ranged fire resolves after the input event, during its authored fire
+        // animation. Keep the release yaw latched until that animation stops being
+        // an active shot so projectile and held-weapon visuals cannot snap back to
+        // the camera between finger-up and the actual fire frame. Loads clear now.
+        if (mobileArchCombatAim.tool !== 'ranged' || !window.RangedWeapons?.isPlayerAttacking?.()) {
+          clearMobileArchCombatAim(pointerId, 'release-complete');
+        }
+      }
+
+      function updateMobileArchCombatAimLifecycle() {
+        if (!mobileArchCombatAim?.released) return;
+        if (mobileArchCombatAim.tool === 'ranged' && window.RangedWeapons?.isPlayerAttacking?.()) return;
+        clearMobileArchCombatAim(null, 'release-complete');
+      }
+
+      window.__mobileArchCombatAimDebug = {
+        snapshot: () => ({
+          latestChange: 'Mobile ranged fire and melee attack holds now reuse the action-arch stick for live aiming and commit on finger release.',
+          active: !!mobileArchCombatAim,
+          state: mobileArchCombatAim ? { ...mobileArchCombatAim } : null,
+          lastEvent: { ...lastMobileArchCombatAimEvent },
+          rangedAction: window.RangedWeapons?.playerActionState?.() ? {
+            itemKey: window.RangedWeapons.playerActionState().itemKey,
+            kind: window.RangedWeapons.playerActionState().kind,
+            fired: !!window.RangedWeapons.playerActionState().fired,
+          } : null,
+        }),
+      };
 
       function meleeAttackCurrentlyActive() {
         return player.lunging || (activeTool === 'weapon' && (toolSwingT > 0 || combatSwingHeld));
@@ -17107,6 +17187,7 @@
       }
 
       function updateMovement(dt) {
+        updateMobileArchCombatAimLifecycle();
         updateMeleeAttackFacingCommitLifecycle();
         const viewModeKeyboard = getKeyboardVector();
         const viewModeMoveMagnitude = viewModeKeyboard.active
@@ -19016,11 +19097,24 @@
       // in updateShoulderSurfReticleAim; it is no longer an aim authority.
       // Other camera modes retain their existing ranged-weapon-only behavior.
       function currentPlayerAimRay() {
-        if (activeCameraMode !== SHOULDER_SURF_MODE
+        const mobileAimAngle = mobileArchCombatAim?.angle; // Overrides horizontal camera authority only while a combat action-arch drag owns aim.
+        if (!Number.isFinite(mobileAimAngle) && activeCameraMode !== SHOULDER_SURF_MODE
           && (heldMode !== 'tool' || activeTool !== 'ranged' || !equipmentSlots.ranged)) return null;
         camera.updateMatrixWorld?.();
         _shoulderSurfReticleRaycaster.setFromCamera(_screenCenterNDC, camera);
         const ray = _shoulderSurfReticleRaycaster.ray;
+        if (Number.isFinite(mobileAimAngle)) {
+          const pitch = Math.asin(window.FormatUtils.clamp(ray.direction.y, -1, 1)); // Keeps the camera's vertical aim while the 2D arch stick supplies world-space yaw.
+          const horizontal = Math.cos(pitch); // Converts the retained camera pitch back into a normalized horizontal magnitude for the stick yaw.
+          return {
+            origin: { x: ray.origin.x, y: ray.origin.y, z: ray.origin.z },
+            direction: {
+              x: Math.cos(mobileAimAngle) * horizontal,
+              y: Math.sin(pitch),
+              z: Math.sin(mobileAimAngle) * horizontal,
+            },
+          };
+        }
         return {
           origin: { x: ray.origin.x, y: ray.origin.y, z: ray.origin.z },
           direction: { x: ray.direction.x, y: ray.direction.y, z: ray.direction.z },
@@ -25307,6 +25401,7 @@
             let _selectorDownX = 0, _selectorDownY = 0, _selectorMoved = false; // Used to keep normal touch jitter from selecting an arch entry before a Potion Select tap can resolve as bandaging.
             let _flaskGesture = false, _flaskCanceled = false; // Used by mobile hold-drag-release flask aiming.
             let _claimedInputAction = null; // Physical arch input temporarily owned by a contextual world interaction; prevents the underlying weapon/tool action from firing on release.
+            let _combatAimRelease = false; // True while this arch press is a ranged shot or weapon-slot press that must aim continuously and commit only on release.
             const DRAG_THRESH = 10;
             // Legacy behavior: holding+dragging an action button like a stick used to
             // keep re-firing the action every 120ms for as long as it stayed pushed off
@@ -25367,6 +25462,7 @@
               _cy = rect.top + rect.height / 2;
               _sockR = rect.width * 0.70;
               _drag = false;
+              _combatAimRelease = false;
               _socket = document.createElement('div');
               _socket.className = 'abt-socket';
               _socket.style.left   = _cx + 'px';
@@ -25412,6 +25508,7 @@
               } else {
                 actionHeldDown = true;
                 _pressSlot = _weaponSlotFor(act);
+                _combatAimRelease = Boolean(_pressSlot || (activeTool === 'ranged' && act === 'shoot'));
                 if (_pressSlot) { window.Combat.input.pressStart(_pressSlot); }
               }
             });
@@ -25445,11 +25542,6 @@
               // target whatever the reticle was aimed at on press — no
               // drag-to-aim for these, unlike farm tools.
               if (_heldItemPress) return;
-              // With a weapon equipped, action buttons are tap/hold only — dragging
-              // must never act like a directional stick, otherwise a thumb wobbling
-              // mid-hold reads as an aim-drag, cancels the pending hold ability, and
-              // fires a tap instead. Farm tools still use drag-to-aim as before.
-              if (activeTool === 'weapon') return;
               if (dist > DRAG_THRESH) {
                 const ang = Math.atan2(dy, dx);
                 facingAngle = ang;
@@ -25458,19 +25550,20 @@
                 // Actually retarget the reticle (getReticleTile() reads
                 // targetAimAngle, not facingAngle/player.angle — see its
                 // declaration) so this drag genuinely aims farm-tool actions
-                // like axe chop / pick mine at a specific tile on mobile,
-                // instead of only rotating the player's visual facing while
-                // the reticle stays wherever the movement joystick last
-                // pointed it.
+                // like axe chop / pick mine at a specific tile on mobile.
+                // Combat presses reuse that same stick vector, but keep their
+                // press/hold state armed and defer the actual attack to finger-up.
                 targetAimAngle = ang;
+                if (_combatAimRelease) setMobileArchCombatAim(ev.pointerId, ang, el.dataset.action, _pressSlot);
                 if (!_drag) {
                   _drag = true;
                   _stack.classList.add('drag-active');
-                  // Aiming takes over firing from here — disarm the tap/hold
-                  // timer so release doesn't also fire/end an ability.
-                  if (_pressSlot) { window.Combat.input.cancelPress(_pressSlot); _pressSlot = null; }
-                  _resolveFire();
-                  if (ABT_DRAG_REPEAT_FIRE) _rtimer = setInterval(_resolveFire, 120);
+                  if (!_combatAimRelease) {
+                    // Non-combat farm/tool drags retain the legacy fire-on-threshold
+                    // behavior. Combat press/hold state never enters this branch.
+                    _resolveFire();
+                    if (ABT_DRAG_REPEAT_FIRE) _rtimer = setInterval(_resolveFire, 120);
+                  }
                 }
               }
             });
@@ -25486,20 +25579,36 @@
               el.style.transition = 'transform 0.14s ease-out';
               el.style.transform  = 'translate(50%, 50%)';
               setTimeout(() => { el.style.transition = ''; el.style.transform = ''; }, 150);
+              const pointerCanceled = ev.type === 'pointercancel'; // Cancellation tears down combat aim without committing a shot or melee release.
+              const combatAimOwned = _combatAimRelease; // Preserve ownership through cleanup below even after the specific input path has fired.
               if (_claimedInputAction) {
-                dispatchWorldInputClaim(_claimedInputAction,ev.type==='pointercancel'?'cancel':'release','touch-arch');
+                dispatchWorldInputClaim(_claimedInputAction,pointerCanceled?'cancel':'release','touch-arch');
                 _claimedInputAction=null;
               } else if (_selectorKind) {
                 if (_selectorArcOpen) {
-                  if (ev.type === 'pointercancel') window._desktopSelectionArc?.close();
+                  if (pointerCanceled) window._desktopSelectionArc?.close();
                   else window._desktopSelectionArc?.releaseSelection();
                 }
               } else if (_flaskGesture) {
                 if (!_flaskCanceled && window.AlchemyFlasks?.aiming) window.AlchemyFlasks.confirmThrow();
-              } else if (!_drag && !_chargeFiredOnPress) {
-                if (_pressSlot) window.Combat.input.pressEnd(_pressSlot);
-                else if (_heldItemPress) window.HeldItemActionInput?.release();
-                else _abtFire();
+              } else if (!_chargeFiredOnPress) {
+                if (_pressSlot) {
+                  if (pointerCanceled) window.Combat.input.abortPress(_pressSlot);
+                  else {
+                    if (combatAimOwned && _drag && Number.isFinite(mobileArchCombatAim?.angle)) {
+                      commitMeleeAttackFacing(mobileArchCombatAim.angle);
+                    }
+                    window.Combat.input.pressEnd(_pressSlot);
+                  }
+                } else if (_heldItemPress) window.HeldItemActionInput?.release();
+                else if (!_drag || combatAimOwned) {
+                  if (!pointerCanceled) _abtFire();
+                }
+              }
+              if (combatAimOwned) {
+                if (pointerCanceled) clearMobileArchCombatAim(ev.pointerId, 'pointer-cancel');
+                else if (_pressSlot) clearMobileArchCombatAim(ev.pointerId, 'melee-release');
+                else releaseMobileArchCombatAim(ev.pointerId);
               }
               _heldItemPress = false;
               _drag = false;
@@ -25511,6 +25620,7 @@
               document.querySelectorAll('.flask-cancel-hover').forEach(button => button.classList.remove('flask-cancel-hover'));
               _flaskGesture = false;
               _flaskCanceled = false;
+              _combatAimRelease = false;
               _pressSlot = null;
             }
 
@@ -25570,6 +25680,7 @@
           `Action FX: particles=${actionParticles.length} tileFlashes=${actionTileEffects.length} slashTrails=${weaponTrailEffects.length}`,
           `Calendar: ${window.CalendarSystem.formatCalendarDate()} (raw day ${calendar.day}), ${window.FormatUtils.formatClock(window.CalendarSystem.getHour())}, ${calendar.weather}`,
           `Tool/action: ${window.FormatUtils.toolName(activeTool)} / ${window.FormatUtils.actionName(activeAction)}`,
+          `Mobile combat arch aim: ${JSON.stringify(window.__mobileArchCombatAimDebug?.snapshot?.() || { active: false })}`,
           `Player: x${player.x.toFixed(0)} y${player.y.toFixed(0)}`,
           ...(weavingDiagnostics ? ['', ...String(weavingDiagnostics).split('\n')] : []),
           '--- raw log ---',
