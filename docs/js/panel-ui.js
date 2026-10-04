@@ -13,12 +13,15 @@
   const isAnimationAuthor = /\/tools\/animation-author\/(?:index\.html)?$/.test(location.pathname); // Used to preload portrait-utils.js's synchronous ColorFill dependency only for Animation Author.
   const animationAuthorColorFill = new URL('./color-fill.js?v=20260923colorfill7', src).href; // Used before Animation Author's repository-runtime loader can execute portrait-utils.js.
   const animationAuthorColorFillTag = isAnimationAuthor ? `<script src="${animationAuthorColorFill}"></script>` : ''; // Keeps parser-time ColorFill ordering explicit without changing other tools.
+  const isCharacterStudio = /\/tools\/character-studio\/(?:index\.html)?$/.test(location.pathname); // Used to install Mammakhbuur appearance metadata before Character Studio reads scratchbones-config.js.
+  const characterStudioMammakhbuur = new URL('./character-studio-mammakhbuur-config.js?v=20261004mammakhhair1', src).href; // Supplies the NPC-only Mammakhbuur variant and removes front hair for both genders.
+  const characterStudioMammakhbuurTag = isCharacterStudio ? `<script src="${characterStudioMammakhbuur}"></script>` : ''; // Parser-time hook must run before the later scratchbones-config assignment.
   if (document.readyState === 'loading') {
-    document.write(`${animationAuthorColorFillTag}<script src="${core}"></script><script src="${mapEditorTextureFix}"></script><script src="${terrainParity}"></script>${cutsceneRepoTag}`);
+    document.write(`${characterStudioMammakhbuurTag}${animationAuthorColorFillTag}<script src="${core}"></script><script src="${mapEditorTextureFix}"></script><script src="${terrainParity}"></script>${cutsceneRepoTag}`);
     return;
   }
 
-  const loadPanelCore = () => { // Continues the existing late-load chain after any Animation Author-only dependency is ready.
+  const loadPanelCore = () => { // Continues the existing late-load chain after any tool-specific prerequisite is ready.
     const coreScript = document.createElement('script'); // Used only by rare late/dynamic PanelUI loads where document.write would replace the page.
     coreScript.src = core;
     coreScript.addEventListener('load', () => {
@@ -39,6 +42,13 @@
     (document.head || document.documentElement).appendChild(coreScript);
   };
 
+  if (isCharacterStudio) {
+    const mammakhbuurScript = document.createElement('script'); // Late-loaded Character Studio pages need the same config hook before PanelUI hands control back to the page.
+    mammakhbuurScript.src = characterStudioMammakhbuur;
+    mammakhbuurScript.addEventListener('load', loadPanelCore, { once: true });
+    (document.head || document.documentElement).appendChild(mammakhbuurScript);
+    return;
+  }
   if (isAnimationAuthor && !window.ColorFill) {
     const colorFillScript = document.createElement('script'); // Ensures dynamically loaded Animation Author pages receive ColorFill before PanelUI finishes bootstrapping.
     colorFillScript.src = animationAuthorColorFill;
