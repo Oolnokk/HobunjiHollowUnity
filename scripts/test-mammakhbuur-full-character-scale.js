@@ -36,7 +36,7 @@ const npc = (id, species, gender) => ({ // Builds compact representative records
   appearance: { speciesId: species, gender, cosmetics: {}, bodyColors: {} },
   avatarEditor: { rawExport: { appearance: { speciesId: species, gender, cosmetics: {}, bodyColors: {} } } },
 });
-const authoredDatabase = { // Contains the real-world situation being guarded: male Mammakhbuur exists, female does not.
+const authoredDatabase = { // Mirrors the shipping representative gap: Harkhanash supplies male Mammakhbuur, while female Mammakhbuur needs a preview-only donor.
   npcs: [
     npc('mashtzarr_male_reference', 'mashtzarr', 'male'),
     npc('mashtzarr_female_reference', 'mashtzarr', 'female'),
