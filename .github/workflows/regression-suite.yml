@@ -28,7 +28,7 @@ jobs:
         if: github.event_name == 'pull_request' && github.head_ref == 'fix/recenter-long-haft-grips-20261004'
         run: |
           set -e
-          git fetch --no-tags origin "$GITHUB_HEAD_REF"
+          git fetch --no-tags origin "$GITHUB_HEAD_REF" "main:refs/remotes/origin/main"
           git checkout -B "$GITHUB_HEAD_REF" "origin/$GITHUB_HEAD_REF"
           node scripts/check-cache-busts.js --fix
           if git diff --quiet; then
