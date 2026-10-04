@@ -140,3 +140,10 @@ assert.equal(blend.snapshot().transitions,3);
 rt.activate('room',{...live(),shotKey:'different-offset'});blend.apply();assert.equal(blend.snapshot().transitions,4);
 rt.deactivate();assert.equal(blend.apply(),false);assert.equal(blend.snapshot().cameraId,null);
 console.log('Persistent shots, edited transforms, live targets and explicit zero-duration blends passed');
+
+// Capturing a new view preserves its FOV and refreshes the visible camera list immediately.
+let syncs=0,saves=0;
+const capture={state:{project:{},three:{camera:{position:{x:5,y:3,z:7},fov:73},controls:{target:{x:1,y:2,z:3}}},cameraEditor:{sync(){syncs++;}}},worldToLocal:(x,z)=>({c:x-1,r:z-2}),saveLocal(){saves++;},toast(){},log(){}};
+const captureStart=editor.indexOf('  function captureCamera3D()'),captureEnd=editor.indexOf('  const PREVIEW_HANDOFF_KEY',captureStart);
+vm.runInNewContext(editor.slice(captureStart,captureEnd)+'\ncaptureCamera3D();',capture);
+assert.equal(capture.state.project.camera3d.fovDeg,73);assert.equal(capture.state.project.camera3d.localPos.x,4);assert.equal(capture.state.project.camera3d.localTarget.z,1);assert.equal(syncs,1);assert.equal(saves,1);

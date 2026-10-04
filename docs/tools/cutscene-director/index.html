@@ -2119,10 +2119,12 @@
     const localPos = worldToLocal(three.camera.position.x, three.camera.position.z);
     const localTarget = worldToLocal(three.controls.target.x, three.controls.target.z);
     state.project.camera3d = {
+      fovDeg: three.camera.fov,
       localPos: { x: localPos.c, y: three.camera.position.y, z: localPos.r },
       localTarget: { x: localTarget.c, y: three.controls.target.y, z: localTarget.r }
     };
     saveLocal();
+    state.cameraEditor?.sync();
     toast("Camera captured for Play.");
     log("Play camera captured from the current 3D view — it'll follow the scene if you move the anchor.");
   }
@@ -3813,7 +3815,7 @@
     els.startPlayBtn.addEventListener("click", startPreview);
     els.resetPlayBtn.addEventListener("click", () => resetPreview(true));
     els.captureCameraBtn.addEventListener("click", captureCamera3D);
-    els.resetCameraBtn.addEventListener("click", () => { state.project.camera3d = null; saveLocal(); frameCameraToStage(); toast("Camera framed to the whole stage."); });
+    els.resetCameraBtn.addEventListener("click", () => { state.project.camera3d = null; saveLocal(); frameCameraToStage(); state.cameraEditor?.sync(); toast("Camera framed to the whole stage."); });
     els.viewModeBtn.addEventListener("click", () => setViewMode(state.viewMode === "2d" ? "3d" : "2d"));
     els.matchGameCameraBtn.addEventListener("click", () => setGameCameraMatch(!state.gameCameraMatch));
     els.previewInGameBtn.addEventListener("click", previewInGame);
