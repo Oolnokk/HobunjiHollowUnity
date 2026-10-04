@@ -14,21 +14,21 @@
 (() => {
   'use strict';
 
-  const VERSION = 15; // Mammakhbuur share Mashtzarr calibration with only 5% extra height.
+  const VERSION = 16; // Applies the intended Animation Author edits for Tletingan male, Mao-ao female, and Mammakhbuur male only.
   const VALUES = Object.freeze({
-    'tletingan::male': Object.freeze({ x: 0.85, y: 0.85, head: 0.8823529411764706, offsetY: 0 }),
+    'tletingan::male': Object.freeze({ x: 0.85, y: 0.85, head: 0.8, offsetY: 0 }),
     'tletingan::female': Object.freeze({ x: 0.915, y: 0.89, head: 0.8823529411764706, offsetY: 0 }),
     'engh-sho::male': Object.freeze({ x: 0.8, y: 0.845, head: 0.7894736842105263, offsetY: 0 }),
     'engh-sho::female': Object.freeze({ x: 0.795, y: 0.81, head: 0.7894736842105263, offsetY: 0 }),
     'harlyao::male': Object.freeze({ x: 0.96, y: 1.014, head: 0.9473684210526315, offsetY: 0 }),
     'harlyao::female': Object.freeze({ x: 0.954, y: 0.972, head: 0.9473684210526315, offsetY: 0 }),
     'mao-ao::male': Object.freeze({ x: 0.81675, y: 1.089, head: 0.726, offsetY: 0 }),
-    'mao-ao::female': Object.freeze({ x: 1.045, y: 1.30625, head: 0.9375, offsetY: 0 }),
+    'mao-ao::female': Object.freeze({ x: 0.895, y: 0.94, head: 0.7813, offsetY: 0 }),
     'kenkari::male': Object.freeze({ x: 1.225, y: 1.225, head: 1, offsetY: 0 }),
     'kenkari::female': Object.freeze({ x: 1.1, y: 1.1, head: 1, offsetY: 0 }),
     'mashtzarr::male': Object.freeze({ x: 0.955, y: 1.255, head: 0.9856, offsetY: -0.095 }),
     'mashtzarr::female': Object.freeze({ x: 1.01, y: 0.99, head: 0.8475, offsetY: -0.02 }),
-    'mammakhbuur::male': Object.freeze({ x: 0.955, y: 1.255 * 1.05, head: 0.9856, offsetY: -0.095 }),
+    'mammakhbuur::male': Object.freeze({ x: 0.96, y: 1.69, head: 0.9771, offsetY: -0.095 }),
     'mammakhbuur::female': Object.freeze({ x: 1.01, y: 0.99 * 1.05, head: 0.8475, offsetY: -0.02 }),
   });
   const ALIASES = Object.freeze({ rakakoan: 'kenkari', ghoul: 'mao-ao', 'harlyao-skeleton': 'harlyao' }); // Transform-equivalent NPC-only species inherit shared full-rig defaults; Harlyao Skeleton deliberately shares Harlyao's 1.2x Engh-sho scale.
