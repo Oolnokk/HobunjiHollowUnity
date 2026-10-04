@@ -19,6 +19,7 @@
 
   const TREES = {
     companion: [
+      { id: 'ruinTracking', name: 'Ruin Tracker', maxRank: 1, desc: 'Finds nearby uncleared ruin entrances within 18 tiles and marks them on your wilderness map.' },
       { id: 'rapportBond', name: 'Trusted Company', maxRank: 5, desc: '+6% positive NPC rapport per rank while this companion is out with you.' },
       { id: 'keenSenses', name: 'Keen Senses', maxRank: 5, desc: '+10% camp/den discovery range per rank. Companion-only.' },
       { id: 'fieldLessons', name: 'Field Lessons', maxRank: 5, desc: '+10% service XP per rank while this companion is active.' },

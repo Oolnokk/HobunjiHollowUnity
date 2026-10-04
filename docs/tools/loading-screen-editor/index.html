@@ -205,6 +205,7 @@ body.previewOnly #dpad { opacity: .42; }
         <label for="imageUrl">Or image URL / repo-relative path</label>
         <input id="imageUrl" type="text" placeholder="assets/.../image.png" autocomplete="off" />
       </div>
+      <div id="introductionFields" class="field"></div>
       <div class="field">
         <label for="loreText">Lore text — KhymeryyanRoman</label>
         <textarea id="loreText" spellcheck="true"></textarea>
@@ -324,8 +325,9 @@ body.previewOnly #dpad { opacity: .42; }
   "use strict";
 
   const STORAGE_KEY = "hobunji.loadingScreenEditor.v1";
+  const INTRODUCTION_PRESET = {"id": "world-introduction", "name": "New-world introduction", "mode": "introduction", "oncePerWorld": true, "stages": [{"text": "stage 1: Something something something something", "minimumSeconds": 3}, {"text": "stage 2: something something something something something.", "minimumSeconds": 3}, {"text": "stage 3: something something something something.", "minimumSeconds": 3}, {"text": "stage 4: something something something.", "minimumSeconds": 3}]}; // Editable world-opening preset is excluded from ordinary randomized loaders.
   const DEFAULTS = {
-    version: 5,
+    version: 6,
     selectedId: "sample",
     settings: {
       scriptSide: "left",
@@ -341,6 +343,7 @@ body.previewOnly #dpad { opacity: .42; }
       loadPercent: 64
     },
     entries: [
+      INTRODUCTION_PRESET,
       {
         id: "sample",
         name: "Sample loading screen",
@@ -375,6 +378,7 @@ body.previewOnly #dpad { opacity: .42; }
   let lastTime = performance.now();
   let keys = new Set();
   let touchDirs = new Set();
+  let introPreviewStage = 0; // Editor preview switches among the four authored introduction screens.
   let lastRandomId = null;
   const logs = [];
 
@@ -398,7 +402,7 @@ body.previewOnly #dpad { opacity: .42; }
       if (!Array.isArray(parsed.entries) || !parsed.entries.length) throw new Error("No entries in saved data");
       const version = Number(parsed.version || 1);
       return {
-        version: 5,
+        version: 6,
         selectedId: parsed.selectedId || parsed.entries[0].id,
         settings: {
           ...DEFAULTS.settings,
@@ -419,7 +423,7 @@ body.previewOnly #dpad { opacity: .42; }
             : Number(parsed.settings?.scriptScrollSpeed ?? DEFAULTS.settings.scriptScrollSpeed),
           loadPercent: Number(parsed.settings?.loadPercent ?? DEFAULTS.settings.loadPercent)
         },
-        entries: parsed.entries
+        entries: parsed.entries.some(e => e.id === INTRODUCTION_PRESET.id) ? parsed.entries : [...parsed.entries, clone(INTRODUCTION_PRESET)]
       };
     } catch (err) {
       console.warn("Loading-screen editor save could not be loaded", err);
@@ -489,17 +493,38 @@ body.previewOnly #dpad { opacity: .42; }
     els.imageUrl.value = entry.image && !entry.image.startsWith("data:") ? entry.image : "";
     els.loreText.value = entry.lore || "";
     els.scriptText.value = entry.script || "";
+    const introFields = $('introductionFields'); // Four stages use simple text and duration controls on mobile.
+    introFields.replaceChildren();
+    if (entry.mode === 'introduction') {
+      for (const [i, stage] of (entry.stages || []).entries()) {
+        const label = document.createElement('label'), text = document.createElement('textarea'), duration = document.createElement('input'), preview = document.createElement('button'); // Each stage retains its fields through import/export.
+        label.textContent = `Stage ${i + 1} text and minimum seconds`;
+        text.value = stage.text || ''; duration.type = 'number'; duration.min = '0'; duration.max = '60'; duration.step = '.5'; duration.value = stage.minimumSeconds ?? 3;
+        text.addEventListener('input', () => { stage.text = text.value; saveData(); renderPreview(); });
+        duration.addEventListener('change', () => { stage.minimumSeconds = clamp(Number(duration.value) || 0, 0, 60); saveData(); });
+        preview.textContent = `Preview stage ${i + 1}`; preview.type = 'button'; preview.addEventListener('click', () => { introPreviewStage = i; renderPreview(); });
+        label.append(text, duration, preview); introFields.append(label);
+      }
+    }
     applySettingsToUI();
   }
 
   function renderPreview() {
     const entry = currentEntry();
-    const hasImage = Boolean(entry.image);
+    const introduction = entry.mode === 'introduction'; // Dedicated preview is white Roman text over black with no image or vertical script.
+    const hasImage = !introduction && Boolean(entry.image);
+    els.scriptViewport.style.visibility = introduction ? 'hidden' : '';
+    els.loadPercentLabel.style.visibility = introduction ? 'hidden' : '';
+    els.emptyImage.style.visibility = introduction ? 'hidden' : '';
+    els.lore.style.color = introduction ? '#fff' : '';
+    els.lore.style.top = introduction ? '50%' : '';
+    els.lore.style.bottom = introduction ? 'auto' : '';
+    els.lore.style.transform = introduction ? 'translate(-50%, -50%)' : '';
     els.image.classList.toggle("hidden", !hasImage);
     els.emptyImage.classList.toggle("hidden", hasImage);
     if (hasImage && els.image.src !== entry.image) els.image.src = entry.image;
-    els.lore.textContent = entry.lore || "";
-    els.lore.style.fontSize = `${data.settings.loreSize}px`;
+    els.lore.textContent = introduction ? entry.stages?.[introPreviewStage]?.text || "" : entry.lore || "";
+    els.lore.style.fontSize = introduction ? 'clamp(20px,4vw,38px)' : `${data.settings.loreSize}px`;
     els.loadPercentLabel.textContent = `${Math.round(Number(data.settings.loadPercent) || 0)}%`;
     renderScript(entry.script);
     els.scriptWords.style.setProperty("--script-column-spacing", `${Number(data.settings.columnSpacing)}em`);
@@ -533,8 +558,9 @@ body.previewOnly #dpad { opacity: .42; }
 
   function chooseRandomEntry() {
     if (!data.entries.length) return;
-    let pool = data.entries;
-    if (data.entries.length > 1 && lastRandomId) pool = data.entries.filter(e => e.id !== lastRandomId);
+    let pool = data.entries.filter(e => e.mode !== "introduction"); // Staged world openings are explicit, never random map loaders.
+    if (pool.length > 1 && lastRandomId) pool = pool.filter(e => e.id !== lastRandomId);
+    if (!pool.length) return;
     const entry = pool[Math.floor(Math.random() * pool.length)];
     lastRandomId = entry.id;
     data.selectedId = entry.id;
@@ -656,7 +682,7 @@ body.previewOnly #dpad { opacity: .42; }
         if (!Array.isArray(parsed.entries) || !parsed.entries.length) throw new Error("JSON needs a non-empty entries array");
         const version = Number(parsed.version || 1);
         data = {
-          version: 5,
+          version: 6,
           selectedId: parsed.selectedId || parsed.entries[0].id,
           settings: {
             ...DEFAULTS.settings,
@@ -668,7 +694,7 @@ body.previewOnly #dpad { opacity: .42; }
             loadPercent: Number(parsed.settings?.loadPercent ?? DEFAULTS.settings.loadPercent)
           },
           entries: parsed.entries.map((entry, i) => ({
-            id: entry.id || uid(), name: entry.name || `Entry ${i + 1}`, image: entry.image || "", lore: entry.lore || "", script: entry.script || ""
+            ...entry, id: entry.id || uid(), name: entry.name || `Entry ${i + 1}`, image: entry.image || "", lore: entry.lore || "", script: entry.script || ""
           }))
         };
         if (!data.entries.some(e => e.id === data.selectedId)) data.selectedId = data.entries[0].id;
@@ -770,7 +796,7 @@ body.previewOnly #dpad { opacity: .42; }
   document.fonts.ready.then(() => log(`Fonts ready: lore=${document.fonts.check('16px "KhymeryyanRoman"')} tankan=${document.fonts.check('16px "TankanScript"')}`));
   renderEditor();
   renderPreview();
-  log("Editor initialized.");
+  log("Editor initialized. Latest change: four-stage world introduction text and minimum-duration controls.");
   requestAnimationFrame(updateMotion);
 })();
 </script>

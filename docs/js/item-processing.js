@@ -123,25 +123,25 @@
     if (!input) return null;
     if (methodId === 'squeezing' && isBerryKey(inputKey)) {
       const base = berryBaseName(inputKey);
-      return { key: inputKey + 'Juice', icon: '🧃', label: base + ' Juice', cat: 'processed', sellPrice: Math.max(4, (input.sellPrice || 4) + 5), tags: ['Processed', 'Juice', 'Fruit'], desc: 'Sweet liquid squeezed from ' + input.label.toLowerCase() + '.' };
+      return { key: inputKey + 'Juice', icon: '🧃', label: base + ' Juice', cat: 'processed', sellPrice: Math.max(4, (input.sellPrice || 4) + 5), tags: ['Processed', 'Juice', 'Fruit'], desc: 'Sweet liquid squeezed from ' + input.label.toLowerCase() + '.', giftIngredientKeys: [inputKey] };
     }
     if (methodId === 'squeezing' && inputKey === 'garWolfMilk') {
-      return { key: 'garWolfButter', icon: '🧈', label: 'Gar-wolf Butter', cat: 'processed', sellPrice: Math.max(6, (input.sellPrice || 6) + 6), tags: ['Processed', 'Butter', 'Gar-wolf'], desc: 'Butter pressed from gar-wolf milk.', spriteIcon: 'cheese.png', spriteColor: input.spriteColor, spriteMode: 'direct' };
+      return { key: 'garWolfButter', icon: '🧈', label: 'Gar-wolf Butter', cat: 'processed', sellPrice: Math.max(6, (input.sellPrice || 6) + 6), tags: ['Processed', 'Butter', 'Gar-wolf'], desc: 'Butter pressed from gar-wolf milk.', giftIngredientKeys: [inputKey], spriteIcon: 'cheese.png', spriteColor: input.spriteColor, spriteMode: 'direct' };
     }
     if (methodId === 'mashing' && isBerryKey(inputKey)) {
       const base = berryBaseName(inputKey);
-      return { key: inputKey + 'Jam', icon: input.icon, label: base + ' Jam', cat: 'processed', sellPrice: Math.max(5, (input.sellPrice || 4) + 7), tags: ['Processed', 'Jam', 'Sweet Paste'], desc: 'Thick berry preserve made at a pestle station.', spriteIcon: 'jar_liquid.png', spriteColor: BERRY_COLORS[inputKey], spriteMode: 'keyed' };
+      return { key: inputKey + 'Jam', icon: input.icon, label: base + ' Jam', cat: 'processed', sellPrice: Math.max(5, (input.sellPrice || 4) + 7), tags: ['Processed', 'Jam', 'Sweet Paste'], desc: 'Thick berry preserve made at a pestle station.', giftIngredientKeys: [inputKey], spriteIcon: 'jar_liquid.png', spriteColor: BERRY_COLORS[inputKey], spriteMode: 'keyed' };
     }
     if (methodId === 'mashing' && inputKey === 'garWolfMilk') {
-      return { key: 'garWolfCream', icon: '🍦', label: 'Gar-wolf Cream', cat: 'processed', sellPrice: Math.max(6, (input.sellPrice || 6) + 4), tags: ['Processed', 'Cream', 'Gar-wolf'], desc: 'Cream worked from gar-wolf milk.', spriteIcon: 'cheese.png', spriteColor: input.spriteColor, spriteMode: 'direct' };
+      return { key: 'garWolfCream', icon: '🍦', label: 'Gar-wolf Cream', cat: 'processed', sellPrice: Math.max(6, (input.sellPrice || 6) + 4), tags: ['Processed', 'Cream', 'Gar-wolf'], desc: 'Cream worked from gar-wolf milk.', giftIngredientKeys: [inputKey], spriteIcon: 'cheese.png', spriteColor: input.spriteColor, spriteMode: 'direct' };
     }
-    if (methodId === 'mashing' && inputKey === 'blackMustardSeed') return { key: 'blackMustardPaste', icon: '🟤', label: 'Black Mustard Paste', cat: 'processed', sellPrice: 13, tags: ['Processed', 'Pungent Paste', 'Spice'], desc: 'Hot pungent paste made from black mustard seed.' };
-    if (methodId === 'mashing' && inputKey === 'greenMustardSeed') return { key: 'greenMustardPaste', icon: '🟢', label: 'Green Mustard Paste', cat: 'processed', sellPrice: 12, tags: ['Processed', 'Pungent Paste', 'Spice'], desc: 'Fresh pungent paste made from green mustard seed.' };
-    if (methodId === 'mashing' && ['heftroot', 'garlink', 'ongyums', 'blackMustard', 'greenMustard'].includes(inputKey)) return { key: inputKey + 'Mash', icon: '🥣', label: 'Mashed ' + input.label, cat: 'processed', sellPrice: Math.max(3, (input.sellPrice || 3) + 3), tags: ['Processed', 'Mash'], desc: 'Mashed crop base for future cooking recipes.' };
-    if (methodId === 'grinding' && inputKey === 'needlegrain') return { key: 'needlegrainFlour', icon: '🌾', label: 'Needlegrain Flour', cat: 'processed', sellPrice: 12, tags: ['Processed', 'Flour', 'Grain'], desc: 'Ground needlegrain flour for noodles and bread.' };
-    if (methodId === 'grinding' && inputKey === 'heftroot') return { key: 'heftrootFlour', icon: '🟡', label: 'Heftroot Flour', cat: 'processed', sellPrice: 15, tags: ['Processed', 'Flour', 'Starch'], desc: 'Ground heftroot flour for yellow noodles and bread.' };
-    if (methodId === 'grinding' && inputKey === 'blackMustardSeed') return { key: 'blackMustardPowder', icon: '⚫', label: 'Black Mustard Powder', cat: 'processed', sellPrice: 11, tags: ['Processed', 'Powder', 'Spice'], desc: 'Ground black mustard powder.' };
-    if (methodId === 'grinding' && inputKey === 'greenMustardSeed') return { key: 'greenMustardPowder', icon: '🥬', label: 'Green Mustard Powder', cat: 'processed', sellPrice: 10, tags: ['Processed', 'Powder', 'Spice'], desc: 'Ground green mustard powder.' };
+    if (methodId === 'mashing' && inputKey === 'blackMustardSeed') return { key: 'blackMustardPaste', icon: '🟤', label: 'Black Mustard Paste', cat: 'processed', sellPrice: 13, tags: ['Processed', 'Pungent Paste', 'Spice'], desc: 'Hot pungent paste made from black mustard seed.', giftIngredientKeys: [inputKey] };
+    if (methodId === 'mashing' && inputKey === 'greenMustardSeed') return { key: 'greenMustardPaste', icon: '🟢', label: 'Green Mustard Paste', cat: 'processed', sellPrice: 12, tags: ['Processed', 'Pungent Paste', 'Spice'], desc: 'Fresh pungent paste made from green mustard seed.', giftIngredientKeys: [inputKey] };
+    if (methodId === 'mashing' && ['heftroot', 'garlink', 'ongyums', 'blackMustard', 'greenMustard'].includes(inputKey)) return { key: inputKey + 'Mash', icon: '🥣', label: 'Mashed ' + input.label, cat: 'processed', sellPrice: Math.max(3, (input.sellPrice || 3) + 3), tags: ['Processed', 'Mash'], desc: 'Mashed crop base for future cooking recipes.', giftIngredientKeys: [inputKey] };
+    if (methodId === 'grinding' && inputKey === 'needlegrain') return { key: 'needlegrainFlour', icon: '🌾', label: 'Needlegrain Flour', cat: 'processed', sellPrice: 12, tags: ['Processed', 'Flour', 'Grain'], desc: 'Ground needlegrain flour for noodles and bread.', giftIngredientKeys: [inputKey] };
+    if (methodId === 'grinding' && inputKey === 'heftroot') return { key: 'heftrootFlour', icon: '🟡', label: 'Heftroot Flour', cat: 'processed', sellPrice: 15, tags: ['Processed', 'Flour', 'Starch'], desc: 'Ground heftroot flour for yellow noodles and bread.', giftIngredientKeys: [inputKey] };
+    if (methodId === 'grinding' && inputKey === 'blackMustardSeed') return { key: 'blackMustardPowder', icon: '⚫', label: 'Black Mustard Powder', cat: 'processed', sellPrice: 11, tags: ['Processed', 'Powder', 'Spice'], desc: 'Ground black mustard powder.', giftIngredientKeys: [inputKey] };
+    if (methodId === 'grinding' && inputKey === 'greenMustardSeed') return { key: 'greenMustardPowder', icon: '🥬', label: 'Green Mustard Powder', cat: 'processed', sellPrice: 10, tags: ['Processed', 'Powder', 'Spice'], desc: 'Ground green mustard powder.', giftIngredientKeys: [inputKey] };
     // Feed Grinder (barn interior fixture) — harvested crops grind into
     // Plant Fodder, raw meat and fish grind into Meat Fodder. Mulch is
     // deliberately not a valid input (it's clearing waste, not feed).
@@ -157,30 +157,30 @@
     if (methodId === 'grindingFeed' && (input.tags?.includes('Meat') || input.tags?.includes('Fish'))) {
       return { key: 'meatFodder', icon: deps.ITEM_DEFS.meatFodder.icon, label: deps.ITEM_DEFS.meatFodder.label, cat: 'material', sellPrice: deps.ITEM_DEFS.meatFodder.sellPrice, tags: deps.ITEM_DEFS.meatFodder.tags, desc: deps.ITEM_DEFS.meatFodder.desc };
     }
-    if (methodId === 'drying' && isBerryKey(inputKey)) return { key: inputKey + 'Dried', icon: input.icon, label: 'Dried ' + input.label, cat: 'processed', sellPrice: Math.max(4, (input.sellPrice || 4) + 4), tags: ['Processed', 'Dried', 'Fruit'], desc: 'Dried berries. Dry-default crops are not valid drying inputs.' };
+    if (methodId === 'drying' && isBerryKey(inputKey)) return { key: inputKey + 'Dried', icon: input.icon, label: 'Dried ' + input.label, cat: 'processed', sellPrice: Math.max(4, (input.sellPrice || 4) + 4), tags: ['Processed', 'Dried', 'Fruit'], desc: 'Dried berries. Dry-default crops are not valid drying inputs.', giftIngredientKeys: [inputKey] };
     if (methodId === 'barrelAging' && /Juice$/.test(inputKey)) {
       const berryKey = inputKey.replace(/Juice$/, '');
-      return { key: inputKey.replace(/Juice$/, 'Wine'), icon: '🍷', label: input.label.replace(/ Juice$/, ' Wine'), cat: 'processed', sellPrice: Math.max(10, (input.sellPrice || 10) + 12), tags: ['Processed', 'Wine', 'Aged'], desc: 'Barrel-aged fruit wine.', ingredientKeys: [berryKey], spriteIcon: 'bottle_wine.png', spriteColor: BERRY_COLORS[berryKey], spriteMode: 'keyed' };
+      return { key: inputKey.replace(/Juice$/, 'Wine'), icon: '🍷', label: input.label.replace(/ Juice$/, ' Wine'), cat: 'processed', sellPrice: Math.max(10, (input.sellPrice || 10) + 12), tags: ['Processed', 'Wine', 'Aged'], desc: 'Barrel-aged fruit wine.', ingredientKeys: [berryKey], giftIngredientKeys: [berryKey], spriteIcon: 'bottle_wine.png', spriteColor: BERRY_COLORS[berryKey], spriteMode: 'keyed' };
     }
     if (methodId === 'barrelAging' && dewColorFromMilkOrCurdsKey(inputKey) && /Milk$/.test(inputKey)) {
       const color = dewColorFromMilkOrCurdsKey(inputKey);
       const properLabel = color.charAt(0).toUpperCase() + color.slice(1);
-      return { key: inputKey.replace(/Milk$/, 'Nectar'), icon: '🍷', label: properLabel + " Uumkao'ii Nectar", cat: 'processed', sellPrice: Math.max(14, (input.sellPrice || 14) + 10), tags: ['Processed', 'Nectar', "Uumkao'ii", 'Aged'], desc: 'Barrel-aged Uumkao\'ii milk.', ingredientKeys: [inputKey], spriteIcon: 'bottle_wine.png', spriteColor: input.spriteColor, spriteMode: 'keyed' };
+      return { key: inputKey.replace(/Milk$/, 'Nectar'), icon: '🍷', label: properLabel + " Uumkao'ii Nectar", cat: 'processed', sellPrice: Math.max(14, (input.sellPrice || 14) + 10), tags: ['Processed', 'Nectar', "Uumkao'ii", 'Aged'], desc: 'Barrel-aged Uumkao\'ii milk.', ingredientKeys: [inputKey], giftIngredientKeys: [inputKey], spriteIcon: 'bottle_wine.png', spriteColor: input.spriteColor, spriteMode: 'keyed' };
     }
     if (methodId === 'barrelAging' && inputKey === 'needlegrain') {
-      return { key: 'needlegrainSake', icon: '🍶', label: 'Needlegrain Sake', cat: 'processed', sellPrice: 24, tags: ['Processed', 'Sake', 'Aged', 'Needlegrain'], desc: 'Barrel-aged needlegrain liquor, colored like dark pine needles.', ingredientKeys: [inputKey], spriteIcon: 'bottle_wine.png', spriteColor: 0x293827, spriteMode: 'keyed' };
+      return { key: 'needlegrainSake', icon: '🍶', label: 'Needlegrain Sake', cat: 'processed', sellPrice: 24, tags: ['Processed', 'Sake', 'Aged', 'Needlegrain'], desc: 'Barrel-aged needlegrain liquor, colored like dark pine needles.', ingredientKeys: [inputKey], giftIngredientKeys: [inputKey], spriteIcon: 'bottle_wine.png', spriteColor: 0x293827, spriteMode: 'keyed' };
     }
     if (methodId === 'barrelAging' && inputKey === 'heftroot') {
-      return { key: 'heftrootVodka', icon: '🥃', label: 'Heftroot Vodka', cat: 'processed', sellPrice: 26, tags: ['Processed', 'Vodka', 'Aged', 'Heftroot'], desc: 'Barrel-aged heftroot spirit, yellow-tan like ripe heftroot.', ingredientKeys: [inputKey], spriteIcon: 'bottle_wine.png', spriteColor: 0xAAA07C, spriteMode: 'keyed' };
+      return { key: 'heftrootVodka', icon: '🥃', label: 'Heftroot Vodka', cat: 'processed', sellPrice: 26, tags: ['Processed', 'Vodka', 'Aged', 'Heftroot'], desc: 'Barrel-aged heftroot spirit, yellow-tan like ripe heftroot.', ingredientKeys: [inputKey], giftIngredientKeys: [inputKey], spriteIcon: 'bottle_wine.png', spriteColor: 0xAAA07C, spriteMode: 'keyed' };
     }
     if (methodId === 'barrelAging' && inputKey === 'garWolfMilk') {
-      return { key: 'garWolfAirag', icon: '🍶', label: 'Gar-wolf Airag', cat: 'processed', sellPrice: 22, tags: ['Processed', 'Airag', 'Aged', 'Gar-wolf'], desc: 'Barrel-fermented gar-wolf milk.', ingredientKeys: [inputKey], spriteIcon: 'bottle_wine.png', spriteColor: input.spriteColor, spriteMode: 'keyed' };
+      return { key: 'garWolfAirag', icon: '🍶', label: 'Gar-wolf Airag', cat: 'processed', sellPrice: 22, tags: ['Processed', 'Airag', 'Aged', 'Gar-wolf'], desc: 'Barrel-fermented gar-wolf milk.', ingredientKeys: [inputKey], giftIngredientKeys: [inputKey], spriteIcon: 'bottle_wine.png', spriteColor: input.spriteColor, spriteMode: 'keyed' };
     }
     if (methodId === 'vaseAging' && dewColorFromMilkOrCurdsKey(inputKey) && /Curds$/.test(inputKey)) {
       return { key: 'uumkaoiiCheese', icon: '🧀', label: "Uumkao'ii Cheese", cat: 'processed', sellPrice: 28, tags: ['Processed', 'Cheese', "Uumkao'ii", 'Aged'], desc: 'Vase-aged Uumkao\'ii curds — every dew color ferments into the same cheese.', spriteIcon: 'cheese.png', spriteColor: 0xD9A441, spriteMode: 'direct' };
     }
     if (methodId === 'vaseAging' && inputKey === 'garWolfMilk') {
-      return { key: 'garWolfCheese', icon: '🧀', label: 'Gar-wolf Cheese', cat: 'processed', sellPrice: 24, tags: ['Processed', 'Cheese', 'Gar-wolf', 'Aged'], desc: 'Vase-aged gar-wolf milk.', spriteIcon: 'cheese.png', spriteColor: input.spriteColor, spriteMode: 'direct' };
+      return { key: 'garWolfCheese', icon: '🧀', label: 'Gar-wolf Cheese', cat: 'processed', sellPrice: 24, tags: ['Processed', 'Cheese', 'Gar-wolf', 'Aged'], desc: 'Vase-aged gar-wolf milk.', giftIngredientKeys: [inputKey], spriteIcon: 'cheese.png', spriteColor: input.spriteColor, spriteMode: 'direct' };
     }
     return null;
   }
@@ -197,8 +197,8 @@
       const properLabel = color.charAt(0).toUpperCase() + color.slice(1);
       const dewColorHex = input.spriteColor;
       return [
-        { key: dewMilkKey(color), icon: '🥛', label: properLabel + " Uumkao'ii Milk", cat: 'processed', sellPrice: Math.max(6, (input.sellPrice || 6) + 3), tags: ['Processed', 'Milk', "Uumkao'ii", 'Squeezed', 'Not Animal Milk'], desc: 'Milk squeezed from ' + input.label.toLowerCase() + '.', spriteIcon: 'jar_liquid.png', spriteColor: dewColorHex, spriteMode: 'keyed' },
-        { key: dewCurdsKey(color), icon: '🧀', label: properLabel + " Uumkao'ii Curds", cat: 'processed', sellPrice: Math.max(6, (input.sellPrice || 6) + 4), tags: ['Processed', 'Curds', "Uumkao'ii", 'Squeezed', 'Not Dairy'], desc: 'Curds squeezed from ' + input.label.toLowerCase() + '.', spriteIcon: 'cheese.png', spriteColor: dewColorHex, spriteMode: 'direct' },
+        { key: dewMilkKey(color), icon: '🥛', label: properLabel + " Uumkao'ii Milk", cat: 'processed', sellPrice: Math.max(6, (input.sellPrice || 6) + 3), tags: ['Processed', 'Milk', "Uumkao'ii", 'Squeezed', 'Not Animal Milk'], desc: 'Milk squeezed from ' + input.label.toLowerCase() + '.', giftIngredientKeys: [inputKey], spriteIcon: 'jar_liquid.png', spriteColor: dewColorHex, spriteMode: 'keyed' },
+        { key: dewCurdsKey(color), icon: '🧀', label: properLabel + " Uumkao'ii Curds", cat: 'processed', sellPrice: Math.max(6, (input.sellPrice || 6) + 4), tags: ['Processed', 'Curds', "Uumkao'ii", 'Squeezed', 'Not Dairy'], desc: 'Curds squeezed from ' + input.label.toLowerCase() + '.', giftIngredientKeys: [inputKey], spriteIcon: 'cheese.png', spriteColor: dewColorHex, spriteMode: 'direct' },
       ];
     }
     const modularOutputs = window.HobunjiFoodProcessing?.getProcessingOutputs?.(methodId, inputKey, input); // Used for decoupled nut-oil, lard, and fish-oil vat recipes.
@@ -268,6 +268,7 @@
     }; // Used to make dynamically generated fats valid hearth ingredients immediately.
     if (deps.ITEM_DEFS[output.key]) {
       if (output.ingredientKeys?.length) deps.ITEM_DEFS[output.key].ingredientKeys = [...output.ingredientKeys];
+      if (output.giftIngredientKeys?.length) deps.ITEM_DEFS[output.key].giftIngredientKeys = [...output.giftIngredientKeys];
       Object.assign(deps.ITEM_DEFS[output.key], presentationMetadata, cookingMetadata);
       normalizeAlcoholItemDef(deps.ITEM_DEFS[output.key]);
       return;
@@ -280,6 +281,7 @@
       tags: output.tags || ['Processed'],
       desc: output.desc || 'Processed food item.',
       ingredientKeys: output.ingredientKeys || [],
+      giftIngredientKeys: output.giftIngredientKeys || [],
       ...cookingMetadata,
       ...(output.spriteIcon ? { spriteIcon: output.spriteIcon, spriteColor: output.spriteColor, spriteMode: output.spriteMode } : {}),
     });

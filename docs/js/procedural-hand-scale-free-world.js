@@ -113,10 +113,21 @@
       && ['x', 'y', 'z'].every(axis => Number.isFinite(Number(binding.referencePosition?.[axis])));
   }
 
+  function zeroPosteriorPlaceholder(position) { return ['x', 'y', 'z'].every(axis => Math.abs(finite(position?.[axis])) < 1e-12); } // Master/export zero anchors mean derive the anatomical hip, not floor-level hands.
+
   function ensureStoredBinding(profile, anchorName, metrics = null) {
     const anchor = profile?.anchors?.[anchorName];
     if (!anchor) return null;
-    if (validBinding(anchor.portraitBinding)) return anchor.portraitBinding;
+    const binding = anchor.portraitBinding; // Repair old debug/export-created posterior bindings as well as fresh placeholders.
+    if (anchorName === 'posterior' && zeroPosteriorPlaceholder(binding?.referencePosition || anchor.position)) {
+      const referenceHeight = positive(binding?.referenceModelHeight, metrics ? adultMetrics(metrics).modelHeight : .9 * profileAnatomy(profile).portraitScale); // Derived posterior stays in the binding's adult reference frame.
+      const derivedY = priorRigMath?.characterPosteriorY?.(profile.posteriorRule, referenceHeight, referenceHeight / 2); // Use the original anatomical rule so a poisoned portrait binding cannot feed itself back into the hip.
+      if (Number.isFinite(derivedY) && derivedY > 0) {
+        anchor.portraitBinding = validBinding(binding) ? { ...binding, referencePosition: { x:0, y:derivedY, z:0 } } : makeBinding(profile, { x:0, y:derivedY, z:0 }, metrics);
+        return anchor.portraitBinding;
+      }
+    }
+    if (validBinding(binding)) return binding;
     anchor.portraitBinding = makeBinding(profile, anchor.position, metrics);
     return anchor.portraitBinding;
   }
@@ -233,7 +244,7 @@
     const priorPosteriorY = priorRigMath.characterPosteriorY.bind(priorRigMath);
     const portraitBoundPosteriorY = function portraitBoundPosteriorY(rule, modelHeight, legacyHandAttachY) {
       const binding = rule?.portraitBinding;
-      if (validBinding(binding)) {
+      if (validBinding(binding) && !zeroPosteriorPlaceholder(binding.referencePosition)) {
         const currentHeight = positive(modelHeight, binding.referenceModelHeight);
         const factor = currentHeight / positive(binding.referenceModelHeight, currentHeight);
         const currentPlacement = finite(binding.currentPlacementRatio, binding.referencePlacementRatio);
@@ -558,5 +569,6 @@
 
   global.ProceduralHandScaleFreeWorld = Object.freeze({
     mode: 'scale-free-quaternion-hierarchy + portrait-bound-character-anchors',
+    latestChange: 'Derived zero posterior placeholders recover authored hip height before hands, seating or diagnostics bind them.',
   });
 })(window);

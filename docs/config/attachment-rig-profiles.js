@@ -26,7 +26,7 @@
   const validPosition = value => ['x', 'y', 'z'].every(axis => Number.isFinite(Number(value?.[axis])));
   const zeroPosition = value => validPosition(value) && ['x', 'y', 'z'].every(axis => Math.abs(Number(value[axis])) <= 1e-12);
 
-  const characterTransformAliases = Object.freeze({ rakakoan: 'kenkari', ghoul: 'mao-ao' });
+  const characterTransformAliases = Object.freeze({ rakakoan: 'kenkari', ghoul: 'mao-ao', mammakhbuur: 'mashtzarr' });
   const transformSpeciesId = value => {
     const species = String(value || '').trim().toLowerCase().replace(/[’']/g, '').replace(/_/g, '-');
     return characterTransformAliases[species] || species;

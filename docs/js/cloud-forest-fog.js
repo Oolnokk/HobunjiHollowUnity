@@ -347,9 +347,10 @@
   const INTERIOR_DARKNESS_OVERLAY_ALPHA = clamp01(0.28 + GLOBAL_DARKNESS_DELTA); // Applies the same +0.09 darkness change to ordinary enclosed interiors.
 
   let skyPolicyDeps = null;
+  function isCloudForestMap(area) { return area === 'map_southern_cloud_forest' || area === 'map_opening_cloud_forest'; } // The temporary rescue map shares the biome's sky and mist policy.
   function isNoSkyArea(area) {
     const id = String(area || '').toLowerCase();
-    return id === 'map_southern_cloud_forest'
+    return isCloudForestMap(id)
       || id === 'interior'
       || id === 'map_i_dev_random_ruin'
       || id.includes('map_i_den_')
@@ -408,7 +409,7 @@
         const outside = skyPolicyDeps?.isOutdoorArea?.() !== false;
         skyRoot.visible = outside && !isNoSkyArea(area);
       }
-      if (scene?.background?.isColor && isNoSkyArea(area) && area !== 'map_southern_cloud_forest') scene.background.set(0x000000);
+      if (scene?.background?.isColor && isNoSkyArea(area) && !isCloudForestMap(area)) scene.background.set(0x000000);
       return result;
     };
   }
@@ -666,7 +667,7 @@
     const currentArea = lightingDeps.getCurrentArea();
     const enclosed = currentArea === 'interior'
       || lightingDeps._isBuildingArea(currentArea)
-      || (isNoSkyArea(currentArea) && currentArea !== 'map_southern_cloud_forest');
+      || (isNoSkyArea(currentArea) && !isCloudForestMap(currentArea));
 
     if (enclosed) {
       const darknessAlpha = enclosedDarknessOverlayAlpha(currentArea); // Enclosed spaces keep one stable darkness base; local masks reveal light without whole-room brightness churn.

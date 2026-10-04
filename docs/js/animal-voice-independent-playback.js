@@ -28,6 +28,7 @@
   // chatter/growl piles get throttled.
   const MAX_CONCURRENT_ANIMAL_VOICES = 6;
   let activeVoiceCount = 0;
+  const activeHandles = new Set(); // Introduction audio can stop pending decodes and native/processed voices together.
 
   // Preserve the old species defaults even though the same recordings now
   // live in the descriptive utterance library under content-based names.
@@ -458,7 +459,7 @@
   }
 
   function play(url, opts = {}) {
-    if (!url) return null;
+    if (!url || window.AudioSystem?.gameAudioConfig?.()?.enabled === false) return null;
     const resolved = absoluteUrl(url);
     const tempo = clampTempo(opts.tempo ?? 1);
     const pitchSemitones = clampPitch(opts.pitchSemitones ?? 0);
@@ -466,10 +467,7 @@
     lastUrl = resolved;
     lastTempo = tempo;
     lastPitchSemitones = pitchSemitones;
-    if (!context || context.state !== 'running') {
-      primeAudioContext();
-      return playNativeFallback(resolved, { ...opts, tempo, pitchSemitones }, opts.fallbackAudio || null);
-    }
+    if (!context || context.state !== 'running') primeAudioContext();
     let stopped = false;
     let active = null;
     const handle = {
@@ -478,19 +476,23 @@
         if (stopped) return;
         stopped = true;
         active?.stop?.();
+        activeHandles.delete(handle);
       },
     };
+    activeHandles.add(handle);
+    const completed = () => { activeHandles.delete(handle); opts.onFinished?.(); }; // Shared cleanup for decoded buffers and native fallback.
+    if (!context || context.state !== 'running') { active = playNativeFallback(resolved, { ...opts, tempo, pitchSemitones, onFinished: completed }, opts.fallbackAudio || null); return handle; }
     lastBackend = 'fixed render pending';
     decodeUrl(resolved, context)
       .then(decoded => renderBufferFor(resolved, decoded, context, tempo, pitchSemitones))
       .then(rendered => {
         if (stopped) return;
-        active = scheduleProcessedBuffer(context, rendered, { ...opts, tempo, pitchSemitones }, opts.onFinished);
+        active = scheduleProcessedBuffer(context, rendered, { ...opts, tempo, pitchSemitones }, completed);
       })
       .catch(error => {
         if (stopped) return;
         lastPlaybackError = error;
-        active = playNativeFallback(resolved, { ...opts, tempo, pitchSemitones }, opts.fallbackAudio || null);
+        active = playNativeFallback(resolved, { ...opts, tempo, pitchSemitones, onFinished: completed }, opts.fallbackAudio || null);
       });
     return handle;
   }
@@ -668,6 +670,7 @@
     play,
     preview,
     stopAllPreviews,
+    stopAll() { for (const handle of [...activeHandles]) handle.stop(); },
     primeAudioContext,
     clampPitch,
     clampTempo,

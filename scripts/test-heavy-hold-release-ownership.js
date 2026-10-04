@@ -35,7 +35,7 @@ assert.match(
 );
 assert.match(
   combatInput,
-  /function abortPress\(slotIndex\)[\s\S]*?if \(s\.holding\) endHold\(slotIndex\)[\s\S]*?emitState\(slotIndex, 'press-abort'\)/,
+  /function abortPress\(slotIndex\)[\s\S]*?if \(s\.holding\) endHold\(slotIndex, true\)[\s\S]*?emitState\(slotIndex, 'press-abort'\)/,
   'cancellation lowers a started heavy hold without firing a pending tap',
 );
 assert.match(

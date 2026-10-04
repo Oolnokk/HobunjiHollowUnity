@@ -56,16 +56,17 @@
 
   "quickAttacks": {
     "WINDUP_S": 0.075, "STRIKE_S": 0.105, "COST_COMMIT": 60, "CONDITIONAL_REFUND_FRACTION": 0.5, "HOLD_S": 1,
+    "BONUS_EFFECT_COOLDOWN_S": 5, "BONUS_EFFECT_POWER_MULTIPLIER": 2.0,
     "RANGE_SCALE": 0.6, "LUNGE_TILE_MUL": 4.5,
     "techniques": {
       "opportunistJab": { "label": "Opportunist Jab", "condKey": "enemyStriking", "halfConeDeg": 16, "rangeMul": 0.95,
-        "base": { "damageMul": 0.5,  "knockbackMul": 0.9 }, "bonus": { "damageMul": 3.2, "knockbackMul": 1.9 }, "bonusText": "bonus: target was winding up or striking" },
+        "base": { "damageMul": 0.5,  "knockbackMul": 0.9 }, "bonus": { "damageMul": 4.0, "knockbackMul": 2.4 }, "bonusText": "bonus: target was winding up or striking" },
       "exhaustCutter": { "label": "Exhaust Cutter", "condKey": "exhausted", "halfConeDeg": 18, "rangeMul": 1.0,
-        "base": { "damageMul": 0.57, "knockbackMul": 1.0 }, "bonus": { "damageMul": 3.1, "knockbackMul": 2.0 }, "bonusText": "bonus: target stamina was empty" },
+        "base": { "damageMul": 0.57, "knockbackMul": 1.0 }, "bonus": { "damageMul": 3.9, "knockbackMul": 2.5 }, "bonusText": "bonus: target stamina was empty" },
       "backstabFlick": { "label": "Backstab Flick", "condKey": "behind", "halfConeDeg": 39, "rangeMul": 1.25,
-        "base": { "damageMul": 0.57, "knockbackMul": 1.0 }, "bonus": { "damageMul": 3.6, "knockbackMul": 2.4 }, "bonusText": "bonus: player was behind target" },
+        "base": { "damageMul": 0.57, "knockbackMul": 1.0 }, "bonus": { "damageMul": 4.5, "knockbackMul": 3.0 }, "bonusText": "bonus: player was behind target" },
       "mercySpike": { "label": "Mercy Spike", "condKey": "lowHealth", "halfConeDeg": 14, "rangeMul": 1.5,
-        "base": { "damageMul": 0.43, "knockbackMul": 0.85 }, "bonus": { "damageMul": 3.9, "knockbackMul": 1.65 }, "bonusText": "bonus: target was below 30% health" }
+        "base": { "damageMul": 0.43, "knockbackMul": 0.85 }, "bonus": { "damageMul": 4.9, "knockbackMul": 2.1 }, "bonusText": "bonus: target was below 30% health" }
     }
   },
 

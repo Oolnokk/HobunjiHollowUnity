@@ -21,9 +21,10 @@
     {
       "id": "f_tbhunundi_wardrobe",
       "itemKey": "wardrobeFurniture",
-      "col": 8,
-      "row": 6,
+      "col": 6,
+      "row": 8,
       "rotY": 0,
+      "gridRot": 90,
       "postX": 0,
       "postY": 0,
       "postZ": 0,
@@ -60,7 +61,9 @@
       "postSZ": 1
     },
     { "id": "fmtst9ykgmqf0", "itemKey": "chairSimpleFurniture", "col": 9, "row": 9, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1, "gridRot": 180, "gridW": 1, "gridD": 1 },
-    { "id": "fmtsteb7xjq80", "itemKey": "chairSimpleFurniture", "col": 8, "row": 9, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1, "gridRot": 180, "gridW": 1, "gridD": 1 }
+    { "id": "fmtsteb7xjq80", "itemKey": "chairSimpleFurniture", "col": 8, "row": 9, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1, "gridRot": 180, "gridW": 1, "gridD": 1 },
+    { "id": "f_tbhunundi_guest_chair_west", "itemKey": "chairSimpleFurniture", "col": 7, "row": 9, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1, "gridRot": 180, "gridW": 1, "gridD": 1 },
+    { "id": "f_tbhunundi_guest_chair_near", "itemKey": "chairSimpleFurniture", "col": 9, "row": 6, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1, "gridRot": 0, "gridW": 1, "gridD": 1 }
   ],
   "floor": [
     [
@@ -213,5 +216,28 @@
   ],
   "npcPaths": [],
   "entryPoints": [],
-  "layouts": []
+  "layouts": [],
+  "cinematicCameras": [
+    {
+      "id": "hunundi_office_wall",
+      "label": "Hunundi office wall camera",
+      "position": {
+        "x": 8.5,
+        "y": 2.7,
+        "z": 6.1
+      },
+      "target": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "trackSpeaker": true,
+      "useForDialogue": true,
+      "stagePlayer": false,
+      "fadePets": true,
+      "fovDeg": 55,
+      "blendSeconds": 0.35,
+      "targetNpcId": "father_hunundi_hodu"
+    }
+  ]
 }

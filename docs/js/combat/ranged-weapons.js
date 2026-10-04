@@ -1302,7 +1302,7 @@
       lastEvent = `friendly-fire:${p.owner?.id || 'enemy'}->${nearest.actor.id || nearest.actor.name || 'hostile'}`;
       return { kind: 'actor', t: nearest.interval.enter, actor: nearest.actor };
     }
-    deps.damagePlayer(damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
+    deps.damagePlayer(damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier, attacker: p.owner || null });
     applySpecialAmmoDebuff(deps.player, p.specialAmmoId);
     return { kind: 'actor', t: nearest.interval.enter, actor: deps.player };
   }

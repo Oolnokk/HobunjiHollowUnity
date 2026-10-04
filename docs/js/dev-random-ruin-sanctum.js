@@ -533,6 +533,7 @@
     const door = s?.door;
     if (!door || door.state !== 'sealed') return;
     door.state = 'awake';
+    window.AudioSystem?.playObjectSfxKey?.('puzzleComplete');
     door.awakeAt = performance.now();
     if (!s.bgs && window.Music?.registerFurnitureSfxSource) {
       s.bgs = window.Music.registerFurnitureSfxSource(MAP_ID, door.group.position.x, door.group.position.z, { url:BGS_URL, rangeTiles:16, volume:.8 });
@@ -785,6 +786,7 @@
       label:'Climb Out of the Ruin',
       onPress:() => {
         if (window.RuinSites?.completeActiveRuin?.()) return; // Wilderness site: surface somewhere random and spend the entrance.
+        window.FurniturePatternSurfaces?.unlockRuin?.(window.DevRandomRuin?.getRuntimeContext?.()?.root);
         deps?.showToast?.('You climb the ladder up into daylight.', true); window.DevRandomRuin?.leave?.();
       },
     };
@@ -959,6 +961,7 @@
     const dead = !(Number(boss.health) > 0) || boss.dead === true || !deps?.hostileObjects?.has?.(boss);
     if (!dead) return;
     s.bossDefeated = true;
+    window.AudioSystem?.playObjectSfxKey?.('puzzleComplete');
     s.bossDefeatedAt = now;
     for (const minion of boss._lichSummons || []) if (Number(minion?.health) > 0) deps?.damageCreature?.(minion, minion.health, undefined, undefined, 0, {});
     for (const coffin of s.coffins || []) if (Number(coffin.skeleton?.health) > 0) deps?.damageCreature?.(coffin.skeleton, coffin.skeleton.health, undefined, undefined, 0, {}); // Its skeletons fall with it.

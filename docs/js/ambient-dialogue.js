@@ -552,7 +552,7 @@
     const bodyYaw = Number.isFinite(Number(walker.rot)) ? Number(walker.rot) : (Number(walker.root.rotation?.y) || 0); // Current locomotion/seat yaw stays authoritative while the head turns independently.
     const requestedYaw = shortestYawDelta(targetYaw, bodyYaw); // Unclamped local neck yaw is retained for diagnostics and the shared-limit decision.
     const maxYaw = playerHeadMaxYawRad(); // Same ±65° physical yaw limit currently used by the player's ordinary head turn.
-    const renderedYaw = Math.max(-maxYaw, Math.min(maxYaw, requestedYaw)); // Prevents greeting glances from twisting farther than the player's head can.
+    const renderedYaw = window.PerpRotation?.clampedNeckYaw?.(neckJoint, walker.root.position, Math.max(-maxYaw, Math.min(maxYaw, requestedYaw)), maxYaw) ?? Math.max(-maxYaw, Math.min(maxYaw, requestedYaw)); // Prevents greeting glances from twisting farther than the player's head can.
     neckJoint.rotation.y = renderedYaw;
     state.lastFacingDebug = {
       speakerId: String(walker.rec?.id || ''),
@@ -647,6 +647,17 @@
     const message = String(text || '').trim();
     if (!THREE || !root || !scene || !message || state.settings.enabled === false) return null;
     const mode = options.mode === 'overhead' ? 'overhead' : 'chathead';
+    if (window.DevCompanion?.isConnected?.()) { // Dev Companion "Now" tab: what was just said ambiently and which config it came from.
+      window.DevCompanion.trace('ambient', {
+        speakerId: options.speakerId || null,
+        text: message,
+        mode,
+        tone: options.tone || null,
+        greeting: !!options.greeting,
+        directedAtPlayer: !!options.directedAtPlayer,
+        source: options.traceSource || 'config/dialogue/ambient-dialogue.json',
+      });
+    }
     const textPart = textPlane(message);
     textPart.text = message;
     textPart.plane.scale.setScalar(state.settings.textWorldHeight);
@@ -856,6 +867,7 @@
       faceWalker: walker,
       faceTarget: target.root ? { root: target.root } : { x: target.x, z: target.z },
       faceMode: 'head', // Walking and seated greetings to either the player or another NPC preserve body/seat heading and use only the neck.
+      traceSource: override ? 'pending-request call-over line (procedural task)' : `config/dialogue/ambient-dialogue.json greeting template${lowFavorNickname ? ' + NPC "Nicknames" phrase pool (below +1 heart)' : ''}`,
     });
     return true;
   }

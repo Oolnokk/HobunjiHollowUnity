@@ -435,6 +435,34 @@
     }
     return { size: creatureSizeTrait(kind, genotype), colors, patterns };
   }
+  function makeRareGiftGenotype(kind, rarityRank = 1) {
+    const genotype = makeDefaultGenotype(kind); // The existing generator supplies correctly shaped inheritable genes.
+    if (!genotype) return null;
+    const rank = Math.max(1, Math.min(3, Math.floor(Number(rarityRank) || 1))); // Matches small/medium/large return-gift tiers.
+    const palette = _livestockPalette(kind); // Species palette constraints apply to guaranteed rare colors too.
+    const rareColor = entries => {
+      const minWeight = Math.min(...entries.map(entry => Number(entry.weight) || 1)); // Lowest authored weight defines the rarest available coat colors.
+      return _pickWeightedFurEntry(entries.filter(entry => (Number(entry.weight) || 1) === minWeight))?.hex;
+    };
+    if (genotype.fur || genotype.plates) {
+      for (const id of (rank >= 2 ? ['fur', 'plates'] : ['fur'])) {
+        if (genotype[id] && palette.length) genotype[id].color = rareColor(palette);
+      }
+    } else {
+      if (genotype.base && palette.length) genotype.base.color = rareColor(palette);
+      const chances = window.SCRATCHBONES_CONFIG?.game?.creatureGenetics?.patternChances?.[kind] || {}; // Prefer the rarest optional authored masks when fewer patterns are earned.
+      const patterns = (LIVESTOCK_PATTERN_DEFS[kind] || []).filter(id => !_patternAlwaysPresent(kind, id))
+        .sort((a, b) => (Number(chances[a]) || 1 / 3) - (Number(chances[b]) || 1 / 3)); // Rank controls the count, including guaranteed expressed rare patterns.
+      for (const [index, id] of patterns.entries()) {
+        genotype[id].enabled = index < rank;
+        genotype[id].copies = index < rank ? 2 : 0;
+        genotype[id].carrier = false;
+        if (index < rank && _patternPalette(kind, id).length) genotype[id].color = rareColor(_patternPalette(kind, id));
+      }
+    }
+    if (rank >= 3) genotype.sizeClass = mutateSizeClassStep(genotype.sizeClass); // Top ordinary animal rewards also have an unusual inherited size.
+    return genotype;
+  }
   function stableEntryRole(entry) {
     return CREATURE_SIZE_ROLE[creatureSizeClass(entry?.kind, entry?.genotype)];
   }
@@ -746,6 +774,7 @@
     init,
     defaultLivestockName,
     makeDefaultGenotype,
+    makeRareGiftGenotype,
     sellValueFor,
     crossOffspring,
     stableEntryRole,

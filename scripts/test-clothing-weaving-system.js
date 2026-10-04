@@ -547,7 +547,7 @@ assert.match(source, /portraitGateWaitingWriters/, 'waiting woven portraits bloc
 assert.match(source, /portraitGatePreferReaders = portraitGateReaderWaiters\.length > 0/, 'each woven writer yields to already-waiting ordinary portraits before another woven writer starts');
 assert.match(source, /const compatibilityTint = function clothingPatternImageForTint/, 'the pre-817 global tint compatibility entry point is restored for portrait code that bypasses renderOptions.imageForTint');
 assert.match(source, /if \(!map\) return portraitBaseTintResolver\(img, sourceKey, tint\)/, 'global tint behavior stays canonical outside an actively owned woven portrait render');
-assert.match(source, /const patternMap = Array\.isArray\(descriptors\)[\s\S]*?buildPortraitPatternMap\(descriptors\)/, 'each woven portrait render builds its own descriptor map');
+assert.match(source, /const patternMap = Array\.isArray\(descriptors\)[\s\S]*?buildPortraitPatternMap\(descriptors,/, 'each woven portrait render builds its own descriptor map with the current portrait-view argument');
 assert.match(source, /patternImageForTint\(patternMap, baseTintResolver, pending => pendingBuilds\.add\(pending\), img, sourceKey, tint\)/, 'the woven tint resolver closes over that render-local descriptor map and reports this render\'s cache misses');
 assert.match(source, /await Promise\.allSettled\(\[\.\.\.pendingBuilds\]\)/, 'woven portrait renders wait for missing pattern composites before returning their canvas');
 assert.match(source, /if \(!patternMap\?\.size\)[\s\S]*?acquirePortraitReadGate\(\)/, 'ordinary portraits acquire the shared side of the portrait gate');
@@ -566,8 +566,8 @@ assert.match(avatarPreviewSource, /await renderer\(canvas, profile, renderOption
 assert.match(source, /document\.addEventListener\('hobunjiPlayerReady'[\s\S]*?requestSessionReadyPlayerAvatarRefresh\(hintedGear\)/, 'woven player-ready lifecycle schedules an automatic post-load avatar rebuild instead of relying on a manual gear toggle');
 assert.match(source, /window\.setTimeout\(attempt, 0\)/, 'session rebuild is deferred until every player-ready listener has installed the live save state');
 assert.match(source, /const startupFinished = window\.__hobunjiGameStarted === true[\s\S]*?liveWoven && initialPortraitPrepared && startupFinished[\s\S]*?equipmentDeps\.refreshPlayerAvatar\(\)/, 'post-load rebuild waits for live woven Gear, the initial gear-to-profile pass, and fully completed game startup before refreshing');
-assert.match(indexSource, /combat-config-loader\.js\?v=20260930directtrimpaint1/, 'index cache-busts the loader that owns the authored clothing trim runtime URL');
-assert.match(combatLoaderSource, /clothing-weaving-system\.js\?v=20260930directtrimpaint1/, 'combat loader cache-busts the authored clothing trim runtime itself');
+assert.match(indexSource, /combat-config-loader\.js\?v=[A-Za-z0-9_-]+/, 'index cache-busts the loader that owns the authored clothing trim runtime URL');
+assert.match(combatLoaderSource, /clothing-weaving-system\.js\?v=[A-Za-z0-9_-]+/, 'combat loader cache-busts the authored clothing trim runtime itself');
 assert.match(portraitSource, /renderOptions\?\.imageForTint[\s\S]*?: _imageForTint/, 'portrait rendering accepts a per-render tint resolver with the canonical tint path as fallback');
 assert.match(portraitSource, /drawPortraitLayerWarped\(ctx, img, resolveXform\(layer\)[\s\S]*?layer\.url, imageForTint\)/, 'breathing overwear layers use the same render-local tint resolver during WorldPortraitLife refreshes');
 
@@ -727,16 +727,167 @@ assert.match(source, /pattern: clone\(pattern\),[\s\S]*patternLibraryId: entry\.
 assert.match(patternAuthorSource, /options\.offloadCustomMotif === false/, 'shared pattern authoring lets weaving opt out of auxiliary motif storage');
 assert.match(patternAuthorSource, /options\.forceTiling === false/, 'shared PatternAuthoring can lock garment-owned trim to one non-repeating overlay');
 assert.equal(clothingTrimManifest.schema, 'hobunji_clothing_trim.v1', 'repo owns one stable authored garment-trim manifest');
+const raggedHoodTrimVariants = clothingTrimManifest.garments?.ragged_hood?.variants || {};
+const expectedRaggedHoodTrimOpCounts = {
+  'mao-ao_male': 30,
+  'mao-ao_female': 30,
+  'tletingan_male': 33,
+  'kenkari_male': 32,
+  'kenkari_female': 32,
+  'engh-sho_male': 32,
+  'engh-sho_female': 30,
+  'rakakoan_male': 31,
+  'rakakoan_female': 31,
+  'mashtzarr_male': 31,
+};
+assert.deepEqual(Object.keys(raggedHoodTrimVariants).sort(), Object.keys(expectedRaggedHoodTrimOpCounts).sort(), 'repo preserves all ten manually reviewed Ragged Hood front variants');
+const expectedRaggedHoodExpands = [7, 10, 11, 12, 12, 1, 4, 7, 9, 12, 13, 13, 14, 14];
+for (const [variantKey, expectedOps] of Object.entries(expectedRaggedHoodTrimOpCounts)) {
+  const front = raggedHoodTrimVariants[variantKey]?.front;
+  assert.equal(front?.motifPng, `assets/patterns/clothing-trims/ragged_hood__${variantKey}__front.png`, `${variantKey} keeps its own Ragged Hood direct-mask asset path`);
+  assert.equal(front?.settings?.directMask, true, `${variantKey} remains an exact Ragged Hood direct mask`);
+  assert.equal(front?.authorOps?.length, expectedOps, `${variantKey} preserves its manually reviewed Ragged Hood authoring journal`);
+  assert.deepEqual(front?.authorOps?.filter(op => op.type === 'expandInward').map(op => op.amount), expectedRaggedHoodExpands, `${variantKey} preserves the common authored inward-expansion sequence`);
+}
+const raggedHoodMasterOps = JSON.stringify(raggedHoodTrimVariants['mao-ao_male']?.front?.authorOps || []);
+for (const variantKey of ['tletingan_male', 'kenkari_male', 'kenkari_female', 'engh-sho_male', 'rakakoan_male', 'rakakoan_female', 'mashtzarr_male']) {
+  assert.notEqual(JSON.stringify(raggedHoodTrimVariants[variantKey]?.front?.authorOps || []), raggedHoodMasterOps, `${variantKey} retains variant-specific manual cleanup instead of being collapsed back to the Mao'ao master journal`);
+}
+const ruggedPonchoTrimVariants = clothingTrimManifest.garments?.rugged_poncho?.variants || {};
+assert.deepEqual(Object.keys(ruggedPonchoTrimVariants), ['mao-ao_male'], 'Rugged Poncho keeps only the uploaded Mao\'ao male master so Replicate All can regenerate every target with region-aware replay');
+const ruggedPonchoMaster = ruggedPonchoTrimVariants['mao-ao_male']?.front;
+assert.equal(ruggedPonchoMaster?.settings?.directMask, true, 'Rugged Poncho master remains an exact direct mask');
+assert.equal(ruggedPonchoMaster?.authorOps?.length, 61, 'Rugged Poncho master preserves the full complex uploaded operation journal');
+assert.equal(ruggedPonchoMaster?.authorOps?.filter(op => op.type === 'stroke' && op.mode === 'paint').length, 32, 'Rugged Poncho master preserves all direct-paint cleanup operations');
+assert.equal(ruggedPonchoMaster?.authorOps?.filter(op => op.type === 'stroke' && op.mode === 'eraser').length, 22, 'Rugged Poncho master preserves all direct-erasure cleanup operations');
+assert.deepEqual(ruggedPonchoMaster?.authorOps?.filter(op => op.type === 'expandInward').map(op => op.amount), [1, 3, 4, 7, 7, 1], 'Rugged Poncho master preserves its authored inward-expansion sequence');
+assert.match(patternEditorSource, /function defaultTrimSourceVariant\(/, 'trim authoring has one shared authored-master selection helper');
+assert.match(patternEditorSource, /authoredInManifest = variants\.find\(key => !!trimRecord\(garmentId, key, view\)\)/, 'manifest-authored variants are preferred over session drafts as replication masters');
+assert.match(patternEditorSource, /preferredSource = defaultTrimSourceVariant/, 'variant selection automatically moves to an authored master when the previous selection is not authored');
+assert.match(patternEditorSource, /function defaultTrimManifestSelection\(\)/, 'Pattern Editor has one startup-selection helper driven by authored trim manifest entries');
+assert.match(patternEditorSource, /if \(views\?\.front\) return \{ garmentId, variantKey, view: 'front' \}/, 'startup selection prefers the authored front view when one exists');
+assert.match(patternEditorSource, /const defaultSelection = defaultTrimManifestSelection\(\)[\s\S]*?select\.value = defaultSelection\.garmentId[\s\S]*?\$\('trimView'\)\.value = defaultSelection\.view[\s\S]*?refreshTrimVariantOptions\(\)[\s\S]*?\$\('trimVariant'\)\.value = defaultSelection\.variantKey/, 'startup applies authored garment, view, and variant before rendering the trim preview');
+assert.match(patternEditorSource, /editableTrimMaskCanvasFor[\s\S]*?catch \(error\) \{[\s\S]*?return null;/, 'missing authored trim PNGs degrade to an empty editable mask instead of aborting trim-editor initialization');
+assert.match(patternEditorSource, /missingTrimAsset = true;[\s\S]*?result = await renderWithTrim\(null\)/, 'trim preview retries the same garment without trim when an authored mask asset cannot be rendered');
+assert.match(patternEditorSource, /Manifest entry exists but its trim PNG could not be loaded/, 'paint viewport reports missing manifest artwork while remaining usable');
+assert.match(patternEditorSource, /Array\.isArray\(record\?\.authorOps\) && record\.authorOps\.length\) return null/, 'journal-backed trim records bypass motifPng as the editor preview source');
+assert.match(patternEditorSource, /replayedMask = replayTrimAuthorOps\(record\.authorOps, baseCanvas\)/, 'normal trim preview reconstructs a saved operation journal directly against the selected variant');
+assert.match(patternEditorSource, /motifDataUrl: replayedMask\.toDataURL\('image\/png'\)/, 'reconstructed journal masks feed the production compositor as an in-memory direct mask');
+assert.match(patternEditorSource, /Trim preview reconstructed directly from this variant’s saved authoring operations/, 'journal-backed previews visibly report that no exported PNG is required');
+assert.match(patternEditorSource, /authorOpsComplete && authorOps\.length[\s\S]*?replayTrimAuthorOps\(authorOps, geometryCanvas\)[\s\S]*?: await editableTrimMaskCanvas/, 'paint-editor loading also prefers complete operation history over any old exported PNG');
+assert.match(patternEditorSource, /const sourceMask = hasJournal\s*\? replayTrimAuthorOps\(sourceOps, sourceGarment\)\s*: await editableTrimMaskCanvasFor/, 'journal-backed replication does not fetch a missing or stale motif PNG before replay');
+assert.match(patternEditorSource, /Legacy trim PNG is missing\/unreadable\. Showing the base garment\./, 'legacy PNG-only preview still has a safe base-garment fallback');
 assert.match(patternEditorSource, /Garment trim authoring/, 'Pattern Editor exposes the dedicated garment trim workspace');
 assert.match(patternEditorSource, /species\/gender variant/i, 'garment trim editor makes per-variant authoring explicit');
 assert.match(patternEditorSource, /trimCoverageText/, 'garment trim editor reports missing species/gender coverage instead of relying on a hard-coded list');
 assert.match(patternEditorSource, /Paint trim directly/, 'garment trim authoring opens an exact sprite-space paint workflow instead of the generic placement editor');
 assert.match(patternEditorSource, /directMask:\s*true/, 'garment trim saves exact pixel placement as a direct mask rather than frame\/mesh transforms');
-assert.match(patternEditorSource, /clipPaintToGarment/, 'direct trim strokes are clipped to the visible garment silhouette');
+assert.match(patternEditorSource, /clipPaintToGarment/, 'loaded trim masks are clipped to the visible garment silhouette');
+assert.match(patternEditorSource, /function stampBrush\(point\)/, 'outline trim brush edits deterministic native sprite pixels rather than anti-aliased vector paths');
+assert.match(patternEditorSource, /function walkLinePixels\(from, to, callback\)/, 'outline trim brush interpolates every native pixel between pointer samples so fast strokes cannot leave gaps');
+assert.doesNotMatch(patternEditorSource, /paintCtx\.lineWidth\s*=\s*brushSize/, 'outline trim brush no longer uses fractional canvas line rasterization');
+assert.doesNotMatch(patternEditorSource, /data-trim-edge-thickness/, 'outline-first trim authoring no longer exposes a competing pre-thickened edge generator');
+assert.match(patternEditorSource, /function buildInwardSilhouetteMap\(mask, width, height\)/, 'trim painter and replication share one silhouette contour and inward ownership map');
+assert.match(patternEditorSource, /boundaryMask\[index\] = 1;[\s\S]*?owner\[index\] = index;[\s\S]*?distance\[index\] = 0;/, 'first non-black garment pixels touching black, transparency, or sprite bounds become one-pixel contour seeds');
+assert.match(patternEditorSource, /data-trim-tool="paint"/, 'trim painter exposes Direct Paint separately from Outline Brush and Eraser');
+assert.match(patternEditorSource, /brushMode === 'paint'[\s\S]*?opaqueGarmentMask\[index\]/, 'Direct Paint uses alpha-only garment membership and can override structural black-outline exclusions');
+assert.match(patternEditorSource, /else if \(silhouetteBoundaryMask\[index\]\)/, 'Outline Brush remains restricted to one-pixel silhouette contour sections');
+assert.match(patternEditorSource, /Outline Brush always authors exactly one contour pixel/, 'outline reach changes selection reach rather than authored trim thickness');
+assert.match(patternEditorSource, /function selectFullOutline\(\)/, 'full-outline shortcut selects the same one-pixel contour used by the brush');
+assert.match(patternEditorSource, /data-trim-expand-amount/, 'trim painter exposes artist-controlled inward depth');
+assert.match(patternEditorSource, /function expandExistingTrim\(amount\)/, 'trim painter expands selected contour sections toward the garment interior');
+assert.match(patternEditorSource, /function distanceFromSelectedContour\(mask, boundaryMask, selectedBoundary, width, height\)/, 'inward expansion computes distance from the union of all actually selected contour sections');
+assert.match(patternEditorSource, /const thinBoundary = new Uint8Array\(mask\.length\)/, 'inward expansion classifies contour-only thin cloth separately from broad perimeter');
+assert.match(patternEditorSource, /mask\[neighbor\] && !boundaryMask\[neighbor\]/, 'thin-contour detection looks for a true non-boundary garment core behind each outline pixel');
+assert.match(patternEditorSource, /boundaryMask\[neighbor\] && !selectedBoundary\[neighbor\] && !thinBoundary\[neighbor\]/, 'broad unselected outline remains a barrier while contour-only thin garment strips stay fillable');
+assert.match(patternEditorSource, /const selectedDistance = distanceFromSelectedContour\(garmentMask, silhouetteBoundaryMask, selectedBoundary, width, height\)/, 'live Expand Inward uses the selected-contour distance field rather than a permanent nearest-owner assignment');
+assert.match(patternEditorSource, /const selectedDistance = distanceFromSelectedContour\(geometry\.mask, inwardMap\.boundaryMask, selectedBoundary, geometry\.width, geometry\.height\)/, 'operation replay uses the same multi-source inward distance as live authoring');
+assert.match(patternEditorSource, /selectedDistance\[index\] > layers \+ 0\.0001/, 'inward expansion stops at the requested distance from any selected contour section');
+assert.match(patternEditorSource, /Any selected inner\/outer contour may claim this interior pixel/, 'replay explicitly allows selected inner and outer edges to meet without leaving Voronoi-owner wedges');
+assert.match(patternEditorSource, /expandExistingBtn\.disabled = !inkPresent/, 'Expand Inward is disabled until the current mask contains trim paint');
+assert.match(patternEditorSource, /Expand Inward needs painted pixels on the one-pixel garment outline/, 'Expand Inward explains when a mask has no valid contour seeds');
+assert.match(patternEditorSource, /trimReplicateTarget/, 'garment trim authoring exposes a target variant picker for cross-species replication');
+assert.match(patternEditorSource, /const STRUCTURAL_TRIM_ALPHA_MIN = 128/, 'structural trim authoring ignores semi-transparent sprite fringe below 50% alpha');
+assert.match(patternEditorSource, /const STRUCTURAL_TRIM_DARK_MAX = 28/, 'structural trim authoring matches the production woven-cloth near-black cutoff');
+assert.match(patternEditorSource, /function opaqueGarmentMaskFromRgba\(rgba\)/, 'manual Direct Paint owns a separate alpha-only garment mask');
+assert.match(patternEditorSource, /rgba\[pixel \* 4 \+ 3\] > 16 \? 1 : 0/, 'Direct Paint still accepts every visibly opaque garment pixel above the lightweight alpha threshold');
+assert.match(patternEditorSource, /function trimableGarmentMaskFromRgba\(rgba\)/, 'structural trim geometry owns a stricter solid non-near-black contour mask');
+assert.match(patternEditorSource, /const alpha = rgba\[offset \+ 3\]/, 'structural trim geometry evaluates source alpha explicitly');
+assert.match(patternEditorSource, /const maxChannel = Math\.max\(rgba\[offset\], rgba\[offset \+ 1\], rgba\[offset \+ 2\]\)/, 'structural trim geometry evaluates near-blackness from source RGB channels');
+assert.match(patternEditorSource, /alpha >= STRUCTURAL_TRIM_ALPHA_MIN && maxChannel > STRUCTURAL_TRIM_DARK_MAX/, 'structural outline selection skips both translucent fringe and near-black line art');
+assert.match(patternEditorSource, /image\.data\[i \+ 3\] > 16 && opaqueGarmentMask\[pixel\]/, 'loaded, replicated, and manually painted trim is preserved on every visible garment pixel');
+assert.match(patternEditorSource, /Direct Paint is a true manual override/, 'trim painter explains that Direct Paint bypasses structural outline classification');
+assert.match(patternEditorSource, /function cloneTrimAuthorOps\(ops\)/, 'trim authoring owns a serializable operation journal helper');
+assert.match(patternEditorSource, /function replayTrimAuthorOps\(authorOps, targetGarment\)/, 'replication can replay authored operations directly against a target garment');
+assert.match(patternEditorSource, /op\.type === 'selectFullOutline'/, 'operation replay preserves full-outline selection as an authored step');
+assert.match(patternEditorSource, /op\.type === 'expandInward'/, 'operation replay preserves exact Expand Inward operations');
+assert.match(patternEditorSource, /op\.type !== 'stroke'/, 'operation replay handles recorded relative trim strokes');
+assert.match(patternEditorSource, /op\.mode === 'paint' \? 'paint' : 'brush'/, 'operation replay preserves Direct Paint as a distinct stroke mode rather than converting it to Outline Brush');
+assert.match(patternEditorSource, /mode === 'paint'[\s\S]*?geometry\.opaqueMask\[index\][\s\S]*?paint\[index\] = 1/, 'replayed Direct Paint uses alpha-only target membership and preserves manual overrides excluded by structural contour detection');
+assert.match(patternEditorSource, /mode: brushMode === 'eraser' \? 'eraser' : \(brushMode === 'paint' \? 'paint' : 'brush'\)/, 'stroke journal records Direct Paint explicitly alongside Outline Brush and Eraser');
+assert.match(patternEditorSource, /sizeNorm:[\s\S]*?brushSize[\s\S]*?sourceScale/, 'stroke journals store outline reach, direct-paint size, and eraser size relative to the source garment scale');
+assert.match(patternEditorSource, /recordStrokePoint\(point\)/, 'pointer stroke samples are recorded in authoring order for replay');
+assert.match(patternEditorSource, /authorOps = \[\{ type: 'selectFullOutline' \}\]/, 'Select Full Outline replaces the mask with a complete replayable journal baseline');
+assert.match(patternEditorSource, /authorOps\.push\(\{ type: 'expandInward', amount \}\)/, 'each successful inward expansion records its exact authored amount');
+assert.match(patternEditorSource, /authorOps = \[\{ type: 'clear' \}\]/, 'Clear establishes a fresh complete replayable history');
+assert.match(patternEditorSource, /authorOpsComplete \? \{ authorOps: cloneTrimAuthorOps\(authorOps\) \} : \{\}/, 'saved trim manifest entries persist complete operation journals beside runtime settings');
+assert.match(patternEditorSource, /snapshot\(\)[\s\S]*?authorOps: cloneTrimAuthorOps\(authorOps\)/, 'undo snapshots preserve operation history alongside mask pixels');
+assert.match(patternEditorSource, /function connectedTrimRegions\(mask, width, height\)/, 'complex trim replay discovers disconnected structural cloth regions before remapping strokes');
+assert.match(patternEditorSource, /function matchTrimReplayRegions\(sourceRegions, targetRegions, sourceBounds, targetBounds\)/, 'complex trim replay first matches source cloth regions to target cloth regions instead of scaling one global rectangle');
+assert.match(patternEditorSource, /function boundaryComponentsForRegion\(region, width, height\)/, 'edge-relative replay separates distinct contour components such as outer hems and inner holes');
+assert.match(patternEditorSource, /function matchTrimBoundaryComponents\(sourceComponents, targetComponents, sourceRegion, targetRegion\)/, 'edge-relative replay matches corresponding source and target contours inside each matched cloth region');
+assert.match(patternEditorSource, /function nearestBoundaryComponentAnchor\(point, components, width\)/, 'each source edit sample anchors to its nearest structural contour before cross-species mapping');
+assert.match(patternEditorSource, /function inwardNormalAtBoundary\(region, boundaryIndex, width, height\)/, 'edge-relative replay derives a local inward direction from the target cloth shape');
+assert.match(patternEditorSource, /const sourceDepth = Math\.hypot\(sourcePoint\.x - sourceAnchor\.x, sourcePoint\.y - sourceAnchor\.y\)/, 'paint and erase replay preserve distance inward from the source edge rather than rectangular XY position');
+assert.match(patternEditorSource, /targetAnchor\.x \+ inward\.x \* targetDepth/, 'paint and erase replay reapply scaled inward depth from the corresponding target edge');
+assert.match(patternEditorSource, /segment\.edgeKey !== mapped\.edgeKey/, 'stroke replay splits when the mapped contour changes so hems, holes, and separate pieces cannot be bridged');
+assert.match(patternEditorSource, /function remapTrimAuthorOpsForTarget\(authorOps, sourceGarment, targetGarment\)/, 'cross-species replication transforms the operation journal through source and target garment geometry');
+assert.match(patternEditorSource, /method === 'replay' && hasJournal[\s\S]*?remapTrimAuthorOpsForTarget\(sourceOps, sourceGarment, targetGarment\)/, 'stroke replay remains available as an explicit replication method');
+assert.match(patternEditorSource, /transferTrimMaskByContour\(sourceMask, sourceGarment, targetGarment\)/, 'default replication transfers the finished source mask through matched cloth contours (see test-trim-contour-warp.js)');
+assert.match(patternEditorSource, /authorOps: cloneTrimAuthorOps\(targetOps\), authorOpsComplete: true/, 'replicated drafts persist their target-specific operation journal instead of copying source coordinates');
+assert.match(patternEditorSource, /type: 'baseMask'/, 'replicated targets inherit replayable operation provenance');
+assert.match(patternEditorSource, /blank canvas is a complete starting state/, 'missing legacy PNGs start a fresh complete operation history instead of poisoning future replication');
+assert.match(patternEditorSource, /trimReplicateAllBtn[\s\S]*?filter\(key => key !== sourceVariant && !trimExists\(garmentId, key, view\)\)/, 'bulk trim replication fills only missing species\/gender variants and leaves authored targets untouched');
+assert.match(patternEditorSource, /Replicate \+ edit target/, 'single-target trim replication explicitly continues into manual cleanup');
 assert.match(patternEditorSource, /Rendered result/, 'direct trim painting keeps a production-compositor result preview beside the paint surface');
 assert.match(patternEditorSource, /trimManifestBtn/, 'garment trim editor exports the shared manifest alongside authored PNG masks');
 assert.match(source, /'clothing-trim'/, 'runtime applies fixed garment trim through its own compositor pass and diagnostic label');
 assert.match(source, /patternDef\?\.directMask === true[\s\S]*?ctx\.drawImage\(motifImg, 0, 0, width, height\)/, 'direct garment trim maps its authored PNG straight into garment pixel coordinates before outlining');
+assert.equal(api.__test.exactDirectMaskPass([{ pattern: { directMask: true } }]), true, 'single direct-mask trim pass is detected as exact sprite-space rendering');
+assert.equal(api.__test.exactDirectMaskPass([{ pattern: {} }]), false, 'ordinary woven pattern does not enter the exact direct-mask path');
+assert.equal(api.__test.patternWorkPad(true), 0, 'direct trim masks use zero compositor work padding and therefore cannot be rescaled by padded mask construction');
+assert.equal(api.__test.patternWorkPad(false), 15, 'ordinary woven motifs retain their existing 15px cell-offset work padding');
+assert.equal(api.__test.patternCellOffset(3, true), 0, 'direct trim masks never receive the generic disconnected-cell pattern shift');
+assert.equal(api.__test.patternCellOffset(3, false), 15, 'ordinary woven patterns retain the existing third-cell 15px phase shift');
+assert.equal(api.__test.patternGarmentPixelEligible(255, 0, true), true, 'manual direct trim can target an opaque raw-black/near-black source pixel');
+assert.equal(api.__test.patternGarmentPixelEligible(255, 28, true), true, 'direct trim eligibility ignores the generic near-black cutoff');
+assert.equal(api.__test.patternGarmentPixelEligible(255, 28, false), false, 'ordinary woven motifs still preserve authored near-black outlines');
+assert.equal(api.__test.patternGarmentPixelEligible(255, 29, false), true, 'ordinary woven motifs still begin immediately above the existing darkness threshold');
+assert.equal(api.__test.patternGarmentPixelEligible(0, 255, true), false, 'direct trim still cannot paint transparent background');
+assert.equal(api.__test.directTrimOutlineSurfacePixelEligible(255, 29), true, 'generated trim border may live on solid cloth immediately above the near-black threshold');
+assert.equal(api.__test.directTrimOutlineSurfacePixelEligible(255, 28), false, 'generated trim border cannot treat authored near-black line art as ordinary cloth');
+assert.equal(api.__test.directTrimOutlineSurfacePixelEligible(127, 255), false, 'generated trim border ignores semi-transparent anti-aliased fringe');
+assert.equal(api.__test.directTrimAuthoredOutlinePixel(255, 0), true, 'opaque authored black line art is recognized as an existing garment border');
+assert.equal(api.__test.directTrimAuthoredOutlinePixel(100, 120), true, 'semi-transparent anti-aliased fringe is also treated as existing authored border');
+assert.equal(api.__test.directTrimAuthoredOutlinePixel(255, 29), false, 'solid normal cloth does not suppress the generated trim separator');
+{
+  const width = 5, height = 3;
+  const generated = new Uint8Array(width * height);
+  const authored = new Uint8Array(width * height);
+  generated[1 * width + 2] = 1; // Would become a duplicate line directly beside the authored border.
+  generated[1 * width + 3] = 1; // Legitimate interior trim separation farther into the cloth.
+  authored[1 * width + 1] = 1;
+  const filtered = api.__test.suppressGeneratedOutlineAgainstAuthoredOutline(generated, authored, width, height);
+  assert.equal(filtered[1 * width + 2], 0, 'trim compositor removes a generated black line immediately beside the garment authored outline');
+  assert.equal(filtered[1 * width + 3], 1, 'trim compositor preserves the interior black separation line away from the garment outline');
+}
+assert.match(source, /const directMaskPass = exactDirectMaskPass\(active\)[\s\S]*?const pad = patternWorkPad\(directMaskPass\)/, 'production compositor routes exact masks through the zero-padding helper');
+assert.match(source, /const off = patternCellOffset\(cellLabels\[p\], directMaskPass\)/, 'production sampling routes exact masks through zero per-cell offset');
+assert.match(source, /patternGarmentPixelEligible\(shadeSourceData\[i \+ 3\], maxChannel, directMaskPass\)/, 'production trim eligibility uses alpha-only direct-mask semantics instead of the generic darkness gate');
+assert.match(source, /directTrimOutlineSurfacePixelEligible\(shadeSourceData\[i \+ 3\], maxChannel\)/, 'production direct trim builds a stricter solid non-near-black surface specifically for generated outline geometry');
+assert.match(source, /directTrimAuthoredOutlinePixel\(shadeSourceData\[i \+ 3\], maxChannel\)/, 'production direct trim identifies the sprite existing dark\/anti-aliased border separately from trim fill');
+assert.match(source, /outlinePatternMask = new Uint8Array\(combinedMask\.length\)/, 'generated direct-trim outline seeds are restricted to structural cloth even though trim color may cover broader alpha-only pixels');
+assert.match(source, /suppressGeneratedOutlineAgainstAuthoredOutline\(outlineMask, directAuthoredOutlineMask, width, height\)/, 'final direct-trim border removes pixels touching the existing authored garment outline to prevent a doubled black edge');
 assert.match(source, /trimPatternOverride/, 'production clothing renderer accepts an unsaved trim draft so the dev editor previews the exact runtime path');
 assert.match(source, /weavingHasAnyDecoration/, 'trim-only clothing participates in rendering/session/cache plumbing without pretending to contain a reusable pattern');
 const diamondLatticeSource = 'basis: (w, h) => ({ u: { x: w / 2, y: h / 2 }, v: { x: w / 2, y: -h / 2 } })';

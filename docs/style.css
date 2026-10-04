@@ -3410,3 +3410,9 @@
     .ctrl-nav-glyph-a { border-color: #7ee787; color: #7ee787; }
     .ctrl-nav-glyph-b { border-color: #ff9b9b; color: #ff9b9b; }
     .ctrl-nav-hint .ctrl-nav-glyph:not(.ctrl-nav-glyph-a):not(.ctrl-nav-glyph-b) { border-radius: 10px; min-width: 34px; }
+
+    body.authored-cutscene #arcContainer, body.introduction-loading #arcContainer,
+    body.authored-cutscene #meleeHudReticle, body.introduction-loading #meleeHudReticle,
+    body.authored-cutscene #rangedHudReticle, body.introduction-loading #rangedHudReticle {
+      display: none !important;
+    }

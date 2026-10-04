@@ -768,12 +768,39 @@ function makeSpritePngUnlitMaterial(THREE, texture, debugName, overrides = {}) {
   return new THREE.MeshBasicMaterial(spritePngMaterialOptions(THREE, texture, debugName, overrides));
 }
 
+// Carvings retain the authored stroke but darken only a thinner core inside it.
+function carveSpritePngCanvas(canvas, coreCanvas = null, options = {}) {
+  const ctx = canvas.getContext('2d'), image = ctx.getImageData(0, 0, canvas.width, canvas.height); // Original coverage defines the full authored stroke.
+  const strokeOpacity = Number.isFinite(options.strokeOpacity) ? Math.max(0,Math.min(1,options.strokeOpacity)) : .65, coreOpacity = Number.isFinite(options.coreOpacity) ? Math.max(strokeOpacity,Math.min(1,options.coreOpacity)) : .95; // Furniture supplies final opacities; sign callers retain their existing material opacity.
+  let corePixels=0,strokePixels=0; // Preview diagnostics distinguish an absent core from a subtle contrast difference.
+  const alpha = new Uint8Array(canvas.width * canvas.height); // Immutable coverage supports sign-text erosion without expanding onto the backing surface.
+  for (let p = 0; p < alpha.length; p++) alpha[p] = image.data[p * 4 + 3];
+  const core = coreCanvas?.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data; // Motifs supply the canonical source-space thinning pass; text uses a two-pixel inset.
+  for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
+    const p = y * canvas.width + x, i = p * 4; // Dark basins lie inside the original stroke, with softer restored edge pixels.
+    if (!alpha[p]) continue;
+    let coverage = core ? core[i+3] / 255 : 1; // Preserve anti-aliasing of the separately thinned motif core.
+    if (!core) for(let oy=-2;oy<=2;oy++)for(let ox=-2;ox<=2;ox++) {
+      if(ox*ox+oy*oy>4)continue;
+      const nx=x+ox,ny=y+oy; // Canvas clipping is not a motif boundary; only actual transparent pixels thin the text.
+      if(nx>=0&&ny>=0&&nx<canvas.width&&ny<canvas.height)coverage=Math.min(coverage,alpha[ny*canvas.width+nx]/Math.max(1,alpha[p]));
+    }
+    image.data[i] = 20; image.data[i + 1] = 16; image.data[i + 2] = 12;
+    image.data[i + 3] = Math.round(alpha[p] * (strokeOpacity + (coreOpacity-strokeOpacity) * coverage));
+    if(coverage>.5)corePixels++;else strokePixels++;
+  }
+  ctx.putImageData(image, 0, 0);
+  canvas.engravingDiagnostics={strokeOpacity,coreOpacity,corePixels,strokePixels}; // Read only on completed composition, never from a permanent frame loop.
+  return canvas;
+}
+
 window.HobunjiSpritePngSurface = {
   tintForBodyColor: bodySpriteTintForColor,
   tintBodyCanvas: getBodyTintedCanvas,
   normalizeSurfaceTone: normalizeAuthoredSurfacePngTone,
   tintSurfaceCanvas: getSurfaceTintedCanvas,
   configureTexture: configureSpritePngTexture,
+  carveCanvas: carveSpritePngCanvas,
   makeCanvasTexture: makeSpritePngCanvasTexture,
   materialOptions: spritePngMaterialOptions,
   makeMaterial: makeSpritePngUnlitMaterial,
@@ -1083,10 +1110,11 @@ const _MOUTH_SPECIES_MAP = {
   'tletingan':{ sprite: 'tletingan',gendered: true,   masked: false },
   'kenkari':   { sprite: 'kenkari',   gendered: false, masked: true  },
   'rakakoan':  { sprite: 'kenkari',   gendered: false, masked: true  },
+  'mammakhbuur': { sprite: 'mashtz', gendered: true, masked: true },
   'mashtzarr': { sprite: 'mashtz',    gendered: true,  masked: true  },
 };
 
-const _BEARD_BELOW_HEAD_SPECIES = new Set(['mashtzarr']);
+const _BEARD_BELOW_HEAD_SPECIES = new Set(['mashtzarr', 'mammakhbuur']);
 
 /**
  * Returns the relative path to the mouth expression sprite, or null.
@@ -1498,7 +1526,21 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     // one layer, not blank the whole portrait. Once the file shows up at its
     // expected path, this starts drawing it with no further code changes.
     const settled = await Promise.allSettled(
-      _allUrls.map(async (url) => [url, await loadImg(url)])
+      _allUrls.map(async (url) => {
+        try { return [url, await loadImg(url)]; }
+        catch (error) {
+          if (url === headUrl) {
+            for (const fallbackUrl of (resolvedFighter?.headFallbackUrls || fighter?.headFallbackUrls || [])) {
+              try {
+                const image = await loadImg(fallbackUrl); // Cache the temporary donor under the requested head for this page session.
+                IMG_CACHE.set(url, image);
+                return [url, image];
+              } catch (_) {}
+            }
+          }
+          throw error;
+        }
+      })
     );
     imgMap = new Map();
     for (const result of settled) {
@@ -2226,6 +2268,7 @@ async function loadPortraitCosmetics(configBase) {
               armLength: Number.isFinite(Number(genderData.armLength)) ? Number(genderData.armLength) : null, // Legacy species-file reach fallback; PNGPlaneAvatar replaces this with attachment-rig-derived anatomy when that shared rig is available.
               label: `${sourceData.label || entry.label} (${genderKey === 'male' ? 'M' : 'F'})`,
               headUrl: genderData.headSprite,
+              headFallbackUrls: genderData.headFallbackUrls || [],
               bodyLayers: genderData.portraitBodyLayers.map(l => ({ ...normalizePortraitLayerXform(l), xformPreset: 'B' })),
               urLayers: (genderData.headUrLayers || []).map(l => ({ url: l.url, renderOrder: l.renderOrder })),
               headXform: genderData.headXform ? normalizePortraitLayerXform(genderData.headXform) : null,
@@ -2244,6 +2287,7 @@ async function loadPortraitCosmetics(configBase) {
               ...(fighterPortraitOverrides[fighter.id] || {}),
               gender: genderKey,
               speciesId,
+              headFallbackUrls: genderData.headFallbackUrls || [],
               ...(Number.isFinite(Number(genderData.armLength)) ? { armLength: Number(genderData.armLength) } : {}), // Preserve the legacy fallback on pre-existing fighters; runtime avatar anatomy still prefers the attachment-rig-derived reach.
               ...(genderData.headXform ? { headXform: genderData.headXform } : {}),
               ...(Array.isArray(genderData.portraitBodyLayers) ? {

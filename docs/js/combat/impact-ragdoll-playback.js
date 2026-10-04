@@ -112,6 +112,42 @@
     );
   }
 
+  function holdHumanoidProne(walker, direction = 'front', blend = 1) {
+    blend = Math.max(0, Math.min(1, Number(blend) || 0));
+    if (!walker?.avatarGroup || walker._cinematicProneBlend === blend) return;
+    const clip = window.ImpactBlendLibrary?.getClip('breakThrow', direction); // Combat holds the settled tail of this same knockdown bank while prone.
+    const frame = clip?.frames?.[clip.frames.length - 1]; // A held pose uses the authored final frame without replaying the initial throw.
+    if (!frame) return;
+    let pivot = walker._cinematicPosePivot; // Isolated actor pivot rotates torso, hands and procedural legs around the normal posterior anchor.
+    if (!pivot) {
+      const posteriorY = Number(walker.legs?.standingPosteriorY) || 0; // Matches the combat body composer's floor-relative pivot.
+      pivot = new THREE.Group();
+      pivot.position.y = posteriorY;
+      walker.root.add(pivot);
+      for (const node of [walker.alcoholPoseGroup || walker.avatarGroup, walker.legs?.group]) {
+        if (!node) continue;
+        pivot.add(node);
+        node.position.y -= posteriorY;
+      }
+      pivot.userData.posteriorY = posteriorY;
+      walker._cinematicPosePivot = pivot;
+    }
+    const body = sampleBody(clip.frames[0], frame, blend); // Same quaternion/height sampling as combat's held player frame.
+    pivot.quaternion.copy(body.quaternion);
+    pivot.position.y = pivot.userData.posteriorY + body.y - (Number(clip.frames[0]?.ragdoll?.body?.localPosition?.y) || 0);
+    for (const side of ['left', 'right']) walker.legs?.applyRecordedLegPose(side, sampleLeg(clip.frames[0].ragdoll.ik[side], frame.ragdoll.ik[side], blend));
+    walker._cinematicProneBlend = blend;
+    walker._cinematicProneHeld = blend > 0;
+  }
+
+  function clearHumanoidProne(walker) {
+    if (!walker?._cinematicProneHeld) return;
+    walker._cinematicPosePivot.quaternion.identity();
+    walker._cinematicPosePivot.position.y = walker._cinematicPosePivot.userData.posteriorY;
+    walker._cinematicProneHeld = false;
+    walker._cinematicProneBlend = undefined;
+  }
+
   function ensureCreatureImpactPivot(entity) {
     const avatarRef = entity?.avatarRef;
     const front = avatarRef?.frontPlane;
@@ -362,6 +398,7 @@
 
   window.ImpactRagdollPlayback = {
     attach,
+    holdHumanoidProne, clearHumanoidProne,
     trigger,
     update,
     beginRecoveryArc,

@@ -47,7 +47,7 @@ assert.match(
 );
 assert.match(
   afterimages,
-  /setCombatExpression\?\.\(entity, inCombat\)[\s\S]{0,1400}spawnAfterimageForRoot\(entity\.avatarRef\.group, 'enemy-dodge'\)/,
+  /setCombatExpression\?\.\(entity, inCombat\)[\s\S]{0,1400}spawnAfterimageForRoot\(entity\.avatarRef\.group, 'enemy-dodge',/,
   'enemy frown is on the source portrait before a dodge afterimage snapshots it'
 );
 assert.match(

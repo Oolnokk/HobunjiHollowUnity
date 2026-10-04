@@ -4,7 +4,7 @@
 
   const load = window.LocalDBOverrides
     ? window.LocalDBOverrides.loadDatabase('attackValues')
-    : fetch('config/combat/attack-values.json?v=20260917charge3').then(response => response.ok ? response.json() : null);
+    : fetch('config/combat/attack-values.json?v=20261001quickbonus1').then(response => response.ok ? response.json() : null);
 
   window.__attackValuesConfigPromise = load.then(config => {
     if (!config) return null;
@@ -80,7 +80,7 @@
   const modules = [
     ['js/text-entry-keybind-guard.js?v=20260901a', () => !!window.HobunjiTextInputGuard],
     ['js/controller-modern-flow-bridge.js?v=20260915a', () => Number(window.ControllerModernFlowBridge?.version) >= 1],
-    ['js/player-body-transform-composer.js?v=20260927greetinghead1', () => !!window.PlayerBodyTransformComposer],
+    ['js/player-body-transform-composer.js?v=20261002hca73c61', () => !!window.PlayerBodyTransformComposer],
     ['js/player-body-attachment-bridge.js?v=20260918shoulderparity3', () => !!window.PlayerBodyAttachmentBridge],
     ['js/front-hat-head-facing.js?v=20260914nofacing1', () => !!window.HobunjiFrontHatHeadFacing],
     ['js/hat-xray-head-facing.js?v=20260914nofacing1', () => !!window.HobunjiHatXrayHeadFacing],
@@ -95,23 +95,25 @@
     ['js/mastery-policy.js?v=20260924levelup1', () => !!window.HobunjiMasteryPolicy],
     ['js/inventory-action-metadata-bridge.js?v=20260813b', () => !!window.HobunjiInventoryActionMetadataBridge],
     ['js/inventory-held-override.js?v=20260918blackstamina1', () => !!window.InventoryHeldOverride],
-    ['js/clothing-weaving-system.js?v=20260930directtrimpaint1', () => Number(window.ClothingWeavingSystem?.version) >= 1],
+    ['js/clothing-weaving-system.js?v=20261003h25b5015', () => Number(window.ClothingWeavingSystem?.version) >= 1],
     ['js/clothing-weight-dodge-policy.js?v=20260913a', () => Number(window.ClothingWeightDodgePolicy?.version) >= 1],
     ['js/inventory-character-effects.js?v=20260915a', () => Number(window.InventoryCharacterEffects?.version) >= 1],
-    ['js/inventory-gear-compact-effects.js?v=20260915b', () => Number(window.InventoryGearCompactEffects?.version) >= 2],
+    ['js/inventory-gear-compact-effects.js?v=20261001hb2dc3b8', () => Number(window.InventoryGearCompactEffects?.version) >= 2],
     ['js/combat/technique-scrolls.js?v=20260928training1', () => !!window.TechniqueScrolls],
     ['js/held-seed-action-bridge.js?v=20260813a', () => !!window.HobunjiHeldSeedActionBridge],
     ['js/held-seed-desktop-capture.js?v=20260814a', () => !!window.HobunjiHeldSeedDesktopCapture],
     ['js/held-item-action-input.js?v=20260910a', () => !!window.HeldItemActionInput],
     ['js/alcohol-gameplay-bridge.js?v=20260918blackstamina1', () => !!window.HobunjiDrunkGameplayBridge],
-    ['js/npc-gifting.js?v=20260922wardrobe2', () => !!window.NpcGifting],
+    ['config/npcs/food-gift-preferences.js?v=20261001foodgift1', () => Number(window.HobunjiNpcFoodGiftPreferences?.version) >= 1],
+    ['js/npc-food-gift-preferences.js?v=20261001foodgift2', () => Number(window.NpcFoodGiftPreferences?.version) >= 1],
+    ['js/npc-gifting.js?v=20261002h0eb6484', () => !!window.NpcGifting],
     ['js/favor-heart-balance.js?v=20260917points3', () => Number(window.NpcFavorBalance?.version) >= 1],
     ['config/npcs/clothing-patterns.js?v=20260924npcweave1', () => Number(window.HobunjiNpcClothingPatterns?.version) >= 1],
     ['js/npc-wardrobe.js?v=20260924npcweave1', () => !!window.NpcWardrobe],
     ['js/clothing-weaving-npc-compat.js?v=20260913a', () => Number(window.ClothingWeavingNpcCompat?.version) >= 1],
     ['js/npc-furniture-wardrobe-bridge-v4.js?v=20261001cf37282d', () => Number(window.NpcFurnitureWardrobes?.version) >= 4],
     ['config/npcs/social-relations.js?v=20260904a', () => !!window.HobunjiNpcSocialRelationsConfig],
-    ['js/npc-social-relationship-bridge-v2.js?v=20260914favor1', () => !!window.NpcRapport?.eventDriven],
+    ['js/npc-social-relationship-bridge-v2.js?v=20261002h7725df2', () => !!window.NpcRapport?.eventDriven],
     ['js/generic-hud-icons.js?v=20260915perf1', () => Number(window.HobunjiGenericHudIcons?.version) >= 1],
     ['js/hud-x-control-polish.js?v=20260915a', () => Number(window.HudXControlPolish?.version) >= 1],
     ['js/favor-popup-points-bridge.js?v=20260914b', () => Number(window.FavorPopupPointsBridge?.version) >= 2],
@@ -123,7 +125,7 @@
     ['js/performance-loop-optimizations.js?v=20260818a', () => !!window.HobunjiPerformanceLoopOptimizations],
     ['js/combat/enemy-target-facing.js?v=20260906a', () => Number(window.EnemyTargetFacing?.version) >= 1],
     ['js/combat/enemy-weapon-stances.js?v=20260903a', () => !!window.EnemyWeaponStances],
-    ['js/npc-held-equipment-v4.js?v=20261001c98b4b8a', () => Number(window.NpcHeldEquipment?.version) >= 4],
+    ['js/npc-held-equipment-v4.js?v=20261002h8724659', () => Number(window.NpcHeldEquipment?.version) >= 4],
     ['js/combat/ranged-weapon-archetypes.js?v=20260920projectileport1-arcembed1-spearspin3-align1', () => Number(window.HobunjiRangedWeaponArchetypes?.version) >= 14],
     ['js/combat/ranged-camera-ray-authority.js?v=20260927reticletarget1', () => Number(window.HobunjiRangedCameraRayAuthority?.version) >= 4],
     ['js/combat/ranged-camera-focus.js?v=20260930rangedconverge1', () => Number(window.HobunjiRangedCameraFocus?.version) >= 12],
@@ -132,12 +134,12 @@
     ['js/drunk-prone-composition-bridge.js?v=20260926hover1', () => !!window.HobunjiDrunkProneCompositionBridge],
     ['js/prone-motion-exclusivity.js?v=20260812a', () => !!window.HobunjiProneMotionExclusivity],
     ['js/footing-damage-recovery-bridge.js?v=20260812a', () => !!window.HobunjiFootingDamageRecovery],
-    ['js/combat/combat-grehlr-burrow.js?v=20260926ring2', () => !!window.HobunjiGrehlrBurrow],
+    ['js/combat/combat-grehlr-burrow.js?v=20261001quickdebuff2', () => !!window.HobunjiGrehlrBurrow],
     ['js/combat/combat-grehlr-stink.js?v=20260822a', () => !!window.HobunjiGrehlrStink],
     ['js/combat/combat-corroded-health.js?v=20260817a', () => !!window.HobunjiCorrodedHealth],
     ['js/combat/enemy-combat-health-recovery.js?v=20260924combatheal2', () => Number(window.CombatHealthRecoveryPolicy?.version || window.EnemyCombatHealthRecoveryPolicy?.version) >= 2],
     ['js/combat/combat-death-mark.js?v=20260903a', () => !!window.HobunjiDeathMark],
-    ['js/combat/combat-drenkirra-pellet.js?v=20260930h5ccaa36', () => !!window.HobunjiDrenkirraPellet],
+    ['js/combat/combat-drenkirra-pellet.js?v=20261001quickdebuff2', () => !!window.HobunjiDrenkirraPellet],
     ['js/combat/combat-grehlr-drenkirra-followup.js?v=20260826drenkirra1', () => !!window.HobunjiGrehlrDrenkirraFollowup],
     // Den locale runtime is an ordinary sibling module, not a script injected
     // from inside Puktuk registration. Keeping one parser-owned loader prevents

@@ -99,7 +99,8 @@
     const dy = entity.y - attacker.y; // Attack-to-enemy axis normalized below.
     const length = Math.max(0.001, Math.hypot(dx, dy));
     const efficacy = Math.max(0, Number(armorStats(entity)?.dodgeEfficacy) || 1); // Same weight-derived duration/travel effectiveness as the player.
-    const travelPx = tuning.speedPxS * tuning.durationS * efficacy; // Endpoint probe distance for choosing a side with usable terrain.
+    const heavyDistanceMul = window.ResourceSystem?.timedDebuffModifier?.(entity, 'dodgeLungeDistance') ?? 1; // Heavy reduces actual evasive travel while leaving the decision/iframe window readable.
+    const travelPx = tuning.speedPxS * tuning.durationS * efficacy * heavyDistanceMul; // Endpoint probe distance for choosing a side with usable terrain.
     const preferredSign = ((String(entity.id || '').length + (Number(threat.id) || 0)) & 1) ? 1 : -1; // Deterministic left/right variety without an extra random roll.
     const candidates = [preferredSign, -preferredSign].map(sign => ({ x: -dy / length * sign, y: dx / length * sign, sign }));
     candidates.push({ x: dx / length, y: dy / length, sign: 0 }); // Backward escape is the fallback when both lateral lanes are obstructed.
@@ -165,14 +166,16 @@
     if (!state) return null;
     state.remainingS = Math.max(0, state.remainingS - dt);
     entity.dodgeT = state.remainingS;
-    const desiredX = entity.x + entity.dodgeDirX * tuning.speedPxS * dt; // Per-frame dodge endpoint resolved through the normal creature terrain sweep.
-    const desiredY = entity.y + entity.dodgeDirY * tuning.speedPxS * dt; // Per-frame dodge endpoint resolved through the normal creature terrain sweep.
+    const heavyDistanceMul = window.ResourceSystem?.timedDebuffModifier?.(entity, 'dodgeLungeDistance') ?? 1; // Same Heavy distance percentage used when this dodge direction was chosen.
+    const dodgeSpeedPxS = tuning.speedPxS * heavyDistanceMul; // Reduced speed over the unchanged dodge duration produces the intended shorter total dodge.
+    const desiredX = entity.x + entity.dodgeDirX * dodgeSpeedPxS * dt; // Per-frame dodge endpoint resolved through the normal creature terrain sweep.
+    const desiredY = entity.y + entity.dodgeDirY * dodgeSpeedPxS * dt; // Per-frame dodge endpoint resolved through the normal creature terrain sweep.
     const swept = deps.sweptMove(entity.x, entity.y, desiredX, desiredY, (x, y) => deps.canOccupyAt(x, y, deps.TILE * 0.32));
     const stepPx = Math.hypot(swept.x - entity.x, swept.y - entity.y); // Actual traveled distance drives the existing creature footstep cadence.
     entity.x = swept.x;
     entity.y = swept.y;
-    entity.vx = entity.dodgeDirX * tuning.speedPxS;
-    entity.vy = entity.dodgeDirY * tuning.speedPxS;
+    entity.vx = entity.dodgeDirX * dodgeSpeedPxS;
+    entity.vy = entity.dodgeDirY * dodgeSpeedPxS;
     deps.tickCreatureFootsteps?.(entity, stepPx);
     const progress = state.durationS > 0 ? 1 - state.remainingS / state.durationS : 1; // Full-body roll progress for the readable dodge animation.
     if (entity.avatarRef?.group?.rotation) entity.avatarRef.group.rotation.z = progress * Math.PI * 2 * state.spinSign;

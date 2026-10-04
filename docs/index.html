@@ -12,9 +12,13 @@
   <!-- Must load before any save/localStorage writer: evicts browser recovery-checkpoint mirrors when the quota is full. -->
   <script src="js/storage-quota-guard.js?v=20261001c7a40d56"></script>
   <script src="js/scene-ready-poller.js?v=20260920startup4"></script>
+  <!-- Dev Companion bridge (window.DevCompanion): session-tied channel to the
+       docs/tools/dev-companion window. Loaded before every config-fetching
+       module so its fetch() wrapper can log each config/JSON access. -->
+  <script src="js/dev-companion-bridge.js?v=20260930companion1"></script>
   <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
   <script src="js/GLTFLoader.js?v=20260712d"></script>
-  <script src="js/WallBuilder.js?v=20261001h58ef7ab"></script>
+  <script src="js/WallBuilder.js?v=20261002h9f31e27"></script>
   <script src="js/HousePieceGen.js?v=20261001hbe2b612&window=20260926rebase1"></script>
   <script src="js/interior-scene-builder.js?v=20260930globalground2&window=20260926rebase1"></script>
   <script src="js/building-door.js?v=20260725a"></script>
@@ -22,7 +26,7 @@
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
        extracted out of game.js; must load before game.js and before every
        other module whose init(deps) is handed window.FormatUtils.clamp/esc. -->
-  <script src="js/format-utils.js?v=20260924perf1"></script>
+  <script src="js/format-utils.js?v=20261002h714941a"></script>
   <!-- Movement virtual-joystick handlers extracted out of game.js; uses
        window.FormatUtils.clamp, so must load after it and before game.js. -->
   <script src="js/virtual-joystick.js?v=20260902mod1"></script>
@@ -42,7 +46,8 @@
   <!-- Cutscene Director preview standalone helpers extracted out of
        game.js; the stateful runCutscenePreview runner itself stays in
        game.js and calls into these. Must load before game.js. -->
-  <script src="js/cutscene-preview-helpers.js?v=20260902mod1"></script>
+  <script src="js/cutscene-furniture-runtime.js?v=20261002furniture1"></script>
+<script src="js/cutscene-preview-helpers.js?v=20261002h0817cc0"></script>
   <!-- Loot-pool/shop-stock config loading and item-quality rolling,
        extracted out of game.js. Must load before game.js, which calls
        window.LootRolling.init(...) and .loadLootShopConfig() during its
@@ -71,7 +76,7 @@
        window.FarmEditor.init(...) very early (right after
        createInitialGrid(), before loading any saved farm layout) and
        window.FarmEditor.loadFarmLayout()/etc. immediately after. -->
-  <script src="js/farm-editor.js?v=20260902mod1&window=20260926rebase1"></script>
+  <script src="js/farm-editor.js?v=20261003h9d1bbfb&window=20260926rebase1"></script>
   <!-- Terrain/path tile geometry builders, extracted out of game.js. Must
        load before game.js, which calls window.TerrainGeometry.init(...)
        partway through its own setup (after camTargetX/pathWallBuilder/
@@ -122,19 +127,19 @@
        js/wild-berries.js also read from it via their own init() calls
        further down game.js. Doesn't touch the DOM (see player-vitals.js's
        comment above and the plan notes on that bug class). -->
-  <script src="js/item-processing.js?v=20260902mod1"></script>
+  <script src="js/item-processing.js?v=20261001foodgift2"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="debug.js?v=20260925weavesessiondebug4"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20260930h1b2e2e2"></script>
-  <script src="config/scratchbones-config.js?v=20260930livestockwalk1"></script>
+  <script src="config/scratchbones-config.js?v=20261002h12b6f76"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
   <script src="js/tool-metal-recolor.js?v=20261001c6751543"></script>
   <script src="js/metal-armor-system.js?v=20260930pauldronverdigris1"></script>
   <script src="config/colors/config.js?v=20260930h1b2e2e2"></script>
-  <script src="config/attachment-rig-profiles.js?v=20260924voorglarge1"></script>
+  <script src="config/attachment-rig-profiles.js?v=20261002h6d814a9"></script>
   <link rel="stylesheet" href="style.css?v=20260927commandauras1-dialogue20">
   <link rel="stylesheet" href="cooking-ui.css?v=20260811a">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
@@ -148,7 +153,7 @@
       window.SCRATCHBONES_CONFIG.game.assets.portrait.configBase = './config/';
     }
   </script>
-  <script src="js/portrait-utils.js?v=20260926hoodback2"></script>
+  <script src="js/portrait-utils.js?v=20261003he8efec4"></script>
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20260930ha019a52"></script>
   <script src="js/png-plane-avatar.js?v=20260926hskelhairalign1"></script>
@@ -160,9 +165,9 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20260924shoulderocclusion1"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261001cc4ca767"></script>
+  <script src="js/held-action-animations.js?v=20261002h40d3b74"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
-  <script src="js/character-action-locks.js?v=20260925metromix1"></script>
+  <script src="js/character-action-locks.js?v=20261002h69592ed"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
   <script src="js/npc-character-state.js?v=20260811a"></script>
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
@@ -184,7 +189,7 @@
        doesn't itself depend on it (each reads genotype data, not each
        other), but they're a matched pair. -->
   <script src="js/voorg-ass-registration.js?v=20260923baseanchor1"></script> <!-- Shared Voorg-Ass creature/renderer/herd registration used by the three scripts below. -->
-  <script src="js/creature-genetics.js?v=20260923baseanchor1"></script>
+  <script src="js/creature-genetics.js?v=20261002h5fdf0c4"></script>
   <!-- Creature genotype recolor + pattern-overlay compositing. -->
   <script src="js/creature-genetics-render.js?v=20260930h6b34ce7"></script>
   <!-- Shared per-frame "where is this creature/character's head" cache — see
@@ -197,16 +202,17 @@
   <!-- Procedural foliage / crop geometry -->
   <script src="js/foliage-generator.js?v=20260910review1"></script>
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
-  <script src="js/procedural-furniture.js?v=20260929glowdecals1"></script>
+  <script src="js/procedural-furniture.js?v=20261004hbcc407f"></script>
   <script src="js/furniture-puzzle-properties.js?v=20260922perpiece1"></script>
   <script src="js/furniture-puzzle-runtime.js?v=20260929glowdecals1"></script>
   <!-- Loads the richer per-piece data authored by furniture-avatar-author (seat
        anchors, processing VFX/warps, livestock stomp points) on top of it -->
   <script src="js/authored-furniture-runtime.js?v=20260922twostate1"></script>
+  <script src="js/furniture-pattern-surfaces.js?v=20261003hfbe7570"></script>
   <!-- Shared plateau/ramp fold math (Map Editor preview + Tothal Shift) and the
        headless Wilderness Map Generator core (Tothal Shift wilderness reroll) -->
   <script src="js/terrain-preview.js?v=20260922ruinrebase1"></script>
-  <script src="js/wilderness-map-generator.js?v=20260924localecollider1"></script>
+  <script src="js/wilderness-map-generator.js?v=20261002hb64913d"></script>
   <!-- Terrain-aware authored locales inspect the finished wilderness and place against existing host terrain. Must load after WildernessMapGenerator so its wrapper installs in the game, not only in editor/tests. -->
   <script src="js/locale-terrain-placement.js?v=20260930ladderfix1"></script>
   <script src="js/foliage-furniture-renderer.js?v=20260816a"></script>
@@ -221,7 +227,7 @@
   <script src="js/banubu-quest-content.js?v=20260925banubuvisual2"></script>
        editors save edited repo-tracked JSON into localStorage and have the
        game load that instead of the repo file when Local source is selected. -->
-  <script src="js/local-db-overrides.js?v=20260923banubuscale2"></script>
+  <script src="js/local-db-overrides.js?v=20260930hd662bf5"></script>
   <script>
     // species-pose-scaling parser-loads earlier for avatar consumers, then
     // re-resolves its config now that LocalDBOverrides knows the selected
@@ -235,47 +241,47 @@
   <!-- Shared condition-axis schema/evaluators (window.ConditionRegistry) —
        single source of truth for the dialogue system's and the Loot & Shop
        system's condition gating, also loaded by their respective dev tools. -->
-  <script src="js/condition-registry.js?v=20260930hc16d04c"></script>
+  <script src="js/condition-registry.js?v=20260930he9dd23b"></script>
   <!-- Optional local-folder save mirror (window.LocalSaveFolder) — self-contained,
        only reads/writes the same hobunjiSaveMeta localStorage key onboarding.js/
        game.js already use. See docs/js/local-save-folder.js. -->
-  <script src="js/local-save-folder.js?v=20261001c619ad88"></script>
+  <script src="js/local-save-folder.js?v=20261002h1b411a3"></script>
   <!-- Onboarding overlay -->
   <link rel="stylesheet" href="onboarding.css?v=20260921preworldsky1">
-  <script src="onboarding.js?v=20261001cc6ee547"></script>
+  <script src="onboarding.js?v=20261002h276e7c7"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
-  <script src="js/combat/resource-system.js?v=20260930h7347c6f"></script>
+  <script src="js/combat/resource-system.js?v=20261001quickdebuff2"></script>
   <script src="js/combat/knockback-collision-impact.js?v=20260930h6c19d61"></script>
   <!-- Burning Health presentation: reuses the authored campfire fire emitter on afflicted player/enemy avatar roots. -->
   <script src="js/combat/burning-affliction-vfx.js?v=20260923burn1"></script>
   <script src="js/combat/resource-rings.js?v=20260809a"></script>
-  <script src="js/combat/combat-core.js?v=20260930h5d10f96"></script>
+  <script src="js/combat/combat-core.js?v=20261001quickdebuff2"></script>
   <script src="js/combat/enemy-search-ai.js?v=20260926combatreview1"></script>
   <!-- Stagger/Footing: authored 4-directional ragdoll blend clips + runtime
        playback onto the player's procedural rig and quarter-turned body-only
        animal planes. Must load after the procedural leg module and after
        resource-system.js/combat-core.js. -->
   <script src="js/combat/impact-blend-library.js?v=20260828b"></script>
-  <script src="js/combat/impact-ragdoll-playback.js?v=20260828b"></script>
+  <script src="js/combat/impact-ragdoll-playback.js?v=20261002hd4bb4ac"></script>
   <script src="js/combat/combat-enemy-telegraph.js?v=20260926combatreview1"></script>
-  <script src="js/combat/combat-animal-attacks.js?v=20260930h43f83e0"></script>
-  <script src="js/combat/combat-loadout.js?v=20260925heldmode1"></script>
-  <script src="js/combat/combat-progression.js?v=20261001c57b23ed"></script>
+  <script src="js/combat/combat-animal-attacks.js?v=20261001quickdebuff2"></script>
+  <script src="js/combat/combat-loadout.js?v=20261002h5d8b101"></script>
+  <script src="js/combat/combat-progression.js?v=20261001quickdebuff2"></script>
   <!-- Shared player-attack event context (prepare/hit/defensive) published by every
        ability module; Enchantments and future cross-cutting systems observe it. -->
-  <script src="js/combat/combat-attack-events.js?v=20260930ench1"></script>
+  <script src="js/combat/combat-attack-events.js?v=20261001quickbonus1"></script>
   <!-- Shared companion offensive-stat aggregation (Engraved Whistle × Sicced). -->
   <script src="js/combat/companion-offense.js?v=20260930ench1"></script>
-  <script src="js/combat/combat-input.js?v=20260924swimcombat2"></script>
+  <script src="js/combat/combat-input.js?v=20261004h0097162"></script>
   <script src="js/combat/combat-combo.js?v=20260930h81d72c4"></script>
-  <script src="js/combat/combat-quickattacks.js?v=20260930h1fa1790"></script>
+  <script src="js/combat/combat-quickattacks.js?v=20261001quickdebuff2"></script>
   <script src="js/combat/combat-counter-shield.js?v=20260930h07cba2f"></script>
-  <script src="js/combat/combat-blink-dodge.js?v=20260930afterimage4"></script>
-  <script src="js/combat/combat-charged-breaker.js?v=20260930hbbcd28d"></script>
+  <script src="js/combat/combat-blink-dodge.js?v=20261002h2d08879"></script>
+  <script src="js/combat/combat-charged-breaker.js?v=20261004h4413146"></script>
   <script src="js/combat/combat-flurry.js?v=20260930he6f6a0a"></script>
   <script src="js/combat/combat-loadout-ui.js?v=20260930h75d45df"></script>
   <!-- Weapon Enchantments + Immundanity (Base/Flourish, planar cancellation, Sicced/Fury/...). -->
-  <script src="js/combat/combat-enchantments.js?v=20260930ench1"></script>
+  <script src="js/combat/combat-enchantments.js?v=20261001quickbonus1"></script>
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
        projectiles. Loads before bandits so their dual loadouts can call it. -->
   <script src="js/nearby-volume-collision.js?v=20260827treecover2"></script>
@@ -283,9 +289,9 @@
   <script src="js/area-footprint-blockers.js?v=20260929shotfloor1"></script>
   <!-- Sub-stepped sliding move extracted out of game.js; must load before game.js. -->
   <script src="js/swept-move.js?v=20260927footprints1"></script>
-  <script src="js/combat/ranged-weapons.js?v=20260929merge1-tutorialrebase1"></script>
-  <script src="js/combat/ranged-hud-reticle.js?v=20260925dialogue3"></script>
-  <script src="js/combat/melee-hud-reticle.js?v=20260926combatreview1"></script>
+  <script src="js/combat/ranged-weapons.js?v=20261001quickdebuff2"></script>
+  <script src="js/combat/ranged-hud-reticle.js?v=20261002haf3daa5"></script>
+  <script src="js/combat/melee-hud-reticle.js?v=20261002hffc6292"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
        load before game.js, which calls window.BanditCombat.init(...)
        during its own setup. Reads window.Combat's comboData/quickAttackData/
@@ -293,12 +299,12 @@
        (at fight time, not load time), so exact ordering against those two
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
-  <script src="js/combat/combat-bandit.js?v=20261001cb09eb58"></script>
+  <script src="js/combat/combat-bandit.js?v=20261001quickdebuff2"></script>
   <!-- Distinct Minion humanoid category: independent roster/dye/Shambling Footing rules over the shared BanditCombat executor. -->
   <script src="js/combat/combat-minion.js?v=20260929lichroom1"></script>
-  <script src="js/combat/combat-enemy-dodge.js?v=20260926combatreview1"></script>
+  <script src="js/combat/combat-enemy-dodge.js?v=20261001quickdebuff2"></script>
   <!-- Testing Arena-only Harlyao Lich class: wraps the final humanoid AI seam after enemy-dodge, owns elemental projectiles/puddles/Entranced commands, and summons ordinary Minions. -->
-  <script src="js/combat/combat-lich.js?v=20261001c7de02fd"></script>
+  <script src="js/combat/combat-lich.js?v=20261001quickdebuff2"></script>
   <!-- Bandit camps (zone adapter, tent props, camp lifecycle, companion
        perception, corpse loot) — window.BanditCamps. Calls
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
@@ -312,7 +318,7 @@
   <script src="js/bounty-board.js?v=20260831spearheadexisting1-colors1"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261001ce94eff3"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261003hbec542d"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -320,10 +326,10 @@
   <script src="js/skill-system.js?v=20260927temperxp1"></script>
   <script src="js/perk-system.js?v=20260930h4cddcbb"></script>
   <!-- Trinkets + shared 8-point Attunement budget; registers stat/perk/companion providers. -->
-  <script src="js/trinket-system.js?v=20260930ench1"></script>
+  <script src="js/trinket-system.js?v=20261002hf79dffc"></script>
   <script src="js/cooking-data.js?v=20260811a"></script>
-  <script src="js/food-processing.js?v=20260811a"></script>
-  <script src="js/cooking-system.js?v=20260811b"></script>
+  <script src="js/food-processing.js?v=20261001foodgift2"></script>
+  <script src="js/cooking-system.js?v=20261001foodgift2"></script>
   <script src="js/key-item-system.js?v=20260918banubu1"></script>
   <!-- Alchemy (reagent/effect defs, potion brewing, shared timed effects) —
        window.AlchemySystem. Self-contained aside from deps injected via
@@ -382,7 +388,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmTroughs.init(...) during its own setup. -->
-  <script src="js/farm-troughs.js?v=20260924perf1"></script>
+  <script src="js/farm-troughs.js?v=20261002h691f6b4"></script>
   <!-- Modular player house (window.HousePieces) — barn-shaped foundation/
        build/demolish pipeline for house-piece deeds bought from the
        Carpenter, replacing the old singular Highland House GLB. Depends on
@@ -390,7 +396,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20260930h94ca2bd&surfaceUv=20260924edgepreserve2"></script>
+  <script src="js/house-pieces.js?v=20261002h2476032&surfaceUv=20260924edgepreserve2"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -430,7 +436,7 @@
        relative to the other systems above doesn't matter; must load before
        game.js, which calls window.CalendarSystem.init(...) during its own
        setup. -->
-  <script src="js/calendar-system.js?v=20260929ruinsites1"></script>
+  <script src="js/calendar-system.js?v=20261002hd5f045a"></script>
   <!-- Resolves a map/interior's active alternate `layouts` entry (see
        docs/config/maps/map_i_temple.json's spirit_communion layout) against
        the current calendar time — window.MapLayoutSystem. Pure/stateless, no
@@ -448,7 +454,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.RelationshipsPanel.init(...) during its own setup. -->
-  <script src="js/relationships-panel.js?v=20260915perf1"></script>
+  <script src="js/relationships-panel.js?v=20261001foodgift1"></script>
   <!-- Debug hitbox/collider overlay, Settings → Dev Tools → Show Hitboxes
        (window.DebugHitboxes) — self-contained aside from deps injected via
        init(), so load order relative to the other systems above doesn't
@@ -480,13 +486,13 @@
        other systems above doesn't matter; must load before game.js, which
        calls window.WildernessMap.init(...) during its own setup. -->
   <script src="js/wilderness-map.js?v=20260929ruinsites1"></script>
-  <script src="js/navigation-compass.js?v=20260830mapwaypoint1"></script>
+  <script src="js/navigation-compass.js?v=20261001h4adf2e4"></script>
   <!-- Dead-zone rotation math shared by player/NPC/creature PNG-plane
        avatars (window.PerpRotation) — self-contained aside from deps
        injected via init(), so load order relative to the other systems
        above doesn't matter; must load before game.js, which calls
        window.PerpRotation.init(...) during its own setup. -->
-  <script src="js/perp-rotation.js?v=20260926b"></script>
+  <script src="js/perp-rotation.js?v=20261002hd5b290e"></script>
   <!-- Funji & Son's General Store (window.GeneralStore) — self-contained
        aside from deps injected via init(), and reads window.DyeSystem/
        window.ConditionRegistry at render time (already global by then), so
@@ -513,19 +519,19 @@
        definition; used today by metal-craft-shop.js's authored
        verdigris-removal pattern service, meant to be reused later by a
        weaving/dye system. No deps injection, so load order doesn't matter. -->
-  <script src="js/pattern-authoring.js?v=20260924overpassgap1"></script>
+  <script src="js/pattern-authoring.js?v=20261003h8825bc4"></script>
   <!-- Character-saved pattern library (window.PatternLibrary) — the
        player's own saved motifs plus a small unlockable premade catalog,
        reusable across whatever pattern-authoring.js sessions the game
        offers (today: metal-craft-shop.js's verdigris-removal patterns).
        Needs init(deps) from game.js, so must load before it, same as
        dye-system.js. -->
-  <script src="js/pattern-library.js?v=20260912a"></script>
+  <script src="js/pattern-library.js?v=20261003h0ad42ee"></script>
   <!-- Dev-mode Settings exporter for the active character's saved PatternLibrary entries. -->
   <script src="js/pattern-library-dev-export.js?v=20260920export1"></script>
   <!-- Repo-authored reusable patterns (JSON + motif PNG). Runtime animal/NPC
        paint can reference a small repoPatternId instead of embedding motif bytes. -->
-  <script src="js/repo-pattern-library.js?v=20260920repo1"></script>
+  <script src="js/repo-pattern-library.js?v=20261003hf072713"></script>
   <!-- Banubu Color Pools: max-level Stable animal paint UI + cave pool visuals.
        Uses PatternAuthoring/PatternLibrary now; the shared weaving compositor
        is resolved at interaction/render time after combat-config-loader loads it. -->
@@ -551,13 +557,15 @@
        calls window.TownZoneBuildings.init(...) during its own setup (and
        reads window.TownZoneBuildings.loadHousePieceFaceTexture as one of
        window.FarmBuildings' own init deps, at that same call-time point). -->
-  <script src="js/town-zone-buildings.js?v=20260909livepreview1"></script>
+  <script src="js/town-zone-buildings.js?v=20261002h8bac730"></script>
   <!-- Same-origin live Map Editor transport + runtime bridge. Loaded before
        game.js so its private scene state can be injected during setup. -->
   <script src="js/map-live-preview.js?v=20260909a&window=20260926rebase1"></script>
   <!-- Wall-mounted furniture loads synchronously before game.js consumers initialize. -->
   <script src="js/wall-ornament-placement.js?v=20260926rebase1"></script>
-  <script src="js/map-live-preview-runtime.js?v=20260925banubukeycam1"></script>
+  <script src="js/map-live-preview-runtime.js?v=20261002hb01296f"></script>
+  <!-- Dev Companion map furniture: palette + reticle placement (floor and wall) into town/building interiors via a dev overlay. -->
+  <script src="js/dev-map-furniture.js?v=20261002devfurniture1"></script>
   <!-- Dev Tools: Testing Arena teleport + creature/bandit/foliage spawner
        panel (window.DevSpawner) — reads window.CreatureGenetics/
        window.CreatureGeneticsRender/window.BanditCombat/
@@ -571,7 +579,8 @@
        moveCreatureToward (window.EnemyCollisionReposition); must load before
        game.js, which calls window.EnemyCollisionReposition.init(...). -->
   <script src="js/enemy-collision-reposition.js?v=20260927reviewfix1"></script>
-  <script src="js/dev-spawner.js?v=20260927reviewfix1"></script>
+  <script src="js/farm-furniture-surface-elevation.js?v=20261002hwinlift1"></script>
+  <script src="js/dev-spawner.js?v=20261002h6fca74b"></script>
   <!-- Furniture Placer panel (window.FurniturePlacer) — the discoverable,
        inventory-scoped furniture selector. Choosing Place arms the shared
        reticle-targeted gameplay placement mode and closes this panel so
@@ -579,7 +588,7 @@
        inventory consumption stays in the existing game placement functions.
        Must load before game.js, which calls window.FurniturePlacer.init(...)
        during its own setup. -->
-  <script src="js/furniture-placer.js?v=20260918utilityplacement1&window=20260926rebase1"></script>
+  <script src="js/furniture-placer.js?v=20261003hd2a4ac0&window=20260926rebase1"></script>
   <!-- Player-craftable persistent campfire (window.WildernessCampfire) —
        only one at a time; survives map changes/saves and also works on Town
        Mine floors, where player death destroys an underground camp.
@@ -600,11 +609,11 @@
        order relative to the other systems above doesn't matter; must load
        before game.js, which calls window.WeatherFX.init(...) during its
        own setup. -->
-  <script src="js/weather-fx.js?v=20260924texture-restore1"></script>
+  <script src="js/weather-fx.js?v=20261002hbfac6cf"></script>
   <!-- Load after WeatherFX exists, but before game.js calls WeatherFX.init(), so daylight windows always capture the real overlay dependencies. -->
-  <script src="js/daylight-window-runtime.js?v=20261001h93863ee"></script>
+  <script src="js/daylight-window-runtime.js?v=20261003h54727ce"></script>
   <!-- Farmhouse windows mirror one ordinary inventory-owned wall object across the exterior/interior 2x coordinate systems and expose their silhouettes to both wall builders. -->
-  <script src="js/house-window-linkage.js?v=20261001h24e25aa"></script>
+  <script src="js/house-window-linkage.js?v=20261003h3c29655"></script>
   <script src="js/daylight-window-overlay-scheduler.js?v=20260926rebase1"></script>
   <!-- Three reusable, UV-scrolling rain sheets in the existing world renderer. -->
   <script src="js/rain-planes.js?v=20260809f"></script>
@@ -625,7 +634,7 @@
   <!-- Player-centered white mist cylinders, shown only in the Southern
        Cloud Forest — see EXTERIOR_ZONES.map_southern_cloud_forest's
        fogDensity/vegCullRadiusTiles comments in game.js for why. -->
-  <script src="js/cloud-forest-fog.js?v=20261001windowglow1"></script>
+  <script src="js/cloud-forest-fog.js?v=20261002h4bc79d1"></script>
   <!-- Farm tab hub (header, grid glance, buildings list, processor status
        tiles, livestock roster + breeding, farm<->stable transfers, storage,
        farmhands) and the Stable tab (window.FarmPanel) — reads
@@ -662,7 +671,7 @@
        render() during its own boot sequence (unlike its sibling panels,
        this one renders once at boot rather than lazily on first tab
        open). -->
-  <script src="js/input-settings-panel.js?v=20260925reticle2"></script>
+  <script src="js/input-settings-panel.js?v=20261002hd84e634"></script>
   <!-- Crafting tab (Inventory panel's Crafting sub-tab, window.CraftingPanel)
        — furniture blueprints plus discovered ore-to-bar recipes; pure DOM/state,
        must load before game.js, which injects inventory and metallurgy data. -->
@@ -740,10 +749,11 @@
        and its build*(...) functions lazily, from buildZoneScene, never
        synchronously during initial boot. -->
   <script src="js/locale-cave-runtime.js?v=20260923caveregistry1"></script>
-  <script src="js/ruin-site-locales.js?v=20260929ruinsites1"></script>
+  <script src="js/ruin-site-locales.js?v=20261002hb4d3f2d"></script>
   <script src="js/stampable-locale-defs.js?v=20260929ruinsites1"></script>
-  <script src="js/ruin-sites.js?v=20260929ruinsites1"></script>
-  <script src="js/zone-den-totem-features.js?v=20260929glowdecals1"></script>
+  <script src="js/ruin-sites.js?v=20261003h12be717"></script>
+  <script src="js/zone-den-totem-features.js?v=20261003h7c00660"></script>
+  <script src="js/transition-markers.js?v=20261001a"></script>
   <!-- Wilderness-zone grass and rich-foliage-patch billboards
        (window.ZoneGrassBillboards) — pure scene-graph generation, no
        other window.* system reads; must load before game.js, which calls
@@ -754,7 +764,7 @@
   <!-- Minecraft-style finite wilderness streaming: owns 16x16 runtime
        terrain/vegetation chunks while the Tothal generator remains owner of
        each zone's deterministic complete tile blueprint. -->
-  <script src="js/wilderness-chunks.js?v=20260924perf3"></script>
+  <script src="js/wilderness-chunks.js?v=20261002h91d6e27"></script>
   <!-- PNG-plane avatar outline occluders: registry of sprite-plane meshes on
        outline layer 4 plus the depth-only replay game.js runs before its
        outline passes (window.PngPlaneOutlineOccluder; game.js calls init). -->
@@ -942,6 +952,7 @@
       </div>
       <div class="fed-section" id="mapEditCameraSection" style="display:none;">
         <div class="fed-label">Cinematic cameras</div>
+        <label><input type="checkbox" id="mapEditShowCameras" checked> Show cinematic cameras</label>
         <div class="fed-grid" id="mapEditCameraList"></div>
         <button class="fed-action-btn" id="mapEditCameraStagePlayerBtn" style="display:none;margin-top:7px">Player repositioning: Off</button>
         <div class="map-edit-detail">Gold camera markers are visible only during Map Edit. Tap a name or use Click to Select, then Move/Rotate the real runtime shot. Player repositioning is off by default for cinematic cameras.</div>
@@ -1974,6 +1985,13 @@
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingDevMode"><span class="toggle-slider"></span></span>
           </label>
+          <div class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Dev Companion Window</div>
+              <div class="settings-desc">Opens a second window tied to this play session: quick save/load with exact position, one-click recovery-backup swapping, autosave pause, Map Edit controls, and a live list of the config/JSON (including the dialogue node on screen and the conditions that chose it) the game is using</div>
+            </div>
+            <button type="button" id="devCompanionOpenBtn" class="settings-small-btn">Open</button>
+          </div>
           <label class="settings-row" id="settingFlipPngPortraitsRow" hidden style="display:none">
             <div class="settings-label">
               <div class="settings-name">Flip PNG Character Portraits Sideways</div>
@@ -2376,23 +2394,23 @@
     <button class="fcv-continue" id="fcvContinueBtn">Continue</button>
   </div>
 
-  <script src="js/tool-icon-render.js?v=20260930globalground2"></script>
-  <script src="js/sprite-recolor.js?v=20260924perf5"></script>
+  <script src="js/tool-icon-render.js?v=20261001h924b68f"></script>
+  <script src="js/sprite-recolor.js?v=20261001quickdebuff2"></script>
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
        calls window.Mounts.init(...) during its own setup. -->
-  <script src="js/mount-system.js?v=20260925mountheading1"></script>
+  <script src="js/mount-system.js?v=20261002h1249b60"></script>
   <!-- Footstep/one-shot SFX (window.AudioSystem) — must load before game.js,
        which calls window.AudioSystem.init(...) during its own setup. -->
-  <script src="js/audio-system.js?v=20260927pitchedsfx1"></script>
+  <script src="js/audio-system.js?v=20261002h8664bae"></script>
   <!-- Semantic animal-call scheduler. Gameplay systems emit vocal intents;
        AudioSystem above remains the replaceable low-level renderer. -->
-  <script src="js/animal-vocalizations.js?v=20260920startup2"></script>
+  <script src="js/animal-vocalizations.js?v=20261002hc534530"></script>
   <!-- Background music/ambient cues/bgs/furniture-proximity SFX
        (window.Music) — wires its own DOM audio-unlock listeners at load
        time, and must load before game.js, which calls
        window.Music.init(...) during its own setup. Depends on
        window.AudioSystem (gameAudioConfig/playObjectSfx), so loads after it. -->
-  <script src="js/music-system.js?v=20260925gameplaycues1"></script>
+  <script src="js/music-system.js?v=20261002h62729f2"></script>
   <script src="js/audio-track-gain-settings.js?v=20260920trackgain2"></script>
   <!-- Shared local-transform dump utility (window.HobunjiTransformDump) —
        also loaded by the Attack Animation Editor, so a probed character's
@@ -2402,7 +2420,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20260927inputclaim1"></script>
+  <script src="js/pixel-probe.js?v=20261003h7bb5f47"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2410,11 +2428,11 @@
        openNpcDialogue/closeNpcDialogue (camera/staging/save) stay in
        game.js and call into this module. -->
   <!-- Authored world-space dialogue/cutscene cameras. Must load before DialogueContent/game.js. -->
-  <script src="js/cinematic-camera-runtime.js?v=20260925reviewfix1"></script>
-  <script src="js/dialogue-camera-framing.js?v=20260926a"></script>
+  <script src="js/cinematic-camera-runtime.js?v=20261002h220240b"></script>
+  <script src="js/dialogue-camera-framing.js?v=20261002hba1474a"></script>
   <script src="js/dialogue-templates.js?v=20260929mastery1"></script>
   <script src="js/dialogue-rich-text.js?v=20260929colors1"></script>
-  <script src="js/dialogue-content.js?v=20260930h3ea8434"></script>
+  <script src="js/dialogue-content.js?v=20261002h16e3b13"></script>
   <script src="js/combat/combat-tutorial-content.js?v=20261001cae883e8"></script>
   <script src="js/combat/combat-tutorial-mastery.js?v=20260929mastery1-goals1"></script>
   <script src="js/combat/combat-tutorial-partner.js?v=20260930partner1"></script>
@@ -2428,20 +2446,20 @@
        helper at module evaluation time, so it belongs here rather than in the
        earlier combat-definition block. It still loads before game.js and
        registers in RuntimeFrameScheduler's pre-game phase. -->
-  <script src="js/combat/quick-attack-bonus-indicator.js?v=20260920startup4"></script>
+  <script src="js/combat/quick-attack-bonus-indicator.js?v=20261002ha7e9886"></script>
   <!-- Lore loading-screen overlay, shown while a wilderness zone or mine
        floor rebuilds from scratch. Content authored via
        tools/loading-screen-editor/index.html. -->
-  <script src="js/loading-screen-runtime.js?v=20260925minefloor1"></script>
+  <script src="js/loading-screen-runtime.js?v=20261002h12a412c"></script>
   <!-- Secondary proximity dialogue: NPC chathead greetings, companion
        onomatopoeia, and reusable crowd cheer/jeer hooks. -->
-  <script src="js/ambient-dialogue.js?v=20260927reviewfix1"></script>
+  <script src="js/ambient-dialogue.js?v=20261002h2d8f60c"></script>
   <script src="js/player-social-poses.js?v=20260810a"></script>
   <script src="js/player-chat.js?v=20260810a"></script>
   <!-- Spearfishing minigame + fishing FX particles (window.Fishing) — must
        load before game.js, which injects the shared thrown-weapon pose seams
        used by fishing's held Windup → Strike presentation. -->
-  <script src="js/fishing-minigame.js?v=20260925fishcue1"></script>
+  <script src="js/fishing-minigame.js?v=20261002h18c42a9"></script>
   <!-- Kurraya hold-assembly + reactive-twitch visuals (window.KurrayaInstrument)
        — must load before game.js, which calls window.KurrayaInstrument.init(...)
        during its own setup, mirroring window.Fishing above. -->
@@ -2532,7 +2550,7 @@
   <!-- Directional camera pitch policy is isolated from controller bindings/gameplay dispatch. -->
   <script src="js/camera-look-clamp.js?v=20260923review2"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261001ca903fa1"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261003h98e19f5"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
@@ -2549,7 +2567,9 @@
   <script src="js/shoulder-cam-pointer-lock.js?v=20260930hfc11b39"></script>
   <!-- Shared character-scoped hobunjiSaveMeta update step used by game.js's save* helpers. -->
   <script src="js/character-meta-save.js?v=20260930ench1"></script>
-  <script src="game.js?v=20261001h0051aee"></script>
+  <script src="game.js?v=20261004hc07fee6"></script>
+  <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
+  <script src="js/opening-story-cutscene.js?v=20261002h1a0061f"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>

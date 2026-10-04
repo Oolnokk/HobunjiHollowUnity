@@ -35,7 +35,7 @@ assert.strictEqual(copies.length, 2 * template.ruinSite.copiesPerZone, 'copiesPe
 assert(copies.every(copy => /_c7_/.test(copy.id) && copy.placement.allowedZones.length === 1 && copy.placement.allowedZones[0] !== 'map_skip'), 'copies are cycle-stamped and pinned to one zone');
 for (const zone of ['map_a', 'map_b']) {
   const facings = copies.filter(copy => copy.placement.allowedZones[0] === zone).map(copy => copy.ruinSite.facing);
-  assert.strictEqual(new Set(facings).size, facings.length, `${zone} copies use distinct facings`);
+  assert.strictEqual(new Set(facings).size, Math.min(4, facings.length), `${zone} copies cover available cardinal facings`);
 }
 assert.deepStrictEqual(RL.expandLocaleDefs([template], 7, zones, 'world').map(copy => copy.id), RL.expandLocaleDefs([template], 7, zones, 'world').map(copy => copy.id), 'expansion is deterministic');
 

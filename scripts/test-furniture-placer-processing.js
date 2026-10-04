@@ -4,6 +4,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+const path = require('node:path');
 
 class FakeElement {
   constructor(id = '') {
@@ -135,9 +136,33 @@ assert.match(gameSource,
 assert.match(gameSource,
   /function rotateDecorativeFurniture\(id, degrees = 45\)[\s\S]{0,1500}furnitureSurfaceYAtWorld\(obj\.area, centerX, centerZ\)/,
   'rotating non-square decorative furniture recomputes its shifted center surface Y');
-assert.match(gameSource,
-  /HobunjiFurnitureSurfaceElevation = Object\.freeze\([\s\S]{0,220}refresh: refreshFarmFurnitureSurfaceElevation/,
-  'farm furniture exposes one shared re-grounding hook for building-footprint elevation changes');
+assert.match(gameSource, /window\.FarmFurnitureSurfaceElevation\.init\(\{/, 'game.js must wire the farm furniture re-grounding module');
+{
+  // Executes js/farm-furniture-surface-elevation.js: ordinary farm decor is
+  // re-grounded onto the farm surface, wall-mounted decor (farmhouse windows)
+  // keeps the height its wall placement solved.
+  const win = { WallOrnamentPlacement: { getAllPlayerPlacements: () => ({ decor_window: { wallPoint: [0, 1, 0] } }) } };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', 'docs/js/farm-furniture-surface-elevation.js'), 'utf8'), { window: win });
+  const mesh = y => ({ position: { y } });
+  const bench = { id: 'decor_bench', key: 'bench', col: 2, row: 3, area: 'farm', mesh: mesh(0), light: { position: { y: 0 } } };
+  const windowObj = { id: 'decor_window', key: 'wideWindow', col: 4, row: 1, area: 'farm', mesh: mesh(-0.04) };
+  const indoor = { id: 'decor_rug', key: 'rug', col: 1, row: 1, area: 'interior', mesh: mesh(0) };
+  const kiln = { col: 6, row: 6, furnitureKey: 'kiln', mesh: mesh(0) };
+  win.FarmFurnitureSurfaceElevation.init({
+    interiorFurnitureObjects: [bench, windowObj, indoor], processingFurnitureObjects: new Set([kiln]),
+    DECORATIVE_FURNITURE_DEFS: { bench: { light: { height: 0.5 } } },
+    decorativeFurnitureSize: () => ({ fw: 1, fd: 1 }),
+    farmSurfaceYAtWorld: (x, z) => x * 0.1 + z * 0.01,
+  });
+  const result = win.HobunjiFurnitureSurfaceElevation.refresh();
+  assert.deepEqual({ ...result }, { decorative: 1, processing: 1, wallMounted: 1 }, 'refresh must re-ground ordinary farm decor and skip wall-mounted decor');
+  assert.ok(Math.abs(bench.mesh.position.y - 0.285) < 1e-9, 'farm decor must sit on the farm surface at its footprint center');
+  assert.ok(Math.abs(bench.light.position.y - 0.785) < 1e-9, 'decor light follows the re-grounded surface');
+  assert.equal(windowObj.mesh.position.y, -0.04, 'wall-mounted window must keep its wall-solved height');
+  assert.equal(indoor.mesh.position.y, 0, 'interior decor is never touched');
+  assert.ok(Math.abs(kiln.mesh.position.y - 0.715) < 1e-9, 'processing furniture is re-grounded too');
+  assert.equal(win.HobunjiFurnitureSurfaceElevation.getDebug().decorative.find(d => d.id === 'decor_window').wallMounted, true);
+}
 assert.match(gameSource,
   /function activeSurfaceYAtWorld\(worldX, worldZ\)[\s\S]{0,220}currentArea === 'farm'\) return farmSurfaceYAtWorld/,
   'seated camera and other active-surface consumers use the exact farm hill');

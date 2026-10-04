@@ -79,6 +79,7 @@
     installNaturalTimeScale();
     bindMonthNav();
     installTimePassageRuntime();
+    registerDevCompanionPanel();
     debugLog('Sleep/Wait tap actions trigger on input release; hold selectors remain press-driven');
     debugLog(`calendar epoch ready: game day 1 = Waxingheat 1, ${FIRST_AOT_YEAR} AoT; Firstrise 1 begins each civil year`);
     debugLog(`Tothal cycle ${tothalCycle()} (monthly) in ${aotYearNumber()} AoT; deterministic y${tothalCycle()} seed`);
@@ -608,6 +609,90 @@
     setTime01Raw(target.time01); // Removes tiny frame dt accumulated while the masked rollover completed.
   }
 
+  // ── Dev Companion: time controls for testing time/weekday/season-gated
+  // content. Same hour-by-hour path as Wait (so crops, schedules, weather and
+  // day rollovers all run), just without the modal's paced countdown.
+  let _devAdvanceBusy = false;
+  async function devAdvanceHours(hours) {
+    if (_devAdvanceBusy) return { ok: false, error: 'A time skip is already running.' };
+    if (_timePassageKind) return { ok: false, error: 'The Wait/Sleep menu is open.' };
+    const total = Math.max(1, Math.min(24 * 7, Math.round(Number(hours) || 1)));
+    _devAdvanceBusy = true;
+    try {
+      for (let step = 0; step < total; step++) await advanceOnePassageHour();
+      persistCalendarSnapshot();
+      window.WeatherFX?.updateRainState?.();
+      window.dispatchEvent(new CustomEvent('hobunji-time-passage', {
+        detail: { kind: 'dev', hours: total, day: deps.calendar.day, time01: deps.calendar.time01 },
+      }));
+      debugLog(`dev companion advanced ${total}h -> ${formatCalendarDateTimeFull()}`);
+      return { ok: true, hours: total, now: formatCalendarDateTimeFull() };
+    } catch (error) {
+      return { ok: false, error: String(error?.message || error) };
+    } finally {
+      _devAdvanceBusy = false;
+    }
+  }
+
+  // Hours until the start of the next `band` ('dawn'|'day'|'dusk'|'night') or
+  // the next weekday/season, using the same classifiers dialogue conditions do.
+  function devHoursUntil(test) {
+    for (let hours = 1; hours <= 24 * 120; hours++) {
+      const at = previewAfterHours(hours);
+      const before = previewAfterHours(hours - 1);
+      if (test(at) && !test(before)) return hours;
+    }
+    return null;
+  }
+
+  function timeOfDayAt(point) {
+    return window.Fishing?.timeOfDay?.(getHour(point.time01)) || null;
+  }
+
+  function registerDevCompanionPanel() {
+    const companion = window.DevCompanion;
+    if (!companion?.registerPanel) return;
+    const bands = ['dawn', 'day', 'dusk', 'night'];
+    companion.registerPanel({
+      id: 'time-weather',
+      title: '🕰️ Time & weather',
+      order: 20,
+      when: () => window.__hobunjiGameStarted === true && !!deps?.calendar,
+      render: () => {
+        const now = { day: deps.calendar.day, time01: deps.calendar.time01 };
+        const band = timeOfDayAt(now);
+        const override = window.WeatherFX?.getDebugWeatherOwner?.() === 'dev-companion' ? window.WeatherFX.getDebugWeather() : null;
+        return {
+          summary: `${formatClockTime()} · ${band || '?'} · ${currentWeekdayName()} · ${currentSeason()?.name || '?'} · ${deps.calendar.weather}${override ? ' (forced)' : ''}`,
+          note: _devAdvanceBusy ? 'Advancing time…' : 'Skips run the real hour-by-hour time passage (crops, schedules, day rollover).',
+          actions: [
+            { id: 'hours', label: '+1h', args: { hours: 1 }, group: 'Skip' },
+            { id: 'hours', label: '+3h', args: { hours: 3 }, group: 'Skip' },
+            ...bands.map(target => ({ id: 'band', label: `→ ${target}`, args: { band: target }, active: band === target, group: 'Skip' })),
+            { id: 'weekday', label: '→ next weekday', group: 'Skip' },
+            { id: 'season', label: '→ next season', group: 'Skip', confirm: 'Skip ahead to the start of the next season? This advances many in-game days (crops, Tothal Shift, etc.).' },
+            ...['clear', 'rain', 'storm'].map(mode => ({ id: 'weather', label: mode, args: { mode }, active: override === mode, group: 'Weather' })),
+            { id: 'weather', label: 'natural', args: { mode: null }, active: !override, group: 'Weather' },
+          ],
+        };
+      },
+      onAction: (action, args) => {
+        if (action === 'weather') {
+          if (args.mode) window.WeatherFX?.setDebugWeather?.(args.mode, 'dev-companion');
+          else window.WeatherFX?.clearDebugWeather?.('dev-companion');
+          return { ok: true };
+        }
+        let hours = null;
+        if (action === 'hours') hours = Number(args.hours) || 1;
+        else if (action === 'band') hours = devHoursUntil(point => timeOfDayAt(point) === args.band);
+        else if (action === 'weekday') hours = devHoursUntil(point => weekdayNameForDay(point.day) !== currentWeekdayName());
+        else if (action === 'season') hours = devHoursUntil(point => seasonForDay(point.day)?.name !== currentSeason()?.name);
+        if (!hours) return { ok: false, error: 'Could not find that time.' };
+        return devAdvanceHours(hours);
+      },
+    });
+  }
+
   function delayMs(ms) {
     return new Promise(resolve => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
   }
@@ -985,6 +1070,7 @@
     nextCivilYearStartDay,
     previewAfterHours,
     openTimePassage,
+    devAdvanceHours,
     copyTimeDebug,
     timeDebugSnapshot,
     renderCalendarPanel,

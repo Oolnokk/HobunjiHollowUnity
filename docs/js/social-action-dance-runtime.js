@@ -345,14 +345,20 @@
     api.beginPlayerSession.__socialKurrayaOwnershipGuard = true;
   }
 
+  // Runs every frame from maintainDanceState: look the wheel up by id (it only
+  // exists while open) instead of scanning the whole document, and compare
+  // before writing so an unchanged wedge queues no attribute mutations.
   function syncKurrayaWedge() {
-    const sector = document.querySelector?.('.socialActionSector[data-social-index="0"]');
+    const wheel = document.getElementById?.('socialActionWheel');
+    const sector = wheel?.querySelector?.('.socialActionSector[data-social-index="0"]');
     if (!sector) return;
     const owned = ownsKurraya();
-    sector.classList.toggle('blocked', !owned);
-    sector.setAttribute('aria-disabled', owned ? 'false' : 'true');
+    if (sector.classList.contains('blocked') === owned) sector.classList.toggle('blocked', !owned);
+    const ariaDisabled = owned ? 'false' : 'true';
+    if (sector.getAttribute('aria-disabled') !== ariaDisabled) sector.setAttribute('aria-disabled', ariaDisabled);
     const label = sector.querySelector?.('.socialActionLabel');
-    if (label) label.style.opacity = owned ? '' : '0.34';
+    const opacity = owned ? '' : '0.34';
+    if (label && label.style.opacity !== opacity) label.style.opacity = opacity;
   }
 
   function beginDanceOwnership() {
@@ -406,7 +412,8 @@
     if (!output) return;
     const render = global.SocialActionR128RenderBridge?.getDebug?.() || {};
     const base = String(output.textContent || '').replace(/\s*\| Runtime:r128=.*$/, '');
-    output.textContent = `${base} | Runtime:r128=${global.SocialActionR128RenderBridge?.installed ? 'yes' : 'no'} dispatch=${render.dispatchCount || 0} move=${state.danceLock ? 'blend' : 'off'} leg=${state.legApplications} hand=${state.handApplications}`;
+    const text = `${base} | Runtime:r128=${global.SocialActionR128RenderBridge?.installed ? 'yes' : 'no'} dispatch=${render.dispatchCount || 0} move=${state.danceLock ? 'blend' : 'off'} leg=${state.legApplications} hand=${state.handApplications}`;
+    if (output.textContent !== text) output.textContent = text; // Unchanged writes would still wake every body-wide MutationObserver.
   }
 
   function maintainDanceState({ timestamp }) {

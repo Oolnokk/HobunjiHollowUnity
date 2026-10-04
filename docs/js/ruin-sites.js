@@ -367,10 +367,37 @@
 
   // ── Map markers (same localeInstances proxy approach as porakaneki camps) ─
   const MARKER_FLAG = '__ruinSiteMarker';
+  function trackNearby(actor, master, dt) {
+    if (actor.stableRole !== 'companion') return;
+    const progression = window.StableAnimalProgression; // Uses the existing active companion training authority.
+    if (!progression?.perkRank(progression.activeEntryForRole('companion'), 'ruinTracking')) return;
+    actor._ruinTrackTimer = Math.max(0, (actor._ruinTrackTimer || 0) - dt);
+    if (actor._ruinTrackTimer > 0) return;
+    actor._ruinTrackTimer = 1;
+    const zoneId = String(deps?.getCurrentArea?.()); // Site coordinates are in tiles; the companion master uses pixels.
+    const tile = Number(deps?.TILE) || 32; // Shared game tile size supplied by RuinSites.init.
+    const entry = state(); // Discovery persists for this world's current Tothal cycle.
+    for (const site of sitesByZone.get(zoneId) || []) {
+      if (entry.entrances[site.id]?.spent || entry.entrances[site.id]?.tracked) continue;
+      if (Math.hypot(site.door.x - master.x / tile, site.door.z - master.y / tile) > 18) continue;
+      entry.entrances[site.id] = { ...(entry.entrances[site.id] || {}), tracked:true };
+      saveState(entry);
+      syncMapMarkers();
+      deps?.showToast?.(`${actor.def?.label || 'Your companion'} found a ruin!`, true, true);
+    }
+  }
+
   function syncMapMarkers() {
     const layouts = deps?._zoneLayouts;
     if (!layouts) return;
     const byZone = new Map();
+    const entrances = state().entrances; // Saved tracking discoveries become ordinary visible locale markers.
+    for (const [zoneId, sites] of sitesByZone) {
+      const layout = layouts.get(zoneId); // Existing locale instances own map positioning and discovery presentation.
+      for (const instance of layout?.localeInstances || []) {
+        if (sites.some(site => site.id === instance.localeId && entrances[site.id]?.tracked)) instance.alwaysVisible = true;
+      }
+    }
     for (const [id, hole] of Object.entries(state().holes || {})) {
       if (hole.state !== 'open') continue;
       if (!byZone.has(hole.zoneId)) byZone.set(hole.zoneId, []);
@@ -427,6 +454,7 @@
     debug.lastExit = { visit, exit, at:Date.now() };
     activeVisit = null;
     if (!exit) return false;
+    window.FurniturePatternSurfaces?.unlockRuin?.(R.getRuntimeContext?.()?.root);
     R.exitTo(() => Promise.resolve(deps.enterZone(exit.zoneId, exit.col ?? undefined, exit.row ?? undefined)).then(() => {
       const zi = deps._zoneScenes?.get?.(visit.zoneId);
       if (zi) buildZoneMeshes(zi.scene, zi.grid, visit.zoneId); // Spent door becomes rubble / hole fills in right away.
@@ -520,7 +548,7 @@
 
   window.RuinSites = Object.freeze({
     init, registerWorkspace, expandLocaleDefs, buildZoneMeshes, objectAt, completeActiveRuin, onRuinLeft,
-    openHole, holeAt, treasureHoleChance, syncMapMarkers, installRangedHook,
+    openHole, holeAt, treasureHoleChance, syncMapMarkers, installRangedHook, trackNearby,
     isInSite:() => !!activeVisit,
     debugSnapshot:() => ({
       ...debug, cycle:cycle(), active:activeVisit, rangedHookInstalled,

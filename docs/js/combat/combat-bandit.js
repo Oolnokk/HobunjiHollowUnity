@@ -736,7 +736,7 @@
         attacker: c,
       });
     }
-    return deps.damagePlayer(amount, fromX, fromY, knockbackPxS, opts);
+    return deps.damagePlayer(amount, fromX, fromY, knockbackPxS, { ...opts, attacker: c });
   } // Bandit ability code is shared by bandit-vs-player and chunk-local actor-vs-actor fights.
 
   // Mirrors combat-quickattacks.js's getConditions(), but for a bandit
@@ -812,8 +812,9 @@
   // the way pounceUpdate already calls them.
   function beginBanditLunge(c, distancePx, durationS, hitTest, targetPlayer) {
     if (durationS <= 0 || c._banditLunging) return;
+    const heavyDistanceMul = window.ResourceSystem?.timedDebuffModifier?.(c, 'dodgeLungeDistance') ?? 1; // Heavy shortens enemy attack lunges without altering their authored windup/strike timing.
     const lungeProfile = window.Combat?.meleeLungeProfile?.(
-      distancePx,
+      distancePx * heavyDistanceMul,
       c._banditAimPitch || 0,
       0,
       c.def?.lungeHeightUnits ?? 1,

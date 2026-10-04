@@ -532,6 +532,7 @@
       // (window.DialogueContent).
 
       function closeNpcDialogue() {
+        if (cutscenePreviewActive) return; // Only the director may advance/close cinematic dialogue; Leave, Escape and controller cancel share this authority.
         dialogueOpen = false;
         window.CinematicCameraRuntime?.endDialogue?.();
         window.DialogueCameraFraming?.end?.();
@@ -898,6 +899,8 @@
       const PRONE_THROW_CREATURE_MIN_PX_S = 480; // Gives animals/bandits a minimum throw at the existing hostile-bite scale.
 
       function applyKnockback(target, fromX, fromY, speedPxS) {
+        const reelingMul = window.ResourceSystem?.timedDebuffModifier?.(target, 'knockbackTaken') ?? 1; // Reeling scales the shared impulse before branch/free-plane collision handling diverges.
+        speedPxS *= reelingMul;
         if (target.onBranch) {
           window.KnockbackCollisionImpact?.cancel?.(target);
           // Knockback while standing on a branch is resolved along the
@@ -1608,6 +1611,8 @@
           audioIndex: 'general',
         },
       };
+      EXTERIOR_ZONES.map_opening_cloud_forest = { ...EXTERIOR_ZONES.map_southern_cloud_forest, label: 'Cloud Forest Rescue', cloudForest: true, packSpecies: [], herbivoreSpecies: [], temporary: true }; // Isolated cinematic map shares Cloud Forest presentation without ambient encounters.
+      EXTERIOR_ZONES.map_southern_cloud_forest.cloudForest = true; // One biome flag serves both the world zone and its introductory mini-wilderness.
       function _isZoneArea(area) { return typeof area === 'string' && (!!EXTERIOR_ZONES[area] || _zoneLayouts.has(area)); }
 
       // Used by input polling; supports both keyboard and touch joystick.
@@ -2455,6 +2460,7 @@
         campfire:      { itemKey: 'campfireKitFurniture',   icon: '🔥', name: 'Campfire Kit',         price: 15, fw: 1, fd: 1, color: 0x6d3e20, area: 'any', desc: 'A portable campfire kit. Select it, aim at open ground anywhere in the wild, and use Action 1 to make camp.', customPlace: true },
         loom:          { itemKey: 'loomFurniture',          icon: '🧶', name: 'Small Loom',           modelFile: 'loom_small.glb',               price: 45, fw: 1, fd: 2, color: 0x8a6a3a, area: 'interior', desc: 'A small loom for weaving cloth.' },
         nightstand:    { itemKey: 'nightstandFurniture',    icon: '🕯️', name: 'Nightstand',           modelFile: 'nightstand.glb',               price: 18, fw: 1, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A small bedside table.', light: { color: 0xffaa44, intensity: 0.5, distance: 4, height: 0.5 } },
+        hangingBanner: { itemKey:'hangingBannerFurniture',icon:'🎏',name:'Hanging Banner',price:25,fw:2,fd:1,color:0x8b6540,area:'any',desc:'Patterned cloth suspended from a wooden beam; its free edge moves with the wind.' },
         rug:           { itemKey: 'rugFurniture',           icon: '🧶', name: 'Woven Rug',            modelFile: 'rug_woven_small.glb',          price: 22, fw: 2, fd: 2, color: 0x8a5a3a, area: 'interior', walkable: true, desc: 'A small decorative woven rug.' },
         standingLamp:  { itemKey: 'standingLampFurniture',  icon: '💡', name: 'Bronze Standing Lamp', modelFile: 'standing_lamp_bronze.glb',     price: 28, fw: 1, fd: 1, color: 0xb87333, area: 'interior', desc: 'A tall bronze oil lamp.', light: { color: 0xffc266, intensity: 0.9, distance: 6, height: 1.3 } },
         statue:        { itemKey: 'statueFurniture',        icon: '🗿', name: 'Weathered Statue',     modelFile: 'statue_weathered.glb',         price: 30, fw: 1, fd: 1, color: 0x54585e, area: 'any',      desc: 'A weathered stone statue, worn by time.' },
@@ -2524,7 +2530,7 @@
         'pestle', 'squeezer', 'handMill', 'dryingRack', 'smoker', 'agingBarrel', 'agingVase',
         'basicBed', 'doubleBed', 'bedroll', 'bookshelf', 'bucket', 'candleTable',
         'chest', 'crateStack', 'copperBarrel', 'desk', 'dresser', 'hearth', 'loom',
-        'nightstand', 'rug', 'standingLamp', 'statue', 'tableLong', 'tableRound',
+        'nightstand', 'rug', 'hangingBanner', 'standingLamp', 'statue', 'tableLong', 'tableRound',
         'tableSmall', 'wardrobe', 'washTub', 'counter', 'alchemyTable', 'bulletinBoard',
         'feedGrinder', 'trough', 'campfire', 'mineLadder', 'stonePedestal',
         // Town business signs, placed as ordinary map_hobunji_town decor
@@ -3701,50 +3707,12 @@
         return { ok: true, message: `${def?.icon || '🪑'} ${def?.name || 'Furniture'} rotated 45°.` };
       }
 
-      function refreshFarmFurnitureSurfaceElevation() {
-        let decorative = 0; // Count returned to runtime/mobile diagnostics after re-grounding existing outdoor decor.
-        for (const obj of interiorFurnitureObjects) {
-          if (obj?.area !== 'farm' || !obj.mesh?.position) continue;
-          const def = DECORATIVE_FURNITURE_DEFS[obj.key];
-          const { fw, fd } = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0);
-          const centerX = obj.col + fw * 0.5; // Existing decor center resampled whenever the house/barn footprint changes.
-          const centerZ = obj.row + fd * 0.5; // Existing decor center paired with centerX for the refreshed heightfield.
-          const surfaceY = farmSurfaceYAtWorld(centerX, centerZ); // New live surface after a nearby building move/build/demolish.
-          obj.mesh.position.y = surfaceY;
-          if (obj.light?.position) obj.light.position.y = surfaceY + (def?.light?.height || 0.6);
-          decorative++;
-        }
-        let processing = 0; // Count returned with decorative so diagnostics cover both outdoor furniture registries.
-        for (const obj of processingFurnitureObjects) {
-          if (!obj?.mesh?.position) continue;
-          obj.mesh.position.y = farmSurfaceYAtWorld(obj.col + 0.5, obj.row + 0.5);
-          processing++;
-        }
-        return { decorative, processing };
-      }
-
-      function farmFurnitureSurfaceElevationDebug() {
-        const decorate = obj => {
-          const size = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0); // Current rotated footprint locates the real rendered anchor.
-          const x = obj.col + size.fw * 0.5; // Debug X for comparing actual mesh Y with the shared farm surface.
-          const z = obj.row + size.fd * 0.5; // Debug Z paired with x for the same comparison.
-          return { id: obj.id, key: obj.key, col: obj.col, row: obj.row, actualY: obj.mesh?.position?.y ?? null, targetY: farmSurfaceYAtWorld(x, z) };
-        };
-        return {
-          samplerReady: typeof window.HobunjiFarmSubtleElevation?.sampleHeightAt === 'function',
-          decorative: interiorFurnitureObjects.filter(obj => obj?.area === 'farm').map(decorate),
-          processing: [...processingFurnitureObjects].map(obj => ({
-            id: obj.id, key: obj.furnitureKey, col: obj.col, row: obj.row,
-            actualY: obj.mesh?.position?.y ?? null,
-            targetY: farmSurfaceYAtWorld(obj.col + 0.5, obj.row + 0.5),
-          })),
-        };
-      }
-
-      window.HobunjiFurnitureSurfaceElevation = Object.freeze({
-        surfaceYAt: farmSurfaceYAtWorld,
-        refresh: refreshFarmFurnitureSurfaceElevation,
-        getDebug: farmFurnitureSurfaceElevationDebug,
+      // Outdoor furniture re-grounding (refresh/debug, exposed as
+      // window.HobunjiFurnitureSurfaceElevation) now lives in
+      // js/farm-furniture-surface-elevation.js.
+      window.FarmFurnitureSurfaceElevation.init({
+        interiorFurnitureObjects, processingFurnitureObjects, DECORATIVE_FURNITURE_DEFS,
+        decorativeFurnitureSize, farmSurfaceYAtWorld,
       });
 
       function transformFurnitureWithHousePiece(pieceId, oldRect, newRect, rotateClockwise) {
@@ -4367,7 +4335,7 @@
       // species' plain (uncolored) sprite — see setCreatureFrame below.
       const _genotypeTexCache = { front: new Map(), back: new Map() };
       window.HobunjiCacheAudit?.register('game.genotypeTexCache', () => _genotypeTexCache.front.size);
-      const _genotypeTexPending = new Set();
+      const _genotypeTexPending = new Map(); // Frame-key promises allow scene preparation to await the existing compositor.
       // Every key this function has ever logged a "kicking off compose" line
       // for — so a creature stuck retrying every tick (see
       // updateCreatureAnimFrame's needsRetry loop) logs its request/failure
@@ -4412,12 +4380,11 @@
         const failedAt = _genotypeTexFailedAt.get(key);
         if (failedAt && performance.now() - failedAt < 3000) return null;
         if (!_genotypeTexPending.has(key)) {
-          _genotypeTexPending.add(key);
           if (!_genotypeTexLogged.has(key)) {
             _genotypeTexLogged.add(key);
             window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): cache miss, sig="${sig}" blink=${blinkShut} — kicking off composeFrame`, 'wildlife');
           }
-          renderer.composeFrame(kind, frame, genotype, blinkShut).then(canvas => {
+          _genotypeTexPending.set(key, renderer.composeFrame(kind, frame, genotype, blinkShut).then(canvas => {
             _genotypeTexPending.delete(key);
             if (!canvas) {
               _genotypeTexFailedAt.set(key, performance.now());
@@ -4437,7 +4404,7 @@
             _genotypeTexPending.delete(key);
             _genotypeTexFailedAt.set(key, performance.now());
             window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): composeFrame THREW for sig="${sig}" — ${err?.stack || err}`, 'error');
-          });
+          }));
         }
         return null;
       }
@@ -4838,6 +4805,8 @@
         // combat-counter-shield.js) -- safe to assume `player` is the guarded
         // captain's riposte target without needing a passed-in attacker.
         if (!environmentalImpact) {
+          const damageSource = dmgOpts?.attacker || (sourceNearPlayer ? player : null); // Explicit NPC attacker wins; ordinary player melee/ranged still resolves from its existing source position.
+          amount *= window.ResourceSystem?.timedDebuffModifier?.(damageSource, 'outgoingDamage') ?? 1; // Enfeebled reduces the attacker's direct damage without altering target affliction buildup rules.
           amount *= window.SkillSystem?.attackMultiplier?.() || 1;
           amount *= window.AlchemySystem?.getOutgoingDamageMultiplier?.() || 1;
           amount *= window.PerkSystem?.combatDamageMultiplier?.(dmgOpts) || 1; // Empower Raw Damage / Quick / Defensive / Heavy Attacks.
@@ -4913,7 +4882,11 @@
       function damagePlayer(amount, fromX, fromY, knockbackPxS = PLAYER_KNOCKBACK_PX_S, dmgOpts) {
         const environmentalImpact = dmgOpts?.environmentalImpact === true; // Collision Health damage cannot be countered or treated as a second incoming attack.
         if (!environmentalImpact && performance.now() < player.invulnUntil) return;
-        if (!environmentalImpact) amount *= window.SkillSystem?.damageTakenMultiplier?.() || 1;
+        if (!environmentalImpact) {
+          const attacker = dmgOpts?.attacker || null; // Enemy modules pass their owning actor when available so Enfeebled follows the source rather than the victim.
+          amount *= window.ResourceSystem?.timedDebuffModifier?.(attacker, 'outgoingDamage') ?? 1;
+          amount *= window.SkillSystem?.damageTakenMultiplier?.() || 1;
+        }
         const resourceDamage = environmentalImpact ? { health: amount, footing: 0 } : hitResourceDamage(amount, dmgOpts);
         // Lets a held defensive ability (Counter Shield) absorb the hit and
         // riposte instead of applying damage normally — only one hold
@@ -5287,7 +5260,7 @@
       }
 
       function requestMeleeAttackAlignment(runAttack) {
-        const manualArchFacing = Number(mobileArchCombatAim?.angle); // Keeps a touch-stick release heading as the fallback when auto-target finds no eligible enemy.
+        const manualArchFacing = mobileArchCombatAim?.angle; // Keeps a touch-stick release heading as the fallback when auto-target finds no eligible enemy.
         if (Number.isFinite(manualArchFacing)) commitMeleeAttackFacing(manualArchFacing);
         else meleeAttackFacingCommit = null; // Every non-touch attack owns a fresh heading.
         meleeAttackAlignment?.cancel?.(); // End any older activation before the next activation is allowed to select.
@@ -5476,7 +5449,8 @@
         if (dist < 1) { c.vx = 0; c.vy = 0; return false; }
         const directionMul = window.RangedWeapons?.movementDirectionMultiplier?.(c) || 1; // Disorient inverts normal movement AI at this shared choke point.
         const nx = dx / dist * directionMul, ny = dy / dist * directionMul;
-        const baseSpeed = speed * devGlobalSpeedMul;
+        const heavyMoveMul = window.ResourceSystem?.timedDebuffModifier?.(c, 'moveSpeed') ?? 1; // Heavy composes with global/swim/climb movement instead of mutating authored creature speeds.
+        const baseSpeed = speed * devGlobalSpeedMul * heavyMoveMul;
         const effectiveSpeed = isCreatureSwimming(c) ? baseSpeed * SWIM_SPEED_MUL : isCreatureClimbing(c) ? baseSpeed * CLIMB_SPEED_MUL : baseSpeed;
         const step = Math.min(dist, effectiveSpeed * dt);
         // Axis-separated so a creature turned back by a cliff face or river
@@ -6127,7 +6101,8 @@
           }
           window.AnimalVocalizations?.tickCreature?.(c, entityDt);
           const def = c.def;
-          c.attackCooldownT = Math.max(0, c.attackCooldownT - entityDt);
+          const attackSpeedMul = window.ResourceSystem?.timedDebuffModifier?.(c, 'attackSpeed') ?? 1; // Sluggish slows the shared hostile attack-cadence clock without slowing locomotion/AI simulation.
+          c.attackCooldownT = Math.max(0, c.attackCooldownT - entityDt * attackSpeedMul);
           const herdNight = !!c.herdKey && !!window.Music?.isNightTime?.(); // Used by open-air herd sleeping; unlike den packs these animals remain visible in a tight group.
           if (!herdNight && c._animalSleeping) {
             c._animalSleeping = false;
@@ -6427,7 +6402,7 @@
                         halfConeRad: attackHalfConeRad,
                         direction: enemyAim?.direction,
                       })) {
-                        damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S, { tag: attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(attackTag) });
+                        damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S, { tag: attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(attackTag), attacker: c });
                         window.AudioSystem?.playCreatureClawHit(c);
                       }
                       c.retreatT = JUMP_BACK_DUR_S;
@@ -7806,6 +7781,7 @@
             _clearCompanionTreasureCue(c, dt, 'treasure revealed, found, or area left');
           }
           if (!isBanditCompanion && !target && c.knockbackT <= 0 && !c.treasureCue && distToMaster <= FOLLOW_FAR_PX && _isZoneArea(currentArea)) {
+            window.RuinSites?.trackNearby?.(c, master, dt);
             const treasureHint = window.WildTreasure?.nearestBuriedPixelPos(currentArea, master.x, master.y);
             if (treasureHint && treasureHint.dist <= TREASURE_HINT_RANGE_PX) _startCompanionTreasureCue(c, treasureHint);
           }
@@ -8954,14 +8930,14 @@
       // regenerateWildernessLabInPlace) gives a new layout each time rather
       // than rebuilding the same one, the way a real Tothal Shift would for
       // a new year.
-      function regenerateWildernessLab(chunksPerSide = 1, seedOverride = null) {
+      function regenerateWildernessLab(chunksPerSide = 1, seedOverride = null, options = {}) {
         if (typeof WildernessMapGenerator === 'undefined' || typeof TerrainPreview === 'undefined') {
           debugLog('[wilderness-lab] generator not loaded', 'warn');
           return false;
         }
-        const mapId = 'map_wilderness_lab';
+        const mapId = options.mapId || 'map_wilderness_lab'; // Optional cinematic destination retains the existing dev-lab default.
         const chunkTiles = window.WildernessChunks?.constants?.CHUNK_TILES || 16;
-        const exportScale = 2; // WildernessMapGenerator's own GENERATION_TILE_SCALE post-layout upscale (generated width/height double on export).
+        const exportScale = WildernessMapGenerator.generationTileScale || 2; // WildernessMapGenerator's own GENERATION_TILE_SCALE post-layout upscale (generated width/height double on export).
         const side = Math.max(1, Math.min(8, Math.round(Number(chunksPerSide) || 1)));
         const internalSize = Math.max(4, Math.round((side * chunkTiles) / exportScale));
         // seedOverride lets a caller (see window.__regenerateWildernessLab from
@@ -8975,10 +8951,11 @@
           // Reuses map_northern_cliffs' terrain preset/boundary settings so
           // the lab's terrain is representative of a real zone's generated
           // plateaus/cliffs rather than the flatter 'custom' default.
+          const biome = options.sourceZoneId ? WildernessMapGenerator.zoneSettings(options.sourceZoneId) : { entrySide: 'south', preset: 'cliffs', boundaryMode: 'followMapHeight', boundaryCliffBoost: 5 }; // Reuse the actual biome preset, including forest density and terrain shape.
           workspace = WildernessMapGenerator.generateWorkspace(seed, {
-            width: internalSize, height: internalSize,
-            entrySide: 'south', preset: 'cliffs', boundaryMode: 'followMapHeight', boundaryCliffBoost: 5,
+            ...biome, width: internalSize, height: internalSize, locales: options.locales || [], requiredLocaleId: options.requiredLocaleId,
           });
+          if (options.requiredLocaleId && !workspace.localeInstances?.some(instance => instance.localeId === options.requiredLocaleId)) throw new Error('Required cinematic locale could not be placed: ' + options.requiredLocaleId);
           merged = TerrainPreview.buildMergedZoneGrid(workspace, workspace.maps[0].id);
         } catch (e) {
           debugLog(`[wilderness-lab] generation failed: ${e.message}`, 'warn');
@@ -8991,7 +8968,7 @@
           mesas: merged.mesas, buildings: merged.buildings || [], decor: [], furniture: [],
           dens: workspace.animalDens || [], rootTotems: workspace.rootTotems || [],
           foliagePatches: workspace.foliagePatches || [], wildernessFoliageFurniture: workspace.wildernessFoliageFurniture || [],
-          ambushStations: workspace.ambushStations || [], localeInstances: [],
+          ambushStations: workspace.ambushStations || [], localeInstances: workspace.localeInstances || [],
         });
         if (EXTERIOR_ZONES[mapId] && workspace.entry) {
           EXTERIOR_ZONES[mapId].entryCol = workspace.entry.col;
@@ -9283,6 +9260,7 @@
       }
 
       function performDodge() {
+        if (window.Mounts?.rideState && window.Mounts.rideState !== 'none') return false; // Mounted movement owns cliff leaps; on-foot rolls cannot finish while riding.
         if (window.DevRandomRuinSimplePuzzles?.releaseActiveRope?.()) return true; // Dodge is the native rope jump-off input; release carries pendulum tangent instead of starting an evasive roll.
         // While prone, the automatic get-up owns the normal recovery. Keep
         // dodge input routed to the same in-place recovery arc so an input on
@@ -9378,6 +9356,8 @@
       // collider at the point the lunge stops, never overshot past it.
       function beginCombatLunge(distancePx, durationS, hopUnits = 0, hitTest = null) {
         if (durationS <= 0 || distancePx <= 0) return false;
+        const heavyDistanceMul = window.ResourceSystem?.timedDebuffModifier?.(player, 'dodgeLungeDistance') ?? 1; // Heavy shortens player attack lunges while preserving the attack's authored timing.
+        distancePx *= heavyDistanceMul;
         // Each combo/quick-attack/charged-breaker module tracks its own
         // "busy" gate independently, so tapping a *different* attack slot
         // while an earlier one's lunge is still in flight isn't blocked by
@@ -9688,10 +9668,10 @@
       // Player portrait perps. The ordinary follow cameras look at the player,
       // so the camera azimuth IS the camera→player bearing. The dialogue
       // camera instead orbits the NPC (js/dialogue-camera-framing.js) with
-      // the player well off-axis, so there the real camera→player bearing is
-      // used or the dead zone would guard the wrong angles.
+      // the player well off-axis. Every mode uses the actual camera→player
+      // bearing so cinematic, shoulder and seated views guard the right angles.
       function playerCameraPerps() {
-        if (dialogueOpen && activeCameraMode === npcDialogueCameraMode() && playerMesh) {
+        if (playerMesh) {
           const perps = window.PerpRotation.cameraRelativePerpsAtWorldPosition(playerMesh.position, camera.position);
           if (perps) return perps;
         }
@@ -10225,9 +10205,9 @@
               // (fruitBush/mushroomPatch/unknown/hand-authored data with no
               // floraKind at all — which also covers every other zone that
               // has no dedicated tree species).
-              const isTreeZone = mapId === 'map_northern_cliffs' || mapId === 'map_southern_cloud_forest';
+              const isTreeZone = mapId === 'map_northern_cliffs' || EXTERIOR_ZONES[mapId]?.cloudForest;
               const isCrownedPine = isTreeZone && mapId === 'map_northern_cliffs' && (tile.floraKind === 'copse' || !tile.floraKind);
-              const isShadewood   = isTreeZone && mapId === 'map_southern_cloud_forest' && (tile.floraKind === 'copse' || !tile.floraKind);
+              const isShadewood   = isTreeZone && EXTERIOR_ZONES[mapId]?.cloudForest && (tile.floraKind === 'copse' || !tile.floraKind);
               const isBush   = tile.floraKind === 'bush';
               const isStump  = tile.floraKind === 'beehive';
               const vegGroup = isCrownedPine ? window.FoliageGenerator.buildCrownedPineMesh(c, r)
@@ -10390,7 +10370,7 @@
         // toggle if it's already been switched off this session, so
         // (re)entering the zone doesn't silently re-enable the mist the
         // player just turned off.
-        const initialFogDensity = (mapId === 'map_southern_cloud_forest' && !s_cloudForestFog) ? 0 : (zdef?.fogDensity ?? 0.018);
+        const initialFogDensity = (zdef?.cloudForest && !s_cloudForestFog) ? 0 : (zdef?.fogDensity ?? 0.018);
         zScene.fog = new THREE.FogExp2(fogColor, initialFogDensity);
         zScene.add(new THREE.AmbientLight(0xfff0e0, 0.7));
         const sun = new THREE.DirectionalLight(0xffeedd, 1.1);
@@ -10749,7 +10729,7 @@
         }
         // Don't fire a spot the player happens to spawn on
         _transitionLatch = travelAreaKey();
-        buildTransitionMarkers();
+        window.TransitionMarkers.buildTransitionMarkers();
         spawnScheduledNpcs().catch(e => console.warn('spawnScheduledNpcs failed:', e));
       }
 
@@ -10762,20 +10742,8 @@
         return area + ':' + Math.floor(player.x / TILE) + ',' + Math.floor(player.y / TILE);
       }
 
-      function buildTransitionMarkers() {
-        const _ringGeo = new THREE.RingGeometry(0.22, 0.36, 24);
-        const _ringMat = new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false });
-        for (const t of worldTransitions) {
-          const interior = t.area === 'interior';
-          const g = interior ? interiorGrid : grid;
-          const tile = g[t.row]?.[t.col];
-          if (!tile) continue;
-          const ring = new THREE.Mesh(_ringGeo, _ringMat);
-          ring.rotation.x = -Math.PI / 2;
-          ring.position.set(t.col + 0.5, tileSurfaceY(tile.type) + 0.02, t.row + 0.5);
-          (interior ? interiorScene : scene).add(ring);
-        }
-      }
+      // Transition-spot floor rings (buildTransitionMarkers) now live in
+      // js/transition-markers.js — call via window.TransitionMarkers.*.
 
       function checkTransitionSpots() {
         const area = _travelAreaOf(currentArea);
@@ -10789,9 +10757,17 @@
         else pool = area === 'town' ? worldTownTransitions : worldTransitions;
         const t = pool.find(x =>
           (_isBuildingArea(area) || _isZoneArea(area) || x.area === area) && x.col === pc && x.row === pr &&
+          (x.target !== 'zone' || window.OpeningStoryCutscene?.canEnterWilderness?.(_playerData) !== false) &&
           (!x.requiresKeyItem || !!window.KeyItemSystem?.has?.(x.requiresKeyItem)) &&
-          (x.target === 'building' ? !!x.targetMapId : x.target === 'zone' ? !!x.targetMapId : x.target === 'exit_building' ? true : (Number.isFinite(x.targetCol) && Number.isFinite(x.targetRow))));
-        if (t !== _pendingSpotTransition) { _pendingSpotTransition = t || null; refreshActionBar(); }
+          (x.target === 'building' ? !!x.targetMapId : x.target === 'zone' ? !!x.targetMapId : x.target === 'exit_building' ? true : (Number.isFinite(x.targetCol) && Number.isFinite(x.targetRow)))) || null;
+        _pendingSpotTransition = t;
+        // Deliberately once per frame, not only when the spot changes: nothing
+        // else re-resolves the action arch as the reticle moves or a tile/NPC
+        // under it changes, so the arch has always depended on this call
+        // (it used to happen by accident — find()'s undefined never equalled
+        // the stored null). refreshActionBar() is _lastBarKey-cached, so its
+        // no-change path must stay free of unconditional DOM writes.
+        refreshActionBar();
         // Farm interior exit fires automatically (legacy behaviour)
         if (t && area === 'interior') startSceneTransition(() => performTravel(t));
       }
@@ -10854,6 +10830,7 @@
         _snapCameraTarget();
         _transitionLatch = travelAreaKey();
         if (t.target !== 'building' && t.target !== 'exit_building') logMapSwap('travel', currentArea, { target: t.target || 'farm' });
+        if (currentArea === 'farm') queueMicrotask(() => window.OpeningStoryCutscene?.onFarmEntered?.());
       }
 
 
@@ -11209,6 +11186,7 @@
           if (_finiteNpcFacePoint(animalFace)) return animalFace;
         }
 
+        walker.root.updateWorldMatrix?.(true, true); // Resolve this frame's root, chair and prone-pivot transforms before sampling the skinned head.
         const rig = walker.avatarGroup?.userData?.neckRig;
         const centroid = rig?.headCentroidPx;
         if (rig?.available && centroid && window.PNGPlaneAvatar?.resolveSkinnedPixelWorldPosition) {
@@ -11216,6 +11194,10 @@
           if (_finiteNpcFacePoint(skinnedFace)) return skinnedFace;
         }
 
+        if (walker.neckJoint?.getWorldPosition) {
+          const head = walker.neckJoint.getWorldPosition(walker._faceWorldScratch ||= new THREE.Vector3()); // The bone follows seating and the combat prone pivot even when the source has no centroid.
+          if (_finiteNpcFacePoint(head)) return head;
+        }
         if (!Number.isFinite(Number(walker.avatarHeight))) return null;
         return _dialogueEyeWorldPosition(walker.root.position, walker.avatarHeight);
       }
@@ -11253,7 +11235,7 @@
         if (direction.lengthSq() < 1e-8) return false;
         const yawDeg = Math.max(-maxYawDeg, Math.min(maxYawDeg, Math.atan2(direction.x, direction.z) * 180 / Math.PI));
         const pitchDeg = Math.max(-maxPitchDeg, Math.min(maxPitchDeg, -Math.atan2(direction.y, Math.max(.0001, horizontal)) * 180 / Math.PI));
-        neckJoint.rotation.set(pitchDeg * Math.PI / 180, yawDeg * Math.PI / 180, 0);
+        neckJoint.rotation.set(pitchDeg * Math.PI / 180, window.PerpRotation.clampedNeckYaw?.(neckJoint, selfRootPosition, yawDeg * Math.PI / 180, maxYawDeg * Math.PI / 180, camera.position) ?? yawDeg * Math.PI / 180, 0);
         return true;
       }
 
@@ -12047,9 +12029,10 @@
               if (this.animalAvatarRef.backPlane) this.animalAvatarRef.backPlane.rotation.y = planeDelta - Math.PI / 2;
               return;
             }
+            const stanceYaw = Number(this._heldBodyYawRad) || 0; // The portrait may also be turned by its held-weapon wrapper.
             this.rot = window.PerpRotation.clampedRotation(
-              this.perpState, this.rot, rawRot, cameraRelativePerps(), lerp,
-            );
+              this.perpState, this.rot + stanceYaw, rawRot + stanceYaw, window.PerpRotation.cameraRelativePerpsAtWorldPosition(root.position, camera.position) || cameraRelativePerps(), lerp,
+            ) - stanceYaw;
             root.rotation.y = this.rot;
             // The portrait plane obeys the camera-relative deadzone, but the
             // procedural feet must keep the NPC's exact logical facing.
@@ -12684,6 +12667,10 @@
           if (w.combatTutorialSuspended || w.area !== currentArea) continue;
           const d = Math.hypot(w.root.position.x - px, w.root.position.z - pz);
           if (d < closestDist) { closestDist = d; closest = w; }
+        }
+        if (window.NpcGifting?.isItemGiftable?.(getHeldGiftItem())) {
+          const hunter = window.PorakanekiCamps?.getNearbyGiftWalker?.(px, pz, closestDist); // Neutral procedural hunters reuse the existing gift action and dispatch target.
+          if (hunter) closest = hunter;
         }
         nearbyNpcWalker = closest;
         if (previousNearbyNpcWalker !== nearbyNpcWalker) refreshActionBar();
@@ -13603,7 +13590,10 @@
           const furnKeyByItemKey = {};
           for (const [key, def] of Object.entries(DECORATIVE_FURNITURE_DEFS)) { allFurnDefs[def.itemKey] = def; furnKeyByItemKey[def.itemKey] = key; }
           for (const [key, def] of Object.entries(PROCESSING_FURNITURE_DEFS)) { allFurnDefs[def.itemKey] = def; furnKeyByItemKey[def.itemKey] = key; }
-          for (const f of (mapData.furniture || [])) {
+          // Dev Companion map-furniture overlay (js/dev-map-furniture.js) merges in
+          // dev-placed/moved/removed pieces; returns the authored list untouched otherwise.
+          const buildingFurniture = window.DevMapFurniture?.mergeBuildingFurniture?.(mapId, mapData.furniture) || mapData.furniture || [];
+          for (const f of buildingFurniture) {
             const def = allFurnDefs[f.itemKey];
             const furnitureKey = furnKeyByItemKey[f.itemKey];
             if (furnitureKey === 'mineLadder') await window.AuthoredFurniture?.load?.('mineLadder'); // Used to guarantee the supplied ladder is ready on the safe room's first visit, not merely on later cached visits.
@@ -13619,8 +13609,15 @@
             const rotRad = THREE.MathUtils.degToRad(f.rotY || 0);
             let renderedFurniture = null;
             let furnitureSfxSource = null;
-            if (furnitureKey && window.ProceduralFurniture.CATALOG[furnitureKey]) {
-              const model = buildFurnitureVisual(furnitureKey, color);
+            // Alias defs (e.g. the inventory wall signs) render through their procKey,
+            // and pieces built by authored/patched builders (wall torch, windows,
+            // signs, doors) count even though they have no procedural CATALOG recipe —
+            // only a build with no geometry at all falls back to the placeholder box.
+            const renderKey = def?.procKey && def.procKey !== furnitureKey ? def.procKey : furnitureKey;
+            const builtModel = renderKey ? buildFurnitureVisual(renderKey, color) : null;
+            window.FurniturePatternSurfaces?.applyOverrides?.(builtModel, f.patternOverrides);
+            if (builtModel && (window.ProceduralFurniture.CATALOG[renderKey] || builtModel.children.length)) {
+              const model = builtModel;
               renderedFurniture = model;
               model.position.set(bx, by, bz);
               model.rotation.y = rotRad;
@@ -14091,6 +14088,7 @@
         if (area === 'town') return _townZone?.name || 'Hobunji Hollow — Town';
         if (area === 'farm') return 'Farm';
         if (_isBuildingArea(area)) return _buildingScenes.get(area)?.name || area;
+        if (EXTERIOR_ZONES[area]?.label) return EXTERIOR_ZONES[area].label;
         return area || '(unknown)';
       }
 
@@ -14298,6 +14296,10 @@
 
       // ── Exterior zones (Northern Cliffs / Southern Cloud Forest) ──────
       async function enterZone(mapId, defaultCol, defaultRow) {
+        if (!cutscenePreviewActive && window.OpeningStoryCutscene?.canEnterWilderness?.() === false) {
+          showToast('Visit your farm with Spearhead before heading into the wilderness.', true);
+          return;
+        }
         // A Tothal Shift in progress is about to replace this zone's layout —
         // wait for it so the player lands on the freshly reshaped map instead
         // of whatever was cached (or authored) a moment before the shift.
@@ -14859,6 +14861,26 @@
         };
       }
 
+      // Rebuilds the building the player is standing in from its (re-merged)
+      // map data, keeping residents and the player's exact spot. Shared by
+      // live Map Editor reflection and Dev Companion map-furniture edits.
+      // residentsOut receives the detached residents so a caller's own
+      // rollback can reattach them if the rebuild throws.
+      async function _rebuildBuildingSceneInPlace(areaId, residentsOut = []) {
+        if (currentArea !== areaId || !_isBuildingArea(areaId)) return false;
+        const playerBefore = { x: player.x, y: player.y, angle: player.angle, facingAngle };
+        const detachedResidents = _detachLivePreviewResidents(areaId);
+        residentsOut.push(...detachedResidents);
+        discardBuildingScene(areaId, { preserveResidents: true });
+        enterBuilding(areaId, playerBefore.x / TILE - 0.5, playerBefore.y / TILE - 0.5);
+        await waitForBuildingSceneReady(areaId);
+        if (!_buildingScenes.get(areaId)?.scene) throw new Error(`Timed out rebuilding ${areaId}.`);
+        _reattachLivePreviewResidents(_buildingScenes.get(areaId).scene, detachedResidents);
+        player.x = playerBefore.x; player.y = playerBefore.y; player.angle = playerBefore.angle; facingAngle = playerBefore.facingAngle;
+        _snapCameraTarget();
+        return true;
+      }
+
       async function _applyLiveMapReflection(request) {
         const incomingWorkspace = window.MapLivePreview.clone(request.workspace);
         const targetMap = incomingWorkspace?.maps?.find(map => map.id === request.mapId);
@@ -14909,14 +14931,7 @@
 
           if (_isBuildingArea(areaBefore)) {
             rebuiltArea = areaBefore;
-            detachedResidents = _detachLivePreviewResidents(areaBefore);
-            discardBuildingScene(areaBefore, { preserveResidents: true });
-            enterBuilding(areaBefore, playerBefore.x / TILE - 0.5, playerBefore.y / TILE - 0.5);
-            await waitForBuildingSceneReady(areaBefore);
-            if (!_buildingScenes.get(areaBefore)?.scene) throw new Error(`Timed out rebuilding ${areaBefore}.`);
-            _reattachLivePreviewResidents(_buildingScenes.get(areaBefore).scene, detachedResidents);
-            player.x = playerBefore.x; player.y = playerBefore.y; player.angle = playerBefore.angle; facingAngle = playerBefore.facingAngle;
-            _snapCameraTarget();
+            await _rebuildBuildingSceneInPlace(areaBefore, detachedResidents);
             return { applyMode: 'scene-rebuild', warnings: [] };
           }
 
@@ -15422,6 +15437,7 @@
           toScene.add(reticleRingMesh);
           toScene.add(reticleWavyGroup);
           refreshActionBar();
+          if (currentArea === 'farm') queueMicrotask(() => window.OpeningStoryCutscene?.onFarmEntered?.());
         });
       }
 
@@ -17253,12 +17269,14 @@
           player.dodgeT -= dt;
           const minX = PLAYER_RADIUS, maxX = window.GridTileAccessors.getActiveCols() * TILE - PLAYER_RADIUS;
           const minY = PLAYER_RADIUS, maxY = window.GridTileAccessors.getActiveRows() * TILE - PLAYER_RADIUS;
-          const desiredX = window.FormatUtils.clamp(player.x + player.dodgeDirX * DODGE_SPEED_PX * dt, minX, maxX);
-          const desiredY = window.FormatUtils.clamp(player.y + player.dodgeDirY * DODGE_SPEED_PX * dt, minY, maxY);
+          const heavyDistanceMul = window.ResourceSystem?.timedDebuffModifier?.(player, 'dodgeLungeDistance') ?? 1; // Heavy reduces dodge travel over the unchanged dodge duration/iframe window.
+          const dodgeSpeedPx = DODGE_SPEED_PX * heavyDistanceMul; // Shared per-frame speed keeps position and reported velocity identical.
+          const desiredX = window.FormatUtils.clamp(player.x + player.dodgeDirX * dodgeSpeedPx * dt, minX, maxX);
+          const desiredY = window.FormatUtils.clamp(player.y + player.dodgeDirY * dodgeSpeedPx * dt, minY, maxY);
           const dodgeSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
           player.x = dodgeSwept.x; player.y = dodgeSwept.y;
-          player.vx = player.dodgeDirX * DODGE_SPEED_PX;
-          player.vy = player.dodgeDirY * DODGE_SPEED_PX;
+          player.vx = player.dodgeDirX * dodgeSpeedPx;
+          player.vy = player.dodgeDirY * dodgeSpeedPx;
           if (player.dodgeT <= 0) {
             player.dodging = false;
             player.vx = 0; player.vy = 0;
@@ -18728,6 +18746,10 @@
           else if (activeAction === 'fish_cancel') window.Fishing?.close();
           return;
         }
+        if (window.DevMapFurniture?.isActive?.() && window.DevMapFurniture.handleArchAction(activeAction)) {
+          refreshActionBar();
+          return;
+        }
         if (window.WallOrnamentPlacement?.isPlayerReticlePlacementActive?.()) {
           if (activeAction === 'wall_place_cancel') window.WallOrnamentPlacement.handleGameplayAction('action2', 'press');
           else if (activeAction === 'wall_place_confirm') window.WallOrnamentPlacement.handleGameplayAction('action1', 'press');
@@ -19075,7 +19097,7 @@
       // in updateShoulderSurfReticleAim; it is no longer an aim authority.
       // Other camera modes retain their existing ranged-weapon-only behavior.
       function currentPlayerAimRay() {
-        const mobileAimAngle = Number(mobileArchCombatAim?.angle); // Overrides horizontal camera authority only while a combat action-arch drag owns aim.
+        const mobileAimAngle = mobileArchCombatAim?.angle; // Overrides horizontal camera authority only while a combat action-arch drag owns aim.
         if (!Number.isFinite(mobileAimAngle) && activeCameraMode !== SHOULDER_SURF_MODE
           && (heldMode !== 'tool' || activeTool !== 'ranged' || !equipmentSlots.ranged)) return null;
         camera.updateMatrixWorld?.();
@@ -20132,32 +20154,15 @@
 
       function dialoguePortraitCameraAim(modeCfg, tx, tz, distance, baseAngle) {
         if (!modeCfg.alignToDialoguePortraitCenters) return null;
-        if (cutscenePreviewActive) {
-          const y = cutscenePreviewSpeakerCenterY(cutscenePreviewDialogueSpeaker);
-          return y == null ? null : { cameraY: y, lookY: y, targetX: tx, targetZ: tz };
-        }
-        if (!_dialogueWalker?.root) return null;
-        const playerCenter = portraitAvatarCenterWorldPosition(playerMesh);
-        const npcCenter = portraitAvatarCenterWorldPosition(_dialogueWalker.root);
-        if (!playerCenter || !npcCenter) return null;
-        const minDistance = modeCfg.portraitCenterMinDistanceTiles ?? 0.001;
-        const portraitDistance = Math.max(
-          minDistance,
-          Math.hypot(npcCenter.x - playerCenter.x, npcCenter.z - playerCenter.z),
-        );
-        const rawPortraitPitch = Math.atan2(npcCenter.y - playerCenter.y, portraitDistance);
-        const maxUpwardPitch = THREE.MathUtils.degToRad(modeCfg.maxUpwardPortraitPitchDeg ?? 0);
-        const portraitPitch = Math.min(rawPortraitPitch, maxUpwardPitch);
-        const cameraY = rawPortraitPitch > maxUpwardPitch
-          ? (playerCenter.y + npcCenter.y) / 2
-          : playerCenter.y;
-        const cameraHorizontalDistance = Math.cos(baseAngle) * distance;
-        return {
-          cameraY,
-          lookY: cameraY + Math.tan(portraitPitch) * cameraHorizontalDistance,
-          targetX: tx,
-          targetZ: tz,
-        };
+        const entity = cutscenePreviewActive ? cutscenePreviewDialogueSpeaker : null; // Cinematic doubles and real NPCs share the same live face resolver.
+        const face = entity?.walker ? _npcFaceWorldPosition(entity.walker)
+          : entity?.creature ? window.CreatureHeadCache?.getHeadWorld?.(entity.creature, 'animal')
+          : (!cutscenePreviewActive && _dialogueWalker ? _npcFaceWorldPosition(_dialogueWalker) : null); // Named animals and humanoids use authored/skinned face positions.
+        if (!face && !entity) return null;
+        const creatureUnits = entity?.creature ? TILE : 1; // Creature head-cache x/z are pixels; humanoid face coordinates already use scene tiles.
+        const y = Number(face?.y ?? face?.worldY ?? cutscenePreviewSpeakerCenterY(entity)); // Creature cache worldY is an absolute head height.
+        if (!Number.isFinite(y)) return null;
+        return { cameraY: y + Math.sin(baseAngle) * distance, lookY: y, targetX: Number.isFinite(face?.x) ? face.x / creatureUnits : tx, targetZ: Number.isFinite(face?.z) ? face.z / creatureUnits : tz };
       }
 
       // Every mesh worth pulling the camera in front of, for whatever area is
@@ -20299,7 +20304,7 @@
                   chosenSideOffsetDeg = best.offsetDeg;
                 }
               } else {
-                desiredSafeDist = Math.min(dist, Math.max(3, hits[0].distance - 0.6));
+                desiredSafeDist = Math.min(dist, Math.max(cutscenePreviewActive ? SEATED_CAMERA_MIN_DISTANCE : 3, hits[0].distance - 0.6));
               }
             }
           }
@@ -20348,7 +20353,7 @@
             // booms slide straight in along their own sightline too: a lift
             // tips the view steeply down, so the smallest aim change swept the
             // reticle's hit point across the floor or ceiling.
-            const lift = (activeCameraMode === 'seated' || interiorBoom) ? 0 : shrink * dist * 0.5;
+            const lift = (activeCameraMode === 'seated' || interiorBoom || cutscenePreviewActive) ? 0 : shrink * dist * 0.5;
             resultX = lookAtX + dir.x * safeDist;
             resultY = lookAtY + dir.y * safeDist + lift;
             resultZ = lookAtZ + dir.z * safeDist;
@@ -20412,6 +20417,7 @@
         }
         return floor;
       }
+      window.DialogueCameraFraming?.init({ viewport: threeContainer, panel: _npcDialogueEl }); // Shared live panel geometry drives dialogue-safe head composition.
       let _cinematicCameraBlend = null; // Outgoing pose used to blend authored dialogue/cutscene camera changes instead of snapping.
       const _cinematicDesiredPosition = new THREE.Vector3(); // Reused every frame while a cinematic shot is active to avoid per-frame allocation.
       const _cinematicDesiredTarget = new THREE.Vector3();
@@ -20441,10 +20447,11 @@
           ? window.FormatUtils.clamp((performance.now() - _cinematicCameraBlend.startedAt) / durationMs, 0, 1)
           : 1;
         const t = rawT * rawT * (3 - 2 * rawT);
+        const shotPosition = window.CinematicCameraRuntime?.resolvedPosition?.() || shot.position; // Procedural actor POV cameras follow live head position through the shared cinematic blend.
         const desiredPosition = _cinematicDesiredPosition.set(
-          Number(shot.position?.x) || 0,
-          Number(shot.position?.y) || 0,
-          Number(shot.position?.z) || 0
+          Number(shotPosition?.x) || 0,
+          Number(shotPosition?.y) || 0,
+          Number(shotPosition?.z) || 0
         );
         const resolvedTarget = window.CinematicCameraRuntime?.resolvedTarget?.();
         const desiredTarget = _cinematicDesiredTarget.set(
@@ -20454,11 +20461,14 @@
         );
         camera.position.lerpVectors(_cinematicCameraBlend.startPosition, desiredPosition, t);
         const lookTarget = _cinematicLookTarget.copy(_cinematicCameraBlend.startTarget).lerp(desiredTarget, t);
+        const safePosition = occlusionSafeCameraPosition(lookTarget.x, lookTarget.y, lookTarget.z, camera.position.x, camera.position.y, camera.position.z); // Authored and procedural shots share the gameplay boom.
+        camera.position.set(safePosition.x, safePosition.y, safePosition.z);
         camera.lookAt(lookTarget);
         _lastCameraLookPoint.copy(lookTarget);
         camera.fov = THREE.MathUtils.lerp(_cinematicCameraBlend.startFov, Number(shot.fovDeg) || 42, t);
         camera.aspect = cameraContainerAspect();
         camera.updateProjectionMatrix();
+        window.DialogueCameraFraming?.apply(camera, shot.dialogueFraming !== false && !!(shot.trackSpeaker || shot.targetNpcId || shot.targetProvider || shot.dialogueFraming));
         return true;
       }
 
@@ -20544,6 +20554,7 @@
         camera.fov = modeCfg.fovDeg ?? 42;
         camera.aspect = cameraContainerAspect();
         camera.updateProjectionMatrix();
+        window.DialogueCameraFraming?.apply(camera, !!portraitAim);
       }
       updateCameraPosition();
 
@@ -20692,7 +20703,7 @@
         // where vegetation pops in/out sits inside the mist uniformly in
         // every direction instead of only character-forward.
         const radialCullRadius = s_cloudForestWideCull
-          ? (currentArea === 'map_southern_cloud_forest' ? s_cloudForestCullRadiusTiles : EXTERIOR_ZONES[currentArea]?.vegCullRadiusTiles)
+          ? (EXTERIOR_ZONES[currentArea]?.cloudForest ? s_cloudForestCullRadiusTiles : EXTERIOR_ZONES[currentArea]?.vegCullRadiusTiles)
           : null;
         let viewX = 0, viewZ = 1, rightX = 1, rightZ = 0, forwardRange = 0, rearRange = 0, halfWidth = 0;
         if (!radialCullRadius) {
@@ -23268,18 +23279,11 @@
           playerMesh.rotation.y = playerFacing;
           if (playerLegs?.group) playerLegs.group.rotation.y = 0;
         } else if (sitInteraction && sitInteraction.phase !== 'out') {
-          // Seated: the body stays pinned to the chair's own facing — no
-          // perpClamp/dead-zone tracking of the camera at all (unlike the
-          // general branch below), since the camera can freely orbit all
-          // the way around while seated and a dead zone that's allowed to
-          // chase a continuously-rotating camera would drag the whole body
-          // around with it. Only the head is meant to turn as the camera
-          // moves (see updateSitInteraction's neck-bone tracking) — pinning
-          // the body here is what makes that "camera doesn't rotate your
-          // body" contract actually hold.
-          playerFacing = -facingAngle + Math.PI / 2;
+          const chairFacing = -facingAngle + Math.PI / 2; // Logical chair direction remains fixed while the flat portrait avoids the camera deadzone.
+          player.perpState ||= {};
+          playerFacing = window.PerpRotation.clampedRotation(player.perpState, playerFacing, chairFacing, playerCameraPerps(), 0.18);
           playerMesh.rotation.y = playerFacing;
-          if (playerLegs?.group) playerLegs.group.rotation.y = 0;
+          if (playerLegs?.group) playerLegs.group.rotation.y = chairFacing - playerFacing;
         } else if (mountRideEntity && mountRideState !== 'rushingIn' && mountRideState !== 'rushingOut') {
           // Glued to a mount (same guard as mountSeatLift above): track the
           // mount's own PNG-plane rotation (c.pngRot, kept current every
@@ -23367,6 +23371,7 @@
 
       // ── Update reticle ────────────────────────────────────────────
       function updateReticleMesh() {
+        if (cutscenePreviewActive) { reticleMesh.visible = reticleCircleMesh.visible = reticleRingMesh.visible = reticleWavyGroup.visible = false; clearTargetHighlights(); return; } // The director owns presentation during dialogue and intervening action cards.
         const reticle = getReticleTile();
         const tile    = window.GridTileAccessors.getActiveGrid()[reticle.row]?.[reticle.col];
         if (!tile) {
@@ -24093,6 +24098,7 @@
           if (window.WallOrnamentPlacement?.isPlayerReticlePlacementActive?.()) {
             window.WallOrnamentPlacement.updatePlayerReticlePreview?.(); // Touch camera/movement retargets wall preview even without a connected controller.
           }
+          if (window.DevMapFurniture?.isActive?.()) window.DevMapFurniture.update(); // Dev map-furniture ghost (throttled inside; floor previews only move with the reticle tile).
           if (furniturePlacementModeArmed()) {
             const furniturePlacementReticle = getReticleTile(); // Used only while placement is armed to keep the ghost on the live gameplay reticle tile.
             showFurniturePlacementGhost(furniturePlacementReticle.col, furniturePlacementReticle.row);
@@ -24903,6 +24909,8 @@
         // explicit entries are essential on touch: keyboard/controller can
         // invoke action1/action2 without visible DOM, while mobile can only
         // press actions that this function actually populates into the arch.
+        const devFurnitureButtons = window.DevMapFurniture?.actionButtons?.(); // Dev map-furniture placement owns the arch like the farm placer does.
+        if (devFurnitureButtons) return devFurnitureButtons;
         if (window.WallOrnamentPlacement?.isPlayerReticlePlacementActive?.()) {
           return [
             { icon: '✓', label: 'Place', action: 'wall_place_confirm', style: 'primary', allowed: window.WallOrnamentPlacement.canConfirmPlayerReticlePlacement?.() !== false },
@@ -24923,7 +24931,7 @@
 
         // NPC dialogue takes priority over tool use on touch controls and mirrors the primary-action keyboard path.
         if (nearbyNpcWalker && !farmEditMode) {
-          const btns = [npcDialogueButton()];
+          const btns = nearbyNpcWalker.isPorakanekiHunter ? [] : [npcDialogueButton()];
           // Smithy is deliberately inserted directly after Talk so it is
           // always Action 2 when either Bronzeworks smith is being faced.
           if (isSmithyNpcInBronzeworks(nearbyNpcWalker)) btns.push(smithyButton());
@@ -25346,8 +25354,12 @@
         // icon otherwise.
         if (dodgeBtn) {
           const icon = dodgeBtn.querySelector('.abt-icon'), label = dodgeBtn.querySelector('.abt-label');
-          if (icon) icon.textContent = climbBtn ? climbBtn.icon : '💨';
-          if (label) label.textContent = climbBtn ? climbBtn.label : 'Dodge';
+          // Compare first: this runs every frame (see checkTransitionSpots), and an
+          // unconditional textContent write queues childList mutations that wake
+          // every action-arch MutationObserver (arch-button-labels, action-arch-icons...).
+          const dodgeIcon = climbBtn ? climbBtn.icon : '💨', dodgeLabel = climbBtn ? climbBtn.label : 'Dodge';
+          if (icon && icon.textContent !== dodgeIcon) icon.textContent = dodgeIcon;
+          if (label && label.textContent !== dodgeLabel) label.textContent = dodgeLabel;
         }
 
         if (!needsRebuild) return;
@@ -26117,6 +26129,10 @@
           && computeActionButtons().some(button => button.action === 'potion_select' && button.allowed);
       }
       function runInputAction(actionId, phase = 'press') {
+        if (window.DevMapFurniture?.handleGameplayAction?.(actionId, phase)) {
+          if (phase === 'press') refreshActionBar();
+          return;
+        }
         if (window.WallOrnamentPlacement?.handleGameplayAction?.(actionId, phase)) {
           if (phase === 'press') refreshActionBar(); // Physical Action 1/2 must clear/rebuild the touch arch after wall confirm/cancel.
           return;
@@ -27000,7 +27016,7 @@
         threeContainer.addEventListener('pointerdown', (e) => {
           if (window.PixelProbe?.armed || menuOpen || farmEditMode || e.shiftKey || window.__mapEditorGizmoActive) return;
           const mouseAction = getActionForButton('desktop', 'Mouse' + e.button);
-          if (window.WallOrnamentPlacement?.isPlayerReticlePlacementActive?.() && (mouseAction === 'action1' || mouseAction === 'action2')) {
+          if ((window.WallOrnamentPlacement?.isPlayerReticlePlacementActive?.() || window.DevMapFurniture?.isActive?.()) && (mouseAction === 'action1' || mouseAction === 'action2')) {
             desktopWallFurnitureMousePresses.add(e.button);
             runInputAction(mouseAction, 'press');
             return;
@@ -27381,6 +27397,8 @@
           })),
         currentAreaOcclusionMeshCount: () => currentAreaOcclusionMeshes().length,
         enterZoneDebug: (mapId, col, row) => enterZone(mapId, col, row),
+        enterBuildingDebug: (mapId, col, row) => enterBuilding(mapId, col, row),
+        enterTownDebug: (col, row) => enterTown(col, row),
         setOutlines: (v) => { s_outlines = !!v; },
         playerNeckPivotInfo: () => {
           let avatarGroup = null;
@@ -28247,7 +28265,7 @@
         TILE,
         getPlayerGroundY: _playerGroundY,
         getActiveScene: window.GridTileAccessors.getActiveScene,
-        isCloudForestArea: () => currentArea === 'map_southern_cloud_forest',
+        isCloudForestArea: () => !!EXTERIOR_ZONES[currentArea]?.cloudForest,
       });
 
       window.FarmPanel?.init({
@@ -28496,6 +28514,17 @@
         getItemDefs: () => ITEM_DEFS,
         getNpcRecordById: npcId => scheduledNpcRecords.get(npcId) || npcWalkers.find(walker => walker.rec?.id === npcId)?.rec || null, // Canonical live preference source used to reconcile saved learned gift tiers after authored data changes.
         getHeldGiftItem,
+        random: rnd,
+        getInventoryMax: key => inventoryItems.find(item => item.key === key)?.max ?? 99,
+        getPorakanekiRewardPools: () => {
+          const zone = EXTERIOR_ZONES[currentArea] || {}; // Uses live species overrides, including Puktuk and Voorg-Ass registration.
+          const species = [...new Set([...(zone.packSpecies || []), ...(zone.herbivoreSpecies || []), ...(zone.roamingHerdSpecies || []), ...(currentArea === 'map_southern_cloud_forest' ? ['drenkirra'] : [])])]; // Tree-nesting Drenkirra are native cloud-forest wildlife outside the den pools.
+          const livestockKinds = window.SCRATCHBONES_CONFIG?.game?.livestock?.itemKinds || {}; // Shared egg/baby inventory keys and domesticated species aliases.
+          const animals = Object.entries(livestockKinds).filter(([key, kind]) => !key.endsWith('Crate') && species.some(wild => (window.CreatureGenetics?.SPECIES_ALIAS?.[wild] || wild) === kind)).map(([itemKey, kind]) => ({ itemKey, kind })); // Preserve the canonical genotype shape used by FarmAnimals.
+          const fishZone = { map_northern_cliffs: 'northernCliffs', map_southern_cloud_forest: 'cloudForest', map_western_slope: 'westernSlope', map_eastern_mire: 'easternMire' }[currentArea]; // Mirrors authored wilderness fishing regions.
+          const meat = species.flatMap(kind => (window.LootRolling?.getLootPools?.()[CREATURE_DB[kind]?.lootPool]?.entries || []).filter(entry => entry.id === 'meat').map(entry => entry.itemKey)); // Meat comes from the actual native creature loot tables.
+          return { herbs: window.AlchemySystem?.reagentsForZone?.(currentArea) || [], fish: (FISH_DEFS[fishZone] || []).map(fish => fish.key), meat, animals };
+        },
         clearManualHeldItem,
         getGearInventory: () => gearInventory,
         saveGearInventory,
@@ -28670,6 +28699,31 @@
         openArenaSpawner: () => window.DevSpawner.toggle(),
       });
 
+      // Dev Companion map furniture (place any repo furniture in town/building
+      // interiors through a dev overlay) now lives in js/dev-map-furniture.js.
+      window.DevMapFurniture?.init({
+        getCurrentArea: () => currentArea,
+        isBuildingArea: _isBuildingArea,
+        isDevMode: () => s_devMode,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
+        camera,
+        playerMesh,
+        isActorRoot: node => npcWalkers.some(walker => walker.root === node || walker.avatarGroup === node),
+        getReticleTile,
+        buildFurnitureVisual,
+        decorativeFurnitureSize,
+        getDecorativeFurnitureDefs: () => DECORATIVE_FURNITURE_DEFS,
+        getProcessingFurnitureDefs: () => PROCESSING_FURNITURE_DEFS,
+        isTileWalkable: (area, col, row) => isNpcTileWalkable(area, col, row),
+        furnitureBaseY: (area, col, row) => area === 'town'
+          ? window.TownZoneBuildings.townFurnitureBaseY(col, row)
+          : tileSurfaceYInArea(npcGridForArea(area)?.[row]?.[col], area),
+        respawnTownFurniture: () => window.TownZoneBuildings.spawnTownDecorFurniture(),
+        rebuildBuildingInPlace: areaId => _rebuildBuildingSceneInPlace(areaId),
+        showToast,
+        refreshActionBar,
+      });
+
       window.DenNestSystem?.init({
         getCurrentArea: () => currentArea,
         setCurrentArea: (v) => { currentArea = v; },
@@ -28788,6 +28842,13 @@
           ...interiorFurnitureObjects.filter(o => o.area === currentArea).map(o => ({ ...o, placementKind: 'decorative' })),
           ...(currentArea === 'farm' ? [...processingFurnitureObjects].map(o => ({ ...o, key: o.furnitureKey, area: 'farm', placementKind: 'processing' })) : []),
         ],
+        editFurniturePattern: id => {
+          const obj = interiorFurnitureObjects.find(entry => entry.id === id && entry.area === currentArea); // Edits the authoritative placed record, including persistent per-instance scale.
+          if (obj) window.FurniturePatternSurfaces?.editInstance?.(obj, overrides => {
+            for (const peer of interiorFurnitureObjects) if (peer.linkedWindowPrimaryId === obj.id) { peer.patternOverrides = overrides; window.FurniturePatternSurfaces?.applyOverrides?.(peer.mesh, overrides); }
+            window.FarmEditor.saveFarmLayout();
+          });
+        },
         removeFurniture: id => processingFurnitureById(id) ? removeProcessingFurniture(id) : removeDecorativeFurniture(id),
         rotateFurniture: (id, degrees) => processingFurnitureById(id) ? rotateProcessingFurniture(id, degrees) : rotateDecorativeFurniture(id, degrees),
         showToast,
@@ -28949,6 +29010,12 @@
         terrainCategoryFor: _terrainCategoryFor,
         waterVertShader, waterFragShader,
         buildMergedWaterMesh: window.WaterSystem.buildMergedWaterMesh,
+      });
+
+      window.TransitionMarkers?.init({
+        interiorGrid, scene, interiorScene, tileSurfaceY,
+        getGrid: () => grid,
+        getWorldTransitions: () => worldTransitions,
       });
 
       window.ZoneDenTotemFeatures?.init({
@@ -29606,7 +29673,7 @@
       // Ensure a farm→town transition always exists even without map editor data
       if (!worldTransitions.some(t => t.target === 'town')) {
         worldTransitions.push({ id: 'sp_farm_to_town', label: 'To Town', area: 'farm', col: 17, row: 0, target: 'town', targetCol: 20, targetRow: 48 });
-        buildTransitionMarkers();
+        window.TransitionMarkers.buildTransitionMarkers();
       }
       // Load town layout from workspace config (authoritative source)
       window.Music?.loadAudioCueIndexes().then(() => window.Music?.resetAmbientCueTimer()).catch(() => window.Music?.resetAmbientCueTimer());
@@ -29891,7 +29958,14 @@
         // a cold boot has its own preconditions this isn't set up to satisfy.
         const _lastPos = playerData.lastPosition;
         const _resumeCampfire = window.WildernessCampfire?.serialize?.();
-        if (_lastPos && _isZoneArea(_lastPos.area) && _resumeCampfire?.mapId === _lastPos.area
+        // A Dev Companion quick load returns to the exact saved spot (any
+        // area) instead of the login spawn — see js/quick-save.js.
+        const _quickResumed = !window.__hobunjiCutscenePreview && await window.HobunjiQuickSave?.restoreResume?.(playerData);
+        if (_quickResumed) {
+          // Placement already applied.
+        } else if (!window.__hobunjiCutscenePreview && window.OpeningStoryCutscene?.needsTempleArrival?.(playerData)) {
+          await placeOpeningPlayerOutsideTemple();
+        } else if (_lastPos && _isZoneArea(_lastPos.area) && _resumeCampfire?.mapId === _lastPos.area
             && Number.isFinite(_lastPos.x) && Number.isFinite(_lastPos.y)) {
           await enterZone(_lastPos.area, Math.floor(_lastPos.x / TILE), Math.floor(_lastPos.y / TILE));
           // enterZone already placed the player at the tile center of the
@@ -29912,6 +29986,45 @@
         gameStarted = true;
         window.__hobunjiGameStarted = true;
       }
+
+      // Dev Companion quick save/load (exact-placement save states) now lives
+      // in js/quick-save.js; these are the live-state hooks it needs.
+      window.HobunjiQuickSave?.init({
+        player, TILE, calendar, showToast,
+        getCurrentArea: () => currentArea,
+        isZoneArea: _isZoneArea,
+        isBuildingArea: _isBuildingArea,
+        enterZone, enterTown, enterBuilding,
+        placeInFarmhouse: () => window.FarmhouseLoginSpawn?.placeInFarmhouse({
+          player, TILE, enterInterior,
+          setFacingAngle: angle => { facingAngle = angle; },
+        }),
+        waitForArea: area => window.CutscenePreviewHelpers.cutscenePreviewWaitForArea(area, 20000,
+          () => currentArea === area && !!_buildingScenes.get(area)),
+        setFacingAngle: angle => { facingAngle = angle; },
+        setFarmPlayerSave: value => { farmPlayerSave = value; },
+        snapCameraTarget: () => _snapCameraTarget(),
+        flushAll: () => {
+          saveMemberWorldData();
+          window.FarmEditor?.saveFarmLayout?.();
+          _saveWorldCalendar();
+        },
+        captureExactState: () => ({
+          area: currentArea,
+          areaLabel: mapDebugName(currentArea),
+          x: player.x, y: player.y, angle: player.angle, facingAngle,
+          returnPoint: farmPlayerSave ? { ...farmPlayerSave } : null,
+          calendar: { day: calendar.day, time01: calendar.time01, weather: calendar.weather },
+        }),
+        describeContext: () => ({
+          area: currentArea,
+          areaLabel: mapDebugName(currentArea),
+          dialogueOpen: !!dialogueOpen,
+          dialogueNpc: dialogueOpen ? (_dialogueWalker?.rec?.name || _dialogueWalker?.rec?.id || null) : null,
+          weekday: window.CalendarSystem?.currentWeekdayName?.() || null,
+          season: window.CalendarSystem?.currentSeason?.()?.name || null,
+        }),
+      });
 
       document.addEventListener('hobunjiPlayerReady', (e) => {
         _playerData = e.detail;
@@ -29961,18 +30074,115 @@
       //      off-screen and untouched, for the whole preview.
       // ══════════════════════════════════════════════════════════════════
 
+      let cutscenePreviewStageId = null; // Exposes the current stage in the existing mobile Pixel Probe cutscene debug snapshot.
       let cutscenePreviewAdvance = null; // set while a talk/choice line is showing
 
       window.CutscenePreviewHelpers.init({
         TILE, TileType, isSolid, npcSurfaceY, sceneForNpcArea, npcGridForArea,
-        characterGroundShadowSurfaceOffset, _zoneScenes, _zoneLayouts,
+        characterGroundShadowSurfaceOffset, npcSeatTransformForTarget, _zoneScenes, _zoneLayouts,
       });
 
-      async function runCutscenePreview(payload) {
+      async function prepareCutsceneAssets(entities, targetScene) {
+        const jobs = []; // Await the authoritative genotype cache for every idle/run and blink frame used by this cast.
+        for (const entity of entities.values()) {
+          const c = entity.creature, kind = c && (window.CreatureGenetics.SPECIES_ALIAS[c.creatureKey] || c.creatureKey); // Shared alias matches normal animated texture playback.
+          if (!c?.genotype || !window.CreatureGeneticsRender?.SPECIES?.[kind]) continue;
+          for (const frame of ['idle', ...(c.def.sprites.run || []).map((_, i) => 'run' + (i + 1))]) for (const blink of [false, true]) {
+            _getGenotypeTextures(kind, frame, c.genotype, blink);
+            const key = `${kind}|${frame}|${window.CreatureGeneticsRender.genotypeSignature(kind, c.genotype)}|${blink ? 'b' : 'o'}`; // Same cache key as normal gameplay, no duplicate asset pipeline.
+            jobs.push(Promise.resolve(_genotypeTexPending.get(key)).then(() => {
+              if (!_genotypeTexCache.front.has(key)) throw new Error('Introduction animal texture failed: ' + key);
+            }));
+          }
+        }
+        await Promise.all(jobs);
+        for (const entity of entities.values()) if (entity.creature) updateCreatureAnimFrame(entity.creature, 0, false);
+        const materials = new Set(); // Single setup scan captures streamed terrain, furniture and actor material maps.
+        targetScene.traverse(node => { for (const material of (Array.isArray(node.material) ? node.material : [node.material])) if (material) materials.add(material); });
+        const started = performance.now(); // A failed texture load reports an error rather than revealing half-loaded scenery.
+        while ([...materials].some(material => Object.values(material).some(value => value?.isTexture && (!value.image || (value.image.complete === false))))) {
+          if (performance.now() - started > 45000) throw new Error('Introduction scene textures did not finish loading.');
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+        const textures = new Set([...materials].flatMap(material => Object.values(material).filter(value => value?.isTexture))); // Upload each settled texture once while the introduction still covers the viewport.
+        await Promise.all([...textures].map(texture => texture.image?.decode?.()));
+        for (const texture of textures) renderer.initTexture?.(texture);
+        updateCameraPosition();
+        await renderer.compileAsync?.(targetScene, camera); // Warm shaders while the black introduction surface still owns the screen.
+      }
+
+      async function runCutscenePreview(payload, runtimeOptions = {}) {
+        const liveMode = runtimeOptions.live === true; // Switches the Director's existing stage engine from disposable preview semantics to a gameplay-safe authored cutscene.
+        const previousArea = currentArea; // Restored after a live cutscene so its temporary scene swap never strands normal gameplay on the cinematic map.
+        const previousCameraMode = activeCameraMode; // Restored with previousArea after live playback completes.
+        const previousCameraTarget = activeCameraTarget; // Restored with the prior camera mode so gameplay resumes on the real player target.
+        const liveLock = liveMode ? window.CharacterActionLocks?.acquire?.({ owner: 'authored-cutscene', reason: payload.title || 'story cutscene', participants: [{ id: 'player', channels: ['movement', 'tools', 'actions'] }] }) : null; // Prevents real-player input from mutating the hidden gameplay actor while stand-ins own the screen.
+        let povShot = null; // Current actor-eye camera binding, including the source avatar visibility to restore.
+        const clearPovShot = () => { if (povShot?.source?.walker?.avatarGroup) povShot.source.walker.avatarGroup.visible = povShot.visible; povShot = null; };
+        let temporaryWildernessArea = null; // A generated mini-wilderness is disposed after its actors and gameplay hierarchy are restored.
+        let releaseCinematicRegion = null; // Wilderness residency pin is released by the existing scene cleanup owner.
+        let furniturePlayback = null; // Shared Director/game transform session restores map furniture on finish or failure.
+        const entities = new Map(); // Temporary cinematic actor rigs also belong to the setup-failure cleanup path.
+        const previousBuildingMapId = _currentBuildingMapId; // Restores building context as well as the active area.
+        const previousPlayerParent = playerMesh.parent; // Real player hierarchy stays independent of temporary cinematic stand-ins.
+        const previousToolParent = toolHolder.parent; // Held tools live at scene level and must return with the actual player.
+        const previousToolPosition = toolHolder.position.clone(); // Restores the pre-cinematic scene-space held-tool pose.
+        const previousToolQuaternion = toolHolder.quaternion.clone(); // Restores the pre-cinematic held-tool orientation.
+        const hiddenLivePlayerNodes = liveMode && (payload.actors || []).some(actor => actor.isPlayer)
+          ? [playerMesh, playerGroundShadow, toolHolder, heldItemHolder].map(node => ({ node, visible: node.visible })) : []; // Preserves the real player's avatar, shadow and scene-level held visuals while a stand-in owns presentation.
+        for (const hidden of hiddenLivePlayerNodes) hidden.node.visible = false;
+        const hiddenLiveWalkers = []; // Saves visibility for scheduled NPCs whose canonical ids are represented by temporary cutscene stand-ins.
+        let resolveCompletion = null; // Completed by finish() so live story code can await an interactive multi-card scene rather than merely its initial scheduling.
+        const completionPromise = new Promise(resolve => { resolveCompletion = resolve; }); // Public completion signal used by sequential authored scenes.
+        const report = (text, isError) => { if (!liveMode) window.CutscenePreviewHelpers.cutscenePreviewBanner(text, isError); }; // Keeps the Director's Exit Preview banner out of real story cinematics.
+        const cutsceneLeaveButton = document.getElementById('npcDialogueLeave'); // Hide the normal conversation exit while the director owns dialogue.
+        document.body?.classList.add('authored-cutscene'); // One presentation claim hides gameplay controls across every cinematic card.
+        reticleMesh.visible = reticleCircleMesh.visible = reticleRingMesh.visible = reticleWavyGroup.visible = false; // Interiors may skip reticle updates, so hide existing meshes before the first frame.
+        clearTargetHighlights();
+        const previousLeaveDisplay = cutsceneLeaveButton?.style.display; // Restores the original Leave-button presentation on success/error.
+        if (cutsceneLeaveButton) cutsceneLeaveButton.style.display = 'none';
+        const releaseLiveLock = () => { releaseCinematicRegion?.(); if (temporaryWildernessArea && liveMode) { _disposeZoneScene(temporaryWildernessArea); _zoneLayouts.delete(temporaryWildernessArea); temporaryWildernessArea = null; } liveLock?.release?.(); document.body?.classList.remove('authored-cutscene'); _arcContainerEl?.classList.remove('arc-hidden'); clearPovShot(); if (cutsceneLeaveButton) cutsceneLeaveButton.style.display = previousLeaveDisplay; }; // Shared cleanup for normal completion and pre-stage load failures.
+        const restoreLiveGameplay = () => {
+          if (!liveMode) return;
+          if (runtimeOptions.placePlayerAtFinalPosition && currentArea === previousArea) {
+            const finalPlayer = entities.get('player'); // Transfers the live farm-tour stand-in's final scene position to the real player.
+            if (finalPlayer?.root) {
+              player.x = finalPlayer.root.position.x * TILE; player.y = finalPlayer.root.position.z * TILE;
+              player.angle = Math.PI / 2 - finalPlayer.root.rotation.y; facingAngle = player.angle;
+              playerMesh.position.copy(finalPlayer.root.position);
+            }
+          }
+          for (const entity of entities.values()) {
+            if (entity?.kind === 'creature' && entity.creature) despawnCreature(entity.creature);
+            else {
+              window.NpcHeldEquipment?.detachCutsceneWalker?.(entity.walker);
+              entity.walker?.legs?.dispose?.();
+              if (entity.walker?.avatarGroup) window.PNGPlaneAvatar?.disposeAvatarModel?.(entity.walker.avatarGroup);
+              entity?.root?.parent?.remove?.(entity.root);
+            }
+          }
+          entities.clear();
+          furniturePlayback?.restore();
+          currentArea = previousArea; // Hand synchronization must resolve the restored gameplay scene.
+          window.CinematicCameraRuntime?.deactivate?.();
+          _currentBuildingMapId = previousBuildingMapId;
+          previousPlayerParent?.add(playerMesh);
+          previousToolParent?.add(toolHolder);
+          toolHolder.position.copy(previousToolPosition);
+          toolHolder.quaternion.copy(previousToolQuaternion);
+          window.WeaponToolStances?.invalidateHolderMatrixWorld?.();
+          playerMesh.updateMatrixWorld(true);
+          toolHolder.updateMatrixWorld(true);
+          window.ProceduralHandFrameDriver?.syncNow?.();
+          for (const hidden of hiddenLivePlayerNodes) hidden.node.visible = hidden.visible; // Normal completion and setup failures restore each node's original visibility.
+        }; // One cleanup path releases procedural rigs and restores player-owned transforms on success and setup failure.
         cutscenePreviewActive = true;
         cutscenePreviewZoomPercent = 100;
-        window.CutscenePreviewHelpers.cutscenePreviewBanner(`🎬 ${payload.title || 'Cutscene Preview'} — loading…`, false);
+        report(`🎬 ${payload.title || 'Cutscene Preview'} — loading…`, false);
 
+        try {
+        await window.ImpactBlendLibrary?.load?.(); // The rescue's held combat pose must be ready before the initial actor-pose pass.
+        await Promise.all((payload.actors || []).filter(actor => actor.seatTarget).map(actor => window.AuthoredFurniture?.load?.(actor.seatTarget.furnitureKey))); // Ensure synchronous seat lookups have real authored anchors, including slow mobile startup.
         const area = normalizeNpcArea(payload.mapId);
         if (_isBuildingArea(area)) {
           try { await loadBuildingScene(area); } catch (e) { console.error(e); }
@@ -30002,21 +30212,40 @@
           // which map, and where on it — can only be resolved here, against
           // real generated terrain, not authored ahead of time.
           try {
-            if (_tothalShiftPromise) await _tothalShiftPromise;
+            if (payload.miniWilderness) {
+              if (!EXTERIOR_ZONES[area]?.temporary) throw new Error('Mini-wilderness scenes require an isolated temporary map.');
+              temporaryWildernessArea = area;
+              const localeDefs = await loadStampableLocaleDefs(); // Same Locale Editor definitions used by normal wilderness generation.
+              const locale = localeDefs.find(def => def.id === payload.localeId); // Fail before revealing an unstamped rescue scene.
+              if (!locale) throw new Error('Missing introductory locale: ' + payload.localeId);
+              const mini = payload.miniWilderness; // Director payload keeps biome, seed and chunk size editable.
+              const generated = regenerateWildernessLab(mini.chunksPerSide || 4, mini.seed || 'opening_' + (_playerData?.worldId || 'world'), { mapId: area, sourceZoneId: mini.sourceZoneId, locales: [locale], requiredLocaleId: payload.localeId });
+              if (!generated) throw new Error('Could not generate the introductory Cloud Forest mini-wilderness.');
+            } else if (_tothalShiftPromise) await _tothalShiftPromise;
             if (!_zoneLayouts.has(area)) {
               checkTothalShift();
               await window.CutscenePreviewHelpers.cutscenePreviewWaitForArea(area, 20000, () => _zoneLayouts.has(area));
             }
-            buildZoneScene(area);
+            if (window.TreeAssetLibrary?.getMode?.() === 'baked') await window.TreeAssetLibrary.preload(); // Settle GLB variants before any tree geometry is built for the intro.
             const fp = payload.footprint || {};
             const fw = Math.max(1, Math.ceil(fp.w || 6)), fh = Math.max(1, Math.ceil(fp.h || 6));
-            const anchor = window.CutscenePreviewHelpers.findZonePlacementFootprint(area, fw, fh);
+            const locale = payload.localeId ? (_zoneLayouts.get(area)?.localeInstances || []).find(instance => instance.localeId === payload.localeId) : null; // Prefer the reserved authored story clearing already stamped by the Tothal generator.
+            const localPlayer = (payload.actors || []).find(actor => actor.isPlayer); // Chooses the real shot focus before any synchronous chunk is built.
+            buildZoneScene(area, locale ? locale.x + (localPlayer?.lc || 0) : null, locale ? locale.y + (localPlayer?.lr || 0) : null);
+            const anchor = locale ? { col: locale.x, row: locale.y } : window.CutscenePreviewHelpers.findZonePlacementFootprint(area, fw, fh);
+            if (anchor && payload.localeId && !locale) { // Cached older worlds can adopt a clear site without regenerating any existing terrain or destroying camps.
+              const layout = _zoneLayouts.get(area);
+              if (layout) { layout.localeInstances ||= []; layout.localeInstances.push({ localeId: payload.localeId, name: 'Cloud Forest Rescue Clearing', x: anchor.col, y: anchor.row, w: fw, h: fh }); }
+            }
             if (!anchor) {
-              window.CutscenePreviewHelpers.cutscenePreviewBanner(`Could not find a clear ${fw}×${fh} spot for this scene on "${payload.mapId}".`, true);
+              const placementError = new Error(`Could not find a clear ${fw}×${fh} spot for this scene on "${payload.mapId}".`); // Stops the live opening before actors are spawned onto blocked wilderness terrain.
+              report(placementError.message, true);
               cutscenePreviewActive = false;
+              if (liveMode) throw placementError;
               return;
             }
             const offsetC = anchor.col - (fp.originC || 0), offsetR = anchor.row - (fp.originR || 0);
+            releaseCinematicRegion = window.WildernessChunks?.pinCinematicRegion?.(area, { minCol: anchor.col, minRow: anchor.row, maxCol: anchor.col + fw, maxRow: anchor.row + fh, loadWholeMap: !!payload.miniWilderness, focusCol: anchor.col + ((payload.actors || []).find(actor => actor.isPlayer)?.lc || 0), focusRow: anchor.row + ((payload.actors || []).find(actor => actor.isPlayer)?.lr || 0) }); // Miniature maps retain the full stage; ordinary wilderness cards retain only the cinematic player's current chunk.
             for (const a of (payload.actors || [])) {
               a.worldC = (a.lc || 0) + offsetC;
               a.worldR = (a.lr || 0) + offsetR;
@@ -30042,12 +30271,17 @@
               payload.camera3d.worldTarget = { x: targetX, y: payload.camera3d.localTarget.y + targetElevY, z: targetZ };
             }
             debugLog(`[cutscene preview] wilderness placement: ${payload.mapId} footprint ${fw}x${fh} anchored at (${anchor.col},${anchor.row})`);
-          } catch (e) { console.error('[cutscene preview] wilderness zone placement failed:', e); }
+          } catch (e) {
+            console.error('[cutscene preview] wilderness zone placement failed:', e);
+            if (liveMode) throw e;
+          }
         }
         const ready = await window.CutscenePreviewHelpers.cutscenePreviewWaitForArea(area, 20000);
         if (!ready) {
-          window.CutscenePreviewHelpers.cutscenePreviewBanner(`Could not load map "${payload.mapId}" for preview.`, true);
+          const loadError = new Error(`Could not load map "${payload.mapId}" for cutscene playback.`); // Carries a concrete map failure to live story orchestration instead of silently advancing to the next scene.
+          report(loadError.message, true);
           cutscenePreviewActive = false;
+          if (liveMode) throw loadError;
           return;
         }
         currentArea = area; // switches the whole game's render/active-scene target to the cutscene's map
@@ -30058,6 +30292,7 @@
         // loaded yet. spawnPlayerAvatar's own boot-time call (game.js
         // ~19883) races this function rather than reliably beating it, so
         // this waits on the same shared cache/promise explicitly.
+        await runtimeOptions.onEnvironmentReady?.(); // Introduction stage two finishes only after real terrain and trees are ready.
         await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' });
 
         const targetScene = sceneForNpcArea(area);
@@ -30108,7 +30343,8 @@
           alignToDialoguePortraitCenters: true,
           targetYOffsetTiles: 0.08,
           angleFromGroundDeg: Math.min(baseDlgCfg.angleFromGroundDeg ?? 10.64, 6),
-          distanceTiles: (baseDlgCfg.distanceTiles ?? 4.67) * 0.78,
+          distanceTiles: (baseDlgCfg.distanceTiles ?? 4.67) * (Number(payload.creatureDialogueDistanceMultiplier) || 0.78),
+          fovDeg: Number(payload.creatureDialogueFovDeg) || baseDlgCfg.fovDeg,
         };
 
         let idleCameraMode, idleCameraTarget;
@@ -30119,7 +30355,7 @@
           const angleFromGroundDeg = Math.asin(window.FormatUtils.clamp(dy / distance, -1, 1)) * 180 / Math.PI;
           const azimuthDeg = Math.atan2(dx, dz) * 180 / Math.PI;
           const shotModeKey = 'cutscenePreviewShot';
-          window.SCRATCHBONES_CONFIG.game.camera.modes[shotModeKey] = { distanceTiles: distance, angleFromGroundDeg, azimuthDeg, fovDeg: 42, followLerp: 1, targetYOffsetTiles: 0 };
+          window.SCRATCHBONES_CONFIG.game.camera.modes[shotModeKey] = { distanceTiles: distance, angleFromGroundDeg, azimuthDeg, fovDeg: Number(payload.camera3d.fovDeg) || 42, followLerp: 1, targetYOffsetTiles: 0 };
           idleCameraMode = shotModeKey;
           idleCameraTarget = { position: new THREE.Vector3(t.x, t.y, t.z) };
           camTargetX = t.x; camTargetY = t.y; camTargetZ = t.z; // instant cut, not a slow lerp in from the farm spawn
@@ -30138,7 +30374,15 @@
         activeCameraTarget = idleCameraTarget;
         updateCameraPosition();
 
-        const entities = new Map(); // actorId -> { kind:'npc'|'creature'|'placeholder', root, ... }
+        if (liveMode) {
+          const cutsceneNpcIds = new Set((payload.actors || []).map(actor => actor.npcId).filter(Boolean)); // Canonical ids whose normal scheduled walkers must not appear behind their cinematic doubles.
+          for (const walker of npcWalkers) {
+            if (!cutsceneNpcIds.has(walker?.rec?.id) || !walker?.root) continue;
+            hiddenLiveWalkers.push({ walker, visible: walker.root.visible }); // Restored exactly on finish/error so schedules keep running without visual duplication.
+            walker.root.visible = false;
+          }
+        }
+        // entities is owned by both successful and failed live cleanup.
         for (const actor of (payload.actors || [])) {
           let entity = null;
           try {
@@ -30158,7 +30402,7 @@
               // case that assignment above ever moves).
               const savedArea = currentArea;
               currentArea = area;
-              const creature = makeCreatureEntity(actor.creatureTypeId, (actor.worldC + 0.5) * TILE, (actor.worldR + 0.5) * TILE, { scene: targetScene, grid: targetGrid, cols: targetCols, rows: targetRows });
+              const creature = makeCreatureEntity(actor.creatureTypeId, (actor.worldC + 0.5) * TILE, (actor.worldR + 0.5) * TILE, { scene: targetScene, grid: targetGrid, cols: targetCols, rows: targetRows, genotype: window.CreatureGenetics.makeDefaultGenotype(actor.creatureTypeId) });
               currentArea = savedArea;
               if (creature) {
                 creature.avatarRef.group.rotation.y = THREE.MathUtils.degToRad(actor.rotation || 0);
@@ -30172,7 +30416,7 @@
               // NPC database, so it gets a real PNG-plane avatar instead of
               // the generic placeholder every other freeform actor falls
               // back to.
-              const playerProfile = _playerData || window.__hobunjiPlayerProfile;
+              const playerProfile = window.EquipmentPanel.applyGearClothingToPlayerData(_playerData || window.__hobunjiPlayerProfile); // Uses the same equipped clothing/dye overlay as the live player avatar.
               const fakeRec = {
                 id: 'player', name: actor.name || 'Player',
                 appearance: playerProfile?.appearance,
@@ -30189,7 +30433,20 @@
             }
           } catch (e) { console.error('[cutscene preview] actor spawn failed for', actor.name, e); }
           if (!entity) entity = window.CutscenePreviewHelpers.cutscenePreviewMakePlaceholder(actor, area, targetScene);
+          entity.root.visible = actor.visible !== false; // Authored entrances keep the real rig hidden until its reveal stage.
           entities.set(actor.id, entity);
+          if (entity.walker) await window.NpcHeldEquipment?.attachCutsceneWalker?.(entity.walker);
+        }
+
+        await runtimeOptions.onActorsReady?.(); // Stage three owns canonical portrait, gear and actor spawning.
+        furniturePlayback = window.CutsceneFurnitureRuntime?.create?.(targetScene);
+        for (const transform of payload.furnitureTransforms || []) furniturePlayback?.set({ ...transform, duration: 0 });
+        if (payload.cameraTargetActorId && entities.get(payload.cameraTargetActorId)?.root) idleCameraTarget = entities.get(payload.cameraTargetActorId).root; // Wide rescue framing follows the actual cinematic player, including its collapse/step.
+        activeCameraTarget = idleCameraTarget;
+        let cinematicCameraReady = !payload.cinematicCameraFromStageId; // Optional stage gate preserves the first dialogue angle before easing into a fixed establishing shot.
+        if (cinematicCameraReady && (payload.cinematicCameraId || payload.cinematicCamera)) {
+          const speaker = entities.get((payload.stages || []).find(stage => stage.type === 'talk')?.speakerId); // Gives the opening fade the same wall shot as later dialogue.
+          window.CinematicCameraRuntime?.activate?.(area, payload.cinematicCameraId || payload.cinematicCamera, { reason: 'authored-cutscene', targetWalker: speaker?.walker });
         }
 
         // ── Stage engine ──────────────────────────────────────────────
@@ -30200,13 +30457,13 @@
         // reading a payload the Director tool has already fully resolved
         // to world tile coordinates (see its "Preview in game" handler).
         const actorsById  = new Map((payload.actors || []).map(a => [a.id, a]));
-        // Authored rotation, used exactly as given — no camera-visibility
-        // biasing. This is the single source of truth for every actor's
+        // Authored logical rotation remains separate from the rendered camera
+        // deadzone. This is the single source of truth for every actor's
         // rotation from here on, kept in sync with the mesh only through
         // applyState, so it can't drift out of sync with what's actually on
         // screen the way computing it twice would.
         const actorStates = new Map((payload.actors || []).map(a =>
-          [a.id, { c: a.worldC, r: a.worldR, rotation: a.rotation || 0, pose: a.pose || 'standing', combatOn: false, canLose: false }]
+          [a.id, { c: a.worldC, r: a.worldR, rotation: a.rotation || 0, pose: a.pose || 'standing', seatTarget: a.seatTarget || null, proneBlend: a.pose === 'prone' ? 1 : 0, combatOn: false, canLose: false }]
         ));
         // actorId -> desired facing in degrees: what each actor is currently
         // trying to face (set at spawn from its raw authored rotation, and
@@ -30250,7 +30507,8 @@
           }
           return path;
         };
-        const applyState = actorId => { const entity = entities.get(actorId), st = actorStates.get(actorId); if (entity && st) window.CutscenePreviewHelpers.cutscenePreviewApplyState(entity, area, st); };
+        const resolveActorSeat = st => { const baseline = npcSeatTransformForTarget(st.seatTarget); return furniturePlayback?.seat(st.seatTarget?.furnitureId, baseline) || baseline; }; // Chair-bound actors track interpolated furniture yaw and anchor position.
+        const applyState = (actorId, dt) => { const entity = entities.get(actorId), st = actorStates.get(actorId); if (entity && st) window.CutscenePreviewHelpers.cutscenePreviewApplyState(entity, area, st, dt, resolveActorSeat(st)); };
 
         // Per-frame travel toward a tile-center target, reusing the real
         // game's own locomotion instead of the discrete grid-hop stepping
@@ -30267,7 +30525,13 @@
           if (!entity || !st) return true;
           if (entity.kind === 'npc' && entity.walker) {
             entity.walker.catchup = speedMul; // preview-scripted walkers are never schedule-driven, so catchup is free to repurpose as a speed dial
+            const beforeX = entity.root.position.x, beforeZ = entity.root.position.z; // Real displacement drives cutscene gait, including the shortened final step.
             const arrived = entity.walker.moveToward(tx, tz, dt);
+            entity.walker._moveSpeedTiles = dt > 0 ? Math.hypot(entity.root.position.x - beforeX, entity.root.position.z - beforeZ) / dt : 0;
+            entity.walker._lastUpdateDt = dt;
+            entity.root.position.y = npcSurfaceY(area, Math.floor(entity.root.position.x), Math.floor(entity.root.position.z));
+            entity.walker.legs?.update(dt, entity.walker._moveSpeedTiles, false);
+            window.NpcHeldEquipment?.updateCutsceneWalker?.(entity.walker);
             st.c = entity.root.position.x - 0.5;
             st.r = entity.root.position.z - 0.5;
             st.rotation = THREE.MathUtils.radToDeg(entity.walker.rot);
@@ -30308,27 +30572,62 @@
         };
 
         const finish = message => {
+          if (!running) return;
           running = false;
+          if (dialogueOpen) closeLine();
           cutscenePreviewActive = false;
-          cutscenePreviewZoomPercent = 100; // never leak an authored zoom into normal gameplay afterward
+          cutscenePreviewZoomPercent = 100; // Never leak an authored zoom into normal gameplay afterward.
           cutscenePreviewDialogueSpeaker = null;
-          enterDefaultCameraMode();
-          activeCameraTarget = null;
-          window.CutscenePreviewHelpers.cutscenePreviewBanner(message || `🎬 ${payload.title || 'Cutscene'} — finished.`, false);
+          if (liveMode) {
+            restoreLiveGameplay();
+            for (const hidden of hiddenLiveWalkers) if (hidden.walker?.root) hidden.walker.root.visible = hidden.visible; // Re-exposes the real scheduled NPCs after their cinematic doubles are gone.
+            hiddenLiveWalkers.length = 0;
+            currentArea = previousArea;
+            activeCameraMode = previousCameraMode;
+            activeCameraTarget = previousCameraTarget;
+            updateCameraPosition();
+            const fadeEl = window.CutscenePreviewHelpers.cutscenePreviewFadeEl(); // Bridges hidden map restoration back into visible gameplay without a one-frame room/farm flash.
+            if (!runtimeOptions.keepFadeOnFinish) {
+              fadeEl.style.transitionDuration = '0.55s';
+              requestAnimationFrame(() => { fadeEl.style.opacity = '0'; });
+            }
+            window.__farmLog?.('[cutscene] finished live authored scene "' + (payload.title || 'Cutscene') + '"', 'info');
+          } else {
+            enterDefaultCameraMode();
+            activeCameraTarget = null;
+            report(message || `🎬 ${payload.title || 'Cutscene'} — finished.`, false);
+          }
+          if (!liveMode) { furniturePlayback?.restore(); for (const entity of entities.values()) window.NpcHeldEquipment?.detachCutsceneWalker?.(entity.walker); }
+          releaseLiveLock();
+          resolveCompletion?.({ ok: true, title: payload.title || 'Cutscene', restoredArea: previousArea });
         };
 
-        async function openLine(entity, speakerName, text) {
+        let dialogueAddressedActorId = null; // Seated speakers look at the addressed actor; listeners look at the current speaker.
+        async function openLine(entity, speakerName, text, options = {}) {
           dialogueOpen = true;
           _dialogueWalker = entity?.kind === 'npc' ? entity.walker : null; // Reuse the actual world walker so dialogue expression refreshes target the visible avatar, never a detached viewport portrait.
           cutscenePreviewDialogueSpeaker = entity || null;
-          activeCameraMode = entity?.kind === 'creature' ? dlgModeKeyCreature : dlgModeKey;
-          activeCameraTarget = { position: (entity || entities.values().next().value)?.root.position || new THREE.Vector3() };
+          if (povShot || (!cinematicCameraReady && window.CinematicCameraRuntime?.isActive?.())) { /* This stage's authored/procedural view remains live across dialogue. */ }
+          else if (cinematicCameraReady && (payload.cinematicCamera || (payload.cinematicCameraId && entity?.walker))) {
+            if (!payload.cinematicCamera || payload.cinematicCamera.trackSpeaker || window.CinematicCameraRuntime?.activeRecord?.()?.camera?.id !== payload.cinematicCamera.id) window.CinematicCameraRuntime?.activate?.(area, payload.cinematicCameraId || payload.cinematicCamera, { reason: 'authored-cutscene', targetWalker: entity?.walker });
+          } else if (payload.widePlayerShots && entity?.rec?.id === 'player') {
+            activeCameraMode = idleCameraMode;
+            activeCameraTarget = idleCameraTarget;
+          } else if (!options.preserveCamera) {
+            activeCameraMode = entity?.kind === 'creature' ? dlgModeKeyCreature : dlgModeKey;
+            if (entity?.kind === 'creature' && payload.randomCreatureDialogueAngles) {
+              const yaw = THREE.MathUtils.radToDeg(entity.creature.groupRot || 0); // Creature forward uses the same world yaw as its live rig.
+              window.SCRATCHBONES_CONFIG.game.camera.modes[dlgModeKeyCreature].azimuthDeg = yaw + (Math.random() < .5 ? -1 : 1) * (25 + Math.random() * 35); // New three-quarter angle per line avoids flat side-on silhouettes.
+            }
+            activeCameraTarget = { position: (entity || entities.values().next().value)?.root.position || new THREE.Vector3() };
+          }
           _npcDialogueNameEl.textContent = speakerName;
           if (_npcDialogueHeartsEl) _npcDialogueHeartsEl.textContent = '';
           _arcContainerEl?.classList.add('arc-hidden');
           if (_dialogueWalker?.profile && window.NpcAvatarPreview) {
             await window.DialogueContent?.renderNpcDialoguePortrait(); // Updates the visible world avatar only.
           }
+          window.DialogueCameraFraming?.invalidate();
           _npcDialogueEl.classList.add('open');
           _npcDialogueEl.setAttribute('aria-hidden', 'false');
           window.DialogueContent?.hideChoiceButtons();
@@ -30345,9 +30644,8 @@
           cutscenePreviewDialogueSpeaker = null;
           _npcDialogueEl.classList.remove('open');
           _npcDialogueEl.setAttribute('aria-hidden', 'true');
-          _arcContainerEl?.classList.remove('arc-hidden');
-          activeCameraMode = idleCameraMode;
-          activeCameraTarget = idleCameraTarget;
+          // Keep the current shot through the next line; action cards select their own views.
+          // The body presentation claim keeps the arch hidden until scene cleanup.
         }
 
         function showChoiceOptions(options) {
@@ -30374,9 +30672,78 @@
         function runStage(stageId) {
           if (!running) return;
           const stage = stagesById.get(stageId);
+          cutscenePreviewStageId = stageId;
+          if (stageId === payload.cinematicCameraFromStageId) cinematicCameraReady = true; // The farm's first Continue selects its choice card and starts the wide-shot blend.
           if (!stage) { finish('Preview stopped — the next card could not be found.'); return; }
-          window.CutscenePreviewHelpers.cutscenePreviewBanner(`🎬 ${payload.title || 'Cutscene'} — ${stage.type}`, false);
+          report(`🎬 ${payload.title || 'Cutscene'} — ${stage.type}`, false);
 
+          if (stage.waitForActors?.some(id => externallyDrivenActorIds.has(id))) { setTimeout(() => runStage(stageId), 25); return; } // The house shot starts after both walkers stop, even if their paths differ.
+          if (stage.spawnOutsideView) {
+            const actor = entities.get(stage.actorId), state = actorStates.get(stage.actorId), goal = stage.targetWorld; // Hidden entrance starts outside the preceding camera's frustum.
+            if (actor && state && goal) {
+              const probe = new THREE.Vector3(); // One setup scratch for candidate projection, never a per-frame allocation.
+              camera.updateMatrixWorld?.(true);
+              let spawn = null;
+              for (let radius = 2; radius <= 16 && !spawn; radius++) for (let dz = -radius; dz <= radius && !spawn; dz++) for (let dx = -radius; dx <= radius && !spawn; dx++) {
+                if (Math.max(Math.abs(dx), Math.abs(dz)) !== radius) continue;
+                const c = Math.round(goal.c + dx), r = Math.round(goal.r + dz); // Candidate floor tile must be legal for normal NPC movement.
+                if (!isNpcTileWalkable(area, c, r)) continue;
+                probe.set(c + .5, npcSurfaceY(area, c, r) + (actor.walker?.avatarHeight || 1) * .5, r + .5).project(camera);
+                if (Math.abs(probe.x) > 1.4 || Math.abs(probe.y) > 1.4 || probe.z > 1) spawn = { c, r };
+              }
+              if (spawn) { state.c = spawn.c; state.r = spawn.r; applyState(stage.actorId, 0); }
+            }
+          }
+          if (stage.visible != null) { const actor = entities.get(stage.actorId); if (actor) actor.root.visible = stage.visible; } // Stage visibility controls doorway entrances and departures.
+          if (povShot && (stage.type === 'talk' || stage.type === 'choice' || stage.cameraMode) && stage.cameraMode !== 'pov') { clearPovShot(); window.CinematicCameraRuntime?.deactivate?.(); }
+          if (stage.cameraMode === 'establishing') {
+            cinematicCameraReady = false;
+            window.CinematicCameraRuntime?.deactivate?.();
+            activeCameraMode = idleCameraMode; activeCameraTarget = idleCameraTarget;
+          } else if (stage.cameraMode === 'authored' || stage.cameraMode === 'follow') {
+            cinematicCameraReady = false;
+            if (stage.cameraMode === 'authored') window.CinematicCameraRuntime?.activate?.(area, stage.camera);
+            else {
+              const subjects = (stage.followActorIds || [stage.actorId]).map(id => entities.get(id)).filter(Boolean); // Live midpoint keeps both moving characters in frame.
+              const center = new THREE.Vector3(), position = new THREE.Vector3(); // Reused by the shared camera providers for this shot.
+              const targetProvider = () => { center.set(0, 0, 0); for (const actor of subjects) center.add(actor.root.position); center.multiplyScalar(1 / Math.max(1, subjects.length)); center.y += .6; return center; };
+              const offset = stage.cameraOffset || { x: 0, y: 5, z: 8 }; // Authored offset is relative to the followed midpoint.
+              const positionProvider = () => position.copy(targetProvider()).add(offset);
+              window.CinematicCameraRuntime?.activate?.(area, { id: `cutscene_follow_${subjects.map(actor => actor.rec?.id || '').join('_')}`, positionProvider, targetProvider, fovDeg: stage.fovDeg || 55, blendSeconds: stage.blendSeconds ?? 1.25, dialogueFraming: false });
+            }
+          } else if (stage.cameraMode === 'pov') {
+            clearPovShot();
+            const source = entities.get(stage.actorId || stage.speakerId); // View origin is the same face anchor used by dialogue and shoulder-style aiming.
+            const target = entities.get(stage.targetActorId || stage.addressedActorId); // A live actor or authored world point drives both camera and neck.
+            if (source?.walker) {
+              const eyePoint = new THREE.Vector3(), targetPoint = new THREE.Vector3(); // Reused by this shot's providers and actor-head solve.
+              const targetProvider = () => targetPoint.copy(target?.walker ? (_npcFaceWorldPosition(target.walker) || _dialogueEyeWorldPosition(target.root.position, target.walker.avatarHeight)) : target?.root?.position || targetPoint.set(Number.isFinite(Number(stage.targetWorld?.c)) ? Number(stage.targetWorld.c) + .5 : 0, Number.isFinite(Number(stage.targetWorld?.y)) ? Number(stage.targetWorld.y) : .8, Number.isFinite(Number(stage.targetWorld?.r)) ? Number(stage.targetWorld.r) + .5 : 0));
+              const positionProvider = () => {
+                eyePoint.copy(_npcFaceWorldPosition(source.walker) || _dialogueEyeWorldPosition(source.root.position, source.walker.avatarHeight));
+                const gaze = targetProvider(), yaw = Math.atan2(gaze.x - eyePoint.x, gaze.z - eyePoint.z); // The shoulder rig follows the live target, independently of body facing.
+                const back = Number(stage.povBack) || 0, side = Number(stage.povSide) || 0; // Optional shoulder offsets preserve the source character in frame.
+                eyePoint.x += -Math.sin(yaw) * back + Math.cos(yaw) * side;
+                eyePoint.z += -Math.cos(yaw) * back - Math.sin(yaw) * side;
+                eyePoint.y += Number(stage.povHeight) || 0;
+                return eyePoint;
+              };
+              povShot = { source, visible: source.walker.avatarGroup.visible, targetProvider };
+              source.walker.avatarGroup.visible = Number(stage.povBack) > 0 ? povShot.visible : false;
+              cinematicCameraReady = false;
+              window.CinematicCameraRuntime?.activate?.(area, { id: `cutscene_pov_${stage.actorId || stage.speakerId}_${stage.targetActorId || stage.addressedActorId}_${stage.povBack || 0}_${stage.povSide || 0}_${stage.povHeight || 0}_${stage.fovDeg || 65}`, position: positionProvider(), target: targetProvider(), positionProvider, targetProvider, fovDeg: Number(stage.fovDeg) || 65, blendSeconds: Number(stage.blendSeconds) || .35 });
+            }
+          } else if (stage.cameraMode === 'npcRelative') {
+            cinematicCameraReady = false;
+            window.CinematicCameraRuntime?.deactivate?.();
+            window.SCRATCHBONES_CONFIG.game.camera.modes[dlgModeKey].distanceTiles = (baseDlgCfg.distanceTiles ?? 4.67) * (Number(stage.cameraDistanceMultiplier) || 1); // Surveyor shots use 70% of the normal character-relative distance.
+            activeCameraMode = dlgModeKey;
+            activeCameraTarget = { position: entities.get(stage.actorId)?.root.position }; // The existing NPC-relative dialogue shot follows the arriving walker.
+          } else if (stage.cameraMode === 'wall') {
+            cinematicCameraReady = true;
+            window.CinematicCameraRuntime?.activate?.(area, payload.cinematicCameraId, { reason: 'authored-cutscene', targetWalker: entities.get(stage.actorId || stage.speakerId)?.walker });
+          }
+          if (stage.type === 'camera') { setTimeout(() => continueTo(getResolvedNext(stage.id, stage.next)), Math.max(0, Number(stage.duration) || 0) * 1000); return; }
+          if (stage.type === 'furniture') { furniturePlayback?.set(stage); setTimeout(() => continueTo(getResolvedNext(stage.id, stage.next)), Math.max(0, Number(stage.duration) || 0) * 1000); return; }
           if (stage.type === 'move') return runMove(stage);
           if (stage.type === 'animation') return runAnimation(stage);
           if (stage.type === 'turn') return runTurn(stage);
@@ -30384,9 +30751,15 @@
           if (stage.type === 'fade') return runFade(stage);
           if (stage.type === 'zoom') return runZoom(stage);
 
+          dialogueAddressedActorId = stage.addressedActorId || 'player';
           const speakerActor  = actorsById.get(stage.speakerId);
           const speakerEntity = entities.get(stage.speakerId);
-          const speakerName   = speakerActor?.name || 'Someone';
+          const speakerName   = speakerActor?.name || stage.speakerName || 'Someone';
+          if (stage.type === 'caption') {
+            openLine(null, stage.speakerName || '', stage.text, { preserveCamera: true }).then(() => showChoiceOptions([]));
+            cutscenePreviewAdvance = () => continueTo(getResolvedNext(stage.id, stage.next));
+            return;
+          }
           if (!speakerEntity) { continueTo(getResolvedNext(stage.id, stage.next)); return; }
           if (stage.type === 'choice') {
             openLine(speakerEntity, speakerName, stage.text).then(() => {
@@ -30396,7 +30769,11 @@
             return;
           }
           openLine(speakerEntity, speakerName, stage.text);
-          cutscenePreviewAdvance = () => continueTo(getResolvedNext(stage.id, stage.next));
+          cutscenePreviewAdvance = () => {
+            if (!running || !dialogueOpen) return;
+            runtimeOptions.onDialogueContinue?.(stage); // Lets authored stories persist milestones only when the player continues the displayed dialogue.
+            continueTo(getResolvedNext(stage.id, stage.next));
+          };
         }
 
         function runMove(stage) {
@@ -30406,6 +30783,9 @@
           const speedMul = stage.speed === 'slow' ? 0.6 : stage.speed === 'fast' ? 1.85 : 1;
           const waitForArrival = stage.waitForArrival !== false;
           const tx = goal.c + 0.5, tz = goal.r + 0.5;
+          const navigation = stage.navigate ? window.TilePathfinding?.findPath(Math.round(st.c), Math.round(st.r), goal.c, goal.r,
+            (c, r) => isNpcTileWalkable(area, c, r), { bounds: window.TilePathfinding.boxAround(Math.round(st.c), Math.round(st.r), goal.c, goal.r, 8) }) : null; // Farm tours use the existing NPC grid authority to walk around furnishings and obstacles.
+          let waypoint = 0; // TilePathfinding excludes the start tile, so the first returned col/row hop must be visited.
           let lastT = performance.now();
           let arrivedAlready = false;
           externallyDrivenActorIds.add(stage.actorId); // advanceActorToward below owns rotation until arrival
@@ -30440,8 +30820,12 @@
             const now = performance.now();
             const dt = Math.min(0.05, (now - lastT) / 1000);
             lastT = now;
-            const arrived = advanceActorToward(stage.actorId, tx, tz, dt, speedMul);
-            if (arrived) { onArrive(); return; }
+            const node = navigation?.[waypoint]; // Authored wilderness blocking remains a direct move; opted-in tours follow the path.
+            const arrived = advanceActorToward(stage.actorId, node ? node.col + 0.5 : tx, node ? node.row + 0.5 : tz, dt, speedMul);
+            if (arrived) {
+              if (navigation && waypoint < navigation.length - 1) waypoint++;
+              else { onArrive(); return; }
+            }
             requestAnimationFrame(step);
           };
           requestAnimationFrame(step);
@@ -30470,8 +30854,13 @@
               } catch (e) {}
             }, 120);
           }
+          if (stage.resultPose === 'prone' || (stage.resultPose === 'standing' && (st.proneBlend > 0 || st.pose === 'prone'))) {
+            st.poseTransition = { from: st.proneBlend ?? (st.pose === 'prone' ? 1 : 0), to: stage.resultPose === 'prone' ? 1 : 0, elapsed: 0, duration: Math.max(.001, Number(stage.duration) || 0) }; // Existing actor ticker blends combat pose over the animation card's authored duration.
+            st.pose = stage.resultPose;
+          }
           setTimeout(() => {
             if (!running) return;
+            if (st.poseTransition) { st.proneBlend = st.poseTransition.to; st.poseTransition = null; }
             if (breathTimer) clearInterval(breathTimer);
             if (stage.resultPose !== 'unchanged') st.pose = stage.resultPose;
             applyState(stage.actorId);
@@ -30642,12 +31031,15 @@
         function cutsceneRotationTick() {
           if (!running) return;
           const now = performance.now();
-          const dt = Math.min(0.05, (now - cutsceneRotLastT) / 1000);
+          const animationDt = Math.max(0, (now - cutsceneRotLastT) / 1000); // Authored pose/furniture durations remain correct at low phone frame rates.
+          const dt = Math.min(0.05, animationDt);
           cutsceneRotLastT = now;
+          furniturePlayback?.update(animationDt);
           for (const [actorId, st] of actorStates) {
-            if (externallyDrivenActorIds.has(actorId)) continue;
+            if (externallyDrivenActorIds.has(actorId)) { window.NpcHeldEquipment?.updateCutsceneWalker?.(entities.get(actorId)?.walker); continue; }
             const entity = entities.get(actorId);
             if (!entity) continue;
+            if (st.poseTransition) { const motion = st.poseTransition; motion.elapsed += animationDt; const t = Math.min(1, motion.elapsed / motion.duration); st.proneBlend = motion.from + (motion.to - motion.from) * t * t * (3 - 2 * t); } // Same ticker owns all in-progress humanoid pose interpolation.
             const targetDeg = desiredFacingDeg.get(actorId) ?? st.rotation;
             if (entity.kind === 'creature' && entity.creature) {
               // The exact same function real wild/companion creatures are
@@ -30668,30 +31060,140 @@
               // inverse of that same mapping (creatureAimAngleForGroupRot)
               // to land groupRot on the actual authored angle rather than
               // its mirror.
-              updateCreatureMesh(entity.creature, dt, creatureAimAngleForGroupRot(THREE.MathUtils.degToRad(targetDeg)));
+              const lookActor = entities.get(actorsById.get(actorId)?.lookAtActorId); // Authored animal attention reuses living-target head height, pitch and yaw.
+              const lookTarget = lookActor?.walker || lookActor?.creature;
+              const aim = lookTarget ? Math.atan2((lookActor.root.position.z * TILE) - entity.creature.y, (lookActor.root.position.x * TILE) - entity.creature.x) : creatureAimAngleForGroupRot(THREE.MathUtils.degToRad(targetDeg));
+              entity.creature.facing = aim;
+              updateCreatureMesh(entity.creature, dt, aim);
+              if (lookTarget) _updateCreatureHeadLookAtCombatTarget(entity.creature, lookTarget, dt);
               updateCreatureAnimFrame(entity.creature, dt, false);
               st.rotation = THREE.MathUtils.radToDeg(entity.creature.groupRot);
             } else {
-              // NPC/player/placeholder: the same idle "face player" ease
-              // real stationary NPCs use (see faceNpcDialogueParticipants's
-              // npcFacePlayerLerp) — a flat coin-plane avatar has no edge-on
-              // issue to dead-zone against, so there's nothing else this
-              // needs to run through.
-              const cfg = npcDialogueStagingConfig();
-              const current = THREE.MathUtils.degToRad(st.rotation);
-              const next = current + angleDiff(THREE.MathUtils.degToRad(targetDeg), current) * (cfg.npcFacePlayerLerp ?? 0.28);
-              st.rotation = THREE.MathUtils.radToDeg(next);
-              applyState(actorId);
+              applyState(actorId, dt);
+              if (entity.walker) {
+                const seat = st.pose === 'sit' ? resolveActorSeat(st) : null; // Furniture facing remains logical; the portrait obeys the normal camera deadzone.
+                window.NpcHeldEquipment?.updateCutsceneWalker?.(entity.walker);
+                entity.walker.applyFacingDeadzone(seat ? -seat.facingRad + Math.PI / 2 : THREE.MathUtils.degToRad(targetDeg), npcDialogueStagingConfig().npcFacePlayerLerp ?? 0.28);
+              }
             }
+          }
+          // Resolve gaze after every actor's pose settles, including the prone head pivot.
+          for (const [actorId, entity] of entities) {
+            const walker = entity.walker; // Standing and seated doubles use the same neck authority, including the player.
+            if (!walker || externallyDrivenActorIds.has(actorId)) continue;
+            const authoredTarget = entities.get(actorsById.get(actorId)?.lookAtActorId);
+            const gaze = entity === cutscenePreviewDialogueSpeaker ? entities.get(dialogueAddressedActorId) : authoredTarget || cutscenePreviewDialogueSpeaker;
+            const target = povShot?.source === entity ? povShot.targetProvider() : gaze?.walker && gaze !== entity ? _npcFaceWorldPosition(gaze.walker) : null;
+            if (target) _aimNeckAtWorldPoint(walker.neckJoint, entity.root.position, walker.avatarHeight, target, 85, 60, walker, _npcFaceWorldPosition(walker));
+            else if (walker.neckJoint && !(actorStates.get(actorId)?.proneBlend > 0)) walker.neckJoint.rotation.y = window.PerpRotation.clampedNeckYaw?.(walker.neckJoint, entity.root.position, 0, 85 * Math.PI / 180, camera.position) ?? 0;
           }
           requestAnimationFrame(cutsceneRotationTick);
         }
         cutsceneRotationTick();
 
-        if (!stageOrder.length) { finish('Preview stopped — this scene has no cards.'); return; }
-        window.CutscenePreviewHelpers.cutscenePreviewBanner(`🎬 ${payload.title || 'Cutscene Preview'}`, false);
+        if (runtimeOptions.onReady) {
+          await prepareCutsceneAssets(entities, targetScene); // Stage four settles animal animation textures, decoded images and shader compilation.
+          await runtimeOptions.onReady();
+        }
+        if (!stageOrder.length) { finish(liveMode ? 'Cutscene stopped — this scene has no cards.' : 'Preview stopped — this scene has no cards.'); return completionPromise; }
+        report(`🎬 ${payload.title || 'Cutscene Preview'}`, false);
         runStage(stageOrder[0]);
+        return completionPromise;
+        } catch (error) {
+          cutscenePreviewActive = false;
+          cutscenePreviewZoomPercent = 100;
+          cutscenePreviewDialogueSpeaker = null;
+          furniturePlayback?.restore();
+          for (const entity of entities.values()) window.NpcHeldEquipment?.detachCutsceneWalker?.(entity.walker);
+          for (const hidden of hiddenLiveWalkers) if (hidden.walker?.root) hidden.walker.root.visible = hidden.visible; // Error paths must never strand a real NPC hidden after a failed stand-in spawn.
+          hiddenLiveWalkers.length = 0;
+          if (liveMode) {
+            restoreLiveGameplay();
+            currentArea = previousArea; // Mirrors successful cleanup so a load/setup failure cannot strand normal gameplay on the cinematic area.
+            activeCameraMode = previousCameraMode;
+            activeCameraTarget = previousCameraTarget;
+            updateCameraPosition();
+          }
+          releaseLiveLock();
+          if (liveMode) {
+            const fadeEl = window.CutscenePreviewHelpers.cutscenePreviewFadeEl(); // Ensures a failed live scene never leaves the real game permanently black.
+            fadeEl.style.transitionDuration = '0.35s';
+            requestAnimationFrame(() => { fadeEl.style.opacity = '0'; });
+          }
+          throw error;
+        }
       }
+
+      async function placeOpeningPlayerOutsideTemple() {
+        if (!townGrid) await window.CutscenePreviewHelpers.cutscenePreviewWaitForArea('__townGrid__', 15000, () => !!townGrid);
+        buildTownScene();
+        let entrance = worldTownTransitions.find(spot => spot.targetMapId === 'map_i_temple'); // Uses the live authored town door if its piece is already loaded.
+        if (!entrance) {
+          const building = (_townZone?.buildings || []).find(record => /temple/i.test(record.label || '') || /temple/.test(record.pieceFile || '')); // Finds the same town building the renderer uses.
+          if (!building) throw new Error('The town has no authored temple building.');
+          const response = await fetch(building.pieceFile); // Uses the existing authored piece door resolver, including building rotation.
+          if (!response.ok) throw new Error('Temple piece could not be loaded.');
+          const piece = await response.json(); // Supplies the canonical door footprint rather than an approximate wall position.
+          const door = window.BuildingDoor.doorWorldFromBuilding(window.BuildingDoor.resolveDoorEntrance(piece), building.gridX, building.gridZ, building.rotationDeg || building.rotation || 0, townGrid.length - 1);
+          entrance = { col: door.col, row: door.row };
+        }
+        const approach = [[1,0],[-1,0],[0,1],[0,-1]].map(([dc,dr]) => ({ col: entrance.col + dc, row: entrance.row + dr })).find(point => townGrid[point.row]?.[point.col] && !isSolid(townGrid[point.row][point.col].type)); // Stands outside the door trigger on a real walkable tile.
+        if (!approach) throw new Error('Temple door has no walkable approach.');
+        enterTown(approach.col, approach.row);
+        _transitionLatch = travelAreaKey();
+        window.WeaponToolStances?.invalidateHolderMatrixWorld?.();
+      }
+
+      function openingFarmTourPoints() {
+        const entry = { c: Math.floor(player.x / TILE), r: Math.floor(player.y / TILE) }; // Starts where the owner actually entered the farm.
+        const front = window.FarmhouseLoginSpawn?.frontDoor?.(); // Supplies both the approach and door normal for the final facade view.
+        const rawPorch = front?.approach || entry; // Shares the live house-piece door/approach computation.
+        const openNear = (point, exclude) => {
+          for (let radius = 0; radius < 5; radius++) for (let dr = -radius; dr <= radius; dr++) for (let dc = -radius; dc <= radius; dc++) {
+            const c = point.c + dc, r = point.r + dr; // Searches only ordinary walkable farm tiles and avoids actor overlap.
+            if (exclude?.c === c && exclude?.r === r) continue;
+            if (grid[r]?.[c] && !isSolid(grid[r][c].type) && !grid[r][c].incline && !getWorldObjectAt(c, r)) return { c, r };
+          }
+          throw new Error('Farm introduction has no nearby walkable stop.');
+        };
+        const porch = openNear(rawPorch); // Keeps the guide clear of later player-authored junk and house walls.
+        const aspect = Math.max(.3, Number(cameraContainerAspect()) || 1); // Portrait/mobile screens need more height to retain the same full-yard width.
+        const tourCamera = { // Uses the shared authored cinematic camera throughout dialogue and movement, facing north from the south edge.
+          id: 'farm_introduction_south', label: 'Farm introduction south camera',
+          position: { x: COLS / 2, y: Math.max(ROWS + 8, COLS / aspect * .85 + 8) / 2, z: ROWS - .5 },
+          target: { x: COLS / 2, y: 1, z: ROWS / 2 },
+          fovDeg: 75, blendSeconds: 1.25, trackSpeaker: false, stagePlayer: false,
+        };
+        const outwardX = rawPorch.c - (front?.door?.c ?? rawPorch.c), outwardZ = rawPorch.r - (front?.door?.r ?? rawPorch.r - 1); // Actual farmhouse door orientation, including player-rotated house pieces.
+        const normalLength = Math.hypot(outwardX, outwardZ) || 1;
+        const houseCamera = { id: 'farm_introduction_house', position: { x: rawPorch.c + .5 + outwardX / normalLength * 8, y: 3, z: rawPorch.r + .5 + outwardZ / normalLength * 8 }, target: { x: (front?.door?.c ?? rawPorch.c) + .5, y: 1.7, z: (front?.door?.r ?? rawPorch.r - 1) + .5 }, fovDeg: 60, blendSeconds: 1.25, trackSpeaker: false }; // Head-on house view blends only after both walkers arrive.
+        return { entry, guide: openNear(entry, entry), porch, playerPorch: openNear(porch, porch), camera: tourCamera, houseCamera };
+      }
+
+      async function preloadOpeningMeeting(payload) {
+        const area = normalizeNpcArea(payload.mapId), temporary = new Map(); // Meeting scenery/portraits warm during the introduction, before either scene is revealed.
+        await loadBuildingScene(area);
+        await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' });
+        try {
+          for (const actor of payload.actors || []) {
+            if (!actor.npcRecord) continue;
+            const walker = await makeNpcWalker(actor.npcRecord, { area, c: actor.worldC, r: actor.worldR }); // Same profile compositor and rig builder as playback.
+            if (walker) { walker.root.visible = false; temporary.set(actor.id, { walker }); }
+          }
+          await prepareCutsceneAssets(temporary, sceneForNpcArea(area));
+        } finally {
+          for (const { walker } of temporary.values()) { walker.legs?.dispose?.(); window.PNGPlaneAvatar?.disposeAvatarModel?.(walker.avatarGroup); walker.root.parent?.remove(walker.root); }
+        }
+      }
+
+      window.AuthoredCutsceneRuntime = Object.freeze({
+        preloadOpeningMeeting,
+        placeOutsideTemple: placeOpeningPlayerOutsideTemple,
+        farmTourPoints: openingFarmTourPoints,
+        run: (payload, options = {}) => runCutscenePreview(payload, { ...options, live: true }), // Plays Director-format payloads as real gameplay cinematics with cleanup/restoration.
+        isActive: () => cutscenePreviewActive, // Gameplay HUD owners can check the director without allocating a debug snapshot.
+        debugSnapshot: () => ({ active: !!cutscenePreviewActive, currentArea, stageId: cutscenePreviewStageId, zoomPercent: cutscenePreviewZoomPercent, latestChange: 'Rescue now uses a temporary generated Cloud Forest mini-wilderness with the authored locale and full mini-map residency; cleaned up after playback. Fight uses the rescue wide shot; Spearhead enters from outside the prior view; moving humanoids animate legs; final player stance yaw obeys body/neck deadzones; tighter surveyor shots and rear chair with departure hiding; lower farm camera, moving two-character follow shot and facade view after both arrivals; intro wind-only audio.' }), // Mobile/debug-panel callers can inspect live cinematic ownership without a console.
+      });
 
       if (window.__hobunjiCutscenePreview) {
         runCutscenePreview(window.__hobunjiCutscenePreview).catch(err => {

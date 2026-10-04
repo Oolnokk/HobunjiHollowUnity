@@ -76,6 +76,7 @@
       comboStep: Number.isFinite(Number(input.comboStep)) ? Number(input.comboStep) : null,
       comboFinisher: !!input.comboFinisher,
       quickConditionalBonus: !!input.quickConditionalBonus,
+      quickBonusEffectProc: !!input.quickBonusEffectProc, // True only when the condition matched AND that Quick Attack's bonus-effect cooldown was ready.
       fullCharge: !!input.fullCharge,
       isFlurry: !!input.isFlurry,
       flurryHitIndex: Number.isFinite(Number(input.flurryHitIndex)) ? Number(input.flurryHitIndex) : null,

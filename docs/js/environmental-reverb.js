@@ -317,6 +317,7 @@
     connectWetNode,
     playWetUrl,
     debugSnapshot,
+    stopAll() { for (const handle of [...activeWetSources]) handle.stop(); }, // Cancel world-sound tails when the introduction takes over the mix.
   };
 
   // mediaPlayWrapped/audioInitWrapped/musicInitWrapped are each idempotent,

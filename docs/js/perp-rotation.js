@@ -422,6 +422,34 @@
     return best;
   }
 
+  let neckWorldRotation = null; // Reused by independent neck deadzones; parent scales must not change facing.
+  let neckForward = null; // Parent forward vector converts clamped world yaw back to local neck yaw.
+  function clampedNeckYaw(neck, worldPosition, requestedYaw, maxYaw = Math.PI, cameraPosition = liveCameraPosition()) {
+    if (!neck?.parent || !worldPosition || !cameraPosition) return requestedYaw;
+    neckWorldRotation ||= new THREE.Quaternion();
+    neckForward ||= new THREE.Vector3();
+    neckWorldRotation.identity();
+    for (let node = neck.parent; node; node = node.parent) neckWorldRotation.premultiply(node.quaternion);
+    neckForward.set(0, 0, 1).applyQuaternion(neckWorldRotation);
+    const parentYaw = Math.atan2(neckForward.x, neckForward.z); // World orientation of this head's parent, independently of body clamp state.
+    const perps = cameraRelativePerpsAtWorldPosition(worldPosition, cameraPosition); // Each head uses its own camera bearing.
+    if (!perps) return requestedYaw;
+    const state = (neck.userData ||= {}).cameraDeadzone ||= {}; // Persistent hysteresis belongs to the head, never the body's rotation state.
+    const rawWorldYaw = parentYaw + requestedYaw; // Logical gaze is kept independent of the visible deadzone correction.
+    const result = perpClamp(state, rawWorldYaw, perps); // Shared entry/exit and center hysteresis prevent head flicker.
+    let localYaw = deps.angleDiff(result.effectiveTarget, parentYaw); // Prefer the clamped edge that is physically reachable by the neck.
+    if (Math.abs(localYaw) > maxYaw) {
+      const nearest = perps[state.lastNearestPerpIndex]; // The opposite edge may fit the physical neck limit when the preferred edge cannot.
+      const other = deps.angleDiff(nearest - state.perpSides[state.lastNearestPerpIndex] * PERP_DEAD_RAD, parentYaw);
+      if (Math.abs(other) <= maxYaw) localYaw = other;
+    }
+    const renderedYaw = Math.max(-maxYaw, Math.min(maxYaw, localYaw)); // Physical limits win if neither deadzone edge is reachable.
+    state.requestedLocalYaw = requestedYaw;
+    state.renderedLocalYaw = renderedYaw;
+    state.physicalLimitConflict = Math.abs(localYaw) > maxYaw;
+    return renderedYaw;
+  }
+
   // FarmAnimals is loaded before game.js but its deps arrive later via init().
   // Wrapping here lets the shared rotation module see livestock positions
   // without adding another dependency seam to game.js.
@@ -431,6 +459,7 @@
     init,
     perpClamp,
     clampedRotation,
+    clampedNeckYaw,
     cameraRelativePerpsAtWorldPosition,
     cameraRelativeCreaturePerpsAtWorldPosition,
     perspectivePerpsForState,

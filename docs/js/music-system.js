@@ -14,6 +14,7 @@
   // plain-.volume fallback. That's a pre-existing quirk of the system being
   // moved, not something this extraction changes.
   let deps = null;
+  let quietLoading = false; // Introduction mix blocks every gameplay music/BGS transport until cleanup.
   let _startupBgm = null; // Holds Remembrance while the title/save/onboarding/loading sequence owns the soundtrack.
   let _startupSequenceComplete = false; // Prevents startup music from restarting after actual gameplay hydration.
   let _startupGameStartWatch = 0; // Short-lived post-selection watcher; cleared as soon as game.js marks the hydrated world started.
@@ -110,6 +111,7 @@
   // success/failure ordering nondeterministic.
   function requestGameAudioPlay(snd) {
     if (!snd) return Promise.reject(new Error('Missing audio element'));
+    if (quietLoading) { snd.pause?.(); return Promise.resolve(); }
     if (!snd.paused) { snd._gameAutoplayBlocked = false; return Promise.resolve(); }
     if (snd._gamePlayPromise) return snd._gamePlayPromise;
     let playResult;
@@ -644,7 +646,7 @@
     let ducked = _lyreDucked; // A track that starts while the Lyre minigame is already sounding (e.g. the previous song looped over) should come up silent, not at full volume.
     let transportPaused = false; // Used by scheduler interruptions that must preserve this track's playhead instead of retiring it.
     const targetVolume = () => {
-      if (ducked) return 0;
+      if (ducked || quietLoading) return 0;
       const measuredGain = _musicLoudnessGain.get(resolveAudioUrl(url)) ?? 1;
       const userTrackGainRaw = Number(window.AudioTrackGainSettings?.gainForUrl?.(url));
       const userTrackGain = Number.isFinite(userTrackGainRaw) ? Math.max(0, userTrackGainRaw) : 1;
@@ -1170,6 +1172,7 @@
   }
 
   function updateAmbientCues() {
+    if (quietLoading) return; // Preserve paused music ownership while the introduction covers scene changes.
     const currentArea = deps.getCurrentArea();
     const audioCfg = window.AudioSystem?.gameAudioConfig();
     if (_startupBgm && window.__hobunjiGameStarted === true) stopStartupBgm('game started'); // Redundant no-poll fallback at the first real gameplay audio tick.
@@ -1652,7 +1655,15 @@
     );
   }
 
+  function beginQuietLoading() {
+    quietLoading = true;
+    const playing = [..._gameAudioElements].filter(audio => !audio.paused); // Restore only transports that were already playing, preserving their playheads.
+    for (const audio of _gameAudioElements) audio.pause?.();
+    return () => { quietLoading = false; for (const audio of playing) if (!audio._musicRetired && window.AudioSystem?.gameAudioConfig?.()?.enabled !== false) { audio._refreshMusicTarget?.(0); requestGameAudioPlay(audio).catch(() => {}); } };
+  }
+
   window.Music = {
+    beginQuietLoading,
     init,
     audioDebug,
     isNightTime,

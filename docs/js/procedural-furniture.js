@@ -206,7 +206,9 @@
   function buildPartMesh(part, baseColor) {
     let geo;
     const t = part.transform;
-    if (part.kind === 'sphere') {
+    if (part.kind === 'banner') {
+      geo = new THREE.PlaneGeometry(Math.max(.01, t.sx || 1), Math.max(.01, t.sy || 1), 12, 16);
+    } else if (part.kind === 'sphere') {
       geo = new THREE.SphereGeometry(0.5 * Math.max(t.sx, t.sy, t.sz), 16, 10);
     } else if (part.kind === 'hoop') {
       geo = createHoopGeometry(part);
@@ -226,6 +228,10 @@
     if (part.materialTexture) applyPartTexture(mat, part);
     applyAuthoredSurfaceMapping(mesh, part); // Must run after the final primitive geometry exists; material assignment above remains authoritative.
     if (part.depthWrite === false) mat.depthWrite = false; // Background/firebox planes may stay opaque visually without hiding later transparent VFX.
+    mesh.userData ||= {};
+    mesh.userData.authoredPart = part; // Pattern placement/instance edits use the same immutable authored definition.
+    window.FurniturePatternSurfaces?.applyPart?.(mesh, part);
+    if (part.kind === 'banner') { mat.visible = false; mesh.castShadow = false; } // Patterned child is the visible wind-warped fabric.
     return mesh;
   }
 
@@ -249,7 +255,7 @@
     entry.base = _texLoader.load('assets/textures/' + filename, () => {
       entry.loaded = true;
       for (const clone of entry.pendingClones) {
-        clone.image = entry.base.image;
+        finishPartTexture(clone, entry.base.image);
         clone.format = entry.base.format;
         clone.needsUpdate = true;
       }
@@ -260,12 +266,38 @@
     _texCache.set(filename, entry);
     return entry;
   }
+  function finishPartTexture(texture, image) {
+    const fill = texture.userData?.furnitureFill; // Authored fill settings retained while the PNG loads.
+    if (fill && typeof window.getShadeFillCanvas === 'function') {
+      const hex = fill.replace('#', ''); // Used to pass the furniture fill color to the shared adaptive shade-fill pipeline.
+      image = window.getShadeFillCanvas(image, `furniture:${texture.userData.furnitureTexture}:${fill}`, {
+        mode: 'shadeFill', rgb: [0, 2, 4].map(offset => parseInt(hex.slice(offset, offset + 2), 16)),
+        options: window.getPortraitTintingConfig?.(),
+      });
+    }
+    if (THREE.Source && texture.source) texture.source = new THREE.Source(image);
+    else texture.image = image;
+    texture.needsUpdate = true;
+  }
+
+  function makePartMaterial(part, baseColor) {
+    const material = partMaterial(part, baseColor); // Shared authored material factory for procedural ruin surfaces and furniture parts.
+    applySurfaceOpacity(material, part);
+    if (part.materialTexture) applyPartTexture(material, part);
+    return material;
+  }
+
   function applyPartTexture(mat, part) {
     const entry = texEntry(part.materialTexture);
     const tex = entry.base.clone();
     tex.needsUpdate = true;
     tex.rotation = (part.materialRotationDeg || 0) * DEG;
+    tex.userData = Object.assign({}, tex.userData); // three.js r128 Textures have no userData field; give each clone its own.
+    tex.userData.furnitureTexture = part.materialTexture;
+    tex.userData.furnitureFill = part.materialFillMode !== 'never' && part.materialFillEnabled && /^#[0-9a-f]{6}$/i.test(part.materialFillColor || '') ? part.materialFillColor : null;
     if (!entry.loaded) entry.pendingClones.add(tex);
+    else finishPartTexture(tex, entry.base.image);
+    tex.repeat.set(Math.max(.01, Number(part.materialRepeatU) || 1), Math.max(.01, Number(part.materialRepeatV) || 1));
     mat.map = tex;
     mat.color.set(0xffffff);
     mat.transparent = !!part.textureTransparent;
@@ -644,9 +676,20 @@ function campfireRecipe() {
     box(0, .65, 0, .6, 1.3, .12, .85),
   ];
 
+  function hangingSignSupportPart(id = 'hanging_sign_post') {
+    return {id,kind:'beam',name:'Horizontal Sign Post',color:'#60452c',materialRole:'wood',materialTexture:'carved_smooth.png',transform:{x:0,y:1.72,z:0,rx:0,ry:0,rz:0,sx:1.25,sy:.14,sz:.14},topScaleX:1,topScaleZ:1,bottomScaleX:1,bottomScaleZ:1,wonkiness:.01}; // Shared by the animation-tab sign and banner preset, returning an independent recipe.
+  }
+  CATALOG.hangingBanner = [
+    hangingSignSupportPart(),
+    {id:'banner-cloth',kind:'banner',name:'Wind banner',bannerWindStrength:.1,transform:{x:-.0863,y:1.0539,z:0,rx:0,ry:0,rz:0,sx:.7,sy:1.1922,sz:.01},patternSurfaces:[{slot:'banner',mode:'cloth',patternId:'omgurku_knot',scale:1,palette:['#b7a185','#315b67']}]}, // Replaces the sign and ropes; cloth top is flush with the shared beam underside at Y=1.65.
+  ];
+
   window.ProceduralFurniture = {
+    hangingSignSupportPart,
     buildFurnitureGroup,
     buildPartMesh,
+    makePartMaterial,
+    latestChange: 'Fixed textured furniture startup crashes on Three.js r128 by initializing clone metadata.',
     shade,
     CATALOG,
   };

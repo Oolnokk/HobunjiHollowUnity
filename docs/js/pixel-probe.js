@@ -960,6 +960,12 @@
     lines.push('Performance cleanup v1: unchanged frame cadence/targeting; reticle writes deduplicated; hand diagnostics on demand.');
     const metalArmorDiagnostics = window.MetalArmorSystem?.diagnosticsText?.(); // Copyable on-phone proof of every equipped metal article's slot, alloy, Temper, verdigris, weight, and XP-hook readiness.
     if (metalArmorDiagnostics) lines.push(metalArmorDiagnostics);
+    const mammakhbuurDebug = window.HobunjiMammakhbuurSpecies?.debugSnapshot?.(); // Copies the new species' size/placement and fallback contract on mobile.
+    if (mammakhbuurDebug) lines.push('Mammakhbuur: ' + JSON.stringify(mammakhbuurDebug));
+    const cutsceneDebug = window.AuthoredCutsceneRuntime?.debugSnapshot?.(); // Copies the active stage and latest runner fixes while a live scene is paused.
+    if (cutsceneDebug) lines.push('Cutscene: ' + JSON.stringify(cutsceneDebug));
+    const openingDebug = window.OpeningStoryCutscene?.debugSnapshot?.(); // Story phase and wilderness-gate status remain visible without a console.
+    if (openingDebug) lines.push('Opening: ' + JSON.stringify(openingDebug));
     const harlyaoSkeletonDebugLine = window.HobunjiHarlyaoSkeletonSpecies?.formatDebug?.(); // Keeps the NPC-only skeleton bridge's rig/extremity/cosmetic status copyable from the mobile Pixel Probe without DevTools.
     if (harlyaoSkeletonDebugLine) lines.push(harlyaoSkeletonDebugLine);
     const harlyaoLichDebugLine = window.HarlyaoLichCombat?.formatDebug?.(); // Keeps live lich type/projectile/puddle/summon/Entranced state copyable on mobile without DevTools.
@@ -1231,6 +1237,8 @@
       if (animalSurface) lines.push(`Color fill animal pattern: shade#${animalSurface.sequence || '-'} sample=${animalSurface.sampledCount} apply=${animalSurface.appliedCount} peak=${animalSurface.peak} splitMask=${animalSurface.separateSampleMask ? 'yes' : 'no'} source=${animalSurface.externalSource ? 'original' : 'current'}`);
     }
     lines.push(pxBuf ? `Raw color under cursor: rgba(${pxBuf[0]},${pxBuf[1]},${pxBuf[2]},${pxBuf[3]})` : 'Raw color under cursor: (readback failed)');
+    const furniturePatterns = window.FurniturePatternSurfaces?.debug?.(deps.getActiveScene?.()) || []; // Surface IDs/palettes/scales remain inspectable from mobile.
+    if (furniturePatterns.length) lines.push('Furniture patterns: ' + JSON.stringify(furniturePatterns));
     const furniturePuzzles = window.FurniturePuzzleRuntime?.debug?.() || []; // Mobile-visible OFF/ON transform and dynamic-collision diagnostics.
     if (furniturePuzzles.length) {
       const puzzleSummary = furniturePuzzles.map(map => `${map.mapId}:${map.nodes.map(node => `${node.id}[${node.role}/${node.behavior} ${Math.round(node.progress * 100)}% ${node.blocked ? 'blocked' : 'open'}]`).join(',') || 'none'} wires=${map.wires}`).join(' | ');

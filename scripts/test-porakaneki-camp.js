@@ -145,7 +145,7 @@ assert(!banditRuntimeSource.includes('buildBanditTentCanvasGeometry'), 'old proc
 assert.deepEqual(cfg.equipment.weaponShapes, ['fishingspear', 'hatchet', 'dagger'], 'Porakaneki must use the true dagger shape, never daggerSword');
 assert(localeIndex.locales.some(entry => entry.id === 'locale_porakaneki_camp_small'));
 assert(localeIndex.locales.some(entry => entry.id === 'locale_porakaneki_camp_chief' && entry.singleton === true));
-assert(houseLoader.includes('porakaneki-camps-runtime.js?v=20260929ruinsites1'));
+assert(houseLoader.includes('porakaneki-camps-runtime.js?v=20261002ha9ed963'));
 assert(runtimeSource.includes("bodyColorsOverride: window.HobunjiPorakanekiSpecies?.bodyColorsForSeed?.(hunter.id, 'male') || null"), 'camp residents must choose an authored Mashtzarr swatch only when materializing their avatar');
 const bodyColorWriteIndex = combatBanditSource.indexOf('roster.appearance.bodyColors = opts.bodyColorsOverride'); // Used with avatar-build ordering below to ensure explicit finite colors reach the portrait before raster work begins.
 const banditAvatarBuildIndex = combatBanditSource.indexOf('const avatarRef = await buildBanditAvatar(roster);'); // Must occur after the explicit body-color assignment.
@@ -441,6 +441,38 @@ function hunterDebug(api, zoneId, campId, index) {
   assert.equal(materialized.plannerControlled, true);
   assert.equal(materialized.registered, true, 'materialized resident is present in the shared hostile Set');
   assert.equal(materialized.renderDelta, 0, 'freshly placed avatar root matches the live simulation position');
+
+  const savedFavor = relation.favor; // Preserve the original LOD scenario after these hostility/gift-target checks.
+  const giftEntity = [...hostileObjects].find(entity => entity._porakanekiPlannerControlled === true && entity.avatarRef?.group?.visible); // A real materialized camp hunter is the gift interaction target.
+  assert(giftEntity);
+  const savedPlayerPosition = { x: combatDeps.player.x, y: combatDeps.player.y }; // Restored before the original LOD boundary checks.
+  combatDeps.player.x = giftEntity.x;
+  combatDeps.player.y = giftEntity.y;
+  relation.favor = -5;
+  contextWindow.NpcRapport = { get: () => 25, canGiftToday: () => true };
+  contextWindow.BanditCamps.updateCampBanners(0.21);
+  assert.equal(api.debugSnapshot().attackOnSight, false, 'positive daily Rapport overrides even the worst permanent Favor');
+  assert.equal(giftEntity._porakanekiPlannerControlled, true, 'the real hunter remains peaceful');
+  const giftWalker = api.getNearbyGiftWalker(giftEntity.x / combatDeps.TILE, giftEntity.y / combatDeps.TILE, 2); // Exercises the public path called by updateNpcWalkers.
+  assert(giftWalker?.isPorakanekiHunter);
+  assert.equal(api.getNearbyGiftWalker(giftEntity.x / combatDeps.TILE, giftEntity.y / combatDeps.TILE, 2), giftWalker, 'cached proxies do not cause action-bar refresh churn');
+  contextWindow.NpcRapport.canGiftToday = () => false;
+  assert.equal(api.getNearbyGiftWalker(giftEntity.x / combatDeps.TILE, giftEntity.y / combatDeps.TILE, 2), null, 'shared chief gift quota hides hunter offers');
+  contextWindow.NpcRapport.get = () => 0;
+  contextWindow.BanditCamps.updateCampBanners(0.21);
+  assert.equal(api.debugSnapshot().attackOnSight, true, 'Rapport expiry restores authored attack-on-sight rules');
+  assert.equal(giftEntity._porakanekiPlannerControlled, false);
+  contextWindow.NpcRapport.get = () => 25;
+  contextWindow.BanditCamps.updateCampBanners(0.21);
+  giftEntity.health -= 1;
+  contextWindow.BanditCamps.updateCampBanners(0.21);
+  assert.equal(giftEntity._porakanekiPlannerControlled, false, 'attacking a hunter still provokes retaliation despite positive Rapport');
+  fakeNowMs += 100000;
+  relation.favor = savedFavor;
+  delete contextWindow.NpcRapport;
+  combatDeps.player.x = savedPlayerPosition.x;
+  combatDeps.player.y = savedPlayerPosition.y;
+  contextWindow.BanditCamps.updateCampBanners(0.21);
 
   // Distance LOD has no invisible 10x10 chunk edge. A resident entered at 12
   // tiles stays live through the wider 16-tile release radius, so walking a

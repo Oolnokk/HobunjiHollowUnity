@@ -14,7 +14,7 @@
   const PEER_SUFFIX = ':house-window-peer'; // Deterministic suffix lets a primary decor id regenerate the same opposite-side id after load.
   const INTERIOR_SCALE = 2; // HousePieces.computeInteriorLayout maps every exterior farm tile to a 2x2 interior footprint.
   const EXTERIOR_WALL_HEIGHT = 1.4; // HousePieceGen Highland body height used to normalize vertical window placement.
-  const EXTERIOR_HEIGHT_SCALE = 1; // Exterior frame and brick opening retain the authored height around the attachment center.
+  const EXTERIOR_HEIGHT_SCALE = 0.5; // Exterior frame and brick opening are half the authored height (the farm exterior is drawn at half the interior scale), scaled around the unchanged attachment center.
   const EXTERIOR_SLOT_TILES = 2; // Fixed placement density: at most one window per two tiles of exposed exterior wall.
   const EXTERIOR_SLOT_V01 = 0.5; // Every exterior slot is vertically centered; aiming chooses only the horizontal slot.
   const INTERIOR_WALL_HEIGHT = 1.75; // Game interior wall height used to scale the same normalized vertical position indoors.
@@ -458,7 +458,7 @@
       root.userData.houseWindowApertureRoot = apertureRoot;
       root.add(apertureRoot);
     }
-    const apertureMatrix = new THREE.Matrix4().set(widthScale, shearX, 0, anchor[0], 0, heightScale, 0, anchor[1], 0, shearZ, 1, anchor[2], 0, 0, 0, 1); // Maps the opening and its child geometry through the identical wall slope and midpoint taper.
+    const apertureMatrix = new THREE.Matrix4().set(widthScale, shearX * heightScale, 0, anchor[0], 0, heightScale, 0, anchor[1], 0, shearZ * heightScale, 1, anchor[2], 0, 0, 0, 1); // Maps the opening and its child geometry through the identical wall slope and midpoint taper; shear is per unit of world rise, so it scales with heightScale.
     apertureRoot.matrixAutoUpdate = false;
     apertureRoot.matrix.copy(apertureMatrix);
     apertureRoot.matrixWorldNeedsUpdate = true;
@@ -551,6 +551,8 @@
       derivedLinkedWindow: true,
       linkedWindowPrimaryId: primaryObject.id,
     }; // Synthetic marker is consumed by FarmEditor.saveFarmLayout so this half never serializes as a second owned item.
+    peer.patternOverrides = primaryObject.patternOverrides || null; // Both sides display the same persistent stained-glass pattern.
+    window.FurniturePatternSurfaces?.applyOverrides?.(peer.mesh, peer.patternOverrides);
     result.mesh.userData.houseWindowDerived = true;
     farmDeps.interiorFurnitureObjects.push(peer);
     return peer;

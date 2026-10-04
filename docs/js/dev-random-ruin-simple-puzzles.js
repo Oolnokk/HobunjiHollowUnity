@@ -256,7 +256,8 @@
   function naturalizeStone(mesh) {
     const natural = window.NaturalSurfaceMaterials;
     if (mesh?.isMesh && typeof natural?.naturalizeMesh === 'function') {
-      natural.naturalizeMesh(mesh, 'cliffs');
+      mesh.material = window.ProceduralFurniture.makePartMaterial({ materialTexture:'carved_smooth.png', materialLighting:'unlit', materialFillMode:'never', color:'#7a746b' });
+      window.HobunjiSurfaceStretchUV?.mapMesh?.(mesh, { label:'ruin-stone', maxPatchWorldSize:6 });
       mesh.userData.devRandomRuinDenMaterial = true;
       mesh.userData.devRandomRuinSimpleStone = true;
     }
@@ -301,6 +302,7 @@
   function activateCeilingGlyph(glyph) {
     if(!glyph||glyph.active)return false;
     glyph.active=true;glyph.hitCount++;
+    playStoneUnlockKchunk();
     glyph.material.color.setHex(0x4dff6e);
     deps?.showToast?.(glyph.message,true);
     try{glyph.onActivate?.(glyph);}catch(error){console.warn('[Random Test Ruin] ceiling glyph activation failed',error);}
@@ -347,24 +349,8 @@
     window.AudioSystem?.playObjectSfx?.({url:KURRAYA_NOTE_URL,volume:.58,pitchVarianceMul:0},1,pitch);
   }
 
-  function playGeneratedStoneKchunk() {
-    const AudioCtx=window.AudioContext||window.webkitAudioContext; // Temporary procedural completion cue; intended to be replaced by a recorded stone kchunk asset later.
-    if(!AudioCtx)return false;
-    try{
-      const ctx=playGeneratedStoneKchunk._ctx||(playGeneratedStoneKchunk._ctx=new AudioCtx());
-      ctx.resume?.();
-      const now=ctx.currentTime,osc=ctx.createOscillator(),gain=ctx.createGain(),filter=ctx.createBiquadFilter();
-      osc.type='square';osc.frequency.setValueAtTime(92,now);osc.frequency.exponentialRampToValueAtTime(46,now+.18);
-      filter.type='lowpass';filter.frequency.value=520;
-      gain.gain.setValueAtTime(.0001,now);gain.gain.exponentialRampToValueAtTime(.16,now+.012);gain.gain.exponentialRampToValueAtTime(.0001,now+.24);
-      osc.connect(filter).connect(gain).connect(ctx.destination);osc.start(now);osc.stop(now+.25);
-      return true;
-    }catch(_){return false;}
-  }
-
   function playStoneUnlockKchunk() {
-    window.AudioSystem?.playObjectSfxKey?.('breakRock',1.45,.58); // Loud, low-pitched existing rock-break cue makes successful plate completion unmistakable until a dedicated stone-lock kchunk recording is added.
-    playGeneratedStoneKchunk(); // Brief synthesized low thunk reinforces the mechanical unlock and preserves a fallback if the configured rock cue is unavailable.
+    window.AudioSystem?.playObjectSfxKey?.('puzzleComplete');
   }
 
   function disposeObject(root) {
@@ -720,7 +706,7 @@
     mount.userData.devRandomRuinRopeCeilingMount=true;
     state.group.add(mount);
 
-    const ropeMesh=new THREE.Mesh(sharedCylinderGeometry(ROPE_BODY_RADIUS,ROPE_BODY_RADIUS,1,8),makeBasic(0xc9ad77,{transparent:true,opacity:.98}));
+    const ropeMesh=new THREE.Mesh(sharedCylinderGeometry(ROPE_BODY_RADIUS,ROPE_BODY_RADIUS,1,8),window.ProceduralFurniture.makePartMaterial({materialTexture:'boards.png',materialLighting:'unlit',color:'#c9ad77',materialFillEnabled:true,materialFillColor:'#c9ad77',materialFillMode:'always',materialRepeatU:4,surfaceOpacity:.98}));
     ropeMesh.name='dev_ruin_swing_rope_'+room.id+(idSuffix?'_'+idSuffix:'');
     ropeMesh.frustumCulled=true;ropeMesh.userData.devRandomRuinSwingRope=true;state.group.add(ropeMesh);
     const marker=new THREE.Mesh(sharedSphereGeometry(.15,10,8),makeBasic(0xd1b682));
@@ -1020,7 +1006,7 @@
     for(let i=0;i<4;i++){
       const p=points[i],support=sampleSupport(p.x,p.z);
       if(!support){disposeObject(root);return null;}
-      const material=makeBasic(CHORD_PLATE_IDLE_COLOR); // Verdigris bronze: distinct from the grey floor and from the sandstone safe-path trap plates.
+      const material=window.ProceduralFurniture.makePartMaterial({materialTexture:'carved_smooth.png',materialLighting:'unlit',color:'#b08d57',materialFillEnabled:true,materialFillColor:'#b08d57',materialFillMode:'always'}); // Verdigris bronze: distinct from the grey floor and from the sandstone safe-path trap plates.
       const mesh=new THREE.Mesh(sharedBoxGeometry(.68,.06,.68),material);
       mesh.name='dev_ruin_chord_plate_'+id+'_'+i;
       mesh.position.set(p.x,Number(support.y)+.03,p.z);

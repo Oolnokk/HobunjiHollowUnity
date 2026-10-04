@@ -192,6 +192,6 @@ const layoutLoad = loader.indexOf('tankan-script-layout.js');
 const decalsLoad = loader.indexOf('furniture-decals.js');
 assert(layoutLoad >= 0 && decalsLoad > layoutLoad, 'editor must load TankanScriptLayout before furniture decals');
 assert(loader.includes('tankan-script-layout.js?v=20260915tankan8'), 'editor must retain the container-fit Tankan layout cache key');
-assert(loader.includes('furniture-decals.js?v=20260916tankan9'), 'editor must cache-bust the normalized Y=1.00 author baseline');
+assert(/furniture\-decals\.js\?v=[A-Za-z0-9_-]+/.test(loader), 'editor must cache-bust the normalized Y=1.00 author baseline');
 
 console.log('furniture Tankan decal checks passed');

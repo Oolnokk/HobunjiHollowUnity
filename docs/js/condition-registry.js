@@ -124,6 +124,43 @@
     return true;
   }
 
+  // Same rules as entryEligible, but itemized: one check per authored axis
+  // (require, exclude, relationship band) with what the entry asked for, the
+  // current world value, and whether it passed. Used by the Dev Companion to
+  // show WHY a dialogue tree / pool entry was (or wasn't) picked. Kept next to
+  // entryEligible so the two can't drift; a test pins that they agree.
+  function explainEntry(entry, world) {
+    world = world || {};
+    const c = entry?.conditions || {};
+    const x = entry?.excludeConditions || {};
+    const checks = [];
+    const relationship = relationshipConditionValue(world);
+    for (const axis of AXES) {
+      const required = Array.isArray(c[axis]) ? c[axis] : [];
+      const excluded = Array.isArray(x[axis]) ? x[axis] : [];
+      const applicable = axis in world;
+      if (required.length) {
+        checks.push({ axis, kind: 'require', values: required.slice(), current: applicable ? world[axis] : null, applicable, pass: !applicable || axisValueMatches(required, axis, world[axis]) });
+      }
+      if (excluded.length) {
+        checks.push({ axis, kind: 'exclude', values: excluded.slice(), current: applicable ? world[axis] : null, applicable, pass: !applicable || !axisValueMatches(excluded, axis, world[axis]) });
+      }
+    }
+    const rel = c.relationship;
+    if (rel && (rel.min != null || rel.max != null)) {
+      checks.push({
+        axis: 'relationship', kind: 'require', values: { min: rel.min ?? null, max: rel.max ?? null }, current: relationship, applicable: relationship != null,
+        pass: relationship == null || ((rel.min == null || relationship >= rel.min) && (rel.max == null || relationship <= rel.max)),
+      });
+    }
+    const xrel = x.relationship;
+    if (xrel && (xrel.min != null || xrel.max != null)) {
+      const inBand = relationship != null && (xrel.min == null || relationship >= xrel.min) && (xrel.max == null || relationship <= xrel.max);
+      checks.push({ axis: 'relationship', kind: 'exclude', values: { min: xrel.min ?? null, max: xrel.max ?? null }, current: relationship, applicable: relationship != null, pass: !inBand });
+    }
+    return { eligible: checks.every(check => check.pass), specificity: entrySpecificity(entry || {}), checks };
+  }
+
   function entrySpecificity(entry) {
     const c = entry.conditions || {};
     let n = 0;
@@ -184,7 +221,7 @@
     normalizeStationLabel,
     emptyConditions, normalizeConditions,
     axisValueMatches, axisMatch, relationshipConditionValue,
-    entryEligible, entrySpecificity,
+    entryEligible, entrySpecificity, explainEntry,
     pickBestEntry,
     rollIndependentEligible, pickWeightedEligible,
   };
