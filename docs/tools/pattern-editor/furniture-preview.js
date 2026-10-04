@@ -16,7 +16,7 @@
       part.transform.y = 1.6 + (part.transform.y - 1.12) * 2;
       part.transform.sy *= 2;
       if (part.id === 'simple_window_pane') {
-        part.patternSurfaces = [{slot:'church-glass',mode:'glass',normal:[0,0,1],scale:1,opacity:.8}];
+        part.patternSurfaces = [1,-1].map(direction => ({slot:direction > 0 ? 'church-glass-front' : 'church-glass-back',mode:'glass',normal:[0,0,direction],scale:1,opacity:.8})); // Each pane face receives the same draft and palette.
       }
     }
     return parts;
@@ -27,7 +27,7 @@
     renderer.setPixelRatio(Math.min(2,window.devicePixelRatio || 1));
     renderer.outputEncoding = THREE.sRGBEncoding;
     const scene = new THREE.Scene(); // Neutral background keeps transparent stained glass visible.
-    scene.background = new THREE.Color('#26323e');
+    scene.background = new THREE.Color('#777777');
     scene.add(new THREE.HemisphereLight(0xffffff,0x58616e,1));
     const camera = new THREE.PerspectiveCamera(38,1,.01,100); // Fitted to complete furniture bounds after loading.
     const viewport = document.createElement('div'); // Same touch-sized viewport works on the page and in the authoring modal.
@@ -113,7 +113,7 @@
       } catch (error) { lastError = error.message; document.getElementById('status').textContent = '3D preview: ' + error.message; }
     },
     dispose() { active?.dispose(); active = null; },
-    debug() { return {mode:active?.mode || null,lastError,mostRecentChange:'Actual hanging banner and tall church stained-glass previews, including primary/overpass drafts.'}; },
+    debug() { return {mode:active?.mode || null,lastError,mostRecentChange:'Two-sided church stained glass with a grey 3D preview background, including primary/overpass drafts.'}; },
   };
   window.addEventListener('pagehide',()=>window.PatternFurniturePreview.dispose());
 })();
