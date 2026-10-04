@@ -49,6 +49,7 @@ assert(editor.includes('The tool is never moved by the hand system'), 'editor mu
 
 assert(gripModes.includes("'palm-parallel'"), 'palm-parallel grip mode must remain');
 assert(gripModes.includes("'palm-perpendicular'"), 'palm-perpendicular grip mode must remain');
+assert(!gripModes.includes("key.includes('pickshovel')"), 'pick-shovel must default to the same palm-parallel 1H grip mode as the spear.');
 assert.match(gripModes, /'palm-perpendicular'[\s\S]*rotationDeg:\s*Object\.freeze\(\{\s*pitch:\s*0,\s*yaw:\s*0,\s*roll:\s*-90\s*\}\)/, 'palm-perpendicular must rotate around the weapon\'s own Z (shaft) axis, not local X');
 assert(gripModes.includes('multiplyQuat(rotationQuaternion, inverseQuat(fineQ))'), 'grip mode must derive a rigid quaternion delta from the fine transform');
 

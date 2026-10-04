@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   regression:
@@ -24,51 +24,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Patch mirrored offhand grip and pick-shovel mode, then restore workflow
-        if: github.event_name == 'pull_request' && github.head_ref == 'fix/recenter-long-haft-grips-20261004'
-        run: |
-          set -e
-          git fetch --no-tags origin "$GITHUB_HEAD_REF" "main:refs/remotes/origin/main"
-          git checkout -B "$GITHUB_HEAD_REF" "origin/$GITHUB_HEAD_REF"
-          node <<'NODE'
-          const fs = require('node:fs');
-          function replaceExact(path, oldText, newText) {
-            const source = fs.readFileSync(path, 'utf8');
-            if (!source.includes(oldText)) throw new Error(`Expected patch target not found in ${path}`);
-            fs.writeFileSync(path, source.replace(oldText, newText));
-          }
-
-          replaceExact(
-            'docs/js/hand-tool-grips.js',
-            `      position: itemPointToHolder(value, { x: 0, y: 0, z: itemZ }, context, identity), // Same grip-anchored mapping as the visible item.\n      rotationDeg: { pitch: 0, yaw: 0, roll: 0 },`,
-            `      position: itemPointToHolder(value, { x: 0, y: 0, z: itemZ }, context, identity), // Same grip-anchored mapping as the visible item.\n      rotationDeg: { ...authoredPrimaryGripForTool(value, context).rotationDeg }, // Left-hand GLB geometry is already mirrored, so sharing the primary tool-space frame produces the natural mirrored grip direction.`,
-          );
-
-          replaceExact(
-            'docs/js/hand-grip-modes.js',
-            `    if (key.includes('pickshovel') || key.includes('pick-shovel')) return 'palm-perpendicular';\n    if (key.includes('hoe')) return 'palm-parallel';`,
-            `    if (key.includes('hoe')) return 'palm-parallel';`,
-          );
-
-          replaceExact(
-            'scripts/test-two-hand-grip-ranges.js',
-            `assert(Math.abs(grips.secondaryGripForTool('pickshovel', 'melee').itemZ - sampledOff) < 1e-9);`,
-            `const sampledSecondary = grips.secondaryGripForTool('pickshovel', 'melee'); // Offhand shares the primary tool-space frame; mirrored left-hand geometry supplies the anatomical mirror.\nassert(Math.abs(sampledSecondary.itemZ - sampledOff) < 1e-9);\nassert.deepEqual(\n  JSON.parse(JSON.stringify(sampledSecondary.rotationDeg)),\n  JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('pickshovel', 'melee').rotationDeg)),\n  '2H offhand direction must match the first-hand tool-space direction so the mirrored left-hand mesh grips naturally.',\n);`,
-          );
-
-          replaceExact(
-            'scripts/test-hand-inverse-authoring.js',
-            `assert(gripModes.includes("'palm-perpendicular'"), 'palm-perpendicular grip mode must remain');\nassert.match(gripModes, /'palm-perpendicular'[\\s\\S]*rotationDeg:\\s*Object\\.freeze\\(\\{\\s*pitch:\\s*0,\\s*yaw:\\s*0,\\s*roll:\\s*-90\\s*\\}\\)/, 'palm-perpendicular must rotate around the weapon\\'s own Z (shaft) axis, not local X');`,
-            `assert(gripModes.includes("'palm-perpendicular'"), 'palm-perpendicular grip mode must remain');\nassert(!gripModes.includes("key.includes('pickshovel')"), 'pick-shovel must default to the same palm-parallel 1H grip mode as the spear.');\nassert.match(gripModes, /'palm-perpendicular'[\\s\\S]*rotationDeg:\\s*Object\\.freeze\\(\\{\\s*pitch:\\s*0,\\s*yaw:\\s*0,\\s*roll:\\s*-90\\s*\\}\\)/, 'palm-perpendicular must rotate around the weapon\\'s own Z (shaft) axis, not local X');`,
-          );
-          NODE
-          node scripts/check-cache-busts.js --fix
-          git checkout origin/main -- .github/workflows/regression-suite.yml
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs scripts .github/workflows/regression-suite.yml
-          git commit -m "Mirror two-hand grip direction and align pick-shovel grip"
-          git push origin "HEAD:$GITHUB_HEAD_REF"
       - name: Syntax check shipped scripts
         run: |
           set -e
@@ -78,9 +33,12 @@ jobs:
           node -e "JSON.parse(require('fs').readFileSync('scripts/runtime-frame-ownership-exceptions.json', 'utf8'))"
           node -e "JSON.parse(require('fs').readFileSync('docs/config/loot/loot-pools.json', 'utf8'))"
       - name: Cache-bust tokens moved with their files
+        # PR checkouts are the merge commit, so diffing against the base tip is
+        # exactly this PR's change. Fix locally with: node scripts/check-cache-busts.js --fix
         if: github.event_name == 'pull_request'
         run: |
           git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
           node scripts/check-cache-busts.js FETCH_HEAD
       - name: Regression tests
+        # Slow tests only run on main / manual dispatch, not on every PR push.
         run: node scripts/run-tests.js ${{ github.event_name != 'pull_request' && '--all' || '' }}

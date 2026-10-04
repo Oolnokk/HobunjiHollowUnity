@@ -31,7 +31,13 @@ const pickOffStart = 0.0822; // Matching translated offhand range stays on the o
 const sampledMain = pickMainStart + 0.12 * 0.75; // Expected main-hand point at the Windup percentage.
 const sampledOff = pickOffStart + 0.12 * 0.25; // Expected offhand point at its separate percentage.
 assert(Math.abs(grips.primaryGripForTool('pickshovel', 'melee').position.z - sampledMain) < 1e-9);
-assert(Math.abs(grips.secondaryGripForTool('pickshovel', 'melee').itemZ - sampledOff) < 1e-9);
+const sampledSecondary = grips.secondaryGripForTool('pickshovel', 'melee'); // Offhand shares the primary tool-space frame; mirrored left-hand geometry supplies the anatomical mirror.
+assert(Math.abs(sampledSecondary.itemZ - sampledOff) < 1e-9);
+assert.deepEqual(
+  JSON.parse(JSON.stringify(sampledSecondary.rotationDeg)),
+  JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('pickshovel', 'melee').rotationDeg)),
+  '2H offhand direction must match the first-hand tool-space direction so the mirrored left-hand mesh grips naturally.',
+);
 assert.equal(grips.authoredPrimaryGripForTool('pickshovel', 'melee').position.z, baseline.position.z);
 assert.equal(grips.primaryGripForTool('pickshovel', 'melee', { animationGripState: null }).position.z, baseline.position.z, 'idle actor does not inherit the player attack');
 assert.equal(grips.secondaryGripForTool('pickshovel', 'melee', { animationGripState: null }), null);

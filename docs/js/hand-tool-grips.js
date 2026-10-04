@@ -651,7 +651,7 @@
       percent: state.percent,
       itemZ,
       position: itemPointToHolder(value, { x: 0, y: 0, z: itemZ }, context, identity), // Same grip-anchored mapping as the visible item.
-      rotationDeg: { pitch: 0, yaw: 0, roll: 0 },
+      rotationDeg: { ...authoredPrimaryGripForTool(value, context).rotationDeg }, // Left-hand GLB geometry is already mirrored, so sharing the primary tool-space frame produces the natural mirrored grip direction.
     };
   }
 
