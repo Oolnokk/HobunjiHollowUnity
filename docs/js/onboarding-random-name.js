@@ -103,6 +103,39 @@
     }
   }
 
+  function suggestNames(text, speciesId, gender, maxLength = 32) {
+    const speciesKeys = { kenkari: 'kenkari', 'mao-ao': 'mao', 'engh-sho': 'engh', tletingan: 'slagothim', slagothim: 'slagothim' }; // Maps the creator's species IDs to the original advisor cultures.
+    const speciesKey = speciesKeys[normalizeSpecies(speciesId)]; // Selects only cultures whose phonology the advisor actually knows.
+    const idea = String(text || '').slice(0, maxLength).trim(); // Bounds work to the name field's limit and ignores blank/nonalphabetic input.
+    if (!speciesKey || !/[a-z]/i.test(idea.normalize('NFD')) || !window.HobunjiNameAdvisor) return [];
+    const options = window.HobunjiNameAdvisor.makeIdeaOptions(speciesKey, speciesKey === 'slagothim' ? 'given' : 'first', idea, { gender: normalizeGender(gender) }); // Reuses the old editor's given-name suggestion rules.
+    const seen = new Set([idea.toLowerCase()]); // Removes duplicate suggestions and the name already in the field.
+    return options.map(option => option.label).filter(name => {
+      const key = name.toLowerCase(); // Compares options without case-only differences.
+      if (!name || name.length > maxLength || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).slice(0, 4);
+  }
+
+  function refreshSuggestions(overlay, input, suggestions) {
+    const identity = activeIdentity(overlay); // Uses the same selected species/gender authority as random naming.
+    const names = identity ? suggestNames(input.value, identity.speciesId, identity.gender, input.maxLength > 0 ? input.maxLength : 32) : []; // Current choices rendered directly beneath the input.
+    suggestions.replaceChildren();
+    suggestions.hidden = names.length === 0;
+    for (const name of names) {
+      const button = document.createElement('button'); // One compact, keyboard/mobile-accessible name choice.
+      button.type = 'button';
+      button.className = 'ob-sel-btn ob-name-suggestion';
+      button.textContent = name;
+      button.addEventListener('click', () => {
+        input.value = name;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      suggestions.appendChild(button);
+    }
+  }
+
   function installStyle() {
     if (document.getElementById(`${MODULE_ID}Style`)) return;
     const style = document.createElement('style');
@@ -111,6 +144,10 @@
 #ob-overlay .ob-random-name-row{display:flex;gap:6px;align-items:stretch}
 #ob-overlay .ob-random-name-row .ob-input{flex:1 1 auto;min-width:0}
 #ob-overlay .ob-random-name-btn{flex:0 0 auto;white-space:nowrap;padding-inline:10px}
+#ob-overlay .ob-name-suggestions{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+#ob-overlay .ob-name-suggestions[hidden]{display:none}
+#ob-overlay .ob-name-suggestion{font-size:10px;padding:4px 7px;min-height:28px;max-width:100%;overflow-wrap:anywhere;opacity:.78}
+#ob-overlay .ob-name-suggestion:hover,#ob-overlay .ob-name-suggestion:focus-visible{opacity:1}
 #ob-overlay .ob-random-name-status{margin-top:5px;font-size:9px;line-height:1.35;color:#8aad8f}
 #ob-overlay .ob-random-name-status.ob-error{color:#ffb59e}
 @media (max-width:560px){#ob-overlay .ob-random-name-row{align-items:stretch}.ob-random-name-btn{padding-inline:8px!important}}
@@ -140,6 +177,19 @@
       button.title = 'Generate a first name using the same species/gender cultural rules as bandits.';
       button.addEventListener('click', () => applyRandomName(overlay, 'button'));
       row.appendChild(button);
+    }
+
+    let suggestions = overlay.querySelector('.ob-name-suggestions'); // Reuses one suggestion row per rendered creator card.
+    if (!suggestions) {
+      suggestions = document.createElement('div');
+      suggestions.className = 'ob-name-suggestions';
+      suggestions.hidden = true;
+      row.after(suggestions);
+      input.addEventListener('input', event => {
+        if (!event.isComposing) refreshSuggestions(overlay, input, suggestions);
+      });
+      input.addEventListener('compositionend', () => refreshSuggestions(overlay, input, suggestions));
+      refreshSuggestions(overlay, input, suggestions);
     }
 
     let diagnostic = statusElement(overlay);
@@ -213,6 +263,7 @@
 
   window[MODULE_ID] = {
     status,
+    suggestNames, // Available to the existing in-page developer diagnostics and regression tests.
     reroll() {
       return applyRandomName(currentOverlay(), 'debug-reroll');
     },
