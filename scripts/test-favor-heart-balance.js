@@ -108,7 +108,7 @@ assert.deepEqual(
   'relationship debug reports both raw Favor XP and derived heart progress'
 );
 
-// Every matched loved trait contributes to the same physical gift with no per-item Favor cap.
+// Regression: every matched loved trait survives the balance layer; quality scaling is checked immediately below.
 NpcGifting.offerGift({ rec: { id: 'multitrait' }, giftScore: 30 });
 assert.equal(rawState('multitrait').favor, 30, 'multi-trait gift keeps the full thirty Favor points before quality scaling');
 assert.equal(rewards.at(-1)?.text, '+30 Favor', 'multi-trait gift displays the full uncapped Favor award');
