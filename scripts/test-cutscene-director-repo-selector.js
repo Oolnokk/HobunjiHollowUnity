@@ -31,8 +31,8 @@ const selectorBrowser = {
 vm.runInNewContext(selectorSource, selectorBrowser);
 const selectorApi = selectorBrowser.window.CutsceneDirectorRepoScenes;
 assert(selectorApi, 'Repo selector must expose its debug/inspection API.');
-assert.deepStrictEqual(Array.from(selectorApi.catalog, scene => scene.id), ['opening-rescue', 'opening-hunundi-room', 'opening-farm-tour']);
-assert.deepStrictEqual(Array.from(selectorApi.catalog, scene => scene.builder), ['buildRescueScene', 'buildHunundiMeetingScene', 'buildFarmTourScene']);
+assert.deepStrictEqual(Array.from(selectorApi.catalog, scene => scene.id), ['opening-rescue', 'opening-hunundi-room', 'opening-farm-tour', 'banubu-intro', 'banubu-key']);
+assert.deepStrictEqual(Array.from(selectorApi.catalog, scene => scene.builder).filter(Boolean), ['buildRescueScene', 'buildHunundiMeetingScene', 'buildFarmTourScene']);
 
 const farmPoints = selectorApi.authoringFarmTourPoints();
 assert.deepStrictEqual(JSON.parse(JSON.stringify(farmPoints.entry)), { c: 2, r: 3 });
@@ -46,7 +46,7 @@ assert.strictEqual(farmPoints.houseCamera.position.y, 3);
 const storyBrowser = { window: {}, document: { addEventListener() {} }, console }; // Materializes the exact live scene builders without starting the game runtime.
 vm.runInNewContext(openingStorySource, storyBrowser);
 const storyApi = storyBrowser.window.OpeningStoryCutscene;
-for (const { builder } of selectorApi.catalog) assert.strictEqual(typeof storyApi[builder], 'function', `OpeningStoryCutscene must publicly export ${builder}.`);
+for (const { builder } of selectorApi.catalog.filter(s=>s.builder)) assert.strictEqual(typeof storyApi[builder], 'function', `OpeningStoryCutscene must publicly export ${builder}.`);
 
 const records = new Map(npcDb.npcs.map(record => [record.id, record]));
 const profile = { nickname: 'Director Test Player', characterId: 'director-test', worldId: 'director-test', isWorldOwner: true };
@@ -106,3 +106,31 @@ assert(wallCamera, 'Father Hunundi room must retain the hunundi_office_wall came
 assert.strictEqual(wallCamera.position.y, 2, 'Hunundi office wall camera Y must stay at the requested 2.0 world units.');
 
 console.log('Cutscene Director repo selector: three live scene builders, graph references, farm cameras and Hunundi camera height passed.');
+
+// The Banubu entries use shipping dialogue, camera records and entry-node branching.
+const banubu={window:{},console};
+vm.runInNewContext(fs.readFileSync(path.join(ROOT,'docs/js/banubu-quest-content.js'),'utf8'),banubu);
+vm.runInNewContext(fs.readFileSync(path.join(ROOT,'docs/js/banubu-cutscene-authoring.js'),'utf8'),banubu);
+const locale=JSON.parse(fs.readFileSync(path.join(ROOT,'docs/config/locales/locale_banubu_cave_interior.json'),'utf8'));
+for(const id of ['banubu_intro','banubu_q1_ready']){
+ const tree=banubu.window.BanubuQuestContent.dialogueTrees.find(t=>t.id===id),before=JSON.stringify(tree);
+ const scene=banubu.window.BanubuCutsceneAuthoring.build(tree,records.get('banubu'),locale);
+ assertSceneReferences(scene);assert.equal(scene.stages[0].id,tree.entryNode);assert.equal(scene.actors[0].worldC,6);assert.equal(scene.actors[0].worldR,5);
+ assert.equal(scene.mapId,'map_i_den_banubu');assert.equal(scene.cinematicCameras.length,locale.cinematicCameras.length);
+ assert.equal(JSON.stringify(tree),before,'authoring must not mutate dialogue or quest rewards');
+ assert(scene.stages.every(s=>!s.banubuPresentation.commitTurnIn&&!s.banubuPresentation.commitIntroAttempt&&!s.banubuPresentation.commitQuestAction));
+ if(id==='banubu_q1_ready'){
+ assert.equal(scene.stages.find(s=>s.id==='banubu_q1_ready_prestand_visual').duration,.8);
+ assert.equal(scene.stages.find(s=>s.id==='banubu_q1_ready_stand_visual').duration,1.6);
+ const move=scene.stages.find(s=>s.id==='banubu_q1_ready_move_visual');assert.equal(move.duration,1.8);assert.equal(move.banubuPresentation.move.duration,1.6);assert.equal(move.cameraId,'banubu_dialogue_awake');
+ assert.equal(scene.stages.find(s=>s.id==='banubu_q1_ready_5').cameraId,'banubu_key_ground');
+ }
+}
+console.log('Banubu canonical branching, cameras, timed presentation and isolated quest transactions passed');
+
+const director=fs.readFileSync(path.join(ROOT,'docs/tools/cutscene-director/index.html'),'utf8');
+const sample=banubu.window.BanubuCutsceneAuthoring.build(banubu.window.BanubuQuestContent.dialogueTrees.find(t=>t.id==='banubu_q1_ready'),records.get('banubu'),locale);
+const validateContext={state:{project:sample,mapMeta:{loaded:true}},npcById:id=>records.get(id),creatureById(){}};
+const validateStart=director.indexOf('  function validateProject()'),validateEnd=director.indexOf('  function renderValidation(',validateStart);
+vm.runInNewContext(director.slice(validateStart,validateEnd)+'\nerrors=validateProject().filter(p=>p.level==="error");',validateContext);
+assert.equal(validateContext.errors.length,0,'canonical single-answer dialogue must be playable without invented options');

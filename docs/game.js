@@ -5074,12 +5074,14 @@
       }
 
       function meleeAttackBodyFacingOverride() {
+        if (Number.isFinite(mobileArchCombatAim?.angle)) return mobileArchCombatAim.angle;
         const alignmentFacing = meleeAttackAlignment?.appliedFacing;
         if (Number.isFinite(alignmentFacing)) return alignmentFacing;
         return Number.isFinite(meleeAttackFacingCommit?.angle) ? meleeAttackFacingCommit.angle : null;
       }
 
       function currentMeleeAimAngle() {
+        if (Number.isFinite(mobileArchCombatAim?.angle)) return mobileArchCombatAim.angle;
         return activeCameraMode === SHOULDER_SURF_MODE ? mouseLookAngle
           : controllerLookActive ? controllerLookAngle
           : (isDesktop && mouseLookActive) ? mouseLookAngle
@@ -5169,6 +5171,7 @@
       }
 
       function currentPlayerAimAngle() {
+        if (Number.isFinite(mobileArchCombatAim?.angle)) return mobileArchCombatAim.angle;
         if (activeCameraMode === SHOULDER_SURF_MODE) return shoulderPerspectiveFacingAngle();
         const target = findAutoTarget();
         return target ? Math.atan2(target.y - player.y, target.x - player.x) : player.angle;
@@ -5257,7 +5260,9 @@
       }
 
       function requestMeleeAttackAlignment(runAttack) {
-        meleeAttackFacingCommit = null; // Every attack owns a fresh heading.
+        const manualArchFacing = mobileArchCombatAim?.angle; // Keeps a touch-stick release heading as the fallback when auto-target finds no eligible enemy.
+        if (Number.isFinite(manualArchFacing)) commitMeleeAttackFacing(manualArchFacing);
+        else meleeAttackFacingCommit = null; // Every non-touch attack owns a fresh heading.
         meleeAttackAlignment?.cancel?.(); // End any older activation before the next activation is allowed to select.
         const target = acquireMeleeAttackTargetLock();
         if (!target) {
@@ -16919,6 +16924,81 @@
       let cardinalHoldTimer = 0;
       let lastMoveAngle = -Math.PI / 2;
       let targetAimAngle = -Math.PI / 2;
+      let mobileArchCombatAim = null; // Live action-arch stick yaw used by ranged fire and melee hold/tap aiming until their release contract is complete.
+      let lastMobileArchCombatAimEvent = { reason: 'not-used', at: 0 }; // Exposed in the mobile-copyable debug snapshot so touch-input failures can be diagnosed without DevTools.
+
+      function invalidateMobileArchAimPerspectiveCache() {
+        // currentPlayerPerspectiveTarget is memoized per render frame. Touch events can
+        // arrive between frame callbacks, so explicitly invalidate it whenever the
+        // action-arch stick changes aim or releases ownership.
+        _cachedPerspectiveTargetAt = -1;
+      }
+
+      function setMobileArchCombatAim(pointerId, angle, action, slot = null) {
+        const normalizedAngle = angleDiff(Number(angle), 0); // Shared world-space yaw consumed by body, melee and ranged aim while this touch owns the arch stick.
+        if (!Number.isFinite(normalizedAngle)) return;
+        mobileArchCombatAim = {
+          pointerId,
+          angle: normalizedAngle,
+          action: action || null,
+          slot: Number(slot) || null,
+          tool: activeTool,
+          released: false,
+        };
+        targetAimAngle = normalizedAngle;
+        facingAngle = normalizedAngle;
+        lastMoveAngle = normalizedAngle;
+        player.angle = normalizedAngle;
+        mouseLookAngle = normalizedAngle;
+        controllerLookAngle = normalizedAngle;
+        if (activeCameraMode === SHOULDER_SURF_MODE) {
+          const baseAzimuthDeg = cameraModeConfig(SHOULDER_SURF_MODE).azimuthDeg ?? 0; // Keeps the screen-center reticle horizontally aligned with the arch-stick yaw in shoulder view.
+          cameraAzimuthOffsetDeg = wrapAzimuthDeg(-(normalizedAngle * 180 / Math.PI) - 90 - baseAzimuthDeg);
+        }
+        lastMobileArchCombatAimEvent = { reason: 'aim', at: Date.now() };
+        invalidateMobileArchAimPerspectiveCache();
+      }
+
+      function clearMobileArchCombatAim(pointerId = null, reason = 'cleared') {
+        if (!mobileArchCombatAim) return;
+        if (pointerId != null && mobileArchCombatAim.pointerId !== pointerId) return;
+        mobileArchCombatAim = null;
+        lastMobileArchCombatAimEvent = { reason, at: Date.now() };
+        invalidateMobileArchAimPerspectiveCache();
+      }
+
+      function releaseMobileArchCombatAim(pointerId) {
+        if (!mobileArchCombatAim || mobileArchCombatAim.pointerId !== pointerId) return;
+        mobileArchCombatAim.released = true;
+        lastMobileArchCombatAimEvent = { reason: 'released', at: Date.now() };
+        // Ranged fire resolves after the input event, during its authored fire
+        // animation. Keep the release yaw latched until that animation stops being
+        // an active shot so projectile and held-weapon visuals cannot snap back to
+        // the camera between finger-up and the actual fire frame. Loads clear now.
+        if (mobileArchCombatAim.tool !== 'ranged' || !window.RangedWeapons?.isPlayerAttacking?.()) {
+          clearMobileArchCombatAim(pointerId, 'release-complete');
+        }
+      }
+
+      function updateMobileArchCombatAimLifecycle() {
+        if (!mobileArchCombatAim?.released) return;
+        if (mobileArchCombatAim.tool === 'ranged' && window.RangedWeapons?.isPlayerAttacking?.()) return;
+        clearMobileArchCombatAim(null, 'release-complete');
+      }
+
+      window.__mobileArchCombatAimDebug = {
+        snapshot: () => ({
+          latestChange: 'Mobile ranged fire and melee attack holds now reuse the action-arch stick for live aiming and commit on finger release.',
+          active: !!mobileArchCombatAim,
+          state: mobileArchCombatAim ? { ...mobileArchCombatAim } : null,
+          lastEvent: { ...lastMobileArchCombatAimEvent },
+          rangedAction: window.RangedWeapons?.playerActionState?.() ? {
+            itemKey: window.RangedWeapons.playerActionState().itemKey,
+            kind: window.RangedWeapons.playerActionState().kind,
+            fired: !!window.RangedWeapons.playerActionState().fired,
+          } : null,
+        }),
+      };
 
       function meleeAttackCurrentlyActive() {
         return player.lunging || (activeTool === 'weapon' && (toolSwingT > 0 || combatSwingHeld));
@@ -17107,6 +17187,7 @@
       }
 
       function updateMovement(dt) {
+        updateMobileArchCombatAimLifecycle();
         updateMeleeAttackFacingCommitLifecycle();
         const viewModeKeyboard = getKeyboardVector();
         const viewModeMoveMagnitude = viewModeKeyboard.active
@@ -19016,11 +19097,24 @@
       // in updateShoulderSurfReticleAim; it is no longer an aim authority.
       // Other camera modes retain their existing ranged-weapon-only behavior.
       function currentPlayerAimRay() {
-        if (activeCameraMode !== SHOULDER_SURF_MODE
+        const mobileAimAngle = mobileArchCombatAim?.angle; // Overrides horizontal camera authority only while a combat action-arch drag owns aim.
+        if (!Number.isFinite(mobileAimAngle) && activeCameraMode !== SHOULDER_SURF_MODE
           && (heldMode !== 'tool' || activeTool !== 'ranged' || !equipmentSlots.ranged)) return null;
         camera.updateMatrixWorld?.();
         _shoulderSurfReticleRaycaster.setFromCamera(_screenCenterNDC, camera);
         const ray = _shoulderSurfReticleRaycaster.ray;
+        if (Number.isFinite(mobileAimAngle)) {
+          const pitch = Math.asin(window.FormatUtils.clamp(ray.direction.y, -1, 1)); // Keeps the camera's vertical aim while the 2D arch stick supplies world-space yaw.
+          const horizontal = Math.cos(pitch); // Converts the retained camera pitch back into a normalized horizontal magnitude for the stick yaw.
+          return {
+            origin: { x: ray.origin.x, y: ray.origin.y, z: ray.origin.z },
+            direction: {
+              x: Math.cos(mobileAimAngle) * horizontal,
+              y: Math.sin(pitch),
+              z: Math.sin(mobileAimAngle) * horizontal,
+            },
+          };
+        }
         return {
           origin: { x: ray.origin.x, y: ray.origin.y, z: ray.origin.z },
           direction: { x: ray.direction.x, y: ray.direction.y, z: ray.direction.z },
@@ -20324,58 +20418,17 @@
         return floor;
       }
       window.DialogueCameraFraming?.init({ viewport: threeContainer, panel: _npcDialogueEl }); // Shared live panel geometry drives dialogue-safe head composition.
-      let _cinematicCameraBlend = null; // Outgoing pose used to blend authored dialogue/cutscene camera changes instead of snapping.
-      const _cinematicDesiredPosition = new THREE.Vector3(); // Reused every frame while a cinematic shot is active to avoid per-frame allocation.
-      const _cinematicDesiredTarget = new THREE.Vector3();
-      const _cinematicLookTarget = new THREE.Vector3();
       // Where the camera was ACTUALLY looking last frame. Cinematic blends
       // start from this rather than camTargetX/Y/Z: camTargetY is ground
       // height (the portrait/targetYOffset look height is added later), so
       // blending from it dipped the view toward the floor before rising back
       // up to the NPC's face on every authored dialogue shot.
       const _lastCameraLookPoint = new THREE.Vector3(camTargetX, camTargetY, camTargetZ);
+      // Authored camera interpolation now lives in the shared camera runtime, also used by the Director.
+      const cinematicBlend = window.CinematicCameraRuntime.createBlendController({ camera, lookPoint: _lastCameraLookPoint, safePosition: occlusionSafeCameraPosition, aspect: cameraContainerAspect, framing: (view, shot) => window.DialogueCameraFraming?.apply(view, shot.dialogueFraming !== false && !!(shot.trackSpeaker || shot.targetNpcId || shot.targetProvider || shot.dialogueFraming)) }); // Retains one blend clock across consecutive lines of the same shot.
       function applyAuthoredCinematicCamera() {
-        const record = window.CinematicCameraRuntime?.activeRecord?.();
-        const shot = record?.camera;
-        if (!shot || window.__mapEditorOrbitActive) { _cinematicCameraBlend = null; return false; }
-        const blendKey = `${record.areaId}:${shot.id}:${record.activatedAt}`;
-        if (!_cinematicCameraBlend || _cinematicCameraBlend.key !== blendKey) {
-          _cinematicCameraBlend = {
-            key: blendKey,
-            startedAt: performance.now(),
-            startPosition: camera.position.clone(),
-            startTarget: _lastCameraLookPoint.clone(),
-            startFov: camera.fov,
-          };
-        }
-        const durationMs = Math.max(0, Number(shot.blendSeconds) || 0) * 1000;
-        const rawT = durationMs > 0
-          ? window.FormatUtils.clamp((performance.now() - _cinematicCameraBlend.startedAt) / durationMs, 0, 1)
-          : 1;
-        const t = rawT * rawT * (3 - 2 * rawT);
-        const shotPosition = window.CinematicCameraRuntime?.resolvedPosition?.() || shot.position; // Procedural actor POV cameras follow live head position through the shared cinematic blend.
-        const desiredPosition = _cinematicDesiredPosition.set(
-          Number(shotPosition?.x) || 0,
-          Number(shotPosition?.y) || 0,
-          Number(shotPosition?.z) || 0
-        );
-        const resolvedTarget = window.CinematicCameraRuntime?.resolvedTarget?.();
-        const desiredTarget = _cinematicDesiredTarget.set(
-          Number(resolvedTarget?.x ?? shot.target?.x) || 0,
-          Number(resolvedTarget?.y ?? shot.target?.y) || 0,
-          Number(resolvedTarget?.z ?? shot.target?.z) || 0
-        );
-        camera.position.lerpVectors(_cinematicCameraBlend.startPosition, desiredPosition, t);
-        const lookTarget = _cinematicLookTarget.copy(_cinematicCameraBlend.startTarget).lerp(desiredTarget, t);
-        const safePosition = occlusionSafeCameraPosition(lookTarget.x, lookTarget.y, lookTarget.z, camera.position.x, camera.position.y, camera.position.z); // Authored and procedural shots share the gameplay boom.
-        camera.position.set(safePosition.x, safePosition.y, safePosition.z);
-        camera.lookAt(lookTarget);
-        _lastCameraLookPoint.copy(lookTarget);
-        camera.fov = THREE.MathUtils.lerp(_cinematicCameraBlend.startFov, Number(shot.fovDeg) || 42, t);
-        camera.aspect = cameraContainerAspect();
-        camera.updateProjectionMatrix();
-        window.DialogueCameraFraming?.apply(camera, shot.dialogueFraming !== false && !!(shot.trackSpeaker || shot.targetNpcId || shot.targetProvider || shot.dialogueFraming));
-        return true;
+        if (window.__mapEditorOrbitActive) { cinematicBlend.reset(); return false; }
+        return cinematicBlend.apply();
       }
 
       // threeContainer's client size, re-read only after it may have changed.
@@ -25307,6 +25360,7 @@
             let _selectorDownX = 0, _selectorDownY = 0, _selectorMoved = false; // Used to keep normal touch jitter from selecting an arch entry before a Potion Select tap can resolve as bandaging.
             let _flaskGesture = false, _flaskCanceled = false; // Used by mobile hold-drag-release flask aiming.
             let _claimedInputAction = null; // Physical arch input temporarily owned by a contextual world interaction; prevents the underlying weapon/tool action from firing on release.
+            let _combatAimRelease = false; // True while this arch press is a ranged shot or weapon-slot press that must aim continuously and commit only on release.
             const DRAG_THRESH = 10;
             // Legacy behavior: holding+dragging an action button like a stick used to
             // keep re-firing the action every 120ms for as long as it stayed pushed off
@@ -25367,6 +25421,7 @@
               _cy = rect.top + rect.height / 2;
               _sockR = rect.width * 0.70;
               _drag = false;
+              _combatAimRelease = false;
               _socket = document.createElement('div');
               _socket.className = 'abt-socket';
               _socket.style.left   = _cx + 'px';
@@ -25412,6 +25467,7 @@
               } else {
                 actionHeldDown = true;
                 _pressSlot = _weaponSlotFor(act);
+                _combatAimRelease = Boolean(_pressSlot || (activeTool === 'ranged' && act === 'shoot'));
                 if (_pressSlot) { window.Combat.input.pressStart(_pressSlot); }
               }
             });
@@ -25445,11 +25501,6 @@
               // target whatever the reticle was aimed at on press — no
               // drag-to-aim for these, unlike farm tools.
               if (_heldItemPress) return;
-              // With a weapon equipped, action buttons are tap/hold only — dragging
-              // must never act like a directional stick, otherwise a thumb wobbling
-              // mid-hold reads as an aim-drag, cancels the pending hold ability, and
-              // fires a tap instead. Farm tools still use drag-to-aim as before.
-              if (activeTool === 'weapon') return;
               if (dist > DRAG_THRESH) {
                 const ang = Math.atan2(dy, dx);
                 facingAngle = ang;
@@ -25458,19 +25509,20 @@
                 // Actually retarget the reticle (getReticleTile() reads
                 // targetAimAngle, not facingAngle/player.angle — see its
                 // declaration) so this drag genuinely aims farm-tool actions
-                // like axe chop / pick mine at a specific tile on mobile,
-                // instead of only rotating the player's visual facing while
-                // the reticle stays wherever the movement joystick last
-                // pointed it.
+                // like axe chop / pick mine at a specific tile on mobile.
+                // Combat presses reuse that same stick vector, but keep their
+                // press/hold state armed and defer the actual attack to finger-up.
                 targetAimAngle = ang;
+                if (_combatAimRelease) setMobileArchCombatAim(ev.pointerId, ang, el.dataset.action, _pressSlot);
                 if (!_drag) {
                   _drag = true;
                   _stack.classList.add('drag-active');
-                  // Aiming takes over firing from here — disarm the tap/hold
-                  // timer so release doesn't also fire/end an ability.
-                  if (_pressSlot) { window.Combat.input.cancelPress(_pressSlot); _pressSlot = null; }
-                  _resolveFire();
-                  if (ABT_DRAG_REPEAT_FIRE) _rtimer = setInterval(_resolveFire, 120);
+                  if (!_combatAimRelease) {
+                    // Non-combat farm/tool drags retain the legacy fire-on-threshold
+                    // behavior. Combat press/hold state never enters this branch.
+                    _resolveFire();
+                    if (ABT_DRAG_REPEAT_FIRE) _rtimer = setInterval(_resolveFire, 120);
+                  }
                 }
               }
             });
@@ -25486,20 +25538,36 @@
               el.style.transition = 'transform 0.14s ease-out';
               el.style.transform  = 'translate(50%, 50%)';
               setTimeout(() => { el.style.transition = ''; el.style.transform = ''; }, 150);
+              const pointerCanceled = ev.type === 'pointercancel'; // Cancellation tears down combat aim without committing a shot or melee release.
+              const combatAimOwned = _combatAimRelease; // Preserve ownership through cleanup below even after the specific input path has fired.
               if (_claimedInputAction) {
-                dispatchWorldInputClaim(_claimedInputAction,ev.type==='pointercancel'?'cancel':'release','touch-arch');
+                dispatchWorldInputClaim(_claimedInputAction,pointerCanceled?'cancel':'release','touch-arch');
                 _claimedInputAction=null;
               } else if (_selectorKind) {
                 if (_selectorArcOpen) {
-                  if (ev.type === 'pointercancel') window._desktopSelectionArc?.close();
+                  if (pointerCanceled) window._desktopSelectionArc?.close();
                   else window._desktopSelectionArc?.releaseSelection();
                 }
               } else if (_flaskGesture) {
                 if (!_flaskCanceled && window.AlchemyFlasks?.aiming) window.AlchemyFlasks.confirmThrow();
-              } else if (!_drag && !_chargeFiredOnPress) {
-                if (_pressSlot) window.Combat.input.pressEnd(_pressSlot);
-                else if (_heldItemPress) window.HeldItemActionInput?.release();
-                else _abtFire();
+              } else if (!_chargeFiredOnPress) {
+                if (_pressSlot) {
+                  if (pointerCanceled) window.Combat.input.abortPress(_pressSlot);
+                  else {
+                    if (combatAimOwned && _drag && Number.isFinite(mobileArchCombatAim?.angle)) {
+                      commitMeleeAttackFacing(mobileArchCombatAim.angle);
+                    }
+                    window.Combat.input.pressEnd(_pressSlot);
+                  }
+                } else if (_heldItemPress) window.HeldItemActionInput?.release();
+                else if (!_drag || combatAimOwned) {
+                  if (!pointerCanceled) _abtFire();
+                }
+              }
+              if (combatAimOwned) {
+                if (pointerCanceled) clearMobileArchCombatAim(ev.pointerId, 'pointer-cancel');
+                else if (_pressSlot) clearMobileArchCombatAim(ev.pointerId, 'melee-release');
+                else releaseMobileArchCombatAim(ev.pointerId);
               }
               _heldItemPress = false;
               _drag = false;
@@ -25511,6 +25579,7 @@
               document.querySelectorAll('.flask-cancel-hover').forEach(button => button.classList.remove('flask-cancel-hover'));
               _flaskGesture = false;
               _flaskCanceled = false;
+              _combatAimRelease = false;
               _pressSlot = null;
             }
 
@@ -25570,6 +25639,7 @@
           `Action FX: particles=${actionParticles.length} tileFlashes=${actionTileEffects.length} slashTrails=${weaponTrailEffects.length}`,
           `Calendar: ${window.CalendarSystem.formatCalendarDate()} (raw day ${calendar.day}), ${window.FormatUtils.formatClock(window.CalendarSystem.getHour())}, ${calendar.weather}`,
           `Tool/action: ${window.FormatUtils.toolName(activeTool)} / ${window.FormatUtils.actionName(activeAction)}`,
+          `Mobile combat arch aim: ${JSON.stringify(window.__mobileArchCombatAimDebug?.snapshot?.() || { active: false })}`,
           `Player: x${player.x.toFixed(0)} y${player.y.toFixed(0)}`,
           ...(weavingDiagnostics ? ['', ...String(weavingDiagnostics).split('\n')] : []),
           '--- raw log ---',
@@ -30010,6 +30080,7 @@
         const clearPovShot = () => { if (povShot?.source?.walker?.avatarGroup) povShot.source.walker.avatarGroup.visible = povShot.visible; povShot = null; };
         let temporaryWildernessArea = null; // A generated mini-wilderness is disposed after its actors and gameplay hierarchy are restored.
         let releaseCinematicRegion = null; // Wilderness residency pin is released by the existing scene cleanup owner.
+        let restorePreviewCameras = null; // Restores authored map definitions after temporary Director overrides.
         let furniturePlayback = null; // Shared Director/game transform session restores map furniture on finish or failure.
         const entities = new Map(); // Temporary cinematic actor rigs also belong to the setup-failure cleanup path.
         const previousBuildingMapId = _currentBuildingMapId; // Restores building context as well as the active area.
@@ -30030,7 +30101,7 @@
         clearTargetHighlights();
         const previousLeaveDisplay = cutsceneLeaveButton?.style.display; // Restores the original Leave-button presentation on success/error.
         if (cutsceneLeaveButton) cutsceneLeaveButton.style.display = 'none';
-        const releaseLiveLock = () => { releaseCinematicRegion?.(); if (temporaryWildernessArea && liveMode) { _disposeZoneScene(temporaryWildernessArea); _zoneLayouts.delete(temporaryWildernessArea); temporaryWildernessArea = null; } liveLock?.release?.(); document.body?.classList.remove('authored-cutscene'); _arcContainerEl?.classList.remove('arc-hidden'); clearPovShot(); if (cutsceneLeaveButton) cutsceneLeaveButton.style.display = previousLeaveDisplay; }; // Shared cleanup for normal completion and pre-stage load failures.
+        const releaseLiveLock = () => { restorePreviewCameras?.(); restorePreviewCameras = null; releaseCinematicRegion?.(); if (temporaryWildernessArea && liveMode) { _disposeZoneScene(temporaryWildernessArea); _zoneLayouts.delete(temporaryWildernessArea); temporaryWildernessArea = null; } liveLock?.release?.(); document.body?.classList.remove('authored-cutscene'); _arcContainerEl?.classList.remove('arc-hidden'); clearPovShot(); if (cutsceneLeaveButton) cutsceneLeaveButton.style.display = previousLeaveDisplay; }; // Shared cleanup for normal completion and pre-stage load failures.
         const restoreLiveGameplay = () => {
           if (!liveMode) return;
           if (runtimeOptions.placePlayerAtFinalPosition && currentArea === previousArea) {
@@ -30332,6 +30403,7 @@
         for (const transform of payload.furnitureTransforms || []) furniturePlayback?.set({ ...transform, duration: 0 });
         if (payload.cameraTargetActorId && entities.get(payload.cameraTargetActorId)?.root) idleCameraTarget = entities.get(payload.cameraTargetActorId).root; // Wide rescue framing follows the actual cinematic player, including its collapse/step.
         activeCameraTarget = idleCameraTarget;
+        if (payload.cinematicCameras?.length) { const cameras = window.CinematicCameraRuntime.camerasForArea(area); window.CinematicCameraRuntime.registerArea(area, payload.cinematicCameras); restorePreviewCameras = () => { window.CinematicCameraRuntime.deactivate(); window.CinematicCameraRuntime.registerArea(area, cameras); }; } // Director camera overrides apply to this preview.
         let cinematicCameraReady = !payload.cinematicCameraFromStageId; // Optional stage gate preserves the first dialogue angle before easing into a fixed establishing shot.
         if (cinematicCameraReady && (payload.cinematicCameraId || payload.cinematicCamera)) {
           const speaker = entities.get((payload.stages || []).find(stage => stage.type === 'talk')?.speakerId); // Gives the opening fade the same wall shot as later dialogue.
@@ -30464,6 +30536,8 @@
           if (!running) return;
           running = false;
           if (dialogueOpen) closeLine();
+          for (const actor of entities.values()) if (actor.rec?.id === 'banubu') window.BanubuQuestline?.onDialogueNode?.(null,{npc:actor.rec,walker:actor.walker,ended:true});
+          window.CinematicCameraRuntime?.deactivate?.();
           cutscenePreviewActive = false;
           cutscenePreviewZoomPercent = 100; // Never leak an authored zoom into normal gameplay afterward.
           cutscenePreviewDialogueSpeaker = null;
@@ -30504,9 +30578,9 @@
             activeCameraTarget = idleCameraTarget;
           } else if (!options.preserveCamera) {
             activeCameraMode = entity?.kind === 'creature' ? dlgModeKeyCreature : dlgModeKey;
-            if (entity?.kind === 'creature' && payload.randomCreatureDialogueAngles) {
+            if (entity?.kind === 'creature' && payload.randomCreatureDialogueAngles && activeCameraTarget?.position !== entity.root.position) {
               const yaw = THREE.MathUtils.radToDeg(entity.creature.groupRot || 0); // Creature forward uses the same world yaw as its live rig.
-              window.SCRATCHBONES_CONFIG.game.camera.modes[dlgModeKeyCreature].azimuthDeg = yaw + (Math.random() < .5 ? -1 : 1) * (25 + Math.random() * 35); // New three-quarter angle per line avoids flat side-on silhouettes.
+              window.SCRATCHBONES_CONFIG.game.camera.modes[dlgModeKeyCreature].azimuthDeg = yaw + (Math.random() < .5 ? -1 : 1) * (25 + Math.random() * 35); // New three-quarter angle when the speaking creature changes avoids flat side-on silhouettes.
             }
             activeCameraTarget = { position: (entity || entities.values().next().value)?.root.position || new THREE.Vector3() };
           }
@@ -30530,7 +30604,7 @@
           window.portraitBreathingComposer?.clearExpression(window.DialogueContent?.dialogueSeatId());
           window.portraitBreathingComposer?.setDefaultExpression(window.DialogueContent?.dialogueSeatId(), null);
           _dialogueWalker = null;
-          cutscenePreviewDialogueSpeaker = null;
+          // Preserve the last speaker anchor until the next card chooses a new shot.
           _npcDialogueEl.classList.remove('open');
           _npcDialogueEl.setAttribute('aria-hidden', 'true');
           // Keep the current shot through the next line; action cards select their own views.
@@ -30584,7 +30658,8 @@
             }
           }
           if (stage.visible != null) { const actor = entities.get(stage.actorId); if (actor) actor.root.visible = stage.visible; } // Stage visibility controls doorway entrances and departures.
-          if (povShot && (stage.type === 'talk' || stage.type === 'choice' || stage.cameraMode) && stage.cameraMode !== 'pov') { clearPovShot(); window.CinematicCameraRuntime?.deactivate?.(); }
+          if (povShot && stage.cameraMode && stage.cameraMode !== 'pov') { clearPovShot(); window.CinematicCameraRuntime?.deactivate?.(); }
+          if (stage.cameraId && !stage.cameraMode) { cinematicCameraReady = false; window.CinematicCameraRuntime?.activate?.(area, stage.cameraId, { reason: 'authored-cutscene', targetWalker: entities.get(stage.speakerId || stage.actorId)?.walker }); }
           if (stage.cameraMode === 'establishing') {
             cinematicCameraReady = false;
             window.CinematicCameraRuntime?.deactivate?.();
@@ -30598,7 +30673,7 @@
               const targetProvider = () => { center.set(0, 0, 0); for (const actor of subjects) center.add(actor.root.position); center.multiplyScalar(1 / Math.max(1, subjects.length)); center.y += .6; return center; };
               const offset = stage.cameraOffset || { x: 0, y: 5, z: 8 }; // Authored offset is relative to the followed midpoint.
               const positionProvider = () => position.copy(targetProvider()).add(offset);
-              window.CinematicCameraRuntime?.activate?.(area, { id: `cutscene_follow_${subjects.map(actor => actor.rec?.id || '').join('_')}`, positionProvider, targetProvider, fovDeg: stage.fovDeg || 55, blendSeconds: stage.blendSeconds ?? 1.25, dialogueFraming: false });
+              window.CinematicCameraRuntime?.activate?.(area, { id: `cutscene_follow_${subjects.map(actor => actor.rec?.id || '').join('_')}`, shotKey: JSON.stringify([stage.followActorIds || [stage.actorId], offset]), positionProvider, targetProvider, fovDeg: stage.fovDeg || 55, blendSeconds: stage.blendSeconds ?? 1.25, dialogueFraming: false });
             }
           } else if (stage.cameraMode === 'pov') {
             clearPovShot();
@@ -30619,7 +30694,7 @@
               povShot = { source, visible: source.walker.avatarGroup.visible, targetProvider };
               source.walker.avatarGroup.visible = Number(stage.povBack) > 0 ? povShot.visible : false;
               cinematicCameraReady = false;
-              window.CinematicCameraRuntime?.activate?.(area, { id: `cutscene_pov_${stage.actorId || stage.speakerId}_${stage.targetActorId || stage.addressedActorId}_${stage.povBack || 0}_${stage.povSide || 0}_${stage.povHeight || 0}_${stage.fovDeg || 65}`, position: positionProvider(), target: targetProvider(), positionProvider, targetProvider, fovDeg: Number(stage.fovDeg) || 65, blendSeconds: Number(stage.blendSeconds) || .35 });
+              window.CinematicCameraRuntime?.activate?.(area, { id: `cutscene_pov_${stage.actorId || stage.speakerId}_${stage.targetActorId || stage.addressedActorId}_${stage.povBack || 0}_${stage.povSide || 0}_${stage.povHeight || 0}_${stage.fovDeg || 65}`, shotKey: JSON.stringify(stage.targetWorld || null), position: positionProvider(), target: targetProvider(), positionProvider, targetProvider, fovDeg: Number(stage.fovDeg) || 65, blendSeconds: stage.blendSeconds == null ? .35 : Math.max(0, Number(stage.blendSeconds) || 0) });
             }
           } else if (stage.cameraMode === 'npcRelative') {
             cinematicCameraReady = false;
@@ -30629,8 +30704,9 @@
             activeCameraTarget = { position: entities.get(stage.actorId)?.root.position }; // The existing NPC-relative dialogue shot follows the arriving walker.
           } else if (stage.cameraMode === 'wall') {
             cinematicCameraReady = true;
-            window.CinematicCameraRuntime?.activate?.(area, payload.cinematicCameraId, { reason: 'authored-cutscene', targetWalker: entities.get(stage.actorId || stage.speakerId)?.walker });
+            window.CinematicCameraRuntime?.activate?.(area, payload.cinematicCamera || payload.cinematicCameraId, { reason: 'authored-cutscene', targetWalker: entities.get(stage.actorId || stage.speakerId)?.walker });
           }
+          if (stage.banubuPresentation) { const actor = entities.get(stage.speakerId || stage.actorId); if (actor?.walker) window.BanubuQuestline?.onDialogueNode?.({ id:stage.id, banubuPresentation:stage.banubuPresentation }, { npc:actor.rec, walker:actor.walker }); } // Director previews retain authored Banubu visuals without quest transaction nodes.
           if (stage.type === 'camera') { setTimeout(() => continueTo(getResolvedNext(stage.id, stage.next)), Math.max(0, Number(stage.duration) || 0) * 1000); return; }
           if (stage.type === 'furniture') { furniturePlayback?.set(stage); setTimeout(() => continueTo(getResolvedNext(stage.id, stage.next)), Math.max(0, Number(stage.duration) || 0) * 1000); return; }
           if (stage.type === 'move') return runMove(stage);

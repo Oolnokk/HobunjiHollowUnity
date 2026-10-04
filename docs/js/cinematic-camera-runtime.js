@@ -111,23 +111,62 @@
       ? normalizeCamera(cameraId, 0)
       : cameraForId(areaId, cameraId);
     if (!camera) return null;
-    const samePoint = (a, b) => a?.x === b?.x && a?.y === b?.y && a?.z === b?.z; // Compare authored transforms only on activation, never per frame.
-    const samePosition = active && (camera.positionProvider && active.camera.positionProvider || samePoint(active.camera.position, camera.position));
-    const sameTarget = active && (camera.targetProvider && active.camera.targetProvider || samePoint(active.camera.target, camera.target));
-    if (active?.areaId === String(areaId || '') && active.camera.id === camera.id && active.camera.fovDeg === camera.fovDeg && samePosition && sameTarget) {
+    const signature = JSON.stringify([camera.id, camera.shotKey || '', camera.fovDeg,
+      camera.positionProvider ? 'live' : camera.position,
+      camera.targetProvider ? 'live' : camera.target,
+      camera.targetNpcId, camera.targetNpcPoint, camera.trackSpeaker]); // Snapshot authored shot identity only at activation; recreated providers and dialogue text do not start a new blend.
+    if (active?.areaId === String(areaId || '') && active.signature === signature) {
       active.camera = camera;
       active.targetWalker = options.targetWalker || active.targetWalker;
-      return active; // Same physical shot: update its live target without restarting the blend.
+      return active;
     }
     active = {
       areaId: String(areaId || ''),
       camera,
+      signature,
       reason: String(options.reason || 'manual'),
       targetWalker: options.targetWalker || null,
       lastResolvedTarget: null,
       activatedAt: performance.now(),
     };
     return active;
+  }
+
+  function createBlendController({ camera, lookPoint, safePosition, aspect, framing }) {
+    const T = window.THREE; // Uses the caller's existing Three.js camera/render loop.
+    const desiredPosition = new T.Vector3(), desiredTarget = new T.Vector3(), target = new T.Vector3(); // Reused interpolation vectors for game and Director playback.
+    let blend = null; // One transition record per actual activated shot.
+    let transitions = 0; // Exposed to mobile/editor diagnostics for detecting unintended restarts.
+    return {
+      reset() { blend = null; },
+      snapshot: () => ({ transitions, cameraId: blend?.record?.camera?.id || null, startedAt: blend?.startedAt ?? null }),
+      apply(record = activeRecord()) {
+        const shot = record?.camera; // Current authored/live shot resolved by the shared selection owner.
+        if (!shot) { blend = null; return false; }
+        if (!blend || blend.record !== record) {
+          blend = { record, startedAt: performance.now(), position: camera.position.clone(), target: lookPoint.clone(), fov: camera.fov };
+          transitions++;
+        }
+        const duration = Math.max(0, Number(shot.blendSeconds) || 0) * 1000; // One clock spans all dialogue cards using this shot.
+        const raw = duration ? Math.max(0, Math.min(1, (performance.now() - blend.startedAt) / duration)) : 1;
+        const alpha = raw * raw * (3 - 2 * raw); // Smoothstep matches the shipping camera blend.
+        const p = typeof shot.positionProvider === 'function' ? shot.positionProvider() : shot.position;
+        const t = resolvedTargetFor(shot, record) || shot.target;
+        desiredPosition.set(finite(p?.x), finite(p?.y), finite(p?.z));
+        desiredTarget.set(finite(t?.x), finite(t?.y), finite(t?.z));
+        camera.position.lerpVectors(blend.position, desiredPosition, alpha);
+        target.copy(blend.target).lerp(desiredTarget, alpha);
+        const safe = safePosition?.(target.x, target.y, target.z, camera.position.x, camera.position.y, camera.position.z); // Game keeps its collision boom; private tool scenes may omit it.
+        if (safe) camera.position.set(safe.x, safe.y, safe.z);
+        camera.lookAt(target);
+        lookPoint.copy(target);
+        camera.fov = blend.fov + (shot.fovDeg - blend.fov) * alpha;
+        if (aspect) camera.aspect = aspect();
+        camera.updateProjectionMatrix();
+        framing?.(camera, shot);
+        return true;
+      },
+    };
   }
 
   function deactivate() {
@@ -389,6 +428,7 @@
     activate,
     deactivate,
     beginDialogue,
+    createBlendController,
     applyDialogueNodeCamera,
     endDialogue,
     activeCamera,

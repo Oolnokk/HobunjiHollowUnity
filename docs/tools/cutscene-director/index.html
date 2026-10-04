@@ -602,8 +602,10 @@
   .hidden { display: none !important; }
 
   @media (max-width: 860px) {
-    #app-layout { grid-template-columns: 1fr; grid-template-rows: 46vh 1fr; overflow-y: auto; }
-    #left-col { border-right: none; border-bottom: 2px solid #382c25; overflow-y: visible; }
+    #app-layout { grid-template-columns: 1fr; grid-template-rows: minmax(500px, 65vh) minmax(260px, auto); overflow-y: auto; }
+    #left-col { grid-row: 2; border-right: none; border-top: 2px solid #382c25; max-height: 70vh; overflow-y: auto; }
+    #right-col { grid-row: 1; min-height: 500px; }
+    #viewport-wrap { min-height: 320px; }
     .add-stage-grid { grid-template-columns: repeat(2,1fr); }
   }
 </style>
@@ -878,6 +880,9 @@
      other tools' in-memory/localStorage state. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
+<script src="../../js/cinematic-camera-runtime.js?v=20261004camera1"></script>
+<script src="camera-author.js?v=20261004camera1"></script>
 <script src="../../js/GLTFLoader.js?v=20260712l"></script>
 <script src="../../js/WallBuilder.js?v=20261002h9f31e27"></script>
 <script src="../../js/HousePieceGen.js?v=20261001hbe2b612"></script>
@@ -996,7 +1001,7 @@
     const line = `[${new Date().toLocaleTimeString()}] ${level}  ${message}`;
     state.logs.push(line);
     if (state.logs.length > 160) state.logs.shift();
-    if (els.debugLog) els.debugLog.textContent = state.logs.join("\n");
+    if (els.debugLog) els.debugLog.textContent = state.logs.join("\n") + "\nCamera: " + JSON.stringify(state.cameraEditor?.snapshot());
   }
 
   let toastTimer = null;
@@ -1579,9 +1584,11 @@
 
     function tick() {
       requestAnimationFrame(tick);
+      state.cameraEditor?.update();
       controls.update();
       renderer.render(scene, camera);
     }
+    state.cameraEditor = window.CutsceneDirectorCameras.create({state,save:saveLocal,localToWorld,worldToLocal,toast}); // Visible camera authoring shares this renderer and export state.
     tick();
     frameCameraToStage();
   }
@@ -2052,6 +2059,7 @@
     canvas.addEventListener("pointerdown", e => {
       const gizmo = three.gizmo;
       if (!gizmo || !gizmo.group.visible || state.viewMode !== "3d") return;
+      if (state.cameraEditor?.isDragging()) return;
       raycaster.setFromCamera(ndcFromEvent(e), three.camera);
       if (!raycaster.intersectObject(gizmo.handle, false).length) return;
       dragging = true;
@@ -2064,6 +2072,7 @@
       const point = pointById(state.selectedPointId);
       const gizmo = three.gizmo;
       if (!point || !gizmo) return;
+      if (state.cameraEditor?.isDragging()) return;
       raycaster.setFromCamera(ndcFromEvent(e), three.camera);
       groundPlane.setFromNormalAndCoplanarPoint(new THREE.Vector3(0,1,0), gizmo.group.position);
       if (!raycaster.ray.intersectPlane(groundPlane, hitPoint)) return;
@@ -3073,6 +3082,8 @@
   }
 
   function resetPreview(showToast=false) {
+    state.cameraEditor?.end();
+    state.preview.banubuMove = null;
     state.preview.running = false;
     state.preview.furniture?.restore();
     state.preview.pov = null;
@@ -3132,6 +3143,7 @@
     state.preview.furniture = window.CutsceneFurnitureRuntime?.create(state.three.scene);
     for (const transform of state.project.furnitureTransforms || []) state.preview.furniture?.set({ ...transform, duration: 0 });
     state.preview.running = true;
+    state.cameraEditor?.begin();
     state.preview.currentStageId = state.project.stages[0]?.id || null;
     const token = state.preview.token;
     toolRotLastT = performance.now();
@@ -3143,6 +3155,8 @@
   function finishPreview(message="Scene finished.") {
     state.preview.furniture?.restore();
     state.preview.pov = null;
+    state.cameraEditor?.end();
+    state.preview.banubuMove = null;
     state.preview.running = false;
     state.preview.currentStageId = null;
     if (state.three) state.three.controls.enabled = true;
@@ -3166,8 +3180,12 @@
     const index = stageIndex(stage.id);
     els.playStatusPill.textContent = `Playing card ${index+1}: ${stageName(stage.type)}`;
     log(`Playing ${stageLabel(stage,index)}.`);
-    if (stage.cameraMode === 'pov') state.preview.pov = stage;
-    else if (stage.cameraMode || stage.type === 'talk' || stage.type === 'choice') state.preview.pov = null;
+    state.cameraEditor?.enterStage(stage);
+    const cue = stage.banubuPresentation, banubu = state.preview.actorStates.get(stage.speakerId || stage.actorId);
+    if (cue && banubu) {
+      if (cue.body) banubu.pose = cue.body === 'sleep' ? 'prone' : 'standing';
+      if (cue.move) { const base = actorById(stage.speakerId || stage.actorId), point = pointById(base.startPointId), origin = worldOfPoint(point); state.preview.banubuMove = { id:base.id, startC:banubu.c, startR:banubu.r, c:origin.c+Number(cue.move.x||0), r:origin.r+Number(cue.move.z||0), startedAt:performance.now(), duration:Math.max(.05,Number(cue.move.duration)||1)*1000 }; }
+    }
     if (stage.visible != null) { const actor = state.actorObjects.get(stage.actorId); if (actor) actor.root.visible = stage.visible; }
     if (stage.type === 'furniture') { state.preview.furniture?.set(stage); state.preview.timer = setTimeout(() => continueTo(getResolvedNext(stage.id, stage.next), token), Math.max(0, Number(stage.duration) || 0) * 1000); return; }
     if (stage.type === 'camera') { state.preview.timer = setTimeout(() => continueTo(getResolvedNext(stage.id, stage.next), token), Math.max(0, Number(stage.duration) || 0) * 1000); return; }
@@ -3232,10 +3250,8 @@
     const animationDt = Math.max(0, (now - toolRotLastT) / 1000); // Preview furniture/pose durations remain independent of render frame rate.
     toolRotLastT = now;
     state.preview.furniture?.update(animationDt);
-    if (state.preview.pov && state.three) {
-      const shot = state.preview.pov, source = state.actorObjects.get(shot.actorId || shot.speakerId), target = state.actorObjects.get(shot.targetActorId || shot.addressedActorId); // Same authored POV binding used by the in-game preview.
-      if (source) { state.three.camera.position.copy(source.root.position); state.three.camera.position.y += source.avatarHeight * .85; state.three.controls.target.copy(target?.root.position || state.three.controls.target); if (target) state.three.controls.target.y += target.avatarHeight * .85; state.three.camera.lookAt(state.three.controls.target); }
-    }
+    const move = state.preview.banubuMove;
+    if (move) { const st = state.preview.actorStates.get(move.id), t = Math.min(1,(now-move.startedAt)/move.duration), alpha = t*t*(3-2*t); if(st){st.c=move.startC+(move.c-move.startC)*alpha;st.r=move.startR+(move.r-move.startR)*alpha;} if(t===1)state.preview.banubuMove=null; }
     for (const [actorId, st] of state.preview.actorStates) {
       if (state.preview.externallyDriven.has(actorId)) continue;
       const targetDeg = state.preview.desiredFacingDeg.get(actorId);
@@ -3515,7 +3531,7 @@
         if (!actorIds.has(stage.speakerId)) problems.push({ level:"error", text:`${label} has no valid speaker.` });
         if (!stage.text.trim()) problems.push({ level:"warning", text:`${label} has empty text.` });
         if (stage.type === "choice") {
-          if (stage.options.length < 2) problems.push({ level:"error", text:`${label} needs at least two answers.` });
+          if (stage.options.length < 1) problems.push({ level:"error", text:`${label} needs at least one answer.` });
           stage.options.forEach((o,i) => { if (!validNext(o.next)) problems.push({ level:"error", text:`${label}, answer ${i+1} points to a missing card.` }); });
         }
       } else if (stage.type === "animation") {
@@ -3558,7 +3574,8 @@
       state.movingPointId = null;
       resetPreview(false);
       saveLocal();
-      if (state.project.mapId) await loadMap(state.project.mapId); else { clearMap(); }
+      if (state.project.repoMap) applyLoadedMap({id:state.project.mapId,name:state.project.repoMap.name,category:"interior"},state.project.repoMap);
+      else if (state.project.mapId) await loadMap(state.project.mapId); else { clearMap(); }
       renderAll();
       log(`Opened ${file.name}.`);
       toast("Scene opened.");
@@ -3677,6 +3694,7 @@
     renderValidation();
     els.mapStatusPill.textContent = state.mapMeta.loaded ? `Map: ${state.mapMeta.name}` : "No map loaded";
     await rebuildActorAndPointMarkers();
+    state.cameraEditor?.sync();
     renderActors(); // avatar thumbnails may have resolved during marker rebuild
   }
 
@@ -3828,7 +3846,7 @@
       toast(errors ? `${errors} problem${errors===1?"":"s"} must be fixed.` : "Scene is ready.");
     });
     els.copyLogBtn.addEventListener("click", async () => {
-      try { await navigator.clipboard.writeText(state.logs.join("\n")); toast("Debug log copied."); }
+      try { await navigator.clipboard.writeText(state.logs.join("\n") + "\nCamera: " + JSON.stringify(state.cameraEditor?.snapshot())); toast("Debug log copied."); }
       catch { toast("Could not copy. Select the log manually."); }
     });
   }
@@ -3869,7 +3887,8 @@
     log("Cutscene Director loaded.");
 
     await Promise.all([fetchMapIndex(), fetchNpcDb(), fetchCreatureBestiary()]);
-    if (state.project.mapId) await loadMap(state.project.mapId); else renderMapSelect();
+    if (state.project.repoMap) applyLoadedMap({id:state.project.mapId,name:state.project.repoMap.name,category:"interior"},state.project.repoMap);
+    else if (state.project.mapId) await loadMap(state.project.mapId); else renderMapSelect();
     renderAll();
   }
 
@@ -3877,6 +3896,7 @@
   // other tools (_editorBridge, _mapEditorBridge, _biaBridge) — lets a host
   // page add a real NPC as an actor without going through the picker UI.
   window._cutsceneDirectorBridge = {
+    cameraSnapshot() { return state.cameraEditor?.snapshot(); },
     addNpcActor(npcId) { return addActorFromNpc(npcId); }
   };
 

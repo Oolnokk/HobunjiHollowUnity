@@ -111,7 +111,32 @@ V.prototype.lerpVectors=function(a,b,t){return this.copy(a).lerp(b,t);};
 let boomCalls=0;
 const shot={id:'wall',position:{x:8,y:2,z:0},target:{x:0,y:1,z:0},blendSeconds:0,fovDeg:50};
 const shotCamera={position:new V(10,2,0),fov:55,lookAt(){},updateProjectionMatrix(){}};
-const boomContext={window:{CinematicCameraRuntime:{activeRecord:()=>({areaId:'office',camera:shot,activatedAt:0}),resolvedPosition:()=>shot.position,resolvedTarget:()=>shot.target},FormatUtils:{clamp:(v,a,b)=>Math.max(a,Math.min(b,v))}},performance:{now:()=>0},camera:shotCamera,_cinematicCameraBlend:null,_lastCameraLookPoint:new V(),_cinematicDesiredPosition:new V(),_cinematicDesiredTarget:new V(),_cinematicLookTarget:new V(),THREE:{MathUtils:{lerp:(a,b,t)=>a+(b-a)*t}},cameraContainerAspect:()=>1,occlusionSafeCameraPosition(x,y,z,ix,iy,iz){boomCalls++;assert.equal(ix,8);return{x:2,y:iy,z:iz};}};
+cameras.window.THREE={Vector3:V};
+const runtime=cameras.window.CinematicCameraRuntime;
+runtime.activate('office',shot);
+const boomContext={window:cameras.window,cinematicBlend:runtime.createBlendController({camera:shotCamera,lookPoint:new V(),aspect:()=>1,safePosition(x,y,z,ix,iy,iz){boomCalls++;assert.equal(ix,8);return{x:2,y:iy,z:iz};}})};
 const boomStart=game.indexOf('      function applyAuthoredCinematicCamera()'),boomEnd=game.indexOf('      // threeContainer',boomStart);
 vm.runInNewContext(game.slice(boomStart,boomEnd)+'\napplyAuthoredCinematicCamera();',boomContext);
 assert.equal(boomCalls,1);assert.equal(shotCamera.position.x,2,'cinematic shots render at the collision-safe boom position');
+
+// Repeated dialogue activates the same shot without resetting its interpolation clock.
+let clock=0;
+const timed={window:{THREE:{Vector3:V}},performance:{now:()=>clock}};
+vm.runInNewContext(read('docs/js/cinematic-camera-runtime.js'),timed);
+const rt=timed.window.CinematicCameraRuntime, view={position:new V(),fov:50,lookAt(){},updateProjectionMatrix(){}}, aim=new V();
+const blend=rt.createBlendController({camera:view,lookPoint:aim});
+const fixed={id:'hold',position:{x:10,y:2,z:0},target:{x:0,y:1,z:0},blendSeconds:1,fovDeg:50};
+const first=rt.activate('room',fixed);blend.apply();clock=500;blend.apply();assert.equal(view.position.x,5);
+assert.strictEqual(rt.activate('room',fixed),first);assert.equal(first.activatedAt,0);
+clock=750;blend.apply();assert.equal(view.position.x,8.4375);assert.equal(blend.snapshot().transitions,1);
+// Mutating a registered camera transform still creates a genuine new shot.
+rt.registerArea('room',[fixed]);rt.activate('room','hold');rt.updateCameraTransform('room','hold',{position:{x:20,y:2,z:0}});
+assert.notStrictEqual(rt.activate('room','hold'),first);blend.apply();assert.equal(blend.snapshot().transitions,2);
+// Recreated live providers retain a shot; its changing target is evaluated each frame.
+let targetX=3;
+const live=()=>({id:'live',shotKey:'same-rig',positionProvider:()=>({x:targetX+4,y:2,z:0}),targetProvider:()=>({x:targetX,y:1,z:0}),blendSeconds:0,fovDeg:60});
+const liveRecord=rt.activate('room',live());blend.apply();targetX=7;assert.strictEqual(rt.activate('room',live()),liveRecord);blend.apply();assert.equal(view.position.x,11);assert.equal(aim.x,7);
+assert.equal(blend.snapshot().transitions,3);
+rt.activate('room',{...live(),shotKey:'different-offset'});blend.apply();assert.equal(blend.snapshot().transitions,4);
+rt.deactivate();assert.equal(blend.apply(),false);assert.equal(blend.snapshot().cameraId,null);
+console.log('Persistent shots, edited transforms, live targets and explicit zero-duration blends passed');

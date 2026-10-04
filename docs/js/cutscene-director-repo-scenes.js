@@ -7,8 +7,10 @@
     Object.freeze({ id: 'opening-rescue', label: 'Opening — Cloud Forest Rescue', builder: 'buildRescueScene', wilderness: true }),
     Object.freeze({ id: 'opening-hunundi-room', label: "Opening — Father Hunundi's Room", builder: 'buildHunundiMeetingScene', wilderness: false }),
     Object.freeze({ id: 'opening-farm-tour', label: 'Opening — Spearhead Shows the Farm', builder: 'buildFarmTourScene', authoringArgs: 'farmTour', virtualMap: 'farm' }),
+    Object.freeze({ id: 'banubu-intro', label: 'Banubu — Wake-up conversation', banubuTree: 'banubu_intro' }),
+    Object.freeze({ id: 'banubu-key', label: 'Banubu — Pie, standing and Color Pools Key', banubuTree: 'banubu_q1_ready' }),
   ]); // Used by the injected selector and the public debug surface so the Director always loads shipping scene builders instead of copied JSON.
-  const REQUIRED_STORY_BUILDERS = Object.freeze(REPO_SCENES.map(scene => scene.builder)); // Used by story-module readiness checks so every visible selector entry is guaranteed callable.
+  const REQUIRED_STORY_BUILDERS = Object.freeze(REPO_SCENES.map(scene => scene.builder).filter(Boolean)); // Used by story-module readiness checks so every visible selector entry is guaranteed callable.
   const STORY_SCRIPT_URL = new URL('../../js/opening-story-cutscene.js?v=20261003repo-selector3', location.href).href; // Used to load the same authored builders the live opening sequence calls.
   const NPC_DB_URL = new URL('../../config/npcs/hobunji-starter-npc-database.json', location.href).href; // Used to supply canonical NPC records to those builders.
   const DIRECTOR_STORAGE_KEY = 'hobunjiCutsceneDirector.v1'; // Used by reload-based imports that still pass through the Director's startup normalizeProject path.
@@ -30,21 +32,26 @@
     }, 3200);
   }
 
+  const scriptLoads = new Map(); // Deduplicates all source modules, including parallel Banubu requests.
   function loadScriptOnce(src) {
-    return new Promise((resolve, reject) => {
+    if (scriptLoads.has(src)) return scriptLoads.get(src);
+    const pending = new Promise((resolve, reject) => {
       const existing = [...document.scripts].find(script => script.src === src);
       if (existing) {
-        if (window.OpeningStoryCutscene) { resolve(); return; }
+        if (existing.dataset.repoCutsceneLoaded === 'true' || (src.includes('/opening-story-cutscene.js') && window.OpeningStoryCutscene) || (src.includes('/banubu-quest-content.js') && window.BanubuQuestContent) || (src.includes('/banubu-cutscene-authoring.js') && window.BanubuCutsceneAuthoring)) { resolve(); return; }
         existing.addEventListener('load', resolve, { once: true });
-        existing.addEventListener('error', () => reject(new Error('Could not load the opening-story cutscene module.')), { once: true });
+        existing.addEventListener('error', () => reject(new Error('Could not load cutscene source: ' + src + '')), { once: true });
         return;
       }
       const script = document.createElement('script'); // Injected only inside Cutscene Director so other tools do not gain story-specific globals.
       script.src = src;
-      script.addEventListener('load', resolve, { once: true });
-      script.addEventListener('error', () => reject(new Error('Could not load the opening-story cutscene module.')), { once: true });
+      script.addEventListener('load', () => { script.dataset.repoCutsceneLoaded = 'true'; resolve(); }, { once: true });
+      script.addEventListener('error', () => reject(new Error('Could not load cutscene source: ' + src + '')), { once: true });
       (document.head || document.documentElement).appendChild(script);
     });
+    scriptLoads.set(src, pending);
+    pending.catch(() => scriptLoads.delete(src));
+    return pending;
   }
 
   function assertStoryApi(api) {
@@ -108,6 +115,17 @@
   async function buildRepoScene(sceneId) {
     const entry = REPO_SCENES.find(scene => scene.id === sceneId);
     if (!entry) throw new Error(`Unknown repo cutscene: ${sceneId}`);
+    if (entry.banubuTree) {
+      await Promise.all([
+        window.BanubuQuestContent ? null : loadScriptOnce(new URL('../../js/banubu-quest-content.js?v=20261004banubu1', location.href).href),
+        window.BanubuCutsceneAuthoring ? null : loadScriptOnce(new URL('../../js/banubu-cutscene-authoring.js?v=20261004banubu1', location.href).href),
+      ]);
+      const [records, response] = await Promise.all([loadNpcRecords(), fetch(new URL('../../config/locales/locale_banubu_cave_interior.json', location.href).href)]);
+      if (!response.ok) throw new Error('Banubu locale HTTP ' + response.status);
+      const npc = records.get('banubu');
+      const tree = npc?.dialogueTrees?.find(t => t.id === entry.banubuTree) || window.BanubuQuestContent.dialogueTrees.find(t => t.id === entry.banubuTree);
+      return { entry, scene: window.BanubuCutsceneAuthoring.build(tree, npc, await response.json()) };
+    }
     const [api, records] = await Promise.all([ensureStoryApi(), loadNpcRecords()]);
     const builder = api[entry.builder];
     const scene = builder(records, authoringProfile(), ...authoringArgsFor(entry));

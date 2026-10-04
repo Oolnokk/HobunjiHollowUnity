@@ -231,7 +231,7 @@
     s.holdAbility?.onHoldUpdate?.({ slotIndex, slotId }, dt);
   }
 
-  function endHold(slotIndex) {
+  function endHold(slotIndex, cancelled = false) {
     const s = slots[slotIndex];
     if (!s) return;
     const slotId = 'hold' + slotIndex;
@@ -239,7 +239,10 @@
       s.releaseQueued = true;
       return;
     }
-    if (s.holdStarted) s.holdAbility?.onHoldEnd?.({ slotIndex, slotId });
+    if (s.holdStarted) {
+      const finish = cancelled ? (s.holdAbility?.onHoldCancel || s.holdAbility?.onHoldEnd) : s.holdAbility?.onHoldEnd; // Canceled holds use cleanup without release attacks when the ability supports it.
+      finish?.({ slotIndex, slotId, cancelled });
+    }
     s.holdStarted = false;
     s.releaseQueued = false;
     s.holdAbility = null;
@@ -295,7 +298,7 @@
   function abortPress(slotIndex) {
     const s = slots[slotIndex];
     if (!s || !s.down) return;
-    if (s.holding) endHold(slotIndex);
+    if (s.holding) endHold(slotIndex, true);
     s.alignmentRequest?.cancel?.();
     s.alignmentRequest = null;
     s.down = false;

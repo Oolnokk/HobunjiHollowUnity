@@ -1,0 +1,22 @@
+{
+  "schema": "hobunji_pattern.v1",
+  "id": "hachutu_glyph_death",
+  "name": "Hachutu Glyph: Death",
+  "motifPng": "assets/patterns/motif_hachutu_glyph_death.png",
+  "collectible": true,
+  "settings": {
+    "motifScale": 1.12,
+    "motifRotationDeg": 0,
+    "tiling": true,
+    "invert": false,
+    "motifThinPx": 2,
+    "frameShape": "brick",
+    "frameX": 0,
+    "frameY": 0,
+    "frameRotationDeg": 0,
+    "frameScale": 1.03,
+    "meshScale": 2.24,
+    "meshRotationDeg": -31,
+    "overpassClearanceMultiplier": 3
+  }
+}

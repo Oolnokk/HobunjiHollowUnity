@@ -311,8 +311,10 @@
     if (document.getElementById(PANEL_ID) || !window.THREE || !(window.TerrainPreview || window.BorderTerrain)) return;
     const panel = document.createElement('section'); // Used as one mobile-accessible control surface independent of each tool's private sidebar implementation.
     panel.id = PANEL_ID;
+    const collapsed = /\/tools\/cutscene-director\//.test(location.pathname); // Camera authoring needs the preview unobscured; terrain controls remain one tap away.
+    panel.dataset.collapsed = collapsed ? '1' : '0';
     panel.innerHTML = `
-      <button type="button" class="tp-title" aria-expanded="true">Live terrain texture parity <span>▾</span></button>
+      <button type="button" class="tp-title" aria-expanded="${!collapsed}">Live terrain texture parity <span>${collapsed ? '▸' : '▾'}</span></button>
       <div class="tp-body">
         <label>Unstretched pixel scale <output data-out="pixelScale">${settings.pixelScale.toFixed(2)}</output>×<input data-setting="pixelScale" type="range" min="0.25" max="4" step="0.05" value="${settings.pixelScale}"></label>
         <label>Protected source edge <output data-out="edge">${Math.round(settings.edge * 100)}</output>%<input data-setting="edge" type="range" min="0" max="0.4" step="0.01" value="${settings.edge}"></label>
