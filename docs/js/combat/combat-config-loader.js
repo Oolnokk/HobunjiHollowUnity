@@ -107,7 +107,7 @@
     ['config/npcs/food-gift-preferences.js?v=20261001foodgift1', () => Number(window.HobunjiNpcFoodGiftPreferences?.version) >= 1],
     ['js/npc-food-gift-preferences.js?v=20261001foodgift2', () => Number(window.NpcFoodGiftPreferences?.version) >= 1],
     ['js/npc-gifting.js?v=20261002h0eb6484', () => !!window.NpcGifting],
-    ['js/favor-heart-balance.js?v=20260917points3', () => Number(window.NpcFavorBalance?.version) >= 1],
+    ['js/favor-heart-balance.js?v=20261004giftfavor4', () => Number(window.NpcFavorBalance?.version) >= 1],
     ['config/npcs/clothing-patterns.js?v=20260924npcweave1', () => Number(window.HobunjiNpcClothingPatterns?.version) >= 1],
     ['js/npc-wardrobe.js?v=20260924npcweave1', () => !!window.NpcWardrobe],
     ['js/clothing-weaving-npc-compat.js?v=20260913a', () => Number(window.ClothingWeavingNpcCompat?.version) >= 1],
@@ -167,4 +167,3 @@
 
   for (const [src, alreadyLoaded] of modules) loadModule(src, alreadyLoaded);
 })();
-
