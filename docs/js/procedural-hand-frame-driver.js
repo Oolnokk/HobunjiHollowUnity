@@ -502,6 +502,9 @@
       const toolKey = currentToolKey(record);
       const gripContext = currentGripContext(record);
       const scaleIdentity = { speciesId: record.speciesId, gender: record.gender }; // Used by grip targets so they expand with the same calculated-height weapon scale as the visible item.
+      if (record.avatarRoot?.userData?.proceduralHandToolHolder) {
+        scaleIdentity.animationGripState = record.avatarRoot.userData.proceduralHandAnimationGrip ?? null; // Each NPC’s own animation gates both ranges; idle NPCs stay 1H.
+      }
       const primaryGrip = toolGrips.primaryGripForTool(toolKey, gripContext, scaleIdentity);
       const primarySocket = toolSocketWorld(record, toolHolder, primaryGrip); // Raw target ON the weapon, before Grip Mode or per-GLB hand-model calibration.
       record.rig.placePaperHandGuideWorld?.(primarySocket.position, primarySocket.quaternion); // Locked reference stays on the raw target while Grip Mode + child calibration move the real hand.
@@ -513,7 +516,7 @@
       const secondaryGrip = toolGrips.secondaryGripForTool(toolKey, gripContext, scaleIdentity);
       if (secondaryGrip) {
         const secondary = handSocketAfterGripMode(record, toolSocketWorld(record, toolHolder, secondaryGrip));
-        record.rig.placeHandWorld?.('left', secondary.position, secondary.quaternion, modelCalibration);
+        record.rig.placeHandWorld?.('left', secondary.position, secondary.quaternion, modelCalibration, secondaryGrip.influence);
         record.secondaryActive = true;
         ensureFallbackState(record).owners.left = 'secondary-grip';
       } else {

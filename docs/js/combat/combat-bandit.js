@@ -1841,6 +1841,7 @@
       handDriverRoot.userData.proceduralHandToolHolder = useRanged ? c._banditRangedToolHolder : c._banditToolHolder;
       handDriverRoot.userData.proceduralHandToolKey = useRanged ? c.def?.rangedWeaponKey : c.def?.weaponKey;
       handDriverRoot.userData.proceduralHandGripContext = useRanged ? 'ranged' : 'melee';
+      if (useRanged) handDriverRoot.userData.proceduralHandAnimationGrip = null; // Ranged poses never opt into the melee 2H ranges.
     }
     syncBanditWeaponScale(c, c._banditToolHolder, c.def?.weaponKey);
     syncBanditWeaponScale(c, c._banditRangedToolHolder, c.def?.rangedWeaponKey, 'ranged');
@@ -1870,6 +1871,7 @@
         if (c._banditToolLastVθ != null) { c.avatarRef.group.rotation.y = c._banditToolLastVθ; c.groupRot = c._banditToolLastVθ; }
         return;
       }
+      if (handDriverRoot?.userData) handDriverRoot.userData.proceduralHandAnimationGrip = null;
     }
     const anim = c._banditSwingAnim || 'thrust';
     const pose = c._banditSwingPose;
@@ -1902,6 +1904,9 @@
       const totalS = Math.max(0.0001, action.windupS + action.strikeS);
       progress = Math.min(1, action.t / totalS);
       wf = action.windupS / totalS;
+      if (handDriverRoot?.userData) {
+        handDriverRoot.userData.proceduralHandAnimationGrip = window.HobunjiHandToolGrips?.animationGripAt?.(progress, { windupFrac: wf, strikeFrac: wf, holdFrac: 1, poseScale: power }, pose || {}) ?? null; // Matches this actor’s windup lerp and immediate strike/settle hold.
+      }
       c._banditToolSettleUntil = performance.now() + BANDIT_TOOL_SETTLE_S * 1000;
     }
 
