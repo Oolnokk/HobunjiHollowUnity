@@ -215,6 +215,13 @@ const context = {
   StableAnimalTownFamiliarity: petRapport,
   StableAnimalTrainingRefinements: refinements,
   AnimalGrowth: animalGrowth,
+  FarmAnimals: {
+    addToStable() {
+      const entry = { id: `incoming_${stable.length}`, kind: 'gar-wolf', name: 'New animal', role: 'mount', lifeStage: 'adult', level: 0, stableXp: 0, animalPerks: {} }; // Represents the existing inventory-to-Stable intake path.
+      stable.push(entry);
+      return { ok: true, entry, message: 'Added to Stable.' };
+    },
+  },
   CreatureGenetics: {
     stableEntryRole: entry => entry.role,
     defaultLivestockName: kind => kind,
@@ -288,6 +295,14 @@ assert.match(allText(ageSections[0]), /Baby Animals/, 'first Stable age group is
 assert.match(allText(ageSections[1]), /Adult Animals/, 'second Stable age group is the adult section');
 assert.equal(descendantsByClass(ageSections[0], 'stable-training-row').length, 1, 'baby section contains only Stable babies');
 assert.equal(descendantsByClass(ageSections[1], 'stable-training-row').length, 2, 'adult section contains only Stable adults');
+assert.equal(ageSections[0].children[0].getAttribute('aria-expanded'), 'false', 'Stable baby inventory is collapsed by default');
+assert.equal(ageSections[0].children[1].hidden, true, 'Stable baby inventory hides both guidance and rows while collapsed');
+ageSections[0].children[0].listeners.click();
+let toggledBabySection = descendantsByClass(stableList, 'stable-age-section')[0]; // Re-read the baby section after its native rerender.
+assert.equal(toggledBabySection.children[0].getAttribute('aria-expanded'), 'true', 'Stable baby inventory can be expanded');
+assert.equal(toggledBabySection.children[1].hidden, false, 'expanded baby inventory reveals all of its contents');
+toggledBabySection.children[0].listeners.click();
+assert.equal(descendantsByClass(stableList, 'stable-age-section')[0].children[1].hidden, true, 'Stable baby inventory can be fully collapsed again');
 
 let babyRow = stableRowById(stableList, 'hound1'); // Re-read after each native rerender because rows are rebuilt.
 let companionRow = stableRowById(stableList, 'hound2'); // Used for companion training expansion assertions.
@@ -337,7 +352,7 @@ assert.equal(context.FarmPanel.stableTrainingDebug().expandedStableId, null, 'de
 assert.equal(context.FarmPanel.stableTrainingDebug().babyCount, 1, 'Stable diagnostics report the saved baby count');
 assert.equal(context.FarmPanel.stableTrainingDebug().adultCount, 2, 'Stable diagnostics report the saved adult count');
 assert.equal(context.FarmPanel.stableTrainingDebug().animals.find(entry => entry.id === 'hound2').petRapport, 12.2, 'Stable diagnostics include Pet Rapport points');
-assert.equal(saveCount, 0, 'expanding/collapsing UI does not mutate the save');
+assert.equal(saveCount, 1, 'only the one-time stowed-state migration saved; expanding/collapsing UI does not save');
 
 babyRow = stableRowById(stableList, 'hound1');
 const growButton = descendantsByClass(babyRow, 'stable-grow-btn')[0]; // Used to prove the native baby control delegates to AnimalGrowth.
@@ -347,6 +362,30 @@ assert.equal(stable.find(entry => entry.id === 'hound1').lifeStage, 'adult', 'de
 assert.equal(context.FarmPanel.stableTrainingDebug().babyCount, 0, 'native age groups refresh after a baby grows up');
 assert.equal(context.FarmPanel.stableTrainingDebug().adultCount, 3, 'grown Stable baby immediately appears in the adult count');
 
+for (let index = 0; index < 6; index++) context.FarmAnimals.addToStable(`animal_${index}`); // Fills eight accessible places, then checks automatic stowage for the ninth.
+context.FarmPanel.renderStablePanel();
+assert.equal(context.FarmPanel.stableTrainingDebug().outsideStorageLimit, 8, 'Stable debug reports the requested eight-animal limit');
+assert.equal(context.FarmPanel.stableTrainingDebug().outsideStorageCount, 8, 'Stable never exposes more than eight animals outside storage');
+assert.equal(context.FarmPanel.stableTrainingDebug().stowedCount, 1, 'the ninth acquired animal is retained in indefinite stowage');
+assert.equal(stable.at(-1).stowed, true, 'a new animal is immediately saved as stowed when the accessible roster is full');
+assert.match(source, /function installStableStorageAcquisitionGuard\(/, 'the item-to-Stable intake path applies the cap before another menu render');
+
+let mountRowForStowing = stableRowById(stableList, 'mount1'); // Used to prove the user can stow and later withdraw an existing animal.
+descendantsByClass(mountRowForStowing, 'stable-stow-btn')[0].listeners.click({ stopPropagation() {} });
+assert.equal(stable.find(entry => entry.id === 'mount1').stowed, true, 'the Stable action moves an animal into stowage');
+assert.equal(context.FarmPanel.stableTrainingDebug().outsideStorageCount, 7, 'stowing one animal opens one out-of-storage place');
+let stowageToggle = descendantsByClass(stableList, 'stable-inventory-toggle').find(button => String(button.textContent).includes('Stowed Animals'));
+stowageToggle.listeners.click();
+let stowedMountRow = stableRowById(stableList, 'mount1');
+descendantsByClass(stowedMountRow, 'stable-stow-btn')[0].listeners.click({ stopPropagation() {} });
+assert.equal(stable.find(entry => entry.id === 'mount1').stowed, false, 'a stowed animal can be withdrawn again');
+assert.equal(context.FarmPanel.stableTrainingDebug().outsideStorageCount, 8, 'withdrawing respects the eight-animal accessible limit');
+activeMountId = 'mount1'; // Simulates an older/corrupt save that marks a currently deployed animal as stowed.
+stable.find(entry => entry.id === 'mount1').stowed = true;
+context.FarmPanel.renderStablePanel();
+assert.equal(stable.find(entry => entry.id === 'mount1').stowed, false, 'normalization keeps a deployed animal outside storage');
+assert.equal(context.FarmPanel.stableTrainingDebug().outsideStorageCount, 8, 'preserving a deployed animal still respects the cap');
+
 assert.doesNotMatch(source, /leveling coming soon/i, 'farm-panel.js itself contains no obsolete leveling placeholder');
 assert.match(source, /function renderStablePanelNative\(/, 'Stable UI is rendered directly by farm-panel.js, not by a post-render decorator');
 assert.match(source, /stableAgeSection\('🐣 Baby Animals'/, 'native Stable renderer owns the baby grouping instead of relying on a retired decorator');
@@ -354,4 +393,4 @@ assert.match(source, /api\?\.growStableBaby\?\.\(entry\.id/, 'native Stable grow
 assert.match(source, /stable-pet-rapport-partial-heart/, 'Stable Pet Rapport reuses gradual clipped-heart presentation');
 assert.match(source, /armNativeInstallOnFarmPanelPublication/, 'browser parser timing is handled at the FarmPanel publication boundary');
 
-console.log('Native Stable panel training + age-section + Pet Rapport regression tests passed.');
+console.log('Native Stable panel training, stowage, cap, and collapsible baby-inventory regression tests passed.');
