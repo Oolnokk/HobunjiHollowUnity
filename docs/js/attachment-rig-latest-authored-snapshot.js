@@ -11,7 +11,7 @@
     new URL('../config/character-rig-scale-defaults.js?v=20261004h2d20519', base).href,
     new URL('attachment-rig-latest-authored-snapshot-core.js?v=20260904a', base).href,
     new URL('character-rig-maoao-authored-20260905.js?v=20260905b', base).href,
-    new URL('mammakhbuur-species-runtime.js?v=20261004fullscale1', base).href,
+    new URL('mammakhbuur-species-runtime.js?v=20261004h5ed99d2', base).href,
     new URL('harlyao-species-runtime.js?v=20260909a', base).href,
     new URL('harlyao-skeleton-species-runtime.js?v=20260927dyes1', base).href,
     new URL('porakaneki-species-runtime.js?v=20260924poracolor2&rearHead=1', base).href,
