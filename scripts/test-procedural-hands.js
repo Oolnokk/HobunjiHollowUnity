@@ -531,13 +531,13 @@ assert.deepStrictEqual(
 
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('fishingspear', 'melee').position)),
-  { x: -0.04, y: -0.04, z: 0 },
-  'Fishing spear melee grip must stay on its existing unflipped hand target.',
+  { x: -0.04, y: -0.04, z: -0.1522 },
+  'Fishing spear melee grip must use the measured center of its long wood haft section.',
 );
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('fishingspear', 'ranged').position)),
-  { x: 0.04, y: -0.04, z: 0 },
-  'Fishing spear ranged grip must mirror its nonzero X across the visible 180-degree Tool End Flip.',
+  { x: 0.04, y: -0.04, z: 0.1522 },
+  'Fishing spear ranged grip must mirror both nonzero in-plane coordinates across the visible 180-degree Tool End Flip.',
 );
 
 const daggerThrowWindupSpinRad = -0.49 * Math.PI * 2 * 2.5; // Runtime Windup endpoint: 1.225 turns (441°) from the generic Spin Throw.
