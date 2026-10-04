@@ -18,6 +18,8 @@
   const MANUAL_MELEE_SPAN_PRESET = 'manual-handle-spans-20261004-v1'; // Updates the six inspected handle ranges in older saved drafts once.
   const MANUAL_MELEE_SPAN_TOOLS = new Set(['plainssword', 'bshuakauitl', 'fishingspear', 'pickshovel', 'hoe', 'hatchet']); // Limits that migration to the manually inspected weapons.
   const TWO_HAND_SPAN_PRESET = 'paired-hand-spans-20261004-v1'; // Migrates the six weapons to separate main/offhand ranges once.
+  const LONG_HAFT_GRIP_PRESET = 'long-haft-center-20261004-v1'; // Migrates the three measured long-haft weapons to their wood/tan-section centers once.
+  const LONG_HAFT_GRIP_TOOLS = new Set(['bshuakauitl', 'fishingspear', 'pickshovel']); // Keeps the measured-center migration from touching other authored weapons.
   const PRIMARY_ROTATION_PRESET = 'hatchet-primary-xy-rotation-20260921-v3'; // Hatchet is the canonical right-hand grip example: propagate its X, Y, and rotation to every other tool, never its item-specific Z.
   const PRE_AUTHORED_RANGED_GRIP_PRESET = 'melee-ranged-split-20260920-v4-editor-authored'; // Previous committed split cloned melee into ranged; used only to migrate untouched old dagger defaults.
   const PRE_END_FLIP_DAGGER_RANGED_PRESET = 'melee-ranged-split-20260920-v5-authored-values'; // Previous authored dagger used ranged Z -0.30 before Tool End Flip's visible-axis correction changed the needed hand target.
@@ -53,6 +55,7 @@
     secondaryGripPreset: SECONDARY_GRIP_PRESET,
     manualMeleeSpanPreset: MANUAL_MELEE_SPAN_PRESET,
     twoHandSpanPreset: TWO_HAND_SPAN_PRESET,
+    longHaftGripPreset: LONG_HAFT_GRIP_PRESET,
     primaryRotationPreset: PRIMARY_ROTATION_PRESET,
     rangedGripPreset: RANGED_GRIP_PRESET,
     heightMultiplierPreset: HEIGHT_MULTIPLIER_PRESET,
@@ -79,21 +82,21 @@
       },
       bshuakauitl: {
         toolScale: 1.3,
-        primaryGrip: { position: { x: -0.04, y: -0.04, z: 0.14 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
+        primaryGrip: { position: { x: -0.04, y: -0.04, z: -0.0006 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         gripMode: null,
-        primaryGripSpan: { enabled: true, startZ: 0.18, endZ: 0.3 }, // Main-hand range used only by 2H attack poses.
-        secondaryGripSpan: { enabled: true, startZ: -0.02, endZ: 0.1 }, // Offhand range paired with the main-hand range.
-        rangedPrimaryGrip: { position: { x: -0.04, y: -0.04, z: 0.14 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
+        primaryGripSpan: { enabled: true, startZ: 0.0394, endZ: 0.1594 }, // Main-hand range translated around the measured tan-section center.
+        secondaryGripSpan: { enabled: true, startZ: -0.1606, endZ: -0.0406 }, // Offhand range stays opposite the main range around the fixed 1H grip.
+        rangedPrimaryGrip: { position: { x: -0.04, y: -0.04, z: -0.0006 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         rangedSecondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
         rangedGripMode: null,
       },
       pickshovel: {
-        primaryGrip: { position: { x: -0.04, y: -0.04, z: 0 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
+        primaryGrip: { position: { x: -0.04, y: -0.04, z: -0.0178 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         gripMode: null,
-        primaryGripSpan: { enabled: true, startZ: -0.22, endZ: -0.1 }, // Main-hand range used only by 2H attack poses.
-        secondaryGripSpan: { enabled: true, startZ: 0.1, endZ: 0.22 }, // Offhand range paired with the main-hand range.
+        primaryGripSpan: { enabled: true, startZ: -0.2378, endZ: -0.1178 }, // Main-hand range translated around the measured brown-haft center.
+        secondaryGripSpan: { enabled: true, startZ: 0.0822, endZ: 0.2022 }, // Offhand range stays opposite the main range around the fixed 1H grip.
         toolScale: 1,
-        rangedPrimaryGrip: { position: { x: -0.04, y: -0.04, z: 0 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
+        rangedPrimaryGrip: { position: { x: -0.04, y: -0.04, z: -0.0178 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         rangedSecondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
         rangedGripMode: null,
       },
@@ -145,11 +148,11 @@
       },
       fishingspear: {
         toolScale: 1.15,
-        primaryGrip: { position: { x: -0.04, y: -0.04, z: 0 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
+        primaryGrip: { position: { x: -0.04, y: -0.04, z: -0.1522 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         gripMode: null,
-        primaryGripSpan: { enabled: true, startZ: -0.2, endZ: -0.08 }, // Main-hand range used only by 2H attack poses.
-        secondaryGripSpan: { enabled: true, startZ: 0.08, endZ: 0.2 }, // Offhand range paired with the main-hand range.
-        rangedPrimaryGrip: { position: { x: 0.04, y: -0.04, z: 0 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
+        primaryGripSpan: { enabled: true, startZ: -0.3522, endZ: -0.2322 }, // Main-hand range translated around the measured long wood-section center.
+        secondaryGripSpan: { enabled: true, startZ: -0.0722, endZ: 0.0478 }, // Offhand range stays opposite the main range around the fixed 1H grip.
+        rangedPrimaryGrip: { position: { x: 0.04, y: -0.04, z: 0.1522 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } }, // Tool End Flip mirrors both in-plane X and Z for the same physical grip.
         rangedSecondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
         rangedGripMode: null,
       },
@@ -273,11 +276,13 @@
     const previousRangedGripPreset = next.rangedGripPreset; // Missing marker identifies drafts created before melee/ranged grip separation.
     const resetTwoHandSpans = next.twoHandSpanPreset !== TWO_HAND_SPAN_PRESET; // Old drafts adopt both stance-authored ranges, leaving 1H grips unchanged.
     const resetManualMeleeSpans = next.manualMeleeSpanPreset !== MANUAL_MELEE_SPAN_PRESET; // Old local drafts receive the manual ranges without changing primary grips or scales.
+    const resetLongHaftGrips = next.longHaftGripPreset !== LONG_HAFT_GRIP_PRESET; // Older drafts adopt the measured long-haft 1H centers and paired ranges once.
     const resetHeightMultipliers = next.heightMultiplierPreset !== HEIGHT_MULTIPLIER_PRESET; // Drafts from the all-1.0 default era adopt the 0.5 default once.
     next.schema = SCHEMA;
     next.secondaryGripPreset = SECONDARY_GRIP_PRESET;
     next.twoHandSpanPreset = TWO_HAND_SPAN_PRESET;
     next.manualMeleeSpanPreset = MANUAL_MELEE_SPAN_PRESET;
+    next.longHaftGripPreset = LONG_HAFT_GRIP_PRESET;
     next.primaryRotationPreset = PRIMARY_ROTATION_PRESET;
     next.rangedGripPreset = RANGED_GRIP_PRESET;
     next.heightMultiplierPreset = HEIGHT_MULTIPLIER_PRESET;
@@ -378,11 +383,17 @@
           && numberOrZero(rr.roll) === HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg.roll;
         if (untouchedPreSpearMirrorGrip) {
           // The corrected Tool End Flip rotates the sprite 180° in its own plane.
-          // Fishing spear's ranged grip is center-length (Z=0) but has X=-0.04,
-          // so the same physical grip point moves to +0.04 after that flip.
+          // The old spear center used Z=0, so only X visibly needed correction at that time.
           // Migrate only the exact old default; artist-authored ranged X stays untouched.
-          entry.rangedPrimaryGrip = normalizeTransform(DEFAULT_DATA.tools.fishingspear.rangedPrimaryGrip);
+          entry.rangedPrimaryGrip.position.x = DEFAULT_DATA.tools.fishingspear.rangedPrimaryGrip.position.x;
         }
+      }
+      if (resetLongHaftGrips && LONG_HAFT_GRIP_TOOLS.has(toolKey)) {
+        entry.primaryGrip.position.z = numberOrZero(fallbackEntry.primaryGrip?.position?.z); // Applies the measured wood/tan midpoint without disturbing authored X/Y/rotation.
+        entry.rangedPrimaryGrip.position.z = numberOrZero(fallbackEntry.rangedPrimaryGrip?.position?.z); // Spear ranged Z mirrors through Tool End Flip; the others keep the same center.
+        entry.primaryGripSpan = clone(fallbackEntry.primaryGripSpan); // Keeps the 2H main-hand range translated around the new fixed 1H center.
+        entry.secondaryGripSpan = clone(fallbackEntry.secondaryGripSpan); // Keeps the 2H offhand range on the opposite side of the new center.
+        entry.rangedSecondaryGripSpan = clone(fallbackEntry.rangedSecondaryGripSpan); // Ranged remains explicitly one-handed.
       }
     }
     return next;
@@ -1060,7 +1071,7 @@
       primaryGrip: authoredPrimaryGripForTool(toolKey, currentGripContext()),
       primaryGripSpan: primaryGripSpanForTool(toolKey, currentGripContext()),
       primaryTarget: primaryGripForTool(toolKey, currentGripContext(), identity),
-      latestChange: '2H poses sample independent main/offhand ranges; idle and ranged retain the fixed primary grip.',
+      latestChange: 'Long-haft 1H grips are centered on measured wood/tan sprite sections; melee 2H ranges stay paired around that fixed grip.',
       secondaryGripSpan: secondaryGripSpanForTool(toolKey, currentGripContext()),
       secondaryAnimation: currentSecondaryGripAnimationState(),
       secondaryTarget: secondaryGripForTool(toolKey),
