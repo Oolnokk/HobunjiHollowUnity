@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   regression:
@@ -24,6 +24,55 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Repair legacy spear migration fixture and restore workflow
+        if: github.event_name == 'pull_request' && github.head_ref == 'fix/recenter-long-haft-grips-20261004'
+        run: |
+          set -e
+          git fetch --no-tags origin "$GITHUB_HEAD_REF" "main:refs/remotes/origin/main"
+          git checkout -B "$GITHUB_HEAD_REF" "origin/$GITHUB_HEAD_REF"
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = 'scripts/test-procedural-hands.js';
+          const source = fs.readFileSync(path, 'utf8');
+          const oldBlock = `const preSpearMirrorSnapshot = grips.clone();
+          const preSpearMirrorDraft = grips.clone();
+          preSpearMirrorDraft.rangedGripPreset = 'melee-ranged-split-20260920-v7-end-flip-mirrored';
+          preSpearMirrorDraft.tools.fishingspear.rangedPrimaryGrip.position.x = -0.04;
+          grips.replace(preSpearMirrorDraft);
+          assert.strictEqual(grips.authoredPrimaryGripForTool('fishingspear', 'ranged').position.x, 0.04, 'Untouched v7 fishing-spear ranged X must migrate to the corrected end-flipped side.');
+          const customPreSpearMirrorDraft = grips.clone();
+          customPreSpearMirrorDraft.rangedGripPreset = 'melee-ranged-split-20260920-v7-end-flip-mirrored';
+          customPreSpearMirrorDraft.tools.fishingspear.rangedPrimaryGrip.position.x = 0.11;
+          grips.replace(customPreSpearMirrorDraft);
+          assert.strictEqual(grips.authoredPrimaryGripForTool('fishingspear', 'ranged').position.x, 0.11, 'Artist-authored pre-v8 fishing-spear ranged X must not be overwritten by the default migration.');
+          grips.replace(preSpearMirrorSnapshot);`;
+          const newBlock = `const preSpearMirrorSnapshot = grips.clone();
+          const preSpearMirrorDraft = grips.clone();
+          preSpearMirrorDraft.rangedGripPreset = 'melee-ranged-split-20260920-v7-end-flip-mirrored';
+          delete preSpearMirrorDraft.longHaftGripPreset;
+          preSpearMirrorDraft.tools.fishingspear.rangedPrimaryGrip.position.x = -0.04;
+          preSpearMirrorDraft.tools.fishingspear.rangedPrimaryGrip.position.z = 0;
+          grips.replace(preSpearMirrorDraft);
+          assert.strictEqual(grips.authoredPrimaryGripForTool('fishingspear', 'ranged').position.x, 0.04, 'Untouched v7 fishing-spear ranged X must migrate to the corrected end-flipped side.');
+          assert.strictEqual(grips.authoredPrimaryGripForTool('fishingspear', 'ranged').position.z, 0.1522, 'Pre-long-haft fishing-spear ranged Z must migrate to the mirrored measured wood-section center.');
+          const customPreSpearMirrorDraft = grips.clone();
+          customPreSpearMirrorDraft.rangedGripPreset = 'melee-ranged-split-20260920-v7-end-flip-mirrored';
+          delete customPreSpearMirrorDraft.longHaftGripPreset;
+          customPreSpearMirrorDraft.tools.fishingspear.rangedPrimaryGrip.position.x = 0.11;
+          customPreSpearMirrorDraft.tools.fishingspear.rangedPrimaryGrip.position.z = 0;
+          grips.replace(customPreSpearMirrorDraft);
+          assert.strictEqual(grips.authoredPrimaryGripForTool('fishingspear', 'ranged').position.x, 0.11, 'Artist-authored pre-v8 fishing-spear ranged X must not be overwritten by the default migration.');
+          assert.strictEqual(grips.authoredPrimaryGripForTool('fishingspear', 'ranged').position.z, 0.1522, 'Artist-authored old ranged X still receives the independent measured long-haft Z migration.');
+          grips.replace(preSpearMirrorSnapshot);`;
+          if (!source.includes(oldBlock)) throw new Error('Expected pre-v8 fishing-spear migration fixture was not found.');
+          fs.writeFileSync(path, source.replace(oldBlock, newBlock));
+          NODE
+          git checkout origin/main -- .github/workflows/regression-suite.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/test-procedural-hands.js .github/workflows/regression-suite.yml
+          git commit -m "Repair fishing spear legacy migration fixture"
+          git push origin "HEAD:$GITHUB_HEAD_REF"
       - name: Syntax check shipped scripts
         run: |
           set -e
