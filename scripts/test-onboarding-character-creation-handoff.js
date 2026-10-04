@@ -9,9 +9,9 @@ const mashtzarr = fs.readFileSync('docs/js/onboarding-character-creation-mashtza
 
 assert.match(camera, /TARGET_PREVIEW_YAW_DEG = 10\b/, 'creator resting turn must be +10 degrees');
 assert.doesNotMatch(camera, /TARGET_PREVIEW_YAW_DEG = 20\b/, 'superseded +20 degree resting turn must stay removed');
-assert.match(camera, /camera\.position\.set\(CAMERA_X, midY, CAMERA_Z\)/, 'mid-body camera height must remain intact');
+assert.match(camera, /camera\.position\.set\(1\.55, midY, 2\.75\)/, 'mid-body camera height must remain intact');
 assert.match(camera, /camera\.lookAt\(0, midY, 0\)/, 'mid-body camera must remain level rather than top-down');
-assert.match(entry, /onboarding-character-creation-camera-composition\.js\?v=[A-Za-z0-9_-]+/, 'onboarding must load the current +10 degree camera composition');
+assert.match(entry, /onboarding-character-creation-camera-composition\.js\?v=20260910review1/, 'onboarding must load the current +10 degree camera composition');
 
 assert.match(entry, /onboarding-character-creation-reload-handoff\.js\?v=20260907charcreator14/, 'onboarding must load the clean-page creator handoff');
 assert.ok(entry.indexOf('onboarding-character-creation-weapon-view-fix.js') < entry.indexOf('onboarding-character-creation-reload-handoff.js'), 'weapon persistence must register before reload interception');

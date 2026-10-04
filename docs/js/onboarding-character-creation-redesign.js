@@ -471,15 +471,13 @@
 
     const root = new THREE.Group();
     root.name = 'OnboardingCharacterPreviewRoot';
-    root.userData.onboardingRestYaw = -0.18; // Camera composition uses this explicit drag baseline before any render or face-view pass.
-    root.rotation.y = root.userData.onboardingRestYaw;
     scene.add(root);
 
     const sceneState = {
       THREE, renderer, scene, camera, root, canvas,
       shellOutlineMaterial: makeRuntimeShellOutlineMaterial(THREE),
       avatarGroup: null, model: null, feet: null,
-      running: true, yaw: root.userData.onboardingRestYaw, pointer: null,
+      running: true, yaw: -0.18, pointer: null,
       lastWidth: 0, lastHeight: 0,
     };
 

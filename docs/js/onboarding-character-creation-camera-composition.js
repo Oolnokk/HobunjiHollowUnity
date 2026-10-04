@@ -1,4 +1,4 @@
-// Character-creator composition: quarter-turn facing correction, 10° resting turn, and a level mid-body camera.
+// Character-creator composition: exact 10° resting turn and a Mao'ao-mid-body camera eye line.
 (() => {
   'use strict';
 
@@ -7,15 +7,12 @@
 
   const PREVIEW_ROOT_NAME = 'OnboardingCharacterPreviewRoot'; // Unique scene node created by the 3D onboarding redesign.
   const LIFE_PATCH_ID = 'hobunjiOnboardingCharacterCreationLifePreview'; // Exposes the current avatar model for face-view anchoring.
-  const TARGET_PREVIEW_YAW_DEG = 10; // Retains the subtle resting turn after the requested facing correction.
-  const PREVIEW_FACING_CORRECTION_DEG = 90; // Adds the requested quarter-turn to character creation only.
+  const TARGET_PREVIEW_YAW_DEG = 10; // Turns the resting preview five degrees back from the earlier +15° composition.
   const MAO_AO_BASE_MODEL_HEIGHT = 0.9; // Runtime PNG-plane fallback width/height used by the creator when config is unavailable.
   const MAO_AO_MALE_RUNTIME_Y = 1.125; // Canonical Full Character Scale Y for Mao'ao male; used only as a fallback.
   const FACE_NECK_OFFSET = 0.13; // Matches the existing species-aware face-view center above the neck joint.
 
-  const CAMERA_X = 1.55; // Shared camera position and azimuth for the resting front view.
-  const CAMERA_Z = 2.75; // Shared camera position and azimuth for the resting front view.
-  const FALLBACK_REST_YAW = -0.18; // Matches the creator baseline when an older cached redesign is still loading.
+  const yawOffsets = new WeakMap(); // Stores only the delta needed to turn each preview root from its existing default to exactly +10°.
   let rendererWrapped = false; // Diagnostic state for the onboarding-only WebGLRenderer hook.
   let active = true; // Flips false once character creation hands off, so the permanent renderer patch and RAF loop stop doing real work.
   let sharedFaceCamera = null; // One reused PerspectiveCamera for syncFaceViewOrigin's per-frame projection instead of allocating a new one every frame.
@@ -39,15 +36,18 @@
 
   function yawOffsetFor(root) {
     if (!root?.rotation) return 0;
-    const restYaw = Number(root.userData?.onboardingRestYaw); // Explicit resting rotation; never inferred from a temporary render or a user's drag.
-    const baseline = Number.isFinite(restYaw) ? restYaw : FALLBACK_REST_YAW; // Retains drag deltas even when composition installs after the first interaction.
-    return Math.atan2(CAMERA_X, CAMERA_Z) + deg(TARGET_PREVIEW_YAW_DEG + PREVIEW_FACING_CORRECTION_DEG) - baseline;
+    if (!yawOffsets.has(root)) {
+      // Preserve drag behavior: the redesign still owns root.rotation.y; this patch
+      // adds only the fixed delta required to make its first/resting view exactly +10°.
+      yawOffsets.set(root, deg(TARGET_PREVIEW_YAW_DEG) - Number(root.rotation.y || 0));
+    }
+    return yawOffsets.get(root) || 0;
   }
 
   function applyCamera(camera) {
     if (!camera?.position || typeof camera.lookAt !== 'function') return;
     const midY = maoAoMidBodyY();
-    camera.position.set(CAMERA_X, midY, CAMERA_Z);
+    camera.position.set(1.55, midY, 2.75);
     camera.lookAt(0, midY, 0); // Eye and target share Y: no residual top-down angle.
     camera.updateMatrixWorld?.(true);
   }
@@ -147,8 +147,6 @@
     const status = window.HOBUNJI_ONBOARDING_REDESIGN_STATUS;
     if (status && typeof status === 'object') {
       status.previewRestYawDeg = TARGET_PREVIEW_YAW_DEG;
-      status.previewFacingBasis = 'camera-relative, +90 degree correction';
-      status.previewFacingCorrectionDeg = PREVIEW_FACING_CORRECTION_DEG; // Existing in-page diagnostics describe the corrected resting orientation.
       status.cameraEyeBasis = "mao-ao male mid-body";
       status.cameraEyeY = maoAoMidBodyY();
       status.cameraTopDownAngle = 0;
@@ -165,7 +163,6 @@
 
   window[PATCH_ID] = Object.freeze({
     targetYawDeg: TARGET_PREVIEW_YAW_DEG,
-    facingCorrectionDeg: PREVIEW_FACING_CORRECTION_DEG,
     maoAoMidBodyY,
     get rendererWrapped() { return rendererWrapped; },
     get active() { return active; },
