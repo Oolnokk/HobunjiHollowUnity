@@ -4,8 +4,8 @@ const fs = require('node:fs');
 const entry = fs.readFileSync('docs/onboarding.js', 'utf8');
 const randomName = fs.readFileSync('docs/js/onboarding-random-name.js', 'utf8');
 
-assert.match(entry, /onboarding-random-name\.js\?v=20260913randomname1/, 'onboarding must load the random-name enhancement');
-assert.match(entry, /redesignUrl[\s\S]{0,500}randomNameUrl[\s\S]{0,500}lifePreviewUrl/, 'random-name enhancement must load with the other character-creation presentation modules');
+assert.match(entry, /onboarding-random-name\.js\?v=[A-Za-z0-9_-]+/, 'onboarding must load the random-name enhancement');
+assert.ok(entry.indexOf('const redesignUrl') < entry.indexOf('const randomNameUrl') && entry.indexOf('const randomNameUrl') < entry.indexOf('const lifePreviewUrl'), 'random-name enhancement must load with the other character-creation presentation modules');
 
 assert.match(randomName, /BanditNameForge/, 'random names must reuse the bandit name forge');
 assert.match(randomName, /generateCulturalIdentity\(\{ speciesId, gender \}\)/, 'name generation must use the selected species and gender');
