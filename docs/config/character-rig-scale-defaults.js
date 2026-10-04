@@ -14,7 +14,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 16; // Applies the intended Animation Author edits for Tletingan male, Mao-ao female, and Mammakhbuur male only.
+  const VERSION = 17; // Applies intended Animation Author edits plus the male-derived Mammakhbuur female proportional scale.
   const VALUES = Object.freeze({
     'tletingan::male': Object.freeze({ x: 0.85, y: 0.85, head: 0.8, offsetY: 0 }),
     'tletingan::female': Object.freeze({ x: 0.915, y: 0.89, head: 0.8823529411764706, offsetY: 0 }),
@@ -29,7 +29,7 @@
     'mashtzarr::male': Object.freeze({ x: 0.955, y: 1.255, head: 0.9856, offsetY: -0.095 }),
     'mashtzarr::female': Object.freeze({ x: 1.01, y: 0.99, head: 0.8475, offsetY: -0.02 }),
     'mammakhbuur::male': Object.freeze({ x: 0.96, y: 1.69, head: 0.9771, offsetY: -0.095 }),
-    'mammakhbuur::female': Object.freeze({ x: 1.01, y: 0.99 * 1.05, head: 0.8475, offsetY: -0.02 }),
+    'mammakhbuur::female': Object.freeze({ x: 1.0153, y: 1.3331, head: 0.8402, offsetY: -0.02 }),
   });
   const ALIASES = Object.freeze({ rakakoan: 'kenkari', ghoul: 'mao-ao', 'harlyao-skeleton': 'harlyao' }); // Transform-equivalent NPC-only species inherit shared full-rig defaults; Harlyao Skeleton deliberately shares Harlyao's 1.2x Engh-sho scale.
   const MAOAO_FOOT_SCALE = Object.freeze({ male: 1.3125, female: 1.28125 }); // +25% over the canonical authored Mao-ao foot scales (1.05 male / 1.025 female).
