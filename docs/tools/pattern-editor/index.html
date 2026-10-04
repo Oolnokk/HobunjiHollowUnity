@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>Hobunji Hollow — Pattern Editor</title>
 <style>
-*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#081018;color:#edf5ff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+[hidden]{display:none!important}*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#081018;color:#edf5ff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
 body{padding:14px}.shell{max-width:1100px;margin:0 auto}.head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}.head h1{font-size:18px;margin:0}.muted{color:#9fb4cf;font-size:12px;line-height:1.45}
 .grid{display:grid;grid-template-columns:minmax(250px,330px) 1fr;gap:12px}.card{border:1px solid rgba(255,255,255,.12);background:#111b28;border-radius:14px;padding:12px}.card h2{font-size:12px;text-transform:uppercase;letter-spacing:.35px;color:#b9cbe0;margin:0 0 9px}
 button{border:1px solid rgba(106,167,255,.32);background:rgba(106,167,255,.13);color:#edf5ff;border-radius:9px;padding:8px 11px;font-weight:750;cursor:pointer}button.secondary{background:rgba(255,255,255,.055);border-color:rgba(255,255,255,.14)}button:disabled{opacity:.45;cursor:default}
@@ -23,6 +23,9 @@ input,select{width:100%;background:#0d1621;border:1px solid rgba(255,255,255,.14
 .trimPaintNote{font-size:11px;line-height:1.45;color:#9fb4cf;margin-top:8px;white-space:pre-wrap}@media(max-width:760px){.trimPaintBody{grid-template-columns:1fr}.trimPaintResult{min-height:150px}}
 @media(max-width:760px){.grid{grid-template-columns:1fr}.fields{grid-template-columns:1fr 1fr}.fields label:first-child{grid-column:1/-1}.previewWrap{min-height:230px}}
 </style>
+<script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="../../js/portrait-utils.js?v=20261004patternpreview1"></script>
 <script src="../../js/scene-ready-poller.js"></script>
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
 <script src="../../js/sprite-recolor.js"></script>
@@ -31,11 +34,14 @@ input,select{width:100%;background:#0d1621;border:1px solid rgba(255,255,255,.14
 <script src="../../js/tool-metal-recolor.js?v=20261001c6751543"></script>
 <script src="../../js/pattern-authoring.js?v=20261003h8825bc4"></script>
 <script src="../../js/repo-pattern-library.js"></script>
+<script src="../../js/furniture-pattern-surfaces.js?v=20261004previewstack1"></script>
+<script src="../../js/procedural-furniture.js?v=20261004bannerpreset1"></script>
+<script src="furniture-preview.js?v=20261004furniturepreview1"></script>
 </head>
 <body>
 <div class="shell">
   <div class="head">
-    <div><h1>Pattern Editor</h1><div class="muted">The same motif/frame/tiling editor used by the shared pattern system. Dev preview can switch between the real Weaving and Verdigris renderers, including the second same-color overpass pattern.</div></div>
+    <div><h1>Pattern Editor</h1><div class="muted">The same motif/frame/tiling editor used by the shared pattern system. Preview weaving, verdigris, a 3D hanging banner, or a tall stained-glass church window, including the second same-color overpass pattern.</div></div>
     <button id="newBtn">＋ New pattern</button>
   </div>
   <div class="grid">
@@ -82,6 +88,8 @@ input,select{width:100%;background:#0d1621;border:1px solid rgba(255,255,255,.14
           <select id="previewMode">
             <option value="weaving" selected>Weaving</option>
             <option value="verdigris">Verdigris</option>
+            <option value="banner">Hanging banner · 3D</option>
+            <option value="churchWindow">Tall church window · 3D</option>
           </select>
         </label>
         <label data-preview-mode="weaving">Background texture
@@ -95,12 +103,14 @@ input,select{width:100%;background:#0d1621;border:1px solid rgba(255,255,255,.14
             <option value="wibbly_surface.png">wibbly_surface.png</option>
           </select>
         </label>
-        <label data-preview-mode="weaving">Surface tint<input id="baseColor" type="color" value="#9b8b73"></label>
-        <label data-preview-mode="weaving">Pattern ink<input id="inkColor" type="color" value="#315c8f"></label>
+        <label data-preview-palette>Surface tint<input id="baseColor" type="color" value="#9b8b73"></label>
+        <label data-preview-palette>Pattern ink<input id="inkColor" type="color" value="#315c8f"></label>
         <label data-preview-mode="verdigris" hidden>Clean metal<input id="metalColor" type="color" value="#CD7F32"></label>
         <label data-preview-mode="verdigris" hidden>Verdigris<input id="verdigrisColor" type="color" value="#57B38B"></label>
       </div>
       <div id="previewModeHelp" class="muted" style="margin:-2px 0 8px">Weaving mode shade-fills a repository surface, then applies the shared pattern compositor exactly like woven clothing.</div>
+      <div id="furniturePreview" hidden></div>
+      <details><summary>Preview diagnostics</summary><button id="previewDebugBtn" class="secondary">Refresh diagnostics</button><pre id="previewDebug" style="white-space:pre-wrap;overflow-wrap:anywhere">Added banner and tall stained-glass window 3D previews.</pre></details>
       <div class="previewWrap"><canvas id="preview" width="384" height="240"></canvas></div>
       <div class="row" style="margin-top:10px">
         <button id="editBtn">Edit primary</button>
@@ -161,10 +171,11 @@ Overpass → not set</div>
     return [primary, authoredOverpass].filter(pattern => pattern?.motifDataUrl || pattern?.motifUrl || pattern?.customMotifId).slice(0, 2);
   }
   function syncPreviewModeControls() {
-    const mode = $('previewMode').value === 'verdigris' ? 'verdigris' : 'weaving'; // Single dev-only preview switch; it never mutates pattern data.
+    const mode = $('previewMode').value; // Preview choice never changes exported motif settings.
+    document.querySelectorAll('[data-preview-palette]').forEach(el => { el.hidden = mode === 'verdigris'; }); // Single dev-only preview switch; it never mutates pattern data.
     document.querySelectorAll('[data-preview-mode]').forEach(el => { el.hidden = el.dataset.previewMode !== mode; });
     const ruggedPoncho = mode === 'weaving' && $('surfaceTexture').value === RUGGED_PONCHO_PREVIEW;
-    $('previewModeHelp').textContent = mode === 'verdigris'
+    $('previewModeHelp').textContent = ['banner','churchWindow'].includes(mode) ? 'Actual furniture geometry with cloth or stained-glass patterns. Drag to orbit; pinch or scroll to zoom.' : mode === 'verdigris'
       ? 'Verdigris mode uses the real tool-metal renderer on the fishing mace. Motif ink marks stripped clean metal; the rest stays oxidized, with the real 2px verdigris outline behavior.'
       : ruggedPoncho
         ? 'Rugged poncho uses the production clothing-layer renderer and the actual authored poncho + wrap sprites, so pattern position/scale are evaluated on real overwear instead of a rectangular test surface.'
@@ -1839,6 +1850,14 @@ Overpass → not set</div>
   async function refreshPreview(primary = draft, overpass = overpassDraft) {
     const canvas = $('preview'), ctx = canvas.getContext('2d');
     const mode = syncPreviewModeControls();
+    const furnitureMode = ['banner','churchWindow'].includes(mode); // One isolated view owns its WebGL resources.
+    $('furniturePreview').hidden = !furnitureMode;
+    canvas.parentElement.hidden = furnitureMode;
+    if (furnitureMode) {
+      await window.PatternFurniturePreview.show($('furniturePreview'), mode, previewPatterns(primary, overpass), [$('baseColor').value, $('inkColor').value]);
+      return;
+    }
+    window.PatternFurniturePreview.dispose();
     const rendered = await renderSimple(primary, overpass);
     canvas.width = rendered.width; canvas.height = rendered.height;
     const compactSpritePreview = mode === 'verdigris' || (mode === 'weaving' && $('surfaceTexture').value === RUGGED_PONCHO_PREVIEW);
@@ -1923,6 +1942,10 @@ Overpass → not set</div>
         list: () => window.RepoPatternLibrary.listCached(),
         get: id => window.RepoPatternLibrary.getCachedEditableById(id),
       },
+      ...(['banner','churchWindow'].includes($('previewMode').value) ? {
+        mountPreview: container => window.PatternFurniturePreview.mount(container, $('previewMode').value, [$('baseColor').value, $('inkColor').value], pattern => previewPatterns(isOverpass ? draft : pattern, isOverpass ? pattern : overpassDraft)),
+        previewHint: 'Drag to orbit; pinch or scroll to zoom.',
+      } : {}),
       renderPreview: patternData => isOverpass ? renderSimple(draft, patternData) : renderSimple(patternData, overpassDraft),
       onSave: async patternData => {
         if (isOverpass) {
@@ -2134,7 +2157,8 @@ Overpass → not set</div>
   };
 
   window.__patternEditorDebug = () => ({ // Mobile-visible console substitute for checking the dev tool's two-slot state.
-    mostRecentChange: 'Cross-species trim replication defaults to contour warp: the finished source mask is carried along matched cloth contours (region, arc-length position, signed depth) instead of replaying strokes, so erase/expand errors cannot compound on multi-piece garments. Stroke replay remains selectable and no longer mirrors off-cloth samples inward.',
+    furniturePreview: window.PatternFurniturePreview.debug(),
+    mostRecentChange: 'Added actual hanging banner and tall stained-glass church window previews. Cross-species trim replication defaults to contour warp: the finished source mask is carried along matched cloth contours (region, arc-length position, signed depth) instead of replaying strokes, so erase/expand errors cannot compound on multi-piece garments. Stroke replay remains selectable and no longer mirrors off-cloth samples inward.',
     previewMode: $('previewMode').value,
     weavingBackground: $('surfaceTexture').value,
     overpassClearanceMultiplier: clampOverpassClearance($('overpassClearance').value),
@@ -2154,6 +2178,7 @@ Overpass → not set</div>
     ...debugState,
   });
 
+  $('previewDebugBtn').onclick = () => { $('previewDebug').textContent = JSON.stringify(window.__patternEditorDebug(), null, 2); };
   syncOverpassClearanceControl(3);
   syncPreviewModeControls();
   refreshPreview(null, null);

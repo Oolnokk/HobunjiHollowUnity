@@ -45,12 +45,13 @@ class Vector2 {constructor(x=0,y=0){this.set(x,y);}set(x,y){this.x=x;this.y=y;re
 const THREE={Matrix3,Vector2,Vector3,BufferGeometry:Geometry,Float32BufferAttribute:Attribute,Mesh,MeshBasicMaterial:Material,DoubleSide:2,RepeatWrapping:1000}; // Enough Three API to execute actual triangle selection and instance lifecycle.
 const definitions=[{id:'rune-a',pattern:{motifDataUrl:'data:a'}},{id:'rune-b',pattern:{motifDataUrl:'data:b'}}]; // Deterministic unlockable catalog fixture.
 const owned=new Set(); // Tracks actual unlock calls; entering/decorating cannot change it.
+const stacks=[]; // Captures the production primary/overpass pair passed to the compositor.
 const sizes=[]; // Atlas extents verify density independently of normalized geometry UVs.
 const canvases=[]; // Records shade references and shared compositor use.
 const document={createElement(){const result={width:0,height:0,fill:null,getContext(){return {fillStyle:'',fillRect(){result.fill=this.fillStyle;},drawImage(source){result.fill=source.fill;}};}};canvases.push(result);return result;}};
 let compositeCount=0; // Proves repeated instances reuse one pending tile build.
 const window={THREE,PatternLibrary:{getById:id=>definitions.find(d=>d.id===id)?.pattern,getCatalog:()=>definitions,unlock:id=>{if(owned.has(id))return false;owned.add(id);return true;}},
-  ClothingWeavingSystem:{async applyPatternStackToTintedImage(canvas,patterns,dye,key,shade){compositeCount++;sizes.push([canvas.width,canvas.height]);assert(!patterns[0].usageScaleMultiplier || patterns[0].usageScaleMultiplier <= 1,"no furniture-only fourfold magnification");assert.equal(shade.fill,'#c0c0c0','authored white must not be used as the shade-fill source');return canvas;}},
+  ClothingWeavingSystem:{async applyPatternStackToTintedImage(canvas,patterns,dye,key,shade){compositeCount++;stacks.push(patterns);sizes.push([canvas.width,canvas.height]);assert(!patterns[0].usageScaleMultiplier || patterns[0].usageScaleMultiplier <= 1,"no furniture-only fourfold magnification");assert.equal(shade.fill,'#c0c0c0','authored white must not be used as the shade-fill source');return canvas;}},
   HobunjiSpritePngSurface:{makeMaterial:(_T,_tex,_name,options)=>new Material(options),makeCanvasTexture:(_T,canvas)=>({canvas,dispose(){this.disposed=true;}})}};
 vm.runInNewContext(fs.readFileSync('docs/js/furniture-pattern-surfaces.js','utf8'),{window,document,performance:{now:()=>1000},console});
 const api=window.FurniturePatternSurfaces; // Public production API used by furniture, ruin generation, and editor preview.
@@ -181,5 +182,13 @@ const pattern={slot:'carpet',mode:'cloth',selector:'top',patternId:'rune-a',pale
   assert(!originalMaterial.disposed&&!originalGeometry.disposed,'source furniture resources must survive preview close');
   editorState.tileBase={};editorState.pieceAnimations=[{connectors:[{}]}];element('fpBanner').onclick();
   assert.equal(editorState.parts.length,2);assert.equal(editorState.pieceAnimations.length,0,'loading the banner preset must remove prior sign ropes/rigid animation');assert.equal(editorState.parts[0].kind,'beam');assert.equal(editorState.parts[1].kind,'banner');assert.equal(editorState.selectedId,editorState.parts[1].id);
+  const primary={motifDataUrl:'data:preview-primary'}, overpass={motifDataUrl:'data:preview-overpass',overpassClearanceMultiplier:7}; // Independent drafts must reach one canonical compositor call.
+  await api.renderTile({...pattern,patternId:null,patterns:[primary,overpass]});
+  assert.equal(stacks.at(-1).length,2);
+  assert.equal(stacks.at(-1)[1].overpassClearanceMultiplier,7);
+  const previousCount=compositeCount; // A changed overpass must invalidate the atlas cache.
+  await api.renderTile({...pattern,patternId:null,patterns:[primary,{...overpass,overpassClearanceMultiplier:9}]});
+  assert.equal(compositeCount,previousCount+1);
+
   console.log('Furniture pattern normalization, clipping, scale, cache, overrides, wind, ruin unlocks and daylight integration passed.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

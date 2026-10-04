@@ -50,11 +50,12 @@
   async function renderTile(raw, patternOverride, size = [TILE_PX, TILE_PX]) {
     const record = normalize(raw); // Validation is shared by the author preview and runtime.
     if (!patternOverride && !resolvePattern(record)) await window.RepoPatternLibrary?.load?.();
-    const pattern = patternOverride || resolvePattern(record); // Never mutate a shared library definition.
+    const pattern = patternOverride || record.patterns?.[0] || resolvePattern(record); // Never mutate a shared library definition.
     if (!pattern) throw new Error(`Pattern unavailable: ${record.patternId || 'custom'}`);
     const compositor = window.ClothingWeavingSystem?.applyPatternStackToTintedImage; // Canonical tiling, inversion, thickness and overpass implementation.
     if (!compositor) throw new Error('The weaving pattern renderer has not loaded');
-    const key = JSON.stringify([record.mode, record.palette, pattern, size, record.mode === 'engraving' ? [record.opacity,record.engravingCoreOpacity] : null]); // Scale/opacity belong to placement rather than the reusable tile pixels.
+    const patterns = (patternOverride ? [patternOverride] : record.patterns?.length ? record.patterns : [pattern]).slice(0,2); // Furniture previews share the canonical primary/overpass stack.
+    const key = JSON.stringify([record.mode, record.palette, patterns, size, record.mode === 'engraving' ? [record.opacity,record.engravingCoreOpacity] : null]); // Scale/opacity belong to placement rather than the reusable tile pixels.
     if (tileCache.has(key)) return tileCache.get(key);
     const pending = (async () => {
       const canvas = document.createElement('canvas'); // Solid dyed base provides the same opaque eligibility mask as cloth.
@@ -65,12 +66,12 @@
       shading.width = canvas.width; shading.height = canvas.height;
       shading.getContext('2d').drawImage(canvas, 0, 0);
       ctx.fillStyle = record.palette[0]; ctx.fillRect(0, 0, canvas.width, canvas.height);
-      const result = await compositor(canvas, [{...pattern,renderRasterScale:size[2] || 1}], record.palette[1], `furniture:${key}`, shading, 'woven-motif', {inkOnly: record.mode === 'engraving', cache:false}); // Use authored settings without an extra purpose-specific magnification.
+      const result = await compositor(canvas, patterns.map(entry=>({...entry,renderRasterScale:size[2] || 1})), record.palette[1], `furniture:${key}`, shading, 'woven-motif', {inkOnly: record.mode === 'engraving', cache:false}); // Use authored settings without an extra purpose-specific magnification.
       if (record.mode !== 'engraving') return result;
       const engraving = document.createElement('canvas'); // Never mutate the compositor's cached mask.
       engraving.width = canvas.width; engraving.height = canvas.height;
       engraving.getContext('2d').drawImage(result, 0, 0);
-      const core = await compositor(canvas, [{...pattern,motifThinPx:finite(pattern.motifThinPx,0)+2,renderRasterScale:size[2] || 1}], record.palette[1], `furniture-core:${key}`, shading, 'woven-motif', {inkOnly:true,cache:false}); // Exactly the authoring slider's two-source-pixel thinning, including inversion and frame/mesh transforms.
+      const core = await compositor(canvas, patterns.map(entry=>({...entry,motifThinPx:finite(entry.motifThinPx,0)+2,renderRasterScale:size[2] || 1})), record.palette[1], `furniture-core:${key}`, shading, 'woven-motif', {inkOnly:true,cache:false}); // Exactly the authoring slider's two-source-pixel thinning, including inversion and frame/mesh transforms.
       return window.HobunjiSpritePngSurface.carveCanvas(engraving,core,{strokeOpacity:.65*Math.min(.5,record.opacity),coreOpacity:record.engravingCoreOpacity});
     })();
     tileCache.set(key, pending);
