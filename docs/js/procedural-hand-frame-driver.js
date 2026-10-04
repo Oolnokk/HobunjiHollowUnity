@@ -507,15 +507,18 @@
       }
       const dualWield = toolGrips.dualWieldStateForTool?.(toolKey, gripContext, scaleIdentity) || null;
       const primaryGrip = toolGrips.primaryGripForTool(toolKey, gripContext, scaleIdentity);
-      const basePrimarySocket = toolSocketWorld(record, toolHolder, primaryGrip); // Raw fixed 1H target on the hidden/original weapon.
-      const primarySocket = dualWield
-        ? (global.HobunjiDualWieldWeaponVisuals?.transformSocketForHand?.(record, 'right', basePrimarySocket) || basePrimarySocket)
-        : basePrimarySocket;
+      const primarySocket = toolSocketWorld(record, toolHolder, primaryGrip); // Raw fixed 1H target remains the canonical weapon-grip reference before optional Dual Wield remapping.
       record.rig.placePaperHandGuideWorld?.(primarySocket.position, primarySocket.quaternion);
-      const primary = handSocketAfterGripMode(record, primarySocket);
+      let primary = handSocketAfterGripMode(record, primarySocket); // Preserve the ordinary raw-socket contract for 1H/2H and diagnostics.
+      if (dualWield) {
+        const dualPrimarySocket = global.HobunjiDualWieldWeaponVisuals?.transformSocketForHand?.(record, 'right', primarySocket) || primarySocket;
+        primary = handSocketAfterGripMode(record, dualPrimarySocket); // Dual Wield alone remaps the same canonical grip onto the lagged main-hand weapon copy.
+      }
       const modelCalibration = modelCalibrationForRecord(record);
       record.rig.placeHandWorld?.('right', primary.position, primary.quaternion, modelCalibration);
-      ensureFallbackState(record).owners.right = dualWield ? 'dual-wield-main-grip' : 'primary-grip';
+      const owners = ensureFallbackState(record).owners;
+      owners.right = 'primary-grip'; // Ordinary attachment ownership always wins over locomotion fallback.
+      if (dualWield) owners.right = 'dual-wield-main-grip'; // Dual Wield refines that ownership to the lagged duplicate weapon.
 
       let secondaryGrip = null;
       if (dualWield) {

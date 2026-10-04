@@ -315,8 +315,8 @@
       owner: 'HobunjiDualWieldWeaponVisuals',
       description: 'Maintains hidden-original dual weapon duplicates and their small main-hand transform lag before hand/socket render sync.',
     });
-  } else {
-    const frame = () => { syncNow(); global.requestAnimationFrame?.(frame); };
-    global.requestAnimationFrame?.(frame);
   }
+  // Standalone editor contexts do not need a second RAF loop: the hand frame driver,
+  // grip-mode toggles, and transformSocketForHand() all call syncNow() synchronously.
+  // Keeping a single owner avoids duplicate transform-history samples and frame-order ambiguity.
 })(window);
