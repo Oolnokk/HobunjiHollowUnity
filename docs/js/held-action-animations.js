@@ -199,6 +199,7 @@
     new URL('config/hand-shoulder-pose-profiles.js?v=20260920localhinge1', docsBase).href,
     new URL('js/procedural-hand-foot-material-roles.js?v=20260821e', docsBase).href,
     new URL('js/hand-tool-grips.js?v=20261004hdb948fc', docsBase).href,
+    new URL('js/dual-wield-weapon-visuals.js?v=20261004dualwield1', docsBase).href,
     new URL('js/hand-grip-modes.js?v=20261004h2e47f31', docsBase).href,
     new URL('js/hand-shoulder-pose-runtime.js?v=20260920elbow5', docsBase).href,
     new URL('js/portrait-arm-cloud-mask.js?v=20260817a', docsBase).href,
@@ -209,7 +210,7 @@
     new URL('js/attachment-rig-latest-authored-snapshot.js?v=20261004h7248fd8', docsBase).href,
     new URL('js/procedural-hand-scale-free-world.js?v=20261002h4b75465', docsBase).href,
     new URL('js/procedural-hand-shoulder-aim.js?v=20260924perf1', docsBase).href,
-    new URL('js/procedural-hand-frame-driver.js?v=20261004h2491dee', docsBase).href,
+    new URL('js/procedural-hand-frame-driver.js?v=20261004h74c3702', docsBase).href,
   ];
   if (isAttackEditor) {
     // The editor starts its first avatar rebuild immediately after these parser-time

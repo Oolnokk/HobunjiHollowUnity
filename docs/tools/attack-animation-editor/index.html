@@ -1083,6 +1083,8 @@ function flipPose(p) {
   const flipped = defaultPose(-p.x, p.y, p.z, p.pitch, -p.yaw, -p.bodyYaw, -(p.roll || 0));
   if (p.scale != null) flipped.scale = p.scale;
   if (p.shoulderAim) flipped.shoulderAim = { ...p.shoulderAim };
+  if (p.secondaryGrip) flipped.secondaryGrip = { ...p.secondaryGrip };
+  if (p.dualWield != null) flipped.dualWield = typeof p.dualWield === 'object' ? { ...p.dualWield } : p.dualWield;
   if (p.elbows) {
     const mirrorPoint = point => point ? { x: -(Number(point.x) || 0), y: Number(point.y) || 0, z: Number(point.z) || 0 } : null;
     // Mirroring an attack never changes which anatomical hand owns the pose.
@@ -1232,6 +1234,7 @@ function applyPreset(preset) {
   // The selected Action owns hand-follow and elbow pose fields too. Reload the
   // hand adapter every time so state from the previously selected Action cannot leak.
   window.HobunjiAttackEditorHandShoulderControls?.loadFromAnimationObject?.({ poses: anim.poses });
+  window.HobunjiHandToolGrips?.loadEditorAnimationGrip?.({ sequence: preset.sequence || 'attack', poses: anim.poses }); // Switching Actions reloads 2H/Dual state instead of leaking the prior Action's mode.
   anim.windupFrac = preset.windupFrac;
   anim.strikeFrac = preset.strikeFrac;
   // Presets predate holdFrac, so derive it the same way game.js's HF auto-
@@ -1453,6 +1456,8 @@ function clonePoseData(pose = {}) {
   return {
     ...pose,
     shoulderAim: pose.shoulderAim ? { ...pose.shoulderAim } : pose.shoulderAim,
+    secondaryGrip: pose.secondaryGrip ? { ...pose.secondaryGrip } : pose.secondaryGrip,
+    dualWield: pose.dualWield && typeof pose.dualWield === 'object' ? { ...pose.dualWield } : pose.dualWield,
     elbows: pose.elbows ? Object.fromEntries(Object.entries(pose.elbows).map(([side, point]) => [side, point ? { ...point } : point])) : pose.elbows,
   };
 }
@@ -1972,6 +1977,8 @@ function loadAnimObject(data) {
   anim.poses.strike = defaultPose(safeNum(s.x, 0), safeNum(s.y, 0), safeNum(s.z, 0), safeNum(s.pitch, 0), safeNum(s.yaw, 0), safeNum(s.bodyYaw, 0), safeNum(s.roll, 0));
   for (const [phase, raw] of [['neutral', n], ['windup', w], ['strike', s]]) {
     if (raw?.shoulderAim && typeof raw.shoulderAim === 'object') anim.poses[phase].shoulderAim = { ...raw.shoulderAim };
+    if (raw?.secondaryGrip && typeof raw.secondaryGrip === 'object') anim.poses[phase].secondaryGrip = { ...raw.secondaryGrip };
+    if (raw?.dualWield != null) anim.poses[phase].dualWield = typeof raw.dualWield === 'object' ? { ...raw.dualWield } : raw.dualWield;
     if (raw?.elbows && typeof raw.elbows === 'object') {
       const elbows = Object.fromEntries(ATTACK_POSE_SIDES
         .map(side => [side, normalizedPoseElbow(raw.elbows?.[side])])
@@ -1983,6 +1990,7 @@ function loadAnimObject(data) {
   // Restore them on every load path (file import, Undo/Redo, programmatic restore),
   // not only the file-input handler.
   window.HobunjiAttackEditorHandShoulderControls?.loadFromAnimationObject?.(data);
+  window.HobunjiHandToolGrips?.loadEditorAnimationGrip?.({ sequence: anim.sequence, poses: anim.poses });
   $('animName').value = action.label;
   $('animStyle').value = anim.style;
   $('playbackSequence').value = anim.sequence;

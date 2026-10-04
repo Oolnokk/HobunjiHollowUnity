@@ -18,6 +18,14 @@ vm.runInNewContext(fs.readFileSync('docs/js/hand-tool-grips.js', 'utf8'), {
 });
 const grips = window.HobunjiHandToolGrips; // Public config, pose sampling, and hand-target authority.
 tasks.get('hand-tool-grips-install')();
+const defaultTwoHandState = grips.animationGripAt(0.25, { windupFrac: 0.25, strikeFrac: 0.6, holdFrac: 0.8 }, {}, 'attack');
+assert(defaultTwoHandState.influence > 0.999, 'melee attacks without explicit hand metadata default to 2H when the equipped weapon exposes valid ranges');
+assert.equal(defaultTwoHandState.dualWieldInfluence, 0);
+const dualWieldState = grips.animationGripAt(0.25, { windupFrac: 0.25, strikeFrac: 0.6, holdFrac: 0.8 }, {
+  windup: { dualWield: { enabled: true } }, strike: { dualWield: { enabled: true } },
+}, 'attack');
+assert.equal(dualWieldState.influence, 0, 'Dual Wield suppresses the mutually exclusive 2H influence');
+assert(dualWieldState.dualWieldInfluence > 0.999, 'Dual Wield reaches full influence at the Windup endpoint');
 const pose = { // Independent percentages exercise both ranges, including legacy Neutral enabled data.
   neutral: { secondaryGrip: { enabled: true, percent: 10, primaryPercent: 10 } },
   windup: { secondaryGrip: { enabled: true, percent: 25, primaryPercent: 75 } },
@@ -116,4 +124,12 @@ assert.equal(restored.neutral.enabled, false);
 assert.equal(restored.windup.primaryPercent, 50, 'missing main-hand percentages default to range center');
 grips.restoreEditorSecondaryGripState({ windup: { enabled: true, percent: 25, primaryPercent: 75 } });
 assert.equal(grips.editorSecondaryGripStateSnapshot().windup.primaryPercent, 75);
+grips.loadEditorAnimationGrip({ sequence: 'attack', poses: { neutral: {}, windup: {}, strike: {} } });
+let editorModes = grips.editorSecondaryGripStateSnapshot();
+assert.equal(editorModes.windup.enabled, true, 'new/imported melee attacks default Windup to 2H');
+assert.equal(editorModes.strike.enabled, true, 'new/imported melee attacks default Strike to 2H');
+grips.loadEditorAnimationGrip({ sequence: 'attack', poses: { neutral: {}, windup: { dualWield: { enabled: true } }, strike: {} } });
+editorModes = grips.editorSecondaryGripStateSnapshot();
+assert.equal(editorModes.windup.dualWield, true, 'Dual Wield metadata loads into the editor phase toggle');
+assert.equal(editorModes.windup.enabled, false, 'Dual Wield and 2H are mutually exclusive in editor state');
 console.log('Measured long-haft 1H centers, mirrored spear ranged grip, paired 2H ranges, idle/ranged fallback, and migration passed.');

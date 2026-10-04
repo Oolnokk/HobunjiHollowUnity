@@ -260,6 +260,9 @@
     }
     current.offRoot.updateMatrix?.();
     current.mainRoot.updateMatrix?.();
+    current.plane.updateWorldMatrix?.(true, false); // Parent must be current before per-hand socket transforms read duplicate matrixWorld values.
+    current.offRoot.updateMatrixWorld?.(true);
+    current.mainRoot.updateMatrixWorld?.(true);
     return current;
   }
 

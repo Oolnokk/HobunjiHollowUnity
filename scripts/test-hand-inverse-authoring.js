@@ -59,6 +59,7 @@ assert(materialRoles.includes("feline: 'mao-ao'"), 'feline hand materials must i
 
 for (const wanted of [
   'hand-tool-grips.js',
+  'dual-wield-weapon-visuals.js',
   'procedural-hand-attachments.js',
   'procedural-hand-frame-driver.js',
   'attack-editor-hand-direct-attachments.js',
