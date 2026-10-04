@@ -6,19 +6,30 @@ const read = path => fs.readFileSync(path, 'utf8'); // Reads the shipping regist
 const window = {HobunjiHandModelProfiles: {data: {speciesModels: {mashtzarr: 'mashtzarr'}}, mutate(fn) {fn(this.data);}}}; // Models the shared hand registry used by the authored rig bootstrap.
 const context = {window, console, setInterval() {return 0;}, clearInterval() {}}; // All anatomy/placement corrections below execute against the actual configured profiles.
 for (const file of ['docs/config/scratchbones-config.js', 'docs/config/attachment-rig-profiles.js', 'docs/js/attachment-rig-latest-authored-snapshot-core.js', 'docs/config/character-rig-scale-defaults.js']) vm.runInNewContext(read(file), context, {filename: file});
-const donors = JSON.parse(JSON.stringify(window.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters)); // Proves installing a larger relative never changes existing Mashtzarr anatomy.
+const donors = JSON.parse(JSON.stringify(window.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters)); // Proves installing Mammakhbuur never changes existing Mashtzarr anatomy.
+const mashtzarrAppearanceBefore = JSON.parse(JSON.stringify(window.SCRATCHBONES_CONFIG.game.appearanceEditor.species.mashtzarr)); // Front-hair removal must stay isolated to Mammakhbuur.
 vm.runInNewContext(read('docs/js/mammakhbuur-species-runtime.js'), context);
+const expectedScale = {
+  male: { x: 0.96, y: 1.69, head: 0.9771, offsetY: -0.095 },
+  female: { x: 1.0153, y: 1.3331, head: 0.8402, offsetY: -0.02 },
+};
 for (const gender of ['male','female']) {
   const donor = donors['mashtzarr::' + gender]; // Compares against the fully authored donor including snapshot corrections.
   const mamm = window.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['mammakhbuur::' + gender];
   assert(mamm, gender + ' rig is installed');
   assert.equal(mamm.anatomy.portraitVerticalPlacementRatio, donor.anatomy.portraitVerticalPlacementRatio);
   assert.equal(window.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.portraitVerticalPlacement.mammakhbuur[gender], donor.anatomy.portraitVerticalPlacementRatio);
-  for (const key of ['x','y','head','offsetY']) assert.equal(window.HobunjiCharacterRigScaleDefaults.scaleFor('mammakhbuur',gender)[key],window.HobunjiCharacterRigScaleDefaults.scaleFor('mashtzarr',gender)[key] * (key === 'y' ? 1.05 : 1));
+  assert.deepEqual(JSON.parse(JSON.stringify(window.HobunjiCharacterRigScaleDefaults.scaleFor('mammakhbuur',gender))), expectedScale[gender]);
   assert.equal(mamm.anchors.rightHandShoulder.position.y, donor.anchors.rightHandShoulder.position.y);
   assert.equal(mamm.anchors.posterior.position.y, donor.anchors.posterior.position.y, 'floor-relative posterior remains on the floor');
   assert.deepEqual(JSON.parse(JSON.stringify(window.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['mashtzarr::' + gender])), donor);
+
+  const appearance = window.SCRATCHBONES_CONFIG.game.appearanceEditor.species.mammakhbuur[gender];
+  assert(appearance, gender + ' Mammakhbuur appearance data is installed');
+  assert(!appearance.slots.some(slot => slot.slot === 'hairFront'), gender + ' Mammakhbuur must not expose a front-hair slot');
+  assert.equal(appearance.forcedCosmetics.hairFront, null, gender + ' Mammakhbuur must suppress stale saved front hair');
 }
+assert.deepEqual(JSON.parse(JSON.stringify(window.SCRATCHBONES_CONFIG.game.appearanceEditor.species.mashtzarr)), mashtzarrAppearanceBefore, 'Mashtzarr appearance choices must remain untouched');
 assert.equal(window.HobunjiHandModelProfiles.data.speciesModels.mammakhbuur, 'mashtzarr');
 assert.equal(window.SCRATCHBONES_CONFIG.game.appearanceEditor.species.mammakhbuur.label, 'Mammakhbuur');
 const species = JSON.parse(read('docs/config/species/mammakhbuur.json')); // Mammakhbuur keep Mashtzarr anatomy while using their authored species-specific heads.
@@ -39,5 +50,5 @@ const loader = {neededUrls: new Set(['future-head']), IMG_CACHE: cache, Image: c
 vm.runInNewContext('(async () => {' + portrait.slice(start,end) + '\nreturn imgMap;})()',loader).then(images => {
   assert.equal(images.get('future-head'), image);
   assert.equal(cache.get('future-head'), image);
-  console.log('Mammakhbuur rigs, placement, player registry and authored head assets passed.');
+  console.log('Mammakhbuur rigs, authored scales, no-front-hair policy, and head assets passed.');
 }).catch(error => {console.error(error);process.exitCode=1;});
