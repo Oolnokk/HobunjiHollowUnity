@@ -14,7 +14,10 @@ assert.match(dual, /makeTranslation\(0, -DUPLICATE_SEPARATION, 0\)/, 'main dupli
 assert.match(dual, /offRoot\.position\.set\(0, DUPLICATE_SEPARATION \* influence, 0\)/, 'offhand duplicate uses the equal opposite offset');
 assert.match(dual, /delayedParentMatrix[\s\S]*MAIN_HAND_LAG_MS/, 'main root replays a delayed copy of original transforms');
 assert.match(dual, /current\.plane\.updateWorldMatrix\?\.\(true, false\)[\s\S]*current\.offRoot\.updateMatrixWorld\?\.\(true\)[\s\S]*current\.mainRoot\.updateMatrixWorld\?\.\(true\)/, 'duplicate world matrices are current before either hand reads its weapon socket');
+assert.doesNotMatch(dual, /requestAnimationFrame/, 'dual-wield visuals must share the scheduler/hand-sync owners instead of starting a second frame loop');
 assert.match(dual, /transformSocketForHand/, 'dual visual layer exposes per-hand socket transforms');
+assert.match(driver, /const primarySocket = toolSocketWorld\(record, toolHolder, primaryGrip\)/, 'the original fixed 1H socket remains the canonical grip before Dual Wield remapping');
+assert.match(driver, /owners\.right = 'primary-grip'[\s\S]*if \(dualWield\) owners\.right = 'dual-wield-main-grip'/, 'Dual Wield refines ordinary main-hand ownership without weakening primary-grip fallback authority');
 assert.match(driver, /transformSocketForHand\?\.\(record, 'right'/, 'right hand follows the lagged main duplicate');
 assert.match(driver, /transformSocketForHand\?\.\(record, 'left'/, 'left hand follows the offhand duplicate');
 assert.match(driver, /offhandBaseSocket = toolSocketWorld\(record, toolHolder, primaryGrip\)/, 'both duplicated weapons use the same fixed 1H grip frame');
@@ -24,4 +27,4 @@ assert.match(grips, /if \(dual\.checked\) editorSecondaryPoses\[phase\]\.enabled
 assert.match(grips, /if \(enabled\.checked\) editorSecondaryPoses\[phase\]\.dualWield = false/, 'editor 2H switches off Dual Wield');
 assert(held.includes('dual-wield-weapon-visuals.js'), 'held-action bootstrap loads dual-wield visuals');
 assert.match(editor, /loadEditorAnimationGrip\?\.\(\{ sequence: preset\.sequence \|\| 'attack', poses: anim\.poses \}\)/, 'switching Actions reloads per-attack hand-mode metadata');
-console.log('dual wield: hidden parent, opposite duplicate offsets, main-hand lag, live per-hand sockets, default 2H, and mutually exclusive editor mode PASS');
+console.log('dual wield: hidden parent, opposite duplicate offsets, main-hand lag, shared frame ownership, live per-hand sockets, default 2H, and mutually exclusive editor mode PASS');
