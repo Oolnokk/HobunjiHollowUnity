@@ -21,22 +21,23 @@ for (const gender of ['male','female']) {
 }
 assert.equal(window.HobunjiHandModelProfiles.data.speciesModels.mammakhbuur, 'mashtzarr');
 assert.equal(window.SCRATCHBONES_CONFIG.game.appearanceEditor.species.mammakhbuur.label, 'Mammakhbuur');
-const species = JSON.parse(read('docs/config/species/mammakhbuur.json')); // Both genders use exactly the donor head art.
+const species = JSON.parse(read('docs/config/species/mammakhbuur.json')); // Mammakhbuur keep Mashtzarr anatomy while using their authored species-specific heads.
 assert.equal(species.parentSpecies, 'mashtzarr');
 for (const gender of ['male','female']) {
-  assert.equal(species[gender].headSprite, JSON.parse(read('docs/config/species/mashtzarr.json'))[gender].headSprite);
+  assert.match(species[gender].headSprite, new RegExp(`fightersprites/mammakhbuur-${gender[0]}/head\\.png$`));
   assert(fs.existsSync('docs/assets/' + species[gender].headSprite));
+  for (const fallback of species[gender].headFallbackUrls || []) assert(fs.existsSync('docs/assets/' + fallback));
   assert.deepEqual(JSON.parse(JSON.stringify(window.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['mammakhbuur::' + gender].anchors)), donors['mashtzarr::' + gender].anchors);
 }
-// Execute the actual portrait image-load branch to simulate the not-yet-authored head returning 404.
+// Execute the actual portrait image-load branch to prove a configured fallback still fills a missing primary image without changing composition identity.
 const portrait = read('docs/js/portrait-utils.js'); // Isolates only loading, before canvas composition.
 const start = portrait.indexOf('  let imgMap;\n');
 const end = portrait.indexOf('  // Load mouth expression', start);
-const image = {}; // Donor image identity must be registered under the future primary URL for composition.
+const image = {}; // Donor image identity must be registered under the requested primary URL for composition.
 const cache = new Map();
 const loader = {neededUrls: new Set(['future-head']), IMG_CACHE: cache, Image: class {}, headUrl:'future-head', resolvedFighter: {headFallbackUrls:['mashtz-head']}, fighter:{}, console, loadImg: async url => {if(url==='future-head') throw Error('404'); return image;}};
 vm.runInNewContext('(async () => {' + portrait.slice(start,end) + '\nreturn imgMap;})()',loader).then(images => {
   assert.equal(images.get('future-head'), image);
   assert.equal(cache.get('future-head'), image);
-  console.log('Mammakhbuur rigs, placement, player registry and shared appearance passed.');
+  console.log('Mammakhbuur rigs, placement, player registry and authored head assets passed.');
 }).catch(error => {console.error(error);process.exitCode=1;});
