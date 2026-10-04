@@ -22,7 +22,7 @@
     <button id="fpApply" type="button">Apply settings</button>
     <button id="fpClear" type="button">Clear selected pattern</button>
     <button id="fpCarpet" type="button">Add carpet</button>
-    <button id="fpBanner" type="button">Add hanging banner</button>
+    <button id="fpBanner" type="button">Load hanging banner preset</button>
     <pre id="fpDebug" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>`;
   document.getElementById('surfaceEditor')?.parentElement?.appendChild(panel);
   const input = id => document.getElementById(id); // Every handler reads current values, rather than stale selected records.
@@ -159,18 +159,20 @@
       patternSurfaces: [{ slot:'carpet', mode:'cloth', selector:'top', patternId:'omgurku_knot', scale:1, palette:['#b7a185','#315b67'] }] }); // Added to existing furniture rather than replacing it.
     state.selectedType='part'; state.selectedId=part.id; rebuildAll(); queueUndoHistory('add carpet');
   }
-  function addBanner() {
-    pushPart('box', { name:'Banner beam', color:'#8b6540', transform:{x:0,y:2.1,z:0,rx:0,ry:0,rz:0,sx:1.4,sy:.1,sz:.12} });
-    pushPart('box', { name:'Banner post', color:'#8b6540', transform:{x:-.7,y:1.05,z:0,rx:0,ry:0,rz:0,sx:.1,sy:2.1,sz:.12} });
-    const part = pushPart('banner', { name:'Wind banner', bannerWindStrength:.1, transform:{x:0,y:1.45,z:.08,rx:0,ry:0,rz:0,sx:1.2,sy:1.2,sz:.01},
-      patternSurfaces:[{slot:'banner',mode:'cloth',patternId:'omgurku_knot',scale:1,palette:['#b7a185','#315b67']}] }); // Top edge attaches to the horizontal beam; shader warps only the hanging fabric.
-    state.selectedType='part'; state.selectedId=part.id; rebuildAll(); queueUndoHistory('add banner');
+  function loadBannerPreset() {
+    clearFurniture(); // The preset replaces the current structure, including prior sign ropes/rigid animations.
+    state.tileBase.footprintW=1;state.tileBase.footprintD=1;
+    const parts=window.ProceduralFurniture.CATALOG.hangingBanner.map(raw=>pushPart(raw.kind,JSON.parse(JSON.stringify(raw)))); // Same recipe as authored/runtime banners; edits cannot mutate the shared catalog.
+    const cloth=parts.find(part=>part.kind==='banner'); // Select the editable cloth rather than the support.
+    state.selectedType='part';state.selectedId=cloth.id;
+    rebuildAll();applyEntrySurfaceDefaults({materialRules:{mapping:'stretch'}},parts);rebuildFurnitureMeshes();syncControlsFromState?.();frameFurniture();setEditorMode('parts');refresh();
+    queueUndoHistory('load hanging banner preset');log('Loaded hanging banner preset: exact store/inn sign beam, with top-pinned cloth replacing the board and ropes.');
   }
   input('fpPng').onclick=()=>exportPattern('png'); input('fpJson').onclick=()=>exportPattern('json');
   input('fpAuthor').onclick=author;
   input('fpApply').onclick=()=>commit(settings());
   input('fpClear').onclick=()=>{ const {part}=target(), record=currentRecord(); if(part&&record) { part.patternSurfaces=part.patternSurfaces.filter(entry=>entry!==record); rebuildFurnitureMeshes(); queueUndoHistory('clear furniture pattern'); } };
-  input('fpCarpet').onclick=addCarpet; input('fpBanner').onclick=addBanner;
-  window.FurniturePatternAuthor = { refresh };
+  input('fpCarpet').onclick=addCarpet; input('fpBanner').onclick=loadBannerPreset;
+  window.FurniturePatternAuthor = { refresh, loadBannerPreset };
   rebuildFurnitureMeshes();
 })();

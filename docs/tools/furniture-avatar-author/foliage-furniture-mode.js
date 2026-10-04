@@ -19,7 +19,7 @@
     await loadClassicScript('furniture-wall-ornaments.js?v=20260924fullheight3');
     await loadClassicScript('furniture-daylight-windows.js?v=20261003hc970385');
     await loadClassicScript('furniture-decal-catalog.js?v=20260907a');
-    await loadClassicScript('furniture-piece-animations.js?v=20260907a');
+    await loadClassicScript('furniture-piece-animations.js?v=20261004hd781699');
     await loadClassicScript('../../js/color-fill.js?v=20260923colorfill7');
     await loadClassicScript('../../js/motif-store.js?v=20260920patterns1');
     await loadClassicScript('../../js/pattern-library.js?v=20261003h0ad42ee');
@@ -27,6 +27,6 @@
     await loadClassicScript('../../js/pattern-authoring.js?v=20261003h8825bc4');
     await loadClassicScript('../../js/clothing-weaving-system.js?v=20261003h25b5015');
     await loadClassicScript('../../js/furniture-pattern-surfaces.js?v=20261003hfbe7570');
-    await loadClassicScript('furniture-patterns.js?v=20261003hb578b3a');
+    await loadClassicScript('furniture-patterns.js?v=20261004h45601fe');
   })().catch(error => console.error('[Furniture Author Extensions]', error));
 })();

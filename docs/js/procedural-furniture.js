@@ -676,13 +676,16 @@ function campfireRecipe() {
     box(0, .65, 0, .6, 1.3, .12, .85),
   ];
 
+  function hangingSignSupportPart(id = 'hanging_sign_post') {
+    return {id,kind:'beam',name:'Horizontal Sign Post',color:'#60452c',materialRole:'wood',materialTexture:'carved_smooth.png',transform:{x:0,y:1.72,z:0,rx:0,ry:0,rz:0,sx:1.25,sy:.14,sz:.14},topScaleX:1,topScaleZ:1,bottomScaleX:1,bottomScaleZ:1,wonkiness:.01}; // Shared by the animation-tab sign and banner preset, returning an independent recipe.
+  }
   CATALOG.hangingBanner = [
-    {id:'banner-post',kind:'box',name:'Banner post',color:'#8b6540',transform:{x:-.7,y:1.05,z:0,sx:.1,sy:2.1,sz:.12}},
-    {id:'banner-beam',kind:'box',name:'Banner beam',color:'#8b6540',transform:{x:0,y:2.1,z:0,sx:1.4,sy:.1,sz:.12}},
-    {id:'banner-cloth',kind:'banner',name:'Wind banner',bannerWindStrength:.1,transform:{x:0,y:1.45,z:.08,sx:1.2,sy:1.2,sz:.01},patternSurfaces:[{slot:'banner',mode:'cloth',patternId:'omgurku_knot',scale:1,palette:['#b7a185','#315b67']}]},
-  ]; // Generic authored recipe is also used while the richer JSON is loading.
+    hangingSignSupportPart(),
+    {id:'banner-cloth',kind:'banner',name:'Wind banner',bannerWindStrength:.1,transform:{x:-.0863,y:1.0539,z:0,rx:0,ry:0,rz:0,sx:.7,sy:1.1922,sz:.01},patternSurfaces:[{slot:'banner',mode:'cloth',patternId:'omgurku_knot',scale:1,palette:['#b7a185','#315b67']}]}, // Replaces the sign and ropes; cloth top is flush with the shared beam underside at Y=1.65.
+  ];
 
   window.ProceduralFurniture = {
+    hangingSignSupportPart,
     buildFurnitureGroup,
     buildPartMesh,
     makePartMaterial,

@@ -151,7 +151,9 @@ const pattern={slot:'carpet',mode:'cloth',selector:'top',patternId:'rune-a',pale
   const editorState = {parts:[authorPart]},surface={id:'editor-rug:surface:top',partId:'editor-rug',localNormal:new Vector3(0,1,0),localCentroid:new Vector3(0,.05,0),faceIndices:[0,1]}; // Canonical base-editor selection fixture.
   let windowMarks=0; // Verifies glass authoring invokes the actual exported daylight-author API.
   let modalOptions=null; // Captures the production author() wiring into PatternAuthoring rather than testing an unattached helper.
-  const editorWindow = {RepoPatternLibrary:{preloadEditable:async()=>{},listCached:()=>[],getCachedEditableById:()=>null},PatternAuthoring:{openEditor:options=>{modalOptions=options;}},FurniturePatternSurfaces:api, FurnitureDaylightWindowAuthor:{markSelectedAsWindow(){windowMarks++;}}};
+  const presetWindow={}; // Load the same catalog consumed by the actual preset handler.
+  vm.runInNewContext(fs.readFileSync('docs/js/procedural-furniture.js','utf8'),{window:presetWindow,THREE:{TextureLoader:class {}}});
+  const editorWindow = {ProceduralFurniture:presetWindow.ProceduralFurniture,RepoPatternLibrary:{preloadEditable:async()=>{},listCached:()=>[],getCachedEditableById:()=>null},PatternAuthoring:{openEditor:options=>{modalOptions=options;}},FurniturePatternSurfaces:api, FurnitureDaylightWindowAuthor:{markSelectedAsWindow(){windowMarks++;}}};
   const editorDocument = {createElement:()=>({style:{},appendChild(){},remove(){}}),getElementById:element}; // UI controls use the same IDs as the production author extension.
   let previewRenders=0,previewDisposed=0,contextLosses=0,controlsDisposed=0,observerDisconnected=0; // Isolated renderer and interaction resources must be released exactly once.
   class PreviewRenderer {constructor(){this.domElement={style:{}};}setPixelRatio(){}setSize(){}render(){previewRenders++;}dispose(){previewDisposed++;}forceContextLoss(){contextLosses++;}}
@@ -164,7 +166,7 @@ const pattern={slot:'carpet',mode:'cloth',selector:'top',patternId:'rune-a',pale
   Object.assign(THREE,{WebGLRenderer:PreviewRenderer,Scene:PreviewScene,Box3:PreviewBounds,Color:PreviewColor});
   mesh.userData.type='part';mesh.userData.id=authorPart.id; // Real editor meshes use this selection identity.
   const previewScene=new PreviewScene(); // Lighting can be inherited without copying avatars or selection gizmos.
-  vm.runInNewContext(fs.readFileSync('docs/tools/furniture-avatar-author/furniture-patterns.js','utf8'),{window:editorWindow,document:editorDocument,THREE,state:editorState,selectedSurface:()=>surface,selectedPart:()=>authorPart,root:mesh,scene:previewScene,camera:previewCamera,renderer:{},orbit:{target:new Vector3()},OrbitControls:PreviewControls,ResizeObserver:PreviewObserver,rebuildFurnitureMeshes(){},rebuildAll(){},queueUndoHistory(){},log(){}});
+  vm.runInNewContext(fs.readFileSync('docs/tools/furniture-avatar-author/furniture-patterns.js','utf8'),{window:editorWindow,document:editorDocument,THREE,state:editorState,selectedSurface:()=>surface,selectedPart:()=>authorPart,root:mesh,scene:previewScene,camera:previewCamera,renderer:{},orbit:{target:new Vector3()},OrbitControls:PreviewControls,ResizeObserver:PreviewObserver,rebuildFurnitureMeshes(){},rebuildAll(){},queueUndoHistory(){},log(){},clearFurniture(){editorState.parts=[];editorState.pieceAnimations=[];},pushPart(kind,raw){const part={kind,...raw};editorState.parts.push(part);return part;},applyEntrySurfaceDefaults(){},syncControlsFromState(){},frameFurniture(){},setEditorMode(){}});
   editorWindow.FurniturePatternAuthor.refresh();element('fpMode').value='glass';element('fpApply').onclick();
   assert.equal(authorPart.patternSurfaces.length,1,'editing a default face slot must not create an overlapping duplicate');
   assert.equal(authorPart.patternSurfaces[0].mode,'glass');assert.equal(authorPart.patternSurfaces[0].opacity,.8);assert.equal(windowMarks,1);
@@ -177,5 +179,7 @@ const pattern={slot:'carpet',mode:'cloth',selector:'top',patternId:'rune-a',pale
   mounted.dispose();mounted.dispose();
   assert.equal(previewDisposed,1);assert.equal(contextLosses,1);assert.equal(controlsDisposed,1);assert.equal(observerDisconnected,1);
   assert(!originalMaterial.disposed&&!originalGeometry.disposed,'source furniture resources must survive preview close');
+  editorState.tileBase={};editorState.pieceAnimations=[{connectors:[{}]}];element('fpBanner').onclick();
+  assert.equal(editorState.parts.length,2);assert.equal(editorState.pieceAnimations.length,0,'loading the banner preset must remove prior sign ropes/rigid animation');assert.equal(editorState.parts[0].kind,'beam');assert.equal(editorState.parts[1].kind,'banner');assert.equal(editorState.selectedId,editorState.parts[1].id);
   console.log('Furniture pattern normalization, clipping, scale, cache, overrides, wind, ruin unlocks and daylight integration passed.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

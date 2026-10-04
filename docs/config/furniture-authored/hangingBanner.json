@@ -8,32 +8,28 @@
   },
   "parts": [
     {
-      "id": "banner-post",
-      "kind": "box",
-      "name": "Banner post",
-      "color": "#8b6540",
-      "transform": {
-        "x": -0.7,
-        "y": 1.05,
-        "z": 0,
-        "sx": 0.1,
-        "sy": 2.1,
-        "sz": 0.12
-      }
-    },
-    {
-      "id": "banner-beam",
-      "kind": "box",
-      "name": "Banner beam",
-      "color": "#8b6540",
+      "id": "hanging_sign_post",
+      "kind": "beam",
+      "name": "Horizontal Sign Post",
+      "color": "#60452c",
+      "materialRole": "wood",
+      "materialTexture": "carved_smooth.png",
       "transform": {
         "x": 0,
-        "y": 2.1,
+        "y": 1.72,
         "z": 0,
-        "sx": 1.4,
-        "sy": 0.1,
-        "sz": 0.12
-      }
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 1.25,
+        "sy": 0.14,
+        "sz": 0.14
+      },
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "wonkiness": 0.01
     },
     {
       "id": "banner-cloth",
@@ -41,11 +37,14 @@
       "name": "Wind banner",
       "bannerWindStrength": 0.1,
       "transform": {
-        "x": 0,
-        "y": 1.45,
-        "z": 0.08,
-        "sx": 1.2,
-        "sy": 1.2,
+        "x": -0.0863,
+        "y": 1.0539,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.7,
+        "sy": 1.1922,
         "sz": 0.01
       },
       "patternSurfaces": [
