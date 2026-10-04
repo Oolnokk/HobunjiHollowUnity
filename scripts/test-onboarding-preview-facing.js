@@ -30,7 +30,7 @@ queued.shift()();
 const renderer = new Renderer(); // Wrapped renderer exercised without a GPU.
 const camera = { isCamera: true, position: new Vector(0, 2, -3), quaternion: new Vector(), lookAt() {}, updateMatrixWorld() {} }; // Starts on a different side to check pose restoration.
 const cameraYaw = Math.atan2(1.55, 2.75); // Actual camera azimuth used to determine which face is visible.
-const turn = 10 * Math.PI / 180; // Intended subtle turn relative to the camera.
+const turn = (10 + 90) * Math.PI / 180; // Requested additional quarter-turn plus the existing subtle resting turn.
 function renderRoot(baseline, drag = 0, fail = false) {
   const root = { rotation: { y: baseline + drag }, userData: { onboardingRestYaw: baseline }, updateMatrixWorld() {} }; // Simulates any root's explicit initial yaw and later drag delta.
   const scene = { root, fail, getObjectByName: () => root }; // Matches the creator scene lookup.
@@ -44,11 +44,7 @@ function renderRoot(baseline, drag = 0, fail = false) {
 }
 for (const baseline of [-0.18, 0, Math.PI, -Math.PI]) {
   const yaw = renderRoot(baseline);
-  const poses = JSON.parse(fs.readFileSync('docs/config/combat/weapon-idle-stances.json', 'utf8')).stances; // Authored weapon body turns must keep the front visible from the starting camera.
-  for (const pose of Object.values(poses)) {
-    const bodyYaw = Number(pose.bodyYaw || 0) * Math.PI / 180; // Runtime weapon stance, preserved by the composition hook.
-    assert.ok(Math.cos(yaw + bodyYaw - cameraYaw) > 0, 'starting weapon stance must face the camera');
-  }
+  assert.ok(Math.abs(yaw - cameraYaw - turn) < 1e-10, 'starting rotation must include exactly the requested additional 90 degrees');
 }
 renderRoot(-0.18, 0.6);
 renderRoot(-0.18, Math.PI);
@@ -57,4 +53,4 @@ listeners.hobunjiPlayerReady();
 const untouched = { rotation: { y: 2 }, userData: {} }; // After handoff gameplay renders must receive their original orientation.
 renderer.render({ root: untouched }, camera);
 assert.equal(observations.at(-1).yaw, 2);
-console.log('creator facing: camera-relative front, stance parity, drag, failure restoration and teardown passed');
+console.log('creator facing: additional 90-degree turn, drag, failure restoration and teardown passed');

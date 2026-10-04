@@ -1,4 +1,4 @@
-// Character-creator composition: exact 10° resting turn and a Mao'ao-mid-body camera eye line.
+// Character-creator composition: quarter-turn facing correction, 10° resting turn, and a level mid-body camera.
 (() => {
   'use strict';
 
@@ -7,7 +7,8 @@
 
   const PREVIEW_ROOT_NAME = 'OnboardingCharacterPreviewRoot'; // Unique scene node created by the 3D onboarding redesign.
   const LIFE_PATCH_ID = 'hobunjiOnboardingCharacterCreationLifePreview'; // Exposes the current avatar model for face-view anchoring.
-  const TARGET_PREVIEW_YAW_DEG = 10; // Turns the resting preview five degrees back from the earlier +15° composition.
+  const TARGET_PREVIEW_YAW_DEG = 10; // Retains the subtle resting turn after the requested facing correction.
+  const PREVIEW_FACING_CORRECTION_DEG = 90; // Adds the requested quarter-turn to character creation only.
   const MAO_AO_BASE_MODEL_HEIGHT = 0.9; // Runtime PNG-plane fallback width/height used by the creator when config is unavailable.
   const MAO_AO_MALE_RUNTIME_Y = 1.125; // Canonical Full Character Scale Y for Mao'ao male; used only as a fallback.
   const FACE_NECK_OFFSET = 0.13; // Matches the existing species-aware face-view center above the neck joint.
@@ -40,7 +41,7 @@
     if (!root?.rotation) return 0;
     const restYaw = Number(root.userData?.onboardingRestYaw); // Explicit resting rotation; never inferred from a temporary render or a user's drag.
     const baseline = Number.isFinite(restYaw) ? restYaw : FALLBACK_REST_YAW; // Retains drag deltas even when composition installs after the first interaction.
-    return Math.atan2(CAMERA_X, CAMERA_Z) + deg(TARGET_PREVIEW_YAW_DEG) - baseline;
+    return Math.atan2(CAMERA_X, CAMERA_Z) + deg(TARGET_PREVIEW_YAW_DEG + PREVIEW_FACING_CORRECTION_DEG) - baseline;
   }
 
   function applyCamera(camera) {
@@ -146,7 +147,8 @@
     const status = window.HOBUNJI_ONBOARDING_REDESIGN_STATUS;
     if (status && typeof status === 'object') {
       status.previewRestYawDeg = TARGET_PREVIEW_YAW_DEG;
-      status.previewFacingBasis = 'front, relative to preview camera'; // Existing in-page diagnostics describe the corrected resting orientation.
+      status.previewFacingBasis = 'camera-relative, +90 degree correction';
+      status.previewFacingCorrectionDeg = PREVIEW_FACING_CORRECTION_DEG; // Existing in-page diagnostics describe the corrected resting orientation.
       status.cameraEyeBasis = "mao-ao male mid-body";
       status.cameraEyeY = maoAoMidBodyY();
       status.cameraTopDownAngle = 0;
@@ -163,6 +165,7 @@
 
   window[PATCH_ID] = Object.freeze({
     targetYawDeg: TARGET_PREVIEW_YAW_DEG,
+    facingCorrectionDeg: PREVIEW_FACING_CORRECTION_DEG,
     maoAoMidBodyY,
     get rendererWrapped() { return rendererWrapped; },
     get active() { return active; },
