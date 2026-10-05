@@ -1,87 +1,40 @@
 from pathlib import Path
-import json
 
-
-def replace_once(text, old, new, label):
-    if old not in text:
-        raise SystemExit(f'{label} target not found')
-    return text.replace(old, new, 1)
-
-# Restore authored page timings, keep only intra-slide reveal delays at 8s,
-# and add the single intended black inter-slide hold after the proverb.
-config_path = Path('docs/config/loading-screens.json')
-data = json.loads(config_path.read_text())
-data['version'] = max(8, int(data.get('version') or 0))
-intro = next(entry for entry in data['entries'] if entry.get('id') == 'world-introduction')
-intro['stages'][0]['minimumSeconds'] = 4
-intro['stages'][1]['minimumSeconds'] = 5
-intro['stages'][2]['minimumSeconds'] = 4
-intro['stages'][3]['minimumSeconds'] = 6
-page_mins = [4, 4, 5, 5, 4, 12.5, 6, 3.5, 5.5]
-pages = [page for stage in intro['stages'] for page in stage.get('pages', [stage])]
-for page, minimum in zip(pages, page_mins):
-    page['minimumSeconds'] = minimum
-    for reveal in page.get('delayedReveals', []):
-        reveal['afterSeconds'] = 8
-pages[2]['delayedReveals'][0]['text'] = '\nOh Breath...'
-maxim = pages[5]
-maxim['textColor'] = '#d6b76b'
-maxim['bold'] = True
-maxim['afterPageSeconds'] = 10
-maxim['delayedReveals'][0]['text'] = '\n\nare those that only the lost may find'
-config_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + '\n')
-
-# Make the wind session expose a promise that resolves only on actual media
-# playback, rather than when play() was merely requested.
-audio_path = Path('docs/js/audio-system.js')
-audio = audio_path.read_text()
-old = """    if (wind) { wind.loop = true; wind.volume = 1; wind.preload = 'auto'; wind.dataset.environmentalReverb = 'off'; }\n    let finished = false, lastError = null; // Exposed in the existing intro diagnostics; idempotent cleanup handles repeated cancellation.\n    const session = {\n      retry() { if (!finished && wind?.paused) { try { Promise.resolve(wind.play()).catch(error => { lastError = String(error); }); } catch (error) { lastError = String(error); } } },\n      finish() { if (finished) return; finished = true; wind?.pause(); if (hadEnabled) config.enabled = enabled; else delete config.enabled; resumeMusic?.(); if (resumeContext) context.resume?.().catch?.(() => {}); window.HobunjiAmbientBgs?.updateNow?.(); if (introductionMix === session) introductionMix = null; },\n      debug: () => ({ wind: wind?.src, playing: !!wind && !wind.paused, lastError, latestChange: 'Introduction mutes gameplay sound/music and plays the violent wind loop.' }),\n    };\n"""
-new = """    if (wind) { wind.loop = true; wind.volume = 1; wind.preload = 'auto'; wind.dataset.environmentalReverb = 'off'; }\n    let finished = false, lastError = null, windStarted = false; // Exposed in the existing intro diagnostics; idempotent cleanup handles repeated cancellation.\n    let resolveStarted; // Used by the narration layer so no words fade in before the wind is genuinely playing.\n    const started = new Promise(resolve => { resolveStarted = resolve; });\n    const markWindStarted = () => {\n      if (windStarted) return;\n      windStarted = true;\n      resolveStarted?.(true);\n    };\n    if (wind?.addEventListener) wind.addEventListener('playing', markWindStarted, { once: true });\n    else if (!wind) markWindStarted(); // Headless/no-media environments must not strand the introduction behind an impossible audio event.\n    const session = {\n      started,\n      retry() {\n        if (finished || !wind?.paused) return;\n        try {\n          const playRequest = wind.play();\n          if (!wind.addEventListener) Promise.resolve(playRequest).then(markWindStarted).catch(error => { lastError = String(error); });\n          else Promise.resolve(playRequest).catch(error => { lastError = String(error); });\n        } catch (error) { lastError = String(error); }\n      },\n      finish() { if (finished) return; finished = true; if (!windStarted) resolveStarted?.(false); wind?.pause(); if (hadEnabled) config.enabled = enabled; else delete config.enabled; resumeMusic?.(); if (resumeContext) context.resume?.().catch?.(() => {}); window.HobunjiAmbientBgs?.updateNow?.(); if (introductionMix === session) introductionMix = null; },\n      debug: () => ({ wind: wind?.src, playing: !!wind && !wind.paused, windStarted, lastError, latestChange: 'Introduction mutes gameplay sound/music, starts the violent wind loop, and exposes its real playing event so narration can wait for audible wind.' }),\n    };\n"""
-audio = replace_once(audio, old, new, 'introduction wind session')
-audio_path.write_text(audio)
-
-# Correct runtime timing semantics: 8 seconds is only the floor for delayed
-# text inside one slide. Ordinary page durations remain authored values.
-runtime_path = Path('docs/js/loading-screen-runtime.js')
-runtime = runtime_path.read_text()
-runtime = replace_once(
-    runtime,
-    "const MIN_STORY_BEAT_SECONDS = 8; // Used as the hard floor between opening narration changes, including delayed reveals and Continue availability.",
-    "const MIN_INTRA_SLIDE_DELAY_SECONDS = 8; // Used only by delayed text within one opening slide; ordinary page holds keep their authored durations.",
-    'intra-slide constant',
-)
-runtime = replace_once(
-    runtime,
-    "    let pageTimers = []; // Delayed line reveals are cancelled whenever the page, session, or opening changes.\n",
-    "    let pageTimers = []; // Delayed line reveals are cancelled whenever the page, session, or opening changes.\n    let pageVisiblePromise = Promise.resolve(); // First-page timing starts only once the violent wind has actually begun playing.\n",
-    'page visible promise',
-)
-old = """    const showPage = page => {\n      clearPageTimers();\n      startedAt = nowMs();\n      ready = false;\n      const delayed = renderPageCopy(page);\n      stageText.style.opacity = '0';\n      void stageText.offsetWidth; // Force the hidden first frame so assigning opacity 1 below reliably animates on mobile browsers.\n      stageText.style.opacity = '1';\n      continueButton.disabled = true;\n      continueButton.style.opacity = '0';\n      continueButton.style.pointerEvents = 'none';\n      continueButton.setAttribute?.('aria-hidden', 'true');\n      for (const { reveal, node } of delayed) {\n        const delaySeconds = Math.max(MIN_STORY_BEAT_SECONDS, Number(reveal?.afterSeconds) || 0);\n        const timer = setTimeout(() => {\n          if (cancelled) return;\n          node.setAttribute?.('aria-hidden', 'false');\n          node.style.opacity = '1';\n        }, delaySeconds * 1000);\n        pageTimers.push(timer);\n      }\n      state.introductionStage = stageIndex + 1;\n      root.focus?.({ preventScroll: true });\n    };\n"""
-new = """    const showPage = page => {\n      clearPageTimers();\n      startedAt = 0;\n      ready = false;\n      const delayed = renderPageCopy(page);\n      stageText.style.opacity = '0';\n      stageText.style.color = String(page?.textColor || '#fff'); // Allows authored emphasis pages, such as the proverb, without HTML in config.\n      stageText.style.fontWeight = page?.bold ? '700' : '400';\n      continueButton.disabled = true;\n      continueButton.style.opacity = '0';\n      continueButton.style.pointerEvents = 'none';\n      continueButton.setAttribute?.('aria-hidden', 'true');\n      const audioGate = introAudio?.started || Promise.resolve(true); // The opening remains black until the violent wind reaches its real playing event.\n      pageVisiblePromise = Promise.race([cancellation, Promise.resolve(audioGate)]).then(() => {\n        if (cancelled) return;\n        startedAt = nowMs();\n        void stageText.offsetWidth; // Force the hidden first frame so assigning opacity 1 below reliably animates on mobile browsers.\n        stageText.style.opacity = '1';\n        for (const { reveal, node } of delayed) {\n          const delaySeconds = Math.max(MIN_INTRA_SLIDE_DELAY_SECONDS, Number(reveal?.afterSeconds) || 0);\n          const timer = setTimeout(() => {\n            if (cancelled) return;\n            node.setAttribute?.('aria-hidden', 'false');\n            node.style.opacity = '1';\n          }, delaySeconds * 1000);\n          pageTimers.push(timer);\n        }\n      });\n      state.introductionStage = stageIndex + 1;\n      root.focus?.({ preventScroll: true });\n    };\n"""
-runtime = replace_once(runtime, old, new, 'showPage audio gate')
-old = """    const waitForPageInput = async (page, requiredWork) => {\n      const authoredReveals = Array.isArray(page?.delayedReveals) ? page.delayedReveals : [];\n      const delayedTail = Math.max(0, ...authoredReveals.map(reveal => Math.max(MIN_STORY_BEAT_SECONDS, Number(reveal?.afterSeconds) || 0))); // Every delayed line waits at least eight seconds before beginning its fade.\n      const authoredMinimum = Math.max(MIN_STORY_BEAT_SECONDS, Number(page?.minimumSeconds) || Number(stages[stageIndex]?.minimumSeconds) || 0);\n      const minimumSeconds = delayedTail > 0 ? Math.max(authoredMinimum, delayedTail + MIN_STORY_BEAT_SECONDS) : authoredMinimum; // Continue waits another full beat after the final delayed line instead of appearing alongside it.\n      const minimum = minimumSeconds * 1000;\n"""
-new = """    const waitForPageInput = async (page, requiredWork) => {\n      await pageVisiblePromise; // A page's clock does not start while the screen is still waiting for audible wind.\n      const authoredReveals = Array.isArray(page?.delayedReveals) ? page.delayedReveals : [];\n      const delayedTail = Math.max(0, ...authoredReveals.map(reveal => Math.max(MIN_INTRA_SLIDE_DELAY_SECONDS, Number(reveal?.afterSeconds) || 0))); // Eight seconds applies only to text revealed inside the current slide.\n      const authoredMinimum = Math.max(0, Number(page?.minimumSeconds) || Number(stages[stageIndex]?.minimumSeconds) || 0);\n      const minimumSeconds = Math.max(authoredMinimum, delayedTail + (delayedTail > 0 ? INTRO_FADE_MS / 1000 : 0)); // Continue can appear as soon as the authored page hold and final intra-slide fade are complete.\n      const minimum = minimumSeconds * 1000;\n"""
-runtime = replace_once(runtime, old, new, 'page timing semantics')
-old = """          await waitForPageInput(pages[pageIndex], isLastPage ? requiredWork : Promise.resolve()); // Only the last page of the loading phase inherits its asset-readiness gate.\n        }\n"""
-new = """          const page = pages[pageIndex];\n          await waitForPageInput(page, isLastPage ? requiredWork : Promise.resolve()); // Only the last page of the loading phase inherits its asset-readiness gate.\n          const afterPageSeconds = Math.max(0, Number(page?.afterPageSeconds) || 0);\n          if (afterPageSeconds > 0) await Promise.race([cancellation, new Promise(resolve => setTimeout(resolve, afterPageSeconds * 1000))]); // Authored black gap between slides; currently used once after the proverb.\n        }\n"""
-runtime = replace_once(runtime, old, new, 'inter-slide delay')
-old = "latestChange: 'Opening narration pages and Continue prompts now fade in/out; delayed lines occupy their final layout from page start, fade in after at least eight seconds, and Continue waits at least another eight seconds after the last delayed reveal.'"
-new = "latestChange: 'Opening narration waits for audible wind before first paint; eight seconds applies only to intra-slide reveals, the proverb is bold/bronze, and its authored ten-second black inter-slide pause precedes the carriage crash.'"
-runtime = replace_once(runtime, old, new, 'debug latest change')
-runtime_path.write_text(runtime)
-
-# Update regression expectations and exercise the first-page audio gate.
-test_path = Path('scripts/test-introduction-loading-and-framing.js')
-test = test_path.read_text()
-test = replace_once(test, "const game = read('docs/game.js'), loader = read('docs/js/loading-screen-runtime.js');", "const game = read('docs/game.js'), loader = read('docs/js/loading-screen-runtime.js'), audio = read('docs/js/audio-system.js');", 'test audio source')
-old = """assert.equal(maximPage.delayedReveals?.[0]?.afterSeconds, 8);\nassert.equal(maximPage.minimumSeconds - maximPage.delayedReveals[0].afterSeconds, 10, 'maxim remains alone for ten seconds after its delayed second line appears');\nassert(maximPage.delayedReveals[0].text.includes('**only the lost may find**'), 'lost-may-find phrase keeps authored emphasis');\nassert(loader.includes('const stagePages = stage =>'), 'introduction runtime must support several visible pages inside one preload phase');\nassert(loader.includes('delayedReveals'), 'introduction runtime must preserve delayed line reveals');\nassert(storyPages.every(page => Number(page.minimumSeconds) >= 8), 'every visible opening page has an eight-second minimum beat');\nassert(storyPages.flatMap(page => page.delayedReveals || []).every(reveal => Number(reveal.afterSeconds) >= 8), 'every delayed reveal waits at least eight seconds');\nassert(loader.includes('const MIN_STORY_BEAT_SECONDS = 8'), 'runtime enforces the eight-second beat floor even for future authored pages');\n"""
-new = """assert.equal(maximPage.delayedReveals?.[0]?.afterSeconds, 8);\nassert.equal(maximPage.afterPageSeconds, 10, 'the original ten-second pause is a black inter-slide hold after the proverb');\nassert.equal(maximPage.bold, true, 'the whole proverb is bold');\nassert.equal(maximPage.textColor, '#d6b76b', 'the proverb uses a distinct bronze-gold color');\nassert.equal(maximPage.delayedReveals[0].text, '\\n\\nare those that only the lost may find', 'the second half of the proverb keeps its own delayed line');\nassert.equal(storyPages[2].delayedReveals?.[0]?.text, '\\nOh Breath...', 'Oh Breath keeps the authored ellipsis');\nassert(storyPages[2].text.endsWith('...'), 'the home/name line keeps its authored ellipsis');\nassert(storyPages[8].text.endsWith('...'), 'the hard-ground line keeps its authored ellipsis');\nassert(storyPages.some(page => Number(page.minimumSeconds) < 8), 'eight seconds is not a blanket inter-slide/page minimum');\nassert(loader.includes('const stagePages = stage =>'), 'introduction runtime must support several visible pages inside one preload phase');\nassert(loader.includes('delayedReveals'), 'introduction runtime must preserve delayed line reveals');\nassert(storyPages.flatMap(page => page.delayedReveals || []).every(reveal => Number(reveal.afterSeconds) >= 8), 'every intra-slide delayed reveal waits at least eight seconds');\nassert(loader.includes('const MIN_INTRA_SLIDE_DELAY_SECONDS = 8'), 'runtime enforces the eight-second floor only for intra-slide delayed text');\nassert(loader.includes('afterPageSeconds'), 'runtime supports the one authored inter-slide black pause');\nassert(loader.includes('introAudio?.started'), 'first-page visibility is gated on the introduction wind actually starting');\nassert(audio.includes("wind.addEventListener('playing', markWindStarted"), 'audio session resolves narration gating from the real playing event');\n"""
-test = replace_once(test, old, new, 'test top assertions')
-test = replace_once(test, "const runtimePreset={...preset,stages:preset.stages.map(stage=>({text:stage.text,minimumSeconds:8}))};", "const runtimePreset={...preset,stages:preset.stages.map(stage=>({text:stage.text,minimumSeconds:3}))};", 'runtime test minimum')
-old = """  const context={state,document:{createElement,body:{appendChild(){}},addEventListener:(name,fn)=>listeners.set(name,fn),removeEventListener:name=>listeners.delete(name)},window:{CharacterActionLocks:{acquire:()=>({release:()=>{unlocked=true;}})},ControllerInput:{subscribe:(name,fn)=>{subscriber=fn;return()=>{subscriber=null;};},setOwner(){}}},nowMs:()=>clock,setTimeout:(fn,delay)=>{timers.push({fn,at:clock+delay});},ensureConfigLoaded:async()=>({entries:[runtimePreset]}),ensureFontsLoaded:async()=>true,finalizeHide(){} };\n"""
-new = """  let releaseWind; const windStarted=new Promise(resolve=>{releaseWind=resolve;});\n  const context={state,document:{createElement,body:{appendChild(){}},addEventListener:(name,fn)=>listeners.set(name,fn),removeEventListener:name=>listeners.delete(name)},window:{AudioSystem:{beginIntroductionMix:()=>({started:windStarted,retry(){},finish(){},debug:()=>({})})},CharacterActionLocks:{acquire:()=>({release:()=>{unlocked=true;}})},ControllerInput:{subscribe:(name,fn)=>{subscriber=fn;return()=>{subscriber=null;};},setOwner(){}}},nowMs:()=>clock,setTimeout:(fn,delay)=>{timers.push({fn,at:clock+delay});},ensureConfigLoaded:async()=>({entries:[runtimePreset]}),ensureFontsLoaded:async()=>true,finalizeHide(){} };\n"""
-test = replace_once(test, old, new, 'runtime audio stub')
-old = """    let continued=false;\n    const done=session.complete(i===3?pendingAssets:undefined).then(()=>{continued=true;});\n    continueButton.events.get('click')();await Promise.resolve();assert.equal(continued,false,'early input cannot skip loading or minimum duration');\n    clock+=7999;assert.equal(timers[0].at,clock+1);\n    clock++;timers.shift().fn();for(let tick=0;tick<5;tick++)await Promise.resolve();\n"""
-new = """    let continued=false;\n    const done=session.complete(i===3?pendingAssets:undefined).then(()=>{continued=true;});\n    if(i===0){\n      assert.equal(stageText.style.opacity,'0','first words stay hidden before wind playback');\n      clock+=9000;for(let tick=0;tick<5;tick++)await Promise.resolve();\n      assert.equal(session.getDebug().ready,false,'page timer cannot finish before the wind begins');\n      releaseWind();for(let tick=0;tick<5;tick++)await Promise.resolve();\n      assert.equal(stageText.style.opacity,'1','first words fade in only after wind starts');\n    }\n    continueButton.events.get('click')();await Promise.resolve();assert.equal(continued,false,'early input cannot skip loading or minimum duration');\n    clock+=2999;assert.equal(timers[0].at,clock+1);\n    clock++;timers.shift().fn();for(let tick=0;tick<5;tick++)await Promise.resolve();\n"""
-test = replace_once(test, old, new, 'runtime timing/audio gate loop')
-test_path.write_text(test)
+path = Path('scripts/test-introduction-loading-and-framing.js')
+text = path.read_text()
+old = """    let continued=false;
+    const done=session.complete(i===3?pendingAssets:undefined).then(()=>{continued=true;});
+    if(i===0){
+      assert.equal(stageText.style.opacity,'0','first words stay hidden before wind playback');
+      clock+=9000;for(let tick=0;tick<5;tick++)await Promise.resolve();
+      assert.equal(session.getDebug().ready,false,'page timer cannot finish before the wind begins');
+      releaseWind();for(let tick=0;tick<5;tick++)await Promise.resolve();
+      assert.equal(stageText.style.opacity,'1','first words fade in only after wind starts');
+    }
+    continueButton.events.get('click')();await Promise.resolve();assert.equal(continued,false,'early input cannot skip loading or minimum duration');
+    clock+=2999;assert.equal(timers[0].at,clock+1);
+    clock++;timers.shift().fn();for(let tick=0;tick<5;tick++)await Promise.resolve();
+"""
+new = """    let continued=false;
+    const done=session.complete(i===3?pendingAssets:undefined).then(()=>{continued=true;});
+    const flushMicrotasks=async(count=12)=>{for(let tick=0;tick<count;tick++)await Promise.resolve();};
+    if(i===0){
+      assert.equal(stageText.style.opacity,'0','first words stay hidden before wind playback');
+      clock+=9000;await flushMicrotasks();
+      assert.equal(session.getDebug().ready,false,'page timer cannot finish before the wind begins');
+      assert.equal(timers.length,0,'no page-duration timer starts while waiting for audible wind');
+      releaseWind();await flushMicrotasks();
+      assert.equal(stageText.style.opacity,'1','first words fade in only after wind starts');
+    } else await flushMicrotasks();
+    continueButton.events.get('click')();await flushMicrotasks(2);assert.equal(continued,false,'early input cannot skip loading or minimum duration');
+    await flushMicrotasks();
+    const minimumAt=clock+3000;
+    const minimumTimerIndex=timers.findIndex(timer=>timer.at===minimumAt);
+    assert(minimumTimerIndex>=0,'authored three-second page timer is scheduled after the page becomes visible');
+    clock+=2999;await flushMicrotasks(2);assert.equal(session.getDebug().ready,false,'page stays gated until its authored duration elapses');
+    clock++;
+    const [minimumTimer]=timers.splice(minimumTimerIndex,1);minimumTimer.fn();await flushMicrotasks();
+"""
+if old not in text:
+    raise SystemExit('runtime loop target not found')
+path.write_text(text.replace(old, new, 1))
