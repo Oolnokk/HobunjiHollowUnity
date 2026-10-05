@@ -1,7 +1,7 @@
 'use strict';
 const assert = require('node:assert/strict'), fs = require('node:fs'), vm = require('node:vm');
 const read = path => fs.readFileSync(path, 'utf8'); // Exercise shipped functions with deterministic clocks and scene fixtures.
-const game = read('docs/game.js'), loader = read('docs/js/loading-screen-runtime.js');
+const game = read('docs/game.js'), loader = read('docs/js/loading-screen-runtime.js'), audio = read('docs/js/audio-system.js');
 const preset = JSON.parse(read('docs/config/loading-screens.json')).entries.find(e => e.id === 'world-introduction');
 assert.equal(preset.mode, 'introduction');
 assert.equal(preset.stages.length, 4, 'opening keeps four preload phases so rescue asset orchestration remains unchanged');
@@ -15,13 +15,21 @@ assert.equal(storyPages[8].delayedReveals?.[0]?.text, '\nand find yourself aslee
 const maximPage = storyPages.find(page => page.text === 'that the greatest things in this world of ours');
 assert(maximPage, 'lost-may-find maxim page is authored');
 assert.equal(maximPage.delayedReveals?.[0]?.afterSeconds, 8);
-assert.equal(maximPage.minimumSeconds - maximPage.delayedReveals[0].afterSeconds, 10, 'maxim remains alone for ten seconds after its delayed second line appears');
-assert(maximPage.delayedReveals[0].text.includes('**only the lost may find**'), 'lost-may-find phrase keeps authored emphasis');
+assert.equal(maximPage.afterPageSeconds, 10, 'the original ten-second pause is a black inter-slide hold after the proverb');
+assert.equal(maximPage.bold, true, 'the whole proverb is bold');
+assert.equal(maximPage.textColor, '#d6b76b', 'the proverb uses a distinct bronze-gold color');
+assert.equal(maximPage.delayedReveals[0].text, '\n\nare those that only the lost may find', 'the second half of the proverb keeps its own delayed line');
+assert.equal(storyPages[2].delayedReveals?.[0]?.text, '\nOh Breath...', 'Oh Breath keeps the authored ellipsis');
+assert(storyPages[2].text.endsWith('...'), 'the home/name line keeps its authored ellipsis');
+assert(storyPages[8].text.endsWith('...'), 'the hard-ground line keeps its authored ellipsis');
+assert(storyPages.some(page => Number(page.minimumSeconds) < 8), 'eight seconds is not a blanket inter-slide/page minimum');
 assert(loader.includes('const stagePages = stage =>'), 'introduction runtime must support several visible pages inside one preload phase');
 assert(loader.includes('delayedReveals'), 'introduction runtime must preserve delayed line reveals');
-assert(storyPages.every(page => Number(page.minimumSeconds) >= 8), 'every visible opening page has an eight-second minimum beat');
-assert(storyPages.flatMap(page => page.delayedReveals || []).every(reveal => Number(reveal.afterSeconds) >= 8), 'every delayed reveal waits at least eight seconds');
-assert(loader.includes('const MIN_STORY_BEAT_SECONDS = 8'), 'runtime enforces the eight-second beat floor even for future authored pages');
+assert(storyPages.flatMap(page => page.delayedReveals || []).every(reveal => Number(reveal.afterSeconds) >= 8), 'every intra-slide delayed reveal waits at least eight seconds');
+assert(loader.includes('const MIN_INTRA_SLIDE_DELAY_SECONDS = 8'), 'runtime enforces the eight-second floor only for intra-slide delayed text');
+assert(loader.includes('afterPageSeconds'), 'runtime supports the one authored inter-slide black pause');
+assert(loader.includes('introAudio?.started'), 'first-page visibility is gated on the introduction wind actually starting');
+assert(audio.includes("wind.addEventListener('playing', markWindStarted"), 'audio session resolves narration gating from the real playing event');
 assert(loader.includes('transition:opacity ${INTRO_FADE_MS}ms ease'), 'narrative and delayed spans use opacity fades');
 assert(loader.includes('Promise.all([fadeTo(continueButton, 0), fadeTo(stageText, 0)])'), 'Continue and page copy fade out before replacement');
 assert(loader.includes("node.style.opacity = '1'"), 'delayed copy fades in from pre-laid-out hidden spans');
@@ -114,8 +122,9 @@ async function main() {
   const timers=[], listeners=new Map(), elements=[]; // Distinct DOM nodes exercise button and status transitions rather than a whole-screen click surrogate.
   const createElement=()=>{ const events=new Map(); let html=''; const el={style:{},children:[],events,textContent:'',offsetWidth:1,setAttribute(){},addEventListener:(name,fn)=>events.set(name,fn),append(...children){this.children.push(...children);},appendChild(child){this.children.push(child);return child;},remove:()=>{removed=true;},focus(){}}; Object.defineProperty(el,'innerHTML',{get(){return html;},set(value){html=String(value);if(value==='')this.children=[];}}); elements.push(el); return el; };
   const state={generation:1};
-  const runtimePreset={...preset,stages:preset.stages.map(stage=>({text:stage.text,minimumSeconds:8}))}; // Keep this deterministic clock test focused on one fresh-input gate per preload phase; authored multi-page structure is asserted above.
-  const context={state,document:{createElement,body:{appendChild(){}},addEventListener:(name,fn)=>listeners.set(name,fn),removeEventListener:name=>listeners.delete(name)},window:{CharacterActionLocks:{acquire:()=>({release:()=>{unlocked=true;}})},ControllerInput:{subscribe:(name,fn)=>{subscriber=fn;return()=>{subscriber=null;};},setOwner(){}}},nowMs:()=>clock,setTimeout:(fn,delay)=>{timers.push({fn,at:clock+delay});},ensureConfigLoaded:async()=>({entries:[runtimePreset]}),ensureFontsLoaded:async()=>true,finalizeHide(){} };
+  const runtimePreset={...preset,stages:preset.stages.map(stage=>({text:stage.text,minimumSeconds:3}))}; // Keep this deterministic clock test focused on one fresh-input gate per preload phase; authored multi-page structure is asserted above.
+  let releaseWind; const windStarted=new Promise(resolve=>{releaseWind=resolve;});
+  const context={state,document:{createElement,body:{appendChild(){}},addEventListener:(name,fn)=>listeners.set(name,fn),removeEventListener:name=>listeners.delete(name)},window:{AudioSystem:{beginIntroductionMix:()=>({started:windStarted,retry(){},finish(){},debug:()=>({})})},CharacterActionLocks:{acquire:()=>({release:()=>{unlocked=true;}})},ControllerInput:{subscribe:(name,fn)=>{subscriber=fn;return()=>{subscriber=null;};},setOwner(){}}},nowMs:()=>clock,setTimeout:(fn,delay)=>{timers.push({fn,at:clock+delay});},ensureConfigLoaded:async()=>({entries:[runtimePreset]}),ensureFontsLoaded:async()=>true,finalizeHide(){} };
   vm.runInNewContext(loader.slice(loader.indexOf('  async function beginIntroduction('),loader.indexOf('  function callbackSource('))+'\napi=beginIntroduction;',context);
   const session=await context.api();
   const [root,stageText,percentText,continueButton]=elements;
@@ -127,8 +136,15 @@ async function main() {
     assert.equal(continueButton.style.opacity,'0');
     let continued=false;
     const done=session.complete(i===3?pendingAssets:undefined).then(()=>{continued=true;});
+    if(i===0){
+      assert.equal(stageText.style.opacity,'0','first words stay hidden before wind playback');
+      clock+=9000;for(let tick=0;tick<5;tick++)await Promise.resolve();
+      assert.equal(session.getDebug().ready,false,'page timer cannot finish before the wind begins');
+      releaseWind();for(let tick=0;tick<5;tick++)await Promise.resolve();
+      assert.equal(stageText.style.opacity,'1','first words fade in only after wind starts');
+    }
     continueButton.events.get('click')();await Promise.resolve();assert.equal(continued,false,'early input cannot skip loading or minimum duration');
-    clock+=7999;assert.equal(timers[0].at,clock+1);
+    clock+=2999;assert.equal(timers[0].at,clock+1);
     clock++;timers.shift().fn();for(let tick=0;tick<5;tick++)await Promise.resolve();
     if(i===3){assert.equal(session.getDebug().ready,false,'the final page alone still waits for required assets');releaseAssets();for(let tick=0;tick<8;tick++)await Promise.resolve();}
     assert.equal(session.getDebug().ready,true);

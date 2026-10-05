@@ -710,7 +710,7 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
     root.setAttribute('aria-label', 'Introduction');
     root.tabIndex = -1;
     const INTRO_FADE_MS = 900; // Used by narrative pages and Continue prompts so every opening-text change crossfades instead of snapping.
-    const MIN_STORY_BEAT_SECONDS = 8; // Used as the hard floor between opening narration changes, including delayed reveals and Continue availability.
+    const MIN_INTRA_SLIDE_DELAY_SECONDS = 8; // Used only by delayed text within one opening slide; ordinary page holds keep their authored durations.
     const stageText = document.createElement('div'); // Authored opening pages keep delayed lines laid out invisibly until their fade-in beat.
     stageText.style.cssText = `opacity:0;transition:opacity ${INTRO_FADE_MS}ms ease`;
     const percentText = document.createElement('div'); // Quiet progress stays at the bottom, separate from centered story copy.
@@ -729,6 +729,7 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
     let stages = [], startedAt = 0, stageIndex = -1, pageIndex = 0, ready = false, cancelled = false; // Stage/page clocks and input gate never reuse old input.
     let continueStage = null, rejectStage = null, unsubscribe = null; // Input subscription and outstanding page wait are released on success/error.
     let pageTimers = []; // Delayed line reveals are cancelled whenever the page, session, or opening changes.
+    let pageVisiblePromise = Promise.resolve(); // First-page timing starts only once the violent wind has actually begun playing.
     let rejectCancellation; // Cancellation also releases a final page still awaiting asset preparation.
     const cancellation = new Promise((_, reject) => { rejectCancellation = reject; });
     cancellation.catch(() => {});
@@ -773,25 +774,32 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
     };
     const showPage = page => {
       clearPageTimers();
-      startedAt = nowMs();
+      startedAt = 0;
       ready = false;
       const delayed = renderPageCopy(page);
       stageText.style.opacity = '0';
-      void stageText.offsetWidth; // Force the hidden first frame so assigning opacity 1 below reliably animates on mobile browsers.
-      stageText.style.opacity = '1';
+      stageText.style.color = String(page?.textColor || '#fff'); // Allows authored emphasis pages, such as the proverb, without HTML in config.
+      stageText.style.fontWeight = page?.bold ? '700' : '400';
       continueButton.disabled = true;
       continueButton.style.opacity = '0';
       continueButton.style.pointerEvents = 'none';
       continueButton.setAttribute?.('aria-hidden', 'true');
-      for (const { reveal, node } of delayed) {
-        const delaySeconds = Math.max(MIN_STORY_BEAT_SECONDS, Number(reveal?.afterSeconds) || 0);
-        const timer = setTimeout(() => {
-          if (cancelled) return;
-          node.setAttribute?.('aria-hidden', 'false');
-          node.style.opacity = '1';
-        }, delaySeconds * 1000);
-        pageTimers.push(timer);
-      }
+      const audioGate = introAudio?.started || Promise.resolve(true); // The opening remains black until the violent wind reaches its real playing event.
+      pageVisiblePromise = Promise.race([cancellation, Promise.resolve(audioGate)]).then(() => {
+        if (cancelled) return;
+        startedAt = nowMs();
+        void stageText.offsetWidth; // Force the hidden first frame so assigning opacity 1 below reliably animates on mobile browsers.
+        stageText.style.opacity = '1';
+        for (const { reveal, node } of delayed) {
+          const delaySeconds = Math.max(MIN_INTRA_SLIDE_DELAY_SECONDS, Number(reveal?.afterSeconds) || 0);
+          const timer = setTimeout(() => {
+            if (cancelled) return;
+            node.setAttribute?.('aria-hidden', 'false');
+            node.style.opacity = '1';
+          }, delaySeconds * 1000);
+          pageTimers.push(timer);
+        }
+      });
       state.introductionStage = stageIndex + 1;
       root.focus?.({ preventScroll: true });
     };
@@ -815,10 +823,11 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
       if (frame.pressed?.has('Button0')) { frame.pressed.delete('Button0'); accept(); }
     }, 1000);
     const waitForPageInput = async (page, requiredWork) => {
+      await pageVisiblePromise; // A page's clock does not start while the screen is still waiting for audible wind.
       const authoredReveals = Array.isArray(page?.delayedReveals) ? page.delayedReveals : [];
-      const delayedTail = Math.max(0, ...authoredReveals.map(reveal => Math.max(MIN_STORY_BEAT_SECONDS, Number(reveal?.afterSeconds) || 0))); // Every delayed line waits at least eight seconds before beginning its fade.
-      const authoredMinimum = Math.max(MIN_STORY_BEAT_SECONDS, Number(page?.minimumSeconds) || Number(stages[stageIndex]?.minimumSeconds) || 0);
-      const minimumSeconds = delayedTail > 0 ? Math.max(authoredMinimum, delayedTail + MIN_STORY_BEAT_SECONDS) : authoredMinimum; // Continue waits another full beat after the final delayed line instead of appearing alongside it.
+      const delayedTail = Math.max(0, ...authoredReveals.map(reveal => Math.max(MIN_INTRA_SLIDE_DELAY_SECONDS, Number(reveal?.afterSeconds) || 0))); // Eight seconds applies only to text revealed inside the current slide.
+      const authoredMinimum = Math.max(0, Number(page?.minimumSeconds) || Number(stages[stageIndex]?.minimumSeconds) || 0);
+      const minimumSeconds = Math.max(authoredMinimum, delayedTail + (delayedTail > 0 ? INTRO_FADE_MS / 1000 : 0)); // Continue can appear as soon as the authored page hold and final intra-slide fade are complete.
       const minimum = minimumSeconds * 1000;
       await Promise.race([cancellation, Promise.all([requiredWork, new Promise(resolve => setTimeout(resolve, Math.max(0, minimum - (nowMs() - startedAt))))])]);
       if (cancelled) throw new Error('Introduction loading cancelled');
@@ -842,7 +851,10 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
         for (; pageIndex < pages.length; pageIndex += 1) {
           if (pageIndex > 0) showPage(pages[pageIndex]);
           const isLastPage = pageIndex === pages.length - 1;
-          await waitForPageInput(pages[pageIndex], isLastPage ? requiredWork : Promise.resolve()); // Only the last page of the loading phase inherits its asset-readiness gate.
+          const page = pages[pageIndex];
+          await waitForPageInput(page, isLastPage ? requiredWork : Promise.resolve()); // Only the last page of the loading phase inherits its asset-readiness gate.
+          const afterPageSeconds = Math.max(0, Number(page?.afterPageSeconds) || 0);
+          if (afterPageSeconds > 0) await Promise.race([cancellation, new Promise(resolve => setTimeout(resolve, afterPageSeconds * 1000))]); // Authored black gap between slides; currently used once after the proverb.
         }
         pageIndex = Math.max(0, pages.length - 1);
       },
@@ -856,7 +868,7 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
         if (state.introduction === session) { state.introduction = null; state.introductionStage = 0; finalizeHide(state.generation); }
       },
       cancel() { const error = new Error('Introduction loading cancelled'); rejectCancellation(error); rejectStage?.(error); session.finish(); },
-      getDebug: () => ({ audio: introAudio?.debug?.(), presetId, stage: stageIndex + 1, page: pageIndex + 1, pageCount: stagePages(stages[stageIndex]).length, ready, minimumSeconds: stagePages(stages[stageIndex])[pageIndex]?.minimumSeconds ?? stages[stageIndex]?.minimumSeconds, latestChange: 'Opening narration pages and Continue prompts now fade in/out; delayed lines occupy their final layout from page start, fade in after at least eight seconds, and Continue waits at least another eight seconds after the last delayed reveal.' }),
+      getDebug: () => ({ audio: introAudio?.debug?.(), presetId, stage: stageIndex + 1, page: pageIndex + 1, pageCount: stagePages(stages[stageIndex]).length, ready, minimumSeconds: stagePages(stages[stageIndex])[pageIndex]?.minimumSeconds ?? stages[stageIndex]?.minimumSeconds, latestChange: 'Opening narration waits for audible wind before first paint; eight seconds applies only to intra-slide reveals, the proverb is bold/bronze, and its authored ten-second black inter-slide pause precedes the carriage crash.' }),
     };
     state.introduction = session; // Claim foreground synchronously before config/fonts are fetched.
     try {
