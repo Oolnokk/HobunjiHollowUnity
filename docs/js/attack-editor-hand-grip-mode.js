@@ -21,7 +21,9 @@
   `;
 
   const firstPoseGroup = card.querySelector('#handFromToolPositionGroup') || card.querySelector('.poseGroup');
-  card.insertBefore(field, firstPoseGroup || null);
+  // Pose controls may be nested after sidebar reorganization. Insert beside
+  // the actual pose group rather than passing a grandchild to card.insertBefore.
+  (firstPoseGroup?.parentNode || card).insertBefore(field, firstPoseGroup || null);
 
   const select = document.getElementById('handGripModeSelect');
   const help = document.getElementById('handGripModeHelp');

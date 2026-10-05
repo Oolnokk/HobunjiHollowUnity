@@ -33,14 +33,18 @@ window.WeaponToolStances.init({
   toolMeshMap: {},
 });
 
+function poseChannels(pose) {
+  return Object.fromEntries(['x', 'y', 'z', 'pitch', 'yaw', 'bodyYaw', 'roll'].map(key => [key, pose[key]])); // Transform comparisons are independent of authored hand metadata.
+}
+
 function mirrored(pose) {
-  return { ...pose, x: -pose.x, yaw: -pose.yaw, bodyYaw: -pose.bodyYaw, roll: -pose.roll };
+  return { ...poseChannels(pose), x: -pose.x, yaw: -pose.yaw, bodyYaw: -pose.bodyYaw, roll: -pose.roll };
 }
 
 // The game applies dirSign to mirrored channels after preparation; reproduce
 // that final step here so assertions describe the visible endpoint poses.
 function visible(pose, dirSign) {
-  return dirSign === -1 ? mirrored(pose) : { ...pose };
+  return dirSign === -1 ? mirrored(pose) : poseChannels(pose);
 }
 
 const authoredSweep = {
@@ -86,6 +90,10 @@ for (const phase of ['windup', 'strike']) {
 
 {
   const regular = window.WeaponToolStances.prepareCombatOptions({ anim: 'sweep', dirSign: 1, pose: authoredSweep });
+  for (const phase of ['neutral', 'windup', 'strike']) {
+    assert.strictEqual(regular.pose[phase].dualWield.enabled, true);
+    assert.strictEqual(regular.pose[phase].secondaryGrip.enabled, phase !== 'neutral');
+  }
   assert.deepStrictEqual(visible(regular.pose.neutral, regular.dirSign), heavyPose);
   assert.deepStrictEqual(visible(regular.pose.returnNeutral, regular.dirSign), mirrored(heavyPose));
   assert.strictEqual(regular.pose.neutralMirrorSign, 1);
@@ -154,3 +162,11 @@ assert.match(source, /PREVIOUS_LIGHT_WEAPON_STANCE[\s\S]*y: -0\.08[\s\S]*isPrevi
 assert.match(idleStanceEditorSource, /hoeTool:\s*Object\.freeze\(\{ x: 0, y: 0, z: 0, pitch: 10\.31, yaw: 0, bodyYaw: 0, roll: -95 \}\)/, 'idle stance editor fallback must match the committed/runtime Hoe Tool stance rather than drifting to -90°');
 
 console.log('test-heavy-weapon-alternating-neutrals: ok');
+
+const independentPose = JSON.parse(JSON.stringify(authoredSweep)); // Authored opt-outs survive transform baking.
+independentPose.windup.dualWield = { enabled: false };
+independentPose.windup.secondaryGrip = { enabled: true, percent: 37 };
+const preparedIndependent = window.WeaponToolStances.prepareCombatOptions({ anim: 'sweep', pose: independentPose });
+assert.strictEqual(preparedIndependent.pose.windup.dualWield.enabled, false);
+assert.strictEqual(preparedIndependent.pose.windup.secondaryGrip.enabled, true);
+assert.strictEqual(preparedIndependent.pose.windup.secondaryGrip.percent, 37);

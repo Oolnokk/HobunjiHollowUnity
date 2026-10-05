@@ -18,6 +18,8 @@
   const MANUAL_MELEE_SPAN_PRESET = 'manual-handle-spans-20261004-v1'; // Updates the six inspected handle ranges in older saved drafts once.
   const MANUAL_MELEE_SPAN_TOOLS = new Set(['plainssword', 'bshuakauitl', 'fishingspear', 'pickshovel', 'hoe', 'hatchet']); // Limits that migration to the manually inspected weapons.
   const TWO_HAND_SPAN_PRESET = 'paired-hand-spans-20261004-v1'; // Migrates the six weapons to separate main/offhand ranges once.
+  const LONG_HAFT_GRIP_PRESET = 'long-haft-center-20261004-v1'; // Migrates the three measured long-haft weapons to their wood/tan-section centers once.
+  const LONG_HAFT_GRIP_TOOLS = new Set(['bshuakauitl', 'fishingspear', 'pickshovel']); // Keeps the measured-center migration from touching other authored weapons.
   const PRIMARY_ROTATION_PRESET = 'hatchet-primary-xy-rotation-20260921-v3'; // Hatchet is the canonical right-hand grip example: propagate its X, Y, and rotation to every other tool, never its item-specific Z.
   const PRE_AUTHORED_RANGED_GRIP_PRESET = 'melee-ranged-split-20260920-v4-editor-authored'; // Previous committed split cloned melee into ranged; used only to migrate untouched old dagger defaults.
   const PRE_END_FLIP_DAGGER_RANGED_PRESET = 'melee-ranged-split-20260920-v5-authored-values'; // Previous authored dagger used ranged Z -0.30 before Tool End Flip's visible-axis correction changed the needed hand target.
@@ -53,6 +55,7 @@
     secondaryGripPreset: SECONDARY_GRIP_PRESET,
     manualMeleeSpanPreset: MANUAL_MELEE_SPAN_PRESET,
     twoHandSpanPreset: TWO_HAND_SPAN_PRESET,
+    longHaftGripPreset: LONG_HAFT_GRIP_PRESET,
     primaryRotationPreset: PRIMARY_ROTATION_PRESET,
     rangedGripPreset: RANGED_GRIP_PRESET,
     heightMultiplierPreset: HEIGHT_MULTIPLIER_PRESET,
@@ -79,21 +82,21 @@
       },
       bshuakauitl: {
         toolScale: 1.3,
-        primaryGrip: { position: { x: -0.04, y: -0.04, z: 0.14 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
+        primaryGrip: { position: { x: -0.04, y: -0.04, z: -0.0006 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         gripMode: null,
-        primaryGripSpan: { enabled: true, startZ: 0.18, endZ: 0.3 }, // Main-hand range used only by 2H attack poses.
-        secondaryGripSpan: { enabled: true, startZ: -0.02, endZ: 0.1 }, // Offhand range paired with the main-hand range.
-        rangedPrimaryGrip: { position: { x: -0.04, y: -0.04, z: 0.14 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
+        primaryGripSpan: { enabled: true, startZ: 0.0394, endZ: 0.1594 }, // Main-hand range translated around the measured tan-section center.
+        secondaryGripSpan: { enabled: true, startZ: -0.1606, endZ: -0.0406 }, // Offhand range stays opposite the main range around the fixed 1H grip.
+        rangedPrimaryGrip: { position: { x: -0.04, y: -0.04, z: -0.0006 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         rangedSecondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
         rangedGripMode: null,
       },
       pickshovel: {
-        primaryGrip: { position: { x: -0.04, y: -0.04, z: 0 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
+        primaryGrip: { position: { x: -0.04, y: -0.04, z: -0.0178 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         gripMode: null,
-        primaryGripSpan: { enabled: true, startZ: -0.22, endZ: -0.1 }, // Main-hand range used only by 2H attack poses.
-        secondaryGripSpan: { enabled: true, startZ: 0.1, endZ: 0.22 }, // Offhand range paired with the main-hand range.
+        primaryGripSpan: { enabled: true, startZ: -0.2378, endZ: -0.1178 }, // Main-hand range translated around the measured brown-haft center.
+        secondaryGripSpan: { enabled: true, startZ: 0.0822, endZ: 0.2022 }, // Offhand range stays opposite the main range around the fixed 1H grip.
         toolScale: 1,
-        rangedPrimaryGrip: { position: { x: -0.04, y: -0.04, z: 0 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
+        rangedPrimaryGrip: { position: { x: -0.04, y: -0.04, z: -0.0178 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         rangedSecondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
         rangedGripMode: null,
       },
@@ -145,11 +148,11 @@
       },
       fishingspear: {
         toolScale: 1.15,
-        primaryGrip: { position: { x: -0.04, y: -0.04, z: 0 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
+        primaryGrip: { position: { x: -0.04, y: -0.04, z: -0.1522 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         gripMode: null,
-        primaryGripSpan: { enabled: true, startZ: -0.2, endZ: -0.08 }, // Main-hand range used only by 2H attack poses.
-        secondaryGripSpan: { enabled: true, startZ: 0.08, endZ: 0.2 }, // Offhand range paired with the main-hand range.
-        rangedPrimaryGrip: { position: { x: 0.04, y: -0.04, z: 0 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
+        primaryGripSpan: { enabled: true, startZ: -0.3522, endZ: -0.2322 }, // Main-hand range translated around the measured long wood-section center.
+        secondaryGripSpan: { enabled: true, startZ: -0.0722, endZ: 0.0478 }, // Offhand range stays opposite the main range around the fixed 1H grip.
+        rangedPrimaryGrip: { position: { x: 0.04, y: -0.04, z: 0.1522 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } }, // Tool End Flip mirrors both in-plane X and Z for the same physical grip.
         rangedSecondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
         rangedGripMode: null,
       },
@@ -176,7 +179,16 @@
     if (key.includes('pickshovel') || key.includes('pick-shovel')) return 'pickshovel';
     if (key.includes('fishingspear') || key.includes('fishing-spear')) return 'fishingspear';
     if (key.includes('fishingmace') || key.includes('fishing-mace')) return 'fishingmace';
+    if (key === 'dagger-sword') return 'daggersword';
+    if (key === 'war-cleaver') return 'warcleaver';
     return key;
+  }
+
+  const DUAL_WIELD_WEAPONS = new Set(['dagger', 'daggersword', 'kylie', 'warcleaver']);
+  function isDualWieldWeapon(value) { return DUAL_WIELD_WEAPONS.has(toolKeyFor(value)); }
+  function weaponHandModeForTool(value) {
+    const key = toolKeyFor(value); // Resolves the applicable pose flag in editor previews and gameplay.
+    return key === 'fishingmace' ? 'single' : (isDualWieldWeapon(key) ? 'dual' : 'two-hand');
   }
 
   function numberOrZero(value) {
@@ -273,11 +285,13 @@
     const previousRangedGripPreset = next.rangedGripPreset; // Missing marker identifies drafts created before melee/ranged grip separation.
     const resetTwoHandSpans = next.twoHandSpanPreset !== TWO_HAND_SPAN_PRESET; // Old drafts adopt both stance-authored ranges, leaving 1H grips unchanged.
     const resetManualMeleeSpans = next.manualMeleeSpanPreset !== MANUAL_MELEE_SPAN_PRESET; // Old local drafts receive the manual ranges without changing primary grips or scales.
+    const resetLongHaftGrips = next.longHaftGripPreset !== LONG_HAFT_GRIP_PRESET; // Older drafts adopt the measured long-haft 1H centers and paired ranges once.
     const resetHeightMultipliers = next.heightMultiplierPreset !== HEIGHT_MULTIPLIER_PRESET; // Drafts from the all-1.0 default era adopt the 0.5 default once.
     next.schema = SCHEMA;
     next.secondaryGripPreset = SECONDARY_GRIP_PRESET;
     next.twoHandSpanPreset = TWO_HAND_SPAN_PRESET;
     next.manualMeleeSpanPreset = MANUAL_MELEE_SPAN_PRESET;
+    next.longHaftGripPreset = LONG_HAFT_GRIP_PRESET;
     next.primaryRotationPreset = PRIMARY_ROTATION_PRESET;
     next.rangedGripPreset = RANGED_GRIP_PRESET;
     next.heightMultiplierPreset = HEIGHT_MULTIPLIER_PRESET;
@@ -378,11 +392,17 @@
           && numberOrZero(rr.roll) === HATCHET_PRIMARY_GRIP_EXAMPLE.rotationDeg.roll;
         if (untouchedPreSpearMirrorGrip) {
           // The corrected Tool End Flip rotates the sprite 180° in its own plane.
-          // Fishing spear's ranged grip is center-length (Z=0) but has X=-0.04,
-          // so the same physical grip point moves to +0.04 after that flip.
+          // The old spear center used Z=0, so only X visibly needed correction at that time.
           // Migrate only the exact old default; artist-authored ranged X stays untouched.
-          entry.rangedPrimaryGrip = normalizeTransform(DEFAULT_DATA.tools.fishingspear.rangedPrimaryGrip);
+          entry.rangedPrimaryGrip.position.x = DEFAULT_DATA.tools.fishingspear.rangedPrimaryGrip.position.x;
         }
+      }
+      if (resetLongHaftGrips && LONG_HAFT_GRIP_TOOLS.has(toolKey)) {
+        entry.primaryGrip.position.z = numberOrZero(fallbackEntry.primaryGrip?.position?.z); // Applies the measured wood/tan midpoint without disturbing authored X/Y/rotation.
+        entry.rangedPrimaryGrip.position.z = numberOrZero(fallbackEntry.rangedPrimaryGrip?.position?.z); // Spear ranged Z mirrors through Tool End Flip; the others keep the same center.
+        entry.primaryGripSpan = clone(fallbackEntry.primaryGripSpan); // Keeps the 2H main-hand range translated around the new fixed 1H center.
+        entry.secondaryGripSpan = clone(fallbackEntry.secondaryGripSpan); // Keeps the 2H offhand range on the opposite side of the new center.
+        entry.rangedSecondaryGripSpan = clone(fallbackEntry.rangedSecondaryGripSpan); // Ranged remains explicitly one-handed.
       }
     }
     return next;
@@ -540,55 +560,109 @@
   }
 
   function twoHandGripStateForTool(value, context = currentGripContext(), identity = null) {
-    if (normalizeGripContext(context) === 'ranged' || !primaryGripSpanForTool(value, context) || !secondaryGripSpanForTool(value, context)) return null;
+    if (normalizeGripContext(context) === 'ranged' || weaponHandModeForTool(value) !== 'two-hand' || !primaryGripSpanForTool(value, context) || !secondaryGripSpanForTool(value, context)) return null;
     const state = identity?.animationGripState !== undefined ? identity.animationGripState : currentSecondaryGripAnimationState(); // Actor-owned poses never inherit the player’s current attack.
     if (!state) return null;
     return state.influence > 0.0001 ? state : null;
   }
 
-  const editorSecondaryPoses = {
-    neutral: { enabled: false, percent: 50, primaryPercent: 50 },
-    windup: { enabled: false, percent: 50, primaryPercent: 50 },
-    strike: { enabled: false, percent: 50, primaryPercent: 50 },
-  };
-  let capturedMelee = null;
+  function dualWieldStateForTool(value, context = currentGripContext(), identity = null) {
+    if (normalizeGripContext(context) === 'ranged' || weaponHandModeForTool(value) !== 'dual') return null; // Dual wield is a melee attack hand mode, never a ranged/load/fire pose.
+    const state = identity?.animationGripState !== undefined ? identity.animationGripState : currentSecondaryGripAnimationState();
+    const influence = clamp01(state?.dualWieldInfluence);
+    return influence > 0.0001 ? { ...state, influence } : null;
+  }
 
-  function normalizeAnimationGrip(raw) {
-    return { influence: raw?.enabled === true ? 1 : 0, percent: clamp(raw?.percent ?? 50, 0, 100), primaryPercent: clamp(raw?.primaryPercent ?? 50, 0, 100) };
+  const editorSecondaryPoses = {
+    neutral: { enabled: false, dualWield: true, percent: 50, primaryPercent: 50 },
+    windup: { enabled: true, dualWield: true, percent: 50, primaryPercent: 50 },
+    strike: { enabled: true, dualWield: true, percent: 50, primaryPercent: 50 },
+  };
+  let editorHandPreview = null; // Shared by hands and weapons: pair preview or isolated stance authoring, only at Neutral.
+  let capturedMelee = null;
+  let runtimeIdleDualWield = null; // Persists the most recently requested melee Neutral dual-wield stance after the attack visual ends.
+  let runtimeIdleDualToolKey = null; // Prevents that idle stance from leaking across weapon swaps or dequip/re-equip.
+
+  function dualWieldEnabled(raw, fallback = false) {
+    return raw == null ? fallback : (raw === true || raw?.enabled === true);
+  }
+
+  function normalizeAnimationGrip(raw, { defaultEnabled = false, dualWield = false, dualWieldIdle = false, handMode = 'two-hand' } = {}) {
+    const explicit = raw && typeof raw === 'object';
+    const twoHandEnabled = handMode === 'two-hand' && (explicit ? raw.enabled === true : defaultEnabled);
+    return {
+      influence: twoHandEnabled ? 1 : 0,
+      dualWieldInfluence: handMode === 'dual' && dualWield ? 1 : 0,
+      dualWieldIdleBlend: handMode === 'dual' && dualWield && dualWieldIdle ? 1 : 0,
+      percent: clamp(raw?.percent ?? 50, 0, 100),
+      primaryPercent: clamp(raw?.primaryPercent ?? 50, 0, 100),
+    };
   }
 
   function lerpAnimationGrip(a, b, t) {
     const k = clamp01(t);
-    return { influence: a.influence + (b.influence - a.influence) * k, percent: a.percent + (b.percent - a.percent) * k, primaryPercent: a.primaryPercent + (b.primaryPercent - a.primaryPercent) * k };
+    return {
+      influence: a.influence + (b.influence - a.influence) * k,
+      dualWieldInfluence: a.dualWieldInfluence + (b.dualWieldInfluence - a.dualWieldInfluence) * k,
+      dualWieldIdleBlend: (a.dualWieldIdleBlend || 0) + ((b.dualWieldIdleBlend || 0) - (a.dualWieldIdleBlend || 0)) * k,
+      percent: a.percent + (b.percent - a.percent) * k,
+      primaryPercent: a.primaryPercent + (b.primaryPercent - a.primaryPercent) * k,
+    };
   }
 
   function hasAnimationGripMetadata(poseSet) {
-    return ['neutral', 'windup', 'strike'].some(phase => poseSet?.[phase]?.secondaryGrip && typeof poseSet[phase].secondaryGrip === 'object');
+    return ['neutral', 'windup', 'strike'].some(phase => {
+      const pose = poseSet?.[phase];
+      return (pose?.secondaryGrip && typeof pose.secondaryGrip === 'object') || pose?.dualWield != null;
+    });
   }
 
-  function animationGripAt(progress, timing = {}, poseSet = {}, sequence = 'attack') {
-    if (sequence === 'load' || sequence === 'fire') return { influence: 0, percent: 50, primaryPercent: 50, source: 'ranged' };
-    if (!hasAnimationGripMetadata(poseSet)) return { influence: 0, percent: 50, source: 'none' };
+  function animationGripAt(progress, timing = {}, poseSet = {}, sequence = 'attack', toolKey = '') {
+    if (sequence === 'load' || sequence === 'fire') {
+      return { influence: 0, dualWieldInfluence: 0, percent: 50, primaryPercent: 50, source: 'ranged' };
+    }
+    const defaultTwoHand = sequence === 'attack'; // Ordinary melee attacks use 2H automatically when the equipped weapon exposes both grip ranges.
     const t = clamp01(progress);
     const wf = clamp01(timing.windupFrac ?? timing.wf ?? 0.16);
     const sf = Math.max(wf, clamp01(timing.strikeFrac ?? timing.sf ?? 0.55));
     const hf = Math.max(sf, clamp01(timing.holdFrac ?? timing.hf ?? 0.68));
-    const neutral = normalizeAnimationGrip({ ...poseSet.neutral?.secondaryGrip, enabled: false }); // Idle/Neutral always keeps the original single-hand grip.
-    const windup = normalizeAnimationGrip(poseSet.windup?.secondaryGrip);
-    const strike = normalizeAnimationGrip(poseSet.strike?.secondaryGrip);
-    const poseScale = clamp01(timing.poseScale ?? 1); // Used after a partial held release to keep the off-hand endpoint at the same amplitude as the weapon.
-    const scaledWindup = lerpAnimationGrip(neutral, windup, poseScale); // Used as the effective partial Windup grip state.
-    const scaledStrike = lerpAnimationGrip(neutral, strike, poseScale); // Used as the effective partial Strike grip state.
+    const handMode = weaponHandModeForTool(toolKey); // The weapon chooses one of the independently authored flags.
+    const neutralDualWield = dualWieldEnabled(poseSet.neutral?.dualWield, defaultTwoHand);
+    const neutral = normalizeAnimationGrip(
+      { ...poseSet.neutral?.secondaryGrip, enabled: false },
+      { defaultEnabled: false, dualWield: neutralDualWield, dualWieldIdle: neutralDualWield, handMode },
+    ); // Neutral can explicitly own Dual Wield; 2H itself remains attack-only.
+    const windup = normalizeAnimationGrip(poseSet.windup?.secondaryGrip, {
+      defaultEnabled: defaultTwoHand,
+      dualWield: dualWieldEnabled(poseSet.windup?.dualWield, defaultTwoHand), handMode,
+    });
+    const strike = normalizeAnimationGrip(poseSet.strike?.secondaryGrip, {
+      defaultEnabled: defaultTwoHand,
+      dualWield: dualWieldEnabled(poseSet.strike?.dualWield, defaultTwoHand), handMode,
+    });
+    const poseScale = clamp01(timing.poseScale ?? 1);
+    const scaledWindup = lerpAnimationGrip(neutral, windup, poseScale);
+    const scaledStrike = lerpAnimationGrip(neutral, strike, poseScale);
     let result;
     if (t <= wf) {
       const rawWindupT = t / Math.max(1e-6, wf);
       const poseT = global.Combat?.windupPoseProgress?.(rawWindupT, timing.windupSlowdown) ?? rawWindupT;
       result = lerpAnimationGrip(neutral, scaledWindup, poseT);
+    } else if (t <= sf) {
+      result = lerpAnimationGrip(scaledWindup, scaledStrike, (t - wf) / Math.max(1e-6, sf - wf));
+    } else if (t <= hf) {
+      result = { ...scaledStrike };
+    } else {
+      result = lerpAnimationGrip(scaledStrike, neutral, (t - hf) / Math.max(1e-6, 1 - hf));
     }
-    else if (t <= sf) result = lerpAnimationGrip(scaledWindup, scaledStrike, (t - wf) / Math.max(1e-6, sf - wf));
-    else if (t <= hf) result = { ...scaledStrike };
-    else result = lerpAnimationGrip(scaledStrike, neutral, (t - hf) / Math.max(1e-6, 1 - hf));
-    return { ...result, source: 'animation-pose' };
+    const dualWieldInfluence = clamp01(result.dualWieldInfluence);
+    return {
+      ...result,
+      influence: clamp01(result.influence), // Authored flags stay independent; the weapon selects their effective influence.
+      dualWieldInfluence,
+      dualWieldIdleBlend: clamp01(result.dualWieldIdleBlend),
+      source: hasAnimationGripMetadata(poseSet) ? 'animation-pose' : (handMode === 'dual' ? 'default-dual-wield' : handMode === 'single' ? 'default-single-hand' : 'default-two-hand'),
+    };
   }
 
   function inAttackEditor() { return /\/tools\/attack-animation-editor\//.test(global.location?.pathname || (typeof location !== 'undefined' ? location.pathname : '')); }
@@ -601,19 +675,37 @@
       holdFrac: document.getElementById('holdFrac')?.value ?? 0.68,
     };
     const poseSet = {
-      neutral: { secondaryGrip: editorSecondaryPoses.neutral },
-      windup: { secondaryGrip: editorSecondaryPoses.windup },
-      strike: { secondaryGrip: editorSecondaryPoses.strike },
+      neutral: { secondaryGrip: editorSecondaryPoses.neutral, dualWield: { enabled: editorSecondaryPoses.neutral.dualWield === true } },
+      windup: { secondaryGrip: editorSecondaryPoses.windup, dualWield: { enabled: editorSecondaryPoses.windup.dualWield === true } },
+      strike: { secondaryGrip: editorSecondaryPoses.strike, dualWield: { enabled: editorSecondaryPoses.strike.dualWield === true } },
     };
-    return animationGripAt(progress, timing, poseSet, document.getElementById('playbackSequence')?.value || 'attack');
+    const sequence = editorGripContext() === 'ranged' || document.getElementById('animStyle')?.value === 'ranged' ? 'fire' : (document.getElementById('playbackSequence')?.value || 'attack');
+    if (editorHandPreview && progress === 0 && sequence === 'attack' && editorGripContext() === 'melee') {
+      const dual = editorHandPreview === 'pair' && isDualWieldWeapon(editorCurrentToolKey()) ? 1 : 0;
+      return { influence: 0, dualWieldInfluence: dual, dualWieldIdleBlend: dual, percent: 50, primaryPercent: 50, source: dual ? 'editor-dual-wield-idle' : 'editor-stance-authoring' };
+    }
+    return animationGripAt(progress, timing, poseSet, sequence, editorCurrentToolKey());
   }
 
   function runtimeAnimationGripState() {
     const snapshot = global.WeaponToolStances?.getRuntimeState?.() || global.WeaponToolStances?.debugSnapshot?.() || null;
-    const active = snapshot?.combatNeutralInjected === true && Number.isFinite(Number(snapshot?.combatProgress));
+    const active = snapshot?.activeSlot !== 'ranged' && snapshot?.combatNeutralInjected === true && Number.isFinite(Number(snapshot?.combatProgress));
     if (!active) {
+      const currentTool = toolKeyFor(snapshot?.itemKey || snapshot?.shape || '');
+      if (snapshot?.activeSlot !== 'weapon' || (runtimeIdleDualToolKey && currentTool !== runtimeIdleDualToolKey)) {
+        runtimeIdleDualWield = null;
+        runtimeIdleDualToolKey = null;
+      }
       capturedMelee = null;
-      return { influence: 0, percent: 50, source: 'idle' };
+      const dualIdle = snapshot?.activeSlot === 'weapon' && isDualWieldWeapon(currentTool) && runtimeIdleDualWield !== false;
+      return {
+        influence: 0,
+        dualWieldInfluence: dualIdle ? 1 : 0,
+        dualWieldIdleBlend: dualIdle ? 1 : 0,
+        percent: 50,
+        primaryPercent: 50,
+        source: dualIdle ? 'dual-wield-idle' : 'idle',
+      };
     }
     const opts = capturedMelee?.opts || {};
     return animationGripAt(snapshot.combatProgress, {
@@ -622,10 +714,18 @@
       holdFrac: opts.holdFrac ?? 0.68,
       windupSlowdown: opts.windupSlowdown ?? 0,
       poseScale: snapshot.combatPoseScale ?? 1,
-    }, opts.pose || {}, opts.sequence || 'attack');
+    }, opts.pose || {}, opts.sequence || 'attack', snapshot?.itemKey || snapshot?.shape || '');
   }
 
   function currentSecondaryGripAnimationState() { return inAttackEditor() ? editorAnimationGripState() : runtimeAnimationGripState(); }
+  function currentDualWieldAnimationState() {
+    const state = currentSecondaryGripAnimationState();
+    return {
+      influence: clamp01(state?.dualWieldInfluence),
+      idleBlend: clamp01(state?.dualWieldIdleBlend),
+      source: state?.source || 'none',
+    };
+  }
 
   function secondaryGripForTool(value, context = currentGripContext(), identity = null) {
     const span = secondaryGripSpanForTool(value, context);
@@ -640,7 +740,7 @@
       percent: state.percent,
       itemZ,
       position: itemPointToHolder(value, { x: 0, y: 0, z: itemZ }, context, identity), // Same grip-anchored mapping as the visible item.
-      rotationDeg: { pitch: 0, yaw: 0, roll: 0 },
+      rotationDeg: { ...authoredPrimaryGripForTool(value, context).rotationDeg }, // Left-hand GLB geometry is already mirrored, so sharing the primary tool-space frame produces the natural mirrored grip direction.
     };
   }
 
@@ -651,13 +751,17 @@
       const original = deps[name];
       if (typeof original !== 'function') continue;
       deps[name] = function secondarySpanAwareCombatStart(durationS, opts = {}) {
+        const stanceSnapshot = global.WeaponToolStances?.getRuntimeState?.() || null;
+        runtimeIdleDualWield = isDualWieldWeapon(stanceSnapshot?.itemKey || stanceSnapshot?.shape) && dualWieldEnabled(opts?.pose?.neutral?.dualWield, true);
+        runtimeIdleDualToolKey = toolKeyFor(stanceSnapshot?.itemKey || stanceSnapshot?.shape || '') || null;
         capturedMelee = { durationS: Math.max(0.001, Number(durationS) || 0.5), opts: opts && typeof opts === 'object' ? opts : {}, kind: name === 'triggerWeaponHoldVisual' ? 'hold' : 'swing', startedAt: performance.now() };
+        global.HobunjiDualWieldWeaponVisuals?.syncNow?.();
         return original.call(this, durationS, opts);
       };
     }
     const cancel = deps.cancelWeaponSwingHold;
     if (typeof cancel === 'function') {
-      deps.cancelWeaponSwingHold = function secondarySpanAwareCancel(...args) { capturedMelee = null; return cancel.apply(this, args); };
+      deps.cancelWeaponSwingHold = function secondarySpanAwareCancel(...args) { capturedMelee = null; global.HobunjiDualWieldWeaponVisuals?.syncNow?.(); return cancel.apply(this, args); };
     }
     Object.defineProperty(deps, '__hobunjiSecondarySpanCapture', { value: true, configurable: true });
     return true;
@@ -830,6 +934,7 @@
   function notify() {
     applyPrimaryGripVisuals();
     for (const listener of listeners) { try { listener(data); } catch (_) {} }
+    global.HobunjiDualWieldWeaponVisuals?.syncNow?.();
     global.ProceduralHandFrameDriver?.syncNow?.();
   }
 
@@ -855,7 +960,22 @@
   function saveLocal() { localStorage.setItem(LOCAL_KEY, JSON.stringify(cleanClone())); }
   function loadLocal() { const raw = localStorage.getItem(LOCAL_KEY); if (!raw) return false; replace(JSON.parse(raw)); return true; }
   function clearLocal() { localStorage.removeItem(LOCAL_KEY); data = normalizeData(DEFAULT_DATA); notify(); }
-  function editorCurrentToolKey() { return toolKeyFor(document.getElementById('toolSpriteSelect')?.value || ''); }
+  function editorCurrentToolKey() { return toolKeyFor(global.HobunjiAttackEditorToolContext?.toolKey || document.getElementById('toolSpriteSelect')?.value || ''); }
+  function setEditorIdlePreview(active) {
+    editorHandPreview = active ? 'pair' : null;
+    global.HobunjiDualWieldWeaponVisuals?.resetPoseHistory?.();
+    return editorHandPreview === 'pair';
+  }
+  function setEditorSingleHandPreview(active) {
+    editorHandPreview = active ? 'single' : null;
+    global.HobunjiDualWieldWeaponVisuals?.resetPoseHistory?.();
+  }
+  function editorToolChanged() {
+    editorHandPreview = null;
+    syncEditorSpanUi();
+    patchEditorJsonView();
+    if (isDualWieldWeapon(editorCurrentToolKey()) && editorSecondaryPoses.neutral.dualWield && editorGripContext() === 'melee') global.AttackIdleStanceEditor?.previewDualWieldMain?.();
+  }
   function editorGripContext() { return normalizeGripContext(document.getElementById('handGripContextSelect')?.value || 'melee'); }
 
   function editorAnimationJsonObject() {
@@ -866,7 +986,13 @@
     if (!parsed.poses || typeof parsed.poses !== 'object') parsed.poses = {};
     for (const phase of ['neutral', 'windup', 'strike']) {
       if (!parsed.poses[phase] || typeof parsed.poses[phase] !== 'object') parsed.poses[phase] = {};
-      parsed.poses[phase].secondaryGrip = { enabled: phase !== 'neutral' && editorSecondaryPoses[phase].enabled === true, percent: clamp(editorSecondaryPoses[phase].percent, 0, 100), primaryPercent: clamp(editorSecondaryPoses[phase].primaryPercent, 0, 100) };
+      const dualWield = editorSecondaryPoses[phase].dualWield === true; // Preserve authored flags independently of the preview weapon.
+      parsed.poses[phase].secondaryGrip = {
+        enabled: phase !== 'neutral' && editorSecondaryPoses[phase].enabled === true,
+        percent: clamp(editorSecondaryPoses[phase].percent, 0, 100),
+        primaryPercent: clamp(editorSecondaryPoses[phase].primaryPercent, 0, 100),
+      };
+      parsed.poses[phase].dualWield = { enabled: dualWield };
     }
     return parsed;
   }
@@ -879,13 +1005,29 @@
   }
 
   function loadEditorAnimationGrip(dataObj) {
+    setEditorIdlePreview(false);
+    const sequence = dataObj?.sequence || document.getElementById('playbackSequence')?.value || 'attack';
+    const defaultTwoHand = sequence === 'attack' && dataObj?.style !== 'ranged' && dataObj?.style !== 'drink' && dataObj?.still !== true;
     for (const phase of ['neutral', 'windup', 'strike']) {
-      const raw = dataObj?.poses?.[phase]?.secondaryGrip;
-      editorSecondaryPoses[phase].enabled = phase !== 'neutral' && raw?.enabled === true;
+      const pose = dataObj?.poses?.[phase] || null;
+      const raw = pose?.secondaryGrip;
+      const dualWield = dualWieldEnabled(pose?.dualWield, defaultTwoHand);
+      const explicitTwoHand = raw && typeof raw === 'object';
+      editorSecondaryPoses[phase].dualWield = dualWield;
+      editorSecondaryPoses[phase].enabled = phase !== 'neutral' && (explicitTwoHand ? raw.enabled === true : defaultTwoHand);
       editorSecondaryPoses[phase].percent = clamp(raw?.percent ?? 50, 0, 100);
       editorSecondaryPoses[phase].primaryPercent = clamp(raw?.primaryPercent ?? 50, 0, 100);
+      if (pose && typeof pose === 'object') {
+        pose.secondaryGrip = {
+          enabled: editorSecondaryPoses[phase].enabled,
+          percent: editorSecondaryPoses[phase].percent,
+          primaryPercent: editorSecondaryPoses[phase].primaryPercent,
+        };
+        pose.dualWield = { enabled: dualWield };
+      }
     }
     syncEditorSpanUi(); patchEditorJsonView();
+    global.HobunjiDualWieldWeaponVisuals?.syncNow?.();
   }
 
   function editorFieldPair(parent, id, label, value, min, max, step, onValue) {
@@ -922,12 +1064,17 @@
     editorUi.startPair.set(numberOrZero(span.startZ)); editorUi.endPair.set(numberOrZero(span.endZ));
     for (const phase of ['neutral', 'windup', 'strike']) {
       const controls = editorUi.pose[phase];
+      const inherentDual = melee && isDualWieldWeapon(editorCurrentToolKey());
       controls.enabled.checked = editorSecondaryPoses[phase].enabled === true;
+      controls.dual.checked = editorSecondaryPoses[phase].dualWield === true;
       controls.percent.set(clamp(editorSecondaryPoses[phase].percent, 0, 100));
       controls.primaryPercent.set(clamp(editorSecondaryPoses[phase].primaryPercent, 0, 100));
       const canGrip = melee && mainSpan.enabled === true && span.enabled === true && phase !== 'neutral'; // Neutral remains 1H even if an older export enabled it.
-      controls.primaryPercent.range.disabled = !canGrip; controls.primaryPercent.number.disabled = !canGrip;
-      controls.enabled.disabled = !canGrip; controls.percent.range.disabled = !canGrip; controls.percent.number.disabled = !canGrip;
+      const canDual = melee;
+      const editingTwoHand = canGrip && !inherentDual && editorSecondaryPoses[phase].enabled === true;
+      controls.primaryPercent.range.disabled = !editingTwoHand; controls.primaryPercent.number.disabled = !editingTwoHand;
+      controls.enabled.disabled = !melee || phase === 'neutral'; controls.dual.disabled = !canDual;
+      controls.percent.range.disabled = !editingTwoHand; controls.percent.number.disabled = !editingTwoHand;
     }
     const state = editorAnimationGripState();
     const identity = editorScaleIdentity();
@@ -936,9 +1083,11 @@
     const heightRatio = characterHeightRatio(identity.speciesId, identity.gender);
     const effectiveScale = effectiveToolScaleForTool(editorCurrentToolKey(), identity.speciesId, identity.gender);
     const scaleLabel = `base ×${baseScale.toFixed(2)} · height multiplier ×${heightMultiplier.toFixed(2)} · body ratio ×${heightRatio.toFixed(3)} = effective ×${effectiveScale.toFixed(3)}`;
-    editorUi.status.textContent = melee && mainSpan.enabled && span.enabled
-      ? `${editorCurrentToolKey() || 'held item'} · ${gripContext.toUpperCase()} grip · ${scaleLabel} · main-hand Z ${numberOrZero(mainSpan.startZ).toFixed(4)} → ${numberOrZero(mainSpan.endZ).toFixed(4)} · off-hand Z ${numberOrZero(span.startZ).toFixed(2)} → ${numberOrZero(span.endZ).toFixed(2)} · main ${Math.round(state.primaryPercent ?? 50)}% · 2H influence ${Math.round(state.influence * 100)}% · span position ${Math.round(state.percent)}%`
-      : `${editorCurrentToolKey() || 'held item'} · ${gripContext.toUpperCase()} grip · ${scaleLabel} · 2H ranges inactive; both ranges require a melee attack pose. Idle and ranged keep the original primary grip.`;
+    const modeLabel = weaponHandModeForTool(editorCurrentToolKey()); // Mobile-visible diagnostics show which independent flag this weapon reads.
+    const statusText = melee && mainSpan.enabled && span.enabled
+      ? `${editorCurrentToolKey() || 'held item'} · ${gripContext.toUpperCase()} grip · ${scaleLabel} · main-hand Z ${numberOrZero(mainSpan.startZ).toFixed(4)} → ${numberOrZero(mainSpan.endZ).toFixed(4)} · off-hand Z ${numberOrZero(span.startZ).toFixed(2)} → ${numberOrZero(span.endZ).toFixed(2)} · main ${Math.round(state.primaryPercent ?? 50)}% · weapon mode ${modeLabel} · Dual Wield ${Math.round(state.dualWieldInfluence * 100)}% · 2H influence ${Math.round(state.influence * 100)}% · span position ${Math.round(state.percent)}%`
+      : `${editorCurrentToolKey() || 'held item'} · ${gripContext.toUpperCase()} grip · ${scaleLabel} · weapon mode ${modeLabel} · Dual Wield ${Math.round(state.dualWieldInfluence * 100)}% · 2H ${Math.round(state.influence * 100)}%; 2H requires both melee ranges.`;
+    if (editorUi.status.textContent !== statusText) editorUi.status.textContent = statusText;
   }
 
   function installEditorUi() {
@@ -982,8 +1131,8 @@
       <div class="field"><label class="fieldRow" style="cursor:pointer"><input type="checkbox" id="handSecondarySpanEnabled" style="width:auto;margin-right:6px">Weapon has an offhand 2H range</label></div>
       <div id="handSecondarySpanFields"></div>
       <div class="hr"></div>
-      <div class="poseGroupHead"><span class="dot" style="background:#f59e0b"></span>Animation two-hand poses</div>
-      <div class="help" style="margin-bottom:6px">Enable 2H separately for Windup and Strike, then set each hand’s percentage within its own range. Both blend with the animation timing. Neutral always uses one hand; ranged poses cannot use 2H ranges.</div>
+      <div class="poseGroupHead"><span class="dot" style="background:#f59e0b"></span>Animation hand mode</div>
+      <div class="help" style="margin-bottom:6px">Melee attacks default to <b>2H when the equipped weapon has both ranges</b>. <b>2H</b> and <b>Dual wield</b> are independent pose flags. Kylies, daggers, dagger-swords, and war-cleavers read Dual Wield; other melee weapons read 2H. Fishing mace uses neither. Neutral Dual Wield uses the authored Dual Wield idle pair, while Windup/Strike use the attack duplicate path. Ranged/load/fire poses use neither mode.</div>
       <div id="handSecondaryAnimationFields"></div>
       <div class="help" id="handSecondarySpanStatus" style="padding:7px;border:1px solid rgba(245,158,11,.24);border-radius:8px;margin:6px 0"></div>`;
     host.insertBefore(panel, status);
@@ -1003,13 +1152,24 @@
     for (const phase of ['neutral', 'windup', 'strike']) {
       const box = document.createElement('div');
       box.className = 'field';
-      box.innerHTML = `<label class="fieldRow" style="cursor:pointer"><input type="checkbox" id="handSecondaryAnim_${phase}_enabled" style="width:auto;margin-right:6px">${phase[0].toUpperCase() + phase.slice(1)} uses two hands (2H)</label><div id="handSecondaryAnim_${phase}_percent"></div>`;
+      box.innerHTML = `<div class="fieldRow" style="gap:12px;flex-wrap:wrap"><label class="fieldRow" style="cursor:pointer;margin:0"><input type="checkbox" id="handSecondaryAnim_${phase}_enabled" style="width:auto;margin-right:6px">${phase[0].toUpperCase() + phase.slice(1)} 2H</label><label class="fieldRow" style="cursor:pointer;margin:0"><input type="checkbox" id="handDualWieldAnim_${phase}_enabled" style="width:auto;margin-right:6px">Dual wield</label></div><div id="handSecondaryAnim_${phase}_percent"></div>`;
       animationFields.appendChild(box);
       const enabled = box.querySelector(`#handSecondaryAnim_${phase}_enabled`);
+      const dual = box.querySelector(`#handDualWieldAnim_${phase}_enabled`);
       const percent = editorFieldPair(box.querySelector(`#handSecondaryAnim_${phase}_percent`), `handSecondaryAnim_${phase}_pct`, `${phase[0].toUpperCase() + phase.slice(1)} offhand range %`, 50, 0, 100, 1, value => { editorSecondaryPoses[phase].percent = clamp(value, 0, 100); patchEditorJsonView(); syncEditorSpanUi(); });
-      enabled.addEventListener('change', () => { editorSecondaryPoses[phase].enabled = enabled.checked; patchEditorJsonView(); syncEditorSpanUi(); });
+      enabled.addEventListener('change', () => { setEditorIdlePreview(false); editorSecondaryPoses[phase].enabled = enabled.checked; patchEditorJsonView(); syncEditorSpanUi(); global.HobunjiDualWieldWeaponVisuals?.syncNow?.(); });
+      dual.addEventListener('change', () => {
+        setEditorIdlePreview(false);
+        editorSecondaryPoses[phase].dualWield = dual.checked;
+        if (dual.checked) {
+          if (phase === 'neutral' && isDualWieldWeapon(editorCurrentToolKey())) global.AttackIdleStanceEditor?.previewDualWieldMain?.();
+        }
+        patchEditorJsonView();
+        syncEditorSpanUi();
+        global.HobunjiDualWieldWeaponVisuals?.syncNow?.();
+      });
       const primaryPercent = editorFieldPair(box, `handPrimaryAnim_${phase}_pct`, `${phase[0].toUpperCase() + phase.slice(1)} main-hand range %`, 50, 0, 100, 1, value => { editorSecondaryPoses[phase].primaryPercent = clamp(value, 0, 100); patchEditorJsonView(); syncEditorSpanUi(); }); // Authored independently from the offhand percentage.
-      pose[phase] = { enabled, percent, primaryPercent };
+      pose[phase] = { enabled, dual, percent, primaryPercent };
     }
     spanEnabled.addEventListener('change', () => mutate(() => { currentSpan().enabled = spanEnabled.checked; }));
     editorUi = { scalePanel, scalePair, heightPair, panel, mainEnabled, mainStartPair, mainEndPair, spanEnabled, startPair, endPair, pose, status: panel.querySelector('#handSecondarySpanStatus') };
@@ -1020,7 +1180,7 @@
       global.ProceduralHandFrameDriver?.syncNow?.();
     });
     for (const id of ['scrub', 'windupFrac', 'strikeFrac', 'holdFrac', 'playbackSequence']) {
-      document.getElementById(id)?.addEventListener('input', syncEditorSpanUi); document.getElementById(id)?.addEventListener('change', syncEditorSpanUi);
+      document.getElementById(id)?.addEventListener('input', () => { setEditorIdlePreview(false); syncEditorSpanUi(); }); document.getElementById(id)?.addEventListener('change', () => { setEditorIdlePreview(false); syncEditorSpanUi(); });
     }
     document.addEventListener('input', event => { if (!event.target?.closest?.('#handSecondaryGripSpanPanel') && !event.target?.closest?.('#handToolScalePanel')) setTimeout(patchEditorJsonView, 0); }, true);
 
@@ -1040,10 +1200,12 @@
       const file = event.currentTarget?.files?.[0]; if (!file) return;
       try { loadEditorAnimationGrip(JSON.parse(await file.text())); } catch (_) {}
     });
+    document.getElementById('actionSelect')?.addEventListener('change', () => setEditorIdlePreview(false));
+    document.getElementById('playPauseBtn')?.addEventListener('click', () => setEditorIdlePreview(false));
     document.getElementById('loadPresetBtn')?.addEventListener('click', () => setTimeout(() => loadEditorAnimationGrip({}), 0));
 
     const topHelp = host.closest('.card')?.querySelector('.sectionTitle')?.nextElementSibling;
-    if (topHelp?.classList.contains('help')) topHelp.innerHTML = 'The fixed <b>primary grip</b> is used for 1H, idle, and ranged poses. Melee 2H poses sample separate <b>main-hand and offhand ranges</b>, with an independent percentage for each hand. Base scale and calculated-height influence remain shared held-item metadata.';
+    if (topHelp?.classList.contains('help')) topHelp.innerHTML = 'The fixed <b>primary grip</b> is used for 1H, idle, ranged, and each duplicated Dual Wield weapon. Kylies, daggers, dagger-swords, and war-cleavers use <b>Dual Wield</b>. Other melee weapons read the independent <b>2H</b> flag when both ranges exist. Fishing mace uses neither flag. Base scale and calculated-height influence remain shared held-item metadata.';
     syncEditorSpanUi(); patchEditorJsonView(); return true;
   }
 
@@ -1060,8 +1222,10 @@
       primaryGrip: authoredPrimaryGripForTool(toolKey, currentGripContext()),
       primaryGripSpan: primaryGripSpanForTool(toolKey, currentGripContext()),
       primaryTarget: primaryGripForTool(toolKey, currentGripContext(), identity),
-      latestChange: '2H poses sample independent main/offhand ranges; idle and ranged retain the fixed primary grip.',
+      latestChange: 'Long-haft 1H grips are centered on measured wood/tan sprite sections; melee 2H ranges stay paired around that fixed grip.',
       secondaryGripSpan: secondaryGripSpanForTool(toolKey, currentGripContext()),
+      weaponHandMode: weaponHandModeForTool(toolKey),
+      authoredPoseFlags: inAttackEditor() ? editorSecondaryGripStateSnapshot() : null,
       secondaryAnimation: currentSecondaryGripAnimationState(),
       secondaryTarget: secondaryGripForTool(toolKey),
     };
@@ -1074,12 +1238,15 @@
   function restoreEditorSecondaryGripState(snapshot) {
     for (const phase of ['neutral', 'windup', 'strike']) {
       const raw = snapshot?.[phase] || {};
-      editorSecondaryPoses[phase].enabled = phase !== 'neutral' && raw.enabled === true;
+      const dualWield = raw.dualWield === true;
+      editorSecondaryPoses[phase].dualWield = dualWield;
+      editorSecondaryPoses[phase].enabled = phase !== 'neutral' && (raw.enabled === undefined ? true : raw.enabled === true);
       editorSecondaryPoses[phase].percent = clamp(raw.percent ?? 50, 0, 100);
       editorSecondaryPoses[phase].primaryPercent = clamp(raw.primaryPercent ?? 50, 0, 100);
     }
     syncEditorSpanUi();
     patchEditorJsonView();
+    global.HobunjiDualWieldWeaponVisuals?.syncNow?.();
     global.ProceduralHandFrameDriver?.syncNow?.();
   }
 
@@ -1088,11 +1255,11 @@
     get data() { return data; },
     get defaultData() { return normalizeData(DEFAULT_DATA); },
     clone: cleanClone,
-    toolKeyFor, ensureTool, toolScaleForTool, heightMultiplierForTool, characterHeightRatio, heightFactorForTool, effectiveToolScaleForTool,
+    toolKeyFor, isDualWieldWeapon, weaponHandModeForTool, setEditorIdlePreview, setEditorSingleHandPreview, getEditorIdlePreview: () => editorHandPreview === 'pair', editorToolChanged, ensureTool, toolScaleForTool, heightMultiplierForTool, characterHeightRatio, heightFactorForTool, effectiveToolScaleForTool,
     heldItemPlacementForTool, itemPointToHolder, holderPointToItem, applyHeldItemPlacement, DEFAULT_HEIGHT_MULTIPLIER, normalizeGripContext, currentGripContext,
-    authoredPrimaryGripForTool, primaryGripForTool, spinPivotOffsetForTool, primaryGripSpanForTool, secondaryGripSpanForTool, secondaryGripForTool,
-    currentSecondaryGripAnimationState, animationGripAt, gripModeForTool, setGripMode, replace, mutate, saveLocal, loadLocal, clearLocal, applyPrimaryGripVisuals, debugForTool,
-    editorSecondaryGripStateSnapshot, restoreEditorSecondaryGripState,
+    authoredPrimaryGripForTool, primaryGripForTool, spinPivotOffsetForTool, primaryGripSpanForTool, secondaryGripSpanForTool, secondaryGripForTool, dualWieldStateForTool,
+    currentSecondaryGripAnimationState, currentDualWieldAnimationState, animationGripAt, gripModeForTool, setGripMode, replace, mutate, saveLocal, loadLocal, clearLocal, applyPrimaryGripVisuals, debugForTool,
+    editorSecondaryGripStateSnapshot, restoreEditorSecondaryGripState, loadEditorAnimationGrip,
     getDebug() {
       const snapshot = global.WeaponToolStances?.debugSnapshot?.() || null;
       const value = inAttackEditor() ? editorCurrentToolKey() : (snapshot?.itemKey || snapshot?.shape || '');

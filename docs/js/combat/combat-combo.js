@@ -54,9 +54,9 @@
   // them needing a separate bespoke animation. game.js's pose-driven swing
   // branch (updateToolMesh) applies this generically.
   const SWEEP_POSE = {
-    neutral: { x: 0, y: 0, z: 0, pitch: 0, yaw: 0,   bodyYaw: 0 },
-    windup:  { x: 0, y: 0, z: 0, pitch: 0, yaw: -42, bodyYaw: -90 },
-    strike:  { x: 0, y: 0, z: 0, pitch: 0, yaw: 20,  bodyYaw: 120 },
+    neutral: { x: 0, y: 0, z: 0, pitch: 0, yaw: 0,   bodyYaw: 0, secondaryGrip: { enabled: false, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
+    windup:  { x: 0, y: 0, z: 0, pitch: 0, yaw: -42, bodyYaw: -90, secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
+    strike:  { x: 0, y: 0, z: 0, pitch: 0, yaw: 20,  bodyYaw: 120, secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
   };
 
   // holdS: how long (seconds) the swing dwells at its strike pose before
