@@ -256,7 +256,7 @@
   <script src="js/combat/knockback-collision-impact.js?v=20260930h6c19d61"></script>
   <!-- Burning Health presentation: reuses the authored campfire fire emitter on afflicted player/enemy avatar roots. -->
   <script src="js/combat/burning-affliction-vfx.js?v=20260923burn1"></script>
-  <script src="js/combat/resource-rings.js?v=20260809a"></script>
+  <script src="js/combat/resource-rings.js?v=20261004h9a5a10d"></script>
   <script src="js/combat/combat-core.js?v=20261001quickdebuff2"></script>
   <script src="js/combat/enemy-search-ai.js?v=20260926combatreview1"></script>
   <!-- Stagger/Footing: authored 4-directional ragdoll blend clips + runtime
@@ -306,7 +306,7 @@
   <script src="js/combat/combat-minion.js?v=20260929lichroom1"></script>
   <script src="js/combat/combat-enemy-dodge.js?v=20261001quickdebuff2"></script>
   <!-- Testing Arena-only Harlyao Lich class: wraps the final humanoid AI seam after enemy-dodge, owns elemental projectiles/puddles/Entranced commands, and summons ordinary Minions. -->
-  <script src="js/combat/combat-lich.js?v=20261001quickdebuff2"></script>
+  <script src="js/combat/combat-lich.js?v=20261004h4a59bec"></script>
   <!-- Bandit camps (zone adapter, tent props, camp lifecycle, companion
        perception, corpse loot) — window.BanditCamps. Calls
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
@@ -320,18 +320,18 @@
   <script src="js/bounty-board.js?v=20260831spearheadexisting1-colors1"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261005h5c1a48b"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261004hdc0f1a3"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
   <script src="js/effect-buff-bar.js?v=20260811a"></script>
   <script src="js/skill-system.js?v=20260927temperxp1"></script>
-  <script src="js/perk-system.js?v=20261005h00ffd8c"></script>
+  <script src="js/perk-system.js?v=20260930h4cddcbb"></script>
   <!-- Trinkets + shared 8-point Attunement budget; registers stat/perk/companion providers. -->
   <script src="js/trinket-system.js?v=20261002hf79dffc"></script>
   <script src="js/cooking-data.js?v=20260811a"></script>
   <script src="js/food-processing.js?v=20261001foodgift2"></script>
-  <script src="js/cooking-system.js?v=20261005hb1435c5"></script>
+  <script src="js/cooking-system.js?v=20261001foodgift2"></script>
   <script src="js/key-item-system.js?v=20260918banubu1"></script>
   <!-- Alchemy (reagent/effect defs, potion brewing, shared timed effects) —
        window.AlchemySystem. Self-contained aside from deps injected via
@@ -342,7 +342,7 @@
   <!-- Banubu's Tea Grinder delegates trait legality/targeting to AlchemySystem
        but outputs cooking Tea Blends, so it must load after both systems. -->
   <script src="js/tea-grinder.js?v=20260919tea1"></script>
-  <script src="js/alchemy-flasks.js?v=20260925bandagemove1"></script>
+  <script src="js/alchemy-flasks.js?v=20261004hf0d70ad"></script>
   <!-- Dye catalog/ownership (window.DyeSystem) — character creation, the
        redye panel, General Store clothing stock, and treasure loot all
        draw from it. Self-contained aside from deps injected via init(), so
@@ -448,7 +448,7 @@
        check. -->
   <script src="js/map-layout-system.js?v=20260905layouts1"></script>
   <!-- Gives interior furniture an authored tile footprint/quarter-turn transform and derives occupied-tile collision before the scene consumes the effective layout. -->
-  <script src="js/interior-furniture-grid.js?v=20261005h2b156cd"></script>
+  <script src="js/interior-furniture-grid.js?v=20260917grid1"></script>
   <!-- Keeps authored seat anchors/surfaces on the same post-placement transform as interior-editor furniture visuals. -->
   <script src="js/seat-surface-placement-transform.js?v=20260915seat1"></script>
   <!-- Relationships menu tab render (window.RelationshipsPanel) —
@@ -509,7 +509,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.CarpenterShop.init(...) during its own setup. -->
-  <script src="js/carpenter-shop.js?v=20261005h0fe2e5a"></script>
+  <script src="js/carpenter-shop.js?v=20261004h2f2da0c"></script>
   <!-- Off-save storage for a per-item "Custom" pattern's motif PNG
        (window.MotifStore) — see the file's own header comment. No deps
        injection and everything on it fails soft, so load order doesn't
@@ -551,7 +551,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20260929ruinsites1"></script>
+  <script src="js/wildlife-spawn.js?v=20261004h9ed21d4"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
@@ -560,7 +560,7 @@
        calls window.TownZoneBuildings.init(...) during its own setup (and
        reads window.TownZoneBuildings.loadHousePieceFaceTexture as one of
        window.FarmBuildings' own init deps, at that same call-time point). -->
-  <script src="js/town-zone-buildings.js?v=20261002h8bac730"></script>
+  <script src="js/town-zone-buildings.js?v=20261004hc37c85b"></script>
   <!-- Same-origin live Map Editor transport + runtime bridge. Loaded before
        game.js so its private scene state can be injected during setup. -->
   <script src="js/map-live-preview.js?v=20260909a&window=20260926rebase1"></script>
@@ -628,7 +628,7 @@
        system in environment-surface-runtime.js (rain-planes.js loads that
        above on demand, now an inert stub kept only so that bootstrap check
        and the Pixel Probe adapter below still have something to find). -->
-  <script src="js/environment-surface-micro-plateau.js?v=20260914snowmass1"></script>
+  <script src="js/environment-surface-micro-plateau.js?v=20261004haf4776e"></script>
   <!-- Feeds the surface overlay's build progress into the Pixel Probe
        report line (window.EnvironmentSurfacePixelProbe) — intercepts
        window.PixelProbe assignment if pixel-probe.js below hasn't loaded
@@ -678,7 +678,7 @@
   <!-- Crafting tab (Inventory panel's Crafting sub-tab, window.CraftingPanel)
        — furniture blueprints plus discovered ore-to-bar recipes; pure DOM/state,
        must load before game.js, which injects inventory and metallurgy data. -->
-  <script src="js/crafting-panel.js?v=20261005he15544a"></script>
+  <script src="js/crafting-panel.js?v=20260902ore1"></script>
   <!-- Tool/weapon equipment-slot assignment and gear clothing (collection,
        equip/de-equip, redye panel — window.EquipmentPanel) — its
        buildEquipmentSlots() calls window.WhistleEquip.build() at render
@@ -756,7 +756,7 @@
   <script src="js/stampable-locale-defs.js?v=20260929ruinsites1"></script>
   <script src="js/ruin-sites.js?v=20261003h12be717"></script>
   <script src="js/zone-den-totem-features.js?v=20261003h7c00660"></script>
-  <script src="js/transition-markers.js?v=20261001a"></script>
+  <script src="js/transition-markers.js?v=20261004h46d3bfb"></script>
   <!-- Wilderness-zone grass and rich-foliage-patch billboards
        (window.ZoneGrassBillboards) — pure scene-graph generation, no
        other window.* system reads; must load before game.js, which calls
@@ -2570,7 +2570,7 @@
   <script src="js/shoulder-cam-pointer-lock.js?v=20260930hfc11b39"></script>
   <!-- Shared character-scoped hobunjiSaveMeta update step used by game.js's save* helpers. -->
   <script src="js/character-meta-save.js?v=20260930ench1"></script>
-  <script src="game.js?v=20261005hc8abfc2"></script>
+  <script src="game.js?v=20261005h744a7b3"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261002h1a0061f"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

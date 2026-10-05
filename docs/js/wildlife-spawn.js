@@ -454,6 +454,7 @@
         new THREE.RingGeometry(0.22, 0.36, 24),
         new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false })
       ); // Same look as buildZoneScene's markers, for a den whose scene was built while it was collapsed.
+      window.EnvironmentSurfaceMicroPlateau?.bindGroundProjection(ring);
       ring.rotation.x = -Math.PI / 2;
       info.scene.add(ring);
     }

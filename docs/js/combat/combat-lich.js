@@ -713,6 +713,7 @@
     ); // Small fixed-AOE warning uses the same flat ring language as other arena telegraphs.
     ring.rotation.x = -Math.PI / 2;
     ring.renderOrder = 3;
+    window.EnvironmentSurfaceMicroPlateau?.bindGroundProjection(ring);
     root.add(ring);
     owner.scene.add(root);
     const erupt = {
@@ -1359,6 +1360,7 @@
     for (const mesh of [base, pulse]) {
       mesh.rotation.x = -Math.PI / 2;
       mesh.renderOrder = 6;
+      window.EnvironmentSurfaceMicroPlateau?.bindGroundProjection(mesh);
     }
     pulse.position.y = 0.003; // Tiny separation avoids z-fighting between the steady ring and burst at pulse start.
     const group = new THREE.Group();
