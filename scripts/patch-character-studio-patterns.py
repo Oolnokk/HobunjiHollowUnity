@@ -1,0 +1,199 @@
+from pathlib import Path
+
+
+def read(path):
+    return Path(path).read_text()
+
+
+def write(path, text):
+    Path(path).write_text(text)
+
+
+def rep(text, old, new, label):
+    if old not in text:
+        raise SystemExit(f'missing patch anchor: {label}')
+    return text.replace(old, new, 1)
+
+
+# Character Studio: persist pattern policy, decorate preview, mount shared-tool UI.
+path = 'docs/tools/character-studio/index.html'
+text = read(path)
+text = rep(text,
+    '<script src="../../js/avatar-preview-scene.js"></script>\n<script>',
+    '<script src="../../js/avatar-preview-scene.js"></script>\n<script src="../../config/npcs/clothing-patterns.js?v=20261004appearancepatterns1"></script>\n<script src="../../js/clothing-weaving-system.js?v=20261004appearancepatterns1"></script>\n<script src="../../js/character-studio-pattern-integration.js?v=20261004appearancepatterns1"></script>\n<script>',
+    'character studio pattern dependencies')
+text = rep(text,
+    "function makeWork(speciesId, gender) {\n  const ap = defaultAppearanceFor({ speciesId, gender });\n  return { name: '', appearance: ap, equippedCosmetics: [], appliedDyes: {} };\n}\nfunction workRenderAppearance() {\n  return { ...work.appearance, equippedCosmetics: work.equippedCosmetics, appliedDyes: work.appliedDyes };\n}",
+    "function makeWork(speciesId, gender) {\n  const ap = defaultAppearanceFor({ speciesId, gender });\n  return { name: '', appearance: ap, equippedCosmetics: [], appliedDyes: {}, clothingPatternPolicy: { defaultClothing: {}, forcedOverpassBySlot: {} } };\n}\nfunction workRenderAppearance() {\n  const avatarData = { appearance: clone(work.appearance), equippedCosmetics: [...work.equippedCosmetics], appliedDyes: clone(work.appliedDyes) }; // Shared preview payload before woven/verdigris marker decoration.\n  const decorated = window.CharacterStudioPatternIntegration?.decoratePreview?.(avatarData, work.clothingPatternPolicy) || avatarData; // Uses the production weaving + metal portrait paths rather than a Character Studio-only compositor.\n  return { ...(decorated.appearance || work.appearance), equippedCosmetics: decorated.equippedCosmetics || work.equippedCosmetics, appliedDyes: decorated.appliedDyes || work.appliedDyes };\n}",
+    'working pattern policy')
+text = rep(text,
+    "  renderCollections();\n  refreshColorPicker();\n  updateTargetPill();",
+    "  renderCollections();\n  window.CharacterStudioPatternIntegration?.render?.(); // Keeps pattern rows synchronized when clothing selection changes.\n  refreshColorPicker();\n  updateTargetPill();",
+    'refresh pattern UI')
+text = rep(text,
+    "    equippedCosmetics: [...work.equippedCosmetics],\n    appliedDyes: { ...work.appliedDyes },\n  };\n  try {\n    localStorage.setItem(STORAGE_KEY, JSON.stringify(playerData));",
+    "    equippedCosmetics: [...work.equippedCosmetics],\n    appliedDyes: { ...work.appliedDyes },\n    clothingPatternPolicy: clone(work.clothingPatternPolicy), // Character Studio-authored clothing pattern overrides travel with the player-profile export.\n  };\n  try {\n    localStorage.setItem(STORAGE_KEY, JSON.stringify(playerData));",
+    'player save pattern policy')
+text = rep(text,
+    "      equippedCosmetics: asEquipArray(saved.equippedCosmetics),\n      appliedDyes: (saved.appliedDyes && typeof saved.appliedDyes === 'object') ? clone(saved.appliedDyes) : {},\n    };",
+    "      equippedCosmetics: asEquipArray(saved.equippedCosmetics),\n      appliedDyes: (saved.appliedDyes && typeof saved.appliedDyes === 'object') ? clone(saved.appliedDyes) : {},\n      clothingPatternPolicy: window.CharacterStudioPatternIntegration?.normalizePolicy?.(saved.clothingPatternPolicy) || { defaultClothing: {}, forcedOverpassBySlot: {} },\n    };",
+    'player load pattern policy')
+text = rep(text,
+    "    appearance: clone(work.appearance),\n    equippedCosmetics: [...work.equippedCosmetics],\n    appliedDyes: { ...work.appliedDyes },\n  };\n  const fname =",
+    "    appearance: clone(work.appearance),\n    equippedCosmetics: [...work.equippedCosmetics],\n    appliedDyes: { ...work.appliedDyes },\n    clothingPatternPolicy: clone(work.clothingPatternPolicy),\n  };\n  const fname =",
+    'appearance export pattern policy')
+text = rep(text,
+    "  work.equippedCosmetics = asEquipArray(obj.equippedCosmetics || p.equippedCosmetics || p.cosmetics || p.equipment);\n  work.appliedDyes = clone(obj.appliedDyes || p.appliedDyes || p.dyes || {});\n  if (obj.name && target.kind === 'player')",
+    "  work.equippedCosmetics = asEquipArray(obj.equippedCosmetics || p.equippedCosmetics || p.cosmetics || p.equipment);\n  work.appliedDyes = clone(obj.appliedDyes || p.appliedDyes || p.dyes || {});\n  work.clothingPatternPolicy = window.CharacterStudioPatternIntegration?.normalizePolicy?.(obj.clothingPatternPolicy || p.clothingPatternPolicy) || { defaultClothing: {}, forcedOverpassBySlot: {} };\n  if (obj.name && target.kind === 'player')",
+    'appearance import pattern policy')
+text = rep(text,
+    "    equippedCosmetics: [...exportNpc.equippedCosmetics],\n    appliedDyes: clone(exportNpc.appliedDyes || {}),\n  };",
+    "    equippedCosmetics: [...exportNpc.equippedCosmetics],\n    appliedDyes: clone(exportNpc.appliedDyes || {}),\n    clothingPatternPolicy: window.CharacterStudioPatternIntegration?.initialPolicyForNpc?.(n, n.clothingPatternPolicy || n.avatarEditor?.rawExport?.clothingPatternPolicy) || { defaultClothing: {}, forcedOverpassBySlot: {} },\n  };",
+    'npc load pattern policy')
+text = rep(text,
+    "  n.appearance = clone(work.appearance);\n  n.equippedCosmetics = [...work.equippedCosmetics];\n  n.appliedDyes = clone(work.appliedDyes);\n  n.avatarEditor = {",
+    "  n.appearance = clone(work.appearance);\n  n.equippedCosmetics = [...work.equippedCosmetics];\n  n.appliedDyes = clone(work.appliedDyes);\n  n.clothingPatternPolicy = clone(work.clothingPatternPolicy); // Canonical NPC record override consumed directly by NpcWardrobe.\n  n.avatarEditor = {",
+    'npc canonical policy')
+text = rep(text,
+    "      appearance: clone(work.appearance),\n      equippedCosmetics: [...work.equippedCosmetics],\n      appliedDyes: clone(work.appliedDyes),\n    },",
+    "      appearance: clone(work.appearance),\n      equippedCosmetics: [...work.equippedCosmetics],\n      appliedDyes: clone(work.appliedDyes),\n      clothingPatternPolicy: clone(work.clothingPatternPolicy),\n    },",
+    'npc raw export policy')
+text = rep(text,
+    "  loadPlayerIntoEditor();\n  setStatus('Ready');",
+    "  loadPlayerIntoEditor();\n  window.CharacterStudioPatternIntegration?.mount?.({\n    getWork: () => work,\n    setPatternPolicy: value => { work.clothingPatternPolicy = clone(value); },\n    markPreviewDirty: invalidatePreview,\n    setStatus,\n    targetLabel: () => target.kind === 'npc' ? (db.npcs.find(n => n.id === target.id)?.name || target.id) : ($('nickname').value.trim() || 'Player'),\n  }); // Adds per-equipped-slot pattern controls and the shared Pattern Editor popup after all Studio state exists.\n  refreshAppearanceUI();\n  setStatus('Ready');",
+    'mount pattern integration')
+write(path, text)
+
+# Standalone Pattern Editor: same-origin embed bridge without forking authoring behavior.
+path = 'docs/tools/pattern-editor/index.html'
+text = read(path)
+bridge = """
+  const EMBED_APPEARANCE = new URLSearchParams(location.search).get('embed') === 'appearance'; // Character Studio popup mode; standalone Pattern Editor behavior is unchanged.
+  const EMBED_READY = 'hobunji-pattern-editor-ready';
+  const EMBED_LOAD = 'hobunji-character-studio-pattern-load';
+  const EMBED_APPLY = 'hobunji-character-studio-pattern-apply';
+  async function editableEmbeddedPattern(pattern) {
+    if (!pattern || typeof pattern !== 'object') return null;
+    if (pattern.motifDataUrl) return { ...pattern };
+    if (pattern.repoPatternId) {
+      const editable = await window.RepoPatternLibrary.getEditableById(pattern.repoPatternId).catch(() => null);
+      if (editable) return { ...editable, ...pattern, motifDataUrl: editable.motifDataUrl || pattern.motifDataUrl };
+    }
+    return { ...pattern };
+  }
+  async function loadEmbeddedPair(data) {
+    const primary = await editableEmbeddedPattern(data?.primary);
+    const overpass = await editableEmbeddedPattern(data?.overpass);
+    draft = primary;
+    overpassDraft = overpass;
+    loadedRepoId = primary?.repoPatternId || null;
+    overpassLoadedRepoId = overpass?.repoPatternId || null;
+    $('patternName').value = String(data?.name || 'appearance_pattern').slice(0, 60);
+    $('previewMode').value = data?.mode === 'verdigris' ? 'verdigris' : 'weaving';
+    syncPreviewModeControls();
+    syncOverpassClearanceControl(overpassDraft?.overpassClearanceMultiplier || 3);
+    await refreshPreview(draft, overpassDraft);
+    await renderTrimPreview();
+    syncExportState();
+    $('status').textContent = `Editing ${data?.mode === 'verdigris' ? 'verdigris' : 'weaving'} pattern pair from Character Studio.`;
+  }
+  function installAppearanceEmbedBridge() {
+    if (!EMBED_APPEARANCE) return;
+    const apply = document.createElement('button');
+    apply.id = 'applyAppearanceBtn';
+    apply.textContent = '✓ Apply to appearance';
+    apply.title = 'Return the current primary + overpass pair to Character Studio';
+    document.querySelector('.head')?.appendChild(apply);
+    apply.onclick = () => parent.postMessage({ type: EMBED_APPLY, primary: draft ? { ...draft } : null, overpass: overpassDraft ? { ...overpassDraft, overpassClearanceMultiplier: syncOverpassClearanceControl(overpassDraft.overpassClearanceMultiplier) } : null }, location.origin);
+    window.addEventListener('message', event => {
+      if (event.origin !== location.origin || event.source !== parent || event.data?.type !== EMBED_LOAD) return;
+      loadEmbeddedPair(event.data).catch(error => { debugState.lastError = error.message; $('status').textContent = 'Could not load Character Studio pattern: ' + error.message; });
+    });
+    parent.postMessage({ type: EMBED_READY }, location.origin);
+  }
+"""
+anchor = "  $('previewDebugBtn').onclick = () => { $('previewDebug').textContent = JSON.stringify(window.__patternEditorDebug(), null, 2); };\n  syncOverpassClearanceControl(3);"
+text = rep(text, anchor, bridge + "\n" + anchor, 'pattern editor embed bridge')
+text = rep(text, "  loadTrimAuthoringData();", "  loadTrimAuthoringData();\n  installAppearanceEmbedBridge();", 'install pattern embed bridge')
+write(path, text)
+
+# NPC wardrobe: Character Studio policy overrides repo defaults slot-by-slot.
+path = 'docs/js/npc-wardrobe.js'
+text = read(path)
+text = rep(text,
+    "  function clothingPatternPolicy(npcId) {\n    return window.HobunjiNpcClothingPatterns?.npcs?.[npcId] || null; // Authored default-item and forced-overpass rules stay data-driven rather than hardcoded into wardrobe behavior.\n  }",
+    "  function clothingPatternPolicy(npcId) {\n    const rec = findRecord(npcId); // Character Studio may attach a per-NPC authored override without mutating the shared repo uniform definition.\n    const base = clone(window.HobunjiNpcClothingPatterns?.npcs?.[npcId] || {});\n    const override = clone(rec?.clothingPatternPolicy || rec?.avatarEditor?.rawExport?.clothingPatternPolicy || {});\n    if (!Object.keys(base).length && !Object.keys(override).length) return null;\n    return {\n      ...base, ...override,\n      defaultClothing: { ...(base.defaultClothing || {}), ...(override.defaultClothing || {}) },\n      forcedOverpassBySlot: { ...(base.forcedOverpassBySlot || {}), ...(override.forcedOverpassBySlot || {}) },\n    }; // Slot maps merge so editing one garment cannot erase another repo-authored pattern.\n  }",
+    'npc wardrobe pattern override merge')
+text = rep(text,
+    "    const renderedExport = window.ClothingWeavingSystem?.decorateAvatarDataWithWovenItems\n      ? window.ClothingWeavingSystem.decorateAvatarDataWithWovenItems(baseExport, effectiveClothing)\n      : baseExport;\n    const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(renderedExport);",
+    "    let renderedExport = window.ClothingWeavingSystem?.decorateAvatarDataWithWovenItems\n      ? window.ClothingWeavingSystem.decorateAvatarDataWithWovenItems(baseExport, effectiveClothing)\n      : baseExport;\n    renderedExport = window.MetalArmorSystem?.decorateAvatarDataWithMetalArmor\n      ? window.MetalArmorSystem.decorateAvatarDataWithMetalArmor(renderedExport, effectiveClothing)\n      : renderedExport; // Character Studio-authored verdigris armor uses the same metal portrait marker as equipped player armor.\n    const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(renderedExport);",
+    'npc metal pattern decoration')
+write(path, text)
+
+# Metal armor: allow shared primary + overpass arrays while retaining legacy single pattern.
+path = 'docs/js/metal-armor-system.js'
+text = read(path)
+old = """    if (active?.mode === 'pattern') {
+      const authoredPattern = active.pattern || window.PatternLibrary?.getById?.(active.patternLibraryId) || null;
+      if (authoredPattern) return { ...sourceOptions, targetHex: baseMetal.hex, verdigrisHex: baseMetal.verdigrisHex, oxidationAmount: 1, authoredPattern };
+    }"""
+new = """    if (active?.mode === 'pattern') {
+      const authoredPatterns = (Array.isArray(active.patterns) ? active.patterns : [active.pattern || window.PatternLibrary?.getById?.(active.patternLibraryId) || null])
+        .filter(pattern => !!pattern && typeof pattern === 'object').slice(0, 2); // Shared primary + overpass save shape; old single-pattern treatments still become slot 1.
+      if (authoredPatterns.length) return { ...sourceOptions, targetHex: baseMetal.hex, verdigrisHex: baseMetal.verdigrisHex, oxidationAmount: 1, authoredPattern: authoredPatterns[0], authoredPatterns };
+    }"""
+text = rep(text, old, new, 'metal dual pattern treatment')
+write(path, text)
+
+# Portrait order: only Mashtzarr/Mammakhbuur pauldrons move below the skull.
+path = 'docs/js/portrait-utils.js'
+text = read(path)
+text = rep(text,
+    "const DEFAULT_BEHIND_LAYER_ORDER = [\n  'sideLeft', 'rightSideHair',",
+    "const PAULDRON_UNDER_HEAD_SPECIES = new Set(['mashtzarr', 'mammakhbuur']); // Their broad shoulder armor belongs behind the head silhouette in both portrait views.\nconst DEFAULT_BEHIND_LAYER_ORDER = [\n  'sideLeft', 'rightSideHair',",
+    'pauldron species policy')
+text = rep(text,
+    "  const renderBehindView = renderOptions?.portraitView === 'behind' || renderOptions?.view === 'behind';",
+    "  const renderBehindView = renderOptions?.portraitView === 'behind' || renderOptions?.view === 'behind';\n  const pauldronUnderHead = PAULDRON_UNDER_HEAD_SPECIES.has(_normalizeSpeciesKey(fighter?.speciesId)); // Used by front + rear composers so Mashtzarr-derived heads occlude their pauldrons.",
+    'pauldron order boolean')
+text = rep(text,
+    "  drawBreathingLayers(hoodBackLayers); // Rear hood cloth must sit behind the skull/head; front opening is drawn later with ordinary hood layers.",
+    "  drawBreathingLayers(hoodBackLayers); // Rear hood cloth must sit behind the skull/head; front opening is drawn later with ordinary hood layers.\n  if (pauldronUnderHead) drawEmoteLayers(pauldronLayers); // Mashtzarr/Mammakhbuur shoulder armor is occluded by the head rather than painted over it.",
+    'front pauldron pre-head draw')
+text = rep(text,
+    "  drawBreathingLayers(hoodLayers);\n  drawEmoteLayers(pauldronLayers);\n  for (const mid of aboveHoodBelowHatUrLayers)",
+    "  drawBreathingLayers(hoodLayers);\n  if (!pauldronUnderHead) drawEmoteLayers(pauldronLayers);\n  for (const mid of aboveHoodBelowHatUrLayers)",
+    'front pauldron normal draw guard')
+text = rep(text,
+    "    for (const key of (renderOptions?.behindLayerOrder || DEFAULT_BEHIND_LAYER_ORDER)) {\n      _behindDraw[key]?.();\n    }",
+    "    const behindLayerOrder = renderOptions?.behindLayerOrder || (pauldronUnderHead\n      ? DEFAULT_BEHIND_LAYER_ORDER.flatMap(key => key === 'pauldron' ? [] : (key === 'head' ? ['pauldron', 'head'] : [key]))\n      : DEFAULT_BEHIND_LAYER_ORDER); // Only these two species move pauldron before head; explicit caller order still wins.\n    for (const key of behindLayerOrder) {\n      _behindDraw[key]?.();\n    }",
+    'behind pauldron order')
+write(path, text)
+
+# Fast source-level regression for the integration seams and species-specific layer order.
+test = """#!/usr/bin/env node
+'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const read = p => fs.readFileSync(p, 'utf8');
+const studio = read('docs/tools/character-studio/index.html');
+const integration = read('docs/js/character-studio-pattern-integration.js');
+const patternEditor = read('docs/tools/pattern-editor/index.html');
+const wardrobe = read('docs/js/npc-wardrobe.js');
+const metal = read('docs/js/metal-armor-system.js');
+const portrait = read('docs/js/portrait-utils.js');
+assert.match(studio, /character-studio-pattern-integration\\.js/, 'Character Studio loads pattern integration');
+assert.match(studio, /clothingPatternPolicy/, 'Character Studio persists a clothing pattern policy');
+assert.match(integration, /forcedOverpassBySlot/, 'integration preserves forced NPC overpasses');
+assert.match(integration, /decorateAvatarDataWithWovenItems/, 'Character Studio preview uses production weaving decorator');
+assert.match(integration, /decorateAvatarDataWithMetalArmor/, 'Character Studio preview uses production verdigris armor decorator');
+assert.match(patternEditor, /hobunji-character-studio-pattern-load/, 'shared Pattern Editor accepts Character Studio payloads');
+assert.match(patternEditor, /Apply to appearance/, 'embedded Pattern Editor can return its pair');
+assert.match(wardrobe, /rec\\?\\.clothingPatternPolicy/, 'runtime NPC wardrobe consumes Character Studio overrides');
+assert.match(metal, /authoredPatterns/, 'metal armor forwards primary + overpass arrays');
+assert.match(portrait, /PAULDRON_UNDER_HEAD_SPECIES = new Set\\(\\['mashtzarr', 'mammakhbuur'\\]\\)/, 'only Mashtzarr and Mammakhbuur opt into pauldron-under-head');
+assert.match(portrait, /if \\(pauldronUnderHead\\) drawEmoteLayers\\(pauldronLayers\\)/, 'front composer draws those pauldrons before head');
+assert.match(portrait, /key === 'head' \\? \\['pauldron', 'head'\\]/, 'behind composer also places pauldron below head');
+console.log('Character Studio pattern integration regression passed.');
+"""
+write('scripts/test-character-studio-pattern-integration.js', test)
