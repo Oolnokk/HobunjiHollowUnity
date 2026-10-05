@@ -1,0 +1,22 @@
+{
+  "schema": "hobunji_pattern.v1",
+  "id": "harlyao_glyph_servitude",
+  "name": "Harlyao Glyph: Servitude",
+  "motifPng": "assets/patterns/motif_harlyao_glyph_servitude.png",
+  "collectible": true,
+  "settings": {
+    "motifScale": 1.35,
+    "motifRotationDeg": 53,
+    "tiling": true,
+    "invert": false,
+    "motifThinPx": 0,
+    "frameShape": "triangle",
+    "frameX": -6.033975701583046,
+    "frameY": 8.889925772683668,
+    "frameRotationDeg": 30,
+    "frameScale": 0.85,
+    "meshScale": 1.74,
+    "meshRotationDeg": 1,
+    "overpassClearanceMultiplier": 3
+  }
+}
