@@ -27,14 +27,15 @@ grid_test = replace_once(
 grid_test_path.write_text(grid_test, encoding='utf-8')
 
 # This isolated VM intentionally tests ordinary saved-pattern reweaving, not
-# Advanced Loom capability. Supply the new dependency with the simple case.
+# Advanced Loom capability. Supply the new dependencies with simple/legacy-safe
+# implementations so the extracted production openLoom closure can initialize.
 review_test_path = Path('scripts/test-review-runtime-regressions.js')
 review_test = review_test_path.read_text(encoding='utf-8')
 review_test = replace_once(
     review_test,
     "      weavingHasAnyPattern: weaving => !!weaving?.layers, weavingHasOptionalTrim: weaving => !!weaving?.trim?.enabled, summarizeWeavingLabel: () => 'Saved',",
-    "      weavingHasAnyPattern: weaving => !!weaving?.layers, weavingHasOverpass: () => false, weavingHasOptionalTrim: weaving => !!weaving?.trim?.enabled, summarizeWeavingLabel: () => 'Saved',",
-    'isolated loom overpass dependency',
+    "      weavingHasAnyPattern: weaving => !!weaving?.layers, weavingHasOverpass: () => false, weavingHasOptionalTrim: weaving => !!weaving?.trim?.enabled, summarizeWeavingLabel: () => 'Saved',\n      normalizePatternStack: value => (Array.isArray(value) ? value : (Array.isArray(value?.patterns) ? value.patterns : [value])).filter(pattern => !!pattern && typeof pattern === 'object').slice(0, 2), // Mirrors production's save-compatible pattern-stack normalizer for this isolated loom closure.",
+    'isolated loom overpass/stack dependencies',
 )
 review_test_path.write_text(review_test, encoding='utf-8')
 
