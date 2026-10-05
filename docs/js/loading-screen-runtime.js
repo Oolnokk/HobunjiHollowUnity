@@ -709,7 +709,7 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
     root.setAttribute('role', 'dialog');
     root.setAttribute('aria-label', 'Introduction');
     root.tabIndex = -1;
-    const stageText = document.createElement('div'); // Authored placeholder copy stays independent of live loading controls.
+    const stageText = document.createElement('div'); // Authored opening pages can reveal later lines while the same black-screen page remains active.
     const percentText = document.createElement('div'); // Quiet progress stays at the bottom, separate from centered story copy.
     percentText.style.cssText = 'position:absolute;bottom:5vh;font-size:14px;opacity:.65';
     percentText.textContent = '0%';
@@ -723,11 +723,51 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
     document.body.classList?.add('introduction-loading');
     const introAudio = window.AudioSystem?.beginIntroductionMix?.(); // Foreground text owns the exclusive wind mix and releases it with the same session.
     const inputLock = window.CharacterActionLocks?.acquire?.({ owner: 'introduction-loading', participants: [{ id: 'player', channels: ['movement', 'tools', 'actions'] }] }); // Covers stage one before the Director obtains its own action lock.
-    let stages = [], startedAt = 0, stageIndex = -1, ready = false, cancelled = false; // Per-session stage clock and input gate never reuse old input.
-    let continueStage = null, rejectStage = null, unsubscribe = null; // Input subscription and outstanding stage wait are released on success/error.
+    let stages = [], startedAt = 0, stageIndex = -1, pageIndex = 0, ready = false, cancelled = false; // Stage/page clocks and input gate never reuse old input.
+    let continueStage = null, rejectStage = null, unsubscribe = null; // Input subscription and outstanding page wait are released on success/error.
+    let pageTimers = []; // Delayed line reveals are cancelled whenever the page, session, or opening changes.
+    let renderedCopy = ''; // Accumulates delayed authored text before re-rendering lightweight **bold** spans.
     let rejectCancellation; // Cancellation also releases a final page still awaiting asset preparation.
     const cancellation = new Promise((_, reject) => { rejectCancellation = reject; });
     cancellation.catch(() => {});
+    const stagePages = stage => Array.isArray(stage?.pages) && stage.pages.length ? stage.pages : [stage || {}]; // Keeps legacy one-page stages working while allowing several visible pages inside one loading phase.
+    const clearPageTimers = () => {
+      if (typeof clearTimeout === 'function') for (const timer of pageTimers) clearTimeout(timer);
+      pageTimers = [];
+    };
+    const renderCopy = value => {
+      const text = String(value || '');
+      if (!text.includes('**') || typeof document.createTextNode !== 'function') { stageText.textContent = text.replace(/\*\*/g, ''); return; }
+      stageText.innerHTML = '';
+      let cursor = 0;
+      for (const match of text.matchAll(/\*\*(.+?)\*\*/gs)) {
+        if (match.index > cursor) stageText.appendChild(document.createTextNode(text.slice(cursor, match.index)));
+        const strong = document.createElement('strong'); // Used by authored opening copy such as “only the lost may find.”
+        strong.textContent = match[1];
+        stageText.appendChild(strong);
+        cursor = match.index + match[0].length;
+      }
+      if (cursor < text.length) stageText.appendChild(document.createTextNode(text.slice(cursor)));
+    };
+    const showPage = page => {
+      clearPageTimers();
+      startedAt = nowMs();
+      ready = false;
+      renderedCopy = String(page?.text || '');
+      renderCopy(renderedCopy);
+      continueButton.disabled = true;
+      continueButton.style.visibility = 'hidden';
+      for (const reveal of Array.isArray(page?.delayedReveals) ? page.delayedReveals : []) {
+        const timer = setTimeout(() => {
+          if (cancelled) return;
+          renderedCopy += String(reveal?.text || '');
+          renderCopy(renderedCopy);
+        }, Math.max(0, Number(reveal?.afterSeconds) || 0) * 1000);
+        pageTimers.push(timer);
+      }
+      state.introductionStage = stageIndex + 1;
+      root.focus?.({ preventScroll: true });
+    };
     const accept = event => {
       if (!ready || cancelled || !continueStage) return;
       event?.preventDefault?.(); event?.stopImmediatePropagation?.();
@@ -744,30 +784,37 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
       window.ControllerInput?.setOwner?.('introduction-loading');
       if (frame.pressed?.has('Button0')) { frame.pressed.delete('Button0'); accept(); }
     }, 1000);
+    const waitForPageInput = async (page, requiredWork) => {
+      const delayedTail = Math.max(0, ...(Array.isArray(page?.delayedReveals) ? page.delayedReveals.map(reveal => Number(reveal?.afterSeconds) || 0) : [0])); // Never show Continue before the last delayed line exists.
+      const minimumSeconds = Math.max(delayedTail, Number(page?.minimumSeconds) || Number(stages[stageIndex]?.minimumSeconds) || 0);
+      const minimum = minimumSeconds * 1000;
+      await Promise.race([cancellation, Promise.all([requiredWork, new Promise(resolve => setTimeout(resolve, Math.max(0, minimum - (nowMs() - startedAt))))])]);
+      if (cancelled) throw new Error('Introduction loading cancelled');
+      await new Promise((resolve, reject) => {
+        continueStage = resolve; rejectStage = reject; ready = true; // Earlier taps are discarded; a fresh input is required for each visible page.
+        continueButton.disabled = false;
+        continueButton.style.visibility = 'visible';
+        continueButton.focus?.({ preventScroll: true });
+      });
+    };
     const session = {
       start(index) {
         if (cancelled) throw new Error('Introduction loading cancelled');
-        stageIndex = index; startedAt = nowMs(); ready = false;
-        stageText.textContent = String(stages[index]?.text || '');
-        continueButton.disabled = true;
-        continueButton.style.visibility = 'hidden';
-        state.introductionStage = index + 1;
-        root.focus?.({ preventScroll: true });
+        stageIndex = index; pageIndex = 0;
+        showPage(stagePages(stages[index])[0]);
       },
       async complete(requiredWork = Promise.resolve()) {
-        const minimum = Math.max(0, Number(stages[stageIndex]?.minimumSeconds) || 0) * 1000; // Each authored stage waits for both its work and minimum duration.
-        await Promise.race([cancellation, Promise.all([requiredWork, new Promise(resolve => setTimeout(resolve, Math.max(0, minimum - (nowMs() - startedAt))))])]);
-        if (cancelled) throw new Error('Introduction loading cancelled');
-        await new Promise((resolve, reject) => {
-          continueStage = resolve; rejectStage = reject; ready = true; // Earlier taps are discarded; a fresh input is required.
-          continueButton.disabled = false;
-          continueButton.style.visibility = 'visible';
-          continueButton.focus?.({ preventScroll: true });
-        });
+        const pages = stagePages(stages[stageIndex]);
+        for (; pageIndex < pages.length; pageIndex += 1) {
+          if (pageIndex > 0) showPage(pages[pageIndex]);
+          const isLastPage = pageIndex === pages.length - 1;
+          await waitForPageInput(pages[pageIndex], isLastPage ? requiredWork : Promise.resolve()); // Only the last page of the loading phase inherits its asset-readiness gate.
+        }
+        pageIndex = Math.max(0, pages.length - 1);
       },
       setProgress(percent) { percentText.textContent = `${Math.round(Math.max(0, Math.min(100, percent)))}%`; }, // Existing preparation owners report their actual readiness milestones.
       finish() {
-        cancelled = true; ready = false;
+        cancelled = true; ready = false; clearPageTimers();
         introAudio?.finish?.();
         document.body.classList?.remove('introduction-loading');
         document.removeEventListener('keydown', keydown, true); unsubscribe?.(); inputLock?.release?.(); root.remove();
@@ -775,13 +822,13 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
         if (state.introduction === session) { state.introduction = null; state.introductionStage = 0; finalizeHide(state.generation); }
       },
       cancel() { const error = new Error('Introduction loading cancelled'); rejectCancellation(error); rejectStage?.(error); session.finish(); },
-      getDebug: () => ({ audio: introAudio?.debug?.(), presetId, stage: stageIndex + 1, ready, minimumSeconds: stages[stageIndex]?.minimumSeconds, latestChange: 'Centered introduction text, quiet loading percentage and a prompt that appears after each delay. Early pages advance during loading; final reveal waits for assets.' }),
+      getDebug: () => ({ audio: introAudio?.debug?.(), presetId, stage: stageIndex + 1, page: pageIndex + 1, pageCount: stagePages(stages[stageIndex]).length, ready, minimumSeconds: stagePages(stages[stageIndex])[pageIndex]?.minimumSeconds ?? stages[stageIndex]?.minimumSeconds, latestChange: 'Opening loading phases now support multiple story pages, delayed line reveals and lightweight **bold** emphasis while preserving fresh-input gates and the final asset-readiness boundary.' }),
     };
     state.introduction = session; // Claim foreground synchronously before config/fonts are fetched.
     try {
-      const [config] = await Promise.all([ensureConfigLoaded(), ensureFontsLoaded()]); // Font loading settles before the first placeholder appears.
+      const [config] = await Promise.all([ensureConfigLoaded(), ensureFontsLoaded()]); // Font loading settles before the first opening page appears.
       stages = config.entries?.find(entry => entry.id === presetId)?.stages || [];
-      if (stages.length !== 4) throw new Error('Introduction preset must contain four stages');
+      if (stages.length !== 4) throw new Error('Introduction preset must contain four loading phases');
       session.start(0);
       return session;
     } catch (error) { session.cancel(); throw error; }
