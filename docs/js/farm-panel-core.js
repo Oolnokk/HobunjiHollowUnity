@@ -848,6 +848,10 @@
     _renderHouseLayoutDeeds();
   }
 
+  function stableBreedingCandidates(stable) {
+    return stable.filter(entry => entry?.stowed !== true && entry?.lifeStage !== 'baby' && !window.AnimalGrowth?.isBaby?.(entry)); // Stowed animals and babies cannot be selected for breeding from the Farm tab.
+  }
+
   // Builds one pickable livestock/stable row. `ref` identifies it for
   // breeding-pair selection. `onRename`/`onSell` are omitted (null) for
   // stable entries — untradeable, and renamed from the Stable tab instead;
@@ -1061,6 +1065,7 @@
     const BARN_TIERS = deps.getBarnTiers();
     const farmBuildings = deps.getFarmBuildings();
     const stable = deps.getStable();
+    const stableCandidates = stableBreedingCandidates(stable); // Only adult animals outside storage can be selected for Farm breeding.
 
     const owner = deps.isFarmOwner();
     list.innerHTML = '';
@@ -1190,14 +1195,14 @@
 
     // Your own stable, offered as breeding-pair candidates on this farm —
     // untradeable, so no rename/Sell controls here (see the Stable tab).
-    if (canManage && stable.length) {
+    if (canManage && stableCandidates.length) {
       const charId = window.FarmAnimals.currentCharacterId();
       const header = document.createElement('div');
       header.className = 'farm-note';
       header.style.marginTop = '4px';
-      header.textContent = 'Your stable (breeding only — untradeable):';
+      header.textContent = 'Your Stable adults outside storage (breeding only — untradeable):';
       list.appendChild(header);
-      stable.forEach(entry => {
+      stableCandidates.forEach(entry => {
         list.appendChild(_buildStablePickRow(
           entry, { source: 'stable', id: entry.id, characterId: charId }, pairs, canManage, null, null
         ));

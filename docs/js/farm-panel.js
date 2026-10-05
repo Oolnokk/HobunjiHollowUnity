@@ -5,10 +5,13 @@
   // training is rendered here directly instead of post-processing whatever
   // markup the core renderer happened to create. During ordinary index.html
   // parsing this keeps the core synchronous, just like the former single file.
-  const CORE_SRC = 'js/farm-panel-core.js?v=20260923windowtrim1';
+  const CORE_SRC = 'js/farm-panel-core.js?v=20261004stableStow1';
 
-  let stableDeps = null;
-  let expandedStableId = null;
+  const MAX_OUT_OF_STORAGE_STABLE_ANIMALS = 8; // Caps the Stable roster kept accessible outside indefinite stowage.
+  let stableDeps = null; // Holds the live Stable save and UI dependencies.
+  let expandedStableId = null; // Tracks the animal training row expanded in the Stable panel.
+  let stableBabyInventoryCollapsed = true; // Keeps the dedicated baby inventory closed by default.
+  let stableStowageCollapsed = true; // Keeps stored adult animals tucked away until requested.
 
   function esc(value) {
     if (stableDeps?.esc) return stableDeps.esc(value);
@@ -241,21 +244,32 @@
     };
   }
 
-  function stableAgeSection(title, note) {
+  function stableAgeSection(title, note, options = {}) {
     const section = document.createElement('div'); // Used as the native Stable age-group container.
     section.className = 'stable-age-section';
-    const heading = makeText('div', title); // Used as the visible baby/adult group heading.
-    heading.className = 'settings-section-title';
+    const heading = options.onToggle ? document.createElement('button') : makeText('div', title); // Used as a collapse control only for inventories that opt in.
+    heading.className = options.onToggle ? 'settings-section-title stable-inventory-toggle' : 'settings-section-title';
+    if (options.onToggle) {
+      heading.type = 'button';
+      heading.style.cssText = 'display:block;width:100%;text-align:left;border:0;background:transparent;color:inherit;padding:0;cursor:pointer;';
+      heading.textContent = `${options.collapsed ? '▸' : '▾'} ${title}`;
+      heading.setAttribute('aria-expanded', options.collapsed ? 'false' : 'true');
+      heading.addEventListener('click', options.onToggle);
+    }
     section.appendChild(heading);
+    const body = document.createElement('div'); // Contains every note and row so the section fully collapses.
+    body.className = 'stable-age-section-body';
+    body.hidden = !!options.collapsed;
     if (note) {
       const noteEl = makeText('div', note); // Used to explain the rules that differ between baby and adult animals.
       noteEl.className = 'farm-note';
-      section.appendChild(noteEl);
+      body.appendChild(noteEl);
     }
     const rows = document.createElement('div'); // Used as the destination for rows belonging to this age group.
     rows.className = 'farm-list';
-    section.appendChild(rows);
-    return { section, rows };
+    body.appendChild(rows);
+    section.appendChild(body);
+    return { section, rows, body };
   }
 
   function stableIsBaby(entry) {
@@ -268,6 +282,83 @@
     const result = api?.growStableBaby?.(entry.id, { equip }) || { ok: false, message: 'Animal growth failed to load.' }; // Used for the user-facing result and toast.
     stableDeps?.showToast?.(result.message, result.ok !== false);
     return result;
+  }
+
+  function activeStableIds() {
+    return new Set(['companion', 'mount', 'shoulderPet'].map(role => activeStableIdForRole(role)).filter(Boolean)); // Prioritizes currently deployed animals during old-save cap migration.
+  }
+
+  function normalizeStableStorage(stable) {
+    let changed = false; // Reports whether normalization should be persisted by the Stable panel.
+    const activeIds = activeStableIds(); // Keeps existing deployed animals out when migrating oversized legacy rosters.
+    stable.forEach(entry => {
+      if (typeof entry.stowed !== 'boolean') {
+        entry.stowed = false;
+        changed = true;
+      }
+      if (entry.stowed && activeIds.has(entry.id)) {
+        entry.stowed = false;
+        changed = true;
+      }
+    });
+
+    const accessible = stable.filter(entry => !entry.stowed);
+    if (accessible.length > MAX_OUT_OF_STORAGE_STABLE_ANIMALS) {
+      const keep = new Set(accessible.filter(entry => activeIds.has(entry.id)).slice(0, MAX_OUT_OF_STORAGE_STABLE_ANIMALS).map(entry => entry.id));
+      for (const entry of accessible) {
+        if (keep.size >= MAX_OUT_OF_STORAGE_STABLE_ANIMALS) break;
+        keep.add(entry.id);
+      }
+      for (const entry of accessible) {
+        if (keep.has(entry.id)) continue;
+        entry.stowed = true;
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
+  function setStableStowed(entry) {
+    const stable = stableDeps?.getStable?.() || []; // Uses the canonical Stable array so storage state follows existing save/load.
+    if (!stable.includes(entry)) return;
+    if (entry.stowed) {
+      const outCount = stable.filter(candidate => !candidate.stowed).length;
+      if (outCount >= MAX_OUT_OF_STORAGE_STABLE_ANIMALS) {
+        stableDeps?.showToast?.(`Your Stable is full outside storage (${MAX_OUT_OF_STORAGE_STABLE_ANIMALS}). Stow an animal first.`, false);
+        return;
+      }
+      entry.stowed = false;
+    } else {
+      const role = stableRole(entry);
+      if (activeStableIdForRole(role) === entry.id) setActiveStableIdForRole(role, null);
+      entry.stowed = true;
+    }
+    stableDeps?.saveStable?.();
+    renderStablePanelNative();
+  }
+
+  function installStableStorageAcquisitionGuard() {
+    const farmAnimals = window.FarmAnimals; // Wraps the canonical item-to-Stable action so a full accessible roster sends new animals straight to stowage.
+    if (!farmAnimals || typeof farmAnimals.addToStable !== 'function' || farmAnimals.__stableStorageAcquisitionGuard) return;
+    const originalAddToStable = farmAnimals.addToStable;
+    const guardedAddToStable = function stableStorageGuardedAdd(...args) {
+      const result = originalAddToStable.apply(this, args);
+      if (!result?.ok || !result.entry) return result;
+      const stable = stableDeps?.getStable?.() || [];
+      const otherOutCount = stable.filter(candidate => candidate !== result.entry && !candidate.stowed).length;
+      result.entry.stowed = otherOutCount >= MAX_OUT_OF_STORAGE_STABLE_ANIMALS;
+      if (result.entry.stowed) {
+        const role = stableRole(result.entry);
+        if (activeStableIdForRole(role) === result.entry.id) setActiveStableIdForRole(role, null);
+      }
+      stableDeps?.saveStable?.();
+      return result.entry.stowed
+        ? { ...result, message: `${result.message} All ${MAX_OUT_OF_STORAGE_STABLE_ANIMALS} accessible Stable places were occupied, so this animal was stowed.` }
+        : result;
+    };
+    guardedAddToStable.__stableStorageAcquisitionGuard = true;
+    farmAnimals.addToStable = guardedAddToStable;
+    farmAnimals.__stableStorageAcquisitionGuard = true;
   }
 
   function buildStablePerkTree(entry) {
@@ -320,6 +411,8 @@
     if (!list || !stableDeps) return;
     growth()?.normalizeStableLifeStages?.();
     const stable = stableDeps.getStable?.() || [];
+    if (normalizeStableStorage(stable)) stableDeps.saveStable?.(); // Migrates old saves and enforces the eight-animal accessible-roster limit.
+    const outCount = stable.filter(entry => !entry.stowed).length;
     if (expandedStableId && !stable.some(entry => entry?.id === expandedStableId)) expandedStableId = null;
     list.innerHTML = '';
     if (!stable.length) {
@@ -330,15 +423,24 @@
 
     const tonicLabel = growth()?.CONFIG?.item?.label || 'Growth Tonic'; // Used in baby-section guidance and growth controls.
     const tonicIcon = growth()?.CONFIG?.item?.icon || '🧪'; // Used to keep the native grow button consistent with AnimalGrowth.
-    const babies = stableAgeSection('🐣 Baby Animals', `Baby Stable animals cannot be mounts, companions, or shoulder pets until you use a ${tonicLabel}.`); // Receives every baby row.
-    const adults = stableAgeSection('🐾 Adult Animals', 'Adult Stable animals can fill their normal role.'); // Receives every adult row.
+    list.appendChild(makeText('div', `Outside storage: ${outCount}/${MAX_OUT_OF_STORAGE_STABLE_ANIMALS}. Stowed animals remain here indefinitely.`, 'font-size:11px;opacity:.8;margin:0 0 8px;'));
+    const babies = stableAgeSection('🐣 Baby Animals', `Baby Stable animals cannot be mounts, companions, or shoulder pets until you use a ${tonicLabel}.`, {
+      collapsed: stableBabyInventoryCollapsed,
+      onToggle: () => { stableBabyInventoryCollapsed = !stableBabyInventoryCollapsed; renderStablePanelNative(); },
+    }); // Dedicated, fully collapsible baby inventory.
+    const adults = stableAgeSection('🐾 Adult Animals', 'Adult Stable animals can fill their normal role.'); // Receives every available adult row.
+    const stowedRows = document.createElement('div'); // Holds stowed adults without removing them from the saved Stable roster.
+    stowedRows.className = 'farm-list';
+    const stowedAdultCount = stable.filter(entry => entry.stowed && !stableIsBaby(entry)).length;
+    const stowedBabyCount = stable.filter(entry => entry.stowed && stableIsBaby(entry)).length;
 
     stable.forEach(entry => {
       normalizeStableEntry(entry);
       const role = stableRole(entry);
       const meta = roleMeta(entry);
       const baby = stableIsBaby(entry); // Used throughout the row to gate role assignment and growth controls.
-      const isActive = !baby && entry.id === activeStableIdForRole(role);
+      const isStowedAdult = entry.stowed && !baby; // Stowed babies remain in their dedicated inventory; adults move into the stowage drawer.
+      const isActive = !baby && !entry.stowed && entry.id === activeStableIdForRole(role);
       const isExpanded = expandedStableId === entry.id;
       const points = availablePoints(entry);
       const max = stableMaxLevel();
@@ -350,20 +452,21 @@
       row.style.flexWrap = 'wrap';
       row.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
       row.innerHTML =
-        `<button class="settings-small-btn farm-companion-btn${isActive ? ' active' : ''}" title="${baby ? `${tonicLabel} required — grow and set as ${meta.label.toLowerCase()}` : isActive ? `Active ${meta.label.toLowerCase()}` : `Set as ${meta.label.toLowerCase()}`}">${meta.icon}</button>` +
+        `<button class="settings-small-btn farm-companion-btn${isActive ? ' active' : ''}" title="${entry.stowed ? 'Stowed — take this animal out of storage first' : baby ? `${tonicLabel} required — grow and set as ${meta.label.toLowerCase()}` : isActive ? `Active ${meta.label.toLowerCase()}` : `Set as ${meta.label.toLowerCase()}`}" ${entry.stowed ? 'disabled' : ''}>${meta.icon}</button>` +
         `<span class="farm-row-icon">${STABLE_KIND_ICONS[entry.kind] || '🐾'}</span>` +
         `<input class="farm-row-name" value="${esc(entry.name || window.CreatureGenetics?.defaultLivestockName?.(entry.kind) || entry.kind)}" maxlength="30">` +
-        `<span class="farm-row-value">${baby ? 'Baby · ' : ''}${esc(meta.label)} · Lv. ${entry.level}/${max}${points > 0 ? ` · ${points} point${points === 1 ? '' : 's'}` : ''}</span>` +
+        `<span class="farm-row-value">${baby ? 'Baby · ' : ''}${entry.stowed ? 'Stowed · ' : ''}${esc(meta.label)} · Lv. ${entry.level}/${max}${points > 0 ? ` · ${points} point${points === 1 ? '' : 's'}` : ''}</span>` +
         `<span class="stable-training-chevron" style="font-size:15px;opacity:.7;margin-left:auto;">${isExpanded ? '▾' : '▸'}</span>` +
         livestockTraitsHtml(entry.genotype, entry.kind);
 
       row.querySelector('.farm-companion-btn')?.addEventListener('click', event => {
         event.stopPropagation();
         if (baby) {
-          const equipAfterGrowth = growth()?.CONFIG?.stable?.growAndEquipOnRoleClick !== false; // Used to preserve the existing baby role-click growth behavior.
+          const equipAfterGrowth = !entry.stowed && growth()?.CONFIG?.stable?.growAndEquipOnRoleClick !== false; // Stowed babies mature in place and cannot bypass the storage boundary by auto-equipping.
           growStableEntry(entry, equipAfterGrowth);
           return;
         }
+        if (entry.stowed) return;
         setActiveStableIdForRole(role, isActive ? null : entry.id);
         stableDeps.saveStable?.();
         renderStablePanelNative();
@@ -380,6 +483,12 @@
         expandedStableId = isExpanded ? null : entry.id;
         renderStablePanelNative();
       });
+      const stowButton = document.createElement('button'); // Moves this animal between the accessible roster and indefinite Stable storage.
+      stowButton.className = 'settings-small-btn stable-stow-btn';
+      stowButton.textContent = entry.stowed ? 'Take Out' : 'Stow';
+      stowButton.title = entry.stowed ? `Take this animal out of storage (${outCount}/${MAX_OUT_OF_STORAGE_STABLE_ANIMALS} currently out).` : 'Keep this animal in Stable storage indefinitely.';
+      stowButton.addEventListener('click', event => { event.stopPropagation(); setStableStowed(entry); });
+      row.appendChild(stowButton);
       if (baby) {
         const growButton = document.createElement('button'); // Used as the explicit one-way Stable maturation control.
         growButton.className = 'settings-small-btn stable-grow-btn';
@@ -392,13 +501,34 @@
         row.appendChild(growButton);
       }
       if (isExpanded) row.appendChild(buildStablePerkTree(entry));
-      (baby ? babies.rows : adults.rows).appendChild(row);
+      (baby ? babies.rows : isStowedAdult ? stowedRows : adults.rows).appendChild(row);
     });
 
     if (!babies.rows.children.length) babies.rows.innerHTML = '<div class="farm-note">No baby animals in your Stable.</div>';
-    if (!adults.rows.children.length) adults.rows.innerHTML = '<div class="farm-note">No adult animals in your Stable.</div>';
+    if (!adults.rows.children.length) adults.rows.innerHTML = '<div class="farm-note">No adult animals are outside storage.</div>';
     list.appendChild(babies.section);
     list.appendChild(adults.section);
+    if (stowedAdultCount || stowedBabyCount) {
+      const stowedSection = document.createElement('div'); // A compact drawer keeps stowed adult animals out of the main roster.
+      stowedSection.className = 'stable-stowage-section';
+      const stowedHeading = makeText('button', `▸ Stowed Animals · ${stowedAdultCount + stowedBabyCount}`);
+      stowedHeading.type = 'button';
+      stowedHeading.style.cssText = 'display:block;width:100%;text-align:left;border:0;background:transparent;color:inherit;padding:0;cursor:pointer;';
+      stowedHeading.className = 'settings-section-title stable-inventory-toggle';
+      stowedHeading.setAttribute('aria-expanded', stableStowageCollapsed ? 'false' : 'true');
+      stowedHeading.addEventListener('click', () => { stableStowageCollapsed = !stableStowageCollapsed; renderStablePanelNative(); });
+      stowedSection.appendChild(stowedHeading);
+      const stowedBody = document.createElement('div');
+      stowedBody.className = 'stable-stowage-body';
+      stowedBody.hidden = stableStowageCollapsed;
+      stowedBody.appendChild(makeText('div', `${stowedAdultCount} adult${stowedAdultCount === 1 ? '' : 's'} and ${stowedBabyCount} bab${stowedBabyCount === 1 ? 'y' : 'ies'} in indefinite storage. Stowed babies remain in Baby Animals.`, 'font-size:11px;opacity:.8;'));
+      if (!stableStowageCollapsed) {
+        stowedHeading.textContent = `▾ Stowed Animals · ${stowedAdultCount + stowedBabyCount}`;
+        stowedBody.appendChild(stowedRows);
+      }
+      stowedSection.appendChild(stowedBody);
+      list.appendChild(stowedSection);
+    }
     refinements()?.syncCompanionCombatPerks?.();
   }
 
@@ -416,6 +546,7 @@
     panel.init = function nativeStablePanelInit(injectedDeps) {
       stableDeps = injectedDeps;
       const result = originalInit?.(injectedDeps);
+      installStableStorageAcquisitionGuard();
       progression()?.install?.();
       petRapport()?.install?.();
       refinements()?.install?.();
@@ -427,11 +558,14 @@
     panel.stableTrainingDebug = () => {
       const stable = stableDeps?.getStable?.() || []; // Used to expose age counts alongside per-animal Stable diagnostics.
       return {
-        mostRecentChange: 'Native Stable rendering now shows Pet Rapport above perks with relationship-style gradual yellow heart fill.',
+        mostRecentChange: 'Stable animals can be stowed indefinitely; eight remain outside storage, and the Baby inventory collapses by default.',
         expandedStableId,
         maxLevel: stableMaxLevel(),
         babyCount: stable.filter(stableIsBaby).length,
         adultCount: stable.filter(entry => !stableIsBaby(entry)).length,
+        stowedCount: stable.filter(entry => entry.stowed).length,
+        outsideStorageCount: stable.filter(entry => !entry.stowed).length,
+        outsideStorageLimit: MAX_OUT_OF_STORAGE_STABLE_ANIMALS,
         animals: stable.map(stableDebugEntry),
       };
     };

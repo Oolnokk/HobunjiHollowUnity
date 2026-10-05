@@ -6,19 +6,19 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync('docs/js/livestock-nursery.js', 'utf8'); // Supplies the exact production helper and UI contracts under test.
 
-function extractNamedFunction(name) {
+function extractNamedFunction(name, sourceText = source) {
   const signature = `function ${name}(`; // Used to locate the requested production function without copying its implementation into the test.
-  const start = source.indexOf(signature); // Used as the beginning of the extracted production function.
+  const start = sourceText.indexOf(signature); // Used as the beginning of the extracted production function.
   assert.notEqual(start, -1, `${name} exists in livestock-nursery.js`);
-  const openBrace = source.indexOf('{', start); // Used to start balanced-brace scanning at the function body.
+  const openBrace = sourceText.indexOf('{', start); // Used to start balanced-brace scanning at the function body.
   assert.notEqual(openBrace, -1, `${name} has a function body`);
   let depth = 0; // Tracks nested blocks until the production function's closing brace is reached.
-  for (let index = openBrace; index < source.length; index++) {
-    const char = source[index]; // Used to advance the balanced-brace scan one source character at a time.
+  for (let index = openBrace; index < sourceText.length; index++) {
+    const char = sourceText[index]; // Used to advance the balanced-brace scan one source character at a time.
     if (char === '{') depth++;
     else if (char === '}') {
       depth--;
-      if (depth === 0) return source.slice(start, index + 1);
+      if (depth === 0) return sourceText.slice(start, index + 1);
     }
   }
   throw new Error(`Could not extract ${name}`);
@@ -75,4 +75,22 @@ assert.match(source, /missingRenderedAdults/, 'mobile Nursery diagnostics expose
 assert.match(source, /renderedStableBreedingRows/, 'mobile Nursery diagnostics report personal-Stable breeding rows separately');
 assert.match(source, /barnAssignments/, 'mobile Nursery diagnostics expose saved barn occupancy groupings');
 
-console.log('Livestock Farm/Nursery menu regression tests passed.');
+const farmPanelCoreSource = fs.readFileSync('docs/js/farm-panel-core.js', 'utf8'); // Supplies the production Stable breeding-candidate filter.
+const stableCandidateSource = extractNamedFunction('stableBreedingCandidates', farmPanelCoreSource);
+const candidateContext = { window: { AnimalGrowth: { isBaby: entry => entry?.legacyBaby === true } } }; // Covers both explicit and legacy baby markers.
+vm.createContext(candidateContext);
+vm.runInContext(`${stableCandidateSource}\nthis.stableBreedingCandidates = stableBreedingCandidates;`, candidateContext, { filename: 'stable-breeding-candidates.js' });
+const stableCandidates = candidateContext.stableBreedingCandidates([
+  { id: 'adult', lifeStage: 'adult' },
+  { id: 'baby', lifeStage: 'baby' },
+  { id: 'legacy_baby', legacyBaby: true },
+  { id: 'stowed_adult', lifeStage: 'adult', stowed: true },
+]); // Mirrors the Farm menu mix of available adults, babies, and stored Stable animals.
+assert.deepEqual(Array.from(stableCandidates, entry => entry.id), ['adult'], 'Farm breeding candidates include only accessible adult Stable animals');
+assert.match(farmPanelCoreSource, /Your Stable adults outside storage/, 'Farm menu labels its Stable breeding candidates clearly');
+assert.match(source, /let farmBabyInventoryCollapsed = true/, 'Farm Nursery baby inventory starts collapsed');
+assert.match(source, /livestock-nursery-toggle/, 'Farm Nursery baby inventory has an explicit disclosure control');
+assert.match(source, /detail\.style\.setProperty\('display', 'none', 'important'\)/, 'Farm Nursery collapse hides all inventory details including actions');
+assert.match(source, /farmBabyInventoryCollapsed,/, 'Farm diagnostics expose the Farm Nursery collapse state');
+
+console.log('Livestock Farm/Nursery menu, Stable breeding eligibility, and collapse regression tests passed.');
