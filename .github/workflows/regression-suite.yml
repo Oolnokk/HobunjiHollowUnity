@@ -3,7 +3,7 @@ name: Apply dual-wield idle follow-up
 on:
   pull_request:
     paths:
-      - 'scripts/apply-dual-wield-idle-followup.js'
+      - 'scripts/apply-dual-wield-idle-followup.py'
       - '.github/workflows/regression-suite.yml'
   workflow_dispatch:
 
@@ -26,13 +26,13 @@ jobs:
           set -e
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          node scripts/apply-dual-wield-idle-followup.js
+          python3 scripts/apply-dual-wield-idle-followup.py
           node scripts/check-cache-busts.js --fix
           for f in docs/game.js docs/js/*.js; do node --check "$f"; done
           node -e "JSON.parse(require('fs').readFileSync('docs/config/combat/weapon-idle-stances.json', 'utf8'))"
           node scripts/run-tests.js
           git checkout origin/main -- .github/workflows/regression-suite.yml
-          rm scripts/apply-dual-wield-idle-followup.js
+          rm -f scripts/apply-dual-wield-idle-followup.js scripts/apply-dual-wield-idle-followup.py
           git add -A
           git commit -m "Add authored dual-wield idle stance and fix duplicate spacing"
           git push origin HEAD:fix/recenter-long-haft-grips-20261004
