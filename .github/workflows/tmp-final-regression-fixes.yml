@@ -1,0 +1,42 @@
+name: Temporary final loom regression fixes
+
+on:
+  push:
+    branches:
+      - codex/npc-crafting-commissions-v2
+    paths:
+      - scripts/tmp-final-regression-fixes.py
+      - .github/workflows/tmp-final-regression-fixes.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Configure branch committer
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: Patch stale regression assumptions
+        run: python3 scripts/tmp-final-regression-fixes.py
+      - name: Validate fixed regressions and feature contract
+        run: |
+          node scripts/test-interior-furniture-grid.js
+          node scripts/test-review-runtime-regressions.js
+          node scripts/test-advanced-loom-cooking-yield.js
+          node scripts/test-clothing-weaving-system.js
+          node scripts/test-npc-crafting-commissions.js
+      - name: Commit regression fixes
+        run: |
+          git add -A
+          git commit -m "Fix Advanced Loom integration regressions"
+          git push origin HEAD:codex/npc-crafting-commissions-v2
