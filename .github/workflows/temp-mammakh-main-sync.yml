@@ -19,7 +19,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Apply reviewed Harkhanash appearance and no-front-hair policy
+      - name: Apply reviewed Harkhanash appearance and Mammakhbuur policy
         run: |
           python - <<'PY'
           import json
@@ -76,14 +76,32 @@ jobs:
               raise SystemExit('Mammakhbuur onboarding donor block not found')
           onboarding_path.write_text(onboarding.replace(old, new, 1))
 
-          for test_name in ['scripts/test-character-rig-scale.js', 'scripts/test-full-character-scale-authoring-20260905.js']:
-              path = Path(test_name)
+          runtime_path = Path('docs/js/mammakhbuur-species-runtime.js')
+          runtime = runtime_path.read_text()
+          old_runtime = 'delete data.defaultCosmetics.hairFront;'
+          new_runtime = 'data.defaultCosmetics.hairFront = null; // Explicitly clears seeded random front hair for every Mammakhbuur appearance.'
+          if old_runtime not in runtime:
+              raise SystemExit('Mammakhbuur runtime front-hair default clear not found')
+          runtime_path.write_text(runtime.replace(old_runtime, new_runtime, 1))
+
+          replacements = {
+            'scripts/test-character-rig-scale.js': [
+              ("'tletingan::male': { x: 0.85, y: 0.85, head: 0.8823529411764706, offsetY: 0 }", "'tletingan::male': { x: 0.85, y: 0.85, head: 0.8, offsetY: 0 }"),
+              ("'mao-ao::female': { x: 1.045, y: 1.30625, head: 0.9375, offsetY: 0 }", "'mao-ao::female': { x: 0.895, y: 0.94, head: 0.7813, offsetY: 0 }"),
+            ],
+            'scripts/test-full-character-scale-authoring-20260905.js': [
+              ("'tletingan::male': { x: 0.85, y: 0.85, head: 0.8823529411764706, offsetY: 0 }", "'tletingan::male': { x: 0.85, y: 0.85, head: 0.8, offsetY: 0 }"),
+              ("'mao-ao::female': { x: 1.045, y: 1.30625, head: 0.9375, offsetY: 0 }", "'mao-ao::female': { x: 0.895, y: 0.94, head: 0.7813, offsetY: 0 }"),
+            ],
+          }
+          for filename, pairs in replacements.items():
+              path = Path(filename)
               text = path.read_text()
-              old_tuple = "'tletingan::male': { x: 0.85, y: 0.85, head: 0.8823529411764706, offsetY: 0 }"
-              new_tuple = "'tletingan::male': { x: 0.85, y: 0.85, head: 0.8, offsetY: 0 }"
-              if old_tuple not in text:
-                  raise SystemExit(f'stale Tletingan expectation not found in {test_name}')
-              path.write_text(text.replace(old_tuple, new_tuple, 1))
+              for old_value, new_value in pairs:
+                  if old_value not in text:
+                      raise SystemExit(f'stale scale expectation not found in {filename}: {old_value}')
+                  text = text.replace(old_value, new_value, 1)
+              path.write_text(text)
 
           full_scale_test = Path('scripts/test-full-character-scale-authoring-20260905.js')
           text = full_scale_test.read_text()
