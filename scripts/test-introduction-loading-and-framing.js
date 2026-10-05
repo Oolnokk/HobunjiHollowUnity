@@ -4,9 +4,21 @@ const read = path => fs.readFileSync(path, 'utf8'); // Exercise shipped function
 const game = read('docs/game.js'), loader = read('docs/js/loading-screen-runtime.js');
 const preset = JSON.parse(read('docs/config/loading-screens.json')).entries.find(e => e.id === 'world-introduction');
 assert.equal(preset.mode, 'introduction');
-assert.equal(preset.stages.length, 4);
-assert.deepEqual(preset.stages.map(s => s.text), ['stage 1: Something something something something', 'stage 2: something something something something something.', 'stage 3: something something something something.', 'stage 4: something something something.']);
+assert.equal(preset.stages.length, 4, 'opening keeps four preload phases so rescue asset orchestration remains unchanged');
 assert(preset.stages.every(s => s.minimumSeconds > 0));
+const storyPages = preset.stages.flatMap(stage => stage.pages?.length ? stage.pages : [stage]);
+assert.equal(storyPages.length, 9, 'authored opening narration is split into nine visible pages');
+assert.equal(storyPages[0].text, 'You hear the grinding of wooden wheels and the shuffle of eight hairy legs. You feel the rough texture of wooden bars against your pelt, and a sharp pain in the back of your head.');
+assert.equal(storyPages[1].text, 'You are far from home, and moving still. You know this much. And the bindings on your arms and over your eyes infer it was not of your own accord.');
+assert.equal(storyPages[8].text, 'And after flying free for what feels like minutes, you finally land on the hard ground...');
+assert.equal(storyPages[8].delayedReveals?.[0]?.text, '\nand find yourself asleep once again.');
+const maximPage = storyPages.find(page => page.text === 'that the greatest things in this world of ours');
+assert(maximPage, 'lost-may-find maxim page is authored');
+assert.equal(maximPage.delayedReveals?.[0]?.afterSeconds, 2.5);
+assert.equal(maximPage.minimumSeconds - maximPage.delayedReveals[0].afterSeconds, 10, 'maxim remains alone for ten seconds after its delayed second line appears');
+assert(maximPage.delayedReveals[0].text.includes('**only the lost may find**'), 'lost-may-find phrase keeps authored emphasis');
+assert(loader.includes('const stagePages = stage =>'), 'introduction runtime must support several visible pages inside one preload phase');
+assert(loader.includes('delayedReveals'), 'introduction runtime must preserve delayed line reveals');
 const ordinary={state:{lastEntryId:null},Math};
 vm.runInNewContext(loader.slice(loader.indexOf('  function pickEntry('),loader.indexOf('  function pickEntry(')+loader.slice(loader.indexOf('  function pickEntry(')).indexOf('\n  function ',1))+'\npick=pickEntry;',ordinary);
 assert.equal(ordinary.pick([preset,{id:'normal'}]).id,'normal');assert.equal(ordinary.pick([preset]),null);
@@ -96,14 +108,15 @@ async function main() {
   const timers=[], listeners=new Map(), elements=[]; // Distinct DOM nodes exercise button and status transitions rather than a whole-screen click surrogate.
   const createElement=()=>{ const events=new Map(); const el={style:{},children:[],events,setAttribute(){},addEventListener:(name,fn)=>events.set(name,fn),append(...children){this.children.push(...children);},remove:()=>{removed=true;},focus(){}}; elements.push(el); return el; };
   const state={generation:1};
-  const context={state,document:{createElement,body:{appendChild(){}},addEventListener:(name,fn)=>listeners.set(name,fn),removeEventListener:name=>listeners.delete(name)},window:{CharacterActionLocks:{acquire:()=>({release:()=>{unlocked=true;}})},ControllerInput:{subscribe:(name,fn)=>{subscriber=fn;return()=>{subscriber=null;};},setOwner(){}}},nowMs:()=>clock,setTimeout:(fn,delay)=>{timers.push({fn,at:clock+delay});},ensureConfigLoaded:async()=>({entries:[preset]}),ensureFontsLoaded:async()=>true,finalizeHide(){} };
+  const runtimePreset={...preset,stages:preset.stages.map(stage=>({text:stage.text,minimumSeconds:3}))}; // Keep this deterministic clock test focused on one fresh-input gate per preload phase; authored multi-page structure is asserted above.
+  const context={state,document:{createElement,body:{appendChild(){}},addEventListener:(name,fn)=>listeners.set(name,fn),removeEventListener:name=>listeners.delete(name)},window:{CharacterActionLocks:{acquire:()=>({release:()=>{unlocked=true;}})},ControllerInput:{subscribe:(name,fn)=>{subscriber=fn;return()=>{subscriber=null;};},setOwner(){}}},nowMs:()=>clock,setTimeout:(fn,delay)=>{timers.push({fn,at:clock+delay});},ensureConfigLoaded:async()=>({entries:[runtimePreset]}),ensureFontsLoaded:async()=>true,finalizeHide(){} };
   vm.runInNewContext(loader.slice(loader.indexOf('  async function beginIntroduction('),loader.indexOf('  function callbackSource('))+'\napi=beginIntroduction;',context);
   const session=await context.api();
   const [root,stageText,percentText,continueButton]=elements;
   let releaseAssets;const pendingAssets=new Promise(resolve=>{releaseAssets=resolve;});
   for(let i=0;i<4;i++) {
     if(i)session.start(i);
-    assert.equal(stageText.textContent,preset.stages[i].text);
+    assert.equal(stageText.textContent,runtimePreset.stages[i].text);
     assert.equal(continueButton.disabled,true);
     assert.equal(continueButton.style.visibility,'hidden');
     let continued=false;
@@ -132,6 +145,6 @@ async function main() {
   assert(order.indexOf('textures-shaders') < order.indexOf('reveal'));
   assert.equal(order.filter(step=>step==='continue').length,4);
   assert.deepEqual(order.filter(step=>step.startsWith('stage')),['stage1','stage2','stage3']);
-  console.log('Independent neck deadzones, panel-safe projection, pinned terrain and four fresh-input introduction gates passed');
+  console.log('Nine-page authored opening copy, independent neck deadzones, panel-safe projection, pinned terrain and four preload-phase gates passed');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
