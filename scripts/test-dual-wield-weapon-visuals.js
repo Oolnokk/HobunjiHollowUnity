@@ -20,7 +20,9 @@ assert.match(dual, /idleStancePoses/, 'dual presentation consumes explicit main/
 assert.doesNotMatch(dual, /requestAnimationFrame/, 'dual-wield visuals must share the scheduler/hand-sync owners instead of starting a second frame loop');
 assert.match(dual, /transformSocketForHand/, 'dual visual layer exposes per-hand socket transforms');
 assert.match(dual, /const weapon = side === 'right' \? current\.mainMesh : current\.offMesh/, 'each hand resolves its socket from its visible child weapon');
-assert.match(dual, /weapon\.matrixWorld\.clone\(\)\.multiply\(current\.plane\.matrixWorld\.clone\(\)\.invert\(\)\)/, 'child local offset/mirroring is included in the grip socket transform');
+assert.match(dual, /planeLocalPosition = socketFrame\.position\.clone\(\)\.applyMatrix4\(inversePlaneWorld\)[\s\S]*planeLocalPosition\.clone\(\)\.applyMatrix4\(weapon\.matrixWorld\)/, 'child grip position is reconstructed in original-plane local space and resolved through the visible child weapon matrix');
+assert.match(dual, /mirrorQuaternionAcrossLocalX[\s\S]*source\.x, -source\.y, -source\.z, source\.w/, 'offhand grip orientation mirrors the proper frame across child-local X instead of losing the reflection in quaternion decomposition');
+assert.match(dual, /mirroredChild = side === 'left' && Number\(weapon\.scale\?\.x\) < 0[\s\S]*mirrorQuaternionAcrossLocalX\(planeLocalQ/, 'the reflected offhand child receives the mirrored local grip frame while the main-hand child keeps the original frame');
 assert.match(dual, /duplicate\.scale\.set\?\.\(side === 'off' \? -1 : 1, 1, 1\)/, 'offhand child carries Mirror Animation sprite-X handedness without altering the root');
 assert.match(driver, /const primarySocket = toolSocketWorld\(record, toolHolder, primaryGrip\)/, 'the original fixed 1H socket remains the canonical grip before Dual Wield remapping');
 assert.match(driver, /owners\.right = 'primary-grip'[\s\S]*if \(dualWield\) owners\.right = 'dual-wield-main-grip'/, 'Dual Wield refines ordinary main-hand ownership without weakening primary-grip fallback authority');
@@ -33,4 +35,4 @@ assert.match(grips, /if \(dual\.checked\) \{[\s\S]*?editorSecondaryPoses\[phase\
 assert.match(grips, /if \(enabled\.checked\) editorSecondaryPoses\[phase\]\.dualWield = false/, 'editor 2H switches off Dual Wield');
 assert(held.includes('dual-wield-weapon-visuals.js'), 'held-action bootstrap loads dual-wield visuals');
 assert.match(editor, /loadEditorAnimationGrip\?\.\(\{ sequence: preset\.sequence \|\| 'attack', poses: anim\.poses \}\)/, 'switching Actions reloads per-attack hand-mode metadata');
-console.log('dual wield: transform-following roots, child-only sandwich offsets, child-mesh grip sockets, main-hand lag, default 2H, and mutually exclusive editor mode PASS');
+console.log('dual wield: transform-following roots, child-local grip frames with proper offhand reflection, child-only sandwich offsets, main-hand lag, default 2H, and mutually exclusive editor mode PASS');

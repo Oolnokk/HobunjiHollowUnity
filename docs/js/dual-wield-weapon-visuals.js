@@ -157,6 +157,15 @@
     return target.normalize();
   }
 
+  // Mirrors a proper rotation frame across the child weapon's local X axis.
+  // A reflection itself cannot live in a quaternion, so conjugating the frame
+  // by Mirror-X produces the equivalent proper rotation: X/pitch stays the
+  // same while Y/yaw and Z/roll reverse. This is the orientation counterpart
+  // to offMesh.scale.x = -1 used for the visible opposite-hand weapon.
+  function mirrorQuaternionAcrossLocalX(source, target) {
+    return target.set(source.x, -source.y, -source.z, source.w).normalize();
+  }
+
   function currentPlanePose(current) {
     const Vector3 = current.plane.position.constructor;
     const Quaternion = current.plane.quaternion.constructor;
@@ -400,16 +409,26 @@
     const weapon = side === 'right' ? current.mainMesh : current.offMesh;
     if (!weapon?.matrixWorld || !current.plane?.matrixWorld) return socketFrame;
     weapon.updateMatrixWorld?.(true);
-    // Map the hidden original weapon's real grip frame onto the VISIBLE child
-    // weapon. This includes the child-local +/-Z offset and offhand sprite mirror;
-    // using the root here leaves both hands gripping the hidden parent instead.
-    const delta = weapon.matrixWorld.clone().multiply(current.plane.matrixWorld.clone().invert());
-    const position = socketFrame.position.clone().applyMatrix4(delta);
+
+    // Reconstruct the canonical grip IN THE ORIGINAL WEAPON PLANE'S LOCAL SPACE,
+    // then resolve that exact local frame through the visible child weapon. The
+    // previous world-delta shortcut got the point mostly right, but it treated a
+    // reflected child matrix as if its orientation were an ordinary rotation.
+    // That left the hand at the handle with axes that no longer matched it.
+    const inversePlaneWorld = current.plane.matrixWorld.clone().invert();
+    const planeLocalPosition = socketFrame.position.clone().applyMatrix4(inversePlaneWorld);
+    const position = planeLocalPosition.clone().applyMatrix4(weapon.matrixWorld);
+
     const Quaternion = weapon.quaternion.constructor;
     const planeWorldQ = hierarchyWorldQuaternion(current.plane, new Quaternion());
     const weaponWorldQ = hierarchyWorldQuaternion(weapon, new Quaternion());
-    const deltaQ = weaponWorldQ.multiply(planeWorldQ.invert()).normalize();
-    const quaternion = deltaQ.multiply(socketFrame.quaternion.clone()).normalize();
+    const planeLocalQ = planeWorldQ.clone().invert().multiply(socketFrame.quaternion.clone()).normalize();
+    const mirroredChild = side === 'left' && Number(weapon.scale?.x) < 0;
+    const childLocalQ = mirroredChild
+      ? mirrorQuaternionAcrossLocalX(planeLocalQ, new Quaternion())
+      : planeLocalQ;
+    const quaternion = weaponWorldQ.multiply(childLocalQ).normalize();
+
     return {
       ...socketFrame,
       position,
@@ -420,6 +439,7 @@
         idleBlend: current.idleBlend,
         zGap: DUPLICATE_Z_GAP,
         mainLagMs: MAIN_HAND_LAG_MS,
+        mirroredGripFrame: mirroredChild,
       },
     };
   }
