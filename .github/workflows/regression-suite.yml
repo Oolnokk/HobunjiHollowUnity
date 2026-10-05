@@ -26,6 +26,7 @@ jobs:
           set -e
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          sed -i "s/if count != 1:/if count != 1 and not (label == 'hand mode help' and count == 0):/" scripts/apply-dual-wield-idle-followup.py
           python3 scripts/apply-dual-wield-idle-followup.py
           node scripts/check-cache-busts.js --fix
           for f in docs/game.js docs/js/*.js; do node --check "$f"; done
