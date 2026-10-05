@@ -1,0 +1,35 @@
+name: Temp Restore Mammakh Character Studio
+
+on:
+  push:
+    branches: [appearance-pattern-editor-pauldron-layer]
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: appearance-pattern-editor-pauldron-layer
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Restore Mammakhbuur species registration
+        run: python scripts/temp-restore-mammakh-character-studio.py
+      - name: Run focused Character Studio regression
+        run: node scripts/test-character-studio-pattern-integration.js
+      - name: Run fast regression suite
+        run: node scripts/run-tests.js
+      - name: Commit tested fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm scripts/temp-restore-mammakh-character-studio.py .github/workflows/temp-restore-mammakh-character-studio.yml
+          git add docs/js/character-studio-mammakhbuur-config.js docs/tools/character-studio/index.html scripts/test-character-studio-pattern-integration.js
+          git commit -m "Restore Mammakhbuur in Character Studio"
+          git push origin HEAD:appearance-pattern-editor-pauldron-layer
