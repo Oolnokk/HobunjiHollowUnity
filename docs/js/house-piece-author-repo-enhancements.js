@@ -439,6 +439,20 @@
     else section.prepend(host);
   }
 
+  function loadStackedLogWallIntegration() {
+    if (window.StackedLogWalls || document.querySelector('script[data-house-stacked-log-walls]')) return;
+    const sourceScript = [...document.scripts].find(script => /house-piece-author-repo-enhancements\.js(?:[?#]|$)/.test(script.src || '')); // Used to resolve the integration beside this sidecar under raw.githack/normal hosting.
+    const source = sourceScript?.src
+      ? new URL('stacked-log-wall-integration.js', sourceScript.src).href
+      : '../../js/stacked-log-wall-integration.js'; // Used as a nested-tool fallback if the sidecar script URL is unavailable.
+    const script = document.createElement('script'); // Loads one shared renderer/UI adapter instead of duplicating log-wall logic in this editor.
+    script.src = source;
+    script.async = false;
+    script.dataset.houseStackedLogWalls = '1';
+    script.addEventListener('error', () => log('Could not load stacked-log-wall-integration.js.', 'error'));
+    document.head.appendChild(script);
+  }
+
   function install() {
     if (installed) return;
     if (!window.__MHPA_READY__ || !window.RepoPicker || !byId('generateBaseBtn') || !byId('jsonInput')) {
@@ -449,6 +463,7 @@
     installed = true;
     installGenerationButtons();
     installRepoHousePicker();
+    loadStackedLogWallIntegration();
 
     window.HousePieceAuthorRepoEnhancements = Object.freeze({
       importHouseData,
