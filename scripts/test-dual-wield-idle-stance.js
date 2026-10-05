@@ -26,11 +26,11 @@ assert.match(editor, /Mirror Main → Offhand/, 'idle editor exposes an explicit
 assert.match(editor, /mirrorDualWieldMainToOffhand/, 'idle editor saves the mirrored result as a normal editable offhand pose');
 assert.match(editor, /bodyYaw: Number\(main\.bodyYaw\) \|\| 0/, 'main-to-offhand mirror deliberately preserves body yaw');
 assert.match(editor, /Preview Dual Wield Pair/, 'idle editor can preview both explicitly authored poses together');
-assert.match(editor, /selectedKey === 'dualWieldOffhand' && dualPairPreview/, 'offhand gizmo editing isolates the explicit offhand weapon');
+assert.match(editor, /if \(dualPairPreviewActive\(\)\) setDualPairPreview\(false\)/, 'offhand gizmo editing isolates the explicit offhand weapon');
 assert.match(editor, /previewDualWieldMain/, 'attack hand-mode UI can switch Neutral preview to the shared dual idle main pose');
 assert.match(editor, /input\.disabled = selectedKey === 'dualWieldOffhand' && field\.key === 'bodyYaw'/, 'offhand pose shares main body yaw instead of inventing a second body rotation');
 
-assert.match(runtime, /if \(dualWield\) return idleStances\.dualWieldMain/, 'runtime holder uses authored dual main while dual wielding');
+assert.match(runtime, /if \(dualWield \|\| window\.HobunjiHandToolGrips\?\.isDualWieldWeapon/, 'runtime holder uses authored dual main while dual wielding');
 assert.match(runtime, /dualWieldIdleRequested/, 'runtime attacks select the dual idle from Neutral hand metadata');
 assert.match(grips, /runtimeIdleDualWield/, 'hand-mode state persists dual idle after a dual attack ends');
 assert.match(grips, /dualWieldIdleBlend/, 'Neutral-to-attack transitions expose a continuous idle-pose blend');

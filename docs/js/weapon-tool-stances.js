@@ -167,7 +167,7 @@
       return null;
     }
     const idleClass = weaponIdleClass(itemKey, def);
-    if (dualWield) return idleStances.dualWieldMain; // Dual Wield rests in its explicitly authored light-style main-hand stance.
+    if (dualWield || window.HobunjiHandToolGrips?.isDualWieldWeapon?.(shape || itemKey)) return idleStances.dualWieldMain; // Dual Wield rests in its explicitly authored light-style main-hand stance.
     if (idleClass === 'heavy') return idleStances.heavyWeapon;
     if (idleClass === 'light') return idleStances.lightWeapon;
     return null;

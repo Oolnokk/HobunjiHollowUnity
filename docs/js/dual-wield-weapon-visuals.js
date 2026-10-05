@@ -20,7 +20,6 @@
   const HISTORY_WINDOW_MS = 240; // Keeps enough parent poses to resolve the short lag through low-FPS frames.
   const ACTIVE_EPSILON = 0.0001;
   let state = null;
-  let editorIdlePreviewActive = false;
 
   function clamp01(value) {
     const n = Number(value);
@@ -47,9 +46,6 @@
   }
 
   function currentDualState() {
-    if (inAttackEditor() && editorIdlePreviewActive) {
-      return { influence: 1, idleBlend: 1, source: 'editor-dual-wield-idle' };
-    }
     const direct = grips.currentDualWieldAnimationState?.();
     if (direct) {
       return {
@@ -166,12 +162,20 @@
     return target.set(source.x, -source.y, -source.z, source.w).normalize();
   }
 
+  function bakedWorldQuaternion(node, target) {
+    if (state && node.matrixWorld?.decompose) {
+      node.matrixWorld.decompose(state.worldPositionScratch, target, state.worldScaleScratch);
+      return target.normalize();
+    }
+    return hierarchyWorldQuaternion(node, target);
+  }
+
   function currentPlanePose(current) {
     const Vector3 = current.plane.position.constructor;
     const Quaternion = current.plane.quaternion.constructor;
     return {
       position: new Vector3().setFromMatrixPosition(current.plane.matrixWorld),
-      quaternion: hierarchyWorldQuaternion(current.plane, new Quaternion()),
+      quaternion: bakedWorldQuaternion(current.plane, new Quaternion()),
     };
   }
 
@@ -296,35 +300,24 @@
     root.updateMatrix?.();
   }
 
-  function installMainLagHook(current) {
+  function applyMainLag(current) {
     const root = current.mainRoot;
-    const originalUpdate = root?.updateMatrixWorld;
-    if (!root || typeof originalUpdate !== 'function') return;
-    const Vector3 = current.plane.position.constructor;
-    const Quaternion = current.plane.quaternion.constructor;
-    const localPosition = new Vector3();
-    const desiredWorldPosition = new Vector3();
-    const basePosition = new Vector3();
-    const baseQuaternion = new Quaternion();
-    const localQuaternion = new Quaternion();
-    const inverseCurrentQuaternion = new Quaternion();
+    if (!root) return;
+    const { localPosition, desiredWorldPosition, basePosition, baseQuaternion, localQuaternion, inverseCurrentQuaternion } = current.lagScratch;
 
-    root.updateMatrixWorld = function dualWieldLaggedMainUpdate(force) {
-      if (state !== current || !current.plane?.parent) return originalUpdate.call(this, force);
-      const now = global.performance?.now?.() ?? Date.now();
-      recordParentHistory(current, now);
-      const currentPose = currentPlanePose(current);
-      const delayed = delayedParentPose(current, now);
-      const lagAmount = 1 - clamp01(current.idleBlend); // Idle stance is authored directly and should not trail itself.
-      basePosition.copy(currentPose.position).lerp(delayed.position, lagAmount);
-      baseQuaternion.copy(currentPose.quaternion).slerp(delayed.quaternion, lagAmount).normalize();
-      desiredWorldPosition.copy(basePosition); // Root follows only the delayed source transform; the child mesh owns the local -Z sandwich offset.
-      localPosition.copy(desiredWorldPosition).applyMatrix4(current.plane.matrixWorld.clone().invert());
-      inverseCurrentQuaternion.copy(currentPose.quaternion).invert();
-      localQuaternion.copy(inverseCurrentQuaternion).multiply(baseQuaternion).normalize();
-      setRootToward(this, localPosition, localQuaternion, current.influence);
-      return originalUpdate.call(this, force);
-    };
+    if (state !== current || !current.plane?.parent) return;
+    const now = global.performance?.now?.() ?? Date.now();
+    recordParentHistory(current, now);
+    const currentPose = currentPlanePose(current);
+    const delayed = delayedParentPose(current, current.lastHistoryAt); // Both hands use the same sampled time, even when sync is called twice.
+    const lagAmount = 1 - clamp01(current.idleBlend); // Idle stance is authored directly and should not trail itself.
+    basePosition.copy(currentPose.position).lerp(delayed.position, lagAmount);
+    baseQuaternion.copy(currentPose.quaternion).slerp(delayed.quaternion, lagAmount).normalize();
+    desiredWorldPosition.copy(basePosition); // Root follows only the delayed source transform; the child mesh owns the local -Z sandwich offset.
+    localPosition.copy(desiredWorldPosition).applyMatrix4(current.plane.matrixWorld.clone().invert());
+    inverseCurrentQuaternion.copy(currentPose.quaternion).invert();
+    localQuaternion.copy(inverseCurrentQuaternion).multiply(baseQuaternion).normalize();
+    setRootToward(root, localPosition, localQuaternion, current.influence);
   }
 
   function buildState(context) {
@@ -352,12 +345,17 @@
       influence: 0,
       idleBlend: 0,
       history: [],
+      lagScratch: {
+        localPosition: new plane.position.constructor(), desiredWorldPosition: new plane.position.constructor(), basePosition: new plane.position.constructor(),
+        baseQuaternion: new plane.quaternion.constructor(), localQuaternion: new plane.quaternion.constructor(), inverseCurrentQuaternion: new plane.quaternion.constructor(),
+      },
+      worldPositionScratch: new plane.position.constructor(),
+      worldScaleScratch: new plane.scale.constructor(),
       lastHistoryAt: -Infinity,
       lastHistoryFrame: null,
       originalMaterials: materialList(plane.material).map(material => ({ material, visible: material.visible !== false })),
     };
     state = next;
-    installMainLagHook(next);
     return next;
   }
 
@@ -381,6 +379,10 @@
     current.mainRoot.visible = active;
     current.offRoot.visible = active;
 
+    // Bake the source first. Runtime idle stances are temporarily applied by
+    // the holder's updateMatrixWorld owner, so updateWorldMatrix would bypass them.
+    if (inAttackEditor()) current.plane.updateWorldMatrix?.(true, false);
+    else current.holder?.updateMatrixWorld?.(true);
     const Vector3 = current.plane.position.constructor;
     const Quaternion = current.plane.quaternion.constructor;
     const idleTransform = current.idleBlend > ACTIVE_EPSILON ? idleOffhandLocalTransform(current) : null;
@@ -397,7 +399,7 @@
       current.mainRoot.scale.set(1, 1, 1);
       current.history.length = 0;
     }
-    current.plane.updateWorldMatrix?.(true, false); // Parent must be current before per-hand socket transforms read duplicate matrixWorld values.
+    if (active) applyMainLag(current);
     current.offRoot.updateMatrixWorld?.(true);
     current.mainRoot.updateMatrixWorld?.(true);
     return current;
@@ -420,8 +422,8 @@
     const position = planeLocalPosition.clone().applyMatrix4(weapon.matrixWorld);
 
     const Quaternion = weapon.quaternion.constructor;
-    const planeWorldQ = hierarchyWorldQuaternion(current.plane, new Quaternion());
-    const weaponWorldQ = hierarchyWorldQuaternion(weapon, new Quaternion());
+    const planeWorldQ = bakedWorldQuaternion(current.plane, new Quaternion());
+    const weaponWorldQ = bakedWorldQuaternion(weapon, new Quaternion());
     const planeLocalQ = planeWorldQ.clone().invert().multiply(socketFrame.quaternion.clone()).normalize();
     const mirroredChild = side === 'left'; // Flip the offhand grip independently of the weapon sprite's facing.
     const childLocalQ = mirroredChild
@@ -444,8 +446,16 @@
     };
   }
 
+  function resetPoseHistory() {
+    if (!state) return;
+    state.history.length = 0;
+    state.lastHistoryAt = -Infinity;
+    state.lastHistoryFrame = null;
+  }
+
   function setEditorIdlePreview(active) {
-    editorIdlePreviewActive = !!active;
+    resetPoseHistory();
+    const editorIdlePreviewActive = grips.setEditorIdlePreview?.(active) === true;
     syncNow();
     global.ProceduralHandFrameDriver?.syncNow?.();
     return editorIdlePreviewActive;
@@ -470,12 +480,14 @@
       offChildMirroredX: Number(state?.offMesh?.scale?.x) < 0,
       mainRootParentIsHiddenOriginalPlane: !!state && state.mainRoot?.parent === state.plane,
       offRootParentIsHiddenOriginalPlane: !!state && state.offRoot?.parent === state.plane,
-      editorIdlePreviewActive,
+      editorIdlePreviewActive: currentDualState().source === 'editor-dual-wield-idle',
     };
   }
 
   global.HobunjiDualWieldWeaponVisuals = {
     syncNow,
+    teardown,
+    resetPoseHistory,
     transformSocketForHand,
     setEditorIdlePreview,
     debugSnapshot,

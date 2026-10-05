@@ -73,7 +73,7 @@
     let workingConfig = clone(FALLBACK_CONFIG);
     let selectedKey = 'lightWeapon';
     let editingNeutral = false;
-    let dualPairPreview = false; // Pair preview renders both explicit idle weapons while each pose remains independently authorable.
+    const dualPairPreviewActive = () => window.HobunjiHandToolGrips?.getEditorIdlePreview?.() === true;
     let lastNeutralSignature = '';
 
     const card = document.createElement('div');
@@ -109,7 +109,7 @@
         <button id="idleClearOverrideBtn" class="secondary">🗑 Clear Local Override</button>
       </div>
       <div class="help" id="idleStanceStatus" style="margin-top:7px"></div>
-      <div class="help" style="margin-top:7px">Use <b>Edit Selected in Neutral</b> to route the existing Neutral sliders and 3D gizmo into any idle preset, including <b>Dual Wield — Offhand</b>. <b>Mirror Main → Offhand</b> performs the same stance mirror as the editor's <b>Mirror Animation</b> operation—X/Yaw/Roll mirror, Y/Z/Pitch stay—but intentionally leaves Body Yaw unchanged and assigns the result to the other hand. The runtime also mirrors the hand-side anchor and sprite facing. Afterward the offhand x/y/z and pitch/yaw/roll remain fully custom and saved explicitly. <b>Preview Dual Wield Pair</b> shows both saved poses together.</div>
+      <div class="help" style="margin-top:7px">Use <b>Edit Selected in Neutral</b> to route the existing Neutral sliders and 3D gizmo into any idle preset, including <b>Dual Wield — Offhand</b>. <b>Mirror Main → Offhand</b> performs the same stance mirror as the editor's <b>Mirror Animation</b> operation—X/Yaw/Roll mirror, Y/Z/Pitch stay—but intentionally leaves Body Yaw unchanged and assigns the result to the other hand. The runtime also mirrors the hand-side anchor and grip direction. Afterward the offhand x/y/z and pitch/yaw/roll remain fully custom and saved explicitly. <b>Preview Dual Wield Pair</b> shows both saved poses together.</div>
     `;
 
     const firstCard = sidebar.querySelector('.card');
@@ -141,11 +141,10 @@
     }
 
     function setDualPairPreview(active) {
-      dualPairPreview = !!active;
-      window.HobunjiDualWieldWeaponVisuals?.setEditorIdlePreview?.(dualPairPreview);
+      window.HobunjiDualWieldWeaponVisuals?.setEditorIdlePreview?.(active);
       window.HobunjiDualWieldWeaponVisuals?.syncNow?.();
       window.ProceduralHandFrameDriver?.syncNow?.();
-      return dualPairPreview;
+      return dualPairPreviewActive();
     }
 
     function mirrorDualWieldMainToOffhand() {
@@ -162,8 +161,7 @@
       select.value = selectedKey;
       syncFieldsFromPose();
       updateEditButton();
-      if (editingNeutral) writeNeutralPose(currentPose());
-      setDualPairPreview(true);
+      previewDualWieldMain();
       setStatus('Mirrored Dual Wield Main into Offhand using Mirror Animation rules, with Body Yaw preserved. Offhand transforms are now independently editable.');
       return true;
     }
@@ -171,6 +169,7 @@
     function previewDualWieldMain() {
       const main = workingConfig.stances.dualWieldMain;
       if (!main) return false;
+      stopEditingNeutral(); // Pair preview must not capture the main pose into a selected offhand preset.
       const shown = writeNeutralPose(main);
       if (shown) {
         setDualPairPreview(true);
@@ -247,6 +246,7 @@
     }
 
     function stopEditingNeutral(message = '') {
+      if (editingNeutral) window.HobunjiHandToolGrips?.setEditorSingleHandPreview?.(false);
       editingNeutral = false;
       updateEditButton();
       if (message) setStatus(message);
@@ -317,13 +317,14 @@
       syncFieldsFromPose();
       window.HobunjiDualWieldWeaponVisuals?.syncNow?.();
       updateEditButton();
-      if (editingNeutral) writeNeutralPose(currentPose());
+      if (editingNeutral) { setDualPairPreview(false); writeNeutralPose(currentPose()); }
       setStatus(`${STANCE_LABELS[selectedKey]} selected.`);
     });
 
     $('idleEditNeutralBtn').addEventListener('click', () => {
-      if (selectedKey === 'dualWieldOffhand' && dualPairPreview) setDualPairPreview(false); // Isolate the offhand copy while the existing Neutral gizmo authors its explicit transform.
+      if (dualPairPreviewActive()) setDualPairPreview(false); // Isolate the offhand copy while the existing Neutral gizmo authors its explicit transform.
       editingNeutral = !editingNeutral;
+      window.HobunjiHandToolGrips?.setEditorSingleHandPreview?.(editingNeutral);
       updateEditButton();
       if (editingNeutral) {
         if (writeNeutralPose(currentPose())) setStatus(`Neutral sliders + gizmo now edit ${STANCE_LABELS[selectedKey]}.`);
@@ -398,22 +399,23 @@
       previewDualWieldMain,
       mirrorDualWieldMainToOffhand,
       setDualPairPreview,
-      dualWieldPreviewActive: () => dualPairPreview,
+      dualWieldPreviewActive: dualPairPreviewActive,
       stopEditing: () => stopEditingNeutral('Stopped idle stance editing.'),
       snapshot() {
-        return { workingConfig: clone(exportPayload()), selectedKey, editingNeutral, dualPairPreview }; // Undo/Redo must preserve hidden stances, not only the selected sliders.
+        return { workingConfig: clone(exportPayload()), selectedKey, editingNeutral, dualPairPreview: dualPairPreviewActive() }; // Undo/Redo must preserve hidden stances, not only the selected sliders.
       },
       restore(snapshot) {
         if (!snapshot?.workingConfig) return false;
         workingConfig = normalizeConfig(clone(snapshot.workingConfig), fileConfig);
         selectedKey = STANCE_ORDER.includes(snapshot.selectedKey) ? snapshot.selectedKey : selectedKey;
         editingNeutral = snapshot.editingNeutral === true;
-        dualPairPreview = snapshot.dualPairPreview === true;
+        const dualPairPreview = snapshot.dualPairPreview === true;
         select.value = selectedKey;
         syncFieldsFromPose();
         updateEditButton();
         if (editingNeutral) writeNeutralPose(currentPose());
         setDualPairPreview(dualPairPreview);
+        if (editingNeutral) window.HobunjiHandToolGrips?.setEditorSingleHandPreview?.(true);
         setStatus(`History restored ${STANCE_LABELS[selectedKey]}.`);
         return true;
       },

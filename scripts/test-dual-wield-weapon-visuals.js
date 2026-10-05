@@ -93,9 +93,10 @@ const gripState = { influence: 1, idleBlend: 0, plane: { matrixWorld: gripMatrix
 const mirrorStart = dual.indexOf('  function mirrorQuaternionAcrossLocalX('); // Bounds of the production direction conversion.
 const mirrorEnd = dual.indexOf('  function currentPlanePose(', mirrorStart);
 const socketStart = dual.indexOf('  function transformSocketForHand('); // Bounds of the production per-hand dispatch.
-const socketEnd = dual.indexOf('  function setEditorIdlePreview(', socketStart);
+const socketEnd = dual.indexOf('  function resetPoseHistory(', socketStart);
 const socketResolver = vm.runInNewContext(`${dual.slice(mirrorStart, mirrorEnd)}\n(${dual.slice(socketStart, socketEnd).trim()})`, {
   syncNow: () => gripState,
+  state: null,
   ACTIVE_EPSILON: 0.0001,
   hierarchyWorldQuaternion: (node, target) => target.set(node.quaternion.x, node.quaternion.y, node.quaternion.z, node.quaternion.w),
   DUPLICATE_Z_GAP: 0.30,
