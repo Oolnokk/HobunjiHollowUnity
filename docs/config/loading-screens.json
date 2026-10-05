@@ -1,5 +1,5 @@
 {
-  "version": 8,
+  "version": 9,
   "selectedId": "sample",
   "settings": {
     "scriptSide": "left",
@@ -51,7 +51,7 @@
               "minimumSeconds": 5,
               "delayedReveals": [
                 {
-                  "afterSeconds": 8,
+                  "afterSeconds": 4,
                   "text": "\nOh Breath..."
                 }
               ]
@@ -61,7 +61,7 @@
               "minimumSeconds": 5,
               "delayedReveals": [
                 {
-                  "afterSeconds": 8,
+                  "afterSeconds": 4,
                   "text": "\nYou are lost."
                 }
               ]
@@ -81,7 +81,7 @@
               "minimumSeconds": 12.5,
               "delayedReveals": [
                 {
-                  "afterSeconds": 8,
+                  "afterSeconds": 4,
                   "text": "\n\nare those that only the lost may find"
                 }
               ],
@@ -108,7 +108,7 @@
               "minimumSeconds": 5.5,
               "delayedReveals": [
                 {
-                  "afterSeconds": 8,
+                  "afterSeconds": 4,
                   "text": "\nand find yourself asleep once again."
                 }
               ]

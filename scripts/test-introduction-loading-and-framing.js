@@ -14,7 +14,7 @@ assert.equal(storyPages[8].text, 'And after flying free for what feels like minu
 assert.equal(storyPages[8].delayedReveals?.[0]?.text, '\nand find yourself asleep once again.');
 const maximPage = storyPages.find(page => page.text === 'that the greatest things in this world of ours');
 assert(maximPage, 'lost-may-find maxim page is authored');
-assert.equal(maximPage.delayedReveals?.[0]?.afterSeconds, 8);
+assert.equal(maximPage.delayedReveals?.[0]?.afterSeconds, 4);
 assert.equal(maximPage.afterPageSeconds, 10, 'the original ten-second pause is a black inter-slide hold after the proverb');
 assert.equal(maximPage.bold, true, 'the whole proverb is bold');
 assert.equal(maximPage.textColor, '#d6b76b', 'the proverb uses a distinct bronze-gold color');
@@ -22,11 +22,11 @@ assert.equal(maximPage.delayedReveals[0].text, '\n\nare those that only the lost
 assert.equal(storyPages[2].delayedReveals?.[0]?.text, '\nOh Breath...', 'Oh Breath keeps the authored ellipsis');
 assert(storyPages[2].text.endsWith('...'), 'the home/name line keeps its authored ellipsis');
 assert(storyPages[8].text.endsWith('...'), 'the hard-ground line keeps its authored ellipsis');
-assert(storyPages.some(page => Number(page.minimumSeconds) < 8), 'eight seconds is not a blanket inter-slide/page minimum');
+assert(storyPages.some(page => Number(page.minimumSeconds) < 4), 'four seconds is not a blanket inter-slide/page minimum');
 assert(loader.includes('const stagePages = stage =>'), 'introduction runtime must support several visible pages inside one preload phase');
 assert(loader.includes('delayedReveals'), 'introduction runtime must preserve delayed line reveals');
-assert(storyPages.flatMap(page => page.delayedReveals || []).every(reveal => Number(reveal.afterSeconds) >= 8), 'every intra-slide delayed reveal waits at least eight seconds');
-assert(loader.includes('const MIN_INTRA_SLIDE_DELAY_SECONDS = 8'), 'runtime enforces the eight-second floor only for intra-slide delayed text');
+assert(storyPages.flatMap(page => page.delayedReveals || []).every(reveal => Number(reveal.afterSeconds) >= 4), 'every intra-slide delayed reveal waits at least four seconds');
+assert(loader.includes('const MIN_INTRA_SLIDE_DELAY_SECONDS = 4'), 'runtime enforces the four-second floor only for intra-slide delayed text');
 assert(loader.includes('afterPageSeconds'), 'runtime supports the one authored inter-slide black pause');
 assert(loader.includes('introAudio?.started'), 'first-page visibility is gated on the introduction wind actually starting');
 assert(audio.includes("wind.addEventListener('playing', markWindStarted"), 'audio session resolves narration gating from the real playing event');

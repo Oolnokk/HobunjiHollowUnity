@@ -710,7 +710,7 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
     root.setAttribute('aria-label', 'Introduction');
     root.tabIndex = -1;
     const INTRO_FADE_MS = 900; // Used by narrative pages and Continue prompts so every opening-text change crossfades instead of snapping.
-    const MIN_INTRA_SLIDE_DELAY_SECONDS = 8; // Used only by delayed text within one opening slide; ordinary page holds keep their authored durations.
+    const MIN_INTRA_SLIDE_DELAY_SECONDS = 4; // Used only by delayed text within one opening slide; ordinary page holds keep their authored durations.
     const stageText = document.createElement('div'); // Authored opening pages keep delayed lines laid out invisibly until their fade-in beat.
     stageText.style.cssText = `opacity:0;transition:opacity ${INTRO_FADE_MS}ms ease`;
     const percentText = document.createElement('div'); // Quiet progress stays at the bottom, separate from centered story copy.
@@ -825,7 +825,7 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
     const waitForPageInput = async (page, requiredWork) => {
       await pageVisiblePromise; // A page's clock does not start while the screen is still waiting for audible wind.
       const authoredReveals = Array.isArray(page?.delayedReveals) ? page.delayedReveals : [];
-      const delayedTail = Math.max(0, ...authoredReveals.map(reveal => Math.max(MIN_INTRA_SLIDE_DELAY_SECONDS, Number(reveal?.afterSeconds) || 0))); // Eight seconds applies only to text revealed inside the current slide.
+      const delayedTail = Math.max(0, ...authoredReveals.map(reveal => Math.max(MIN_INTRA_SLIDE_DELAY_SECONDS, Number(reveal?.afterSeconds) || 0))); // Four seconds applies only to text revealed inside the current slide.
       const authoredMinimum = Math.max(0, Number(page?.minimumSeconds) || Number(stages[stageIndex]?.minimumSeconds) || 0);
       const minimumSeconds = Math.max(authoredMinimum, delayedTail + (delayedTail > 0 ? INTRO_FADE_MS / 1000 : 0)); // Continue can appear as soon as the authored page hold and final intra-slide fade are complete.
       const minimum = minimumSeconds * 1000;
@@ -868,7 +868,7 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
         if (state.introduction === session) { state.introduction = null; state.introductionStage = 0; finalizeHide(state.generation); }
       },
       cancel() { const error = new Error('Introduction loading cancelled'); rejectCancellation(error); rejectStage?.(error); session.finish(); },
-      getDebug: () => ({ audio: introAudio?.debug?.(), presetId, stage: stageIndex + 1, page: pageIndex + 1, pageCount: stagePages(stages[stageIndex]).length, ready, minimumSeconds: stagePages(stages[stageIndex])[pageIndex]?.minimumSeconds ?? stages[stageIndex]?.minimumSeconds, latestChange: 'Opening narration waits for audible wind before first paint; eight seconds applies only to intra-slide reveals, the proverb is bold/bronze, and its authored ten-second black inter-slide pause precedes the carriage crash.' }),
+      getDebug: () => ({ audio: introAudio?.debug?.(), presetId, stage: stageIndex + 1, page: pageIndex + 1, pageCount: stagePages(stages[stageIndex]).length, ready, minimumSeconds: stagePages(stages[stageIndex])[pageIndex]?.minimumSeconds ?? stages[stageIndex]?.minimumSeconds, latestChange: 'Opening narration waits for audible wind before first paint; four seconds applies only to intra-slide reveals, the proverb is bold/bronze, and its authored ten-second black inter-slide pause precedes the carriage crash.' }),
     };
     state.introduction = session; // Claim foreground synchronously before config/fonts are fetched.
     try {
