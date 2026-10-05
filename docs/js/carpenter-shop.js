@@ -78,7 +78,7 @@
   // craftFurnitureFromBlueprint).
   function buyFurnitureBlueprint(blueprintKey) {
     const bp = deps.FURNITURE_BLUEPRINT_CATALOG.find(b => b.key === blueprintKey);
-    if (!bp) return;
+    if (!bp || bp.moteOnly) return;
     const gold = deps.inventory.gold || 0;
     if (gold < bp.price) { deps.showToast('Not enough ganang.', false); return; }
     deps.inventory.gold = gold - bp.price;
@@ -171,7 +171,7 @@
     bpHdr.textContent = '📜 Furniture Blueprints';
     list.appendChild(bpHdr);
 
-    deps.FURNITURE_BLUEPRINT_CATALOG.filter(bp => window.ConditionRegistry.entryEligible(bp, world)).forEach(bp => {
+    deps.FURNITURE_BLUEPRINT_CATALOG.filter(bp => !bp.moteOnly && window.ConditionRegistry.entryEligible(bp, world)).forEach(bp => {
       const owned = deps.inventory[bp.key] || 0;
       const row = document.createElement('div');
       row.className = 'shop-row';

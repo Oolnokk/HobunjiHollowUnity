@@ -3,7 +3,7 @@
 
   if (Number(window.ClothingWeavingSystem?.version) >= 1) return;
 
-  const VERSION = 2;
+  const VERSION = 3;
   const LIGHT_WOOL_KEY = 'lightWool'; // Used by loom recipes for low-weight cloth variants.
   const HEAVY_WOOL_KEY = 'puktukWool'; // Existing save-compatible Puktuk item key; presented in-game as Heavy Wool.
   const COMBAT_GRACE_MS = 6000; // Matches the game's quiet-period notion closely enough to limit movement burden to active combat.
@@ -190,6 +190,12 @@
     if (forcedOverpassPatternForWeaving(weaving)) return true; // Lets an NPC policy put its mark onto default/unpatterned clothing without fabricating a permanent slot-1 pattern.
     if (weaving.layers) return Object.keys(weaving.layers).some(role => weavingPatternsForRole(weaving, role).length > 0);
     return weavingPatternsForRole(weaving, null).length > 0;
+  }
+
+  function weavingHasOverpass(weaving) {
+    if (!weaving) return false;
+    if (weaving.layers) return Object.values(weaving.layers).some(entry => normalizePatternStack(entry?.patterns || []).length > 1);
+    return normalizePatternStack(weaving.patterns || []).length > 1; // Used by Advanced Loom cost/gating logic without treating NPC-only forced overpasses as player-authored second patterns.
   }
   function normalizeTrimDyeSlot(value) {
     const slot = String(value || '').trim().toUpperCase(); // Stored on a literal garment so its fixed trim can reuse any one of the existing A/B/C dye channels.
@@ -833,11 +839,18 @@
 
   function patternLibraryEntries() { return window.PatternLibrary?.listAvailable?.() || []; }
 
-  function openLoom(reweaveUid = null) {
+  function openLoom(reweaveUid = null, options = {}) {
+    const advanced = !!options?.advanced; // Used to expose the second pattern slot only when the interaction came from an Advanced Loom.
     injectStyles();
     closeLoom();
     const blueprints = currentBlueprints();
-    const reweaveItems = (gearInventory()?.clothingItems || []).filter(item => item && isCraftableCloth(item)); // Permanent Gear garments are the only reweave targets; Pack clothing remains world-scoped and untouched.
+    const allReweaveItems = (gearInventory()?.clothingItems || []).filter(item => item && isCraftableCloth(item)); // Permanent Gear garments are the only reweave targets; Pack clothing remains world-scoped and untouched.
+    const requestedReweaveItem = reweaveUid ? allReweaveItems.find(item => item.uid === reweaveUid) || null : null; // Used to reject a direct attempt to edit an overpass garment on the Simple Loom without silently deleting slot 2.
+    if (requestedReweaveItem && weavingHasOverpass(requestedReweaveItem.weaving) && !advanced) {
+      equipmentDeps?.showToast?.('An Advanced Loom is required to reweave a garment with an overpass pattern.', false);
+      return false;
+    }
+    const reweaveItems = allReweaveItems.filter(item => advanced || !weavingHasOverpass(item.weaving)); // Simple Loom never offers a garment whose second saved pattern it cannot edit.
     const reweaveItem = reweaveUid ? reweaveItems.find(item => item.uid === reweaveUid) || null : null;
     const isReweave = !!reweaveItem;
     if (!isReweave && !blueprints.length) {
@@ -864,6 +877,7 @@
       previewRevision: 0, // Rejects stale asynchronous preview renders after garment/dye/view changes.
       layers: [], // Resolved [{url, role}] for the currently selected blueprint; refreshed whenever the blueprint changes.
       layerPatterns: {}, // role -> {pattern, patternId, patternLabel, swapPatternColors}. Sticky across blueprint switches; the swap flag belongs to this garment layer, not the reusable pattern.
+      overpassPatterns: {}, // role -> {pattern, patternId, patternLabel}. Used only by Advanced Looms as visual pattern stack slot 2.
       trimAvailable: false, // Set after resolving whether this clothing piece has an authored trim mask for the current species/gender variant.
       trimEnabled: weavingHasOptionalTrim(reweaveItem?.weaving), // Reweaving preserves the literal garment's optional authored trim toggle.
       trimDyeSlot: normalizeTrimDyeSlot(reweaveItem?.weaving?.trim?.dyeSlot || 'B'), // Selects which existing garment dye channel colors the fixed trim overlay.
@@ -887,11 +901,17 @@
         // cannot mutate an already-crafted or reweaved item.
         const pattern = entry.pattern || (entry.patternId ? window.PatternLibrary?.getById?.(entry.patternId) : null);
         if (!pattern) continue;
+        const overpassEntry = advanced ? state.overpassPatterns[key] : null; // Advanced Loom's second visual pattern for this exact garment role.
+        const overpassPattern = overpassEntry?.pattern || (overpassEntry?.patternId ? window.PatternLibrary?.getById?.(overpassEntry.patternId) : null);
+        const patterns = overpassPattern ? [clone(pattern), clone(overpassPattern)] : [clone(pattern)]; // Slot 2 is already rendered as the compositor's overpass.
         const swapPatternColors = !!entry.swapPatternColors; // Stored beside this garment layer so base/trim can swap independently without changing the source pattern.
         layers[key] = {
           pattern: clone(pattern),
+          patterns,
           ...(entry.patternId ? { patternLibraryId: entry.patternId } : {}),
           patternLabel: entry.patternLabel || 'Custom',
+          ...(overpassEntry?.patternId ? { overpassPatternLibraryId: overpassEntry.patternId } : {}),
+          ...(overpassPattern ? { overpassPatternLabel: overpassEntry?.patternLabel || 'Custom' } : {}),
           ...(swapPatternColors ? { swapPatternColors: true } : {}),
         };
       }
@@ -905,20 +925,33 @@
     function seedReweavePatternsFromItem() {
       if (!isReweave || state.reweaveSeededUid === reweaveItem.uid) return;
       state.layerPatterns = {};
+      state.overpassPatterns = {};
       const savedWeaving = reweaveItem.weaving;
       if (savedWeaving) {
         for (const { role, key } of patternRoles()) {
           const stored = savedWeaving.layers
             ? weavingEntryForRole(savedWeaving, role)
-            : (savedWeaving.pattern ? { pattern: savedWeaving.pattern, patternLabel: 'Custom' } : null);
+            : (savedWeaving.pattern || savedWeaving.patterns ? { pattern: savedWeaving.pattern, patterns: savedWeaving.patterns, patternLabel: 'Custom' } : null);
           if (!stored) continue;
           const patternId = stored.patternLibraryId || '';
-          state.layerPatterns[key] = {
-            pattern: clone(stored.pattern || (patternId ? window.PatternLibrary?.getById?.(patternId) : null)),
-            patternId,
-            patternLabel: stored.patternLabel || (patternId ? window.PatternLibrary?.listAvailable?.().find(entry => entry.id === patternId)?.label : null) || 'Custom',
-            swapPatternColors: !!stored.swapPatternColors,
-          };
+          const stack = normalizePatternStack(stored.patterns?.length ? stored.patterns : (stored.pattern || (patternId ? window.PatternLibrary?.getById?.(patternId) : null)));
+          const primaryPattern = stack[0] || null; // Saved pattern stack slot 1 remains the ordinary pattern.
+          if (primaryPattern) {
+            state.layerPatterns[key] = {
+              pattern: clone(primaryPattern),
+              patternId,
+              patternLabel: stored.patternLabel || (patternId ? window.PatternLibrary?.listAvailable?.().find(entry => entry.id === patternId)?.label : null) || 'Custom',
+              swapPatternColors: !!stored.swapPatternColors,
+            };
+          }
+          if (advanced && stack[1]) {
+            const overpassPatternId = stored.overpassPatternLibraryId || ''; // Used to preserve library provenance for the optional second pattern.
+            state.overpassPatterns[key] = {
+              pattern: clone(stack[1]),
+              patternId: overpassPatternId,
+              patternLabel: stored.overpassPatternLabel || (overpassPatternId ? window.PatternLibrary?.listAvailable?.().find(entry => entry.id === overpassPatternId)?.label : null) || 'Custom',
+            };
+          }
         }
       }
       state.reweaveSeededUid = reweaveItem.uid;
@@ -928,7 +961,7 @@
     overlay.className = 'loomcraft-overlay';
     overlay.innerHTML = `
       <div class="loomcraft-panel" role="dialog" aria-modal="true">
-        <div class="loomcraft-head"><h2>🧶 Loom</h2><button class="loomcraft-close" type="button" aria-label="Close">✕</button></div>
+        <div class="loomcraft-head"><h2>🧶 ${advanced ? 'Advanced Loom' : 'Simple Loom'}</h2><button class="loomcraft-close" type="button" aria-label="Close">✕</button></div>
         <div class="loomcraft-body">
           <div>
             <div class="loomcraft-card loomcraft-operation"><h3>Operation</h3><div class="loomcraft-field"><label>Craft new or reweave Gear clothing</label><select data-field="reweaveItem"><option value="">Craft new garment</option></select></div><div class="loomcraft-note">Reweaving edits the selected permanent Gear item in place. You can remove, swap, or custom-edit its woven pattern without replacing the garment.</div></div>
@@ -936,7 +969,7 @@
             <div class="loomcraft-card" data-craft-only><h3>Wool weight</h3><div class="loomcraft-row"><button type="button" class="loomcraft-material active" data-material="light">Light Wool</button><button type="button" class="loomcraft-material" data-material="heavy">Heavy Wool</button></div><div class="loomcraft-note" data-material-note></div></div>
             <div class="loomcraft-card"><h3>${isReweave ? 'Decoration dyes' : 'Default dyes'}</h3><div class="loomcraft-field" data-primary-field><label>Dye A — primary</label><select data-field="dyeA">${dyeOptionHtml(dyes, state.dyeA)}</select></div><div class="loomcraft-field" data-trim-field><label>Dye B — secondary</label><select data-field="dyeB">${dyeOptionHtml(dyes, state.dyeB)}</select></div><div class="loomcraft-field" data-pattern-dye-field><label>Dye C — pattern / third color</label><select data-field="dyeC">${dyeOptionHtml(dyes, state.dyeC)}</select></div></div>
             <div class="loomcraft-card" data-optional-trim-card style="display:none"><h3>Added trim</h3><label class="loomcraft-pattern-swap"><input type="checkbox" data-field="trimEnabled"><span>Add this garment's authored trim</span></label><div class="loomcraft-field" data-trim-dye-slot-field><label>Color trim with</label><select data-field="trimDyeSlot"><option value="A">Dye A</option><option value="B">Dye B</option><option value="C">Dye C</option></select></div><div class="loomcraft-note">This is a fixed, clothing-specific, non-tiling overlay authored separately for each supported species/gender. It renders above woven patterns and receives its own black separation outline.</div></div>
-            <div class="loomcraft-card"><h3>Weaving pattern</h3><div data-pattern-layers><span class="loomcraft-note">Loading…</span></div><div class="loomcraft-note">Uses the same saved/unlocked pattern library and authoring workflow as mastered-tool verdigris removal. Each layer's motif is baked into this crafted item; only its third dye color remains freely changeable afterward.</div></div>
+            <div class="loomcraft-card"><h3>Weaving pattern</h3><div data-pattern-layers><span class="loomcraft-note">Loading…</span></div><div class="loomcraft-note">Uses the same saved/unlocked pattern library and authoring workflow as mastered-tool verdigris removal. Each layer's motif is baked into this crafted item; only its third dye color remains freely changeable afterward.${advanced ? ' Advanced Loom: add an optional overpass pattern above the base motif; any overpass doubles the wool cost.' : ''}</div></div>
           </div>
           <div><div class="loomcraft-card"><h3>Preview <button class="loomcraft-behindToggle" type="button" data-act="toggleBehindView" style="display:none">Behind view</button></h3><div class="loomcraft-preview" data-preview><span class="loomcraft-note">Loading preview…</span></div><div class="loomcraft-stats" data-stats></div></div><button class="loomcraft-craft" type="button" data-act="craft">Craft</button></div>
         </div>
@@ -998,7 +1031,9 @@
       const supportsBehindView = await hasBehindView(bp.baseCosmeticId);
       const previewFor = view => patternData => {
         const base = weavingFromState() || { layers: {} };
-        const weaving = { layers: { ...base.layers, [roleKey]: { pattern: patternData, ...(swapPatternColors ? { swapPatternColors: true } : {}) } } };
+        const currentLayer = base.layers?.[roleKey] || {}; // Used to retain Advanced Loom pattern stack slot 2 while previewing edits to slot 1.
+        const currentStack = normalizePatternStack(currentLayer.patterns?.length ? currentLayer.patterns : currentLayer.pattern);
+        const weaving = { layers: { ...base.layers, [roleKey]: { ...currentLayer, pattern: patternData, patterns: currentStack[1] ? [patternData, currentStack[1]] : [patternData], swapPatternColors: !!swapPatternColors } } };
         return renderClothingLayers(bp.baseCosmeticId, { primaryHex: selectedPrimaryHex(), secondaryHex: selectedSecondaryHex(), patternHex: selectedPatternHex(), weaving, view }).then(r => r.canvas);
       };
       const patternRoleCount = patternRoles().length; // UI wording follows logical weave roles rather than raw front/back raster count.
@@ -1067,6 +1102,22 @@
         const select = document.createElement('select');
         populatePatternSelect(select, state.layerPatterns[key]?.patternId);
         row.appendChild(select);
+        let overpassSelect = null; // Advanced Loom-only second pattern selector for this garment role.
+        if (advanced) {
+          const overpassLabel = document.createElement('label');
+          overpassLabel.textContent = 'Overpass pattern';
+          row.appendChild(overpassLabel);
+          overpassSelect = document.createElement('select');
+          populatePatternSelect(overpassSelect, state.overpassPatterns[key]?.patternId);
+          overpassSelect.disabled = !state.layerPatterns[key];
+          overpassSelect.onchange = () => {
+            const patternId = overpassSelect.value;
+            if (!patternId) delete state.overpassPatterns[key];
+            else state.overpassPatterns[key] = { pattern: clone(window.PatternLibrary?.getById?.(patternId)), patternId, patternLabel: overpassSelect.selectedOptions[0]?.textContent || 'None' };
+            refreshPreview();
+          };
+          row.appendChild(overpassSelect);
+        }
         const swapWrap = document.createElement('label'); // Holds the per-layer cloth/pattern color-swap control outside PatternAuthoring.
         swapWrap.className = 'loomcraft-pattern-swap';
         const swapCheck = document.createElement('input'); // Writes only state.layerPatterns[key].swapPatternColors; base and trim therefore remain independent.
@@ -1083,10 +1134,13 @@
           const keepSwap = !!swapCheck.checked; // Carries this garment-layer choice across library-pattern changes without touching the pattern data.
           if (!patternId) {
             delete state.layerPatterns[key];
+            delete state.overpassPatterns[key]; // An overpass is always pattern stack slot 2 and therefore cannot exist without slot 1.
+            if (overpassSelect) { overpassSelect.value = ''; overpassSelect.disabled = true; }
             swapCheck.checked = false;
             swapCheck.disabled = true;
           } else {
             state.layerPatterns[key] = { pattern: clone(window.PatternLibrary?.getById?.(patternId)), patternId, patternLabel: select.selectedOptions[0]?.textContent || 'None', swapPatternColors: keepSwap };
+            if (overpassSelect) overpassSelect.disabled = false;
             swapCheck.disabled = false;
           }
           refreshPreview();
@@ -1109,7 +1163,9 @@
         clearBtn.textContent = 'Plain cloth';
         clearBtn.onclick = () => {
           delete state.layerPatterns[key];
+          delete state.overpassPatterns[key];
           select.value = '';
+          if (overpassSelect) { overpassSelect.value = ''; overpassSelect.disabled = true; }
           swapCheck.checked = false;
           swapCheck.disabled = true;
           refreshPreview();
@@ -1131,7 +1187,8 @@
       const primaryHex = selectedPrimaryHex(); // Captured before awaits so this render cannot mix dye states.
       const secondaryHex = selectedSecondaryHex(); // Captured with primaryHex for a coherent preview frame.
       const patternHex = selectedPatternHex(); // Captured with the weaving snapshot for a coherent preview frame.
-      const cost = isReweave ? reweaveMaterialCost(reweaveItem) : (WOOL_COST_BY_SLOT[bp.slot] || 1);
+      const baseCost = isReweave ? reweaveMaterialCost(reweaveItem) : (WOOL_COST_BY_SLOT[bp.slot] || 1); // Ordinary Simple Loom price before the Advanced Loom overpass multiplier.
+      const cost = baseCost * (weavingHasOverpass(weaving) ? 2 : 1); // Any player-authored overpass doubles craft/reweave wool exactly once, regardless of garment layer count.
       const owned = Number(equipmentDeps?.inventory?.[material.itemKey]) || 0;
       const weight = isReweave ? itemWeightUnits(reweaveItem) : standardWeightFor(bp) * material.weightMul;
       const hasPattern = weavingHasAnyPattern(weaving); // Reusable motifs still own normal pattern-dye semantics.
@@ -1140,10 +1197,10 @@
       overlay.querySelector('[data-primary-field]').style.display = isReweave ? 'none' : '';
       overlay.querySelector('[data-trim-field]').style.display = ((!isReweave && hasSecondary()) || (hasTrim && trimDyeSlot === 'B')) ? '' : 'none';
       overlay.querySelector('[data-pattern-dye-field]').style.display = (hasPattern || (hasTrim && trimDyeSlot === 'C')) ? '' : 'none';
-      overlay.querySelector('[data-material-note]').textContent = `${material.label}: ${owned} owned · ${cost} required${isReweave ? ' to reweave (half craft cost, rounded up)' : ''}.`;
+      overlay.querySelector('[data-material-note]').textContent = `${material.label}: ${owned} owned · ${cost} required${isReweave ? ' to reweave' : ''}${weavingHasOverpass(weaving) ? ' (2× for overpass)' : (isReweave ? ' (half craft cost, rounded up)' : '')}.`;
       overlay.querySelector('[data-stats]').textContent = `Weight: ${weight.toFixed(1)} units\nDefense: +${Math.round(weight * TUNING.defensePerUnit * 100)}%\nFooting resistance: +${Math.round(weight * TUNING.footingResistancePerUnit * 100)}%\nDodge efficacy: −${Math.round(weight * TUNING.dodgePenaltyPerUnit * 100)}%\nCombat movement: −${Math.round(weight * TUNING.combatMovePenaltyPerUnit * 100)}%\nPattern: ${summarizePatterns(weaving)}\nAdded trim: ${hasTrim ? 'Dye ' + trimDyeSlot : 'None'}`;
       const craft = overlay.querySelector('[data-act="craft"]');
-      craft.textContent = isReweave ? `Reweave · ${cost} ${material.label}` : 'Craft';
+      craft.textContent = isReweave ? `Reweave · ${cost} ${material.label}` : `Craft · ${cost} ${material.label}`;
       craft.disabled = !state.layersReady || owned < cost;
       const behindToggleBtn = overlay.querySelector('[data-act="toggleBehindView"]');
       const showBehindToggle = await hasBehindView(blueprintId);
@@ -1185,7 +1242,7 @@
       await refreshPatternLayerControls(); // Layer initialization owns the follow-up preview refresh.
       if (!loomOverlay || state.blueprintId !== blueprintId) return;
     };
-    reweaveSelect.onchange = () => openLoom(reweaveSelect.value || null);
+    reweaveSelect.onchange = () => openLoom(reweaveSelect.value || null, { advanced });
     overlay.querySelector('[data-act="toggleBehindView"]').onclick = () => {
       state.previewView = state.previewView === 'behind' ? 'front' : 'behind';
       refreshPreview();
@@ -1202,8 +1259,8 @@
     trimDyeSlotSelect.onchange = () => { state.trimDyeSlot = normalizeTrimDyeSlot(trimDyeSlotSelect.value); refreshPreview(); }; // Reuses A/B/C rather than inventing a fourth dye channel.
     overlay.querySelector('[data-act="craft"]').onclick = () => {
       if (loomOverlay !== overlay || !state.layersReady) return false;
-      if (isReweave) reweaveFromLoom(reweaveItem, selectedMaterial(), dyeById(state.dyeC), weavingFromState(), dyeById(state.dyeB));
-      else craftFromLoom(state, selectedBlueprint(), selectedMaterial(), dyeById, hasSecondary(), weavingFromState());
+      if (isReweave) reweaveFromLoom(reweaveItem, selectedMaterial(), dyeById(state.dyeC), weavingFromState(), dyeById(state.dyeB), advanced);
+      else craftFromLoom(state, selectedBlueprint(), selectedMaterial(), dyeById, hasSecondary(), weavingFromState(), advanced);
     };
     overlay.querySelector('.loomcraft-close').onclick = closeLoom;
     overlay.addEventListener('pointerdown', event => { if (event.target === overlay) closeLoom(); });
@@ -1211,10 +1268,12 @@
     return true;
   }
 
-  function craftFromLoom(state, bp, material, dyeById, hasSecondary, weaving) {
+  function craftFromLoom(state, bp, material, dyeById, hasSecondary, weaving, advanced = false) {
     const gear = gearInventory();
     if (!gear || !bp || !material) return false;
-    const cost = WOOL_COST_BY_SLOT[bp.slot] || 1;
+    const baseCost = WOOL_COST_BY_SLOT[bp.slot] || 1; // Used by Simple Loom crafting and as the Advanced Loom overpass base price.
+    if (weavingHasOverpass(weaving) && !advanced) { equipmentDeps?.showToast?.('An Advanced Loom is required to weave an overpass pattern.', false); return false; }
+    const cost = baseCost * (weavingHasOverpass(weaving) ? 2 : 1);
     const inventory = equipmentDeps?.inventory;
     if (!inventory || Number(inventory[material.itemKey]) < cost) {
       equipmentDeps?.showToast?.(`Need ${cost} ${material.label}.`, false);
@@ -1270,14 +1329,16 @@
     window.EquipmentPanel?.buildPackClothingSection?.();
     invalidateClothingVisualCaches();
     equipmentDeps?.showToast?.(`Wove ${material.label} ${baseLabel} (${weightUnits.toFixed(1)} weight) — added to your pack.`, true);
-    openLoom();
+    openLoom(null, { advanced });
     return true;
   }
 
-  function reweaveFromLoom(item, material, patternDye, weaving, secondaryDye = null) {
+  function reweaveFromLoom(item, material, patternDye, weaving, secondaryDye = null, advanced = false) {
     const gear = gearInventory();
     if (!gear || !item || !material) return false;
-    const cost = reweaveMaterialCost(item);
+    const baseCost = reweaveMaterialCost(item); // Regular reweaving price before Advanced Loom's requested overpass multiplier.
+    if (weavingHasOverpass(weaving) && !advanced) { equipmentDeps?.showToast?.('An Advanced Loom is required to reweave an overpass pattern.', false); return false; }
+    const cost = baseCost * (weavingHasOverpass(weaving) ? 2 : 1);
     const inventory = equipmentDeps?.inventory;
     if (!inventory || Number(inventory[material.itemKey]) < cost) {
       equipmentDeps?.showToast?.(`Need ${cost} ${material.label} to reweave this garment.`, false);
@@ -1320,7 +1381,7 @@
     const worn = CLOTHING_SLOTS.some(slot => gear.clothing?.[slot]?.uid === item.uid);
     if (worn) equipmentDeps?.refreshPlayerAvatar?.();
     equipmentDeps?.showToast?.(`Rewove ${baseLabel} for ${cost} ${material.label}.`, true);
-    openLoom(item.uid);
+    openLoom(item.uid, { advanced });
     return true;
   }
 

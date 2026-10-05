@@ -155,8 +155,8 @@ assert.match(editorSource, /id="gridFurnD"/, 'interior editor exposes whole-tile
 assert.match(editorSource, /id="nonCollidingFurniture"/, 'interior editor exposes non-colliding checkbox');
 assert.match(editorSource, /f\.gridW=nextW; f\.gridD=nextD/, 'grid-size control persists dimensions on the furniture record');
 assert.match(wardrobeEditorSource, /piece\.nonColliding = true;[\s\S]{0,180}InteriorFurnitureGrid/, 'walkable elevation automatically persists non-collision');
-assert.match(indexSource, /js\/interior-furniture-grid\.js\?v=20260917grid1/, 'game loads the furniture-grid runtime bridge');
-assert.match(mapEditorSource, /js\/interior-furniture-grid\.js\?v=20260917grid1/, 'main Map Editor loads the shared furniture-grid helper');
+assert.match(indexSource, /js\/interior-furniture-grid\.js\?v=[^"']+/, 'game loads the furniture-grid runtime bridge');
+assert.match(mapEditorSource, /js\/interior-furniture-grid\.js\?v=[^"']+/, 'main Map Editor loads the shared furniture-grid helper');
 assert.match(mapEditorSyncSource, /InteriorFurnitureGrid\?\.mergedColliders/, 'main Map Editor derives interior blockers from furniture grid footprints');
 
 const mapIndex = JSON.parse(read('docs/config/maps/index.json'));

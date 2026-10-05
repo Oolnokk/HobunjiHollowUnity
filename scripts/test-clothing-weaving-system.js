@@ -915,9 +915,9 @@ assert.match(metalPatternSource, /const meshScale = Math\.max\(0\.05, Number\(pa
 assert.match(metalPatternSource, /function scaledOutlineWidthForPattern\(defaultWidth, _rawPatternDef\)[\s\S]*return Math\.max\(1, Math\.round\(Number\(defaultWidth\) \|\| 0\)\);/, 'verdigris authored-pattern outline width stays fixed regardless of motif, frame, or mesh scale');
 assert.doesNotMatch(source, /clothingLoomInjected|syncLoomActionButton|targetedLoom/, 'weaving module no longer owns a parallel DOM/polling interaction path');
 const gameSource = fs.readFileSync('docs/game.js', 'utf8');
-assert.match(gameSource, /if \(o\.key === 'loom'\) return makeLoomInteractable\(\)/, 'player-placed house loom is a normal interior furniture interactable');
-assert.match(gameSource, /loomFurniture: \(\) => makeLoomInteractable\(\)/, 'map-authored loom uses the same core interactable factory');
-assert.match(gameSource, /function makeLoomInteractable\(\)/, 'loom interaction is owned by the core furniture system');
+assert.match(gameSource, /if \(o\.key === 'loom'\) return makeLoomInteractable\(false\)/, 'player-placed Simple Loom uses the core loom interactable without overpass capability');
+assert.match(gameSource, /loomFurniture: \(\) => makeLoomInteractable\(false\)/, 'map-authored Simple Loom uses the same capability-gated core interactable');
+assert.match(gameSource, /function makeLoomInteractable\(advanced = false\)/, 'loom interaction is owned by the core furniture system and defaults to Simple Loom capability');
 compatibilityRuntimeRegression.then(() => {
   if (!process.exitCode) console.log('clothing weaving system tests passed');
 });

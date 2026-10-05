@@ -2458,7 +2458,8 @@
         // instead), since only one can ever be placed and it's aimed
         // anywhere in the wild rather than snapped to farm/interior tiles.
         campfire:      { itemKey: 'campfireKitFurniture',   icon: '🔥', name: 'Campfire Kit',         price: 15, fw: 1, fd: 1, color: 0x6d3e20, area: 'any', desc: 'A portable campfire kit. Select it, aim at open ground anywhere in the wild, and use Action 1 to make camp.', customPlace: true },
-        loom:          { itemKey: 'loomFurniture',          icon: '🧶', name: 'Small Loom',           modelFile: 'loom_small.glb',               price: 45, fw: 1, fd: 2, color: 0x8a6a3a, area: 'interior', desc: 'A small loom for weaving cloth.' },
+        loom:          { itemKey: 'loomFurniture',          icon: '🧶', name: 'Simple Loom',          modelFile: 'loom_small.glb',               price: 45, fw: 1, fd: 1, color: 0x8a6a3a, area: 'interior', desc: 'A compact loom for ordinary single-pattern weaving.' },
+        advancedLoom:  { itemKey: 'advancedLoomFurniture',  icon: '🧶', name: 'Advanced Loom',        modelFile: 'loom_small.glb',               price: 72, fw: 1, fd: 2, color: 0x76502f, area: 'interior', desc: 'A full-sized loom that can weave a second overpass pattern.', moteOnly: true, masteryUnlockId: 'advancedLoomBlueprint' },
         nightstand:    { itemKey: 'nightstandFurniture',    icon: '🕯️', name: 'Nightstand',           modelFile: 'nightstand.glb',               price: 18, fw: 1, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A small bedside table.', light: { color: 0xffaa44, intensity: 0.5, distance: 4, height: 0.5 } },
         hangingBanner: { itemKey:'hangingBannerFurniture',icon:'🎏',name:'Hanging Banner',price:25,fw:2,fd:1,color:0x8b6540,area:'any',desc:'Patterned cloth suspended from a wooden beam; its free edge moves with the wind.' },
         rug:           { itemKey: 'rugFurniture',           icon: '🧶', name: 'Woven Rug',            modelFile: 'rug_woven_small.glb',          price: 22, fw: 2, fd: 2, color: 0x8a5a3a, area: 'interior', walkable: true, desc: 'A small decorative woven rug.' },
@@ -2577,6 +2578,8 @@
         icon: item.icon,
         name: item.name,
         desc: item.desc,
+        moteOnly: !!item.moteOnly, // Used to keep Mote-only mastery blueprints out of the gold Carpenter inventory.
+        masteryUnlockId: item.masteryUnlockId || null, // Used by CraftingPanel to treat the world-scoped mastery purchase as permanent blueprint ownership.
         // A permanent, reusable unlock (see craftFurnitureFromBlueprint —
         // building from a blueprint only ever spends Wood/Stone, never the
         // blueprint itself), so it's priced above the finished piece's own
@@ -3539,7 +3542,8 @@
         });
         if (!o) return null;
         if (o.key === 'hearth') return makeCookingInteractable();
-        if (o.key === 'loom') return makeLoomInteractable(); // Player-placed house looms use the same core reticle/action path as beds and hearths.
+        if (o.key === 'loom') return makeLoomInteractable(false); // Simple Loom keeps the ordinary one-pattern weaving rules.
+        if (o.key === 'advancedLoom') return makeLoomInteractable(true); // Advanced Loom opts the shared panel into overpass authoring and doubled overpass costs.
         if (o.key === 'basicBed' || o.key === 'doubleBed' || o.key === 'bedroll') {
           return {
             interactIcon: '😴',
@@ -4281,7 +4285,7 @@
         };
       }
 
-      function makeLoomInteractable() {
+      function makeLoomInteractable(advanced = false) {
         return {
           interactIcon: '🧶',
           interactLabel: 'Use Loom',
@@ -4292,7 +4296,7 @@
             if (action !== 'obj_loom' && action !== 'obj_interact') return { ok: false, message: 'Unknown action.' };
             const openLoom = window.ClothingWeavingSystem?.openLoom; // Used by both house and map-authored loom interaction records.
             if (typeof openLoom !== 'function') return { ok: false, message: 'The loom is unavailable right now.' };
-            const opened = openLoom(); // Synchronous: the panel creates immediately; its sprite preview continues asynchronously inside the module.
+            const opened = openLoom(null, { advanced }); // Synchronous: the physical loom decides whether overpass controls/cost rules are available; preview work remains asynchronous inside the module.
             return opened === false
               ? { ok: false, message: 'The loom could not be opened.' }
               : { ok: true, message: 'Opened the loom.' };
@@ -9757,7 +9761,8 @@
       // whose placement should also register a _buildingInteractables entry.
       const BUILDING_FIXTURE_INTERACTABLES = {
         hearthFurniture: () => makeCookingInteractable(),
-        loomFurniture: () => makeLoomInteractable(), // Map-authored looms share the same core interaction object as player-placed house looms.
+        loomFurniture: () => makeLoomInteractable(false), // Map-authored Simple Looms share the same ordinary interaction object as player-placed ones.
+        advancedLoomFurniture: () => makeLoomInteractable(true), // Map-authored Advanced Looms opt into overpass weaving through the same interaction path.
         alchemyTableFurniture: () => ({
           getButtons() {
             return [{ icon: '⚗️', label: 'Brew Potion', action: 'obj_alchemy', style: 'primary', allowed: true }];

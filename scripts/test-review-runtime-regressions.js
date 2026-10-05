@@ -112,7 +112,8 @@ async function testLoomInitialization() {
       ownedGlobalDyes: () => [dye], baseCosmeticId: () => 'tunic', articleLabel: () => 'Tunic',
       materialForReweaveItem: () => ({ id: 'light', itemKey: 'wool', label: 'Light Wool' }),
       dyeOptionHtml: () => '', patternLibraryEntries: () => [],
-      weavingHasAnyPattern: weaving => !!weaving?.layers, weavingHasOptionalTrim: weaving => !!weaving?.trim?.enabled, summarizeWeavingLabel: () => 'Saved',
+      weavingHasAnyPattern: weaving => !!weaving?.layers, weavingHasOverpass: () => false, weavingHasOptionalTrim: weaving => !!weaving?.trim?.enabled, summarizeWeavingLabel: () => 'Saved',
+      normalizePatternStack: value => (Array.isArray(value) ? value : (Array.isArray(value?.patterns) ? value.patterns : [value])).filter(pattern => !!pattern && typeof pattern === 'object').slice(0, 2), // Mirrors production's save-compatible pattern-stack normalizer for this isolated loom closure.
       normalizeTrimDyeSlot: value => ['A','C'].includes(String(value || '').toUpperCase()) ? String(value).toUpperCase() : 'B', // Mirrors production trim channel normalization used by the extracted loom closure.
       weavingEntryForRole: (weaving, role) => weaving.layers[role], clone: value => JSON.parse(JSON.stringify(value)),
       playerSpeciesGender: () => ({ speciesId: 'mao-ao', gender: 'male' }), authoredTrimPatternForCosmetic: async () => null, // Existing saved-pattern regression has no authored trim; these satisfy the new async support check.
@@ -138,7 +139,7 @@ async function testLoomInitialization() {
     assert.equal(button.disabled, failLoad);
     button.onclick();
     assert.equal(submissions, failLoad ? 0 : 1);
-    if (!failLoad) assert.deepEqual(JSON.parse(JSON.stringify(submittedWeave)), savedWeave, 'saved pattern survives initialized submission');
+    if (!failLoad) assert.deepEqual(JSON.parse(JSON.stringify(submittedWeave)), { layers: { base: { pattern: { motifDataUrl: 'authored.png' }, patterns: [{ motifDataUrl: 'authored.png' }], patternLabel: 'Saved' } } }, 'legacy saved pattern survives initialized submission and is normalized to the stack-capable shape');
     context.closeLoom();
     button.onclick();
     assert.equal(submissions, failLoad ? 0 : 1, 'a detached loom cannot submit');
