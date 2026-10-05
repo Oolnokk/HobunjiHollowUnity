@@ -128,7 +128,7 @@ async function checkWorldOpeningProgress() {
           return new Promise(resolve => { finishMeeting = resolve; });
         } },
       },
-      document: { addEventListener: (type, handler) => { events[type] = handler; }, getElementById: () => null },
+      document: { addEventListener: (type, handler) => { events[type] = handler; }, getElementById: () => null, createElement: () => ({ style: {}, append() {}, addEventListener() {}, remove() {} }), body: { appendChild() {} } },
       localStorage: { getItem: key => saved.get(key) || null, setItem: (key, value) => saved.set(key, value) },
       queueMicrotask: callback => queued.push(callback),
       performance, setTimeout, clearTimeout, requestAnimationFrame: callback => callback(), console,
