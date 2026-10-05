@@ -163,7 +163,7 @@
     style.textContent = `
       .cs-pattern-list{display:flex;flex-direction:column;gap:7px}.cs-pattern-row{display:grid;grid-template-columns:minmax(120px,1fr) minmax(120px,170px) auto auto;gap:7px;align-items:center;padding:8px;border:1px solid rgba(255,255,255,.1);border-radius:10px;background:rgba(255,255,255,.025)}
       .cs-pattern-name{min-width:0}.cs-pattern-name b{display:block;font-size:12px}.cs-pattern-name span{display:block;font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.cs-pattern-state{font-size:10px;color:var(--muted);margin-top:3px}.cs-pattern-row select{padding:6px 7px}.cs-pattern-row button{padding:6px 8px;font-size:11px}
-      .cs-pattern-overlay{position:fixed;inset:0;z-index:9700;background:rgba(3,7,12,.86);display:flex;align-items:center;justify-content:center;padding:12px}.cs-pattern-popup{width:min(1180px,100%);height:min(92vh,900px);display:flex;flex-direction:column;background:#081018;border:1px solid rgba(255,255,255,.18);border-radius:15px;box-shadow:0 24px 80px rgba(0,0,0,.7);overflow:hidden}.cs-pattern-popup-head{display:flex;align-items:center;gap:9px;padding:9px 11px;border-bottom:1px solid rgba(255,255,255,.12);background:#111b28}.cs-pattern-popup-head b{flex:1}.cs-pattern-popup iframe{border:0;flex:1;min-height:0;width:100%;background:#081018}.cs-pattern-popup-close{padding:5px 10px}
+      .cs-pattern-overlay[hidden]{display:none!important}.cs-pattern-overlay{position:fixed;inset:0;z-index:9700;background:rgba(3,7,12,.86);display:flex;align-items:center;justify-content:center;padding:12px}.cs-pattern-popup{width:min(1180px,100%);height:min(92vh,900px);display:flex;flex-direction:column;background:#081018;border:1px solid rgba(255,255,255,.18);border-radius:15px;box-shadow:0 24px 80px rgba(0,0,0,.7);overflow:hidden}.cs-pattern-popup-head{display:flex;align-items:center;gap:9px;padding:9px 11px;border-bottom:1px solid rgba(255,255,255,.12);background:#111b28}.cs-pattern-popup-head b{flex:1}.cs-pattern-popup iframe{border:0;flex:1;min-height:0;width:100%;background:#081018}.cs-pattern-popup-close{padding:5px 10px}
       @media(max-width:760px){.cs-pattern-row{grid-template-columns:1fr 1fr}.cs-pattern-row .cs-pattern-name{grid-column:1/-1}.cs-pattern-popup{height:96vh}.cs-pattern-overlay{padding:4px}}
     `;
     document.head.appendChild(style);
@@ -179,6 +179,9 @@
     iframe = overlay.querySelector('iframe');
     overlay.querySelector('.cs-pattern-popup-close').onclick = closePopup;
     overlay.addEventListener('pointerdown', event => { if (event.target === overlay) closePopup(); });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && overlay && !overlay.hidden) closePopup();
+    }); // Popup-only Escape handler; ensureOverlay runs once, so this cannot stack duplicate listeners.
   }
 
   function closePopup() {
