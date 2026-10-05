@@ -37,6 +37,12 @@ review_test = replace_once(
     "      weavingHasAnyPattern: weaving => !!weaving?.layers, weavingHasOverpass: () => false, weavingHasOptionalTrim: weaving => !!weaving?.trim?.enabled, summarizeWeavingLabel: () => 'Saved',\n      normalizePatternStack: value => (Array.isArray(value) ? value : (Array.isArray(value?.patterns) ? value.patterns : [value])).filter(pattern => !!pattern && typeof pattern === 'object').slice(0, 2), // Mirrors production's save-compatible pattern-stack normalizer for this isolated loom closure.",
     'isolated loom overpass/stack dependencies',
 )
+review_test = replace_once(
+    review_test,
+    "    const savedWeave = { layers: { base: { pattern: { motifDataUrl: 'authored.png' }, patternLabel: 'Saved' } } }; // Existing garment pattern.",
+    "    const savedWeave = { layers: { base: { pattern: { motifDataUrl: 'authored.png' }, patterns: [{ motifDataUrl: 'authored.png' }], patternLabel: 'Saved' } } }; // Existing garment pattern in the canonical stack-capable save shape; `pattern` remains for legacy readers while `patterns` carries overpass slot 2 when present.",
+    'canonical saved weaving pattern stack',
+)
 review_test_path.write_text(review_test, encoding='utf-8')
 
 # Remove one-shot automation from the finished feature branch.
