@@ -10,14 +10,18 @@ assert.match(dual, /const DUPLICATE_Z_GAP = 0\.30/, 'dual weapons use the reques
 assert.match(dual, /const MAIN_HAND_LAG_MS = 45/, 'main-hand duplicate keeps the requested small transform lag');
 assert.match(dual, /plane\.add\(offRoot\)[\s\S]*plane\.add\(mainRoot\)/, 'both visible weapon roots are children of the hidden original plane');
 assert.match(dual, /record\.material\.visible = false/, 'original weapon material is hidden without hiding child duplicates');
-assert.match(dual, /offsetWorld\.set\(0, 0, -HALF_Z_SEPARATION\)/, 'main duplicate sits on one side of the actual sprite-plane normal');
-assert.match(dual, /new Vector3\(0, 0, HALF_Z_SEPARATION\)/, 'offhand attack duplicate sits on the equal opposite side of the sprite-plane normal');
+assert.match(dual, /duplicate\.position\.set\?\.\(0, 0, side === 'main' \? -HALF_Z_SEPARATION : HALF_Z_SEPARATION\)/, 'only visible child weapons receive the equal/opposite local sprite-plane-normal offsets');
+assert.doesNotMatch(dual, /offsetWorld\.set\(0, 0, -HALF_Z_SEPARATION\)/, 'main root no longer carries the sandwich offset');
+assert.match(dual, /desiredWorldPosition\.copy\(basePosition\)/, 'main root replays only the delayed source transform');
 assert.match(dual, /delayedParentPose[\s\S]*MAIN_HAND_LAG_MS/, 'main root replays delayed translation + rotation without inheriting sprite scale twice');
 assert.match(dual, /current\.plane\.updateWorldMatrix\?\.\(true, false\)[\s\S]*current\.offRoot\.updateMatrixWorld\?\.\(true\)[\s\S]*current\.mainRoot\.updateMatrixWorld\?\.\(true\)/, 'duplicate world matrices are current before either hand reads its weapon socket');
 assert.match(dual, /root\.scale\.set\(1, 1, 1\)/, 'dual roots stay unit-scale so the hidden parent is the sole sprite-scale authority');
 assert.match(dual, /idleStancePoses/, 'dual presentation consumes explicit main/offhand idle stance poses');
 assert.doesNotMatch(dual, /requestAnimationFrame/, 'dual-wield visuals must share the scheduler/hand-sync owners instead of starting a second frame loop');
 assert.match(dual, /transformSocketForHand/, 'dual visual layer exposes per-hand socket transforms');
+assert.match(dual, /const weapon = side === 'right' \? current\.mainMesh : current\.offMesh/, 'each hand resolves its socket from its visible child weapon');
+assert.match(dual, /weapon\.matrixWorld\.clone\(\)\.multiply\(current\.plane\.matrixWorld\.clone\(\)\.invert\(\)\)/, 'child local offset/mirroring is included in the grip socket transform');
+assert.match(dual, /duplicate\.scale\.set\?\.\(side === 'off' \? -1 : 1, 1, 1\)/, 'offhand child carries Mirror Animation sprite-X handedness without altering the root');
 assert.match(driver, /const primarySocket = toolSocketWorld\(record, toolHolder, primaryGrip\)/, 'the original fixed 1H socket remains the canonical grip before Dual Wield remapping');
 assert.match(driver, /owners\.right = 'primary-grip'[\s\S]*if \(dualWield\) owners\.right = 'dual-wield-main-grip'/, 'Dual Wield refines ordinary main-hand ownership without weakening primary-grip fallback authority');
 assert.match(driver, /transformSocketForHand\?\.\(record, 'right'/, 'right hand follows the lagged main duplicate');
@@ -29,4 +33,4 @@ assert.match(grips, /if \(dual\.checked\) \{[\s\S]*?editorSecondaryPoses\[phase\
 assert.match(grips, /if \(enabled\.checked\) editorSecondaryPoses\[phase\]\.dualWield = false/, 'editor 2H switches off Dual Wield');
 assert(held.includes('dual-wield-weapon-visuals.js'), 'held-action bootstrap loads dual-wield visuals');
 assert.match(editor, /loadEditorAnimationGrip\?\.\(\{ sequence: preset\.sequence \|\| 'attack', poses: anim\.poses \}\)/, 'switching Actions reloads per-attack hand-mode metadata');
-console.log('dual wield: hidden parent, opposite duplicate offsets, main-hand lag, shared frame ownership, live per-hand sockets, default 2H, and mutually exclusive editor mode PASS');
+console.log('dual wield: transform-following roots, child-only sandwich offsets, child-mesh grip sockets, main-hand lag, default 2H, and mutually exclusive editor mode PASS');

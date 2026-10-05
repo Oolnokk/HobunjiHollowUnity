@@ -1837,6 +1837,7 @@ window.HobunjiAttackEditorToolContext = Object.freeze({
   renderer,
   camera,
   get toolHolder() { return toolHolder; },
+  get bodyRoot() { return rig; }, // Dual Wield mirrors the offhand anchor in this already-body-yawed frame without changing bodyYaw itself.
   get toolPlaneMesh() { return toolPlaneMesh; },
   get toolKey() { return currentToolKey; },
   focusNeutral() {

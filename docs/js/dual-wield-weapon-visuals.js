@@ -1,11 +1,13 @@
 // Dual-wield presentation shared by gameplay and the Attack Animation Editor.
 //
 // The authored/original weapon plane remains the transform authority but becomes
-// material-hidden while dual wield is active. Two visible duplicate meshes live
-// beneath that hidden plane, so sprite scale is inherited exactly once. During
-// attacks the copies straddle the sprite plane like two slices of bread around a
-// sandwich and the main-hand copy replays the weapon transform with a small lag.
-// During idle, the offhand copy may instead use an explicitly authored idle pose.
+// material-hidden while dual wield is active. Two transform-following roots live
+// beneath it. Those ROOTS reproduce the source weapon transform (the main root may
+// replay it with the authored short lag); only their visible weapon children carry
+// the local +/-Z sandwich offsets. Hands resolve sockets from those visible child
+// weapon matrices, never from the hidden source or a root-only approximation.
+// During idle, the offhand root may additionally take the explicitly authored
+// opposite-hand stance while preserving the shared body yaw.
 (function (global) {
   'use strict';
 
@@ -34,14 +36,14 @@
       const context = global.HobunjiAttackEditorToolContext;
       const visual = context?.toolPlaneMesh || null;
       const plane = visual?.userData?.toolPlane || null;
-      return { visual, plane, holder: context?.toolHolder || null, source: 'attack-editor' };
+      return { visual, plane, holder: context?.toolHolder || null, bodyRoot: context?.bodyRoot || null, source: 'attack-editor' };
     }
     const deps = global.ProceduralHandAttachments?.gameDeps || null;
     const snapshot = global.WeaponToolStances?.getRuntimeState?.() || global.WeaponToolStances?.debugSnapshot?.() || null;
     const activeSlot = snapshot?.activeSlot || deps?.getActiveTool?.() || null;
     const visual = (activeSlot && (deps?.toolMeshMap?.get?.(activeSlot) || deps?.toolMeshMap?.[activeSlot])) || null;
     const plane = visual?.userData?.toolPlane || null;
-    return { visual, plane, holder: deps?.toolHolder || null, source: 'runtime' };
+    return { visual, plane, holder: deps?.toolHolder || null, bodyRoot: global.PlayerBodyTransformComposer?.getPlayerMesh?.() || deps?.playerMesh || null, source: 'runtime' };
   }
 
   function currentDualState() {
@@ -102,9 +104,9 @@
     }
     if (!duplicate) return null;
     duplicate.name = `dual_wield_${side}_weapon`;
-    duplicate.position.set?.(0, 0, 0);
+    duplicate.position.set?.(0, 0, side === 'main' ? -HALF_Z_SEPARATION : HALF_Z_SEPARATION); // Only the child weapon gets the bread-slice separation; roots stay transform followers.
     duplicate.quaternion.identity?.();
-    duplicate.scale.set?.(1, 1, 1); // The hidden original plane is the only scale authority.
+    duplicate.scale.set?.(side === 'off' ? -1 : 1, 1, 1); // The offhand is the opposite-hand mirror, matching Mirror Animation's sprite-X flip without touching the root transform.
     duplicate.renderOrder = plane.renderOrder;
     duplicate.frustumCulled = plane.frustumCulled;
     duplicate.castShadow = plane.castShadow;
@@ -216,34 +218,66 @@
 
   function idleOffhandLocalTransform(current) {
     const poses = idleStancePoses();
-    if (!poses || !current.holder?.matrixWorld || !current.plane?.matrixWorld) return null;
+    if (!poses || !current.holder?.matrixWorld || !current.plane?.matrixWorld || !current.bodyRoot) return null;
     const Matrix4 = current.plane.matrixWorld.constructor;
     const Vector3 = current.plane.position.constructor;
     const Quaternion = current.plane.quaternion.constructor;
     const unitScale = new Vector3(1, 1, 1);
     const mainQ = poseQuaternion(Quaternion, Vector3, poses.main);
     const offQ = poseQuaternion(Quaternion, Vector3, poses.offhand);
-    const invMainQ = mainQ.clone().invert();
-    const holderDeltaPosition = new Vector3(
-      (Number(poses.offhand.x) || 0) - (Number(poses.main.x) || 0),
-      (Number(poses.offhand.y) || 0) - (Number(poses.main.y) || 0),
-      (Number(poses.offhand.z) || 0) - (Number(poses.main.z) || 0),
-    ).applyQuaternion(invMainQ);
-    const holderDeltaQuaternion = invMainQ.multiply(offQ).normalize();
-    const holderDelta = new Matrix4().compose(holderDeltaPosition, holderDeltaQuaternion, unitScale);
 
+    // Reconstruct the hand-side anchor underneath the authored main pose. This is
+    // the part Mirror Animation also mirrors by negating toolBase.x. Runtime's
+    // holder is scene-level, so deriving the anchor from the baked holder pose is
+    // more reliable than assuming a particular parent hierarchy.
     const bakedHolderWorld = !inAttackEditor() ? global.WeaponToolStances?.lastHolderMatrixWorld?.() : null;
     const holderWorld = bakedHolderWorld || current.holder.matrixWorld.clone();
-    const holderToPlane = holderWorld.clone().invert().multiply(current.plane.matrixWorld.clone());
-    const planeRelative = holderToPlane.clone().invert().multiply(holderDelta).multiply(holderToPlane);
-    const normalOffset = new Matrix4().makeTranslation(0, 0, HALF_Z_SEPARATION); // Actual sprite-plane normal: bread slices around the sandwich.
-    planeRelative.multiply(normalOffset);
+    const holderPosition = new Vector3();
+    const holderQuaternion = new Quaternion();
+    const ignoredHolderScale = new Vector3();
+    holderWorld.decompose(holderPosition, holderQuaternion, ignoredHolderScale);
+    const baseQuaternion = holderQuaternion.clone().multiply(mainQ.clone().invert()).normalize();
+    const mainPoseOffset = new Vector3(
+      Number(poses.main.x) || 0,
+      Number(poses.main.y) || 0,
+      Number(poses.main.z) || 0,
+    ).applyQuaternion(baseQuaternion);
+    const basePosition = holderPosition.clone().sub(mainPoseOffset);
 
+    // Mirror that anchor across the character's left/right midline. Because the
+    // body root itself owns the normal body yaw, reflecting in its current local X
+    // frame is exactly "Mirror Animation" AFTER body yaw without negating bodyYaw.
+    current.bodyRoot.updateWorldMatrix?.(true, false);
+    const bodyPosition = current.bodyRoot.getWorldPosition?.(new Vector3()) || new Vector3().setFromMatrixPosition(current.bodyRoot.matrixWorld);
+    const bodyQuaternion = hierarchyWorldQuaternion(current.bodyRoot, new Quaternion());
+    const bodyRight = new Vector3(1, 0, 0).applyQuaternion(bodyQuaternion).normalize();
+    const sideDistance = basePosition.clone().sub(bodyPosition).dot(bodyRight);
+    const mirroredBasePosition = basePosition.clone().addScaledVector(bodyRight, -2 * sideDistance);
+
+    // The offhand pose itself is explicitly authored. Its DEFAULT is generated
+    // with the same channel mirror as the editor button (X/Yaw/Roll negate;
+    // Y/Z/Pitch stay; Body Yaw stays shared), but artists can change it afterward.
+    const offPoseOffset = new Vector3(
+      Number(poses.offhand.x) || 0,
+      Number(poses.offhand.y) || 0,
+      Number(poses.offhand.z) || 0,
+    ).applyQuaternion(baseQuaternion);
+    const targetHolderPosition = mirroredBasePosition.add(offPoseOffset);
+    const targetHolderQuaternion = baseQuaternion.clone().multiply(offQ).normalize();
+    const targetHolderWorld = new Matrix4().compose(targetHolderPosition, targetHolderQuaternion, unitScale);
+
+    // Move the duplicated offhand ROOT from the hidden source plane to the exact
+    // authored opposite-hand holder transform. The +/-Z bread separation is NOT
+    // in this matrix; it belongs only to offMesh.position.z.
+    const holderDelta = targetHolderWorld.multiply(holderWorld.clone().invert());
+    const planeRelative = current.plane.matrixWorld.clone().invert()
+      .multiply(holderDelta)
+      .multiply(current.plane.matrixWorld.clone());
     const position = new Vector3();
     const quaternion = new Quaternion();
     const ignoredScale = new Vector3();
     planeRelative.decompose(position, quaternion, ignoredScale);
-    return { position, quaternion: quaternion.normalize() }; // Scale is intentionally discarded; parent plane owns sprite scale once.
+    return { position, quaternion: quaternion.normalize() };
   }
 
   function setRootToward(root, targetPosition, targetQuaternion, influence) {
@@ -261,7 +295,6 @@
     const Quaternion = current.plane.quaternion.constructor;
     const localPosition = new Vector3();
     const desiredWorldPosition = new Vector3();
-    const offsetWorld = new Vector3();
     const basePosition = new Vector3();
     const baseQuaternion = new Quaternion();
     const localQuaternion = new Quaternion();
@@ -276,8 +309,7 @@
       const lagAmount = 1 - clamp01(current.idleBlend); // Idle stance is authored directly and should not trail itself.
       basePosition.copy(currentPose.position).lerp(delayed.position, lagAmount);
       baseQuaternion.copy(currentPose.quaternion).slerp(delayed.quaternion, lagAmount).normalize();
-      offsetWorld.set(0, 0, -HALF_Z_SEPARATION).applyQuaternion(baseQuaternion);
-      desiredWorldPosition.copy(basePosition).add(offsetWorld);
+      desiredWorldPosition.copy(basePosition); // Root follows only the delayed source transform; the child mesh owns the local -Z sandwich offset.
       localPosition.copy(desiredWorldPosition).applyMatrix4(current.plane.matrixWorld.clone().invert());
       inverseCurrentQuaternion.copy(currentPose.quaternion).invert();
       localQuaternion.copy(inverseCurrentQuaternion).multiply(baseQuaternion).normalize();
@@ -342,16 +374,13 @@
 
     const Vector3 = current.plane.position.constructor;
     const Quaternion = current.plane.quaternion.constructor;
-    const attackPosition = new Vector3(0, 0, HALF_Z_SEPARATION);
-    const attackQuaternion = new Quaternion();
     const idleTransform = current.idleBlend > ACTIVE_EPSILON ? idleOffhandLocalTransform(current) : null;
-    const targetPosition = idleTransform
-      ? attackPosition.clone().lerp(idleTransform.position, clamp01(current.idleBlend))
-      : attackPosition;
+    const idleAmount = clamp01(current.idleBlend);
+    const targetPosition = idleTransform ? idleTransform.position.clone().multiplyScalar(idleAmount) : new Vector3();
     const targetQuaternion = idleTransform
-      ? attackQuaternion.clone().slerp(idleTransform.quaternion, clamp01(current.idleBlend))
-      : attackQuaternion;
-    setRootToward(current.offRoot, targetPosition, targetQuaternion, current.influence);
+      ? new Quaternion().identity().slerp(idleTransform.quaternion, idleAmount)
+      : new Quaternion();
+    setRootToward(current.offRoot, targetPosition, targetQuaternion, current.influence); // Attack root stays identity; only idle authoring moves it.
 
     if (!active) {
       current.mainRoot.position.set(0, 0, 0);
@@ -368,14 +397,18 @@
   function transformSocketForHand(record, side, socketFrame) {
     const current = syncNow();
     if (!current || current.influence <= ACTIVE_EPSILON || !socketFrame?.position || !socketFrame?.quaternion) return socketFrame;
-    const root = side === 'right' ? current.mainRoot : current.offRoot;
-    if (!root?.matrixWorld || !current.plane?.matrixWorld) return socketFrame;
-    const delta = root.matrixWorld.clone().multiply(current.plane.matrixWorld.clone().invert());
+    const weapon = side === 'right' ? current.mainMesh : current.offMesh;
+    if (!weapon?.matrixWorld || !current.plane?.matrixWorld) return socketFrame;
+    weapon.updateMatrixWorld?.(true);
+    // Map the hidden original weapon's real grip frame onto the VISIBLE child
+    // weapon. This includes the child-local +/-Z offset and offhand sprite mirror;
+    // using the root here leaves both hands gripping the hidden parent instead.
+    const delta = weapon.matrixWorld.clone().multiply(current.plane.matrixWorld.clone().invert());
     const position = socketFrame.position.clone().applyMatrix4(delta);
-    const Quaternion = root.quaternion.constructor;
+    const Quaternion = weapon.quaternion.constructor;
     const planeWorldQ = hierarchyWorldQuaternion(current.plane, new Quaternion());
-    const rootWorldQ = hierarchyWorldQuaternion(root, new Quaternion());
-    const deltaQ = rootWorldQ.multiply(planeWorldQ.invert()).normalize();
+    const weaponWorldQ = hierarchyWorldQuaternion(weapon, new Quaternion());
+    const deltaQ = weaponWorldQ.multiply(planeWorldQ.invert()).normalize();
     const quaternion = deltaQ.multiply(socketFrame.quaternion.clone()).normalize();
     return {
       ...socketFrame,
@@ -412,6 +445,9 @@
       originalMaterialHidden: !!state && state.influence > ACTIVE_EPSILON,
       mainRootScale: state?.mainRoot?.scale?.toArray?.() || null,
       offRootScale: state?.offRoot?.scale?.toArray?.() || null,
+      mainChildLocalPosition: state?.mainMesh?.position?.toArray?.() || null,
+      offChildLocalPosition: state?.offMesh?.position?.toArray?.() || null,
+      offChildMirroredX: Number(state?.offMesh?.scale?.x) < 0,
       mainRootParentIsHiddenOriginalPlane: !!state && state.mainRoot?.parent === state.plane,
       offRootParentIsHiddenOriginalPlane: !!state && state.offRoot?.parent === state.plane,
       editorIdlePreviewActive,

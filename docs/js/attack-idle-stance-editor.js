@@ -93,7 +93,10 @@
         <button id="idleResetBtn" class="secondary">Reset Selected</button>
       </div>
       <div class="row" style="margin-top:6px">
+        <button id="idleMirrorDualOffhandBtn" class="secondary">Mirror Main → Offhand</button>
         <button id="idlePreviewDualPairBtn" class="secondary">Preview Dual Wield Pair</button>
+      </div>
+      <div class="row" style="margin-top:6px">
         <button id="idleStopDualPairBtn" class="secondary">Stop Pair Preview</button>
       </div>
       <div class="hr"></div>
@@ -106,7 +109,7 @@
         <button id="idleClearOverrideBtn" class="secondary">🗑 Clear Local Override</button>
       </div>
       <div class="help" id="idleStanceStatus" style="margin-top:7px"></div>
-      <div class="help" style="margin-top:7px">Use <b>Edit Selected in Neutral</b> to route the existing Neutral sliders and 3D gizmo into any idle preset, including <b>Dual Wield — Offhand</b>. The offhand begins as a body-relative mirror of Light Weapon, but that mirror is only the default: its x/y/z and pitch/yaw/roll are saved explicitly and runtime uses exactly what you author. Body yaw stays shared with Dual Wield — Main hand. <b>Preview Dual Wield Pair</b> shows both saved poses together.</div>
+      <div class="help" style="margin-top:7px">Use <b>Edit Selected in Neutral</b> to route the existing Neutral sliders and 3D gizmo into any idle preset, including <b>Dual Wield — Offhand</b>. <b>Mirror Main → Offhand</b> performs the same stance mirror as the editor's <b>Mirror Animation</b> operation—X/Yaw/Roll mirror, Y/Z/Pitch stay—but intentionally leaves Body Yaw unchanged and assigns the result to the other hand. The runtime also mirrors the hand-side anchor and sprite facing. Afterward the offhand x/y/z and pitch/yaw/roll remain fully custom and saved explicitly. <b>Preview Dual Wield Pair</b> shows both saved poses together.</div>
     `;
 
     const firstCard = sidebar.querySelector('.card');
@@ -143,6 +146,26 @@
       window.HobunjiDualWieldWeaponVisuals?.syncNow?.();
       window.ProceduralHandFrameDriver?.syncNow?.();
       return dualPairPreview;
+    }
+
+    function mirrorDualWieldMainToOffhand() {
+      const main = workingConfig.stances.dualWieldMain;
+      if (!main) return false;
+      workingConfig.stances.dualWieldOffhand = normalizePose({
+        ...main,
+        x: -(Number(main.x) || 0),
+        yaw: -(Number(main.yaw) || 0),
+        roll: -(Number(main.roll) || 0),
+        bodyYaw: Number(main.bodyYaw) || 0, // Deliberately NOT mirrored: both weapons share the normal body yaw.
+      }, FALLBACK_CONFIG.stances.dualWieldOffhand);
+      selectedKey = 'dualWieldOffhand';
+      select.value = selectedKey;
+      syncFieldsFromPose();
+      updateEditButton();
+      if (editingNeutral) writeNeutralPose(currentPose());
+      setDualPairPreview(true);
+      setStatus('Mirrored Dual Wield Main into Offhand using Mirror Animation rules, with Body Yaw preserved. Offhand transforms are now independently editable.');
+      return true;
     }
 
     function previewDualWieldMain() {
@@ -310,6 +333,8 @@
       }
     });
 
+    $('idleMirrorDualOffhandBtn').addEventListener('click', mirrorDualWieldMainToOffhand);
+
     $('idlePreviewBtn').addEventListener('click', () => {
       if (writeNeutralPose(currentPose())) setStatus(`Previewing ${STANCE_LABELS[selectedKey]} in Neutral.`);
     });
@@ -371,6 +396,7 @@
       previewSelected: () => writeNeutralPose(currentPose()),
       captureSelected: () => captureNeutralPose(),
       previewDualWieldMain,
+      mirrorDualWieldMainToOffhand,
       setDualPairPreview,
       dualWieldPreviewActive: () => dualPairPreview,
       stopEditing: () => stopEditingNeutral('Stopped idle stance editing.'),

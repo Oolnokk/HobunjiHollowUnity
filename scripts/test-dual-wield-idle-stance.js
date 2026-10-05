@@ -22,6 +22,9 @@ assert.equal(off.bodyYaw, main.bodyYaw, 'both idle weapons share the normal body
 
 assert.match(editor, /dualWieldMain: 'Dual Wield — Main hand'/, 'idle editor exposes a dedicated main-hand preset');
 assert.match(editor, /dualWieldOffhand: 'Dual Wield — Offhand'/, 'idle editor exposes a dedicated offhand preset');
+assert.match(editor, /Mirror Main → Offhand/, 'idle editor exposes an explicit Mirror Animation-style main-to-offhand authoring action');
+assert.match(editor, /mirrorDualWieldMainToOffhand/, 'idle editor saves the mirrored result as a normal editable offhand pose');
+assert.match(editor, /bodyYaw: Number\(main\.bodyYaw\) \|\| 0/, 'main-to-offhand mirror deliberately preserves body yaw');
 assert.match(editor, /Preview Dual Wield Pair/, 'idle editor can preview both explicitly authored poses together');
 assert.match(editor, /selectedKey === 'dualWieldOffhand' && dualPairPreview/, 'offhand gizmo editing isolates the explicit offhand weapon');
 assert.match(editor, /previewDualWieldMain/, 'attack hand-mode UI can switch Neutral preview to the shared dual idle main pose');
@@ -33,7 +36,9 @@ assert.match(grips, /runtimeIdleDualWield/, 'hand-mode state persists dual idle 
 assert.match(grips, /dualWieldIdleBlend/, 'Neutral-to-attack transitions expose a continuous idle-pose blend');
 assert.match(grips, /const canDual = melee;/, 'Neutral Dual Wield is authorable beside the existing hand-mode controls');
 assert.match(dual, /idleOffhandLocalTransform/, 'dual visuals convert the explicit body-relative offhand stance into the hidden-plane hierarchy');
+assert.match(dual, /sideDistance = basePosition\.clone\(\)\.sub\(bodyPosition\)\.dot\(bodyRight\)/, 'idle offhand mirrors the actual hand-side anchor across the character midline');
+assert.match(dual, /targetHolderPosition = mirroredBasePosition\.add\(offPoseOffset\)/, 'authored offhand pose is applied after the anchor has moved to the other hand');
 assert.match(dual, /HALF_Z_SEPARATION = DUPLICATE_Z_GAP \* 0\.5/, 'the two sprite planes straddle the hidden original with a 0.30 total gap');
 
 // This contract intentionally covers both the mirrored default and later non-mirrored authored offhand edits.
-console.log('dual wield idle stance: light-main default, authored mirrored offhand, pair preview, runtime persistence, and editable Neutral metadata PASS');
+console.log('dual wield idle stance: Mirror Animation-style other-hand default without bodyYaw flip, editable offhand pose, pair preview, and runtime persistence PASS');
