@@ -205,7 +205,7 @@
     new URL('js/dual-wield-weapon-visuals.js?v=20261005hec58343', docsBase).href,
     new URL('js/hand-grip-modes.js?v=20261005h2e47f31', docsBase).href,
     new URL('js/hand-shoulder-pose-runtime.js?v=20260920elbow5', docsBase).href,
-    new URL('js/portrait-arm-cloud-mask.js?v=20260817a', docsBase).href,
+    new URL('js/portrait-arm-cloud-mask.js?v=20261005h2d40d1a', docsBase).href,
     new URL('js/portrait-hand-shoulder-scan.js?v=20260818c', docsBase).href,
     new URL('js/portrait-hand-shoulder-scan-species.js?v=20260818a', docsBase).href,
     new URL('js/procedural-hand-attachments.js?v=20260920wristaxis1', docsBase).href,

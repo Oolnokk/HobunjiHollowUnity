@@ -956,17 +956,9 @@ function drawPortraitLayerWarped(ctx, img, xform, tint, breathingComposer, speci
   ctx.restore();
 }
 
-function applyPortraitOpacityMask(ctx, img, xform) {
-  const { ax, ay, sx, sy } = xform;
-  const h  = PORTRAIT_L * sy;
-  const w  = (img.naturalWidth / img.naturalHeight) * PORTRAIT_L * sx;
-  const cx = PORTRAIT_CW / 2 + ay * PORTRAIT_L;
-  const cy = PORTRAIT_CH / 2 - ax * PORTRAIT_L;
-  ctx.save();
-  ctx.globalCompositeOperation = 'destination-out';
-  ctx.drawImage(img, cx - w / 2, cy - h / 2, w, h);
-  ctx.restore();
-}
+// The full-portrait cloud opacity mask has been removed. Species keep their
+// portraitOpacityMaskLayer only as the source shape for the arm-only hard cut
+// in js/portrait-arm-cloud-mask.js, which loads that image itself.
 
 
 function getPortraitLayeringConfig() {
@@ -1510,7 +1502,6 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     ...hoodLayers.map(({ layer }) => layer.url),
     ...pauldronLayers.map(({ layer }) => layer.url),
     ...hatOverLayers.map(({ layer }) => layer.url),
-    ...(opacityMaskLayer?.url ? [opacityMaskLayer.url] : []),
     ...(renderBehindView ? [] : blinkOverlayUrlsByBase.values()),
   ].filter(Boolean));
 
@@ -1694,10 +1685,6 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     for (const key of (renderOptions?.behindLayerOrder || DEFAULT_BEHIND_LAYER_ORDER)) {
       _behindDraw[key]?.();
     }
-    if (opacityMaskLayer?.url) {
-      const maskImg = imgMap.get(opacityMaskLayer.url);
-      if (maskImg) applyPortraitOpacityMask(ctx, maskImg, resolveXform(opacityMaskLayer));
-    }
     if (_needsScale) ctx.restore();
     return;
   }
@@ -1781,10 +1768,6 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     if (img) drawLayerWithEmote(img, getPortraitXformPreset('B'), 'none', 1, activeUrl);
   }
   drawEmoteLayers(hatOverLayers);
-  if (opacityMaskLayer?.url) {
-    const maskImg = imgMap.get(opacityMaskLayer.url);
-    if (maskImg) applyPortraitOpacityMask(ctx, maskImg, resolveXform(opacityMaskLayer));
-  }
   if (_needsScale) ctx.restore();
 }
 

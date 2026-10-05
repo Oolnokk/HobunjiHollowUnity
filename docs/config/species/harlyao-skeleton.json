@@ -127,7 +127,17 @@
         }
       }
     ],
-    "portraitOpacityMaskLayer": null
+    "portraitOpacityMaskLayer": {
+      "id": "opacityMask",
+      "url": "hud/spriteopacitymask_cloud.png",
+      "xform": {
+        "ax": -0.2,
+        "ay": 0,
+        "scaleX": 2.55,
+        "scaleY": 2.55,
+        "rotDeg": 0
+      }
+    }
   },
   "female": {
     "headSprite": "fightersprites/engh-sho-f/head_hskel_f.png",
@@ -252,6 +262,16 @@
         }
       }
     ],
-    "portraitOpacityMaskLayer": null
+    "portraitOpacityMaskLayer": {
+      "id": "opacityMask",
+      "url": "hud/spriteopacitymask_cloud.png",
+      "xform": {
+        "ax": -0.2,
+        "ay": 0,
+        "scaleX": 2.55,
+        "scaleY": 2.55,
+        "rotDeg": 0
+      }
+    }
   }
 }
