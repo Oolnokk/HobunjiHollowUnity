@@ -149,3 +149,32 @@
 
   window.CraftingPanel = { init, render: renderCraftingPanel, craftMetalBar, visibleMetalRecipes };
 })();
+
+// Crafting mastery + NPC crafting commissions live next to the CraftingPanel
+// rather than in the broad combat compatibility loader. They install their
+// adapters synchronously here; future-global hooks let them safely patch task,
+// gifting, and shop modules regardless of those modules' parser order.
+(() => {
+  'use strict';
+  const modules = [
+    ['js/crafting-mastery-system.js?v=20261005craft2', () => Number(window.CraftingMasterySystem?.version) >= 2],
+    ['js/dye-trait-labels.js?v=20261005craft1', () => Number(window.DyeTraitLabels?.version) >= 1],
+    ['js/npc-crafting-commission-generator.js?v=20261005craft2', () => Number(window.NpcCraftingCommissionGenerator?.version) >= 2],
+    ['js/npc-crafting-commission-delivery.js?v=20261005craft2', () => Number(window.NpcCraftingCommissionDelivery?.version) >= 2],
+    ['js/npc-crafting-commissions.js?v=20261005craft2', () => Number(window.NpcCraftingCommissions?.version) >= 2],
+  ]; // Local progression/commission modules loaded immediately after CraftingPanel publishes its API.
+
+  function loadModule(src, alreadyLoaded) {
+    if (alreadyLoaded()) return;
+    if (document.readyState === 'loading') {
+      document.write(`<script src="${src}"></` + 'script>');
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = false;
+    document.head.appendChild(script);
+  }
+
+  for (const [src, alreadyLoaded] of modules) loadModule(src, alreadyLoaded);
+})();
