@@ -37,7 +37,7 @@ assert.match(grips, /if \(enabled\.checked\) editorSecondaryPoses\[phase\]\.dual
 assert(held.includes('dual-wield-weapon-visuals.js'), 'held-action bootstrap loads dual-wield visuals');
 const heldActionTokens = runtimeEntries.map(path => {
   const html = fs.readFileSync(path, 'utf8');
-  return html.match(/held-action-animations\\.js\\?v=([A-Za-z0-9_-]+)/)?.[1] || null;
+  return html.match(/held-action-animations\.js\?v=([A-Za-z0-9_-]+)/)?.[1] || null;
 });
 assert(heldActionTokens.every(token => token && token === heldActionTokens[0]), 'game and authoring pages must use the same fresh held-action bootstrap token');
 assert.match(editor, /loadEditorAnimationGrip\?\.\(\{ sequence: preset\.sequence \|\| 'attack', poses: anim\.poses \}\)/, 'switching Actions reloads per-attack hand-mode metadata');
