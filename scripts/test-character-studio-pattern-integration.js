@@ -1,0 +1,24 @@
+#!/usr/bin/env node
+'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const read = p => fs.readFileSync(p, 'utf8');
+const studio = read('docs/tools/character-studio/index.html');
+const integration = read('docs/js/character-studio-pattern-integration.js');
+const patternEditor = read('docs/tools/pattern-editor/index.html');
+const wardrobe = read('docs/js/npc-wardrobe.js');
+const metal = read('docs/js/metal-armor-system.js');
+const portrait = read('docs/js/portrait-utils.js');
+assert.match(studio, /character-studio-pattern-integration\.js/, 'Character Studio loads pattern integration');
+assert.match(studio, /clothingPatternPolicy/, 'Character Studio persists a clothing pattern policy');
+assert.match(integration, /forcedOverpassBySlot/, 'integration preserves forced NPC overpasses');
+assert.match(integration, /decorateAvatarDataWithWovenItems/, 'Character Studio preview uses production weaving decorator');
+assert.match(integration, /decorateAvatarDataWithMetalArmor/, 'Character Studio preview uses production verdigris armor decorator');
+assert.match(patternEditor, /hobunji-character-studio-pattern-load/, 'shared Pattern Editor accepts Character Studio payloads');
+assert.match(patternEditor, /Apply to appearance/, 'embedded Pattern Editor can return its pair');
+assert.match(wardrobe, /rec\?\.clothingPatternPolicy/, 'runtime NPC wardrobe consumes Character Studio overrides');
+assert.match(metal, /authoredPatterns/, 'metal armor forwards primary + overpass arrays');
+assert.match(portrait, /PAULDRON_UNDER_HEAD_SPECIES = new Set\(\['mashtzarr', 'mammakhbuur'\]\)/, 'only Mashtzarr and Mammakhbuur opt into pauldron-under-head');
+assert.match(portrait, /if \(pauldronUnderHead\) drawEmoteLayers\(pauldronLayers\)/, 'front composer draws those pauldrons before head');
+assert.match(portrait, /key === 'head' \? \['pauldron', 'head'\]/, 'behind composer also places pauldron below head');
+console.log('Character Studio pattern integration regression passed.');

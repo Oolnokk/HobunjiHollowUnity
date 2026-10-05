@@ -231,6 +231,7 @@ function shouldRenderBlink(headUrl, nowMs) {
 let _puAssetBase = './assets/';
 const IMG_CACHE  = new Map();
 
+const PAULDRON_UNDER_HEAD_SPECIES = new Set(['mashtzarr', 'mammakhbuur']); // Their broad shoulder armor belongs behind the head silhouette in both portrait views.
 const DEFAULT_BEHIND_LAYER_ORDER = [
   'sideLeft', 'rightSideHair',
   'baseLeftArm', 'baseTorso', 'baseRightArm',
@@ -1255,6 +1256,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const omitHeadSpriteAndCosmetics = renderOptions?.omitHeadSpriteAndCosmetics === true;
   const onlyHeadSprite = renderOptions?.onlyHeadSprite === true; // Used below to render an alpha mask from the fighter's undecorated base head only.
   const renderBehindView = renderOptions?.portraitView === 'behind' || renderOptions?.view === 'behind';
+  const pauldronUnderHead = PAULDRON_UNDER_HEAD_SPECIES.has(_normalizeSpeciesKey(fighter?.speciesId)); // Used by front + rear composers so Mashtzarr-derived heads occlude their pauldrons.
   const breathingComposer   = renderOptions?.breathingComposer ?? window.portraitBreathingComposer ?? null;
   const breathingPhaseOffset = Number(renderOptions?.breathingPhaseOffsetMs) || 0;
   const seatId = renderOptions?.seatId ?? null;
@@ -1691,7 +1693,10 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       // plausible rear silhouette instead of leaving the back of the head bald.
       frontHair:     () => drawEmoteLayers(frontHairLayers),
     };
-    for (const key of (renderOptions?.behindLayerOrder || DEFAULT_BEHIND_LAYER_ORDER)) {
+    const behindLayerOrder = renderOptions?.behindLayerOrder || (pauldronUnderHead
+      ? DEFAULT_BEHIND_LAYER_ORDER.flatMap(key => key === 'pauldron' ? [] : (key === 'head' ? ['pauldron', 'head'] : [key]))
+      : DEFAULT_BEHIND_LAYER_ORDER); // Only these two species move pauldron before head; explicit caller order still wins.
+    for (const key of behindLayerOrder) {
       _behindDraw[key]?.();
     }
     if (opacityMaskLayer?.url) {
@@ -1709,6 +1714,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   drawBreathingLayers(torsoClothingLayers);
   drawBreathingLayers(overwearLayers);
   drawBreathingLayers(hoodBackLayers); // Rear hood cloth must sit behind the skull/head; front opening is drawn later with ordinary hood layers.
+  if (pauldronUnderHead) drawEmoteLayers(pauldronLayers); // Mashtzarr/Mammakhbuur shoulder armor is occluded by the head rather than painted over it.
   const _beardBelowHead = _BEARD_BELOW_HEAD_SPECIES.has(String(speciesId || '').toLowerCase().replace(/_/g, '-'));
   drawEmoteLayers(sideLeftLayers);
   if (_beardBelowHead) drawEmoteLayers(facialHairLayers);
@@ -1774,7 +1780,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   drawEmoteLayers(hatUnderLayers);
   drawEmoteLayers(elevatedEyeAccessoryLayers);
   drawBreathingLayers(hoodLayers);
-  drawEmoteLayers(pauldronLayers);
+  if (!pauldronUnderHead) drawEmoteLayers(pauldronLayers);
   for (const mid of aboveHoodBelowHatUrLayers) {
     const activeUrl = isBlinkFrame ? (blinkOverlayUrlsByBase.get(mid.url) || mid.url) : mid.url;
     const img = imgMap.get(activeUrl) || imgMap.get(mid.url);

@@ -37,7 +37,15 @@
   }
 
   function clothingPatternPolicy(npcId) {
-    return window.HobunjiNpcClothingPatterns?.npcs?.[npcId] || null; // Authored default-item and forced-overpass rules stay data-driven rather than hardcoded into wardrobe behavior.
+    const rec = findRecord(npcId); // Character Studio may attach a per-NPC authored override without mutating the shared repo uniform definition.
+    const base = clone(window.HobunjiNpcClothingPatterns?.npcs?.[npcId] || {});
+    const override = clone(rec?.clothingPatternPolicy || rec?.avatarEditor?.rawExport?.clothingPatternPolicy || {});
+    if (!Object.keys(base).length && !Object.keys(override).length) return null;
+    return {
+      ...base, ...override,
+      defaultClothing: { ...(base.defaultClothing || {}), ...(override.defaultClothing || {}) },
+      forcedOverpassBySlot: { ...(base.forcedOverpassBySlot || {}), ...(override.forcedOverpassBySlot || {}) },
+    }; // Slot maps merge so editing one garment cannot erase another repo-authored pattern.
   }
 
   function wornMapFor(npcId, create = false) {
@@ -338,9 +346,12 @@
       appliedDyes: rec?.appliedDyes || {},
     };
     const effectiveClothing = wornClothingItemsForRecord(rec, true); // Applies authored default patterns + forced NPC overpass only to this render copy.
-    const renderedExport = window.ClothingWeavingSystem?.decorateAvatarDataWithWovenItems
+    let renderedExport = window.ClothingWeavingSystem?.decorateAvatarDataWithWovenItems
       ? window.ClothingWeavingSystem.decorateAvatarDataWithWovenItems(baseExport, effectiveClothing)
       : baseExport;
+    renderedExport = window.MetalArmorSystem?.decorateAvatarDataWithMetalArmor
+      ? window.MetalArmorSystem.decorateAvatarDataWithMetalArmor(renderedExport, effectiveClothing)
+      : renderedExport; // Character Studio-authored verdigris armor uses the same metal portrait marker as equipped player armor.
     const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(renderedExport);
     if (!profile) return;
     walker.profile = profile;

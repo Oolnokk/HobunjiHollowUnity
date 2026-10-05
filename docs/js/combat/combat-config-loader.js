@@ -109,7 +109,7 @@
     ['js/npc-gifting.js?v=20261002h0eb6484', () => !!window.NpcGifting],
     ['js/favor-heart-balance.js?v=20261004giftfavor4', () => Number(window.NpcFavorBalance?.version) >= 1],
     ['config/npcs/clothing-patterns.js?v=20260924npcweave1', () => Number(window.HobunjiNpcClothingPatterns?.version) >= 1],
-    ['js/npc-wardrobe.js?v=20260924npcweave1', () => !!window.NpcWardrobe],
+    ['js/npc-wardrobe.js?v=20261005hdd0ebbe', () => !!window.NpcWardrobe],
     ['js/clothing-weaving-npc-compat.js?v=20260913a', () => Number(window.ClothingWeavingNpcCompat?.version) >= 1],
     ['js/npc-furniture-wardrobe-bridge-v4.js?v=20261001cf37282d', () => Number(window.NpcFurnitureWardrobes?.version) >= 4],
     ['config/npcs/social-relations.js?v=20260904a', () => !!window.HobunjiNpcSocialRelationsConfig],

@@ -25,7 +25,7 @@ input,select{width:100%;background:#0d1621;border:1px solid rgba(255,255,255,.14
 </style>
 <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-<script src="../../js/portrait-utils.js?v=20261004patternpreview1"></script>
+<script src="../../js/portrait-utils.js?v=20261005h67aaf5e"></script>
 <script src="../../js/scene-ready-poller.js"></script>
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
 <script src="../../js/sprite-recolor.js"></script>
@@ -2178,12 +2178,58 @@ Overpass → not set</div>
     ...debugState,
   });
 
+
+  const EMBED_APPEARANCE = new URLSearchParams(location.search).get('embed') === 'appearance'; // Character Studio popup mode; standalone Pattern Editor behavior is unchanged.
+  const EMBED_READY = 'hobunji-pattern-editor-ready';
+  const EMBED_LOAD = 'hobunji-character-studio-pattern-load';
+  const EMBED_APPLY = 'hobunji-character-studio-pattern-apply';
+  async function editableEmbeddedPattern(pattern) {
+    if (!pattern || typeof pattern !== 'object') return null;
+    if (pattern.motifDataUrl) return { ...pattern };
+    if (pattern.repoPatternId) {
+      const editable = await window.RepoPatternLibrary.getEditableById(pattern.repoPatternId).catch(() => null);
+      if (editable) return { ...editable, ...pattern, motifDataUrl: editable.motifDataUrl || pattern.motifDataUrl };
+    }
+    return { ...pattern };
+  }
+  async function loadEmbeddedPair(data) {
+    const primary = await editableEmbeddedPattern(data?.primary);
+    const overpass = await editableEmbeddedPattern(data?.overpass);
+    draft = primary;
+    overpassDraft = overpass;
+    loadedRepoId = primary?.repoPatternId || null;
+    overpassLoadedRepoId = overpass?.repoPatternId || null;
+    $('patternName').value = String(data?.name || 'appearance_pattern').slice(0, 60);
+    $('previewMode').value = data?.mode === 'verdigris' ? 'verdigris' : 'weaving';
+    syncPreviewModeControls();
+    syncOverpassClearanceControl(overpassDraft?.overpassClearanceMultiplier || 3);
+    await refreshPreview(draft, overpassDraft);
+    await renderTrimPreview();
+    syncExportState();
+    $('status').textContent = `Editing ${data?.mode === 'verdigris' ? 'verdigris' : 'weaving'} pattern pair from Character Studio.`;
+  }
+  function installAppearanceEmbedBridge() {
+    if (!EMBED_APPEARANCE) return;
+    const apply = document.createElement('button');
+    apply.id = 'applyAppearanceBtn';
+    apply.textContent = '✓ Apply to appearance';
+    apply.title = 'Return the current primary + overpass pair to Character Studio';
+    document.querySelector('.head')?.appendChild(apply);
+    apply.onclick = () => parent.postMessage({ type: EMBED_APPLY, primary: draft ? { ...draft } : null, overpass: overpassDraft ? { ...overpassDraft, overpassClearanceMultiplier: syncOverpassClearanceControl(overpassDraft.overpassClearanceMultiplier) } : null }, location.origin);
+    window.addEventListener('message', event => {
+      if (event.origin !== location.origin || event.source !== parent || event.data?.type !== EMBED_LOAD) return;
+      loadEmbeddedPair(event.data).catch(error => { debugState.lastError = error.message; $('status').textContent = 'Could not load Character Studio pattern: ' + error.message; });
+    });
+    parent.postMessage({ type: EMBED_READY }, location.origin);
+  }
+
   $('previewDebugBtn').onclick = () => { $('previewDebug').textContent = JSON.stringify(window.__patternEditorDebug(), null, 2); };
   syncOverpassClearanceControl(3);
   syncPreviewModeControls();
   refreshPreview(null, null);
   renderLibrary().then(() => { $('status').textContent = 'Repo library ready. Choose Primary or Overpass on any entry.'; }).catch(error => { debugState.lastError = error.message; $('status').textContent = 'Repo library load failed: ' + error.message; });
   loadTrimAuthoringData();
+  installAppearanceEmbedBridge();
 })();
 </script>
 </body>

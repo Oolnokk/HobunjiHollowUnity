@@ -378,14 +378,17 @@ label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
 <script src="../../config/colors/config.js?v=20260930h1b2e2e2"></script>
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
 <script src="../../js/tool-metal-recolor.js?v=20261001c6751543"></script>
-<script src="../../js/metal-armor-system.js?v=20260926metalarmor3"></script>
+<script src="../../js/metal-armor-system.js?v=20261005hea63810"></script>
 <script src="../../js/repo-picker.js?v=20260924overpassgap1"></script>
-<script src="../../js/portrait-utils.js?v=20261003he8efec4"></script>
+<script src="../../js/portrait-utils.js?v=20261005h67aaf5e"></script>
 <script src="../../js/portrait-breathing.js"></script>
 <script src="../../js/npc-avatar-preview-utils.js"></script>
 <script src="../../js/harlyao-skeleton-species-runtime.js?v=20260927dyes1"></script>
 <script src="../../js/png-plane-avatar.js?v=20260926hskelhairalign1"></script>
 <script src="../../js/avatar-preview-scene.js"></script>
+<script src="../../config/npcs/clothing-patterns.js?v=20261004appearancepatterns1"></script>
+<script src="../../js/clothing-weaving-system.js?v=20261004appearancepatterns1"></script>
+<script src="../../js/character-studio-pattern-integration.js?v=20261004appearancepatterns1"></script>
 <script>
 (() => {
 'use strict';
@@ -825,10 +828,12 @@ let work = makeWork('mao-ao', 'male');
 
 function makeWork(speciesId, gender) {
   const ap = defaultAppearanceFor({ speciesId, gender });
-  return { name: '', appearance: ap, equippedCosmetics: [], appliedDyes: {} };
+  return { name: '', appearance: ap, equippedCosmetics: [], appliedDyes: {}, clothingPatternPolicy: { defaultClothing: {}, forcedOverpassBySlot: {} } };
 }
 function workRenderAppearance() {
-  return { ...work.appearance, equippedCosmetics: work.equippedCosmetics, appliedDyes: work.appliedDyes };
+  const avatarData = { appearance: clone(work.appearance), equippedCosmetics: [...work.equippedCosmetics], appliedDyes: clone(work.appliedDyes) }; // Shared preview payload before woven/verdigris marker decoration.
+  const decorated = window.CharacterStudioPatternIntegration?.decoratePreview?.(avatarData, work.clothingPatternPolicy) || avatarData; // Uses the production weaving + metal portrait paths rather than a Character Studio-only compositor.
+  return { ...(decorated.appearance || work.appearance), equippedCosmetics: decorated.equippedCosmetics || work.equippedCosmetics, appliedDyes: decorated.appliedDyes || work.appliedDyes };
 }
 
 // ── Account mock (from npc-portrait-editor, wired to the working record) ────
@@ -1609,6 +1614,7 @@ function refreshAppearanceUI() {
   renderSpeciesControls();
   renderCosmeticControls();
   renderCollections();
+  window.CharacterStudioPatternIntegration?.render?.(); // Keeps pattern rows synchronized when clothing selection changes.
   refreshColorPicker();
   updateTargetPill();
   invalidatePreview();
@@ -1649,6 +1655,7 @@ function setAsPlayer() {
     },
     equippedCosmetics: [...work.equippedCosmetics],
     appliedDyes: { ...work.appliedDyes },
+    clothingPatternPolicy: clone(work.clothingPatternPolicy), // Character Studio-authored clothing pattern overrides travel with the player-profile export.
   };
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(playerData));
@@ -1672,6 +1679,7 @@ function loadPlayerIntoEditor() {
       appearance: { ...defaultAppearanceFor(saved.appearance), ...clone(saved.appearance) },
       equippedCosmetics: asEquipArray(saved.equippedCosmetics),
       appliedDyes: (saved.appliedDyes && typeof saved.appliedDyes === 'object') ? clone(saved.appliedDyes) : {},
+      clothingPatternPolicy: window.CharacterStudioPatternIntegration?.normalizePolicy?.(saved.clothingPatternPolicy) || { defaultClothing: {}, forcedOverpassBySlot: {} },
     };
     work.appearance.cosmetics = { ...(saved.appearance.cosmetics || {}) };
     work.appearance.bodyColors = { ...clone(DEFAULT_BODY_COLORS), ...clone(saved.appearance.bodyColors || {}) };
@@ -1694,6 +1702,7 @@ function exportAppearance() {
     appearance: clone(work.appearance),
     equippedCosmetics: [...work.equippedCosmetics],
     appliedDyes: { ...work.appliedDyes },
+    clothingPatternPolicy: clone(work.clothingPatternPolicy),
   };
   const fname = (String(data.name || 'character').replace(/[^a-z0-9_\-]/gi, '_').replace(/_+/g, '_').replace(/^_|_$/g, '') || 'character') + '.json';
   downloadJson(fname, data);
@@ -1710,6 +1719,7 @@ function importAppearance(obj) {
   work.appearance.bodyColors = { ...clone(DEFAULT_BODY_COLORS), ...clone(appearance.bodyColors || {}) };
   work.equippedCosmetics = asEquipArray(obj.equippedCosmetics || p.equippedCosmetics || p.cosmetics || p.equipment);
   work.appliedDyes = clone(obj.appliedDyes || p.appliedDyes || p.dyes || {});
+  work.clothingPatternPolicy = window.CharacterStudioPatternIntegration?.normalizePolicy?.(obj.clothingPatternPolicy || p.clothingPatternPolicy) || { defaultClothing: {}, forcedOverpassBySlot: {} };
   if (obj.name && target.kind === 'player') $('nickname').value = obj.name;
   _activeDyeSlot = null;
   refreshAppearanceUI();
@@ -1884,6 +1894,7 @@ function loadWorkFromNpc(n) {
     appearance: clone(exportNpc.appearance),
     equippedCosmetics: [...exportNpc.equippedCosmetics],
     appliedDyes: clone(exportNpc.appliedDyes || {}),
+    clothingPatternPolicy: window.CharacterStudioPatternIntegration?.initialPolicyForNpc?.(n, n.clothingPatternPolicy || n.avatarEditor?.rawExport?.clothingPatternPolicy) || { defaultClothing: {}, forcedOverpassBySlot: {} },
   };
   _activeDyeSlot = null;
   refreshAppearanceUI();
@@ -2015,6 +2026,7 @@ function applyWorkToNpc() {
   n.appearance = clone(work.appearance);
   n.equippedCosmetics = [...work.equippedCosmetics];
   n.appliedDyes = clone(work.appliedDyes);
+  n.clothingPatternPolicy = clone(work.clothingPatternPolicy); // Canonical NPC record override consumed directly by NpcWardrobe.
   n.avatarEditor = {
     sourceFormat: 'npc_avatar_editor_export',
     rawExport: {
@@ -2023,6 +2035,7 @@ function applyWorkToNpc() {
       appearance: clone(work.appearance),
       equippedCosmetics: [...work.equippedCosmetics],
       appliedDyes: clone(work.appliedDyes),
+      clothingPatternPolicy: clone(work.clothingPatternPolicy),
     },
   };
   fillFields(n);
@@ -2246,6 +2259,14 @@ async function init() {
   // loadStarterDb -> fill() retargets the appearance pane at NPC #1;
   // boot should start on the player instead.
   loadPlayerIntoEditor();
+  window.CharacterStudioPatternIntegration?.mount?.({
+    getWork: () => work,
+    setPatternPolicy: value => { work.clothingPatternPolicy = clone(value); },
+    markPreviewDirty: invalidatePreview,
+    setStatus,
+    targetLabel: () => target.kind === 'npc' ? (db.npcs.find(n => n.id === target.id)?.name || target.id) : ($('nickname').value.trim() || 'Player'),
+  }); // Adds per-equipped-slot pattern controls and the shared Pattern Editor popup after all Studio state exists.
+  refreshAppearanceUI();
   setStatus('Ready');
 }
 

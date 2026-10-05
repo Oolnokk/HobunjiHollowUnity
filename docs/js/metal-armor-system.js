@@ -366,8 +366,9 @@
       return { ...sourceOptions, targetHex: baseMetal.hex, verdigrisHex: null, oxidationAmount: 0 };
     }
     if (active?.mode === 'pattern') {
-      const authoredPattern = active.pattern || window.PatternLibrary?.getById?.(active.patternLibraryId) || null;
-      if (authoredPattern) return { ...sourceOptions, targetHex: baseMetal.hex, verdigrisHex: baseMetal.verdigrisHex, oxidationAmount: 1, authoredPattern };
+      const authoredPatterns = (Array.isArray(active.patterns) ? active.patterns : [active.pattern || window.PatternLibrary?.getById?.(active.patternLibraryId) || null])
+        .filter(pattern => !!pattern && typeof pattern === 'object').slice(0, 2); // Shared primary + overpass save shape; old single-pattern treatments still become slot 1.
+      if (authoredPatterns.length) return { ...sourceOptions, targetHex: baseMetal.hex, verdigrisHex: baseMetal.verdigrisHex, oxidationAmount: 1, authoredPattern: authoredPatterns[0], authoredPatterns };
     }
     return { ...sourceOptions, targetHex: baseMetal.hex, verdigrisHex: baseMetal.verdigrisHex, oxidationAmount: quantizedVerdigrisFraction(state) };
   }
