@@ -35,4 +35,5 @@ assert.match(grips, /const canDual = melee;/, 'Neutral Dual Wield is authorable 
 assert.match(dual, /idleOffhandLocalTransform/, 'dual visuals convert the explicit body-relative offhand stance into the hidden-plane hierarchy');
 assert.match(dual, /HALF_Z_SEPARATION = DUPLICATE_Z_GAP \* 0\.5/, 'the two sprite planes straddle the hidden original with a 0.30 total gap');
 
+// This contract intentionally covers both the mirrored default and later non-mirrored authored offhand edits.
 console.log('dual wield idle stance: light-main default, authored mirrored offhand, pair preview, runtime persistence, and editable Neutral metadata PASS');
