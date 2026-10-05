@@ -1,0 +1,133 @@
+h).replace(/^\.\//,''),runtimeDocsBase()).href}
+async function fetchRuntimeSource(path,timeoutMs=15000){
+  const url=runtimeUrl(path);
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),timeoutMs);
+  try{
+    const response=await fetch(url,{cache:'no-store',signal:controller.signal});
+    if(!response.ok)throw new Error(`${response.status} ${response.statusText}`);
+    return await response.text();
+  }catch(error){
+    if(error?.name==='AbortError')throw new Error(`Timed out fetching ${path}`);
+    throw new Error(`Could not fetch ${path}: ${error?.message||error}`);
+  }finally{clearTimeout(timer)}
+}
+function patchRuntimeSource(path,source){
+  const docsExpr="new URL(window.__HobunjiRuntimeDocsBase || './', location.href)";
+  let code=String(source||'');
+
+  // Several hand/cloud helpers resolve assets from document.currentScript.
+  // Because V9 executes fetched source directly rather than via a cross-origin
+  // <script> tag, give those helpers the selected repository root explicitly.
+  code=code.replace(
+    /const selfUrl = document\.currentScript\?\.src \? new URL\(document\.currentScript\.src, location\.href\) : null;\s*const docsBase = selfUrl \? new URL\('\.\.\/', selfUrl\) : new URL\('\.\/', location\.href\);/g,
+    `const selfUrl = null;\n  const docsBase = ${docsExpr};`
+  );
+  code=code.replace(
+    /const selfUrl = document\.currentScript\?\.src \? new URL\(document\.currentScript\.src, location\.href\) : null;\s*const docsBase = selfUrl \? new URL\('\.\.\/', selfUrl\)\.href : new URL\('\.\/', location\.href\)\.href;/g,
+    `const selfUrl = null;\n  const docsBase = ${docsExpr}.href;`
+  );
+
+  // procedural-leg-animation already has a repository-tool override; the line
+  // remains untouched and reads __HobunjiProceduralFeetDocsBase.
+  return `${code}\n//# sourceURL=${runtimeUrl(path)}`;
+}
+async function executeRuntimeScript(path,index,total){
+  E.threeStatus.textContent=`Runtime ${index}/${total}: fetching ${path}…`;
+  const source=await fetchRuntimeSource(path);
+  E.threeStatus.textContent=`Runtime ${index}/${total}: starting ${path}…`;
+  try{
+    (0,eval)(patchRuntimeSource(path,source));
+  }catch(error){
+    throw new Error(`${path} threw during startup: ${error?.message||error}`);
+  }
+}
+function installCanonicalCloudMaskScale(){
+  // The live game wraps the ordinary destination-out portrait cloud mask with
+  // this exact 0.60 Y-scale + bottom-anchor compensation. Keep that behavior
+  // available even if the later arm-specific cloud helper elects not to wrap.
+  const original=window.applyPortraitOpacityMask;
+  if(typeof original!=='function'||original.__hobunjiCloudMaskYScaled)return;
+  const wrapped=function(ctx,image,xform={}){
+    const ax=Number(xform.ax)||0;
+    const sy=Number(xform.sy??xform.scaleY)||1;
+    const multiplier=.60;
+    const bottomAnchorCompensation=sy*(1-multiplier)/2;
+    return original(ctx,image,{
+      ...xform,
+      ax:ax-bottomAnchorCompensation,
+      sy:sy*multiplier,
+      scaleY:sy*multiplier
+    });
+  };
+  wrapped.__hobunjiCloudMaskYScaled=true;
+  window.applyPortraitOpacityMask=wrapped;
+}
+async function ensureRigRuntime(){
+  if(R.three.runtimeReadyPromise)return R.three.runtimeReadyPromise;
+  R.three.runtimeReadyPromise=(async()=>{
+    const docs=runtimeDocsBase();
+    R.three.runtimeDocsBase=docs;
+    window.__HobunjiRuntimeDocsBase=docs;
+    window.__HobunjiProceduralFeetDocsBase=docs;
+    window.__HobunjiHandBootstrapDocsBase=docs;
+
+    /*
+      Only load the actual modules needed by this reference.
+      V8 also loaded attachment-rig-latest-authored-snapshot.js, whose job is to
+      bootstrap additional authoring snapshots. config/attachment-rig-profiles.js
+      is already the canonical runtime master, so that extra nested loader is both
+      unnecessary here and was another place the standalone file could stall.
+    */
+    const coreScripts=[
+      'config/scratchbones-config.js',
+      'js/color-fill.js',
+      'config/attachment-rig-profiles.js',
+      'js/GLTFLoader.js',
+      'js/portrait-utils.js',
+      'js/npc-avatar-preview-utils.js',
+      'js/png-plane-avatar.js',
+      'js/leg-bones.js',
+      'js/procedural-leg-animation.js',
+      'config/hand-model-profiles.js',
+      'config/hand-shoulder-points.js',
+      'config/hand-shoulder-pose-profiles.js',
+      'js/procedural-hand-foot-material-roles.js',
+      'js/hand-tool-grips.js',
+      'js/hand-grip-modes.js',
+      'js/hand-shoulder-pose-runtime.js',
+      'js/portrait-arm-cloud-mask.js',
+      'js/portrait-hand-shoulder-scan.js',
+      'js/portrait-hand-shoulder-scan-species.js',
+      'js/procedural-hand-attachments.js',
+      'js/procedural-hand-outline-parity.js',
+      'js/procedural-hand-scale-free-world.js',
+      'js/procedural-hand-shoulder-aim.js',
+      'config/character-rig-scale-defaults.js',
+      'js/character-rig-scale.js',
+      'js/character-rig-scale-avatar-runtime.js',
+      'js/procedural-hand-frame-driver.js',
+    ];
+
+    for(let i=0;i<coreScripts.length;i++){
+      const path=coreScripts[i];
+      await executeRuntimeScript(path,i+1,coreScripts.length);
+      if(path==='config/scratchbones-config.js'){
+        const portrait=window.SCRATCHBONES_CONFIG?.game?.assets?.portrait;
+        if(portrait){
+          portrait.assetBase=new URL('assets/',docs).href;
+          portrait.configBase=new URL('config/',docs).href;
+        }
+      }
+      if(path==='js/portrait-utils.js')installCanonicalCloudMaskScale();
+    }
+
+    const required=[
+      ['NpcAvatarPreview',window.NpcAvatarPreview],
+      ['PNGPlaneAvatar',window.PNGPlaneAvatar],
+      ['ProceduralLegAnimation',window.ProceduralLegAnimation],
+      ['ProceduralHandAttachments',window.ProceduralHandAttachments],
+      ['ProceduralHandFrameDriver',window.ProceduralHandFrameDriver],
+    ];
+    const missing=required.filter(([,value])=>!value).map(([name])=>name);
+    if(missing.length)throw new Error('Runtime rig dependencies missing after load: '+missing.join

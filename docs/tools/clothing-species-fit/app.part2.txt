@@ -1,0 +1,114 @@
+hUndo(){undoStack.push(snapshot());if(undoStack.length>50)undoStack.shift();redoStack=[];syncHistory()}
+function restore(raw){
+  const v=JSON.parse(raw);A.baseTransforms=v.baseTransforms||{};A.localOffsets=v.localOffsets||{};A.maskPreviewTransforms=v.maskPreviewTransforms||{};
+  saveState();syncTransformControls();syncMaskTransformControls();render();
+}
+
+function syncHistory(){E.undo.disabled=!undoStack.length;E.redo.disabled=!redoStack.length}
+function log(s){R.logs.unshift(`[${new Date().toLocaleTimeString()}] ${s}`);R.logs=R.logs.slice(0,40);refreshDebug()}
+function status(s){E.status.textContent=s}
+function base(){const s=String(E.repo.value||'').trim();return s.endsWith('/')?s:s+'/'}
+function docsUrl(path){return new URL(String(path).replace(/^\.\//,''),base()).href}
+function assetUrl(path){
+  const p=String(path||'');
+  if(/^https?:/i.test(p))return p;
+  if(p.startsWith('./assets/'))return docsUrl(p.slice(2));
+  if(p.startsWith('assets/'))return docsUrl(p);
+  return docsUrl('assets/'+p.replace(/^\.\//,''));
+}
+async function fetchJson(path){
+  const r=await fetch(docsUrl(path),{cache:'no-store'});
+  if(!r.ok)throw new Error(`${r.status} ${path}`);
+  return r.json();
+}
+function loadImage(url){
+  if(R.images.has(url))return R.images.get(url);
+  const p=new Promise((ok,bad)=>{
+    const img=new Image();img.crossOrigin='anonymous';img.onload=()=>ok(img);img.onerror=()=>bad(new Error('Image failed: '+url));img.src=url;
+  });
+  R.images.set(url,p);return p;
+}
+function loadLocalImage(file){
+  return new Promise((resolve,reject)=>{
+    if(!file){resolve(null);return}
+    const url=URL.createObjectURL(file),img=new Image();
+    img.onload=()=>{URL.revokeObjectURL(url);resolve({img,name:file.name,width:img.naturalWidth,height:img.naturalHeight})};
+    img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('Could not load '+file.name))};
+    img.src=url;
+  }); // Local extended sprites never leave the browser.
+}
+function importedExtendedLayers(){
+  return [R.extendedLayers.torso,R.extendedLayers.torsoClothing,R.extendedLayers.overwear].filter(Boolean);
+}
+function extendedSourceUsesCutoffMode(){return !!E.extUseCutoff?.checked}
+function syncExtendedCutoffControls(maxHint){
+  const imported=importedExtendedLayers();
+  const guessedMax=Math.max(300,Math.round(maxHint||Math.max(R.maoBody?.height||173,...imported.map(l=>l.height||0),0)));
+  E.extCutoffY.max=String(guessedMax);E.extCutoffYNumber.max=String(guessedMax);
+  let v=Number(E.extCutoffYNumber?.value??E.extCutoffY?.value??130);
+  if(!Number.isFinite(v))v=130;
+  v=Math.max(0,Math.min(guessedMax,Math.round(v)));
+  E.extCutoffY.value=String(v);E.extCutoffYNumber.value=String(v);
+  return v;
+}
+function buildDerivedOverlayLayer(layer,cutoffY,normalHeight){
+  const clipped=document.createElement('canvas');clipped.width=layer.width;clipped.height=layer.height;
+  const cx=clipped.getContext('2d',{alpha:true});cx.imageSmoothingEnabled=false;
+  cx.drawImage(layer.img,0,0);
+  cx.clearRect(0,0,clipped.width,Math.max(0,Math.min(layer.height,cutoffY)));
+  const shiftY=(normalHeight-cutoffY);
+  const out=document.createElement('canvas');
+  out.width=layer.width;out.height=Math.max(normalHeight,layer.height+shiftY);
+  const ox=out.getContext('2d',{alpha:true});ox.imageSmoothingEnabled=false;
+  ox.drawImage(clipped,0,shiftY);
+  return{
+    img:out,name:layer.name,width:out.width,height:out.height,
+    _sourceHeight:layer.height,_cutoffY:cutoffY,_alignShiftY:shiftY,_derivedFromRegularSprite:true
+  };
+}
+function rebuildExtendedSource(){
+  const imported=importedExtendedLayers();
+  if(!imported.length){R.extendedSource=null;R.extendedWarped=null;updateExtendedStatus();return null}
+  const width=R.maoBody?.width||imported[0].width;
+  const normalHeight=R.maoBody?.height||0;
+  const cutoffY=syncExtendedCutoffControls();
+  const cutoffMode=extendedSourceUsesCutoffMode();
+  const layers=cutoffMode?imported.map(layer=>buildDerivedOverlayLayer(layer,cutoffY,normalHeight)):imported;
+
+  const height=Math.max(normalHeight,...layers.map(l=>l.height));
+  const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
+  const x=canvas.getContext('2d',{alpha:true});x.imageSmoothingEnabled=false;
+  const mismatches=[];
+  for(const layer of layers){
+    if(layer.width!==width)mismatches.push(`${layer.name}: ${layer.width}px wide (portrait is ${width}px)`);
+    x.drawImage(layer.img,0,0);
+  }
+  canvas._paths=layers.map(l=>l.name);
+  canvas._overlayMode=cutoffMode?'derived-cutoff':'top-aligned';
+  canvas._cutoffY=cutoffMode?cutoffY:null;
+  canvas._alignShiftY=cutoffMode?(normalHeight-cutoffY):0;
+  canvas._sourceLayerHeights=layers.map(l=>l.height);
+  R.extendedSource=canvas;R.extendedWarped=null;
+  updateExtendedStatus(mismatches);
+  return canvas;
+}
+function updateExtendedStatus(mismatches=[]){
+  const roles=[['torso',R.extendedLayers.torso],['torso clothing',R.extendedLayers.torsoClothing],['overwear',R.extendedLayers.overwear]];
+  const lines=roles.map(([role,v])=>`${role}: ${v?`${v.name} (${v.width}×${v.height})`:'—'}`);
+  const cutoffY=syncExtendedCutoffControls();
+  lines.push(`source mode: ${extendedSourceUsesCutoffMode()?'derive overlay from regular sprite':'direct extended import, top-aligned'}`);
+  lines.push(`cutoff Y: ${cutoffY}`);
+  if(R.extendedSource){
+    if(R.extendedSource._overlayMode==='derived-cutoff'){
+      lines.push(`composite: ${R.extendedSource.width}×${R.extendedSource.height}, cutoff-aligned, shifted by ${R.extendedSource._alignShiftY}px so cutoff row meets portrait bottom`);
+    }else{
+      lines.push(`composite: ${R.extendedSource.width}×${R.extendedSource.height}, top-aligned`);
+    }
+  }
+  if(mismatches.length)lines.push('WIDTH WARNING: '+mismatches.join(' | '));
+  lines.push('arms: skipped');
+  E.extendedStatus.textContent=lines.join('\\n');
+}
+async function mapLimit(items,n,fn){
+  const out=new Array(items.length);let q=0;
+  async function run(){while(true){const i=q++;if(i>=items.length)return;try{out[i]=await fn(

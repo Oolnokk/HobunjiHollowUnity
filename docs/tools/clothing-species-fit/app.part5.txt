@@ -1,0 +1,124 @@
+gion: continue the deformation vector from the last normal grid row.
+  if(sourceHeight>sourceNormalHeight){
+    const extSub=Math.max(CELL_SUBDIVISIONS,Math.ceil(Math.max(1,extensionFactor)*CELL_SUBDIVISIONS));
+    for(let col=0;col<GRID_SIZE-1;col++){
+      const lastL=targetPx[(GRID_SIZE-1)*GRID_SIZE+col],lastR=targetPx[(GRID_SIZE-1)*GRID_SIZE+col+1];
+      const sTL={x:(col/(GRID_SIZE-1))*sourceWidth,y:sourceNormalHeight};
+      const sTR={x:((col+1)/(GRID_SIZE-1))*sourceWidth,y:sourceNormalHeight};
+      const sBL={x:(col/(GRID_SIZE-1))*sourceWidth,y:sourceHeight};
+      const sBR={x:((col+1)/(GRID_SIZE-1))*sourceWidth,y:sourceHeight};
+      drawBilinearCell(x,source,sTL,sTR,sBL,sBR,lastL,lastR,bottomDest[col],bottomDest[col+1],extSub);
+    }
+  }
+  return output;
+}
+function warpGarment(source,targetNorm,outWidth,outHeight){
+  const output=document.createElement('canvas');output.width=outWidth;output.height=outHeight;
+  const x=output.getContext('2d',{alpha:true});x.imageSmoothingEnabled=false;
+
+  /*
+    Important correction from V4:
+    a 6x6 square was formerly split into only two triangles. A corner node therefore
+    had zero influence over the opposite half of that same square. Here each base cell
+    is treated as a bilinear quad. We sample that bilinear surface into a 4x4 micro-grid,
+    then render the micro-quads as affine triangles. Thus every one of the four authored
+    corner nodes influences every pixel region in its adjacent cell.
+  */
+  for(let row=0;row<GRID_SIZE-1;row++){
+    for(let col=0;col<GRID_SIZE-1;col++){
+      const tl=row*GRID_SIZE+col,tr=tl+1,bl=(row+1)*GRID_SIZE+col,br=bl+1;
+
+      const sTL=SOURCE_GRID[tl],sTR=SOURCE_GRID[tr],sBL=SOURCE_GRID[bl],sBR=SOURCE_GRID[br];
+      const dTL=targetNorm[tl],dTR=targetNorm[tr],dBL=targetNorm[bl],dBR=targetNorm[br];
+
+      for(let sy=0;sy<CELL_SUBDIVISIONS;sy++){
+        const v0=sy/CELL_SUBDIVISIONS,v1=(sy+1)/CELL_SUBDIVISIONS;
+        for(let sx=0;sx<CELL_SUBDIVISIONS;sx++){
+          const u0=sx/CELL_SUBDIVISIONS,u1=(sx+1)/CELL_SUBDIVISIONS;
+
+          const sn00=toWarpPixel(bilerpPoint(sTL,sTR,sBL,sBR,u0,v0),source.width,source.height);
+          const sn10=toWarpPixel(bilerpPoint(sTL,sTR,sBL,sBR,u1,v0),source.width,source.height);
+          const sn01=toWarpPixel(bilerpPoint(sTL,sTR,sBL,sBR,u0,v1),source.width,source.height);
+          const sn11=toWarpPixel(bilerpPoint(sTL,sTR,sBL,sBR,u1,v1),source.width,source.height);
+
+          const dn00=toWarpPixel(bilerpPoint(dTL,dTR,dBL,dBR,u0,v0),outWidth,outHeight);
+          const dn10=toWarpPixel(bilerpPoint(dTL,dTR,dBL,dBR,u1,v0),outWidth,outHeight);
+          const dn01=toWarpPixel(bilerpPoint(dTL,dTR,dBL,dBR,u0,v1),outWidth,outHeight);
+          const dn11=toWarpPixel(bilerpPoint(dTL,dTR,dBL,dBR,u1,v1),outWidth,outHeight);
+
+          // Alternate the micro-cell diagonal to avoid reintroducing a strong one-direction triangle bias.
+          if(((row+col+sx+sy)&1)===0){
+            drawTriangleWarp(x,source,sn00,sn10,sn11,dn00,dn10,dn11);
+            drawTriangleWarp(x,source,sn00,sn11,sn01,dn00,dn11,dn01);
+          }else{
+            drawTriangleWarp(x,source,sn00,sn10,sn01,dn00,dn10,dn01);
+            drawTriangleWarp(x,source,sn10,sn11,sn01,dn10,dn11,dn01);
+          }
+        }
+      }
+    }
+  }
+  return output;
+}
+
+async function refreshAssets(){
+  try{
+    R.body=await buildBodyCanvas(E.species.value,E.gender.value);
+    R.maoBody=await buildBodyCanvas('mao-ao',E.gender.value);
+    R.cloth=E.garment.value?await buildGarmentCanvas(E.garment.value,E.gender.value,R.maoBody.width,R.maoBody.height):null;
+    R.authoredTargetCloth=E.garment.value
+      ?await buildVariantGarmentCanvas(E.garment.value,E.species.value,E.gender.value,R.body.width,R.body.height)
+      :null;
+    E.authoredStatus.textContent=R.authoredTargetCloth
+      ?`Authored ${E.species.value}_${E.gender.value} variant available.`
+      :'No authored target variant for this garment/species/gender.';
+    ensureTargetData(E.species.value,E.gender.value);syncTransformControls();syncMaskTransformControls();
+    saveState();render();
+  }catch(error){status('Refresh failed: '+error.message);log('ERROR '+error.message);console.error(error)}
+}
+function sizeStage(){
+  if(!R.body)return;
+  E.stage.width=R.body.width;E.stage.height=R.body.height;C.imageSmoothingEnabled=false;
+}
+function drawGrid(ctx,points,color,active){
+  const px=toDisplayPixels(points,E.stage.width,E.stage.height);
+  ctx.save();ctx.strokeStyle=color;ctx.fillStyle=color;ctx.globalAlpha=active?1:.58;ctx.lineWidth=1.2;
+
+  for(let row=0;row<GRID_SIZE;row++){
+    ctx.beginPath();
+    for(let col=0;col<GRID_SIZE;col++){
+      const p=px[row*GRID_SIZE+col];
+      col?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y);
+    }
+    ctx.stroke();
+  }
+  for(let col=0;col<GRID_SIZE;col++){
+    ctx.beginPath();
+    for(let row=0;row<GRID_SIZE;row++){
+      const p=px[row*GRID_SIZE+col];
+      row?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y);
+    }
+    ctx.stroke();
+  }
+  for(const p of px){ctx.beginPath();ctx.arc(p.x,p.y,HANDLE_RADIUS,0,Math.PI*2);ctx.fill()}
+  ctx.restore();
+}
+function warpGridForMode(){return mode==='transform'?transformedSourceGrid():targetGrid()}
+function currentWarp(){
+  if(!R.cloth)return null;
+  return warpGarment(R.cloth,warpGridForMode(),R.body.width,R.body.height); // Base Transform previews only the recorded global step; later modes include local offsets.
+}
+function currentExtendedWarp(finalFit=false){
+  if(!R.extendedSource)return null;
+  const grid=finalFit?targetGrid():warpGridForMode();
+  R.extendedWarped=warpExtendedOverlay(R.extendedSource,grid,R.body.width,R.body.height);
+  return R.extendedWarped;
+}
+
+function runtimeDocsBase(){
+  // Use the SAME raw repository root that already powers the 2D editor.
+  // V8 converted this to jsDelivr for <script src>, which could leave mobile/local
+  // copies waiting forever on the CDN. V9 fetches source text from repoBase instead.
+  return base();
+}
+function runtimeUrl(path){return new URL(String(pat
