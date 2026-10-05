@@ -379,6 +379,9 @@
       const signature = selections.map(({ slot, selected }) => `${slot.id}:${selected.key}:${selected.stars}`).join('|'); // Used to stack identical dishes only.
       const key = `food_${recipe.id}_${hash(signature + `|${stars}|${JSON.stringify(effects)}`)}`;
       const label = foodName(recipe, effects);
+      const cookingYieldRank = window.PerkSystem?.rank?.('cooking', 'increaseCookingYield') || 0; // Used by the Cooking perk tree; one purchased rank grants the authored extra-serving chance.
+      const cookingYieldChance = Math.min(0.25, Math.max(0, cookingYieldRank) * 0.25); // Central yield tuning: rank 1 = 25%, and bonus ranks cannot push this starter perk above its authored cap.
+      const servings = 1 + (((deps.random || Math.random)() < cookingYieldChance) ? 1 : 0); // Extra yield never consumes another ingredient because this roll happens once per completed cooking action.
       const saved = [];
       selections.forEach(({ selected }) => {
         const saveChance = window.SkillSystem?.craftIngredientSaveChance?.() || 0; // Used for Cooking's independent per-ingredient save roll.
@@ -396,8 +399,8 @@
         ingredientKeys: selections.map(({ selected }) => selected.key), // Used by ordinary item-trait inheritance for this cooked stack.
         giftIngredientKeys: selections.map(({ selected }) => selected.key), // Used by specific NPC food preferences; cooked stack identity is unique to this exact ingredient signature.
       });
-      deps.inventory[key] = Math.min(99, (deps.inventory[key] || 0) + 1);
-      recordItemQuality(key, stars, 1);
+      deps.inventory[key] = Math.min(99, (deps.inventory[key] || 0) + servings);
+      recordItemQuality(key, stars, servings); // Both servings share the same completed dish quality/effects because the perk increases batch yield, not recipe resolution.
       window.SkillSystem?.award?.('cooking', window.SkillSystem?.XP_GAINS?.cook || 8, recipe.name);
       selectedSlots = {};
       cookTimer = null;
@@ -405,7 +408,7 @@
       deps.buildInventoryGrid();
       deps.refreshActionBar();
       deps.saveMemberWorldData();
-      deps.showToast(`🍲 ${window.SkillSystem?.starRatingText?.(stars) || '★'.repeat(stars)} ${label}${saved.length ? ` · saved ${saved.join(', ')}` : ''}`, true);
+      deps.showToast(`🍲 ${window.SkillSystem?.starRatingText?.(stars) || '★'.repeat(stars)} ${label}${servings > 1 ? ' · ×2 yield' : ''}${saved.length ? ` · saved ${saved.join(', ')}` : ''}`, true);
       render();
     }, 1800);
   }
@@ -549,7 +552,9 @@
     const processingDiagnostics = window.HobunjiFoodProcessing?.diagnosticsText?.() || 'Processing module: unavailable'; // Used to expose vat/source wiring on mobile without developer tools.
     const lastProcessing = window.SkillSystem?.processingDiagnosticsText?.(); // Used to make the most recent processing-quality roll auditable on mobile — see SkillSystem.rollProcessingQuality.
     const banubuDiagnostics = window.BanubuQuestline?.diagnosticsText?.(); // Used to expose fish-pie target feasibility/progress on mobile without browser developer tools.
-    output.textContent = `Station: ${isOpen() ? 'hearth open' : 'closed'}\nRecipes: ${data().recipes.length}\nUnlocked special recipes: ${[...unlockedRecipeIds].join(', ') || 'none'}\nRegistered ingredients: ${Object.keys(deps.ITEM_DEFS).filter(key => deps.ITEM_DEFS[key].cookingCategories).length}\nTracked quality units: ${tracked}\nCooked definitions: ${Object.keys(cookedDefinitions).length}\nActive food effects: ${activeFoodEffects.map(effect => `${effect.key}+${effect.stacks}`).join(', ') || 'none'}\n\n${processingDiagnostics}${lastProcessing ? `\n\n${lastProcessing}` : ''}${banubuDiagnostics ? `\n\n${banubuDiagnostics}` : ''}`;
+    const cookingYieldRank = window.PerkSystem?.rank?.('cooking', 'increaseCookingYield') || 0; // Used to verify the perk without a desktop console.
+    const cookingYieldChance = Math.min(0.25, Math.max(0, cookingYieldRank) * 0.25); // Mirrors the authoritative cook() roll above for mobile-readable diagnostics.
+    output.textContent = `Station: ${isOpen() ? 'hearth open' : 'closed'}\nCooking Yield perk: ${cookingYieldRank} (extra serving ${(cookingYieldChance * 100).toFixed(0)}%)\nRecipes: ${data().recipes.length}\nUnlocked special recipes: ${[...unlockedRecipeIds].join(', ') || 'none'}\nRegistered ingredients: ${Object.keys(deps.ITEM_DEFS).filter(key => deps.ITEM_DEFS[key].cookingCategories).length}\nTracked quality units: ${tracked}\nCooked definitions: ${Object.keys(cookedDefinitions).length}\nActive food effects: ${activeFoodEffects.map(effect => `${effect.key}+${effect.stacks}`).join(', ') || 'none'}\n\n${processingDiagnostics}${lastProcessing ? `\n\n${lastProcessing}` : ''}${banubuDiagnostics ? `\n\n${banubuDiagnostics}` : ''}`;
   }
 
   function render() {

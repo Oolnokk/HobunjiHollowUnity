@@ -24,8 +24,8 @@
   function installProceduralFallbacks() {
     const catalog = window.ProceduralFurniture?.CATALOG;
     if (!catalog) return false;
-    const box = (x, y, z, sx, sy, sz, tint = 0.9) => ({ type: 'box', x, y, z, sx, sy, sz, color: 0x7d5b3a, tint }); // Used by the two loom fallback frames when authored furniture JSON is unavailable.
-    const leg = (x, z, h, thick = 0.1, tint = 0.8) => ({ type: 'legSquare', x, y: h / 2, z, sx: thick, sy: h, sz: thick, color: 0x6f5133, tint }); // Used to keep Simple and Advanced loom fallback proportions consistent.
+    const box = (x, y, z, sx, sy, sz, tint = 0.9) => ({ kind: 'box', tint, color: 0x7d5b3a, transform: { x, y, z, sx, sy, sz } }); // Used by the two loom fallback frames when authored furniture JSON is unavailable; matches ProceduralFurniture's canonical part schema.
+    const leg = (x, z, h, thick = 0.1, tint = 0.8) => ({ kind: 'legSquare', tint, color: 0x6f5133, transform: { x, y: h / 2, z, sx: thick, sy: h, sz: thick } }); // Used to keep Simple and Advanced loom fallback proportions consistent.
 
     catalog.loom = [
       leg(-0.22, -0.36, 1.0), leg(0.22, -0.36, 1.0),

@@ -138,7 +138,7 @@
   }
 
   function generateFurniture(giver) {
-    const catalog = (craftingDeps?.FURNITURE_BLUEPRINT_CATALOG || []).filter(entry => entry?.key && entry?.furnitureKey && entry?.name && entry?.craftCost); // Only real reusable-blueprint furniture can be requested.
+    const catalog = (craftingDeps?.FURNITURE_BLUEPRINT_CATALOG || []).filter(entry => entry?.key && entry?.furnitureKey && entry?.name && entry?.craftCost && !entry?.moteOnly && !entry?.masteryUnlockId); // Only ordinary reusable blueprints can be granted free; Crafting Mastery/Mote unlocks such as Advanced Loom must keep their progression gate.
     if (!catalog.length) return null;
     const ranked = catalog.map(entry => ({ entry, score: furnitureScore(giver, entry) })).filter(record => record.score > 0).sort((a, b) => b.score - a.score);
     if (!ranked.length) return null; // Never ask this NPC for a role-irrelevant random object.
