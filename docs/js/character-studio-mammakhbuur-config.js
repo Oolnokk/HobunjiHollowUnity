@@ -1,9 +1,11 @@
 // Character Studio loads scratchbones-config.js after panel-ui.js, so install a one-shot
-// config assignment hook that exposes Mammakhbuur there without duplicating the editor.
+// config assignment hook that exposes derived species there without duplicating the editor.
 (() => {
   'use strict';
   const ID = 'mammakhbuur'; // NPC/editor species id used by Surveyor Harkhanash and authored Mammakhbuur appearances.
   const DONOR = 'mashtzarr'; // Mammakhbuur inherit Mashtzarr cosmetics except for front hair.
+  const NUHONGAN_ID = 'nuhongan'; // Character Studio species id used for the smaller Tletingan-derived Slagothim.
+  const NUHONGAN_DONOR = 'tletingan'; // Supplies every Nuhongan appearance option while rig scale remains species-specific elsewhere.
   const clone = value => JSON.parse(JSON.stringify(value));
 
   function stripFrontHair(genderData) {
@@ -18,17 +20,29 @@
   function install(config) {
     const appearance = config?.game?.appearanceEditor;
     const donor = appearance?.species?.[DONOR];
-    if (!donor) return config;
-    const donorCopy = clone(donor);
-    appearance.species[ID] = {
-      ...donorCopy,
-      label: 'Mammakhbuur',
-      parentSpecies: DONOR,
-      genders: ['male', 'female'],
-      male: stripFrontHair(donorCopy.male),
-      female: stripFrontHair(donorCopy.female || donorCopy.male),
-    };
-    if (appearance.bodyPalettes?.[DONOR]) appearance.bodyPalettes[ID] = clone(appearance.bodyPalettes[DONOR]);
+    if (donor) {
+      const donorCopy = clone(donor);
+      appearance.species[ID] = {
+        ...donorCopy,
+        label: 'Mammakhbuur',
+        parentSpecies: DONOR,
+        genders: ['male', 'female'],
+        male: stripFrontHair(donorCopy.male),
+        female: stripFrontHair(donorCopy.female || donorCopy.male),
+      };
+      if (appearance.bodyPalettes?.[DONOR]) appearance.bodyPalettes[ID] = clone(appearance.bodyPalettes[DONOR]);
+    }
+
+    const nuhonganDonor = appearance?.species?.[NUHONGAN_DONOR]; // Used to expose Nuhongan as an exact appearance clone of Tletingan in Character Studio.
+    if (nuhonganDonor) {
+      appearance.species[NUHONGAN_ID] = {
+        ...clone(nuhonganDonor),
+        label: 'Nuhongan',
+        parentSpecies: NUHONGAN_DONOR,
+        genders: clone(nuhonganDonor.genders || ['male', 'female']),
+      };
+      if (appearance.bodyPalettes?.[NUHONGAN_DONOR]) appearance.bodyPalettes[NUHONGAN_ID] = clone(appearance.bodyPalettes[NUHONGAN_DONOR]);
+    }
     return config;
   }
 
@@ -52,5 +66,5 @@
     });
   }
 
-  window.HobunjiCharacterStudioMammakhbuurConfig = Object.freeze({ speciesId: ID, donorSpeciesId: DONOR, install });
+  window.HobunjiCharacterStudioMammakhbuurConfig = Object.freeze({ speciesId: ID, donorSpeciesId: DONOR, nuhonganSpeciesId: NUHONGAN_ID, nuhonganDonorSpeciesId: NUHONGAN_DONOR, install });
 })();
