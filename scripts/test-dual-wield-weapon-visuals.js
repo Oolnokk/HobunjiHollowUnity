@@ -6,6 +6,7 @@ const grips = fs.readFileSync('docs/js/hand-tool-grips.js', 'utf8');
 const driver = fs.readFileSync('docs/js/procedural-hand-frame-driver.js', 'utf8');
 const held = fs.readFileSync('docs/js/held-action-animations.js', 'utf8');
 const editor = fs.readFileSync('docs/tools/attack-animation-editor/index.html', 'utf8');
+const runtimeEntries = ['docs/index.html', 'docs/tools/animation-author/index.html', 'docs/tools/attack-animation-editor/index.html']; // All entry points must request the current shared hand bootstrap.
 assert.match(dual, /const DUPLICATE_Z_GAP = 0\.30/, 'dual weapons use the requested 0.30 total plane-normal gap');
 assert.match(dual, /const MAIN_HAND_LAG_MS = 45/, 'main-hand duplicate keeps the requested small transform lag');
 assert.match(dual, /plane\.add\(offRoot\)[\s\S]*plane\.add\(mainRoot\)/, 'both visible weapon roots are children of the hidden original plane');
@@ -34,5 +35,10 @@ assert.match(grips, /defaultTwoHand = sequence === 'attack'/, 'ordinary melee at
 assert.match(grips, /if \(dual\.checked\) \{[\s\S]*?editorSecondaryPoses\[phase\]\.enabled = false/, 'editor Dual Wield switches off 2H');
 assert.match(grips, /if \(enabled\.checked\) editorSecondaryPoses\[phase\]\.dualWield = false/, 'editor 2H switches off Dual Wield');
 assert(held.includes('dual-wield-weapon-visuals.js'), 'held-action bootstrap loads dual-wield visuals');
+const heldActionTokens = runtimeEntries.map(path => {
+  const html = fs.readFileSync(path, 'utf8');
+  return html.match(/held-action-animations\\.js\\?v=([A-Za-z0-9_-]+)/)?.[1] || null;
+});
+assert(heldActionTokens.every(token => token && token === heldActionTokens[0]), 'game and authoring pages must use the same fresh held-action bootstrap token');
 assert.match(editor, /loadEditorAnimationGrip\?\.\(\{ sequence: preset\.sequence \|\| 'attack', poses: anim\.poses \}\)/, 'switching Actions reloads per-attack hand-mode metadata');
 console.log('dual wield: transform-following roots, child-local grip frames with proper offhand reflection, child-only sandwich offsets, main-hand lag, default 2H, and mutually exclusive editor mode PASS');
