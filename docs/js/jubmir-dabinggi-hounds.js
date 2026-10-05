@@ -81,8 +81,8 @@
   }
 
   function cutsceneOwnsCreatures(deps) {
-    const value = deps?.cutscenePreviewActive; // Existing companion-sync guard exposed by game.js; supports boolean or getter forms.
-    return typeof value === 'function' ? !!value() : !!value;
+    const value = deps?.cutscenePreviewActive; // Supports runtimes that expose the existing internal cutscene companion guard through Combat deps.
+    return isOpeningRescueActive() || (typeof value === 'function' ? !!value() : !!value);
   }
 
   function updateMaster(walker, deps) {
