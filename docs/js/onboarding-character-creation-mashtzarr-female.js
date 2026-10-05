@@ -1,4 +1,5 @@
 // Character-creator compatibility bridge: female Mashtzarr use their real female body/profile and temporarily borrow male hairstyle controls.
+// The same private-table hook also exposes Nuhongan as an exact Tletingan-derived player species; its size difference is applied by the rig-scale system.
 (() => {
   'use strict';
 
@@ -13,6 +14,7 @@
     fallbackMode: 'female-body-male-hair-slots',
     speciesTableCaptured: false,
     randomizerGuardInstalled: false,
+    nuhonganAdded: false,
     hairSlotCount: 0,
     hairSlotLabels: [],
     facialHairAllowed: false,
@@ -69,6 +71,11 @@
     if (!Array.isArray(mashtzarr.genders)) mashtzarr.genders = ['male'];
     if (!mashtzarr.genders.includes('female')) mashtzarr.genders.push('female');
     mashtzarr.female = femaleData;
+
+    const nuhongan = JSON.parse(JSON.stringify(table.tletingan)); // Used as the creator-facing Nuhongan definition so every Tletingan option remains identical.
+    nuhongan.label = 'Nuhongan';
+    table.nuhongan = nuhongan;
+    status.nuhonganAdded = true;
 
     speciesTableCaptured = true;
     status.speciesTableCaptured = true;
