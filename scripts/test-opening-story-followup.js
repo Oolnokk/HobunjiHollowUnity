@@ -20,7 +20,7 @@ for (const scene of [api.buildRescueScene(records,profile),api.buildHunundiMeeti
   for (const stage of scene.stages.filter(stage=>stage.type==='choice')) assert(stage.options.length>=2);
 }
 const meeting = api.buildHunundiMeetingScene(records,profile); // Company introduction must distinguish it from the empire.
-assert.match(meeting.stages.find(stage=>stage.id==='meeting_hark_intro').text,/the Imperial Khanibarri Mining Company/);
+assert.match(meeting.stages.find(stage=>stage.id==='meeting_hark_intro').text,/the Imperial Khannibarri Mining Company/);
 for (const stage of meeting.stages.filter(stage=>stage.id!=='meeting_hark_intro')) assert(!/Khan+ibarri/i.test(stage.text||''));
 assert.equal(db.npcs.find(record=>record.id==='khannibarri_agent').appearance.speciesId,'mammakhbuur');
 assert.equal(api.needsTempleArrival(profile),true);

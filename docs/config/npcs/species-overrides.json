@@ -150,6 +150,58 @@
         "appliedDyes": {}
       }
     },
+    "khannibarri_agent": {
+      "species": "mammakhbuur",
+      "displayName": "Surveyor Harkhanash",
+      "avatarExport": {
+        "schema": "npc_avatar_editor_export.v1",
+        "source": "character-studio",
+        "name": "Surveyor Harkhanash",
+        "appearance": {
+          "speciesId": "mammakhbuur",
+          "gender": "male",
+          "cosmetics": {
+            "hairFront": null,
+            "hairBack": "appearance::Mao-ao_M::mao-ao_long_ponytail",
+            "hairSide": "appearance::Mao-ao_M::mao-ao_braidcluster-R",
+            "hairSideL": "appearance::Mao-ao_M::mao-ao_braid-L",
+            "facialHair": null
+          },
+          "bodyColors": {
+            "A": {
+              "h": -70,
+              "s": -0.8,
+              "v": -0.55
+            },
+            "B": {
+              "h": -70,
+              "s": -0.8,
+              "v": -0.55
+            },
+            "C": {
+              "h": -70,
+              "s": -0.75,
+              "v": -0.37000000000000005
+            }
+          },
+          "chatColor": {
+            "h": 210,
+            "s": 75,
+            "l": 68
+          }
+        },
+        "equippedCosmetics": [
+          "rounded_pauldron",
+          "fine_poncho",
+          "bandolier1"
+        ],
+        "appliedDyes": {
+          "CLOTH": "dye:CLOTH:shadow_blue",
+          "CLOTH_B": "dye:CLOTH:pure_yellow",
+          "CLOTH_C": "dye:CLOTH:pure_yellow"
+        }
+      }
+    },
     "porakaneki_chief": {
       "species": "porakaneki",
       "avatarExport": {

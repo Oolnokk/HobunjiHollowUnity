@@ -1,0 +1,33 @@
+name: Temp Mammakh Main Merge
+
+on:
+  push:
+    branches: [mammakhbuur-head-placeholders]
+
+permissions:
+  contents: write
+
+jobs:
+  merge-main-test:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: mammakhbuur-head-placeholders
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Merge current main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+Oolnokk@users.noreply.github.com"
+          git fetch origin main
+          git merge origin/main --no-edit
+      - name: Validate cache-bust chain
+        run: node scripts/check-cache-busts.js $(git merge-base HEAD origin/main)
+      - name: Run regression suite
+        run: node scripts/run-tests.js
+      - name: Push resolved branch
+        run: git push origin HEAD:mammakhbuur-head-placeholders

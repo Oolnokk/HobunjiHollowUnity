@@ -196,7 +196,7 @@
       { id: 'meeting_hunundi_face_door', type: 'turn', actorId: 'hunundi', mode: 'actor', targetActorId: 'harkharash', duration: 0.4, next: '__next__' },
       { id: 'meeting_hunundi_door', type: 'talk', speakerId: 'hunundi', text: 'Hm? Come in.', next: '__next__' },
       { id: 'meeting_hark_enter', type: 'animation', animKind: 'none', resultPose: 'standing', duration: 0.35, visible: true, cameraMode: 'npcRelative', actorId: 'harkharash', next: '__next__' },
-      { id: 'meeting_hark_intro', type: 'talk', speakerId: 'harkharash', text: "Surveyor Harkhanash, the Imperial Khanibarri Mining Company. I'm looking for Father Hunundi — the nearest thing to a leader here, I'm told.", next: '__next__' },
+      { id: 'meeting_hark_intro', type: 'talk', speakerId: 'harkharash', text: "Surveyor Harkhanash, the Imperial Khannibarri Mining Company. I'm looking for Father Hunundi — the nearest thing to a leader here, I'm told.", next: '__next__' },
       { id: 'meeting_hunundi_no_leader', type: 'talk', speakerId: 'hunundi', text: "I'm Father Hunundi. I help settle disputes; the Hollow isn't mine. Have a seat.", next: '__next__' },
       { id: 'meeting_hark_to_seat', type: 'move', actorId: 'harkharash', targetWorld: { c: 9, r: 6 }, speed: 'normal', next: '__next__' },
       { id: 'meeting_hark_sit', type: 'animation', cameraMode: 'wall', actorId: 'harkharash', animKind: 'none', resultPose: 'sit', duration: 0.35, next: '__next__' },

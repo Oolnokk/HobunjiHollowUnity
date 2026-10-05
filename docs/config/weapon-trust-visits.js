@@ -183,8 +183,8 @@
         dialogueLines: [
           "Good {{timeOfDay}}, {{playerName}}. I decided to close the tavern for a moment so I could talk to you about something. So please listen.",
           "In my line of work I see lots of people come and go from this little nook of ours. I'm glad you came, and even happier that you didn't go.",
-          "I wasn't born around here, you know. I grew up in Khanibarr-krassin, north up into the Eastern Highplains, and as far west as you could possibly go. Down a mountain's height of stairs, deep into a burning savannah, and up another into the snowy towerwood forests of the Western Highplains.",
-          "There stands the Great Stone City, the capital of the entire Khanibarri Empire. A place of fortune and prosperity. And I grew up with neither.",
+          "I wasn't born around here, you know. I grew up in Khannibarr-krassin, north up into the Eastern Highplains, and as far west as you could possibly go. Down a mountain's height of stairs, deep into a burning savannah, and up another into the snowy towerwood forests of the Western Highplains.",
+          "There stands the Great Stone City, the capital of the entire Khannibarri Empire. A place of fortune and prosperity. And I grew up with neither.",
           "My parents died in the plague of '22. Same one that took Kzubug's wife and kids. So I grew up with nothing, and nobody. Nobody unaffiliated with the Thug's Guild, that is.",
           "In order to eat I stole, and often in order to steal, I had no choice but to fight. And the Thug's Guild gave me the tools I needed to do that. These.",
           "They're called kylies. They say the Tembarri use them for hunting giant birds down in the Low Plains. We used them for beating innocent people within an inch of their lives and clobbering anyone who thought they could make a run for it.",
