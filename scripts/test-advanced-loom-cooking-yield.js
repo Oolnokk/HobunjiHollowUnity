@@ -1,6 +1,7 @@
 const assert = require('assert');
 const fs = require('fs');
 
+// Cross-system contract: loom capability/progression and Cooking yield stay in their respective world- and character-scoped progression systems.
 const game = fs.readFileSync('docs/game.js', 'utf8');
 const weaving = fs.readFileSync('docs/js/clothing-weaving-system.js', 'utf8');
 const mastery = fs.readFileSync('docs/js/advanced-loom-system.js', 'utf8');
