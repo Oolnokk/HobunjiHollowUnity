@@ -19,6 +19,7 @@ jobs:
       - name: Fix cache-bust loader chain
         run: |
           git fetch --no-tags origin main
+          sed -i 's/opening-story-cutscene\.js?v=20261005openingtext1/opening-story-cutscene.js?v=20261003repo-selector3/' docs/js/cutscene-director-repo-scenes.js
           node scripts/check-cache-busts.js --fix origin/main
       - name: Commit generated cache tokens
         run: |
@@ -29,5 +30,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add docs scripts
-          git commit -m "Refresh opening cache-bust tokens"
+          git commit -m "Refresh all opening story cache tokens"
           git push origin HEAD:codex/fix-opening-rescue-mobile-startup
