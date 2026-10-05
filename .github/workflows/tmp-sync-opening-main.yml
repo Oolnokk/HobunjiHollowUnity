@@ -22,10 +22,20 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch --no-tags origin main
           git merge --no-edit origin/main
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/test-introduction-loading-and-framing.js')
+          text = path.read_text()
+          old = "document:{addEventListener(){}},performance:{now:()=>0}"
+          new = "document:{addEventListener(){},getElementById(){return null;}},performance:{now:()=>0}"
+          if old not in text:
+              raise SystemExit('opening regression document stub target not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
           node scripts/check-cache-busts.js --fix origin/main
           if ! git diff --quiet; then
             git add docs scripts
-            git commit -m "Refresh opening cache tokens after main sync"
+            git commit -m "Update opening regression harness after main sync"
           fi
           git push origin HEAD:codex/fix-opening-rescue-mobile-startup
           node scripts/test-introduction-loading-and-framing.js
