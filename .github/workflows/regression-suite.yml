@@ -28,6 +28,25 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           sed -i "s/if count != 1:/if count != 1 and not (label == 'hand mode help' and count == 0):/" scripts/apply-dual-wield-idle-followup.py
           python3 scripts/apply-dual-wield-idle-followup.py
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/test-attack-animation-editor-history-grips.js')
+          text = path.read_text()
+          old = "assert.match(panelUi, /attack-idle-stance-editor\\.js\\?v=20260919history1/, 'idle stance cache key must ship the unified-panel/history update');"
+          new = "assert.match(panelUi, /attack-idle-stance-editor\\.js\\?v=[^'\\\"\\s]+/, 'idle stance cache key must remain versioned after idle-authoring updates');"
+          if text.count(old) != 1:
+              raise SystemExit('stale idle stance cache assertion target missing')
+          path.write_text(text.replace(old, new, 1))
+
+          path = Path('scripts/test-dual-wield-weapon-visuals.js')
+          text = path.read_text()
+          old = "assert.match(grips, /if \\(dual\\.checked\\) editorSecondaryPoses\\[phase\\]\\.enabled = false/, 'editor Dual Wield switches off 2H');"
+          new = "assert.match(grips, /if \\(dual\\.checked\\) \\{[\\s\\S]*?editorSecondaryPoses\\[phase\\]\\.enabled = false/, 'editor Dual Wield switches off 2H');"
+          if text.count(old) != 1:
+              raise SystemExit('stale dual-wield exclusivity assertion target missing')
+          path.write_text(text.replace(old, new, 1))
+          PY
           node scripts/check-cache-busts.js --fix
           for f in docs/game.js docs/js/*.js; do node --check "$f"; done
           node -e "JSON.parse(require('fs').readFileSync('docs/config/combat/weapon-idle-stances.json', 'utf8'))"
