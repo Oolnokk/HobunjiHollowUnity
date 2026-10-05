@@ -30,7 +30,7 @@ assert.match(editor, /if \(dualPairPreviewActive\(\)\) setDualPairPreview\(false
 assert.match(editor, /previewDualWieldMain/, 'attack hand-mode UI can switch Neutral preview to the shared dual idle main pose');
 assert.match(editor, /input\.disabled = selectedKey === 'dualWieldOffhand' && field\.key === 'bodyYaw'/, 'offhand pose shares main body yaw instead of inventing a second body rotation');
 
-assert.match(runtime, /if \(dualWield \|\| window\.HobunjiHandToolGrips\?\.isDualWieldWeapon/, 'runtime holder uses authored dual main while dual wielding');
+assert.match(runtime, /if \(dualWield !== false && window\.HobunjiHandToolGrips\?\.isDualWieldWeapon/, 'runtime holder uses authored dual main while dual wielding');
 assert.match(runtime, /dualWieldIdleRequested/, 'runtime attacks select the dual idle from Neutral hand metadata');
 assert.match(grips, /runtimeIdleDualWield/, 'hand-mode state persists dual idle after a dual attack ends');
 assert.match(grips, /dualWieldIdleBlend/, 'Neutral-to-attack transitions expose a continuous idle-pose blend');

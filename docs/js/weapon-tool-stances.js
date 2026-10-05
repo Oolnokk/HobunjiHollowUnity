@@ -159,7 +159,7 @@
     return { activeSlot, itemKey, def, mesh };
   }
 
-  function targetPoseFor(activeSlot, itemKey, def, { dualWield = false } = {}) {
+  function targetPoseFor(activeSlot, itemKey, def, { dualWield = null } = {}) {
     const shape = shapeFor(itemKey, def);
     if (activeSlot !== 'weapon') {
       if (activeSlot === 'hoe' && shape === 'hoe') return idleStances.hoeTool;
@@ -167,7 +167,7 @@
       return null;
     }
     const idleClass = weaponIdleClass(itemKey, def);
-    if (dualWield || window.HobunjiHandToolGrips?.isDualWieldWeapon?.(shape || itemKey)) return idleStances.dualWieldMain; // Dual Wield rests in its explicitly authored light-style main-hand stance.
+    if (dualWield !== false && window.HobunjiHandToolGrips?.isDualWieldWeapon?.(shape || itemKey)) return idleStances.dualWieldMain; // Dual Wield rests in its explicitly authored light-style main-hand stance.
     if (idleClass === 'heavy') return idleStances.heavyWeapon;
     if (idleClass === 'light') return idleStances.lightWeapon;
     return null;
@@ -182,7 +182,9 @@
 
   function dualWieldIdleRequested(rawOpts = {}) {
     const raw = rawOpts?.pose?.neutral?.dualWield;
-    return raw === true || raw?.enabled === true;
+    const state = activeState(); // Neutral metadata is used only by a weapon that actually supports a pair.
+    return window.HobunjiHandToolGrips?.isDualWieldWeapon?.(shapeFor(state.itemKey, state.def) || state.itemKey) === true
+      && (raw == null || raw === true || raw?.enabled === true);
   }
 
   function deg(value) {
@@ -274,7 +276,7 @@
   }
 
   function bakeAuthoredEndpoint(raw, sourceNeutral, power) {
-    const out = {};
+    const out = { ...raw }; // Keep independently authored hand flags while baking only transform channels.
     for (const key of POSE_KEYS) {
       const rawValue = Number(raw?.[key]);
       const endpoint = Number.isFinite(rawValue) ? rawValue : sourceNeutral[key];
@@ -343,12 +345,12 @@
       // would have reached. power=1 prevents a changed Neutral from rescaling them.
       power: 1,
       pose: {
-        neutral: neutralInputForSigns(targetNeutral, startNeutralSign, effectiveSign),
+        neutral: { dualWield: { enabled: true }, ...authoredPose?.neutral, secondaryGrip: { ...authoredPose?.neutral?.secondaryGrip, enabled: false }, ...neutralInputForSigns(targetNeutral, startNeutralSign, effectiveSign) },
         returnNeutral: neutralInputForSigns(targetNeutral, returnNeutralSign, effectiveSign),
         neutralMirrorSign: startNeutralSign,
         returnNeutralMirrorSign: returnNeutralSign,
-        windup,
-        strike,
+        windup: { secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true }, ...windup },
+        strike: { secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true }, ...strike },
       },
     };
   }

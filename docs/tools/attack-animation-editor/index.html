@@ -297,7 +297,7 @@ canvas{display:block;width:100%;height:100%}
      loaded by the game's Pixel Probe, so this editor's preview dump and an
      in-game character dump use the exact same code/format. -->
 <script src="../../js/transform-dump-utils.js?v=20260820a"></script>
-<script src="../../js/held-action-animations.js?v=20261005h1a5a4c1"></script>
+<script src="../../js/held-action-animations.js?v=20261005h6b81b97"></script>
 <script src="../../js/combat/melee-pose-spacing.js?v=20260920spacing2"></script>
 <script type="module">
 import * as THREE from 'three';
@@ -849,9 +849,9 @@ let anim = {
   projectileLockAlignment: false,
   projectileBasisDeg: 0,
   poses: {
-    neutral: { ...neutralPoseFor('sweep') },
-    windup: defaultPose(0.05, 0.05, -0.15, -15, 0, -60),
-    strike: defaultPose(-0.05, 0.0, 0.20, 10, 0, 55),
+    neutral: { ...neutralPoseFor('sweep'), secondaryGrip: { enabled: false, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
+    windup: { ...defaultPose(0.05, 0.05, -0.15, -15, 0, -60), secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
+    strike: { ...defaultPose(-0.05, 0.0, 0.20, 10, 0, 55), secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
   },
 };
 
@@ -1168,14 +1168,16 @@ const TOOL_PRESETS = [
     windup: defaultPose(0, 0, 0.16, 0, 0, 0), strike: defaultPose(0, 0, 0.16, 0, 0, 0),
     windupFrac: 0.16, strikeFrac: 0.28 },
   { id: 'hatchet_swing', label: 'Hatchet — Swing (sweep)', style: 'sweep', toolKey: 'hatchet', still: false,
-    windup: defaultPose(0, 0, 0.16, 0, 0, -126.05), strike: defaultPose(0, 0, 0.16, 0, 0, 121.49),
+    neutral: { ...neutralPoseFor('sweep'), secondaryGrip: { enabled: false, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
+    windup: { ...defaultPose(0, 0, 0.16, 0, 0, -126.05), secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } }, strike: { ...defaultPose(0, 0, 0.16, 0, 0, 121.49), secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
     windupFrac: 0.16, strikeFrac: 0.28 },
 
   { id: 'pickshovel_idle', label: 'Pick-Shovel — Idle (still)', style: 'thrust', toolKey: 'pickshovel', still: true,
     windup: defaultPose(0, 0, 0, 10.31, 0, 0), strike: defaultPose(0, 0, 0, 10.31, 0, 0),
     windupFrac: 0.16, strikeFrac: 0.28 },
   { id: 'pickshovel_swing', label: 'Pick-Shovel — Swing (thrust)', style: 'thrust', toolKey: 'pickshovel', still: false,
-    windup: defaultPose(0, 0, -0.22, 10.31, 0, -45), strike: defaultPose(-0.23, 0, 0.32, 1, -45, 46),
+    neutral: { ...neutralPoseFor('thrust'), secondaryGrip: { enabled: false, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
+    windup: { ...defaultPose(0, 0, -0.22, 10.31, 0, -45), secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } }, strike: { ...defaultPose(-0.23, 0, 0.32, 1, -45, 46), secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
     windupFrac: 0.16, strikeFrac: 0.28 },
 
   { id: 'bronzehoe_idle', label: 'Bronze Hoe — Idle (still)', style: 'chop', toolKey: 'bronzehoe', still: true,
@@ -1183,22 +1185,24 @@ const TOOL_PRESETS = [
     windup: defaultPose(0.03, 0.37, -0.01, -155, -79, 2, -82), strike: defaultPose(0.03, 0.37, -0.01, -155, -79, 2, -82),
     windupFrac: 0.16, strikeFrac: 0.28 },
   { id: 'bronzehoe_swing', label: 'Bronze Hoe — Swing (chop)', style: 'chop', toolKey: 'bronzehoe', still: false,
-    neutral: defaultPose(0.03, 0.37, -0.01, -155, -79, 2, -82),
-    windup: defaultPose(-0.18, 0.41, -0.15, -165, 13, -29, -112), strike: defaultPose(0, 0, 0.12, 13, -28, 29, -91),
+    neutral: { ...defaultPose(0.03, 0.37, -0.01, -155, -79, 2, -82), secondaryGrip: { enabled: false, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
+    windup: { ...defaultPose(-0.18, 0.41, -0.15, -165, 13, -29, -112), secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } }, strike: { ...defaultPose(0, 0, 0.12, 13, -28, 29, -91), secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
     windupFrac: 0.16, strikeFrac: 0.28 },
 
   { id: 'fishingspear_idle', label: 'Fishing Spear — Idle (still)', style: 'sweep', toolKey: 'fishingspear', still: true,
     windup: defaultPose(0, 0, 0.16, 0, 0, 0), strike: defaultPose(0, 0, 0.16, 0, 0, 0),
     windupFrac: 0.16, strikeFrac: 0.28 },
   { id: 'fishingspear_swing', label: 'Fishing Spear — Swing (sweep)', style: 'sweep', toolKey: 'fishingspear', still: false,
-    windup: defaultPose(0, 0, 0.16, 0, 0, -126.05), strike: defaultPose(0, 0, 0.16, 0, 0, 121.49),
+    neutral: { ...neutralPoseFor('sweep'), secondaryGrip: { enabled: false, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
+    windup: { ...defaultPose(0, 0, 0.16, 0, 0, -126.05), secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } }, strike: { ...defaultPose(0, 0, 0.16, 0, 0, 121.49), secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
     windupFrac: 0.16, strikeFrac: 0.28 },
 
   { id: 'fishingmace_idle', label: 'Fishing Mace — Idle (still)', style: 'sweep', toolKey: 'fishingmace', still: true,
     windup: defaultPose(0, 0, 0.16, 0, 0, 0), strike: defaultPose(0, 0, 0.16, 0, 0, 0),
     windupFrac: 0.16, strikeFrac: 0.28 },
   { id: 'fishingmace_swing', label: 'Fishing Mace — Swing (sweep, spins in-game)', style: 'sweep', toolKey: 'fishingmace', still: false,
-    windup: defaultPose(0, 0, 0.16, 0, 0, -126.05), strike: defaultPose(0, 0, 0.16, 0, 0, 121.49),
+    neutral: { ...neutralPoseFor('sweep'), secondaryGrip: { enabled: false, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
+    windup: { ...defaultPose(0, 0, 0.16, 0, 0, -126.05), secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } }, strike: { ...defaultPose(0, 0, 0.16, 0, 0, 121.49), secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
     windupFrac: 0.16, strikeFrac: 0.28 },
   { id: 'crossbow_load', label: 'Crossbow — Load', name: 'Crossbow Load', style: 'ranged', sequence: 'attack', toolKey: 'crossbow', still: false,
     neutral: { ...defaultPose(0, 0.12, 0.18, -8, 0, 0, 0), scale: 1.77 }, windup: defaultPose(0, -0.17, 0.09, 77, 0, -10, 0), strike: defaultPose(0, 0.18, 0.08, -11, 0, 7, 0), windupFrac: 0.55, strikeFrac: 0.56, holdFrac: 0.692, durationS: 1.04 },
@@ -1239,7 +1243,7 @@ function applyPreset(preset) {
   // The selected Action owns hand-follow and elbow pose fields too. Reload the
   // hand adapter every time so state from the previously selected Action cannot leak.
   window.HobunjiAttackEditorHandShoulderControls?.loadFromAnimationObject?.({ poses: anim.poses });
-  window.HobunjiHandToolGrips?.loadEditorAnimationGrip?.({ sequence: preset.sequence || 'attack', poses: anim.poses }); // Switching Actions reloads 2H/Dual state instead of leaking the prior Action's mode.
+  window.HobunjiHandToolGrips?.loadEditorAnimationGrip?.({ sequence: preset.sequence || 'attack', style: preset.style, still: preset.still, poses: anim.poses }); // Switching Actions reloads 2H/Dual state instead of leaking the prior Action's mode.
   anim.windupFrac = preset.windupFrac;
   anim.strikeFrac = preset.strikeFrac;
   // Presets predate holdFrac, so derive it the same way game.js's HF auto-
@@ -1996,7 +2000,7 @@ function loadAnimObject(data) {
   // Restore them on every load path (file import, Undo/Redo, programmatic restore),
   // not only the file-input handler.
   window.HobunjiAttackEditorHandShoulderControls?.loadFromAnimationObject?.(data);
-  window.HobunjiHandToolGrips?.loadEditorAnimationGrip?.({ sequence: anim.sequence, poses: anim.poses });
+  window.HobunjiHandToolGrips?.loadEditorAnimationGrip?.({ sequence: anim.sequence, style: anim.style, poses: anim.poses });
   $('animName').value = action.label;
   $('animStyle').value = anim.style;
   $('playbackSequence').value = anim.sequence;

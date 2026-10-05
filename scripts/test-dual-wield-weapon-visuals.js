@@ -33,16 +33,14 @@ assert.match(driver, /transformSocketForHand\?\.\(record, 'left'/, 'left hand fo
 assert.match(driver, /offhandBaseSocket = toolSocketWorld\(record, toolHolder, primaryGrip\)/, 'both duplicated weapons use the same fixed 1H grip frame');
 assert.match(grips, /dualWieldStateForTool/, 'shared grip state exposes Dual Wield as a melee hand mode');
 assert.match(grips, /defaultTwoHand = sequence === 'attack'/, 'ordinary melee attacks default to 2H');
-assert.match(grips, /if \(dual\.checked\) \{[\s\S]*?editorSecondaryPoses\[phase\]\.enabled = false/, 'editor Dual Wield switches off 2H');
-assert.match(grips, /if \(enabled\.checked\) editorSecondaryPoses\[phase\]\.dualWield = false/, 'editor 2H switches off Dual Wield');
 assert(held.includes('dual-wield-weapon-visuals.js'), 'held-action bootstrap loads dual-wield visuals');
 const heldActionTokens = runtimeEntries.map(path => {
   const html = fs.readFileSync(path, 'utf8');
   return html.match(/held-action-animations\.js\?v=([A-Za-z0-9_-]+)/)?.[1] || null;
 });
 assert(heldActionTokens.every(token => token && token === heldActionTokens[0]), 'game and authoring pages must use the same fresh held-action bootstrap token');
-assert.match(editor, /loadEditorAnimationGrip\?\.\(\{ sequence: preset\.sequence \|\| 'attack', poses: anim\.poses \}\)/, 'switching Actions reloads per-attack hand-mode metadata');
-console.log('dual wield: transform-following roots, child-local grip frames with proper offhand reflection, child-only sandwich offsets, main-hand lag, default 2H, and mutually exclusive editor mode PASS');
+assert.match(editor, /loadEditorAnimationGrip\?\.\(\{ sequence: preset\.sequence \|\| 'attack', style: preset\.style, still: preset\.still, poses: anim\.poses \}\)/, 'switching Actions reloads per-attack hand-mode metadata');
+console.log('dual wield: transform-following roots, child-local grip frames with proper offhand reflection, child-only sandwich offsets, main-hand lag, default 2H, and independent editor flags PASS');
 
 // Execute the mesh builder: a negative offhand X scale reverses an asymmetric axe blade.
 class DuplicateMesh {

@@ -23,8 +23,8 @@ assert(defaultTwoHandState.influence > 0.999, 'melee attacks without explicit ha
 assert.equal(defaultTwoHandState.dualWieldInfluence, 0);
 const dualWieldState = grips.animationGripAt(0.25, { windupFrac: 0.25, strikeFrac: 0.6, holdFrac: 0.8 }, {
   windup: { dualWield: { enabled: true } }, strike: { dualWield: { enabled: true } },
-}, 'attack');
-assert.equal(dualWieldState.influence, 0, 'Dual Wield suppresses the mutually exclusive 2H influence');
+}, 'attack', 'dagger');
+assert.equal(dualWieldState.influence, 0, 'A paired weapon reads the Dual Wield flag');
 assert(dualWieldState.dualWieldInfluence > 0.999, 'Dual Wield reaches full influence at the Windup endpoint');
 const pose = { // Independent percentages exercise both ranges, including legacy Neutral enabled data.
   neutral: { secondaryGrip: { enabled: true, percent: 10, primaryPercent: 10 } },
@@ -131,5 +131,5 @@ assert.equal(editorModes.strike.enabled, true, 'new/imported melee attacks defau
 grips.loadEditorAnimationGrip({ sequence: 'attack', poses: { neutral: {}, windup: { dualWield: { enabled: true } }, strike: {} } });
 editorModes = grips.editorSecondaryGripStateSnapshot();
 assert.equal(editorModes.windup.dualWield, true, 'Dual Wield metadata loads into the editor phase toggle');
-assert.equal(editorModes.windup.enabled, false, 'Dual Wield and 2H are mutually exclusive in editor state');
+assert.equal(editorModes.windup.enabled, true, 'Dual Wield and 2H remain independently enabled in editor state');
 console.log('Measured long-haft 1H centers, mirrored spear ranged grip, paired 2H ranges, idle/ranged fallback, and migration passed.');

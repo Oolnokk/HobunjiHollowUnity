@@ -248,7 +248,7 @@
     const existingScript = document.querySelector('script[data-weapon-tool-stances]'); // Prevents duplicate loads if this script is re-evaluated in dev mode.
     if (existingScript) return;
     const script = document.createElement('script'); // Loads after the shared melee-spacing math so every attack wrapper sees the same calibrated endpoint rule.
-    script.src = 'js/weapon-tool-stances.js?v=20261005h3168cfe';
+    script.src = 'js/weapon-tool-stances.js?v=20261005heca4b32';
     script.async = false;
     script.dataset.weaponToolStances = 'true';
     script.onload = initializeStancesIfReady;
