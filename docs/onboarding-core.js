@@ -1099,14 +1099,21 @@
     </div>`;
   }
 
+  function farmPresetDescriptionHTML(preset) {
+    const split = preset.description.indexOf('. '); // Separate the activity summary from its complementary playstyle paragraph.
+    const activities = split < 0 ? preset.description : preset.description.slice(0,split+1); // Larger highlighted activity text.
+    const playstyle = split < 0 ? '' : preset.description.slice(split+2); // Softer secondary playstyle text stays readable on mobile.
+    return `<span class="sl-farm-activities">${esc(activities)}</span>${playstyle ? `<span class="sl-farm-playstyle">${esc(playstyle)}</span>` : ''}`;
+  }
+
   function buildFarmCreationSettingsHTML() {
     return `<div class="sl-section" style="display:grid;gap:10px">
       <div class="sl-section-label">Farm buildings</div>
       ${window.FarmWorldSettings.colorSelect('stone', _newFarmSettings.stone, 'slFarmStone')}
       ${window.FarmWorldSettings.colorSelect('wood', _newFarmSettings.wood, 'slFarmWood')}
       <label>Starting farm specialization <select id="slFarmSpecialization">${Object.entries(window.FARM_SPECIALIZATIONS_CONFIG.specializations).map(([key, value]) => `<option value="${key}"${key === _newFarmSettings.specialization ? ' selected' : ''}>${value.label}</option>`).join('')}</select></label>
-      <div id="slFarmSpecializationDescription" aria-live="polite">${window.FARM_SPECIALIZATIONS_CONFIG.specializations[_newFarmSettings.specialization].description}</div>
-      <div id="slFarmSpecializationSupplies">${window.FARM_SPECIALIZATIONS_CONFIG.specializations[_newFarmSettings.specialization].starterDescription}</div>
+      <div id="slFarmSpecializationDescription" aria-live="polite">${farmPresetDescriptionHTML(window.FARM_SPECIALIZATIONS_CONFIG.specializations[_newFarmSettings.specialization])}</div>
+      <div id="slFarmSpecializationSupplies" class="sl-farm-supplies">${window.FARM_SPECIALIZATIONS_CONFIG.specializations[_newFarmSettings.specialization].starterDescription}</div>
       <button id="slFarmRerollName" class="sl-world-action" type="button">Randomize farm name</button>
     </div>`;
   }
@@ -1300,7 +1307,7 @@
         const description = _el.querySelector('#slFarmSpecializationDescription'); // Draft description follows the selected starter package.
         const preset = window.FARM_SPECIALIZATIONS_CONFIG.specializations[_newFarmSettings.specialization]; // Shared activities/playstyle and supply copy for the selected facility.
         const supplies = _el.querySelector('#slFarmSpecializationSupplies'); // Keep starting equipment visible alongside the playstyle description.
-        if (description) description.textContent = preset.description;
+        if (description) description.innerHTML = farmPresetDescriptionHTML(preset);
         if (supplies) supplies.textContent = preset.starterDescription;
       });
     });
