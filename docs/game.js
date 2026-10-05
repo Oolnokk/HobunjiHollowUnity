@@ -16294,10 +16294,10 @@
               if (result.ok) { buildInventoryGrid(); window.HudUpdate.refreshItemScroll(); saveMemberWorldData(); }
             });
           }
-          // Alchemical items follow the same physical held-item language as
-          // every other bag item. Selecting here only places the bottle in
-          // hand; Drink/Throw/Read/Eat remains on the normal action arch.
-          if ((window.AlchemySystem.POTION_ITEMS[key] || window.AlchemySystem.getPotionEffectsFromKey(key)) && count > 0) {
+          // Wheel-selectable Pack objects can also be equipped directly from
+          // their info panel, so the player does not need to leave the menu
+          // and open the item select wheel just to hold one.
+          if (window.ItemProcessing.isWheelEligible(key) && count > 0) {
             mkBtn('🤲 Hold', 'equip', () => {
               const index = getInventoryStackItems().findIndex(item => item.key === key);
               if (index >= 0) activeItemIndex = index;
@@ -16305,11 +16305,8 @@
               window.HudUpdate.refreshItemScroll(); refreshActionBar(); closeMenu();
             });
           }
-          // Materials/etc that isWheelEligible excludes from the wheel
-          // (see getInventoryStackItems) have no other way to become the
-          // held item, so gifting one (see js/npc-gifting.js) needs its own
-          // explicit hold, same mechanism as the Equipment panel's clothing
-          // "Hold" button (see selectGearClothing in js/equipment-panel.js).
+          // Items excluded from the wheel still need a manual held-item slot,
+          // including when they are selected from the Pack details.
           if (!window.ItemProcessing.isWheelEligible(key) && count > 0) {
             const heldNow = getManualHeldItem();
             const isHeld = heldNow?.kind === 'bagItem' && heldNow.key === key;
