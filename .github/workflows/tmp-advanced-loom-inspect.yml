@@ -6,6 +6,7 @@ on:
       - codex/npc-crafting-commissions-v2
     paths:
       - scripts/tmp-loom-cooking-finalize.py
+      - scripts/tmp-loom-finalizer-extra.py
       - .github/workflows/tmp-advanced-loom-inspect.yml
 
 permissions:
@@ -22,12 +23,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Configure branch committer
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
       - name: Bring branch up to current main
         run: |
           git fetch origin main
           git merge --no-edit origin/main
       - name: Finalize Advanced Loom and Cooking Yield
-        run: python3 scripts/tmp-loom-cooking-finalize.py
+        run: |
+          python3 scripts/tmp-loom-cooking-finalize.py
+          python3 scripts/tmp-loom-finalizer-extra.py
       - name: Validate changed runtime files
         run: |
           node --check docs/js/advanced-loom-system.js
@@ -35,6 +42,7 @@ jobs:
           node --check docs/js/perk-system.js
           node --check docs/js/cooking-system.js
           node --check docs/js/crafting-panel.js
+          node --check docs/js/npc-crafting-commission-generator.js
           node --check docs/game.js
           python3 -m json.tool docs/config/furniture-authored/loom.json >/dev/null
           python3 -m json.tool docs/config/furniture-authored/advancedLoom.json >/dev/null
@@ -46,8 +54,6 @@ jobs:
         run: node scripts/check-cache-busts.js --fix origin/main
       - name: Commit finished feature
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           git commit -m "Add Advanced Loom and Cooking Yield perk"
           git push origin HEAD:codex/npc-crafting-commissions-v2
