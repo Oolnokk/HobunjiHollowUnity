@@ -49,7 +49,6 @@
     const stored = storedModeForTool(value);
     if (stored) return stored;
     const key = normalizeKey(value);
-    if (key.includes('pickshovel') || key.includes('pick-shovel')) return 'palm-perpendicular';
     if (key.includes('hoe')) return 'palm-parallel';
     return 'palm-parallel';
   }

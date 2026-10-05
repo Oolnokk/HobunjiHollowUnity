@@ -138,6 +138,10 @@
       "file": "config/furniture-authored/loom.json"
     },
     {
+      "key": "advancedLoom",
+      "file": "config/furniture-authored/advancedLoom.json"
+    },
+    {
       "key": "mineLadder",
       "file": "config/furniture-authored/mineLadder.json"
     },

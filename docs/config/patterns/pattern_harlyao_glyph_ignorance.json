@@ -1,0 +1,22 @@
+{
+  "schema": "hobunji_pattern.v1",
+  "id": "harlyao_glyph_ignorance",
+  "name": "Harlyao Glyph: Ignorance",
+  "motifPng": "assets/patterns/motif_harlyao_glyph_ignorance.png",
+  "collectible": true,
+  "settings": {
+    "motifScale": 1.15,
+    "motifRotationDeg": 0,
+    "tiling": true,
+    "invert": false,
+    "motifThinPx": 4,
+    "frameShape": "triangle",
+    "frameX": -33.79004227487664,
+    "frameY": 19.953415184690286,
+    "frameRotationDeg": 6,
+    "frameScale": 1.4,
+    "meshScale": 1.49,
+    "meshRotationDeg": -1,
+    "overpassClearanceMultiplier": 3
+  }
+}

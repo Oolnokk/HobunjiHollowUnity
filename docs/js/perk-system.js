@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  // Perk trees for Combat, Alchemy, Foraging, Fishing, and Mining. Point entitlement
+  // Perk trees for Combat, Alchemy, Foraging, Fishing, Mining, Farming, and Cooking. Point entitlement
   // is derived from the current tree itself rather than stored as a separate
   // balance: at max skill level, a character can buy about half of that
   // tree's total purchasable ranks. The entitlement is distributed across
@@ -42,6 +42,7 @@
     foraging: [6, 10],
     fishing: [6, 12],
     farming: [8, 16],
+    cooking: [], // Cooking currently has only a Tier-1 foundation perk; later tiers can add thresholds here without changing saves.
   };
 
   const TREES = {
@@ -126,10 +127,16 @@
       { id: 'cellarmaster', name: 'Cellarmaster', tier: 3, maxRank: 5, desc: r => `Barrel/vase aging is noticeably more likely to improve quality (rank ${r}/5).` },
       { id: 'preserver', name: 'Preserver', tier: 3, maxRank: 5, desc: r => `Drying/smoking is noticeably more likely to preserve or improve quality (rank ${r}/5).` },
     ],
+    // Cooking is already a real character skill. Start its perk tree with one
+    // broad yield choice; more specialized recipe/effect perks can branch from
+    // here later without moving Cooking progression into world Crafting Mastery.
+    cooking: [
+      { id: 'increaseCookingYield', name: 'Increase Cooking Yield', tier: 1, maxRank: 1, desc: () => '25% chance for each cooking action to produce one extra serving without consuming extra ingredients.' },
+    ],
   };
 
   let deps = null;
-  const ranks = { combat: {}, alchemy: {}, foraging: {}, fishing: {}, mining: {}, farming: {} }; // skillKey -> perkId -> rank
+  const ranks = { combat: {}, alchemy: {}, foraging: {}, fishing: {}, mining: {}, farming: {}, cooking: {} }; // skillKey -> perkId -> rank
 
   function init(injectedDeps = {}) { deps = injectedDeps; render(); }
 
@@ -255,6 +262,7 @@
     fishing: { label: 'Fishing', icon: '🎣' },
     mining: { label: 'Mining', icon: '⛏️' },
     farming: { label: 'Farming', icon: '🌾' },
+    cooking: { label: 'Cooking', icon: '🍲' },
   };
   const openTrees = new Set();
 

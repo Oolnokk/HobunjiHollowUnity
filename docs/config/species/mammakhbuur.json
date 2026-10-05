@@ -7,9 +7,15 @@
     "female"
   ],
   "male": {
-    "headSprite": "fightersprites/mashtzarr-m/head.png"
+    "headSprite": "fightersprites/mammakhbuur-m/head.png",
+    "headFallbackUrls": [
+      "fightersprites/mashtzarr-m/head.png"
+    ]
   },
   "female": {
-    "headSprite": "fightersprites/mashtzarr-f/head.png"
+    "headSprite": "fightersprites/mammakhbuur-f/head.png",
+    "headFallbackUrls": [
+      "fightersprites/mashtzarr-f/head.png"
+    ]
   }
 }

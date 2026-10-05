@@ -228,14 +228,25 @@
     };
   }
 
-  function hierarchyWorldQuaternion(node) {
+  let castHandScratch = null; // syncLichCastHand runs every frame per lich (via updateToolMesh); placeHandWorld clones its inputs, so these are safely reused.
+  function lichCastHandScratch() {
+    return castHandScratch ||= {
+      chain: [],
+      socketPosition: new THREE.Vector3(), socketQuaternion: new THREE.Quaternion(),
+      gripOffset: new THREE.Vector3(), gripQuaternion: new THREE.Quaternion(), gripEuler: new THREE.Euler(),
+      handPosition: new THREE.Vector3(), handQuaternion: new THREE.Quaternion(),
+    };
+  }
+
+  function hierarchyWorldQuaternion(node, target) {
     if (!node?.quaternion || typeof THREE === 'undefined') return null;
-    const chain = []; // Avoids matrix decomposition under mirrored/non-uniform avatar ancestors, matching the existing hand runtimes.
+    const chain = lichCastHandScratch().chain; // Avoids matrix decomposition under mirrored/non-uniform avatar ancestors, matching the existing hand runtimes.
+    chain.length = 0;
     for (let cursor = node; cursor?.isObject3D; cursor = cursor.parent) chain.push(cursor);
-    const world = new THREE.Quaternion();
-    world.identity();
-    for (let i = chain.length - 1; i >= 0; i--) world.multiply(chain[i].quaternion);
-    return world.normalize();
+    target.identity();
+    for (let i = chain.length - 1; i >= 0; i--) target.multiply(chain[i].quaternion);
+    chain.length = 0;
+    return target.normalize();
   }
 
   function syncLichCastHand(entity) {
@@ -244,8 +255,9 @@
     const hand = lichHandFrame(rig); // Existing species/model calibration composed after the weapon grip.
     if (!holder?.visible || !holder.parent || !rig?.placeHandWorld || !hand || typeof THREE === 'undefined') return false;
     holder.updateWorldMatrix?.(true, true);
-    const socketPosition = holder.getWorldPosition(new THREE.Vector3()); // Current Light Weapon pose position after BanditCombat animation.
-    const socketQuaternion = hierarchyWorldQuaternion(holder); // Current Light Weapon pose orientation without mirrored-matrix decomposition.
+    const scratch = lichCastHandScratch();
+    const socketPosition = holder.getWorldPosition(scratch.socketPosition); // Current Light Weapon pose position after BanditCombat animation.
+    const socketQuaternion = hierarchyWorldQuaternion(holder, scratch.socketQuaternion); // Current Light Weapon pose orientation without mirrored-matrix decomposition.
     if (!socketQuaternion) return false;
     const grips = window.HobunjiHandToolGrips; // Existing authored grip metadata keeps the invisible reference weapon's hand placement identical to a real held copy.
     const grip = grips?.authoredPrimaryGripForTool?.(LICH_CAST_WEAPON_KEY, 'melee') || {};
@@ -254,15 +266,15 @@
     const gripScale = Number(grips?.toolScaleForTool?.(LICH_CAST_WEAPON_KEY)) || 1;
     const gripTarget = grips?.itemPointToHolder?.(LICH_CAST_WEAPON_KEY, gripPosition, 'melee', { speciesId: rig.speciesId, gender: rig.gender })
       || { x: (Number(gripPosition.x) || 0) * gripScale, y: (Number(gripPosition.y) || 0) * gripScale, z: (Number(gripPosition.z) || 0) * gripScale }; // Height scaling pivots on the grip, so the hand target is the same as a real held copy's.
-    socketPosition.add(new THREE.Vector3(gripTarget.x, gripTarget.y, gripTarget.z).applyQuaternion(socketQuaternion));
-    socketQuaternion.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(
+    socketPosition.add(scratch.gripOffset.set(gripTarget.x, gripTarget.y, gripTarget.z).applyQuaternion(socketQuaternion));
+    socketQuaternion.multiply(scratch.gripQuaternion.setFromEuler(scratch.gripEuler.set(
       THREE.MathUtils.degToRad(Number(gripRotation.pitch) || 0),
       THREE.MathUtils.degToRad(Number(gripRotation.yaw) || 0),
       THREE.MathUtils.degToRad(Number(gripRotation.roll) || 0),
       'YXZ',
     )));
-    const handPosition = socketPosition.clone().add(hand.position.clone().applyQuaternion(socketQuaternion)); // Final right-palm point after the species/model hand offset.
-    const handQuaternion = socketQuaternion.clone().multiply(hand.quaternion); // Final right-palm orientation after grip + model calibration.
+    const handPosition = scratch.handPosition.copy(hand.position).applyQuaternion(socketQuaternion).add(socketPosition); // Final right-palm point after the species/model hand offset.
+    const handQuaternion = scratch.handQuaternion.copy(socketQuaternion).multiply(hand.quaternion); // Final right-palm orientation after grip + model calibration.
     rig.setSideVisible?.('right', true);
     rig.placeHandWorld('right', handPosition, handQuaternion);
     return true;
@@ -713,6 +725,7 @@
     ); // Small fixed-AOE warning uses the same flat ring language as other arena telegraphs.
     ring.rotation.x = -Math.PI / 2;
     ring.renderOrder = 3;
+    window.EnvironmentSurfaceMicroPlateau?.bindGroundProjection(ring);
     root.add(ring);
     owner.scene.add(root);
     const erupt = {
@@ -1359,6 +1372,7 @@
     for (const mesh of [base, pulse]) {
       mesh.rotation.x = -Math.PI / 2;
       mesh.renderOrder = 6;
+      window.EnvironmentSurfaceMicroPlateau?.bindGroundProjection(mesh);
     }
     pulse.position.y = 0.003; // Tiny separation avoids z-fighting between the steady ring and burst at pulse start.
     const group = new THREE.Group();

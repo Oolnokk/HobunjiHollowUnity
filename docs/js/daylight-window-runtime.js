@@ -215,17 +215,19 @@
     return output;
   }
 
+  let paneTintScratch = null;
   const PANE_MIN_PEAK = 0.55; // Brightest channel floor for the pane tint, so night windows glow instead of reading black.
 
   function updatePaneTint(state = currentOutdoorLighting()) {
     const THREE = window.THREE; // Color setter uses the active Three implementation.
     if (!THREE?.Color) return;
-    const tint = new THREE.Color(clamp01(state.r / 255), clamp01(state.g / 255), clamp01(state.b / 255)); // Same RGB tint currently applied by the outdoor lighting overlay.
+    if (!(paneTintScratch instanceof THREE.Color)) paneTintScratch = new THREE.Color(); // Reused by the 220ms scheduler tick.
+    const tint = paneTintScratch.setRGB(clamp01(state.r / 255), clamp01(state.g / 255), clamp01(state.b / 255)); // Same RGB tint currently applied by the outdoor lighting overlay.
     const peak = Math.max(tint.r, tint.g, tint.b);
     if (peak > 0.0001 && peak < PANE_MIN_PEAK) tint.multiplyScalar(PANE_MIN_PEAK / peak); // Night keeps the sky's hue but stays a visible moonlit glow.
     for (const source of registeredSources) {
       const material = source.mesh?.material; // Each pane owns a material so opacity/debug can vary independently later.
-      if (material?.color) { material.color.copy(tint); material.needsUpdate = true; }
+      if (material?.color) material.color.copy(tint); // color is a uniform; needsUpdate would only force a needless program re-check every tick.
       for (const pattern of source.patternMeshes || []) pattern.material?.color?.copy?.(tint); // Stained glass shares the same outdoor tint/aperture rather than a second lighting source.
     }
   }

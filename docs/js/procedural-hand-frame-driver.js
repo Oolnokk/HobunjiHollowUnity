@@ -505,23 +505,40 @@
       if (record.avatarRoot?.userData?.proceduralHandToolHolder) {
         scaleIdentity.animationGripState = record.avatarRoot.userData.proceduralHandAnimationGrip ?? null; // Each NPC’s own animation gates both ranges; idle NPCs stay 1H.
       }
+      const dualWield = toolGrips.dualWieldStateForTool?.(toolKey, gripContext, scaleIdentity) || null;
       const primaryGrip = toolGrips.primaryGripForTool(toolKey, gripContext, scaleIdentity);
-      const primarySocket = toolSocketWorld(record, toolHolder, primaryGrip); // Raw target ON the weapon, before Grip Mode or per-GLB hand-model calibration.
-      record.rig.placePaperHandGuideWorld?.(primarySocket.position, primarySocket.quaternion); // Locked reference stays on the raw target while Grip Mode + child calibration move the real hand.
-      const primary = handSocketAfterGripMode(record, primarySocket);
-      const modelCalibration = modelCalibrationForRecord(record); // Exact selected-model transform is passed through; the rig never re-resolves a different model by species.
+      const primarySocket = toolSocketWorld(record, toolHolder, primaryGrip); // Raw fixed 1H target remains the canonical weapon-grip reference before optional Dual Wield remapping.
+      record.rig.placePaperHandGuideWorld?.(primarySocket.position, primarySocket.quaternion);
+      let primary = handSocketAfterGripMode(record, primarySocket); // Preserve the ordinary raw-socket contract for 1H/2H and diagnostics.
+      if (dualWield) {
+        const dualPrimarySocket = global.HobunjiDualWieldWeaponVisuals?.transformSocketForHand?.(record, 'right', primarySocket) || primarySocket;
+        primary = handSocketAfterGripMode(record, dualPrimarySocket); // Dual Wield alone remaps the same canonical grip onto the lagged main-hand weapon copy.
+      }
+      const modelCalibration = modelCalibrationForRecord(record);
       record.rig.placeHandWorld?.('right', primary.position, primary.quaternion, modelCalibration);
-      ensureFallbackState(record).owners.right = 'primary-grip';
+      const owners = ensureFallbackState(record).owners;
+      owners.right = 'primary-grip'; // Ordinary attachment ownership always wins over locomotion fallback.
+      if (dualWield) owners.right = 'dual-wield-main-grip'; // Dual Wield refines that ownership to the lagged duplicate weapon.
 
-      const secondaryGrip = toolGrips.secondaryGripForTool(toolKey, gripContext, scaleIdentity);
-      if (secondaryGrip) {
-        const secondary = handSocketAfterGripMode(record, toolSocketWorld(record, toolHolder, secondaryGrip));
-        record.rig.placeHandWorld?.('left', secondary.position, secondary.quaternion, modelCalibration, secondaryGrip.influence);
+      let secondaryGrip = null;
+      if (dualWield) {
+        const offhandBaseSocket = toolSocketWorld(record, toolHolder, primaryGrip); // Both duplicated weapons use the same authored 1H grip frame.
+        const offhandSocket = global.HobunjiDualWieldWeaponVisuals?.transformSocketForHand?.(record, 'left', offhandBaseSocket) || offhandBaseSocket;
+        const secondary = handSocketAfterGripMode(record, offhandSocket);
+        record.rig.placeHandWorld?.('left', secondary.position, secondary.quaternion, modelCalibration, dualWield.influence);
         record.secondaryActive = true;
-        ensureFallbackState(record).owners.left = 'secondary-grip';
+        ensureFallbackState(record).owners.left = 'dual-wield-offhand-grip';
       } else {
-        applyFallbackSide(record, 'left');
-        record.secondaryActive = false;
+        secondaryGrip = toolGrips.secondaryGripForTool(toolKey, gripContext, scaleIdentity);
+        if (secondaryGrip) {
+          const secondary = handSocketAfterGripMode(record, toolSocketWorld(record, toolHolder, secondaryGrip));
+          record.rig.placeHandWorld?.('left', secondary.position, secondary.quaternion, modelCalibration, secondaryGrip.influence);
+          record.secondaryActive = true;
+          ensureFallbackState(record).owners.left = 'secondary-grip';
+        } else {
+          applyFallbackSide(record, 'left');
+          record.secondaryActive = false;
+        }
       }
       record.lastToolKey = toolKey || null;
       record.lastVisualGripBasis = primary.visualBasis || null;
@@ -541,7 +558,10 @@
         gripMode: global.HobunjiHandGripModes?.currentModeKey?.() || null,
         primaryGrip: JSON.parse(JSON.stringify(primaryGrip)),
         secondaryActive: record.secondaryActive,
-        secondaryGrip: secondaryGrip ? JSON.parse(JSON.stringify(secondaryGrip)) : null,
+        dualWield: dualWield ? JSON.parse(JSON.stringify(dualWield)) : null,
+        secondaryGrip: dualWield
+          ? { mode: 'dual-wield', grip: JSON.parse(JSON.stringify(primaryGrip)), influence: dualWield.influence }
+          : (secondaryGrip ? JSON.parse(JSON.stringify(secondaryGrip)) : null),
         authoredHandTransform: profiles.data?.models?.[modelCalibration.modelKey]?.handFromTool || null,
         modelCalibration,
         gripModeTransform: primary.mode,

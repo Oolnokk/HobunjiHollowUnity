@@ -50,4 +50,16 @@ assert(!editor.includes('weightMap'), 'mask editor must not retain weight-paint 
 assert(!editor.includes('calculated-bicep'), 'mask editor must not retain bicep-rig bindings');
 assert(!editor.includes('deformPreview'), 'mask editor must not retain deformation preview code');
 
-console.log('portrait arm hard-cut/profile/cache regression checks passed');
+// The full-portrait cloud mask is removed; only the arm hard cut uses the cloud.
+const portraitUtils = fs.readFileSync(path.join(root, 'docs', 'js', 'portrait-utils.js'), 'utf8');
+assert(!/\bapplyPortraitOpacityMask\s*\(/.test(portraitUtils), 'portrait composition must not apply the full-portrait cloud mask');
+assert(!/global\.applyPortraitOpacityMask\s*=/.test(runtime), 'arm runtime must not reinstall a full-portrait cloud-mask wrapper');
+// The arm cut derives its shape from each species' portraitOpacityMaskLayer, so
+// removing the full-portrait mask must never be done by nulling that layer.
+for (const species of ['engh-sho', 'kenkari', 'mao-ao', 'mashtzarr', 'rakakoan', 'tletingan', 'harlyao', 'harlyao-skeleton', 'porakaneki']) {
+  const config = JSON.parse(fs.readFileSync(path.join(root, 'docs', 'config', 'species', `${species}.json`), 'utf8'));
+  const layers = Object.values(config).filter(value => value && typeof value === 'object' && 'portraitOpacityMaskLayer' in value).map(value => value.portraitOpacityMaskLayer);
+  assert(layers.length && layers.every(layer => layer?.url), `${species} must keep its cloud layer as the arm-cut source`);
+}
+
+console.log('portrait arm hard-cut/profile/cache and full-portrait-cloud-removal checks passed');

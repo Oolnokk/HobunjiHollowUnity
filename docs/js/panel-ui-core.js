@@ -512,7 +512,7 @@
 // Load it only there so the generic PanelUI helper remains harmless elsewhere.
 if (/\/tools\/attack-animation-editor\/(?:index\.html)?$/.test(location.pathname)) {
   const idleStanceScript = document.createElement('script');
-  idleStanceScript.src = '../../js/attack-idle-stance-editor.js?v=20260919history1';
+  idleStanceScript.src = '../../js/attack-idle-stance-editor.js?v=20261005hcd8a6cf';
   idleStanceScript.defer = true;
   document.head.appendChild(idleStanceScript);
 }
@@ -547,7 +547,7 @@ if (/\/tools\/locale-editor\/(?:index\.html)?$/.test(location.pathname)) {
   document.head.appendChild(localeTerrainScript);
 
   const localePreview3dScript = document.createElement('script'); // Adds relative-height shortcuts and a full-viewport live 3D authoring preview.
-  localePreview3dScript.src = 'locale-preview3d.js?v=20261003h14b938b';
+  localePreview3dScript.src = 'locale-preview3d.js?v=20261005hed2e540';
   localePreview3dScript.defer = true;
   document.head.appendChild(localePreview3dScript);
 

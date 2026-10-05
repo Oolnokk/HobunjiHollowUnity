@@ -1,0 +1,120 @@
+t(q.x-p.x,q.y-p.y);if(d<bd){bd=d;best=i}});
+  return bd<=HIT_RADIUS?best:-1;
+}
+function editable(){return mode==='fit'||mode==='body'}
+let transformDrag=null;
+E.stage.addEventListener('pointerdown',e=>{
+  if(mode==='transform'){
+    const p=pointer(e),tr=currentTransform();
+    pushUndo();transformDrag={x:p.x,y:p.y,translateX:tr.translateX,translateY:tr.translateY};
+    E.stage.setPointerCapture(e.pointerId);e.preventDefault();return;
+  }
+  if(!editable())return;
+  const index=nearest(targetGrid(),pointer(e));if(index<0)return;
+  dragIndex=index;dragSnapshotTaken=false;E.stage.setPointerCapture(e.pointerId);e.preventDefault();
+});
+E.stage.addEventListener('pointermove',e=>{
+  if(mode==='transform'&&transformDrag){
+    const p=pointer(e),tr=currentTransform();
+    tr.translateX=transformDrag.translateX+(p.x-transformDrag.x);
+    tr.translateY=transformDrag.translateY+(p.y-transformDrag.y);
+    saveState();syncTransformControls();render();e.preventDefault();return;
+  }
+  if(dragIndex==null||!editable())return;
+  if(!dragSnapshotTaken){pushUndo();dragSnapshotTaken=true}
+  const p=pointer(e),baseGrid=transformedSourceGrid(),offsets=currentOffsets();
+  const desired={
+    x:Math.max(-0.5,Math.min(1.5,p.x/(E.stage.width-1))),
+    y:Math.max(-0.5,Math.min(1.5,p.y/(E.stage.height-1)))
+  };
+  offsets[dragIndex]={x:desired.x-baseGrid[dragIndex].x,y:desired.y-baseGrid[dragIndex].y};
+  saveState();render();e.preventDefault();
+});
+function endDrag(e){
+  dragIndex=null;dragSnapshotTaken=false;transformDrag=null;
+  if(e?.pointerId!=null&&E.stage.hasPointerCapture?.(e.pointerId))E.stage.releasePointerCapture(e.pointerId);
+}
+E.stage.addEventListener('pointerup',endDrag);E.stage.addEventListener('pointercancel',endDrag);
+
+function resetTarget(){
+  pushUndo();A.localOffsets[targetKey(E.species.value,E.gender.value)]=zeroOffsets();saveState();render();log('Reset local 6×6 corrections; base transform preserved.');
+}
+function resetBaseTransform(){
+  pushUndo();A.baseTransforms[targetKey(E.species.value,E.gender.value)]=defaultTransform();saveState();syncTransformControls();render();log('Reset recorded base scale and translation.');
+}
+function setTransformField(field,value){
+  const n=Number(value);if(!Number.isFinite(n))return;
+  currentTransform()[field]=n;saveState();syncTransformControls();render();
+}
+function wireTransformPair(slider,number,field){
+  slider.addEventListener('pointerdown',()=>pushUndo(),{passive:true});
+  number.addEventListener('focus',()=>pushUndo(),{passive:true});
+  slider.addEventListener('input',()=>setTransformField(field,slider.value));
+  number.addEventListener('input',()=>setTransformField(field,number.value));
+}
+function resetMaskTransform(){
+  pushUndo();
+  A.maskPreviewTransforms[targetKey(E.species.value,E.gender.value)]=defaultMaskTransform();
+  R.three.portraitCache.clear();
+  saveState();syncMaskTransformControls();render();log('Reset cloud mask preview transform.');
+}
+function setMaskField(field,value){
+  const tr=currentMaskTransform(),n=Number(value);
+  if(!Number.isFinite(n))return;
+  tr[field]=n;
+  R.three.portraitCache.clear();
+  saveState();syncMaskTransformControls();render();
+}
+function wireMaskPair(slider,number,field){
+  slider.addEventListener('pointerdown',()=>pushUndo(),{passive:true});
+  number.addEventListener('focus',()=>pushUndo(),{passive:true});
+  slider.addEventListener('input',()=>setMaskField(field,slider.value));
+  number.addEventListener('input',()=>setMaskField(field,number.value));
+}
+
+function exportGrids(){
+  const payload={version:3,gridSize:GRID_SIZE,exportedAt:new Date().toISOString(),repoBase:base(),baseTransforms:A.baseTransforms,localOffsets:A.localOffsets,maskPreviewTransforms:A.maskPreviewTransforms};
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download='hobunji_6x6_species_clothing_transforms.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
+async function importGrids(file){
+  const v=JSON.parse(await file.text());
+  if(v.gridSize!==GRID_SIZE)throw new Error('This file is not a 6×6 species-grid export.');
+  pushUndo();
+  if(v.version===3||v.version===2){
+    A.baseTransforms=v.baseTransforms||{};A.localOffsets=v.localOffsets||{};A.maskPreviewTransforms=v.maskPreviewTransforms||{};
+  }else if(v.version===1&&v.targetGrids){
+    A.baseTransforms={};A.localOffsets={};A.maskPreviewTransforms={};
+    for(const [key,grid] of Object.entries(v.targetGrids)){
+      if(!Array.isArray(grid)||grid.length!==SOURCE_GRID.length)continue;
+      A.baseTransforms[key]=defaultTransform();
+      A.localOffsets[key]=grid.map((p,i)=>({x:p.x-SOURCE_GRID[i].x,y:p.y-SOURCE_GRID[i].y}));
+      A.maskPreviewTransforms[key]=defaultMaskTransform();
+    }
+  }else throw new Error('Unsupported grid export version.');
+  if(v.repoBase)E.repo.value=v.repoBase;
+  saveState();syncTransformControls();syncMaskTransformControls();await refreshAssets();log('Imported '+file.name);
+}
+
+async function importExtendedRole(role,file){
+  try{
+    R.extendedLayers[role]=file?await loadLocalImage(file):null;
+    rebuildExtendedSource();render();log(file?`Imported extended ${role}: ${file.name}`:`Cleared extended ${role}.`);
+  }catch(error){log('ERROR '+error.message)}
+}
+function clearExtendedImports(){
+  R.extendedLayers={torso:null,torsoClothing:null,overwear:null};R.extendedSource=null;R.extendedWarped=null;
+  E.extTorsoFile.value='';E.extTorsoClothingFile.value='';E.extOverwearFile.value='';
+  updateExtendedStatus();render();log('Cleared all imported extended overlay sprites.');
+}
+function rebuildExtendedImportsFromControls(){
+  syncExtendedCutoffControls();
+  if(importedExtendedLayers().length)rebuildExtendedSource();
+  else updateExtendedStatus();
+  render();
+}
+function downloadExtendedWarp(){
+  if(!R.extendedSource){log('No extended overlay imported.');return}
+  const c=warpExtendedOverlay(R.extendedSource,targetGrid(),R.body.width,R.body.height);
+  if(c

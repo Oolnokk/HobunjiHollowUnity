@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "kind": "hobunji_weapon_idle_stances",
   "stances": {
     "tool": {
@@ -37,6 +37,24 @@
       "yaw": -68,
       "bodyYaw": -40,
       "roll": -114
+    },
+    "dualWieldMain": {
+      "x": -0.09,
+      "y": 0,
+      "z": -0.04,
+      "pitch": 37,
+      "yaw": -68,
+      "bodyYaw": -40,
+      "roll": -114
+    },
+    "dualWieldOffhand": {
+      "x": 0.09,
+      "y": 0,
+      "z": -0.04,
+      "pitch": 37,
+      "yaw": 68,
+      "bodyYaw": -40,
+      "roll": 114
     }
   }
 }

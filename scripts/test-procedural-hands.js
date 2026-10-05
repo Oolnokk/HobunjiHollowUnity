@@ -531,13 +531,13 @@ assert.deepStrictEqual(
 
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('fishingspear', 'melee').position)),
-  { x: -0.04, y: -0.04, z: 0 },
-  'Fishing spear melee grip must stay on its existing unflipped hand target.',
+  { x: -0.04, y: -0.04, z: -0.1522 },
+  'Fishing spear melee grip must use the measured center of its long wood haft section.',
 );
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('fishingspear', 'ranged').position)),
-  { x: 0.04, y: -0.04, z: 0 },
-  'Fishing spear ranged grip must mirror its nonzero X across the visible 180-degree Tool End Flip.',
+  { x: 0.04, y: -0.04, z: 0.1522 },
+  'Fishing spear ranged grip must mirror both nonzero in-plane coordinates across the visible 180-degree Tool End Flip.',
 );
 
 const daggerThrowWindupSpinRad = -0.49 * Math.PI * 2 * 2.5; // Runtime Windup endpoint: 1.225 turns (441°) from the generic Spin Throw.
@@ -586,14 +586,20 @@ assert.deepStrictEqual(
 const preSpearMirrorSnapshot = grips.clone();
 const preSpearMirrorDraft = grips.clone();
 preSpearMirrorDraft.rangedGripPreset = 'melee-ranged-split-20260920-v7-end-flip-mirrored';
+delete preSpearMirrorDraft.longHaftGripPreset;
 preSpearMirrorDraft.tools.fishingspear.rangedPrimaryGrip.position.x = -0.04;
+preSpearMirrorDraft.tools.fishingspear.rangedPrimaryGrip.position.z = 0;
 grips.replace(preSpearMirrorDraft);
 assert.strictEqual(grips.authoredPrimaryGripForTool('fishingspear', 'ranged').position.x, 0.04, 'Untouched v7 fishing-spear ranged X must migrate to the corrected end-flipped side.');
+assert.strictEqual(grips.authoredPrimaryGripForTool('fishingspear', 'ranged').position.z, 0.1522, 'Pre-long-haft fishing-spear ranged Z must migrate to the mirrored measured wood-section center.');
 const customPreSpearMirrorDraft = grips.clone();
 customPreSpearMirrorDraft.rangedGripPreset = 'melee-ranged-split-20260920-v7-end-flip-mirrored';
+delete customPreSpearMirrorDraft.longHaftGripPreset;
 customPreSpearMirrorDraft.tools.fishingspear.rangedPrimaryGrip.position.x = 0.11;
+customPreSpearMirrorDraft.tools.fishingspear.rangedPrimaryGrip.position.z = 0;
 grips.replace(customPreSpearMirrorDraft);
 assert.strictEqual(grips.authoredPrimaryGripForTool('fishingspear', 'ranged').position.x, 0.11, 'Artist-authored pre-v8 fishing-spear ranged X must not be overwritten by the default migration.');
+assert.strictEqual(grips.authoredPrimaryGripForTool('fishingspear', 'ranged').position.z, 0.1522, 'Artist-authored old ranged X still receives the independent measured long-haft Z migration.');
 grips.replace(preSpearMirrorSnapshot);
 
 const unsplitSnapshot = grips.clone();

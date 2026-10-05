@@ -1,6 +1,6 @@
 // Adds a second, higher portrait cutout to authored base-arm sprites only.
 //
-// Unlike the canonical full-portrait opacity mask, this path deliberately edits
+// The old full-portrait cloud mask has been removed; this path deliberately edits
 // each temporary arm image BEFORE portrait composition. The cloud's soft alpha is
 // converted into a deterministic hard/wobbly cut, then the newly exposed arm edge
 // is capped in black. Torso/clothing pixels are never part of this operation.
@@ -8,7 +8,7 @@
   'use strict';
 
   const previewApi = global.NpcAvatarPreview;
-  const MASK_Y_SCALE_MULTIPLIER = 0.60; // Existing canonical full-portrait cloud scaling.
+  const MASK_Y_SCALE_MULTIPLIER = 0.60; // Default arm-cut cloud Y scale (inherited from the removed full-portrait mask).
   const LOGICAL_W = 200;
   const LOGICAL_H = 200;
   const LAYER_SIZE = 80;
@@ -251,16 +251,8 @@
     return { ...xform, ax: resolvedAx - bottomAnchorCompensation, sy: resolvedSy * resolvedMultiplier };
   }
 
-  // Preserve the existing canonical cloud-mask adjustment. Only the SECOND arm
-  // cutout below is converted from a gentle fade to a hard outlined cap.
-  const originalApplyPortraitOpacityMask = global.applyPortraitOpacityMask;
-  if (typeof originalApplyPortraitOpacityMask === 'function' && !originalApplyPortraitOpacityMask.__hobunjiCloudMaskYScaled) {
-    const scaledApplyPortraitOpacityMask = function portraitCloudMaskYScaled(ctx, image, xform) {
-      return originalApplyPortraitOpacityMask(ctx, image, scaleMaskY(xform, MASK_Y_SCALE_MULTIPLIER));
-    };
-    scaledApplyPortraitOpacityMask.__hobunjiCloudMaskYScaled = true;
-    global.applyPortraitOpacityMask = scaledApplyPortraitOpacityMask;
-  }
+  // The full-portrait cloud mask (and its Y-scale wrapper) has been removed;
+  // the species cloud layer now only shapes the arm hard cut below.
 
   function resolveAssetPath(path) {
     const raw = String(path || '');

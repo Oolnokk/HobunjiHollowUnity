@@ -1,0 +1,120 @@
+R.three.extendedGroup=extGroup}
+      }
+    }
+
+    R.three.group.add(rigGroup);
+    R.three.rigRoot=rigGroup;R.three.avatarModel=model;R.three.feet=feet;
+
+    // Match the full-character preview contract used elsewhere in the repository.
+    const scale=window.HobunjiCharacterRigScale?.scaleFor?.(E.species.value,E.gender.value)||null;
+    window.HobunjiCharacterRigScale?.applyToParent?.(rigGroup,E.species.value,E.gender.value,scale,0);
+    window.ProceduralHandFrameDriver?.syncNow?.();
+
+    rigGroup.updateMatrixWorld(true);
+    R.three.group.rotation.set(R.three.rotX,R.three.rotY,0);
+    frameRuntimeRig();
+    const cloud=R.speciesCfg.get(E.species.value)?.[E.gender.value]?.portraitOpacityMaskLayer?.url?'arm cloud cut active':'no species arm cloud cut'; // The full-portrait cloud mask was removed; the species layer only shapes the arm cut.
+    const handState=model.userData?.proceduralHandRig?'hands attached':'hands queued';
+    E.threeStatus.textContent=`Runtime rig: portrait + neck + ${handState} + feet + ${cloud}${R.extendedGroup?' + extended overlay':''}.`;
+  }catch(error){
+    if(buildId!==R.three.buildGeneration)return;
+    console.error(error);E.threeStatus.textContent='Runtime rig preview failed: '+error.message;log('3D RUNTIME ERROR '+error.message);
+  }
+}
+function scheduleThreePreview(delay=90){
+  clearTimeout(R.three.buildTimer);
+  R.three.buildTimer=setTimeout(()=>updateThreePreview(),delay);
+}
+function render(){
+  if(!R.body)return;
+  sizeStage();C.setTransform(1,0,0,1,0,0);C.clearRect(0,0,E.stage.width,E.stage.height);C.imageSmoothingEnabled=false;
+  if(E.showBody.checked)C.drawImage(R.body,0,0);
+
+  if(mode==='transform'||mode==='fit'||mode==='preview'){
+    R.warped=currentWarp();
+    if(R.warped&&E.showGarment.checked){
+      C.save();C.globalAlpha=+E.opacity.value;C.drawImage(R.warped,0,0);C.restore();
+    }
+  }
+
+  if(E.showAuthored.checked&&R.authoredTargetCloth){
+    C.save();
+    C.globalAlpha=+E.authoredOpacity.value;
+    C.drawImage(R.authoredTargetCloth,0,0); // Existing hand-authored target-species art overlays the experimental warp for visual matching.
+    C.restore();
+  }
+
+  if(E.showMeshes.checked){
+    drawGrid(C,SOURCE_GRID,'#ffb84a',false); // Fixed Mao-ao source.
+    drawGrid(C,transformedSourceGrid(),'#65d48a',mode==='transform'); // Recorded scale + translation.
+    if(mode!=='transform')drawGrid(C,targetGrid(),'#45c3ff',mode!=='preview'); // Base transform plus local fit.
+  }
+
+  E.label.textContent=
+    mode==='transform'
+      ?`Base Transform • ${garmentRecord()?.label||''} • ${E.species.options[E.species.selectedIndex]?.text||E.species.value} ${E.gender.value}`
+      :mode==='body'
+        ?`Grid only • ${E.species.options[E.species.selectedIndex]?.text||E.species.value} ${E.gender.value}`
+        :mode==='fit'
+          ?`Species Fit • ${garmentRecord()?.label||''} • Mao-ao ${E.gender.value} → ${E.species.options[E.species.selectedIndex]?.text||E.species.value}`
+          :`Preview • recorded base transform + local 6×6 deformation applied to ${garmentRecord()?.label||''}`;
+
+  refreshHelp();refreshDebug();scheduleThreePreview();
+}
+function refreshHelp(){
+  E.help.textContent=
+    mode==='transform'
+      ?'First fit overall size and position: independent Scale X / Scale Y plus translation. Drag the canvas to translate quickly.'
+      :mode==='body'
+        ?'Edit only the local target 6×6 corrections without clothing.'
+        :mode==='fit'
+          ?'Now drag BLUE points for local shape corrections on top of the recorded global transform.'
+          :'Switch garments to verify the same saved global transform and local corrections are reused.';
+  E.modeBtns.forEach(b=>b.classList.toggle('active',b.dataset.mode===mode));
+}
+function refreshDebug(){
+  const target=targetGrid(),ops=[];
+  if(target){
+    target.forEach((p,i)=>{
+      const s=SOURCE_GRID[i];
+      ops.push(`${i}: (${s.x.toFixed(3)},${s.y.toFixed(3)}) -> (${p.x.toFixed(3)},${p.y.toFixed(3)})`);
+    });
+  }
+  E.debug.textContent=[
+    `gridSize: ${GRID_SIZE}x${GRID_SIZE}`,
+    `warp model: bilinear 6x6 quads`,
+    `quad cells: ${(GRID_SIZE-1)*(GRID_SIZE-1)}`,
+    `subdivisions per cell: ${CELL_SUBDIVISIONS}x${CELL_SUBDIVISIONS}`,
+    `micro triangles: ${MICRO_TRIANGLE_COUNT}`,
+    `mode: ${mode}`,
+    `target grid: ${targetKey(E.species.value,E.gender.value)}`,
+    `base transform: ${JSON.stringify(currentTransform())}`,
+    `local offset points: ${currentOffsets().length}`,
+    `garment: ${garmentRecord()?.id||'(none)'}`,
+    `stage: ${E.stage.width}x${E.stage.height}`,
+    `body sources: ${(R.body?._paths||[]).join(' | ')}`,
+    `garment sources: ${(R.cloth?._paths||[]).join(' | ')}`,
+    `authored target available: ${!!R.authoredTargetCloth}`,
+    `authored target sources: ${(R.authoredTargetCloth?._paths||[]).join(' | ')}`,
+    `extended imports: ${importedExtendedLayers().map(x=>x.name).join(' | ')||'(none)'}`,
+    `extended source: ${R.extendedSource?`${R.extendedSource.width}x${R.extendedSource.height}`:'(none)'}`,
+    `extended warped: ${R.extendedWarped?`${R.extendedWarped.width}x${R.extendedWarped.height}`:'(none)'}`,
+    `extended source mode: ${R.extendedSource?R.extendedSource._overlayMode:'(none)'}`,
+    `extended cutoff: ${R.extendedSource?R.extendedSource._cutoffY:'(none)'}`,
+    `3D runtime docs: ${R.three.runtimeDocsBase||'(not loaded yet)'}`,
+    `3D runtime rig: ${R.three.rigRoot?.name||'(not built yet)'}`,
+    `cloud mask: ${R.speciesCfg.get(E.species.value)?.[E.gender.value]?.portraitOpacityMaskLayer?.url||'(none)'}`,
+    `cloud mask preview: ${JSON.stringify(currentMaskTransform())}`,
+    `cloud mask scope: full runtime front/back portrait (base torso included)`,
+    `source→target points:`,...ops,'',
+    `recent log:`,...R.logs
+  ].join('\n');
+}
+
+function pointer(e){
+  const r=E.stage.getBoundingClientRect();
+  return{x:(e.clientX-r.left)*E.stage.width/r.width,y:(e.clientY-r.top)*E.stage.height/r.height};
+}
+function nearest(points,p){
+  const px=toDisplayPixels(points,E.stage.width,E.stage.height);let best=-1,bd=Infinity;
+  px.forEach((q,i)=>{const d=Math.hypo

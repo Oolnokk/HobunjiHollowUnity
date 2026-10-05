@@ -33,9 +33,9 @@
     holdFrac: 0.68,
     releaseFrac: 0.62,
     poses: {
-      neutral: { x: 0, y: 0, z: -0.05, pitch: 10.31, yaw: 0, roll: 0, bodyYaw: 0 },
-      windup: { x: 0.12, y: 0.46, z: -0.16, pitch: -126, yaw: -8, roll: 10, bodyYaw: -12 },
-      strike: { x: 0.18, y: 0.3, z: 0.5, pitch: 34, yaw: 4, roll: -6, bodyYaw: 8 },
+      neutral: { x: 0, y: 0, z: -0.05, pitch: 10.31, yaw: 0, roll: 0, bodyYaw: 0, secondaryGrip: { enabled: false, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
+      windup: { x: 0.12, y: 0.46, z: -0.16, pitch: -126, yaw: -8, roll: 10, bodyYaw: -12, secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
+      strike: { x: 0.18, y: 0.3, z: 0.5, pitch: 34, yaw: 4, roll: -6, bodyYaw: 8, secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
     },
   }; // Used by held flask aim/confirm; intentionally simple for later authoring tweaks.
 
@@ -60,17 +60,20 @@
       neutral: {
         x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, bodyYaw: 2, roll: -82,
         shoulderAim: { grip: true, palmNormal: true },
-        secondaryGrip: { enabled: false, percent: 50 },
+        secondaryGrip: { enabled: false, percent: 50, primaryPercent: 50 },
+        dualWield: { enabled: true },
       },
       windup: {
         x: 0.41, y: 0.37, z: 0.42, pitch: -180, yaw: 139, bodyYaw: -152, roll: -92,
         shoulderAim: { grip: false, palmNormal: true },
-        secondaryGrip: { enabled: false, percent: 50 },
+        secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 },
+        dualWield: { enabled: true },
       },
       strike: {
         x: -0.57, y: 0.33, z: 0.17, pitch: -25, yaw: -65, bodyYaw: 63, roll: -88,
         shoulderAim: { grip: false, palmNormal: true },
-        secondaryGrip: { enabled: false, percent: 50 },
+        secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 },
+        dualWield: { enabled: true },
       },
     },
   };
@@ -108,9 +111,9 @@
     strikeFrac: 1.00,
     holdFrac: 1.00,
     poses: {
-      neutral: { x: 0, y: 0, z: 0.16, pitch: 0, yaw: 0, roll: 180, bodyYaw: 0 },
-      windup: { x: 0, y: 0.05, z: 0.30, pitch: 14, yaw: 0, roll: 180, bodyYaw: -20 },
-      strike: { x: 0, y: 0.05, z: 0.30, pitch: 14, yaw: 0, roll: 180, bodyYaw: -20 },
+      neutral: { x: 0, y: 0, z: 0.16, pitch: 0, yaw: 0, roll: 180, bodyYaw: 0, secondaryGrip: { enabled: false, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
+      windup: { x: 0, y: 0.05, z: 0.30, pitch: 14, yaw: 0, roll: 180, bodyYaw: -20, secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
+      strike: { x: 0, y: 0.05, z: 0.30, pitch: 14, yaw: 0, roll: 180, bodyYaw: -20, secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
     },
   };
 
@@ -198,18 +201,19 @@
     new URL('config/hand-shoulder-points.js?v=20260818b', docsBase).href,
     new URL('config/hand-shoulder-pose-profiles.js?v=20260920localhinge1', docsBase).href,
     new URL('js/procedural-hand-foot-material-roles.js?v=20260821e', docsBase).href,
-    new URL('js/hand-tool-grips.js?v=20261004h6a187f9', docsBase).href,
-    new URL('js/hand-grip-modes.js?v=20260920palmflip1-rangedgrip1', docsBase).href,
+    new URL('js/hand-tool-grips.js?v=20261005ha1abc50', docsBase).href,
+    new URL('js/dual-wield-weapon-visuals.js?v=20261005hec58343', docsBase).href,
+    new URL('js/hand-grip-modes.js?v=20261005h2e47f31', docsBase).href,
     new URL('js/hand-shoulder-pose-runtime.js?v=20260920elbow5', docsBase).href,
-    new URL('js/portrait-arm-cloud-mask.js?v=20260817a', docsBase).href,
+    new URL('js/portrait-arm-cloud-mask.js?v=20261005h2d40d1a', docsBase).href,
     new URL('js/portrait-hand-shoulder-scan.js?v=20260818c', docsBase).href,
     new URL('js/portrait-hand-shoulder-scan-species.js?v=20260818a', docsBase).href,
     new URL('js/procedural-hand-attachments.js?v=20260920wristaxis1', docsBase).href,
     new URL('js/procedural-hand-outline-parity.js?v=20260930a', docsBase).href,
-    new URL('js/attachment-rig-latest-authored-snapshot.js?v=20261004h7248fd8', docsBase).href,
+    new URL('js/attachment-rig-latest-authored-snapshot.js?v=20261005hfe592ac', docsBase).href,
     new URL('js/procedural-hand-scale-free-world.js?v=20261002h4b75465', docsBase).href,
     new URL('js/procedural-hand-shoulder-aim.js?v=20260924perf1', docsBase).href,
-    new URL('js/procedural-hand-frame-driver.js?v=20261004h2491dee', docsBase).href,
+    new URL('js/procedural-hand-frame-driver.js?v=20261004h74c3702', docsBase).href,
   ];
   if (isAttackEditor) {
     // The editor starts its first avatar rebuild immediately after these parser-time
@@ -219,7 +223,7 @@
     handScripts.push(new URL('js/attack-editor-hand-configurator.js?v=20260919handreview1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-inverse-configurator.js?v=20260919handreview1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-mirror-toggle.js?v=20260817a', docsBase).href);
-    handScripts.push(new URL('js/attack-editor-hand-grip-mode.js?v=20260919labels1-rangedgrip1', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-hand-grip-mode.js?v=20261005hce195f1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-direct-attachments.js?v=20261001c0bd7bbe', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-shoulder-controls.js?v=20260920posecore1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-idle-hand-parity.js?v=20260920localhinge1', docsBase).href);

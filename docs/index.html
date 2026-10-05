@@ -19,14 +19,14 @@
   <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
   <script src="js/GLTFLoader.js?v=20260712d"></script>
   <script src="js/WallBuilder.js?v=20261002h9f31e27"></script>
-  <script src="js/HousePieceGen.js?v=20261001hbe2b612&window=20260926rebase1"></script>
+  <script src="js/HousePieceGen.js?v=20261004h5ffe8f0&window=20260926rebase1"></script>
   <script src="js/interior-scene-builder.js?v=20260930globalground2&window=20260926rebase1"></script>
   <script src="js/building-door.js?v=20260725a"></script>
   <script src="js/tile-pathfinding.js?v=20260808a"></script>
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
        extracted out of game.js; must load before game.js and before every
        other module whose init(deps) is handed window.FormatUtils.clamp/esc. -->
-  <script src="js/format-utils.js?v=20261002h714941a"></script>
+  <script src="js/format-utils.js?v=20261004h8e607ab"></script>
   <!-- Movement virtual-joystick handlers extracted out of game.js; uses
        window.FormatUtils.clamp, so must load after it and before game.js. -->
   <script src="js/virtual-joystick.js?v=20260902mod1"></script>
@@ -76,7 +76,7 @@
        window.FarmEditor.init(...) very early (right after
        createInitialGrid(), before loading any saved farm layout) and
        window.FarmEditor.loadFarmLayout()/etc. immediately after. -->
-  <script src="js/farm-editor.js?v=20261003h9d1bbfb&window=20260926rebase1"></script>
+  <script src="js/farm-editor.js?v=20261004h79d63f5&window=20260926rebase1"></script>
   <!-- Terrain/path tile geometry builders, extracted out of game.js. Must
        load before game.js, which calls window.TerrainGeometry.init(...)
        partway through its own setup (after camTargetX/pathWallBuilder/
@@ -127,13 +127,13 @@
        js/wild-berries.js also read from it via their own init() calls
        further down game.js. Doesn't touch the DOM (see player-vitals.js's
        comment above and the plan notes on that bug class). -->
-  <script src="js/item-processing.js?v=20261001foodgift2"></script>
+  <script src="js/item-processing.js?v=20261004hc1b9412"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="debug.js?v=20260925weavesessiondebug4"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20260930h1b2e2e2"></script>
-  <script src="config/scratchbones-config.js?v=20261002h12b6f76"></script>
+  <script src="config/scratchbones-config.js?v=20261005hf8e15ea"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
   <script src="js/tool-metal-recolor.js?v=20261001c6751543"></script>
@@ -153,7 +153,7 @@
       window.SCRATCHBONES_CONFIG.game.assets.portrait.configBase = './config/';
     }
   </script>
-  <script src="js/portrait-utils.js?v=20261003he8efec4"></script>
+  <script src="js/portrait-utils.js?v=20261005h123b9e8"></script>
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20260930ha019a52"></script>
   <script src="js/png-plane-avatar.js?v=20260926hskelhairalign1"></script>
@@ -165,7 +165,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20260924shoulderocclusion1"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261004h34218dd"></script>
+  <script src="js/held-action-animations.js?v=20261005h1b24e4a"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
   <script src="js/character-action-locks.js?v=20261002h69592ed"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
@@ -202,7 +202,7 @@
   <!-- Procedural foliage / crop geometry -->
   <script src="js/foliage-generator.js?v=20260910review1"></script>
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
-  <script src="js/procedural-furniture.js?v=20261004hbcc407f"></script>
+  <script src="js/procedural-furniture.js?v=20261004h0c86d5a"></script>
   <script src="js/furniture-puzzle-properties.js?v=20260922perpiece1"></script>
   <script src="js/furniture-puzzle-runtime.js?v=20260929glowdecals1"></script>
   <!-- Loads the richer per-piece data authored by furniture-avatar-author (seat
@@ -241,20 +241,22 @@
   <!-- Shared condition-axis schema/evaluators (window.ConditionRegistry) —
        single source of truth for the dialogue system's and the Loot & Shop
        system's condition gating, also loaded by their respective dev tools. -->
-  <script src="js/condition-registry.js?v=20260930he9dd23b"></script>
+  <script src="js/condition-registry.js?v=20261005ha28d6f7"></script>
   <!-- Optional local-folder save mirror (window.LocalSaveFolder) — self-contained,
        only reads/writes the same hobunjiSaveMeta localStorage key onboarding.js/
        game.js already use. See docs/js/local-save-folder.js. -->
   <script src="js/local-save-folder.js?v=20261002h1b411a3"></script>
   <!-- Onboarding overlay -->
-  <link rel="stylesheet" href="onboarding.css?v=20260921preworldsky1">
-  <script src="onboarding.js?v=20261004hf32b009"></script>
+  <link rel="stylesheet" href="onboarding.css?v=20261005h64e87e5">
+  <script src="config/farm-specializations.js?v=20261004farm1"></script>
+  <script src="js/farm-world-settings.js?v=20261004farm1"></script>
+  <script src="onboarding.js?v=20261005h7d3597a"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
   <script src="js/combat/resource-system.js?v=20261001quickdebuff2"></script>
   <script src="js/combat/knockback-collision-impact.js?v=20260930h6c19d61"></script>
   <!-- Burning Health presentation: reuses the authored campfire fire emitter on afflicted player/enemy avatar roots. -->
   <script src="js/combat/burning-affliction-vfx.js?v=20260923burn1"></script>
-  <script src="js/combat/resource-rings.js?v=20260809a"></script>
+  <script src="js/combat/resource-rings.js?v=20261004h9a5a10d"></script>
   <script src="js/combat/combat-core.js?v=20261001quickdebuff2"></script>
   <script src="js/combat/enemy-search-ai.js?v=20260926combatreview1"></script>
   <!-- Stagger/Footing: authored 4-directional ragdoll blend clips + runtime
@@ -265,7 +267,7 @@
   <script src="js/combat/impact-ragdoll-playback.js?v=20261002hd4bb4ac"></script>
   <script src="js/combat/combat-enemy-telegraph.js?v=20260926combatreview1"></script>
   <script src="js/combat/combat-animal-attacks.js?v=20261001quickdebuff2"></script>
-  <script src="js/combat/combat-loadout.js?v=20261002h5d8b101"></script>
+  <script src="js/combat/combat-loadout.js?v=20261005h234f91b"></script>
   <script src="js/combat/combat-progression.js?v=20261001quickdebuff2"></script>
   <!-- Shared player-attack event context (prepare/hit/defensive) published by every
        ability module; Enchantments and future cross-cutting systems observe it. -->
@@ -273,9 +275,9 @@
   <!-- Shared companion offensive-stat aggregation (Engraved Whistle × Sicced). -->
   <script src="js/combat/companion-offense.js?v=20260930ench1"></script>
   <script src="js/combat/combat-input.js?v=20261004h0097162"></script>
-  <script src="js/combat/combat-combo.js?v=20260930h81d72c4"></script>
+  <script src="js/combat/combat-combo.js?v=20261005heb94de5"></script>
   <script src="js/combat/combat-quickattacks.js?v=20261001quickdebuff2"></script>
-  <script src="js/combat/combat-counter-shield.js?v=20260930h07cba2f"></script>
+  <script src="js/combat/combat-counter-shield.js?v=20261005h66f4dee"></script>
   <script src="js/combat/combat-blink-dodge.js?v=20261002h2d08879"></script>
   <script src="js/combat/combat-charged-breaker.js?v=20261004h4413146"></script>
   <script src="js/combat/combat-flurry.js?v=20260930he6f6a0a"></script>
@@ -304,7 +306,7 @@
   <script src="js/combat/combat-minion.js?v=20260929lichroom1"></script>
   <script src="js/combat/combat-enemy-dodge.js?v=20261001quickdebuff2"></script>
   <!-- Testing Arena-only Harlyao Lich class: wraps the final humanoid AI seam after enemy-dodge, owns elemental projectiles/puddles/Entranced commands, and summons ordinary Minions. -->
-  <script src="js/combat/combat-lich.js?v=20261001quickdebuff2"></script>
+  <script src="js/combat/combat-lich.js?v=20261005he55cbf7"></script>
   <!-- Bandit camps (zone adapter, tent props, camp lifecycle, companion
        perception, corpse loot) — window.BanditCamps. Calls
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
@@ -318,18 +320,18 @@
   <script src="js/bounty-board.js?v=20260831spearheadexisting1-colors1"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261004hdc0f1a3"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261005h5c1a48b"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
   <script src="js/effect-buff-bar.js?v=20260811a"></script>
   <script src="js/skill-system.js?v=20260927temperxp1"></script>
-  <script src="js/perk-system.js?v=20260930h4cddcbb"></script>
+  <script src="js/perk-system.js?v=20261005h00ffd8c"></script>
   <!-- Trinkets + shared 8-point Attunement budget; registers stat/perk/companion providers. -->
   <script src="js/trinket-system.js?v=20261002hf79dffc"></script>
   <script src="js/cooking-data.js?v=20260811a"></script>
   <script src="js/food-processing.js?v=20261001foodgift2"></script>
-  <script src="js/cooking-system.js?v=20261001foodgift2"></script>
+  <script src="js/cooking-system.js?v=20261005hb1435c5"></script>
   <script src="js/key-item-system.js?v=20260918banubu1"></script>
   <!-- Alchemy (reagent/effect defs, potion brewing, shared timed effects) —
        window.AlchemySystem. Self-contained aside from deps injected via
@@ -340,7 +342,7 @@
   <!-- Banubu's Tea Grinder delegates trait legality/targeting to AlchemySystem
        but outputs cooking Tea Blends, so it must load after both systems. -->
   <script src="js/tea-grinder.js?v=20260919tea1"></script>
-  <script src="js/alchemy-flasks.js?v=20260925bandagemove1"></script>
+  <script src="js/alchemy-flasks.js?v=20261004hf0d70ad"></script>
   <!-- Dye catalog/ownership (window.DyeSystem) — character creation, the
        redye panel, General Store clothing stock, and treasure loot all
        draw from it. Self-contained aside from deps injected via init(), so
@@ -372,6 +374,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmAnimals.init(...) during its own setup. -->
+  <script src="js/farm-production.js?v=20261004h120d988"></script>
   <script src="js/world-meta-store.js?v=20260930livestockwalk1"></script>
   <script src="js/farm-animals.js?v=20260930livestockwalk1"></script>
   <!-- Farm buildings: barn placement/construction/demolition
@@ -380,7 +383,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmBuildings.init(...) during its own setup. -->
-  <script src="js/farm-buildings.js?v=20260807a"></script>
+  <script src="js/farm-buildings.js?v=20261004h68f94a3"></script>
   <!-- Barn trough system: barn-interior map synthesis, the live fill-level
        mesh registry, and the open-trough bag/slot panel (window.FarmTroughs)
        — self-contained aside from deps injected via init(), and reads
@@ -388,7 +391,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmTroughs.init(...) during its own setup. -->
-  <script src="js/farm-troughs.js?v=20261002h691f6b4"></script>
+  <script src="js/farm-troughs.js?v=20261005h73d24e5"></script>
   <!-- Modular player house (window.HousePieces) — barn-shaped foundation/
        build/demolish pipeline for house-piece deeds bought from the
        Carpenter, replacing the old singular Highland House GLB. Depends on
@@ -396,7 +399,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261002h2476032&surfaceUv=20260924edgepreserve2"></script>
+  <script src="js/house-pieces.js?v=20261004h71c5a26&surfaceUv=20260924edgepreserve2"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -506,7 +509,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.CarpenterShop.init(...) during its own setup. -->
-  <script src="js/carpenter-shop.js?v=20260807a"></script>
+  <script src="js/carpenter-shop.js?v=20261005h0fe2e5a"></script>
   <!-- Off-save storage for a per-item "Custom" pattern's motif PNG
        (window.MotifStore) — see the file's own header comment. No deps
        injection and everything on it fails soft, so load order doesn't
@@ -548,7 +551,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20260929ruinsites1"></script>
+  <script src="js/wildlife-spawn.js?v=20261004h9ed21d4"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
@@ -557,7 +560,7 @@
        calls window.TownZoneBuildings.init(...) during its own setup (and
        reads window.TownZoneBuildings.loadHousePieceFaceTexture as one of
        window.FarmBuildings' own init deps, at that same call-time point). -->
-  <script src="js/town-zone-buildings.js?v=20261002h8bac730"></script>
+  <script src="js/town-zone-buildings.js?v=20261004hc37c85b"></script>
   <!-- Same-origin live Map Editor transport + runtime bridge. Loaded before
        game.js so its private scene state can be injected during setup. -->
   <script src="js/map-live-preview.js?v=20260909a&window=20260926rebase1"></script>
@@ -602,7 +605,7 @@
        createInitialGrid() call (which itself calls recomputeWater()
        synchronously to settle day-one water levels), well before most of
        the other window.<Namespace>.init(...) calls below. -->
-  <script src="js/water-system.js?v=20260923review2"></script>
+  <script src="js/water-system.js?v=20261004h2a2b524"></script>
   <!-- Weather rolling, day/night + weather lighting overlay, and trench
        water particle/paddy ripple FX (window.WeatherFX) — reads
        window.CalendarSystem at call time (already global by then), so load
@@ -611,7 +614,7 @@
        own setup. -->
   <script src="js/weather-fx.js?v=20261002hbfac6cf"></script>
   <!-- Load after WeatherFX exists, but before game.js calls WeatherFX.init(), so daylight windows always capture the real overlay dependencies. -->
-  <script src="js/daylight-window-runtime.js?v=20261003h54727ce"></script>
+  <script src="js/daylight-window-runtime.js?v=20261005hde1ce1f"></script>
   <!-- Farmhouse windows mirror one ordinary inventory-owned wall object across the exterior/interior 2x coordinate systems and expose their silhouettes to both wall builders. -->
   <script src="js/house-window-linkage.js?v=20261003h3c29655"></script>
   <script src="js/daylight-window-overlay-scheduler.js?v=20260926rebase1"></script>
@@ -625,7 +628,7 @@
        system in environment-surface-runtime.js (rain-planes.js loads that
        above on demand, now an inert stub kept only so that bootstrap check
        and the Pixel Probe adapter below still have something to find). -->
-  <script src="js/environment-surface-micro-plateau.js?v=20260914snowmass1"></script>
+  <script src="js/environment-surface-micro-plateau.js?v=20261004haf4776e"></script>
   <!-- Feeds the surface overlay's build progress into the Pixel Probe
        report line (window.EnvironmentSurfacePixelProbe) — intercepts
        window.PixelProbe assignment if pixel-probe.js below hasn't loaded
@@ -644,7 +647,7 @@
        so load order relative to the other systems above doesn't matter;
        must load before game.js, which calls window.FarmPanel.init(...)
        during its own setup. -->
-  <script src="js/farm-panel.js?v=20260809c&window=20260926rebase1"></script>
+  <script src="js/farm-panel.js?v=20261005h8d65c64"></script>
   <!-- Tasks tab (window.TasksPanel), Supplies tab (window.SupplyPage),
        whistle-equip row (window.WhistleEquip), and the Wildlife/genotype
        debug panel (window.WildlifeDebugPanel) — all read
@@ -675,7 +678,7 @@
   <!-- Crafting tab (Inventory panel's Crafting sub-tab, window.CraftingPanel)
        — furniture blueprints plus discovered ore-to-bar recipes; pure DOM/state,
        must load before game.js, which injects inventory and metallurgy data. -->
-  <script src="js/crafting-panel.js?v=20260902ore1"></script>
+  <script src="js/crafting-panel.js?v=20261005h5016d48"></script>
   <!-- Tool/weapon equipment-slot assignment and gear clothing (collection,
        equip/de-equip, redye panel — window.EquipmentPanel) — its
        buildEquipmentSlots() calls window.WhistleEquip.build() at render
@@ -753,7 +756,7 @@
   <script src="js/stampable-locale-defs.js?v=20260929ruinsites1"></script>
   <script src="js/ruin-sites.js?v=20261003h12be717"></script>
   <script src="js/zone-den-totem-features.js?v=20261003h7c00660"></script>
-  <script src="js/transition-markers.js?v=20261001a"></script>
+  <script src="js/transition-markers.js?v=20261004h46d3bfb"></script>
   <!-- Wilderness-zone grass and rich-foliage-patch billboards
        (window.ZoneGrassBillboards) — pure scene-graph generation, no
        other window.* system reads; must load before game.js, which calls
@@ -2567,7 +2570,7 @@
   <script src="js/shoulder-cam-pointer-lock.js?v=20260930hfc11b39"></script>
   <!-- Shared character-scoped hobunjiSaveMeta update step used by game.js's save* helpers. -->
   <script src="js/character-meta-save.js?v=20260930ench1"></script>
-  <script src="game.js?v=20261004h6168fa7"></script>
+  <script src="game.js?v=20261005h20cdf50"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261005h9a94218"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

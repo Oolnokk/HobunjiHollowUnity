@@ -30,6 +30,31 @@
       "id": "tankan_guard_emblem",
       "name": "Tankan Guard Emblem",
       "file": "config/patterns/pattern_tankan_guard_emblem.json"
+    },
+    {
+      "id": "mark_of_khannibarr",
+      "name": "Mark of Khannibarr",
+      "file": "config/patterns/pattern_mark_of_khannibarr.json"
+    },
+    {
+      "id": "hachutu_glyph_death",
+      "name": "Hachutu Glyph: Death",
+      "file": "config/patterns/pattern_hachutu_glyph_death.json"
+    },
+    {
+      "id": "harlyao_glyph_entropy",
+      "name": "Harlyao Glyph: Entropy",
+      "file": "config/patterns/pattern_harlyao_glyph_entropy.json"
+    },
+    {
+      "id": "harlyao_glyph_servitude",
+      "name": "Harlyao Glyph: Servitude",
+      "file": "config/patterns/pattern_harlyao_glyph_servitude.json"
+    },
+    {
+      "id": "harlyao_glyph_ignorance",
+      "name": "Harlyao Glyph: Ignorance",
+      "file": "config/patterns/pattern_harlyao_glyph_ignorance.json"
     }
   ]
 }

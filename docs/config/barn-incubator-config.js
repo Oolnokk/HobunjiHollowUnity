@@ -11,6 +11,11 @@
       maxPerBarn: 1,
       roofSpineHeightMultiplier: 0.75,
     },
+    tiers: { // Capacity and plan identities shared by the barn editor, carpenter and starter package.
+      small: { slots: 1, footprint: { w: 1, h: 1 }, planItem: 'barnIncubatorSmallPlan', label: 'Small Incubator', price: 220 },
+      medium: { slots: 3, footprint: { w: 3, h: 1 }, planItem: 'barnIncubatorPlan', label: 'Medium Incubator', price: 600 },
+      large: { slots: 6, footprint: { w: 4, h: 2 }, planItem: 'barnIncubatorLargePlan', label: 'Large Incubator', price: 1400 },
+    },
     gameplay: {
       slots: 3,
       maturationDays: 2,

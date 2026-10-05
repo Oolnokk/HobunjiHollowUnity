@@ -55,6 +55,7 @@
   let originalSynthesizeBarnInterior = null;
   let originalPanelRender = null;
   let selectedBabyId = null; // Persists the compact-list selection while the Farm panel partially rerenders.
+  let farmBabyInventoryCollapsed = true; // Keeps the dedicated Farm Nursery baby inventory collapsed by default.
   let panelObserver = null; // Reapplies Nursery decoration after FarmPanel's private partial renders.
   let panelDecorating = false;
   let panelDecorateQueued = false;
@@ -736,7 +737,7 @@
     section.id = 'livestockNurserySection';
     section.style.cssText = 'border:1px solid var(--border,#4b443a);border-radius:8px;padding:7px 8px;margin:0 0 8px;background:rgba(255,220,160,.055);';
     section.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px;">
-      <strong>🍼 Nursery · ${babyList.length} babies</strong>
+      <strong><button type="button" class="livestock-nursery-toggle" aria-expanded="${farmBabyInventoryCollapsed ? 'false' : 'true'}" style="border:0;background:transparent;color:inherit;padding:0;text-align:left;font:inherit;font-weight:800;cursor:pointer;">${farmBabyInventoryCollapsed ? '▸' : '▾'} 🍼 Nursery · ${babyList.length} babies</button></strong>
       <span style="font-size:11px;${warning ? 'color:#ff9b80;font-weight:700;' : 'color:var(--muted,#999);'}">Adults ${count}/${capacity} barn spaces</span>
     </div>
     <div style="font-size:10px;color:var(--muted,#999);line-height:1.25;margin-bottom:5px;">Babies stay babies indefinitely. Grow Up is one-way. Up to ${NURSERY_VISIBLE_LIMIT} are visible inside at once.</div>`;
@@ -804,6 +805,18 @@
       });
       actions.appendChild(debug);
       section.appendChild(actions);
+    }
+    const inventoryToggle = section.querySelector('.livestock-nursery-toggle'); // Controls every Farm Nursery baby-management element as one collapsed inventory.
+    inventoryToggle?.addEventListener('click', event => {
+      event.stopPropagation();
+      farmBabyInventoryCollapsed = !farmBabyInventoryCollapsed;
+      queuePanelDecoration();
+    });
+    inventoryToggle?.setAttribute('aria-expanded', farmBabyInventoryCollapsed ? 'false' : 'true');
+    for (const detail of [...section.children].slice(1)) {
+      if (!farmBabyInventoryCollapsed) continue;
+      detail.hidden = true;
+      detail.style.setProperty('display', 'none', 'important'); // Overrides existing compact-list inline flex styles while collapsed.
     }
     container.prepend(section);
   }
@@ -942,11 +955,12 @@
     const babyRecords = records.filter(isBaby); // Reused for the snapshot's baby list/count.
     const adultRecords = records.filter(entry => !isBaby(entry)); // Reused for the snapshot's adult count.
     return {
-      mostRecentChange: 'Farm livestock rows now bind by animal ID; repeated Nursery decoration cannot delete adults or Stable breeding rows, and the Nursery list is compact/scrollable.',
+      mostRecentChange: 'Farm Nursery babies collapse by default; Farm breeding choices contain only accessible adult Stable animals.',
       nursery: nursery && { id: nursery.id, col: nursery.col, row: nursery.row, w: nursery.w, h: nursery.h, tier: nursery.tier },
       currentArea: currentArea(),
       babies: babyRecords.map(entry => ({ id: entry.id, name: entry.name, kind: entry.kind, size: entry.genotype?.sizeClass })),
       babyCount: babyRecords.length,
+      farmBabyInventoryCollapsed,
       adults: adultRecords.length,
       adultCapacity: adultCapacity(),
       overCapacityBy: Math.max(0, adultRecords.length - adultCapacity()),

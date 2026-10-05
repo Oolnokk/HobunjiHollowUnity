@@ -1,0 +1,133 @@
+(', '));
+
+    E.threeStatus.textContent='Runtime modules loaded; fetching portrait configuration…';
+    const cosmeticsPromise=window.NpcAvatarPreview.ensurePortraitCosmetics({
+      assetBase:new URL('assets/',docs).href,
+      configBase:new URL('config/',docs).href,
+    });
+    await Promise.race([
+      cosmeticsPromise,
+      new Promise((_,reject)=>setTimeout(()=>reject(new Error('Timed out loading portrait configuration')),20000))
+    ]);
+
+    window.applyHobunjiAttachmentRigProfileCorrections?.();
+    E.threeStatus.textContent='Hobunji runtime rig loaded.';
+    return true;
+  })().catch(error=>{
+    R.three.runtimeReadyPromise=null;
+    E.threeStatus.textContent='Runtime load failed: '+(error?.message||error)+' — tap Retry runtime.';
+    throw error;
+  });
+  return R.three.runtimeReadyPromise;
+}
+function resetRuntimeLoad(){
+  // Modules already executed safely stay installed; retry simply resumes/re-executes
+  // idempotent runtime modules against the same repository root.
+  R.three.runtimeReadyPromise=null;
+  R.three.portraitCache.clear();
+  R.three.buildGeneration++;
+  E.threeStatus.textContent='Retrying runtime…';
+  scheduleThreePreview(0);
+}
+function runtimeProfileKey(){return`${E.species.value}::${E.gender.value}::${R.three.runtimeDocsBase||runtimeDocsBase()}`}
+function blankRuntimeNpc(){
+  return{
+    name:'Clothing fit runtime preview',
+    appearance:{
+      speciesId:E.species.value,
+      gender:E.gender.value,
+      randomSeed:`clothing-fit-runtime:${E.species.value}:${E.gender.value}`,
+      cosmetics:{
+        hairFront:'none',hairBack:'none',hairSide:'none',hairSideL:'none',
+        eyes:'none',upperFace:'none',facialHair:'none'
+      }
+    },
+    equippedCosmetics:[],
+    appliedDyes:{},
+  };
+}
+async function runtimePortraitSet(){
+  await ensureRigRuntime();
+  const profileKey=runtimeProfileKey();
+  const mask=currentMaskTransform();
+  const cacheKey=`${profileKey}::mask:${Number(mask.scaleX).toFixed(4)}:${Number(mask.scaleY).toFixed(4)}:${Number(mask.translateY).toFixed(4)}`;
+  if(R.three.portraitCache.has(cacheKey))return R.three.portraitCache.get(cacheKey);
+
+  const promise=(async()=>{
+    const npc=blankRuntimeNpc();
+    let profile=window.NpcAvatarPreview.buildProfileFromNpcExport(npc);
+    if(!profile){
+      // Keep the random/profile seed independent of mask sliders so changing the
+      // mask never changes body colours or any other appearance choice.
+      profile=window.NpcAvatarPreview.randomProfile(`clothing-fit:${profileKey}`,{
+        speciesId:E.species.value,gender:E.gender.value
+      });
+    }
+    if(!profile)throw new Error(`Could not build runtime portrait profile for ${E.species.value} ${E.gender.value}.`);
+
+    for(const prop of ['hair','hairFront','hairBack','hairSide','hairSideL','eyes','upperFace','facialHair','hat','hood','pauldron','torsoCosmetic','armCosmetic']){
+      if(profile[prop])profile[prop]={id:'none',label:'None',tintSlot:null,layers:[]};
+    }
+
+    const size=Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.previewPortraitCanvasSize)||200;
+    const make=()=>Object.assign(document.createElement('canvas'),{width:size,height:size});
+    const front=make(),back=make(),head=make();
+
+    // This is the important V11 change: the preview transform is installed
+    // while portrait-utils renders the WHOLE front/back portrait. Its canonical
+    // destination-out pass therefore cuts base torso, base arms, torso clothing,
+    // overwear, etc. exactly at the normal full-portrait mask stage.
+    await withPreviewCloudMaskTransform(()=>window.NpcAvatarPreview.renderProfileToCanvas(
+      front,profile,{seatId:'clothing-fit-runtime',forceEyesOpen:true}
+    ));
+    await withPreviewCloudMaskTransform(()=>window.NpcAvatarPreview.renderProfileToCanvas(
+      back,profile,{seatId:'clothing-fit-runtime',portraitView:'behind',forceEyesOpen:true}
+    ));
+
+    // Keep the neck/head-only texture on the ordinary runtime path. The cloud
+    // mask belongs to the body portrait and should not be authored by these sliders.
+    await window.NpcAvatarPreview.renderProfileToCanvas(
+      head,profile,{seatId:'clothing-fit-runtime',onlyHeadSprite:true,forceEyesOpen:true}
+    );
+    return{npc,profile,front,back,head,size};
+  })();
+  R.three.portraitCache.set(cacheKey,promise);
+  try{return await promise}catch(error){R.three.portraitCache.delete(cacheKey);throw error}
+}
+function normalizedLayerXform(raw={}){
+  return{
+    ax:Number(raw.ax)||0,ay:Number(raw.ay)||0,
+    sx:Number(raw.sx??raw.scaleX??raw.scaleMulX)||1,
+    sy:Number(raw.sy??raw.scaleY??raw.scaleMulY)||1,
+  };
+}
+function targetBodyLayerXform(){
+  const cfg=R.speciesCfg.get(E.species.value)?.[E.gender.value];
+  const torso=(cfg?.portraitBodyLayers||[]).find(layer=>String(layer.id||'').toLowerCase()==='torso')
+    ||(cfg?.portraitBodyLayers||[])[0];
+  return normalizedLayerXform(torso?.xform||{ax:-.2,ay:0,scaleX:2.55,scaleY:2.55});
+}
+function portraitLayerRect(rawWidth,rawBaseHeight,xform,targetWidth=200,targetHeight=200){
+  const L=80;
+  const h=L*xform.sy;
+  const w=(rawWidth/Math.max(1,rawBaseHeight))*L*Math.abs(xform.sx);
+  const cx=targetWidth/2+xform.ay*L;
+  const cy=targetHeight/2-xform.ax*L;
+  return{x:cx-w/2,y:cy-h/2,w,h,cx,cy};
+}
+function previewedCloudMaskXform(rawXform={}){
+  const baseXform=normalizedLayerXform(rawXform);
+  const preview=currentMaskTransform();
+  return{
+    ...baseXform,
+    sx:(Number(baseXform.sx)||1)*(Number(preview.scaleX)||1),
+    scaleX:(Number(baseXform.sx)||1)*(Number(preview.scaleX)||1),
+    sy:(Number(baseXform.sy)||1)*(Number(preview.scaleY)||1),
+    scaleY:(Number(baseXform.sy)||1)*(Number(preview.scaleY)||1),
+    // portrait-utils uses cy = centerY - ax*L, so subtracting preview Y makes
+    // positive slider values move the mask downward like the other Y controls.
+    ax:(Number(baseXform.ax)||0)-(Number(preview.translateY)||0),
+  };
+}
+async function withPreviewCloudMaskTransform(callback){
+  const original=window.applyPortraitOpacit

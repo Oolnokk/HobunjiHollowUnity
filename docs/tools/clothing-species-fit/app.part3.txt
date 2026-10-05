@@ -1,0 +1,113 @@
+items[i],i)}catch(error){out[i]={error}}}}
+  await Promise.all(Array.from({length:Math.min(n,items.length)},run));return out;
+}
+
+async function loadRepositoryData(){
+  status('Loading repository data…');
+  R.three.portraitCache.clear();
+  if(R.three.runtimeDocsBase&&R.three.runtimeDocsBase!==runtimeDocsBase()){
+    R.three.runtimeReadyPromise=null;
+    R.three.runtimeDocsBase=null;
+    E.threeStatus.textContent='Repository base changed; 3D runtime will reload from the new root.';
+  }
+  R.speciesCfg.clear();R.garments=[];R.images.clear();R.bodyCanvases.clear();R.garmentCanvases.clear();
+  try{
+    const [si,ci]=await Promise.all([fetchJson('config/species/index.json'),fetchJson('config/cosmetics/index.json')]);
+    R.speciesIndex=si.entries||[];
+
+    const speciesResults=await mapLimit(R.speciesIndex,6,async entry=>({
+      entry,cfg:await fetchJson('config/species/'+String(entry.path||'').replace(/^\.\//,''))
+    }));
+    for(const x of speciesResults)if(x&&!x.error)R.speciesCfg.set(x.entry.speciesId,x.cfg);
+
+    const cosmeticResults=await mapLimit(ci.entries||[],8,async entry=>({
+      entry,cfg:await fetchJson('config/cosmetics/'+String(entry.path||'').replace(/^\.\//,''))
+    }));
+    for(const x of cosmeticResults){
+      if(!x||x.error)continue;
+      const cfg=x.cfg,variants=cfg?.speciesVariants||{};
+      if(BODY_SLOTS.has(cfg?.slot)&&(variants['mao-ao_male']||variants['mao-ao_female'])){
+        R.garments.push({id:x.entry.id,label:cfg?.meta?.name||x.entry.id,slot:cfg.slot,cfg});
+      }
+    }
+    R.garments.sort((a,b)=>a.label.localeCompare(b.label));
+    rebuildSelectors();await refreshAssets();
+    status(`Loaded ${R.speciesCfg.size} species and ${R.garments.length} Mao-ao body garments.`);
+    log('Repository load complete.');
+  }catch(error){status('Load failed: '+error.message);log('ERROR '+error.message);console.error(error)}
+}
+function rebuildSelectors(){
+  const wantedSpecies=A.settings?.species||'mao-ao';
+  E.species.innerHTML='';
+  for(const entry of R.speciesIndex){
+    if(!R.speciesCfg.has(entry.speciesId))continue;
+    const o=document.createElement('option');o.value=entry.speciesId;o.textContent=entry.label||entry.speciesId;E.species.appendChild(o);
+  }
+  if([...E.species.options].some(o=>o.value===wantedSpecies))E.species.value=wantedSpecies;
+
+  const wantedGarment=A.settings?.garment||'';
+  E.garment.innerHTML='';
+  for(const garment of R.garments){
+    const o=document.createElement('option');o.value=garment.id;o.textContent=`${garment.label} [${garment.slot}]`;E.garment.appendChild(o);
+  }
+  if([...E.garment.options].some(o=>o.value===wantedGarment))E.garment.value=wantedGarment;
+  if(!E.garment.value&&E.garment.options.length)E.garment.selectedIndex=0;
+}
+function bodyLayers(species,gender){
+  return(R.speciesCfg.get(species)?.[gender]?.portraitBodyLayers||[]).map(x=>({path:x.url,url:assetUrl(x.url)})).filter(x=>x.path);
+}
+async function buildBodyCanvas(species,gender){
+  const key=`${species}::${gender}`;
+  if(R.bodyCanvases.has(key))return R.bodyCanvases.get(key);
+  const p=(async()=>{
+    const layers=bodyLayers(species,gender);
+    if(!layers.length)throw new Error(`No body layers for ${species} ${gender}.`);
+    const images=await Promise.all(layers.map(x=>loadImage(x.url)));
+    const width=Math.max(...images.map(i=>i.naturalWidth||i.width)),height=Math.max(...images.map(i=>i.naturalHeight||i.height));
+    const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
+    const x=canvas.getContext('2d',{alpha:true});x.imageSmoothingEnabled=false;
+    for(const image of images)x.drawImage(image,0,0); // Direct source-pixel compositing of the repository body layers.
+    canvas._paths=layers.map(x=>x.path);return canvas;
+  })();
+  R.bodyCanvases.set(key,p);return p;
+}
+function gatherImages(node,out=[],seen=new Set()){
+  if(!node||typeof node!=='object')return out;
+  if(node.image?.url){
+    const resolved=assetUrl(node.image.url);
+    if(!seen.has(resolved)){seen.add(resolved);out.push({url:resolved,path:node.image.url})}
+  }
+  for(const value of Object.values(node))gatherImages(value,out,seen);
+  return out;
+}
+function garmentRecord(){return R.garments.find(g=>g.id===E.garment.value)||null}
+async function buildVariantGarmentCanvas(id,species,gender,width,height){
+  const key=`${id}::${species}::${gender}::${width}x${height}`;
+  if(R.garmentCanvases.has(key))return R.garmentCanvases.get(key);
+  const p=(async()=>{
+    const garment=R.garments.find(x=>x.id===id),variant=garment?.cfg?.speciesVariants?.[`${species}_${gender}`];
+    if(!variant)return null; // Missing target-species art is normal; comparison overlay simply stays unavailable.
+    const layers=gatherImages(variant);
+    if(!layers.length)return null;
+    const images=await Promise.all(layers.map(x=>loadImage(x.url)));
+    const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
+    const x=canvas.getContext('2d',{alpha:true});x.imageSmoothingEnabled=false;
+    for(const image of images)x.drawImage(image,0,0); // Flattens every authored layer of this exact species+gender variant.
+    canvas._paths=layers.map(x=>x.path);return canvas;
+  })();
+  R.garmentCanvases.set(key,p);return p;
+}
+async function buildGarmentCanvas(id,gender,width,height){
+  const canvas=await buildVariantGarmentCanvas(id,'mao-ao',gender,width,height);
+  if(!canvas)throw new Error('Selected garment has no Mao-ao source for this gender.');
+  return canvas;
+}
+
+function targetKey(species,gender){return`${species}_${gender}`} // One recorded transform and local-offset set per species+gender.
+function ensureTargetData(species,gender){
+  const key=targetKey(species,gender);
+  if(!A.baseTransforms[key])A.baseTransforms[key]=defaultTransform();
+  if(!A.localOffsets[key]||A.localOffsets[key].length!==SOURCE_GRID.length)A.localOffsets[key]=zeroOffsets();
+  return key;
+}
+function currentTransform(){const key=ensureTargetData(E.species.value,E.gender.value);return A.baseTransforms[key]}

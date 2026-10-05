@@ -2458,7 +2458,8 @@
         // instead), since only one can ever be placed and it's aimed
         // anywhere in the wild rather than snapped to farm/interior tiles.
         campfire:      { itemKey: 'campfireKitFurniture',   icon: '🔥', name: 'Campfire Kit',         price: 15, fw: 1, fd: 1, color: 0x6d3e20, area: 'any', desc: 'A portable campfire kit. Select it, aim at open ground anywhere in the wild, and use Action 1 to make camp.', customPlace: true },
-        loom:          { itemKey: 'loomFurniture',          icon: '🧶', name: 'Small Loom',           modelFile: 'loom_small.glb',               price: 45, fw: 1, fd: 2, color: 0x8a6a3a, area: 'interior', desc: 'A small loom for weaving cloth.' },
+        loom:          { itemKey: 'loomFurniture',          icon: '🧶', name: 'Simple Loom',          modelFile: 'loom_small.glb',               price: 45, fw: 1, fd: 1, color: 0x8a6a3a, area: 'interior', desc: 'A compact loom for ordinary single-pattern weaving.' },
+        advancedLoom:  { itemKey: 'advancedLoomFurniture',  icon: '🧶', name: 'Advanced Loom',        modelFile: 'loom_small.glb',               price: 72, fw: 1, fd: 2, color: 0x76502f, area: 'interior', desc: 'A full-sized loom that can weave a second overpass pattern.', moteOnly: true, masteryUnlockId: 'advancedLoomBlueprint' },
         nightstand:    { itemKey: 'nightstandFurniture',    icon: '🕯️', name: 'Nightstand',           modelFile: 'nightstand.glb',               price: 18, fw: 1, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A small bedside table.', light: { color: 0xffaa44, intensity: 0.5, distance: 4, height: 0.5 } },
         hangingBanner: { itemKey:'hangingBannerFurniture',icon:'🎏',name:'Hanging Banner',price:25,fw:2,fd:1,color:0x8b6540,area:'any',desc:'Patterned cloth suspended from a wooden beam; its free edge moves with the wind.' },
         rug:           { itemKey: 'rugFurniture',           icon: '🧶', name: 'Woven Rug',            modelFile: 'rug_woven_small.glb',          price: 22, fw: 2, fd: 2, color: 0x8a5a3a, area: 'interior', walkable: true, desc: 'A small decorative woven rug.' },
@@ -2577,6 +2578,8 @@
         icon: item.icon,
         name: item.name,
         desc: item.desc,
+        moteOnly: !!item.moteOnly, // Used to keep Mote-only mastery blueprints out of the gold Carpenter inventory.
+        masteryUnlockId: item.masteryUnlockId || null, // Used by CraftingPanel to treat the world-scoped mastery purchase as permanent blueprint ownership.
         // A permanent, reusable unlock (see craftFurnitureFromBlueprint —
         // building from a blueprint only ever spends Wood/Stone, never the
         // blueprint itself), so it's priced above the finished piece's own
@@ -3539,7 +3542,8 @@
         });
         if (!o) return null;
         if (o.key === 'hearth') return makeCookingInteractable();
-        if (o.key === 'loom') return makeLoomInteractable(); // Player-placed house looms use the same core reticle/action path as beds and hearths.
+        if (o.key === 'loom') return makeLoomInteractable(false); // Simple Loom keeps the ordinary one-pattern weaving rules.
+        if (o.key === 'advancedLoom') return makeLoomInteractable(true); // Advanced Loom opts the shared panel into overpass authoring and doubled overpass costs.
         if (o.key === 'basicBed' || o.key === 'doubleBed' || o.key === 'bedroll') {
           return {
             interactIcon: '😴',
@@ -4281,7 +4285,7 @@
         };
       }
 
-      function makeLoomInteractable() {
+      function makeLoomInteractable(advanced = false) {
         return {
           interactIcon: '🧶',
           interactLabel: 'Use Loom',
@@ -4292,7 +4296,7 @@
             if (action !== 'obj_loom' && action !== 'obj_interact') return { ok: false, message: 'Unknown action.' };
             const openLoom = window.ClothingWeavingSystem?.openLoom; // Used by both house and map-authored loom interaction records.
             if (typeof openLoom !== 'function') return { ok: false, message: 'The loom is unavailable right now.' };
-            const opened = openLoom(); // Synchronous: the panel creates immediately; its sprite preview continues asynchronously inside the module.
+            const opened = openLoom(null, { advanced }); // Synchronous: the physical loom decides whether overpass controls/cost rules are available; preview work remains asynchronous inside the module.
             return opened === false
               ? { ok: false, message: 'The loom could not be opened.' }
               : { ok: true, message: 'Opened the loom.' };
@@ -9757,7 +9761,8 @@
       // whose placement should also register a _buildingInteractables entry.
       const BUILDING_FIXTURE_INTERACTABLES = {
         hearthFurniture: () => makeCookingInteractable(),
-        loomFurniture: () => makeLoomInteractable(), // Map-authored looms share the same core interaction object as player-placed house looms.
+        loomFurniture: () => makeLoomInteractable(false), // Map-authored Simple Looms share the same ordinary interaction object as player-placed ones.
+        advancedLoomFurniture: () => makeLoomInteractable(true), // Map-authored Advanced Looms opt into overpass weaving through the same interaction path.
         alchemyTableFurniture: () => ({
           getButtons() {
             return [{ icon: '⚗️', label: 'Brew Potion', action: 'obj_alchemy', style: 'primary', allowed: true }];
@@ -10515,6 +10520,7 @@
         for (const t of transitions) {
           const tile = zGrid[t.row]?.[t.col];
           const ring = new THREE.Mesh(ringGeo, ringMat);
+          window.EnvironmentSurfaceMicroPlateau?.bindGroundProjection(ring);
           ring.rotation.x = -Math.PI / 2;
           ring.position.set(t.col + 0.5, tileSurfaceYInArea(tile, mapId) + 0.02, t.row + 0.5);
           ring.userData.mapEditorRef = { mapId, kind: 'spot', id: t.id, col: t.col, row: t.row };
@@ -10851,6 +10857,7 @@
         const shadow = new THREE.Mesh(geo, mat);
         shadow.name = name;
         shadow.renderOrder = -1;
+        window.EnvironmentSurfaceMicroPlateau?.bindGroundProjection(shadow);
         shadow.scale.set(cfg.radiusX ?? 0.34, 1, cfg.radiusZ ?? 0.22);
         return shadow;
       }
@@ -13207,7 +13214,7 @@
       // fill-level mesh registry, and the open-trough panel) lives in
       // window.FarmTroughs — see docs/js/farm-troughs.js.
       function synthesizeBarnInteriorMapData(mapId) {
-        return window.FarmTroughs.synthesizeBarnInteriorMapData(mapId);
+        return window.FarmTroughs.synthesizeConnectedBarnInteriorMapData(mapId);
       }
 
       async function buildMineLadderMesh() {
@@ -15170,6 +15177,7 @@
         for (const t of worldTownTransitions) {
           const tile = townGrid[t.row]?.[t.col];
           const ring = new THREE.Mesh(ringGeo, ringMat);
+          window.EnvironmentSurfaceMicroPlateau?.bindGroundProjection(ring);
           ring.rotation.x = -Math.PI / 2;
           ring.position.set(t.col + 0.5, tileSurfaceY((tile?.type) || TileType.GRASS) + 0.02, t.row + 0.5);
           // Used by the async building pass to move a stale linked marker
@@ -16294,10 +16302,10 @@
               if (result.ok) { buildInventoryGrid(); window.HudUpdate.refreshItemScroll(); saveMemberWorldData(); }
             });
           }
-          // Alchemical items follow the same physical held-item language as
-          // every other bag item. Selecting here only places the bottle in
-          // hand; Drink/Throw/Read/Eat remains on the normal action arch.
-          if ((window.AlchemySystem.POTION_ITEMS[key] || window.AlchemySystem.getPotionEffectsFromKey(key)) && count > 0) {
+          // Wheel-selectable Pack objects can also be equipped directly from
+          // their info panel, so the player does not need to leave the menu
+          // and open the item select wheel just to hold one.
+          if (window.ItemProcessing.isWheelEligible(key) && count > 0) {
             mkBtn('🤲 Hold', 'equip', () => {
               const index = getInventoryStackItems().findIndex(item => item.key === key);
               if (index >= 0) activeItemIndex = index;
@@ -16305,11 +16313,8 @@
               window.HudUpdate.refreshItemScroll(); refreshActionBar(); closeMenu();
             });
           }
-          // Materials/etc that isWheelEligible excludes from the wheel
-          // (see getInventoryStackItems) have no other way to become the
-          // held item, so gifting one (see js/npc-gifting.js) needs its own
-          // explicit hold, same mechanism as the Equipment panel's clothing
-          // "Hold" button (see selectGearClothing in js/equipment-panel.js).
+          // Items excluded from the wheel still need a manual held-item slot,
+          // including when they are selected from the Pack details.
           if (!window.ItemProcessing.isWheelEligible(key) && count > 0) {
             const heldNow = getManualHeldItem();
             const isHeld = heldNow?.kind === 'bagItem' && heldNow.key === key;
@@ -17861,6 +17866,7 @@
         window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.crop || 6, `harvested ${data.label}`);
         const msg = `Harvested ${window.LootRolling.starRatingText(stars)} ${data.emoji} ${data.label}${amount > 1 ? ` ×${amount}` : ''}!`;
         tile.crop = CropType.NONE;
+        tile.fertilized = false; // Fertilizer is consumed by this harvest, never carried into the next planting.
         tile.cropAge = 0;
         tile.cropReady = false;
         tile.stress = '';
@@ -18449,6 +18455,7 @@
           fog: false,
         });
         const mesh = new THREE.Mesh(geo, mat);
+        window.EnvironmentSurfaceMicroPlateau?.bindGroundProjection(mesh);
         mesh.userData.baseOpacity = LUNGE_TRAIL_BASE_OPACITY;
         group.add(mesh);
 
@@ -21142,6 +21149,7 @@
       const reticleCircleGeo = new THREE.TorusGeometry(0.28, 0.04, 8, 40);
       reticleCircleGeo.rotateX(-Math.PI / 2);
       const reticleCircleMesh = new THREE.Mesh(reticleCircleGeo, reticleIntenseMat);
+      window.EnvironmentSurfaceMicroPlateau?.bindGroundProjection(reticleCircleMesh);
       reticleCircleMesh.visible = false;
 
       // Floating ring for object highlights — torus baked horizontal, bobs + spins
@@ -21163,6 +21171,7 @@
         }
         reticleWavyGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(_pts), _wavyLineMat));
       }
+      window.EnvironmentSurfaceMicroPlateau?.bindGroundProjection(reticleWavyGroup);
       reticleWavyGroup.visible = false;
 
       // ── Mesh stores ───────────────────────────────────────────────
@@ -21774,6 +21783,7 @@
 
       // ── Reticle mesh ──────────────────────────────────────────────
       const reticleMesh = new THREE.Mesh(reticleGeo, reticleMat);
+      window.EnvironmentSurfaceMicroPlateau?.bindGroundProjection(reticleMesh);
       scene.add(reticleMesh);
       scene.add(reticleCircleMesh);
       scene.add(reticleRingMesh);
@@ -24641,6 +24651,7 @@
       // in js/weather-fx.js — call via window.WeatherFX.*.
 
       function tickCropDay() {
+        window.FarmProduction?.irrigate(grid, calendar, RAIN_RATE, true); // Analytic irrigation handles sleep/day skips before crops evaluate their water.
         for (let row = 0; row < ROWS; row++) {
           for (let col = 0; col < COLS; col++) {
             const tile = grid[row][col];
@@ -24651,7 +24662,7 @@
             tile.stress = ditchStress || (mul < 0.15 ? (tile.water < data.idealMin ? 'too dry' : 'waterlogged')
                         : mul < 0.6  ? (tile.water < data.idealMin ? 'dry'     : 'too wet')
                         : '');
-            tile.cropAge += mul;
+            tile.cropAge += mul * (tile.fertilized ? 1.25 : 1); // Compost improves one crop cycle without overriding water stress.
             tile.cropReady = tile.cropAge >= data.growDays;
           }
         }
@@ -29624,9 +29635,15 @@
       resizeCanvas();
       refreshActionBar();
       window.HudUpdate.refreshItemScroll();
+      window.FarmWorldSettings.init({ getPlayerData: () => _playerData, isFarmOwner, showToast, debugLog });
+      window.FarmProduction.init({ getPlayerData: () => _playerData, calendar, inventory, ITEM_DEFS, cropData, COLS, ROWS, TileType, MAX_WATER,
+        scene, worldObjects, hasFarmPermission, isFarmOwner, showToast, debugLog, getGrid: () => grid,
+        loadStorage: _loadWorldStorage, saveStorage: _saveWorldStorage, consumeInput: consumeProcessingInput,
+        surfaceY: farmSurfaceYAtWorld, markOutline: _markOutline,
+        saveFarmLayout: window.FarmEditor.saveFarmLayout, saveMemberWorldData });
       try { initWorldObjects(); } catch(e) { console.error('initWorldObjects:', e); }
       // Apply saved object positions and furniture after world objects are created
-      try { window.FarmEditor.applyFarmLayoutObjects(window.FarmEditor.loadFarmLayout()); } catch(e) { console.error('applyFarmLayoutObjects:', e); }
+      try { window.FarmEditor.applyFarmLayoutObjects(window.FarmEditor.loadFarmLayout()); window.FarmProduction.load(window.FarmEditor.loadFarmLayout()?.productionBuildings || []); } catch(e) { console.error('applyFarmLayoutObjects:', e); }
       // Transition spots + shared NPC routes from the map editor
       try { initWorldTravel(window.FarmEditor.loadFarmLayout()); } catch(e) { console.error('initWorldTravel:', e); }
       // Ensure a farm→town transition always exists even without map editor data
@@ -29704,7 +29721,8 @@
         }
         const _worldLayout = window.FarmEditor.loadFarmLayout();
         if (_worldLayout) window.FarmEditor.applyFarmLayoutToGrid(_worldLayout, { refreshVisuals: true });
-        window.FarmEditor.applyFarmLayoutObjects(_worldLayout); // repositions again if THIS world saved custom crate positions
+        window.FarmEditor.applyFarmLayoutObjects(_worldLayout);
+        window.FarmProduction.load(_worldLayout?.productionBuildings || []); // repositions again if THIS world saved custom crate positions
         // Seed a starter bed in the farmhouse for a brand-new world — sleepInBed()
         // (see getInteriorInteractableAt) needs somewhere to sleep, and a fresh
         // player has no bed item in inventory yet to buy+place one themselves.
