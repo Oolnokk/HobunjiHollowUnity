@@ -40,7 +40,7 @@ assert.equal(ed.grips.currentDualWieldAnimationState().influence, 1);
 ed.window.HobunjiDualWieldWeaponVisuals.setEditorIdlePreview(false);
 assert.equal(JSON.stringify(ed.grips.currentDualWieldAnimationState()), checkboxState, 'preview before/after authoring yields the same result');
 ed.grips.loadEditorAnimationGrip({});
-for (const key of ['kylie', 'dagger', 'daggerSword', 'dagger-sword-tinbronze']) {
+for (const key of ['kylie', 'dagger', 'daggerSword', 'dagger-sword-tinbronze', 'warCleaver', 'war-cleaver', 'warcleaver-nativecopper', 'war-cleaver-tinbronze']) {
   assert(ed.grips.isDualWieldWeapon(key), key);
   ed.window.HobunjiAttackEditorToolContext.toolKey = key;
   ed.grips.editorToolChanged();
@@ -70,7 +70,7 @@ assert.equal(ed.grips.currentSecondaryGripAnimationState().influence, 1, 'ordina
 ed.controls.toolSpriteSelect.value = 'dagger';
 assert.equal(ed.grips.currentDualWieldAnimationState().influence, 0);
 const game = fixture(false);
-for (const key of ['kylie', 'dagger-nativecopper', 'daggersword-tinbronze']) {
+for (const key of ['kylie', 'dagger-nativecopper', 'daggersword-tinbronze', 'warCleaver', 'war-cleaver-tinbronze']) {
   game.setSnapshot({ activeSlot: 'weapon', itemKey: key, combatNeutralInjected: false });
   assert.equal(game.grips.currentDualWieldAnimationState().influence, 1, 'game equip starts paired before any attack');
   game.window.Combat.deps.triggerWeaponSwingVisual(1, { pose: { windup: { dualWield: true, secondaryGrip: { enabled: true } } } });
@@ -123,7 +123,7 @@ const selectStance = vm.runInNewContext(`(${stanceSource.slice(stanceStart, stan
   window: game.window, shapeFor: (key, def) => def?.shapeKey || null, weaponIdleClass: () => 'light',
   idleStances: { dualWieldMain: dualPose, lightWeapon: lightPose, heavyWeapon: heavyPose },
 });
-for (const key of ['dagger', 'kylie', 'daggersword-nativecopper']) assert.equal(selectStance('weapon', key, {}), dualPose);
+for (const key of ['dagger', 'kylie', 'daggersword-nativecopper', 'warCleaver', 'war-cleaver-tinbronze']) assert.equal(selectStance('weapon', key, {}), dualPose);
 assert.equal(selectStance('weapon', 'hatchet', {}), lightPose);
 // A stale holder/plane matrix used to make idle placement depend on the last render.
 // Run the production sync ordering with a matrix owner that marks its bake.
@@ -156,7 +156,7 @@ const bothFlags = {
   windup: { secondaryGrip: { enabled: true }, dualWield: { enabled: true } },
   strike: { secondaryGrip: { enabled: true }, dualWield: { enabled: true } },
 };
-for (const key of ['dagger', 'daggersword', 'kylie', 'hatchet', 'fishingspear', 'pickshovel', 'fishingmace']) {
+for (const key of ['dagger', 'daggersword', 'kylie', 'warCleaver', 'war-cleaver-tinbronze', 'hatchet', 'fishingspear', 'pickshovel', 'fishingmace']) {
   for (const progress of [0, 0.16, 0.55, 1]) {
     const sample = ed.grips.animationGripAt(progress, {}, bothFlags, 'attack', key);
     const mode = ed.grips.weaponHandModeForTool(key);
@@ -164,7 +164,7 @@ for (const key of ['dagger', 'daggersword', 'kylie', 'hatchet', 'fishingspear', 
     assert.equal(sample.influence, mode === 'two-hand' && progress !== 0 && progress !== 1 ? 1 : 0);
   }
 }
-for (const key of ['hatchet', 'dagger', 'fishingmace']) {
+for (const key of ['hatchet', 'dagger', 'warCleaver', 'fishingmace']) {
   ed.window.HobunjiAttackEditorToolContext.toolKey = key;
   ed.controls.jsonView = { value: JSON.stringify({ poses: {} }) };
   const animation = JSON.parse(JSON.stringify(bothFlags));
