@@ -49,7 +49,10 @@ const runtimeWindow = { // Used to verify Nuhongan runtime inheritance without l
 };
 vm.runInNewContext(read('docs/js/nuhongan-species-runtime.js'), { window: runtimeWindow });
 assert.equal(runtimeWindow.SCRATCHBONES_CONFIG.game.appearanceEditor.species.nuhongan.parentSpecies, 'tletingan');
-assert.deepEqual(runtimeWindow.SCRATCHBONES_CONFIG.game.appearanceEditor.bodyPalettes.nuhongan, runtimeWindow.SCRATCHBONES_CONFIG.game.appearanceEditor.bodyPalettes.tletingan);
+assert.equal(
+  JSON.stringify(runtimeWindow.SCRATCHBONES_CONFIG.game.appearanceEditor.bodyPalettes.nuhongan),
+  JSON.stringify(runtimeWindow.SCRATCHBONES_CONFIG.game.appearanceEditor.bodyPalettes.tletingan),
+);
 assert.equal(runtimeWindow.HobunjiHandModelProfiles.data.speciesModels.nuhongan, 'tletingan-hands');
 for (const gender of ['male', 'female']) {
   const profile = runtimeWindow.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters[`nuhongan::${gender}`]; // Used to verify an independent same-gender Tletingan rig clone exists.
@@ -60,8 +63,8 @@ for (const gender of ['male', 'female']) {
   assert.equal(profile.anatomy.headScale, undefined);
   assert.equal(profile.anatomy.headOffsetY, undefined);
 }
-assert.deepEqual(runtimeWindow.HobunjiNuhonganSpecies.debugSnapshot().rigHeightMultiplier, 0.75);
-assert.deepEqual(runtimeWindow.HobunjiNuhonganSpecies.debugSnapshot().rigWidthMultiplier, 0.8);
+assert.equal(runtimeWindow.HobunjiNuhonganSpecies.debugSnapshot().rigHeightMultiplier, 0.75);
+assert.equal(runtimeWindow.HobunjiNuhonganSpecies.debugSnapshot().rigWidthMultiplier, 0.8);
 
 const studioWindow = {}; // Used to verify the Character Studio pre-config assignment hook adds Nuhongan before editor initialization.
 vm.runInNewContext(read('docs/js/character-studio-mammakhbuur-config.js'), { window: studioWindow, console });
@@ -78,7 +81,7 @@ studioWindow.SCRATCHBONES_CONFIG = {
 };
 assert.equal(studioWindow.SCRATCHBONES_CONFIG.game.appearanceEditor.species.nuhongan.label, 'Nuhongan');
 assert.equal(studioWindow.SCRATCHBONES_CONFIG.game.appearanceEditor.species.nuhongan.parentSpecies, 'tletingan');
-assert.deepEqual(studioWindow.SCRATCHBONES_CONFIG.game.appearanceEditor.species.nuhongan.genders, ['male']);
+assert.deepEqual(Array.from(studioWindow.SCRATCHBONES_CONFIG.game.appearanceEditor.species.nuhongan.genders), ['male']);
 
 const onboardingWindow = { // Used to call the existing private SPECIES_DATA hydration bridge directly.
   SCRATCHBONES_CONFIG: { game: { appearanceEditor: { species: { mashtzarr: { female: { slots: [] } } }, bodyPalettes: {} } } },
@@ -100,8 +103,8 @@ const privateSpeciesTable = { // Used to mimic onboarding-core's private species
 };
 assert.equal(onboardingWindow.hobunjiOnboardingMashtzarrFemale.hydratePrivateSpeciesTable(privateSpeciesTable), true);
 assert.equal(privateSpeciesTable.nuhongan.label, 'Nuhongan');
-assert.deepEqual(privateSpeciesTable.nuhongan.genders, privateSpeciesTable.tletingan.genders);
-assert.deepEqual(privateSpeciesTable.nuhongan.male, privateSpeciesTable.tletingan.male);
+assert.deepEqual(Array.from(privateSpeciesTable.nuhongan.genders), privateSpeciesTable.tletingan.genders);
+assert.equal(JSON.stringify(privateSpeciesTable.nuhongan.male), JSON.stringify(privateSpeciesTable.tletingan.male));
 assert.notEqual(privateSpeciesTable.nuhongan, privateSpeciesTable.tletingan);
 
 console.log('Nuhongan species tests passed.');
