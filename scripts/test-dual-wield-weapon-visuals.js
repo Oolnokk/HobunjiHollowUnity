@@ -1,6 +1,7 @@
 'use strict';
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const vm = require('node:vm'); // Executes the production duplicate builder below.
 const dual = fs.readFileSync('docs/js/dual-wield-weapon-visuals.js', 'utf8');
 const grips = fs.readFileSync('docs/js/hand-tool-grips.js', 'utf8');
 const driver = fs.readFileSync('docs/js/procedural-hand-frame-driver.js', 'utf8');
@@ -24,7 +25,7 @@ assert.match(dual, /const weapon = side === 'right' \? current\.mainMesh : curre
 assert.match(dual, /planeLocalPosition = socketFrame\.position\.clone\(\)\.applyMatrix4\(inversePlaneWorld\)[\s\S]*planeLocalPosition\.clone\(\)\.applyMatrix4\(weapon\.matrixWorld\)/, 'child grip position is reconstructed in original-plane local space and resolved through the visible child weapon matrix');
 assert.match(dual, /mirrorQuaternionAcrossLocalX[\s\S]*source\.x, -source\.y, -source\.z, source\.w/, 'offhand grip orientation mirrors the proper frame across child-local X instead of losing the reflection in quaternion decomposition');
 assert.match(dual, /mirroredChild = side === 'left' && Number\(weapon\.scale\?\.x\) < 0[\s\S]*mirrorQuaternionAcrossLocalX\(planeLocalQ/, 'the reflected offhand child receives the mirrored local grip frame while the main-hand child keeps the original frame');
-assert.match(dual, /duplicate\.scale\.set\?\.\(side === 'off' \? -1 : 1, 1, 1\)/, 'offhand child carries Mirror Animation sprite-X handedness without altering the root');
+assert.match(dual, /duplicate\.scale\.set\?\.\(1, 1, 1\)/, 'both weapon copies preserve the source blade facing; the idle offhand pose owns its rotation');
 assert.match(driver, /const primarySocket = toolSocketWorld\(record, toolHolder, primaryGrip\)/, 'the original fixed 1H socket remains the canonical grip before Dual Wield remapping');
 assert.match(driver, /owners\.right = 'primary-grip'[\s\S]*if \(dualWield\) owners\.right = 'dual-wield-main-grip'/, 'Dual Wield refines ordinary main-hand ownership without weakening primary-grip fallback authority');
 assert.match(driver, /transformSocketForHand\?\.\(record, 'right'/, 'right hand follows the lagged main duplicate');
@@ -42,3 +43,29 @@ const heldActionTokens = runtimeEntries.map(path => {
 assert(heldActionTokens.every(token => token && token === heldActionTokens[0]), 'game and authoring pages must use the same fresh held-action bootstrap token');
 assert.match(editor, /loadEditorAnimationGrip\?\.\(\{ sequence: preset\.sequence \|\| 'attack', poses: anim\.poses \}\)/, 'switching Actions reloads per-attack hand-mode metadata');
 console.log('dual wield: transform-following roots, child-local grip frames with proper offhand reflection, child-only sandwich offsets, main-hand lag, default 2H, and mutually exclusive editor mode PASS');
+
+// Execute the mesh builder: a negative offhand X scale reverses an asymmetric axe blade.
+class DuplicateMesh {
+  constructor(geometry, material) {
+    this.geometry = geometry;
+    this.material = material;
+    this.position = { set(x, y, z) { Object.assign(this, { x, y, z }); } };
+    this.scale = { set(x, y, z) { Object.assign(this, { x, y, z }); } };
+    this.quaternion = { identity() {} };
+    this.layers = { mask: 1 };
+  }
+}
+const builderSource = dual.slice(dual.indexOf('  function makeDuplicateMesh('), dual.indexOf('  function makeRoot(')); // Isolates the unchanged production factory dependencies.
+const builder = vm.runInNewContext(`(${builderSource.trim()})`, {
+  HALF_Z_SEPARATION: 0.15,
+  cloneOwnedMaterial: material => ({ ...material }),
+}); // Calls the actual factory for both anatomical sides.
+const sourcePlane = new DuplicateMesh({ axeBlade: true }, {}); // Shared source geometry must retain its authored handedness.
+for (const side of ['main', 'off']) {
+  const copy = builder(sourcePlane, side); // The visible weapon tested against the same blade geometry.
+  assert.equal(copy.geometry, sourcePlane.geometry);
+  assert.equal(copy.scale.x, 1, `${side} axe blade must face the authored direction`);
+  assert.equal(copy.scale.y, 1);
+  assert.equal(copy.scale.z, 1);
+  assert.equal(copy.position.z, side === 'main' ? -0.15 : 0.15);
+}

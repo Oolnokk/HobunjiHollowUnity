@@ -106,7 +106,7 @@
     duplicate.name = `dual_wield_${side}_weapon`;
     duplicate.position.set?.(0, 0, side === 'main' ? -HALF_Z_SEPARATION : HALF_Z_SEPARATION); // Only the child weapon gets the bread-slice separation; roots stay transform followers.
     duplicate.quaternion.identity?.();
-    duplicate.scale.set?.(side === 'off' ? -1 : 1, 1, 1); // The offhand is the opposite-hand mirror, matching Mirror Animation's sprite-X flip without touching the root transform.
+    duplicate.scale.set?.(1, 1, 1); // Both attack copies keep the blade facing forward; the authored offhand idle pose owns its rotation.
     duplicate.renderOrder = plane.renderOrder;
     duplicate.frustumCulled = plane.frustumCulled;
     duplicate.castShadow = plane.castShadow;
