@@ -31,7 +31,7 @@ jobs:
             "scripts/test-full-character-scale-authoring-20260905.js": [
               ("'tletingan::male': { x: 0.85, y: 0.85, head: 0.8823529411764706, offsetY: 0 }", "'tletingan::male': { x: 0.85, y: 0.85, head: 0.8, offsetY: 0 }"),
               ("'mao-ao::female': { x: 1.045, y: 1.30625, head: 0.9375, offsetY: 0 }", "'mao-ao::female': { x: 0.895, y: 0.94, head: 0.7813, offsetY: 0 }"),
-              ("const expectedRawHeadPercent = key === 'mao-ao::male' ? 72.6 : 75;", "const expectedRawHeadPercent = key === 'mao-ao::male' ? 72.6 : (key === 'tletingan::male' ? 68 : 75);"),
+              ("const expectedRawHeadPercent = key === 'mao-ao::male' ? 72.6 : 75;", "const expectedRawHeadPercent = key === 'mao-ao::male' ? 72.6 : (key === 'mao-ao::female' ? 62.504 : (key === 'tletingan::male' ? 68 : 75));"),
             ],
             "docs/js/mammakhbuur-species-runtime.js": [
               ("delete data.defaultCosmetics.hairFront;", "data.defaultCosmetics.hairFront = null; // Explicitly clears seeded random front hair for every Mammakhbuur appearance.")
