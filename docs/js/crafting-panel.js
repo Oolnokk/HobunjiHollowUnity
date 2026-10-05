@@ -163,7 +163,7 @@
     ['js/npc-crafting-commission-generator.js?v=20261005craft2', () => Number(window.NpcCraftingCommissionGenerator?.version) >= 2],
     ['js/npc-crafting-commission-delivery.js?v=20261005craft2', () => Number(window.NpcCraftingCommissionDelivery?.version) >= 2],
     ['js/npc-crafting-commissions.js?v=20261005craft2', () => Number(window.NpcCraftingCommissions?.version) >= 2],
-  ]; // Local progression/commission modules loaded immediately after CraftingPanel publishes its API.
+  ]; // Local progression/commission modules loaded immediately after CraftingPanel publishes its API. Cache ownership is refreshed by the repo checker.
 
   function loadModule(src, alreadyLoaded) {
     if (alreadyLoaded()) return;
