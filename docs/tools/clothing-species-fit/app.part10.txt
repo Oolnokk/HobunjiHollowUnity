@@ -13,7 +13,7 @@ R.three.extendedGroup=extGroup}
     rigGroup.updateMatrixWorld(true);
     R.three.group.rotation.set(R.three.rotX,R.three.rotY,0);
     frameRuntimeRig();
-    const cloud=R.speciesCfg.get(E.species.value)?.[E.gender.value]?.portraitOpacityMaskLayer?.url?'cloud mask active':'no species cloud mask';
+    const cloud=R.speciesCfg.get(E.species.value)?.[E.gender.value]?.portraitOpacityMaskLayer?.url?'arm cloud cut active':'no species arm cloud cut'; // The full-portrait cloud mask was removed; the species layer only shapes the arm cut.
     const handState=model.userData?.proceduralHandRig?'hands attached':'hands queued';
     E.threeStatus.textContent=`Runtime rig: portrait + neck + ${handState} + feet + ${cloud}${R.extendedGroup?' + extended overlay':''}.`;
   }catch(error){

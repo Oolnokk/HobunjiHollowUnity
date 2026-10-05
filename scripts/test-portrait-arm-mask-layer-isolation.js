@@ -5,19 +5,61 @@ const path = require('path');
 
 const root = path.resolve(__dirname, '..');
 const runtimePath = path.join(root, 'docs', 'js', 'portrait-arm-cloud-mask.js');
+const editorPath = path.join(root, 'docs', 'tools', 'portrait-arm-mask', 'app.js');
 const runtime = fs.readFileSync(runtimePath, 'utf8');
+const editor = fs.readFileSync(editorPath, 'utf8');
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-assert(runtime.includes("mode: 'disabled'"), 'portrait arm cloud-mask runtime must report disabled mode');
-assert(runtime.includes('__hobunjiCloudMaskDisabled'), 'global mask no-op must expose the disabled marker');
-assert(runtime.includes('global.applyPortraitOpacityMask = disabledApplyPortraitOpacityMask'), 'canonical full-portrait mask must be replaced by the no-op');
-assert(runtime.includes("__hobunjiCloudMaskYScaled = true"), 'disabled mask must prevent legacy scaling wrappers from reinstalling cloud-mask behavior');
-assert(runtime.includes('authoredProfiles: Object.freeze({})'), 'legacy authored arm-mask profiles must not be active at runtime');
-assert(!runtime.includes("mode: 'per-arm-hard-cut-black-cap'"), 'legacy per-arm hard-cap behavior must remain disabled');
-assert(!runtime.includes('buildClippedArmImage'), 'disabled runtime must not preprocess arm sprites');
-assert(!runtime.includes('activeArmClipsByCanvas'), 'disabled runtime must not install per-canvas arm clipping state');
+assert(runtime.includes("mode: 'per-arm-hard-cut-black-cap'"), 'arm cut must report hard-cut black-cap mode');
+assert(runtime.includes('activeArmClipsByCanvas'), 'arm cut must scope temporary arm images to the portrait canvas');
+assert(runtime.includes('buildClippedArmImage'), 'arm cut must preprocess only the authored arm image');
+assert(runtime.includes('buildCutOutlineMask'), 'arm cut must cap the newly exposed edge');
+assert(runtime.includes('valueNoise1D') && runtime.includes('valueNoise2D'), 'arm cut must retain deterministic verdigris-style noise');
+assert(runtime.includes('profiles?.[profileKey]'), 'runtime must support species+gender profile overrides');
+assert(runtime.includes('AUTHORED_PROFILES'), 'runtime must carry committed authored profile defaults');
+assert(runtime.includes("'rakakoan:male'") && runtime.includes("'rakakoan:female'"), 'Rakakoan must retain copied Kenkari arm-mask defaults');
+assert(runtime.includes("'ghoul:male'") && runtime.includes("'ghoul:female'"), 'both ghoul genders must retain copied Mao-ao arm-mask defaults');
+assert(runtime.includes('660632132'), 'Mao-ao/ghoul authored edge seed must be retained');
+assert(runtime.includes('cutThreshold') && runtime.includes('wobbleStrength') && runtime.includes('outlineWidth'), 'hard-cut controls must be runtime tunables');
+assert(runtime.includes('armData.data[i + 3] = 0'), 'masked arm pixels must be erased instead of softly faded');
+assert(runtime.includes('armData.data[i] = 0'), 'new arm cap pixels must be painted black');
+assert(runtime.includes('state?.clips?.get'), 'draw helpers must substitute only known authored arm source keys');
+assert(runtime.includes("const shouldClip = renderOptions?.onlyHeadSprite !== true;"), 'front and behind portrait planes must both receive the arm hard cut');
+assert(!runtime.includes("renderOptions?.portraitView !== 'behind'"), 'behind portrait renders must not bypass the arm hard cut');
+assert(!runtime.includes("renderOptions?.view !== 'behind'"), 'behind-view alias must not bypass the arm hard cut');
+assert(!runtime.includes('material.alphaMap'), 'arm-only cut must not be applied to the flattened portrait material');
+assert(!runtime.includes('buildSinglePlaneAvatarModel'), 'arm-only cut must not patch the finished PNG-plane avatar');
+assert(!runtime.includes('hobunjiArmCloudAlphaMap'), 'legacy flattened arm alpha-map state must stay removed');
+assert(runtime.includes('const armClipStateCache = new Map()'), 'processed arm hard-cuts must be cached instead of rebuilt for every portrait redraw');
+assert(runtime.includes('const pending = buildArmClipStateUncached(request)'), 'cache misses must share one in-flight preprocessing promise');
+assert(runtime.includes('armClipStateCache.set(request.cacheKey, pending)'), 'in-flight and completed preprocessing must use the same cache entry');
+assert(runtime.includes('ARM_CLIP_CACHE_LIMIT = 64'), 'processed arm cache must remain explicitly bounded');
+assert(runtime.includes('debugSnapshot: armClipCacheDebugSnapshot'), 'mobile diagnostics must expose arm hard-cut cache hits/misses/builds');
 
-console.log('portrait cloud-mask disabled regression checks passed');
+assert(editor.includes("schema: 'hobunji_portrait_arm_mask.v2'"), 'mask editor must export the species/gender profile schema');
+assert(editor.includes('profiles[profileKey()]'), 'editor must store distinct settings per species+gender');
+assert(editor.includes('seedAuthoredProfiles'), 'editor must seed the committed authored profiles');
+assert(editor.includes('authoredSettingsFor'), 'editor reset must return to committed species/gender defaults');
+assert(editor.includes('STORAGE_KEY'), 'editor must retain authored profile values across browser reloads');
+assert(editor.includes('wobbleStrength') && editor.includes('outlineWidth'), 'editor must expose hard-edge authoring values');
+assert(editor.includes('NpcAvatarPreview.renderProfileToCanvas'), 'mask editor must preview through the real portrait pipeline');
+assert(!editor.includes('weightMap'), 'mask editor must not retain weight-paint data');
+assert(!editor.includes('calculated-bicep'), 'mask editor must not retain bicep-rig bindings');
+assert(!editor.includes('deformPreview'), 'mask editor must not retain deformation preview code');
+
+// The full-portrait cloud mask is removed; only the arm hard cut uses the cloud.
+const portraitUtils = fs.readFileSync(path.join(root, 'docs', 'js', 'portrait-utils.js'), 'utf8');
+assert(!/\bapplyPortraitOpacityMask\s*\(/.test(portraitUtils), 'portrait composition must not apply the full-portrait cloud mask');
+assert(!/global\.applyPortraitOpacityMask\s*=/.test(runtime), 'arm runtime must not reinstall a full-portrait cloud-mask wrapper');
+// The arm cut derives its shape from each species' portraitOpacityMaskLayer, so
+// removing the full-portrait mask must never be done by nulling that layer.
+for (const species of ['engh-sho', 'kenkari', 'mao-ao', 'mashtzarr', 'rakakoan', 'tletingan', 'harlyao', 'harlyao-skeleton', 'porakaneki']) {
+  const config = JSON.parse(fs.readFileSync(path.join(root, 'docs', 'config', 'species', `${species}.json`), 'utf8'));
+  const layers = Object.values(config).filter(value => value && typeof value === 'object' && 'portraitOpacityMaskLayer' in value).map(value => value.portraitOpacityMaskLayer);
+  assert(layers.length && layers.every(layer => layer?.url), `${species} must keep its cloud layer as the arm-cut source`);
+}
+
+console.log('portrait arm hard-cut/profile/cache and full-portrait-cloud-removal checks passed');

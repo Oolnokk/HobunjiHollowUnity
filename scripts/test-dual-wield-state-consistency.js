@@ -131,7 +131,7 @@ const syncStart = visualSource.indexOf('  function syncNow(');
 const syncEnd = visualSource.indexOf('  function transformSocketForHand(', syncStart);
 for (const editor of [true, false]) {
   const operations = [];
-  class Vector { clone() { return new Vector(); } multiplyScalar() { return this; } }
+  class Vector { clone() { return new Vector(); } copy() { return this; } set() { return this; } multiplyScalar() { return this; } }
   class Quaternion { identity() { return this; } slerp() { return this; } }
   const plane = { position: new Vector(), quaternion: new Quaternion(), updateWorldMatrix() { operations.push('editor-bake'); } };
   const holder = { updateMatrixWorld() { operations.push('game-bake'); } };
@@ -146,6 +146,7 @@ for (const editor of [true, false]) {
       operations.push('idle-pose'); return { position: new Vector(), quaternion: new Quaternion() };
     },
     setRootToward() {}, applyMainLag() { operations.push('main-pose'); },
+    frameScratch: () => ({ offTargetPosition: new Vector(), offTargetQuaternion: new Quaternion() }), // Per-state scratch reused by the every-frame sync.
   });
   sync();
   assert.deepEqual(operations, [editor ? 'editor-bake' : 'game-bake', 'idle-pose', 'main-pose', 'root-world', 'root-world']);
