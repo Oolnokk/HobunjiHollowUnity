@@ -8,6 +8,108 @@ function reset3DView(){
   else{R.three.zoom=3;R.three.camera.position.set(0,.5,3);R.three.camera.lookAt(0,.45,0)}
 }
 
+function patchNodeAtPath(root,path){
+  let node=root; // Resolves the equivalent layer inside the target-species garment variant.
+  for(const key of path||[]){node=node?.[key];if(node==null)break}
+  return node||null;
+}
+function collectPatchImageNodes(node,path=[],out=[]){
+  if(!node||typeof node!=='object')return out;
+  if(node.image?.url)out.push({path:[...path],url:node.image.url,role:node.layerRole||'',drawSlot:node.drawSlot||'',attachBone:node.attachBone||''});
+  for(const [key,value] of Object.entries(node)){
+    if(key==='image')continue;
+    if(value&&typeof value==='object')collectPatchImageNodes(value,[...path,key],out);
+  }
+  return out;
+}
+function inferPatchView(path,url){
+  const hint=`${(path||[]).join(' ')} ${url||''}`.toLowerCase();
+  return /(^|[\s_./-])(back|behind|rear)([\s_./-]|$)/.test(hint)?'back':'front';
+}
+function behindPatchCatalog(){
+  const gender=E.gender.value,targetSpecies=E.species.value;
+  const items=[]; // Exact source layers available to the behind-sprite patch author.
+  const garment=garmentRecord();
+  if(garment){
+    const sourceVariant=garment.cfg?.speciesVariants?.[`mao-ao_${gender}`]||null;
+    const targetVariant=garment.cfg?.speciesVariants?.[`${targetSpecies}_${gender}`]||null;
+    for(const [index,leaf] of collectPatchImageNodes(sourceVariant).entries()){
+      const targetNode=targetVariant?patchNodeAtPath(targetVariant,leaf.path):null;
+      const labelPath=leaf.path.join(' › ')||`layer ${index+1}`;
+      items.push({
+        id:`clothing:${garment.id}:${gender}:${index}`,
+        kind:'clothing',
+        garmentId:garment.id,
+        garmentLabel:garment.label,
+        label:`${garment.label} • ${labelPath}`,
+        layerPath:[...leaf.path],
+        sourceSpecies:'mao-ao',
+        targetSpecies,
+        gender,
+        sourceUrl:leaf.url,
+        targetUrl:targetNode?.image?.url||null,
+        role:leaf.role||'',
+        view:inferPatchView(leaf.path,leaf.url)
+      });
+    }
+  }
+
+  const sourceBody=R.speciesCfg.get('mao-ao')?.[gender]?.portraitBodyLayers||[];
+  const targetBody=R.speciesCfg.get(targetSpecies)?.[gender]?.portraitBodyLayers||[];
+  for(const [index,layer] of sourceBody.entries()){
+    const targetLayer=targetBody.find(candidate=>candidate?.id&&candidate.id===layer?.id)||targetBody[index]||null;
+    if(!layer?.url)continue;
+    items.push({
+      id:`body:${gender}:${layer.id||index}`,
+      kind:'body',
+      layerId:layer.id||`layer${index+1}`,
+      label:`Body • ${layer.id||`layer ${index+1}`} • Mao-ao ${gender}`,
+      sourceSpecies:'mao-ao',
+      targetSpecies,
+      gender,
+      sourceUrl:layer.url,
+      targetUrl:targetLayer?.url||null,
+      role:layer.id||'',
+      view:'front'
+    });
+  }
+  return items;
+}
+async function loadBehindPatchSource(id){
+  const descriptor=behindPatchCatalog().find(item=>item.id===id);
+  if(!descriptor)throw new Error('That behind-sprite source is no longer available. Refresh the source list.');
+  const image=await loadImage(assetUrl(descriptor.sourceUrl));
+  const canvas=document.createElement('canvas'); // Native source pixels are preserved before the current 6×6 deformation is applied.
+  canvas.width=image.naturalWidth||image.width;canvas.height=image.naturalHeight||image.height;
+  const x=canvas.getContext('2d',{alpha:true});x.imageSmoothingEnabled=false;x.drawImage(image,0,0);
+  canvas._paths=[descriptor.sourceUrl];
+  return{descriptor,canvas};
+}
+function warpBehindPatchCanvas(sourceCanvas){
+  if(!sourceCanvas||!R.body)throw new Error('The clothing species-fit editor is not ready to deform a behind sprite yet.');
+  return warpGarment(sourceCanvas,targetGrid(),R.body.width,R.body.height); // Uses the final base transform + local 6×6 fit, never an intermediate display mode.
+}
+function behindPatchOutputInfo(){
+  return{
+    ready:!!(R.body&&R.maoBody),
+    targetSpecies:E.species.value,
+    gender:E.gender.value,
+    garmentId:E.garment.value||'',
+    garmentLabel:garmentRecord()?.label||'',
+    outputWidth:R.body?.width||0,
+    outputHeight:R.body?.height||0,
+    sourceWidth:R.maoBody?.width||0,
+    sourceHeight:R.maoBody?.height||0
+  };
+}
+window.ClothingSpeciesFitTool=Object.freeze({
+  getBehindPatchCatalog:behindPatchCatalog,
+  loadBehindPatchSource,
+  warpBehindPatchCanvas,
+  getOutputInfo:behindPatchOutputInfo,
+  logMessage:message=>log(String(message||''))
+}); // Narrow bridge for behind-sprite-patch.js; repository loading and deformation math remain owned by the core editor.
+
 E.modeBtns.forEach(b=>b.onclick=()=>{mode=b.dataset.mode;saveState();render()});
 E.reload.onclick=loadRepositoryData;E.gender.onchange=refreshAssets;E.species.onchange=refreshAssets;E.garment.onchange=refreshAssets;
 E.showBody.onchange=render;E.showGarment.onchange=render;E.showMeshes.onchange=render;E.opacity.oninput=render;
