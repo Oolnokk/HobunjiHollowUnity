@@ -595,7 +595,9 @@
     _buildFaceMeshes(group, faces, opts);
 
     var roofFaces = faces.filter(function (f) { return f.tag === 'roof'; });
+    var roofChildStart = group.children.length; // Tags this structure's shingle instances independently of shared source materials.
     _addShingles(group, roofFaces, faces, opts);
+    for (var childIndex = roofChildStart; childIndex < group.children.length; childIndex++) group.children[childIndex].traverse(function (mesh) { if (mesh.isMesh) mesh.userData.farmMaterialRole = 'wood'; });
 
     // WallBuilder bricks on frustum body walls + gable end triangles
     if (opts.wallBuilder) {
@@ -624,6 +626,7 @@
       group.add(gableGroup);
     }
 
+    if (opts.farmNaturalColors) global.FarmWorldSettings?.tintStructure(group, opts.farmNaturalColors);
     return group;
   }
 
@@ -806,6 +809,7 @@
       var mesh = new THREE.Mesh(geom, mat);
       // Semantic face metadata is used by runtime diagnostics and lets callers inspect authored cloth/opening faces without guessing from materials.
       mesh.userData.housePieceFaceTag = f.tag;
+      mesh.userData.farmMaterialRole = f.tag === 'roof' ? 'wood' : (f.tag === 'wall' ? 'stone' : null); // Farm-only natural finish semantics.
       mesh.userData.housePieceFaceId = f.id;
       if (f.tag === 'doorOpening') {
         // Door openings are dark backing planes exactly coplanar with the surrounding authored cloth edges. A small depth bias keeps that backing behind the canvas at grazing camera angles instead of leaking one-pixel black wedges past the cloth.
@@ -1254,11 +1258,14 @@
       geom.computeVertexNormals();
       var mesh = new THREE.Mesh(geom, mat);
       mesh.castShadow = mesh.receiveShadow = true;
+      mesh.userData.farmMaterialRole = (tag === 'roof' || BOARD_TAGS[tag]) ? 'wood' : (STONE_TAGS[tag] ? 'stone' : null); // Natural farm finish role; canvases keep their authored appearance.
       group.add(mesh);
     }
 
     // Shingles on roof faces (same as buildGroup)
+    var roofChildStart = group.children.length; // Marks only the newly emitted roof shingles for optional farm finishes.
     _addShingles(group, roofFaces, allOff, Object.assign({ matTube: matTube }, opts));
+    for (var childIndex = roofChildStart; childIndex < group.children.length; childIndex++) group.children[childIndex].traverse(function (mesh) { if (mesh.isMesh) mesh.userData.farmMaterialRole = 'wood'; });
 
     // WallBuilder bricks on body walls and gable triangles
     if (opts.wallBuilder) {
@@ -1281,6 +1288,7 @@
       }
     }
 
+    if (opts.farmNaturalColors) global.FarmWorldSettings?.tintStructure(group, opts.farmNaturalColors);
     return group;
   }
 

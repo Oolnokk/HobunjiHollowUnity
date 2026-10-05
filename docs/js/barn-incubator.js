@@ -17,6 +17,9 @@
   let state = null; // Holds this world's serialized barn-addition/incubation state.
   let selectedBarnId = null; // Identifies the barn currently open in the Barn Layout editor.
   let selectedAdditionId = null; // Identifies the selected incubator piece in that editor.
+  let interiorRoomMapId = null, interiorRoomOffsets = {}; // Joined barn interior offsets supplied by the existing map synthesis owner.
+  let selectedTier = 'medium'; // New additions use the selected tier; legacy saved additions remain medium.
+  const tierDef = tier => CONFIG.tiers?.[tier] || CONFIG.tiers?.medium || { slots: CONFIG.gameplay.slots, footprint: CONFIG.addition.canonicalFootprint }; // One tier authority for slots and footprint.
   let editorMode = null; // 'place'|'move' while the next canvas tap should reposition a piece.
   let managementAdditionId = null; // Identifies the incubator whose 3 maturation slots are being managed.
   let interiorSyncTimer = null; // Periodically reconciles visible sleeping babies in loaded barn interiors.
@@ -63,11 +66,11 @@
     return state;
   }
 
-  function saveState(reason = null) {
+  function saveState(reason = null, saveMember = true) { // Starter grants occur before member inventory hydration and only checkpoint addition state.
     if (!state) loadState();
     localStorage.setItem(storageKey(), JSON.stringify(state));
     if (reason) lastDebugChange = reason;
-    buildingDeps?.saveMemberWorldData?.();
+    if (saveMember) buildingDeps?.saveMemberWorldData?.();
   }
 
   function barnState(barnId, create = true) {
@@ -103,18 +106,19 @@
     return regularBarns().find(barn => barn.id === barnId) || null; // Used by every placement/trough/interior operation.
   }
 
-  function stockDefinition() {
-    return window.LootRolling?.getShopStock?.()?.carpenterBarnPlans?.additions?.[CONFIG.addition.id] || null; // Price/plan identity stays authored in shop-stock.json.
+  function stockDefinition(tier = selectedTier) {
+    const key = tier === 'medium' ? CONFIG.addition.id : CONFIG.addition.id + tier[0].toUpperCase() + tier.slice(1); // Legacy medium plan keeps its saved item identity.
+    return window.LootRolling?.getShopStock?.()?.carpenterBarnPlans?.additions?.[key] || null; // Price/plan identity stays authored in shop-stock.json.
   }
 
-  function planItemKey() {
-    return stockDefinition()?.planItem || null; // Used for purchases and placement inventory without a duplicate hard-coded item ID.
+  function planItemKey(tier = selectedTier) {
+    return stockDefinition(tier)?.planItem || null; // Used for purchases and placement inventory without a duplicate hard-coded item ID.
   }
 
-  function ensurePlanItemDef() {
+  function ensurePlanItemDef(tier = selectedTier) {
     const deps = carpenterDeps || panelDeps || animalDeps; // Used to register the purchased plan in whichever initialized UI seam is available.
-    const definition = stockDefinition(); // Used as the authored label/description source.
-    const key = planItemKey(); // Used as the actual inventory stack key.
+    const definition = stockDefinition(tier); // Used as the authored label/description source.
+    const key = planItemKey(tier); // Used as the actual inventory stack key.
     if (!deps?.ITEM_DEFS || !definition || !key || deps.ITEM_DEFS[key]) return key;
     deps.ITEM_DEFS[key] = {
       icon: definition.icon || '🪺',
@@ -129,7 +133,9 @@
 
   function ensureFurnitureDef() {
     const defs = panelDeps?.DECORATIVE_FURNITURE_DEFS; // Used by interior-scene furniture lookup for the authored crib.
-    if (!defs || defs[CONFIG.interior.furnitureKey]) return;
+    if (!defs) return;
+    for (const [tier, fw, fd] of [['small',2,2],['large',8,4]]) { const key = 'incubator' + tier[0].toUpperCase() + tier.slice(1) + 'Furniture'; if (!defs[key]) defs[key] = { name: tierDef(tier).label + ' Crib', icon: '🪺', fw, fd, procKey: 'incubator' + tier[0].toUpperCase() + tier.slice(1), desc: 'Tiered maturation crib with independently authored baby anchors.' }; } // Tier-specific assets remain editable furniture.
+    if (defs[CONFIG.interior.furnitureKey]) return;
     defs[CONFIG.interior.furnitureKey] = {
       name: 'Incubator Crib',
       icon: '🪺',
@@ -140,8 +146,8 @@
     };
   }
 
-  function makeSlots() {
-    return Array.from({ length: CONFIG.gameplay.slots }, (_, index) => ({
+  function makeSlots(tier = selectedTier) {
+    return Array.from({ length: tierDef(tier).slots }, (_, index) => ({
       index,
       troughBarnId: null,
       troughIndex: null,
@@ -153,9 +159,11 @@
 
   function normalizeAddition(addition) {
     if (!addition || addition.type !== CONFIG.addition.id) return addition;
-    if (!Array.isArray(addition.slots)) addition.slots = makeSlots();
-    while (addition.slots.length < CONFIG.gameplay.slots) addition.slots.push(makeSlots()[addition.slots.length]);
-    if (addition.slots.length > CONFIG.gameplay.slots) addition.slots.length = CONFIG.gameplay.slots;
+    addition.tier = CONFIG.tiers?.[addition.tier] ? addition.tier : 'medium'; // Legacy rooms retain their three slots and every maturing baby.
+    const capacity = tierDef(addition.tier).slots; // Tier-specific capacity never truncates occupied legacy slots.
+    if (!Array.isArray(addition.slots)) addition.slots = makeSlots(addition.tier);
+    while (addition.slots.length < capacity) addition.slots.push(makeSlots(addition.tier)[addition.slots.length]);
+    if (addition.slots.length > capacity && !addition.slots.slice(capacity).some(slot => slot.baby)) addition.slots.length = capacity;
     addition.slots.forEach((slot, index) => {
       slot.index = index;
       if (!Object.prototype.hasOwnProperty.call(slot, 'troughBarnId')) slot.troughBarnId = null;
@@ -173,9 +181,9 @@
     }
   }
 
-  function candidatePlacementsForBarn(barn) {
+  function candidatePlacementsForBarn(barn, tier = selectedTier) {
     if (!barn) return [];
-    const footprint = CONFIG.addition.canonicalFootprint; // Used to generate every full-long-edge attachment position.
+    const footprint = tierDef(tier).footprint; // Used to generate every full-long-edge attachment position.
     const out = []; // Returned to editor hit-testing and validation.
     for (let localCol = 0; localCol <= barn.w - footprint.w; localCol++) {
       out.push({ side: 'north', localCol, localRow: -footprint.h, w: footprint.w, h: footprint.h, rotY: 0 });
@@ -245,7 +253,7 @@
   }
 
   function closestCandidate(barn, col, row, ignoreAdditionId = null) {
-    const candidates = candidatePlacementsForBarn(barn); // Used to snap a mobile/desktop canvas tap to the nearest valid wall-flush 3×1 placement.
+    const candidates = candidatePlacementsForBarn(barn, additionById(ignoreAdditionId)?.tier || selectedTier); // Used to snap a mobile/desktop canvas tap to the nearest valid wall-flush 3×1 placement.
     const scored = candidates.map(candidate => {
       const rect = absoluteRect(barn, candidate); // Used only for center-distance scoring.
       const distance = Math.hypot(col - (rect.col + rect.w / 2), row - (rect.row + rect.h / 2)); // Used to choose the most intuitive wall slot.
@@ -255,6 +263,22 @@
       if (validatePlacement(barn, entry.candidate, ignoreAdditionId).ok) return entry.candidate;
     }
     return null;
+  }
+
+  function ensureStarterIncubator(barnId, tier = 'small') {
+    const barn = barnById(barnId); // The completed starter barn owns its attached incubator.
+    if (!barn || !CONFIG.tiers[tier]) return { ok:false, message:'Starter barn or incubator tier unavailable.' };
+    const id = barnId + '_starter_incubator'; // Stable identity survives retries without duplicating additions.
+    const existing = additionsForBarn(barnId).find(addition => addition.id === id); // Existing queues/babies are preserved on reload.
+    if (existing) return { ok:true, addition:existing };
+    if (additionsForBarn(barnId).length >= CONFIG.addition.maxPerBarn) return { ok:false, message:'Starter barn has no free addition slot.' };
+    const placement = candidatePlacementsForBarn(barn,tier).find(candidate => validatePlacement(barn,candidate).ok); // Attach along an actually clear wall using the ordinary collision authority.
+    if (!placement) return { ok:false, message:'No clear wall for the starter incubator.' };
+    const addition = normalizeAddition({id,type:CONFIG.addition.id,tier,...placement,slots:makeSlots(tier)}); // Fully installed one-slot addition; no purchased plan is granted or consumed.
+    barnState(barnId).additions.push(addition);
+    saveState('Installed completed starter incubator on '+barnId+'.',false);
+    rebuildExteriorAll();
+    return { ok:true, addition };
   }
 
   function placeIncubator(barnId, placement) {
@@ -271,6 +295,7 @@
     const addition = normalizeAddition({
       id: `barn_incubator_${Math.random().toString(36).slice(2, 10)}`,
       type: CONFIG.addition.id,
+      tier: selectedTier, // Persists selected maturation capacity with the room.
       localCol: placement.localCol,
       localRow: placement.localRow,
       w: placement.w,
@@ -315,7 +340,7 @@
     if (additionHasBaby(addition)) return { ok: false, message: 'Move or finish every maturing baby before removing the incubator.' };
     barnState(barn.id).additions = additionsForBarn(barn.id).filter(entry => entry.id !== additionId);
     if (refund) {
-      const key = ensurePlanItemDef(); // Returned to inventory just like relocating a reusable farmhouse room deed.
+      const key = ensurePlanItemDef(addition.tier); // Returned to inventory just like relocating a reusable farmhouse room deed.
       const inventory = (panelDeps || carpenterDeps || animalDeps)?.inventory; // Receives the recovered addition plan.
       if (key && inventory) inventory[key] = Math.min(9, (inventory[key] || 0) + 1);
     }
@@ -404,13 +429,14 @@
     disposeExteriorMesh(addition.id);
     registerAdditionObject(barn, addition);
     if (typeof THREE === 'undefined' || !window.HousePieceGen || !buildingDeps?.scene) return;
-    const source = await loadPiece(); // Repo-authored 3×1 Highland room with the lowered ridge.
+    const source = addition.tier === 'medium' ? await loadPiece() : await fetch('config/pieces/barn-incubator-' + addition.tier + '.json').then(response => response.ok ? response.json() : null); // Repo-authored 3×1 Highland room with the lowered ridge.
     if (!source || !additionById(addition.id)) return;
     const piece = addition.w < addition.h ? rotatedVerticalPiece(source) : source; // East/west attachments use the same authored piece quarter-turned.
     const rect = absoluteRect(barn, addition); // World top-left consumed by HousePieceGen.
     try {
       const mesh = window.HousePieceGen.buildGroupFromPiece(THREE, piece, rect.col, rect.row, {
         wallBuilder: buildingDeps.houseWallBuilder || null,
+        farmNaturalColors: window.FarmWorldSettings?.current(),
         wbUsePlaceholder: true,
         wbOpts: { unitMult: 0.4375, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } },
       }); // Uses the same renderer as authored barns/house pieces.
@@ -810,6 +836,7 @@
     const scale = CONFIG.interior.cellsPerFarmTile; // Existing barn interiors use two cells per exterior farm tile.
     const shiftCol = -extents.minCol * scale; // Moves negative west additions into nonnegative interior coordinates.
     const shiftRow = -extents.minRow * scale; // Moves negative north additions likewise.
+    map.farmBarnOriginShift = { col: shiftCol, row: shiftRow }; // Allows connected rooms to union already-expanded incubator interiors without shifting twice.
     shiftMapCoordinates(map, shiftCol, shiftRow);
     map.cols = (extents.maxCol - extents.minCol) * scale;
     map.rows = (extents.maxRow - extents.minRow) * scale;
@@ -823,7 +850,7 @@
       const placement = interiorFurniturePlacement(barn, addition, extents); // Authored crib placed against the addition's outside/back wall.
       map.furniture.push({
         id: `f_barn_incubator_${addition.id}`,
-        itemKey: CONFIG.interior.furnitureKey,
+        itemKey: addition.tier === 'medium' ? CONFIG.interior.furnitureKey : 'incubator' + addition.tier[0].toUpperCase() + addition.tier.slice(1) + 'Furniture',
         col: placement.col,
         row: placement.row,
         rotY: placement.rotY,
@@ -867,7 +894,8 @@
     return window.GridTileAccessors?.getActiveScene?.() || troughDeps?.getActiveScene?.() || null; // Scene receiving incubator baby visuals.
   }
 
-  function loadFurnitureAuthored() {
+  function loadFurnitureAuthored(tier = 'medium') {
+    if (tier !== 'medium') return window.AuthoredFurniture?.load?.('incubator' + tier[0].toUpperCase() + tier.slice(1)) || fetch('config/furniture-authored/incubator' + tier[0].toUpperCase() + tier.slice(1) + '.json').then(response => response.json());
     if (!furniturePromise) furniturePromise = fetch(CONFIG.interior.furnitureFile).then(response => {
       if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
       return response.json();
@@ -961,14 +989,19 @@
     }
     const barnId = String(area).slice('map_i_barn_'.length); // Loaded barn owning potential incubator visuals.
     const barn = barnById(barnId); // Real barn corresponding to the interior.
-    const additions = barn ? additionsForBarn(barnId) : [];
+    const roomBarns = interiorRoomMapId === area ? window.FarmBuildings.connectedBarnRooms(barnId) : (barn ? [barn] : []); // Joined barns expose sleeping babies from every room.
+    const additions = roomBarns.flatMap(room => additionsForBarn(room.id));
     if (!barn || !additions.length) { clearSleepingVisuals(); return; }
     const wanted = new Set(); // Visual slot keys that should remain alive after reconciliation.
-    const authored = await loadFurnitureAuthored(); // Editable crib anchor definitions.
-    if (!authored || currentArea() !== area) return;
+    if (currentArea() !== area) return;
     const extents = mapExtentsForBarn(barn); // Same coordinate expansion used by synthesized interior placement.
     for (const addition of additions) {
-      const placement = interiorFurniturePlacement(barn, addition, extents); // Crib world position in expanded interior.
+      const authored = await loadFurnitureAuthored(addition.tier); // Tier-specific crib anchors match the actual sleeping visuals.
+      if (!authored || currentArea() !== area) return;
+      const ownerBarn = owningBarnOfAddition(addition.id); // Addition retains its room-local lifecycle and trough reservation.
+      const placement = interiorFurniturePlacement(ownerBarn, addition, mapExtentsForBarn(ownerBarn));
+      const offset = interiorRoomMapId === area ? interiorRoomOffsets[ownerBarn.id] : null; // Exact offset from merged map synthesis.
+      if (offset) { placement.col += offset.col; placement.row += offset.row; } // Crib world position in expanded interior.
       for (const slot of addition.slots || []) {
         if (!slot.baby) continue;
         const key = `${addition.id}:${slot.index}`; // Desired visible baby key.
@@ -1208,13 +1241,22 @@
     const definition = stockDefinition(); // Authored plan label/price description.
     const key = ensurePlanItemDef(); // Unplaced plan stack.
     const owned = Number((panelDeps || carpenterDeps || animalDeps)?.inventory?.[key]) || 0; // Current plans available for new placement.
+    let tierPicker = document.getElementById('barnIncubatorTierPicker'); // Compact tier choice beside the existing placement actions.
+    if (!tierPicker) {
+      tierPicker = document.createElement('select'); tierPicker.id = 'barnIncubatorTierPicker'; tierPicker.setAttribute('aria-label', 'Incubator tier');
+      for (const [tier, def] of Object.entries(CONFIG.tiers)) { const option = document.createElement('option'); option.value = tier; option.textContent = def.label + ' · ' + def.slots + (def.slots === 1 ? ' slot' : ' slots'); tierPicker.append(option); }
+      document.getElementById('barnIncubatorPlaceBtn').before(tierPicker);
+      tierPicker.onchange = () => { selectedTier = tierPicker.value; editorMode = null; renderBarnEditor(); };
+    }
+    tierPicker.value = selectedTier;
+    for (const tier of Object.keys(CONFIG.tiers)) ensurePlanItemDef(tier);
     const additions = additionsForBarn(barn.id); // Installed additions rendered in list/canvas.
     const selected = additionById(selectedAdditionId); // Selected piece, if any.
     document.getElementById('barnIncubatorEditorTitle').textContent = `${buildingDeps?.getBarnTiers?.()?.[barn.tier]?.label || 'Barn'} Layout`;
     document.getElementById('barnIncubatorEditorSummary').textContent =
       `${definition?.label || CONFIG.addition.label}: ${owned} unplaced · ${additions.length}/${CONFIG.addition.maxPerBarn} installed.`;
     document.getElementById('barnIncubatorEditorHint').textContent = editorMode
-      ? `Tap the desired barn wall. The ${CONFIG.addition.canonicalFootprint.w}-tile side snaps flat against the wall automatically.`
+      ? `Tap the desired barn wall. The ${tierDef(selectedTier).footprint.w}-tile side snaps flat against the wall automatically.`
       : 'Select an installed addition, or place a purchased one. Moving the barn later carries its additions with it.';
     const list = document.getElementById('barnIncubatorEditorList'); // Installed room list.
     list.innerHTML = additions.length ? '' : '<div class="farm-note">No barn additions installed.</div>';
@@ -1223,7 +1265,7 @@
       row.type = 'button';
       row.className = `settings-small-btn${addition.id === selectedAdditionId ? ' active' : ''}`;
       const active = addition.slots.filter(slot => slot.baby).length; // Current maturation occupancy.
-      row.textContent = `🪺 ${CONFIG.addition.label} · ${active}/${CONFIG.gameplay.slots} maturing`;
+      row.textContent = `🪺 ${tierDef(addition.tier).label} · ${active}/${addition.slots.length} maturing`;
       row.addEventListener('click', () => { selectedAdditionId = addition.id; editorMode = null; renderBarnEditor(); });
       list.appendChild(row);
     });
@@ -1394,7 +1436,7 @@
       api.init = function incubatorPanelInit(injectedDeps, ...args) {
         const result = original.panelInit.call(this, injectedDeps, ...args);
         panelDeps = injectedDeps;
-        ensurePlanItemDef();
+        for (const tier of Object.keys(CONFIG.tiers)) ensurePlanItemDef(tier);
         ensureFurnitureDef();
         return result;
       };
@@ -1478,7 +1520,7 @@
       document.addEventListener('hobunjiPlayerReady', () => {
         loadState(); // Reloads under the now-known real world ID rather than the parser-time legacy namespace.
         normalizeState();
-        ensurePlanItemDef();
+        for (const tier of Object.keys(CONFIG.tiers)) ensurePlanItemDef(tier);
         ensureFurnitureDef();
         rebuildExteriorAll();
         refreshAllUi();
@@ -1493,6 +1535,8 @@
     openIncubatorMenu,
     candidatePlacementsForBarn,
     placeIncubator,
+    ensureStarterIncubator,
+    selectTier: tier => { if (CONFIG.tiers?.[tier]) selectedTier = tier; },
     moveIncubator,
     removeIncubator,
     reserveTrough,
@@ -1504,6 +1548,7 @@
     rebuildExteriorAll,
     syncSleepingBabies,
     debugSnapshot,
+    setInteriorRoomOffsets: (mapId, offsets) => { interiorRoomMapId = mapId; interiorRoomOffsets = offsets || {}; },
     getState: () => deepClone(state || freshState()),
     constants: {
       additionId: CONFIG.addition.id,

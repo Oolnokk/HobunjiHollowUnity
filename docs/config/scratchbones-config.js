@@ -80,6 +80,7 @@ window.SCRATCHBONES_CONFIG = {
     },
     "livestock": {
       "itemKinds": {
+        "voorgAssBaby": "voorg-ass",
         "uumkaoiiCrate": "uumkaoii", "uumkaoiiEgg": "uumkaoii",
         "garWolfBaby": "gar-wolf", "dabinggiHoundEgg": "dabinggi-hound",
         "grehlrBaby": "grehlr", "fertileDrenkirraEgg": "drenkirra"

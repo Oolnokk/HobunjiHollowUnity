@@ -157,6 +157,19 @@
     if (methodId === 'grindingFeed' && (input.tags?.includes('Meat') || input.tags?.includes('Fish'))) {
       return { key: 'meatFodder', icon: deps.ITEM_DEFS.meatFodder.icon, label: deps.ITEM_DEFS.meatFodder.label, cat: 'material', sellPrice: deps.ITEM_DEFS.meatFodder.sellPrice, tags: deps.ITEM_DEFS.meatFodder.tags, desc: deps.ITEM_DEFS.meatFodder.desc };
     }
+    const tags = input.tags || []; // Raw meat/fish preservation is shared by furniture and farm buildings.
+    const rawProtein = !tags.includes('Processed') && (tags.includes('Meat') || tags.includes('Fish') || tags.includes('Mollusk'));
+    if ((methodId === 'smoking' || methodId === 'drying') && rawProtein) {
+      const jerky = methodId === 'drying' && tags.includes('Meat'); // Meat drying yields jerky; fish/mollusks remain dried goods.
+      const prefix = jerky ? 'Jerky' : (methodId === 'smoking' ? 'Smoked' : 'Dried'); // The source ingredient identity survives processing.
+      return { key: inputKey + prefix, icon: input.icon, label: jerky ? input.label + ' Jerky' : prefix + ' ' + input.label,
+        cat: 'processed', sellPrice: Math.max(4, (Number(input.sellPrice) || 4) + 7),
+        tags: [...new Set(['Processed', prefix, 'Food', 'Ingredient', ...tags.filter(tag => ['Meat', 'Fish', 'Mollusk'].includes(tag))])],
+        desc: 'Preserved ' + input.label + '.', giftIngredientKeys: [inputKey], spriteIcon: input.spriteIcon, spriteColor: input.spriteColor, spriteMode: input.spriteMode };
+    }
+    if (methodId === 'composting' && (deps.cropData[inputKey] || ['crop', 'food', 'meal', 'cooked'].includes(input.cat) || tags.some(tag => ['Food', 'Ingredient', 'Meal', 'Fruit', 'Meat', 'Fish', 'Egg', 'Vegetable', 'Grain'].includes(tag)))) {
+      return { key: 'compostFertilizer', icon: '🍂', label: 'Compost Fertilizer', cat: 'material', sellPrice: 2, tags: ['Fertilizer'], desc: 'Apply from a compost bin to planted farm crops; 25% faster growth for one harvest.' };
+    }
     if (methodId === 'drying' && isBerryKey(inputKey)) return { key: inputKey + 'Dried', icon: input.icon, label: 'Dried ' + input.label, cat: 'processed', sellPrice: Math.max(4, (input.sellPrice || 4) + 4), tags: ['Processed', 'Dried', 'Fruit'], desc: 'Dried berries. Dry-default crops are not valid drying inputs.', giftIngredientKeys: [inputKey] };
     if (methodId === 'barrelAging' && /Juice$/.test(inputKey)) {
       const berryKey = inputKey.replace(/Juice$/, '');

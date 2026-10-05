@@ -129,6 +129,10 @@
       saveBtn.onclick = () => { deps.setFarmName(input.value); renderFarmHeader(); deps.showToast('Farm renamed.', true); };
     }
     if (ownerSpan) ownerSpan.textContent = deps.getFarmOwnerName();
+    const colorHost = document.getElementById('farmNaturalColors') || document.createElement('div'); // Reuses the header host without accumulating duplicate controls.
+    colorHost.id = 'farmNaturalColors'; colorHost.replaceChildren();
+    input?.parentElement?.after(colorHost);
+    window.FarmWorldSettings?.renderOwnerControls(colorHost);
   }
 
   const FARM_GLANCE_PX = 10;
@@ -246,10 +250,14 @@
     if (!canvas.dataset.clickBound) {
       canvas.dataset.clickBound = '1';
       canvas.addEventListener('click', (e) => {
-        if (!_farmPlacementMode || !deps.hasFarmPermission('alterFarm')) return;
+        if ((!_farmPlacementMode && !window.FarmProduction?.hasPlacement()) || !deps.hasFarmPermission('alterFarm')) return;
         const rect = canvas.getBoundingClientRect();
         const col = Math.floor((e.clientX - rect.left) * (canvas.width / rect.width) / PX);
         const row = Math.floor((e.clientY - rect.top) * (canvas.height / rect.height) / PX);
+        if (window.FarmProduction?.hasPlacement()) {
+          const productionResult = window.FarmProduction.placeAt(col, row); // Uses this same map-click owner for multi-tile production buildings.
+          deps.showToast(productionResult.message, productionResult.ok); renderFarmPanel(); return;
+        }
         const mode = _farmPlacementMode;
         const result = mode.type === 'move' ? window.FarmBuildings.move(mode.buildingId, col, row)
           : window.FarmBuildings.placePlan(mode.tier, col, row);
@@ -258,7 +266,7 @@
         renderFarmPanel();
       });
     }
-    canvas.style.cursor = _farmPlacementMode ? 'crosshair' : '';
+    canvas.style.cursor = (_farmPlacementMode || window.FarmProduction?.hasPlacement()) ? 'crosshair' : '';
   }
 
   // "Buildings" section of the Farm tab: one consolidated "House" row
@@ -282,7 +290,7 @@
         : _farmPlacementMode
           ? (_farmPlacementMode.type === 'move' ? 'Click a tile on the map above to move it there.'
             : `Click a tile above to place the ${BARN_TIERS[_farmPlacementMode.tier].label} foundation.`)
-          : 'Move a barn, or place an owned barn plan, by clicking the map above. Open House Layout to edit your house.';
+          : 'Place or move buildings on the map. Little and medium barns connect as rooms when their edges touch. Open House Layout to edit your house.';
     }
     if (cancelBtn) {
       cancelBtn.hidden = !_farmPlacementMode;
@@ -324,7 +332,7 @@
     deps.getFarmBuildings().filter(b => b.kind === 'barn').forEach(b => {
       const tier = BARN_TIERS[b.tier];
       addRow(`🏚 ${tier.label}${b.stage === 'foundation' ? ' (foundation)' : ''}`, b.w, b.h,
-        () => { _farmPlacementMode = { type: 'move', buildingId: b.id }; renderFarmBuildings(); });
+        () => { window.FarmProduction?.cancelPlacement(); _farmPlacementMode = { type: 'move', buildingId: b.id }; renderFarmBuildings(); });
     });
 
     if (canAlter) {
@@ -337,11 +345,12 @@
         const btn = document.createElement('button');
         btn.className = 'settings-small-btn';
         btn.textContent = 'Place';
-        btn.addEventListener('click', () => { _farmPlacementMode = { type: 'place', tier }; renderFarmBuildings(); });
+        btn.addEventListener('click', () => { window.FarmProduction?.cancelPlacement(); _farmPlacementMode = { type: 'place', tier }; renderFarmBuildings(); });
         row.appendChild(btn);
         list.appendChild(row);
       });
     }
+    window.FarmProduction?.renderRows(list);
   }
 
   // ── House Layout editor ─────────────────────────────────────────────
@@ -848,6 +857,10 @@
     _renderHouseLayoutDeeds();
   }
 
+  function stableBreedingCandidates(stable) {
+    return stable.filter(entry => entry?.stowed !== true && entry?.lifeStage !== 'baby' && !window.AnimalGrowth?.isBaby?.(entry)); // Stowed animals and babies cannot be selected for breeding from the Farm tab.
+  }
+
   // Builds one pickable livestock/stable row. `ref` identifies it for
   // breeding-pair selection. `onRename`/`onSell` are omitted (null) for
   // stable entries — untradeable, and renamed from the Stable tab instead;
@@ -1061,6 +1074,7 @@
     const BARN_TIERS = deps.getBarnTiers();
     const farmBuildings = deps.getFarmBuildings();
     const stable = deps.getStable();
+    const stableCandidates = stableBreedingCandidates(stable); // Only adult animals outside storage can be selected for Farm breeding.
 
     const owner = deps.isFarmOwner();
     list.innerHTML = '';
@@ -1190,14 +1204,14 @@
 
     // Your own stable, offered as breeding-pair candidates on this farm —
     // untradeable, so no rename/Sell controls here (see the Stable tab).
-    if (canManage && stable.length) {
+    if (canManage && stableCandidates.length) {
       const charId = window.FarmAnimals.currentCharacterId();
       const header = document.createElement('div');
       header.className = 'farm-note';
       header.style.marginTop = '4px';
-      header.textContent = 'Your stable (breeding only — untradeable):';
+      header.textContent = 'Your Stable adults outside storage (breeding only — untradeable):';
       list.appendChild(header);
-      stable.forEach(entry => {
+      stableCandidates.forEach(entry => {
         list.appendChild(_buildStablePickRow(
           entry, { source: 'stable', id: entry.id, characterId: charId }, pairs, canManage, null, null
         ));
@@ -1605,5 +1619,6 @@
     renderStablePanel,
     renderFarmProcessors,
     activeStableIdForRole,
+    cancelBarnPlacement: () => { _farmPlacementMode = null; },
   };
 })();

@@ -325,7 +325,8 @@
   let _saveMeta    = null;   // loaded hobunjiSaveMeta object
   let _selCharId   = null;   // selected character id in save-select
   let _selWorldId  = null;   // selected world id, or 'new' for new world
-  let _newWorldName = '';    // in-progress name typed for a not-yet-created world
+  let _newWorldName = '';
+  let _newFarmSettings = window.FarmWorldSettings.normalize(); // Draft colors/specialization survive save-selector renders.    // in-progress name typed for a not-yet-created world
   let _flowStep    = null;   // 'save-select' | 'char-create'
   // Within 'save-select', the wizard sub-step: save source is resolved first
   // (it decides which characters/worlds even exist to pick from), then
@@ -532,7 +533,7 @@
   function makeDefaultWorld(characterId) {
     const world = {
       id:                uid('world'),
-      label:             'Hobunji Hollow',
+      label:             window.FarmWorldSettings.randomName(),
       ownerCharacterId:  characterId,
       farmhands:         [],   // [{ characterId, permissions }] — non-owner members with farm access grants
       members:           {},   // { [characterId]: memberState } — world-scoped data per character who has joined
@@ -545,6 +546,7 @@
       createdAt:         Date.now(),
       lastPlayed:        Date.now(),
     };
+    window.FarmWorldSettings.initializeWorld(world, _newFarmSettings);
     world.members[characterId] = makeDefaultMemberState();
     return world;
   }
@@ -1031,7 +1033,8 @@
         </div>`;
       }).join('');
 
-      const newWorldSelected = _selWorldId === 'new';
+      const newWorldSelected = _selWorldId === 'new' || worlds.length === 0;
+      if (newWorldSelected && !_newWorldName) _newWorldName = window.FarmWorldSettings.randomName();
       const newWorldHtml = `
         <div class="sl-world-card-wrap">
           <div class="sl-world-card${newWorldSelected ? ' sl-selected' : ''}" id="slNewWorld" role="button" tabindex="0">
@@ -1039,7 +1042,7 @@
             <div class="sl-world-info">
               <div class="sl-world-name">New World</div>
               ${newWorldSelected
-                ? `<input type="text" id="slNewWorldName" class="sl-world-name-input" placeholder="Hobunji Hollow" value="${esc(_newWorldName)}" maxlength="40" />`
+                ? `<input type="text" id="slNewWorldName" class="sl-world-name-input" aria-label="Farm name" placeholder="Farm name" value="${esc(_newWorldName)}" maxlength="40" />`
                 : `<div class="sl-world-meta">Fresh start</div>`}
             </div>
           </div>
@@ -1088,10 +1091,30 @@
       <div class="ob-title">🌿 Hobunji Hollow</div>
       ${_stepIndicatorHtml('world')}
       ${worldSectionHtml}
+      ${(_selWorldId === 'new' || worlds.length === 0) ? buildFarmCreationSettingsHTML() : ''}
       <div class="sl-footer">
         <button class="ob-tab ob-back-tab" id="slBackToCharacter" type="button">← Back</button>
         <button class="ob-start-btn" id="slPlay" type="button"${canPlay ? '' : ' disabled'}>${playLabel}</button>
       </div>
+    </div>`;
+  }
+
+  function farmPresetDescriptionHTML(preset) {
+    const split = preset.description.indexOf('. '); // Separate the activity summary from its complementary playstyle paragraph.
+    const activities = split < 0 ? preset.description : preset.description.slice(0,split+1); // Larger highlighted activity text.
+    const playstyle = split < 0 ? '' : preset.description.slice(split+2); // Softer secondary playstyle text stays readable on mobile.
+    return `<span class="sl-farm-activities">${esc(activities)}</span>${playstyle ? `<span class="sl-farm-playstyle">${esc(playstyle)}</span>` : ''}`;
+  }
+
+  function buildFarmCreationSettingsHTML() {
+    return `<div class="sl-section" style="display:grid;gap:10px">
+      <div class="sl-section-label">Farm buildings</div>
+      ${window.FarmWorldSettings.colorSelect('stone', _newFarmSettings.stone, 'slFarmStone')}
+      ${window.FarmWorldSettings.colorSelect('wood', _newFarmSettings.wood, 'slFarmWood')}
+      <label>Starting farm specialization <select id="slFarmSpecialization">${Object.entries(window.FARM_SPECIALIZATIONS_CONFIG.specializations).map(([key, value]) => `<option value="${key}"${key === _newFarmSettings.specialization ? ' selected' : ''}>${value.label}</option>`).join('')}</select></label>
+      <div id="slFarmSpecializationDescription" aria-live="polite">${farmPresetDescriptionHTML(window.FARM_SPECIALIZATIONS_CONFIG.specializations[_newFarmSettings.specialization])}</div>
+      <div id="slFarmSpecializationSupplies" class="sl-farm-supplies">${window.FARM_SPECIALIZATIONS_CONFIG.specializations[_newFarmSettings.specialization].starterDescription}</div>
+      <button id="slFarmRerollName" class="sl-world-action" type="button">Randomize farm name</button>
     </div>`;
   }
 
@@ -1278,6 +1301,17 @@
       });
     }
 
+    [['slFarmStone', 'stone'], ['slFarmWood', 'wood'], ['slFarmSpecialization', 'specialization']].forEach(([id, key]) => {
+      _el.querySelector('#' + id)?.addEventListener('change', event => {
+        _newFarmSettings[key] = event.target.value;
+        const description = _el.querySelector('#slFarmSpecializationDescription'); // Draft description follows the selected starter package.
+        const preset = window.FARM_SPECIALIZATIONS_CONFIG.specializations[_newFarmSettings.specialization]; // Shared activities/playstyle and supply copy for the selected facility.
+        const supplies = _el.querySelector('#slFarmSpecializationSupplies'); // Keep starting equipment visible alongside the playstyle description.
+        if (description) description.innerHTML = farmPresetDescriptionHTML(preset);
+        if (supplies) supplies.textContent = preset.starterDescription;
+      });
+    });
+    _el.querySelector('#slFarmRerollName')?.addEventListener('click', () => { _newWorldName = window.FarmWorldSettings.randomName(); const input = _el.querySelector('#slNewWorldName'); if (input) input.value = _newWorldName; });
     const newWorldNameInput = _el.querySelector('#slNewWorldName');
     if (newWorldNameInput) {
       newWorldNameInput.addEventListener('input', () => { _newWorldName = newWorldNameInput.value; });
@@ -1329,7 +1363,7 @@
     let world, isNewWorld;
     if (_selWorldId === 'new' || (!_selWorldId && worlds.length === 0)) {
       world = makeDefaultWorld(char.id);
-      world.label = _newWorldName.trim() || 'Hobunji Hollow';
+      world.label = _newWorldName.trim().slice(0, 40) || window.FarmWorldSettings.randomName();
       _newWorldName = '';
       _saveMeta.worlds.push(world);
       isNewWorld = true;

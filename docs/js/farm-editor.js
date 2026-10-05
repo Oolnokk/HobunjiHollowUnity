@@ -248,7 +248,7 @@
       const grid = deps.getGrid();
       const shippingBoxObject = deps.getShippingBoxObject();
       const supplyBoxObject = deps.getSupplyBoxObject();
-      const layout = { version: 3, tiles: [], objects: {}, furniture: [], decor: [] };
+      const layout = { version: 3, tiles: [], objects: {}, furniture: [], decor: [], productionBuildings: window.FarmProduction?.serialize?.() || previousLayout?.productionBuildings || [] };
       if (shippingBoxObject) layout.objects.sellCrate = [shippingBoxObject.col, shippingBoxObject.row];
       if (supplyBoxObject)   layout.objects.supplyBox = [supplyBoxObject.col, supplyBoxObject.row];
       for (let r = 0; r < deps.ROWS; r++) {
@@ -258,7 +258,7 @@
           if (t.type !== def.type || (t.crop && t.crop !== deps.CropType.NONE) || t.dewPile) {
             layout.tiles.push({ c, r, type: t.type, depth: t.type === deps.TileType.TRENCH && Number.isFinite(t.depth) ? window.FormatUtils.clamp(t.depth, 0, 1) : 0, crop: t.crop || '', dewPile: t.dewPile || '',
               cropAge: t.crop && t.crop !== deps.CropType.NONE ? t.cropAge : undefined,
-              cropReady: t.crop && t.crop !== deps.CropType.NONE ? !!t.cropReady : undefined });
+              cropReady: t.crop && t.crop !== deps.CropType.NONE ? !!t.cropReady : undefined, fertilized: !!t.fertilized });
           }
         }
       }
@@ -327,7 +327,7 @@
   function applyFarmLayoutToGrid(layout, { refreshVisuals = false } = {}) {
     if (!layout || layout.version !== 3) return;
     const grid = deps.getGrid();
-    (layout.tiles || []).forEach(({ c, r, type, depth, crop, dewPile, cropAge, cropReady }) => {
+    (layout.tiles || []).forEach(({ c, r, type, depth, crop, dewPile, cropAge, cropReady, fertilized }) => {
       if (grid[r]?.[c]) {
         const previousType = grid[r][c].type; // Used below to skip visual refreshes for non-terrain save data.
         const previousDepth = grid[r][c].depth; // Used below to detect restored trench-depth changes.
@@ -349,6 +349,7 @@
           grid[r][c].cropAge = Number.isFinite(cropAge) ? cropAge : 50;
           grid[r][c].cropReady = Number.isFinite(cropAge) ? !!cropReady : false;
         }
+        grid[r][c].fertilized = !!fertilized; // Fertilizer lasts one saved crop cycle.
         grid[r][c].dewPile = dewPile || null;
         if (refreshVisuals && (previousType !== grid[r][c].type || previousDepth !== grid[r][c].depth)) {
           deps.markTileDirty(c, r);
