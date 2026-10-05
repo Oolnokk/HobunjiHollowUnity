@@ -213,7 +213,7 @@
     "function": "_houseLayoutTick",
     "reason": "Drives an independent top-down orthographic Three.js preview renderer for the House Layout edit modal; started in openHouseLayoutModal and explicitly cancelAnimationFrame'd in closeHouseLayoutModal, entirely separate from the main gameplay render loop.",
     "migrationStage": "not-planned",
-    "line": 466
+    "line": 530
   },
   {
     "file": "docs/js/fish-catalog.js",

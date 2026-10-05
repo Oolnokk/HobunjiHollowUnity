@@ -203,9 +203,46 @@
     if (opacity <= 0) mat.colorWrite = false;
   }
 
+  const glbTemplates = new Map(); // Shared decoded templates; instances clone geometry/materials before applying furniture edits.
+  function loadFurnitureGlb(path) {
+    if (!glbTemplates.has(path)) glbTemplates.set(path, new Promise((resolve, reject) => {
+      if (!THREE.GLTFLoader) { reject(new Error('GLTFLoader unavailable')); return; }
+      new THREE.GLTFLoader().load(path, gltf => resolve(gltf.scene), undefined, reject);
+    }));
+    return glbTemplates.get(path);
+  }
+  function attachGlb(mesh, part, baseColor) {
+    const path = /^(?:https?:|data:|blob:|\/)/.test(part.modelPath || '') ? part.modelPath : (window.__hobunjiFurnitureAssetBase || 'assets/') + String(part.modelPath || '').replace(/^assets\//, ''); // Runtime and isolated editor resolve the same saved model identity.
+    loadFurnitureGlb(path).then(template => {
+      if (mesh.userData.glbDisposed) return; // A world reset/move can dispose the owner while the GLB is still loading.
+      const instance = template.clone(true); // Cached materials/geometries are never mutated or disposed by a furniture instance.
+      instance.traverse(child => {
+        if (/^(?:shinglebone|.*_bone|bone)$/i.test(child.name || '')) child.visible = false;
+        if (!child.isMesh) return;
+        child.geometry = child.geometry.clone();
+        const color = material => { const result = material.clone(); result.color?.set(resolveColor(part, baseColor)); if (part.materialTexture) applyPartTexture(result, part); return result; }; // Existing per-part furniture texture/color pipeline.
+        child.material = Array.isArray(child.material) ? child.material.map(color) : color(child.material);
+        child.castShadow = child.receiveShadow = true;
+      });
+      instance.updateMatrixWorld(true);
+      const box = new THREE.Box3(); // Visible geometry only; the hidden alignment bone cannot inflate the model bounds.
+      instance.traverse(child => { if (child.isMesh && child.visible) { child.geometry.computeBoundingBox(); box.union(child.geometry.boundingBox.clone().applyMatrix4(child.matrixWorld)); } });
+      if (box.isEmpty()) throw new Error('GLB has no visible geometry');
+      const size = box.getSize(new THREE.Vector3()), center = box.getCenter(new THREE.Vector3()); // Imported model fills authored X/Y/Z dimensions independently.
+      const holder = new THREE.Group(); holder.scale.set(part.transform.sx / Math.max(.001, size.x), part.transform.sy / Math.max(.001, size.y), part.transform.sz / Math.max(.001, size.z)); // Geometry stays centered like every other furniture part.
+      instance.position.sub(center); holder.add(instance); mesh.add(holder);
+      mesh.material.colorWrite = false; mesh.material.depthWrite = false; mesh.castShadow = false; mesh.receiveShadow = false; // Keeps a tiny renderable driver for existing rigid-piece animation hooks.
+      mesh.userData.glbReady = true;
+    }).catch(error => { mesh.userData.glbError = String(error); window.__farmLog?.('Furniture GLB: ' + error.message, 'error'); });
+  }
   function buildPartMesh(part, baseColor) {
     let geo;
     const t = part.transform;
+    if (part.kind === 'glb') {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(.001, .001, .001), new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false })); // Animation/picking owner while the bone-hidden model loads.
+      mesh.position.set(t.x || 0, t.y || 0, t.z || 0); mesh.rotation.set((t.rx || 0) * DEG, (t.ry || 0) * DEG, (t.rz || 0) * DEG);
+      mesh.userData.furnitureGlbPart = true; attachGlb(mesh, part, baseColor); return mesh;
+    }
     if (part.kind === 'banner') {
       geo = new THREE.PlaneGeometry(Math.max(.01, t.sx || 1), Math.max(.01, t.sy || 1), 12, 16);
     } else if (part.kind === 'sphere') {

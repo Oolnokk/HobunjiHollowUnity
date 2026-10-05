@@ -354,9 +354,53 @@
     }
   }
 
-  function _prepareBarnPiece(piece) {
+  function sharedEdge(a, b) {
+    if (!a || !b || a === b || !['small','medium'].includes(a.tier) || !['small','medium'].includes(b.tier) || a.nursery || b.nursery || a.stage !== 'built' || b.stage !== 'built') return null;
+    const horizontal = Math.min(a.col + a.w, b.col + b.w) - Math.max(a.col, b.col); // Shared frontage must include at least one complete farm tile.
+    const vertical = Math.min(a.row + a.h, b.row + b.h) - Math.max(a.row, b.row); // Corner contacts cannot connect rooms.
+    if (horizontal >= 1 && a.row === b.row + b.h) return { side:'north', start:Math.max(a.col,b.col)-a.col, end:Math.min(a.col+a.w,b.col+b.w)-a.col };
+    if (horizontal >= 1 && a.row + a.h === b.row) return { side:'south', start:Math.max(a.col,b.col)-a.col, end:Math.min(a.col+a.w,b.col+b.w)-a.col };
+    if (vertical >= 1 && a.col === b.col + b.w) return { side:'west', start:Math.max(a.row,b.row)-a.row, end:Math.min(a.row+a.h,b.row+b.h)-a.row };
+    if (vertical >= 1 && a.col + a.w === b.col) return { side:'east', start:Math.max(a.row,b.row)-a.row, end:Math.min(a.row+a.h,b.row+b.h)-a.row };
+    return null;
+  }
+  function connectedBarnRooms(id) {
+    const start = deps.getFarmBuildings().find(entry => entry.id === id); // Entry point may be any room in the connected barn.
+    if (!start) return [];
+    const rooms = [start]; // Breadth-first room union; each retains its own livestock/trough identity.
+    for (let index = 0; index < rooms.length; index++) for (const candidate of deps.getFarmBuildings()) {
+      if (!rooms.includes(candidate) && sharedEdge(rooms[index], candidate)) rooms.push(candidate);
+    }
+    return rooms;
+  }
+  function cutAttachedBarnWalls(piece, entry) {
+    if (!entry) return piece;
+    const faces = piece.base.faces, sides = _wallSideMap(faces); // Existing authored wall-side authority, reused for precise shared-edge cuts.
+    const joins = deps.getFarmBuildings().map(other => sharedEdge(entry, other)).filter(Boolean); // Only actual built touching rooms remove brick walls.
+    const result = faces.flatMap(face => { // Cut every neighboring interval against the original face, including multiple rooms on one side.
+      const side = sides.get(face); // Existing wall-side classification remains valid for the original authored face.
+      if (face.tag !== 'wall' || !side) return [face];
+      const dimension = side === 'north' || side === 'south' ? entry.w : entry.h; // Farm frontage converted to authored coordinates.
+      const axis = side === 'north' || side === 'south' ? 0 : 2; // Supports either winding direction.
+      const forward = face.v[3][axis] >= face.v[0][axis]; // Preserve the original wall normal.
+      const intervals = joins.filter(join => join.side === side).map(join => forward
+        ? [join.start / dimension, join.end / dimension]
+        : [1 - join.end / dimension, 1 - join.start / dimension]).sort((a,b) => a[0]-b[0]); // Ordered openings may overlap.
+      const sections = []; // Original-face slices keep repeated neighboring cuts precise.
+      let cursor = 0; // First uncut coordinate after each joined interval.
+      const append = (start,end) => { // Emit only the remaining wall between openings.
+        if (end-start > .001) sections.push({ ...face, v:[_lerp3(face.v[0],face.v[3],start),_lerp3(face.v[1],face.v[2],start),_lerp3(face.v[1],face.v[2],end),_lerp3(face.v[0],face.v[3],end)] });
+      };
+      for (const [start,end] of intervals) { append(cursor,start); cursor = Math.max(cursor,end); }
+      append(cursor,1);
+      return sections;
+    });
+    piece.base.faces = result; return piece;
+  }
+  function _prepareBarnPiece(piece, entry) {
     const next = _clonePiece(piece);
     if (!next?.base?.faces) return next;
+    cutAttachedBarnWalls(next, entry);
     const run = _entryRun(next);
     if (!run) return next;
 
@@ -403,8 +447,8 @@
     _loadBarnPiece(entry.tier).then(piece => {
       if (!piece || entry.stage !== 'built' || !deps.getFarmBuildings().includes(entry)) return;
       _disposeMesh(entry._mesh);
-      entry._mesh = HousePieceGen.buildGroupFromPiece(THREE, _prepareBarnPiece(piece), entry.col, entry.row, {
-        wallBuilder: deps.houseWallBuilder, wbUsePlaceholder: true, wbOpts: _barnWbDefaults,
+      entry._mesh = HousePieceGen.buildGroupFromPiece(THREE, _prepareBarnPiece(piece, entry), entry.col, entry.row, {
+        wallBuilder: deps.houseWallBuilder, wbUsePlaceholder: true, wbOpts: _barnWbDefaults, farmNaturalColors: window.FarmWorldSettings?.current(),
         ..._barnFaceMats(),
       });
       deps.scene.add(entry._mesh);
@@ -451,7 +495,7 @@
           if (entry.stage !== 'foundation') return { ok: false, message: 'Already built.' };
           entry.stage = 'built';
           _disposeMesh(entry._mesh); entry._mesh = null;
-          _buildStructureMesh(entry);
+          window.FarmBuildings.refreshConnections();
           deps.saveFarmLayout();
           return { ok: true, message: `🔨 ${label(entry)} construction complete!` };
         }
@@ -479,6 +523,22 @@
     entry._mesh = entry.stage === 'built' ? null : _buildFoundationMesh(entry.col, entry.row, entry.w, entry.h);
     if (entry.stage === 'built') _buildStructureMesh(entry);
     _registerFootprint(entry);
+  }
+
+  function ensureStarterBarn(tier, id) {
+    const existing = deps.getFarmBuildings().find(entry => entry.id === id); // Deterministic starter identity makes interrupted grants/reloads safe.
+    if (existing) return { ok:true, entry:existing };
+    if (!deps.getBarnTiers()[tier]) return { ok:false, message:'Unknown starter barn tier.' };
+    const definition = _pieceDef(tier); // Reuse authored barn footprint and regular farm occupancy validation.
+    for (let row = 7; row + definition.h < deps.ROWS; row++) for (let col = 20; col + definition.w < deps.COLS; col++) {
+      if (!canPlaceAt(col,row,definition.w,definition.h)) continue;
+      const entry = { id, kind:'barn', tier, col, row, w:definition.w, h:definition.h, stage:'built' }; // Completed structure uses normal barn serialization and interaction paths.
+      deps.getFarmBuildings().push(entry);
+      clearFootprint(col,row,entry.w,entry.h);
+      window.FarmBuildings.spawnEntry(entry);
+      return { ok:true, entry };
+    }
+    return { ok:false, message:'No clear ground for the starter barn.' };
   }
 
   function placePlan(tier, col, row) {
@@ -529,6 +589,7 @@
     _unregisterFootprint(entry);
     _disposeMesh(entry._mesh);
     deps.setFarmBuildings(farmBuildings.filter(b => b.id !== id));
+    window.FarmBuildings.refreshConnections();
     deps.saveFarmLayout();
     deps.saveMemberWorldData();
     return { ok: true, message: 'Barn demolished — its livestock are back in stasis.' };
@@ -548,7 +609,7 @@
       entry._mesh.position.set(newCol + entry.w / 2, 0.07, newRow + entry.h / 2);
     } else if (entry.stage === 'built') {
       _disposeMesh(entry._mesh); entry._mesh = null;
-      _buildStructureMesh(entry);
+      window.FarmBuildings.refreshConnections();
     }
     clearFootprint(newCol, newRow, entry.w, entry.h);
     deps.saveFarmLayout();
@@ -557,6 +618,7 @@
   }
 
   function clearAll() {
+    window.FarmProduction?.clear?.();
     const farmBuildings = deps.getFarmBuildings();
     farmBuildings.forEach(entry => { _unregisterFootprint(entry); _disposeMesh(entry._mesh); });
     deps.setFarmBuildings([]);
@@ -591,15 +653,19 @@
   window.FarmBuildings = {
     init,
     canPlaceAt,
+    sharedEdge, connectedBarnRooms,
     clearFootprint,
     label,
     spawnEntry,
     placePlan,
+    ensureStarterBarn,
     demolish,
     move,
     clearAll,
     findOpenTileNear,
     debugFarmMenuDemolish,
+    refreshConnections: () => { for (const entry of deps.getFarmBuildings()) if (entry.kind === 'barn' && entry.stage === 'built') _buildStructureMesh(entry); },
+    refreshColors: () => { for (const entry of deps.getFarmBuildings()) if (entry.stage === 'built') _buildStructureMesh(entry); },
     pieceDefForTier: tier => ({ ..._pieceDef(tier) }),
     BARN_PIECES,
   };

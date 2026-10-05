@@ -138,7 +138,7 @@ assert(runtimeSource.includes("const BENCHLOG_KEY = 'benchlog'"), 'camp runtime 
 assert(runtimeSource.includes("const BONFIRE_KEY = 'bonfire'"), 'camp runtime must use the large shared bonfire key');
 assert(runtimeSource.includes('HousePieceGen.buildGroupFromPiece'), 'Porakaneki runtime must render through HousePieceGen');
 assert.match(housePieceGenSource, /mesh\.userData\.housePieceFaceTag = f\.tag[\s\S]{0,450}f\.tag === 'doorOpening'[\s\S]{0,450}mat\.polygonOffsetFactor = 2/, 'authored dark door-opening faces are identified and depth-biased behind their cloth border');
-assert(gameIndexSource.includes('HousePieceGen.js?v=20261001hbe2b612'), 'game runtime cache-busts the shared tent clipping fix');
+assert(gameIndexSource.includes('HousePieceGen.js?v=20261004h5ffe8f0'), 'game runtime cache-busts the shared tent clipping fix');
 assert(banditRuntimeSource.includes("const BANDIT_TENT_PIECE_URL = 'config/pieces/bandit-tent.json'"), 'Bandit runtime must load the authored bandit tent clone');
 assert(banditRuntimeSource.includes('HousePieceGen.buildGroupFromPiece'), 'Bandit runtime must render through HousePieceGen');
 assert(!banditRuntimeSource.includes('buildBanditTentCanvasGeometry'), 'old procedural five-sided bandit tent geometry must stay removed');

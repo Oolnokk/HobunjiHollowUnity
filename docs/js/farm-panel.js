@@ -5,7 +5,7 @@
   // training is rendered here directly instead of post-processing whatever
   // markup the core renderer happened to create. During ordinary index.html
   // parsing this keeps the core synchronous, just like the former single file.
-  const CORE_SRC = 'js/farm-panel-core.js?v=20261004stableStow1';
+  const CORE_SRC = 'js/farm-panel-core.js?v=20261005hcb4d6e1';
 
   const MAX_OUT_OF_STORAGE_STABLE_ANIMALS = 8; // Caps the Stable roster kept accessible outside indefinite stowage.
   let stableDeps = null; // Holds the live Stable save and UI dependencies.

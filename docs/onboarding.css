@@ -317,6 +317,26 @@ html.hobunji-preworld-sky-active #ob-overlay {
   flex-direction: column;
   gap: 8px;
 }
+/* Facility descriptions separate activities, playstyle, and starting supplies. */
+.sl-farm-activities {
+  display: block;
+  color: #f9e28a;
+  font-size: clamp(16px, 2.6vw, 18px);
+  font-weight: 600;
+  line-height: 1.5;
+}
+.sl-farm-playstyle {
+  display: block;
+  margin-top: 6px;
+  color: #d2efc7;
+  font-size: 15px;
+  line-height: 1.55;
+}
+.sl-farm-supplies {
+  color: #b4c8b8;
+  font-size: 14px;
+  line-height: 1.5;
+}
 .sl-section-label {
   font-size: 9px;
   text-transform: uppercase;

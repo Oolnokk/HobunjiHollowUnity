@@ -287,6 +287,24 @@
           "planItem": "barnIncubatorPlan",
           "additionId": "incubator",
           "conditions": {}
+        },
+        "incubatorSmall": {
+          "label": "Small Incubator Plan",
+          "icon": "\ud83e\udeba",
+          "desc": "A small modular incubator with one maturation slots.",
+          "price": 220,
+          "planItem": "barnIncubatorSmallPlan",
+          "additionId": "incubator",
+          "conditions": {}
+        },
+        "incubatorLarge": {
+          "label": "Large Incubator Plan",
+          "icon": "\ud83e\udeba",
+          "desc": "A large modular incubator with six maturation slots.",
+          "price": 1400,
+          "planItem": "barnIncubatorLargePlan",
+          "additionId": "incubator",
+          "conditions": {}
         }
       }
     },

@@ -240,6 +240,8 @@
       }
     }
 
+    if (!decayOnly) window.FarmProduction?.irrigate(targetGrid, calendar, deps.RAIN_RATE); // Production owns the farm-grid gate; initial terrain generation must not read the still-uninitialized live grid.
+
     // Pass 2: cross-tile flow — process south→north for southward bias
     const dirs = [
       { dc:  0, dr:  1 },  // south
