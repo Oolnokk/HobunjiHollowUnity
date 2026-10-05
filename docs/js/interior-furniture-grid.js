@@ -19,7 +19,7 @@
     deskFurniture: [2, 1],
     dresserFurniture: [2, 1],
     hearthFurniture: [2, 1],
-    loomFurniture: [1, 2],
+    loomFurniture: [1, 1], advancedLoomFurniture: [1, 2],
     nightstandFurniture: [1, 1],
     rugFurniture: [2, 2],
     standingLampFurniture: [1, 1],
