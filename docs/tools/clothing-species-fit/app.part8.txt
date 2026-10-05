@@ -1,0 +1,131 @@
+yMask;
+  if(typeof original!=='function')return callback();
+  const wrapped=function previewCloudMaskTransform(ctx,image,xform){
+    return original(ctx,image,previewedCloudMaskXform(xform||{}));
+  };
+  // Preserve the runtime marker because arm-cloud-mask checks it to avoid
+  // installing another canonical Y-scale wrapper around the temporary function.
+  if(original.__hobunjiCloudMaskYScaled)wrapped.__hobunjiCloudMaskYScaled=true;
+  window.applyPortraitOpacityMask=wrapped;
+  try{
+    return await callback();
+  }finally{
+    window.applyPortraitOpacityMask=original;
+  }
+}
+
+async function applyRuntimeCloudMask(canvas){
+  const cfg=R.speciesCfg.get(E.species.value)?.[E.gender.value];
+  const maskLayer=cfg?.portraitOpacityMaskLayer;
+  if(!maskLayer?.url||typeof window.applyPortraitOpacityMask!=='function')return canvas;
+  const image=await loadImage(assetUrl(maskLayer.url));
+  if(!image)return canvas;
+  const ctx=canvas.getContext('2d',{alpha:true});
+  window.applyPortraitOpacityMask(ctx,image,previewedCloudMaskXform(maskLayer.xform||{}));
+  return canvas;
+}
+async function rawGarmentToRuntimeLayer(rawCanvas,opacity=1){
+  if(!rawCanvas||!R.body)return null;
+  const size=Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.previewPortraitCanvasSize)||200;
+  const out=Object.assign(document.createElement('canvas'),{width:size,height:size});
+  const ctx=out.getContext('2d',{alpha:true});ctx.imageSmoothingEnabled=false;
+  const xf=targetBodyLayerXform(),rect=portraitLayerRect(rawCanvas.width,R.body.height,xf,size,size);
+  ctx.globalAlpha=opacity;
+  ctx.drawImage(rawCanvas,rect.x,rect.y,rect.w,rect.h);
+  ctx.globalAlpha=1;
+  await applyRuntimeCloudMask(out);
+  return out;
+}
+function flipCanvasX(source){
+  const out=Object.assign(document.createElement('canvas'),{width:source.width,height:source.height});
+  const ctx=out.getContext('2d',{alpha:true});
+  ctx.translate(out.width,0);ctx.scale(-1,1);ctx.drawImage(source,0,0);
+  return out;
+}
+async function composeRuntimePortrait(){
+  const runtime=await runtimePortraitSet();
+  const front=Object.assign(document.createElement('canvas'),{width:runtime.front.width,height:runtime.front.height});
+  const back=Object.assign(document.createElement('canvas'),{width:runtime.back.width,height:runtime.back.height});
+  const fctx=front.getContext('2d',{alpha:true}),bctx=back.getContext('2d',{alpha:true});
+  fctx.drawImage(runtime.front,0,0);bctx.drawImage(runtime.back,0,0);
+
+  if(E.showGarment.checked&&R.cloth){
+    const warped=currentWarp();
+    const layer=await rawGarmentToRuntimeLayer(warped,+E.opacity.value);
+    if(layer){
+      fctx.drawImage(layer,0,0);
+      bctx.drawImage(flipCanvasX(layer),0,0);
+    }
+  }
+  if(E.showAuthored.checked&&R.authoredTargetCloth){
+    const authored=await rawGarmentToRuntimeLayer(R.authoredTargetCloth,+E.authoredOpacity.value);
+    if(authored){
+      fctx.drawImage(authored,0,0);
+      bctx.drawImage(flipCanvasX(authored),0,0);
+    }
+  }
+  return{...runtime,frontComposed:front,backComposed:back};
+}
+async function extendedRuntimeCanvas(){
+  if(!R.extendedSource||!R.body)return null;
+  const raw=currentExtendedWarp(false);
+  if(!raw)return null;
+
+  const normalSize=Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.previewPortraitCanvasSize)||200;
+  const xf=targetBodyLayerXform();
+  const normalRect=portraitLayerRect(R.body.width,R.body.height,xf,normalSize,normalSize);
+  const pixelScaleY=normalRect.h/Math.max(1,R.body.height);
+  const pixelScaleX=normalRect.w/Math.max(1,R.body.width);
+  const drawW=raw.width*pixelScaleX;
+  const drawH=raw.height*pixelScaleY;
+  const drawX=normalRect.cx-drawW/2;
+  const drawY=normalRect.y; // The imported raster shares the original sprite's TOP edge and only grows downward.
+  const outHeight=Math.max(normalSize,Math.ceil(drawY+drawH)+2);
+
+  const out=Object.assign(document.createElement('canvas'),{width:normalSize,height:outHeight});
+  const ctx=out.getContext('2d',{alpha:true});ctx.imageSmoothingEnabled=false;
+  ctx.drawImage(raw,drawX,drawY,drawW,drawH);
+  await applyRuntimeCloudMask(out);
+  return out;
+}
+function disposeObjectTree(root){
+  if(!root)return;
+  root.traverse?.(obj=>{
+    if(obj.geometry?.dispose)obj.geometry.dispose();
+    const materials=Array.isArray(obj.material)?obj.material:[obj.material].filter(Boolean);
+    for(const material of materials){
+      if(material?.map?.dispose)material.map.dispose();
+      material?.dispose?.();
+    }
+  });
+  root.parent?.remove?.(root);
+}
+function disposeRuntimeRig(){
+  try{R.three.feet?.dispose?.()}catch{}
+  R.three.feet=null;
+  if(R.three.avatarModel&&window.PNGPlaneAvatar?.disposeAvatarModel){
+    try{window.PNGPlaneAvatar.disposeAvatarModel(R.three.avatarModel)}catch{}
+  }
+  if(R.three.rigRoot)disposeObjectTree(R.three.rigRoot);
+  R.three.rigRoot=null;R.three.avatarModel=null;R.three.extendedGroup=null;
+}
+function ensureThreePreview(){
+  if(R.three.ready)return true;
+  if(!window.THREE){E.threeStatus.textContent='Three.js failed to load; 2D tool still works.';return false}
+  const THREE=window.THREE;
+  const scene=new THREE.Scene();
+  scene.background=new THREE.Color(0x05080b);
+  scene.add(new THREE.HemisphereLight(0xffffff,0x24303b,1.2));
+  const directional=new THREE.DirectionalLight(0xffffff,1.1);directional.position.set(2.5,4,3);scene.add(directional);
+
+  const camera=new THREE.PerspectiveCamera(38,1,0.01,100);
+  camera.position.set(0,.55,R.three.zoom);
+  const renderer=new THREE.WebGLRenderer({antialias:true,alpha:false,preserveDrawingBuffer:true});
+  renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
+  renderer.setClearColor(0x05080b,1);
+  E.threeHost.innerHTML='';E.threeHost.appendChild(renderer.domElement);
+
+  const group=new THREE.Group();group.name='ClothingFitRuntimeViewRoot';scene.add(group);
+  const grid=new THREE.GridHelper(4,16,0x4b6175,0x263440);grid.position.y=0;scene.add(grid);
+
+  R.three.scene=scene;R.three.camera=camera;R.three.renderer=renderer;R.three.group=group;R.three.r

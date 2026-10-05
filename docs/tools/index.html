@@ -12,7 +12,6 @@ html,body{height:100%;overflow:hidden;background:#07101a;color:#edf5ff;font-fami
 button{border:1px solid rgba(106,167,255,.3);background:rgba(106,167,255,.12);color:var(--text);border-radius:8px;padding:6px 11px;font:inherit;font-size:12px;font-weight:700;cursor:pointer;transition:background .1s}
 button:hover{background:rgba(106,167,255,.22)}
 input{font:inherit;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:7px;color:var(--text);padding:6px 9px;outline:none;width:100%}
-
 #shell{display:flex;flex-direction:column;height:100%}
 #titlebar{display:flex;align-items:center;gap:10px;padding:6px 10px;background:var(--bg);border-bottom:1px solid var(--border);flex-shrink:0}
 #titlebar h1{font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.4px}
@@ -20,10 +19,7 @@ input{font:inherit;background:rgba(255,255,255,.06);border:1px solid rgba(255,25
 #titlebar a:hover{background:rgba(106,167,255,.1)}
 #titlebar #open-game-btn{margin-left:auto;font-size:11px;color:var(--acc);background:none}
 #titlebar #open-game-btn:hover{background:rgba(106,167,255,.1)}
-
 #body{display:flex;flex:1;min-height:0}
-
-/* NPC sidebar */
 #npc-sidebar{width:230px;min-width:180px;flex-shrink:0;display:flex;flex-direction:column;background:var(--panel);border-right:1px solid var(--border)}
 #npc-header{padding:8px 10px;border-bottom:1px solid var(--border);flex-shrink:0}
 #npc-header h2{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-bottom:6px}
@@ -31,380 +27,159 @@ input{font:inherit;background:rgba(255,255,255,.06);border:1px solid rgba(255,25
 .npc-item{border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);border-radius:7px;padding:7px 9px;cursor:pointer;margin-bottom:4px;transition:background .1s}
 .npc-item:hover{background:rgba(106,167,255,.1)}
 .npc-item.sel{outline:2px solid var(--acc);outline-offset:1px}
-.npc-name{font-weight:700;font-size:12px}
-.npc-meta{font-size:10px;color:var(--muted);margin-top:2px}
+.npc-name{font-weight:700;font-size:12px}.npc-meta{font-size:10px;color:var(--muted);margin-top:2px}
 #npc-status{font-size:10px;color:var(--muted);padding:4px 10px;border-top:1px solid var(--border);flex-shrink:0}
-
-/* Tab area */
 #tab-area{display:flex;flex-direction:column;flex:1;min-width:0}
 #tabbar{display:flex;align-items:stretch;gap:2px;background:var(--panel);border-bottom:1px solid var(--border);padding:0 8px;flex-shrink:0;overflow-x:auto;-webkit-overflow-scrolling:touch}
 .tab{display:flex;align-items:center;gap:6px;padding:9px 13px;font-size:12px;font-weight:700;background:none;border:none;color:var(--muted);cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap;transition:color .12s,border-color .12s;flex-shrink:0}
-.tab:hover{color:var(--text)}
-.tab.active{color:var(--text);border-bottom-color:var(--acc)}
+.tab:hover{color:var(--text)}.tab.active{color:var(--text);border-bottom-color:var(--acc)}
 .tab-group{align-self:center;font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;padding:0 6px;border-left:1px solid var(--border);margin-left:4px;flex-shrink:0}
-.tab-dot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.18);flex-shrink:0;transition:background .12s}
-.tab.active .tab-dot{background:var(--ok)}
-#frames{flex:1;position:relative;min-height:0}
-.frame-wrap{position:absolute;inset:0;display:none}
-.frame-wrap.active{display:block}
+.tab-dot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.18);flex-shrink:0;transition:background .12s}.tab.active .tab-dot{background:var(--ok)}
+#frames{flex:1;position:relative;min-height:0}.frame-wrap{position:absolute;inset:0;display:none}.frame-wrap.active{display:block}
 iframe{width:100%;height:100%;border:none;display:block;background:var(--bg)}
 </style>
 </head>
 <body>
 <div id="shell">
-  <div id="titlebar">
-    <h1>HOBUNJI HOLLOW — DEV TOOLS</h1>
-    <button id="open-game-btn">▶ Open Game</button>
-  </div>
+  <div id="titlebar"><h1>HOBUNJI HOLLOW — DEV TOOLS</h1><button id="open-game-btn">▶ Open Game</button></div>
   <div id="body">
-
-    <!-- NPC Database Sidebar -->
     <div id="npc-sidebar">
-      <div id="npc-header">
-        <h2>NPC Database</h2>
-        <input id="npc-search" type="search" placeholder="Search NPCs…">
-      </div>
+      <div id="npc-header"><h2>NPC Database</h2><input id="npc-search" type="search" placeholder="Search NPCs…"></div>
       <div id="npc-list"><div style="color:var(--muted);font-size:11px;padding:8px">Loading NPC database…</div></div>
       <div id="npc-status">0 NPCs loaded</div>
     </div>
-
-    <!-- Main tab area -->
     <div id="tab-area">
       <div id="tabbar">
         <span class="tab-group" style="border:none;margin:0">Game</span>
-        <button class="tab active" data-target="map-editor">
-          <span class="tab-dot"></span>🗺 Map Editor
-        </button>
-        <button class="tab" data-target="schedule-editor">
-          <span class="tab-dot"></span>🕒 Schedule Editor
-        </button>
-        <button class="tab" data-target="character-studio">
-          <span class="tab-dot"></span>🧍 Character Studio
-        </button>
-        <button class="tab" data-target="color-editor">
-          <span class="tab-dot"></span>🎨 Body &amp; Dye Colors
-        </button>
-        <button class="tab" data-target="dialogue-editor">
-          <span class="tab-dot"></span>💬 Dialogue Editor
-        </button>
-        <button class="tab" data-target="ambient-dialogue-editor">
-          <span class="tab-dot"></span>🗨 Ambient Dialogue
-        </button>
-        <button class="tab" data-target="cutscene-director">
-          <span class="tab-dot"></span>🎬 Cutscene Director
-        </button>
-        <button class="tab" data-target="animation-author">
-          <span class="tab-dot"></span>🕺 Animation Author
-        </button>
-        <button class="tab" data-target="kurraya-music-lab">
-          <span class="tab-dot"></span>🎼 Kurraya Music Lab
-        </button>
-        <button class="tab" data-target="procedural-animation-editor">
-          <span class="tab-dot"></span>🦶 Procedural Animation
-        </button>
+        <button class="tab active" data-target="map-editor"><span class="tab-dot"></span>🗺 Map Editor</button>
+        <button class="tab" data-target="schedule-editor"><span class="tab-dot"></span>🕒 Schedule Editor</button>
+        <button class="tab" data-target="character-studio"><span class="tab-dot"></span>🧍 Character Studio</button>
+        <button class="tab" data-target="color-editor"><span class="tab-dot"></span>🎨 Body &amp; Dye Colors</button>
+        <button class="tab" data-target="dialogue-editor"><span class="tab-dot"></span>💬 Dialogue Editor</button>
+        <button class="tab" data-target="ambient-dialogue-editor"><span class="tab-dot"></span>🗨 Ambient Dialogue</button>
+        <button class="tab" data-target="cutscene-director"><span class="tab-dot"></span>🎬 Cutscene Director</button>
+        <button class="tab" data-target="animation-author"><span class="tab-dot"></span>🕺 Animation Author</button>
+        <button class="tab" data-target="kurraya-music-lab"><span class="tab-dot"></span>🎼 Kurraya Music Lab</button>
+        <button class="tab" data-target="procedural-animation-editor"><span class="tab-dot"></span>🦶 Procedural Animation</button>
         <span class="tab-group">Combat</span>
-        <button class="tab" data-target="world-popup-editor">
-          <span class="tab-dot"></span>🔢 Popup Text Editor
-        </button>
-        <button class="tab" data-target="attack-animation-editor">
-          <span class="tab-dot"></span>⚔ Attack Animation Editor
-        </button>
+        <button class="tab" data-target="world-popup-editor"><span class="tab-dot"></span>🔢 Popup Text Editor</button>
+        <button class="tab" data-target="attack-animation-editor"><span class="tab-dot"></span>⚔ Attack Animation Editor</button>
         <span class="tab-group">Assets</span>
-        <button class="tab" data-target="house-piece-author">
-          <span class="tab-dot"></span>🏠 House Editor
-        </button>
-        <button class="tab" data-target="wall-builder">
-          <span class="tab-dot"></span>🧱 Wall Builder
-        </button>
-        <button class="tab" data-target="furniture-avatar-author">
-          <span class="tab-dot"></span>🪑 Furniture + Avatar Author
-        </button>
-        <button class="tab" data-target="foliage-generator">
-          <span class="tab-dot"></span>🌿 Foliage Generator
-        </button>
-        <button class="tab" data-target="fish-editor">
-          <span class="tab-dot"></span>🐟 Fish Editor
-        </button>
-        <button class="tab" data-target="animal-head-rig">
-          <span class="tab-dot"></span>🐾 Animal Head Rig
-        </button>
-        <button class="tab" data-target="pattern-editor">
-          <span class="tab-dot"></span>🧵 Pattern Editor
-        </button>
-        <button class="tab" data-target="tree-asset-exporter">
-          <span class="tab-dot"></span>🌲 Tree Assets
-        </button>
+        <button class="tab" data-target="house-piece-author"><span class="tab-dot"></span>🏠 House Editor</button>
+        <button class="tab" data-target="wall-builder"><span class="tab-dot"></span>🧱 Wall Builder</button>
+        <button class="tab" data-target="furniture-avatar-author"><span class="tab-dot"></span>🪑 Furniture + Avatar Author</button>
+        <button class="tab" data-target="clothing-species-fit"><span class="tab-dot"></span>👕 Clothing Species Fit</button>
+        <button class="tab" data-target="foliage-generator"><span class="tab-dot"></span>🌿 Foliage Generator</button>
+        <button class="tab" data-target="fish-editor"><span class="tab-dot"></span>🐟 Fish Editor</button>
+        <button class="tab" data-target="animal-head-rig"><span class="tab-dot"></span>🐾 Animal Head Rig</button>
+        <button class="tab" data-target="pattern-editor"><span class="tab-dot"></span>🧵 Pattern Editor</button>
+        <button class="tab" data-target="tree-asset-exporter"><span class="tab-dot"></span>🌲 Tree Assets</button>
         <span class="tab-group">World</span>
-        <button class="tab" data-target="wilderness-generation-lab">
-          <span class="tab-dot"></span>❄ Wilderness + Surface Lab
-        </button>
-        <button class="tab" data-target="background-scenery-author">
-          <span class="tab-dot"></span>🏞 Background Scenery
-        </button>
-        <button class="tab" data-target="building-interior-author">
-          <span class="tab-dot"></span>🏠 Interior Editor
-        </button>
-        <button class="tab" data-target="locale-editor">
-          <span class="tab-dot"></span>🌿 Locale Editor
-        </button>
-        <button class="tab" data-target="loading-screen-editor">
-          <span class="tab-dot"></span>⏳ Loading Screen Editor
-        </button>
-        <button class="tab" data-target="cavern-sculptor-tuner">
-          <span class="tab-dot"></span>🕳 Cavern Sculptor Tuner
-        </button>
+        <button class="tab" data-target="wilderness-generation-lab"><span class="tab-dot"></span>❄ Wilderness + Surface Lab</button>
+        <button class="tab" data-target="background-scenery-author"><span class="tab-dot"></span>🏞 Background Scenery</button>
+        <button class="tab" data-target="building-interior-author"><span class="tab-dot"></span>🏠 Interior Editor</button>
+        <button class="tab" data-target="locale-editor"><span class="tab-dot"></span>🌿 Locale Editor</button>
+        <button class="tab" data-target="loading-screen-editor"><span class="tab-dot"></span>⏳ Loading Screen Editor</button>
+        <button class="tab" data-target="cavern-sculptor-tuner"><span class="tab-dot"></span>🕳 Cavern Sculptor Tuner</button>
         <span class="tab-group">Economy</span>
-        <button class="tab" data-target="loot-shop-editor">
-          <span class="tab-dot"></span>💰 Loot &amp; Shop Editor
-        </button>
-        <button class="tab" data-target="item-database-editor">
-          <span class="tab-dot"></span>🏷️ Item Database Editor
-        </button>
+        <button class="tab" data-target="loot-shop-editor"><span class="tab-dot"></span>💰 Loot &amp; Shop Editor</button>
+        <button class="tab" data-target="item-database-editor"><span class="tab-dot"></span>🏷️ Item Database Editor</button>
       </div>
       <div id="frames">
-        <div class="frame-wrap active" id="fw-map-editor">
-          <iframe src="map-editor/index.html" title="Map Editor" id="if-map-editor"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-schedule-editor">
-          <iframe src="schedule-editor/index.html" title="Schedule Editor" id="if-schedule-editor" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-character-studio">
-          <iframe src="character-studio/index.html" title="Character Studio" id="if-character-studio" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-color-editor">
-          <iframe src="color-editor/index.html" title="Body &amp; Dye Color Editor" id="if-color-editor" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-dialogue-editor">
-          <iframe src="dialogue-editor/index.html" title="Dialogue Editor" id="if-dialogue-editor" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-ambient-dialogue-editor">
-          <iframe src="ambient-dialogue-editor/index.html" title="Ambient Dialogue Editor" id="if-ambient-dialogue-editor" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-cutscene-director">
-          <iframe src="cutscene-director/index.html" title="Cutscene Director" id="if-cutscene-director" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-animation-author">
-          <iframe src="animation-author/index.html" title="Animation Author" id="if-animation-author" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-kurraya-music-lab">
-          <iframe src="kurraya-music-lab/index.html?v=20260925lab12" title="Kurraya Music Lab" id="if-kurraya-music-lab" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-procedural-animation-editor">
-          <iframe src="procedural-animation-editor/index.html" title="Procedural Animation" id="if-procedural-animation-editor" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-attack-animation-editor">
-          <iframe src="attack-animation-editor/index.html" title="Attack Animation Editor" id="if-attack-animation-editor" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-world-popup-editor">
-          <iframe src="world-popup-editor/index.html" title="World Popup Text Editor" id="if-world-popup-editor" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-house-piece-author">
-          <iframe src="house-piece-author/index.html" title="House Editor" id="if-house-piece-author" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-wall-builder">
-          <iframe src="wall-builder/index.html" title="Wall Builder" id="if-wall-builder" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-furniture-avatar-author">
-          <iframe src="furniture-avatar-author/index.html" title="Furniture + Avatar Author" id="if-furniture-avatar-author" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-foliage-generator">
-          <iframe src="foliage-generator/index.html" title="Foliage Generator" id="if-foliage-generator" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-fish-editor">
-          <iframe src="../references/(HA)HobunjiFishEditorV1.html" title="Fish Editor" id="if-fish-editor" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-animal-head-rig">
-          <iframe src="animal-head-rig/index.html" title="Animal Head Rig Author" id="if-animal-head-rig" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-pattern-editor">
-          <iframe src="pattern-editor/index.html" title="Pattern Editor" id="if-pattern-editor" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-tree-asset-exporter">
-          <iframe src="tree-asset-exporter/index.html" title="Tree Asset Exporter" id="if-tree-asset-exporter" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-wilderness-generation-lab">
-          <iframe src="wilderness-generation-lab/index.html" title="Wilderness + Surface Lab" id="if-wilderness-generation-lab" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-background-scenery-author">
-          <iframe src="background-scenery-author/index.html" title="Background Scenery Author" id="if-background-scenery-author" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-building-interior-author">
-          <iframe src="building-interior-author/index.html" title="Interior Editor" id="if-building-interior-author" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-locale-editor">
-          <iframe src="locale-editor/index.html" title="Locale Editor" id="if-locale-editor" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-loading-screen-editor">
-          <iframe src="loading-screen-editor/index.html" title="Loading Screen Editor" id="if-loading-screen-editor" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-cavern-sculptor-tuner">
-          <iframe src="cavern-sculptor-tuner/index.html" title="Cavern Sculptor Tuner" id="if-cavern-sculptor-tuner" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-loot-shop-editor">
-          <iframe src="loot-shop-editor/index.html" title="Loot & Shop Editor" id="if-loot-shop-editor" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-item-database-editor">
-          <iframe src="item-database-editor/index.html" title="Item Database Editor" id="if-item-database-editor" loading="lazy"></iframe>
-        </div>
+        <div class="frame-wrap active" id="fw-map-editor"><iframe src="map-editor/index.html" title="Map Editor" id="if-map-editor"></iframe></div>
+        <div class="frame-wrap" id="fw-schedule-editor"><iframe src="schedule-editor/index.html" title="Schedule Editor" id="if-schedule-editor" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-character-studio"><iframe src="character-studio/index.html" title="Character Studio" id="if-character-studio" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-color-editor"><iframe src="color-editor/index.html" title="Body &amp; Dye Color Editor" id="if-color-editor" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-dialogue-editor"><iframe src="dialogue-editor/index.html" title="Dialogue Editor" id="if-dialogue-editor" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-ambient-dialogue-editor"><iframe src="ambient-dialogue-editor/index.html" title="Ambient Dialogue Editor" id="if-ambient-dialogue-editor" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-cutscene-director"><iframe src="cutscene-director/index.html" title="Cutscene Director" id="if-cutscene-director" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-animation-author"><iframe src="animation-author/index.html" title="Animation Author" id="if-animation-author" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-kurraya-music-lab"><iframe src="kurraya-music-lab/index.html?v=20260925lab12" title="Kurraya Music Lab" id="if-kurraya-music-lab" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-procedural-animation-editor"><iframe src="procedural-animation-editor/index.html" title="Procedural Animation" id="if-procedural-animation-editor" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-attack-animation-editor"><iframe src="attack-animation-editor/index.html" title="Attack Animation Editor" id="if-attack-animation-editor" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-world-popup-editor"><iframe src="world-popup-editor/index.html" title="World Popup Text Editor" id="if-world-popup-editor" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-house-piece-author"><iframe src="house-piece-author/index.html" title="House Editor" id="if-house-piece-author" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-wall-builder"><iframe src="wall-builder/index.html" title="Wall Builder" id="if-wall-builder" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-furniture-avatar-author"><iframe src="furniture-avatar-author/index.html" title="Furniture + Avatar Author" id="if-furniture-avatar-author" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-clothing-species-fit"><iframe src="clothing-species-fit/index.html" title="Clothing Species Fit" id="if-clothing-species-fit" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-foliage-generator"><iframe src="foliage-generator/index.html" title="Foliage Generator" id="if-foliage-generator" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-fish-editor"><iframe src="../references/(HA)HobunjiFishEditorV1.html" title="Fish Editor" id="if-fish-editor" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-animal-head-rig"><iframe src="animal-head-rig/index.html" title="Animal Head Rig Author" id="if-animal-head-rig" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-pattern-editor"><iframe src="pattern-editor/index.html" title="Pattern Editor" id="if-pattern-editor" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-tree-asset-exporter"><iframe src="tree-asset-exporter/index.html" title="Tree Asset Exporter" id="if-tree-asset-exporter" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-wilderness-generation-lab"><iframe src="wilderness-generation-lab/index.html" title="Wilderness + Surface Lab" id="if-wilderness-generation-lab" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-background-scenery-author"><iframe src="background-scenery-author/index.html" title="Background Scenery Author" id="if-background-scenery-author" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-building-interior-author"><iframe src="building-interior-author/index.html" title="Interior Editor" id="if-building-interior-author" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-locale-editor"><iframe src="locale-editor/index.html" title="Locale Editor" id="if-locale-editor" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-loading-screen-editor"><iframe src="loading-screen-editor/index.html" title="Loading Screen Editor" id="if-loading-screen-editor" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-cavern-sculptor-tuner"><iframe src="cavern-sculptor-tuner/index.html" title="Cavern Sculptor Tuner" id="if-cavern-sculptor-tuner" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-loot-shop-editor"><iframe src="loot-shop-editor/index.html" title="Loot & Shop Editor" id="if-loot-shop-editor" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-item-database-editor"><iframe src="item-database-editor/index.html" title="Item Database Editor" id="if-item-database-editor" loading="lazy"></iframe></div>
       </div>
     </div>
   </div>
 </div>
 <script>
-// ── NPC sidebar: collapse + drag-to-resize ───────────────────────────────────
 PanelUI.makeCollapsible(document.getElementById('npc-sidebar'), {
-  toolbar: document.getElementById('titlebar'),
-  before: document.getElementById('open-game-btn'),
-  label: '☰ Hide NPCs',
-  collapsedLabel: '☰ Show NPCs',
-  title: 'Show/hide the NPC Database sidebar',
+  toolbar: document.getElementById('titlebar'), before: document.getElementById('open-game-btn'),
+  label: '☰ Hide NPCs', collapsedLabel: '☰ Show NPCs', title: 'Show/hide the NPC Database sidebar',
   storageKey: 'hobunji_hub_npc_sidebar_collapsed_v1'
 });
-PanelUI.makeResizableEdge(document.getElementById('npc-sidebar'), {
-  edge: 'right',
-  min: 180,
-  max: 480,
-  storageKey: 'hobunji_hub_npc_sidebar_width_v1'
-});
+PanelUI.makeResizableEdge(document.getElementById('npc-sidebar'), {edge:'right',min:180,max:480,storageKey:'hobunji_hub_npc_sidebar_width_v1'});
 
-// ── Tab switching ─────────────────────────────────────────────────────────────
-const tabs = document.querySelectorAll('.tab');
-const frames = document.querySelectorAll('.frame-wrap');
-tabs.forEach(tab => {
-  tab.addEventListener('click', () => {
-    const target = tab.dataset.target;
-    tabs.forEach(t => t.classList.toggle('active', t === tab));
-    frames.forEach(f => f.classList.toggle('active', f.id === 'fw-' + target));
-  });
-});
+const tabs=document.querySelectorAll('.tab');
+const frames=document.querySelectorAll('.frame-wrap');
+tabs.forEach(tab=>tab.addEventListener('click',()=>{
+  const target=tab.dataset.target;
+  tabs.forEach(t=>t.classList.toggle('active',t===tab));
+  frames.forEach(f=>f.classList.toggle('active',f.id==='fw-'+target));
+}));
 
-// ── NPC Database sidebar → Character Studio bridge ───────────────────────────
-const NPC_DB_URL = '../config/npcs/hobunji-starter-npc-database.json';
-let allNpcs = [];
-let selectedNpcId = null;
-
-async function loadNpcDb() {
-  try {
-    const res = await fetch(NPC_DB_URL);
-    const json = await res.json();
-    allNpcs = (json.npcs || json) || [];
-    document.getElementById('npc-status').textContent = `${allNpcs.length} NPCs loaded`;
-    renderNpcList(allNpcs);
-  } catch (e) {
-    document.getElementById('npc-list').innerHTML = `<div style="color:var(--bad);font-size:11px;padding:8px">Failed to load NPC DB: ${e.message}</div>`;
-    document.getElementById('npc-status').textContent = 'Load failed';
+const NPC_DB_URL='../config/npcs/hobunji-starter-npc-database.json';
+let allNpcs=[];let selectedNpcId=null;
+async function loadNpcDb(){
+  try{
+    const res=await fetch(NPC_DB_URL);const json=await res.json();allNpcs=(json.npcs||json)||[];
+    document.getElementById('npc-status').textContent=`${allNpcs.length} NPCs loaded`;renderNpcList(allNpcs);
+  }catch(e){
+    document.getElementById('npc-list').innerHTML=`<div style="color:var(--bad);font-size:11px;padding:8px">Failed to load NPC DB: ${e.message}</div>`;
+    document.getElementById('npc-status').textContent='Load failed';
   }
 }
-
-function renderNpcList(npcs) {
-  const container = document.getElementById('npc-list');
-  if (!npcs.length) { container.innerHTML = '<div style="color:var(--muted);font-size:11px;padding:8px">No NPCs found.</div>'; return; }
-  container.innerHTML = npcs.map(npc => `
-    <div class="npc-item ${npc.id === selectedNpcId ? 'sel' : ''}" data-id="${npc.id}">
-      <div class="npc-name">${npc.name || npc.id}</div>
-      <div class="npc-meta">${npc.id}${npc.species ? ' · ' + npc.species : ''}${npc.role ? ' · ' + npc.role : ''}</div>
-      <button type="button" class="npc-schedule-btn" data-schedule-id="${npc.id}" title="Open this NPC's schedule" style="margin-top:3px;font-size:10px;padding:2px 7px">🕒 Schedule</button>
-    </div>
-  `).join('');
-  container.querySelectorAll('.npc-item').forEach(el =>
-    el.addEventListener('click', e => { if (e.target.closest('.npc-schedule-btn')) return; openInStudio(el.dataset.id); })
-  );
-  container.querySelectorAll('.npc-schedule-btn').forEach(el =>
-    el.addEventListener('click', e => { e.stopPropagation(); openInScheduleEditor(el.dataset.scheduleId); })
-  );
+function renderNpcList(npcs){
+  const container=document.getElementById('npc-list');
+  if(!npcs.length){container.innerHTML='<div style="color:var(--muted);font-size:11px;padding:8px">No NPCs found.</div>';return}
+  container.innerHTML=npcs.map(npc=>`<div class="npc-item ${npc.id===selectedNpcId?'sel':''}" data-id="${npc.id}"><div class="npc-name">${npc.name||npc.id}</div><div class="npc-meta">${npc.id}${npc.species?' · '+npc.species:''}${npc.role?' · '+npc.role:''}</div><button type="button" class="npc-schedule-btn" data-schedule-id="${npc.id}" title="Open this NPC's schedule" style="margin-top:3px;font-size:10px;padding:2px 7px">🕒 Schedule</button></div>`).join('');
+  container.querySelectorAll('.npc-item').forEach(el=>el.addEventListener('click',e=>{if(e.target.closest('.npc-schedule-btn'))return;openInStudio(el.dataset.id)}));
+  container.querySelectorAll('.npc-schedule-btn').forEach(el=>el.addEventListener('click',e=>{e.stopPropagation();openInScheduleEditor(el.dataset.scheduleId)}));
 }
-
-function switchToTab(target) {
-  tabs.forEach(t => t.classList.toggle('active', t.dataset.target === target));
-  frames.forEach(f => f.classList.toggle('active', f.id === 'fw-' + target));
+function switchToTab(target){tabs.forEach(t=>t.classList.toggle('active',t.dataset.target===target));frames.forEach(f=>f.classList.toggle('active',f.id==='fw-'+target))}
+function openInStudio(npcId){
+  selectedNpcId=npcId;const q=document.getElementById('npc-search').value.toLowerCase();renderNpcList(q?allNpcs.filter(n=>matchNpc(n,q)):allNpcs);
+  switchToTab('character-studio');const iframe=document.getElementById('if-character-studio');
+  const tryBridge=(attempts=0)=>{const bridge=iframe.contentWindow?._editorBridge;if(bridge?.selectNpc){bridge.selectNpc(npcId);return}if(attempts<12)setTimeout(()=>tryBridge(attempts+1),300)};tryBridge();
 }
-
-function openInStudio(npcId) {
-  selectedNpcId = npcId;
-  const q = document.getElementById('npc-search').value.toLowerCase();
-  renderNpcList(q ? allNpcs.filter(n => matchNpc(n, q)) : allNpcs);
-  // Switch to Character Studio tab and select the NPC via its bridge
-  switchToTab('character-studio');
-  const iframe = document.getElementById('if-character-studio');
-  const tryBridge = (attempts=0) => {
-    const bridge = iframe.contentWindow?._editorBridge;
-    if (bridge?.selectNpc) { bridge.selectNpc(npcId); return; }
-    if (attempts < 12) setTimeout(() => tryBridge(attempts+1), 300);
-  };
-  tryBridge();
+function openInScheduleEditor(npcId){
+  switchToTab('schedule-editor');const iframe=document.getElementById('if-schedule-editor');
+  const tryBridge=(attempts=0)=>{const bridge=iframe.contentWindow?._scheduleEditorBridge;if(bridge?.selectNpc){bridge.selectNpc(npcId);return}if(attempts<20)setTimeout(()=>tryBridge(attempts+1),300)};tryBridge();
 }
-
-function openInScheduleEditor(npcId) {
-  switchToTab('schedule-editor');
-  const iframe = document.getElementById('if-schedule-editor');
-  const tryBridge = (attempts=0) => {
-    const bridge = iframe.contentWindow?._scheduleEditorBridge;
-    if (bridge?.selectNpc) { bridge.selectNpc(npcId); return; }
-    if (attempts < 20) setTimeout(() => tryBridge(attempts+1), 300);
-  };
-  tryBridge();
-}
-
-function matchNpc(n, q) {
-  return (n.id||'').includes(q) || (n.name||'').toLowerCase().includes(q) ||
-    (n.species||'').toLowerCase().includes(q) || (n.role||'').toLowerCase().includes(q);
-}
-
-document.getElementById('npc-search').addEventListener('input', e => {
-  const q = e.target.value.toLowerCase();
-  renderNpcList(q ? allNpcs.filter(n => matchNpc(n, q)) : allNpcs);
-});
-
+function matchNpc(n,q){return(n.id||'').includes(q)||(n.name||'').toLowerCase().includes(q)||(n.species||'').toLowerCase().includes(q)||(n.role||'').toLowerCase().includes(q)}
+document.getElementById('npc-search').addEventListener('input',e=>{const q=e.target.value.toLowerCase();renderNpcList(q?allNpcs.filter(n=>matchNpc(n,q)):allNpcs)});
 loadNpcDb();
 
-// ── Hub bridge: map editor → Interior Editor ─────────────────────────────────
-window.openBuildingInteriorEditor = function(mapId, mapData) {
-  switchToTab('building-interior-author');
-  const iframe = document.getElementById('if-building-interior-author');
-  const tryBridge = (attempts=0) => {
-    const bridge = iframe.contentWindow?._biaBridge;
-    if (mapData && bridge?.loadData) { bridge.loadData(mapData, 'Map Editor'); return; }
-    if (bridge?.loadFromServer) { bridge.loadFromServer(mapId); return; }
-    if (attempts < 20) setTimeout(() => tryBridge(attempts + 1), 300);
-  };
-  tryBridge();
-  return true;
+window.openBuildingInteriorEditor=function(mapId,mapData){
+  switchToTab('building-interior-author');const iframe=document.getElementById('if-building-interior-author');
+  const tryBridge=(attempts=0)=>{const bridge=iframe.contentWindow?._biaBridge;if(mapData&&bridge?.loadData){bridge.loadData(mapData,'Map Editor');return}if(bridge?.loadFromServer){bridge.loadFromServer(mapId);return}if(attempts<20)setTimeout(()=>tryBridge(attempts+1),300)};tryBridge();return true;
 };
-window.addEventListener('message', e => {
-  if (!e.data || e.data.type !== 'openBuildingInterior') return;
-  window.openBuildingInteriorEditor(e.data.mapId, e.data.mapData);
+window.addEventListener('message',e=>{if(!e.data||e.data.type!=='openBuildingInterior')return;window.openBuildingInteriorEditor(e.data.mapId,e.data.mapData)});
+window.addEventListener('message',e=>{
+  if(!e.data||e.data.type!=='openMapEditorStation')return;const{mapId,stationId}=e.data;switchToTab('map-editor');const iframe=document.getElementById('if-map-editor');
+  const tryBridge=(attempts=0)=>{const bridge=iframe.contentWindow?._mapEditorBridge;if(bridge?.focusStation){if(bridge.focusStation(mapId,stationId))return}if(attempts<20)setTimeout(()=>tryBridge(attempts+1),300)};tryBridge();
 });
-
-// ── Hub bridge: Schedule Editor → Map Editor (jump to a rule's station) ──────
-window.addEventListener('message', e => {
-  if (!e.data || e.data.type !== 'openMapEditorStation') return;
-  const { mapId, stationId } = e.data;
-  switchToTab('map-editor');
-  const iframe = document.getElementById('if-map-editor');
-  const tryBridge = (attempts=0) => {
-    const bridge = iframe.contentWindow?._mapEditorBridge;
-    if (bridge?.focusStation) { if (bridge.focusStation(mapId, stationId)) return; }
-    if (attempts < 20) setTimeout(() => tryBridge(attempts + 1), 300);
-  };
-  tryBridge();
-});
-
-// ── "Open Game" with live unsaved map-editor data ────────────────────────────
-// The map editor only autosaves to localStorage (never to the on-disk JSON), so
-// reading straight from the editor's live in-memory workspace via its bridge
-// (falling back to its localStorage key if the iframe hasn't loaded yet) lets
-// "Open Game" reflect in-progress edits without having to export/save first.
-// The override is one-shot: game.js reads and immediately clears this key, so
-// reloading the game tab afterwards goes back to the real saved file.
-const GAME_WS_OVERRIDE_KEY = 'hobunji_game_workspace_override_v1';
-document.getElementById('open-game-btn').addEventListener('click', () => {
-  try {
-    const bridge = document.getElementById('if-map-editor')?.contentWindow?._mapEditorBridge;
-    const liveWs = bridge?.getWorkspace ? bridge.getWorkspace() : null;
-    const raw = liveWs ? JSON.stringify(liveWs) : localStorage.getItem('hobunji_map_editor_workspace_v1');
-    if (raw) localStorage.setItem(GAME_WS_OVERRIDE_KEY, raw);
-  } catch (_) {}
-  window.open('../index.html', '_blank');
+const GAME_WS_OVERRIDE_KEY='hobunji_game_workspace_override_v1';
+document.getElementById('open-game-btn').addEventListener('click',()=>{
+  try{const bridge=document.getElementById('if-map-editor')?.contentWindow?._mapEditorBridge;const liveWs=bridge?.getWorkspace?bridge.getWorkspace():null;const raw=liveWs?JSON.stringify(liveWs):localStorage.getItem('hobunji_map_editor_workspace_v1');if(raw)localStorage.setItem(GAME_WS_OVERRIDE_KEY,raw)}catch(_){}
+  window.open('../index.html','_blank');
 });
 </script>
 </body>

@@ -1,0 +1,126 @@
+function currentOffsets(){const key=ensureTargetData(E.species.value,E.gender.value);return A.localOffsets[key]}
+function currentMaskTransform(){
+  const key=ensureTargetData(E.species.value,E.gender.value);
+  if(!A.maskPreviewTransforms[key])A.maskPreviewTransforms[key]=defaultMaskTransform();
+  return A.maskPreviewTransforms[key];
+}
+function syncMaskTransformControls(){
+  const tr=currentMaskTransform();
+  const pairs=[
+    [E.maskScaleX,E.maskScaleXNumber,tr.scaleX],
+    [E.maskScaleY,E.maskScaleYNumber,tr.scaleY],
+    [E.maskTranslateY,E.maskTranslateYNumber,tr.translateY],
+  ];
+  for(const [slider,number,value] of pairs){
+    slider.value=String(value);number.value=String(value);
+  }
+}
+function transformedSourceGrid(){
+  const tr=currentTransform(),w=Math.max(1,E.stage.width||234),h=Math.max(1,E.stage.height||173);
+  return SOURCE_GRID.map(p=>{
+    const px=(p.x-.5)*w*tr.scaleX+w*.5+tr.translateX;
+    const py=(p.y-.5)*h*tr.scaleY+h*.5+tr.translateY;
+    return{x:px/w,y:py/h};
+  }); // Global scale/translation is applied first.
+}
+function targetGrid(){
+  const baseGrid=transformedSourceGrid(),offsets=currentOffsets();
+  return baseGrid.map((p,i)=>({x:p.x+offsets[i].x,y:p.y+offsets[i].y})); // Local node corrections are applied second.
+}
+function syncTransformControls(){
+  const tr=currentTransform();
+  for(const [slider,number,value] of [[E.scaleX,E.scaleXNumber,tr.scaleX],[E.scaleY,E.scaleYNumber,tr.scaleY],[E.translateX,E.translateXNumber,tr.translateX],[E.translateY,E.translateYNumber,tr.translateY]]){
+    slider.value=String(value);number.value=String(value);
+  }
+}
+function toDisplayPixels(points,width,height){
+  return points.map(p=>({x:p.x*(width-1),y:p.y*(height-1)})); // Keeps visible drag handles inside the canvas border.
+}
+function toWarpPixel(point,width,height){
+  return{x:point.x*width,y:point.y*height}; // Uses the actual raster edges (0..width / 0..height) so right/bottom source pixels are covered too.
+}
+function bilerpPoint(tl,tr,bl,br,u,v){
+  const a=(1-u)*(1-v),b=u*(1-v),c=(1-u)*v,d=u*v;
+  return{
+    x:tl.x*a+tr.x*b+bl.x*c+br.x*d,
+    y:tl.y*a+tr.y*b+bl.y*c+br.y*d
+  }; // Every point inside a cell depends on all four surrounding authored nodes.
+}
+
+function drawTriangleWarp(targetCtx,source,s0,s1,s2,d0,d1,d2){
+  const sx10=s1.x-s0.x,sy10=s1.y-s0.y,sx20=s2.x-s0.x,sy20=s2.y-s0.y;
+  const det=sx10*sy20-sx20*sy10;if(Math.abs(det)<1e-6)return;
+  const dx10=d1.x-d0.x,dy10=d1.y-d0.y,dx20=d2.x-d0.x,dy20=d2.y-d0.y;
+  const a=(dx10*sy20-dx20*sy10)/det;
+  const c=(-dx10*sx20+dx20*sx10)/det;
+  const b=(dy10*sy20-dy20*sy10)/det;
+  const d=(-dy10*sx20+dy20*sx10)/det;
+  const e=d0.x-a*s0.x-c*s0.y;
+  const f=d0.y-b*s0.x-d*s0.y;
+
+  targetCtx.save();
+  targetCtx.beginPath();
+  targetCtx.moveTo(d0.x,d0.y);targetCtx.lineTo(d1.x,d1.y);targetCtx.lineTo(d2.x,d2.y);targetCtx.closePath();
+  targetCtx.clip();
+  targetCtx.setTransform(a,b,c,d,e,f);
+  targetCtx.imageSmoothingEnabled=false;
+  targetCtx.drawImage(source,0,0);
+  targetCtx.restore();
+}
+function drawBilinearCell(targetCtx,source,sTL,sTR,sBL,sBR,dTL,dTR,dBL,dBR,subdivisions=CELL_SUBDIVISIONS){
+  for(let sy=0;sy<subdivisions;sy++){
+    const v0=sy/subdivisions,v1=(sy+1)/subdivisions;
+    for(let sx=0;sx<subdivisions;sx++){
+      const u0=sx/subdivisions,u1=(sx+1)/subdivisions;
+      const sn00=bilerpPoint(sTL,sTR,sBL,sBR,u0,v0),sn10=bilerpPoint(sTL,sTR,sBL,sBR,u1,v0);
+      const sn01=bilerpPoint(sTL,sTR,sBL,sBR,u0,v1),sn11=bilerpPoint(sTL,sTR,sBL,sBR,u1,v1);
+      const dn00=bilerpPoint(dTL,dTR,dBL,dBR,u0,v0),dn10=bilerpPoint(dTL,dTR,dBL,dBR,u1,v0);
+      const dn01=bilerpPoint(dTL,dTR,dBL,dBR,u0,v1),dn11=bilerpPoint(dTL,dTR,dBL,dBR,u1,v1);
+      if(((sx+sy)&1)===0){
+        drawTriangleWarp(targetCtx,source,sn00,sn10,sn11,dn00,dn10,dn11);
+        drawTriangleWarp(targetCtx,source,sn00,sn11,sn01,dn00,dn11,dn01);
+      }else{
+        drawTriangleWarp(targetCtx,source,sn00,sn10,sn01,dn00,dn10,dn01);
+        drawTriangleWarp(targetCtx,source,sn10,sn11,sn01,dn10,dn11,dn01);
+      }
+    }
+  }
+}
+function warpExtendedOverlay(source,targetNorm,outWidth,normalOutHeight){
+  if(!source||!R.maoBody)return null;
+  const sourceNormalHeight=R.maoBody.height;
+  const sourceWidth=source.width;
+  const sourceHeight=source.height;
+
+  // First determine the extrapolated destination bottom row from the final two normal 6×6 rows.
+  const targetPx=targetNorm.map(p=>({x:p.x*outWidth,y:p.y*normalOutHeight}));
+  const bottomDest=[];
+  const extraDepth=Math.max(0,sourceHeight-sourceNormalHeight);
+  const sourceCellHeight=sourceNormalHeight/(GRID_SIZE-1);
+  const extensionFactor=sourceCellHeight>0?extraDepth/sourceCellHeight:0;
+  for(let col=0;col<GRID_SIZE;col++){
+    const prev=targetPx[(GRID_SIZE-2)*GRID_SIZE+col];
+    const last=targetPx[(GRID_SIZE-1)*GRID_SIZE+col];
+    bottomDest.push({
+      x:last.x+(last.x-prev.x)*extensionFactor,
+      y:last.y+(last.y-prev.y)*extensionFactor
+    });
+  }
+  const maxY=Math.max(normalOutHeight,...targetPx.map(p=>p.y),...bottomDest.map(p=>p.y));
+  const outHeight=Math.max(normalOutHeight,Math.ceil(maxY)+2);
+  const output=document.createElement('canvas');output.width=outWidth;output.height=outHeight;
+  const x=output.getContext('2d',{alpha:true});x.imageSmoothingEnabled=false;
+
+  // Normal portrait-height region: source cage occupies only the first normal portrait-height pixels.
+  for(let row=0;row<GRID_SIZE-1;row++){
+    for(let col=0;col<GRID_SIZE-1;col++){
+      const tl=row*GRID_SIZE+col,tr=tl+1,bl=(row+1)*GRID_SIZE+col,br=bl+1;
+      const sTL={x:SOURCE_GRID[tl].x*sourceWidth,y:SOURCE_GRID[tl].y*sourceNormalHeight};
+      const sTR={x:SOURCE_GRID[tr].x*sourceWidth,y:SOURCE_GRID[tr].y*sourceNormalHeight};
+      const sBL={x:SOURCE_GRID[bl].x*sourceWidth,y:SOURCE_GRID[bl].y*sourceNormalHeight};
+      const sBR={x:SOURCE_GRID[br].x*sourceWidth,y:SOURCE_GRID[br].y*sourceNormalHeight};
+      drawBilinearCell(x,source,sTL,sTR,sBL,sBR,targetPx[tl],targetPx[tr],targetPx[bl],targetPx[br]);
+    }
+  }
+
+  // Extra vertical re

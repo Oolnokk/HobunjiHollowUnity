@@ -1,0 +1,101 @@
+(() => {
+'use strict';
+
+const STORE='hobunji_clothing_species_fit_6x6_v2'; // New storage key so earlier 3×3 experiments cannot corrupt this simpler model.
+const BODY_SLOTS=new Set(['torso','overwear','pauldron']); // Keeps the garment picker focused on body clothing.
+const GRID_SIZE=6; // Fixed source/target cage resolution requested for this version.
+const HANDLE_RADIUS=5.2; // Visible grid-point radius in native canvas pixels.
+const HIT_RADIUS=13; // Touch-friendly pointer selection radius.
+const SOURCE_GRID=makeRegularGrid(GRID_SIZE); // Fixed Mao-ao 6x6 source cage spanning the full portrait.
+const CELL_SUBDIVISIONS=4; // Each 6x6 cell is internally sampled as a 4x4 bilinear micro-grid so all four cell corners influence the whole cell.
+const MICRO_TRIANGLE_COUNT=(GRID_SIZE-1)*(GRID_SIZE-1)*CELL_SUBDIVISIONS*CELL_SUBDIVISIONS*2; // 800 small affine triangles approximate the bilinear 25-quad warp.
+
+const $=id=>document.getElementById(id);
+const E={
+  repo:$('repo'),reload:$('reload'),status:$('status'),gender:$('gender'),species:$('species'),garment:$('garment'),
+  help:$('help'),showBody:$('showBody'),showGarment:$('showGarment'),showMeshes:$('showMeshes'),opacity:$('opacity'),
+  showAuthored:$('showAuthored'),authoredOpacity:$('authoredOpacity'),authoredStatus:$('authoredStatus'),
+  extTorsoFile:$('extTorsoFile'),extTorsoClothingFile:$('extTorsoClothingFile'),extOverwearFile:$('extOverwearFile'),
+  extUseCutoff:$('extUseCutoff'),extCutoffY:$('extCutoffY'),extCutoffYNumber:$('extCutoffYNumber'),
+  showExtended3D:$('showExtended3D'),clearExtended:$('clearExtended'),downloadExtended:$('downloadExtended'),extendedStatus:$('extendedStatus'),
+  maskScaleX:$('maskScaleX'),maskScaleY:$('maskScaleY'),maskTranslateY:$('maskTranslateY'),
+  maskScaleXNumber:$('maskScaleXNumber'),maskScaleYNumber:$('maskScaleYNumber'),maskTranslateYNumber:$('maskTranslateYNumber'),
+  resetMaskTransform:$('resetMaskTransform'),
+  threeHost:$('threeHost'),threeStatus:$('threeStatus'),retry3D:$('retry3D'),reset3D:$('reset3D'),
+  scaleX:$('scaleX'),scaleY:$('scaleY'),translateX:$('translateX'),translateY:$('translateY'),
+  scaleXNumber:$('scaleXNumber'),scaleYNumber:$('scaleYNumber'),translateXNumber:$('translateXNumber'),translateYNumber:$('translateYNumber'),resetTransform:$('resetTransform'),
+  reset:$('reset'),undo:$('undo'),redo:$('redo'),bodyPng:$('bodyPng'),clothPng:$('clothPng'),overlayPng:$('overlayPng'),
+  exportJson:$('exportJson'),importJson:$('importJson'),file:$('file'),copyDebug:$('copyDebug'),debug:$('debug'),
+  label:$('label'),stage:$('stage'),modeBtns:[...document.querySelectorAll('[data-mode]')]
+};
+const C=E.stage.getContext('2d',{alpha:true}); // Paints the interactive reference canvas.
+C.imageSmoothingEnabled=false;
+
+const R={
+  speciesIndex:[],speciesCfg:new Map(),garments:[],images:new Map(),bodyCanvases:new Map(),garmentCanvases:new Map(),
+  body:null,maoBody:null,cloth:null,authoredTargetCloth:null,warped:null,
+  extendedLayers:{torso:null,torsoClothing:null,overwear:null},extendedSource:null,extendedWarped:null,
+  three:{
+    ready:false,scene:null,camera:null,renderer:null,group:null,drag:null,rotX:0,rotY:0,zoom:3.0,
+    runtimeReadyPromise:null,runtimeDocsBase:null,portraitCache:new Map(),rigRoot:null,avatarModel:null,feet:null,
+    extendedGroup:null,buildGeneration:0,buildTimer:null,lastBuiltKey:null
+  },
+  logs:[]
+}; // Runtime-only repository, imported overlay, and 3D preview state.
+
+let A=loadState(); // Persistent target species+gender grids.
+let mode=A.settings?.mode||'fit'; // Current UI mode.
+let dragIndex=null; // Active target-grid point during pointer drag.
+let dragSnapshotTaken=false; // Ensures one undo entry per drag.
+let undoStack=[]; // Local grid undo history.
+let redoStack=[]; // Local grid redo history.
+
+function makeRegularGrid(size){
+  const points=[]; // Creates row-major normalized points that touch all four portrait edges.
+  for(let row=0;row<size;row++){
+    for(let col=0;col<size;col++){
+      points.push({x:col/(size-1),y:row/(size-1)});
+    }
+  }
+  return points;
+}
+function clone(v){return JSON.parse(JSON.stringify(v))}
+function defaultTransform(){return{scaleX:1,scaleY:1,translateX:0,translateY:0}}
+function defaultMaskTransform(){return{scaleX:1,scaleY:1,translateY:0}}
+function zeroOffsets(){return SOURCE_GRID.map(()=>({x:0,y:0}))}
+function fresh(){
+  return{
+    version:3,gridSize:GRID_SIZE,baseTransforms:{},localOffsets:{},maskPreviewTransforms:{},
+    settings:{mode:'transform',gender:'male',species:'mao-ao',garment:'',repo:E.repo.value}
+  };
+}
+function migrateLegacyV1(){
+  try{
+    const old=JSON.parse(localStorage.getItem('hobunji_clothing_species_fit_6x6_v1')||'null');
+    if(!old||old.version!==1||old.gridSize!==GRID_SIZE)return null;
+    const next=fresh();
+    for(const [key,grid] of Object.entries(old.targetGrids||{})){
+      if(!Array.isArray(grid)||grid.length!==SOURCE_GRID.length)continue;
+      next.baseTransforms[key]=defaultTransform();
+      next.localOffsets[key]=grid.map((p,i)=>({x:p.x-SOURCE_GRID[i].x,y:p.y-SOURCE_GRID[i].y}));
+    }
+    next.settings={...next.settings,...(old.settings||{}),mode:'fit'};
+    return next;
+  }catch{return null}
+}
+function loadState(){
+  try{
+    const v=JSON.parse(localStorage.getItem(STORE)||'null');
+    if(v&&(v.version===2||v.version===3)&&v.gridSize===GRID_SIZE){
+      return{version:3,gridSize:GRID_SIZE,baseTransforms:v.baseTransforms||{},localOffsets:v.localOffsets||{},maskPreviewTransforms:v.maskPreviewTransforms||{},settings:v.settings||{}};
+    }
+    return migrateLegacyV1()||fresh();
+  }catch{return migrateLegacyV1()||fresh()}
+}
+function saveState(){
+  A.version=3;A.gridSize=GRID_SIZE;
+  A.settings={mode,gender:E.gender.value,species:E.species.value,garment:E.garment.value,repo:base()};
+  localStorage.setItem(STORE,JSON.stringify(A));
+}
+function snapshot(){return JSON.stringify({baseTransforms:A.baseTransforms,localOffsets:A.localOffsets,maskPreviewTransforms:A.maskPreviewTransforms})}
+function pus
