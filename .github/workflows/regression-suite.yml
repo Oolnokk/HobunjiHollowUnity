@@ -1,9 +1,9 @@
 name: Rebase dual-wield follow-up onto main
 
 on:
-  pull_request:
-    paths:
-      - '.github/workflows/regression-suite.yml'
+  push:
+    branches:
+      - fix/recenter-long-haft-grips-20261004
   workflow_dispatch:
 
 permissions:
@@ -45,17 +45,10 @@ jobs:
             exit "$merge_status"
           fi
 
-          # index.html conflicts are cache-bust/load-order churn from main; keep current
-          # main and let the repo cache-bust fixer restore refs for this feature's modules.
           git checkout --theirs -- docs/index.html
-
-          # This editor contains the feature's real 2H/Dual authoring changes. Main only
-          # moved a dependency cache token here, which the cache-bust fixer recomputes.
           git checkout --ours -- docs/tools/attack-animation-editor/index.html
-
-          # Main changed a different frame-ownership line. Keep main's manifest, then
-          # restore this feature's hand-tool-grips fallback line number.
           git checkout --theirs -- scripts/runtime-frame-ownership-exceptions.json
+
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -71,7 +64,6 @@ jobs:
           git add docs/index.html docs/tools/attack-animation-editor/index.html scripts/runtime-frame-ownership-exceptions.json
           node scripts/check-cache-busts.js --fix
 
-          # Restore the repository's normal read-only workflow before committing.
           git checkout origin/main -- .github/workflows/regression-suite.yml
           git add -A
 
