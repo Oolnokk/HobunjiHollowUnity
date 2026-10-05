@@ -33,6 +33,7 @@
   let repickSelected = false; // When true, the next wall click retargets selectedId instead of creating a new record.
   let lastLayoutId = null; // Used to detect base/layout switches and rebuild the sidecar visuals.
   let lastFurnitureSignature = ''; // Cheap JSON signature prevents unnecessary overlay rebuilds during the render loop.
+  let lastOffsetInputsKey = null; // Selection + stored offsets last written into the offset inputs; the 300ms refresh must not erase typed, not-yet-applied values.
   let rebuildGeneration = 0; // Invalidates async authored-furniture loads when the room/layout changes mid-build.
   let lastError = null; // Mobile-visible diagnostics instead of console-only failures.
   let lastWallPick = null; // Canonical panel hit diagnostics for cases where pointer placement needs debugging.
@@ -442,8 +443,10 @@
 
   function setStatus(message, tone = 'normal') {
     if (!statusEl) return;
-    statusEl.textContent = message;
-    statusEl.style.color = tone === 'error' ? '#ff9a9a' : tone === 'ok' ? '#85e09b' : '#9eacc3';
+    // Compare first: refreshUi() calls this every 300ms, and unconditional writes queue MutationObserver records.
+    const color = tone === 'error' ? '#ff9a9a' : tone === 'ok' ? '#85e09b' : '#9eacc3';
+    if (statusEl.textContent !== message) statusEl.textContent = message;
+    if (statusEl.dataset.tone !== tone) { statusEl.dataset.tone = tone; statusEl.style.color = color; } // style.color reads back as rgb(), so compare the tone instead.
   }
 
   function installUi() {
@@ -491,9 +494,13 @@
     const record = recordById(interior, selectedId);
     const preset = presetForRecord(record);
     const placement = record?.wallAttachment;
-    for (const [id, value] of [['biaWallOffsetU', placement?.offsetU], ['biaWallOffsetV', placement?.offsetV], ['biaWallOffsetN', placement?.normalOffset]]) {
-      const input = byId(id);
-      if (input) input.value = placement ? round(value) : 0;
+    const offsetInputsKey = `${selectedId}|${placement?.offsetU}|${placement?.offsetV}|${placement?.normalOffset}`;
+    if (offsetInputsKey !== lastOffsetInputsKey) {
+      lastOffsetInputsKey = offsetInputsKey;
+      for (const [id, value] of [['biaWallOffsetU', placement?.offsetU], ['biaWallOffsetV', placement?.offsetV], ['biaWallOffsetN', placement?.normalOffset]]) {
+        const input = byId(id);
+        if (input) input.value = placement ? round(value) : 0;
+      }
     }
     const hasSelection = !!record && !!preset;
     if (byId('biaWallRepick')) byId('biaWallRepick').disabled = !hasSelection;
