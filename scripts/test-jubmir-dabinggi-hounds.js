@@ -90,10 +90,19 @@ assert(spawned.every(hound => companionObjects.has(hound)), 'movement should ret
 assert.equal(spawned[0].master.x, 352);
 assert.equal(spawned[0].master.y, 672);
 
-window.Combat.deps.cutscenePreviewActive = true;
-assert.equal(api.sync(), false, 'authored cutscenes should own their creature cast without duplicate roaming hounds');
+openingPhase = 'rescue';
+assert.equal(api.sync(), false, 'the opening rescue phase should suppress roaming duplicates even when Combat deps do not expose the internal cutscene flag');
 assert.equal(companionObjects.size, 0);
 assert.equal(despawned.length, 2);
 assert(spawned.every(hound => hound.despawned));
+
+openingPhase = 'idle';
+assert.equal(api.sync(), true, 'the roaming pair should return after the rescue phase releases creature ownership');
+const respawned = [...companionObjects]; // Tracks the second pair for the generic exported-cutscene guard check below.
+window.Combat.deps.cutscenePreviewActive = true;
+assert.equal(api.sync(), false, 'runtimes that export cutscenePreviewActive should also suppress duplicate roaming hounds');
+assert.equal(companionObjects.size, 0);
+assert.equal(despawned.length, 4);
+assert(respawned.every(hound => hound.despawned));
 
 console.log('Jubmir dabinggi hound entourage passed');
