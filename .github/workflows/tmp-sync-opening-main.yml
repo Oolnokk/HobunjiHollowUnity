@@ -1,0 +1,31 @@
+name: Temporary sync opening branch with main
+
+on:
+  push:
+    branches:
+      - codex/fix-opening-rescue-mobile-startup
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Merge current main and refresh cache tokens
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch --no-tags origin main
+          git merge --no-edit origin/main
+          node scripts/check-cache-busts.js --fix origin/main
+          node scripts/test-introduction-loading-and-framing.js
+          if ! git diff --quiet; then
+            git add docs scripts
+            git commit -m "Refresh opening cache tokens after main sync"
+          fi
+          git push origin HEAD:codex/fix-opening-rescue-mobile-startup
