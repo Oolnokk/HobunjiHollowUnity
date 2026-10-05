@@ -237,10 +237,10 @@
   const docsBase = self ? new URL('../', self) : new URL('./', location.href);
   const scripts = [
     new URL('js/doorstep-visits.js?v=20260930doorstep1', docsBase).href, // Shared visitor runtime every doorstep provider (trust gifts, tutorial notices) registers with.
-    new URL('config/weapon-trust-visits.js?v=20260930h4e1b622', docsBase).href,
+    new URL('config/weapon-trust-visits.js?v=20261005h47526be', docsBase).href,
     new URL('config/weapon-discovery-rewards.js?v=20260902a', docsBase).href,
     new URL('js/weapon-discovery-rewards.js?v=20260902a', docsBase).href,
-    new URL('js/weapon-trust-visits.js?v=20260930h4e1b622', docsBase).href,
+    new URL('js/weapon-trust-visits.js?v=20261005h47526be', docsBase).href,
     new URL('js/weapon-trust-bandit-loadouts.js?v=20260926minion1', docsBase).href,
   ];
   for (const src of scripts) {
