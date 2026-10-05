@@ -35,6 +35,21 @@
       "id": "mark_of_khannibarr",
       "name": "Mark of Khannibarr",
       "file": "config/patterns/pattern_mark_of_khannibarr.json"
+    },
+    {
+      "id": "hachutu_glyph_death",
+      "name": "Hachutu Glyph: Death",
+      "file": "config/patterns/pattern_hachutu_glyph_death.json"
+    },
+    {
+      "id": "harlyao_glyph_entropy",
+      "name": "Harlyao Glyph: Entropy",
+      "file": "config/patterns/pattern_harlyao_glyph_entropy.json"
+    },
+    {
+      "id": "harlyao_glyph_servitude",
+      "name": "Harlyao Glyph: Servitude",
+      "file": "config/patterns/pattern_harlyao_glyph_servitude.json"
     }
   ]
 }
