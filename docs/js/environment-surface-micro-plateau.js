@@ -545,6 +545,42 @@
     return debugSnapshot();
   }
 
+  // Flat overlays retain their authored ground clearance above the cap. Use
+  // its full depth even at an exposed lip so a ring's wider footprint cannot
+  // cut back through adjacent snow. This is visual only, never collision.
+  function projectionLiftAt(x, z, scene = currentScene()) {
+    if (!Number.isFinite(x) || !Number.isFinite(z) || scene !== currentScene() || resolveMode() === 'none') return 0;
+    const tile = currentGrid()?.[Math.floor(z)]?.[Math.floor(x)]; // Coverage under the overlay's world-space anchor.
+    return tile && tileCovered(tile) ? SURFACE_DEPTH : 0;
+  }
+
+  function bindGroundProjection(object) {
+    if (!object) return object;
+    // Install once at creation, including each drawable child of HUD groups.
+    // Render hooks run after parent transforms, covering NPC-local shadows
+    // and scene-level indicators without changing their gameplay positions.
+    object.traverse(node => {
+      if ((!node.isMesh && !node.isLine && !node.isPoints) || node.userData.environmentGroundProjection) return;
+      node.userData.environmentGroundProjection = true;
+      node.renderOrder = Math.max(Number(node.renderOrder) || 0, 23); // Draw after the transparent slush cap (22.1).
+      const before = node.onBeforeRender; // Preserves the drawable's existing render callback.
+      const after = node.onAfterRender; // Preserves cleanup after restoring the gameplay matrix.
+      let lift = 0; // Temporary world-space translation, removed after each draw.
+      node.onBeforeRender = function(renderer, scene, ...args) {
+        before?.call(this, renderer, scene, ...args);
+        const elements = this.matrixWorld.elements; // Final parent-composed transform used for this draw.
+        lift = projectionLiftAt(elements[12], elements[14], scene);
+        elements[13] += lift;
+      };
+      node.onAfterRender = function(...args) {
+        this.matrixWorld.elements[13] -= lift;
+        lift = 0;
+        after?.apply(this, args);
+      };
+    });
+    return object;
+  }
+
   function debugSnapshot() {
     const mode = resolveMode();
     return {
@@ -554,6 +590,7 @@
       area: currentArea() || null,
       mode,
       thickness: SURFACE_DEPTH,
+      groundProjectionLift: SURFACE_DEPTH,
       edgeWidth: EDGE_WIDTH,
       opacity: MODE_PRESETS[mode]?.opacity ?? null,
       builtTiles,
@@ -566,7 +603,7 @@
     };
   }
 
-  window.EnvironmentSurfaceMicroPlateau = Object.freeze({ installed: true, debugSnapshot, forceRebuild });
+  window.EnvironmentSurfaceMicroPlateau = Object.freeze({ installed: true, debugSnapshot, forceRebuild, projectionLiftAt, bindGroundProjection });
   ensureTexture();
 
   // The shipped game always provides RuntimeFrameScheduler; the standalone
