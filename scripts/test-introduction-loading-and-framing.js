@@ -14,11 +14,17 @@ assert.equal(storyPages[8].text, 'And after flying free for what feels like minu
 assert.equal(storyPages[8].delayedReveals?.[0]?.text, '\nand find yourself asleep once again.');
 const maximPage = storyPages.find(page => page.text === 'that the greatest things in this world of ours');
 assert(maximPage, 'lost-may-find maxim page is authored');
-assert.equal(maximPage.delayedReveals?.[0]?.afterSeconds, 2.5);
+assert.equal(maximPage.delayedReveals?.[0]?.afterSeconds, 8);
 assert.equal(maximPage.minimumSeconds - maximPage.delayedReveals[0].afterSeconds, 10, 'maxim remains alone for ten seconds after its delayed second line appears');
 assert(maximPage.delayedReveals[0].text.includes('**only the lost may find**'), 'lost-may-find phrase keeps authored emphasis');
 assert(loader.includes('const stagePages = stage =>'), 'introduction runtime must support several visible pages inside one preload phase');
 assert(loader.includes('delayedReveals'), 'introduction runtime must preserve delayed line reveals');
+assert(storyPages.every(page => Number(page.minimumSeconds) >= 8), 'every visible opening page has an eight-second minimum beat');
+assert(storyPages.flatMap(page => page.delayedReveals || []).every(reveal => Number(reveal.afterSeconds) >= 8), 'every delayed reveal waits at least eight seconds');
+assert(loader.includes('const MIN_STORY_BEAT_SECONDS = 8'), 'runtime enforces the eight-second beat floor even for future authored pages');
+assert(loader.includes('transition:opacity ${INTRO_FADE_MS}ms ease'), 'narrative and delayed spans use opacity fades');
+assert(loader.includes('Promise.all([fadeTo(continueButton, 0), fadeTo(stageText, 0)])'), 'Continue and page copy fade out before replacement');
+assert(loader.includes("node.style.opacity = '1'"), 'delayed copy fades in from pre-laid-out hidden spans');
 const ordinary={state:{lastEntryId:null},Math};
 vm.runInNewContext(loader.slice(loader.indexOf('  function pickEntry('),loader.indexOf('  function pickEntry(')+loader.slice(loader.indexOf('  function pickEntry(')).indexOf('\n  function ',1))+'\npick=pickEntry;',ordinary);
 assert.equal(ordinary.pick([preset,{id:'normal'}]).id,'normal');assert.equal(ordinary.pick([preset]),null);
@@ -106,9 +112,9 @@ async function main() {
   await verifyAssetReadiness();
   let clock=0, subscriber=null, removed=false, unlocked=false;
   const timers=[], listeners=new Map(), elements=[]; // Distinct DOM nodes exercise button and status transitions rather than a whole-screen click surrogate.
-  const createElement=()=>{ const events=new Map(); const el={style:{},children:[],events,setAttribute(){},addEventListener:(name,fn)=>events.set(name,fn),append(...children){this.children.push(...children);},remove:()=>{removed=true;},focus(){}}; elements.push(el); return el; };
+  const createElement=()=>{ const events=new Map(); let html=''; const el={style:{},children:[],events,textContent:'',offsetWidth:1,setAttribute(){},addEventListener:(name,fn)=>events.set(name,fn),append(...children){this.children.push(...children);},appendChild(child){this.children.push(child);return child;},remove:()=>{removed=true;},focus(){}}; Object.defineProperty(el,'innerHTML',{get(){return html;},set(value){html=String(value);if(value==='')this.children=[];}}); elements.push(el); return el; };
   const state={generation:1};
-  const runtimePreset={...preset,stages:preset.stages.map(stage=>({text:stage.text,minimumSeconds:3}))}; // Keep this deterministic clock test focused on one fresh-input gate per preload phase; authored multi-page structure is asserted above.
+  const runtimePreset={...preset,stages:preset.stages.map(stage=>({text:stage.text,minimumSeconds:8}))}; // Keep this deterministic clock test focused on one fresh-input gate per preload phase; authored multi-page structure is asserted above.
   const context={state,document:{createElement,body:{appendChild(){}},addEventListener:(name,fn)=>listeners.set(name,fn),removeEventListener:name=>listeners.delete(name)},window:{CharacterActionLocks:{acquire:()=>({release:()=>{unlocked=true;}})},ControllerInput:{subscribe:(name,fn)=>{subscriber=fn;return()=>{subscriber=null;};},setOwner(){}}},nowMs:()=>clock,setTimeout:(fn,delay)=>{timers.push({fn,at:clock+delay});},ensureConfigLoaded:async()=>({entries:[runtimePreset]}),ensureFontsLoaded:async()=>true,finalizeHide(){} };
   vm.runInNewContext(loader.slice(loader.indexOf('  async function beginIntroduction('),loader.indexOf('  function callbackSource('))+'\napi=beginIntroduction;',context);
   const session=await context.api();
@@ -116,23 +122,25 @@ async function main() {
   let releaseAssets;const pendingAssets=new Promise(resolve=>{releaseAssets=resolve;});
   for(let i=0;i<4;i++) {
     if(i)session.start(i);
-    assert.equal(stageText.textContent,runtimePreset.stages[i].text);
+    assert.equal(stageText.children.at(-1)?.textContent,runtimePreset.stages[i].text);
     assert.equal(continueButton.disabled,true);
-    assert.equal(continueButton.style.visibility,'hidden');
+    assert.equal(continueButton.style.opacity,'0');
     let continued=false;
     const done=session.complete(i===3?pendingAssets:undefined).then(()=>{continued=true;});
     continueButton.events.get('click')();await Promise.resolve();assert.equal(continued,false,'early input cannot skip loading or minimum duration');
-    clock+=2999;assert.equal(timers[0].at,clock+1);
+    clock+=7999;assert.equal(timers[0].at,clock+1);
     clock++;timers.shift().fn();for(let tick=0;tick<5;tick++)await Promise.resolve();
     if(i===3){assert.equal(session.getDebug().ready,false,'the final page alone still waits for required assets');releaseAssets();for(let tick=0;tick<8;tick++)await Promise.resolve();}
     assert.equal(session.getDebug().ready,true);
     assert.equal(continueButton.disabled,false);
-    assert.equal(continueButton.style.visibility,'visible');
+    assert.equal(continueButton.style.opacity,'1');
     assert(continueButton.textContent.includes('Enter / Space'));
     session.setProgress((i+1)*25);assert.equal(percentText.textContent,`${(i+1)*25}%`);
     if(i===1) subscriber({pressed:new Set(['Button0'])});
     else continueButton.events.get('click')();
-    await done;assert.equal(continued,true);assert.equal(continueButton.disabled,true);
+    await Promise.resolve();assert.equal(continued,false,'page replacement waits for the fade-out');
+    clock+=900;for(const timer of timers.splice(0).filter(timer=>timer.at<=clock))timer.fn();for(let tick=0;tick<5;tick++)await Promise.resolve();
+    await done;assert.equal(continued,true);assert.equal(continueButton.disabled,true);assert.equal(stageText.style.opacity,'0');
   }
   session.finish();assert(removed && unlocked);assert.equal(subscriber,null);assert.equal(listeners.size,0);assert.equal(state.introduction,null);
 
