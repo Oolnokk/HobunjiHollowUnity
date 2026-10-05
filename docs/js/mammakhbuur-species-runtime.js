@@ -8,7 +8,7 @@
     const data = clone(genderData || {});
     if (Array.isArray(data.slots)) data.slots = data.slots.filter(slot => slot?.slot !== 'hairFront');
     data.defaultCosmetics = { ...(data.defaultCosmetics || {}) };
-    delete data.defaultCosmetics.hairFront;
+    data.defaultCosmetics.hairFront = null; // Explicitly clears seeded random front hair for every Mammakhbuur appearance.
     data.forcedCosmetics = { ...(data.forcedCosmetics || {}), hairFront: null }; // Blocks stale saved front-hair selections from rendering on existing Mammakhbuur NPCs.
     return data;
   };
