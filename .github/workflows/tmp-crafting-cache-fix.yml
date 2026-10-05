@@ -1,0 +1,33 @@
+name: Temporary crafting cache-bust fix
+
+on:
+  push:
+    branches:
+      - codex/npc-crafting-commissions-v2
+    paths:
+      - docs/js/crafting-panel.js
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Refresh cache-bust ownership chain
+        run: node scripts/check-cache-busts.js --fix origin/main
+      - name: Commit generated cache tokens
+        run: |
+          if git diff --quiet; then
+            echo "No cache token changes required."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs scripts
+          git commit -m "Refresh crafting cache-bust tokens"
+          git push origin HEAD:codex/npc-crafting-commissions-v2
