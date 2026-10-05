@@ -26,7 +26,7 @@
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
        extracted out of game.js; must load before game.js and before every
        other module whose init(deps) is handed window.FormatUtils.clamp/esc. -->
-  <script src="js/format-utils.js?v=20261004h8e607ab"></script>
+  <script src="js/format-utils.js?v=20261005hd9d9f4b"></script>
   <!-- Movement virtual-joystick handlers extracted out of game.js; uses
        window.FormatUtils.clamp, so must load after it and before game.js. -->
   <script src="js/virtual-joystick.js?v=20260902mod1"></script>
@@ -391,7 +391,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmTroughs.init(...) during its own setup. -->
-  <script src="js/farm-troughs.js?v=20261005h73d24e5"></script>
+  <script src="js/farm-troughs.js?v=20261005hc08b5bb"></script>
   <!-- Modular player house (window.HousePieces) — barn-shaped foundation/
        build/demolish pipeline for house-piece deeds bought from the
        Carpenter, replacing the old singular Highland House GLB. Depends on
