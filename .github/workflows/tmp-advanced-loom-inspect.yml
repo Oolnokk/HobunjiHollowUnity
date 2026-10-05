@@ -7,6 +7,7 @@ on:
     paths:
       - scripts/tmp-loom-cooking-finalize.py
       - scripts/tmp-loom-finalizer-extra.py
+      - scripts/tmp-update-loom-regression.py
       - .github/workflows/tmp-advanced-loom-inspect.yml
 
 permissions:
@@ -35,6 +36,7 @@ jobs:
         run: |
           python3 scripts/tmp-loom-cooking-finalize.py
           python3 scripts/tmp-loom-finalizer-extra.py
+          python3 scripts/tmp-update-loom-regression.py
       - name: Validate changed runtime files
         run: |
           node --check docs/js/advanced-loom-system.js
