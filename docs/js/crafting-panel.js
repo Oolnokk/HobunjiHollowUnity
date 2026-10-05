@@ -156,6 +156,7 @@
 // gifting, and shop modules regardless of those modules' parser order.
 (() => {
   'use strict';
+  if (typeof document === 'undefined' || typeof document.createElement !== 'function') return; // Headless regression VMs intentionally execute CraftingPanel without a browser loader.
   const modules = [
     ['js/crafting-mastery-system.js?v=20261005craft2', () => Number(window.CraftingMasterySystem?.version) >= 2],
     ['js/dye-trait-labels.js?v=20261005craft1', () => Number(window.DyeTraitLabels?.version) >= 1],
@@ -166,14 +167,14 @@
 
   function loadModule(src, alreadyLoaded) {
     if (alreadyLoaded()) return;
-    if (document.readyState === 'loading') {
+    if (document.readyState === 'loading' && typeof document.write === 'function') {
       document.write(`<script src="${src}"></` + 'script>');
       return;
     }
     const script = document.createElement('script');
     script.src = src;
     script.async = false;
-    document.head.appendChild(script);
+    document.head?.appendChild(script);
   }
 
   for (const [src, alreadyLoaded] of modules) loadModule(src, alreadyLoaded);
