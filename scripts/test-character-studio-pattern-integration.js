@@ -12,6 +12,7 @@ const portrait = read('docs/js/portrait-utils.js');
 assert.match(studio, /character-studio-pattern-integration\.js/, 'Character Studio loads pattern integration');
 assert.match(studio, /clothingPatternPolicy/, 'Character Studio persists a clothing pattern policy');
 assert.match(integration, /forcedOverpassBySlot/, 'integration preserves forced NPC overpasses');
+assert.match(integration, /modeSelect\.onchange = \(\) => \{/, 'mode selector stays on the user-selected weaving or verdigris mode');
 assert.match(integration, /decorateAvatarDataWithWovenItems/, 'Character Studio preview uses production weaving decorator');
 assert.match(integration, /decorateAvatarDataWithMetalArmor/, 'Character Studio preview uses production verdigris armor decorator');
 assert.match(patternEditor, /hobunji-character-studio-pattern-load/, 'shared Pattern Editor accepts Character Studio payloads');
