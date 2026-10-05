@@ -6,8 +6,10 @@
   const MODULE_URL = document.currentScript?.src || '';
   const DOCS_BASE = MODULE_URL ? new URL('../', MODULE_URL).href : './';
   const INDEX_PATH = 'config/patterns/index.json';
+  const HARLYAO_RUIN_PATTERN_IDS = Object.freeze(['harlyao_glyph_entropy', 'harlyao_glyph_servitude', 'harlyao_glyph_ignorance']); // Used to restrict the current Harlyao ruin engraving pool without hiding other repo patterns.
   let loadPromise = null;
   let entries = [];
+  let ruinPatternDecoratorInstalled = false; // Used to ensure the current-ruin pattern filter wraps FurniturePatternSurfaces only once.
   const resolvedById = new Map();
   const editableById = new Map();
 
@@ -49,27 +51,56 @@
     };
   }
 
+  function installHarlyaoRuinPatternPool() {
+    const surfaces = window.FurniturePatternSurfaces; // Used to wrap the one production ruin-decoration entry point after that module has loaded.
+    if (ruinPatternDecoratorInstalled || !surfaces?.decorateRuin) return ruinPatternDecoratorInstalled;
+    const decorateRuin = surfaces.decorateRuin; // Used as the unchanged generic decorator beneath the Harlyao-only catalog scope.
+    surfaces.decorateRuin = function (root, seed) {
+      const allowedIds = new Set(HARLYAO_RUIN_PATTERN_IDS); // Used to admit only Entropy, Servitude and Ignorance while the current Harlyao ruin is decorated.
+      const repoLibrary = window.RepoPatternLibrary; // Temporarily narrowed for the generic decorator's collectible-repo lookup.
+      const playerLibrary = window.PatternLibrary; // Temporarily narrowed so built-in generic runes cannot leak into Harlyao ruins.
+      const narrowedRepoLibrary = repoLibrary ? Object.freeze({ ...repoLibrary, listCached: () => repoLibrary.listCached().filter(entry => allowedIds.has(entry.id)) }) : repoLibrary; // Used only during this synchronous decoration pass.
+      const narrowedPlayerLibrary = playerLibrary ? { ...playerLibrary, getCatalog: () => playerLibrary.getCatalog().filter(entry => allowedIds.has(entry.id)) } : playerLibrary; // Used only during this synchronous decoration pass.
+      if (repoLibrary) window.RepoPatternLibrary = narrowedRepoLibrary;
+      if (playerLibrary) window.PatternLibrary = narrowedPlayerLibrary;
+      try {
+        const result = decorateRuin.call(this, root, seed); // Used as the authoritative list of motifs actually assigned to this generated ruin.
+        if (root?.userData) root.userData.ruinPatternPoolIds = [...HARLYAO_RUIN_PATTERN_IDS]; // Mobile/debug-visible metadata records the intended current-ruin pool.
+        return result;
+      } finally {
+        if (repoLibrary) window.RepoPatternLibrary = repoLibrary;
+        if (playerLibrary) window.PatternLibrary = playerLibrary;
+      }
+    };
+    surfaces.decorateRuin.__harlyaoPatternPoolWrapped = true;
+    ruinPatternDecoratorInstalled = true;
+    return true;
+  }
+
   async function load() {
-    if (loadPromise) return loadPromise;
-    loadPromise = (async () => {
-      const index = await fetchJson(INDEX_PATH).catch(() => ({ patterns: [] }));
-      const list = Array.isArray(index?.patterns) ? index.patterns : [];
-      const loaded = await Promise.all(list.map(async entry => {
-        if (!entry?.file) return null;
-        try {
-          const raw = await fetchJson(entry.file);
-          return normalizeDefinition(raw, entry);
-        } catch (error) {
-          console.warn('[RepoPatternLibrary] failed to load', entry.file, error);
-          return null;
-        }
-      }));
-      entries = loaded.filter(Boolean);
-      resolvedById.clear();
-      for (const entry of entries) resolvedById.set(entry.id, entry.pattern);
-      return listCached();
-    })();
-    return loadPromise;
+    if (!loadPromise) {
+      loadPromise = (async () => {
+        const index = await fetchJson(INDEX_PATH).catch(() => ({ patterns: [] }));
+        const list = Array.isArray(index?.patterns) ? index.patterns : [];
+        const loaded = await Promise.all(list.map(async entry => {
+          if (!entry?.file) return null;
+          try {
+            const raw = await fetchJson(entry.file);
+            return normalizeDefinition(raw, entry);
+          } catch (error) {
+            console.warn('[RepoPatternLibrary] failed to load', entry.file, error);
+            return null;
+          }
+        }));
+        entries = loaded.filter(Boolean);
+        resolvedById.clear();
+        for (const entry of entries) resolvedById.set(entry.id, entry.pattern);
+        return listCached();
+      })();
+    }
+    const result = await loadPromise; // Used to preserve the existing load() return contract while retrying late decorator installation on every caller.
+    installHarlyaoRuinPatternPool();
+    return result;
   }
 
   function listCached() {

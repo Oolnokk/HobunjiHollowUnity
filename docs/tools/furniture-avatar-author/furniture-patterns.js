@@ -31,6 +31,9 @@
     const surface = selectedSurface(); // Canonical recognized surface selection takes precedence over piece selection.
     return { surface, part: surface ? state.parts.find(part => part.id === surface.partId) : selectedPart() };
   }
+  function squarePillarSideGroup(part, surface) {
+    return !!(part && surface && part.kind === 'legSquare' && Math.abs(surface.localNormal?.y || 0) < .7); // Square pillar shafts use one continuous pattern across all four long vertical faces.
+  }
   function currentRecord() {
     const { part, surface } = target(); // Finds the exact selected slot, with existing whole-piece defaults as a fallback.
     if (!surface) return part?.patternSurfaces?.[0] || null;
@@ -43,10 +46,15 @@
   function settings() {
     const { part, surface } = target(); // Surface-local geometry keeps glass/engraving away from frames or neighboring faces.
     if (!part) return null;
-    const record = api.normalize({ ...currentRecord(), slot: currentRecord()?.slot || surface?.id || input('fpSlot').value || 'surface', mode: input('fpMode').value, opacity: input('fpMode').value === 'glass' ? .8 : input('fpMode').value === 'engraving' ? .5 : 1,
+    const groupedSquareSides = squarePillarSideGroup(part, surface); // Used by square pillar shafts so selecting any long side authors all four vertical sides together.
+    const slot = groupedSquareSides ? `${part.id}:surface:sides` : currentRecord()?.slot || surface?.id || input('fpSlot').value || 'surface';
+    const record = api.normalize({ ...currentRecord(), slot, mode: input('fpMode').value, opacity: input('fpMode').value === 'glass' ? .8 : input('fpMode').value === 'engraving' ? .5 : 1,
       engravingCoreOpacity: input('fpCoreOpacity').value || .85, random: input('fpRandom').checked, scale: input('fpScale').value, palette: [input('fpBase').value, input('fpDye').value],
-      ...(surface ? { normal: surface.localNormal.toArray(), localCentroid: surface.localCentroid.toArray(), dimensions: [part.transform.sx,part.transform.sy,part.transform.sz] } : {}) });
-    if (surface && ['cylinder','disc','legRound','barrel','cup','sphere'].includes(part.kind) && surface.faceIndices.length > 2) {
+      ...(surface && !groupedSquareSides ? { normal: surface.localNormal.toArray(), localCentroid: surface.localCentroid.toArray(), dimensions: [part.transform.sx,part.transform.sy,part.transform.sz] } : {}) });
+    if (groupedSquareSides) {
+      record.selector = 'sides'; // The shared renderer continuously unwraps rectangular side faces around the full pillar perimeter.
+      delete record.normal; delete record.localCentroid; delete record.dimensions;
+    } else if (surface && ['cylinder','disc','legRound','barrel','cup','sphere'].includes(part.kind) && surface.faceIndices.length > 2) {
       record.selector = surface.recognizedType === 'upward top' ? 'top' : surface.recognizedType === 'underside' ? 'bottom' : 'sides'; // Curved recognized groups wrap their entire cap/side instead of clipping to one averaged normal.
       delete record.normal; delete record.localCentroid; delete record.dimensions;
     }
