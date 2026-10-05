@@ -11,7 +11,7 @@
     Object.freeze({ id: 'banubu-key', label: 'Banubu — Pie, standing and Color Pools Key', banubuTree: 'banubu_q1_ready' }),
   ]); // Used by the injected selector and the public debug surface so the Director always loads shipping scene builders instead of copied JSON.
   const REQUIRED_STORY_BUILDERS = Object.freeze(REPO_SCENES.map(scene => scene.builder).filter(Boolean)); // Used by story-module readiness checks so every visible selector entry is guaranteed callable.
-  const STORY_SCRIPT_URL = new URL('../../js/opening-story-cutscene.js?v=20261003repo-selector3', location.href).href; // Used to load the same authored builders the live opening sequence calls.
+  const STORY_SCRIPT_URL = new URL('../../js/opening-story-cutscene.js?v=20261005openingtext1', location.href).href; // Used to load the same authored builders the live opening sequence calls.
   const NPC_DB_URL = new URL('../../config/npcs/hobunji-starter-npc-database.json', location.href).href; // Used to supply canonical NPC records to those builders.
   const DIRECTOR_STORAGE_KEY = 'hobunjiCutsceneDirector.v1'; // Used by reload-based imports that still pass through the Director's startup normalizeProject path.
   const PENDING_WILDERNESS_KEY = 'hobunjiCutsceneDirector.repoWilderness.v1'; // Used after fallback reload to restore a procedural-wilderness scene with the Director's existing wilderness controls.
