@@ -4045,6 +4045,10 @@ window.SCRATCHBONES_CONFIG = {
         },
         "behindView": {
           "headUrls": {
+            "tletingan": {
+              "male": "fightersprites/special_cases/head-behind_tl_m.png",
+              "female": "fightersprites/special_cases/head-behind_tl_f.png"
+            },
             "mao-ao": {
               "male": "fightersprites/special_cases/head-behind_mao_m.png",
               "female": "fightersprites/special_cases/head-behind_mao_f.png"
