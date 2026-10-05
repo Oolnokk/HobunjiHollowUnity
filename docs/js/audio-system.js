@@ -1171,11 +1171,28 @@
     if (resumeContext) context.suspend?.().catch?.(() => {});
     const wind = typeof Audio === 'function' ? new Audio('assets/audio/sfx/bgs/bgs_wind2.mp3') : null; // Stronger existing wind recording is the intro's sole dry audio layer.
     if (wind) { wind.loop = true; wind.volume = 1; wind.preload = 'auto'; wind.dataset.environmentalReverb = 'off'; }
-    let finished = false, lastError = null; // Exposed in the existing intro diagnostics; idempotent cleanup handles repeated cancellation.
+    let finished = false, lastError = null, windStarted = false; // Exposed in the existing intro diagnostics; idempotent cleanup handles repeated cancellation.
+    let resolveStarted; // Used by the narration layer so no words fade in before the wind is genuinely playing.
+    const started = new Promise(resolve => { resolveStarted = resolve; });
+    const markWindStarted = () => {
+      if (windStarted) return;
+      windStarted = true;
+      resolveStarted?.(true);
+    };
+    if (wind?.addEventListener) wind.addEventListener('playing', markWindStarted, { once: true });
+    else if (!wind) markWindStarted(); // Headless/no-media environments must not strand the introduction behind an impossible audio event.
     const session = {
-      retry() { if (!finished && wind?.paused) { try { Promise.resolve(wind.play()).catch(error => { lastError = String(error); }); } catch (error) { lastError = String(error); } } },
-      finish() { if (finished) return; finished = true; wind?.pause(); if (hadEnabled) config.enabled = enabled; else delete config.enabled; resumeMusic?.(); if (resumeContext) context.resume?.().catch?.(() => {}); window.HobunjiAmbientBgs?.updateNow?.(); if (introductionMix === session) introductionMix = null; },
-      debug: () => ({ wind: wind?.src, playing: !!wind && !wind.paused, lastError, latestChange: 'Introduction mutes gameplay sound/music and plays the violent wind loop.' }),
+      started,
+      retry() {
+        if (finished || !wind?.paused) return;
+        try {
+          const playRequest = wind.play();
+          if (!wind.addEventListener) Promise.resolve(playRequest).then(markWindStarted).catch(error => { lastError = String(error); });
+          else Promise.resolve(playRequest).catch(error => { lastError = String(error); });
+        } catch (error) { lastError = String(error); }
+      },
+      finish() { if (finished) return; finished = true; if (!windStarted) resolveStarted?.(false); wind?.pause(); if (hadEnabled) config.enabled = enabled; else delete config.enabled; resumeMusic?.(); if (resumeContext) context.resume?.().catch?.(() => {}); window.HobunjiAmbientBgs?.updateNow?.(); if (introductionMix === session) introductionMix = null; },
+      debug: () => ({ wind: wind?.src, playing: !!wind && !wind.paused, windStarted, lastError, latestChange: 'Introduction mutes gameplay sound/music, starts the violent wind loop, and exposes its real playing event so narration can wait for audible wind.' }),
     };
     introductionMix = session;
     session.retry();

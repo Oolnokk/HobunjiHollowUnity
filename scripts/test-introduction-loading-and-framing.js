@@ -1,12 +1,38 @@
 'use strict';
 const assert = require('node:assert/strict'), fs = require('node:fs'), vm = require('node:vm');
 const read = path => fs.readFileSync(path, 'utf8'); // Exercise shipped functions with deterministic clocks and scene fixtures.
-const game = read('docs/game.js'), loader = read('docs/js/loading-screen-runtime.js');
+const game = read('docs/game.js'), loader = read('docs/js/loading-screen-runtime.js'), audio = read('docs/js/audio-system.js');
 const preset = JSON.parse(read('docs/config/loading-screens.json')).entries.find(e => e.id === 'world-introduction');
 assert.equal(preset.mode, 'introduction');
-assert.equal(preset.stages.length, 4);
-assert.deepEqual(preset.stages.map(s => s.text), ['stage 1: Something something something something', 'stage 2: something something something something something.', 'stage 3: something something something something.', 'stage 4: something something something.']);
+assert.equal(preset.stages.length, 4, 'opening keeps four preload phases so rescue asset orchestration remains unchanged');
 assert(preset.stages.every(s => s.minimumSeconds > 0));
+const storyPages = preset.stages.flatMap(stage => stage.pages?.length ? stage.pages : [stage]);
+assert.equal(storyPages.length, 9, 'authored opening narration is split into nine visible pages');
+assert.equal(storyPages[0].text, 'You hear the grinding of wooden wheels and the shuffle of eight hairy legs. You feel the rough texture of wooden bars against your pelt, and a sharp pain in the back of your head.');
+assert.equal(storyPages[1].text, 'You are far from home, and moving still. You know this much. And the bindings on your arms and over your eyes infer it was not of your own accord.');
+assert.equal(storyPages[8].text, 'And after flying free for what feels like minutes, you finally land on the hard ground...');
+assert.equal(storyPages[8].delayedReveals?.[0]?.text, '\nand find yourself asleep once again.');
+const maximPage = storyPages.find(page => page.text === 'that the greatest things in this world of ours');
+assert(maximPage, 'lost-may-find maxim page is authored');
+assert.equal(maximPage.delayedReveals?.[0]?.afterSeconds, 4);
+assert.equal(maximPage.afterPageSeconds, 10, 'the original ten-second pause is a black inter-slide hold after the proverb');
+assert.equal(maximPage.bold, true, 'the whole proverb is bold');
+assert.equal(maximPage.textColor, '#d6b76b', 'the proverb uses a distinct bronze-gold color');
+assert.equal(maximPage.delayedReveals[0].text, '\n\nare those that only the lost may find', 'the second half of the proverb keeps its own delayed line');
+assert.equal(storyPages[2].delayedReveals?.[0]?.text, '\nOh Breath...', 'Oh Breath keeps the authored ellipsis');
+assert(storyPages[2].text.endsWith('...'), 'the home/name line keeps its authored ellipsis');
+assert(storyPages[8].text.endsWith('...'), 'the hard-ground line keeps its authored ellipsis');
+assert(storyPages.some(page => Number(page.minimumSeconds) < 4), 'four seconds is not a blanket inter-slide/page minimum');
+assert(loader.includes('const stagePages = stage =>'), 'introduction runtime must support several visible pages inside one preload phase');
+assert(loader.includes('delayedReveals'), 'introduction runtime must preserve delayed line reveals');
+assert(storyPages.flatMap(page => page.delayedReveals || []).every(reveal => Number(reveal.afterSeconds) >= 4), 'every intra-slide delayed reveal waits at least four seconds');
+assert(loader.includes('const MIN_INTRA_SLIDE_DELAY_SECONDS = 4'), 'runtime enforces the four-second floor only for intra-slide delayed text');
+assert(loader.includes('afterPageSeconds'), 'runtime supports the one authored inter-slide black pause');
+assert(loader.includes('introAudio?.started'), 'first-page visibility is gated on the introduction wind actually starting');
+assert(audio.includes("wind.addEventListener('playing', markWindStarted"), 'audio session resolves narration gating from the real playing event');
+assert(loader.includes('transition:opacity ${INTRO_FADE_MS}ms ease'), 'narrative and delayed spans use opacity fades');
+assert(loader.includes('Promise.all([fadeTo(continueButton, 0), fadeTo(stageText, 0)])'), 'Continue and page copy fade out before replacement');
+assert(loader.includes("node.style.opacity = '1'"), 'delayed copy fades in from pre-laid-out hidden spans');
 const ordinary={state:{lastEntryId:null},Math};
 vm.runInNewContext(loader.slice(loader.indexOf('  function pickEntry('),loader.indexOf('  function pickEntry(')+loader.slice(loader.indexOf('  function pickEntry(')).indexOf('\n  function ',1))+'\npick=pickEntry;',ordinary);
 assert.equal(ordinary.pick([preset,{id:'normal'}]).id,'normal');assert.equal(ordinary.pick([preset]),null);
@@ -94,44 +120,62 @@ async function main() {
   await verifyAssetReadiness();
   let clock=0, subscriber=null, removed=false, unlocked=false;
   const timers=[], listeners=new Map(), elements=[]; // Distinct DOM nodes exercise button and status transitions rather than a whole-screen click surrogate.
-  const createElement=()=>{ const events=new Map(); const el={style:{},children:[],events,setAttribute(){},addEventListener:(name,fn)=>events.set(name,fn),append(...children){this.children.push(...children);},remove:()=>{removed=true;},focus(){}}; elements.push(el); return el; };
+  const createElement=()=>{ const events=new Map(); let html=''; const el={style:{},children:[],events,textContent:'',offsetWidth:1,setAttribute(){},addEventListener:(name,fn)=>events.set(name,fn),append(...children){this.children.push(...children);},appendChild(child){this.children.push(child);return child;},remove:()=>{removed=true;},focus(){}}; Object.defineProperty(el,'innerHTML',{get(){return html;},set(value){html=String(value);if(value==='')this.children=[];}}); elements.push(el); return el; };
   const state={generation:1};
-  const context={state,document:{createElement,body:{appendChild(){}},addEventListener:(name,fn)=>listeners.set(name,fn),removeEventListener:name=>listeners.delete(name)},window:{CharacterActionLocks:{acquire:()=>({release:()=>{unlocked=true;}})},ControllerInput:{subscribe:(name,fn)=>{subscriber=fn;return()=>{subscriber=null;};},setOwner(){}}},nowMs:()=>clock,setTimeout:(fn,delay)=>{timers.push({fn,at:clock+delay});},ensureConfigLoaded:async()=>({entries:[preset]}),ensureFontsLoaded:async()=>true,finalizeHide(){} };
+  const runtimePreset={...preset,stages:preset.stages.map(stage=>({text:stage.text,minimumSeconds:3}))}; // Keep this deterministic clock test focused on one fresh-input gate per preload phase; authored multi-page structure is asserted above.
+  let releaseWind; const windStarted=new Promise(resolve=>{releaseWind=resolve;});
+  const context={state,document:{createElement,body:{appendChild(){}},addEventListener:(name,fn)=>listeners.set(name,fn),removeEventListener:name=>listeners.delete(name)},window:{AudioSystem:{beginIntroductionMix:()=>({started:windStarted,retry(){},finish(){},debug:()=>({})})},CharacterActionLocks:{acquire:()=>({release:()=>{unlocked=true;}})},ControllerInput:{subscribe:(name,fn)=>{subscriber=fn;return()=>{subscriber=null;};},setOwner(){}}},nowMs:()=>clock,setTimeout:(fn,delay)=>{timers.push({fn,at:clock+delay});},ensureConfigLoaded:async()=>({entries:[runtimePreset]}),ensureFontsLoaded:async()=>true,finalizeHide(){} };
   vm.runInNewContext(loader.slice(loader.indexOf('  async function beginIntroduction('),loader.indexOf('  function callbackSource('))+'\napi=beginIntroduction;',context);
   const session=await context.api();
   const [root,stageText,percentText,continueButton]=elements;
   let releaseAssets;const pendingAssets=new Promise(resolve=>{releaseAssets=resolve;});
   for(let i=0;i<4;i++) {
     if(i)session.start(i);
-    assert.equal(stageText.textContent,preset.stages[i].text);
+    assert.equal(stageText.children.at(-1)?.textContent,runtimePreset.stages[i].text);
     assert.equal(continueButton.disabled,true);
-    assert.equal(continueButton.style.visibility,'hidden');
+    assert.equal(continueButton.style.opacity,'0');
     let continued=false;
     const done=session.complete(i===3?pendingAssets:undefined).then(()=>{continued=true;});
-    continueButton.events.get('click')();await Promise.resolve();assert.equal(continued,false,'early input cannot skip loading or minimum duration');
-    clock+=2999;assert.equal(timers[0].at,clock+1);
-    clock++;timers.shift().fn();for(let tick=0;tick<5;tick++)await Promise.resolve();
+    const flushMicrotasks=async(count=12)=>{for(let tick=0;tick<count;tick++)await Promise.resolve();};
+    if(i===0){
+      assert.equal(stageText.style.opacity,'0','first words stay hidden before wind playback');
+      clock+=9000;await flushMicrotasks();
+      assert.equal(session.getDebug().ready,false,'page timer cannot finish before the wind begins');
+      assert.equal(timers.length,0,'no page-duration timer starts while waiting for audible wind');
+      releaseWind();await flushMicrotasks();
+      assert.equal(stageText.style.opacity,'1','first words fade in only after wind starts');
+    } else await flushMicrotasks();
+    continueButton.events.get('click')();await flushMicrotasks(2);assert.equal(continued,false,'early input cannot skip loading or minimum duration');
+    await flushMicrotasks();
+    const minimumAt=clock+3000;
+    const minimumTimerIndex=timers.findIndex(timer=>timer.at===minimumAt);
+    assert(minimumTimerIndex>=0,'authored three-second page timer is scheduled after the page becomes visible');
+    clock+=2999;await flushMicrotasks(2);assert.equal(session.getDebug().ready,false,'page stays gated until its authored duration elapses');
+    clock++;
+    const [minimumTimer]=timers.splice(minimumTimerIndex,1);minimumTimer.fn();await flushMicrotasks();
     if(i===3){assert.equal(session.getDebug().ready,false,'the final page alone still waits for required assets');releaseAssets();for(let tick=0;tick<8;tick++)await Promise.resolve();}
     assert.equal(session.getDebug().ready,true);
     assert.equal(continueButton.disabled,false);
-    assert.equal(continueButton.style.visibility,'visible');
+    assert.equal(continueButton.style.opacity,'1');
     assert(continueButton.textContent.includes('Enter / Space'));
     session.setProgress((i+1)*25);assert.equal(percentText.textContent,`${(i+1)*25}%`);
     if(i===1) subscriber({pressed:new Set(['Button0'])});
     else continueButton.events.get('click')();
-    await done;assert.equal(continued,true);assert.equal(continueButton.disabled,true);
+    await Promise.resolve();assert.equal(continued,false,'page replacement waits for the fade-out');
+    clock+=900;for(const timer of timers.splice(0).filter(timer=>timer.at<=clock))timer.fn();for(let tick=0;tick<5;tick++)await Promise.resolve();
+    await done;assert.equal(continued,true);assert.equal(continueButton.disabled,true);assert.equal(stageText.style.opacity,'0');
   }
   session.finish();assert(removed && unlocked);assert.equal(subscriber,null);assert.equal(listeners.size,0);assert.equal(state.introduction,null);
 
   // Execute real opening orchestration: all readiness hooks finish before scene one reveals.
   const order=[], records=['jubmir','father_hunundi_hodu','spearhead_unumanuk','khannibarri_agent'].map(id=>({id}));
-  const story={window:{__hobunjiGameStarted:true,LoadingScreenRuntime:{beginIntroduction:async()=>({setProgress(){},complete:async work=>{await work;order.push('continue');},start:i=>order.push('stage'+i),finish:()=>order.push('reveal'),cancel(){}})},LocalDBOverrides:{loadDatabase:async()=>({npcs:records})},AuthoredCutsceneRuntime:{preloadOpeningMeeting:async()=>order.push('meeting-assets'),run:async(payload,options)=>{if(payload.title==='Rescue'){order.push('terrain');await options.onEnvironmentReady();order.push('actors');await options.onActorsReady();order.push('textures-shaders');await options.onReady();order.push('rescue');}else options.onDialogueContinue({id:'meeting_hunundi_final'});},placeOutsideTemple:async()=>{}}},document:{addEventListener(){}},performance:{now:()=>0},localStorage:{setItem(){},getItem(){return null;}}};
+  const story={window:{__hobunjiGameStarted:true,LoadingScreenRuntime:{beginIntroduction:async()=>({setProgress(){},complete:async work=>{await work;order.push('continue');},start:i=>order.push('stage'+i),finish:()=>order.push('reveal'),cancel(){}})},LocalDBOverrides:{loadDatabase:async()=>({npcs:records})},AuthoredCutsceneRuntime:{preloadOpeningMeeting:async()=>order.push('meeting-assets'),run:async(payload,options)=>{if(payload.title==='Rescue'){order.push('terrain');await options.onEnvironmentReady();order.push('actors');await options.onActorsReady();order.push('textures-shaders');await options.onReady();order.push('rescue');}else options.onDialogueContinue({id:'meeting_hunundi_final'});},placeOutsideTemple:async()=>{}}},document:{addEventListener(){},getElementById(){return null;}},performance:{now:()=>0},localStorage:{setItem(){},getItem(){return null;}}};
   vm.runInNewContext(read('docs/js/opening-story-cutscene.js'),story);
   assert.equal(await story.window.OpeningStoryCutscene.play({characterId:'c',worldId:'w'}),true);
   assert(order.indexOf('terrain') < order.indexOf('reveal'));
   assert(order.indexOf('textures-shaders') < order.indexOf('reveal'));
   assert.equal(order.filter(step=>step==='continue').length,4);
   assert.deepEqual(order.filter(step=>step.startsWith('stage')),['stage1','stage2','stage3']);
-  console.log('Independent neck deadzones, panel-safe projection, pinned terrain and four fresh-input introduction gates passed');
+  console.log('Nine-page authored opening copy, independent neck deadzones, panel-safe projection, pinned terrain and four preload-phase gates passed');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

@@ -709,7 +709,10 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
     root.setAttribute('role', 'dialog');
     root.setAttribute('aria-label', 'Introduction');
     root.tabIndex = -1;
-    const stageText = document.createElement('div'); // Authored placeholder copy stays independent of live loading controls.
+    const INTRO_FADE_MS = 900; // Used by narrative pages and Continue prompts so every opening-text change crossfades instead of snapping.
+    const MIN_INTRA_SLIDE_DELAY_SECONDS = 4; // Used only by delayed text within one opening slide; ordinary page holds keep their authored durations.
+    const stageText = document.createElement('div'); // Authored opening pages keep delayed lines laid out invisibly until their fade-in beat.
+    stageText.style.cssText = `opacity:0;transition:opacity ${INTRO_FADE_MS}ms ease`;
     const percentText = document.createElement('div'); // Quiet progress stays at the bottom, separate from centered story copy.
     percentText.style.cssText = 'position:absolute;bottom:5vh;font-size:14px;opacity:.65';
     percentText.textContent = '0%';
@@ -717,24 +720,99 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
     continueButton.type = 'button';
     continueButton.textContent = 'Continue · Enter / Space · controller A';
     continueButton.disabled = true;
-    continueButton.style.cssText = 'position:absolute;bottom:12vh;min-height:48px;padding:10px 20px;background:transparent;color:#fff;border:0;font:18px KhymeryyanRoman,serif;cursor:pointer;visibility:hidden';
+    continueButton.style.cssText = `position:absolute;bottom:12vh;min-height:48px;padding:10px 20px;background:transparent;color:#fff;border:0;font:18px KhymeryyanRoman,serif;cursor:pointer;opacity:0;pointer-events:none;transition:opacity ${INTRO_FADE_MS}ms ease`;
     root.append(stageText, percentText, continueButton);
     document.body.appendChild(root);
     document.body.classList?.add('introduction-loading');
     const introAudio = window.AudioSystem?.beginIntroductionMix?.(); // Foreground text owns the exclusive wind mix and releases it with the same session.
     const inputLock = window.CharacterActionLocks?.acquire?.({ owner: 'introduction-loading', participants: [{ id: 'player', channels: ['movement', 'tools', 'actions'] }] }); // Covers stage one before the Director obtains its own action lock.
-    let stages = [], startedAt = 0, stageIndex = -1, ready = false, cancelled = false; // Per-session stage clock and input gate never reuse old input.
-    let continueStage = null, rejectStage = null, unsubscribe = null; // Input subscription and outstanding stage wait are released on success/error.
+    let stages = [], startedAt = 0, stageIndex = -1, pageIndex = 0, ready = false, cancelled = false; // Stage/page clocks and input gate never reuse old input.
+    let continueStage = null, rejectStage = null, unsubscribe = null; // Input subscription and outstanding page wait are released on success/error.
+    let pageTimers = []; // Delayed line reveals are cancelled whenever the page, session, or opening changes.
+    let pageVisiblePromise = Promise.resolve(); // First-page timing starts only once the violent wind has actually begun playing.
     let rejectCancellation; // Cancellation also releases a final page still awaiting asset preparation.
     const cancellation = new Promise((_, reject) => { rejectCancellation = reject; });
     cancellation.catch(() => {});
+    const stagePages = stage => Array.isArray(stage?.pages) && stage.pages.length ? stage.pages : [stage || {}]; // Keeps legacy one-page stages working while allowing several visible pages inside one loading phase.
+    const clearPageTimers = () => {
+      if (typeof clearTimeout === 'function') for (const timer of pageTimers) clearTimeout(timer);
+      pageTimers = [];
+    };
+    const appendRichText = (container, value) => {
+      const copy = String(value || '');
+      if (!copy.includes('**') || typeof document.createTextNode !== 'function') { container.textContent = copy.replace(/\*\*/g, ''); return; }
+      let cursor = 0;
+      for (const match of copy.matchAll(/\*\*(.+?)\*\*/gs)) {
+        if (match.index > cursor) container.appendChild(document.createTextNode(copy.slice(cursor, match.index)));
+        const strong = document.createElement('strong'); // Used by authored opening copy such as “only the lost may find.”
+        strong.textContent = match[1];
+        container.appendChild(strong);
+        cursor = match.index + match[0].length;
+      }
+      if (cursor < copy.length) container.appendChild(document.createTextNode(copy.slice(cursor)));
+    };
+    const fadeTo = (element, opacity, durationMs = INTRO_FADE_MS) => {
+      element.style.opacity = String(opacity);
+      if (durationMs <= 0 || typeof setTimeout !== 'function') return Promise.resolve();
+      return new Promise(resolve => setTimeout(resolve, durationMs));
+    };
+    const renderPageCopy = page => {
+      stageText.innerHTML = '';
+      const base = document.createElement('span'); // The base copy stays visible while delayed spans already occupy their final layout space.
+      appendRichText(base, page?.text || '');
+      stageText.appendChild(base);
+      const delayed = [];
+      for (const reveal of Array.isArray(page?.delayedReveals) ? page.delayedReveals : []) {
+        const node = document.createElement('span'); // Opacity zero preserves the final page geometry so delayed copy never shifts the centered composition.
+        node.style.cssText = `opacity:0;transition:opacity ${INTRO_FADE_MS}ms ease`;
+        node.setAttribute?.('aria-hidden', 'true');
+        appendRichText(node, reveal?.text || '');
+        stageText.appendChild(node);
+        delayed.push({ reveal, node });
+      }
+      return delayed;
+    };
+    const showPage = page => {
+      clearPageTimers();
+      startedAt = 0;
+      ready = false;
+      const delayed = renderPageCopy(page);
+      stageText.style.opacity = '0';
+      stageText.style.color = String(page?.textColor || '#fff'); // Allows authored emphasis pages, such as the proverb, without HTML in config.
+      stageText.style.fontWeight = page?.bold ? '700' : '400';
+      continueButton.disabled = true;
+      continueButton.style.opacity = '0';
+      continueButton.style.pointerEvents = 'none';
+      continueButton.setAttribute?.('aria-hidden', 'true');
+      const audioGate = introAudio?.started || Promise.resolve(true); // The opening remains black until the violent wind reaches its real playing event.
+      pageVisiblePromise = Promise.race([cancellation, Promise.resolve(audioGate)]).then(() => {
+        if (cancelled) return;
+        startedAt = nowMs();
+        void stageText.offsetWidth; // Force the hidden first frame so assigning opacity 1 below reliably animates on mobile browsers.
+        stageText.style.opacity = '1';
+        for (const { reveal, node } of delayed) {
+          const delaySeconds = Math.max(MIN_INTRA_SLIDE_DELAY_SECONDS, Number(reveal?.afterSeconds) || 0);
+          const timer = setTimeout(() => {
+            if (cancelled) return;
+            node.setAttribute?.('aria-hidden', 'false');
+            node.style.opacity = '1';
+          }, delaySeconds * 1000);
+          pageTimers.push(timer);
+        }
+      });
+      state.introductionStage = stageIndex + 1;
+      root.focus?.({ preventScroll: true });
+    };
     const accept = event => {
       if (!ready || cancelled || !continueStage) return;
       event?.preventDefault?.(); event?.stopImmediatePropagation?.();
       ready = false;
       continueButton.disabled = true;
-      continueButton.style.visibility = 'hidden';
-      const resolve = continueStage; continueStage = null; rejectStage = null; resolve(); // Consume this input exactly once.
+      continueButton.style.pointerEvents = 'none';
+      continueButton.setAttribute?.('aria-hidden', 'true');
+      clearPageTimers();
+      const resolve = continueStage; continueStage = null; rejectStage = null;
+      Promise.all([fadeTo(continueButton, 0), fadeTo(stageText, 0)]).then(resolve); // Let both prompt and current page finish fading out before the next page can replace their text.
     };
     const keydown = event => { introAudio?.retry?.(); if (['Enter', ' ', 'Space'].includes(event.key)) { event.preventDefault(); event.stopImmediatePropagation(); if (!event.repeat) accept(); } }; // Keyboard continuation matches dialogue; mobile taps the text surface.
     root.addEventListener('pointerdown', () => introAudio?.retry?.()); // Autoplay-blocked mobile audio resumes on the first trusted touch, including an early tap.
@@ -744,30 +822,45 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
       window.ControllerInput?.setOwner?.('introduction-loading');
       if (frame.pressed?.has('Button0')) { frame.pressed.delete('Button0'); accept(); }
     }, 1000);
+    const waitForPageInput = async (page, requiredWork) => {
+      await pageVisiblePromise; // A page's clock does not start while the screen is still waiting for audible wind.
+      const authoredReveals = Array.isArray(page?.delayedReveals) ? page.delayedReveals : [];
+      const delayedTail = Math.max(0, ...authoredReveals.map(reveal => Math.max(MIN_INTRA_SLIDE_DELAY_SECONDS, Number(reveal?.afterSeconds) || 0))); // Four seconds applies only to text revealed inside the current slide.
+      const authoredMinimum = Math.max(0, Number(page?.minimumSeconds) || Number(stages[stageIndex]?.minimumSeconds) || 0);
+      const minimumSeconds = Math.max(authoredMinimum, delayedTail + (delayedTail > 0 ? INTRO_FADE_MS / 1000 : 0)); // Continue can appear as soon as the authored page hold and final intra-slide fade are complete.
+      const minimum = minimumSeconds * 1000;
+      await Promise.race([cancellation, Promise.all([requiredWork, new Promise(resolve => setTimeout(resolve, Math.max(0, minimum - (nowMs() - startedAt))))])]);
+      if (cancelled) throw new Error('Introduction loading cancelled');
+      await new Promise((resolve, reject) => {
+        continueStage = resolve; rejectStage = reject; ready = true; // Earlier taps are discarded; a fresh input is required for each visible page.
+        continueButton.disabled = false;
+        continueButton.style.pointerEvents = 'auto';
+        continueButton.setAttribute?.('aria-hidden', 'false');
+        continueButton.style.opacity = '1';
+        continueButton.focus?.({ preventScroll: true });
+      });
+    };
     const session = {
       start(index) {
         if (cancelled) throw new Error('Introduction loading cancelled');
-        stageIndex = index; startedAt = nowMs(); ready = false;
-        stageText.textContent = String(stages[index]?.text || '');
-        continueButton.disabled = true;
-        continueButton.style.visibility = 'hidden';
-        state.introductionStage = index + 1;
-        root.focus?.({ preventScroll: true });
+        stageIndex = index; pageIndex = 0;
+        showPage(stagePages(stages[index])[0]);
       },
       async complete(requiredWork = Promise.resolve()) {
-        const minimum = Math.max(0, Number(stages[stageIndex]?.minimumSeconds) || 0) * 1000; // Each authored stage waits for both its work and minimum duration.
-        await Promise.race([cancellation, Promise.all([requiredWork, new Promise(resolve => setTimeout(resolve, Math.max(0, minimum - (nowMs() - startedAt))))])]);
-        if (cancelled) throw new Error('Introduction loading cancelled');
-        await new Promise((resolve, reject) => {
-          continueStage = resolve; rejectStage = reject; ready = true; // Earlier taps are discarded; a fresh input is required.
-          continueButton.disabled = false;
-          continueButton.style.visibility = 'visible';
-          continueButton.focus?.({ preventScroll: true });
-        });
+        const pages = stagePages(stages[stageIndex]);
+        for (; pageIndex < pages.length; pageIndex += 1) {
+          if (pageIndex > 0) showPage(pages[pageIndex]);
+          const isLastPage = pageIndex === pages.length - 1;
+          const page = pages[pageIndex];
+          await waitForPageInput(page, isLastPage ? requiredWork : Promise.resolve()); // Only the last page of the loading phase inherits its asset-readiness gate.
+          const afterPageSeconds = Math.max(0, Number(page?.afterPageSeconds) || 0);
+          if (afterPageSeconds > 0) await Promise.race([cancellation, new Promise(resolve => setTimeout(resolve, afterPageSeconds * 1000))]); // Authored black gap between slides; currently used once after the proverb.
+        }
+        pageIndex = Math.max(0, pages.length - 1);
       },
       setProgress(percent) { percentText.textContent = `${Math.round(Math.max(0, Math.min(100, percent)))}%`; }, // Existing preparation owners report their actual readiness milestones.
       finish() {
-        cancelled = true; ready = false;
+        cancelled = true; ready = false; clearPageTimers();
         introAudio?.finish?.();
         document.body.classList?.remove('introduction-loading');
         document.removeEventListener('keydown', keydown, true); unsubscribe?.(); inputLock?.release?.(); root.remove();
@@ -775,13 +868,13 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
         if (state.introduction === session) { state.introduction = null; state.introductionStage = 0; finalizeHide(state.generation); }
       },
       cancel() { const error = new Error('Introduction loading cancelled'); rejectCancellation(error); rejectStage?.(error); session.finish(); },
-      getDebug: () => ({ audio: introAudio?.debug?.(), presetId, stage: stageIndex + 1, ready, minimumSeconds: stages[stageIndex]?.minimumSeconds, latestChange: 'Centered introduction text, quiet loading percentage and a prompt that appears after each delay. Early pages advance during loading; final reveal waits for assets.' }),
+      getDebug: () => ({ audio: introAudio?.debug?.(), presetId, stage: stageIndex + 1, page: pageIndex + 1, pageCount: stagePages(stages[stageIndex]).length, ready, minimumSeconds: stagePages(stages[stageIndex])[pageIndex]?.minimumSeconds ?? stages[stageIndex]?.minimumSeconds, latestChange: 'Opening narration waits for audible wind before first paint; four seconds applies only to intra-slide reveals, the proverb is bold/bronze, and its authored ten-second black inter-slide pause precedes the carriage crash.' }),
     };
     state.introduction = session; // Claim foreground synchronously before config/fonts are fetched.
     try {
-      const [config] = await Promise.all([ensureConfigLoaded(), ensureFontsLoaded()]); // Font loading settles before the first placeholder appears.
+      const [config] = await Promise.all([ensureConfigLoaded(), ensureFontsLoaded()]); // Font loading settles before the first opening page appears.
       stages = config.entries?.find(entry => entry.id === presetId)?.stages || [];
-      if (stages.length !== 4) throw new Error('Introduction preset must contain four stages');
+      if (stages.length !== 4) throw new Error('Introduction preset must contain four loading phases');
       session.start(0);
       return session;
     } catch (error) { session.cancel(); throw error; }
