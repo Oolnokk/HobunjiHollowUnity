@@ -1,0 +1,24 @@
+name: Temporary advanced loom inspection
+on:
+  push:
+    branches:
+      - codex/npc-crafting-commissions-v2
+    paths:
+      - .github/workflows/tmp-advanced-loom-inspect.yml
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect loom integration seams
+        run: |
+          echo '=== makeLoomInteractable ==='
+          grep -n -C 14 "makeLoomInteractable" docs/game.js || true
+          echo '=== loom blueprint/catalog ==='
+          grep -n -C 8 "loomFurniture\|FURNITURE_BLUEPRINT_CATALOG" docs/game.js | head -n 220 || true
+          echo '=== decorative loom def ==='
+          grep -n -C 8 "loom.*itemKey\|itemKey.*loom" docs/game.js | head -n 160 || true
+          echo '=== furniture placer / item defs loom ==='
+          grep -n -C 8 "loom" docs/js/furniture-placer.js | head -n 180 || true
