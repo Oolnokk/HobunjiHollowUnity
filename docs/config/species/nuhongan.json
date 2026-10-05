@@ -1,0 +1,11 @@
+{
+  "speciesId": "nuhongan",
+  "label": "Nuhongan",
+  "parentSpecies": "tletingan",
+  "genders": [
+    "male",
+    "female"
+  ],
+  "male": {},
+  "female": {}
+}
