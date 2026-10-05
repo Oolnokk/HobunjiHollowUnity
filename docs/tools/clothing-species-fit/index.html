@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Hobunji 6x6 Clothing Species Fit Reference V12</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+    <div>
+      <h1>Hobunji 6×6 Clothing Species Fit Reference V12</h1>
+      <div class="small">Recorded transform + 6×6 fit + extended torso/clothing overlay + repository-runtime full-character preview + cloud-mask transform preview + derived overlay baking from existing species sprites.</div>
+    </div>
+    <div class="small">Repository authoring tool</div>
+  </div>
+
+  <div class="grid">
+    <aside class="panel controls">
+      <section>
+        <h2>Repository</h2>
+        <div class="field"><label for="repo">Docs base</label><input id="repo" value="https://raw.githubusercontent.com/Oolnokk/HobunjiHollowUnity/main/docs/"></div>
+        <button id="reload">Reload data</button>
+        <div id="status" class="status">Loading…</div>
+      </section>
+
+      <section>
+        <h2>Selection</h2>
+        <div class="field"><label for="gender">Gender</label><select id="gender"><option value="male">male</option><option value="female">female</option></select></div>
+        <div class="field"><label for="species">Target species</label><select id="species"></select></div>
+        <div class="field"><label for="garment">Mao-ao calibration / preview garment</label><select id="garment"></select></div>
+      </section>
+
+      <section>
+        <h2>Mode</h2>
+        <div class="modes" style="grid-template-columns:repeat(4,1fr)">
+          <button data-mode="transform" class="active">Base transform</button>
+          <button data-mode="body">Grid only</button>
+          <button data-mode="fit">Species fit</button>
+          <button data-mode="preview">Preview</button>
+        </div>
+        <div id="help" class="help" style="margin-top:6px"></div>
+      </section>
+
+      <section>
+        <h2>Display</h2>
+        <div class="row">
+          <label class="small"><input id="showBody" type="checkbox" checked> body</label>
+          <label class="small"><input id="showGarment" type="checkbox" checked> garment</label>
+          <label class="small"><input id="showMeshes" type="checkbox" checked> grids</label>
+        </div>
+        <div class="field"><label for="opacity">Warped garment opacity</label><input id="opacity" type="range" min="0" max="1" step=".05" value=".78"></div>
+        <div class="row">
+          <label class="small"><input id="showAuthored" type="checkbox"> authored target variant</label>
+        </div>
+        <div class="field"><label for="authoredOpacity">Authored variant opacity</label><input id="authoredOpacity" type="range" min="0" max="1" step=".05" value=".55"></div>
+        <div id="authoredStatus" class="small">No authored target variant loaded.</div>
+      </section>
+
+      <section>
+        <h2>Initial recorded transform</h2>
+        <div class="field"><label for="scaleX">Scale X</label><div class="row"><input id="scaleX" type="range" min="0.5" max="1.75" step="0.005" value="1"><input id="scaleXNumber" type="number" min="0.5" max="1.75" step="0.005" value="1" aria-label="Scale X value"></div></div>
+        <div class="field"><label for="scaleY">Scale Y</label><div class="row"><input id="scaleY" type="range" min="0.5" max="1.75" step="0.005" value="1"><input id="scaleYNumber" type="number" min="0.5" max="1.75" step="0.005" value="1" aria-label="Scale Y value"></div></div>
+        <div class="field"><label for="translateX">Translate X (px)</label><div class="row"><input id="translateX" type="range" min="-120" max="120" step="0.25" value="0"><input id="translateXNumber" type="number" min="-120" max="120" step="0.25" value="0" aria-label="Translate X pixels"></div></div>
+        <div class="field"><label for="translateY">Translate Y (px)</label><div class="row"><input id="translateY" type="range" min="-120" max="120" step="0.25" value="0"><input id="translateYNumber" type="number" min="-120" max="120" step="0.25" value="0" aria-label="Translate Y pixels"></div></div>
+        <div class="row"><button id="resetTransform">Reset base transform</button></div>
+        <div class="small">Saved per species+gender. In Base Transform mode you can also drag the canvas to translate the whole garment.</div>
+      </section>
+
+      <section>
+        <h2>Target grid</h2>
+        <div class="row">
+          <button id="reset">Reset local offsets</button>
+          <button id="undo">Undo</button>
+          <button id="redo">Redo</button>
+        </div>
+        <div class="small">Orange is the fixed Mao source, green is the recorded base transform, and blue adds the local 6×6 corrections.</div>
+      </section>
+
+      <section>
+        <h2>Cloud mask</h2>
+        <div style="display:none"><div class="field"><label for="maskScaleX">Mask Scale X</label><input id="maskScaleX" type="range" min="0.3" max="2.0" step="0.005" value="1"></div>
+        <div class="field"><label for="maskScaleY">Mask Scale Y</label><input id="maskScaleY" type="range" min="0.3" max="2.0" step="0.005" value="1"></div>
+        <div class="field"><label for="maskTranslateY">Mask Translate Y (+ down)</label><input id="maskTranslateY" type="range" min="-0.6" max="0.6" step="0.0025" value="0"></div>
+        <div class="row">
+          <input id="maskScaleXNumber" type="number" min="0.3" max="2.0" step="0.005" value="1" aria-label="Mask Scale X value">
+          <input id="maskScaleYNumber" type="number" min="0.3" max="2.0" step="0.005" value="1" aria-label="Mask Scale Y value">
+        </div>
+        <div class="row">
+          <input id="maskTranslateYNumber" type="number" min="-0.6" max="0.6" step="0.0025" value="0" aria-label="Mask Translate Y value">
+          <button id="resetMaskTransform">Reset mask transform</button>
+        </div>
+        <div class="small">Cloud masks are disabled globally in the game. The legacy transform controls below are retained only for old exported JSON compatibility.</div></div>
+      </section>
+
+      <section>
+        <h2>Extended overlay sprites</h2>
+        <div class="field"><label for="extTorsoFile">Extended torso/base PNG</label><input id="extTorsoFile" type="file" accept="image/png"></div>
+        <div class="field"><label for="extTorsoClothingFile">Extended torso clothing PNG</label><input id="extTorsoClothingFile" type="file" accept="image/png"></div>
+        <div class="field"><label for="extOverwearFile">Extended overwear PNG</label><input id="extOverwearFile" type="file" accept="image/png"></div>
+        <div class="row">
+          <label class="small"><input id="extUseCutoff" type="checkbox"> imported PNGs are ordinary species clothing sprites; clear everything above a cutoff and align that cutoff row to the main portrait bottom</label>
+        </div>
+        <div class="field"><label for="extCutoffY">Derived overlay cutoff Y</label><input id="extCutoffY" type="range" min="0" max="300" step="1" value="130"></div>
+        <div class="row">
+          <input id="extCutoffYNumber" type="number" min="0" max="300" step="1" value="130" aria-label="Derived overlay cutoff Y value">
+        </div>
+        <div class="small" style="margin-top:5px">Use this when you import an existing clothing sprite from another species. The tool makes pixels above the cutoff transparent, shifts the remaining pixels downward so the cutoff lines up with the normal portrait cutoff, and then warps the result as an extended overlay.</div>
+        <div class="row">
+          <label class="small"><input id="showExtended3D" type="checkbox" checked> show extended overlay in 3D</label>
+        </div>
+        <div class="row"><button id="clearExtended">Clear imported sprites</button><button id="downloadExtended">Export baked warped extended overlay PNG</button></div>
+        <div id="extendedStatus" class="importStatus">No extended sprites imported. Arm sprites are intentionally excluded.</div>
+        <div class="small" style="margin-top:5px">Imports are session-only. Layers are composited in this order: torso → torso clothing → overwear. When cutoff mode is enabled, the imported PNGs are treated as ordinary portrait sprites and baked into an aligned extended-overlay source before warping.</div>
+      </section>
+
+      <section>
+        <h2>Downloads</h2>
+        <div class="row"><button id="bodyPng">Body PNG</button><button id="clothPng">Warped clothing</button></div>
+        <div class="row"><button id="overlayPng">Overlay PNG</button><button id="exportJson">Export grids</button></div>
+        <div class="row"><button id="importJson">Import grids</button><input id="file" type="file" accept=".json,application/json" hidden></div>
+      </section>
+
+      <details>
+        <summary>Mapping</summary>
+        <div class="help" style="margin-top:7px">
+          The Mao-ao source is a fixed <b>6×6 full-portrait grid</b>: 36 points at 0%, 20%, 40%, 60%, 80%, and 100% on both axes. First, a recorded global transform applies independent X/Y scale about portrait center plus X/Y translation. Local node offsets are added afterward.
+          Each of its twenty-five cells is treated as a <b>bilinear quad</b>, so all four corner nodes influence the entire cell. Each quad is internally subdivided for rendering, while the grid still reaches every portrait edge. Imported extended overlays support torso/base, torso clothing, and overwear only; arm sprites are deliberately left on the normal portrait plane.
+        </div>
+      </details>
+
+      <details open>
+        <summary>Diagnostics</summary>
+        <div class="row" style="margin:6px 0"><button id="copyDebug">Copy diagnostics</button></div>
+        <div id="debug" class="debug"></div>
+      </details>
+    </aside>
+
+    <main class="panel">
+      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:7px">
+        <div><h2 style="margin:0">Reference canvas</h2><div id="label" class="small"></div></div>
+        <div class="legend">
+          <span><i class="dot" style="background:var(--orange)"></i>fixed Mao grid</span>
+          <span><i class="dot" style="background:var(--green)"></i>base transform</span>
+          <span><i class="dot" style="background:var(--blue)"></i>final target grid</span>
+          <span><i class="dot" style="background:var(--pink)"></i>authored target variant</span>
+        </div>
+      </div>
+      <div class="shell"><canvas id="stage" width="234" height="173"></canvas></div>
+      <div class="small" style="margin-top:7px">Start with Base Transform for global X/Y scale and translation, then use Species Fit for local blue-node corrections. The authored comparison overlay works in both steps.</div>
+
+      <div class="threeToolbar">
+        <div><h2 style="margin:0">Runtime full-character rig preview</h2><div id="threeStatus" class="small">Initializing Three.js…</div></div>
+        <div class="row"><button id="retry3D">Retry runtime</button><button id="reset3D">Reset 3D view</button></div>
+      </div>
+      <div id="threeHost" class="threeHost"></div>
+      <div class="small" style="margin-top:7px">Uses the game's PNG-plane avatar, neck rig, procedural hands/feet, and species scaling. Portrait cloud masks are disabled globally; loading progress is shown above.</div>
+    </main>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="loader.js"></script>
+</body>
+</html>

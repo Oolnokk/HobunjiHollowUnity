@@ -1,0 +1,118 @@
+eady=true;
+
+  function resize(){
+    const w=Math.max(1,E.threeHost.clientWidth),h=Math.max(1,E.threeHost.clientHeight);
+    renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();
+  }
+  new ResizeObserver(resize).observe(E.threeHost);resize();
+
+  renderer.domElement.addEventListener('pointerdown',e=>{
+    R.three.drag={x:e.clientX,y:e.clientY,rotX:R.three.rotX,rotY:R.three.rotY};
+    renderer.domElement.setPointerCapture(e.pointerId);e.preventDefault();
+  });
+  renderer.domElement.addEventListener('pointermove',e=>{
+    if(!R.three.drag)return;
+    R.three.rotY=R.three.drag.rotY+(e.clientX-R.three.drag.x)*0.008;
+    R.three.rotX=Math.max(-1.0,Math.min(1.0,R.three.drag.rotX+(e.clientY-R.three.drag.y)*0.008));
+    group.rotation.set(R.three.rotX,R.three.rotY,0);e.preventDefault();
+  });
+  const end=e=>{R.three.drag=null;if(e?.pointerId!=null&&renderer.domElement.hasPointerCapture?.(e.pointerId))renderer.domElement.releasePointerCapture(e.pointerId)};
+  renderer.domElement.addEventListener('pointerup',end);renderer.domElement.addEventListener('pointercancel',end);
+  renderer.domElement.addEventListener('wheel',e=>{
+    R.three.zoom=Math.max(1.1,Math.min(8,R.three.zoom+Math.sign(e.deltaY)*0.2));
+    camera.position.z=R.three.zoom;e.preventDefault();
+  },{passive:false});
+  (function loop(){requestAnimationFrame(loop);renderer.render(scene,camera)})();
+  E.threeStatus.textContent='3D scene ready; loading runtime rig…';
+  return true;
+}
+function frameRuntimeRig(){
+  if(!R.three.rigRoot||!window.THREE)return;
+  const THREE=window.THREE,box=new THREE.Box3().setFromObject(R.three.rigRoot);
+  if(box.isEmpty())return;
+  const center=box.getCenter(new THREE.Vector3()),size=box.getSize(new THREE.Vector3());
+  const fov=THREE.MathUtils.degToRad(R.three.camera.fov||38);
+  const aspect=Math.max(.1,R.three.camera.aspect||1);
+  const horizontalFov=2*Math.atan(Math.tan(fov/2)*aspect);
+  const byH=(size.y/2+.18)/Math.max(.01,Math.tan(fov/2));
+  const byW=(size.x/2+.18)/Math.max(.01,Math.tan(horizontalFov/2));
+  const distance=Math.max(1.25,byH,byW)+size.z/2;
+  R.three.zoom=distance;
+  R.three.camera.position.set(center.x,Math.max(center.y,size.y*.42),center.z+distance);
+  R.three.camera.lookAt(center.x,Math.max(center.y,size.y*.42),center.z);
+  R.three.camera.updateMatrixWorld(true);
+}
+function makeExtendedRigPlanes(THREE,canvas,modelWidth,modelHeight){
+  if(!canvas)return null;
+  const group=new THREE.Group();group.name='ImportedExtendedPortraitOverlay';
+  const worldHeight=modelHeight*(canvas.height/200);
+  const topY=modelHeight;
+  const centerY=topY-worldHeight/2;
+  const makeTexture=(source,name)=>{
+    const texture=new THREE.CanvasTexture(source);texture.name=name;texture.generateMipmaps=false;
+    texture.minFilter=THREE.LinearFilter;texture.magFilter=THREE.LinearFilter;texture.needsUpdate=true;return texture;
+  };
+  const frontTexture=makeTexture(canvas,'extended_overlay_front');
+  const backTexture=makeTexture(flipCanvasX(canvas),'extended_overlay_back');
+  const geometry=new THREE.PlaneGeometry(modelWidth,worldHeight);
+  const front=new THREE.Mesh(geometry,new THREE.MeshBasicMaterial({map:frontTexture,transparent:true,alphaTest:.001,side:THREE.FrontSide,depthTest:true,depthWrite:false}));
+  front.position.set(0,centerY,.008);front.name='extended_overlay_front_plane';group.add(front);
+  const back=new THREE.Mesh(geometry.clone(),new THREE.MeshBasicMaterial({map:backTexture,transparent:true,alphaTest:.001,side:THREE.FrontSide,depthTest:true,depthWrite:false}));
+  back.rotation.y=Math.PI;back.position.set(0,centerY,-.008);back.name='extended_overlay_back_plane';group.add(back);
+  return group;
+}
+async function updateThreePreview(){
+  if(!R.body||!ensureThreePreview())return;
+  const buildId=++R.three.buildGeneration;
+  try{
+    await ensureRigRuntime();
+    if(buildId!==R.three.buildGeneration)return;
+    E.threeStatus.textContent='Rendering runtime portrait + cloud mask…';
+
+    const avatar=await composeRuntimePortrait();
+    if(buildId!==R.three.buildGeneration)return;
+    const THREE=window.THREE;
+    disposeRuntimeRig();
+
+    const rigGroup=new THREE.Group();
+    rigGroup.name=`RuntimeCharacterRig_${E.species.value}_${E.gender.value}`;
+    const avatarCfg=window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar||{};
+    const baseWidth=Number(avatarCfg.worldModelWidth)>0?Number(avatarCfg.worldModelWidth):.9;
+    const model=window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE,avatar.frontComposed,{
+      backCanvas:avatar.backComposed,
+      headCanvas:avatar.head,
+      neckRig:true,
+      profile:avatar.profile,
+      appearance:avatar.npc.appearance,
+      npcRecord:avatar.npc,
+      modelWidth:baseWidth,
+      modelHeight:baseWidth,
+      name:'ClothingFitRuntimePortrait',
+      userData:{source:'clothing-fit-runtime-preview',nonInteractive:true},
+    });
+    model.userData.proceduralHandParent=rigGroup;
+    model.userData.rigAvatarProfile=avatar.profile;
+    rigGroup.add(model);
+
+    const modelHeight=Number(model.userData.portraitModelHeight)||baseWidth;
+    const modelWidth=Number(model.userData.portraitModelWidth)||baseWidth;
+    model.position.y=modelHeight/2;
+
+    const feet=window.ProceduralLegAnimation?.attach?.(THREE,rigGroup,{
+      speciesId:E.species.value,
+      gender:E.gender.value,
+      bodyColors:avatar.profile?.bodyColors||avatar.npc.appearance?.bodyColors,
+      modelWidth,modelHeight,
+      handAttachY:model.userData.handAttachY,
+      name:'ClothingFitRuntimeFeet',
+      profile:avatar.profile,
+      portraitSize:avatar.frontComposed.width||200,
+    })||null;
+    feet?.update?.(0,0,false,null);
+
+    if(E.showExtended3D.checked&&R.extendedSource){
+      const extCanvas=await extendedRuntimeCanvas();
+      if(buildId!==R.three.buildGeneration){feet?.dispose?.();disposeObjectTree(rigGroup);return}
+      if(extCanvas){
+        const extGroup=makeExtendedRigPlanes(THREE,extCanvas,modelWidth,modelHeight);
+        if(extGroup){rigGroup.add(extGroup);
