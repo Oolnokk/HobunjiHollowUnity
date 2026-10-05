@@ -1,0 +1,35 @@
+name: Temporary opening narration corrections
+
+on:
+  push:
+    branches:
+      - codex/fix-opening-rescue-mobile-startup
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply narration timing, proverb, and audio gate corrections
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          python scripts/tmp-opening-narration-fix.py
+          git fetch --no-tags origin main
+          node scripts/check-cache-busts.js --fix origin/main
+          git add docs scripts
+          git commit -m "Correct opening narration timing and wind gate"
+          git push origin HEAD:codex/fix-opening-rescue-mobile-startup
+          node --check docs/js/loading-screen-runtime.js
+          node --check docs/js/audio-system.js
+          node scripts/test-introduction-loading-and-framing.js
+          node scripts/run-tests.js
