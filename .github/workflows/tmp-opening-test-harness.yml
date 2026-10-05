@@ -1,0 +1,40 @@
+name: Temporary opening test harness patch
+
+on:
+  push:
+    branches:
+      - codex/fix-opening-rescue-mobile-startup
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Patch browser fixture and run regressions
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/test-opening-story-cutscene.js')
+          text = path.read_text()
+          old = "document: { addEventListener: (type, handler) => { events[type] = handler; }, getElementById: () => null },"
+          new = "document: { addEventListener: (type, handler) => { events[type] = handler; }, getElementById: () => null, createElement: () => ({ style: {}, append() {}, addEventListener() {}, remove() {} }), body: { appendChild() {} } },"
+          if old not in text:
+              raise SystemExit('opening-story browser fixture target not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          git add scripts/test-opening-story-cutscene.js
+          git commit -m "Update opening story retry-screen test fixture"
+          git push origin HEAD:codex/fix-opening-rescue-mobile-startup
+          node scripts/test-opening-story-cutscene.js
+          node scripts/run-tests.js
