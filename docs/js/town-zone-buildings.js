@@ -358,6 +358,7 @@
             targetCol: Math.floor(deps.INTERIOR_COLS / 2), targetRow: deps.INTERIOR_ROWS - 2,
           });
           const ring = new THREE.Mesh(_entranceRingGeo, _entranceMat);
+          window.EnvironmentSurfaceMicroPlateau?.bindGroundProjection(ring);
           ring.rotation.x = -Math.PI / 2;
           ring.position.set(eCol + 0.5, deps.tileSurfaceY(deps.TileType.GRASS) + _tileVisualHeight(townMap, eCol, eRow) + 0.02, eRow + 0.5);
           townScene2.add(ring);

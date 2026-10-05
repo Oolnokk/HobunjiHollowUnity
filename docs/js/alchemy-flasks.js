@@ -105,6 +105,7 @@
     const geometry = new deps.THREE.RingGeometry(0.2, 0.27, 40); // Readable fixed-width green ground ring.
     const material = new deps.THREE.MeshBasicMaterial({ color: 0x55ff82, transparent: true, opacity: 0.82, side: deps.THREE.DoubleSide, depthWrite: false }); // Aim-only presentation material.
     targetRing = new deps.THREE.Mesh(geometry, material);
+    window.EnvironmentSurfaceMicroPlateau?.bindGroundProjection(targetRing);
     targetRing.rotation.x = -Math.PI / 2;
     targetRing.renderOrder = 40;
     return targetRing;
@@ -265,6 +266,7 @@
       const geometry = new THREE.RingGeometry(0.86, 1, 56); // Expanding ground shock ring.
       const material = new THREE.MeshBasicMaterial({ color:colors[index % colors.length], transparent:true, opacity:0, side:THREE.DoubleSide, depthWrite:false, blending:THREE.AdditiveBlending }); // Additive shock-ring material.
       const mesh = new THREE.Mesh(geometry, material);
+      window.EnvironmentSurfaceMicroPlateau?.bindGroundProjection(mesh);
       mesh.rotation.x = -Math.PI / 2;
       mesh.position.y = 0.012 + index * 0.008;
       group.add(mesh);

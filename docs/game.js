@@ -10515,6 +10515,7 @@
         for (const t of transitions) {
           const tile = zGrid[t.row]?.[t.col];
           const ring = new THREE.Mesh(ringGeo, ringMat);
+          window.EnvironmentSurfaceMicroPlateau?.bindGroundProjection(ring);
           ring.rotation.x = -Math.PI / 2;
           ring.position.set(t.col + 0.5, tileSurfaceYInArea(tile, mapId) + 0.02, t.row + 0.5);
           ring.userData.mapEditorRef = { mapId, kind: 'spot', id: t.id, col: t.col, row: t.row };
@@ -10851,6 +10852,7 @@
         const shadow = new THREE.Mesh(geo, mat);
         shadow.name = name;
         shadow.renderOrder = -1;
+        window.EnvironmentSurfaceMicroPlateau?.bindGroundProjection(shadow);
         shadow.scale.set(cfg.radiusX ?? 0.34, 1, cfg.radiusZ ?? 0.22);
         return shadow;
       }
@@ -15170,6 +15172,7 @@
         for (const t of worldTownTransitions) {
           const tile = townGrid[t.row]?.[t.col];
           const ring = new THREE.Mesh(ringGeo, ringMat);
+          window.EnvironmentSurfaceMicroPlateau?.bindGroundProjection(ring);
           ring.rotation.x = -Math.PI / 2;
           ring.position.set(t.col + 0.5, tileSurfaceY((tile?.type) || TileType.GRASS) + 0.02, t.row + 0.5);
           // Used by the async building pass to move a stale linked marker
@@ -18447,6 +18450,7 @@
           fog: false,
         });
         const mesh = new THREE.Mesh(geo, mat);
+        window.EnvironmentSurfaceMicroPlateau?.bindGroundProjection(mesh);
         mesh.userData.baseOpacity = LUNGE_TRAIL_BASE_OPACITY;
         group.add(mesh);
 
@@ -21140,6 +21144,7 @@
       const reticleCircleGeo = new THREE.TorusGeometry(0.28, 0.04, 8, 40);
       reticleCircleGeo.rotateX(-Math.PI / 2);
       const reticleCircleMesh = new THREE.Mesh(reticleCircleGeo, reticleIntenseMat);
+      window.EnvironmentSurfaceMicroPlateau?.bindGroundProjection(reticleCircleMesh);
       reticleCircleMesh.visible = false;
 
       // Floating ring for object highlights — torus baked horizontal, bobs + spins
@@ -21161,6 +21166,7 @@
         }
         reticleWavyGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(_pts), _wavyLineMat));
       }
+      window.EnvironmentSurfaceMicroPlateau?.bindGroundProjection(reticleWavyGroup);
       reticleWavyGroup.visible = false;
 
       // ── Mesh stores ───────────────────────────────────────────────
@@ -21772,6 +21778,7 @@
 
       // ── Reticle mesh ──────────────────────────────────────────────
       const reticleMesh = new THREE.Mesh(reticleGeo, reticleMat);
+      window.EnvironmentSurfaceMicroPlateau?.bindGroundProjection(reticleMesh);
       scene.add(reticleMesh);
       scene.add(reticleCircleMesh);
       scene.add(reticleRingMesh);

@@ -112,6 +112,7 @@
       ...(additive ? { blending: THREE.AdditiveBlending } : {}),
     });
     const mesh = new THREE.Mesh(geometry, material);
+    window.EnvironmentSurfaceMicroPlateau?.bindGroundProjection(mesh);
     // Keep world-space height independent from draw priority. Most callers
     // still use yOffset for both; outlines can now paint last without being
     // physically raised above the fill and shifting under perspective.
