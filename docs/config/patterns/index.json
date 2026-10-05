@@ -50,6 +50,11 @@
       "id": "harlyao_glyph_servitude",
       "name": "Harlyao Glyph: Servitude",
       "file": "config/patterns/pattern_harlyao_glyph_servitude.json"
+    },
+    {
+      "id": "harlyao_glyph_ignorance",
+      "name": "Harlyao Glyph: Ignorance",
+      "file": "config/patterns/pattern_harlyao_glyph_ignorance.json"
     }
   ]
 }
