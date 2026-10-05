@@ -1,14 +1,16 @@
 (() => {
   'use strict';
 
-  const CONFIG_URL = '../../config/combat/weapon-idle-stances.json?v=20260817a';
+  const CONFIG_URL = '../../config/combat/weapon-idle-stances.json?v=20261005dualidle1';
   const LOCAL_STORAGE_KEY = 'hobunji.weaponIdleStances.v1';
-  const STANCE_ORDER = ['tool', 'hoeTool', 'heavyWeapon', 'lightWeapon'];
+  const STANCE_ORDER = ['tool', 'hoeTool', 'heavyWeapon', 'lightWeapon', 'dualWieldMain', 'dualWieldOffhand'];
   const STANCE_LABELS = Object.freeze({
     tool: 'Tool / Shovel-style',
     hoeTool: 'Hoe Tool',
     heavyWeapon: 'Heavy Weapon',
     lightWeapon: 'Light Weapon',
+    dualWieldMain: 'Dual Wield — Main hand',
+    dualWieldOffhand: 'Dual Wield — Offhand',
   });
   const FIELD_DEFS = Object.freeze([
     { key: 'x', label: 'Tool X position (side)', min: -1, max: 1, step: 0.01, angle: false },
@@ -21,13 +23,15 @@
   ]);
 
   const FALLBACK_CONFIG = Object.freeze({
-    version: 1,
+    version: 2,
     kind: 'hobunji_weapon_idle_stances',
     stances: Object.freeze({
       tool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0 }),
       hoeTool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: -95 }),
       heavyWeapon: Object.freeze({ x: -0.03, y: 0.27, z: 0.02, pitch: -23, yaw: 104, bodyYaw: -15, roll: 89 }),
       lightWeapon: Object.freeze({ x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 }),
+      dualWieldMain: Object.freeze({ x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 }),
+      dualWieldOffhand: Object.freeze({ x: 0.09, y: 0, z: -0.04, pitch: 37, yaw: 68, bodyYaw: -40, roll: 114 }),
     }),
   });
 
@@ -43,7 +47,7 @@
   }
 
   function normalizeConfig(raw, fallback = FALLBACK_CONFIG) {
-    const out = { version: 1, kind: 'hobunji_weapon_idle_stances', stances: {} };
+    const out = { version: 2, kind: 'hobunji_weapon_idle_stances', stances: {} };
     for (const key of STANCE_ORDER) {
       out.stances[key] = normalizePose(raw?.stances?.[key], fallback.stances[key]);
     }
@@ -52,6 +56,7 @@
       Math.abs(numberOr(incomingLight[field.key]) - PREVIOUS_LIGHT_WEAPON_STANCE[field.key]) < 1e-9
     );
     if (wasPreviousDefault) out.stances.lightWeapon.y = 0; // Keep editor/runtime parity for exact old saved defaults without touching authored variants.
+    out.stances.dualWieldOffhand.bodyYaw = out.stances.dualWieldMain.bodyYaw; // Body yaw is shared; only the offhand weapon transform is independently authored.
     return out;
   }
 
@@ -68,6 +73,7 @@
     let workingConfig = clone(FALLBACK_CONFIG);
     let selectedKey = 'lightWeapon';
     let editingNeutral = false;
+    let dualPairPreview = false; // Pair preview renders both explicit idle weapons while each pose remains independently authorable.
     let lastNeutralSignature = '';
 
     const card = document.createElement('div');
@@ -86,6 +92,10 @@
         <button id="idleCaptureBtn" class="secondary">Capture Neutral</button>
         <button id="idleResetBtn" class="secondary">Reset Selected</button>
       </div>
+      <div class="row" style="margin-top:6px">
+        <button id="idlePreviewDualPairBtn" class="secondary">Preview Dual Wield Pair</button>
+        <button id="idleStopDualPairBtn" class="secondary">Stop Pair Preview</button>
+      </div>
       <div class="hr"></div>
       <div class="row">
         <button id="idleDownloadBtn" class="secondary">⭳ Download idle-stances.json</button>
@@ -96,7 +106,7 @@
         <button id="idleClearOverrideBtn" class="secondary">🗑 Clear Local Override</button>
       </div>
       <div class="help" id="idleStanceStatus" style="margin-top:7px"></div>
-      <div class="help" style="margin-top:7px">Use <b>Edit Selected in Neutral</b> to route the existing Neutral sliders and 3D gizmo into this idle preset. The committed JSON is the game default; Local Override is shared with the game on the same origin for rapid testing.</div>
+      <div class="help" style="margin-top:7px">Use <b>Edit Selected in Neutral</b> to route the existing Neutral sliders and 3D gizmo into any idle preset, including <b>Dual Wield — Offhand</b>. The offhand begins as a body-relative mirror of Light Weapon, but that mirror is only the default: its x/y/z and pitch/yaw/roll are saved explicitly and runtime uses exactly what you author. Body yaw stays shared with Dual Wield — Main hand. <b>Preview Dual Wield Pair</b> shows both saved poses together.</div>
     `;
 
     const firstCard = sidebar.querySelector('.card');
@@ -127,11 +137,33 @@
       return workingConfig.stances[selectedKey];
     }
 
+    function setDualPairPreview(active) {
+      dualPairPreview = !!active;
+      window.HobunjiDualWieldWeaponVisuals?.setEditorIdlePreview?.(dualPairPreview);
+      window.HobunjiDualWieldWeaponVisuals?.syncNow?.();
+      window.ProceduralHandFrameDriver?.syncNow?.();
+      return dualPairPreview;
+    }
+
+    function previewDualWieldMain() {
+      const main = workingConfig.stances.dualWieldMain;
+      if (!main) return false;
+      const shown = writeNeutralPose(main);
+      if (shown) {
+        setDualPairPreview(true);
+        setStatus('Previewing the authored Dual Wield main + offhand idle pair.');
+      }
+      return shown;
+    }
+
     function syncFieldsFromPose() {
       const pose = currentPose();
+      if (selectedKey === 'dualWieldOffhand') pose.bodyYaw = workingConfig.stances.dualWieldMain.bodyYaw;
       for (const field of FIELD_DEFS) {
         const value = numberOr(pose[field.key]);
-        $(`idle_${field.key}`).value = value;
+        const input = $(`idle_${field.key}`);
+        input.value = value;
+        input.disabled = selectedKey === 'dualWieldOffhand' && field.key === 'bodyYaw';
         $(`idle_${field.key}_val`).textContent = field.angle ? `${value.toFixed(0)}°` : value.toFixed(2);
       }
     }
@@ -248,21 +280,26 @@
       const input = $(`idle_${field.key}`);
       input.addEventListener('input', () => {
         const value = numberOr(input.value);
+        if (selectedKey === 'dualWieldOffhand' && field.key === 'bodyYaw') return;
         currentPose()[field.key] = value;
+        if (selectedKey === 'dualWieldMain' && field.key === 'bodyYaw') workingConfig.stances.dualWieldOffhand.bodyYaw = value;
         $(`idle_${field.key}_val`).textContent = field.angle ? `${value.toFixed(0)}°` : value.toFixed(2);
         if (editingNeutral) writeNeutralPose(currentPose());
+        if (selectedKey === 'dualWieldMain' || selectedKey === 'dualWieldOffhand') window.HobunjiDualWieldWeaponVisuals?.syncNow?.();
       });
     }
 
     select.addEventListener('change', () => {
       selectedKey = select.value;
       syncFieldsFromPose();
+      window.HobunjiDualWieldWeaponVisuals?.syncNow?.();
       updateEditButton();
       if (editingNeutral) writeNeutralPose(currentPose());
       setStatus(`${STANCE_LABELS[selectedKey]} selected.`);
     });
 
     $('idleEditNeutralBtn').addEventListener('click', () => {
+      if (selectedKey === 'dualWieldOffhand' && dualPairPreview) setDualPairPreview(false); // Isolate the offhand copy while the existing Neutral gizmo authors its explicit transform.
       editingNeutral = !editingNeutral;
       updateEditButton();
       if (editingNeutral) {
@@ -277,6 +314,11 @@
       if (writeNeutralPose(currentPose())) setStatus(`Previewing ${STANCE_LABELS[selectedKey]} in Neutral.`);
     });
     $('idleCaptureBtn').addEventListener('click', () => captureNeutralPose());
+    $('idlePreviewDualPairBtn').addEventListener('click', previewDualWieldMain);
+    $('idleStopDualPairBtn').addEventListener('click', () => {
+      setDualPairPreview(false);
+      setStatus('Stopped Dual Wield pair preview.');
+    });
     $('idleResetBtn').addEventListener('click', () => {
       workingConfig.stances[selectedKey] = clone(fileConfig.stances[selectedKey] || FALLBACK_CONFIG.stances[selectedKey]);
       syncFieldsFromPose();
@@ -328,19 +370,24 @@
       getSelected: () => selectedKey,
       previewSelected: () => writeNeutralPose(currentPose()),
       captureSelected: () => captureNeutralPose(),
+      previewDualWieldMain,
+      setDualPairPreview,
+      dualWieldPreviewActive: () => dualPairPreview,
       stopEditing: () => stopEditingNeutral('Stopped idle stance editing.'),
       snapshot() {
-        return { workingConfig: clone(exportPayload()), selectedKey, editingNeutral }; // Undo/Redo must preserve hidden stances, not only the selected sliders.
+        return { workingConfig: clone(exportPayload()), selectedKey, editingNeutral, dualPairPreview }; // Undo/Redo must preserve hidden stances, not only the selected sliders.
       },
       restore(snapshot) {
         if (!snapshot?.workingConfig) return false;
         workingConfig = normalizeConfig(clone(snapshot.workingConfig), fileConfig);
         selectedKey = STANCE_ORDER.includes(snapshot.selectedKey) ? snapshot.selectedKey : selectedKey;
         editingNeutral = snapshot.editingNeutral === true;
+        dualPairPreview = snapshot.dualPairPreview === true;
         select.value = selectedKey;
         syncFieldsFromPose();
         updateEditButton();
         if (editingNeutral) writeNeutralPose(currentPose());
+        setDualPairPreview(dualPairPreview);
         setStatus(`History restored ${STANCE_LABELS[selectedKey]}.`);
         return true;
       },

@@ -1,58 +1,44 @@
-name: Apply dual-wield idle follow-up
+name: Regression suite
 
+# One workflow for every scripts/test-*.js check (replaces the ~75 per-feature
+# workflows that each ran a handful of them). The whole fast suite takes ~10s,
+# so it isn't path-filtered. Browser smoke tests stay in smoke-dev-random-ruin-*.yml.
 on:
   pull_request:
     paths:
-      - 'scripts/apply-dual-wield-idle-followup.py'
+      - 'docs/**'
+      - 'scripts/**'
       - '.github/workflows/regression-suite.yml'
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  patch:
+  regression:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: fix/recenter-long-haft-grips-20261004
-          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Apply follow-up, validate, and restore normal workflow
+      - name: Syntax check shipped scripts
         run: |
           set -e
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          sed -i "s/if count != 1:/if count != 1 and not (label == 'hand mode help' and count == 0):/" scripts/apply-dual-wield-idle-followup.py
-          python3 scripts/apply-dual-wield-idle-followup.py
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path('scripts/test-attack-animation-editor-history-grips.js')
-          text = path.read_text()
-          old = "assert.match(panelUi, /attack-idle-stance-editor\\.js\\?v=20260919history1/, 'idle stance cache key must ship the unified-panel/history update');"
-          new = "assert.match(panelUi, /attack-idle-stance-editor\\.js\\?v=[^'\\\"\\s]+/, 'idle stance cache key must remain versioned after idle-authoring updates');"
-          if text.count(old) != 1:
-              raise SystemExit('stale idle stance cache assertion target missing')
-          path.write_text(text.replace(old, new, 1))
-
-          path = Path('scripts/test-dual-wield-weapon-visuals.js')
-          text = path.read_text()
-          old = "assert.match(grips, /if \\(dual\\.checked\\) editorSecondaryPoses\\[phase\\]\\.enabled = false/, 'editor Dual Wield switches off 2H');"
-          new = "assert.match(grips, /if \\(dual\\.checked\\) \\{[\\s\\S]*?editorSecondaryPoses\\[phase\\]\\.enabled = false/, 'editor Dual Wield switches off 2H');"
-          if text.count(old) != 1:
-              raise SystemExit('stale dual-wield exclusivity assertion target missing')
-          path.write_text(text.replace(old, new, 1))
-          PY
-          node scripts/check-cache-busts.js --fix
           for f in docs/game.js docs/js/*.js; do node --check "$f"; done
-          node -e "JSON.parse(require('fs').readFileSync('docs/config/combat/weapon-idle-stances.json', 'utf8'))"
-          node scripts/run-tests.js
-          git checkout origin/main -- .github/workflows/regression-suite.yml
-          rm -f scripts/apply-dual-wield-idle-followup.js scripts/apply-dual-wield-idle-followup.py
-          git add -A
-          git commit -m "Add authored dual-wield idle stance and fix duplicate spacing"
-          git push origin HEAD:fix/recenter-long-haft-grips-20261004
+      - name: Validate JSON manifests
+        run: |
+          node -e "JSON.parse(require('fs').readFileSync('scripts/runtime-frame-ownership-exceptions.json', 'utf8'))"
+          node -e "JSON.parse(require('fs').readFileSync('docs/config/loot/loot-pools.json', 'utf8'))"
+      - name: Cache-bust tokens moved with their files
+        # PR checkouts are the merge commit, so diffing against the base tip is
+        # exactly this PR's change. Fix locally with: node scripts/check-cache-busts.js --fix
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+          node scripts/check-cache-busts.js FETCH_HEAD
+      - name: Regression tests
+        # Slow tests only run on main / manual dispatch, not on every PR push.
+        run: node scripts/run-tests.js ${{ github.event_name != 'pull_request' && '--all' || '' }}

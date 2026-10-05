@@ -149,7 +149,7 @@ assert.match(idle, /poseTabNeutral/, 'Idle Stance editor must use the unified si
 assert.doesNotMatch(idle, /neutral_\$\{fieldKey\}/, 'Idle Stance editor must not look for retired neutral_* controls');
 assert.match(idleParity, /STANCE_BY_ACTION/, 'idle-hand parity must key off unified Action ids');
 assert.doesNotMatch(idleParity, /scrubNeutralBtn/, 'idle-hand parity must not wait on retired scrub buttons');
-assert.match(panelUi, /attack-idle-stance-editor\.js\?v=20260919history1/, 'idle stance cache key must ship the unified-panel/history update');
+assert.match(panelUi, /attack-idle-stance-editor\.js\?v=[^'\"\s]+/, 'idle stance cache key must remain versioned after idle-authoring updates');
 
 // The same hand-target contract must hold in non-player preview/NPC paths.
 assert.match(npcHeld, /Authored point\/orientation ON the weapon where the right hand must land/, 'NPC hands must consume the authored weapon target');

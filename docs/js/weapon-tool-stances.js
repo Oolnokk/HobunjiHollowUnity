@@ -26,7 +26,7 @@
   // hand socket sync) can read it without triggering that recompute.
   let lastBakedHolderMatrixWorld = null;
 
-  const STANCE_CONFIG_URL = 'config/combat/weapon-idle-stances.json?v=20260817a';
+  const STANCE_CONFIG_URL = 'config/combat/weapon-idle-stances.json?v=20261005dualidle1';
   const STANCE_LOCAL_STORAGE_KEY = 'hobunji.weaponIdleStances.v1';
   const POSE_KEYS = Object.freeze(['x', 'y', 'z', 'pitch', 'yaw', 'bodyYaw', 'roll']);
   const MIRRORED_POSE_KEYS = new Set(['x', 'yaw', 'bodyYaw', 'roll']);
@@ -47,6 +47,8 @@
     hoeTool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: -95 }),
     heavyWeapon: Object.freeze({ x: -0.03, y: 0.27, z: 0.02, pitch: -23, yaw: 104, bodyYaw: -15, roll: 89 }),
     lightWeapon: Object.freeze({ x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 }),
+    dualWieldMain: Object.freeze({ x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 }),
+    dualWieldOffhand: Object.freeze({ x: 0.09, y: 0, z: -0.04, pitch: 37, yaw: 68, bodyYaw: -40, roll: 114 }),
   });
   const PREVIOUS_LIGHT_WEAPON_STANCE = Object.freeze({ x: -0.09, y: -0.08, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 });
 
@@ -57,6 +59,8 @@
     hoeTool: { ...DEFAULT_IDLE_STANCES.hoeTool },
     heavyWeapon: { ...DEFAULT_IDLE_STANCES.heavyWeapon },
     lightWeapon: { ...DEFAULT_IDLE_STANCES.lightWeapon },
+    dualWieldMain: { ...DEFAULT_IDLE_STANCES.dualWieldMain },
+    dualWieldOffhand: { ...DEFAULT_IDLE_STANCES.dualWieldOffhand },
   };
 
   function normalizePose(raw, fallback) {
@@ -155,7 +159,7 @@
     return { activeSlot, itemKey, def, mesh };
   }
 
-  function targetPoseFor(activeSlot, itemKey, def) {
+  function targetPoseFor(activeSlot, itemKey, def, { dualWield = false } = {}) {
     const shape = shapeFor(itemKey, def);
     if (activeSlot !== 'weapon') {
       if (activeSlot === 'hoe' && shape === 'hoe') return idleStances.hoeTool;
@@ -163,16 +167,22 @@
       return null;
     }
     const idleClass = weaponIdleClass(itemKey, def);
+    if (dualWield) return idleStances.dualWieldMain; // Dual Wield rests in its explicitly authored light-style main-hand stance.
     if (idleClass === 'heavy') return idleStances.heavyWeapon;
     if (idleClass === 'light') return idleStances.lightWeapon;
     return null;
   }
 
-  function currentCombatNeutral() {
+  function currentCombatNeutral(options = {}) {
     const state = activeState();
     if (state.activeSlot !== 'weapon') return null;
-    const pose = targetPoseFor(state.activeSlot, state.itemKey, state.def);
+    const pose = targetPoseFor(state.activeSlot, state.itemKey, state.def, options);
     return pose ? clonePose(pose) : null;
+  }
+
+  function dualWieldIdleRequested(rawOpts = {}) {
+    const raw = rawOpts?.pose?.neutral?.dualWield;
+    return raw === true || raw?.enabled === true;
   }
 
   function deg(value) {
@@ -286,7 +296,8 @@
 
   function prepareCombatOptions(rawOpts = {}) {
     const state = activeState();
-    const targetNeutral = currentCombatNeutral();
+    const useDualWieldIdle = dualWieldIdleRequested(rawOpts);
+    const targetNeutral = currentCombatNeutral({ dualWield: useDualWieldIdle });
     if (!targetNeutral || state.activeSlot !== 'weapon') return rawOpts || {};
 
     const anim = rawOpts.anim || state.def?.animStyle || 'thrust';
@@ -519,7 +530,9 @@
       // Weapon attacks are explicitly tracked by the combat wrappers, so never let
       // their real holder rotation poison the tool-motion idle suppression timer.
       const holderMoving = activeSlot === 'weapon' ? false : holderIsMoving(now);
-      const targetPose = targetPoseFor(activeSlot, itemKey, def);
+      const idleDualState = !attackInProgress ? window.HobunjiHandToolGrips?.currentDualWieldAnimationState?.() : null;
+      const idleDualWield = !!idleDualState && idleDualState.source === 'dual-wield-idle' && idleDualState.influence > 0.0001;
+      const targetPose = targetPoseFor(activeSlot, itemKey, def, { dualWield: idleDualWield });
       const sourcePose = ENGINE_NEUTRAL_POSES[def?.animStyle] || ENGINE_NEUTRAL_POSES.thrust;
       let savedPosition = null;
       let savedQuaternion = null;
