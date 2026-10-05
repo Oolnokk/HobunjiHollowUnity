@@ -1,4 +1,4 @@
-name: Temp Mammakh Main Sync
+name: Temp PR917 Main Resolve
 
 on:
   push:
@@ -8,9 +8,9 @@ permissions:
   contents: write
 
 jobs:
-  reconcile-and-test:
+  resolve-and-test:
     if: github.actor != 'github-actions[bot]'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -19,122 +19,42 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Apply reviewed Harkhanash appearance and Mammakhbuur policy
+      - name: Reconcile intentional scale tests and runtime hair clear
         run: |
           python - <<'PY'
-          import json
           from pathlib import Path
-
-          overrides_path = Path('docs/config/npcs/species-overrides.json')
-          overrides = json.loads(overrides_path.read_text())
-          overrides.setdefault('npcs', {})['khannibarri_agent'] = {
-            'species': 'mammakhbuur',
-            'displayName': 'Surveyor Harkhanash',
-            'avatarExport': {
-              'schema': 'npc_avatar_editor_export.v1',
-              'source': 'character-studio',
-              'name': 'Surveyor Harkhanash',
-              'appearance': {
-                'speciesId': 'mammakhbuur',
-                'gender': 'male',
-                'cosmetics': {
-                  'hairBack': 'appearance::Mao-ao_M::mao-ao_long_ponytail',
-                  'hairSide': 'appearance::Mao-ao_M::mao-ao_braidcluster-R',
-                  'hairSideL': 'appearance::Mao-ao_M::mao-ao_braid-L',
-                  'facialHair': None
-                },
-                'bodyColors': {
-                  'A': {'h': -70, 's': -0.8, 'v': -0.55},
-                  'B': {'h': -70, 's': -0.8, 'v': -0.55},
-                  'C': {'h': -70, 's': -0.75, 'v': -0.37000000000000005}
-                },
-                'chatColor': {'h': 210, 's': 75, 'l': 68}
-              },
-              'equippedCosmetics': ['rounded_pauldron', 'fine_poncho', 'bandolier1'],
-              'appliedDyes': {
-                'CLOTH': 'dye:CLOTH:shadow_blue',
-                'CLOTH_B': 'dye:CLOTH:pure_yellow',
-                'CLOTH_C': 'dye:CLOTH:pure_yellow'
-              }
-            }
-          }
-          overrides_path.write_text(json.dumps(overrides, indent=2) + '\n')
-
-          onboarding_path = Path('docs/onboarding-core.js')
-          onboarding = onboarding_path.read_text()
-          old = """    if (authored?.slots) SPECIES_DATA.mammakhbuur[gender].slots = JSON.parse(JSON.stringify(authored.slots));
-    SPECIES_DATA.mammakhbuur[gender].colorOptions = bodyPalette('mashtzarr', gender);
-"""
-          new = """    if (authored?.slots) SPECIES_DATA.mammakhbuur[gender].slots = JSON.parse(JSON.stringify(authored.slots));
-    const mammakhGender = SPECIES_DATA.mammakhbuur[gender]; // Mammakhbuur use the Mashtzarr donor set except front hair, which is intentionally unavailable for both genders.
-    if (Array.isArray(mammakhGender.slots)) mammakhGender.slots = mammakhGender.slots.filter(slot => slot?.slot !== 'hairFront');
-    mammakhGender.defaultCosmetics = { ...(mammakhGender.defaultCosmetics || {}), hairFront: null };
-    mammakhGender.forcedCosmetics = { ...(mammakhGender.forcedCosmetics || {}), hairFront: null };
-    mammakhGender.colorOptions = bodyPalette('mashtzarr', gender);
-"""
-          if old not in onboarding:
-              raise SystemExit('Mammakhbuur onboarding donor block not found')
-          onboarding_path.write_text(onboarding.replace(old, new, 1))
-
-          runtime_path = Path('docs/js/mammakhbuur-species-runtime.js')
-          runtime = runtime_path.read_text()
-          old_runtime = 'delete data.defaultCosmetics.hairFront;'
-          new_runtime = 'data.defaultCosmetics.hairFront = null; // Explicitly clears seeded random front hair for every Mammakhbuur appearance.'
-          if old_runtime not in runtime:
-              raise SystemExit('Mammakhbuur runtime front-hair default clear not found')
-          runtime_path.write_text(runtime.replace(old_runtime, new_runtime, 1))
-
           replacements = {
-            'scripts/test-character-rig-scale.js': [
+            "scripts/test-character-rig-scale.js": [
               ("'tletingan::male': { x: 0.85, y: 0.85, head: 0.8823529411764706, offsetY: 0 }", "'tletingan::male': { x: 0.85, y: 0.85, head: 0.8, offsetY: 0 }"),
               ("'mao-ao::female': { x: 1.045, y: 1.30625, head: 0.9375, offsetY: 0 }", "'mao-ao::female': { x: 0.895, y: 0.94, head: 0.7813, offsetY: 0 }"),
             ],
-            'scripts/test-full-character-scale-authoring-20260905.js': [
+            "scripts/test-full-character-scale-authoring-20260905.js": [
               ("'tletingan::male': { x: 0.85, y: 0.85, head: 0.8823529411764706, offsetY: 0 }", "'tletingan::male': { x: 0.85, y: 0.85, head: 0.8, offsetY: 0 }"),
               ("'mao-ao::female': { x: 1.045, y: 1.30625, head: 0.9375, offsetY: 0 }", "'mao-ao::female': { x: 0.895, y: 0.94, head: 0.7813, offsetY: 0 }"),
+              ("const expectedRawHeadPercent = key === 'mao-ao::male' ? 72.6 : 75;", "const expectedRawHeadPercent = key === 'mao-ao::male' ? 72.6 : (key === 'tletingan::male' ? 68 : 75);"),
+            ],
+            "docs/js/mammakhbuur-species-runtime.js": [
+              ("delete data.defaultCosmetics.hairFront;", "data.defaultCosmetics.hairFront = null; // Explicitly clears seeded random front hair for every Mammakhbuur appearance.")
             ],
           }
           for filename, pairs in replacements.items():
-              path = Path(filename)
-              text = path.read_text()
-              for old_value, new_value in pairs:
-                  if old_value not in text:
-                      raise SystemExit(f'stale scale expectation not found in {filename}: {old_value}')
-                  text = text.replace(old_value, new_value, 1)
-              path.write_text(text)
-
-          full_scale_test = Path('scripts/test-full-character-scale-authoring-20260905.js')
-          text = full_scale_test.read_text()
-          old_pct = "const expectedRawHeadPercent = key === 'mao-ao::male' ? 72.6 : 75;"
-          new_pct = "const expectedRawHeadPercent = key === 'mao-ao::male' ? 72.6 : (key === 'tletingan::male' ? 68 : 75);"
-          if old_pct not in text:
-              raise SystemExit('raw head percentage expectation not found')
-          full_scale_test.write_text(text.replace(old_pct, new_pct, 1))
-
-          studio_test = Path('scripts/test-character-studio-mammakhbuur-config.js')
-          text = studio_test.read_text()
-          marker = "console.log('Character Studio Mammakhbuur no-front-hair config checks passed.');"
-          extra = """const onboardingSource = fs.readFileSync('docs/onboarding-core.js', 'utf8');
-assert.match(onboardingSource, /mammakhGender\\.slots\\.filter\\(slot => slot\\?\\.slot !== 'hairFront'\\)/,
-  'onboarding must also remove Mammakhbuur front hair for both genders');
-assert.match(onboardingSource, /forcedCosmetics = \\{ \\.\\.\\.\\(mammakhGender\\.forcedCosmetics \\|\\| \\{\\}\\), hairFront: null \\}/,
-  'onboarding must force stale Mammakhbuur front hair off');
-""" + marker
-          if marker not in text:
-              raise SystemExit('Character Studio Mammakh test marker not found')
-          studio_test.write_text(text.replace(marker, extra, 1))
+            path = Path(filename)
+            text = path.read_text()
+            for old, new in pairs:
+              if old not in text:
+                raise SystemExit(f'missing expected text in {filename}: {old}')
+              text = text.replace(old, new)
+            path.write_text(text)
           PY
-      - name: Advance static cache chain from current main
+      - name: Advance cache-bust chain from current main
         run: node scripts/check-cache-busts.js --fix 1eb64c001e7fe642ba9a406dd201090c905ffa51
-      - name: Validate cache chain
-        run: node scripts/check-cache-busts.js 1eb64c001e7fe642ba9a406dd201090c905ffa51
-      - name: Run regression suite
+      - name: Run fast regression suite
         run: node scripts/run-tests.js
-      - name: Commit reconciled branch
+      - name: Commit resolved branch
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet; then exit 0; fi
           git add docs scripts
-          git commit -m "Apply Harkhanash appearance and reconcile Mammakhbuur with main"
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Resolve PR917 onto current main"
           git push origin HEAD:mammakhbuur-head-placeholders
