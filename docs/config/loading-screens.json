@@ -29,20 +29,88 @@
       "oncePerWorld": true,
       "stages": [
         {
-          "text": "stage 1: Something something something something",
-          "minimumSeconds": 3
+          "text": "You hear the grinding of wooden wheels and the shuffle of eight hairy legs. You feel the rough texture of wooden bars against your pelt, and a sharp pain in the back of your head.",
+          "minimumSeconds": 4,
+          "pages": [
+            {
+              "text": "You hear the grinding of wooden wheels and the shuffle of eight hairy legs. You feel the rough texture of wooden bars against your pelt, and a sharp pain in the back of your head.",
+              "minimumSeconds": 4
+            },
+            {
+              "text": "You are far from home, and moving still. You know this much. And the bindings on your arms and over your eyes infer it was not of your own accord.",
+              "minimumSeconds": 4
+            }
+          ]
         },
         {
-          "text": "stage 2: something something something something something.",
-          "minimumSeconds": 3
+          "text": "But \"home\". Suddenly it seems such a meaningless word. But then again so too does your own name...",
+          "minimumSeconds": 5,
+          "pages": [
+            {
+              "text": "But \"home\". Suddenly it seems such a meaningless word. But then again so too does your own name...",
+              "minimumSeconds": 5,
+              "delayedReveals": [
+                {
+                  "afterSeconds": 2.5,
+                  "text": "\nOh Breath"
+                }
+              ]
+            },
+            {
+              "text": "You realize now, that you are without your memories, you know not your heading nor the place from whence you came.",
+              "minimumSeconds": 5,
+              "delayedReveals": [
+                {
+                  "afterSeconds": 2.5,
+                  "text": "\nYou are lost."
+                }
+              ]
+            }
+          ]
         },
         {
-          "text": "stage 3: something something something something.",
-          "minimumSeconds": 3
+          "text": "And yet, you have a strong sense deep within your gut, a piece of knowledge that no tremor to the head can loose:",
+          "minimumSeconds": 4,
+          "pages": [
+            {
+              "text": "And yet, you have a strong sense deep within your gut, a piece of knowledge that no tremor to the head can loose:",
+              "minimumSeconds": 4
+            },
+            {
+              "text": "that the greatest things in this world of ours",
+              "minimumSeconds": 12.5,
+              "delayedReveals": [
+                {
+                  "afterSeconds": 2.5,
+                  "text": "\n\nare those that **only the lost may find**"
+                }
+              ]
+            }
+          ]
         },
         {
-          "text": "stage 4: something something something.",
-          "minimumSeconds": 3
+          "text": "Suddenly you hear the squeal of the Uumkao'i and a jolt in the wagon, the shouting of its drivers. Then you, your cage and everything around you starts rolling to the side out of the vehicle and down into a rocky descent.",
+          "minimumSeconds": 6,
+          "pages": [
+            {
+              "text": "Suddenly you hear the squeal of the Uumkao'i and a jolt in the wagon, the shouting of its drivers. Then you, your cage and everything around you starts rolling to the side out of the vehicle and down into a rocky descent.",
+              "minimumSeconds": 6
+            },
+            {
+              "text": "You can hear your cage snap open as you're lifted through the air.",
+              "minimumSeconds": 3.5
+            },
+            {
+              "text": "And after flying free for what feels like minutes, you finally land on the hard ground...",
+              "minimumSeconds": 5.5,
+              "delayedReveals": [
+                {
+                  "afterSeconds": 2.5,
+                  "text": "\nand find yourself asleep once again."
+                }
+              ]
+            }
+          ]
         }
       ]
     }
