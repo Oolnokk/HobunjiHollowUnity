@@ -24,7 +24,7 @@ assert.match(dual, /transformSocketForHand/, 'dual visual layer exposes per-hand
 assert.match(dual, /const weapon = side === 'right' \? current\.mainMesh : current\.offMesh/, 'each hand resolves its socket from its visible child weapon');
 assert.match(dual, /planeLocalPosition = socketFrame\.position\.clone\(\)\.applyMatrix4\(inversePlaneWorld\)[\s\S]*planeLocalPosition\.clone\(\)\.applyMatrix4\(weapon\.matrixWorld\)/, 'child grip position is reconstructed in original-plane local space and resolved through the visible child weapon matrix');
 assert.match(dual, /mirrorQuaternionAcrossLocalX[\s\S]*source\.x, -source\.y, -source\.z, source\.w/, 'offhand grip orientation mirrors the proper frame across child-local X instead of losing the reflection in quaternion decomposition');
-assert.match(dual, /mirroredChild = side === 'left' && Number\(weapon\.scale\?\.x\) < 0[\s\S]*mirrorQuaternionAcrossLocalX\(planeLocalQ/, 'the reflected offhand child receives the mirrored local grip frame while the main-hand child keeps the original frame');
+assert.match(dual, /mirroredChild = side === 'left'[\s\S]*mirrorQuaternionAcrossLocalX\(planeLocalQ/, 'the offhand receives the flipped grip frame independently of the forward-facing sprite');
 assert.match(dual, /duplicate\.scale\.set\?\.\(1, 1, 1\)/, 'both weapon copies preserve the source blade facing; the idle offhand pose owns its rotation');
 assert.match(driver, /const primarySocket = toolSocketWorld\(record, toolHolder, primaryGrip\)/, 'the original fixed 1H socket remains the canonical grip before Dual Wield remapping');
 assert.match(driver, /owners\.right = 'primary-grip'[\s\S]*if \(dualWield\) owners\.right = 'dual-wield-main-grip'/, 'Dual Wield refines ordinary main-hand ownership without weakening primary-grip fallback authority');
@@ -69,3 +69,45 @@ for (const side of ['main', 'off']) {
   assert.equal(copy.scale.z, 1);
   assert.equal(copy.position.z, side === 'main' ? -0.15 : 0.15);
 }
+
+class GripQuaternion {
+  constructor(x = 0, y = 0, z = 0, w = 1) { this.set(x, y, z, w); }
+  set(x, y, z, w) { Object.assign(this, { x, y, z, w }); return this; }
+  clone() { return new GripQuaternion(this.x, this.y, this.z, this.w); }
+  invert() { this.x *= -1; this.y *= -1; this.z *= -1; return this; }
+  normalize() { return this; }
+  multiply(q) {
+    const { x, y, z, w } = this; // Preserves the input rotation during quaternion composition.
+    return this.set(w*q.x + x*q.w + y*q.z - z*q.y, w*q.y - x*q.z + y*q.w + z*q.x,
+      w*q.z + x*q.y - y*q.x + z*q.w, w*q.w - x*q.x - y*q.y - z*q.z);
+  }
+}
+class GripPoint {
+  constructor(x = 0, y = 0, z = 0) { Object.assign(this, { x, y, z }); }
+  clone() { return new GripPoint(this.x, this.y, this.z); }
+  applyMatrix4(matrix) { this.z += matrix.z || 0; return this; }
+}
+const gripMatrix = z => ({ z, clone() { return gripMatrix(this.z); }, invert() { this.z *= -1; return this; } }); // Translation-only fixture isolates the hand direction from the weapon position.
+const gripWeapon = z => ({ matrixWorld: gripMatrix(z), quaternion: new GripQuaternion(), scale: { x: 1 }, updateMatrixWorld() {} }); // Both visible sprites retain the corrected forward facing.
+const gripState = { influence: 1, idleBlend: 0, plane: { matrixWorld: gripMatrix(0), quaternion: new GripQuaternion() }, mainMesh: gripWeapon(-0.15), offMesh: gripWeapon(0.15) }; // Supplies a live dual pair to the production socket resolver.
+const mirrorStart = dual.indexOf('  function mirrorQuaternionAcrossLocalX('); // Bounds of the production direction conversion.
+const mirrorEnd = dual.indexOf('  function currentPlanePose(', mirrorStart);
+const socketStart = dual.indexOf('  function transformSocketForHand('); // Bounds of the production per-hand dispatch.
+const socketEnd = dual.indexOf('  function setEditorIdlePreview(', socketStart);
+const socketResolver = vm.runInNewContext(`${dual.slice(mirrorStart, mirrorEnd)}\n(${dual.slice(socketStart, socketEnd).trim()})`, {
+  syncNow: () => gripState,
+  ACTIVE_EPSILON: 0.0001,
+  hierarchyWorldQuaternion: (node, target) => target.set(node.quaternion.x, node.quaternion.y, node.quaternion.z, node.quaternion.w),
+  DUPLICATE_Z_GAP: 0.30,
+  MAIN_HAND_LAG_MS: 45,
+}); // Exercises the real branch selecting the offhand frame even though neither weapon is reflected.
+const authoredSocket = { position: new GripPoint(-0.04, -0.04, -0.1), quaternion: new GripQuaternion(0.5, -0.5, 0.5, 0.5) }; // A normalized nontrivial grip makes yaw/roll reversal observable.
+const rightGrip = socketResolver({}, 'right', authoredSocket); // Main hand keeps the authored direction.
+const leftGrip = socketResolver({}, 'left', authoredSocket); // Offhand flips its grip while remaining on its own visible weapon.
+assert.deepEqual([rightGrip.quaternion.x, rightGrip.quaternion.y, rightGrip.quaternion.z, rightGrip.quaternion.w], [0.5, -0.5, 0.5, 0.5]);
+assert.deepEqual([leftGrip.quaternion.x, leftGrip.quaternion.y, leftGrip.quaternion.z, leftGrip.quaternion.w], [0.5, 0.5, -0.5, 0.5]);
+assert.equal(leftGrip.dualWield.mirroredGripFrame, true);
+assert.equal(rightGrip.dualWield.mirroredGripFrame, false);
+assert.equal(leftGrip.position.x, authoredSocket.position.x);
+assert(Math.abs(leftGrip.position.z - (authoredSocket.position.z + 0.15)) < 1e-9);
+assert.equal(authoredSocket.quaternion.y, -0.5, 'offhand conversion must not mutate the shared authored grip');

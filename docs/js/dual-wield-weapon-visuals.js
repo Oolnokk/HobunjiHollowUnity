@@ -161,7 +161,7 @@
   // A reflection itself cannot live in a quaternion, so conjugating the frame
   // by Mirror-X produces the equivalent proper rotation: X/pitch stays the
   // same while Y/yaw and Z/roll reverse. This is the orientation counterpart
-  // to offMesh.scale.x = -1 used for the visible opposite-hand weapon.
+  // to the offhand grip itself; the weapon sprite keeps its forward facing.
   function mirrorQuaternionAcrossLocalX(source, target) {
     return target.set(source.x, -source.y, -source.z, source.w).normalize();
   }
@@ -423,7 +423,7 @@
     const planeWorldQ = hierarchyWorldQuaternion(current.plane, new Quaternion());
     const weaponWorldQ = hierarchyWorldQuaternion(weapon, new Quaternion());
     const planeLocalQ = planeWorldQ.clone().invert().multiply(socketFrame.quaternion.clone()).normalize();
-    const mirroredChild = side === 'left' && Number(weapon.scale?.x) < 0;
+    const mirroredChild = side === 'left'; // Flip the offhand grip independently of the weapon sprite's facing.
     const childLocalQ = mirroredChild
       ? mirrorQuaternionAcrossLocalX(planeLocalQ, new Quaternion())
       : planeLocalQ;
