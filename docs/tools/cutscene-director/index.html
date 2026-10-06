@@ -890,8 +890,9 @@
 <script src="../../js/cinematic-camera-runtime.js?v=20261004camera1"></script>
 <script src="camera-author.js?v=20261004camera1"></script>
 <script src="../../js/GLTFLoader.js?v=20260712l"></script>
-<script src="../../js/WallBuilder.js?v=20261006h4d986c4"></script>
-<script src="../../js/HousePieceGen.js?v=20261006hd436066"></script>
+<script src="../../js/WallBuilder.js?v=20261006h9c26ecb"></script>
+<script src="../../js/surface-stretch-uv-furniture.js?v=20261006h24ab7dd"></script>
+<script src="../../js/HousePieceGen.js?v=20261006h1036239"></script>
 <script src="../../js/cutscene-furniture-runtime.js?v=20261002furniture1"></script>
 <script src="../../js/procedural-furniture.js?v=20261004h0c86d5a"></script>
 <script src="../../js/foliage-generator.js?v=20260712l"></script>
@@ -1802,6 +1803,7 @@
         const piece = await res.json();
         if (myGen !== _buildGeneration) return;
         const group = HousePieceGen.buildGroupFromPiece(THREE, piece, b.gridX, b.gridZ, {
+          shingleVariant: 'town', // Matches the game's town/zone roofs.
           wallBuilder: wb, wbUsePlaceholder: true,
           wbOpts: b.wbOpts || WB_DEFAULTS, wbGableOpts: b.wbGableOpts,
           rotationDeg: b.rotationDeg || 0, elevationY: TerrainPreview.NORMAL_TOP + (b.elevTier||0)*TerrainPreview.PLATEAU_UNIT

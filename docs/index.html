@@ -18,8 +18,8 @@
   <script src="js/dev-companion-bridge.js?v=20260930companion1"></script>
   <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
   <script src="js/GLTFLoader.js?v=20260712d"></script>
-  <script src="js/WallBuilder.js?v=20261006h4d986c4"></script>
-  <script src="js/HousePieceGen.js?v=20261006hd436066&window=20260926rebase1"></script>
+  <script src="js/WallBuilder.js?v=20261006h9c26ecb"></script>
+  <script src="js/HousePieceGen.js?v=20261006h1036239&window=20260926rebase1"></script>
   <script src="js/interior-scene-builder.js?v=20260930globalground2&window=20260926rebase1"></script>
   <script src="js/building-door.js?v=20260725a"></script>
   <script src="js/tile-pathfinding.js?v=20260808a"></script>
@@ -281,9 +281,10 @@
   <script src="js/combat/combat-blink-dodge.js?v=20261002h2d08879"></script>
   <script src="js/combat/combat-charged-breaker.js?v=20261004h4413146"></script>
   <script src="js/combat/combat-flurry.js?v=20260930he6f6a0a"></script>
-  <script src="js/combat/combat-loadout-ui.js?v=20260930h75d45df"></script>
+  <script src="js/combat/combat-loadout-ui.js?v=20261006planarreview1"></script>
   <!-- Weapon Enchantments + Immundanity (Base/Flourish, planar cancellation, Sicced/Fury/...). -->
   <script src="js/combat/combat-enchantments.js?v=20261001quickbonus1"></script>
+  <script src="js/combat/weapon-enchantment-vfx.js?v=20261006planar1"></script>
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
        projectiles. Loads before bandits so their dual loadouts can call it. -->
   <script src="js/nearby-volume-collision.js?v=20260827treecover2"></script>
@@ -374,7 +375,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmAnimals.init(...) during its own setup. -->
-  <script src="js/farm-production.js?v=20261006h19757ea"></script>
+  <script src="js/farm-production.js?v=20261006hf19b63f"></script>
   <script src="js/world-meta-store.js?v=20260930livestockwalk1"></script>
   <script src="js/farm-animals.js?v=20260930livestockwalk1"></script>
   <!-- Farm buildings: barn placement/construction/demolition
@@ -399,7 +400,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261004h71c5a26&surfaceUv=20260924edgepreserve2"></script>
+  <script src="js/house-pieces.js?v=20261004h71c5a26&surfaceUv=20261006h24ab7dd"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -560,7 +561,7 @@
        calls window.TownZoneBuildings.init(...) during its own setup (and
        reads window.TownZoneBuildings.loadHousePieceFaceTexture as one of
        window.FarmBuildings' own init deps, at that same call-time point). -->
-  <script src="js/town-zone-buildings.js?v=20261004hc37c85b"></script>
+  <script src="js/town-zone-buildings.js?v=20261006h6e33b83"></script>
   <!-- Same-origin live Map Editor transport + runtime bridge. Loaded before
        game.js so its private scene state can be injected during setup. -->
   <script src="js/map-live-preview.js?v=20260909a&window=20260926rebase1"></script>
@@ -2423,7 +2424,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261003h7bb5f47"></script>
+  <script src="js/pixel-probe.js?v=20261006hfed7a88"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
