@@ -5,10 +5,10 @@ const assert = require('assert');
 
 const vfxPath = path.resolve(__dirname, '../docs/js/combat/weapon-enchantment-vfx.js'); // Used to load the new runtime module for source and state-persistence checks.
 const verdigrisPath = path.resolve(__dirname, '../docs/js/tool-metal-recolor.js'); // Used to pin the metal-region detector to the existing verdigris thresholds.
-const attackEventsPath = path.resolve(__dirname, '../docs/js/combat/combat-attack-events.js'); // Used to verify the already-required combat bootstrap loads the isolated VFX module.
+const indexPath = path.resolve(__dirname, '../docs/index.html'); // Used to verify the VFX module is a normal cache-busted parser dependency after EnchantmentSystem.
 const vfxSource = fs.readFileSync(vfxPath, 'utf8'); // Used by structural regression assertions below.
 const verdigrisSource = fs.readFileSync(verdigrisPath, 'utf8'); // Used to compare canonical metal-selection constants.
-const attackEventsSource = fs.readFileSync(attackEventsPath, 'utf8'); // Used to protect the runtime loader seam.
+const indexSource = fs.readFileSync(indexPath, 'utf8'); // Used to protect the explicit combat-module load order.
 
 function numberConstant(source, name) {
   const match = source.match(new RegExp(`const ${name} = ([0-9.]+)`)); // Used to read simple numeric detector constants without executing either renderer.
@@ -26,8 +26,10 @@ assert(vfxSource.includes('hobunjiDualWieldDuplicate'), 'dual-wield enchantments
 assert(vfxSource.includes('ProceduralHandAttachments?.gameDeps'), 'runtime must resolve the exact live held-tool mesh through the existing hand/equipment seam first.');
 assert(vfxSource.includes('weaponEnchantmentVisuals'), 'semi-customizable color/effect selections must persist per weapon in gearInventory.');
 assert(vfxSource.includes("'spirit-wisp'") && vfxSource.includes("'dead-light-orb'") && vfxSource.includes("'veil-shard'"), 'Ohthic visual vocabulary must remain explicitly spectral.');
-assert(vfxSource.includes("opacity: 0.38"), 'Ohthic particles must remain ghostly/semi-transparent rather than sharing the opaque planar defaults.');
-assert(attackEventsSource.includes("js/combat/weapon-enchantment-vfx.js?v=20261006planar1"), 'combat bootstrap must load the enchantment VFX module with a cache-busted URL.');
+assert(vfxSource.includes('opacity: 0.38'), 'Ohthic particles must remain ghostly/semi-transparent rather than sharing the opaque planar defaults.');
+const enchantmentScriptAt = indexSource.indexOf('js/combat/combat-enchantments.js'); // Used to pin VFX dependency order against its authoritative planar state provider.
+const vfxScriptAt = indexSource.indexOf('js/combat/weapon-enchantment-vfx.js?v=20261006planar1'); // Used to pin the cache-busted runtime entry point.
+assert(enchantmentScriptAt >= 0 && vfxScriptAt > enchantmentScriptAt, 'weapon enchantment VFX must load directly after EnchantmentSystem with a cache-busted URL.');
 
 const gear = {}; // Used by the VM harness as the active character's persistent gear inventory.
 let saves = 0; // Used to confirm player visual choices call the normal gear-save seam.
