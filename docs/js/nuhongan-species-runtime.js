@@ -22,6 +22,11 @@
     poseOrbitScale: {},
     armMaskProfilesInstalled: 0,
     mouthInheritanceInstalled: false,
+    conditionSpeciesRegistered: false,
+    creatorPrivateSpeciesTableCaptured: false,
+    creatorPlaceholderActivated: false,
+    creatorTopLevelHidden: false,
+    creatorActive: false,
     lastError: null,
   }; // Mobile-readable verification of the inheritance paths most likely to fail from load-order regressions.
 
@@ -148,6 +153,160 @@
     return true;
   }
 
+  function installConditionTaxonomy() {
+    const species = window.ConditionRegistry?.PLAYER_SPECIES; // Dialogue/loot condition editor/runtime exposes a mutable shared species list.
+    if (!Array.isArray(species)) return false;
+    if (!species.includes(ID)) species.push(ID);
+    status.conditionSpeciesRegistered = species.includes(ID);
+    return status.conditionSpeciesRegistered;
+  }
+
+  // onboarding-core keeps its own private SPECIES_DATA. Add Nuhongan there by
+  // cloning Tletingan at the first real table enumeration. The existing
+  // Mashtzarr-female bridge may wrap Object.entries after this one; both wrappers
+  // deliberately delegate and self-remove cleanly when they see the same table.
+  function hydrateOnboardingSpeciesTable(table) {
+    const donor = table?.[DONOR];
+    const looksLikeCoreSpeciesTable = table?.['mao-ao']?.label === 'Mao-ao'
+      && table?.kenkari?.label === 'Kenkari'
+      && table?.['engh-sho']?.label === 'Engh-sho'
+      && donor?.label === 'Tletingan'
+      && Array.isArray(donor?.male?.slots);
+    if (!looksLikeCoreSpeciesTable) return false;
+    table[ID] = {
+      ...clone(donor),
+      label: 'Nuhongan',
+      parentSpecies: DONOR,
+    };
+    status.creatorPrivateSpeciesTableCaptured = true;
+    return true;
+  }
+
+  function installOnboardingSpeciesTableCapture() {
+    const originalEntries = Object.entries;
+    if (originalEntries.__hobunjiNuhonganSpeciesCapture) return false;
+    let retired = false; // Returning players may skip creator enumeration; retire the wrapper once gameplay starts.
+    const wrappedEntries = function hobunjiNuhonganSpeciesEntries(value) {
+      if (retired) return originalEntries(value);
+      const captured = hydrateOnboardingSpeciesTable(value);
+      if (captured && Object.entries === wrappedEntries) Object.entries = originalEntries;
+      return originalEntries(value);
+    };
+    wrappedEntries.__hobunjiNuhonganSpeciesCapture = true;
+    Object.entries = wrappedEntries;
+    if (typeof document !== 'undefined') document.addEventListener('hobunjiPlayerReady', () => {
+      retired = true;
+      if (Object.entries === wrappedEntries) Object.entries = originalEntries;
+    }, { once: true });
+    return true;
+  }
+
+  // The redesign already authored Nuhongan as a disabled Slagothim placeholder.
+  // Keep onboarding-core's real Nuhongan button as state only, hide it from the
+  // top-level row, and route the existing subspecies button to that state.
+  function installCreatorSubspeciesUi() {
+    if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') return false;
+    let queued = false; // Coalesces core/redesign card replacements into one idempotent repair pass.
+    let overlayObserver = null; // Watches only the mounted onboarding overlay's direct children.
+    let observedOverlay = null; // Current overlay attached to overlayObserver.
+
+    const coreButton = (overlay, speciesId) => overlay?.querySelector(`[data-ob-species="${speciesId}"]`) || null;
+    const activeSpecies = overlay => String(overlay?.querySelector('[data-ob-species].ob-active')?.dataset?.obSpecies || '').toLowerCase();
+    const familyDetailsHtml = () => `
+      <div class="ob-species-description"><strong>Slagothim</strong>Sloth-folk of the Northern Archipelago, and the lifeblood of cross-continental trade.</div>
+      <div class="ob-subspecies-wrap">
+        <div class="ob-subspecies-title">Slagothim subspecies</div>
+        <div class="ob-subspecies-group">
+          <button type="button" class="ob-sel-btn" data-ob-subspecies="tletingan">Tletingan</button>
+          <button type="button" class="ob-sel-btn ob-active" data-ob-subspecies="nuhongan">Nuhongan</button>
+          <button type="button" class="ob-sel-btn ob-disabled ob-subspecies-unavailable" data-ob-subspecies="longoran" disabled>Longoran</button>
+        </div>
+        <div class="ob-subspecies-description"><strong>Nuhongan:</strong> A smaller Slagothim subspecies using the same authored Tletingan appearance and anatomy: 75% of Tletingan height and 80% of Tletingan width.</div>
+      </div>`;
+
+    const bindSubspeciesButtons = overlay => {
+      for (const button of overlay.querySelectorAll('[data-ob-subspecies]')) {
+        const speciesId = button.dataset.obSubspecies;
+        if (speciesId === ID) {
+          button.disabled = false;
+          button.classList.remove('ob-disabled', 'ob-subspecies-unavailable');
+          status.creatorPlaceholderActivated = true;
+        }
+        if ((speciesId === DONOR || speciesId === ID) && button.dataset.nuhonganBound !== '1') {
+          button.dataset.nuhonganBound = '1';
+          button.addEventListener('click', event => {
+            event.preventDefault();
+            coreButton(overlay, speciesId)?.click();
+          });
+        }
+      }
+    };
+
+    const enhance = () => {
+      queued = false;
+      try {
+        const overlay = document.getElementById('ob-overlay');
+        if (!overlay) return;
+        const donorButton = coreButton(overlay, DONOR);
+        const nuhonganButton = coreButton(overlay, ID);
+        if (!donorButton || !nuhonganButton) return;
+        donorButton.hidden = true;
+        nuhonganButton.hidden = true;
+        status.creatorTopLevelHidden = true;
+
+        const current = activeSpecies(overlay);
+        status.creatorActive = current === ID;
+        const familyButton = overlay.querySelector('[data-ob-family="slagothim"]');
+        if (familyButton) familyButton.classList.toggle('ob-active', current === DONOR || current === ID);
+
+        // The redesign's own species-click listener closes its private family
+        // panel for any non-Tletingan core species, so restore the same family
+        // panel only while Nuhongan is active.
+        if (current === ID) {
+          const group = familyButton?.closest?.('.ob-group') || donorButton.closest?.('.ob-group');
+          const oldDetails = group?.parentElement?.querySelector('[data-ob-redesign-details="1"]');
+          if (group) {
+            const details = oldDetails || document.createElement('div');
+            details.dataset.obRedesignDetails = '1';
+            details.innerHTML = familyDetailsHtml();
+            if (!oldDetails) group.after(details);
+          }
+        }
+        bindSubspeciesButtons(overlay);
+      } catch (error) {
+        status.lastError = String(error?.message || error);
+      }
+    };
+
+    const schedule = () => {
+      if (queued) return;
+      queued = true;
+      queueMicrotask(enhance);
+    };
+    const syncOverlay = () => {
+      const overlay = document.getElementById('ob-overlay');
+      if (overlay === observedOverlay) return;
+      overlayObserver?.disconnect();
+      observedOverlay = overlay;
+      if (!overlay) return;
+      overlayObserver = new MutationObserver(schedule);
+      overlayObserver.observe(overlay, { childList: true });
+      schedule();
+    };
+    const bodyObserver = new MutationObserver(() => {
+      syncOverlay();
+      schedule();
+    }); // Used only to detect onboarding overlay mount/unmount.
+    const start = () => {
+      bodyObserver.observe(document.body, { childList: true });
+      syncOverlay();
+      schedule();
+    };
+    if (document.body) start();
+    else document.addEventListener('DOMContentLoaded', start, { once: true });
+    return true;
+  }
+
   try {
     installAppearanceInheritance();
     installBehindHeadInheritance();
@@ -156,6 +315,9 @@
     installPoseOrbitInheritance();
     installArmMaskInheritance();
     installMouthInheritance();
+    installConditionTaxonomy();
+    installOnboardingSpeciesTableCapture();
+    installCreatorSubspeciesUi();
   } catch (error) {
     status.lastError = String(error?.message || error);
     console.warn('[NuhonganSpecies] inheritance install failed:', error);
@@ -164,6 +326,7 @@
   window.HobunjiNuhonganSpecies = Object.freeze({
     speciesId: ID,
     parentSpecies: DONOR,
+    hydrateOnboardingSpeciesTable,
     debugSnapshot: () => ({
       ...clone(status),
       speciesId: ID,
