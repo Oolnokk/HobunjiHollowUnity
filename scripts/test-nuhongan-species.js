@@ -18,14 +18,12 @@ assert.deepEqual(species.genders, ['male', 'female']);
 assert(speciesIndex.entries.some(entry => entry.speciesId === 'nuhongan' && entry.path === './nuhongan.json'));
 assert.deepEqual(poseConfig.species.nuhongan, poseConfig.species.tletingan, 'Nuhongan weapon-pose orbit must exactly match Tletingan');
 
-// The existing creator redesign owns the Slagothim family/placeholder. The
-// species runtime activates that placeholder and keeps onboarding-core's real
-// state button hidden, rather than introducing a second top-level species.
-assert.match(redesignSource, /data-ob-subspecies="nuhongan" disabled/, 'redesign must still author the Nuhongan Slagothim placeholder');
-assert.match(runtimeSource, /nuhonganButton\.hidden = true/, 'Nuhongan core state button must never become a top-level species choice');
-assert.match(runtimeSource, /button\.disabled = false/, 'existing Nuhongan subspecies placeholder must be activated');
-assert.match(runtimeSource, /coreButton\(overlay, speciesId\)\?\.click\(\)/, 'subspecies choice must route through onboarding-core saved-state handling');
-assert.match(runtimeSource, /data-ob-subspecies="nuhongan"/, 'active Nuhongan family view must retain the subspecies button');
+// The creator now owns both supported Slagothim subspecies directly. Its UI
+// must not depend on a second observer repairing a disabled placeholder.
+assert.match(redesignSource, /data-ob-subspecies="nuhongan"/);
+assert.doesNotMatch(runtimeSource, /installCreatorSubspeciesUi/);
+assert.match(redesignSource, /nuhonganButton.hidden = true/);
+assert.match(redesignSource, /coreButton.click\(\)/);
 assert(attachmentBootstrap.includes("nuhongan-species-runtime.js?v="), 'attachment bootstrap must load the Nuhongan bridge');
 assert(gameIndex.indexOf('js/held-action-animations.js?v=') < gameIndex.indexOf('onboarding.js?v='), 'hand/attachment bootstrap must complete before onboarding scripts install the Slagothim UI');
 
