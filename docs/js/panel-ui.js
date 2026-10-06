@@ -14,7 +14,7 @@
   const animationAuthorColorFill = new URL('./color-fill.js?v=20260923colorfill7', src).href; // Used before Animation Author's repository-runtime loader can execute portrait-utils.js.
   const animationAuthorColorFillTag = isAnimationAuthor ? `<script src="${animationAuthorColorFill}"></script>` : ''; // Keeps parser-time ColorFill ordering explicit without changing other tools.
   const isCharacterStudio = /\/tools\/character-studio\/(?:index\.html)?$/.test(location.pathname); // Used to install derived-species appearance metadata before Character Studio reads scratchbones-config.js.
-  const characterStudioMammakhbuur = new URL('./character-studio-mammakhbuur-config.js?v=20261005nuhongan1', src).href; // Supplies Mammakhbuur and Nuhongan appearance inheritance before Character Studio initializes.
+  const characterStudioMammakhbuur = new URL('./character-studio-mammakhbuur-config.js?v=20261005nuhonganreview2', src).href; // Supplies Mammakhbuur plus full Nuhongan/Tletingan inheritance before Character Studio initializes.
   const characterStudioMammakhbuurTag = isCharacterStudio ? `<script src="${characterStudioMammakhbuur}"></script>` : ''; // Parser-time hook must run before the later scratchbones-config assignment.
   if (document.readyState === 'loading') {
     document.write(`${characterStudioMammakhbuurTag}${animationAuthorColorFillTag}<script src="${core}"></script><script src="${mapEditorTextureFix}"></script><script src="${terrainParity}"></script>${cutsceneRepoTag}`);
