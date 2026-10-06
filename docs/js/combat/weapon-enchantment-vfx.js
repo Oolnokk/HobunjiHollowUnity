@@ -22,8 +22,8 @@
 
   let lastScanAt = -Infinity; // Used by update() to throttle held-plane/config resolution.
   let activeSnapshot = null; // Used by updateEmitters()/debugSnapshot() as the latest resolved weapon + planar visual state.
-  let loadoutHookInstalled = false; // Used by installLoadoutHook() to wrap CombatLoadoutUI.render exactly once.
-  let updateLoopInstalled = false; // Used by installUpdateLoop() to avoid duplicate scheduler/RAF registration.
+  let scanGeneration = 0; // Used by update()/forceRefresh() so an older async mask scan can never overwrite a newer weapon/config snapshot.
+  let updateLoopInstalled = false; // Used by installUpdateLoop() to avoid duplicate scheduler registration.
   let lastEvent = 'idle'; // Used by debugSnapshot() and the in-menu diagnostics without browser devtools.
 
   function lichDyeIds(hues, neutrals = []) {
@@ -158,7 +158,10 @@
     visualStore()[key] = next;
     window.Combat?.deps?.saveGearInventory?.();
     lastEvent = `saved ${key}: ${next.alignment}/${next.dyeId}/${next.effectId}`;
+    scanGeneration++; // Invalidate any in-flight scan that still reflects the old visual choice.
+    lastScanAt = -Infinity;
     activeSnapshot = null;
+    clearAllEmitters();
     return true;
   }
 
@@ -220,11 +223,13 @@
           const mask = buildMetalMask(context.getImageData(0, 0, width, height)); // Used by emitters as the only legal spawn region.
           resolve(mask);
         } catch (error) {
+          MASK_CACHE.delete(url); // A transient decode/canvas failure must not permanently poison this sprite for the rest of the session.
           lastEvent = `mask failed: ${error?.message || error}`;
           resolve(null);
         }
       };
       image.onerror = () => {
+        MASK_CACHE.delete(url); // Allow a later scan to retry a transient mobile/network asset failure.
         lastEvent = `mask image failed: ${spritePath}`;
         resolve(null);
       };
@@ -240,15 +245,19 @@
   }
 
   function directHeldVisual(key) {
-    const handDeps = window.ProceduralHandAttachments?.gameDeps; // Used to reach the exact live equipment mesh map already shared by hand/dual-wield runtime.
+    const handDeps = window.ProceduralHandAttachments?.gameDeps; // Used to reach the same live player-held seams as hand grips and dual-wield presentation.
     const runtimeState = window.WeaponToolStances?.getRuntimeState?.() || window.WeaponToolStances?.debugSnapshot?.() || null; // Used to identify the active held slot without assuming 'weapon'.
-    const activeSlot = runtimeState?.activeSlot || handDeps?.getActiveTool?.() || null; // Used as the first toolMeshMap lookup key.
-    const meshMap = handDeps?.toolMeshMap; // Used to resolve the exact live makeToolPlaneMesh group instead of guessing from scene names.
-    let visual = activeSlot && (meshMap?.get?.(activeSlot) || meshMap?.[activeSlot]); // Used as the normal player-held visual.
-    if (visual?.userData?.itemKey === key && visual?.userData?.toolPlane) return visual;
+    const activeSlot = runtimeState?.activeSlot || handDeps?.getActiveTool?.() || null; // Used as the first optional toolMeshMap lookup key.
+    const meshMap = handDeps?.toolMeshMap; // Some runtime injections expose this map; others intentionally expose only toolHolder.
+    let visual = activeSlot && (meshMap?.get?.(activeSlot) || meshMap?.[activeSlot]); // Fast path when the equipment mesh map is present.
+    if (visual?.userData?.itemKey === key && visual?.userData?.toolPlane?.isObject3D) return visual;
     const candidates = meshMap instanceof Map ? [...meshMap.values()] : Object.values(meshMap || {}); // Used as an equipment-slot fallback if the active-slot snapshot lags one frame.
-    visual = candidates.find(candidate => candidate?.userData?.itemKey === key && candidate?.userData?.toolPlane) || null;
-    return visual;
+    visual = candidates.find(candidate => candidate?.userData?.itemKey === key && candidate?.userData?.toolPlane?.isObject3D) || null;
+    if (visual) return visual;
+    const holder = handDeps?.toolHolder; // Real gameplay may omit toolMeshMap; the holder child is the canonical fallback used by dual-wield-weapon-visuals.js.
+    return holder?.children?.find(child => child?.visible !== false && child?.userData?.itemKey === key && child?.userData?.toolPlane?.isObject3D)
+      || holder?.children?.find(child => child?.visible !== false && child?.userData?.toolPlane?.isObject3D)
+      || null;
   }
 
   function sceneHeldVisual(key) {
@@ -559,7 +568,9 @@
 
     if (now - lastScanAt >= SCAN_INTERVAL_MS) {
       lastScanAt = now;
+      const generation = ++scanGeneration; // Captured by this async scan; any newer scan/config refresh invalidates its eventual result.
       resolveActiveSnapshot().then(snapshot => {
+        if (generation !== scanGeneration) return;
         if (!snapshot) {
           activeSnapshot = null;
           clearAllEmitters();
@@ -571,7 +582,7 @@
         lastEvent = snapshot.mask?.matchedMetalPixels
           ? `${snapshot.weaponKey}: ${snapshot.mask.matchedMetalPixels} metal px, ${snapshot.planes.length} plane(s)`
           : `${snapshot.weaponKey}: no matched metal pixels`;
-      }).catch(error => { lastEvent = `scan failed: ${error?.message || error}`; });
+      }).catch(error => { if (generation === scanGeneration) lastEvent = `scan failed: ${error?.message || error}`; });
     }
 
     if (activeSnapshot?.planes?.length && activeSnapshot.mask?.indices?.length) updateEmitters(dt, activeSnapshot);
@@ -642,21 +653,24 @@
     } else {
       const alignmentDef = ALIGNMENTS[state.alignment]; // Used by color/effect rows and the spectral opacity preview.
       const alignmentSelect = makeSelect(state.alignment, active.map(alignment => ({ value: alignment, label: ALIGNMENTS[alignment].label })), value => {
-        if (setChoice(key, 'alignment', value)) window.CombatLoadoutUI?.render?.();
+        if (setChoice(key, 'alignment', value)) window.CombatLoadoutUI?.render?.('weaponEnchantmentVfxAlignment');
       });
+      alignmentSelect.id = 'weaponEnchantmentVfxAlignment';
       alignmentSelect.disabled = active.length < 2;
       addControlRow(section, 'Planar appearance', alignmentDef.lore, alignmentSelect);
 
       const colorSelect = makeSelect(state.dyeId, alignmentDef.dyeIds.map(dyeId => ({ value: dyeId, label: dyeLabel(dyeId) })), value => {
-        if (setChoice(key, 'dyeId', value)) window.CombatLoadoutUI?.render?.();
+        if (setChoice(key, 'dyeId', value)) window.CombatLoadoutUI?.render?.('weaponEnchantmentVfxColor');
       });
+      colorSelect.id = 'weaponEnchantmentVfxColor';
       addControlRow(section, 'Particle color', state.alignment === 'Ohthic'
         ? 'Ohthic colors render deliberately ghostly and semi-transparent.'
         : 'Uses the same authored cloth-dye color possibilities as the matching lich tradition.', colorSelect);
 
       const effectSelect = makeSelect(state.effectId, alignmentDef.effects.map(effect => ({ value: effect.id, label: effect.label })), value => {
-        if (setChoice(key, 'effectId', value)) window.CombatLoadoutUI?.render?.();
+        if (setChoice(key, 'effectId', value)) window.CombatLoadoutUI?.render?.('weaponEnchantmentVfxEffect');
       });
+      effectSelect.id = 'weaponEnchantmentVfxEffect';
       addControlRow(section, 'Particle form', 'Attack-shaped or plane-themed silhouettes; every particle still originates from the weapon’s detected metal region.', effectSelect);
 
       const preview = document.createElement('div'); // Used as an immediate readable color/opacity sample beneath browser-native selects.
@@ -694,19 +708,6 @@
     else pane.appendChild(section);
   }
 
-  function installLoadoutHook() {
-    const ui = window.CombatLoadoutUI; // Used as the stable menu render seam because EnchantmentSystem itself is intentionally Object.freeze()'d.
-    if (loadoutHookInstalled || !ui?.render) return false;
-    const originalRender = ui.render.bind(ui); // Used to preserve the full existing loadout/enchantment/ranged menu before adding the VFX section.
-    ui.render = (...args) => {
-      const result = originalRender(...args); // Used as the existing render contract/return value.
-      const pane = document.getElementById('combatLoadoutPane'); // Used as the existing loadout menu insertion surface.
-      if (pane) renderControls(pane, window.Combat?.deps?.currentWeaponKey?.() || 'none');
-      return result;
-    };
-    loadoutHookInstalled = true;
-    return true;
-  }
 
   async function copyDebug(key = window.Combat?.deps?.currentWeaponKey?.() || 'none') {
     const text = JSON.stringify(debugSnapshot(key), null, 2); // Used as the exact clipboard payload for mobile issue reports.
@@ -742,15 +743,6 @@
 
   function bootstrap() {
     installUpdateLoop();
-    if (!installLoadoutHook()) {
-      const timer = setInterval(() => { // Used only during parser startup until combat-loadout-ui.js has created its public API.
-        if (!installLoadoutHook()) return;
-        clearInterval(timer);
-        if (document.readyState !== 'loading') window.CombatLoadoutUI?.render?.();
-      }, 80);
-    } else if (document.readyState !== 'loading') {
-      window.CombatLoadoutUI?.render?.();
-    }
   }
 
   window.WeaponEnchantmentVFX = Object.freeze({
@@ -763,7 +755,7 @@
     renderControls,
     debugSnapshot,
     copyDebug,
-    forceRefresh() { lastScanAt = -Infinity; activeSnapshot = null; },
+    forceRefresh() { scanGeneration++; lastScanAt = -Infinity; activeSnapshot = null; clearAllEmitters(); },
   });
 
   bootstrap();

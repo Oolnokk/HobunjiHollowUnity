@@ -9,6 +9,7 @@ const indexPath = path.resolve(__dirname, '../docs/index.html'); // Used to veri
 const vfxSource = fs.readFileSync(vfxPath, 'utf8'); // Used by structural regression assertions below.
 const verdigrisSource = fs.readFileSync(verdigrisPath, 'utf8'); // Used to compare canonical metal-selection constants.
 const indexSource = fs.readFileSync(indexPath, 'utf8'); // Used to protect the explicit combat-module load order.
+const loadoutUiSource = fs.readFileSync(path.resolve(__dirname, '../docs/js/combat/combat-loadout-ui.js'), 'utf8'); // Used to verify aura controls are part of the loadout's authoritative render path.
 
 function numberConstant(source, name) {
   const match = source.match(new RegExp(`const ${name} = ([0-9.]+)`)); // Used to read simple numeric detector constants without executing either renderer.
@@ -25,6 +26,11 @@ assert(vfxSource.includes('ColorFill'), 'metal mask must reuse canonical ColorFi
 assert(vfxSource.includes('hobunjiDualWieldDuplicate'), 'dual-wield enchantments must target the two visible copied weapon planes instead of the hidden midpoint source.');
 assert(vfxSource.includes('ProceduralHandAttachments?.gameDeps'), 'runtime must resolve the exact live held-tool mesh through the existing hand/equipment seam first.');
 assert(vfxSource.includes('weaponEnchantmentVisuals'), 'semi-customizable color/effect selections must persist per weapon in gearInventory.');
+assert(vfxSource.includes('handDeps?.toolHolder'), 'held-weapon resolution must support the real runtime dependency bag when toolMeshMap is absent.');
+assert(vfxSource.includes('generation !== scanGeneration'), 'older async mask scans must be rejected after a newer weapon/config scan starts.');
+assert(!vfxSource.includes('function installLoadoutHook()'), 'VFX must not monkeypatch CombatLoadoutUI.render; the owner render path calls it directly.');
+assert(loadoutUiSource.includes('window.WeaponEnchantmentVFX?.renderControls?.(pane, toolKey)'), 'the authoritative loadout render must always inject the enchantment aura controls.');
+assert(vfxSource.includes("alignmentSelect.id = 'weaponEnchantmentVfxAlignment'") && vfxSource.includes("colorSelect.id = 'weaponEnchantmentVfxColor'") && vfxSource.includes("effectSelect.id = 'weaponEnchantmentVfxEffect'"), 'aura controls need stable ids so controller focus survives loadout rerenders.');
 assert(vfxSource.includes("'spirit-wisp'") && vfxSource.includes("'dead-light-orb'") && vfxSource.includes("'veil-shard'"), 'Ohthic visual vocabulary must remain explicitly spectral.');
 assert(vfxSource.includes('opacity: 0.38'), 'Ohthic particles must remain ghostly/semi-transparent rather than sharing the opaque planar defaults.');
 const enchantmentScriptAt = indexSource.indexOf('js/combat/combat-enchantments.js'); // Used to pin VFX dependency order against its authoritative planar state provider.
