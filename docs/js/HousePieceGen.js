@@ -51,6 +51,7 @@
   var _pendingShingleTint = null; // Applied after the shared GLB loads; used by every farmhouse/town roof.
   var _appliedShingleTintKey = ''; // Prevents duplicate texture work when several building systems request the same PNG.
   var _shingleTintGeneration = 0; // Rejects obsolete PNG callbacks after a newer roof finish is requested.
+  var _shingleSurfaceDebug = { ready: false, meshes: 0, surfaces: 0, fallbacks: 0, angleToleranceDeg: null, latestChange: 'The real shingle has six irregular sides: a 78-degree cutoff preserves its 79.4-degree end crease, and reversed coplanar cap triangles remain one side.' }; // Copied into the mobile Pixel Probe report.
 
   function _shingleTextureLog(message, level) {
     if (typeof global.__farmLog === 'function') global.__farmLog('Shingle PNG: ' + message, level || 'info', 'render');
@@ -73,6 +74,25 @@
   }
 
   function shingleReady() { return !!_tpl; }
+
+  function _mapShingleSurfaces(sceneObj) {
+    var mapper = global.HobunjiSurfaceStretchUV; // Reuses the same connected-face recognition and PNG fitting as natural surfaces.
+    if (!mapper || typeof mapper.mapGeometry !== 'function') return false;
+    sceneObj.traverse(function (o) {
+      if (!o.isMesh || !o.geometry || String(o.name || '').toLowerCase() === 'shinglebone') return;
+      var mapped = mapper.mapGeometry(o.geometry, { angleToleranceDeg: 78, splitAtThreshold: true, ignoreReversedCoplanarFaces: true, avoidCollapsedUvs: true, edgeReferenceWorldSize: 0.5 }); // The actual shell's shallowest main crease is 79.38 degrees; cap triangulation includes reversed coplanar faces.
+      var report = mapped.userData && mapped.userData.hobunjiSurfaceStretch; // Summarizes the actual connected sides, including small end/bevel surfaces.
+      o.geometry = mapped;
+      if (!report) return;
+      _shingleSurfaceDebug.meshes++;
+      _shingleSurfaceDebug.surfaces += report.patchCount;
+      _shingleSurfaceDebug.fallbacks += report.fallbackCount;
+      _shingleSurfaceDebug.angleToleranceDeg = report.angleToleranceDeg;
+    });
+    _shingleSurfaceDebug.ready = true;
+    _shingleTextureLog('UV mapping: ' + _shingleSurfaceDebug.surfaces + ' separate connected surfaces, ' + _shingleSurfaceDebug.fallbacks + ' projected fallback(s)');
+    return true;
+  }
 
   // Recolors the shingle GLB's own baked material in place, replacing its
   // texture with a repo PNG retinted via the same adaptive shade fill used
@@ -183,6 +203,7 @@
   // Exact port of analyzeShingleTemplate() from house-piece-author
   function _analyzeShingle(sceneObj) {
     var bone = null;
+    var surfacesReady = _mapShingleSurfaces(sceneObj); // Early GLB preloads may precede the parser-loaded mapper; first instancing retries below.
     sceneObj.traverse(function (o) {
       if (!bone && String(o.name || '').toLowerCase() === 'shinglebone') bone = o;
       if (o.isMesh && o.geometry) _ensureProjectedUv(o.geometry, { stretch: true });
@@ -202,7 +223,7 @@
       var size = box.getSize(new THREE.Vector3());
       boneLength = Math.max(size.x, size.y, size.z, 1);
     }
-    return { scene: sceneObj, bone: bone, boneLength: boneLength, boneFrameInverse: boneFrameInverse };
+    return { scene: sceneObj, bone: bone, boneLength: boneLength, boneFrameInverse: boneFrameInverse, surfacesReady: surfacesReady };
   }
 
   // ── Door portal cutting + entry tunnel (ported from the reference
@@ -558,6 +579,7 @@
   global.HousePieceGen = {
     buildGroup: buildGroup, buildGroupFromPiece: buildGroupFromPiece,
     loadShingleGlb: loadShingleGlb, shingleReady: shingleReady, tintShingleMaterial: tintShingleMaterial,
+    shingleSurfaceSnapshot: function () { return Object.assign({}, _shingleSurfaceDebug); },
     cutDoorPortal: cutDoorPortal, buildEntryTunnelGroup: buildEntryTunnelGroup,
     buildChimneyGroup: buildChimneyGroup,
   };
@@ -1056,6 +1078,7 @@
   // GLB shingle instance — exact port of makeShingleInstance()
   function _makeShingle(target, cfg, peakCenter) {
     if (!_tpl) return null;  // caller falls back to tube
+    if (!_tpl.surfacesReady) _tpl.surfacesReady = _mapShingleSurfaces(_tpl.scene);
     var p       = _scalePlacement(target, cfg);
     var stretch = target.length / Math.max(0.001, _tpl.boneLength);
     var layer   = _layerSettings(target, cfg);
