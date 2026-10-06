@@ -83,6 +83,18 @@ const runtimeWindow = { // Models the real inheritance registries closely enough
   _getMouthSpriteUrl(expression, speciesId, gender) { return `${expression}:${speciesId}:${gender}`; },
   _isMouthMask(speciesId) { return speciesId === 'tletingan'; },
   _getMouthExpressionOpacity(expression, speciesId) { return speciesId === 'tletingan' ? 0.75 : 1; },
+  MetalArmorSystem: {
+    version: 3,
+    spriteForBlueprintAppearance(_blueprintId, rawAppearance) { return `${rawAppearance?.speciesId || rawAppearance?.species}:${rawAppearance?.gender}`; },
+    init(injectedDeps) { runtimeWindow._metalArmorDeps = injectedDeps; return true; },
+  },
+  BanditNameForge: {
+    generateCulturalIdentity(options) { return { givenName: `name:${options.speciesId}:${options.gender}` }; },
+    cultureIdForSpecies(speciesId) { return `culture:${speciesId}`; },
+  },
+  HobunjiNameAdvisor: {
+    makeIdeaOptions(speciesId, slot, idea) { return [`${speciesId}:${slot}:${idea}`]; },
+  },
 };
 runtimeWindow.HobunjiHandModelProfiles = {
   data: { speciesModels: { tletingan: 'sloth' }, speciesScaleOverrides: {} },
@@ -129,6 +141,13 @@ assert.equal(runtimeWindow._getMouthSpriteUrl('talk', 'nuhongan', 'male'), 'talk
 assert.equal(runtimeWindow._getMouthExpressionOpacity('talk', 'nuhongan'), 0.75, 'mouth opacity tuning must route to Tletingan');
 assert(runtimeWindow.ConditionRegistry.PLAYER_SPECIES.includes('nuhongan'), 'shared player-species condition taxonomy must include Nuhongan');
 
+assert.equal(runtimeWindow.MetalArmorSystem.spriteForBlueprintAppearance('rounded_pauldron', { speciesId: 'nuhongan', gender: 'male' }), 'tletingan:male', 'Nuhongan metal armor must use Tletingan-authored sprite variants');
+runtimeWindow.MetalArmorSystem.init({ getPlayerData: () => ({ appearance: { speciesId: 'nuhongan', gender: 'female' } }) });
+assert.equal(runtimeWindow._metalArmorDeps.getPlayerData().appearance.speciesId, 'tletingan', 'MetalArmorSystem current-player sprite lookup must see the Tletingan donor only inside that module');
+assert.equal(runtimeWindow.BanditNameForge.generateCulturalIdentity({ speciesId: 'nuhongan', gender: 'male' }).givenName, 'name:tletingan:male', 'Nuhongan generated names must use Tletingan culture');
+assert.equal(runtimeWindow.BanditNameForge.cultureIdForSpecies('nuhongan'), 'culture:tletingan');
+assert.equal(runtimeWindow.HobunjiNameAdvisor.makeIdeaOptions('nuhongan', 'first', 'bru')[0], 'slagothim:given:bru', 'Nuhongan lore-name suggestions must use Slagothim phonetics');
+
 for (const gender of ['male', 'female']) {
   const profile = runtimeWindow.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters[`nuhongan::${gender}`];
   assert(profile);
@@ -148,6 +167,9 @@ assert.equal(runtimeDebug.handScale.male, 0.9);
 assert.equal(runtimeDebug.footScale.female, 1.025);
 assert.equal(runtimeDebug.behindHeadInstalled, true);
 assert.equal(runtimeDebug.armMaskProfilesInstalled, 2);
+assert.equal(runtimeDebug.metalArmorInheritanceInstalled, true);
+assert.equal(runtimeDebug.nameForgeInheritanceInstalled, true);
+assert.equal(runtimeDebug.nameAdvisorInheritanceInstalled, true);
 assert.equal(runtimeDebug.conditionSpeciesRegistered, true);
 
 // onboarding-core's private table must preserve the parent relation so creator
