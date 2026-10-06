@@ -588,8 +588,7 @@
       });
       return;
     }
-    const frame = now => { update(now); requestAnimationFrame(frame); }; // Used as a standalone fallback in tools/pages without RuntimeFrameScheduler.
-    requestAnimationFrame(frame);
+    lastEvent = 'RuntimeFrameScheduler unavailable; enchantment VFX idle.'; // The shipped game owns frame work through RuntimeFrameScheduler; no parallel RAF loop is permitted.
   }
 
   function makeSelect(value, options, onChange) {

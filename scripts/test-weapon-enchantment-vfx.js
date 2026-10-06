@@ -28,7 +28,7 @@ assert(vfxSource.includes('weaponEnchantmentVisuals'), 'semi-customizable color/
 assert(vfxSource.includes("'spirit-wisp'") && vfxSource.includes("'dead-light-orb'") && vfxSource.includes("'veil-shard'"), 'Ohthic visual vocabulary must remain explicitly spectral.');
 assert(vfxSource.includes('opacity: 0.38'), 'Ohthic particles must remain ghostly/semi-transparent rather than sharing the opaque planar defaults.');
 const enchantmentScriptAt = indexSource.indexOf('js/combat/combat-enchantments.js'); // Used to pin VFX dependency order against its authoritative planar state provider.
-const vfxScriptAt = indexSource.indexOf('js/combat/weapon-enchantment-vfx.js?v=20261006planar1'); // Used to pin the cache-busted runtime entry point.
+const vfxScriptAt = indexSource.search(/js\/combat\/weapon-enchantment-vfx\.js\?v=[A-Za-z0-9_-]+/); // Used to require a cache-busted runtime entry point without pinning its current token.
 assert(enchantmentScriptAt >= 0 && vfxScriptAt > enchantmentScriptAt, 'weapon enchantment VFX must load directly after EnchantmentSystem with a cache-busted URL.');
 
 const gear = {}; // Used by the VM harness as the active character's persistent gear inventory.
