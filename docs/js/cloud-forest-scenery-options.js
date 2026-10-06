@@ -310,8 +310,8 @@
     const BT = root.BorderTerrain;
     if (!BT?.buildZoneBorderTerrain || BT.__cloudForestBoundaryOptionsPatch || !BT.__cloudForestDenseNorthPatch) return false;
     const original = BT.buildZoneBorderTerrain;
-    BT.buildZoneBorderTerrain = function (scene, zcols, zrows, mapId, zoneBaseElev = 0, zGrid = null) {
-      const result = original.call(this, scene, zcols, zrows, mapId, zoneBaseElev, zGrid);
+    BT.buildZoneBorderTerrain = function (scene, zcols, zrows, mapId, zoneBaseElev = 0, zGrid = null, backgroundScenery = null) {
+      const result = original.call(this, scene, zcols, zrows, mapId, zoneBaseElev, zGrid, backgroundScenery);
       if (mapId !== CLOUD_ID || !scene) return result;
 
       const enabled = treeWallEnabled();
