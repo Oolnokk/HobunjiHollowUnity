@@ -6,9 +6,10 @@ const read = path => fs.readFileSync(path, 'utf8'); // Keeps repository-source a
 const species = JSON.parse(read('docs/config/species/nuhongan.json')); // Canonical parent-species record consumed by portrait inheritance.
 const speciesIndex = JSON.parse(read('docs/config/species/index.json')); // Shared species-loader registry.
 const poseConfig = JSON.parse(read('docs/config/combat/species-pose-orbit-scales.json')); // Weapon-pose reach table does not itself walk parentSpecies.
-const onboardingEntry = read('docs/onboarding.js'); // Guards creator adapter load order.
-const onboardingAdapter = read('docs/js/onboarding-nuhongan-subspecies.js'); // Guards Slagothim-family presentation instead of a top-level Nuhongan button.
-const attachmentBootstrap = read('docs/js/attachment-rig-latest-authored-snapshot.js'); // Guards parser-time runtime load and script-tag escaping.
+const runtimeSource = read('docs/js/nuhongan-species-runtime.js'); // Single owner for Nuhongan runtime + creator inheritance.
+const redesignSource = read('docs/js/onboarding-character-creation-redesign.js'); // Contains the pre-existing Slagothim/Nuhongan placeholder UI.
+const attachmentBootstrap = read('docs/js/attachment-rig-latest-authored-snapshot.js'); // Loads the species bridge after canonical rig data.
+const gameIndex = read('docs/index.html'); // Guards held-action/rig bootstrap availability before onboarding.
 
 assert.equal(species.speciesId, 'nuhongan');
 assert.equal(species.label, 'Nuhongan');
@@ -17,14 +18,16 @@ assert.deepEqual(species.genders, ['male', 'female']);
 assert(speciesIndex.entries.some(entry => entry.speciesId === 'nuhongan' && entry.path === './nuhongan.json'));
 assert.deepEqual(poseConfig.species.nuhongan, poseConfig.species.tletingan, 'Nuhongan weapon-pose orbit must exactly match Tletingan');
 
-// Nuhongan is a Slagothim subspecies in creator UX. The historical placeholder
-// remains authored by the redesign, while this small adapter activates it and
-// keeps the real core state button hidden.
-assert.match(onboardingEntry, /redesignUrl[\s\S]*nuhonganSubspeciesUrl[\s\S]*\$\{redesignUrl\}[\s\S]*\$\{nuhonganSubspeciesUrl\}/, 'Nuhongan adapter must load after the Slagothim redesign');
-assert.match(onboardingAdapter, /nuhongan\.hidden = true/, 'Nuhongan core state button must never become a top-level species choice');
-assert.match(onboardingAdapter, /button\.disabled = false/, 'existing Nuhongan subspecies placeholder must be activated');
-assert.match(onboardingAdapter, /coreButton\(overlay, speciesId\)\?\.click\(\)/, 'subspecies choice must route through onboarding-core saved-state handling');
-assert.match(onboardingAdapter, /data-ob-subspecies=\"nuhongan\"/, 'active Nuhongan family view must retain the subspecies button');
+// The existing creator redesign owns the Slagothim family/placeholder. The
+// species runtime activates that placeholder and keeps onboarding-core's real
+// state button hidden, rather than introducing a second top-level species.
+assert.match(redesignSource, /data-ob-subspecies="nuhongan" disabled/, 'redesign must still author the Nuhongan Slagothim placeholder');
+assert.match(runtimeSource, /nuhonganButton\.hidden = true/, 'Nuhongan core state button must never become a top-level species choice');
+assert.match(runtimeSource, /button\.disabled = false/, 'existing Nuhongan subspecies placeholder must be activated');
+assert.match(runtimeSource, /coreButton\(overlay, speciesId\)\?\.click\(\)/, 'subspecies choice must route through onboarding-core saved-state handling');
+assert.match(runtimeSource, /data-ob-subspecies="nuhongan"/, 'active Nuhongan family view must retain the subspecies button');
+assert(attachmentBootstrap.includes("nuhongan-species-runtime.js?v="), 'attachment bootstrap must load the Nuhongan bridge');
+assert(gameIndex.indexOf('js/held-action-animations.js?v=') < gameIndex.indexOf('onboarding.js?v='), 'hand/attachment bootstrap must complete before onboarding scripts install the Slagothim UI');
 
 const scaleWindow = { SCRATCHBONES_CONFIG: { game: { assets: { pngPlaneAvatar: { proceduralFeet: { footScale: {} } } } } } }; // Executes canonical whole-rig scale defaults without a browser.
 vm.runInNewContext(read('docs/config/character-rig-scale-defaults.js'), { window: scaleWindow });
@@ -59,6 +62,7 @@ const runtimeWindow = { // Models the real inheritance registries closely enough
       },
     },
   },
+  ConditionRegistry: { PLAYER_SPECIES: ['mao-ao', 'tletingan', 'kenkari', 'engh-sho', 'rakakoan'] },
   HOBUNJI_ATTACHMENT_RIG_PROFILES: {
     characters: {
       'tletingan::male': { species: 'tletingan', gender: 'male', anchors: { hand: 1 }, anatomy: { rigScaleX: 99, rigScaleY: 99, headScale: 99, headOffsetY: 99, handScale: 0.9, footScale: 1 } },
@@ -93,21 +97,21 @@ runtimeWindow.HobunjiHandModelProfiles = {
 };
 runtimeWindow.applyHobunjiAttachmentRigProfileCorrections = () => { // Simulates the canonical correction pass that publishes profile hand/foot scales.
   for (const profile of Object.values(runtimeWindow.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters)) {
-    const { species, gender, anatomy = {} } = profile;
+    const { species: speciesId, gender, anatomy = {} } = profile;
     if (Number.isFinite(anatomy.handScale)) {
-      runtimeWindow.HobunjiHandModelProfiles.data.speciesScaleOverrides[species] ||= {};
-      runtimeWindow.HobunjiHandModelProfiles.data.speciesScaleOverrides[species][gender] = anatomy.handScale;
+      runtimeWindow.HobunjiHandModelProfiles.data.speciesScaleOverrides[speciesId] ||= {};
+      runtimeWindow.HobunjiHandModelProfiles.data.speciesScaleOverrides[speciesId][gender] = anatomy.handScale;
     }
     if (Number.isFinite(anatomy.footScale)) {
       const feet = runtimeWindow.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.proceduralFeet.footScale;
-      feet[species] ||= {};
-      feet[species][gender] = anatomy.footScale;
+      feet[speciesId] ||= {};
+      feet[speciesId][gender] = anatomy.footScale;
     }
   }
   return true;
 };
 
-vm.runInNewContext(read('docs/js/nuhongan-species-runtime.js'), { window: runtimeWindow, console });
+vm.runInNewContext(runtimeSource, { window: runtimeWindow, console, MutationObserver: undefined });
 assert.equal(runtimeWindow.SCRATCHBONES_CONFIG.game.appearanceEditor.species.nuhongan.parentSpecies, 'tletingan');
 assert.equal(JSON.stringify(runtimeWindow.SCRATCHBONES_CONFIG.game.appearanceEditor.bodyPalettes.nuhongan), JSON.stringify(runtimeWindow.SCRATCHBONES_CONFIG.game.appearanceEditor.bodyPalettes.tletingan));
 assert.equal(runtimeWindow.HobunjiHandModelProfiles.modelKeyForSpecies('nuhongan'), 'sloth', 'Nuhongan must resolve the Tletingan/sloth hand model');
@@ -123,6 +127,7 @@ assert.equal(runtimeWindow.SCRATCHBONES_CONFIG.game.portrait.armOnlyOpacityMask.
 assert.equal(runtimeWindow.SCRATCHBONES_CONFIG.game.portrait.armOnlyOpacityMask.profiles['nuhongan:female'].maskYScaleMultiplier, 1.35);
 assert.equal(runtimeWindow._getMouthSpriteUrl('talk', 'nuhongan', 'male'), 'talk:tletingan:male', 'mouth expressions must route to Tletingan art');
 assert.equal(runtimeWindow._getMouthExpressionOpacity('talk', 'nuhongan'), 0.75, 'mouth opacity tuning must route to Tletingan');
+assert(runtimeWindow.ConditionRegistry.PLAYER_SPECIES.includes('nuhongan'), 'shared player-species condition taxonomy must include Nuhongan');
 
 for (const gender of ['male', 'female']) {
   const profile = runtimeWindow.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters[`nuhongan::${gender}`];
@@ -143,9 +148,25 @@ assert.equal(runtimeDebug.handScale.male, 0.9);
 assert.equal(runtimeDebug.footScale.female, 1.025);
 assert.equal(runtimeDebug.behindHeadInstalled, true);
 assert.equal(runtimeDebug.armMaskProfilesInstalled, 2);
+assert.equal(runtimeDebug.conditionSpeciesRegistered, true);
+
+// onboarding-core's private table must preserve the parent relation so creator
+// preview hands/feet can walk Nuhongan -> Tletingan before gameplay starts.
+const privateSpeciesTable = {
+  'mao-ao': { label: 'Mao-ao' },
+  tletingan: { label: 'Tletingan', genders: ['male'], male: { slots: [{ slot: 'hairFront', options: [{ id: 'same' }] }], colorOptions: ['same'] } },
+  kenkari: { label: 'Kenkari' },
+  'engh-sho': { label: 'Engh-sho' },
+};
+assert.equal(runtimeWindow.HobunjiNuhonganSpecies.hydrateOnboardingSpeciesTable(privateSpeciesTable), true);
+assert.equal(privateSpeciesTable.nuhongan.label, 'Nuhongan');
+assert.equal(privateSpeciesTable.nuhongan.parentSpecies, 'tletingan');
+assert.deepEqual(Array.from(privateSpeciesTable.nuhongan.genders), privateSpeciesTable.tletingan.genders);
+assert.equal(JSON.stringify(privateSpeciesTable.nuhongan.male), JSON.stringify(privateSpeciesTable.tletingan.male));
+assert.notEqual(privateSpeciesTable.nuhongan, privateSpeciesTable.tletingan);
 
 // Character Studio's private BASE_SPECIES_DATA contains the actual Tletingan
-// cosmetic controls. Verify the hook clones that final table rather than the
+// cosmetic controls. Verify its hook clones that final table rather than the
 // lightweight scratchbones-config species metadata that caused the regression.
 const studioWindow = {};
 vm.runInNewContext(read('docs/js/character-studio-mammakhbuur-config.js'), { window: studioWindow, console });
@@ -177,33 +198,6 @@ assert.equal(fullStudioTable.nuhongan.parentSpecies, 'tletingan');
 assert.equal(JSON.stringify(fullStudioTable.nuhongan.male.slots), JSON.stringify(fullStudioTable.tletingan.male.slots), 'male Studio cosmetics must be complete Tletingan slots');
 assert.equal(JSON.stringify(fullStudioTable.nuhongan.female.slots), JSON.stringify(fullStudioTable.tletingan.female.slots), 'female Studio cosmetics must be complete Tletingan slots');
 assert.equal(studioBridge.status.nuhonganSlotCount, fullStudioTable.tletingan.male.slots.length);
-
-// onboarding-core's private table must likewise preserve the parent relation so
-// creator-preview hands/feet can walk Nuhongan -> Tletingan even before gameplay.
-const onboardingWindow = {
-  SCRATCHBONES_CONFIG: { game: { appearanceEditor: { species: { mashtzarr: { female: { slots: [] } } }, bodyPalettes: {} } } },
-  randomPortraitProfileSeeded() { return {}; },
-  getPortraitFighters() { return []; },
-};
-const onboardingDocument = { addEventListener() {} };
-vm.runInNewContext(read('docs/js/onboarding-character-creation-mashtzarr-female.js'), {
-  window: onboardingWindow,
-  document: onboardingDocument,
-  setTimeout() { return 0; },
-});
-const privateSpeciesTable = {
-  'mao-ao': { label: 'Mao-ao' },
-  tletingan: { label: 'Tletingan', genders: ['male'], male: { slots: [{ slot: 'hairFront', options: [{ id: 'same' }] }], colorOptions: ['same'] } },
-  kenkari: { label: 'Kenkari' },
-  'engh-sho': { label: 'Engh-sho' },
-  mashtzarr: { label: 'Mashtzarr', genders: ['male'], male: { slots: [{ slot: 'hairFront' }], colorOptions: [] } },
-};
-assert.equal(onboardingWindow.hobunjiOnboardingMashtzarrFemale.hydratePrivateSpeciesTable(privateSpeciesTable), true);
-assert.equal(privateSpeciesTable.nuhongan.label, 'Nuhongan');
-assert.equal(privateSpeciesTable.nuhongan.parentSpecies, 'tletingan');
-assert.deepEqual(Array.from(privateSpeciesTable.nuhongan.genders), privateSpeciesTable.tletingan.genders);
-assert.equal(JSON.stringify(privateSpeciesTable.nuhongan.male), JSON.stringify(privateSpeciesTable.tletingan.male));
-assert.notEqual(privateSpeciesTable.nuhongan, privateSpeciesTable.tletingan);
 
 // Regression for a malformed escaping sequence introduced in the first PR pass:
 // parser-time bootstrap must emit a real closing script tag rather than literal backslashes.
