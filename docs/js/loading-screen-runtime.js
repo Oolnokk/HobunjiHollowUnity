@@ -710,6 +710,7 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
     root.setAttribute('aria-label', 'Introduction');
     root.tabIndex = -1;
     const INTRO_FADE_MS = 900; // Used by narrative pages and Continue prompts so every opening-text change crossfades instead of snapping.
+    const WIND_GATE_TIMEOUT_MS = 5000; // Autoplay-blocked mobile audio only starts on a tap, so narration may not wait on 'playing' forever with no visible prompt.
     const MIN_INTRA_SLIDE_DELAY_SECONDS = 4; // Used only by delayed text within one opening slide; ordinary page holds keep their authored durations.
     const stageText = document.createElement('div'); // Authored opening pages keep delayed lines laid out invisibly until their fade-in beat.
     stageText.style.cssText = `opacity:0;transition:opacity ${INTRO_FADE_MS}ms ease`;
@@ -784,7 +785,7 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
       continueButton.style.opacity = '0';
       continueButton.style.pointerEvents = 'none';
       continueButton.setAttribute?.('aria-hidden', 'true');
-      const audioGate = introAudio?.started || Promise.resolve(true); // The opening remains black until the violent wind reaches its real playing event.
+      const audioGate = Promise.race([introAudio?.started || Promise.resolve(true), new Promise(resolve => setTimeout(resolve, WIND_GATE_TIMEOUT_MS))]); // The opening stays black until the wind is really playing, capped so blocked/failed audio cannot hold it there.
       pageVisiblePromise = Promise.race([cancellation, Promise.resolve(audioGate)]).then(() => {
         if (cancelled) return;
         startedAt = nowMs();

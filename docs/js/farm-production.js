@@ -200,6 +200,10 @@
     document.getElementById('farmProductionModal')?.remove();
     const modal = document.createElement('div'); // Touch-friendly in-file management and diagnostics.
     modal.id = 'farmProductionModal'; modal.style.cssText = 'position:fixed;inset:0;background:#000b;z-index:11000;display:grid;place-items:center;padding:12px';
+    modal.setAttribute('data-ctrl-panel', '');
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-label', definition.label);
     const panel = document.createElement('div'); // Scrollable compact panel fits mobile screens.
     panel.style.cssText = 'background:#27231e;color:#eee;padding:18px;border:1px solid #89785d;border-radius:12px;max-height:85vh;overflow:auto;width:min(520px,90vw)';
     const title = document.createElement('h3'); // Authored labels are assigned as text.
@@ -212,6 +216,8 @@
     if (definition.method) {
       const select = document.createElement('select'); // Lists only legal bag/storage input stacks through the recipe authority.
       select.style.cssText = 'width:100%;margin:8px 0';
+      select.setAttribute('data-ctrl-default', '');
+      select.setAttribute('aria-label', 'Ingredient and source');
       for (const [source, stock] of [['bag', deps.inventory], ['storage', deps.loadStorage()]]) for (const [itemKey, count] of Object.entries(stock)) {
         if (!(count > 0) || !outputsFor(entry.key, itemKey)) continue;
         const option = document.createElement('option'); // Item names cannot inject HTML into the menu.
@@ -220,16 +226,17 @@
       panel.append(select);
       const quantity = document.createElement('input'); // Explicit batch size; no arbitrary queue capacity.
       quantity.type = 'number'; quantity.min = '1'; quantity.step = '1'; quantity.value = '1'; quantity.style.width = '90px'; panel.append(quantity);
+      quantity.setAttribute('aria-label', 'Batch quantity');
       button('Queue', () => { if (!select.value) return; const choice = JSON.parse(select.value); const result = enqueue(id, choice.itemKey, Number(quantity.value), choice.source); deps.showToast(result.message, result.ok); open(id); });
       button('Queue entire stack', () => { if (!select.value) return; const choice = JSON.parse(select.value); const stock = choice.source === 'bag' ? deps.inventory : deps.loadStorage(); const result = enqueue(id, choice.itemKey, Number(stock[choice.itemKey]), choice.source); deps.showToast(result.message, result.ok); open(id); });
       if (definition.family === 'compostBin') button('Fertilize planted crops', () => { const result = fertilize(); deps.showToast(result.message, result.ok); });
       button('Collect goods', () => { const result = collect(id); deps.showToast(result.message, result.ok); open(id); });
       for (const batch of entry.ready) { const line = document.createElement('div'); line.textContent = `${batch.label} · ${batch.count} · ${batch.stars}★`; panel.append(line); }
     }
-    button('Close', () => modal.remove());
+    button('Close', () => modal.remove()).setAttribute('data-ctrl-cancel', '');
     const debug = document.createElement('details'); // Mobile-readable state; contains the most recent feature change.
-    const heading = document.createElement('summary'); heading.textContent = 'Production diagnostics'; debug.append(heading);
-    const text = document.createElement('pre'); text.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere'; text.textContent = JSON.stringify({ mostRecentChange: 'Starting facilities arrive completed, including the Ranch medium barn and attached one-slot incubator.', worldTime: now(), building: serialize().find(record => record.id === id), lastError }, null, 2); debug.append(text); panel.append(debug);
+    const heading = document.createElement('summary'); heading.textContent = 'Production diagnostics'; heading.setAttribute('tabindex', '0'); debug.append(heading);
+    const text = document.createElement('pre'); text.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere'; text.textContent = JSON.stringify({ mostRecentChange: 'Facility menus support controller navigation: left/right changes ingredient or quantity, confirm activates actions, and Back closes.', worldTime: now(), building: serialize().find(record => record.id === id), lastError }, null, 2); debug.append(text); panel.append(debug);
     modal.append(panel); document.body.append(modal);
   }
   function connectedCrops(entry, grid) {
