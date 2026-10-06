@@ -45,9 +45,9 @@
     delete geometry.userData.naturalSurfaceUvMapping;
   }
 
-  function applyTownCliffMaterial(THREE, mesh, fallbackMaterial, surfacePreset = 'town-cliffs') {
+  function applyTownCliffMaterial(THREE, mesh, fallbackMaterial, surfacePreset = 'farm-cliff') {
     const natural = root.NaturalSurfaceMaterials; // Used by ordinary mines/dens for the existing cliff material and by opted-in locales for the farm's canonical rock material factory.
-    const farmCliffParity = surfacePreset === 'farm-cliff'; // Gates the Banubu-specific material/UV path so unrelated cavern interiors keep their existing appearance.
+    const farmCliffParity = surfacePreset === 'farm-cliff'; // Every cavern wall now finishes like farm cliffs; data can still opt back out with surfaceMaterial: 'town-cliffs'.
     if (mesh?.isMesh && typeof natural?.naturalizeMesh === 'function') {
       mesh.material = fallbackMaterial;
       if (farmCliffParity) natural.naturalizeMesh(mesh, 'rocks', 'planar-stretch');
@@ -252,7 +252,7 @@
     const materialOptions = { color: options.color ?? 0x5f5a56, map: texture, flatShading: !texture, side: THREE.FrontSide };
     const fallbackMat = new THREE.MeshBasicMaterial(materialOptions);
     const mesh = new THREE.Mesh(geo, fallbackMat);
-    applyTownCliffMaterial(THREE, mesh, fallbackMat, options.surfaceMaterial || meshData.surfaceMaterial || 'town-cliffs');
+    applyTownCliffMaterial(THREE, mesh, fallbackMat, options.surfaceMaterial || meshData.surfaceMaterial || 'farm-cliff');
     mesh.receiveShadow = true;
     mesh.userData.cameraObstacle = true;
     return mesh;

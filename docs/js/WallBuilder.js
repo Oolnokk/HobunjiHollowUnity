@@ -17,6 +17,42 @@
 
   // ── Utilities ─────────────────────────────────────────────────────────────
 
+  // r128's InstancedMesh.raycast tests every instance with no whole-mesh
+  // bounds check, so camera-occlusion rays aimed anywhere near a town paid
+  // for every brick of every building (~90% of a town raycast). Rays that miss
+  // the sphere around all of a wall mesh's bricks now skip it. The sphere is
+  // rebuilt whenever the instance matrices or count change.
+  const _rayBoundsBox = new THREE.Box3();
+  const _rayBoundsInstBox = new THREE.Box3();
+  const _rayBoundsMatrix = new THREE.Matrix4();
+  const _rayBoundsSphere = new THREE.Sphere();
+  const _rayBoundsCache = new WeakMap(); // InstancedMesh -> { key, sphere } in mesh-local space.
+  function boundedInstancedRaycast(raycaster, intersects) {
+    const geo = this.geometry;
+    if (geo && this.count > 0) {
+      const key = this.instanceMatrix.version + ':' + this.count;
+      let cache = _rayBoundsCache.get(this);
+      if (!cache || cache.key !== key) {
+        if (!geo.boundingBox) geo.computeBoundingBox();
+        _rayBoundsBox.makeEmpty();
+        for (let i = 0; i < this.count; i++) {
+          this.getMatrixAt(i, _rayBoundsMatrix);
+          _rayBoundsInstBox.copy(geo.boundingBox).applyMatrix4(_rayBoundsMatrix);
+          // A brick with a NaN matrix can never be hit, but would poison the union.
+          if (Number.isFinite(_rayBoundsInstBox.min.x + _rayBoundsInstBox.min.y + _rayBoundsInstBox.min.z +
+              _rayBoundsInstBox.max.x + _rayBoundsInstBox.max.y + _rayBoundsInstBox.max.z)) _rayBoundsBox.union(_rayBoundsInstBox);
+        }
+        cache = { key, sphere: _rayBoundsBox.isEmpty() ? null : _rayBoundsBox.getBoundingSphere(new THREE.Sphere()) };
+        _rayBoundsCache.set(this, cache);
+      }
+      if (!cache.sphere) return;
+      _rayBoundsSphere.copy(cache.sphere).applyMatrix4(this.matrixWorld);
+      if (!raycaster.ray.intersectsSphere(_rayBoundsSphere)) return;
+    }
+    THREE.InstancedMesh.prototype.raycast.call(this, raycaster, intersects);
+  }
+
+
   function v3(arr) {
     return new THREE.Vector3(Number(arr?.[0] ?? 0), Number(arr?.[1] ?? 0), Number(arr?.[2] ?? 0));
   }
@@ -641,6 +677,7 @@
       inst.instanceMatrix.needsUpdate = true;
       inst.castShadow = true;
       inst.receiveShadow = true;
+      inst.raycast = boundedInstancedRaycast;
       group.add(inst);
     }
 
