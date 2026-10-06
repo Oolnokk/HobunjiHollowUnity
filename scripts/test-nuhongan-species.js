@@ -35,11 +35,11 @@ const tletinganMale = scaleWindow.HobunjiCharacterRigScaleDefaults.scaleFor('tle
 const tletinganFemale = scaleWindow.HobunjiCharacterRigScaleDefaults.scaleFor('tletingan', 'female'); // Female ratio donor.
 const nuhonganMale = scaleWindow.HobunjiCharacterRigScaleDefaults.scaleFor('nuhongan', 'male'); // Male Nuhongan proportions.
 const nuhonganFemale = scaleWindow.HobunjiCharacterRigScaleDefaults.scaleFor('nuhongan', 'female'); // Female Nuhongan proportions.
-assert.equal(nuhonganMale.x, tletinganMale.x * 0.8);
-assert.equal(nuhonganMale.y, tletinganMale.y * 0.75);
+assert(Math.abs(nuhonganMale.x - tletinganMale.x * 0.8) < 1e-9);
+assert(Math.abs(nuhonganMale.y - tletinganMale.y * 0.75) < 1e-9);
 assert.equal(nuhonganMale.head, tletinganMale.head);
-assert.equal(nuhonganFemale.x, tletinganFemale.x * 0.8);
-assert.equal(nuhonganFemale.y, tletinganFemale.y * 0.75);
+assert(Math.abs(nuhonganFemale.x - tletinganFemale.x * 0.8) < 1e-9);
+assert(Math.abs(nuhonganFemale.y - tletinganFemale.y * 0.75) < 1e-9);
 assert.equal(nuhonganFemale.head, tletinganFemale.head);
 
 const runtimeWindow = { // Models the real inheritance registries closely enough to catch lost hands/feet and direct-lookup systems.
