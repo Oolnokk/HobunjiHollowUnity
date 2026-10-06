@@ -141,7 +141,7 @@ async function main() {
       assert.equal(stageText.style.opacity,'0','first words stay hidden before wind playback');
       clock+=9000;await flushMicrotasks();
       assert.equal(session.getDebug().ready,false,'page timer cannot finish before the wind begins');
-      assert.equal(timers.length,0,'no page-duration timer starts while waiting for audible wind');
+      assert.deepEqual(timers.map(timer=>timer.at),[5000],'only the blocked-audio cap is scheduled; no page-duration timer starts while waiting for audible wind');
       releaseWind();await flushMicrotasks();
       assert.equal(stageText.style.opacity,'1','first words fade in only after wind starts');
     } else await flushMicrotasks();
@@ -166,6 +166,22 @@ async function main() {
     await done;assert.equal(continued,true);assert.equal(continueButton.disabled,true);assert.equal(stageText.style.opacity,'0');
   }
   session.finish();assert(removed && unlocked);assert.equal(subscriber,null);assert.equal(listeners.size,0);assert.equal(state.introduction,null);
+
+  // Wind that never plays (autoplay blocked until a tap, or a failed load) must not hold the opening on black forever.
+  {
+    elements.length=0;timers.length=0;clock=0;
+    context.window.AudioSystem.beginIntroductionMix=()=>({started:new Promise(()=>{}),retry(){},finish(){},debug:()=>({})});
+    const silent=await context.api();
+    const silentText=elements[1];
+    const flush=async(count=12)=>{for(let tick=0;tick<count;tick++)await Promise.resolve();};
+    await flush();
+    assert.equal(silentText.style.opacity,'0','words still wait briefly for the wind');
+    const cap=timers.find(timer=>timer.at===5000);
+    assert(cap,'a bounded wind-gate timer is scheduled');
+    clock=5000;cap.fn();await flush();
+    assert.equal(silentText.style.opacity,'1','narration appears once the wind-gate cap elapses even though the wind never played');
+    silent.finish();
+  }
 
   // Execute real opening orchestration: all readiness hooks finish before scene one reveals.
   const order=[], records=['jubmir','father_hunundi_hodu','spearhead_unumanuk','khannibarri_agent'].map(id=>({id}));

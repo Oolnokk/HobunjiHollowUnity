@@ -71,6 +71,42 @@ const saved=JSON.parse(JSON.stringify(production.serialize())); // Reload a full
 delete itemDefs.needlegrainFlour;production.load(saved);assert.equal(itemDefs.needlegrainFlour.label,'Needlegrain Flour');
 inventory.needlegrainFlour=98;assert.equal(production.collect('mill').ok,true);assert.equal(inventory.needlegrainFlour,99);assert.equal(production.entries()[0].ready[0].count,8,'full bags retain all excess output');
 assert.equal(production.collect('mill').ok,false);inventory.needlegrainFlour=0;production.collect('mill');assert.equal(inventory.needlegrainFlour,8);
+// Execute the facility's real menu builder and the same click handlers ControllerUI activates.
+{
+  class Element {
+    constructor(tag) { this.tagName = tag.toUpperCase(); this.children = []; this.attributes = {}; this.style = {}; this.value = ''; }
+    append(...children) { for (const child of children) { child.parentElement = this; this.children.push(child); if (this.tagName === 'SELECT' && !this.value) this.value = child.value; } }
+    setAttribute(name, value) { this.attributes[name] = value; }
+    getAttribute(name) { return this.attributes[name] ?? null; }
+    remove() { if (this.parentElement) this.parentElement.children = this.parentElement.children.filter(child => child !== this); }
+    click() { this.onclick?.(); }
+  }
+  const body = new Element('body'); // Owns dynamically opened modal roots and tracks replacement/close.
+  context.document = { createElement: tag => new Element(tag), body, getElementById: id => body.children.find(child => child.id === id) || null };
+  const modal = () => context.document.getElementById('farmProductionModal'); // Reads the live root after queue/collect rebuilds it.
+  const controls = () => modal().children[0].children; // Mirrors native controls discovered by the shared controller navigator.
+  for (const id of ['mill', 'smokehouse', 'jerky']) {
+    production.open(id);
+    assert.equal(modal().getAttribute('data-ctrl-panel'), '', 'every facility opts into controller focus');
+    assert.equal(modal().getAttribute('role'), 'dialog');
+    assert.equal(modal().getAttribute('aria-modal'), 'true');
+    const select = controls().find(child => child.tagName === 'SELECT'); // Ingredient picker receives initial controller focus.
+    assert.equal(select.getAttribute('data-ctrl-default'), '');
+    assert.equal(select.getAttribute('aria-label'), 'Ingredient and source');
+    const quantity = controls().find(child => child.tagName === 'INPUT'); // Existing navigator adjusts numbers with left/right and respects min/step.
+    assert.equal(quantity.type, 'number'); assert.equal(quantity.min, '1'); assert.equal(quantity.step, '1');
+    const close = controls().find(child => child.getAttribute('data-ctrl-cancel') === ''); // B invokes this same close handler.
+    close.click(); assert.equal(modal(), null, 'controller cancel closes the facility root');
+  }
+  production.open('mill');
+  const beforeQueue = inventory.needlegrain; // Confirms menu activation reaches the existing validated queue authority.
+  controls().find(child => child.textContent === 'Queue').click();
+  assert.equal(inventory.needlegrain, beforeQueue - 1);
+  assert.equal(modal().getAttribute('data-ctrl-panel'), '', 'queue refresh retains controller ownership');
+  controls().find(child => child.textContent === 'Collect goods').click();
+  assert.equal(modal().getAttribute('data-ctrl-panel'), '', 'collection refresh retains controller ownership');
+  controls().find(child => child.getAttribute('data-ctrl-cancel') === '').click();
+}
 allowed=false;assert.equal(production.enqueue('mill','needlegrain',1).ok,false);assert.equal(settings.saveColors({stone:'#88847d',wood:'#604632'}).ok,false);allowed=true;
 assert.equal(settings.saveColors({stone:'#88847d',wood:'#604632'}).ok,true);assert.equal(settings.current().stone,'#88847d');
 assert.equal(context.ItemProcessing.getProcessingOutputs('composting','meal')[0].key,'compostFertilizer');

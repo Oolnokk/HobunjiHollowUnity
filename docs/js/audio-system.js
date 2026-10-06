@@ -1181,6 +1181,7 @@
     };
     if (wind?.addEventListener) wind.addEventListener('playing', markWindStarted, { once: true });
     else if (!wind) markWindStarted(); // Headless/no-media environments must not strand the introduction behind an impossible audio event.
+    wind?.addEventListener?.('error', () => { lastError = `wind load failed (${wind.error?.code ?? 'unknown'})`; if (!windStarted) resolveStarted?.(false); }, { once: true }); // A missing/undecodable file can never fire 'playing'; release the narration gate instead of holding the opening on black.
     const session = {
       started,
       retry() {
