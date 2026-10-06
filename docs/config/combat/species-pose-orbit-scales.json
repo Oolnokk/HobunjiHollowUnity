@@ -24,6 +24,10 @@
     "tletingan": {
       "male": 0.5,
       "female": 0.47
+    },
+    "nuhongan": {
+      "male": 0.5,
+      "female": 0.47
     }
   }
 }
