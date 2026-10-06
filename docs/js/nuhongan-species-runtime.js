@@ -22,6 +22,9 @@
     poseOrbitScale: {},
     armMaskProfilesInstalled: 0,
     mouthInheritanceInstalled: false,
+    metalArmorInheritanceInstalled: false,
+    nameForgeInheritanceInstalled: false,
+    nameAdvisorInheritanceInstalled: false,
     conditionSpeciesRegistered: false,
     creatorPrivateSpeciesTableCaptured: false,
     creatorPlaceholderActivated: false,
@@ -150,6 +153,112 @@
       return baseOpacity.call(this, expression, normalizeSpecies(speciesId) === ID ? DONOR : speciesId);
     };
     status.mouthInheritanceInstalled = true;
+    return true;
+  }
+
+  function installMetalArmorInheritance() {
+    // Metal armor's authored sprite table is private/frozen and its current-player
+    // lookup does not walk parentSpecies. Wrap the public init boundary so only
+    // that module sees Nuhongan as Tletingan when it asks for appearance art.
+    const system = window.MetalArmorSystem;
+    if (!system || system.__hobunjiNuhonganInheritance) return !!system?.__hobunjiNuhonganInheritance;
+    const baseInit = system.init;
+    const baseSpriteForAppearance = system.spriteForBlueprintAppearance;
+    if (typeof baseInit !== 'function' || typeof baseSpriteForAppearance !== 'function') return false;
+
+    const donorAppearance = raw => {
+      if (!raw || normalizeSpecies(raw.speciesId || raw.species) !== ID) return raw;
+      return { ...raw, speciesId: DONOR, species: DONOR };
+    };
+    const wrapped = {
+      ...system,
+      __hobunjiNuhonganInheritance: true,
+      spriteForBlueprintAppearance(blueprintId, rawAppearance) {
+        return baseSpriteForAppearance.call(system, blueprintId, donorAppearance(rawAppearance));
+      },
+      init(injectedDeps) {
+        if (!injectedDeps || typeof injectedDeps.getPlayerData !== 'function') return baseInit.call(system, injectedDeps);
+        const baseGetPlayerData = injectedDeps.getPlayerData; // Used only inside MetalArmorSystem to choose current-player authored armor art.
+        return baseInit.call(system, {
+          ...injectedDeps,
+          getPlayerData() {
+            const data = baseGetPlayerData();
+            return data?.appearance && normalizeSpecies(data.appearance.speciesId || data.appearance.species) === ID
+              ? { ...data, appearance: donorAppearance(data.appearance) }
+              : data;
+          },
+        });
+      },
+    };
+    window.MetalArmorSystem = Object.freeze(wrapped);
+    status.metalArmorInheritanceInstalled = true;
+    return true;
+  }
+
+  function installFutureGlobalAdapter(globalName, wrapValue, statusKey) {
+    // Name systems load after the hand/rig bootstrap on the game page. Install a
+    // one-shot assignment hook so Nuhongan gets Slagothim/Tletingan phonetics
+    // without editing or duplicating either naming engine.
+    const descriptor = Object.getOwnPropertyDescriptor(window, globalName);
+    const current = window[globalName];
+    if (current) {
+      window[globalName] = wrapValue(current);
+      status[statusKey] = true;
+      return true;
+    }
+    if (descriptor && descriptor.configurable === false) return false;
+    let pending = null; // Holds the first late-loaded engine until it is wrapped and promoted to a normal writable property.
+    Object.defineProperty(window, globalName, {
+      configurable: true,
+      enumerable: descriptor?.enumerable ?? true,
+      get: () => pending,
+      set(value) {
+        pending = wrapValue(value);
+        Object.defineProperty(window, globalName, {
+          configurable: true,
+          enumerable: descriptor?.enumerable ?? true,
+          writable: true,
+          value: pending,
+        });
+        status[statusKey] = true;
+      },
+    });
+    return true;
+  }
+
+  function installNameInheritance() {
+    installFutureGlobalAdapter('BanditNameForge', forge => {
+      if (!forge || forge.__hobunjiNuhonganInheritance) return forge;
+      const baseGenerate = forge.generateCulturalIdentity;
+      const baseCulture = forge.cultureIdForSpecies;
+      return Object.freeze({
+        ...forge,
+        __hobunjiNuhonganInheritance: true,
+        generateCulturalIdentity(options = {}) {
+          const next = normalizeSpecies(options?.speciesId) === ID ? { ...options, speciesId: DONOR } : options;
+          return typeof baseGenerate === 'function' ? baseGenerate.call(forge, next) : null;
+        },
+        cultureIdForSpecies(speciesId) {
+          const next = normalizeSpecies(speciesId) === ID ? DONOR : speciesId;
+          return typeof baseCulture === 'function' ? baseCulture.call(forge, next) : null;
+        },
+      });
+    }, 'nameForgeInheritanceInstalled');
+
+    installFutureGlobalAdapter('HobunjiNameAdvisor', advisor => {
+      if (!advisor || advisor.__hobunjiNuhonganInheritance) return advisor;
+      const baseMakeIdeaOptions = advisor.makeIdeaOptions;
+      return Object.freeze({
+        ...advisor,
+        __hobunjiNuhonganInheritance: true,
+        makeIdeaOptions(speciesId, slot, idea) {
+          // Tletingan name suggestions are Slagothim phonetics; use the same
+          // semantic family key so the advisor also selects the Slagothim slot.
+          if (normalizeSpecies(speciesId) === ID) return baseMakeIdeaOptions?.call(advisor, 'slagothim', slot === 'first' ? 'given' : slot, idea) || [];
+          return baseMakeIdeaOptions?.call(advisor, speciesId, slot, idea) || [];
+        },
+      });
+    }, 'nameAdvisorInheritanceInstalled');
     return true;
   }
 
@@ -315,6 +424,8 @@
     installPoseOrbitInheritance();
     installArmMaskInheritance();
     installMouthInheritance();
+    installMetalArmorInheritance();
+    installNameInheritance();
     installConditionTaxonomy();
     installOnboardingSpeciesTableCapture();
     installCreatorSubspeciesUi();
@@ -336,7 +447,7 @@
       headScaleMultiplier: 1,
       inheritedMaleRig: !!window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[`${ID}::male`],
       inheritedFemaleRig: !!window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[`${ID}::female`],
-      latestChange: 'Nuhongan remain a Slagothim/Tletingan child identity and inherit Tletingan cosmetics, hands, feet, rig anatomy, rear head, arm mask, mouth expressions and weapon-pose orbit; only whole-body width/height differ.',
+      latestChange: 'Nuhongan remain a Slagothim/Tletingan child identity and inherit Tletingan cosmetics, hands, feet, rig anatomy, rear head, arm mask, mouth expressions, metal armor art, naming culture and weapon-pose orbit; only whole-body width/height differ.',
     }),
   });
 })();
