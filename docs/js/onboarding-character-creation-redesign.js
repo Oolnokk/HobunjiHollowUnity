@@ -263,7 +263,7 @@
     if (!kind) return true;
     if (gender !== 'male') return false;
     if (kind === 'kenkari-bowl-kasa') return speciesId === 'kenkari';
-    return speciesId === 'tletingan' || speciesId === 'mao-ao';
+    return speciesId === 'tletingan' || speciesId === 'nuhongan' || speciesId === 'mao-ao';
   }
 
   function randomizeVisibleClothing(overlay, speciesId, gender) {
@@ -328,7 +328,7 @@
       collectionsTab?.click(); // Core rerenders synchronously; all following queries intentionally reacquire the current DOM.
       let current = creatorOverlay();
       const clothingRoll = current ? randomizeVisibleClothing(current, speciesId, gender) : { kasaSelected: false, kasaKind: null };
-      const restrictOrdinaryKasaDyes = clothingRoll.kasaKind === 'ordinary-kasa' && (speciesId === 'tletingan' || speciesId === 'mao-ao');
+      const restrictOrdinaryKasaDyes = clothingRoll.kasaKind === 'ordinary-kasa' && (speciesId === 'tletingan' || speciesId === 'nuhongan' || speciesId === 'mao-ao');
 
       clickRandomDye('data-ob-cloth-dye-a', restrictOrdinaryKasaDyes);
       clickRandomDye('data-ob-cloth-dye-b', restrictOrdinaryKasaDyes);

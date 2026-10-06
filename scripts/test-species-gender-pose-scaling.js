@@ -94,6 +94,7 @@ assert.deepStrictEqual(orbitConfig.species, {
   rakakoan: { male: 0.5, female: 0.4 },
   mashtzarr: { male: 0.8, female: 0.65 },
   tletingan: { male: 0.5, female: 0.47 },
+  nuhongan: { male: 0.5, female: 0.47 },
 }, 'repo defaults must exactly match the complete authored species+gender orbit table');
 
 const game = fs.readFileSync('docs/game.js', 'utf8');
