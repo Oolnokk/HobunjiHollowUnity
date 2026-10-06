@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   regression:
@@ -24,6 +24,19 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Fix cache-bust token on this branch
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          git fetch --no-tags origin "${{ github.base_ref }}" "${{ github.head_ref }}"
+          git checkout -B "${{ github.head_ref }}" "origin/${{ github.head_ref }}"
+          node scripts/check-cache-busts.js --fix "origin/${{ github.base_ref }}"
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add docs scripts
+            git commit -m "Bump cache-bust tokens"
+            git push origin "HEAD:${{ github.head_ref }}"
+          fi
       - name: Syntax check shipped scripts
         run: |
           set -e
