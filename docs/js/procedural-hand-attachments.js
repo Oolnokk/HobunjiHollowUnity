@@ -605,6 +605,8 @@
       calibration.name = `${side}_hand_calibration`;
       socket.add(calibration);
       root.add(socket);
+      const profileKey = `${speciesId}::${gender}`; // Stable lookup follows live editor anatomy replacement without altering the grip origin.
+      global.HobunjiCharacterRigScale?.installPartScaleAxes?.(THREE, socket, parent, () => global.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[profileKey]?.anatomy?.handScaleAxes);
       sockets[side] = { socket, calibration, guide, visual: null, toolCalibrationEnabled: false };
     }
 

@@ -1,11 +1,12 @@
 // Nuhongan are Tletingan-derived Slagothim: identical authored anatomy/assets,
-// with their distinct proportions supplied only by character-rig-scale-defaults.js.
+// with distinct body proportions and authored world-size extremity compensation.
 (() => {
   'use strict';
 
   const ID = 'nuhongan'; // Distinct saved/runtime species id so Nuhongan retain their own whole-rig scale.
   const DONOR = 'tletingan'; // Single appearance/anatomy authority for every non-scale Nuhongan system.
   const GENDERS = Object.freeze(['male', 'female']); // Used by all same-gender inheritance passes below.
+  const PART_SCALE_AXES = window.HobunjiCharacterRigScaleDefaults?.nuhonganPartScaleAxes; // Reads fixed authored axes; this bridge never calculates a donor/body scale ratio.
   const clone = value => value == null ? value : JSON.parse(JSON.stringify(value)); // Prevents Nuhongan edits from mutating Tletingan source records.
   const normalizeSpecies = value => String(value || '').trim().toLowerCase().replace(/_/g, '-');
   const config = window.SCRATCHBONES_CONFIG?.game; // Shared gameplay/editor configuration extended by this bridge.
@@ -65,9 +66,11 @@
       if (profile.shoulderPerchRule) profile.shoulderPerchRule.appearanceSpeciesId = ID;
       if (profile.posteriorRule) profile.posteriorRule.appearanceSpeciesId = ID;
       profile.anatomy ||= {};
-      // Width/height/head placement are Nuhongan-specific. All other anatomy,
-      // including Tletingan handScale and footScale, is intentionally retained.
+      // Retain donor size controls; fixed per-axis authoring cancels only the
+      // extremities' inherited body shrink, without moving their anchors.
       for (const key of ['rigScale', 'rigScaleX', 'rigScaleY', 'headScale', 'headOffsetY']) delete profile.anatomy[key];
+      profile.anatomy.handScaleAxes = clone(PART_SCALE_AXES);
+      profile.anatomy.footScaleAxes = clone(PART_SCALE_AXES);
       characters[`${ID}::${gender}`] = profile;
       installed += 1;
     }

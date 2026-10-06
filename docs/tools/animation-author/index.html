@@ -1215,9 +1215,9 @@ const STORAGE_KEY = 'hobunjiNpcPlaneAvatarRepoViewer.source.v1';
 const KURRAYA_STORAGE_KEY = 'hobunjiNpcPlaneAvatarRepoViewer.kurrayaProfiles.v1';
 const CREATURE_STORAGE_KEY = 'hobunjiGameplayBackdropRepoViewer.creatureProfiles.v1';
 const CREATURE_RENDER_SCRIPT = 'js/creature-genetics-render.js';
-const AUTHOR_HAND_RUNTIME_SCRIPT = new URL('../../js/held-action-animations.js?v=20261006h1043636', location.href).href; // Keeps the hand preview paired with this exact Animation Author build instead of an older selected repository ref.
+const AUTHOR_HAND_RUNTIME_SCRIPT = new URL('../../js/held-action-animations.js?v=20261006h2bfae76', location.href).href; // Keeps the hand preview paired with this exact Animation Author build instead of an older selected repository ref.
 const AUTHOR_LEG_BONES_SCRIPT = new URL('../../js/leg-bones.js?v=20260821a', location.href).href; // Supplies the exact invisible two-bone solver used by the paired feet preview.
-const AUTHOR_FEET_RUNTIME_SCRIPT = new URL('../../js/procedural-leg-animation.js?v=20260821f', location.href).href; // Keeps rig-preview feet paired with this author build instead of the selected repository ref.
+const AUTHOR_FEET_RUNTIME_SCRIPT = new URL('../../js/procedural-leg-animation.js?v=20261006h2716d8f', location.href).href; // Keeps rig-preview feet paired with this author build instead of the selected repository ref.
 // These repository paths are used to load the two authored Kurraya PNG planes.
 const KURRAYA_ASSETS = {
   front: { path: 'docs/assets/toolsprites/kurraya_front.png', width: 320, height: 663 },
@@ -12177,6 +12177,10 @@ function clampCharacterAnatomyV1530(value, min, max, fallback) {
   return Math.max(min, Math.min(max, Number.isFinite(number) ? number : fallback));
 }
 
+function configuredPartScaleAxes(raw, fallback) {
+  return Object.fromEntries(['x', 'y', 'z'].map(axis => [axis, clampCharacterAnatomyV1530(raw?.[axis], .1, 4, Number(fallback?.[axis]) || 1)]));
+}
+
 function configuredCharacterAnatomyV1530(species, gender, source = {}) {
   const key = `${species}::${gender}`;
   const staticAnatomy = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[key]?.anatomy || {}; // Restores built-in anatomy after older normalizers have stripped unknown fields.
@@ -12200,6 +12204,8 @@ function configuredCharacterAnatomyV1530(species, gender, source = {}) {
     portraitScale: clampCharacterAnatomyV1530(sourceAnatomy.portraitScale, .1, 4, Number.isFinite(Number(staticAnatomy.portraitScale)) ? Number(staticAnatomy.portraitScale) : Number.isFinite(configuredPortraitScale) ? configuredPortraitScale : 1),
     handScale: clampCharacterAnatomyV1530(sourceAnatomy.handScale, .1, 4, Number.isFinite(Number(staticAnatomy.handScale)) ? Number(staticAnatomy.handScale) : Number.isFinite(resolvedHandScale) ? resolvedHandScale : 1),
     footScale: clampCharacterAnatomyV1530(sourceAnatomy.footScale, .1, 4, Number.isFinite(Number(staticAnatomy.footScale)) ? Number(staticAnatomy.footScale) : Number.isFinite(resolvedFootScale) ? resolvedFootScale : 1),
+    handScaleAxes: configuredPartScaleAxes(sourceAnatomy.handScaleAxes, staticAnatomy.handScaleAxes),
+    footScaleAxes: configuredPartScaleAxes(sourceAnatomy.footScaleAxes, staticAnatomy.footScaleAxes),
     armLengthHeightPercentOffset: clampCharacterAnatomyV1530(sourceAnatomy.armLengthHeightPercentOffset, -100, 100, Number(staticAnatomy.armLengthHeightPercentOffset) || 0),
     version: CHARACTER_ANATOMY_VERSION_V1530,
   };
@@ -12285,7 +12291,9 @@ function applyCharacterAnatomyToActorV1530(actor, profile) {
   if (!anatomy || actor?.source?.type !== 'npc') return { placementChanged: false, footScaleChanged: false };
   applyCharacterAnatomyConfigV1530(profile);
   const placementChanged = applyCharacterPortraitPlacementV1530(actor, anatomy.portraitVerticalPlacementRatio);
-  const footScaleChanged = Number(actor.rigAnatomyFootScaleV1530) !== anatomy.footScale;
+  const footAxesKey = `${anatomy.footScaleAxes.x},${anatomy.footScaleAxes.y},${anatomy.footScaleAxes.z}`; // Rebuilds contact geometry only when an authored foot axis changes.
+  const footScaleChanged = Number(actor.rigAnatomyFootScaleV1530) !== anatomy.footScale || actor.rigAnatomyFootAxesKey !== footAxesKey;
+  actor.rigAnatomyFootAxesKey = footAxesKey;
   actor.rigAnatomyFootScaleV1530 = anatomy.footScale; // Prevents ordinary inspector renders from needlessly rebuilding the GLB feet.
   return { placementChanged, footScaleChanged };
 }
@@ -12329,12 +12337,22 @@ function characterAnatomyMarkupV1530(actor) {
       <div class="maaField"><label for="maaArmLengthOffset">Arm length offset (%)</label><input id="maaArmLengthOffset" type="number" min="-100" max="100" step="0.5" value="${anatomy.armLengthHeightPercentOffset.toFixed(2)}"></div>
       <div class="maaField"><label for="maaSpeciesHandScale">Hand scale (%)</label><input id="maaSpeciesHandScale" type="number" min="10" max="400" step="2.5" value="${(anatomy.handScale * 100).toFixed(1)}"></div>
       <div class="maaField"><label for="maaSpeciesFootScale">Foot scale (%)</label><input id="maaSpeciesFootScale" type="number" min="10" max="400" step="2.5" value="${(anatomy.footScale * 100).toFixed(1)}"></div>
+      ${['hand', 'foot'].map(part => ['x', 'y', 'z'].map(axis => `<div class="maaField"><label for="maaPartScale-${part}-${axis}">${part === 'hand' ? 'Hand' : 'Foot'} ${axis.toUpperCase()} scale (%)</label><input id="maaPartScale-${part}-${axis}" type="number" min="10" max="400" step="0.1" value="${(anatomy[`${part}ScaleAxes`][axis] * 100).toFixed(4)}"></div>`).join('')).join('')}
     </div>
     <div class="maaRigStatus" style="margin-top:8px">Profile fields: <b>portraitVerticalPlacementRatio</b>, <b>portraitScale</b>, <b>handScale</b>, <b>footScale</b>, and <b>armLengthHeightPercentOffset</b>. Body scale previews immediately and rebuilds the full anatomy when released.<br><span id="maaBodyScaleDiagnostic">${escapeHtml(actor.rigBodyScaleDiagnosticV1533 || 'Scale diagnostic initializes with the preview.')}</span></div>
   </section>`;
 }
 
 function bindCharacterAnatomyControlsV1530(actor) {
+  for (const part of ['hand', 'foot']) for (const axis of ['x', 'y', 'z']) {
+    $(`maaPartScale-${part}-${axis}`)?.addEventListener('input', event => {
+      const profile = attachmentRigProfileForActor(actor); // Writes the existing exported species/gender anatomy record.
+      profile.anatomy[`${part}ScaleAxes`][axis] = clampCharacterAnatomyV1530(event.currentTarget.value, 10, 400, 100) / 100;
+      applyAttachmentRigProfileToActor(actor);
+      syncAnimationTransformFields();
+      scheduleAnimationProjectSave();
+    });
+  }
   const bindings = [
     ['maaSpeciesYOffset', 'portraitVerticalPlacementRatio', value => .5 + value / 100, -100, 100],
     ['maaArmLengthOffset', 'armLengthHeightPercentOffset', value => value, -100, 100],

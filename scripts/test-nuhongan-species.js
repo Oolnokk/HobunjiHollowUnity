@@ -41,6 +41,7 @@ assert(Math.abs(nuhonganFemale.y - tletinganFemale.y * 0.75) < 1e-9);
 assert.equal(nuhonganFemale.head, tletinganFemale.head);
 
 const runtimeWindow = { // Models the real inheritance registries closely enough to catch lost hands/feet and direct-lookup systems.
+  HobunjiCharacterRigScaleDefaults: scaleWindow.HobunjiCharacterRigScaleDefaults,
   SCRATCHBONES_CONFIG: {
     game: {
       appearanceEditor: {
@@ -156,6 +157,8 @@ for (const gender of ['male', 'female']) {
   assert.equal(profile.anatomy.headOffsetY, undefined);
   assert(Number.isFinite(profile.anatomy.handScale), `${gender} Nuhongan must retain Tletingan handScale`);
   assert(Number.isFinite(profile.anatomy.footScale), `${gender} Nuhongan must retain Tletingan footScale`);
+  assert.equal(JSON.stringify(profile.anatomy.handScaleAxes), JSON.stringify({ x: 1.25, y: 1.3333333333333333, z: 1.25 }));
+  assert.equal(JSON.stringify(profile.anatomy.footScaleAxes), JSON.stringify(profile.anatomy.handScaleAxes));
 }
 const runtimeDebug = runtimeWindow.HobunjiNuhonganSpecies.debugSnapshot();
 assert.equal(runtimeDebug.rigHeightMultiplier, 0.75);
