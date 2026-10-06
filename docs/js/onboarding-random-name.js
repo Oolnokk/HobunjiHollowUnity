@@ -120,13 +120,10 @@
   function suggestionRank(name, idea, originalIndex) {
     const candidate = String(name || '').toLowerCase(); // Case-folded spelling used only for ranking.
     const source = String(idea || '').toLowerCase(); // Keeps edit comparison independent of display capitalization.
-    const distance = editDistance(candidate, source); // Counts substitutions, insertions, and removals equally.
-    const sameLength = candidate.length === source.length; // Elevates spelling-like substitutions over added/removed letters.
-    const sharedPositions = Math.min(candidate.length, source.length); // Bounds positional comparison for length-changing candidates.
-    let substitutions = 0;
-    for (let i = 0; i < sharedPositions; i += 1) if (candidate[i] !== source[i]) substitutions += 1;
-    const lengthChange = Math.abs(candidate.length - source.length); // Distinguishes length edits from character swaps.
-    return { name, sameLength, distance, lengthChange, substitutions, originalIndex };
+    const distance = editDistance(candidate, source); // Finds the smallest number of edits needed for a lore spelling.
+    const sameLength = candidate.length === source.length; // Gives substitution-only repairs priority when edit counts tie.
+    const lengthChange = Math.abs(candidate.length - source.length); // Penalizes inserted or removed letters after edit distance.
+    return { name, distance, sameLength, lengthChange, originalIndex };
   }
 
   function suggestNames(text, speciesId, gender, maxLength = 32) {
@@ -142,7 +139,7 @@
       seen.add(key);
       return true;
     }).map(({ name, originalIndex }) => suggestionRank(name, idea, originalIndex))
-      .sort((a, b) => Number(b.sameLength) - Number(a.sameLength) || a.distance - b.distance || a.lengthChange - b.lengthChange || a.substitutions - b.substitutions || a.originalIndex - b.originalIndex)
+      .sort((a, b) => a.distance - b.distance || Number(b.sameLength) - Number(a.sameLength) || a.lengthChange - b.lengthChange || a.substitutions - b.substitutions || a.originalIndex - b.originalIndex)
       .slice(0, 4)
       .map(entry => entry.name);
   }
