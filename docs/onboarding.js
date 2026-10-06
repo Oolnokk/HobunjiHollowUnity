@@ -8,7 +8,7 @@
   const viewportFitUrl = new URL('js/onboarding-viewport-fit.js?v=20260913viewportfit1', selfUrl).href; // Keeps creator/save cards inside the live viewport and exposes visible overflow diagnostics.
   const switchboxPlacementUrl = new URL('js/onboarding-switchbox-placement.js?v=20260913switchboxworld1', selfUrl).href; // Keeps the dev switchbox out of character creation and collapses it on the World step.
   const mashtzarrFemaleUrl = new URL('js/onboarding-character-creation-mashtzarr-female.js?v=20260924perf1', selfUrl).href; // Uses the real female Mashtzarr body/profile while temporarily borrowing male hairstyle controls and excluding facial hair.
-  const redesignUrl = new URL('js/onboarding-character-creation-redesign.js?v=20260907charcreator5', selfUrl).href; // Loads the integrated 3D creator, Slagothim workflow, generated appearance/outfit rules, material parity, and shell pass.
+  const redesignUrl = new URL('js/onboarding-character-creation-redesign.js?v=20261006nuhongan1', selfUrl).href; // Loads the integrated 3D creator, Slagothim workflow, generated appearance/outfit rules, material parity, and shell pass.
   const nameAdvisorUrl = new URL('js/name-advisor.js?v=20261004names1', selfUrl).href; // Loads the local Scratchbones phonetic suggestion algorithms before the name controls.
   const randomNameUrl = new URL('js/onboarding-random-name.js?v=20261004ha490db8', selfUrl).href; // Adds BanditNameForge-backed first-name rolls for the initial and every changed species/gender selection.
   const lifePreviewUrl = new URL('js/onboarding-character-creation-life-preview.js?v=20261001ca1cbbdf', selfUrl).href; // Adds breathing/blinking, Bowl-Kasa dye parity, and the first living-preview layer.

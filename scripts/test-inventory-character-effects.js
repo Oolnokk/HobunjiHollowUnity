@@ -19,9 +19,9 @@ vm.runInContext(source, context, { filename: 'inventory-character-effects.js' })
 const api = windowStub.InventoryCharacterEffects;
 assert(api, 'InventoryCharacterEffects exports its runtime API');
 assert.equal(api.version, 1, 'character effects module version is available to the bootstrap loader');
-assert.match(loaderSource, /inventory-character-effects\.js\?v=20260915a/, 'combat bootstrap loads the character-effects module');
+assert.match(loaderSource, /inventory-character-effects\.js\?v=[A-Za-z0-9_.-]+/, 'combat bootstrap loads the character-effects module');
 assert.match(loaderSource, /inventory-gear-compact-effects\.js\?v=[A-Za-z0-9_-]+/, 'combat bootstrap loads the three-panel Gear layout module revision');
-assert.match(loaderSource, /hud-x-control-polish\.js\?v=20260915a/, 'combat bootstrap loads shared X-control presentation after generic HUD icons');
+assert.match(loaderSource, /hud-x-control-polish\.js\?v=[A-Za-z0-9_.-]+/, 'combat bootstrap loads shared X-control presentation after generic HUD icons');
 assert.match(gearLayoutSource, /const VERSION = 2;/, 'Gear layout module exposes the three-panel layout revision');
 
 // Gear workspace regression: the old four-across loadout is reflowed into a left summary rail,

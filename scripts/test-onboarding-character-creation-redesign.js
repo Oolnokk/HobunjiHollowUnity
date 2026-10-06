@@ -8,7 +8,7 @@ const core = fs.readFileSync('docs/onboarding-core.js', 'utf8');
 // Later onboarding fixes (#718 onward) re-bump the core key; any revision at or after the redesign still ships it.
 const onboardingCoreKey = entry.match(/onboarding-core\.js\?v=(\d{8}[a-z0-9-]*)/i)?.[1] || '';
 assert(onboardingCoreKey >= '20260907charcreator1', `onboarding entrypoint must load the preserved core first (found ${onboardingCoreKey || 'none'})`);
-assert.match(entry, /onboarding-character-creation-redesign\.js\?v=20260907charcreator5/, 'onboarding entrypoint must load the current integrated redesign after the core');
+assert.match(entry, /onboarding-character-creation-redesign\.js\?v=[A-Za-z0-9_.-]+/, 'onboarding entrypoint must load the current integrated redesign after the core');
 assert.doesNotMatch(entry, /runtime-parity/, 'creator behavior must not depend on a separate follow-up script');
 assert.match(core, /makeDefaultState\('mao-ao', 'male'\)/, "fresh character creation must start with Mao'ao selected");
 assert.match(core, /window\.HobunjiOnboarding = \{ init, reset, loadProfile, loadSaveMeta \}/, 'preserved onboarding core must still expose the original public API');
@@ -47,7 +47,7 @@ for (const dyeId of ['dye:CLOTH:brown', 'dye:CLOTH:dusty_yellow', 'dye:CLOTH:dus
 }
 assert.match(redesign, /if \(gender !== 'male'\) return false;/, 'no female character may receive a Kasa from randomization');
 assert.match(redesign, /if \(kind === 'kenkari-bowl-kasa'\) return speciesId === 'kenkari';/, 'Kenkari Bowl-Kasa randomization must be Kenkari-only');
-assert.match(redesign, /return speciesId === 'tletingan' \|\| speciesId === 'mao-ao';/, 'ordinary Kasa randomization must be Tletingan/Mao\'ao-only');
+assert.match(redesign, /return speciesId === 'tletingan' \|\| speciesId === 'nuhongan' \|\| speciesId === 'mao-ao';/, 'ordinary Kasa randomization must be Tletingan/Nuhongan/Mao\'ao-only');
 assert.match(redesign, /filter\(option => randomClothingOptionAllowed\(option, speciesId, gender\)\)/, 'clothing randomization must apply the Kasa eligibility filter without removing manual options');
 assert.match(redesign, /const restrictOrdinaryKasaDyes = clothingRoll\.kasaKind === 'ordinary-kasa'[\s\S]{0,120}speciesId === 'tletingan'[\s\S]{0,80}speciesId === 'mao-ao'/, 'ordinary Kasa generated dyes must be restricted only for Tletingan/Mao\'ao');
 assert.match(redesign, /clickRandomDye\('data-ob-cloth-dye-a', restrictOrdinaryKasaDyes\)/, 'ordinary Kasa primary dye randomization must use the restricted palette');

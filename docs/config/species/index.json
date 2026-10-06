@@ -31,6 +31,11 @@
       "path": "./tletingan.json"
     },
     {
+      "speciesId": "nuhongan",
+      "label": "Nuhongan",
+      "path": "./nuhongan.json"
+    },
+    {
       "speciesId": "kenkari",
       "label": "Kenkari",
       "path": "./kenkari.json"

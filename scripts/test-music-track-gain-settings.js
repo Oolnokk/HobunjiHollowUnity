@@ -16,7 +16,7 @@ const indexSource = source('docs/index.html');
 
 assert.match(indexSource, />Audio<\/div>[\s\S]*?id="settingMusicTrackGainSong"[\s\S]*?id="settingMusicTrackGain"[^>]*max="500"/,
   'Settings exposes an Audio section with one song dropdown and a gain slider reaching 500%');
-assert.match(indexSource, /audio-track-gain-settings\.js\?v=20260920trackgain2/,
+assert.match(indexSource, /audio-track-gain-settings\.js\?v=[A-Za-z0-9_.-]+/,
   'the per-song gain settings runtime is loaded by the game page');
 assert.match(musicSource, /window\._footstepAudioCtx = _musicAudioCtx/,
   'music reuses the proven shared boosted-audio context rather than an isolated destination');

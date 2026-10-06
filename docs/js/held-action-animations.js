@@ -202,6 +202,7 @@
     new URL('config/hand-shoulder-pose-profiles.js?v=20260920localhinge1', docsBase).href,
     new URL('js/procedural-hand-foot-material-roles.js?v=20260821e', docsBase).href,
     new URL('js/hand-tool-grips.js?v=20261005ha1abc50', docsBase).href,
+    new URL('js/hand-tool-grip-authored-overrides.js?v=20261006a', docsBase).href, // Must follow hand-tool-grips.js: migrates authored spear/bshuakauitl grips onto its live data.
     new URL('js/dual-wield-weapon-visuals.js?v=20261006hc088ca4', docsBase).href,
     new URL('js/hand-grip-modes.js?v=20261005h2e47f31', docsBase).href,
     new URL('js/hand-shoulder-pose-runtime.js?v=20260920elbow5', docsBase).href,
@@ -210,7 +211,7 @@
     new URL('js/portrait-hand-shoulder-scan-species.js?v=20260818a', docsBase).href,
     new URL('js/procedural-hand-attachments.js?v=20260920wristaxis1', docsBase).href,
     new URL('js/procedural-hand-outline-parity.js?v=20260930a', docsBase).href,
-    new URL('js/attachment-rig-latest-authored-snapshot.js?v=20261005hfe592ac', docsBase).href,
+    new URL('js/attachment-rig-latest-authored-snapshot.js?v=20261006nuhongan1', docsBase).href,
     new URL('js/procedural-hand-scale-free-world.js?v=20261002h4b75465', docsBase).href,
     new URL('js/procedural-hand-shoulder-aim.js?v=20260924perf1', docsBase).href,
     new URL('js/procedural-hand-frame-driver.js?v=20261004h74c3702', docsBase).href,

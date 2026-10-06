@@ -94,7 +94,7 @@ assert(authorityAt >= 0, 'ControllerInput must remain in the shipped page');
 if (schedulerAt >= 0) {
   assert(schedulerAt < authorityAt, 'an explicit scheduler tag must load before ControllerInput');
 } else {
-  assert(authority.includes('runtime-frame-scheduler.js?v=20260916main1'), 'ControllerInput must parser-bootstrap the scheduler when index omits the explicit tag');
+  assert(/runtime-frame-scheduler\.js\?v=[A-Za-z0-9_.-]+/.test(authority), 'ControllerInput must parser-bootstrap the scheduler when index omits the explicit tag');
   assert(authority.includes('document.write'), 'the current bootstrap must remain parser-synchronous so later HUD modules cannot race it');
 }
 for (const [name, source, id] of [

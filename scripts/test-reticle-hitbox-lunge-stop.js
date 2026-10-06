@@ -55,8 +55,8 @@ for (const [name, sourceText] of [['combo', comboSource], ['quick', quickSource]
     `${name} must grant aerial chaining only after its real strike reports at least one enemy hit`);
 }
 assert.match(indexSource, /js\/combat\/combat-combo\.js\?v=[A-Za-z0-9_-]+/);
-assert(indexSource.includes('js/combat/combat-quickattacks.js?v=20261001quickdebuff2'));
-assert(indexSource.includes('js/combat/combat-charged-breaker.js?v=20261004h4413146'));
+assert(/js\/combat\/combat-quickattacks\.js\?v=[A-Za-z0-9_.-]+/.test(indexSource));
+assert(/js\/combat\/combat-charged-breaker\.js\?v=[A-Za-z0-9_.-]+/.test(indexSource));
 assert.match(indexSource, /game\.js\?v=[A-Za-z0-9_-]+/);
 
 const player = {

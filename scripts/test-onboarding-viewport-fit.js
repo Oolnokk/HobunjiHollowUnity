@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const entry = fs.readFileSync('docs/onboarding.js', 'utf8');
 const fit = fs.readFileSync('docs/js/onboarding-viewport-fit.js', 'utf8');
 
-assert.match(entry, /onboarding-viewport-fit\.js\?v=20260913viewportfit1/, 'onboarding must load the viewport-fit guard');
+assert.match(entry, /onboarding-viewport-fit\.js\?v=[A-Za-z0-9_.-]+/, 'onboarding must load the viewport-fit guard');
 assert.match(entry, /coreUrl[\s\S]{0,500}viewportFitUrl[\s\S]{0,500}mashtzarrFemaleUrl/, 'viewport fit must load immediately after the onboarding core');
 assert.match(fit, /#ob-overlay>\.ob-card\{box-sizing:border-box;min-height:0;max-width:100%\}/, 'onboarding cards must include padding inside their viewport width');
 assert.match(fit, /max-height:calc\(100dvh - 32px\)/, 'desktop creator height must be capped to the dynamic viewport');

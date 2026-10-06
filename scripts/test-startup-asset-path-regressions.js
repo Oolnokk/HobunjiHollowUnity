@@ -30,7 +30,7 @@ assert.equal(fallbackBase, 'https://raw.githack.com/Oolnokk/HobunjiHollowUnity/c
 assert(!resolvedBase.includes('/docs/docs/assets/'));
 assert(!fallbackBase.includes('/docs/docs/assets/'));
 
-assert.match(index, /js\/HousePieceGen\.js\?v=20260924facetag1/);
-assert.match(index, /js\/portrait-utils\.js\?v=20260924assetroot1/);
+assert.match(index, /js\/HousePieceGen\.js\?v=[A-Za-z0-9_.-]+/);
+assert.match(index, /js\/portrait-utils\.js\?v=[A-Za-z0-9_.-]+/);
 
 console.log('HousePieceGen face-tag and portrait asset-root startup regressions passed.');

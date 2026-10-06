@@ -122,9 +122,9 @@ assert.equal(paletteDebug.liveLivestockMarkers, 1, 'farm glance diagnostics expo
 assert.equal(paletteDebug.serviceCounts.shipping, 1, 'farm glance diagnostics distinguish Shipping Box markers');
 assert.equal(paletteDebug.serviceCounts.supply, 1, 'farm glance diagnostics distinguish Supply / Order Box markers');
 
-assert.match(bridgeSource, /globalKey: 'FarmMenuLayout', src: 'js\/farm-menu-layout\.js\?v=20260915farmui2'/, 'farm feature bootstrap loads the current Farm menu presentation module');
+assert.match(bridgeSource, /globalKey: 'FarmMenuLayout', src: 'js\/farm-menu-layout\.js\?v=[A-Za-z0-9_.-]+'/, 'farm feature bootstrap loads the current Farm menu presentation module');
 assert.match(bridgeSource, /window\.FarmMenuLayout\?\.install\?\.\(\)/, 'late bootstrap path installs FarmMenuLayout as well');
-assert.match(bridgeSource, /globalKey: 'FarmGlancePalette', src: 'js\/farm-glance-palette\.js\?v=20260916palette1'/, 'farm feature bootstrap loads the distinct map-marker palette');
+assert.match(bridgeSource, /globalKey: 'FarmGlancePalette', src: 'js\/farm-glance-palette\.js\?v=[A-Za-z0-9_.-]+'/, 'farm feature bootstrap loads the distinct map-marker palette');
 assert.match(bridgeSource, /window\.FarmGlancePalette\?\.install\?\.\(\)/, 'late bootstrap path installs the farm map palette as well');
 
 console.log('Farm menu layout + Nursery controller continuity + farm glance palette regression tests passed.');

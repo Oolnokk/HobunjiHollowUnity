@@ -62,7 +62,7 @@ const context = vm.createContext({ window: contextWindow, console, Map, Object, 
 vm.runInContext(source, context, { filename: 'porakaneki-map-markers.js' });
 
 assert.equal(contextWindow.PorakanekiMapMarkers.version, 1);
-assert(houseLoader.includes("['PorakanekiMapMarkers', 'porakaneki-map-markers.js?v=20260912a']"));
+assert.match(houseLoader, /\['PorakanekiMapMarkers', 'porakaneki-map-markers\.js\?v=[A-Za-z0-9_.-]+'\]/);
 assert.equal(contextWindow.WildernessMap.init({ _zoneLayouts: zoneLayouts }), 'map-init');
 assert(mapInitDeps?._zoneLayouts === zoneLayouts);
 

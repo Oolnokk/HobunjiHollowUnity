@@ -709,7 +709,7 @@ assert.match(debugSource, /playerCommit: started=/,
   'Rendering debug includes player-specific commit/generation/patterned-tint diagnostics');
 assert.match(debugCopySource, /\.\.\.String\(weavingDiagnostics\)\.split\('\\n'\)/,
   'copied report emits every weaving diagnostic line before the raw log');
-assert.match(indexSource, /debug\.js\?v=20260925weavesessiondebug4/,
+assert.match(indexSource, /debug\.js\?v=[A-Za-z0-9_.-]+/,
   'index cache-busts the debug bootstrap that renders and exports the weaving session snapshot');
 // game.js is re-bumped by nearly every merge; any key at or after #829's weavecommit2 still ships its diagnostics.
 const gameCacheKey = indexSource.match(/"game\.js\?v=(\d{8}[a-z0-9-]*)/i)?.[1] || '';

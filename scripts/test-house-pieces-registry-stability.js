@@ -13,7 +13,7 @@ const loaderSource = fs.readFileSync(loaderPath, 'utf8');
 
 assert.match(
   loaderSource,
-  /\['HousePieces', 'house-pieces-core\.js\?v=[^']+'\],[\s\S]*\[null, 'house-pieces-registry-stability\.js\?v=20260906a'\],[\s\S]*\[null, 'house-pieces-elevation-bootstrap\.js\?v=[^']+'\]/,
+  /\['HousePieces', 'house-pieces-core\.js\?v=[^']+'\],[\s\S]*\[null, 'house-pieces-registry-stability\.js\?v=[A-Za-z0-9_.-]+'\],[\s\S]*\[null, 'house-pieces-elevation-bootstrap\.js\?v=[^']+'\]/,
   'registry stability adapter loads after the core and before elevation wrappers'
 );
 

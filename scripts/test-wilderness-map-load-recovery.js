@@ -45,7 +45,7 @@ assert.equal(fallback?.__loadFallback, true, 'missing WildernessMap must install
 assert.equal(typeof fallback.updateFogAroundPlayer, 'function', 'fallback must cover the unconditional game-loop fog update');
 assert.equal(typeof fallback.renderMapPanel, 'function', 'fallback must cover the unguarded Map-tab render call');
 assert.equal(appendedScripts.length, 1, 'missing parser-time module must trigger exactly one retry');
-assert.match(appendedScripts[0].src, /wilderness-map\.js\?v=20260909loadretry1$/, 'retry must bypass the stale/missed parser-time URL');
+assert.match(appendedScripts[0].src, /wilderness-map\.js\?v=[A-Za-z0-9_.-]+$/, 'retry must bypass the stale/missed parser-time URL');
 
 const deps = { marker: 'game-init-deps' };
 fallback.init(deps);

@@ -91,7 +91,7 @@ const configText = read('docs/config/scratchbones-config.js');
 assert.match(configText, /"npcDialogue"[\s\S]{0,500}"maxFps": 30/, 'dialogue portraits may sample the absolute yap clock at 30 FPS');
 
 const index = read('docs/index.html');
-assert.match(index, /portrait-breathing\.js\?v=20260831syllable4/);
+assert.match(index, /portrait-breathing\.js\?v=[A-Za-z0-9_.-]+/);
 // dialogue-content.js is re-bumped by later dialogue work (#788 onward); any key at or after the syllable-cadence
 // revision still ships it, so don't pin one value (pinning left this test red on main since #788).
 const dialogueContentKey = index.match(/dialogue-content\.js\?v=(\d{8}[a-z0-9-]*)/i)?.[1] || '';

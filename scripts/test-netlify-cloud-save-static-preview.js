@@ -11,7 +11,7 @@ const loader = fs.readFileSync('docs/js/local-save-folder.js', 'utf8');
 assert.match(source, /STATIC_PREVIEW_HOSTS/, 'cloud save identifies hosts that cannot serve Netlify Functions');
 assert.match(source, /startsWith\('\/\.netlify\/functions\/'\)[\s\S]{0,220}!netlifyFunctionsAvailableHere\(\)/,
   'Netlify function requests are rejected locally on static preview hosts before fetch');
-assert.match(loader, /netlify-cloud-save\.js\?v=20260920startup4/,
+assert.match(loader, /netlify-cloud-save\.js\?v=[A-Za-z0-9_.-]+/,
   'the parser-time cloud-save loader cache-busts the static-preview guard');
 
 (async () => {

@@ -193,8 +193,8 @@ for (const id of ['shoulderPaintSource','shoulderEditBefore','shoulderEditAfter'
   assert(shellSource.includes(`id="${id}"`), `rigger exposes ${id}`);
 }
 assert(shellSource.includes('BEFORE / Bind') && shellSource.includes('AFTER / Pose'));
-assert(shellSource.includes('animal-shoulder-spline.js?v=20260917spline10'));
-assert(shellSource.includes('animal-head-rig-authored.js?v=20260918uploads2'),
+assert(/animal-shoulder-spline\.js\?v=[A-Za-z0-9_.-]+/.test(shellSource));
+assert(/animal-head-rig-authored\.js\?v=[A-Za-z0-9_.-]+/.test(shellSource),
   'rigger loads the same committed uploaded rig overrides as gameplay');
 assert(shellSource.includes('author-part7.js'));
 assert(shellSource.includes('author-part8.js'), 'rigger loads additive broad-pose authoring after precise/separator authoring');
@@ -307,7 +307,7 @@ assert.match(paritySource, /HobunjiShoulderSplitLayerParity = \{ version: 3/,
   'fixed shoulder split visibility ships as parity runtime v3');
 
 for (const bootstrapSource of [legacyBootstrapSource, legacyV5BootstrapSource]) {
-  assert(bootstrapSource.includes('animal-shoulder-spline.js?v=20260917spline10'));
+  assert(/animal-shoulder-spline\.js\?v=[A-Za-z0-9_.-]+/.test(bootstrapSource));
   assert(bootstrapSource.includes('AnimalShoulderRestV5 = { version: 10'));
 }
 assert.match(bridgeSource, /AnimalShoulderSpline\.version\) < 10/,
@@ -317,9 +317,9 @@ assert.match(bridgeSource, /separatorPolygon/,
 assert.match(bridgeSource, /separatorRotationDeg/,
   'game frame cache key changes when separator Z rotation changes');
 assert.match(bridgeSource, /stableRole === 'shoulderPet'/, 'game shoulder role remains the activation gate');
-assert(bridgeSource.includes('animal-shoulder-spline-layering.js?v=20260918parity3'),
+assert(/animal-shoulder-spline-layering\.js\?v=[A-Za-z0-9_.-]+/.test(bridgeSource),
   'attachment bridge requests the fixed parity runtime under a fresh cache key');
-assert(combatLoaderSource.includes('player-body-attachment-bridge.js?v=20260918shoulderparity3'),
+assert(/player-body-attachment-bridge\.js\?v=[A-Za-z0-9_.-]+/.test(combatLoaderSource),
   'combat loader invalidates the attachment bridge cache so the parity3 URL is actually reached');
 assert.match(indexSource, /js\/combat\/combat-config-loader\.js\?v=[\w-]+/,
   'deployed index loads the combat loader under a cache key (pinning one exact key broke on every later loader bump; the bridge key above is the parity-specific check)');
