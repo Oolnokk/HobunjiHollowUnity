@@ -42,14 +42,36 @@ const context = {
 vm.createContext(context);
 for (const path of ['docs/js/name-advisor.js', 'docs/js/onboarding-random-name.js']) vm.runInContext(fs.readFileSync(path, 'utf8'), context);
 const suggest = context.window.hobunjiOnboardingRandomName.suggestNames;
+function editDistance(a, b) {
+  const row = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i += 1) {
+    let diagonal = row[0]; row[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const above = row[j];
+      row[j] = Math.min(row[j] + 1, row[j - 1] + 1, diagonal + (a[i - 1] === b[j - 1] ? 0 : 1));
+      diagonal = above;
+    }
+  }
+  return row[b.length];
+}
 const sourceName = 'Benjamin';
 for (const species of ['kenkari', 'mao-ao', 'engh-sho', 'tletingan', 'nuhongan']) { // Nuhongan are Tletingan-derived Slagothim and share their naming culture.
   const names = suggest(sourceName, species, 'male');
   assert.ok(names.length > 0 && names.length <= 4, species);
   assert.equal(new Set(names.map(name => name.toLowerCase())).size, names.length);
   assert.ok(names.every(name => name.length <= 32 && name.toLowerCase() !== sourceName.toLowerCase()));
-  if (names.some(name => name.length === sourceName.length)) {
-    assert.equal(names[0].length, sourceName.length, `${species}: same-length spelling candidates should come first`);
+  const spellingScore = name => ({
+    distance: editDistance(name.toLowerCase(), sourceName.toLowerCase()),
+    sameLength: name.length === sourceName.length,
+    lengthChange: Math.abs(name.length - sourceName.length),
+  });
+  for (let i = 1; i < names.length; i += 1) {
+    const previous = spellingScore(names[i - 1]);
+    const current = spellingScore(names[i]);
+    const ordered = previous.distance < current.distance
+      || (previous.distance === current.distance && previous.sameLength >= current.sameLength)
+      || (previous.distance === current.distance && previous.sameLength === current.sameLength && previous.lengthChange <= current.lengthChange);
+    assert.ok(ordered, `${species}: suggestions should minimize spelling edits and prefer substitutions on ties`);
   }
 }
 const slagothim = suggest(sourceName, 'tletingan', 'male');
