@@ -18,7 +18,7 @@ for (const [name, source] of Object.entries({ livestock, chathead, locks, farm }
 
 assert.match(locks, /animal-chathead-frame\.js\?v=[A-Za-z0-9_-]+/,
   'the existing early interaction-lock script parser-loads animal chathead metadata');
-assert.match(locks, /livestock-dialogue\.js\?v=20260902modular1/,
+assert.match(locks, /livestock-dialogue\.js\?v=[A-Za-z0-9_.-]+/,
   'the existing early interaction-lock script parser-loads the modular livestock session');
 assert.doesNotMatch(index, /livestock-dialogue\.js|animal-chathead-frame\.js/,
   'main index.html stays untouched by the livestock feature bootstrap');

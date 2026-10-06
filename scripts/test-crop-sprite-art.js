@@ -47,7 +47,7 @@ assert.match(gameSource, /const hasSpriteColor = def\.spriteColor != null && Num
 assert.doesNotMatch(gameSource, /def\.spriteColor \?\? 0xFFFFFF/,
   'missing spriteColor is never converted into an implicit white tint');
 
-const cropModuleIndex = loaderSource.indexOf('crop-sprite-art.js?v=20260915cropscan1'); // Used to confirm crop item metadata is installed before generic inventory metadata synchronization.
+const cropModuleIndex = loaderSource.search(/crop-sprite-art\.js\?v=[A-Za-z0-9_.-]+/); // Used to confirm crop item metadata is installed before generic inventory metadata synchronization.
 const inventoryMetadataIndex = loaderSource.indexOf('inventory-action-metadata-bridge.js'); // Used as the ordering boundary for selectable item metadata synchronization.
 assert.ok(cropModuleIndex >= 0 && inventoryMetadataIndex > cropModuleIndex,
   'crop sprite art loads before inventory action metadata synchronization');

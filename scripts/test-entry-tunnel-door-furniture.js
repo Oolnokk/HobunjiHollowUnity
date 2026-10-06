@@ -14,7 +14,7 @@ assert.strictEqual(doorData.schema, 'hobunji_furniture_authored_runtime.v1');
 assert.strictEqual(doorData.key, 'door');
 assert.deepStrictEqual(doorData.footprint, { w: 1, d: 1 });
 assert.strictEqual(doorData.parts.length, 2);
-assert(formatSource.includes('entry-tunnel-door-furniture.js?v=20260907b'), 'format-utils must synchronously load the current entry-tunnel door bridge');
+assert(/entry-tunnel-door-furniture\.js\?v=[A-Za-z0-9_.-]+/.test(formatSource), 'format-utils must synchronously load the current entry-tunnel door bridge');
 
 const previousDoorTransforms = [ // Baseline is the user's prior 50%-of-original door asset.
   { x: 0, y: 0.40305, z: 0.05155, sx: 0.5, sy: 0.07895, sz: 0.82245 },

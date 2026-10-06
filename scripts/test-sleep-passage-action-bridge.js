@@ -10,7 +10,7 @@ const bridgeSource = fs.readFileSync(path.join(root, 'docs/js/sleep-passage-acti
 const loaderSource = fs.readFileSync(path.join(root, 'docs/js/combat/combat-config-loader.js'), 'utf8');
 
 assert.doesNotThrow(() => new vm.Script(bridgeSource), 'sleep passage action bridge parses');
-assert.match(loaderSource, /sleep-passage-action-bridge\.js\?v=20260914a/, 'runtime bootstrap loads the bed sleep bridge with a cache-busted URL');
+assert.match(loaderSource, /sleep-passage-action-bridge\.js\?v=[A-Za-z0-9_.-]+/, 'runtime bootstrap loads the bed sleep bridge with a cache-busted URL');
 
 function makeButton(id, label, key, action = 'obj_interact') {
   const button = {

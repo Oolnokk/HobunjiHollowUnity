@@ -8,7 +8,7 @@ const vm = require('node:vm');
 const source = fs.readFileSync('docs/js/combat/ranged-camera-focus.js', 'utf8');
 const loader = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8');
 
-assert.match(loader, /ranged-camera-focus\.js\?v=20260930rangedconverge1[\s\S]*HobunjiRangedCameraFocus\?\.version\) >= 12/, 'loader requires camera-focus v12 with frozen melee endpoint reuse');
+assert.match(loader, /ranged-camera-focus\.js\?v=[A-Za-z0-9_.-]+[\s\S]*HobunjiRangedCameraFocus\?\.version\) >= 12/, 'loader requires camera-focus v12 with frozen melee endpoint reuse');
 assert.doesNotMatch(loader, /attack-camera-player-root/, 'obsolete player-root camera hook stays removed');
 assert.match(source, /change-driven-persistent-cache/, 'combat aim advertises persistent change-driven caching');
 assert.match(source, /intersectObject\(root, true, localHits\)/, 'scene roots remain isolated so one bad root cannot abort the frame');

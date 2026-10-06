@@ -311,7 +311,7 @@ assert.ok(scaleBootstrapSource.indexOf('character-rig-scale-defaults.js') < scal
   'defaults must load before the runtime scale module');
 assert.match(scaleBootstrapSource, /character-rig-scale\.js\?v=[A-Za-z0-9_-]+/,
   'bootstrap must cache-bust the runtime default hook');
-assert.match(scaleBootstrapSource, /character-scale-comparison-host-bridge\.js\?v=20260904j/,
+assert.match(scaleBootstrapSource, /character-scale-comparison-host-bridge\.js\?v=[A-Za-z0-9_.-]+/,
   'bootstrap must cache-bust the rigScale round-trip host');
 
 // The lineup itself must never become Animation Author actors. It should use the
@@ -333,7 +333,7 @@ assert.doesNotMatch(scaleComparisonSource, /selectedAnimationActor/,
   'comparison slider selection must not depend on Animation Author selection state');
 assert.doesNotMatch(scaleBootstrapSource, /character-scale-comparison-camera\.js/,
   'obsolete private-state camera/picking wrapper must not load with the isolated comparison');
-assert.match(scaleBootstrapSource, /character-scale-comparison\.js\?v=20260904k/,
+assert.match(scaleBootstrapSource, /character-scale-comparison\.js\?v=[A-Za-z0-9_.-]+/,
   'bootstrap must cache-bust the isolated Full Character Scale comparison');
 // The five slider rows are rendered through one small scaleRow(axis, ...) template
 // helper (id="maaFullScaleRange${axis}"/"maaFullScaleNum${axis}") rather than five

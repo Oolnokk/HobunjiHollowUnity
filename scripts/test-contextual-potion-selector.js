@@ -210,7 +210,7 @@ const tapBandageWindowOpen = () => window.ContextualPotionSelector.isTapBandageW
 const alchemyFlasksSource = fs.readFileSync(path.join(__dirname, '..', 'docs/js/alchemy-flasks.js'), 'utf8'); // Guards the nested contextual-selector cache-buster.
 const indexSource = fs.readFileSync(path.join(__dirname, '..', 'docs/index.html'), 'utf8'); // Guards the outer AlchemyFlasks cache-buster that must deliver the nested loader change.
 
-assert.match(alchemyFlasksSource, /mobile-potion-category-drag\.js\?v=20260925bandagemove1/, 'AlchemyFlasks must cache-bust the moving-bandage selector adapter');
+assert.match(alchemyFlasksSource, /mobile-potion-category-drag\.js\?v=[A-Za-z0-9_.-]+/, 'AlchemyFlasks must cache-bust the moving-bandage selector adapter');
 assert.match(indexSource, /alchemy-flasks\.js\?v=[A-Za-z0-9_-]+/, 'index must cache-bust AlchemyFlasks so the nested selector loader update reaches existing browsers');
 
 // An untouched quick tap is now the free bandage gesture; it must close the

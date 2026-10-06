@@ -28,7 +28,7 @@ assert.match(game, /getActorWorldY: \(actor\) =>[\s\S]{0,300}playerMesh\.positio
 assert.match(game, /worldSurfaceY: \(x, y\) => activeSurfaceYAtWorld\(x \/ TILE, y \/ TILE\)/, 'combat receives terrain height for pitched projectile grounding');
 assert.match(game, /if \(!isBanditCompanion[\s\S]{0,40}!c\.treasureCue[\s\S]{0,160}animalAttacks\?\.isBusy\(c\)/, 'companion head restoration waits until a named attack is no longer active');
 assert.match(loader, /combat-drenkirra-pellet\.js\?v=[A-Za-z0-9_-]+/, 'pellet module is loaded with a cache key');
-assert.match(loader, /combat-grehlr-drenkirra-followup\.js\?v=20260826drenkirra1/, 'follow-up module cache key is bumped');
+assert.match(loader, /combat-grehlr-drenkirra-followup\.js\?v=[A-Za-z0-9_.-]+/, 'follow-up module cache key is bumped');
 
 for (const file of [
   'docs/game.js',

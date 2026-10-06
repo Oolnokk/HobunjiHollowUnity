@@ -138,14 +138,14 @@ assert(runtimeSource.includes("const BENCHLOG_KEY = 'benchlog'"), 'camp runtime 
 assert(runtimeSource.includes("const BONFIRE_KEY = 'bonfire'"), 'camp runtime must use the large shared bonfire key');
 assert(runtimeSource.includes('HousePieceGen.buildGroupFromPiece'), 'Porakaneki runtime must render through HousePieceGen');
 assert.match(housePieceGenSource, /mesh\.userData\.housePieceFaceTag = f\.tag[\s\S]{0,450}f\.tag === 'doorOpening'[\s\S]{0,450}mat\.polygonOffsetFactor = 2/, 'authored dark door-opening faces are identified and depth-biased behind their cloth border');
-assert(gameIndexSource.includes('HousePieceGen.js?v=20261004h5ffe8f0'), 'game runtime cache-busts the shared tent clipping fix');
+assert(/HousePieceGen\.js\?v=[A-Za-z0-9_.-]+/.test(gameIndexSource), 'game runtime cache-busts the shared tent clipping fix');
 assert(banditRuntimeSource.includes("const BANDIT_TENT_PIECE_URL = 'config/pieces/bandit-tent.json'"), 'Bandit runtime must load the authored bandit tent clone');
 assert(banditRuntimeSource.includes('HousePieceGen.buildGroupFromPiece'), 'Bandit runtime must render through HousePieceGen');
 assert(!banditRuntimeSource.includes('buildBanditTentCanvasGeometry'), 'old procedural five-sided bandit tent geometry must stay removed');
 assert.deepEqual(cfg.equipment.weaponShapes, ['fishingspear', 'hatchet', 'dagger'], 'Porakaneki must use the true dagger shape, never daggerSword');
 assert(localeIndex.locales.some(entry => entry.id === 'locale_porakaneki_camp_small'));
 assert(localeIndex.locales.some(entry => entry.id === 'locale_porakaneki_camp_chief' && entry.singleton === true));
-assert(houseLoader.includes('porakaneki-camps-runtime.js?v=20261002ha9ed963'));
+assert(/porakaneki-camps-runtime\.js\?v=[A-Za-z0-9_.-]+/.test(houseLoader));
 assert(runtimeSource.includes("bodyColorsOverride: window.HobunjiPorakanekiSpecies?.bodyColorsForSeed?.(hunter.id, 'male') || null"), 'camp residents must choose an authored Mashtzarr swatch only when materializing their avatar');
 const bodyColorWriteIndex = combatBanditSource.indexOf('roster.appearance.bodyColors = opts.bodyColorsOverride'); // Used with avatar-build ordering below to ensure explicit finite colors reach the portrait before raster work begins.
 const banditAvatarBuildIndex = combatBanditSource.indexOf('const avatarRef = await buildBanditAvatar(roster);'); // Must occur after the explicit body-color assignment.

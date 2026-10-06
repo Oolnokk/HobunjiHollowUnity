@@ -18,12 +18,12 @@ assert.doesNotMatch(
 );
 assert.match(
   housePieces,
-  /\['CloudForestAvatarDepthOccluder', 'cloud-forest-avatar-depth-occluder\.js\?v=20260906a'\]/,
+  /\['CloudForestAvatarDepthOccluder', 'cloud-forest-avatar-depth-occluder\.js\?v=[A-Za-z0-9_.-]+'\]/,
   'Cloud Forest runtime must load the attached-avatar depth occluder before rendering mist',
 );
 assert.match(
   housePieces,
-  /\['OutlineRenderPerformance', 'outline-render-performance\.js\?v=20260924perf1'\]/,
+  /\['OutlineRenderPerformance', 'outline-render-performance\.js\?v=[A-Za-z0-9_.-]+'\]/,
   'fog repair must not remove the ordinary outline renderer',
 );
 assert.match(

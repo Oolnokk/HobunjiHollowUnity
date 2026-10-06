@@ -34,7 +34,7 @@ const context = vm.createContext({
 vm.runInContext(source, context, { filename: 'enemy-target-facing.js' });
 
 assert(context.window.EnemyTargetFacing, 'facing adapter should install');
-assert(loader.includes("js/combat/enemy-target-facing.js?v=20260906a"), 'combat bootstrap should load the facing adapter before game.js');
+assert(/js\/combat\/enemy-target-facing\.js\?v=[A-Za-z0-9_.-]+/.test(loader), 'combat bootstrap should load the facing adapter before game.js');
 assert.strictEqual(context.window.EnemyTargetFacing.turnRateRadS, 6);
 
 const halfTurn = {

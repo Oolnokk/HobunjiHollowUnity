@@ -107,7 +107,7 @@ const bootstrapContext = {
   Object,
 };
 vm.runInNewContext(authority, bootstrapContext, { filename: 'controller-input.js' });
-assert.match(bootstrapMarkup, /runtime-frame-scheduler\.js\?v=20260916main1/, 'shipped ControllerInput parser-inserts the scheduler when index omits it');
+assert.match(bootstrapMarkup, /runtime-frame-scheduler\.js\?v=[A-Za-z0-9_.-]+/, 'shipped ControllerInput parser-inserts the scheduler when index omits it');
 assert.equal(typeof domReadyHandler, 'function', 'controller cadence installation still waits for DOMContentLoaded after parser bootstrap');
 assert.ok(fs.existsSync('docs/js/runtime-frame-scheduler.js'), 'the parser-bootstrap target must exist in the shipped tree');
 

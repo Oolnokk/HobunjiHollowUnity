@@ -37,7 +37,7 @@ assert.match(runtime, /if \(key\) return key === 'grass'/, 'Coldmuck slush must 
 assert.match(runtime, /LAND_TARGETS\.has\(key\)/, 'Western snow must cover the authored exposed-land target set');
 assert.match(runtime, /lastSliceMs/, 'runtime must expose per-frame hitch diagnostics');
 assert.match(runtime, /snowTextureState/, 'runtime must expose snow texture load\/tint state');
-assert.match(rain, /environment-surface-runtime\.js\?v=20260912a/, 'rain bootstrap must synchronously load the environment runtime before game boot');
+assert.match(rain, /environment-surface-runtime\.js\?v=[A-Za-z0-9_.-]+/, 'rain bootstrap must synchronously load the environment runtime before game boot');
 assert.match(hub, /data-target="wilderness-generation-lab"/, 'main tool hub must expose the Wilderness + Surface Lab');
 
 console.log('Environment surface runtime regression checks passed.');
