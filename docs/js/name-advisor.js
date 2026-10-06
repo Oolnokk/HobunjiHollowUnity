@@ -117,6 +117,17 @@
   function expandTokens(tokens, validOnsets) {
     return tokens.flatMap(t => t.length > 1 && !validOnsets.has(t) ? [...t] : [t]);
   }
+  function collapseConsonantCluster(cluster, allowed, variant, mappings = {}) {
+    const raw = cluster.join('');
+    if (mappings[raw] && allowed.includes(mappings[raw])) return mappings[raw];
+    const legal = cluster.filter(token => allowed.includes(token));
+    if (legal.length) return legal[variant % legal.length];
+    const sonorants = cluster.filter(token => ['l', 'r', 'm', 'n', 'ng', 'w', 'y'].includes(token));
+    const source = sonorants.length ? sonorants : cluster;
+    const chosen = source[variant % source.length];
+    return mappings[chosen] || chosen;
+  }
+
   function makeBlock(text) { return { text: String(text).toLowerCase() }; }
 
   function uniqueOptions(opts) {
@@ -191,6 +202,8 @@
     const allowedVowels = ['a', 'i', 'u', 'o', 'e'];
     // keep source digraphs (ch, th, gh, ng, ph) intact so mapKenkariConsonant can map them as units
     const expandSet = new Set([...allowed, 'ch', 'th', 'gh', 'ng', 'ph']);
+    const clusterMap = { bl:'br', br:'br', cl:'k', cr:'k', dr:'tr', fl:'f', fr:'fr', gl:'g', gr:'gr', pl:'pr', pr:'pr', sl:'s', sm:'m', sn:'n', sp:'s', st:'s', str:'tr', sw:'s', tr:'tr', tw:'t', sk:'s', scr:'sh', spr:'shr', spl:'sh', skw:'k' }; // Maps familiar clusters to a legal single onset or an authored Mao-ao onset cluster.
+    const collapseOnset = (cluster, index) => collapseConsonantCluster(cluster, allowed, index, clusterMap);
     const tokens = expandTokens(tokenizeIdeaSounds(text), expandSet);
     const ideaVows = ideaVowels(text);
     const blocks = [];
@@ -200,15 +213,19 @@
     const defaults = ['h','k','n','m'];
 
     function mapC(token) { return mapKenkariConsonant(token, v + blocks.length + pending.length); }
+    function flushCluster(vowel) {
+      const cluster = pending.splice(0);
+      const consonant = cluster.length === 1 ? mapC(cluster[0]) : collapseConsonantCluster(cluster, allowed, v + blocks.length, clusterMap);
+      blocks.push(makeBlock(consonant + vowel));
+    }
     function nearV(raw) { return nearestVowel(raw, allowedVowels[0]); }
 
     for (const token of tokens) {
       if (/^[aeiouy]$/.test(token)) {
         const mappedV = nearV(token);
         if (pending.length) {
-          // mid-word cluster: insert last-seen vowel between stacked consonants
-          while (pending.length > 1) blocks.push(makeBlock(mapC(pending.shift()) + lastVowel));
-          blocks.push(makeBlock(mapC(pending.shift()) + mappedV));
+          if (pending.length > 1) flushCluster(lastVowel);
+          if (pending.length) flushCluster(mappedV);
         } else if (blocks.length === 0 && v % 3 === 1) {
           blocks.push(makeBlock(mappedV));
         } else if (blocks.length > 0) {
@@ -221,9 +238,8 @@
         pending.push(token);
       }
     }
-    // trailing consonants: mid-cluster ones get lastVowel, final one gets 'u'
-    while (pending.length > 1) blocks.push(makeBlock(mapC(pending.shift()) + lastVowel));
-    if (pending.length === 1) blocks.push(makeBlock(mapC(pending.shift()) + 'u'));
+    // A trailing cluster reduces to one consonant plus the existing final vowel.
+    if (pending.length) flushCluster('u');
 
     if (!blocks.length) {
       blocks.push(makeBlock(defaults[v % 4] + (ideaVows[0] ? nearV(ideaVows[0]) : 'a')));
@@ -301,8 +317,8 @@
             const mc = new Set(getSpecies().mao.codas.filter(Boolean));
             while (pending.length > 1 && mc.has(pending[0])) blocks[blocks.length - 1].text += pending.shift();
           }
-          while (pending.length > 1) { addBlock(mapMaoOnset(pending.shift(), v + blocks.length), lastVowel); vi++; }
-          addBlock(mapMaoOnset(pending.shift(), v + blocks.length), vow);
+          if (pending.length > 1) { addBlock(collapseOnset(pending.splice(0), v + blocks.length), lastVowel); vi++; }
+          if (pending.length) addBlock(mapMaoOnset(pending.shift(), v + blocks.length), vow);
         } else if (blocks.length === 0) {
           addBlock(['n','m','k','t','p','w'][0], vow);
         }
@@ -312,6 +328,11 @@
       } else pending.push(token);
     }
     const validCodas = new Set(getSpecies().mao.codas.filter(Boolean));
+    if (pending.length > 1) {
+      const cluster = pending.splice(0, pending.length - 1);
+      addBlock(collapseOnset(cluster, v + blocks.length), lastVowel);
+      vi++;
+    }
     while (pending.length) {
       const c = pending.shift();
       const isLast = pending.length === 0;
@@ -430,7 +451,12 @@
     }
     const suffix = gender === 'female' ? getSpecies().slagothim.femaleSuffix : getSpecies().slagothim.maleSuffix;
     const clean = expandedIdeaText(text).replace(/'/g, '');
-    const repaired = clean.replace(/[bcdfghjklmnpqrstvwxyz]{4,}/g, m => m.slice(0, 2) + 'a' + m.slice(2));
+    const repaired = clean.replace(/[bcdfghjklmnpqrstvwxyz]{4,}/g, cluster => {
+      const consonants = [...cluster];
+      const replacement = collapseConsonantCluster(consonants, ['b','g','n','p','t','d','k','m','sl','shr','tr','gr','br','gl'], 0,
+        { bl:'b', br:'br', cl:'k', cr:'k', dr:'tr', fl:'p', fr:'br', gl:'gl', gr:'gr', pl:'p', pr:'br', sl:'sl', sm:'m', sn:'n', sp:'p', st:'t', str:'tr', sw:'sl', tr:'tr', tw:'t', sk:'k', scr:'shr', spr:'br', spl:'sl', skw:'k' });
+      return replacement || consonants[0];
+    });
     const base = repaired.replace(/^(sl)+/, '').replace(new RegExp(`${suffix}a?$`), '');
     const starts = base.replace(/^[bcdfghjklmnpqrstvwxyz]+/, '');
     const variants = [base, 'sl' + starts, base + suffix, 'sl' + starts + suffix];
