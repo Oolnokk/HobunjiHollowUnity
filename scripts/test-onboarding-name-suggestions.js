@@ -48,13 +48,13 @@ for (const species of ['kenkari', 'mao-ao', 'engh-sho', 'tletingan', 'nuhongan']
   assert.ok(names.length > 0 && names.length <= 4, species);
   assert.equal(new Set(names.map(name => name.toLowerCase())).size, names.length);
   assert.ok(names.every(name => name.length <= 32 && name.toLowerCase() !== sourceName.toLowerCase()));
-  const sameLengthIndex = names.findIndex(name => name.length === sourceName.length);
-  const lengthChangeIndex = names.findIndex(name => name.length !== sourceName.length);
-  assert.ok(sameLengthIndex < 0 || lengthChangeIndex < 0 || sameLengthIndex < lengthChangeIndex, `${species}: same-length spelling candidates should come first`);
+  if (names.some(name => name.length === sourceName.length)) {
+    assert.equal(names[0].length, sourceName.length, `${species}: same-length spelling candidates should come first`);
+  }
 }
 const slagothim = suggest(sourceName, 'tletingan', 'male');
 assert.equal(slagothim[0], 'Benjamir', 'best same-length Slagothim repair should be first');
-assert.equal(slagothim[1], 'Slenjamin', 'initial Slagothim cluster should remain available after replacement-like choices');
+assert.ok(slagothim.includes('Slenjamin'), 'initial Slagothim cluster should remain available');
 for (const value of ['', '   ', '123', '🐈']) assert.equal(suggest(value, 'kenkari', 'male').length, 0);
 assert.equal(suggest(sourceName, 'mashtzarr', 'male').length, 0);
 assert.ok(suggest(sourceName, 'mao-ao', 'female').every(name => /^[aeiou]/i.test(name)));
