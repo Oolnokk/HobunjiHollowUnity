@@ -117,17 +117,6 @@
   function expandTokens(tokens, validOnsets) {
     return tokens.flatMap(t => t.length > 1 && !validOnsets.has(t) ? [...t] : [t]);
   }
-  function collapseConsonantCluster(cluster, allowed, variant, mappings = {}) {
-    const raw = cluster.join('');
-    if (mappings[raw] && allowed.includes(mappings[raw])) return mappings[raw];
-    const legal = cluster.filter(token => allowed.includes(token));
-    if (legal.length) return legal[variant % legal.length];
-    const sonorants = cluster.filter(token => ['l', 'r', 'm', 'n', 'ng', 'w', 'y'].includes(token));
-    const source = sonorants.length ? sonorants : cluster;
-    const chosen = source[variant % source.length];
-    return mappings[chosen] || chosen;
-  }
-
   function collapseConsonantCluster(cluster, allowedSingles, mappings = {}) {
     const raw = cluster.join('');
     if (mappings[raw] && allowedSingles.includes(mappings[raw])) return mappings[raw];
@@ -437,9 +426,12 @@
     }
     const suffix = gender === 'female' ? getSpecies().slagothim.femaleSuffix : getSpecies().slagothim.maleSuffix;
     const clean = expandedIdeaText(text).replace(/'/g, '');
-    const repaired = clean.replace(/[bcdfghjklmnpqrstvwxyz]{4,}/g, cluster => {
-      const map = { bl:'b', br:'b', cl:'k', cr:'k', dr:'t', fl:'p', fr:'b', gl:'g', gr:'g', pl:'p', pr:'b', sl:'s', sm:'m', sn:'n', sp:'p', st:'t', str:'t', sw:'s', tr:'t', tw:'t', sk:'k', scr:'k', spr:'p', spl:'s', skw:'k' };
-      return collapseConsonantCluster([...cluster], ['b','g','n','p','t','d','k','m'], map) || cluster[0];
+    const slagSingles = getSpecies().slagothim.firstConsonants.filter(onset => onset.length === 1);
+    const validInitialClusters = new Set(getSpecies().slagothim.firstConsonants.filter(onset => onset.length > 1));
+    const repaired = clean.replace(/[bcdfghjklmnpqrstvwxyz]{2,}/g, (cluster, offset) => {
+      if (offset === 0 && validInitialClusters.has(cluster)) return cluster;
+      const map = { bl:'b', br:'b', cl:'k', cr:'k', dr:'t', fl:'p', fr:'b', gl:'g', gr:'g', pl:'p', pr:'b', sl:'s', sm:'m', sn:'n', sp:'p', st:'t', str:'t', sw:'s', tr:'t', tw:'t', sk:'k', scr:'g', spr:'p', spl:'s', skw:'k' };
+      return collapseConsonantCluster([...cluster], slagSingles, map) || cluster[0];
     });
     const base = repaired.replace(/^(sl)+/, '').replace(new RegExp(`${suffix}a?$`), '');
     const starts = base.replace(/^[bcdfghjklmnpqrstvwxyz]+/, '');
