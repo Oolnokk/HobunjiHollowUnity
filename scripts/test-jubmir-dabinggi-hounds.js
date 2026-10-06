@@ -9,6 +9,7 @@ const loaderSource = fs.readFileSync('docs/js/livestock-nursery-install-bridge.j
 const companionObjects = new Set(); // Mock canonical companion collection used by game.js.
 const despawned = []; // Records only entities passed through the canonical despawn path.
 let openingPhase = 'idle'; // Lets the test enter/leave the rescue-only genotype override deterministically.
+let playerArea = 'map_hobunji_town'; // The real Combat deps expose the player's live area; hounds may only exist where Jubmir is.
 let defaultGenotypeCalls = 0; // Proves ordinary default-genotype calls still delegate to the original API.
 
 const window = { // Minimal browser/game global used by the production module.
@@ -33,6 +34,7 @@ window.Combat = {
     TILE: 32,
     cutscenePreviewActive: false,
     companionObjects,
+    getCurrentArea: () => playerArea,
     makeCreatureEntity(kind, x, y, opts) {
       return { kind, x, y, health: 100, areaId: walker.area, ...opts };
     },
@@ -104,5 +106,26 @@ assert.equal(api.sync(), false, 'runtimes that export cutscenePreviewActive shou
 assert.equal(companionObjects.size, 0);
 assert.equal(despawned.length, 4);
 assert(respawned.every(hound => hound.despawned));
+
+window.Combat.deps.cutscenePreviewActive = false;
+assert.equal(api.sync(), true);
+const townPair = [...companionObjects];
+playerArea = 'farm';
+assert.equal(api.sync(), false, 'Jubmir in town must not keep hounds in the player\'s farm scene');
+assert.equal(companionObjects.size, 0, 'leaving Jubmir\'s area despawns the pair instead of churning spawn/prune every poll');
+assert(townPair.every(hound => hound.despawned));
+assert.equal(api.sync(), false);
+assert.equal(companionObjects.size, 0, 'no respawn while areas differ');
+playerArea = 'map_hobunji_town';
+assert.equal(api.sync(), true, 'returning to Jubmir\'s area restores the pair');
+
+// The module reads its spawn/despawn seam from Combat.deps, so game.js must actually supply it there.
+const game = fs.readFileSync('docs/game.js', 'utf8');
+const initStart = game.indexOf('window.Combat?.init({');
+assert(initStart >= 0, 'game.js must call Combat.init');
+const initBody = game.slice(initStart, game.indexOf('\n      });', initStart));
+for (const key of ['companionObjects', 'getCurrentArea', 'makeCreatureEntity', 'despawnCreature', 'cutscenePreviewActive']) {
+  assert.match(initBody, new RegExp(`\\n\\s+${key}[,:]`), `Combat.init deps must expose ${key} for JubmirDabinggiHounds`);
+}
 
 console.log('Jubmir dabinggi hound entourage passed');
