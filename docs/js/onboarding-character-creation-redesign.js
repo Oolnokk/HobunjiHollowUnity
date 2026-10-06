@@ -437,6 +437,21 @@
     try { sceneState.renderer?.dispose?.(); } catch (_) {}
   }
 
+  async function copyFacingDiagnostics(text, field, feedback) {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard API unavailable');
+      await navigator.clipboard.writeText(text);
+      feedback.textContent = 'Copied diagnostics';
+    } catch (_) {
+      field.focus();
+      field.select();
+      field.setSelectionRange(0, text.length);
+      try {
+        feedback.textContent = document.execCommand('copy') ? 'Copied diagnostics' : 'Copy unavailable; diagnostics selected below';
+      } catch (_) { feedback.textContent = 'Copy unavailable; diagnostics selected below'; }
+    }
+  }
+
   function installFacingDiagnostics(sceneState, model, profile) {
     const plane = model.userData?.neckRig?.skinnedPlane || model.getObjectByName?.('npc_avatar_front_plane'); // Samples the actual portrait draw after render decorators apply their temporary transforms.
     if (!plane) return;
@@ -458,6 +473,8 @@
         speciesId: status.speciesId, gender: status.gender,
         renderedSide: frontDot >= 0 ? 'front' : 'behind', frontDot, determinant,
         rootYawDeg: toDegrees(sceneState.root), bodyYawDeg: toDegrees(model.parent),
+        inputYawDeg: Number((Number(sceneState.yaw || 0) * 180 / Math.PI).toFixed(2)),
+        pointerActive: !!sceneState.pointer,
         neckYawDeg: toDegrees(model.userData?.neckRig?.neckJoint),
         cameraPosition: camera.position.toArray(), worldMatrix: this.matrixWorld.toArray(),
         frontHeadUrl: profile?.fighter?.headUrl || null,
@@ -468,9 +485,26 @@
       const panel = sceneState.canvas.parentElement?.querySelector('.ob-facing-diagnostics'); // Current creator panel survives only as long as its canvas does.
       if (!panel) return;
       panel.replaceChildren();
-      const dump = document.createElement('pre'); // Selectable text works on mobile without DevTools.
-      dump.textContent = JSON.stringify(snapshot, null, 2);
-      panel.appendChild(dump);
+      const text = JSON.stringify(snapshot, null, 2); // One capture supplies both the visible field and clipboard.
+      const controls = document.createElement('div'); // Keeps explicit copy and close actions within reach while scrolling.
+      controls.style.cssText = 'position:sticky;top:0;background:#14201f;padding:4px;z-index:1;display:flex;gap:8px;flex-wrap:wrap';
+      const copy = document.createElement('button'); // User gesture enables the browser clipboard permission.
+      copy.type = 'button';
+      copy.textContent = 'Copy diagnostics';
+      const close = document.createElement('button'); // Closing no longer competes with selecting the diagnostic text.
+      close.type = 'button';
+      close.textContent = 'Close';
+      close.addEventListener('click', () => { panel.hidden = true; });
+      const feedback = document.createElement('span'); // Reports copy success or a selected-text fallback.
+      feedback.setAttribute('role', 'status');
+      const dump = document.createElement('textarea'); // Readonly selectable fallback stays inside the mobile viewport.
+      dump.readOnly = true;
+      dump.value = text;
+      dump.setAttribute('aria-label', 'Character preview diagnostics');
+      dump.style.cssText = 'box-sizing:border-box;width:100%;height:260px;font:inherit;color:inherit;background:transparent;white-space:pre-wrap;overflow-wrap:anywhere';
+      copy.addEventListener('click', () => copyFacingDiagnostics(text, dump, feedback));
+      controls.append(copy, close, feedback);
+      panel.append(controls, dump);
       for (const face of ['front', 'back']) {
         const label = document.createElement('div'); // Identifies which authored canvas supplied each side independently of rotations.
         label.textContent = `${face} texture`;
@@ -615,11 +649,10 @@
       panel.hidden = true;
       panel.style.cssText = 'position:absolute;inset:4px;z-index:5;overflow:auto;background:#14201ff5;padding:10px;font-size:10px;white-space:pre-wrap';
       panel.addEventListener('pointerdown', event => event.stopPropagation());
-      panel.addEventListener('click', event => { if (event.target === panel) panel.hidden = true; });
       button.addEventListener('pointerdown', event => event.stopPropagation());
       button.addEventListener('click', () => {
         panel.hidden = false;
-        panel.textContent = 'Capturing next portrait draw… Tap this panel to close.';
+        panel.textContent = 'Capturing next portrait draw…';
         if (previewScene?.canvas === canvas) previewScene.captureFacing = true;
       });
       shell.append(button, panel);

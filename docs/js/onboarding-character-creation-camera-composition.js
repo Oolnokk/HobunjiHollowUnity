@@ -53,6 +53,7 @@
   }
 
   function installRendererHook() {
+    if (rendererWrapped) return true; // Later decorators retain our hook beneath them; wrapping again compounds the yaw offset.
     const THREE = window.THREE;
     const proto = THREE?.WebGLRenderer?.prototype;
     if (!proto?.render || proto.render.__hobunjiCreatorMidBodyCamera) return !!proto?.render;
