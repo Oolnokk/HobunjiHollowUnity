@@ -104,7 +104,7 @@
   }
 
   function suggestNames(text, speciesId, gender, maxLength = 32) {
-    const speciesKeys = { kenkari: 'kenkari', 'mao-ao': 'mao', 'engh-sho': 'engh', tletingan: 'slagothim', slagothim: 'slagothim' }; // Maps the creator's species IDs to the original advisor cultures.
+    const speciesKeys = { kenkari: 'kenkari', 'mao-ao': 'mao', 'engh-sho': 'engh', tletingan: 'slagothim', nuhongan: 'slagothim', slagothim: 'slagothim' }; // Maps the creator's species IDs to the original advisor cultures; Nuhongan are Tletingan-derived Slagothim.
     const speciesKey = speciesKeys[normalizeSpecies(speciesId)]; // Selects only cultures whose phonology the advisor actually knows.
     const idea = String(text || '').slice(0, maxLength).trim(); // Bounds work to the name field's limit and ignores blank/nonalphabetic input.
     if (!speciesKey || !/[a-z]/i.test(idea.normalize('NFD')) || !window.HobunjiNameAdvisor) return [];

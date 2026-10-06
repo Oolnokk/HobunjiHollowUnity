@@ -27523,6 +27523,11 @@
         // reticles pause/hide on isDialogueOpen. Without these the exterior
         // snore sat at "waiting for live zone layout" forever.
         isDialogueOpen: () => dialogueOpen,
+        // JubmirDabinggiHounds spawns/despawns its NPC-owned companion pair
+        // through these, and stands down while an authored cutscene owns the cast.
+        makeCreatureEntity,
+        despawnCreature,
+        cutscenePreviewActive: () => cutscenePreviewActive,
         zoneLayouts: _zoneLayouts,
         zoneScenes: _zoneScenes,
         getActiveGrid: window.GridTileAccessors.getActiveGrid,
