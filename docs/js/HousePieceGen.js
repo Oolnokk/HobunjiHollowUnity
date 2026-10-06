@@ -1105,8 +1105,95 @@
       }
 
       _alignGroup(face, faceGroup, cfg);
+      _mergeStaticShingles(faceGroup);
       group.add(faceGroup);
     }
+  }
+
+  // Each GLB shingle is an 8-node clone (wrapper > AuxScene > ... > shell +
+  // hidden bone), so a town's ~500 shingles added ~4k scene nodes that three.js
+  // walked in updateMatrixWorld on every render pass, plus one draw call (and
+  // one outline-pass draw call) per shingle. Roofs never move relative to their
+  // building, so each roof face's visible shingle meshes are baked into one
+  // mesh per shared material. Materials are kept by reference, so later
+  // tintShingleMaterial()/tintStructure() edits still apply. Anything unusual
+  // (multi-material, groups, morphs, interleaved data) leaves the face as-is.
+  function _mergeStaticShingles(faceGroup) {
+    faceGroup.updateMatrixWorld(true);
+    var toFace = new THREE.Matrix4().copy(faceGroup.matrixWorld).invert();
+    var buckets = [], byKey = {}, ok = true;
+    faceGroup.traverse(function (o) {
+      if (!ok || !o.isMesh) return;
+      for (var n = o; n && n !== faceGroup; n = n.parent) if (n.visible === false) return;
+      var g = o.geometry, mat = o.material;
+      if (!g || !g.isBufferGeometry || !mat || Array.isArray(mat) || o.isInstancedMesh || o.isSkinnedMesh ||
+          (g.groups && g.groups.length) || Object.keys(g.morphAttributes || {}).length || !g.getAttribute('position')) { ok = false; return; }
+      var names = Object.keys(g.attributes).sort();
+      for (var i = 0; i < names.length; i++) if (g.attributes[names[i]].isInterleavedBufferAttribute) { ok = false; return; }
+      var key = mat.uuid + '|' + names.join(',') + '|' + (g.index ? 'i' : 'n') + '|' + o.layers.mask + '|' + o.castShadow + o.receiveShadow + '|' + o.renderOrder;
+      var b = byKey[key];
+      if (!b) { b = byKey[key] = { mesh: o, names: names, items: [] }; buckets.push(b); }
+      b.items.push(o);
+    });
+    if (!ok || !buckets.length) return;
+
+    var m = new THREE.Matrix4(), nm = new THREE.Matrix3(), v = new THREE.Vector3();
+    var merged = buckets.map(function (b) {
+      var first = b.mesh.geometry, vertCount = 0, indexCount = 0;
+      b.items.forEach(function (o) {
+        vertCount += o.geometry.getAttribute('position').count;
+        indexCount += o.geometry.index ? o.geometry.index.count : 0;
+      });
+      var geo = new THREE.BufferGeometry(), out = {};
+      b.names.forEach(function (name) {
+        var src = first.getAttribute(name);
+        var arr = (name === 'position' || name === 'normal') ? new Float32Array(vertCount * src.itemSize) : new src.array.constructor(vertCount * src.itemSize);
+        out[name] = new THREE.BufferAttribute(arr, src.itemSize, name === 'position' || name === 'normal' ? false : src.normalized);
+      });
+      var index = first.index ? new (vertCount > 65535 ? Uint32Array : Uint16Array)(indexCount) : null;
+      var vOff = 0, iOff = 0;
+      b.items.forEach(function (o) {
+        var g = o.geometry, count = g.getAttribute('position').count;
+        m.multiplyMatrices(toFace, o.matrixWorld);
+        nm.getNormalMatrix(m);
+        b.names.forEach(function (name) {
+          var src = g.getAttribute(name), dst = out[name], size = src.itemSize;
+          if (name === 'position' || name === 'normal') {
+            for (var k = 0; k < count; k++) {
+              v.set(src.getX(k), src.getY(k), size > 2 ? src.getZ(k) : 0);
+              if (name === 'position') v.applyMatrix4(m); else v.applyMatrix3(nm).normalize();
+              dst.setXYZ(vOff + k, v.x, v.y, v.z);
+            }
+          } else {
+            dst.array.set(src.array.subarray(0, count * size), vOff * size);
+          }
+        });
+        if (index) {
+          var flip = m.determinant() < 0, si = g.index.array;
+          for (var t = 0; t < si.length; t += 3) {
+            index[iOff + t] = si[t] + vOff;
+            index[iOff + t + 1] = si[flip ? t + 2 : t + 1] + vOff;
+            index[iOff + t + 2] = si[flip ? t + 1 : t + 2] + vOff;
+          }
+          iOff += si.length;
+        }
+        vOff += count;
+      });
+      b.names.forEach(function (name) { geo.setAttribute(name, out[name]); });
+      if (index) geo.setIndex(new THREE.BufferAttribute(index, 1));
+      geo.computeBoundingBox();
+      geo.computeBoundingSphere();
+      var src = b.mesh, mesh = new THREE.Mesh(geo, src.material);
+      mesh.name = (src.name || 'shingle') + '_merged';
+      mesh.castShadow = src.castShadow;
+      mesh.receiveShadow = src.receiveShadow;
+      mesh.renderOrder = src.renderOrder;
+      mesh.layers.mask = src.layers.mask;
+      mesh.userData = Object.assign({}, src.userData, { mergedShingleCount: b.items.length });
+      return mesh;
+    });
+    for (var c = faceGroup.children.length - 1; c >= 0; c--) faceGroup.remove(faceGroup.children[c]);
+    merged.forEach(function (mesh) { faceGroup.add(mesh); });
   }
 
   // ── buildGroupFromPiece ─────────────────────────────────────────────────────
