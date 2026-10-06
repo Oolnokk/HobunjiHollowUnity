@@ -18,6 +18,7 @@
     { globalKey: 'StableAnimalTrainingRefinements', src: 'js/stable-animal-training-refinements.js?v=20260912pets3' },
     { globalKey: 'StableAnimalXpEvents', src: 'js/stable-animal-xp-events.js?v=20260924perf1' },
     { globalKey: 'StableTrainingCompendiumPatch', src: 'js/stable-training-compendium-patch.js?v=20260912stableNative1' },
+    { globalKey: 'JubmirDabinggiHounds', src: 'js/jubmir-dabinggi-hounds.js?v=20261005jubmirhounds1' },
     { globalKey: 'BARN_INCUBATOR_CONFIG', src: 'config/barn-incubator-config.js?v=20261004h3ebe719' },
     { globalKey: 'BarnIncubator', src: 'js/barn-incubator.js?v=20261004hc90980e' },
     { globalKey: 'FarmMenuLayout', src: 'js/farm-menu-layout.js?v=20260915farmui2' },
@@ -53,6 +54,7 @@
         window.StableAnimalTownFamiliarity?.install?.();
         window.StableAnimalTrainingRefinements?.install?.();
         window.StableAnimalXpEvents?.install?.();
+        window.JubmirDabinggiHounds?.install?.();
         window.BarnIncubator?.install?.();
         window.FarmMenuLayout?.install?.();
         window.FarmGlancePalette?.install?.();
@@ -216,6 +218,7 @@
     installStableAnimalTrainingRefinements();
     installStableProgressionDepsBridge();
     installStableAnimalXpEvents();
+    window.JubmirDabinggiHounds?.install?.();
     installBarnIncubator();
     installFarmMenuLayout();
     installFarmGlancePalette();

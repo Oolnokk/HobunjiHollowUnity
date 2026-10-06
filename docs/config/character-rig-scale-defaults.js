@@ -14,10 +14,12 @@
 (() => {
   'use strict';
 
-  const VERSION = 17; // Applies intended Animation Author edits plus the male-derived Mammakhbuur female proportional scale.
+  const VERSION = 18; // Adds Nuhongan as a Tletingan-derived rig at 80% width and 75% height.
   const VALUES = Object.freeze({
     'tletingan::male': Object.freeze({ x: 0.85, y: 0.85, head: 0.8, offsetY: 0 }),
     'tletingan::female': Object.freeze({ x: 0.915, y: 0.89, head: 0.8823529411764706, offsetY: 0 }),
+    'nuhongan::male': Object.freeze({ x: 0.68, y: 0.6375, head: 0.8, offsetY: 0 }),
+    'nuhongan::female': Object.freeze({ x: 0.732, y: 0.6675, head: 0.8823529411764706, offsetY: 0 }),
     'engh-sho::male': Object.freeze({ x: 0.8, y: 0.845, head: 0.7894736842105263, offsetY: 0 }),
     'engh-sho::female': Object.freeze({ x: 0.795, y: 0.81, head: 0.7894736842105263, offsetY: 0 }),
     'harlyao::male': Object.freeze({ x: 0.96, y: 1.014, head: 0.9473684210526315, offsetY: 0 }),

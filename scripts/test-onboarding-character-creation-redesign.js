@@ -47,7 +47,7 @@ for (const dyeId of ['dye:CLOTH:brown', 'dye:CLOTH:dusty_yellow', 'dye:CLOTH:dus
 }
 assert.match(redesign, /if \(gender !== 'male'\) return false;/, 'no female character may receive a Kasa from randomization');
 assert.match(redesign, /if \(kind === 'kenkari-bowl-kasa'\) return speciesId === 'kenkari';/, 'Kenkari Bowl-Kasa randomization must be Kenkari-only');
-assert.match(redesign, /return speciesId === 'tletingan' \|\| speciesId === 'mao-ao';/, 'ordinary Kasa randomization must be Tletingan/Mao\'ao-only');
+assert.match(redesign, /return speciesId === 'tletingan' \|\| speciesId === 'nuhongan' \|\| speciesId === 'mao-ao';/, 'ordinary Kasa randomization must be Tletingan/Nuhongan/Mao\'ao-only');
 assert.match(redesign, /filter\(option => randomClothingOptionAllowed\(option, speciesId, gender\)\)/, 'clothing randomization must apply the Kasa eligibility filter without removing manual options');
 assert.match(redesign, /const restrictOrdinaryKasaDyes = clothingRoll\.kasaKind === 'ordinary-kasa'[\s\S]{0,120}speciesId === 'tletingan'[\s\S]{0,80}speciesId === 'mao-ao'/, 'ordinary Kasa generated dyes must be restricted only for Tletingan/Mao\'ao');
 assert.match(redesign, /clickRandomDye\('data-ob-cloth-dye-a', restrictOrdinaryKasaDyes\)/, 'ordinary Kasa primary dye randomization must use the restricted palette');

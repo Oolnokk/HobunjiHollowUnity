@@ -37,6 +37,7 @@ context.StableAnimalTownFamiliarity = { install() {} }; // Pet Rapport is a pars
 context.StableAnimalTrainingRefinements = { install() {} };
 context.StableAnimalXpEvents = { install() { xpInstallCount++; } };
 context.StableTrainingCompendiumPatch = {};
+context.JubmirDabinggiHounds = { install() {} }; // Jubmir's hounds are bridge-installed and must not trigger the dynamic-loader trap.
 context.BARN_INCUBATOR_CONFIG = {};
 context.BarnIncubator = { install() {} };
 context.FarmMenuLayout = { install() {} }; // Keeps this bridge-only regression focused on dependency mirroring rather than dynamic feature loading.
