@@ -39,6 +39,8 @@ assert(enchantmentScriptAt >= 0 && vfxScriptAt > enchantmentScriptAt, 'weapon en
 
 const gear = {}; // Used by the VM harness as the active character's persistent gear inventory.
 let saves = 0; // Used to confirm player visual choices call the normal gear-save seam.
+const heldToolPlane = { isObject3D: true }; // Used by the runtime-shape test to stand in for the real held PNG plane without pulling THREE into this focused VM harness.
+const heldToolVisual = { visible: true, userData: { itemKey: 'dagger_copper', toolPlane: heldToolPlane } }; // Used to reproduce the supported gameplay dependency shape where toolHolder exists but toolMeshMap does not.
 const context = {
   window: {
     Combat: {
@@ -51,6 +53,11 @@ const context = {
     EnchantmentSystem: {
       PLANES: ['Tothal', 'Hronal', 'Kanthic', 'Ohthic'],
       planarCounts: () => ({ Tothal: 0, Hronal: 0, Kanthic: 0, Ohthic: 1 }),
+    },
+    ProceduralHandAttachments: {
+      gameDeps: {
+        toolHolder: { children: [heldToolVisual] },
+      },
     },
     RuntimeFrameScheduler: { register() {} },
   },
@@ -75,6 +82,7 @@ vm.runInContext(vfxSource, context, { filename: 'weapon-enchantment-vfx.js' });
 
 const api = context.window.WeaponEnchantmentVFX; // Used to exercise the public persistence/customization contract without THREE/DOM rendering.
 assert(api, 'WeaponEnchantmentVFX must install its public API.');
+assert.strictEqual(api.debugSnapshot('dagger_copper').heldVisualFound, true, 'toolHolder-only runtime dependencies must resolve the live held weapon without scene traversal or toolMeshMap.');
 assert.strictEqual(api.ALIGNMENTS.Tothal.dyeIds.length, 12, 'Tothal palette must mirror 3 lich hue families × 4 authored variants.');
 assert.strictEqual(api.ALIGNMENTS.Hronal.dyeIds.length, 20, 'Hronal palette must mirror 5 lich hue families × 4 authored variants.');
 assert.strictEqual(api.ALIGNMENTS.Kanthic.dyeIds.length, 15, 'Kanthic palette must mirror 3 hue families × 4 variants plus white/gray/charcoal.');
