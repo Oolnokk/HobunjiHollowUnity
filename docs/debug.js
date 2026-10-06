@@ -97,13 +97,17 @@
     return debugPrefs.master !== false && debugPrefs.categories[cat] !== false;
   }
 
+  function isAlwaysVisibleErrorLevel(level) {
+    return ['error', 'promise'].includes(String(level || '').toLowerCase());
+  }
+
   window.__farmDebugLog = window.__farmDebugLog || [];
   window.__farmLog = function farmLog(message, level, category) {
     const lvl = level || 'info';
     const cat = DEBUG_CATEGORIES.includes(category) ? category : inferCategory(message, lvl);
-    // Gate before retaining strings or rebuilding the debug DOM. Chatty hot-loop
-    // diagnostics can otherwise become a performance problem by themselves.
-    if (!categoryEnabled(cat)) return false;
+    // Gate ordinary diagnostics before retaining strings or rebuilding the debug DOM.
+    // Real runtime errors and unhandled promise rejections always survive category/master suppression.
+    if (!isAlwaysVisibleErrorLevel(lvl) && !categoryEnabled(cat)) return false;
     const stamp = new Date().toLocaleTimeString();
     window.__farmDebugLog.push({ t: stamp, lvl, cat, msg: String(message) });
     if (window.__farmDebugLog.length > 200) window.__farmDebugLog.shift();
@@ -255,7 +259,7 @@
     const prevScrollTop = panel.scrollTop;
     const filter = window.__debugLogFilter || 'all';
     const logHtml = window.__farmDebugLog
-      .filter(e => categoryEnabled(e.cat || inferCategory(e.msg, e.lvl)))
+      .filter(e => isAlwaysVisibleErrorLevel(e.lvl) || categoryEnabled(e.cat || inferCategory(e.msg, e.lvl)))
       .filter(e => _matchesDebugFilter(e, filter))
       .map(e => {
         const c = COLOR[e.lvl] || COLOR.info;
