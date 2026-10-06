@@ -3,62 +3,177 @@
 (() => {
   'use strict';
 
-  const ID = 'nuhongan'; // Used as the distinct runtime/editor species id so Nuhongan keep their own whole-rig scale.
-  const DONOR = 'tletingan'; // Used wherever Nuhongan inherit Tletingan appearance, attachment, hand and foot data.
-  const clone = value => value == null ? value : JSON.parse(JSON.stringify(value)); // Used to copy donor records without mutating Tletingan data.
-  const config = window.SCRATCHBONES_CONFIG?.game; // Used below to extend shared appearance and avatar-asset registries.
-  const appearance = config?.appearanceEditor; // Used to expose Nuhongan anywhere the normal appearance-editor species table is consumed.
+  const ID = 'nuhongan'; // Distinct saved/runtime species id so Nuhongan retain their own whole-rig scale.
+  const DONOR = 'tletingan'; // Single appearance/anatomy authority for every non-scale Nuhongan system.
+  const GENDERS = Object.freeze(['male', 'female']); // Used by all same-gender inheritance passes below.
+  const clone = value => value == null ? value : JSON.parse(JSON.stringify(value)); // Prevents Nuhongan edits from mutating Tletingan source records.
+  const normalizeSpecies = value => String(value || '').trim().toLowerCase().replace(/_/g, '-');
+  const config = window.SCRATCHBONES_CONFIG?.game; // Shared gameplay/editor configuration extended by this bridge.
+  const appearance = config?.appearanceEditor; // Parent-species registry read by hands, feet, portrait placement and editor grouping.
 
-  if (appearance?.species?.[DONOR]) {
-    const donorSpecies = clone(appearance.species[DONOR]); // Used as the exact appearance/cosmetic basis for Nuhongan.
+  const status = {
+    appearanceInstalled: false,
+    behindHeadInstalled: false,
+    rigProfilesInstalled: 0,
+    rigCorrectionsApplied: false,
+    handModelKey: null,
+    handScale: {},
+    footScale: {},
+    poseOrbitScale: {},
+    armMaskProfilesInstalled: 0,
+    mouthInheritanceInstalled: false,
+    lastError: null,
+  }; // Mobile-readable verification of the inheritance paths most likely to fail from load-order regressions.
+
+  function installAppearanceInheritance() {
+    const donorSpecies = appearance?.species?.[DONOR];
+    if (!donorSpecies) return false;
     appearance.species[ID] = {
-      ...donorSpecies,
+      ...clone(donorSpecies),
       label: 'Nuhongan',
       parentSpecies: DONOR,
-      genders: clone(donorSpecies.genders || ['male', 'female']),
+      genders: clone(donorSpecies.genders || GENDERS),
     };
-  }
-  if (appearance?.bodyPalettes?.[DONOR]) appearance.bodyPalettes[ID] = clone(appearance.bodyPalettes[DONOR]);
-
-  const characters = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters; // Used to give Nuhongan exact Tletingan attachment coordinates under their own species key.
-  for (const gender of ['male', 'female']) {
-    const source = characters?.[`${DONOR}::${gender}`]; // Used as the same-gender Tletingan rig donor.
-    if (!source) continue;
-    const profile = clone(source); // Used as an independent Nuhongan profile so later authoring cannot mutate Tletingan.
-    profile.species = ID;
-    profile.gender = gender;
-    if (profile.shoulderPerchRule) profile.shoulderPerchRule.appearanceSpeciesId = ID;
-    if (profile.posteriorRule) profile.posteriorRule.appearanceSpeciesId = ID;
-    profile.anatomy ||= {};
-    for (const key of ['rigScale', 'rigScaleX', 'rigScaleY', 'headScale', 'headOffsetY']) delete profile.anatomy[key];
-    characters[`${ID}::${gender}`] = profile;
+    if (appearance.bodyPalettes?.[DONOR]) appearance.bodyPalettes[ID] = clone(appearance.bodyPalettes[DONOR]);
+    status.appearanceInstalled = appearance.species[ID]?.parentSpecies === DONOR;
+    return status.appearanceInstalled;
   }
 
-  const feet = config?.assets?.pngPlaneAvatar?.proceduralFeet; // Used to inherit every Tletingan foot asset/calibration table without a second body scale.
-  for (const table of Object.values(feet || {})) {
-    if (table && typeof table === 'object' && table[DONOR] != null) table[ID] = clone(table[DONOR]);
+  function installBehindHeadInheritance() {
+    const headUrls = config?.assets?.pngPlaneAvatar?.behindView?.headUrls; // portrait-utils uses a direct species lookup here rather than parentSpecies.
+    if (!headUrls?.[DONOR]) return false;
+    headUrls[ID] = clone(headUrls[DONOR]);
+    status.behindHeadInstalled = true;
+    return true;
   }
 
-  window.HobunjiHandModelProfiles?.mutate?.(data => {
-    data.speciesModels ||= {};
-    if (data.speciesModels[DONOR]) data.speciesModels[ID] = data.speciesModels[DONOR];
-  });
+  function installRigInheritance() {
+    const characters = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters; // Shared geometry/attachment source for hands, feet, posterior and shoulder perches.
+    if (!characters) return 0;
+    let installed = 0;
+    for (const gender of GENDERS) {
+      const source = characters[`${DONOR}::${gender}`];
+      if (!source) continue;
+      const profile = clone(source);
+      profile.species = ID;
+      profile.gender = gender;
+      if (profile.shoulderPerchRule) profile.shoulderPerchRule.appearanceSpeciesId = ID;
+      if (profile.posteriorRule) profile.posteriorRule.appearanceSpeciesId = ID;
+      profile.anatomy ||= {};
+      // Width/height/head placement are Nuhongan-specific. All other anatomy,
+      // including Tletingan handScale and footScale, is intentionally retained.
+      for (const key of ['rigScale', 'rigScaleX', 'rigScaleY', 'headScale', 'headOffsetY']) delete profile.anatomy[key];
+      characters[`${ID}::${gender}`] = profile;
+      installed += 1;
+    }
+    status.rigProfilesInstalled = installed;
+    return installed;
+  }
 
-  window.applyHobunjiAttachmentRigProfileCorrections?.();
+  function installExtremityInheritance() {
+    const feet = config?.assets?.pngPlaneAvatar?.proceduralFeet; // Shared foot model/size/bend registries; most consumers also understand parentSpecies.
+    for (const table of Object.values(feet || {})) {
+      if (table && typeof table === 'object' && table[DONOR] != null) table[ID] = clone(table[DONOR]);
+    }
+
+    const handProfiles = window.HobunjiHandModelProfiles; // Shared GLB/model + species/gender hand-scale registry.
+    handProfiles?.mutate?.(data => {
+      data.speciesModels ||= {};
+      if (data.speciesModels[DONOR]) data.speciesModels[ID] = data.speciesModels[DONOR];
+    });
+
+    // Re-running the canonical profile correction copies the retained Tletingan
+    // anatomy.handScale/footScale from the cloned rig profiles into the runtime
+    // scale tables under the Nuhongan key.
+    status.rigCorrectionsApplied = !!window.applyHobunjiAttachmentRigProfileCorrections?.();
+    status.handModelKey = handProfiles?.modelKeyForSpecies?.(ID) || handProfiles?.data?.speciesModels?.[ID] || null;
+    for (const gender of GENDERS) {
+      status.handScale[gender] = handProfiles?.speciesScaleFor?.(ID, gender) ?? handProfiles?.data?.speciesScaleOverrides?.[ID]?.[gender] ?? null;
+      status.footScale[gender] = handProfiles?.footScaleFor?.(ID, gender) ?? feet?.footScale?.[ID]?.[gender] ?? null;
+    }
+  }
+
+  function installPoseOrbitInheritance() {
+    const poseScale = window.HobunjiSpeciesPoseScale; // Weapon pose system does not currently walk parentSpecies, so register the donor values explicitly.
+    if (!poseScale?.resolveScale || !poseScale?.setScale) return false;
+    for (const gender of GENDERS) {
+      const donorScale = poseScale.resolveScale(DONOR, gender);
+      if (Number.isFinite(Number(donorScale)) && Number(donorScale) > 0) {
+        poseScale.setScale(ID, gender, donorScale);
+        status.poseOrbitScale[gender] = donorScale;
+      }
+    }
+    return Object.keys(status.poseOrbitScale).length > 0;
+  }
+
+  function installArmMaskInheritance() {
+    const armMask = window.PortraitArmCloudMask; // Exposes the canonical authored per-species arm-cut profiles.
+    const portrait = config?.portrait;
+    if (!armMask?.authoredProfiles || !portrait) return 0;
+    portrait.armOnlyOpacityMask ||= {};
+    portrait.armOnlyOpacityMask.profiles ||= {};
+    let installed = 0;
+    for (const gender of GENDERS) {
+      const donorProfile = armMask.authoredProfiles[`${DONOR}:${gender}`];
+      if (!donorProfile) continue;
+      portrait.armOnlyOpacityMask.profiles[`${ID}:${gender}`] = clone(donorProfile);
+      installed += 1;
+    }
+    status.armMaskProfilesInstalled = installed;
+    return installed;
+  }
+
+  function installMouthInheritance() {
+    // Mouth-expression helpers predate parentSpecies and use a hard-coded map.
+    // Wrap only Nuhongan calls through the Tletingan mapping while delegating all
+    // other species unchanged; renderProfile's global bindings observe these assignments.
+    const baseUrl = window._getMouthSpriteUrl;
+    const baseMask = window._isMouthMask;
+    const baseOpacity = window._getMouthExpressionOpacity;
+    if (typeof baseUrl !== 'function' || baseUrl.__hobunjiNuhonganMouthInheritance) return false;
+
+    const url = function nuhonganMouthSpriteUrl(expression, speciesId, gender) {
+      return baseUrl.call(this, expression, normalizeSpecies(speciesId) === ID ? DONOR : speciesId, gender);
+    };
+    url.__hobunjiNuhonganMouthInheritance = true;
+    window._getMouthSpriteUrl = url;
+
+    if (typeof baseMask === 'function') window._isMouthMask = function nuhonganMouthMask(speciesId) {
+      return baseMask.call(this, normalizeSpecies(speciesId) === ID ? DONOR : speciesId);
+    };
+    if (typeof baseOpacity === 'function') window._getMouthExpressionOpacity = function nuhonganMouthOpacity(expression, speciesId) {
+      return baseOpacity.call(this, expression, normalizeSpecies(speciesId) === ID ? DONOR : speciesId);
+    };
+    status.mouthInheritanceInstalled = true;
+    return true;
+  }
+
+  try {
+    installAppearanceInheritance();
+    installBehindHeadInheritance();
+    installRigInheritance();
+    installExtremityInheritance();
+    installPoseOrbitInheritance();
+    installArmMaskInheritance();
+    installMouthInheritance();
+  } catch (error) {
+    status.lastError = String(error?.message || error);
+    console.warn('[NuhonganSpecies] inheritance install failed:', error);
+  }
 
   window.HobunjiNuhonganSpecies = Object.freeze({
     speciesId: ID,
     parentSpecies: DONOR,
     debugSnapshot: () => ({
+      ...clone(status),
       speciesId: ID,
       parentSpecies: DONOR,
       rigHeightMultiplier: 0.75,
       rigWidthMultiplier: 0.8,
       headScaleMultiplier: 1,
-      inheritedAppearance: !!appearance?.species?.[ID],
-      inheritedMaleRig: !!characters?.[`${ID}::male`],
-      inheritedFemaleRig: !!characters?.[`${ID}::female`],
-      latestChange: 'Nuhongan inherit Tletingan anatomy/assets while rendering at 75% Tletingan height and 80% Tletingan width.',
+      inheritedMaleRig: !!window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[`${ID}::male`],
+      inheritedFemaleRig: !!window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[`${ID}::female`],
+      latestChange: 'Nuhongan remain a Slagothim/Tletingan child identity and inherit Tletingan cosmetics, hands, feet, rig anatomy, rear head, arm mask, mouth expressions and weapon-pose orbit; only whole-body width/height differ.',
     }),
   });
 })();
