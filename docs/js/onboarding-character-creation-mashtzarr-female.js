@@ -1,5 +1,5 @@
 // Character-creator compatibility bridge: female Mashtzarr use their real female body/profile and temporarily borrow male hairstyle controls.
-// The same private-table hook also exposes Nuhongan as an exact Tletingan-derived player species; its size difference is applied by the rig-scale system.
+// The same private-table hook exposes Nuhongan to onboarding-core while the redesign presents it only beneath the Slagothim family.
 (() => {
   'use strict';
 
@@ -72,8 +72,13 @@
     if (!mashtzarr.genders.includes('female')) mashtzarr.genders.push('female');
     mashtzarr.female = femaleData;
 
-    const nuhongan = JSON.parse(JSON.stringify(table.tletingan)); // Used as the creator-facing Nuhongan definition so every Tletingan option remains identical.
+    // Keep Nuhongan as a real saved identity for runtime scaling, but derive its
+    // entire creator data from Tletingan and mark that relationship explicitly.
+    // The redesign layer hides this core state button and activates its existing
+    // Slagothim-subspecies placeholder instead.
+    const nuhongan = JSON.parse(JSON.stringify(table.tletingan));
     nuhongan.label = 'Nuhongan';
+    nuhongan.parentSpecies = 'tletingan';
     table.nuhongan = nuhongan;
     status.nuhonganAdded = true;
 
