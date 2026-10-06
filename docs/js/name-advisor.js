@@ -435,10 +435,12 @@
     });
     const base = repaired.replace(/^(sl)+/, '').replace(new RegExp(`${suffix}a?$`), '');
     const starts = base.replace(/^[bcdfghjklmnpqrstvwxyz]+/, '');
+    const sourceBase = clean.replace(/^(sl)+/, '').replace(new RegExp(`${suffix}a?$ `.trim()), '');
+    const sourceStarts = sourceBase.replace(/^[bcdfghjklmnpqrstvwxyz]+/, '');
     const substitutionEnding = gender === 'female'
-      ? base.replace(/n$/, 'ra')
-      : base.replace(/n$/, 'r'); // Turns a near-match like Benjamin into the authored -mir ending by changing the final consonant.
-    const variants = [base, substitutionEnding, 'sl' + starts, base + suffix, 'sl' + starts + suffix];
+      ? sourceBase.replace(/n$/, 'ra')
+      : sourceBase.replace(/n$/, 'r'); // Turns Benjamin into the authored -mir ending with a final consonant substitution.
+    const variants = [base, substitutionEnding, 'sl' + sourceStarts, 'sl' + starts, base + suffix, 'sl' + starts + suffix];
     return uniqueOptions(variants.map(v => ({ label: tc(v), type: 'slagGiven', value: v.toLowerCase() })));
   }
 
