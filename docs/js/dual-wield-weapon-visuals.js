@@ -40,9 +40,12 @@
     const deps = global.ProceduralHandAttachments?.gameDeps || null;
     const snapshot = global.WeaponToolStances?.getRuntimeState?.() || global.WeaponToolStances?.debugSnapshot?.() || null;
     const activeSlot = snapshot?.activeSlot || deps?.getActiveTool?.() || null;
-    const visual = (activeSlot && (deps?.toolMeshMap?.get?.(activeSlot) || deps?.toolMeshMap?.[activeSlot])) || null;
+    const holder = deps?.toolHolder || null; // Runtime hand dependencies expose the live holder but do not require an equipment mesh map.
+    const visual = (activeSlot && (deps?.toolMeshMap?.get?.(activeSlot) || deps?.toolMeshMap?.[activeSlot]))
+      || holder?.children?.find(child => child.visible !== false && child.userData?.toolPlane?.isObject3D && child.userData.toolPlane.visible !== false)
+      || null;
     const plane = visual?.userData?.toolPlane || null;
-    return { visual, plane, holder: deps?.toolHolder || null, bodyRoot: global.PlayerBodyTransformComposer?.getPlayerMesh?.() || deps?.playerMesh || null, source: 'runtime' };
+    return { visual, plane, holder, bodyRoot: global.PlayerBodyTransformComposer?.getPlayerMesh?.() || deps?.playerMesh || null, source: 'runtime' };
   }
 
   function currentDualState() {
