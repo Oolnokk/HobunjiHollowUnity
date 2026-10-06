@@ -19,7 +19,7 @@
     const lines = ['', SECTION];
     const dual = window.HobunjiDualWieldWeaponVisuals?.debugSnapshot?.(); // Exposes whether the duplicate renderer found the weapon when hands claim dual-wield ownership.
     lines.push(dual
-      ? `Dual wield: active=${dual.active} source=${dual.source || '-'} plane=${dual.originalPlaneName || '-'} idleBlend=${dual.idleBlend} latest="Runtime resolves the equipped weapon directly from its holder when the mesh map is absent."`
+      ? `Dual wield: active=${dual.active} source=${dual.source || '-'} plane=${dual.originalPlaneName || '-'} idleBlend=${dual.idleBlend} latest="Attached dual weapons survive temporary plane hiding during held-object render passes."`
       : 'Dual wield: visual module missing');
 
     if (parity) {
