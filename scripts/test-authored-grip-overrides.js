@@ -42,4 +42,10 @@ data.tools.bshuakauitl.primaryGrip.position.z = -9;
 listener?.();
 assert.equal(data.tools.bshuakauitl.primaryGrip.position.z, 0.05);
 
+// The runtime/editor hand-script loader must actually load the migration, after the grip module it patches.
+const loader = fs.readFileSync('docs/js/held-action-animations.js', 'utf8');
+const gripsAt = loader.search(/js\/hand-tool-grips\.js\?v=[A-Za-z0-9_-]+/);
+const overridesAt = loader.search(/js\/hand-tool-grip-authored-overrides\.js\?v=[A-Za-z0-9_-]+/);
+assert(gripsAt >= 0 && overridesAt > gripsAt, 'held-action-animations.js must load the authored grip overrides after hand-tool-grips.js');
+
 console.log('authored spear/bshuakauitl grip migration PASS');
