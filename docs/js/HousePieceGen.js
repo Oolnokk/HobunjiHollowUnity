@@ -48,9 +48,12 @@
   // ── Shingle GLB singleton ───────────────────────────────────────────────────
   var _tpl = null;      // { scene, bone, boneLength, boneFrameInverse }
   var _tplProm = null;
-  var _pendingShingleTint = null; // Applied after the shared GLB loads; used by every farmhouse/town roof.
-  var _appliedShingleTintKey = ''; // Prevents duplicate texture work when several building systems request the same PNG.
-  var _shingleTintGeneration = 0; // Rejects obsolete PNG callbacks after a newer roof finish is requested.
+  // Farm and town roofs share the template's mapped geometry but each get
+  // their own material copies, so one can be retinted without restyling the
+  // other. Callers that pass no variant (farmhouse, barns, tools) use 'farm'.
+  var SHINGLE_VARIANTS = ['farm', 'town'];
+  var _shingleVariants = {}; // variant -> { scene, meshPairs, appliedTintKey, tintGeneration }
+  var _pendingShingleTints = {}; // variant -> { pngPath, fillColor } requested before the GLB loaded.
   var _shingleSurfaceDebug = { ready: false, meshes: 0, surfaces: 0, fallbacks: 0, angleToleranceDeg: null, latestChange: 'The real shingle has six irregular sides: a 78-degree cutoff preserves its 79.4-degree end crease, and reversed coplanar cap triangles remain one side.' }; // Copied into the mobile Pixel Probe report.
 
   function _shingleTextureLog(message, level) {
@@ -66,7 +69,10 @@
       var loader = new THREE.GLTFLoader();
       loader.load(url, function (gltf) {
         _tpl = _analyzeShingle(gltf.scene);
-        if (_pendingShingleTint) tintShingleMaterial(_pendingShingleTint.pngPath, _pendingShingleTint.fillColor);
+        SHINGLE_VARIANTS.forEach(function (name) {
+          var pending = _pendingShingleTints[name];
+          if (pending) tintShingleMaterial(pending.pngPath, pending.fillColor, name);
+        });
         resolve(_tpl);
       }, undefined, reject);
     });
@@ -74,6 +80,39 @@
   }
 
   function shingleReady() { return !!_tpl; }
+
+  function _shingleVariantName(name) { return name === 'town' ? 'town' : 'farm'; }
+
+  // Lazily builds a variant: a clone of the template whose meshes keep the
+  // template geometry (so #939's six-sided UV mapping applies to every roof)
+  // but own their materials.
+  function _shingleVariant(name) {
+    if (!_tpl) return null;
+    name = _shingleVariantName(name);
+    if (_shingleVariants[name]) return _shingleVariants[name];
+    var scene = _tpl.scene.clone(true);
+    var baseMeshes = [], variantMeshes = [];
+    _tpl.scene.traverse(function (o) { if (o.isMesh) baseMeshes.push(o); });
+    scene.traverse(function (o) { if (o.isMesh) variantMeshes.push(o); });
+    var meshPairs = [];
+    variantMeshes.forEach(function (mesh, i) {
+      mesh.material = Array.isArray(mesh.material)
+        ? mesh.material.map(function (m) { return m && m.clone ? m.clone() : m; })
+        : (mesh.material && mesh.material.clone ? mesh.material.clone() : mesh.material);
+      if (baseMeshes[i]) meshPairs.push([baseMeshes[i], mesh]);
+    });
+    _shingleVariants[name] = { name: name, scene: scene, meshPairs: meshPairs, appliedTintKey: '', tintGeneration: 0 };
+    return _shingleVariants[name];
+  }
+
+  // Re-points every variant at the template's current (re)mapped geometry.
+  function _syncShingleVariantGeometry() {
+    SHINGLE_VARIANTS.forEach(function (name) {
+      var variant = _shingleVariants[name];
+      if (!variant) return;
+      variant.meshPairs.forEach(function (pair) { pair[1].geometry = pair[0].geometry; });
+    });
+  }
 
   function _mapShingleSurfaces(sceneObj) {
     var mapper = global.HobunjiSurfaceStretchUV; // Reuses the same connected-face recognition and PNG fitting as natural surfaces.
@@ -98,30 +137,32 @@
   // texture with a repo PNG retinted via the same adaptive shade fill used
   // for portrait/creature tinting (getShadeFillCanvas in portrait-utils.js,
   // loaded after this file — called lazily here since script load order puts
-  // this file first). _makeShingle's `_tpl.scene.clone(true)` shares material
-  // references with the template (THREE's Object3D/Mesh clone does not deep-
-  // clone materials), so tinting the template's material once retints every
-  // shingle instance — already placed or placed later.
-  function tintShingleMaterial(pngPath, fillColor) {
-    _pendingShingleTint = { pngPath: pngPath, fillColor: fillColor };
+  // this file first). Each roof variant ('farm' default, 'town') owns its
+  // materials; _makeShingle's `variant.scene.clone(true)` shares them by
+  // reference, so tinting a variant once retints every shingle of that
+  // variant — already placed or placed later — and leaves the other alone.
+  function tintShingleMaterial(pngPath, fillColor, variantName) {
+    variantName = _shingleVariantName(variantName);
+    _pendingShingleTints[variantName] = { pngPath: pngPath, fillColor: fillColor };
     if (!_tpl) return;
+    var variant = _shingleVariant(variantName);
     var tintKey = pngPath + '|' + (fillColor || '');
-    if (_appliedShingleTintKey === tintKey) return;
-    _appliedShingleTintKey = tintKey;
-    var generation = ++_shingleTintGeneration; // Identifies this asynchronous PNG request for success/failure callbacks.
+    if (variant.appliedTintKey === tintKey) return;
+    variant.appliedTintKey = tintKey;
+    var generation = ++variant.tintGeneration; // Identifies this asynchronous PNG request for success/failure callbacks.
     var mats = new Set();
-    _tpl.scene.traverse(function (o) {
+    variant.scene.traverse(function (o) {
       if (!o.isMesh || !o.material) return;
       (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) { if (m) mats.add(m); });
     });
-    if (!mats.size) { _appliedShingleTintKey = ''; return; }
+    if (!mats.size) { variant.appliedTintKey = ''; return; }
     function failed(error) {
-      if (generation !== _shingleTintGeneration) return;
-      _appliedShingleTintKey = '';
+      if (generation !== variant.tintGeneration) return;
+      variant.appliedTintKey = '';
       _shingleTextureLog('could not apply ' + pngPath + ': ' + (error && error.message || 'image load failed'), 'warn');
     }
     new THREE.TextureLoader().load(pngPath, function (tex) {
-      if (generation !== _shingleTintGeneration) { tex.dispose(); return; }
+      if (generation !== variant.tintGeneration) { tex.dispose(); return; }
       try {
         var rgb = fillColor && global.parseHexColor && global.parseHexColor(fillColor);
         var finalTex = tex;
@@ -143,7 +184,7 @@
           if ('roughness' in m) m.roughness = 1;
           m.needsUpdate = true;
         });
-        _shingleTextureLog('applied ' + pngPath + ' (' + mats.size + ' shared materials; baked vertex colors disabled)');
+        _shingleTextureLog('applied ' + pngPath + (fillColor ? ' tinted ' + fillColor : '') + ' to ' + variantName + ' roofs (' + mats.size + ' materials; baked vertex colors disabled)');
       } catch (error) { failed(error); }
     }, undefined, failed);
   }
@@ -579,7 +620,8 @@
   global.HousePieceGen = {
     buildGroup: buildGroup, buildGroupFromPiece: buildGroupFromPiece,
     loadShingleGlb: loadShingleGlb, shingleReady: shingleReady, tintShingleMaterial: tintShingleMaterial,
-    shingleSurfaceSnapshot: function () { return Object.assign({}, _shingleSurfaceDebug); },
+    shingleSurfaceSnapshot: function () { return Object.assign({}, _shingleSurfaceDebug, { variants: Object.keys(_shingleVariants), tints: Object.keys(_shingleVariants).reduce(function (out, name) { out[name] = _shingleVariants[name].appliedTintKey; return out; }, {}) }); },
+    shingleVariantScene: function (name) { var v = _shingleVariant(name); return v ? v.scene : null; }, // Diagnostics/tests: the material-owning template clone behind 'farm' or 'town' roofs.
     cutDoorPortal: cutDoorPortal, buildEntryTunnelGroup: buildEntryTunnelGroup,
     buildChimneyGroup: buildChimneyGroup,
   };
@@ -1076,9 +1118,10 @@
   }
 
   // GLB shingle instance — exact port of makeShingleInstance()
-  function _makeShingle(target, cfg, peakCenter) {
+  function _makeShingle(target, cfg, peakCenter, variantName) {
     if (!_tpl) return null;  // caller falls back to tube
-    if (!_tpl.surfacesReady) _tpl.surfacesReady = _mapShingleSurfaces(_tpl.scene);
+    if (!_tpl.surfacesReady && (_tpl.surfacesReady = _mapShingleSurfaces(_tpl.scene))) _syncShingleVariantGeometry();
+    var variant = _shingleVariant(variantName);
     var p       = _scalePlacement(target, cfg);
     var stretch = target.length / Math.max(0.001, _tpl.boneLength);
     var layer   = _layerSettings(target, cfg);
@@ -1086,7 +1129,7 @@
     var q = _targetQuat(tWithOrigin, cfg, peakCenter);
 
     var wrapper = new THREE.Group();
-    var clone   = _tpl.scene.clone(true);
+    var clone   = variant.scene.clone(true);
     clone.traverse(function (o) {
       if (String(o.name || '').toLowerCase() === 'shinglebone') o.visible = false;
     });
@@ -1140,13 +1183,13 @@
 
       for (var ti = 0; ti < targets.length; ti++) {
         var t  = targets[ti];
-        var s1 = _makeShingle(t, cfg, peakCenter) || _makeTube(t, cfg, matTube);
+        var s1 = _makeShingle(t, cfg, peakCenter, opts.shingleVariant) || _makeTube(t, cfg, matTube);
         faceGroup.add(s1);
         _markOutlineLayer(s1);
 
         if (cfg.secondLayer) {
           var t2 = _layer2Target(t, cfg);
-          var s2 = _makeShingle(t2, cfg, peakCenter) || _makeTube(t2, cfg, matTube);
+          var s2 = _makeShingle(t2, cfg, peakCenter, opts.shingleVariant) || _makeTube(t2, cfg, matTube);
           faceGroup.add(s2);
           _markOutlineLayer(s2);
         }

@@ -4342,6 +4342,7 @@ function spawnPreviewBuildings(group, merged, myGen) {
         const elevationY = TerrainPreview.NORMAL_TOP + (b.elevTier || 0) * TerrainPreview.PLATEAU_UNIT
           + TerrainPreview.sampleVisualHeight(merged.visualHeights, b.gridX + 0.5, b.gridZ + 0.5, merged.cols, merged.rows);
         const bgroup = HousePieceGen.buildGroupFromPiece(THREE, piece, b.gridX, b.gridZ, {
+          shingleVariant: 'town', // Matches the game's town/zone roofs.
           wallBuilder: wb, wbUsePlaceholder: true,
           wbOpts: b.wbOpts || _MAP_EDITOR_WB_DEFAULTS, wbGableOpts: b.wbGableOpts,
           rotationDeg: b.rotationDeg || 0, elevationY,

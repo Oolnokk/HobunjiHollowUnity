@@ -1803,6 +1803,7 @@
         const piece = await res.json();
         if (myGen !== _buildGeneration) return;
         const group = HousePieceGen.buildGroupFromPiece(THREE, piece, b.gridX, b.gridZ, {
+          shingleVariant: 'town', // Matches the game's town/zone roofs.
           wallBuilder: wb, wbUsePlaceholder: true,
           wbOpts: b.wbOpts || WB_DEFAULTS, wbGableOpts: b.wbGableOpts,
           rotationDeg: b.rotationDeg || 0, elevationY: TerrainPreview.NORMAL_TOP + (b.elevTier||0)*TerrainPreview.PLATEAU_UNIT

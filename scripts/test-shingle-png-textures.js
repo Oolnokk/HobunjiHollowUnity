@@ -13,9 +13,15 @@ const requests = []; // Controls success, failure, and out-of-order PNG response
 const logs = []; // Checks diagnostics reach the mobile-visible debug sink.
 let completeGlb; // Delays template loading to exercise a queued tint.
 let failCanvas = false; // Simulates canvas read failures while recoloring the PNG.
-const material = { vertexColors: true, metalness: 1, roughness: 0.5, color: { setHex(value) { this.value = value; } } }; // Models the authored shingle shell material.
-const scene = { traverse(fn) { fn({ isMesh: true, material, geometry: { getAttribute() { return {}; } } }); } }; // Keeps an existing UV attribute intact during template analysis.
-const clone = { material }; // Models Three's shared material references on already-placed shingles.
+function makeMaterial() { // Models the authored shingle shell material; clone() mirrors THREE.Material#clone.
+  return { vertexColors: true, metalness: 1, roughness: 0.5, color: { setHex(value) { this.value = value; } }, clone() { const copy = makeMaterial(); Object.assign(copy, this, { color: { setHex(value) { this.value = value; } } }); return copy; } };
+}
+function makeScene(mesh) { // Object3D#clone(true) shares geometry and material references with its source.
+  return { mesh, traverse(fn) { fn(this.mesh); }, clone() { return makeScene({ ...this.mesh }); } };
+}
+const geometry = { getAttribute() { return {}; } }; // Keeps an existing UV attribute intact during template analysis.
+const templateMaterial = makeMaterial();
+const scene = makeScene({ isMesh: true, material: templateMaterial, geometry });
 const window = {
   THREE: {
     GLTFLoader: class { load(url, done) { completeGlb = done; } },
@@ -32,13 +38,19 @@ const window = {
 }; // Supplies only the APIs used by the public shingle loading/tinting path.
 vm.runInNewContext(fs.readFileSync('docs/js/HousePieceGen.js', 'utf8'), { window });
 const api = window.HousePieceGen; // Exercises the renderer's actual public API.
+const variantMaterial = name => api.shingleVariantScene(name).mesh.material; // The material every placed shingle of that variant shares.
 api.tintShingleMaterial('roof.png', '#7d7355');
 api.loadShingleGlb('assets/models/');
 assert.strictEqual(requests.length, 0);
 completeGlb({ scene });
 assert.strictEqual(requests.length, 1);
 requests[0].done({ image: { width: 32, height: 32 } });
-assert.strictEqual(clone.material.map.image.width, 32);
+const material = variantMaterial('farm'); // Untagged callers (farmhouse, barns, tools) own the 'farm' roof variant.
+assert.strictEqual(material.map.image.width, 32);
+assert.notStrictEqual(material, templateMaterial, 'variants own copies; the template material is never restyled');
+assert.strictEqual(templateMaterial.vertexColors, true);
+assert.strictEqual(api.shingleVariantScene('town').mesh.geometry, geometry, 'town shares the mapped template geometry');
+assert.strictEqual(api.shingleVariantScene('farm').mesh.geometry, geometry, 'farm shares the mapped template geometry');
 assert.strictEqual(material.vertexColors, false);
 assert.strictEqual(material.metalness, 0);
 assert.strictEqual(material.roughness, 1);
@@ -75,4 +87,28 @@ assert.strictEqual(requests.length, 7, 'failed recoloring must be retryable');
 requests[6].done({ image: {} });
 assert(logs.some(entry => entry[1] === 'warn' && entry[0].includes('canvas read failed')));
 assert(logs.some(entry => entry[2] === 'render' && entry[0].includes('baked vertex colors disabled')));
+// Town roofs get their own finish without restyling farm roofs, and vice versa.
+const townBefore = requests.length;
+api.tintShingleMaterial('roof.png', '#141209', 'town');
+assert.strictEqual(requests.length, townBefore + 1, 'town tint is its own request');
+const farmMapBefore = variantMaterial('farm').map;
+requests[townBefore].done({ image: { town: true } });
+assert.strictEqual(variantMaterial('town').map.image.town, true);
+assert.strictEqual(variantMaterial('town').vertexColors, false);
+assert.strictEqual(variantMaterial('farm').map, farmMapBefore, 'retinting town must not touch farm roofs');
+api.tintShingleMaterial('roof.png', '#141209', 'town');
+assert.strictEqual(requests.length, townBefore + 1, 'identical town finish reuses its request');
+api.tintShingleMaterial('farm-only.png');
+requests[requests.length - 1].done({ image: { farm: true } });
+assert.strictEqual(variantMaterial('town').map.image.town, true, 'retinting farm must not touch town roofs');
+
+// Production callers: town/zone buildings and the town-preview tools request the town variant.
+const town = fs.readFileSync('docs/js/town-zone-buildings.js', 'utf8');
+assert.match(town, /tintShingleMaterial\([^)]*, TOWN_SHINGLE_FILL, 'town'\)/);
+assert.strictEqual((town.match(/shingleVariant: 'town'/g) || []).length, 4, 'every town/zone buildGroupFromPiece call uses the town variant');
+for (const tool of ['docs/tools/map-editor/index.html', 'docs/tools/cutscene-director/index.html']) {
+  assert.match(fs.readFileSync(tool, 'utf8'), /shingleVariant: 'town'/, tool + ' previews town roofs');
+}
+assert.match(fs.readFileSync('docs/js/HousePieceGen.js', 'utf8'), /_makeShingle\(t, cfg, peakCenter, opts\.shingleVariant\)/, 'roof builder forwards the caller variant');
+
 console.log('Shingle PNG material, queued tint, shared clones, request races, and retry diagnostics passed.');
