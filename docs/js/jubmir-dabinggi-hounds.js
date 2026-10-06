@@ -14,7 +14,7 @@
     activeHounds: 0,
     geneticsOverrideInstalled: false,
     lastError: null,
-    latestChange: 'Jubmir now carries two black-brown, golden-striped Dabinggi-hounds that use the normal animal companion AI around his live NPC walker; the opening rescue uses the same authored coat.',
+    latestChange: 'Hounds now spawn in-game: game.js exposes makeCreatureEntity/despawnCreature/cutscenePreviewActive on Combat.deps, and the pair only exists while Jubmir is in the player\'s current area. Jubmir now carries two black-brown, golden-striped Dabinggi-hounds that use the normal animal companion AI around his live NPC walker; the opening rescue uses the same authored coat.',
   };
 
   let timer = null; // Stores the lightweight scheduler poll started by install().
@@ -156,7 +156,8 @@
       const walker = findJubmirWalker(); // Active scheduler representation determines whether Jubmir is visibly present in this area.
       status.ownerPresent = !!walker;
       status.ownerArea = walker?.area || null;
-      if (!deps || !walker || cutsceneOwnsCreatures(deps)) {
+      const playerArea = deps?.getCurrentArea?.() ?? null; // Hounds spawn into the active scene, so they only exist while Jubmir shares the player's area.
+      if (!deps || !walker || (playerArea != null && walker.area !== playerArea) || cutsceneOwnsCreatures(deps)) {
         cleanup(deps);
         return false;
       }

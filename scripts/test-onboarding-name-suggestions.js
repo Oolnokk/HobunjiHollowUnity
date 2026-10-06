@@ -42,7 +42,7 @@ const context = {
 vm.createContext(context);
 for (const path of ['docs/js/name-advisor.js', 'docs/js/onboarding-random-name.js']) vm.runInContext(fs.readFileSync(path, 'utf8'), context);
 const suggest = context.window.hobunjiOnboardingRandomName.suggestNames;
-for (const species of ['kenkari', 'mao-ao', 'engh-sho', 'tletingan']) {
+for (const species of ['kenkari', 'mao-ao', 'engh-sho', 'tletingan', 'nuhongan']) { // Nuhongan are Tletingan-derived Slagothim and share their naming culture.
   const names = suggest('Benjamin', species, 'male');
   assert.ok(names.length > 0 && names.length <= 4, species);
   assert.equal(new Set(names.map(name => name.toLowerCase())).size, names.length);
