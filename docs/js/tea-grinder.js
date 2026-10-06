@@ -228,9 +228,14 @@
     document.head.appendChild(style);
     const layer = document.createElement('div');
     layer.id = 'teaGrinderLayer';
+    layer.setAttribute('data-ctrl-panel', '');
+    layer.setAttribute('role', 'dialog');
+    layer.setAttribute('aria-modal', 'true');
+    layer.setAttribute('aria-label', 'Tea Grinder');
     layer.setAttribute('aria-hidden', 'true');
     layer.innerHTML = `<section class="tea-grinder-panel"><div class="tea-grinder-head"><div><small>BANUBU'S PROCESSOR</small><h2>🍵 Tea Grinder</h2></div><button type="button" data-tea-close aria-label="Close">×</button></div><p class="tea-grinder-note">Choose exactly three herbs. The same trait-source math as Alchemy applies, but only beneficial reactions that translate into food buffs can become Tea Blends.</p><div class="tea-grinder-strip" data-tea-selected></div><div class="tea-grinder-grid"><div><h3>Herbs</h3><div class="tea-grinder-list" data-tea-reagents></div></div><div><h3>Possible Tea Blends</h3><div class="tea-grinder-outcomes" data-tea-outcomes></div></div></div><div class="tea-grinder-actions"><button type="button" data-tea-grind>Grind Tea Blend</button></div><pre class="tea-grinder-debug" data-tea-debug></pre></section>`;
     document.body.appendChild(layer);
+    layer.querySelector('[data-tea-close]')?.setAttribute('data-ctrl-cancel', '');
     layer.querySelector('[data-tea-close]')?.addEventListener('click', close);
     layer.querySelector('[data-tea-grind]')?.addEventListener('click', () => {
       const result = grind();
