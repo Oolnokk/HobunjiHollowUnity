@@ -141,18 +141,3 @@
     currentWeaponKey,
   });
 })();
-
-// Enchantment particles stay isolated from the attack-event bus itself; this
-// already-required combat bootstrap only loads their module so index.html does
-// not gain another ordering-sensitive script tag.
-(() => {
-  'use strict';
-  if (typeof document === 'undefined' || !document.createElement) return;
-  if (window.WeaponEnchantmentVFX || document.querySelector?.('script[data-hobunji-weapon-enchantment-vfx]')) return;
-  const script = document.createElement('script'); // Used to load the planar held-weapon VFX module exactly once.
-  script.src = 'js/combat/weapon-enchantment-vfx.js?v=20261006planar1';
-  script.async = false;
-  script.dataset.hobunjiWeaponEnchantmentVfx = 'true';
-  script.onerror = () => window.__farmLog?.('[enchantment-vfx] failed to load weapon-enchantment-vfx.js', 'warn', 'combat');
-  (document.head || document.documentElement)?.appendChild?.(script);
-})();
