@@ -1,0 +1,210 @@
+name: Branch planar VFX reviewed fixes
+
+on:
+  push:
+    branches:
+      - feature/enchantment-planar-metal-vfx
+
+permissions:
+  contents: write
+
+jobs:
+  fix-reviewed-vfx:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply reviewed integration fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          vfx_path = Path('docs/js/combat/weapon-enchantment-vfx.js')
+          vfx = vfx_path.read_text()
+
+          vfx = vfx.replace(
+              "  let activeSnapshot = null; // Used by updateEmitters()/debugSnapshot() as the latest resolved weapon + planar visual state.\n  let loadoutHookInstalled = false; // Used by installLoadoutHook() to wrap CombatLoadoutUI.render exactly once.\n  let updateLoopInstalled = false; // Used by installUpdateLoop() to avoid duplicate scheduler/RAF registration.",
+              "  let activeSnapshot = null; // Used by updateEmitters()/debugSnapshot() as the latest resolved weapon + planar visual state.\n  let scanGeneration = 0; // Used by update()/forceRefresh() so an older async mask scan can never overwrite a newer weapon/config snapshot.\n  let updateLoopInstalled = false; // Used by installUpdateLoop() to avoid duplicate scheduler registration."
+          )
+
+          old_direct = """  function directHeldVisual(key) {
+    const handDeps = window.ProceduralHandAttachments?.gameDeps; // Used to reach the exact live equipment mesh map already shared by hand/dual-wield runtime.
+    const runtimeState = window.WeaponToolStances?.getRuntimeState?.() || window.WeaponToolStances?.debugSnapshot?.() || null; // Used to identify the active held slot without assuming 'weapon'.
+    const activeSlot = runtimeState?.activeSlot || handDeps?.getActiveTool?.() || null; // Used as the first toolMeshMap lookup key.
+    const meshMap = handDeps?.toolMeshMap; // Used to resolve the exact live makeToolPlaneMesh group instead of guessing from scene names.
+    let visual = activeSlot && (meshMap?.get?.(activeSlot) || meshMap?.[activeSlot]); // Used as the normal player-held visual.
+    if (visual?.userData?.itemKey === key && visual?.userData?.toolPlane) return visual;
+    const candidates = meshMap instanceof Map ? [...meshMap.values()] : Object.values(meshMap || {}); // Used as an equipment-slot fallback if the active-slot snapshot lags one frame.
+    visual = candidates.find(candidate => candidate?.userData?.itemKey === key && candidate?.userData?.toolPlane) || null;
+    return visual;
+  }
+"""
+          new_direct = """  function directHeldVisual(key) {
+    const handDeps = window.ProceduralHandAttachments?.gameDeps; // Used to reach the same live player-held seams as hand grips and dual-wield presentation.
+    const runtimeState = window.WeaponToolStances?.getRuntimeState?.() || window.WeaponToolStances?.debugSnapshot?.() || null; // Used to identify the active held slot without assuming 'weapon'.
+    const activeSlot = runtimeState?.activeSlot || handDeps?.getActiveTool?.() || null; // Used as the first optional toolMeshMap lookup key.
+    const meshMap = handDeps?.toolMeshMap; // Some runtime injections expose this map; others intentionally expose only toolHolder.
+    let visual = activeSlot && (meshMap?.get?.(activeSlot) || meshMap?.[activeSlot]); // Fast path when the equipment mesh map is present.
+    if (visual?.userData?.itemKey === key && visual?.userData?.toolPlane?.isObject3D) return visual;
+    const candidates = meshMap instanceof Map ? [...meshMap.values()] : Object.values(meshMap || {}); // Used as an equipment-slot fallback if the active-slot snapshot lags one frame.
+    visual = candidates.find(candidate => candidate?.userData?.itemKey === key && candidate?.userData?.toolPlane?.isObject3D) || null;
+    if (visual) return visual;
+    const holder = handDeps?.toolHolder; // Real gameplay may omit toolMeshMap; the holder child is the canonical fallback used by dual-wield-weapon-visuals.js.
+    return holder?.children?.find(child => child?.visible !== false && child?.userData?.itemKey === key && child?.userData?.toolPlane?.isObject3D)
+      || holder?.children?.find(child => child?.visible !== false && child?.userData?.toolPlane?.isObject3D)
+      || null;
+  }
+"""
+          if old_direct not in vfx:
+              raise SystemExit('directHeldVisual block did not match expected source')
+          vfx = vfx.replace(old_direct, new_direct)
+
+          vfx = vfx.replace(
+              "          resolve(mask);\n        } catch (error) {\n          lastEvent = `mask failed: ${error?.message || error}`;\n          resolve(null);",
+              "          resolve(mask);\n        } catch (error) {\n          MASK_CACHE.delete(url); // A transient decode/canvas failure must not permanently poison this sprite for the rest of the session.\n          lastEvent = `mask failed: ${error?.message || error}`;\n          resolve(null);"
+          )
+          vfx = vfx.replace(
+              "      image.onerror = () => {\n        lastEvent = `mask image failed: ${spritePath}`;\n        resolve(null);",
+              "      image.onerror = () => {\n        MASK_CACHE.delete(url); // Allow a later scan to retry a transient mobile/network asset failure.\n        lastEvent = `mask image failed: ${spritePath}`;\n        resolve(null);"
+          )
+
+          old_scan = """    if (now - lastScanAt >= SCAN_INTERVAL_MS) {
+      lastScanAt = now;
+      resolveActiveSnapshot().then(snapshot => {
+        if (!snapshot) {
+          activeSnapshot = null;
+          clearAllEmitters();
+          return;
+        }
+        snapshot.updatedAt = performance.now();
+        activeSnapshot = snapshot;
+        reconcileEmitters(snapshot.planes || [], snapshot);
+        lastEvent = snapshot.mask?.matchedMetalPixels
+          ? `${snapshot.weaponKey}: ${snapshot.mask.matchedMetalPixels} metal px, ${snapshot.planes.length} plane(s)`
+          : `${snapshot.weaponKey}: no matched metal pixels`;
+      }).catch(error => { lastEvent = `scan failed: ${error?.message || error}`; });
+    }
+"""
+          new_scan = """    if (now - lastScanAt >= SCAN_INTERVAL_MS) {
+      lastScanAt = now;
+      const generation = ++scanGeneration; // Captured by this async scan; any newer scan/config refresh invalidates its eventual result.
+      resolveActiveSnapshot().then(snapshot => {
+        if (generation !== scanGeneration) return;
+        if (!snapshot) {
+          activeSnapshot = null;
+          clearAllEmitters();
+          return;
+        }
+        snapshot.updatedAt = performance.now();
+        activeSnapshot = snapshot;
+        reconcileEmitters(snapshot.planes || [], snapshot);
+        lastEvent = snapshot.mask?.matchedMetalPixels
+          ? `${snapshot.weaponKey}: ${snapshot.mask.matchedMetalPixels} metal px, ${snapshot.planes.length} plane(s)`
+          : `${snapshot.weaponKey}: no matched metal pixels`;
+      }).catch(error => { if (generation === scanGeneration) lastEvent = `scan failed: ${error?.message || error}`; });
+    }
+"""
+          if old_scan not in vfx:
+              raise SystemExit('async scan block did not match expected source')
+          vfx = vfx.replace(old_scan, new_scan)
+
+          vfx = vfx.replace(
+              "    lastEvent = `saved ${key}: ${next.alignment}/${next.dyeId}/${next.effectId}`;\n    activeSnapshot = null;\n    return true;",
+              "    lastEvent = `saved ${key}: ${next.alignment}/${next.dyeId}/${next.effectId}`;\n    scanGeneration++; // Invalidate any in-flight scan that still reflects the old visual choice.\n    lastScanAt = -Infinity;\n    activeSnapshot = null;\n    clearAllEmitters();\n    return true;"
+          )
+
+          vfx = vfx.replace(
+              "      const alignmentSelect = makeSelect(state.alignment, active.map(alignment => ({ value: alignment, label: ALIGNMENTS[alignment].label })), value => {\n        if (setChoice(key, 'alignment', value)) window.CombatLoadoutUI?.render?.();\n      });",
+              "      const alignmentSelect = makeSelect(state.alignment, active.map(alignment => ({ value: alignment, label: ALIGNMENTS[alignment].label })), value => {\n        if (setChoice(key, 'alignment', value)) window.CombatLoadoutUI?.render?.('weaponEnchantmentVfxAlignment');\n      });\n      alignmentSelect.id = 'weaponEnchantmentVfxAlignment';"
+          )
+          vfx = vfx.replace(
+              "      const colorSelect = makeSelect(state.dyeId, alignmentDef.dyeIds.map(dyeId => ({ value: dyeId, label: dyeLabel(dyeId) })), value => {\n        if (setChoice(key, 'dyeId', value)) window.CombatLoadoutUI?.render?.();\n      });",
+              "      const colorSelect = makeSelect(state.dyeId, alignmentDef.dyeIds.map(dyeId => ({ value: dyeId, label: dyeLabel(dyeId) })), value => {\n        if (setChoice(key, 'dyeId', value)) window.CombatLoadoutUI?.render?.('weaponEnchantmentVfxColor');\n      });\n      colorSelect.id = 'weaponEnchantmentVfxColor';"
+          )
+          vfx = vfx.replace(
+              "      const effectSelect = makeSelect(state.effectId, alignmentDef.effects.map(effect => ({ value: effect.id, label: effect.label })), value => {\n        if (setChoice(key, 'effectId', value)) window.CombatLoadoutUI?.render?.();\n      });",
+              "      const effectSelect = makeSelect(state.effectId, alignmentDef.effects.map(effect => ({ value: effect.id, label: effect.label })), value => {\n        if (setChoice(key, 'effectId', value)) window.CombatLoadoutUI?.render?.('weaponEnchantmentVfxEffect');\n      });\n      effectSelect.id = 'weaponEnchantmentVfxEffect';"
+          )
+
+          hook_start = vfx.find("  function installLoadoutHook() {")
+          hook_end = vfx.find("\n  async function copyDebug", hook_start)
+          if hook_start < 0 or hook_end < 0:
+              raise SystemExit('installLoadoutHook block not found')
+          vfx = vfx[:hook_start] + vfx[hook_end:]
+
+          old_bootstrap = """  function bootstrap() {
+    installUpdateLoop();
+    if (!installLoadoutHook()) {
+      const timer = setInterval(() => { // Used only during parser startup until combat-loadout-ui.js has created its public API.
+        if (!installLoadoutHook()) return;
+        clearInterval(timer);
+        if (document.readyState !== 'loading') window.CombatLoadoutUI?.render?.();
+      }, 80);
+    } else if (document.readyState !== 'loading') {
+      window.CombatLoadoutUI?.render?.();
+    }
+  }
+"""
+          new_bootstrap = """  function bootstrap() {
+    installUpdateLoop();
+  }
+"""
+          if old_bootstrap not in vfx:
+              raise SystemExit('bootstrap block did not match expected source')
+          vfx = vfx.replace(old_bootstrap, new_bootstrap)
+          vfx = vfx.replace(
+              "    forceRefresh() { lastScanAt = -Infinity; activeSnapshot = null; },",
+              "    forceRefresh() { scanGeneration++; lastScanAt = -Infinity; activeSnapshot = null; clearAllEmitters(); },"
+          )
+          vfx_path.write_text(vfx)
+
+          ui_path = Path('docs/js/combat/combat-loadout-ui.js')
+          ui = ui_path.read_text()
+          old_ui = "    window.EnchantmentSystem?.renderLoadoutUI?.(pane, toolKey); // Base/Flourish slots, planar alignment, Immundanity + diagnostics (js/combat/combat-enchantments.js).\n    renderRangedLoadout(pane);"
+          new_ui = "    window.EnchantmentSystem?.renderLoadoutUI?.(pane, toolKey); // Base/Flourish slots, planar alignment, Immundanity + diagnostics (js/combat/combat-enchantments.js).\n    window.WeaponEnchantmentVFX?.renderControls?.(pane, toolKey); // Enchantment visuals integrate into the loadout's authoritative render path so tab/DOMContentLoaded/internal rerenders cannot bypass them.\n    renderRangedLoadout(pane);"
+          if old_ui not in ui:
+              raise SystemExit('combat-loadout-ui render seam did not match expected source')
+          ui_path.write_text(ui.replace(old_ui, new_ui))
+
+          index_path = Path('docs/index.html')
+          index = index_path.read_text()
+          old_token = 'js/combat/combat-loadout-ui.js?v=20260930h75d45df'
+          new_token = 'js/combat/combat-loadout-ui.js?v=20261006planarreview1'
+          if old_token not in index:
+              raise SystemExit('combat-loadout-ui cache token did not match expected source')
+          index_path.write_text(index.replace(old_token, new_token, 1))
+
+          test_path = Path('scripts/test-weapon-enchantment-vfx.js')
+          test = test_path.read_text()
+          test = test.replace(
+              "const indexSource = fs.readFileSync(indexPath, 'utf8'); // Used to protect the explicit combat-module load order.\n",
+              "const indexSource = fs.readFileSync(indexPath, 'utf8'); // Used to protect the explicit combat-module load order.\nconst loadoutUiSource = fs.readFileSync(path.resolve(__dirname, '../docs/js/combat/combat-loadout-ui.js'), 'utf8'); // Used to verify aura controls are part of the loadout's authoritative render path.\n"
+          )
+          marker = "assert(vfxSource.includes('weaponEnchantmentVisuals'), 'semi-customizable color/effect selections must persist per weapon in gearInventory.');\n"
+          extra = "assert(vfxSource.includes('handDeps?.toolHolder'), 'held-weapon resolution must support the real runtime dependency bag when toolMeshMap is absent.');\nassert(vfxSource.includes('generation !== scanGeneration'), 'older async mask scans must be rejected after a newer weapon/config scan starts.');\nassert(!vfxSource.includes('function installLoadoutHook()'), 'VFX must not monkeypatch CombatLoadoutUI.render; the owner render path calls it directly.');\nassert(loadoutUiSource.includes('window.WeaponEnchantmentVFX?.renderControls?.(pane, toolKey)'), 'the authoritative loadout render must always inject the enchantment aura controls.');\nassert(vfxSource.includes("alignmentSelect.id = 'weaponEnchantmentVfxAlignment'") && vfxSource.includes("colorSelect.id = 'weaponEnchantmentVfxColor'") && vfxSource.includes("effectSelect.id = 'weaponEnchantmentVfxEffect'"), 'aura controls need stable ids so controller focus survives loadout rerenders.');\n"
+          if marker not in test:
+              raise SystemExit('focused test insertion marker missing')
+          test = test.replace(marker, marker + extra)
+          test_path.write_text(test)
+          PY
+
+          node scripts/test-weapon-enchantment-vfx.js
+          node scripts/test-no-cache-token-pins.js
+          node scripts/test-runtime-frame-ownership.js
+          node scripts/test-controller-experience.js
+          node scripts/test-dual-wield-weapon-visuals.js
+          git diff --check
+      - name: Commit reviewed fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/index.html docs/js/combat/combat-loadout-ui.js docs/js/combat/weapon-enchantment-vfx.js scripts/test-weapon-enchantment-vfx.js
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "Fix reviewed enchantment VFX integration"
+          git push origin HEAD:feature/enchantment-planar-metal-vfx
