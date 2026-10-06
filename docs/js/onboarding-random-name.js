@@ -103,19 +103,48 @@
     }
   }
 
+  function editDistance(a, b) {
+    const previous = Array.from({ length: b.length + 1 }, (_, i) => i); // Dynamic-programming row used to count spelling edits.
+    for (let i = 1; i <= a.length; i += 1) {
+      let diagonal = previous[0];
+      previous[0] = i;
+      for (let j = 1; j <= b.length; j += 1) {
+        const above = previous[j];
+        previous[j] = Math.min(previous[j] + 1, previous[j - 1] + 1, diagonal + (a[i - 1] === b[j - 1] ? 0 : 1));
+        diagonal = above;
+      }
+    }
+    return previous[b.length];
+  }
+
+  function suggestionRank(name, idea, originalIndex) {
+    const candidate = String(name || '').toLowerCase(); // Case-folded spelling used only for ranking.
+    const source = String(idea || '').toLowerCase(); // Keeps edit comparison independent of display capitalization.
+    const distance = editDistance(candidate, source); // Counts substitutions, insertions, and removals equally.
+    const sameLength = candidate.length === source.length; // Elevates spelling-like substitutions over added/removed letters.
+    const sharedPositions = Math.min(candidate.length, source.length); // Bounds positional comparison for length-changing candidates.
+    let substitutions = 0;
+    for (let i = 0; i < sharedPositions; i += 1) if (candidate[i] !== source[i]) substitutions += 1;
+    const lengthChange = Math.abs(candidate.length - source.length); // Distinguishes length edits from character swaps.
+    return { name, sameLength, distance, lengthChange, substitutions, originalIndex };
+  }
+
   function suggestNames(text, speciesId, gender, maxLength = 32) {
     const speciesKeys = { kenkari: 'kenkari', 'mao-ao': 'mao', 'engh-sho': 'engh', tletingan: 'slagothim', nuhongan: 'slagothim', slagothim: 'slagothim' }; // Maps the creator's species IDs to the original advisor cultures; Nuhongan are Tletingan-derived Slagothim.
     const speciesKey = speciesKeys[normalizeSpecies(speciesId)]; // Selects only cultures whose phonology the advisor actually knows.
     const idea = String(text || '').slice(0, maxLength).trim(); // Bounds work to the name field's limit and ignores blank/nonalphabetic input.
     if (!speciesKey || !/[a-z]/i.test(idea.normalize('NFD')) || !window.HobunjiNameAdvisor) return [];
-    const options = window.HobunjiNameAdvisor.makeIdeaOptions(speciesKey, speciesKey === 'slagothim' ? 'given' : 'first', idea, { gender: normalizeGender(gender) }); // Reuses the old editor's given-name suggestion rules.
+    const options = window.HobunjiNameAdvisor.makeIdeaOptions(speciesKey, speciesKey === 'slagothim' ? 'given' : 'first', idea, { gender: normalizeGender(gender) }); // Reuses each culture's existing phonology and naming rules.
     const seen = new Set([idea.toLowerCase()]); // Removes duplicate suggestions and the name already in the field.
-    return options.map(option => option.label).filter(name => {
-      const key = name.toLowerCase(); // Compares options without case-only differences.
+    return options.map((option, originalIndex) => ({ name: option.label, originalIndex })).filter(({ name }) => {
+      const key = String(name || '').toLowerCase(); // Compares options without case-only differences.
       if (!name || name.length > maxLength || seen.has(key)) return false;
       seen.add(key);
       return true;
-    }).slice(0, 4);
+    }).map(({ name, originalIndex }) => suggestionRank(name, idea, originalIndex))
+      .sort((a, b) => Number(b.sameLength) - Number(a.sameLength) || a.distance - b.distance || a.lengthChange - b.lengthChange || a.substitutions - b.substitutions || a.originalIndex - b.originalIndex)
+      .slice(0, 4)
+      .map(entry => entry.name);
   }
 
   function refreshSuggestions(overlay, input, suggestions) {
