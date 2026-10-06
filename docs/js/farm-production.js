@@ -1,6 +1,8 @@
 (() => {
   'use strict';
   const catalog = window.FARM_SPECIALIZATIONS_CONFIG.buildings; // One plan/asset/processor definition per family and tier.
+  const STARTER_ENTRANCE_WEST_COL = 16; // Starter specialty structures use this as the exclusive east edge so they stay west of the north entrance road.
+  const STARTER_SCAN_ROW = 7; // Starter placement keeps the established north/south offset while changing only which side of the entrance receives facilities.
   let deps = null; // Injected farm scene, inventory, calendar, placement and persistence authorities.
   let buildings = []; // Live production entries; serialized alongside the existing farm layout.
   let placement = null; // Farm-map placement or move request owned by this module.
@@ -78,22 +80,38 @@
     for (const entry of buildings) for (const result of entry.ready) window.ItemProcessing.ensureProcessedItemDef(result); // Saved finished goods remain registered even when their input queue is empty.
     ensureStarters(); tick();
   }
+  function findStarterLocation(width, height, excludeId = null) {
+    const eastEdge = Math.min(deps.COLS, STARTER_ENTRANCE_WEST_COL); // Entire specialty-building footprint must stop before entrance-road column 16.
+    for (let row = STARTER_SCAN_ROW; row + height <= deps.ROWS; row++) {
+      for (let col = eastEdge - width; col >= 0; col--) {
+        if (window.FarmBuildings.canPlaceAt(col, row, width, height, excludeId)) return { col, row };
+      }
+    }
+    return null;
+  }
+  function ensureStarterBarnWest() {
+    const result = window.FarmBuildings.ensureStarterBarn('medium', 'starter_barnMedium'); // Existing barn authority still creates/restores the canonical starter barn.
+    if (!result.ok) return result;
+    const barn = result.entry; // Used to enforce the preset-layout policy before the attached incubator is installed.
+    if (barn.col + barn.w <= STARTER_ENTRANCE_WEST_COL) return result;
+    const location = findStarterLocation(barn.w, barn.h, barn.id); // Relocates legacy east-biased starter placement using the normal collision authority.
+    if (!location) return { ok: false, message: 'No clear ground west of the farm entrance for the starter barn.' };
+    const moved = window.FarmBuildings.move(barn.id, location.col, location.row); // Normal move path keeps footprints, meshes, connections and saves coherent.
+    return moved.ok ? { ok: true, entry: barn } : moved;
+  }
   function ensureStarters() {
     const { meta, world } = window.FarmWorldSettings.read(); // Pending starter list acts as the once-only grant marker.
     if (!world?.farmStarterBuildings?.length) return;
     const pending = []; // Failed placements remain pending; never silently discard starter buildings.
     for (const key of world.farmStarterBuildings) {
       if (key === 'barnMedium' || key === 'barnIncubatorSmall') {
-        const result = key === 'barnMedium' ? window.FarmBuildings.ensureStarterBarn('medium','starter_barnMedium') : window.BarnIncubator.ensureStarterIncubator('starter_barnMedium','small'); // Completed Ranch facilities use existing barn/addition authorities.
+        const result = key === 'barnMedium' ? ensureStarterBarnWest() : window.BarnIncubator.ensureStarterIncubator('starter_barnMedium','small'); // Ranch facilities stay west because the barn is relocated before its attached incubator is created.
         if (!result.ok) { pending.push(key); lastError = result.message; }
         continue;
       }
       if (buildings.some(entry => entry.id === 'starter_' + key)) continue;
       const definition = catalog[key]; // Authored starter building chosen at world creation.
-      let location = null; // First clear rectangle discovered near the farmhouse.
-      for (let row = 7; row < deps.ROWS - definition.h && !location; row++) for (let col = 20; col < deps.COLS - definition.w; col++) {
-        if (canPlace(key, col, row)) { location = { col, row }; break; }
-      }
+      const location = findStarterLocation(definition.w, definition.h); // Scan from beside the entrance toward the west edge, never across the entrance road/camera lane.
       if (!location) { pending.push(key); continue; }
       const entry = { id: 'starter_' + key, key, ...location, queue: [], ready: [], nextAt: null, water: 0 }; // Supplied completed structure, with an empty rainwater tank.
       buildings.push(entry); window.FarmBuildings.clearFootprint(entry.col, entry.row, definition.w, definition.h); spawn(entry);
@@ -236,7 +254,7 @@
     button('Close', () => modal.remove()).setAttribute('data-ctrl-cancel', '');
     const debug = document.createElement('details'); // Mobile-readable state; contains the most recent feature change.
     const heading = document.createElement('summary'); heading.textContent = 'Production diagnostics'; heading.setAttribute('tabindex', '0'); debug.append(heading);
-    const text = document.createElement('pre'); text.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere'; text.textContent = JSON.stringify({ mostRecentChange: 'Facility menus support controller navigation: left/right changes ingredient or quantity, confirm activates actions, and Back closes.', worldTime: now(), building: serialize().find(record => record.id === id), lastError }, null, 2); debug.append(text); panel.append(debug);
+    const text = document.createElement('pre'); text.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere'; text.textContent = JSON.stringify({ mostRecentChange: 'Starting-specialization barns, mills, silos and processor buildings now stay wholly west of the north farm entrance; farmhouse placement is unchanged.', starterPlacement: { westOfColumn: STARTER_ENTRANCE_WEST_COL, firstRow: STARTER_SCAN_ROW }, worldTime: now(), building: serialize().find(record => record.id === id), lastError }, null, 2); debug.append(text); panel.append(debug);
     modal.append(panel); document.body.append(modal);
   }
   function connectedCrops(entry, grid) {
