@@ -20,7 +20,7 @@
   <script src="js/GLTFLoader.js?v=20260712d"></script>
   <script src="js/WallBuilder.js?v=20261006h9c26ecb"></script>
   <script src="js/HousePieceGen.js?v=20261006h1036239&window=20260926rebase1"></script>
-  <script src="js/interior-scene-builder.js?v=20260930globalground2&window=20260926rebase1"></script>
+  <script src="js/interior-scene-builder.js?v=20261006h6327b82&window=20260926rebase1"></script>
   <script src="js/building-door.js?v=20260725a"></script>
   <script src="js/tile-pathfinding.js?v=20260808a"></script>
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
@@ -400,7 +400,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261004h71c5a26&surfaceUv=20261006h24ab7dd"></script>
+  <script src="js/house-pieces.js?v=20261004h71c5a26&surfaceUv=20261006cliffparity1"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -704,7 +704,7 @@
        window.*?.init(...) calls near the bottom of game.js run), and later
        calls window.BorderTerrain.buildTownBorderTerrain() when the town
        scene is built. -->
-  <script src="js/border-terrain.js?v=20260807a"></script>
+  <script src="js/border-terrain.js?v=20261006he564e6d"></script>
   <!-- Farm-only road paving and border reshaping. These must be explicit
        parser-time dependencies after BorderTerrain: loading them indirectly
        from house-pieces.js ran the cliff adapter before BorderTerrain existed,

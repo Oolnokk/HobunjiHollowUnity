@@ -22,6 +22,8 @@
     missingUvsAfter: 0,
     plateauBuildsCaptured: 0,
     plateauRebuildsCaptured: 0,
+    townBorderBuildsCaptured: 0,
+    borderMeshesFarmFinished: 0,
     errors: 0,
     recent: [],
   }; // Used by snapshot() and the in-game render log to verify wilderness cliff parity without DevTools.
@@ -303,16 +305,40 @@
     return api;
   }
 
+  // Border cliff skins are separate meshes laid over a grass base that still
+  // covers the same steep cells, exactly like the farm border. Run the farm's
+  // own finishing step on them (rock material, shell skipped, coplanar base
+  // triangles removed) before the shared 6u final surface pass.
+  function finishBorderLikeFarm(meshes) {
+    const farmCliff = window.FarmCliffRockOutline; // Same post-create step farm-border-cliff-edge.js runs on the farm's skins.
+    if (typeof farmCliff?.applyRockMaterialAndTextureOutline !== 'function') return 0;
+    const changed = farmCliff.applyRockMaterialAndTextureOutline(meshes);
+    stats.borderMeshesFarmFinished += changed;
+    return changed;
+  }
+
   function patchBorderTerrain(api) {
     if (!api || api.__wildernessCliffSurfaceParityWrapped) return api;
-    const original = api.buildZoneBorderTerrain; // Used to target shared wilderness boundaries without changing farm/town builders.
+    const original = api.buildZoneBorderTerrain; // Wilderness zone boundaries.
     if (typeof original === 'function') {
       api.buildZoneBorderTerrain = function (scene, ...args) {
         const before = scene?.children?.length || 0; // Used to capture the zone border's grass base + cliff skins synchronously.
         const result = original.call(this, scene, ...args);
         const mapId = String(args[2] || 'wilderness'); // Used only to identify the boundary's zone in mobile diagnostics.
-        scheduleFinalSurfacePass(captureNewMeshes(scene, before), `zone-border:${mapId}`);
+        const meshes = captureNewMeshes(scene, before);
+        finishBorderLikeFarm(meshes);
+        scheduleFinalSurfacePass(meshes, `zone-border:${mapId}`);
         return result;
+      };
+    }
+    const originalTown = api.buildTownBorderTerrain; // Town boundary; its scene comes from BorderTerrain's deps, so capture its Scene.add calls instead.
+    if (typeof originalTown === 'function') {
+      api.buildTownBorderTerrain = function (...args) {
+        const capture = runCapturingSceneAdds(() => originalTown.apply(this, args));
+        stats.townBorderBuildsCaptured++;
+        finishBorderLikeFarm(capture.meshes);
+        scheduleFinalSurfacePass(capture.meshes, 'town-border');
+        return capture.result;
       };
     }
     api.__wildernessCliffSurfaceParityWrapped = true;
