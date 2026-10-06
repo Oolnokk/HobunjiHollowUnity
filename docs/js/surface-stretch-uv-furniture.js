@@ -125,7 +125,7 @@
     return { triangles, vertexPositions, edgeToTriangles };
   }
 
-  function segmentSurfaceIslands(topology, splitAngleDeg) {
+  function segmentSurfaceIslands(topology, splitAngleDeg, splitAtThreshold, ignoreReversedCoplanarFaces) {
     const triangles = topology.triangles; // Used as the face set consumed by the furniture-style flood fill.
     const cosThreshold = Math.cos(THREE.MathUtils.degToRad(splitAngleDeg)); // Used as the adjacent-face normal similarity threshold.
     const neighbors = Array.from({ length: triangles.length }, () => new Set()); // Used as each triangle's edge-sharing neighbor set.
@@ -150,7 +150,11 @@
         for (const neighborIndex of neighbors[currentIndex]) {
           if (visited[neighborIndex]) continue;
           const neighbor = triangles[neighborIndex]; // Used as the candidate adjacent face.
-          if (current.normal.dot(neighbor.normal) + 1e-7 < cosThreshold) continue;
+          let similarity = current.normal.dot(neighbor.normal); // Uses geometric face normals rather than smoothed vertex normals for the side boundary.
+          // Concave GLB end-cap fans can contain reversed, nearly coplanar
+          // triangles. Their winding is not a physical crease in that side.
+          if (ignoreReversedCoplanarFaces && similarity < -Math.cos(THREE.MathUtils.degToRad(10))) similarity = -similarity;
+          if (splitAtThreshold ? similarity <= cosThreshold + 1e-7 : similarity + 1e-7 < cosThreshold) continue;
           visited[neighborIndex] = 1;
           stack.push(neighborIndex);
         }
@@ -439,6 +443,18 @@
       const extraLoops = loops.filter(loop => loop !== outerLoop); // Used to keep holes from collapsing during relaxation.
       relaxInteriorUvs(data, outerLoop, extraLoops, uvByKey);
     }
+    if (options.avoidCollapsedUvs && !usedFallback) {
+      for (const triangleIndex of island.triangleIndices) {
+        const triangle = topology.triangles[triangleIndex]; // Ignores the GLB's effectively zero-area cap triangle when checking PNG coverage.
+        if (triangle.area <= 1e-8) continue;
+        const [a, b, c] = triangle.keys.map(key => uvByKey.get(key)); // Checks whether square-perimeter fitting flattened a real irregular corner.
+        const uvArea = Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1])); // A real surface triangle must sample an area of the PNG rather than a line.
+        if (uvArea > 1e-10) continue;
+        fallbackProjectedIsland(data, uvByKey);
+        usedFallback = true;
+        break;
+      }
+    }
     const edgeScale = preserveEdgeScale(data, uvByKey, options); // Used after the continuous unwrap so only the center absorbs scale beyond the native PNG size.
     for (const triangleIndex of island.triangleIndices) {
       const triangle = topology.triangles[triangleIndex]; // Used to write solved logical UVs back to this triangle's independent corners.
@@ -455,15 +471,17 @@
     const referenceRaw = Number(options.edgeReferenceWorldSize ?? options.maxPatchWorldSize); // Used to treat the old patch-size hint as a compatibility alias for native one-PNG scale.
     const edgeSourceFraction = Number.isFinite(sourceEdgeRaw) ? Math.max(0, Math.min(0.495, sourceEdgeRaw)) : DEFAULT_EDGE_SOURCE_FRACTION; // Used by every island's perpendicular edge preservation.
     const edgeReferenceWorldSize = Number.isFinite(referenceRaw) ? Math.max(0.5, referenceRaw) : DEFAULT_EDGE_REFERENCE_WORLD_SIZE; // Used by every island to convert the source border into fixed world thickness.
-    return { edgeSourceFraction, edgeReferenceWorldSize };
+    return { edgeSourceFraction, edgeReferenceWorldSize, avoidCollapsedUvs: options.avoidCollapsedUvs === true };
   }
 
   function mapGeometry(sourceGeometry, options = {}) {
     if (!sourceGeometry?.getAttribute?.('position')) return sourceGeometry;
     const splitAngleDeg = Number.isFinite(Number(options.angleToleranceDeg)) ? Math.max(1, Math.min(89, Number(options.angleToleranceDeg))) : DEFAULT_SPLIT_ANGLE_DEG; // Used as the furniture-style adjacent-face split threshold.
+    const splitAtThreshold = options.splitAtThreshold === true; // Lets shingles treat the exact authored cutoff as a new side while retaining the default natural-surface behavior.
+    const ignoreReversedCoplanarFaces = options.ignoreReversedCoplanarFaces === true; // Repairs surface recognition for malformed cap winding without changing triangles or ordinary terrain.
     const materialIndex = options.materialIndex == null ? null : Number(options.materialIndex); // Used to isolate only the cliff material slot on a shared grass/cliff mesh.
     const edgeOptions = mappingOptions(options); // Used as the single centralized edge-preserving stretch policy for every caller.
-    const signature = `surface-island-v3|furniture-adjacency|angle=${splitAngleDeg}|material=${materialIndex == null ? '*' : materialIndex}|edge=${edgeOptions.edgeSourceFraction}|reference=${edgeOptions.edgeReferenceWorldSize}`; // Used to invalidate all older uniform/perimeter-compression mappings automatically.
+    const signature = `surface-island-v3|furniture-adjacency|angle=${splitAngleDeg}|material=${materialIndex == null ? '*' : materialIndex}|edge=${edgeOptions.edgeSourceFraction}|reference=${edgeOptions.edgeReferenceWorldSize}${splitAtThreshold ? '|split-at-threshold' : ''}${ignoreReversedCoplanarFaces ? '|repair-cap-winding' : ''}${edgeOptions.avoidCollapsedUvs ? '|preserve-triangle-coverage' : ''}`; // Separates shingle-side UVs from the default natural-surface cache.
     const sourcePosition = sourceGeometry.getAttribute('position'); // Used to validate a cached signature against the actual surviving vertex buffer.
     const sourceUv = sourceGeometry.getAttribute('uv'); // Used to reject stale metadata when downstream code lost the UV attribute.
     const cachedUvValid = !!(sourcePosition && sourceUv?.count === sourcePosition.count && Number(sourceUv.itemSize || 2) >= 2); // Used to trust the v3 signature only when real UV data still exists.
@@ -475,7 +493,7 @@
     const epsilon = chooseQuantizationEpsilon(geometry); // Used to reconstruct shared topology after non-indexing.
     const topology = collectTriangles(geometry, materialIndex, epsilon); // Used by furniture-style surface recognition without obsolete fixed-distance UV patch splitting.
     if (!topology.triangles.length) return sourceGeometry;
-    const islands = segmentSurfaceIslands(topology, splitAngleDeg); // Used so each true connected furniture-recognized surface gets one continuous PNG domain.
+    const islands = segmentSurfaceIslands(topology, splitAngleDeg, splitAtThreshold, ignoreReversedCoplanarFaces); // Used so each true connected furniture-recognized surface gets one continuous PNG domain.
     let fallbackCount = 0; // Used to summarize malformed/tiny surface fallbacks.
     let boundaryLoopCount = 0; // Used to expose recognized-boundary complexity in diagnostics.
     const edgeBands = []; // Used to expose per-island physical edge preservation without requiring DevTools geometry inspection.
@@ -492,6 +510,8 @@
       segmentation: 'furniture-edge-adjacency',
       mapping: 'edge-preserving-nine-slice',
       angleToleranceDeg: splitAngleDeg,
+      splitAtThreshold,
+      ignoreReversedCoplanarFaces,
       materialIndex,
       maxPatchWorldSize: null,
       legacyPatchHintIgnored: Object.prototype.hasOwnProperty.call(options, 'maxPatchWorldSize'),

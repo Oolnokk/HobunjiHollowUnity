@@ -57,18 +57,25 @@
   // the shared shingle GLB (HighlandLongshingle_boned.glb, via HousePieceGen)
   // from their baked textures to a repo PNG + shade-fill color, the same way
   // loadHousePieceFaceTexture already does for the boards/stone/canvas faces
-  // above. Both GLB templates are shared singletons whose clones/instances
-  // reference the same material object (see WallBuilder.build's InstancedMesh
-  // and HousePieceGen's _tpl.scene.clone), so retinting each template's
-  // material once here covers every building anywhere, town or wilderness —
-  // no per-building or per-zone material copies are needed. The material
+  // above. The brick template is a shared singleton (WallBuilder.build's
+  // InstancedMesh), so one retint covers every wall. Shingles use
+  // HousePieceGen's 'town' variant, whose materials are separate from the
+  // farm's, so this retint covers every town/zone roof but no farm roof. The material
   // APIs cache these requests themselves. Calling this after
   // every GLB-ready boundary is intentional: town and farmhouse rebuilds
   // cannot race and leave a newly loaded template on its baked material.
   function _applyBuildingGlbTints() {
     deps.houseWallBuilder.tintDefaultGlb('assets/textures/carved_smooth.png', '#4d4d4d');
-    HousePieceGen.tintShingleMaterial('assets/textures/carved_smooth.png', '#7d7355');
+    HousePieceGen.tintShingleMaterial('assets/textures/carved_smooth.png', TOWN_SHINGLE_FILL, 'town');
   }
+
+  // Town and zone roofs use HousePieceGen's 'town' shingle variant: the same
+  // six-sided PNG mapping as the farm, with their own material copies and a
+  // fill chosen to keep the near-black colour town roofs had before that
+  // mapping (measured in-game: the old vertex-coloured, fully metallic roofs
+  // rendered ~RGB 0.2/255). Pure black would hide the shingle shapes, so this
+  // is the darkest same-hue tint that still shows them.
+  const TOWN_SHINGLE_FILL = '#141209';
 
   // One shared readiness boundary for final brick + shingle geometry. The
   // parser-time StructurePreload starts the expensive immutable source work
@@ -289,6 +296,7 @@
         let g = new THREE.Group();
         if (piece) {
           g = HousePieceGen.buildGroupFromPiece(THREE, piece, bldg.gridX, bldg.gridZ, {
+            shingleVariant: 'town',
             wallBuilder: deps.houseWallBuilder, wbUsePlaceholder: !structureReady,
             wbOpts, wbGableOpts, matBoards: _boardsMat, matStone: _stoneMat, matCanvas: _canvasMat,
             rotationDeg: bldg.rotationDeg || 0, elevationY,
@@ -397,6 +405,7 @@
             if (!piece) { upgraded.push({ group: new THREE.Group(), bldg, piece: null, wbOpts, wbGableOpts }); continue; }
             const elevationY = deps.NORMAL_TOP + _buildingVisualHeight(townMap2, bldg);
             const g = HousePieceGen.buildGroupFromPiece(THREE, piece, bldg.gridX, bldg.gridZ, {
+            shingleVariant: 'town',
               wallBuilder: deps.houseWallBuilder, wbUsePlaceholder: false,
               wbOpts, wbGableOpts, matBoards: _boardsMat, matStone: _stoneMat, matCanvas: _canvasMat,
               rotationDeg: bldg.rotationDeg || 0, elevationY,
@@ -462,6 +471,7 @@
         let g = new THREE.Group();
         if (piece) {
           g = HousePieceGen.buildGroupFromPiece(THREE, piece, bldg.gridX, bldg.gridZ, {
+            shingleVariant: 'town',
             wallBuilder: deps.houseWallBuilder, wbUsePlaceholder: !structureReady,
             wbOpts, wbGableOpts, matBoards: _boardsMat, matStone: _stoneMat, matCanvas: _canvasMat,
             rotationDeg: bldg.rotationDeg || 0, elevationY,
@@ -499,6 +509,7 @@
             if (!piece) { groups.push({ group: new THREE.Group(), bldg, piece: null, wbOpts, wbGableOpts }); continue; }
             const elevationY = deps.NORMAL_TOP + (bldg.elevTier || 0) * deps.PLATEAU_UNIT + _buildingVisualHeight(zoneData, bldg);
             const g = HousePieceGen.buildGroupFromPiece(THREE, piece, bldg.gridX, bldg.gridZ, {
+            shingleVariant: 'town',
               wallBuilder: deps.houseWallBuilder, wbUsePlaceholder: false,
               wbOpts, wbGableOpts, matBoards: _boardsMat, matStone: _stoneMat, matCanvas: _canvasMat,
               rotationDeg: bldg.rotationDeg || 0, elevationY,

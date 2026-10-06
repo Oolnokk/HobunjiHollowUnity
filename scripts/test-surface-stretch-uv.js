@@ -180,5 +180,65 @@ delete stale.attributes.uv;
 const rebuilt = mapper.mapGeometry(stale);
 if (!rebuilt.getAttribute('uv') || rebuilt.getAttribute('uv').count !== rebuilt.getAttribute('position').count) throw new Error('Missing UVs were not regenerated despite a stale v3 signature');
 
+for (const [angle, expected] of [[79, 1], [80, 2], [81, 2]]) {
+  const mapped = mapper.mapGeometry(foldedVerticalStrip(2, angle), { angleToleranceDeg: 80, splitAtThreshold: true }); // Verifies the user's exact boundary, including equality.
+  if (mapped.userData.hobunjiSurfaceStretch.patchCount !== expected) throw new Error(`Shingle ${angle}-degree boundary should produce ${expected} side(s)`);
+}
+const windingSide = mapper.mapGeometry(foldedVerticalStrip(4, 60), { angleToleranceDeg: 80, splitAtThreshold: true }); // A curved side stays connected through local bends even as its total heading changes drastically.
+if (windingSide.userData.hobunjiSurfaceStretch.patchCount !== 1) throw new Error('Gradual shingle bends were split by total heading instead of adjacent-face angles');
+
+const boxFaces = [
+  [[0,0,0],[0,0.2,0],[3,0.2,0],[3,0,0]],
+  [[0,0,0.15],[3,0,0.15],[3,0.2,0.15],[0,0.2,0.15]],
+  [[0,0,0],[3,0,0],[3,0,0.15],[0,0,0.15]],
+  [[0,0.2,0],[0,0.2,0.15],[3,0.2,0.15],[3,0.2,0]],
+  [[0,0,0],[0,0,0.15],[0,0.2,0.15],[0,0.2,0]],
+  [[3,0,0],[3,0.2,0],[3,0.2,0.15],[3,0,0.15]],
+]; // Uses six connected hard-edged sides with drastically different aspect ratios.
+const boxPositions = boxFaces.flatMap(face => [face[0],face[1],face[2],face[0],face[2],face[3]].flat()); // Expands independent triangle corners for the UV seam test.
+const boxMapped = mapper.mapGeometry(new Geometry(boxPositions), { angleToleranceDeg: 80, splitAtThreshold: true, edgeReferenceWorldSize: 0.5 }); // Every recognized side must receive all four PNG corners.
+if (boxMapped.userData.hobunjiSurfaceStretch.patchCount !== 6) throw new Error('Hard-edged shingle box must have six independent PNG sides');
+const boxUv = boxMapped.getAttribute('uv'); // Reads the full PNG domain assigned to each of the six sides.
+for (let face = 0; face < 6; face++) {
+  const corners = new Set(); // Collects exact UV corners without assuming face orientation.
+  for (let i = face * 6; i < face * 6 + 6; i++) corners.add(`${boxUv.getX(i)},${boxUv.getY(i)}`);
+  for (const corner of ['0,0','0,1','1,0','1,1']) if (!corners.has(corner)) throw new Error(`Side ${face} is missing PNG corner ${corner}`);
+}
+
+const shingleBytes = fs.readFileSync(path.join(__dirname, '..', 'docs', 'assets', 'models', 'HighlandLongshingle_boned.glb')); // Exercises the real irregular GLB rather than relying solely on a box.
+const jsonLength = shingleBytes.readUInt32LE(12); // Locates the GLB's JSON and binary chunks.
+const shingleGlb = JSON.parse(shingleBytes.subarray(20, 20 + jsonLength).toString()); // Supplies accessor layouts from the shipped model.
+const primitive = shingleGlb.meshes[0].primitives[0]; // Selects the visible shell, excluding its hidden guide bone.
+const positionAccessor = shingleGlb.accessors[primitive.attributes.POSITION]; // Used to read actual shell vertices.
+const positionView = shingleGlb.bufferViews[positionAccessor.bufferView]; // Locates the shell's position bytes.
+const indexAccessor = shingleGlb.accessors[primitive.indices]; // Used to preserve the original indexed topology before mapping.
+const indexView = shingleGlb.bufferViews[indexAccessor.bufferView]; // Locates the shell's triangle index bytes.
+const binaryOffset = 28 + jsonLength; // Points to the binary GLB payload.
+const shellPositions = Array.from({ length: positionAccessor.count * 3 }, (_, i) => shingleBytes.readFloatLE(binaryOffset + (positionView.byteOffset || 0) + (positionAccessor.byteOffset || 0) + i * 4)); // Reads Float32 position components.
+const shellIndices = Array.from({ length: indexAccessor.count }, (_, i) => shingleBytes.readUInt16LE(binaryOffset + (indexView.byteOffset || 0) + (indexAccessor.byteOffset || 0) + i * 2)); // Reads the shipped Uint16 indices.
+const shellGeometry = new Geometry(shellPositions); // Matches the indexed shell geometry that GLTFLoader provides to HousePieceGen.
+shellGeometry.index = new BufferAttribute(new Uint16Array(shellIndices), 1);
+shellGeometry.toNonIndexed = function () { return new Geometry(shellIndices.flatMap(index => shellPositions.slice(index * 3, index * 3 + 3))); };
+const shellMesh = { name: 'Highland_Longshingle_shell', isMesh: true, geometry: shellGeometry }; // Allows production template analysis to replace its geometry.
+const shellScene = { traverse(fn) { fn(shellMesh); } }; // Drives the public GLB load path without unrelated renderer APIs.
+windowMock.THREE.GLTFLoader = class { load(url, callback) { callback({ scene: shellScene }); } };
+windowMock.THREE.Box3 = class { setFromObject() { return this; } getSize() { return { x: 1, y: 1, z: 1 }; } };
+vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'HousePieceGen.js'), 'utf8'), { window: windowMock });
+windowMock.HousePieceGen.loadShingleGlb('assets/models/');
+const shingleReport = windowMock.HousePieceGen.shingleSurfaceSnapshot(); // Confirms the real runtime owner uses the requested side-detection rule.
+if (!shingleReport.ready || shingleReport.meshes !== 1 || shingleReport.surfaces !== 6 || shingleReport.angleToleranceDeg !== 78) throw new Error(`Real shingle side mapping failed: ${JSON.stringify(shingleReport)}`);
+if (shellMesh.geometry === shellGeometry || shellMesh.geometry.index || shellMesh.geometry.getAttribute('uv').count !== shellIndices.length) throw new Error('Real shingle corners did not receive independent seam-capable UVs');
+for (const value of shellMesh.geometry.getAttribute('uv').array) if (!Number.isFinite(value) || value < -1e-6 || value > 1 + 1e-6) throw new Error('Real shingle UV escaped its full-PNG domain');
+const shellUv = shellMesh.geometry.getAttribute('uv'); // Verifies the original model's irregular side triangles retain visible PNG coverage.
+const shellPosition = shellMesh.geometry.getAttribute('position'); // Distinguishes a real triangle from the source GLB's nearly zero-area cap triangle.
+for (let i = 0; i < shellUv.count; i += 3) {
+  const a = new Vector3(shellPosition.getX(i), shellPosition.getY(i), shellPosition.getZ(i)); // First source triangle corner.
+  const b = new Vector3(shellPosition.getX(i+1), shellPosition.getY(i+1), shellPosition.getZ(i+1)).sub(a); // First geometric edge.
+  const c = new Vector3(shellPosition.getX(i+2), shellPosition.getY(i+2), shellPosition.getZ(i+2)).sub(a); // Second geometric edge.
+  if (new Vector3().crossVectors(b,c).length() * 0.5 <= 1e-8) continue;
+  const uvArea = Math.abs((shellUv.getX(i+1)-shellUv.getX(i))*(shellUv.getY(i+2)-shellUv.getY(i))-(shellUv.getX(i+2)-shellUv.getX(i))*(shellUv.getY(i+1)-shellUv.getY(i))); // Detects square-boundary fitting that would leave a triangle sampling a single line.
+  if (uvArea <= 1e-10) throw new Error(`Real shingle triangle ${i/3} lost its PNG coverage`);
+}
+
 if (!logs.some(entry => entry[2] === 'render')) throw new Error('Expected mobile-visible render diagnostics');
 console.log(JSON.stringify({ texas: texasReport, nativeScale: edgeBand, bent: bentReport, gradual: gradualReport, legacyScaleAlias: formerlyBoundedReport, multi: multiReport, debug: mapper.snapshot() }, null, 2));
