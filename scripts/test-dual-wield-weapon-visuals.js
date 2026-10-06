@@ -110,3 +110,28 @@ assert.equal(rightGrip.dualWield.mirroredGripFrame, false);
 assert.equal(leftGrip.position.x, authoredSocket.position.x);
 assert(Math.abs(leftGrip.position.z - (authoredSocket.position.z + 0.15)) < 1e-9);
 assert.equal(authoredSocket.quaternion.y, -0.5, 'offhand conversion must not mutate the shared authored grip');
+
+const runtimeDeps = { toolHolder: { children: [] }, playerMesh: {} }; // Mirrors the real hand-runtime injection, which omits toolMeshMap.
+const runtimeContext = vm.runInNewContext(`(${dual.slice(dual.indexOf('  function currentContext('), dual.indexOf('  function currentDualState(')).trim()})`, {
+  inAttackEditor: () => false,
+  global: { ProceduralHandAttachments: { gameDeps: runtimeDeps }, WeaponToolStances: { getRuntimeState: () => ({ activeSlot: 'weapon' }) } },
+}); // Executes production context discovery rather than supplying a pre-resolved context.
+const liveWeapon = { visible: true, userData: { toolPlane: { isObject3D: true, visible: true } } }; // Represents the equipped dagger group under the scene-level holder.
+const hiddenWeapon = { visible: false, userData: { toolPlane: { isObject3D: true, visible: true } } }; // Ensures hidden equipment cannot displace the equipped visual.
+runtimeDeps.toolHolder.children = [{ userData: {} }, hiddenWeapon, liveWeapon];
+assert.equal(runtimeContext().visual, liveWeapon, 'runtime dual visuals must find the equipped weapon without a mesh map');
+assert.equal(runtimeContext().plane, liveWeapon.userData.toolPlane);
+assert.equal(runtimeContext().holder, runtimeDeps.toolHolder);
+liveWeapon.userData.toolPlane.visible = false;
+assert.equal(runtimeContext().visual, liveWeapon, 'held-object base rendering temporarily hides the plane while hand sentinels still need its duplicates');
+liveWeapon.userData.toolPlane.visible = true;
+runtimeDeps.toolHolder.children = [hiddenWeapon];
+assert.equal(runtimeContext().visual, null, 'hidden/holstered equipment does not start duplicates');
+runtimeDeps.toolMeshMap = { weapon: liveWeapon };
+assert.equal(runtimeContext().visual, liveWeapon, 'existing object-map integrations remain supported');
+runtimeDeps.toolMeshMap = new Map([['weapon', liveWeapon]]);
+assert.equal(runtimeContext().visual, liveWeapon, 'existing Map integrations remain supported');
+delete runtimeDeps.toolMeshMap;
+const replacementWeapon = { visible: true, userData: { toolPlane: { isObject3D: true } } }; // Simulates swapping the dagger mesh without reconstructing the injected dependencies.
+runtimeDeps.toolHolder.children = [replacementWeapon];
+assert.equal(runtimeContext().visual, replacementWeapon, 'equipment swaps resolve the new attached weapon');
