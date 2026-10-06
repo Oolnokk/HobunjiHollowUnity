@@ -27,7 +27,7 @@ assert.match(redesign, /dataset\.obFamily = 'slagothim'/, 'Slagothim must be ins
 assert.match(redesign, /familyButton\.addEventListener\('click',[\s\S]{0,180}familyOpen = true;[\s\S]{0,120}tletinganButton\.click\(\)/, 'selecting Slagothim must immediately select Tletingan through the core handler');
 assert.match(redesign, /tletinganButton\.hidden = true/, 'legacy top-level Tletingan must remain hidden');
 assert.match(redesign, /data-ob-subspecies="tletingan"/, 'Tletingan must be a visible second-step subspecies');
-assert.match(redesign, /data-ob-subspecies="nuhongan" disabled/, 'Nuhongan must be visibly unavailable');
+assert.match(redesign, /data-ob-subspecies="nuhongan"/, 'Nuhongan must be included in the Slagothim subspecies panel');
 assert.match(redesign, /data-ob-subspecies="longoran" disabled/, 'Longoran must be visibly unavailable');
 
 assert.match(redesign, /overlayObserver\.observe\(overlay, \{ childList: true \}\)/, 'creator observer must watch only direct core card replacements');

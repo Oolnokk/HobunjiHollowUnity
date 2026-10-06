@@ -951,6 +951,13 @@
     }
 
     const surfaceForRole = makeSurfaceRoleResolver(THREE, speciesId, options.bodyColors);
+    const partProfileKey = `${speciesId}::${gender}`; // Stable key avoids allocating lookup strings during joint animation.
+    const partAxes = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[partProfileKey]?.anatomy?.footScaleAxes; // Optional authored foot-only axes leave hips, leg lengths, and stance positions untouched.
+
+    function installFootAxes(foot) {
+      window.HobunjiCharacterRigScale?.installPartScaleAxes?.(THREE, foot, parent, () => window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[partProfileKey]?.anatomy?.footScaleAxes);
+      if (partAxes?.y > 0) foot.userData.contactRadiusY *= partAxes.y; // Sphere fallback retains ground contact after geometry grows about its center; GLB bottom origin remains zero.
+    }
 
     const leftFallback = buildFallbackFoot(THREE, { speciesId, radius, sphereScaleXZ, sphereScaleY, initialColorHex });
     const rightFallback = buildFallbackFoot(THREE, { speciesId, radius, sphereScaleXZ, sphereScaleY, initialColorHex });
@@ -958,6 +965,8 @@
     rightFallback.name = 'right_foot';
     legChains.left.calf.add(leftFallback);
     legChains.right.calf.add(rightFallback);
+    installFootAxes(leftFallback);
+    installFootAxes(rightFallback);
     state.left = leftFallback;
     state.right = rightFallback;
     state.leftContactY = leftFallback.userData.contactRadiusY;
@@ -1000,6 +1009,8 @@
         disposeObjectResources(state.right);
         legChains.left.calf.add(leftMesh);
         legChains.right.calf.add(rightMesh);
+        installFootAxes(leftMesh);
+        installFootAxes(rightMesh);
         state.left = leftMesh;
         state.right = rightMesh;
         state.leftContactY = leftMesh.userData.contactRadiusY;

@@ -14,7 +14,8 @@
 (() => {
   'use strict';
 
-  const VERSION = 18; // Adds Nuhongan as a Tletingan-derived rig at 80% width and 75% height.
+  const VERSION = 19; // Adds authored Nuhongan part axes without changing whole-character dimensions.
+  const NUHONGAN_PART_SCALE_AXES = Object.freeze({ x: 1.25, y: 1.3333333333333333, z: 1.25 }); // Calculated offline: 1 / 0.8 on X/Z, 1 / 0.75 on Y, for Tletingan-sized hands and feet.
   const VALUES = Object.freeze({
     'tletingan::male': Object.freeze({ x: 0.85, y: 0.85, head: 0.8, offsetY: 0 }),
     'tletingan::female': Object.freeze({ x: 0.915, y: 0.89, head: 0.8823529411764706, offsetY: 0 }),
@@ -62,6 +63,7 @@
     version: VERSION,
     coordinateSpace: 'character-floor-parent',
     values: VALUES,
+    nuhonganPartScaleAxes: NUHONGAN_PART_SCALE_AXES,
     aliases: ALIASES,
     maoaoFootScale: MAOAO_FOOT_SCALE,
     applyMaoaoFootScaleTuning,

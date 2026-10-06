@@ -300,6 +300,48 @@
     return true;
   }
 
+  // Authored part axes act in the floor-parent frame before joint rotations.
+  // Conjugating through the joint chain keeps the part origin/arm reach fixed
+  // and gives the same size during idle, grip rotation, and leg animation.
+  function installPartScaleAxes(THREE, node, reference, axes) {
+    if (!axes || !node?.updateMatrix || !reference) return false;
+    const initial = typeof axes === 'function' ? axes() : axes; // Editor profiles can replace their anatomy object while this part remains attached.
+    if (!initial) return false;
+    const values = ['x', 'y', 'z'].map(axis => Number(initial[axis])); // Validates literal authored axis multipliers without deriving species ratios.
+    if (!values.every(value => Number.isFinite(value) && value > 0)) return false;
+    const authored = new THREE.Matrix4().makeScale(...values); // Fixed part-size transform supplied by the rig profile.
+    const ancestry = new THREE.Matrix4(); // Reused joint-chain matrix in the reference frame.
+    const inverse = new THREE.Matrix4(); // Reused inverse maps the authored transform back into the part's parent frame.
+    const correction = new THREE.Matrix4(); // Reused conjugated transform avoids allocations during animation.
+    const update = node.updateMatrix; // Standard Object3D compose still owns position, quaternion, and ordinary local scale.
+    node.updateMatrix = function updateAuthoredPartMatrix() {
+      update.call(this);
+      if (window.HobunjiAttackEditorHandCalibrationMode?.active) return; // Neutral calibration workspace already cancels the entire avatar scale.
+      const current = typeof axes === 'function' ? axes() : axes; // Reads live authored controls without allocating a per-frame object.
+      if (!current) return;
+      if (current.x !== values[0] || current.y !== values[1] || current.z !== values[2]) {
+        if (!(current.x > 0 && current.y > 0 && current.z > 0)) return;
+        values[0] = current.x; values[1] = current.y; values[2] = current.z;
+        authored.makeScale(...values);
+      }
+      if (values[0] === 1 && values[1] === 1 && values[2] === 1) return;
+      ancestry.identity();
+      let ancestor = this.parent; // Walks only this part's small joint chain, never the scene graph.
+      while (ancestor && ancestor !== reference) {
+        if (ancestor.matrixAutoUpdate) ancestor.updateMatrix();
+        ancestry.premultiply(ancestor.matrix);
+        ancestor = ancestor.parent;
+      }
+      if (ancestor !== reference) return; // A detached/reparented part cannot apply a transform in an unrelated frame.
+      ancestry.setPosition(0, 0, 0);
+      inverse.copy(ancestry).invert();
+      correction.copy(inverse).multiply(authored).multiply(ancestry);
+      this.matrix.premultiply(correction);
+      this.matrix.setPosition(this.position); // Scale geometry about the part origin; attachment position is unchanged.
+    };
+    return true;
+  }
+
   const api = Object.freeze({
     minScale: MIN_SCALE,
     maxScale: MAX_SCALE,
@@ -314,6 +356,7 @@
     applyHeadCompensation,
     clearFromParent,
     installProfileDefaults,
+    installPartScaleAxes,
   });
   window.HobunjiCharacterRigScale = api;
 

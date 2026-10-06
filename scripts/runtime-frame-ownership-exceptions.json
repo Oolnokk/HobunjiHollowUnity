@@ -465,7 +465,7 @@
     "function": "frame (makePreviewScene)",
     "reason": "Drives an entirely separate THREE.WebGLRenderer/Scene/Camera created just for the character-creator's own preview canvas (not the main gameplay renderer); it stops itself via sceneState.running (set false by disposePreviewScene) once the canvas is disconnected, a legitimate independent preview render loop.",
     "migrationStage": "not-planned",
-    "line": 517
+    "line": 594
   },
   {
     "file": "docs/js/onboarding-character-creation-weapon-view-fix.js",

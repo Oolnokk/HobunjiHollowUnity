@@ -15,6 +15,10 @@
       label: 'Tletingan',
       text: 'Natives of the islands of Tletinga-taru and Tletinga-iku. The most populous of the Slagothim subspecies.',
     }),
+    nuhongan: Object.freeze({
+      label: 'Nuhongan',
+      text: 'A smaller Slagothim subspecies using the same authored Tletingan appearance and anatomy: 75% of Tletingan height and 80% of Tletingan width.',
+    }),
     mashtzarr: Object.freeze({
       label: 'Mashtzarr',
       text: 'Oliphanti of the Eastern Highplains. Though smaller and rounder-headed than their western cousins, the Mammakhbuur, but still tower over most other peoples of Khymeryya. Their homeland is a harsh, elevated grassland rich with deep copper mines. Most live their whole lives in isolated communities, working as miners or herders.',
@@ -149,10 +153,12 @@
     group.parentElement?.querySelector('[data-ob-redesign-details="1"]')?.remove();
     const currentSpecies = activeCoreSpecies(overlay);
     const tletinganActive = currentSpecies === 'tletingan' || !!tletinganButton?.classList.contains('ob-active');
-    if (tletinganActive) familyOpen = true;
+    const nuhonganButton = group.querySelector('[data-ob-species="nuhongan"]'); // Existing core button owns the saved Nuhongan identity.
+    const nuhonganActive = currentSpecies === 'nuhongan'; // Keeps the family panel open while its second subspecies is selected.
+    if (tletinganActive || nuhonganActive) familyOpen = true;
 
     const familyButton = group.querySelector('[data-ob-family="slagothim"]');
-    const showFamily = familyOpen || tletinganActive;
+    const showFamily = familyOpen || tletinganActive || nuhonganActive;
     familyButton?.classList.toggle('ob-active', showFamily);
 
     const details = document.createElement('div');
@@ -171,17 +177,21 @@
       <div class="ob-subspecies-title">Slagothim subspecies</div>
       <div class="ob-subspecies-group">
         <button type="button" class="ob-sel-btn${tletinganActive ? ' ob-active' : ''}" data-ob-subspecies="tletingan">Tletingan</button>
-        <button type="button" class="ob-sel-btn ob-disabled ob-subspecies-unavailable" data-ob-subspecies="nuhongan" disabled>Nuhongan</button>
+        <button type="button" class="ob-sel-btn${nuhonganActive ? ' ob-active' : ''}" data-ob-subspecies="nuhongan"${nuhonganButton ? '' : ' disabled'}>Nuhongan</button>
         <button type="button" class="ob-sel-btn ob-disabled ob-subspecies-unavailable" data-ob-subspecies="longoran" disabled>Longoran</button>
       </div>
-      <div class="ob-subspecies-description"><strong>${LORE.tletingan.label}:</strong> ${LORE.tletingan.text}</div>`;
+      <div class="ob-subspecies-description"><strong>${(nuhonganActive ? LORE.nuhongan : LORE.tletingan).label}:</strong> ${(nuhonganActive ? LORE.nuhongan : LORE.tletingan).text}</div>`;
     details.appendChild(subspecies);
     group.after(details);
 
-    subspecies.querySelector('[data-ob-subspecies="tletingan"]')?.addEventListener('click', () => {
-      familyOpen = true;
-      tletinganButton?.click();
-    });
+    for (const button of subspecies.querySelectorAll('[data-ob-subspecies]')) {
+      const coreButton = group.querySelector(`[data-ob-species="${button.dataset.obSubspecies}"]`); // Routes each supported subspecies through the core identity/randomization handler.
+      if (!coreButton) continue;
+      button.addEventListener('click', () => {
+        familyOpen = true;
+        coreButton.click();
+      });
+    }
   }
 
   function enhanceSpeciesWorkflow(overlay) {
@@ -191,6 +201,8 @@
     if (!tletinganButton) return;
 
     tletinganButton.hidden = true;
+    const nuhonganButton = group.querySelector('[data-ob-species="nuhongan"]'); // Nuhongan shares the Slagothim family row instead of a separate top-level choice.
+    if (nuhonganButton) nuhonganButton.hidden = true;
     if (tletinganButton.classList.contains('ob-active')) familyOpen = true;
 
     const maoButton = group.querySelector('[data-ob-species="mao-ao"]');
@@ -214,7 +226,7 @@
       if (button.dataset.obRedesignBound === '1') return;
       button.dataset.obRedesignBound = '1';
       button.addEventListener('click', () => {
-        if (button.dataset.obSpecies !== 'tletingan') familyOpen = false;
+        if (button.dataset.obSpecies !== 'tletingan' && button.dataset.obSpecies !== 'nuhongan') familyOpen = false;
       }, true);
     });
 
@@ -425,6 +437,89 @@
     try { sceneState.renderer?.dispose?.(); } catch (_) {}
   }
 
+  async function copyFacingDiagnostics(text, field, feedback) {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard API unavailable');
+      await navigator.clipboard.writeText(text);
+      feedback.textContent = 'Copied diagnostics';
+    } catch (_) {
+      field.focus();
+      field.select();
+      field.setSelectionRange(0, text.length);
+      try {
+        feedback.textContent = document.execCommand('copy') ? 'Copied diagnostics' : 'Copy unavailable; diagnostics selected below';
+      } catch (_) { feedback.textContent = 'Copy unavailable; diagnostics selected below'; }
+    }
+  }
+
+  function installFacingDiagnostics(sceneState, model, profile) {
+    const plane = model.userData?.neckRig?.skinnedPlane || model.getObjectByName?.('npc_avatar_front_plane'); // Samples the actual portrait draw after render decorators apply their temporary transforms.
+    if (!plane) return;
+    const previous = plane.onBeforeRender; // Preserves hand/portrait hooks already installed on this mesh.
+    plane.onBeforeRender = function (...args) {
+      previous?.apply(this, args);
+      if (!sceneState.captureFacing || args[1]?.overrideMaterial) return;
+      sceneState.captureFacing = false;
+      const camera = args[2]; // Uses this render's camera, including the creator composition hook.
+      const THREE = sceneState.THREE; // Creates vectors only on a requested diagnostic capture.
+      const position = this.getWorldPosition(new THREE.Vector3()); // Origin for the camera-facing dot product.
+      const towardCamera = camera.getWorldPosition(new THREE.Vector3()).sub(position).normalize(); // Actual camera bearing at draw time.
+      const normal = new THREE.Vector3(0, 0, 1).transformDirection(this.matrixWorld); // World direction of the front portrait plane.
+      const determinant = this.matrixWorld.determinant(); // A mirrored parent reverses triangle winding even when its normal points forward.
+      const frontDot = normal.dot(towardCamera) * (determinant < 0 ? -1 : 1); // Positive selects the front-facing triangles; negative selects rear artwork.
+      const toDegrees = node => Number((Number(node?.rotation?.y || 0) * 180 / Math.PI).toFixed(2)); // Formats the separate root/body/head yaw owners for the mobile dump.
+      const snapshot = {
+        latestChange: 'Nuhongan selection is owned by the creator; facing investigation preserves existing transforms.',
+        speciesId: status.speciesId, gender: status.gender,
+        renderedSide: frontDot >= 0 ? 'front' : 'behind', frontDot, determinant,
+        rootYawDeg: toDegrees(sceneState.root), bodyYawDeg: toDegrees(model.parent),
+        inputYawDeg: Number((Number(sceneState.yaw || 0) * 180 / Math.PI).toFixed(2)),
+        pointerActive: !!sceneState.pointer,
+        neckYawDeg: toDegrees(model.userData?.neckRig?.neckJoint),
+        cameraPosition: camera.position.toArray(), worldMatrix: this.matrixWorld.toArray(),
+        frontHeadUrl: profile?.fighter?.headUrl || null,
+        portraitsFlipped: window.PNGPlaneAvatar?.getPortraitsFlipped?.(),
+        stance: window.WeaponToolStances?.debugSnapshot?.() || null,
+      }; // Retained in the existing status object and the visible diagnostic panel.
+      status.facingDiagnostics = snapshot;
+      const panel = sceneState.canvas.parentElement?.querySelector('.ob-facing-diagnostics'); // Current creator panel survives only as long as its canvas does.
+      if (!panel) return;
+      panel.replaceChildren();
+      const text = JSON.stringify(snapshot, null, 2); // One capture supplies both the visible field and clipboard.
+      const controls = document.createElement('div'); // Keeps explicit copy and close actions within reach while scrolling.
+      controls.style.cssText = 'position:sticky;top:0;background:#14201f;padding:4px;z-index:1;display:flex;gap:8px;flex-wrap:wrap';
+      const copy = document.createElement('button'); // User gesture enables the browser clipboard permission.
+      copy.type = 'button';
+      copy.textContent = 'Copy diagnostics';
+      const close = document.createElement('button'); // Closing no longer competes with selecting the diagnostic text.
+      close.type = 'button';
+      close.textContent = 'Close';
+      close.addEventListener('click', () => { panel.hidden = true; });
+      const feedback = document.createElement('span'); // Reports copy success or a selected-text fallback.
+      feedback.setAttribute('role', 'status');
+      const dump = document.createElement('textarea'); // Readonly selectable fallback stays inside the mobile viewport.
+      dump.readOnly = true;
+      dump.value = text;
+      dump.setAttribute('aria-label', 'Character preview diagnostics');
+      dump.style.cssText = 'box-sizing:border-box;width:100%;height:260px;font:inherit;color:inherit;background:transparent;white-space:pre-wrap;overflow-wrap:anywhere';
+      copy.addEventListener('click', () => copyFacingDiagnostics(text, dump, feedback));
+      controls.append(copy, close, feedback);
+      panel.append(controls, dump);
+      for (const face of ['front', 'back']) {
+        const label = document.createElement('div'); // Identifies which authored canvas supplied each side independently of rotations.
+        label.textContent = `${face} texture`;
+        panel.appendChild(label);
+        try {
+          const image = document.createElement('img'); // Shows texture provenance to distinguish rear artwork from a yaw/culling error.
+          image.alt = `${face} portrait texture`;
+          image.src = model.userData[`${face}Texture`].image.toDataURL();
+          image.style.cssText = 'width:150px;height:150px;object-fit:contain;background:#405046';
+          panel.appendChild(image);
+        } catch (error) { label.textContent += `: ${error.message}`; }
+      }
+    };
+  }
+
   function renderPreviewFrame(sceneState) {
     const { renderer, scene, camera, shellOutlineMaterial } = sceneState;
     const baseMask = camera.layers.mask;
@@ -543,6 +638,25 @@
     }
 
     const canvas = shell.querySelector('.ob-3d-canvas');
+    if (!shell.querySelector('.ob-facing-debug-button')) {
+      const button = document.createElement('button'); // Explicit on-demand diagnostic capture; never adds per-frame serialization.
+      button.type = 'button';
+      button.className = 'ob-facing-debug-button';
+      button.textContent = 'Preview diagnostics';
+      button.style.cssText = 'position:absolute;bottom:22px;left:8px;z-index:4;font-size:10px';
+      const panel = document.createElement('div'); // Expandable, scrollable text and front/rear textures for mobile inspection.
+      panel.className = 'ob-facing-diagnostics';
+      panel.hidden = true;
+      panel.style.cssText = 'position:absolute;inset:4px;z-index:5;overflow:auto;background:#14201ff5;padding:10px;font-size:10px;white-space:pre-wrap';
+      panel.addEventListener('pointerdown', event => event.stopPropagation());
+      button.addEventListener('pointerdown', event => event.stopPropagation());
+      button.addEventListener('click', () => {
+        panel.hidden = false;
+        panel.textContent = 'Capturing next portrait draw…';
+        if (previewScene?.canvas === canvas) previewScene.captureFacing = true;
+      });
+      shell.append(button, panel);
+    }
     if (!canvas) return sourceCanvas;
     if (!previewScene || previewScene.canvas !== canvas) {
       disposePreviewScene();
@@ -648,6 +762,7 @@
     sceneState.avatarGroup = group;
     sceneState.model = model;
     sceneState.feet = feet;
+    installFacingDiagnostics(sceneState, model, profile);
     status.preview = 'ready';
     status.speciesId = identity.speciesId;
     status.gender = identity.gender;
