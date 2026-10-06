@@ -1,0 +1,30 @@
+name: Branch planar VFX sync main
+
+on:
+  push:
+    branches:
+      - feature/enchantment-planar-metal-vfx
+
+permissions:
+  contents: write
+
+jobs:
+  sync-main:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Merge latest main into feature branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git merge --no-edit origin/main
+          node scripts/test-weapon-enchantment-vfx.js
+          node scripts/test-dual-wield-weapon-visuals.js
+          node scripts/test-controller-experience.js
+          git push origin HEAD:feature/enchantment-planar-metal-vfx
