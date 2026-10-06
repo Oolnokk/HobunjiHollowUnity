@@ -74,6 +74,10 @@ for (const species of ['kenkari', 'mao-ao', 'engh-sho', 'tletingan', 'nuhongan']
     assert.ok(ordered, `${species}: suggestions should minimize spelling edits and prefer substitutions on ties`);
   }
 }
+const advisorOptions = context.window.HobunjiNameAdvisor.makeIdeaOptions;
+assert.equal(advisorOptions('kenkari', 'first', 'Strand', { gender: 'male' })[0].label, 'Tanu', 'Kenkari should collapse the invalid str onset to one consonant');
+assert.equal(advisorOptions('mao', 'first', 'Strand', { gender: 'male' })[0].label, 'Tanu', 'Mao-ao should collapse the invalid str onset to one consonant');
+assert.ok(advisorOptions('slagothim', 'given', 'Strand', { gender: 'male' }).some(option => option.label === 'Tan'), 'Slagothim should simplify invalid onset and medial clusters');
 const slagothim = suggest(sourceName, 'tletingan', 'male');
 assert.equal(slagothim[0], 'Benjamir', 'best same-length Slagothim repair should be first');
 assert.ok(slagothim.includes('Slenjamin'), 'initial Slagothim cluster should remain available');
