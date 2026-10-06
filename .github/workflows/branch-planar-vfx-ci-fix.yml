@@ -1,0 +1,55 @@
+name: Branch planar VFX CI cleanup
+
+on:
+  push:
+    branches:
+      - feature/enchantment-planar-metal-vfx
+
+permissions:
+  contents: write
+
+jobs:
+  fix-ci:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Remove cache-token pin and raw frame fallback
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          test_path = Path('scripts/test-weapon-enchantment-vfx.js')
+          text = test_path.read_text()
+          old = "const vfxScriptAt = indexSource.indexOf('js/combat/weapon-enchantment-vfx.js?v=20261006planar1'); // Used to pin the cache-busted runtime entry point."
+          new = "const vfxScriptAt = indexSource.search(/js\\/combat\\/weapon-enchantment-vfx\\.js\\?v=[A-Za-z0-9_-]+/); // Used to require a cache-busted runtime entry point without pinning its current token."
+          if old not in text:
+              raise SystemExit('Could not locate exact VFX cache-token assertion')
+          test_path.write_text(text.replace(old, new))
+
+          vfx_path = Path('docs/js/combat/weapon-enchantment-vfx.js')
+          text = vfx_path.read_text()
+          old = "    const frame = now => { update(now); requestAnimationFrame(frame); }; // Used as a standalone fallback in tools/pages without RuntimeFrameScheduler.\n    requestAnimationFrame(frame);"
+          new = "    lastEvent = 'RuntimeFrameScheduler unavailable; enchantment VFX idle.'; // The shipped game owns frame work through RuntimeFrameScheduler; no parallel RAF loop is permitted."
+          if old not in text:
+              raise SystemExit('Could not locate raw requestAnimationFrame fallback')
+          vfx_path.write_text(text.replace(old, new))
+          PY
+          node scripts/test-weapon-enchantment-vfx.js
+          node scripts/test-no-cache-token-pins.js
+          node scripts/test-runtime-frame-ownership.js
+          git diff --check
+      - name: Commit branch-only CI cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/js/combat/weapon-enchantment-vfx.js scripts/test-weapon-enchantment-vfx.js
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "Align planar enchantment VFX with runtime governance"
+          git push origin HEAD:feature/enchantment-planar-metal-vfx
