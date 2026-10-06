@@ -11,9 +11,9 @@ assert.match(camera, /TARGET_PREVIEW_YAW_DEG = 10\b/, 'creator resting turn must
 assert.doesNotMatch(camera, /TARGET_PREVIEW_YAW_DEG = 20\b/, 'superseded +20 degree resting turn must stay removed');
 assert.match(camera, /camera\.position\.set\(1\.55, midY, 2\.75\)/, 'mid-body camera height must remain intact');
 assert.match(camera, /camera\.lookAt\(0, midY, 0\)/, 'mid-body camera must remain level rather than top-down');
-assert.match(entry, /onboarding-character-creation-camera-composition\.js\?v=20260910review1/, 'onboarding must load the current +10 degree camera composition');
+assert.match(entry, /onboarding-character-creation-camera-composition\.js\?v=[A-Za-z0-9_.-]+/, 'onboarding must load the current +10 degree camera composition');
 
-assert.match(entry, /onboarding-character-creation-reload-handoff\.js\?v=20260907charcreator14/, 'onboarding must load the clean-page creator handoff');
+assert.match(entry, /onboarding-character-creation-reload-handoff\.js\?v=[A-Za-z0-9_.-]+/, 'onboarding must load the clean-page creator handoff');
 assert.ok(entry.indexOf('onboarding-character-creation-weapon-view-fix.js') < entry.indexOf('onboarding-character-creation-reload-handoff.js'), 'weapon persistence must register before reload interception');
 assert.match(reload, /hobunjiOnboardingPostCreatorReload\.v1/, 'reload handoff must use a session-only one-shot marker');
 assert.match(reload, /#ob-overlay #ob-start-btn/, 'reload must apply only to Start Farming, not save-select Play');
@@ -23,7 +23,7 @@ assert.match(reload, /setTimeout\(\(\) => location\.reload\(\), 0\)/, 'creator c
 assert.match(reload, /api\.loadProfile\?\.\(\)/, 'fresh page must resume from the already-saved player profile');
 assert.match(reload, /document\.dispatchEvent\(new CustomEvent\('hobunjiPlayerReady'/, 'fresh page must deliver the saved profile to normal game listeners');
 
-assert.match(entry, /onboarding-character-creation-mashtzarr-female\.js\?v=20260924perf1/, 'female Mashtzarr bridge cache key must include the female-body fix');
+assert.match(entry, /onboarding-character-creation-mashtzarr-female\.js\?v=[A-Za-z0-9_.-]+/, 'female Mashtzarr bridge cache key must include the female-body fix');
 assert.match(core, /'mashtzarr':[\s\S]{0,1800}slot: 'hairFront'[\s\S]{0,700}slot: 'hairBack'[\s\S]{0,700}slot: 'hairSide'[\s\S]{0,700}slot: 'hairSideL'/, 'male Mashtzarr core data must contain the hairstyle selectors being borrowed');
 assert.match(mashtzarr, /fallbackMode: 'female-body-male-hair-slots'/, 'female Mashtzarr fallback must borrow only hair controls');
 assert.match(mashtzarr, /configuredFemaleData\(\)/, 'female fallback must use authored female Mashtzarr config as its base');

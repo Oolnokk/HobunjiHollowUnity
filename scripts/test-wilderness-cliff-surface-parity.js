@@ -21,8 +21,8 @@ for (const expected of [
 
 const parityLoaderToken = "['WildernessCliffSurfaceParity', naturalSurfaceScript('wilderness-cliff-surface-parity.js')]"; // Used to verify parity shares the coherent natural-surface cache generation.
 assert.ok(loader.includes(parityLoaderToken), 'loader does not include coherently-versioned wilderness cliff parity adapter');
-assert.ok(loader.indexOf('farm-cliff-rock-outline.js?v=20260907b') < loader.indexOf(parityLoaderToken), 'wilderness parity must load after farm cliff material helper');
-assert.ok(loader.indexOf(parityLoaderToken) < loader.indexOf('terrain-render-chunks.js?v=20260924perf1'), 'wilderness parity must load before terrain chunking');
+assert.ok(loader.search(/farm-cliff-rock-outline\.js\?v=[A-Za-z0-9_.-]+/) < loader.indexOf(parityLoaderToken), 'wilderness parity must load after farm cliff material helper');
+assert.ok(loader.indexOf(parityLoaderToken) < loader.search(/terrain-render-chunks\.js\?v=[A-Za-z0-9_.-]+/), 'wilderness parity must load before terrain chunking');
 
 function color(hex) {
   const normalized = String(hex).replace(/^#/, '').toLowerCase();

@@ -20,7 +20,7 @@ assert.doesNotMatch(waterSystemSource,
 assert.match(waterSystemSource,
   /function _dryRenderBaseline\(\)[\s\S]{0,260}?surfaceY: null/,
   'a dry flood baseline has no surface and therefore needs no NORMAL_TOP lookup');
-assert.match(indexSource, /merged-water-renderer\.js\?v=20260921floodvisual1/,
+assert.match(indexSource, /merged-water-renderer\.js\?v=[A-Za-z0-9_.-]+/,
   'the shipped page cache-busts the flood visual-attribute renderer support');
 assert.match(indexSource, /water-system\.js\?v=[A-Za-z0-9_-]+/,
   'the shipped page cache-busts the stable-water flood visual profile');

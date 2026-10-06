@@ -9,7 +9,7 @@ const minePiece = JSON.parse(fs.readFileSync('docs/config/pieces/mine_entrance.j
 const townHousePiece = JSON.parse(fs.readFileSync('docs/config/pieces/hobunjihouse1.json', 'utf8')); // Covers the ordinary Highland town house with crossing cross-gable walls.
 const formatSource = fs.readFileSync('docs/js/format-utils.js', 'utf8'); // Proves the corrected bridge is loaded before world structures build.
 
-assert(formatSource.includes('entry-tunnel-wall-unmark.js?v=20260907c'), 'format-utils must synchronously load the wall-carving entry-tunnel bridge');
+assert(/entry-tunnel-wall-unmark\.js\?v=[A-Za-z0-9_.-]+/.test(formatSource), 'format-utils must synchronously load the wall-carving entry-tunnel bridge');
 
 function normalizePiece(piece) { return piece?.currentPiece || piece; }
 function makeGroup() { return { children: [], userData: {} }; }

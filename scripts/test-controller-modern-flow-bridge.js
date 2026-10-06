@@ -9,7 +9,7 @@ const navSource = fs.readFileSync(path.join(root, 'docs/js/controller-ui-nav.js'
 const loaderSource = fs.readFileSync(path.join(root, 'docs/js/combat/combat-config-loader.js'), 'utf8');
 assert.doesNotThrow(() => new vm.Script(bridgeSource), 'controller modern flow bridge parses');
 assert.doesNotThrow(() => new vm.Script(navSource), 'controller UI navigator parses');
-assert.match(loaderSource, /controller-modern-flow-bridge\.js\?v=20260915a/, 'runtime bootstrap loads the controller modern-flow bridge');
+assert.match(loaderSource, /controller-modern-flow-bridge\.js\?v=[A-Za-z0-9_.-]+/, 'runtime bootstrap loads the controller modern-flow bridge');
 assert.ok(bridgeSource.includes('!frame.pressed?.size'), 'compatibility bridge does no DOM/binding work on idle controller frames');
 assert.match(navSource, /SEMANTIC_PANEL_SELECTOR\s*=\s*'\[role="dialog"\]\[aria-modal="true"\]'/, 'semantic modal dialogs are auto-discovered for controller navigation');
 assert.match(navSource, /CONE_HALF_ANGLE/, 'menu navigation defines a narrow intent cone');

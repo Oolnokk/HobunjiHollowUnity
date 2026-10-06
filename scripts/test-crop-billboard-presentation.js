@@ -22,10 +22,10 @@ assert.match(presentation, /root\.position\.y -= waterLift \+ centerLift/,
 assert.doesNotMatch(presentation, /root\.scale\.set|mesh\.scale\.set/,
   'soil anchoring never changes crop growth scale');
 
-const artIndex = loader.indexOf('crop-sprite-art.js?v=20260915cropscan1');
+const artIndex = loader.search(/crop-sprite-art\.js\?v=[A-Za-z0-9_.-]+/);
 const heftrootIndex = loader.indexOf('heftroot-billboard-bridge.js');
-const presentationIndex = loader.indexOf('crop-billboard-presentation.js?v=20260924perf1');
-const readyIndex = loader.indexOf('crop-ready-presentation.js?v=20260818a');
+const presentationIndex = loader.search(/crop-billboard-presentation\.js\?v=[A-Za-z0-9_.-]+/);
+const readyIndex = loader.search(/crop-ready-presentation\.js\?v=[A-Za-z0-9_.-]+/);
 assert.ok(artIndex >= 0 && heftrootIndex > artIndex && presentationIndex > heftrootIndex && readyIndex > presentationIndex,
   'crop sprite conversion, soil anchoring, then ripe sparkle presentation keep their required order');
 

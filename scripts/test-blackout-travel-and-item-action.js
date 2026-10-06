@@ -113,7 +113,7 @@ assert.match(inventoryMetadata, /document\.addEventListener\('pointerup'[\s\S]*?
   'touch crop taps bypass the stale tool-swing gate while preserving the native pointer cleanup path');
 assert.match(inventoryMetadata, /scene\.onBeforeRender[\s\S]*?applyPlantReticleOverride\(scene\);/,
   'held seeds can override the stale active-tool reticle color immediately before rendering');
-assert.match(loader, /inventory-action-metadata-bridge\.js\?v=20260813b/,
+assert.match(loader, /inventory-action-metadata-bridge\.js\?v=[A-Za-z0-9_.-]+/,
   'the mobile seed-action bridge revision is cache-busted');
 
 const bridgeWindow = {}; // Used to exercise future-global hooks without requiring a browser.

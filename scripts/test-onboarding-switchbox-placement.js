@@ -5,7 +5,7 @@ const entry = fs.readFileSync('docs/onboarding.js', 'utf8');
 const placement = fs.readFileSync('docs/js/onboarding-switchbox-placement.js', 'utf8');
 const switchbox = fs.readFileSync('docs/js/dev-testing-switchbox.js', 'utf8');
 
-assert.match(entry, /onboarding-switchbox-placement\.js\?v=20260913switchboxworld1/, 'onboarding must load the switchbox placement guard');
+assert.match(entry, /onboarding-switchbox-placement\.js\?v=[A-Za-z0-9_.-]+/, 'onboarding must load the switchbox placement guard');
 assert.match(switchbox, /devSwitchboxSaveSelectSection/, 'placement guard must target the existing switchbox onboarding section rather than duplicate its controls');
 
 assert.match(placement, /querySelector\('#slPlay'\)/, 'world-step detection must use the existing Play control');

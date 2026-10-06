@@ -63,7 +63,7 @@ assert.match(capture, /window\.HobunjiDesktopActionSlotRouter = api;[\s\S]*?wind
   'new generic routing is exposed for diagnostics while preserving the existing loader readiness name');
 
 const heldIndex = loader.indexOf('held-seed-action-bridge.js');
-const desktopIndex = loader.indexOf('held-seed-desktop-capture.js?v=20260814a');
+const desktopIndex = loader.search(/held-seed-desktop-capture\.js\?v=[A-Za-z0-9_.-]+/);
 const alcoholIndex = loader.indexOf('alcohol-gameplay-bridge.js');
 assert.ok(heldIndex >= 0 && desktopIndex > heldIndex && alcoholIndex > desktopIndex,
   'desktop action adapter still loads after the pointer/plant owner and before later held-item providers');

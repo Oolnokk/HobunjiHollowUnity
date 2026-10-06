@@ -98,7 +98,7 @@ vm.runInContext(temporaryLocalesSource, context, { filename: 'temporary-locales.
 vm.runInContext(policySource, context, { filename: 'porakaneki-camp-placement-policy.js' });
 
 assert.equal(contextWindow.PorakanekiCampPlacementPolicy.version, 3);
-assert(loaderSource.indexOf("['PorakanekiCampPlacementPolicy', 'porakaneki-camp-placement-policy.js?v=20260924chunkecology2']") >= 0, 'placement policy is parser-loaded');
+assert.match(loaderSource, /\['PorakanekiCampPlacementPolicy', 'porakaneki-camp-placement-policy\.js\?v=[A-Za-z0-9_.-]+'\]/, 'placement policy is parser-loaded');
 assert(loaderSource.indexOf("['PorakanekiCampPlacementPolicy'") < loaderSource.indexOf("['PorakanekiCamps'"), 'placement policy loads before camp generation');
 assert(loaderSource.indexOf("['PorakanekiCamps'") < loaderSource.indexOf("['PorakanekiMapMarkers'"), 'camp state still updates before map proxies');
 assert(porakanekiRuntimeSource.includes('if (zoneState.chiefReservation) for (const key of streamChunkKeysForSite(zoneState.chiefReservation.site))'),

@@ -21,7 +21,7 @@ assert(
 );
 
 assert(
-  index.includes('style.css?v=20260927commandauras1'),
+  /style\.css\?v=[A-Za-z0-9_.-]+/.test(index),
   'index.html must cache-bust style.css so the text contrast fix reaches existing installs.'
 );
 

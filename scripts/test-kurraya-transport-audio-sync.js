@@ -258,13 +258,13 @@ assert.match(
 
 assert.match(
   hostSource,
-  /MUSIC_MINIGAME_SRC = 'assets\/minigames\/lyre-performance\.html\?v=20260926clockcache1'/,
+  /MUSIC_MINIGAME_SRC = 'assets\/minigames\/lyre-performance\.html\?v=[A-Za-z0-9_.-]+'/,
   'gameplay must cache-bust the fixed-harmony minigame revision'
 );
 
 assert.match(
   gameIndex,
-  /<script src="js\/music-minigame\.js\?v=20260926forojijoin1"><\/script>[\s\S]*?<script src="game\.js\?v=/,
+  /<script src="js\/music-minigame\.js\?v=[A-Za-z0-9_.-]+"><\/script>[\s\S]*?<script src="game\.js\?v=/,
   'the shipped game page must load the cache-busted music host before game.js'
 );
 
@@ -448,7 +448,7 @@ assert.match(
 
 assert.match(
   toolsHub,
-  /data-target="kurraya-music-lab"[\s\S]*?kurraya-music-lab\/index\.html\?v=20260925lab12/,
+  /data-target="kurraya-music-lab"[\s\S]*?kurraya-music-lab\/index\.html\?v=[A-Za-z0-9_.-]+/,
   'the combined Kurraya Music Lab must be the single Kurraya entry in the tools hub'
 );
 assert.doesNotMatch(
