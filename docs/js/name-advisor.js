@@ -208,26 +208,16 @@
     v = v || 0;
     const allowed = getSpecies().kenkari.onsets.filter(Boolean);
     const allowedVowels = ['a', 'i', 'u', 'o', 'e'];
-    // keep source digraphs (ch, th, gh, ng, ph) intact so mapKenkariConsonant can map them as units
-    const expandSet = new Set([...allowed, 'ch', 'th', 'gh', 'ng', 'ph']);
-    const clusterMap = { bl:'br', br:'br', cl:'k', cr:'k', dr:'tr', fl:'f', fr:'fr', gl:'g', gr:'gr', pl:'pr', pr:'pr', sl:'s', sm:'m', sn:'n', sp:'s', st:'s', str:'tr', sw:'s', tr:'tr', tw:'t', sk:'s', scr:'sh', spr:'shr', spl:'sh', skw:'k' }; // Maps familiar clusters to a legal single onset or an authored Mao-ao onset cluster.
-    const collapseOnset = (cluster, index) => collapseConsonantCluster(cluster, allowed, index, clusterMap);
+    const expandSet = new Set([...allowed, 'ch', 'th', 'gh', 'ng', 'ph']); // Keeps recognized sounds intact before invalid clusters are repaired.
+    const clusterSingles = ['b','g','h','k','m','n','p','r','t'];
+    const clusterMap = { bl:'b', br:'b', cl:'k', cr:'k', dr:'t', fl:'p', fr:'p', gl:'g', gr:'g', pl:'p', pr:'p', sl:'h', sm:'m', sn:'n', sp:'p', st:'t', str:'t', sw:'h', tr:'t', tw:'t', sk:'k', scr:'k', spr:'p', spl:'p', skw:'k' }; // Maps common onset clusters to one allowed Kenkari consonant.
     const tokens = expandTokens(tokenizeIdeaSounds(text), expandSet);
     const ideaVows = ideaVowels(text);
     const blocks = [];
     let pending = [];
-    // before any vowel: use input's first vowel; after a vowel: use last seen
     let lastVowel = ideaVows.length > 0 ? nearestVowel(ideaVows[0], allowedVowels[0]) : 'i';
     const defaults = ['h','k','n','m'];
-    const clusterSingles = ['b','g','h','k','m','n','p','r','t'];
-    const clusterMap = { bl:'b', br:'b', cl:'k', cr:'k', dr:'t', fl:'p', fr:'p', gl:'g', gr:'g', pl:'p', pr:'p', sl:'h', sm:'m', sn:'n', sp:'p', st:'t', str:'t', sw:'h', tr:'t', tw:'t', sk:'k', scr:'k', spr:'p', spl:'p', skw:'k' }; // Common onset simplifications mapped into Kenkari's single consonants.
-
     function mapC(token) { return mapKenkariConsonant(token, v + blocks.length + pending.length); }
-    function flushCluster(vowel) {
-      const cluster = pending.splice(0);
-      const consonant = cluster.length === 1 ? mapC(cluster[0]) : collapseConsonantCluster(cluster, allowed, v + blocks.length, clusterMap);
-      blocks.push(makeBlock(consonant + vowel));
-    }
     function flushCluster(vowel) {
       const cluster = pending.splice(0);
       const consonant = cluster.length === 1 ? mapC(cluster[0]) : collapseConsonantCluster(cluster, clusterSingles, clusterMap);
@@ -238,28 +228,15 @@
     for (const token of tokens) {
       if (/^[aeiouy]$/.test(token)) {
         const mappedV = nearV(token);
-        if (pending.length) {
-          if (pending.length > 1) flushCluster(lastVowel);
-          if (pending.length) flushCluster(mappedV);
-        } else if (blocks.length === 0 && v % 3 === 1) {
-          blocks.push(makeBlock(mappedV));
-        } else if (blocks.length > 0) {
-          blocks.push(makeBlock("'" + mappedV));
-        } else {
-          blocks.push(makeBlock(defaults[v % 4] + mappedV));
-        }
-        lastVowel = mappedV; // update AFTER resolving cluster so epenthesis uses prior vowel
-      } else {
-        pending.push(token);
-      }
+        if (pending.length) flushCluster(mappedV);
+        else if (blocks.length === 0 && v % 3 === 1) blocks.push(makeBlock(mappedV));
+        else if (blocks.length > 0) blocks.push(makeBlock("'" + mappedV));
+        else blocks.push(makeBlock(defaults[v % 4] + mappedV));
+        lastVowel = mappedV;
+      } else pending.push(token);
     }
-    // A trailing cluster reduces to one consonant plus the existing final vowel.
     if (pending.length) flushCluster('u');
-
-    if (!blocks.length) {
-      blocks.push(makeBlock(defaults[v % 4] + (ideaVows[0] ? nearV(ideaVows[0]) : 'a')));
-    }
-    // apostrophe before any vowel-initial block after the first
+    if (!blocks.length) blocks.push(makeBlock(defaults[v % 4] + (ideaVows[0] ? nearV(ideaVows[0]) : 'a')));
     return blocks.map((b, i) => (i > 0 && /^[aeiou]/.test(b.text)) ? makeBlock("'" + b.text) : b);
   }
 
@@ -335,8 +312,8 @@
             const mc = new Set(getSpecies().mao.codas.filter(Boolean));
             while (pending.length > 1 && mc.has(pending[0])) blocks[blocks.length - 1].text += pending.shift();
           }
-          if (pending.length > 1) { addBlock(collapseOnset(pending.splice(0), v + blocks.length), lastVowel); vi++; }
-          if (pending.length) addBlock(mapMaoOnset(pending.shift(), v + blocks.length), vow);
+          if (pending.length > 1) addBlock(collapseOnset(pending.splice(0)), vow);
+          else addBlock(mapMaoOnset(pending.shift(), v + blocks.length), vow);
         } else if (blocks.length === 0) {
           addBlock(['n','m','k','t','p','w'][0], vow);
         }
@@ -347,23 +324,14 @@
     }
     const validCodas = new Set(getSpecies().mao.codas.filter(Boolean));
     if (pending.length > 1) {
-      const cluster = pending.splice(0, pending.length - 1);
-      addBlock(collapseOnset(cluster, v + blocks.length), lastVowel);
+      addBlock(collapseOnset(pending.splice(0)), 'u');
       vi++;
     }
     while (pending.length) {
       const c = pending.shift();
-      const isLast = pending.length === 0;
-      if (isLast && v % 4 !== 0 && validCodas.has(c) && blocks.length > 0) {
-        // last consonant is a valid coda: append to last syllable
-        blocks[blocks.length - 1].text += c;
-      } else if (isLast) {
-        // last consonant, invalid as coda: new syllable with 'u'
-        addBlock(mapMaoOnset(c, v + blocks.length), 'u'); vi++;
-      } else {
-        // internal cluster consonant: use last seen vowel, not 'u'
-        addBlock(mapMaoOnset(c, v + blocks.length), lastVowel); vi++;
-      }
+      if (validCodas.has(c) && blocks.length > 0) blocks[blocks.length - 1].text += c;
+      else addBlock(mapMaoOnset(c, v + blocks.length), 'u');
+      vi++;
     }
     if (!blocks.length) addBlock(slot === 'first' && gender === 'female' && !married ? '' : 'n', ideaVows[0] || 'a');
     return blocks;
