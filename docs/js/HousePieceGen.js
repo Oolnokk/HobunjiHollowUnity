@@ -50,6 +50,12 @@
   var _tplProm = null;
   var _pendingShingleTint = null; // Applied after the shared GLB loads; used by every farmhouse/town roof.
   var _appliedShingleTintKey = ''; // Prevents duplicate texture work when several building systems request the same PNG.
+  var _shingleTintGeneration = 0; // Rejects obsolete PNG callbacks after a newer roof finish is requested.
+
+  function _shingleTextureLog(message, level) {
+    if (typeof global.__farmLog === 'function') global.__farmLog('Shingle PNG: ' + message, level || 'info', 'render');
+    else if (global.console) (level === 'warn' ? global.console.warn : global.console.log)('Shingle PNG: ' + message);
+  }
 
   function loadShingleGlb(basePath) {
     if (_tpl)     return Promise.resolve(_tpl);
@@ -82,25 +88,44 @@
     var tintKey = pngPath + '|' + (fillColor || '');
     if (_appliedShingleTintKey === tintKey) return;
     _appliedShingleTintKey = tintKey;
+    var generation = ++_shingleTintGeneration; // Identifies this asynchronous PNG request for success/failure callbacks.
     var mats = new Set();
     _tpl.scene.traverse(function (o) {
       if (!o.isMesh || !o.material) return;
       (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) { if (m) mats.add(m); });
     });
-    if (!mats.size) return;
+    if (!mats.size) { _appliedShingleTintKey = ''; return; }
+    function failed(error) {
+      if (generation !== _shingleTintGeneration) return;
+      _appliedShingleTintKey = '';
+      _shingleTextureLog('could not apply ' + pngPath + ': ' + (error && error.message || 'image load failed'), 'warn');
+    }
     new THREE.TextureLoader().load(pngPath, function (tex) {
-      var rgb = fillColor && global.parseHexColor && global.parseHexColor(fillColor);
-      var finalTex = tex;
-      if (rgb) {
-        var canvas = global.getShadeFillCanvas(tex.image, pngPath + '|' + fillColor, {
-          mode: 'shadeFill', rgb: [rgb.r, rgb.g, rgb.b], options: global.getPortraitTintingConfig(),
+      if (generation !== _shingleTintGeneration) { tex.dispose(); return; }
+      try {
+        var rgb = fillColor && global.parseHexColor && global.parseHexColor(fillColor);
+        var finalTex = tex;
+        if (rgb) {
+          var canvas = global.getShadeFillCanvas(tex.image, pngPath + '|' + fillColor, {
+            mode: 'shadeFill', rgb: [rgb.r, rgb.g, rgb.b], options: global.getPortraitTintingConfig(),
+          });
+          finalTex = new THREE.CanvasTexture(canvas);
+        }
+        finalTex.wrapS = finalTex.wrapT = THREE.RepeatWrapping;
+        finalTex.needsUpdate = true;
+        mats.forEach(function (m) {
+          m.map = finalTex;
+          if (m.color) m.color.setHex(0xffffff);
+          // The shell's baked COLOR_0 is nearly black and its GLB metalness is 1.
+          // Both must yield to the replacement PNG's own shaded, nonmetal surface.
+          m.vertexColors = false;
+          if ('metalness' in m) m.metalness = 0;
+          if ('roughness' in m) m.roughness = 1;
+          m.needsUpdate = true;
         });
-        finalTex = new THREE.CanvasTexture(canvas);
-      }
-      finalTex.wrapS = finalTex.wrapT = THREE.RepeatWrapping;
-      finalTex.needsUpdate = true;
-      mats.forEach(function (m) { m.map = finalTex; if (m.color) m.color.setHex(0xffffff); m.needsUpdate = true; });
-    }, undefined, function () { if (_appliedShingleTintKey === tintKey) _appliedShingleTintKey = ''; });
+        _shingleTextureLog('applied ' + pngPath + ' (' + mats.size + ' shared materials; baked vertex colors disabled)');
+      } catch (error) { failed(error); }
+    }, undefined, failed);
   }
 
   // Some authored GLBs (e.g. HighlandLongshingle_boned.glb's shell meshes)
