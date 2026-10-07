@@ -36,8 +36,13 @@
     return deps?.getNpcRecordById?.(npcId) || findWalker(npcId)?.rec || null; // Canonical record access keeps outfit persistence working even while an NPC has no live walker.
   }
 
-  function clothingPatternPolicy(npcId) {
-    return window.HobunjiNpcClothingPatterns?.npcs?.[npcId] || null; // Authored default-item and forced-overpass rules stay data-driven rather than hardcoded into wardrobe behavior.
+  function clothingPatternPolicy(rec) {
+    const authored = window.HobunjiNpcClothingPatterns?.npcs?.[rec?.id] || {}; // Supplies existing guard emblems when the NPC has no database override.
+    const edited = rec?.clothingPatterns || {}; // Character Studio stores per-slot overrides in the same NPC database as appearance.
+    return {
+      defaultClothing: { ...authored.defaultClothing, ...edited.defaultClothing },
+      forcedOverpassBySlot: { ...authored.forcedOverpassBySlot, ...edited.forcedOverpassBySlot },
+    };
   }
 
   function wornMapFor(npcId, create = false) {
@@ -76,7 +81,7 @@
     if (!rec || !cosmeticId || !slot) return null;
     const live = wornMapFor(rec.id)?.[slot];
     if (live?.cosmeticId === cosmeticId) return clone(live); // Gifted/manual garment keeps complete weaving, colorC, material and player-return metadata.
-    const authored = clothingPatternPolicy(rec.id)?.defaultClothing?.[slot];
+    const authored = clothingPatternPolicy(rec)?.defaultClothing?.[slot];
     const base = authored && (!authored.cosmeticId || authored.cosmeticId === cosmeticId) ? clone(authored) : {};
     const colors = clothingColorsFromWorn(rec, slot);
     return {
@@ -91,7 +96,7 @@
 
   function effectiveWornClothingItem(rec, rawItem) {
     if (!rec || !rawItem) return rawItem;
-    const forced = clothingPatternPolicy(rec.id)?.forcedOverpassBySlot?.[rawItem.slot];
+    const forced = clothingPatternPolicy(rec)?.forcedOverpassBySlot?.[rawItem.slot];
     if (!forced?.pattern) return clone(rawItem);
     const weaving = {
       ...(clone(rawItem.weaving) || {}),
@@ -332,6 +337,9 @@
       cosmetics: authoredAppearance.cosmetics || {},
     }; // Fills only missing legacy identity fields while preserving body colors, deformation, cosmetics, and all other authored appearance data.
     const baseExport = {
+      id: rec?.id,
+      restingExpression: rec?.restingExpression,
+      clothingPatterns: rec?.clothingPatterns,
       name: rec?.name || rec?.id || 'npc',
       appearance,
       equippedCosmetics: rec?.equippedCosmetics || [],
@@ -472,6 +480,7 @@
     applyOutfitOverrideToRecord,
     syncWalkerOutfit,
     wornClothingItemsForRecord,
+    clothingColorsForSlot: clothingColorsFromWorn, // Lets the editor keep pattern-bearing garment colors synchronized with ordinary dye controls.
     serialize,
     restore,
   };

@@ -187,6 +187,110 @@
           }
         }
       }
+    },
+    "mashtzarr_male": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/mashtz_headband_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "mashtzarr_female": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/mashtz_headband_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "mammakhbuur_male": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/mashtz_headband_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "mammakhbuur_female": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/mashtz_headband_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

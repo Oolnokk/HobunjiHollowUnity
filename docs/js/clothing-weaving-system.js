@@ -2884,6 +2884,8 @@
     applyPatternStackToTintedImage, // Shared primary+overpass compositor; slot 2 punches an authored 3×..12×-outline-width invisible clearance through slot 1 before black outlining.
     renderProfileWithWovenPatterns, // Stable adapter used by NpcAvatarPreview when later runtime wrappers replace the initially wrapped global renderer.
     decorateAvatarDataWithWovenItems, // Reuses the player's woven portrait marker contract for NPC/default clothing without duplicating renderer internals.
+    patternStackForLayer: weavingPatternsForRole, // Character Studio edits the same per-layer primary/overpass data as the loom.
+    resolveLayersForCosmetic: resolveIconLayers, // Editor layer choices follow species/gender sprite roles from the production garment resolver.
     hasBehindView,
     iconSpriteForCosmetic,
     hasWovenPattern: item => weavingHasAnyDecoration(item?.weaving), // Compatibility API means "needs the fully-composited clothing path"; trim-only garments qualify too.

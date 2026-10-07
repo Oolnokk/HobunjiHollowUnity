@@ -913,9 +913,15 @@
   }
 </script>
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
+<script src="../../js/local-db-overrides.js"></script>
+<script src="../../js/sprite-recolor.js?v=npcappearance1"></script>
+<script src="../../js/repo-pattern-library.js?v=npcappearance1"></script>
+<script src="../../js/clothing-weaving-system.js?v=npcappearance1"></script>
+<script src="../../config/npcs/clothing-patterns.js?v=npcappearance1"></script>
+<script src="../../js/npc-wardrobe.js?v=npcappearance1"></script>
 <script src="../../js/portrait-utils.js?v=20261005h123b9e8"></script>
 <script src="../../js/portrait-breathing.js?v=20260712l"></script>
-<script src="../../js/npc-avatar-preview-utils.js?v=20260930ha019a52"></script>
+<script src="../../js/npc-avatar-preview-utils.js?v=20261007ha6123a6"></script>
 <script src="../../js/png-plane-avatar.js?v=20261007h317c527"></script>
 
 <script>
@@ -2239,8 +2245,10 @@
   async function fetchNpcDb() {
     state.npcDb.loading = true;
     try {
-      const res = await fetch(NPC_DB_URL);
-      const json = await res.json();
+      const json = window.LocalDBOverrides?.getOverride('npcDatabase') || await fetch(NPC_DB_URL).then(res => {
+        if (!res.ok) throw new Error('NPC database HTTP ' + res.status);
+        return res.json();
+      }); // Director previews use the same locally-authored faces/patterns as gameplay.
       const list = Array.isArray(json.npcs) ? json.npcs : (Array.isArray(json) ? json : []);
       state.npcDb.list = list;
       state.npcDb.byId = new Map(list.map(n => [n.id, n]));
@@ -2254,6 +2262,10 @@
       renderActors(); // badges may need to resolve now that names are known
     }
   }
+
+  window.addEventListener('storage', event => {
+    if (event.key === null || event.key?.endsWith('npcDatabase')) fetchNpcDb(); // Refreshes an already-open Director when Character Studio saves or clears its database override.
+  });
 
   async function fetchCreatureBestiary() {
     state.bestiary.loading = true;
@@ -2293,6 +2305,7 @@
     appearance.cosmetics = { ...DEFAULT_APPEARANCE.cosmetics, ...(npc.appearance?.cosmetics || {}) };
     appearance.bodyColors = { ...DEFAULT_APPEARANCE.bodyColors, ...(npc.appearance?.bodyColors || {}) };
     return {
+      id: npc.id, restingExpression: npc.restingExpression, clothingPatterns: npc.clothingPatterns,
       name: npc.name || npc.id, appearance,
       equippedCosmetics: Array.isArray(npc.equippedCosmetics) ? npc.equippedCosmetics : [],
       appliedDyes: npc.appliedDyes || {}, portrait: npc.portrait || {}
@@ -2420,7 +2433,7 @@
     const three = state.three;
     if (!three) return null;
     let rec = state.actorObjects.get(actor.id);
-    if (rec && rec.npcId === actor.npcId && rec.creatureTypeId === actor.creatureTypeId && rec.name === actor.name) return rec;
+    if (rec && rec.npcId === actor.npcId && rec.creatureTypeId === actor.creatureTypeId && rec.name === actor.name && rec.sourceNpcRecord === npcById(actor.npcId)) return rec;
 
     if (rec) { three.actorsGroup.remove(rec.root); }
     const root = new THREE.Group();
@@ -2439,6 +2452,7 @@
     root.add(buildForwardArrowMarker(avatarHeight));
     three.actorsGroup.add(root);
     rec = {
+      sourceNpcRecord: npc, // A refreshed NPC database rebuilds this actor's face/patterns instead of reusing its old portrait texture.
       root, avatarGroup, npcId: actor.npcId, creatureTypeId: actor.creatureTypeId, name: actor.name, usingPlaceholder,
       profile: avatarInfo?.profile || null, frontCanvas: avatarInfo?.frontCanvas || null,
       avatarHeight, breathTimer: null,

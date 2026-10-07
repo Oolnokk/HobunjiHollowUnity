@@ -171,9 +171,20 @@
     return profile;
   }
 
+  function restingExpressionForRecord(rec) {
+    const cfg = window.SCRATCHBONES_CONFIG?.game?.portrait?.expressions || {}; // Shared expression validation for world, dialogue and cutscene portraits.
+    const available = Array.isArray(cfg.available) ? cfg.available.map(value => String(value).trim().toLowerCase()) : []; // Accepts the configured mouth expressions only.
+    const fallback = String(cfg.defaultResting || 'neutral').trim().toLowerCase(); // Used for unset or invalid authored expressions.
+    const authored = String(rec?.restingExpression || fallback).trim().toLowerCase(); // Keeps imported expressions consistent with editor selections.
+    return !available.length || available.includes(authored) ? authored : fallback;
+  }
+
   function buildProfileFromNpcExport(npc) {
     const cosmetics = cosmeticsCache;
     if (!cosmetics || !npc?.appearance) return null;
+    if (npc.id !== 'player' && (npc.id || npc.clothingPatterns) && window.NpcWardrobe?.wornClothingItemsForRecord && window.ClothingWeavingSystem?.decorateAvatarDataWithWovenItems) {
+      npc = window.ClothingWeavingSystem.decorateAvatarDataWithWovenItems(npc, window.NpcWardrobe.wornClothingItemsForRecord(npc, true));
+    }
     installAccountShim();
     activeNpcForShim = npc;
     const appearance = npc.appearance || {};
@@ -183,6 +194,10 @@
       gender: appearance.gender,
     });
     if (!profile) return null;
+    if (npc.id || Object.hasOwn(npc, 'restingExpression')) {
+      profile.restingExpression = restingExpressionForRecord(npc);
+      profile.portraitSeatId = npc.id || npc.name || 'npc';
+    }
 
     const { optionCache, hatOptions, hoodOptions, torsoPortraitOptions, armPortraitOptions } = cosmetics;
     const savedCosmetics = appearance.cosmetics || {};
@@ -280,6 +295,12 @@
   async function renderProfileToCanvas(canvas, profile, renderOptions = {}) {
     const renderer = window.renderPortraitProfile; // Current live portrait renderer; later runtime wrappers are allowed to replace the original global function.
     if (!canvas || !profile || typeof renderer !== 'function') return false;
+    if (Object.hasOwn(profile, 'restingExpression')) {
+      const seatId = renderOptions.seatId ?? profile.portraitSeatId; // Cutscene/static bakes use the same seat as dialogue instead of the shared null seat.
+      const composer = renderOptions.breathingComposer ?? window.portraitBreathingComposer; // Explicit frozen/emote composers remain authoritative.
+      composer?.setDefaultExpression?.(seatId, profile.restingExpression); // Register the fallback even when a timed expression currently has the same face; timed overrides remain intact.
+      renderOptions = { ...renderOptions, seatId };
+    }
     const weaving = window.ClothingWeavingSystem; // Optional runtime bridge that reapplies woven rendering when a later wrapper replaced the initially woven global renderer.
     if (typeof weaving?.renderProfileWithWovenPatterns === 'function') {
       await weaving.renderProfileWithWovenPatterns(renderer, canvas, profile, renderOptions);
@@ -294,6 +315,7 @@
   }
 
   window.NpcAvatarPreview = {
+    restingExpressionForRecord,
     ensurePortraitCosmetics,
     buildProfileFromNpcExport,
     randomProfile,

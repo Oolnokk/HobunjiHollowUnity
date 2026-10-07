@@ -11885,6 +11885,9 @@
           cosmetics: {},
         };
         const profile = window.NpcAvatarPreview.buildProfileFromNpcExport({
+          id: rec?.id,
+          restingExpression: rec?.restingExpression,
+          clothingPatterns: rec?.clothingPatterns,
           name: rec?.name || rec?.id || 'npc',
           appearance,
           equippedCosmetics: rec?.equippedCosmetics || [],
@@ -30675,6 +30678,7 @@
           _npcDialogueNameEl.textContent = speakerName;
           if (_npcDialogueHeartsEl) _npcDialogueHeartsEl.textContent = '';
           _arcContainerEl?.classList.add('arc-hidden');
+          window.DialogueContent?.setNpcDialogueText(text, options.node || null);
           if (_dialogueWalker?.profile && window.NpcAvatarPreview) {
             await window.DialogueContent?.renderNpcDialoguePortrait(); // Updates the visible world avatar only.
           }
@@ -30682,7 +30686,6 @@
           _npcDialogueEl.classList.add('open');
           _npcDialogueEl.setAttribute('aria-hidden', 'false');
           window.DialogueContent?.hideChoiceButtons();
-          window.DialogueContent?.setNpcDialogueText(text);
         }
 
         function closeLine() {
@@ -30690,7 +30693,7 @@
           cutscenePreviewAdvance = null;
           window.DialogueContent?.hideChoiceButtons();
           window.portraitBreathingComposer?.clearExpression(window.DialogueContent?.dialogueSeatId());
-          window.portraitBreathingComposer?.setDefaultExpression(window.DialogueContent?.dialogueSeatId(), null);
+          window.portraitBreathingComposer?.setDefaultExpression(window.DialogueContent?.dialogueSeatId(), window.DialogueContent?.npcRestingExpression?.(_dialogueWalker?.rec) || null);
           _dialogueWalker = null;
           // Preserve the last speaker anchor until the next card chooses a new shot.
           _npcDialogueEl.classList.remove('open');
@@ -30815,13 +30818,13 @@
           }
           if (!speakerEntity) { continueTo(getResolvedNext(stage.id, stage.next)); return; }
           if (stage.type === 'choice') {
-            openLine(speakerEntity, speakerName, stage.text).then(() => {
+            openLine(speakerEntity, speakerName, stage.text, { node: stage }).then(() => {
               showChoiceOptions((stage.options || []).map(o => ({ text: o.text, onClick: () => continueTo(getResolvedNext(stage.id, o.next)) })));
             });
             cutscenePreviewAdvance = () => {}; // choices only ever advance via their own button
             return;
           }
-          openLine(speakerEntity, speakerName, stage.text);
+          openLine(speakerEntity, speakerName, stage.text, { node: stage });
           cutscenePreviewAdvance = () => {
             if (!running || !dialogueOpen) return;
             runtimeOptions.onDialogueContinue?.(stage); // Lets authored stories persist milestones only when the player continues the displayed dialogue.
