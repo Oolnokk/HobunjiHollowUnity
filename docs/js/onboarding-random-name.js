@@ -127,23 +127,42 @@
   }
 
   function suggestNames(text, speciesId, gender, maxLength = 32) {
-    const speciesKeys = { kenkari: 'kenkari', 'mao-ao': 'mao', 'engh-sho': 'engh', tletingan: 'slagothim', nuhongan: 'slagothim', slagothim: 'slagothim' }; // Maps the creator's species IDs to the original advisor cultures; Nuhongan are Tletingan-derived Slagothim.
-    const speciesKey = speciesKeys[normalizeSpecies(speciesId)]; // Selects only cultures whose phonology the advisor actually knows.
-    const idea = String(text || '').slice(0, maxLength).trim(); // Bounds work to the name field's limit and ignores blank/nonalphabetic input.
+    const speciesKeys = { kenkari: 'kenkari', 'mao-ao': 'mao', 'engh-sho': 'engh', tletingan: 'slagothim', nuhongan: 'slagothim', slagothim: 'slagothim' };
+    const speciesKey = speciesKeys[normalizeSpecies(speciesId)];
+    const idea = String(text || '').slice(0, maxLength).trim();
     if (!speciesKey || !/[a-z]/i.test(idea.normalize('NFD')) || !window.HobunjiNameAdvisor) return [];
-    const options = window.HobunjiNameAdvisor.makeIdeaOptions(speciesKey, speciesKey === 'slagothim' ? 'given' : 'first', idea, { gender: normalizeGender(gender) }); // Reuses each culture's existing phonology and naming rules.
-    const seen = new Set([idea.toLowerCase()]); // Removes duplicate suggestions and the name already in the field.
-    return options.map((option, originalIndex) => ({ name: option.label, originalIndex })).filter(({ name }) => {
-      const key = String(name || '').toLowerCase(); // Compares options without case-only differences.
-      if (!name || name.length > maxLength || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    }).map(({ name, originalIndex }) => suggestionRank(name, idea, originalIndex))
+    const options = window.HobunjiNameAdvisor.makeIdeaOptions(speciesKey, speciesKey === 'slagothim' ? 'given' : 'first', idea, { gender: normalizeGender(gender) });
+    const seen = new Set([idea.toLowerCase()]);
+    return options.map((option, originalIndex) => ({ name: option.label, originalIndex }))
+      .filter(({ name }) => {
+        const key = String(name || '').toLowerCase();
+        if (!name || name.length > maxLength || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .filter(({ name }) => speciesKey !== 'slagothim' || isValidSlagothimSuggestion(name, gender))
+      .map(({ name, originalIndex }) => suggestionRank(name, idea, originalIndex))
       .sort((a, b) => a.distance - b.distance || Number(b.sameLength) - Number(a.sameLength) || a.lengthChange - b.lengthChange || a.substitutions - b.substitutions || a.originalIndex - b.originalIndex)
       .slice(0, 4)
       .map(entry => entry.name);
   }
 
+  function isValidSlagothimSuggestion(name, gender) {
+    const lower = String(name || '').toLowerCase();
+    const female = normalizeGender(gender) === 'female';
+    const suffix = female ? 'mira' : 'mir';
+    const vowels = new Set('aeiou');
+    const first = ['sl', 'shr', 'tr', 'gr', 'br', 'gl', 'b', 'g', 'n', 'p', 't', 'd', 'k', 'm'];
+    const second = ['b', 'g', 'p', 't', 'd', 'k', 'r', 'n', 'ng', 'mn'];
+    const allowedLetters = new Set([...vowels, ...'bgnptdkmrslh']);
+    if (!lower.endsWith(suffix) || ![...lower].every(char => allowedLetters.has(char))) return false;
+    const onset = first.slice().sort((a, b) => b.length - a.length).find(token => lower.startsWith(token));
+    if (!onset) return false;
+    const stem = lower.slice(onset.length, -suffix.length);
+    if (!stem || !vowels.has(stem[0])) return false;
+    const runs = stem.slice(1).match(/[bcdfghjklmnpqrstvwxyz]+/g) || [];
+    return runs.every(run => second.includes(run));
+  }
   function refreshSuggestions(overlay, input, suggestions) {
     const identity = activeIdentity(overlay); // Uses the same selected species/gender authority as random naming.
     const names = identity ? suggestNames(input.value, identity.speciesId, identity.gender, input.maxLength > 0 ? input.maxLength : 32) : []; // Current choices rendered directly beneath the input.
