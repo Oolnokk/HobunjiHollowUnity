@@ -439,6 +439,18 @@
     return t * t * (3 - 2 * t);
   }
 
+  // Shared by rendered vertices and CPU landmarks so head scaling agrees.
+  function headScaleGateAtPixel(pixelX, headBoundsPx) {
+    if (!headBoundsPx) return 1;
+    const halfWidth = Math.max(1, (headBoundsPx.right - headBoundsPx.left) / 2); // Bare head half-width in pixels.
+    const centerX = (headBoundsPx.left + headBoundsPx.right) / 2; // Horizontal center of the detected head.
+    const inner = halfWidth * 1.5; // Full head-scale influence includes nearby hats.
+    const outer = halfWidth * 2.5; // Shoulders beyond this keep rotation only.
+    const dx = Math.abs(pixelX - centerX); // Distance from the head center.
+    return dx <= inner ? 1 : dx >= outer ? 0
+      : smoothstep01(1 - (dx - inner) / (outer - inner));
+  }
+
   // Builds the complete rectangular PNG plane as one two-sided SkinnedMesh.
   // Every grid vertex receives root/head weights regardless of the texel alpha
   // beneath it. Cosmetics, separated silhouettes, and transparent space are
@@ -471,10 +483,6 @@
     // shoulder/collar pixels at head height sit well past that and keep
     // their full headWeight on the rotation bone instead.
     const headBoundsPx = options.headBoundsPx || null;
-    const headHalfWidthPx = headBoundsPx ? Math.max(1, (headBoundsPx.right - headBoundsPx.left) / 2) : 0;
-    const headCenterXPx = headBoundsPx ? (headBoundsPx.left + headBoundsPx.right) / 2 : 0;
-    const headScaleInnerPx = headHalfWidthPx * 1.5;
-    const headScaleOuterPx = headHalfWidthPx * 2.5;
     const positions = [], normals = [], uvs = [], skinIndices = [], skinWeights = [];
 
     const toModelX = pixelX => -modelWidth / 2 + (pixelX / pixelWidth) * modelWidth;
@@ -486,14 +494,7 @@
       normals.push(0, 0, normalZ);
       uvs.push(pixelX / pixelWidth, 1 - pixelY / pixelHeight);
       const headWeight = smoothstep01((y - (neckLocal.y - blendHeight * .55)) / blendHeight);
-      let headScaleGate = 1;
-      if (headBoundsPx) {
-        const dx = Math.abs(pixelX - headCenterXPx);
-        headScaleGate = dx <= headScaleInnerPx ? 1
-          : dx >= headScaleOuterPx ? 0
-          : smoothstep01(1 - (dx - headScaleInnerPx) / (headScaleOuterPx - headScaleInnerPx));
-      }
-      const headScaleWeight = headWeight * headScaleGate;
+      const headScaleWeight = headWeight * headScaleGateAtPixel(pixelX, headBoundsPx);
       const headRotateWeight = headWeight - headScaleWeight;
       skinIndices.push(0, 1, 2, 0);
       skinWeights.push(1 - headWeight, headRotateWeight, headScaleWeight, 0);
@@ -927,21 +928,36 @@
     const t = Math.max(0, Math.min(1, (localPoint.y - (neckY - blendHeight * .55)) / blendHeight));
     const headWeight = t * t * (3 - 2 * t); // Same smoothstep as buildSkinnedPlaneGeometry.
 
-    portraitRoot.updateWorldMatrix?.(true, false);
-    skinnedPlane.updateWorldMatrix?.(true, false);
+    // updateMatrixWorld (not only updateWorldMatrix) is intentional here:
+    // SkinnedMesh's override refreshes bindMatrixInverse in attached bind mode,
+    // exactly as the renderer does before evaluating the skinning shader.
+    portraitRoot.updateMatrixWorld?.(true);
+    skinnedPlane.updateMatrixWorld?.(true);
+    skeleton.update?.();
+
+    const bindPoint = localPoint.clone().applyMatrix4(skinnedPlane.bindMatrix);
     const deformed = new THREE.Vector3();
     const bonePoint = new THREE.Vector3();
     const boneMatrix = new THREE.Matrix4();
-    const weights = [1 - headWeight, headWeight];
-    for (let i = 0; i < Math.min(2, skeleton.bones.length); i++) {
-      const bone = skeleton.bones[i];
+    const headScaleWeight = rig.headScaleJoint && skeleton.bones.length >= 3
+      ? headWeight * headScaleGateAtPixel(renderedPixelX, rig.headBoundsPx) : 0; // Match the rendered head-scale bone.
+    const weights = [1 - headWeight, headWeight - headScaleWeight, headScaleWeight];
+    for (let i = 0; i < Math.min(weights.length, skeleton.bones.length); i++) {
       const weight = weights[i] || 0;
-      if (!weight || !bone) continue;
-      bone.updateWorldMatrix?.(true, false);
-      boneMatrix.multiplyMatrices(bone.matrixWorld, skeleton.boneInverses[i]);
-      bonePoint.copy(localPoint).applyMatrix4(boneMatrix);
+      if (!weight) continue;
+      if (skeleton.boneMatrices?.length >= (i + 1) * 16) {
+        boneMatrix.fromArray(skeleton.boneMatrices, i * 16);
+      } else {
+        const bone = skeleton.bones[i];
+        const boneInverse = skeleton.boneInverses?.[i];
+        if (!bone || !boneInverse) continue;
+        bone.updateWorldMatrix?.(true, false);
+        boneMatrix.multiplyMatrices(bone.matrixWorld, boneInverse);
+      }
+      bonePoint.copy(bindPoint).applyMatrix4(boneMatrix);
       deformed.addScaledVector(bonePoint, weight);
     }
+    deformed.applyMatrix4(skinnedPlane.bindMatrixInverse);
     return skinnedPlane.localToWorld(deformed);
   }
 
@@ -1166,6 +1182,7 @@
     scanOpaqueVerticalBoundsOfImage,
     detectNeckPivotPx,
     upgradePlaneToAutoNeckSkin,
+    headScaleGateAtPixel,
     resolveSkinnedPortraitRoot,
     resolveSkinnedPixelWorldPosition,
     resolveSkinnedPixelWorldFrame,

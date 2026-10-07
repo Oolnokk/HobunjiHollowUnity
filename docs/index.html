@@ -156,16 +156,16 @@
   <script src="js/portrait-utils.js?v=20261005h123b9e8"></script>
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20260930ha019a52"></script>
-  <script src="js/png-plane-avatar.js?v=20260926hskelhairalign1"></script>
+  <script src="js/png-plane-avatar.js?v=20261007h317c527"></script>
   <script src="js/species-pose-scaling.js?v=20260920height2"></script>
   <script src="js/character-dimensions.js?v=20260930dims1"></script>
   <!-- Keeps the portrait plane's occlusion-depth redraws (used so its silhouette can
        occlude 3D held items/tools) on the same matrix as its visible draw when
        PlayerBodyTransformComposer is composing a render-time body delta (mirrors
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
-  <script src="js/portrait-plane-outline-parity.js?v=20260924shoulderocclusion1"></script>
+  <script src="js/portrait-plane-outline-parity.js?v=20261007hfd6211c"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261007h547abf3"></script>
+  <script src="js/held-action-animations.js?v=20261007hb5a7f24"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
   <script src="js/character-action-locks.js?v=20261002h69592ed"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
@@ -1815,8 +1815,8 @@
               <div class="settings-desc">Raises/lowers the shoulder cam's framing relative to the head — adjusts whichever stance (Default/Combat) is currently active</div>
             </div>
             <div style="display:flex;align-items:center;gap:8px">
-              <input type="range" id="settingShoulderSurfOffsetV" min="-1" max="1" step="0.05" value="-0.05" style="align-self:center">
-              <span id="settingShoulderSurfOffsetVValue" class="settings-slider-value">-0.05</span>
+              <input type="range" id="settingShoulderSurfOffsetV" min="-1" max="1" step="0.05" value="0.05" style="align-self:center">
+              <span id="settingShoulderSurfOffsetVValue" class="settings-slider-value">0.05</span>
             </div>
           </label>
           <div class="settings-section-title" style="margin-top:10px">Input</div>
@@ -2424,7 +2424,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261006hfed7a88"></script>
+  <script src="js/pixel-probe.js?v=20261007h7b27157"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2571,7 +2571,7 @@
   <script src="js/shoulder-cam-pointer-lock.js?v=20260930hfc11b39"></script>
   <!-- Shared character-scoped hobunjiSaveMeta update step used by game.js's save* helpers. -->
   <script src="js/character-meta-save.js?v=20260930ench1"></script>
-  <script src="game.js?v=20261006h3151033"></script>
+  <script src="game.js?v=20261007h0e999fd"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261005h9a94218"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
