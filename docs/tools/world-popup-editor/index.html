@@ -166,6 +166,6 @@ $('download').onclick=()=>{collect();const blob=new Blob([JSON.stringify(setting
 $('reset').onclick=()=>{settings=popupRuntime.applySettings(repoSettings);localStorage.removeItem(STORAGE_KEY);renderControls();replayBurst();status('Restored repository settings.')};
 boot().catch(error=>status(error.stack||error.message,'bad'));
 </script>
-<script src="../../js/world-popup-relationship-editor.js?v=20260915c"></script>
+<script src="../../js/world-popup-relationship-editor.js?v=20261007h00e451d"></script>
 </body>
 </html>

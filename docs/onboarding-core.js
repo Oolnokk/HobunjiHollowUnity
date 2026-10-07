@@ -1434,6 +1434,7 @@
       wildernessCampfireState: memberState.wildernessCampfireState || null,
       townMineState:     memberState.townMineState || null,
       doorstepVisitState: { ...(memberState.doorstepVisitState || {}) },
+      romanceState:      memberState.romanceState || null,
       lastPosition:      memberState.lastPosition || null,
       isNewWorld,
     };
@@ -1799,6 +1800,7 @@
       playerData.wildernessCampfireState = memberState.wildernessCampfireState || null;
       playerData.townMineState = memberState.townMineState || null;
       playerData.doorstepVisitState = { ...(memberState.doorstepVisitState || {}) };
+      playerData.romanceState = memberState.romanceState || null;
       playerData.lastPosition = memberState.lastPosition || null;
       playerData.isNewWorld     = true;
     }

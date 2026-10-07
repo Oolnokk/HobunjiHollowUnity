@@ -473,6 +473,7 @@
     }) || null;
 
     state.debug.lastAction = `Dance: ${DANCE_STYLES[style].label} + ${ARM_STYLES[armStyle]}`;
+    window.HobunjiActivityEvents?.emit('dance', { style, armStyle });
     toast(`${DANCE_STYLES[style].label} · ${ARM_STYLES[armStyle]} — Dodge to stop`, true);
     updateDebug();
     return true;

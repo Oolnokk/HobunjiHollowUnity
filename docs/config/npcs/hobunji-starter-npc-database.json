@@ -11452,8 +11452,8 @@
                   },
                   "relationship": {
                         "canBefriend": true,
-                        "canDate": false,
-                        "canMarry": false,
+                        "canDate": true,
+                        "canMarry": true,
                         "maxHearts": 10,
                         "decayRule": "unknown",
                         "baseDisposition": 0,
@@ -13581,8 +13581,8 @@
                   },
                   "relationship": {
                         "canBefriend": true,
-                        "canDate": false,
-                        "canMarry": false,
+                        "canDate": true,
+                        "canMarry": true,
                         "maxHearts": 10,
                         "decayRule": "unknown",
                         "baseDisposition": 0,
@@ -14155,8 +14155,8 @@
                   },
                   "relationship": {
                         "canBefriend": true,
-                        "canDate": false,
-                        "canMarry": false,
+                        "canDate": true,
+                        "canMarry": true,
                         "maxHearts": 10,
                         "decayRule": "unknown",
                         "baseDisposition": 0,

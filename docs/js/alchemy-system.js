@@ -314,6 +314,7 @@
     deps.inventory[itemKey] = Math.min(99, (deps.inventory[itemKey] || 0) + batch);
     const discovered = discoverRecipe(chosen.recipeId, 'brewed new recipe'); // One-time discovery XP.
     window.SkillSystem?.award?.('alchemy', window.SkillSystem?.XP_GAINS?.alchemyBrew || 8, 'brewed potion');
+    window.HobunjiActivityEvents?.emit('potion_brewed', { itemKey, recipeId: chosen.recipeId });
     if (target && chosen.recipeId === target) window.SkillSystem?.award?.('alchemy', window.SkillSystem?.XP_GAINS?.alchemyTarget || 5, 'targeted recipe');
     lastBrewDiagnostics = { keys, outcomes, target, probability: target ? targetingProbability(targetLevel, outcomes, target) : null, chosenRecipeId: chosen.recipeId, potencyTier: tier, batch, everyIngredientContributes: outcomes.every(outcome => outcome.assignments.every(a => Object.values(a.contributes).every(list => list.length))) }; // Dev report.
     document.dispatchEvent(new CustomEvent('hobunji-alchemy-change', { detail: { type: 'brew', recipeId: chosen.recipeId, itemKey } }));

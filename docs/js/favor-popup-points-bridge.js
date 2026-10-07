@@ -8,6 +8,7 @@
   const POPUP_FONT_FAMILY = "'KhymeryyanRomanLetters+Numbers', 'DM Mono', monospace";
   const RAPPORT_HEART_COLOR = '#ffd84d';
   const FAVOR_HEART_COLOR = '#ff8fbd';
+  const ROMANCE_HEART_COLOR = '#ff3d73'; // Date Romance (js/romance-system.js) reads as a deeper red than Favor's pink.
   const RELATIONSHIP_GAIN_COLOR = '#66d96f';
   const RELATIONSHIP_LOSS_COLOR = '#ff5b5b';
   const HEART_RENDER_ORDER = 1211;
@@ -70,7 +71,7 @@
     const value = Math.round((Number(amount) || 0) * 10) / 10;
     return Object.is(value, -0) ? 0 : value;
   }
-  function relationshipHeartColor(kind) { return kind === 'favor' ? FAVOR_HEART_COLOR : RAPPORT_HEART_COLOR; }
+  function relationshipHeartColor(kind) { return kind === 'favor' ? FAVOR_HEART_COLOR : kind === 'romance' ? ROMANCE_HEART_COLOR : RAPPORT_HEART_COLOR; }
   function relationshipNumberColor(amount) { return amount > 0 ? RELATIONSHIP_GAIN_COLOR : RELATIONSHIP_LOSS_COLOR; }
   function spritePngSurface() { return window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit || null; }
 
@@ -533,7 +534,7 @@
     }
     const editorSettings = editorSettingsObject();
     if (editorSettings) captureSettings(editorSettings);
-    api.showRelationshipChange = (root, kind, amount, options) => spawnRelationshipPopup(root, kind === 'favor' ? 'favor' : 'rapport', amount, options);
+    api.showRelationshipChange = (root, kind, amount, options) => spawnRelationshipPopup(root, kind === 'favor' || kind === 'romance' ? kind : 'rapport', amount, options);
     api.showRapportGain = (root, amount, options) => spawnRelationshipPopup(root, 'rapport', amount, options);
     api.showRapportChange = api.showRapportGain;
     api.showFavorChange = (root, amount, options) => spawnRelationshipPopup(root, 'favor', amount, options);

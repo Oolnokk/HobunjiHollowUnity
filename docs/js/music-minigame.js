@@ -349,6 +349,13 @@
     if (!data || data.source !== 'hobunji-music-minigame' || data.type !== 'sounded-note') return;
     onSoundedNote(data, event.source);
   });
+  // One 'kurraya_played' activity per player session, on the first note the
+  // player actually sounds (see js/activity-events.js).
+  function announcePlayerPlaying() {
+    if (!playerSession || playerSession.announcedPlaying) return;
+    playerSession.announcedPlaying = true;
+    window.HobunjiActivityEvents?.emit('kurraya_played', { mode: playerSession.mode });
+  }
   function onSoundedNote(data, source) {
     if (source === frameEl?.contentWindow) {
       if (playerSession?.mode === 'backup') {
@@ -357,10 +364,11 @@
         // was torn down for the duration — see beginPlayerSession — so this
         // is the only place those notes are still observable) and 'backup'
         // notes are the player's own input.
-        if (data.performer === 'backup') deps?.triggerPlayerKurrayaTwitch?.();
+        if (data.performer === 'backup') { deps?.triggerPlayerKurrayaTwitch?.(); announcePlayerPlaying(); }
         else if (playerSession.npcId) deps?.triggerNpcKurrayaTwitch?.(playerSession.npcId);
       } else {
         deps?.triggerPlayerKurrayaTwitch?.();
+        announcePlayerPlaying();
       }
       return;
     }

@@ -5,7 +5,7 @@
   if (!/\/tools\/world-popup-editor\//.test(location.pathname)) return;
 
   const MODULE_SRC = document.currentScript?.src || ''; // Used to resolve the shared runtime relationship bridge from this editor helper.
-  const POSITION_BRIDGE_URL = MODULE_SRC ? new URL('favor-popup-points-bridge.js?v=20260915position6', MODULE_SRC).href : '../../js/favor-popup-points-bridge.js?v=20260915position6'; // Used to run the exact gameplay relationship renderer in the editor.
+  const POSITION_BRIDGE_URL = MODULE_SRC ? new URL('favor-popup-points-bridge.js?v=20261007h99b53f8', MODULE_SRC).href : '../../js/favor-popup-points-bridge.js?v=20261007h99b53f8'; // Used to run the exact gameplay relationship renderer in the editor.
   const FALLBACK_NPC = Object.freeze({ // Used only so the preview never waits on the large repository NPC database before showing a real PNG-plane character.
     id: 'popup_preview_character',
     name: 'Preview Character',

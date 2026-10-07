@@ -276,6 +276,7 @@
           parts.push('👘 ' + loot.clothing.label);
         }
         placement.found = true;
+        window.HobunjiActivityEvents?.emit('chest_opened', { buried: true, mapId });
         deps._zoneScenes.get(mapId)?.scene.remove(mesh);
         const groups = deps._zoneTreasureMeshGroups.get(mapId);
         if (groups) { const i = groups.indexOf(mesh); if (i >= 0) groups.splice(i, 1); }

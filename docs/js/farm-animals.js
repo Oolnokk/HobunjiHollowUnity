@@ -548,6 +548,7 @@
     }
     const talkName = rec?.name || label;
     buttons.push({ icon: '💬', label: `Talk to ${talkName}`, action: 'obj_talk_' + animal.id, style: resourceReady ? 'secondary' : 'primary', allowed: true });
+    buttons.push({ icon: '🤚', label: `Pet ${talkName}`, action: 'obj_pet_' + animal.id, style: 'secondary', allowed: true });
 
     const heldKey = deps.getHeldItemKey?.(); // Ordinary held-item selection is the only administration source.
     const heldPayload = heldKey && (window.AlchemySystem?.POTION_ITEMS?.[heldKey] || window.AlchemySystem?.parseBrewedItemKey?.(heldKey)); // Stored recipe/tier payload.
@@ -568,6 +569,11 @@
       return { ok: true };
     }
     if (action === 'obj_alchemy_' + animal.id) return administerBreedingPotion(animal.livestockId, deps.getHeldItemKey?.());
+    if (action === 'obj_pet_' + animal.id) {
+      const rec = deps.loadWorldLivestock().find(l => l.id === animal.livestockId);
+      window.HobunjiActivityEvents?.emit('animal_petted', { farm: true, kind: rec?.kind || null, livestockId: animal.livestockId });
+      return { ok: true, message: `🤚 You give ${rec?.name || 'them'} a good scratch. They lean right into it.` };
+    }
     if (action === 'obj_collect_' + animal.id) {
       const rec = deps.loadWorldLivestock().find(l => l.id === animal.livestockId);
       const resDef = rec ? deps.LIVESTOCK_RESOURCE_DEFS[rec.kind] : null;

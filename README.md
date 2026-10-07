@@ -222,3 +222,36 @@ with their own character saves) is a design goal, not yet implemented. See
 in the current save/combat/AI architecture already lines up with it, and the
 desync risks (NPC/creature transforms, combat timing, animation state) that
 will need addressing.
+
+## Dating, marriage & children
+
+- **Hold Action 1 on an NPC** (`docs/js/npc-command-wheel.js`) opens a radial
+  command wheel; a tap still Talks exactly as before. The press is owned via
+  `WorldActionInputClaims`, so touch/mouse/keyboard/controller share one
+  tap-vs-hold path. NPCs with no commands leave Action 1 unclaimed.
+- **Dates** (`docs/js/romance-system.js`): ask a romanceable NPC out (2+ hearts),
+  then Follow / Wait / Dismiss until the in-game-hour limit runs out. Dates
+  drive the NPC through `NpcScheduling.registerTargetOverride`.
+- **Romance** is a date-only sibling of Rapport stored by `NpcRapport`
+  (`getRomance`/`adjustRomance`): range −100..400, settles into Favor at
+  midnight at 5× Rapport's rate, shown in the Day Review. Each NPC's likes and
+  the short list of things that *lose* Romance live in
+  `docs/config/romance-config.js`, scored from `window.HobunjiActivityEvents`
+  (`docs/js/activity-events.js`), a generic "player did X" bus emitted from
+  fishing, felling, mining, foraging, harvesting, cooking, brewing, chests,
+  kills, petting (new farm-animal Pet button), drinks, dancing, Kurraya and
+  nest theft.
+- **Marriage**: propose on a date (10 hearts, 3 dates), meet at the Life Temple
+  (`map_i_temple`) from the next day, Father Hunundi officiates, and the spouse
+  moves to the farmhouse (sleeps in your bed, sits in your chairs, potters
+  around the farm, some afternoons back on their old town schedule).
+- **Children** (`docs/js/romance-family.js`): 3 months after the wedding a
+  pregnancy/egg is announced for same-species opposite-gender couples; the
+  first sleep in your farmhouse bed after 6 months brings the birth/hatching
+  (or, for any other pairing, a dream-child picker followed by Father Hunundi
+  at the door via `DoorstepVisits` with an orphan to name). Newborns sleep a
+  month in a `babyBasket` fixture, toddle with hidden Toddling Footing (99 → 0
+  over 5 months), then walk the farm, greet you, and can work a squeezing vat
+  (`DewVats.setExternalWorker`) at 2× yield.
+- Saved per character per world as `member.romanceState`. Executable coverage:
+  `scripts/test-romance-dating.js`.

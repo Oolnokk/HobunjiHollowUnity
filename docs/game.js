@@ -366,7 +366,10 @@
         refreshWeaponSwitchBtn();
       }
 
-      async function openNpcDialogue(walker) {
+      // opts.node: open straight into one synthetic dialogue node (feature
+      // conversations such as js/romance-system.js's date/proposal/wedding
+      // scripts) instead of the NPC's ordinary tree/turn-in/favor routing.
+      async function openNpcDialogue(walker, opts = null) {
         const rec  = walker.rec;
         window.DialogueContent?.recordNpcMemory(rec?.id, 'talked');
         window.WorldPopupText?.clearInteractionPrompts?.();
@@ -402,6 +405,12 @@
 
         _npcDialogueEl.classList.add('open');
         _npcDialogueEl.setAttribute('aria-hidden', 'false');
+
+        if (opts?.node) {
+          window.DialogueContent?.beginSyntheticChoice(rec);
+          window.DialogueContent?.renderDlgNode(opts.node);
+          return;
+        }
 
         if (rec?.id === 'spearhead_unumanuk' && window.CombatTutorial?.active()) {
           window.DialogueContent?.beginNpcConversation(rec); // Automatic coaching must not be displaced by procedural requests.
@@ -2441,6 +2450,7 @@
         bedroll:       { itemKey: 'bedrollFurniture',       icon: '🛌', name: 'Bedroll',              modelFile: 'bedroll_folded.glb',            price: 12, fw: 1, fd: 1, color: 0x6b8c5e, area: 'interior', desc: 'A simple folded bedroll for sleeping rough.' },
         bench:         { itemKey: 'benchFurniture',         icon: '🪑', name: 'Short Bench',          modelFile: 'bench_short.glb',              price: 18, fw: 2, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A short wooden bench.', sit: true },
         bookshelf:     { itemKey: 'bookshelfFurniture',     icon: '📚', name: 'Bookshelf',            modelFile: 'bookshelf_low.glb',            price: 28, fw: 2, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A low bookshelf.' },
+        babyBasket:    { itemKey: 'babyBasketFurniture',    icon: '🧺', name: 'Baby Basket',          price: 0,  fw: 1, fd: 1, color: 0xb08a4e, area: 'interior', desc: 'A woven basket where your newborn sleeps for their first month.', fixture: true },
         bucket:        { itemKey: 'bucketFurniture',        icon: '🪣', name: 'Tin Bucket',           modelFile: 'bucket_tin.glb',               price: 8,  fw: 1, fd: 1, color: 0x888888, area: 'any',      desc: 'A utilitarian tin bucket.' },
         candleTable:   { fireHazard: true, itemKey: 'candleTableFurniture',   icon: '🕯️', name: 'Candle Table',         modelFile: 'candle_table.glb',             price: 15, fw: 1, fd: 1, color: 0x5a4020, area: 'interior', desc: 'Small table with a candle for warm light.', light: { color: 0xffaa44, intensity: 0.7, distance: 5, height: 0.55 } },
         chairSimple:   { itemKey: 'chairSimpleFurniture',   icon: '🪑', name: 'Simple Chair',         modelFile: 'chair_simple.glb',             price: 12, fw: 1, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A plain wooden chair.', sit: true },
@@ -2758,7 +2768,7 @@
         barrelAging: 'aging', vaseAging: 'aging',
       };
 
-      function addProcessedOutputs(outputs, inputStars, methodId) {
+      function addProcessedOutputs(outputs, inputStars, methodId, yieldMultiplier = 1) {
         const methodClass = PROCESSING_METHOD_CLASSES[methodId] || 'quick';
         // Output quality evolves from the input's actual quality rather than
         // being rerolled from scratch — see the processing-quality-resolution
@@ -2774,7 +2784,7 @@
         outputs.forEach(output => {
           window.ItemProcessing.ensureProcessedItemDef(output);
           const previousCount = inventory[output.key] || 0; // Used to keep quality buckets aligned when an output stack is full.
-          inventory[output.key] = Math.min(99, previousCount + 1 + bonusUnit);
+          inventory[output.key] = Math.min(99, previousCount + (1 + bonusUnit) * Math.max(1, Math.floor(Number(yieldMultiplier) || 1)));
           window.CookingSystem?.recordItemQuality?.(output.key, outputStars, inventory[output.key] - previousCount);
         });
         return outputStars;
@@ -2815,11 +2825,11 @@
           const color = outputs?.[0]?.spriteColor;
           return Number.isFinite(color) ? '#' + Number(color).toString(16).padStart(6, '0') : processTimeline?.substanceColor;
         }
-        function startTimedJob(outputs, inputStars, inputLabel, source = 'manual') {
+        function startTimedJob(outputs, inputStars, inputLabel, source = 'manual', yieldMultiplier = 1) {
           if (!processTimeline) return { ok: false, message: `${def.name} has no authored process timeline.` };
           if (job) return { ok: false, busy: true, message: `${def.name} is already squeezing a batch.` };
           const durationS = Math.max(.1, Number(processTimeline.duration) || 12);
-          job = { kind: 'timed', outputs, inputStars, inputLabel, source, durationS, readyAtMs: Date.now() + durationS * 1000, substanceColor: timelineSubstanceColor(outputs) };
+          job = { kind: 'timed', outputs, inputStars, inputLabel, source, yieldMultiplier, durationS, readyAtMs: Date.now() + durationS * 1000, substanceColor: timelineSubstanceColor(outputs) };
           window.FarmEditor.saveFarmLayout();
           window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().processStart);
           return { ok: true, started: true, durationS };
@@ -2828,7 +2838,7 @@
           if (job?.kind !== 'timed') return;
           const finished = job;
           job = null;
-          const outputStars = addProcessedOutputs(finished.outputs, finished.inputStars, def.method);
+          const outputStars = addProcessedOutputs(finished.outputs, finished.inputStars, def.method, finished.yieldMultiplier);
           window.FarmAnimals?.clearVatWorkerPose?.(obj.id);
           window.FarmEditor.saveFarmLayout();
           saveMemberWorldData();
@@ -2867,7 +2877,7 @@
           label: def.icon + ' ' + def.name,
           update: updateVfx,
           triggerVfx: triggerBurst, // used by autoSqueezeDewAtVat (livestock-to-vat automation)
-          startTimedJob({ outputs, inputStars, inputLabel, source } = {}) { return startTimedJob(outputs, inputStars, inputLabel, source); }, // Used by assigned livestock without coupling dew-vats.js to timeline internals.
+          startTimedJob({ outputs, inputStars, inputLabel, source, yieldMultiplier } = {}) { return startTimedJob(outputs, inputStars, inputLabel, source, yieldMultiplier); }, // Used by assigned livestock without coupling dew-vats.js to timeline internals.
           getJob() { return job; }, // read by saveFarmLayout
           getButtons() {
             if (def.specialMode === 'teaGrinder') {
@@ -3076,8 +3086,8 @@
         };
       }
 
-      function canPlaceDecorativeFurnitureAt(col, row, ignoreId = null, furnitureKey = null, rotYDeg = 0) {
-        const g = currentArea === 'interior' ? interiorGrid : grid;
+      function canPlaceDecorativeFurnitureAt(col, row, ignoreId = null, furnitureKey = null, rotYDeg = 0, area = currentArea) {
+        const g = area === 'interior' ? interiorGrid : grid;
         const { fw, fd } = decorativeFurnitureSize(furnitureKey, rotYDeg);
         // Farm decor also has to respect worldObjects — the same shared
         // occupancy map processing furniture, barns, and the sell/supply
@@ -3093,7 +3103,7 @@
           for (let c = col; c < col + fw; c++) {
             const tile = g[r]?.[c];
             if (!tile || tile.type === TileType.ROCK) return false;
-            if (currentArea === 'farm') {
+            if (area === 'farm') {
               if (window.GridTileAccessors.isHouseFootprint(c, r)) return false;
               const occupyingWorldObject = getWorldObjectAt(c, r);
               const isOwnCurrentTile = ignoreObj && ignoreObj.col === c && ignoreObj.row === r;
@@ -3102,7 +3112,7 @@
           }
         }
         return !interiorFurnitureObjects.find(o => {
-          if (o.id === ignoreId || o.area !== currentArea) return false;
+          if (o.id === ignoreId || o.area !== area) return false;
           const { fw: ow, fd: od } = decorativeFurnitureSize(o.key, o.rotYDeg || 0);
           return col < o.col + ow && col + fw > o.col && row < o.row + od && row + fd > o.row;
         });
@@ -3630,6 +3640,46 @@
         window.HudUpdate.refreshItemScroll();
         window.FarmEditor.saveFarmLayout();
         return { ok: true, message: `${def.icon} ${def.name} placed.` };
+      }
+
+      // Places a no-inventory fixture (the baby basket from js/romance-family.js)
+      // on a clear farmhouse-interior tile, wherever the player currently is.
+      // Tiles touching an interior exit are skipped so the door stays usable;
+      // when the house is full, one ordinary decor piece (never a bed, hearth
+      // or fixture) is moved to farm storage to make room.
+      function placeInteriorFixtureFurniture(furnitureKey) {
+        if (!DECORATIVE_FURNITURE_DEFS[furnitureKey]) return null;
+        const nearExit = (c, r) => { for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) if (_interiorExitTiles.has((c + dc) + ',' + (r + dr))) return true; return false; };
+        const cells = [];
+        for (const piece of housePieces) {
+          if (piece.stage !== 'built') continue;
+          for (let r = piece.row * 2; r < (piece.row + piece.h) * 2; r++) for (let c = piece.col * 2; c < (piece.col + piece.w) * 2; c++) cells.push([c, r]);
+        }
+        const open = cells.filter(([c, r]) => !nearExit(c, r) && canPlaceDecorativeFurnitureAt(c, r, null, furnitureKey, 0, 'interior'));
+        let spot = open[Math.floor(open.length / 2)] || null;
+        let stored = null;
+        if (!spot) {
+          const movable = interiorFurnitureObjects.find(o => o.area === 'interior' && !/bed|hearth/i.test(o.key) && !DECORATIVE_FURNITURE_DEFS[o.key]?.fixture && !nearExit(o.col, o.row));
+          if (!movable) return null;
+          stored = DECORATIVE_FURNITURE_DEFS[movable.key]?.name || movable.key;
+          spot = [movable.col, movable.row];
+          recoverFurnitureInInteriorRect(movable.col, movable.row, 1, 1);
+          if (!canPlaceDecorativeFurnitureAt(spot[0], spot[1], null, furnitureKey, 0, 'interior')) return { id: null, stored };
+        }
+        const [col, row] = spot;
+        const result = makeDecorativeFurnitureMesh(col, row, furnitureKey, interiorScene, 'interior');
+        if (!result) return null;
+        const id = 'decor_' + Math.random().toString(36).slice(2, 10);
+        interiorFurnitureObjects.push({ id, key: furnitureKey, col, row, mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: 'interior', rotYDeg: 0, ...furnitureOwnerFields(col, row) });
+        window.FarmEditor.saveFarmLayout();
+        return { id, col, row, stored };
+      }
+      function removeInteriorFurnitureById(id) {
+        const obj = interiorFurnitureObjects.find(o => o.id === id);
+        if (!obj) return false;
+        disposeDecorativeFurniture(obj, false);
+        window.FarmEditor.saveFarmLayout();
+        return true;
       }
 
       function disposeDecorativeFurniture(obj, refundToInventory = false) {
@@ -4776,6 +4826,12 @@
         if (!c.isCompanion) {
           awardMotesOfProwess(MOTES_PER_KILL);
           window.SkillSystem?.award?.('combat', window.SkillSystem?.XP_GAINS?.combatKill || 8, 'defeated creature');
+          const isBarbarian = c.isPorakanekiHunter === true; // The Porakaneki/Omgurku war bands are the setting's "barbarians".
+          window.HobunjiActivityEvents?.emit('creature_killed', {
+            creatureKey: c.def?.key || c.kind || null, label: c.def?.label || null,
+            isBandit: !!c.isBandit, isBarbarian,
+            isPredator: !c.isBandit && !isBarbarian && !!c.def?.hostile && c.def?.diet !== 'herbivore',
+          });
         }
         window.CreatureDeath.begin(c, fromX ?? c.x, fromY ?? c.y);
         return true;
@@ -8422,6 +8478,7 @@
           member.minedRockState = serializeZoneMinedRockState();
           member.townMineState = window.TownMine?.serialize?.() || null;
           member.doorstepVisitState = window.DoorstepVisits?.serialize?.() || {};
+          member.romanceState = window.RomanceSystem?.serialize?.() || null;
           // Only ever consumed on the next boot if it lands in a wilderness
           // zone with a still-active campfire there (see spawnPlayerAvatar) —
           // saved unconditionally anyway since it's cheap and harmless
@@ -11407,51 +11464,11 @@
         };
       }
 
-      function normalizeRoutes(routes, legacyPaths = []) {
-        const out = (routes || []).filter(r => r && Array.isArray(r.nodes) && r.nodes.length > 0)
-          .map(r => ({ id: r.id, label: r.label || 'Route', area: normalizeNpcArea(r.area || 'farm'), nodes: r.nodes.map(n => [n[0], n[1]]) }));
-        if (!out.length) legacyPaths.forEach(p => out.push({ id: 'legacy_' + (p.id || p.label || out.length), label: p.label || 'Legacy route', area: normalizeNpcArea(p.area || 'farm'), nodes: p.nodes.map(n => [n[0], n[1]]) }));
-        return out;
-      }
-
-      // Whether the straight segment between two route nodes stays on dry,
-      // walkable ground (no river crossing) — sampled the same way as
-      // canNpcBeeline so authored route edges respect the same rules.
-      function isRouteSegmentDry(area, c1, r1, c2, r2) {
-        const x1 = c1 + 0.5, z1 = r1 + 0.5, x2 = c2 + 0.5, z2 = r2 + 0.5;
-        const dist = Math.hypot(x2 - x1, z2 - z1);
-        const samples = Math.max(1, Math.ceil(dist / 0.5));
-        for (let i = 0; i <= samples; i++) {
-          const t = i / samples;
-          const c = Math.floor(x1 + (x2 - x1) * t);
-          const r = Math.floor(z1 + (z2 - z1) * t);
-          if (!isNpcTileWalkable(area, c, r)) return false;
-        }
-        return true;
-      }
-
-      function buildRouteGraph(routes) {
-        const nodes = new Map();
-        const key = (area, c, r) => area + ':' + c + ',' + r;
-        const ensure = (area, c, r) => {
-          const k = key(area, c, r);
-          if (!nodes.has(k)) nodes.set(k, { key: k, area, c, r, edges: new Set(), routeIds: new Set() });
-          return nodes.get(k);
-        };
-        routes.forEach(route => {
-          const area = route.area || 'farm';
-          let prev = null;
-          (route.nodes || []).forEach(([c, r]) => {
-            const node = ensure(area, c, r);
-            if (route.id) node.routeIds.add(route.id);
-            // Skip edges that wade through a river — NPCs following this route
-            // will detour via any other dry edge instead of crossing the water.
-            if (prev && isRouteSegmentDry(area, prev.c, prev.r, c, r)) { prev.edges.add(node.key); node.edges.add(prev.key); }
-            prev = node;
-          });
-        });
-        return { nodes };
-      }
+      // normalizeRoutes / isRouteSegmentDry / buildRouteGraph now live in
+      // js/npc-route-graph.js; these hoisted wrappers keep every call site
+      // (some run before this point at module init) working unchanged.
+      function normalizeRoutes(routes, legacyPaths = []) { return window.NpcRouteGraph.normalizeRoutes(routes, legacyPaths, normalizeNpcArea); }
+      function buildRouteGraph(routes) { return window.NpcRouteGraph.buildRouteGraph(routes, isNpcTileWalkable); }
 
       function rebuildRouteGraphs() {
         routeGraphsByArea.clear();
@@ -17864,6 +17881,7 @@
         const stars = window.LootRolling.rollItemStars('farming');
         window.CookingSystem.recordItemQuality(data.cropKey, stars, amount);
         window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.crop || 6, `harvested ${data.label}`);
+        window.HobunjiActivityEvents?.emit('crop_harvested', { cropKey: data.cropKey, label: data.label });
         const msg = `Harvested ${window.LootRolling.starRatingText(stars)} ${data.emoji} ${data.label}${amount > 1 ? ` ×${amount}` : ''}!`;
         tile.crop = CropType.NONE;
         tile.fertilized = false; // Fertilizer is consumed by this harvest, never carried into the next planting.
@@ -18632,6 +18650,7 @@
           const zoneVisualsUpdated = removeZoneVegetationVisual(currentArea, col, row); // Lets completion skip the full-zone fallback.
           awardToolUseMasteryXp('axe');
           window.SkillSystem?.award?.('foraging', window.SkillSystem?.XP_GAINS?.tree || 8, 'felled tree');
+          window.HobunjiActivityEvents?.emit('tree_felled', { area: currentArea });
           const nutMessage = nutDrop ? `, ${addedNutAmount} ${window.LootRolling.starRatingText(nutDrop.stars)} ${nutDrop.label}${nutDrop.bonusAmount ? ' (Foraging bonus)' : ''}` : ''; // Used to make the skill-driven nut result visible at the point of harvest.
           return { ok: true, zoneVisualsUpdated, message: `Felled the tree — got ${amount} ${logDef?.label || logKey}${amount === 1 ? '' : 's'}${nutMessage}, and 1 Mulch${bonus ? ' (Foraging log bonus)' : ''}.` };
         }
@@ -18677,6 +18696,8 @@
           const revealedMineDescent = tryRevealMineDescent(currentArea, col, row, 'rock');
           awardToolUseMasteryXp('pick');
           window.SkillSystem?.award?.('mining', window.SkillSystem?.XP_GAINS?.rock || 8, 'mined rock');
+          window.HobunjiActivityEvents?.emit('rock_broken', { area: currentArea });
+          if (metalMessage) window.HobunjiActivityEvents?.emit('ore_mined', { oreKey: minedOreKey });
           const descentMessage = revealedMineDescent ? ' A hole leading deeper has been revealed!' : '';
           return { ok: true, zoneVisualsUpdated, message: `Broke the rock — got ${amount} Stone${metalMessage}${gotPebble ? ' and 1 Pebble' : ''}${bonus ? ' (Mining bonus)' : ''}.${descentMessage}` };
         }
@@ -27849,7 +27870,10 @@
         rareFishWeightMultiplier: rarity => window.SkillSystem?.rareFishWeightMultiplier?.(rarity) || 1,
         getPlayer: () => player,
         recordItemQuality: (...args) => window.CookingSystem?.recordItemQuality?.(...args),
-        awardFishingXp: () => window.SkillSystem?.award?.('fishing', window.SkillSystem?.XP_GAINS?.fish || 10, 'caught fish'),
+        awardFishingXp: () => {
+          window.HobunjiActivityEvents?.emit('fish_caught', {});
+          return window.SkillSystem?.award?.('fishing', window.SkillSystem?.XP_GAINS?.fish || 10, 'caught fish');
+        },
         awardToolUseMasteryXp,
         getInventoryStackKeys,
         getCurrentArea: () => currentArea,
@@ -28319,6 +28343,36 @@
       });
 
       window.CombatTutorialPartner?.init?.({ TILE });
+      // Dating / marriage / children (js/romance-system.js + romance-family.js)
+      // and the hold-Action-1 NPC command wheel (js/npc-command-wheel.js).
+      window.RomanceSystem?.init?.({
+        npcWalkers,
+        getNpcRecord: id => scheduledNpcRecords.get(id) || null,
+        getCurrentArea: () => currentArea,
+        normalizeNpcArea,
+        canHostNpc: area => area === 'farm' || area === 'interior' || area === 'town' || _isBuildingArea(area) || _isZoneArea(area),
+        getPlayerTilePosition: () => ({ x: player.x / TILE, z: player.y / TILE }),
+        isDialogueOpen: () => dialogueOpen,
+        showToast,
+        openNpcDialogue: walker => openNpcDialogue(walker),
+        openDialogueNode: (walker, node) => { if (!walker || !node) return false; if (dialogueOpen) closeNpcDialogue(); openNpcDialogue(walker, { node }); return true; },
+        getInteriorFurniture: () => interiorFurnitureObjects,
+        furniture: { placeInteriorFixture: placeInteriorFixtureFurniture, removeInteriorFurniture: removeInteriorFurnitureById },
+        spawnNpcRecord: async (rec, target) => {
+          if (!rec?.id || npcWalkers.some(w => w.rec?.id === rec.id)) return null;
+          const walker = await makeNpcWalker(rec, target);
+          if (walker && !npcWalkers.some(w => w.rec?.id === rec.id)) npcWalkers.push(walker);
+          return walker;
+        },
+        saveMemberWorldData,
+      });
+      window.NpcCommandWheel?.init?.({
+        getNearbyNpcWalker: () => nearbyNpcWalker,
+        isDialogueOpen: () => dialogueOpen,
+        isMenuOpen: () => menuOpen,
+        isFarmEditMode: () => farmEditMode,
+        openNpcDialogue: walker => openNpcDialogue(walker),
+      });
       window.DoorstepVisits?.init?.({
         save: saveMemberWorldData,
         getPlayerTile: () => ({ c: player.x / TILE, r: player.y / TILE }), // Feet position in the same tile units as HousePieces door tiles.
@@ -28904,7 +28958,10 @@
         getCurrentArea: () => currentArea,
         random: rnd,
         bonusYieldChance: skill => window.SkillSystem?.bonusYieldChance?.(skill) || 0,
-        awardForagingXp: () => window.SkillSystem?.award?.('foraging', window.SkillSystem?.XP_GAINS?.forage || 4, 'picked herb'),
+        awardForagingXp: () => {
+          window.HobunjiActivityEvents?.emit('herb_picked', {});
+          return window.SkillSystem?.award?.('foraging', window.SkillSystem?.XP_GAINS?.forage || 4, 'picked herb');
+        },
         hostileObjects,
         EXTERIOR_ZONES,
         damageCreature,
@@ -29237,7 +29294,10 @@
         rollItemStars: window.LootRolling.rollItemStars,
         starRatingText: window.LootRolling.starRatingText,
         recordItemQuality: (...args) => window.CookingSystem?.recordItemQuality?.(...args),
-        awardFarmingXp: () => window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.animalGood || 5, 'collected animal good'),
+        awardFarmingXp: () => {
+          window.HobunjiActivityEvents?.emit('livestock_harvested', {});
+          return window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.animalGood || 5, 'collected animal good');
+        },
         getScene: window.GridTileAccessors.getActiveScene,
         getWorldObjectAt,
         isHouseFootprint: window.GridTileAccessors.isHouseFootprint,
@@ -29365,7 +29425,10 @@
         rollItemStars: window.LootRolling.rollItemStars,
         starRatingText: window.LootRolling.starRatingText,
         recordItemQuality: (...args) => window.CookingSystem?.recordItemQuality?.(...args),
-        awardFarmingXp: () => window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.animalGood || 5, 'collected animal good'),
+        awardFarmingXp: () => {
+          window.HobunjiActivityEvents?.emit('livestock_harvested', {});
+          return window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.animalGood || 5, 'collected animal good');
+        },
         // Farm livestock has its own tile-space update loop, so give it the
         // same explicit face target used by companion/wildlife gaze.  The
         // horizontal point is in farm tiles; worldY is the player's actual
@@ -29787,6 +29850,7 @@
         window.DialogueContent?.loadNpcRelationships(playerData);
         questProgress = { ...(playerData.questProgress || {}) };
         window.DoorstepVisits?.restore?.(playerData.doorstepVisitState); // "Already told you" flags for farmhouse-door visitors (js/doorstep-visits.js).
+        window.RomanceSystem?.restore?.(playerData.romanceState); // Dates, engagement, spouse and children (js/romance-system.js / romance-family.js).
         window.ProceduralTasks.maybeRefreshRequestPostings(); // makes sure requests exist even before the first day rollover
 
         // Alchemy: discovered reagent effects, still-active buffs/debuffs, and
