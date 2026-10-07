@@ -60,16 +60,16 @@ assert.strictEqual(windowObject.HobunjiShoulderCameraReset.resetToDefaults(), tr
 assert.strictEqual(toggle.checked, true, 'reset should enable Shoulder Cam');
 assert(toggle.events.includes('change'), 'reset should use Shoulder Cam\'s existing change handler');
 assert.strictEqual(horizontal.value, '0.35', 'default stance horizontal offset should reset to 0.35');
-assert.strictEqual(vertical.value, '-0.05', 'default stance vertical offset should reset to -0.05');
+assert.strictEqual(vertical.value, '0.05', 'default stance vertical offset should reset to 0.05');
 assert(horizontal.events.includes('input') && vertical.events.includes('input'), 'reset should use the existing offset input handlers');
-assert.strictEqual(refreshCount, 1, 'reset should reapply species-relative neck/height framing');
+assert.strictEqual(refreshCount, 1, 'reset should reapply species-relative head/height framing');
 
 combat = true;
 horizontal.events.length = 0;
 vertical.events.length = 0;
 assert.strictEqual(windowObject.HobunjiShoulderCameraReset.resetToDefaults(), true, 'combat-stance reset should succeed');
 assert.strictEqual(horizontal.value, '0.6', 'combat stance horizontal offset should reset to 0.60');
-assert.strictEqual(vertical.value, '-0.05', 'combat stance vertical offset should reset to -0.05');
+assert.strictEqual(vertical.value, '0.05', 'combat stance vertical offset should reset to 0.05');
 assert.strictEqual(refreshCount, 2, 'combat reset should also reapply species-relative framing');
 const snapshot = windowObject.HobunjiShoulderCameraReset.snapshot();
 assert.strictEqual(snapshot.lastReset.preset, 'combat', 'debug snapshot should identify the reset stance');

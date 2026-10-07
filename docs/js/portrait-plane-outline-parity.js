@@ -82,8 +82,10 @@
       const deformed = new THREE.Vector3();
       const bonePoint = new THREE.Vector3();
       const boneMatrix = new THREE.Matrix4();
-      const weights = [1 - headWeight, headWeight];
-      for (let i = 0; i < Math.min(2, skeleton.bones.length); i++) {
+      const headScaleWeight = rig.headScaleJoint && skeleton.bones.length >= 3
+        ? headWeight * avatarApi.headScaleGateAtPixel(renderedPixelX, rig.headBoundsPx) : 0; // Match the rendered head-scale bone.
+      const weights = [1 - headWeight, headWeight - headScaleWeight, headScaleWeight];
+      for (let i = 0; i < Math.min(weights.length, skeleton.bones.length); i++) {
         const weight = weights[i] || 0;
         if (!weight) continue;
         if (skeleton.boneMatrices?.length >= (i + 1) * 16) {

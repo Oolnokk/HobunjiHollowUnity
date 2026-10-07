@@ -9574,9 +9574,9 @@
       // and write whichever preset is currently active (see their input
       // handlers and the per-frame sync below) rather than a single value.
       let s_shoulderSurfOffsetH_default = 0.35;
-      let s_shoulderSurfOffsetV_default = -0.05;
+      let s_shoulderSurfOffsetV_default = 0.05;
       let s_shoulderSurfOffsetH_combat = 0.60;
-      let s_shoulderSurfOffsetV_combat = -0.05;
+      let s_shoulderSurfOffsetV_combat = 0.05;
       // What the camera actually reads (see updateCameraPosition) — eased
       // toward whichever preset is active every frame (see the per-frame
       // sync below) rather than snapping the instant a weapon is drawn/
