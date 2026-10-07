@@ -89,6 +89,7 @@
       ...base,
       cosmeticId,
       slot,
+      ...(window.MetalArmorSystem?.blueprintForId?.(cosmeticId) ? { materialKind: 'metal', metalKey: base.metalKey || 'nativeCopper' } : {}), // Authored metal garments use the same treatment descriptors as crafted armor.
       colorA: base.colorA ?? colors.colorA,
       colorB: base.colorB ?? colors.colorB,
     }; // Default NPC clothing can carry the same full weaving/colorC shape as player clothing.

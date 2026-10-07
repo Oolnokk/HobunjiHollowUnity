@@ -1025,7 +1025,9 @@ function buildPreviewProfile(appearance) {
   }
   if (target.kind === 'npc') {
     const npc = { ...work, id: target.id, appearance: { ...appearance, bodyColors: profile.bodyColors } }; // Reuses runtime wardrobe/compositor data for the live editor portrait.
-    const decorated = window.ClothingWeavingSystem?.decorateAvatarDataWithWovenItems?.(npc, window.NpcWardrobe?.wornClothingItemsForRecord?.(npc, true) || []); // Applies primary/overpass patterns and their independent pattern dye.
+    const items = window.NpcWardrobe?.wornClothingItemsForRecord?.(npc, true) || []; // Shares cloth and metal treatment metadata with runtime portraits.
+    const woven = window.ClothingWeavingSystem?.decorateAvatarDataWithWovenItems?.(npc, items) || npc; // Applies primary/overpass patterns and their independent pattern dye.
+    const decorated = window.MetalArmorSystem?.decorateAvatarDataWithMetalArmor?.(woven, items) || woven; // Applies authored verdigris removal through the existing metal renderer.
     if (decorated) profile.bodyColors = decorated.appearance.bodyColors;
     profile.restingExpression = window.NpcAvatarPreview.restingExpressionForRecord(work);
     profile.portraitSeatId = 'studio-preview';
@@ -1652,7 +1654,7 @@ async function renderNpcAppearanceControls() {
   const patterns = window.RepoPatternLibrary?.listCached?.() || []; // Uses committed patterns rather than a player's unlocked pattern inventory.
   const dyes = StudioAccount.getDyeCatalog(); // Reuses the clothing dye catalog for the independent pattern color.
   const items = window.NpcWardrobe?.wornClothingItemsForRecord?.(workingNpcRecord(), true) || []; // Includes existing guard-emblem policies in the editor.
-  const garments = await Promise.all(items.filter(item => window.ClothingWeavingSystem?.isCraftableCloth?.(item)).map(async item => { // Resolves actual species/gender layer roles through the production renderer.
+  const garments = await Promise.all(items.filter(item => window.ClothingWeavingSystem?.isCraftableCloth?.(item) || window.MetalArmorSystem?.isMetalArmor?.(item)).map(async item => { // Resolves actual species/gender layer roles through the production renderer.
     try {
       const layers = await window.ClothingWeavingSystem.resolveLayersForCosmetic(item.cosmeticId, work.appearance.speciesId, work.appearance.gender); // Distinguishes poncho cloth from trim/shoulder-wrap layers.
       return { item, roles: [...new Set(layers.map(layer => layer.role || '__default'))] };
@@ -1660,6 +1662,10 @@ async function renderNpcAppearanceControls() {
   }));
   if (pass !== npcAppearancePass) return;
   $('npcPatternControls').innerHTML = garments.map(({ item, roles }) => {
+    if (window.MetalArmorSystem?.isMetalArmor?.(item)) {
+      const selected = item.smithTreatment?.mode === 'pattern' ? item.smithTreatment.pattern?.repoPatternId || '' : ''; // Keeps saved removal motifs selected without converting them to cloth weaving.
+      return `<div class="card" style="margin:8px 0"><b>${esc(StudioAccount.getShopCatalog().find(entry => entry.id === item.cosmeticId)?.label || item.cosmeticId)}</b><label>Verdigris removal pattern</label><select data-npc-metal-pattern="${esc(item.slot)}"><option value="">Live verdigris</option>${patterns.map(pattern => `<option value="${esc(pattern.id)}"${pattern.id === selected ? ' selected' : ''}>${esc(pattern.name)}</option>`).join('')}${item.smithTreatment && !patterns.some(pattern => pattern.id === selected) ? '<option value="__custom" selected>Existing treatment (preserved)</option>' : ''}</select></div>`;
+    }
     const layerControls = roles.map(role => { // Each sprite role owns independent pattern choices.
     const rawWeaving = { ...(item.weaving || {}) }; // Reads the original stack separately from any permanent NPC emblem.
     delete rawWeaving.forcedOverpassPattern; delete rawWeaving.forcedOverpassRoles;
@@ -1673,8 +1679,19 @@ async function renderNpcAppearanceControls() {
     }).join('');
     const colorId = typeof item.colorC === 'string' ? item.colorC : item.colorC?.dyeId || ''; // Accepts legacy string dyes and full clothing-item color references.
     const label = StudioAccount.getShopCatalog().find(entry => entry.id === item.cosmeticId)?.label || item.cosmeticId; // Names the exact garment being edited.
-    return `<div class="card" style="margin:8px 0"><b>${esc(label)}</b>${layerControls}<div style="margin-top:8px"><label>Pattern dye</label><select data-npc-pattern-dye="${esc(item.slot)}"><option value="">Default</option>${dyes.map(dye => `<option value="${esc(dye.id)}"${dye.id === colorId ? ' selected' : ''}>${esc(dye.label || dye.name || dye.id)}</option>`).join('')}</select></div></div>`;
-  }).join('') || '<div class="help">Equip a cloth garment to assign patterns.</div>';
+    return `<div class="card" style="margin:8px 0"><b>${esc(label)}</b>${layerControls || '<div class="help">No cloth layers resolved for this species. See Log for asset errors.</div>'}<div style="margin-top:8px"><label>Pattern dye</label><select data-npc-pattern-dye="${esc(item.slot)}"><option value="">Default</option>${dyes.map(dye => `<option value="${esc(dye.id)}"${dye.id === colorId ? ' selected' : ''}>${esc(dye.label || dye.name || dye.id)}</option>`).join('')}</select></div></div>`;
+  }).join('') || '<div class="help">Equip cloth or metal clothing to assign patterns.</div>';
+  $('npcPatternControls').querySelectorAll('[data-npc-metal-pattern]').forEach(el => el.onchange = () => {
+    if (el.value === '__custom') return;
+    const item = window.NpcWardrobe.wornClothingItemsForRecord(workingNpcRecord(), false).find(entry => entry.slot === el.dataset.npcMetalPattern); // Retains alloy, temper and unrelated armor properties.
+    if (!item) return;
+    const entry = patterns.find(pattern => pattern.id === el.value); // Supplies the portable repository motif snapshot.
+    const pattern = entry ? window.RepoPatternLibrary.getCachedById(entry.id) : null; // Reuses the existing smith treatment format.
+    if (pattern && entry.motifPng) pattern.motifUrl = entry.motifPng; // Saved armor motifs remain portable across editor and game hosts.
+    work.clothingPatterns ||= {}; work.clothingPatterns.defaultClothing ||= {};
+    work.clothingPatterns.defaultClothing[item.slot] = { ...item, smithTreatment: pattern ? { mode: 'pattern', pattern, patternLibraryId: null } : null };
+    invalidatePreview(); setStatus('Verdigris removal pattern changed — use Apply to NPC');
+  });
   $('npcPatternControls').querySelectorAll('[data-npc-pattern-slot]').forEach(el => el.onchange = () => {
     if (el.value === '__custom') return;
     const slot = el.dataset.npcPatternSlot; // Identifies the authored default garment receiving this pattern change.

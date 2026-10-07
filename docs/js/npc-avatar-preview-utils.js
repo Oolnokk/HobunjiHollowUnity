@@ -183,7 +183,9 @@
     const cosmetics = cosmeticsCache;
     if (!cosmetics || !npc?.appearance) return null;
     if (npc.id !== 'player' && (npc.id || npc.clothingPatterns) && window.NpcWardrobe?.wornClothingItemsForRecord && window.ClothingWeavingSystem?.decorateAvatarDataWithWovenItems) {
-      npc = window.ClothingWeavingSystem.decorateAvatarDataWithWovenItems(npc, window.NpcWardrobe.wornClothingItemsForRecord(npc, true));
+      const items = window.NpcWardrobe.wornClothingItemsForRecord(npc, true); // Supplies both cloth weaving and metal verdigris-removal treatments.
+      npc = window.ClothingWeavingSystem.decorateAvatarDataWithWovenItems(npc, items);
+      npc = window.MetalArmorSystem?.decorateAvatarDataWithMetalArmor?.(npc, items) || npc;
     }
     installAccountShim();
     activeNpcForShim = npc;

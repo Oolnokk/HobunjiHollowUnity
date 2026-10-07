@@ -16,7 +16,7 @@ const window = {
   renderPortraitProfile: async (_canvas, profile, options) => { renders.push({ seat: options.seatId, expression: window.portraitBreathingComposer.getExpression(options.seatId), view: options.portraitView, profile }); },
 }; // Real modules share one browser-like namespace.
 const runtime = vm.createContext({ window, document, console, URL, Date, setTimeout, clearTimeout, setInterval, clearInterval }); // Executes production code without a browser asset download.
-for (const file of ['docs/js/portrait-breathing.js', 'docs/js/npc-avatar-preview-utils.js', 'docs/js/clothing-weaving-system.js', 'docs/config/npcs/clothing-patterns.js', 'docs/js/npc-wardrobe.js']) vm.runInContext(read(file), runtime, { filename: file });
+for (const file of ['docs/js/portrait-breathing.js', 'docs/js/npc-avatar-preview-utils.js', 'docs/js/clothing-weaving-system.js', 'docs/js/metal-armor-system.js', 'docs/config/npcs/clothing-patterns.js', 'docs/js/npc-wardrobe.js']) vm.runInContext(read(file), runtime, { filename: file });
 
 function editorFunction(name) {
   const source = read('docs/tools/character-studio/index.html'); // Reads handlers from the real editor instead of recreating their behavior.
@@ -26,6 +26,15 @@ function editorFunction(name) {
 }
 
 async function main() {
+  const portrait = vm.createContext({ window: { SCRATCHBONES_CONFIG: {} }, console, URL }); // Loads the actual portrait variant authority for inheritance and nearest-variant regressions.
+  vm.runInContext(read('docs/js/portrait-utils.js'), portrait);
+  vm.runInContext("LAST_SPECIES_DATA_BY_ID={mammakhbuur:{parentSpecies:'mashtzarr'}}; LAST_COSMETIC_FALLBACK_GROUPS={bodyGroups:[{members:[{species:'tletingan',gender:'female',position:0},{species:'mao-ao',gender:'female',position:1}]}]};", portrait);
+  window.portraitVariantKeysForFighter = portrait.portraitVariantKeysForFighter;
+  const finePoncho = JSON.parse(read('docs/config/cosmetics/clothes/overwear/fine_poncho.json')); // Exercises the shipped multi-sprite garment rather than a synthetic single layer.
+  for (const [speciesId, gender] of [['mammakhbuur', 'male'], ['tletingan', 'female']]) {
+    const layers = window.ClothingWeavingSystem.__test.resolveIconLayerUrls(finePoncho, speciesId, gender); // Must expose every patterned role selected by the visible portrait.
+    assert.deepEqual(copy(window.ClothingWeavingSystem.__test.patternRolesForLayers(layers).map(role => role.key)).sort(), ['poncho', 'trim']);
+  }
   await window.NpcAvatarPreview.ensurePortraitCosmetics();
   const npc = { id: 'custom_npc', name: 'Custom NPC', restingExpression: ' FROWN ', appearance: { speciesId: 'mao-ao', gender: 'male', cosmetics: {} }, equippedCosmetics: ['rugged_poncho'], appliedDyes: {}, clothingPatterns: { defaultClothing: { overwear: { cosmeticId: 'rugged_poncho', weaving: { layers: { poncho: { patterns: [{ repoPatternId: 'a', motifUrl: 'assets/patterns/a.png' }] }, trim: { patterns: [{ repoPatternId: 'b', motifUrl: 'assets/patterns/b.png' }] } } }, colorC: { hex: '#123456' } } } } }; // Round-trip fixture includes distinct pattern-bearing sprite roles.
   const original = copy(npc); // Detects shared-definition mutation during profile construction.
@@ -60,6 +69,14 @@ async function main() {
   assert.equal(window.NpcWardrobe.wornClothingItemsForRecord(guard, true)[0].weaving, undefined, 'explicit None disables a forced emblem');
   const player = window.NpcAvatarPreview.buildProfileFromNpcExport({ ...npc, id: 'player', appearance: { ...npc.appearance, bodyColors: { __hobunjiWovenClothing: [{ uid: 'player_saved' }] } } }); // Cinematic player stand-ins already carry their equipped woven descriptors.
   assert.equal(player.bodyColors.__hobunjiWovenClothing[0].uid, 'player_saved');
+  const armored = { ...npc, equippedCosmetics: ['rounded_pauldron'], clothingPatterns: { defaultClothing: { pauldron: { cosmeticId: 'rounded_pauldron', metalKey: 'tinBronze', temperXp: 15, smithTreatment: { mode: 'pattern', pattern: { repoPatternId: 'metal_pattern', motifUrl: 'assets/patterns/metal.png' } } } } } }; // NPC armor shares authored smith treatments with equipped player armor.
+  const armoredProfile = window.NpcAvatarPreview.buildProfileFromNpcExport(armored); // Verifies world/cutscene profile construction retains metal treatment metadata.
+  const metalState = armoredProfile.bodyColors[window.MetalArmorSystem.PORTRAIT_MARKER_KEY][0]; // Reads the same marker consumed by portraitStateForGroup.
+  assert.equal(metalState.metalKey, 'tinBronze');
+  assert.equal(metalState.smithTreatment.pattern.repoPatternId, 'metal_pattern');
+  window.resolvePortraitAssetUrl = path => 'https://example.test/docs/assets/' + path;
+  assert.equal(window.MetalArmorSystem.visualOptions(metalState).authoredPattern.motifUrl, 'https://example.test/docs/assets/patterns/metal.png');
+  assert.equal(metalState.smithTreatment.pattern.motifUrl, 'assets/patterns/metal.png', 'render resolution must not mutate saved patterns');
 
   const elements = new Map(); // Minimal DOM records allow actual editor change handlers to run.
   const element = id => { if (!elements.has(id)) elements.set(id, { value: '', hidden: false, innerHTML: '', querySelectorAll: () => [] }); return elements.get(id); }; // Used by the editor's $ helper.
@@ -83,6 +100,17 @@ async function main() {
   assert.equal(result.clothingPatterns.defaultClothing.overwear.colorA, 'new_dye');
   assert.deepEqual(saved[0].clothingPatterns, result.clothingPatterns);
   assert.equal(saved[0].restingExpression, 'smile');
+  const metalSelect = { dataset: { npcMetalPattern: 'pauldron' }, value: 'new_pattern' }; // Exercises the real NPC metal selector's save and clear paths.
+  element('npcPatternControls').querySelectorAll = selector => selector === '[data-npc-metal-pattern]' ? [metalSelect] : [];
+  editor.work = copy(armored);
+  await vm.runInContext('renderNpcAppearanceControls()', editor);
+  assert.match(element('npcPatternControls').innerHTML, /Verdigris removal pattern/);
+  metalSelect.onchange();
+  assert.equal(editor.work.clothingPatterns.defaultClothing.pauldron.smithTreatment.pattern.repoPatternId, 'new_pattern');
+  assert.equal(editor.work.clothingPatterns.defaultClothing.pauldron.metalKey, 'tinBronze');
+  metalSelect.value = '';
+  metalSelect.onchange();
+  assert.equal(editor.work.clothingPatterns.defaultClothing.pauldron.smithTreatment, null);
 
   const dialogue = read('docs/js/dialogue-content.js'); // Verifies the live cutscene walker supersedes an earlier ordinary conversation's record.
   const resolver = dialogue.slice(dialogue.indexOf('  function _npcRestingExpression('), dialogue.indexOf('  function _playNpcDialogueLetterSfx(')); // Executes the production dialogue resolver with stale conversation state.

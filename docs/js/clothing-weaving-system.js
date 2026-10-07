@@ -1616,7 +1616,10 @@
   function resolveIconLayerUrls(cfg, speciesId, gender) {
     const paletteLayerMap = cfg?.palette?.layers && typeof cfg.palette.layers === 'object' ? cfg.palette.layers : null;
     const slot = cfg?.slot || null; // Carries garment semantics into flat inventory/loom rendering without hard-coding a specific cosmetic id.
-    for (const key of speciesVariantKeyCandidates(speciesId, gender)) {
+    const variantKeys = typeof window.portraitVariantKeysForFighter === 'function'
+      ? window.portraitVariantKeysForFighter({ speciesId, gender }, { slot })
+      : speciesVariantKeyCandidates(speciesId, gender); // Matches the portrait's inherited and nearest supported garment variant.
+    for (const key of variantKeys) {
       const layers = collectLayerImageUrls(cfg?.speciesVariants?.[key]?.parts, paletteLayerMap, []);
       if (layers.length) return layers.map(layer => ({ ...layer, slot }));
     }
