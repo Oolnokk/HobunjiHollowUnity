@@ -19,7 +19,7 @@
   <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
   <script src="js/GLTFLoader.js?v=20260712d"></script>
   <script src="js/WallBuilder.js?v=20261006h9c26ecb"></script>
-  <script src="js/HousePieceGen.js?v=20261006h1036239&window=20260926rebase1"></script>
+  <script src="js/HousePieceGen.js?v=20261007h7b668c0&window=20260926rebase1"></script>
   <script src="js/interior-scene-builder.js?v=20261006h6327b82&window=20260926rebase1"></script>
   <script src="js/building-door.js?v=20260725a"></script>
   <script src="js/tile-pathfinding.js?v=20260808a"></script>
@@ -249,7 +249,7 @@
   <!-- Onboarding overlay -->
   <link rel="stylesheet" href="onboarding.css?v=20261005h64e87e5">
   <script src="config/farm-specializations.js?v=20261004farm1"></script>
-  <script src="js/farm-world-settings.js?v=20261004farm1"></script>
+  <script src="js/farm-world-settings.js?v=20261007hf674925"></script>
   <script src="onboarding.js?v=20261007h9c97c42"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
   <script src="js/combat/resource-system.js?v=20261001quickdebuff2"></script>
@@ -400,7 +400,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261004h71c5a26&surfaceUv=20261006cliffparity1"></script>
+  <script src="js/house-pieces.js?v=20261007he02ef13&surfaceUv=20261006cliffparity1"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -561,7 +561,7 @@
        calls window.TownZoneBuildings.init(...) during its own setup (and
        reads window.TownZoneBuildings.loadHousePieceFaceTexture as one of
        window.FarmBuildings' own init deps, at that same call-time point). -->
-  <script src="js/town-zone-buildings.js?v=20261006h6e33b83"></script>
+  <script src="js/town-zone-buildings.js?v=20261007hbe2d67a"></script>
   <!-- Same-origin live Map Editor transport + runtime bridge. Loaded before
        game.js so its private scene state can be injected during setup. -->
   <script src="js/map-live-preview.js?v=20260909a&window=20260926rebase1"></script>

@@ -54,7 +54,7 @@
   var SHINGLE_VARIANTS = ['farm', 'town'];
   var _shingleVariants = {}; // variant -> { scene, meshPairs, appliedTintKey, tintGeneration }
   var _pendingShingleTints = {}; // variant -> { pngPath, fillColor } requested before the GLB loaded.
-  var _shingleSurfaceDebug = { ready: false, meshes: 0, surfaces: 0, fallbacks: 0, angleToleranceDeg: null, latestChange: 'The real shingle has six irregular sides: a 78-degree cutoff preserves its 79.4-degree end crease, and reversed coplanar cap triangles remain one side.' }; // Copied into the mobile Pixel Probe report.
+  var _shingleSurfaceDebug = { ready: false, meshes: 0, surfaces: 0, fallbacks: 0, angleToleranceDeg: null, latestChange: 'Named farm wood colors no longer receive the grass brightness boost; town shingles use a darker fill. Six-sided PNG mapping is preserved.' }; // Copied into the mobile Pixel Probe report.
 
   function _shingleTextureLog(message, level) {
     if (typeof global.__farmLog === 'function') global.__farmLog('Shingle PNG: ' + message, level || 'info', 'render');
