@@ -148,11 +148,11 @@
       },
       fishingspear: {
         toolScale: 1.15,
-        primaryGrip: { position: { x: -0.04, y: -0.04, z: -0.1522 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
+        primaryGrip: { position: { x: -0.04, y: -0.04, z: 0 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } }, // Fixed melee grip from the October 7 editor export; attack ranges remain independently authored.
         gripMode: null,
         primaryGripSpan: { enabled: true, startZ: -0.3522, endZ: -0.2322 }, // Main-hand range translated around the measured long wood-section center.
-        secondaryGripSpan: { enabled: true, startZ: -0.0722, endZ: 0.0478 }, // Offhand range stays opposite the main range around the fixed 1H grip.
-        rangedPrimaryGrip: { position: { x: 0.04, y: -0.04, z: 0.1522 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } }, // Tool End Flip mirrors both in-plane X and Z for the same physical grip.
+        secondaryGripSpan: { enabled: true, startZ: -0.0722, endZ: 0.0478 }, // Offhand attack range retained independently of the fixed melee grip.
+        rangedPrimaryGrip: { position: { x: 0.04, y: -0.04, z: 0.1522 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } }, // Independently authored ranged grip retained from the editor export.
         rangedSecondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
         rangedGripMode: null,
       },

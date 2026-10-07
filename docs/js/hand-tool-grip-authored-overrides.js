@@ -6,7 +6,8 @@
   const api = global.HobunjiHandToolGrips; // Used below to migrate live/editor grip data after the core grip module loads.
   if (!api?.mutate || global.HobunjiAuthoredGripOverrides) return;
 
-  const REVISION = 'spear-bshuakauitl-authored-20261006-v1'; // Stored on grip data so these authored coordinates migrate exactly once.
+  const PREVIOUS_REVISION = 'spear-bshuakauitl-authored-20261006-v1'; // Identifies already-migrated drafts whose only new correction is the spear's fixed melee Z.
+  const REVISION = 'spear-bshuakauitl-authored-20261007-v2'; // Stored on grip data so these authored coordinates migrate exactly once.
   const AUTHORED = Object.freeze({ // Canonical values copied from the newest Attack Animation Editor grip export.
     bshuakauitl: Object.freeze({
       primaryGrip: Object.freeze({ position: Object.freeze({ x: -0.04, y: -0.04, z: 0.05 }), rotationDeg: Object.freeze({ pitch: 90, yaw: -90, roll: 0 }) }),
@@ -16,7 +17,7 @@
       rangedSecondaryGripSpan: Object.freeze({ enabled: false, startZ: 0, endZ: 0 }),
     }),
     fishingspear: Object.freeze({
-      primaryGrip: Object.freeze({ position: Object.freeze({ x: -0.04, y: -0.04, z: -0.1522 }), rotationDeg: Object.freeze({ pitch: 90, yaw: -90, roll: 0 }) }),
+      primaryGrip: Object.freeze({ position: Object.freeze({ x: -0.04, y: -0.04, z: 0 }), rotationDeg: Object.freeze({ pitch: 90, yaw: -90, roll: 0 }) }),
       primaryGripSpan: Object.freeze({ enabled: true, startZ: -0.3522, endZ: -0.2322 }),
       secondaryGripSpan: Object.freeze({ enabled: true, startZ: -0.0722, endZ: 0.0478 }),
       rangedPrimaryGrip: Object.freeze({ position: Object.freeze({ x: 0.04, y: -0.04, z: 0.1522 }), rotationDeg: Object.freeze({ pitch: 90, yaw: -90, roll: 0 }) }),
@@ -29,7 +30,13 @@
 
   function applyAuthoredValues(data) {
     if (!data || typeof data !== 'object') return data;
+    if (data.authoredGripRevision === REVISION) return data;
     data.tools ||= {};
+    if (data.authoredGripRevision === PREVIOUS_REVISION && data.tools.fishingspear?.primaryGrip?.position) {
+      data.tools.fishingspear.primaryGrip.position.z = AUTHORED.fishingspear.primaryGrip.position.z;
+      data.authoredGripRevision = REVISION;
+      return data;
+    }
     for (const [toolKey, authored] of Object.entries(AUTHORED)) {
       const entry = data.tools[toolKey] ||= {}; // Existing per-tool scale/mode metadata stays intact; only authored grip fields are replaced.
       entry.primaryGrip = clone(authored.primaryGrip);

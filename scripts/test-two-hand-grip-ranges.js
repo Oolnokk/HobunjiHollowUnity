@@ -72,7 +72,7 @@ assert.equal(grips.animationGripAt(0.25, {}, pose, 'load').influence, 0);
 
 const measuredLongHaft = { // Rounded from the opaque/color component measurements used to place the fixed 1H grip.
   bshuakauitl: { meleeZ: -0.0006, rangedZ: -0.0006, main: [0.0394, 0.1594], off: [-0.1606, -0.0406] },
-  fishingspear: { meleeZ: -0.1522, rangedZ: 0.1522, main: [-0.3522, -0.2322], off: [-0.0722, 0.0478] },
+  fishingspear: { meleeZ: 0, rangedZ: 0.1522, main: [-0.3522, -0.2322], off: [-0.0722, 0.0478] },
   pickshovel: { meleeZ: -0.0178, rangedZ: -0.0178, main: [-0.2378, -0.1178], off: [0.0822, 0.2022] },
 };
 for (const [key, expected] of Object.entries(measuredLongHaft)) {
@@ -83,11 +83,11 @@ for (const [key, expected] of Object.entries(measuredLongHaft)) {
   assert.equal(entry.rangedPrimaryGrip.position.z, expected.rangedZ);
   assert.deepEqual([main.startZ, main.endZ], expected.main);
   assert.deepEqual([off.startZ, off.endZ], expected.off);
-  assert(Math.abs((main.startZ + main.endZ + off.startZ + off.endZ) / 4 - entry.primaryGrip.position.z) < 1e-9);
+  if (key !== 'fishingspear') assert(Math.abs((main.startZ + main.endZ + off.startZ + off.endZ) / 4 - entry.primaryGrip.position.z) < 1e-9);
   assert.equal(entry.rangedSecondaryGripSpan.enabled, false, `${key} remains strictly 1H in ranged context`);
 }
 assert.equal(grips.data.tools.fishingspear.rangedPrimaryGrip.position.x, -grips.data.tools.fishingspear.primaryGrip.position.x, 'Tool End Flip mirrors spear ranged X');
-assert.equal(grips.data.tools.fishingspear.rangedPrimaryGrip.position.z, -grips.data.tools.fishingspear.primaryGrip.position.z, 'Tool End Flip mirrors the new nonzero spear ranged Z');
+assert.equal(grips.data.tools.fishingspear.rangedPrimaryGrip.position.z, 0.1522, 'Spear ranged Z stays independently authored when its fixed melee grip moves');
 
 for (const key of ['plainssword', 'hoe', 'hatchet']) {
   const entry = grips.data.tools[key]; // These sprites' working ends face positive tool-local Z.
