@@ -140,6 +140,12 @@
         if (Object.prototype.hasOwnProperty.call(avatarExport, 'appliedDyes')) {
           npc.appliedDyes = JSON.parse(JSON.stringify(avatarExport.appliedDyes ?? {}));
         }
+        if (Object.prototype.hasOwnProperty.call(avatarExport, 'restingExpression')) {
+          npc.restingExpression = avatarExport.restingExpression ?? null;
+        }
+        if (Object.prototype.hasOwnProperty.call(avatarExport, 'clothingPatterns')) {
+          npc.clothingPatterns = JSON.parse(JSON.stringify(avatarExport.clothingPatterns ?? {}));
+        }
         npc.avatarEditor = {
           ...(npc.avatarEditor || {}),
           sourceFormat: 'npc_avatar_editor_export',

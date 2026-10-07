@@ -27,6 +27,24 @@ function editorFunction(name) {
 }
 
 async function main() {
+  const reviewed = JSON.parse(read('docs/config/npcs/species-overrides.json')); // Repository authority shared by the game and Character Studio.
+  const starter = JSON.parse(read('docs/config/npcs/hobunji-starter-npc-database.json')); // Verifies the default also survives an unavailable override request.
+  const surveyor = starter.npcs.find(record => record.id === 'khannibarri_agent'); // Existing NPC identity must retain the authored export in place.
+  const authored = reviewed.npcs.khannibarri_agent.avatarExport; // Exact settings used for both startup records and stale local database composition.
+  const fields = ['appearance', 'equippedCosmetics', 'appliedDyes', 'clothingPatterns', 'restingExpression']; // Appearance fields that must reach world and cutscene records.
+  for (const field of fields) assert.deepEqual(surveyor[field], authored[field]);
+  assert.deepEqual(surveyor.avatarEditor.rawExport, authored);
+  const overridesRuntime = vm.createContext({ window: {}, console, URL }); // Loads the actual shared override owner without browser boot or network requests.
+  vm.runInContext(read('docs/js/local-db-overrides.js'), overridesRuntime);
+  const staleDatabase = { npcs: [{ id: surveyor.id, name: 'Stale Surveyor', appearance: { speciesId: 'mao-ao' }, clothingPatterns: {}, restingExpression: 'smile' }] }; // Models a saved local NPC database predating the reviewed appearance.
+  const composed = overridesRuntime.window.LocalDBOverrides.applyNpcSpeciesOverrides(staleDatabase, reviewed).npcs[0]; // Runs the same composition used by game, studio and director.
+  for (const field of fields) assert.deepEqual(copy(composed[field]), authored[field]);
+  assert.deepEqual(staleDatabase.npcs[0].clothingPatterns, {}, 'composition leaves the saved source recoverable');
+  assert.equal(staleDatabase.npcs[0].restingExpression, 'smile');
+  if (process.argv[2]) {
+    const supplied = JSON.parse(read(process.argv[2])); // Checks the supplied source exactly without committing a duplicate fixture.
+    for (const field of fields) assert.deepEqual(authored[field], supplied[field]);
+  }
   window.SCRATCHBONES_CONFIG.game.dyes = { catalog: [{ id: 'dye:CLOTH:pure_yellow', hex: '#ffff00' }] }; // Reproduces the uploaded Surveyor's pattern dye without the gameplay DyeSystem.
   assert.equal(window.ClothingWeavingSystem.__test.resolvePatternHex({ dyeId: 'dye:CLOTH:pure_yellow' }), '#ffff00');
   assert.equal(window.ClothingWeavingSystem.__test.resolvePatternHex({ dyeId: 'missing' }), '#ffffff');
@@ -40,6 +58,9 @@ async function main() {
     assert.deepEqual(copy(window.ClothingWeavingSystem.__test.patternRolesForLayers(layers).map(role => role.key)).sort(), ['poncho', 'trim']);
   }
   await window.NpcAvatarPreview.ensurePortraitCosmetics();
+  const surveyorProfile = window.NpcAvatarPreview.buildProfileFromNpcExport(composed); // Runtime adapter must receive both authored cloth and metal treatment.
+  assert.equal(surveyorProfile.restingExpression, 'frown');
+  assert.deepEqual(copy(surveyorProfile.bodyColors[window.MetalArmorSystem.PORTRAIT_MARKER_KEY][0].smithTreatment), authored.clothingPatterns.defaultClothing.pauldron.smithTreatment);
   const npc = { id: 'custom_npc', name: 'Custom NPC', restingExpression: ' FROWN ', appearance: { speciesId: 'mao-ao', gender: 'male', cosmetics: {} }, equippedCosmetics: ['rugged_poncho'], appliedDyes: {}, clothingPatterns: { defaultClothing: { overwear: { cosmeticId: 'rugged_poncho', weaving: { layers: { poncho: { patterns: [{ repoPatternId: 'a', motifUrl: 'assets/patterns/a.png' }] }, trim: { patterns: [{ repoPatternId: 'b', motifUrl: 'assets/patterns/b.png' }] } } }, colorC: { hex: '#123456' } } } } }; // Round-trip fixture includes distinct pattern-bearing sprite roles.
   const original = copy(npc); // Detects shared-definition mutation during profile construction.
   const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(npc); // Runs the same construction used by world/cutscene stand-ins.

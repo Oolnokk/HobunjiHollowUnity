@@ -162,26 +162,26 @@
           "gender": "male",
           "cosmetics": {
             "hairFront": null,
-            "hairBack": "appearance::Mao-ao_M::mao-ao_long_ponytail",
+            "hairBack": "appearance::Mao-ao_M::mao-ao_splayedknot_medium",
             "hairSide": "appearance::Mao-ao_M::mao-ao_braidcluster-R",
             "hairSideL": "appearance::Mao-ao_M::mao-ao_braid-L",
             "facialHair": null
           },
           "bodyColors": {
             "A": {
-              "h": -70,
-              "s": -0.8,
-              "v": -0.55
+              "h": -113,
+              "s": -0.35,
+              "v": -0.25
             },
             "B": {
-              "h": -70,
-              "s": -0.8,
-              "v": -0.55
+              "h": -83,
+              "s": -0.45,
+              "v": -0.2
             },
             "C": {
-              "h": -70,
-              "s": -0.75,
-              "v": -0.37000000000000005
+              "h": -83,
+              "s": -0.45,
+              "v": -0.2
             }
           },
           "chatColor": {
@@ -193,13 +193,155 @@
         "equippedCosmetics": [
           "rounded_pauldron",
           "fine_poncho",
-          "bandolier1"
+          "bandolier1",
+          "appearance::hat::basic_headband"
         ],
         "appliedDyes": {
-          "CLOTH": "dye:CLOTH:shadow_blue",
-          "CLOTH_B": "dye:CLOTH:pure_yellow",
-          "CLOTH_C": "dye:CLOTH:pure_yellow"
-        }
+          "CLOTH": "dye:CLOTH:deep_green_blue",
+          "CLOTH_B": "dye:CLOTH:pure_yellow_orange",
+          "CLOTH_C": "dye:CLOTH:pure_yellow_orange",
+          "HAT": "dye:CLOTH:smoky_orange"
+        },
+        "restingExpression": "frown",
+        "clothingPatterns": {
+          "defaultClothing": {
+            "overwear": {
+              "uid": "npc_default_khannibarri_agent_overwear",
+              "cosmeticId": "fine_poncho",
+              "slot": "overwear",
+              "colorA": "dye:CLOTH:deep_green_blue",
+              "colorB": "dye:CLOTH:pure_yellow_orange",
+              "colorC": {
+                "dyeId": "dye:CLOTH:pure_yellow_orange"
+              },
+              "weaving": {
+                "layers": {
+                  "trim": {
+                    "patterns": [
+                      {
+                        "motifScale": 1.14,
+                        "motifRotationDeg": 75,
+                        "tiling": true,
+                        "invert": false,
+                        "motifThinPx": 3,
+                        "frameShape": "triangle",
+                        "frameX": -31.309844435307028,
+                        "frameY": 8.688176740679822,
+                        "frameRotationDeg": 37,
+                        "frameScale": 0.83,
+                        "meshScale": 1.92,
+                        "meshRotationDeg": 2,
+                        "overpassClearanceMultiplier": 3,
+                        "repoPatternId": "mark_of_khannibarr",
+                        "motifUrl": "assets/patterns/motif_mark_of_khannibarr.png"
+                      }
+                    ]
+                  },
+                  "poncho": {
+                    "patterns": [
+                      {
+                        "motifScale": 1.14,
+                        "motifRotationDeg": 75,
+                        "tiling": true,
+                        "invert": false,
+                        "motifThinPx": 3,
+                        "frameShape": "triangle",
+                        "frameX": -31.309844435307028,
+                        "frameY": 8.688176740679822,
+                        "frameRotationDeg": 37,
+                        "frameScale": 0.83,
+                        "meshScale": 1.92,
+                        "meshRotationDeg": 2,
+                        "overpassClearanceMultiplier": 3,
+                        "repoPatternId": "mark_of_khannibarr",
+                        "motifUrl": "assets/patterns/motif_mark_of_khannibarr.png",
+                        "usageScaleMultiplier": 0.75,
+                        "usageOffsetY": -16,
+                        "usageRotationDeg": 45,
+                        "usageFlipY": false
+                      },
+                      {
+                        "motifScale": 1.14,
+                        "motifRotationDeg": 75,
+                        "tiling": true,
+                        "invert": false,
+                        "motifThinPx": 3,
+                        "frameShape": "triangle",
+                        "frameX": -31.309844435307028,
+                        "frameY": 8.688176740679822,
+                        "frameRotationDeg": 37,
+                        "frameScale": 0.83,
+                        "meshScale": 1.92,
+                        "meshRotationDeg": 2,
+                        "overpassClearanceMultiplier": 3,
+                        "repoPatternId": "mark_of_khannibarr",
+                        "motifUrl": "assets/patterns/motif_mark_of_khannibarr.png",
+                        "usageFlipX": true,
+                        "usageScaleMultiplier": 0.65,
+                        "usageRotationDeg": 45
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            "pauldron": {
+              "uid": "npc_default_khannibarri_agent_pauldron",
+              "cosmeticId": "rounded_pauldron",
+              "slot": "pauldron",
+              "materialKind": "metal",
+              "metalKey": "nativeCopper",
+              "colorA": null,
+              "colorB": null,
+              "smithTreatment": {
+                "mode": "pattern",
+                "pattern": {
+                  "motifScale": 1.14,
+                  "motifRotationDeg": 75,
+                  "tiling": true,
+                  "invert": false,
+                  "motifThinPx": 3,
+                  "frameShape": "triangle",
+                  "frameX": -31.309844435307028,
+                  "frameY": 8.688176740679822,
+                  "frameRotationDeg": 37,
+                  "frameScale": 0.83,
+                  "meshScale": 1.92,
+                  "meshRotationDeg": 2,
+                  "overpassClearanceMultiplier": 3,
+                  "repoPatternId": "mark_of_khannibarr",
+                  "motifUrl": "assets/patterns/motif_mark_of_khannibarr.png",
+                  "usageScaleMultiplier": 0.2,
+                  "usageOffsetX": -21,
+                  "usageOffsetY": 32
+                },
+                "patternLibraryId": null
+              }
+            },
+            "hat": {
+              "uid": "npc_default_khannibarri_agent_hat",
+              "cosmeticId": "appearance::hat::basic_headband",
+              "slot": "hat",
+              "colorA": "dye:CLOTH:smoky_orange",
+              "colorB": null,
+              "colorC": {
+                "dyeId": "dye:CLOTH:pure_yellow_orange"
+              },
+              "weaving": {
+                "layers": {
+                  "__default": {
+                    "patterns": []
+                  }
+                }
+              }
+            }
+          },
+          "forcedOverpassBySlot": {
+            "overwear": null,
+            "hat": null
+          }
+        },
+        "id": "khannibarri_agent"
       }
     },
     "porakaneki_chief": {
