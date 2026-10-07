@@ -375,9 +375,15 @@
       uniforms: THREE.UniformsUtils.merge([
         THREE.UniformsLib.fog,
         { uThickness: { value: 0.006 } },
+        { uHandAlphaMap: { value: null } },
+        { uHandAlphaMatrix: { value: new THREE.Matrix3() } },
+        { uHandAlphaTest: { value: 0.001 } },
+        { uUseHandAlpha: { value: 0 } },
       ]),
       vertexShader: `
         uniform float uThickness;
+        attribute vec2 uv;
+        varying vec2 vHandUv;
         varying float vFogDepth;
         void main() {
           #ifdef USE_INSTANCING
@@ -396,10 +402,16 @@
           clip.xy += dir * uThickness * clip.w;
           gl_Position = clip;
           vFogDepth = -viewPos.z;
+          vHandUv = uv;
         }
       `,
       fragmentShader: `
         uniform vec3 fogColor;
+        uniform sampler2D uHandAlphaMap;
+        uniform mat3 uHandAlphaMatrix;
+        uniform float uHandAlphaTest;
+        uniform float uUseHandAlpha;
+        varying vec2 vHandUv;
         #ifdef FOG_EXP2
           uniform float fogDensity;
         #else
@@ -408,6 +420,7 @@
         #endif
         varying float vFogDepth;
         void main() {
+          if (uUseHandAlpha > 0.5 && texture2D(uHandAlphaMap, (uHandAlphaMatrix * vec3(vHandUv, 1.0)).xy).a <= uHandAlphaTest) discard;
           vec3 outlineColor = vec3(0.0);
           #ifdef USE_FOG
             #ifdef FOG_EXP2
@@ -532,9 +545,40 @@
       renderer.autoClearColor = false;
       renderer.autoClearDepth = false;
       scene.overrideMaterial = shellOutlineMaterial;
+      const maskedHandMeshes = [];
+      scene.traverse(object => {
+        if (!object?.isMesh || object.userData?.hobunjiPortraitOccludedWingLayer !== true) return;
+        const baseMaterial = Array.isArray(object.material) ? object.material[0] : object.material;
+        const map = baseMaterial?.map;
+        if (!map) return;
+        map.updateMatrix?.();
+        const originalIndex = object.geometry?.getIndex?.() || null;
+        const shellIndex = object.userData.hobunjiShellIndex || null;
+        const previousBefore = object.onBeforeRender;
+        const previousAfter = object.onAfterRender;
+        if (shellIndex) object.geometry.setIndex(shellIndex);
+        object.onBeforeRender = function previewMaskedHandOutlineBefore(...args) {
+          previousBefore?.apply(this, args);
+          shellOutlineMaterial.uniforms.uHandAlphaMap.value = map;
+          shellOutlineMaterial.uniforms.uHandAlphaMatrix.value.copy(map.matrix);
+          shellOutlineMaterial.uniforms.uHandAlphaTest.value = Number(baseMaterial.alphaTest) || 0.001;
+          shellOutlineMaterial.uniforms.uUseHandAlpha.value = 1;
+        };
+        object.onAfterRender = function previewMaskedHandOutlineAfter(...args) {
+          previousAfter?.apply(this, args);
+          shellOutlineMaterial.uniforms.uUseHandAlpha.value = 0;
+        };
+        maskedHandMeshes.push({ object, originalIndex, shellIndex, previousBefore, previousAfter });
+      });
       camera.layers.set(1);
       renderer.render(scene, camera);
     } finally {
+      for (const entry of maskedHandMeshes) {
+        if (entry.shellIndex) entry.object.geometry.setIndex(entry.originalIndex);
+        entry.object.onBeforeRender = entry.previousBefore;
+        entry.object.onAfterRender = entry.previousAfter;
+      }
+      shellOutlineMaterial.uniforms.uUseHandAlpha.value = 0;
       camera.layers.mask = baseMask;
       scene.overrideMaterial = previousOverride;
       renderer.autoClearColor = previousAutoClearColor;
