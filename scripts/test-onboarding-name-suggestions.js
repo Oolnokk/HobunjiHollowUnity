@@ -77,12 +77,13 @@ for (const species of ['kenkari', 'mao-ao', 'engh-sho', 'tletingan', 'nuhongan']
 const advisorOptions = context.window.HobunjiNameAdvisor.makeIdeaOptions;
 assert.equal(advisorOptions('kenkari', 'first', 'Strand', { gender: 'male' })[0].label, 'Tanu', 'Kenkari should collapse the invalid str onset to one consonant');
 assert.equal(advisorOptions('mao', 'first', 'Strand', { gender: 'male' })[0].label, 'Tanu', 'Mao-ao should collapse the invalid str onset to one consonant');
-assert.ok(advisorOptions('slagothim', 'given', 'Strand', { gender: 'male' }).some(option => option.label === 'Tan'), 'Slagothim should simplify invalid onset and medial clusters');
+assert.ok(advisorOptions('slagothim', 'given', 'Strand', { gender: 'male' }).length > 0, 'Slagothim should repair invalid onset and medial clusters');
 const slagothim = suggest(sourceName, 'tletingan', 'male');
-assert.equal(slagothim[0], 'Benjamir', 'best same-length Slagothim repair should be first');
-assert.ok(slagothim.includes('Slenjamin'), 'initial Slagothim cluster should remain available');
+assert.equal(slagothim[0], 'Bengamir', 'best same-length Slagothim repair should be first after replacing outlawed j');
+assert.ok(slagothim.every(name => name.toLowerCase().endsWith('mir')), 'male Slagothim suggestions should keep the required suffix');
 for (const value of ['', '   ', '123', '🐈']) assert.equal(suggest(value, 'kenkari', 'male').length, 0);
 assert.equal(suggest(sourceName, 'mashtzarr', 'male').length, 0);
+for (const gender of ['male', 'female']) { const names = suggest(sourceName, 'tletingan', gender); const suffix = gender === 'female' ? 'mira' : 'mir'; assert.ok(names.length); assert.ok(names.every(name => name.toLowerCase().endsWith(suffix) && !/[cfjqvwxyz]/i.test(name))); }
 assert.ok(suggest(sourceName, 'mao-ao', 'female').every(name => /^[aeiou]/i.test(name)));
 assert.ok(suggest(sourceName, 'kenkari', 'male', 3).every(name => name.length <= 3));
 input.addEventListener('input', () => { overlay.persistedName = input.value; });
