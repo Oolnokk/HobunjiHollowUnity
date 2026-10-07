@@ -790,7 +790,11 @@
   function clothingColorHex(color, fallback = '#ffffff') {
     const direct = String(color?.hex || '').trim();
     if (/^#[0-9a-f]{6}$/i.test(direct)) return direct;
-    const dyeHex = String(window.DyeSystem?.getById?.(color?.dyeId)?.hex || '').trim();
+    const dyeId = typeof color === 'string' ? color : color?.dyeId; // Legacy NPC colors and current wardrobe records share the same catalog identifier.
+    const dye = window.DyeSystem?.getById?.(dyeId)
+      || window.ScratchbonesAccount?.getDyeCatalog?.()?.find(entry => entry.id === dyeId)
+      || window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog?.find(entry => entry.id === dyeId); // Standalone editors have the shared dye catalog without the gameplay DyeSystem.
+    const dyeHex = String(dye?.hex || '').trim();
     return /^#[0-9a-f]{6}$/i.test(dyeHex) ? dyeHex : fallback;
   }
 
@@ -1874,7 +1878,7 @@
   }
 
   function resolvePatternHex(colorC) {
-    return colorC?.hex || window.DyeSystem?.getById?.(colorC?.dyeId)?.hex || '#ffffff';
+    return clothingColorHex(colorC);
   }
 
   function portraitTintForHex(tint, hex) {
@@ -2079,7 +2083,9 @@
     const meshScale = resolvedPatternMeshScale(patternDef);
     const motifRad = (Number(patternDef?.motifRotationDeg) || 0) * Math.PI / 180;
     const frameRad = (Number(patternDef?.frameRotationDeg) || 0) * Math.PI / 180;
-    const meshRad = (Number(patternDef?.meshRotationDeg) || 0) * Math.PI / 180;
+    const meshRad = ((Number(patternDef?.meshRotationDeg) || 0) + finite(patternDef?.usageRotationDeg)) * Math.PI / 180; // Per-piece rotation preserves the repository pattern's authored rotation.
+    const offsetX = clamp(finite(patternDef?.usageOffsetX), -4096, 4096); // Moves the completed pattern across this sprite, instead of moving its crop window.
+    const offsetY = clamp(finite(patternDef?.usageOffsetY), -4096, 4096); // Saved in raw sprite pixels, matching the X offset.
     const shape = frameShapeFor(patternDef?.frameShape), naturalW = motifImg.naturalWidth || motifImg.width || 1, naturalH = motifImg.naturalHeight || motifImg.height || 1;
     // The sole source everything crops from: the authored ink, rotated by
     // motifRotationDeg, at its natural 1x size — motifScale is applied
@@ -2103,14 +2109,14 @@
     const clusterSeparatorSrc = maskCanvas(sourceClusterSeparatorMask, srcSize, srcSize);
 
     ctx.save();
-    ctx.translate(width / 2, height / 2);
+    ctx.translate(width / 2 + offsetX, height / 2 + offsetY);
     ctx.rotate(meshRad);
-    ctx.scale(meshScale, meshScale);
+    ctx.scale(meshScale * (patternDef?.usageFlipX ? -1 : 1), meshScale * (patternDef?.usageFlipY ? -1 : 1));
     if (clusterSeparatorSrc) {
       clusterSeparatorCtx.save();
-      clusterSeparatorCtx.translate(width / 2, height / 2);
+      clusterSeparatorCtx.translate(width / 2 + offsetX, height / 2 + offsetY);
       clusterSeparatorCtx.rotate(meshRad);
-      clusterSeparatorCtx.scale(meshScale, meshScale);
+      clusterSeparatorCtx.scale(meshScale * (patternDef?.usageFlipX ? -1 : 1), meshScale * (patternDef?.usageFlipY ? -1 : 1));
     }
 
     if (bbox) {
@@ -2177,7 +2183,7 @@
         // meshScale converts it into those same local units. Lattice
         // placement no longer depends on frameX/frameY at all — those only
         // steer what a cell's own crop samples now, never where cells sit.
-        const reach = Math.hypot(width, height) / 2 / meshScale + Math.hypot(cellW, cellH);
+        const reach = (Math.hypot(width, height) / 2 + Math.hypot(offsetX, offsetY)) / meshScale + Math.hypot(cellW, cellH); // Offset tiled meshes must still cover the entire garment.
         const det = basisU.x*basisV.y-basisU.y*basisV.x; let maxI=8, maxJ=8;
         if (Math.abs(det) > 1e-6) {
           const ia=basisV.y/det, ib=-basisV.x/det, ic=-basisU.y/det, id=basisU.x/det;
@@ -2895,7 +2901,7 @@
     hasAddedTrim: item => weavingHasOptionalTrim(item?.weaving),
     reweaveMaterialCost,
     debugSnapshot,
-    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, applyPatternStackToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, resolveIconLayerUrls, patternRolesForLayers, layersUseSecondaryDye, iconLayersForView, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingPatternsForRole, normalizePatternStack, forcedOverpassPatternForWeaving, withForcedOverpass, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, weavingHasOptionalTrim, weavingHasAnyDecoration, normalizeTrimDyeSlot, clothingTrimConfig, authoredTrimPatternFromManifest, authoredTrimPatternForCosmetic, variantKeyForSourceUrl, trimColorHexForDescriptor, weavingCarriesSavedPattern, gearHasEquippedWovenClothing, requestSessionReadyPlayerAvatarRefresh, decorateAvatarDataWithWovenItems, materializeWeavingLibrarySnapshots, docsRelativeUrl, standaloneAssetUrl, frameShapeFor, wovenIconVisualKey, reweaveMaterialCost, resolvedPatternMeshScale, buildMotifClusterSeparatorMask, adjustMaskThickness, buildPatternOutlineMask, scaledOutlineWidth, overpassClearanceMultiplier, exactDirectMaskPass, patternWorkPad, patternGarmentPixelEligible, directTrimOutlineSurfacePixelEligible, directTrimAuthoredOutlinePixel, suppressGeneratedOutlineAgainstAuthoredOutline, patternCellOffset }),
+    __test: Object.freeze({ clothingColorHex, resolvePatternHex, baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, applyPatternStackToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, resolveIconLayerUrls, patternRolesForLayers, layersUseSecondaryDye, iconLayersForView, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingPatternsForRole, normalizePatternStack, forcedOverpassPatternForWeaving, withForcedOverpass, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, weavingHasOptionalTrim, weavingHasAnyDecoration, normalizeTrimDyeSlot, clothingTrimConfig, authoredTrimPatternFromManifest, authoredTrimPatternForCosmetic, variantKeyForSourceUrl, trimColorHexForDescriptor, weavingCarriesSavedPattern, gearHasEquippedWovenClothing, requestSessionReadyPlayerAvatarRefresh, decorateAvatarDataWithWovenItems, materializeWeavingLibrarySnapshots, docsRelativeUrl, standaloneAssetUrl, frameShapeFor, wovenIconVisualKey, reweaveMaterialCost, resolvedPatternMeshScale, buildMotifClusterSeparatorMask, adjustMaskThickness, buildPatternOutlineMask, scaledOutlineWidth, overpassClearanceMultiplier, exactDirectMaskPass, patternWorkPad, patternGarmentPixelEligible, directTrimOutlineSurfacePixelEligible, directTrimAuthoredOutlinePixel, suppressGeneratedOutlineAgainstAuthoredOutline, patternCellOffset }),
   });
   window.__clothingWeavingDebug = debugSnapshot;
 

@@ -26,6 +26,9 @@ function editorFunction(name) {
 }
 
 async function main() {
+  window.SCRATCHBONES_CONFIG.game.dyes = { catalog: [{ id: 'dye:CLOTH:pure_yellow', hex: '#ffff00' }] }; // Reproduces the uploaded Surveyor's pattern dye without the gameplay DyeSystem.
+  assert.equal(window.ClothingWeavingSystem.__test.resolvePatternHex({ dyeId: 'dye:CLOTH:pure_yellow' }), '#ffff00');
+  assert.equal(window.ClothingWeavingSystem.__test.resolvePatternHex({ dyeId: 'missing' }), '#ffffff');
   const portrait = vm.createContext({ window: { SCRATCHBONES_CONFIG: {} }, console, URL }); // Loads the actual portrait variant authority for inheritance and nearest-variant regressions.
   vm.runInContext(read('docs/js/portrait-utils.js'), portrait);
   vm.runInContext("LAST_SPECIES_DATA_BY_ID={mammakhbuur:{parentSpecies:'mashtzarr'}}; LAST_COSMETIC_FALLBACK_GROUPS={bodyGroups:[{members:[{species:'tletingan',gender:'female',position:0},{species:'mao-ao',gender:'female',position:1}]}]};", portrait);
@@ -91,6 +94,20 @@ async function main() {
   await vm.runInContext('renderNpcAppearanceControls()', editor);
   patternSelect.onchange();
   await Promise.resolve();
+  const placement = { dataset: { npcPatternTransformSlot: 'overwear', patternRole: 'poncho', patternIndex: '0', patternField: 'usageScaleMultiplier' }, type: 'number', value: '2.5', min: '0.1', max: '20' }; // Real placement control changes only this piece's primary snapshot.
+  element('npcPatternControls').querySelectorAll = selector => selector === '[data-npc-pattern-transform-slot]' ? [placement] : [];
+  await vm.runInContext('renderNpcAppearanceControls()', editor);
+  placement.onchange();
+  assert.equal(editor.work.clothingPatterns.defaultClothing.overwear.weaving.layers.poncho.patterns[0].usageScaleMultiplier, 2.5);
+  placement.dataset.patternField = 'tiling'; placement.type = 'select-one'; placement.value = 'false';
+  placement.onchange();
+  placement.dataset.patternField = 'usageFlipX'; placement.type = 'checkbox'; placement.checked = true;
+  placement.onchange();
+  const placed = editor.work.clothingPatterns.defaultClothing.overwear.weaving.layers.poncho.patterns[0]; // Ensures subsequent controls preserve earlier edits and the motif identity.
+  assert.equal(placed.tiling, false);
+  assert.equal(placed.usageFlipX, true);
+  assert.equal(placed.repoPatternId, 'new_pattern');
+  assert.equal(editor.work.clothingPatterns.defaultClothing.overwear.weaving.layers.trim.patterns[0].usageScaleMultiplier, undefined);
   vm.runInContext("work.restingExpression='smile'; work.appliedDyes.CLOTH='new_dye'; syncNpcPatternColors(); applyWorkToNpc(); exportAppearance();", editor);
   const result = copy(editor.db.npcs[0]); // Verifies Apply writes the canonical record, not only raw avatar JSON.
   assert.equal(result.restingExpression, 'smile');
@@ -100,6 +117,7 @@ async function main() {
   assert.equal(result.clothingPatterns.defaultClothing.overwear.colorA, 'new_dye');
   assert.deepEqual(saved[0].clothingPatterns, result.clothingPatterns);
   assert.equal(saved[0].restingExpression, 'smile');
+  assert.equal(saved[0].clothingPatterns.defaultClothing.overwear.weaving.layers.poncho.patterns[0].usageScaleMultiplier, 2.5);
   const metalSelect = { dataset: { npcMetalPattern: 'pauldron' }, value: 'new_pattern' }; // Exercises the real NPC metal selector's save and clear paths.
   element('npcPatternControls').querySelectorAll = selector => selector === '[data-npc-metal-pattern]' ? [metalSelect] : [];
   editor.work = copy(armored);
@@ -108,9 +126,28 @@ async function main() {
   metalSelect.onchange();
   assert.equal(editor.work.clothingPatterns.defaultClothing.pauldron.smithTreatment.pattern.repoPatternId, 'new_pattern');
   assert.equal(editor.work.clothingPatterns.defaultClothing.pauldron.metalKey, 'tinBronze');
+  placement.dataset = { npcPatternTransformSlot: 'pauldron', patternRole: '__metal', patternIndex: '0', patternField: 'usageOffsetX' };
+  placement.type = 'number'; placement.min = '-4096'; placement.max = '4096'; placement.value = '12';
+  element('npcPatternControls').querySelectorAll = selector => selector === '[data-npc-pattern-transform-slot]' ? [placement] : [];
+  await vm.runInContext('renderNpcAppearanceControls()', editor);
+  placement.onchange();
+  assert.equal(editor.work.clothingPatterns.defaultClothing.pauldron.smithTreatment.pattern.usageOffsetX, 12);
+  assert.equal(editor.work.clothingPatterns.defaultClothing.pauldron.smithTreatment.pattern.repoPatternId, 'new_pattern');
   metalSelect.value = '';
   metalSelect.onchange();
   assert.equal(editor.work.clothingPatterns.defaultClothing.pauldron.smithTreatment, null);
+  const transforms = []; // Records canvas operations made by both production mask renderers.
+  document.createElement = () => ({ width: 0, height: 0, getContext() { return new Proxy({ getImageData(_x, _y, width, height) { const data = new Uint8ClampedArray(width * height * 4); data[3] = 255; return { data }; }, createImageData(width, height) { return { data: new Uint8ClampedArray(width * height * 4) }; } }, { get(object, key) { return object[key] || ((...args) => transforms.push([key, ...args])); } }); } }); // A one-pixel motif exercises real stamping and transform math without native Canvas dependencies.
+  vm.runInContext(read('docs/js/tool-metal-recolor.js'), runtime);
+  const transformPattern = { meshScale: 1, usageScaleMultiplier: 2, meshRotationDeg: 10, usageRotationDeg: 30, usageOffsetX: 12, usageOffsetY: -8, usageFlipX: true, tiling: false }; // Asymmetric placement catches swapped axes and flipping the wrong coordinate space.
+  window.ClothingWeavingSystem.__test.buildPatternMask(64, 64, transformPattern, { width: 4, height: 4 });
+  assert(transforms.some(([operation, x, y]) => operation === 'translate' && x === 44 && y === 24));
+  assert(transforms.some(([operation, x, y]) => operation === 'scale' && x === -0.5 && y === 0.5));
+  assert(transforms.some(([operation, angle]) => operation === 'rotate' && Math.abs(angle - 40 * Math.PI / 180) < 1e-9));
+  transforms.length = 0;
+  window.ToolMetalRecolor.__test.buildAuthoredClearedMask(64, 64, transformPattern, { width: 4, height: 4 });
+  assert(transforms.some(([operation, x, y]) => operation === 'translate' && x === 44 && y === 24));
+  assert(transforms.some(([operation, x, y]) => operation === 'scale' && x === -2 && y === 2), 'metal preserves its authored physical scale');
 
   const dialogue = read('docs/js/dialogue-content.js'); // Verifies the live cutscene walker supersedes an earlier ordinary conversation's record.
   const resolver = dialogue.slice(dialogue.indexOf('  function _npcRestingExpression('), dialogue.indexOf('  function _playNpcDialogueLetterSfx(')); // Executes the production dialogue resolver with stale conversation state.

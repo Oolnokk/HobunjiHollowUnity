@@ -369,10 +369,13 @@
     // patterns saved before motifScale existed as its own field.
     const motifScale = Math.max(0.05, Number(patternDef.motifScale ?? patternDef.scale) || 1);
     const frameScale = Math.max(0.05, Number(patternDef.frameScale) || 1);
-    const meshScale = Math.max(0.05, Number(patternDef.meshScale) || 1); // Verdigris intentionally keeps its legacy physical mesh scale; weaving alone applies the normalized 1.00 -> old 0.25 mapping.
+    const meshScale = Math.max(0.05, Number(patternDef.meshScale) || 1); // Verdigris keeps its authored physical scale.
+    const usageScale = Math.max(0.1, Math.min(20, Number(patternDef.usageScaleMultiplier) || 1)); // Independent per-piece zoom leaves existing tool pattern sizes unchanged.
     const motifRad = ((Number(patternDef.motifRotationDeg) || 0) * Math.PI) / 180;
     const frameRad = ((Number(patternDef.frameRotationDeg) || 0) * Math.PI) / 180;
-    const meshRad = ((Number(patternDef.meshRotationDeg) || 0) * Math.PI) / 180;
+    const meshRad = (((Number(patternDef.meshRotationDeg) || 0) + (Number(patternDef.usageRotationDeg) || 0)) * Math.PI) / 180;
+    const offsetX = Math.max(-4096, Math.min(4096, Number(patternDef.usageOffsetX) || 0)); // Placement of the completed removal pattern in raw sprite pixels.
+    const offsetY = Math.max(-4096, Math.min(4096, Number(patternDef.usageOffsetY) || 0)); // Shares cloth pattern placement semantics.
     const shape = frameShapeFor(patternDef.frameShape);
     const naturalW = motifImg.naturalWidth || motifImg.width || 1;
     const naturalH = motifImg.naturalHeight || motifImg.height || 1;
@@ -400,9 +403,9 @@
     const adjustedSrc = maskCanvas(adjustedSrcMask, srcSize, srcSize);
 
     ctx.save();
-    ctx.translate(width / 2, height / 2);
+    ctx.translate(width / 2 + offsetX, height / 2 + offsetY);
     ctx.rotate(meshRad);
-    ctx.scale(meshScale, meshScale);
+    ctx.scale(meshScale * usageScale * (patternDef.usageFlipX ? -1 : 1), meshScale * usageScale * (patternDef.usageFlipY ? -1 : 1));
 
     if (bbox) {
       // The frame is a crop window laid over the source ink: frameX/frameY
@@ -469,7 +472,7 @@
         // meshScale converts it into those same local units. Lattice
         // placement no longer depends on frameX/frameY at all — those only
         // steer what a cell's own crop samples now, never where cells sit.
-        const reach = Math.hypot(width, height) / 2 / meshScale + Math.hypot(cellW, cellH);
+        const reach = (Math.hypot(width, height) / 2 + Math.hypot(offsetX, offsetY)) / (meshScale * usageScale) + Math.hypot(cellW, cellH); // Keeps shifted tiling continuous at the canvas edges.
         const det = basisU.x * basisV.y - basisU.y * basisV.x;
         let maxI = 8, maxJ = 8;
         if (Math.abs(det) > 1e-6) {
