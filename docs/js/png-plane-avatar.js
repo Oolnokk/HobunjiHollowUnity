@@ -210,6 +210,21 @@
     return tags.some(tag => markers.tags.has(normalizeKey(tag)));
   }
 
+  // Child proportions: `body` is the whole-avatar multiplier (portrait, hands,
+  // feet — everything below), `head` is the head's FINAL size relative to an
+  // adult head. Heads shrink less than bodies, so js/character-rig-scale.js
+  // re-enlarges just the head at the neck bone by head / body. A record can
+  // override either (childBodyScale / childHeadScale — e.g. babies vs older
+  // children from js/romance-family.js); config supplies the defaults.
+  function childScaleFor(options = {}) {
+    if (!isChildAvatar(options)) return null;
+    const record = options.npcRecord || options.profile?.npcRecord || {};
+    const positive = value => { const n = Number(value); return Number.isFinite(n) && n > 0 ? n : null; };
+    const body = positive(record.childBodyScale) ?? positive(options.childBodyScale) ?? positive(cfg().childScaleMultiplier) ?? 1;
+    const head = positive(record.childHeadScale) ?? positive(options.childHeadScale) ?? positive(cfg().childHeadScaleMultiplier) ?? body;
+    return { body, head, headFactor: head / body };
+  }
+
   function avatarScaleMultiplierFor(options = {}) {
     const { species, gender } = avatarSpeciesAndGender(options);
     const scaleBySpecies = cfg().portraitScaleBySpecies || {};
@@ -226,10 +241,8 @@
         }
       }
     }
-    if (isChildAvatar(options)) {
-      const childScale = Number(cfg().childScaleMultiplier);
-      if (Number.isFinite(childScale) && childScale > 0) scale *= childScale;
-    }
+    const child = childScaleFor(options);
+    if (child) scale *= child.body;
     return scale;
   }
 
@@ -1161,6 +1174,7 @@
     avatarPlacementRatioFor,
     avatarScaleMultiplierFor,
     isChildAvatar,
+    childScaleFor,
     disposeAvatarModel,
     loadThreeModules,
     scanOpaqueVerticalBoundsOfImage,

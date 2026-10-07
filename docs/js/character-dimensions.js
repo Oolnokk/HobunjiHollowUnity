@@ -211,7 +211,11 @@
     const rigApi = window.HobunjiCharacterRigScale;
     const resolvedRig = rigApi?.scaleFor?.(s, g) || window.HobunjiCharacterRigScaleDefaults?.scaleFor?.(s, g) || { x: 1, y: 1, head: 1, offsetY: 0 };
     const rig = { ...resolvedRig, ...(options.rigScale || {}) };
-    const rx = positive(rig.x, 1), ry = positive(rig.y, 1), head = positive(rig.head, 1);
+    const childHeadFactor = options.child || png?.isChildAvatar?.(avatarOptions)
+      ? positive(png?.childScaleFor?.({ ...avatarOptions, npcRecord: options.npcRecord || avatarOptions.npcRecord || { role: 'child' } })?.headFactor,
+        positive(cfg.childHeadScaleMultiplier, positive(cfg.childScaleMultiplier, 1)) / positive(cfg.childScaleMultiplier, 1)) // No configured head multiplier → head shrinks with the body.
+      : 1; // Children's heads shrink less than their bodies (see PNGPlaneAvatar.childScaleFor).
+    const rx = positive(rig.x, 1), ry = positive(rig.y, 1), head = positive(rig.head, 1) * childHeadFactor;
     const age = rigApi?.ageFor ? rigApi.ageFor(options) : (Number(options.age) || 0); // Explicit age, else an NPC's authored appearance.aging.hunch (pass { npcRecord } or { profile }).
     const hunch = rigApi?.ageHunchFraction?.(age) || 0;
     const headOffset = (Number(rig.offsetY) || 0) + hunch;

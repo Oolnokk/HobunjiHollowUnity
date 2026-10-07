@@ -49,11 +49,13 @@
       if (!identity.speciesId) return root;
 
       const resolved = scaleApi.scaleFor(identity.speciesId, identity.gender); // Canonical authored tuple; body x/y are used to counter-compensate the head before the parent scale lands later.
+      const child = window.PNGPlaneAvatar?.childScaleFor?.(options) || null; // Child body is already applied to the whole portrait; the head shrinks less.
+      const childHeadFactor = child ? child.headFactor : 1;
       const applied = scaleApi.applyHeadCompensation(
         root,
         identity.speciesId,
         identity.gender,
-        resolved,
+        child ? { ...resolved, childHeadFactor } : resolved,
         identity.age,
       );
 
@@ -65,6 +67,8 @@
         headScale: resolved.head,
         headOffsetY: resolved.offsetY,
         age: identity.age, // Read back by HobunjiCharacterRigScale.ageFor when hands later reapply head compensation.
+        childHeadFactor, // Read back by HobunjiCharacterRigScale.applyHeadCompensation on later reapplication.
+        childBodyScale: child ? child.body : null,
         bodyScaleX: resolved.x,
         bodyScaleY: resolved.y,
         source: 'PNGPlaneAvatar.buildSinglePlaneAvatarModel',

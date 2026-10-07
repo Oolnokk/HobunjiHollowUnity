@@ -11,7 +11,7 @@ assert(onboardingCoreKey >= '20260907charcreator1', `onboarding entrypoint must 
 assert.match(entry, /onboarding-character-creation-redesign\.js\?v=[A-Za-z0-9_.-]+/, 'onboarding entrypoint must load the current integrated redesign after the core');
 assert.doesNotMatch(entry, /runtime-parity/, 'creator behavior must not depend on a separate follow-up script');
 assert.match(core, /makeDefaultState\('mao-ao', 'male'\)/, "fresh character creation must start with Mao'ao selected");
-assert.match(core, /window\.HobunjiOnboarding = \{ init, reset, loadProfile, loadSaveMeta \}/, 'preserved onboarding core must still expose the original public API');
+assert.match(core, /window\.HobunjiOnboarding = \{ init, reset, loadProfile, loadSaveMeta[,\s\w]*\}/, 'preserved onboarding core must still expose the original public API (later additions such as openCreator are allowed)');
 
 for (const required of [
   'Sloth-folk of the Northern Archipelago',

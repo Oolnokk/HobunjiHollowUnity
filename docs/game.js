@@ -28358,6 +28358,7 @@
         openDialogueNode: (walker, node) => { if (!walker || !node) return false; if (dialogueOpen) closeNpcDialogue(); openNpcDialogue(walker, { node }); return true; },
         getInteriorFurniture: () => interiorFurnitureObjects,
         furniture: { placeInteriorFixture: placeInteriorFixtureFurniture, removeInteriorFurniture: removeInteriorFurnitureById },
+        despawnNpcWalker: walker => despawnNpcVisitor(walker),
         spawnNpcRecord: async (rec, target) => {
           if (!rec?.id || npcWalkers.some(w => w.rec?.id === rec.id)) return null;
           const walker = await makeNpcWalker(rec, target);

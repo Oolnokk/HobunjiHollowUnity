@@ -99,7 +99,17 @@
       toddlingDays: 5 * DAYS_PER_MONTH, // Toddling Footing eases 99 → 0 over this span after leaving the basket.
       independentAfterDays: 12 * DAYS_PER_MONTH, // Age (from birth) at which children walk normally and leave the house.
       eggLayingSpecies: ['kenkari'],
-      childScale: 0.62,
+      // Child proportions per growth phase, fed to PNGPlaneAvatar.childScaleFor
+      // as the record's childBodyScale / childHeadScale: `body` scales the whole
+      // avatar, `head` is the head's final size vs an adult (heads shrink less).
+      // The 'child' phase leaves both unset so it uses the same config default
+      // (pngPlaneAvatar.childScaleMultiplier / childHeadScaleMultiplier) as
+      // Gantami and every other authored child.
+      phaseScales: {
+        basket: { body: 0.32, head: 0.58 },
+        toddler: { body: 0.4, head: 0.66 },
+        child: null,
+      },
       vatEfficacyMultiplier: 2,
     },
   };

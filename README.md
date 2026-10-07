@@ -248,10 +248,24 @@ will need addressing.
 - **Children** (`docs/js/romance-family.js`): 3 months after the wedding a
   pregnancy/egg is announced for same-species opposite-gender couples; the
   first sleep in your farmhouse bed after 6 months brings the birth/hatching
-  (or, for any other pairing, a dream-child picker followed by Father Hunundi
-  at the door via `DoorstepVisits` with an orphan to name). Newborns sleep a
+  (or, for any other pairing, a dream in which the real character creator —
+  `HobunjiOnboarding.openCreator`, the same creator UI plus its redesign/life
+  preview add-ons re-armed through the `hobunji-creator-session` event — picks
+  the child's species, gender, cosmetics, colors and clothing, followed by
+  Father Hunundi at the door via `DoorstepVisits` with an orphan to name). Newborns sleep a
   month in a `babyBasket` fixture, toddle with hidden Toddling Footing (99 → 0
   over 5 months), then walk the farm, greet you, and can work a squeezing vat
   (`DewVats.setExternalWorker`) at 2× yield.
 - Saved per character per world as `member.romanceState`. Executable coverage:
   `scripts/test-romance-dating.js`.
+
+## Child proportions
+
+NPCs marked as children (`role`/`tags` `child`, e.g. Gantami and the family's
+children) are scaled down by `pngPlaneAvatar.childScaleMultiplier` (body)
+while their head only shrinks to `childHeadScaleMultiplier` of an adult head:
+`PNGPlaneAvatar.childScaleFor` resolves both (a record may override them with
+`childBodyScale` / `childHeadScale`, which `romance-family.js` uses for babies
+and toddlers), and `character-rig-scale.js` re-enlarges just the head at the
+neck rig's head-scale bone by head ÷ body — the same bone the rig editor's
+head scale drives. `character-dimensions.js` accounts for it.

@@ -728,6 +728,7 @@
       modelHeight: baseWidth,
       name: `${group.name}_portrait`,
       userData: { source: 'onboarding-character-creator', nonInteractive: true },
+      ...(window.HobunjiOnboarding?.creatorSessionInfo?.()?.child ? { npcRecord: { role: 'child' } } : {}), // In-game dream-child sessions preview real child proportions (PNGPlaneAvatar.childScaleFor).
     });
     model.userData.proceduralHandParent = group;
     model.userData.rigAvatarProfile = profile;
@@ -850,34 +851,44 @@
     overlayObserver.observe(overlay, { childList: true }); // Direct children only: core innerHTML replacements trigger; nested redesign changes do not.
   }
 
-  function installObservers() {
-    const start = () => {
-      if (bodyObserver) return;
-      bodyObserver = new MutationObserver(() => {
-        attachOverlayObserver();
-        queueEnhance();
-      });
-      bodyObserver.observe(document.body, { childList: true }); // Only detects #ob-overlay mount/unmount at body level.
+  function startObservers() {
+    if (bodyObserver || !document.body) return;
+    bodyObserver = new MutationObserver(() => {
       attachOverlayObserver();
       queueEnhance();
-    };
+    });
+    bodyObserver.observe(document.body, { childList: true }); // Only detects #ob-overlay mount/unmount at body level.
+    attachOverlayObserver();
+    queueEnhance();
+  }
 
-    if (document.body) start();
-    else document.addEventListener('DOMContentLoaded', start, { once: true });
+  function stopObservers() {
+    bodyObserver?.disconnect();
+    bodyObserver = null;
+    overlayObserver?.disconnect();
+    overlayObserver = null;
+    observedOverlay = null;
+    disposePreviewScene();
+  }
+
+  function installObservers() {
+    if (document.body) startObservers();
+    else document.addEventListener('DOMContentLoaded', startObservers, { once: true });
+
+    // In-game creator sessions (HobunjiOnboarding.openCreator, e.g. the
+    // dream child) re-arm the creator presentation after gameplay began, and
+    // tear it down again once the session's card has faded out.
+    document.addEventListener('hobunji-creator-session', event => {
+      if (event.detail?.phase === 'open') startObservers();
+      else if (event.detail?.phase === 'close') setTimeout(stopObservers, 500);
+    });
 
     // Neither observer is expensive (both are childList-only, direct children
     // only -- see the comments above), but nothing was stopping them from
     // running for the rest of the game session once character creation hands
     // off. Same teardown signal already used by the sibling weapon/life-preview
     // modules.
-    document.addEventListener('hobunjiPlayerReady', () => {
-      bodyObserver?.disconnect();
-      bodyObserver = null;
-      overlayObserver?.disconnect();
-      overlayObserver = null;
-      observedOverlay = null;
-      disposePreviewScene();
-    }, { once: true });
+    document.addEventListener('hobunjiPlayerReady', stopObservers, { once: true });
   }
 
   function install() {

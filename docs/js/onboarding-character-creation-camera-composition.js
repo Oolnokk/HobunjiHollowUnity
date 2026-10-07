@@ -161,6 +161,14 @@
   document.addEventListener('hobunjiPlayerReady', () => {
     setTimeout(() => { active = false; }, 500);
   }, { once: true });
+  // In-game creator sessions (HobunjiOnboarding.openCreator) re-arm the same
+  // composition for the life of the session only.
+  document.addEventListener('hobunji-creator-session', event => {
+    if (event.detail?.phase === 'close') { setTimeout(() => { active = false; }, 500); return; }
+    if (event.detail?.phase !== 'open' || active) return;
+    active = true;
+    requestAnimationFrame(frame);
+  });
 
   window[PATCH_ID] = Object.freeze({
     targetYawDeg: TARGET_PREVIEW_YAW_DEG,

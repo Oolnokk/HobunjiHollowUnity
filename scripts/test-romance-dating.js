@@ -263,6 +263,9 @@ const child = W.RomanceFamily.createChild({ name: 'Pip', speciesId: 'engh-sho', 
 assert.equal(child.basketId, 'basket1', 'newborns get a baby basket in the house');
 assert.equal(fam.phaseOf(child), 'basket');
 assert.equal(fam.childTarget(child).activity, 'napping in the basket');
+let childRec = fam.childRecord(child);
+assert.equal(childRec.role, 'child', 'family children use the shared child marker (PNGPlaneAvatar.isChildAvatar)');
+assert.ok(childRec.childHeadScale > childRec.childBodyScale, 'babies: the head shrinks less than the body');
 clock.rawDay += 28;
 assert.equal(fam.phaseOf(child), 'toddler');
 assert.equal(fam.toddlingFooting(child), 99, 'Toddling Footing starts at 99');
@@ -272,6 +275,8 @@ W.RomanceFamily.tick();
 assert.ok(!interior.some(o => o.id === 'basket1'), 'the basket is removed once the baby starts toddling');
 clock.rawDay += 70;
 assert.equal(fam.phaseOf(child), 'child');
+childRec = fam.childRecord(child);
+assert.equal(childRec.childBodyScale, undefined, 'grown children use the shared config child proportions, like Gantami');
 assert.equal(fam.toddlingFooting(child), 0);
 clock.hour = 12;
 assert.equal(fam.childTarget(child).area, 'farm', 'grown children leave the house during the day');

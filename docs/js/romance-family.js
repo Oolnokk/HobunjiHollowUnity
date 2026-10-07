@@ -223,6 +223,10 @@
     const progress = (ageDays(child) - basketDays()) / Math.max(1, toddlingDays());
     return Math.round(99 * clamp(1 - progress, 0, 1));
   }
+  function phaseScaleFields(phase) {
+    const scales = cfg().phaseScales?.[phase];
+    return scales ? { childBodyScale: scales.body, childHeadScale: scales.head } : {};
+  }
   function childRecord(child) {
     return {
       id: child.id,
@@ -230,19 +234,25 @@
       isChild: true,
       species: child.speciesId,
       gender: child.gender,
-      appearance: { speciesId: child.speciesId, gender: child.gender, bodyColors: child.bodyColors, cosmetics: {} },
-      equippedCosmetics: [],
-      appliedDyes: {},
+      appearance: { speciesId: child.speciesId, gender: child.gender, bodyColors: child.bodyColors, cosmetics: { ...(child.cosmetics || {}) } },
+      equippedCosmetics: [...(child.equippedCosmetics || [])],
+      appliedDyes: { ...(child.appliedDyes || {}) },
+      role: 'child',
       tags: ['child', 'family'],
+      ...phaseScaleFields(phaseOf(child)),
       bio: `Your ${child.gender === 'female' ? 'daughter' : 'son'}.`,
       relationship: { canBefriend: true, canDate: false, canMarry: false, maxHearts: 10 },
       ambientGreetings: phaseOf(child) === 'child',
       scheduleHooks: { rules: [] },
     };
   }
-  function createChild({ name, speciesId, gender, bodyColors, origin, otherParentId }) {
+  function createChild({ name, speciesId, gender, bodyColors, cosmetics, equippedCosmetics, appliedDyes, origin, otherParentId }) {
     const id = `child_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-    const child = { id, name: String(name || 'Little One').slice(0, 32), speciesId, gender, bodyColors, origin, otherParentId, bornRawDay: H.rawDay(), basketId: null, vatId: null };
+    const child = {
+      id, name: String(name || 'Little One').slice(0, 32), speciesId, gender, bodyColors,
+      cosmetics: { ...(cosmetics || {}) }, equippedCosmetics: [...(equippedCosmetics || [])], appliedDyes: { ...(appliedDyes || {}) }, // Dream children keep every creator choice.
+      origin, otherParentId, bornRawDay: H.rawDay(), basketId: null, vatId: null,
+    };
     const placed = deps().furniture?.placeInteriorFixture?.('babyBasket');
     if (placed?.id) child.basketId = placed.id;
     if (placed?.stored) H.toast(`📦 Moved your ${placed.stored} into farm storage to make room for the baby basket.`, true);
@@ -329,9 +339,14 @@
     }
     if (!walker) return;
     if (walker.rec) walker.rec.ambientGreetings = phase === 'child';
-    const scaleBase = num(cfg().childScale, 0.62);
-    const scale = phase === 'basket' ? scaleBase * 0.6 : phase === 'toddler' ? scaleBase * (0.75 + 0.25 * (1 - toddlingFooting(child) / 99)) : scaleBase;
-    if (walker.root && Math.abs(walker.root.scale.x - scale) > 0.005) walker.root.scale.setScalar(scale);
+    // Proportions are baked when the avatar is built (PNGPlaneAvatar child
+    // scale + the rig scaler's head compensation), so a child who grows into
+    // the next phase is rebuilt once with that phase's body/head scale.
+    if (walker._childPhase && walker._childPhase !== phase && deps().despawnNpcWalker) {
+      deps().despawnNpcWalker(walker);
+      return;
+    }
+    walker._childPhase = phase;
     if (phase === 'toddler') {
       const footing = toddlingFooting(child) / 99;
       const now = performance.now();
@@ -433,7 +448,6 @@
 #romanceFamilyOverlay .rf-row{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px}
 #romanceFamilyOverlay button{font:inherit;color:inherit;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);border-radius:8px;padding:6px 10px;cursor:pointer}
 #romanceFamilyOverlay button.on{background:rgba(220,160,255,.35);border-color:rgba(240,200,255,.7)}
-#romanceFamilyOverlay .rf-swatch{width:28px;height:28px;padding:0;border-radius:50%}
 #romanceFamilyOverlay .rf-label{font-size:12px;opacity:.75;margin-top:4px}
 #romanceFamilyOverlay canvas{display:block;margin:0 auto 8px;width:160px;height:160px}
 #romanceFamilyOverlay input{font:inherit;width:100%;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,.25);background:rgba(0,0,0,.35);color:#fff}
@@ -456,74 +470,57 @@
     return uiOverlay;
   }
 
-  const DREAM_SPECIES = [
-    { id: 'mao-ao', label: 'Mao-ao' }, { id: 'tletingan', label: 'Tletingan' }, { id: 'kenkari', label: 'Kenkari' },
-    { id: 'engh-sho', label: 'Engh-sho' }, { id: 'mashtzarr', label: 'Mashtzarr' },
-  ];
-  function palette(speciesId, gender) {
-    const palettes = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.bodyPalettes?.[speciesId] || {};
-    const list = palettes[gender]?.length ? palettes[gender] : (palettes.male || palettes.female || []);
-    return list.length ? list : [{ h: 0, s: -0.6, v: -0.3, label: 'Default' }];
-  }
-  function swatchCss(color) {
-    const hue = ((num(color.h) % 360) + 360) % 360;
-    const sat = clamp(50 + num(color.s) * 50, 5, 95);
-    const light = clamp(50 + num(color.v) * 40, 10, 90);
-    return `hsl(${hue} ${sat}% ${light}%)`;
-  }
-  function makeBodyColors(primary, secondary) {
-    return { A: { ...primary }, B: { ...secondary }, C: { h: primary.h, s: primary.s, v: clamp(num(primary.v) - 0.1, -1, 1) } };
-  }
   async function renderPreview(canvas, choice) {
     const preview = window.NpcAvatarPreview;
     if (!canvas || !preview?.buildProfileFromNpcExport || !preview?.renderProfileToCanvas) return;
     try {
-      const profile = preview.buildProfileFromNpcExport({ name: 'dream_child', appearance: { speciesId: choice.speciesId, gender: choice.gender, bodyColors: choice.bodyColors, cosmetics: {} }, equippedCosmetics: [], appliedDyes: {} });
+      const profile = preview.buildProfileFromNpcExport({
+        name: 'dream_child',
+        appearance: { speciesId: choice.speciesId, gender: choice.gender, bodyColors: choice.bodyColors, cosmetics: { ...(choice.cosmetics || {}) } },
+        equippedCosmetics: [...(choice.equippedCosmetics || [])],
+        appliedDyes: { ...(choice.appliedDyes || {}) },
+      });
       if (profile) await preview.renderProfileToCanvas(canvas, profile);
-    } catch (error) { console.warn('[RomanceFamily] dream preview failed', error); }
+    } catch (error) { console.warn('[RomanceFamily] child preview failed', error); }
   }
 
-  // Character-creation style picker for the dream child: species, gender,
-  // and primary/secondary body colors, with a live portrait.
+  // The dream is the real character creator (HobunjiOnboarding.openCreator):
+  // species/subspecies, gender, every cosmetic slot, body colors, clothing
+  // and dyes, with the to-scale 3D preview showing child proportions. The
+  // child is named later, when Father Hunundi brings them to the door.
+  let dreamLock = null;
   function openDreamPicker(onDone) {
-    const choice = { speciesId: H.playerAppearance().speciesId || 'mao-ao', gender: Math.random() < 0.5 ? 'male' : 'female', primary: 0, secondary: 0 };
-    const render = () => {
-      const colors = palette(choice.speciesId, choice.gender);
-      choice.primary = Math.min(choice.primary, colors.length - 1);
-      choice.secondary = Math.min(choice.secondary, colors.length - 1);
-      choice.bodyColors = makeBodyColors(colors[choice.primary], colors[choice.secondary]);
-      const root = openOverlay(`
-        <h2>🌙 You dream of a child…</h2>
-        <p>In the dream they are so clear. Who do you see?</p>
-        <canvas width="200" height="200" data-rf-preview></canvas>
-        <div class="rf-label">Species</div>
-        <div class="rf-row">${DREAM_SPECIES.map(s => `<button data-rf-species="${s.id}" class="${s.id === choice.speciesId ? 'on' : ''}">${s.label}</button>`).join('')}</div>
-        <div class="rf-label">Gender</div>
-        <div class="rf-row">${['male', 'female'].map(g => `<button data-rf-gender="${g}" class="${g === choice.gender ? 'on' : ''}">${g === 'male' ? 'Boy' : 'Girl'}</button>`).join('')}</div>
-        <div class="rf-label">Primary color</div>
-        <div class="rf-row">${colors.map((c, i) => `<button class="rf-swatch ${i === choice.primary ? 'on' : ''}" title="${c.label || ''}" data-rf-primary="${i}" style="background:${swatchCss(c)}"></button>`).join('')}</div>
-        <div class="rf-label">Secondary color</div>
-        <div class="rf-row">${colors.map((c, i) => `<button class="rf-swatch ${i === choice.secondary ? 'on' : ''}" title="${c.label || ''}" data-rf-secondary="${i}" style="background:${swatchCss(c)}"></button>`).join('')}</div>
-        <div class="rf-actions"><button data-rf-random>Surprise me</button><button class="rf-primary" data-rf-done>Wake up</button></div>`);
-      root.querySelectorAll('[data-rf-species]').forEach(el => el.addEventListener('click', () => { choice.speciesId = el.dataset.rfSpecies; render(); }));
-      root.querySelectorAll('[data-rf-gender]').forEach(el => el.addEventListener('click', () => { choice.gender = el.dataset.rfGender; render(); }));
-      root.querySelectorAll('[data-rf-primary]').forEach(el => el.addEventListener('click', () => { choice.primary = Number(el.dataset.rfPrimary); render(); }));
-      root.querySelectorAll('[data-rf-secondary]').forEach(el => el.addEventListener('click', () => { choice.secondary = Number(el.dataset.rfSecondary); render(); }));
-      root.querySelector('[data-rf-random]').addEventListener('click', () => {
-        choice.speciesId = DREAM_SPECIES[Math.floor(Math.random() * DREAM_SPECIES.length)].id;
-        choice.gender = Math.random() < 0.5 ? 'male' : 'female';
-        const list = palette(choice.speciesId, choice.gender);
-        choice.primary = Math.floor(Math.random() * list.length);
-        choice.secondary = Math.floor(Math.random() * list.length);
-        render();
-      });
-      root.querySelector('[data-rf-done]').addEventListener('click', () => {
-        closeUi();
-        onDone?.({ speciesId: choice.speciesId, gender: choice.gender, bodyColors: choice.bodyColors });
-      });
-      renderPreview(root.querySelector('[data-rf-preview]'), choice);
-    };
-    render();
+    const creator = window.HobunjiOnboarding;
+    if (!creator?.openCreator) { console.warn('[RomanceFamily] character creator unavailable for the dream child'); return false; }
+    dreamLock?.release?.();
+    dreamLock = window.CharacterActionLocks?.acquire?.({ owner: 'romance-dream-child', reason: 'Dreaming of a child', participants: [{ id: 'player', channels: ['movement', 'tools', 'actions'] }] }) || null;
+    if (document.pointerLockElement) { try { document.exitPointerLock(); } catch (_) {} }
+    const opened = creator.openCreator({
+      mode: 'dreamChild',
+      child: true,
+      hideName: true,
+      title: '🌙 You dream of a child…',
+      subtitle: 'In the dream they are so clear. Who do you see?',
+      confirmLabel: '☀️ Wake up',
+      hint: 'You will name them when you meet.',
+      speciesId: H.playerAppearance().speciesId || 'mao-ao',
+      gender: Math.random() < 0.5 ? 'male' : 'female',
+      onComplete: result => {
+        dreamLock?.release?.();
+        dreamLock = null;
+        const appearance = result?.appearance || {};
+        onDone?.({
+          speciesId: appearance.speciesId || 'mao-ao',
+          gender: appearance.gender === 'female' ? 'female' : 'male',
+          bodyColors: appearance.bodyColors || null,
+          cosmetics: { ...(appearance.cosmetics || {}) },
+          equippedCosmetics: [...(result?.equippedCosmetics || [])],
+          appliedDyes: { ...(result?.appliedDyes || {}) },
+        });
+      },
+    });
+    if (!opened) { dreamLock?.release?.(); dreamLock = null; }
+    return opened;
   }
 
   function randomName(speciesId, gender) {
@@ -591,7 +588,7 @@
     init, tick, serialize, restore, snapshot,
     spouseTargetOverride, commandOptionsFor, spouseHoldingEgg,
     openDreamPicker, openNamingPrompt, createChild,
-    _test: { resolveKind, mixedColors, nearColors, phaseOf, toddlingFooting, childTarget, onTimePassage, getFamily: () => fam },
+    _test: { resolveKind, mixedColors, nearColors, phaseOf, toddlingFooting, childTarget, childRecord, onTimePassage, getFamily: () => fam },
   };
   window.RomanceFamily = api;
 })();
