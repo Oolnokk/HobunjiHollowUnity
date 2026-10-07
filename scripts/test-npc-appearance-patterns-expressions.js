@@ -21,8 +21,9 @@ for (const file of ['docs/js/portrait-breathing.js', 'docs/js/npc-avatar-preview
 function editorFunction(name) {
   const source = read('docs/tools/character-studio/index.html'); // Reads handlers from the real editor instead of recreating their behavior.
   const start = source.search(new RegExp(`^(?:async )?function ${name}\\(`, 'm')); // Locates the top-level function.
-  const next = source.slice(start + 1).search(/^(?:async )?function \w+\(/m); // Nested callbacks are indented, so only the next top-level function ends this slice.
-  return source.slice(start, next < 0 ? source.indexOf('// ── Player profile', start) : start + next + 1);
+  const end = source.indexOf('\n}', start); // Top-level closing braces end the handler without executing following editor state declarations.
+  assert.ok(start >= 0 && end >= 0, `Missing editor handler: ${name}`);
+  return source.slice(start, end + 2);
 }
 
 async function main() {
@@ -118,6 +119,41 @@ async function main() {
   assert.deepEqual(saved[0].clothingPatterns, result.clothingPatterns);
   assert.equal(saved[0].restingExpression, 'smile');
   assert.equal(saved[0].clothingPatterns.defaultClothing.overwear.weaving.layers.poncho.patterns[0].usageScaleMultiplier, 2.5);
+  Object.assign(editor, { selectedId: npc.id, DEFAULT_BODY_COLORS: {}, _activeDyeSlot: null, defaultAppearanceFor: () => ({}), asEquipArray: value => Array.isArray(value) ? [...value] : [], readStoredPlayer: () => ({ nickname: 'Player', appearance: { speciesId: 'mao-ao', gender: 'male' }, equippedCosmetics: [], appliedDyes: {} }), refreshAppearanceUI() {} }); // Runs the real Load player → import sequence without a browser UI.
+  for (const name of ['loadPlayerIntoEditor', 'importAppearance']) vm.runInContext(editorFunction(name), editor);
+  const roundTrip = copy(saved[0]); // Current export includes stable NPC identity and complete placement settings.
+  vm.runInContext('loadPlayerIntoEditor()', editor);
+  assert.equal(editor.target.kind, 'player');
+  editor.importAppearance(roundTrip);
+  assert.equal(editor.target.id, npc.id);
+  assert.deepEqual(copy(editor.work.clothingPatterns), roundTrip.clothingPatterns);
+  assert.equal(editor.work.restingExpression, roundTrip.restingExpression);
+  vm.runInContext('exportAppearance()', editor);
+  assert.deepEqual(saved.at(-1).clothingPatterns, roundTrip.clothingPatterns);
+  assert.equal(saved.at(-1).id, npc.id);
+  const legacy = copy(roundTrip); delete legacy.id; // ID-less exports resolve by a unique name, preserving compatibility with the user's existing files.
+  vm.runInContext('loadPlayerIntoEditor()', editor);
+  editor.importAppearance({ profile: legacy });
+  assert.equal(editor.target.id, npc.id);
+  assert.deepEqual(copy(editor.work.clothingPatterns), legacy.clothingPatterns);
+  vm.runInContext('loadPlayerIntoEditor()', editor);
+  editor.db.npcs.push({ ...copy(npc), id: 'duplicate_name' });
+  assert.throws(() => editor.importAppearance(legacy), /Select the destination NPC/);
+  assert.equal(editor.target.kind, 'player', 'ambiguous import fails before changing the target');
+  editor.db.npcs.pop();
+  if (process.argv[2]) {
+    const uploaded = JSON.parse(read(process.argv[2])); // Optionally verifies an actual user export without adding it to the repository.
+    editor.db.npcs.push({ id: 'khannibarri_agent', name: uploaded.name });
+    vm.runInContext('loadPlayerIntoEditor()', editor);
+    editor.importAppearance(uploaded);
+    assert.equal(editor.target.id, 'khannibarri_agent');
+    vm.runInContext('exportAppearance()', editor);
+    assert.deepEqual(saved.at(-1).clothingPatterns, uploaded.clothingPatterns);
+    assert.deepEqual(saved.at(-1).appliedDyes, uploaded.appliedDyes);
+    assert.equal(saved.at(-1).restingExpression, uploaded.restingExpression);
+    editor.db.npcs.pop();
+  }
+  editor.target = { kind: 'npc', id: npc.id };
   const metalSelect = { dataset: { npcMetalPattern: 'pauldron' }, value: 'new_pattern' }; // Exercises the real NPC metal selector's save and clear paths.
   element('npcPatternControls').querySelectorAll = selector => selector === '[data-npc-metal-pattern]' ? [metalSelect] : [];
   editor.work = copy(armored);

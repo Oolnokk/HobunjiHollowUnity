@@ -1845,7 +1845,7 @@ function exportAppearance() {
     appearance: clone(work.appearance),
     equippedCosmetics: [...work.equippedCosmetics],
     appliedDyes: { ...work.appliedDyes },
-    ...(target.kind === 'npc' ? { restingExpression: work.restingExpression || null, clothingPatterns: clone(work.clothingPatterns || {}) } : {}),
+    ...(target.kind === 'npc' ? { id: target.id, restingExpression: work.restingExpression || null, clothingPatterns: clone(work.clothingPatterns || {}) } : {}),
   };
   const fname = (String(data.name || 'character').replace(/[^a-z0-9_\-]/gi, '_').replace(/_+/g, '_').replace(/^_|_$/g, '') || 'character') + '.json';
   downloadJson(fname, data);
@@ -1856,6 +1856,17 @@ function importAppearance(obj) {
   const p = obj.profile || obj.avatarProfile || obj.npcProfile || obj;
   const appearance = obj.appearance || p.appearance || p.visuals?.appearance || null;
   if (!appearance) throw new Error('JSON does not contain an appearance object');
+  const carriesNpcSettings = Object.hasOwn(obj, 'clothingPatterns') || Object.hasOwn(p, 'clothingPatterns') || Object.hasOwn(obj, 'restingExpression') || Object.hasOwn(p, 'restingExpression'); // Older NPC exports lack an ID but still identify their NPC-specific settings.
+  if (target.kind === 'player' && carriesNpcSettings) {
+    const id = obj.id || p.id; // New exports identify the original NPC without depending on its display name.
+    const name = String(obj.name || p.name || '').trim().toLowerCase(); // Resolves existing ID-less exports such as Surveyor Harkhanash.
+    const byId = id ? db.npcs.find(npc => npc.id === id) : null; // Exact record identity takes priority over names.
+    const matches = byId ? [byId] : db.npcs.filter(npc => name && String(npc.name || '').trim().toLowerCase() === name); // A duplicate name must never silently select a different NPC.
+    if (matches.length !== 1) throw new Error('This JSON contains NPC patterns or expressions. Select the destination NPC, then import it.');
+    target = { kind: 'npc', id: matches[0].id };
+    selectedId = matches[0].id;
+    work = clone(matches[0]); // Start from this NPC rather than retaining player-only state after Load player.
+  }
   const fallback = defaultAppearanceFor(appearance);
   work.appearance = { ...fallback, ...clone(appearance) };
   work.appearance.cosmetics = { ...(appearance.cosmetics || {}) };
@@ -2268,7 +2279,7 @@ $('importApFile').onchange = async e => {
   const f = e.target.files?.[0];
   if (!f) return;
   try { importAppearance(JSON.parse(await f.text())); }
-  catch (err) { log('Appearance import failed: ' + (err.stack || err.message), 'error'); setStatus('Appearance import failed'); }
+  catch (err) { log('Appearance import failed: ' + (err.stack || err.message), 'error'); setStatus('Appearance import failed: ' + err.message); }
   e.target.value = '';
 };
 
