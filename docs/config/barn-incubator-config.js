@@ -39,4 +39,17 @@
   };
 
   window.BARN_INCUBATOR_CONFIG = config;
+
+  const paritySrc = 'js/barn-layout-editor-parity.js?v=20261007barnlayout1'; // Loads the farmhouse-style direct-manipulation/exit layer anywhere this barn feature is bootstrapped.
+  if (!window.BarnLayoutEditorParity && typeof document !== 'undefined') {
+    if (document.readyState === 'loading') {
+      document.write(`<script src="${paritySrc}"><\/script>`);
+    } else if (!document.querySelector('script[data-barn-layout-parity]')) {
+      const script = document.createElement('script'); // Late-load fallback used when farm features initialize after parser time.
+      script.src = paritySrc;
+      script.dataset.barnLayoutParity = '1';
+      script.onerror = () => console.warn('[BarnIncubator] barn layout parity helper failed to load.');
+      document.head.appendChild(script);
+    }
+  }
 })();
