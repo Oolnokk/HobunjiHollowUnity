@@ -703,7 +703,8 @@
     return walker?.rec?.id || walker?.rec?.name || 'npcDialogue';
   }
 
-  function _npcRestingExpression(rec = _dlgNpcRec || deps.getDialogueWalker()?.rec) {
+  function _npcRestingExpression(rec = deps.getDialogueWalker()?.rec || _dlgNpcRec) {
+    if (window.NpcAvatarPreview?.restingExpressionForRecord) return window.NpcAvatarPreview.restingExpressionForRecord(rec);
     const cfg = window.SCRATCHBONES_CONFIG?.game?.portrait?.expressions || {};
     const fallback = String(cfg.defaultResting || 'neutral').toLowerCase();
     const available = Array.isArray(cfg.available) ? cfg.available.map(value => String(value).toLowerCase()) : [];

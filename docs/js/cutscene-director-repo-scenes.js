@@ -67,6 +67,8 @@
   }
 
   async function loadNpcRecords() {
+    const override = window.LocalDBOverrides?.getOverride('npcDatabase'); // Read at scene selection so a saved Character Studio edit supersedes an earlier repo cache.
+    if (Array.isArray(override?.npcs)) return new Map(override.npcs.map(record => [record.id, record]));
     npcRecordsPromise ||= fetch(NPC_DB_URL).then(async response => {
       if (!response.ok) throw new Error(`NPC database HTTP ${response.status}`);
       const json = await response.json();

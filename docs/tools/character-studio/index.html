@@ -219,6 +219,13 @@ label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
           <div class="sectionTitle"><b>Clothing &amp; dyes</b><span class="sectionTag">shop catalog</span></div>
           <div id="collectionsControls"></div>
         </div>
+        <div id="npcAppearanceControls" class="card section" style="--sec:#fbbf24;--secBg:rgba(251,191,36,.10)" hidden>
+          <div class="sectionTitle"><b>NPC expressions &amp; clothing patterns</b><span class="sectionTag">default appearance</span></div>
+          <label for="npcRestingExpression">Default expression</label><select id="npcRestingExpression"></select>
+          <div class="help" style="margin:6px 0 12px">Used in the world, dialogue and cutscenes. Explicit dialogue expressions temporarily override it.</div>
+          <div id="npcPatternControls"></div>
+          <div class="help" style="margin-top:10px">Choose clothing above, then assign patterns here. Use Apply to NPC, then Save as Local Override or download the NPC database.</div>
+        </div>
       </div>
     </section>
 
@@ -325,9 +332,6 @@ label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
         <section id="dialogue" class="tabPanel">
           <div class="card section" style="--sec:#fbbf24;--secBg:rgba(251,191,36,.10)">
             <div class="sectionTitle"><b>Dialogue trees</b><span class="sectionTag">full tree JSON</span></div>
-            <div class="grid2" style="margin-bottom:8px">
-              <div><label>Resting expression</label><select id="npcRestingExpression"></select></div>
-            </div>
             <div class="help">No one-way conversations: every entry should include choices. Tokens: {{npcName}}, {{playerName}}, {{npcSpecies}}, {{playerSpecies}}, {{giftName}}, {{role}}, and any character variable.</div>
             <textarea id="dialogueJson" class="jsonBox"></textarea>
           </div>
@@ -379,7 +383,12 @@ label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
 <script src="../../js/tool-metal-recolor.js?v=20261001c6751543"></script>
 <script src="../../js/metal-armor-system.js?v=20260926metalarmor3"></script>
+<script src="../../js/sprite-recolor.js?v=npcappearance1" data-character-studio-sprite-recolor="1"></script>
+<script src="../../js/repo-pattern-library.js?v=npcappearance1" data-character-studio-repo-pattern-library="1"></script>
+<script src="../../js/clothing-weaving-system.js?v=npcappearance1" data-character-studio-weaving-compositor="1"></script>
 <script src="../../js/repo-picker.js?v=20260924overpassgap1"></script>
+<script src="../../config/npcs/clothing-patterns.js?v=npcappearance1"></script>
+<script src="../../js/npc-wardrobe.js?v=npcappearance1"></script>
 <script src="../../js/portrait-utils.js?v=20261005h123b9e8"></script>
 <script src="../../js/portrait-breathing.js"></script>
 <script src="../../js/npc-avatar-preview-utils.js"></script>
@@ -822,6 +831,7 @@ function asEquipArray(v) {
 // target: { kind:'player' } or { kind:'npc', id }
 let target = { kind: 'player' };
 let work = makeWork('mao-ao', 'male');
+let npcAppearancePass = 0; // Discards slow pattern-layer results after changing the selected NPC or garment.
 
 function makeWork(speciesId, gender) {
   const ap = defaultAppearanceFor({ speciesId, gender });
@@ -859,8 +869,8 @@ const StudioAccount = {
     work.equippedCosmetics.push(id);
   },
   unequipCosmetic: (id) => { work.equippedCosmetics = work.equippedCosmetics.filter(eid => eid !== id); },
-  applyDye:  (dyeId, tintKey) => { work.appliedDyes[tintKey] = dyeId; },
-  removeDye: (tintKey) => { delete work.appliedDyes[tintKey]; },
+  applyDye:  (dyeId, tintKey) => { work.appliedDyes[tintKey] = dyeId; syncNpcPatternColors(); },
+  removeDye: (tintKey) => { delete work.appliedDyes[tintKey]; syncNpcPatternColors(); },
 };
 window.ScratchbonesAccount = StudioAccount;
 
@@ -1013,6 +1023,15 @@ function buildPreviewProfile(appearance) {
       if (dye) profile.bodyColors = { ...(profile.bodyColors || {}), [tintKey]: { ...(dye.color || {}), ...(dye.hex ? { hex: dye.hex, tintMode: 'hexShadeFill' } : {}) } };
     }
   }
+  if (target.kind === 'npc') {
+    const npc = { ...work, id: target.id, appearance: { ...appearance, bodyColors: profile.bodyColors } }; // Reuses runtime wardrobe/compositor data for the live editor portrait.
+    const items = window.NpcWardrobe?.wornClothingItemsForRecord?.(npc, true) || []; // Shares cloth and metal treatment metadata with runtime portraits.
+    const woven = window.ClothingWeavingSystem?.decorateAvatarDataWithWovenItems?.(npc, items) || npc; // Applies primary/overpass patterns and their independent pattern dye.
+    const decorated = window.MetalArmorSystem?.decorateAvatarDataWithMetalArmor?.(woven, items) || woven; // Applies authored verdigris removal through the existing metal renderer.
+    if (decorated) profile.bodyColors = decorated.appearance.bodyColors;
+    profile.restingExpression = window.NpcAvatarPreview.restingExpressionForRecord(work);
+    profile.portraitSeatId = 'studio-preview';
+  }
   return profile;
 }
 
@@ -1039,7 +1058,7 @@ function previewLoop() {
   }
   if (!_previewProfile || !window.renderProfile) return;
   _previewBusy = true;
-  Promise.resolve(window.renderProfile($('apCanvas'), _previewProfile, { seatId: 'studio-preview' }))
+  Promise.resolve(window.NpcAvatarPreview.renderProfileToCanvas($('apCanvas'), _previewProfile, { seatId: 'studio-preview' }))
     .catch(() => {})
     .finally(() => { _previewBusy = false; });
 }
@@ -1566,6 +1585,7 @@ function renderCollections() {
       work.appearance.cosmetics = { ...(work.appearance.cosmetics || {}), [sel.dataset.appearanceSlot]: sel.value || null };
       invalidatePreview();
       renderCollections();
+      renderNpcAppearanceControls().catch(error => log('NPC appearance controls failed: ' + error.message, 'error'));
     });
   });
   el.querySelectorAll('[data-slot-cat]').forEach(sel => {
@@ -1580,6 +1600,7 @@ function renderCollections() {
       }
       invalidatePreview();
       renderCollections();
+      renderNpcAppearanceControls().catch(error => log('NPC appearance controls failed: ' + error.message, 'error'));
     });
   });
   el.querySelectorAll('[data-toggle-dye]').forEach(btn => {
@@ -1611,7 +1632,137 @@ function refreshAppearanceUI() {
   renderCollections();
   refreshColorPicker();
   updateTargetPill();
+  renderNpcAppearanceControls().catch(error => log('NPC appearance controls failed: ' + error.message, 'error'));
   invalidatePreview();
+}
+
+function workingNpcRecord() {
+  return { ...work, id: target.id }; // Gives wardrobe policy lookup the selected NPC identity without mutating the database before Apply.
+}
+function syncNpcPatternColors() {
+  if (target.kind !== 'npc') return;
+  for (const [slot, item] of Object.entries(work.clothingPatterns?.defaultClothing || {})) {
+    if (item) Object.assign(item, window.NpcWardrobe.clothingColorsForSlot(work, slot));
+  }
+}
+async function renderNpcAppearanceControls() {
+  const pass = ++npcAppearancePass; // Async garment-role resolution must not rebuild another NPC's controls.
+  $('npcAppearanceControls').hidden = target.kind !== 'npc';
+  if (target.kind !== 'npc') return;
+  fillRestingExpressionOptions(work.restingExpression);
+  $('npcPatternControls').innerHTML = '<div class="help">Loading garment layers…</div>';
+  const patterns = window.RepoPatternLibrary?.listCached?.() || []; // Uses committed patterns rather than a player's unlocked pattern inventory.
+  const dyes = StudioAccount.getDyeCatalog(); // Reuses the clothing dye catalog for the independent pattern color.
+  const items = window.NpcWardrobe?.wornClothingItemsForRecord?.(workingNpcRecord(), true) || []; // Includes existing guard-emblem policies in the editor.
+  const garments = await Promise.all(items.filter(item => window.ClothingWeavingSystem?.isCraftableCloth?.(item) || window.MetalArmorSystem?.isMetalArmor?.(item)).map(async item => { // Resolves actual species/gender layer roles through the production renderer.
+    try {
+      const layers = await window.ClothingWeavingSystem.resolveLayersForCosmetic(item.cosmeticId, work.appearance.speciesId, work.appearance.gender); // Distinguishes poncho cloth from trim/shoulder-wrap layers.
+      return { item, roles: [...new Set(layers.map(layer => layer.role || '__default'))] };
+    } catch (error) { log('Garment layers failed: ' + error.message, 'error'); return { item, roles: [] }; }
+  }));
+  if (pass !== npcAppearancePass) return;
+  function transformControls(item, role, index, pattern) {
+    if (!pattern) return '';
+    const fields = [['usageScaleMultiplier', 'Scale ×', 1, 0.1, 20, 0.05], ['usageOffsetX', 'X offset (px)', 0, -4096, 4096, 1], ['usageOffsetY', 'Y offset (px)', 0, -4096, 4096, 1], ['usageRotationDeg', 'Rotation (°)', 0, -360, 360, 1]]; // Changes the garment's saved snapshot, retaining all repository frame/crop settings.
+    const attrs = `data-npc-pattern-transform-slot="${esc(item.slot)}" data-pattern-role="${esc(role)}" data-pattern-index="${index}"`; // Routes every transform to its precise garment and primary/overpass slot.
+    return `<details style="margin-top:6px"><summary>Placement</summary><div class="grid2">${fields.map(([field, label, fallback, min, max, step]) => `<div><label>${label}</label><input type="number" ${attrs} data-pattern-field="${field}" value="${esc(pattern[field] ?? fallback)}" min="${min}" max="${max}" step="${step}"></div>`).join('')}${['usageFlipX', 'usageFlipY'].map((field, i) => `<label><input type="checkbox" ${attrs} data-pattern-field="${field}"${pattern[field] ? ' checked' : ''}> Flip ${i ? 'Y' : 'X'}</label>`).join('')}<div><label>Repeat</label><select ${attrs} data-pattern-field="tiling"><option value="true"${pattern.tiling ? ' selected' : ''}>Tile</option><option value="false"${!pattern.tiling ? ' selected' : ''}>Single</option></select></div></div></details>`;
+  }
+  $('npcPatternControls').innerHTML = garments.map(({ item, roles }) => {
+    if (window.MetalArmorSystem?.isMetalArmor?.(item)) {
+      const selected = item.smithTreatment?.mode === 'pattern' ? item.smithTreatment.pattern?.repoPatternId || '' : ''; // Keeps saved removal motifs selected without converting them to cloth weaving.
+      return `<div class="card" style="margin:8px 0"><b>${esc(StudioAccount.getShopCatalog().find(entry => entry.id === item.cosmeticId)?.label || item.cosmeticId)}</b><label>Verdigris removal pattern</label><select data-npc-metal-pattern="${esc(item.slot)}"><option value="">Live verdigris</option>${patterns.map(pattern => `<option value="${esc(pattern.id)}"${pattern.id === selected ? ' selected' : ''}>${esc(pattern.name)}</option>`).join('')}${item.smithTreatment && !patterns.some(pattern => pattern.id === selected) ? '<option value="__custom" selected>Existing treatment (preserved)</option>' : ''}</select>${transformControls(item, '__metal', 0, item.smithTreatment?.mode === 'pattern' ? item.smithTreatment.pattern : null)}</div>`;
+    }
+    const layerControls = roles.map(role => { // Each sprite role owns independent pattern choices.
+    const rawWeaving = { ...(item.weaving || {}) }; // Reads the original stack separately from any permanent NPC emblem.
+    delete rawWeaving.forcedOverpassPattern; delete rawWeaving.forcedOverpassRoles;
+    const stack = [...window.ClothingWeavingSystem.patternStackForLayer(rawWeaving, role)]; // Same saved primary/overpass resolution as runtime.
+    if (item.weaving?.forcedOverpassPattern && (!item.weaving.forcedOverpassRoles?.length || item.weaving.forcedOverpassRoles.includes(role))) stack[1] = item.weaving.forcedOverpassPattern;
+    const select = (index, label) => {
+      const selected = stack[index]?.repoPatternId || ''; // Retains the selected repository pattern across panel rebuilds.
+      return `<div><label>${label}</label><select data-npc-pattern-slot="${esc(item.slot)}" data-pattern-index="${index}" data-pattern-role="${esc(role)}"><option value="">None</option>${patterns.map(pattern => `<option value="${esc(pattern.id)}"${pattern.id === selected ? ' selected' : ''}>${esc(pattern.name)}</option>`).join('')}${stack[index] && !patterns.some(pattern => pattern.id === selected) ? `<option value="__custom" selected>${esc(selected || 'Imported pattern')} (preserved)</option>` : ''}</select>${transformControls(item, role, index, stack[index])}</div>`;
+    };
+    return `<div style="margin-top:8px"><span class="sectionTag">${esc(role === '__default' ? 'Cloth' : role)}</span><div class="grid2">${select(0, 'Pattern')}${select(1, 'Overpass pattern')}</div></div>`;
+    }).join('');
+    const colorId = typeof item.colorC === 'string' ? item.colorC : item.colorC?.dyeId || ''; // Accepts legacy string dyes and full clothing-item color references.
+    const label = StudioAccount.getShopCatalog().find(entry => entry.id === item.cosmeticId)?.label || item.cosmeticId; // Names the exact garment being edited.
+    return `<div class="card" style="margin:8px 0"><b>${esc(label)}</b>${layerControls || '<div class="help">No cloth layers resolved for this species. See Log for asset errors.</div>'}<div style="margin-top:8px"><label>Pattern dye</label><select data-npc-pattern-dye="${esc(item.slot)}"><option value="">Default</option>${dyes.map(dye => `<option value="${esc(dye.id)}"${dye.id === colorId ? ' selected' : ''}>${esc(dye.label || dye.name || dye.id)}</option>`).join('')}</select></div></div>`;
+  }).join('') || '<div class="help">Equip cloth or metal clothing to assign patterns.</div>';
+  function storeClothPattern(item, effective, role, index, stack) {
+    const slot = item.slot; // Identifies the garment shared by selection and placement handlers.
+    const weaving = { ...(item.weaving || {}), layers: { ...(item.weaving?.layers || {}) } }; // Preserves unrelated role assignments and optional trim metadata.
+    if (!item.weaving?.layers) {
+      for (const layerRole of garments.find(garment => garment.item.slot === slot)?.roles || []) weaving.layers[layerRole] = { patterns: window.ClothingWeavingSystem.patternStackForLayer(item.weaving, layerRole) };
+    }
+    weaving.layers[role] = { ...(weaving.layers[role] || {}), patterns: stack.filter(Boolean) };
+    delete weaving.layers[role].pattern; delete weaving.layers[role].patternLibraryId;
+    delete weaving.patterns; delete weaving.pattern;
+    work.clothingPatterns ||= {};
+    work.clothingPatterns.defaultClothing ||= {};
+    if (index === 1) {
+      work.clothingPatterns.forcedOverpassBySlot ||= {};
+      work.clothingPatterns.forcedOverpassBySlot[slot] = null;
+    }
+    work.clothingPatterns.defaultClothing[slot] = { ...item, weaving, colorC: item.colorC || effective?.colorC || null };
+  }
+  $('npcPatternControls').querySelectorAll('[data-npc-metal-pattern]').forEach(el => el.onchange = () => {
+    if (el.value === '__custom') return;
+    const item = window.NpcWardrobe.wornClothingItemsForRecord(workingNpcRecord(), false).find(entry => entry.slot === el.dataset.npcMetalPattern); // Retains alloy, temper and unrelated armor properties.
+    if (!item) return;
+    const entry = patterns.find(pattern => pattern.id === el.value); // Supplies the portable repository motif snapshot.
+    const pattern = entry ? window.RepoPatternLibrary.getCachedById(entry.id) : null; // Reuses the existing smith treatment format.
+    if (pattern && entry.motifPng) pattern.motifUrl = entry.motifPng; // Saved armor motifs remain portable across editor and game hosts.
+    work.clothingPatterns ||= {}; work.clothingPatterns.defaultClothing ||= {};
+    work.clothingPatterns.defaultClothing[item.slot] = { ...item, smithTreatment: pattern ? { mode: 'pattern', pattern, patternLibraryId: null } : null };
+    invalidatePreview(); setStatus('Verdigris removal pattern changed — use Apply to NPC');
+  });
+  $('npcPatternControls').querySelectorAll('[data-npc-pattern-slot]').forEach(el => el.onchange = () => {
+    if (el.value === '__custom') return;
+    const slot = el.dataset.npcPatternSlot; // Identifies the authored default garment receiving this pattern change.
+    const item = window.NpcWardrobe.wornClothingItemsForRecord(workingNpcRecord(), false).find(entry => entry.slot === slot); // Preserves material/color/trim metadata on the original item.
+    if (!item) return;
+    const effective = items.find(entry => entry.slot === slot); // Supplies the current forced emblem when the overpass itself is being edited.
+    const stack = [...window.ClothingWeavingSystem.patternStackForLayer(item.weaving, el.dataset.patternRole)]; // Copy prevents editing shared definitions.
+    const index = Number(el.dataset.patternIndex); // Selects primary or overpass without rebuilding an untouched slot.
+    const entry = patterns.find(pattern => pattern.id === el.value); // Supplies a portable motif path for saved data.
+    const pattern = entry ? window.RepoPatternLibrary.getCachedById(entry.id) : null; // Materializes an authored snapshot so first portrait bakes need no asynchronous lookup.
+    if (pattern && entry.motifPng) pattern.motifUrl = entry.motifPng;
+    stack[index] = pattern;
+    const role = el.dataset.patternRole; // Limits this edit to the displayed cloth/trim layer.
+    storeClothPattern(item, effective, role, index, stack);
+    renderNpcAppearanceControls().catch(error => log('NPC appearance controls failed: ' + error.message, 'error')); invalidatePreview();
+    setStatus('Clothing pattern changed — use Apply to NPC');
+  });
+  $('npcPatternControls').querySelectorAll('[data-npc-pattern-transform-slot]').forEach(el => el.onchange = () => {
+    const slot = el.dataset.npcPatternTransformSlot; // Placement belongs to this garment only.
+    const role = el.dataset.patternRole; // Metal uses a smith treatment; cloth uses the displayed sprite role.
+    const index = Number(el.dataset.patternIndex); // Primary and overpass retain independent transforms.
+    const item = window.NpcWardrobe.wornClothingItemsForRecord(workingNpcRecord(), false).find(entry => entry.slot === slot); // Reads the latest staged data so one change cannot undo another.
+    if (!item) return;
+    const effective = window.NpcWardrobe.wornClothingItemsForRecord(workingNpcRecord(), true).find(entry => entry.slot === slot); // Supports placement changes to existing forced uniform emblems.
+    const stack = role === '__metal' ? [item.smithTreatment?.pattern] : [...window.ClothingWeavingSystem.patternStackForLayer(effective?.weaving, role)]; // Copies the actual visible stack before changing one snapshot.
+    if (!stack[index]) return;
+    const field = el.dataset.patternField; // Field names come from the fixed placement controls above.
+    let value = el.type === 'checkbox' ? el.checked : field === 'tiling' ? el.value === 'true' : Number(el.value); // Converts booleans without treating "false" as truthy.
+    if (typeof value === 'number') {
+      if (!Number.isFinite(value)) return;
+      value = Math.max(Number(el.min), Math.min(Number(el.max), value));
+      el.value = value;
+    }
+    stack[index] = { ...stack[index], [field]: value };
+    if (role === '__metal') {
+      work.clothingPatterns ||= {}; work.clothingPatterns.defaultClothing ||= {};
+      work.clothingPatterns.defaultClothing[slot] = { ...item, smithTreatment: { ...item.smithTreatment, pattern: stack[0] } };
+    } else storeClothPattern(item, effective, role, index, stack);
+    invalidatePreview(); setStatus('Pattern placement changed — use Apply to NPC');
+  });
+  $('npcPatternControls').querySelectorAll('[data-npc-pattern-dye]').forEach(el => el.onchange = () => {
+    const slot = el.dataset.npcPatternDye; // Pattern color belongs to this garment only.
+    const item = window.NpcWardrobe.wornClothingItemsForRecord(workingNpcRecord(), false).find(entry => entry.slot === slot); // Keeps imported weaving and forced policy unchanged during a color edit.
+    if (!item) return;
+    work.clothingPatterns ||= {}; work.clothingPatterns.defaultClothing ||= {};
+    work.clothingPatterns.defaultClothing[slot] = { ...item, colorC: el.value ? { dyeId: el.value } : null };
+    invalidatePreview(); setStatus('Pattern dye changed — use Apply to NPC');
+  });
 }
 
 // ── Player profile (matches docs/onboarding.js exactly) ──────────────────────
@@ -1694,6 +1845,7 @@ function exportAppearance() {
     appearance: clone(work.appearance),
     equippedCosmetics: [...work.equippedCosmetics],
     appliedDyes: { ...work.appliedDyes },
+    ...(target.kind === 'npc' ? { id: target.id, restingExpression: work.restingExpression || null, clothingPatterns: clone(work.clothingPatterns || {}) } : {}),
   };
   const fname = (String(data.name || 'character').replace(/[^a-z0-9_\-]/gi, '_').replace(/_+/g, '_').replace(/^_|_$/g, '') || 'character') + '.json';
   downloadJson(fname, data);
@@ -1704,12 +1856,27 @@ function importAppearance(obj) {
   const p = obj.profile || obj.avatarProfile || obj.npcProfile || obj;
   const appearance = obj.appearance || p.appearance || p.visuals?.appearance || null;
   if (!appearance) throw new Error('JSON does not contain an appearance object');
+  const carriesNpcSettings = Object.hasOwn(obj, 'clothingPatterns') || Object.hasOwn(p, 'clothingPatterns') || Object.hasOwn(obj, 'restingExpression') || Object.hasOwn(p, 'restingExpression'); // Older NPC exports lack an ID but still identify their NPC-specific settings.
+  if (target.kind === 'player' && carriesNpcSettings) {
+    const id = obj.id || p.id; // New exports identify the original NPC without depending on its display name.
+    const name = String(obj.name || p.name || '').trim().toLowerCase(); // Resolves existing ID-less exports such as Surveyor Harkhanash.
+    const byId = id ? db.npcs.find(npc => npc.id === id) : null; // Exact record identity takes priority over names.
+    const matches = byId ? [byId] : db.npcs.filter(npc => name && String(npc.name || '').trim().toLowerCase() === name); // A duplicate name must never silently select a different NPC.
+    if (matches.length !== 1) throw new Error('This JSON contains NPC patterns or expressions. Select the destination NPC, then import it.');
+    target = { kind: 'npc', id: matches[0].id };
+    selectedId = matches[0].id;
+    work = clone(matches[0]); // Start from this NPC rather than retaining player-only state after Load player.
+  }
   const fallback = defaultAppearanceFor(appearance);
   work.appearance = { ...fallback, ...clone(appearance) };
   work.appearance.cosmetics = { ...(appearance.cosmetics || {}) };
   work.appearance.bodyColors = { ...clone(DEFAULT_BODY_COLORS), ...clone(appearance.bodyColors || {}) };
   work.equippedCosmetics = asEquipArray(obj.equippedCosmetics || p.equippedCosmetics || p.cosmetics || p.equipment);
   work.appliedDyes = clone(obj.appliedDyes || p.appliedDyes || p.dyes || {});
+  if (target.kind === 'npc') {
+    if (Object.hasOwn(obj, 'restingExpression') || Object.hasOwn(p, 'restingExpression')) work.restingExpression = normalizeRestingExpression(obj.restingExpression ?? p.restingExpression);
+    if (obj.clothingPatterns || p.clothingPatterns) work.clothingPatterns = clone(obj.clothingPatterns || p.clothingPatterns);
+  }
   if (obj.name && target.kind === 'player') $('nickname').value = obj.name;
   _activeDyeSlot = null;
   refreshAppearanceUI();
@@ -1807,6 +1974,9 @@ function portraitExportFor(n) {
   appearance.bodyColors = { ...clone(DEFAULT_BODY_COLORS), ...(fallback.bodyColors || {}), ...(appearance.bodyColors || {}) };
   return {
     name: n.name || 'NPC',
+    id: n.id,
+    restingExpression: n.restingExpression,
+    clothingPatterns: n.clothingPatterns || {},
     appearance,
     equippedCosmetics: asEquipArray(raw.equippedCosmetics || p.equippedCosmetics || p.cosmetics || p.equipment || n.equippedCosmetics),
     appliedDyes: raw.appliedDyes || p.appliedDyes || p.dyes || n.appliedDyes || {},
@@ -1837,7 +2007,7 @@ async function renderPortraitCanvases() {
         || window.NpcAvatarPreview.randomProfile(`fallback:${n?.id || 'default'}`, { speciesId: exportNpc.appearance.speciesId, gender: exportNpc.appearance.gender });
       const ctx = canvas.getContext('2d');
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      if (profile) await window.renderProfile(canvas, profile, { seatId: id });
+      if (profile) await window.NpcAvatarPreview.renderProfileToCanvas(canvas, profile, { seatId: id });
     }
   } catch (e) { log(`Portrait render failed: ${e.message}`, 'error'); }
 }
@@ -1884,6 +2054,8 @@ function loadWorkFromNpc(n) {
     appearance: clone(exportNpc.appearance),
     equippedCosmetics: [...exportNpc.equippedCosmetics],
     appliedDyes: clone(exportNpc.appliedDyes || {}),
+    restingExpression: normalizeRestingExpression(n.restingExpression),
+    clothingPatterns: clone(n.clothingPatterns || {}),
   };
   _activeDyeSlot = null;
   refreshAppearanceUI();
@@ -1927,7 +2099,6 @@ function read() {
     neutral: split($('neutralGifts').value), disliked: split($('dislikedGifts').value),
     hated: split($('hatedGifts').value), categoryNotes: parse('giftCategoriesJson', []),
   };
-  n.restingExpression = normalizeRestingExpression($('npcRestingExpression').value);
   n.dialogueTrees = parse('dialogueJson', []);
   db.worldContext = parse('worldJson', db.worldContext);
   renderDb(false);
@@ -2001,6 +2172,8 @@ function importAvatarJson(obj) {
   n.appearance = obj.appearance || profile.appearance || profile.visuals?.appearance || {};
   n.equippedCosmetics = asEquipArray(obj.equippedCosmetics || profile.equippedCosmetics || profile.cosmetics || profile.equipment || []);
   n.appliedDyes = obj.appliedDyes || profile.appliedDyes || profile.dyes || {};
+  if (Object.hasOwn(obj, 'restingExpression') || Object.hasOwn(profile, 'restingExpression')) n.restingExpression = normalizeRestingExpression(obj.restingExpression ?? profile.restingExpression);
+  if (obj.clothingPatterns || profile.clothingPatterns) n.clothingPatterns = clone(obj.clothingPatterns || profile.clothingPatterns);
   n.portrait = n.portrait || { asset: '', avatarKey: '' };
   n.portrait.asset = obj.portraitAsset || obj.headImage || obj.avatarHeadImage || profile.portraitAsset || profile.headImage || profile.avatarHeadImage || n.portrait.asset || '';
   n.portrait.avatarKey = obj.avatarKey || profile.avatarKey || profile.presetId || n.portrait.avatarKey || '';
@@ -2015,14 +2188,19 @@ function applyWorkToNpc() {
   n.appearance = clone(work.appearance);
   n.equippedCosmetics = [...work.equippedCosmetics];
   n.appliedDyes = clone(work.appliedDyes);
+  n.restingExpression = normalizeRestingExpression(work.restingExpression);
+  n.clothingPatterns = clone(work.clothingPatterns || {});
   n.avatarEditor = {
     sourceFormat: 'npc_avatar_editor_export',
     rawExport: {
+      ...(n.avatarEditor?.rawExport || {}),
       schema: 'npc_avatar_editor_export.v1',
       source: 'character-studio',
       appearance: clone(work.appearance),
       equippedCosmetics: [...work.equippedCosmetics],
       appliedDyes: clone(work.appliedDyes),
+      restingExpression: n.restingExpression,
+      clothingPatterns: clone(n.clothingPatterns),
     },
   };
   fillFields(n);
@@ -2076,7 +2254,7 @@ window._editorBridge = {
   selectNpc(npcId) {
     const n = db.npcs.find(x => x.id === npcId);
     if (!n) return false;
-    switchMainTab('database');
+    switchMainTab('appearance');
     fill(n);
     return true;
   },
@@ -2085,6 +2263,10 @@ window._editorBridge = {
 // ── Wire static UI ───────────────────────────────────────────────────────────
 $('mainTabAppearance').onclick = () => switchMainTab('appearance');
 $('mainTabDatabase').onclick = () => switchMainTab('database');
+$('npcRestingExpression').onchange = () => {
+  work.restingExpression = normalizeRestingExpression($('npcRestingExpression').value);
+  invalidatePreview(); setStatus('Default expression changed — use Apply to NPC');
+};
 
 $('setPlayerBtn').onclick = setAsPlayer;
 $('loadPlayerBtn').onclick = loadPlayerIntoEditor;
@@ -2097,7 +2279,7 @@ $('importApFile').onchange = async e => {
   const f = e.target.files?.[0];
   if (!f) return;
   try { importAppearance(JSON.parse(await f.text())); }
-  catch (err) { log('Appearance import failed: ' + (err.stack || err.message), 'error'); setStatus('Appearance import failed'); }
+  catch (err) { log('Appearance import failed: ' + (err.stack || err.message), 'error'); setStatus('Appearance import failed: ' + err.message); }
   e.target.value = '';
 };
 
@@ -2111,7 +2293,7 @@ document.querySelectorAll('.tabBtn').forEach(b => b.onclick = () => {
 ['npcId','npcName','homeId','npcSpecies','npcGender','npcAge','npcRole','romanceable','canBefriend','canMarry',
  'npcTags','npcBio','maxHearts','baseDisposition','decayRule','speciesDispositionJson','friendUnlocksJson',
  'appearanceJson','cosmeticsJson','dyesJson','avatarRawJson','lovedGifts','likedGifts','neutralGifts',
- 'dislikedGifts','hatedGifts','giftCategoriesJson','npcRestingExpression','dialogueJson','worldJson'
+ 'dislikedGifts','hatedGifts','giftCategoriesJson','dialogueJson','worldJson'
 ].forEach(id => { const el = $(id); if (el) el.addEventListener('input', read); });
 
 $('addNpcBtn').onclick = addNpc;
@@ -2243,6 +2425,7 @@ async function init() {
 
   initOffsetSliders();
   await loadStarterDbPreferOverride();
+  await window.RepoPatternLibrary?.load?.();
   // loadStarterDb -> fill() retargets the appearance pane at NPC #1;
   // boot should start on the player instead.
   loadPlayerIntoEditor();
