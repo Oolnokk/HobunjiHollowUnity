@@ -84,6 +84,17 @@
     weddingHours: { start: 8, end: 20 }, // Arriving at the Life Temple in this window starts the ceremony.
     templeAreaId: 'map_i_temple',
     officiantNpcId: 'father_hunundi_hodu',
+    // The ceremony (js/romance-wedding.js) runs on map_i_temple's "wedding"
+    // layout with every villager's live walker seated in its pews.
+    wedding: {
+      receptionHours: 1, // Guests stay seated this long after the vows, then return to their routines.
+      excludeGuests: [ // Not villagers: fey, faction leaders, the deceased, the Company surveyor and the out-of-town researcher.
+        'nohuknuk', 'hiki_hiki', 'banubu', 'mother_rahayobi',
+        'baruhi_chief', 'omgurku_chief', 'porakaneki_chief',
+        'talisman_hatayap', 'bowstring_hatayap',
+        'khannibarri_agent', 'garanki_gabu', 'village_elder',
+      ],
+    },
     spouse: {
       sleepHours: { start: 22, end: 7 },
       townAfternoon: { start: 12, end: 17, daysOfWeekMod: 3 }, // Visits town (their old schedule) on roughly every third day's afternoon.

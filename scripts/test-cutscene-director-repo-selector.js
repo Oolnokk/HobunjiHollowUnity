@@ -31,7 +31,7 @@ const selectorBrowser = {
 vm.runInNewContext(selectorSource, selectorBrowser);
 const selectorApi = selectorBrowser.window.CutsceneDirectorRepoScenes;
 assert(selectorApi, 'Repo selector must expose its debug/inspection API.');
-assert.deepStrictEqual(Array.from(selectorApi.catalog, scene => scene.id), ['opening-rescue', 'opening-hunundi-room', 'opening-farm-tour', 'banubu-intro', 'banubu-key']);
+assert.deepStrictEqual(Array.from(selectorApi.catalog, scene => scene.id), ['opening-rescue', 'opening-hunundi-room', 'opening-farm-tour', 'banubu-intro', 'banubu-key', 'wedding']);
 assert.deepStrictEqual(Array.from(selectorApi.catalog, scene => scene.builder).filter(Boolean), ['buildRescueScene', 'buildHunundiMeetingScene', 'buildFarmTourScene']);
 
 const farmPoints = selectorApi.authoringFarmTourPoints();

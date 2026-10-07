@@ -243,8 +243,18 @@ will need addressing.
   nest theft.
 - **Marriage**: propose on a date (10 hearts, 3 dates), meet at the Life Temple
   (`map_i_temple`) from the next day, Father Hunundi officiates, and the spouse
-  moves to the farmhouse (sleeps in your bed, sits in your chairs, potters
-  around the farm, some afternoons back on their old town schedule).
+  moves to the farmhouse. The ceremony (`docs/js/romance-wedding.js`) switches
+  the temple to its third layout, `wedding` (flag `templeWedding`: 16 north-facing
+  pews tagged `wedding_pew`, a clear centre aisle), seats every villager's live
+  walker in the pews behind one fade (household first, then by Favor), and
+  plays an authored Director-format scene through `AuthoredCutsceneRuntime`:
+  couple one tile apart at the altar, Hunundi between and one tile north, a
+  vow choice that can postpone, a pronouncement Continue that completes
+  the marriage (the pews cheer), and a recessional down the centre aisle. Guests stay an hour for the reception; the layout reverts once
+  you leave. The scene is also in the Cutscene Director's repo list ("Marriage
+  — Life Temple Wedding"). After the wedding the spouse moves to the farmhouse (sleeps in your bed, sits
+  in your chairs, potters around the farm, some afternoons back on their old
+  town schedule).
 - **Children** (`docs/js/romance-family.js`): 3 months after the wedding a
   pregnancy/egg is announced for same-species opposite-gender couples; the
   first sleep in your farmhouse bed after 6 months brings the birth/hatching

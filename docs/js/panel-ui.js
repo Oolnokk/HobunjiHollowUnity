@@ -8,7 +8,7 @@
   const mapEditorTextureFix = new URL('./map-editor-terrain-texture-fix.js?v=20260914terrain4', src).href; // Used only on Map Editor to preserve async preview materials and redraw after PNG loads.
   const terrainParity = new URL('./tool-terrain-preview-parity.js?v=20261004h365b521', src).href; // Used to install shared game-material/UV parity and unstretched-pixel scale controls in terrain tools.
   const isCutsceneDirector = /\/tools\/cutscene-director\//.test(location.pathname); // Used to keep repo-scene authoring hooks isolated to the Cutscene Director iframe.
-  const cutsceneRepoScenes = new URL('./cutscene-director-repo-scenes.js?v=20261005h391acfd', src).href; // Used only by Cutscene Director to load shipping repo cutscene builders into its existing JSON import path.
+  const cutsceneRepoScenes = new URL('./cutscene-director-repo-scenes.js?v=20261007heb715b1', src).href; // Used only by Cutscene Director to load shipping repo cutscene builders into its existing JSON import path.
   const cutsceneRepoTag = isCutsceneDirector ? `<script src="${cutsceneRepoScenes}"></script>` : '';
   const isAnimationAuthor = /\/tools\/animation-author\/(?:index\.html)?$/.test(location.pathname); // Used to preload portrait-utils.js's synchronous ColorFill dependency only for Animation Author.
   const animationAuthorColorFill = new URL('./color-fill.js?v=20260923colorfill7', src).href; // Used before Animation Author's repository-runtime loader can execute portrait-utils.js.

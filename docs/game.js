@@ -14224,22 +14224,38 @@
         if (_layoutSwapInProgress) return;
         const rawMapData = _rawMapDataByMapId.get(mapId);
         if (!rawMapData) return;
-        const snapshot = window.MapLayoutSystem.currentSnapshot();
-        const nextLayout = window.MapLayoutSystem.resolveActiveLayout(rawMapData, snapshot);
-        const nextLayoutId = nextLayout?.id || 'default';
-        if (nextLayoutId === _activeLayoutByMap.get(mapId)) return;
-        _layoutSwapInProgress = true;
+        const nextLayout = window.MapLayoutSystem.resolveActiveLayout(rawMapData, window.MapLayoutSystem.currentSnapshot());
+        if ((nextLayout?.id || 'default') === _activeLayoutByMap.get(mapId)) return;
+        _layoutSwapInProgress = true; // Held across the whole iris so the throttled gameLoop check cannot queue a second swap.
         try {
-          await window.CalendarSystem.runScreenTransition(async () => {
-            const fromCol = Math.floor(player.x / TILE), fromRow = Math.floor(player.y / TILE);
-            const entry = window.MapLayoutSystem.pickEntryPoint(rawMapData, { layout: nextLayout, fromCol, fromRow });
-            discardBuildingScene(mapId);
-            enterBuilding(mapId, entry?.col, entry?.row);
-            await waitForBuildingSceneReady(mapId);
-          });
-          window.__farmLog?.(`[layout] ${mapId} -> ${nextLayoutId}`);
+          await window.CalendarSystem.runScreenTransition(() => rebuildBuildingForActiveLayout(mapId, { guarded: true }));
         } finally {
           _layoutSwapInProgress = false;
+        }
+      }
+
+      // The rebuild half of performLiveLayoutSwap, without its own iris, for
+      // callers already behind a transition of their own (e.g. the temple's
+      // flag-driven Wedding layout in js/romance-wedding.js). Rebuilds only
+      // when the resolved layout actually differs from the rendered one.
+      async function rebuildBuildingForActiveLayout(mapId, { guarded = false } = {}) {
+        if (_layoutSwapInProgress && !guarded) return false;
+        const rawMapData = _rawMapDataByMapId.get(mapId);
+        if (!rawMapData) return false;
+        const nextLayout = window.MapLayoutSystem.resolveActiveLayout(rawMapData, window.MapLayoutSystem.currentSnapshot());
+        const nextLayoutId = nextLayout?.id || 'default';
+        if (nextLayoutId === _activeLayoutByMap.get(mapId)) return false;
+        _layoutSwapInProgress = true;
+        try {
+          const fromCol = Math.floor(player.x / TILE), fromRow = Math.floor(player.y / TILE);
+          const entry = window.MapLayoutSystem.pickEntryPoint(rawMapData, { layout: nextLayout, fromCol, fromRow });
+          discardBuildingScene(mapId);
+          enterBuilding(mapId, entry?.col, entry?.row);
+          await waitForBuildingSceneReady(mapId);
+          window.__farmLog?.(`[layout] ${mapId} -> ${nextLayoutId}`);
+          return true;
+        } finally {
+          if (!guarded) _layoutSwapInProgress = false;
         }
       }
 
@@ -28359,6 +28375,8 @@
         getInteriorFurniture: () => interiorFurnitureObjects,
         furniture: { placeInteriorFixture: placeInteriorFixtureFurniture, removeInteriorFurniture: removeInteriorFurnitureById },
         despawnNpcWalker: walker => despawnNpcVisitor(walker),
+        rebuildBuildingForActiveLayout,
+        seatTransformForTarget: target => npcSeatTransformForTarget(target),
         spawnNpcRecord: async (rec, target) => {
           if (!rec?.id || npcWalkers.some(w => w.rec?.id === rec.id)) return null;
           const walker = await makeNpcWalker(rec, target);

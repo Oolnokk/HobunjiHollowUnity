@@ -394,43 +394,25 @@
 
   let weddingInProgress = false;
   let weddingSnoozed = false; // Set once a ceremony was offered and not completed; cleared when the player leaves the temple.
+  // The ceremony itself is an authored cutscene on the temple's Wedding
+  // layout (js/romance-wedding.js); this only decides when it starts. One
+  // offer per temple visit: declining ("Not today") or leaving waits for the
+  // next visit.
   async function maybeStartWedding() {
     const temple = cfg().templeAreaId || 'map_i_temple';
     const inTemple = deps?.getCurrentArea?.() === temple;
-    if (!inTemple) { weddingSnoozed = false; weddingInProgress = false; return; }
-    if (weddingInProgress && !deps?.isDialogueOpen?.() && !activeScript) { weddingInProgress = false; weddingSnoozed = true; } // Left/escaped mid-ceremony.
+    if (!inTemple) { weddingSnoozed = false; return; }
     if (weddingInProgress || weddingSnoozed || !weddingWindowOpen()) return;
-    if (deps?.isDialogueOpen?.()) return;
+    if (deps?.isDialogueOpen?.() || window.AuthoredCutsceneRuntime?.isActive?.() || !window.RomanceWedding?.play) return;
     const eng = state.engagement;
-    const fiance = findWalker(eng.npcId);
-    if (!fiance) return;
     weddingInProgress = true;
+    weddingSnoozed = true;
     try {
-      const player = playerTilePos();
-      weddingSnoozed = true; // Until completeWedding clears the engagement, one offer per temple visit.
-      const run = async () => {
-        if (fiance.area !== temple && player) fiance.transferToArea(temple, nearestWalkable(temple, Math.floor(player.x) + 1, Math.floor(player.z)) || { c: Math.floor(player.x), r: Math.floor(player.z) });
-      };
-      if (window.CalendarSystem?.runScreenTransition) await window.CalendarSystem.runScreenTransition(run);
-      else await run();
-      const officiant = findWalker(cfg().officiantNpcId || 'father_hunundi_hodu');
-      const speaker = officiant && officiant.area === temple ? officiant : fiance;
-      const fianceName = npcName(eng.npcId);
-      const you = playerAppearance().name;
-      converse(speaker, [
-        { text: speaker === officiant ? `Ah, there you both are. Come, stand before the Life Totem.` : `${fianceName}: You came! Father Hunundi is ready for us.` },
-        { text: `We gather beneath the Life that runs through all things, to bind ${you} and ${fianceName} as one household.` },
-        { text: `${you}, will you share your hearth, your harvests and your hardships with ${fianceName}?`, choices: [
-          { label: 'I will.', goto: 3 },
-          { label: 'Wait — not today.', run: () => { weddingInProgress = false; weddingSnoozed = true; return [{ text: 'No matter. The Totem will be here when you are ready.' }]; } },
-        ] },
-        { text: `${fianceName}: …I will. With all my heart.` },
-        { text: 'Then by the Life in the soil and the Life in the stars, you are wed. Go home together.', choices: [
-          { label: '💍', run: () => { completeWedding(eng.npcId); return null; }, goto: 'end' },
-        ] },
-      ]);
+      const wed = await window.RomanceWedding.play({ spouseId: eng.npcId, officiantId: cfg().officiantNpcId || 'father_hunundi_hodu' });
+      if (wed) completeWedding(eng.npcId);
     } catch (error) {
       console.warn('[RomanceSystem] wedding failed', error);
+    } finally {
       weddingInProgress = false;
     }
   }
@@ -581,6 +563,7 @@
       }
     }
     maybeStartWedding();
+    window.RomanceWedding?.tick?.(deps.getCurrentArea?.());
     window.RomanceFamily?.tick?.();
   }
 
@@ -631,6 +614,7 @@
     window.NpcScheduling?.registerTargetOverride?.('romance', scheduleOverride);
     window.HobunjiActivityEvents?.on?.(onActivity);
     window.RomanceFamily?.init?.(api);
+    window.RomanceWedding?.init?.(deps);
     if (!tickTimer) tickTimer = setInterval(() => { try { tick(); } catch (error) { console.warn('[RomanceSystem] tick failed', error); } }, TICK_MS);
     return api;
   }
