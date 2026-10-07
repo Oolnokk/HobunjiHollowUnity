@@ -519,6 +519,7 @@
     if (!ambientDeps || now - lastAmbientScanAt < AMBIENT_SCAN_MS || now - lastAmbientSpokeAt < AMBIENT_MIN_GAP_MS) return;
     lastAmbientScanAt = now;
     if (ambientDeps.isDialogueOpen?.() || ambientDeps.isPaused?.()) return;
+    if (window.AuthoredCutsceneRuntime?.isActive?.()) return; // Same as ambient greetings: story scenes stay quiet.
     const day = Number(ambientDeps.getDay?.()) || 1;
     if (ambientDay !== day) { ambientDay = day; ambientSeen.clear(); }
     const animals = presentAnimals();

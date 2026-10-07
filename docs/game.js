@@ -11578,9 +11578,10 @@
       }
       function registerChairNpcStation(furnitureKey, col, row, rotYDeg, area, extraRoles, lookAt) {
         const def = DECORATIVE_FURNITURE_DEFS[furnitureKey];
-        if (!def?.sit) return;
+        if (!def?.sit) return null;
+        const id = furnitureNpcStationId(area, col, row);
         registerNpcStations([{
-          id: furnitureNpcStationId(area, col, row), label: def.name,
+          id, label: def.name,
           area, c: col, r: row, rotY: rotYDeg || 0, pose: 'sit', furnitureKey, seatIndex: 0,
           // Every sittable piece of furniture is automatically a 'sit'
           // free-time opportunity (design doc §14/§16) — no per-chair
@@ -11597,6 +11598,7 @@
           // to this auto-registered seat, same as `roles` above.
           ...(lookAt ? { lookAt } : {}),
         }], area);
+        return id;
       }
       function unregisterChairNpcStation(furnitureKey, col, row, area) {
         if (!DECORATIVE_FURNITURE_DEFS[furnitureKey]?.sit) return;
@@ -13289,6 +13291,18 @@
             creature.groundShadow?.parent?.remove(creature.groundShadow);
           }
         }
+        // NPCs standing in the room survive the rebuild: detach them before the
+        // dispose/clear below and queue them for the rebuilt scene, the same
+        // _pendingBuildingAdd hand-off a walker spawned before its room loads uses.
+        for (const w of npcWalkers) {
+          if (w.root?.parent !== info.scene) continue;
+          info.scene.remove(w.root);
+          w.root._npcScene = null;
+          w.root._pendingBuildingAdd = mapId;
+        }
+        // Drop the outgoing layout's seats/stations (e.g. wedding pews) so a
+        // rebuilt room only advertises what it actually contains.
+        for (const id of info.registeredStationIds || []) npcStationsById.delete(id);
         info.scene.traverse(object => object.geometry?.dispose?.());
         info.scene.clear();
         _buildingScenes.delete(mapId);
@@ -13386,6 +13400,7 @@
 
         // ── hobunji_building_interior.v1 schema ──────────────────────────
         if (mapData?.schema === 'hobunji_building_interior.v1') {
+          const registeredStationIds = []; // Everything this build registers, so discardBuildingScene can drop exactly these when the room's layout changes.
           const cols = mapData.cols || 20, rows = mapData.rows || 20;
           const bGrid = Array.from({ length: rows }, () =>
             Array.from({ length: cols }, () => ({
@@ -13650,7 +13665,8 @@
               _markFurnitureEdgeId(model);
               bScene.add(model);
               furnitureSfxSource = window.Music?.registerFurnitureSfxSource(mapId, bx, bz, window.Music?.resolveFurnitureSfx(def));
-              registerChairNpcStation(furnitureKey, f.col, f.row, f.rotY || 0, normalizeNpcArea(mapId), f.roles, f.lookAt);
+              const seatStationId = registerChairNpcStation(furnitureKey, f.col, f.row, f.rotY || 0, normalizeNpcArea(mapId), f.roles, f.lookAt);
+              if (seatStationId) registeredStationIds.push(seatStationId);
               if (furnitureKey === 'trough' && f.barnId != null && f.troughIndex != null) {
                 const authoredData = window.AuthoredFurniture?.peek('trough');
                 window.FarmTroughs.registerMesh(f.barnId, f.troughIndex, model, authoredData);
@@ -13943,6 +13959,7 @@
           }
           const _stationSrc = (_wsOverride?.npcStations?.length ? _wsOverride.npcStations : mapData.npcStations) || [];
           registerNpcStations(_stationSrc.map(st => ({ ...st, area: mapId })), mapId);
+          for (const st of _stationSrc) if (st?.id) registeredStationIds.push(st.id);
           const buildingPaths = (mapData.npcPaths || []).filter(p => p && Array.isArray(p.nodes) && p.nodes.length > 0)
             .map(p => ({ ...p, area: mapId }));
           const buildingRoutes = normalizeRoutes(
@@ -13961,7 +13978,7 @@
           bScene.traverse(o => { if (o.userData?.cameraObstacle) occlusionMeshes.push(o); });
           window.BanubuCaveClouds?.validateCaveMaterials?.({ THREE, scene: bScene, mapData }); // Repairs malformed cave texture UV transforms once before Three.js renders the scene.
           window.CinematicCameraRuntime?.registerArea?.(mapId, mapData.cinematicCameras || []); // Cave/building cameras share this scene's local tile coordinate space.
-          const info = { scene: bScene, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config', name: mapData.name || mapId, wallStyle: mapData.wallStyle || '', entrySpots: mapData.entrySpots || {}, keyDoorGroups, mineFloor: mapData.mineFloor || null, minePlacementSafeTileCount: mapData.minePlacementSafeTileCount ?? null, disconnectedFloorTilesRemoved: mapData.disconnectedFloorTilesRemoved ?? 0, occlusionMeshes };
+          const info = { scene: bScene, registeredStationIds, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config', name: mapData.name || mapId, wallStyle: mapData.wallStyle || '', entrySpots: mapData.entrySpots || {}, keyDoorGroups, mineFloor: mapData.mineFloor || null, minePlacementSafeTileCount: mapData.minePlacementSafeTileCount ?? null, disconnectedFloorTilesRemoved: mapData.disconnectedFloorTilesRemoved ?? 0, occlusionMeshes };
           _buildingScenes.set(mapId, info);
           if (info.disconnectedFloorTilesRemoved > 0) window.__farmLog?.(`[cavern] ${mapId}: sealed ${info.disconnectedFloorTilesRemoved} unreachable floor tiles`, 'warn', mapData.wallStyle === 'mine' ? 'mine' : undefined);
           for (const w of npcWalkers) {
@@ -28376,6 +28393,8 @@
         furniture: { placeInteriorFixture: placeInteriorFixtureFurniture, removeInteriorFurniture: removeInteriorFurnitureById },
         despawnNpcWalker: walker => despawnNpcVisitor(walker),
         rebuildBuildingForActiveLayout,
+        closeNpcDialogue: () => { if (dialogueOpen) closeNpcDialogue(); },
+        isAreaSettled: () => sceneTransDir === 0 && !_layoutSwapInProgress && (!_isBuildingArea(currentArea) || !!_buildingScenes.get(currentArea)), // No door iris or room build in flight.
         seatTransformForTarget: target => npcSeatTransformForTarget(target),
         spawnNpcRecord: async (rec, target) => {
           if (!rec?.id || npcWalkers.some(w => w.rec?.id === rec.id)) return null;

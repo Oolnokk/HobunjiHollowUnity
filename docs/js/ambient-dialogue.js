@@ -899,6 +899,7 @@
 
   function updateGreetings(now) {
     if (state.deps?.isDialogueOpen?.() || state.deps?.isPaused?.()) return;
+    if (window.AuthoredCutsceneRuntime?.isActive?.()) return; // Story scenes (e.g. the wedding's seated guests) stay quiet; scripted crowd() cheers still show.
     const day = Number(state.deps?.getDay?.()) || 1;
     ensureGreetingLedger(day);
     const area = state.deps.getCurrentArea();

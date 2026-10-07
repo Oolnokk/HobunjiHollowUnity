@@ -189,25 +189,60 @@
       if (walker?.root) window.AmbientDialogue?.cheer?.(walker.root);
     }
   }
+  // Pew seat transforms come from the bench's authored seat anchors, which
+  // load asynchronously; without them every seat resolves to null.
+  async function preloadPewFurniture() {
+    const stations = window.NpcScheduling?.findStationsByRole?.('wedding_pew', { area: TEMPLE_MAP_ID }) || [];
+    const keys = [...new Set(stations.map(station => station.furnitureKey).filter(Boolean))];
+    await Promise.all(keys.map(key => window.AuthoredFurniture?.load?.(key)));
+  }
+  // The live spouse takes the stand-in's place beside the player at the end of
+  // the aisle and stays there (with the guests) for the reception.
+  function holdSpouseBesidePlayer(spouseId) {
+    const walker = (deps?.npcWalkers || []).find(w => w.rec?.id === spouseId);
+    const player = deps?.getPlayerTilePosition?.();
+    if (!walker?.root || !player || !ceremony) return;
+    const c = Math.floor(player.x) + 1, r = Math.floor(player.z);
+    if (walker.area !== TEMPLE_MAP_ID) walker.transferToArea(TEMPLE_MAP_ID, { c, r });
+    walker._exitSpot = null; walker._entrySpot = null; walker._exitToArea = null;
+    walker.state = 'idle';
+    walker.root.position.x = c + 0.5;
+    walker.root.position.z = r + 0.5;
+    ceremony.guestTargets.set(spouseId, { area: TEMPLE_MAP_ID, c, r, rotY: 0, pose: 'stand', stationId: 'wedding_spouse_reception', activity: 'celebrating the wedding' });
+  }
+  function releaseGuests() {
+    if (ceremony) { ceremony.guestTargets = new Map(); ceremony.releaseAtHour = -Infinity; }
+  }
+
   async function play({ spouseId, officiantId = 'father_hunundi_hodu', profile = window.__hobunjiPlayerProfile } = {}) {
     const runtime = window.AuthoredCutsceneRuntime;
     if (!runtime?.run) throw new Error('The authored cutscene runtime is unavailable.');
     if (!window.MapLayoutSystem?.setFlag || !deps?.rebuildBuildingForActiveLayout) throw new Error('Temple layouts are unavailable.');
+    // Freeze the player from the moment the ceremony is decided, not just once
+    // the cutscene itself takes over: no wandering out the door or starting a
+    // conversation while the hall is being rearranged.
+    const lock = window.CharacterActionLocks?.acquire?.({ owner: 'romance-wedding', reason: 'wedding ceremony', participants: [{ id: 'player', channels: ['movement', 'tools', 'actions'] }] });
     status.phase = 'loading';
     status.lastError = null;
     try {
       const records = await loadNpcRecords();
       const scene = buildWeddingScene(records, profile, { spouseId, officiantId });
+      let ready = false;
       const setUp = async () => {
+        if (deps.getCurrentArea?.() !== TEMPLE_MAP_ID) return; // The player left before the iris closed.
+        deps.closeNpcDialogue?.();
         window.MapLayoutSystem.setFlag(LAYOUT_FLAG, true);
         await deps.rebuildBuildingForActiveLayout(TEMPLE_MAP_ID);
         await waitForPews();
+        await preloadPewFurniture();
         ceremony = { guestTargets: seatGuests(spouseId, officiantId), releaseAtHour: Infinity };
         const fade = window.CutscenePreviewHelpers?.cutscenePreviewFadeEl?.(); // Stays black until the scene's own fade-in, like the opening's boot cover.
         if (fade) { fade.style.transitionDuration = '0s'; fade.style.opacity = '1'; }
+        ready = true;
       };
       if (window.CalendarSystem?.runScreenTransition) await window.CalendarSystem.runScreenTransition(setUp);
       else await setUp();
+      if (!ready) { status.phase = 'idle'; return false; }
       status.phase = 'ceremony';
       let wed = false;
       await runtime.run(scene, {
@@ -215,19 +250,32 @@
         onDialogueContinue(stage) {
           if (stage.id !== 'wedding_pronounce') return;
           wed = true;
-          cheerGuests(); // The pews cheer under the closing kiss/love emote and "rises to cheer" caption.
+          cheerGuests(); // The pews cheer under the closing love emote and "bursts into cheers" caption.
         },
       });
-      // Guests stay for an in-game hour of reception, cheering, then go home.
-      ceremony.releaseAtHour = hourStamp() + Math.max(0, Number(cfg().receptionHours) || 1);
+      if (wed) {
+        holdSpouseBesidePlayer(spouseId);
+        ceremony.releaseAtHour = hourStamp() + Math.max(0, Number(cfg().receptionHours) || 1); // An in-game hour of reception, then everyone back to their routines.
+      } else {
+        releaseGuests(); // "Not today": nothing to celebrate, the crowd disperses straight away.
+      }
       status.phase = wed ? 'wed' : 'postponed';
       return wed;
     } catch (error) {
+      releaseGuests(); // Never leave the village pinned to the pews after a failed scene.
       status.phase = 'error';
       status.lastError = error?.message || String(error);
       window.__farmLog?.('[wedding] ' + status.lastError, 'error');
       throw error;
+    } finally {
+      lock?.release?.();
     }
+  }
+
+  // Whether the wedding currently owns this NPC's schedule (a seated guest,
+  // or the newlywed spouse during the reception). RomanceSystem defers to it.
+  function holds(npcId) {
+    return !!ceremony?.guestTargets?.has(npcId);
   }
 
   // Called from RomanceSystem's tick: releases the reception crowd after its
@@ -248,10 +296,10 @@
   }
 
   const api = {
-    init, play, tick, buildWeddingScene,
+    init, play, tick, holds, buildWeddingScene,
     cameras: CAMERAS, spots: SPOTS, layoutFlag: LAYOUT_FLAG, templeMapId: TEMPLE_MAP_ID,
     snapshot: () => ({ ...status, guestsSeated: ceremony?.guestTargets?.size || 0, layoutFlag: !!window.MapLayoutSystem?.getFlag?.(LAYOUT_FLAG) }),
-    _test: { pickGuests, pewSeats, seatGuests, scheduleOverride },
+    _test: { pickGuests, pewSeats, seatGuests, scheduleOverride, holdSpouseBesidePlayer, releaseGuests, setCeremony: value => { ceremony = value; } },
   };
   window.RomanceWedding = api;
 })();

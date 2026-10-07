@@ -404,6 +404,8 @@
     if (!inTemple) { weddingSnoozed = false; return; }
     if (weddingInProgress || weddingSnoozed || !weddingWindowOpen()) return;
     if (deps?.isDialogueOpen?.() || window.AuthoredCutsceneRuntime?.isActive?.() || !window.RomanceWedding?.play) return;
+    if (deps?.isAreaSettled && !deps.isAreaSettled()) return; // Let the door's iris and the hall's build finish before the ceremony takes over.
+    if (window.CharacterActionLocks?.isLocked?.('player', 'actions')) return; // Mid-interaction (sitting down, a minigame…): wait for it to end.
     const eng = state.engagement;
     weddingInProgress = true;
     weddingSnoozed = true;
@@ -541,6 +543,7 @@
   }
 
   function scheduleOverride(rec) {
+    if (window.RomanceWedding?.holds?.(rec?.id)) return null; // Seated guest / spouse at the reception: the wedding's own override places them.
     return dateTarget(rec) || engagedTarget(rec) || spouseTarget(rec);
   }
 

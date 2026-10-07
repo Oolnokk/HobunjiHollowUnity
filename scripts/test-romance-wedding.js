@@ -116,4 +116,62 @@ assert.equal(targets.get('gorobi_ginju').pose, 'sit');
 assert.ok(Math.abs(gorobi.root.position.x - 10) < 2, 'front-row family sit on the aisle-side seat (the aisle is 2 tiles wide)');
 assert.equal(new Set([...targets.values()].map(t => t.stationId)).size, 3, 'no two guests share a seat');
 
-console.log('romance wedding tests passed');
+// ── play(): lock, layout, seating, outcome-specific release ─────────────
+(async () => {
+  const locks = [];
+  windowStub.CharacterActionLocks = { acquire: options => { const lock = { options, released: false, release() { this.released = true; } }; locks.push(lock); return lock; } };
+  windowStub.LocalDBOverrides = { loadDatabase: async () => ({ npcs: [...records.values()] }) };
+  let area = 'map_i_temple', rebuilds = 0, closedDialogue = 0, runImpl = null;
+  windowStub.AuthoredCutsceneRuntime = { run: (scene, options) => runImpl(scene, options) };
+  windowStub.CalendarSystem.runScreenTransition = async fn => fn();
+  W.init({
+    npcWalkers: walkers,
+    seatTransformForTarget: target => ({ x: target.c + 1 + (target.seatIndex ? -0.37 : 0.37), z: target.r + 0.5 }),
+    rebuildBuildingForActiveLayout: async () => { rebuilds++; },
+    getCurrentArea: () => area,
+    closeNpcDialogue: () => { closedDialogue++; },
+    getPlayerTilePosition: () => ({ x: 9.5, z: 11.5 }),
+  });
+  const aliri = walkers.find(w => w.rec.id === 'aliri_ginju');
+
+  runImpl = async (scene, options) => { assert.ok(!locks.at(-1).released, 'the player stays locked while the scene plays'); options.onDialogueContinue({ id: 'wedding_pronounce' }); };
+  assert.equal(await W.play({ spouseId: 'aliri_ginju' }), true, 'continuing the pronouncement marries the couple');
+  assert.ok(locks.at(-1).released, 'the lock is released afterwards');
+  assert.deepEqual(plain(locks.at(-1).options.participants[0].channels), ['movement', 'tools', 'actions']);
+  assert.equal(rebuilds, 1); assert.equal(closedDialogue, 1, 'an open conversation is closed before the hall is rearranged');
+  assert.equal(layouts.getFlag('templeWedding'), true, 'the hall stays in its wedding layout for the reception');
+  assert.ok(W.holds('gorobi_ginju') && W.holds('aliri_ginju'), 'guests and the new spouse are held for the reception');
+  assert.deepEqual(plain([aliri.area, aliri.root.position.x, aliri.root.position.z]), ['map_i_temple', 10.5, 11.5], 'the live spouse stands beside the player at the end of the aisle');
+  assert.equal(W.snapshot().phase, 'wed');
+  W.tick('map_i_temple');
+  assert.ok(W.holds('kzubug'), 'the reception lasts beyond the ceremony itself');
+  windowStub.CalendarSystem.getHour = () => 12; // two in-game hours later
+  W.tick('map_i_temple');
+  assert.ok(!W.holds('kzubug') && !W.holds('aliri_ginju'), 'after the reception hour everyone returns to their routines');
+  W.tick('town');
+  assert.equal(layouts.getFlag('templeWedding'), false, 'leaving the temple reverts it to the ordinary hall');
+  windowStub.CalendarSystem.getHour = () => 10;
+
+  runImpl = async () => {};
+  assert.equal(await W.play({ spouseId: 'aliri_ginju' }), false, '"Not today" leaves the couple engaged');
+  assert.equal(W.snapshot().phase, 'postponed');
+  assert.ok(!W.holds('gorobi_ginju'), 'a postponed ceremony releases the crowd at once');
+  assert.ok(locks.at(-1).released);
+  W.tick('town');
+
+  runImpl = async () => { throw new Error('scene failed'); };
+  await assert.rejects(W.play({ spouseId: 'aliri_ginju' }), /scene failed/);
+  assert.equal(W.snapshot().phase, 'error');
+  assert.ok(!W.holds('gorobi_ginju'), 'a failed scene never leaves villagers pinned to the pews');
+  assert.ok(locks.at(-1).released, 'a failed scene still releases the player');
+  W.tick('town');
+
+  area = 'town';
+  let ran = false; runImpl = async () => { ran = true; };
+  const rebuildsBefore = rebuilds;
+  assert.equal(await W.play({ spouseId: 'aliri_ginju' }), false, 'nothing happens if the player already left the temple');
+  assert.ok(!ran && rebuilds === rebuildsBefore && !layouts.getFlag('templeWedding'));
+  assert.ok(locks.at(-1).released);
+
+  console.log('romance wedding tests passed');
+})().catch(error => { console.error(error); process.exit(1); });
