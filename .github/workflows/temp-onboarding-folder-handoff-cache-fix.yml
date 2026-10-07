@@ -1,0 +1,34 @@
+name: Temp Onboarding Folder Handoff Cache Fix
+
+on:
+  push:
+    branches: [fix/linear-onboarding-flow]
+
+permissions:
+  contents: write
+
+jobs:
+  cache-fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/linear-onboarding-flow
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Fix cache-bust chain
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          node scripts/check-cache-busts.js --fix origin/main
+          git add docs scripts
+          if git diff --cached --quiet; then
+            echo "No cache-bust changes needed"
+            exit 0
+          fi
+          git commit -m "Refresh onboarding folder handoff cache-bust chain"
+          git push origin HEAD:fix/linear-onboarding-flow
