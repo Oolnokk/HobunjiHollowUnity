@@ -10,6 +10,8 @@ assert.match(fit, /#ob-overlay>\.ob-card\{box-sizing:border-box;min-height:0;max
 assert.match(fit, /max-height:calc\(100dvh - 32px\)/, 'desktop creator height must be capped to the dynamic viewport');
 assert.match(fit, /max-height:calc\(100dvh - 16px\)/, 'mobile creator height must be capped to the dynamic viewport');
 assert.match(fit, />\.ob-two-col\{flex:1 1 auto;min-height:0;overflow:hidden\}/, 'creator body must consume only the remaining card height');
+assert.match(fit, />\.ob-two-col>\.ob-col-left\{position:sticky;top:0;align-self:flex-start;z-index:2;min-height:0\}/, 'desktop creator preview must stay visible when the two-column body scrolls');
+assert.match(fit, /@media \(max-width:560px\)[\s\S]*?>\.ob-two-col>\.ob-col-left\{position:static;top:auto;z-index:auto;flex:0 0 auto\}/, 'narrow stacked creator layouts must disable sticky preview positioning');
 assert.match(fit, /@media \(max-width:560px\)[\s\S]*?>\.ob-two-col\{overflow-x:hidden;overflow-y:auto/, 'mobile creator body must become the scroll container');
 assert.match(fit, /@media \(max-height:640px\) and \(min-width:561px\)[\s\S]*?>\.ob-two-col\{overflow-y:auto/, 'short desktop viewports must also scroll the creator body');
 assert.match(fit, /visualViewport/, 'fit diagnostics must use the visible viewport when available');
