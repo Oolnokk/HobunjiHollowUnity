@@ -247,4 +247,5 @@
   }
 
   window.BarnLayoutEditorParity = { install, debugSnapshot: () => window.__barnLayoutEditorDebug?.() || null };
+  install();
 })();
