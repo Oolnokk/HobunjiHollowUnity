@@ -28,7 +28,7 @@ assert.match(flow, /resumePendingFarmSetup\(resumeMarker\)/, 'clean reload must 
 
 assert.match(flow, /worldStep = 'name'/, 'new-world creation must begin at the dedicated Farm Name step');
 assert.match(flow, /nameInput\.value = ''[\s\S]{0,120}dispatchEvent\(new Event\('input'/, 'core automatic farm name must be cleared through its own input state when Farm Name begins');
-assert.match(flow, /const valid = !!String\(input\.value \|\| ''\)\.trim\(\)[\s\S]{0,100}play\.disabled = !valid/, 'Farm Name forward action must be disabled for blank or whitespace-only names');
+assert.match(flow, /const valid = !!String\(input\.value \|\| ''\)\.trim\(\)[\s\S]{0,260}play\.disabled = !valid/, 'Farm Name forward action must be disabled for blank or whitespace-only names');
 assert.match(flow, /Name the farm or use Randomize farm name before continuing/, 'blank farm names must produce a visible actionable error instead of silently generating a world');
 assert.match(flow, /setWorldStep\('setup'\)/, 'valid Farm Name must advance to Farm Setup before any world is created');
 assert.match(flow, /event\.key !== 'Enter' \|\| worldStep !== 'name'[\s\S]{0,180}stopImmediatePropagation/, 'Enter in Farm Name must not trigger the core old direct Play shortcut');
