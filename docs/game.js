@@ -20107,6 +20107,42 @@
       let cutscenePreviewZoomPercent = 100; // a cutscene Zoom card's percent (100 = unmodified); reset on preview start/end
       let cutscenePreviewDialogueSpeaker = null; // current Talk stage's { kind, root, creature } entity, or null; see dialoguePortraitCameraAim
 
+      // Terrain levels must exist before the synchronous camera boot below:
+      // shoulder ground collision calls the real farm/area surface readers.
+      // ── World Z levels (in Three.js Y units) ──────────────────────
+      // Grass/tilled/weeds/paddy: top face at Y=0
+      // Trench:                   top face at Y=-0.5  (dug 0.5 down)
+      // Raised:                   top face at Y=+0.5  (built 0.5 up)
+      // Rock:                     top face at Y=+0.75 (tall obstacle)
+      // Vegetation slabs:         bottom at Y=0, top at Y=VEG_H
+      //
+      // Box center Y = topFaceY - boxHeight/2
+      const SLAB_H     = 0.5;   // thickness of all ground slabs
+      const TRENCH_TOP = -0.5;  // top surface of trench
+      const NORMAL_TOP =  0.0;  // top surface of grass/tilled/etc
+      const RAISED_TOP = +0.5;  // top surface of raised bed
+      // World-Y rise per plateau elevation tier (absolute units shared by each
+      // merged tile's elevTier and authored ramp.rampElevation values — see
+      // tileSurfaceYInArea / _loadTownFromWorkspace's mergeZoneTiles).
+      const PLATEAU_UNIT = 2.5;
+      const RIVER_TOP  = -0.55; // river bed — a wide channel, at least trench-deep
+      const STREAM_TOP = -0.55; // stream bed — the actual painted waterway in current maps; same depth as the river
+      const ROCK_H     =  0.75; // rock block height
+      const ROCK_TOP   = NORMAL_TOP + ROCK_H;
+      // Tile types whose ground geometry sinks below NORMAL_TOP (vs. RAISED, which rises).
+      const DEPRESSION_TOP = {
+        [TileType.TRENCH]:    TRENCH_TOP,
+        [TileType.RIVER]:     RIVER_TOP,
+        [TileType.STREAM]:    STREAM_TOP,
+        [TileType.WATERFALL]: RIVER_TOP,
+      };
+
+      const WATER_UNIT = SLAB_H / MAX_WATER; // world-Y per water depth unit
+      // Must match js/vegetation-crop-rendering.js's own VEG_H — both control
+      // the same shrub/weed slab height (one for its geometry, this one for
+      // tileYCenter/tileSurfaceY's Y-placement math).
+      const VEG_H = 0.18;
+
       // Camera — mode-driven, with the default preserving the original isometric follow.
       const camera = new THREE.PerspectiveCamera(cameraModeConfig('default').fovDeg ?? 42, 1, 0.1, 200);
       window.PngPlaneOutlineOccluder.init({ renderer, camera }); // Registry pruning + depth-only PNG silhouette replay: js/png-plane-outline-occluder.js.
@@ -20232,15 +20268,48 @@
       const SEATED_CAMERA_MIN_DISTANCE = 0.04; // emergency near-target limit used when a chair is almost flush against a wall
       const INTERIOR_CAMERA_WALL_CLEARANCE = 0.35; // gap kept between an interior (building-area) boom and the wall that pulled it in
       const SEATED_CAMERA_MIN_FRAMING_DISTANCE = 0.8; // closest useful third-person framing distance before the camera searches sideways for room
+      const SHOULDER_CAMERA_MIN_TARGET_HEIGHT = 0.04; // Keeps lowered shoulder offsets above the terrain so upward aim has room to shorten its boom.
+      let _cameraBoomDebug = null; // Latest shoulder collision and ground solve, read by the copyable Pixel Probe report.
+      let _occlusionCameraMode = null; // Resets collision smoothing when switching between shoulder, seated, and scripted cameras.
       let _seatedOcclusionDistance = null; // smoothed seated-camera distance used while an obstruction clears
       let _seatedOcclusionUpdatedAt = 0; // previous seated occlusion update time used to calculate smoothing delta
       let _seatedCameraDebug = null; // latest seated obstruction solve, exposed to Pixel Probe for mobile diagnosis
+      // Find the first terrain crossing along the boom, then shorten along
+      // that same ray. Sampling local surfaces handles ramps and raised tiles;
+      // lifting Y independently would flatten the player's requested pitch.
+      function shoulderCameraGroundFraction(lookAtX, lookAtY, lookAtZ, cameraX, cameraY, cameraZ, clearance) {
+        const dx = cameraX - lookAtX, dy = cameraY - lookAtY, dz = cameraZ - lookAtZ; // Defines the collision-resolved boom sampled below.
+        const steps = Math.max(1, Math.min(64, Math.ceil(Math.hypot(dx, dz) / 0.1))); // Bounds terrain work while checking short booms at sub-tile intervals.
+        let safe = 0; // Last terrain-safe fraction before the first crossing.
+        for (let i = 1; i <= steps; i++) {
+          let blocked = i / steps; // Candidate fraction, refined only when it crosses the local surface.
+          if (lookAtY + dy * blocked >= activeSurfaceYAtWorld(lookAtX + dx * blocked, lookAtZ + dz * blocked) + clearance) {
+            safe = blocked;
+            continue;
+          }
+          for (let j = 0; j < 12; j++) {
+            const mid = (safe + blocked) * 0.5; // Bisects the first crossing to avoid visible stepping while aiming.
+            if (lookAtY + dy * mid >= activeSurfaceYAtWorld(lookAtX + dx * mid, lookAtZ + dz * mid) + clearance) safe = mid;
+            else blocked = mid;
+          }
+          return safe;
+        }
+        return 1;
+      }
+
       function occlusionSafeCameraPosition(lookAtX, lookAtY, lookAtZ, idealX, idealY, idealZ) {
         let resultX = idealX, resultY = idealY, resultZ = idealZ;
+        const shoulderBoom = activeCameraMode === SHOULDER_SURF_MODE && !cutscenePreviewActive && !dialogueZoomActive(); // Preserves manual shoulder aim while retaining authored cinematic collision behavior.
+        let wallHitDistance = null; // Reported after the final floor solve for mobile diagnosis.
+        if (_occlusionCameraMode !== activeCameraMode) {
+          _seatedOcclusionDistance = null;
+          _seatedOcclusionUpdatedAt = 0;
+          _occlusionCameraMode = activeCameraMode;
+        }
         const obstacles = currentAreaOcclusionMeshes();
         const dx = idealX - lookAtX, dy = idealY - lookAtY, dz = idealZ - lookAtZ;
         const dist = Math.hypot(dx, dy, dz);
-        if (dist >= 0.5) {
+        if (dist >= (shoulderBoom ? SEATED_CAMERA_MIN_DISTANCE : 0.5)) {
           let dir = { x: dx / dist, y: dy / dist, z: dz / dist };
           let desiredSafeDist = dist;
           let directHitDistance = null;
@@ -20253,7 +20322,7 @@
             // A chair can put the seated target much closer than 0.3 tiles to
             // a wall. Use a short near plane there so the wall is not skipped;
             // ordinary standing cameras retain the player-avoidance distance.
-            _cameraOcclusionRaycaster.near = activeCameraMode === 'seated' ? 0.02 : 0.3;
+            _cameraOcclusionRaycaster.near = activeCameraMode === 'seated' || shoulderBoom ? 0.02 : 0.3;
             _cameraOcclusionRaycaster.far = dist;
             // recursive:true — zone occlusion meshes are already individual
             // tagged leaf meshes (harmless either way there), but the
@@ -20261,8 +20330,9 @@
             const hits = _cameraOcclusionRaycaster.intersectObjects(obstacles, true);
             if (hits.length) {
               directHitDistance = hits[0].distance;
+              wallHitDistance = directHitDistance;
               const interiorStanding = activeCameraMode !== 'seated' && _isBuildingArea(currentArea);
-              if (activeCameraMode === 'seated' || interiorStanding) {
+              if (activeCameraMode === 'seated' || interiorStanding || shoulderBoom) {
                 // Interiors (dens, shops, the Random Test Ruin) are tight and
                 // their boom is shorter than the outdoor 3-tile minimum below,
                 // so that minimum meant the boom never pulled in at all there.
@@ -20284,7 +20354,7 @@
                 // near plane. Search progressively around the chair instead;
                 // this produces an over-the-shoulder slide along the wall
                 // while preserving the user's pitch and target.
-                if (!interiorStanding && desiredSafeDist < SEATED_CAMERA_MIN_FRAMING_DISTANCE) {
+                if (!interiorStanding && !shoulderBoom && desiredSafeDist < SEATED_CAMERA_MIN_FRAMING_DISTANCE) {
                   let best = { dir, safeDist: desiredSafeDist, offsetDeg: 0 };
                   for (const offsetDeg of [25, -25, 45, -45, 70, -70, 90, -90]) {
                     const a = THREE.MathUtils.degToRad(offsetDeg);
@@ -20320,7 +20390,7 @@
           // that flickers between hitting and missing a wall edge otherwise
           // pops the camera in and out under the reticle.
           const interiorBoom = activeCameraMode !== 'seated' && _isBuildingArea(currentArea);
-          if (activeCameraMode === 'seated' || interiorBoom) {
+          if (activeCameraMode === 'seated' || interiorBoom || shoulderBoom) {
             // Smooth toward the freshly raycast distance every frame. The old
             // direct assignment made the camera stick to whichever wall face
             // happened to win one raycast, then snap when that face changed.
@@ -20337,7 +20407,7 @@
               _seatedOcclusionDistance += (desiredSafeDist - _seatedOcclusionDistance) * alpha;
             }
             safeDist = window.FormatUtils.clamp(_seatedOcclusionDistance, SEATED_CAMERA_MIN_DISTANCE, dist);
-            _seatedCameraDebug = interiorBoom ? null : {
+            _seatedCameraDebug = interiorBoom || shoulderBoom ? null : {
               idealDistance: dist,
               directHitDistance,
               desiredDistance: desiredSafeDist,
@@ -20360,7 +20430,7 @@
             // booms slide straight in along their own sightline too: a lift
             // tips the view steeply down, so the smallest aim change swept the
             // reticle's hit point across the floor or ceiling.
-            const lift = (activeCameraMode === 'seated' || interiorBoom || cutscenePreviewActive) ? 0 : shrink * dist * 0.5;
+            const lift = (activeCameraMode === 'seated' || interiorBoom || shoulderBoom || cutscenePreviewActive) ? 0 : shrink * dist * 0.5;
             resultX = lookAtX + dir.x * safeDist;
             resultY = lookAtY + dir.y * safeDist + lift;
             resultZ = lookAtZ + dir.z * safeDist;
@@ -20370,28 +20440,50 @@
           _seatedOcclusionUpdatedAt = 0;
           _seatedCameraDebug = null;
         }
-        // Floor guard — applies everywhere, not just zones (unlike the
-        // mesh-obstacle pull-in above, which has nothing to raycast against
-        // for the ground itself). A steep enough upward pitch (see the
-        // seated camera's up/down joystick allowance) can put the ideal
-        // position below ground with no cliff/obstacle involved at all —
-        // same pull-toward-lookAt technique as above: slide the camera back
-        // along its own look-at ray (preserving direction, not just
-        // clamping Y in isolation) until it clears a minimum floor
-        // clearance, using camTargetY (the player's own smoothed ground
-        // height, already tracked for the ordinary follow camera) as the
-        // floor reference so this still holds up on tiered zone terrain,
-        // not just the flat Y=0 farm/interior/town case that motivated it.
-        const minCameraY = camTargetY + CAMERA_FLOOR_CLEARANCE;
-        if (resultY < minCameraY) {
-          const dx = resultX - lookAtX, dy = resultY - lookAtY, dz = resultZ - lookAtZ;
-          if (dy < -1e-4) {
-            const t = window.FormatUtils.clamp((minCameraY - lookAtY) / dy, 0, 1);
-            resultX = lookAtX + dx * t;
-            resultY = lookAtY + dy * t;
-            resultZ = lookAtZ + dz * t;
-          } else {
-            resultY = minCameraY;
+        if (shoulderBoom) {
+          const targetFloorY = activeSurfaceYAtWorld(lookAtX, lookAtZ); // Measures terrain under the actual offset target, rather than the player's smoothed floor.
+          const clearance = Math.min(CAMERA_FLOOR_CLEARANCE, Math.max(0.01, (lookAtY - targetFloorY) * 0.25)); // Short characters retain vertical room between their neck and the ground.
+          const fraction = shoulderCameraGroundFraction(lookAtX, lookAtY, lookAtZ, resultX, resultY, resultZ, clearance); // Preserves pitch and yaw when the ground shortens the boom.
+          resultX = lookAtX + (resultX - lookAtX) * fraction;
+          resultY = lookAtY + (resultY - lookAtY) * fraction;
+          resultZ = lookAtZ + (resultZ - lookAtZ) * fraction;
+          _cameraBoomDebug = {
+            latestChange: 'Shoulder boom shortens along the aim ray at walls and local terrain; floor clearance follows target height.',
+            idealDistance: dist,
+            solvedDistance: Math.hypot(resultX - lookAtX, resultY - lookAtY, resultZ - lookAtZ),
+            requestedPitchDeg: Math.atan2(-dy, Math.hypot(dx, dz)) * 180 / Math.PI,
+            solvedPitchDeg: Math.atan2(lookAtY - resultY, Math.hypot(resultX - lookAtX, resultZ - lookAtZ)) * 180 / Math.PI,
+            directHitDistance: wallHitDistance,
+            groundLimited: fraction < 1,
+            floorClearance: clearance,
+            targetY: lookAtY,
+            floorY: activeSurfaceYAtWorld(resultX, resultZ),
+          };
+        } else {
+          _cameraBoomDebug = null;
+          // Floor guard — applies everywhere, not just zones (unlike the
+          // mesh-obstacle pull-in above, which has nothing to raycast against
+          // for the ground itself). A steep enough upward pitch (see the
+          // seated camera's up/down joystick allowance) can put the ideal
+          // position below ground with no cliff/obstacle involved at all —
+          // same pull-toward-lookAt technique as above: slide the camera back
+          // along its own look-at ray (preserving direction, not just
+          // clamping Y in isolation) until it clears a minimum floor
+          // clearance, using camTargetY (the player's own smoothed ground
+          // height, already tracked for the ordinary follow camera) as the
+          // floor reference so this still holds up on tiered zone terrain,
+          // not just the flat Y=0 farm/interior/town case that motivated it.
+          const minCameraY = camTargetY + CAMERA_FLOOR_CLEARANCE;
+          if (resultY < minCameraY) {
+            const dx = resultX - lookAtX, dy = resultY - lookAtY, dz = resultZ - lookAtZ;
+            if (dy < -1e-4) {
+              const t = window.FormatUtils.clamp((minCameraY - lookAtY) / dy, 0, 1);
+              resultX = lookAtX + dx * t;
+              resultY = lookAtY + dy * t;
+              resultZ = lookAtZ + dz * t;
+            } else {
+              resultY = minCameraY;
+            }
           }
         }
         return { x: resultX, y: resultY, z: resultZ };
@@ -20502,6 +20594,9 @@
           lookAtX += rightX * s_shoulderSurfOffsetH_current;
           lookAtZ += rightZ * s_shoulderSurfOffsetH_current;
           lookY += s_shoulderSurfOffsetV_current;
+          // A lowered Settings offset must not bury the aim pivot: no ground-safe
+          // camera position below that pivot could retain an upward sightline.
+          if (!cutscenePreviewActive && !dialogueZoomActive()) lookY = Math.max(lookY, activeSurfaceYAtWorld(lookAtX, lookAtZ) + SHOULDER_CAMERA_MIN_TARGET_HEIGHT);
         }
         const cameraY = portraitAim?.cameraY ?? (lookY + Math.sin(angle) * distance);
         const groundDistance = Math.cos(angle) * distance;
@@ -20517,6 +20612,9 @@
           camera.lookAt(lookAtX, lookY, lookAtZ);
           _lastCameraLookPoint.set(lookAtX, lookY, lookAtZ);
         }
+        // Very short ground-limited booms need a smaller near plane to keep
+        // the nearby character visible; other modes retain the normal plane.
+        camera.near = _cameraBoomDebug ? Math.min(0.1, Math.max(0.01, _cameraBoomDebug.solvedDistance * 0.2)) : 0.1;
         camera.fov = modeCfg.fovDeg ?? 42;
         camera.aspect = cameraContainerAspect();
         camera.updateProjectionMatrix();
@@ -21031,40 +21129,6 @@
       const reticleBlockedMat = new THREE.MeshBasicMaterial({
         color: 0xff6040, wireframe: true, transparent: true, opacity: 0.85,
       });
-
-      // ── World Z levels (in Three.js Y units) ──────────────────────
-      // Grass/tilled/weeds/paddy: top face at Y=0
-      // Trench:                   top face at Y=-0.5  (dug 0.5 down)
-      // Raised:                   top face at Y=+0.5  (built 0.5 up)
-      // Rock:                     top face at Y=+0.75 (tall obstacle)
-      // Vegetation slabs:         bottom at Y=0, top at Y=VEG_H
-      //
-      // Box center Y = topFaceY - boxHeight/2
-      const SLAB_H     = 0.5;   // thickness of all ground slabs
-      const TRENCH_TOP = -0.5;  // top surface of trench
-      const NORMAL_TOP =  0.0;  // top surface of grass/tilled/etc
-      const RAISED_TOP = +0.5;  // top surface of raised bed
-      // World-Y rise per plateau elevation tier (absolute units shared by each
-      // merged tile's elevTier and authored ramp.rampElevation values — see
-      // tileSurfaceYInArea / _loadTownFromWorkspace's mergeZoneTiles).
-      const PLATEAU_UNIT = 2.5;
-      const RIVER_TOP  = -0.55; // river bed — a wide channel, at least trench-deep
-      const STREAM_TOP = -0.55; // stream bed — the actual painted waterway in current maps; same depth as the river
-      const ROCK_H     =  0.75; // rock block height
-      const ROCK_TOP   = NORMAL_TOP + ROCK_H;
-      // Tile types whose ground geometry sinks below NORMAL_TOP (vs. RAISED, which rises).
-      const DEPRESSION_TOP = {
-        [TileType.TRENCH]:    TRENCH_TOP,
-        [TileType.RIVER]:     RIVER_TOP,
-        [TileType.STREAM]:    STREAM_TOP,
-        [TileType.WATERFALL]: RIVER_TOP,
-      };
-
-      const WATER_UNIT = SLAB_H / MAX_WATER; // world-Y per water depth unit
-      // Must match js/vegetation-crop-rendering.js's own VEG_H — both control
-      // the same shrub/weed slab height (one for its geometry, this one for
-      // tileYCenter/tileSurfaceY's Y-placement math).
-      const VEG_H = 0.18;
 
       // Y center of each tile's primary mesh
       function tileYCenter(type) {
@@ -27457,6 +27521,7 @@
         getPlayerAvatarFrontMaterial: () => _playerAvatarFrontMaterial,
         getSitInteraction: () => sitInteraction,
         getSeatedCameraDebug: () => _seatedCameraDebug,
+        getCameraBoomDebug: () => _cameraBoomDebug, // Makes shoulder ground/wall collision values available without devtools.
         getPaused: () => paused,
         getHeldObjectDebug,
         getItemSpriteIconDebug,
