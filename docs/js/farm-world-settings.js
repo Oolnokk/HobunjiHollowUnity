@@ -51,7 +51,7 @@
       let role = mesh.userData.farmMaterialRole; // Semantic roles are assigned by the shared structure builder.
       for (let parent = mesh.parent; parent && parent !== group; parent = parent.parent) if (parent.userData.isWallBricks) role = 'stone';
       if (!colors[role]) return;
-      const tint = material => { const result = material.clone(); window.SurfaceTint?.applyGrassLuminance?.(result, colors[role]); if (!window.SurfaceTint) result.color?.set(colors[role]); return result; }; // Clone per farm structure; town/global source materials remain untouched.
+      const tint = material => { const result = material.clone(); window.SurfaceTint?.applyGrassLuminance?.(result, colors[role], role === 'wood'); if (!window.SurfaceTint) result.color?.set(colors[role]); return result; }; // Clone per structure; wood keeps the named palette value instead of the grass shader's 150% brightness boost.
       mesh.material = Array.isArray(mesh.material) ? mesh.material.map(tint) : tint(mesh.material);
     });
   }
