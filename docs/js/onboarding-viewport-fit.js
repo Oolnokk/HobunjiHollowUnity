@@ -36,14 +36,14 @@
 #ob-overlay>.ob-card:not(.sl-card)>.ob-tabs,
 #ob-overlay>.ob-card:not(.sl-card)>.ob-footer{flex:0 0 auto}
 #ob-overlay>.ob-card:not(.sl-card)>.ob-two-col{flex:1 1 auto;min-height:0;overflow:hidden}
-#ob-overlay>.ob-card:not(.sl-card)>.ob-two-col>.ob-col-left{min-height:0}
+#ob-overlay>.ob-card:not(.sl-card)>.ob-two-col>.ob-col-left{position:sticky;top:0;align-self:flex-start;z-index:2;min-height:0}
 #ob-overlay>.ob-card:not(.sl-card)>.ob-two-col>.ob-col-right{min-height:0;max-height:100%;overflow-y:auto;overscroll-behavior:contain}
 #ob-overlay .ob-viewport-fit-warning{position:fixed;left:8px;bottom:8px;z-index:9999;max-width:min(420px,calc(100vw - 16px));box-sizing:border-box;padding:6px 8px;border:1px solid rgba(255,181,158,.48);border-radius:7px;background:rgba(20,5,3,.92);color:#ffb59e;font:9px/1.35 'DM Mono',ui-monospace,monospace;pointer-events:none}
 @media (max-width:560px){
   #ob-overlay{padding:8px}
   #ob-overlay>.ob-card:not(.sl-card){max-height:calc(100vh - 16px);max-height:calc(100dvh - 16px);padding:12px;gap:10px}
   #ob-overlay>.ob-card:not(.sl-card)>.ob-two-col{overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain}
-  #ob-overlay>.ob-card:not(.sl-card)>.ob-two-col>.ob-col-left{flex:0 0 auto}
+  #ob-overlay>.ob-card:not(.sl-card)>.ob-two-col>.ob-col-left{position:static;top:auto;z-index:auto;flex:0 0 auto}
   #ob-overlay>.ob-card:not(.sl-card)>.ob-two-col>.ob-col-right{flex:0 0 auto;width:100%;max-height:none;overflow:visible;padding-right:0}
 }
 @media (max-height:640px) and (min-width:561px){
