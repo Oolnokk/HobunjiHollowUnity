@@ -85,11 +85,12 @@ const BanditCombat = {
 };
 const windowObject = { GameRandom: { random }, ResourceSystem, BanditCombat };
 windowObject.window = windowObject;
+vm.runInContext(fs.readFileSync('docs/js/metal-armor-system.js', 'utf8'), vm.createContext(windowObject));
 vm.runInContext(minionSource, vm.createContext(windowObject), { filename: 'combat-minion.js' });
 const api = windowObject.MinionCombat;
 assert(api);
 
-const allowedClothes = new Set(['tankan_bodywrap', 'rugged_poncho', 'bandolier1']);
+const allowedClothes = new Set(['tankan_bodywrap', 'rugged_poncho', 'bandolier1', 'rounded_pauldron', 'tangedcirclet']);
 const allowedDyes = new Set(authoredDyes);
 let sawNoOverwear = false, sawBodywrap = false, sawPoncho = false, sawNoClothes = false;
 for (let i = 0; i < 300; i++) {
@@ -102,7 +103,10 @@ for (let i = 0; i < 300; i++) {
   if (!overwear) sawNoOverwear = true;
   if (overwear === 'tankan_bodywrap') sawBodywrap = true;
   if (overwear === 'rugged_poncho') sawPoncho = true;
-  if (!roster.equippedCosmetics.length) sawNoClothes = true;
+  if (!roster.equippedCosmetics.some(id => ['tankan_bodywrap', 'rugged_poncho', 'bandolier1'].includes(id))) sawNoClothes = true;
+  assert.equal(roster.metalArmorItems.length, 2);
+  for (const armor of roster.metalArmorItems) assert.equal(windowObject.MetalArmorSystem.temperLevel(armor), 5);
+  assert.deepEqual(Array.from(windowObject.MetalArmorSystem.decorateAvatarDataWithMetalArmor(roster, roster.metalArmorItems).appearance.bodyColors.__hobunjiMetalArmor, item => item.temperXp), [300, 300]);
 }
 assert(sawNoOverwear && sawBodywrap && sawPoncho && sawNoClothes);
 

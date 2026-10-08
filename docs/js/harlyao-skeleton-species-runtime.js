@@ -14,8 +14,8 @@
   const BODY_SPECIES_ID = 'engh-sho'; // Canonical donor for wardrobe variants, rig coordinates, and feline extremity meshes.
   const EXTREMITY_COLOR = '#D4D6C9'; // Fixed A/B/C descriptor consumed by procedural hand/foot body-material paths.
   const GENDERS = Object.freeze(['male', 'female']); // Both authored skeleton gender variants are installed together.
-  const ALLOWED_CLOTHING_IDS = Object.freeze(['fine_hood', 'ragged_hood', 'tankan_tunic', 'bandolier1', 'tankan_bodywrap', 'rugged_poncho', 'fine_poncho']); // Broad species-level clothing support survives while Minion randomization itself is restricted to bodywrap/poncho/bandolier.
-  const FORCED_EMPTY_SLOTS = Object.freeze(['eyes', 'upperFace', 'facialHair', 'hairFront', 'hairBack', 'hairSide', 'hairSideL', 'hat']); // Appearance-only slots are always empty for skeletons.
+  const ALLOWED_CLOTHING_IDS = Object.freeze(['fine_hood', 'ragged_hood', 'tankan_tunic', 'bandolier1', 'tankan_bodywrap', 'rugged_poncho', 'fine_poncho', 'rounded_pauldron', 'tangedcirclet']); // Broad species-level clothing support survives while Minion randomization itself is restricted to bodywrap/poncho/bandolier.
+  const FORCED_EMPTY_SLOTS = Object.freeze(['eyes', 'upperFace', 'facialHair', 'hairFront', 'hairBack', 'hairSide', 'hairSideL']); // Appearance-only slots are always empty for skeletons.
   const EXPECTED_ASSETS = Object.freeze({ // Exposed through mobile diagnostics so a bad asset path is visible without devtools.
     maleHead: 'fightersprites/engh-sho-m/head_hskel_m.png',
     femaleHead: 'fightersprites/engh-sho-f/head_hskel_f.png',
@@ -149,6 +149,7 @@
     }
     const wrapped = function resolveHarlyaoSkeletonWardrobeLayers(option, fighter) {
       if (normalizeSpecies(fighter?.speciesId) !== SPECIES_ID) return baseResolve.apply(this, arguments);
+      if (option?.variantLayers?.[`${SPECIES_ID}_${fighter.gender}`]?.length) return baseResolve.call(this, option, fighter); // Skeleton-authored headwear takes priority over the Engh-sho wardrobe donor.
       const inheritedFighter = { ...fighter, speciesId: BODY_SPECIES_ID }; // Clothing art resolves through matching-gender Engh-sho variants only.
       return baseResolve.call(this, option, inheritedFighter);
     };

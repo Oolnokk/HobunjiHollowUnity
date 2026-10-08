@@ -292,12 +292,8 @@
   async function buildBanditAvatar(roster) {
     if (!window.NpcAvatarPreview || !window.PNGPlaneAvatar) return null;
     await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' });
-    const profile = window.NpcAvatarPreview.buildProfileFromNpcExport({
-      name: roster.name,
-      appearance: roster.appearance,
-      equippedCosmetics: roster.equippedCosmetics,
-      appliedDyes: roster.appliedDyes,
-    });
+    const avatarData = window.MetalArmorSystem?.decorateAvatarDataWithMetalArmor?.(roster, roster.metalArmorItems || []) || roster; // Portrait colors retain the same alloy/Temper state as corpse loot.
+    const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(avatarData);
     if (!profile) return null;
     const resolvedRosterDyes = applyRosterDyesToProfile(profile, roster); // Final world-avatar authority: visible pixels must use the same appliedDyes record that loot preserves.
     const avatarCfg = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};

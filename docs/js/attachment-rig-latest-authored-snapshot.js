@@ -14,7 +14,7 @@
     new URL('mammakhbuur-species-runtime.js?v=20261004mammakhhair1', base).href,
     new URL('nuhongan-species-runtime.js?v=20261006h4e1c09a', base).href,
     new URL('harlyao-species-runtime.js?v=20260909a', base).href,
-    new URL('harlyao-skeleton-species-runtime.js?v=20260927dyes1', base).href,
+    new URL('harlyao-skeleton-species-runtime.js?v=20261008h778e788', base).href,
     new URL('porakaneki-species-runtime.js?v=20260924poracolor2&rearHead=1', base).href,
     new URL('character-rig-scale.js?v=20261007h0c4d7d9', base).href,
     new URL('character-rig-scale-avatar-runtime.js?v=20261007hde9f0b3', base).href,

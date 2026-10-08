@@ -1234,6 +1234,8 @@
     const catalog = deps.getDyeCatalog();
     const items = [];
     for (const cosmeticId of (roster?.equippedCosmetics || [])) {
+      const armor = roster.metalArmorItems?.find(item => window.MetalArmorSystem?.baseCosmeticId?.(item) === cosmeticId); // Preserve alloy, maximum Temper, and article identity instead of converting armor into dyed cloth.
+      if (armor) { items.push(JSON.parse(JSON.stringify(armor))); continue; }
       const slot = roster.cosmeticSlots?.[cosmeticId] || 'torso';
       const piece = _banditClothingPiece(cosmeticId, slot);
       const dyeId = roster.appliedDyes?.[window.BanditCombat.TINT_SLOT_BY_SLOT[piece.category]] || null;
@@ -1269,6 +1271,7 @@
         if (specialAmmo) parts.push(`🏹 Special Ammo×${specialAmmo}`);
         for (const item of banditWornClothingItems(c.rosterRecord)) {
           deps.getPackClothing().push(item);
+          window.MetalArmorSystem?.learnBlueprints?.([item]); // Unlock at acquisition even if the player sells the loot before visiting the smith.
           parts.push('👘 ' + item.label);
         }
         // keepCorpseAfterLoot: the body stays where it fell (e.g. a lich's
