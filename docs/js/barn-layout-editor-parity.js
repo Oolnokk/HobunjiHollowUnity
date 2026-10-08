@@ -17,7 +17,7 @@
   }
 
   function pointerToFarm(target, event) {
-    const view = target?.__incubatorView; // Existing Barn Layout draw transform; keeps pointer math exactly aligned with what the player sees.
+    const view = target?.__incubatorView;
     if (!view) return null;
     const rect = target.getBoundingClientRect();
     return {
@@ -36,10 +36,10 @@
   }
 
   function nearestCandidate(barn, addition, point) {
-    const tier = additionState(barn.id, addition.id)?.tier; // Moving a saved addition keeps its own authored footprint tier, regardless of the placement picker.
+    const tier = additionState(barn.id, addition.id)?.tier;
     const candidates = api()?.candidatePlacementsForBarn?.(barn, tier) || [];
-    let best = null; // Holds the wall slot whose center is nearest the drag pointer.
-    let bestDistance = Infinity; // Used to rank candidate wall slots without mutating game state during preview.
+    let best = null;
+    let bestDistance = Infinity;
     for (const candidate of candidates) {
       const col = barn.col + candidate.localCol + candidate.w / 2;
       const row = barn.row + candidate.localRow + candidate.h / 2;
@@ -62,10 +62,10 @@
   function clearActiveDrag() {
     const drag = activeDrag;
     if (!drag) return null;
+    activeDrag = null; // Clear first so releasePointerCapture -> lostpointercapture cannot re-enter cleanup on browsers that dispatch it immediately.
     restoreDragCanvas(drag);
     drag.target?.classList?.remove('barn-layout-dragging');
     try { drag.target?.releasePointerCapture?.(drag.pointerId); } catch (_) {}
-    activeDrag = null;
     return drag;
   }
 
@@ -76,7 +76,7 @@
     if (!drag || !candidate || !view) return;
     restoreDragCanvas(drag);
     const rect = target.getBoundingClientRect();
-    const dpr = target.width / Math.max(1, rect.width); // Matches the existing high-DPI backing-store scale.
+    const dpr = target.width / Math.max(1, rect.width);
     const ctx = target.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const x = view.ox + (drag.barn.col + candidate.localCol - view.minCol) * view.cell;
@@ -92,7 +92,7 @@
   }
 
   function refreshEditor(barnId, message = null) {
-    api()?.openBarnEditor?.(barnId); // Reuses the editor's own authoritative redraw/list refresh after a direct drag move.
+    api()?.openBarnEditor?.(barnId);
     enhanceModal();
     if (message) {
       const hint = document.getElementById('barnIncubatorEditorHint');
@@ -123,21 +123,20 @@
   function onPointerDown(event) {
     if (event.button != null && event.button !== 0) return;
     const target = event.currentTarget;
-    const currentModal = modal();
-    if (!currentModal?.classList.contains('open')) return;
+    if (!modal()?.classList.contains('open')) return;
     if (activeDrag) clearActiveDrag();
     const snapshot = api()?.debugSnapshot?.();
     const point = pointerToFarm(target, event);
-    const owningBarn = (snapshot?.barns || []).find(entry => additionAt(entry, point)) || null; // Farm-space hit testing uniquely identifies the barn whose installed addition was grabbed.
+    const owningBarn = (snapshot?.barns || []).find(entry => additionAt(entry, point)) || null;
     const addition = owningBarn ? additionAt(owningBarn, point) : null;
-    if (!owningBarn || !addition) return; // Plain taps and Place mode remain owned by the legacy editor exactly as before.
+    if (!owningBarn || !addition) return;
     const stateAddition = additionState(owningBarn.id, addition.id);
-    if (stateAddition?.slots?.some(slot => slot.baby)) return; // Matches the existing Move Selected disabled state for active incubators.
+    if (stateAddition?.slots?.some(slot => slot.baby)) return;
 
     const ctx = target.getContext('2d');
     activeDrag = {
       target,
-      pointerId: event.pointerId, // Used to release pointer capture even when Escape/Close cancels the drag before pointerup.
+      pointerId: event.pointerId, // Used to release pointer capture even when Escape/Close cancels before pointerup.
       barn: owningBarn,
       addition,
       startX: event.clientX,
@@ -169,8 +168,8 @@
   }
 
   function requestClose() {
-    clearActiveDrag(); // Closing during a drag must restore the canvas, cursor and pointer capture before the modal disappears.
-    const close = document.getElementById('barnIncubatorEditorClose'); // Calls the original closeBarnEditor so its internal editorMode is also cleared.
+    clearActiveDrag();
+    const close = document.getElementById('barnIncubatorEditorClose');
     if (close) close.click();
     else modal()?.classList.remove('open');
     lastDebugChange = 'Closed Barn Layout editor through farmhouse-style exit control.';
@@ -189,10 +188,10 @@
 
     currentModal.setAttribute('role', 'dialog');
     currentModal.setAttribute('aria-modal', 'true');
-    // Keep the existing Move Selected button as a keyboard/controller/non-drag fallback. Direct dragging is additive, not a replacement for accessible controls.
+    // Keep Move Selected as a keyboard/controller/non-drag fallback. Direct dragging is additive, not a replacement for accessible controls.
 
     if (!currentModal.querySelector('.barn-layout-parity-close')) {
-      const close = document.createElement('button'); // Always-visible close control avoids trapping mobile users at the bottom of a scrolling sidebar.
+      const close = document.createElement('button');
       close.type = 'button';
       close.className = 'settings-small-btn barn-layout-parity-close';
       close.textContent = 'Close';
@@ -216,7 +215,7 @@
     if (!currentModal.dataset.houseStyleExitBound) {
       currentModal.dataset.houseStyleExitBound = '1';
       currentModal.addEventListener('pointerdown', event => {
-        if (event.target === currentModal) requestClose(); // Same familiar modal backdrop exit expected by the farmhouse editor.
+        if (event.target === currentModal) requestClose();
       });
     }
 
@@ -229,7 +228,7 @@
 
   function ensureStyles() {
     if (document.getElementById('barnLayoutEditorParityStyles')) return;
-    const style = document.createElement('style'); // Keeps the barn editor controls reachable and visually consistent with direct farmhouse manipulation.
+    const style = document.createElement('style');
     style.id = 'barnLayoutEditorParityStyles';
     style.textContent = `
       #barnIncubatorLayoutCanvas{cursor:grab}
