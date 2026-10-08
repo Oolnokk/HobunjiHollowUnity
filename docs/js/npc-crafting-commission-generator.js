@@ -117,7 +117,7 @@
       recipientId: recipient.id, recipientName: recipient.name || recipient.id,
       disclosedTraits: [...new Set(dyeSlots.flatMap(slot => slot.traits).filter(trait => liked.includes(trait)))],
       rewardMotes: patterned ? 3 : 2,
-      rewardGold: 40 + (material === 'heavy' ? 12 : 0) + (patterned ? 18 : 0) + (article.hasSecondary ? 8 : 0),
+      rewardGold: 80 + (material === 'heavy' ? 24 : 0) + (patterned ? 36 : 0) + (article.hasSecondary ? 16 : 0), // Scaled with the crop/fishing economy so a dyed, woven commission out-earns selling its inputs.
     };
   }
 
@@ -146,7 +146,7 @@
     const blueprint = pick(ranked.filter(record => record.score >= best - 2))?.entry;
     if (!blueprint) return null;
     const materialValue = finite(blueprint.craftCost?.wood) * 3 + finite(blueprint.craftCost?.stone) * 3; // Generic gold scaling for larger pieces.
-    return { type: 'furniture', blueprintKey: blueprint.key, furnitureKey: blueprint.furnitureKey, furnitureLabel: blueprint.name, category: blueprint.category || 'furniture', rewardMotes: 2, rewardGold: 35 + Math.round(materialValue * 0.6) };
+    return { type: 'furniture', blueprintKey: blueprint.key, furnitureKey: blueprint.furnitureKey, furnitureLabel: blueprint.name, category: blueprint.category || 'furniture', rewardMotes: 2, rewardGold: 70 + Math.round(materialValue * 1.5) }; // Pays more than selling the wood/stone it consumes.
   }
 
   function generateTask(giver, tier) {

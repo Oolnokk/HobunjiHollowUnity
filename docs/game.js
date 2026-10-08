@@ -1655,7 +1655,7 @@
         uumkaoiiCrate: 1,
         barnPlanSmall: 1,
         campfireKitFurnitureBlueprint: 1, // Always-available campfire blueprint — see DECORATIVE_FURNITURE_DEFS.campfire; blueprints are reusable (see craftFurnitureFromBlueprint), so one copy is permanent.
-        gold: 40,
+        gold: 100, // Covers a first seed order at SUPPLY_CATALOG prices on day 1.
       };
 
       // Used by inventoryHud and planting/harvesting actions.
@@ -2368,10 +2368,10 @@
       //    • Supply Box  (col=4, row=ROWS-3) — blue crate
       // ═══════════════════════════════════════════════════════════════
 
+      const CROP_SELL_PRICES = window.HOBUNJI_CROP_ECONOMY.sellPrices;
       const BASE_PRICES = {
-        needlegrain: 8, heftroot: 11, garlink: 7, ongyums: 7,
-        redberries: 12, blueberries: 13, yellowberries: 12, whiteberries: 14, blackberries: 14,
-        blackMustard: 10, greenMustard: 9,
+        // Crop sale values now live in config/crop-economy.js (shared with ITEM_DEFS below).
+        ...CROP_SELL_PRICES,
         mulch: 2
       };
 
@@ -2610,15 +2610,15 @@
       ];
 
       const SUPPLY_CATALOG = [
-        { key: 'needlegrainSeeds',   icon: '🌾', name: 'Needlegrain Seeds',   desc: 'Dry-default grain. Ideal water 20–50%.', price: 5, gives: { needlegrainSeeds: 3 } },
-        { key: 'heftrootSeeds',      icon: '🟡', name: 'Heftroot Seeds',      desc: 'Starchy root crop. Ideal water 25–55%.', price: 6, gives: { heftrootSeeds: 3 } },
-        { key: 'garlinkSeeds',       icon: '🧄', name: 'Garlink Seeds',       desc: 'Pungent broth-base crop. Ideal water 15–45%.', price: 4, gives: { garlinkSeeds: 3 } },
-        { key: 'ongyumsSeeds',       icon: '🧅', name: 'Ongyums Seeds',       desc: 'Aromatic crop. Ideal water 35–70%.', price: 4, gives: { ongyumsSeeds: 3 } },
+        { key: 'needlegrainSeeds',   icon: '🌾', name: 'Needlegrain Seeds',   desc: 'Dry-default grain. Ideal water 20–50%.', price: 15, gives: { needlegrainSeeds: 3 } },
+        { key: 'heftrootSeeds',      icon: '🟡', name: 'Heftroot Seeds',      desc: 'Starchy root crop. Ideal water 25–55%.', price: 21, gives: { heftrootSeeds: 3 } },
+        { key: 'garlinkSeeds',       icon: '🧄', name: 'Garlink Seeds',       desc: 'Pungent broth-base crop. Ideal water 15–45%.', price: 15, gives: { garlinkSeeds: 3 } },
+        { key: 'ongyumsSeeds',       icon: '🧅', name: 'Ongyums Seeds',       desc: 'Aromatic crop. Ideal water 35–70%.', price: 15, gives: { ongyumsSeeds: 3 } },
         // Berry seeds are intentionally not sold — all 5 varieties grow wild
         // across the wilderness zones instead (see WILD_BERRY_ZONES) and
         // have a small chance to yield a seed when foraged.
-        { key: 'blackMustardSeed',   icon: '⚫', name: 'Black Mustard Seed',  desc: 'Hot mustard crop. Ideal water 15–40%.', price: 6, gives: { blackMustardSeed: 2 } },
-        { key: 'greenMustardSeed',   icon: '🥬', name: 'Green Mustard Seed',  desc: 'Fresh mustard crop. Ideal water 30–65%.', price: 6, gives: { greenMustardSeed: 2 } },
+        { key: 'blackMustardSeed',   icon: '⚫', name: 'Black Mustard Seed',  desc: 'Hot mustard crop. Ideal water 15–40%.', price: 14, gives: { blackMustardSeed: 2 } },
+        { key: 'greenMustardSeed',   icon: '🥬', name: 'Green Mustard Seed',  desc: 'Fresh mustard crop. Ideal water 30–65%.', price: 14, gives: { greenMustardSeed: 2 } },
         { key: 'mulchBag',           icon: '🍂', name: 'Mulch Bag',           desc: 'Boosts soil recovery and gives clearing material.', price: 3, gives: { mulch: 5 } },
         // Furniture (processing stations and decorative pieces) is no longer
         // mail-order-able — see FURNITURE_BLUEPRINT_CATALOG. Blueprints are
@@ -15306,8 +15306,8 @@
       // shop-stock.json's carpenterBarnPlans.tiers once it loads.
       let BARN_TIERS = {
         small:  { label: 'Little Barn', slots: 4,  price: 500,  planItem: 'barnPlanSmall'  },
-        medium: { label: 'Medium Barn', slots: 8,  price: 1000, planItem: 'barnPlanMedium' },
-        large:  { label: 'Large Barn',  slots: 12, price: 1500, planItem: 'barnPlanLarge'  },
+        medium: { label: 'Medium Barn', slots: 8,  price: 2500, planItem: 'barnPlanMedium' },
+        large:  { label: 'Large Barn',  slots: 12, price: 4500, planItem: 'barnPlanLarge'  },
       };
       // House piece deeds — bought from the Carpenter (see
       // js/carpenter-shop.js), placed touching the existing house cluster,
@@ -15327,8 +15327,8 @@
       // carpenterHouseDeeds.pieces once it loads.
       let HOUSE_PIECE_CATALOG = {
         starter:   { label: 'House',           w: 4, h: 3 },
-        largeWing: { label: 'Large Wing Deed', w: 5, h: 7, price: 1300, deedItem: 'houseDeedLargeWing' },
-        smallRoom: { label: 'Small Room Deed', w: 3, h: 3, price: 400,  deedItem: 'houseDeedSmallRoom'  },
+        largeWing: { label: 'Large Wing Deed', w: 5, h: 7, price: 3000, deedItem: 'houseDeedLargeWing' },
+        smallRoom: { label: 'Small Room Deed', w: 3, h: 3, price: 900,  deedItem: 'houseDeedSmallRoom'  },
       };
       // Loaded config (docs/config/shops/shop-stock.json) replaces
       // WARES_POOLS/GENERAL_STORE_CATALOG/STORE_CLOTHING_PIECES/
@@ -15629,17 +15629,17 @@
         blackberrySeeds: { icon: '⚫', label: 'Blackberry Seeds', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Berry'], desc: 'Plants blackberries. Berries grow best when any adjacent tile is a ditch; ideal water 45–80%.' },
         blackMustardSeed: { icon: '⚫', label: 'Black Mustard Seed', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Mustard'], desc: 'Plants black mustard. Hot mustard crop; ideal water 15–40%.' },
         greenMustardSeed: { icon: '🥬', label: 'Green Mustard Seed', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Mustard'], desc: 'Plants green mustard. Fresh mustard crop; ideal water 30–65%.' },
-        needlegrain: { icon: '🌾', label: 'Needlegrain', cat: 'crop', sellPrice: 8, tags: ['Crop', 'Sellable', 'Grain'], desc: 'Dry-default grain crop from the cooking system.' },
-        heftroot: { icon: '🟡', label: 'Heftroot', cat: 'crop', sellPrice: 11, tags: ['Crop', 'Sellable', 'Root'], desc: 'Starchy root crop used for heftroot flour and yellow noodles.' },
-        garlink: { icon: '🧄', label: 'Garlink', cat: 'crop', sellPrice: 7, tags: ['Crop', 'Sellable', 'Pungent'], desc: 'Pungent vegetable and broth base.' },
-        ongyums: { icon: '🧅', label: 'Ongyums', cat: 'crop', sellPrice: 7, tags: ['Crop', 'Sellable', 'Aromatic'], desc: 'Aromatic vegetable and broth base.' },
-        redberries: { icon: '🍓', label: 'Redberries', cat: 'crop', sellPrice: 12, tags: ['Crop', 'Sellable', 'Berry'], desc: 'Berry crop. Grows well beside adjacent ditches.' },
-        blueberries: { icon: '🫐', label: 'Blueberries', cat: 'crop', sellPrice: 13, tags: ['Crop', 'Sellable', 'Berry'], desc: 'Wet-loving berry crop. Grows well beside adjacent ditches.' },
-        yellowberries: { icon: '🟡', label: 'Yellowberries', cat: 'crop', sellPrice: 12, tags: ['Crop', 'Sellable', 'Berry'], desc: 'Berry crop. Grows well beside adjacent ditches.' },
-        whiteberries: { icon: '⚪', label: 'Whiteberries', cat: 'crop', sellPrice: 14, tags: ['Crop', 'Sellable', 'Berry'], desc: 'Mild berry crop. Grows well beside adjacent ditches.' },
-        blackberries: { icon: '⚫', label: 'Blackberries', cat: 'crop', sellPrice: 14, tags: ['Crop', 'Sellable', 'Berry'], desc: 'Dark berry crop. Grows well beside adjacent ditches.' },
-        blackMustard: { icon: '⚫', label: 'Black Mustard', cat: 'crop', sellPrice: 10, tags: ['Crop', 'Sellable', 'Mustard'], desc: 'Hot mustard crop. Can be processed into pungent paste later.' },
-        greenMustard: { icon: '🥬', label: 'Green Mustard', cat: 'crop', sellPrice: 9, tags: ['Crop', 'Sellable', 'Mustard'], desc: 'Fresh mustard crop. Can be processed into pungent paste later.' },
+        needlegrain: { icon: '🌾', label: 'Needlegrain', cat: 'crop', sellPrice: CROP_SELL_PRICES.needlegrain, tags: ['Crop', 'Sellable', 'Grain'], desc: 'Dry-default grain crop from the cooking system.' },
+        heftroot: { icon: '🟡', label: 'Heftroot', cat: 'crop', sellPrice: CROP_SELL_PRICES.heftroot, tags: ['Crop', 'Sellable', 'Root'], desc: 'Starchy root crop used for heftroot flour and yellow noodles.' },
+        garlink: { icon: '🧄', label: 'Garlink', cat: 'crop', sellPrice: CROP_SELL_PRICES.garlink, tags: ['Crop', 'Sellable', 'Pungent'], desc: 'Pungent vegetable and broth base.' },
+        ongyums: { icon: '🧅', label: 'Ongyums', cat: 'crop', sellPrice: CROP_SELL_PRICES.ongyums, tags: ['Crop', 'Sellable', 'Aromatic'], desc: 'Aromatic vegetable and broth base.' },
+        redberries: { icon: '🍓', label: 'Redberries', cat: 'crop', sellPrice: CROP_SELL_PRICES.redberries, tags: ['Crop', 'Sellable', 'Berry'], desc: 'Berry crop. Grows well beside adjacent ditches.' },
+        blueberries: { icon: '🫐', label: 'Blueberries', cat: 'crop', sellPrice: CROP_SELL_PRICES.blueberries, tags: ['Crop', 'Sellable', 'Berry'], desc: 'Wet-loving berry crop. Grows well beside adjacent ditches.' },
+        yellowberries: { icon: '🟡', label: 'Yellowberries', cat: 'crop', sellPrice: CROP_SELL_PRICES.yellowberries, tags: ['Crop', 'Sellable', 'Berry'], desc: 'Berry crop. Grows well beside adjacent ditches.' },
+        whiteberries: { icon: '⚪', label: 'Whiteberries', cat: 'crop', sellPrice: CROP_SELL_PRICES.whiteberries, tags: ['Crop', 'Sellable', 'Berry'], desc: 'Mild berry crop. Grows well beside adjacent ditches.' },
+        blackberries: { icon: '⚫', label: 'Blackberries', cat: 'crop', sellPrice: CROP_SELL_PRICES.blackberries, tags: ['Crop', 'Sellable', 'Berry'], desc: 'Dark berry crop. Grows well beside adjacent ditches.' },
+        blackMustard: { icon: '⚫', label: 'Black Mustard', cat: 'crop', sellPrice: CROP_SELL_PRICES.blackMustard, tags: ['Crop', 'Sellable', 'Mustard'], desc: 'Hot mustard crop. Can be processed into pungent paste later.' },
+        greenMustard: { icon: '🥬', label: 'Green Mustard', cat: 'crop', sellPrice: CROP_SELL_PRICES.greenMustard, tags: ['Crop', 'Sellable', 'Mustard'], desc: 'Fresh mustard crop. Can be processed into pungent paste later.' },
         mulch: { icon: '🍂', label: 'Mulch', cat: 'material', sellPrice: 2, tags: ['Material', 'Organic'], desc: 'Organic matter from cleared vegetation. Useful by-product of land clearing.' },
         // isInstrument gates the held-item "Play" action button (see
         // computeActionButtons' item-context section) — held it opens the
@@ -15689,16 +15689,16 @@
         // UUMKAOII_DEFAULT_DEW_COLOR). The other six are pre-wired data for
         // whichever future mechanism (breeding/genetics) assigns a farm
         // uumkao'ii a different dew color.
-        yellowDew: { icon: '🟡', label: 'Yellow Uumkao\'ii Dew', cat: 'material', sellPrice: 9, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Dry Season'], desc: 'Glossy sweet dew from a dry-season uumkao\'ii, dug up from a farm pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0xF3D23A, spriteMode: 'keyed' },
-        greenDew:  { icon: '🟢', label: 'Green Uumkao\'ii Dew',  cat: 'material', sellPrice: 9, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Wet Season'], desc: 'Glossy sweet dew from a wet-season uumkao\'ii, dug up from a farm pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0x5CB84A, spriteMode: 'keyed' },
-        blueDew:   { icon: '🔵', label: 'Blue Uumkao\'ii Dew',   cat: 'material', sellPrice: 13, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Cloud Forest'], desc: 'Glossy blue dew — the common color a farm uumkao\'ii leaves, dug up from a pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0x3F8FE0, spriteMode: 'keyed' },
-        orangeDew: { icon: '🟠', label: 'Orange Uumkao\'ii Dew', cat: 'material', sellPrice: 13, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Cloud Forest'], desc: 'Glossy sweet dew from a cloud-forest uumkao\'ii, dug up from a farm pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0xF08A2E, spriteMode: 'keyed' },
-        redDew:    { icon: '🔴', label: 'Red Uumkao\'ii Dew',    cat: 'material', sellPrice: 13, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Northern Cliffs'], desc: 'Glossy sweet dew from a northern-cliffs uumkao\'ii, dug up from a farm pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0xE0453F, spriteMode: 'keyed' },
-        purpleDew: { icon: '🟣', label: 'Purple Uumkao\'ii Dew', cat: 'material', sellPrice: 13, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Mire'], desc: 'Glossy sweet dew from a mire-dwelling uumkao\'ii, dug up from a farm pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0x9B4FD9, spriteMode: 'keyed' },
-        whiteDew:  { icon: '⚪', label: 'White Uumkao\'ii Dew',  cat: 'material', sellPrice: 13, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Mire'], desc: 'Glossy pale dew from a mire-dwelling uumkao\'ii, dug up from a farm pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0xFFFFFF, spriteMode: 'keyed' },
+        yellowDew: { icon: '🟡', label: 'Yellow Uumkao\'ii Dew', cat: 'material', sellPrice: 18, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Dry Season'], desc: 'Glossy sweet dew from a dry-season uumkao\'ii, dug up from a farm pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0xF3D23A, spriteMode: 'keyed' },
+        greenDew:  { icon: '🟢', label: 'Green Uumkao\'ii Dew',  cat: 'material', sellPrice: 18, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Wet Season'], desc: 'Glossy sweet dew from a wet-season uumkao\'ii, dug up from a farm pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0x5CB84A, spriteMode: 'keyed' },
+        blueDew:   { icon: '🔵', label: 'Blue Uumkao\'ii Dew',   cat: 'material', sellPrice: 26, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Cloud Forest'], desc: 'Glossy blue dew — the common color a farm uumkao\'ii leaves, dug up from a pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0x3F8FE0, spriteMode: 'keyed' },
+        orangeDew: { icon: '🟠', label: 'Orange Uumkao\'ii Dew', cat: 'material', sellPrice: 26, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Cloud Forest'], desc: 'Glossy sweet dew from a cloud-forest uumkao\'ii, dug up from a farm pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0xF08A2E, spriteMode: 'keyed' },
+        redDew:    { icon: '🔴', label: 'Red Uumkao\'ii Dew',    cat: 'material', sellPrice: 26, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Northern Cliffs'], desc: 'Glossy sweet dew from a northern-cliffs uumkao\'ii, dug up from a farm pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0xE0453F, spriteMode: 'keyed' },
+        purpleDew: { icon: '🟣', label: 'Purple Uumkao\'ii Dew', cat: 'material', sellPrice: 26, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Mire'], desc: 'Glossy sweet dew from a mire-dwelling uumkao\'ii, dug up from a farm pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0x9B4FD9, spriteMode: 'keyed' },
+        whiteDew:  { icon: '⚪', label: 'White Uumkao\'ii Dew',  cat: 'material', sellPrice: 26, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Mire'], desc: 'Glossy pale dew from a mire-dwelling uumkao\'ii, dug up from a farm pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0xFFFFFF, spriteMode: 'keyed' },
 
         // ── Milkable/extractable livestock resources (Gar-wolf, Dabinggi-hound, Grehlr) ─
-        garWolfMilk: { icon: '🥛', label: 'Gar-wolf Milk', cat: 'material', sellPrice: 10, tags: ['Material', 'Milk', 'Gar-wolf'], desc: 'Milk collected from a housed gar-wolf. Pale white with a faint blue sheen.', spriteIcon: 'jar_liquid.png', spriteColor: 0xEFF3F8, spriteMode: 'keyed' },
+        garWolfMilk: { icon: '🥛', label: 'Gar-wolf Milk', cat: 'material', sellPrice: 20, tags: ['Material', 'Milk', 'Gar-wolf'], desc: 'Milk collected from a housed gar-wolf. Pale white with a faint blue sheen.', spriteIcon: 'jar_liquid.png', spriteColor: 0xEFF3F8, spriteMode: 'keyed' },
         dabinggiHoundVenom: { icon: '🧪', label: 'Dabinggi-hound Venom', cat: 'material', sellPrice: 15, tags: ['Material', 'Venom', 'Dabinggi-hound'], desc: 'Venom milked from a housed dabinggi-hound. A vivid, lime-green fluid.', spriteIcon: 'jar_liquid.png', spriteColor: 0xA6E22E, spriteMode: 'keyed' },
         grehlrStinkOil: { icon: '🦨', label: 'Grehlr Stink Oil', cat: 'material', sellPrice: 18, tags: ['Material', 'Stink Oil', 'Grehlr'], desc: 'Denatured stink oil extracted from a housed grehlr. A murky yellow-green.', spriteIcon: 'jar_liquid.png', spriteColor: 0x8A9A3D, spriteMode: 'keyed' },
 
@@ -17916,7 +17916,7 @@
         inventory[data.cropKey] = Math.min(99, (inventory[data.cropKey] || 0) + amount);
         const stars = window.LootRolling.rollItemStars('farming');
         window.CookingSystem.recordItemQuality(data.cropKey, stars, amount);
-        window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.crop || 6, `harvested ${data.label}`);
+        window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.crop || 10, `harvested ${data.label}`);
         window.HobunjiActivityEvents?.emit('crop_harvested', { cropKey: data.cropKey, label: data.label });
         const msg = `Harvested ${window.LootRolling.starRatingText(stars)} ${data.emoji} ${data.label}${amount > 1 ? ` ×${amount}` : ''}!`;
         tile.crop = CropType.NONE;
@@ -27973,7 +27973,7 @@
         recordItemQuality: (...args) => window.CookingSystem?.recordItemQuality?.(...args),
         awardFishingXp: () => {
           window.HobunjiActivityEvents?.emit('fish_caught', {});
-          return window.SkillSystem?.award?.('fishing', window.SkillSystem?.XP_GAINS?.fish || 10, 'caught fish');
+          return window.SkillSystem?.award?.('fishing', window.SkillSystem?.XP_GAINS?.fish || 7, 'caught fish');
         },
         awardToolUseMasteryXp,
         getInventoryStackKeys,

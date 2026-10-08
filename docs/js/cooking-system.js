@@ -353,6 +353,19 @@
     return Math.max(1, Math.min(5, Math.round(average + cookingLift + jitter)));
   }
 
+  // A dish's base value is its ingredients' base values times a cooking
+  // premium, never less than the old flat slot/star value, so cooking adds
+  // value instead of destroying it once crops are priced to compete with
+  // fishing. Star quality is applied at sale time by
+  // valueMultiplierForStars(), so this base is kept star-neutral.
+  // Balance guardrails: scripts/test-economy-progression.js.
+  const COOKED_VALUE_PREMIUM = 1.3;
+  function cookedSellPrice(recipe, selections, stars, itemDefs = deps?.ITEM_DEFS) {
+    const flat = Math.max(4, (recipe?.slots?.length || 0) * 4 + stars * 3);
+    const ingredientValue = (selections || []).reduce((sum, { selected }) => sum + Math.max(0, Number(itemDefs?.[selected?.key]?.sellPrice) || 0), 0);
+    return Math.max(flat, Math.round(ingredientValue * COOKED_VALUE_PREMIUM));
+  }
+
   function recipeOutputIcon(recipe) {
     if (recipe?.outputIcon) return String(recipe.outputIcon); // Used by bespoke recipes such as Three-Fish Pie and Nine Leaf Tea without special-casing their ids here.
     const categories = recipe.inventoryCategories || []; // Used to visually distinguish reusable bases from finished meals.
@@ -390,7 +403,7 @@
       });
       const effectText = Object.entries(effects).map(([effect, amount]) => formatEffectStrength(effect, amount)).join(', ');
       registerCookedDefinition(key, {
-        icon: recipeOutputIcon(recipe), label, cat: 'food', sellPrice: Math.max(4, recipe.slots.length * 4 + stars * 3),
+        icon: recipeOutputIcon(recipe), label, cat: 'food', sellPrice: cookedSellPrice(recipe, selections, stars),
         tags: ['Cooked Food', ...recipe.outputTags, `${stars} Star`],
         desc: `${recipe.description} Eat it for ${effectText || 'a satisfying meal'}.`,
         recipeId: recipe.id,
@@ -603,7 +616,7 @@
   window.CookingSystem = {
     init, restore, serialize, update, openAtHearth, close, isOpen, eat, recordItemQuality, consumeBestQuality,
     getFoodEffectStacks, getSpeedMultiplier, getStaminaRegenMultiplier, registerIngredientItems, availableQualityEntries,
-    consumeQuality, consumeLowestQuality, consumeQualityByPolicy, peekLowestQuality, valueMultiplierForStars,
+    consumeQuality, consumeLowestQuality, consumeQualityByPolicy, peekLowestQuality, valueMultiplierForStars, cookedSellPrice,
     unlockRecipe, isRecipeUnlocked, listIngredientDefinitions, listCookedInventory, consumeCookedInventoryItem, effectLabel,
     FOOD_EFFECT_STRENGTH_TIERS, effectStrengthLabel, formatEffectStrength, ingredientEffectTotals, ingredientBuffText,
   };

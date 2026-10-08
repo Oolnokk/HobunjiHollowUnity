@@ -31,7 +31,7 @@
           "icon": "🟡",
           "name": "Heftroot",
           "desc": "Minimum-quality staple vegetable for cooking.",
-          "price": 30,
+          "price": 45,
           "gives": {
             "heftroot": 1
           },
@@ -43,7 +43,7 @@
           "icon": "🧄",
           "name": "Garlink",
           "desc": "Minimum-quality staple vegetable for cooking.",
-          "price": 30,
+          "price": 45,
           "gives": {
             "garlink": 1
           },
@@ -55,7 +55,7 @@
           "icon": "🧅",
           "name": "Ongyums",
           "desc": "Minimum-quality staple vegetable for cooking.",
-          "price": 30,
+          "price": 45,
           "gives": {
             "ongyums": 1
           },
@@ -67,7 +67,7 @@
           "icon": "🥣",
           "name": "Needlegrain Flour",
           "desc": "Minimum-quality flour for basic cooking.",
-          "price": 30,
+          "price": 45,
           "gives": {
             "needlegrainFlour": 1
           },
@@ -266,14 +266,14 @@
         "medium": {
           "label": "Medium Barn",
           "slots": 8,
-          "price": 1000,
+          "price": 2500,
           "planItem": "barnPlanMedium",
           "conditions": {}
         },
         "large": {
           "label": "Large Barn",
           "slots": 12,
-          "price": 1500,
+          "price": 4500,
           "planItem": "barnPlanLarge",
           "conditions": {}
         }
@@ -324,7 +324,7 @@
           "label": "Large Wing Deed",
           "w": 5,
           "h": 7,
-          "price": 1300,
+          "price": 3000,
           "deedItem": "houseDeedLargeWing",
           "conditions": {}
         },
@@ -332,7 +332,7 @@
           "label": "Small Room Deed",
           "w": 3,
           "h": 3,
-          "price": 400,
+          "price": 900,
           "deedItem": "houseDeedSmallRoom",
           "conditions": {}
         }
