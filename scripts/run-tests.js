@@ -23,6 +23,7 @@ const SLOW = new Set([
   'test-wilderness-plateau-export-ownership.js',
   'test-wilderness-plateau-ring-export.js',
   'test-banubu-wilderness-lab-generation.js',
+  'test-cloud-forest-trade-exit.js',
 ]);
 
 // Need Playwright + a served docs/ folder; run by the smoke-dev-random-ruin-* workflows.

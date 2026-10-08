@@ -21,17 +21,45 @@
     deps = injectedDeps;
   }
 
+  // Larger barn/incubator plans are a Town Value perk: a def's optional
+  // minTownValue (shop-stock.json) hides nothing, but locks the Buy button
+  // until the town has grown. Farm presets still hand out any tier.
+  function _townValueLock(def) {
+    const required = Number(def?.minTownValue) || 0;
+    const current = Number(window.TownMine?.getTownValue?.()) || 0;
+    return current < required ? required : 0;
+  }
+  function _refuseLocked(def) {
+    const required = _townValueLock(def);
+    if (!required) return false;
+    deps.showToast(`Dzibim won't build that until the town has grown (Town Value ${required}).`, false);
+    return true;
+  }
+  function _buyButtonHtml(def, dataAttr) {
+    const required = _townValueLock(def);
+    return required
+      ? `<button class="shop-buy-btn" disabled title="Requires Town Value ${required}">🔒 TV ${required}</button>`
+      : `<button class="shop-buy-btn" ${dataAttr}>Buy</button>`;
+  }
+
+  // Blueprints are never consumed by building (see CraftingPanel's
+  // ownsBlueprint) and sell for 0g, so a second copy is wasted gold.
+  function ownsBlueprint(bp) {
+    if ((Number(deps.inventory[bp?.key]) || 0) > 0) return true;
+    return !!(bp?.masteryUnlockId && window.CraftingMasterySystem?.hasUnlock?.(bp.masteryUnlockId));
+  }
+
   function _barnAdditions() {
     return window.LootRolling?.getShopStock?.()?.carpenterBarnPlans?.additions || {};
   }
 
   function buyBarnPlan(tier) {
     const tierDef = deps.getBarnTiers()[tier];
-    if (!tierDef) return;
+    if (!tierDef || _refuseLocked(tierDef)) return;
     const gold = deps.inventory.gold || 0;
     if (gold < tierDef.price) { deps.showToast('Not enough ganang.', false); return; }
     deps.inventory.gold = gold - tierDef.price;
-    deps.inventory[tierDef.planItem] = Math.min(9, (deps.inventory[tierDef.planItem] || 0) + 1);
+    deps.inventory[tierDef.planItem] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[tierDef.planItem] || 0) + 1);
     deps.showToast(`Bought a ${tierDef.label} plan!`, true);
     renderCarpenterShopPage();
     deps.buildInventoryGrid();
@@ -44,11 +72,11 @@
   // lets future barn rooms use the same stock shape without new shop code.
   function buyBarnAddition(additionKey) {
     const def = _barnAdditions()[additionKey];
-    if (!def?.planItem) return;
+    if (!def?.planItem || _refuseLocked(def)) return;
     const gold = deps.inventory.gold || 0;
     if (gold < def.price) { deps.showToast('Not enough ganang.', false); return; }
     deps.inventory.gold = gold - def.price;
-    deps.inventory[def.planItem] = Math.min(9, (deps.inventory[def.planItem] || 0) + 1);
+    deps.inventory[def.planItem] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[def.planItem] || 0) + 1);
     deps.showToast(`Bought a ${def.label}!`, true);
     renderCarpenterShopPage();
     deps.buildInventoryGrid();
@@ -64,7 +92,7 @@
     const gold = deps.inventory.gold || 0;
     if (gold < def.price) { deps.showToast('Not enough ganang.', false); return; }
     deps.inventory.gold = gold - def.price;
-    deps.inventory[def.deedItem] = Math.min(9, (deps.inventory[def.deedItem] || 0) + 1);
+    deps.inventory[def.deedItem] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[def.deedItem] || 0) + 1);
     deps.showToast(`Bought a ${def.label}!`, true);
     renderCarpenterShopPage();
     deps.buildInventoryGrid();
@@ -79,10 +107,11 @@
   function buyFurnitureBlueprint(blueprintKey) {
     const bp = deps.FURNITURE_BLUEPRINT_CATALOG.find(b => b.key === blueprintKey);
     if (!bp || bp.moteOnly) return;
+    if (ownsBlueprint(bp)) { deps.showToast(`You already own the ${bp.name} blueprint.`, false); return; }
     const gold = deps.inventory.gold || 0;
     if (gold < bp.price) { deps.showToast('Not enough ganang.', false); return; }
     deps.inventory.gold = gold - bp.price;
-    deps.inventory[bp.key] = Math.min(9, (deps.inventory[bp.key] || 0) + 1);
+    deps.inventory[bp.key] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[bp.key] || 0) + 1);
     deps.showToast(`Bought a ${bp.name} blueprint!`, true);
     renderCarpenterShopPage();
     deps.buildInventoryGrid();
@@ -110,10 +139,10 @@
         <div class="sh-icon">🏚</div>
         <div class="sh-info">
           <div class="sh-name">${deps.esc(def.label)} Plan</div>
-          <div class="sh-desc">Houses up to ${def.slots} livestock. Owned: ${owned}</div>
+          <div class="sh-desc">Houses up to ${def.slots} livestock. Owned: ${owned}${_townValueLock(def) ? ` · Requires Town Value ${_townValueLock(def)}` : ''}</div>
           <div class="sh-price">${def.price}g each</div>
         </div>
-        <button class="shop-buy-btn" data-tier="${tier}">Buy</button>
+        ${_buyButtonHtml(def, `data-tier="${tier}"`)}
       `;
       row.querySelector('[data-tier]')?.addEventListener('click', () => buyBarnPlan(tier));
       list.appendChild(row);
@@ -134,10 +163,10 @@
           <div class="sh-icon">${deps.esc(def.icon || '🪚')}</div>
           <div class="sh-info">
             <div class="sh-name">${deps.esc(def.label)}</div>
-            <div class="sh-desc">${deps.esc(def.desc || 'A modular addition for a barn.')} Owned: ${owned}</div>
+            <div class="sh-desc">${deps.esc(def.desc || 'A modular addition for a barn.')} Owned: ${owned}${_townValueLock(def) ? ` · Requires Town Value ${_townValueLock(def)}` : ''}</div>
             <div class="sh-price">${def.price}g each</div>
           </div>
-          <button class="shop-buy-btn" data-barn-addition="${deps.esc(additionKey)}">Buy</button>
+          ${_buyButtonHtml(def, `data-barn-addition="${deps.esc(additionKey)}"`)}
         `;
         row.querySelector('[data-barn-addition]')?.addEventListener('click', () => buyBarnAddition(additionKey));
         list.appendChild(row);
@@ -172,19 +201,19 @@
     list.appendChild(bpHdr);
 
     deps.FURNITURE_BLUEPRINT_CATALOG.filter(bp => !bp.moteOnly && window.ConditionRegistry.entryEligible(bp, world)).forEach(bp => {
-      const owned = deps.inventory[bp.key] || 0;
+      const owned = ownsBlueprint(bp);
       const row = document.createElement('div');
       row.className = 'shop-row';
       row.innerHTML = `
         <div class="sh-icon">${bp.icon}</div>
         <div class="sh-info">
           <div class="sh-name">${deps.esc(bp.name)} Blueprint</div>
-          <div class="sh-desc">Build with ${bp.craftCost.wood} Wood + ${bp.craftCost.stone} Stone in the Crafting tab. Owned: ${owned}</div>
-          <div class="sh-price">${bp.price}g each</div>
+          <div class="sh-desc">Build with ${bp.craftCost.wood} Wood + ${bp.craftCost.stone} Stone in the Crafting tab.${owned ? ' Already owned — reusable.' : ''}</div>
+          <div class="sh-price">${bp.price}g</div>
         </div>
-        <button class="shop-buy-btn" data-bp="${bp.key}">Buy</button>
+        <button class="shop-buy-btn" data-bp="${bp.key}" ${owned ? 'disabled' : ''}>${owned ? 'Owned' : 'Buy'}</button>
       `;
-      row.querySelector('[data-bp]')?.addEventListener('click', () => buyFurnitureBlueprint(bp.key));
+      if (!owned) row.querySelector('[data-bp]')?.addEventListener('click', () => buyFurnitureBlueprint(bp.key));
       list.appendChild(row);
     });
   }

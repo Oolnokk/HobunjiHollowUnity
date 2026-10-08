@@ -4,7 +4,7 @@ const path = require('path');
 const assert = require('assert');
 const root = path.resolve(__dirname, '..');
 
-global.window = {};
+global.window = { InventoryStacks: require('./lib/inventory-stacks') };
 global.document = { dispatchEvent: () => {} };
 require(path.join(root, 'docs/js/alchemy-system.js'));
 require(path.join(root, 'docs/js/reagent-plants.js'));

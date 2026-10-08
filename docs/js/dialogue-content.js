@@ -717,7 +717,7 @@
     if (cfg.enabled === false || !char || /\s/.test(char)) return;
     const audioCfg = window.AudioSystem?.gameAudioConfig();
     if (audioCfg.enabled === false) return;
-    const volume = Math.max(0, Math.min(1, Number(cfg.volume) || 0.18)) * Math.max(0, Number(audioCfg.sfxVolume) || 1);
+    const volume = Math.max(0, Math.min(1, Number(cfg.volume) || 0.18)) * Math.max(0, Number(audioCfg.sfxVolume ?? 1));
     if (volume <= 0) return;
     if (cfg.url) {
       const snd = new Audio(cfg.url);

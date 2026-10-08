@@ -148,7 +148,7 @@
       const plating = deps.toolPlating(itemKey);
       if (!plating) { deps.showToast('No plating to clear.', false); return; }
       const refundMetal = plating.mode === 'cosmetic' ? plating.metalKey : def.metalKey;
-      deps.inventory[deps.metalBarItemKey(refundMetal)] = Math.min(99, (deps.inventory[deps.metalBarItemKey(refundMetal)] || 0) + PLATE_BAR_COST);
+      deps.inventory[deps.metalBarItemKey(refundMetal)] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[deps.metalBarItemKey(refundMetal)] || 0) + PLATE_BAR_COST);
       deps.clearToolPlating(itemKey);
       deps.showToast('Cleared plating/pattern — back to live verdigris, materials returned.', true);
     } else if (choice === 'resistant' || choice.startsWith('cosmetic:')) {

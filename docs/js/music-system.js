@@ -741,7 +741,7 @@
     const cue = audioCfg.gameplayCues?.[key]; // Resolves the semantic fishing/mine cue without leaking asset paths into gameplay modules.
     if (audioCfg.enabled === false || !cue?.url || audioUrlFailed(cue.url)) return null;
     const cueVolume = Math.max(0, Number(cue.volume) || 1); // Scales this sting against the user's existing BGM volume.
-    const baseVolume = Math.max(0, Math.min(1, Number(audioCfg.bgmVolume) || 0.48)) * cueVolume; // Keeps gameplay stings on the music-volume path rather than object-SFX settings.
+    const baseVolume = Math.max(0, Math.min(1, Number(audioCfg.bgmVolume ?? 0.48))) * cueVolume; // Keeps gameplay stings on the music-volume path rather than object-SFX settings.
     const snd = playMusicTrack(cue.url, baseVolume, 0, 0); // Uses the shared unlock/loudness/ducking transport without claiming an ambient scheduler slot.
     snd._gameplayCueKey = key; // Exposes the semantic owner to mobile-readable audio diagnostics and ad-hoc inspection.
     const finishGameplayCue = () => retireMusicTrack(snd); // Releases the one-shot element after playback/error without disturbing area/combat music.
@@ -769,7 +769,7 @@
       return false;
     }
     const fade = musicFadeConfig(); // Reuses the normal song fades so the startup/gameplay handoff is musical.
-    const baseVol = Math.max(0, Math.min(1, Number(audioCfg.bgmVolume) || 0.48)); // Uses the same master BGM level as area music.
+    const baseVol = Math.max(0, Math.min(1, Number(audioCfg.bgmVolume ?? 0.48))); // Uses the same master BGM level as area music.
     const earlyTitleAudio = window.HobunjiTitleScreen?.claimStartupBgmAudio?.(track.url) || null; // Takes over the title runtime's already-loaded/already-playing Remembrance element without resetting currentTime.
     const snd = playMusicTrack(track.url, baseVol, fade.songFadeInMs, fade.songFadeOutMs, { loop: track.loop !== false, existingAudio: earlyTitleAudio }); // Persists continuously across title, every pre-game menu/loading surface, and world hydration. Its calibrated default stays below the HTML volume ceiling, so it remains on direct audio unless the user explicitly boosts it high enough to require Web Audio.
     snd._musicEntry = track;
@@ -1252,7 +1252,7 @@
       if (!_ambientCueState.currentCombatBgm && combatTracks.length && performance.now() >= _ambientCueState.blockUntil) {
         const track = combatTracks[Math.floor(Math.random() * combatTracks.length)];
         const fade = musicFadeConfig();
-        const baseVol = Math.max(0, Math.min(1, Number(audioCfg.bgmVolume) || 0.48));
+        const baseVol = Math.max(0, Math.min(1, Number(audioCfg.bgmVolume ?? 0.48)));
         const trackVolMulRaw = Number(track.volumeMultiplier); // Optional authored per-track gain; Ghoul mine music uses 2x while existing tracks remain 1x.
         const trackVolMul = Number.isFinite(trackVolMulRaw) ? Math.max(0, trackVolMulRaw) : 1;
         const repeatWhileCombat = track.loop !== false; // Used by sample-accurate/native looping and the same-transport ended fallback below.
@@ -1331,7 +1331,7 @@
       if (!cue?.file) { scheduleNextCueDelay(); return; }
       const fade = musicFadeConfig();
       const cueUrl = (idx.__basePath || '') + cue.file;
-      const cueBaseVolume = Math.max(0, Math.min(1, Number(cue.volume) || Number(audioCfg.bgmVolume) || 0.7));
+      const cueBaseVolume = Math.max(0, Math.min(1, Number(cue.volume) || Number(audioCfg.bgmVolume ?? 0.7)));
       const snd = playMusicTrack(cueUrl, cueBaseVolume, fade.cueFadeMs, fade.cueFadeMs);
       snd._musicEntry = cue;
       const finishCue = ({ nextMode = 'bgm', retryMs = 0 } = {}) => {
@@ -1383,7 +1383,7 @@
       return;
     }
     const fade = musicFadeConfig();
-    const bgmBaseVolume = Math.max(0, Math.min(1, Number(audioCfg.bgmVolume) || 0.48));
+    const bgmBaseVolume = Math.max(0, Math.min(1, Number(audioCfg.bgmVolume ?? 0.48)));
     const snd = playMusicTrack(bgmUrl, bgmBaseVolume, fade.songFadeInMs, fade.songFadeOutMs, { loop: bgmTrack?.loop === true });
     snd._musicEntry = bgmTrack;
     const finishBgm = ({ nextMode = 'cue_wait', retryMs = 0 } = {}) => {
@@ -1532,7 +1532,7 @@
       ? Math.min(1, (deps.calendar.rainStrength || 0) / 3)
       : 0;
     const weights = rainLayerWeights(intensity);
-    const master = Math.max(0, Number(audioCfg.rainVolume) || 1);
+    const master = Math.max(0, Number(audioCfg.rainVolume ?? 1));
     setLoopingBgs('raingentle', bgs.gentlerain, weights.gentle * (bgs.gentlerainVolume ?? 0.45) * master);
     setLoopingBgs('rainmid',    bgs.midrain,    weights.mid    * (bgs.midrainVolume    ?? 0.55) * master);
     setLoopingBgs('rainheavy',  bgs.heavyrain,  weights.heavy  * (bgs.heavyrainVolume   ?? 0.65) * master);

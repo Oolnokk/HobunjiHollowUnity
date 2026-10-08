@@ -52,7 +52,7 @@
       deps.clampInventoryStack(itemKey);
     }
     const barKey = deps.metalBarItemKey(metalKey); // Used as the existing smithing, plating, and ladder material key.
-    deps.inventory[barKey] = Math.min(99, (deps.inventory[barKey] || 0) + 1);
+    deps.inventory[barKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[barKey] || 0) + 1);
     deps.showToast(`Crafted 1 ${metal.label} Bar!`, true);
     renderCraftingPanel();
     deps.buildInventoryGrid();
@@ -88,7 +88,7 @@
     consumeWood(bp.craftCost.wood);
     deps.inventory.stone -= bp.craftCost.stone;
     deps.clampInventoryStack('stone');
-    deps.inventory[bp.furnitureKey] = Math.min(99, (deps.inventory[bp.furnitureKey] || 0) + 1);
+    deps.inventory[bp.furnitureKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[bp.furnitureKey] || 0) + 1);
     deps.showToast(`Built a ${bp.name}!`, true);
     renderCraftingPanel();
     deps.buildInventoryGrid();

@@ -20,11 +20,11 @@
     { globalKey: 'StableTrainingCompendiumPatch', src: 'js/stable-training-compendium-patch.js?v=20260912stableNative1' },
     { globalKey: 'JubmirDabinggiHounds', src: 'js/jubmir-dabinggi-hounds.js?v=20261006h1a27ed3' },
     { globalKey: 'BARN_INCUBATOR_CONFIG', src: 'config/barn-incubator-config.js?v=20261004h3ebe719' },
-    { globalKey: 'BarnIncubator', src: 'js/barn-incubator.js?v=20261004hc90980e' },
+    { globalKey: 'BarnIncubator', src: 'js/barn-incubator.js?v=20261008hcad7b92' },
     { globalKey: 'BarnLayoutEditorParity', src: 'js/barn-layout-editor-parity.js?v=20261007barnlayout2' },
     { globalKey: 'FarmMenuLayout', src: 'js/farm-menu-layout.js?v=20260915farmui2' },
     { globalKey: 'FarmGlancePalette', src: 'js/farm-glance-palette.js?v=20260916palette1' },
-    { globalKey: 'LivestockNurseryGrid', src: 'js/livestock-nursery-grid.js?v=20260916nurserygrid3' },
+    { globalKey: 'LivestockNurseryGrid', src: 'js/livestock-nursery-grid.js?v=20261008ha48cf12' },
     { globalKey: 'LivestockNurseryInventoryPaging', src: 'js/livestock-nursery-inventory-paging.js?v=20260916nurserypage6' },
     { globalKey: 'LivestockNurseryGridUiFix', src: 'js/livestock-nursery-grid-ui-fix.js?v=20260916uifix1' },
   ];

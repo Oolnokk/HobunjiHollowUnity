@@ -72,7 +72,7 @@
     const gold = deps.inventory.gold || 0;
     if (gold < entry.price) { deps.showToast('Not enough ganang.', false); return; }
     deps.inventory.gold = gold - entry.price;
-    deps.inventory[entry.key] = Math.min(entry.givesGenotype ? 9 : 99, (deps.inventory[entry.key] || 0) + 1);
+    deps.inventory[entry.key] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[entry.key] || 0) + 1);
     if (entry.givesGenotype) window.FarmAnimals.queueItemGenotype(entry.key, stock.eggGenotype);
     stock.purchasedByKey[entry.key] = purchased + 1;
     _saveJubmirStock(stock);

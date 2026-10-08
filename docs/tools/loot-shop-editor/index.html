@@ -482,6 +482,7 @@ function renderShopDetail() {
           <div class="field narrow"><label>Slots</label><input class="fSlots" type="number" value="${def.slots??0}"></div>
           <div class="field narrow"><label>Price</label><input class="fPrice" type="number" value="${def.price??0}"></div>
           <div class="field wide"><label>Plan item key</label><input class="fPlanItem" value="${esc(def.planItem||'')}"></div>
+          <div class="field narrow"><label>Min Town Value</label><input class="fMinTownValue" type="number" min="0" value="${def.minTownValue??0}"></div>
         </div>
         <label>Conditions</label>
         <div class="condPickerHost"></div>
@@ -497,6 +498,7 @@ function renderShopDetail() {
       card.querySelector('.fSlots').addEventListener('input', e => def.slots = parseInt(e.target.value)||0);
       card.querySelector('.fPrice').addEventListener('input', e => def.price = parseInt(e.target.value)||0);
       card.querySelector('.fPlanItem').addEventListener('input', e => def.planItem = e.target.value);
+      card.querySelector('.fMinTownValue').addEventListener('input', e => def.minTownValue = Math.max(0, parseInt(e.target.value) || 0));
       tierEntries.appendChild(card);
     });
     sec.querySelector('#addTierBtn').addEventListener('click', () => {

@@ -10,7 +10,7 @@ const read = rel => fs.readFileSync(path.join(root, rel), 'utf8');
 global.CustomEvent = class CustomEvent { constructor(type, init) { this.type = type; this.detail = init?.detail; } };
 global.document = { getElementById: () => null, querySelector: () => null, dispatchEvent: () => {}, addEventListener: () => {} };
 global.addEventListener = () => {}; // Browser load-hook stand-in used by alchemy-flasks.js's optional UI bootstraps.
-global.window = { SCRATCHBONES_CONFIG: { game: { combat: { resourceSystem: {} } } } };
+global.window = { InventoryStacks: require('./lib/inventory-stacks'), SCRATCHBONES_CONFIG: { game: { combat: { resourceSystem: {} } } } };
 require(path.join(root, 'docs/js/combat/resource-system.js'));
 
 const player = { health: 20, maxHealth: 100, stamina: 40, maxStamina: 100, footing: 50, maxFooting: 100 };

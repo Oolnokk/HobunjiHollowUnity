@@ -40,7 +40,7 @@
         onAction(action) {
           if (action !== 'obj_loot_corpse') return { ok: false, message: 'Unknown action.' };
           if (!key || !corpseDeps?.inventory) return { ok: false, message: 'The fish could not be retrieved.' };
-          corpseDeps.inventory[key] = Math.min(99, (corpseDeps.inventory[key] || 0) + 1);
+          corpseDeps.inventory[key] = Math.min(window.InventoryStacks.MAX_TOTAL, (corpseDeps.inventory[key] || 0) + 1);
           corpseDeps.clampInventoryStack?.(key);
           window.CookingSystem?.recordItemQuality?.(key, stars, 1);
           corpseDeps.corpseObjects?.delete?.(c);

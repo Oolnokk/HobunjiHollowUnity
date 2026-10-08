@@ -149,7 +149,7 @@ assert.match(uiFixSource, /white-space:normal\s*!important/, 'Nursery info note 
 assert.match(uiFixSource, /document\.addEventListener\('focusin',[\s\S]*true\)/, 'controller focus refreshes Grow Up state after the private grid detail updater runs');
 
 assert.match(bridgeSource, /globalKey:\s*'LivestockNurseryOutdoorGrowth'[\s\S]*outdoor1/, 'farm feature bridge loads full-barn outdoor maturation support');
-assert.match(bridgeSource, /globalKey:\s*'LivestockNurseryGrid'[\s\S]*nurserygrid3/, 'farm feature bridge cache-busts the Nursery grid revision used by this compatibility pass');
+assert.match(bridgeSource, /globalKey:\s*'LivestockNurseryGrid',\s*src:\s*'js\/livestock-nursery-grid\.js\?v=[A-Za-z0-9_-]+'/, 'farm feature bridge loads the cache-busted Nursery grid');
 assert.match(bridgeSource, /globalKey:\s*'LivestockNurseryInventoryPaging'[\s\S]*nurserypage6/, 'farm feature bridge loads the observer-safe fixed-page revision');
 assert.match(bridgeSource, /globalKey:\s*'LivestockNurseryGridUiFix'[\s\S]*uifix1/, 'farm feature bridge loads the help/controller compatibility layer after paging');
 assert.match(bridgeSource, /installLivestockNurseryGrid\(\)/, 'farm feature bridge installs the Nursery grid after FarmPanel becomes available');

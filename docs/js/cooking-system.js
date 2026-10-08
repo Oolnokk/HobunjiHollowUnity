@@ -412,7 +412,7 @@
         ingredientKeys: selections.map(({ selected }) => selected.key), // Used by ordinary item-trait inheritance for this cooked stack.
         giftIngredientKeys: selections.map(({ selected }) => selected.key), // Used by specific NPC food preferences; cooked stack identity is unique to this exact ingredient signature.
       });
-      deps.inventory[key] = Math.min(99, (deps.inventory[key] || 0) + servings);
+      deps.inventory[key] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[key] || 0) + servings);
       recordItemQuality(key, stars, servings); // Both servings share the same completed dish quality/effects because the perk increases batch yield, not recipe resolution.
       window.SkillSystem?.award?.('cooking', window.SkillSystem?.XP_GAINS?.cook || 8, recipe.name);
       window.HobunjiActivityEvents?.emit('meal_cooked', { itemKey: key, recipe: recipe.name });

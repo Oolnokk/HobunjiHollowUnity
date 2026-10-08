@@ -596,11 +596,11 @@
     const parts = []; // Used to build the player-facing Gullet treasure summary.
     for (const metalKey of bundle.metalKeys || []) {
       const key = treasureDeps.metalBarItemKey(metalKey); // Used as the inventory item key for the rolled metal bar.
-      treasureDeps.inventory[key] = Math.min(99, (treasureDeps.inventory[key] || 0) + 1);
+      treasureDeps.inventory[key] = Math.min(window.InventoryStacks.MAX_TOTAL, (treasureDeps.inventory[key] || 0) + 1);
       parts.push(`${treasureDeps.ITEM_DEFS?.[key]?.icon || '🔶'} ${treasureDeps.METAL_DEFS?.[metalKey]?.label || metalKey} Bar`);
     }
     for (const dyeItemKey of bundle.dyeItemKeys || []) {
-      treasureDeps.inventory[dyeItemKey] = Math.min(99, (treasureDeps.inventory[dyeItemKey] || 0) + 1);
+      treasureDeps.inventory[dyeItemKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (treasureDeps.inventory[dyeItemKey] || 0) + 1);
       parts.push(`${treasureDeps.ITEM_DEFS?.[dyeItemKey]?.icon || '🎨'} ${treasureDeps.ITEM_DEFS?.[dyeItemKey]?.label || 'Mystery Dye'}`);
     }
     if (bundle.gold > 0) {
@@ -608,15 +608,15 @@
       parts.push(`💰${bundle.gold}g`);
     }
     if (bundle.potionKey) {
-      treasureDeps.inventory[bundle.potionKey] = Math.min(99, (treasureDeps.inventory[bundle.potionKey] || 0) + 1);
+      treasureDeps.inventory[bundle.potionKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (treasureDeps.inventory[bundle.potionKey] || 0) + 1);
       parts.push(`${treasureDeps.ITEM_DEFS?.[bundle.potionKey]?.icon || '🧪'} ${treasureDeps.ITEM_DEFS?.[bundle.potionKey]?.label || 'Potion'}`);
     }
     if (bundle.recipeItemKey) {
-      treasureDeps.inventory[bundle.recipeItemKey] = Math.min(99, (treasureDeps.inventory[bundle.recipeItemKey] || 0) + 1);
+      treasureDeps.inventory[bundle.recipeItemKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (treasureDeps.inventory[bundle.recipeItemKey] || 0) + 1);
       parts.push(`${treasureDeps.ITEM_DEFS?.[bundle.recipeItemKey]?.icon || '📜'} ${treasureDeps.ITEM_DEFS?.[bundle.recipeItemKey]?.label || 'Alchemy Recipe'}`);
     }
     if (bundle.combatManualKey) {
-      treasureDeps.inventory[bundle.combatManualKey] = Math.min(99, (treasureDeps.inventory[bundle.combatManualKey] || 0) + 1);
+      treasureDeps.inventory[bundle.combatManualKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (treasureDeps.inventory[bundle.combatManualKey] || 0) + 1);
       parts.push(`${treasureDeps.ITEM_DEFS?.[bundle.combatManualKey]?.icon || '📕'} ${treasureDeps.ITEM_DEFS?.[bundle.combatManualKey]?.label || 'Combat Manual'}`);
     }
     if (bundle.clothing) {

@@ -53,7 +53,7 @@ for (const [variant, variantData] of Object.entries(cosmetic.speciesVariants)) {
 
 const skillSystemSource = read('docs/js/skill-system.js');
 const metalArmorSource = read('docs/js/metal-armor-system.js');
-const windowStub = {};
+const windowStub = { InventoryStacks: require('./lib/inventory-stacks') };
 const vmContext = {
   window: windowStub,
   document: { querySelector: () => null },

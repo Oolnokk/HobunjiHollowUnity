@@ -182,7 +182,7 @@
     setText('shipRightFooter', isBoxSide(shippingSelected.side) && def ? `${def.label} ×${count}` : panel.text.rightFooter);
     setText('shipDetailIcon', def ? def.icon : panel.iconFallback);
     setText('shipDetailName', def ? def.label : panel.text.detailName);
-    setText('shipDetailValue', def && canShipKey(key) ? `${deps.BASE_PRICES[key]}${panel.text.valueEachSuffix}` : (def ? panel.text.notSellable : panel.emptyValue));
+    setText('shipDetailValue', def && canShipKey(key) ? `${saleValue(deps.BASE_PRICES[key])}${panel.text.valueEachSuffix}` : (def ? panel.text.notSellable : panel.emptyValue));
     setText('shipDetailDesc', def ? `${def.desc}${blocked ? panel.text.blockedSuffix : ''}` : panel.text.detailEmpty);
     const tags = document.getElementById('shipDetailTags');
     if (tags) tags.innerHTML = def
@@ -260,6 +260,11 @@
     try { document.exitPointerLock(); } catch (_) {}
   }
 
+  // Town Value sale bonus (js/town-mine.js), applied wherever an item sale is priced or paid.
+  function saleValue(amount) {
+    return window.TownMine?.applySaleBonus?.(amount) ?? amount;
+  }
+
   function getSellableInventory() {
     if (!deps) return [];
     const fallbackIcon = panelCfg().iconFallback;
@@ -268,7 +273,7 @@
       const price = Number(deps.BASE_PRICES[key]);
       const def = deps.ITEM_DEFS[key];
       if (count < 1 || !Number.isFinite(price) || price < 0 || !def) return [];
-      return [{ key, count, price, icon: def.icon || fallbackIcon, label: def.label || key, desc: def.desc || '', cat: def.cat || '' }];
+      return [{ key, count, price: saleValue(price), icon: def.icon || fallbackIcon, label: def.label || key, desc: def.desc || '', cat: def.cat || '' }];
     });
   }
 
@@ -283,9 +288,9 @@
     // quietly liquidate a prize-quality unit, and prices each consumed
     // quality tier separately so star quality is actually worth something.
     const consumed = window.CookingSystem?.consumeQualityByPolicy?.(key, moved, 'lowest');
-    const earned = consumed
+    const earned = saleValue(consumed
       ? consumed.groups.reduce((sum, group) => sum + Math.round(group.amount * price * window.CookingSystem.valueMultiplierForStars(group.stars)), 0)
-      : moved * price;
+      : moved * price);
     if (!consumed) {
       deps.inventory[key] -= moved;
       deps.clampInventoryStack(key);

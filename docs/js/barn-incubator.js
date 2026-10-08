@@ -342,7 +342,7 @@
     if (refund) {
       const key = ensurePlanItemDef(addition.tier); // Returned to inventory just like relocating a reusable farmhouse room deed.
       const inventory = (panelDeps || carpenterDeps || animalDeps)?.inventory; // Receives the recovered addition plan.
-      if (key && inventory) inventory[key] = Math.min(9, (inventory[key] || 0) + 1);
+      if (key && inventory) inventory[key] = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory[key] || 0) + 1);
     }
     unregisterAdditionObject(additionId);
     disposeExteriorMesh(additionId);
@@ -1030,7 +1030,7 @@
     const gold = Number(deps.inventory.gold) || 0; // Current wallet.
     if (gold < definition.price) return { ok: false, message: `Not enough gold (need ${definition.price}g).` };
     deps.inventory.gold = gold - definition.price;
-    deps.inventory[key] = Math.min(9, (deps.inventory[key] || 0) + 1);
+    deps.inventory[key] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[key] || 0) + 1);
     deps.saveMemberWorldData?.();
     deps.buildInventoryGrid?.();
     deps.showToast?.(`Bought ${definition.label}!`, true);

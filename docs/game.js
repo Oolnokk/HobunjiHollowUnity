@@ -2784,7 +2784,7 @@
         outputs.forEach(output => {
           window.ItemProcessing.ensureProcessedItemDef(output);
           const previousCount = inventory[output.key] || 0; // Used to keep quality buckets aligned when an output stack is full.
-          inventory[output.key] = Math.min(99, previousCount + (1 + bonusUnit) * Math.max(1, Math.floor(Number(yieldMultiplier) || 1)));
+          inventory[output.key] = Math.min(window.InventoryStacks.MAX_TOTAL, previousCount + (1 + bonusUnit) * Math.max(1, Math.floor(Number(yieldMultiplier) || 1)));
           window.CookingSystem?.recordItemQuality?.(output.key, outputStars, inventory[output.key] - previousCount);
         });
         return outputStars;
@@ -4713,7 +4713,7 @@
             const gained = window.LootRolling.rollLootPool(c.def.lootPool);
             const parts = [];
             Object.entries(gained).forEach(([key, qty]) => {
-              inventory[key] = Math.min(99, (inventory[key] || 0) + qty);
+              inventory[key] = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory[key] || 0) + qty);
               // Meat gets a quality roll same as fish/crops; hides and other
               // butchering byproducts don't.
               const meatStars = /meat/i.test(key) ? window.LootRolling.rollItemStars('combat') : null;
@@ -4723,7 +4723,7 @@
             const carriedBabyKey = c.carriedBabyItemKey; // Herd-Mothers expose their carried young only through the corpse interaction, never while alive.
             const carriedBabyCount = Math.max(0, Math.floor(Number(c.carriedBabyCount) || 0));
             if (carriedBabyKey && carriedBabyCount > 0) {
-              inventory[carriedBabyKey] = Math.min(99, (inventory[carriedBabyKey] || 0) + carriedBabyCount);
+              inventory[carriedBabyKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory[carriedBabyKey] || 0) + carriedBabyCount);
               parts.push(`${itemIconForKey(carriedBabyKey)}×${carriedBabyCount} ${ITEM_DEFS[carriedBabyKey]?.label || carriedBabyKey}`);
               c.carriedBabyCount = 0; // One-shot even if an external caller somehow re-enters corpse action before despawn completes.
             }
@@ -8477,6 +8477,7 @@
           member.felledTreeState = serializeZoneFelledTreeState();
           member.minedRockState = serializeZoneMinedRockState();
           member.townMineState = window.TownMine?.serialize?.() || null;
+          member.slagothimTradersState = window.SlagothimTraders?.serialize?.() || null;
           member.doorstepVisitState = window.DoorstepVisits?.serialize?.() || {};
           member.romanceState = window.RomanceSystem?.serialize?.() || null;
           // Only ever consumed on the next boot if it lands in a wilderness
@@ -8640,6 +8641,7 @@
         await _tothalCacheSet(key, {
           workspace: {
             entry: workspace.entry || null,
+            tradeExit: workspace.tradeExit || null,
             animalDens: workspace.animalDens || [],
             localeInstances: workspace.localeInstances || [],
             localeTransitions: (workspace.maps || []).find(map => map && !map.isSubmap)?.transitions?.filter(t => t?.generatedLocaleId) || [], // Restored zones need the stamped cave entrances as well as their instance markers.
@@ -8899,6 +8901,7 @@
                 ...denTransitions,
               ],
               toTownExit, mesas: merged.mesas, buildings: [...(merged.buildings || []), ...tentBuilding], decor: tentDecor, furniture: [],
+              tradeExit: workspace.tradeExit || null, // Southern Cloud Forest's road out of the region — see js/slagothim-traders.js.
               dens: workspace.animalDens || [],
               rootTotems: workspace.rootTotems || [],
               foliagePatches: workspace.foliagePatches || [],
@@ -9850,7 +9853,7 @@
             inventory[active.key] = Math.max(0, (inventory[active.key] || 0) - 1);
             clampInventoryStack(active.key);
             const out = outputs[0];
-            inventory[out.key] = Math.min(99, (inventory[out.key] || 0) + 1);
+            inventory[out.key] = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory[out.key] || 0) + 1);
             window.HudUpdate.refreshItemScroll(); buildInventoryGrid(); refreshActionBar();
             saveMemberWorldData();
             window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().processHandmill);
@@ -11015,81 +11018,19 @@
         return window.SCRATCHBONES_CONFIG?.game?.mobileControls?.npcDialogueButton || {};
       }
       function npcDialogueAction() { return npcDialogueButtonConfig().action || 'npc_dialogue'; }
-      function smithyButtonConfig() {
-        return window.SCRATCHBONES_CONFIG?.game?.mobileControls?.smithyButton || {};
-      }
-      function smithyAction() { return smithyButtonConfig().action || 'open_smithy'; }
-      function isSmithyNpcInBronzeworks(walker) {
-        const cfg = smithyButtonConfig();
-        const ids = Array.isArray(cfg.npcIds) ? cfg.npcIds : ['kzubug', 'sloomi'];
-        return currentArea === (cfg.areaId || 'map_i_smithy') && ids.includes(walker?.rec?.id || '');
-      }
-      function smithyButton() {
-        const cfg = smithyButtonConfig();
-        const name = nearbyNpcWalker?.rec?.name;
-        return {
-          icon: cfg.icon || '🔨',
-          label: name ? `${cfg.label || 'Smithy'}: ${name}` : (cfg.label || 'Smithy'),
-          action: smithyAction(),
-          style: cfg.style || 'primary',
-          allowed: true,
-        };
-      }
-      function generalStoreButtonConfig() {
-        return window.SCRATCHBONES_CONFIG?.game?.mobileControls?.generalStoreButton || {};
-      }
-      function generalStoreAction() { return generalStoreButtonConfig().action || 'open_general_store'; }
-      function isGeneralStoreNpcOnDuty(walker) {
-        const cfg = generalStoreButtonConfig();
-        const ids = Array.isArray(cfg.npcIds) ? cfg.npcIds : ['furunji_funji', 'foroji_funji'];
-        const stationLabels = Array.isArray(cfg.stationLabels) ? cfg.stationLabels : [];
-        const npcId = walker?.rec?.id || '';
-        const target = walker?.currentScheduleTarget || null;
-        const stationLabel = normalizeStationLabel(target?.label);
-        const isAtStation = walker?.state === 'idle' && target && Number.isFinite(target.c) && Number.isFinite(target.r)
-          && Math.hypot(walker.root.position.x - (target.c + 0.5), walker.root.position.z - (target.r + 0.5)) <= (npcMovementConfig().arrivalRadiusTiles ?? 0.18);
-        return ids.includes(npcId) && isAtStation && stationLabels.some(label => stationLabel === normalizeStationLabel(label));
-      }
-      function generalStoreButton() {
-        const cfg = generalStoreButtonConfig();
-        const name = nearbyNpcWalker?.rec?.name;
-        return {
-          icon: cfg.icon || '🛒',
-          label: name ? `${cfg.label || 'Shop'}: ${name}` : (cfg.label || 'Shop'),
-          action: generalStoreAction(),
-          style: cfg.style || 'primary',
-          allowed: true,
-        };
-      }
-
-      // ── Carpenter's shop — mirrors the General Store's NPC-gated shop
-      // button pattern above, but for barn plans instead of goods/clothing.
-      function carpenterButtonConfig() {
-        return window.SCRATCHBONES_CONFIG?.game?.mobileControls?.carpenterButton || {};
-      }
-      function carpenterAction() { return carpenterButtonConfig().action || 'open_carpenter_shop'; }
-      function isCarpenterNpcOnDuty(walker) {
-        const cfg = carpenterButtonConfig();
-        const ids = Array.isArray(cfg.npcIds) ? cfg.npcIds : ['dzibim_khibu'];
-        const stationLabels = Array.isArray(cfg.stationLabels) ? cfg.stationLabels : ['Carpentry Work'];
-        const npcId = walker?.rec?.id || '';
-        const target = walker?.currentScheduleTarget || null;
-        const stationLabel = normalizeStationLabel(target?.label);
-        const isAtStation = walker?.state === 'idle' && target && Number.isFinite(target.c) && Number.isFinite(target.r)
-          && Math.hypot(walker.root.position.x - (target.c + 0.5), walker.root.position.z - (target.r + 0.5)) <= (npcMovementConfig().arrivalRadiusTiles ?? 0.18);
-        return ids.includes(npcId) && isAtStation && stationLabels.some(label => stationLabel === normalizeStationLabel(label));
-      }
-      function carpenterButton() {
-        const cfg = carpenterButtonConfig();
-        const name = nearbyNpcWalker?.rec?.name;
-        return {
-          icon: cfg.icon || '🪚',
-          label: name ? `${cfg.label || 'Carpenter'}: ${name}` : (cfg.label || 'Carpenter'),
-          action: carpenterAction(),
-          style: cfg.style || 'primary',
-          allowed: true,
-        };
-      }
+      // Smithy / General Store / Carpenter shop-counter buttons (config,
+      // on-duty checks, arch buttons) now live in js/npc-shop-buttons.js;
+      // these names stay as aliases for the call sites below and above.
+      window.NpcShopButtons.init({
+        getCurrentArea: () => currentArea,
+        getNearbyNpcWalker: () => nearbyNpcWalker,
+        npcMovementConfig,
+      });
+      const {
+        smithyButtonConfig, smithyAction, isSmithyNpcInBronzeworks, smithyButton,
+        generalStoreButtonConfig, generalStoreAction, isGeneralStoreNpcOnDuty, generalStoreButton,
+        carpenterButtonConfig, carpenterAction, isCarpenterNpcOnDuty, carpenterButton,
+      } = window.NpcShopButtons;
 
       // INSTRUMENT_NPC_DEFS, isNpcOnDutyAtStation, listInstrumentPerformers,
       // and window.__farmDebugTools now live in js/npc-scheduling.js —
@@ -15527,7 +15468,7 @@
         for (const o of arriving) {
           const item = o.item;
           Object.entries(item.gives).forEach(([k, v]) => {
-            inventory[k] = Math.min(99, (inventory[k] || 0) + v * o.qty);
+            inventory[k] = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory[k] || 0) + v * o.qty);
           });
           const line = 'Day ' + today + ' — ' + o.qty + '× ' + item.name + ' delivered';
           deliveryLog.unshift({ type: 'delivery', text: line });
@@ -16196,12 +16137,14 @@
         if (!grid) return;
         grid.innerHTML = '';
         const keys = getInventoryStackKeys(invActiveCat);
-        const visibleSlotCount = Math.max(INVENTORY_EMPTY_SLOT_FLOOR, Math.ceil(Math.max(keys.length, 1) / 7) * 7);
+        // A count past InventoryStacks.STACK_SIZE spills into extra boxes of
+        // the same item (250 -> 99, 99, 52) rather than one oversized stack.
+        const boxStacks = keys.flatMap(key => window.InventoryStacks.stackCounts(inventory[key] || 0).map(count => ({ key, count })));
+        const visibleSlotCount = Math.max(INVENTORY_EMPTY_SLOT_FLOOR, Math.ceil(Math.max(boxStacks.length, 1) / 7) * 7);
 
         const _slotAbbr = { hoe:'H', shovel:'Sh', axe:'Ax', pick:'Pk', harpoon:'Hp', weapon:'W', ranged:'R' };
-        keys.forEach(key => {
+        boxStacks.forEach(({ key, count }) => {
           const def   = ITEM_DEFS[key];
-          const count = inventory[key] || 0;
           const box   = document.createElement('button');
           box.className = 'inv-item-box' + (key === invSelectedKey ? ' selected' : '');
           box.dataset.key = key;
@@ -16223,7 +16166,7 @@
           grid.appendChild(box);
         });
 
-        for (let i = keys.length; i < visibleSlotCount; i++) {
+        for (let i = boxStacks.length; i < visibleSlotCount; i++) {
           const box = document.createElement('button');
           box.className = 'inv-item-box empty';
           box.type = 'button';
@@ -17880,53 +17823,14 @@
           if (action === 'harvest') return Boolean(tile.crop && tile.cropReady);
           const crop = action.startsWith('plant_') ? action.slice(6) : null;
           if (!crop || tile.crop || !cropData[crop]) return false;
-          if (inventory[cropData[crop].seedKey] <= 0) return false;
+          if ((Number(inventory[cropData[crop].seedKey]) || 0) <= 0) return false; // A spent stack is deleted, and undefined <= 0 is false.
           return canPlantCropOnTile(crop, tile);
         }
         return false;
       }
 
-      function plantCrop(tile, crop) {
-        const data = cropData[crop];
-        if (!data) return { ok: false, message: 'Unknown crop.' };
-        if (inventory[data.seedKey] <= 0) return { ok: false, message: `No ${data.label} seeds left.` };
-        if (tile.crop) return { ok: false, message: 'Something is already growing here.' };
-        if (!canPlantCropOnTile(crop, tile))
-          return { ok: false, message: 'Can only plant on tilled or raised soil.' };
-        inventory[data.seedKey]--;
-        clampInventoryStack(data.seedKey);
-        tile.crop = crop;
-        tile.cropAge = 0;
-        tile.cropReady = false;
-        tile.stress = '';
-        const idealPct = Math.round(data.idealMin * 100) + '–' + Math.round(data.idealMax * 100);
-        const ditchNote = data.needsAdjacentDitch ? ' Grows well beside adjacent ditches.' : '';
-        return { ok: true, message: `Planted ${data.emoji} ${data.label}. Ideal water: ${idealPct}%.${ditchNote}` };
-      }
-
-      function harvestCrop(tile) {
-        if (!tile.crop) return { ok: false, message: 'Nothing to harvest here.' };
-        if (!tile.cropReady) return { ok: false, message: `${tile.crop} isn't ready yet.` };
-        const data = cropData[tile.crop];
-        // Bountiful Harvest (Farming perk): a chance for one extra crop unit
-        // from the same harvest, capped well below Foraging/Mining's yield
-        // perks since processed goods already amplify quality economically.
-        const bonusChance = Math.min(0.3, (window.PerkSystem?.rank('farming', 'bountifulHarvest') || 0) * 0.06);
-        const amount = 1 + ((window.GameRandom?.random?.() ?? Math.random()) < bonusChance ? 1 : 0);
-        inventory[data.cropKey] = Math.min(99, (inventory[data.cropKey] || 0) + amount);
-        const stars = window.LootRolling.rollItemStars('farming');
-        window.CookingSystem.recordItemQuality(data.cropKey, stars, amount);
-        window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.crop || 10, `harvested ${data.label}`);
-        window.HobunjiActivityEvents?.emit('crop_harvested', { cropKey: data.cropKey, label: data.label });
-        const msg = `Harvested ${window.LootRolling.starRatingText(stars)} ${data.emoji} ${data.label}${amount > 1 ? ` ×${amount}` : ''}!`;
-        tile.crop = CropType.NONE;
-        tile.fertilized = false; // Fertilizer is consumed by this harvest, never carried into the next planting.
-        tile.cropAge = 0;
-        tile.cropReady = false;
-        tile.stress = '';
-        window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().harvest);
-        return { ok: true, message: msg };
-      }
+      // plantCrop/harvestCrop now live in js/crop-planting.js.
+      window.CropPlanting.init({ inventory, cropData, CropType, canPlantCropOnTile, clampInventoryStack });
 
       function getMacheteTargets(col, row, action) {
         const acols = window.GridTileAccessors.getActiveCols(), arows = window.GridTileAccessors.getActiveRows();
@@ -17963,7 +17867,7 @@
             if (tile.type === TileType.SHRUB && isChoppableTreeTile(t.col, t.row)) continue;
             const previousType = tile.type; // Used to choose the targeted zone visual replacement below.
             tile.type = TileType.GRASS;
-            inventory.mulch = Math.min(99, inventory.mulch + 1);
+            inventory.mulch = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory.mulch || 0) + 1);
             // markTileDirty indexes the farm's own small grid (see its
             // declaration) — calling it with a wilderness zone's col/row
             // (up to 100x100) reads past the farm grid's bounds. Zones get
@@ -18005,7 +17909,7 @@
 
             const previousType = tile.type; // Used to remove/cover the matching runtime visual.
             tile.type = TileType.GRASS;
-            inventory.mulch = Math.min(99, inventory.mulch + 1);
+            inventory.mulch = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory.mulch || 0) + 1);
             if (currentArea === 'farm') markTileDirty(col, row);
             else if (_isZoneArea(currentArea)) window.ZoneRegrowth.updateClearedZoneVegetationVisual(currentArea, col, row, previousType);
             cleared++;
@@ -18620,7 +18524,7 @@
             tile.dewPile = null;
             window.DewVats.removeMesh(col, row);
             const dewKey = window.ItemProcessing.dewItemKey(colorKey);
-            inventory[dewKey] = Math.min(99, (inventory[dewKey] || 0) + 1);
+            inventory[dewKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory[dewKey] || 0) + 1);
             awardToolUseMasteryXp('shovel');
             window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.dig || 1, 'dug dew');
             window.FarmEditor.saveFarmLayout();
@@ -18667,12 +18571,12 @@
           const _felledEntries = _zoneFelledTreePersist.get(currentArea) || [];
           _felledEntries.push({ col, row, feltDay: calendar.day });
           _zoneFelledTreePersist.set(currentArea, _felledEntries);
-          inventory[logKey] = Math.min(99, (inventory[logKey] || 0) + amount);
-          inventory.mulch = Math.min(99, inventory.mulch + 1);
+          inventory[logKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory[logKey] || 0) + amount);
+          inventory.mulch = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory.mulch || 0) + 1);
           let addedNutAmount = 0; // Used to report the actual amount accepted when the nut stack is nearly full.
           if (nutDrop) {
             const previousNutCount = inventory[nutDrop.itemKey] || 0; // Used to avoid tracking quality for units discarded by the stack cap.
-            inventory[nutDrop.itemKey] = Math.min(99, previousNutCount + nutDrop.amount);
+            inventory[nutDrop.itemKey] = Math.min(window.InventoryStacks.MAX_TOTAL, previousNutCount + nutDrop.amount);
             addedNutAmount = inventory[nutDrop.itemKey] - previousNutCount;
             window.CookingSystem?.recordItemQuality?.(nutDrop.itemKey, nutDrop.stars, addedNutAmount);
           }
@@ -18712,17 +18616,17 @@
             _minedEntries.push({ col, row, minedDay: calendar.day });
             _zoneMinedRockPersist.set(currentArea, _minedEntries);
           }
-          inventory.stone = Math.min(99, (inventory.stone || 0) + amount);
+          inventory.stone = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory.stone || 0) + amount);
           let metalMessage = ''; // Used to append raw ore rewards without changing ordinary farm/wilderness rock messaging.
           if (minedOreKey && ORE_DEFS[minedOreKey]) {
             const oreAmount = window.TownMine?.rollOreYield?.(rnd, bonus) ?? (1 + (rnd() < 0.5 ? 1 : 0) + bonus); // One or two ore averages 1.5 before the separate +1 Mining yield perk roll.
             const oreItemKey = metalOreItemKey(minedOreKey); // Used to feed the Crafting pane without ever minting a bar directly from a rock.
-            inventory[oreItemKey] = Math.min(99, (inventory[oreItemKey] || 0) + oreAmount);
+            inventory[oreItemKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory[oreItemKey] || 0) + oreAmount);
             window.TownMine?.recordHeldOres?.([minedOreKey]);
             metalMessage = ` and ${oreAmount} ${ORE_DEFS[minedOreKey].label}`;
           }
           const gotPebble = Math.random() < 0.35;
-          if (gotPebble) inventory.pebble = Math.min(99, (inventory.pebble || 0) + 1);
+          if (gotPebble) inventory.pebble = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory.pebble || 0) + 1);
           // Farm rocks use ordinary per-tile mesh rebuilding. Wilderness
           // resource rocks are individually indexed, so remove only this
           // mound and skip the expensive full-zone ground reconstruction.
@@ -18772,9 +18676,9 @@
         }
 
         if (tool === 'seeds') {
-          if (action === 'harvest') return harvestCrop(tile);
+          if (action === 'harvest') return window.CropPlanting.harvestCrop(tile);
           const crop = action.startsWith('plant_') ? action.slice(6) : null;
-          return plantCrop(tile, crop);
+          return window.CropPlanting.plantCrop(tile, crop);
         }
 
         return { ok: false, message: 'No action handler found.' };
@@ -18916,6 +18820,10 @@
         }
         if (activeAction === 'npc_open_wardrobe') {
           window.NpcWardrobe?.openWardrobePanel?.(nearbyNpcWalker?.rec?.id);
+          return;
+        }
+        if (activeAction === 'npc_slagothim_trade') {
+          window.SlagothimTraders?.openTrade?.(nearbyNpcWalker);
           return;
         }
         // The frame update owns the five-second aimed nest hold; do not let
@@ -19111,9 +19019,9 @@
         } else if (action.startsWith('place_')) {
           result = placeProcessingFurniture(col, row, action.slice(6));
         } else if (action.startsWith('plant_')) {
-          result = plantCrop(tile, action.slice(6));
+          result = window.CropPlanting.plantCrop(tile, action.slice(6));
         } else if (action === 'harvest') {
-          result = harvestCrop(tile);
+          result = window.CropPlanting.harvestCrop(tile);
         } else {
           result = applyAction(tool, action, col, row);
         }
@@ -24694,7 +24602,10 @@
         const currentHour = window.CalendarSystem.getHour();
         if (Math.floor(previousHour) !== Math.floor(currentHour)) {
           window.WeatherFX.updateRainState();
-          if (Math.floor(currentHour) === MORNING_HOUR) { tickCropDay(); window.WeatherFX.checkForMajorStorm(); worldObjectMorningTick(); }
+          // Hour 6 is only ever entered by the time01 wrap above, which has
+          // already run advanceDay() -> tickCropDay() this frame; ticking crops
+          // here too grew every crop (and ran irrigation) twice per day.
+          if (Math.floor(currentHour) === MORNING_HOUR) { window.WeatherFX.checkForMajorStorm(); worldObjectMorningTick(); }
           // Breeding progress ticks per in-game hour crossed (rather than
           // once per day) so a pair's bar visibly creeps forward through
           // the day and can complete the moment it fills, not just at the
@@ -24757,6 +24668,7 @@
         checkTothalShift();
         window.WildlifeSpawn.clearPendingDenRespawn();
         window.ReagentPlants.respawnAllZoneReagents();
+        window.WildBerries.respawnAll(); // Same daily respawn advanceDay() runs.
         window.WildTreasure.respawnAll();
         window.ZoneRegrowth.tickFelledTreeRegrowth();
         window.ZoneRegrowth.tickMinedRockRegrowth();
@@ -25022,6 +24934,12 @@
 
         // NPC dialogue takes priority over tool use on touch controls and mirrors the primary-action keyboard path.
         if (nearbyNpcWalker && !farmEditMode) {
+          // Slagothim caravan members are transient visitors: Talk + Trade only
+          // (see js/slagothim-traders.js), no gifts/wardrobe/command wheel.
+          if (window.SlagothimTraders?.isTraderWalker?.(nearbyNpcWalker)) {
+            const tradeButton = window.SlagothimTraders.actionButtonFor(nearbyNpcWalker);
+            return tradeButton ? [npcDialogueButton(), tradeButton] : [npcDialogueButton()];
+          }
           const btns = nearbyNpcWalker.isPorakanekiHunter ? [] : [npcDialogueButton()];
           // Smithy is deliberately inserted directly after Talk so it is
           // always Action 2 when either Bronzeworks smith is being faced.
@@ -25514,7 +25432,7 @@
               // same story: it's pure traversal, not a tool swing, so a leftover
               // toolSwingT from whatever was equipped before walking up to a
               // cliff shouldn't be able to eat the tap either.
-              const isNavAction = act === npcDialogueAction() || act === smithyAction() || act === generalStoreAction() || act === carpenterAction() || act === 'npc_offer_alcohol_swig' || act === 'npc_offer_gift' || act === 'npc_open_wardrobe' || act === 'use_spot' || act === 'obj_exit_house' || act === 'climb' || act.startsWith('obj_') || act.startsWith('fish_');
+              const isNavAction = act === npcDialogueAction() || act === smithyAction() || act === generalStoreAction() || act === carpenterAction() || act === 'npc_offer_alcohol_swig' || act === 'npc_offer_gift' || act === 'npc_open_wardrobe' || act === 'npc_slagothim_trade' || act === 'use_spot' || act === 'obj_exit_house' || act === 'climb' || act.startsWith('obj_') || act.startsWith('fish_');
               // Same reasoning again for every item-mode action (place_campfire_kit,
               // consume_food_item, plant_*, alchemy_flask_*, ...): none of them are
               // tool swings either, so a leftover toolSwingT from whatever tool was
@@ -28650,7 +28568,7 @@
         getNpcRecordById: npcId => scheduledNpcRecords.get(npcId) || npcWalkers.find(walker => walker.rec?.id === npcId)?.rec || null, // Canonical live preference source used to reconcile saved learned gift tiers after authored data changes.
         getHeldGiftItem,
         random: rnd,
-        getInventoryMax: key => inventoryItems.find(item => item.key === key)?.max ?? 99,
+        getInventoryMax: () => window.InventoryStacks.MAX_TOTAL, // Past 99 an item spills into another bag box (js/inventory-stacks.js).
         getPorakanekiRewardPools: () => {
           const zone = EXTERIOR_ZONES[currentArea] || {}; // Uses live species overrides, including Puktuk and Voorg-Ass registration.
           const species = [...new Set([...(zone.packSpecies || []), ...(zone.herbivoreSpecies || []), ...(zone.roamingHerdSpecies || []), ...(currentArea === 'map_southern_cloud_forest' ? ['drenkirra'] : [])])]; // Tree-nesting Drenkirra are native cloud-forest wildlife outside the den pools.
@@ -28800,7 +28718,7 @@
           Object.entries(gained || {}).forEach(([key, qty]) => {
             if (!(qty > 0)) return;
             if (key === 'gold') inventory.gold = (inventory.gold || 0) + qty;
-            else inventory[key] = Math.min(99, (inventory[key] || 0) + qty);
+            else inventory[key] = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory[key] || 0) + qty);
             parts.push(itemIconForKey(key) + '×' + qty);
           });
           if (parts.length) { window.HudUpdate.refreshItemScroll(); buildInventoryGrid(); refreshActionBar(); }
@@ -29355,6 +29273,36 @@
         esc: window.FormatUtils.esc,
         buildInventoryGrid,
         saveMemberWorldData,
+      });
+
+      // Slagothim trade caravans (road travel, trading, notices, compass)
+      // live in js/slagothim-traders.js.
+      window.SlagothimTraders?.init({
+        calendar,
+        inventory,
+        ITEM_DEFS,
+        BASE_PRICES,
+        EXTERIOR_ZONES,
+        VERDIGRIS_METAL_KEYS,
+        metalBarItemKey,
+        npcWalkers,
+        makeNpcWalker,
+        despawnNpcWalker: despawnNpcVisitor,
+        npcSurfaceY,
+        getZoneLayout: zoneId => _zoneLayouts.get(zoneId),
+        getTownGrid: () => townGrid,
+        isTownTileWalkable: (c, r) => window.NpcPathfinding.isNpcTileWalkable('town', c, r),
+        getCurrentArea: () => currentArea,
+        getPlayerTile: () => ({ col: player.x / TILE, row: player.y / TILE }),
+        // Dev Companion "Go to caravan" only (see the module's companion panel).
+        setPlayerTile: (col, row) => { player.x = col * TILE; player.y = row * TILE; },
+        travelTo: (area, col, row) => area === 'town' ? enterTown(col, row) : enterZone(area, col, row),
+        tothalWorldId: _tothalWorldId,
+        showToast,
+        esc: window.FormatUtils.esc,
+        buildInventoryGrid,
+        refreshActionBar,
+        save: saveMemberWorldData,
       });
 
       window.DyeSystem?.init({
@@ -29972,6 +29920,7 @@
         restoreZoneFelledTreeState(playerData.felledTreeState);
         restoreZoneMinedRockState(playerData.minedRockState);
         window.TownMine?.restore?.(playerData.townMineState);
+        window.SlagothimTraders?.restore?.(playerData.slagothimTradersState);
         // Potion items just restored into `inventory` above have no ITEM_DEFS
         // entry yet this page load (ITEM_DEFS starts empty of them every
         // session, unlike the static reagent/furniture/fish tables) — rebuild

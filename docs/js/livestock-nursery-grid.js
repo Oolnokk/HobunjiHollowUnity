@@ -644,7 +644,8 @@
     const index = list.findIndex(entry => String(entry.id) === String(id));
     const entry = index >= 0 ? list[index] : null;
     if (!entry || !isBaby(entry)) return { ok: false, message: 'That Nursery baby was not found.' };
-    const value = babyValueFor(entry);
+    const rawValue = babyValueFor(entry);
+    const value = { ...rawValue, amount: window.TownMine?.applySaleBonus?.(rawValue.amount) ?? rawValue.amount }; // Town Value sale bonus.
     list.splice(index, 1);
     cleanupBabyBreedingRefs(entry.id);
     animalDeps?.saveWorldLivestock?.(list);

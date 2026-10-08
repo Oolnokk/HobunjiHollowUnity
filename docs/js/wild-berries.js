@@ -91,10 +91,10 @@
       },
       onAction(action) {
         if (action !== 'obj_pick_berry') return { ok: false, message: 'Unknown action.' };
-        deps.inventory[berryKey] = Math.min(99, (deps.inventory[berryKey] || 0) + 1);
+        deps.inventory[berryKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[berryKey] || 0) + 1);
         let seedMsg = '';
         if (Math.random() < WILD_BERRY_SEED_CHANCE) {
-          deps.inventory[data.seedKey] = Math.min(99, (deps.inventory[data.seedKey] || 0) + 1);
+          deps.inventory[data.seedKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[data.seedKey] || 0) + 1);
           seedMsg = ' and found a seed!';
         }
         deps._zoneScenes.get(mapId)?.scene.remove(mesh);
