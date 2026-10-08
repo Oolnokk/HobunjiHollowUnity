@@ -57,6 +57,7 @@ const toasts = [];
 let townValue = 0; // Larger barn additions are a Town Value perk (shop-stock minTownValue).
 const window = {
   TownMine: { getTownValue: () => townValue },
+  InventoryStacks: require('./lib/inventory-stacks'),
   ConditionRegistry: { entryEligible: () => true },
   LootRolling: { getShopStock: () => stock.shops },
 };

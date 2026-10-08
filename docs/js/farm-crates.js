@@ -494,11 +494,10 @@
         // Bound the move by how much room is actually left in the pack stack
         // (not just how much is in the box) — moved is what's both taken out
         // of the box AND added to the pack below. Clamping only the deposit
-        // side (inventory[key] to maxStack) after already removing the full
+        // side (inventory[key] to the bag ceiling) after already removing the full
         // qty from bin used to vanish the overflow: it left the box, but the
         // pack stack was already at/near its cap, so it never arrived there.
-        const maxStack = Number(inventoryCfg().maxStack);
-        const room = Math.max(0, maxStack - (deps.inventory[key] || 0));
+        const room = Math.max(0, window.InventoryStacks.MAX_TOTAL - (deps.inventory[key] || 0)); // Past 99 the pack shows another stack (js/inventory-stacks.js).
         const moved = Math.max(0, Math.min(qty, bin[key] || 0, room));
         if (moved < 1) return 0;
         bin[key] -= moved;
@@ -562,7 +561,7 @@
           const qty = qtys[key] || 0;
           if (qty < 1) return { ok: false, message: 'Select a quantity first.' };
           const cost = item.price * qty;
-          if (deps.inventory.gold < cost) return { ok: false, message: 'Not enough gold. Need ' + cost + 'g.' };
+          if ((Number(deps.inventory.gold) || 0) < cost) return { ok: false, message: 'Not enough gold. Need ' + cost + 'g.' };
           deps.inventory.gold -= cost;
           deps.getPendingOrders().push({ key, qty, arrivalDay: deps.calendar.day + 1, item });
           qtys[key] = 0;

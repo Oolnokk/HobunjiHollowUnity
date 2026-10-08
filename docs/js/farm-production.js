@@ -200,7 +200,7 @@
     if (!entry) return { ok: false, message: 'Building not found.' };
     let collected = 0; // No result disappears when the personal stack limit is reached.
     for (const result of entry.ready) {
-      const amount = Math.min(result.count, Math.max(0, 99 - (Number(deps.inventory[result.key]) || 0))); // Per-item bag capacity.
+      const amount = Math.min(result.count, Math.max(0, window.InventoryStacks.MAX_TOTAL - (Number(deps.inventory[result.key]) || 0))); // Per-item bag capacity.
       deps.inventory[result.key] = (Number(deps.inventory[result.key]) || 0) + amount;
       window.CookingSystem?.recordItemQuality?.(result.key, result.stars, amount);
       result.count -= amount; collected += amount;

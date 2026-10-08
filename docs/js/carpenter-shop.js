@@ -42,6 +42,13 @@
       : `<button class="shop-buy-btn" ${dataAttr}>Buy</button>`;
   }
 
+  // Blueprints are never consumed by building (see CraftingPanel's
+  // ownsBlueprint) and sell for 0g, so a second copy is wasted gold.
+  function ownsBlueprint(bp) {
+    if ((Number(deps.inventory[bp?.key]) || 0) > 0) return true;
+    return !!(bp?.masteryUnlockId && window.CraftingMasterySystem?.hasUnlock?.(bp.masteryUnlockId));
+  }
+
   function _barnAdditions() {
     return window.LootRolling?.getShopStock?.()?.carpenterBarnPlans?.additions || {};
   }
@@ -52,7 +59,7 @@
     const gold = deps.inventory.gold || 0;
     if (gold < tierDef.price) { deps.showToast('Not enough ganang.', false); return; }
     deps.inventory.gold = gold - tierDef.price;
-    deps.inventory[tierDef.planItem] = Math.min(9, (deps.inventory[tierDef.planItem] || 0) + 1);
+    deps.inventory[tierDef.planItem] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[tierDef.planItem] || 0) + 1);
     deps.showToast(`Bought a ${tierDef.label} plan!`, true);
     renderCarpenterShopPage();
     deps.buildInventoryGrid();
@@ -69,7 +76,7 @@
     const gold = deps.inventory.gold || 0;
     if (gold < def.price) { deps.showToast('Not enough ganang.', false); return; }
     deps.inventory.gold = gold - def.price;
-    deps.inventory[def.planItem] = Math.min(9, (deps.inventory[def.planItem] || 0) + 1);
+    deps.inventory[def.planItem] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[def.planItem] || 0) + 1);
     deps.showToast(`Bought a ${def.label}!`, true);
     renderCarpenterShopPage();
     deps.buildInventoryGrid();
@@ -85,7 +92,7 @@
     const gold = deps.inventory.gold || 0;
     if (gold < def.price) { deps.showToast('Not enough ganang.', false); return; }
     deps.inventory.gold = gold - def.price;
-    deps.inventory[def.deedItem] = Math.min(9, (deps.inventory[def.deedItem] || 0) + 1);
+    deps.inventory[def.deedItem] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[def.deedItem] || 0) + 1);
     deps.showToast(`Bought a ${def.label}!`, true);
     renderCarpenterShopPage();
     deps.buildInventoryGrid();
@@ -100,10 +107,11 @@
   function buyFurnitureBlueprint(blueprintKey) {
     const bp = deps.FURNITURE_BLUEPRINT_CATALOG.find(b => b.key === blueprintKey);
     if (!bp || bp.moteOnly) return;
+    if (ownsBlueprint(bp)) { deps.showToast(`You already own the ${bp.name} blueprint.`, false); return; }
     const gold = deps.inventory.gold || 0;
     if (gold < bp.price) { deps.showToast('Not enough ganang.', false); return; }
     deps.inventory.gold = gold - bp.price;
-    deps.inventory[bp.key] = Math.min(9, (deps.inventory[bp.key] || 0) + 1);
+    deps.inventory[bp.key] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[bp.key] || 0) + 1);
     deps.showToast(`Bought a ${bp.name} blueprint!`, true);
     renderCarpenterShopPage();
     deps.buildInventoryGrid();
@@ -193,19 +201,19 @@
     list.appendChild(bpHdr);
 
     deps.FURNITURE_BLUEPRINT_CATALOG.filter(bp => !bp.moteOnly && window.ConditionRegistry.entryEligible(bp, world)).forEach(bp => {
-      const owned = deps.inventory[bp.key] || 0;
+      const owned = ownsBlueprint(bp);
       const row = document.createElement('div');
       row.className = 'shop-row';
       row.innerHTML = `
         <div class="sh-icon">${bp.icon}</div>
         <div class="sh-info">
           <div class="sh-name">${deps.esc(bp.name)} Blueprint</div>
-          <div class="sh-desc">Build with ${bp.craftCost.wood} Wood + ${bp.craftCost.stone} Stone in the Crafting tab. Owned: ${owned}</div>
-          <div class="sh-price">${bp.price}g each</div>
+          <div class="sh-desc">Build with ${bp.craftCost.wood} Wood + ${bp.craftCost.stone} Stone in the Crafting tab.${owned ? ' Already owned — reusable.' : ''}</div>
+          <div class="sh-price">${bp.price}g</div>
         </div>
-        <button class="shop-buy-btn" data-bp="${bp.key}">Buy</button>
+        <button class="shop-buy-btn" data-bp="${bp.key}" ${owned ? 'disabled' : ''}>${owned ? 'Owned' : 'Buy'}</button>
       `;
-      row.querySelector('[data-bp]')?.addEventListener('click', () => buyFurnitureBlueprint(bp.key));
+      if (!owned) row.querySelector('[data-bp]')?.addEventListener('click', () => buyFurnitureBlueprint(bp.key));
       list.appendChild(row);
     });
   }

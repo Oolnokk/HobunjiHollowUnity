@@ -242,7 +242,7 @@
     const safe = Math.max(1, Math.min(3, Math.floor(Number(tier) || 1))); // Used to normalize all grants to one canonical tier.
     const scroll = SCROLLS[safe]; // Used to resolve the inventory stack receiving the reward.
     if (!itemDeps?.inventory) return null;
-    itemDeps.inventory[scroll.key] = Math.min(99, (Number(itemDeps.inventory[scroll.key]) || 0) + 1);
+    itemDeps.inventory[scroll.key] = Math.min(window.InventoryStacks.MAX_TOTAL, (Number(itemDeps.inventory[scroll.key]) || 0) + 1);
     itemDeps.clampInventoryStack?.(scroll.key); refreshInventory();
     lastEvent = { type: 'grant', tier: safe, source, at: Date.now() };
     window.__farmLog?.(`[techniques] ${source}: Tier ${safe} Technique Scroll.`, 'combat');

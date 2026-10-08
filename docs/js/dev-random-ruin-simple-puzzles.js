@@ -781,7 +781,7 @@
     const url=cfg?.url||'assets/audio/sfx/combat/sfx_acid_sizzle.mp3';
     try{
       const audio=new Audio(url);
-      const gameVolume=Math.max(0,Math.min(1,Number(audioCfg.sfxVolume) || 1));
+      const gameVolume=Math.max(0,Math.min(1,Number(audioCfg.sfxVolume ?? 1)));
       audio.volume=Math.max(0,Math.min(1,(Number(cfg?.volume)||.9)*gameVolume));
       audio.play().catch(()=>{});
     }catch(_){}

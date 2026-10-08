@@ -1021,7 +1021,8 @@
     if (gold < entry.price) { deps.showToast?.('Not enough ganang.', false); return { ok: false, reason: 'gold' }; }
     if (entry.kind === 'item') {
       const owned = num(deps.inventory[entry.key], 0);
-      if (owned >= 99) { deps.showToast?.('You cannot carry any more of that.', false); return { ok: false, reason: 'full' }; }
+      const maxTotal = num(window.InventoryStacks?.MAX_TOTAL, 9999); // Shared bag cap (js/inventory-stacks.js).
+      if (owned >= maxTotal) { deps.showToast?.('You cannot carry any more of that.', false); return { ok: false, reason: 'full' }; }
       deps.inventory[entry.key] = owned + 1;
     } else if (entry.kind === 'trinket') {
       if (!window.TrinketSystem?.grant?.(entry.trinketId, 'slagothim')) { deps.showToast?.('That trinket is not available.', false); return { ok: false, reason: 'trinket' }; }

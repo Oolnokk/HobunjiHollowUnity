@@ -158,7 +158,7 @@
   function grantStation() {
     if (!deps?.inventory) return { ok: false, message: 'Tea Grinder inventory is not initialized.' };
     registerStationItemDef();
-    deps.inventory[STATION_ITEM_KEY] = Math.min(99, (deps.inventory[STATION_ITEM_KEY] || 0) + 1); // Used by Quest 1 to give one ordinary placeable station item.
+    deps.inventory[STATION_ITEM_KEY] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[STATION_ITEM_KEY] || 0) + 1); // Used by Quest 1 to give one ordinary placeable station item.
     deps.clampInventoryStack?.(STATION_ITEM_KEY);
     refreshInventory();
     return { ok: true, itemKey: STATION_ITEM_KEY, message: '🍵 Tea Grinder obtained.' };
@@ -188,7 +188,7 @@
       deps.clampInventoryStack?.(key);
     });
     const itemKey = ensureBlendItemDef(chosen.cookingEffect);
-    deps.inventory[itemKey] = Math.min(99, (deps.inventory[itemKey] || 0) + 1);
+    deps.inventory[itemKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[itemKey] || 0) + 1);
     global.CookingSystem?.recordItemQuality?.(itemKey, 3, 1);
     lastBlend = {
       reagentKeys: consumed,

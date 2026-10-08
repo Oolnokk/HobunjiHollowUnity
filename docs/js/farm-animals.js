@@ -114,7 +114,7 @@
     const itemKey = trough?.slots?.[slotIndex];
     if (!itemKey) return { ok: false, message: 'That slot is empty.' };
     trough.slots[slotIndex] = null;
-    deps.inventory[itemKey] = Math.min(99, (deps.inventory[itemKey] || 0) + 1);
+    deps.inventory[itemKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[itemKey] || 0) + 1);
     deps.saveFarmLayout();
     deps.refreshTroughVisual?.(barnId, troughIndex);
     return { ok: true, message: `Took 1 ${deps.ITEM_DEFS[itemKey]?.label || itemKey} from the trough.` };
@@ -978,7 +978,7 @@
     if (!rec) return { ok: false, message: 'Livestock not found.' };
     const resDef = deps.LIVESTOCK_RESOURCE_DEFS[rec.kind];
     if (!resDef || !rec.resourceReady) return { ok: false, message: 'Nothing to collect yet.' };
-    deps.inventory[resDef.itemKey] = Math.min(99, (deps.inventory[resDef.itemKey] || 0) + 1);
+    deps.inventory[resDef.itemKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[resDef.itemKey] || 0) + 1);
     const hearts = Number.isFinite(rec.heartLevel) ? rec.heartLevel : HEART_DEFAULT;
     // A well-cared-for (well-fed, high-heart) animal nudges its own
     // product quality up on top of whatever Farming rolls — every full

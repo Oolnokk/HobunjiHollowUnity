@@ -68,7 +68,7 @@
     if (audioCfg.enabled === false) return false;
     const snd = dewShovelSfxPreload?.cloneNode?.(true) || (typeof Audio === 'function' ? new Audio(DEW_SHOVEL_SFX_URL) : null);
     if (!snd) return false;
-    snd.volume = Math.max(0, Math.min(1, 0.9 * Math.max(0, Number(audioCfg.sfxVolume) || 1) * Math.max(0, Number(volumeScale) || 0)));
+    snd.volume = Math.max(0, Math.min(1, 0.9 * Math.max(0, Number(audioCfg.sfxVolume ?? 1)) * Math.max(0, Number(volumeScale) || 0)));
     snd.playbackRate = Math.max(0.3, Number(pitch) || 1);
     snd.play().catch(() => {});
     const target = _targetedDewPile();
