@@ -8477,6 +8477,7 @@
           member.felledTreeState = serializeZoneFelledTreeState();
           member.minedRockState = serializeZoneMinedRockState();
           member.townMineState = window.TownMine?.serialize?.() || null;
+          member.slagothimTradersState = window.SlagothimTraders?.serialize?.() || null;
           member.doorstepVisitState = window.DoorstepVisits?.serialize?.() || {};
           member.romanceState = window.RomanceSystem?.serialize?.() || null;
           // Only ever consumed on the next boot if it lands in a wilderness
@@ -8640,6 +8641,7 @@
         await _tothalCacheSet(key, {
           workspace: {
             entry: workspace.entry || null,
+            tradeExit: workspace.tradeExit || null,
             animalDens: workspace.animalDens || [],
             localeInstances: workspace.localeInstances || [],
             localeTransitions: (workspace.maps || []).find(map => map && !map.isSubmap)?.transitions?.filter(t => t?.generatedLocaleId) || [], // Restored zones need the stamped cave entrances as well as their instance markers.
@@ -8899,6 +8901,7 @@
                 ...denTransitions,
               ],
               toTownExit, mesas: merged.mesas, buildings: [...(merged.buildings || []), ...tentBuilding], decor: tentDecor, furniture: [],
+              tradeExit: workspace.tradeExit || null, // Southern Cloud Forest's road out of the region — see js/slagothim-traders.js.
               dens: workspace.animalDens || [],
               rootTotems: workspace.rootTotems || [],
               foliagePatches: workspace.foliagePatches || [],
@@ -11015,81 +11018,19 @@
         return window.SCRATCHBONES_CONFIG?.game?.mobileControls?.npcDialogueButton || {};
       }
       function npcDialogueAction() { return npcDialogueButtonConfig().action || 'npc_dialogue'; }
-      function smithyButtonConfig() {
-        return window.SCRATCHBONES_CONFIG?.game?.mobileControls?.smithyButton || {};
-      }
-      function smithyAction() { return smithyButtonConfig().action || 'open_smithy'; }
-      function isSmithyNpcInBronzeworks(walker) {
-        const cfg = smithyButtonConfig();
-        const ids = Array.isArray(cfg.npcIds) ? cfg.npcIds : ['kzubug', 'sloomi'];
-        return currentArea === (cfg.areaId || 'map_i_smithy') && ids.includes(walker?.rec?.id || '');
-      }
-      function smithyButton() {
-        const cfg = smithyButtonConfig();
-        const name = nearbyNpcWalker?.rec?.name;
-        return {
-          icon: cfg.icon || '🔨',
-          label: name ? `${cfg.label || 'Smithy'}: ${name}` : (cfg.label || 'Smithy'),
-          action: smithyAction(),
-          style: cfg.style || 'primary',
-          allowed: true,
-        };
-      }
-      function generalStoreButtonConfig() {
-        return window.SCRATCHBONES_CONFIG?.game?.mobileControls?.generalStoreButton || {};
-      }
-      function generalStoreAction() { return generalStoreButtonConfig().action || 'open_general_store'; }
-      function isGeneralStoreNpcOnDuty(walker) {
-        const cfg = generalStoreButtonConfig();
-        const ids = Array.isArray(cfg.npcIds) ? cfg.npcIds : ['furunji_funji', 'foroji_funji'];
-        const stationLabels = Array.isArray(cfg.stationLabels) ? cfg.stationLabels : [];
-        const npcId = walker?.rec?.id || '';
-        const target = walker?.currentScheduleTarget || null;
-        const stationLabel = normalizeStationLabel(target?.label);
-        const isAtStation = walker?.state === 'idle' && target && Number.isFinite(target.c) && Number.isFinite(target.r)
-          && Math.hypot(walker.root.position.x - (target.c + 0.5), walker.root.position.z - (target.r + 0.5)) <= (npcMovementConfig().arrivalRadiusTiles ?? 0.18);
-        return ids.includes(npcId) && isAtStation && stationLabels.some(label => stationLabel === normalizeStationLabel(label));
-      }
-      function generalStoreButton() {
-        const cfg = generalStoreButtonConfig();
-        const name = nearbyNpcWalker?.rec?.name;
-        return {
-          icon: cfg.icon || '🛒',
-          label: name ? `${cfg.label || 'Shop'}: ${name}` : (cfg.label || 'Shop'),
-          action: generalStoreAction(),
-          style: cfg.style || 'primary',
-          allowed: true,
-        };
-      }
-
-      // ── Carpenter's shop — mirrors the General Store's NPC-gated shop
-      // button pattern above, but for barn plans instead of goods/clothing.
-      function carpenterButtonConfig() {
-        return window.SCRATCHBONES_CONFIG?.game?.mobileControls?.carpenterButton || {};
-      }
-      function carpenterAction() { return carpenterButtonConfig().action || 'open_carpenter_shop'; }
-      function isCarpenterNpcOnDuty(walker) {
-        const cfg = carpenterButtonConfig();
-        const ids = Array.isArray(cfg.npcIds) ? cfg.npcIds : ['dzibim_khibu'];
-        const stationLabels = Array.isArray(cfg.stationLabels) ? cfg.stationLabels : ['Carpentry Work'];
-        const npcId = walker?.rec?.id || '';
-        const target = walker?.currentScheduleTarget || null;
-        const stationLabel = normalizeStationLabel(target?.label);
-        const isAtStation = walker?.state === 'idle' && target && Number.isFinite(target.c) && Number.isFinite(target.r)
-          && Math.hypot(walker.root.position.x - (target.c + 0.5), walker.root.position.z - (target.r + 0.5)) <= (npcMovementConfig().arrivalRadiusTiles ?? 0.18);
-        return ids.includes(npcId) && isAtStation && stationLabels.some(label => stationLabel === normalizeStationLabel(label));
-      }
-      function carpenterButton() {
-        const cfg = carpenterButtonConfig();
-        const name = nearbyNpcWalker?.rec?.name;
-        return {
-          icon: cfg.icon || '🪚',
-          label: name ? `${cfg.label || 'Carpenter'}: ${name}` : (cfg.label || 'Carpenter'),
-          action: carpenterAction(),
-          style: cfg.style || 'primary',
-          allowed: true,
-        };
-      }
+      // Smithy / General Store / Carpenter shop-counter buttons (config,
+      // on-duty checks, arch buttons) now live in js/npc-shop-buttons.js;
+      // these names stay as aliases for the call sites below and above.
+      window.NpcShopButtons.init({
+        getCurrentArea: () => currentArea,
+        getNearbyNpcWalker: () => nearbyNpcWalker,
+        npcMovementConfig,
+      });
+      const {
+        smithyButtonConfig, smithyAction, isSmithyNpcInBronzeworks, smithyButton,
+        generalStoreButtonConfig, generalStoreAction, isGeneralStoreNpcOnDuty, generalStoreButton,
+        carpenterButtonConfig, carpenterAction, isCarpenterNpcOnDuty, carpenterButton,
+      } = window.NpcShopButtons;
 
       // INSTRUMENT_NPC_DEFS, isNpcOnDutyAtStation, listInstrumentPerformers,
       // and window.__farmDebugTools now live in js/npc-scheduling.js —
@@ -18881,6 +18822,10 @@
           window.NpcWardrobe?.openWardrobePanel?.(nearbyNpcWalker?.rec?.id);
           return;
         }
+        if (activeAction === 'npc_slagothim_trade') {
+          window.SlagothimTraders?.openTrade?.(nearbyNpcWalker);
+          return;
+        }
         // The frame update owns the five-second aimed nest hold; do not let
         // the same physical Action 1 press fall through into a weapon swing.
         if (activeAction === 'nest_take') return;
@@ -24989,6 +24934,12 @@
 
         // NPC dialogue takes priority over tool use on touch controls and mirrors the primary-action keyboard path.
         if (nearbyNpcWalker && !farmEditMode) {
+          // Slagothim caravan members are transient visitors: Talk + Trade only
+          // (see js/slagothim-traders.js), no gifts/wardrobe/command wheel.
+          if (window.SlagothimTraders?.isTraderWalker?.(nearbyNpcWalker)) {
+            const tradeButton = window.SlagothimTraders.actionButtonFor(nearbyNpcWalker);
+            return tradeButton ? [npcDialogueButton(), tradeButton] : [npcDialogueButton()];
+          }
           const btns = nearbyNpcWalker.isPorakanekiHunter ? [] : [npcDialogueButton()];
           // Smithy is deliberately inserted directly after Talk so it is
           // always Action 2 when either Bronzeworks smith is being faced.
@@ -25481,7 +25432,7 @@
               // same story: it's pure traversal, not a tool swing, so a leftover
               // toolSwingT from whatever was equipped before walking up to a
               // cliff shouldn't be able to eat the tap either.
-              const isNavAction = act === npcDialogueAction() || act === smithyAction() || act === generalStoreAction() || act === carpenterAction() || act === 'npc_offer_alcohol_swig' || act === 'npc_offer_gift' || act === 'npc_open_wardrobe' || act === 'use_spot' || act === 'obj_exit_house' || act === 'climb' || act.startsWith('obj_') || act.startsWith('fish_');
+              const isNavAction = act === npcDialogueAction() || act === smithyAction() || act === generalStoreAction() || act === carpenterAction() || act === 'npc_offer_alcohol_swig' || act === 'npc_offer_gift' || act === 'npc_open_wardrobe' || act === 'npc_slagothim_trade' || act === 'use_spot' || act === 'obj_exit_house' || act === 'climb' || act.startsWith('obj_') || act.startsWith('fish_');
               // Same reasoning again for every item-mode action (place_campfire_kit,
               // consume_food_item, plant_*, alchemy_flask_*, ...): none of them are
               // tool swings either, so a leftover toolSwingT from whatever tool was
@@ -29324,6 +29275,36 @@
         saveMemberWorldData,
       });
 
+      // Slagothim trade caravans (road travel, trading, notices, compass)
+      // live in js/slagothim-traders.js.
+      window.SlagothimTraders?.init({
+        calendar,
+        inventory,
+        ITEM_DEFS,
+        BASE_PRICES,
+        EXTERIOR_ZONES,
+        VERDIGRIS_METAL_KEYS,
+        metalBarItemKey,
+        npcWalkers,
+        makeNpcWalker,
+        despawnNpcWalker: despawnNpcVisitor,
+        npcSurfaceY,
+        getZoneLayout: zoneId => _zoneLayouts.get(zoneId),
+        getTownGrid: () => townGrid,
+        isTownTileWalkable: (c, r) => window.NpcPathfinding.isNpcTileWalkable('town', c, r),
+        getCurrentArea: () => currentArea,
+        getPlayerTile: () => ({ col: player.x / TILE, row: player.y / TILE }),
+        // Dev Companion "Go to caravan" only (see the module's companion panel).
+        setPlayerTile: (col, row) => { player.x = col * TILE; player.y = row * TILE; },
+        travelTo: (area, col, row) => area === 'town' ? enterTown(col, row) : enterZone(area, col, row),
+        tothalWorldId: _tothalWorldId,
+        showToast,
+        esc: window.FormatUtils.esc,
+        buildInventoryGrid,
+        refreshActionBar,
+        save: saveMemberWorldData,
+      });
+
       window.DyeSystem?.init({
         getGearInventory: () => gearInventory,
         saveGearInventory,
@@ -29939,6 +29920,7 @@
         restoreZoneFelledTreeState(playerData.felledTreeState);
         restoreZoneMinedRockState(playerData.minedRockState);
         window.TownMine?.restore?.(playerData.townMineState);
+        window.SlagothimTraders?.restore?.(playerData.slagothimTradersState);
         // Potion items just restored into `inventory` above have no ITEM_DEFS
         // entry yet this page load (ITEM_DEFS starts empty of them every
         // session, unlike the static reagent/furniture/fish tables) — rebuild

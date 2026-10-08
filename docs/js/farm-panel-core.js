@@ -1276,9 +1276,10 @@
     const entry = _removeWorldLivestockAndCleanup(id);
     if (!entry) return;
     const value = window.CreatureGenetics.sellValueFor(entry.genotype, entry.kind);
-    deps.inventory.gold = (deps.inventory.gold || 0) + value.amount;
+    const amount = window.TownMine?.applySaleBonus?.(value.amount) ?? value.amount; // Town Value sale bonus.
+    deps.inventory.gold = (deps.inventory.gold || 0) + amount;
     deps.saveMemberWorldData();
-    deps.showToast(`Sold ${entry.name || window.CreatureGenetics.defaultLivestockName(entry.kind)} for ${value.amount}g`, true);
+    deps.showToast(`Sold ${entry.name || window.CreatureGenetics.defaultLivestockName(entry.kind)} for ${amount}g`, true);
     refreshGoldHud();
     renderFarmLivestock(); renderFarmGridGlance();
   }

@@ -339,11 +339,14 @@
     if (placement) { const row = document.createElement('div'); row.className = 'farm-row'; row.textContent = 'Tap the map to place ' + catalog[placement.key].label; button(row, 'Cancel', () => { placement = null; window.FarmPanel.render(); }); list.append(row); }
   }
   function renderShop(list, shopDeps) {
+    const townValue = Number(window.TownMine?.getTownValue?.()) || 0; // Larger processor tiers are a Town Value perk at the carpenter.
     for (const definition of Object.values(catalog)) {
-      const row = document.createElement('div'); row.className = 'shop-row'; // Every tier remains available independently of starting specialization.
-      const label = document.createElement('div'); label.className = 'sh-info'; label.textContent = definition.label + ' Plan · ' + definition.price + 'g'; row.append(label);
-      const buy = document.createElement('button'); buy.className = 'shop-buy-btn'; buy.textContent = 'Buy'; // Purchase follows the existing carpenter transaction.
-      buy.onclick = () => { if ((shopDeps.inventory.gold || 0) < definition.price || (shopDeps.inventory[definition.planItem] || 0) >= 9) { shopDeps.showToast('Not enough ganang or plan stack is full.', false); return; } shopDeps.inventory.gold -= definition.price; shopDeps.inventory[definition.planItem] = (shopDeps.inventory[definition.planItem] || 0) + 1; shopDeps.saveMemberWorldData(); shopDeps.buildInventoryGrid(); shopDeps.showToast('Bought ' + definition.label + ' Plan.', true); };
+      const required = Number(definition.minTownValue) || 0;
+      const locked = townValue < required;
+      const row = document.createElement('div'); row.className = 'shop-row'; // Every tier remains available independently of starting specialization, once the town is big enough.
+      const label = document.createElement('div'); label.className = 'sh-info'; label.textContent = definition.label + ' Plan · ' + definition.price + 'g' + (locked ? ' · 🔒 Requires Town Value ' + required : ''); row.append(label);
+      const buy = document.createElement('button'); buy.className = 'shop-buy-btn'; buy.textContent = locked ? 'Locked' : 'Buy'; buy.disabled = locked; // Purchase follows the existing carpenter transaction.
+      buy.onclick = () => { if ((Number(window.TownMine?.getTownValue?.()) || 0) < required) { shopDeps.showToast('Dzibim won\'t build that until the town has grown (Town Value ' + required + ').', false); return; } if ((shopDeps.inventory.gold || 0) < definition.price || (shopDeps.inventory[definition.planItem] || 0) >= 9) { shopDeps.showToast('Not enough ganang or plan stack is full.', false); return; } shopDeps.inventory.gold -= definition.price; shopDeps.inventory[definition.planItem] = (shopDeps.inventory[definition.planItem] || 0) + 1; shopDeps.saveMemberWorldData(); shopDeps.buildInventoryGrid(); shopDeps.showToast('Bought ' + definition.label + ' Plan.', true); };
       row.append(buy); list.append(row);
     }
   }

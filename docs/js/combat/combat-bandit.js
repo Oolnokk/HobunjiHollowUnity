@@ -2222,6 +2222,10 @@
     // rollBanditRoster) — used standalone by game.js's generateBountyTask
     // when no live camp exists yet to adopt a captain's real identity from.
     randomName: _banditName,
+    // Rolls a full humanoid roster record (species/gender/clothing/dyes) from
+    // a gang-shaped config without building an entity — used by
+    // js/slagothim-traders.js to dress caravan walkers like other Tletingans.
+    rollRoster: rollBanditRoster,
     updateCombatAI: updateBanditCombatAI,
     restNeckLook,
     updateToolMesh: updateBanditToolMesh,

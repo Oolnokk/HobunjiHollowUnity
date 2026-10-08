@@ -163,6 +163,15 @@ materials in place once the config loads.
   which moves it to gear and teaches him its enchantments (Flourishes per
   enchantment × slot) so he can apply them to other weapons for more.
 
+## Town Value perks: Slagothim caravans, carpentry tiers, sale prices
+
+Town Value (raised by extending the mine ladder, `docs/js/town-mine.js`) now pays off in three ways:
+
+- **Slagothim trade caravans** (`docs/js/slagothim-traders.js`). From Town Value 1, a seeded daily roll (15% at TV 1, +6% per TV, capped at 70%; one caravan on the roads at a time, two from TV 5) brings 3–4 Slagothim up the **southern road**, a second road mouth that `wilderness-map-generator.js`'s `chooseTradeExit` carves on the Southern Cloud Forest's south border (`tradeExitSide`). That border is where the playable region ends. A caravan follows the roads: it stops at a Porakaneki camp near the Cloud Forest road, sets up at the town market for four hours, then usually travels out to one other zone's Porakaneki camp and back before heading home. It walks only between 06:00 and 20:00. Routes come from a weighted A* over each zone's folded tiles: road tiles are cheap, open ground costs more, fords and cliff walls cost much more, and trees and rocks block. The simulation is abstract everywhere; members become real `makeNpcWalker` walkers (Talk + **Trade**) only when the player is in the same area within 70 tiles. Stock is rolled once per caravan: out-of-season fish and seasonal produce, sometimes ordinary metal bars, and bars above the Town Value metal ceiling (usually 0, sometimes 1, rarely 2). Rarely it includes a Harlyao trinket or a bound enchanted Harlyao blade, which Garanki unbinds. Everything is priced at about 2.2× sale value.
+  - *Why nobody needs to hunt them:* arrival is announced at the region entrance with an ETA to the market, and the market stop is long and announced. Stock is fixed for the trip, so catching them on the road gets nothing the stall wouldn't. In the same zone you are told when they pass your nearest stretch of road, and a ⚖ compass marker appears within 60 tiles.
+- **Carpentry tiers.** Larger barn plans, incubator additions and Medium/Large processor plans need Town Value 1/2 at Dzibim's (`minTownValue` in `config/shops/shop-stock.json` and `config/farm-specializations.js`). Farm presets still grant any tier.
+- **Sale prices** rise +3% per Town Value, capped at +30% (`TownMine.salePriceMultiplier`/`applySaleBonus`). This covers the shipping box, store sales, and livestock and Nursery sales.
+
 ## Dev Companion window
 
 Settings → **Dev Companion Window** (or `window.DevCompanion.open()`) opens
@@ -182,6 +191,11 @@ what just started.
   (favor ±1 heart, forget heard trees) and *Time & weather* (skip to the next
   dawn/day/dusk/night/weekday/season through the real hour-by-hour passage,
   force clear/rain/storm) — the knobs dialogue conditions read.
+  *⚖ Town Value & caravans* (`js/slagothim-traders.js`): Town Value −1/+1
+  and presets (0/1/2/5/10, written through `TownMine`), the current sale
+  bonus and daily caravan odds, *Spawn caravan* (ignores the daily roll and
+  cap), and per caravan *Go to* (travels/teleports you beside it), *Skip to
+  next stop*, *Open trade* and *Dismiss*.
 - **Saves** — quick saves for the current farmer/world (`js/quick-save.js`:
   IndexedDB save states with exact area/position/facing/doorway/time; loading
   reloads so edited config is picked up, applies the snapshot at the start of

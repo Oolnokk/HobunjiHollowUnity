@@ -30,6 +30,7 @@ class FakeNode {
   }
   set innerHTML(value) {
     this._innerHTML = String(value);
+    if (!this._innerHTML) this.children = [];
     if (/data-(?:tier|deed|bp|barn-addition)=/.test(this._innerHTML)) this._button = new FakeButton();
   }
   get innerHTML() { return this._innerHTML; }
@@ -53,7 +54,9 @@ const document = {
 
 const inventory = { gold: 6000 };
 const toasts = [];
+let townValue = 0; // Larger barn additions are a Town Value perk (shop-stock minTownValue).
 const window = {
+  TownMine: { getTownValue: () => townValue },
   InventoryStacks: require('./lib/inventory-stacks'),
   ConditionRegistry: { entryEligible: () => true },
   LootRolling: { getShopStock: () => stock.shops },
@@ -72,6 +75,17 @@ window.CarpenterShop.init({
   buildInventoryGrid() {},
   saveMemberWorldData() {},
 });
+window.CarpenterShop.render();
+
+{
+  const lockedRow = list.children.find(node => node.innerHTML.includes('Barn Incubator Addition'));
+  assert(lockedRow, 'a Town-Value-locked addition is still listed');
+  assert(!lockedRow._button, 'locked addition has no live buy button below its Town Value');
+  assert(/Requires Town Value 1/.test(lockedRow.innerHTML), 'locked row says what Town Value it needs');
+  const smallRow = list.children.find(node => node.innerHTML.includes('Small Incubator Plan'));
+  assert(smallRow?._button, 'Town Value 0 additions stay buyable');
+}
+townValue = 1;
 window.CarpenterShop.render();
 
 const additionHeader = list.children.find(node => node.textContent === '🪚 Barn Additions');

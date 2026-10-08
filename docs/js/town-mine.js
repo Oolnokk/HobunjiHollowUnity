@@ -236,6 +236,18 @@
 
   function getTownValue() { return progression.townValue; }
 
+  // Town Value perk: everything the player sells (shipping box, store
+  // counter, livestock) fetches a little more as the town grows.
+  const SALE_BONUS_PER_TOWN_VALUE = 0.03; // +3% per Town Value…
+  const SALE_BONUS_MAX = 0.3; // …capped at +30% (Town Value 10).
+  function salePriceMultiplier(townValue = progression.townValue) {
+    return 1 + Math.min(SALE_BONUS_MAX, Math.max(0, Math.floor(Number(townValue) || 0)) * SALE_BONUS_PER_TOWN_VALUE);
+  }
+  function applySaleBonus(amount, townValue = progression.townValue) {
+    const value = Number(amount) || 0;
+    return value > 0 ? Math.round(value * salePriceMultiplier(townValue)) : value;
+  }
+
   function bgmTracksForArea(mapId) {
     if (!floorFromMapId(mapId)) return null;
     return ghoulBgmFloorIds.has(mapId) ? [GHOUL_BGM_TRACK] : [];
@@ -324,7 +336,8 @@
     const panel = ensureLadderPanel();
     panel.style.display = 'flex';
     const rows = await ladderRows();
-    panel.querySelector('[data-summary]').textContent = `Deepest floor: ${progression.deepestFloor} · Town Value: ${progression.townValue}. Completed tiers permit costly permanent shortcuts.`;
+    const saleBonusPercent = Math.round((salePriceMultiplier() - 1) * 100); // Shown here because extending the ladder is how Town Value rises.
+    panel.querySelector('[data-summary]').textContent = `Deepest floor: ${progression.deepestFloor} · Town Value: ${progression.townValue}${saleBonusPercent ? ` (sale prices +${saleBonusPercent}%)` : ''}. Completed tiers permit costly permanent shortcuts; a growing town draws Slagothim traders and unlocks larger carpentry plans.`;
     const shortcuts = panel.querySelector('[data-shortcuts]');
     shortcuts.innerHTML = '<h3>Descend</h3>';
     const destinations = [{ floor: 1, label: 'Floor 1' }, ...rows.filter(row => row.unlocked).map(row => ({ floor: row.targetFloor, label: `Floor ${row.targetFloor}` }))];
@@ -400,6 +413,8 @@
     serialize,
     restore,
     getTownValue,
+    salePriceMultiplier,
+    applySaleBonus,
     bgmTracksForArea,
     descentChance,
     recordHeldOres,
