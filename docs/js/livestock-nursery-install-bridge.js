@@ -21,6 +21,7 @@
     { globalKey: 'JubmirDabinggiHounds', src: 'js/jubmir-dabinggi-hounds.js?v=20261006h1a27ed3' },
     { globalKey: 'BARN_INCUBATOR_CONFIG', src: 'config/barn-incubator-config.js?v=20261004h3ebe719' },
     { globalKey: 'BarnIncubator', src: 'js/barn-incubator.js?v=20261004hc90980e' },
+    { globalKey: 'BarnLayoutEditorParity', src: 'js/barn-layout-editor-parity.js?v=20261007barnlayout2' },
     { globalKey: 'FarmMenuLayout', src: 'js/farm-menu-layout.js?v=20260915farmui2' },
     { globalKey: 'FarmGlancePalette', src: 'js/farm-glance-palette.js?v=20260916palette1' },
     { globalKey: 'LivestockNurseryGrid', src: 'js/livestock-nursery-grid.js?v=20260916nurserygrid3' },
@@ -56,6 +57,7 @@
         window.StableAnimalXpEvents?.install?.();
         window.JubmirDabinggiHounds?.install?.();
         window.BarnIncubator?.install?.();
+        window.BarnLayoutEditorParity?.install?.();
         window.FarmMenuLayout?.install?.();
         window.FarmGlancePalette?.install?.();
         window.LivestockNurseryGrid?.install?.();
@@ -79,7 +81,7 @@
   // FarmPanel, while AnimalSleepPresentation/OutdoorLivestockWelfare/
   // OutdoorLivestockPresence/LivestockNursery/AnimalGrowth/StableAnimalProgression/
   // StableAnimalTownFamiliarity/StableAnimalTrainingRefinements/StableAnimalXpEvents/BarnIncubator/
-  // FarmMenuLayout/FarmGlancePalette/LivestockNurseryGrid/
+  // BarnLayoutEditorParity/FarmMenuLayout/FarmGlancePalette/LivestockNurseryGrid/
   // LivestockNurseryInventoryPaging all need the public farm APIs before game.js
   // initializes them. Capture FarmPanel's one global assignment and install
   // synchronously at that exact point; afterward FarmPanel is a normal writable
@@ -95,6 +97,7 @@
   const installStableAnimalTrainingRefinements = () => window.StableAnimalTrainingRefinements?.install?.();
   const installStableAnimalXpEvents = () => window.StableAnimalXpEvents?.install?.();
   const installBarnIncubator = () => window.BarnIncubator?.install?.();
+  const installBarnLayoutEditorParity = () => window.BarnLayoutEditorParity?.install?.();
   const installFarmMenuLayout = () => window.FarmMenuLayout?.install?.();
   const installFarmGlancePalette = () => window.FarmGlancePalette?.install?.();
   const installLivestockNurseryGrid = () => window.LivestockNurseryGrid?.install?.();
@@ -220,6 +223,7 @@
     installStableAnimalXpEvents();
     window.JubmirDabinggiHounds?.install?.();
     installBarnIncubator();
+    installBarnLayoutEditorParity();
     installFarmMenuLayout();
     installFarmGlancePalette();
     installLivestockNurseryGrid();
