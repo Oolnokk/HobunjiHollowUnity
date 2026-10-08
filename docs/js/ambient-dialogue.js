@@ -820,6 +820,7 @@
   function tryGreeting(walker, target, now, day, override = null) {
     const speakerId = walker?.rec?.id;
     if (speakerId === 'banubu') return false; // Avoid greeting policy, portrait composition, and ledger work for the sleeping Fey.
+    if (walker?.rec?.ambientGreetings === false) return false; // Runtime-spawned records (e.g. babies/toddlers from js/romance-family.js) can opt out entirely.
     if (!speakerId || walker.area !== state.deps.getCurrentArea()) return false;
     if (window.HobunjiDrunkGameplayBridge?.isNpcBlackedOut?.(speakerId)) return false;
     // The active event remains in this list through its final opacity fade,
@@ -898,6 +899,7 @@
 
   function updateGreetings(now) {
     if (state.deps?.isDialogueOpen?.() || state.deps?.isPaused?.()) return;
+    if (window.AuthoredCutsceneRuntime?.isActive?.()) return; // Story scenes (e.g. the wedding's seated guests) stay quiet; scripted crowd() cheers still show.
     const day = Number(state.deps?.getDay?.()) || 1;
     ensureGreetingLedger(day);
     const area = state.deps.getCurrentArea();
@@ -1026,6 +1028,15 @@
     jeer: (root, options) => crowd(root, 'jeer', options),
     resolveAlcoholOffer,
     showAlcoholOfferResponse,
+    // Runtime NPCs (children from js/romance-family.js) have no authored
+    // ambient-dialogue.json entry; this registers their greeting pool.
+    setNpcGreetings(npcId, greetings) {
+      const id = String(npcId || '');
+      if (!id || !state.settings?.npcGreetings) return false;
+      if (greetings) state.settings.npcGreetings[id] = greetings;
+      else delete state.settings.npcGreetings[id];
+      return true;
+    },
     playerGreetingWaitMsForWalker,
     clear,
     loadSettings,

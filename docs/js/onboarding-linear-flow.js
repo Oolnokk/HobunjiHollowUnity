@@ -559,6 +559,10 @@
     enhanceQueued = false;
     const overlay = overlayElement(); // One pass chooses creator, new-world, or ordinary save-select behavior from the current core card.
     if (!overlay) return;
+    // In-game creator sessions (HobunjiOnboarding.openCreator, e.g. the romance
+    // adoption dream) reuse the creator UI but never create a farmer or world;
+    // the new-farmer steps and their world hand-off must not apply to them.
+    if (window.HobunjiOnboarding?.creatorSessionInfo?.()) return;
     installStyle();
     if (creatorOverlay()) {
       enhanceCreator(overlay);

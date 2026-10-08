@@ -532,7 +532,37 @@
   // Falls back to calling resolveLegacyNpcScheduleTarget directly if the
   // planner module didn't load for any reason, so a missing/broken script
   // tag degrades to exactly today's behavior rather than breaking every NPC.
+  // Feature-owned target overrides (e.g. js/romance-system.js's date
+  // follow/wait and spouse-at-the-farmhouse routines). Each provider gets
+  // (rec, { hasExistingWalker }) and returns a target to take over this
+  // NPC's schedule outright, or null/undefined to leave it alone. Checked
+  // before visitors/agenda/flood shelter so a following date can't be
+  // pulled back to their workplace mid-date.
+  const targetOverrides = new Map(); // ownerId → provider, insertion-ordered.
+  function registerTargetOverride(ownerId, provider) {
+    const id = String(ownerId || '').trim();
+    if (!id) return false;
+    if (typeof provider === 'function') targetOverrides.set(id, provider);
+    else targetOverrides.delete(id);
+    return true;
+  }
+  function resolveTargetOverride(rec) {
+    if (!targetOverrides.size || !rec?.id) return null;
+    let hasWalker = null; // Resolved lazily; most providers bail out on npc id first.
+    for (const [ownerId, provider] of targetOverrides) {
+      try {
+        const target = provider(rec, { get hasExistingWalker() { if (hasWalker === null) hasWalker = hasExistingNpcWalker(rec); return hasWalker; } });
+        if (target) return { ...target, area: deps.normalizeNpcArea(target.area), overrideOwner: ownerId };
+      } catch (error) {
+        console.warn('[schedule] target override failed', ownerId, rec.id, error);
+      }
+    }
+    return null;
+  }
+
   function resolveNpcScheduleTarget(rec) {
+    const overrideTarget = resolveTargetOverride(rec);
+    if (overrideTarget) return overrideTarget;
     const visitor = getVisitorPresence(rec); // Used to make visitor absence override agenda/free-time fallbacks.
     if (visitor) {
       const hasWalker = hasExistingNpcWalker(rec); // Used to distinguish an arrival spawn from an existing visitor's departure walk.
@@ -650,6 +680,7 @@
     findStationsByRole,
     getVisitorPresence,
     resolveNpcScheduleTarget,
+    registerTargetOverride,
     applyTownFloodShelter,
     floodShelterSnapshot,
     // The unwrapped original resolver, exposed for the Agenda/Activity

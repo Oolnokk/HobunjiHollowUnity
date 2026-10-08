@@ -291,8 +291,19 @@
       window.__farmLog?.('[squeezing-vat] cleared stale non-Small/unhoused livestock assignments', 'livestock');
     }
   }
+  // Non-livestock workers (children from js/romance-family.js) stand in for
+  // a Small animal at a vat: { id, name, efficacy }. They have no dew of
+  // their own, so they squeeze dew piles from the farm instead (see
+  // squeezePileWithExternalWorker), at `efficacy`× the yield.
+  const externalWorkers = new Map(); // vatId → worker
+  function setExternalWorker(vatId, worker) {
+    if (!vatId) return false;
+    if (worker) externalWorkers.set(vatId, { ...worker, external: true });
+    else externalWorkers.delete(vatId);
+    return true;
+  }
   function assignedWorkerForVat(vatId, list = deps.loadWorldLivestock()) {
-    return list.find(rec => rec.assignedVatId === vatId && _workerCanOperate(rec)) || null;
+    return list.find(rec => rec.assignedVatId === vatId && _workerCanOperate(rec)) || externalWorkers.get(vatId) || null;
   }
   function findVatById(vatId) {
     for (const obj of deps.processingFurnitureObjects) if (obj.id === vatId) return obj;
@@ -402,9 +413,26 @@
       const heartStars = Math.round((hearts - 2.5) / (heartMax / 2) * (workingAnimalsRank / 3));
       stars = Math.max(1, Math.min(5, baseStars + heartStars));
     }
-    const result = vat.startTimedJob?.({ outputs, inputStars: stars, inputLabel: `${colorKey} dew`, source: 'livestock' });
+    const yieldMultiplier = worker.external ? Math.max(1, Number(worker.efficacy) || 1) : 1; // Used so an external worker's efficacy multiplies each output unit.
+    const result = vat.startTimedJob?.({ outputs, inputStars: stars, inputLabel: `${colorKey} dew`, source: worker.external ? 'worker' : 'livestock', yieldMultiplier });
     if (result?.busy) return 'busy';
     return result?.ok ? 'started' : false;
+  }
+
+  // Lets an external worker pull one dug-up-able dew pile off the farm into
+  // its vat. Returns the autoSqueezeAtVat status, or 'no-dew'.
+  function squeezePileWithExternalWorker(vatId) {
+    if (!externalWorkers.has(vatId)) return false;
+    const pile = listPiles()[0];
+    if (!pile) return 'no-dew';
+    const status = autoSqueezeAtVat(vatId, pile.colorKey);
+    if (status === 'started') {
+      const grid = deps.getGrid();
+      if (grid[pile.row]?.[pile.col]) grid[pile.row][pile.col].dewPile = null;
+      removeMesh(pile.col, pile.row);
+      deps.saveFarmLayout();
+    }
+    return status;
   }
 
   window.DewVats = {
@@ -424,6 +452,9 @@
     unassignFromVat,
     retargetAssignments,
     autoSqueezeAtVat,
+    setExternalWorker,
+    squeezePileWithExternalWorker,
+    listSqueezingVats: () => [...(deps?.processingFurnitureObjects || [])].filter(obj => deps.PROCESSING_FURNITURE_DEFS[obj.furnitureKey]?.method === 'squeezing'),
     dewShovelSfxDebugSnapshot,
   };
 })();

@@ -223,3 +223,60 @@ with their own character saves) is a design goal, not yet implemented. See
 in the current save/combat/AI architecture already lines up with it, and the
 desync risks (NPC/creature transforms, combat timing, animation state) that
 will need addressing.
+
+## Dating, marriage & children
+
+- **Hold Action 1 on an NPC** (`docs/js/npc-command-wheel.js`) opens a radial
+  command wheel; a tap still Talks exactly as before. The press is owned via
+  `WorldActionInputClaims`, so touch/mouse/keyboard/controller share one
+  tap-vs-hold path. NPCs with no commands leave Action 1 unclaimed.
+- **Dates** (`docs/js/romance-system.js`): ask a romanceable NPC out (2+ hearts),
+  then Follow / Wait / Dismiss until the in-game-hour limit runs out. Dates
+  drive the NPC through `NpcScheduling.registerTargetOverride`.
+- **Romance** is a date-only sibling of Rapport stored by `NpcRapport`
+  (`getRomance`/`adjustRomance`): range −100..400, settles into Favor at
+  midnight at 5× Rapport's rate, shown in the Day Review. Each NPC's likes and
+  the short list of things that *lose* Romance live in
+  `docs/config/romance-config.js`, scored from `window.HobunjiActivityEvents`
+  (`docs/js/activity-events.js`), a generic "player did X" bus emitted from
+  fishing, felling, mining, foraging, harvesting, cooking, brewing, chests,
+  kills, petting (new farm-animal Pet button), drinks, dancing, Kurraya and
+  nest theft.
+- **Marriage**: propose on a date (10 hearts, 3 dates), meet at the Life Temple
+  (`map_i_temple`) from the next day, Father Hunundi officiates, and the spouse
+  moves to the farmhouse. The ceremony (`docs/js/romance-wedding.js`) switches
+  the temple to its third layout, `wedding` (flag `templeWedding`: 16 north-facing
+  pews tagged `wedding_pew`, a clear centre aisle), seats every villager's live
+  walker in the pews behind one fade (household first, then by Favor), and
+  plays an authored Director-format scene through `AuthoredCutsceneRuntime`:
+  couple one tile apart at the altar, Hunundi between and one tile north, a
+  vow choice that can postpone, a pronouncement Continue that completes
+  the marriage (the pews cheer), and a recessional down the centre aisle. Guests stay an hour for the reception; the layout reverts once
+  you leave. The scene is also in the Cutscene Director's repo list ("Marriage
+  — Life Temple Wedding"). After the wedding the spouse moves to the farmhouse (sleeps in your bed, sits
+  in your chairs, potters around the farm, some afternoons back on their old
+  town schedule).
+- **Children** (`docs/js/romance-family.js`): 3 months after the wedding a
+  pregnancy/egg is announced for same-species opposite-gender couples; the
+  first sleep in your farmhouse bed after 6 months brings the birth/hatching
+  (or, for any other pairing, a dream in which the real character creator —
+  `HobunjiOnboarding.openCreator`, the same creator UI plus its redesign/life
+  preview add-ons re-armed through the `hobunji-creator-session` event — picks
+  the child's species, gender, cosmetics, colors and clothing, followed by
+  Father Hunundi at the door via `DoorstepVisits` with an orphan to name). Newborns sleep a
+  month in a `babyBasket` fixture, toddle with hidden Toddling Footing (99 → 0
+  over 5 months), then walk the farm, greet you, and can work a squeezing vat
+  (`DewVats.setExternalWorker`) at 2× yield.
+- Saved per character per world as `member.romanceState`. Executable coverage:
+  `scripts/test-romance-dating.js`.
+
+## Child proportions
+
+NPCs marked as children (`role`/`tags` `child`, e.g. Gantami and the family's
+children) are scaled down by `pngPlaneAvatar.childScaleMultiplier` (body)
+while their head only shrinks to `childHeadScaleMultiplier` of an adult head:
+`PNGPlaneAvatar.childScaleFor` resolves both (a record may override them with
+`childBodyScale` / `childHeadScale`, which `romance-family.js` uses for babies
+and toddlers), and `character-rig-scale.js` re-enlarges just the head at the
+neck rig's head-scale bone by head ÷ body — the same bone the rig editor's
+head scale drives. `character-dimensions.js` accounts for it.

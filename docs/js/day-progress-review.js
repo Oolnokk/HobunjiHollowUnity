@@ -265,6 +265,15 @@
     queuePersist();
   }
 
+  function recordRomance(npcId, amount) {
+    const delta = finiteNumber(amount, 0); // Actually-applied date Romance delta (js/romance-system.js) from the same memory stream.
+    if (!delta) return;
+    const entry = relationshipEntry(npcId);
+    if (!entry) return;
+    entry.romanceDelta = finiteNumber(entry.romanceDelta, 0) + delta;
+    queuePersist();
+  }
+
   function recordFavor(npcId, amount) {
     const delta = finiteNumber(amount, 0); // Actually-applied permanent Favor delta measured from authoritative relationship snapshots.
     if (!delta) return;
@@ -284,6 +293,7 @@
       value: function dayProgressReviewMemoryPush(...entries) {
         const result = originalPush.apply(this, entries); // Existing memory storage and HUD popup behavior run first.
         for (const event of entries) {
+          if (event?.type === 'romance') { recordRomance(npcId, event.amount); continue; }
           if (event?.type !== 'rapport') continue;
           const amount = finiteNumber(event.amount, 0); // Applied Rapport amount recorded without treating midnight rollover as a new daily gain.
           if (amount) recordRapport(npcId, amount);
@@ -635,6 +645,11 @@
     return Math.round(Math.max(0, finiteNumber(rapport, 0)) * Math.max(0, finiteNumber(rate, 0)));
   }
 
+  function romanceConversion(romance) {
+    const rate = finiteNumber(window.NpcRapport?.romanceFavorRate?.(), relationshipRate() * 5); // Same weighted rate NpcRapport.settle applies to Romance.
+    return Math.round(finiteNumber(romance, 0) * Math.max(0, rate)); // Negative Romance settles into lost Favor, unlike Rapport.
+  }
+
   function npcDisplayName(npcId) {
     const id = String(npcId || ''); // Stable relationship id resolved to a live authored display name when possible.
     const walkers = window.__hobunjiFurnitureDebug?.getNpcWalkers?.() || []; // Existing live-walker debug seam works without desktop devtools.
@@ -655,6 +670,7 @@
     return {
       favor: finiteNumber(relationship?.favor, 0),
       rapport: Math.max(0, finiteNumber(relationship?.rapport, 0)),
+      romance: finiteNumber(relationship?.romance, 0),
     };
   }
 
@@ -671,17 +687,21 @@
     const ledger = JSON.parse(JSON.stringify(reviewState.ledger)); // Immutable copy prevents later reward events from changing an open review.
     const rate = relationshipRate(); // Actual authored Rapport→Favor conversion rate shown and used for preview math.
     const relationships = Object.values(ledger.relationships || {})
-      .filter(entry => finiteNumber(entry?.favorDelta, 0) || finiteNumber(entry?.rapportDelta, 0))
+      .filter(entry => finiteNumber(entry?.favorDelta, 0) || finiteNumber(entry?.rapportDelta, 0) || finiteNumber(entry?.romanceDelta, 0))
       .map(entry => {
         const current = currentRelationshipSnapshot(entry.npcId); // Live pre-midnight totals used for exact upcoming conversion visualization.
-        const conversion = rapportConversion(current.rapport, rate); // Same Math.round formula NpcRapport.settle uses after midnight.
+        const romanceFavor = romanceConversion(current.romance); // Date Romance settles alongside Rapport at the same midnight.
+        const conversion = rapportConversion(current.rapport, rate) + romanceFavor; // Same Math.round formulas NpcRapport.settle uses after midnight.
         return {
           npcId: String(entry.npcId || ''),
           name: npcDisplayName(entry.npcId),
           favorDelta: finiteNumber(entry.favorDelta, 0),
           rapportDelta: finiteNumber(entry.rapportDelta, 0),
+          romanceDelta: finiteNumber(entry.romanceDelta, 0),
           favorBeforeConversion: current.favor,
           rapportBeforeConversion: current.rapport,
+          romanceBeforeConversion: current.romance,
+          romanceConversion: romanceFavor,
           conversion,
           favorAfterConversion: current.favor + conversion,
           conversionRate: rate,
@@ -729,7 +749,7 @@
       .day-review-card{padding:10px 12px;margin:8px 0;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.025)}
       .day-review-person{display:flex;align-items:baseline;justify-content:space-between;gap:10px;font-size:clamp(15px,4vw,19px)}
       .day-review-deltas{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end;font-size:13px}
-      .day-review-favor{color:#ff9bc8}.day-review-rapport{color:#ffd84d}.day-review-positive{color:#70df83}.day-review-negative{color:#ff7777}
+      .day-review-favor{color:#ff9bc8}.day-review-rapport{color:#ffd84d}.day-review-romance{color:#ff5f8f}.day-review-positive{color:#70df83}.day-review-negative{color:#ff7777}
       .day-review-conversion{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;margin-top:10px;padding-top:9px;border-top:1px solid rgba(255,255,255,.07);transition:opacity .3s ease,transform .3s ease}
       .day-review-orb{min-width:72px;text-align:center;font-size:12px;line-height:1.2}
       .day-review-orb strong{display:block;font-size:19px}
@@ -818,14 +838,19 @@
       ? snapshot.relationships.map(entry => {
           const favorDelta = relationshipDeltaHtml('Favor', entry.favorDelta, 'day-review-favor'); // Direct permanent Favor change for this NPC.
           const rapportDelta = relationshipDeltaHtml('Rapport', entry.rapportDelta, 'day-review-rapport'); // Net temporary Rapport change for this NPC.
-          const deltas = [favorDelta, rapportDelta].filter(Boolean).join(''); // Compact row of every relationship value that actually changed.
+          const romanceDelta = relationshipDeltaHtml('Romance', entry.romanceDelta, 'day-review-romance'); // Net date Romance change for this NPC.
+          const deltas = [favorDelta, rapportDelta, romanceDelta].filter(Boolean).join(''); // Compact row of every relationship value that actually changed.
           const percent = Math.round(entry.conversionRate * 1000) / 10; // Authored conversion rate rendered as a readable percentage.
-          const conversion = entry.rapportBeforeConversion > 0
+          const romanceLine = entry.romanceBeforeConversion
+            ? `<span class="day-review-formula day-review-romance">${htmlEscape(formatNumber(entry.romanceBeforeConversion))} Romance → ${htmlEscape(signedNumber(entry.romanceConversion || 0))} Favor</span>`
+            : '';
+          const conversion = entry.rapportBeforeConversion > 0 || entry.romanceBeforeConversion
             ? `<div class="day-review-conversion day-review-pending" data-day-review-conversion>
                 <span class="day-review-orb day-review-rapport"><strong>${htmlEscape(formatNumber(entry.rapportBeforeConversion))}</strong>Rapport</span>
                 <span class="day-review-flow" aria-hidden="true"></span>
                 <span class="day-review-orb day-review-favor"><strong>+${htmlEscape(formatNumber(entry.conversion))}</strong>Favor</span>
-                <span class="day-review-formula">${htmlEscape(formatNumber(entry.rapportBeforeConversion))} Rapport × ${htmlEscape(formatNumber(percent))}% → +${htmlEscape(formatNumber(entry.conversion))} Favor</span>
+                <span class="day-review-formula">${htmlEscape(formatNumber(entry.rapportBeforeConversion))} Rapport × ${htmlEscape(formatNumber(percent))}% → +${htmlEscape(formatNumber(entry.conversion - (entry.romanceConversion || 0)))} Favor</span>
+                ${romanceLine}
               </div>`
             : '';
           return `<article class="day-review-card day-review-pending"><div class="day-review-person"><strong>${htmlEscape(entry.name)}</strong><span class="day-review-deltas">${deltas || '<span class="day-review-empty">No net change</span>'}</span></div>${conversion}</article>`;

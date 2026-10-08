@@ -262,6 +262,7 @@
 
   async function installStarterWeapon(model) {
     if (!model?.parent || model !== life.model) return;
+    if (window.HobunjiOnboarding?.creatorSessionInfo?.()?.child) return; // Dream children are not handed a starter hatchet.
     const THREE = window.THREE;
     const avatarGroup = model.parent;
     const modelHeight = Number(model.userData?.portraitModelHeight) || 0.9;
@@ -409,7 +410,7 @@
 
   function installObservers() {
     const start = () => {
-      if (bodyObserver) return;
+      if (bodyObserver || !document.body) return;
       bodyObserver = new MutationObserver(() => {
         attachOverlayObserver();
         scheduleCreatorSync();
@@ -432,6 +433,16 @@
     // hands off to gameplay, ~420ms before the overlay actually leaves the DOM.
     // The delay lets the closing fade still repaint on its way out.
     document.addEventListener('hobunjiPlayerReady', () => setTimeout(teardown, 500), { once: true });
+    // In-game creator sessions (HobunjiOnboarding.openCreator) re-arm the
+    // living preview for the life of the session only.
+    document.addEventListener('hobunji-creator-session', event => {
+      if (event.detail?.phase === 'close') { setTimeout(teardown, 500); return; }
+      if (event.detail?.phase !== 'open') return;
+      const wasActive = active;
+      active = true;
+      installObservers();
+      if (!wasActive) requestAnimationFrame(lifeFrame);
+    });
 
     // The hand/bootstrap scripts are parser-loaded before onboarding, but keep a
     // short retry for cache/race cases where PNGPlaneAvatar is late to publish.

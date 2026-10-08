@@ -60,6 +60,13 @@
     const minutes = Math.max(1, num(config.representedMinutesPerDay, DEFAULTS.representedMinutesPerDay));
     return rawDay() * minutes + time01() * minutes;
   }
+  // Romance (js/romance-system.js) is a date-only sibling of Rapport: same
+  // midnight settlement into Favor, but its own range (-100..high cap) and a
+  // heavier conversion weight, all authored in config/romance-config.js.
+  function romanceConfig() { return window.SCRATCHBONES_CONFIG?.game?.romance || {}; }
+  function romanceMin() { return num(romanceConfig().romanceMin, -100); }
+  function romanceMax() { return num(romanceConfig().romanceMax, 400); }
+  function romanceFavorRate() { return Math.max(0, num(config.rapportToFavorRate, DEFAULTS.rapportToFavorRate)) * Math.max(0, num(romanceConfig().romanceConversionMultiplier, 5)); }
   function rawRelationship(npcId) {
     const id = String(npcId || '');
     return id ? (window.DialogueContent?.getNpcDlgState?.(id) || window.DialogueContent?.npcDlgState?.get?.(id) || null) : null;
@@ -70,14 +77,22 @@
     const stateDay = Number.isFinite(Number(state.rapportDay)) ? Math.floor(Number(state.rapportDay)) : today;
     if (stateDay >= today) { state.rapportDay = today; return 0; }
     const oldRapport = clamp(num(state.rapport, 0), num(config.rapportMin, 0), num(config.rapportMax, 100));
-    const favorGain = Math.round(oldRapport * Math.max(0, num(config.rapportToFavorRate, DEFAULTS.rapportToFavorRate)));
+    const rapportFavor = Math.round(oldRapport * Math.max(0, num(config.rapportToFavorRate, DEFAULTS.rapportToFavorRate)));
+    const oldRomance = clamp(num(state.romance, 0), romanceMin(), romanceMax());
+    const romanceFavor = Math.round(oldRomance * romanceFavorRate()); // Negative Romance settles into lost Favor.
+    const favorGain = rapportFavor + romanceFavor;
     state.rapport = 0;
+    state.romance = 0;
     state.rapportDay = today;
-    if (favorGain) {
-      state.favor = num(state.favor, 0) + favorGain;
-      if (Array.isArray(state.memory)) state.memory.push({ type: 'rapport_rollover', day: today, amount: favorGain, sourceRapport: oldRapport });
-      window.__farmLog?.(`Rapport with ${npcId} became ${favorGain} permanent favor at midnight.`);
+    if (rapportFavor) {
+      if (Array.isArray(state.memory)) state.memory.push({ type: 'rapport_rollover', day: today, amount: rapportFavor, sourceRapport: oldRapport });
+      window.__farmLog?.(`Rapport with ${npcId} became ${rapportFavor} permanent favor at midnight.`);
     }
+    if (romanceFavor) {
+      if (Array.isArray(state.memory)) state.memory.push({ type: 'romance_rollover', day: today, amount: romanceFavor, sourceRomance: oldRomance });
+      window.__farmLog?.(`Romance with ${npcId} became ${romanceFavor} permanent favor at midnight.`);
+    }
+    if (favorGain) state.favor = num(state.favor, 0) + favorGain;
     return favorGain;
   }
   function relationship(npcId) {
@@ -86,6 +101,7 @@
     if (!state) return null;
     touchedNpcIds.add(id);
     if (!Number.isFinite(Number(state.rapport))) state.rapport = 0;
+    if (!Number.isFinite(Number(state.romance))) state.romance = 0;
     if (!Number.isFinite(Number(state.rapportDay))) state.rapportDay = socialDay();
     if (!Number.isFinite(Number(state.lastGiftDay))) state.lastGiftDay = -1;
     settle(id, state);
@@ -103,6 +119,20 @@
     state.rapport = after;
     state.rapportDay = socialDay();
     if (after !== before && Array.isArray(state.memory)) state.memory.push({ type: 'rapport', day: socialDay(), amount: after - before, reason: String(reason || 'social') });
+    return after - before;
+  }
+  function getRomance(npcId) {
+    const state = relationship(npcId);
+    return state ? clamp(num(state.romance, 0), romanceMin(), romanceMax()) : 0;
+  }
+  function adjustRomance(npcId, amount, reason = 'date') {
+    const state = relationship(npcId);
+    if (!state) return 0;
+    const before = getRomance(npcId);
+    const after = clamp(before + num(amount, 0), romanceMin(), romanceMax());
+    state.romance = after;
+    state.rapportDay = socialDay();
+    if (after !== before && Array.isArray(state.memory)) state.memory.push({ type: 'romance', day: socialDay(), amount: after - before, reason: String(reason || 'date') });
     return after - before;
   }
   function canGiftToday(npcId) {
@@ -129,6 +159,7 @@
         if (id && state) {
           touchedNpcIds.add(id);
           if (!Number.isFinite(Number(state.rapport))) state.rapport = 0;
+          if (!Number.isFinite(Number(state.romance))) state.romance = 0;
           if (!Number.isFinite(Number(state.rapportDay))) state.rapportDay = socialDay();
           if (!Number.isFinite(Number(state.lastGiftDay))) state.lastGiftDay = -1;
           settle(id, state);
@@ -145,6 +176,7 @@
         if (!state) continue;
         snapshot[id] = snapshot[id] || {};
         snapshot[id].rapport = get(id);
+        snapshot[id].romance = getRomance(id);
         snapshot[id].rapportDay = Math.floor(num(state.rapportDay, socialDay()));
         snapshot[id].lastGiftDay = Math.floor(num(state.lastGiftDay, -1));
       }
@@ -158,6 +190,7 @@
         if (!state) continue;
         touchedNpcIds.add(id);
         state.rapport = clamp(num(saved?.rapport, 0), num(config.rapportMin, 0), num(config.rapportMax, 100));
+        state.romance = clamp(num(saved?.romance, 0), romanceMin(), romanceMax());
         state.rapportDay = Number.isFinite(Number(saved?.rapportDay)) ? Math.floor(Number(saved.rapportDay)) : socialDay();
         state.lastGiftDay = Number.isFinite(Number(saved?.lastGiftDay)) ? Math.floor(Number(saved.lastGiftDay)) : -1;
         settle(id, state);
@@ -263,6 +296,7 @@
       if (before !== bottleSignature(bridge)) {
         drinkRecord(id).lastAcceptedSwigMinute = absoluteGameMinute();
         adjust(id, num(config.rapportDeltas?.drinkAccepted, DEFAULTS.rapportDeltas.drinkAccepted), 'drink_accepted');
+        window.HobunjiActivityEvents?.emit('drink_accepted', { npcId: id });
       }
       return result;
     };
@@ -367,6 +401,7 @@
         rapportPerSecond,
         totalAwarded: 0,
       });
+      window.HobunjiActivityEvents?.emit('dance_together', { npcId: id });
       return;
     }
     activeDanceByNpc.set(id, { stimulusId, sourceIsPlayer: true, type: stimulus.type || null });
@@ -410,6 +445,7 @@
       installed: true, eventDriven: true, polling: false, plannerHookInstalled: plannerPatched,
       config: JSON.parse(JSON.stringify(config)), rawGameDay: rawDay(), gameDay: socialDay(), clockHour: clockHour(), absoluteGameMinute: absoluteGameMinute(),
       rapport: Object.fromEntries([...touchedNpcIds].map(id => [id, get(id)])),
+      romance: Object.fromEntries([...touchedNpcIds].map(id => [id, getRomance(id)]).filter(([, value]) => value)),
       giftDays: Object.fromEntries([...touchedNpcIds].map(id => [id, relationship(id)?.lastGiftDay ?? -1])),
       drink: Object.fromEntries([...drinkState].map(([id, record]) => [id, { ...record, cooldownRemaining: drinkCooldownRemaining(id) }])),
       activeDanceStimulusByNpc: Object.fromEntries([...activeDanceByNpc].map(([id, session]) => [id, session?.stimulusId || null])),
@@ -425,7 +461,7 @@
     };
   }
 
-  window.NpcRapport = Object.freeze({ installed: true, eventDriven: true, config, rawGameDay: rawDay, currentGameDay: socialDay, absoluteGameMinute, get, adjust, danceRapportPerSecond, canGiftToday, markGiftedToday, drinkCooldownRemaining, flushRollover, getDebug });
+  window.NpcRapport = Object.freeze({ installed: true, eventDriven: true, config, rawGameDay: rawDay, currentGameDay: socialDay, absoluteGameMinute, get, adjust, getRomance, adjustRomance, romanceFavorRate, danceRapportPerSecond, canGiftToday, markGiftedToday, drinkCooldownRemaining, flushRollover, getDebug });
   window.__npcRapportDebug = getDebug;
   patchDialogue();
   patchGifting();

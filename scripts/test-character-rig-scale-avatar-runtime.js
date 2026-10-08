@@ -66,4 +66,18 @@ const installed = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel;
 intervalCallback?.();
 assert.strictEqual(window.PNGPlaneAvatar.buildSinglePlaneAvatarModel, installed, 'late-load retry must be idempotent');
 
+// Children: the whole portrait already carries the child body multiplier, so
+// the head bone is re-enlarged by childHead / childBody and remembered on the
+// root for later reapplication.
+window.PNGPlaneAvatar.childScaleFor = options => (options.npcRecord?.role === 'child' ? { body: 0.5, head: 0.75, headFactor: 1.5 } : null);
+calls.length = 0;
+window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(null, null, {
+  profile: { appearance: { speciesId: 'mao-ao', gender: 'male' } },
+  npcRecord: { role: 'child' },
+  neckRig: true,
+});
+assert.strictEqual(calls[0].tuple.childHeadFactor, 1.5, 'child heads are re-enlarged by head / body at the neck bone');
+assert.strictEqual(calls[0].tuple.head, resolved.head, 'the authored species head scale is unchanged');
+assert.strictEqual(avatarRoot.userData.hobunjiCharacterRigHeadRuntime.childHeadFactor, 1.5);
+
 console.log('character rig scale avatar runtime tests passed');

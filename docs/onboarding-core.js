@@ -304,6 +304,10 @@
   let _clothDyeBId = null;
   let _el          = null;
   let _renderTimer = null;
+  // In-game creator session (openCreator below): the same creator UI reused
+  // for something other than a new save — e.g. js/romance-family.js's dream
+  // child. null during ordinary onboarding.
+  let _creatorSession = null;
 
   function mountOnboardingOverlay() {
     document.documentElement?.classList?.add('hobunji-onboarding-foreground'); // Claims the foreground before DOM insertion so loading-screen text cannot flash over the first onboarding paint.
@@ -1434,6 +1438,7 @@
       wildernessCampfireState: memberState.wildernessCampfireState || null,
       townMineState:     memberState.townMineState || null,
       doorstepVisitState: { ...(memberState.doorstepVisitState || {}) },
+      romanceState:      memberState.romanceState || null,
       lastPosition:      memberState.lastPosition || null,
       isNewWorld,
     };
@@ -1487,10 +1492,10 @@
         <div class="ob-preview-hint">Live preview</div>
       </div>
       <div class="ob-col ob-col-right">
-        <div class="ob-section-label">Farmer name</div>
+        ${_creatorSession?.hideName ? '<div hidden>' : ''}<div class="ob-section-label">${_creatorSession ? 'Name' : 'Farmer name'}</div>
         <input class="ob-input" id="ob-nickname" type="text" maxlength="32"
                value="${esc(_state.nickname || '')}" placeholder="Your name…"
-               autocomplete="off" spellcheck="false" />
+               autocomplete="off" spellcheck="false" />${_creatorSession?.hideName ? '</div>' : ''}
 
         <div class="ob-section-label" style="margin-top:12px;">Species</div>
         <div class="ob-group">${speciesBtns}</div>
@@ -1563,10 +1568,11 @@
   }
 
   function renderOverlay() {
-    const hasExistingChars = _saveMeta && (_saveMeta.characters || []).length > 0;
+    const hasExistingChars = !_creatorSession && _saveMeta && (_saveMeta.characters || []).length > 0;
     const body = _activeTab === 'appearance' ? renderAppearanceBody() : renderCollectionsBody();
-    return `<div class="ob-card">
-      <div class="ob-title">🌿 Create Your Farmer</div>
+    return `<div class="ob-card${_creatorSession ? ' ob-creator-session' : ''}">
+      <div class="ob-title">${_creatorSession ? esc(_creatorSession.title) : '🌿 Create Your Farmer'}</div>
+      ${_creatorSession?.subtitle ? `<div class="ob-muted" style="margin:-4px 0 8px;">${esc(_creatorSession.subtitle)}</div>` : ''}
       <div class="ob-tabs">
         ${hasExistingChars ? `<button class="ob-tab ob-back-tab" id="ob-back-btn" type="button">← Back</button>` : ''}
         <button class="ob-tab${_activeTab === 'appearance'   ? ' ob-active' : ''}" data-ob-tab="appearance">✨ Appearance</button>
@@ -1574,8 +1580,8 @@
       </div>
       <div class="ob-two-col">${body}</div>
       <div class="ob-footer">
-        <span class="ob-footer-hint">Saved automatically — you can change this later.</span>
-        <button class="ob-start-btn" id="ob-start-btn">🌱 Start Farming</button>
+        <span class="ob-footer-hint">${_creatorSession ? esc(_creatorSession.hint || '') : 'Saved automatically — you can change this later.'}</span>
+        <button class="ob-start-btn" id="ob-start-btn">${_creatorSession ? esc(_creatorSession.confirmLabel) : '🌱 Start Farming'}</button>
       </div>
     </div>`;
   }
@@ -1706,6 +1712,7 @@
 
   // ── Completion ────────────────────────────────────────────────────────
   function _complete() {
+    if (_creatorSession) { _completeCreatorSession(); return; }
     const playerData = {
       nickname:          (_state.nickname || '').trim() || 'Farmer',
       appearance:        { ..._state.appearance, cosmetics: { ..._state.appearance.cosmetics }, bodyColors: { ..._state.appearance.bodyColors } },
@@ -1799,6 +1806,7 @@
       playerData.wildernessCampfireState = memberState.wildernessCampfireState || null;
       playerData.townMineState = memberState.townMineState || null;
       playerData.doorstepVisitState = { ...(memberState.doorstepVisitState || {}) };
+      playerData.romanceState = memberState.romanceState || null;
       playerData.lastPosition = memberState.lastPosition || null;
       playerData.isNewWorld     = true;
     }
@@ -1963,6 +1971,67 @@
     ensureCosmetics().then(() => schedulePreviewRender());
   }
 
+  // ── In-game creator sessions ──────────────────────────────────────────
+  // Reopens this same creator (species/subspecies, gender, every cosmetic
+  // slot, body colors, Collections clothing + dyes, and the redesign/life
+  // preview add-ons, which re-arm on the 'hobunji-creator-session' event)
+  // for something other than a new save. The result goes to onComplete; no
+  // save meta, world, or hobunjiPlayerReady is touched.
+  //   openCreator({ title, subtitle, confirmLabel, hint, hideName,
+  //                 speciesId, gender, child, onComplete(result) })
+  // result: { nickname, appearance, equippedCosmetics, appliedDyes }
+  function openCreator(options = {}) {
+    if (_el || _creatorSession) return false;
+    _creatorSession = {
+      title: String(options.title || '✨ Create a Character'),
+      subtitle: options.subtitle ? String(options.subtitle) : '',
+      confirmLabel: String(options.confirmLabel || 'Done'),
+      hint: options.hint != null ? String(options.hint) : '',
+      hideName: options.hideName === true,
+      child: options.child === true,
+      mode: String(options.mode || 'custom'),
+      onComplete: typeof options.onComplete === 'function' ? options.onComplete : null,
+    };
+    _flowStep = 'char-create';
+    _state = makeDefaultState(options.speciesId || 'mao-ao', options.gender || 'male');
+    _activeTab = 'appearance';
+    _colorAIdx = 0;
+    _colorBIdx = 0;
+    _clothDyeAId = null;
+    _clothDyeBId = null;
+    _el = mountOnboardingOverlay();
+    _el.classList.add('ob-in-game-session');
+    document.dispatchEvent(new CustomEvent('hobunji-creator-session', { detail: { phase: 'open', mode: _creatorSession.mode, child: _creatorSession.child } }));
+    rerender();
+    ensureCosmetics().then(() => schedulePreviewRender());
+    return true;
+  }
+
+  function creatorSessionInfo() {
+    return _creatorSession ? { mode: _creatorSession.mode, child: _creatorSession.child } : null;
+  }
+
+  function _completeCreatorSession() {
+    const session = _creatorSession;
+    const dyeA = selectedClothDye('A');
+    const dyeB = selectedClothDye('B') || dyeA;
+    // NPC records carry clothing dyes as tint-slot → dye id (the same tint
+    // namespace buildPreviewProfile previews them in).
+    const clothDyes = dyeA ? { HAT: dyeA.id, HOOD: dyeA.id, PAULDRON: dyeA.id, TORSO: dyeA.id, CLOTH: dyeA.id, HOOD_B: dyeB.id, CLOTH_B: dyeB.id } : {};
+    const result = {
+      nickname: (_state.nickname || '').trim(),
+      appearance: { ..._state.appearance, cosmetics: { ..._state.appearance.cosmetics }, bodyColors: { ..._state.appearance.bodyColors } },
+      equippedCosmetics: [..._state.equippedCosmetics],
+      appliedDyes: { ...(_state.appliedDyes || {}), ...clothDyes },
+    };
+    _creatorSession = null;
+    _flowStep = null;
+    _el?.classList.add('ob-fade-out');
+    setTimeout(removeOnboardingOverlay, 420);
+    document.dispatchEvent(new CustomEvent('hobunji-creator-session', { detail: { phase: 'close', mode: session.mode } }));
+    try { session.onComplete?.(result); } catch (error) { console.warn('[onboarding] creator session callback failed', error); }
+  }
+
   function reset() {
     try { localStorage.removeItem(STORAGE_KEY); }   catch (_) {}
     try { localStorage.removeItem(SAVE_META_KEY); } catch (_) {}
@@ -1974,5 +2043,5 @@
     _saveFlowStep = null;
   }
 
-  window.HobunjiOnboarding = { init, reset, loadProfile, loadSaveMeta };
+  window.HobunjiOnboarding = { init, reset, loadProfile, loadSaveMeta, openCreator, creatorSessionInfo };
 })();

@@ -3974,6 +3974,7 @@ window.SCRATCHBONES_CONFIG = {
           "mashtzarr": 1
         },
         "childScaleMultiplier": 0.5,
+        "childHeadScaleMultiplier": 0.72,
         "childMarkers": {
           "roles": ["child"],
           "tags": ["child"]

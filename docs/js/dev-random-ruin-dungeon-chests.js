@@ -123,6 +123,7 @@
   function open(chest) {
     if (!chest || chest.opened) return false;
     chest.opened = true;
+    window.HobunjiActivityEvents?.emit('chest_opened', { buried: false, boss: !!chest.boss });
     const gained = window.LootRolling?.rollLootPool?.(chest.poolId) || {};
     const trinketParts = window.TrinketSystem?.claimLoot?.(gained, 'harlyaoRuin') || []; // trinket_<id> entries become gear, never inventory stacks.
     const relicParts = chest.boss ? (window.HarlyaoRelics?.rollBossChestRelic?.(chest) || []) : [];

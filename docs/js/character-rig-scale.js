@@ -191,7 +191,7 @@
   function findNeckRig(root) {
     if (!root) return null;
     const found = node => usableNeckRig(node?.userData?.neckRig)
-      ? { rig: node.userData.neckRig, modelHeight: Number(node.userData.portraitModelHeight) || null }
+      ? { rig: node.userData.neckRig, modelHeight: Number(node.userData.portraitModelHeight) || null, node }
       : null;
     const direct = found(root);
     if (direct) return direct;
@@ -232,6 +232,18 @@
   // bone would drag those along with the head. Animation Author's own
   // separate two-sided-plane rig builder has no headScaleJoint yet, so it
   // still falls back to neckJoint there.
+  // Child avatars (PNGPlaneAvatar.childScaleFor) are shrunk as a whole by
+  // their body multiplier when the portrait is built; their head should shrink
+  // less, so the head bone is re-enlarged by childHead / childBody. Recorded
+  // on the avatar root at build time so later reapplications (hand attach)
+  // keep it without needing the NPC record again.
+  function childHeadFactorFor(overrides, node) {
+    const explicit = Number(overrides?.childHeadFactor);
+    if (Number.isFinite(explicit) && explicit > 0) return explicit;
+    const stored = Number(node?.userData?.hobunjiCharacterRigHeadRuntime?.childHeadFactor);
+    return Number.isFinite(stored) && stored > 0 ? stored : 1;
+  }
+
   function applyHeadCompensation(root, species, gender, overrides = {}, ageFraction = 0) {
     const found = findNeckRig(root);
     if (!found) return false;
@@ -241,7 +253,7 @@
     const bx = clampScale(Number.isFinite(Number(overrides.x)) && Number(overrides.x) > 0 ? overrides.x : resolved.x);
     const by = clampScale(Number.isFinite(Number(overrides.y)) && Number(overrides.y) > 0 ? overrides.y : resolved.y);
     const headNumber = Number(overrides.head);
-    const head = clampScale(Number.isFinite(headNumber) && headNumber > 0 ? headNumber : resolved.head);
+    const head = clampScale((Number.isFinite(headNumber) && headNumber > 0 ? headNumber : resolved.head) * childHeadFactorFor(overrides, found.node));
     target.scale.set(bx > 0 ? head / bx : head, by > 0 ? head / by : head, 1);
     target.updateMatrix?.();
 
@@ -349,6 +361,7 @@
     maxAgeHunchFraction: MAX_AGE_HUNCH_FRACTION,
     ageHunchFraction,
     ageFor,
+    childHeadFactorFor,
     defaultScaleFor,
     profileFor,
     scaleFor,

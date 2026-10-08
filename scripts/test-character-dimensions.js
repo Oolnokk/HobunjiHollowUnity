@@ -73,6 +73,14 @@ const child = D.dimensionsFor('mashtzarr', 'male', { child: true });
 near(child.factors.portraitScale, 0.6, 'child multiplier is applied to portrait scale');
 near(child.height, d.height * 0.5, 'child height is half (every layer is linear in model height)');
 
+// A configured child head multiplier keeps the body at the child scale but
+// shrinks the head less (head / body is re-applied at the neck bone).
+windowObject.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.childHeadScaleMultiplier = 0.75;
+const bigHeadChild = D.dimensionsFor('mashtzarr', 'male', { child: true });
+near(bigHeadChild.body.top, child.body.top, 'child head multiplier leaves the body alone');
+near(bigHeadChild.head.height, child.head.height * 1.5, 'head ends at 0.75 of adult size instead of 0.5');
+delete windowObject.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.childHeadScaleMultiplier;
+
 // Transform aliases fall back to their canonical species' measurement.
 D._setMeasurement('kenkari', 'female', {
   body: { top: 0.5, bottom: 0.9, left: 0.3, right: 0.7, centroidU: 0.5, centroidV: 0.7 },

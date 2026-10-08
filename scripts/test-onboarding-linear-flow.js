@@ -35,6 +35,8 @@ assert.match(flow, /event\.key !== 'Enter' \|\| worldStep !== 'name'[\s\S]{0,180
 assert.match(flow, /Create Farm & Play/, 'only the final Farm Setup step may expose world creation/play');
 assert.match(flow, /dataset\.obLinearFinalPlay = '1'/, 'final Play must mark the existing clean reload handoff without changing ordinary save-select Play');
 
+assert.match(flow, /if \(window\.HobunjiOnboarding\?\.creatorSessionInfo\?\.\(\)\) return;\s*installStyle\(\);\s*if \(creatorOverlay\(\)\)/, 'in-game creator sessions (openCreator, e.g. the adoption dream) must bypass the new-farmer steps and their world-deleting hand-off');
+
 assert.match(flow, /window\[FLOW_ID\] = Object\.freeze\(\{[\s\S]*status,/, 'linear flow must expose mobile-readable status diagnostics');
 assert.match(flow, /ob-linear-flow-error/, 'linear flow errors must be visible in-page for mobile testing without DevTools');
 

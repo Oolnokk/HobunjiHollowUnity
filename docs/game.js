@@ -366,7 +366,10 @@
         refreshWeaponSwitchBtn();
       }
 
-      async function openNpcDialogue(walker) {
+      // opts.node: open straight into one synthetic dialogue node (feature
+      // conversations such as js/romance-system.js's date/proposal/wedding
+      // scripts) instead of the NPC's ordinary tree/turn-in/favor routing.
+      async function openNpcDialogue(walker, opts = null) {
         const rec  = walker.rec;
         window.DialogueContent?.recordNpcMemory(rec?.id, 'talked');
         window.WorldPopupText?.clearInteractionPrompts?.();
@@ -402,6 +405,12 @@
 
         _npcDialogueEl.classList.add('open');
         _npcDialogueEl.setAttribute('aria-hidden', 'false');
+
+        if (opts?.node) {
+          window.DialogueContent?.beginSyntheticChoice(rec);
+          window.DialogueContent?.renderDlgNode(opts.node);
+          return;
+        }
 
         if (rec?.id === 'spearhead_unumanuk' && window.CombatTutorial?.active()) {
           window.DialogueContent?.beginNpcConversation(rec); // Automatic coaching must not be displaced by procedural requests.
@@ -2441,6 +2450,7 @@
         bedroll:       { itemKey: 'bedrollFurniture',       icon: '🛌', name: 'Bedroll',              modelFile: 'bedroll_folded.glb',            price: 12, fw: 1, fd: 1, color: 0x6b8c5e, area: 'interior', desc: 'A simple folded bedroll for sleeping rough.' },
         bench:         { itemKey: 'benchFurniture',         icon: '🪑', name: 'Short Bench',          modelFile: 'bench_short.glb',              price: 18, fw: 2, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A short wooden bench.', sit: true },
         bookshelf:     { itemKey: 'bookshelfFurniture',     icon: '📚', name: 'Bookshelf',            modelFile: 'bookshelf_low.glb',            price: 28, fw: 2, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A low bookshelf.' },
+        babyBasket:    { itemKey: 'babyBasketFurniture',    icon: '🧺', name: 'Baby Basket',          price: 0,  fw: 1, fd: 1, color: 0xb08a4e, area: 'interior', desc: 'A woven basket where your newborn sleeps for their first month.', fixture: true },
         bucket:        { itemKey: 'bucketFurniture',        icon: '🪣', name: 'Tin Bucket',           modelFile: 'bucket_tin.glb',               price: 8,  fw: 1, fd: 1, color: 0x888888, area: 'any',      desc: 'A utilitarian tin bucket.' },
         candleTable:   { fireHazard: true, itemKey: 'candleTableFurniture',   icon: '🕯️', name: 'Candle Table',         modelFile: 'candle_table.glb',             price: 15, fw: 1, fd: 1, color: 0x5a4020, area: 'interior', desc: 'Small table with a candle for warm light.', light: { color: 0xffaa44, intensity: 0.7, distance: 5, height: 0.55 } },
         chairSimple:   { itemKey: 'chairSimpleFurniture',   icon: '🪑', name: 'Simple Chair',         modelFile: 'chair_simple.glb',             price: 12, fw: 1, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A plain wooden chair.', sit: true },
@@ -2758,7 +2768,7 @@
         barrelAging: 'aging', vaseAging: 'aging',
       };
 
-      function addProcessedOutputs(outputs, inputStars, methodId) {
+      function addProcessedOutputs(outputs, inputStars, methodId, yieldMultiplier = 1) {
         const methodClass = PROCESSING_METHOD_CLASSES[methodId] || 'quick';
         // Output quality evolves from the input's actual quality rather than
         // being rerolled from scratch — see the processing-quality-resolution
@@ -2774,7 +2784,7 @@
         outputs.forEach(output => {
           window.ItemProcessing.ensureProcessedItemDef(output);
           const previousCount = inventory[output.key] || 0; // Used to keep quality buckets aligned when an output stack is full.
-          inventory[output.key] = Math.min(99, previousCount + 1 + bonusUnit);
+          inventory[output.key] = Math.min(99, previousCount + (1 + bonusUnit) * Math.max(1, Math.floor(Number(yieldMultiplier) || 1)));
           window.CookingSystem?.recordItemQuality?.(output.key, outputStars, inventory[output.key] - previousCount);
         });
         return outputStars;
@@ -2815,11 +2825,11 @@
           const color = outputs?.[0]?.spriteColor;
           return Number.isFinite(color) ? '#' + Number(color).toString(16).padStart(6, '0') : processTimeline?.substanceColor;
         }
-        function startTimedJob(outputs, inputStars, inputLabel, source = 'manual') {
+        function startTimedJob(outputs, inputStars, inputLabel, source = 'manual', yieldMultiplier = 1) {
           if (!processTimeline) return { ok: false, message: `${def.name} has no authored process timeline.` };
           if (job) return { ok: false, busy: true, message: `${def.name} is already squeezing a batch.` };
           const durationS = Math.max(.1, Number(processTimeline.duration) || 12);
-          job = { kind: 'timed', outputs, inputStars, inputLabel, source, durationS, readyAtMs: Date.now() + durationS * 1000, substanceColor: timelineSubstanceColor(outputs) };
+          job = { kind: 'timed', outputs, inputStars, inputLabel, source, yieldMultiplier, durationS, readyAtMs: Date.now() + durationS * 1000, substanceColor: timelineSubstanceColor(outputs) };
           window.FarmEditor.saveFarmLayout();
           window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().processStart);
           return { ok: true, started: true, durationS };
@@ -2828,7 +2838,7 @@
           if (job?.kind !== 'timed') return;
           const finished = job;
           job = null;
-          const outputStars = addProcessedOutputs(finished.outputs, finished.inputStars, def.method);
+          const outputStars = addProcessedOutputs(finished.outputs, finished.inputStars, def.method, finished.yieldMultiplier);
           window.FarmAnimals?.clearVatWorkerPose?.(obj.id);
           window.FarmEditor.saveFarmLayout();
           saveMemberWorldData();
@@ -2867,7 +2877,7 @@
           label: def.icon + ' ' + def.name,
           update: updateVfx,
           triggerVfx: triggerBurst, // used by autoSqueezeDewAtVat (livestock-to-vat automation)
-          startTimedJob({ outputs, inputStars, inputLabel, source } = {}) { return startTimedJob(outputs, inputStars, inputLabel, source); }, // Used by assigned livestock without coupling dew-vats.js to timeline internals.
+          startTimedJob({ outputs, inputStars, inputLabel, source, yieldMultiplier } = {}) { return startTimedJob(outputs, inputStars, inputLabel, source, yieldMultiplier); }, // Used by assigned livestock without coupling dew-vats.js to timeline internals.
           getJob() { return job; }, // read by saveFarmLayout
           getButtons() {
             if (def.specialMode === 'teaGrinder') {
@@ -3076,8 +3086,8 @@
         };
       }
 
-      function canPlaceDecorativeFurnitureAt(col, row, ignoreId = null, furnitureKey = null, rotYDeg = 0) {
-        const g = currentArea === 'interior' ? interiorGrid : grid;
+      function canPlaceDecorativeFurnitureAt(col, row, ignoreId = null, furnitureKey = null, rotYDeg = 0, area = currentArea) {
+        const g = area === 'interior' ? interiorGrid : grid;
         const { fw, fd } = decorativeFurnitureSize(furnitureKey, rotYDeg);
         // Farm decor also has to respect worldObjects — the same shared
         // occupancy map processing furniture, barns, and the sell/supply
@@ -3093,7 +3103,7 @@
           for (let c = col; c < col + fw; c++) {
             const tile = g[r]?.[c];
             if (!tile || tile.type === TileType.ROCK) return false;
-            if (currentArea === 'farm') {
+            if (area === 'farm') {
               if (window.GridTileAccessors.isHouseFootprint(c, r)) return false;
               const occupyingWorldObject = getWorldObjectAt(c, r);
               const isOwnCurrentTile = ignoreObj && ignoreObj.col === c && ignoreObj.row === r;
@@ -3102,7 +3112,7 @@
           }
         }
         return !interiorFurnitureObjects.find(o => {
-          if (o.id === ignoreId || o.area !== currentArea) return false;
+          if (o.id === ignoreId || o.area !== area) return false;
           const { fw: ow, fd: od } = decorativeFurnitureSize(o.key, o.rotYDeg || 0);
           return col < o.col + ow && col + fw > o.col && row < o.row + od && row + fd > o.row;
         });
@@ -3630,6 +3640,46 @@
         window.HudUpdate.refreshItemScroll();
         window.FarmEditor.saveFarmLayout();
         return { ok: true, message: `${def.icon} ${def.name} placed.` };
+      }
+
+      // Places a no-inventory fixture (the baby basket from js/romance-family.js)
+      // on a clear farmhouse-interior tile, wherever the player currently is.
+      // Tiles touching an interior exit are skipped so the door stays usable;
+      // when the house is full, one ordinary decor piece (never a bed, hearth
+      // or fixture) is moved to farm storage to make room.
+      function placeInteriorFixtureFurniture(furnitureKey) {
+        if (!DECORATIVE_FURNITURE_DEFS[furnitureKey]) return null;
+        const nearExit = (c, r) => { for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) if (_interiorExitTiles.has((c + dc) + ',' + (r + dr))) return true; return false; };
+        const cells = [];
+        for (const piece of housePieces) {
+          if (piece.stage !== 'built') continue;
+          for (let r = piece.row * 2; r < (piece.row + piece.h) * 2; r++) for (let c = piece.col * 2; c < (piece.col + piece.w) * 2; c++) cells.push([c, r]);
+        }
+        const open = cells.filter(([c, r]) => !nearExit(c, r) && canPlaceDecorativeFurnitureAt(c, r, null, furnitureKey, 0, 'interior'));
+        let spot = open[Math.floor(open.length / 2)] || null;
+        let stored = null;
+        if (!spot) {
+          const movable = interiorFurnitureObjects.find(o => o.area === 'interior' && !/bed|hearth/i.test(o.key) && !DECORATIVE_FURNITURE_DEFS[o.key]?.fixture && !nearExit(o.col, o.row));
+          if (!movable) return null;
+          stored = DECORATIVE_FURNITURE_DEFS[movable.key]?.name || movable.key;
+          spot = [movable.col, movable.row];
+          recoverFurnitureInInteriorRect(movable.col, movable.row, 1, 1);
+          if (!canPlaceDecorativeFurnitureAt(spot[0], spot[1], null, furnitureKey, 0, 'interior')) return { id: null, stored };
+        }
+        const [col, row] = spot;
+        const result = makeDecorativeFurnitureMesh(col, row, furnitureKey, interiorScene, 'interior');
+        if (!result) return null;
+        const id = 'decor_' + Math.random().toString(36).slice(2, 10);
+        interiorFurnitureObjects.push({ id, key: furnitureKey, col, row, mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: 'interior', rotYDeg: 0, ...furnitureOwnerFields(col, row) });
+        window.FarmEditor.saveFarmLayout();
+        return { id, col, row, stored };
+      }
+      function removeInteriorFurnitureById(id) {
+        const obj = interiorFurnitureObjects.find(o => o.id === id);
+        if (!obj) return false;
+        disposeDecorativeFurniture(obj, false);
+        window.FarmEditor.saveFarmLayout();
+        return true;
       }
 
       function disposeDecorativeFurniture(obj, refundToInventory = false) {
@@ -4776,6 +4826,12 @@
         if (!c.isCompanion) {
           awardMotesOfProwess(MOTES_PER_KILL);
           window.SkillSystem?.award?.('combat', window.SkillSystem?.XP_GAINS?.combatKill || 8, 'defeated creature');
+          const isBarbarian = c.isPorakanekiHunter === true; // The Porakaneki/Omgurku war bands are the setting's "barbarians".
+          window.HobunjiActivityEvents?.emit('creature_killed', {
+            creatureKey: c.def?.key || c.kind || null, label: c.def?.label || null,
+            isBandit: !!c.isBandit, isBarbarian,
+            isPredator: !c.isBandit && !isBarbarian && !!c.def?.hostile && c.def?.diet !== 'herbivore',
+          });
         }
         window.CreatureDeath.begin(c, fromX ?? c.x, fromY ?? c.y);
         return true;
@@ -8422,6 +8478,7 @@
           member.minedRockState = serializeZoneMinedRockState();
           member.townMineState = window.TownMine?.serialize?.() || null;
           member.doorstepVisitState = window.DoorstepVisits?.serialize?.() || {};
+          member.romanceState = window.RomanceSystem?.serialize?.() || null;
           // Only ever consumed on the next boot if it lands in a wilderness
           // zone with a still-active campfire there (see spawnPlayerAvatar) —
           // saved unconditionally anyway since it's cheap and harmless
@@ -11407,51 +11464,11 @@
         };
       }
 
-      function normalizeRoutes(routes, legacyPaths = []) {
-        const out = (routes || []).filter(r => r && Array.isArray(r.nodes) && r.nodes.length > 0)
-          .map(r => ({ id: r.id, label: r.label || 'Route', area: normalizeNpcArea(r.area || 'farm'), nodes: r.nodes.map(n => [n[0], n[1]]) }));
-        if (!out.length) legacyPaths.forEach(p => out.push({ id: 'legacy_' + (p.id || p.label || out.length), label: p.label || 'Legacy route', area: normalizeNpcArea(p.area || 'farm'), nodes: p.nodes.map(n => [n[0], n[1]]) }));
-        return out;
-      }
-
-      // Whether the straight segment between two route nodes stays on dry,
-      // walkable ground (no river crossing) — sampled the same way as
-      // canNpcBeeline so authored route edges respect the same rules.
-      function isRouteSegmentDry(area, c1, r1, c2, r2) {
-        const x1 = c1 + 0.5, z1 = r1 + 0.5, x2 = c2 + 0.5, z2 = r2 + 0.5;
-        const dist = Math.hypot(x2 - x1, z2 - z1);
-        const samples = Math.max(1, Math.ceil(dist / 0.5));
-        for (let i = 0; i <= samples; i++) {
-          const t = i / samples;
-          const c = Math.floor(x1 + (x2 - x1) * t);
-          const r = Math.floor(z1 + (z2 - z1) * t);
-          if (!isNpcTileWalkable(area, c, r)) return false;
-        }
-        return true;
-      }
-
-      function buildRouteGraph(routes) {
-        const nodes = new Map();
-        const key = (area, c, r) => area + ':' + c + ',' + r;
-        const ensure = (area, c, r) => {
-          const k = key(area, c, r);
-          if (!nodes.has(k)) nodes.set(k, { key: k, area, c, r, edges: new Set(), routeIds: new Set() });
-          return nodes.get(k);
-        };
-        routes.forEach(route => {
-          const area = route.area || 'farm';
-          let prev = null;
-          (route.nodes || []).forEach(([c, r]) => {
-            const node = ensure(area, c, r);
-            if (route.id) node.routeIds.add(route.id);
-            // Skip edges that wade through a river — NPCs following this route
-            // will detour via any other dry edge instead of crossing the water.
-            if (prev && isRouteSegmentDry(area, prev.c, prev.r, c, r)) { prev.edges.add(node.key); node.edges.add(prev.key); }
-            prev = node;
-          });
-        });
-        return { nodes };
-      }
+      // normalizeRoutes / isRouteSegmentDry / buildRouteGraph now live in
+      // js/npc-route-graph.js; these hoisted wrappers keep every call site
+      // (some run before this point at module init) working unchanged.
+      function normalizeRoutes(routes, legacyPaths = []) { return window.NpcRouteGraph.normalizeRoutes(routes, legacyPaths, normalizeNpcArea); }
+      function buildRouteGraph(routes) { return window.NpcRouteGraph.buildRouteGraph(routes, isNpcTileWalkable); }
 
       function rebuildRouteGraphs() {
         routeGraphsByArea.clear();
@@ -11561,9 +11578,10 @@
       }
       function registerChairNpcStation(furnitureKey, col, row, rotYDeg, area, extraRoles, lookAt) {
         const def = DECORATIVE_FURNITURE_DEFS[furnitureKey];
-        if (!def?.sit) return;
+        if (!def?.sit) return null;
+        const id = furnitureNpcStationId(area, col, row);
         registerNpcStations([{
-          id: furnitureNpcStationId(area, col, row), label: def.name,
+          id, label: def.name,
           area, c: col, r: row, rotY: rotYDeg || 0, pose: 'sit', furnitureKey, seatIndex: 0,
           // Every sittable piece of furniture is automatically a 'sit'
           // free-time opportunity (design doc §14/§16) — no per-chair
@@ -11580,6 +11598,7 @@
           // to this auto-registered seat, same as `roles` above.
           ...(lookAt ? { lookAt } : {}),
         }], area);
+        return id;
       }
       function unregisterChairNpcStation(furnitureKey, col, row, area) {
         if (!DECORATIVE_FURNITURE_DEFS[furnitureKey]?.sit) return;
@@ -13275,6 +13294,18 @@
             creature.groundShadow?.parent?.remove(creature.groundShadow);
           }
         }
+        // NPCs standing in the room survive the rebuild: detach them before the
+        // dispose/clear below and queue them for the rebuilt scene, the same
+        // _pendingBuildingAdd hand-off a walker spawned before its room loads uses.
+        for (const w of npcWalkers) {
+          if (w.root?.parent !== info.scene) continue;
+          info.scene.remove(w.root);
+          w.root._npcScene = null;
+          w.root._pendingBuildingAdd = mapId;
+        }
+        // Drop the outgoing layout's seats/stations (e.g. wedding pews) so a
+        // rebuilt room only advertises what it actually contains.
+        for (const id of info.registeredStationIds || []) npcStationsById.delete(id);
         info.scene.traverse(object => object.geometry?.dispose?.());
         info.scene.clear();
         _buildingScenes.delete(mapId);
@@ -13372,6 +13403,7 @@
 
         // ── hobunji_building_interior.v1 schema ──────────────────────────
         if (mapData?.schema === 'hobunji_building_interior.v1') {
+          const registeredStationIds = []; // Everything this build registers, so discardBuildingScene can drop exactly these when the room's layout changes.
           const cols = mapData.cols || 20, rows = mapData.rows || 20;
           const bGrid = Array.from({ length: rows }, () =>
             Array.from({ length: cols }, () => ({
@@ -13636,7 +13668,8 @@
               _markFurnitureEdgeId(model);
               bScene.add(model);
               furnitureSfxSource = window.Music?.registerFurnitureSfxSource(mapId, bx, bz, window.Music?.resolveFurnitureSfx(def));
-              registerChairNpcStation(furnitureKey, f.col, f.row, f.rotY || 0, normalizeNpcArea(mapId), f.roles, f.lookAt);
+              const seatStationId = registerChairNpcStation(furnitureKey, f.col, f.row, f.rotY || 0, normalizeNpcArea(mapId), f.roles, f.lookAt);
+              if (seatStationId) registeredStationIds.push(seatStationId);
               if (furnitureKey === 'trough' && f.barnId != null && f.troughIndex != null) {
                 const authoredData = window.AuthoredFurniture?.peek('trough');
                 window.FarmTroughs.registerMesh(f.barnId, f.troughIndex, model, authoredData);
@@ -13929,6 +13962,7 @@
           }
           const _stationSrc = (_wsOverride?.npcStations?.length ? _wsOverride.npcStations : mapData.npcStations) || [];
           registerNpcStations(_stationSrc.map(st => ({ ...st, area: mapId })), mapId);
+          for (const st of _stationSrc) if (st?.id) registeredStationIds.push(st.id);
           const buildingPaths = (mapData.npcPaths || []).filter(p => p && Array.isArray(p.nodes) && p.nodes.length > 0)
             .map(p => ({ ...p, area: mapId }));
           const buildingRoutes = normalizeRoutes(
@@ -13947,7 +13981,7 @@
           bScene.traverse(o => { if (o.userData?.cameraObstacle) occlusionMeshes.push(o); });
           window.BanubuCaveClouds?.validateCaveMaterials?.({ THREE, scene: bScene, mapData }); // Repairs malformed cave texture UV transforms once before Three.js renders the scene.
           window.CinematicCameraRuntime?.registerArea?.(mapId, mapData.cinematicCameras || []); // Cave/building cameras share this scene's local tile coordinate space.
-          const info = { scene: bScene, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config', name: mapData.name || mapId, wallStyle: mapData.wallStyle || '', entrySpots: mapData.entrySpots || {}, keyDoorGroups, mineFloor: mapData.mineFloor || null, minePlacementSafeTileCount: mapData.minePlacementSafeTileCount ?? null, disconnectedFloorTilesRemoved: mapData.disconnectedFloorTilesRemoved ?? 0, occlusionMeshes };
+          const info = { scene: bScene, registeredStationIds, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config', name: mapData.name || mapId, wallStyle: mapData.wallStyle || '', entrySpots: mapData.entrySpots || {}, keyDoorGroups, mineFloor: mapData.mineFloor || null, minePlacementSafeTileCount: mapData.minePlacementSafeTileCount ?? null, disconnectedFloorTilesRemoved: mapData.disconnectedFloorTilesRemoved ?? 0, occlusionMeshes };
           _buildingScenes.set(mapId, info);
           if (info.disconnectedFloorTilesRemoved > 0) window.__farmLog?.(`[cavern] ${mapId}: sealed ${info.disconnectedFloorTilesRemoved} unreachable floor tiles`, 'warn', mapData.wallStyle === 'mine' ? 'mine' : undefined);
           for (const w of npcWalkers) {
@@ -14210,22 +14244,38 @@
         if (_layoutSwapInProgress) return;
         const rawMapData = _rawMapDataByMapId.get(mapId);
         if (!rawMapData) return;
-        const snapshot = window.MapLayoutSystem.currentSnapshot();
-        const nextLayout = window.MapLayoutSystem.resolveActiveLayout(rawMapData, snapshot);
-        const nextLayoutId = nextLayout?.id || 'default';
-        if (nextLayoutId === _activeLayoutByMap.get(mapId)) return;
-        _layoutSwapInProgress = true;
+        const nextLayout = window.MapLayoutSystem.resolveActiveLayout(rawMapData, window.MapLayoutSystem.currentSnapshot());
+        if ((nextLayout?.id || 'default') === _activeLayoutByMap.get(mapId)) return;
+        _layoutSwapInProgress = true; // Held across the whole iris so the throttled gameLoop check cannot queue a second swap.
         try {
-          await window.CalendarSystem.runScreenTransition(async () => {
-            const fromCol = Math.floor(player.x / TILE), fromRow = Math.floor(player.y / TILE);
-            const entry = window.MapLayoutSystem.pickEntryPoint(rawMapData, { layout: nextLayout, fromCol, fromRow });
-            discardBuildingScene(mapId);
-            enterBuilding(mapId, entry?.col, entry?.row);
-            await waitForBuildingSceneReady(mapId);
-          });
-          window.__farmLog?.(`[layout] ${mapId} -> ${nextLayoutId}`);
+          await window.CalendarSystem.runScreenTransition(() => rebuildBuildingForActiveLayout(mapId, { guarded: true }));
         } finally {
           _layoutSwapInProgress = false;
+        }
+      }
+
+      // The rebuild half of performLiveLayoutSwap, without its own iris, for
+      // callers already behind a transition of their own (e.g. the temple's
+      // flag-driven Wedding layout in js/romance-wedding.js). Rebuilds only
+      // when the resolved layout actually differs from the rendered one.
+      async function rebuildBuildingForActiveLayout(mapId, { guarded = false } = {}) {
+        if (_layoutSwapInProgress && !guarded) return false;
+        const rawMapData = _rawMapDataByMapId.get(mapId);
+        if (!rawMapData) return false;
+        const nextLayout = window.MapLayoutSystem.resolveActiveLayout(rawMapData, window.MapLayoutSystem.currentSnapshot());
+        const nextLayoutId = nextLayout?.id || 'default';
+        if (nextLayoutId === _activeLayoutByMap.get(mapId)) return false;
+        _layoutSwapInProgress = true;
+        try {
+          const fromCol = Math.floor(player.x / TILE), fromRow = Math.floor(player.y / TILE);
+          const entry = window.MapLayoutSystem.pickEntryPoint(rawMapData, { layout: nextLayout, fromCol, fromRow });
+          discardBuildingScene(mapId);
+          enterBuilding(mapId, entry?.col, entry?.row);
+          await waitForBuildingSceneReady(mapId);
+          window.__farmLog?.(`[layout] ${mapId} -> ${nextLayoutId}`);
+          return true;
+        } finally {
+          if (!guarded) _layoutSwapInProgress = false;
         }
       }
 
@@ -17867,6 +17917,7 @@
         const stars = window.LootRolling.rollItemStars('farming');
         window.CookingSystem.recordItemQuality(data.cropKey, stars, amount);
         window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.crop || 6, `harvested ${data.label}`);
+        window.HobunjiActivityEvents?.emit('crop_harvested', { cropKey: data.cropKey, label: data.label });
         const msg = `Harvested ${window.LootRolling.starRatingText(stars)} ${data.emoji} ${data.label}${amount > 1 ? ` ×${amount}` : ''}!`;
         tile.crop = CropType.NONE;
         tile.fertilized = false; // Fertilizer is consumed by this harvest, never carried into the next planting.
@@ -18635,6 +18686,7 @@
           const zoneVisualsUpdated = removeZoneVegetationVisual(currentArea, col, row); // Lets completion skip the full-zone fallback.
           awardToolUseMasteryXp('axe');
           window.SkillSystem?.award?.('foraging', window.SkillSystem?.XP_GAINS?.tree || 8, 'felled tree');
+          window.HobunjiActivityEvents?.emit('tree_felled', { area: currentArea });
           const nutMessage = nutDrop ? `, ${addedNutAmount} ${window.LootRolling.starRatingText(nutDrop.stars)} ${nutDrop.label}${nutDrop.bonusAmount ? ' (Foraging bonus)' : ''}` : ''; // Used to make the skill-driven nut result visible at the point of harvest.
           return { ok: true, zoneVisualsUpdated, message: `Felled the tree — got ${amount} ${logDef?.label || logKey}${amount === 1 ? '' : 's'}${nutMessage}, and 1 Mulch${bonus ? ' (Foraging log bonus)' : ''}.` };
         }
@@ -18680,6 +18732,8 @@
           const revealedMineDescent = tryRevealMineDescent(currentArea, col, row, 'rock');
           awardToolUseMasteryXp('pick');
           window.SkillSystem?.award?.('mining', window.SkillSystem?.XP_GAINS?.rock || 8, 'mined rock');
+          window.HobunjiActivityEvents?.emit('rock_broken', { area: currentArea });
+          if (metalMessage) window.HobunjiActivityEvents?.emit('ore_mined', { oreKey: minedOreKey });
           const descentMessage = revealedMineDescent ? ' A hole leading deeper has been revealed!' : '';
           return { ok: true, zoneVisualsUpdated, message: `Broke the rock — got ${amount} Stone${metalMessage}${gotPebble ? ' and 1 Pebble' : ''}${bonus ? ' (Mining bonus)' : ''}.${descentMessage}` };
         }
@@ -27917,7 +27971,10 @@
         rareFishWeightMultiplier: rarity => window.SkillSystem?.rareFishWeightMultiplier?.(rarity) || 1,
         getPlayer: () => player,
         recordItemQuality: (...args) => window.CookingSystem?.recordItemQuality?.(...args),
-        awardFishingXp: () => window.SkillSystem?.award?.('fishing', window.SkillSystem?.XP_GAINS?.fish || 10, 'caught fish'),
+        awardFishingXp: () => {
+          window.HobunjiActivityEvents?.emit('fish_caught', {});
+          return window.SkillSystem?.award?.('fishing', window.SkillSystem?.XP_GAINS?.fish || 10, 'caught fish');
+        },
         awardToolUseMasteryXp,
         getInventoryStackKeys,
         getCurrentArea: () => currentArea,
@@ -28387,6 +28444,41 @@
       });
 
       window.CombatTutorialPartner?.init?.({ TILE });
+      // Dating / marriage / children (js/romance-system.js + romance-family.js)
+      // and the hold-Action-1 NPC command wheel (js/npc-command-wheel.js).
+      window.RomanceSystem?.init?.({
+        npcWalkers,
+        getNpcRecord: id => scheduledNpcRecords.get(id) || null,
+        getCurrentArea: () => currentArea,
+        normalizeNpcArea,
+        canHostNpc: area => area === 'farm' || area === 'interior' || area === 'town' || _isBuildingArea(area) || _isZoneArea(area),
+        getPlayerTilePosition: () => ({ x: player.x / TILE, z: player.y / TILE }),
+        isDialogueOpen: () => dialogueOpen,
+        showToast,
+        openNpcDialogue: walker => openNpcDialogue(walker),
+        openDialogueNode: (walker, node) => { if (!walker || !node) return false; if (dialogueOpen) closeNpcDialogue(); openNpcDialogue(walker, { node }); return true; },
+        getInteriorFurniture: () => interiorFurnitureObjects,
+        furniture: { placeInteriorFixture: placeInteriorFixtureFurniture, removeInteriorFurniture: removeInteriorFurnitureById },
+        despawnNpcWalker: walker => despawnNpcVisitor(walker),
+        rebuildBuildingForActiveLayout,
+        closeNpcDialogue: () => { if (dialogueOpen) closeNpcDialogue(); },
+        isAreaSettled: () => sceneTransDir === 0 && !_layoutSwapInProgress && (!_isBuildingArea(currentArea) || !!_buildingScenes.get(currentArea)), // No door iris or room build in flight.
+        seatTransformForTarget: target => npcSeatTransformForTarget(target),
+        spawnNpcRecord: async (rec, target) => {
+          if (!rec?.id || npcWalkers.some(w => w.rec?.id === rec.id)) return null;
+          const walker = await makeNpcWalker(rec, target);
+          if (walker && !npcWalkers.some(w => w.rec?.id === rec.id)) npcWalkers.push(walker);
+          return walker;
+        },
+        saveMemberWorldData,
+      });
+      window.NpcCommandWheel?.init?.({
+        getNearbyNpcWalker: () => nearbyNpcWalker,
+        isDialogueOpen: () => dialogueOpen,
+        isMenuOpen: () => menuOpen,
+        isFarmEditMode: () => farmEditMode,
+        openNpcDialogue: walker => openNpcDialogue(walker),
+      });
       window.DoorstepVisits?.init?.({
         save: saveMemberWorldData,
         getPlayerTile: () => ({ c: player.x / TILE, r: player.y / TILE }), // Feet position in the same tile units as HousePieces door tiles.
@@ -28972,7 +29064,10 @@
         getCurrentArea: () => currentArea,
         random: rnd,
         bonusYieldChance: skill => window.SkillSystem?.bonusYieldChance?.(skill) || 0,
-        awardForagingXp: () => window.SkillSystem?.award?.('foraging', window.SkillSystem?.XP_GAINS?.forage || 4, 'picked herb'),
+        awardForagingXp: () => {
+          window.HobunjiActivityEvents?.emit('herb_picked', {});
+          return window.SkillSystem?.award?.('foraging', window.SkillSystem?.XP_GAINS?.forage || 4, 'picked herb');
+        },
         hostileObjects,
         EXTERIOR_ZONES,
         damageCreature,
@@ -29305,7 +29400,10 @@
         rollItemStars: window.LootRolling.rollItemStars,
         starRatingText: window.LootRolling.starRatingText,
         recordItemQuality: (...args) => window.CookingSystem?.recordItemQuality?.(...args),
-        awardFarmingXp: () => window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.animalGood || 5, 'collected animal good'),
+        awardFarmingXp: () => {
+          window.HobunjiActivityEvents?.emit('livestock_harvested', {});
+          return window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.animalGood || 5, 'collected animal good');
+        },
         getScene: window.GridTileAccessors.getActiveScene,
         getWorldObjectAt,
         isHouseFootprint: window.GridTileAccessors.isHouseFootprint,
@@ -29433,7 +29531,10 @@
         rollItemStars: window.LootRolling.rollItemStars,
         starRatingText: window.LootRolling.starRatingText,
         recordItemQuality: (...args) => window.CookingSystem?.recordItemQuality?.(...args),
-        awardFarmingXp: () => window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.animalGood || 5, 'collected animal good'),
+        awardFarmingXp: () => {
+          window.HobunjiActivityEvents?.emit('livestock_harvested', {});
+          return window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.animalGood || 5, 'collected animal good');
+        },
         // Farm livestock has its own tile-space update loop, so give it the
         // same explicit face target used by companion/wildlife gaze.  The
         // horizontal point is in farm tiles; worldY is the player's actual
@@ -29855,6 +29956,7 @@
         window.DialogueContent?.loadNpcRelationships(playerData);
         questProgress = { ...(playerData.questProgress || {}) };
         window.DoorstepVisits?.restore?.(playerData.doorstepVisitState); // "Already told you" flags for farmhouse-door visitors (js/doorstep-visits.js).
+        window.RomanceSystem?.restore?.(playerData.romanceState); // Dates, engagement, spouse and children (js/romance-system.js / romance-family.js).
         window.ProceduralTasks.maybeRefreshRequestPostings(); // makes sure requests exist even before the first day rollover
 
         // Alchemy: discovered reagent effects, still-active buffs/debuffs, and

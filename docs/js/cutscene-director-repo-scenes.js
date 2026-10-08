@@ -9,6 +9,7 @@
     Object.freeze({ id: 'opening-farm-tour', label: 'Opening — Spearhead Shows the Farm', builder: 'buildFarmTourScene', authoringArgs: 'farmTour', virtualMap: 'farm' }),
     Object.freeze({ id: 'banubu-intro', label: 'Banubu — Wake-up conversation', banubuTree: 'banubu_intro' }),
     Object.freeze({ id: 'banubu-key', label: 'Banubu — Pie, standing and Color Pools Key', banubuTree: 'banubu_q1_ready' }),
+    Object.freeze({ id: 'wedding', label: 'Marriage — Life Temple Wedding', weddingScene: true, authoringSpouseId: 'aliri_ginju' }),
   ]); // Used by the injected selector and the public debug surface so the Director always loads shipping scene builders instead of copied JSON.
   const REQUIRED_STORY_BUILDERS = Object.freeze(REPO_SCENES.map(scene => scene.builder).filter(Boolean)); // Used by story-module readiness checks so every visible selector entry is guaranteed callable.
   const STORY_SCRIPT_URL = new URL('../../js/opening-story-cutscene.js?v=20261005h9a94218', location.href).href; // Used to load the same authored builders the live opening sequence calls.
@@ -127,6 +128,11 @@
       const npc = records.get('banubu');
       const tree = npc?.dialogueTrees?.find(t => t.id === entry.banubuTree) || window.BanubuQuestContent.dialogueTrees.find(t => t.id === entry.banubuTree);
       return { entry, scene: window.BanubuCutsceneAuthoring.build(tree, npc, await response.json()) };
+    }
+    if (entry.weddingScene) {
+      if (!window.RomanceWedding) await loadScriptOnce(new URL('../../js/romance-wedding.js?v=20261007wedding1', location.href).href);
+      const records = await loadNpcRecords();
+      return { entry, scene: window.RomanceWedding.buildWeddingScene(records, authoringProfile(), { spouseId: entry.authoringSpouseId }) }; // Same builder the live ceremony plays; in game it runs on the temple's Wedding layout.
     }
     const [api, records] = await Promise.all([ensureStoryApi(), loadNpcRecords()]);
     const builder = api[entry.builder];
