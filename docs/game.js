@@ -17880,53 +17880,14 @@
           if (action === 'harvest') return Boolean(tile.crop && tile.cropReady);
           const crop = action.startsWith('plant_') ? action.slice(6) : null;
           if (!crop || tile.crop || !cropData[crop]) return false;
-          if (inventory[cropData[crop].seedKey] <= 0) return false;
+          if ((Number(inventory[cropData[crop].seedKey]) || 0) <= 0) return false; // A spent stack is deleted, and undefined <= 0 is false.
           return canPlantCropOnTile(crop, tile);
         }
         return false;
       }
 
-      function plantCrop(tile, crop) {
-        const data = cropData[crop];
-        if (!data) return { ok: false, message: 'Unknown crop.' };
-        if (inventory[data.seedKey] <= 0) return { ok: false, message: `No ${data.label} seeds left.` };
-        if (tile.crop) return { ok: false, message: 'Something is already growing here.' };
-        if (!canPlantCropOnTile(crop, tile))
-          return { ok: false, message: 'Can only plant on tilled or raised soil.' };
-        inventory[data.seedKey]--;
-        clampInventoryStack(data.seedKey);
-        tile.crop = crop;
-        tile.cropAge = 0;
-        tile.cropReady = false;
-        tile.stress = '';
-        const idealPct = Math.round(data.idealMin * 100) + '–' + Math.round(data.idealMax * 100);
-        const ditchNote = data.needsAdjacentDitch ? ' Grows well beside adjacent ditches.' : '';
-        return { ok: true, message: `Planted ${data.emoji} ${data.label}. Ideal water: ${idealPct}%.${ditchNote}` };
-      }
-
-      function harvestCrop(tile) {
-        if (!tile.crop) return { ok: false, message: 'Nothing to harvest here.' };
-        if (!tile.cropReady) return { ok: false, message: `${tile.crop} isn't ready yet.` };
-        const data = cropData[tile.crop];
-        // Bountiful Harvest (Farming perk): a chance for one extra crop unit
-        // from the same harvest, capped well below Foraging/Mining's yield
-        // perks since processed goods already amplify quality economically.
-        const bonusChance = Math.min(0.3, (window.PerkSystem?.rank('farming', 'bountifulHarvest') || 0) * 0.06);
-        const amount = 1 + ((window.GameRandom?.random?.() ?? Math.random()) < bonusChance ? 1 : 0);
-        inventory[data.cropKey] = Math.min(99, (inventory[data.cropKey] || 0) + amount);
-        const stars = window.LootRolling.rollItemStars('farming');
-        window.CookingSystem.recordItemQuality(data.cropKey, stars, amount);
-        window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.crop || 6, `harvested ${data.label}`);
-        window.HobunjiActivityEvents?.emit('crop_harvested', { cropKey: data.cropKey, label: data.label });
-        const msg = `Harvested ${window.LootRolling.starRatingText(stars)} ${data.emoji} ${data.label}${amount > 1 ? ` ×${amount}` : ''}!`;
-        tile.crop = CropType.NONE;
-        tile.fertilized = false; // Fertilizer is consumed by this harvest, never carried into the next planting.
-        tile.cropAge = 0;
-        tile.cropReady = false;
-        tile.stress = '';
-        window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().harvest);
-        return { ok: true, message: msg };
-      }
+      // plantCrop/harvestCrop now live in js/crop-planting.js.
+      window.CropPlanting.init({ inventory, cropData, CropType, canPlantCropOnTile, clampInventoryStack });
 
       function getMacheteTargets(col, row, action) {
         const acols = window.GridTileAccessors.getActiveCols(), arows = window.GridTileAccessors.getActiveRows();
@@ -17963,7 +17924,7 @@
             if (tile.type === TileType.SHRUB && isChoppableTreeTile(t.col, t.row)) continue;
             const previousType = tile.type; // Used to choose the targeted zone visual replacement below.
             tile.type = TileType.GRASS;
-            inventory.mulch = Math.min(99, inventory.mulch + 1);
+            inventory.mulch = Math.min(99, (inventory.mulch || 0) + 1);
             // markTileDirty indexes the farm's own small grid (see its
             // declaration) — calling it with a wilderness zone's col/row
             // (up to 100x100) reads past the farm grid's bounds. Zones get
@@ -18005,7 +17966,7 @@
 
             const previousType = tile.type; // Used to remove/cover the matching runtime visual.
             tile.type = TileType.GRASS;
-            inventory.mulch = Math.min(99, inventory.mulch + 1);
+            inventory.mulch = Math.min(99, (inventory.mulch || 0) + 1);
             if (currentArea === 'farm') markTileDirty(col, row);
             else if (_isZoneArea(currentArea)) window.ZoneRegrowth.updateClearedZoneVegetationVisual(currentArea, col, row, previousType);
             cleared++;
@@ -18668,7 +18629,7 @@
           _felledEntries.push({ col, row, feltDay: calendar.day });
           _zoneFelledTreePersist.set(currentArea, _felledEntries);
           inventory[logKey] = Math.min(99, (inventory[logKey] || 0) + amount);
-          inventory.mulch = Math.min(99, inventory.mulch + 1);
+          inventory.mulch = Math.min(99, (inventory.mulch || 0) + 1);
           let addedNutAmount = 0; // Used to report the actual amount accepted when the nut stack is nearly full.
           if (nutDrop) {
             const previousNutCount = inventory[nutDrop.itemKey] || 0; // Used to avoid tracking quality for units discarded by the stack cap.
@@ -18772,9 +18733,9 @@
         }
 
         if (tool === 'seeds') {
-          if (action === 'harvest') return harvestCrop(tile);
+          if (action === 'harvest') return window.CropPlanting.harvestCrop(tile);
           const crop = action.startsWith('plant_') ? action.slice(6) : null;
-          return plantCrop(tile, crop);
+          return window.CropPlanting.plantCrop(tile, crop);
         }
 
         return { ok: false, message: 'No action handler found.' };
@@ -19111,9 +19072,9 @@
         } else if (action.startsWith('place_')) {
           result = placeProcessingFurniture(col, row, action.slice(6));
         } else if (action.startsWith('plant_')) {
-          result = plantCrop(tile, action.slice(6));
+          result = window.CropPlanting.plantCrop(tile, action.slice(6));
         } else if (action === 'harvest') {
-          result = harvestCrop(tile);
+          result = window.CropPlanting.harvestCrop(tile);
         } else {
           result = applyAction(tool, action, col, row);
         }

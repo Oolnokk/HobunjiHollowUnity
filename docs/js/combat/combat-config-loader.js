@@ -139,7 +139,7 @@
     ['js/combat/combat-corroded-health.js?v=20260817a', () => !!window.HobunjiCorrodedHealth],
     ['js/combat/enemy-combat-health-recovery.js?v=20260924combatheal2', () => Number(window.CombatHealthRecoveryPolicy?.version || window.EnemyCombatHealthRecoveryPolicy?.version) >= 2],
     ['js/combat/combat-death-mark.js?v=20260903a', () => !!window.HobunjiDeathMark],
-    ['js/combat/combat-drenkirra-pellet.js?v=20261001quickdebuff2', () => !!window.HobunjiDrenkirraPellet],
+    ['js/combat/combat-drenkirra-pellet.js?v=20261008hb638849', () => !!window.HobunjiDrenkirraPellet],
     ['js/combat/combat-grehlr-drenkirra-followup.js?v=20260826drenkirra1', () => !!window.HobunjiGrehlrDrenkirraFollowup],
     // Den locale runtime is an ordinary sibling module, not a script injected
     // from inside Puktuk registration. Keeping one parser-owned loader prevents

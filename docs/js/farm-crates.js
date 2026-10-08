@@ -562,7 +562,7 @@
           const qty = qtys[key] || 0;
           if (qty < 1) return { ok: false, message: 'Select a quantity first.' };
           const cost = item.price * qty;
-          if (deps.inventory.gold < cost) return { ok: false, message: 'Not enough gold. Need ' + cost + 'g.' };
+          if ((Number(deps.inventory.gold) || 0) < cost) return { ok: false, message: 'Not enough gold. Need ' + cost + 'g.' };
           deps.inventory.gold -= cost;
           deps.getPendingOrders().push({ key, qty, arrivalDay: deps.calendar.day + 1, item });
           qtys[key] = 0;

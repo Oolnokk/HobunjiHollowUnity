@@ -21,6 +21,22 @@
     deps = injectedDeps;
   }
 
+  // Plan/deed stacks cap at 9; buying into a full stack used to take the
+  // gold and grant nothing (Math.min silently dropped the unit).
+  const PLAN_STACK_MAX = 9;
+  function stackIsFull(itemKey) {
+    if ((Number(deps.inventory[itemKey]) || 0) < PLAN_STACK_MAX) return false;
+    deps.showToast(`You can't carry any more of those (max ${PLAN_STACK_MAX}).`, false);
+    return true;
+  }
+
+  // Blueprints are never consumed by building (see CraftingPanel's
+  // ownsBlueprint) and sell for 0g, so a second copy is wasted gold.
+  function ownsBlueprint(bp) {
+    if ((Number(deps.inventory[bp?.key]) || 0) > 0) return true;
+    return !!(bp?.masteryUnlockId && window.CraftingMasterySystem?.hasUnlock?.(bp.masteryUnlockId));
+  }
+
   function _barnAdditions() {
     return window.LootRolling?.getShopStock?.()?.carpenterBarnPlans?.additions || {};
   }
@@ -28,6 +44,7 @@
   function buyBarnPlan(tier) {
     const tierDef = deps.getBarnTiers()[tier];
     if (!tierDef) return;
+    if (stackIsFull(tierDef.planItem)) return;
     const gold = deps.inventory.gold || 0;
     if (gold < tierDef.price) { deps.showToast('Not enough ganang.', false); return; }
     deps.inventory.gold = gold - tierDef.price;
@@ -45,6 +62,7 @@
   function buyBarnAddition(additionKey) {
     const def = _barnAdditions()[additionKey];
     if (!def?.planItem) return;
+    if (stackIsFull(def.planItem)) return;
     const gold = deps.inventory.gold || 0;
     if (gold < def.price) { deps.showToast('Not enough ganang.', false); return; }
     deps.inventory.gold = gold - def.price;
@@ -61,6 +79,7 @@
   function buyHousePieceDeed(pieceKey) {
     const def = deps.getHousePieceDeeds()[pieceKey];
     if (!def) return;
+    if (stackIsFull(def.deedItem)) return;
     const gold = deps.inventory.gold || 0;
     if (gold < def.price) { deps.showToast('Not enough ganang.', false); return; }
     deps.inventory.gold = gold - def.price;
@@ -79,6 +98,7 @@
   function buyFurnitureBlueprint(blueprintKey) {
     const bp = deps.FURNITURE_BLUEPRINT_CATALOG.find(b => b.key === blueprintKey);
     if (!bp || bp.moteOnly) return;
+    if (ownsBlueprint(bp)) { deps.showToast(`You already own the ${bp.name} blueprint.`, false); return; }
     const gold = deps.inventory.gold || 0;
     if (gold < bp.price) { deps.showToast('Not enough ganang.', false); return; }
     deps.inventory.gold = gold - bp.price;
@@ -172,19 +192,19 @@
     list.appendChild(bpHdr);
 
     deps.FURNITURE_BLUEPRINT_CATALOG.filter(bp => !bp.moteOnly && window.ConditionRegistry.entryEligible(bp, world)).forEach(bp => {
-      const owned = deps.inventory[bp.key] || 0;
+      const owned = ownsBlueprint(bp);
       const row = document.createElement('div');
       row.className = 'shop-row';
       row.innerHTML = `
         <div class="sh-icon">${bp.icon}</div>
         <div class="sh-info">
           <div class="sh-name">${deps.esc(bp.name)} Blueprint</div>
-          <div class="sh-desc">Build with ${bp.craftCost.wood} Wood + ${bp.craftCost.stone} Stone in the Crafting tab. Owned: ${owned}</div>
-          <div class="sh-price">${bp.price}g each</div>
+          <div class="sh-desc">Build with ${bp.craftCost.wood} Wood + ${bp.craftCost.stone} Stone in the Crafting tab.${owned ? ' Already owned — reusable.' : ''}</div>
+          <div class="sh-price">${bp.price}g</div>
         </div>
-        <button class="shop-buy-btn" data-bp="${bp.key}">Buy</button>
+        <button class="shop-buy-btn" data-bp="${bp.key}" ${owned ? 'disabled' : ''}>${owned ? 'Owned' : 'Buy'}</button>
       `;
-      row.querySelector('[data-bp]')?.addEventListener('click', () => buyFurnitureBlueprint(bp.key));
+      if (!owned) row.querySelector('[data-bp]')?.addEventListener('click', () => buyFurnitureBlueprint(bp.key));
       list.appendChild(row);
     });
   }

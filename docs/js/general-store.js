@@ -183,6 +183,12 @@
       return;
     }
 
+    // Every granted stack already at the 99 cap would take the gold (and any
+    // trade goods) for nothing — addConfiguredGrant clamps the excess away.
+    if (Object.entries(grants).every(([key, value]) => (Number(value) || 0) <= 0 || (Number(deps.inventory[key]) || 0) >= 99)) {
+      deps.showToast(`You can't carry any more ${item.name}.`, false);
+      return;
+    }
     const qualityStars = configuredQualityStars(item); // Used for minimum-quality food staples without changing ordinary shop goods.
     deps.inventory.gold = gold - item.price;
     for (const [key, qty] of Object.entries(item.tradeCost || {})) deps.inventory[key] = Math.max(0, (Number(deps.inventory[key]) || 0) - (Number(qty) || 0));

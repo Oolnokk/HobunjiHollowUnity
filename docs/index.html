@@ -55,6 +55,9 @@
        own setup, and before every other module whose init(deps) is handed
        window.LootRolling.rollItemStars/starRatingText/etc. -->
   <script src="js/loot-rolling.js?v=20260902mod1"></script>
+  <!-- Seed planting/crop harvesting, extracted out of game.js. Must load
+       before game.js, which calls window.CropPlanting.init(...). -->
+  <script src="js/crop-planting.js?v=20261008crop1"></script>
   <!-- Wilderness den teleport + Den-Mother nest hold-to-take interaction,
        extracted out of game.js. Must load before game.js, which calls
        window.DenNestSystem.init(...) (binds its own devTeleportDenBtn/
@@ -284,7 +287,7 @@
   <script src="js/combat/combat-flurry.js?v=20260930he6f6a0a"></script>
   <script src="js/combat/combat-loadout-ui.js?v=20261006planarreview1"></script>
   <!-- Weapon Enchantments + Immundanity (Base/Flourish, planar cancellation, Sicced/Fury/...). -->
-  <script src="js/combat/combat-enchantments.js?v=20261001quickbonus1"></script>
+  <script src="js/combat/combat-enchantments.js?v=20261008hfd476df"></script>
   <script src="js/combat/weapon-enchantment-vfx.js?v=20261006planar1"></script>
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
        projectiles. Loads before bandits so their dual loadouts can call it. -->
@@ -322,7 +325,7 @@
   <script src="js/bounty-board.js?v=20260831spearheadexisting1-colors1"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261007h51c6b62"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261008h5767ff3"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -357,7 +360,7 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.DewVats.init(...) during its own
        setup. -->
-  <script src="js/dew-vats.js?v=20261007h264bc7a"></script>
+  <script src="js/dew-vats.js?v=20261008hcf36900"></script>
   <!-- Wild berry bushes (window.WildBerries) — self-contained aside from
        deps injected via init(), so load order relative to the other
        systems above doesn't matter; must load before game.js, which
@@ -413,7 +416,7 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.FarmCrates.init(...) during its
        own setup. -->
-  <script src="js/farm-crates.js?v=20260807a"></script>
+  <script src="js/farm-crates.js?v=20261008hbb4aabc"></script>
   <!-- Procedural tasks: bulletin board + trusted-NPC favors
        (window.ProceduralTasks) — self-contained aside from deps injected
        via init(), so load order relative to the other systems above
@@ -432,7 +435,7 @@
        call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.JubmirShop.init(...) during its own setup. -->
-  <script src="js/jubmir-shop.js?v=20260910manuals1"></script>
+  <script src="js/jubmir-shop.js?v=20261008h176df45"></script>
   <!-- Bound Harlyao relic weapons + Garanki Gabu's unbinding/enchanting panel. -->
   <script src="js/harlyao-relics.js?v=20260930ench1"></script>
   <!-- Khymeryyan civil calendar (day/week/month/year derivations + regional
@@ -504,14 +507,14 @@
        load order relative to the other systems above doesn't matter; must
        load before game.js, which calls window.GeneralStore.init(...)
        during its own setup. -->
-  <script src="js/general-store.js?v=20260930h2bd80d0"></script>
+  <script src="js/general-store.js?v=20261008hd4c78fb"></script>
   <!-- Carpenter's shop: barn plans + furniture blueprints
        (window.CarpenterShop) — self-contained aside from deps injected via
        init(), and reads window.ConditionRegistry at render time (already
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.CarpenterShop.init(...) during its own setup. -->
-  <script src="js/carpenter-shop.js?v=20261005h0fe2e5a"></script>
+  <script src="js/carpenter-shop.js?v=20261008hb5b3c4c"></script>
   <!-- Off-save storage for a per-item "Custom" pattern's motif PNG
        (window.MotifStore) — see the file's own header comment. No deps
        injection and everything on it fails soft, so load order doesn't
@@ -2406,7 +2409,7 @@
   <script src="js/mount-system.js?v=20261002h1249b60"></script>
   <!-- Footstep/one-shot SFX (window.AudioSystem) — must load before game.js,
        which calls window.AudioSystem.init(...) during its own setup. -->
-  <script src="js/audio-system.js?v=20261006h15841e1"></script>
+  <script src="js/audio-system.js?v=20261008h00fd88a"></script>
   <!-- Semantic animal-call scheduler. Gameplay systems emit vocal intents;
        AudioSystem above remains the replaceable low-level renderer. -->
   <script src="js/animal-vocalizations.js?v=20261002hc534530"></script>
@@ -2415,7 +2418,7 @@
        time, and must load before game.js, which calls
        window.Music.init(...) during its own setup. Depends on
        window.AudioSystem (gameAudioConfig/playObjectSfx), so loads after it. -->
-  <script src="js/music-system.js?v=20261002h62729f2"></script>
+  <script src="js/music-system.js?v=20261008hb1f5ae9"></script>
   <script src="js/audio-track-gain-settings.js?v=20260920trackgain2"></script>
   <!-- Shared local-transform dump utility (window.HobunjiTransformDump) —
        also loaded by the Attack Animation Editor, so a probed character's
@@ -2437,7 +2440,7 @@
   <script src="js/dialogue-camera-framing.js?v=20261002hba1474a"></script>
   <script src="js/dialogue-templates.js?v=20260929mastery1"></script>
   <script src="js/dialogue-rich-text.js?v=20260929colors1"></script>
-  <script src="js/dialogue-content.js?v=20261007h90e2b1f"></script>
+  <script src="js/dialogue-content.js?v=20261008h542bf03"></script>
   <script src="js/combat/combat-tutorial-content.js?v=20261001cae883e8"></script>
   <script src="js/combat/combat-tutorial-mastery.js?v=20260929mastery1-goals1"></script>
   <script src="js/combat/combat-tutorial-partner.js?v=20260930partner1"></script>
@@ -2556,7 +2559,7 @@
   <!-- Directional camera pitch policy is isolated from controller bindings/gameplay dispatch. -->
   <script src="js/camera-look-clamp.js?v=20260923review2"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261007h5c619ae"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261008had481fc"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
@@ -2581,7 +2584,7 @@
   <script src="js/romance-wedding.js?v=20261007wedding1"></script>
   <script src="js/romance-system.js?v=20261007romance1"></script>
   <script src="js/npc-command-wheel.js?v=20261007romance1"></script>
-  <script src="game.js?v=20261008h44f1ce6"></script>
+  <script src="game.js?v=20261008hd5e26f3"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261005h9a94218"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

@@ -71,8 +71,10 @@
     if (entry.abilityId && window.TechniqueScrolls?.isUnlocked?.(entry.abilityId)) { deps.showToast(`${entry.name}: you already know that technique.`, false); return; }
     const gold = deps.inventory.gold || 0;
     if (gold < entry.price) { deps.showToast('Not enough ganang.', false); return; }
+    const stackMax = entry.givesGenotype ? 9 : 99; // Matches the cap applied below; buying into a full stack would take gold for nothing.
+    if ((Number(deps.inventory[entry.key]) || 0) >= stackMax) { deps.showToast(`You can't carry any more ${entry.name}.`, false); return; }
     deps.inventory.gold = gold - entry.price;
-    deps.inventory[entry.key] = Math.min(entry.givesGenotype ? 9 : 99, (deps.inventory[entry.key] || 0) + 1);
+    deps.inventory[entry.key] = Math.min(stackMax, (deps.inventory[entry.key] || 0) + 1);
     if (entry.givesGenotype) window.FarmAnimals.queueItemGenotype(entry.key, stock.eggGenotype);
     stock.purchasedByKey[entry.key] = purchased + 1;
     _saveJubmirStock(stock);
