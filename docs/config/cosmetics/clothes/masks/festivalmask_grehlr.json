@@ -1,0 +1,83 @@
+{
+  "slot": "hood",
+  "tintSlot": "HOOD",
+  "specialHeadwearRules": false,
+  "material": "cloth",
+  "tags": [
+    "material:cloth",
+    "hides-facial-hair"
+  ],
+  "meta": {
+    "name": "Grehlr Festival Mask"
+  },
+  "palette": {
+    "layers": {
+      "base": "A",
+      "trim": "B",
+      "accent": "C"
+    }
+  },
+  "parts": {
+    "head": {
+      "layers": {
+        "front": {
+          "image": {
+            "url": "./assets/cosmetics/clothes/masks/festivalmask_grehlr.png"
+          },
+          "spriteStyle": {
+            "base": {
+              "xform": {
+                "head": {
+                  "ax": -0.2,
+                  "ay": 0,
+                  "scaleX": 2.55,
+                  "scaleY": 2.55,
+                  "rotDeg": 0
+                }
+              }
+            }
+          },
+          "layerRole": "base"
+        },
+        "trim": {
+          "image": {
+            "url": "./assets/cosmetics/clothes/masks/festivalmask_grehlr-extras1.png"
+          },
+          "spriteStyle": {
+            "base": {
+              "xform": {
+                "head": {
+                  "ax": -0.2,
+                  "ay": 0,
+                  "scaleX": 2.55,
+                  "scaleY": 2.55,
+                  "rotDeg": 0
+                }
+              }
+            }
+          },
+          "layerRole": "trim"
+        },
+        "accent": {
+          "image": {
+            "url": "./assets/cosmetics/clothes/masks/festivalmask_grehlr-extras2.png"
+          },
+          "spriteStyle": {
+            "base": {
+              "xform": {
+                "head": {
+                  "ax": -0.2,
+                  "ay": 0,
+                  "scaleX": 2.55,
+                  "scaleY": 2.55,
+                  "rotDeg": 0
+                }
+              }
+            }
+          },
+          "layerRole": "accent"
+        }
+      }
+    }
+  }
+}

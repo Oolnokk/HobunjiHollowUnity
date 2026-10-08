@@ -1,0 +1,478 @@
+{
+  "slot": "hat",
+  "tintSlot": "HAT",
+  "hoodLayering": "under",
+  "specialHeadwearRules": false,
+  "material": "metal",
+  "tags": [
+    "material:metal",
+    "hood-layer:under"
+  ],
+  "meta": {
+    "name": "Tanged Circlet"
+  },
+  "palette": {
+    "layers": {
+      "base": "A"
+    }
+  },
+  "parts": {
+    "head": {
+      "layers": {
+        "front": {
+          "image": {
+            "url": "./assets/cosmetics/clothes/hat/tangedcirclet_m.png"
+          },
+          "spriteStyle": {
+            "base": {
+              "xform": {
+                "head": {
+                  "ax": -0.2,
+                  "ay": 0,
+                  "scaleX": 2.55,
+                  "scaleY": 2.55,
+                  "rotDeg": 0
+                }
+              }
+            }
+          },
+          "layerRole": "base"
+        }
+      }
+    }
+  },
+  "speciesVariants": {
+    "mao-ao_male": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/tangedcirclet_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            }
+          }
+        }
+      }
+    },
+    "mao-ao_female": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/tangedcirclet_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            }
+          }
+        }
+      }
+    },
+    "tletingan_male": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/tl_tangedcirclet_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            }
+          }
+        }
+      }
+    },
+    "tletingan_female": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/tl_tangedcirclet_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            }
+          }
+        }
+      }
+    },
+    "kenkari_male": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/kenk_tangedcirclet_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            }
+          }
+        }
+      }
+    },
+    "kenkari_female": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/kenk_tangedcirclet_f.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            }
+          }
+        }
+      }
+    },
+    "rakakoan_male": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/kenk_tangedcirclet_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            }
+          }
+        }
+      }
+    },
+    "rakakoan_female": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/kenk_tangedcirclet_f.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            }
+          }
+        }
+      }
+    },
+    "engh-sho_male": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/engh_tangedcirclet_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            }
+          }
+        }
+      }
+    },
+    "engh-sho_female": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/engh_tangedcirclet_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            }
+          }
+        }
+      }
+    },
+    "harlyao_male": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/engh_tangedcirclet_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            }
+          }
+        }
+      }
+    },
+    "harlyao_female": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/engh_tangedcirclet_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            }
+          }
+        }
+      }
+    },
+    "harlyao-skeleton_male": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/hskel_tangedcirclet_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            }
+          }
+        }
+      }
+    },
+    "harlyao-skeleton_female": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/hskel_tangedcirclet_f.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            }
+          }
+        }
+      }
+    },
+    "mashtzarr_male": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/mashtz_tangedcirclet_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            }
+          }
+        }
+      }
+    },
+    "mashtzarr_female": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/mashtz_tangedcirclet_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            }
+          }
+        }
+      }
+    }
+  }
+}

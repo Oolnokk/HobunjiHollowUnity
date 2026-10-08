@@ -36,7 +36,9 @@
       "bandolier1",
       "tankan_bodywrap",
       "rugged_poncho",
-      "fine_poncho"
+      "fine_poncho",
+      "rounded_pauldron",
+      "tangedcirclet"
     ],
     "cosmeticWeights": {
       "hood": {
@@ -57,8 +59,7 @@
       "hairFront": "none",
       "hairBack": "none",
       "hairSide": "none",
-      "hairSideL": "none",
-      "hat": "none"
+      "hairSideL": "none"
     },
     "exclusiveSlotCosmetics": {
       "eyes": [
@@ -83,7 +84,8 @@
         "none"
       ],
       "hat": [
-        "none"
+        "none",
+        "tangedcirclet"
       ]
     },
     "portraitBodyLayers": [
@@ -159,7 +161,9 @@
       "bandolier1",
       "tankan_bodywrap",
       "rugged_poncho",
-      "fine_poncho"
+      "fine_poncho",
+      "rounded_pauldron",
+      "tangedcirclet"
     ],
     "cosmeticWeights": {
       "hood": {
@@ -180,8 +184,7 @@
       "hairFront": "none",
       "hairBack": "none",
       "hairSide": "none",
-      "hairSideL": "none",
-      "hat": "none"
+      "hairSideL": "none"
     },
     "exclusiveSlotCosmetics": {
       "eyes": [
@@ -206,7 +209,8 @@
         "none"
       ],
       "hat": [
-        "none"
+        "none",
+        "tangedcirclet"
       ]
     },
     "fixedPortraitSlots": {

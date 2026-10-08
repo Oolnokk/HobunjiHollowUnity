@@ -69,10 +69,36 @@
         'kenkari::female': 'assets/cosmetics/clothes/pauldrons/rounded_pauldron_kenk_f.png',
         'rakakoan::male': 'assets/cosmetics/clothes/pauldrons/rounded_pauldron_kenk_m.png',
         'rakakoan::female': 'assets/cosmetics/clothes/pauldrons/rounded_pauldron_kenk_f.png',
+        'harlyao-skeleton::male': 'assets/cosmetics/clothes/pauldrons/rounded_pauldron_engh_m.png',
+        'harlyao-skeleton::female': 'assets/cosmetics/clothes/pauldrons/rounded_pauldron_engh_f.png',
         'engh-sho::male': 'assets/cosmetics/clothes/pauldrons/rounded_pauldron_engh_m.png',
         'engh-sho::female': 'assets/cosmetics/clothes/pauldrons/rounded_pauldron_engh_f.png',
         'mashtzarr::male': 'assets/cosmetics/clothes/pauldrons/rounded_pauldron_mashtz_m.png',
         'mashtzarr::female': 'assets/cosmetics/clothes/pauldrons/rounded_pauldron_mashtz_f.png',
+      }),
+    }),
+    tangedcirclet: Object.freeze({
+      id: 'tangedcirclet', label: 'Tanged Circlet', slot: 'hat', icon: '👑',
+      referenceSteelMassKg: 0.20, // Circlet mass used for alloy-density outfit weight.
+      craftBarCost: 1, craftLaborGold: DEFAULT_CRAFT_LABOR_GOLD,
+      sourceHex: '#50726E', hueToleranceDeg: 55, saturationTolerance: 0.55,
+      spriteByAppearance: Object.freeze({
+        "mao-ao::male": "assets/cosmetics/clothes/hat/tangedcirclet_m.png",
+        "mao-ao::female": "assets/cosmetics/clothes/hat/tangedcirclet_m.png",
+        "tletingan::male": "assets/cosmetics/clothes/hat/tl_tangedcirclet_m.png",
+        "tletingan::female": "assets/cosmetics/clothes/hat/tl_tangedcirclet_m.png",
+        "kenkari::male": "assets/cosmetics/clothes/hat/kenk_tangedcirclet_m.png",
+        "kenkari::female": "assets/cosmetics/clothes/hat/kenk_tangedcirclet_f.png",
+        "rakakoan::male": "assets/cosmetics/clothes/hat/kenk_tangedcirclet_m.png",
+        "rakakoan::female": "assets/cosmetics/clothes/hat/kenk_tangedcirclet_f.png",
+        "engh-sho::male": "assets/cosmetics/clothes/hat/engh_tangedcirclet_m.png",
+        "engh-sho::female": "assets/cosmetics/clothes/hat/engh_tangedcirclet_m.png",
+        "harlyao::male": "assets/cosmetics/clothes/hat/engh_tangedcirclet_m.png",
+        "harlyao::female": "assets/cosmetics/clothes/hat/engh_tangedcirclet_m.png",
+        "harlyao-skeleton::male": "assets/cosmetics/clothes/hat/hskel_tangedcirclet_m.png",
+        "harlyao-skeleton::female": "assets/cosmetics/clothes/hat/hskel_tangedcirclet_f.png",
+        "mashtzarr::male": "assets/cosmetics/clothes/hat/mashtz_tangedcirclet_m.png",
+        "mashtzarr::female": "assets/cosmetics/clothes/hat/mashtz_tangedcirclet_m.png"
       }),
     }),
   });
@@ -534,9 +560,29 @@
     };
   }
 
+  function learnBlueprints(items = []) {
+    const gear = deps?.getGearInventory?.(); // Permanent knowledge lives with the player's gear save.
+    if (!gear) return [];
+    const known = Array.isArray(gear.knownMetalArmorBlueprints) ? gear.knownMetalArmorBlueprints : (gear.knownMetalArmorBlueprints = []); // Blueprint IDs remain known after selling an article.
+    const candidates = [...items, ...(gear.clothingItems || []), ...Object.values(gear.clothing || {}), ...(deps?.getPackClothing?.() || [])]; // Gear and pack both count as acquisition, as they do at the loom.
+    let changed = false; // Saves only when a new article type is learned.
+    for (const item of candidates) {
+      const id = baseCosmeticId(item); // Normalizes unique smith article IDs to their blueprint.
+      if (!blueprintForId(id) || known.includes(id)) continue;
+      known.push(id);
+      changed = true;
+    }
+    if (changed) deps?.saveGearInventory?.();
+    return known;
+  }
+
   function craft(blueprintId, metalKey) {
     const blueprint = blueprintForId(blueprintId);
     if (!deps || !blueprint || !deps.VERDIGRIS_METAL_KEYS?.includes(metalKey)) return false;
+    if (!learnBlueprints().includes(blueprintId)) {
+      deps.showToast?.(`Acquire ${blueprint.label} as loot to learn how to smith them.`, false);
+      return false;
+    }
     if (ownedForBlueprintMetal(blueprintId, metalKey)) {
       deps.showToast?.(`You already own ${metalDef(metalKey).label} ${blueprint.label}.`, false);
       return false;
@@ -655,7 +701,7 @@
         remove: id => window.PatternLibrary.removeSaved(id),
       } : null,
       renderPreview: patternData => window.ToolMetalRecolor.getRecoloredCanvas(item.sprite || currentPlayerSprite(baseCosmeticId(item)), {
-        ...visualOptions({ metalKey: item.metalKey, temperXp: MAX_TEMPER_XP, smithTreatment: null }),
+        ...visualOptions({ blueprintId: baseCosmeticId(item), metalKey: item.metalKey, temperXp: MAX_TEMPER_XP, smithTreatment: null }),
         oxidationAmount: 1,
         authoredPattern: patternData,
       }),
@@ -710,7 +756,8 @@
     for (const blueprint of blueprints) {
       const recipeHdr = document.createElement('div');
       recipeHdr.className = 'shop-section-label mc-metal-armor-recipe-label';
-      recipeHdr.textContent = blueprint.label;
+      const unlocked = learnBlueprints().includes(blueprint.id); // UI and craft() share the permanent acquisition gate.
+      recipeHdr.textContent = blueprint.label + (unlocked ? '' : ' — acquire as loot to unlock');
       list.appendChild(recipeHdr);
       const barCost = Number(blueprint.craftBarCost) || DEFAULT_CRAFT_BAR_COST;
       const laborGold = Number(blueprint.craftLaborGold) || DEFAULT_CRAFT_LABOR_GOLD;
@@ -731,7 +778,7 @@
             <div class="sh-desc">Approx. mass ~${weight.massKg.toFixed(2)} kg · ${weight.weightUnits.toFixed(2)} outfit-weight units · bars owned: ${ownedBars}${alreadyOwned ? ' — already smithed' : ''}</div>
             <div class="sh-price">${barCost} bars + ${laborGold}g</div>
           </div>
-          <button class="shop-buy-btn" data-metal-armor-blueprint="${blueprint.id}" data-metal-armor-metal="${metalKey}" ${alreadyOwned || !affordable ? 'disabled' : ''}>${alreadyOwned ? 'Owned' : 'Smith'}</button>
+          <button class="shop-buy-btn" data-metal-armor-blueprint="${blueprint.id}" data-metal-armor-metal="${metalKey}" ${!unlocked || alreadyOwned || !affordable ? 'disabled' : ''}>${!unlocked ? 'Locked' : alreadyOwned ? 'Owned' : 'Smith'}</button>
         `;
         row.querySelector('[data-metal-armor-blueprint]')?.addEventListener('click', () => craft(blueprint.id, metalKey));
         list.appendChild(row);
@@ -813,13 +860,14 @@
         temperLevel: temperLevel(item),
         weightUnits: Number(item.weightUnits) || 0,
       })),
+      knownBlueprints: learnBlueprints(), // Included in mobile Pixel Probe reports.
       lastError,
     };
   }
 
   function diagnosticsText() {
     const snapshot = debugSnapshot();
-    if (!snapshot.worn.length) return `Metal armor Temper: none equipped · skill listener ${skillXpListenerInstalled ? 'ready' : 'missing'}`;
+    if (!snapshot.worn.length) return `Metal armor blueprints: ${snapshot.knownBlueprints.join(', ') || 'none'} · Temper: none equipped · skill listener ${skillXpListenerInstalled ? 'ready' : 'missing'}`;
     const items = snapshot.worn.map(item => `${item.blueprintId}@${item.slot} ${item.metalKey} ${item.temperXp}/${MAX_TEMPER_XP}xp T${item.temperLevel}/5 ${Math.round(item.verdigrisFraction * 100)}%v ${item.weight.weightUnits.toFixed(2)}wu source=${item.visual?.sourceHex || '-'}→target=${item.visual?.targetHex || '-'}`).join(' | ');
     const renderState = Object.entries(snapshot.portraitResolution || {}).map(([id, rec]) => `${id}@${rec.slot || '?'} layers=${rec.layerCount}`).join(' | ') || 'no resolved metal portrait groups yet';
     const resolverState = snapshot.portraitAssetResolverReady ? 'asset-resolver=ready' : 'asset-resolver=MISSING';
@@ -876,6 +924,8 @@
     ownedMetalArmor,
     ownedForBlueprintMetal,
     detailText,
+    makeCraftedItem,
+    learnBlueprints,
     renderSmithySection,
     debugSnapshot,
     diagnosticsText,

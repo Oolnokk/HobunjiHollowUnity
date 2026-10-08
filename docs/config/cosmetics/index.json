@@ -409,6 +409,26 @@
     {
       "id": "appearance::Mashtzarr_M::mashtz_wildbeard",
       "path": "./appearance/mashtzarr-m/wildbeard.json"
+    },
+    {
+      "id": "tangedcirclet",
+      "path": "./clothes/hat/tangedcirclet.json"
+    },
+    {
+      "id": "festivalmask_gar-wolf",
+      "path": "./clothes/masks/festivalmask_gar-wolf.json"
+    },
+    {
+      "id": "festivalmask_grehlr",
+      "path": "./clothes/masks/festivalmask_grehlr.json"
+    },
+    {
+      "id": "festivalmask_uumkao'ii",
+      "path": "./clothes/masks/festivalmask_uumkao'ii.json"
+    },
+    {
+      "id": "festivalmask_voorg-ass",
+      "path": "./clothes/masks/festivalmask_voorg-ass.json"
     }
   ]
 }

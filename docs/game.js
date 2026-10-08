@@ -29095,6 +29095,7 @@
       });
 
       window.MetalCraftShop?.init({
+        getPackClothing: () => packClothing, // Smith blueprint discovery includes looted articles still in the pack.
         inventory,
         showToast,
         clampInventoryStack,

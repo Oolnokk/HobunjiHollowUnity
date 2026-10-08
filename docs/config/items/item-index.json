@@ -1390,5 +1390,35 @@
     "label": "Zinc",
     "icon": "",
     "cat": "ingredient"
+  },
+  "cosmetic:tangedcirclet": {
+    "key": "cosmetic:tangedcirclet",
+    "label": "Tanged Circlet",
+    "icon": "\ud83d\udc55",
+    "cat": "clothing"
+  },
+  "cosmetic:festivalmask_gar-wolf": {
+    "key": "cosmetic:festivalmask_gar-wolf",
+    "label": "Festivalmask Gar-Wolf",
+    "icon": "\ud83d\udc55",
+    "cat": "clothing"
+  },
+  "cosmetic:festivalmask_grehlr": {
+    "key": "cosmetic:festivalmask_grehlr",
+    "label": "Festivalmask Grehlr",
+    "icon": "\ud83d\udc55",
+    "cat": "clothing"
+  },
+  "cosmetic:festivalmask_uumkao'ii": {
+    "key": "cosmetic:festivalmask_uumkao'ii",
+    "label": "Festivalmask Uumkao'Ii",
+    "icon": "\ud83d\udc55",
+    "cat": "clothing"
+  },
+  "cosmetic:festivalmask_voorg-ass": {
+    "key": "cosmetic:festivalmask_voorg-ass",
+    "label": "Festivalmask Voorg-Ass",
+    "icon": "\ud83d\udc55",
+    "cat": "clothing"
   }
 }

@@ -58,7 +58,19 @@
       cosmeticSlots.bandolier1 = 'torso';
       appliedDyes.TORSO = weightedPick();
     }
-    return { name, appearance: { speciesId, gender, cosmetics: {} }, equippedCosmetics, appliedDyes, cosmeticSlots };
+    const metalArmorItems = []; // These same maximum-temper records feed the portrait and corpse loot.
+    if (speciesId === 'harlyao-skeleton') {
+      for (const id of ['rounded_pauldron', 'tangedcirclet']) {
+        const item = window.MetalArmorSystem?.makeCraftedItem?.(id, 'nativeCopper'); // Shared smith article factory supplies weight and alloy metadata.
+        if (!item) throw new Error('MetalArmorSystem must load before skeleton equipment is generated.');
+        item.temperXp = window.MetalArmorSystem.MAX_TEMPER_XP;
+        item.sprite = window.MetalArmorSystem.spriteForBlueprintAppearance(id, { speciesId, gender });
+        metalArmorItems.push(item);
+        equippedCosmetics.push(id);
+        cosmeticSlots[id] = item.slot;
+      }
+    }
+    return { name, appearance: { speciesId, gender, cosmetics: {} }, equippedCosmetics, appliedDyes, cosmeticSlots, metalArmorItems };
   }
 
   async function makeEntity(options = {}) {

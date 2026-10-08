@@ -190,6 +190,7 @@ assert.equal(windowObject.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.behindV
 assert.equal(windowObject.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['harlyao-skeleton::male'].species, 'harlyao-skeleton');
 assert.equal(windowObject.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['harlyao-skeleton::male'].anatomy.rigScaleX, undefined);
 assert.equal(windowObject.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['harlyao-skeleton::female'].anatomy.headScale, undefined);
+assert.equal(windowObject.resolveOptionLayers({ variantLayers: { 'harlyao-skeleton_male': [{}] } }, fighters[0]), 'harlyao-skeleton', 'Skeleton-authored circlets take priority over donor art');
 assert.equal(windowObject.resolveOptionLayers({}, fighters[0]), 'engh-sho', 'Skeleton wardrobe variants must resolve through Engh-sho');
 assert.equal(windowObject.resolveOptionLayers({}, fighters[2]), 'engh-sho', 'Non-skeleton wardrobe resolution must remain unchanged');
 assert.equal(windowObject.SCRATCHBONES_CONFIG.game.portrait.armOnlyOpacityMask.profiles['harlyao-skeleton:male'].maskYScaleMultiplier, 1.04);
@@ -207,8 +208,8 @@ assert.equal(enghExportProfile.bodyColors.A.hex, '#123456');
   const loaded = await windowObject.loadPortraitCosmetics();
   for (const fighterId of ['harlyao-skeleton_male', 'harlyao-skeleton_female']) {
     assert.equal(loaded.bodyColorRangesByGender[fighterId].fixedHex, '#D4D6C9'); // Field-level equality avoids VM-realm prototype differences while still proving the fixed extremity descriptor.
-    assert.deepEqual(Array.from(loaded.allowedCosmeticsByFighter[fighterId].set).sort(), ['bandolier1', 'fine_hood', 'ragged_hood', 'fine_poncho', 'rugged_poncho', 'tankan_bodywrap', 'tankan_tunic'].sort());
-    for (const slot of ['eyes', 'upperFace', 'facialHair', 'hairFront', 'hairBack', 'hairSide', 'hairSideL', 'hat']) {
+    assert.deepEqual(Array.from(loaded.allowedCosmeticsByFighter[fighterId].set).sort(), ['bandolier1', 'fine_hood', 'ragged_hood', 'fine_poncho', 'rugged_poncho', 'tankan_bodywrap', 'tankan_tunic', 'rounded_pauldron', 'tangedcirclet'].sort());
+    for (const slot of ['eyes', 'upperFace', 'facialHair', 'hairFront', 'hairBack', 'hairSide', 'hairSideL']) {
       assert.equal(loaded.forcedCosmeticsByFighter[fighterId][slot], 'none');
     }
   }
