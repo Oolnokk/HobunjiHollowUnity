@@ -166,7 +166,7 @@
     ['js/crafting-mastery-system.js?v=20261005craft2', () => Number(window.CraftingMasterySystem?.version) >= 2],
     ['js/advanced-loom-system.js?v=20261005loom1', () => Number(window.AdvancedLoomSystem?.version) >= 1],
     ['js/dye-trait-labels.js?v=20261005craft1', () => Number(window.DyeTraitLabels?.version) >= 1],
-    ['js/npc-crafting-commission-generator.js?v=20261005craft2', () => Number(window.NpcCraftingCommissionGenerator?.version) >= 2],
+    ['js/npc-crafting-commission-generator.js?v=20261008h8a0d52d', () => Number(window.NpcCraftingCommissionGenerator?.version) >= 2],
     ['js/npc-crafting-commission-delivery.js?v=20261005craft2', () => Number(window.NpcCraftingCommissionDelivery?.version) >= 2],
     ['js/npc-crafting-commissions.js?v=20261005craft2', () => Number(window.NpcCraftingCommissions?.version) >= 2],
   ]; // Local progression/commission modules loaded immediately after CraftingPanel publishes its API. Cache ownership is refreshed by the repo checker.

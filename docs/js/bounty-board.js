@@ -102,7 +102,7 @@ window.BanditNameForge={sourceVersion:'khymeryyan-all-culture-name-forge-v7',gen
   }
 
   const BOUNTY_RANK_LABELS = ['Petty', 'Notorious', 'Ruthless', 'Infamous'];
-  const BOUNTY_REWARD_GOLD_BY_TIER = [80, 160, 280, 450];
+  const BOUNTY_REWARD_GOLD_BY_TIER = [200, 400, 700, 1100]; // Roughly 1/4 to 1.5 beginner fishing days (see config/economy-progression.js) so clearing a camp competes with a day of farming or fishing.
 
   // Uses the same bandit-gang-config speciesWeights as the actual roster.
   // This helper lives here only because bounty creation happens before any

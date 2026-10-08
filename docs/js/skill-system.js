@@ -13,10 +13,15 @@
   }; // Used by progression, food-skill buffs, and the Skills tab.
   const LEGACY_SKILL_MAP = { crafting: 'cooking' }; // Used to preserve pre-rename Crafting saves under the same skill, now called Cooking.
   const XP_GAINS = {
-    forage: 4, tree: 8, rock: 8, dig: 1, crop: 6, animalGood: 5,
-    fish: 10, combatHit: 0, combatKill: 16, cook: 8,
+    forage: 4, tree: 8, rock: 8, dig: 1, crop: 10, animalGood: 5,
+    fish: 7, combatHit: 0, combatKill: 16, cook: 8,
     alchemyBrew: 8, alchemyDiscovery: 18, alchemyTarget: 5,
   }; // Used by game actions so balance remains centralized; Combat XP is kill-only and requires a player tag.
+  // Pacing target (see config/economy-progression.js skillPacing): a focused
+  // in-game day of one activity is worth ~150-200 XP, so level 10 takes about
+  // a week and level 20 about a month of focused play (a season of mixed play).
+  // Crop XP is higher per action because farming is land- and growth-capped;
+  // fish XP is lower because a fishing day already yields ~25 catches.
   const XP_GAIN_MULTIPLIERS = {
     combat: 0.25,
   }; // Used by award() to keep Combat progression slow independently without changing the shared level curve or existing character XP.
@@ -379,6 +384,7 @@
     SKILLS,
     XP_GAINS,
     XP_GAIN_MULTIPLIERS,
+    xpForLevel,
     init,
     restore,
     award,

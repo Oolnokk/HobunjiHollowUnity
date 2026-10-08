@@ -123,8 +123,157 @@ assert(
 assert.equal(growthTonic.price, 200, 'Growth Tonic reference buy price is 200g');
 assert.equal(incubator.price, 5000, 'Incubator reference buy price remains 5000g');
 
+// ── Farming, processing, cooking, rewards and skill pacing ──────────────
+// Every value below is read from the shipped source (game.js object
+// literals, shop-stock.json, or the real runtime modules run in a vm) so
+// these guardrails track the actual game numbers.
+const targets = config.targets;
+const gameSource = fs.readFileSync('docs/game.js', 'utf8');
+
+function extractLiteral(source, marker, open = '{', scope = {}) {
+  const start = source.indexOf(marker);
+  assert(start >= 0, `missing ${marker}`);
+  const literalStart = source.indexOf(open, start);
+  const close = open === '{' ? '}' : ']';
+  let depth = 0;
+  let quote = null;
+  let escaped = false;
+  for (let i = literalStart; i < source.length; i++) {
+    const ch = source[i];
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '/' && source[i + 1] === '/') { i = source.indexOf('\n', i); continue; }
+    if (ch === "'" || ch === '"' || ch === '`') { quote = ch; continue; }
+    if (ch === open) depth++;
+    else if (ch === close && --depth === 0) return vm.runInNewContext(`(${source.slice(literalStart, i + 1)})`, { ...scope });
+  }
+  throw new Error(`Could not parse ${marker}`);
+}
+
+function inRange(value, range, label) {
+  if (range.min !== undefined) assert(value >= range.min, `${label}: ${value.toFixed(3)} < min ${range.min}`);
+  if (range.max !== undefined) assert(value <= range.max, `${label}: ${value.toFixed(3)} > max ${range.max}`);
+}
+
+function loadModule(file) {
+  const moduleWindow = {};
+  vm.runInNewContext(fs.readFileSync(file, 'utf8'), { window: moduleWindow, document: {}, console, queueMicrotask }, { filename: file });
+  return moduleWindow;
+}
+
+const cropData = extractLiteral(gameSource, 'const cropData = {');
+const basePrices = extractLiteral(gameSource, 'const BASE_PRICES = {', '{', { CROP_SELL_PRICES: {} });
+const startingInventory = extractLiteral(gameSource, 'const STARTING_INVENTORY = {');
+
+const cropSellPrices = loadModule('docs/config/crop-economy.js').HOBUNJI_CROP_ECONOMY.sellPrices;
+Object.assign(basePrices, cropSellPrices); // Mirrors game.js's `...CROP_SELL_PRICES` spread into BASE_PRICES.
+function itemDefSellPrice(key) {
+  assert(new RegExp(`\\n\\s+${key}: \\{[^\\n]*?sellPrice: CROP_SELL_PRICES\\.${key},`).test(gameSource), `ITEM_DEFS.${key} must read its sellPrice from CROP_SELL_PRICES`);
+  return cropSellPrices[key];
+}
+
+const seedPacks = {};
+for (const match of gameSource.matchAll(/\{ key: '(\w+)',[^\n]*?price: (\d+), gives: \{ (\w+): (\d+) \} \}/g)) {
+  if (match[1] === match[3]) seedPacks[match[1]] = { price: Number(match[2]), count: Number(match[4]) };
+}
+
+let earlyFieldDaily = 0;
+let boughtSeedNets = [];
+for (const [cropKey, crop] of Object.entries(cropData)) {
+  const sell = itemDefSellPrice(crop.cropKey);
+  const pack = seedPacks[crop.seedKey];
+  const seedCost = pack ? pack.price / pack.count : 0;
+  const netPerPlotDay = (sell - seedCost) / crop.growDays;
+  if (pack) {
+    inRange(seedCost / sell, targets.seedCostShareOfCrop, `${cropKey} seed cost share`);
+    inRange(netPerPlotDay, targets.boughtSeedCropNetPerPlotDay, `${cropKey} net/plot-day`);
+    boughtSeedNets.push(netPerPlotDay);
+    earlyFieldDaily += netPerPlotDay;
+  } else {
+    inRange(netPerPlotDay, targets.wildSeedCropNetPerPlotDay, `${cropKey} (wild seed) net/plot-day`);
+  }
+}
+assert(boughtSeedNets.length >= 4, 'seed-shop crops must be found in SUPPLY_CATALOG');
+inRange(Math.max(...boughtSeedNets) / Math.min(...boughtSeedNets), targets.boughtSeedCropSpread, 'bought-seed crop spread');
+earlyFieldDaily = earlyFieldDaily / boughtSeedNets.length * config.referenceFarming.plots;
+inRange(earlyFieldDaily / expectedGoldPerDay, targets.earlyFieldShareOfFishingDay, 'early field share of a fishing day');
+
+if (targets.startingGoldCoversOneOfEachSeedPack) {
+  const allPacks = Object.values(seedPacks).reduce((sum, pack) => sum + pack.price, 0);
+  assert(startingInventory.gold >= allPacks, `starting gold ${startingInventory.gold} must cover one of each seed pack (${allPacks})`);
+}
+
+for (const good of shopStock.shops.generalStoreWares.goods) {
+  const [itemKey] = Object.keys(good.gives || {});
+  if (!good.qualityStars || basePrices[itemKey] === undefined) continue;
+  inRange(good.price / basePrices[itemKey], targets.stapleRetailOverSell, `${good.key} retail/sell`);
+}
+
+const processing = loadModule('docs/js/item-processing.js').ItemProcessing;
+for (const [kind, rule] of Object.entries(processing.PROCESSING_VALUE)) {
+  if (kind === 'dewMilk' || kind === 'dewCurds') continue; // Checked jointly below.
+  inRange(processing.processedValue(kind, 10) / 10, targets.processingGainAtCheapInput, `${kind} at 10g`);
+  inRange(processing.processedValue(kind, 60) / 60, targets.processingGainAtExpensiveInput, `${kind} at 60g`);
+  assert(rule.mult > 1, `${kind} must multiply value`);
+}
+for (const input of [10, 60]) {
+  const squeezed = processing.processedValue('dewMilk', input) + processing.processedValue('dewCurds', input);
+  inRange(squeezed / input, targets.processingGainAtCheapInput, `dew squeeze (milk+curds) at ${input}g`);
+}
+const flourOverStaple = processing.processedValue('flour', basePrices.needlegrain);
+const flourStaple = shopStock.shops.generalStoreWares.goods.find(good => good.key === 'needlegrainFlourStaple');
+inRange(flourStaple.price / flourOverStaple, targets.stapleRetailOverSell, 'needlegrain flour staple retail/sell');
+
+const cooking = loadModule('docs/js/cooking-system.js').CookingSystem;
+const dishDefs = { a: { sellPrice: basePrices.heftroot }, b: { sellPrice: basePrices.garlink }, c: { sellPrice: 30 } };
+const dishSelections = ['a', 'b', 'c'].map(key => ({ selected: { key } }));
+const dishValue = cooking.cookedSellPrice({ slots: [{}, {}, {}] }, dishSelections, 3, dishDefs);
+inRange(dishValue / (basePrices.heftroot + basePrices.garlink + 30), targets.cookedDishPremium, 'cooked dish premium');
+assert(cooking.cookedSellPrice({ slots: [{}, {}] }, [], 2, {}) >= 4, 'dish value keeps a floor for unknown ingredients');
+
+const fishingDays = price => price / expectedGoldPerDay;
+const carpenter = shopStock.shops.carpenterBarnPlans.tiers;
+const deeds = shopStock.shops.carpenterHouseDeeds.pieces;
+const ladder = {
+  houseSmallRoom: deeds.smallRoom.price,
+  barnMedium: carpenter.medium.price,
+  houseLargeWing: deeds.largeWing.price,
+  barnLarge: carpenter.large.price,
+};
+for (const [key, price] of Object.entries(ladder)) inRange(fishingDays(price), targets.purchaseFishingDays[key], `${key} fishing days`);
+const fallbackBarns = extractLiteral(gameSource, 'medium: { label', '{');
+assert.equal(fallbackBarns.price, carpenter.medium.price, 'game.js fallback barn tier must match shop-stock.json');
+
+const bountyTiers = extractLiteral(fs.readFileSync('docs/js/bounty-board.js', 'utf8'), 'const BOUNTY_REWARD_GOLD_BY_TIER = ', '[');
+inRange(fishingDays(bountyTiers[0]), targets.bountyTierFishingDays, 'lowest bounty tier');
+inRange(fishingDays(bountyTiers[bountyTiers.length - 1]), targets.bountyTierFishingDays, 'highest bounty tier');
+
+const skills = loadModule('docs/js/skill-system.js').SkillSystem;
+const pacing = config.skillPacing;
+const avgGrowDays = Object.values(cropData).reduce((sum, crop) => sum + crop.growDays, 0) / Object.keys(cropData).length;
+const pacingReport = [];
+for (const [skillKey, actions] of Object.entries(pacing.actionsPerFocusedDay)) {
+  let xpPerDay = 0;
+  for (const [gainKey, count] of Object.entries(actions)) {
+    const actionCount = count === 'midGameHarvests' ? config.referenceFarming.midGamePlots / avgGrowDays : count;
+    assert(skills.XP_GAINS[gainKey] !== undefined, `SkillSystem.XP_GAINS.${gainKey} must exist`);
+    xpPerDay += actionCount * skills.XP_GAINS[gainKey] * skills.xpGainMultiplier(skillKey);
+  }
+  const days10 = skills.xpForLevel(10) / xpPerDay;
+  const days20 = skills.xpForLevel(skills.MAX_LEVEL) / xpPerDay;
+  inRange(days10, pacing.daysToLevel10, `${skillKey} days to level 10`);
+  inRange(days20, pacing.daysToLevel20, `${skillKey} days to level ${skills.MAX_LEVEL}`);
+  pacingReport.push(`${skillKey} ${days20.toFixed(1)}d`);
+}
+
 console.log(
   `economy progression passed: ${meanSellPerCatch.toFixed(2)}g/catch, ` +
   `${expectedGoldPerDay.toFixed(2)}g/day, ${tonicsPerDay.toFixed(2)} tonics/day, ` +
-  `${incubatorFishingDays.toFixed(2)} incubator fishing days`
+  `${incubatorFishingDays.toFixed(2)} incubator fishing days; ` +
+  `${config.referenceFarming.plots}-plot field ${earlyFieldDaily.toFixed(0)}g/day; ` +
+  `days to max skill: ${pacingReport.join(', ')}`
 );

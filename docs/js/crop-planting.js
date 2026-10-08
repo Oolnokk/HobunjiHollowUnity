@@ -42,7 +42,7 @@
     deps.inventory[data.cropKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[data.cropKey] || 0) + amount);
     const stars = window.LootRolling.rollItemStars('farming');
     window.CookingSystem.recordItemQuality(data.cropKey, stars, amount);
-    window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.crop || 6, `harvested ${data.label}`);
+    window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.crop || 10, `harvested ${data.label}`);
     window.HobunjiActivityEvents?.emit('crop_harvested', { cropKey: data.cropKey, label: data.label });
     const msg = `Harvested ${window.LootRolling.starRatingText(stars)} ${data.emoji} ${data.label}${amount > 1 ? ` ×${amount}` : ''}!`;
     tile.crop = deps.CropType.NONE;

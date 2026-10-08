@@ -270,7 +270,7 @@
     lastDeps.inventory[crop] = Math.min(window.InventoryStacks.MAX_TOTAL, (Number(lastDeps.inventory[crop]) || 0) + 1);
     const stars = Math.max(1, Number(targetingDeps.rollItemStars?.('farming')) || 1); // Used to preserve the same farming-quality roll as game.js harvestCrop().
     targetingDeps.recordItemQuality?.(crop, stars, 1);
-    window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.crop || 6, `harvested ${cropDef.label || crop}`);
+    window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.crop || 10, `harvested ${cropDef.label || crop}`);
     window.HobunjiActivityEvents?.emit('crop_harvested', { cropKey: crop, label: cropDef.label || crop });
     const starText = targetingDeps.starRatingText?.(stars) || '';
     const message = `Harvested ${starText ? `${starText} ` : ''}${cropDef.icon || '🌱'} ${cropDef.label || crop}!`;
