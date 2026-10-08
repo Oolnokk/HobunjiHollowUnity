@@ -52,12 +52,21 @@
     return best;
   }
 
-  function restoreDragCanvas() {
-    const drag = activeDrag;
+  function restoreDragCanvas(drag = activeDrag) {
     if (!drag?.baseImage || !drag.target?.isConnected) return;
     const ctx = drag.target.getContext('2d');
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.putImageData(drag.baseImage, 0, 0);
+  }
+
+  function clearActiveDrag() {
+    const drag = activeDrag;
+    if (!drag) return null;
+    restoreDragCanvas(drag);
+    drag.target?.classList?.remove('barn-layout-dragging');
+    try { drag.target?.releasePointerCapture?.(drag.pointerId); } catch (_) {}
+    activeDrag = null;
+    return drag;
   }
 
   function drawDragPreview(candidate) {
@@ -65,7 +74,7 @@
     const target = drag?.target;
     const view = target?.__incubatorView;
     if (!drag || !candidate || !view) return;
-    restoreDragCanvas();
+    restoreDragCanvas(drag);
     const rect = target.getBoundingClientRect();
     const dpr = target.width / Math.max(1, rect.width); // Matches the existing high-DPI backing-store scale.
     const ctx = target.getContext('2d');
@@ -94,18 +103,19 @@
   function endDrag(event, cancelled = false) {
     const drag = activeDrag;
     if (!drag) return;
-    restoreDragCanvas();
-    activeDrag = null;
-    drag.target.classList.remove('barn-layout-dragging');
-    try { drag.target.releasePointerCapture?.(event.pointerId); } catch (_) {}
-    if (cancelled || !drag.moved || !drag.candidate) return;
+    const moved = drag.moved;
+    const candidate = drag.candidate;
+    const addition = drag.addition;
+    const barn = drag.barn;
+    clearActiveDrag();
+    if (cancelled || !moved || !candidate) return;
 
     suppressClickUntil = performance.now() + 250;
-    const result = api()?.moveIncubator?.(drag.addition.id, drag.candidate) || { ok: false, message: 'Barn addition move API unavailable.' };
+    const result = api()?.moveIncubator?.(addition.id, candidate) || { ok: false, message: 'Barn addition move API unavailable.' };
     lastDebugChange = result.ok
-      ? `Dragged ${drag.addition.id} to ${drag.candidate.side} wall (${drag.candidate.localCol},${drag.candidate.localRow}).`
+      ? `Dragged ${addition.id} to ${candidate.side} wall (${candidate.localCol},${candidate.localRow}).`
       : `Barn layout drag rejected: ${result.message || 'unknown placement error'}`;
-    refreshEditor(drag.barn.id, result.ok
+    refreshEditor(barn.id, result.ok
       ? 'Moved. Drag any installed addition directly to another clear barn wall.'
       : (result.message || 'That barn position is blocked.'));
   }
@@ -115,6 +125,7 @@
     const target = event.currentTarget;
     const currentModal = modal();
     if (!currentModal?.classList.contains('open')) return;
+    if (activeDrag) clearActiveDrag();
     const snapshot = api()?.debugSnapshot?.();
     const point = pointerToFarm(target, event);
     const owningBarn = (snapshot?.barns || []).find(entry => additionAt(entry, point)) || null; // Farm-space hit testing uniquely identifies the barn whose installed addition was grabbed.
@@ -126,6 +137,7 @@
     const ctx = target.getContext('2d');
     activeDrag = {
       target,
+      pointerId: event.pointerId, // Used to release pointer capture even when Escape/Close cancels the drag before pointerup.
       barn: owningBarn,
       addition,
       startX: event.clientX,
@@ -140,7 +152,7 @@
 
   function onPointerMove(event) {
     const drag = activeDrag;
-    if (!drag || drag.target !== event.currentTarget) return;
+    if (!drag || drag.target !== event.currentTarget || drag.pointerId !== event.pointerId) return;
     if (!drag.moved && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 5) return;
     drag.moved = true;
     const point = pointerToFarm(drag.target, event);
@@ -157,10 +169,10 @@
   }
 
   function requestClose() {
+    clearActiveDrag(); // Closing during a drag must restore the canvas, cursor and pointer capture before the modal disappears.
     const close = document.getElementById('barnIncubatorEditorClose'); // Calls the original closeBarnEditor so its internal editorMode is also cleared.
     if (close) close.click();
     else modal()?.classList.remove('open');
-    activeDrag = null;
     lastDebugChange = 'Closed Barn Layout editor through farmhouse-style exit control.';
   }
 
@@ -177,8 +189,7 @@
 
     currentModal.setAttribute('role', 'dialog');
     currentModal.setAttribute('aria-modal', 'true');
-    const moveButton = document.getElementById('barnIncubatorMoveBtn');
-    if (moveButton) moveButton.hidden = true; // Direct dragging now owns ordinary moves, matching farmhouse layout editing.
+    // Keep the existing Move Selected button as a keyboard/controller/non-drag fallback. Direct dragging is additive, not a replacement for accessible controls.
 
     if (!currentModal.querySelector('.barn-layout-parity-close')) {
       const close = document.createElement('button'); // Always-visible close control avoids trapping mobile users at the bottom of a scrolling sidebar.
@@ -196,6 +207,9 @@
       target.addEventListener('pointermove', onPointerMove);
       target.addEventListener('pointerup', event => endDrag(event, false));
       target.addEventListener('pointercancel', event => endDrag(event, true));
+      target.addEventListener('lostpointercapture', event => {
+        if (activeDrag?.pointerId === event.pointerId) clearActiveDrag();
+      });
       target.addEventListener('click', onClickCapture, true);
     }
 
@@ -208,7 +222,7 @@
 
     const hint = document.getElementById('barnIncubatorEditorHint');
     if (hint && !/Drag any installed addition directly/i.test(hint.textContent || '')) {
-      hint.textContent = 'Drag any installed addition directly to another barn wall. Use Place Incubator for a new plan; Close, Escape, or the dark backdrop exits.';
+      hint.textContent = 'Drag any installed addition directly to another barn wall, or use Move Selected. Use Place Incubator for a new plan; Close, Escape, or the dark backdrop exits.';
     }
     return true;
   }
@@ -242,6 +256,7 @@
       directDragBound: canvas()?.dataset.houseStyleDragBound === '1',
       draggingAdditionId: activeDrag?.addition?.id || null,
       previewCandidate: activeDrag?.candidate || null,
+      moveButtonAvailable: !!document.getElementById('barnIncubatorMoveBtn'),
     });
     return true;
   }
