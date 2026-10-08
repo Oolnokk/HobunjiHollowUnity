@@ -4,9 +4,9 @@
 
   const VERSION = 1; // Exposed through the debug API so mobile reports can identify this reset behavior.
   const DEFAULT_OFFSET_H = 0.35; // Used when resetting the ordinary/default Shoulder Cam stance.
-  const DEFAULT_OFFSET_V = -0.05; // Used when resetting the ordinary/default Shoulder Cam stance.
+  const DEFAULT_OFFSET_V = 0.05; // Used when resetting the ordinary/default Shoulder Cam stance.
   const COMBAT_OFFSET_H = 0.60; // Used when resetting the combat Shoulder Cam stance.
-  const COMBAT_OFFSET_V = -0.05; // Used when resetting the combat Shoulder Cam stance.
+  const COMBAT_OFFSET_V = 0.05; // Used when resetting the combat Shoulder Cam stance.
   const RESET_BUTTON_ID = 'resetShoulderCamBtn'; // Used to prevent duplicate Settings rows when the runtime bootstrap is reloaded.
   let lastReset = null; // Reported through snapshot() so mobile diagnostics can confirm what the most recent tap restored.
 
@@ -63,7 +63,7 @@
 
     const row = document.createElement('div'); // Added once to the existing Settings list; uses the same row/button classes as the game's other reset controls.
     row.className = 'settings-row';
-    row.innerHTML = '<div class="settings-label"><div class="settings-name">Shoulder Cam Defaults</div><div class="settings-desc">Recenters Shoulder Cam, restores the currently active Default/Combat shoulder offsets, and reapplies species-relative neck/height framing.</div></div><button type="button" class="settings-small-btn" id="resetShoulderCamBtn">Set to Default</button>';
+    row.innerHTML = '<div class="settings-label"><div class="settings-name">Shoulder Cam Defaults</div><div class="settings-desc">Recenters Shoulder Cam, restores the currently active Default/Combat shoulder offsets, and reapplies species-relative head/height framing.</div></div><button type="button" class="settings-small-btn" id="resetShoulderCamBtn">Set to Default</button>';
     anchorRow.parentNode.insertBefore(row, anchorRow.nextSibling);
     row.querySelector(`#${RESET_BUTTON_ID}`)?.addEventListener('click', resetToDefaults);
     return true;

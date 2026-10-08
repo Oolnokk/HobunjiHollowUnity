@@ -74,8 +74,8 @@
   // fill chosen to keep the near-black colour town roofs had before that
   // mapping (measured in-game: the old vertex-coloured, fully metallic roofs
   // rendered ~RGB 0.2/255). Pure black would hide the shingle shapes, so this
-  // is the darkest same-hue tint that still shows them.
-  const TOWN_SHINGLE_FILL = '#141209';
+  // retains the dark hue while reducing brightness after the PNG mapping fix.
+  const TOWN_SHINGLE_FILL = '#0e0d06'; // Used by every town/zone roof tint request.
 
   // One shared readiness boundary for final brick + shingle geometry. The
   // parser-time StructurePreload starts the expensive immutable source work

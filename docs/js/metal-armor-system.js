@@ -367,7 +367,13 @@
     }
     if (active?.mode === 'pattern') {
       const authoredPattern = active.pattern || window.PatternLibrary?.getById?.(active.patternLibraryId) || null;
-      if (authoredPattern) return { ...sourceOptions, targetHex: baseMetal.hex, verdigrisHex: baseMetal.verdigrisHex, oxidationAmount: 1, authoredPattern };
+      if (authoredPattern) {
+        const motifUrl = authoredPattern.motifUrl; // Repository snapshots use docs-relative asset paths instead of the current page's directory.
+        const resolvedPattern = motifUrl && !/^(?:[a-z]+:|\/\/)/i.test(motifUrl) && window.resolvePortraitAssetUrl
+          ? { ...authoredPattern, motifUrl: window.resolvePortraitAssetUrl(motifUrl.replace(/^\.?\/?assets\//, '')) }
+          : authoredPattern; // Resolves the render copy without changing saved treatment data.
+        return { ...sourceOptions, targetHex: baseMetal.hex, verdigrisHex: baseMetal.verdigrisHex, oxidationAmount: 1, authoredPattern: resolvedPattern };
+      }
     }
     return { ...sourceOptions, targetHex: baseMetal.hex, verdigrisHex: baseMetal.verdigrisHex, oxidationAmount: quantizedVerdigrisFraction(state) };
   }

@@ -17,6 +17,10 @@
     const xray = window.HeldObjectRenderOrder?.snapshot?.() || null;
     const mist = window.CloudForestAvatarDepthOccluder?.snapshot?.() || null;
     const lines = ['', SECTION];
+    const authoredGrips = window.HobunjiAuthoredGripOverrides?.debugSnapshot?.(); // Reports the loaded migration and fixed spear grip in mobile-copyable Pixel Probe output.
+    lines.push(authoredGrips
+      ? `Authored grips: revision=${authoredGrips.revision} applied=${authoredGrips.applied} spearMeleeZ=${authoredGrips.fishingspear?.primaryGrip?.position?.z ?? '-'} latest="Fishing spear fixed melee grip now uses the exported Z=0; ranged grip and attack ranges retain their authored values."`
+      : 'Authored grips: migration module missing');
     const dual = window.HobunjiDualWieldWeaponVisuals?.debugSnapshot?.(); // Exposes whether the duplicate renderer found the weapon when hands claim dual-wield ownership.
     lines.push(dual
       ? `Dual wield: active=${dual.active} source=${dual.source || '-'} plane=${dual.originalPlaneName || '-'} idleBlend=${dual.idleBlend} latest="Attached dual weapons survive temporary plane hiding during held-object render passes."`

@@ -33,12 +33,12 @@
   // raw channels, let luminance carry the authored value/shading, and let the
   // tint carry hue/color. Do NOT run mapTexelToLinear here: the grass
   // ShaderMaterial does not do that conversion before this luminance step.
-  function grassLuminanceMapFragment(uniformName = 'hobunjiSurfaceTint') {
+  function grassLuminanceMapFragment(uniformName = 'hobunjiSurfaceTint', preserveTintValue = false) {
     return `
 #ifdef USE_MAP
   vec4 texelColor = texture2D( map, vUv );
   float hobunjiLum = dot(texelColor.rgb, vec3(0.299, 0.587, 0.114));
-  vec3 hobunjiTinted = ${uniformName} * (0.7 + hobunjiLum * 0.8);
+  vec3 hobunjiTinted = ${uniformName} * ${preserveTintValue ? 'min(1.0, 0.7 + hobunjiLum * 0.8)' : '(0.7 + hobunjiLum * 0.8)'};
   vec3 hobunjiCol = mix(vec3(0.0), hobunjiTinted, smoothstep(0.0, 0.15, hobunjiLum));
   diffuseColor.rgb = hobunjiCol;
   diffuseColor.a *= texelColor.a;
@@ -62,20 +62,21 @@
     return fragmentShader.replace(mainPattern, `${declaration}\nvoid main() {`);
   }
 
-  function applyGrassLuminance(material, tint = null) {
+  function applyGrassLuminance(material, tint = null, preserveTintValue = false) {
     if (!material || typeof material.onBeforeCompile !== 'function') return false;
     if (!material.map) return false;
 
     const tintColor = colorFrom(tint || material.color || 0xffffff);
+    const treatment = TREATMENT + (preserveTintValue ? '-bounded-value' : ''); // Separates wood's named-color shading from the brighter grass shader.
     material.userData = Object.assign({}, material.userData);
 
-    if (material.userData.surfaceTintTreatment === TREATMENT) {
+    if (material.userData.surfaceTintTreatment === treatment) {
       const existing = material.userData.surfaceTintColor;
       if (existing?.isColor) existing.copy(tintColor);
       return true;
     }
 
-    material.userData.surfaceTintTreatment = TREATMENT;
+    material.userData.surfaceTintTreatment = treatment;
     material.userData.surfaceTintColor = tintColor;
 
     const previousOnBeforeCompile = material.onBeforeCompile;
@@ -102,14 +103,14 @@
 
       shader.fragmentShader = declared.replace(
         include,
-        grassLuminanceMapFragment('hobunjiSurfaceTint')
+        grassLuminanceMapFragment('hobunjiSurfaceTint', preserveTintValue)
       );
       stats.shaderCompiles++;
     };
 
     material.customProgramCacheKey = function () {
       const prior = previousProgramCacheKey ? previousProgramCacheKey() : '';
-      return `${prior}|hobunji-${TREATMENT}`;
+      return `${prior}|hobunji-${treatment}`;
     };
 
     material.needsUpdate = true;

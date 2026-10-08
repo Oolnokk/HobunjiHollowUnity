@@ -531,8 +531,8 @@ assert.deepStrictEqual(
 
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('fishingspear', 'melee').position)),
-  { x: -0.04, y: -0.04, z: -0.1522 },
-  'Fishing spear melee grip must use the measured center of its long wood haft section.',
+  { x: -0.04, y: -0.04, z: 0 },
+  'Fishing spear fixed melee grip must use the October 7 editor export.',
 );
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('fishingspear', 'ranged').position)),

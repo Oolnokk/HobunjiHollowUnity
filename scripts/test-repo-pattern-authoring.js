@@ -118,7 +118,7 @@ assert.match(devExporter, /motifPng: 'assets\/patterns\/' \+ motifFile/, 'charac
 assert.match(devExporter, /MotifStore\.loadMotif/, 'Settings exporter can resolve indirectly stored custom motif pixels before PNG export');
 
 const sourceThicknessIndex = weaving.indexOf('const adjustedSrcMask = adjustMaskThickness(srcMask, sourceAllowedMask'); // Signed contour work belongs in motif-source pixels, before scaling/stamping.
-const meshScaleIndex = weaving.indexOf('ctx.scale(meshScale, meshScale)', sourceThicknessIndex);
+const meshScaleIndex = weaving.indexOf('ctx.scale(meshScale', sourceThicknessIndex);
 const repeatMaskIndex = weaving.indexOf('const sampledMasks = []'); // Repeated motif instances still flatten into one final sampled mask per primary/overpass slot.
 const stackCombineIndex = weaving.indexOf('const combinedMask = new Uint8Array(sampledMasks[0])', repeatMaskIndex); // Slot masks are combined only after their source-pixel contour work and garment-cell sampling are complete.
 const sharedOutlineIndex = weaving.indexOf('let outlineMask = buildPatternOutlineMask(', stackCombineIndex); // The one visible black-outline pass still happens after overpass recombination; direct trim may substitute stricter outline masks before this call.

@@ -19,7 +19,7 @@
   <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
   <script src="js/GLTFLoader.js?v=20260712d"></script>
   <script src="js/WallBuilder.js?v=20261006h9c26ecb"></script>
-  <script src="js/HousePieceGen.js?v=20261006h1036239&window=20260926rebase1"></script>
+  <script src="js/HousePieceGen.js?v=20261007h7b668c0&window=20260926rebase1"></script>
   <script src="js/interior-scene-builder.js?v=20261006h6327b82&window=20260926rebase1"></script>
   <script src="js/building-door.js?v=20260725a"></script>
   <script src="js/tile-pathfinding.js?v=20260808a"></script>
@@ -156,17 +156,17 @@
   </script>
   <script src="js/portrait-utils.js?v=20261005h123b9e8"></script>
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
-  <script src="js/npc-avatar-preview-utils.js?v=20260930ha019a52"></script>
-  <script src="js/png-plane-avatar.js?v=20261007h42a78e7"></script>
+  <script src="js/npc-avatar-preview-utils.js?v=20261007ha6123a6"></script>
+  <script src="js/png-plane-avatar.js?v=20261008hee0d24b"></script>
   <script src="js/species-pose-scaling.js?v=20260920height2"></script>
   <script src="js/character-dimensions.js?v=20261007he86e7d1"></script>
   <!-- Keeps the portrait plane's occlusion-depth redraws (used so its silhouette can
        occlude 3D held items/tools) on the same matrix as its visible draw when
        PlayerBodyTransformComposer is composing a render-time body delta (mirrors
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
-  <script src="js/portrait-plane-outline-parity.js?v=20260924shoulderocclusion1"></script>
+  <script src="js/portrait-plane-outline-parity.js?v=20261007hfd6211c"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261007h4ab71f8"></script>
+  <script src="js/held-action-animations.js?v=20261008h4cbebe8"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
   <script src="js/character-action-locks.js?v=20261007h6a88d9d"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
@@ -228,7 +228,7 @@
   <script src="js/banubu-quest-content.js?v=20260925banubuvisual2"></script>
        editors save edited repo-tracked JSON into localStorage and have the
        game load that instead of the repo file when Local source is selected. -->
-  <script src="js/local-db-overrides.js?v=20260930hd662bf5"></script>
+  <script src="js/local-db-overrides.js?v=20261007h364016d"></script>
   <script>
     // species-pose-scaling parser-loads earlier for avatar consumers, then
     // re-resolves its config now that LocalDBOverrides knows the selected
@@ -250,8 +250,8 @@
   <!-- Onboarding overlay -->
   <link rel="stylesheet" href="onboarding.css?v=20261005h64e87e5">
   <script src="config/farm-specializations.js?v=20261004farm1"></script>
-  <script src="js/farm-world-settings.js?v=20261004farm1"></script>
-  <script src="onboarding.js?v=20261007hd21f847"></script>
+  <script src="js/farm-world-settings.js?v=20261007hf674925"></script>
+  <script src="onboarding.js?v=20261008hb7bb32d"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
   <script src="js/combat/resource-system.js?v=20261001quickdebuff2"></script>
   <script src="js/combat/knockback-collision-impact.js?v=20260930h6c19d61"></script>
@@ -401,7 +401,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261004h71c5a26&surfaceUv=20261006cliffparity1"></script>
+  <script src="js/house-pieces.js?v=20261007he02ef13&surfaceUv=20261006cliffparity1"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -562,7 +562,7 @@
        calls window.TownZoneBuildings.init(...) during its own setup (and
        reads window.TownZoneBuildings.loadHousePieceFaceTexture as one of
        window.FarmBuildings' own init deps, at that same call-time point). -->
-  <script src="js/town-zone-buildings.js?v=20261006h6e33b83"></script>
+  <script src="js/town-zone-buildings.js?v=20261007hbe2d67a"></script>
   <!-- Same-origin live Map Editor transport + runtime bridge. Loaded before
        game.js so its private scene state can be injected during setup. -->
   <script src="js/map-live-preview.js?v=20260909a&window=20260926rebase1"></script>
@@ -1816,8 +1816,8 @@
               <div class="settings-desc">Raises/lowers the shoulder cam's framing relative to the head — adjusts whichever stance (Default/Combat) is currently active</div>
             </div>
             <div style="display:flex;align-items:center;gap:8px">
-              <input type="range" id="settingShoulderSurfOffsetV" min="-1" max="1" step="0.05" value="-0.05" style="align-self:center">
-              <span id="settingShoulderSurfOffsetVValue" class="settings-slider-value">-0.05</span>
+              <input type="range" id="settingShoulderSurfOffsetV" min="-1" max="1" step="0.05" value="0.05" style="align-self:center">
+              <span id="settingShoulderSurfOffsetVValue" class="settings-slider-value">0.05</span>
             </div>
           </label>
           <div class="settings-section-title" style="margin-top:10px">Input</div>
@@ -2425,7 +2425,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261006hfed7a88"></script>
+  <script src="js/pixel-probe.js?v=20261007h7b27157"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2437,7 +2437,7 @@
   <script src="js/dialogue-camera-framing.js?v=20261002hba1474a"></script>
   <script src="js/dialogue-templates.js?v=20260929mastery1"></script>
   <script src="js/dialogue-rich-text.js?v=20260929colors1"></script>
-  <script src="js/dialogue-content.js?v=20261002h16e3b13"></script>
+  <script src="js/dialogue-content.js?v=20261007h90e2b1f"></script>
   <script src="js/combat/combat-tutorial-content.js?v=20261001cae883e8"></script>
   <script src="js/combat/combat-tutorial-mastery.js?v=20260929mastery1-goals1"></script>
   <script src="js/combat/combat-tutorial-partner.js?v=20260930partner1"></script>
@@ -2581,7 +2581,7 @@
   <script src="js/romance-wedding.js?v=20261007wedding1"></script>
   <script src="js/romance-system.js?v=20261007romance1"></script>
   <script src="js/npc-command-wheel.js?v=20261007romance1"></script>
-  <script src="game.js?v=20261007ha05613e"></script>
+  <script src="game.js?v=20261008h44f1ce6"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261005h9a94218"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
