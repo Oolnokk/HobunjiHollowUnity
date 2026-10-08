@@ -1475,9 +1475,9 @@
     if (!stock || !def || !storeDeps?.inventory) return;
     const gold = Number(storeDeps.inventory.gold) || 0;
     if (gold < stock.buyPrice) { storeDeps.showToast?.("Not enough gold.", false); return; }
-    if ((storeDeps.inventory[itemKey] || 0) >= 99) { storeDeps.showToast?.("That stack is full.", false); return; }
+    if ((storeDeps.inventory[itemKey] || 0) >= window.InventoryStacks.MAX_TOTAL) { storeDeps.showToast?.("You can't carry any more of those.", false); return; }
     storeDeps.inventory.gold = gold - stock.buyPrice;
-    storeDeps.inventory[itemKey] = Math.min(99, (storeDeps.inventory[itemKey] || 0) + 1);
+    storeDeps.inventory[itemKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (storeDeps.inventory[itemKey] || 0) + 1);
     storeDeps.showToast?.(`Bought ${def.label}!`, true);
     storeDeps.buildInventoryGrid?.();
     storeDeps.saveMemberWorldData?.();

@@ -248,11 +248,11 @@
         const parts = [];
         for (const metalKey of loot.metalKeys) {
           const key = deps.metalBarItemKey(metalKey);
-          deps.inventory[key] = Math.min(99, (deps.inventory[key] || 0) + 1);
+          deps.inventory[key] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[key] || 0) + 1);
           parts.push((deps.ITEM_DEFS[key]?.icon || '🔶') + ' ' + deps.METAL_DEFS[metalKey].label + ' Bar');
         }
         for (const dyeItemKey of (loot.dyeItemKeys || [])) {
-          deps.inventory[dyeItemKey] = Math.min(99, (deps.inventory[dyeItemKey] || 0) + 1);
+          deps.inventory[dyeItemKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[dyeItemKey] || 0) + 1);
           parts.push((deps.ITEM_DEFS[dyeItemKey]?.icon || '🎨') + ' ' + (deps.ITEM_DEFS[dyeItemKey]?.label || 'Mystery Dye'));
         }
         if (loot.gold > 0) {
@@ -260,15 +260,15 @@
           parts.push('💰' + loot.gold + 'g');
         }
         if (loot.potionKey) {
-          deps.inventory[loot.potionKey] = Math.min(99, (deps.inventory[loot.potionKey] || 0) + 1);
+          deps.inventory[loot.potionKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[loot.potionKey] || 0) + 1);
           parts.push((deps.ITEM_DEFS[loot.potionKey]?.icon || '🧪') + ' ' + (deps.ITEM_DEFS[loot.potionKey]?.label || 'Potion'));
         }
         if (loot.recipeItemKey) {
-          deps.inventory[loot.recipeItemKey] = Math.min(99, (deps.inventory[loot.recipeItemKey] || 0) + 1);
+          deps.inventory[loot.recipeItemKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[loot.recipeItemKey] || 0) + 1);
           parts.push((deps.ITEM_DEFS[loot.recipeItemKey]?.icon || '📜') + ' ' + (deps.ITEM_DEFS[loot.recipeItemKey]?.label || 'Alchemy Recipe'));
         }
         if (loot.combatManualKey) {
-          deps.inventory[loot.combatManualKey] = Math.min(99, (deps.inventory[loot.combatManualKey] || 0) + 1);
+          deps.inventory[loot.combatManualKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[loot.combatManualKey] || 0) + 1);
           parts.push((deps.ITEM_DEFS[loot.combatManualKey]?.icon || '📕') + ' ' + (deps.ITEM_DEFS[loot.combatManualKey]?.label || 'Combat Manual'));
         }
         if (loot.clothing) {

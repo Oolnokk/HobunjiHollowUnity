@@ -267,7 +267,7 @@
 
     const { crop, reticle, tile } = context;
     const cropDef = lastDeps.ITEM_DEFS?.[crop] || {}; // Used for the inventory icon/label while the tile itself remains the source of crop identity.
-    lastDeps.inventory[crop] = Math.min(99, (Number(lastDeps.inventory[crop]) || 0) + 1);
+    lastDeps.inventory[crop] = Math.min(window.InventoryStacks.MAX_TOTAL, (Number(lastDeps.inventory[crop]) || 0) + 1);
     const stars = Math.max(1, Number(targetingDeps.rollItemStars?.('farming')) || 1); // Used to preserve the same farming-quality roll as game.js harvestCrop().
     targetingDeps.recordItemQuality?.(crop, stars, 1);
     window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.crop || 6, `harvested ${cropDef.label || crop}`);

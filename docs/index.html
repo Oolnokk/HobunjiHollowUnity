@@ -11,6 +11,9 @@
        the document parser is still loading the main module list. -->
   <!-- Must load before any save/localStorage writer: evicts browser recovery-checkpoint mirrors when the quota is full. -->
   <script src="js/storage-quota-guard.js?v=20261001c7a40d56"></script>
+  <!-- Bag stack sizing (99 per box, overflow spills into another box).
+       Must load before every module that grants inventory items. -->
+  <script src="js/inventory-stacks.js?v=20261008stack1"></script>
   <script src="js/scene-ready-poller.js?v=20260920startup4"></script>
   <!-- Dev Companion bridge (window.DevCompanion): session-tied channel to the
        docs/tools/dev-companion window. Loaded before every config-fetching
@@ -26,7 +29,7 @@
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
        extracted out of game.js; must load before game.js and before every
        other module whose init(deps) is handed window.FormatUtils.clamp/esc. -->
-  <script src="js/format-utils.js?v=20261007hbac0873"></script>
+  <script src="js/format-utils.js?v=20261008hd43cea6"></script>
   <!-- Movement virtual-joystick handlers extracted out of game.js; uses
        window.FormatUtils.clamp, so must load after it and before game.js. -->
   <script src="js/virtual-joystick.js?v=20260902mod1"></script>
@@ -62,13 +65,13 @@
        extracted out of game.js. Must load before game.js, which calls
        window.DenNestSystem.init(...) (binds its own devTeleportDenBtn/
        wildlifeDenList listeners) during its own setup. -->
-  <script src="js/den-nest-system.js?v=20261007hc6eeb8c"></script>
+  <script src="js/den-nest-system.js?v=20261008h92095a1"></script>
   <!-- Key HUD row, item-scroll widget, and per-frame status-pill HUD
        refresh, extracted out of game.js; uses window.FormatUtils.
        toolEmoji/actionName/formatClock, so must load after it and before
        game.js, which calls window.HudUpdate.init(...) (binds its own
        itemPrev/itemNext listeners) during its own setup. -->
-  <script src="js/hud-update.js?v=20260902mod1"></script>
+  <script src="js/hud-update.js?v=20261008h91861af"></script>
   <!-- Desktop/touch radial arc selector (tool/item wheels, ammo/potion
        entry menus, utilities wheel), extracted out of game.js; uses
        window.HudUpdate.refreshItemScroll, so must load after it and before
@@ -141,7 +144,7 @@
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
   <script src="js/tool-metal-recolor.js?v=20261001c6751543"></script>
-  <script src="js/metal-armor-system.js?v=20260930pauldronverdigris1"></script>
+  <script src="js/metal-armor-system.js?v=20261008h63fc9a4"></script>
   <script src="config/colors/config.js?v=20260930h1b2e2e2"></script>
   <script src="config/attachment-rig-profiles.js?v=20261002h6d814a9"></script>
   <link rel="stylesheet" href="style.css?v=20260927commandauras1-dialogue20">
@@ -261,7 +264,7 @@
   <!-- Burning Health presentation: reuses the authored campfire fire emitter on afflicted player/enemy avatar roots. -->
   <script src="js/combat/burning-affliction-vfx.js?v=20260923burn1"></script>
   <script src="js/combat/resource-rings.js?v=20261004h9a5a10d"></script>
-  <script src="js/combat/combat-core.js?v=20261001quickdebuff2"></script>
+  <script src="js/combat/combat-core.js?v=20261008h7cef530"></script>
   <script src="js/combat/enemy-search-ai.js?v=20260926combatreview1"></script>
   <!-- Stagger/Footing: authored 4-directional ragdoll blend clips + runtime
        playback onto the player's procedural rig and quarter-turned body-only
@@ -317,7 +320,7 @@
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
        must load after combat-bandit.js above, and before game.js, which
        calls window.BanditCamps.init(...) during its own setup. -->
-  <script src="js/bandit-camps.js?v=20260929lichroom1"></script>
+  <script src="js/bandit-camps.js?v=20261008h7c4d5ba"></script>
   <!-- Bounty board (hunt a named bandit captain, destroy his camp) —
        window.BountyBoard. Reads window.BanditCamps/window.BanditCombat
        directly, so must load after both above, and before game.js, which
@@ -336,17 +339,17 @@
   <script src="js/trinket-system.js?v=20261002hf79dffc"></script>
   <script src="js/cooking-data.js?v=20260811a"></script>
   <script src="js/food-processing.js?v=20261001foodgift2"></script>
-  <script src="js/cooking-system.js?v=20261007h1f1fcde"></script>
+  <script src="js/cooking-system.js?v=20261008h310d870"></script>
   <script src="js/key-item-system.js?v=20260918banubu1"></script>
   <!-- Alchemy (reagent/effect defs, potion brewing, shared timed effects) —
        window.AlchemySystem. Self-contained aside from deps injected via
        init(), so load order relative to the other systems above doesn't
        matter; must load before game.js, which calls
        window.AlchemySystem.init(...) during its own setup. -->
-  <script src="js/alchemy-system.js?v=20261007hdf45986"></script>
+  <script src="js/alchemy-system.js?v=20261008h42a8fec"></script>
   <!-- Banubu's Tea Grinder delegates trait legality/targeting to AlchemySystem
        but outputs cooking Tea Blends, so it must load after both systems. -->
-  <script src="js/tea-grinder.js?v=20261006he402c54"></script>
+  <script src="js/tea-grinder.js?v=20261008he9050ff"></script>
   <script src="js/alchemy-flasks.js?v=20261004hf0d70ad"></script>
   <!-- Dye catalog/ownership (window.DyeSystem) — character creation, the
        redye panel, General Store clothing stock, and treasure loot all
@@ -365,23 +368,23 @@
        deps injected via init(), so load order relative to the other
        systems above doesn't matter; must load before game.js, which
        calls window.WildBerries.init(...) during its own setup. -->
-  <script src="js/wild-berries.js?v=20260807a"></script>
+  <script src="js/wild-berries.js?v=20261008h5ac0677"></script>
   <!-- Buried wilderness treasure (window.WildTreasure) — self-contained
        aside from deps injected via init(), and reads window.AlchemySystem/
        window.DyeSystem at roll time (both already global by then), so
        load order relative to the other systems above doesn't matter;
        must load before game.js, which calls window.WildTreasure.init(...)
        during its own setup. -->
-  <script src="js/wild-treasure.js?v=20261007hbd7709e"></script>
+  <script src="js/wild-treasure.js?v=20261008hcbbb956"></script>
   <!-- Farm livestock: barn AI, animal factories, harvest interaction,
        breeding (window.FarmAnimals) — self-contained aside from deps
        injected via init(), and reads window.DewVats at call time (already
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmAnimals.init(...) during its own setup. -->
-  <script src="js/farm-production.js?v=20261006hf19b63f"></script>
+  <script src="js/farm-production.js?v=20261008h4558bf9"></script>
   <script src="js/world-meta-store.js?v=20260930livestockwalk1"></script>
-  <script src="js/farm-animals.js?v=20261007h27d4584"></script>
+  <script src="js/farm-animals.js?v=20261008h8cd38f3"></script>
   <!-- Farm buildings: barn placement/construction/demolition
        (window.FarmBuildings) — self-contained aside from deps injected
        via init(), and reads window.FarmAnimals at call time (already
@@ -396,7 +399,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmTroughs.init(...) during its own setup. -->
-  <script src="js/farm-troughs.js?v=20261007h84f2777"></script>
+  <script src="js/farm-troughs.js?v=20261008h2a72c03"></script>
   <!-- Modular player house (window.HousePieces) — barn-shaped foundation/
        build/demolish pipeline for house-piece deeds bought from the
        Carpenter, replacing the old singular Highland House GLB. Depends on
@@ -428,7 +431,7 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.ReagentPlants.init(...) during
        its own setup. -->
-  <script src="js/reagent-plants.js?v=20260918habitats1"></script>
+  <script src="js/reagent-plants.js?v=20261008hd731896"></script>
   <!-- Jubmir the traveling trader: daily egg + combat-manual stock (window.JubmirShop)
        — self-contained aside from deps injected via init(), and reads
        window.CreatureGenetics/window.FarmAnimals/window.ConditionRegistry at
@@ -549,7 +552,7 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.MetalCraftShop.init(...) during
        its own setup. -->
-  <script src="js/metal-craft-shop.js?v=20260926metalarmor1"></script>
+  <script src="js/metal-craft-shop.js?v=20261008h500d39f"></script>
   <!-- Ambient wildlife den spawning, per-den shared genotype rolls, and
        wildlife-vs-wildlife skirmish damage (window.WildlifeSpawn) — reads
        window.BanditCamps/window.CreatureGenetics/window.CreatureGeneticsRender
@@ -683,7 +686,7 @@
   <!-- Crafting tab (Inventory panel's Crafting sub-tab, window.CraftingPanel)
        — furniture blueprints plus discovered ore-to-bar recipes; pure DOM/state,
        must load before game.js, which injects inventory and metallurgy data. -->
-  <script src="js/crafting-panel.js?v=20261005h5016d48"></script>
+  <script src="js/crafting-panel.js?v=20261008h16fc595"></script>
   <!-- Tool/weapon equipment-slot assignment and gear clothing (collection,
        equip/de-equip, redye panel — window.EquipmentPanel) — its
        buildEquipmentSlots() calls window.WhistleEquip.build() at render
@@ -2467,7 +2470,7 @@
   <!-- Spearfishing minigame + fishing FX particles (window.Fishing) — must
        load before game.js, which injects the shared thrown-weapon pose seams
        used by fishing's held Windup → Strike presentation. -->
-  <script src="js/fishing-minigame.js?v=20261002h18c42a9"></script>
+  <script src="js/fishing-minigame.js?v=20261008h0fa38cb"></script>
   <!-- Kurraya hold-assembly + reactive-twitch visuals (window.KurrayaInstrument)
        — must load before game.js, which calls window.KurrayaInstrument.init(...)
        during its own setup, mirroring window.Fishing above. -->

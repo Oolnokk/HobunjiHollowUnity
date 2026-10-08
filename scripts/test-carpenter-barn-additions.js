@@ -54,6 +54,7 @@ const document = {
 const inventory = { gold: 6000 };
 const toasts = [];
 const window = {
+  InventoryStacks: require('./lib/inventory-stacks'),
   ConditionRegistry: { entryEligible: () => true },
   LootRolling: { getShopStock: () => stock.shops },
 };

@@ -11,6 +11,7 @@ const window = {
   LootRolling: { rollItemStars: () => 3, starRatingText: () => '★★★☆☆' },
   CookingSystem: { recordItemQuality() {} },
 };
+vm.runInNewContext(fs.readFileSync('docs/js/inventory-stacks.js', 'utf8'), { window, Math, Number, Object });
 vm.runInNewContext(fs.readFileSync('docs/js/crop-planting.js', 'utf8'), { window, Math });
 
 const inventory = { needlegrainSeeds: 1 };

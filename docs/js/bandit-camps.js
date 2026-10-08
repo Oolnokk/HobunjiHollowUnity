@@ -1214,7 +1214,7 @@
         parts.push('💰' + qty + 'g');
         continue;
       }
-      deps.inventory[key] = Math.min(99, (deps.inventory[key] || 0) + qty);
+      deps.inventory[key] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[key] || 0) + qty);
       deps.clampInventoryStack(key);
       parts.push(deps.itemIconForKey(key) + '×' + qty);
     }

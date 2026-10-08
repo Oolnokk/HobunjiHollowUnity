@@ -76,7 +76,6 @@
     },
 
     inventory: {
-      maxStack: 99,
       permissions: {
         withdraw: 'storage',
         alterFarm: 'alterFarm',

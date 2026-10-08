@@ -124,6 +124,7 @@ const context = {
   },
 };
 context.window = context;
+context.InventoryStacks = require('./lib/inventory-stacks');
 
 context.CookingSystem = {
   listIngredientDefinitions(category) { return category === 'fish' ? fishDefinitions : []; },

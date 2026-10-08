@@ -21,6 +21,7 @@ const context = {
   setTimeout,
   fetch: async () => ({ ok: true, json: async () => config }),
   window: {
+    InventoryStacks: require('./lib/inventory-stacks'),
     WildernessMapGenerator: { makeRng: () => () => 0.41 },
     CavernGenerator: {
       generateCavernFloor(seed) {
@@ -133,7 +134,7 @@ vm.runInContext(fs.readFileSync('docs/js/town-mine.js', 'utf8'), context);
   const discovered = new Set(['copper']);
   const craftingInventory = { ore_copper: 5, ore_tin: 5 };
   const craftingContext = {
-    window: {},
+    window: { InventoryStacks: require('./lib/inventory-stacks') },
     document: { querySelectorAll: () => [], getElementById: () => null },
   };
   vm.createContext(craftingContext);

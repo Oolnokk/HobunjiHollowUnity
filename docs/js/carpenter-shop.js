@@ -21,15 +21,6 @@
     deps = injectedDeps;
   }
 
-  // Plan/deed stacks cap at 9; buying into a full stack used to take the
-  // gold and grant nothing (Math.min silently dropped the unit).
-  const PLAN_STACK_MAX = 9;
-  function stackIsFull(itemKey) {
-    if ((Number(deps.inventory[itemKey]) || 0) < PLAN_STACK_MAX) return false;
-    deps.showToast(`You can't carry any more of those (max ${PLAN_STACK_MAX}).`, false);
-    return true;
-  }
-
   // Blueprints are never consumed by building (see CraftingPanel's
   // ownsBlueprint) and sell for 0g, so a second copy is wasted gold.
   function ownsBlueprint(bp) {
@@ -44,11 +35,10 @@
   function buyBarnPlan(tier) {
     const tierDef = deps.getBarnTiers()[tier];
     if (!tierDef) return;
-    if (stackIsFull(tierDef.planItem)) return;
     const gold = deps.inventory.gold || 0;
     if (gold < tierDef.price) { deps.showToast('Not enough ganang.', false); return; }
     deps.inventory.gold = gold - tierDef.price;
-    deps.inventory[tierDef.planItem] = Math.min(9, (deps.inventory[tierDef.planItem] || 0) + 1);
+    deps.inventory[tierDef.planItem] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[tierDef.planItem] || 0) + 1);
     deps.showToast(`Bought a ${tierDef.label} plan!`, true);
     renderCarpenterShopPage();
     deps.buildInventoryGrid();
@@ -62,11 +52,10 @@
   function buyBarnAddition(additionKey) {
     const def = _barnAdditions()[additionKey];
     if (!def?.planItem) return;
-    if (stackIsFull(def.planItem)) return;
     const gold = deps.inventory.gold || 0;
     if (gold < def.price) { deps.showToast('Not enough ganang.', false); return; }
     deps.inventory.gold = gold - def.price;
-    deps.inventory[def.planItem] = Math.min(9, (deps.inventory[def.planItem] || 0) + 1);
+    deps.inventory[def.planItem] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[def.planItem] || 0) + 1);
     deps.showToast(`Bought a ${def.label}!`, true);
     renderCarpenterShopPage();
     deps.buildInventoryGrid();
@@ -79,11 +68,10 @@
   function buyHousePieceDeed(pieceKey) {
     const def = deps.getHousePieceDeeds()[pieceKey];
     if (!def) return;
-    if (stackIsFull(def.deedItem)) return;
     const gold = deps.inventory.gold || 0;
     if (gold < def.price) { deps.showToast('Not enough ganang.', false); return; }
     deps.inventory.gold = gold - def.price;
-    deps.inventory[def.deedItem] = Math.min(9, (deps.inventory[def.deedItem] || 0) + 1);
+    deps.inventory[def.deedItem] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[def.deedItem] || 0) + 1);
     deps.showToast(`Bought a ${def.label}!`, true);
     renderCarpenterShopPage();
     deps.buildInventoryGrid();
@@ -102,7 +90,7 @@
     const gold = deps.inventory.gold || 0;
     if (gold < bp.price) { deps.showToast('Not enough ganang.', false); return; }
     deps.inventory.gold = gold - bp.price;
-    deps.inventory[bp.key] = Math.min(9, (deps.inventory[bp.key] || 0) + 1);
+    deps.inventory[bp.key] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[bp.key] || 0) + 1);
     deps.showToast(`Bought a ${bp.name} blueprint!`, true);
     renderCarpenterShopPage();
     deps.buildInventoryGrid();

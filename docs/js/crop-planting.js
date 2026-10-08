@@ -39,7 +39,7 @@
     // perks since processed goods already amplify quality economically.
     const bonusChance = Math.min(0.3, (window.PerkSystem?.rank('farming', 'bountifulHarvest') || 0) * 0.06);
     const amount = 1 + ((window.GameRandom?.random?.() ?? Math.random()) < bonusChance ? 1 : 0);
-    deps.inventory[data.cropKey] = Math.min(99, (deps.inventory[data.cropKey] || 0) + amount);
+    deps.inventory[data.cropKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[data.cropKey] || 0) + amount);
     const stars = window.LootRolling.rollItemStars('farming');
     window.CookingSystem.recordItemQuality(data.cropKey, stars, amount);
     window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.crop || 6, `harvested ${data.label}`);
