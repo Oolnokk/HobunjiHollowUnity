@@ -18,7 +18,8 @@
       const key = family + tier[0].toUpperCase() + tier.slice(1); // Shared asset key and plan prefix.
       buildings[key] = { ...definition, key, family, tier, label: tier[0].toUpperCase() + tier.slice(1) + ' ' + definition.label,
         w: 2 + index, h: 2 + index, planItem: key + 'Plan', price: [240, 650, 1400][index],
-        yield: [3, 4, 5][index], daysPerInput: [.5, .4, .3][index], waterCapacity: [12000, 24000, 48000][index] };
+        yield: [3, 4, 5][index], daysPerInput: [.5, .4, .3][index], waterCapacity: [12000, 24000, 48000][index],
+        minTownValue: [0, 1, 2][index] }; // Carpenter sale gate only (see FarmProduction.renderShop); farm presets still grant any tier.
     });
   }
   const specializations = { // These supplies belong to shared world storage, granted once at creation.

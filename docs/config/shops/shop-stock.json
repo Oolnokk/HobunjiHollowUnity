@@ -261,6 +261,7 @@
           "slots": 4,
           "price": 500,
           "planItem": "barnPlanSmall",
+          "minTownValue": 0,
           "conditions": {}
         },
         "medium": {
@@ -268,6 +269,7 @@
           "slots": 8,
           "price": 1000,
           "planItem": "barnPlanMedium",
+          "minTownValue": 1,
           "conditions": {}
         },
         "large": {
@@ -275,6 +277,7 @@
           "slots": 12,
           "price": 1500,
           "planItem": "barnPlanLarge",
+          "minTownValue": 2,
           "conditions": {}
         }
       },
@@ -285,6 +288,7 @@
           "desc": "A modular 3×1 barn room with three maturation slots. Each slot needs an unused trough reserved before a Nursery baby can begin maturing.",
           "price": 5000,
           "planItem": "barnIncubatorPlan",
+          "minTownValue": 1,
           "additionId": "incubator",
           "conditions": {}
         },
@@ -294,6 +298,7 @@
           "desc": "A small modular incubator with one maturation slots.",
           "price": 220,
           "planItem": "barnIncubatorSmallPlan",
+          "minTownValue": 0,
           "additionId": "incubator",
           "conditions": {}
         },
@@ -303,6 +308,7 @@
           "desc": "A large modular incubator with six maturation slots.",
           "price": 1400,
           "planItem": "barnIncubatorLargePlan",
+          "minTownValue": 2,
           "additionId": "incubator",
           "conditions": {}
         }

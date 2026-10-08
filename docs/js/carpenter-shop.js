@@ -21,13 +21,34 @@
     deps = injectedDeps;
   }
 
+  // Larger barn/incubator plans are a Town Value perk: a def's optional
+  // minTownValue (shop-stock.json) hides nothing, but locks the Buy button
+  // until the town has grown. Farm presets still hand out any tier.
+  function _townValueLock(def) {
+    const required = Number(def?.minTownValue) || 0;
+    const current = Number(window.TownMine?.getTownValue?.()) || 0;
+    return current < required ? required : 0;
+  }
+  function _refuseLocked(def) {
+    const required = _townValueLock(def);
+    if (!required) return false;
+    deps.showToast(`Dzibim won't build that until the town has grown (Town Value ${required}).`, false);
+    return true;
+  }
+  function _buyButtonHtml(def, dataAttr) {
+    const required = _townValueLock(def);
+    return required
+      ? `<button class="shop-buy-btn" disabled title="Requires Town Value ${required}">🔒 TV ${required}</button>`
+      : `<button class="shop-buy-btn" ${dataAttr}>Buy</button>`;
+  }
+
   function _barnAdditions() {
     return window.LootRolling?.getShopStock?.()?.carpenterBarnPlans?.additions || {};
   }
 
   function buyBarnPlan(tier) {
     const tierDef = deps.getBarnTiers()[tier];
-    if (!tierDef) return;
+    if (!tierDef || _refuseLocked(tierDef)) return;
     const gold = deps.inventory.gold || 0;
     if (gold < tierDef.price) { deps.showToast('Not enough ganang.', false); return; }
     deps.inventory.gold = gold - tierDef.price;
@@ -44,7 +65,7 @@
   // lets future barn rooms use the same stock shape without new shop code.
   function buyBarnAddition(additionKey) {
     const def = _barnAdditions()[additionKey];
-    if (!def?.planItem) return;
+    if (!def?.planItem || _refuseLocked(def)) return;
     const gold = deps.inventory.gold || 0;
     if (gold < def.price) { deps.showToast('Not enough ganang.', false); return; }
     deps.inventory.gold = gold - def.price;
@@ -110,10 +131,10 @@
         <div class="sh-icon">🏚</div>
         <div class="sh-info">
           <div class="sh-name">${deps.esc(def.label)} Plan</div>
-          <div class="sh-desc">Houses up to ${def.slots} livestock. Owned: ${owned}</div>
+          <div class="sh-desc">Houses up to ${def.slots} livestock. Owned: ${owned}${_townValueLock(def) ? ` · Requires Town Value ${_townValueLock(def)}` : ''}</div>
           <div class="sh-price">${def.price}g each</div>
         </div>
-        <button class="shop-buy-btn" data-tier="${tier}">Buy</button>
+        ${_buyButtonHtml(def, `data-tier="${tier}"`)}
       `;
       row.querySelector('[data-tier]')?.addEventListener('click', () => buyBarnPlan(tier));
       list.appendChild(row);
@@ -134,10 +155,10 @@
           <div class="sh-icon">${deps.esc(def.icon || '🪚')}</div>
           <div class="sh-info">
             <div class="sh-name">${deps.esc(def.label)}</div>
-            <div class="sh-desc">${deps.esc(def.desc || 'A modular addition for a barn.')} Owned: ${owned}</div>
+            <div class="sh-desc">${deps.esc(def.desc || 'A modular addition for a barn.')} Owned: ${owned}${_townValueLock(def) ? ` · Requires Town Value ${_townValueLock(def)}` : ''}</div>
             <div class="sh-price">${def.price}g each</div>
           </div>
-          <button class="shop-buy-btn" data-barn-addition="${deps.esc(additionKey)}">Buy</button>
+          ${_buyButtonHtml(def, `data-barn-addition="${deps.esc(additionKey)}"`)}
         `;
         row.querySelector('[data-barn-addition]')?.addEventListener('click', () => buyBarnAddition(additionKey));
         list.appendChild(row);

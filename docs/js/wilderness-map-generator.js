@@ -3060,6 +3060,35 @@
   function chooseEntry() {
     const forcedSide = activePresetConfig().forcedEntrySide;
     const requested = (map && map.preselectedEntrySide) || forcedSide || (settings.entrySide === 'random' ? pick(['north', 'east', 'south', 'west']) : settings.entrySide);
+    let chosen = bestBorderGateCandidate(requested);
+    if (!chosen) chosen = { x: 0, y: Math.floor(settings.height / 2), side: 'west' };
+    map.entry = { x: chosen.x, y: chosen.y, side: chosen.side, type: 'mapEntry' };
+    const greatBasinTarget = usesGreatBasinPreset() ? highestWalkablePlateauCandidate(map.entry) : null;
+    const forcedGateHeight = greatBasinTarget ? greatBasinTarget.height : null;
+    openBorderEntryGate(map.entry, forcedGateHeight);
+    if (greatBasinTarget) connectGreatBasinEntryToHighestPlateau(map.entry, greatBasinTarget);
+    logDebug(`entry: ${map.entry.side} border at ${map.entry.x},${map.entry.y} with protected road opening${greatBasinTarget ? ` at high basin height ${greatBasinTarget.height}` : ''}`);
+  }
+
+  // A second road mouth on another border (settings.tradeExitSide, see
+  // map_southern_cloud_forest's ZONE_CONFIG entry): where the world's road
+  // leaves the playable region. It is carved exactly like the entry gate and
+  // generatePaths() joins it to the entry with a visible road, which is the
+  // route Slagothim trade caravans (js/slagothim-traders.js) arrive and leave
+  // by. The player cannot walk out through it; it only reads as a road that
+  // carries on past the border escarpment.
+  function chooseTradeExit() {
+    map.tradeExit = null;
+    const side = settings.tradeExitSide;
+    if (!side || !map.entry || side === map.entry.side) return;
+    const chosen = bestBorderGateCandidate(side);
+    if (!chosen) return;
+    map.tradeExit = { x: chosen.x, y: chosen.y, side: chosen.side, type: 'tradeExit' };
+    openBorderEntryGate(map.tradeExit);
+    logDebug(`trade exit: ${side} border at ${chosen.x},${chosen.y}`);
+  }
+
+  function bestBorderGateCandidate(requested) {
     const candidates = [];
     if (requested === 'north' || requested === 'south') {
       const y = requested === 'north' ? 0 : settings.height - 1;
@@ -3086,14 +3115,7 @@
       const heightPenalty = inner ? Math.max(0, tileHeight(inner) - 2) * 0.08 : 1;
       return { candidate, score: -waterPenalty * 9 - centerPenalty * 4 - heightPenalty + noise2(candidate.x, candidate.y, 74231) * 0.25 };
     }).sort((a, b) => b.score - a.score);
-    let chosen = scored.length ? scored[0].candidate : null;
-    if (!chosen) chosen = { x: 0, y: Math.floor(settings.height / 2), side: 'west' };
-    map.entry = { x: chosen.x, y: chosen.y, side: chosen.side, type: 'mapEntry' };
-    const greatBasinTarget = usesGreatBasinPreset() ? highestWalkablePlateauCandidate(map.entry) : null;
-    const forcedGateHeight = greatBasinTarget ? greatBasinTarget.height : null;
-    openBorderEntryGate(map.entry, forcedGateHeight);
-    if (greatBasinTarget) connectGreatBasinEntryToHighestPlateau(map.entry, greatBasinTarget);
-    logDebug(`entry: ${map.entry.side} border at ${map.entry.x},${map.entry.y} with protected road opening${greatBasinTarget ? ` at high basin height ${greatBasinTarget.height}` : ''}`);
+    return scored.length ? scored[0].candidate : null;
   }
 
   function placeStructures() {
@@ -4013,6 +4035,17 @@
       map.paths.push({ id: `path_${map.paths.length + 1}`, from: { ...start }, to: { x: target.x, y: target.y, reason: target.reason, targetId: target.targetId || null }, points: path });
       start = { x: target.x, y: target.y };
       made++;
+    }
+    if (map.tradeExit) {
+      // The through-road: entry gate to the trade exit (see chooseTradeExit).
+      const road = findPath({ x: map.entry.x, y: map.entry.y }, { x: map.tradeExit.x, y: map.tradeExit.y }, { allowWater: true });
+      if (road) {
+        markVisiblePath(road);
+        map.paths.push({ id: `path_${map.paths.length + 1}`, from: { x: map.entry.x, y: map.entry.y }, to: { x: map.tradeExit.x, y: map.tradeExit.y, reason: 'tradeExit', targetId: null }, points: road });
+        made++;
+      } else {
+        warn('trade exit road: no path from entry to trade exit');
+      }
     }
     logDebug(`visible paths made: ${made}, destinations attempted: ${targets.length}`);
   }
@@ -6577,6 +6610,9 @@
       plateaus: 25, plateauAreaMul: 1.5, lowProfilePlateaus: true, maxTier: 2,
       wideRamps: true, ramps: 20,
       pathWindiness: 8, entryGateWidthMul: 0.2,
+      // The region's southern road out of the playable world (see
+      // chooseTradeExit) — Slagothim caravans enter and leave by it.
+      tradeExitSide: 'south',
     },
     map_western_slope: { entrySide: 'east', preset: 'cliffs', boundaryMode: 'entrySideDistantLandscape', boundaryCliffBoost: 0 },
     map_eastern_mire: { entrySide: 'west', preset: 'greatBasin', boundaryMode: 'followMapHeight', boundaryCliffBoost: 2 },
@@ -6843,6 +6879,7 @@
     settings.sourceHeight = originalHeight;
 
     map.entry = scaleEntryPoint(map.entry, scale, originalWidth, originalHeight);
+    if (map.tradeExit) map.tradeExit = scaleEntryPoint(map.tradeExit, scale, originalWidth, originalHeight);
     map.objects = (map.objects || []).map(object => scaleGeneratedObject(object, scale));
     rebuildObjectCache();
     for (const tile of allTiles()) tile.occupiedBy = null;
@@ -8331,6 +8368,7 @@
     syncTileHeights();
     generateCliffSkirts();
     chooseEntry();
+    chooseTradeExit();
     if (usesGreatBasinPreset()) generateCliffSkirts(); // refresh after Great Basin entry road
     generateLatePaintedRivers();
     generateCliffSkirts(); // refresh after late-painted rivers
@@ -8354,6 +8392,7 @@
     buildAnimalActivity();
     const workspace = buildHobunjiMapExport();
     workspace.entry = map.entry ? { col: map.entry.x, row: map.entry.y, side: map.entry.side } : null;
+    workspace.tradeExit = map.tradeExit ? { col: map.tradeExit.x, row: map.tradeExit.y, side: map.tradeExit.side } : null;
     workspace.warnings = map.warnings.slice();
     // Stumps/logs are generated in the normal object pass but rendered at
     // runtime from authored furniture definitions. Export their exact final
@@ -8486,7 +8525,10 @@
     generateWorkspace,
     generateZoneWorkspace,
     defaultSettings,
-    zoneSettings: zoneMapId => ({ ...ZONE_CONFIG[zoneMapId] }), // Mini-wilderness callers reuse biome settings without mutating the shared preset.
+    // Mini-wilderness callers reuse biome settings without mutating the shared
+    // preset. The region-exit trade road (tradeExitSide) belongs to the real
+    // zone only, so it is left out here.
+    zoneSettings: zoneMapId => { const { tradeExitSide, ...biome } = ZONE_CONFIG[zoneMapId] || {}; return biome; },
     generationTileScale: GENERATION_TILE_SCALE, // Shared size conversion replaces the lab's hard-coded export multiplier.
     zoneMapIds: () => Object.keys(ZONE_CONFIG),
     hashSeed,

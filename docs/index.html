@@ -26,7 +26,7 @@
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
        extracted out of game.js; must load before game.js and before every
        other module whose init(deps) is handed window.FormatUtils.clamp/esc. -->
-  <script src="js/format-utils.js?v=20261007hbac0873"></script>
+  <script src="js/format-utils.js?v=20261008hd45817a"></script>
   <!-- Movement virtual-joystick handlers extracted out of game.js; uses
        window.FormatUtils.clamp, so must load after it and before game.js. -->
   <script src="js/virtual-joystick.js?v=20260902mod1"></script>
@@ -213,7 +213,7 @@
   <!-- Shared plateau/ramp fold math (Map Editor preview + Tothal Shift) and the
        headless Wilderness Map Generator core (Tothal Shift wilderness reroll) -->
   <script src="js/terrain-preview.js?v=20260922ruinrebase1"></script>
-  <script src="js/wilderness-map-generator.js?v=20261002hb64913d"></script>
+  <script src="js/wilderness-map-generator.js?v=20261008h77613d8"></script>
   <!-- Terrain-aware authored locales inspect the finished wilderness and place against existing host terrain. Must load after WildernessMapGenerator so its wrapper installs in the game, not only in editor/tests. -->
   <script src="js/locale-terrain-placement.js?v=20260930ladderfix1"></script>
   <script src="js/foliage-furniture-renderer.js?v=20260816a"></script>
@@ -249,7 +249,7 @@
   <script src="js/local-save-folder.js?v=20261002h1b411a3"></script>
   <!-- Onboarding overlay -->
   <link rel="stylesheet" href="onboarding.css?v=20261005h64e87e5">
-  <script src="config/farm-specializations.js?v=20261004farm1"></script>
+  <script src="config/farm-specializations.js?v=20261008h817d2c1"></script>
   <script src="js/farm-world-settings.js?v=20261007hf674925"></script>
   <script src="onboarding.js?v=20261008hb7bb32d"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
@@ -303,7 +303,7 @@
        (at fight time, not load time), so exact ordering against those two
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
-  <script src="js/combat/combat-bandit.js?v=20261004h163c880"></script>
+  <script src="js/combat/combat-bandit.js?v=20261008h9e83464"></script>
   <!-- Distinct Minion humanoid category: independent roster/dye/Shambling Footing rules over the shared BanditCombat executor. -->
   <script src="js/combat/combat-minion.js?v=20260929lichroom1"></script>
   <script src="js/combat/combat-enemy-dodge.js?v=20261001quickdebuff2"></script>
@@ -376,7 +376,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmAnimals.init(...) during its own setup. -->
-  <script src="js/farm-production.js?v=20261006hf19b63f"></script>
+  <script src="js/farm-production.js?v=20261008hd8a945f"></script>
   <script src="js/world-meta-store.js?v=20260930livestockwalk1"></script>
   <script src="js/farm-animals.js?v=20261007h27d4584"></script>
   <!-- Farm buildings: barn placement/construction/demolition
@@ -393,7 +393,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmTroughs.init(...) during its own setup. -->
-  <script src="js/farm-troughs.js?v=20261007h84f2777"></script>
+  <script src="js/farm-troughs.js?v=20261008h3680f7f"></script>
   <!-- Modular player house (window.HousePieces) — barn-shaped foundation/
        build/demolish pipeline for house-piece deeds bought from the
        Carpenter, replacing the old singular Highland House GLB. Depends on
@@ -413,7 +413,7 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.FarmCrates.init(...) during its
        own setup. -->
-  <script src="js/farm-crates.js?v=20260807a"></script>
+  <script src="js/farm-crates.js?v=20261008h861e057"></script>
   <!-- Procedural tasks: bulletin board + trusted-NPC favors
        (window.ProceduralTasks) — self-contained aside from deps injected
        via init(), so load order relative to the other systems above
@@ -435,6 +435,14 @@
   <script src="js/jubmir-shop.js?v=20260910manuals1"></script>
   <!-- Bound Harlyao relic weapons + Garanki Gabu's unbinding/enchanting panel. -->
   <script src="js/harlyao-relics.js?v=20260930ench1"></script>
+  <!-- Smithy / General Store / Carpenter shop-counter buttons (window.NpcShopButtons),
+       initialized by game.js. -->
+  <script src="js/npc-shop-buttons.js?v=20261008shopbtn1"></script>
+  <!-- Slagothim trade caravans: town-value-gated road traders (window.SlagothimTraders).
+       game.js calls window.SlagothimTraders.init(...); the name generator supplies
+       Slagothim culture names for caravan members. -->
+  <script src="js/scratchbones-name-generator.js?v=20261008slagothim1"></script>
+  <script src="js/slagothim-traders.js?v=20261008slagothim1"></script>
   <!-- Khymeryyan civil calendar (day/week/month/year derivations + regional
        seasons) and the Calendar tab UI (window.CalendarSystem) —
        self-contained aside from deps injected via init(), so load order
@@ -491,7 +499,7 @@
        other systems above doesn't matter; must load before game.js, which
        calls window.WildernessMap.init(...) during its own setup. -->
   <script src="js/wilderness-map.js?v=20260929ruinsites1"></script>
-  <script src="js/navigation-compass.js?v=20261001h4adf2e4"></script>
+  <script src="js/navigation-compass.js?v=20261008h6b805df"></script>
   <!-- Dead-zone rotation math shared by player/NPC/creature PNG-plane
        avatars (window.PerpRotation) — self-contained aside from deps
        injected via init(), so load order relative to the other systems
@@ -511,7 +519,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.CarpenterShop.init(...) during its own setup. -->
-  <script src="js/carpenter-shop.js?v=20261005h0fe2e5a"></script>
+  <script src="js/carpenter-shop.js?v=20261008hf0e6ea4"></script>
   <!-- Off-save storage for a per-item "Custom" pattern's motif PNG
        (window.MotifStore) — see the file's own header comment. No deps
        injection and everything on it fails soft, so load order doesn't
@@ -649,7 +657,7 @@
        so load order relative to the other systems above doesn't matter;
        must load before game.js, which calls window.FarmPanel.init(...)
        during its own setup. -->
-  <script src="js/farm-panel.js?v=20261005h8d65c64"></script>
+  <script src="js/farm-panel.js?v=20261008h5b036f9"></script>
   <!-- Tasks tab (window.TasksPanel), Supplies tab (window.SupplyPage),
        whistle-equip row (window.WhistleEquip), and the Wildlife/genotype
        debug panel (window.WildlifeDebugPanel) — all read
@@ -669,7 +677,7 @@
        load before game.js, which calls window.ShippingPanel.init(...)
        during its own setup, and also wires boot-time shipping-tab button
        listeners through window.ShippingPanel.* directly. -->
-  <script src="js/shipping-panel.js?v=20260807a"></script>
+  <script src="js/shipping-panel.js?v=20261008h6e90f89"></script>
   <!-- Settings tab's input-binding rows (window.InputSettingsPanel) — pure
        DOM/state, no other window.* system reads; must load before game.js,
        which calls window.InputSettingsPanel.init(...) and an immediate
@@ -727,7 +735,7 @@
        whose generateCavernFloor calls window.CavernSculptor.carveMazeCavern(...). -->
   <script src="js/cavern-sculptor.js?v=20260923banubuwalls1"></script>
   <script src="js/cavern-generator.js?v=20260925denturnover1"></script>
-  <script src="js/town-mine.js?v=20260919combatbgm2"></script>
+  <script src="js/town-mine.js?v=20261008hf23c45c"></script>
   <!-- A wilderness zone's in-bounds elevated plateau/mesa terrain
        (window.ZonePlateauMesa) — pure scene-graph generation, no other
        window.* system reads; must load before game.js, which calls
@@ -2580,8 +2588,8 @@
   <script src="js/romance-family.js?v=20261007romance1"></script>
   <script src="js/romance-wedding.js?v=20261007wedding1"></script>
   <script src="js/romance-system.js?v=20261007romance1"></script>
-  <script src="js/npc-command-wheel.js?v=20261007romance1"></script>
-  <script src="game.js?v=20261008h44f1ce6"></script>
+  <script src="js/npc-command-wheel.js?v=20261008h02bf686"></script>
+  <script src="game.js?v=20261008h2056e59"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261005h9a94218"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

@@ -111,7 +111,7 @@
         if (qty < 1) continue;
         bin[key] -= qty;
         sold += qty;
-        earned += qty * (deps.BASE_PRICES[key] || 0);
+        earned += window.TownMine?.applySaleBonus?.(qty * (deps.BASE_PRICES[key] || 0)) ?? qty * (deps.BASE_PRICES[key] || 0); // Town Value sale bonus.
         soldParts.push((deps.itemIconForKey(key) || key) + '×' + qty);
       }
       if (sold < 1) return { sold: 0, earned: 0 };

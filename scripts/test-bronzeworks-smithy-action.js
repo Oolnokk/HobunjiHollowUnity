@@ -10,8 +10,23 @@ const index = fs.readFileSync('docs/index.html', 'utf8');
 
 assert.match(config, /"smithyButton": \{[\s\S]{0,400}"npcIds": \["kzubug", "sloomi"\][\s\S]{0,120}"areaId": "map_i_smithy"/,
   'the Smithy action is limited to Kzubug and Sloomi in the Bronzeworks');
-assert.match(game, /function isSmithyNpcInBronzeworks\(walker\) \{[\s\S]{0,320}currentArea === \(cfg\.areaId \|\| 'map_i_smithy'\)[\s\S]{0,100}ids\.includes\(walker\?\.rec\?\.id \|\| ''\)/,
-  'runtime availability checks both the active building and the faced NPC identity');
+{
+  // Runtime availability checks both the active building and the faced NPC
+  // identity (js/npc-shop-buttons.js, aliased into game.js).
+  const vm = require('node:vm');
+  const window = { SCRATCHBONES_CONFIG: { game: { mobileControls: { smithyButton: { npcIds: ['kzubug', 'sloomi'], areaId: 'map_i_smithy' } } } } };
+  window.window = window;
+  vm.runInNewContext(fs.readFileSync('docs/js/npc-shop-buttons.js', 'utf8'), { window });
+  let area = 'map_i_smithy';
+  window.NpcShopButtons.init({ getCurrentArea: () => area, getNearbyNpcWalker: () => ({ rec: { name: 'Kzubug' } }) });
+  assert.equal(window.NpcShopButtons.isSmithyNpcInBronzeworks({ rec: { id: 'kzubug' } }), true, 'Kzubug in the Bronzeworks offers the Smithy');
+  assert.equal(window.NpcShopButtons.isSmithyNpcInBronzeworks({ rec: { id: 'jubmir' } }), false, 'other NPCs do not');
+  area = 'town';
+  assert.equal(window.NpcShopButtons.isSmithyNpcInBronzeworks({ rec: { id: 'kzubug' } }), false, 'not outside the Bronzeworks');
+  assert.equal(window.NpcShopButtons.smithyButton().label, 'Smithy: Kzubug');
+  assert.match(game, /const \{[^}]*isSmithyNpcInBronzeworks[^}]*\} = window\.NpcShopButtons;/, 'game.js aliases the extracted shop buttons');
+  assert.match(index, /js\/npc-shop-buttons\.js\?v=[A-Za-z0-9_-]+/, 'the shop-button module is loaded');
+}
 assert.match(game, /const btns = (?:nearbyNpcWalker\.isPorakanekiHunter \? \[\] : )?\[npcDialogueButton\(\)\];[\s\S]{0,240}if \(isSmithyNpcInBronzeworks\(nearbyNpcWalker\)\) btns\.push\(smithyButton\(\)\);/,
   'Smithy is inserted directly after Talk and therefore occupies Action 2');
 assert.match(game, /if \(activeAction === smithyAction\(\)\) \{[\s\S]{0,260}openMenu\('metalCraftShop'\); return;/,

@@ -180,6 +180,8 @@
       if (marker.zoneId !== areaId) continue;
       targets.push({ id: `bounty:${id}`, source: 'bounty', label: `Bounty: ${marker.label}`, col: marker.col, row: marker.row, symbol: '☠', color: '#f3c64f', priority: 1 });
     }
+    // Slagothim trade caravans inside their compass radius (js/slagothim-traders.js).
+    for (const target of window.SlagothimTraders?.compassTargets?.(areaId) || []) targets.push(target);
     for (const [id, marker] of window.BanditCamps?.perceivedThreats || []) {
       if (marker.zoneId !== areaId) continue;
       targets.push({
