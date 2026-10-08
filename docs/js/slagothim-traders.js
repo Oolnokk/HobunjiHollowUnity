@@ -1102,9 +1102,121 @@
     };
   }
 
+  // ── Dev Companion panel ─────────────────────────────────────────────
+  // Town Value knobs (TownMine owns the value; this just rewrites it through
+  // its own restore()) plus caravan spawn/skip/go-to/trade controls, shown in
+  // the companion's Now tab (js/dev-companion-bridge.js registerPanel).
+  function setTownValueForDev(value) {
+    const mine = window.TownMine;
+    if (!mine?.serialize || !mine?.restore) return { ok: false, error: 'TownMine unavailable.' };
+    mine.restore({ ...mine.serialize(), townValue: Math.max(0, Math.min(99, Math.floor(num(value, 0)))) });
+    deps?.save?.();
+    return { ok: true, townValue: townValue() };
+  }
+
+  // Jumps one caravan straight to its next stop (or the end of its current
+  // leg), firing the same stop/leg hooks a real arrival would.
+  function skipToNextStop(caravan) {
+    const route = legRoute(caravan);
+    if (!route) return { ok: false, error: 'That caravan\'s area has not generated yet.' };
+    if (caravan.pauseLeft > 0) { caravan.pauseLeft = 0; hooks.onStopEnd(caravan, route.pauses[caravan.pauseIdx - 1]); return { ok: true }; }
+    const nextPause = route.pauses[caravan.pauseIdx];
+    const nowHours = worldHours() ?? 0;
+    if (nextPause) {
+      caravan.dist = Math.min(nextPause.at, route.length);
+      caravan.pauseIdx += 1; caravan.pauseLeft = nextPause.hours;
+      hooks.onStop(caravan, nextPause, nowHours);
+    } else {
+      const from = caravan.legIndex;
+      caravan.legIndex += 1; caravan.dist = 0; caravan.pauseIdx = 0; caravan.pauseLeft = 0;
+      if (caravan.legIndex >= caravan.legs.length) { caravan.done = true; hooks.onDone(caravan); }
+      else hooks.onLeg(caravan, from, nowHours);
+    }
+    return { ok: true };
+  }
+
+  async function goToCaravan(caravan) {
+    const area = caravanArea(caravan);
+    const route = area ? legRoute(caravan) : null;
+    if (!route) return { ok: false, error: 'That caravan\'s area has not generated yet.' };
+    const lead = pointAt(route, caravan.dist);
+    const col = Math.floor(lead.x + 1.5), row = Math.floor(lead.z + 1.5);
+    if (currentArea() !== area) {
+      if (!deps?.travelTo) return { ok: false, error: 'Travel is unavailable.' };
+      await deps.travelTo(area, col, row);
+      // Travel can be refused (e.g. wilderness locked during the opening
+      // story); never move the player around whatever area they stayed in.
+      if (currentArea() !== area) return { ok: false, error: `Could not travel to ${areaLabel(area)} right now.` };
+    }
+    deps?.setPlayerTile?.(col + 0.5, row + 0.5);
+    return { ok: true, area, col, row };
+  }
+
+  function registerDevCompanionPanel() {
+    const companion = window.DevCompanion;
+    if (!companion?.registerPanel) return;
+    companion.registerPanel({
+      id: 'slagothim-traders',
+      title: '⚖ Town Value & caravans',
+      order: 40,
+      when: () => window.__hobunjiGameStarted === true && !!deps,
+      render: () => {
+        const value = townValue();
+        const nowHours = worldHours();
+        const sale = Math.round((num(window.TownMine?.salePriceMultiplier?.(value), 1) - 1) * 100);
+        const actions = [
+          { id: 'townValue', label: '−1', args: { delta: -1 }, group: 'Town Value' },
+          { id: 'townValue', label: '+1', args: { delta: 1 }, group: 'Town Value' },
+          ...[0, 1, 2, 5, 10].map(v => ({ id: 'townValue', label: `= ${v}`, args: { value: v }, active: value === v, group: 'Town Value' })),
+          { id: 'spawn', label: '＋ Spawn caravan', group: 'Caravans', title: 'Brings a caravan up the southern road right now (ignores the daily roll and the active cap).' },
+        ];
+        const rows = [];
+        state.caravans.forEach((caravan, index) => {
+          const leg = activeLeg(caravan);
+          const route = caravan._routes?.get(caravan.legIndex);
+          const status = caravan.pauseLeft > 0 ? `stopped ${caravan.pauseLeft.toFixed(1)}h` : (nowHours != null && !isTravelHour(nowHours) ? 'camped for the night' : 'walking');
+          rows.push([`#${index + 1} ${caravan.members[0]?.name || caravan.id}`,
+            `${areaLabel(leg?.area)} · leg ${caravan.legIndex + 1}/${caravan.legs.length} · ${caravan.dist.toFixed(0)}/${route ? route.length.toFixed(0) : '?'} tiles · ${status} · ${caravan.stock.filter(e => e.qty > 0).length} goods · walkers ${caravan._walkers?.length || 0}`]);
+          const group = `Caravan #${index + 1}`;
+          actions.push(
+            { id: 'goTo', label: 'Go to', args: { id: caravan.id }, group },
+            { id: 'skip', label: 'Skip to next stop', args: { id: caravan.id }, group },
+            { id: 'trade', label: 'Open trade', args: { id: caravan.id }, group },
+            { id: 'dismiss', label: 'Dismiss', args: { id: caravan.id }, group },
+          );
+        });
+        if (state.caravans.length) actions.push({ id: 'dismissAll', label: 'Dismiss all', group: 'Caravans', confirm: 'Remove every active caravan?' });
+        rows.push(['Daily roll', `${Math.round(dailySpawnChance(value) * 100)}% · cap ${maxActiveCaravans(value)} · last ${state.lastRollDay ?? '—'}`]);
+        rows.push(['Last', state.lastReason]);
+        return {
+          summary: `TV ${value} · sales +${sale}% · ${state.caravans.length} caravan${state.caravans.length === 1 ? '' : 's'}`,
+          rows,
+          note: 'Town Value also gates larger carpentry plans and the metal ceiling. Caravans need the Southern Cloud Forest to have generated.',
+          actions,
+        };
+      },
+      onAction: async (action, args) => {
+        const caravan = state.caravans.find(c => c.id === args.id) || null;
+        if (action === 'townValue') return setTownValueForDev(args.value != null ? args.value : townValue() + num(args.delta, 0));
+        if (action === 'spawn') {
+          const spawned = spawnCaravan();
+          return spawned ? { ok: true, id: spawned.id } : { ok: false, error: state.lastReason };
+        }
+        if (action === 'dismissAll') { state.caravans.forEach(release); state.caravans = []; deps?.save?.(); return { ok: true }; }
+        if (!caravan) return { ok: false, error: 'That caravan has left.' };
+        if (action === 'goTo') return goToCaravan(caravan);
+        if (action === 'skip') return skipToNextStop(caravan);
+        if (action === 'trade') { openCaravanId = caravan.id; return { ok: openTrade(null) }; }
+        if (action === 'dismiss') { release(caravan); state.caravans = state.caravans.filter(c => c !== caravan); deps?.save?.(); return { ok: true }; }
+        return { ok: false, error: `Unknown action ${action}` };
+      },
+    });
+  }
+
   function init(injectedDeps) {
     deps = injectedDeps;
     gridCache.clear();
+    registerDevCompanionPanel();
     if (!schedulerRegistered && window.RuntimeFrameScheduler?.register) {
       window.RuntimeFrameScheduler.register(SCHEDULER_ID, frame => update(Math.max(0, num(frame?.deltaMs, 0)) / 1000), {
         phase: 'pre-game',
@@ -1130,6 +1242,6 @@
     buy,
     spawnCaravan, // Dev/testing: force a caravan in at the southern road now.
     debugSnapshot,
-    __test: Object.freeze({ dailySpawnChance, maxActiveCaravans, findRoute, buildZoneGrid, gridForArea, legRoute, advance, pointAt, rollStock, buildItinerary, createCaravan, hoursUntilMarket, isTravelHour, hoursUntilTravel, tilesPerHour, maybeRollSpawn, state, gridCache, outOfSeasonFish, outOfSeasonProduce, checkClosestPass, memberTarget }),
+    __test: Object.freeze({ setTownValueForDev, skipToNextStop, registerDevCompanionPanel, dailySpawnChance, maxActiveCaravans, findRoute, buildZoneGrid, gridForArea, legRoute, advance, pointAt, rollStock, buildItinerary, createCaravan, hoursUntilMarket, isTravelHour, hoursUntilTravel, tilesPerHour, maybeRollSpawn, state, gridCache, outOfSeasonFish, outOfSeasonProduce, checkClosestPass, memberTarget }),
   });
 })();

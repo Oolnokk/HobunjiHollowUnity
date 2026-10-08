@@ -37,6 +37,8 @@ function makeHarness({ townValue = 3, season = 'Stormtide' } = {}) {
       { key: 'fish_winter', seasons: 'winter', sellPrice: 30 },
       { key: 'fish_any', seasons: 'any', sellPrice: 10 },
     ] },
+    __hobunjiGameStarted: true,
+    DevCompanion: { panels: new Map(), registerPanel(spec) { this.panels.set(spec.id, spec); return true; } },
     TrinketSystem: { DEFINITIONS: { harlyaoA: { id: 'harlyaoA', source: 'harlyaoRuin', attunementCost: 2, displayName: 'A' } }, grant: () => 'uid' },
   };
   window.window = window;
@@ -194,4 +196,26 @@ function makeHarness({ townValue = 3, season = 'Stormtide' } = {}) {
   assert.deepEqual([...restored.stock], ['Winter Fish×0@66g']);
 }
 
-console.log('slagothim traders: ok');
+// ── Dev Companion panel ──────────────────────────────────────────────
+(async () => {
+  const { T, window } = makeHarness({ townValue: 0 });
+  const panel = window.DevCompanion.panels.get('slagothim-traders');
+  assert.ok(panel, 'registers a Dev Companion panel');
+  assert.equal(panel.when(), true);
+  assert.match(panel.render().summary, /TV 0/);
+  assert.equal((await panel.onAction('townValue', { delta: 1 })).townValue, 1, '+1 raises Town Value through TownMine');
+  assert.equal(window.TownMine.getTownValue(), 1);
+  assert.equal((await panel.onAction('townValue', { value: 5 })).townValue, 5);
+  const spawned = await panel.onAction('spawn', {});
+  assert.equal(spawned.ok, true, 'spawn button brings a caravan in');
+  const view = panel.render();
+  assert.ok(view.actions.some(action => action.id === 'skip' && action.args.id === spawned.id), 'per-caravan controls are listed');
+  const caravan = T.debugSnapshot().caravans[0];
+  assert.equal((await panel.onAction('skip', { id: spawned.id })).ok, true);
+  assert.notEqual(T.debugSnapshot().caravans[0].dist + T.debugSnapshot().caravans[0].pauseLeft, caravan.dist + caravan.pauseLeft, 'skip moves the caravan to its next stop');
+  const refused = await panel.onAction('goTo', { id: spawned.id }); // Harness has no travelTo and the player is on the farm.
+  assert.equal(refused.ok, false, 'Go to fails cleanly instead of teleporting within the wrong area');
+  assert.equal((await panel.onAction('dismiss', { id: spawned.id })).ok, true);
+  assert.equal(T.debugSnapshot().caravans.length, 0, 'dismiss removes it');
+  console.log('slagothim traders: ok');
+})().catch(error => { console.error(error); process.exit(1); });

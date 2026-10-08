@@ -191,6 +191,11 @@ what just started.
   (favor ±1 heart, forget heard trees) and *Time & weather* (skip to the next
   dawn/day/dusk/night/weekday/season through the real hour-by-hour passage,
   force clear/rain/storm) — the knobs dialogue conditions read.
+  *⚖ Town Value & caravans* (`js/slagothim-traders.js`): Town Value −1/+1
+  and presets (0/1/2/5/10, written through `TownMine`), the current sale
+  bonus and daily caravan odds, *Spawn caravan* (ignores the daily roll and
+  cap), and per caravan *Go to* (travels/teleports you beside it), *Skip to
+  next stop*, *Open trade* and *Dismiss*.
 - **Saves** — quick saves for the current farmer/world (`js/quick-save.js`:
   IndexedDB save states with exact area/position/facing/doorway/time; loading
   reloads so edited config is picked up, applies the snapshot at the start of

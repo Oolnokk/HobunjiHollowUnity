@@ -29327,6 +29327,9 @@
         isTownTileWalkable: (c, r) => window.NpcPathfinding.isNpcTileWalkable('town', c, r),
         getCurrentArea: () => currentArea,
         getPlayerTile: () => ({ col: player.x / TILE, row: player.y / TILE }),
+        // Dev Companion "Go to caravan" only (see the module's companion panel).
+        setPlayerTile: (col, row) => { player.x = col * TILE; player.y = row * TILE; },
+        travelTo: (area, col, row) => area === 'town' ? enterTown(col, row) : enterZone(area, col, row),
         tothalWorldId: _tothalWorldId,
         showToast,
         esc: window.FormatUtils.esc,
