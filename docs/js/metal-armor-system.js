@@ -578,7 +578,7 @@
     if (!active || !deps?.inventory) return;
     const metalKey = active.mode === 'cosmetic' ? active.metalKey : item.metalKey;
     const barKey = deps.metalBarItemKey?.(metalKey);
-    if (barKey) deps.inventory[barKey] = Math.min(99, (Number(deps.inventory[barKey]) || 0) + TREATMENT_BAR_COST);
+    if (barKey) deps.inventory[barKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (Number(deps.inventory[barKey]) || 0) + TREATMENT_BAR_COST);
   }
 
   function commitTreatment(item, nextTreatment, toastText) {

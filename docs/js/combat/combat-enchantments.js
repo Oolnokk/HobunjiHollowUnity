@@ -759,7 +759,6 @@
     flourishQualifies,
     applyPeripheralGust,
     getCurrentSiccedTarget,
-    getCompanionTargetPowerMultiplier,
     enforceCompanionTargeting,
     renderLoadoutUI,
     debugSnapshot,

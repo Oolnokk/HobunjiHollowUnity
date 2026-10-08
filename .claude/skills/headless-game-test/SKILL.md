@@ -103,6 +103,39 @@ await page.fill('input[placeholder*="name" i]', 'HeadlessTester').catch(() => {}
 await page.click('#ob-start-btn');             // "🌱 Start Farming"
 ```
 
+**The creator is now a multi-step linear flow** (`js/onboarding-linear-flow.js`):
+`#ob-start-btn` is clicked once per step (appearance → clothing → name →
+create), then farm-name/setup steps use `#slPlay`, and the final Play does a
+reload handoff. A single click no longer starts the game. What works
+reliably is to keep making trusted `page.click()` calls on whichever forward
+button is visible, until `window.__hobunjiGameStarted === true` (allow
+several minutes):
+
+```js
+for (let i = 0; i < 60; i++) {
+  if (await page.evaluate(() => window.__hobunjiGameStarted === true).catch(() => false)) break;
+  const sel = await page.evaluate(() => {
+    const vis = el => el && el.offsetParent !== null && !el.disabled;
+    const farm = document.querySelector('#slNewWorldName');
+    if (vis(farm) && !farm.value.trim()) { farm.value = 'Test Farm'; farm.dispatchEvent(new Event('input', { bubbles: true })); }
+    return ['#hobunjiEmptySaveCreate', '#ob-start-btn', '#slPlay', '#slCharNext', '#slSourceContinue']
+      .find(s => vis(document.querySelector(s))) || null;
+  }).catch(() => null);
+  if (sel) await page.click(sel, { timeout: 8000 }).catch(() => {});  // trusted click, not el.click()
+  else await page.keyboard.press('Enter').catch(() => {});
+  await page.waitForTimeout(4000);
+}
+```
+
+Once in game, frames take ~1s each, so Playwright's actionability waits for
+`#menuBtn` can time out. Calling `document.getElementById('menuBtn').click()`
+inside `page.evaluate` works after the title screen is gone. Debug hooks:
+`window.__climbDebug.inventory()` (the live bag), `__hobunjiFurnitureDebug.give(key, n)`,
+and `window.__farmDebugTools.jumpTime(day, time01)`. A natural day rollover
+stops at the midnight Day Review (`#dayReviewContinue`) until it's
+clicked. `CalendarSystem.devAdvanceHours()`'s 1.8s rollover wait is too
+short for headless frame times.
+
 After Start Farming, a brand-new world runs the Tothal Shift (four wilderness
 zones generated synchronously) and then spawns ~25 NPCs one at a time; in this
 sandbox that takes ~2 minutes before the farm reaches a real steady state.

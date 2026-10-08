@@ -463,7 +463,7 @@
     const base = FOOTSTEP_BASE;
     const pitchMul = (Number(postFx.pitchMul) || 1) * (heavy ? 0.55 : 1);
     const durationS = Math.max(0.02, (Number(base.durationMs) || 55) / 1000 * (Number(postFx.durationMul) || 1) * (heavy ? 2.2 : 1));
-    const noiseMix = Math.max(0, Math.min(1, Number(base.noiseMix) ?? 0.82));
+    const noiseMix = Math.max(0, Math.min(1, Number(base.noiseMix ?? 0.82)));
     const baseFreq = Math.max(20, Number(base.freq) * pitchMul);
     const variance = Math.max(0, Number(base.freqVarianceHz) || 15);
 
@@ -556,7 +556,7 @@
       window.__farmLog?.(`[footstep] area=${String(area || '-')} surface=${surfaceKey} tile=${String(tile?.type ?? '-')} wet=${wetFraction.toFixed(2)}`, 'audio');
     }
     const baseVolume = Math.max(0, Math.min(1, Number(footstepCfg.volume) || 0.65));
-    const volume = baseVolume * Math.max(0, Number(audioCfg.sfxVolume) || 1)
+    const volume = baseVolume * Math.max(0, Number(audioCfg.sfxVolume ?? 1))
       * Math.max(0, volumeScale) * Math.max(0, Number(FOOTSTEP_BASE.volume) || 0.26);
     playFootstepSurface(surfaceKey, footstepCfg, volume, pan, heavy);
 
@@ -668,7 +668,7 @@
     if (audioCfg.enabled === false || !cfgEntry?.url) return null;
     if (combatSfxConfig().enabled === false) return null;
     const volume = Math.max(0, Math.min(1, Number(cfgEntry.volume) || 0.8))
-      * Math.max(0, Number(audioCfg.sfxVolume) || 1) * Math.max(0, volumeScale);
+      * Math.max(0, Number(audioCfg.sfxVolume ?? 1)) * Math.max(0, volumeScale);
     if (volume <= 0.002) return null;
     const snd = acquireCombatSfxAudio(cfgEntry.url) || new Audio(cfgEntry.url);
     trackActiveSfx(snd);
@@ -757,7 +757,7 @@
     if (audioCfg.enabled === false || !cfgEntry) return;
     if (objectSfxConfig().enabled === false) return;
     const volume = Math.max(0, Math.min(1, Number(cfgEntry.volume) || 0.8))
-      * Math.max(0, Number(audioCfg.sfxVolume) || 1) * Math.max(0, volumeScale);
+      * Math.max(0, Number(audioCfg.sfxVolume ?? 1)) * Math.max(0, volumeScale);
     if (volume <= 0.002) return;
     const gainBoost = Number(cfgEntry.gainBoost) || 1;
     const pickPlaceholder = () => (cfgEntry.placeholderUrls?.length)
@@ -988,7 +988,7 @@
     disablePitchPreservation(snd);
     const falloff = Math.max(0, 1 - distance / earshot);
     const baseVolume = Number.isFinite(Number(opts.volume)) ? Number(opts.volume) : 0.7;
-    snd.volume = Math.max(0, Math.min(1, baseVolume * Math.max(0, Number(audioCfg.sfxVolume) || 1) * falloff));
+    snd.volume = Math.max(0, Math.min(1, baseVolume * Math.max(0, Number(audioCfg.sfxVolume ?? 1)) * falloff));
     if (snd.volume <= 0.002) return false;
     const rate = Math.max(0.35, Math.min(2, Number(opts.rate)) || 1);
     snd.playbackRate = rate;

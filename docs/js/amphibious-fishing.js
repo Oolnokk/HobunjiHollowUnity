@@ -348,7 +348,7 @@
       onAction(action) {
         if (action !== 'obj_loot_corpse') return { ok: false, message: 'Unknown action.' };
         if (!key || !fishingDeps?.inventory) return { ok: false, message: 'The fish could not be retrieved.' };
-        fishingDeps.inventory[key] = Math.min(99, (fishingDeps.inventory[key] || 0) + 1);
+        fishingDeps.inventory[key] = Math.min(window.InventoryStacks.MAX_TOTAL, (fishingDeps.inventory[key] || 0) + 1);
         window.CookingSystem?.recordItemQuality?.(key, stars, 1);
         deathDeps?.corpseObjects?.delete?.(c);
         deathDeps?.despawnCreature?.(c);
@@ -429,7 +429,7 @@
 
   function restoreFailedCatch(catchInfo) {
     if (!catchInfo?.key || !fishingDeps?.inventory) return;
-    fishingDeps.inventory[catchInfo.key] = Math.min(99, (fishingDeps.inventory[catchInfo.key] || 0) + 1);
+    fishingDeps.inventory[catchInfo.key] = Math.min(window.InventoryStacks.MAX_TOTAL, (fishingDeps.inventory[catchInfo.key] || 0) + 1);
     window.CookingSystem?.recordItemQuality?.(catchInfo.key, catchInfo.stars, 1);
     fishingDeps.showToast?.(`${catchInfo.label} could not enter combat; the catch was returned to your bag.`, false);
   }

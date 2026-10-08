@@ -33,6 +33,7 @@ const context = {
   setTimeout(fn) { timers.push(fn); return timers.length; },
   document: { getElementById() { return null; }, body: null },
   window: {
+    InventoryStacks: require('./lib/inventory-stacks'),
     AudioSystem: fakeAudio,
     CalendarSystem: { currentSeason: () => ({ emoji: '', name: 'Test' }), getHour: () => 12, formatCalendarDate: () => 'Testday' },
     FormatUtils: { formatClock: () => '12:00', toolEmoji: () => '', actionName: value => value },

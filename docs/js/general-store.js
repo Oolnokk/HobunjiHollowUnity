@@ -138,9 +138,9 @@
   }
 
   function addConfiguredGrant(key, value, qualityStars) {
-    const requestedAmount = Math.max(0, Number(value) || 0); // Used to normalize shop grants before applying the 99-item stack cap.
+    const requestedAmount = Math.max(0, Number(value) || 0); // Used to normalize shop grants before applying the bag's per-item ceiling.
     const previousAmount = Math.max(0, Number(deps.inventory[key]) || 0); // Used to measure how many units actually fit in the inventory stack.
-    const nextAmount = Math.min(99, previousAmount + requestedAmount); // Used as the authoritative post-purchase stack count.
+    const nextAmount = Math.min(window.InventoryStacks.MAX_TOTAL, previousAmount + requestedAmount); // Used as the authoritative post-purchase stack count.
     const addedAmount = Math.max(0, nextAmount - previousAmount); // Used so quality buckets never record units rejected by the stack cap.
     deps.inventory[key] = nextAmount;
     if (qualityStars != null && addedAmount > 0) window.CookingSystem?.recordItemQuality?.(key, qualityStars, addedAmount);
@@ -357,6 +357,6 @@
 // General Store is already loaded before game.js. Use that stable parser slot
 // to load ShippingBoxConfig, then the separate world adapter, before game boot.
 if (document.readyState === 'loading') {
-  if (!window.ShippingBoxConfig) document.write('<script src="js/shipping-box-config.js?v=20260902shipping6"></scr' + 'ipt>');
+  if (!window.ShippingBoxConfig) document.write('<script src="js/shipping-box-config.js?v=20261008h2a8f7cd"></scr' + 'ipt>');
   if (!window.__shippingBoxWorldInstalled) document.write('<script src="js/shipping-box-world.js?v=20260902shipping6"></scr' + 'ipt>');
 }

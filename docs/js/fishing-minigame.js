@@ -1037,7 +1037,7 @@
       }
       const doubleCatchChance = Math.min(0.5, (window.PerkSystem?.rank('fishing', 'doubleCatchChance') || 0) * 0.12); // Chance to Get Double Catches perk.
       const catchCount = (deps.random || Math.random)() < doubleCatchChance ? 2 : 1;
-      deps.inventory[fm.fishDef.key] = Math.min(99, (deps.inventory[fm.fishDef.key] || 0) + catchCount);
+      deps.inventory[fm.fishDef.key] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[fm.fishDef.key] || 0) + catchCount);
       const stars = deps.rollItemStars('fishing');
       deps.recordItemQuality?.(fm.fishDef.key, stars, catchCount);
       deps.awardFishingXp?.();

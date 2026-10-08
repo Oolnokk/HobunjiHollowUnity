@@ -35,6 +35,7 @@ const context = {console,Date,Math,performance:{now:()=>0},setInterval:()=>1,cle
   localStorage:{getItem:key=>values.get(key)||null,setItem:(key,value)=>values.set(key,value)},window:{},
 }; // Browser globals required by the existing modules.
 context.window=context;
+context.InventoryStacks=require('./lib/inventory-stacks');
 context.CalendarSystem={currentSeason:()=>({name:season})};
 context.AuthoredFurniture={load:async()=>({parts:[]}),buildGroup:emptyMesh};
 vm.createContext(context);
@@ -69,7 +70,8 @@ assert.deepEqual(Array.from(production.entries()[1].ready, output=>output.key).s
 assert.equal(production.entries()[0].queue.length,0);assert.equal(production.entries()[0].ready[0].count,9);assert.equal(production.entries()[0].ready[0].stars,4);
 const saved=JSON.parse(JSON.stringify(production.serialize())); // Reload a fully finished queue with its dynamic item definition.
 delete itemDefs.needlegrainFlour;production.load(saved);assert.equal(itemDefs.needlegrainFlour.label,'Needlegrain Flour');
-inventory.needlegrainFlour=98;assert.equal(production.collect('mill').ok,true);assert.equal(inventory.needlegrainFlour,99);assert.equal(production.entries()[0].ready[0].count,8,'full bags retain all excess output');
+const bagMax=context.InventoryStacks.MAX_TOTAL; // Past 99 the bag spills into another box; only this per-item ceiling holds output back.
+inventory.needlegrainFlour=bagMax-1;assert.equal(production.collect('mill').ok,true);assert.equal(inventory.needlegrainFlour,bagMax);assert.equal(production.entries()[0].ready[0].count,8,'full bags retain all excess output');
 assert.equal(production.collect('mill').ok,false);inventory.needlegrainFlour=0;production.collect('mill');assert.equal(inventory.needlegrainFlour,8);
 // Execute the facility's real menu builder and the same click handlers ControllerUI activates.
 {

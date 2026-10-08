@@ -164,13 +164,13 @@
 
   function grantDugGoldOre(watch) {
     const itemKey = 'ore_gold'; // Used as the physical ore stack; deliberately distinct from legacy inventory.gold, which stores ganang currency.
-    const before = Math.max(0, Number(deps?.inventory?.[itemKey]) || 0); // Used to respect the ordinary 99-item stack cap.
-    if (before >= 99) {
-      deps?.showToast?.('Gold Ore stack is full.', false);
+    const before = Math.max(0, Number(deps?.inventory?.[itemKey]) || 0); // Used to respect the bag's per-item ceiling.
+    if (before >= window.InventoryStacks.MAX_TOTAL) {
+      deps?.showToast?.('You can\'t carry any more Gold Ore.', false);
       loreEconomyDebug.lastDig = { area: watch.area, col: watch.col, row: watch.row, granted: 0, reason: 'stack-full', at: Date.now() };
       return 0;
     }
-    deps.inventory[itemKey] = Math.min(99, before + 1);
+    deps.inventory[itemKey] = Math.min(window.InventoryStacks.MAX_TOTAL, before + 1);
     deps?.clampInventoryStack?.(itemKey);
     deps?.showToast?.('Dug up 1 Gold Ore.', true);
     deps?.buildInventoryGrid?.();

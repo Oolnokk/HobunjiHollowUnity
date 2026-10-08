@@ -75,7 +75,7 @@
     const distance = Math.hypot(px - playerX, py - playerY);
     if (distance > earshot) return false;
     const falloff = Math.max(0, 1 - distance / earshot);
-    const volume = Math.max(0, Math.min(1, cfg.volume * Math.max(0, Number(audioCfg.sfxVolume) || 1) * falloff));
+    const volume = Math.max(0, Math.min(1, cfg.volume * Math.max(0, Number(audioCfg.sfxVolume ?? 1)) * falloff));
     if (volume <= 0.002) return false;
     const preload = pelletSfxPreloads.get(cfg.url); // Used so launch/impact playback clones a ready element instead of queuing a late first decode.
     const snd = preload?.cloneNode?.(true) || new Audio(cfg.url);

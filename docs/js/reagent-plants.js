@@ -149,7 +149,7 @@
         const bonus = (deps.random || Math.random)() < (deps.bonusYieldChance?.('foraging') || 0) ? 1 : 0; // Used for Foraging's extra-herb chance.
         const doubleRank = window.PerkSystem?.rank('foraging', 'doubleForageables') || 0; // Double Forageables perk.
         const amount = (1 + bonus) * (doubleRank > 0 ? 2 : 1);
-        deps.inventory[reagentKey] = Math.min(99, (deps.inventory[reagentKey] || 0) + amount);
+        deps.inventory[reagentKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[reagentKey] || 0) + amount);
         deps.awardForagingXp?.();
         deps._zoneScenes.get(mapId)?.scene.remove(mesh);
         const objs = deps._zoneReagentObjects.get(mapId);

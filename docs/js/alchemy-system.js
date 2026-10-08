@@ -284,7 +284,7 @@
       if (!payload?.legacyEffects || payload.legacyEffects.length !== 1 || !obvious[payload.legacyEffects[0]]) return;
       const count = Math.max(0, Number(inventory[key]) || 0);
       const modernKey = ensureRecipeItemDef(obvious[payload.legacyEffects[0]], 0);
-      inventory[modernKey] = Math.min(99, (inventory[modernKey] || 0) + count);
+      inventory[modernKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory[modernKey] || 0) + count);
       delete inventory[key];
     });
     return inventory;
@@ -311,7 +311,7 @@
     keys.forEach(key => { deps.inventory[key]--; deps.clampInventoryStack?.(key); });
     const itemKey = ensureRecipeItemDef(chosen.recipeId, tier, keys); // One recipe per result.
     const batch = batchCountFor(chosen.recipeId); // Base batch (see recipe.baseBatch), scaled by Empower Flasks/Healing & Cures.
-    deps.inventory[itemKey] = Math.min(99, (deps.inventory[itemKey] || 0) + batch);
+    deps.inventory[itemKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[itemKey] || 0) + batch);
     const discovered = discoverRecipe(chosen.recipeId, 'brewed new recipe'); // One-time discovery XP.
     window.SkillSystem?.award?.('alchemy', window.SkillSystem?.XP_GAINS?.alchemyBrew || 8, 'brewed potion');
     window.HobunjiActivityEvents?.emit('potion_brewed', { itemKey, recipeId: chosen.recipeId });

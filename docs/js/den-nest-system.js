@@ -795,7 +795,7 @@
       _removeContentRecord(state, content);
       nest.remaining = Math.max(0, Number(nest.remaining) - 1);
       window.WildlifeSpawn?.updateClearedDenClutchVisual?.(deps.getCurrentArea(), nest); // Keeps the cleared-den collapse's reload fallback aligned with post-kill egg/baby collection.
-      deps.inventory[nest.itemKey] = Math.min(99, (deps.inventory[nest.itemKey] || 0) + 1);
+      deps.inventory[nest.itemKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[nest.itemKey] || 0) + 1);
       window.HobunjiActivityEvents?.emit('nest_stolen', { liveBirth: !!nest.liveBirth, itemKey: nest.itemKey });
       window.FarmAnimals.queueItemGenotype(nest.itemKey, nest.genotype);
       deps.clampInventoryStack(nest.itemKey);
