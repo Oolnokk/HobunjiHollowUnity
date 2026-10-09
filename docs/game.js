@@ -5178,6 +5178,8 @@
       let gameFrameSerial = 0; // Identifies the current animation frame for shared target and profiler work.
       let autoTargetCacheFrame = -1; // Prevents repeated target searches within the same frame.
       let autoTargetCacheValue = null; // Stores the single target-selection result for autoTargetCacheFrame.
+      let availableAutoTargetCacheFrame = -1; // Caches the disabled-mode eligibility preview once per frame.
+      let availableAutoTargetCacheValue = null; // Stores the target the mobile toggle would acquire without enabling it.
 
       const autoTargetSightRay = new THREE.Raycaster(); // Reused for mobile target obstruction checks without per-frame vector allocation.
       const autoTargetSightOrigin = new THREE.Vector3(); // Shared ray origin at the player's combat hitbox center.
@@ -5249,11 +5251,11 @@
           : player.angle;
       }
 
-      function meleeAttackTargetCandidate() {
-        if (!mobileAutoTargetEnabled() || !meleeWeaponOut() || Number.isFinite(mobileArchCombatAim?.angle)) return null;
+      function meleeAttackTargetCandidate(preview = false) {
+        if (isDesktop || (!preview && !mobileAutoTargetEnabled()) || !meleeWeaponOut() || Number.isFinite(mobileArchCombatAim?.angle)) return null;
         if (meleeAttackTargetLock) return meleeAttackTargetLock; // Never rescan surrounding enemies while this activation owns a target.
         if (autoTargetCandidateValid(manualAutoTarget) && autoTargetVisible(manualAutoTarget)) return manualAutoTarget;
-        manualAutoTarget = null;
+        if (!preview) manualAutoTarget = null;
         const aimAngle = currentMeleeAimAngle(); // Live camera/stick/body bearing used by the shared ±45° cone.
         const maxDist = TILE * (Number(combatConfig().autoTargetRangeTiles) || 0); // Existing melee assist range remains authoritative.
         let best = null, bestDist = maxDist, bestAimError = Infinity;
@@ -5297,33 +5299,34 @@
         invalidateAutoTargetCache();
       }
 
-      function computeAutoTarget() {
+      function computeAutoTarget(preview = false) {
         const rangedActive = heldMode === 'tool' && activeTool === 'ranged' && !!equipmentSlots.ranged; // Only equipped mobile combat tools acquire targets.
-        if (!mobileAutoTargetEnabled() || (!meleeWeaponOut() && !rangedActive)) {
-          manualAutoTarget = null;
+        if (isDesktop || (!preview && !mobileAutoTargetEnabled()) || (!meleeWeaponOut() && !rangedActive)) {
+          if (!preview) manualAutoTarget = null;
           return null;
         }
         if (meleeWeaponOut()) {
-          if (autoTargetCandidateValid(meleeAttackTargetLock)) return meleeAttackTargetLock;
-          const target = meleeAttackTargetCandidate(); // Keeps a chosen enemy stable between mobile melee attacks.
-          manualAutoTarget = target;
+          if (meleeAttackTargetLock) return autoTargetCandidateValid(meleeAttackTargetLock) && autoTargetVisible(meleeAttackTargetLock) ? meleeAttackTargetLock : null;
+          const target = meleeAttackTargetCandidate(preview); // The same selection serves attacks and the read-only prey availability preview.
+          if (!preview) manualAutoTarget = target;
           return target;
         }
         const maxDist = autoTargetRange(); // Ranged weapon configuration remains the range authority.
         if (autoTargetCandidateValid(manualAutoTarget, maxDist) && autoTargetVisible(manualAutoTarget)) return manualAutoTarget;
-        manualAutoTarget = null;
+        if (!preview) manualAutoTarget = null;
         let best = null, bestDist = maxDist;
         for (const c of hostileObjects) {
           if (!autoTargetCandidateValid(c, maxDist)) continue;
           const dist = Math.hypot(c.x - player.x, c.y - player.y); // Select nearest valid enemy without replacing a still-valid lock.
           if (dist <= bestDist && autoTargetVisible(c)) { best = c; bestDist = dist; }
         }
-        manualAutoTarget = best;
+        if (!preview) manualAutoTarget = best;
         return best;
       }
 
       function invalidateAutoTargetCache() {
         autoTargetCacheFrame = -1;
+        availableAutoTargetCacheFrame = -1;
       }
 
       function findAutoTarget() {
@@ -5331,6 +5334,16 @@
         autoTargetCacheValue = computeAutoTarget();
         autoTargetCacheFrame = gameFrameSerial;
         return autoTargetCacheValue;
+      }
+
+      function findAvailableAutoTarget() {
+        if (isDesktop) return null;
+        if (mobileAutoTargetEnabled()) return findAutoTarget();
+        if (availableAutoTargetCacheFrame !== gameFrameSerial) {
+          availableAutoTargetCacheValue = computeAutoTarget(true); // Uses ordinary range, visibility, and weapon/cone rules without selecting or turning toward prey.
+          availableAutoTargetCacheFrame = gameFrameSerial;
+        }
+        return availableAutoTargetCacheValue;
       }
 
       function currentPlayerAimAngle() {
@@ -17342,7 +17355,7 @@
       }
 
       function updateMovement(dt) {
-        syncMobileAutoTargetButton(); // Combat visibility must refresh even when prone, mounted, or another mode skips ordinary movement.
+        syncMobileAutoTargetButton(); // Target availability refreshes even when prone, mounted, or another mode skips ordinary movement.
         updateMobileArchCombatAimLifecycle();
         updateMeleeAttackFacingCommitLifecycle();
         const viewModeKeyboard = getKeyboardVector();
@@ -26090,7 +26103,7 @@
       function syncMobileAutoTargetButton() {
         if (!btnSwapTarget) return;
         const enabled = mobileAutoTargetEnabled(); // Read once to keep the arch's toggle presentation consistent.
-        const hidden = isDesktop || !isPlayerInCombat(); // Reuses active hostile combat state; drawing a weapon alone does not expose the control.
+        const hidden = isDesktop || !findAvailableAutoTarget(); // Prey can expose the toggle before combat starts, including while autotarget is disabled.
         if (btnSwapTarget.classList.contains('abt-hidden') !== hidden) btnSwapTarget.classList.toggle('abt-hidden', hidden);
         if (btnSwapTarget.classList.contains('active') !== enabled) btnSwapTarget.classList.toggle('active', enabled);
         const pressed = String(enabled); // Avoids rewriting accessibility state every movement frame.
@@ -27620,14 +27633,16 @@
         get shoulderSurfOffsets() { return { defaultH: s_shoulderSurfOffsetH_default, defaultV: s_shoulderSurfOffsetV_default, combatH: s_shoulderSurfOffsetH_combat, combatV: s_shoulderSurfOffsetV_combat, currentH: s_shoulderSurfOffsetH_current, currentV: s_shoulderSurfOffsetV_current }; },
         meleeAttackAlignmentSnapshot: () => {
           const target = meleeAttackTargetLock;
+          const availableTarget = findAvailableAutoTarget(); // Reports the prospective prey/enemy even while the mobile toggle is disabled.
           return {
-            latestChange: 'Mobile-only autotarget defaults on; red TARGET label appears only during active mobile combat; second-arch endpoint follows Social Actions with 20% larger sizing and spacing; tap toggles, hold enables and drags select melee/ranged targets with stable locks and obstruction checks.',
+            latestChange: 'Mobile-only autotarget defaults on; TARGET appears for eligible enemies or prey before combat, red when enabled and gray when disabled; second-arch endpoint follows Social Actions with 20% larger sizing and spacing; tap toggles, hold enables and drags select melee/ranged targets with stable locks and obstruction checks.',
             settings: window.Combat?.input?.autoTargetSettingsSnapshot?.(),
             controlLayout: ['btnUtilityMenu', 'btnSocialActions', 'btnSwapTarget'].map(id => {
               const rect = document.getElementById(id)?.getBoundingClientRect?.(); // On-demand copyable diagnostics use actual runtime button sizes and positions.
               return rect ? { id, width: rect.width, height: rect.height, centerX: rect.left + rect.width / 2, centerY: rect.top + rect.height / 2 } : { id, missing: true };
             }),
             selectedTarget: manualAutoTarget?.id ?? manualAutoTarget?.def?.label ?? null,
+            availableTarget: availableTarget?.id ?? availableTarget?.def?.label ?? null,
             active: !!meleeAttackAlignment,
             targetLocked: !!meleeAttackTargetLock,
             activationSerial: lastMeleeAttackTargetLock.serial,

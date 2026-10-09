@@ -22,8 +22,8 @@ vm.createContext(targetContext);
 function load(start,end) { vm.runInContext(game.slice(game.indexOf(start),game.indexOf(end,game.indexOf(start))),targetContext); }
 load('      function mobileAutoTargetEnabled()', '      function autoTargetVisible(');
 load('      function meleeWeaponOut()', '      function commitMeleeAttackFacing(');
-load('      function meleeAttackTargetCandidate()', '      function acquireMeleeAttackTargetLock(');
-load('      function computeAutoTarget()', '      function invalidateAutoTargetCache(');
+load('      function meleeAttackTargetCandidate(', '      function acquireMeleeAttackTargetLock(');
+load('      function computeAutoTarget(', '      function invalidateAutoTargetCache(');
 targetContext.activeCameraAzimuthRad = () => Math.PI / 2;
 load('      function targetStickWorldAngle(', '      function swapAutoTarget(');
 assert(Math.abs(targetContext.targetStickWorldAngle(1,0) + Math.PI/2)<1e-8,'target stick follows rotated camera right');
@@ -144,27 +144,45 @@ assert(declaration(labelsCss,'#btnSwapTarget .arch-meaning-label','font-size'),'
 console.log('executed runtime target size, label, and social-ring layout regression checks passed');
 
 const visibilityClasses = new Set(); // Tracks the production control's active and hidden state without a browser renderer.
-let visibilityWrites = 0, combatActive = false, visibilityEnabled = true; // Verifies combat transitions and deduplicated DOM updates.
+let visibilityWrites = 0, eligibleTarget = false, visibilityEnabled = true; // Verifies combat transitions and deduplicated DOM updates.
 const visibilityAttrs = {}; // Cached accessibility state written by the production sync function.
-const visibilityContext = {btnSwapTarget:{classList:{contains:name=>visibilityClasses.has(name),toggle(name,value){visibilityWrites++;if(value)visibilityClasses.add(name);else visibilityClasses.delete(name);}},getAttribute:name=>visibilityAttrs[name],setAttribute(name,value){visibilityWrites++;visibilityAttrs[name]=value;}},isDesktop:false,mobileAutoTargetEnabled:()=>visibilityEnabled,isPlayerInCombat:()=>combatActive}; // Isolated live button presentation owner.
+const visibilityContext = {btnSwapTarget:{classList:{contains:name=>visibilityClasses.has(name),toggle(name,value){visibilityWrites++;if(value)visibilityClasses.add(name);else visibilityClasses.delete(name);}},getAttribute:name=>visibilityAttrs[name],setAttribute(name,value){visibilityWrites++;visibilityAttrs[name]=value;}},isDesktop:false,mobileAutoTargetEnabled:()=>visibilityEnabled,findAvailableAutoTarget:()=>eligibleTarget?{id:"prey"}:null}; // Isolated live button presentation owner.
 const visibilityStart = game.indexOf('      function syncMobileAutoTargetButton()'); // Runs the actual owner rather than mirroring its logic.
 vm.runInNewContext(game.slice(visibilityStart,game.indexOf("      window.addEventListener('hobunji-auto-target-change'",visibilityStart)),visibilityContext);
 visibilityContext.syncMobileAutoTargetButton();
-assert(visibilityClasses.has('abt-hidden'),'mobile target control is hidden outside combat');
-combatActive=true;
+assert(visibilityClasses.has('abt-hidden'),'mobile target control is hidden without an eligible target');
+eligibleTarget=true;
 visibilityContext.syncMobileAutoTargetButton();
-assert(!visibilityClasses.has('abt-hidden'),'combat exposes the mobile target control');
+assert(!visibilityClasses.has('abt-hidden'),'nearby prey exposes the mobile target control before combat');
 visibilityEnabled=false;
 visibilityContext.syncMobileAutoTargetButton();
-assert(!visibilityClasses.has('abt-hidden'),'turning assist off during combat leaves its toggle available');
+assert(!visibilityClasses.has('abt-hidden'),'disabled assist still exposes its toggle while prey is available');
 const settledWrites=visibilityWrites; // Repeated movement ticks must not queue redundant DOM mutations.
 visibilityContext.syncMobileAutoTargetButton();
 assert.equal(visibilityWrites,settledWrites,'unchanged visibility does not rewrite the DOM');
-combatActive=false;
+eligibleTarget=false;
 visibilityContext.syncMobileAutoTargetButton();
-assert(visibilityClasses.has('abt-hidden'),'ending combat hides the control');
-combatActive=true;visibilityContext.isDesktop=true;
+assert(visibilityClasses.has('abt-hidden'),'losing every eligible target hides the control');
+eligibleTarget=true;visibilityContext.isDesktop=true;
 visibilityContext.syncMobileAutoTargetButton();
-assert(visibilityClasses.has('abt-hidden'),'desktop combat never exposes the mobile button');
-assert.equal(declaration(labelsCss,'#btnSwapTarget .arch-meaning-label','color'),'#ff6873','runtime target label is red');
-console.log('executed combat-only target visibility and interrupted gesture checks passed');
+assert(visibilityClasses.has('abt-hidden'),'desktop never exposes the mobile button');
+assert.equal(declaration(labelsCss,'#btnSwapTarget .arch-meaning-label','color'),'#b8b8b8','disabled target label is gray');
+assert.equal(declaration(labelsCss,'#btnSwapTarget.active .arch-meaning-label','color'),'#ff6873','enabled target label is red');
+console.log('executed eligible-target visibility, on/off colors, and interrupted gesture checks passed');
+
+targetContext.isDesktop=false;targetContext.enabled=false;targetContext.activeTool='ranged';
+targetContext.manualAutoTarget=null;targetContext.hostileObjects=[near];near.state='idle';near.health=10;near.blocked=false;
+targetContext.gameFrameSerial=100;targetContext.availableAutoTargetCacheFrame=-1;targetContext.availableAutoTargetCacheValue=null;
+load('      function findAvailableAutoTarget()', '      function currentPlayerAimAngle()');
+assert.equal(targetContext.findAvailableAutoTarget(),near,'disabled ranged assist previews idle prey without requiring aggression');
+assert.equal(targetContext.manualAutoTarget,null,'availability preview does not select a target while disabled');
+assert.equal(targetContext.enabled,false,'availability preview does not enable aiming');
+targetContext.activeTool='weapon';targetContext.gameFrameSerial++;
+assert.equal(targetContext.findAvailableAutoTarget(),near,'disabled melee assist previews prey using the same attack cone');
+near.blocked=true;targetContext.gameFrameSerial++;
+assert.equal(targetContext.findAvailableAutoTarget(),null,'blocked prey does not expose the toggle');
+near.blocked=false;near.x=50;targetContext.gameFrameSerial++;
+assert.equal(targetContext.findAvailableAutoTarget(),null,'out-of-range prey does not expose the melee toggle');
+near.x=15;targetContext.equipmentSlots.weapon=null;targetContext.gameFrameSerial++;
+assert.equal(targetContext.findAvailableAutoTarget(),null,'an unequipped weapon has no potential autotarget');
+console.log('executed disabled-mode prey acquisition preview checks passed');

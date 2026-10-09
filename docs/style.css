@@ -1183,11 +1183,12 @@
       touch-action: none;
     }
     #btnSwapTarget .abt-icon { font-size: 1.02em; }
-    #btnSwapTarget:not(.active) { opacity: 0.55; }
-    #btnSwapTarget.active { box-shadow: 0 0 10px rgba(125,200,255,0.6); }
+    #btnSwapTarget:not(.active) { color:#b8b8b8; }
+    #btnSwapTarget.active { color:#ff6873; box-shadow: 0 0 10px rgba(255,104,115,0.6); }
     @media (pointer: fine) { #btnSwapTarget { display: none; } }
     .abt-item { border-color:rgba(255,211,125,0.46)!important; background:rgba(255,211,125,0.09)!important; }
-    .abt-swap { border-color:rgba(125,200,255,0.46)!important; background:rgba(125,200,255,0.09)!important; }
+    .abt-swap { border-color:rgba(184,184,184,0.46)!important; background:rgba(184,184,184,0.09)!important; }
+    .abt-swap.active { border-color:rgba(255,104,115,0.6)!important; background:rgba(255,104,115,0.12)!important; }
     .abt-swap .abt-icon svg { display: block; }
     .abt-key  { position:absolute; top:2px; right:3px; font-size:7px; color:rgba(255,255,255,0.42); font-family:'KhymeryyanRomanLetters+Numbers','DM Mono',monospace; pointer-events:none; }
     .abt-icon { position:relative; overflow:visible; font-size:1.3em; line-height:1; pointer-events:none; }

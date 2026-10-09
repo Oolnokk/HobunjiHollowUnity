@@ -99,9 +99,10 @@
         text-shadow:0 0 2px #000, 0 0 3px #000;
       }
       #btnSwapTarget .arch-meaning-label {
-        color:#ff6873;
+        color:#b8b8b8;
         font-size:clamp(22.05px, calc(0.569625 * var(--col)), 33.075px);
       }
+      #btnSwapTarget.active .arch-meaning-label { color:#ff6873; }
       .arch-meaning-label.long { font-size:clamp(16.84375px, calc(0.4134375 * var(--col)), 24.5px); }
       .arch-meaning-label.very-long { font-size:clamp(15.3125px, calc(0.3521875 * var(--col)), 21.4375px); letter-spacing:-0.085em; }
 
