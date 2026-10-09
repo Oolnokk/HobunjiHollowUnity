@@ -156,13 +156,20 @@
     return { width: Math.max(0.05, width), height: Math.max(0.05, height) };
   }
 
+  function legSearchRoot(model) {
+    let root = model; // The editor keeps its solved leg chain on the floor-anchored locomotion root, a sibling branch of the avatar model rather than a child of it.
+    while (root?.parent && root.parent.type !== 'Scene') root = root.parent;
+    return root;
+  }
+
   function findLegNodes(model) {
-    if (!model?.getObjectByName) return null;
+    const root = legSearchRoot(model);
+    if (!root?.getObjectByName) return null;
     const nodes = { // These are the procedural editor's existing IK transforms, not a Pants-specific skeleton.
-      leftThigh: model.getObjectByName('left_thigh'),
-      leftCalf: model.getObjectByName('left_calf'),
-      rightThigh: model.getObjectByName('right_thigh'),
-      rightCalf: model.getObjectByName('right_calf'),
+      leftThigh: root.getObjectByName('left_thigh'),
+      leftCalf: root.getObjectByName('left_calf'),
+      rightThigh: root.getObjectByName('right_thigh'),
+      rightCalf: root.getObjectByName('right_calf'),
     };
     return Object.values(nodes).every(Boolean) ? nodes : null;
   }
@@ -199,8 +206,8 @@
   }
 
   function relativeMatrix(Runtime, node, model) {
-    model.updateMatrixWorld?.(true);
-    node.updateMatrixWorld?.(true);
+    model.updateWorldMatrix?.(true, true); // Includes ancestors: the node and model sit on different branches of the locomotion hierarchy.
+    node.updateWorldMatrix?.(true, true);
     const inverseModel = new Runtime.Matrix4().copy(model.matrixWorld).invert(); // Converts a live procedural-bone transform into avatar-local space.
     return new Runtime.Matrix4().multiplyMatrices(inverseModel, node.matrixWorld);
   }
@@ -259,9 +266,10 @@
   }
 
   function disposePreview() {
+    state.buildGeneration++; // Invalidates any in-flight async rebuild so it cannot re-attach a mesh after this disposal.
     const preview = state.preview;
     if (!preview) return;
-    preview.mesh?.removeFromParent?.();
+    preview.mesh?.parent?.remove?.(preview.mesh); // three r128 (this editor) lacks the newer one-call detach helper, so detach via the parent.
     preview.geometry?.dispose?.();
     preview.material?.dispose?.();
     preview.texture?.dispose?.();
