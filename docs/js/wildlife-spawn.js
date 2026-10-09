@@ -648,7 +648,8 @@
     for (const creature of [...deps.hostileObjects]) {
       if (!creature || creature.isDenMother || creature.areaId !== cavernMapId) continue;
       deps.hostileObjects.delete(creature);
-      creature.avatarRef?.group?.parent?.remove?.(creature.avatarRef.group);
+      if (deps.despawnCreature) deps.despawnCreature(creature);
+      else { creature.avatarRef?.group?.parent?.remove?.(creature.avatarRef.group); creature.avatarRef?.dispose?.(); }
       removed++;
     }
     if (removed) window.__farmLog?.(`[den-turnover] purged ${removed} stale cavern resident(s) for ${denKey} before discarding the cleared interior.`, 'wildlife');
@@ -798,7 +799,8 @@
       const baseDef = deps.CREATURE_DB?.[survivor.creatureKey]; // Canonical species definition used to repair incomplete per-instance overlays before displacement.
       if (!survivor.creatureKey || !baseDef) {
         deps.hostileObjects.delete(survivor);
-        survivor.avatarRef?.group?.parent?.remove?.(survivor.avatarRef.group);
+        if (deps.despawnCreature) deps.despawnCreature(survivor);
+        else { survivor.avatarRef?.group?.parent?.remove?.(survivor.avatarRef.group); survivor.avatarRef?.dispose?.(); }
         discardedInvalid++;
         continue;
       }
@@ -1133,6 +1135,7 @@
         homeX: anchor.x + Math.cos(formationAngle) * homeOffset,
         homeY: anchor.y + Math.sin(formationAngle) * homeOffset,
         state: 'idle',
+        streamVisuals: true, // Logical herd adults are promoted by distance instead of allocating every rig at zone entry.
         wildlifeRole: 'prey', // Used by chunk-local faction ecology; roaming herds are valid Porakaneki hunting targets.
         herdKey,
         herdHomeX: anchor.x,
@@ -1263,7 +1266,7 @@
         memberHomeX = homeX + Math.cos(spreadAngle) * spreadDist;
         memberHomeY = homeY + Math.sin(spreadAngle) * spreadDist;
       }
-      const opts = { homeX: memberHomeX, homeY: memberHomeY, denEntranceX, denEntranceY, state: 'idle', denKey, genotype: denGenotype, wildlifeRole: speciesIsHerbivore ? 'prey' : 'predator' }; // Explicit ecology role avoids guessing from hostility/diet overlays later.
+      const opts = { streamVisuals: true, homeX: memberHomeX, homeY: memberHomeY, denEntranceX, denEntranceY, state: 'idle', denKey, genotype: denGenotype, wildlifeRole: speciesIsHerbivore ? 'prey' : 'predator' }; // Explicit ecology role avoids guessing from hostility/diet overlays later.
       assignWildlifeStation(opts, zoneData, memberHomeX, memberHomeY, speciesIsHerbivore);
       const creature = deps.makeCreatureEntity(speciesKey, x, y, opts);
       if (creature) { deps.hostileObjects.add(creature); spawned++; }
@@ -1592,6 +1595,7 @@
     window.BanditCamps.ensureCurrentZoneCamps();
     if (_zoneEntryAnimalLogPending === currentArea) {
       _zoneEntryAnimalLogPending = null;
+      window.MobileRenderBudget?.checkpoint?.('zone-populated'); // Captures the entry spike before a later page-process crash can discard diagnostics.
       let alive = 0;
       for (const c of deps.hostileObjects) if (c.health > 0 && c.areaId === currentArea) alive++;
       window.__farmLog?.(`[wildlife] entered "${currentArea}": ${alive} living animal${alive === 1 ? '' : 's'} present.`, 'wildlife');
@@ -1652,6 +1656,7 @@
     isDenPackAlive,
     updateHostileSpawning,
     onZoneEntered,
+    restoreHerdMotherVisuals: c => c?.isHerdMother ? attachVoorgBabiesToMother(c, c.carriedBabyCount) : 0, // Used by the canonical creature visual promotion path.
     denNestCensus,
     roamingHerdCensus: (zoneId = deps.getCurrentArea()) => {
       const zdef = deps.EXTERIOR_ZONES?.[zoneId] || {};

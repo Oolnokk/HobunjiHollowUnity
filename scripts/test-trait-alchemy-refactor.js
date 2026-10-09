@@ -218,6 +218,7 @@ window.CreatureGenetics = {
   crossOffspring: (a, b) => ({ sizeClass:'medium', coat:a.coat, inherited:true }),
   defaultLivestockName: () => 'Baby',
 };
+require(path.join(root, 'docs/js/creature-texture-cache.js'));
 require(path.join(root, 'docs/js/farm-animals.js'));
 let worldLivestock = [
   { id:'a', kind:'uumkaoii', name:'A', genotype:{sizeClass:'small',coat:'blue'}, pendingOffspringSizeShift:1 },

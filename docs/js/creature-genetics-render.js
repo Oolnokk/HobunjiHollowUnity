@@ -165,15 +165,34 @@
   }
 
   const _recolorCache = new Map(); // key -> Promise<canvas>
-  const RECOLOR_CACHE_LIMIT = 96; // Bounds retained recolored base/pattern canvases while live composites keep their own references.
+  const RECOLOR_CACHE_LIMIT = 96; // Also bounds tiny images/keys and unresolved recolor promises.
+  const RECOLOR_CACHE_BYTES = 24 * 1024 * 1024; // Resolved canvas estimates are byte-bounded, not only entry-count bounded.
+  const recolorBytesByKey = new Map(); // Accounts only images still retained by the authoritative recolor cache.
+  let recolorBytes = 0; // Updated on resolution/eviction, never by per-frame scene scans.
+  function forgetRecolor(key) {
+    _recolorCache.delete(key);
+    recolorBytes -= recolorBytesByKey.get(key) || 0;
+    recolorBytesByKey.delete(key);
+  }
+  function trimRecolors() {
+    while (_recolorCache.size > RECOLOR_CACHE_LIMIT || recolorBytes > RECOLOR_CACHE_BYTES) forgetRecolor(_recolorCache.keys().next().value);
+  }
   function cachedRecolor(key) {
     const cached = _recolorCache.get(key); // Refreshes LRU order for frequently reused colors.
     if (cached) { _recolorCache.delete(key); _recolorCache.set(key, cached); }
     return cached;
   }
   function rememberRecolor(key, promise) {
+    if (_recolorCache.has(key)) forgetRecolor(key);
     _recolorCache.set(key, promise);
-    while (_recolorCache.size > RECOLOR_CACHE_LIMIT) _recolorCache.delete(_recolorCache.keys().next().value);
+    trimRecolors();
+    Promise.resolve(promise).then(image => {
+      if (_recolorCache.get(key) !== promise) return; // Evicted pending work must not resurrect its cache entry on completion.
+      const bytes = Math.max(0, Number(image?.width || image?.naturalWidth) || 0) * Math.max(0, Number(image?.height || image?.naturalHeight) || 0) * 4; // RGBA surface estimate; live callers can retain evicted canvases safely.
+      recolorBytesByKey.set(key, bytes);
+      recolorBytes += bytes;
+      trimRecolors();
+    }, () => { if (_recolorCache.get(key) === promise) forgetRecolor(key); });
   }
   async function recoloredBase(url, color, mask, allowUnmasked = false, sourceReferenceHex = null, kind = '') {
     const key = `base|${url}|${color}|ref:${sourceReferenceHex || 'auto'}|full:${allowUnmasked}`;
@@ -194,7 +213,7 @@
       );
       ctx.putImageData(data, 0, 0);
       return c;
-    })().catch(err => { if (_recolorCache.get(key) === promise) _recolorCache.delete(key); throw err; });
+    })().catch(err => { if (_recolorCache.get(key) === promise) forgetRecolor(key); throw err; });
     rememberRecolor(key, promise);
     return promise;
   }
@@ -209,7 +228,7 @@
       recolorPixels(px, hexToRgb(color), null);
       ctx.putImageData(data, 0, 0);
       return c;
-    })().catch(err => { if (_recolorCache.get(key) === promise) _recolorCache.delete(key); throw err; });
+    })().catch(err => { if (_recolorCache.get(key) === promise) forgetRecolor(key); throw err; });
     rememberRecolor(key, promise);
     return promise;
   }
@@ -368,7 +387,23 @@
   // never the other way around. Untinted raw art, same convention as the
   // NPC portrait pipeline's "untinted_regions" overlays — these are
   // already fully painted eye sprites, not a recolor target.
+  let composeTail = Promise.resolve(); // One native-resolution compositor at a time bounds overlapping pixel arrays and temporary canvases.
+  let composePending = 0, composeActive = 0; // Mobile checkpoint diagnostics distinguish queued requests from actual allocation work.
   async function composeFrame(kind, frame, genotype, blinkShut = false) {
+    const previous = composeTail; // Serial shared farm/wild/companion composition, without changing any frame's pixels.
+    let unlock; // Always releases the queue after errors as well as successful renders.
+    composeTail = new Promise(resolve => { unlock = resolve; });
+    composePending++;
+    try {
+      await previous;
+      if (composePending > 1 && typeof setTimeout === 'function') await new Promise(resolve => setTimeout(resolve, 0)); // Yield between queued native pixel jobs so gameplay can present a frame.
+      composeActive++;
+      try { return await composeFrameNow(kind, frame, genotype, blinkShut); }
+      finally { composeActive--; }
+    } finally { composePending--; unlock(); }
+  }
+
+  async function composeFrameNow(kind, frame, genotype, blinkShut = false) {
     const t0 = performance.now();
     lastPatternPaintDebug = { kind, frame, layers: {} }; // Reset per composite so Character Studio status reflects this exact preview frame.
     const spec = SPECIES[kind];
@@ -491,7 +526,7 @@
     return parts.join('|');
   }
 
-  window.CreatureGeneticsRender = { composeFrame, genotypeSignature, colorPoolPaintSignature, getLastPatternPaintDebug, prewarm, SPECIES, recolorPixels, hexToRgb };
+  window.CreatureGeneticsRender = { composeFrame, genotypeSignature, colorPoolPaintSignature, getLastPatternPaintDebug, prewarm, SPECIES, recolorPixels, hexToRgb, memorySnapshot: () => ({ recolorEntries: _recolorCache.size, recolorEstimatedBytes: recolorBytes, recolorBudgetBytes: RECOLOR_CACHE_BYTES, composePending, composeActive }) };
 
   window.HobunjiCacheAudit?.register('CreatureGeneticsRender.imageCache', () => _imageCache.size);
   window.HobunjiCacheAudit?.register('CreatureGeneticsRender.recolorCache', () => _recolorCache.size);

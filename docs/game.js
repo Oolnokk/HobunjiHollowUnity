@@ -4390,6 +4390,7 @@
       // signature's compose is still in flight, callers fall back to the
       // species' plain (uncolored) sprite — see setCreatureFrame below.
       const _genotypeTexCache = { front: new Map(), back: new Map() };
+      const _genotypeTextureResidency = window.CreatureTextureCache.create('wild-and-companion', _genotypeTexCache); // Owns disposal and bounded idle retention while preserving the existing map/debug API.
       window.HobunjiCacheAudit?.register('game.genotypeTexCache', () => _genotypeTexCache.front.size);
       const _genotypeTexPending = new Map(); // Frame-key promises allow scene preparation to await the existing compositor.
       // Every key this function has ever logged a "kicking off compose" line
@@ -4425,7 +4426,7 @@
         const sig = renderer.genotypeSignature(kind, genotype);
         const key = `${kind}|${frame}|${sig}|${blinkShut ? 'b' : 'o'}`;
         if (_genotypeTexCache.front.has(key)) {
-          return { front: _genotypeTexCache.front.get(key), back: _genotypeTexCache.back.get(key) };
+          return _genotypeTextureResidency.get(key);
         }
         // A key that just failed (thrown or resolved null) gets a short
         // cooldown before it's allowed to retry — without this, a
@@ -4438,6 +4439,7 @@
         if (!_genotypeTexPending.has(key)) {
           if (!_genotypeTexLogged.has(key)) {
             _genotypeTexLogged.add(key);
+            if (_genotypeTexLogged.size >= 256) _genotypeTexLogged.delete(_genotypeTexLogged.values().next().value);
             window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): cache miss, sig="${sig}" blink=${blinkShut} — kicking off composeFrame`, 'wildlife');
           }
           _genotypeTexPending.set(key, renderer.composeFrame(kind, frame, genotype, blinkShut).then(canvas => {
@@ -4453,8 +4455,7 @@
             const back = new THREE.CanvasTexture(canvas);
             back.colorSpace = THREE.SRGBColorSpace;
             back.wrapS = THREE.RepeatWrapping; back.repeat.set(-1, 1); back.offset.set(1, 0);
-            _genotypeTexCache.front.set(key, front);
-            _genotypeTexCache.back.set(key, back);
+            _genotypeTextureResidency.put(key, { front, back });
             window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): composited texture cached for sig="${sig}" (canvas ${canvas.width}x${canvas.height})`, 'wildlife');
           }).catch(err => {
             _genotypeTexPending.delete(key);
@@ -4476,17 +4477,19 @@
       // fallback if its own specific frame wasn't ready at that exact
       // moment and nothing else ever bumped the counter again).
       function setCreatureFrame(avatarRef, url, genotypeKind, frameKey, genotype, blinkShut = false) {
+        if (window.CreatureTextureCache.isDisposed(avatarRef)) return false; // Prevent a late visual update from reacquiring removed-avatar memory.
         const genoTex = (genotypeKind && genotype) ? _getGenotypeTextures(genotypeKind, frameKey, genotype, blinkShut) : null;
         const front = genoTex?.front || _getCreatureFrontTexture(url);
         const back = genoTex?.back || _getCreatureBackTexture(url);
         for (const child of [avatarRef.frontPlane, avatarRef.backPlane]) {
-          if (!child.material) continue;
+          if (!child?.material) continue;
           const hadMap = !!child.material.map; // Only a map-presence change requires shader recompilation.
           if (child.name.endsWith('_front_plane')) child.material.map = front;
           else if (child.name.endsWith('_back_plane')) child.material.map = back;
           else continue;
           if (!hadMap) child.material.needsUpdate = true; // Ordinary frame swaps only change the map uniform.
         }
+        _genotypeTextureResidency.retain(avatarRef, genoTex?.key || null); // Pins only the texture pair actually bound on this avatar; previous frames become evictable.
         return !!genoTex;
       }
 
@@ -4557,9 +4560,66 @@
         const halfH = modelHeight * sizeScale.y / 2; // Existing automatic prism floor-to-origin distance, retained as the fallback and physical half-height.
         const groundLift = Number.isFinite(authoredGroundOffset) ? authoredGroundOffset : halfH; // Replaces, rather than adds to/subtracts from, the automatic terrain baseline.
         const idUniq = (performance.now() | 0) + '_' + Math.floor(Math.random() * 100000);
+        const avatarRef = dataCreatureAvatar(); // Data-only wildlife retains an empty transform group, never image/rig allocations.
+        const groundShadow = null; // Allocated with the character rig only when it is promoted into the visible bubble.
+
+        const creature = {
+          id: creatureKey + '_' + idUniq,
+          creatureKey, def, avatarRef, groundShadow,
+          _wildlifeVisualsReleased: true, // Distinguishes data-only wildlife from a live native-resolution rig.
+          _wildlifeVisualLodHidden: !!opts.streamVisuals,
+          x, y, vx: 0, vy: 0,
+          halfHeight: halfH,
+          groundLift, // Floor-to-origin terrain lift: authored per species+size when present, otherwise the original half-height baseline.
+          visualScaleX: sizeScale.x, // Reused whenever attack squash updates the group scale.
+          visualScaleY: sizeScale.y, // Reused whenever attack squash updates the group scale.
+          visualModelWidth: modelWidth * sizeScale.x, // Keeps shadows, rings, and combat reach aligned with visible width.
+          health: def.maxHealth, maxHealth: def.maxHealth,
+          stamina: def.maxStamina, maxStamina: def.maxStamina,
+          facing: 0, groupRot: 0, pngRot: 0, perpState: {},
+          scaleY: 1,
+          attackCooldownT: 0, retreatT: 0, hitFlashT: 0,
+          knockbackT: 0, knockbackVX: 0, knockbackVY: 0,
+          runFrame: 0, runFrameDistPx: 0, currentFrameUrl: def.sprites.idle,
+          isCompanion: false,
+          // Whichever entity this companion follows/defends/anchors to —
+          // {x, y, angle, climbing}, same shape as the real `player` object.
+          // Defaults to null (hostiles/wild creatures have no master); a
+          // companion always gets one passed in via opts (see
+          // syncCompanionFromWhistle). Kept as a plain reference rather than
+          // hardcoding `player` so a future NPC-owned companion (or a second
+          // remote player's companion) can point at any qualifying entity.
+          master: null,
+          name: def.label,
+          state: 'idle',
+          wanderTarget: null, wanderT: 0,
+          homeX: x, homeY: y,
+          scene: targetScene, areaGrid: targetGrid, areaCols: gridCols, areaRows: gridRows, areaId: currentArea,
+          ...restOpts,
+        };
+        window.__farmLog?.(`[size-render] ${creatureKey}: ${sizeScale.sizeClass} at ${Math.round(sizeScale.x * 100)}% × ${Math.round(sizeScale.y * 100)}%`, 'wildlife');
+        window.ResourceSystem?.initEntity(creature);
+        if (!opts.streamVisuals) createCreatureVisuals(creature); // Companions, cinematic actors, and ordinary callers keep immediate construction.
+        return creature;
+      }
+
+      function dataCreatureAvatar() {
+        const group = new THREE.Group(); // Keeps logical actors compatible with targeting/AI transform readers without any renderable children.
+        group.visible = false;
+        return { group, frontPlane: null, backPlane: null, dispose() {} };
+      }
+
+      function createCreatureVisuals(c) {
+        if (!c._wildlifeVisualsReleased) return;
+        const { creatureKey, def, x, y } = c; // Existing creature data is the authority; promotion never respawns or rerolls it.
+        const opts = { genotype: c.genotype }; // Passed through the original appearance path below.
+        const modelWidth = def.modelWidth, modelHeight = modelWidth * (def.spriteAspect || (600 / 1375)); // Native geometry proportions survive retirement.
+        const sizeScale = { x: c.visualScaleX, y: c.visualScaleY }; // Already resolved by the factory, including authored size class.
+        const targetScene = c.scene, targetGrid = c.areaGrid, gridCols = c.areaCols, gridRows = c.areaRows; // Stored area ownership survives town/wilderness transitions.
+        const groundLift = c.groundLift; // Authored floor lift remains unchanged.
         const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, def.sprites.idle, {
           modelWidth, modelHeight,
-          name: creatureKey + '_' + idUniq,
+          name: c.id,
           creatureId: creatureKey,
           headRig: window.CreatureGeneticsRender?.headRigForKind?.(creatureKey) || undefined,
         });
@@ -4598,39 +4658,11 @@
         groundShadow.position.set(x / TILE, surfY + characterGroundShadowSurfaceOffset(), y / TILE);
         targetScene.add(groundShadow);
 
-        const creature = {
-          id: creatureKey + '_' + idUniq,
-          creatureKey, def, avatarRef, groundShadow,
-          x, y, vx: 0, vy: 0,
-          halfHeight: halfH,
-          groundLift, // Floor-to-origin terrain lift: authored per species+size when present, otherwise the original half-height baseline.
-          visualScaleX: sizeScale.x, // Reused whenever attack squash updates the group scale.
-          visualScaleY: sizeScale.y, // Reused whenever attack squash updates the group scale.
-          visualModelWidth: modelWidth * sizeScale.x, // Keeps shadows, rings, and combat reach aligned with visible width.
-          health: def.maxHealth, maxHealth: def.maxHealth,
-          stamina: def.maxStamina, maxStamina: def.maxStamina,
-          facing: 0, groupRot: 0, pngRot: 0, perpState: {},
-          scaleY: 1,
-          attackCooldownT: 0, retreatT: 0, hitFlashT: 0,
-          knockbackT: 0, knockbackVX: 0, knockbackVY: 0,
-          runFrame: 0, runFrameDistPx: 0, currentFrameUrl: def.sprites.idle,
-          isCompanion: false,
-          // Whichever entity this companion follows/defends/anchors to —
-          // {x, y, angle, climbing}, same shape as the real `player` object.
-          // Defaults to null (hostiles/wild creatures have no master); a
-          // companion always gets one passed in via opts (see
-          // syncCompanionFromWhistle). Kept as a plain reference rather than
-          // hardcoding `player` so a future NPC-owned companion (or a second
-          // remote player's companion) can point at any qualifying entity.
-          master: null,
-          name: def.label,
-          state: 'idle',
-          wanderTarget: null, wanderT: 0,
-          homeX: x, homeY: y,
-          scene: targetScene, areaGrid: targetGrid, areaCols: gridCols, areaRows: gridRows, areaId: currentArea,
-          ...restOpts,
-        };
-        window.__farmLog?.(`[size-render] ${creatureKey}: ${sizeScale.sizeClass} at ${Math.round(sizeScale.x * 100)}% × ${Math.round(sizeScale.y * 100)}%`, 'wildlife');
+        c.avatarRef = avatarRef;
+        c.groundShadow = groundShadow;
+        c._wildlifeVisualsReleased = false;
+        c.currentFrameUrl = null;
+        c._genotypeReadyFrames?.clear();
         // Shifts the plane meshes (not the prism/group itself — see
         // creaturePlaneGroundOffset) down once the idle sprite's real
         // opaque bottom edge is known, so the art's actual feet sit on the
@@ -4638,17 +4670,33 @@
         // Fires synchronously if this species' sprite was already scanned
         // by an earlier creature.
         resolveCreatureGroundAnchorRatio(def.sprites.idle, (bottomRatio) => {
+          if (c.avatarRef !== avatarRef) return; // Ignore an opacity scan that completes after this visual rig was retired.
           const offsetY = creaturePlaneGroundOffset(modelHeight, bottomRatio);
           if (avatarRef.frontPlane) avatarRef.frontPlane.position.y = offsetY;
           if (avatarRef.backPlane) avatarRef.backPlane.position.y = offsetY;
         });
-        window.ResourceSystem?.initEntity(creature);
-        return creature;
+        window.WildlifeSpawn?.restoreHerdMotherVisuals?.(c); // Recreates shared-map saddle babies after a data-only mother's promotion.
+      }
+
+      function releaseCreatureVisuals(c) {
+        if (!c.streamVisuals || c.isCompanion || c.health <= 0 || c._wildlifeVisualsReleased) return;
+        disposeCreaturePresentation(c); // Releases only visuals; health, genes, movement state, and population keys remain registered.
+        c.avatarRef = dataCreatureAvatar();
+        c.groundShadow = null;
+        c._carriedBabyVisuals = null;
+        c._wildlifeVisualsReleased = true;
+        c._wildlifeVisualLodHidden = true;
+        c.currentFrameUrl = null;
+        c._genotypeReadyFrames?.clear();
       }
 
       function despawnCreature(c) {
-        window.BurningAfflictionVfx?.disposeEntity?.(c); // Removes any Burning Health emitter before the avatar group leaves its scene.
         clearKnockbackLedgeMotion(c);
+        disposeCreaturePresentation(c); // Ordinary despawns and data-only retirement share one visual disposal owner.
+      }
+
+      function disposeCreaturePresentation(c) {
+        window.BurningAfflictionVfx?.disposeEntity?.(c); // Removes presentation without changing the creature's Burning resource state.
         (c.scene || scene).remove(c.avatarRef.group);
         c.avatarRef.dispose();
         if (c.groundShadow) {
@@ -4835,6 +4883,11 @@
             isBandit: !!c.isBandit, isBarbarian,
             isPredator: !c.isBandit && !isBarbarian && !!c.def?.hostile && c.def?.diet !== 'herbivore',
           });
+        }
+        if (c._wildlifeVisualsReleased) {
+          createCreatureVisuals(c); // Environmental/resource deaths still produce the normal visible, lootable corpse.
+          c._wildlifeVisualLodHidden = false;
+          c.avatarRef.group.visible = true;
         }
         window.CreatureDeath.begin(c, fromX ?? c.x, fromY ?? c.y);
         return true;
@@ -5646,6 +5699,7 @@
       }
 
       function updateCreatureMesh(c, dt, aimAngle) {
+        if (c._wildlifeVisualsReleased) return; // Coarse logical wildlife has no presentation to update.
         const g = c.areaGrid || grid;
         const col = window.FormatUtils.clamp(Math.floor(c.x / TILE), 0, (c.areaCols || COLS) - 1);
         const row = window.FormatUtils.clamp(Math.floor(c.y / TILE), 0, (c.areaRows || ROWS) - 1);
@@ -5815,6 +5869,8 @@
       const RUN_FRAME_STRIDE_PX = 30;
 
       function updateCreatureAnimFrame(c, dt, moving, runInPlace = false) {
+        if (c._wildlifeVisualsReleased) return; // No asynchronous texture work for data-only actors.
+        c._genotypeTexturesReleased = false; // Active playback reacquires native-resolution frames through the normal cache path.
         // A genotype-bearing creature (gar-wolf/dabinggi-hound with genes —
         // see makeCreatureEntity's opts.genotype) needs its composited
         // texture re-applied once the async compose finishes, even if the
@@ -6110,11 +6166,35 @@
       // function of the creature object and a distance, no closure deps, so
       // it extracted cleanly. wildlifeVisualLodCanHide's old callers (none
       // outside this file) should use window.WildlifeVisualLod.canHide.
-      function updateWildlifeVisualLod(c, distanceTiles) {
-        return window.WildlifeVisualLod.update(c, distanceTiles);
+      function releaseInactiveCreatureTextures(c) {
+        if (!c?.genotype || !c.def?.sprites?.idle || !c.avatarRef || c._wildlifeVisualsReleased || c._genotypeTexturesReleased) return;
+        setCreatureFrame(c.avatarRef, c.def.sprites.idle, null, 'idle', null); // Rebind finite shared species textures before unpinning generated maps.
+        c.currentFrameUrl = null;
+        c._genotypeReadyFrames?.clear();
+        c._genotypeTexturesReleased = true; // Avoids repeating work until this creature actually animates again.
       }
 
+      let _lastInactiveCreatureTextureArea = null; // One pass per area transition releases generated maps retained by inactive scenes.
+      function releasePreviousAreaCreatureTextures() {
+        if (_lastInactiveCreatureTextureArea === currentArea || cutscenePreviewActive) return;
+        _lastInactiveCreatureTextureArea = currentArea;
+        for (const c of hostileObjects) if (c.areaId !== currentArea) {
+          releaseInactiveCreatureTextures(c);
+          releaseCreatureVisuals(c); // An inactive zone keeps creature data, not full animal rigs.
+        }
+      }
+
+      function updateWildlifeVisualLod(c, distanceTiles) {
+        const hidden = window.WildlifeVisualLod.update(c, distanceTiles); // Promotes data-only actors through the same distance owner.
+        if (hidden) releaseInactiveCreatureTextures(c);
+        return hidden;
+      }
+
+      window.WildlifeVisualLod.init({ createVisuals: createCreatureVisuals, releaseVisuals: releaseCreatureVisuals }); // Existing LOD owns streamed wildlife presentation lifetime.
+
       function updateHostiles(dt) {
+        window.WildlifeVisualLod.beginFrame(); // Caps calm character-rig promotions during an entry burst; combatants always wake immediately.
+        releasePreviousAreaCreatureTextures();
         currentHostilesFrame.length = 0;
         if (grazingPreyIndexArea !== currentArea) {
           grazingPreyIndexArea = currentArea;
@@ -10654,7 +10734,7 @@
             object.traverse?.(mesh => { if (mesh.isMesh && mesh.userData?.wildernessChunkOwnsGeometry) bakeTargets.push(mesh); });
           }
           for (const mesh of bakeTargets) {
-            const baked = window.TerrainJigsawUV?.bakeMesh?.(mesh);
+            const baked = window.TerrainJigsawUV?.bakeMesh?.(mesh, { shareChunkTexture: true });
             if (baked) mesh.userData.wildernessChunkOwnsMaterial = true;
             yield;
           }
@@ -10713,9 +10793,9 @@
             if (object.userData?.wildernessChunkOwnsMaterial) {
               const materials = Array.isArray(object.material) ? object.material : [object.material];
               for (const material of materials) {
-                material?.map?.dispose?.();
+                if (!material?.map?.userData?.chunkJigsawShared) material?.map?.dispose?.();
                 for (const uniform of Object.values(material?.uniforms || {})) {
-                  if (uniform?.value?.isTexture) uniform.value.dispose?.();
+                  if (uniform?.value?.isTexture && !uniform.value.userData?.chunkJigsawShared) uniform.value.dispose?.();
                 }
                 material?.dispose?.();
               }
@@ -11501,7 +11581,7 @@
       // live in js/npc-scheduling.js (schedule-rule time-window matching);
       // normalizeNpcArea stays here since it's used well beyond scheduling.
       function normalizeNpcArea(area) {
-        if (!area) return 'farm';
+        if (!area || area === 'farm') return 'farm';
         if (area === 'interior') return 'interior';
         if (area === 'town' || area === 'hobunji_main_town' || area === 'map_hobunji_town') return 'town';
         if (_isBuildingArea(area)) return area;
@@ -13197,9 +13277,8 @@
         for (const creature of [...hostileObjects]) {
           if (creature.areaId !== mapId && creature.zoneId !== mapId) continue;
           hostileObjects.delete(creature);
-          creature.avatarRef?.group?.parent?.remove(creature.avatarRef.group);
+          despawnCreature(creature); // Releases rig, rings, effects, and shared texture pins before discarding this scene.
           creature.mesh?.parent?.remove(creature.mesh);
-          creature.groundShadow?.parent?.remove(creature.groundShadow);
         }
         if (info?.scene) {
           info.scene.traverse(object => object.geometry?.dispose?.());
@@ -13229,9 +13308,8 @@
           for (const creature of [...hostileObjects]) {
             if (creature.areaId !== mapId && creature.zoneId !== mapId) continue;
             hostileObjects.delete(creature);
-            creature.avatarRef?.group?.parent?.remove(creature.avatarRef.group);
+            despawnCreature(creature); // Room replacement owns complete resident cleanup, not just scene detachment.
             creature.mesh?.parent?.remove(creature.mesh);
-            creature.groundShadow?.parent?.remove(creature.groundShadow);
           }
         }
         // NPCs standing in the room survive the rebuild: detach them before the
@@ -23846,12 +23924,21 @@
       // time are already available too, via the adjacent "Performance
       // Profiler" checkbox and its overlay (perfState in that file).
       window.MobileRenderBudget?.attach(renderer, resizeCanvas);
-      document.getElementById('settingResolution').value = window.MobileRenderBudget?.mobile ? 'auto' : '1';
+      document.getElementById('settingResolution').value = '1';
       document.getElementById('settingResolution').addEventListener('change', e => {
         window.MobileRenderBudget?.setMode(e.target.value);
         s_resScale = parseFloat(e.target.value) || 1;
         resizeCanvas();
       });
+
+      const wildlifeDistanceInput = document.getElementById('settingWildlifeDistance'); // Mobile-accessible runtime override owned/persisted by WildlifeVisualLod.
+      if (wildlifeDistanceInput) {
+        wildlifeDistanceInput.value = window.WildlifeVisualLod.wakeRadius();
+        wildlifeDistanceInput.addEventListener('change', () => {
+          window.WildlifeVisualLod.setWakeRadius(wildlifeDistanceInput.value);
+          wildlifeDistanceInput.value = window.WildlifeVisualLod.wakeRadius();
+        });
+      }
 
       // Local Save Folder settings row — see docs/js/local-save-folder.js.
       // window.LocalSaveFolder owns all the actual folder-handle/IndexedDB/
@@ -25706,6 +25793,38 @@
 
       function updateDebugPage() { /* debug panel removed from menu */ }
 
+      // Captured only on report requests: no per-frame allocation or serialization.
+      function playerMovementDebugSnapshot() {
+        const keyboard = getKeyboardVector();
+        const locks = (window.CharacterActionLocks?.getDebug?.() || []).filter(lock =>
+          lock.participants.some(participant => participant.id === PLAYER_ACTION_LOCK_ID));
+        const footingTarget = proneRecoveryFootingTarget(player);
+        const speedMul = window.Combat?.getMovementSpeedMul?.() ?? 1;
+        return {
+          area: currentArea, paused, dialogueOpen,
+          input: { x: input.x, y: input.y, keyboard, strength: player.inputStrength, vx: player.vx, vy: player.vy },
+          movementLocks: locks,
+          modes: {
+            chat: !!window.PlayerChat?.isOpen, socialPose: !!window.PlayerSocialPoses?.active,
+            harvesting: !!window.FarmAnimals?.isHarvesting?.(), sitting: !!sitInteraction,
+            fishing: !!window.Fishing?.state?.active, music: !!window.MusicMinigame?.state?.active,
+            mount: window.Mounts?.rideState || 'none', climbing: !!player.climbing, onBranch: !!player.onBranch,
+          },
+          combat: {
+            health: player.health, stamina: player.stamina, footing: player.footing,
+            maxFooting: player.maxFooting, footingTarget,
+            footingFinite: Number.isFinite(player.footing), speedMul, speedMulFinite: Number.isFinite(speedMul),
+            prone: !!player.prone, recovering: !!player.somersaultRecovering,
+            proneThrowT: player.proneThrowT, ledgeFall: !!player._knockbackLedgeFall,
+            knockbackT: player.knockbackT, dodging: !!player.dodging, dodgeT: player.dodgeT,
+            lunging: !!player.lunging, lungeT: player.lungeT,
+            staggered: player.staggered ? { active: !!player.staggered.active, endsAt: player.staggered.endsAt } : null,
+            ragdoll: window.ImpactRagdollPlayback?.getDebug?.() || null,
+          },
+        };
+      }
+      window.__playerMovementDebugSnapshot = playerMovementDebugSnapshot;
+
       async function copyDebugLog() {
         const reticle = getReticleTile();
         const filter = window.__debugLogFilter || 'all';
@@ -25731,6 +25850,8 @@
           `Tool/action: ${window.FormatUtils.toolName(activeTool)} / ${window.FormatUtils.actionName(activeAction)}`,
           `Mobile combat arch aim: ${JSON.stringify(window.__mobileArchCombatAimDebug?.snapshot?.() || { active: false })}`,
           `Player: x${player.x.toFixed(0)} y${player.y.toFixed(0)}`,
+          `Player movement/status: ${JSON.stringify(playerMovementDebugSnapshot())}`,
+          `Memory/resources: ${JSON.stringify(window.HobunjiCacheAudit?.snapshot?.() || null)}`,
           ...(weavingDiagnostics ? ['', ...String(weavingDiagnostics).split('\n')] : []),
           '--- raw log ---',
           ...filteredLog.map(e => `[${e.t}] [${e.lvl}] ${e.msg}`)
@@ -29047,6 +29168,7 @@
       });
 
       window.WildlifeSpawn?.init({
+        despawnCreature, // Den turnover must dispose removed residents through the same owner as ordinary despawns.
         TILE,
         TileType,
         rnd,
@@ -30258,32 +30380,38 @@
       });
 
       async function prepareCutsceneAssets(entities, targetScene) {
-        const jobs = []; // Await the authoritative genotype cache for every idle/run and blink frame used by this cast.
-        for (const entity of entities.values()) {
-          const c = entity.creature, kind = c && (window.CreatureGenetics.SPECIES_ALIAS[c.creatureKey] || c.creatureKey); // Shared alias matches normal animated texture playback.
-          if (!c?.genotype || !window.CreatureGeneticsRender?.SPECIES?.[kind]) continue;
-          for (const frame of ['idle', ...(c.def.sprites.run || []).map((_, i) => 'run' + (i + 1))]) for (const blink of [false, true]) {
-            _getGenotypeTextures(kind, frame, c.genotype, blink);
-            const key = `${kind}|${frame}|${window.CreatureGeneticsRender.genotypeSignature(kind, c.genotype)}|${blink ? 'b' : 'o'}`; // Same cache key as normal gameplay, no duplicate asset pipeline.
-            jobs.push(Promise.resolve(_genotypeTexPending.get(key)).then(() => {
-              if (!_genotypeTexCache.front.has(key)) throw new Error('Introduction animal texture failed: ' + key);
-            }));
+        const preloadPins = []; // Holds each cast frame until shader/texture preparation completes, including setup failures.
+        try {
+          const jobs = []; // Await the authoritative genotype cache for every idle/run and blink frame used by this cast.
+          for (const entity of entities.values()) {
+            const c = entity.creature, kind = c && (window.CreatureGenetics.SPECIES_ALIAS[c.creatureKey] || c.creatureKey); // Shared alias matches normal animated texture playback.
+            if (!c?.genotype || !window.CreatureGeneticsRender?.SPECIES?.[kind]) continue;
+            for (const frame of ['idle', ...(c.def.sprites.run || []).map((_, i) => 'run' + (i + 1))]) for (const blink of [false, true]) {
+              const key = `${kind}|${frame}|${window.CreatureGeneticsRender.genotypeSignature(kind, c.genotype)}|${blink ? 'b' : 'o'}`; // Same cache key as normal gameplay, no duplicate asset pipeline.
+              const pin = {}; // A distinct temporary owner lets every preloaded frame stay resident.
+              preloadPins.push(pin);
+              _genotypeTextureResidency.retain(pin, key);
+              _getGenotypeTextures(kind, frame, c.genotype, blink);
+              jobs.push(Promise.resolve(_genotypeTexPending.get(key)).then(() => {
+                if (!_genotypeTexCache.front.has(key)) throw new Error('Introduction animal texture failed: ' + key);
+              }));
+            }
           }
-        }
-        await Promise.all(jobs);
-        for (const entity of entities.values()) if (entity.creature) updateCreatureAnimFrame(entity.creature, 0, false);
-        const materials = new Set(); // Single setup scan captures streamed terrain, furniture and actor material maps.
-        targetScene.traverse(node => { for (const material of (Array.isArray(node.material) ? node.material : [node.material])) if (material) materials.add(material); });
-        const started = performance.now(); // A failed texture load reports an error rather than revealing half-loaded scenery.
-        while ([...materials].some(material => Object.values(material).some(value => value?.isTexture && (!value.image || (value.image.complete === false))))) {
-          if (performance.now() - started > 45000) throw new Error('Introduction scene textures did not finish loading.');
-          await new Promise(resolve => setTimeout(resolve, 50));
-        }
-        const textures = new Set([...materials].flatMap(material => Object.values(material).filter(value => value?.isTexture))); // Upload each settled texture once while the introduction still covers the viewport.
-        await Promise.all([...textures].map(texture => texture.image?.decode?.()));
-        for (const texture of textures) renderer.initTexture?.(texture);
-        updateCameraPosition();
-        await renderer.compileAsync?.(targetScene, camera); // Warm shaders while the black introduction surface still owns the screen.
+          await Promise.all(jobs);
+          for (const entity of entities.values()) if (entity.creature) updateCreatureAnimFrame(entity.creature, 0, false);
+          const materials = new Set(); // Single setup scan captures streamed terrain, furniture and actor material maps.
+          targetScene.traverse(node => { for (const material of (Array.isArray(node.material) ? node.material : [node.material])) if (material) materials.add(material); });
+          const started = performance.now(); // A failed texture load reports an error rather than revealing half-loaded scenery.
+          while ([...materials].some(material => Object.values(material).some(value => value?.isTexture && (!value.image || (value.image.complete === false))))) {
+            if (performance.now() - started > 45000) throw new Error('Introduction scene textures did not finish loading.');
+            await new Promise(resolve => setTimeout(resolve, 50));
+          }
+          const textures = new Set([...materials].flatMap(material => Object.values(material).filter(value => value?.isTexture))); // Upload each settled texture once while the introduction still covers the viewport.
+          await Promise.all([...textures].map(texture => texture.image?.decode?.()));
+          for (const texture of textures) renderer.initTexture?.(texture);
+          updateCameraPosition();
+          await renderer.compileAsync?.(targetScene, camera); // Warm shaders while the black introduction surface still owns the screen.
+        } finally { for (const pin of preloadPins) _genotypeTextureResidency.release(pin); }
       }
 
       async function runCutscenePreview(payload, runtimeOptions = {}) {
