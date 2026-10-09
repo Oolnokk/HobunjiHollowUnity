@@ -1,0 +1,51 @@
+name: Temp NPC Collision Audit
+
+on:
+  push:
+    branches: [fix/npc-collision-aware-pathing]
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/npc-collision-aware-pathing
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Print NPC runtime integration slices
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const s = fs.readFileSync('docs/game.js','utf8');
+          const patterns = [
+            '_npcWalkers',
+            'function makeNpcWalker',
+            'moveToward(tx',
+            '_tryStartGridPath',
+            '_updateStationWander',
+            'advanceActorToward',
+            'NpcPathfinding.init',
+            'function furnitureBlocksMovementAt'
+          ];
+          for (const p of patterns) {
+            console.log(`\n===== ${p} =====`);
+            let from = 0, hits = 0;
+            while (hits < 8) {
+              const i = s.indexOf(p, from);
+              if (i < 0) break;
+              const a = Math.max(0, s.lastIndexOf('\n', Math.max(0, i - 1800)));
+              const b0 = s.indexOf('\n', i + 2600);
+              const b = b0 < 0 ? s.length : b0;
+              console.log(s.slice(a, b));
+              from = i + p.length;
+              hits++;
+            }
+            if (!hits) console.log('(not found)');
+          }
+          NODE
