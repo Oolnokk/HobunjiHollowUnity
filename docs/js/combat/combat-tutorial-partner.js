@@ -12,9 +12,9 @@
     target.telegraphState = null; target._banditLunging = false;
     target.vx = 0; target.vy = 0;
   }
-  function reset(target, lesson) {
+  function reset(target, lesson, practice) {
     if (!target) return;
-    target.x = 10.5 * tile; target.y = 11.5 * tile;
+    target.x = (practice?.c ?? 10.5) * tile; target.y = (practice?.r ?? 11.5) * tile;
     target.facing = Math.PI / 2; target.state = 'idle';
     target.attackCooldownT = 1.5; target._banditComboIndex = 0;
     target.knockbackT = 0; target.knockbackVX = 0; target.knockbackVY = 0;

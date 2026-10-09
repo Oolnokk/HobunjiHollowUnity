@@ -328,7 +328,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
              only authors the shape it reads. -->
         <div class="section" id="layoutsSection" style="--sec:#a78bfa;--secBg:rgba(167,139,250,.08)">
           <div class="sect-head"><b>Alternate Layouts</b><span class="qhelp" data-help="layouts" style="margin-left:4px">?</span><span class="sect-tag" id="layoutCountTag">0</span></div>
-          <p class="muted">A layout swaps this map's decor for a special occasion (a festival, a ritual) — pick one below, then use the 🪑 Decor tool as normal: while a layout (not Base) is selected, placing/erasing decor edits <em>that layout's</em> decor instead of the base map's. Only decor is layout-aware in this tool — buildings/furniture/objects/routes/etc. stay base-level; if a layout needs those too, hand-edit the exported JSON's <code>layouts</code> array (Copy/Download, edit, Import back in).</p>
+          <p class="muted">Pick a layout, then edit its 🪑 Decor and NPC Stations normally. Festival props below carry their activities when moved. Roads, buildings, exits, and terrain stay base-level. The game switches town layouts live when their calendar conditions change.</p>
           <div class="field" style="margin:8px 0 6px">
             <label>Now editing</label>
             <select id="layoutEditSelect"><option value="">Base (default)</option></select>
@@ -346,7 +346,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
             <div style="margin-top:8px">
               <div class="row" style="justify-content:space-between">
                 <b style="font-size:12px">When active</b>
-                <span class="sect-tag">any one below is enough (OR)</span>
+                <span class="sect-tag">all filled fields must match</span>
               </div>
               <div style="margin-top:4px"><label>Time of day (blank = all day)</label>
                 <div class="row" style="margin:0;gap:4px">
@@ -366,12 +366,24 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
                   <input id="layoutCondToDay" type="number" min="1" max="28" placeholder="day" style="width:25%">
                 </div>
               </div>
+              <div style="margin-top:6px"><label>Festival week</label><select id="layoutCondFestival"><option value="">None</option></select></div>
               <div style="margin-top:6px"><label>World-state flag (blank = ignore)</label><input id="layoutCondFlag" placeholder="harvestFestivalActive"></div>
               <p class="muted" style="margin-top:4px">Need this layout to trigger on several unrelated windows (OR)? Edit the JSON's <code>conditions</code> array directly — Copy/Download JSON, edit, Import back in.</p>
             </div>
             <div class="row" style="margin-top:8px">
               <button class="ok" id="applyLayoutBtn">Apply</button>
               <button class="bad" id="delLayoutBtn">Delete layout</button>
+            </div>
+            <div style="margin-top:12px;border-top:1px solid #596;padding-top:8px">
+              <b>Festival props &amp; activity areas</b>
+              <p class="muted">Pick any decor prop to edit its activity, placeholder dressing, and location. Changes belong only to this layout; normal JSON export/import and undo preserve them.</p>
+              <select id="festivalPropSelect"></select>
+              <label>Activity</label><select id="festivalPropType"></select>
+              <label>Label</label><input id="festivalPropLabel">
+              <div class="row"><div><label>Column</label><input id="festivalPropCol" type="number" step="1"></div><div><label>Row</label><input id="festivalPropRow" type="number" step="1"></div><div><label>Reach (tiles)</label><input id="festivalPropRadius" type="number" min="1" max="8" step="0.25" value="2.5"></div></div>
+              <label>Placeholder dressing</label><select id="festivalPropDressing"><option value="">None</option><option>blossoms</option><option>gifts</option><option>masks</option><option>sweets</option><option>feast</option><option>ancestors</option><option>bunting</option></select>
+              <label>Accent</label><input id="festivalPropColor" type="color" value="#caa45c">
+              <button class="ok" id="festivalPropApply">Apply prop settings</button>
             </div>
           </div>
         </div>
@@ -440,6 +452,8 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 <script src="../../js/HousePieceGen.js"></script>
 <script src="../../js/terrain-preview.js"></script>
 <script src="../../js/procedural-furniture.js"></script>
+<script src="../../js/festival-calendar.js?v=20261008festivals1"></script>
+<script src="../../js/festival-props.js?v=20261008festivals1"></script>
 <script>
 (() => {
 'use strict';
@@ -877,7 +891,7 @@ function liveSelectionLocation(map, selection) {
   let record = null;
   if (selection?.kind === 'building') record = (map.buildings || []).find(item => item.id === selection.id);
   else if (selection?.kind === 'spot') record = (map.transitions || []).find(item => item.id === selection.id);
-  else if (selection?.kind === 'station') record = (map.npcStations || []).find(item => item.id === selection.id);
+  else if (selection?.kind === 'station') record = activeStations(map).find(item => item.id === selection.id);
   else if (selection?.kind === 'entry') record = (map.entryPoints || []).find(item => item.id === selection.id);
   else if (selection?.kind === 'decor') record = activeDecor(map).find(item => (selection.id && item.id === selection.id) || (!selection.id && item.key === selection.key && item.col === selection.col && item.row === selection.row));
   else if (selection?.kind === 'furniture') {
@@ -1130,13 +1144,13 @@ function activeMap() { return ws.maps.find(m => m.id === ws.activeId) || ws.maps
 function isInteriorMap(map) { return map?.category === 'interior' || map?.category === 'building_interior'; }
 function mapById(id) { return ws.maps.find(m => m.id === id) || null; }
 
-// ── Alternate layouts: decor seam ────────────────────────────────────────────
+// ── Alternate layouts: decor and NPC station seams ────────────────────────────────────────────
 // See docs/js/map-layout-system.js for the runtime side: it picks the
 // highest-priority layout whose conditions currently match the calendar (or
 // the base map if none do) and merges just that layout's overridable arrays
-// over the base. Of those, only `decor` gets dedicated authoring UI here —
+// over the base. Decor and NPC stations have dedicated authoring UI here —
 // while a layout (not Base) is selected in the Alternate Layouts panel,
-// `editingLayoutId` redirects every decor placement/erase/render call site at
+// `editingLayoutId` redirects decor and station placement/erase/render at
 // this one seam instead of a larger refactor, mirroring
 // building-interior-author's activeFurniture/setActiveFurniture. The map
 // object itself (and thus JSON.stringify/export/undo snapshots) always stays
@@ -1158,6 +1172,17 @@ function setActiveDecor(m, arr) {
   const lay = currentLayoutObj(m);
   if (lay) lay.decor = arr; else m.decor = arr;
 }
+function activeStations(m) {
+  const layout = currentLayoutObj(m); // Editor NPC tools use the same selected layout as decor.
+  if (!layout) return m.npcStations || (m.npcStations = []);
+  return layout.npcStations || (layout.npcStations = JSON.parse(JSON.stringify(m.npcStations || [])));
+}
+function setActiveStations(m, stations) {
+  const layout = currentLayoutObj(m); // Copy-on-write keeps the normal town schedule intact.
+  if (layout) layout.npcStations = stations; else m.npcStations = stations;
+}
+function allStationArrays(m) { return [m.npcStations || [], ...(m.layouts || []).filter(layout => layout.npcStations).map(layout => layout.npcStations)]; }
+
 // Every decor array on this map (base + every layout's own) — used only by
 // structural map edits (resize, shift) that must stay consistent no matter
 // which one happens to be selected for interactive editing right now; see
@@ -1334,7 +1359,7 @@ function shiftMapContents(m, dc, dr) {
   ((m.routes || []).concat(m.npcPaths || [])).forEach(p => { p.nodes = p.nodes.map(([c,r]) => [c+dc, r+dr]); });
   (m.rivers || []).forEach(p => { p.nodes = p.nodes.map(([c,r]) => [c+dc, r+dr]); });
   (m.transitions || []).forEach(t => { t.col += dc; t.row += dr; });
-  (m.npcStations || []).forEach(st => { st.col += dc; st.row += dr; });
+  allStationArrays(m).forEach(stations => stations.forEach(st => { st.col += dc; st.row += dr; }));
   (m.entryPoints || []).forEach(ep => { ep.col += dc; ep.row += dr; });
 }
 function getOrCreateSubmap(parentMap, group) {
@@ -1421,7 +1446,7 @@ function resizeMapAndSubmaps(m, nc, nr) {
   ((m.routes || []).concat(m.npcPaths || [])).forEach(p => { p.nodes = p.nodes.filter(([c,r]) => c >= 0 && r >= 0 && c < nc && r < nr); });
   (m.rivers || []).forEach(p => { p.nodes = p.nodes.filter(([c,r]) => c >= 0 && r >= 0 && c < nc && r < nr); });
   m.transitions = (m.transitions || []).filter(t => t.col >= 0 && t.row >= 0 && t.col < nc && t.row < nr);
-  m.npcStations = (m.npcStations || []).filter(st => st.col >= 0 && st.row >= 0 && st.col < nc && st.row < nr);
+  for (const owner of [m, ...(m.layouts || [])]) if (owner.npcStations) owner.npcStations = owner.npcStations.filter(st => st.col >= 0 && st.row >= 0 && st.col < nc && st.row < nr);
   // Submaps are sized from their own painted plateau footprint (see
   // getOrCreateSubmap), not from a fixed offset off this map's dimensions —
   // resizing `m` only matters here if it truncated away some of that footprint.
@@ -1842,6 +1867,36 @@ function renderLayoutsPanel() {
   $('layoutCondToMonth').value = (cond.dateTo && cond.dateTo.month) || '';
   $('layoutCondToDay').value = (cond.dateTo && cond.dateTo.day) || '';
   $('layoutCondFlag').value = cond.flag || '';
+  $('layoutCondFestival').innerHTML = '<option value="">None</option>' + window.FestivalCalendar.festivals.map(festival => `<option value="${festival.id}">${festival.name}</option>`).join('');
+  $('layoutCondFestival').value = cond.festival || '';
+  renderFestivalPropsPanel(true);
+}
+
+let festivalPropPanelKey = ''; // Avoid overwriting in-progress field edits during canvas pan/zoom.
+function selectedFestivalProp() { return activeDecor(activeMap()).find(record => record.id === $('festivalPropSelect')?.value); }
+function loadFestivalPropFields() {
+  const record = selectedFestivalProp(); // Same authored object the 2D/3D gizmos move.
+  if (!record) return;
+  $('festivalPropType').innerHTML = '<option value="">No activity</option>' + Object.entries(window.FestivalCalendar.activityLabels).map(([id, label]) => `<option value="${id}">${label}</option>`).join('');
+  $('festivalPropType').value = record.activity?.type || '';
+  $('festivalPropLabel').value = record.activity?.label || '';
+  $('festivalPropCol').value = record.col; $('festivalPropRow').value = record.row;
+  $('festivalPropRadius').value = record.activity?.radius || 2.5;
+  $('festivalPropDressing').value = record.festivalDecoration || '';
+  $('festivalPropColor').value = record.festivalColor || '#caa45c';
+}
+function renderFestivalPropsPanel(force = false) {
+  const select = $('festivalPropSelect'); // Panel exists in both exterior and interior map-editor workspaces.
+  if (!select || !window.FestivalCalendar) return;
+  const records = activeDecor(activeMap());
+  const key = `${activeMap().id}:${editingLayoutId}:${records.map(record => record.id).join(',')}`;
+  if (!force && key === festivalPropPanelKey) return;
+  festivalPropPanelKey = key;
+  const selected = select.value;
+  select.replaceChildren();
+  for (const record of records) { const option = document.createElement('option'); option.value = record.id; option.textContent = `${record.activity?.label || DECOR[record.key]?.label || record.key} (${record.col}, ${record.row})`; select.append(option); }
+  if (records.some(record => record.id === selected)) select.value = selected;
+  loadFestivalPropFields();
 }
 
 // ── Mode / brush state ────────────────────────────────────────────────────────
@@ -1933,7 +1988,7 @@ function updateBrushPill() {
   if (mode === 'ramp') { const rp = (ws.ramps || []).find(x => x.id === activeRampId); t = rp ? `ramp: ${rp.label}${activeRampNodeIndex!==null?' node '+(activeRampNodeIndex+1):''}` : 'ramp: (click to start one)'; }
   if (mode === 'spot') t = 'spot: click map to place';
   if (mode === 'station') {
-    const st = (activeMap().npcStations || []).find(x => x.id === activeStationId);
+    const st = activeStations(activeMap()).find(x => x.id === activeStationId);
     t = _stationPaintMode && st ? `station: ${st.label} — 🖌 painting wander tiles (click to toggle)` : st ? `station: ${st.label}` : 'station: click map to place';
   }
   if (mode === 'entry') {
@@ -2503,7 +2558,7 @@ function renderPalette() {
     }).join('') || '<p class="muted">No transition spots yet.</p>';
     html += '<p class="muted" style="margin-top:5px">Click the map to place a spot, then pick which map (and which spot on it) it leads to. In-game, spots warp the player when their target is the linked Farm or Farmhouse map; other targets are kept in the map JSON for future zones. A building\'s door spot is created/synced automatically — set its target from the Buildings panel instead of here.</p>';
   } else if (mode === 'station') {
-    html = (m.npcStations || []).map(st => `<div class="item ${st.id===activeStationId?'sel':''}" data-stationsel="${st.id}">
+    html = activeStations(m).map(st => `<div class="item ${st.id===activeStationId?'sel':''}" data-stationsel="${st.id}">
       <div class="row"><input data-stationlabel="${st.id}" value="${(st.label||st.id).replace(/"/g,'&quot;')}" style="flex:1"><button class="bad" data-stationdel="${st.id}" style="padding:3px 8px">✕</button></div>
       <div class="g3" style="margin-top:4px">
         <div><label>Rot Y° <span class="qhelp" data-help="station-rot">?</span></label><input data-stationrot="${st.id}" type="number" value="${st.rotY||0}"></div>
@@ -2785,11 +2840,11 @@ function renderPalette() {
   }));
   box.querySelectorAll('[data-stationdel]').forEach(el => el.addEventListener('click', e => {
     e.stopPropagation(); pushUndo();
-    m.npcStations = (m.npcStations || []).filter(st => st.id !== el.dataset.stationdel);
+    setActiveStations(m, activeStations(m).filter(st => st.id !== el.dataset.stationdel));
     if (activeStationId === el.dataset.stationdel) activeStationId = null;
     renderPalette(); draw(); refreshPreview(); saveWorkspace(); updateBrushPill();
   }));
-  const updateStation = (id, patch) => { const st = (m.npcStations || []).find(x => x.id === id); if (!st) return; Object.assign(st, patch); draw(); refreshPreview(); saveWorkspace(); updateBrushPill(); };
+  const updateStation = (id, patch) => { const st = activeStations(m).find(x => x.id === id); if (!st) return; Object.assign(st, patch); draw(); refreshPreview(); saveWorkspace(); updateBrushPill(); };
   box.querySelectorAll('[data-stationlabel]').forEach(el => el.addEventListener('change', () => updateStation(el.dataset.stationlabel, { label: el.value.trim() || el.dataset.stationlabel })));
   box.querySelectorAll('[data-stationrot]').forEach(el => el.addEventListener('change', () => updateStation(el.dataset.stationrot, { rotY: Number(el.value) || 0 })));
   box.querySelectorAll('[data-stationpose]').forEach(el => el.addEventListener('change', () => updateStation(el.dataset.stationpose, { pose: el.value })));
@@ -2880,6 +2935,7 @@ function resizeCanvas() {
 }
 
 function draw() {
+  renderFestivalPropsPanel();
   const m = activeMap();
   const r = canvas.getBoundingClientRect();
   ctx.clearRect(0,0,r.width,r.height);
@@ -3112,6 +3168,13 @@ function draw() {
     ctx.strokeRect(p.x+1, p.y+1, info.fw*z-2, info.fd*z-2);
     ctx.lineWidth = 1;
     if (z > 9) ctx.fillText(info.icon, p.x + info.fw*z/2, p.y + info.fd*z/2);
+    if (d.activity) {
+      const center = w2s(d.col + info.fw / 2 + (d.postX || 0), d.row + info.fd / 2 + (d.postZ || 0)); // Mirrors the live interaction anchor.
+      ctx.save(); ctx.strokeStyle = d.festivalColor || '#ffd68a'; ctx.setLineDash([4, 4]);
+      ctx.beginPath(); ctx.arc(center.x, center.y, (d.activity.radius || 2.5) * z, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]); ctx.fillStyle = '#fff1bf'; ctx.font = '11px sans-serif';
+      ctx.fillText(d.activity.label || d.activity.type, center.x, center.y - 12); ctx.restore();
+    }
   });
   // Interior puzzle wiring is visible in the editor and persisted verbatim to
   // the building-interior JSON consumed by gameplay.
@@ -3208,7 +3271,7 @@ function draw() {
     }
   });
   // NPC Stations (cyan squares)
-  (m.npcStations || []).forEach(st => {
+  activeStations(m).forEach(st => {
     const p = w2s(st.col + .5, st.row + .5);
     const s = z * .36;
     // Wander region — only drawn while THIS station is selected (mirrors
@@ -3428,7 +3491,7 @@ function applyAt(tile) {
     maybePaintRamp();
     renderPalette(); updateBrushPill();
   } else if (mode === 'station') {
-    m.npcStations = m.npcStations || [];
+    activeStations(m);
     if (_stationPaintMode) {
       // Painting the active station's custom wander shape instead of
       // placing/selecting a station — stored as [dc,dr] offsets from the
@@ -3441,7 +3504,7 @@ function applyAt(tile) {
       // tiles it merely passed over would be surprising to drag across),
       // so pointermove can call this repeatedly for a continuous stroke
       // without flicker.
-      const st = m.npcStations.find(x => x.id === activeStationId);
+      const st = activeStations(m).find(x => x.id === activeStationId);
       if (st) {
         st.wanderShapeTiles = st.wanderShapeTiles || [];
         const rad = Math.max(1, _stationPaintRadius);
@@ -3466,11 +3529,11 @@ function applyAt(tile) {
       renderPalette(); updateBrushPill();
       return;
     }
-    const existing = m.npcStations.find(st => st.col === c && st.row === r);
+    const existing = activeStations(m).find(st => st.col === c && st.row === r);
     if (existing) activeStationId = existing.id;
     else {
-      const st = { id: uid('station'), label: `Station ${m.npcStations.length+1}`, col: c, row: r, rotY: 0, pose: 'stand', toolKey: '', toolIntervalSec: 0, toolAnimStyle: '', wanderRadiusTiles: 0, wanderMode: 'radius', wanderShapeTiles: [] };
-      m.npcStations.push(st); activeStationId = st.id;
+      const st = { id: uid('station'), label: `Station ${activeStations(m).length+1}`, col: c, row: r, rotY: 0, pose: 'stand', toolKey: '', toolIntervalSec: 0, toolAnimStyle: '', wanderRadiusTiles: 0, wanderMode: 'radius', wanderShapeTiles: [] };
+      activeStations(m).push(st); activeStationId = st.id;
     }
     renderPalette(); updateBrushPill();
   } else if (mode === 'spot') {
@@ -3518,8 +3581,8 @@ function applyAt(tile) {
     });
     const ti = (m.transitions || []).findIndex(t => t.col === c && t.row === r);
     if (ti >= 0) { if (m.transitions[ti].id === activeSpotId) activeSpotId = null; m.transitions.splice(ti,1); did = true; }
-    const si = (m.npcStations || []).findIndex(st => st.col === c && st.row === r);
-    if (si >= 0) { if (m.npcStations[si].id === activeStationId) activeStationId = null; m.npcStations.splice(si,1); did = true; }
+    const si = activeStations(m).findIndex(st => st.col === c && st.row === r);
+    if (si >= 0) { if (activeStations(m)[si].id === activeStationId) activeStationId = null; activeStations(m).splice(si,1); did = true; }
     const ei = (m.entryPoints || []).findIndex(ep => ep.col === c && ep.row === r);
     if (ei >= 0) { if (m.entryPoints[ei].id === activeEntryId) activeEntryId = null; m.entryPoints.splice(ei,1); did = true; renderEntryPointsPanel(); }
     if (!did) return;
@@ -3639,7 +3702,7 @@ canvas.addEventListener('pointerdown', e => {
   }
   if (mode === 'station' && !_stationPaintMode) {
     const m = activeMap();
-    for (const st of (m.npcStations || [])) {
+    for (const st of activeStations(m)) {
       if (Math.hypot(w.x - (st.col + 0.5), w.y - (st.row + 0.5)) <= 0.45) {
         pushUndo(); activeStationId = st.id; _stationDrag = { stationId: st.id };
         renderPalette(); updateBrushPill(); draw(); return;
@@ -3692,7 +3755,7 @@ canvas.addEventListener('pointermove', e => {
     return;
   }
   if (_stationDrag) {
-    const m = activeMap(); const st = (m.npcStations || []).find(st => st.id === _stationDrag.stationId);
+    const m = activeMap(); const st = activeStations(m).find(st => st.id === _stationDrag.stationId);
     if (st) { st.col = clamp(Math.floor(w.x), 0, m.cols - 1); st.row = clamp(Math.floor(w.y), 0, m.rows - 1); renderPalette(); draw(); }
     return;
   }
@@ -4053,6 +4116,7 @@ function rebuild3D() {
   three3d.placementMeshes.clear();
   while (group.children.length) {
     const o = group.children.pop();
+    window.FestivalProps?.dispose?.(o);
     // Terrain materials are cached/reused across rebuilds now (see
     // resolvePreviewMat) so their loaded texture/async state survives an
     // edit-triggered rebuild — only geometry is unique per rebuild and
@@ -4225,6 +4289,7 @@ function spawnPreviewPlacements(group, merged) {
       + TerrainPreview.sampleVisualHeight(merged.visualHeights, cx, cz, merged.cols, merged.rows);
     const color = kind === 'decor' ? 0x8b6540 : 0x888888;
     const mesh = window.ProceduralFurniture.buildFurnitureGroup(key, color);
+    window.FestivalProps?.decorate(mesh, record);
     const scale = record.postScale != null ? record.postScale : 1;
     mesh.position.set(cx + (record.postX || 0), baseY + (record.postY || 0), cz + (record.postZ || 0));
     mesh.rotation.y = (record.rotY || 0) * Math.PI / 180;
@@ -5060,8 +5125,25 @@ $('delEntryPointBtn').addEventListener('click', () => {
 });
 
 // ── Alternate layouts panel handlers ──────────────────────────────────────────
+$('festivalPropSelect').addEventListener('change', loadFestivalPropFields);
+$('festivalPropApply').addEventListener('click', () => {
+  const record = selectedFestivalProp(); // Mutate only the selected layout's record, and retain all unedited metadata.
+  if (!record) return;
+  const col = Number($('festivalPropCol').value), row = Number($('festivalPropRow').value);
+  if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col >= activeMap().cols || row >= activeMap().rows) { setStatus('Choose a column and row inside the map.'); return; }
+  pushUndo(); record.col = col; record.row = row;
+  const type = $('festivalPropType').value;
+  if (type) record.activity = { ...(record.activity || {}), type, label: $('festivalPropLabel').value.trim() || window.FestivalCalendar.activityLabels[type], radius: Math.max(1, Math.min(8, Number($('festivalPropRadius').value) || 2.5)) };
+  else delete record.activity;
+  record.festivalDecoration = $('festivalPropDressing').value;
+  record.festivalColor = $('festivalPropColor').value;
+  renderFestivalPropsPanel(true); draw(); refreshPreview(); saveWorkspace(); schedule3DRebuild();
+  setStatus('Festival prop updated. Latest change: editable activities, placeholder dressings, and per-layout NPC stations.');
+});
+
 $('layoutEditSelect').addEventListener('change', () => {
   editingLayoutId = $('layoutEditSelect').value || null;
+  activeStationId = null; selectedPlacement = null; _3dSelected = null; renderPalette();
   renderLayoutsPanel(); draw(); refreshPreview();
 });
 $('addLayoutBtn').addEventListener('click', () => {
@@ -5069,7 +5151,7 @@ $('addLayoutBtn').addEventListener('click', () => {
   const m = activeMap();
   m.layouts = m.layouts || [];
   const id = uid('layout');
-  m.layouts.push({ id, name: 'New layout', priority: 0, conditions: [], decor: JSON.parse(JSON.stringify(m.decor || [])) });
+  m.layouts.push({ id, name: 'New layout', priority: 0, conditions: [], decor: JSON.parse(JSON.stringify(m.decor || [])), npcStations: JSON.parse(JSON.stringify(m.npcStations || [])) });
   editingLayoutId = id;
   renderLayoutsPanel(); draw(); refreshPreview(); saveWorkspace();
   setStatus('New layout created as a copy of the base decor — rearrange it with the 🪑 Decor tool, then set its conditions below.');
@@ -5099,7 +5181,8 @@ $('applyLayoutBtn').addEventListener('click', () => {
         tm = Number($('layoutCondToMonth').value) || 0, td = Number($('layoutCondToDay').value) || 0;
   if (fm && fd && tm && td) { cond.dateFrom = { month: fm, day: fd }; cond.dateTo = { month: tm, day: td }; }
   const flag = $('layoutCondFlag').value.trim(); if (flag) cond.flag = flag;
-  lay.conditions = Object.keys(cond).length ? [cond] : [];
+  const festival = $('layoutCondFestival').value; if (festival) cond.festival = festival;
+  lay.conditions = Object.keys(cond).length ? [cond, ...(lay.conditions || []).slice(1)] : (lay.conditions || []).slice(1);
   renderLayoutsPanel(); refreshPreview(); saveWorkspace();
   setStatus(`Layout "${lay.name}" updated.${!lay.conditions.length ? ' No conditions set — it will never auto-activate.' : ''}`);
 });

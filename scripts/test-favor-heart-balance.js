@@ -236,3 +236,14 @@ assert.match(chainedHearts, /width:30\.5%/, 'chained browser hook uses 12.2 Favo
 assert.equal((chainedHearts.match(/❤️/gu) || []).length, 1, 'chained renderer exposes only one clipped red heart token for 12.2 Favor');
 
 console.log('Favor point / relationship heart balance regression checks passed.');
+// Festival gift and ancestor multipliers enter the same Favor authority once.
+windowStub.FestivalSystem = { giftMultiplier: () => 2, blessingMultiplier: () => 1.25 };
+const beforeFestival = rawState('festival_friend').favor;
+DialogueContent.adjustNpcFavor('festival_friend', 10, 'gift_loved');
+assert.equal(rawState('festival_friend').favor - beforeFestival, 25);
+DialogueContent.adjustNpcFavor('festival_plain', 10, 'festival_dance');
+assert.equal(rawState('festival_plain').favor, 12.5, 'non-gift activities receive only the ancestor bonus');
+DialogueContent.adjustNpcFavor('festival_spill', 10, 'spillover_friend', true, true);
+assert.equal(rawState('festival_spill').favor, 10, 'spillover never double-multiplies');
+DialogueContent.adjustNpcFavor('festival_negative', -10, 'gift_hated');
+assert.equal(rawState('festival_negative').favor, -20, 'Mountaindawn doubles gift effects; goodwill never worsens losses');

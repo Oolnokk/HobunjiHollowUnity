@@ -171,6 +171,7 @@
     const townMap = deps.getTownZone();
     for (const mesh of _townDecorFurnitureGroups) {
       townScene?.remove(mesh);
+      window.FestivalProps?.dispose?.(mesh);
       mesh.traverse(o => { if (o.geometry) o.geometry.dispose(); });
     }
     _townDecorFurnitureGroups = [];
@@ -198,6 +199,7 @@
     for (const d of decorDefs) {
       const result = deps.makeDecorativeFurnitureMesh(d.col, d.row, d.key, townScene, 'map_hobunji_town');
       if (!result) continue;
+      window.FestivalProps?.decorate(result.mesh, d);
       const y = deps.NORMAL_TOP + _tileVisualHeight(townMap, d.col, d.row);
       applyPlacementTransform(result.mesh, d, y);
       if (result.light) {

@@ -126,7 +126,7 @@
        refresh, extracted out of game.js. Must load before game.js, which
        calls window.PlayerVitals.init(...) alongside the other
        window.*.init(...) calls. -->
-  <script src="js/player-vitals.js?v=20260918collision2"></script>
+  <script src="js/player-vitals.js?v=20261009h29e5795"></script>
   <!-- Processing-station recipe resolution, berry/dew/alcohol key & color
        derivation, and item-wheel eligibility, extracted out of game.js.
        Must load before game.js, which calls window.ItemProcessing.init(...)
@@ -329,7 +329,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261008hd623d79"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261009h4153ea8"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -340,7 +340,7 @@
   <script src="js/trinket-system.js?v=20261002hf79dffc"></script>
   <script src="js/cooking-data.js?v=20260811a"></script>
   <script src="js/food-processing.js?v=20261001foodgift2"></script>
-  <script src="js/cooking-system.js?v=20261008h8edfe60"></script>
+  <script src="js/cooking-system.js?v=20261009h23667e0"></script>
   <script src="js/key-item-system.js?v=20260918banubu1"></script>
   <!-- Alchemy (reagent/effect defs, potion brewing, shared timed effects) —
        window.AlchemySystem. Self-contained aside from deps injected via
@@ -456,14 +456,15 @@
        relative to the other systems above doesn't matter; must load before
        game.js, which calls window.CalendarSystem.init(...) during its own
        setup. -->
-  <script src="js/calendar-system.js?v=20261002hd5f045a"></script>
+  <script src="js/calendar-system.js?v=20261009h0ee0528"></script>
   <!-- Resolves a map/interior's active alternate `layouts` entry (see
        docs/config/maps/map_i_temple.json's spirit_communion layout) against
        the current calendar time — window.MapLayoutSystem. Pure/stateless, no
        load-order dependency on anything else here; game.js calls into it
        from loadBuildingScene/_loadTownFromWorkspace and its own live-swap
        check. -->
-  <script src="js/map-layout-system.js?v=20260905layouts1"></script>
+  <script src="js/festival-calendar.js?v=20261008festivals1"></script>
+  <script src="js/map-layout-system.js?v=20261009h87dfae4"></script>
   <!-- Gives interior furniture an authored tile footprint/quarter-turn transform and derives occupied-tile collision before the scene consumes the effective layout. -->
   <script src="js/interior-furniture-grid.js?v=20260917grid1"></script>
   <!-- Keeps authored seat anchors/surfaces on the same post-placement transform as interior-editor furniture visuals. -->
@@ -577,7 +578,7 @@
        calls window.TownZoneBuildings.init(...) during its own setup (and
        reads window.TownZoneBuildings.loadHousePieceFaceTexture as one of
        window.FarmBuildings' own init deps, at that same call-time point). -->
-  <script src="js/town-zone-buildings.js?v=20261007hbe2d67a"></script>
+  <script src="js/town-zone-buildings.js?v=20261009h04898b3"></script>
   <!-- Same-origin live Map Editor transport + runtime bridge. Loaded before
        game.js so its private scene state can be injected during setup. -->
   <script src="js/map-live-preview.js?v=20260909a&window=20260926rebase1"></script>
@@ -2452,11 +2453,14 @@
   <script src="js/dialogue-camera-framing.js?v=20261002hba1474a"></script>
   <script src="js/dialogue-templates.js?v=20260929mastery1"></script>
   <script src="js/dialogue-rich-text.js?v=20260929colors1"></script>
-  <script src="js/dialogue-content.js?v=20261008h542bf03"></script>
+  <script src="js/dialogue-content.js?v=20261009h14e8360"></script>
   <script src="js/combat/combat-tutorial-content.js?v=20261001cae883e8"></script>
   <script src="js/combat/combat-tutorial-mastery.js?v=20260929mastery1-goals1"></script>
-  <script src="js/combat/combat-tutorial-partner.js?v=20260930partner1"></script>
-  <script src="js/combat/combat-tutorial.js?v=20261001c7157451"></script>
+  <script src="js/combat/combat-tutorial-partner.js?v=20261009hdbd0721"></script>
+  <script src="js/combat/combat-tutorial.js?v=20261009hd195c4f"></script>
+  <script src="js/festival-props.js?v=20261008festivals1"></script>
+  <script src="js/festival-system.js?v=20261008festivals1"></script>
+  <script src="js/festival-ui.js?v=20261008festivals1"></script>
   <script src="js/tutorial-unlock-visits.js?v=20260930doorstep1"></script>
   <script src="js/farmhouse-login-spawn.js?v=20260930doorstep1"></script>
   <script src="js/banubu-questline.js?v=20260925banubutransaction4"></script>
@@ -2505,7 +2509,7 @@
        calls window.NpcScheduling.init(...) during its own setup.
        resolveNpcScheduleTarget itself now bridges into
        window.NpcActivityPlanner (loaded just above) when present. -->
-  <script src="js/npc-scheduling.js?v=20261007h97d7c42"></script>
+  <script src="js/npc-scheduling.js?v=20261009he4308cf"></script>
   <!-- Authored NPC relationship tags (partner/family/friend) + social
        seating policy (window.SCRATCHBONES_CONFIG.game.socialRelationships) —
        read lazily at call time by npc-social-seating-bridge.js below, so
@@ -2596,7 +2600,7 @@
   <script src="js/romance-wedding.js?v=20261007wedding1"></script>
   <script src="js/romance-system.js?v=20261007romance1"></script>
   <script src="js/npc-command-wheel.js?v=20261008h02bf686"></script>
-  <script src="game.js?v=20261008hd8ece7a"></script>
+  <script src="game.js?v=20261009h7f80c57"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261005h9a94218"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

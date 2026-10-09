@@ -412,6 +412,8 @@
           return;
         }
 
+        if (window.DialogueContent?.hasQueuedConversationTree?.(rec?.id)) { window.DialogueContent.beginNpcConversation(rec); return; }
+
         if (rec?.id === 'spearhead_unumanuk' && window.CombatTutorial?.active()) {
           window.DialogueContent?.beginNpcConversation(rec); // Automatic coaching must not be displaced by procedural requests.
           return;
@@ -8464,6 +8466,7 @@
           member.alcoholBottleSwigs = window.HobunjiDrunkGameplayBridge?.serializeBottleSwigs?.() || {};
           member.npcAlcoholState = window.HobunjiDrunkGameplayBridge?.serializeNpcAlcoholState?.() || {};
           member.npcWardrobeState = window.NpcWardrobe?.serialize?.() || {};
+          member.festivals = window.FestivalSystem?.serialize?.() || {};
           member.npcDiscoveredGiftTraits = window.NpcGifting?.serializeDiscoveredPrefs?.() || {};
           member.alchemyKnownEffects = window.AlchemySystem.serializeKnownEffects();
           member.alchemyKnownRecipes = window.AlchemySystem.serializeKnownRecipes();
@@ -9897,6 +9900,7 @@
       let _pendingEntrySpawnFromExit = false; // true when enterBuilding fired before scene loaded
       let _pendingEntrySpotId = ''; // Named locale-cavern connector requested before its destination scene finished generating.
       let _workspaceMaps = null;       // all maps from town-workspace-v1.json, cached for building interiors
+      const _rawExteriorMaps = new Map(); // Keeps base arrays intact when live calendar layouts are reapplied.
       let _workspaceDefinition = null; // Resolved full workspace used to merge one live-preview map without leaking unrelated editor edits.
       const _livePreviewMapIds = new Set(); // Map ids whose in-memory editor snapshot must outrank standalone config files until reload.
       function _isBuildingArea(area) { return typeof area === 'string' && area.startsWith('map_i_'); }
@@ -11844,7 +11848,7 @@
           gender: rec?.gender === 'female' ? 'female' : 'male',
           cosmetics: {},
         };
-        const profile = window.NpcAvatarPreview.buildProfileFromNpcExport({
+        const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(window.NpcWardrobe.decorateAppearance({
           id: rec?.id,
           restingExpression: rec?.restingExpression,
           clothingPatterns: rec?.clothingPatterns,
@@ -11852,7 +11856,7 @@
           appearance,
           equippedCosmetics: rec?.equippedCosmetics || [],
           appliedDyes: rec?.appliedDyes || {},
-        });
+        }));
         if (!profile) return null;
 
         const namedAnimalKind = window.NamedAnimalNpc?.creatureKindForProfile?.(profile, { npcRecord: rec }) || null; // Creature identity is resolved before NPC-specific presentation so animals inherit their species pipeline first.
@@ -12690,17 +12694,20 @@
               for (const e of (idx.maps || [])) if (e.id && e.file) mapFileIndex[e.id] = e.file;
             }
           } catch(_) {}
+          const resolveExterior = data => { // Cache the unmodified authored map before resolving any calendar override.
+            if (data?.schema !== 'hobunji_map.v1' || data.category !== 'exterior') return data;
+            _rawExteriorMaps.set(data.id, window.MapLivePreview.clone(data));
+            return window.MapLayoutSystem.getEffectiveMapData(data, window.MapLayoutSystem.currentSnapshot());
+          };
           // Resolve each map: fetch from file if listed in index, fall back to workspace inline data
           const resolvedMaps = await Promise.all((ws.maps || []).map(async m => {
             const file = options.preferWorkspace ? null : mapFileIndex[m.id];
             if (!file) {
-              return m?.schema === 'hobunji_map.v1' && m.category === 'exterior'
-                ? window.MapLayoutSystem.getEffectiveMapData(m, window.MapLayoutSystem.currentSnapshot())
-                : m;
+              return resolveExterior(m);
             }
             try {
               const r = await fetch(file);
-              if (!r.ok) return m;
+              if (!r.ok) return resolveExterior(m);
               const data = await r.json();
               // If the file is an Interior Editor layout and the workspace entry is Map Editor
               // format, keep the workspace version (source of truth for game logic) and attach
@@ -12714,21 +12721,12 @@
                 for (const t of data.tiles) d[`${t.c},${t.r}`] = { type: t.type, crop: t.crop || '' };
                 data.tiles = d;
               }
-              // Exterior maps (hobunji_map.v1) get their `layouts` resolved
-              // here, once, at boot — e.g. a festival's decor/buildings
-              // override renders correctly if the game happens to load
-              // during its scheduled window. Interiors resolve their own
-              // `layouts` independently inside loadBuildingScene (which
-              // re-fetches config/maps/<id>.json itself), so this only
-              // actually changes anything for schema:'hobunji_map.v1'.
-              // Unlike an authored interior, the always-resident exterior
-              // scene (buildTownScene/buildZoneScene) has no safe in-place
-              // rebuild for a map already loaded this session — see
-              // checkMapLayoutChanges's own comment — so an exterior
-              // layout's window opening/closing mid-session takes effect on
-              // the next fresh load rather than live.
-              return window.MapLayoutSystem.getEffectiveMapData(data, window.MapLayoutSystem.currentSnapshot());
-            } catch(_) { return m; }
+              // Resolve exterior layouts while preserving their raw base maps.
+              // Town refreshes live through the map-preview rebuild seam;
+              // wilderness layouts resolve on load. Interiors resolve separately
+              // inside loadBuildingScene.
+              return resolveExterior(data);
+            } catch(_) { return resolveExterior(m); }
           }));
           _workspaceMaps = resolvedMaps;
 
@@ -13032,9 +13030,9 @@
             if (options.throwOnError) throw new Error('Workspace has no map_hobunji_town map.');
             return false;
           }
-          _workspaceDefinition = window.MapLivePreview.clone({ ...ws, maps: resolvedMaps });
+          _workspaceDefinition = window.MapLivePreview.clone({ ...ws, maps: resolvedMaps.map(map => _rawExteriorMaps.get(map.id) || map) });
           await window.TownMine?.decorateTownMap?.(townM);
-          const layout = { version: 1, name: townM.name || 'Hobunji Hollow — Town', cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [], npcStations: [], buildings: townM.buildings || [], decor: townM.decor || [], furniture: townM.furniture || [] };
+          const layout = { version: 1, activeLayoutId: townM.activeLayoutId || 'default', name: townM.name || 'Hobunji Hollow — Town', cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [], npcStations: [], buildings: townM.buildings || [], decor: townM.decor || [], furniture: townM.furniture || [] };
           for (let r = 0; r < townM.rows; r++) for (let c = 0; c < townM.cols; c++) {
             const t = townM.tiles[`${c},${r}`];
             if (t) layout.tiles.push({ c, r, type: t.type || 'grass' });
@@ -13103,7 +13101,7 @@
         const townPaths = (layout.npcPaths || []).filter(p =>
           p && Array.isArray(p.nodes) && p.nodes.length > 0 && p.area === 'town');
         worldTownRoutes = normalizeRoutes(layout.routes, townPaths).map(r => ({ ...r, area: 'town' }));
-        registerNpcStations(layout.npcStations, 'town');
+        window.NpcScheduling.replaceMapNpcStations(layout.npcStations, 'town');
         window.Music?.registerMapAudio(layout.mapAudio);
         rebuildRouteGraphs();
         // If town scene was already built before this layout arrived, spawn buildings now
@@ -14225,14 +14223,38 @@
       // gameLoop's own throttled call, covering ordinary real-time hour
       // rollover for a player who's simply standing inside when a scheduled
       // layout's window opens or closes without ever opening the Wait menu.
-      // Scoped to authored interiors only (see _isBuildingArea) — the
-      // always-resident exterior town scene has no rebuild-in-place path
-      // today (buildTownScene builds once per page load; see its own
-      // _townSceneBuilt guard), so an exterior `layouts` entry currently
-      // takes effect on the next fresh load/session rather than live.
+      // Interiors and the town both refresh from their preserved base maps.
+      // Town reuses live-preview rebuilding so residents survive the change.
+      async function refreshTownCalendarLayout() {
+        const raw = _rawExteriorMaps.get('map_hobunji_town'); // Raw base is preserved; ending a holiday restores it exactly.
+        if (!raw || !_townZone || !_workspaceDefinition) return;
+        const wanted = window.MapLayoutSystem.resolveActiveLayout(raw)?.id || 'default';
+        if (wanted === _townZone.activeLayoutId || _layoutSwapInProgress) return;
+        if (dialogueOpen || menuOpen || isPlayerInCombat() || window.FestivalUI?.isOpen?.() || window.CombatTutorial?.active?.() || window.FestivalSystem?.dance || sceneTransDir !== 0 || window.CharacterActionLocks?.isLocked?.('player', 'movement')) return;
+        _layoutSwapInProgress = true;
+        const previousLayout = _townZone.activeLayoutId; // Failed scene builds must remain eligible for a safe retry.
+        const rebuild = async () => { // Reuses the tested map-preview rebuild while retaining residents and player location.
+          await _loadTownFromWorkspace(_workspaceDefinition, { preferWorkspace: true, throwOnError: true, deferTownSceneRefresh: true });
+          if (townScene || currentArea === 'town') {
+            const residents = _disposeTownSceneForLivePreview();
+            buildTownScene();
+            _reattachLivePreviewResidents(townScene, residents);
+            if (currentArea === 'town') _snapCameraTarget();
+          }
+          refreshActionBar();
+          window.__farmLog?.(`[festival layout] town -> ${wanted}`);
+        };
+        try {
+          if (currentArea === 'town') await window.CalendarSystem.runScreenTransition(rebuild);
+          else await rebuild();
+        } catch (error) { if (_townZone) _townZone.activeLayoutId = previousLayout; window.__farmLog?.(`[festival layout] ${error.message}`, 'error'); }
+        finally { _layoutSwapInProgress = false; }
+      }
+
       function checkMapLayoutChanges() {
         if (_layoutSwapInProgress) return;
-        if (!_isBuildingArea(currentArea) || !_buildingScenes.has(currentArea)) return;
+        void refreshTownCalendarLayout();
+        if (_layoutSwapInProgress || !_isBuildingArea(currentArea) || !_buildingScenes.has(currentArea)) return;
         performLiveLayoutSwap(currentArea);
       }
 
@@ -14799,8 +14821,10 @@
       }
 
       function _disposeTownSceneForLivePreview() {
+        window.Music?.unregisterFurnitureSfxSourcesForArea?.('map_hobunji_town');
         const residents = _detachLivePreviewResidents('town');
         if (townScene) {
+          window.FestivalProps?.dispose?.(townScene);
           townScene.traverse(object => object.geometry?.dispose?.());
           townScene.clear();
         }
@@ -17475,7 +17499,7 @@
         // while it's converting movement into zips; 1 (no change) otherwise.
         const combatSpeedMul = window.Combat?.getMovementSpeedMul ? window.Combat.getMovementSpeedMul() : 1;
         const footingSpeedMul = getFootingSpeedMul(player);
-        const targetSpeed = MOVE_SPEED * speedMul * analogEase * combatSpeedMul * footingSpeedMul * window.AlchemySystem.getSpeedMul() * window.CookingSystem.getSpeedMultiplier() * devGlobalSpeedMul;
+        const targetSpeed = MOVE_SPEED * speedMul * analogEase * combatSpeedMul * footingSpeedMul * window.AlchemySystem.getSpeedMul() * window.CookingSystem.getSpeedMultiplier() * (window.FestivalSystem?.blessingMultiplier?.('speed') || 1) * devGlobalSpeedMul;
         if (inputStrength > 0.001) {
           const targetVx = ix * targetSpeed;
           const targetVy = iy * targetSpeed;
@@ -18813,6 +18837,9 @@
           refreshActionBar();
           return;
         }
+        if (activeAction === 'festival_npc_gift' || activeAction === 'festival_npc_sweet') { window.FestivalSystem?.receiveNpcReward?.(nearbyNpcWalker, activeAction); refreshActionBar(); return; }
+        if (activeAction === 'festival_activity') { window.FestivalUI?.open?.(); return; }
+        if (activeAction === 'festival_stop_dance') { window.FestivalSystem?.cancelDance?.(); refreshActionBar(); return; }
         if (activeAction === 'npc_offer_gift') {
           window.NpcGifting?.offerGift?.(nearbyNpcWalker);
           refreshActionBar();
@@ -24052,6 +24079,7 @@
         const dt = Math.min(0.04, (now - lastTime) / 1000);
         lastTime = now;
         gameFrameSerial++;
+        window.FestivalSystem?.update?.();
         window.CombatTutorial?.update?.(); // Simulation and scene cleanup share the existing gameLoop cadence.
 
         if (!gameStarted) {
@@ -24932,6 +24960,9 @@
           ];
         }
 
+        const festivalButton = !farmEditMode ? window.FestivalSystem?.actionButton?.() : null; // Shared Action 1/2 dispatch supports touch, keyboard, and controllers.
+        if (festivalButton && !nearbyNpcWalker && !_pendingSpotTransition) return [festivalButton];
+
         // NPC dialogue takes priority over tool use on touch controls and mirrors the primary-action keyboard path.
         if (nearbyNpcWalker && !farmEditMode) {
           // Slagothim caravan members are transient visitors: Talk + Trade only
@@ -24948,8 +24979,11 @@
           if (isCarpenterNpcOnDuty(nearbyNpcWalker)) btns.push(carpenterButton());
           const swigOffer = window.HobunjiDrunkGameplayBridge?.getNpcSwigOfferAction?.(nearbyNpcWalker);
           if (swigOffer) btns.push(swigOffer);
+          const festivalNpcReward = window.FestivalSystem?.npcRewardAction?.(nearbyNpcWalker); // Receive gifts directly through normal NPC interaction as well as the communal tables.
+          if (festivalNpcReward) btns.push(festivalNpcReward);
           const giftOffer = window.NpcGifting?.getNpcGiftOfferAction?.(nearbyNpcWalker);
           if (giftOffer) btns.push(giftOffer);
+          if (festivalButton) btns.push(festivalButton);
           // Wardrobe: only reachable while actually standing in that NPC's
           // own home interior (currentArea === 'map_i_' + homeId — the same
           // area-id convention loadBuildingScene/_isBuildingArea use), so
@@ -25432,7 +25466,7 @@
               // same story: it's pure traversal, not a tool swing, so a leftover
               // toolSwingT from whatever was equipped before walking up to a
               // cliff shouldn't be able to eat the tap either.
-              const isNavAction = act === npcDialogueAction() || act === smithyAction() || act === generalStoreAction() || act === carpenterAction() || act === 'npc_offer_alcohol_swig' || act === 'npc_offer_gift' || act === 'npc_open_wardrobe' || act === 'npc_slagothim_trade' || act === 'use_spot' || act === 'obj_exit_house' || act === 'climb' || act.startsWith('obj_') || act.startsWith('fish_');
+              const isNavAction = act === npcDialogueAction() || act === smithyAction() || act === generalStoreAction() || act === carpenterAction() || act === 'npc_offer_alcohol_swig' || act === 'npc_offer_gift' || act === 'npc_open_wardrobe' || act === 'npc_slagothim_trade' || act === 'use_spot' || act === 'obj_exit_house' || act === 'climb' || act.startsWith('obj_') || act.startsWith('fish_') || act.startsWith('festival_');
               // Same reasoning again for every item-mode action (place_campfire_kit,
               // consume_food_item, plant_*, alchemy_flask_*, ...): none of them are
               // tool swings either, so a leftover toolSwingT from whatever tool was
@@ -28404,6 +28438,7 @@
       window.CombatTutorial?.init?.({
         getQuestProgress: () => questProgress,
         save: saveMemberWorldData,
+        playerPosition: () => ({ c: player.x / TILE, r: player.y / TILE }),
         getArea: () => currentArea,
         getGear: () => gearInventory,
         mastery: toolMasteryLevel,
@@ -28416,9 +28451,11 @@
         toast: showToast,
         capture: () => ({
           equipmentSlots: { ...equipmentSlots }, activeTool, heldMode,
+          position: { x: player.x, y: player.y, area: currentArea },
           resources: structuredClone({ health: player.health, stamina: player.stamina, footing: player.footing, afflictions: player.afflictions, exhaustion: player.exhaustion, prone: player.prone, staggered: player.staggered }),
         }),
-        restore: original => {
+        restore: (original, practice) => {
+          if (practice && original.position?.area === currentArea) { player.x = original.position.x; player.y = original.position.y; }
           Object.assign(equipmentSlots, original.equipmentSlots);
           Object.assign(player, structuredClone(original.resources));
           player.vx = 0; player.vy = 0;
@@ -28428,7 +28465,8 @@
           heldMode = original.heldMode;
           refreshActionBar();
         },
-        enterArena: async () => {
+        enterArena: async practice => {
+          if (practice) { if (practice.area !== currentArea) throw new Error('Return to the sparring ring first.'); return; }
           if (!_buildingScenes.get('map_i_watchhouse_arena')) await loadBuildingScene('map_i_watchhouse_arena');
           if (!_buildingScenes.get('map_i_watchhouse_arena') || _buildingScenes.get('map_i_watchhouse_arena').fallback) throw new Error('Practice arena map failed to load.');
           await new Promise(resolve => startSceneTransition(() => { enterBuilding('map_i_watchhouse_arena', 10, 13); resolve(); }));
@@ -28437,12 +28475,12 @@
           if (!_buildingScenes.get('map_i_watchhouse')) await loadBuildingScene('map_i_watchhouse');
           await new Promise(resolve => startSceneTransition(() => { enterBuilding('map_i_watchhouse', 8, 12); resolve(); }));
         },
-        resetPractice: (gapTiles = 2) => { // Oddclaw stands at row 11.5; melee exercises start within reach.
+        resetPractice: (gapTiles = 2, practice) => { // Oddclaw stands at row 11.5; melee exercises start within reach.
           player.health = player.maxHealth; player.stamina = player.maxStamina; player.footing = player.maxFooting;
           player.afflictions = {}; player.exhaustion = { active: false, blackStamina: 100 };
           player.prone = false; player.staggered = { active: false, endsAt: 0 };
           player.knockbackT = 0; player.dodging = false; player.dodgeCooldownT = 0;
-          player.x = 10.5 * TILE; player.y = (11.5 + gapTiles) * TILE;
+          player.x = (practice?.c ?? 10.5) * TILE; player.y = ((practice?.r ?? 11.5) + gapTiles) * TILE;
           player.vx = 0; player.vy = 0;
           setPlayerFacingInstant(-Math.PI / 2);
           _snapCameraTarget();
@@ -28458,7 +28496,7 @@
           rebuildToolMeshes();
           setActiveTool(slot, { silent: true });
         },
-        spawnTarget: async () => {
+        spawnTarget: async practice => {
           const walker = npcWalkers.find(w => w.rec?.id === 'oddclaw_unumanuk'); // Preserve the named NPC's live wardrobe and ordinary schedule.
           let record = walker?.rec || scheduledNpcRecords.get('oddclaw_unumanuk'); // Fall back to the same authored database if his scheduled walker is not loaded yet.
           if (!record) {
@@ -28467,8 +28505,8 @@
           }
           if (!record?.appearance) throw new Error('Oddclaw’s appearance is unavailable.');
           const config = await window.BanditCombat.loadGangConfig(); // Reuses the shared humanoid renderer, hands, weapon poses and attack executor.
-          const target = await window.BanditCombat.makeEntity(config, 'grunt', 0, 10.5 * TILE, 11.5 * TILE, {
-            zoneId: 'map_i_watchhouse_arena',
+          const target = await window.BanditCombat.makeEntity(config, 'grunt', 0, (practice?.c ?? 10.5) * TILE, (practice?.r ?? 11.5) * TILE, {
+            zoneId: practice?.area || 'map_i_watchhouse_arena',
             rosterOverride: structuredClone(record),
             enemyClass: 'sparring-partner',
             defOverride: { label: 'Oddclaw', weaponKey: 'fishingspear', attackTag: 'sharp', rangedWeaponKey: null, maxHealth: 10000, attackDamage: 2, attackCooldownS: 2,
@@ -28593,6 +28631,34 @@
         buildEquipmentSlots: () => window.EquipmentPanel?.buildEquipmentSlots?.(),
         refreshActionBar,
         saveMemberWorldData,
+      });
+
+      window.FestivalSystem?.init({
+        inventory,
+        getItemDefs: () => ITEM_DEFS,
+        getNpcs: () => [...new Map([...scheduledNpcRecords.values(), ...npcWalkers.map(w => w.rec)].filter(Boolean).map(rec => [rec.id, rec])).values()],
+        getWalkers: () => npcWalkers,
+        getTownMap: () => _rawExteriorMaps.get('map_hobunji_town'),
+        getDecorSize: key => DECORATIVE_FURNITURE_DEFS[key],
+        getArea: () => currentArea,
+        getPlayerTile: () => ({ c: player.x / TILE, r: player.y / TILE }),
+        isBlocked: () => dialogueOpen || menuOpen || isPlayerInCombat() || sceneTransDir !== 0 || _layoutSwapInProgress || !!window.CombatTutorial?.active?.() || !!window.Fishing?.state?.active || !!window.MusicMinigame?.state?.active,
+        isFestivalSuspended: () => !!window.WaterSystem?.isTownFloodEmergency?.(),
+        save: saveMemberWorldData,
+        toast: showToast,
+        refresh: () => { window.HudUpdate.refreshItemScroll(); buildInventoryGrid(); window.EquipmentPanel?.buildPackClothingSection?.(); refreshActionBar(); },
+        grantMask: id => {
+          if (!window.FestivalSystem.MASKS.some(mask => id === `festivalmask_${mask}`)) return false;
+          const piece = { category: 'hood', label: ITEM_DEFS[`cosmetic:${id}`]?.label || id.replace('festivalmask_', '') + ' Festival Mask', price: 20 }; // Canonical cosmetic ID and ordinary pack-clothing shape; no shop rotation required.
+          packClothing.push({ uid: `festival_${id}_${Date.now()}`, cosmeticId: id, slot: piece.category || 'hood', label: piece.label, baseLabel: piece.label,
+            colorA: { hex: '#ddaf64', h: 37, s: 55, v: 87 }, colorB: { hex: '#8072bd', h: 251, s: 40, v: 74 }, colorC: { hex: '#e7d8aa', h: 45, s: 26, v: 91 }, sprite: window.EquipmentPanel.clothingSpriteForCosmetic(id), sellPrice: Math.floor((piece.price || 0) * .4) });
+          return true;
+        },
+        tellStory: async (walker, lines) => {
+          window.DialogueContent.queueConversationTree(walker.rec.id, { id: 'festival_hachutu_story', entryNode: 'line0', nodes: [...lines.map((text, index) => ({ id: `line${index}`, type: 'text', text, next: index + 1 < lines.length ? `line${index + 1}` : 'end' })), { id: 'end', type: 'end' }] });
+          await openNpcDialogue(walker);
+          return { ok: true };
+        },
       });
 
       window.NpcWardrobe?.init({
@@ -29894,6 +29960,7 @@
         window.HobunjiDrunkGameplayBridge?.restoreBottleSwigs?.(playerData.alcoholBottleSwigs);
         window.HobunjiDrunkGameplayBridge?.restoreNpcAlcoholState?.(playerData.npcAlcoholState);
         window.NpcWardrobe?.restore?.(playerData.npcWardrobeState);
+        window.FestivalSystem?.restore?.(playerData.festivals);
         window.NpcGifting?.restoreDiscoveredPrefs?.(playerData.npcDiscoveredGiftTraits);
         packClothing = [...(playerData.packClothing || [])];
         window.CookingSystem.restore(playerData.cookingState);

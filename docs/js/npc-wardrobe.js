@@ -232,7 +232,7 @@
   function guessSlot(cosmeticId) {
     const id = String(cosmeticId || '').toLowerCase();
     if (/hat|kasa|helmet|headband/.test(id)) return 'hat';
-    if (/hood/.test(id)) return 'hood';
+    if (/hood|festivalmask/.test(id)) return 'hood';
     if (/pauldron|shoulder.?armor/.test(id)) return 'pauldron';
     if (/poncho|cloak|wrap|overwear/.test(id)) return 'overwear';
     return 'torso';
@@ -326,6 +326,15 @@
     deps?.saveMemberWorldData?.();
     return true;
   }
+  const appearanceDecorators = new Map(); // Temporary event/costume layers applied only to a render export.
+  function registerAppearanceDecorator(owner, decorator) {
+    if (typeof decorator === 'function') appearanceDecorators.set(owner, decorator); else appearanceDecorators.delete(owner);
+  }
+  function decorateAppearance(data) {
+    let effective = data; // Providers must return copies; canonical wardrobe data remains unchanged.
+    for (const decorator of appearanceDecorators.values()) effective = decorator(effective) || effective;
+    return effective;
+  }
   async function refreshWalkerAppearance(walker) {
     if (!walker?.avatarGroup?.userData?.frontTexture || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
     const rec = walker.rec;
@@ -350,7 +359,7 @@
     const renderedExport = window.ClothingWeavingSystem?.decorateAvatarDataWithWovenItems
       ? window.ClothingWeavingSystem.decorateAvatarDataWithWovenItems(baseExport, effectiveClothing)
       : baseExport;
-    const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(renderedExport);
+    const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(decorateAppearance(renderedExport));
     if (!profile) return;
     walker.profile = profile;
     try {
@@ -468,6 +477,7 @@
     }
   }
   window.NpcWardrobe = {
+    registerAppearanceDecorator, decorateAppearance, refreshWalkerAppearance, slotForCosmetic: guessSlot,
     init,
     offerClothing,
     getWardrobeContents,

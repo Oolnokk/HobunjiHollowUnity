@@ -336,6 +336,15 @@
         cell.type = 'button';
         cell.className = 'cal-day-btn' + (d === deps.calendar.day ? ' today' : '');
         cell.innerHTML = `<span>${WEEKDAY_NAMES[i]}</span><span class="cal-day-num">${dayOfMonth(d)}</span>`;
+        const festival = window.FestivalCalendar?.forRawDay(d); // Same date source as live map-layout conditions.
+        if (festival) {
+          const marker = document.createElement('span'); // Explicit text keeps the full seven-day holiday legible without hover on mobile.
+          marker.textContent = `${festival.icon} ${festival.name}`;
+          marker.style.cssText = 'font-size:10px;line-height:1.2;white-space:normal;color:' + festival.color;
+          cell.appendChild(marker);
+          cell.title = `${festival.name}: ${festival.description}`;
+          cell.setAttribute('aria-label', `${dayOfMonth(d)} ${MONTH_NAMES[calViewMonthIndex]} — ${festival.name}`);
+        }
         daysWrap.appendChild(cell);
       }
       row.appendChild(daysWrap);
