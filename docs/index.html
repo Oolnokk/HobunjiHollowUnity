@@ -147,8 +147,8 @@
   <script src="js/metal-armor-system.js?v=20261008h99621ca"></script>
   <script src="config/colors/config.js?v=20260930h1b2e2e2"></script>
   <script src="config/attachment-rig-profiles.js?v=20261002h6d814a9"></script>
-  <link rel="stylesheet" href="style.css?v=20261009mobiletarget1">
-  <link rel="stylesheet" href="cooking-ui.css?v=20261009mobiletarget1">
+  <link rel="stylesheet" href="style.css?v=20261009mobiletarget2">
+  <link rel="stylesheet" href="cooking-ui.css?v=20261009mobiletarget2">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
   <!-- Shared gameplay presentation: mirrors the outlined text + light translucent containers used by character/save select. -->
   <link rel="stylesheet" href="gameplay-ui-theme.css?v=20260923outlineart1">
@@ -2327,7 +2327,7 @@
       <button id="btnCallMount" class="abt" aria-label="Call or dismiss mount">
         <span class="abt-icon">🐴</span>
       </button>
-      <!-- Utility menu: final SAFE control on the outer ring, taking the
+      <!-- Utility menu: penultimate control on the outer ring, taking the
            12:00 slot Call Mount used to occupy; live CSS keeps it inside the screen.
            Hold to open the utilities wheel (Character View, Return to Camp,
            quick-select a Campfire Kit, Return to Farm — see game.js's
@@ -2337,17 +2337,7 @@
       <button id="btnUtilityMenu" class="abt" aria-label="Hold for utility menu">
         <span class="abt-icon">🧭</span>
       </button>
-    </div>
-    <!-- Action Arch: 0-size anchor at bottom-right corner, buttons extend along clock 9:10–11:50 -->
-    <div id="actionStack">
-      <button class="abt" id="btnAction1" aria-label="Primary action"></button>
-      <button class="abt" id="btnAction2" aria-label="Action 2"></button>
-      <button class="abt" id="btnAction3" aria-label="Action 3"></button>
-      <button class="abt abt-item" id="btnItemAction1" aria-label="Use item"></button>
-      <button class="abt abt-item" id="btnItemAction2" aria-label="Use item 2"></button>
-    </div>
-    <!-- Third control arch: one mobile target control at its clockwise end. -->
-    <div id="targetArch">
+      <!-- Final second-arch control: 12-degree gap and 20% larger than its neighbors. -->
       <button class="abt abt-swap abt-hidden" id="btnSwapTarget" aria-label="Auto-target: tap to toggle, hold and drag to select target" aria-pressed="true">
         <span class="abt-icon">
           <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -2362,6 +2352,15 @@
         <span class="abt-label">Auto-target</span>
       </button>
     </div>
+    <!-- Action Arch: 0-size anchor at bottom-right corner, buttons extend along clock 9:10–11:50 -->
+    <div id="actionStack">
+      <button class="abt" id="btnAction1" aria-label="Primary action"></button>
+      <button class="abt" id="btnAction2" aria-label="Action 2"></button>
+      <button class="abt" id="btnAction3" aria-label="Action 3"></button>
+      <button class="abt abt-item" id="btnItemAction1" aria-label="Use item"></button>
+      <button class="abt abt-item" id="btnItemAction2" aria-label="Use item 2"></button>
+    </div>
+
   </div>
 
   <!-- Item Select: grid x:20 y:14 w:5 h:3 · sub-grid 14×6 -->
@@ -2608,7 +2607,7 @@
   <script src="js/romance-wedding.js?v=20261007wedding1"></script>
   <script src="js/romance-system.js?v=20261007romance1"></script>
   <script src="js/npc-command-wheel.js?v=20261008h02bf686"></script>
-  <script src="game.js?v=20261009h83e67ed"></script>
+  <script src="game.js?v=20261009h65ac28e"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261005h9a94218"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

@@ -27619,7 +27619,7 @@
         meleeAttackAlignmentSnapshot: () => {
           const target = meleeAttackTargetLock;
           return {
-            latestChange: 'Mobile-only autotarget defaults on; third-arch tap toggles, hold enables and drags select melee/ranged targets with stable locks and obstruction checks.',
+            latestChange: 'Mobile-only autotarget defaults on; second-arch endpoint (20% larger and more spaced) tap toggles, hold enables and drags select melee/ranged targets with stable locks and obstruction checks.',
             settings: window.Combat?.input?.autoTargetSettingsSnapshot?.(),
             selectedTarget: manualAutoTarget?.id ?? manualAutoTarget?.def?.label ?? null,
             active: !!meleeAttackAlignment,
