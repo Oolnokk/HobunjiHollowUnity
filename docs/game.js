@@ -30959,13 +30959,18 @@
 
         function runMove(stage) {
           const st = actorStates.get(stage.actorId);
+          const entity = entities.get(stage.actorId); // Selects footprint-aware NPC navigation while preserving the existing planner for creature/player actors.
           const goal = stage.targetWorld;
           if (!st || !goal) { continueTo(getResolvedNext(stage.id, stage.next)); return; }
           const speedMul = stage.speed === 'slow' ? 0.6 : stage.speed === 'fast' ? 1.85 : 1;
           const waitForArrival = stage.waitForArrival !== false;
           const tx = goal.c + 0.5, tz = goal.r + 0.5;
-          const navigation = stage.navigate ? window.TilePathfinding?.findPath(Math.round(st.c), Math.round(st.r), goal.c, goal.r,
-            (c, r) => isNpcTileWalkable(area, c, r), { bounds: window.TilePathfinding.boxAround(Math.round(st.c), Math.round(st.r), goal.c, goal.r, 8) }) : null; // Farm tours use the existing NPC grid authority to walk around furnishings and obstacles.
+          const navigation = stage.navigate
+            ? (entity?.kind === 'npc' && window.NpcPathfinding?.findNpcPath
+              ? window.NpcPathfinding.findNpcPath(area, st.c + 0.5, st.r + 0.5, goal.c, goal.r, { padding: 10, maxNodes: 2200 })
+              : window.TilePathfinding?.findPath(Math.round(st.c), Math.round(st.r), goal.c, goal.r,
+                (c, r) => isNpcTileWalkable(area, c, r), { bounds: window.TilePathfinding.boxAround(Math.round(st.c), Math.round(st.r), goal.c, goal.r, 8) }))
+            : null; // NPC cutscenes use the same swept-edge planner as gameplay; other actor kinds retain the established tile planner.
           let waypoint = 0; // TilePathfinding excludes the start tile, so the first returned col/row hop must be visited.
           let lastT = performance.now();
           let arrivedAlready = false;
