@@ -98,11 +98,46 @@
     return { width, height };
   }
 
-  function cloneJigsawMaterial(mat, wallLike) {
+  const chunkJigsawTextures = new WeakMap(); // Source map -> the two possible sampler variants owned by live chunk materials.
+  let chunkJigsawTextureCount = 0, chunkJigsawTextureRefs = 0; // Scalar allocation diagnostics for crash checkpoints.
+  function retainChunkJigsawTexture(source, wallLike) {
+    let variants = chunkJigsawTextures.get(source); // Keep shared sources weakly owned by the existing terrain material cache.
+    if (!variants) { variants = new Map(); chunkJigsawTextures.set(source, variants); }
+    let entry = variants.get(wallLike); // Wall and floor wrapping intentionally remain distinct.
+    if (!entry) {
+      const texture = source.clone(); // One normalized native-resolution clone for every identical chunk sampler.
+      texture.wrapS = wallLike ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
+      texture.wrapT = THREE.ClampToEdgeWrapping;
+      texture.repeat.set(1, 1); texture.offset.set(0, 0);
+      if (texture.center) texture.center.set(0, 0);
+      texture.rotation = 0; texture.matrixAutoUpdate = true;
+      texture.userData = Object.assign({}, texture.userData, { chunkJigsawShared: true });
+      texture.needsUpdate = true;
+      entry = { texture, refs: 0 };
+      variants.set(wallLike, entry);
+      chunkJigsawTextureCount++;
+    }
+    entry.refs++; chunkJigsawTextureRefs++;
+    return { texture: entry.texture, release() {
+      entry.refs--; chunkJigsawTextureRefs--;
+      if (entry.refs > 0) return;
+      variants.delete(wallLike);
+      if (!variants.size) chunkJigsawTextures.delete(source);
+      entry.texture.dispose();
+      chunkJigsawTextureCount--;
+    } };
+  }
+
+  function cloneJigsawMaterial(mat, wallLike, shareChunkTexture = false) {
     if (!mat) return mat;
     const out = mat.clone();
     out.userData = Object.assign({}, mat.userData, { terrainJigsawMaterial: true });
-    if (mat.map) {
+    if (mat.map && shareChunkTexture) {
+      const lease = retainChunkJigsawTexture(mat.map, wallLike); // This material owns exactly one texture reference until disposal.
+      let released = false; // Three.js may emit dispose more than once during defensive teardown.
+      out.map = lease.texture;
+      out.addEventListener('dispose', () => { if (!released) { released = true; lease.release(); } });
+    } else if (mat.map) {
       const tex = mat.map.clone();
       tex.wrapS = wallLike ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
       tex.wrapT = THREE.ClampToEdgeWrapping;
@@ -365,7 +400,7 @@
     next.computeBoundingBox();next.computeBoundingSphere();
 
     const mats=Array.isArray(mesh.material)?mesh.material.slice():[mesh.material];
-    for(let i=0;i<mats.length;i++)if(materialEligible(mats[i]))mats[i]=cloneJigsawMaterial(mats[i],!!wallByMaterial.get(i));
+    for(let i=0;i<mats.length;i++)if(materialEligible(mats[i]))mats[i]=cloneJigsawMaterial(mats[i],!!wallByMaterial.get(i), options.shareChunkTexture === true);
     const oldGeo=mesh.geometry;mesh.geometry=next;mesh.material=Array.isArray(mesh.material)?mats:mats[0];
     mesh.userData.terrainGeometryRevision=(Number(mesh.userData.terrainGeometryRevision)||0)+1;
     if(options.disposeSource!==false){try{oldGeo.dispose?.();}catch(_){}}
@@ -453,7 +488,7 @@
     return notified;
   }
 
-  const jigsawApi={installed:true,bakeMesh,scanScene:scanJigsawScene,defaults:{edgePx:DEFAULT_EDGE_PX,edgeWorldWidth:DEFAULT_EDGE_WORLD},snapshot(){return{meshesBaked:jigsawMeshesBaked,islandsBaked:jigsawIslandsBaked,trianglesBaked:jigsawTrianglesBaked,edgePx:DEFAULT_EDGE_PX,edgeWorldWidth:DEFAULT_EDGE_WORLD};}};
+  const jigsawApi={installed:true,bakeMesh,scanScene:scanJigsawScene,defaults:{edgePx:DEFAULT_EDGE_PX,edgeWorldWidth:DEFAULT_EDGE_WORLD},snapshot(){return{meshesBaked:jigsawMeshesBaked,islandsBaked:jigsawIslandsBaked,trianglesBaked:jigsawTrianglesBaked,sharedChunkTextures:chunkJigsawTextureCount,sharedChunkTextureRefs:chunkJigsawTextureRefs,edgePx:DEFAULT_EDGE_PX,edgeWorldWidth:DEFAULT_EDGE_WORLD};}};
   const chunkApi={installed:true,scanScene:scanChunkScene,snapshot(){return{sourceMeshesChunked,chunksCreated,sourceTrianglesChunked,chunkTiles:CHUNK_TILES,chunkWorldSize:CHUNK_WORLD,chunkCoordinateUnits:'tiles',rejectedTooFewBuckets,rejectedTooManyBuckets};}};
 
   function wrappedRender(scene,camera){const now=performance.now();scanJigsawScene(scene,now);scanChunkScene(scene,now);notifyTerrainGeometryReady(scene);return originalRender.call(this,scene,camera);}

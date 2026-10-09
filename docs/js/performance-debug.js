@@ -1119,7 +1119,7 @@
     box.appendChild(reportText);
     const stabilityNote = document.createElement('div'); // Explains the latest performance changes beside the existing mobile report control.
     stabilityNote.style.cssText = 'font-size:11px;opacity:.8;padding:4px 0';
-    stabilityNote.textContent = 'Latest memory update: portrait source images and tint canvases now have byte limits as you explore new camps. Full selected resolution is preserved. Reports include portrait cache bytes, terrain residency, and the previous session checkpoint; a checkpoint alone does not prove a crash.';
+    stabilityNote.textContent = 'Latest memory update: streamed terrain meshes share reference-counted UV-bake textures and release them with their final chunk owner. Portrait caches remain byte-bounded. Full selected resolution is preserved. Reports include portrait cache bytes, terrain residency, and the previous session checkpoint; a checkpoint alone does not prove a crash.';
     box.appendChild(stabilityNote);
 
     // perfState.subsystem never resets on its own (each entry is an

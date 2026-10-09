@@ -72,7 +72,7 @@
     ['FarmCliffRockOutline', 'farm-cliff-rock-outline.js?v=20260907b'],
     // Wilderness cliff builders can alter geometry after the generic natural-surface pass; rerun the farm-style material + connected-surface stretch once the full builder stack has finished.
     ['WildernessCliffSurfaceParity', naturalSurfaceScript('wilderness-cliff-surface-parity.js')],
-    ['TerrainRenderChunks', 'terrain-render-chunks.js?v=20260924perf1'],
+    ['TerrainRenderChunks', 'terrain-render-chunks.js?v=20261009hcc454ee'],
     // Terrain Jigsaw still exists for other opaque terrain. This final wrapper remains as a safety net for old/untagged natural surfaces before spatial chunking and drawing.
     ['NaturalSurfaceStretchPostJigsaw', naturalSurfaceScript('natural-surface-stretch-post-jigsaw.js')],
     ['BuildingSubtleElevation', 'building-subtle-elevation.js?v=20260811a'],

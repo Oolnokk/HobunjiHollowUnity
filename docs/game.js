@@ -10734,7 +10734,7 @@
             object.traverse?.(mesh => { if (mesh.isMesh && mesh.userData?.wildernessChunkOwnsGeometry) bakeTargets.push(mesh); });
           }
           for (const mesh of bakeTargets) {
-            const baked = window.TerrainJigsawUV?.bakeMesh?.(mesh);
+            const baked = window.TerrainJigsawUV?.bakeMesh?.(mesh, { shareChunkTexture: true });
             if (baked) mesh.userData.wildernessChunkOwnsMaterial = true;
             yield;
           }
@@ -10793,9 +10793,9 @@
             if (object.userData?.wildernessChunkOwnsMaterial) {
               const materials = Array.isArray(object.material) ? object.material : [object.material];
               for (const material of materials) {
-                material?.map?.dispose?.();
+                if (!material?.map?.userData?.chunkJigsawShared) material?.map?.dispose?.();
                 for (const uniform of Object.values(material?.uniforms || {})) {
-                  if (uniform?.value?.isTexture) uniform.value.dispose?.();
+                  if (uniform?.value?.isTexture && !uniform.value.userData?.chunkJigsawShared) uniform.value.dispose?.();
                 }
                 material?.dispose?.();
               }
@@ -11581,7 +11581,7 @@
       // live in js/npc-scheduling.js (schedule-rule time-window matching);
       // normalizeNpcArea stays here since it's used well beyond scheduling.
       function normalizeNpcArea(area) {
-        if (!area) return 'farm';
+        if (!area || area === 'farm') return 'farm';
         if (area === 'interior') return 'interior';
         if (area === 'town' || area === 'hobunji_main_town' || area === 'map_hobunji_town') return 'town';
         if (_isBuildingArea(area)) return area;

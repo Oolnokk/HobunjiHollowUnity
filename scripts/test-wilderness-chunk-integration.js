@@ -29,7 +29,7 @@ assert.ok(game.includes('applyWildernessChunkTileDeltas(mapId, zGrid)'));
 assert.ok(game.includes('includeTiles: false'));
 assert.ok(game.includes('includeGlobalPath: false'));
 assert.ok(game.includes('mesh.isMesh && mesh.userData?.wildernessChunkOwnsGeometry'));
-assert.ok(game.includes('window.TerrainJigsawUV?.bakeMesh?.(mesh)'));
+assert.match(game, /window\.TerrainJigsawUV\?\.bakeMesh\?\.\(mesh\s*[,)]/);
 assert.ok(game.includes('window.WildernessChunks?.destroyZone(mapId);'));
 assert.ok(game.includes('removeBranchesInBounds(mapId, bounds)'));
 assert.ok(game.includes('vegCullRadiusTiles: 30'));
