@@ -857,6 +857,7 @@
       planeScale,
       syncMirroredPlaneScale,
       dispose() {
+        window.CreatureTextureCache?.releaseOwner(this); // Drops shared generated-texture pins through the canonical animal disposal path.
         frontGeo.dispose();
         backGeo.dispose();
         frontMat.dispose();

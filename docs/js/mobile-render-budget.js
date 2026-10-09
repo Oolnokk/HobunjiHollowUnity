@@ -11,20 +11,17 @@
   let resize = null; // Calls the existing resize owner so outline targets stay in sync.
   let lost = false; // Suspends gameplay while the GPU cannot present a frame.
   let losses = 0; // Counts actual WebGL loss events rather than guessing from low FPS.
-  let auto = mobile; // Manual resolution selections disable adaptation.
-  let scale = 1; // Automatic world resolution relative to CSS pixels, never applied to HUD text.
+  const auto = false; // Resolution is explicitly controlled by the player; lag never lowers it.
+  const scale = 1; // Retained in reports for compatibility with prior checkpoints.
   let lastSample = 0; // Start of the current sustained-FPS window.
   let frames = 0; // Counts rendered gameplay frames in that window.
-  let fastWindows = 0; // Requires sustained headroom before restoring visual detail.
   let lastCheckpoint = 0; // Limits storage writes to once every 15 seconds, outside normal frame sampling.
   let lastFps = 0; // Latest gameplay-only sample exposed to the existing debug snapshot.
   let status = null; // Visible context-loss notice for users without DevTools.
 
   function pixelRatio(width, height, manualScale = 1) {
     const dpr = Math.max(0.1, Math.min(Number(window.devicePixelRatio) || 1, 2)); // Matches the existing manual resolution range.
-    if (!auto) return dpr * Math.max(0.5, Math.min(1, Number(manualScale) || 1));
-    const pixels = Math.max(1, Number(width) || 1) * Math.max(1, Number(height) || 1); // Bounds large tablet buffers as well as high-DPI phones.
-    return Math.min(dpr, 1, Math.sqrt(1000000 / pixels)) * scale;
+    return dpr * Math.max(0.5, Math.min(1, Number(manualScale) || 1));
   }
 
   function checkpoint(reason) {
@@ -35,20 +32,19 @@
       width: renderer.domElement.width, height: renderer.domElement.height,
       textures: renderer.info?.memory?.textures || 0, geometries: renderer.info?.memory?.geometries || 0,
       heapBytes: performance.memory?.usedJSHeapSize || null,
+      heapLimitBytes: performance.memory?.jsHeapSizeLimit || null,
+      animalTextures: window.CreatureTextureCache?.snapshot?.() || null,
     };
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(record)); } catch (_) {}
   }
 
-  function setMode(value) {
-    auto = value === 'auto';
-    scale = 1;
-    resetSample();
+  function setMode() {
+    resetSample(); // Manual resolution changes restart FPS sampling without adaptation.
   }
 
   function resetSample() {
     lastSample = 0;
     frames = 0;
-    fastWindows = 0;
   }
 
   function sample(timestamp, eligible = true) {
@@ -60,14 +56,6 @@
     lastFps = frames * 1000 / Math.max(1, elapsed);
     lastSample = timestamp;
     frames = 0;
-    if (auto) {
-      const oldScale = scale; // Resizes only after a sustained change, never every frame.
-      if (lastFps < 40) { scale = Math.max(0.65, +(scale - 0.1).toFixed(2)); fastWindows = 0; }
-      else if (lastFps > 55) {
-        if (++fastWindows >= 5) { scale = Math.min(1, +(scale + 0.05).toFixed(2)); fastWindows = 0; }
-      } else fastWindows = 0;
-      if (scale !== oldScale) resize?.();
-    }
     if (timestamp - lastCheckpoint >= 15000) { lastCheckpoint = timestamp; checkpoint('playing'); }
   }
 
@@ -92,7 +80,6 @@
     });
     renderer.domElement.addEventListener('webglcontextrestored', () => {
       lost = false;
-      if (auto) scale = 0.65; // Rebuild smaller buffers after real memory/driver pressure.
       resize?.();
       resetSample();
       checkpoint('webglcontextrestored');
@@ -105,6 +92,6 @@
   window.MobileRenderBudget = {
     mobile, attach, pixelRatio, setMode, sample,
     shouldSuspend: () => lost || document.hidden,
-    snapshot: () => ({ mobile, automatic: auto, scale, fps: lastFps, contextLost: lost, contextLosses: losses, previousSession: previous }),
+    snapshot: () => ({ mobile, automatic: auto, scale, fps: lastFps, contextLost: lost, contextLosses: losses, previousSession: previous, animalTextures: window.CreatureTextureCache?.snapshot?.() || null }),
   };
 })();

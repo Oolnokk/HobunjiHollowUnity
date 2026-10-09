@@ -7,6 +7,7 @@ async function main() {
   let composes = 0; // Counts actual asynchronous compositing requests.
   let resolveCanvas; // Keeps concurrent callers pending together.
   const context = { window: { CreatureGeneticsRender: { genotypeSignature: () => 'same', composeFrame: () => { composes++; return new Promise(resolve => { resolveCanvas = resolve; }); } } }, THREE: { CanvasTexture: class { constructor() { uploads++; this.repeat = this.offset = { set() {} }; } } } }; // Texture-only farm fixture.
+  vm.runInNewContext(fs.readFileSync('docs/js/creature-texture-cache.js', 'utf8'), context);
   const source = fs.readFileSync('docs/js/farm-animals.js', 'utf8'); // Actual implementation with independent cache state.
   vm.runInNewContext(source.slice(source.indexOf('  const _farmGenotypeTexCache'), source.indexOf('  function _tickFarmAnimalBlink')) + '\nwindow.apply = _applyGenotypeCompositeTexture;', context);
   function avatar() { return { group: { children: ['_front_plane', '_back_plane'].map(name => ({ name, material: { map: {}, needsUpdate: false } })) } }; }
@@ -21,6 +22,13 @@ async function main() {
   assert.equal(first.group.children[0].material.needsUpdate, false, 'frame changes must not rebuild shader programs');
   await context.window.apply(first, 'wolf', 'idle', {}, false);
   assert.equal(uploads, 2, 'cache hit uploads nothing');
+  const removed = avatar();
+  const originalMap = removed.group.children[0].material.map;
+  const late = context.window.apply(removed, 'wolf', 'run1', {}, false);
+  context.window.CreatureTextureCache.releaseOwner(removed);
+  resolveCanvas({ width: 64, height: 64 });
+  assert.equal(await late, false, 'late loads cannot rebind a disposed avatar');
+  assert.equal(removed.group.children[0].material.map, originalMap);
 
   const recolor = fs.readFileSync('docs/js/creature-genetics-render.js', 'utf8'); // Tests the CPU cache independently of canvas rendering.
   const cacheContext = {}; // Exposes only the actual cache helpers.

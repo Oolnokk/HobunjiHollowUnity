@@ -98,6 +98,8 @@ assert.equal(controller.focus.c,900,'mini-map cleanup returns streaming to gamep
 async function verifyAssetReadiness() {
   const calls = [], texture = {isTexture:true,image:{complete:true,decode:async()=>calls.push('decode')}}; // A decoded scene texture must reach the GPU before readiness completes.
   const context={window:{CreatureGenetics:{SPECIES_ALIAS:{}},CreatureGeneticsRender:{SPECIES:{wolf:{}},genotypeSignature:()=> 'g',composeFrame:async(kind,frame,g,blink)=>({width:4,height:4,frame,blink})}},THREE:{CanvasTexture:class {constructor(canvas){this.image=canvas;this.repeat={set(){}};this.offset={set(){}};}},SRGBColorSpace:'srgb',RepeatWrapping:1},_genotypeTexCache:{front:new Map(),back:new Map()},_genotypeTexPending:new Map(),_genotypeUnsupportedKinds:new Set(),_genotypeTexFailedAt:new Map(),_genotypeTexLogged:new Set(),performance:{now:()=>0},renderer:{initTexture:tex=>{assert.equal(tex,texture);calls.push('upload');},compileAsync:async()=>calls.push('compile')},camera:{},updateCameraPosition(){},updateCreatureAnimFrame:()=>calls.push('idle'),setTimeout};
+  vm.runInNewContext(read('docs/js/creature-texture-cache.js'), context);
+  context._genotypeTextureResidency = context.window.CreatureTextureCache.create('test', context._genotypeTexCache);
   const start=game.indexOf('      function _getGenotypeTextures('),end=game.indexOf('      // Returns true when a real composited texture',start);
   const readyStart=game.indexOf('      async function prepareCutsceneAssets('),readyEnd=game.indexOf('      async function runCutscenePreview(',readyStart);
   vm.runInNewContext(game.slice(start,end)+game.slice(readyStart,readyEnd)+'\nprepare=prepareCutsceneAssets;',context);
@@ -107,6 +109,7 @@ async function verifyAssetReadiness() {
   assert.equal(context._genotypeTexPending.size,0,'normal compositing promises are drained without a second asset cache');
   assert.deepEqual(calls,['idle','decode','upload','compile']);
   context.window.CreatureGeneticsRender.composeFrame=async()=>null;context._genotypeTexCache.front.clear();context._genotypeTexCache.back.clear();
+  context._genotypeTextureResidency = context.window.CreatureTextureCache.create('failure-test', context._genotypeTexCache);
   await assert.rejects(context.prepare(entities,{traverse(){}}),/Introduction animal texture failed/,'failed required character assets stop reveal');
 }
 

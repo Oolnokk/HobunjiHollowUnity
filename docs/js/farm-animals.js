@@ -155,6 +155,7 @@
   // sessions) and how long the farm stays loaded, which is exactly what
   // was crashing long-lived saves on mobile from GPU-memory exhaustion.
   const _farmGenotypeTexCache = new Map();
+  const _farmTextureResidency = window.CreatureTextureCache.create('farm', null, _farmGenotypeTexCache); // Shares the lifecycle/idle-memory policy used by wild animals.
   const _farmGenotypeTexPending = new Map(); // Shares one compose/upload among animals requesting the same signature concurrently.
   window.HobunjiCacheAudit?.register('FarmAnimals.genotypeTexCache', () => _farmGenotypeTexCache.size);
 
@@ -173,6 +174,9 @@
     const sig = window.CreatureGeneticsRender.genotypeSignature(kind, genotype);
     const key = `${kind}|${frame}|${sig}|${blinkShut ? 'b' : 'o'}`;
     const applyCached = (tex) => {
+      if (window.CreatureTextureCache.isDisposed(avatarRef)) return false; // A late compose must not attach textures to a despawned animal.
+      tex = _farmTextureResidency.get(key) || _farmTextureResidency.put(key, tex); // A completed request may have waited through an idle-cache eviction.
+      _farmTextureResidency.retain(avatarRef, key);
       for (const child of avatarRef.group.children) {
         if (!child.material) continue;
         const hadMap = !!child.material.map; // Preserve initial shader setup while avoiding recompilation on blink swaps.
@@ -182,7 +186,7 @@
       }
       return true;
     };
-    const cached = _farmGenotypeTexCache.get(key);
+    const cached = _farmTextureResidency.get(key);
     if (cached) return Promise.resolve(applyCached(cached));
     if (_farmGenotypeTexPending.has(key)) return _farmGenotypeTexPending.get(key).then(tex => tex ? applyCached(tex) : false);
     const pending = window.CreatureGeneticsRender.composeFrame(kind, frame, genotype, blinkShut).then(canvas => { // One GPU texture pair per key even when multiple animals blink together.
@@ -191,8 +195,7 @@
       const backTex = new THREE.CanvasTexture(canvas); backTex.colorSpace = THREE.SRGBColorSpace;
       backTex.wrapS = THREE.RepeatWrapping; backTex.repeat.set(-1, 1); backTex.offset.set(1, 0);
       const tex = { front: frontTex, back: backTex };
-      _farmGenotypeTexCache.set(key, tex);
-      return tex;
+      return _farmTextureResidency.put(key, tex);
     }).catch(() => null).finally(() => _farmGenotypeTexPending.delete(key));
     _farmGenotypeTexPending.set(key, pending);
     return pending.then(tex => tex ? applyCached(tex) : false);

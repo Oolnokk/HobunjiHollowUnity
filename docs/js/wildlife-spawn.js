@@ -648,7 +648,8 @@
     for (const creature of [...deps.hostileObjects]) {
       if (!creature || creature.isDenMother || creature.areaId !== cavernMapId) continue;
       deps.hostileObjects.delete(creature);
-      creature.avatarRef?.group?.parent?.remove?.(creature.avatarRef.group);
+      if (deps.despawnCreature) deps.despawnCreature(creature);
+      else { creature.avatarRef?.group?.parent?.remove?.(creature.avatarRef.group); creature.avatarRef?.dispose?.(); }
       removed++;
     }
     if (removed) window.__farmLog?.(`[den-turnover] purged ${removed} stale cavern resident(s) for ${denKey} before discarding the cleared interior.`, 'wildlife');
@@ -798,7 +799,8 @@
       const baseDef = deps.CREATURE_DB?.[survivor.creatureKey]; // Canonical species definition used to repair incomplete per-instance overlays before displacement.
       if (!survivor.creatureKey || !baseDef) {
         deps.hostileObjects.delete(survivor);
-        survivor.avatarRef?.group?.parent?.remove?.(survivor.avatarRef.group);
+        if (deps.despawnCreature) deps.despawnCreature(survivor);
+        else { survivor.avatarRef?.group?.parent?.remove?.(survivor.avatarRef.group); survivor.avatarRef?.dispose?.(); }
         discardedInvalid++;
         continue;
       }
