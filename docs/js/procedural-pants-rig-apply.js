@@ -394,5 +394,6 @@
     }),
   });
 
+  window.addEventListener('hobunji-pants-rig-panel-ready', () => { installButton(); }); // Panel may be built long after this script loads, so the bounded poll below is only a fast path.
   waitForPanel();
 })();
