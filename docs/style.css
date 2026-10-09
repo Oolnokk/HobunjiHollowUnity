@@ -957,14 +957,8 @@
        — the angles below only apply if that override is ever missing, so
        treat them as a documented fallback, not the live layout (see that
        file's own comment for why, and why #btnUtilityMenu needed an entry
-       added there too). Melee auto-target keeps its own original, unrelated
-       12:45 position past 12:00, untouched by any of this and NOT covered
-       by the override — cos() goes negative that far past 12:00, pushing
-       the button out past the container's right edge rather than in from
-       it, which is only tolerable there because it's conditional (hidden
-       outside melee combat); an always-visible button that far out would
-       be genuinely invisible, which is exactly the bug this whole comment
-       exists to flag if anyone's tempted to move something else out there. */
+       added there too). Mobile autotarget now has its own third arch,
+       with its clockwise endpoint kept safely inside the screen. */
     #toolSelect {
       --ar2: calc(10 * var(--col));
       position: absolute; right: 0; bottom: 0;
@@ -1181,11 +1175,20 @@
       bottom: calc(   sin(90deg)*var(--ar));
       width: clamp(44px, var(--col), 60px); height: clamp(44px, var(--col), 60px);
     }
-    #btnSwapTarget {                                                  /* 12:45  67.5° */
-      right:  calc(-1*cos(67.5deg)*var(--ar));
-      bottom: calc(   sin(67.5deg)*var(--ar));
-      width: clamp(44px, var(--col), 60px); height: clamp(44px, var(--col), 60px);
+    #targetArch {
+      --ar3: min(max(calc(12 * var(--col)), calc(10 * var(--col) + 56px)), calc(100dvh - 68px));
+      position: absolute; right: 0; bottom: 0;
+      width: 0; height: 0; overflow: visible; z-index: 3; touch-action: none;
     }
+    #btnSwapTarget { /* Clockwise end of the third arch, safely inside the screen. */
+      right: max(30px, calc(-1*cos(115deg)*var(--ar3)));
+      bottom: calc(sin(115deg)*var(--ar3));
+      width: clamp(44px, var(--col), 60px); height: clamp(44px, var(--col), 60px);
+      touch-action: none;
+    }
+    #btnSwapTarget:not(.active) { opacity: 0.55; }
+    #btnSwapTarget.active { box-shadow: 0 0 10px rgba(125,200,255,0.6); }
+    @media (pointer: fine) { #targetArch { display: none; } }
     .abt-item { border-color:rgba(255,211,125,0.46)!important; background:rgba(255,211,125,0.09)!important; }
     .abt-swap { border-color:rgba(125,200,255,0.46)!important; background:rgba(125,200,255,0.09)!important; }
     .abt-swap .abt-icon svg { display: block; }

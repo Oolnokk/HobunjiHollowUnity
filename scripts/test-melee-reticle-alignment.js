@@ -8,7 +8,7 @@ const game = fs.readFileSync('docs/game.js', 'utf8');
 assert.match(core, /function playerReticleAlignmentSolution\(/, 'player alignment has a screen-reticle solution');
 assert.match(core, /reticleOverTarget \? 0 : screenCorrectionRad/, 'reticle overlap produces exactly zero corrective turn');
 assert.match(game, /bestAimError/, 'melee target selection prioritizes reticle error before distance');
-assert.match(game, /attackAlignmentStep\?\.\(player, c, 0, \{ facing: aimAngle \}\)/, 'candidate ranking uses the same alignment math as the actual turn');
+assert.match(game, /attackAlignmentStep\?\.\(player, c, 0, \{ facing: aimAngle, halfConeRad: Math\.PI \/ 2 \}\)/, 'candidate ranking uses the same alignment math as the actual turn');
 
 const THREE = { MathUtils: {
   degToRad: d => d * Math.PI / 180,

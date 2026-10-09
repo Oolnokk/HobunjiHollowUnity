@@ -108,10 +108,8 @@
    style.css's own un-overridden 90-degree position it sits close enough to
    the container's corner (see that file's #btnUtilityMenu comment on why
    cos() near 90deg leaves almost nothing for the button to be inset by)
-   that it went visibly off-screen on a real phone. Melee auto-target is
-   the one control that was never part of this cadence, on either side of
-   the put-away removal — it keeps its own original wider-spaced position
-   in style.css, past 12:00, unrelated to any of this. */
+   that it went visibly off-screen on a real phone. Autotarget occupies
+   a separate third arch defined in style.css. */
 #btnWeaponSwitch {
   right: calc(-1*cos(165deg)*var(--ar2));
   bottom: calc(sin(165deg)*var(--ar2));

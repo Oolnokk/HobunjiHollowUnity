@@ -147,8 +147,8 @@
   <script src="js/metal-armor-system.js?v=20261008h99621ca"></script>
   <script src="config/colors/config.js?v=20260930h1b2e2e2"></script>
   <script src="config/attachment-rig-profiles.js?v=20261002h6d814a9"></script>
-  <link rel="stylesheet" href="style.css?v=20260927commandauras1-dialogue20">
-  <link rel="stylesheet" href="cooking-ui.css?v=20260811a">
+  <link rel="stylesheet" href="style.css?v=20261009mobiletarget1">
+  <link rel="stylesheet" href="cooking-ui.css?v=20261009mobiletarget1">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
   <!-- Shared gameplay presentation: mirrors the outlined text + light translucent containers used by character/save select. -->
   <link rel="stylesheet" href="gameplay-ui-theme.css?v=20260923outlineart1">
@@ -283,7 +283,7 @@
   <script src="js/combat/combat-attack-events.js?v=20261001quickbonus1"></script>
   <!-- Shared companion offensive-stat aggregation (Engraved Whistle × Sicced). -->
   <script src="js/combat/companion-offense.js?v=20260930ench1"></script>
-  <script src="js/combat/combat-input.js?v=20261004h0097162"></script>
+  <script src="js/combat/combat-input.js?v=20261009h78254e1"></script>
   <script src="js/combat/combat-combo.js?v=20261005heb94de5"></script>
   <script src="js/combat/combat-quickattacks.js?v=20261001quickdebuff2"></script>
   <script src="js/combat/combat-counter-shield.js?v=20261005h66f4dee"></script>
@@ -2328,9 +2328,7 @@
         <span class="abt-icon">🐴</span>
       </button>
       <!-- Utility menu: final SAFE control on the outer ring, taking the
-           12:00 slot Call Mount used to occupy (see the #btnUtilityMenu CSS
-           comment for why it isn't past 12:00 the way melee auto-target
-           below is — an always-visible button out there would go off-screen).
+           12:00 slot Call Mount used to occupy; live CSS keeps it inside the screen.
            Hold to open the utilities wheel (Character View, Return to Camp,
            quick-select a Campfire Kit, Return to Farm — see game.js's
            _openUtilitiesArc)
@@ -2347,10 +2345,10 @@
       <button class="abt" id="btnAction3" aria-label="Action 3"></button>
       <button class="abt abt-item" id="btnItemAction1" aria-label="Use item"></button>
       <button class="abt abt-item" id="btnItemAction2" aria-label="Use item 2"></button>
-      <!-- Swap Target: weapon-only. Acts as its own mini-stick — push it toward
-           a hostile to lock auto-targeting onto it. Icon is the universal
-           4-arrow "move/translate" cross used in art-program gizmos. -->
-      <button class="abt abt-swap abt-hidden" id="btnSwapTarget" aria-label="Swap target">
+    </div>
+    <!-- Third control arch: one mobile target control at its clockwise end. -->
+    <div id="targetArch">
+      <button class="abt abt-swap abt-hidden" id="btnSwapTarget" aria-label="Auto-target: tap to toggle, hold and drag to select target" aria-pressed="true">
         <span class="abt-icon">
           <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <polyline points="5 9 2 12 5 15"></polyline>
@@ -2361,7 +2359,7 @@
             <line x1="12" y1="2" x2="12" y2="22"></line>
           </svg>
         </span>
-        <span class="abt-label">Swap Target</span>
+        <span class="abt-label">Auto-target</span>
       </button>
     </div>
   </div>
@@ -2610,7 +2608,7 @@
   <script src="js/romance-wedding.js?v=20261007wedding1"></script>
   <script src="js/romance-system.js?v=20261007romance1"></script>
   <script src="js/npc-command-wheel.js?v=20261008h02bf686"></script>
-  <script src="game.js?v=20261009h1dce0d5"></script>
+  <script src="game.js?v=20261009h83e67ed"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261005h9a94218"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

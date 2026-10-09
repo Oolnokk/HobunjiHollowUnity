@@ -5167,8 +5167,8 @@
         return { hits, message: hits > 1 ? `${verb} ${hits} creatures!` : `${verb} the ${lastName}!` };
       }
 
-      // Ranged weapons retain a player-selected lock; melee targeting exists
-      // only for the few frames between an attack request and its windup.
+      // Mobile weapons share a stable selected target; melee alignment still
+      // owns a separate transient lock until its attack windup begins.
       let manualAutoTarget = null;
       let meleeAttackAlignment = null; // Active transient player alignment consumed by updateMeleeAttackAlignment().
       let meleeAttackTargetLock = null; // Selected once per transient activation and reused by every melee-target consumer until release.
@@ -5178,6 +5178,51 @@
       let gameFrameSerial = 0; // Identifies the current animation frame for shared target and profiler work.
       let autoTargetCacheFrame = -1; // Prevents repeated target searches within the same frame.
       let autoTargetCacheValue = null; // Stores the single target-selection result for autoTargetCacheFrame.
+
+      const autoTargetSightRay = new THREE.Raycaster(); // Reused for mobile target obstruction checks without per-frame vector allocation.
+      const autoTargetSightOrigin = new THREE.Vector3(); // Shared ray origin at the player's combat hitbox center.
+      const autoTargetSightDirection = new THREE.Vector3(); // Shared direction toward each candidate's combat center.
+      const autoTargetSightHits = []; // Reused intersection output for the current area's existing obstacle collection.
+      let autoTargetSightFrame = -1; // Keeps obstacle collection to one lookup per frame.
+      let autoTargetSightObstacles = []; // Cached active-area geometry for all candidate checks in the same frame.
+
+      function mobileAutoTargetEnabled() {
+        return !isDesktop && !!window.Combat?.input?.isAutoTargetEnabled?.();
+      }
+
+      function autoTargetRange() {
+        return activeTool === 'ranged'
+          ? window.RangedWeapons?.playerLockRangePx?.(equipmentSlots.ranged) || TILE * 7
+          : TILE * Math.max(0, Number(combatConfig().autoTargetRangeTiles) || 4);
+      }
+
+      function autoTargetCandidateValid(target, maxDist = autoTargetRange()) {
+        return !!target && target.health > 0 && target.areaId === currentArea
+          && !target._denHidden && !target._grehlrBurrowProtected && !target.isCompanion
+          && Number.isFinite(target.x) && Number.isFinite(target.y)
+          && Math.hypot(target.x - player.x, target.y - player.y) <= maxDist;
+      }
+
+      function autoTargetVisible(target) {
+        if (autoTargetSightFrame !== gameFrameSerial) {
+          autoTargetSightObstacles = currentAreaOcclusionMeshes();
+          if (currentArea === 'interior' && activeCameraMode !== 'seated' && interiorWallGroup) autoTargetSightObstacles.push(interiorWallGroup);
+          autoTargetSightFrame = gameFrameSerial;
+        }
+        if (!autoTargetSightObstacles.length) return true;
+        const origin = window.RangedWeapons?.actorHitbox?.(player)?.center; // Existing collider supplies species-correct targeting height.
+        const center = window.RangedWeapons?.actorHitbox?.(target)?.center; // Existing target collider avoids aiming through the floor at short creatures.
+        autoTargetSightOrigin.set(player.x / TILE, origin?.y ?? activeSurfaceYAtWorld(player.x / TILE, player.y / TILE) + 0.55, player.y / TILE);
+        autoTargetSightDirection.set(target.x / TILE, center?.y ?? activeSurfaceYAtWorld(target.x / TILE, target.y / TILE) + 0.4, target.y / TILE).sub(autoTargetSightOrigin);
+        const distance = autoTargetSightDirection.length(); // Limits occlusion to geometry between the player and target.
+        if (distance < 0.05) return true;
+        autoTargetSightRay.set(autoTargetSightOrigin, autoTargetSightDirection.normalize());
+        autoTargetSightRay.near = 0.03;
+        autoTargetSightRay.far = Math.max(0.03, distance - 0.05);
+        autoTargetSightHits.length = 0;
+        autoTargetSightRay.intersectObjects(autoTargetSightObstacles, true, autoTargetSightHits);
+        return !autoTargetSightHits.some(hit => hit.object?.visible !== false);
+      }
 
       function meleeWeaponOut() {
         return heldMode === 'tool' && activeTool === 'weapon' && !!equipmentSlots.weapon;
@@ -5205,22 +5250,25 @@
       }
 
       function meleeAttackTargetCandidate() {
-        if (!meleeWeaponOut()) return null;
+        if (!mobileAutoTargetEnabled() || !meleeWeaponOut() || Number.isFinite(mobileArchCombatAim?.angle)) return null;
         if (meleeAttackTargetLock) return meleeAttackTargetLock; // Never rescan surrounding enemies while this activation owns a target.
+        if (autoTargetCandidateValid(manualAutoTarget) && autoTargetVisible(manualAutoTarget)) return manualAutoTarget;
+        manualAutoTarget = null;
         const aimAngle = currentMeleeAimAngle(); // Live camera/stick/body bearing used by the shared ±45° cone.
         const maxDist = TILE * (Number(combatConfig().autoTargetRangeTiles) || 0); // Existing melee assist range remains authoritative.
         let best = null, bestDist = maxDist, bestAimError = Infinity;
         for (const c of hostileObjects) {
-          if (c.health <= 0 || c.areaId !== currentArea || c._denHidden) continue;
+          if (!autoTargetCandidateValid(c, maxDist)) continue;
           const dx = c.x - player.x, dy = c.y - player.y;
           const dist = Math.hypot(dx, dy);
           if (dist > maxDist) continue;
-          const alignment = window.Combat?.attackAlignmentStep?.(player, c, 0, { facing: aimAngle });
+          const alignment = window.Combat?.attackAlignmentStep?.(player, c, 0, { facing: aimAngle, halfConeRad: Math.PI / 2 });
           if (!alignment?.eligible) continue;
           const aimError = Math.abs(Number(alignment.deltaRad) || 0);
           const clearlyBetterAim = aimError < bestAimError - 1e-4;
           const sameAim = Math.abs(aimError - bestAimError) <= 1e-4;
           if (!clearlyBetterAim && !(sameAim && dist < bestDist)) continue;
+          if (!autoTargetVisible(c)) continue;
           best = c;
           bestDist = dist;
           bestAimError = aimError;
@@ -5250,28 +5298,27 @@
       }
 
       function computeAutoTarget() {
-        const rangedActive = heldMode === 'tool' && activeTool === 'ranged' && !!equipmentSlots.ranged;
+        const rangedActive = heldMode === 'tool' && activeTool === 'ranged' && !!equipmentSlots.ranged; // Only equipped mobile combat tools acquire targets.
+        if (!mobileAutoTargetEnabled() || (!meleeWeaponOut() && !rangedActive)) {
+          manualAutoTarget = null;
+          return null;
+        }
         if (meleeWeaponOut()) {
-          const target = meleeAttackTargetLock;
-          if (target?.health > 0 && target.areaId === currentArea && !target._denHidden) return target;
-          return null;
+          if (autoTargetCandidateValid(meleeAttackTargetLock)) return meleeAttackTargetLock;
+          const target = meleeAttackTargetCandidate(); // Keeps a chosen enemy stable between mobile melee attacks.
+          manualAutoTarget = target;
+          return target;
         }
-        if (!rangedActive) {
-          manualAutoTarget = null;
-          return null;
-        }
-        const maxDist = window.RangedWeapons?.playerLockRangePx?.(equipmentSlots.ranged) || TILE * 7;
-        if (manualAutoTarget) {
-          if (manualAutoTarget.health > 0 && manualAutoTarget.areaId === currentArea &&
-              Math.hypot(manualAutoTarget.x - player.x, manualAutoTarget.y - player.y) <= maxDist) return manualAutoTarget;
-          manualAutoTarget = null;
-        }
+        const maxDist = autoTargetRange(); // Ranged weapon configuration remains the range authority.
+        if (autoTargetCandidateValid(manualAutoTarget, maxDist) && autoTargetVisible(manualAutoTarget)) return manualAutoTarget;
+        manualAutoTarget = null;
         let best = null, bestDist = maxDist;
         for (const c of hostileObjects) {
-          if (c.health <= 0 || c.areaId !== currentArea || c._denHidden) continue;
-          const dist = Math.hypot(c.x - player.x, c.y - player.y);
-          if (dist <= bestDist) { best = c; bestDist = dist; }
+          if (!autoTargetCandidateValid(c, maxDist)) continue;
+          const dist = Math.hypot(c.x - player.x, c.y - player.y); // Select nearest valid enemy without replacing a still-valid lock.
+          if (dist <= bestDist && autoTargetVisible(c)) { best = c; bestDist = dist; }
         }
+        manualAutoTarget = best;
         return best;
       }
 
@@ -5346,20 +5393,24 @@
         return false;
       }
 
-      const SWAP_TARGET_HALF_CONE_RAD = Math.PI / 2;
+      function targetStickWorldAngle(dx, dy) {
+        const azimuth = activeCameraAzimuthRad(); // Rotates screen-stick directions into the same world axes used by the current camera.
+        return Math.atan2(-dx * Math.sin(azimuth) + dy * Math.cos(azimuth), dx * Math.cos(azimuth) + dy * Math.sin(azimuth));
+      }
+
       function swapAutoTarget(aimAngle) {
-        const rangedActive = heldMode === 'tool' && activeTool === 'ranged' && !!equipmentSlots.ranged;
-        if (!rangedActive) return false;
-        const current = findAutoTarget();
-        const maxDist = window.RangedWeapons?.playerLockRangePx?.(equipmentSlots.ranged) || TILE * 7;
-        let best = null, bestDist = Infinity;
+        const rangedActive = heldMode === 'tool' && activeTool === 'ranged' && !!equipmentSlots.ranged; // Shared mobile selector supports either combat weapon.
+        if (!mobileAutoTargetEnabled() || (!rangedActive && !meleeWeaponOut()) || !Number.isFinite(aimAngle)) return false;
+        const maxDist = autoTargetRange(); // Shares acquisition's authored weapon range.
+        let best = null, bestScore = Infinity; // Angular priority picks the indicated enemy rather than a closer one off to the side.
         for (const c of hostileObjects) {
-          if (c.health <= 0 || c.areaId !== currentArea || c === current || c._denHidden) continue;
-          const dx = c.x - player.x, dy = c.y - player.y;
-          const dist = Math.hypot(dx, dy);
-          if (dist > maxDist || dist < 0.001 || dist >= bestDist) continue;
-          if (Math.abs(angleDiff(Math.atan2(dy, dx), aimAngle)) > SWAP_TARGET_HALF_CONE_RAD) continue;
-          bestDist = dist;
+          if (!autoTargetCandidateValid(c, maxDist)) continue;
+          const dx = c.x - player.x, dy = c.y - player.y; // Candidate bearing is compared with the target stick's current direction.
+          const dist = Math.hypot(dx, dy); // Small distance tie-break keeps directional selection deterministic.
+          const error = Math.abs(angleDiff(Math.atan2(dy, dx), aimAngle)); // Directional selection includes the current target to prevent repeated drag oscillation.
+          const score = error + dist / Math.max(1, maxDist) * 0.05; // Angle dominates distance while nearby equal-bearing targets win.
+          if (error > Math.PI / 2 || score >= bestScore || !autoTargetVisible(c)) continue;
+          bestScore = score;
           best = c;
         }
         if (!best) return false;
@@ -5386,7 +5437,7 @@
           return null;
         }
         const startFacing = currentMeleeAimAngle(); // Stable beginning of the eased camera/body rotation.
-        const initialStep = window.Combat?.attackAlignmentStep?.(player, target, 0, { facing: startFacing }); // Detects an already-aligned target without adding input latency.
+        const initialStep = window.Combat?.attackAlignmentStep?.(player, target, 0, { facing: startFacing, halfConeRad: Math.PI }); // Detects an already-aligned target without adding input latency.
         if (initialStep?.aligned) {
           commitMeleeAttackFacing(initialStep.desiredFacing);
           try {
@@ -5420,8 +5471,8 @@
         if (!alignment) return;
         const target = alignment.target;
         const turnMultiplier = window.Combat?.postAttackTurnMultiplier?.(player) ?? 1; // Slows visible turn after an attack while continuing to consume input.
-        const step = meleeWeaponOut() && target?.areaId === currentArea
-          ? window.Combat?.attackAlignmentStep?.(player, target, 0, { facing: alignment.appliedFacing })
+        const step = mobileAutoTargetEnabled() && meleeWeaponOut() && autoTargetCandidateValid(target) && autoTargetVisible(target)
+          ? window.Combat?.attackAlignmentStep?.(player, target, 0, { facing: alignment.appliedFacing, halfConeRad: Math.PI })
           : null;
         if (!step?.eligible) {
           commitMeleeAttackFacing(alignment.appliedFacing);
@@ -17628,9 +17679,8 @@
         }
 
         // ── Facing ────────────────────────────────────────────
-        // Persistent target swapping is ranged-only; melee alignment is automatic and transient.
-        const rangedTargetingEngaged = heldMode === 'tool' && activeTool === 'ranged' && !!equipmentSlots.ranged;
-        btnSwapTarget?.classList.toggle('abt-hidden', !rangedTargetingEngaged);
+        // The mobile target toggle remains available even with weapons put away.
+        syncMobileAutoTargetButton();
         btnWeaponSwitch?.classList.toggle('active', heldMode === 'tool' && (activeTool === 'weapon' || activeTool === 'ranged'));
         // Melee aim assist is intentionally invisible and exists only immediately before windup.
         if (characterViewMode.enabled) {
@@ -19176,6 +19226,16 @@
       // Other camera modes retain their existing ranged-weapon-only behavior.
       function currentPlayerAimRay() {
         const mobileAimAngle = mobileArchCombatAim?.angle; // Overrides horizontal camera authority only while a combat action-arch drag owns aim.
+        if (!Number.isFinite(mobileAimAngle) && heldMode === 'tool' && activeTool === 'ranged' && equipmentSlots.ranged && mobileAutoTargetEnabled()) {
+          const target = findAutoTarget(); // Routes the shared mobile selection into actual projectile aim, including shoulder view.
+          if (target) {
+            const originY = window.RangedWeapons?.actorHitbox?.(player)?.center?.y ?? activeSurfaceYAtWorld(player.x / TILE, player.y / TILE) + 0.55; // Species-aware origin for the auto-aim ray.
+            const targetY = window.RangedWeapons?.actorHitbox?.(target)?.center?.y ?? activeSurfaceYAtWorld(target.x / TILE, target.y / TILE) + 0.4; // Targets the enemy's body instead of the hidden ground beneath it.
+            const dx = (target.x - player.x) / TILE, dy = targetY - originY, dz = (target.y - player.y) / TILE; // Direct target vector consumed by existing ranged aim convergence.
+            const distance = Math.hypot(dx, dy, dz); // Normalizes the ray and guards overlapping actors.
+            if (distance > 1e-8) return { origin: { x: player.x / TILE, y: originY, z: player.y / TILE }, direction: { x: dx / distance, y: dy / distance, z: dz / distance } };
+          }
+        }
         if (!Number.isFinite(mobileAimAngle) && activeCameraMode !== SHOULDER_SURF_MODE
           && (heldMode !== 'tool' || activeTool !== 'ranged' || !equipmentSlots.ranged)) return null;
         camera.updateMatrixWorld?.();
@@ -25861,6 +25921,7 @@
           `Calendar: ${window.CalendarSystem.formatCalendarDate()} (raw day ${calendar.day}), ${window.FormatUtils.formatClock(window.CalendarSystem.getHour())}, ${calendar.weather}`,
           `Tool/action: ${window.FormatUtils.toolName(activeTool)} / ${window.FormatUtils.actionName(activeAction)}`,
           `Mobile combat arch aim: ${JSON.stringify(window.__mobileArchCombatAimDebug?.snapshot?.() || { active: false })}`,
+          `Mobile autotarget: ${JSON.stringify(window.__hobunjiFurnitureDebug?.meleeAttackAlignmentSnapshot?.() || { ready: false })}`,
           `Player: x${player.x.toFixed(0)} y${player.y.toFixed(0)}`,
           `Player movement/status: ${JSON.stringify(playerMovementDebugSnapshot())}`,
           `Memory/resources: ${JSON.stringify(window.HobunjiCacheAudit?.snapshot?.() || null)}`,
@@ -26027,61 +26088,75 @@
         window.Mounts?.toggleMount();
       });
 
-      // Swap Target button remains ranged-only; melee selects automatically at attack time.
-      // Swap Target button: its own dedicated drag-direction stick (separate
-      // from applyAbt()'s tool/item-action wiring, which had its drag-repeat
-      // behavior disabled). Pushing it toward a hostile swaps auto-targeting
-      // onto it — fires once per drag, no repeat needed since it's a single
-      // selection, not a continuous action.
-      if (btnSwapTarget) {
-        let _stPtId = null, _stCx = 0, _stCy = 0, _stSockR = 0, _stDrag = false, _stSocket = null;
-        const ST_DRAG_THRESH = 10;
-        btnSwapTarget.addEventListener('pointerdown', ev => {
-          if (btnSwapTarget.classList.contains('abt-hidden')) return;
-          ev.preventDefault();
-          // See handleJoystickPointerDown's comment — guarded here too so a
-          // capture failure just loses this one touch instead of throwing.
-          try { btnSwapTarget.setPointerCapture?.(ev.pointerId); } catch (err) { /* degrade gracefully */ }
-          _stPtId = ev.pointerId;
-          const rect = btnSwapTarget.getBoundingClientRect();
-          _stCx = rect.left + rect.width / 2;
-          _stCy = rect.top + rect.height / 2;
-          _stSockR = rect.width * 0.55;
-          _stDrag = false;
-          _stSocket = document.createElement('div');
-          _stSocket.className = 'abt-socket';
-          _stSocket.style.left = _stCx + 'px';
-          _stSocket.style.top = _stCy + 'px';
-          _stSocket.style.width = _stSocket.style.height = (rect.width * 2.2) + 'px';
-          document.body.appendChild(_stSocket);
-          btnSwapTarget.style.transition = 'none';
-        });
-        btnSwapTarget.addEventListener('pointermove', ev => {
-          if (ev.pointerId !== _stPtId) return;
-          const dx = ev.clientX - _stCx, dy = ev.clientY - _stCy;
-          const dist = Math.hypot(dx, dy);
-          const r = Math.min(dist, _stSockR);
-          const nx = dist > 0.5 ? dx / dist * r : 0;
-          const ny = dist > 0.5 ? dy / dist * r : 0;
-          btnSwapTarget.style.transform = `translate(calc(50% + ${nx}px), calc(50% + ${ny}px))`;
-          if (!_stDrag && dist > ST_DRAG_THRESH) {
-            _stDrag = true;
-            swapAutoTarget(Math.atan2(dy, dx));
-          }
-        });
-        function _stUp(ev) {
-          if (ev.pointerId !== _stPtId) return;
-          _stPtId = null;
-          if (_stSocket) { _stSocket.remove(); _stSocket = null; }
-          btnSwapTarget.style.transition = 'transform 0.14s ease-out';
-          btnSwapTarget.style.transform = 'translate(50%, 50%)';
-          setTimeout(() => { btnSwapTarget.style.transition = ''; btnSwapTarget.style.transform = ''; }, 150);
-          if (!_stDrag) swapAutoTarget(player.angle);
-          _stDrag = false;
-        }
-        btnSwapTarget.addEventListener('pointerup', _stUp);
-        btnSwapTarget.addEventListener('pointercancel', _stUp);
+      function syncMobileAutoTargetButton() {
+        if (!btnSwapTarget) return;
+        const enabled = mobileAutoTargetEnabled(); // Read once to keep the arch's toggle presentation consistent.
+        if (btnSwapTarget.classList.contains('abt-hidden') !== isDesktop) btnSwapTarget.classList.toggle('abt-hidden', isDesktop);
+        if (btnSwapTarget.classList.contains('active') !== enabled) btnSwapTarget.classList.toggle('active', enabled);
+        const pressed = String(enabled); // Avoids rewriting accessibility state every movement frame.
+        if (btnSwapTarget.getAttribute('aria-pressed') !== pressed) btnSwapTarget.setAttribute('aria-pressed', pressed);
       }
+
+      window.addEventListener('hobunji-auto-target-change', () => {
+        manualAutoTarget = null;
+        if (!mobileAutoTargetEnabled()) meleeAttackAlignment?.runAttack?.();
+        invalidateAutoTargetCache();
+        syncMobileAutoTargetButton();
+      });
+
+      // Tap toggles. Holding enables targeting, then drag chooses a stable target.
+      if (btnSwapTarget && !isDesktop) {
+        let targetStick = null; // Owns one pointer, timer, and socket until release or cancellation.
+        const TARGET_HOLD_MS = 180; // Distinguishes a toggle tap from the target-select hold gesture.
+        function beginTargetHold() {
+          if (!targetStick || targetStick.held) return;
+          targetStick.held = true;
+          window.Combat?.input?.setAutoTargetEnabled(true);
+          const socket = document.createElement('div'); // Displays the same fixed socket used by existing arch sticks.
+          socket.className = 'abt-socket';
+          socket.style.left = targetStick.x + 'px';
+          socket.style.top = targetStick.y + 'px';
+          socket.style.width = socket.style.height = targetStick.radius * 4 + 'px';
+          document.body.appendChild(socket);
+          targetStick.socket = socket;
+        }
+        function finishTargetStick(event, cancelled = false) {
+          if (!targetStick || (event && event.pointerId !== targetStick.id)) return;
+          const press = targetStick; // Preserve gesture state while releasing its pointer and timer.
+          targetStick = null;
+          clearTimeout(press.timer);
+          press.socket?.remove();
+          btnSwapTarget.style.transform = '';
+          try { btnSwapTarget.releasePointerCapture?.(press.id); } catch (_) {}
+          if (!cancelled && !press.held) window.Combat?.input?.setAutoTargetEnabled(!mobileAutoTargetEnabled());
+        }
+        btnSwapTarget.addEventListener('pointerdown', event => {
+          if (targetStick || btnSwapTarget.classList.contains('abt-hidden')) return;
+          event.preventDefault();
+          event.stopPropagation();
+          const rect = btnSwapTarget.getBoundingClientRect(); // Fixed gesture center avoids feedback from moving the knob.
+          targetStick = { id: event.pointerId, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, radius: rect.width * 0.55, held: false, socket: null, timer: null };
+          targetStick.timer = setTimeout(beginTargetHold, TARGET_HOLD_MS);
+          try { btnSwapTarget.setPointerCapture?.(event.pointerId); } catch (_) {}
+        });
+        btnSwapTarget.addEventListener('pointermove', event => {
+          if (!targetStick || event.pointerId !== targetStick.id) return;
+          event.preventDefault();
+          const dx = event.clientX - targetStick.x, dy = event.clientY - targetStick.y; // Screen-space target-stick vector shares the existing action arch's bearing convention.
+          const distance = Math.hypot(dx, dy); // Movement threshold also enters hold mode promptly without waiting for its timer.
+          if (distance > 10) beginTargetHold();
+          if (!targetStick.held) return;
+          const scale = distance > 0 ? Math.min(distance, targetStick.radius) / distance : 0; // Caps knob travel without limiting target bearing.
+          btnSwapTarget.style.transform = `translate(calc(50% + ${dx * scale}px), calc(50% + ${dy * scale}px))`;
+          if (distance > 10) swapAutoTarget(targetStickWorldAngle(dx, dy));
+        });
+        btnSwapTarget.addEventListener('pointerup', event => finishTargetStick(event));
+        btnSwapTarget.addEventListener('pointercancel', event => finishTargetStick(event, true));
+        btnSwapTarget.addEventListener('lostpointercapture', event => finishTargetStick(event, true));
+        window.addEventListener('blur', () => finishTargetStick(null, true));
+        document.addEventListener('visibilitychange', () => { if (document.hidden) finishTargetStick(null, true); });
+      }
+      syncMobileAutoTargetButton();
 
       const desktopTapWindowMs = () => Number(desktopControlsConfig().tapWindowMs) || 350;
       let desktopTentInteractHeld = false; // Used to reserve a held desktop Interact press for a nearby bandit tent instead of opening the Tool Select wheel.
@@ -26751,15 +26826,7 @@
       window.MusicMinigame?.renderPatternLoadoutSettings();
       window.MusicMinigame?.renderFreeplayKeySettings();
 
-      // Desktop Shift's dual role: held + mouse movement rotates the camera
-      // (see the mousemove handler's e.shiftKey branch, unchanged), while a
-      // clean TAP — pressed and released within the same tap window as
-      // every other tap/hold gesture here, with no mouse movement in
-      // between — toggles melee auto-target instead. _shiftDragged is set
-      // the instant any mousemove event fires while Shift is down
-      // (regardless of which branch handles it — shoulder-surf's own free
-      // mouselook included), so a hold-to-rotate never gets misread as a
-      // toggle on release.
+      // Desktop Shift remains reserved for camera movement; autotarget is mobile-only.
       let _shiftDownAt = null;
       let _shiftDragged = false;
       window.addEventListener('keydown', (event) => {
@@ -27552,7 +27619,9 @@
         meleeAttackAlignmentSnapshot: () => {
           const target = meleeAttackTargetLock;
           return {
-            latestChange: 'Momentary melee auto-target selects one entity per activation and never rescans until that activation releases.',
+            latestChange: 'Mobile-only autotarget defaults on; third-arch tap toggles, hold enables and drags select melee/ranged targets with stable locks and obstruction checks.',
+            settings: window.Combat?.input?.autoTargetSettingsSnapshot?.(),
+            selectedTarget: manualAutoTarget?.id ?? manualAutoTarget?.def?.label ?? null,
             active: !!meleeAttackAlignment,
             targetLocked: !!meleeAttackTargetLock,
             activationSerial: lastMeleeAttackTargetLock.serial,

@@ -13,11 +13,11 @@
   if (!window.Combat?.loadout) { console.error('combat-input.js requires combat-core.js + combat-loadout.js to load first'); return; }
 
   const HOLD_THRESHOLD_S = 0.16;
-  const AUTO_TARGET_STORAGE_KEY = 'hobunjiMeleeAutoTargetEnabled'; // Used to persist the player-facing auto-target preference across sessions.
-  let autoTargetEnabled = false; // Gates whether attacks enter the existing transient melee alignment/target-lock path.
+  const AUTO_TARGET_STORAGE_KEY = 'hobunjiMobileAutoTargetEnabled'; // Used to persist the player-facing auto-target preference across sessions.
+  let autoTargetEnabled = true; // Gates whether attacks enter the existing transient melee alignment/target-lock path.
   let autoTargetControl = null; // Cached Settings checkbox used to keep the injected UI synchronized with runtime state.
   try {
-    autoTargetEnabled = localStorage.getItem(AUTO_TARGET_STORAGE_KEY) === 'true';
+    autoTargetEnabled = localStorage.getItem(AUTO_TARGET_STORAGE_KEY) !== 'false';
   } catch (_) {}
 
   function makeSlotState() {
@@ -36,10 +36,16 @@
     return performance.now() / 1000;
   }
 
+  function isAutoTargetEnabled() {
+    return !window.matchMedia?.('(pointer: fine)').matches && autoTargetEnabled;
+  }
+
   function autoTargetSettingsSnapshot() {
     return {
-      enabled: autoTargetEnabled,
-      defaultEnabled: false,
+      enabled: isAutoTargetEnabled(),
+      preferenceEnabled: autoTargetEnabled,
+      mobileOnly: true,
+      defaultEnabled: true,
       storageKey: AUTO_TARGET_STORAGE_KEY,
       controlMounted: !!autoTargetControl,
     };
@@ -48,16 +54,19 @@
   function setAutoTargetEnabled(enabled, options = {}) {
     const nextEnabled = !!enabled; // Normalized preference used by the attack-alignment gate and Settings checkbox.
     const persist = options.persist !== false; // Allows regression/debug callers to change runtime state without writing browser storage.
+    const changed = autoTargetEnabled !== nextEnabled; // Emits a targeting transition only when the preference actually changes.
     autoTargetEnabled = nextEnabled;
     if (autoTargetControl) autoTargetControl.checked = autoTargetEnabled;
     if (persist) {
       try { localStorage.setItem(AUTO_TARGET_STORAGE_KEY, autoTargetEnabled ? 'true' : 'false'); }
       catch (_) {}
     }
-    return autoTargetEnabled;
+    if (changed) window.dispatchEvent(new CustomEvent('hobunji-auto-target-change'));
+    return isAutoTargetEnabled();
   }
 
   function mountAutoTargetSetting() {
+    if (window.matchMedia?.('(pointer: fine)').matches) return false;
     const existingControl = document.getElementById('settingMeleeAutoTarget'); // Reuses an already-mounted control if Settings rerenders around this module.
     if (existingControl) {
       autoTargetControl = existingControl;
@@ -80,7 +89,7 @@
     row.className = 'settings-row';
     row.innerHTML = '<div class="settings-label">' +
       '<div class="settings-name">Auto-target</div>' +
-      '<div class="settings-desc">Briefly turns you toward one nearby enemy before a melee attack. Off keeps your current facing and reticle aim fully manual.</div>' +
+      '<div class="settings-desc">Mobile only. Assists melee and ranged attacks. Tap the target button to toggle; hold and drag to choose an enemy.</div>' +
       '</div>' +
       '<span class="settings-toggle"><input type="checkbox" id="settingMeleeAutoTarget"><span class="toggle-slider"></span></span>';
 
@@ -146,7 +155,7 @@
   }
 
   function runAfterAttackAlignment(callback) {
-    if (!autoTargetEnabled) {
+    if (!isAutoTargetEnabled()) {
       const bypassedAtMs = performance.now(); // Diagnostic timestamp proving the attack skipped target acquisition rather than aligning invisibly.
       lastAlignmentHandoff = { phase: 'disabled-bypass', startedAtMs: bypassedAtMs, releasedAtMs: bypassedAtMs };
       callback();
@@ -343,7 +352,7 @@
     abortAllPresses,
     fireTap,
     getState,
-    isAutoTargetEnabled: () => autoTargetEnabled,
+    isAutoTargetEnabled,
     setAutoTargetEnabled,
     autoTargetSettingsSnapshot,
     mountAutoTargetSetting,
