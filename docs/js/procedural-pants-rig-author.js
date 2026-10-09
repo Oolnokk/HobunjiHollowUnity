@@ -477,6 +477,7 @@
     style.textContent = `
 #${PANEL_ID}{position:absolute;z-index:120;top:max(8px,env(safe-area-inset-top));right:max(8px,env(safe-area-inset-right));bottom:max(8px,env(safe-area-inset-bottom));width:min(620px,52vw);max-width:calc(100% - 16px);display:none;flex-direction:column;min-height:0;overflow:hidden;border:1px solid rgba(255,255,255,.18);border-radius:15px;background:rgba(7,16,26,.985);box-shadow:0 22px 70px rgba(0,0,0,.62)}
 #${PANEL_ID}.open{display:flex}
+#${PANEL_ID}.pantsRigExpanded{left:max(4px,env(safe-area-inset-left));right:max(4px,env(safe-area-inset-right));bottom:max(4px,env(safe-area-inset-bottom));width:auto;max-width:none}
 #${PANEL_ID} .pantsRigHostHeader{flex:0 0 auto;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;padding:7px 9px;border-bottom:1px solid rgba(255,255,255,.12);background:linear-gradient(180deg,rgba(22,37,56,.99),rgba(11,20,31,.99))}
 #${PANEL_ID} .pantsRigHostTitle{font-size:12px;font-weight:800;color:#dce9ff}.pantsRigHostSub{font-size:10px;color:#9eb2cb;margin-top:2px}
 #${PANEL_ID} .pantsRigHostTools{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}
@@ -486,7 +487,7 @@
 #${PANEL_ID} .pantsRigHostBody{flex:1 1 0;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 #${PANEL_ID} iframe{display:block;flex:1 1 0;min-height:0;width:100%;border:0;background:#07101a}
 #${PANEL_ID} .pantsRigHostStatus{flex:0 0 auto;max-height:4.5em;overflow:auto;white-space:pre-wrap;padding:5px 8px;border-top:1px solid rgba(255,255,255,.1);font:10px/1.35 ui-monospace,monospace;color:#9edfbf;background:#07101a}.pantsRigHostStatus[data-kind="warn"]{color:#ffc857}
-@media(max-width:700px) and (orientation:portrait){#${PANEL_ID}{top:auto;left:max(4px,env(safe-area-inset-left));right:max(4px,env(safe-area-inset-right));bottom:max(4px,env(safe-area-inset-bottom));width:auto;height:min(58dvh,690px);max-width:none;border-radius:13px}#${PANEL_ID} .pantsRigHostHeader{padding:5px 7px}.pantsRigHostSub{display:none}}
+@media(max-width:700px) and (orientation:portrait){#${PANEL_ID}.pantsRigExpanded{top:max(4px,env(safe-area-inset-top));height:auto}#${PANEL_ID}{top:auto;left:max(4px,env(safe-area-inset-left));right:max(4px,env(safe-area-inset-right));bottom:max(4px,env(safe-area-inset-bottom));width:auto;height:min(58dvh,690px);max-width:none;border-radius:13px}#${PANEL_ID} .pantsRigHostHeader{padding:5px 7px}.pantsRigHostSub{display:none}}
 @media(max-height:520px) and (orientation:landscape){#${PANEL_ID}{top:max(4px,env(safe-area-inset-top));right:max(4px,env(safe-area-inset-right));bottom:max(4px,env(safe-area-inset-bottom));width:min(560px,48vw);border-radius:11px}}
 `;
     document.head.appendChild(style);
@@ -502,6 +503,11 @@
     if (bottom > 0) panel.style.top = `${Math.ceil(bottom) + 6}px`;
   }
 
+  function setExpanded(expanded) { // Full-viewport Pants panel while an author workspace is enlarged.
+    state.panel?.classList.toggle('pantsRigExpanded', !!expanded);
+    if (state.open) avoidFootingHud();
+  }
+
   function setOpen(open) {
     state.open = !!open;
     state.panel?.classList.toggle('open', state.open);
@@ -512,6 +518,8 @@
       syncAuthorToProceduralIdentity();
       setStatus('Pants Rig open · Live 3D uses the exact Procedural Animation avatar/IK legs.', 'good');
     } else {
+      setExpanded(false);
+      try { state.iframe?.contentWindow?.postMessage({ type: 'hobunji-pants-rig-exit-enlarge' }, window.location.origin); } catch (_) {}
       state.buildGeneration++; // Invalidates any in-flight texture load before the panel disappears.
       disposePreview();
     }
@@ -583,6 +591,7 @@
     });
     window.addEventListener('resize', () => { if (state.open) avoidFootingHud(); });
     window.addEventListener('message', event => {
+      if (event.source === state.iframe?.contentWindow && event.data?.type === 'hobunji-pants-rig-enlarge') { setExpanded(event.data.enlarged === true); return; }
       if (event.source !== state.iframe?.contentWindow || event.data?.type !== 'hobunji-pants-rig-changed') return;
       state.forceRebuild = true; // Rebuilds geometry/weights after a completed 2D authoring gesture rather than serializing the project every animation frame.
     });
