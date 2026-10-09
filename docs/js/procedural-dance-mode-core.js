@@ -485,14 +485,16 @@
       // Mirrors procedural-hand-attachments.js's own idlePositions formula
       // (left = -handAttachX, right = +handAttachX) so the relaxed pose lines
       // up with where the real game's hand actually sits.
-      const idleHand = new THREE.Vector3(side === 'left' ? -safeHandAttachX : safeHandAttachX, safeHandAttachY, 0);
-      // No authored shoulder anchor exists that this editor can safely scale
-      // (attachment-rig-profiles.js's leftHandShoulder/rightHandShoulder are
-      // only ever used for hand-orientation aim, never position, and carry
-      // calibration assumptions this tool doesn't reproduce) — approximated
-      // instead from the same two verified numbers as idleHand: pulled in
-      // toward the midline and lifted slightly above idle-hand height.
-      const shoulderLocal = new THREE.Vector3(idleHand.x * SHOULDER_X_FRACTION, safeHandAttachY + dims.height * SHOULDER_Y_OFFSET_FRACTION, 0);
+      const gameRest = model.userData?.gameFreeHandRest?.[side]; // Editor-published game free-hand rest (shoulder anchor X, posterior minus arm length), already in model-local space.
+      const idleHand = gameRest
+        ? new THREE.Vector3(gameRest.hand.x, gameRest.hand.y, gameRest.hand.z)
+        : new THREE.Vector3(side === 'left' ? -safeHandAttachX : safeHandAttachX, safeHandAttachY, 0);
+      // Prefer the editor-published attachment-rig shoulder anchor; without
+      // it, approximate from idleHand: pulled in toward the midline and lifted
+      // slightly above idle-hand height.
+      const shoulderLocal = gameRest
+        ? new THREE.Vector3(gameRest.shoulder.x, gameRest.shoulder.y, gameRest.shoulder.z)
+        : new THREE.Vector3(idleHand.x * SHOULDER_X_FRACTION, safeHandAttachY + dims.height * SHOULDER_Y_OFFSET_FRACTION, 0);
       const line = new renderingTHREE.Line(
         new renderingTHREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()]),
         new renderingTHREE.LineBasicMaterial({ color: side === 'left' ? 0xffb36b : 0xff6ba8, transparent: true, opacity: 0.92, depthTest: false }),
