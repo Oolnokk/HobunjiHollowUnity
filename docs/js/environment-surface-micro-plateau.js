@@ -47,6 +47,7 @@
   let activeArea = null;
   let activeMode = 'none';
   let root = null;
+  let cameraSurfaceState = null; // Built tile vertex heights used only by the camera's terrain solver.
   let lastFrameAt = 0;
   let textureState = 'not-requested';
   let snowTexture = null;
@@ -208,6 +209,7 @@
   }
 
   function disposeRoot() {
+    cameraSurfaceState = null;
     if (!root) return;
     root.parent?.remove(root);
     root.traverse?.(node => node.geometry?.dispose?.());
@@ -399,6 +401,9 @@
           exposedEdges++;
         }
         addMicroPlateauTile(pos, idx, col, row, baseCorners, exposed);
+        const heights = new Float32Array(16); // Mirrors the rendered tile vertices without retaining its full geometry buffers.
+        for (let i = 0; i < 16; i++) heights[i] = pos[pos.length - 48 + i * 3 + 1];
+        state.cameraHeights[row * state.cols + col] = heights;
         builtTiles++;
       }
     }
@@ -448,7 +453,7 @@
   // skips straight to the cheap planar UV).
   function buildZoneSurface(scene, grid, cols, rows, mode) {
     const started = now();
-    const state = { grid, cols, rows, surfaceCache: new Array(cols * rows) };
+    const state = { grid, cols, rows, surfaceCache: new Array(cols * rows), cameraHeights: new Array(cols * rows) };
     root = new window.THREE.Group();
     root.name = `hobunji_environment_surface_micro_plateau_${mode}`;
     root.userData.environmentSurfaceRuntime = true;
@@ -485,6 +490,7 @@
       }
     }
 
+    cameraSurfaceState = state;
     buildCount++;
     lastBuildMs = now() - started;
     setGrassHidden(scene, true);
@@ -554,6 +560,34 @@
     return tile && tileCovered(tile) ? SURFACE_DEPTH : 0;
   }
 
+  function hasCameraSurface() {
+    return Boolean(root && root.visible && root.parent === currentScene() && activeArea === currentArea() && activeMode === resolveMode() && cameraSurfaceState);
+  }
+
+  // Interpolate the same two triangles as addMicroPlateauTile. This covers
+  // caps, rooted lips and ramps exactly, without per-frame mesh raycasts or
+  // changing the walkable surface used by players, creatures and pathing.
+  function cameraSurfaceYAt(x, z) {
+    if (!Number.isFinite(x) || !Number.isFinite(z) || !hasCameraSurface()) return null;
+    const col = Math.floor(x), row = Math.floor(z); // Finds the built tile under the camera sample.
+    const state = cameraSurfaceState; // Latest completed surface build, cleared on scene/season changes.
+    if (col < 0 || row < 0 || col >= state.cols || row >= state.rows) return null;
+    const heights = state.cameraHeights[row * state.cols + col]; // Water and uncovered tiles have no camera surface.
+    if (!heights) return null;
+    const u = x - col, v = z - row; // Local coordinates in the tile's four-by-four vertex grid.
+    const inset = Math.min(0.49, Math.max(0.001, EDGE_WIDTH)); // Matches the geometry builder's axis spacing.
+    const i = u < inset ? 0 : u < 1 - inset ? 1 : 2; // Column of the rendered quad containing this sample.
+    const j = v < inset ? 0 : v < 1 - inset ? 1 : 2; // Row of the rendered quad containing this sample.
+    const cellX = i === 0 ? 0 : i === 1 ? inset : 1 - inset; // Quad's left edge.
+    const cellZ = j === 0 ? 0 : j === 1 ? inset : 1 - inset; // Quad's north edge.
+    const a = (u - cellX) / (i === 1 ? 1 - 2 * inset : inset); // Fraction across the rendered quad.
+    const b = (v - cellZ) / (j === 1 ? 1 - 2 * inset : inset); // Fraction down the rendered quad.
+    const base = j * 4 + i; // Top-left vertex of the quad, split along its top-left/bottom-right diagonal.
+    return b >= a
+      ? heights[base] * (1 - b) + heights[base + 4] * (b - a) + heights[base + 5] * a
+      : heights[base] * (1 - a) + heights[base + 5] * b + heights[base + 1] * (a - b);
+  }
+
   function bindGroundProjection(object) {
     if (!object) return object;
     // Install once at creation, including each drawable child of HUD groups.
@@ -591,6 +625,8 @@
       mode,
       thickness: SURFACE_DEPTH,
       groundProjectionLift: SURFACE_DEPTH,
+      cameraCollision: hasCameraSurface(),
+      latestChange: 'Camera terrain collision includes rendered snow/slush caps and inclined edges; player collision stays at the authored ground.',
       edgeWidth: EDGE_WIDTH,
       opacity: MODE_PRESETS[mode]?.opacity ?? null,
       builtTiles,
@@ -603,7 +639,7 @@
     };
   }
 
-  window.EnvironmentSurfaceMicroPlateau = Object.freeze({ installed: true, debugSnapshot, forceRebuild, projectionLiftAt, bindGroundProjection });
+  window.EnvironmentSurfaceMicroPlateau = Object.freeze({ installed: true, debugSnapshot, forceRebuild, projectionLiftAt, bindGroundProjection, hasCameraSurface, cameraSurfaceYAt });
   ensureTexture();
 
   // The shipped game always provides RuntimeFrameScheduler; the standalone

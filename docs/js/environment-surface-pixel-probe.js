@@ -10,12 +10,12 @@
     const micro = window.EnvironmentSurfaceMicroPlateau?.debugSnapshot?.();
     const microStatus = !micro ? 'unavailable' : !micro.active ? 'waiting' : (micro.mode || 'active');
     const microText = micro
-      ? ` micro=${microStatus}/v${micro.version ?? '-'}/thick${micro.thickness ?? '-'}/opacity${micro.opacity ?? '-'}/tiles${micro.builtTiles ?? 0}/chunks${micro.chunkCount ?? 0}/edges${micro.exposedEdges ?? 0}/builds${micro.buildCount ?? 0}/lastBuild${micro.lastBuildMs ?? '-'}ms/tex${micro.textureState || '-'}`
+      ? ` micro=${microStatus}/v${micro.version ?? '-'}/thick${micro.thickness ?? '-'}/opacity${micro.opacity ?? '-'}/tiles${micro.builtTiles ?? 0}/chunks${micro.chunkCount ?? 0}/edges${micro.exposedEdges ?? 0}/builds${micro.buildCount ?? 0}/lastBuild${micro.lastBuildMs ?? '-'}ms/tex${micro.textureState || '-'}/cameraCollision=${micro.cameraCollision ? 'yes' : 'no'}`
       : ' micro=unavailable';
     const legacyText = legacy
       ? ` legacy=${legacy.mode || 'disabled'}/pending${legacy.pendingJobs ?? 0}/owners${legacy.ownerSurfaces ?? 0}`
       : ' legacy=absent';
-    return `${LINE_PREFIX}${microText}${legacyText} reason=${micro?.lastReason || legacy?.lastReason || '-'}`;
+    return `${LINE_PREFIX}${microText}${legacyText} reason=${micro?.lastReason || legacy?.lastReason || '-'} latestChange=${micro?.latestChange || '-'}`;
   }
 
   function appendOrReplace(report) {

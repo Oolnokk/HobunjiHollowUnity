@@ -20345,6 +20345,11 @@
       let _seatedOcclusionDistance = null; // smoothed seated-camera distance used while an obstruction clears
       let _seatedOcclusionUpdatedAt = 0; // previous seated occlusion update time used to calculate smoothing delta
       let _seatedCameraDebug = null; // latest seated obstruction solve, exposed to Pixel Probe for mobile diagnosis
+      function cameraSurfaceYAtWorld(x, z) {
+        const ground = activeSurfaceYAtWorld(x, z); // Gameplay ground remains the authority for movement and uncovered tiles.
+        const cover = window.EnvironmentSurfaceMicroPlateau?.cameraSurfaceYAt?.(x, z); // Exact rendered snow/slush height, exclusively for camera clearance.
+        return Number.isFinite(cover) ? Math.max(ground, cover) : ground;
+      }
       // Find the first terrain crossing along the boom, then shorten along
       // that same ray. Sampling local surfaces handles ramps and raised tiles;
       // lifting Y independently would flatten the player's requested pitch.
@@ -20354,13 +20359,13 @@
         let safe = 0; // Last terrain-safe fraction before the first crossing.
         for (let i = 1; i <= steps; i++) {
           let blocked = i / steps; // Candidate fraction, refined only when it crosses the local surface.
-          if (lookAtY + dy * blocked >= activeSurfaceYAtWorld(lookAtX + dx * blocked, lookAtZ + dz * blocked) + clearance) {
+          if (lookAtY + dy * blocked >= cameraSurfaceYAtWorld(lookAtX + dx * blocked, lookAtZ + dz * blocked) + clearance) {
             safe = blocked;
             continue;
           }
           for (let j = 0; j < 12; j++) {
             const mid = (safe + blocked) * 0.5; // Bisects the first crossing to avoid visible stepping while aiming.
-            if (lookAtY + dy * mid >= activeSurfaceYAtWorld(lookAtX + dx * mid, lookAtZ + dz * mid) + clearance) safe = mid;
+            if (lookAtY + dy * mid >= cameraSurfaceYAtWorld(lookAtX + dx * mid, lookAtZ + dz * mid) + clearance) safe = mid;
             else blocked = mid;
           }
           return safe;
@@ -20512,14 +20517,14 @@
           _seatedCameraDebug = null;
         }
         if (shoulderBoom) {
-          const targetFloorY = activeSurfaceYAtWorld(lookAtX, lookAtZ); // Measures terrain under the actual offset target, rather than the player's smoothed floor.
+          const targetFloorY = cameraSurfaceYAtWorld(lookAtX, lookAtZ); // Includes snow/slush under the offset target without lifting the player.
           const clearance = Math.min(CAMERA_FLOOR_CLEARANCE, Math.max(0.01, (lookAtY - targetFloorY) * 0.25)); // Short characters retain vertical room between their neck and the ground.
           const fraction = shoulderCameraGroundFraction(lookAtX, lookAtY, lookAtZ, resultX, resultY, resultZ, clearance); // Preserves pitch and yaw when the ground shortens the boom.
           resultX = lookAtX + (resultX - lookAtX) * fraction;
           resultY = lookAtY + (resultY - lookAtY) * fraction;
           resultZ = lookAtZ + (resultZ - lookAtZ) * fraction;
           _cameraBoomDebug = {
-            latestChange: 'Shoulder boom shortens along the aim ray at walls and local terrain; floor clearance follows target height.',
+            latestChange: 'Camera collision includes snow/slush caps and inclined edges; short-character pivots stay above cover while player ground is unchanged.',
             idealDistance: dist,
             solvedDistance: Math.hypot(resultX - lookAtX, resultY - lookAtY, resultZ - lookAtZ),
             requestedPitchDeg: Math.atan2(-dy, Math.hypot(dx, dz)) * 180 / Math.PI,
@@ -20528,7 +20533,7 @@
             groundLimited: fraction < 1,
             floorClearance: clearance,
             targetY: lookAtY,
-            floorY: activeSurfaceYAtWorld(resultX, resultZ),
+            floorY: cameraSurfaceYAtWorld(resultX, resultZ),
           };
         } else {
           _cameraBoomDebug = null;
@@ -20555,6 +20560,13 @@
             } else {
               resultY = minCameraY;
             }
+          }
+          if (window.EnvironmentSurfaceMicroPlateau?.hasCameraSurface?.()) {
+            const fraction = shoulderCameraGroundFraction(lookAtX, lookAtY, lookAtZ, resultX, resultY, resultZ, 0.01); // Seated/scripted booms also stop at raised snow/slush along their sightline.
+            resultX = lookAtX + (resultX - lookAtX) * fraction;
+            resultY = lookAtY + (resultY - lookAtY) * fraction;
+            resultZ = lookAtZ + (resultZ - lookAtZ) * fraction;
+            resultY = Math.max(resultY, cameraSurfaceYAtWorld(resultX, resultZ) + 0.01); // An authored target buried in cover still cannot leave the camera beneath it.
           }
         }
         return { x: resultX, y: resultY, z: resultZ };
@@ -20667,7 +20679,7 @@
           lookY += s_shoulderSurfOffsetV_current;
           // A lowered Settings offset must not bury the aim pivot: no ground-safe
           // camera position below that pivot could retain an upward sightline.
-          if (!cutscenePreviewActive && !dialogueZoomActive()) lookY = Math.max(lookY, activeSurfaceYAtWorld(lookAtX, lookAtZ) + SHOULDER_CAMERA_MIN_TARGET_HEIGHT);
+          if (!cutscenePreviewActive && !dialogueZoomActive()) lookY = Math.max(lookY, cameraSurfaceYAtWorld(lookAtX, lookAtZ) + SHOULDER_CAMERA_MIN_TARGET_HEIGHT);
         }
         const cameraY = portraitAim?.cameraY ?? (lookY + Math.sin(angle) * distance);
         const groundDistance = Math.cos(angle) * distance;
