@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Hobunji Hollow — Pants Rig Author</title>
+<script src="../../config/scratchbones-config.js"></script>
+<script src="../../js/portrait-utils.js"></script>
+<script src="../../js/npc-avatar-preview-utils.js"></script>
+<script src="../../config/pants-rigs.js"></script>
+<script src="../../js/pants-rig-core.js"></script>
+<style>
+:root{
+  color-scheme:dark;font-family:system-ui,-apple-system,Segoe UI,sans-serif;
+  --bg:#07101a;--panel:#101b28;--panel2:#0b151f;--line:#2a3d56;--text:#edf5ff;--muted:#9eb2cb;
+  --accent:#6ba9ff;--good:#45d6a0;--warn:#ffc857;--belt:#9cff00;--thigh:#18e7ef;--calf:#ff00a9;--opening:#ffad12
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text)}
+button,input,select,textarea{font:inherit}
+button{min-height:40px;border:1px solid rgba(107,169,255,.35);border-radius:9px;background:rgba(107,169,255,.12);color:var(--text);padding:7px 10px;font-weight:700}
+button:hover,button.active{background:rgba(107,169,255,.28);border-color:var(--accent)}
+button:disabled{opacity:.4}
+input,select,textarea{width:100%;border:1px solid rgba(255,255,255,.15);border-radius:8px;background:#08111b;color:var(--text);padding:7px}
+input[type=range]{padding:0}
+input[type=file]{font-size:11px}
+textarea{min-height:160px;font:11px/1.4 ui-monospace,monospace;resize:vertical}
+.app{display:grid;grid-template-columns:minmax(285px,350px) minmax(420px,1fr) minmax(320px,420px);gap:10px;padding:10px;min-height:100dvh}
+.panel{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:13px;padding:10px;min-width:0}
+.controls,.inspect{display:flex;flex-direction:column;gap:11px;max-height:calc(100dvh - 20px);overflow:auto}
+.workspace{display:flex;flex-direction:column;gap:9px;min-height:0}
+.canvasPair{display:grid;grid-template-rows:minmax(0,1fr) minmax(260px,.68fr);gap:9px;flex:1;min-height:700px}
+.canvasCard{display:flex;flex-direction:column;gap:6px;min-height:0}
+.canvasWrap{display:grid;place-items:center;flex:1;min-height:0;overflow:hidden;border:1px solid #30425d;border-radius:11px;background:#0a1119;touch-action:none}
+canvas.author{display:block;width:min(100%,760px);height:auto;max-height:100%;touch-action:none}
+#portraitCanvas{width:min(100%,520px)}
+h1{font-size:18px;margin:0;color:var(--accent)}
+h2{font-size:13px;margin:0 0 6px;color:#cfe0ff}
+.card{border:1px solid rgba(255,255,255,.09);border-radius:10px;padding:9px;background:rgba(255,255,255,.025)}
+.hint,.small{font-size:11px;line-height:1.42;color:var(--muted)}
+.row{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+.row>*{flex:1;min-width:0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.modeGrid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.modeGrid button:last-child{grid-column:1/-1}
+label{display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--muted)}
+.check{display:flex;flex-direction:row;align-items:center;gap:7px}
+.check input{width:auto}
+.value{float:right;color:var(--text);font-variant-numeric:tabular-nums}
+.legend{display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:11px;color:var(--muted)}
+.swatch{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px}
+.status{white-space:pre-wrap;font:11px/1.4 ui-monospace,monospace;background:#070d14;border:1px solid #293b53;border-radius:8px;padding:8px;min-height:56px}
+.status[data-kind=good]{color:var(--good)}.status[data-kind=warn]{color:var(--warn)}.status[data-kind=busy]{color:#9fd2ff}
+pre{white-space:pre-wrap;word-break:break-word;font:10px/1.35 ui-monospace,monospace;background:#070d14;border:1px solid #293b53;border-radius:8px;padding:7px;margin:0;max-height:240px;overflow:auto}
+#completion{font-size:11px;line-height:1.55;color:#c9d8ea}
+.badge{font:10px ui-monospace,monospace;color:var(--muted)}
+.guideNote{border-left:3px solid var(--belt);padding-left:8px}
+@media(max-width:1080px){
+  .app{grid-template-columns:310px minmax(0,1fr);grid-template-areas:"controls workspace" "inspect workspace"}
+  .controls{grid-area:controls;max-height:none}.workspace{grid-area:workspace}.inspect{grid-area:inspect;max-height:none}
+}
+@media(max-width:760px){
+  html,body{overflow:auto}.app{display:flex;flex-direction:column;padding:7px}.controls,.inspect{max-height:none}
+  .workspace{order:-1}.canvasPair{min-height:900px;grid-template-rows:520px 360px}.canvasWrap{min-height:300px}
+  button{min-height:44px}.modeGrid{grid-template-columns:1fr 1fr}.grid3{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <section class="panel controls">
+    <div>
+      <h1>👖 Pants Rig Author</h1>
+      <div class="hint guideNote">The colored beltline, leg bones, openings, nodes, and weight overlays are <b>workspace guides only</b>. The clean pants PNG and fitted PNG exports never contain them.</div>
+    </div>
+
+    <div class="card">
+      <h2>1 · Pants source</h2>
+      <label>Clean pants PNG<input id="pantsFile" type="file" accept="image/png,image/*"></label>
+      <label>Garment ID<input id="garmentId" type="text" value="pants_1" autocomplete="off"></label>
+      <label>Runtime asset path<input id="sourcePath" type="text" placeholder="assets/cosmetics/pants/..." autocomplete="off"></label>
+      <label class="check"><input id="clearBlack" type="checkbox" checked> Clear only edge-connected black background</label>
+      <label>Black threshold <span id="blackThresholdValue" class="value">10</span><input id="blackThreshold" type="range" min="0" max="40" step="1" value="10"></label>
+      <div class="hint">The edge flood-fill preserves enclosed dark outlines. It is useful for references like the supplied mockup whose outside background appears black instead of transparent.</div>
+    </div>
+
+    <div class="card">
+      <h2>2 · Workspace mode</h2>
+      <div class="modeGrid">
+        <button data-mode="pantsBelt">Lime beltline</button>
+        <button data-mode="bones">Cyan / magenta bones</button>
+        <button data-mode="leftOpening">Left orange opening</button>
+        <button data-mode="rightOpening">Right orange opening</button>
+        <button data-mode="weights">Weight paint</button>
+      </div>
+      <div id="modeHint" class="hint"></div>
+      <label class="check"><input id="showGuides" type="checkbox" checked> Show editor guides</label>
+      <div class="legend">
+        <span><i class="swatch" style="background:var(--belt)"></i>beltline</span>
+        <span><i class="swatch" style="background:var(--opening)"></i>leg openings</span>
+        <span><i class="swatch" style="background:var(--thigh)"></i>thigh bone</span>
+        <span><i class="swatch" style="background:var(--calf)"></i>calf bone</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>3 · Weight painting</h2>
+      <label>Paint channel<select id="weightChannel"></select></label>
+      <label>Brush radius <span id="brushRadiusValue" class="value">7 cells</span><input id="brushRadius" type="range" min="1" max="20" step="1" value="7"></label>
+      <label>Strength <span id="brushStrengthValue" class="value">35%</span><input id="brushStrength" type="range" min="0.03" max="1" step="0.01" value="0.35"></label>
+      <div class="grid3">
+        <button id="autoWeights">Auto seed</button>
+        <button id="smoothWeights">Smooth once</button>
+        <button id="resetWeights">Reset to belt</button>
+      </div>
+      <div class="hint">Weights always normalize to 100%. “Belt” is the body/waist influence; the other four channels follow the two authored leg-bone segments.</div>
+    </div>
+
+    <div class="row">
+      <button id="undo">↶ Undo</button>
+      <button id="redo">↷ Redo</button>
+    </div>
+    <div class="row">
+      <button id="resetGarment">Reset garment guides</button>
+      <span id="draftState" class="badge">draft not saved</span>
+    </div>
+  </section>
+
+  <section class="panel workspace">
+    <div class="canvasPair">
+      <div class="canvasCard">
+        <div class="row"><strong>Pants PNG workspace</strong><span class="badge">guide colors follow your sketch</span></div>
+        <div class="canvasWrap"><canvas id="pantsCanvas" class="author" width="760" height="760"></canvas></div>
+      </div>
+      <div class="canvasCard">
+        <div class="row"><strong>Species portrait beltline</strong><span class="badge">canonical naked portrait render</span></div>
+        <div class="canvasWrap"><canvas id="portraitCanvas" class="author" width="620" height="420"></canvas></div>
+      </div>
+    </div>
+    <div id="status" class="status">Booting…</div>
+  </section>
+
+  <section class="panel inspect">
+    <div class="card">
+      <h2>4 · Species + gender fit</h2>
+      <label>Canonical portrait<select id="fighter"></select></label>
+      <label>Leg thickness <span id="legThicknessValue" class="value">1.00×</span><input id="legThickness" type="range" min="0.55" max="1.45" step="0.01" value="1"></label>
+      <label class="check"><input id="showFit" type="checkbox"> Preview one-time fitted pants PNG</label>
+      <div class="hint">Thickness moves the five nodes of each orange opening toward or away from that opening’s centroid. The lime pants belt is pinned during this static PNG-space warp. It does <b>not</b> run every animation frame.</div>
+      <div class="row"><button id="resetCharacter">Reset this portrait fit</button><button id="downloadFitted">Bake fitted PNG</button></div>
+    </div>
+
+    <div class="card">
+      <h2>Completion / contract</h2>
+      <div id="completion"></div>
+      <div class="hint" style="margin-top:7px">At runtime, the five portrait belt points are the live body anchors. The five matching pants-belt points establish the garment-to-portrait mapping. Bone weights then deform the lower garment with the existing procedural thigh/calf rig.</div>
+    </div>
+
+    <div class="card">
+      <h2>Project JSON</h2>
+      <div class="grid2">
+        <button id="copyJson">Copy JSON</button>
+        <button id="downloadJson">Download JSON</button>
+      </div>
+      <div class="grid2" style="margin-top:6px">
+        <button id="showJson">Show JSON</button>
+        <label style="margin:0">Import<input id="projectFile" type="file" accept=".json,application/json"></label>
+      </div>
+      <textarea id="jsonOutput" spellcheck="false" placeholder="Use “Show JSON” for the full export."></textarea>
+    </div>
+
+    <div class="card">
+      <h2>In-page debug</h2>
+      <button id="copyDebug">Copy diagnostics</button>
+      <pre id="debugSnapshot"></pre>
+      <pre id="debug"></pre>
+    </div>
+  </section>
+</div>
+
+<canvas id="portraitSource" width="200" height="200" hidden></canvas>
+<script src="app.js"></script>
+</body>
+</html>

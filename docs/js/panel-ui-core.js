@@ -521,7 +521,7 @@ if (/\/tools\/attack-animation-editor\/(?:index\.html)?$/.test(location.pathname
 // layout rewrites, so load its isolated Impact workspace adapter separately.
 if (/\/tools\/procedural-animation-editor\/(?:index\.html)?$/.test(location.pathname)) {
   const impactTabsScript = document.createElement('script');
-  impactTabsScript.src = '../../js/procedural-impact-tabs.js?v=20260828d';
+  impactTabsScript.src = '../../js/procedural-impact-tabs.js?v=20261009h6c8af83';
   impactTabsScript.defer = true;
   document.head.appendChild(impactTabsScript);
 }
