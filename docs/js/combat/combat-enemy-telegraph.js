@@ -63,6 +63,7 @@
   const FIRE_MAX_COLORS = 4; // Caps layered colors so future multi-affliction attacks cannot explode draw-call count.
   const FIELD_COLOR = 0x75d9ff; // Shared restrained cyan for Counter Shield glow and force-field shell.
   const FIELD_RADIUS = 0.72; // Radius used by the front-half defensive bubble around its user.
+  const holderWorldScratch = new THREE.Vector3(); // Reused for Counter Shield holder positions on every combat frame.
   const actorVisuals = new Map(); // Reuses one presentation bundle per actor instead of allocating every frame.
   const missingHolderWarnings = new WeakSet(); // Prevents repeated mobile debug-log spam while an avatar/weapon is mounting.
   let cachedDefensiveIcon = '🛡️'; // Last arch-derived defensive-heavy glyph used to texture Counter Shield projections.
@@ -396,7 +397,7 @@
     if (!actor || !holder || !visual.fieldGroup) return;
     const deps = window.Combat.deps; // Supplies TILE conversion and player identity/facing conventions.
     const tile = Number(deps?.TILE) || 64; // Converts actor pixel X/Y into Three.js world X/Z.
-    const holderWorld = new THREE.Vector3(); // Samples the live weapon-holder height without assuming flat terrain.
+    const holderWorld = holderWorldScratch; // Samples live height without a per-frame Vector3 allocation.
     holder.getWorldPosition(holderWorld);
     const facing = actor === deps?.player ? Number(actor.angle) || 0 : Number(actor.facing) || 0; // Uses each actor type's canonical combat-facing field.
     visual.fieldGroup.position.set((Number(actor.x) || 0) / tile, holderWorld.y - 0.12, (Number(actor.y) || 0) / tile);

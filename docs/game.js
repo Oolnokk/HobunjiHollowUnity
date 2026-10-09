@@ -4481,10 +4481,11 @@
         const back = genoTex?.back || _getCreatureBackTexture(url);
         for (const child of [avatarRef.frontPlane, avatarRef.backPlane]) {
           if (!child.material) continue;
+          const hadMap = !!child.material.map; // Only a map-presence change requires shader recompilation.
           if (child.name.endsWith('_front_plane')) child.material.map = front;
           else if (child.name.endsWith('_back_plane')) child.material.map = back;
           else continue;
-          child.material.needsUpdate = true;
+          if (!hadMap) child.material.needsUpdate = true; // Ordinary frame swaps only change the map uniform.
         }
         return !!genoTex;
       }
@@ -19463,7 +19464,7 @@
       // especially on a tile-based mobile GPU. Keeping the buffer around
       // lets the probe read back the literal frame the user actually saw.
       const renderer  = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true });
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setPixelRatio(window.MobileRenderBudget?.pixelRatio(threeRect.width || window.innerWidth, threeRect.height || window.innerHeight) ?? Math.min(window.devicePixelRatio, 2));
       renderer.setSize(threeRect.width || window.innerWidth, threeRect.height || window.innerHeight);
       renderer.shadowMap.enabled = true;
       renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
@@ -20021,7 +20022,7 @@
       const _edgeIdRT = _makeSceneRT(1, 1);
       function _resizeOutlineTargets(pixelW, pixelH) {
         _mainRT.setSize(pixelW, pixelH);
-        _edgeIdRT.setSize(pixelW, pixelH);
+        _edgeIdRT.setSize(s_furnitureSeamOutlines ? pixelW : 1, s_furnitureSeamOutlines ? pixelH : 1);
         _postMat.uniforms.uTexel.value.set(1 / pixelW, 1 / pixelH);
       }
 
@@ -23547,7 +23548,7 @@
         _threeRect = rect;
         const w = rect.width  || window.innerWidth;
         const h = rect.height || window.innerHeight;
-        renderer.setPixelRatio(dpr * s_resScale);
+        renderer.setPixelRatio(window.MobileRenderBudget?.pixelRatio(w, h, s_resScale) ?? dpr * s_resScale);
         renderer.setSize(w, h);
         const bufSize = renderer.getDrawingBufferSize(new THREE.Vector2());
         _resizeOutlineTargets(bufSize.x, bufSize.y);
@@ -23844,7 +23845,10 @@
       // text every half second. Draw calls/triangles/GPU memory/render CPU
       // time are already available too, via the adjacent "Performance
       // Profiler" checkbox and its overlay (perfState in that file).
+      window.MobileRenderBudget?.attach(renderer, resizeCanvas);
+      document.getElementById('settingResolution').value = window.MobileRenderBudget?.mobile ? 'auto' : '1';
       document.getElementById('settingResolution').addEventListener('change', e => {
+        window.MobileRenderBudget?.setMode(e.target.value);
         s_resScale = parseFloat(e.target.value) || 1;
         resizeCanvas();
       });
@@ -24063,6 +24067,7 @@
       });
 
       function gameLoop(now) {
+        if (window.MobileRenderBudget?.shouldSuspend()) { lastTime = now; return; }
         // Brackets the ENTIRE function so 'frame ms' (measured independently by
         // performance-debug.js's own rAF loop, i.e. real wall-clock time between
         // one gameLoop call and the next) minus this bucket's average tells us
@@ -24548,6 +24553,7 @@
           }
         }
         window.PerfProfiler?.end(renderPassPerf);
+        window.MobileRenderBudget?.sample(now, !paused && !window.PixelProbe?.armed);
         // Optional diagnostic hook (off by default, see performance-debug.js):
         // everything timed above only measures how long the CPU took to
         // *issue* this frame's draw calls, not how long the GPU actually

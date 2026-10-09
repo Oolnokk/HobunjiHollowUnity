@@ -137,7 +137,7 @@
   <script src="js/item-processing.js?v=20261008h5a1190f"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <script src="debug.js?v=20260925weavesessiondebug4"></script>
+  <script src="debug.js?v=20261009ha361780"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20260930h1b2e2e2"></script>
   <script src="config/scratchbones-config.js?v=20261007h6f60f04"></script>
@@ -198,7 +198,7 @@
   <script src="js/voorg-ass-registration.js?v=20260923baseanchor1"></script> <!-- Shared Voorg-Ass creature/renderer/herd registration used by the three scripts below. -->
   <script src="js/creature-genetics.js?v=20261002h5fdf0c4"></script>
   <!-- Creature genotype recolor + pattern-overlay compositing. -->
-  <script src="js/creature-genetics-render.js?v=20260930h6b34ce7"></script>
+  <script src="js/creature-genetics-render.js?v=20261009h12b6be6"></script>
   <!-- Shared per-frame "where is this creature/character's head" cache — see
        its own file header for why. No dependencies of its own; must load
        before anything that calls window.CreatureHeadCache. -->
@@ -273,7 +273,7 @@
        resource-system.js/combat-core.js. -->
   <script src="js/combat/impact-blend-library.js?v=20260828b"></script>
   <script src="js/combat/impact-ragdoll-playback.js?v=20261002hd4bb4ac"></script>
-  <script src="js/combat/combat-enemy-telegraph.js?v=20260926combatreview1"></script>
+  <script src="js/combat/combat-enemy-telegraph.js?v=20261009he463e76"></script>
   <script src="js/combat/combat-animal-attacks.js?v=20261001quickdebuff2"></script>
   <script src="js/combat/combat-loadout.js?v=20261005h234f91b"></script>
   <script src="js/combat/combat-progression.js?v=20261001quickdebuff2"></script>
@@ -385,7 +385,7 @@
        window.FarmAnimals.init(...) during its own setup. -->
   <script src="js/farm-production.js?v=20261008h34e9cde"></script>
   <script src="js/world-meta-store.js?v=20260930livestockwalk1"></script>
-  <script src="js/farm-animals.js?v=20261008h8cd38f3"></script>
+  <script src="js/farm-animals.js?v=20261009heb1fcdb"></script>
   <!-- Farm buildings: barn placement/construction/demolition
        (window.FarmBuildings) — self-contained aside from deps injected
        via init(), and reads window.FarmAnimals at call time (already
@@ -785,7 +785,8 @@
   <!-- Minecraft-style finite wilderness streaming: owns 16x16 runtime
        terrain/vegetation chunks while the Tothal generator remains owner of
        each zone's deterministic complete tile blueprint. -->
-  <script src="js/wilderness-chunks.js?v=20261002h91d6e27"></script>
+  <script src="js/mobile-render-budget.js?v=20261009mobile1"></script>
+  <script src="js/wilderness-chunks.js?v=20261009he76d12d"></script>
   <!-- PNG-plane avatar outline occluders: registry of sprite-plane meshes on
        outline layer 4 plus the depth-only replay game.js runs before its
        outline passes (window.PngPlaneOutlineOccluder; game.js calls init). -->
@@ -1809,6 +1810,7 @@
             </div>
             <select id="settingZoom" style="font-size:12px;padding:5px 8px;background:rgba(255,255,255,.06);border:1px solid var(--border-bright);border-radius:6px;color:var(--text);align-self:center">
               <option value="0.75">75%</option>
+              <option value="auto">Auto (mobile recommended)</option>
               <option value="1">100%</option>
               <option value="1.25">125%</option>
               <option value="1.5" selected>150%</option>
@@ -1909,7 +1911,7 @@
           <label class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Resolution</div>
-              <div class="settings-desc">Lower render resolution to improve performance</div>
+              <div class="settings-desc">Auto limits mobile GPU memory and adjusts world detail under load. HUD stays sharp.</div>
             </div>
             <select id="settingResolution" style="font-size:12px;padding:5px 8px;background:rgba(255,255,255,.06);border:1px solid var(--border-bright);border-radius:6px;color:var(--text);align-self:center">
               <option value="1">100%</option>
@@ -2586,7 +2588,7 @@
   <!-- Optional world-only painterly postprocess. It patches the existing
        fullscreen world composite after renderer creation, persists only its
        quality mode, and owns no requestAnimationFrame loop. -->
-  <script src="js/painterly-postprocess.js?v=20260925defaultmedium1"></script>
+  <script src="js/painterly-postprocess.js?v=20261009ha9475e1"></script>
   <script src="js/banubu-cave-clouds.js?v=20260923cloudring3"></script>
   <!-- Shoulder Cam / Character View Pointer Lock (window.ShoulderCamPointerLock); game.js calls init(...) during setup. -->
   <script src="js/shoulder-cam-pointer-lock.js?v=20260930hfc11b39"></script>
@@ -2600,7 +2602,7 @@
   <script src="js/romance-wedding.js?v=20261007wedding1"></script>
   <script src="js/romance-system.js?v=20261007romance1"></script>
   <script src="js/npc-command-wheel.js?v=20261008h02bf686"></script>
-  <script src="game.js?v=20261009h7f80c57"></script>
+  <script src="game.js?v=20261009h17ad152"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261005h9a94218"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
