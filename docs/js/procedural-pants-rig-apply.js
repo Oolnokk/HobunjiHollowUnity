@@ -22,6 +22,7 @@
       status.textContent = message;
       status.dataset.kind = kind;
     }
+    window.ProceduralPantsRigStatusHoldUntil = performance.now() + 5000; // Stops the Live 3D loop's own status text from overwriting this action's result before it can be read.
     const pill = document.getElementById('statusPill'); // Mirrors important state to the procedural editor's global mobile-visible status pill.
     if (pill) {
       pill.textContent = message;
@@ -359,7 +360,15 @@
     button.className = 'secondary';
     button.textContent = 'Apply to NPC';
     button.title = 'Apply the authored pants to the current NPC using the five-point pants and species beltlines';
-    button.addEventListener('click', () => applyToNpc());
+    button.addEventListener('click', () => {
+      button.classList.add('active'); // Lights the button the instant the tap registers (editor's .active outline), even if the apply then fails.
+      Promise.resolve(applyToNpc()).then(ok => {
+        button.classList.remove('active');
+        button.style.outline = `2px solid ${ok ? '#45d6a0' : '#ffc857'}`; // Green = applied, amber = failed; the reason is in the status line.
+        button.style.outlineOffset = '1px';
+        setTimeout(() => { button.style.outline = ''; button.style.outlineOffset = ''; }, 1600);
+      });
+    });
     const rebind = document.getElementById('proceduralPantsRebind');
     tools.insertBefore(button, rebind || tools.lastElementChild || null);
     return true;

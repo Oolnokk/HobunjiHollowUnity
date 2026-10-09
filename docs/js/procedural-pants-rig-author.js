@@ -56,6 +56,7 @@
   }
 
   function setStatus(message, kind = 'good') {
+    if (performance.now() < (window.ProceduralPantsRigStatusHoldUntil || 0)) return; // A just-finished button action's result stays readable.
     if (state.status) {
       state.status.textContent = message;
       state.status.dataset.kind = kind;
@@ -543,7 +544,11 @@
       state.forceRebuild = true;
       if (!state.liveToggle.checked) disposePreview();
     });
-    panel.querySelector('#proceduralPantsRebind').addEventListener('click', () => {
+    panel.querySelector('#proceduralPantsRebind').addEventListener('click', event => {
+      const button = event.currentTarget;
+      button.classList.add('active'); // Immediate tap feedback.
+      setTimeout(() => button.classList.remove('active'), 600);
+      window.ProceduralPantsRigStatusHoldUntil = 0; // Rebind's own status should show right away.
       state.forceRebuild = true;
       syncAuthorToProceduralIdentity();
       setStatus('Rebinding pants preview to the current procedural avatar…', 'good');
