@@ -6,6 +6,7 @@
 
   const SELF_SCRIPT_SRC = document.currentScript?.src || ''; // Used to load sibling editor adapters from the same branch/commit as this script, including commit-pinned GitHack previews.
   const DANCE_SCRIPT_ID = 'proceduralDanceModeScript'; // Prevents the procedural dance workspace from being loaded twice.
+  const PANTS_SCRIPT_ID = 'proceduralPantsRigAuthorScript'; // Prevents the Pants Rig workspace from being loaded twice.
   const STYLE_ID = 'proceduralImpactTabsStyles'; // Prevents duplicate workspace CSS if the adapter is evaluated twice.
 
   // The procedural animation editor owns its own embedded leg rig and does not
@@ -142,6 +143,24 @@
       : new URL('../../js/procedural-dance-mode.js', window.location.href).href; // Keeps direct editor loads working even if currentScript is unavailable.
     script.addEventListener('error', () => console.error(`[Dance mode] Failed to load ${script.src}`));
     document.head.appendChild(script);
+  }
+
+  function loadProceduralPantsRig() {
+    if (window.ProceduralPantsRigAuthor?.installed || document.getElementById(PANTS_SCRIPT_ID)) return;
+    const load = (filename, id) => new Promise((resolve, reject) => {
+      const script = document.createElement('script'); // Loads the Pants Rig workspace modules without adding more code to the giant editor HTML.
+      if (id) script.id = id;
+      script.async = false;
+      script.src = SELF_SCRIPT_SRC
+        ? new URL(filename, SELF_SCRIPT_SRC).href
+        : new URL(`../../js/${filename}`, window.location.href).href; // Keeps direct editor loads working even if currentScript is unavailable.
+      script.addEventListener('load', resolve, { once: true });
+      script.addEventListener('error', () => reject(new Error(`Failed to load ${script.src}`)), { once: true });
+      document.head.appendChild(script);
+    });
+    load('procedural-pants-rig-author.js', PANTS_SCRIPT_ID)
+      .then(() => load('procedural-pants-rig-apply.js', 'proceduralPantsRigApplyScript')) // Apply-to-NPC needs the author host's header to exist first.
+      .catch(error => console.error('[Pants Rig]', error));
   }
 
   function injectImpactWorkspaceStyles() {
@@ -346,6 +365,7 @@
 
   installEditorLegBoneGuideBridge();
   loadProceduralDanceMode();
+  loadProceduralPantsRig();
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', buildImpactWorkspace, { once: true });
   else buildImpactWorkspace();
 })();
