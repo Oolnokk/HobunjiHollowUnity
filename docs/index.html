@@ -147,8 +147,8 @@
   <script src="js/metal-armor-system.js?v=20261008h99621ca"></script>
   <script src="config/colors/config.js?v=20260930h1b2e2e2"></script>
   <script src="config/attachment-rig-profiles.js?v=20261002h6d814a9"></script>
-  <link rel="stylesheet" href="style.css?v=20261009mobiletarget2">
-  <link rel="stylesheet" href="cooking-ui.css?v=20261009mobiletarget2">
+  <link rel="stylesheet" href="style.css?v=20261009mobiletarget3">
+  <link rel="stylesheet" href="cooking-ui.css?v=20261009mobiletarget3">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
   <!-- Shared gameplay presentation: mirrors the outlined text + light translucent containers used by character/save select. -->
   <link rel="stylesheet" href="gameplay-ui-theme.css?v=20260923outlineart1">
@@ -174,7 +174,7 @@
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
   <script src="js/held-action-animations.js?v=20261008h6aea492"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
-  <script src="js/character-action-locks.js?v=20261007h6a88d9d"></script>
+  <script src="js/character-action-locks.js?v=20261009ha9f526c"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
   <script src="js/npc-character-state.js?v=20260811a"></script>
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
@@ -2337,7 +2337,7 @@
       <button id="btnUtilityMenu" class="abt" aria-label="Hold for utility menu">
         <span class="abt-icon">🧭</span>
       </button>
-      <!-- Final second-arch control: 12-degree gap and 20% larger than its neighbors. -->
+      <!-- Final second-arch control: Social Actions inserts before this; live sizing and spacing are 20% larger. -->
       <button class="abt abt-swap abt-hidden" id="btnSwapTarget" aria-label="Auto-target: tap to toggle, hold and drag to select target" aria-pressed="true">
         <span class="abt-icon">
           <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -2422,7 +2422,7 @@
     <button class="fcv-continue" id="fcvContinueBtn">Continue</button>
   </div>
 
-  <script src="js/tool-icon-render.js?v=20261001h924b68f"></script>
+  <script src="js/tool-icon-render.js?v=20261009he7f6171"></script>
   <script src="js/sprite-recolor.js?v=20261001quickdebuff2"></script>
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
        calls window.Mounts.init(...) during its own setup. -->
@@ -2607,7 +2607,7 @@
   <script src="js/romance-wedding.js?v=20261007wedding1"></script>
   <script src="js/romance-system.js?v=20261007romance1"></script>
   <script src="js/npc-command-wheel.js?v=20261008h02bf686"></script>
-  <script src="game.js?v=20261009h65ac28e"></script>
+  <script src="game.js?v=20261009hf76466c"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261005h9a94218"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

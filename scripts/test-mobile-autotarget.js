@@ -84,3 +84,49 @@ assert.equal(transitions,beforeCancel,'second finger cannot steal ownership');
 handlers.lostpointercapture(event(5));
 assert.equal(timers.size,0,'capture loss clears hold timer');
 console.log('mobile autotarget preference, acquisition, switching, and gesture checks passed');
+
+function injectedCss(file, nextFunction, extra = {}) {
+  const source = fs.readFileSync(file, 'utf8'); // Executes each production style installer, including runtime-only overrides.
+  const styles = []; // Captures the styles actually emitted for the gameplay HUD.
+  const context = {document:{getElementById(){return null;},createElement(){return {};},head:{appendChild(style){styles.push(style.textContent);}}},...extra}; // Lightweight DOM surface for real injectStyles calls.
+  const start = source.indexOf('  function injectStyles()'); // Isolates the real owner's installer without booting unrelated gameplay systems.
+  vm.runInNewContext(source.slice(start,source.indexOf(nextFunction,start))+'\ninjectStyles();',context);
+  return styles.join('\n');
+}
+const iconCss = injectedCss('docs/js/action-arch-icons.js','  function report('); // Canonical size owner must supersede all generic arch button sizes.
+const layoutDefaults = {btnWeaponSwitch:170,toolBtn:160,itemBtn:150,btnCallMount:140,btnUtilityMenu:130,btnSocialActions:120}; // Live ring defaults, including the previously missed Social Actions control.
+function outerCss(angles) {
+  return injectedCss('docs/js/social-action-wheel.js','  function buildUi()', {cfg:{wheelRadiusPx:190,mobileOuterAnglesDeg:angles},DEFAULTS:{mobileOuterAnglesDeg:layoutDefaults}});
+}
+function declaration(css, selector, property) {
+  for (const match of css.replace(/\/\*[\s\S]*?\*\//g,'').matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    if (!match[1].split(',').some(part=>part.trim()===selector)) continue;
+    const entry=match[2].split(';').find(part=>part.trim().startsWith(property+':')); // Parses emitted CSS rather than pinning authored source spelling.
+    if(entry)return entry.slice(entry.indexOf(':')+1).trim();
+  }
+  throw Error('Missing live HUD declaration '+selector+' '+property);
+}
+function evaluateLength(value, col, outerSize) {
+  const expression=value.replace(/!important/g,'').replace(/var\(--outer-control-size\)/g,String(outerSize)).replace(/var\(--col\)/g,String(col)).replace(/px/g,'').replace(/calc\(/g,'('); // Evaluates the generated arithmetic for real phone layout columns.
+  return Function('clamp','return '+expression)((min,value,max)=>Math.max(min,Math.min(max,value)));
+}
+const normalSizeCss=declaration(iconCss,'#toolSelect','--outer-control-size'); // Uses the live 33–46px baseline rather than the obsolete base stylesheet.
+const targetWidthCss=declaration(iconCss,'#toolSelect #btnSwapTarget','width'); // Higher-specificity important override must beat #toolSelect button.
+const targetHeightCss=declaration(iconCss,'#toolSelect #btnSwapTarget','height'); // Both hit-area dimensions must carry the same scale.
+assert(targetWidthCss.includes('!important')&&targetHeightCss.includes('!important'),'target size overrides the runtime important generic rule');
+for(const col of [10,12.1875,21.0625,48,80]) {
+  const normalSize=evaluateLength(normalSizeCss,col,0); // Real responsive diameter at this layout column size.
+  assert(Math.abs(evaluateLength(targetWidthCss,col,normalSize)/normalSize-1.2)<1e-9,'live target width is 20% larger');
+  assert(Math.abs(evaluateLength(targetHeightCss,col,normalSize)/normalSize-1.2)<1e-9,'live target height is 20% larger');
+}
+for(const angles of [layoutDefaults,{btnUtilityMenu:145,btnSocialActions:130}]) {
+  const css=outerCss(angles); // Partial authored overrides must retain defaults and derive the target endpoint.
+  const resolved={...layoutDefaults,...angles}; // Provides the fixture's effective neighbor positions.
+  const right=declaration(css,'#btnSwapTarget','right'); // Captures the actual important placement override that beats style.css.
+  const angle=Number(right.match(/cos\(([-\d.]+)deg\)/)?.[1]); // Reads emitted geometry, not the production implementation text.
+  assert(right.includes('!important'),'target position joins the runtime ring layout authority');
+  assert.equal(resolved.btnSocialActions-angle,Math.abs(resolved.btnUtilityMenu-resolved.btnSocialActions)*1.2,'target follows Social Actions with 20% extra spacing');
+}
+const labelsCss=injectedCss('docs/js/arch-button-labels.js','  function currentBindings()'); // Runtime label overlay must grow together with the button.
+assert(declaration(labelsCss,'#btnSwapTarget .arch-meaning-label','font-size'),'visible target text has its own larger size');
+console.log('executed runtime target size, label, and social-ring layout regression checks passed');

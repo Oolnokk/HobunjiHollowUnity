@@ -109,7 +109,7 @@
    the container's corner (see that file's #btnUtilityMenu comment on why
    cos() near 90deg leaves almost nothing for the button to be inset by)
    that it went visibly off-screen on a real phone. Autotarget ends this
-   second arch at 113 degrees, 12 degrees after utilities (20% more spacing). */
+   second arch after Social Actions; its live runtime layout owns the 20% extra spacing. */
 #btnWeaponSwitch {
   right: calc(-1*cos(165deg)*var(--ar2));
   bottom: calc(sin(165deg)*var(--ar2));

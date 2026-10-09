@@ -27619,8 +27619,12 @@
         meleeAttackAlignmentSnapshot: () => {
           const target = meleeAttackTargetLock;
           return {
-            latestChange: 'Mobile-only autotarget defaults on; second-arch endpoint (20% larger and more spaced) tap toggles, hold enables and drags select melee/ranged targets with stable locks and obstruction checks.',
+            latestChange: 'Mobile-only autotarget defaults on; second-arch endpoint follows Social Actions; live runtime sizing and spacing are 20% larger; tap toggles, hold enables and drags select melee/ranged targets with stable locks and obstruction checks.',
             settings: window.Combat?.input?.autoTargetSettingsSnapshot?.(),
+            controlLayout: ['btnUtilityMenu', 'btnSocialActions', 'btnSwapTarget'].map(id => {
+              const rect = document.getElementById(id)?.getBoundingClientRect?.(); // On-demand copyable diagnostics use actual runtime button sizes and positions.
+              return rect ? { id, width: rect.width, height: rect.height, centerX: rect.left + rect.width / 2, centerY: rect.top + rect.height / 2 } : { id, missing: true };
+            }),
             selectedTarget: manualAutoTarget?.id ?? manualAutoTarget?.def?.label ?? null,
             active: !!meleeAttackAlignment,
             targetLocked: !!meleeAttackTargetLock,
