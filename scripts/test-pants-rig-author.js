@@ -144,4 +144,6 @@ assert.doesNotMatch(proceduralPantsSource, /const THREE = window\.THREE/);
 assert.match(proceduralPantsSource, /hobunji-pants-rig-changed/);
 assert.match(proceduralPantsSource, /ProceduralPantsRigAuthor/);
 
+assert.doesNotMatch(proceduralPantsSource, /<header\b/, 'the editor stylesheet hides every <header> with display:none !important; the Pants host header must be a div');
+
 console.log('Pants rig author regression: PASS');

@@ -513,14 +513,14 @@
     panel.id = PANEL_ID;
     panel.setAttribute('aria-label', 'Pants Rig Author');
     panel.innerHTML = `
-      <header class="pantsRigHostHeader">
+      <div class="pantsRigHostHeader"><!-- Not <header>: the editor stylesheet hides every header element with display:none !important. -->
         <div><div class="pantsRigHostTitle">👖 Pants Rig Author</div><div class="pantsRigHostSub">2D rig + visible weight paint + live deformation on this procedural avatar</div></div>
         <div class="pantsRigHostTools">
           <label><input id="proceduralPantsLive3d" type="checkbox" checked> Live 3D</label>
           <button id="proceduralPantsRebind" type="button" class="secondary">Rebind</button>
           <button id="proceduralPantsClose" type="button" class="secondary" aria-label="Close Pants Rig">×</button>
         </div>
-      </header>
+      </div>
       <div class="pantsRigHostBody">
         <iframe id="proceduralPantsRigFrame" title="Pants Rig Author"></iframe>
         <div id="proceduralPantsRigStatus" class="pantsRigHostStatus">Loading pants author…</div>
