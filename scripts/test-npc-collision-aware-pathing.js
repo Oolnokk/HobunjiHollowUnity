@@ -3,6 +3,7 @@ const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
 
+// Audit-hardening coverage intentionally includes sub-tile first edges, blocked-overlap escape, and the real cutscene planner seam.
 const repo = path.resolve(__dirname, '..');
 const pathfindingSource = fs.readFileSync(path.join(repo, 'docs/js/npc-pathfinding.js'), 'utf8');
 const routeGraphSource = fs.readFileSync(path.join(repo, 'docs/js/npc-route-graph.js'), 'utf8');
