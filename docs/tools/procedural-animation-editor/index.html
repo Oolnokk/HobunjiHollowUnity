@@ -54987,6 +54987,7 @@ const REQUIRED_SCRIPTS = [
   'js/portrait-breathing.js',
   'js/npc-avatar-preview-utils.js',
   'js/png-plane-avatar.js',
+  'js/character-rig-scale.js', // Whole-character body x/y scale + neck-rig head compensation applied to the floor root in bindProceduralModel().
   'js/leg-bones.js',
   CREATURE_RENDER_SCRIPT,
 ];
@@ -55172,7 +55173,11 @@ const procedural = { // Holds live input, motion, playback, and recording state 
     rightPhase: 'idle', // Exposes whether the right foot is planted, swinging, or settling.
   },
   hands: {
-    root: null, // Parents both generated hand GLBs directly under the avatar model (same frame as handAttachX/Y), for Dance's generated arm bones to find and drive by name.
+    root: null, // Parents both generated hand GLBs directly under the avatar model, for Dance's generated arm bones to find and drive by name.
+    left: null, // Left hand socket wrapper (see applyFreeHandPose).
+    right: null, // Right hand socket wrapper.
+    rest: null, // gameFreeHandRestLocal() result for the current model.
+    motion: { phase: 0, gaitStrength: 0 }, // Free-hand swing state mirroring procedural-hand-frame-driver.js.
   },
   legBones: { // Invisible hip->thigh->calf debug visualization + authored-bend gizmo (see docs/js/leg-bones.js).
     enabled: true, // "Show leg bones" toggle.
@@ -56009,7 +56014,9 @@ async function buildAvatarRender(npc, options = {}) {
     const back = Object.assign(document.createElement('canvas'), { width: size, height: size });
     await renderPortraitSerial(front, profile, { seatId: npc.id || npc.name || 'npc' });
     await renderPortraitSerial(back, profile, { seatId: npc.id || npc.name || 'npc', portraitView: 'behind' });
-    return { exportNpc, profile, front, back, bodyOnly };
+    const head = Object.assign(document.createElement('canvas'), { width: size, height: size }); // Locates the neck pivot, exactly like game.js's NPC walker build.
+    await renderPortraitSerial(head, profile, { seatId: npc.id || npc.name || 'npc', onlyHeadSprite: true, forceEyesOpen: true });
+    return { exportNpc, profile, front, back, head, bodyOnly };
   })();
   state.renderCache.set(cacheKey, promise);
   try { return await promise; }
@@ -58096,16 +58103,106 @@ function disposeExperimentalHands() { // Removes the generated hand GLBs before 
     disposeObjectResources(handsRoot);
   }
   procedural.hands.root = null;
+  procedural.hands.left = null;
+  procedural.hands.right = null;
+  procedural.hands.rest = null;
 }
 
-// Builds simple GLB hand markers — one per side, named `${model.name}_LeftHand`/
-// `_RightHand` and parented directly to the model (the same local space
-// handAttachX/handAttachY already live in) — for Dance's generated arm bones
-// (docs/js/procedural-dance-mode-core.js) to find by name and drive every
-// frame. Unlike the feet, nothing in this editor's own native gait moves
-// these; they simply sit at the idle hand-attach point until Dance (or
-// nothing) repositions them, mirroring how the real game's own hand system
-// is a single flat socket with no owned animation of its own either.
+// Game free-hand rule (docs/js/procedural-hand-shoulder-aim.js
+// alignFreeHandToFallbackAnchor + procedural-hand-attachments.js setSideIdle):
+// an empty hand sits at its attachment-rig shoulder anchor's X and at
+// posteriorY - modelHeight * anatomy.armLengthHeightPercentOffset / 100, in the
+// floor-relative character parent. The hands here are parented under the model
+// (Dance finds them by name), which sits avatarLiftY above that floor parent, so
+// every floor-relative value is shifted down by the lift. handAttachY is itself
+// floor-relative; using it directly under the lifted model is what left the
+// hands at shoulder height with no arm length.
+const FREE_HAND_IDLE_MEDIAL_YAW_DEG = 90; // procedural-hand-attachments.js IDLE_MEDIAL_YAW_DEG.
+const FREE_HAND_RIGHT_TWIST_DEG = 180; // procedural-hand-attachments.js RIGHT_SHOULDER_AXIS_TWIST_DEG.
+const FREE_HAND_REFERENCE_SPEED = 3.2; // procedural-hand-frame-driver.js FALLBACK_REFERENCE_SPEED.
+
+function gameFreeHandRestLocal(model, speciesId, gender) { // Returns { left/right: { hand, shoulder } } in model-local space plus the source used.
+  const modelHeight = Number(model?.userData?.portraitModelHeight) || 0.9;
+  const lift = model === state.three.model && Number.isFinite(procedural.avatarLiftY) ? procedural.avatarLiftY : modelHeight / 2;
+  const handAttachX = Number(model?.userData?.handAttachX);
+  const handAttachY = Number(model?.userData?.handAttachY);
+  const safeHandAttachX = Number.isFinite(handAttachX) ? handAttachX : -modelHeight * 0.28;
+  const safeHandAttachY = Number.isFinite(handAttachY) ? handAttachY : modelHeight * 0.45;
+  const transformSpecies = typeof window.hobunjiTransformSpeciesId === 'function' ? window.hobunjiTransformSpeciesId(speciesId) : speciesId;
+  const lib = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters || {};
+  const profile = lib[`${transformSpecies}::${gender}`] || lib[`${speciesId}::${gender}`] || null;
+  const posteriorY = posteriorYForAnalysis({ gameModelHeight: modelHeight, handAttachY: safeHandAttachY, speciesId: profile?.species || transformSpecies, gender });
+  const armOffset = Number(profile?.anatomy?.armLengthHeightPercentOffset);
+  const wristY = posteriorY - modelHeight * (Number.isFinite(armOffset) ? armOffset : 0) / 100;
+  const result = { source: profile ? 'attachment-rig-profile' : 'handAttach-fallback', modelHeight, lift, posteriorY, wristY };
+  for (const side of ['left', 'right']) {
+    const anchor = profile?.anchors?.[`${side}HandShoulder`]?.position;
+    const hasAnchor = anchor && [anchor.x, anchor.y, anchor.z].every(value => Number.isFinite(Number(value)));
+    const idleX = side === 'left' ? -safeHandAttachX : safeHandAttachX; // procedural-hand-attachments.js idlePositions sign convention.
+    const shoulder = hasAnchor
+      ? { x: Number(anchor.x), y: Number(anchor.y) - lift, z: Number(anchor.z) }
+      : { x: idleX * 0.72, y: safeHandAttachY + modelHeight * 0.08 - lift, z: 0 };
+    const hand = { x: hasAnchor ? Number(anchor.x) : idleX, y: (profile ? wristY : safeHandAttachY) - lift, z: 0 };
+    result[side] = { hand, shoulder };
+  }
+  return result;
+}
+
+function freeHandFallbackPose(side, motion, nowMs, modelHeight) { // Same formula as procedural-hand-frame-driver.js fallbackPose().
+  const sidePhase = motion.phase + (side === 'right' ? Math.PI : 0);
+  const swing = Math.sin(sidePhase);
+  const liftWave = Math.max(0, Math.cos(sidePhase));
+  const idlePhase = nowMs * 0.0017 + (side === 'right' ? 0.28 : 0);
+  const idleBreath = Math.sin(idlePhase);
+  const h = modelHeight;
+  const gait = motion.gaitStrength;
+  return {
+    position: {
+      y: h * (0.0045 * idleBreath * (1 - gait) + 0.018 * liftWave * gait),
+      z: h * 0.085 * swing * gait + h * 0.003 * Math.cos(idlePhase) * (1 - gait),
+    },
+    rotationDeg: {
+      pitch: 22 * swing * gait + 2.5 * idleBreath * (1 - gait),
+      yaw: (side === 'right' ? -1 : 1) * 3 * gait * Math.abs(swing),
+      roll: (side === 'right' ? -1 : 1) * (5 * liftWave * gait + 1.5 * idleBreath * (1 - gait)),
+    },
+  };
+}
+
+function applyFreeHandPose(dt = 0, movingSpeed = 0) { // Drives both free hands like the game's empty-hand fallback (idle breathing, walk swing).
+  const hands = procedural.hands;
+  const rest = hands.rest;
+  const THREE = state.three.THREE;
+  if (!hands.root || !rest || !THREE) return;
+  const motion = hands.motion;
+  const damp = (current, target, rate) => current + (target - current) * (1 - Math.exp(-Math.max(0, rate) * Math.max(0, dt)));
+  const speedRatio = Math.max(0, Math.min(1.25, movingSpeed / FREE_HAND_REFERENCE_SPEED));
+  const targetStrength = movingSpeed > 0.035 ? Math.sqrt(speedRatio) : 0;
+  motion.gaitStrength = damp(motion.gaitStrength, targetStrength, targetStrength > motion.gaitStrength ? 9 : 13);
+  const strideWorld = Math.max(rest.modelHeight * 0.48, 0.12);
+  const cadenceHz = movingSpeed > 0.035 ? Math.max(0.55, Math.min(3.1, movingSpeed / strideWorld)) : 0;
+  if (cadenceHz > 0 && dt > 0) motion.phase = (motion.phase + dt * cadenceHz * Math.PI * 2) % (Math.PI * 2);
+  const nowMs = performance.now();
+  const idleQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, THREE.MathUtils.degToRad(FREE_HAND_IDLE_MEDIAL_YAW_DEG), 0, 'YXZ'));
+  for (const side of ['left', 'right']) {
+    const wrapper = hands[side];
+    if (!wrapper) continue;
+    const pose = freeHandFallbackPose(side, motion, nowMs, rest.modelHeight);
+    wrapper.position.set(rest[side].hand.x, rest[side].hand.y + pose.position.y, rest[side].hand.z + pose.position.z);
+    const fallbackQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(
+      THREE.MathUtils.degToRad(pose.rotationDeg.pitch),
+      THREE.MathUtils.degToRad(pose.rotationDeg.yaw),
+      THREE.MathUtils.degToRad(pose.rotationDeg.roll),
+      'YXZ',
+    ));
+    wrapper.quaternion.copy(idleQuaternion).multiply(fallbackQuaternion);
+  }
+}
+
+// Builds the GLB hands — one per side, named `${model.name}_LeftHand`/
+// `_RightHand` and parented directly to the model — for Dance's generated arm
+// bones (docs/js/procedural-dance-mode-core.js) to find by name. Outside Dance
+// they follow the game's free-hand rule above via applyFreeHandPose().
 async function buildExperimentalHandsForAvatar(model, avatar) {
   disposeExperimentalHands();
   if (!model || state.previewMode !== 'npc' || !window.HobunjiHandModelProfiles) return;
@@ -58127,15 +58224,15 @@ async function buildExperimentalHandsForAvatar(model, avatar) {
   const targetHeight = modelHeight * handHeightFraction;
   const effectiveScale = Number(window.HobunjiHandModelProfiles.effectiveScaleFor?.(speciesId, gender)) || 1; // model.scale (per-GLB import correction) * species/gender scale — the exact factor docs/js/procedural-hand-attachments.js's own buildGlbHand() multiplies on top of its own canonicalFit.
   const sourceIsLeft = handProfile.mirrorX !== false; // Matches docs/js/procedural-hand-attachments.js's own sourceIsLeft convention (authored GLBs default to a left-hand basis).
-  const handAttachX = Number(model.userData?.handAttachX);
-  const handAttachY = Number(model.userData?.handAttachY);
-  const safeHandAttachX = Number.isFinite(handAttachX) ? handAttachX : -modelHeight * 0.28;
-  const safeHandAttachY = Number.isFinite(handAttachY) ? handAttachY : modelHeight * 0.45;
+  const rest = gameFreeHandRestLocal(model, speciesId, gender);
+  model.userData.gameFreeHandRest = rest; // Read by Dance's arm rig so its relaxed pose and shoulders match this placement.
 
   const handsRoot = new THREE.Group();
   handsRoot.name = `${model.name || 'Avatar'}_procedural_hands`;
   model.add(handsRoot);
   procedural.hands.root = handsRoot;
+  procedural.hands.rest = rest;
+  procedural.hands.motion = { phase: 0, gaitStrength: 0 };
 
   for (const side of ['left', 'right']) {
     const mesh = state.footGlb.skeletonClone ? state.footGlb.skeletonClone(gltf.scene) : gltf.scene.clone(true);
@@ -58154,13 +58251,18 @@ async function buildExperimentalHandsForAvatar(model, avatar) {
     // Deliberately NOT recentering on the mesh's own bounds: per
     // procedural-hand-attachments.js's own comment, the GLB's authored 0,0,0
     // is the grip/wrist origin and must stay the pivot Dance positions.
-    const wrapper = new THREE.Group(); // Dance sets this wrapper's position/quaternion each frame; the mesh itself stays at its authored rest orientation and pivot inside it.
+    const visual = new THREE.Group(); // Same visual group as buildGlbHand(), including the right hand's shoulder-axis twist.
+    visual.name = `${model.name || 'Avatar'}_${side}_hand_visual`;
+    if (side === 'right') visual.rotation.y = THREE.MathUtils.degToRad(FREE_HAND_RIGHT_TWIST_DEG);
+    visual.add(mesh);
+    const wrapper = new THREE.Group(); // Socket equivalent: Dance or applyFreeHandPose() sets its position/quaternion.
     wrapper.name = `${model.name || 'Avatar'}_${side === 'left' ? 'Left' : 'Right'}Hand`;
-    wrapper.add(mesh);
-    wrapper.position.set(side === 'left' ? -Math.abs(safeHandAttachX) : Math.abs(safeHandAttachX), safeHandAttachY, 0);
+    wrapper.add(visual);
     handsRoot.add(wrapper);
+    procedural.hands[side] = wrapper;
   }
-  log(`Generated ${speciesId} hand markers from ${handProfile.glb} at effective scale ${effectiveScale.toFixed(3)}.`);
+  applyFreeHandPose(0, 0);
+  log(`Generated ${speciesId} hands from ${handProfile.glb} at effective scale ${effectiveScale.toFixed(3)}; free-hand rest from ${rest.source}: posterior ${rest.posteriorY.toFixed(3)}, wrist ${rest.wristY.toFixed(3)} above floor.`);
 }
 
 function disposeCurrentThreeModel() {
@@ -59366,11 +59468,24 @@ function bindProceduralModel(model, options = {}) { // Wraps the repository avat
   const modelHeight = Number(model.userData?.portraitModelHeight) || 0; // Supplies the final scaled avatarHeight returned by PNGPlaneAvatar.
   procedural.baseModelY = useGameGrounding ? previewGroundWorldY() : 0;
   procedural.avatarLiftY = useGameGrounding ? modelHeight / 2 : 0;
+  // Whole-character body x/y scale around the floor, on the root that owns the
+  // portrait lift, feet, leg bones and hands — the same single floor-relative
+  // parent character-rig-scale.js scales in the game (also compensates the head).
+  procedural.bodyRigScale = null;
+  if (useGameGrounding && window.HobunjiCharacterRigScale?.applyToParent && model.userData?.speciesId) {
+    const rigSpecies = model.userData.speciesId;
+    const rigGender = model.userData.gender || 'male';
+    const age = window.HobunjiCharacterRigScale.ageFor?.({ avatarRoot: model }) || 0;
+    if (window.HobunjiCharacterRigScale.applyToParent(locomotionRoot, rigSpecies, rigGender, null, age)) {
+      procedural.bodyRigScale = { ...locomotionRoot.userData.hobunjiCharacterRigScaleState.factor, species: rigSpecies, gender: rigGender };
+    }
+  }
   model.userData.gameGrounding = {
     enabled: useGameGrounding,
     floorY: procedural.baseModelY,
     avatarHeight: modelHeight,
     avatarHeightHalfLift: procedural.avatarLiftY,
+    bodyRigScale: procedural.bodyRigScale,
     formula: 'locomotion floor root Y + avatarHeight / 2 lift root, matching makeNpcWalker / refreshPlayerAvatar',
   };
   resetProceduralMovement({ resetCamera: true, preservePlayback: true });
@@ -59693,6 +59808,7 @@ function updateProceduralMovement(dt) { // Advances input, movement physics, pos
   syncPosteriorPoseRotationOrigin(); // Recomputes the pivot-compensated position now that sway/counter-wave rotation was applied directly, after applyTransformRecord already ran.
   removeFootingDrunkenLegPlacement();
   updateExperimentalFeetGait(dt, movingSpeed, characterMotion, input);
+  applyFreeHandPose(dt, movingSpeed);
   applyFootingDrunkenLegPlacement(dt, movingSpeed);
   updateLegBonesVisual();
   applyAutoWalkBakedBlendOverlay();
@@ -60300,6 +60416,8 @@ async function placeThreeModel(npc, avatar) {
   const worldModelHeight = worldModelWidth * (avatar.front.height / Math.max(1, avatar.front.width)); // Preserves non-square source aspect before species/child scaling.
   t.model = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(t.THREE, avatar.front, {
     backCanvas: avatar.back,
+    headCanvas: avatar.head,
+    neckRig: true, // Game NPC walkers build a neck rig; the body rig scale's head compensation needs it.
     profile: avatar.profile,
     appearance: avatar.exportNpc.appearance,
     npcRecord: npc,
