@@ -54975,6 +54975,13 @@ const REQUIRED_SCRIPTS = [
   'config/scratchbones-config.js',
   'config/attachment-rig-profiles.js',
   'config/hand-model-profiles.js',
+  // The game loads these through held-action-animations.js -> attachment-rig-latest-authored-snapshot.js.
+  // Without them the editor kept the stale base anatomy (e.g. Mao-ao male placement 0.95 / portrait
+  // scale 1.0 instead of the game's 1.1 / 0.8) and posterior heights, so the portrait sat at the wrong
+  // height relative to the feet and hands. Order mirrors the game's bootstrap.
+  'config/character-rig-scale-defaults.js',
+  'js/attachment-rig-latest-authored-snapshot-core.js',
+  'js/character-rig-maoao-authored-20260905.js',
   'js/color-fill.js', // portrait-utils.js throws unless ColorFill is already loaded.
   'js/portrait-utils.js',
   'js/portrait-breathing.js',
@@ -55373,6 +55380,8 @@ async function loadRepositoryRuntime(settings) {
     await executeClassicScript(code, rawUrl(path));
     log(`Loaded runtime script ${path}`);
   }
+
+  window.applyHobunjiAttachmentRigProfileCorrections?.(); // Same post-bootstrap call held-action-animations.js makes in the game: pushes snapshot anatomy into the live pngPlaneAvatar config.
 
   if (!window.NpcAvatarPreview) throw new Error('npc-avatar-preview-utils.js did not expose window.NpcAvatarPreview.');
   if (!window.PNGPlaneAvatar) throw new Error('png-plane-avatar.js did not expose window.PNGPlaneAvatar.');
