@@ -33,7 +33,7 @@ const deps = {
   worldObjects: new Map(),
   isHouseFootprint: () => false,
   isTownBuildingCollisionTile: () => false,
-  furnitureBlocksMovementAt: () => false,
+  furnitureBlocksMovementAt: (area, x, z) => area === 'interior' && x > 4.05 && x < 4.95 && z > 4.05 && z < 4.95,
   npcMovementConfig: () => ({ beelineSampleStepTiles: 0.25, collisionRadiusTiles: 0.22 }),
   npcTransitionPool: () => [],
   buildingScenes: new Map(),
@@ -53,6 +53,10 @@ for (let i = 0; i < detour.length; i++) {
   const to = detour[i];
   assert.equal(window.NpcPathfinding.canNpcTraverse('interior', from.col + 0.5, from.row + 0.5, to.col + 0.5, to.row + 0.5), true);
 }
+
+assert.equal(window.NpcPathfinding.findNpcPath('interior', 3.5, 3.5, 4, 4, { padding: 2 }), null, 'ordinary pathing still treats chair furniture as occupied');
+const seatPath = window.NpcPathfinding.findNpcPath('interior', 3.5, 3.5, 4, 4, { padding: 2, allowOccupiedTarget: true });
+assert.ok(seatPath?.length, 'seat pathing may enter occupied furniture only inside its final target tile');
 
 // Existing live-walker seam is patched when game.js assigns/pushes walkers.
 window._npcWalkers = [];
