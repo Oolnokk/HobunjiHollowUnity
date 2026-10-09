@@ -17,40 +17,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Capture NPC runtime integration slices
-        shell: bash
-        run: |
-          node - <<'NODE' > npc-collision-audit.txt
-          const fs = require('fs');
-          const s = fs.readFileSync('docs/game.js','utf8');
-          const patterns = [
-            '_npcWalkers',
-            'function makeNpcWalker',
-            'moveToward(tx',
-            '_tryStartGridPath',
-            '_updateStationWander',
-            'advanceActorToward',
-            'NpcPathfinding.init',
-            'function furnitureBlocksMovementAt'
-          ];
-          for (const p of patterns) {
-            console.log(`\n===== ${p} =====`);
-            let from = 0, hits = 0;
-            while (hits < 8) {
-              const i = s.indexOf(p, from);
-              if (i < 0) break;
-              const a = Math.max(0, s.lastIndexOf('\n', Math.max(0, i - 2200)));
-              const b0 = s.indexOf('\n', i + 3200);
-              const b = b0 < 0 ? s.length : b0;
-              console.log(s.slice(a, b));
-              from = i + p.length;
-              hits++;
-            }
-            if (!hits) console.log('(not found)');
-          }
-          NODE
+      - name: Run focused NPC collision regression
+        run: node scripts/test-npc-collision-aware-pathing.js
       - uses: actions/upload-artifact@v4
         with:
-          name: npc-collision-audit
-          path: npc-collision-audit.txt
+          name: npc-collision-audit-sources
+          path: |
+            docs/game.js
+            docs/js/npc-pathfinding.js
+            docs/js/npc-route-graph.js
+            scripts/test-npc-collision-aware-pathing.js
+            scripts/test-farm-tour-playback.js
           retention-days: 1
