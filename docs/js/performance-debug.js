@@ -1119,7 +1119,7 @@
     box.appendChild(reportText);
     const stabilityNote = document.createElement('div'); // Explains the latest performance changes beside the existing mobile report control.
     stabilityNote.style.cssText = 'font-size:11px;opacity:.8;padding:4px 0';
-    stabilityNote.textContent = 'Memory update: data-only distant herds/dens, configurable wildlife activation distance, shared base sprites, serialized character/recolor builds, and bounded recolor bytes. Full selected resolution is preserved. Reports include the previous session checkpoint; a checkpoint alone does not prove a crash.';
+    stabilityNote.textContent = 'Latest memory update: portrait source images and tint canvases now have byte limits as you explore new camps. Full selected resolution is preserved. Reports include portrait cache bytes, terrain residency, and the previous session checkpoint; a checkpoint alone does not prove a crash.';
     box.appendChild(stabilityNote);
 
     // perfState.subsystem never resets on its own (each entry is an

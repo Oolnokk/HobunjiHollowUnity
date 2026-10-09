@@ -25851,6 +25851,7 @@
           `Mobile combat arch aim: ${JSON.stringify(window.__mobileArchCombatAimDebug?.snapshot?.() || { active: false })}`,
           `Player: x${player.x.toFixed(0)} y${player.y.toFixed(0)}`,
           `Player movement/status: ${JSON.stringify(playerMovementDebugSnapshot())}`,
+          `Memory/resources: ${JSON.stringify(window.HobunjiCacheAudit?.snapshot?.() || null)}`,
           ...(weavingDiagnostics ? ['', ...String(weavingDiagnostics).split('\n')] : []),
           '--- raw log ---',
           ...filteredLog.map(e => `[${e.t}] [${e.lvl}] ${e.msg}`)

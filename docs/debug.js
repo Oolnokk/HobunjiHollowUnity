@@ -388,7 +388,7 @@
       return;
     }
     const script = document.createElement('script');
-    script.src = 'js/performance-debug.js?v=20261009h3679e5b';
+    script.src = 'js/performance-debug.js?v=20261009h8663a7f';
     script.async = true;
     script.dataset.hobunjiPerformanceDebug = '1';
     script.onload = _installCloudForestDevModeGate;

@@ -39,6 +39,8 @@
       wildlifeStreaming: window.WildlifeVisualLod?.snapshot?.() || null,
       animalComposition: window.CreatureGeneticsRender?.memorySnapshot?.() || null,
       characterBuilds: window.BanditCombat?.characterBuildSnapshot?.() || null,
+      portraitPixels: window.__portraitPixelCacheDebug?.() || null,
+      terrainStreaming: window.WildernessChunks?.snapshot?.() || null,
     };
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(record)); } catch (_) {}
   }
@@ -97,6 +99,6 @@
   window.MobileRenderBudget = {
     mobile, attach, pixelRatio, setMode, sample, checkpoint,
     shouldSuspend: () => lost || document.hidden,
-    snapshot: () => ({ mobile, automatic: auto, scale, fps: lastFps, contextLost: lost, contextLosses: losses, previousSession: previous, animalSources: window.PNGPlaneAvatar?.animalSourceTextureSnapshot?.() || null, wildlifeStreaming: window.WildlifeVisualLod?.snapshot?.() || null, animalComposition: window.CreatureGeneticsRender?.memorySnapshot?.() || null, characterBuilds: window.BanditCombat?.characterBuildSnapshot?.() || null, animalTextures: window.CreatureTextureCache?.snapshot?.() || null }),
+    snapshot: () => ({ mobile, automatic: auto, scale, fps: lastFps, contextLost: lost, contextLosses: losses, previousSession: previous, portraitPixels: window.__portraitPixelCacheDebug?.() || null, terrainStreaming: window.WildernessChunks?.snapshot?.() || null, animalSources: window.PNGPlaneAvatar?.animalSourceTextureSnapshot?.() || null, wildlifeStreaming: window.WildlifeVisualLod?.snapshot?.() || null, animalComposition: window.CreatureGeneticsRender?.memorySnapshot?.() || null, characterBuilds: window.BanditCombat?.characterBuildSnapshot?.() || null, animalTextures: window.CreatureTextureCache?.snapshot?.() || null }),
   };
 })();
