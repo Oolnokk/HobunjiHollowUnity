@@ -80,6 +80,7 @@
 
   function canNpcTraverse(area, fromX, fromZ, toX, toZ, {
     ignoreFurnitureAtEnd = false,
+    ignoreFurnitureTile = null,
     structuralOnly = false,
     stepTiles = null,
   } = {}) {
@@ -90,7 +91,7 @@
       ? stepTiles
       : Math.min(Number.isFinite(configuredStep) && configuredStep > 0 ? configuredStep : 0.25, Math.max(0.08, npcCollisionRadiusTiles() * 0.75));
     const samples = Math.max(1, Math.ceil(dist / step));
-    const ignoredEndTile = ignoreFurnitureAtEnd ? { c: Math.floor(toX), r: Math.floor(toZ) } : null; // Allows chair overlap only inside the final destination tile.
+    const ignoredEndTile = ignoreFurnitureTile || (ignoreFurnitureAtEnd ? { c: Math.floor(toX), r: Math.floor(toZ) } : null); // Explicit seat tiles stay stable across small per-frame steps; path edges may derive theirs from the edge endpoint.
     for (let i = 0; i <= samples; i++) {
       const t = i / samples;
       const x = fromX + (toX - fromX) * t, z = fromZ + (toZ - fromZ) * t;
@@ -108,6 +109,44 @@
 
   function canNpcBeeline(area, fromX, fromZ, targetC, targetR, allowOccupiedTarget = false) {
     return canNpcTraverse(area, fromX, fromZ, targetC + 0.5, targetR + 0.5, { ignoreFurnitureAtEnd: allowOccupiedTarget });
+  }
+
+  // A saved/seated NPC may legitimately begin inside a blocker. Permit only
+  // the contiguous prefix needed to leave that existing overlap; once the
+  // body reaches clear space it may not enter another wall or furniture item.
+  function canNpcEscapeExistingOverlap(area, fromX, fromZ, toX, toZ, {
+    startStructuralClear = isNpcPositionStructurallyWalkable(area, fromX, fromZ),
+    ignoreFurnitureAtEnd = false,
+    ignoreFurnitureTile = null,
+    stepTiles = null,
+  } = {}) {
+    if (!deps || ![fromX, fromZ, toX, toZ].every(Number.isFinite)) return false;
+    const dist = Math.hypot(toX - fromX, toZ - fromZ);
+    const configuredStep = Number(deps.npcMovementConfig().beelineSampleStepTiles);
+    const step = Number.isFinite(stepTiles) && stepTiles > 0
+      ? stepTiles
+      : Math.min(Number.isFinite(configuredStep) && configuredStep > 0 ? configuredStep : 0.25, Math.max(0.08, npcCollisionRadiusTiles() * 0.75));
+    const samples = Math.max(1, Math.ceil(dist / step));
+    const ignoredEndTile = ignoreFurnitureTile || (ignoreFurnitureAtEnd ? { c: Math.floor(toX), r: Math.floor(toZ) } : null); // Only the explicitly allowed final-seat tile may be ignored during an escape segment.
+    let reachedClearSpace = false;
+    for (let i = 1; i <= samples; i++) {
+      const t = i / samples;
+      const x = fromX + (toX - fromX) * t, z = fromZ + (toZ - fromZ) * t;
+      const structuralClear = isNpcPositionStructurallyWalkable(area, x, z);
+      if (!startStructuralClear && !reachedClearSpace && !structuralClear) continue;
+      if (!structuralClear) return false;
+      const fullyClear = isNpcPositionWalkable(area, x, z, npcCollisionRadiusTiles(), { ignoreFurnitureTile: ignoredEndTile });
+      if (!reachedClearSpace) {
+        if (!fullyClear) {
+          if (startStructuralClear) continue; // Still leaving the same furniture footprint.
+          return false; // Leaving old structural geometry directly into furniture is not a valid escape.
+        }
+        reachedClearSpace = true;
+        continue;
+      }
+      if (!fullyClear) return false;
+    }
+    return true;
   }
 
   const PATH_DIRS = Object.freeze([
@@ -170,7 +209,14 @@
         const nk = key(nc, nr);
         if (closed.has(nk) || !centerClear(nc, nr)) continue;
         const targetStep = allowOccupiedTarget && nc === targetC && nr === targetR;
-        const edgeClear = canNpcTraverse(area, cur.c + 0.5, cur.r + 0.5, nc + 0.5, nr + 0.5, { ignoreFurnitureAtEnd: targetStep });
+        const firstEdge = cur.key === startKey; // The first hop must originate at the NPC's real sub-tile position, not an assumed tile center.
+        const edgeFromX = firstEdge ? fromX : cur.c + 0.5; // Used only for this edge's swept collision validation.
+        const edgeFromZ = firstEdge ? fromZ : cur.r + 0.5; // Used only for this edge's swept collision validation.
+        const startStructuralClear = firstEdge ? isNpcPositionStructurallyWalkable(area, fromX, fromZ) : true; // Allows a seated/legacy-overlap start to escape without granting wall tunneling.
+        const startFullyClear = firstEdge && startStructuralClear ? isNpcPositionWalkable(area, fromX, fromZ) : !firstEdge; // Selects the narrow escape-prefix validator only when the actual start is blocked.
+        const edgeClear = firstEdge && !startFullyClear
+          ? canNpcEscapeExistingOverlap(area, edgeFromX, edgeFromZ, nc + 0.5, nr + 0.5, { startStructuralClear, ignoreFurnitureAtEnd: targetStep })
+          : canNpcTraverse(area, edgeFromX, edgeFromZ, nc + 0.5, nr + 0.5, { ignoreFurnitureAtEnd: targetStep });
         if (!edgeClear) continue;
         if (dc !== 0 && dr !== 0) {
           // Prevent a diagonal body from squeezing between two blocked
@@ -210,16 +256,14 @@
     window.__farmLog?.(`[npc collision] ${debugStats.lastBlock.npcId} blocked in ${debugStats.lastBlock.area} while moving toward ${debugStats.lastBlock.targetX},${debugStats.lastBlock.targetZ}`, 'npc');
   }
 
-  function _resolveBlockedStep(walker, startX, startZ, desiredX, desiredZ, structuralOnly) {
+  function _resolveBlockedStep(walker, startX, startZ, desiredX, desiredZ, { ignoreFurnitureTile = null } = {}) {
     const dx = desiredX - startX, dz = desiredZ - startZ;
     const travel = Math.hypot(dx, dz);
     if (travel < 1e-6) return { x: startX, z: startZ };
     const fx = dx / travel, fz = dz / travel;
     const tx = -fz, tz = fx;
-    const positionClear = (x, z) => structuralOnly
-      ? isNpcPositionStructurallyWalkable(walker.area, x, z)
-      : isNpcPositionWalkable(walker.area, x, z);
-    const segmentClear = (x, z) => canNpcTraverse(walker.area, startX, startZ, x, z, { structuralOnly });
+    const positionClear = (x, z) => isNpcPositionWalkable(walker.area, x, z, npcCollisionRadiusTiles(), { ignoreFurnitureTile });
+    const segmentClear = (x, z) => canNpcTraverse(walker.area, startX, startZ, x, z, { ignoreFurnitureTile });
     const preferred = walker._npcCollisionAvoidSide === -1 ? -1 : 1;
     for (const side of [preferred, -preferred]) {
       for (const scale of [1.35, 1, 0.65]) {
@@ -234,15 +278,13 @@
     return { x: startX, z: startZ };
   }
 
-  function _npcStepIsClear(walker, startX, startZ, desiredX, desiredZ, structuralOnly) {
+  function _npcStepIsClear(walker, startX, startZ, desiredX, desiredZ, { ignoreFurnitureTile = null } = {}) {
     const travel = Math.hypot(desiredX - startX, desiredZ - startZ);
     const shortStep = Math.max(0.04, npcCollisionRadiusTiles() * 0.45);
     if (travel <= shortStep) {
-      return structuralOnly
-        ? isNpcPositionStructurallyWalkable(walker.area, desiredX, desiredZ)
-        : isNpcPositionWalkable(walker.area, desiredX, desiredZ);
+      return isNpcPositionWalkable(walker.area, desiredX, desiredZ, npcCollisionRadiusTiles(), { ignoreFurnitureTile });
     }
-    return canNpcTraverse(walker.area, startX, startZ, desiredX, desiredZ, { structuralOnly });
+    return canNpcTraverse(walker.area, startX, startZ, desiredX, desiredZ, { ignoreFurnitureTile });
   }
 
   function decorateWalkerCollision(walker) {
@@ -259,16 +301,22 @@
       const arrived = originalMoveToward.call(this, tx, tz, dt);
       const desiredX = this.root.position.x, desiredZ = this.root.position.z;
 
-      // Old saves can place a walker inside a wall, and seated walkers begin
-      // inside their chair by design. Let either escape its existing overlap,
-      // but never let furniture escape cross a structural wall on the way out.
-      if (!startStructuralClear) return arrived;
-      if (!startFullyClear && isNpcPositionStructurallyWalkable(this.area, desiredX, desiredZ)) return arrived;
-
       const seatOverlap = _walkerAllowsFurnitureOverlap(this, tx, tz);
-      if (_npcStepIsClear(this, startX, startZ, desiredX, desiredZ, seatOverlap)) return arrived;
+      const seatFurnitureTile = seatOverlap ? { c: Math.floor(tx), r: Math.floor(tz) } : null; // Used by every per-frame check so only the actual chair tile is exempted.
+      // Old saves can place a walker inside a wall, and seated walkers begin
+      // inside their chair by design. Only the contiguous blocked prefix may
+      // be escaped; a second wall/table encountered after clear space is hard.
+      if (!startFullyClear) {
+        if (canNpcEscapeExistingOverlap(this.area, startX, startZ, desiredX, desiredZ, { startStructuralClear, ignoreFurnitureTile: seatFurnitureTile })) return arrived;
+        this.root.position.x = startX;
+        this.root.position.z = startZ;
+        _recordBlockedMove(this, tx, tz);
+        return false;
+      }
 
-      const resolved = _resolveBlockedStep(this, startX, startZ, desiredX, desiredZ, seatOverlap);
+      if (_npcStepIsClear(this, startX, startZ, desiredX, desiredZ, { ignoreFurnitureTile: seatFurnitureTile })) return arrived;
+
+      const resolved = _resolveBlockedStep(this, startX, startZ, desiredX, desiredZ, { ignoreFurnitureTile: seatFurnitureTile });
       this.root.position.x = resolved.x;
       this.root.position.z = resolved.z;
       const actualDx = resolved.x - startX, actualDz = resolved.z - startZ;
@@ -452,6 +500,7 @@
     isNpcPositionWalkable,
     canNpcTraverse,
     canNpcBeeline,
+    canNpcEscapeExistingOverlap,
     findNpcPath,
     decorateWalkerCollision,
     areaLinksFrom,

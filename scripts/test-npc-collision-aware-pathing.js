@@ -6,6 +6,7 @@ const path = require('path');
 const repo = path.resolve(__dirname, '..');
 const pathfindingSource = fs.readFileSync(path.join(repo, 'docs/js/npc-pathfinding.js'), 'utf8');
 const routeGraphSource = fs.readFileSync(path.join(repo, 'docs/js/npc-route-graph.js'), 'utf8');
+const gameSource = fs.readFileSync(path.join(repo, 'docs/game.js'), 'utf8');
 const openGrid = Array.from({ length: 6 }, () => Array.from({ length: 6 }, () => ({ type: 0, crop: false })));
 const logs = [];
 const window = {
@@ -13,8 +14,10 @@ const window = {
   AreaFootprintBlockers: {
     blocksBox(area, x, z, half = 0) {
       if (area !== 'interior') return false;
-      // Thin wall between tile centers x=1.5 and x=2.5, ending before row 2 center.
-      return x + half > 2.0 && x - half < 2.12 && z + half > 0 && z - half < 2.2;
+      const overlaps = (minX, maxX, minZ, maxZ) => x + half > minX && x - half < maxX && z + half > minZ && z - half < maxZ; // Shared exact-box probe for the wall cases below.
+      if (overlaps(2.0, 2.12, 0, 2.2)) return true; // Thin wall between tile centers x=1.5 and x=2.5.
+      if (overlaps(4.0, 5.0, 3.0, 3.12)) return true; // Separate wall used to prove a chair escape cannot tunnel through a later blocker.
+      return overlaps(1.78, 1.92, 2.78, 2.96); // Sub-tile spur crossed by an offset real start but missed by the start tile center.
     },
   },
 };
@@ -33,7 +36,10 @@ const deps = {
   worldObjects: new Map(),
   isHouseFootprint: () => false,
   isTownBuildingCollisionTile: () => false,
-  furnitureBlocksMovementAt: (area, x, z) => area === 'interior' && x > 4.05 && x < 4.95 && z > 4.05 && z < 4.95,
+  furnitureBlocksMovementAt: (area, x, z) => area === 'interior' && (
+    (x > 4.05 && x < 4.95 && z > 4.05 && z < 4.95) || // Chair target/starting overlap.
+    (x > 3.15 && x < 3.85 && z > 4.2 && z < 4.8) // Intervening table that must remain solid even on a final seat approach.
+  ),
   npcMovementConfig: () => ({ beelineSampleStepTiles: 0.25, collisionRadiusTiles: 0.22 }),
   npcTransitionPool: () => [],
   buildingScenes: new Map(),
@@ -53,6 +59,11 @@ for (let i = 0; i < detour.length; i++) {
   const to = detour[i];
   assert.equal(window.NpcPathfinding.canNpcTraverse('interior', from.col + .5, from.row + .5, to.col + .5, to.row + .5), true);
 }
+
+const offsetStartPath = window.NpcPathfinding.findNpcPath('interior', 1.5, 2.85, 2, 2, { padding: 3 });
+assert.ok(offsetStartPath?.length, 'offset real start should still find a path around a sub-tile spur');
+const offsetFirst = offsetStartPath[0]; // Validates the actual first swept edge instead of trusting the start tile center.
+assert.equal(window.NpcPathfinding.canNpcTraverse('interior', 1.5, 2.85, offsetFirst.col + .5, offsetFirst.row + .5), true, 'first path edge must be clear from the NPC real sub-tile position');
 
 assert.equal(window.NpcPathfinding.findNpcPath('interior', 3.5, 3.5, 4, 4, { padding: 2 }), null, 'ordinary pathing still treats chair furniture as occupied');
 const seatPath = window.NpcPathfinding.findNpcPath('interior', 3.5, 3.5, 4, 4, { padding: 2, allowOccupiedTarget: true });
@@ -83,8 +94,29 @@ const chairEscapeWalker = {
   moveToward(tx, tz) { this.root.position.x = tx; this.root.position.z = tz; return true; },
 };
 window._npcWalkers.push(chairEscapeWalker);
-chairEscapeWalker.moveToward(3.5, 4.5, 1);
-assert.equal(chairEscapeWalker.root.position.x, 3.5, 'a seated NPC can leave its existing furniture overlap without tunneling through structural walls');
+chairEscapeWalker.moveToward(4.5, 3.5, 1);
+assert.equal(chairEscapeWalker.root.position.z, 3.5, 'a seated NPC can leave its existing furniture overlap into clear space');
+chairEscapeWalker.root.position.x = 4.5; chairEscapeWalker.root.position.z = 4.5;
+chairEscapeWalker.moveToward(4.5, 2.5, 1);
+assert.equal(chairEscapeWalker.root.position.z, 4.5, 'escaping an existing chair overlap may not tunnel through a later structural wall');
+
+const seatApproachWalker = {
+  area: 'interior',
+  rec: { id: 'seat_approach_npc' },
+  currentScheduleTarget: { pose: 'sit', c: 4, r: 4 },
+  root: { position: { x: 2.8, z: 4.5 } },
+  moveToward(tx, tz) {
+    const dx = tx - this.root.position.x, dz = tz - this.root.position.z;
+    const d = Math.hypot(dx, dz);
+    const step = Math.min(0.4, d); // Mimics an ordinary small frame step whose temporary endpoint is still in the table tile.
+    if (d > 1e-6) { this.root.position.x += dx / d * step; this.root.position.z += dz / d * step; }
+    return d <= step;
+  },
+};
+window._npcWalkers.push(seatApproachWalker);
+seatApproachWalker.moveToward(4.5, 4.5, 1);
+assert.equal(window.NpcPathfinding.isNpcPositionWalkable('interior', seatApproachWalker.root.position.x, seatApproachWalker.root.position.z), true, 'small final-seat steps may exempt only the chair tile, never an intervening table tile');
+assert.ok(seatApproachWalker.root.position.x < 3.15 || Math.abs(seatApproachWalker.root.position.z - 4.5) > 0.25, 'blocked seat approach must stop or move around the table instead of entering it');
 
 const wanderWalker = {
   area: 'interior',
@@ -115,6 +147,9 @@ assert.equal(received.stages[1].navigate, undefined);
 window.__hobunjiCutscenePreview = { stages: [{ id: 'preview', type: 'move', targetWorld: { c: 2, r: 2 } }] };
 assert.equal(window.__hobunjiCutscenePreview.stages[0].navigate, true, 'Director preview receives same navigation default');
 
+assert.match(gameSource, /if \(entity\.walker\) await window\.NpcHeldEquipment\?\.attachCutsceneWalker\?\.\(entity\.walker\)/, 'real cutscene NPC walkers must pass through the decorated attachment seam');
+assert.match(gameSource, /entity\?\.kind === 'npc'[\s\S]*window\.NpcPathfinding\?\.findNpcPath[\s\S]*window\.NpcPathfinding\.findNpcPath/, 'real cutscene NPC movement must use the swept-edge NPC planner instead of only tile-center pathfinding');
+
 // NpcHeldEquipment is the existing cutscene-walker attachment seam.
 let attached = false;
 window.NpcHeldEquipment = {
@@ -140,7 +175,7 @@ const cutWalker = {
   assert.equal(graph.nodes.get('interior:1,1').edges.size, 0, 'authored route edge through exact wall is rejected');
 
   const debug = window.NpcPathfinding.debugSnapshot();
-  assert.ok(debug.decoratedWalkers >= 4);
+  assert.ok(debug.decoratedWalkers >= 5);
   assert.ok(debug.blockedMoves >= 2);
   assert.ok(debug.pathReplans >= 2);
   console.log('npc collision-aware pathing tests passed');
