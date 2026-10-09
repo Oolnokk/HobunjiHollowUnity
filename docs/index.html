@@ -137,10 +137,10 @@
   <script src="js/item-processing.js?v=20261008h5a1190f"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <script src="debug.js?v=20261009h3c579df"></script>
+  <script src="debug.js?v=20261009h0cb493d"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20260930h1b2e2e2"></script>
-  <script src="config/scratchbones-config.js?v=20261007h6f60f04"></script>
+  <script src="config/scratchbones-config.js?v=20261009h1c69d65"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
   <script src="js/tool-metal-recolor.js?v=20261001c6751543"></script>
@@ -163,7 +163,7 @@
   <script src="js/portrait-utils.js?v=20261005h123b9e8"></script>
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20261007ha6123a6"></script>
-  <script src="js/png-plane-avatar.js?v=20261009hc139934"></script>
+  <script src="js/png-plane-avatar.js?v=20261009hba7e3f2"></script>
   <script src="js/species-pose-scaling.js?v=20260920height2"></script>
   <script src="js/character-dimensions.js?v=20261007he86e7d1"></script>
   <!-- Keeps the portrait plane's occlusion-depth redraws (used so its silhouette can
@@ -199,7 +199,7 @@
   <script src="js/creature-genetics.js?v=20261002h5fdf0c4"></script>
   <!-- Creature genotype recolor + pattern-overlay compositing. -->
   <script src="js/creature-texture-cache.js?v=20261009memory1"></script>
-  <script src="js/creature-genetics-render.js?v=20261009h12b6be6"></script>
+  <script src="js/creature-genetics-render.js?v=20261009h8a62350"></script>
   <!-- Shared per-frame "where is this creature/character's head" cache — see
        its own file header for why. No dependencies of its own; must load
        before anything that calls window.CreatureHeadCache. -->
@@ -311,7 +311,7 @@
        (at fight time, not load time), so exact ordering against those two
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
-  <script src="js/combat/combat-bandit.js?v=20261008hf79a8fb"></script>
+  <script src="js/combat/combat-bandit.js?v=20261009hbe9e1b4"></script>
   <!-- Distinct Minion humanoid category: independent roster/dye/Shambling Footing rules over the shared BanditCombat executor. -->
   <script src="js/combat/combat-minion.js?v=20261008h2e9a1c3"></script>
   <script src="js/combat/combat-enemy-dodge.js?v=20261001quickdebuff2"></script>
@@ -409,7 +409,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261007he02ef13&surfaceUv=20261006cliffparity1"></script>
+  <script src="js/house-pieces.js?v=20261009hced537f&surfaceUv=20261006cliffparity1"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -570,7 +570,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20261009hee3dafd"></script>
+  <script src="js/wildlife-spawn.js?v=20261009h9141ba0"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
@@ -786,7 +786,7 @@
   <!-- Minecraft-style finite wilderness streaming: owns 16x16 runtime
        terrain/vegetation chunks while the Tothal generator remains owner of
        each zone's deterministic complete tile blueprint. -->
-  <script src="js/mobile-render-budget.js?v=20261009hc738a51"></script>
+  <script src="js/mobile-render-budget.js?v=20261009he9a130d"></script>
   <script src="js/wilderness-chunks.js?v=20261009he76d12d"></script>
   <!-- PNG-plane avatar outline occluders: registry of sprite-plane meshes on
        outline layer 4 plus the depth-only replay game.js runs before its
@@ -1919,6 +1919,14 @@
               <option value="0.5">50%</option>
             </select>
           </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Wildlife Activation Distance</div>
+              <div class="settings-desc">Nearby herd and den animals get full character visuals. Distant animals keep their data and AI. A shorter distance uses less memory; fighting animals stay visible.</div>
+            </div>
+            <input id="settingWildlifeDistance" type="number" min="8" max="64" step="1" aria-label="Wildlife activation distance in tiles" style="width:64px;align-self:center" value="14">
+            <span style="font-size:11px;align-self:center">tiles</span>
+          </label>
           <div class="settings-section-title" style="margin-top:10px">Painterly</div>
           <label class="settings-row">
             <div class="settings-label">
@@ -2602,7 +2610,7 @@
   <script src="js/romance-wedding.js?v=20261007wedding1"></script>
   <script src="js/romance-system.js?v=20261007romance1"></script>
   <script src="js/npc-command-wheel.js?v=20261008h02bf686"></script>
-  <script src="game.js?v=20261009h07a6cd5"></script>
+  <script src="game.js?v=20261009h69798d2"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261005h9a94218"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

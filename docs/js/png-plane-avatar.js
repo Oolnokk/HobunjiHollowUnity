@@ -728,22 +728,36 @@
   // backMesh  rotation.y = -PI/2 → visible from camera when group faces east (rotation.y = +PI/2).
   // Back texture is the same sprite UV-flipped horizontally; no runtime setFlipped() needed.
   // Returns { group, dispose() }.
+  const animalSourceTextures = new Map(); // Native sprite pairs shared by live animal avatars; zero-owner pairs are removed immediately.
+  function acquireAnimalSourceTextures(THREE, spriteUrl) {
+    let entry = animalSourceTextures.get(spriteUrl); // Same species art should consume one front/back GPU pair, not one pair per herd member.
+    if (!entry) {
+      const loader = new THREE.TextureLoader(); // Existing source-image loader and material settings stay unchanged.
+      const front = loader.load(spriteUrl), back = loader.load(spriteUrl); // Faces retain independent mirrored UV settings.
+      front.colorSpace = back.colorSpace = THREE.SRGBColorSpace;
+      back.wrapS = THREE.RepeatWrapping;
+      back.repeat.set(-1, 1); back.offset.set(1, 0);
+      entry = { front, back, refs: 0 };
+      animalSourceTextures.set(spriteUrl, entry);
+    }
+    entry.refs++;
+    return entry;
+  }
+  function releaseAnimalSourceTextures(spriteUrl, entry) {
+    if (--entry.refs > 0) return; // Surviving animals keep their shared maps intact.
+    if (animalSourceTextures.get(spriteUrl) === entry) animalSourceTextures.delete(spriteUrl);
+    entry.front.dispose(); entry.back.dispose();
+  }
+
   function buildAnimalPlaneAvatarModel(THREE, spriteUrl, options = {}) {
     if (!THREE) throw new Error('THREE is required.');
     if (!spriteUrl) throw new Error('A sprite URL is required.');
     const modelWidth  = options.modelWidth  ?? cfg().modelWidth ?? 1;
     const modelHeight = options.modelHeight ?? modelWidth;
 
-    const loader = new THREE.TextureLoader();
-
-    const frontTex = loader.load(spriteUrl);
-    frontTex.colorSpace = THREE.SRGBColorSpace;
-
-    const backTex = loader.load(spriteUrl);
-    backTex.colorSpace = THREE.SRGBColorSpace;
-    backTex.wrapS = THREE.RepeatWrapping;
-    backTex.repeat.set(-1, 1);
-    backTex.offset.set(1, 0);
+    const sourceTextures = acquireAnimalSourceTextures(THREE, spriteUrl); // Reference-counted source pair for the canonical animal builder.
+    const frontTex = sourceTextures.front, backTex = sourceTextures.back; // Per-avatar materials can switch generated maps without mutating these textures.
+    let disposed = false; // Disposal wrappers can safely call this more than once.
 
     // See makeSpriteMaterial above for why depthWrite is true here.
     const matOpts = { transparent: true, alphaTest: cfg().alphaTest ?? 0.001, side: THREE.FrontSide, depthWrite: true };
@@ -857,13 +871,14 @@
       planeScale,
       syncMirroredPlaneScale,
       dispose() {
+        if (disposed) return;
+        disposed = true;
         window.CreatureTextureCache?.releaseOwner(this); // Drops shared generated-texture pins through the canonical animal disposal path.
         frontGeo.dispose();
         backGeo.dispose();
         frontMat.dispose();
         backMat.dispose();
-        frontTex.dispose();
-        backTex.dispose();
+        releaseAnimalSourceTextures(spriteUrl, sourceTextures);
       },
     };
   }
@@ -1187,6 +1202,11 @@
     makeVariantCanvas,
     refreshSinglePlaneAvatarModel,
     buildAnimalPlaneAvatarModel,
+    animalSourceTextureSnapshot: () => {
+      let avatars = 0; // Counts live references without retaining an avatar registry.
+      for (const entry of animalSourceTextures.values()) avatars += entry.refs;
+      return { sourcePairs: animalSourceTextures.size, avatars };
+    },
     buildSinglePlaneAvatarModel,
     avatarPlacementRatioFor,
     avatarScaleMultiplierFor,

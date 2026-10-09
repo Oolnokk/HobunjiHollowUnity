@@ -230,11 +230,7 @@
     const entity = hunter?.entity;
     if (!entity) return;
     combatDeps.hostileObjects.delete(entity);
-    entity.avatarRef?.group?.parent?.remove?.(entity.avatarRef.group);
-    entity.groundShadow?.parent?.remove?.(entity.groundShadow);
-    entity._banditToolHolder?.parent?.remove?.(entity._banditToolHolder);
-    entity._banditRangedToolHolder?.parent?.remove?.(entity._banditRangedToolHolder);
-    entity.avatarRef?.dispose?.();
+    window.BanditCombat.discardEntity(entity); // Canonical disposal also releases shadow, weapon-holder, ring, and trail resources.
     hunter.entity = null;
   }
   function disposeObject3D(root) {
@@ -1360,7 +1356,10 @@
           porakanekiWeaponShape: weapon.shapeKey,
         },
       });
-      if (!entity || generation !== buildGeneration) { entity?.avatarRef?.dispose?.(); return null; }
+      if (!entity || generation !== buildGeneration || currentArea() !== camp.zoneId || !sharesPlayerChunk(hunter)) {
+        window.BanditCombat.discardEntity?.(entity); // Drop a completed build whose data-only owner moved outside the activation bubble.
+        return null;
+      }
       hunter.entity = entity;
       hunter.lastHealth = entity.health;
       placeEntity(hunter);

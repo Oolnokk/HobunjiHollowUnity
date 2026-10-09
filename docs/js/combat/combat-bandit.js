@@ -2081,12 +2081,37 @@
   // resolved after the player left the area). Disposing avatarRef alone
   // left the ground shadow and weapon holders parked in the zone scene.
   function discardBanditEntity(entity) {
-    if (!entity) return;
+    if (!entity || entity._banditDisposed) return;
+    entity._banditDisposed = true; // Late-build cancellation and data-only retirement can meet on the same actor.
+    if (window.Combat?.deps?.despawnCreature) { window.Combat.deps.despawnCreature(entity); return; }
     entity.avatarRef?.group?.parent?.remove?.(entity.avatarRef.group);
-    entity.groundShadow?.parent?.remove?.(entity.groundShadow);
-    entity._banditToolHolder?.parent?.remove?.(entity._banditToolHolder);
-    entity._banditRangedToolHolder?.parent?.remove?.(entity._banditRangedToolHolder);
     entity.avatarRef?.dispose?.();
+    for (const root of [entity.groundShadow, entity._banditToolHolder, entity._banditRangedToolHolder, entity._banditTrailMesh]) {
+      root?.parent?.remove?.(root);
+      root?.traverse?.(object => {
+        object.geometry?.dispose?.();
+        if (Array.isArray(object.material)) for (const material of object.material) material?.dispose?.();
+        else object.material?.dispose?.();
+      });
+    }
+    window.ResourceRings?.disposeRingHud?.(entity);
+  }
+
+  let characterBuildTail = Promise.resolve(); // Serializes portrait builds shared by bandits and Porakaneki camps during zone-entry bursts.
+  let characterBuildPending = 0, characterBuildActive = 0; // Scalar diagnostics included in the mobile memory checkpoint.
+  async function buildQueuedBanditAvatar(roster, zoneId) {
+    const previous = characterBuildTail; // Every caller waits for the prior portrait's temporary canvases to settle.
+    let unlock; // Resolves the tail in finally, including cancellations and renderer errors.
+    characterBuildTail = new Promise(resolve => { unlock = resolve; });
+    characterBuildPending++;
+    try {
+      await previous;
+      if (characterBuildPending > 1 && typeof setTimeout === 'function') await new Promise(resolve => setTimeout(resolve, 0)); // Give entry/combat rendering a turn between queued portrait builds.
+      if (zoneId && zoneId !== deps.getCurrentArea()) return null; // Leaving a zone cancels queued work before any portrait allocations.
+      characterBuildActive++;
+      try { return await buildBanditAvatar(roster); }
+      finally { characterBuildActive--; }
+    } finally { characterBuildPending--; unlock(); }
   }
 
   async function makeBanditEntity(cfg, rank, tier, x, y, opts = {}) {
@@ -2094,7 +2119,7 @@
     if (opts.bodyColorsOverride && roster?.appearance) {
       roster.appearance.bodyColors = opts.bodyColorsOverride; // Caller-owned explicit body tint applied before portrait generation without changing any other seeded appearance choices.
     }
-    const avatarRef = await buildBanditAvatar(roster);
+    const avatarRef = await buildQueuedBanditAvatar(roster, opts.zoneId);
     if (roster?.appearance?.speciesId === 'ghoul') makeGhoulAvatarMineLit(avatarRef); // Ghoul PNGs obey the cave's actual light level instead of glowing at full unlit brightness.
     if (!avatarRef) {
       window.__farmLog?.(`[bandits] portrait avatar build failed for a ${rank} (${roster.appearance.speciesId}/${roster.appearance.gender}) -- skipping this gang member.`, 'wildlife');
@@ -2211,6 +2236,7 @@
     loadGangConfig: loadBanditGangConfig,
     loadCampLocaleDefs: loadBanditCampLocaleDefs,
     makeEntity: makeBanditEntity,
+    characterBuildSnapshot: () => ({ pending: characterBuildPending, active: characterBuildActive }), // Existing debug report reads queue pressure without retaining roster objects.
     discardEntity: discardBanditEntity, // Scene teardown for a built-but-never-registered entity (late async spawns).
     setCombatExpression, // Synchronously swaps the live humanoid hostile portrait between its pre-baked resting and combat-frown canvases.
     applyRosterDyesToProfile, // Shared/testable world-avatar dye reconciliation used by Bandits, Minions, and Liches.

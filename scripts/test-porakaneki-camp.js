@@ -148,7 +148,7 @@ assert(localeIndex.locales.some(entry => entry.id === 'locale_porakaneki_camp_ch
 assert(/porakaneki-camps-runtime\.js\?v=[A-Za-z0-9_.-]+/.test(houseLoader));
 assert(runtimeSource.includes("bodyColorsOverride: window.HobunjiPorakanekiSpecies?.bodyColorsForSeed?.(hunter.id, 'male') || null"), 'camp residents must choose an authored Mashtzarr swatch only when materializing their avatar');
 const bodyColorWriteIndex = combatBanditSource.indexOf('roster.appearance.bodyColors = opts.bodyColorsOverride'); // Used with avatar-build ordering below to ensure explicit finite colors reach the portrait before raster work begins.
-const banditAvatarBuildIndex = combatBanditSource.indexOf('const avatarRef = await buildBanditAvatar(roster);'); // Must occur after the explicit body-color assignment.
+const banditAvatarBuildIndex = combatBanditSource.indexOf('const avatarRef = await buildQueuedBanditAvatar(roster, opts.zoneId);'); // Must occur after the explicit body-color assignment.
 assert(bodyColorWriteIndex >= 0 && banditAvatarBuildIndex > bodyColorWriteIndex, 'BanditCombat must apply explicit body colors before portrait generation');
 assert(!combatBanditSource.includes('opts.appearanceSeed'), 'Porakaneki color variation must not randomize the whole portrait profile or create continuous body tint-cache keys');
 assert(devSpawnerSource.includes('bodyColorsOverride: window.HobunjiPorakanekiSpecies?.bodyColorsForSeed?.('), 'Testing Arena Porakaneki must use the same bounded authored swatch helper');
@@ -241,6 +241,7 @@ function avatarGroup() {
   return { visible: true, position, parent: { remove() {} } };
 }
 const banditCombat = {
+  discardEntity(entity) { entity?.avatarRef?.dispose?.(); }, // Runtime fixture implements the canonical full-entity disposal dependency.
   init(deps) { this.deps = deps; return 'bandit-init'; },
   async loadGangConfig() { return { baseline: true }; },
   async makeEntity(_base, _rank, _tier, x, y, opts) {

@@ -4482,7 +4482,7 @@
         const front = genoTex?.front || _getCreatureFrontTexture(url);
         const back = genoTex?.back || _getCreatureBackTexture(url);
         for (const child of [avatarRef.frontPlane, avatarRef.backPlane]) {
-          if (!child.material) continue;
+          if (!child?.material) continue;
           const hadMap = !!child.material.map; // Only a map-presence change requires shader recompilation.
           if (child.name.endsWith('_front_plane')) child.material.map = front;
           else if (child.name.endsWith('_back_plane')) child.material.map = back;
@@ -4560,9 +4560,66 @@
         const halfH = modelHeight * sizeScale.y / 2; // Existing automatic prism floor-to-origin distance, retained as the fallback and physical half-height.
         const groundLift = Number.isFinite(authoredGroundOffset) ? authoredGroundOffset : halfH; // Replaces, rather than adds to/subtracts from, the automatic terrain baseline.
         const idUniq = (performance.now() | 0) + '_' + Math.floor(Math.random() * 100000);
+        const avatarRef = dataCreatureAvatar(); // Data-only wildlife retains an empty transform group, never image/rig allocations.
+        const groundShadow = null; // Allocated with the character rig only when it is promoted into the visible bubble.
+
+        const creature = {
+          id: creatureKey + '_' + idUniq,
+          creatureKey, def, avatarRef, groundShadow,
+          _wildlifeVisualsReleased: true, // Distinguishes data-only wildlife from a live native-resolution rig.
+          _wildlifeVisualLodHidden: !!opts.streamVisuals,
+          x, y, vx: 0, vy: 0,
+          halfHeight: halfH,
+          groundLift, // Floor-to-origin terrain lift: authored per species+size when present, otherwise the original half-height baseline.
+          visualScaleX: sizeScale.x, // Reused whenever attack squash updates the group scale.
+          visualScaleY: sizeScale.y, // Reused whenever attack squash updates the group scale.
+          visualModelWidth: modelWidth * sizeScale.x, // Keeps shadows, rings, and combat reach aligned with visible width.
+          health: def.maxHealth, maxHealth: def.maxHealth,
+          stamina: def.maxStamina, maxStamina: def.maxStamina,
+          facing: 0, groupRot: 0, pngRot: 0, perpState: {},
+          scaleY: 1,
+          attackCooldownT: 0, retreatT: 0, hitFlashT: 0,
+          knockbackT: 0, knockbackVX: 0, knockbackVY: 0,
+          runFrame: 0, runFrameDistPx: 0, currentFrameUrl: def.sprites.idle,
+          isCompanion: false,
+          // Whichever entity this companion follows/defends/anchors to —
+          // {x, y, angle, climbing}, same shape as the real `player` object.
+          // Defaults to null (hostiles/wild creatures have no master); a
+          // companion always gets one passed in via opts (see
+          // syncCompanionFromWhistle). Kept as a plain reference rather than
+          // hardcoding `player` so a future NPC-owned companion (or a second
+          // remote player's companion) can point at any qualifying entity.
+          master: null,
+          name: def.label,
+          state: 'idle',
+          wanderTarget: null, wanderT: 0,
+          homeX: x, homeY: y,
+          scene: targetScene, areaGrid: targetGrid, areaCols: gridCols, areaRows: gridRows, areaId: currentArea,
+          ...restOpts,
+        };
+        window.__farmLog?.(`[size-render] ${creatureKey}: ${sizeScale.sizeClass} at ${Math.round(sizeScale.x * 100)}% × ${Math.round(sizeScale.y * 100)}%`, 'wildlife');
+        window.ResourceSystem?.initEntity(creature);
+        if (!opts.streamVisuals) createCreatureVisuals(creature); // Companions, cinematic actors, and ordinary callers keep immediate construction.
+        return creature;
+      }
+
+      function dataCreatureAvatar() {
+        const group = new THREE.Group(); // Keeps logical actors compatible with targeting/AI transform readers without any renderable children.
+        group.visible = false;
+        return { group, frontPlane: null, backPlane: null, dispose() {} };
+      }
+
+      function createCreatureVisuals(c) {
+        if (!c._wildlifeVisualsReleased) return;
+        const { creatureKey, def, x, y } = c; // Existing creature data is the authority; promotion never respawns or rerolls it.
+        const opts = { genotype: c.genotype }; // Passed through the original appearance path below.
+        const modelWidth = def.modelWidth, modelHeight = modelWidth * (def.spriteAspect || (600 / 1375)); // Native geometry proportions survive retirement.
+        const sizeScale = { x: c.visualScaleX, y: c.visualScaleY }; // Already resolved by the factory, including authored size class.
+        const targetScene = c.scene, targetGrid = c.areaGrid, gridCols = c.areaCols, gridRows = c.areaRows; // Stored area ownership survives town/wilderness transitions.
+        const groundLift = c.groundLift; // Authored floor lift remains unchanged.
         const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, def.sprites.idle, {
           modelWidth, modelHeight,
-          name: creatureKey + '_' + idUniq,
+          name: c.id,
           creatureId: creatureKey,
           headRig: window.CreatureGeneticsRender?.headRigForKind?.(creatureKey) || undefined,
         });
@@ -4601,39 +4658,11 @@
         groundShadow.position.set(x / TILE, surfY + characterGroundShadowSurfaceOffset(), y / TILE);
         targetScene.add(groundShadow);
 
-        const creature = {
-          id: creatureKey + '_' + idUniq,
-          creatureKey, def, avatarRef, groundShadow,
-          x, y, vx: 0, vy: 0,
-          halfHeight: halfH,
-          groundLift, // Floor-to-origin terrain lift: authored per species+size when present, otherwise the original half-height baseline.
-          visualScaleX: sizeScale.x, // Reused whenever attack squash updates the group scale.
-          visualScaleY: sizeScale.y, // Reused whenever attack squash updates the group scale.
-          visualModelWidth: modelWidth * sizeScale.x, // Keeps shadows, rings, and combat reach aligned with visible width.
-          health: def.maxHealth, maxHealth: def.maxHealth,
-          stamina: def.maxStamina, maxStamina: def.maxStamina,
-          facing: 0, groupRot: 0, pngRot: 0, perpState: {},
-          scaleY: 1,
-          attackCooldownT: 0, retreatT: 0, hitFlashT: 0,
-          knockbackT: 0, knockbackVX: 0, knockbackVY: 0,
-          runFrame: 0, runFrameDistPx: 0, currentFrameUrl: def.sprites.idle,
-          isCompanion: false,
-          // Whichever entity this companion follows/defends/anchors to —
-          // {x, y, angle, climbing}, same shape as the real `player` object.
-          // Defaults to null (hostiles/wild creatures have no master); a
-          // companion always gets one passed in via opts (see
-          // syncCompanionFromWhistle). Kept as a plain reference rather than
-          // hardcoding `player` so a future NPC-owned companion (or a second
-          // remote player's companion) can point at any qualifying entity.
-          master: null,
-          name: def.label,
-          state: 'idle',
-          wanderTarget: null, wanderT: 0,
-          homeX: x, homeY: y,
-          scene: targetScene, areaGrid: targetGrid, areaCols: gridCols, areaRows: gridRows, areaId: currentArea,
-          ...restOpts,
-        };
-        window.__farmLog?.(`[size-render] ${creatureKey}: ${sizeScale.sizeClass} at ${Math.round(sizeScale.x * 100)}% × ${Math.round(sizeScale.y * 100)}%`, 'wildlife');
+        c.avatarRef = avatarRef;
+        c.groundShadow = groundShadow;
+        c._wildlifeVisualsReleased = false;
+        c.currentFrameUrl = null;
+        c._genotypeReadyFrames?.clear();
         // Shifts the plane meshes (not the prism/group itself — see
         // creaturePlaneGroundOffset) down once the idle sprite's real
         // opaque bottom edge is known, so the art's actual feet sit on the
@@ -4641,17 +4670,33 @@
         // Fires synchronously if this species' sprite was already scanned
         // by an earlier creature.
         resolveCreatureGroundAnchorRatio(def.sprites.idle, (bottomRatio) => {
+          if (c.avatarRef !== avatarRef) return; // Ignore an opacity scan that completes after this visual rig was retired.
           const offsetY = creaturePlaneGroundOffset(modelHeight, bottomRatio);
           if (avatarRef.frontPlane) avatarRef.frontPlane.position.y = offsetY;
           if (avatarRef.backPlane) avatarRef.backPlane.position.y = offsetY;
         });
-        window.ResourceSystem?.initEntity(creature);
-        return creature;
+        window.WildlifeSpawn?.restoreHerdMotherVisuals?.(c); // Recreates shared-map saddle babies after a data-only mother's promotion.
+      }
+
+      function releaseCreatureVisuals(c) {
+        if (!c.streamVisuals || c.isCompanion || c.health <= 0 || c._wildlifeVisualsReleased) return;
+        disposeCreaturePresentation(c); // Releases only visuals; health, genes, movement state, and population keys remain registered.
+        c.avatarRef = dataCreatureAvatar();
+        c.groundShadow = null;
+        c._carriedBabyVisuals = null;
+        c._wildlifeVisualsReleased = true;
+        c._wildlifeVisualLodHidden = true;
+        c.currentFrameUrl = null;
+        c._genotypeReadyFrames?.clear();
       }
 
       function despawnCreature(c) {
-        window.BurningAfflictionVfx?.disposeEntity?.(c); // Removes any Burning Health emitter before the avatar group leaves its scene.
         clearKnockbackLedgeMotion(c);
+        disposeCreaturePresentation(c); // Ordinary despawns and data-only retirement share one visual disposal owner.
+      }
+
+      function disposeCreaturePresentation(c) {
+        window.BurningAfflictionVfx?.disposeEntity?.(c); // Removes presentation without changing the creature's Burning resource state.
         (c.scene || scene).remove(c.avatarRef.group);
         c.avatarRef.dispose();
         if (c.groundShadow) {
@@ -4838,6 +4883,11 @@
             isBandit: !!c.isBandit, isBarbarian,
             isPredator: !c.isBandit && !isBarbarian && !!c.def?.hostile && c.def?.diet !== 'herbivore',
           });
+        }
+        if (c._wildlifeVisualsReleased) {
+          createCreatureVisuals(c); // Environmental/resource deaths still produce the normal visible, lootable corpse.
+          c._wildlifeVisualLodHidden = false;
+          c.avatarRef.group.visible = true;
         }
         window.CreatureDeath.begin(c, fromX ?? c.x, fromY ?? c.y);
         return true;
@@ -5649,6 +5699,7 @@
       }
 
       function updateCreatureMesh(c, dt, aimAngle) {
+        if (c._wildlifeVisualsReleased) return; // Coarse logical wildlife has no presentation to update.
         const g = c.areaGrid || grid;
         const col = window.FormatUtils.clamp(Math.floor(c.x / TILE), 0, (c.areaCols || COLS) - 1);
         const row = window.FormatUtils.clamp(Math.floor(c.y / TILE), 0, (c.areaRows || ROWS) - 1);
@@ -5818,6 +5869,7 @@
       const RUN_FRAME_STRIDE_PX = 30;
 
       function updateCreatureAnimFrame(c, dt, moving, runInPlace = false) {
+        if (c._wildlifeVisualsReleased) return; // No asynchronous texture work for data-only actors.
         c._genotypeTexturesReleased = false; // Active playback reacquires native-resolution frames through the normal cache path.
         // A genotype-bearing creature (gar-wolf/dabinggi-hound with genes —
         // see makeCreatureEntity's opts.genotype) needs its composited
@@ -6115,7 +6167,7 @@
       // it extracted cleanly. wildlifeVisualLodCanHide's old callers (none
       // outside this file) should use window.WildlifeVisualLod.canHide.
       function releaseInactiveCreatureTextures(c) {
-        if (!c?.genotype || !c.def?.sprites?.idle || !c.avatarRef || c._genotypeTexturesReleased) return;
+        if (!c?.genotype || !c.def?.sprites?.idle || !c.avatarRef || c._wildlifeVisualsReleased || c._genotypeTexturesReleased) return;
         setCreatureFrame(c.avatarRef, c.def.sprites.idle, null, 'idle', null); // Rebind finite shared species textures before unpinning generated maps.
         c.currentFrameUrl = null;
         c._genotypeReadyFrames?.clear();
@@ -6126,16 +6178,22 @@
       function releasePreviousAreaCreatureTextures() {
         if (_lastInactiveCreatureTextureArea === currentArea || cutscenePreviewActive) return;
         _lastInactiveCreatureTextureArea = currentArea;
-        for (const c of hostileObjects) if (c.areaId !== currentArea) releaseInactiveCreatureTextures(c);
+        for (const c of hostileObjects) if (c.areaId !== currentArea) {
+          releaseInactiveCreatureTextures(c);
+          releaseCreatureVisuals(c); // An inactive zone keeps creature data, not full animal rigs.
+        }
       }
 
       function updateWildlifeVisualLod(c, distanceTiles) {
-        const hidden = window.WildlifeVisualLod.update(c, distanceTiles); // Preserve distance eligibility and wake thresholds.
+        const hidden = window.WildlifeVisualLod.update(c, distanceTiles); // Promotes data-only actors through the same distance owner.
         if (hidden) releaseInactiveCreatureTextures(c);
         return hidden;
       }
 
+      window.WildlifeVisualLod.init({ createVisuals: createCreatureVisuals, releaseVisuals: releaseCreatureVisuals }); // Existing LOD owns streamed wildlife presentation lifetime.
+
       function updateHostiles(dt) {
+        window.WildlifeVisualLod.beginFrame(); // Caps calm character-rig promotions during an entry burst; combatants always wake immediately.
         releasePreviousAreaCreatureTextures();
         currentHostilesFrame.length = 0;
         if (grazingPreyIndexArea !== currentArea) {
@@ -23872,6 +23930,15 @@
         s_resScale = parseFloat(e.target.value) || 1;
         resizeCanvas();
       });
+
+      const wildlifeDistanceInput = document.getElementById('settingWildlifeDistance'); // Mobile-accessible runtime override owned/persisted by WildlifeVisualLod.
+      if (wildlifeDistanceInput) {
+        wildlifeDistanceInput.value = window.WildlifeVisualLod.wakeRadius();
+        wildlifeDistanceInput.addEventListener('change', () => {
+          window.WildlifeVisualLod.setWakeRadius(wildlifeDistanceInput.value);
+          wildlifeDistanceInput.value = window.WildlifeVisualLod.wakeRadius();
+        });
+      }
 
       // Local Save Folder settings row — see docs/js/local-save-folder.js.
       // window.LocalSaveFolder owns all the actual folder-handle/IndexedDB/

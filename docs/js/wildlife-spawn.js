@@ -1135,6 +1135,7 @@
         homeX: anchor.x + Math.cos(formationAngle) * homeOffset,
         homeY: anchor.y + Math.sin(formationAngle) * homeOffset,
         state: 'idle',
+        streamVisuals: true, // Logical herd adults are promoted by distance instead of allocating every rig at zone entry.
         wildlifeRole: 'prey', // Used by chunk-local faction ecology; roaming herds are valid Porakaneki hunting targets.
         herdKey,
         herdHomeX: anchor.x,
@@ -1265,7 +1266,7 @@
         memberHomeX = homeX + Math.cos(spreadAngle) * spreadDist;
         memberHomeY = homeY + Math.sin(spreadAngle) * spreadDist;
       }
-      const opts = { homeX: memberHomeX, homeY: memberHomeY, denEntranceX, denEntranceY, state: 'idle', denKey, genotype: denGenotype, wildlifeRole: speciesIsHerbivore ? 'prey' : 'predator' }; // Explicit ecology role avoids guessing from hostility/diet overlays later.
+      const opts = { streamVisuals: true, homeX: memberHomeX, homeY: memberHomeY, denEntranceX, denEntranceY, state: 'idle', denKey, genotype: denGenotype, wildlifeRole: speciesIsHerbivore ? 'prey' : 'predator' }; // Explicit ecology role avoids guessing from hostility/diet overlays later.
       assignWildlifeStation(opts, zoneData, memberHomeX, memberHomeY, speciesIsHerbivore);
       const creature = deps.makeCreatureEntity(speciesKey, x, y, opts);
       if (creature) { deps.hostileObjects.add(creature); spawned++; }
@@ -1594,6 +1595,7 @@
     window.BanditCamps.ensureCurrentZoneCamps();
     if (_zoneEntryAnimalLogPending === currentArea) {
       _zoneEntryAnimalLogPending = null;
+      window.MobileRenderBudget?.checkpoint?.('zone-populated'); // Captures the entry spike before a later page-process crash can discard diagnostics.
       let alive = 0;
       for (const c of deps.hostileObjects) if (c.health > 0 && c.areaId === currentArea) alive++;
       window.__farmLog?.(`[wildlife] entered "${currentArea}": ${alive} living animal${alive === 1 ? '' : 's'} present.`, 'wildlife');
@@ -1654,6 +1656,7 @@
     isDenPackAlive,
     updateHostileSpawning,
     onZoneEntered,
+    restoreHerdMotherVisuals: c => c?.isHerdMother ? attachVoorgBabiesToMother(c, c.carriedBabyCount) : 0, // Used by the canonical creature visual promotion path.
     denNestCensus,
     roamingHerdCensus: (zoneId = deps.getCurrentArea()) => {
       const zdef = deps.EXTERIOR_ZONES?.[zoneId] || {};

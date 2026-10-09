@@ -159,6 +159,7 @@
     let total = 0;
     let sleeping = 0;
     let totalWildlife = 0; // Reports non-bandit wildlife retained in the logical simulation.
+    let dataOnlyWildlife = 0; // Counts logical actors whose native visual rig has actually been disposed.
     let visuallySleepingWildlife = 0; // Reports wildlife currently omitted from rendering/visual-rig work by game.js.
     if (deps?.hostileObjects) {
       for (const c of deps.hostileObjects) {
@@ -168,6 +169,7 @@
           if (isSleeping(c)) sleeping++;
         } else {
           totalWildlife++;
+          if (c._wildlifeVisualsReleased) dataOnlyWildlife++;
           if (c._wildlifeVisualLodHidden) visuallySleepingWildlife++;
         }
       }
@@ -177,7 +179,8 @@
       sleepingBandits: sleeping,
       activeBandits: total - sleeping,
       totalWildlife,
-      visuallySleepingWildlife,
+      dataOnlyWildlife,
+      wildlifeStreaming: window.WildlifeVisualLod?.snapshot?.() || null,      visuallySleepingWildlife,
       visuallyActiveWildlife: totalWildlife - visuallySleepingWildlife,
       sleepTransitions,
       wakeTransitions,
