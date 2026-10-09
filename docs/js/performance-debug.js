@@ -1093,20 +1093,34 @@
     cacheBtn.type = 'button';
     cacheBtn.textContent = 'Copy current';
     cacheBtn.style.cssText = 'font-size:11px;padding:3px 10px;border-radius:6px;cursor:pointer;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);color:#d1d5db';
+    const reportText = document.createElement('textarea'); // Visible selectable fallback when Android clipboard permissions reject copying.
+    reportText.readOnly = true;
+    reportText.setAttribute('aria-label', 'Performance report');
+    reportText.style.cssText = 'display:none;width:100%;min-height:180px;font:11px monospace;box-sizing:border-box';
     cacheBtn.addEventListener('click', async () => {
-      const snap = root.HobunjiCacheAudit?.snapshot?.(); // On-demand snapshot avoids console/table work and includes the new day/night/march context.
+      const snap = root.HobunjiCacheAudit?.snapshot?.(); // Includes mobile render policy and the checkpoint retained from before the latest reload.
       if (!snap) { flashButtonLabel(cacheBtn, 'Unavailable'); return; }
+      const text = JSON.stringify(snap, null, 2); // Used by both clipboard and the mobile-selectable fallback.
       try {
-        const clipboard = root.navigator?.clipboard; // Clipboard API is required for a DevTools-free mobile/desktop handoff of the current snapshot.
+        const clipboard = root.navigator?.clipboard;
         if (typeof clipboard?.writeText !== 'function') throw new Error('clipboard unavailable');
-        await clipboard.writeText(JSON.stringify(snap, null, 2));
+        await clipboard.writeText(text);
         flashButtonLabel(cacheBtn, 'Copied!');
       } catch (_) {
-        flashButtonLabel(cacheBtn, 'Copy failed');
+        reportText.value = text;
+        reportText.style.display = 'block';
+        reportText.focus();
+        reportText.select();
+        flashButtonLabel(cacheBtn, 'Report shown');
       }
     });
     cacheBtnRow.append(cacheBtnLabel, cacheBtn);
     box.appendChild(cacheBtnRow);
+    box.appendChild(reportText);
+    const stabilityNote = document.createElement('div'); // Explains the latest performance changes beside the existing mobile report control.
+    stabilityNote.style.cssText = 'font-size:11px;opacity:.8;padding:4px 0';
+    stabilityNote.textContent = 'Mobile update: automatic world resolution, paced chunk builds, bounded recolor cache, and graphics-loss recovery. Reports include the previous session checkpoint; a checkpoint alone does not prove a crash.';
+    box.appendChild(stabilityNote);
 
     // perfState.subsystem never resets on its own (each entry is an
     // exponential moving average that only updates when a NEW sample

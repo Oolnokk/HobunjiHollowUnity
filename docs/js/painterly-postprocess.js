@@ -5,7 +5,7 @@
   // fullscreen outline composite, so HUD/menus and the separately redrawn
   // world-space dialogue/chat text remain crisp and outside the effect.
   const STORAGE_KEY = 'hobunjiPainterlyPostprocessMode';
-  const DEFAULT_MODE = 'medium'; // Used by loadMode() when no painterly preference has been saved yet.
+  const DEFAULT_MODE = window.MobileRenderBudget?.mobile ? 'off' : 'medium'; // Used by loadMode() when no painterly preference has been saved yet.
   const MODE_TO_VALUE = Object.freeze({ off: 0, low: 1, medium: 2, high: 3 });
   const MODE_SAMPLE_COUNT = Object.freeze({ off: 0, low: 68, medium: 72, high: 76 });
 

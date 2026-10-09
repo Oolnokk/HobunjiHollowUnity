@@ -165,9 +165,19 @@
   }
 
   const _recolorCache = new Map(); // key -> Promise<canvas>
+  const RECOLOR_CACHE_LIMIT = 96; // Bounds retained recolored base/pattern canvases while live composites keep their own references.
+  function cachedRecolor(key) {
+    const cached = _recolorCache.get(key); // Refreshes LRU order for frequently reused colors.
+    if (cached) { _recolorCache.delete(key); _recolorCache.set(key, cached); }
+    return cached;
+  }
+  function rememberRecolor(key, promise) {
+    _recolorCache.set(key, promise);
+    while (_recolorCache.size > RECOLOR_CACHE_LIMIT) _recolorCache.delete(_recolorCache.keys().next().value);
+  }
   async function recoloredBase(url, color, mask, allowUnmasked = false, sourceReferenceHex = null, kind = '') {
     const key = `base|${url}|${color}|ref:${sourceReferenceHex || 'auto'}|full:${allowUnmasked}`;
-    if (_recolorCache.has(key)) return _recolorCache.get(key);
+    if (_recolorCache.has(key)) return cachedRecolor(key);
     const promise = (async () => {
       const img = await loadImage(url);
       const maskMatches = !!mask && mask.width === img.naturalWidth && mask.height === img.naturalHeight; // Used to choose authored-region recolor versus an explicitly allowed full-sprite recolor.
@@ -184,13 +194,13 @@
       );
       ctx.putImageData(data, 0, 0);
       return c;
-    })().catch(err => { _recolorCache.delete(key); throw err; });
-    _recolorCache.set(key, promise);
+    })().catch(err => { if (_recolorCache.get(key) === promise) _recolorCache.delete(key); throw err; });
+    rememberRecolor(key, promise);
     return promise;
   }
   async function recoloredPattern(url, color) {
     const key = `pattern|${url}|${color}`;
-    if (_recolorCache.has(key)) return _recolorCache.get(key);
+    if (_recolorCache.has(key)) return cachedRecolor(key);
     const promise = (async () => {
       const img = await loadImage(url);
       const c = makeCanvas(img.naturalWidth, img.naturalHeight), ctx = c.getContext('2d', { willReadFrequently: true });
@@ -199,8 +209,8 @@
       recolorPixels(px, hexToRgb(color), null);
       ctx.putImageData(data, 0, 0);
       return c;
-    })().catch(err => { _recolorCache.delete(key); throw err; });
-    _recolorCache.set(key, promise);
+    })().catch(err => { if (_recolorCache.get(key) === promise) _recolorCache.delete(key); throw err; });
+    rememberRecolor(key, promise);
     return promise;
   }
 

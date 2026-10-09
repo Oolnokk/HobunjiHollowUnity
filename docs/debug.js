@@ -173,6 +173,7 @@
         heldOverlay: window.HeldObjectRenderOrder?.snapshot?.() || null,
         outlineRender: window.OutlineRenderPerformance?.snapshot?.() || null,
         wildernessLod: window.WildernessSimulationLOD?.snapshot?.() || null,
+        mobileRendering: window.MobileRenderBudget?.snapshot?.() || null,
         localStorageBytes,
         caches,
       };
@@ -387,7 +388,7 @@
       return;
     }
     const script = document.createElement('script');
-    script.src = 'js/performance-debug.js?v=20260924perf2';
+    script.src = 'js/performance-debug.js?v=20261009h79dfd65';
     script.async = true;
     script.dataset.hobunjiPerformanceDebug = '1';
     script.onload = _installCloudForestDevModeGate;

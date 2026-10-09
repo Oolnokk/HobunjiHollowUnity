@@ -155,6 +155,7 @@
   // sessions) and how long the farm stays loaded, which is exactly what
   // was crashing long-lived saves on mobile from GPU-memory exhaustion.
   const _farmGenotypeTexCache = new Map();
+  const _farmGenotypeTexPending = new Map(); // Shares one compose/upload among animals requesting the same signature concurrently.
   window.HobunjiCacheAudit?.register('FarmAnimals.genotypeTexCache', () => _farmGenotypeTexCache.size);
 
   // Composites a genotype's textures onto an animal's front/back planes —
@@ -174,22 +175,27 @@
     const applyCached = (tex) => {
       for (const child of avatarRef.group.children) {
         if (!child.material) continue;
-        if (child.name.endsWith('_front_plane')) { child.material.map = tex.front; child.material.needsUpdate = true; }
-        else if (child.name.endsWith('_back_plane')) { child.material.map = tex.back; child.material.needsUpdate = true; }
+        const hadMap = !!child.material.map; // Preserve initial shader setup while avoiding recompilation on blink swaps.
+        if (child.name.endsWith('_front_plane')) { child.material.map = tex.front; }
+        else if (child.name.endsWith('_back_plane')) { child.material.map = tex.back; }
+        if (!hadMap && child.material.map) child.material.needsUpdate = true;
       }
       return true;
     };
     const cached = _farmGenotypeTexCache.get(key);
     if (cached) return Promise.resolve(applyCached(cached));
-    return window.CreatureGeneticsRender.composeFrame(kind, frame, genotype, blinkShut).then(canvas => {
-      if (!canvas) return false;
+    if (_farmGenotypeTexPending.has(key)) return _farmGenotypeTexPending.get(key).then(tex => tex ? applyCached(tex) : false);
+    const pending = window.CreatureGeneticsRender.composeFrame(kind, frame, genotype, blinkShut).then(canvas => { // One GPU texture pair per key even when multiple animals blink together.
+      if (!canvas) return null;
       const frontTex = new THREE.CanvasTexture(canvas); frontTex.colorSpace = THREE.SRGBColorSpace;
       const backTex = new THREE.CanvasTexture(canvas); backTex.colorSpace = THREE.SRGBColorSpace;
       backTex.wrapS = THREE.RepeatWrapping; backTex.repeat.set(-1, 1); backTex.offset.set(1, 0);
       const tex = { front: frontTex, back: backTex };
       _farmGenotypeTexCache.set(key, tex);
-      return applyCached(tex);
-    }).catch(() => false);
+      return tex;
+    }).catch(() => null).finally(() => _farmGenotypeTexPending.delete(key));
+    _farmGenotypeTexPending.set(key, pending);
+    return pending.then(tex => tex ? applyCached(tex) : false);
   }
 
   // Ticks a farm animal's eye-blink state and kicks off a recompose only

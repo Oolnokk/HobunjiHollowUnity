@@ -23,7 +23,7 @@
   // are advanced a stage at a time: each frame runs stages until this budget
   // is spent (always at least one), so one chunk's floor/feature/UV-bake/
   // water/grass work spreads over a few frames instead of one long hitch.
-  const STAGED_BUILD_FRAME_BUDGET_MS = 6;
+  const STAGED_BUILD_FRAME_BUDGET_MS = LOW_MEMORY_STREAMING ? 3 : 6;
   const DEBUG_REFRESH_MS = 250; // Used to keep mobile diagnostic text inexpensive.
 
   let deps = null; // Receives the current-area/player accessors supplied by game.js.
@@ -135,6 +135,7 @@
       this.buildChunkStages = typeof config.buildChunkStages === 'function' ? config.buildChunkStages : null; // Optional generator form of buildChunk used for paced streaming.
       this.staged = null; // At most one in-progress staged build: { key, cx, cz, bounds, group, ctx, iterator, startedAt, workMs, steps }.
       this.stagedCancels = 0;
+      this.failedUntil = new Map(); // Backs off failed allocations instead of retrying/logging every frame.
       this.disposeChunk = config.disposeChunk || (record => disposeTaggedChunkObjects(record.group));
       this.onChunkLoaded = config.onChunkLoaded || null;
       this.onChunkUnloaded = config.onChunkUnloaded || null;
@@ -170,6 +171,7 @@
       if (!this.validChunk(cx, cz)) return;
       const key = chunkKey(cx, cz);
       if (this.loaded.has(key) || this.staged?.key === key) return;
+      if ((this.failedUntil.get(key) || 0) > performance.now()) return;
       const existing = this.queue.get(key);
       if (!existing || distance < existing.distance) this.queue.set(key, { key, cx, cz, distance });
     }
@@ -198,6 +200,7 @@
     finishLoad(key, cx, cz, bounds, group, payload, buildMs) {
       const record = { key, cx, cz, bounds, group, payload: payload || {}, buildMs, loadedAt: performance.now(), debugCage: null };
       this.loaded.set(key, record);
+      this.failedUntil.delete(key);
       this.builds++;
       this.lastBuildMs = buildMs;
       this.totalBuildMs += buildMs;
@@ -206,9 +209,16 @@
       return record;
     }
 
-    failLoad(key, group, error) {
+    failLoad(ctx, error) {
+      const { key, cx, cz, bounds, group } = ctx; // Preserves partial payloads for the normal registry/resource cleanup owner.
+      const record = this.loaded.get(key) || { key, cx, cz, bounds, group, payload: ctx.payload || {}, debugCage: null }; // Also handles an integration hook throwing after finishLoad registered the chunk.
+      this.loaded.delete(key);
+      this.queue.delete(key);
+      this.failedUntil.set(key, performance.now() + 5000);
+      try { this.onChunkUnloaded?.(record); } catch (cleanupError) { console.error('[wilderness-chunks] failed-build detach', cleanupError); }
+      try { this.disposeChunk(record); } catch (cleanupError) { console.error('[wilderness-chunks] failed-build dispose', cleanupError); }
       this.scene.remove(group);
-      disposeTaggedChunkObjects(group);
+      group.clear?.();
       console.error('[wilderness-chunks] failed ' + this.mapId + ' ' + key, error);
       window.__farmLog?.('[wilderness-chunks] failed ' + this.mapId + ' ' + key + ': ' + error.message, 'warn');
       return null;
@@ -223,11 +233,13 @@
       const bounds = this.boundsFor(cx, cz);
       const group = this.createChunkGroup(cx, cz);
       const startedAt = performance.now();
+      const ctx = { mapId: this.mapId, key, cx, cz, bounds, group, payload: null }; // Retains cleanup bookkeeping even when the builder throws.
       try {
-        const payload = this.buildChunk({ mapId: this.mapId, key, cx, cz, bounds, group }) || {};
+        const payload = this.buildChunk(ctx) || {};
+        ctx.payload = payload;
         return this.finishLoad(key, cx, cz, bounds, group, payload, performance.now() - startedAt);
       } catch (error) {
-        return this.failLoad(key, group, error);
+        return this.failLoad(ctx, error);
       }
     }
 
@@ -241,7 +253,7 @@
         this.staged = { key, cx, cz, bounds, group, ctx, iterator: this.buildChunkStages(ctx), workMs: 0, steps: 0 };
       } catch (error) {
         this.staged = null;
-        this.failLoad(key, group, error);
+        this.failLoad(ctx, error);
       }
     }
 
@@ -265,7 +277,8 @@
         }
       } catch (error) {
         this.staged = null;
-        return this.failLoad(staged.key, staged.group, error);
+        try { staged.iterator.return?.(); } catch (_) {}
+        return this.failLoad(staged.ctx, error);
       }
     }
 
@@ -320,6 +333,7 @@
     unloadAll() {
       this.cancelStaged();
       this.queue.clear();
+      this.failedUntil.clear();
       for (const key of [...this.loaded.keys()]) this.unload(key);
       this.centerCx = null;
       this.centerCz = null;
@@ -389,7 +403,7 @@
 
     updateInactive(dt) {
       this.inactiveSeconds += Math.max(0, Number(dt) || 0);
-      if (this.inactiveSeconds >= INACTIVE_UNLOAD_DELAY_S && this.loaded.size) this.unloadAll();
+      if (this.inactiveSeconds >= INACTIVE_UNLOAD_DELAY_S && (this.loaded.size || this.staged || this.queue.size)) this.unloadAll();
     }
 
     rebuild(col = null, row = null) {
@@ -457,6 +471,7 @@
         streamBuildIntervalMs: Math.round(STREAM_BUILD_INTERVAL_S * 1000),
         stagedBuild: this.staged ? { key: this.staged.key, steps: this.staged.steps, workMs: Number(this.staged.workMs.toFixed(2)) } : null,
         stagedCancels: this.stagedCancels,
+        failedChunks: this.failedUntil.size,
         stagedFrameBudgetMs: this.buildChunkStages ? STAGED_BUILD_FRAME_BUDGET_MS : null,
       };
     }
