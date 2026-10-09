@@ -262,7 +262,7 @@
 
   function disposeApplied() {
     if (!applied) return;
-    applied.mesh?.removeFromParent?.();
+    applied.mesh?.parent?.remove?.(applied.mesh); // three r128 (this editor) lacks the newer one-call detach helper, so detach via the parent.
     applied.geometry?.dispose?.();
     applied.material?.dispose?.();
     applied.texture?.dispose?.();
