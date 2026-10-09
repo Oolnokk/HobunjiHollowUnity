@@ -30,4 +30,39 @@ assert(apply.includes("live.dispatchEvent(new Event('change'"), 'static Pants ap
 assert(apply.includes('clearEdgeDarkBackground'), 'applied repository pants should mirror the author edge-black transparency behavior');
 assert(!apply.includes("getObjectByName('left_thigh')"), 'beltline-only Apply must not require the procedural leg chain');
 
+// Behavior: the Apply button must attach even when the Pants panel is built after the module's bounded poll expires.
+{
+  const vm = require('vm');
+  let now = 0;
+  const listeners = {};
+  const rafQueue = [];
+  const tools = { children: [], lastElementChild: null, insertBefore(el) { this.children.push(el); } };
+  let panelBuilt = false;
+  const byId = {};
+  const document = {
+    currentScript: null,
+    querySelector: sel => (panelBuilt && sel.includes('pantsRigHostTools') ? tools : null),
+    getElementById: id => byId[id] || (tools.children.find(c => c.id === id) || null),
+    createElement: () => ({ addEventListener() {}, style: {} }),
+  };
+  const win = {
+    document, performance: { now: () => now },
+    addEventListener: (type, fn) => { (listeners[type] = listeners[type] || []).push(fn); },
+    dispatchEvent: ev => { (listeners[ev.type] || []).forEach(fn => fn(ev)); },
+    requestAnimationFrame: fn => { rafQueue.push(fn); },
+    Event: class { constructor(type) { this.type = type; } },
+  };
+  win.window = win;
+  win.location = { href: 'https://example.test/docs/tools/procedural-animation-editor/index.html' };
+  vm.runInNewContext(apply, { ...win, window: win, document, performance: win.performance, requestAnimationFrame: win.requestAnimationFrame, Event: win.Event, URL, console });
+  now = 13000; // Poll window (12s) has expired before the panel exists.
+  while (rafQueue.length) rafQueue.shift()();
+  assert.strictEqual(tools.children.length, 0, 'button must not exist before the panel does');
+  panelBuilt = true;
+  win.dispatchEvent(new win.Event('hobunji-pants-rig-panel-ready'));
+  assert.strictEqual(tools.children.length, 1, 'Apply to NPC must attach when the panel-ready event fires after the poll expired');
+  assert.strictEqual(tools.children[0].textContent, 'Apply to NPC');
+  assert(fs.readFileSync('docs/js/procedural-pants-rig-author.js', 'utf8').includes("'hobunji-pants-rig-panel-ready'"), 'author must announce panel readiness');
+}
+
 console.log('embedded Pants containment + Apply-to-NPC: PASS');

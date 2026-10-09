@@ -577,6 +577,7 @@
     const install = () => {
       if (!buildPanel()) return false;
       editorLog('Integrated Pants Rig Author ready inside Procedural Animation.');
+      window.dispatchEvent(new Event('hobunji-pants-rig-panel-ready')); // Lets host-header add-ons (Apply to NPC) attach whenever the panel exists, however late the editor built its HUD.
       requestAnimationFrame(() => { frame().catch(error => editorLog('Pants Rig loop failed', 'warn', error)); });
       return true;
     };
