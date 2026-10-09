@@ -84,7 +84,10 @@ function ensureGarment() {
   for (const side of ['left', 'right']) {
     garment.legBones[side] ||= JSON.parse(JSON.stringify(defaultGarment().legBones[side]));
   }
-  if (garment.weightMap?.encoding === 'rle8') state.weightGrid = Core.decodeWeightGridRle(garment.weightMap);
+  // Decode the stored map only when no live grid exists (boot, garment/project switch,
+  // undo/redo all null it first). ensureGarment() runs on every render and draft save,
+  // so decoding unconditionally overwrote each auto-seed and brush stroke with the old map.
+  if (!state.weightGrid && garment.weightMap?.encoding === 'rle8') state.weightGrid = Core.decodeWeightGridRle(garment.weightMap);
   if (!state.weightGrid || state.weightGrid.channels?.join('|') !== Core.WEIGHT_CHANNELS.join('|')) state.weightGrid = freshWeightGrid();
   return garment;
 }
@@ -675,7 +678,9 @@ function portraitPointerDown(event) {
   const canvas = $('portraitCanvas'); // Portrait beltline canvas.
   const position = pointerPosition(event, canvas); // Pointer in portrait canvas pixels.
   const character = ensureCharacter(); // Per-species/gender record being edited.
-  const index = nearestSplineHandle(position, character.portraitBeltSpline, state.portraitImageRect); // Hit portrait belt node.
+  // Any touch on the portrait grabs the nearest of the five belt nodes: the default
+  // 24-backing-pixel hit radius is only ~10 CSS px on the small embedded canvas.
+  const index = nearestSplineHandle(position, character.portraitBeltSpline, state.portraitImageRect, Infinity); // Nearest portrait belt node.
   if (index == null) return;
   snapshotForUndo('move portrait belt');
   state.activeHandle = { type: 'portraitBelt', index };
