@@ -25793,6 +25793,38 @@
 
       function updateDebugPage() { /* debug panel removed from menu */ }
 
+      // Captured only on report requests: no per-frame allocation or serialization.
+      function playerMovementDebugSnapshot() {
+        const keyboard = getKeyboardVector();
+        const locks = (window.CharacterActionLocks?.getDebug?.() || []).filter(lock =>
+          lock.participants.some(participant => participant.id === PLAYER_ACTION_LOCK_ID));
+        const footingTarget = proneRecoveryFootingTarget(player);
+        const speedMul = window.Combat?.getMovementSpeedMul?.() ?? 1;
+        return {
+          area: currentArea, paused, dialogueOpen,
+          input: { x: input.x, y: input.y, keyboard, strength: player.inputStrength, vx: player.vx, vy: player.vy },
+          movementLocks: locks,
+          modes: {
+            chat: !!window.PlayerChat?.isOpen, socialPose: !!window.PlayerSocialPoses?.active,
+            harvesting: !!window.FarmAnimals?.isHarvesting?.(), sitting: !!sitInteraction,
+            fishing: !!window.Fishing?.state?.active, music: !!window.MusicMinigame?.state?.active,
+            mount: window.Mounts?.rideState || 'none', climbing: !!player.climbing, onBranch: !!player.onBranch,
+          },
+          combat: {
+            health: player.health, stamina: player.stamina, footing: player.footing,
+            maxFooting: player.maxFooting, footingTarget,
+            footingFinite: Number.isFinite(player.footing), speedMul, speedMulFinite: Number.isFinite(speedMul),
+            prone: !!player.prone, recovering: !!player.somersaultRecovering,
+            proneThrowT: player.proneThrowT, ledgeFall: !!player._knockbackLedgeFall,
+            knockbackT: player.knockbackT, dodging: !!player.dodging, dodgeT: player.dodgeT,
+            lunging: !!player.lunging, lungeT: player.lungeT,
+            staggered: player.staggered ? { active: !!player.staggered.active, endsAt: player.staggered.endsAt } : null,
+            ragdoll: window.ImpactRagdollPlayback?.getDebug?.() || null,
+          },
+        };
+      }
+      window.__playerMovementDebugSnapshot = playerMovementDebugSnapshot;
+
       async function copyDebugLog() {
         const reticle = getReticleTile();
         const filter = window.__debugLogFilter || 'all';
@@ -25818,6 +25850,7 @@
           `Tool/action: ${window.FormatUtils.toolName(activeTool)} / ${window.FormatUtils.actionName(activeAction)}`,
           `Mobile combat arch aim: ${JSON.stringify(window.__mobileArchCombatAimDebug?.snapshot?.() || { active: false })}`,
           `Player: x${player.x.toFixed(0)} y${player.y.toFixed(0)}`,
+          `Player movement/status: ${JSON.stringify(playerMovementDebugSnapshot())}`,
           ...(weavingDiagnostics ? ['', ...String(weavingDiagnostics).split('\n')] : []),
           '--- raw log ---',
           ...filteredLog.map(e => `[${e.t}] [${e.lvl}] ${e.msg}`)
