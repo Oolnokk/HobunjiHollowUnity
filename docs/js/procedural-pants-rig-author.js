@@ -478,11 +478,22 @@
     document.head.appendChild(style);
   }
 
+  function avoidFootingHud() {
+    const panel = state.panel;
+    if (!panel) return;
+    panel.style.removeProperty('top'); // Restores the stylesheet position before measuring.
+    if (window.matchMedia?.('(max-width:700px) and (orientation:portrait)').matches) return; // Portrait phones anchor the panel to the bottom instead.
+    const hud = document.getElementById('footingHud'); // Sits on a higher layer than the modal root and would cover the host header (Live 3D / Apply to NPC).
+    const bottom = hud?.getBoundingClientRect?.().bottom || 0;
+    if (bottom > 0) panel.style.top = `${Math.ceil(bottom) + 6}px`;
+  }
+
   function setOpen(open) {
     state.open = !!open;
     state.panel?.classList.toggle('open', state.open);
     state.quickButton?.classList.toggle('active', state.open);
     if (state.open) {
+      avoidFootingHud();
       state.forceRebuild = true;
       syncAuthorToProceduralIdentity();
       setStatus('Pants Rig open · Live 3D uses the exact Procedural Animation avatar/IK legs.', 'good');
@@ -552,6 +563,7 @@
     document.addEventListener('keydown', event => {
       if (event.key === 'Escape' && state.open) setOpen(false);
     });
+    window.addEventListener('resize', () => { if (state.open) avoidFootingHud(); });
     window.addEventListener('message', event => {
       if (event.source !== state.iframe?.contentWindow || event.data?.type !== 'hobunji-pants-rig-changed') return;
       state.forceRebuild = true; // Rebuilds geometry/weights after a completed 2D authoring gesture rather than serializing the project every animation frame.
