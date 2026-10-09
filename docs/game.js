@@ -17342,6 +17342,7 @@
       }
 
       function updateMovement(dt) {
+        syncMobileAutoTargetButton(); // Combat visibility must refresh even when prone, mounted, or another mode skips ordinary movement.
         updateMobileArchCombatAimLifecycle();
         updateMeleeAttackFacingCommitLifecycle();
         const viewModeKeyboard = getKeyboardVector();
@@ -17679,8 +17680,6 @@
         }
 
         // ── Facing ────────────────────────────────────────────
-        // The mobile target toggle remains available even with weapons put away.
-        syncMobileAutoTargetButton();
         btnWeaponSwitch?.classList.toggle('active', heldMode === 'tool' && (activeTool === 'weapon' || activeTool === 'ranged'));
         // Melee aim assist is intentionally invisible and exists only immediately before windup.
         if (characterViewMode.enabled) {
@@ -26091,7 +26090,8 @@
       function syncMobileAutoTargetButton() {
         if (!btnSwapTarget) return;
         const enabled = mobileAutoTargetEnabled(); // Read once to keep the arch's toggle presentation consistent.
-        if (btnSwapTarget.classList.contains('abt-hidden') !== isDesktop) btnSwapTarget.classList.toggle('abt-hidden', isDesktop);
+        const hidden = isDesktop || !isPlayerInCombat(); // Reuses active hostile combat state; drawing a weapon alone does not expose the control.
+        if (btnSwapTarget.classList.contains('abt-hidden') !== hidden) btnSwapTarget.classList.toggle('abt-hidden', hidden);
         if (btnSwapTarget.classList.contains('active') !== enabled) btnSwapTarget.classList.toggle('active', enabled);
         const pressed = String(enabled); // Avoids rewriting accessibility state every movement frame.
         if (btnSwapTarget.getAttribute('aria-pressed') !== pressed) btnSwapTarget.setAttribute('aria-pressed', pressed);
@@ -26110,6 +26110,7 @@
         const TARGET_HOLD_MS = 180; // Distinguishes a toggle tap from the target-select hold gesture.
         function beginTargetHold() {
           if (!targetStick || targetStick.held) return;
+          if (btnSwapTarget.classList.contains('abt-hidden')) { finishTargetStick(null, true); return; }
           targetStick.held = true;
           window.Combat?.input?.setAutoTargetEnabled(true);
           const socket = document.createElement('div'); // Displays the same fixed socket used by existing arch sticks.
@@ -26128,7 +26129,7 @@
           press.socket?.remove();
           btnSwapTarget.style.transform = '';
           try { btnSwapTarget.releasePointerCapture?.(press.id); } catch (_) {}
-          if (!cancelled && !press.held) window.Combat?.input?.setAutoTargetEnabled(!mobileAutoTargetEnabled());
+          if (!cancelled && !press.held && !btnSwapTarget.classList.contains('abt-hidden')) window.Combat?.input?.setAutoTargetEnabled(!mobileAutoTargetEnabled());
         }
         btnSwapTarget.addEventListener('pointerdown', event => {
           if (targetStick || btnSwapTarget.classList.contains('abt-hidden')) return;
@@ -26141,6 +26142,7 @@
         });
         btnSwapTarget.addEventListener('pointermove', event => {
           if (!targetStick || event.pointerId !== targetStick.id) return;
+          if (btnSwapTarget.classList.contains('abt-hidden')) { finishTargetStick(event, true); return; }
           event.preventDefault();
           const dx = event.clientX - targetStick.x, dy = event.clientY - targetStick.y; // Screen-space target-stick vector shares the existing action arch's bearing convention.
           const distance = Math.hypot(dx, dy); // Movement threshold also enters hold mode promptly without waiting for its timer.
@@ -27619,7 +27621,7 @@
         meleeAttackAlignmentSnapshot: () => {
           const target = meleeAttackTargetLock;
           return {
-            latestChange: 'Mobile-only autotarget defaults on; second-arch endpoint follows Social Actions; live runtime sizing and spacing are 20% larger; tap toggles, hold enables and drags select melee/ranged targets with stable locks and obstruction checks.',
+            latestChange: 'Mobile-only autotarget defaults on; red TARGET label appears only during active mobile combat; second-arch endpoint follows Social Actions with 20% larger sizing and spacing; tap toggles, hold enables and drags select melee/ranged targets with stable locks and obstruction checks.',
             settings: window.Combat?.input?.autoTargetSettingsSnapshot?.(),
             controlLayout: ['btnUtilityMenu', 'btnSocialActions', 'btnSwapTarget'].map(id => {
               const rect = document.getElementById(id)?.getBoundingClientRect?.(); // On-demand copyable diagnostics use actual runtime button sizes and positions.

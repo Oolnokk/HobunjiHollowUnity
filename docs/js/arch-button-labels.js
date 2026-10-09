@@ -99,6 +99,7 @@
         text-shadow:0 0 2px #000, 0 0 3px #000;
       }
       #btnSwapTarget .arch-meaning-label {
+        color:#ff6873;
         font-size:clamp(22.05px, calc(0.569625 * var(--col)), 33.075px);
       }
       .arch-meaning-label.long { font-size:clamp(16.84375px, calc(0.4134375 * var(--col)), 24.5px); }

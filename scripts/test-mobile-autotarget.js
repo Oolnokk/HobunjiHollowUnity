@@ -63,8 +63,8 @@ assert.equal(targetContext.swapAutoTarget(0),false,'desktop cannot swap an assis
 
 const handlers = {}; // Captures handlers attached by the real target-stick installation.
 const timers = new Map(); // Deterministic hold timer callbacks without sleeping.
-let timerId = 0, selectedAngle = null, enabled = true, transitions = 0; // Shared observable gesture results.
-const button = {classList:{contains:()=>false},style:{},addEventListener:(name,fn)=>handlers[name]=fn,getBoundingClientRect:()=>({left:10,top:10,width:44,height:44}),setPointerCapture(){},releasePointerCapture(){}}; // Only the existing button's required DOM methods.
+let timerId = 0, selectedAngle = null, enabled = true, transitions = 0, buttonHidden = false; // Shared observable gesture results.
+const button = {classList:{contains:name=>name==='abt-hidden'&&buttonHidden},style:{},addEventListener:(name,fn)=>handlers[name]=fn,getBoundingClientRect:()=>({left:10,top:10,width:44,height:44}),setPointerCapture(){},releasePointerCapture(){}}; // Only the existing button's required DOM methods.
 const gesture = {btnSwapTarget:button,isDesktop:false,window:{Combat:{input:{setAutoTargetEnabled(value){enabled=value;transitions++;}}},addEventListener(){}},document:{hidden:false,body:{appendChild(){}},createElement:()=>({style:{},remove(){}}),addEventListener(){}},mobileAutoTargetEnabled:()=>enabled,targetStickWorldAngle:(x,y)=>Math.atan2(y,x),swapAutoTarget:angle=>{selectedAngle=angle;},syncMobileAutoTargetButton(){},setTimeout:fn=>{timers.set(++timerId,fn);return timerId;},clearTimeout:id=>timers.delete(id)}; // Runs production pointerdown/move/up/cancel lifecycle.
 const gestureStart = game.indexOf('      if (btnSwapTarget && !isDesktop)'); // Isolates the real handler block rather than recreating its state machine.
 vm.runInNewContext(game.slice(gestureStart,game.indexOf('      const desktopTapWindowMs',gestureStart)),gesture);
@@ -83,6 +83,18 @@ handlers.pointerdown(event(5));handlers.pointerdown(event(6));handlers.pointerup
 assert.equal(transitions,beforeCancel,'second finger cannot steal ownership');
 handlers.lostpointercapture(event(5));
 assert.equal(timers.size,0,'capture loss clears hold timer');
+handlers.pointerdown(event(7));
+buttonHidden=true;
+handlers.pointerup(event(7));
+assert.equal(transitions,beforeCancel,'combat ending during a tap does not toggle the saved preference');
+buttonHidden=false;
+handlers.pointerdown(event(8));
+buttonHidden=true;
+[...timers.values()].forEach(fn=>fn());
+assert.equal(transitions,beforeCancel,'combat ending before the hold timer does not enable targeting');
+assert.equal(timers.size,0,'hidden hold gesture releases its timer');
+buttonHidden=false;
+
 console.log('mobile autotarget preference, acquisition, switching, and gesture checks passed');
 
 function injectedCss(file, nextFunction, extra = {}) {
@@ -130,3 +142,29 @@ for(const angles of [layoutDefaults,{btnUtilityMenu:145,btnSocialActions:130}]) 
 const labelsCss=injectedCss('docs/js/arch-button-labels.js','  function currentBindings()'); // Runtime label overlay must grow together with the button.
 assert(declaration(labelsCss,'#btnSwapTarget .arch-meaning-label','font-size'),'visible target text has its own larger size');
 console.log('executed runtime target size, label, and social-ring layout regression checks passed');
+
+const visibilityClasses = new Set(); // Tracks the production control's active and hidden state without a browser renderer.
+let visibilityWrites = 0, combatActive = false, visibilityEnabled = true; // Verifies combat transitions and deduplicated DOM updates.
+const visibilityAttrs = {}; // Cached accessibility state written by the production sync function.
+const visibilityContext = {btnSwapTarget:{classList:{contains:name=>visibilityClasses.has(name),toggle(name,value){visibilityWrites++;if(value)visibilityClasses.add(name);else visibilityClasses.delete(name);}},getAttribute:name=>visibilityAttrs[name],setAttribute(name,value){visibilityWrites++;visibilityAttrs[name]=value;}},isDesktop:false,mobileAutoTargetEnabled:()=>visibilityEnabled,isPlayerInCombat:()=>combatActive}; // Isolated live button presentation owner.
+const visibilityStart = game.indexOf('      function syncMobileAutoTargetButton()'); // Runs the actual owner rather than mirroring its logic.
+vm.runInNewContext(game.slice(visibilityStart,game.indexOf("      window.addEventListener('hobunji-auto-target-change'",visibilityStart)),visibilityContext);
+visibilityContext.syncMobileAutoTargetButton();
+assert(visibilityClasses.has('abt-hidden'),'mobile target control is hidden outside combat');
+combatActive=true;
+visibilityContext.syncMobileAutoTargetButton();
+assert(!visibilityClasses.has('abt-hidden'),'combat exposes the mobile target control');
+visibilityEnabled=false;
+visibilityContext.syncMobileAutoTargetButton();
+assert(!visibilityClasses.has('abt-hidden'),'turning assist off during combat leaves its toggle available');
+const settledWrites=visibilityWrites; // Repeated movement ticks must not queue redundant DOM mutations.
+visibilityContext.syncMobileAutoTargetButton();
+assert.equal(visibilityWrites,settledWrites,'unchanged visibility does not rewrite the DOM');
+combatActive=false;
+visibilityContext.syncMobileAutoTargetButton();
+assert(visibilityClasses.has('abt-hidden'),'ending combat hides the control');
+combatActive=true;visibilityContext.isDesktop=true;
+visibilityContext.syncMobileAutoTargetButton();
+assert(visibilityClasses.has('abt-hidden'),'desktop combat never exposes the mobile button');
+assert.equal(declaration(labelsCss,'#btnSwapTarget .arch-meaning-label','color'),'#ff6873','runtime target label is red');
+console.log('executed combat-only target visibility and interrupted gesture checks passed');
