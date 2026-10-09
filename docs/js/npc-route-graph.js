@@ -15,10 +15,14 @@
   }
 
   // Whether the straight segment between two route nodes stays on dry,
-  // walkable ground (no river crossing) — sampled the same way as
-  // canNpcBeeline so authored route edges respect the same rules.
+  // walkable ground. Newer NPC pathfinding exposes a footprint-aware segment
+  // validator on the predicate itself; older/test callers keep the original
+  // tile-sampling fallback.
   function isRouteSegmentDry(area, c1, r1, c2, r2, isNpcTileWalkable) {
     const x1 = c1 + 0.5, z1 = r1 + 0.5, x2 = c2 + 0.5, z2 = r2 + 0.5;
+    if (typeof isNpcTileWalkable?.canTraverse === 'function') {
+      return isNpcTileWalkable.canTraverse(area, x1, z1, x2, z2);
+    }
     const dist = Math.hypot(x2 - x1, z2 - z1);
     const samples = Math.max(1, Math.ceil(dist / 0.5));
     for (let i = 0; i <= samples; i++) {
@@ -44,8 +48,9 @@
       (route.nodes || []).forEach(([c, r]) => {
         const node = ensure(area, c, r);
         if (route.id) node.routeIds.add(route.id);
-        // Skip edges that wade through a river — NPCs following this route
-        // will detour via any other dry edge instead of crossing the water.
+        // Only connect route nodes when an NPC-sized body can actually
+        // traverse the segment; this catches thin interior walls/props that
+        // sit between otherwise-walkable tile centers.
         if (prev && isRouteSegmentDry(area, prev.c, prev.r, c, r, isNpcTileWalkable)) { prev.edges.add(node.key); node.edges.add(prev.key); }
         prev = node;
       });
