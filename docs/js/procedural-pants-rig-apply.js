@@ -159,7 +159,7 @@
           }
         }
         if (!local) {
-          localPoint.set((portrait.x - 0.5) * dimensions.width, (0.5 - portrait.y) * dimensions.height, 0.014);
+          localPoint.set((window.PNGPlaneAvatar?.getPortraitsFlipped?.() === true ? 0.5 - portrait.x : portrait.x - 0.5) * dimensions.width, (0.5 - portrait.y) * dimensions.height, 0.014); // Mirrors with the UV-flipped portrait texture (the skinned resolver path already does).
           worldPoint.copy(localPoint);
           plane.localToWorld(worldPoint);
           local = model.worldToLocal(worldPoint);

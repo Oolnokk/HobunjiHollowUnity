@@ -162,14 +162,19 @@
     return root;
   }
 
+  function portraitsFlipped() {
+    return window.PNGPlaneAvatar?.getPortraitsFlipped?.() === true; // The game mirrors every portrait texture by default (UV repeat.x = -1); garment geometry must mirror with it.
+  }
+
   function findLegNodes(model) {
     const root = legSearchRoot(model);
     if (!root?.getObjectByName) return null;
+    const flipped = portraitsFlipped(); // Mirrored art puts the garment's image-left leg on the screen-right side, which is where the right_* IK nodes live.
     const nodes = { // These are the procedural editor's existing IK transforms, not a Pants-specific skeleton.
-      leftThigh: root.getObjectByName('left_thigh'),
-      leftCalf: root.getObjectByName('left_calf'),
-      rightThigh: root.getObjectByName('right_thigh'),
-      rightCalf: root.getObjectByName('right_calf'),
+      leftThigh: root.getObjectByName(flipped ? 'right_thigh' : 'left_thigh'),
+      leftCalf: root.getObjectByName(flipped ? 'right_calf' : 'left_calf'),
+      rightThigh: root.getObjectByName(flipped ? 'left_thigh' : 'right_thigh'),
+      rightCalf: root.getObjectByName(flipped ? 'left_calf' : 'right_calf'),
     };
     return Object.values(nodes).every(Boolean) ? nodes : null;
   }
@@ -298,7 +303,7 @@
         const u = col / PREVIEW_SEGMENTS;
         const fitted = forwardStaticFit(Core, garment, character, { x: u, y: v });
         const portrait = Core.applyAffine(transform, fitted);
-        localPoint.set((portrait.x - 0.5) * dimensions.width, (0.5 - portrait.y) * dimensions.height, 0.012);
+        localPoint.set((portraitsFlipped() ? 0.5 - portrait.x : portrait.x - 0.5) * dimensions.width, (0.5 - portrait.y) * dimensions.height, 0.012); // Mirrors with the UV-flipped portrait texture.
         worldPoint.copy(localPoint);
         plane.localToWorld(worldPoint); // Includes the exact Procedural Animation portrait assembly transform.
         model.worldToLocal(worldPoint);
