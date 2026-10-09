@@ -42,6 +42,7 @@
       }
     }
     cavesByMapId.set(String(mapId || ''), caves);
+    window.CaveSiteSystem?.applyWorkspaceProfiles?.(mapId, workspace); // Promotes the existing animal-den anchors into generic cave sites without changing their terrain/collision representation.
     return caves;
   }
 
@@ -66,6 +67,20 @@
     };
   }
 
+  function loadCaveSiteSystem() {
+    if (window.CaveSiteSystem || typeof document === 'undefined') return;
+    const currentSrc = document.currentScript?.src || ''; // Current module URL used to resolve the sibling cave-site script in game and standalone preview tools.
+    const src = currentSrc ? new URL('cave-site-system.js?v=20261009caves1', currentSrc).href : 'js/cave-site-system.js?v=20261009caves1';
+    if (document.readyState === 'loading' && typeof document.write === 'function') {
+      document.write(`<script src="${src}"><\/script>`); // Parser-time load guarantees later subsystem assignments are intercepted before game.js initializes them.
+      return;
+    }
+    const script = document.createElement('script'); // Late preview/tool fallback when LocaleCaveRuntime is injected after parsing.
+    script.src = src;
+    script.async = false;
+    document.head?.appendChild(script);
+  }
+
   window.LocaleCaveRuntime = {
     registerWorkspace,
     cavesForZone,
@@ -74,4 +89,5 @@
   };
 
   installGeneratorCapture();
+  loadCaveSiteSystem();
 })();
