@@ -147,6 +147,8 @@ assert.match(proceduralPantsSource, /ProceduralPantsRigAuthor/);
 assert.doesNotMatch(proceduralPantsSource, /<header\b/, 'the editor stylesheet hides every <header> with display:none !important; the Pants host header must be a div');
 assert.doesNotMatch(proceduralPantsSource, /removeFromParent/, 'three r128 (the editor) has no Object3D.removeFromParent(); use parent.remove(mesh)');
 assert.doesNotMatch(read('docs/js/procedural-pants-rig-apply.js'), /removeFromParent/, 'three r128 (the editor) has no Object3D.removeFromParent(); use parent.remove(mesh)');
+assert.match(proceduralPantsSource, /getPortraitsFlipped/, 'portraits are UV-mirrored by default; the pants mesh and left/right leg channels must mirror with them');
+assert.match(read('docs/js/procedural-pants-rig-apply.js'), /getPortraitsFlipped/, 'static Apply fallback must mirror with the UV-flipped portrait');
 const editorSource = read('docs/tools/procedural-animation-editor/index.html');
 assert.match(editorSource, /name = `\$\{side\}_thigh`/, 'the editor must create named left/right thigh nodes for Pants Rig and other adapters');
 assert.match(proceduralPantsSource, /function legSearchRoot/, 'Pants must search for leg nodes from the avatar root, not just the model');
