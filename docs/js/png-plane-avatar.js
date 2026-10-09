@@ -933,6 +933,11 @@
     const rig = portraitRoot.userData.neckRig;
     const skinnedPlane = rig.skinnedPlane;
     const skeleton = skinnedPlane.skeleton;
+    // Module-based tools (the Procedural Animation editor) never publish a
+    // global THREE; fall back to the live mesh's own constructors there.
+    const globalThree = typeof THREE !== 'undefined' ? THREE : null;
+    const Vector3 = globalThree?.Vector3 || skinnedPlane.position.constructor;
+    const Matrix4 = globalThree?.Matrix4 || skinnedPlane.matrixWorld.constructor;
     const sourceCanvas = portraitRoot.userData.sourceCanvas;
     const pixelWidth = Number(sourceCanvas?.naturalWidth || sourceCanvas?.width);
     const pixelHeight = Number(sourceCanvas?.naturalHeight || sourceCanvas?.height);
@@ -944,7 +949,7 @@
       || pixelWidth <= 0 || pixelHeight <= 0 || modelWidth <= 0 || modelHeight <= 0) return null;
     const renderedPixelX = portraitsFlipped ? pixelWidth - pixelX : pixelX; // Used below so authored attachment landmarks mirror with the UV-flipped portrait.
 
-    const localPoint = new THREE.Vector3(
+    const localPoint = new Vector3(
       -modelWidth / 2 + (renderedPixelX / pixelWidth) * modelWidth,
       modelHeight / 2 - (pixelY / pixelHeight) * modelHeight,
       0,
@@ -965,9 +970,9 @@
     skeleton.update?.();
 
     const bindPoint = localPoint.clone().applyMatrix4(skinnedPlane.bindMatrix);
-    const deformed = new THREE.Vector3();
-    const bonePoint = new THREE.Vector3();
-    const boneMatrix = new THREE.Matrix4();
+    const deformed = new Vector3();
+    const bonePoint = new Vector3();
+    const boneMatrix = new Matrix4();
     const headScaleWeight = rig.headScaleJoint && skeleton.bones.length >= 3
       ? headWeight * headScaleGateAtPixel(renderedPixelX, rig.headBoundsPx) : 0; // Match the rendered head-scale bone.
     const weights = [1 - headWeight, headWeight - headScaleWeight, headScaleWeight];
@@ -1015,10 +1020,14 @@
     if (vertical.lengthSq() < 1e-10) return null;
     vertical.normalize();
     const normal = tangent.clone().cross(vertical).normalize();
-    const basis = new THREE.Matrix4().makeBasis(tangent, vertical, normal);
+    const globalThree = typeof THREE !== 'undefined' ? THREE : null;
+    const skinnedPlane = globalThree ? null : resolveSkinnedPortraitRoot(avatarRoot).userData.neckRig.skinnedPlane; // Constructor source when no global THREE exists.
+    const Matrix4 = globalThree?.Matrix4 || skinnedPlane.matrixWorld.constructor;
+    const Quaternion = globalThree?.Quaternion || skinnedPlane.quaternion.constructor;
+    const basis = new Matrix4().makeBasis(tangent, vertical, normal);
     return {
       position: center,
-      quaternion: new THREE.Quaternion().setFromRotationMatrix(basis),
+      quaternion: new Quaternion().setFromRotationMatrix(basis),
       tangent,
       vertical,
       normal,

@@ -55186,6 +55186,7 @@ const procedural = { // Holds live input, motion, playback, and recording state 
     defaultFrame: null, // Object3D re-oriented every frame to the unauthored (straight-at-the-foot) left-thigh direction.
     proxy: null, // Child of defaultFrame; its LOCAL quaternion IS the authored bend (so it survives defaultFrame's own per-frame gait tracking).
     lines: { left: null, right: null }, // THREE.Line (hip -> knee -> foot), one per leg.
+    chains: null, // Invisible left/right {hip, thigh, calf} Object3D chains solved every frame (named like the game runtime's), so Pants Rig and other adapters can read real bone transforms.
     transformControls: null,
     transformHelper: null,
   },
@@ -55365,6 +55366,27 @@ async function executeClassicScript(code, sourceUrl) {
   } finally { URL.revokeObjectURL(blobUrl); }
 }
 
+// The avatar is built with a neck rig (SkinnedMesh), so Pants/runtime callers use
+// PNGPlaneAvatar.resolveSkinnedPixelWorldPosition. Older copies of
+// png-plane-avatar.js (e.g. main's, fetched when ref=main) read a global THREE
+// inside it, which this module-based editor never publishes; lend it the
+// editor's own THREE for the duration of each call only.
+function installSkinnedResolverThreeShim() {
+  const api = window.PNGPlaneAvatar;
+  for (const name of ['resolveSkinnedPixelWorldPosition', 'resolveSkinnedPixelWorldFrame']) {
+    const original = api?.[name];
+    if (typeof original !== 'function' || original.__editorThreeShim) continue;
+    const shimmed = function editorThreeShimmedResolver(...args) {
+      if (window.THREE || !state.three.THREE) return original.apply(this, args);
+      window.THREE = state.three.THREE;
+      try { return original.apply(this, args); }
+      finally { delete window.THREE; }
+    };
+    shimmed.__editorThreeShim = true;
+    api[name] = shimmed;
+  }
+}
+
 async function loadRepositoryRuntime(settings) {
   const key = repoKey(settings);
   if (state.runtimeKey === key && window.NpcAvatarPreview && window.PNGPlaneAvatar && window.CreatureGeneticsRender) {
@@ -55387,6 +55409,7 @@ async function loadRepositoryRuntime(settings) {
   }
 
   window.applyHobunjiAttachmentRigProfileCorrections?.(); // Same post-bootstrap call held-action-animations.js makes in the game: pushes snapshot anatomy into the live pngPlaneAvatar config.
+  installSkinnedResolverThreeShim();
 
   if (!window.NpcAvatarPreview) throw new Error('npc-avatar-preview-utils.js did not expose window.NpcAvatarPreview.');
   if (!window.PNGPlaneAvatar) throw new Error('png-plane-avatar.js did not expose window.PNGPlaneAvatar.');
@@ -57742,6 +57765,7 @@ function disposeLegBonesVisual() {
   lb.proxy = null;
   lb.lines.left = null;
   lb.lines.right = null;
+  lb.chains = null;
 }
 
 function buildLegBonesVisual() {
@@ -57761,6 +57785,19 @@ function buildLegBonesVisual() {
   };
   lb.lines.left = makeLine(0x5ec8ff);
   lb.lines.right = makeLine(0xffa15e);
+  lb.chains = {}; // Same hip -> thigh -> calf names as docs/js/procedural-leg-animation.js; matrices update while the debug lines are hidden because three still updates invisible nodes.
+  for (const side of ['left', 'right']) {
+    const hip = new THREE.Group();
+    hip.name = `${side}_hip`;
+    const thigh = new THREE.Group();
+    thigh.name = `${side}_thigh`;
+    const calf = new THREE.Group();
+    calf.name = `${side}_calf`;
+    thigh.add(calf);
+    hip.add(thigh);
+    root.add(hip);
+    lb.chains[side] = { hip, thigh, calf };
+  }
   lb.defaultFrame = new THREE.Object3D();
   lb.defaultFrame.name = 'LeftThighDefaultFrame';
   root.add(lb.defaultFrame);
@@ -57804,9 +57841,16 @@ function updateLegBonesVisual() {
   const bendEuler = lb.proxy ? new THREE.Euler().setFromQuaternion(lb.proxy.quaternion, 'XYZ') : new THREE.Euler();
   const bendDegX = THREE.MathUtils.radToDeg(bendEuler.x);
   const bendDegZ = THREE.MathUtils.radToDeg(bendEuler.z);
-  const drawLeg = (hip, foot, line, sideBendDegX) => {
+  const drawLeg = (side, hip, foot, line, sideBendDegX) => {
     if (!foot || !line) return;
     const solved = window.LegBones.solveTwoBoneLeg(THREE, { hip, foot: foot.position, bendDegX: sideBendDegX, bendDegZ });
+    const chain = lb.chains?.[side]; // Drives the invisible bone nodes from the exact same solve that draws the debug line.
+    if (chain) {
+      chain.hip.position.set(hip.x, hip.y, hip.z);
+      chain.thigh.quaternion.copy(solved.thighQuaternion);
+      chain.calf.position.set(0, -solved.thighLength, 0);
+      chain.calf.quaternion.copy(solved.calfLocalQuaternion);
+    }
     const positions = line.geometry.attributes.position;
     positions.setXYZ(0, hip.x, hip.y, hip.z);
     positions.setXYZ(1, solved.knee.x, solved.knee.y, solved.knee.z);
@@ -57814,8 +57858,8 @@ function updateLegBonesVisual() {
     positions.needsUpdate = true;
     line.geometry.computeBoundingSphere();
   };
-  drawLeg(leftHip, leftFoot, lb.lines.left, bendDegX);
-  drawLeg(rightHip, rightFoot, lb.lines.right, -bendDegX); // Right leg mirrors the left's lateral (x) bend, matching legBendForSpecies' own mirroring.
+  drawLeg('left', leftHip, leftFoot, lb.lines.left, bendDegX);
+  drawLeg('right', rightHip, rightFoot, lb.lines.right, -bendDegX); // Right leg mirrors the left's lateral (x) bend, matching legBendForSpecies' own mirroring.
 }
 
 function syncLegBonesVisibility() {
