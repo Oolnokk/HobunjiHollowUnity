@@ -127,9 +127,15 @@
     const key = (c, r) => c + ',' + r;
     const targetKey = key(targetC, targetR);
     const startKey = key(startC, startR);
+    const centerClearCache = new Map(); // Reuses footprint/furniture checks while A* revisits neighboring tiles.
     const centerClear = (c, r) => {
-      if (allowOccupiedTarget && c === targetC && r === targetR) return isNpcPositionStructurallyWalkable(area, c + 0.5, r + 0.5);
-      return isNpcPositionWalkable(area, c + 0.5, r + 0.5);
+      const k = key(c, r);
+      if (centerClearCache.has(k)) return centerClearCache.get(k);
+      const clear = allowOccupiedTarget && c === targetC && r === targetR
+        ? isNpcPositionStructurallyWalkable(area, c + 0.5, r + 0.5)
+        : isNpcPositionWalkable(area, c + 0.5, r + 0.5);
+      centerClearCache.set(k, clear);
+      return clear;
     };
     if (!centerClear(targetC, targetR)) return null;
 
@@ -228,6 +234,17 @@
     return { x: startX, z: startZ };
   }
 
+  function _npcStepIsClear(walker, startX, startZ, desiredX, desiredZ, structuralOnly) {
+    const travel = Math.hypot(desiredX - startX, desiredZ - startZ);
+    const shortStep = Math.max(0.04, npcCollisionRadiusTiles() * 0.45);
+    if (travel <= shortStep) {
+      return structuralOnly
+        ? isNpcPositionStructurallyWalkable(walker.area, desiredX, desiredZ)
+        : isNpcPositionWalkable(walker.area, desiredX, desiredZ);
+    }
+    return canNpcTraverse(walker.area, startX, startZ, desiredX, desiredZ, { structuralOnly });
+  }
+
   function decorateWalkerCollision(walker) {
     if (!walker || decoratedWalkers.has(walker) || typeof walker.moveToward !== 'function') return walker;
     decoratedWalkers.add(walker);
@@ -237,17 +254,25 @@
     walker.moveToward = function collisionAwareNpcMoveToward(tx, tz, dt) {
       if (!deps || !this.root?.position) return originalMoveToward.call(this, tx, tz, dt);
       const startX = this.root.position.x, startZ = this.root.position.z;
-      const startedEmbedded = !isNpcPositionStructurallyWalkable(this.area, startX, startZ); // Lets legacy/stale saves escape a pre-existing embed instead of permanently freezing the NPC.
+      const startStructuralClear = isNpcPositionStructurallyWalkable(this.area, startX, startZ);
+      const startFullyClear = startStructuralClear && isNpcPositionWalkable(this.area, startX, startZ);
       const arrived = originalMoveToward.call(this, tx, tz, dt);
       const desiredX = this.root.position.x, desiredZ = this.root.position.z;
-      if (startedEmbedded || canNpcTraverse(this.area, startX, startZ, desiredX, desiredZ, {
-        structuralOnly: _walkerAllowsFurnitureOverlap(this, tx, tz),
-      })) return arrived;
+
+      // Old saves can place a walker inside a wall, and seated walkers begin
+      // inside their chair by design. Let either escape its existing overlap,
+      // but never let furniture escape cross a structural wall on the way out.
+      if (!startStructuralClear) return arrived;
+      if (!startFullyClear && isNpcPositionStructurallyWalkable(this.area, desiredX, desiredZ)) return arrived;
 
       const seatOverlap = _walkerAllowsFurnitureOverlap(this, tx, tz);
+      if (_npcStepIsClear(this, startX, startZ, desiredX, desiredZ, seatOverlap)) return arrived;
+
       const resolved = _resolveBlockedStep(this, startX, startZ, desiredX, desiredZ, seatOverlap);
       this.root.position.x = resolved.x;
       this.root.position.z = resolved.z;
+      const actualDx = resolved.x - startX, actualDz = resolved.z - startZ;
+      if (Math.hypot(actualDx, actualDz) > 1e-6) this.applyFacingDeadzone?.(-Math.atan2(actualDz, actualDx) + Math.PI / 2, 0.15);
       _recordBlockedMove(this, tx, tz);
       return arrived && Math.hypot(resolved.x - tx, resolved.z - tz) < 0.001;
     };
@@ -264,6 +289,26 @@
         this._gridPathTargetKey = target.routeId + '|' + target.c + ',' + target.r;
         debugStats.pathReplans++;
         return true;
+      };
+    }
+    if (typeof walker._updateStationWander === 'function') {
+      const originalStationWander = walker._updateStationWander;
+      walker._updateStationWander = function collisionAwareNpcStationWander(target, dt) {
+        const result = originalStationWander.call(this, target, dt);
+        if (!this._wanderTarget) { this._npcCollisionWanderPathKey = null; return result; }
+        const targetKey = this._wanderTarget.c + ',' + this._wanderTarget.r;
+        if (this._wanderGridPath?.length && this._npcCollisionWanderPathKey !== targetKey) {
+          const path = findNpcPath(this.area, this.root.position.x, this.root.position.z, this._wanderTarget.c, this._wanderTarget.r, { padding: 4 });
+          if (path?.length) {
+            this._wanderGridPath = path;
+            debugStats.pathReplans++;
+          } else {
+            this._wanderGridPath = null;
+            this._wanderTarget = null;
+          }
+          this._npcCollisionWanderPathKey = targetKey; // Prevents rebuilding the same wander path every frame.
+        }
+        return result;
       };
     }
     return walker;
