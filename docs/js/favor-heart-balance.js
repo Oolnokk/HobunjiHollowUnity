@@ -216,7 +216,8 @@
     dialogue.adjustNpcFavor = function favorPointAdjustment(npcId, amount, reason, isSpillover = false, skipPositiveMultiplier = false) {
       if (!npcId) return 0;
       let appliedPoints = finite(amount, 0); // Used as the raw Favor XP delta persisted in relationship state.
-      if (!isSpillover && /^gift_/i.test(String(reason || ''))) appliedPoints = balancedGiftPoints(appliedPoints);
+      if (!isSpillover && /^gift_/i.test(String(reason || ''))) appliedPoints = balancedGiftPoints(appliedPoints) * (window.FestivalSystem?.giftMultiplier?.() || 1);
+      if (appliedPoints > 0 && !isSpillover && !skipPositiveMultiplier) appliedPoints *= window.FestivalSystem?.blessingMultiplier?.('goodwill') || 1;
       if (appliedPoints > 0 && !skipPositiveMultiplier) appliedPoints *= finite(window.AlchemySystem?.getPositiveFavorMultiplier?.(), 1);
       appliedPoints = roundPoint(appliedPoints);
       if (!appliedPoints) {

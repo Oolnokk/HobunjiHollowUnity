@@ -223,6 +223,7 @@
     if (cond.dateFrom || cond.dateTo) {
       if (!isWithinDateWindow(now.dateOrdinal, cond.dateFrom, cond.dateTo)) return false;
     }
+    if (cond.festival && window.FestivalCalendar?.forOrdinal(now.dateOrdinal)?.id !== cond.festival) return false;
     if (cond.flag) {
       const want = cond.flagValue !== false;
       if (getFlag(cond.flag) !== want) return false;

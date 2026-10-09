@@ -48,7 +48,7 @@
     // per-second constants keeps un-afflicted regen feeling the same
     // as before this system existed; quiet rest now doubles it.
     const tickResult = window.ResourceSystem?.tick(deps.player, dt, {
-      staminaRegenPerSec: deps.PLAYER_STAMINA_REGEN * window.CookingSystem.getStaminaRegenMultiplier(),
+      staminaRegenPerSec: deps.PLAYER_STAMINA_REGEN * window.CookingSystem.getStaminaRegenMultiplier() * (window.FestivalSystem?.blessingMultiplier?.('vigor') || 1),
       healthRegenPerSec: deps.PLAYER_HEALTH_REGEN,
     });
     // Direct hits check death in game.js's damagePlayer(), while already-

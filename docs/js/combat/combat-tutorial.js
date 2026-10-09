@@ -14,7 +14,8 @@
   function state(id) { return deps?.getQuestProgress?.()?.[id] || null; }
   function definition(id) { return content.quests.find(quest => quest.id === id); }
   function step() { return session?.quest.steps[session.index] || null; }
-  function active() { return !!session && deps?.getArea() === content.ARENA; }
+  function practiceArea() { return session?.quest.practice?.area || content.ARENA; } // Allows reusable, nonpersistent sparring at an authored world activity.
+  function active() { return !!session && deps?.getArea() === practiceArea(); }
   function gate(quest) {
     if (quest.requires && state(quest.requires)?.status !== 'completed') return `Complete ${definition(quest.requires)?.title || quest.requires}`;
     if (quest.combat > (window.SkillSystem?.level?.('combat') || 0)) return `Combat level ${quest.combat}`;
@@ -104,7 +105,7 @@
         const kind = { quickAttack: 'Quick Attack', offensiveHold: 'Offensive Hold', defensiveHold: 'Defensive Hold' }[window.Combat.abilities.get(id)?.category]; // Reminds the player which Loadout slot the permanent pick fills.
         return { label: `Learn ${abilityName(id)}${kind ? ` (${kind})` : ''}`, actions: [action('reward', { abilityId: id })] };
       });
-    return tree('spearhead_training_reward', [{ id: 'start', type: 'choice', text: session.replay ? 'Good practice. You have already received this lesson’s reward.' : unknown.length ? 'You have tried these techniques. Pick one to keep. The other techniques and borrowed weapons stay here.' : session.quest.mastery || session.quest.rangedMastery ? 'Good work. When you have decided, open the Loadout to choose your upgrade. Your own equipment is ready upstairs.' : 'Well done. You already know every technique practiced here. Your own equipment is ready upstairs.', choices }]);
+    return tree('spearhead_training_reward', [{ id: 'start', type: 'choice', text: session.quest.transient ? 'Well done. You faced the challenge without fear. Finish to restore your equipment and resources.' : session.replay ? 'Good practice. You have already received this lesson’s reward.' : unknown.length ? 'You have tried these techniques. Pick one to keep. The other techniques and borrowed weapons stay here.' : session.quest.mastery || session.quest.rangedMastery ? 'Good work. When you have decided, open the Loadout to choose your upgrade. Your own equipment is ready upstairs.' : 'Well done. You already know every technique practiced here. Your own equipment is ready upstairs.', choices }]);
   }
   function stopActions() {
     window.Combat?.input?.abortAllPresses?.();
@@ -127,7 +128,7 @@
       if (quest.mastery || quest.rangedMastery) quest = window.CombatTutorialMastery.build(quest, deps);
       deps.closeDialogue();
       stopActions();
-      session = { quest, index: 0, hits: 0, phase: 'loading', lastProgressAt: now(), lastTickAt: now(), wrongHits: 0, ammo: { specialAmmo: 8, rangedAmmoLoadouts: {}, unlockedSpecialAmmo: ['shrapnel', 'concussive'] }, replay: state(quest.id)?.status === 'completed', tried: new Set(), original: deps.capture(), walker, actor: { area: walker.area, c: walker.root.position.x - 0.5, r: walker.root.position.z - 0.5, pause: walker.pause }, target: null };
+      session = { quest, index: 0, hits: 0, phase: 'loading', lastProgressAt: now(), lastTickAt: now(), wrongHits: 0, ammo: { specialAmmo: 8, rangedAmmoLoadouts: {}, unlockedSpecialAmmo: ['shrapnel', 'concussive'] }, replay: !!quest.transient || state(quest.id)?.status === 'completed', tried: new Set(), original: deps.capture(), walker, actor: { area: walker.area, c: walker.root.position.x - 0.5, r: walker.root.position.z - 0.5, pause: walker.pause }, target: null };
       session.ammoBaseline = JSON.parse(JSON.stringify(deps.getGear()?.rangedAmmoLoadouts?.[quest.weapon] || { basicEffects: {}, specialSlots: {}, activeAmmo: 'basic' })); // Private preview copy; permanent ammunition selections never change.
       // Resume at the saved card. Earlier verified exercises retain reward eligibility across reloads.
       if (!session.replay) {
@@ -138,12 +139,12 @@
         saveProgress();
       }
       const starting = session; // Owns scene travel and the async humanoid build through cancellation.
-      await deps.enterArena();
+      await deps.enterArena(quest.practice);
       if (session !== starting) return false;
-      walker.transferToArea(content.ARENA, { c: 8, r: 14 });
+      walker.transferToArea(practiceArea(), quest.practice ? { c: quest.practice.c - 2.5, r: quest.practice.r + 1.5 } : { c: 8, r: 14 });
       walker.pause = Infinity;
-      const target = await deps.spawnTarget(); // Oddclaw remains present throughout the sequential lesson.
-      if (session !== starting || deps.getArea() !== content.ARENA) {
+      const target = await deps.spawnTarget(quest.practice); // Oddclaw remains present throughout the sequential lesson.
+      if (session !== starting || deps.getArea() !== practiceArea()) {
         if (target) deps.removeTarget(target);
         if (session === starting) await leave(false);
         return false;
@@ -176,10 +177,10 @@
     session.wrongHits = 0;
     const lesson = step(); // An absent card means all practice is complete and the reward is pending.
     if (lesson) {
-      deps.resetPractice(lesson.startGap ?? (['hit', 'quickBonus', 'block'].includes(lesson.check) ? 1.2 : 2)); // Melee starts within reach instead of making new players guess they must close the gap.
+      deps.resetPractice(lesson.startGap ?? (['hit', 'quickBonus', 'block'].includes(lesson.check) ? 1.2 : 2), session.quest.practice); // Melee starts within reach instead of making new players guess they must close the gap.
       deps.equip(lesson.weapon || 'hatchet', lesson.equipSlot || (lesson.check === 'rangedHit' ? 'ranged' : 'weapon'));
       applyPreview(lesson);
-      deps.resetTarget?.(session.target, lesson);
+      deps.resetTarget?.(session.target, lesson, session.quest.practice);
     }
     saveProgress();
     render();
@@ -282,7 +283,9 @@
         saved.status = 'completed'; saved.reward = abilityId; saved.progress.hidden = true;
         deps.save();
       }
+      const onComplete = session.quest.onComplete; // Called only after real verified actions and temporary-state cleanup.
       await leave(true);
+      onComplete?.();
       return true;
     } finally { busy = false; render(); }
   }
@@ -296,10 +299,10 @@
     if (ending.target) deps.removeTarget(ending.target);
     ending.walker.transferToArea(ending.actor.area, { c: ending.actor.c, r: ending.actor.r });
     ending.walker.pause = ending.actor.pause;
-    deps.restore(ending.original);
+    deps.restore(ending.original, ending.quest.practice);
     session = null;
     render();
-    if (returnUpstairs && deps.getArea() === content.ARENA) await deps.exitArena();
+    if (returnUpstairs && !ending.quest.practice && deps.getArea() === content.ARENA) await deps.exitArena();
   }
   function slotOverride(slot) {
     if (!active() || !step()) return undefined;
@@ -336,7 +339,7 @@
         else if (operation === 'debug') { diagnosticsOpen = !diagnosticsOpen; panel.dataset.key = ''; render(); }
       });
     }
-    const visible = deps.getArea() === content.ARENA && !deps.dialogueOpen(); // Only dialogue presents lesson text.
+    const visible = (session ? active() : deps.getArea() === content.ARENA) && !deps.dialogueOpen(); // Only dialogue presents lesson text.
     panel.hidden = !visible;
     panel.style.display = visible ? 'flex' : 'none';
     if (!visible) return;
@@ -387,7 +390,8 @@
   }
   function update() {
     if (!deps) return;
-    if (session && session.phase !== 'loading' && deps.getArea() !== content.ARENA && session.phase !== 'leaving') { void leave(false); return; }
+    if (session && session.phase !== 'loading' && deps.getArea() !== practiceArea() && session.phase !== 'leaving') { void leave(false); return; }
+    if (active() && session.quest.practice && (session.quest.isAvailable?.() === false || Math.hypot((deps.playerPosition?.().c ?? session.quest.practice.c) - session.quest.practice.c, (deps.playerPosition?.().r ?? session.quest.practice.r) - session.quest.practice.r) > (session.quest.practice.radius || 7))) { void leave(false); return; }
     if (active()) {
       const tick = now(); // Shared game-loop clock; background tabs and dialogue do not consume coaching time.
       const elapsed = Math.max(0, tick - (session.lastTickAt || tick)); // Used to exclude pauses from the no-progress threshold.
@@ -407,7 +411,7 @@
         deps.maintainTarget?.(session.target, step());
       }
     }
-    const visible = deps.getArea() === content.ARENA && !deps.dialogueOpen(); // Visibility transitions and objective changes redraw; render() skips unchanged content.
+    const visible = (session ? active() : deps.getArea() === content.ARENA) && !deps.dialogueOpen(); // Visibility transitions and objective changes redraw; render() skips unchanged content.
     if ((!panel && visible) || (panel && (panel.hidden === visible || (visible && panel.dataset.key !== objectiveKey())))) render();
   }
   function diagnosticsText() {

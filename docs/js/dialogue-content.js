@@ -513,7 +513,18 @@
     });
   }
 
+  const queuedConversationTrees = new Map(); // One-shot scripted conversations, consumed before ordinary provider selection.
+  function queueConversationTree(npcId, tree) {
+    if (!npcId || !tree?.entryNode || !Array.isArray(tree.nodes)) return false;
+    queuedConversationTrees.set(npcId, tree);
+    return true;
+  }
   function _pickDialogueTree(rec) {
+    if (queuedConversationTrees.has(rec?.id)) {
+      const queued = queuedConversationTrees.get(rec.id); // Delete before playback so reopening cannot trap the player in a script.
+      queuedConversationTrees.delete(rec.id);
+      return queued;
+    }
     const provider = _dialogueTreeProviders.get(String(rec?.id || '')); // Used to let a stateful feature choose one ordinary authored tree for this interaction.
     if (provider) {
       try {
@@ -1080,6 +1091,8 @@
     playSpeechTick: _playNpcDialogueLetterSfx,
     npcDlgState: _npcDlgState,
     npcBaseDispositions: _npcBaseDispositions,
+    hasQueuedConversationTree: npcId => queuedConversationTrees.has(npcId),
+    queueConversationTree,
     registerTreeProvider,
     registerActionHandler,
     registerNodeEnterHandler,

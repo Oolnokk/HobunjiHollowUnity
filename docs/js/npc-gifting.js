@@ -280,7 +280,7 @@
   function applyGiftRelationshipDelta(npcId, evaluation) {
     const reason = 'gift_' + evaluation.tier;
     window.DialogueContent?.adjustNpcFavor?.(npcId, evaluation.favorDelta, reason);
-    if (evaluation.favorDelta > 0) window.NpcRapport?.adjust?.(npcId, giftRapportAmount(), reason);
+    if (evaluation.favorDelta > 0) window.NpcRapport?.adjust?.(npcId, giftRapportAmount() * (window.FestivalSystem?.giftMultiplier?.() || 1), reason);
   }
 
   // Only calls out a dislike/hate in the prompt when the player has
@@ -328,7 +328,7 @@
       recordDiscoveredTraits(npcId, preferenceTier, evaluation.matches[preferenceTier]);
     }
 
-    const favorGain = Math.round(evaluation.favorDelta * (evaluation.favorDelta > 0 ? window.AlchemySystem?.getPositiveFavorMultiplier?.() || 1 : 1) * 10) / 10; // Mirrors DialogueContent's actual favor gain, including existing positive-favor buffs.
+    const favorGain = Math.round(evaluation.favorDelta * (window.FestivalSystem?.giftMultiplier?.() || 1) * (evaluation.favorDelta > 0 ? (window.AlchemySystem?.getPositiveFavorMultiplier?.() || 1) * (window.FestivalSystem?.blessingMultiplier?.('goodwill') || 1) : 1) * 10) / 10; // Mirrors DialogueContent's actual favor gain, including existing positive-favor buffs.
     const barterReward = isPorakaneki(walker) ? rollBarterReward(favorGain, held) : null; // Preflight the promised return before consuming anything.
     if (isPorakaneki(walker) && !barterReward) { deps.showToast?.('Make room for a Porakaneki return gift.', false); return false; }
 

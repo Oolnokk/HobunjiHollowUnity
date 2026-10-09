@@ -73,6 +73,12 @@
         out.push({ npcId: def.npcId, name: walker.rec?.name || def.npcId, area: walker.area, songId: def.songId });
       }
     }
+    for (const walker of deps.npcWalkers) {
+      const target = walker.currentScheduleTarget; // Any authored music station can host a performer, including temporary layouts.
+      if (out.some(entry => entry.npcId === walker.rec?.id) || target?.toolKey !== 'kurraya' || !target.roles?.includes('music-performance') || !isNpcOnDutyAtStation(walker, target.label)) continue;
+      const songId = INSTRUMENT_NPC_DEFS.find(def => def.npcId === walker.rec?.id)?.songId || 'when-the-kininjis-bloom';
+      out.push({ npcId: walker.rec.id, name: walker.rec.name || walker.rec.id, area: walker.area, songId });
+    }
     return out;
   }
 
@@ -121,6 +127,7 @@
   }
 
   const npcStationsById = new Map(); // stationId → { id, label, area, c, r, rotY, pose, toolKey, toolIntervalSec, ... }
+  const mapStationIds = new Map(); // Area-owned station IDs removed when its editable map/layout is replaced.
   const floodShelterAssignmentsByNpcId = new Map(); // Used to keep each NPC committed to one shelter/seat for the whole flood emergency instead of retargeting every planner tick.
   let floodShelterTownBuildingLinks = null; // Used to cache direct town-to-building doors for one emergency; cleared when schedules resume.
   let floodShelterEmergencyWasActive = false; // Used to clear cached shelter commitments once flood hysteresis releases.
@@ -190,6 +197,11 @@
   function resolveNpcStationTarget(stationId) {
     const station = npcStationsById.get(stationId);
     return station ? { ...station, stationId: station.id } : null;
+  }
+  function replaceMapNpcStations(stations, area) {
+    for (const id of mapStationIds.get(area) || []) npcStationsById.delete(id);
+    registerNpcStations(stations, area);
+    mapStationIds.set(area, new Set((stations || []).map(station => normalizeNpcStation(station, area)?.id).filter(Boolean)));
   }
 
   // Every registered station advertising `role`, optionally narrowed to one
@@ -676,6 +688,7 @@
     isNpcOnDutyAtStation,
     listInstrumentPerformers,
     registerNpcStations,
+    replaceMapNpcStations,
     resolveNpcStationTarget,
     findStationsByRole,
     getVisitorPresence,
