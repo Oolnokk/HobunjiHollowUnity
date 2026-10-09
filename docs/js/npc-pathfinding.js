@@ -57,13 +57,15 @@
     return true;
   }
 
-  function isNpcPositionWalkable(area, x, z, radius = npcCollisionRadiusTiles(), { ignoreFurniture = false } = {}) {
+  function isNpcPositionWalkable(area, x, z, radius = npcCollisionRadiusTiles(), { ignoreFurniture = false, ignoreFurnitureTile = null } = {}) {
     if (!isNpcPositionStructurallyWalkable(area, x, z, radius)) return false;
     if (ignoreFurniture) return true;
     const d = radius * 0.82;
     const samples = [[0, 0], [-d, 0], [d, 0], [0, -d], [0, d], [-d, -d], [d, -d], [-d, d], [d, d]];
     for (const [dx, dz] of samples) {
-      if (deps.furnitureBlocksMovementAt(area, x + dx, z + dz)) return false;
+      const sx = x + dx, sz = z + dz;
+      if (ignoreFurnitureTile && Math.floor(sx) === ignoreFurnitureTile.c && Math.floor(sz) === ignoreFurnitureTile.r) continue;
+      if (deps.furnitureBlocksMovementAt(area, sx, sz)) return false;
     }
     return true;
   }
@@ -88,13 +90,13 @@
       ? stepTiles
       : Math.min(Number.isFinite(configuredStep) && configuredStep > 0 ? configuredStep : 0.25, Math.max(0.08, npcCollisionRadiusTiles() * 0.75));
     const samples = Math.max(1, Math.ceil(dist / step));
+    const ignoredEndTile = ignoreFurnitureAtEnd ? { c: Math.floor(toX), r: Math.floor(toZ) } : null; // Allows chair overlap only inside the final destination tile.
     for (let i = 0; i <= samples; i++) {
       const t = i / samples;
       const x = fromX + (toX - fromX) * t, z = fromZ + (toZ - fromZ) * t;
-      const atEnd = i === samples;
       const clear = structuralOnly
         ? isNpcPositionStructurallyWalkable(area, x, z)
-        : isNpcPositionWalkable(area, x, z, npcCollisionRadiusTiles(), { ignoreFurniture: i === 0 || (atEnd && ignoreFurnitureAtEnd) });
+        : isNpcPositionWalkable(area, x, z, npcCollisionRadiusTiles(), { ignoreFurniture: i === 0, ignoreFurnitureTile: ignoredEndTile });
       if (!clear) return false;
     }
     return true;
