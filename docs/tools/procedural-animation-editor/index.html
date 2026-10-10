@@ -57855,6 +57855,7 @@ function updateLegBonesVisual() {
       chain.thigh.quaternion.copy(solved.thighQuaternion);
       chain.calf.position.set(0, -solved.thighLength, 0);
       chain.calf.quaternion.copy(solved.calfLocalQuaternion);
+      chain.calf.userData.hobunjiCalfLength = solved.calfLength; // Lets the Pants rig place the ankle: calf origin + calf-down * calfLength.
     }
     const positions = line.geometry.attributes.position;
     positions.setXYZ(0, hip.x, hip.y, hip.z);

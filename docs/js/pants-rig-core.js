@@ -289,6 +289,87 @@
     return result;
   }
 
+  // ---- Leg bones: exact-midpoint knee, 2D->3D bone alignment, weighted skinning -------------------------------------
+  // A leg is two separate bones: thigh (hip -> knee) and calf (knee -> ankle). The knee is not authored independently:
+  // it is the exact midpoint of hip and ankle, which is also where the 3D solver (docs/js/leg-bones.js) puts the
+  // knee of an unbent leg (thighLength is exactly half the hip-to-foot distance).
+  function kneeAtMidpoint(hip, ankle) {
+    return { x: ((Number(hip?.x) || 0) + (Number(ankle?.x) || 0)) / 2, y: ((Number(hip?.y) || 0) + (Number(ankle?.y) || 0)) / 2 };
+  }
+
+  function normalizeLegBones(legBones) { // Returns a copy whose knees are the exact midpoint of hip and ankle.
+    const result = {};
+    for (const side of ['left', 'right']) {
+      const hip = clonePoint(legBones?.[side]?.hip);
+      const ankle = clonePoint(legBones?.[side]?.ankle);
+      result[side] = { hip, knee: kneeAtMidpoint(hip, ankle), ankle };
+    }
+    return result;
+  }
+
+  const MIN_BONE_LENGTH = 1e-6;
+  const MAX_STRETCH = 12; // A foot target that pops a long way away must not blow the garment up.
+  const MIN_STRETCH = 0.08;
+
+  // 2D transform that carries the 2D bone (fromStart -> fromEnd) onto the 3D bone (toStart -> toEnd): rotate to the
+  // new direction, stretch ALONG the bone so its length matches, and scale across it by `perpendicularScale`:
+  // a number (1 keeps the authored leg thickness) or 'balanced' (sqrt of the stretch: halfway between stretching only
+  // and scaling uniformly, so a leg stretched 4x gets 2x wider and keeps believable proportions whatever the species'
+  // leg length). Same {a,b,c,d,tx,ty} layout as solveAffine/applyAffine:
+  //   x' = a x + c y + tx,  y' = b x + d y + ty.
+  function alignBoneSegment(fromStart, fromEnd, toStart, toEnd, { perpendicularScale = 1 } = {}) {
+    const fx = Number(fromStart?.x) || 0, fy = Number(fromStart?.y) || 0;
+    const tx0 = Number(toStart?.x) || 0, ty0 = Number(toStart?.y) || 0;
+    const dx2 = (Number(fromEnd?.x) || 0) - fx, dy2 = (Number(fromEnd?.y) || 0) - fy;
+    const dx3 = (Number(toEnd?.x) || 0) - tx0, dy3 = (Number(toEnd?.y) || 0) - ty0;
+    const length2 = Math.hypot(dx2, dy2);
+    const length3 = Math.hypot(dx3, dy3);
+    if (length2 < MIN_BONE_LENGTH || length3 < MIN_BONE_LENGTH) { // Degenerate bone: follow the joint, keep the shape.
+      return { a: 1, b: 0, c: 0, d: 1, tx: tx0 - fx, ty: ty0 - fy, stretch: 1, rotation: 0 };
+    }
+    const ux = dx2 / length2, uy = dy2 / length2; // Unit 2D bone direction.
+    const stretch = Math.max(MIN_STRETCH, Math.min(MAX_STRETCH, length3 / length2));
+    const across = perpendicularScale === 'balanced'
+      ? Math.sqrt(stretch)
+      : (Number.isFinite(perpendicularScale) && perpendicularScale > 0 ? perpendicularScale : 1);
+    // S = across * I + (stretch - across) * u u^T
+    const k = stretch - across;
+    const s00 = across + k * ux * ux, s01 = k * ux * uy, s10 = s01, s11 = across + k * uy * uy;
+    const rotation = Math.atan2(dy3, dx3) - Math.atan2(dy2, dx2);
+    const cos = Math.cos(rotation), sin = Math.sin(rotation);
+    const a = cos * s00 - sin * s10, c = cos * s01 - sin * s11; // A = R * S
+    const b = sin * s00 + cos * s10, d = sin * s01 + cos * s11;
+    return { a, b, c, d, tx: tx0 - (a * fx + c * fy), ty: ty0 - (b * fx + d * fy), stretch, rotation };
+  }
+
+  // Linear-blend skinning of a flat vertex array in place. base/out: Float32Array xyz triples. weights:
+  // Float32Array of `channelCount` normalized weights per vertex, in WEIGHT_CHANNELS order. transforms: one entry per
+  // channel, an {a,b,c,d,tx,ty} affine or null for "stays rigid" (the belt). Depth (z) is carried through unchanged so
+  // the garment keeps its place in front of the portrait plane.
+  function skinWeightedPositions(base, weights, transforms, out, channelCount = WEIGHT_CHANNELS.length) {
+    const vertexCount = Math.floor(base.length / 3);
+    for (let vertex = 0; vertex < vertexCount; vertex++) {
+      const x = base[vertex * 3], y = base[vertex * 3 + 1];
+      let ox = 0, oy = 0;
+      for (let channel = 0; channel < channelCount; channel++) {
+        const weight = weights[vertex * channelCount + channel];
+        if (!(weight > 0)) continue;
+        const transform = transforms[channel];
+        if (transform) {
+          ox += weight * (transform.a * x + transform.c * y + transform.tx);
+          oy += weight * (transform.b * x + transform.d * y + transform.ty);
+        } else {
+          ox += weight * x;
+          oy += weight * y;
+        }
+      }
+      out[vertex * 3] = ox;
+      out[vertex * 3 + 1] = oy;
+      out[vertex * 3 + 2] = base[vertex * 3 + 2];
+    }
+    return out;
+  }
+
   function validateProject(project) {
     const errors = [];
     if (!project || project.schema !== SCHEMA) errors.push(`schema must be ${SCHEMA}`);
@@ -331,6 +412,10 @@
     decodeWeightGridRle,
     normalizeWeightCell,
     sampleWeights,
+    kneeAtMidpoint,
+    normalizeLegBones,
+    alignBoneSegment,
+    skinWeightedPositions,
     validateProject,
   });
 })(typeof window !== 'undefined' ? window : globalThis);

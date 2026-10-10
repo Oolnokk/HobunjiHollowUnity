@@ -55,10 +55,10 @@ function defaultGarment() {
         { x: 0.66, y: 0.65 }, { x: 0.74, y: 0.675 }, { x: 0.81, y: 0.625 }, { x: 0.85, y: 0.54 }, { x: 0.845, y: 0.43 },
       ],
     },
-    legBones: {
-      left: { hip: { x: 0.39, y: 0.36 }, knee: { x: 0.285, y: 0.515 }, ankle: { x: 0.17, y: 0.69 } },
-      right: { hip: { x: 0.61, y: 0.36 }, knee: { x: 0.715, y: 0.515 }, ankle: { x: 0.83, y: 0.69 } },
-    },
+    legBones: Core.normalizeLegBones({ // The knee is always the exact midpoint of hip and ankle.
+      left: { hip: { x: 0.39, y: 0.36 }, ankle: { x: 0.17, y: 0.69 } },
+      right: { hip: { x: 0.61, y: 0.36 }, ankle: { x: 0.83, y: 0.69 } },
+    }),
     weightMap: null,
   };
 }
@@ -83,6 +83,9 @@ function ensureGarment() {
   garment.legBones ||= defaultGarment().legBones;
   for (const side of ['left', 'right']) {
     garment.legBones[side] ||= JSON.parse(JSON.stringify(defaultGarment().legBones[side]));
+    const bone = garment.legBones[side];
+    const midpoint = Core.kneeAtMidpoint(bone.hip, bone.ankle); // Older drafts/imports let the knee wander; the knee is derived now.
+    if (!bone.knee || bone.knee.x !== midpoint.x || bone.knee.y !== midpoint.y) bone.knee = midpoint;
   }
   // Decode the stored map only when no live grid exists (boot, garment/project switch,
   // undo/redo all null it first). ensureGarment() runs on every render and draft save,
@@ -648,9 +651,27 @@ function moveActivePantsHandle(normalized) {
   if (!handle) return;
   if (handle.type === 'pantsBelt') garment.pantsBeltSpline[handle.index] = normalized;
   if (handle.type === 'opening') garment.legOpenings[handle.side][handle.index] = normalized;
-  if (handle.type === 'bone') garment.legBones[handle.side][handle.joint] = normalized;
+  if (handle.type === 'bone') moveLegBone(garment.legBones[handle.side], handle, normalized);
   persistDraft();
   queueRender({ rebuildFit: true });
+}
+
+// The knee is not a free joint: it is the exact midpoint of hip and ankle, so thigh and calf are always equal in length
+// and meet in a straight line. Dragging the hip or ankle reshapes the leg (the knee follows); dragging the knee dot
+// carries the whole leg without changing its shape.
+function moveLegBone(bone, handle, normalized) {
+  if (handle.joint === 'knee') {
+    const last = handle.last || normalized; // Pointer position at the previous move, in normalized garment space.
+    let dx = normalized.x - last.x;
+    let dy = normalized.y - last.y;
+    dx = Math.max(-Math.min(bone.hip.x, bone.ankle.x), Math.min(1 - Math.max(bone.hip.x, bone.ankle.x), dx)); // Keep both ends inside the PNG.
+    dy = Math.max(-Math.min(bone.hip.y, bone.ankle.y), Math.min(1 - Math.max(bone.hip.y, bone.ankle.y), dy));
+    for (const joint of ['hip', 'ankle']) bone[joint] = { x: bone[joint].x + dx, y: bone[joint].y + dy };
+    handle.last = normalized;
+  } else {
+    bone[handle.joint] = Core.clonePoint(normalized);
+  }
+  bone.knee = Core.kneeAtMidpoint(bone.hip, bone.ankle);
 }
 
 function pantsPointerMove(event) {
@@ -919,7 +940,7 @@ function setMode(mode) {
     pantsBelt: 'Drag the five lime pants-belt nodes.',
     leftOpening: 'Drag the five orange left leg-opening nodes.',
     rightOpening: 'Drag the five orange right leg-opening nodes.',
-    bones: 'Drag hip, knee, and ankle joints. Cyan = thigh; magenta = calf.',
+    bones: 'Drag the hip or ankle to reshape a leg; the knee stays the exact midpoint. Drag the white knee dot to move the whole leg. Cyan = thigh, magenta = calf. In 3D the pants stretch so these bones land on the avatar\u2019s leg bones.',
     weights: 'Paint the selected bone/belt influence over the clean pants PNG.',
   }; // Mobile instruction text for the selected workspace mode.
   $('modeHint').textContent = labels[mode] || '';
