@@ -448,8 +448,8 @@
     const flat = preview.bones2D;
     const transforms = preview.scratch.transforms; // Channel order is Core.WEIGHT_CHANNELS: belt, leftThigh, leftCalf, rightThigh, rightCalf.
     const options = { perpendicularScale: LEG_ACROSS_SCALE };
-    const s = preview.beltScale, c = preview.beltCenter; // Belt-weighted pixels scale about the beltline centre; leg-weighted pixels follow their bones.
-    transforms[0] = s === 1 ? null : { a: s, b: 0, c: 0, d: s, tx: c.x * (1 - s), ty: c.y * (1 - s) };
+    const s = preview.beltScale, c = preview.beltCenter; // Belt-weighted pixels scale vertically about the beltline centre; leg-weighted pixels follow their bones.
+    transforms[0] = s === 1 ? null : { a: 1, b: 0, c: 0, d: s, tx: 0, ty: c.y * (1 - s) }; // Vertical only: the beltline spline already controls width.
     transforms[1] = Core.alignBoneSegment(flat.left.hip, flat.left.knee, live.left.hip, live.left.knee, options);
     transforms[2] = Core.alignBoneSegment(flat.left.knee, flat.left.ankle, live.left.knee, live.left.ankle, options);
     transforms[3] = Core.alignBoneSegment(flat.right.hip, flat.right.knee, live.right.hip, live.right.knee, options);

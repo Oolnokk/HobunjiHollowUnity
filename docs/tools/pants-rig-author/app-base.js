@@ -988,7 +988,7 @@ function wire() {
     persistDraft();
     queueRender({ rebuildFit: true });
   });
-  $('beltScale').addEventListener('input', () => { // Live 3D preview only: scales the belt-weighted pixels about the beltline centre.
+  $('beltScale').addEventListener('input', () => { // Live 3D preview only: scales the belt-weighted pixels vertically about the beltline.
     const character = ensureCharacter();
     character.beltScale = Number($('beltScale').value) || 1;
     $('beltScaleValue').textContent = `${character.beltScale.toFixed(2)}×`;
