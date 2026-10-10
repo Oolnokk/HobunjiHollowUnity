@@ -212,6 +212,27 @@
     return { a, c, tx, b, d, ty, kind: 'affine' };
   }
 
+  // "Posterior" fit, for species whose beltline gives a poor fit (very short or very long legs): treat the garment as one
+  // sprite. Scale it so its legs are as long as the species' legs (vertical), stretch it horizontally to match the portrait
+  // beltline's width, and hang it from the species' posterior (hip pivot): the garment's hip centre lands on the posterior
+  // point, centred under the portrait beltline. The legs' bone alignment then only has the small remainder to absorb.
+  // portraitPosterior = {x, y} (portrait canvas 0..1); legLength = the species' hip->ankle length in portrait units.
+  function solvePosteriorFit(garment, portraitBelt, portraitPosterior, legLength) {
+    const bones = normalizeLegBones(garment?.legBones);
+    const belt = normalizeSpline(portraitBelt);
+    const garmentBelt = normalizeSpline(garment?.pantsBeltSpline);
+    const xs = pts => ({ min: Math.min(...pts.map(p => p.x)), max: Math.max(...pts.map(p => p.x)) });
+    const garmentSpan = xs(garmentBelt), portraitSpan = xs(belt);
+    const hip = { x: (bones.left.hip.x + bones.right.hip.x) / 2, y: (bones.left.hip.y + bones.right.hip.y) / 2 };
+    const garmentLeg = (Math.hypot(bones.left.ankle.x - bones.left.hip.x, bones.left.ankle.y - bones.left.hip.y) + Math.hypot(bones.right.ankle.x - bones.right.hip.x, bones.right.ankle.y - bones.right.hip.y)) / 2;
+    if (!(garmentLeg > 1e-6) || !(garmentSpan.max - garmentSpan.min > 1e-6)) return null;
+    const scaleX = clamp((portraitSpan.max - portraitSpan.min) / (garmentSpan.max - garmentSpan.min), 0.05, 4);
+    const scaleY = clamp((Number(legLength) > 1e-6 ? Number(legLength) : garmentLeg) / garmentLeg, 0.05, 4);
+    const centerX = (portraitSpan.min + portraitSpan.max) / 2;
+    const anchorY = Number.isFinite(portraitPosterior?.y) ? portraitPosterior.y : 0.86;
+    return { a: scaleX, c: 0, tx: centerX - scaleX * hip.x, b: 0, d: scaleY, ty: anchorY - scaleY * hip.y, kind: 'posterior' };
+  }
+
   function applyAffine(transform, point) {
     if (!transform) return clonePoint(point);
     const x = Number(point?.x) || 0;
@@ -732,6 +753,7 @@
     warpRgbaNearest,
     solveBeltSimilarity,
     solveAffine,
+    solvePosteriorFit,
     applyAffine,
     encodeWeightGridRle,
     decodeWeightGridRle,

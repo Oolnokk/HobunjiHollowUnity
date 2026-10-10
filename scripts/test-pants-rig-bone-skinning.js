@@ -283,4 +283,21 @@ assert([out[2], out[5], out[8]].every(z => near(z, 0.012, 1e-6)), 'depth is carr
   assert(nearPoint(apply(up, { x: 0.1, y: 0 }), { x: 0.2, y: 0 }), 'a longer leg widens by the square root of the stretch');
 }
 
+// ---- posterior fit ---------------------------------------------------------------------
+{
+  const garment = {
+    pantsBeltSpline: [0.34, 0.42, 0.5, 0.58, 0.66].map((x, i) => ({ x, y: [0.28, 0.27, 0.265, 0.27, 0.28][i] })),
+    legBones: { left: { hip: { x: 0.4, y: 0.4 }, knee: { x: 0.4, y: 0.6 }, ankle: { x: 0.4, y: 0.8 } }, right: { hip: { x: 0.6, y: 0.4 }, knee: { x: 0.6, y: 0.6 }, ankle: { x: 0.6, y: 0.8 } } },
+  };
+  const portraitBelt = [0.3, 0.4, 0.5, 0.6, 0.7].map(x => ({ x, y: 0.9 })); // 0.4 wide vs the garment belt's 0.32.
+  const fit = Core.solvePosteriorFit(garment, portraitBelt, { x: 0.5, y: 0.9 }, 0.06); // Legs 0.06 long in the portrait vs 0.4 in the garment.
+  assert(near(fit.a, 0.4 / 0.32) && near(fit.d, 0.06 / 0.4), 'horizontal stretch matches the beltline width; vertical scale matches the leg length');
+  const hipMapped = Core.applyAffine(fit, { x: 0.5, y: 0.4 });
+  assert(near(hipMapped.x, 0.5) && near(hipMapped.y, 0.9), 'the garment hip centre lands on the posterior point, centred under the beltline');
+  const ankleMapped = Core.applyAffine(fit, { x: 0.4, y: 0.8 });
+  assert(near(ankleMapped.y - hipMapped.y, 0.06), 'the garment legs are exactly as long as the species legs');
+  assert(Core.solvePosteriorFit(garment, portraitBelt, { x: 0.5, y: 0.9 }, NaN) !== null, 'a missing leg length falls back to natural scale');
+  assert(Core.solvePosteriorFit({ legBones: null, pantsBeltSpline: garment.pantsBeltSpline }, portraitBelt, { x: 0.5, y: 0.9 }, 0.06) !== undefined, 'missing bones never throw');
+}
+
 console.log('Pants rig bone skinning: PASS');

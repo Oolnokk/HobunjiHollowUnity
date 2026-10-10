@@ -44,6 +44,7 @@ function waitForAuthor() {
     if (changeIds.has(event.target?.id)) notifyHost(`click:${event.target.id}`);
   }, true);
   document.getElementById('legThickness')?.addEventListener('input', () => notifyHost('leg-thickness'), true);
+  document.getElementById('fitMode')?.addEventListener('change', () => notifyHost('fit-mode'), true);
   document.getElementById('weightSharpness')?.addEventListener('input', () => notifyHost('weight-sharpness'), true);
   document.getElementById('legRollGain')?.addEventListener('input', () => notifyHost('leg-roll-gain'), true);
   document.getElementById('beltScale')?.addEventListener('input', () => notifyHost('belt-scale'), true);
