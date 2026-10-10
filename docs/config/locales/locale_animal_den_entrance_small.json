@@ -4,7 +4,7 @@
   "name": "Animal Den Entrance (Small)",
   "category": "den_entrance",
   "singleton": false,
-  "description": "Small den entrance for narrow cliff faces: the same cave_small model scaled down (4 tiles wide, lower facade) onto a 2x3 footprint. Needs a 1-tier plateau at least two rows deep behind a single cliff-face tile. The back row sits inside the plateau, the middle row is the cliff's low side, and the entry connector sits on the front (floor) row inside the cave opening, leading out to free approach tiles. The facade is shifted one tile north and deepened so it sinks into the cliff and still arches over the entry.",
+  "description": "Small den entrance for narrow cliff faces: the same cave_small model scaled down (4 tiles wide, lower facade) onto a 2x3 footprint. Needs a 1-tier plateau at least two rows deep behind a single cliff-face tile. The back row sits inside the plateau, the middle row is the cliff's low side, and the entry connector sits on the front (floor) row inside the cave opening, leading out to free approach tiles. The facade is shifted two tiles north and deepened so it sinks into the cliff and still arches over the entry. The connector's insetTiles moves the entry one more (final-grid) tile into the opening, onto the cliff's low-side row, which stays walkable for that column.",
   "tags": [
     "den",
     "entrance",
@@ -56,7 +56,7 @@
         "scaleZ": 3,
         "offsetX": 0,
         "offsetY": 0,
-        "offsetZ": -1,
+        "offsetZ": -2,
         "surface": "cliff",
         "sink": 0.35
       },
@@ -72,7 +72,8 @@
       "col": 3,
       "row": 4,
       "side": "south",
-      "label": "Den entry (inside the cave opening)"
+      "label": "Den entry (inside the cave opening)",
+      "insetTiles": 1
     }
   ],
   "terrainAnchors": {

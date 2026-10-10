@@ -137,6 +137,15 @@
     return den?.cliffBacked && Number.isFinite(mouthX) ? mouthX + 0.5 : Number(den?.x) + w / 2;
   }
 
+  // The cliff templates' depth offset sinks the facade into the cliff over an
+  // entry inside the footprint. A den that turnover relocated onto open
+  // ground has its entry back outside, so it drops that offset.
+  function denVisualOffsetZ(den, authoredOffsetZ) {
+    const mouthY = Number(den?.mouthAnchor?.y);
+    const entryInside = Number.isFinite(mouthY) && mouthY < Number(den?.y) + Math.max(1, Number(den?.h) || 1);
+    return den?.cliffBacked && !entryInside ? 0 : (Number(authoredOffsetZ) || 0);
+  }
+
   function loadAnimalDenEntranceLocaleObject() {
     return loadAnimalDenEntranceLocale().then(denEntranceObjectFromLocale); // Compatibility helper retained for diagnostics/tests that only need the cave object.
   }
@@ -732,7 +741,7 @@
         mesh.position.set(
           centerCol + (Number(visual.offsetX) || 0),
           groundY + (Number(visual.offsetY) || 0) - sink - box.min.y * renderedScaleY,
-          centerRow + (Number(visual.offsetZ) || 0)
+          centerRow + denVisualOffsetZ(den, visual.offsetZ)
         );
         mesh.castShadow = true;
         mesh.receiveShadow = true;
@@ -805,7 +814,7 @@
       if (String(child?.userData?.denId ?? '') !== String(den.id ?? '')) continue;
       if (child.userData.denCaveEntrance) {
         child.position.x = centerCol + (Number(child.userData.denOffsetX) || 0);
-        child.position.z = centerRow + (Number(child.userData.denOffsetZ) || 0);
+        child.position.z = centerRow + denVisualOffsetZ(den, child.userData.denOffsetZ);
         if (den.collapsed && den._collapsePresentationPending) {
           queueDenCollapseAnimation(child, den, mapId, caveGroundY, zGrid);
         } else {

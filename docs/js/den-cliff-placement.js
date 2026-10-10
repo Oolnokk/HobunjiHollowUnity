@@ -88,9 +88,12 @@
     const mouth = connector
       ? { dx: (Number(connector.col) || 0) - originC, dy: (Number(connector.row) || 0) - originR }
       : { dx: Math.floor(w / 2), dy: h };
+    // connector.insetTiles: extra final-grid (density-scaled) tiles to push an
+    // inside entry deeper into the opening, applied after tile-density scaling.
+    const entryInsetTiles = connector ? Math.max(0, Math.round(Number(connector.insetTiles) || 0)) : 0;
     return {
       id: String(locale.id || ''),
-      w, h, mouth, probes, embedded,
+      w, h, mouth, entryInsetTiles, probes, embedded,
       embeddedKeys: new Set(embedded.map(cell => `${cell.dx},${cell.dy}`)),
       size: w * h,
     };
@@ -210,7 +213,7 @@
           const mouthKey = `${result.mouth.x},${result.mouth.y}`;
           if (claimed.has(mouthKey)) continue;
           claimed.add(mouthKey);
-          sites.push({ templateId: compiled.id, x, y, w: compiled.w, h: compiled.h, ...result });
+          sites.push({ templateId: compiled.id, x, y, w: compiled.w, h: compiled.h, entryInsetTiles: compiled.entryInsetTiles || 0, ...result });
         }
       }
     }

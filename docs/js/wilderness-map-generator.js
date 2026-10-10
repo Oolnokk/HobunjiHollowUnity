@@ -4133,7 +4133,7 @@
       // under the arch; escape/path anchors use the free tile in front of it.
       const entryInside = site.mouth.y < site.y + site.h;
       const approach = entryInside ? { x: site.mouth.x, y: site.y + site.h } : { ...site.mouth };
-      addAnimalDen({ x: site.x, y: site.y }, { w: site.w, h: site.h }, { ...site.mouth }, { entranceTemplateId: site.templateId, cliffBacked: true, entryInside, approachAnchor: approach }, approach);
+      addAnimalDen({ x: site.x, y: site.y }, { w: site.w, h: site.h }, { ...site.mouth }, { entranceTemplateId: site.templateId, cliffBacked: true, entryInside, approachAnchor: approach, ...(entryInside && site.entryInsetTiles ? { entryInsetTiles: site.entryInsetTiles } : {}) }, approach);
       placed.push(site);
     }
     logDebug(`cliff-backed dens: ${placed.length}/${target} from ${sites.length} candidate site(s) [${placed.map(site => site.templateId).join(', ')}]`);
@@ -5981,10 +5981,12 @@
 
   function hobunjiObjectOverlayByTile() {
     const overlays = new Map();
+    const denEntryGround = new Set(); // Entry columns forced to plain ground (an inset entry can land on a cliff-skirt row, which would otherwise export as rock).
     for (const object of map.objects) {
       const overlayType = hobunjiOverlayTypeForObject(object);
       if (!overlayType) continue;
       const walkable = denEntryWalkableKeys(object);
+      for (const key of walkable) denEntryGround.add(key);
       for (let y = object.y; y < object.y + (object.h || 1); y++) {
         for (let x = object.x; x < object.x + (object.w || 1); x++) {
           if (!inBounds(x, y)) continue;
@@ -5996,6 +5998,7 @@
         }
       }
     }
+    for (const key of denEntryGround) overlays.set(key, { type: 'grass', objectId: undefined, objectType: undefined, priority: 99 });
     return overlays;
   }
 
@@ -6075,7 +6078,7 @@
       if (tile.rampSharesPlateau) output.rampSharesPlateau = true;
       if (tile.rampSharedPlateauGroupId) output.rampSharedPlateauGroupId = tile.rampSharedPlateauGroupId;
     }
-    if (overlay) {
+    if (overlay?.objectId) {
       output.generatedObjectId = overlay.objectId;
       output.generatedObjectType = overlay.objectType;
     }
@@ -6094,7 +6097,7 @@
       if (tile.rampSharesPlateau) output.rampSharesPlateau = true;
       if (tile.rampSharedPlateauGroupId) output.rampSharedPlateauGroupId = tile.rampSharedPlateauGroupId;
     }
-    if (overlay) {
+    if (overlay?.objectId) {
       output.generatedObjectId = overlay.objectId;
       output.generatedObjectType = overlay.objectType;
     }
@@ -6790,6 +6793,9 @@
     if (object.mouthAnchor) output.mouthAnchor = scaleMapPoint(object.mouthAnchor, scale);
     if (object.anchor) output.anchor = scaleMapPoint(object.anchor, scale);
     if (object.approachAnchor) output.approachAnchor = scaleMapPoint(object.approachAnchor, scale);
+    // Cliff dens can push their inside entry further into the arch on the
+    // final grid (den-entrance connector insetTiles); never past the footprint.
+    if (object.entryInsetTiles && output.mouthAnchor) output.mouthAnchor.y = Math.max(output.y, output.mouthAnchor.y - object.entryInsetTiles);
     return output;
   }
 

@@ -4,7 +4,7 @@
   "name": "Animal Den Entrance",
   "category": "den_entrance",
   "singleton": false,
-  "description": "Authoring template used by every procedurally generated wilderness animal-den entrance. Edit the cave_small object here to change the shared den facade; Automatic collider mode preserves the den doorway-gap collision rule. Terrain anchors fit the den into an existing south-facing plateau cliff like Banubu's Cave: the back row sits inside plateau at least 1 tier above the mouth, the full-width row below it is the cliff's low side, and the mouth plus the tiles in front stay free. The plateau must continue one more row behind the cave so the facade (shifted one tile north) sinks a tile deeper into the cliff; the entry connector sits inside the cave opening, on a walkable column that leads out to the free approach tiles.",
+  "description": "Authoring template used by every procedurally generated wilderness animal-den entrance. Edit the cave_small object here to change the shared den facade; Automatic collider mode preserves the den doorway-gap collision rule. Terrain anchors fit the den into an existing south-facing plateau cliff like Banubu's Cave: the back row sits inside plateau at least 1 tier above the mouth, the full-width row below it is the cliff's low side, and the mouth plus the tiles in front stay free. The plateau must continue one more row behind the cave so the facade (shifted two tiles north) sinks a tile deeper into the cliff; the entry connector sits inside the cave opening, on a walkable column that leads out to the free approach tiles. The connector's insetTiles moves the entry one more (final-grid) tile into the opening, onto the cliff's low-side row, which stays walkable for that column.",
   "tags": [
     "den",
     "entrance",
@@ -64,7 +64,7 @@
         "scaleZ": 2,
         "offsetX": 0,
         "offsetY": 0,
-        "offsetZ": -1,
+        "offsetZ": -2,
         "surface": "cliff",
         "sink": 0.45
       },
@@ -80,7 +80,8 @@
       "col": 3,
       "row": 4,
       "side": "south",
-      "label": "Den entry (inside the cave opening)"
+      "label": "Den entry (inside the cave opening)",
+      "insetTiles": 1
     }
   ],
   "terrainAnchors": {

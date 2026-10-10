@@ -65,6 +65,7 @@ for (const den of dens) {
   assert(x >= den.x && x < den.x + den.w && y >= den.y && y < den.y + den.h, `${den.id}: entry tile is inside the footprint`);
   for (let row = y; row < den.y + den.h; row++) assert.notEqual(rootMap.tiles[`${x},${row}`]?.type, 'rock', `${den.id}: entry column (${x},${row}) is walkable ground`);
   assert(den.approachAnchor && den.approachAnchor.y === den.y + den.h, `${den.id}: approach tile is just in front of the footprint`);
+  assert.equal(y, den.y + den.h - 3, `${den.id}: entry is inset one final tile past the front floor row, onto the cliff's low side`);
   assert.notEqual(rootMap.tiles[`${den.approachAnchor.x},${den.approachAnchor.y}`]?.type, 'rock', `${den.id}: approach tile is open`);
 }
 const legacy = Generator.generateZoneWorkspace('map_western_slope', 'den-cliff-regression', []);
