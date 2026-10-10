@@ -598,6 +598,28 @@
           out[i * 3] += dx * k; out[i * 3 + 1] += dy * k; out[i * 3 + 2] += dz * k;
         }
       }
+      // The ankle spline's length (its horizontal span) is the art's own, never scaled by the leg's length: undo whatever width
+      // the bone alignment gave the ring, fading out up the leg with the ring's influence.
+      for (const side of ['left', 'right']) {
+        const ring = handle.rings?.[side], samples = handle.splineSpec[`${side}Ankle`]?.samples;
+        if (!ring || !samples || samples.length < 2) continue;
+        const stride = SEGMENTS + 1, at = (arr, sm, k) => { const a = sm.i * 3 + k, b = (sm.i + 1) * 3 + k, c = (sm.i + stride) * 3 + k, d = (sm.i + stride + 1) * 3 + k; const top = arr[a] + (arr[b] - arr[a]) * sm.fx, bottom = arr[c] + (arr[d] - arr[c]) * sm.fx; return top + (bottom - top) * sm.fy; };
+        const first = samples[0], last = samples[samples.length - 1], base = handle.basePositions;
+        const baseSpan = Math.hypot(at(base, last, 0) - at(base, first, 0), at(base, last, 1) - at(base, first, 1), at(base, last, 2) - at(base, first, 2));
+        let dx = at(out, last, 0) - at(out, first, 0), dy = at(out, last, 1) - at(out, first, 1), dz = at(out, last, 2) - at(out, first, 2);
+        const span = Math.hypot(dx, dy, dz);
+        if (!(span > 1e-9) || !(baseSpan > 1e-9)) continue;
+        dx /= span; dy /= span; dz /= span;
+        const gain = Math.max(0.5, Math.min(12, baseSpan / span)) - 1;
+        if (Math.abs(gain) < 1e-4) continue;
+        const ox = at(out, ring.anchor, 0), oy = at(out, ring.anchor, 1), oz = at(out, ring.anchor, 2);
+        for (let i = 0; i < ring.influence.length; i++) {
+          const k = ring.influence[i];
+          if (k === 0) continue;
+          const along = ((out[i * 3] - ox) * dx + (out[i * 3 + 1] - oy) * dy + (out[i * 3 + 2] - oz) * dz) * gain * k;
+          out[i * 3] += dx * along; out[i * 3 + 1] += dy * along; out[i * 3 + 2] += dz * along;
+        }
+      }
       if (handle.showSplines) updateDebugSplines();
       position.needsUpdate = true; // frustumCulled is off, so no per-frame bounding-sphere work.
     };
