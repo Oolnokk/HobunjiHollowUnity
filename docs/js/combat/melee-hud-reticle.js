@@ -284,6 +284,11 @@
       return false;
     }
 
+    const reticleNDC = window.Combat?.deps?.getCombatReticleNDC?.(); // Shared eased aim position also drives the production camera ray.
+    const left = (50 + (reticleNDC?.x || 0) * 50) + '%'; // Converts Three.js horizontal NDC to the HUD's host-relative position.
+    const top = (50 - (reticleNDC?.y || 0) * 50) + '%'; // Screen Y is inverted from Three.js NDC.
+    if (root.style.left !== left) root.style.left = left;
+    if (root.style.top !== top) root.style.top = top;
     const slotProfiles = profiles();
     const direction = deps.getPlayerMeleeAimDirection?.() || { x: 1, y: 0, z: 0 };
     const state = targetState(deps, direction, slotProfiles);

@@ -20,14 +20,15 @@ assert.equal(desktop.isAutoTargetEnabled(), false, 'desktop cannot enable assist
 const targetContext = { isDesktop:false,enabled:true,window:{Combat:{input:{isAutoTargetEnabled:()=>targetContext.enabled},attackAlignmentStep:(p,c,dt,o)=>({eligible:Math.abs(Math.atan2(c.y-p.y,c.x-p.x)-o.facing)<=o.halfConeRad,deltaRad:Math.atan2(c.y-p.y,c.x-p.x)-o.facing})},RangedWeapons:{playerLockRangePx:()=>100}},heldMode:'tool',activeTool:'ranged',equipmentSlots:{weapon:'sword',ranged:'bow'},TILE:10,combatConfig:()=>({autoTargetRangeTiles:4}),player:{x:0,y:0},currentArea:'farm',hostileObjects:[],manualAutoTarget:null,meleeAttackTargetLock:null,mobileArchCombatAim:null,currentMeleeAimAngle:()=>0,angleDiff:(a,b)=>Math.atan2(Math.sin(a-b),Math.cos(a-b)),invalidateAutoTargetCache(){} }; // Executes the shared selector against changing actor state.
 vm.createContext(targetContext);
 function load(start,end) { vm.runInContext(game.slice(game.indexOf(start),game.indexOf(end,game.indexOf(start))),targetContext); }
-load('      function mobileAutoTargetEnabled()', '      function autoTargetVisible(');
+load('      function mobileAutoTargetEnabled()', '      const mobileAutoReticleNDC');
+load('      function autoTargetCandidateValid(', '      function autoTargetVisible(');
 load('      function meleeWeaponOut()', '      function commitMeleeAttackFacing(');
-load('      function meleeAttackTargetCandidate(', '      function acquireMeleeAttackTargetLock(');
+load('      function meleeAttackTargetCandidate(', '      function computeAutoTarget(');
 load('      function computeAutoTarget(', '      function invalidateAutoTargetCache(');
 targetContext.activeCameraAzimuthRad = () => Math.PI / 2;
 load('      function targetStickWorldAngle(', '      function swapAutoTarget(');
 assert(Math.abs(targetContext.targetStickWorldAngle(1,0) + Math.PI/2)<1e-8,'target stick follows rotated camera right');
-load('      function swapAutoTarget(', '      function finishMeleeAttackAlignment(');
+load('      function swapAutoTarget(', '      function requestMeleeAttackAlignment(');
 targetContext.autoTargetVisible = c => !c.blocked;
 targetContext.findAutoTarget = targetContext.computeAutoTarget;
 const near = {id:'near',health:10,x:15,y:0,areaId:'farm'}; // Initial nearest ranged enemy.
@@ -37,11 +38,18 @@ targetContext.hostileObjects=[near,east,south];
 assert.equal(targetContext.computeAutoTarget(),near);
 east.x=10;
 assert.equal(targetContext.computeAutoTarget(),near,'closer entrant does not steal valid lock');
+near.x=200;
+assert.equal(targetContext.computeAutoTarget(),near,'retreat beyond acquisition range keeps the lock despite closer entrants');
+near.blocked=true;
+assert.equal(targetContext.computeAutoTarget(),near,'temporary obstruction keeps identity');
+near.blocked=false;near.x=15;
 near._denHidden=true;
 assert.equal(targetContext.computeAutoTarget(),east,'hidden lock reacquires');
 east._grehlrBurrowProtected=true;
 assert.equal(targetContext.computeAutoTarget(),south,'burrowed lock reacquires');
 south.blocked=true;
+assert.equal(targetContext.computeAutoTarget(),south,'blocked selected target remains locked');
+targetContext.manualAutoTarget=null;
 assert.equal(targetContext.computeAutoTarget(),null,'occluded candidates are rejected');
 near._denHidden=false;east._grehlrBurrowProtected=false;south.blocked=false;east.x=30;
 assert.equal(targetContext.swapAutoTarget(Math.PI/2),true);
@@ -53,7 +61,7 @@ assert.equal(targetContext.computeAutoTarget(),south,'melee inherits manual sele
 south.health=0;
 assert.equal(targetContext.computeAutoTarget(),near,'melee reacquires after selected enemy dies');
 targetContext.mobileArchCombatAim={angle:Math.PI};
-assert.equal(targetContext.meleeAttackTargetCandidate(),null,'explicit attack-stick aim stays manual');
+assert.equal(targetContext.meleeAttackTargetCandidate(),near,'manual attack aiming preserves target identity without using it as attack authority');
 targetContext.mobileArchCombatAim=null;
 targetContext.enabled=false;
 assert.equal(targetContext.computeAutoTarget(),null,'toggle off clears target');

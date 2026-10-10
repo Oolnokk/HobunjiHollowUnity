@@ -33,7 +33,7 @@ console.log('mobile combat arch aim/release regression checks passed');
 const assert = require('node:assert/strict'); // Checks production aim and cancellation behavior below.
 const vm = require('node:vm'); // Executes browser helpers with minimal runtime dependencies.
 const rayContext = {
-  mobileArchCombatAim: null,
+  mobileArchCombatAim: null, mobileAutoReticleActive:false, currentCombatReticleNDC:()=>({x:0,y:0}),
   activeCameraMode: 'orbit', SHOULDER_SURF_MODE: 'shoulder',
   heldMode: 'tool', activeTool: 'weapon', equipmentSlots: {},
   camera: { updateMatrixWorld() {} }, _screenCenterNDC: {},

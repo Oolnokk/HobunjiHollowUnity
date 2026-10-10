@@ -5167,13 +5167,8 @@
         return { hits, message: hits > 1 ? `${verb} ${hits} creatures!` : `${verb} the ${lastName}!` };
       }
 
-      // Mobile weapons share a stable selected target; melee alignment still
-      // owns a separate transient lock until its attack windup begins.
+      // Mobile weapons share one persistent target; only the reticle tracks it.
       let manualAutoTarget = null;
-      let meleeAttackAlignment = null; // Active transient player alignment consumed by updateMeleeAttackAlignment().
-      let meleeAttackTargetLock = null; // Selected once per transient activation and reused by every melee-target consumer until release.
-      let meleeAttackTargetLockSerial = 0; // Identifies each acquisition in the existing mobile-readable alignment diagnostics.
-      let lastMeleeAttackTargetLock = { serial: 0, targetId: null, releaseReason: 'not-acquired' }; // Reports the latest lock lifecycle after it turns off.
       let meleeAttackFacingCommit = null; // Frozen screen-correct heading carried through the melee windup/attack.
       let gameFrameSerial = 0; // Identifies the current animation frame for shared target and profiler work.
       let autoTargetCacheFrame = -1; // Prevents repeated target searches within the same frame.
@@ -5196,6 +5191,50 @@
         return activeTool === 'ranged'
           ? window.RangedWeapons?.playerLockRangePx?.(equipmentSlots.ranged) || TILE * 7
           : TILE * Math.max(0, Number(combatConfig().autoTargetRangeTiles) || 4);
+      }
+
+      function autoTargetRetentionRange() {
+        return Math.max(TILE * 12, autoTargetRange() * 3); // Acquisition is short-range; an existing lock survives retreat without switching to a closer enemy.
+      }
+
+      const mobileAutoReticleNDC = new THREE.Vector2(0, 0); // Shared eased screen position consumed by both HUD sights and their existing camera-ray math.
+      const mobileAutoReticleWorld = new THREE.Vector3(); // Reused target-center projection scratch vector.
+      let mobileAutoReticleActive = false; // Selects the eased reticle instead of screen center when mobile assist owns aim.
+      let mobileAutoReticleResponseS = 0; // Last distance-scaled tracking time constant exposed in the copyable mobile report.
+
+      function manualCombatReticleAim() {
+        return Number.isFinite(mobileArchCombatAim?.angle)
+          || (!!meleeAttackFacingCommit && meleeAttackCurrentlyActive());
+      }
+
+      function currentCombatReticleNDC() {
+        return mobileAutoReticleActive && mobileAutoTargetEnabled() && !manualCombatReticleAim() ? mobileAutoReticleNDC : _screenCenterNDC;
+      }
+
+      function updateMobileAutoTargetReticle(dt) {
+        const target = findAutoTarget(); // Selection stays stable even while manual attack-stick input owns the reticle.
+        const suppressed = isDesktop || !target || manualCombatReticleAim() || menuOpen || dialogueOpen || sitInteraction
+          || farmEditMode || characterViewMode.enabled || window.AuthoredCutsceneRuntime?.isActive?.(); // Gameplay menus and cutscenes retain their existing camera authority.
+        if (suppressed) {
+          mobileAutoReticleActive = false;
+          mobileAutoReticleNDC.set(0, 0);
+          mobileAutoReticleResponseS = 0;
+          _cachedPerspectiveTargetAt = -1;
+          return;
+        }
+        mobileAutoReticleActive = true;
+        if (!autoTargetVisible(target)) return; // A temporary obstruction pauses tracking, without handing the lock to another creature.
+        const center = window.RangedWeapons?.actorHitbox?.(target)?.center; // Use the existing species-aware combat collider center.
+        mobileAutoReticleWorld.set(target.x / TILE, center?.y ?? activeSurfaceYAtWorld(target.x / TILE, target.y / TILE) + 0.4, target.y / TILE);
+        camera.updateMatrixWorld?.();
+        mobileAutoReticleWorld.project(camera);
+        if (!Number.isFinite(mobileAutoReticleWorld.x) || !Number.isFinite(mobileAutoReticleWorld.y) || mobileAutoReticleWorld.z < -1 || mobileAutoReticleWorld.z > 1) return; // Offscreen/behind-camera targets keep their identity without flipping the sight.
+        const distanceTiles = Math.hypot(target.x - player.x, target.y - player.y) / TILE; // Close sidesteps should be harder to follow than distant motion.
+        mobileAutoReticleResponseS = 0.2 + 0.8 / (1 + Math.max(0, distanceTiles));
+        const blend = 1 - Math.exp(-Math.min(0.05, Math.max(0, Number(dt) || 0)) / mobileAutoReticleResponseS); // Frame-rate-independent lag with no catch-up snap after a stalled frame.
+        mobileAutoReticleNDC.x += (window.FormatUtils.clamp(mobileAutoReticleWorld.x, -0.92, 0.92) - mobileAutoReticleNDC.x) * blend;
+        mobileAutoReticleNDC.y += (window.FormatUtils.clamp(mobileAutoReticleWorld.y, -0.92, 0.92) - mobileAutoReticleNDC.y) * blend;
+        _cachedPerspectiveTargetAt = -1;
       }
 
       function autoTargetCandidateValid(target, maxDist = autoTargetRange()) {
@@ -5238,8 +5277,6 @@
 
       function meleeAttackBodyFacingOverride() {
         if (Number.isFinite(mobileArchCombatAim?.angle)) return mobileArchCombatAim.angle;
-        const alignmentFacing = meleeAttackAlignment?.appliedFacing;
-        if (Number.isFinite(alignmentFacing)) return alignmentFacing;
         return Number.isFinite(meleeAttackFacingCommit?.angle) ? meleeAttackFacingCommit.angle : null;
       }
 
@@ -5252,11 +5289,10 @@
       }
 
       function meleeAttackTargetCandidate(preview = false) {
-        if (isDesktop || (!preview && !mobileAutoTargetEnabled()) || !meleeWeaponOut() || Number.isFinite(mobileArchCombatAim?.angle)) return null;
-        if (meleeAttackTargetLock) return meleeAttackTargetLock; // Never rescan surrounding enemies while this activation owns a target.
-        if (autoTargetCandidateValid(manualAutoTarget) && autoTargetVisible(manualAutoTarget)) return manualAutoTarget;
+        if (isDesktop || (!preview && !mobileAutoTargetEnabled()) || !meleeWeaponOut()) return null;
+        if (autoTargetCandidateValid(manualAutoTarget, autoTargetRetentionRange())) return manualAutoTarget;
         if (!preview) manualAutoTarget = null;
-        const aimAngle = currentMeleeAimAngle(); // Live camera/stick/body bearing used by the shared ±45° cone.
+        const aimAngle = currentMeleeAimAngle(); // Live camera/stick/body bearing used for initial acquisition in the front half-plane.
         const maxDist = TILE * (Number(combatConfig().autoTargetRangeTiles) || 0); // Existing melee assist range remains authoritative.
         let best = null, bestDist = maxDist, bestAimError = Infinity;
         for (const c of hostileObjects) {
@@ -5278,27 +5314,6 @@
         return best;
       }
 
-      function acquireMeleeAttackTargetLock() {
-        const target = meleeAttackTargetCandidate();
-        if (!target) return null;
-        meleeAttackTargetLock = target;
-        meleeAttackTargetLockSerial++;
-        lastMeleeAttackTargetLock = {
-          serial: meleeAttackTargetLockSerial,
-          targetId: target.id ?? target.creatureKey ?? target.def?.label ?? null,
-          releaseReason: null,
-        };
-        invalidateAutoTargetCache();
-        return target;
-      }
-
-      function releaseMeleeAttackTargetLock(target, reason) {
-        if (meleeAttackTargetLock !== target) return;
-        meleeAttackTargetLock = null;
-        lastMeleeAttackTargetLock = { ...lastMeleeAttackTargetLock, releaseReason: reason };
-        invalidateAutoTargetCache();
-      }
-
       function computeAutoTarget(preview = false) {
         const rangedActive = heldMode === 'tool' && activeTool === 'ranged' && !!equipmentSlots.ranged; // Only equipped mobile combat tools acquire targets.
         if (isDesktop || (!preview && !mobileAutoTargetEnabled()) || (!meleeWeaponOut() && !rangedActive)) {
@@ -5306,13 +5321,12 @@
           return null;
         }
         if (meleeWeaponOut()) {
-          if (meleeAttackTargetLock) return autoTargetCandidateValid(meleeAttackTargetLock) && autoTargetVisible(meleeAttackTargetLock) ? meleeAttackTargetLock : null;
           const target = meleeAttackTargetCandidate(preview); // The same selection serves attacks and the read-only prey availability preview.
           if (!preview) manualAutoTarget = target;
           return target;
         }
         const maxDist = autoTargetRange(); // Ranged weapon configuration remains the range authority.
-        if (autoTargetCandidateValid(manualAutoTarget, maxDist) && autoTargetVisible(manualAutoTarget)) return manualAutoTarget;
+        if (autoTargetCandidateValid(manualAutoTarget, autoTargetRetentionRange())) return manualAutoTarget;
         if (!preview) manualAutoTarget = null;
         let best = null, bestDist = maxDist;
         for (const c of hostileObjects) {
@@ -5348,14 +5362,13 @@
 
       function currentPlayerAimAngle() {
         if (Number.isFinite(mobileArchCombatAim?.angle)) return mobileArchCombatAim.angle;
-        if (activeCameraMode === SHOULDER_SURF_MODE) return shoulderPerspectiveFacingAngle();
-        const target = findAutoTarget();
-        return target ? Math.atan2(target.y - player.y, target.x - player.x) : player.angle;
+        if (activeCameraMode === SHOULDER_SURF_MODE || mobileAutoReticleActive) return shoulderPerspectiveFacingAngle();
+        return player.angle;
       }
 
       const MAX_RANGED_AIM_PITCH_RAD = THREE.MathUtils.degToRad(60);
       function currentPlayerAimPitch() {
-        if (activeCameraMode === SHOULDER_SURF_MODE) {
+        if (activeCameraMode === SHOULDER_SURF_MODE || mobileAutoReticleActive) {
           const direction = currentPlayerPerspectiveDirection();
           if (direction) {
             return window.FormatUtils.clamp(
@@ -5364,14 +5377,6 @@
               MAX_RANGED_AIM_PITCH_RAD,
             );
           }
-        }
-        const target = activeCameraMode === SHOULDER_SURF_MODE ? null : findAutoTarget();
-        if (target) {
-          const originY = activeSurfaceYAtWorld(player.x / TILE, player.y / TILE) + 0.55;
-          const targetY = target.avatarRef?.group?.position?.y ?? (activeSurfaceYAtWorld(target.x / TILE, target.y / TILE) + 0.4);
-          const horizDist = Math.hypot(target.x - player.x, target.y - player.y) / TILE;
-          if (horizDist < 0.05) return 0;
-          return window.FormatUtils.clamp(Math.atan2(targetY - originY, horizDist), -MAX_RANGED_AIM_PITCH_RAD, MAX_RANGED_AIM_PITCH_RAD);
         }
         return window.FormatUtils.clamp(-THREE.MathUtils.degToRad(cameraAngleOffsetDeg), -MAX_RANGED_AIM_PITCH_RAD, MAX_RANGED_AIM_PITCH_RAD);
       }
@@ -5432,96 +5437,15 @@
         return true;
       }
 
-      function finishMeleeAttackAlignment(alignment, runAttack) {
-        if (meleeAttackAlignment !== alignment) return;
-        meleeAttackAlignment = null; // Raw release; combat-input defers this until the windup has inherited the aligned heading.
-        releaseMeleeAttackTargetLock(alignment.target, alignment.cancelled ? 'cancelled' : 'aligned');
-        if (!alignment.cancelled) runAttack();
-      }
-
       function requestMeleeAttackAlignment(runAttack) {
-        const manualArchFacing = mobileArchCombatAim?.angle; // Keeps a touch-stick release heading as the fallback when auto-target finds no eligible enemy.
+        // Attacks start with the current reticle. Never wait for or snap to the target.
+        const manualArchFacing = mobileArchCombatAim?.angle; // Preserves the existing dragged heavy-attack heading through release.
         if (Number.isFinite(manualArchFacing)) commitMeleeAttackFacing(manualArchFacing);
-        else meleeAttackFacingCommit = null; // Every non-touch attack owns a fresh heading.
-        meleeAttackAlignment?.cancel?.(); // End any older activation before the next activation is allowed to select.
-        const target = acquireMeleeAttackTargetLock();
-        if (!target) {
-          runAttack();
-          return null;
-        }
-        const startFacing = currentMeleeAimAngle(); // Stable beginning of the eased camera/body rotation.
-        const initialStep = window.Combat?.attackAlignmentStep?.(player, target, 0, { facing: startFacing, halfConeRad: Math.PI }); // Detects an already-aligned target without adding input latency.
-        if (initialStep?.aligned) {
-          commitMeleeAttackFacing(initialStep.desiredFacing);
-          try {
-            runAttack();
-          } finally {
-            releaseMeleeAttackTargetLock(target, 'already-aligned');
-          }
-          return null;
-        }
-        const alignment = {
-          target,
-          startFacing,
-          appliedFacing: startFacing,
-          elapsedS: 0, // Accumulated by updateMeleeAttackAlignment until durationS is reached.
-          durationS: window.Combat?.playerAttackAlignmentDuration?.(initialStep?.deltaRad) ?? 0, // Shared targeting policy owns the distance-scaled glide tuning.
-          cancelled: false,
-          cancel() {
-            if (meleeAttackAlignment !== alignment) return;
-            alignment.cancelled = true;
-            meleeAttackAlignment = null;
-            releaseMeleeAttackTargetLock(alignment.target, 'cancelled');
-          },
-        }; // Handle retained by combat-input while an offensive hold waits to start.
-        meleeAttackAlignment = alignment;
-        alignment.runAttack = () => finishMeleeAttackAlignment(alignment, runAttack);
-        return alignment;
+        else meleeAttackFacingCommit = null;
+        runAttack();
+        return null;
       }
 
-      function updateMeleeAttackAlignment(dt) {
-        const alignment = meleeAttackAlignment;
-        if (!alignment) return;
-        const target = alignment.target;
-        const turnMultiplier = window.Combat?.postAttackTurnMultiplier?.(player) ?? 1; // Slows visible turn after an attack while continuing to consume input.
-        const step = mobileAutoTargetEnabled() && meleeWeaponOut() && autoTargetCandidateValid(target) && autoTargetVisible(target)
-          ? window.Combat?.attackAlignmentStep?.(player, target, 0, { facing: alignment.appliedFacing, halfConeRad: Math.PI })
-          : null;
-        if (!step?.eligible) {
-          commitMeleeAttackFacing(alignment.appliedFacing);
-          alignment.runAttack(); // Aim assist never blocks a manual attack when its target leaves the cone.
-          return;
-        }
-
-        alignment.elapsedS = Math.min(alignment.durationS, alignment.elapsedS + Math.max(0, dt) * turnMultiplier);
-        const progress = alignment.durationS > 0 ? alignment.elapsedS / alignment.durationS : 1; // Drives the smoothstep rather than an abrupt constant-rate snap.
-        const easedProgress = window.Combat?.playerAttackAlignmentProgress?.(progress) ?? progress; // Shared targeting policy selects the authored curve.
-        const startToTarget = angleDiff(step.desiredFacing, alignment.startFacing); // Re-evaluated so a moving target remains correctly aligned at the end.
-        const nextFacing = progress >= 1
-          ? step.desiredFacing
-          : alignment.startFacing + startToTarget * easedProgress;
-        alignment.appliedFacing = nextFacing;
-        mouseLookAngle = nextFacing;
-        targetAimAngle = nextFacing;
-        controllerLookAngle = nextFacing;
-        player.angle = nextFacing;
-        facingAngle = nextFacing;
-        if (activeCameraMode === SHOULDER_SURF_MODE) {
-          const baseAzimuthDeg = cameraModeConfig(SHOULDER_SURF_MODE).azimuthDeg ?? 0; // Converts logical facing back into the camera's offset convention.
-          cameraAzimuthOffsetDeg = wrapAzimuthDeg(-(nextFacing * 180 / Math.PI) - 90 - baseAzimuthDeg);
-        } else {
-          mouseLookActive = true;
-          controllerLookActive = true;
-          lastMouseMoveTime = performance.now();
-        }
-        if (progress >= 1) {
-          commitMeleeAttackFacing(nextFacing);
-          alignment.runAttack();
-        }
-      }
-
-      // Shared by hostiles, companions, and wandering creatures — covers every
-      // creature movement path with a single footstep hook.
       function tickCreatureFootsteps(c, distPx) {
         if (c.areaId !== currentArea) return; // not in the player's current area; inaudible
         if (!Number.isFinite(c.x) || !Number.isFinite(c.y)) return; // belt-and-suspenders: see moveCreatureToward/creatureCanEnterTile's own NaN guards
@@ -9484,11 +9408,7 @@
           dirX = player.inputX;
           dirY = player.inputY;
         } else {
-          const weaponEngaged = heldMode === 'tool' && ((activeTool === 'weapon' && !!equipmentSlots.weapon) || (activeTool === 'ranged' && !!equipmentSlots.ranged));
-          const target = weaponEngaged ? findAutoTarget() : null;
-          const aimAngle = target
-            ? Math.atan2(target.y - player.y, target.x - player.x)
-            : player.angle;
+          const aimAngle = player.angle;
           // A no-input dodge is a forward dodge, matching the direction used
           // to enter a climb instead of unexpectedly zipping backward.
           dirX = Math.cos(aimAngle);
@@ -17176,7 +17096,7 @@
         if (!meleeAttackFacingCommit) return;
         const active = meleeAttackCurrentlyActive();
         if (active) meleeAttackFacingCommit.attackSeen = true;
-        else if (meleeAttackFacingCommit.attackSeen && !meleeAttackAlignment) meleeAttackFacingCommit = null;
+        else if (meleeAttackFacingCommit.attackSeen) meleeAttackFacingCommit = null;
       }
 
       function shoulderBodyPerspectiveAuthority(movementStrength = player.inputStrength, perspectiveFacing = shoulderPerspectiveFacingAngle()) {
@@ -17709,7 +17629,7 @@
           const perspectiveFacing = shoulderPerspectiveFacingAngle(); // Shared point bearing used by direct alignment and the idle neck-limit boundary.
           const perspectiveAuthority = shoulderBodyPerspectiveAuthority(inputStrength, perspectiveFacing); // Central state boundary shared with the on-demand mobile/debug report below.
           const meleeFacingOverride = meleeAttackBodyFacingOverride();
-          if (Number.isFinite(meleeFacingOverride) && (meleeAttackAlignment || perspectiveAuthority === 'attack')) {
+          if (Number.isFinite(meleeFacingOverride) && perspectiveAuthority === 'attack') {
             facingAngle = meleeFacingOverride;
           } else if (perspectiveAuthority === 'movement' || perspectiveAuthority === 'attack') {
             facingAngle = perspectiveFacing;
@@ -19238,20 +19158,10 @@
       // Other camera modes retain their existing ranged-weapon-only behavior.
       function currentPlayerAimRay() {
         const mobileAimAngle = mobileArchCombatAim?.angle; // Overrides horizontal camera authority only while a combat action-arch drag owns aim.
-        if (!Number.isFinite(mobileAimAngle) && heldMode === 'tool' && activeTool === 'ranged' && equipmentSlots.ranged && mobileAutoTargetEnabled()) {
-          const target = findAutoTarget(); // Routes the shared mobile selection into actual projectile aim, including shoulder view.
-          if (target) {
-            const originY = window.RangedWeapons?.actorHitbox?.(player)?.center?.y ?? activeSurfaceYAtWorld(player.x / TILE, player.y / TILE) + 0.55; // Species-aware origin for the auto-aim ray.
-            const targetY = window.RangedWeapons?.actorHitbox?.(target)?.center?.y ?? activeSurfaceYAtWorld(target.x / TILE, target.y / TILE) + 0.4; // Targets the enemy's body instead of the hidden ground beneath it.
-            const dx = (target.x - player.x) / TILE, dy = targetY - originY, dz = (target.y - player.y) / TILE; // Direct target vector consumed by existing ranged aim convergence.
-            const distance = Math.hypot(dx, dy, dz); // Normalizes the ray and guards overlapping actors.
-            if (distance > 1e-8) return { origin: { x: player.x / TILE, y: originY, z: player.y / TILE }, direction: { x: dx / distance, y: dy / distance, z: dz / distance } };
-          }
-        }
-        if (!Number.isFinite(mobileAimAngle) && activeCameraMode !== SHOULDER_SURF_MODE
+        if (!mobileAutoReticleActive && !Number.isFinite(mobileAimAngle) && activeCameraMode !== SHOULDER_SURF_MODE
           && (heldMode !== 'tool' || activeTool !== 'ranged' || !equipmentSlots.ranged)) return null;
         camera.updateMatrixWorld?.();
-        _shoulderSurfReticleRaycaster.setFromCamera(_screenCenterNDC, camera);
+        _shoulderSurfReticleRaycaster.setFromCamera(currentCombatReticleNDC(), camera);
         const ray = _shoulderSurfReticleRaycaster.ray;
         if (Number.isFinite(mobileAimAngle)) {
           const pitch = Math.asin(window.FormatUtils.clamp(ray.direction.y, -1, 1)); // Keeps the camera's vertical aim while the 2D arch stick supplies world-space yaw.
@@ -19276,8 +19186,8 @@
             window.Fishing?.state?.active || window.MusicMinigame?.state?.active) return null;
         camera.updateMatrixWorld?.();
         // Desktop normal-camera interactions follow the actual cursor reticle;
-        // shoulder/mobile interactions remain screen-centered.
-        const ndc = activeCameraMode === SHOULDER_SURF_MODE ? _screenCenterNDC : _mouseNDC;
+        // Mobile interactions share the visible eased sight; desktop shoulder aim remains centered.
+        const ndc = !isDesktop || activeCameraMode === SHOULDER_SURF_MODE ? currentCombatReticleNDC() : _mouseNDC;
         _shoulderSurfReticleRaycaster.setFromCamera(ndc, camera);
         const ray = _shoulderSurfReticleRaycaster.ray;
         return {
@@ -19482,7 +19392,7 @@
           return;
         }
         _shoulderSurfReticleGroundPlane.constant = -_playerGroundY();
-        _shoulderSurfReticleRaycaster.setFromCamera(_screenCenterNDC, camera);
+        _shoulderSurfReticleRaycaster.setFromCamera(currentCombatReticleNDC(), camera);
         if (!_shoulderSurfReticleRaycaster.ray.intersectPlane(_shoulderSurfReticleGroundPlane, _shoulderSurfReticleWorld)) return;
         const dx = _shoulderSurfReticleWorld.x - player.x / TILE;
         const dz = _shoulderSurfReticleWorld.z - player.y / TILE;
@@ -24295,7 +24205,6 @@
           const inputPerf = window.PerfProfiler?.begin('movement+input'); // Isolates controller polling/camera-look and player movement from everything else below.
           pollControllerInput();
           applyControllerCameraLook(dt);
-          updateMeleeAttackAlignment(dt);
           updateMovement(dt);
           if (window.WallOrnamentPlacement?.isPlayerReticlePlacementActive?.()) {
             window.WallOrnamentPlacement.updatePlayerReticlePreview?.(); // Touch camera/movement retargets wall preview even without a connected controller.
@@ -24474,6 +24383,7 @@
           snapShoulderSurfAzimuth();
         }
         updateCameraPosition();
+        if (!paused) updateMobileAutoTargetReticle(dt); // The camera projection is current before the shared reticle ray is rebuilt.
         // Refreshes the shared head/body/reticle aim point every frame
         // (rather than only on a mousemove/touch event) so it always
         // reflects the current camera — including a horizontal offset slide
@@ -26112,7 +26022,6 @@
 
       window.addEventListener('hobunji-auto-target-change', () => {
         manualAutoTarget = null;
-        if (!mobileAutoTargetEnabled()) meleeAttackAlignment?.runAttack?.();
         invalidateAutoTargetCache();
         syncMobileAutoTargetButton();
       });
@@ -27632,10 +27541,10 @@
         get shoulderSurfCombatStance() { return shoulderSurfCombatStanceActive(); },
         get shoulderSurfOffsets() { return { defaultH: s_shoulderSurfOffsetH_default, defaultV: s_shoulderSurfOffsetV_default, combatH: s_shoulderSurfOffsetH_combat, combatV: s_shoulderSurfOffsetV_combat, currentH: s_shoulderSurfOffsetH_current, currentV: s_shoulderSurfOffsetV_current }; },
         meleeAttackAlignmentSnapshot: () => {
-          const target = meleeAttackTargetLock;
+          const target = manualAutoTarget;
           const availableTarget = findAvailableAutoTarget(); // Reports the prospective prey/enemy even while the mobile toggle is disabled.
           return {
-            latestChange: 'Mobile-only autotarget defaults on; TARGET appears for eligible enemies or prey before combat, red when enabled and gray when disabled; second-arch endpoint follows Social Actions with 20% larger sizing and spacing; tap toggles, hold enables and drags select melee/ranged targets with stable locks and obstruction checks.',
+            latestChange: 'Persistent mobile target locks survive distance and nearby entrants; only the reticle tracks, gradually and more slowly up close. Attacks use existing reticle convergence, with dragged heavy/ranged aim taking priority. Red on/gray off prey control and approved second-arch layout retained.',
             settings: window.Combat?.input?.autoTargetSettingsSnapshot?.(),
             controlLayout: ['btnUtilityMenu', 'btnSocialActions', 'btnSwapTarget'].map(id => {
               const rect = document.getElementById(id)?.getBoundingClientRect?.(); // On-demand copyable diagnostics use actual runtime button sizes and positions.
@@ -27643,17 +27552,13 @@
             }),
             selectedTarget: manualAutoTarget?.id ?? manualAutoTarget?.def?.label ?? null,
             availableTarget: availableTarget?.id ?? availableTarget?.def?.label ?? null,
-            active: !!meleeAttackAlignment,
-            targetLocked: !!meleeAttackTargetLock,
-            activationSerial: lastMeleeAttackTargetLock.serial,
-            lastTargetId: lastMeleeAttackTargetLock.targetId,
-            releaseReason: lastMeleeAttackTargetLock.releaseReason,
+            active: mobileAutoReticleActive,
+            targetLocked: !!manualAutoTarget,
             target: target ? { id: target.id ?? target.creatureKey ?? target.def?.label ?? null, x: target.x, y: target.y } : null,
-            elapsedS: meleeAttackAlignment?.elapsedS || 0,
-            durationS: meleeAttackAlignment?.durationS || 0,
-            progress: meleeAttackAlignment?.durationS
-              ? window.FormatUtils.clamp(meleeAttackAlignment.elapsedS / meleeAttackAlignment.durationS, 0, 1)
-              : 0,
+            retentionRangeTiles: autoTargetRetentionRange() / TILE,
+            reticleNDC: { x: mobileAutoReticleNDC.x, y: mobileAutoReticleNDC.y },
+            trackingResponseS: mobileAutoReticleResponseS,
+            manualAttackAim: manualCombatReticleAim(),
             turnRecoveryMultiplier: window.Combat?.postAttackTurnMultiplier?.(player) ?? 1,
           };
         },
@@ -27874,7 +27779,8 @@
         getPlayerPerspectiveTarget: currentPlayerPerspectiveTarget,
         getHeldMode: () => heldMode,
         getActiveTool: () => activeTool,
-        getMeleeReticleTarget: () => meleeAttackTargetLock || window.RangedWeapons?.focusedHostile?.(24)?.candidate?.data || null,
+        getMeleeReticleTarget: () => window.RangedWeapons?.focusedHostile?.(24)?.candidate?.data || null,
+        getCombatReticleNDC: currentCombatReticleNDC,
         findMeleeAttackCandidate: meleeAttackTargetCandidate,
         requestMeleeAttackAlignment,
         inCone,

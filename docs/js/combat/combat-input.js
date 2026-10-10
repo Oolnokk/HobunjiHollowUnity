@@ -14,7 +14,7 @@
 
   const HOLD_THRESHOLD_S = 0.16;
   const AUTO_TARGET_STORAGE_KEY = 'hobunjiMobileAutoTargetEnabled'; // Used to persist the player-facing auto-target preference across sessions.
-  let autoTargetEnabled = true; // Gates whether attacks enter the existing transient melee alignment/target-lock path.
+  let autoTargetEnabled = true; // Enables mobile reticle tracking; attacks still use the existing reticle aim path.
   let autoTargetControl = null; // Cached Settings checkbox used to keep the injected UI synchronized with runtime state.
   try {
     autoTargetEnabled = localStorage.getItem(AUTO_TARGET_STORAGE_KEY) !== 'false';
@@ -89,7 +89,7 @@
     row.className = 'settings-row';
     row.innerHTML = '<div class="settings-label">' +
       '<div class="settings-name">Auto-target</div>' +
-      '<div class="settings-desc">Mobile only. Assists melee and ranged attacks. Tap the target button to toggle; hold and drag to choose an enemy.</div>' +
+      '<div class="settings-desc">Mobile only. Gradually tracks the reticle, more slowly up close. Drag heavy or ranged attack buttons to aim manually. Tap TARGET to toggle; hold and drag to choose prey or an enemy.</div>' +
       '</div>' +
       '<span class="settings-toggle"><input type="checkbox" id="settingMeleeAutoTarget"><span class="toggle-slider"></span></span>';
 
