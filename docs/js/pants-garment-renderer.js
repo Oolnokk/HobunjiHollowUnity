@@ -15,6 +15,7 @@
 
   if (global.PantsGarmentRenderer) return;
 
+  const HOOP_CORE = 0.03, HOOP_FADE = 0.07; // Distance (garment units) around an ankle spline that is fully rigid, and where that fades out.
   const SEGMENTS = 64; // Vertices per side of the garment grid: fine enough that weight transitions deform smoothly instead of faceting.
   const LEG_ACROSS_SCALE = 'shrinkUniform'; // A leg shorter than the garment's scales down uniformly (so a short-legged species gets proportionally smaller pants, not wedges); a longer one widens by sqrt of the stretch.
   const DEFAULT_GARMENT_ID = 'pants_basic';
@@ -223,12 +224,16 @@
     // Ankle rings: each leg opening (ankle spline) is a ring around its 3D bone like a ring around a tent pole. The ring's centre
     // vertex is kept ON the bone axis (see handle.update); this prepares which vertex that is and how strongly each other vertex
     // follows the correction (the leg's own half of the garment, easing in from the hip down to the knee, full from the knee down).
+    const sampleAt = point => {
+      const gx = Math.max(0, Math.min(1, point.x)) * SEGMENTS, gy = Math.max(0, Math.min(1, point.y)) * SEGMENTS;
+      const x0 = Math.min(SEGMENTS - 1, Math.floor(gx)), y0 = Math.min(SEGMENTS - 1, Math.floor(gy));
+      return { i: y0 * (SEGMENTS + 1) + x0, fx: gx - x0, fy: gy - y0 };
+    };
     const rings = {};
     const smooth01 = (e0, e1, x) => { const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
     for (const side of ['left', 'right']) {
       const opening = garment.legOpenings?.[side];
-      const center = Array.isArray(opening) && opening.length ? opening[Math.floor(opening.length / 2)] : null;
-      if (!center) continue;
+      if (!Array.isArray(opening) || opening.length < 2) continue;
       const influence = new Float32Array(vertexCount);
       const hipV = legBones[side].hip.y, kneeV = legBones[side].knee.y;
       for (let row = 0, i = 0; row <= SEGMENTS; row++) {
@@ -238,20 +243,39 @@
           influence[i] = t * half;
         }
       }
-      rings[side] = { vertex: Math.round(Math.max(0, Math.min(1, center.y)) * SEGMENTS) * (SEGMENTS + 1) + Math.round(Math.max(0, Math.min(1, center.x)) * SEGMENTS), influence };
+      // The ankle spline is a rigid hoop: every vertex on or near it belongs entirely to its leg's calf, so the five spline points
+      // (and the art around them) all take the identical transform and keep their relationship to each other exactly.
+      const polyline = opening.map(p => ({ x: p.x, y: p.y }));
+      const calfChannel = side === 'left' ? 2 : 4;
+      const hoop = new Float32Array(vertexCount);
+      for (let row = 0, i = 0; row <= SEGMENTS; row++) {
+        for (let col = 0; col <= SEGMENTS; col++, i++) {
+          const u = col / SEGMENTS, v = row / SEGMENTS;
+          let best = Infinity;
+          for (let k = 0; k + 1 < polyline.length; k++) {
+            const a = polyline[k], b = polyline[k + 1], abx = b.x - a.x, aby = b.y - a.y, len2 = abx * abx + aby * aby;
+            const t = len2 > 1e-12 ? Math.max(0, Math.min(1, ((u - a.x) * abx + (v - a.y) * aby) / len2)) : 0;
+            best = Math.min(best, Math.hypot(u - (a.x + abx * t), v - (a.y + aby * t)));
+          }
+          const mask = 1 - smooth01(HOOP_CORE, HOOP_FADE, best);
+          if (mask <= 0) continue;
+          hoop[i] = mask;
+          for (let c = 0; c < 5; c++) weights[i * 5 + c] = weights[i * 5 + c] * (1 - mask) + (c === calfChannel ? mask : 0);
+          influence[i] = Math.max(influence[i], mask);
+        }
+      }
+      // The ring is looped around the pole where the 2D calf bone crosses the spline (not at a spline vertex).
+      const crossing = Core.boneSplineCrossing(legBones[side].knee, legBones[side].ankle, polyline);
+      rings[side] = { crossing, anchor: sampleAt(crossing), influence };
     }
     // Debug splines: the belt spline and the two ankle (leg opening) splines, as bilinear samples of the skinned grid so they
     // show exactly where those authored curves currently sit on the deformed garment.
-    const sampleAt = point => {
-      const gx = Math.max(0, Math.min(1, point.x)) * SEGMENTS, gy = Math.max(0, Math.min(1, point.y)) * SEGMENTS;
-      const x0 = Math.min(SEGMENTS - 1, Math.floor(gx)), y0 = Math.min(SEGMENTS - 1, Math.floor(gy));
-      return { i: y0 * (SEGMENTS + 1) + x0, fx: gx - x0, fy: gy - y0 };
-    };
     const splines = {
       belt: { color: 0x9cff00, samples: (garment.pantsBeltSpline || []).map(sampleAt) },
       leftAnkle: { color: 0xffad12, samples: (garment.legOpenings?.left || []).map(sampleAt) },
       rightAnkle: { color: 0xffad12, samples: (garment.legOpenings?.right || []).map(sampleAt) },
     };
+    for (const side of ['left', 'right']) if (rings[side]) splines[`${side}Pole`] = { color: 0xffffff, samples: [rings[side].anchor, rings[side].anchor] }; // The point each ring is looped around the 3D bone at.
     return { geometry, basePositions, weights, bones2D, beltCenter, maskMapping, rings, splines, planeNormal: { x: normal.x, y: normal.y, z: normal.z } };
   }
 
@@ -277,7 +301,7 @@
   function makeScratch(THREE) {
     const joint = () => ({ x: 0, y: 0, z: 0 });
     const leg = () => ({ hip: joint(), knee: joint(), ankle: joint() });
-    return { inverseModel: new THREE.Matrix4(), point: new THREE.Vector3(), bones3D: { left: leg(), right: leg() }, aim: { left: leg(), right: leg() }, ringShift: { x: 0, y: 0, z: 0 }, transforms: [null, null, null, null, null] };
+    return { inverseModel: new THREE.Matrix4(), point: new THREE.Vector3(), bones3D: { left: leg(), right: leg() }, aim: { left: leg(), right: leg() }, ringShift: { x: 0, y: 0, z: 0 }, m4: new THREE.Matrix4(), frames: { left: { thigh: new Array(9).fill(0), calf: new Array(9).fill(0) }, right: { thigh: new Array(9).fill(0), calf: new Array(9).fill(0) } }, transforms: [null, null, null, null, null] };
   }
 
   // Live 3D leg bones in avatar-local space. Hip = thigh origin, knee = calf origin, ankle = calf origin + calf-down * calfLength.
@@ -296,6 +320,10 @@
       const calfLength = Number(calf.userData?.hobunjiCalfLength) > 0 ? Number(calf.userData.hobunjiCalfLength) : Math.abs(calf.position.y);
       scratch.point.set(0, -calfLength, 0).applyMatrix4(calf.matrixWorld).applyMatrix4(inverseModel);
       bones.ankle.x = scratch.point.x; bones.ankle.y = scratch.point.y; bones.ankle.z = scratch.point.z;
+      for (const [name, node] of [['thigh', thigh], ['calf', calf]]) { // The bone's orientation frame in avatar-local space (row-major 3x3), for twist.
+        const e = scratch.m4.multiplyMatrices(inverseModel, node.matrixWorld).elements, f = scratch.frames[side][name];
+        for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) f[row * 3 + col] = e[col * 4 + row];
+      }
     }
     return scratch.bones3D;
   }
@@ -376,7 +404,7 @@
       beltCenter: data.beltCenter, planeNormal: data.planeNormal, rings: data.rings, splineSpec: data.splines, debugLines: null, showSplines: !!debugSplines,
       beltScale: Math.min(3.5, Math.max(1.7, Number(character.beltScale) || DEFAULT_BELT_SCALE)),
       legRollGain: Math.min(4, Math.max(1, Number(character.legRollGain) || 2)),
-      maskMapping: data.maskMapping, footLift, rest: null, restRaw: null, fitMode, beltStretchX, rotationScale: { left: 1, right: 1 },
+      maskMapping: data.maskMapping, footLift, rest: null, restRaw: null, fitMode, beltStretchX, rotationScale: { left: 1, right: 1 }, restFrames: { left: {}, right: {} },
       maskUniforms: { uPantsDepthBias: { value: 0 }, uPantsMask: { value: null }, uPantsMaskOn: { value: 0 }, uPantsMaskO: { value: new THREE.Vector2(data.maskMapping.ox, data.maskMapping.oy) }, uPantsMaskInv: { value: new THREE.Vector4(...data.maskMapping.inv) } },
       scratch: makeScratch(THREE), appearance: { ...appearance, speciesId, gender, imageUrl }, renderToken: 0, ready: false, garment,
     };
@@ -456,6 +484,7 @@
       // vertex sits exactly where the art puts it, and only the motion away from this pose moves the garment.
       const measured = readLiveBones(handle);
       for (const side of ['left', 'right']) {
+        for (const name of ['thigh', 'calf']) handle.restFrames[side][name] = handle.scratch.frames[side][name].slice();
         Core.amplifyLegRoll(measured[side], handle.legRollGain, handle.restRaw[side]);
         for (const joint of ['hip', 'knee', 'ankle']) {
           const raw = handle.restRaw[side][joint], flat = handle.rest[side][joint];
@@ -480,7 +509,7 @@
     const boneTransform = (side, from, to, aim) => handle.fitMode === 'posterior'
       // Blender-style: the 3D leg is laid onto the art's own bone and the garment is skinned to it, so at rest the pants are
       // exactly the art as authored and only the legs' motion since rest moves them (about the art's own joint).
-      ? Core.alignBoneBind(handle.bones2D[side][from], handle.rest[side][from], handle.rest[side][to], aim[side][from], aim[side][to], { rotationScale: handle.rotationScale[side] })
+      ? Core.alignBoneBind(handle.bones2D[side][from], handle.rest[side][from], handle.rest[side][to], aim[side][from], aim[side][to], { rotationScale: handle.rotationScale[side], twist: Core.boneTwistAngle(handle.restFrames[side][from === 'hip' ? 'thigh' : 'calf'], handle.scratch.frames[side][from === 'hip' ? 'thigh' : 'calf']) }) // Rolling the bone about its own axis rolls what is bound to it (the ankle ring keeps its orientation relative to the calf).
       : Core.alignBoneWithMotion(
         handle.bones2D[side][from], handle.bones2D[side][to], handle.rest[side][from], handle.rest[side][to], aim[side][from], aim[side][to],
         { perpendicularScale: LEG_ACROSS_SCALE, rotationScale: handle.rotationScale[side] }); // Belt fit: the full planar alignment onto the 3D bone.
@@ -552,8 +581,13 @@
       for (const side of ['left', 'right']) {
         const ring = handle.rings?.[side];
         if (!ring) continue;
-        const ci = ring.vertex * 3, shift = handle.scratch.ringShift;
-        if (!Core.offsetOntoAxis(out[ci], out[ci + 1], out[ci + 2], aim[side].knee, aim[side].ankle, shift)) continue;
+        const shift = handle.scratch.ringShift, sm = ring.anchor, stride = SEGMENTS + 1;
+        const a = sm.i * 3, b = (sm.i + 1) * 3, c = (sm.i + stride) * 3, d = (sm.i + stride + 1) * 3;
+        const px = out[a] + (out[b] - out[a]) * sm.fx, qx = out[c] + (out[d] - out[c]) * sm.fx;
+        const py = out[a + 1] + (out[b + 1] - out[a + 1]) * sm.fx, qy = out[c + 1] + (out[d + 1] - out[c + 1]) * sm.fx;
+        const pz = out[a + 2] + (out[b + 2] - out[a + 2]) * sm.fx, qz = out[c + 2] + (out[d + 2] - out[c + 2]) * sm.fx;
+        const ax = px + (qx - px) * sm.fy, ay = py + (qy - py) * sm.fy, az = pz + (qz - pz) * sm.fy; // Where the bone crosses the spline, on the skinned garment.
+        if (!Core.offsetOntoAxis(ax, ay, az, aim[side].knee, aim[side].ankle, shift)) continue;
         const dx = shift.x, dy = shift.y, dz = shift.z;
         const influence = ring.influence;
         for (let i = 0; i < influence.length; i++) {
