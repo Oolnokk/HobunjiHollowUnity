@@ -89,11 +89,6 @@
     const visible = rangedWeaponDrawn() && !gameplayReticleSuppressed();
     const display = visible ? 'block' : 'none'; // Compare the live node so replacement roots retain the original refresh behavior.
     if (image.style.display !== display) image.style.display = display;
-    const reticleNDC = window.Combat?.deps?.getCombatReticleNDC?.(); // Shared eased aim position also drives the production camera ray.
-    const left = (50 + (reticleNDC?.x || 0) * 50) + '%'; // Converts Three.js horizontal NDC to the HUD's host-relative position.
-    const top = (50 - (reticleNDC?.y || 0) * 50) + '%'; // Screen Y is inverted from Three.js NDC.
-    if (image.style.left !== left) image.style.left = left;
-    if (image.style.top !== top) image.style.top = top;
     const wouldHit = visible && !!window.RangedWeapons?.wouldHitHostile?.();
     if (wouldHit !== lastWouldHit) image.style.filter = wouldHit ? FILTER_RED : FILTER_WHITE;
     lastWouldHit = wouldHit;

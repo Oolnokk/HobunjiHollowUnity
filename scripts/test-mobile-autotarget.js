@@ -20,7 +20,7 @@ assert.equal(desktop.isAutoTargetEnabled(), false, 'desktop cannot enable assist
 const targetContext = { isDesktop:false,enabled:true,window:{Combat:{input:{isAutoTargetEnabled:()=>targetContext.enabled},attackAlignmentStep:(p,c,dt,o)=>({eligible:Math.abs(Math.atan2(c.y-p.y,c.x-p.x)-o.facing)<=o.halfConeRad,deltaRad:Math.atan2(c.y-p.y,c.x-p.x)-o.facing})},RangedWeapons:{playerLockRangePx:()=>100}},heldMode:'tool',activeTool:'ranged',equipmentSlots:{weapon:'sword',ranged:'bow'},TILE:10,combatConfig:()=>({autoTargetRangeTiles:4}),player:{x:0,y:0},currentArea:'farm',hostileObjects:[],manualAutoTarget:null,meleeAttackTargetLock:null,mobileArchCombatAim:null,currentMeleeAimAngle:()=>0,angleDiff:(a,b)=>Math.atan2(Math.sin(a-b),Math.cos(a-b)),invalidateAutoTargetCache(){} }; // Executes the shared selector against changing actor state.
 vm.createContext(targetContext);
 function load(start,end) { vm.runInContext(game.slice(game.indexOf(start),game.indexOf(end,game.indexOf(start))),targetContext); }
-load('      function mobileAutoTargetEnabled()', '      const mobileAutoReticleNDC');
+load('      function mobileAutoTargetEnabled()', '      const mobileAutoTargetView');
 load('      function autoTargetCandidateValid(', '      function autoTargetVisible(');
 load('      function meleeWeaponOut()', '      function commitMeleeAttackFacing(');
 load('      function meleeAttackTargetCandidate(', '      function computeAutoTarget(');

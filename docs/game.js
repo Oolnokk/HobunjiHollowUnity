@@ -5197,10 +5197,9 @@
         return Math.max(TILE * 12, autoTargetRange() * 3); // Acquisition is short-range; an existing lock survives retreat without switching to a closer enemy.
       }
 
-      const mobileAutoReticleNDC = new THREE.Vector2(0, 0); // Shared eased screen position consumed by both HUD sights and their existing camera-ray math.
-      const mobileAutoReticleWorld = new THREE.Vector3(); // Reused target-center projection scratch vector.
-      let mobileAutoReticleActive = false; // Selects the eased reticle instead of screen center when mobile assist owns aim.
-      let mobileAutoReticleResponseS = 0; // Last distance-scaled tracking time constant exposed in the copyable mobile report.
+      const mobileAutoTargetView = new THREE.Vector3(); // Reused target-center vector in camera-local coordinates for automatic yaw/pitch error.
+      let mobileAutoCameraActive = false; // Diagnostic flag; assist steers the existing camera offsets while the reticle stays centered.
+      let mobileAutoCameraResponseS = 0; // Last distance-scaled camera tracking time constant exposed in the copyable mobile report.
 
       function manualCombatReticleAim() {
         return Number.isFinite(mobileArchCombatAim?.angle)
@@ -5208,32 +5207,34 @@
       }
 
       function currentCombatReticleNDC() {
-        return mobileAutoReticleActive && mobileAutoTargetEnabled() && !manualCombatReticleAim() ? mobileAutoReticleNDC : _screenCenterNDC;
+        return _screenCenterNDC;
       }
 
-      function updateMobileAutoTargetReticle(dt) {
-        const target = findAutoTarget(); // Selection stays stable even while manual attack-stick input owns the reticle.
+      function updateMobileAutoTargetCamera(dt) {
+        const target = findAutoTarget(); // Keep the selected creature while manual attack-stick input owns camera aim.
         const suppressed = isDesktop || !target || manualCombatReticleAim() || menuOpen || dialogueOpen || sitInteraction
-          || farmEditMode || characterViewMode.enabled || window.AuthoredCutsceneRuntime?.isActive?.(); // Gameplay menus and cutscenes retain their existing camera authority.
-        if (suppressed) {
-          mobileAutoReticleActive = false;
-          mobileAutoReticleNDC.set(0, 0);
-          mobileAutoReticleResponseS = 0;
-          _cachedPerspectiveTargetAt = -1;
-          return;
-        }
-        mobileAutoReticleActive = true;
-        if (!autoTargetVisible(target)) return; // A temporary obstruction pauses tracking, without handing the lock to another creature.
-        const center = window.RangedWeapons?.actorHitbox?.(target)?.center; // Use the existing species-aware combat collider center.
-        mobileAutoReticleWorld.set(target.x / TILE, center?.y ?? activeSurfaceYAtWorld(target.x / TILE, target.y / TILE) + 0.4, target.y / TILE);
+          || farmEditMode || characterViewMode.enabled || window.AuthoredCutsceneRuntime?.isActive?.()
+          || window.__mapEditorOrbitActive; // Scripted/menu/editor camera owners remain authoritative.
+        mobileAutoCameraActive = false;
+        mobileAutoCameraResponseS = 0;
+        if (suppressed || !autoTargetVisible(target)) return; // Temporary obstruction pauses camera tracking without selecting another target.
+        const center = window.RangedWeapons?.actorHitbox?.(target)?.center; // Existing species-aware collider supplies the prey/enemy combat center.
+        mobileAutoTargetView.set(target.x / TILE, center?.y ?? activeSurfaceYAtWorld(target.x / TILE, target.y / TILE) + 0.4, target.y / TILE);
         camera.updateMatrixWorld?.();
-        mobileAutoReticleWorld.project(camera);
-        if (!Number.isFinite(mobileAutoReticleWorld.x) || !Number.isFinite(mobileAutoReticleWorld.y) || mobileAutoReticleWorld.z < -1 || mobileAutoReticleWorld.z > 1) return; // Offscreen/behind-camera targets keep their identity without flipping the sight.
-        const distanceTiles = Math.hypot(target.x - player.x, target.y - player.y) / TILE; // Close sidesteps should be harder to follow than distant motion.
-        mobileAutoReticleResponseS = 0.2 + 0.8 / (1 + Math.max(0, distanceTiles));
-        const blend = 1 - Math.exp(-Math.min(0.05, Math.max(0, Number(dt) || 0)) / mobileAutoReticleResponseS); // Frame-rate-independent lag with no catch-up snap after a stalled frame.
-        mobileAutoReticleNDC.x += (window.FormatUtils.clamp(mobileAutoReticleWorld.x, -0.92, 0.92) - mobileAutoReticleNDC.x) * blend;
-        mobileAutoReticleNDC.y += (window.FormatUtils.clamp(mobileAutoReticleWorld.y, -0.92, 0.92) - mobileAutoReticleNDC.y) * blend;
+        mobileAutoTargetView.applyMatrix4(camera.matrixWorldInverse);
+        const horizontal = Math.hypot(mobileAutoTargetView.x, mobileAutoTargetView.z); // Camera-local horizontal distance supplies continuous yaw, including targets behind the view.
+        if (![mobileAutoTargetView.x, mobileAutoTargetView.y, mobileAutoTargetView.z, horizontal].every(Number.isFinite) || horizontal < 1e-8) return;
+        const yawError = Math.atan2(mobileAutoTargetView.x, -mobileAutoTargetView.z); // Camera looks along local -Z; a target to screen-right needs a negative orbit azimuth change.
+        const pitchError = Math.atan2(mobileAutoTargetView.y, horizontal); // Positive screen-up error needs a smaller downward camera pitch.
+        const distanceTiles = Math.hypot(target.x - player.x, target.y - player.y) / TILE; // Close sidesteps should take longer to track than distant motion.
+        mobileAutoCameraResponseS = 0.2 + 0.8 / (1 + Math.max(0, distanceTiles));
+        const blend = 1 - Math.exp(-Math.min(0.05, Math.max(0, Number(dt) || 0)) / mobileAutoCameraResponseS); // No instantaneous target snap or catch-up jump after a stalled frame.
+        const orbitGain = Math.max(1, Math.hypot(horizontal, mobileAutoTargetView.y) / Math.max(0.5, distanceTiles)); // Compensates a long camera boom: orbiting the player moves a close target less than rotating a camera in place.
+        const yawCorrection = Math.max(-Math.PI, Math.min(Math.PI, yawError * orbitGain)); // Keeps compensation bounded so a nearby crossing cannot cause an instantaneous flip.
+        const pitchCorrection = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitchError * orbitGain)); // Same bounded correction for a close target's vertical movement.
+        cameraAzimuthOffsetDeg = wrapAzimuthDeg(cameraAzimuthOffsetDeg - yawCorrection * 180 / Math.PI * blend);
+        cameraAngleOffsetDeg = clampCameraPitchOffsetDeg(cameraAngleOffsetDeg - pitchCorrection * 180 / Math.PI * blend);
+        mobileAutoCameraActive = true;
         _cachedPerspectiveTargetAt = -1;
       }
 
@@ -5362,13 +5363,13 @@
 
       function currentPlayerAimAngle() {
         if (Number.isFinite(mobileArchCombatAim?.angle)) return mobileArchCombatAim.angle;
-        if (activeCameraMode === SHOULDER_SURF_MODE || mobileAutoReticleActive) return shoulderPerspectiveFacingAngle();
+        if (activeCameraMode === SHOULDER_SURF_MODE || mobileAutoCameraActive) return shoulderPerspectiveFacingAngle();
         return player.angle;
       }
 
       const MAX_RANGED_AIM_PITCH_RAD = THREE.MathUtils.degToRad(60);
       function currentPlayerAimPitch() {
-        if (activeCameraMode === SHOULDER_SURF_MODE || mobileAutoReticleActive) {
+        if (activeCameraMode === SHOULDER_SURF_MODE || mobileAutoCameraActive) {
           const direction = currentPlayerPerspectiveDirection();
           if (direction) {
             return window.FormatUtils.clamp(
@@ -19158,7 +19159,7 @@
       // Other camera modes retain their existing ranged-weapon-only behavior.
       function currentPlayerAimRay() {
         const mobileAimAngle = mobileArchCombatAim?.angle; // Overrides horizontal camera authority only while a combat action-arch drag owns aim.
-        if (!mobileAutoReticleActive && !Number.isFinite(mobileAimAngle) && activeCameraMode !== SHOULDER_SURF_MODE
+        if (!mobileAutoCameraActive && !Number.isFinite(mobileAimAngle) && activeCameraMode !== SHOULDER_SURF_MODE
           && (heldMode !== 'tool' || activeTool !== 'ranged' || !equipmentSlots.ranged)) return null;
         camera.updateMatrixWorld?.();
         _shoulderSurfReticleRaycaster.setFromCamera(currentCombatReticleNDC(), camera);
@@ -19186,7 +19187,7 @@
             window.Fishing?.state?.active || window.MusicMinigame?.state?.active) return null;
         camera.updateMatrixWorld?.();
         // Desktop normal-camera interactions follow the actual cursor reticle;
-        // Mobile interactions share the visible eased sight; desktop shoulder aim remains centered.
+        // Mobile and shoulder interactions use the fixed screen-center reticle.
         const ndc = !isDesktop || activeCameraMode === SHOULDER_SURF_MODE ? currentCombatReticleNDC() : _mouseNDC;
         _shoulderSurfReticleRaycaster.setFromCamera(ndc, camera);
         const ray = _shoulderSurfReticleRaycaster.ray;
@@ -24382,8 +24383,8 @@
           _shoulderSurfBootSnapped = true;
           snapShoulderSurfAzimuth();
         }
+        if (!paused) updateMobileAutoTargetCamera(dt); // Steer existing offsets before the normal camera pose/collision owner applies them.
         updateCameraPosition();
-        if (!paused) updateMobileAutoTargetReticle(dt); // The camera projection is current before the shared reticle ray is rebuilt.
         // Refreshes the shared head/body/reticle aim point every frame
         // (rather than only on a mousemove/touch event) so it always
         // reflects the current camera — including a horizontal offset slide
@@ -25844,6 +25845,7 @@
           `Tool/action: ${window.FormatUtils.toolName(activeTool)} / ${window.FormatUtils.actionName(activeAction)}`,
           `Mobile combat arch aim: ${JSON.stringify(window.__mobileArchCombatAimDebug?.snapshot?.() || { active: false })}`,
           `Mobile autotarget: ${JSON.stringify(window.__hobunjiFurnitureDebug?.meleeAttackAlignmentSnapshot?.() || { ready: false })}`,
+          `Arena spawn: ${JSON.stringify(window.DevSpawner?.spawnSnapshot?.() || { ready: false })}`,
           `Player: x${player.x.toFixed(0)} y${player.y.toFixed(0)}`,
           `Player movement/status: ${JSON.stringify(playerMovementDebugSnapshot())}`,
           `Memory/resources: ${JSON.stringify(window.HobunjiCacheAudit?.snapshot?.() || null)}`,
@@ -27544,7 +27546,7 @@
           const target = manualAutoTarget;
           const availableTarget = findAvailableAutoTarget(); // Reports the prospective prey/enemy even while the mobile toggle is disabled.
           return {
-            latestChange: 'Persistent mobile target locks survive distance and nearby entrants; only the reticle tracks, gradually and more slowly up close. Attacks use existing reticle convergence, with dragged heavy/ranged aim taking priority. Red on/gray off prey control and approved second-arch layout retained.',
+            latestChange: 'Persistent mobile locks gradually steer the camera, more slowly up close; the reticle remains centered and attacks use existing reticle convergence. Manual heavy/ranged drags retain priority. Arena prey now use wild-creature registration instead of being immune player companions.',
             settings: window.Combat?.input?.autoTargetSettingsSnapshot?.(),
             controlLayout: ['btnUtilityMenu', 'btnSocialActions', 'btnSwapTarget'].map(id => {
               const rect = document.getElementById(id)?.getBoundingClientRect?.(); // On-demand copyable diagnostics use actual runtime button sizes and positions.
@@ -27552,12 +27554,13 @@
             }),
             selectedTarget: manualAutoTarget?.id ?? manualAutoTarget?.def?.label ?? null,
             availableTarget: availableTarget?.id ?? availableTarget?.def?.label ?? null,
-            active: mobileAutoReticleActive,
+            active: mobileAutoCameraActive,
             targetLocked: !!manualAutoTarget,
             target: target ? { id: target.id ?? target.creatureKey ?? target.def?.label ?? null, x: target.x, y: target.y } : null,
             retentionRangeTiles: autoTargetRetentionRange() / TILE,
-            reticleNDC: { x: mobileAutoReticleNDC.x, y: mobileAutoReticleNDC.y },
-            trackingResponseS: mobileAutoReticleResponseS,
+            reticleNDC: { x: 0, y: 0 },
+            cameraOffsetsDeg: { yaw: cameraAzimuthOffsetDeg, pitch: cameraAngleOffsetDeg },
+            trackingResponseS: mobileAutoCameraResponseS,
             manualAttackAim: manualCombatReticleAim(),
             turnRecoveryMultiplier: window.Combat?.postAttackTurnMultiplier?.(player) ?? 1,
           };

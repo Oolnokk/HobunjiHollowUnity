@@ -85,7 +85,7 @@ assert(devSpawnerSource.includes('window.MinionCombat.makeEntity({'), 'Arena ske
 assert(devSpawnerSource.includes("speciesId: 'harlyao-skeleton'"), 'Arena Minion spawn must force the Harlyao Skeleton species');
 assert(devSpawnerSource.includes("weaponMetalKey: 'nativeCopper'"), 'Arena skeleton melee weapons must use the canonical Harlyao native-copper material');
 assert(devSpawnerSource.includes('deps.hostileObjects.add(creature);'), 'Arena skeleton Minions must enter the normal hostile enemy update set');
-assert(devSpawnerSource.includes('spawnDevArenaHarlyaoSkeleton(devSpawnBanditTier);'), 'Skeleton arena button must dispatch to the Minion spawn path');
+assert(devSpawnerSource.includes('spawnDevArenaHarlyaoSkeleton(tier);'), 'Skeleton arena button must dispatch to the Minion spawn path');
 assert(combatBanditSource.includes('Array.isArray(cfg?.weaponShapePool) ? cfg.weaponShapePool : null'), 'BanditCombat must honor an optional caller-scoped melee weapon pool');
 assert(combatBanditSource.includes('configuredMetalKey || rolledMetalKey'), 'BanditCombat must honor an optional fixed metal without changing ordinary bandit rolls');
 assert(combatBanditSource.includes('const resolvedRosterDyes = applyRosterDyesToProfile(profile, roster)'), 'shared hostile avatar builder must reconcile roster dyes directly onto the rendered profile');
