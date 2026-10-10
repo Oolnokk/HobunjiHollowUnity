@@ -266,7 +266,10 @@
     return seen;
   }
 
-  const MAX_SEPARATOR_WIDTH = 3; // Widest corridor a mineable wall may span; generated cavern corridors are usually 1-3 tiles wide.
+  const MAX_SEPARATOR_WIDTH = 6; // Widest opening a mineable wall may span. Mining any one rock opens it, so width costs the player nothing; generated cavern chambers join through 3-6 tile openings.
+  const MIN_HIDDEN_TILES = 12; // Smallest chamber worth walling off.
+  const MIN_HIDDEN_RATIO = 0.05; // ...as a share of the cave floor; real caverns are mostly one big chamber with side pockets.
+  const MAX_HIDDEN_RATIO = 0.58; // Never wall off most of the cave.
 
   // Straight wall-to-wall cuts across a corridor: a run of 1..MAX floor cells
   // along a row or column whose two ends both touch non-floor. Filling such a
@@ -305,13 +308,13 @@
       if (near.size >= usable) continue;
       const far = new Set([...floorSet].filter(candidate => !blocked.has(candidate) && !near.has(candidate))); // Sealed component revealed after mining through.
       const farRatio = far.size / Math.max(1, usable); // Portion behind the wall; rejects trivial closets and most-of-map lockouts.
-      if (far.size < 8 || farRatio < 0.10 || farRatio > 0.58) continue;
+      if (far.size < MIN_HIDDEN_TILES || farRatio < MIN_HIDDEN_RATIO || farRatio > MAX_HIDDEN_RATIO) continue;
       const mid = cut.cells[Math.floor(cut.cells.length / 2)];
       candidates.push({
         col: mid.col, row: mid.row, key: cut.keys.join('|'), cells: cut.cells,
         nearKeys: [...near], farKeys: [...far],
         // Prefer a big hidden chamber behind a narrow wall far from the entrance.
-        score: far.size - (cut.cells.length - 1) * 6 + Math.hypot(mid.col - exitCol, mid.row - exitRow) * 0.35,
+        score: far.size - (cut.cells.length - 1) * 3 + Math.hypot(mid.col - exitCol, mid.row - exitRow) * 0.35,
       });
     }
     candidates.sort((a, b) => b.score - a.score || a.key.localeCompare(b.key));
