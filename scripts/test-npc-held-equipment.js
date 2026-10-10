@@ -237,6 +237,22 @@ function makeRuntimeWalker(id, name) {
   spearhead.area = 'farm'; // The farm tour and rescue still use the outdoor spear/stance.
   spearhead.update(1/60);
   assert.equal(runtimeWindow.NpcHeldEquipment.debugSnapshot('spearhead_unumanuk').holderVisible,true);
+
+  // A watchman in another area skips the pose/hand work and hides its
+  // scene-parented weapon holder, then picks both back up on return.
+  let playerArea = 'farm';
+  runtimeWindow.GridTileAccessors = { getCurrentArea: () => playerArea };
+  oddclaw.area = 'town';
+  oddclaw.update(1/60);
+  let away = runtimeWindow.NpcHeldEquipment.debugSnapshot('oddclaw_unumanuk');
+  assert.equal(away.offscreen, true, 'a walker outside the player area is skipped');
+  assert.equal(away.holderVisible, false, 'its weapon holder does not float in the scene it left');
+  playerArea = 'town';
+  oddclaw.update(1/60);
+  away = runtimeWindow.NpcHeldEquipment.debugSnapshot('oddclaw_unumanuk');
+  assert.equal(away.offscreen, false);
+  assert.equal(away.mode, 'watchman');
+  assert.equal(away.holderVisible, true, 'the weapon reappears once the player shares the area');
   console.log('npc-held-equipment v4 player-parity + live watchman holder regression: ok');
 })().catch(error => {
   console.error(error);

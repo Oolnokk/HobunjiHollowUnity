@@ -481,9 +481,26 @@
     state.ownedTextures.clear();
   }
 
+  // A walker in another area is in a scene nobody is looking at, so its
+  // held-item pose, body yaw and hand claims are pure presentation cost.
+  // Cutscene actors are always posed. The watchman holder lives in the
+  // walker's scene (not under the walker), so hide it rather than leave it
+  // floating where the walker last stood.
+  function walkerOffscreen(state) {
+    const area = window.GridTileAccessors?.getCurrentArea?.();
+    if (!area || cinematicWalkers.has(state.walker)) return false;
+    return !!state.walker?.area && state.walker.area !== area;
+  }
+
   function updateState(state) {
     const walker = state.walker;
     state.lastUpdateAt = performance.now();
+    if (walkerOffscreen(state)) {
+      if (state.holder) state.holder.visible = false;
+      state.offscreen = true;
+      return;
+    }
+    state.offscreen = false;
     const loadout = watchmanLoadoutFor(walker);
     if (loadout) {
       const parent = walker?.root?.parent;
@@ -600,6 +617,7 @@
         visualSource: state.visualSource,
         sharedPlaneFactoryReady: !!sharedToolFactory(),
         walkerState: walker?.state || null,
+        offscreen: !!state.offscreen,
         area: walker?.area || null,
         cinematicPose: walker?._cinematicPose || null,
         posteriorY: walker?.legs?.standingPosteriorY ?? null,

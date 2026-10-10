@@ -154,4 +154,39 @@ function buildFixture({ withScheduler }) {
   assert.equal(getUseIdlePoseCalls(), callsAfterPoseSync + 2, 'the next real frame (a new frameId) must run the sync again');
 }
 
+// --- Rigs nobody is drawing skip the pre-render pose work ----------------
+// The sentinel only fires when its rig is drawn, so a rig in another area's
+// scene (or hidden) stops costing pre-render work after a short grace window,
+// and resumes as soon as it draws again.
+{
+  const { windowObject, avatarApi, registered, parent, frameIdBox, getUseIdlePoseCalls } = buildFixture({ withScheduler: true });
+  avatarApi.buildSinglePlaneAvatarModel(windowObject.THREE, {}, { speciesId: 'mao-ao', gender: 'male', profile: {} });
+  registered.get('procedural-hand-attachment').fn();
+  const poseSync = registered.get('procedural-hand-pose-sync').fn;
+  poseSync();
+  const sentinel = parent.children.find(child => typeof child.onBeforeRender === 'function');
+  const debug = () => windowObject.ProceduralHandFrameDriver.getDebug()[0];
+
+  frameIdBox.value = 3; // Within the grace window after creation: still posed.
+  let before = getUseIdlePoseCalls();
+  poseSync();
+  assert.equal(getUseIdlePoseCalls(), before + 1, 'a rig is posed during the grace window');
+  assert.equal(debug().poseSyncSkipped, false);
+
+  frameIdBox.value = 4; // Never drawn for more than the grace window.
+  before = getUseIdlePoseCalls();
+  poseSync();
+  assert.equal(getUseIdlePoseCalls(), before, 'an undrawn rig is skipped');
+  assert.equal(debug().poseSyncSkipped, true);
+
+  frameIdBox.value = 9;
+  sentinel.onBeforeRender(); // Its scene renders again: the sentinel syncs it this frame...
+  frameIdBox.value = 10;
+  before = getUseIdlePoseCalls();
+  poseSync(); // ...and pre-render owns it again from the next frame.
+  assert.equal(getUseIdlePoseCalls(), before + 1, 'a rig is posed again once it draws');
+  assert.equal(debug().poseSyncSkipped, false);
+  assert.equal(debug().fallback.mode, 'idle', 'resumed gait sampling does not read the gap as movement');
+}
+
 console.log('procedural hand frame driver attachment/pose-sync split passed');
