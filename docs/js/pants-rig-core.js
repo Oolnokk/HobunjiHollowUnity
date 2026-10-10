@@ -574,9 +574,20 @@
   // (no rotation or stretch): used by the posterior fit, where the garment has already been scaled and placed as a whole
   // sprite and rotating its (flattened) bones to vertical would twist it.
   function alignBoneWithMotion(fromStart, fromEnd, restStart, restEnd, liveStart, liveEnd, { perpendicularScale = 1, initial = 'align', anchorFrom = null, anchorTo = null, rotationScale = 1 } = {}) {
-    const planar = initial === 'translate' && anchorFrom && anchorTo
+    let planar;
+    if (initial === 'fold') { // Rotate the garment bone about its start so it points the way the rest bone does (straight down), then slide it sideways onto the rest bone. No stretch, no vertical shift.
+      const gx = (Number(fromEnd?.x) || 0) - (Number(fromStart?.x) || 0), gy = (Number(fromEnd?.y) || 0) - (Number(fromStart?.y) || 0);
+      const rx = (Number(restEnd?.x) || 0) - (Number(restStart?.x) || 0), ry = (Number(restEnd?.y) || 0) - (Number(restStart?.y) || 0);
+      const gl = Math.hypot(gx, gy), rl = Math.hypot(rx, ry);
+      const angle = gl > MIN_BONE_LENGTH && rl > MIN_BONE_LENGTH ? Math.atan2(ry, rx) - Math.atan2(gy, gx) : 0;
+      const cs = Math.cos(angle), sn = Math.sin(angle);
+      const px = Number(fromStart?.x) || 0, py = Number(fromStart?.y) || 0;
+      const shift = (Number(restStart?.x) || 0) - px;
+      planar = { a: cs, b: sn, c: -sn, d: cs, tx: px - (cs * px - sn * py) + shift, ty: py - (sn * px + cs * py), stretch: 1, rotation: angle };
+    } else planar = initial === 'translate' && anchorFrom && anchorTo
       ? { a: 1, b: 0, c: 0, d: 1, tx: (Number(anchorTo.x) || 0) - (Number(anchorFrom.x) || 0), ty: (Number(anchorTo.y) || 0) - (Number(anchorFrom.y) || 0), stretch: 1, rotation: 0 }
       : alignBoneSegment(fromStart, fromEnd, restStart, restEnd, { perpendicularScale });
+    if (!planar) planar = alignBoneSegment(fromStart, fromEnd, restStart, restEnd, { perpendicularScale });
     const num = value => Number(value) || 0;
     const rs = [num(restStart?.x), num(restStart?.y), num(restStart?.z)];
     const ls = [num(liveStart?.x), num(liveStart?.y), num(liveStart?.z)];

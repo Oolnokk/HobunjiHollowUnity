@@ -330,4 +330,18 @@ assert([out[2], out[5], out[8]].every(z => near(z, 0.012, 1e-6)), 'depth is carr
   assert(near(hipOut(half, g0).x, r0.x) && near(hipOut(half, g0).y, r0.y), 'the hip still follows the live hip when damped');
 }
 
+// ---- fold-only initial alignment (posterior fit) -----------------------------------------
+{
+  const P = (x, y, z = 0.012) => ({ x, y, z });
+  const g0 = P(0.4, 0.5), g1 = P(0.2, 0.2); // Garment bone angled outward, 0.36 long.
+  const r0 = P(0.45, 0.3), r1 = P(0.45, 0.28); // Rest bone straight down but only 0.02 long: the garment must NOT be squashed to it.
+  const t = Core.alignBoneWithMotion(g0, g1, r0, r1, r0, r1, { initial: 'fold' });
+  const map = p => ({ x: t.m[0] * p.x + t.m[1] * p.y + t.tx, y: t.m[3] * p.x + t.m[4] * p.y + t.ty });
+  const start = map(g0), end = map(g1);
+  assert(near(start.x, 0.45) && near(start.y, 0.5), 'the bone start slides sideways onto the rest bone and keeps its height');
+  assert(near(end.x, 0.45), 'the bone now hangs straight up and down on the rest bone');
+  assert(near(Math.hypot(end.x - start.x, end.y - start.y), Math.hypot(0.2, 0.3), 1e-9), 'the garment keeps its length: no stretch to the 3D leg length');
+  assert(end.y < start.y, 'it points down the same way the rest bone does');
+}
+
 console.log('Pants rig bone skinning: PASS');
