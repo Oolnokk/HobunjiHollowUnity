@@ -221,8 +221,8 @@
   <!-- Shared plateau/ramp fold math (Map Editor preview + Tothal Shift) and the
        headless Wilderness Map Generator core (Tothal Shift wilderness reroll) -->
   <script src="js/terrain-preview.js?v=20261010h4a6a67f"></script>
-  <script src="js/den-cliff-placement.js?v=20261010dencliff1"></script>
-  <script src="js/wilderness-map-generator.js?v=20261010he13bc22"></script>
+  <script src="js/den-cliff-placement.js?v=20261010h1a6266f"></script>
+  <script src="js/wilderness-map-generator.js?v=20261010hf733d1a"></script>
   <!-- Terrain-aware authored locales inspect the finished wilderness and place against existing host terrain. Must load after WildernessMapGenerator so its wrapper installs in the game, not only in editor/tests. -->
   <script src="js/locale-terrain-placement.js?v=20261010h185827e"></script>
   <script src="js/foliage-furniture-renderer.js?v=20260816a"></script>
@@ -572,7 +572,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20261010h5c2eabd"></script>
+  <script src="js/wildlife-spawn.js?v=20261010h03b982b"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
@@ -779,7 +779,7 @@
   <script src="js/ruin-site-locales.js?v=20261002hb4d3f2d"></script>
   <script src="js/stampable-locale-defs.js?v=20261010h93ea9d8"></script>
   <script src="js/ruin-sites.js?v=20261003h12be717"></script>
-  <script src="js/zone-den-totem-features.js?v=20261010hfc244ec"></script>
+  <script src="js/zone-den-totem-features.js?v=20261010ha26e4f4"></script>
   <script src="js/transition-markers.js?v=20261004h46d3bfb"></script>
   <!-- Wilderness-zone grass and rich-foliage-patch billboards
        (window.ZoneGrassBillboards) — pure scene-graph generation, no

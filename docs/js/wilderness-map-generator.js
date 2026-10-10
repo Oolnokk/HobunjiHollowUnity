@@ -4131,6 +4131,15 @@
       const entryInside = site.mouth.y < site.y + site.h;
       const approach = entryInside ? { x: site.mouth.x, y: site.y + site.h } : { ...site.mouth };
       addAnimalDen({ x: site.x, y: site.y }, { w: site.w, h: site.h }, { ...site.mouth }, { entranceTemplateId: site.templateId, cliffBacked: true, entryInside, approachAnchor: approach, ...(entryInside && site.entryInsetTiles ? { entryInsetTiles: site.entryInsetTiles } : {}) }, approach);
+      // Keep the template's "free" approach tiles clear of everything placed
+      // later (flora, statues, rocks). Reserve ids are not real objects, so
+      // paths and movement still treat the tiles as open ground.
+      const compiled = templates.find(template => template.id === site.templateId);
+      for (const probe of compiled?.probes || []) {
+        if (probe.terrain !== 'free') continue;
+        const tile = tileAt(site.x + probe.dx, site.y + probe.dy);
+        if (tile && !tile.occupiedBy) tile.occupiedBy = `den_approach_reserve_${site.x}_${site.y}`;
+      }
       placed.push(site);
     }
     logDebug(`cliff-backed dens: ${placed.length}/${target} from ${sites.length} candidate site(s) [${placed.map(site => site.templateId).join(', ')}]`);

@@ -158,35 +158,42 @@
   // Evaluates a den footprint at (x, y). Returns null when any hard rule
   // fails, else { score, floorTier, mouth }.
   function evaluate(compiled, tileAt, x, y) {
+    return explain(compiled, tileAt, x, y).result;
+  }
+
+  // Same as evaluate, but also names the first rule a site fails (for
+  // diagnostics: Locale Editor previews, relocation logs, tests).
+  function explain(compiled, tileAt, x, y) {
+    const fail = reason => ({ result: null, reason });
     const mouthTile = tileAt(x + compiled.mouth.dx, y + compiled.mouth.dy);
-    if (!mouthTile) return null;
+    if (!mouthTile) return fail('entry tile out of bounds');
     const floorTier = tier(mouthTile);
     // Footprint: never water/ramp/boundary/occupied; ordinary (non-embedded)
     // cells stand on the mouth's tier, embedded cells are judged below.
     for (let dy = 0; dy < compiled.h; dy++) {
       for (let dx = 0; dx < compiled.w; dx++) {
         const tile = tileAt(x + dx, y + dy);
-        if (!tile || tile.water || tile.ramp || tile.occupiedBy || tile.designReserve || isBoundary(tile)) return null;
-        if (!compiled.embeddedKeys.has(`${dx},${dy}`) && Math.abs(tier(tile) - floorTier) > 0.05) return null;
+        if (!tile || tile.water || tile.ramp || tile.occupiedBy || tile.designReserve || isBoundary(tile)) return fail(`footprint ${dx},${dy} blocked`);
+        if (!compiled.embeddedKeys.has(`${dx},${dy}`) && Math.abs(tier(tile) - floorTier) > 0.05) return fail(`footprint ${dx},${dy} off the floor tier`);
       }
     }
     // Walkable entry column from the entry tile out through the footprint's
     // front row: plain floor only (cliff skirts and ramps export as rock/slope).
     for (const step of entryPath(compiled)) {
       const tile = tileAt(x + step.dx, y + step.dy);
-      if (!tile || (tile.cliffSkirt && !tile.waterfall) || tile.plateauRing || compiled.embeddedKeys.has(`${step.dx},${step.dy}`)) return null;
+      if (!tile || (tile.cliffSkirt && !tile.waterfall) || tile.plateauRing || compiled.embeddedKeys.has(`${step.dx},${step.dy}`)) return fail(`entry column ${step.dx},${step.dy} not walkable`);
     }
     for (const cell of compiled.embedded) {
-      if (!probeMatches(tileAt, x + cell.dx, y + cell.dy, cell, floorTier)) return null;
+      if (!probeMatches(tileAt, x + cell.dx, y + cell.dy, cell, floorTier)) return fail(`embedded ${cell.dx},${cell.dy} not ${cell.terrain}`);
     }
     let score = 0;
     for (const probe of compiled.probes) {
       const matched = probeMatches(tileAt, x + probe.dx, y + probe.dy, probe, floorTier);
-      if (probe.strength === 'required' && !matched) return null;
-      if (probe.strength === 'avoid' && matched) return null;
+      if (probe.strength === 'required' && !matched) return fail(`required ${probe.terrain} ${probe.dx},${probe.dy} failed`);
+      if (probe.strength === 'avoid' && matched) return fail(`avoided ${probe.terrain} ${probe.dx},${probe.dy} matched`);
       if (probe.strength === 'preferred') score += matched ? probe.weight : -probe.weight * 0.25;
     }
-    return { score, floorTier, mouth: { x: x + compiled.mouth.dx, y: y + compiled.mouth.dy } };
+    return { result: { score, floorTier, mouth: { x: x + compiled.mouth.dx, y: y + compiled.mouth.dy } }, reason: null };
   }
 
   // Footprint cells between an inside entry tile and the front edge, entry included.
@@ -220,5 +227,5 @@
     return sites;
   }
 
-  return { TEMPLATE_CATEGORY, isTemplate, caveObject, compileTemplate, evaluate, findSites, entryPath };
+  return { TEMPLATE_CATEGORY, isTemplate, caveObject, compileTemplate, evaluate, explain, findSites, entryPath };
 });
