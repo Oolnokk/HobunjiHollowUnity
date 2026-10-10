@@ -240,7 +240,19 @@
       }
       rings[side] = { vertex: Math.round(Math.max(0, Math.min(1, center.y)) * SEGMENTS) * (SEGMENTS + 1) + Math.round(Math.max(0, Math.min(1, center.x)) * SEGMENTS), influence };
     }
-    return { geometry, basePositions, weights, bones2D, beltCenter, maskMapping, rings, planeNormal: { x: normal.x, y: normal.y, z: normal.z } };
+    // Debug splines: the belt spline and the two ankle (leg opening) splines, as bilinear samples of the skinned grid so they
+    // show exactly where those authored curves currently sit on the deformed garment.
+    const sampleAt = point => {
+      const gx = Math.max(0, Math.min(1, point.x)) * SEGMENTS, gy = Math.max(0, Math.min(1, point.y)) * SEGMENTS;
+      const x0 = Math.min(SEGMENTS - 1, Math.floor(gx)), y0 = Math.min(SEGMENTS - 1, Math.floor(gy));
+      return { i: y0 * (SEGMENTS + 1) + x0, fx: gx - x0, fy: gy - y0 };
+    };
+    const splines = {
+      belt: { color: 0x9cff00, samples: (garment.pantsBeltSpline || []).map(sampleAt) },
+      leftAnkle: { color: 0xffad12, samples: (garment.legOpenings?.left || []).map(sampleAt) },
+      rightAnkle: { color: 0xffad12, samples: (garment.legOpenings?.right || []).map(sampleAt) },
+    };
+    return { geometry, basePositions, weights, bones2D, beltCenter, maskMapping, rings, splines, planeNormal: { x: normal.x, y: normal.y, z: normal.z } };
   }
 
   // How far in front of the portrait plane the procedural feet reach (avatar-local +z). The garment is lifted past that so
@@ -337,7 +349,7 @@
    * @param opts.appearance  {primaryHex, secondaryHex, patternHex, weaving}
    * @returns handle {update, setAppearance, dispose, mesh} or null when pants cannot be drawn for this avatar
    */
-  function attach(THREE, { avatarGroup, legHandle, speciesId, gender, garmentId = DEFAULT_GARMENT_ID, appearance = {}, name = 'pants', overlayMask = null, garmentRecord = null, characterRecord = null, imageUrl = null, footObjects = null } = {}) {
+  function attach(THREE, { avatarGroup, legHandle, speciesId, gender, garmentId = DEFAULT_GARMENT_ID, appearance = {}, name = 'pants', overlayMask = null, garmentRecord = null, characterRecord = null, imageUrl = null, footObjects = null, debugSplines = false } = {}) {
     const Core = core();
     const garment = garmentRecord || rigConfig().garments?.[garmentId]; // The editor passes its live, unsaved authoring records here.
     let character = characterRecord || resolveCharacter(speciesId, gender);
@@ -361,7 +373,7 @@
     const handle = {
       name, garmentId, model: avatarGroup, nodes, mesh: null, disposed: false, texture: null, material: null,
       geometry: data.geometry, basePositions: data.basePositions, weights: data.weights, bones2D: data.bones2D,
-      beltCenter: data.beltCenter, planeNormal: data.planeNormal, rings: data.rings,
+      beltCenter: data.beltCenter, planeNormal: data.planeNormal, rings: data.rings, splineSpec: data.splines, debugLines: null, showSplines: !!debugSplines,
       beltScale: Math.min(3.5, Math.max(1.7, Number(character.beltScale) || DEFAULT_BELT_SCALE)),
       legRollGain: Math.min(4, Math.max(1, Number(character.legRollGain) || 2)),
       maskMapping: data.maskMapping, footLift, rest: null, restRaw: null, fitMode, beltStretchX, rotationScale: { left: 1, right: 1 },
@@ -450,19 +462,7 @@
           flat.x = raw.x; flat.y = raw.y; flat.z = handle.bones2D[side][joint].z; // Flat, at the portrait plane's depth.
         }
       }
-      // Damping: how far the garment reaches from each hip versus how long the leg is. A wide garment on short legs would be
-      // swung far around the hip by a small leg rotation, so the animation rotation is scaled by leg length / reach (min 0.2).
-      for (const side of ['left', 'right']) {
-        const hip = handle.fitMode === 'posterior' ? handle.bones2D[side].hip : handle.rest[side].hip, base = handle.basePositions, weights = handle.weights; // Bound fit pivots about the art's own hip.
-        const channels = side === 'left' ? [1, 2] : [3, 4];
-        let reach = 0;
-        for (let v = 0; v < base.length / 3; v++) {
-          if (weights[v * 5 + channels[0]] + weights[v * 5 + channels[1]] < 0.5) continue;
-          reach = Math.max(reach, Math.hypot(base[v * 3] - hip.x, base[v * 3 + 1] - hip.y));
-        }
-        const legLength = Math.hypot(handle.rest[side].ankle.x - hip.x, handle.rest[side].ankle.y - hip.y);
-        handle.rotationScale[side] = reach > 1e-6 ? Math.max(0.2, Math.min(1, legLength / reach)) : 1;
-      }
+      // The whole garment, the ankle rings included, takes the bone's full rotation (no damping).
       handle.restCaptured = true;
     };
 
@@ -484,6 +484,49 @@
       : Core.alignBoneWithMotion(
         handle.bones2D[side][from], handle.bones2D[side][to], handle.rest[side][from], handle.rest[side][to], aim[side][from], aim[side][to],
         { perpendicularScale: LEG_ACROSS_SCALE, rotationScale: handle.rotationScale[side] }); // Belt fit: the full planar alignment onto the 3D bone.
+
+    // Debug rendering of the belt and ankle splines on the deformed garment (lines + a dot per control point; the ankle ring
+    // centres, the vertices locked to the 3D bones, are drawn larger).
+    const ensureDebugLines = () => {
+      if (handle.debugLines) return;
+      handle.debugLines = {};
+      for (const [name, spec] of Object.entries(handle.splineSpec)) {
+        if (!spec.samples.length) continue;
+        const count = spec.samples.length;
+        const lineGeometry = new THREE.BufferGeometry();
+        lineGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+        const line = new THREE.Line(lineGeometry, new THREE.LineBasicMaterial({ color: spec.color, depthTest: false, transparent: true }));
+        const pointGeometry = new THREE.BufferGeometry();
+        pointGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+        const points = new THREE.Points(pointGeometry, new THREE.PointsMaterial({ color: spec.color, size: 7, sizeAttenuation: false, depthTest: false, transparent: true }));
+        for (const object of [line, points]) { object.renderOrder = 1000; object.frustumCulled = false; object.userData.hobunjiPantsDebug = true; handle.model.add(object); }
+        handle.debugLines[name] = { line, points, lineGeometry, pointGeometry };
+      }
+    };
+    const updateDebugSplines = () => {
+      ensureDebugLines();
+      const pos = handle.geometry.getAttribute('position').array;
+      const stride = SEGMENTS + 1;
+      for (const [name, spec] of Object.entries(handle.splineSpec)) {
+        const entry = handle.debugLines[name];
+        if (!entry) continue;
+        const lineArray = entry.lineGeometry.getAttribute('position').array, pointArray = entry.pointGeometry.getAttribute('position').array;
+        spec.samples.forEach((sample, index) => {
+          const a = sample.i * 3, b = (sample.i + 1) * 3, c = (sample.i + stride) * 3, d = (sample.i + stride + 1) * 3;
+          for (let k = 0; k < 3; k++) {
+            const top = pos[a + k] + (pos[b + k] - pos[a + k]) * sample.fx, bottom = pos[c + k] + (pos[d + k] - pos[c + k]) * sample.fx;
+            lineArray[index * 3 + k] = pointArray[index * 3 + k] = top + (bottom - top) * sample.fy;
+          }
+        });
+        entry.lineGeometry.getAttribute('position').needsUpdate = true;
+        entry.pointGeometry.getAttribute('position').needsUpdate = true;
+        entry.line.visible = entry.points.visible = true;
+      }
+    };
+    handle.setDebugSplines = on => {
+      handle.showSplines = !!on;
+      if (!handle.showSplines && handle.debugLines) for (const entry of Object.values(handle.debugLines)) entry.line.visible = entry.points.visible = false;
+    };
 
     handle.update = () => {
       if (handle.disposed || !handle.mesh || !handle.model.parent) return;
@@ -519,6 +562,7 @@
           out[i * 3] += dx * k; out[i * 3 + 1] += dy * k; out[i * 3 + 2] += dz * k;
         }
       }
+      if (handle.showSplines) updateDebugSplines();
       position.needsUpdate = true; // frustumCulled is off, so no per-frame bounding-sphere work.
     };
 
@@ -558,6 +602,11 @@
       handle.material?.dispose?.();
       handle.texture?.dispose?.();
       handle.maskTexture?.dispose?.();
+      if (handle.debugLines) for (const entry of Object.values(handle.debugLines)) {
+        entry.line.parent?.remove?.(entry.line); entry.points.parent?.remove?.(entry.points);
+        entry.lineGeometry.dispose?.(); entry.pointGeometry.dispose?.(); entry.line.material.dispose?.(); entry.points.material.dispose?.();
+      }
+      handle.debugLines = null;
       handle.mesh = null;
     };
 
