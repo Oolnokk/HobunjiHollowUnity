@@ -1,99 +1,3 @@
-function currentOffsets(){const key=ensureTargetData(E.species.value,E.gender.value);return A.localOffsets[key]}
-function currentMaskTransform(){
-  const key=ensureTargetData(E.species.value,E.gender.value);
-  if(!A.maskPreviewTransforms[key])A.maskPreviewTransforms[key]=defaultMaskTransform();
-  return A.maskPreviewTransforms[key];
-}
-function syncMaskTransformControls(){
-  const tr=currentMaskTransform();
-  const pairs=[
-    [E.maskScaleX,E.maskScaleXNumber,tr.scaleX],
-    [E.maskScaleY,E.maskScaleYNumber,tr.scaleY],
-    [E.maskTranslateY,E.maskTranslateYNumber,tr.translateY],
-  ];
-  for(const [slider,number,value] of pairs){
-    slider.value=String(value);number.value=String(value);
-  }
-}
-function transformedSourceGrid(){
-  const tr=currentTransform(),w=Math.max(1,E.stage.width||234),h=Math.max(1,E.stage.height||173);
-  return SOURCE_GRID.map(p=>{
-    const px=(p.x-.5)*w*tr.scaleX+w*.5+tr.translateX;
-    const py=(p.y-.5)*h*tr.scaleY+h*.5+tr.translateY;
-    return{x:px/w,y:py/h};
-  }); // Global scale/translation is applied first.
-}
-function targetGrid(){
-  const baseGrid=transformedSourceGrid(),offsets=currentOffsets();
-  return baseGrid.map((p,i)=>({x:p.x+offsets[i].x,y:p.y+offsets[i].y})); // Local node corrections are applied second.
-}
-function syncTransformControls(){
-  const tr=currentTransform();
-  for(const [slider,number,value] of [[E.scaleX,E.scaleXNumber,tr.scaleX],[E.scaleY,E.scaleYNumber,tr.scaleY],[E.translateX,E.translateXNumber,tr.translateX],[E.translateY,E.translateYNumber,tr.translateY]]){
-    slider.value=String(value);number.value=String(value);
-  }
-}
-function toDisplayPixels(points,width,height){
-  return points.map(p=>({x:p.x*(width-1),y:p.y*(height-1)})); // Keeps visible drag handles inside the canvas border.
-}
-function toWarpPixel(point,width,height){
-  return{x:point.x*width,y:point.y*height}; // Uses the actual raster edges (0..width / 0..height) so right/bottom source pixels are covered too.
-}
-function bilerpPoint(tl,tr,bl,br,u,v){
-  const a=(1-u)*(1-v),b=u*(1-v),c=(1-u)*v,d=u*v;
-  return{
-    x:tl.x*a+tr.x*b+bl.x*c+br.x*d,
-    y:tl.y*a+tr.y*b+bl.y*c+br.y*d
-  }; // Every point inside a cell depends on all four surrounding authored nodes.
-}
-
-function drawTriangleWarp(targetCtx,source,s0,s1,s2,d0,d1,d2){
-  const sx10=s1.x-s0.x,sy10=s1.y-s0.y,sx20=s2.x-s0.x,sy20=s2.y-s0.y;
-  const det=sx10*sy20-sx20*sy10;if(Math.abs(det)<1e-6)return;
-  const dx10=d1.x-d0.x,dy10=d1.y-d0.y,dx20=d2.x-d0.x,dy20=d2.y-d0.y;
-  const a=(dx10*sy20-dx20*sy10)/det;
-  const c=(-dx10*sx20+dx20*sx10)/det;
-  const b=(dy10*sy20-dy20*sy10)/det;
-  const d=(-dy10*sx20+dy20*sx10)/det;
-  const e=d0.x-a*s0.x-c*s0.y;
-  const f=d0.y-b*s0.x-d*s0.y;
-
-  targetCtx.save();
-  targetCtx.beginPath();
-  targetCtx.moveTo(d0.x,d0.y);targetCtx.lineTo(d1.x,d1.y);targetCtx.lineTo(d2.x,d2.y);targetCtx.closePath();
-  targetCtx.clip();
-  targetCtx.setTransform(a,b,c,d,e,f);
-  targetCtx.imageSmoothingEnabled=false;
-  targetCtx.drawImage(source,0,0);
-  targetCtx.restore();
-}
-function drawBilinearCell(targetCtx,source,sTL,sTR,sBL,sBR,dTL,dTR,dBL,dBR,subdivisions=CELL_SUBDIVISIONS){
-  for(let sy=0;sy<subdivisions;sy++){
-    const v0=sy/subdivisions,v1=(sy+1)/subdivisions;
-    for(let sx=0;sx<subdivisions;sx++){
-      const u0=sx/subdivisions,u1=(sx+1)/subdivisions;
-      const sn00=bilerpPoint(sTL,sTR,sBL,sBR,u0,v0),sn10=bilerpPoint(sTL,sTR,sBL,sBR,u1,v0);
-      const sn01=bilerpPoint(sTL,sTR,sBL,sBR,u0,v1),sn11=bilerpPoint(sTL,sTR,sBL,sBR,u1,v1);
-      const dn00=bilerpPoint(dTL,dTR,dBL,dBR,u0,v0),dn10=bilerpPoint(dTL,dTR,dBL,dBR,u1,v0);
-      const dn01=bilerpPoint(dTL,dTR,dBL,dBR,u0,v1),dn11=bilerpPoint(dTL,dTR,dBL,dBR,u1,v1);
-      if(((sx+sy)&1)===0){
-        drawTriangleWarp(targetCtx,source,sn00,sn10,sn11,dn00,dn10,dn11);
-        drawTriangleWarp(targetCtx,source,sn00,sn11,sn01,dn00,dn11,dn01);
-      }else{
-        drawTriangleWarp(targetCtx,source,sn00,sn10,sn01,dn00,dn10,dn01);
-        drawTriangleWarp(targetCtx,source,sn10,sn11,sn01,dn10,dn11,dn01);
-      }
-    }
-  }
-}
-function warpExtendedOverlay(source,targetNorm,outWidth,normalOutHeight){
-  if(!source||!R.maoBody)return null;
-  const sourceNormalHeight=R.maoBody.height;
-  const sourceWidth=source.width;
-  const sourceHeight=source.height;
-
-  // First determine the extrapolated destination bottom row from the final two normal 6×6 rows.
-  const targetPx=targetNorm.map(p=>({x:p.x*outWidth,y:p.y*normalOutHeight}));
   const bottomDest=[];
   const extraDepth=Math.max(0,sourceHeight-sourceNormalHeight);
   const sourceCellHeight=sourceNormalHeight/(GRID_SIZE-1);
@@ -123,4 +27,116 @@ function warpExtendedOverlay(source,targetNorm,outWidth,normalOutHeight){
     }
   }
 
-  // Extra vertical re
+  // Extra vertical region: continue the deformation vector from the last normal grid row.
+  if(sourceHeight>sourceNormalHeight){
+    const extSub=Math.max(CELL_SUBDIVISIONS,Math.ceil(Math.max(1,extensionFactor)*CELL_SUBDIVISIONS));
+    for(let col=0;col<GRID_SIZE-1;col++){
+      const lastL=targetPx[(GRID_SIZE-1)*GRID_SIZE+col],lastR=targetPx[(GRID_SIZE-1)*GRID_SIZE+col+1];
+      const sTL={x:(col/(GRID_SIZE-1))*sourceWidth,y:sourceNormalHeight};
+      const sTR={x:((col+1)/(GRID_SIZE-1))*sourceWidth,y:sourceNormalHeight};
+      const sBL={x:(col/(GRID_SIZE-1))*sourceWidth,y:sourceHeight};
+      const sBR={x:((col+1)/(GRID_SIZE-1))*sourceWidth,y:sourceHeight};
+      drawBilinearCell(x,source,sTL,sTR,sBL,sBR,lastL,lastR,bottomDest[col],bottomDest[col+1],extSub);
+    }
+  }
+  return output;
+}
+function warpGarment(source,targetNorm,outWidth,outHeight){
+  const output=document.createElement('canvas');output.width=outWidth;output.height=outHeight;
+  const x=output.getContext('2d',{alpha:true});x.imageSmoothingEnabled=false;
+
+  /*
+    Important correction from V4:
+    a 6x6 square was formerly split into only two triangles. A corner node therefore
+    had zero influence over the opposite half of that same square. Here each base cell
+    is treated as a bilinear quad. We sample that bilinear surface into a 4x4 micro-grid,
+    then render the micro-quads as affine triangles. Thus every one of the four authored
+    corner nodes influences every pixel region in its adjacent cell.
+  */
+  for(let row=0;row<GRID_SIZE-1;row++){
+    for(let col=0;col<GRID_SIZE-1;col++){
+      const tl=row*GRID_SIZE+col,tr=tl+1,bl=(row+1)*GRID_SIZE+col,br=bl+1;
+
+      const sTL=SOURCE_GRID[tl],sTR=SOURCE_GRID[tr],sBL=SOURCE_GRID[bl],sBR=SOURCE_GRID[br];
+      const dTL=targetNorm[tl],dTR=targetNorm[tr],dBL=targetNorm[bl],dBR=targetNorm[br];
+
+      for(let sy=0;sy<CELL_SUBDIVISIONS;sy++){
+        const v0=sy/CELL_SUBDIVISIONS,v1=(sy+1)/CELL_SUBDIVISIONS;
+        for(let sx=0;sx<CELL_SUBDIVISIONS;sx++){
+          const u0=sx/CELL_SUBDIVISIONS,u1=(sx+1)/CELL_SUBDIVISIONS;
+
+          const sn00=toWarpPixel(bilerpPoint(sTL,sTR,sBL,sBR,u0,v0),source.width,source.height);
+          const sn10=toWarpPixel(bilerpPoint(sTL,sTR,sBL,sBR,u1,v0),source.width,source.height);
+          const sn01=toWarpPixel(bilerpPoint(sTL,sTR,sBL,sBR,u0,v1),source.width,source.height);
+          const sn11=toWarpPixel(bilerpPoint(sTL,sTR,sBL,sBR,u1,v1),source.width,source.height);
+
+          const dn00=toWarpPixel(bilerpPoint(dTL,dTR,dBL,dBR,u0,v0),outWidth,outHeight);
+          const dn10=toWarpPixel(bilerpPoint(dTL,dTR,dBL,dBR,u1,v0),outWidth,outHeight);
+          const dn01=toWarpPixel(bilerpPoint(dTL,dTR,dBL,dBR,u0,v1),outWidth,outHeight);
+          const dn11=toWarpPixel(bilerpPoint(dTL,dTR,dBL,dBR,u1,v1),outWidth,outHeight);
+
+          // Alternate the micro-cell diagonal to avoid reintroducing a strong one-direction triangle bias.
+          if(((row+col+sx+sy)&1)===0){
+            drawTriangleWarp(x,source,sn00,sn10,sn11,dn00,dn10,dn11);
+            drawTriangleWarp(x,source,sn00,sn11,sn01,dn00,dn11,dn01);
+          }else{
+            drawTriangleWarp(x,source,sn00,sn10,sn01,dn00,dn10,dn01);
+            drawTriangleWarp(x,source,sn10,sn11,sn01,dn10,dn11,dn01);
+          }
+        }
+      }
+    }
+  }
+  return output;
+}
+
+async function refreshAssets(){
+  try{
+    if(R.patchWorkflow.active||R.patchWorkflow.canvas){
+      R.patchWorkflow={active:false,canvas:null,descriptor:null,filename:'',patchName:'',revision:(R.patchWorkflow.revision||0)+1}; // Selection changes must never carry a patch source into a different garment/species/gender.
+      E.clothPng.textContent='Export fitted clothing PNG';
+    }
+    R.body=await buildBodyCanvas(E.species.value,E.gender.value);
+    R.maoBody=await buildBodyCanvas('mao-ao',E.gender.value);
+    R.cloth=E.garment.value?await buildGarmentCanvas(E.garment.value,E.gender.value,R.maoBody.width,R.maoBody.height):null;
+    R.authoredTargetCloth=E.garment.value
+      ?await buildVariantGarmentCanvas(E.garment.value,E.species.value,E.gender.value,R.body.width,R.body.height)
+      :null;
+    E.authoredStatus.textContent=R.authoredTargetCloth
+      ?`Authored ${E.species.value}_${E.gender.value} variant available.`
+      :'No authored target variant for this garment/species/gender.';
+    ensureTargetData(E.species.value,E.gender.value);syncTransformControls();syncMaskTransformControls();
+    saveState();render();
+    window.dispatchEvent(new CustomEvent('hobunji-clothing-fit-assets-refreshed',{detail:{species:E.species.value,gender:E.gender.value,garmentId:E.garment.value||''}})); // Lets injected authoring panels rebuild against the completed species/gender asset state rather than polling a half-refreshed selection.
+  }catch(error){status('Refresh failed: '+error.message);log('ERROR '+error.message);console.error(error)}
+}
+function sizeStage(){
+  if(!R.body)return;
+  E.stage.width=R.body.width;E.stage.height=R.body.height;C.imageSmoothingEnabled=false;
+}
+function drawGrid(ctx,points,color,active){
+  const px=toDisplayPixels(points,E.stage.width,E.stage.height);
+  ctx.save();ctx.strokeStyle=color;ctx.fillStyle=color;ctx.globalAlpha=active?1:.58;ctx.lineWidth=1.2;
+
+  for(let row=0;row<GRID_SIZE;row++){
+    ctx.beginPath();
+    for(let col=0;col<GRID_SIZE;col++){
+      const p=px[row*GRID_SIZE+col];
+      col?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y);
+    }
+    ctx.stroke();
+  }
+  for(let col=0;col<GRID_SIZE;col++){
+    ctx.beginPath();
+    for(let row=0;row<GRID_SIZE;row++){
+      const p=px[row*GRID_SIZE+col];
+      row?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y);
+    }
+    ctx.stroke();
+  }
+  for(const p of px){ctx.beginPath();ctx.arc(p.x,p.y,HANDLE_RADIUS,0,Math.PI*2);ctx.fill()}
+  ctx.restore();
+}
+function warpGridForMode(){return mode==='transform'?transformedSourceGrid():targetGrid()}
+function mainClothSource(){
+  return R.patchWorkflow.active&&R.patchWorkflow.canvas?R.patchWorkflow.canvas:R.cloth; // Generic deform source: clothing uses a composite, body routes only the positioned corrective patch.

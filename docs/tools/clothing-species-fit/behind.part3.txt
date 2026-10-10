@@ -1,0 +1,127 @@
+}
+
+function numeric(input,fallback){
+  const value=Number(input.value);return Number.isFinite(value)?value:fallback; // Guards malformed mobile number input values.
+}
+function readTransformAndRender(){
+  patchTransform={
+    x:numeric(ui.x,0),y:numeric(ui.y,0),
+    scaleX:Math.max(.01,numeric(ui.scaleX,1)),
+    scaleY:Math.max(.01,numeric(ui.scaleY,1))
+  };
+  renderPreviews();
+}
+function writeTransform(){
+  ui.x.value=String(roundDisplay(patchTransform.x));ui.y.value=String(roundDisplay(patchTransform.y));
+  ui.scaleX.value=String(roundDisplay(patchTransform.scaleX));ui.scaleY.value=String(roundDisplay(patchTransform.scaleY));
+}
+function roundDisplay(value){return Math.round(value*1000)/1000}
+
+function resetPatchPlacement(render=true){
+  patchTransform={x:0,y:0,scaleX:1,scaleY:1}; // Full-canvas patches align directly with their source raster by default.
+  writeTransform();
+  if(render)renderPreviews();
+}
+function fitPatchToBase(){
+  if(!patch||!currentSource)return;
+  patchTransform={
+    x:0,y:0,
+    scaleX:currentSource.canvas.width/Math.max(1,patch.canvas.width),
+    scaleY:currentSource.canvas.height/Math.max(1,patch.canvas.height)
+  }; // Useful when the corrective art was authored on a differently sized full canvas.
+  writeTransform();renderPreviews();
+}
+
+function composeSource(baseCanvas,patchCanvas,transform){
+  const out=document.createElement('canvas'); // Combined front art + corrective overlay becomes the rear-view source before deformation.
+  out.width=baseCanvas.width;out.height=baseCanvas.height;
+  const context=out.getContext('2d',{alpha:true});context.imageSmoothingEnabled=false;
+  context.drawImage(baseCanvas,0,0);
+  if(patchCanvas){
+    const width=patchCanvas.width*transform.scaleX,height=patchCanvas.height*transform.scaleY;
+    context.drawImage(patchCanvas,transform.x,transform.y,width,height); // Transparent patch pixels leave the original source untouched.
+  }
+  return out;
+}
+
+function positionedPatchCanvas(baseCanvas,patchCanvas,transform){
+  if(!baseCanvas||!patchCanvas)return null;
+  const out=document.createElement('canvas'); // Shared body-patch staging raster; only corrective pixels are present, so the species fit can never deform the body source by accident.
+  out.width=baseCanvas.width;out.height=baseCanvas.height;
+  const context=out.getContext('2d',{alpha:true});context.imageSmoothingEnabled=false;
+  context.drawImage(patchCanvas,transform.x,transform.y,patchCanvas.width*transform.scaleX,patchCanvas.height*transform.scaleY);
+  return out;
+}
+function positionedPatchOnly(){
+  return positionedPatchCanvas(currentSource?.canvas||null,patch?.canvas||null,patchTransform); // Body routing needs only the corrective pixels; the avatar already supplies the original torso/arm beneath them.
+}
+function composeBodyExport(baseCanvas,patchCanvas,transform,fitState=null){
+  const positioned=positionedPatchCanvas(baseCanvas,patchCanvas,transform);
+  if(!positioned)return null;
+  const warpedPatch=api.warpBehindPatchCanvas(positioned,fitState); // Apply the exact export fit snapshot to corrective pixels only.
+  const out=document.createElement('canvas');out.width=baseCanvas.width;out.height=baseCanvas.height;
+  const context=out.getContext('2d',{alpha:true});context.imageSmoothingEnabled=false;
+  context.drawImage(baseCanvas,0,0); // Critical invariant: the selected target-species body raster is copied 1:1 and is never passed through the clothing deformation grid.
+  context.drawImage(warpedPatch,0,0); // The already-deformed patch is composited over the untouched body in the same full-sprite coordinate space.
+  return out;
+}
+function currentComposite(){
+  if(!currentSource)return null;
+  return composeSource(currentSource.canvas,patch?.canvas||null,patchTransform);
+}
+function currentWorkflowSource(){
+  const descriptor=currentSource?.descriptor||null;
+  if(!descriptor)return null;
+  return descriptor.kind==='body'?positionedPatchOnly():currentComposite(); // Main transform workflow must deform only the corrective pixels for body patches; clothing still deforms source+patch together.
+}
+function currentWorkflowOutput(){
+  const source=currentWorkflowSource();
+  if(!source)return null;
+  return api.warpBehindPatchCanvas(source); // Patch-author output preview mirrors the same patch-only/body vs composite/clothing source that is routed into the main workflow.
+}
+function currentFinishedBehindOutput(fitState=null){
+  const descriptor=currentSource?.descriptor||null;
+  if(!descriptor||!patch)return null;
+  if(descriptor.kind==='body')return composeBodyExport(currentSource.canvas,patch.canvas,patchTransform,fitState); // Body stays untouched; patch uses the pinned export fit.
+  const composite=currentComposite();
+  return composite?api.warpBehindPatchCanvas(composite,fitState):null; // Clothing composite uses the same pinned base-transform + 6×6 fit.
+}
+function syncMainWorkflowRoute(){
+  if(!api||!ui)return;
+  const descriptor=currentSource?.descriptor||null;
+  const canRoute=!!(ui.route.checked&&descriptor&&patch&&currentSource);
+  if(!canRoute){api.clearMainWorkflowPatch?.();return}
+  const routedSource=currentWorkflowSource();
+  api.setMainWorkflowPatch?.(routedSource,{
+    descriptor,filename:outputNameFor(descriptor),patchName:patch.name
+  }); // Body routes patch-only pixels and clothing routes source+patch, but both continue through the core transform/6×6 workflow before avatar assembly.
+}
+
+function copyCanvasToPreview(source,target){
+  if(!source){target.width=234;target.height=173;target.getContext('2d').clearRect(0,0,target.width,target.height);return}
+  target.width=source.width;target.height=source.height;
+  const context=target.getContext('2d',{alpha:true});context.imageSmoothingEnabled=false;context.clearRect(0,0,target.width,target.height);context.drawImage(source,0,0);
+}
+function renderPreviews(){
+  try{
+    if(ui.outputLabel)ui.outputLabel.textContent=currentSource?.descriptor?.kind==='body'?'Deformed patch-only workflow output':'Deformed clothing composite output';
+    copyCanvasToPreview(currentComposite(),ui.sourcePreview);
+    copyCanvasToPreview(currentSource?currentWorkflowOutput():null,ui.outputPreview); // Body mode intentionally previews only the deformed corrective patch; the untouched body source remains visible only in the source/composite preview.
+    syncMainWorkflowRoute(); // Keeps the main workflow source live while the patch is dragged/scaled/replaced.
+  }catch(error){reportError(error)}
+  setDisabledState();
+}
+
+function previewPointer(event){
+  const rect=ui.sourcePreview.getBoundingClientRect(); // Converts CSS-scaled mobile coordinates back to native source pixels.
+  return{x:(event.clientX-rect.left)*(ui.sourcePreview.width/Math.max(1,rect.width)),y:(event.clientY-rect.top)*(ui.sourcePreview.height/Math.max(1,rect.height))};
+}
+function startPatchDrag(event){
+  if(!patch||!currentSource)return;
+  const point=previewPointer(event);
+  drag={x:point.x,y:point.y,startX:patchTransform.x,startY:patchTransform.y}; // Moves only the corrective patch; repository source pixels remain fixed.
+  ui.sourcePreview.setPointerCapture?.(event.pointerId);event.preventDefault();
+}
+function movePatchDrag(event){
+  if(!drag)return;
+  const point=previewPointer(event);

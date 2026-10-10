@@ -16,7 +16,6 @@ const E={
   help:$('help'),showBody:$('showBody'),showGarment:$('showGarment'),showMeshes:$('showMeshes'),opacity:$('opacity'),
   showAuthored:$('showAuthored'),authoredOpacity:$('authoredOpacity'),authoredStatus:$('authoredStatus'),
   extTorsoFile:$('extTorsoFile'),extTorsoClothingFile:$('extTorsoClothingFile'),extOverwearFile:$('extOverwearFile'),
-  extUseCutoff:$('extUseCutoff'),extCutoffY:$('extCutoffY'),extCutoffYNumber:$('extCutoffYNumber'),
   showExtended3D:$('showExtended3D'),clearExtended:$('clearExtended'),downloadExtended:$('downloadExtended'),extendedStatus:$('extendedStatus'),
   maskScaleX:$('maskScaleX'),maskScaleY:$('maskScaleY'),maskTranslateY:$('maskTranslateY'),
   maskScaleXNumber:$('maskScaleXNumber'),maskScaleYNumber:$('maskScaleYNumber'),maskTranslateYNumber:$('maskTranslateYNumber'),
@@ -25,7 +24,7 @@ const E={
   scaleX:$('scaleX'),scaleY:$('scaleY'),translateX:$('translateX'),translateY:$('translateY'),
   scaleXNumber:$('scaleXNumber'),scaleYNumber:$('scaleYNumber'),translateXNumber:$('translateXNumber'),translateYNumber:$('translateYNumber'),resetTransform:$('resetTransform'),
   reset:$('reset'),undo:$('undo'),redo:$('redo'),bodyPng:$('bodyPng'),clothPng:$('clothPng'),overlayPng:$('overlayPng'),
-  exportJson:$('exportJson'),importJson:$('importJson'),file:$('file'),copyDebug:$('copyDebug'),debug:$('debug'),
+  exportJson:$('exportJson'),importJson:$('importJson'),file:$('file'),diagnosticsInput:$('diagnosticsInput'),importDiagnostics:$('importDiagnostics'),copyDebug:$('copyDebug'),debug:$('debug'),
   label:$('label'),stage:$('stage'),modeBtns:[...document.querySelectorAll('[data-mode]')]
 };
 const C=E.stage.getContext('2d',{alpha:true}); // Paints the interactive reference canvas.
@@ -35,6 +34,7 @@ const R={
   speciesIndex:[],speciesCfg:new Map(),garments:[],images:new Map(),bodyCanvases:new Map(),garmentCanvases:new Map(),
   body:null,maoBody:null,cloth:null,authoredTargetCloth:null,warped:null,
   extendedLayers:{torso:null,torsoClothing:null,overwear:null},extendedSource:null,extendedWarped:null,
+  patchWorkflow:{active:false,canvas:null,descriptor:null,filename:'',patchName:'',revision:0}, // Live routed patch source. Clothing routes a source+patch composite; body routes patch-only pixels as a separate canonical body-tinted rear backplane layer in front of the selected base body layer and behind clothing.
   three:{
     ready:false,scene:null,camera:null,renderer:null,group:null,drag:null,rotX:0,rotY:0,zoom:3.0,
     runtimeReadyPromise:null,runtimeDocsBase:null,portraitCache:new Map(),rigRoot:null,avatarModel:null,feet:null,
@@ -98,4 +98,27 @@ function saveState(){
   localStorage.setItem(STORE,JSON.stringify(A));
 }
 function snapshot(){return JSON.stringify({baseTransforms:A.baseTransforms,localOffsets:A.localOffsets,maskPreviewTransforms:A.maskPreviewTransforms})}
-function pus
+function pushUndo(){undoStack.push(snapshot());if(undoStack.length>50)undoStack.shift();redoStack=[];syncHistory()}
+function restore(raw){
+  const v=JSON.parse(raw);A.baseTransforms=v.baseTransforms||{};A.localOffsets=v.localOffsets||{};A.maskPreviewTransforms=v.maskPreviewTransforms||{};
+  saveState();syncTransformControls();syncMaskTransformControls();render();
+}
+
+function syncHistory(){E.undo.disabled=!undoStack.length;E.redo.disabled=!redoStack.length}
+function log(s){R.logs.unshift(`[${new Date().toLocaleTimeString()}] ${s}`);R.logs=R.logs.slice(0,40);refreshDebug()}
+function status(s){E.status.textContent=s}
+function base(){const s=String(E.repo.value||'').trim();return s.endsWith('/')?s:s+'/'}
+function docsUrl(path){return new URL(String(path).replace(/^\.\//,''),base()).href}
+function assetUrl(path){
+  const p=String(path||'');
+  if(/^https?:/i.test(p))return p;
+  if(p.startsWith('./assets/'))return docsUrl(p.slice(2));
+  if(p.startsWith('assets/'))return docsUrl(p);
+  return docsUrl('assets/'+p.replace(/^\.\//,''));
+}
+async function fetchJson(path){
+  const r=await fetch(docsUrl(path),{cache:'no-store'});
+  if(!r.ok)throw new Error(`${r.status} ${path}`);
+  return r.json();
+}
+function loadImage(url){

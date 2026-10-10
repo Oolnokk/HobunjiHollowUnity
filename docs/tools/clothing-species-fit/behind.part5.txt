@@ -1,0 +1,122 @@
+    const localHeader=makeLocalHeader(nameBytes,entry.bytes,checksum,stamp);
+    const centralHeader=makeCentralHeader(nameBytes,entry.bytes,checksum,stamp,localOffset);
+    localParts.push(localHeader,entry.bytes);centralParts.push(centralHeader);
+    localOffset+=localHeader.length+entry.bytes.length;centralSize+=centralHeader.length;
+  }
+  const end=new Uint8Array(22); // End-of-central-directory record makes the archive readable by ordinary unzip tools.
+  const view=new DataView(end.buffer);
+  writeU32(view,0,0x06054b50);writeU16(view,4,0);writeU16(view,6,0);writeU16(view,8,entries.length);writeU16(view,10,entries.length);
+  writeU32(view,12,centralSize);writeU32(view,16,localOffset);writeU16(view,20,0);
+  return new Blob([...localParts,...centralParts,end],{type:'application/zip'});
+}
+function uniqueName(name,used){
+  const lower=name.toLowerCase();
+  if(!used.has(lower)){used.add(lower);return name}
+  const {stem,ext}=splitExtension(name);
+  let index=2,candidate=`${stem}_${index}${ext}`; // Avoids collisions when multiple source layers would otherwise suggest the same rear filename.
+  while(used.has(candidate.toLowerCase()))candidate=`${stem}_${++index}${ext}`;
+  used.add(candidate.toLowerCase());return candidate;
+}
+
+async function renderJob(job){
+  if(job.descriptor?.kind==='body')return composeBodyExport(job.baseCanvas,job.patchCanvas,job.transform,job.fitState); // ZIP body jobs retain the fit active when saved.
+  const composite=composeSource(job.baseCanvas,job.patchCanvas,job.transform); // Recreates the exact clothing source + patch snapshot saved by the user.
+  return api.warpBehindPatchCanvas(composite,job.fitState); // ZIP clothing jobs retain their saved base transform + local 6×6 fit.
+}
+
+async function exportBatchZip(){
+  if(exporting||!batch.length)return;
+  exporting=true;setDisabledState();
+  const info=api.getOutputInfo();
+  const entries=[],used=new Set(),manifest={
+    format:'hobunji-behind-sprite-patch-batch-v1',
+    exportedAt:new Date().toISOString(),
+    targetSpecies:info.targetSpecies,
+    gender:info.gender,
+    files:[]
+  }; // Manifest makes every generated raster traceable back to its exact repository source and corrective patch.
+  try{
+    for(let index=0;index<batch.length;index++){
+      const job=batch[index];
+      ui.status.textContent=`Baking ${index+1}/${batch.length}: ${job.outputName}`;
+      const output=await renderJob(job);
+      const bytes=await canvasToPngBytes(output);
+      const finalName=uniqueName(job.outputName,used);
+      entries.push({name:finalName,bytes});
+      manifest.files.push({
+        outputName:finalName,
+        suggestedRepoPath:outputRepoPathFor(job.descriptor,finalName),
+        kind:job.descriptor.kind,
+        garmentId:job.descriptor.garmentId||null,
+        bodyLayerId:job.descriptor.layerId||null,
+        sourceUrl:job.descriptor.sourceUrl,
+        targetFrontUrl:job.descriptor.targetUrl||null,
+        sourceSpecies:job.descriptor.sourceSpecies,
+        targetSpecies:job.descriptor.targetSpecies,
+        gender:job.descriptor.gender,
+        patchFile:job.patchName,
+        patchTransform:job.transform
+      });
+    }
+    const manifestBytes=zipEncoder.encode(JSON.stringify(manifest,null,2)); // JSON is stored alongside PNGs so later config wiring does not require guesswork.
+    entries.push({name:'behind-sprite-manifest.json',bytes:manifestBytes});
+    const zip=buildStoredZip(entries);
+    const archiveName=`behind_sprites_${safeToken(info.targetSpecies)}_${safeToken(info.gender)}.zip`;
+    downloadBlob(zip,archiveName);
+    api.logMessage(`Exported ${batch.length} patched behind sprite${batch.length===1?'':'s'} as ${archiveName}.`);
+    renderStatus(`Exported ${archiveName}.`);
+  }catch(error){reportError(error)}
+  finally{exporting=false;setDisabledState()}
+}
+function safeToken(value){return String(value||'unknown').replace(/[^a-z0-9_-]+/gi,'_').replace(/^_+|_+$/g,'')||'unknown'}
+
+function setBusyStatus(message){if(ui)ui.status.textContent=message}
+function reportError(error){
+  console.error(error);
+  const message=String(error?.message||error);
+  if(api)api.logMessage(`Behind sprite patch error: ${message}`);
+  renderStatus(`ERROR: ${message}`);
+}
+function renderStatus(extra=''){
+  if(!ui||!api)return;
+  const info=api.getOutputInfo();
+  const descriptor=currentSource?.descriptor||null;
+  const lines=[];
+  lines.push(info.ready?`target: ${info.targetSpecies} ${info.gender} → ${info.outputWidth}×${info.outputHeight}`:'target: repository assets still loading');
+  if(ui.kind.value==='clothing')lines.push(`clothing: ${info.garmentLabel||'(choose a garment above)'}`);
+  lines.push(`source: ${descriptor?descriptor.sourceUrl:'—'}`);
+  lines.push(`target front counterpart: ${descriptor?.targetUrl||'—'}`);
+  lines.push(`patch: ${patch?`${patch.name} (${patch.width}×${patch.height})`:'—'}`);
+  lines.push('patch replacement: picker resets before open; newest async selection wins');
+  lines.push(`main workflow route: ${ui.route.checked&&patch&&currentSource?`ACTIVE — ${currentSource.descriptor?.kind==='body'?'patch-only → live Base Transform + 6×6 fit → canonical rear body layer':'source+patch → live Base Transform + 6×6 fit → clothing plane'}`:ui.route.checked?'ready when both source and patch are loaded':'off'}`);
+  lines.push(`deformation input: ${currentSource?.descriptor?.kind==='body'?'CORRECTIVE PATCH ONLY':'source + corrective patch composite'}`);
+  lines.push(`export composition: ${currentSource?.descriptor?.kind==='body'?'BODY COPIED 1:1 + DEFORMED PATCH overlay':'source + patch deformed together'}`); // Mobile-visible proof of which pixels are allowed through the warp.
+  { const fit=api.captureFitState?.(); lines.push(`export fit: ${fit?.key||'(unavailable)'} base ${JSON.stringify(fit?.transform||{})} + ${fit?.offsets?.length||0} local offsets`); } // Mobile-visible proof that fitted clothing export sees the base transform.
+  if(currentSource&&patch&&(patch.width!==currentSource.canvas.width||patch.height!==currentSource.canvas.height))lines.push('PATCH SIZE NOTE: patch canvas differs from the source; drag it or use Fit patch canvas to base.');
+  lines.push(`ZIP batch: ${batch.length}`);
+  if(extra)lines.push(extra);
+  ui.status.textContent=lines.join('\n');
+  setDisabledState();
+}
+function setDisabledState(){
+  if(!ui||!api)return;
+  const ready=api.getOutputInfo().ready;
+  ui.kind.disabled=!ready||exporting;
+  ui.route.disabled=!ready||exporting;
+  ui.source.disabled=!ready||exporting||!catalog.length;
+  ui.file.disabled=!ready||exporting;
+  ui.clearCurrent.disabled=exporting||!patch;
+  for(const input of [ui.x,ui.y,ui.scaleX,ui.scaleY])input.disabled=exporting||!patch;
+  ui.reset.disabled=exporting||!patch;ui.fit.disabled=exporting||!patch||!currentSource;
+  ui.add.disabled=exporting||!patch||!currentSource;ui.png.disabled=exporting||!patch||!currentSource;
+  ui.zip.disabled=exporting||!batch.length;ui.clear.disabled=exporting||!batch.length;
+}
+
+
+window.addEventListener('hobunji-clothing-fit-assets-refreshed',()=>{
+  if(!api||!ui)return;
+  refreshCatalog(false); // Rebuild body source labels/URLs only after the selected species/gender assets have finished refreshing, then safely re-route any still-loaded corrective PNG.
+});
+
+waitForApi();
+})();

@@ -1,97 +1,3 @@
-items[i],i)}catch(error){out[i]={error}}}}
-  await Promise.all(Array.from({length:Math.min(n,items.length)},run));return out;
-}
-
-async function loadRepositoryData(){
-  status('Loading repository data…');
-  R.three.portraitCache.clear();
-  if(R.three.runtimeDocsBase&&R.three.runtimeDocsBase!==runtimeDocsBase()){
-    R.three.runtimeReadyPromise=null;
-    R.three.runtimeDocsBase=null;
-    E.threeStatus.textContent='Repository base changed; 3D runtime will reload from the new root.';
-  }
-  R.speciesCfg.clear();R.garments=[];R.images.clear();R.bodyCanvases.clear();R.garmentCanvases.clear();
-  try{
-    const [si,ci]=await Promise.all([fetchJson('config/species/index.json'),fetchJson('config/cosmetics/index.json')]);
-    R.speciesIndex=si.entries||[];
-
-    const speciesResults=await mapLimit(R.speciesIndex,6,async entry=>({
-      entry,cfg:await fetchJson('config/species/'+String(entry.path||'').replace(/^\.\//,''))
-    }));
-    for(const x of speciesResults)if(x&&!x.error)R.speciesCfg.set(x.entry.speciesId,x.cfg);
-
-    const cosmeticResults=await mapLimit(ci.entries||[],8,async entry=>({
-      entry,cfg:await fetchJson('config/cosmetics/'+String(entry.path||'').replace(/^\.\//,''))
-    }));
-    for(const x of cosmeticResults){
-      if(!x||x.error)continue;
-      const cfg=x.cfg,variants=cfg?.speciesVariants||{};
-      if(BODY_SLOTS.has(cfg?.slot)&&(variants['mao-ao_male']||variants['mao-ao_female'])){
-        R.garments.push({id:x.entry.id,label:cfg?.meta?.name||x.entry.id,slot:cfg.slot,cfg});
-      }
-    }
-    R.garments.sort((a,b)=>a.label.localeCompare(b.label));
-    rebuildSelectors();await refreshAssets();
-    status(`Loaded ${R.speciesCfg.size} species and ${R.garments.length} Mao-ao body garments.`);
-    log('Repository load complete.');
-  }catch(error){status('Load failed: '+error.message);log('ERROR '+error.message);console.error(error)}
-}
-function rebuildSelectors(){
-  const wantedSpecies=A.settings?.species||'mao-ao';
-  E.species.innerHTML='';
-  for(const entry of R.speciesIndex){
-    if(!R.speciesCfg.has(entry.speciesId))continue;
-    const o=document.createElement('option');o.value=entry.speciesId;o.textContent=entry.label||entry.speciesId;E.species.appendChild(o);
-  }
-  if([...E.species.options].some(o=>o.value===wantedSpecies))E.species.value=wantedSpecies;
-
-  const wantedGarment=A.settings?.garment||'';
-  E.garment.innerHTML='';
-  for(const garment of R.garments){
-    const o=document.createElement('option');o.value=garment.id;o.textContent=`${garment.label} [${garment.slot}]`;E.garment.appendChild(o);
-  }
-  if([...E.garment.options].some(o=>o.value===wantedGarment))E.garment.value=wantedGarment;
-  if(!E.garment.value&&E.garment.options.length)E.garment.selectedIndex=0;
-}
-function bodyLayers(species,gender){
-  return(R.speciesCfg.get(species)?.[gender]?.portraitBodyLayers||[]).map(x=>({path:x.url,url:assetUrl(x.url)})).filter(x=>x.path);
-}
-async function buildBodyCanvas(species,gender){
-  const key=`${species}::${gender}`;
-  if(R.bodyCanvases.has(key))return R.bodyCanvases.get(key);
-  const p=(async()=>{
-    const layers=bodyLayers(species,gender);
-    if(!layers.length)throw new Error(`No body layers for ${species} ${gender}.`);
-    const images=await Promise.all(layers.map(x=>loadImage(x.url)));
-    const width=Math.max(...images.map(i=>i.naturalWidth||i.width)),height=Math.max(...images.map(i=>i.naturalHeight||i.height));
-    const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
-    const x=canvas.getContext('2d',{alpha:true});x.imageSmoothingEnabled=false;
-    for(const image of images)x.drawImage(image,0,0); // Direct source-pixel compositing of the repository body layers.
-    canvas._paths=layers.map(x=>x.path);return canvas;
-  })();
-  R.bodyCanvases.set(key,p);return p;
-}
-function gatherImages(node,out=[],seen=new Set()){
-  if(!node||typeof node!=='object')return out;
-  if(node.image?.url){
-    const resolved=assetUrl(node.image.url);
-    if(!seen.has(resolved)){seen.add(resolved);out.push({url:resolved,path:node.image.url})}
-  }
-  for(const value of Object.values(node))gatherImages(value,out,seen);
-  return out;
-}
-function garmentRecord(){return R.garments.find(g=>g.id===E.garment.value)||null}
-async function buildVariantGarmentCanvas(id,species,gender,width,height){
-  const key=`${id}::${species}::${gender}::${width}x${height}`;
-  if(R.garmentCanvases.has(key))return R.garmentCanvases.get(key);
-  const p=(async()=>{
-    const garment=R.garments.find(x=>x.id===id),variant=garment?.cfg?.speciesVariants?.[`${species}_${gender}`];
-    if(!variant)return null; // Missing target-species art is normal; comparison overlay simply stays unavailable.
-    const layers=gatherImages(variant);
-    if(!layers.length)return null;
-    const images=await Promise.all(layers.map(x=>loadImage(x.url)));
-    const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
-    const x=canvas.getContext('2d',{alpha:true});x.imageSmoothingEnabled=false;
     for(const image of images)x.drawImage(image,0,0); // Flattens every authored layer of this exact species+gender variant.
     canvas._paths=layers.map(x=>x.path);return canvas;
   })();
@@ -111,3 +17,130 @@ function ensureTargetData(species,gender){
   return key;
 }
 function currentTransform(){const key=ensureTargetData(E.species.value,E.gender.value);return A.baseTransforms[key]}
+function currentOffsets(){const key=ensureTargetData(E.species.value,E.gender.value);return A.localOffsets[key]}
+function currentMaskTransform(){
+  const key=ensureTargetData(E.species.value,E.gender.value);
+  if(!A.maskPreviewTransforms[key])A.maskPreviewTransforms[key]=defaultMaskTransform();
+  return A.maskPreviewTransforms[key];
+}
+function syncMaskTransformControls(){
+  const tr=currentMaskTransform();
+  const pairs=[
+    [E.maskScaleX,E.maskScaleXNumber,tr.scaleX],
+    [E.maskScaleY,E.maskScaleYNumber,tr.scaleY],
+    [E.maskTranslateY,E.maskTranslateYNumber,tr.translateY],
+  ];
+  for(const [slider,number,value] of pairs){
+    slider.value=String(value);number.value=String(value);
+  }
+}
+function transformedSourceGrid(){
+  const tr=currentTransform(),w=Math.max(1,E.stage.width||234),h=Math.max(1,E.stage.height||173);
+  return SOURCE_GRID.map(p=>{
+    const px=(p.x-.5)*w*tr.scaleX+w*.5+tr.translateX;
+    const py=(p.y-.5)*h*tr.scaleY+h*.5+tr.translateY;
+    return{x:px/w,y:py/h};
+  }); // Global scale/translation is applied first.
+}
+function targetGrid(){
+  const baseGrid=transformedSourceGrid(),offsets=currentOffsets();
+  return baseGrid.map((p,i)=>({x:p.x+offsets[i].x,y:p.y+offsets[i].y})); // Local node corrections are applied second.
+}
+function captureFitState(){
+  const key=ensureTargetData(E.species.value,E.gender.value);
+  const tr=currentTransform();
+  return{
+    key,
+    species:E.species.value,
+    gender:E.gender.value,
+    transform:{scaleX:+tr.scaleX,scaleY:+tr.scaleY,translateX:+tr.translateX,translateY:+tr.translateY},
+    offsets:currentOffsets().map(point=>({x:+point.x,y:+point.y})),
+    outputWidth:R.body?.width||Math.max(1,E.stage.width||234),
+    outputHeight:R.body?.height||Math.max(1,E.stage.height||173)
+  }; // Used by PNG/ZIP exports so the complete fitted state cannot change between authoring and baking.
+}
+function targetGridFromFitState(fitState){
+  if(!fitState)return targetGrid();
+  const tr=fitState.transform||defaultTransform();
+  const offsets=Array.isArray(fitState.offsets)&&fitState.offsets.length===SOURCE_GRID.length?fitState.offsets:zeroOffsets();
+  const w=Math.max(1,+fitState.outputWidth||R.body?.width||E.stage.width||234);
+  const h=Math.max(1,+fitState.outputHeight||R.body?.height||E.stage.height||173);
+  const sx=Number.isFinite(+tr.scaleX)?+tr.scaleX:1,sy=Number.isFinite(+tr.scaleY)?+tr.scaleY:1;
+  const tx=Number.isFinite(+tr.translateX)?+tr.translateX:0,ty=Number.isFinite(+tr.translateY)?+tr.translateY:0;
+  return SOURCE_GRID.map((p,i)=>{
+    const px=(p.x-.5)*w*sx+w*.5+tx,py=(p.y-.5)*h*sy+h*.5+ty;
+    return{x:px/w+(Number.isFinite(+offsets[i].x)?+offsets[i].x:0),y:py/h+(Number.isFinite(+offsets[i].y)?+offsets[i].y:0)};
+  }); // Explicitly reapplies the saved base transform first, then the saved local 6×6 offsets.
+}
+function syncTransformControls(){
+  const tr=currentTransform();
+  for(const [slider,number,value] of [[E.scaleX,E.scaleXNumber,tr.scaleX],[E.scaleY,E.scaleYNumber,tr.scaleY],[E.translateX,E.translateXNumber,tr.translateX],[E.translateY,E.translateYNumber,tr.translateY]]){
+    slider.value=String(value);number.value=String(value);
+  }
+}
+function toDisplayPixels(points,width,height){
+  return points.map(p=>({x:p.x*(width-1),y:p.y*(height-1)})); // Keeps visible drag handles inside the canvas border.
+}
+function toWarpPixel(point,width,height){
+  return{x:point.x*width,y:point.y*height}; // Uses the actual raster edges (0..width / 0..height) so right/bottom source pixels are covered too.
+}
+function bilerpPoint(tl,tr,bl,br,u,v){
+  const a=(1-u)*(1-v),b=u*(1-v),c=(1-u)*v,d=u*v;
+  return{
+    x:tl.x*a+tr.x*b+bl.x*c+br.x*d,
+    y:tl.y*a+tr.y*b+bl.y*c+br.y*d
+  }; // Every point inside a cell depends on all four surrounding authored nodes.
+}
+
+function drawTriangleWarp(targetCtx,source,s0,s1,s2,d0,d1,d2){
+  const sx10=s1.x-s0.x,sy10=s1.y-s0.y,sx20=s2.x-s0.x,sy20=s2.y-s0.y;
+  const det=sx10*sy20-sx20*sy10;if(Math.abs(det)<1e-6)return;
+  const dx10=d1.x-d0.x,dy10=d1.y-d0.y,dx20=d2.x-d0.x,dy20=d2.y-d0.y;
+  const a=(dx10*sy20-dx20*sy10)/det;
+  const c=(-dx10*sx20+dx20*sx10)/det;
+  const b=(dy10*sy20-dy20*sy10)/det;
+  const d=(-dy10*sx20+dy20*sx10)/det;
+  const e=d0.x-a*s0.x-c*s0.y;
+  const f=d0.y-b*s0.x-d*s0.y;
+
+  const points=[d0,d1,d2],center={x:(d0.x+d1.x+d2.x)/3,y:(d0.y+d1.y+d2.y)/3};
+  const radius=Math.max(...points.map(p=>Math.hypot(p.x-center.x,p.y-center.y)),.5);
+  const clipScale=1+.7/radius; // Overlaps neighboring affine patches by less than one output pixel to hide canvas clip antialias seams.
+  const clipPoints=points.map(p=>({x:center.x+(p.x-center.x)*clipScale,y:center.y+(p.y-center.y)*clipScale}));
+
+  targetCtx.save();
+  targetCtx.beginPath();
+  targetCtx.moveTo(clipPoints[0].x,clipPoints[0].y);targetCtx.lineTo(clipPoints[1].x,clipPoints[1].y);targetCtx.lineTo(clipPoints[2].x,clipPoints[2].y);targetCtx.closePath();
+  targetCtx.clip();
+  targetCtx.setTransform(a,b,c,d,e,f);
+  targetCtx.imageSmoothingEnabled=false;
+  targetCtx.drawImage(source,0,0);
+  targetCtx.restore();
+}
+function drawBilinearCell(targetCtx,source,sTL,sTR,sBL,sBR,dTL,dTR,dBL,dBR,subdivisions=CELL_SUBDIVISIONS){
+  for(let sy=0;sy<subdivisions;sy++){
+    const v0=sy/subdivisions,v1=(sy+1)/subdivisions;
+    for(let sx=0;sx<subdivisions;sx++){
+      const u0=sx/subdivisions,u1=(sx+1)/subdivisions;
+      const sn00=bilerpPoint(sTL,sTR,sBL,sBR,u0,v0),sn10=bilerpPoint(sTL,sTR,sBL,sBR,u1,v0);
+      const sn01=bilerpPoint(sTL,sTR,sBL,sBR,u0,v1),sn11=bilerpPoint(sTL,sTR,sBL,sBR,u1,v1);
+      const dn00=bilerpPoint(dTL,dTR,dBL,dBR,u0,v0),dn10=bilerpPoint(dTL,dTR,dBL,dBR,u1,v0);
+      const dn01=bilerpPoint(dTL,dTR,dBL,dBR,u0,v1),dn11=bilerpPoint(dTL,dTR,dBL,dBR,u1,v1);
+      if(((sx+sy)&1)===0){
+        drawTriangleWarp(targetCtx,source,sn00,sn10,sn11,dn00,dn10,dn11);
+        drawTriangleWarp(targetCtx,source,sn00,sn11,sn01,dn00,dn11,dn01);
+      }else{
+        drawTriangleWarp(targetCtx,source,sn00,sn10,sn01,dn00,dn10,dn01);
+        drawTriangleWarp(targetCtx,source,sn10,sn11,sn01,dn10,dn11,dn01);
+      }
+    }
+  }
+}
+function warpExtendedOverlay(source,targetNorm,outWidth,normalOutHeight){
+  if(!source||!R.maoBody)return null;
+  const sourceNormalHeight=R.maoBody.height;
+  const sourceWidth=source.width;
+  const sourceHeight=source.height;
+
+  // First determine the extrapolated destination bottom row from the final two normal 6×6 rows.
+  const targetPx=targetNorm.map(p=>({x:p.x*outWidth,y:p.y*normalOutHeight}));

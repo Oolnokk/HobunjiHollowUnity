@@ -1,31 +1,3 @@
-yMask;
-  if(typeof original!=='function')return callback();
-  const wrapped=function previewCloudMaskTransform(ctx,image,xform){
-    return original(ctx,image,previewedCloudMaskXform(xform||{}));
-  };
-  // Preserve the runtime marker because arm-cloud-mask checks it to avoid
-  // installing another canonical Y-scale wrapper around the temporary function.
-  if(original.__hobunjiCloudMaskYScaled)wrapped.__hobunjiCloudMaskYScaled=true;
-  window.applyPortraitOpacityMask=wrapped;
-  try{
-    return await callback();
-  }finally{
-    window.applyPortraitOpacityMask=original;
-  }
-}
-
-async function applyRuntimeCloudMask(canvas){
-  const cfg=R.speciesCfg.get(E.species.value)?.[E.gender.value];
-  const maskLayer=cfg?.portraitOpacityMaskLayer;
-  if(!maskLayer?.url||typeof window.applyPortraitOpacityMask!=='function')return canvas;
-  const image=await loadImage(assetUrl(maskLayer.url));
-  if(!image)return canvas;
-  const ctx=canvas.getContext('2d',{alpha:true});
-  window.applyPortraitOpacityMask(ctx,image,previewedCloudMaskXform(maskLayer.xform||{}));
-  return canvas;
-}
-async function rawGarmentToRuntimeLayer(rawCanvas,opacity=1){
-  if(!rawCanvas||!R.body)return null;
   const size=Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.previewPortraitCanvasSize)||200;
   const out=Object.assign(document.createElement('canvas'),{width:size,height:size});
   const ctx=out.getContext('2d',{alpha:true});ctx.imageSmoothingEnabled=false;
@@ -47,9 +19,18 @@ async function composeRuntimePortrait(){
   const front=Object.assign(document.createElement('canvas'),{width:runtime.front.width,height:runtime.front.height});
   const back=Object.assign(document.createElement('canvas'),{width:runtime.back.width,height:runtime.back.height});
   const fctx=front.getContext('2d',{alpha:true}),bctx=back.getContext('2d',{alpha:true});
-  fctx.drawImage(runtime.front,0,0);bctx.drawImage(runtime.back,0,0);
+  fctx.drawImage(runtime.front,0,0);
 
-  if(E.showGarment.checked&&R.cloth){
+  bctx.drawImage(runtime.back,0,0); // Canonical rear base body is always the backplane foundation.
+  if(routedPatchIsBody()&&mainClothSource()&&E.showBody.checked){
+    const warpedPatch=currentWarp();
+    const patchLayer=await renderRoutedBodyPatchOverlay(
+      runtime.profile,warpedPatch,R.patchWorkflow.descriptor,back.width,back.height
+    );
+    if(patchLayer)bctx.drawImage(patchLayer,0,0); // Explicit backplane order: patch is in front of the torso/body, while the clothing block below still draws afterward and therefore remains in front of the patch.
+  }
+
+  if(mainClothSource()&&!routedPatchIsBody()&&E.showGarment.checked){
     const warped=currentWarp();
     const layer=await rawGarmentToRuntimeLayer(warped,+E.opacity.value);
     if(layer){
@@ -128,4 +109,42 @@ function ensureThreePreview(){
   const group=new THREE.Group();group.name='ClothingFitRuntimeViewRoot';scene.add(group);
   const grid=new THREE.GridHelper(4,16,0x4b6175,0x263440);grid.position.y=0;scene.add(grid);
 
-  R.three.scene=scene;R.three.camera=camera;R.three.renderer=renderer;R.three.group=group;R.three.r
+  R.three.scene=scene;R.three.camera=camera;R.three.renderer=renderer;R.three.group=group;R.three.ready=true;
+
+  function resize(){
+    const w=Math.max(1,E.threeHost.clientWidth),h=Math.max(1,E.threeHost.clientHeight);
+    renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();
+  }
+  new ResizeObserver(resize).observe(E.threeHost);resize();
+
+  renderer.domElement.addEventListener('pointerdown',e=>{
+    R.three.drag={x:e.clientX,y:e.clientY,rotX:R.three.rotX,rotY:R.three.rotY};
+    renderer.domElement.setPointerCapture(e.pointerId);e.preventDefault();
+  });
+  renderer.domElement.addEventListener('pointermove',e=>{
+    if(!R.three.drag)return;
+    R.three.rotY=R.three.drag.rotY+(e.clientX-R.three.drag.x)*0.008;
+    R.three.rotX=Math.max(-1.0,Math.min(1.0,R.three.drag.rotX+(e.clientY-R.three.drag.y)*0.008));
+    group.rotation.set(R.three.rotX,R.three.rotY,0);e.preventDefault();
+  });
+  const end=e=>{R.three.drag=null;if(e?.pointerId!=null&&renderer.domElement.hasPointerCapture?.(e.pointerId))renderer.domElement.releasePointerCapture(e.pointerId)};
+  renderer.domElement.addEventListener('pointerup',end);renderer.domElement.addEventListener('pointercancel',end);
+  renderer.domElement.addEventListener('wheel',e=>{
+    R.three.zoom=Math.max(1.1,Math.min(8,R.three.zoom+Math.sign(e.deltaY)*0.2));
+    camera.position.z=R.three.zoom;e.preventDefault();
+  },{passive:false});
+  (function loop(){requestAnimationFrame(loop);renderer.render(scene,camera)})();
+  E.threeStatus.textContent='3D scene ready; loading runtime rig…';
+  return true;
+}
+function frameRuntimeRig(){
+  if(!R.three.rigRoot||!window.THREE)return;
+  const THREE=window.THREE,box=new THREE.Box3().setFromObject(R.three.rigRoot);
+  if(box.isEmpty())return;
+  const center=box.getCenter(new THREE.Vector3()),size=box.getSize(new THREE.Vector3());
+  const fov=THREE.MathUtils.degToRad(R.three.camera.fov||38);
+  const aspect=Math.max(.1,R.three.camera.aspect||1);
+  const horizontalFov=2*Math.atan(Math.tan(fov/2)*aspect);
+  const byH=(size.y/2+.18)/Math.max(.01,Math.tan(fov/2));
+  const byW=(size.x/2+.18)/Math.max(.01,Math.tan(horizontalFov/2));
+  const distance=Math.max(1.25,byH,byW)+size.z/2;

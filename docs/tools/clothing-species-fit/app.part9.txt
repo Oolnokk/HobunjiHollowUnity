@@ -1,42 +1,3 @@
-eady=true;
-
-  function resize(){
-    const w=Math.max(1,E.threeHost.clientWidth),h=Math.max(1,E.threeHost.clientHeight);
-    renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();
-  }
-  new ResizeObserver(resize).observe(E.threeHost);resize();
-
-  renderer.domElement.addEventListener('pointerdown',e=>{
-    R.three.drag={x:e.clientX,y:e.clientY,rotX:R.three.rotX,rotY:R.three.rotY};
-    renderer.domElement.setPointerCapture(e.pointerId);e.preventDefault();
-  });
-  renderer.domElement.addEventListener('pointermove',e=>{
-    if(!R.three.drag)return;
-    R.three.rotY=R.three.drag.rotY+(e.clientX-R.three.drag.x)*0.008;
-    R.three.rotX=Math.max(-1.0,Math.min(1.0,R.three.drag.rotX+(e.clientY-R.three.drag.y)*0.008));
-    group.rotation.set(R.three.rotX,R.three.rotY,0);e.preventDefault();
-  });
-  const end=e=>{R.three.drag=null;if(e?.pointerId!=null&&renderer.domElement.hasPointerCapture?.(e.pointerId))renderer.domElement.releasePointerCapture(e.pointerId)};
-  renderer.domElement.addEventListener('pointerup',end);renderer.domElement.addEventListener('pointercancel',end);
-  renderer.domElement.addEventListener('wheel',e=>{
-    R.three.zoom=Math.max(1.1,Math.min(8,R.three.zoom+Math.sign(e.deltaY)*0.2));
-    camera.position.z=R.three.zoom;e.preventDefault();
-  },{passive:false});
-  (function loop(){requestAnimationFrame(loop);renderer.render(scene,camera)})();
-  E.threeStatus.textContent='3D scene ready; loading runtime rig…';
-  return true;
-}
-function frameRuntimeRig(){
-  if(!R.three.rigRoot||!window.THREE)return;
-  const THREE=window.THREE,box=new THREE.Box3().setFromObject(R.three.rigRoot);
-  if(box.isEmpty())return;
-  const center=box.getCenter(new THREE.Vector3()),size=box.getSize(new THREE.Vector3());
-  const fov=THREE.MathUtils.degToRad(R.three.camera.fov||38);
-  const aspect=Math.max(.1,R.three.camera.aspect||1);
-  const horizontalFov=2*Math.atan(Math.tan(fov/2)*aspect);
-  const byH=(size.y/2+.18)/Math.max(.01,Math.tan(fov/2));
-  const byW=(size.x/2+.18)/Math.max(.01,Math.tan(horizontalFov/2));
-  const distance=Math.max(1.25,byH,byW)+size.z/2;
   R.three.zoom=distance;
   R.three.camera.position.set(center.x,Math.max(center.y,size.y*.42),center.z+distance);
   R.three.camera.lookAt(center.x,Math.max(center.y,size.y*.42),center.z);
@@ -115,4 +76,76 @@ async function updateThreePreview(){
       if(buildId!==R.three.buildGeneration){feet?.dispose?.();disposeObjectTree(rigGroup);return}
       if(extCanvas){
         const extGroup=makeExtendedRigPlanes(THREE,extCanvas,modelWidth,modelHeight);
-        if(extGroup){rigGroup.add(extGroup);
+        if(extGroup){rigGroup.add(extGroup);R.three.extendedGroup=extGroup}
+      }
+    }
+
+    R.three.group.add(rigGroup);
+    R.three.rigRoot=rigGroup;R.three.avatarModel=model;R.three.feet=feet;
+
+    // Match the full-character preview contract used elsewhere in the repository.
+    const scale=window.HobunjiCharacterRigScale?.scaleFor?.(E.species.value,E.gender.value)||null;
+    window.HobunjiCharacterRigScale?.applyToParent?.(rigGroup,E.species.value,E.gender.value,scale,0);
+    window.ProceduralHandFrameDriver?.syncNow?.();
+
+    rigGroup.updateMatrixWorld(true);
+    R.three.group.rotation.set(R.three.rotX,R.three.rotY,0);
+    frameRuntimeRig();
+    const cloud=R.speciesCfg.get(E.species.value)?.[E.gender.value]?.portraitOpacityMaskLayer?.url?'cloud mask active':'no species cloud mask';
+    const handState=model.userData?.proceduralHandRig?'hands attached':'hands queued';
+    E.threeStatus.textContent=`Runtime rig: portrait + neck + ${handState} + feet + ${cloud}${R.extendedGroup?' + extended overlay':''}.`;
+  }catch(error){
+    if(buildId!==R.three.buildGeneration)return;
+    console.error(error);E.threeStatus.textContent='Runtime rig preview failed: '+error.message;log('3D RUNTIME ERROR '+error.message);
+  }
+}
+function scheduleThreePreview(delay=90){
+  clearTimeout(R.three.buildTimer);
+  R.three.buildTimer=setTimeout(()=>updateThreePreview(),delay);
+}
+function render(){
+  if(!R.body)return;
+  sizeStage();C.setTransform(1,0,0,1,0,0);C.clearRect(0,0,E.stage.width,E.stage.height);C.imageSmoothingEnabled=false;
+  if(E.showBody.checked)C.drawImage(R.body,0,0);
+
+  if(mode==='transform'||mode==='fit'||mode==='preview'){
+    R.warped=currentWarp();
+    const showRoutedSource=routedPatchIsBody()?E.showBody.checked:E.showGarment.checked;
+    if(R.warped&&showRoutedSource){
+      C.save();C.globalAlpha=routedPatchIsBody()?1:+E.opacity.value;C.drawImage(R.warped,0,0);C.restore();
+    }
+  }
+
+  if(E.showAuthored.checked&&R.authoredTargetCloth){
+    C.save();
+    C.globalAlpha=+E.authoredOpacity.value;
+    C.drawImage(R.authoredTargetCloth,0,0); // Existing hand-authored target-species art overlays the experimental warp for visual matching.
+    C.restore();
+  }
+
+  if(E.showMeshes.checked){
+    drawGrid(C,SOURCE_GRID,'#ffb84a',false); // Fixed Mao-ao source.
+    drawGrid(C,transformedSourceGrid(),'#65d48a',mode==='transform'); // Recorded scale + translation.
+    if(mode!=='transform')drawGrid(C,targetGrid(),'#45c3ff',mode!=='preview'); // Base transform plus local fit.
+  }
+
+  E.label.textContent=
+    mode==='transform'
+      ?`Base Transform • ${garmentRecord()?.label||''} • ${E.species.options[E.species.selectedIndex]?.text||E.species.value} ${E.gender.value}`
+      :mode==='body'
+        ?`Grid only • ${E.species.options[E.species.selectedIndex]?.text||E.species.value} ${E.gender.value}`
+        :mode==='fit'
+          ?`Species Fit • ${garmentRecord()?.label||''} • Mao-ao ${E.gender.value} → ${E.species.options[E.species.selectedIndex]?.text||E.species.value}`
+          :`Preview • recorded base transform + local 6×6 deformation applied to ${garmentRecord()?.label||''}`;
+
+  refreshHelp();refreshDebug();scheduleThreePreview();
+}
+function refreshHelp(){
+  E.help.textContent=
+    mode==='transform'
+      ?'First fit overall size and position: independent Scale X / Scale Y plus translation. Drag the canvas to translate quickly.'
+      :mode==='body'
+        ?'Edit only the local target 6×6 corrections without clothing.'
+        :mode==='fit'
+          ?'Now drag BLUE points for local shape corrections on top of the recorded global transform.'
+          :'Switch garments to verify the same saved global transform and local corrections are reused.';

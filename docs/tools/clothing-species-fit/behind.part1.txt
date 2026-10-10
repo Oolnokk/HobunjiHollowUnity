@@ -1,0 +1,82 @@
+(() => {
+'use strict';
+
+const API_POLL_MS=180; // Poll interval while the core editor and repository assets finish loading.
+const zipEncoder=new TextEncoder(); // Encodes ZIP member names and manifest text as UTF-8 bytes.
+const crcTable=(()=>{
+  const table=new Uint32Array(256); // Shared CRC-32 lookup table for the dependency-free ZIP writer.
+  for(let n=0;n<256;n++){
+    let c=n; // Builds one standard ZIP CRC-32 table entry.
+    for(let k=0;k<8;k++)c=(c&1)?(0xedb88320^(c>>>1)):(c>>>1);
+    table[n]=c>>>0;
+  }
+  return table;
+})();
+
+let api=null; // Receives the narrow deformation/source bridge exposed by the core clothing editor.
+let ui=null; // Holds injected behind-sprite authoring controls.
+let catalog=[]; // Current exact repository image layers available for the selected garment/body mode.
+let currentSource=null; // Loaded base sprite descriptor + native canvas.
+let patch=null; // Session-only corrective PNG that is composited over the current source sprite.
+let patchImportGeneration=0; // Guards rapid mobile replacements so an older async image decode cannot overwrite the newest chosen patch.
+let sourceLoadGeneration=0; // Guards species/gender/source refreshes so a late image load can never restore a stale body sprite from the previous selection.
+let patchTransform={x:0,y:0,scaleX:1,scaleY:1}; // Positions/scales cropped patches before species deformation.
+let batch=[]; // Saved behind-sprite jobs for the current target species+gender.
+let targetKey=''; // Detects target changes so queued jobs cannot be exported through the wrong deformation grid.
+let exporting=false; // Prevents overlapping PNG/ZIP exports on slower mobile browsers.
+let drag=null; // Pointer-drag state for moving a cropped patch directly in the source preview.
+
+function waitForApi(){
+  api=window.ClothingSpeciesFitTool||null;
+  if(!api){setTimeout(waitForApi,API_POLL_MS);return}
+  buildUi();
+  refreshCatalog(true);
+  setInterval(syncFromCore,API_POLL_MS*4);
+}
+
+function buildUi(){
+  if(document.getElementById('behindSpritePatchSection'))return; // Avoids duplicate panels if the standalone file is re-evaluated by a mobile viewer.
+  const section=document.createElement('section'); // Adds the intended front-art-to-behind-art workflow beside the existing editor controls.
+  section.id='behindSpritePatchSection';
+  section.innerHTML=`
+    <h2>Patch setup → main workflow</h2>
+    <div class="small">Build rear-view artwork from existing front sprites. Clothing remains Mao-ao → target through the 6×6 fit. Body patching follows the currently selected species/gender directly: its torso/arm source updates with species, the positioned corrective PNG stays in that body sprite's native pixel space, and avatar assembly supplies the canonical body tint/transform.</div>
+    <div class="field"><label for="behindPatchKind">Source type</label><select id="behindPatchKind"><option value="clothing">Selected clothing piece</option><option value="body">Body sprite</option></select></div>
+    <div class="row"><label class="small"><input id="behindPatchRoute" type="checkbox" checked> route selected patch into main workflow</label></div>
+    <div class="field"><label for="behindPatchSource">Existing source layer</label><select id="behindPatchSource"></select></div>
+    <div class="field"><label for="behindPatchFile">Corrective patch PNG</label><input id="behindPatchFile" type="file" accept="image/png,.png"></div>
+    <div class="row"><button id="behindPatchClearCurrent">Clear current patch</button></div>
+    <div class="row">
+      <label class="small">X <input id="behindPatchX" type="number" step="1" value="0" style="width:72px"></label>
+      <label class="small">Y <input id="behindPatchY" type="number" step="1" value="0" style="width:72px"></label>
+    </div>
+    <div class="row">
+      <label class="small">Scale X <input id="behindPatchScaleX" type="number" step="0.01" min="0.01" value="1" style="width:72px"></label>
+      <label class="small">Scale Y <input id="behindPatchScaleY" type="number" step="0.01" min="0.01" value="1" style="width:72px"></label>
+    </div>
+    <div class="row"><button id="behindPatchReset">Reset patch placement</button><button id="behindPatchFit">Fit patch canvas to base</button></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:7px">
+      <div><div class="small">Source + corrective patch</div><canvas id="behindPatchSourcePreview" width="234" height="173" style="display:block;width:100%;height:auto;image-rendering:pixelated;background:#0b1018;border:1px solid #26384f;touch-action:none"></canvas></div>
+      <div><div id="behindPatchOutputLabel" class="small">Deformed workflow output</div><canvas id="behindPatchOutputPreview" width="234" height="173" style="display:block;width:100%;height:auto;image-rendering:pixelated;background:#0b1018;border:1px solid #26384f"></canvas></div>
+    </div>
+    <div class="row" style="margin-top:7px"><button id="behindPatchAdd">Save / replace in ZIP batch</button><button id="behindPatchPng">Export current behind PNG</button></div>
+    <div class="row"><button id="behindPatchZip">Export behind sprites ZIP</button><button id="behindPatchClear">Clear ZIP batch</button></div>
+    <div id="behindPatchStatus" class="importStatus">Waiting for repository assets…</div>
+    <div id="behindPatchJobs" class="small" style="white-space:pre-wrap;margin-top:5px">ZIP batch: empty</div>`;
+
+  const downloads=[...document.querySelectorAll('.controls section')].find(candidate=>candidate.querySelector('h2')?.textContent.trim()==='Downloads'); // Keeps the new workflow next to the editor's existing export controls.
+  if(downloads)downloads.before(section);else document.querySelector('.controls')?.appendChild(section);
+
+  ui={
+    section,
+    kind:section.querySelector('#behindPatchKind'), // Switches between the selected garment's exact image layers and Mao-ao body layers.
+    route:section.querySelector('#behindPatchRoute'), // When checked, the selected clothing/body composite becomes the main editor's deformable source.
+    source:section.querySelector('#behindPatchSource'), // Chooses the exact repository raster to patch.
+    file:section.querySelector('#behindPatchFile'), // Loads/replaces one transparent corrective PNG locally; source loading is allowed to finish independently.
+    clearCurrent:section.querySelector('#behindPatchClearCurrent'), // Explicitly drops the active patch and routed main-workflow override without changing source selection.
+    x:section.querySelector('#behindPatchX'),y:section.querySelector('#behindPatchY'), // Patch translation in source pixels.
+    scaleX:section.querySelector('#behindPatchScaleX'),scaleY:section.querySelector('#behindPatchScaleY'), // Independent patch scale before deformation.
+    reset:section.querySelector('#behindPatchReset'),fit:section.querySelector('#behindPatchFit'), // Placement shortcuts for full-canvas and cropped patches.
+    sourcePreview:section.querySelector('#behindPatchSourcePreview'), // Displays the exact source raster plus corrective overlay.
+    outputPreview:section.querySelector('#behindPatchOutputPreview'), // Displays the exact source routed through the deformation workflow; body mode is patch-only.
+    outputLabel:section.querySelector('#behindPatchOutputLabel'), // Clarifies whether the right preview is patch-only or a clothing composite.

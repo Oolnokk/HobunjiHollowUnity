@@ -1,111 +1,71 @@
-(', '));
-
-    E.threeStatus.textContent='Runtime modules loaded; fetching portrait configuration…';
-    const cosmeticsPromise=window.NpcAvatarPreview.ensurePortraitCosmetics({
-      assetBase:new URL('assets/',docs).href,
-      configBase:new URL('config/',docs).href,
-    });
-    await Promise.race([
-      cosmeticsPromise,
-      new Promise((_,reject)=>setTimeout(()=>reject(new Error('Timed out loading portrait configuration')),20000))
-    ]);
-
-    window.applyHobunjiAttachmentRigProfileCorrections?.();
-    E.threeStatus.textContent='Hobunji runtime rig loaded.';
-    return true;
-  })().catch(error=>{
-    R.three.runtimeReadyPromise=null;
-    E.threeStatus.textContent='Runtime load failed: '+(error?.message||error)+' — tap Retry runtime.';
-    throw error;
-  });
-  return R.three.runtimeReadyPromise;
+function canonicalPortraitImageForTint(img,sourceKey,tint){
+  const resolver=window._imageForTint; // portrait-utils' own image+tint resolver; using it preserves the exact body-color algorithm and cache behavior.
+  if(typeof resolver!=='function')throw new Error('Canonical portrait tint resolver is unavailable; cannot safely inject a body patch without changing avatar colors.');
+  return resolver(img,sourceKey,tint);
 }
-function resetRuntimeLoad(){
-  // Modules already executed safely stay installed; retry simply resumes/re-executes
-  // idempotent runtime modules against the same repository root.
-  R.three.runtimeReadyPromise=null;
-  R.three.portraitCache.clear();
-  R.three.buildGeneration++;
-  E.threeStatus.textContent='Retrying runtime…';
-  scheduleThreePreview(0);
+function runtimeBodyLayerRecord(profile,descriptor=null){
+  const layers=profile?.fighter?.bodyLayers||[]; // Exact runtime-normalized body-layer records; these carry the same preset/transform fields portrait-utils will use for the real avatar.
+  const wanted=String(descriptor?.layerId||descriptor?.role||'').toLowerCase();
+  if(wanted){
+    const exact=layers.find(layer=>String(layer?.id||'').toLowerCase()===wanted);
+    if(exact)return exact;
+    const normalizedWanted=wanted.replace(/[^a-z0-9]/g,'');
+    const normalized=layers.find(layer=>String(layer?.id||'').toLowerCase().replace(/[^a-z0-9]/g,'')===normalizedWanted);
+    if(normalized)return normalized;
+  }
+  return layers.find(layer=>String(layer?.id||'').toLowerCase()==='torso')||layers[0]||null;
 }
-function runtimeProfileKey(){return`${E.species.value}::${E.gender.value}::${R.three.runtimeDocsBase||runtimeDocsBase()}`}
-function blankRuntimeNpc(){
-  return{
-    name:'Clothing fit runtime preview',
-    appearance:{
-      speciesId:E.species.value,
-      gender:E.gender.value,
-      randomSeed:`clothing-fit-runtime:${E.species.value}:${E.gender.value}`,
-      cosmetics:{
-        hairFront:'none',hairBack:'none',hairSide:'none',hairSideL:'none',
-        eyes:'none',upperFace:'none',facialHair:'none'
-      }
-    },
-    equippedCosmetics:[],
-    appliedDyes:{},
+function patchCanvasDataUrl(canvas){
+  try{return canvas?.toDataURL?.('image/png')||''}catch(error){throw new Error(`Could not encode routed body patch for portrait assembly: ${error?.message||error}`)}
+}
+async function renderRoutedBodyPatchOverlay(profile,rawPatchCanvas,descriptor,width,height){
+  if(!profile||!rawPatchCanvas)return null;
+  const runtimeLayer=runtimeBodyLayerRecord(profile,descriptor);
+  if(!runtimeLayer)throw new Error('Could not resolve the selected body layer inside the runtime portrait profile.');
+  const patchUrl=patchCanvasDataUrl(rawPatchCanvas);
+  if(!patchUrl)throw new Error('Could not encode the routed body patch as an isolated portrait layer.');
+
+  const overlay=Object.assign(document.createElement('canvas'),{width,height}); // Transparent rear-body overlay; drawn after the ordinary rear body and before clothing in composeRuntimePortrait().
+  const isolatedLayer={...runtimeLayer,url:patchUrl}; // Reuses the exact runtime body-layer transform/preset, tint slot, position, and any future metadata while swapping only its raster.
+  const isolatedFighter={
+    ...profile.fighter,
+    id:`__clothing_fit_body_patch_${safeName(E.species.value)}_${safeName(E.gender.value)}_${safeName(isolatedLayer.id||'layer')}`, // Unique id prevents resolvePortraitFighter() from replacing this one-layer fighter with the canonical full-body fighter.
+    headUrl:null,headFallbackUrls:[],urLayers:[],bodyLayers:[isolatedLayer]
+  };
+  const isolatedProfile={...profile,fighter:isolatedFighter};
+  await withPreviewCloudMaskTransform(()=>window.NpcAvatarPreview.renderProfileToCanvas(
+    overlay,isolatedProfile,{
+      seatId:'clothing-fit-runtime-body-patch',portraitView:'behind',forceEyesOpen:true,
+      omitHeadSpriteAndCosmetics:true
+    }
+  )); // portrait-utils owns tinting, preset resolution, rear flip, breathing/body deformation, and mask placement; no transform is reconstructed here.
+  return overlay;
+}
+function bodyPatchImageForTintResolver(rawPatchCanvas,descriptor){
+  const targetLayer=targetBodyLayerRecord(descriptor);
+  const targetUrl=targetLayer?.url||descriptor?.targetUrl||'';
+  const compositeByImage=new WeakMap(); // Reuses the same pre-tint composite if the portrait renderer asks for the target layer more than once in one rear render.
+  const routeRevision=R.patchWorkflow.revision; // Makes canonical tint caches distinguish this live patch state from earlier replacements/drags.
+  return function bodyPatchAwareImageForTint(img,sourceKey,tint){
+    if(!samePortraitAsset(sourceKey,targetUrl))return canonicalPortraitImageForTint(img,sourceKey,tint);
+    let composite=compositeByImage.get(img);
+    if(!composite){
+      const width=Number(img?.naturalWidth||img?.width)||rawPatchCanvas.width;
+      const height=Number(img?.naturalHeight||img?.height)||rawPatchCanvas.height;
+      composite=Object.assign(document.createElement('canvas'),{width,height});
+      const ctx=composite.getContext('2d',{alpha:true});ctx.imageSmoothingEnabled=false;
+      ctx.drawImage(img,0,0,width,height); // The ordinary body layer remains the base raster; the corrective patch becomes part of this same layer rather than a second avatar plane.
+      ctx.drawImage(rawPatchCanvas,0,0,rawPatchCanvas.width,rawPatchCanvas.height,0,0,width,height); // Full-sprite coordinates are preserved; only a dimension mismatch is proportionally normalized to the actual target raster.
+      compositeByImage.set(img,composite);
+    }
+    const patchedSourceKey=`${targetUrl}#hobunji-body-patch-${routeRevision}-${currentWarpCacheSignature()}`;
+    return canonicalPortraitImageForTint(composite,patchedSourceKey,tint); // Tint the original body pixels and patch together before the renderer applies its own transform preset, rear flip, breathing/deformation, and mask.
   };
 }
-async function runtimePortraitSet(){
-  await ensureRigRuntime();
-  const profileKey=runtimeProfileKey();
-  const mask=currentMaskTransform();
-  const cacheKey=`${profileKey}::mask:${Number(mask.scaleX).toFixed(4)}:${Number(mask.scaleY).toFixed(4)}:${Number(mask.translateY).toFixed(4)}`;
-  if(R.three.portraitCache.has(cacheKey))return R.three.portraitCache.get(cacheKey);
-
-  const promise=(async()=>{
-    const npc=blankRuntimeNpc();
-    let profile=window.NpcAvatarPreview.buildProfileFromNpcExport(npc);
-    if(!profile){
-      // Keep the random/profile seed independent of mask sliders so changing the
-      // mask never changes body colours or any other appearance choice.
-      profile=window.NpcAvatarPreview.randomProfile(`clothing-fit:${profileKey}`,{
-        speciesId:E.species.value,gender:E.gender.value
-      });
-    }
-    if(!profile)throw new Error(`Could not build runtime portrait profile for ${E.species.value} ${E.gender.value}.`);
-
-    for(const prop of ['hair','hairFront','hairBack','hairSide','hairSideL','eyes','upperFace','facialHair','hat','hood','pauldron','torsoCosmetic','armCosmetic']){
-      if(profile[prop])profile[prop]={id:'none',label:'None',tintSlot:null,layers:[]};
-    }
-
-    const size=Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.previewPortraitCanvasSize)||200;
-    const make=()=>Object.assign(document.createElement('canvas'),{width:size,height:size});
-    const front=make(),back=make(),head=make();
-
-    // This is the important V11 change: the preview transform is installed
-    // while portrait-utils renders the WHOLE front/back portrait. Its canonical
-    // destination-out pass therefore cuts base torso, base arms, torso clothing,
-    // overwear, etc. exactly at the normal full-portrait mask stage.
-    await withPreviewCloudMaskTransform(()=>window.NpcAvatarPreview.renderProfileToCanvas(
-      front,profile,{seatId:'clothing-fit-runtime',forceEyesOpen:true}
-    ));
-    await withPreviewCloudMaskTransform(()=>window.NpcAvatarPreview.renderProfileToCanvas(
-      back,profile,{seatId:'clothing-fit-runtime',portraitView:'behind',forceEyesOpen:true}
-    ));
-
-    // Keep the neck/head-only texture on the ordinary runtime path. The cloud
-    // mask belongs to the body portrait and should not be authored by these sliders.
-    await window.NpcAvatarPreview.renderProfileToCanvas(
-      head,profile,{seatId:'clothing-fit-runtime',onlyHeadSprite:true,forceEyesOpen:true}
-    );
-    return{npc,profile,front,back,head,size};
-  })();
-  R.three.portraitCache.set(cacheKey,promise);
-  try{return await promise}catch(error){R.three.portraitCache.delete(cacheKey);throw error}
-}
-function normalizedLayerXform(raw={}){
-  return{
-    ax:Number(raw.ax)||0,ay:Number(raw.ay)||0,
-    sx:Number(raw.sx??raw.scaleX??raw.scaleMulX)||1,
-    sy:Number(raw.sy??raw.scaleY??raw.scaleMulY)||1,
-  };
-}
-function targetBodyLayerXform(){
-  const cfg=R.speciesCfg.get(E.species.value)?.[E.gender.value];
-  const torso=(cfg?.portraitBodyLayers||[]).find(layer=>String(layer.id||'').toLowerCase()==='torso')
-    ||(cfg?.portraitBodyLayers||[])[0];
-  return normalizedLayerXform(torso?.xform||{ax:-.2,ay:0,scaleX:2.55,scaleY:2.55});
+function currentWarpCacheSignature(){
+  const tr=currentTransform();
+  const offsets=currentOffsets();
+  return `${mode}:${tr.scaleX},${tr.scaleY},${tr.translateX},${tr.translateY}:${offsets.map(p=>`${Number(p.x).toFixed(4)},${Number(p.y).toFixed(4)}`).join(';')}`;
 }
 function portraitLayerRect(rawWidth,rawBaseHeight,xform,targetWidth=200,targetHeight=200){
   const L=80;
@@ -130,4 +90,31 @@ function previewedCloudMaskXform(rawXform={}){
   };
 }
 async function withPreviewCloudMaskTransform(callback){
-  const original=window.applyPortraitOpacit
+  const original=window.applyPortraitOpacityMask;
+  if(typeof original!=='function')return callback();
+  const wrapped=function previewCloudMaskTransform(ctx,image,xform){
+    return original(ctx,image,previewedCloudMaskXform(xform||{}));
+  };
+  // Preserve the runtime marker because arm-cloud-mask checks it to avoid
+  // installing another canonical Y-scale wrapper around the temporary function.
+  if(original.__hobunjiCloudMaskYScaled)wrapped.__hobunjiCloudMaskYScaled=true;
+  window.applyPortraitOpacityMask=wrapped;
+  try{
+    return await callback();
+  }finally{
+    window.applyPortraitOpacityMask=original;
+  }
+}
+
+async function applyRuntimeCloudMask(canvas){
+  const cfg=R.speciesCfg.get(E.species.value)?.[E.gender.value];
+  const maskLayer=cfg?.portraitOpacityMaskLayer;
+  if(!maskLayer?.url||typeof window.applyPortraitOpacityMask!=='function')return canvas;
+  const image=await loadImage(assetUrl(maskLayer.url));
+  if(!image)return canvas;
+  const ctx=canvas.getContext('2d',{alpha:true});
+  window.applyPortraitOpacityMask(ctx,image,previewedCloudMaskXform(maskLayer.xform||{}));
+  return canvas;
+}
+async function rawGarmentToRuntimeLayer(rawCanvas,opacity=1){
+  if(!rawCanvas||!R.body)return null;
