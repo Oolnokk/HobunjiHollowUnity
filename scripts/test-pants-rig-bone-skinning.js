@@ -274,4 +274,13 @@ assert([out[2], out[5], out[8]].every(z => near(z, 0.012, 1e-6)), 'depth is carr
   assert(off.every((value, i) => value === (i % 5 === 0 ? 1 : 0)), 'strength 0 leaves the painted weights alone');
 }
 
+// ---- uniform scale-down for short legs ---------------------------------------------
+{
+  const apply = (t, p) => ({ x: t.a * p.x + t.c * p.y + t.tx, y: t.b * p.x + t.d * p.y + t.ty });
+  const down = Core.alignBoneSegment({ x: 0, y: 0 }, { x: 0, y: 1 }, { x: 0, y: 0 }, { x: 0, y: 0.25 }, { perpendicularScale: 'shrinkUniform' });
+  assert(nearPoint(apply(down, { x: 0.2, y: 0.5 }), { x: 0.05, y: 0.125 }), 'a 4x shorter leg scales down uniformly: width shrinks as much as length');
+  const up = Core.alignBoneSegment({ x: 0, y: 0 }, { x: 0, y: 1 }, { x: 0, y: 0 }, { x: 0, y: 4 }, { perpendicularScale: 'shrinkUniform' });
+  assert(nearPoint(apply(up, { x: 0.1, y: 0 }), { x: 0.2, y: 0 }), 'a longer leg widens by the square root of the stretch');
+}
+
 console.log('Pants rig bone skinning: PASS');

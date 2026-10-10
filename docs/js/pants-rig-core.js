@@ -422,7 +422,9 @@
     }
     const ux = dx2 / length2, uy = dy2 / length2; // Unit 2D bone direction.
     const stretch = Math.max(MIN_STRETCH, Math.min(MAX_STRETCH, length3 / length2));
-    const across = perpendicularScale === 'balanced'
+    const across = perpendicularScale === 'shrinkUniform'
+      ? (stretch < 1 ? stretch : Math.sqrt(stretch)) // Shorter than the garment: scale the whole leg down uniformly (shape and outline keep their proportions); longer: widen by sqrt.
+      : perpendicularScale === 'balanced'
       ? Math.sqrt(stretch)
       : (Number.isFinite(perpendicularScale) && perpendicularScale > 0 ? perpendicularScale : 1);
     // S = across * I + (stretch - across) * u u^T
@@ -627,7 +629,9 @@
     n2 = unit(n2);
     const p2 = cross(n2, u2); // In-plane direction across the bone.
     const stretch = Math.max(MIN_STRETCH, Math.min(MAX_STRETCH, length3 / length2));
-    const across = perpendicularScale === 'balanced'
+    const across = perpendicularScale === 'shrinkUniform'
+      ? (stretch < 1 ? stretch : Math.sqrt(stretch)) // Shorter than the garment: scale the whole leg down uniformly (shape and outline keep their proportions); longer: widen by sqrt.
+      : perpendicularScale === 'balanced'
       ? Math.sqrt(stretch)
       : (Number.isFinite(perpendicularScale) && perpendicularScale > 0 ? perpendicularScale : 1);
     const cosine = Math.max(-1, Math.min(1, dot(u2, u3)));
