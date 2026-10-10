@@ -22,6 +22,7 @@
     iframe: null,
     quickButton: null,
     liveToggle: null,
+    splinesToggle: null,
     status: null,
     open: false,
     coreReady: false,
@@ -221,7 +222,7 @@
     const handle = Renderer.attach(THREE, {
       avatarGroup: model, legHandle: { group: legSearchRoot(model) }, speciesId: identity.speciesId, gender: identity.gender,
       garmentId, garmentRecord: garment, characterRecord: character, imageUrl: garmentSourceUrl(garment), name: 'pantsLivePreview',
-      footObjects: window.HobunjiGameplayBackdrop?.getFootObjects?.() || null,
+      footObjects: window.HobunjiGameplayBackdrop?.getFootObjects?.() || null, debugSplines: state.splinesToggle ? state.splinesToggle.checked : true,
     });
     if (!handle) {
       setStatus('Could not solve pants beltline mapping for this species.', 'warn');
@@ -359,6 +360,7 @@
         <div><div class="pantsRigHostTitle">👖 Pants Rig Author</div><div class="pantsRigHostSub">2D rig + visible weight paint + live deformation on this procedural avatar</div></div>
         <div class="pantsRigHostTools">
           <label><input id="proceduralPantsLive3d" type="checkbox" checked> Live 3D</label>
+          <label title="Draw the belt (lime) and ankle (orange) splines on the deformed garment"><input id="proceduralPantsSplines" type="checkbox" checked> Splines</label>
           <button id="proceduralPantsRebind" type="button" class="secondary">Rebind</button>
           <button id="proceduralPantsClose" type="button" class="secondary" aria-label="Close Pants Rig">×</button>
         </div>
@@ -371,6 +373,7 @@
     state.panel = panel;
     state.iframe = panel.querySelector('#proceduralPantsRigFrame');
     state.liveToggle = panel.querySelector('#proceduralPantsLive3d');
+    state.splinesToggle = panel.querySelector('#proceduralPantsSplines');
     state.status = panel.querySelector('#proceduralPantsRigStatus');
     state.iframe.addEventListener('load', () => {
       state.forceRebuild = true;
@@ -381,6 +384,7 @@
       }, 0);
     });
     state.iframe.src = AUTHOR_URL;
+    state.splinesToggle.addEventListener('change', () => state.preview?.handle?.setDebugSplines?.(state.splinesToggle.checked));
     state.liveToggle.addEventListener('change', () => {
       state.forceRebuild = true;
       if (!state.liveToggle.checked) disposePreview();
