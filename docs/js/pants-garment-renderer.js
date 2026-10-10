@@ -216,6 +216,8 @@
       beltCenter.x += p.x / garment.pantsBeltSpline.length;
       beltCenter.y += p.y / garment.pantsBeltSpline.length;
     }
+    const beltSorted = [...garment.pantsBeltSpline].sort((p, q) => p.x - q.x);
+    const beltEnds = { left: placeOnPlane(beltSorted[0].x, beltSorted[0].y).clone(), right: placeOnPlane(beltSorted[beltSorted.length - 1].x, beltSorted[beltSorted.length - 1].y).clone() };
     const origin = placeOnPlane(0, 0).clone();
     const across = placeOnPlane(1, 0).clone().sub(origin);
     const down = placeOnPlane(0, 1).clone().sub(origin);
@@ -276,7 +278,7 @@
       rightAnkle: { color: 0xffad12, samples: (garment.legOpenings?.right || []).map(sampleAt) },
     };
     for (const side of ['left', 'right']) if (rings[side]) splines[`${side}Pole`] = { color: 0xffffff, samples: [rings[side].anchor, rings[side].anchor] }; // The point each ring is looped around the 3D bone at.
-    return { geometry, basePositions, weights, bones2D, beltCenter, maskMapping, rings, splines, planeNormal: { x: normal.x, y: normal.y, z: normal.z } };
+    return { geometry, basePositions, weights, bones2D, beltCenter, beltEnds, maskMapping, rings, splines, planeNormal: { x: normal.x, y: normal.y, z: normal.z } };
   }
 
   // How far in front of the portrait plane the procedural feet reach (avatar-local +z). The garment is lifted past that so
@@ -389,7 +391,7 @@
     }
     const feet = (footObjects || ['left_foot', 'right_foot'].map(foot => legHandle.group?.getObjectByName?.(foot))).filter(Boolean); // The procedural foot models.
     const footLift = footFrontLift(THREE, avatarGroup, feet);
-    const fitMode = character.fitMode || ((characterRecord || hasAuthoredCharacter(speciesId, gender)) ? 'belt' : 'posterior'); // Authored beltlines keep the beltline fit; unauthored species hang from the posterior.
+    const fitMode = character.fitMode === 'posterior' ? 'posterior' : 'belt'; // Beltline (authored) is the default fit; posterior is opt-in per character.
     let fit = null;
     if (fitMode === 'posterior') {
       const geometry = posteriorGeometry(THREE, avatarGroup, plane, nodes);
@@ -401,7 +403,7 @@
     const handle = {
       name, garmentId, model: avatarGroup, nodes, mesh: null, disposed: false, texture: null, material: null,
       geometry: data.geometry, basePositions: data.basePositions, weights: data.weights, bones2D: data.bones2D,
-      beltCenter: data.beltCenter, planeNormal: data.planeNormal, rings: data.rings, splineSpec: data.splines, debugLines: null, showSplines: !!debugSplines,
+      beltCenter: data.beltCenter, beltEnds: data.beltEnds, planeNormal: data.planeNormal, rings: data.rings, splineSpec: data.splines, debugLines: null, showSplines: !!debugSplines,
       beltScale: Math.min(3.5, Math.max(1.7, Number(character.beltScale) || DEFAULT_BELT_SCALE)),
       legRollGain: Math.min(4, Math.max(1, Number(character.legRollGain) || 2)),
       maskMapping: data.maskMapping, footLift, rest: null, restRaw: null, fitMode, beltStretchX, rotationScale: { left: 1, right: 1 }, restFrames: { left: {}, right: {} },
@@ -648,6 +650,40 @@
     const worldElements = handle.model.matrixWorld.elements;
     handle.maskUniforms.uPantsDepthBias.value = footLift * Math.hypot(worldElements[0], worldElements[1], worldElements[2]); // View-space distance to pull the garment's depth toward the camera.
     handle.captureRest(); // The legs' stance at attach is the rest pose the initial 2D warp targets.
+    if (fitMode === 'posterior') {
+      // Initial alignment warp (purely 2D): every pixel is owned by a bone and is rotated and scaled by it. The belt bone (the
+      // waistband's ends) aligns to the portrait beltline; each thigh and calf aligns its 2D bone onto the rest 3D bone. The
+      // garment's bind pose is then the aligned one, so the 2D bones coincide with the 3D bones at rest and the bound pieces
+      // (animation, ankle hoops) start from there.
+      const m = handle.maskMapping, det = m.inv[0] * m.inv[3] - m.inv[1] * m.inv[2];
+      const toLocal = p => ({ x: m.ox + (m.inv[3] * p.x - m.inv[1] * p.y) / det, y: m.oy + (-m.inv[2] * p.x + m.inv[0] * p.y) / det });
+      const portraitBelt = [...character.portraitBeltSpline].sort((p, q) => p.x - q.x);
+      const targetLeft = toLocal(portraitBelt[0]), targetRight = toLocal(portraitBelt[portraitBelt.length - 1]);
+      const withZ = (p, z) => ({ x: p.x, y: p.y, z });
+      const warp = [
+        Core.alignBoneSegment(handle.beltEnds.left, handle.beltEnds.right, withZ(targetLeft, handle.beltEnds.left.z), withZ(targetRight, handle.beltEnds.right.z), { perpendicularScale: 'uniform' }),
+        Core.alignBoneSegment(handle.bones2D.left.hip, handle.bones2D.left.knee, handle.rest.left.hip, handle.rest.left.knee, { perpendicularScale: LEG_ACROSS_SCALE }),
+        Core.alignBoneSegment(handle.bones2D.left.knee, handle.bones2D.left.ankle, handle.rest.left.knee, handle.rest.left.ankle, { perpendicularScale: LEG_ACROSS_SCALE }),
+        Core.alignBoneSegment(handle.bones2D.right.hip, handle.bones2D.right.knee, handle.rest.right.hip, handle.rest.right.knee, { perpendicularScale: LEG_ACROSS_SCALE }),
+        Core.alignBoneSegment(handle.bones2D.right.knee, handle.bones2D.right.ankle, handle.rest.right.knee, handle.rest.right.ankle, { perpendicularScale: LEG_ACROSS_SCALE }),
+      ];
+      // Pixels around the beltline and higher stay with the belt bone alone; the leg bones own everything below, fading in over a short band.
+      const beltY = (handle.beltEnds.left.y + handle.beltEnds.right.y) / 2, hipY = (handle.bones2D.left.hip.y + handle.bones2D.right.hip.y) / 2;
+      const upSign = beltY >= hipY ? 1 : -1, band = Math.abs(beltY - hipY) * 0.5 + 1e-6;
+      const warpWeights = new Float32Array(handle.weights);
+      for (let v = 0; v * 3 < handle.basePositions.length; v++) {
+        const below = Math.max(0, Math.min(1, (beltY - handle.basePositions[v * 3 + 1]) * upSign / band)); // 0 at/above the belt, 1 a band below it.
+        for (let c = 1; c < 5; c++) warpWeights[v * 5 + c] *= below;
+        warpWeights[v * 5] = 1 - (warpWeights[v * 5 + 1] + warpWeights[v * 5 + 2] + warpWeights[v * 5 + 3] + warpWeights[v * 5 + 4]);
+        if (warpWeights[v * 5] < 0) warpWeights[v * 5] = 0;
+      }
+      const warped = Core.skinWeightedPositions(handle.basePositions, warpWeights, warp, new Float32Array(handle.basePositions.length));
+      handle.basePositions.set(warped);
+      handle.geometry.getAttribute('position').array.set(warped);
+      for (const side of ['left', 'right']) for (const joint of ['hip', 'knee', 'ankle']) { const r = handle.rest[side][joint]; handle.bones2D[side][joint] = { x: r.x, y: r.y, z: r.z }; }
+      const belt = warp[0];
+      handle.beltCenter = { x: belt.a * handle.beltCenter.x + belt.c * handle.beltCenter.y + belt.tx, y: belt.b * handle.beltCenter.x + belt.d * handle.beltCenter.y + belt.ty };
+    }
     handles.add(handle);
     handle.setAppearance({});
     if (overlayMask) Promise.resolve(overlayMask).then(canvas => { if (!handle.disposed) handle.setOverlayMask(canvas); }).catch(() => {});
