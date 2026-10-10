@@ -194,8 +194,20 @@ assert([out[2], out[5], out[8]].every(z => near(z, 0.012, 1e-6)), 'depth is carr
   const low = Core.portraitPointForLocal(mapping, 0, -0.4);
   assert(near(low.y, 1), 'the bottom edge of the plane is canvas y = 1');
   const belt = Core.defaultBeltAtPosterior(0.7);
-  assert(belt.length === 5 && belt.every(p => p.y >= 0.69 && p.y <= 0.7 + 1e-9), 'default belt sits at the posterior height');
+  assert(belt.length === 5 && near(belt[2].y, 0.7) && belt.every(p => p.y >= 0.7 - 1e-9 && p.y <= 0.72), 'default belt sits at the posterior height with the garment belt\'s own curve');
   assert(Core.defaultBeltAtPosterior(1.4).every(p => p.y <= 1), 'a posterior below the image rests on the image edge');
+  // A default belt maps the default garment onto the portrait at natural scale (no collapse).
+  const garmentBelt = [0.28, 0.27, 0.265, 0.27, 0.28].map((y, i) => ({ x: [0.34, 0.42, 0.5, 0.58, 0.66][i], y }));
+  for (const py of [0.3, 0.7, 0.88, 1.2]) {
+    const fit = Core.solveAffine(garmentBelt, Core.defaultBeltAtPosterior(py));
+    assert(near(fit.d, 1, 1e-6) && near(fit.a, 1, 1e-6), `default belt at ${py} keeps natural scale`);
+  }
+  // A badly mismatched (almost straight) belt can no longer collapse the garment vertically.
+  const flatTarget = [0.34, 0.42, 0.5, 0.58, 0.66].map(x => ({ x, y: 0.86 }));
+  const squash = Core.solveAffine(garmentBelt, flatTarget);
+  assert(Math.hypot(squash.c, squash.d) >= 0.7 * Math.hypot(squash.a, squash.b) - 1e-9, 'vertical scale stays within the sane band of the horizontal scale');
+  const centerMapped = Core.applyAffine(squash, { x: 0.5, y: 0.273 });
+  assert(near(centerMapped.y, 0.86, 1e-3), 'the belt centre stays anchored');
   assert(Core.defaultBeltAtPosterior(NaN).every(p => Number.isFinite(p.y)), 'a missing posterior still yields a belt');
 }
 
