@@ -251,14 +251,14 @@
     return best;
   }
 
-  function bfsKeys(startKey, floorSet, blockedKey = null) {
-    if (!startKey || !floorSet.has(startKey) || startKey === blockedKey) return new Set();
-    const seen = new Set([startKey]); // Reachable logical cave-floor cells from this start with an optional mined-wall candidate removed.
+  function bfsKeys(startKey, floorSet, blocked = null) {
+    if (!startKey || !floorSet.has(startKey) || blocked?.has(startKey)) return new Set();
+    const seen = new Set([startKey]); // Reachable logical cave-floor cells from this start with the mined-wall candidate cells removed.
     const queue = [startKey]; // FIFO work list used for four-way connectivity.
     for (let index = 0; index < queue.length; index++) {
       const key = queue[index]; // Current floor cell whose neighbors will be explored.
       for (const next of neighborsOf(key, floorSet)) {
-        if (next === blockedKey || seen.has(next)) continue;
+        if (blocked?.has(next) || seen.has(next)) continue;
         seen.add(next);
         queue.push(next);
       }
@@ -266,27 +266,52 @@
     return seen;
   }
 
+  const MAX_SEPARATOR_WIDTH = 3; // Widest corridor a mineable wall may span; generated cavern corridors are usually 1-3 tiles wide.
+
+  // Straight wall-to-wall cuts across a corridor: a run of 1..MAX floor cells
+  // along a row or column whose two ends both touch non-floor. Filling such a
+  // run with ore rocks seals whatever lies beyond it.
+  function corridorCuts(floorSet) {
+    const cuts = new Map(); // Sorted cell-key list -> cut, deduplicating runs found from every cell they contain.
+    for (const key of floorSet) {
+      const [col, row] = key.split(',').map(Number);
+      for (const [dc, dr] of [[1, 0], [0, 1]]) {
+        if (floorSet.has(tileKey(col - dc, row - dr))) continue; // Only start runs at the wall on the low side.
+        const cells = [];
+        let c = col, r = row;
+        while (floorSet.has(tileKey(c, r)) && cells.length <= MAX_SEPARATOR_WIDTH) { cells.push({ col: c, row: r }); c += dc; r += dr; }
+        if (!cells.length || cells.length > MAX_SEPARATOR_WIDTH) continue; // Too wide to be a corridor wall.
+        const keys = cells.map(cell => tileKey(cell.col, cell.row));
+        cuts.set(keys.join('|'), { cells, keys });
+      }
+    }
+    return [...cuts.values()];
+  }
+
   function findMineableSeparator(mapData) {
     const tiles = floorTiles(mapData);
-    const floorSet = new Set(tiles.map(tile => tileKey(tile.col, tile.row))); // Full connected cave footprint used by articulation testing.
-    const entranceKey = nearestFloorKey(tiles, Number(mapData?.exitCol) || 0, Number(mapData?.exitRow) || 0); // Entrance-side seed used to classify the near chamber.
+    const floorSet = new Set(tiles.map(tile => tileKey(tile.col, tile.row))); // Full connected cave footprint used by cut testing.
+    const exitCol = Number(mapData?.exitCol) || 0, exitRow = Number(mapData?.exitRow) || 0;
+    const entranceKey = nearestFloorKey(tiles, exitCol, exitRow); // Entrance-side seed used to classify the near chamber.
     if (!entranceKey || floorSet.size < 22) return null;
-    const candidates = []; // Articulation-like corridor cells that split off a meaningful secondary chamber.
-    for (const key of floorSet) {
-      if (key === entranceKey) continue;
-      const [col, row] = key.split(',').map(Number);
-      if (Math.hypot(col - Number(mapData.exitCol), row - Number(mapData.exitRow)) < 5) continue;
-      const degree = neighborsOf(key, floorSet).length; // Narrow corridor degree used to reject broad room-floor blockers.
-      if (degree !== 2) continue;
-      const near = bfsKeys(entranceKey, floorSet, key); // Entrance-side component if this one cell becomes a mineable rock barrier.
-      if (near.size >= floorSet.size - 1) continue;
-      const far = new Set([...floorSet].filter(candidate => candidate !== key && !near.has(candidate))); // Sealed component revealed after mining through the barrier.
-      const farRatio = far.size / Math.max(1, floorSet.size - 1); // Portion behind the barrier used to reject trivial closets or most-of-map lockouts.
+    const reachable = bfsKeys(entranceKey, floorSet).size; // Baseline connectivity; parts already sealed from the entrance never count as "behind" a cut.
+    const candidates = []; // Corridor cuts that split off a meaningful secondary chamber.
+    for (const cut of corridorCuts(floorSet)) {
+      if (cut.keys.includes(entranceKey)) continue;
+      if (cut.cells.some(cell => Math.hypot(cell.col - exitCol, cell.row - exitRow) < 5)) continue;
+      const blocked = new Set(cut.keys);
+      const near = bfsKeys(entranceKey, floorSet, blocked); // Entrance-side component once the cut becomes mineable rock.
+      const usable = reachable - cut.keys.length;
+      if (near.size >= usable) continue;
+      const far = new Set([...floorSet].filter(candidate => !blocked.has(candidate) && !near.has(candidate))); // Sealed component revealed after mining through.
+      const farRatio = far.size / Math.max(1, usable); // Portion behind the wall; rejects trivial closets and most-of-map lockouts.
       if (far.size < 8 || farRatio < 0.10 || farRatio > 0.58) continue;
+      const mid = cut.cells[Math.floor(cut.cells.length / 2)];
       candidates.push({
-        col, row, key,
+        col: mid.col, row: mid.row, key: cut.keys.join('|'), cells: cut.cells,
         nearKeys: [...near], farKeys: [...far],
-        score: far.size + Math.hypot(col - Number(mapData.exitCol), row - Number(mapData.exitRow)) * 0.35,
+        // Prefer a big hidden chamber behind a narrow wall far from the entrance.
+        score: far.size - (cut.cells.length - 1) * 6 + Math.hypot(mid.col - exitCol, mid.row - exitRow) * 0.35,
       });
     }
     candidates.sort((a, b) => b.score - a.score || a.key.localeCompare(b.key));
@@ -451,14 +476,16 @@
     let separator = profile.mineableSeparator ? findMineableSeparator(mapData) : null; // Existing ore-rock mechanic becomes the optional mine-through wall between histories.
     if (separator) {
       const separatorKind = mineOreKind(rng); // Ordinary ore kind means all existing mining/tool/loot/regrowth interaction code remains authoritative.
-      mapData.oreRocks = [...(mapData.oreRocks || []), { col: separator.col, row: separator.row, oreKind: separatorKind, caveSeparator: true }];
-      blockedKeys.add(separator.key);
+      const existing = new Set((mapData.oreRocks || []).map(rock => tileKey(rock.col, rock.row)));
+      const wall = separator.cells.filter(cell => !existing.has(tileKey(cell.col, cell.row))).map(cell => ({ col: cell.col, row: cell.row, oreKind: separatorKind, caveSeparator: true }));
+      mapData.oreRocks = [...(mapData.oreRocks || []), ...wall];
+      for (const cell of separator.cells) blockedKeys.add(tileKey(cell.col, cell.row));
       separator = { ...separator, oreKind: separatorKind };
     }
 
     const plan = {
       profile: clone(profile),
-      separator: separator ? { col: separator.col, row: separator.row, oreKind: separator.oreKind, nearKeys: separator.nearKeys, farKeys: separator.farKeys } : null,
+      separator: separator ? { col: separator.col, row: separator.row, cells: separator.cells, oreKind: separator.oreKind, nearKeys: separator.nearKeys, farKeys: separator.farKeys } : null,
       banditSpawns: [], ghoulSpawns: [], traps: [], coffins: [], mineRocks: [], cache: null, ruinEntrance: null,
     }; // Runtime-only plan mirrors map decorations and drives mechanics that cannot live in static building map data.
     const regions = layerRegions(profile, mapData, separator, allTiles);
@@ -475,7 +502,7 @@
     mapData.name = profile.discoveredLabel;
     mapData.caveSite = clone(profile);
     mapData.caveSitePlan = {
-      separatorRock: plan.separator ? { col: plan.separator.col, row: plan.separator.row, oreKind: plan.separator.oreKind } : null,
+      separatorRock: plan.separator ? { col: plan.separator.col, row: plan.separator.row, cells: clone(plan.separator.cells), oreKind: plan.separator.oreKind } : null,
       banditSpawns: clone(plan.banditSpawns), ghoulSpawns: clone(plan.ghoulSpawns), traps: clone(plan.traps), cache: clone(plan.cache),
       coffins: clone(plan.coffins), ruinEntrance: clone(plan.ruinEntrance), mineRockCount: plan.mineRocks.length,
     };
@@ -794,7 +821,7 @@
       caves: sites.map(site => ({ mapId: site.mapId, zoneId: site.zoneId, denId: site.denId, layers: site.layers, separator: !!site.mineableSeparator, label: site.discoveredLabel })),
       currentPlan: plansByMapId.has(currentArea) ? clone({
         profile: plansByMapId.get(currentArea).profile,
-        separator: plansByMapId.get(currentArea).separator && { col: plansByMapId.get(currentArea).separator.col, row: plansByMapId.get(currentArea).separator.row, oreKind: plansByMapId.get(currentArea).separator.oreKind },
+        separator: plansByMapId.get(currentArea).separator && { col: plansByMapId.get(currentArea).separator.col, row: plansByMapId.get(currentArea).separator.row, cells: plansByMapId.get(currentArea).separator.cells, oreKind: plansByMapId.get(currentArea).separator.oreKind },
         banditSpawns: plansByMapId.get(currentArea).banditSpawns,
         ghoulSpawns: plansByMapId.get(currentArea).ghoulSpawns,
         traps: plansByMapId.get(currentArea).traps,

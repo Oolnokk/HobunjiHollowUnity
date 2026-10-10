@@ -89,6 +89,18 @@ const separator = Cave.__test.findMineableSeparator(baseMap('separator_test'));
 assert(separator && separator.col === 6 && separator.row === 3, 'mixed cave finds the existing corridor as a mineable partition');
 assert(separator.nearKeys.length >= 20 && separator.farKeys.length >= 20, 'separator preserves substantial chambers on both sides');
 
+// Real cavern corridors are usually 2-3 tiles wide: the wall must span the whole corridor.
+const wideFloor = [];
+for (let r = 1; r <= 6; r++) for (let c = 1; c <= 6; c++) wideFloor.push([c, r]);
+wideFloor.push([7, 3], [7, 4], [8, 3], [8, 4]);
+for (let r = 1; r <= 6; r++) for (let c = 9; c <= 14; c++) wideFloor.push([c, r]);
+const wideSeparator = Cave.__test.findMineableSeparator({ ...baseMap('wide_separator_test'), cols: 16, rows: 8, floor: wideFloor });
+assert(wideSeparator && wideSeparator.cells.length === 2, 'two-wide corridor gets a two-rock wall');
+assert(wideSeparator.cells.every(cell => cell.col === 7 || cell.col === 8), 'wall sits in the corridor');
+const wideFloorKeys = new Set(wideFloor.map(([c, r]) => `${c},${r}`));
+for (const cell of wideSeparator.cells) wideFloorKeys.delete(`${cell.col},${cell.row}`);
+assert.equal(wideSeparator.nearKeys.length + wideSeparator.farKeys.length, wideFloorKeys.size, 'wall fully partitions the cave');
+
 function installProfile(profile) {
   Cave.__test.sitesByMapId.set(profile.mapId, JSON.parse(JSON.stringify(profile)));
 }
@@ -128,6 +140,7 @@ const mixedProfile = profile('map_i_test_mixed', [Cave.TYPES.BANDIT_HIDEOUT, Cav
 installProfile(mixedProfile);
 const mixedMap = Cave.decorateCavernMapData(mixedProfile.mapId, baseMap(mixedProfile.mapId));
 assert(mixedMap.oreRocks.some(rock => rock.caveSeparator), 'mixed history is partitioned with an existing mineable ore-rock blocker');
+assert.equal(mixedMap.caveSitePlan.separatorRock.cells.length, mixedMap.oreRocks.filter(rock => rock.caveSeparator).length, 'every wall cell becomes an ore rock');
 assert(mixedMap.caveBanditSpawns.length >= 2, 'bandit hideout supplies runtime BanditCombat spawn points');
 assert(mixedMap.caveProps.some(item => item.key === 'ruinSanctumCoffin'), 'secondary catacomb coexists beyond the same cave shell');
 
