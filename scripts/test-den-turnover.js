@@ -34,7 +34,7 @@ assert.match(denNestSource, /updateClearedDenClutchVisual\?\.\(deps\.getCurrentA
 assert.match(denVisualSource, /function syncAnimalDenVisual\(/, 'den facade/furniture must have a runtime relocation synchronizer');
 assert.match(gameSource, /function isPlayerInCombat\(\)[\s\S]{0,240}!c\._denHidden[\s\S]{0,120}!c\.denDisplacedPrey/, 'hidden den residents and displaced prey cannot keep combat BGM active');
 assert.match(gridSource, /if \(den\.collapsed\)[\s\S]*?return true/, 'collapsed den footprint must close its former doorway gap');
-assert.match(porakanekiSource, /filter\(den => den && den\.id != null && !den\.collapsed\)/, 'Porakaneki hunting routes must exclude collapsed dens');
+assert.match(porakanekiSource, /filter\(den => den && den\.id != null && !den\.collapsed(?: && [^)]+)?\)/, 'Porakaneki hunting routes must exclude collapsed dens');
 assert.match(porakanekiSource, /const liveTarget = denExteriorPoint\(camp, liveDen\)/, 'Porakaneki active parties must refresh a relocated den target');
 assert.match(porakanekiSource, /function occupiedSites\(zoneId\)/, 'Porakaneki must expose exact active camp footprints to den relocation');
 assert.match(banditSource, /function forgetDenPerception\(denKey\)/, 'collapsed dens must be removable from companion-discovered map markers');

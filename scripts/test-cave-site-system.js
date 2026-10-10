@@ -167,11 +167,12 @@ assert.equal(ruinSeed, Cave.decorateCavernMapData('map_i_test_ruin', baseMap('ma
 
 // Assignment-time hooks must capture dependencies before synchronous game initialization.
 let seenDenCount = -1;
+let seenCaveAnchors = -1;
 const zoneLayouts = new Map([['map_test_wilds', { dens: workspace.animalDens, transitions: workspace.animalDens.map(den => ({ targetMapId: den.caveSite.mapId, label: 'A dark burrow' })) }]]);
 context.WildlifeSpawn = {
   denCavernMapId(zoneId, denId) { return `map_i_den_${zoneId}_${denId}`; },
   init(deps) { this.deps = deps; },
-  updateHostileSpawning() { seenDenCount = this.deps.zoneLayouts.get('map_test_wilds').dens.length; },
+  updateHostileSpawning() { seenDenCount = this.deps.zoneLayouts.get('map_test_wilds').dens.length; seenCaveAnchors = this.deps.zoneLayouts.get('map_test_wilds').caveAnchors?.length; },
   onZoneEntered() {},
   denNestCensus() { return { denCount: 999, nestTreesAlive: 0 }; },
 };
@@ -193,6 +194,8 @@ context.WildlifeSpawn.updateHostileSpawning(0.1);
 const expectedAnimalDens = workspace.animalDens.filter(den => den.isAnimalDen).length;
 assert.equal(seenDenCount, expectedAnimalDens, 'legacy wildlife tick only sees caves that contain animal dens');
 assert.equal(zoneLayouts.get('map_test_wilds').dens.length, workspace.animalDens.length, 'full compatibility cave anchor list is restored after wildlife tick');
+assert.equal(seenCaveAnchors, workspace.animalDens.length, 'wildlife tick still sees every cave footprint (caveAnchors) for den relocation');
+assert.equal(zoneLayouts.get('map_test_wilds').caveAnchors, undefined, 'caveAnchors only exists during the filtered tick');
 context.WildlifeSpawn.onZoneEntered('map_test_wilds');
 assert(zoneLayouts.get('map_test_wilds').transitions.every(transition => transition.label === 'Cave'), 'exterior transition label no longer advertises a den/burrow');
 const census = context.WildlifeSpawn.denNestCensus('map_test_wilds');

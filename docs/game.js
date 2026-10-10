@@ -8962,7 +8962,7 @@
                 // player actually enters this specific den — see its
                 // _pendingEntrySpawnFromExit handling.
                 return {
-                  id: `den_${den.id}_enter`, label: 'A dark burrow', col: den.mouthAnchor.x, row: den.mouthAnchor.y,
+                  id: `den_${den.id}_enter`, label: 'Cave', col: den.mouthAnchor.x, row: den.mouthAnchor.y, // Contents/inhabitants are revealed on entry (js/cave-site-system.js).
                   target: 'building', targetMapId: cavernMapId,
                 };
               });

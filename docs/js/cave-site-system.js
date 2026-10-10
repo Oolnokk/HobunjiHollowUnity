@@ -609,9 +609,10 @@
     zoneSites(zoneId); // Ensures older layouts receive caveSite metadata before filtering.
     const originalDens = layout.dens; // Full cave-anchor compatibility list restored immediately after legacy wildlife code completes.
     layout.dens = originalDens.filter(den => isAnimalDenSite(den));
+    layout.caveAnchors = originalDens; // Every cave footprint, for wildlife code that must avoid all caves (den relocation) while it only sees animal dens.
     filteringDens = true;
     try { return callback(); }
-    finally { layout.dens = originalDens; filteringDens = false; }
+    finally { layout.dens = originalDens; delete layout.caveAnchors; filteringDens = false; }
   }
 
   function caveDistanceTiles(target) {

@@ -421,7 +421,7 @@
       transition = {
         ...(saved || {}),
         id: denTransitionId(den.id),
-        label: saved?.label || 'A dark burrow',
+        label: saved?.label || 'Cave', // Exterior label for every cave; contents are revealed inside (js/cave-site-system.js).
         target: 'building',
         targetMapId: cavernMapId,
       };
@@ -564,7 +564,7 @@
     if (maxElev - minElev > 1) return false;
 
     const candidate = { x, y, w, h: h + 1 };
-    for (const other of (layout.dens || [])) {
+    for (const other of (layout.caveAnchors || layout.dens || [])) { // caveAnchors: every cave (js/cave-site-system.js), not just the animal dens this tick sees.
       if (!other || String(other.id) === String(den.id)) continue;
       if (rectsOverlap(candidate, { x:Number(other.x), y:Number(other.y), w:Math.max(1,Number(other.w)||1), h:Math.max(1,Number(other.h)||1)+1 }, 4)) return false;
     }
