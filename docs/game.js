@@ -9005,6 +9005,7 @@
             debugLog(`Tothal Shift: ${zoneId} reshaped (entry ${workspace.entry?.side ?? '?'} at ${workspace.entry?.col ?? '?'},${workspace.entry?.row ?? '?'})`);
             await new Promise(resolve => setTimeout(resolve, 0)); // yield between zones
           }
+          remainingLocales = remainingLocales.filter(l => l?.category !== 'den_entrance'); // Den-cliff templates are placement rules, never placed themselves.
           if (remainingLocales.length) {
             debugLog(`Tothal Shift: ${remainingLocales.length} locale(s) found no room in any zone this shift: ${remainingLocales.map(l => l.id).join(', ')}`, 'warn');
           }

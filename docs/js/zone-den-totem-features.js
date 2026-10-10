@@ -55,17 +55,26 @@
   }
   const CAVE_SMALL_GLB_PATH = zoneFeatureAssetUrl('assets/models/cave_small.glb');
   const ANIMAL_DEN_ENTRANCE_LOCALE_ID = 'locale_animal_den_entrance'; // Shared Locale Editor document cloned by every procedural den.
-  const ANIMAL_DEN_ENTRANCE_LOCALE_URL = zoneFeatureAssetUrl('config/locales/locale_animal_den_entrance.json');
-  let _animalDenEntranceLocalePromise = null; // Repo-backed template request shared across all zone builds.
-  let _animalDenEntranceLocale = null; // Synchronous full template used by den rendering and movement collision after loading.
+  // Cliff-backed dens record which den_entrance template the generator fitted
+  // them with (den.entranceTemplateId, see js/den-cliff-placement.js); the
+  // small template renders the same cave_small.glb scaled to a 2x2 footprint.
+  const ANIMAL_DEN_ENTRANCE_SMALL_LOCALE_ID = 'locale_animal_den_entrance_small';
+  const ANIMAL_DEN_ENTRANCE_LOCALE_IDS = [ANIMAL_DEN_ENTRANCE_LOCALE_ID, ANIMAL_DEN_ENTRANCE_SMALL_LOCALE_ID];
+  const _animalDenEntranceLocalePromises = new Map(); // Template id -> repo-backed request shared across all zone builds.
+  const _animalDenEntranceLocales = new Map(); // Template id -> synchronous full template used by den rendering and movement collision after loading.
   const _denFurnitureDataCache = new Map(); // Furniture key -> authored JSON promise reused by every generated den instance.
 
-  function localAnimalDenEntranceLocale() {
+  function denEntranceLocaleId(den) {
+    const id = String(den?.entranceTemplateId || ''); // Generator-chosen template; unknown/legacy ids fall back to the shared full-size template.
+    return ANIMAL_DEN_ENTRANCE_LOCALE_IDS.includes(id) ? id : ANIMAL_DEN_ENTRANCE_LOCALE_ID;
+  }
+
+  function localAnimalDenEntranceLocale(id = ANIMAL_DEN_ENTRANCE_LOCALE_ID) {
     try {
       if (window.LocalDBOverrides?.getSourceMode?.() !== 'local') return null;
       const override = window.LocalDBOverrides.getOverride?.('locales');
       const locales = Array.isArray(override) ? override : override?.locales;
-      return Array.isArray(locales) ? locales.find(locale => locale?.id === ANIMAL_DEN_ENTRANCE_LOCALE_ID) || null : null;
+      return Array.isArray(locales) ? locales.find(locale => locale?.id === id) || null : null;
     } catch (_) { return null; }
   }
 
@@ -73,36 +82,56 @@
     return (locale?.objects || []).find(object => object?.key === 'cave_small' || object?.visual?.renderer === 'cave_small') || null;
   }
 
-  function activeAnimalDenEntranceLocale() {
-    return localAnimalDenEntranceLocale() || _animalDenEntranceLocale; // Local editor override wins immediately; repo data is the stable fallback.
+  function activeAnimalDenEntranceLocale(den = null) {
+    const id = denEntranceLocaleId(den);
+    // Local editor override wins immediately; repo data is the stable fallback;
+    // a small den whose template is unavailable borrows the full-size one.
+    return localAnimalDenEntranceLocale(id) || _animalDenEntranceLocales.get(id)
+      || (id !== ANIMAL_DEN_ENTRANCE_LOCALE_ID ? activeAnimalDenEntranceLocale() : null);
   }
 
-  function loadAnimalDenEntranceLocale() {
-    const local = localAnimalDenEntranceLocale(); // Live Locale Editor override supplies the complete den template during local-db testing.
+  function loadAnimalDenEntranceLocale(id = ANIMAL_DEN_ENTRANCE_LOCALE_ID) {
+    const local = localAnimalDenEntranceLocale(id); // Live Locale Editor override supplies the complete den template during local-db testing.
     if (local) {
-      _animalDenEntranceLocale = local;
+      _animalDenEntranceLocales.set(id, local);
       return Promise.resolve(local);
     }
-    if (_animalDenEntranceLocalePromise) return _animalDenEntranceLocalePromise;
+    if (_animalDenEntranceLocalePromises.has(id)) return _animalDenEntranceLocalePromises.get(id);
     if (typeof fetch !== 'function') return Promise.resolve(null); // Headless/unit-test runtimes keep the legacy facade without browser fetch.
-    _animalDenEntranceLocalePromise = fetch(ANIMAL_DEN_ENTRANCE_LOCALE_URL, { cache:'no-store' })
+    const promise = fetch(zoneFeatureAssetUrl(`config/locales/${id}.json`), { cache:'no-store' })
       .then(response => response.ok ? response.json() : null)
       .then(locale => {
-        _animalDenEntranceLocale = locale;
+        if (locale) _animalDenEntranceLocales.set(id, locale);
         return locale;
       })
       .catch(error => {
-        console.warn('[den entrance locale] shared template failed to load; keeping legacy den facade:', error);
+        console.warn(`[den entrance locale] ${id} failed to load; keeping legacy den facade:`, error);
         return null;
       });
-    return _animalDenEntranceLocalePromise;
+    _animalDenEntranceLocalePromises.set(id, promise);
+    return promise;
+  }
+
+  function loadAllAnimalDenEntranceLocales() {
+    return Promise.all(ANIMAL_DEN_ENTRANCE_LOCALE_IDS.map(id => loadAnimalDenEntranceLocale(id)));
+  }
+
+  // Cliff-backed dens put their back row inside the higher plateau, so the
+  // footprint centre can sample the wrong tier; the mouth tile in front is
+  // always on the den's floor (legacy flat dens read the same tier there).
+  function denFloorTier(zGrid, den) {
+    const mouth = den?.mouthAnchor;
+    const mouthTier = mouth ? zGrid?.[Math.floor(Number(mouth.y))]?.[Math.floor(Number(mouth.x))]?.elevTier : null;
+    if (Number.isFinite(Number(mouthTier))) return Number(mouthTier);
+    const w = Math.max(1, Number(den?.w) || 1), h = Math.max(1, Number(den?.h) || 1);
+    return zGrid?.[Math.floor(Number(den?.y) + h / 2)]?.[Math.floor(Number(den?.x) + w / 2)]?.elevTier || 0;
   }
 
   function loadAnimalDenEntranceLocaleObject() {
     return loadAnimalDenEntranceLocale().then(denEntranceObjectFromLocale); // Compatibility helper retained for diagnostics/tests that only need the cave object.
   }
 
-  function denTemplateTransform(den, locale = activeAnimalDenEntranceLocale()) {
+  function denTemplateTransform(den, locale = activeAnimalDenEntranceLocale(den)) {
     const cave = denEntranceObjectFromLocale(locale); // Cave object is the template-space origin mapped onto the generated den footprint.
     if (!cave) return null;
     const denW = Math.max(.1, Number(den?.w) || 1); // Generated den width establishes template-to-world X scale.
@@ -138,7 +167,7 @@
   }
 
   function denEntranceCollisionState(den) {
-    const locale = activeAnimalDenEntranceLocale(); // Current full den template supplies cave + furniture collider policies.
+    const locale = activeAnimalDenEntranceLocale(den); // This den's template supplies cave + furniture collider policies.
     const transform = denTemplateTransform(den, locale); // Shared placement transform keeps collision aligned with rendered template objects.
     if (!locale || !transform) return null;
     const rects = []; // Explicit collider rectangles for all authored den-template objects.
@@ -197,7 +226,7 @@
         model.name = `denEntranceLocaleObject_${object.id || object.key}`;
         model.position.set(worldX, groundY, worldZ);
         model.rotation.y = (Number(object.rot) || 0) * Math.PI / 180;
-        model.userData.denEntranceLocaleId = ANIMAL_DEN_ENTRANCE_LOCALE_ID;
+        model.userData.denEntranceLocaleId = locale?.id || ANIMAL_DEN_ENTRANCE_LOCALE_ID;
         model.userData.denEntranceLocaleObjectId = object.id || null;
         model.userData.denId = den.id || null;
         model.userData.denFurnitureRoot = true;
@@ -641,9 +670,8 @@
     const denList = Array.isArray(dens) ? dens : [];
     const localeCaves = window.LocaleCaveRuntime?.cavesForZone?.(mapId) || []; // Authored caves are registered from placed localeInstances after wilderness generation.
     if (!denList.length && !localeCaves.length) return;
-    Promise.all([loadCaveSmallTemplate(), loadAnimalDenEntranceLocale()]).then(([template, denEntranceLocale]) => {
+    Promise.all([loadCaveSmallTemplate(), loadAllAnimalDenEntranceLocales()]).then(([template]) => {
       if (!template) return;
-      const denEntranceObject = denEntranceObjectFromLocale(denEntranceLocale); // Cave-specific visual settings come from the full shared den locale.
       const box = template.geometry.boundingBox;
       const templateWidth = Math.max(1e-4, box.max.x - box.min.x);
       const templateDepth = Math.max(1e-4, box.max.z - box.min.z);
@@ -651,9 +679,11 @@
       const group = new THREE.Group();
       group.name = 'animalDenEntrances';
       for (const den of denList) {
+        const denEntranceLocale = activeAnimalDenEntranceLocale(den); // Full-size or small cliff template this den was placed with.
+        const denEntranceObject = denEntranceObjectFromLocale(denEntranceLocale); // Cave-specific visual settings come from that den locale.
         const w = den.w || 1, h = den.h || 1;
         const centerCol = den.x + w / 2, centerRow = den.y + h / 2;
-        const elevTier = zGrid?.[Math.floor(centerRow)]?.[Math.floor(centerCol)]?.elevTier || 0;
+        const elevTier = denFloorTier(zGrid, den);
         const groundY = deps.NORMAL_TOP + elevTier * deps.PLATEAU_UNIT;
         const cavernMapId = window.WildlifeSpawn?.denCavernMapId?.(mapId, den.id) || null;
         const denMotherKind = cavernMapId ? window.CavernGenerator?.pickDenMotherKind?.(cavernMapId) : null;
@@ -684,7 +714,7 @@
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         mesh.userData.cameraObstacle = true;
-        mesh.userData.denEntranceLocaleId = ANIMAL_DEN_ENTRANCE_LOCALE_ID;
+        mesh.userData.denEntranceLocaleId = denEntranceLocale?.id || ANIMAL_DEN_ENTRANCE_LOCALE_ID;
         mesh.userData.denEntranceLocaleObjectId = denEntranceObject?.id || null;
         mesh.userData.denId = den.id || null;
         mesh.userData.denCaveEntrance = true;
@@ -745,7 +775,7 @@
     const h = Math.max(1, Number(den.h) || 1); // Used with w to sample the relocated footprint's elevation.
     const centerCol = Number(den.x) + w / 2;
     const centerRow = Number(den.y) + h / 2;
-    const centerTier = zGrid?.[Math.floor(centerRow)]?.[Math.floor(centerCol)]?.elevTier || 0; // Relocated ground tier under the cave itself.
+    const centerTier = denFloorTier(zGrid, den); // Relocated ground tier at the cave's mouth.
     const caveGroundY = deps.NORMAL_TOP + centerTier * deps.PLATEAU_UNIT;
     let changed = false;
     for (const child of group.children || []) {

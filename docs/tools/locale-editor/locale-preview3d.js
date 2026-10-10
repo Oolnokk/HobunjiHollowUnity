@@ -185,6 +185,7 @@
     await loadScript('../../js/color-fill.js?v=20260923colorfill7', () => !!window.ColorFill?.shadeFillPixels);
     await loadScript('../../js/portrait-utils.js?v=20261010h545295b', () => !!window.getShadeFillCanvas && !!window.parseHexColor);
     await loadScript('../../js/terrain-preview.js', () => !!window.TerrainPreview?.buildMergedZoneGrid);
+    await loadScript('../../js/den-cliff-placement.js', () => !!window.DenCliffPlacement?.findSites); // Den-entrance templates fit dens into cliffs inside the generator.
     await loadScript('../../js/wilderness-map-generator.js', () => !!window.WildernessMapGenerator?.generateZoneWorkspace);
     await loadScript('../../js/locale-terrain-placement.js', () => !!window.LocaleTerrainPlacement?.evaluateCandidateForTest);
     await loadScript('../../js/locale-cave-runtime.js', () => !!window.LocaleCaveRuntime?.registerWorkspace);
@@ -834,8 +835,34 @@
       connectors: (locale.connectors || []).map(point),
     };
   }
+  // Den-entrance templates (category den_entrance) are never stamped: the
+  // generator fits procedural dens into cliffs with their anchors instead (see
+  // js/den-cliff-placement.js). Their valid preview shows a den the generator
+  // placed with this template, framed exactly like a placed locale.
+  function denTemplateScenario(locale, zoneId, seed) {
+    const Generator = window.WildernessMapGenerator;
+    const Placement = window.LocaleTerrainPlacement;
+    const cave = (locale.objects || []).find(object => object?.key === 'cave_small' || object?.visual?.renderer === 'cave_small');
+    let workspace = null, den = null, attempts = 0;
+    while (!den && attempts < 5) {
+      if (attempts) seed = randomSeed(locale, zoneId);
+      workspace = Generator.generateZoneWorkspace(zoneId, seed, [locale]);
+      den = (workspace.animalDens || []).find(item => item.entranceTemplateId === locale.id) || null;
+      attempts++;
+    }
+    if (!den || !cave) return { workspace, instance: null, seed, kind: 'no-match', candidate: null, reason: cave ? 'No den fitted this template on these seeds' : 'Template has no cave_small object' };
+    const scale = Placement.inferGenerationScale(workspace);
+    const anchorC = Number(den.x) - (Number(cave.col) || 0) * scale;
+    const anchorR = Number(den.y) - (Number(cave.row) || 0) * scale;
+    const result = Placement.evaluateCandidateForTest(workspace, locale, anchorC, anchorR, { scale, seed }); // Editor-side rule diagnostics for the overlay.
+    const candidate = { anchorC, anchorR, scale, result, floorTier: result.floorTier };
+    const instance = { ...virtualInstance(locale, candidate), ghostFailure: false };
+    return { workspace, instance, seed, kind: 'valid', candidate, reason: `procedural den ${den.id}` };
+  }
+
   async function generateScenario(locale, zoneId, seed, scenario) {
     const Generator = window.WildernessMapGenerator;
+    if (scenario === 'valid' && locale?.category === 'den_entrance') return denTemplateScenario(locale, zoneId, seed);
     if (scenario === 'valid') {
       let workspace = Generator.generateZoneWorkspace(zoneId, seed, [locale]);
       let instance = workspace.localeInstances?.find(item => item.localeId === locale.id) || null;

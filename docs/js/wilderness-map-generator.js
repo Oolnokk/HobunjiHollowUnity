@@ -3458,7 +3458,9 @@
   }
 
   function stampLocales() {
-    const locales = (settings.locales || []).slice().sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    // Den-entrance templates (category den_entrance) are never stamped; they
+    // carry the cliff-fit rules placeAnimalDens reads (see js/den-cliff-placement.js).
+    const locales = (settings.locales || []).filter(locale => locale?.category !== 'den_entrance').slice().sort((a, b) => String(a.id).localeCompare(String(b.id)));
     for (const locale of locales) stampLocale(locale);
     logDebug(`locales stamped: ${locales.filter(l => (map.objects || []).some(o => o.localeMeta?.localeId === l.id)).length}/${locales.length}`);
   }
@@ -4075,9 +4077,68 @@
     return id;
   }
 
+  function denCliffPlacementApi() {
+    if (typeof DenCliffPlacement !== 'undefined') return DenCliffPlacement;
+    if (typeof require === 'function') { try { return require('./den-cliff-placement.js'); } catch (_) { return null; } }
+    return null;
+  }
+
+  function addAnimalDen(spot, dims, mouthAnchor, extra = {}) {
+    // nearestFreeNeighbor(x,y) never checks (x,y) itself and its ring search
+    // isn't direction-aware (r=1's first candidate is (x-1,y-1) by iteration
+    // order, not "closest free tile south") — fine for escapeAnchor, which
+    // only needs *some* nearby free tile to flee toward, but wrong for the
+    // doorway anchor, which must be the exact tile south of the footprint
+    // to line up with the mesh's south-facing mouth carve (see
+    // buildAnimalDenMeshes) and the collision-gap cutout. Computed directly
+    // by the caller instead, clamped to map bounds; it doesn't need a
+    // walkability check since it becomes the walkable doorway/transition tile itself.
+    const anchor = nearestFreeNeighbor(mouthAnchor.x, mouthAnchor.y);
+    addObject({
+      type: 'animalDen',
+      x: spot.x,
+      y: spot.y,
+      w: dims.w,
+      h: dims.h,
+      blocksMovement: true,
+      escapeAnchor: anchor,
+      pathAnchor: anchor,
+      // The den's south-facing doorway tile — see comment above.
+      mouthAnchor,
+      spawnRole: 'wildAnimalPackHome',
+      note: 'wild animal den; low-health packs can flee toward this anchor',
+      ...extra,
+    });
+  }
+
+  // Cliff-backed dens: each den-entrance template (Locale Editor, category
+  // den_entrance) says how its cave sits in a cliff — back row inside higher
+  // plateau, cliff face behind the mouth, free approach tiles in front. The
+  // largest template that fits a spot wins, so the small template only takes
+  // cliff faces too narrow (or, per its anchors, too short) for the full-size
+  // one. Returns how many dens it placed.
+  function placeCliffBackedDens(target) {
+    const api = denCliffPlacementApi();
+    const templates = (settings.locales || []).filter(locale => api?.isTemplate(locale)).map(locale => api.compileTemplate(locale)).filter(Boolean);
+    if (!api || !templates.length || target <= 0) return 0;
+    const sites = shuffle(api.findSites(templates, tileAt, settings.width, settings.height));
+    const minSpacing = 10; // Den-to-den mouth spacing in source tiles; keeps cliff dens from clustering on one long face.
+    const placed = [];
+    for (const site of sites) {
+      if (placed.length >= target) break;
+      if (!areaFree(site.x, site.y, site.w, site.h, { allowCliffSkirt: true, allowPlateauRing: true })) continue; // An earlier den/structure may have claimed it since the scan.
+      if (!areaFree(site.mouth.x, site.mouth.y, 1, 1)) continue;
+      if (placed.some(other => Math.hypot(other.mouth.x - site.mouth.x, other.mouth.y - site.mouth.y) < minSpacing)) continue;
+      addAnimalDen({ x: site.x, y: site.y }, { w: site.w, h: site.h }, { ...site.mouth }, { entranceTemplateId: site.templateId, cliffBacked: true });
+      placed.push(site);
+    }
+    logDebug(`cliff-backed dens: ${placed.length}/${target} from ${sites.length} candidate site(s) [${placed.map(site => site.templateId).join(', ')}]`);
+    return placed.length;
+  }
+
   function placeAnimalDens() {
     // new variable: placedDens counts combat-spawn anchor objects for the debug panel.
-    let placedDens = 0;
+    let placedDens = placeCliffBackedDens(settings.animalDens);
     const maxTries = Math.max(300, settings.animalDens * 70);
     for (let tries = 0; tries < maxTries && placedDens < settings.animalDens; tries++) {
       const dims = chance(0.7) ? { w: 3, h: 3 } : { w: 3, h: 2 };
@@ -4091,34 +4152,13 @@
         }
       }, 1);
       if (!spot) continue;
-      // nearestFreeNeighbor(x,y) never checks (x,y) itself and its ring search
-      // isn't direction-aware (r=1's first candidate is (x-1,y-1) by iteration
-      // order, not "closest free tile south") — fine for escapeAnchor, which
-      // only needs *some* nearby free tile to flee toward, but wrong for the
-      // doorway anchor, which must be the exact tile south of the footprint
-      // to line up with the mesh's south-facing mouth carve (see
-      // buildAnimalDenMeshes) and the collision-gap cutout. Computed directly
-      // here instead, clamped to map bounds; it doesn't need a walkability
-      // check since it becomes the walkable doorway/transition tile itself.
-      const anchor = nearestFreeNeighbor(spot.x + Math.floor(dims.w / 2), spot.y + dims.h);
+      // Legacy free-standing den: only when the zone's cliffs could not host
+      // every den (or no den-entrance templates were supplied).
       const mouthAnchor = {
         x: clamp(spot.x + Math.floor(dims.w / 2), 0, settings.width - 1),
         y: clamp(spot.y + dims.h, 0, settings.height - 1),
       };
-      addObject({
-        type: 'animalDen',
-        x: spot.x,
-        y: spot.y,
-        w: dims.w,
-        h: dims.h,
-        blocksMovement: true,
-        escapeAnchor: anchor,
-        pathAnchor: anchor,
-        // The den's south-facing doorway tile — see comment above.
-        mouthAnchor,
-        spawnRole: 'wildAnimalPackHome',
-        note: 'wild animal den; low-health packs can flee toward this anchor'
-      });
+      addAnimalDen(spot, dims, mouthAnchor);
       placedDens++;
     }
     if (placedDens < settings.animalDens) warn(`animalDen: placed ${placedDens}/${settings.animalDens}`);
@@ -8437,6 +8477,10 @@
         w: object.w || 1,
         h: object.h || 1,
         mouthAnchor: object.mouthAnchor ? { x: object.mouthAnchor.x, y: object.mouthAnchor.y } : null,
+        // Cliff-backed dens (placeCliffBackedDens): which den-entrance template
+        // to render and the mouth's tier, since the back row sits inside the
+        // higher plateau and the footprint is not flat.
+        ...(object.entranceTemplateId ? { entranceTemplateId: object.entranceTemplateId, cliffBacked: true } : {}),
       }));
     // Root Totems (see placeRootTotems) — same "read the real placement
     // instead of recovering it from the lossy tile overlay" reasoning as
