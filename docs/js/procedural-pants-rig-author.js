@@ -16,10 +16,6 @@
   const AUTHOR_URL = SELF_SCRIPT_SRC
     ? new URL('../tools/pants-rig-author/index.html?embedded=1', SELF_SCRIPT_SRC).href
     : new URL('../pants-rig-author/index.html?embedded=1', window.location.href).href; // Hosts the existing 2D author inside Procedural Animation.
-  const PREVIEW_SEGMENTS = 32; // Gives the garment enough vertices for smooth painted leg weights while staying mobile-friendly.
-  const DYNAMIC_DRAW_USAGE = 35048; // Three.js DynamicDrawUsage numeric value used without requiring a global THREE namespace.
-  const LEG_ACROSS_SCALE = 'balanced'; // Garment legs stretch ALONG their bone to meet the 3D leg and widen by the square root of that stretch, so proportions hold for any species' leg length.
-  const DOUBLE_SIDE = 2; // Three.js DoubleSide numeric value used without requiring a global THREE namespace.
 
   const state = { // Owns the editor-only Pants UI and preview resources.
     panel: null,
@@ -69,7 +65,7 @@
     }
   }
 
-  function loadCore() {
+  function loadCoreMath() {
     if (window.HobunjiPantsRig) {
       state.coreReady = true;
       return Promise.resolve(window.HobunjiPantsRig);
@@ -100,6 +96,26 @@
     });
   }
 
+  // The live preview is drawn by the same module the game uses (js/pants-garment-renderer.js).
+  function loadRenderer() {
+    if (window.PantsGarmentRenderer) return Promise.resolve(window.PantsGarmentRenderer);
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.id = 'proceduralPantsGarmentRendererScript';
+      script.async = false;
+      script.src = SELF_SCRIPT_SRC
+        ? new URL('pants-garment-renderer.js', SELF_SCRIPT_SRC).href
+        : new URL('../../js/pants-garment-renderer.js', window.location.href).href;
+      script.addEventListener('load', () => window.PantsGarmentRenderer ? resolve(window.PantsGarmentRenderer) : reject(new Error('pants-garment-renderer loaded without installing PantsGarmentRenderer.')), { once: true });
+      script.addEventListener('error', () => reject(new Error(`Failed to load ${script.src}`)), { once: true });
+      document.head.appendChild(script);
+    });
+  }
+
+  function loadCore() {
+    return loadCoreMath().then(core => loadRenderer().then(() => core));
+  }
+
   function authorApi() {
     try { return state.iframe?.contentWindow?.__pantsRigAuthorDebug || null; }
     catch (_) { return null; }
@@ -118,26 +134,9 @@
 
   // The species' posterior (hip pivot) height as a portrait-canvas y, so an unauthored species starts with its beltline there.
   function posteriorPortraitYForModel(model) {
-    const Core = window.HobunjiPantsRig;
-    const plane = findPortraitPlane(model);
-    const nodes = findLegNodes(model);
-    const Runtime = plane ? deriveRuntime(model, plane) : null;
-    if (!Core?.portraitMapping || !plane || !nodes || !Runtime) return null;
-    const dimensions = portraitDimensions(model, plane);
-    const flipped = portraitsFlipped();
-    model.updateMatrixWorld?.(true);
-    plane.updateMatrixWorld?.(true);
-    const corner = (px, py) => {
-      const point = new Runtime.Vector3((flipped ? 0.5 - px : px - 0.5) * dimensions.width, (0.5 - py) * dimensions.height, 0.012);
-      plane.localToWorld(point);
-      model.worldToLocal(point);
-      return { x: point.x, y: point.y };
-    };
-    const mapping = Core.portraitMapping(corner(0, 0), corner(1, 0), corner(0, 1));
-    nodes.leftThigh.updateWorldMatrix?.(true, false);
-    const hip = new Runtime.Vector3().setFromMatrixPosition(nodes.leftThigh.matrixWorld);
-    model.worldToLocal(hip);
-    return Core.portraitPointForLocal(mapping, hip.x, hip.y).y;
+    const THREE = window.HobunjiGameplayBackdrop?.getThree?.();
+    const Renderer = window.PantsGarmentRenderer;
+    return THREE && Renderer?.posteriorPortraitYForAvatar ? Renderer.posteriorPortraitYForAvatar(THREE, model, legSearchRoot(model)) : null;
   }
 
   function syncAuthorToProceduralIdentity(model = null) {
@@ -160,26 +159,6 @@
 
   function currentGarmentId() {
     return String(authorApi()?.state?.()?.garmentId || DEFAULT_GARMENT_ID);
-  }
-
-  function findPortraitPlane(model) {
-    let preferred = null; // Prefers the canonical front/skinned portrait plane used by the procedural preview.
-    let fallback = null; // Keeps the preview functional for older rigid-plane builds.
-    model?.traverse?.((node) => {
-      if (!node?.isMesh || node.userData?.hobunjiPantsPreview) return;
-      if (!fallback && node.geometry) fallback = node;
-      const face = String(node.userData?.hobunjiPlaneFace || '').toLowerCase();
-      const name = String(node.name || '').toLowerCase();
-      if (!preferred && (face === 'front' || /front.*plane|plane.*front/.test(name) || node.isSkinnedMesh)) preferred = node;
-    });
-    return preferred || fallback;
-  }
-
-  function portraitDimensions(model, plane) {
-    const parameters = plane?.geometry?.parameters || {}; // Reads authored plane dimensions when model metadata has not been published yet.
-    const width = Number(model?.userData?.portraitModelWidth) || Number(parameters.width) || 0.9;
-    const height = Number(model?.userData?.portraitModelHeight) || Number(parameters.height) || width;
-    return { width: Math.max(0.05, width), height: Math.max(0.05, height) };
   }
 
   function legSearchRoot(model) {
@@ -205,71 +184,6 @@
     return Object.values(nodes).every(Boolean) ? nodes : null;
   }
 
-  function constructorNamed(instance, name) {
-    let proto = instance; // Walks native Three prototype chains so this adapter never needs window.THREE, which the procedural editor intentionally does not expose.
-    while (proto) {
-      const ctor = proto.constructor;
-      if (ctor?.name === name) return ctor;
-      proto = Object.getPrototypeOf(proto);
-    }
-    return null;
-  }
-
-  function deriveRuntime(model, plane) {
-    if (!model || !plane?.geometry) return null;
-    const Vector3 = model.position?.constructor; // Used for garment-space/world-space point conversion and weighted skinning.
-    const Matrix4 = model.matrixWorld?.constructor; // Used for rest-relative procedural-bone transforms.
-    const BufferGeometry = constructorNamed(plane.geometry, 'BufferGeometry') || plane.geometry.constructor; // Used to create the dynamic garment mesh geometry.
-    const sourcePosition = plane.geometry.getAttribute?.('position'); // Supplies a real BufferAttribute prototype from the editor's Three instance.
-    const BufferAttribute = constructorNamed(sourcePosition, 'BufferAttribute') || sourcePosition?.constructor; // Used to install dynamic position/UV arrays.
-    let meshSample = null; // Finds a normal Mesh constructor so a skinned portrait does not accidentally create a SkinnedMesh with no skeleton.
-    model.traverse?.((node) => {
-      if (!meshSample && node?.isMesh && !node?.isSkinnedMesh && !node.userData?.hobunjiPantsPreview) meshSample = node;
-    });
-    let Mesh = meshSample?.constructor || null;
-    if (!Mesh && plane.isSkinnedMesh) Mesh = Object.getPrototypeOf(plane.constructor?.prototype || null)?.constructor || null;
-    if (!Mesh) Mesh = plane.constructor;
-    const materials = Array.isArray(plane.material) ? plane.material : [plane.material]; // Chooses the visible portrait material as a cloning template.
-    const sourceMaterial = materials.find(material => material?.map) || materials.find(Boolean) || null;
-    const sourceTexture = sourceMaterial?.map || null;
-    if (![Vector3, Matrix4, BufferGeometry, BufferAttribute, Mesh, sourceMaterial, sourceTexture].every(Boolean)) return null;
-    return { Vector3, Matrix4, BufferGeometry, BufferAttribute, Mesh, sourceMaterial, sourceTexture };
-  }
-
-  // Live 3D leg bones in avatar-local space, written into `scratch.bones3D` (no per-frame allocation). The hip is the
-  // thigh node's origin, the knee is the calf node's origin, and the ankle is the calf origin plus calf-down * calfLength
-  // (the solver publishes calfLength on the calf node; without it the leg is assumed straight, calf as long as thigh).
-  function readLiveBones(preview) {
-    const { model, nodes, scratch } = preview;
-    model.updateWorldMatrix?.(true, false); // Ancestors only: the leg chain and the avatar sit on different branches of the locomotion hierarchy.
-    const inverseModel = scratch.inverseModel.copy(model.matrixWorld).invert();
-    for (const [side, thigh, calf] of [['left', nodes.leftThigh, nodes.leftCalf], ['right', nodes.rightThigh, nodes.rightCalf]]) {
-      thigh.updateWorldMatrix?.(true, false);
-      calf.updateWorldMatrix?.(true, false);
-      const bones = scratch.bones3D[side];
-      scratch.point.setFromMatrixPosition(thigh.matrixWorld).applyMatrix4(inverseModel);
-      bones.hip.x = scratch.point.x; bones.hip.y = scratch.point.y; bones.hip.z = scratch.point.z;
-      scratch.point.setFromMatrixPosition(calf.matrixWorld).applyMatrix4(inverseModel);
-      bones.knee.x = scratch.point.x; bones.knee.y = scratch.point.y; bones.knee.z = scratch.point.z;
-      const calfLength = Number(calf.userData?.hobunjiCalfLength) > 0 ? Number(calf.userData.hobunjiCalfLength) : Math.abs(calf.position.y);
-      scratch.point.set(0, -calfLength, 0).applyMatrix4(calf.matrixWorld).applyMatrix4(inverseModel);
-      bones.ankle.x = scratch.point.x; bones.ankle.y = scratch.point.y; bones.ankle.z = scratch.point.z;
-    }
-    return scratch.bones3D;
-  }
-
-  function makeBoneScratch(Runtime) {
-    const joint = () => ({ x: 0, y: 0, z: 0 });
-    const leg = () => ({ hip: joint(), knee: joint(), ankle: joint() });
-    return { inverseModel: new Runtime.Matrix4(), point: new Runtime.Vector3(), bones3D: { left: leg(), right: leg() }, aim: { left: leg(), right: leg() }, transforms: [null, null, null, null, null] };
-  }
-
-  function forwardStaticFit(Core, garment, character, point) {
-    const controls = Core.buildLegOpeningFitControls(garment, Number(character?.legThickness) || 1); // Uses the exact one-time species/gender leg-opening fit as the 2D author.
-    const displacement = Core.inverseDistanceDisplacement(point, controls.source, controls.target, 2);
-    return { x: Core.clamp(point.x + displacement.x), y: Core.clamp(point.y + displacement.y) };
-  }
-
   function garmentSourceUrl(garment) {
     const path = String(garment?.image || DEFAULT_IMAGE_PATH).trim() || DEFAULT_IMAGE_PATH;
     if (/^https?:/i.test(path)) return path;
@@ -279,218 +193,50 @@
     return DEFAULT_IMAGE_URL;
   }
 
-  function loadImage(url) {
-    return new Promise((resolve, reject) => {
-      const image = new Image(); // Loads the clean repository PNG; no workspace spline/weight colors ever enter the 3D texture.
-      image.crossOrigin = 'anonymous';
-      image.onload = () => resolve(image);
-      image.onerror = () => reject(new Error(`Could not load pants texture ${url}`));
-      image.src = url;
-    });
-  }
-
-  async function clonePreviewTexture(Runtime, url) {
-    const image = await loadImage(url); // Replaces only the cloned texture image while preserving the procedural editor's native texture class/filter/wrapping settings.
-    const texture = Runtime.sourceTexture.clone();
-    texture.image = image;
-    texture.needsUpdate = true;
-    return texture;
-  }
-
   function disposePreview() {
     state.buildGeneration++; // Invalidates any in-flight async rebuild so it cannot re-attach a mesh after this disposal.
-    const preview = state.preview;
-    if (!preview) return;
-    preview.mesh?.parent?.remove?.(preview.mesh); // three r128 (this editor) lacks the newer one-call detach helper, so detach via the parent.
-    preview.geometry?.dispose?.();
-    preview.material?.dispose?.();
-    preview.texture?.dispose?.();
+    state.preview?.handle?.dispose?.();
     state.preview = null;
   }
 
-  function createGeometry(Runtime, Core, model, plane, garment, character) {
-    const transform = Core.solveAffine(garment.pantsBeltSpline, character.portraitBeltSpline); // Maps the pants beltline into this species/gender's authored portrait beltline.
-    if (!transform) return null;
-    const dimensions = portraitDimensions(model, plane);
-    const weightGrid = garment.weightMap?.encoding === 'rle8' ? Core.decodeWeightGridRle(garment.weightMap) : garment.weightMap; // Uses the exact painted five-channel weight data.
-    const vertexCount = (PREVIEW_SEGMENTS + 1) * (PREVIEW_SEGMENTS + 1); // Allocates one regular deformable grid over the clean PNG.
-    const positions = new Float32Array(vertexCount * 3);
-    const basePositions = new Float32Array(vertexCount * 3); // Remains neutral so animation deformation never accumulates frame-to-frame.
-    const uvs = new Float32Array(vertexCount * 2);
-    const weights = new Float32Array(vertexCount * 5); // Channel order is Core.WEIGHT_CHANNELS.
-    const indices = [];
-    model.updateMatrixWorld?.(true);
-    plane.updateMatrixWorld?.(true);
-    let vertex = 0;
-    const localPoint = new Runtime.Vector3(); // Reused while mapping fitted PNG pixels through the real portrait plane.
-    const worldPoint = new Runtime.Vector3(); // Reused to convert that portrait position back into avatar-local space.
-    // One placement for everything on the garment: a PNG-space point -> leg-thickness fit -> belt affine -> portrait
-    // plane -> avatar-local. The 2D bone joints below go through exactly the same path as the vertices, so a joint and
-    // the vertices around it keep their relationship.
-    const placeOnPlane = (u, v) => {
-      const fitted = forwardStaticFit(Core, garment, character, { x: u, y: v });
-      const portrait = Core.applyAffine(transform, fitted);
-      localPoint.set((portraitsFlipped() ? 0.5 - portrait.x : portrait.x - 0.5) * dimensions.width, (0.5 - portrait.y) * dimensions.height, 0.012); // Mirrors with the UV-flipped portrait texture.
-      worldPoint.copy(localPoint);
-      plane.localToWorld(worldPoint); // Includes the exact Procedural Animation portrait assembly transform.
-      model.worldToLocal(worldPoint);
-      return worldPoint;
-    };
-    for (let row = 0; row <= PREVIEW_SEGMENTS; row++) {
-      const v = row / PREVIEW_SEGMENTS;
-      for (let col = 0; col <= PREVIEW_SEGMENTS; col++, vertex++) {
-        const u = col / PREVIEW_SEGMENTS;
-        placeOnPlane(u, v);
-        basePositions[vertex * 3] = positions[vertex * 3] = worldPoint.x;
-        basePositions[vertex * 3 + 1] = positions[vertex * 3 + 1] = worldPoint.y;
-        basePositions[vertex * 3 + 2] = positions[vertex * 3 + 2] = worldPoint.z;
-        uvs[vertex * 2] = u;
-        uvs[vertex * 2 + 1] = 1 - v;
-        const sampled = Core.sampleWeights(weightGrid, u, v);
-        let sum = 0;
-        Core.WEIGHT_CHANNELS.forEach((channel, channelIndex) => {
-          const value = Math.max(0, Number(sampled[channel]) || 0);
-          weights[vertex * 5 + channelIndex] = value;
-          sum += value;
-        });
-        if (!(sum > 0)) { weights[vertex * 5] = 1; sum = 1; }
-        if (Math.abs(sum - 1) > 0.0001) {
-          for (let channelIndex = 0; channelIndex < 5; channelIndex++) weights[vertex * 5 + channelIndex] /= sum;
-        }
-      }
-    }
-    for (let row = 0; row < PREVIEW_SEGMENTS; row++) {
-      for (let col = 0; col < PREVIEW_SEGMENTS; col++) {
-        const a = row * (PREVIEW_SEGMENTS + 1) + col;
-        const b = a + 1;
-        const c = a + PREVIEW_SEGMENTS + 1;
-        const d = c + 1;
-        indices.push(a, c, b, b, c, d);
-      }
-    }
-    const geometry = new Runtime.BufferGeometry(); // Created from the live editor's own BufferGeometry constructor, not window.THREE.
-    geometry.setAttribute('position', new Runtime.BufferAttribute(positions, 3));
-    geometry.setAttribute('uv', new Runtime.BufferAttribute(uvs, 2));
-    geometry.setIndex(indices);
-    geometry.getAttribute('position').setUsage?.(DYNAMIC_DRAW_USAGE);
-    geometry.computeBoundingSphere();
-    const legBones = Core.normalizeLegBones(garment.legBones); // Knees are the exact midpoint of hip and ankle, whatever the stored data says.
-    const bones2D = {}; // The authored 2D bones in the garment's rest space (avatar-local), aligned onto the live 3D bones every frame.
-    for (const side of ['left', 'right']) {
-      bones2D[side] = {};
-      for (const joint of ['hip', 'knee', 'ankle']) {
-        const placed = placeOnPlane(legBones[side][joint].x, legBones[side][joint].y);
-        bones2D[side][joint] = { x: placed.x, y: placed.y, z: placed.z };
-      }
-    }
-    const beltCenter = { x: 0, y: 0 }; // Centre of the pants beltline in avatar-local space: the belt scale grows/shrinks the garment about it.
-    for (const point of garment.pantsBeltSpline) {
-      const placed = placeOnPlane(point.x, point.y);
-      beltCenter.x += placed.x / garment.pantsBeltSpline.length;
-      beltCenter.y += placed.y / garment.pantsBeltSpline.length;
-    }
-    const origin = placeOnPlane(0, 0).clone(), across = placeOnPlane(1, 0).clone().sub(origin), down = placeOnPlane(0, 1).clone().sub(origin);
-    const normal = across.cross(down).normalize(); // The portrait plane's normal in avatar-local space: legs that swing forward/back tilt the garment about it.
-    Core.sharpenWeights(weights, Math.min(8, Math.max(1, Number(character.weightSharpness) || 4))); // Strong initial 2D->3D alignment (see Core.sharpenWeights).
-    return { geometry, basePositions, weights, bones2D, beltCenter, planeNormal: { x: normal.x, y: normal.y, z: normal.z } };
-  }
-
+  // The live preview IS the in-game garment: js/pants-garment-renderer.js builds and skins the mesh (weights, 3D bone
+  // alignment, belt scale, leg roll, foot lift) from the author's live, unsaved records, so what you see here is what
+  // the game draws.
   async function rebuildPreview(model, project, identity) {
     const Core = window.HobunjiPantsRig;
+    const Renderer = window.PantsGarmentRenderer;
+    const THREE = window.HobunjiGameplayBackdrop?.getThree?.(); // The editor keeps three as a module import, so it hands the namespace over explicitly.
     if (!Core || !model || !project || !identity) return false;
     const garmentId = currentGarmentId();
     const garment = project.garments?.[garmentId] || project.garments?.[DEFAULT_GARMENT_ID] || Object.values(project.garments || {})[0];
     const character = project.characters?.[identityKey(identity)];
-    const plane = findPortraitPlane(model);
     const nodes = findLegNodes(model);
-    const Runtime = deriveRuntime(model, plane); // Derives all Three constructors from this exact preview instead of relying on a nonexistent/foreign global THREE.
-    if (!garment || !character || !plane || !nodes || !Runtime) {
-      const reason = !nodes ? 'procedural leg chain' : !character ? 'authored species beltline' : !Runtime ? 'native 3D constructors' : 'garment data';
+    if (!garment || !character || !nodes || !Renderer || !THREE) {
+      const reason = !nodes ? 'procedural leg chain' : !character ? 'authored species beltline' : !(Renderer && THREE) ? 'native 3D constructors' : 'garment data';
       setStatus(`Pants 3D preview is waiting for ${reason}.`, 'warn');
       disposePreview();
       return false;
     }
-    const built = createGeometry(Runtime, Core, model, plane, garment, character);
-    if (!built) {
-      setStatus('Could not solve pants beltline mapping for this species.', 'warn');
-      disposePreview();
-      return false;
-    }
-    const generation = ++state.buildGeneration; // Rejects stale async image loads if the user changes NPC/garment mid-build.
-    const texture = await clonePreviewTexture(Runtime, garmentSourceUrl(garment));
-    if (generation !== state.buildGeneration || model !== window.HobunjiGameplayBackdrop?.getAvatarModel?.()) {
-      texture.dispose?.();
-      built.geometry.dispose?.();
-      return false;
-    }
     disposePreview();
-    const material = Runtime.sourceMaterial.clone(); // Cloning preserves the procedural editor's actual sprite shader/texture conventions.
-    material.map = texture;
-    material.transparent = true;
-    material.alphaTest = 0.01;
-    material.side = DOUBLE_SIDE;
-    material.depthWrite = false;
-    material.polygonOffset = true;
-    material.polygonOffsetFactor = -2;
-    material.polygonOffsetUnits = -2;
-    if ('skinning' in material) material.skinning = false; // Prevents a material cloned from a SkinnedMesh portrait from requesting missing skin attributes on the Pants mesh.
-    material.color?.set?.(0xffffff);
-    material.needsUpdate = true;
-    const mesh = new Runtime.Mesh(built.geometry, material); // Plain Mesh constructor is derived from the editor's own scene/model hierarchy.
-    mesh.name = 'ProceduralPantsRigLivePreview';
-    mesh.renderOrder = 28;
-    mesh.frustumCulled = false;
-    mesh.userData.hobunjiPantsPreview = true;
-    model.add(mesh);
-    model.updateMatrixWorld?.(true);
-    state.preview = {
-      model,
-      mesh,
-      geometry: built.geometry,
-      material,
-      texture,
-      runtime: Runtime,
-      basePositions: built.basePositions,
-      weights: built.weights,
-      nodes,
-      bones2D: built.bones2D,
-      beltCenter: built.beltCenter,
-      planeNormal: built.planeNormal,
-      beltScale: Math.min(3.5, Math.max(1.7, Number(character.beltScale) || 1.75)),
-      legRollGain: Math.min(4, Math.max(1, Number(character.legRollGain) || 2)),
-      scratch: makeBoneScratch(Runtime),
-      garmentId,
-      identityKey: identityKey(identity),
-    };
+    const handle = Renderer.attach(THREE, {
+      avatarGroup: model, legHandle: { group: legSearchRoot(model) }, speciesId: identity.speciesId, gender: identity.gender,
+      garmentId, garmentRecord: garment, characterRecord: character, imageUrl: garmentSourceUrl(garment), name: 'pantsLivePreview',
+      footObjects: window.HobunjiGameplayBackdrop?.getFootObjects?.() || null,
+    });
+    if (!handle) {
+      setStatus('Could not solve pants beltline mapping for this species.', 'warn');
+      return false;
+    }
+    state.preview = { handle, model, nodes: handle.nodes, garmentId, identityKey: identityKey(identity) };
     setStatus('Live pants preview bound to this Procedural Animation avatar + its existing IK legs.', 'good');
     return true;
   }
 
-  // Every frame each of the four leg bones (left/right thigh and calf) is aligned from its authored 2D position onto
-  // the live 3D bone: rotated to the 3D direction and stretched along the bone so its length matches, so the garment
-  // legs follow the avatar's legs however they are posed. The belt weight stays rigid with the body. Thigh and calf
-  // both carry the knee to the same 3D point, so a vertex at the knee cannot tear apart between them.
+  // Runs every rendered frame: the renderer re-aligns the garment's thigh/calf bones onto the live 3D legs and skins it.
   function updatePreviewPose() {
     const preview = state.preview;
-    const Core = window.HobunjiPantsRig;
-    if (!preview || !preview.model?.parent || !Core) return;
-    const measured = readLiveBones(preview);
-    const live = preview.scratch.aim; // The garment aims at the live legs with their sideways (z) swing exaggerated by the roll gain.
-    Core.amplifyLegRoll(measured.left, preview.legRollGain, live.left);
-    Core.amplifyLegRoll(measured.right, preview.legRollGain, live.right);
-    const flat = preview.bones2D;
-    const transforms = preview.scratch.transforms; // Channel order is Core.WEIGHT_CHANNELS: belt, leftThigh, leftCalf, rightThigh, rightCalf.
-    const options = { perpendicularScale: LEG_ACROSS_SCALE, normal: preview.planeNormal };
-    const s = preview.beltScale, c = preview.beltCenter; // Belt-weighted pixels scale vertically about the beltline centre; leg-weighted pixels follow their bones.
-    transforms[0] = s === 1 ? null : { a: 1, b: 0, c: 0, d: s, tx: 0, ty: c.y * (1 - s) }; // Vertical only: the beltline spline already controls width.
-    transforms[1] = Core.alignBoneSegment3D(flat.left.hip, flat.left.knee, live.left.hip, live.left.knee, options);
-    transforms[2] = Core.alignBoneSegment3D(flat.left.knee, flat.left.ankle, live.left.knee, live.left.ankle, options);
-    transforms[3] = Core.alignBoneSegment3D(flat.right.hip, flat.right.knee, live.right.hip, live.right.knee, options);
-    transforms[4] = Core.alignBoneSegment3D(flat.right.knee, flat.right.ankle, live.right.knee, live.right.ankle, options);
-    const position = preview.geometry.getAttribute('position');
-    Core.skinWeightedPositions(preview.basePositions, preview.weights, transforms, position.array);
-    position.needsUpdate = true;
-    preview.geometry.computeBoundingSphere();
+    if (!preview || !preview.model?.parent) return;
+    preview.handle.update();
   }
 
   async function syncPreviewBinding() {
@@ -710,44 +456,17 @@
 
   // How well the garment's 2D bones currently sit on the live 3D leg bones, per side, in avatar-local units. Every
   // *Error should be ~0 and kneeMidpointError3D is 0 for an unbent leg (the solver puts the knee at exactly half).
-  function boneAlignmentReport() {
-    const preview = state.preview;
-    const Core = window.HobunjiPantsRig;
-    if (!preview || !Core) return null;
-    const measured = readLiveBones(preview);
-    const live = { left: Core.amplifyLegRoll(measured.left, preview.legRollGain, { hip: {}, knee: {}, ankle: {} }), right: Core.amplifyLegRoll(measured.right, preview.legRollGain, { hip: {}, knee: {}, ankle: {} }) };
-    const options = { perpendicularScale: LEG_ACROSS_SCALE, normal: preview.planeNormal };
-    const distance = (p, q) => Math.hypot(p.x - q.x, p.y - q.y, (p.z || 0) - (q.z || 0));
-    const through = (t, p) => ({ x: t.m[0] * p.x + t.m[1] * p.y + t.m[2] * p.z + t.tx, y: t.m[3] * p.x + t.m[4] * p.y + t.m[5] * p.z + t.ty, z: t.m[6] * p.x + t.m[7] * p.y + t.m[8] * p.z + t.tz });
-    const report = {};
-    for (const side of ['left', 'right']) {
-      const l = live[side], f = preview.bones2D[side];
-      const thigh = Core.alignBoneSegment3D(f.hip, f.knee, l.hip, l.knee, options);
-      const calf = Core.alignBoneSegment3D(f.knee, f.ankle, l.knee, l.ankle, options);
-      report[side] = {
-        length2D: { thigh: distance(f.hip, f.knee), calf: distance(f.knee, f.ankle) },
-        length3D: { thigh: distance(l.hip, l.knee), calf: distance(l.knee, l.ankle) },
-        stretch: { thigh: thigh.stretch, calf: calf.stretch },
-        kneeMidpointError3D: distance(l.knee, Core.kneeAtMidpoint(l.hip, l.ankle)),
-        hipError: distance(through(thigh, f.hip), l.hip),
-        kneeErrorThigh: distance(through(thigh, f.knee), l.knee),
-        kneeErrorCalf: distance(through(calf, f.knee), l.knee),
-        ankleError: distance(through(calf, f.ankle), l.ankle),
-        live3D: { hip: { ...l.hip }, knee: { ...l.knee }, ankle: { ...l.ankle } },
-        rest2D: { hip: { ...f.hip }, knee: { ...f.knee }, ankle: { ...f.ankle } },
-      };
-    }
-    return report;
-  }
+  const boneAlignmentReport = () => state.preview?.handle?.alignmentReport?.() || null;
 
   window.ProceduralPantsRigAuthor = {
     installed: true,
     getBoneAlignment: boneAlignmentReport,
-    getPreviewData: () => (state.preview ? { base: state.preview.basePositions, weights: state.preview.weights, positions: state.preview.geometry.getAttribute('position').array } : null),
+    getPreviewData: () => (state.preview ? { base: state.preview.handle.basePositions, weights: state.preview.handle.weights, positions: state.preview.handle.geometry.getAttribute('position').array } : null),
     open: () => setOpen(true),
     close: () => setOpen(false),
     rebuild: () => { state.forceRebuild = true; },
-    getPreviewMesh: () => state.preview?.mesh || null,
+    getPreviewMesh: () => state.preview?.handle?.mesh || null,
+    getPreviewHandle: () => state.preview?.handle || null,
     getAuthorFrame: () => state.iframe || null,
     debugSnapshot: () => ({
       open: state.open,
@@ -758,7 +477,7 @@
       identity: selectedIdentity(),
       modelName: window.HobunjiGameplayBackdrop?.getAvatarModel?.()?.name || null,
       previewBound: !!state.preview,
-      previewVertices: state.preview?.geometry?.getAttribute?.('position')?.count || 0,
+      previewVertices: state.preview?.handle?.geometry?.getAttribute?.('position')?.count || 0,
       proceduralLegs: !!findLegNodes(window.HobunjiGameplayBackdrop?.getAvatarModel?.()),
       globalThreeRequired: false,
     }),

@@ -12015,6 +12015,7 @@
           window.PantsGarmentRenderer?.attachToLegs(THREE, legs, {
             avatarGroup, speciesId: appearance.speciesId, gender: appearance.gender, name: rec?.id || rec?.name || 'npc',
             appearance: window.PantsGarmentRenderer.appearanceFromBodyColors(profile?.bodyColors),
+            overlayMask: window.PantsGarmentRenderer.buildOverlayMask(frontCanvas, profile, { forceEyesOpen: true }), // Arm clothing/overwear/pauldron/hood art stays in front of the pants.
           });
         }
 
@@ -16832,6 +16833,7 @@
           window.PantsGarmentRenderer?.attachToLegs(THREE, playerLegs, {
             avatarGroup, speciesId: _playerData?.appearance?.speciesId, gender: _playerData?.appearance?.gender, name: 'player',
             appearance: window.PantsGarmentRenderer.appearanceFromItem(wornPants),
+            overlayMask: window.PantsGarmentRenderer.buildOverlayMask(frontCanvas, profile, staticRenderOptions),
           });
         }
         window.ImpactRagdollPlayback?.attach(playerMesh, playerLegs);
