@@ -65,12 +65,14 @@
     return { minC, minR, w: maxC - minC + 1, h: maxR - minR + 1 };
   }
 
-  function isBlocked(zone, x, y, clearableTypes) {
+  // objectsById is optional: findSite passes a prebuilt index so a zone with
+  // thousands of clutter objects isn't linearly re-scanned per occupied tile.
+  function isBlocked(zone, x, y, clearableTypes, objectsById = null) {
     const t = tileAt(zone, x, y);
     if (!t) return true;
     if (t.water || t.path || t.ramp || t.waterfall || t.invisiblePath) return true;
     if (!t.occupiedBy) return false;
-    const obj = objectAt(zone, t.occupiedBy);
+    const obj = objectsById ? (objectsById.get(t.occupiedBy) || null) : objectAt(zone, t.occupiedBy);
     // An occupied tile with no resolvable object (e.g. a locale's own
     // reserved-but-not-yet-painted buffer) is treated as blocking -- safest
     // default when the occupant can't be identified.
@@ -79,16 +81,43 @@
     return !clearableTypes.has(obj.type);
   }
 
-  function siteFits(zone, x, y, w, h, requireFlat, clearableTypes) {
-    let targetH = null;
+  // First object per id, matching objectAt's Array.find semantics.
+  function indexObjectsById(zone) {
+    const byId = new Map();
+    for (const obj of (zone.objects || [])) if (obj && !byId.has(obj.id)) byId.set(obj.id, obj);
+    return byId;
+  }
+
+  // Summed-area table of isBlocked() over the whole zone, so findSite can ask
+  // "is any tile in this rect blocked?" in O(1) per candidate instead of
+  // re-walking w*h tiles (and, before the id index, every zone object per
+  // occupied tile) for each of the zone's cols*rows candidates. Porakaneki
+  // camps stamp every wilderness zone on their first tick, so the old scan
+  // was a ~1s main-thread hitch.
+  function blockedSummedArea(zone, clearableTypes) {
+    const cols = zone.cols, rows = zone.rows, stride = cols + 1;
+    const objectsById = indexObjectsById(zone);
+    const sums = new Int32Array(stride * (rows + 1));
+    for (let y = 0; y < rows; y++) {
+      let rowCount = 0;
+      for (let x = 0; x < cols; x++) {
+        if (isBlocked(zone, x, y, clearableTypes, objectsById)) rowCount++;
+        sums[(y + 1) * stride + x + 1] = sums[y * stride + x + 1] + rowCount;
+      }
+    }
+    return sums;
+  }
+
+  function rectHasBlocked(sums, cols, x, y, w, h) {
+    const stride = cols + 1;
+    return sums[(y + h) * stride + x + w] - sums[y * stride + x + w] - sums[(y + h) * stride + x] + sums[y * stride + x] > 0;
+  }
+
+  function rectIsFlat(zone, x, y, w, h) {
+    const targetH = tileHeight(tileAt(zone, x, y));
     for (let yy = y; yy < y + h; yy++) {
       for (let xx = x; xx < x + w; xx++) {
-        if (isBlocked(zone, xx, yy, clearableTypes)) return false;
-        if (requireFlat) {
-          const th = tileHeight(tileAt(zone, xx, yy));
-          if (targetH === null) targetH = th;
-          else if (Math.abs(th - targetH) > 0.05) return false;
-        }
+        if (Math.abs(tileHeight(tileAt(zone, xx, yy)) - targetH) > 0.05) return false;
       }
     }
     return true;
@@ -143,6 +172,7 @@
     }; // Used for every shuffled candidate before the more expensive tile-by-tile fit scan.
 
     const rng = opts.rng || Math.random;
+    const blockedSums = blockedSummedArea(zone, clearableTypes);
     const candidates = [];
     for (let y = 0; y <= zone.rows - h; y++) {
       for (let x = 0; x <= zone.cols - w; x++) candidates.push({ x, y });
@@ -165,7 +195,8 @@
         });
         if (tooClose) continue;
       }
-      if (siteFits(zone, c.x, c.y, w, h, requireFlat, clearableTypes)) {
+      // Fits when no tile is blocked and, if required, the rect is one height.
+      if (!rectHasBlocked(blockedSums, zone.cols, c.x, c.y, w, h) && (!requireFlat || rectIsFlat(zone, c.x, c.y, w, h))) {
         return { x: c.x, y: c.y, w, h, clearance, bbox };
       }
     }

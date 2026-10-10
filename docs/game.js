@@ -9875,6 +9875,8 @@
       // re-fetching config/maps/<id>.json.
       const _rawMapDataByMapId = new Map();
       let _layoutSwapInProgress = false;
+      const COVERED_WORLD_RENDER_INTERVAL_MS = 250; // World render cadence while a loading screen hides the canvas — see gameLoop.
+      let _lastCoveredWorldRenderAt = -Infinity;
       let _layoutCheckAccumS = 0; // Real seconds since checkMapLayoutChanges last ran — see its call in gameLoop.
       const _denNests = new Map(); // mapId → { col, row, w, h, itemKey, liveBirth, label, remaining }
       // Some placed furniture opens a custom panel on interact instead of
@@ -24520,6 +24522,42 @@
         window.RuntimeFrameScheduler.checkpoint('pre-render');
 
         // ── Render active scene ──────────────────────────────────
+        // An opaque loading/introduction screen covers the whole canvas, so
+        // redrawing the world underneath it (up to ~10 scene passes with
+        // outlines + the held overlay) every frame is wasted. Keep a slow
+        // cadence instead of stopping outright so a freshly loaded area still
+        // compiles shaders and uploads textures before the screen lifts.
+        const worldCovered = window.LoadingScreenRuntime?.coversWorld?.() === true;
+        if (!worldCovered || now - _lastCoveredWorldRenderAt >= COVERED_WORLD_RENDER_INTERVAL_MS) {
+          if (worldCovered) _lastCoveredWorldRenderAt = now;
+          renderWorldPasses(now);
+        }
+        // Optional diagnostic hook (off by default, see performance-debug.js):
+        // everything timed above only measures how long the CPU took to
+        // *issue* this frame's draw calls, not how long the GPU actually
+        // took to execute them. A forced readback here blocks until the GPU
+        // has really finished, so toggling this on can reveal GPU-bound
+        // frame time that's otherwise invisible to CPU-side profiling.
+        window.__hobunjiGpuSyncDiagnostic?.(renderer);
+
+        // ── 2D overlays (combat/debug/lightning, plus lighting) ──
+        const overlayPerf = window.PerfProfiler?.begin('overlays+hud');
+        drawOverlays();
+        window.WeatherFX.drawLightingOverlay();
+
+        window.DialogueContent?.updateNpcDialoguePortrait(now);
+        window.HudUpdate.updateHud();
+        if (!preworldBackdropReleased) {
+          preworldBackdropReleased = !window.HobunjiTitleScreen?.releaseBackdrop
+            || window.HobunjiTitleScreen.releaseBackdrop('first-world-frame') === true;
+        }
+        window.PerfProfiler?.end(overlayPerf);
+        window.PerfProfiler?.end(gameLoopTotalPerf);
+      }
+
+      // gameLoop's world render: the main pass plus, with outlines on, the
+      // occluder/outline/mist/seam passes and the post-process composite.
+      function renderWorldPasses(now) {
         // "Render CPU" in the overlay only shows the average cost of a single
         // renderer.render() call; s_outlines below can chain up to 6 of them
         // in one frame, so this bucket captures the true per-frame total.
@@ -24631,27 +24669,6 @@
         }
         window.PerfProfiler?.end(renderPassPerf);
         window.MobileRenderBudget?.sample(now, !paused && !window.PixelProbe?.armed);
-        // Optional diagnostic hook (off by default, see performance-debug.js):
-        // everything timed above only measures how long the CPU took to
-        // *issue* this frame's draw calls, not how long the GPU actually
-        // took to execute them. A forced readback here blocks until the GPU
-        // has really finished, so toggling this on can reveal GPU-bound
-        // frame time that's otherwise invisible to CPU-side profiling.
-        window.__hobunjiGpuSyncDiagnostic?.(renderer);
-
-        // ── 2D overlays (combat/debug/lightning, plus lighting) ──
-        const overlayPerf = window.PerfProfiler?.begin('overlays+hud');
-        drawOverlays();
-        window.WeatherFX.drawLightingOverlay();
-
-        window.DialogueContent?.updateNpcDialoguePortrait(now);
-        window.HudUpdate.updateHud();
-        if (!preworldBackdropReleased) {
-          preworldBackdropReleased = !window.HobunjiTitleScreen?.releaseBackdrop
-            || window.HobunjiTitleScreen.releaseBackdrop('first-world-frame') === true;
-        }
-        window.PerfProfiler?.end(overlayPerf);
-        window.PerfProfiler?.end(gameLoopTotalPerf);
       }
 
       // Debug hitbox/collider overlay (Settings → Dev Tools → Show Hitboxes)
