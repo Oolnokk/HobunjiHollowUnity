@@ -14,7 +14,13 @@
   const style = document.createElement('style');
   style.id = 'pantsWorkspaceEnlargeStyles';
   style.textContent = `
-.pantsEnlargeBtn,.pantsZoomBtn,.pantsPanBtn{flex:0 0 auto!important;min-height:30px;padding:4px 10px;font-size:12px;white-space:nowrap}
+/* Phones in "desktop site" mode ignore the viewport meta, so without touch-action the browser holds every tap back to
+   wait for a double-tap zoom: the second tap zooms the page instead of reaching the button. manipulation keeps pan and
+   pinch but removes double-tap zoom and the click delay, page-wide here (the canvases stay touch-action:none). */
+html,body{touch-action:manipulation}
+.pantsEnlargeBtn,.pantsZoomBtn,.pantsPanBtn{flex:0 0 auto!important;min-height:30px;padding:4px 10px;font-size:12px;white-space:nowrap;touch-action:manipulation;-webkit-tap-highlight-color:rgba(107,169,255,.45);user-select:none;-webkit-user-select:none}
+.pantsEnlargeBtn:active,.pantsZoomBtn:active,.pantsPanBtn:active{transform:scale(.95);background:#2a4a78!important}
+@media(pointer:coarse){.pantsEnlargeBtn,.pantsZoomBtn,.pantsPanBtn{min-height:44px;padding:8px 14px;font-size:14px}}
 .pantsZoomBtn,.pantsPanBtn{display:none!important}
 .canvasCard.pantsEnlarged{position:fixed!important;inset:6px!important;z-index:1000!important;height:auto!important;min-height:0!important;display:flex!important;flex-direction:column!important;gap:6px;padding:8px;border:1px solid #4a6a92;border-radius:12px;background:#07101a;box-shadow:0 0 0 100vmax rgba(2,6,12,.7),0 18px 60px rgba(0,0,0,.7)}
 .canvasCard.pantsEnlarged .canvasWrap{flex:1 1 0!important;min-height:0!important;height:auto!important}
@@ -32,6 +38,8 @@ html.pantsWorkspaceEnlarged .controls,html.pantsWorkspaceEnlarged .inspect,html.
 
   let active = null; // { card, button, canvas } for the currently enlarged workspace.
   let zoom = 1; // Multiplier on the contain-fit size while enlarged.
+  let lastToggleAt = -Infinity; // A double tap must open the window once, not open it and immediately close it again.
+  const TOGGLE_DEBOUNCE_MS = 450;
 
   function fitEnlarged() { // Contain-fit the canvas bitmap into the enlarged wrap (upscaling allowed), times the zoom step.
     if (!active) return;
@@ -131,7 +139,12 @@ html.pantsWorkspaceEnlarged .controls,html.pantsWorkspaceEnlarged .inspect,html.
       };
       make('pantsPanBtn', '✋ Pan', togglePan, 'Scroll the zoomed workspace with one finger');
       make('pantsZoomBtn', '🔍 1×', cycleZoom, 'Zoom the enlarged workspace 1×/2×/3×');
-      const enlarge = make('pantsEnlargeBtn', '⤢ Enlarge', () => setEnlarged(card, active?.card !== card), 'Enlarge this workspace for precise spline authoring (Esc to exit)');
+      const enlarge = make('pantsEnlargeBtn', '⤢ Enlarge', () => {
+        const now = performance.now();
+        if (now - lastToggleAt < TOGGLE_DEBOUNCE_MS) return; // Second tap of a double tap.
+        lastToggleAt = now;
+        setEnlarged(card, active?.card !== card);
+      }, 'Enlarge this workspace for precise spline authoring (Esc to exit)');
       enlarge.setAttribute('aria-pressed', 'false');
     }
     document.addEventListener('keydown', event => { if (event.key === 'Escape' && active) setEnlarged(null, false); });
