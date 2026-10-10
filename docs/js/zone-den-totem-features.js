@@ -38,6 +38,7 @@
   function init(injectedDeps) {
     deps = injectedDeps;
     loadAnimalDenEntranceLocaleObject(); // Preload the shared den facade/collider so movement can use it as soon as the zone is interactive.
+    loadAllAnimalDenEntranceLocales(); // Small-den template too: den relocation (js/wildlife-spawn.js) can run for a zone whose meshes were never built this session.
   }
   function canonicalRootTotemRecipe() {
     return window.HOBUNJI_ROOT_TOTEM_CONFIG?.canonicalRecipe || null;
