@@ -111,7 +111,7 @@
   const social = new URL('social-action-wheel.js?v=20261009h26550c9', base).href;
   const socialArchAdapter = new URL('social-action-wheel-arch-adapter.js?v=20260905social17', base).href; // Keeps the centered wheel while sharing selection-arch hold/wheel/release controls and HUD styling.
   const controllerSelectionUi = new URL('controller-selection-ui.js?v=20260910controller1', base).href; // Gives held controller wheel/arch openers automatic both-stick navigation with no authored mode shift.
-  const archButtonLabels = new URL('arch-button-labels.js?v=20261009h9654a80', base).href; // Adds centered non-attack meanings plus live lower-right configured-input subscripts to gameplay arch icons.
+  const archButtonLabels = new URL('arch-button-labels.js?v=20261010h84de030', base).href; // Adds centered non-attack meanings plus live lower-right configured-input subscripts to gameplay arch icons.
   const inputDefaultsResetUi = new URL('input-default-reset-ui.js?v=20260909controller4', base).href; // Adds independent keyboard/controller Reset to Defaults buttons after the Settings binding lists render.
   const bandageSystem = new URL('bandage-system.js?v=20260924affliction2', base).href; // Bandaging shares these action locks and must exist before the post-load Potion Select adapter can route quick taps into it.
   const socialRhythmRuntime = new URL('social-rhythm-runtime.js?v=20260925metromix1', base).href;

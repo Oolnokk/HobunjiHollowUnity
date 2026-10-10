@@ -103,6 +103,16 @@
         font-size:clamp(22.05px, calc(0.569625 * var(--col)), 33.075px);
       }
       #btnSwapTarget.active .arch-meaning-label { color:#ff6873; }
+      #btnSwapTarget:not(.active):not(.abt-hidden) .arch-meaning-label {
+        animation:mobile-target-available-pulse 1.8s ease-in-out infinite;
+      }
+      @keyframes mobile-target-available-pulse {
+        0%, 100% { opacity:1; }
+        50% { opacity:.55; }
+      }
+      @media (prefers-reduced-motion:reduce) {
+        #btnSwapTarget .arch-meaning-label { animation:none !important; }
+      }
       .arch-meaning-label.long { font-size:clamp(16.84375px, calc(0.4134375 * var(--col)), 24.5px); }
       .arch-meaning-label.very-long { font-size:clamp(15.3125px, calc(0.3521875 * var(--col)), 21.4375px); letter-spacing:-0.085em; }
 

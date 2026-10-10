@@ -9,9 +9,10 @@ function preference(fine, saved = null, brokenStorage = false) {
   vm.runInNewContext(input, context);
   return context.window.Combat.input;
 }
-assert.equal(preference(false).isAutoTargetEnabled(), true, 'fresh mobile starts enabled');
+assert.equal(preference(false).isAutoTargetEnabled(), false, 'fresh mobile starts off');
 assert.equal(preference(false, 'false').isAutoTargetEnabled(), false, 'mobile saved off is respected');
-assert.equal(preference(false, null, true).isAutoTargetEnabled(), true, 'blocked storage retains default on');
+assert.equal(preference(false, null, true).isAutoTargetEnabled(), false, 'blocked storage starts off');
+assert.equal(preference(false, 'true').isAutoTargetEnabled(), false, 'saved on cannot enable targeting automatically');
 const desktop = preference(true, 'true'); // Desktop fixture must stay manual regardless of preference changes.
 assert.equal(desktop.isAutoTargetEnabled(), false);
 desktop.setAutoTargetEnabled(true);
@@ -194,3 +195,25 @@ assert.equal(targetContext.findAvailableAutoTarget(),null,'out-of-range prey doe
 near.x=15;targetContext.equipmentSlots.weapon=null;targetContext.gameFrameSerial++;
 assert.equal(targetContext.findAvailableAutoTarget(),null,'an unequipped weapon has no potential autotarget');
 console.log('executed disabled-mode prey acquisition preview checks passed');
+
+const lifecycleListeners = {};
+const lifecycle = {isDesktop:false,inCombat:false,weaponOut:false,enabled:false,transitions:0,window:{dispatchEvent(event){lifecycleListeners[event.type]?.();},Combat:{input:{setAutoTargetEnabled(value){lifecycle.enabled=value;lifecycle.transitions++;}}}},CustomEvent:function(type){this.type=type;},isPlayerInCombat:()=>lifecycle.inCombat,shoulderSurfCombatStanceActive:()=>lifecycle.weaponOut};
+const lifecycleStart = game.indexOf('      let mobileAutoTargetWasInCombat');
+vm.createContext(lifecycle);
+vm.runInContext(game.slice(lifecycleStart,game.indexOf('      function syncMobileAutoTargetButton()',lifecycleStart)),lifecycle);
+function combatTick() { vm.runInContext('syncMobileAutoTargetCombatState()',lifecycle); }
+combatTick();lifecycle.inCombat=true;lifecycle.weaponOut=true;combatTick();
+assert.equal(lifecycle.enabled,false,'combat entry never enables assist');
+lifecycle.enabled=true;combatTick();assert.equal(lifecycle.enabled,true,'explicit activation survives active combat');
+lifecycle.inCombat=false;combatTick();assert.equal(lifecycle.enabled,false,'encounter ending switches off');
+lifecycle.inCombat=true;combatTick();assert.equal(lifecycle.enabled,false,'next encounter stays off');
+lifecycle.enabled=true;lifecycle.weaponOut=false;combatTick();assert.equal(lifecycle.enabled,false,'stowing weapon switches off even while enemies chase');
+lifecycle.inCombat=false;combatTick();lifecycle.enabled=true;combatTick();assert.equal(lifecycle.enabled,true,'explicit prey targeting works outside combat');
+const gestureListeners={};
+gesture.window.addEventListener=(name,fn)=>{gestureListeners[name]=fn;};
+vm.runInNewContext(game.slice(gestureStart,game.indexOf('      const desktopTapWindowMs',gestureStart)),gesture);
+handlers.pointerdown(event(20));gestureListeners['hobunji-auto-target-combat-end']();
+const beforeExitRelease=transitions;handlers.pointerup(event(20));
+assert.equal(transitions,beforeExitRelease,'combat exit cancels a pending toggle');
+assert.equal(timers.size,0,'combat exit clears hold timer');
+console.log('manual activation and combat-exit lifecycle checks passed');

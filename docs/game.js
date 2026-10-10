@@ -17276,6 +17276,7 @@
       }
 
       function updateMovement(dt) {
+        syncMobileAutoTargetCombatState();
         syncMobileAutoTargetButton(); // Target availability refreshes even when prone, mounted, or another mode skips ordinary movement.
         updateMobileArchCombatAimLifecycle();
         updateMeleeAttackFacingCommitLifecycle();
@@ -26012,6 +26013,21 @@
         window.Mounts?.toggleMount();
       });
 
+      let mobileAutoTargetWasInCombat = false; // Edge tracking allows explicit prey targeting outside an encounter.
+      let mobileAutoTargetWeaponWasOut = false;
+      function syncMobileAutoTargetCombatState() {
+        if (isDesktop) return;
+        const inCombat = isPlayerInCombat();
+        const weaponOut = shoulderSurfCombatStanceActive();
+        const ended = (mobileAutoTargetWasInCombat && !inCombat) || (mobileAutoTargetWeaponWasOut && !weaponOut);
+        mobileAutoTargetWasInCombat = inCombat;
+        mobileAutoTargetWeaponWasOut = weaponOut;
+        if (ended) {
+          window.dispatchEvent(new CustomEvent('hobunji-auto-target-combat-end')); // Cancel a pending tap/hold before it can re-enable targeting.
+          window.Combat?.input?.setAutoTargetEnabled(false);
+        }
+      }
+
       function syncMobileAutoTargetButton() {
         if (!btnSwapTarget) return;
         const enabled = mobileAutoTargetEnabled(); // Read once to keep the arch's toggle presentation consistent.
@@ -26079,6 +26095,7 @@
         btnSwapTarget.addEventListener('pointerup', event => finishTargetStick(event));
         btnSwapTarget.addEventListener('pointercancel', event => finishTargetStick(event, true));
         btnSwapTarget.addEventListener('lostpointercapture', event => finishTargetStick(event, true));
+        window.addEventListener('hobunji-auto-target-combat-end', () => finishTargetStick(null, true));
         window.addEventListener('blur', () => finishTargetStick(null, true));
         document.addEventListener('visibilitychange', () => { if (document.hidden) finishTargetStick(null, true); });
       }
@@ -27546,7 +27563,7 @@
           const target = manualAutoTarget;
           const availableTarget = findAvailableAutoTarget(); // Reports the prospective prey/enemy even while the mobile toggle is disabled.
           return {
-            latestChange: 'Persistent mobile locks gradually steer the camera, more slowly up close; the reticle remains centered and attacks use existing reticle convergence. Manual heavy/ranged drags retain priority. Arena prey now use wild-creature registration instead of being immune player companions.',
+            latestChange: 'Mobile autotarget starts off, never enables on combat entry, and switches off on combat exit or weapon stow. Available gray TARGET text pulses; persistent locks gradually steer the camera, more slowly up close; the reticle remains centered and attacks use existing reticle convergence. Manual heavy/ranged drags retain priority. Arena prey now use wild-creature registration instead of being immune player companions.',
             settings: window.Combat?.input?.autoTargetSettingsSnapshot?.(),
             controlLayout: ['btnUtilityMenu', 'btnSocialActions', 'btnSwapTarget'].map(id => {
               const rect = document.getElementById(id)?.getBoundingClientRect?.(); // On-demand copyable diagnostics use actual runtime button sizes and positions.
