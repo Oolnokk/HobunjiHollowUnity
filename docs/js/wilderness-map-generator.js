@@ -4083,7 +4083,7 @@
     return null;
   }
 
-  function addAnimalDen(spot, dims, mouthAnchor, extra = {}) {
+  function addAnimalDen(spot, dims, mouthAnchor, extra = {}, approachTile = mouthAnchor) {
     // nearestFreeNeighbor(x,y) never checks (x,y) itself and its ring search
     // isn't direction-aware (r=1's first candidate is (x-1,y-1) by iteration
     // order, not "closest free tile south") — fine for escapeAnchor, which
@@ -4093,7 +4093,7 @@
     // buildAnimalDenMeshes) and the collision-gap cutout. Computed directly
     // by the caller instead, clamped to map bounds; it doesn't need a
     // walkability check since it becomes the walkable doorway/transition tile itself.
-    const anchor = nearestFreeNeighbor(mouthAnchor.x, mouthAnchor.y);
+    const anchor = nearestFreeNeighbor(approachTile.x, approachTile.y);
     addObject({
       type: 'animalDen',
       x: spot.x,
@@ -4129,7 +4129,11 @@
       if (!areaFree(site.x, site.y, site.w, site.h, { allowCliffSkirt: true, allowPlateauRing: true })) continue; // An earlier den/structure may have claimed it since the scan.
       if (!areaFree(site.mouth.x, site.mouth.y, 1, 1)) continue;
       if (placed.some(other => Math.hypot(other.mouth.x - site.mouth.x, other.mouth.y - site.mouth.y) < minSpacing)) continue;
-      addAnimalDen({ x: site.x, y: site.y }, { w: site.w, h: site.h }, { ...site.mouth }, { entranceTemplateId: site.templateId, cliffBacked: true });
+      // The template connector is the entry tile, usually inside the footprint
+      // under the arch; escape/path anchors use the free tile in front of it.
+      const entryInside = site.mouth.y < site.y + site.h;
+      const approach = entryInside ? { x: site.mouth.x, y: site.y + site.h } : { ...site.mouth };
+      addAnimalDen({ x: site.x, y: site.y }, { w: site.w, h: site.h }, { ...site.mouth }, { entranceTemplateId: site.templateId, cliffBacked: true, entryInside, approachAnchor: approach }, approach);
       placed.push(site);
     }
     logDebug(`cliff-backed dens: ${placed.length}/${target} from ${sites.length} candidate site(s) [${placed.map(site => site.templateId).join(', ')}]`);
@@ -5265,7 +5269,7 @@
     // could block the den off entirely.
     const denEntrances = (map.objects || [])
       .filter(o => o.type === 'animalDen' && o.mouthAnchor)
-      .map(o => o.mouthAnchor);
+      .map(o => o.approachAnchor || o.mouthAnchor); // Cliff dens' entry sits inside the footprint; keep their approach tile clear instead.
     const denClearance = Math.max(0, Number(settings.denEntranceTreeClearance) || 0);
     function nearDenEntrance(x, y) {
       if (!denEntrances.length || denClearance <= 0) return false;
@@ -5964,14 +5968,27 @@
     return null;
   }
 
+  // A cliff-backed den whose entry sits inside its footprint keeps that entry
+  // column (entry tile down to the front row) as ordinary ground, so the
+  // entry is reachable on foot instead of buried in the den's rock overlay.
+  function denEntryWalkableKeys(object) {
+    const keys = new Set();
+    const mouth = object?.mouthAnchor;
+    if (object?.type !== 'animalDen' || !object.entryInside || !mouth) return keys;
+    for (let y = mouth.y; y < object.y + (object.h || 1); y++) keys.add(`${mouth.x},${y}`);
+    return keys;
+  }
+
   function hobunjiObjectOverlayByTile() {
     const overlays = new Map();
     for (const object of map.objects) {
       const overlayType = hobunjiOverlayTypeForObject(object);
       if (!overlayType) continue;
+      const walkable = denEntryWalkableKeys(object);
       for (let y = object.y; y < object.y + (object.h || 1); y++) {
         for (let x = object.x; x < object.x + (object.w || 1); x++) {
           if (!inBounds(x, y)) continue;
+          if (walkable.has(`${x},${y}`)) continue;
           const key = `${x},${y}`;
           const current = overlays.get(key);
           const priority = overlayType === 'rock' ? 3 : overlayType === 'shrub' ? 2 : 1;
@@ -6772,6 +6789,7 @@
     if (object.escapeAnchor) output.escapeAnchor = scaleMapPoint(object.escapeAnchor, scale);
     if (object.mouthAnchor) output.mouthAnchor = scaleMapPoint(object.mouthAnchor, scale);
     if (object.anchor) output.anchor = scaleMapPoint(object.anchor, scale);
+    if (object.approachAnchor) output.approachAnchor = scaleMapPoint(object.approachAnchor, scale);
     return output;
   }
 
@@ -8481,6 +8499,8 @@
         // to render and the mouth's tier, since the back row sits inside the
         // higher plateau and the footprint is not flat.
         ...(object.entranceTemplateId ? { entranceTemplateId: object.entranceTemplateId, cliffBacked: true } : {}),
+        // Entry inside the footprint (under the arch): the free tile in front.
+        ...(object.entryInside && object.approachAnchor ? { approachAnchor: { x: object.approachAnchor.x, y: object.approachAnchor.y } } : {}),
       }));
     // Root Totems (see placeRootTotems) — same "read the real placement
     // instead of recovering it from the lossy tile overlay" reasoning as

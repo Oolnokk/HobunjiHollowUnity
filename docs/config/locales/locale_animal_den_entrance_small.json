@@ -4,7 +4,7 @@
   "name": "Animal Den Entrance (Small)",
   "category": "den_entrance",
   "singleton": false,
-  "description": "Small den entrance for narrow cliff faces: the same cave_small model scaled down onto a 2x2 footprint. Needs only a single cliff-face tile under a 1-tier plateau; the mouth and the tile in front stay free.",
+  "description": "Small den entrance for narrow cliff faces: the same cave_small model scaled down (4 tiles wide, lower facade) onto a 2x3 footprint. Needs a 1-tier plateau at least two rows deep behind a single cliff-face tile. The back row sits inside the plateau, the middle row is the cliff's low side, and the entry connector sits on the front (floor) row inside the cave opening, leading out to free approach tiles. The facade is shifted one tile north and deepened so it sinks into the cliff and still arches over the entry.",
   "tags": [
     "den",
     "entrance",
@@ -14,7 +14,7 @@
     "small"
   ],
   "cols": 6,
-  "rows": 6,
+  "rows": 7,
   "tiles": {
     "2,2": {
       "type": "grass"
@@ -28,7 +28,13 @@
     "3,3": {
       "type": "grass"
     },
+    "2,4": {
+      "type": "grass"
+    },
     "3,4": {
+      "type": "path"
+    },
+    "3,5": {
       "type": "path"
     }
   },
@@ -41,17 +47,17 @@
       "col": 2,
       "row": 2,
       "w": 2,
-      "h": 2,
+      "h": 3,
       "rot": 0,
       "visual": {
         "renderer": "cave_small",
         "scaleX": 2,
         "scaleY": 1.25,
-        "scaleZ": 2,
+        "scaleZ": 3,
         "offsetX": 0,
         "offsetY": 0,
-        "offsetZ": 0,
-        "surface": "auto",
+        "offsetZ": -1,
+        "surface": "cliff",
         "sink": 0.35
       },
       "collision": {
@@ -66,10 +72,32 @@
       "col": 3,
       "row": 4,
       "side": "south",
-      "label": "Den mouth approach"
+      "label": "Den entry (inside the cave opening)"
     }
   ],
   "terrainAnchors": {
+    "3,1": {
+      "terrain": "plateau",
+      "strength": "required",
+      "weight": 1,
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": null
+      }
+    },
+    "2,1": {
+      "terrain": "plateau",
+      "strength": "preferred",
+      "weight": 1,
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": null
+      }
+    },
     "3,3": {
       "terrain": "plateauCliff",
       "strength": "required",
@@ -86,17 +114,6 @@
       "strength": "preferred",
       "weight": 1,
       "facing": "south",
-      "height": {
-        "mode": "relativeRange",
-        "min": 0,
-        "max": 0
-      }
-    },
-    "3,4": {
-      "terrain": "free",
-      "strength": "required",
-      "weight": 1,
-      "facing": "any",
       "height": {
         "mode": "relativeRange",
         "min": 0,
@@ -114,9 +131,20 @@
         "max": 0
       }
     },
-    "2,4": {
+    "2,5": {
       "terrain": "free",
       "strength": "preferred",
+      "weight": 1,
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 0,
+        "max": 0
+      }
+    },
+    "3,6": {
+      "terrain": "free",
+      "strength": "required",
       "weight": 1,
       "facing": "any",
       "height": {
@@ -161,6 +189,28 @@
     "groundOnly": false,
     "notes": "Template-only locale (category den_entrance, never stamped). Used by wilderness-map-generator.js for dens on cliff faces too narrow for locale_animal_den_entrance. Same cave_small.glb, scaled to the 2x2 footprint.",
     "terrainAnchors": {
+      "3,1": {
+        "terrain": "plateau",
+        "strength": "required",
+        "weight": 1,
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": null
+        }
+      },
+      "2,1": {
+        "terrain": "plateau",
+        "strength": "preferred",
+        "weight": 1,
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": null
+        }
+      },
       "3,3": {
         "terrain": "plateauCliff",
         "strength": "required",
@@ -183,17 +233,6 @@
           "max": 0
         }
       },
-      "3,4": {
-        "terrain": "free",
-        "strength": "required",
-        "weight": 1,
-        "facing": "any",
-        "height": {
-          "mode": "relativeRange",
-          "min": 0,
-          "max": 0
-        }
-      },
       "3,5": {
         "terrain": "free",
         "strength": "required",
@@ -205,9 +244,20 @@
           "max": 0
         }
       },
-      "2,4": {
+      "2,5": {
         "terrain": "free",
         "strength": "preferred",
+        "weight": 1,
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 0,
+          "max": 0
+        }
+      },
+      "3,6": {
+        "terrain": "free",
+        "strength": "required",
         "weight": 1,
         "facing": "any",
         "height": {
@@ -242,6 +292,6 @@
   },
   "meta": {
     "createdAt": "2026-10-10T00:00:00.000Z",
-    "updatedAt": "2026-10-10T00:00:00.000Z"
+    "updatedAt": "2026-10-10T12:00:00.000Z"
   }
 }

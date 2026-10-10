@@ -127,6 +127,16 @@
     return zGrid?.[Math.floor(Number(den?.y) + h / 2)]?.[Math.floor(Number(den?.x) + w / 2)]?.elevTier || 0;
   }
 
+  // Cliff-backed dens centre the cave on their entry tile so the walkable
+  // entry (and its transition ring) sits in the middle of the arch opening;
+  // the footprint is always an even number of tiles wide, so its own centre
+  // would leave the entry half a tile off.
+  function denCenterCol(den) {
+    const w = Math.max(1, Number(den?.w) || 1);
+    const mouthX = Number(den?.mouthAnchor?.x);
+    return den?.cliffBacked && Number.isFinite(mouthX) ? mouthX + 0.5 : Number(den?.x) + w / 2;
+  }
+
   function loadAnimalDenEntranceLocaleObject() {
     return loadAnimalDenEntranceLocale().then(denEntranceObjectFromLocale); // Compatibility helper retained for diagnostics/tests that only need the cave object.
   }
@@ -601,6 +611,19 @@
     return mat;
   }
 
+  // visual.surface 'cliff': the cave wears the same natural-surface cliff
+  // material as the wilderness plateau walls it is set into. Uses a private
+  // geometry copy so the shared template's UVs stay intact for other caves.
+  let _cliffCaveGeometry = null;
+  function applyCaveSurface(mesh, template, surface, variant) {
+    mesh.material = caveMaterialFor(variant);
+    if (surface !== 'cliff' || !window.NaturalSurfaceMaterials?.naturalizeMesh) return mesh;
+    if (!_cliffCaveGeometry) _cliffCaveGeometry = template.geometry.clone();
+    mesh.geometry = _cliffCaveGeometry;
+    window.NaturalSurfaceMaterials.naturalizeMesh(mesh, 'cliffs', 'source-uv'); // Keeps the fitted 0..1 cave UVs: one cliff panel stretched over the arch.
+    return mesh;
+  }
+
   function fitCaveUvToTexture(geometry) {
     const pos = geometry.getAttribute('position');
     let sourceUv = geometry.getAttribute('uv');
@@ -682,7 +705,7 @@
         const denEntranceLocale = activeAnimalDenEntranceLocale(den); // Full-size or small cliff template this den was placed with.
         const denEntranceObject = denEntranceObjectFromLocale(denEntranceLocale); // Cave-specific visual settings come from that den locale.
         const w = den.w || 1, h = den.h || 1;
-        const centerCol = den.x + w / 2, centerRow = den.y + h / 2;
+        const centerCol = denCenterCol(den), centerRow = den.y + h / 2;
         const elevTier = denFloorTier(zGrid, den);
         const groundY = deps.NORMAL_TOP + elevTier * deps.PLATEAU_UNIT;
         const cavernMapId = window.WildlifeSpawn?.denCavernMapId?.(mapId, den.id) || null;
@@ -699,7 +722,7 @@
         const scaleZ = baseScale * Math.max(.05, Number(visual.scaleZ) || 1);
         const sink = Number.isFinite(Number(visual.sink)) ? Number(visual.sink) : DEN_SINK;
         const mesh = template.clone();
-        mesh.material = caveMaterialFor(variant);
+        applyCaveSurface(mesh, template, visual.surface, variant);
         const collapsePending = !!den.collapsed && !!den._collapsePresentationPending; // Used to leave the freshly-cleared facade full-size until its delayed cave-in begins.
         const renderedScaleX = scaleX; // Collapse never changes the authored den footprint width.
         const renderedScaleY = den.collapsed && !collapsePending ? scaleY * DEN_COLLAPSED_HEIGHT_MULTIPLIER : scaleY; // Fresh collapses animate from full height; old collapses load at their final height.
@@ -744,7 +767,7 @@
         const scaleY = baseScale * Math.max(0.1, Number(visual.scaleY) || 1); // Used to raise authored cave mouths while preserving their ground contact.
         const scaleZ = baseScale * Math.max(0.1, Number(visual.scaleZ) || 1); // Used to keep or independently tune cave depth into the host cliff.
         const mesh = template.clone();
-        mesh.material = caveMaterialFor(variant);
+        applyCaveSurface(mesh, template, visual.surface, variant);
         mesh.scale.set(scaleX, scaleY, scaleZ);
         mesh.rotation.y = caveFacingRotation(visual.facing, Number.isFinite(Number(cave.rot)) ? cave.rot : null);
         const sink = Number.isFinite(Number(visual.sink)) ? Number(visual.sink) : DEN_SINK;
@@ -773,7 +796,7 @@
     if (!group) return false;
     const w = Math.max(1, Number(den.w) || 1); // Used to recenter the cave mesh after relocation.
     const h = Math.max(1, Number(den.h) || 1); // Used with w to sample the relocated footprint's elevation.
-    const centerCol = Number(den.x) + w / 2;
+    const centerCol = denCenterCol(den);
     const centerRow = Number(den.y) + h / 2;
     const centerTier = denFloorTier(zGrid, den); // Relocated ground tier at the cave's mouth.
     const caveGroundY = deps.NORMAL_TOP + centerTier * deps.PLATEAU_UNIT;

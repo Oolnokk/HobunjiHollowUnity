@@ -710,7 +710,7 @@
     persistState();
     ruinTransitionMaps.add(profile.mapId);
     const den = zoneLayout(profile.zoneId)?.dens?.find(candidate => String(candidate.id) === String(profile.denId)); // Exterior cave anchor used as the safe existing return destination after the ruin.
-    const anchor = den?.mouthAnchor || profile.mouthAnchor || { x: 1, y: 1 };
+    const anchor = den?.approachAnchor || den?.mouthAnchor || profile.mouthAnchor || { x: 1, y: 1 }; // Cliff dens' mouth is the entry transition itself; return in front of it.
     const tileSize = Number(wildlifeDeps?.TILE) || 32;
     const returnAnchor = { area: profile.zoneId, x: (Number(anchor.x) + 0.5) * tileSize, y: (Number(anchor.y) + 0.5) * tileSize };
     Promise.resolve(ruin.generate(plan.ruinEntrance.seed, { site: true, label: 'Ancient Ruin', returnAnchor }))

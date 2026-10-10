@@ -81,6 +81,9 @@
       embedded.push({ dx: cell.c - originC, dy: cell.r - originR, terrain: String(raw?.terrain || 'plateau'), facing: 'any', height: heightRule(raw?.height) });
     }
     if (!probes.length && !embedded.length) return null;
+    // The first connector is the den's entry tile. It may sit inside the cave
+    // footprint (in the arch opening); the column from it to the footprint's
+    // front edge then becomes walkable ground (see entryPath).
     const connector = (locale.connectors || [])[0];
     const mouth = connector
       ? { dx: (Number(connector.col) || 0) - originC, dy: (Number(connector.row) || 0) - originR }
@@ -164,6 +167,12 @@
         if (!compiled.embeddedKeys.has(`${dx},${dy}`) && Math.abs(tier(tile) - floorTier) > 0.05) return null;
       }
     }
+    // Walkable entry column from the entry tile out through the footprint's
+    // front row: plain floor only (cliff skirts and ramps export as rock/slope).
+    for (const step of entryPath(compiled)) {
+      const tile = tileAt(x + step.dx, y + step.dy);
+      if (!tile || (tile.cliffSkirt && !tile.waterfall) || tile.plateauRing || compiled.embeddedKeys.has(`${step.dx},${step.dy}`)) return null;
+    }
     for (const cell of compiled.embedded) {
       if (!probeMatches(tileAt, x + cell.dx, y + cell.dy, cell, floorTier)) return null;
     }
@@ -175,6 +184,15 @@
       if (probe.strength === 'preferred') score += matched ? probe.weight : -probe.weight * 0.25;
     }
     return { score, floorTier, mouth: { x: x + compiled.mouth.dx, y: y + compiled.mouth.dy } };
+  }
+
+  // Footprint cells between an inside entry tile and the front edge, entry included.
+  function entryPath(compiled) {
+    const { dx, dy } = compiled.mouth;
+    if (dx < 0 || dx >= compiled.w || dy < 0 || dy >= compiled.h) return [];
+    const cells = [];
+    for (let row = dy; row < compiled.h; row++) cells.push({ dx, dy: row });
+    return cells;
   }
 
   // Every valid site for every template over a width×height grid. When two
@@ -199,5 +217,5 @@
     return sites;
   }
 
-  return { TEMPLATE_CATEGORY, isTemplate, caveObject, compileTemplate, evaluate, findSites };
+  return { TEMPLATE_CATEGORY, isTemplate, caveObject, compileTemplate, evaluate, findSites, entryPath };
 });

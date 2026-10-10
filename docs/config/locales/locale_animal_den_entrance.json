@@ -4,7 +4,7 @@
   "name": "Animal Den Entrance",
   "category": "den_entrance",
   "singleton": false,
-  "description": "Authoring template used by every procedurally generated wilderness animal-den entrance. Edit the cave_small object here to change the shared den facade; Automatic collider mode preserves the den doorway-gap collision rule. Terrain anchors fit the den into an existing south-facing plateau cliff like Banubu's Cave: the back row sits inside plateau at least 1 tier above the mouth, the full-width row below it is the cliff's low side, and the mouth plus the tiles in front stay free.",
+  "description": "Authoring template used by every procedurally generated wilderness animal-den entrance. Edit the cave_small object here to change the shared den facade; Automatic collider mode preserves the den doorway-gap collision rule. Terrain anchors fit the den into an existing south-facing plateau cliff like Banubu's Cave: the back row sits inside plateau at least 1 tier above the mouth, the full-width row below it is the cliff's low side, and the mouth plus the tiles in front stay free. The plateau must continue one more row behind the cave so the facade (shifted one tile north) sinks a tile deeper into the cliff; the entry connector sits inside the cave opening, on a walkable column that leads out to the free approach tiles.",
   "tags": [
     "den",
     "entrance",
@@ -37,7 +37,7 @@
       "type": "grass"
     },
     "3,4": {
-      "type": "grass"
+      "type": "path"
     },
     "4,4": {
       "type": "grass"
@@ -64,8 +64,8 @@
         "scaleZ": 2,
         "offsetX": 0,
         "offsetY": 0,
-        "offsetZ": 0,
-        "surface": "auto",
+        "offsetZ": -1,
+        "surface": "cliff",
         "sink": 0.45
       },
       "collision": {
@@ -78,9 +78,9 @@
     {
       "id": "den_mouth_path",
       "col": 3,
-      "row": 5,
+      "row": 4,
       "side": "south",
-      "label": "Den mouth approach"
+      "label": "Den entry (inside the cave opening)"
     }
   ],
   "terrainAnchors": {
@@ -181,6 +181,39 @@
         "mode": "relativeRange",
         "min": 0,
         "max": 0
+      }
+    },
+    "2,1": {
+      "terrain": "plateau",
+      "strength": "preferred",
+      "weight": 1,
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": null
+      }
+    },
+    "3,1": {
+      "terrain": "plateau",
+      "strength": "required",
+      "weight": 1,
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": null
+      }
+    },
+    "4,1": {
+      "terrain": "plateau",
+      "strength": "preferred",
+      "weight": 1,
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": null
       }
     }
   },
@@ -327,6 +360,39 @@
           "min": 0,
           "max": 0
         }
+      },
+      "2,1": {
+        "terrain": "plateau",
+        "strength": "preferred",
+        "weight": 1,
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": null
+        }
+      },
+      "3,1": {
+        "terrain": "plateau",
+        "strength": "required",
+        "weight": 1,
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": null
+        }
+      },
+      "4,1": {
+        "terrain": "plateau",
+        "strength": "preferred",
+        "weight": 1,
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": null
+        }
       }
     },
     "embeddedTiles": {
@@ -364,6 +430,6 @@
   },
   "meta": {
     "createdAt": "2026-09-24T19:40:00.000Z",
-    "updatedAt": "2026-10-10T00:00:00.000Z"
+    "updatedAt": "2026-10-10T12:00:00.000Z"
   }
 }
