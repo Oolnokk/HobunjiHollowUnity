@@ -571,10 +571,12 @@
   // direction plus the change in bone length. Points are {x,y,z}; `rest*` must be flattened to the garment's depth and
   // `live*` expressed relative to rest at that same depth (the caller adds the per-joint depth correction), so at rest the
   // result is exactly the planar alignment. Returns {m: [9 row-major], tx, ty, tz, stretch, rotation}.
+  // options.rotationScale (0..1) damps the animation rotation (same axis, scaled angle): a wide garment on very short legs
+  // would otherwise be swung a long way around the hip by a small leg rotation. 1 = the full rotation.
   // options.initial 'translate' replaces the planar bone alignment by a pure translation of `anchorFrom` onto `anchorTo`
   // (no rotation or stretch): used by the posterior fit, where the garment has already been scaled and placed as a whole
   // sprite and rotating its (flattened) bones to vertical would twist it.
-  function alignBoneWithMotion(fromStart, fromEnd, restStart, restEnd, liveStart, liveEnd, { perpendicularScale = 1, initial = 'align', anchorFrom = null, anchorTo = null } = {}) {
+  function alignBoneWithMotion(fromStart, fromEnd, restStart, restEnd, liveStart, liveEnd, { perpendicularScale = 1, initial = 'align', anchorFrom = null, anchorTo = null, rotationScale = 1 } = {}) {
     const planar = initial === 'translate' && anchorFrom && anchorTo
       ? { a: 1, b: 0, c: 0, d: 1, tx: (Number(anchorTo.x) || 0) - (Number(anchorFrom.x) || 0), ty: (Number(anchorTo.y) || 0) - (Number(anchorFrom.y) || 0), stretch: 1, rotation: 0 }
       : alignBoneSegment(fromStart, fromEnd, restStart, restEnd, { perpendicularScale });
@@ -594,7 +596,18 @@
       const cosine = Math.max(-1, Math.min(1, ur[0] * ul[0] + ur[1] * ul[1] + ur[2] * ul[2]));
       rotation = Math.acos(cosine);
       let R;
-      if (cosine < -0.999999) { // End for end: half turn about any axis across the bone.
+      const damp = Number.isFinite(rotationScale) ? Math.max(0, Math.min(1, rotationScale)) : 1;
+      if (damp < 1 && cosine < 0.999999 && cosine > -0.999999) { // Same axis, scaled angle.
+        const axis = [ur[1] * ul[2] - ur[2] * ul[1], ur[2] * ul[0] - ur[0] * ul[2], ur[0] * ul[1] - ur[1] * ul[0]];
+        const axisLength = Math.hypot(axis[0], axis[1], axis[2]) || 1;
+        const k = axis.map(v => v / axisLength);
+        const angle = Math.acos(cosine) * damp, cs = Math.cos(angle), sn = Math.sin(angle), oc = 1 - cs;
+        R = [
+          cs + k[0] * k[0] * oc, k[0] * k[1] * oc - k[2] * sn, k[0] * k[2] * oc + k[1] * sn,
+          k[1] * k[0] * oc + k[2] * sn, cs + k[1] * k[1] * oc, k[1] * k[2] * oc - k[0] * sn,
+          k[2] * k[0] * oc - k[1] * sn, k[2] * k[1] * oc + k[0] * sn, cs + k[2] * k[2] * oc,
+        ];
+      } else if (cosine < -0.999999) { // End for end: half turn about any axis across the bone.
         const axis = Math.abs(ur[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
         const dotAxis = axis[0] * ur[0] + axis[1] * ur[1] + axis[2] * ur[2];
         let p = [axis[0] - dotAxis * ur[0], axis[1] - dotAxis * ur[1], axis[2] - dotAxis * ur[2]];
