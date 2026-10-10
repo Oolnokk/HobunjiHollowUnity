@@ -115,7 +115,7 @@ assert.match(enhancementsSource, /pants_basic\.png/);
 assert.match(enhancementsSource, /assets\/cosmetics\/clothes\/legs\/pants_basic\.png/);
 assert.match(enhancementsSource, /pantsWeightPaintOverlay/);
 assert.match(enhancementsSource, /setCharacter/);
-assert.match(enhancementsSource, /weight > 0 \? Math\.max\(42/);
+assert.match(enhancementsSource, /weight >= 16 \? Math\.max\(42/);
 assert.match(hostBridgeSource, /hobunji-pants-rig-changed/);
 assert.match(hostBridgeSource, /pointerup/);
 assert(fs.existsSync(path.join(root, 'docs/assets/cosmetics/clothes/legs/pants_basic.png')), 'repository pants_basic.png should exist on this branch');

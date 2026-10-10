@@ -471,7 +471,10 @@ function renderPants() {
     state.pantsImageRect = rect;
     context.imageSmoothingEnabled = true;
     context.drawImage(source, rect.x, rect.y, rect.width, rect.height);
-    if (state.mode === 'weights') {
+    // Weight heatmap is drawn by enhancements.js (#pantsWeightPaintOverlay), clipped to the garment
+    // silhouette. This unclipped copy painted the nearest bone's weights over the empty transparent
+    // area around the pants as a large flat block.
+    if (state.mode === 'weights' && !window.PantsRigAuthorEnhancementsReady) {
       context.save();
       context.globalCompositeOperation = 'source-over';
       context.imageSmoothingEnabled = true;
