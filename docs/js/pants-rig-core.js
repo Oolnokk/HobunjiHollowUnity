@@ -212,25 +212,29 @@
     return { a, c, tx, b, d, ty, kind: 'affine' };
   }
 
-  // "Posterior" fit, for species whose beltline gives a poor fit (very short or very long legs): treat the garment as one
-  // sprite. Scale it so its legs are as long as the species' legs (vertical), stretch it horizontally to match the portrait
-  // beltline's width, and hang it from the species' posterior (hip pivot): the garment's hip centre lands on the posterior
-  // point, centred under the portrait beltline. The legs' bone alignment then only has the small remainder to absorb.
-  // portraitPosterior = {x, y} (portrait canvas 0..1); legLength = the species' hip->ankle length in portrait units.
-  function solvePosteriorFit(garment, portraitBelt, portraitPosterior, legLength) {
-    const bones = normalizeLegBones(garment?.legBones);
+  // "Posterior" fit, for species whose beltline gives a poor fit (very short or very long legs): the pants are a sprite
+  // pinned at two lines. Horizontally the garment is stretched to the portrait beltline's width; vertically its waistband
+  // lands on the portrait beltline and its lowest hem lands on the species' ankle line (the tops of its feet), so the pants
+  // fill exactly the space from the waist to the feet. When that space is too short for the garment's proportions (a default
+  // beltline sitting at the hips), the vertical scale is held to at least half the horizontal one and the hem stays on the
+  // ankle line, so the pants never collapse to a flat band. portraitAnkleY = the species' ankle height (portrait 0..1).
+  function solvePosteriorFit(garment, portraitBelt, portraitAnkleY) {
     const belt = normalizeSpline(portraitBelt);
     const garmentBelt = normalizeSpline(garment?.pantsBeltSpline);
-    const xs = pts => ({ min: Math.min(...pts.map(p => p.x)), max: Math.max(...pts.map(p => p.x)) });
-    const garmentSpan = xs(garmentBelt), portraitSpan = xs(belt);
-    const hip = { x: (bones.left.hip.x + bones.right.hip.x) / 2, y: (bones.left.hip.y + bones.right.hip.y) / 2 };
-    const garmentLeg = (Math.hypot(bones.left.ankle.x - bones.left.hip.x, bones.left.ankle.y - bones.left.hip.y) + Math.hypot(bones.right.ankle.x - bones.right.hip.x, bones.right.ankle.y - bones.right.hip.y)) / 2;
-    if (!(garmentLeg > 1e-6) || !(garmentSpan.max - garmentSpan.min > 1e-6)) return null;
+    const spanOf = pts => ({ min: Math.min(...pts.map(p => p.x)), max: Math.max(...pts.map(p => p.x)) });
+    const meanY = pts => pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
+    const garmentSpan = spanOf(garmentBelt), portraitSpan = spanOf(belt);
+    if (!(garmentSpan.max - garmentSpan.min > 1e-6)) return null;
     const scaleX = clamp((portraitSpan.max - portraitSpan.min) / (garmentSpan.max - garmentSpan.min), 0.05, 4);
-    const scaleY = clamp((Number(legLength) > 1e-6 ? Number(legLength) : garmentLeg) / garmentLeg, 0.05, 4);
-    const centerX = (portraitSpan.min + portraitSpan.max) / 2;
-    const anchorY = Number.isFinite(portraitPosterior?.y) ? portraitPosterior.y : 0.86;
-    return { a: scaleX, c: 0, tx: centerX - scaleX * hip.x, b: 0, d: scaleY, ty: anchorY - scaleY * hip.y, kind: 'posterior' };
+    let hemY = 0; // The garment's lowest hem: the bottom of its leg openings (the ankles when none are authored).
+    for (const side of ['left', 'right']) for (const point of normalizeSpline(garment?.legOpenings?.[side])) hemY = Math.max(hemY, point.y);
+    if (!(hemY > 0)) { const bones = normalizeLegBones(garment?.legBones); hemY = Math.max(bones.left.ankle.y, bones.right.ankle.y); }
+    const garmentBeltY = meanY(garmentBelt), portraitBeltY = meanY(belt);
+    const ankleY = Number.isFinite(portraitAnkleY) ? portraitAnkleY : 0.9;
+    const wanted = hemY - garmentBeltY > 1e-6 ? (ankleY - portraitBeltY) / (hemY - garmentBeltY) : scaleX;
+    const scaleY = clamp(Math.max(wanted, 0.5 * scaleX), 0.05, 4);
+    const garmentCenterX = (garmentSpan.min + garmentSpan.max) / 2, portraitCenterX = (portraitSpan.min + portraitSpan.max) / 2;
+    return { a: scaleX, c: 0, tx: portraitCenterX - scaleX * garmentCenterX, b: 0, d: scaleY, ty: ankleY - scaleY * hemY, kind: 'posterior', beltStretchX: 1 };
   }
 
   function applyAffine(transform, point) {

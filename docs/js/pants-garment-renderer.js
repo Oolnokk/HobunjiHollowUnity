@@ -52,7 +52,7 @@
     model.worldToLocal(hip);
     model.worldToLocal(ankle);
     const hipP = core().portraitPointForLocal(mapping, hip.x, hip.y), ankleP = core().portraitPointForLocal(mapping, ankle.x, ankle.y);
-    return { posterior: hipP, legLength: Math.hypot(ankleP.x - hipP.x, ankleP.y - hipP.y) };
+    return { posterior: hipP, ankleY: ankleP.y, legLength: Math.hypot(ankleP.x - hipP.x, ankleP.y - hipP.y) };
   }
 
   const hasAuthoredCharacter = (speciesId, gender) => !!(rigConfig().characters || {})[characterKey(speciesId, gender)];
@@ -329,8 +329,9 @@
     let fit = null;
     if (fitMode === 'posterior') {
       const geometry = posteriorGeometry(THREE, avatarGroup, plane, nodes);
-      fit = Core.solvePosteriorFit(garment, character.portraitBeltSpline, geometry.posterior, geometry.legLength);
+      fit = Core.solvePosteriorFit(garment, character.portraitBeltSpline, geometry.ankleY);
     }
+    const beltStretchX = fit?.beltStretchX || 1; // Posterior fit: the waistband alone is stretched across to the beltline's width.
     const data = buildGarmentData(THREE, Core, avatarGroup, plane, garment, character, fit);
     if (!data) return null;
     const handle = {
@@ -339,7 +340,7 @@
       beltCenter: data.beltCenter, planeNormal: data.planeNormal,
       beltScale: Math.min(3.5, Math.max(1.7, Number(character.beltScale) || DEFAULT_BELT_SCALE)),
       legRollGain: Math.min(4, Math.max(1, Number(character.legRollGain) || 2)),
-      maskMapping: data.maskMapping, footLift, rest: null, restRaw: null, fitMode, rotationScale: { left: 1, right: 1 },
+      maskMapping: data.maskMapping, footLift, rest: null, restRaw: null, fitMode, beltStretchX, rotationScale: { left: 1, right: 1 },
       maskUniforms: { uPantsDepthBias: { value: 0 }, uPantsMask: { value: null }, uPantsMaskOn: { value: 0 }, uPantsMaskO: { value: new THREE.Vector2(data.maskMapping.ox, data.maskMapping.oy) }, uPantsMaskInv: { value: new THREE.Vector4(...data.maskMapping.inv) } },
       scratch: makeScratch(THREE), appearance: { ...appearance, speciesId, gender, imageUrl }, renderToken: 0, ready: false, garment,
     };
@@ -460,7 +461,9 @@
     };
     const boneTransform = (side, from, to, aim) => Core.alignBoneWithMotion(
       handle.bones2D[side][from], handle.bones2D[side][to], handle.rest[side][from], handle.rest[side][to], aim[side][from], aim[side][to],
-      { perpendicularScale: LEG_ACROSS_SCALE, rotationScale: handle.rotationScale[side] }); // (Core also offers initial: 'translate'; tried for the posterior fit, it flattened Tletingan into one band, so the full planar alignment stays.)
+      handle.fitMode === 'posterior'
+        ? { initial: 'translate', anchorFrom: handle.bones2D[side].hip, anchorTo: handle.rest[side].hip, rotationScale: handle.rotationScale[side] } // The whole-sprite fit already sized and placed the garment: just hang each leg from its hip.
+        : { perpendicularScale: LEG_ACROSS_SCALE, rotationScale: handle.rotationScale[side] });
 
     handle.update = () => {
       if (handle.disposed || !handle.mesh || !handle.model.parent) return;
@@ -471,7 +474,8 @@
       const aim = aimAtLiveLegs();
       const transforms = handle.scratch.transforms; // Channel order is Core.WEIGHT_CHANNELS: belt, leftThigh, leftCalf, rightThigh, rightCalf.
       const s = handle.beltScale, c = handle.beltCenter;
-      transforms[0] = s === 1 ? null : { a: 1, b: 0, c: 0, d: s, tx: 0, ty: c.y * (1 - s) }; // Vertical-only scale of the belt-weighted pixels, flat in the portrait plane.
+      const bx = handle.beltStretchX;
+      transforms[0] = (s === 1 && bx === 1) ? null : { a: bx, b: 0, c: 0, d: s, tx: c.x * (1 - bx), ty: c.y * (1 - s) }; // Belt-weighted pixels: horizontal stretch to the beltline (posterior fit) and the vertical belt scale, flat in the portrait plane.
       transforms[1] = boneTransform('left', 'hip', 'knee', aim);
       transforms[2] = boneTransform('left', 'knee', 'ankle', aim);
       transforms[3] = boneTransform('right', 'hip', 'knee', aim);
