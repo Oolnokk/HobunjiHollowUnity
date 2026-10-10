@@ -148,6 +148,8 @@ pre{white-space:pre-wrap;word-break:break-word;font:10px/1.35 ui-monospace,monos
       <h2>4 · Species + gender fit</h2>
       <label>Canonical portrait<select id="fighter"></select></label>
       <label>Leg thickness <span id="legThicknessValue" class="value">1.00×</span><input id="legThickness" type="range" min="0.55" max="1.45" step="0.01" value="1"></label>
+      <label>Beltline scale <span id="beltScaleValue" class="value">1.00×</span><input id="beltScale" type="range" min="0.5" max="2" step="0.01" value="1"></label>
+      <div class="hint">Scales the pixels weighted to the <b>belt</b> channel about the beltline centre (live 3D preview). Leg-weighted pixels keep following their bones.</div>
       <label class="check"><input id="showFit" type="checkbox"> Preview one-time fitted pants PNG</label>
       <div class="hint">Thickness moves the five nodes of each orange opening toward or away from that opening’s centroid. The lime pants belt is pinned during this static PNG-space warp. It does <b>not</b> run every animation frame.</div>
       <div class="row"><button id="resetCharacter">Reset this portrait fit</button><button id="downloadFitted">Bake fitted PNG</button></div>
