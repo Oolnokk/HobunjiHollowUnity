@@ -484,11 +484,13 @@
     return [0.34, 0.42, 0.5, 0.58, 0.66].map((x, index) => ({ x, y: clamp(y + (Number(shape[index]) || 0), 0, 1) }));
   }
 
-  // Each leg deforms HALF the garment in its entirety: everything left of the centre line follows the left leg, everything
-  // right of it follows the right leg, and the two halves blend across the central seam so the crotch and waist stay joined.
-  // Within a half, the thigh drives everything down to the knee and the calf takes over below it. This replaces painted
-  // weights wherever it applies (the part above the beltline spline is kept rigid separately). `weights` is five floats per
-  // vertex on a (segments+1)^2 grid in garment (u,v) order; `strength` 0 leaves the painted weights, 1 fully applies this.
+  // Makes the whole lower garment follow the legs. Painted/auto-seeded weights fall off with distance from the bone, so the
+  // SIDES of a pant leg (and the crotch between the legs) end up belt-weighted and stay rigid while only the pixels near the
+  // bone move with it; on a species with very short legs the hem then goes concave. Here everything at or below a leg's hip
+  // level is pulled toward that leg's bone weights regardless of its distance from the bone: thigh above the knee, calf
+  // below it, easing in from the hip so the belt-to-leg transition stays soft, and the two legs blending across the
+  // centre line so the crotch stays joined. `weights` is five floats per vertex on a (segments+1)^2 grid in garment (u,v)
+  // order; `strength` 0 leaves the painted weights, 1 fully applies this. In place.
   function applyLegAxisWeights(weights, segments, garment, strength = 1) {
     const amount = clamp(Number(strength), 0, 1);
     if (!(amount > 0)) return weights;
@@ -499,17 +501,22 @@
     for (let row = 0, vertex = 0; row <= segments; row++) {
       const v = row / segments;
       for (let col = 0; col <= segments; col++, vertex++) {
-        const leftShare = 1 - smooth(0.42, 0.58, col / segments); // The central seam: the halves blend over a narrow band.
+        const leftShare = 1 - smooth(0.42, 0.58, col / segments);
+        let lambda = 0;
         target.fill(0);
         legs.forEach((leg, index) => {
+          const t = (v - leg.hipY) / leg.span; // 0 at the hip's height, 1 at the ankle's.
           const share = index === 0 ? leftShare : 1 - leftShare;
-          if (!(share > 0)) return;
-          const thigh = 1 - smooth(0.4, 0.6, (v - leg.hipY) / leg.span); // Thigh down to the knee, calf below; above the hip it is all thigh.
-          target[leg.thighChannel] += share * thigh;
-          target[leg.calfChannel] += share * (1 - thigh);
+          const legStrength = smooth(0, 0.3, t) * share;
+          if (!(legStrength > 0)) return;
+          const thigh = 1 - smooth(0.4, 0.6, t);
+          target[leg.thighChannel] += legStrength * thigh;
+          target[leg.calfChannel] += legStrength * (1 - thigh);
+          lambda += legStrength;
         });
-        const base = vertex * 5;
-        for (let channel = 0; channel < 5; channel++) weights[base + channel] = weights[base + channel] * (1 - amount) + target[channel] * amount;
+        if (!(lambda > 0)) continue;
+        const blend = lambda * amount, base = vertex * 5;
+        for (let channel = 0; channel < 5; channel++) weights[base + channel] = weights[base + channel] * (1 - blend) + (target[channel] / lambda) * blend;
       }
     }
     return weights;
@@ -574,20 +581,9 @@
   // (no rotation or stretch): used by the posterior fit, where the garment has already been scaled and placed as a whole
   // sprite and rotating its (flattened) bones to vertical would twist it.
   function alignBoneWithMotion(fromStart, fromEnd, restStart, restEnd, liveStart, liveEnd, { perpendicularScale = 1, initial = 'align', anchorFrom = null, anchorTo = null, rotationScale = 1 } = {}) {
-    let planar;
-    if (initial === 'fold') { // Rotate the garment bone about its start so it points the way the rest bone does (straight down), then slide it sideways onto the rest bone. No stretch, no vertical shift.
-      const gx = (Number(fromEnd?.x) || 0) - (Number(fromStart?.x) || 0), gy = (Number(fromEnd?.y) || 0) - (Number(fromStart?.y) || 0);
-      const rx = (Number(restEnd?.x) || 0) - (Number(restStart?.x) || 0), ry = (Number(restEnd?.y) || 0) - (Number(restStart?.y) || 0);
-      const gl = Math.hypot(gx, gy), rl = Math.hypot(rx, ry);
-      const angle = gl > MIN_BONE_LENGTH && rl > MIN_BONE_LENGTH ? Math.atan2(ry, rx) - Math.atan2(gy, gx) : 0;
-      const cs = Math.cos(angle), sn = Math.sin(angle);
-      const px = Number(fromStart?.x) || 0, py = Number(fromStart?.y) || 0;
-      const shift = (Number(restStart?.x) || 0) - px;
-      planar = { a: cs, b: sn, c: -sn, d: cs, tx: px - (cs * px - sn * py) + shift, ty: py - (sn * px + cs * py), stretch: 1, rotation: angle };
-    } else planar = initial === 'translate' && anchorFrom && anchorTo
+    const planar = initial === 'translate' && anchorFrom && anchorTo
       ? { a: 1, b: 0, c: 0, d: 1, tx: (Number(anchorTo.x) || 0) - (Number(anchorFrom.x) || 0), ty: (Number(anchorTo.y) || 0) - (Number(anchorFrom.y) || 0), stretch: 1, rotation: 0 }
       : alignBoneSegment(fromStart, fromEnd, restStart, restEnd, { perpendicularScale });
-    if (!planar) planar = alignBoneSegment(fromStart, fromEnd, restStart, restEnd, { perpendicularScale });
     const num = value => Number(value) || 0;
     const rs = [num(restStart?.x), num(restStart?.y), num(restStart?.z)];
     const ls = [num(liveStart?.x), num(liveStart?.y), num(liveStart?.z)];
