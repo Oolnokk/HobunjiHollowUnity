@@ -145,6 +145,8 @@
   <script src="config/scratchbones-config.js?v=20261009h1c69d65"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
+  <!-- Shared frame-budget yield for long async pixel jobs (clothing weaving, creature genetics). -->
+  <script src="js/pixel-work-yield.js?v=20261010pwy1"></script>
   <script src="js/tool-metal-recolor.js?v=20261001c6751543"></script>
   <script src="js/metal-armor-system.js?v=20261008h99621ca"></script>
   <script src="config/colors/config.js?v=20260930h1b2e2e2"></script>
@@ -201,7 +203,7 @@
   <script src="js/creature-genetics.js?v=20261002h5fdf0c4"></script>
   <!-- Creature genotype recolor + pattern-overlay compositing. -->
   <script src="js/creature-texture-cache.js?v=20261009memory1"></script>
-  <script src="js/creature-genetics-render.js?v=20261009h8a62350"></script>
+  <script src="js/creature-genetics-render.js?v=20261010h19c4ac7"></script>
   <!-- Shared per-frame "where is this creature/character's head" cache — see
        its own file header for why. No dependencies of its own; must load
        before anything that calls window.CreatureHeadCache. -->
@@ -333,7 +335,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261009h4153ea8"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261010h7e89e8e"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
