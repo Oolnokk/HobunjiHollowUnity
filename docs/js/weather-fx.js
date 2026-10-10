@@ -435,11 +435,19 @@
     const lctx = deps.lctx;
     // Each carrier's y is used below to project its mask at avatar height;
     // player/NPC movement code already keeps these world positions grounded.
-    const carriers = [{ x: deps.player.x / deps.TILE, y: deps.getPlayerWorldY() + 0.5, z: deps.player.y / deps.TILE }];
+    const cutsceneRoots = window.CutsceneLanternCarriers?.active?.() ? window.CutsceneLanternCarriers.list() : null; // Authored cutscene rigs (e.g. the rescue) carry their own lanterns; the parked real player must not light a second spot.
+    const carriers = cutsceneRoots ? [] : [{ x: deps.player.x / deps.TILE, y: deps.getPlayerWorldY() + 0.5, z: deps.player.y / deps.TILE }];
     const currentArea = deps.getCurrentArea();
-    for (const w of deps.npcWalkers) {
-      if (w.area === currentArea && w.rec?.tags?.includes('watch')) {
-        carriers.push({ x: w.root.position.x, y: w.root.position.y + 0.5, z: w.root.position.z });
+    if (cutsceneRoots) {
+      for (const root of cutsceneRoots) {
+        if (!root.visible || !root.parent) continue; // Hidden entrances and despawned rigs carry no light.
+        carriers.push({ x: root.position.x, y: root.position.y + 0.5, z: root.position.z, warm: true });
+      }
+    } else {
+      for (const w of deps.npcWalkers) {
+        if (w.area === currentArea && w.rec?.tags?.includes('watch')) {
+          carriers.push({ x: w.root.position.x, y: w.root.position.y + 0.5, z: w.root.position.z });
+        }
       }
     }
     lctx.globalCompositeOperation = 'destination-out';
@@ -460,6 +468,22 @@
       lctx.fill();
     }
     lctx.globalCompositeOperation = 'source-over';
+    // Cutscene lantern carriers also get a restrained warm glow (same recipe as furniture lights) so the lantern reads even when the sky tint is too light for the cleared mask to show.
+    for (const c of carriers) {
+      if (!c.warm) continue;
+      const center = deps.worldToOverlay(c.x, c.y, c.z);
+      if (!center.visible) continue;
+      const glowR = _lightScreenRadius(c.x, c.z, c.y, LANTERN_SHINE_TILES) * 0.55;
+      if (!(glowR > 0)) continue;
+      const glow = lctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, glowR);
+      glow.addColorStop(0,   'rgba(255,196,110,0.20)');
+      glow.addColorStop(0.4, 'rgba(255,170,80,0.09)');
+      glow.addColorStop(1,   'rgba(255,150,60,0)');
+      lctx.fillStyle = glow;
+      lctx.beginPath();
+      lctx.arc(center.x, center.y, glowR, 0, Math.PI * 2);
+      lctx.fill();
+    }
   }
 
   // Furniture uses the lantern mask technique, scaled by each real Three.js

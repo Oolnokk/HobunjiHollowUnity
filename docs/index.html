@@ -114,6 +114,7 @@
        Loaded early since it has no deps of its own and any of those
        creation sites may run as soon as the game world starts building. -->
   <script src="js/furniture-light-registry.js?v=20260918perf1"></script>
+  <script src="js/cutscene-lantern-carriers.js?v=20261010lant1"></script>
   <!-- Farmhouse interior renders flat; all its lighting comes from the 2D overlay (window.FarmhouseFlatLighting). -->
   <script src="js/farmhouse-flat-lighting.js?v=20261001flat1"></script>
   <!-- Wilderness zone ground-visual refresh after a runtime tile edit and
@@ -633,7 +634,7 @@
        order relative to the other systems above doesn't matter; must load
        before game.js, which calls window.WeatherFX.init(...) during its
        own setup. -->
-  <script src="js/weather-fx.js?v=20261002hbfac6cf"></script>
+  <script src="js/weather-fx.js?v=20261010h4dceade"></script>
   <!-- Load after WeatherFX exists, but before game.js calls WeatherFX.init(), so daylight windows always capture the real overlay dependencies. -->
   <script src="js/daylight-window-runtime.js?v=20261005hde1ce1f"></script>
   <!-- Farmhouse windows mirror one ordinary inventory-owned wall object across the exterior/interior 2x coordinate systems and expose their silhouettes to both wall builders. -->
@@ -2622,7 +2623,7 @@
   <script src="js/npc-command-wheel.js?v=20261008h02bf686"></script>
   <script src="game.js?v=20261010h4da2a7a"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
-  <script src="js/opening-story-cutscene.js?v=20261005h9a94218"></script>
+  <script src="js/opening-story-cutscene.js?v=20261010h8448517"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>

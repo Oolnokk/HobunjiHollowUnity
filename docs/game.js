@@ -30508,6 +30508,7 @@
             }
           }
           entities.clear();
+          window.CutsceneLanternCarriers?.clear();
           furniturePlayback?.restore();
           currentArea = previousArea; // Hand synchronization must resolve the restored gameplay scene.
           window.CinematicCameraRuntime?.deactivate?.();
@@ -30781,6 +30782,7 @@
           if (!entity) entity = window.CutscenePreviewHelpers.cutscenePreviewMakePlaceholder(actor, area, targetScene);
           entity.root.visible = actor.visible !== false; // Authored entrances keep the real rig hidden until its reveal stage.
           entities.set(actor.id, entity);
+          if (actor.lantern) window.CutsceneLanternCarriers?.add(entity.root); // Lantern-carrying cutscene rigs light the scene through WeatherFX's lantern mask (docs/js/cutscene-lantern-carriers.js).
           if (entity.walker) await window.NpcHeldEquipment?.attachCutsceneWalker?.(entity.walker);
         }
 
