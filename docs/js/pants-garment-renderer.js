@@ -16,7 +16,7 @@
   if (global.PantsGarmentRenderer) return;
 
   const SEGMENTS = 32; // Vertices per side of the garment grid; matches the author's live preview.
-  const LEG_ACROSS_SCALE = 'balanced'; // Same widening rule as the author preview.
+  const LEG_ACROSS_SCALE = 'shrinkUniform'; // A leg shorter than the garment's scales down uniformly (so a short-legged species gets proportionally smaller pants, not wedges); a longer one widens by sqrt of the stretch.
   const DEFAULT_GARMENT_ID = 'pants_basic';
   const FALLBACK_CHARACTER_KEY = '__default'; // Species/gender without their own authored record share this fit.
   const DEFAULT_BELT_SCALE = 1.75;
