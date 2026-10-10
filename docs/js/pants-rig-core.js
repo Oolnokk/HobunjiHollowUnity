@@ -168,6 +168,9 @@
     };
   }
 
+  const MIN_VERTICAL_SCALE_RATIO = 0.7; // Vertical scale of the belt fit relative to its horizontal scale.
+  const MAX_VERTICAL_SCALE_RATIO = 1.5;
+
   function solveAffine(sourcePoints, targetPoints) {
     if (!validateFivePointSpline(sourcePoints) || !validateFivePointSpline(targetPoints)) return null;
     const normal = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
@@ -186,11 +189,27 @@
     const xCoefficients = solve3x3(normal, bx);
     const yCoefficients = solve3x3(normal, by);
     if (!xCoefficients || !yCoefficients) return solveBeltSimilarity(sourcePoints, targetPoints);
-    return {
-      a: xCoefficients[0], c: xCoefficients[1], tx: xCoefficients[2],
-      b: yCoefficients[0], d: yCoefficients[1], ty: yCoefficients[2],
-      kind: 'affine',
-    };
+    let a = xCoefficients[0], c = xCoefficients[1], tx = xCoefficients[2];
+    let b = yCoefficients[0], d = yCoefficients[1], ty = yCoefficients[2];
+    // Five nearly-straight belt points barely constrain the vertical axis: the least-squares fit then reads a tiny
+    // difference in belt curvature as a huge vertical scale, collapsing (or exploding) everything below the belt. Keep the
+    // vertical scale within a sane band of the horizontal scale, re-anchored so the belt's centre stays put.
+    const scaleX = Math.hypot(a, b);
+    let scaleY = Math.hypot(c, d);
+    if (scaleX > 1e-9) {
+      let rebuilt = false;
+      if (scaleY < 1e-9) { c = -b; d = a; scaleY = scaleX; rebuilt = true; } // Fully collapsed vertically: fall back to a uniform (similarity) vertical axis.
+      const clampedY = Math.max(MIN_VERTICAL_SCALE_RATIO * scaleX, Math.min(MAX_VERTICAL_SCALE_RATIO * scaleX, scaleY));
+      if (clampedY !== scaleY || rebuilt) {
+        const k = clampedY / scaleY;
+        const sourceCenter = sourcePoints.reduce((sum, point) => ({ x: sum.x + point.x / sourcePoints.length, y: sum.y + point.y / sourcePoints.length }), { x: 0, y: 0 });
+        const targetCenter = targetPoints.reduce((sum, point) => ({ x: sum.x + point.x / targetPoints.length, y: sum.y + point.y / targetPoints.length }), { x: 0, y: 0 });
+        c *= k; d *= k;
+        tx = targetCenter.x - (a * sourceCenter.x + c * sourceCenter.y);
+        ty = targetCenter.y - (b * sourceCenter.x + d * sourceCenter.y);
+      }
+    }
+    return { a, c, tx, b, d, ty, kind: 'affine' };
   }
 
   function applyAffine(transform, point) {
@@ -429,9 +448,13 @@
   }
   // The default portrait beltline for a species whose beltline has not been authored: a level line at the species'
   // posterior (hip pivot) height, given as a portrait y (0..1). Below the bottom of the image it rests on the image edge.
-  function defaultBeltAtPosterior(portraitY) {
-    const y = clamp(Number.isFinite(portraitY) ? portraitY : 0.86, 0.05, 1);
-    return [0.34, 0.42, 0.5, 0.58, 0.66].map((x, index) => ({ x, y: index === 2 ? Math.max(0, y - 0.003) : y }));
+  // It has the same curve as the garment's own belt (its y offsets from the centre point), so the garment maps onto the
+  // portrait at natural scale instead of being squashed by a curvature mismatch.
+  const DEFAULT_BELT_SHAPE = [0.015, 0.005, 0, 0.005, 0.015]; // y offsets of the default garment's belt points from its centre point.
+  function defaultBeltAtPosterior(portraitY, shape = DEFAULT_BELT_SHAPE) {
+    const room = Math.max(...shape);
+    const y = clamp(Number.isFinite(portraitY) ? portraitY : 0.86, 0.05, 1 - room);
+    return [0.34, 0.42, 0.5, 0.58, 0.66].map((x, index) => ({ x, y: clamp(y + (Number(shape[index]) || 0), 0, 1) }));
   }
 
   // Hardens painted weights so a vertex mostly follows its dominant bone: each weight is raised to `power` and the cell is
