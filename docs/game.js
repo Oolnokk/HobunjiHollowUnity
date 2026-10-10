@@ -2269,7 +2269,7 @@
           // room to grow into) — a fresh character now genuinely starts at
           // the bottom of the smithing ladder (see toolMetalMultiplier).
           tools:    { hoe_nativeCopper: true, hatchet_nativeCopper: true, fishingmace_nativeCopper: true, fishingspear_nativeCopper: true, pickshovel_nativeCopper: true, crossbow: true, scatterbow: true },
-          clothing: { hat: null, hood: null, torso: null, overwear: null },
+          clothing: { hat: null, hood: null, torso: null, overwear: null, pants: null },
           clothingItems: [],
           charms: [],
           whistles: [
@@ -2666,6 +2666,7 @@
         { id: 'rugged_poncho', label: 'Rugged Poncho',        category: 'overwear', usesB: true,  price: 70 },
         { id: 'fine_poncho',   label: 'Fine Poncho',          category: 'overwear', usesB: true,  price: 80 },
         { id: 'fine_hood',     label: 'Fine Hood',            category: 'hood',     usesB: true,  price: 60 },
+        { id: 'pants_basic',   label: 'Basic Pants',          category: 'pants',    usesB: false, price: 35 },
         { id: 'tankan_tunic',  label: 'Tankan Tunic',         category: 'torso',    usesB: false, price: 50 },
         { id: 'bandolier1',    label: 'Bandolier',            category: 'torso',    usesB: false, price: 40 },
         { id: 'appearance::hat::basic_headband',      label: 'Basic Headband',        category: 'hat', usesB: false, price: 35 },
@@ -11921,6 +11922,7 @@
       }
 
       async function makeNpcWalker(rec, initialTarget) {
+        window.PantsGarmentRenderer?.ensureNpcPants?.(rec); // Nearly every humanoid NPC wears the free default pants (js/pants-garment-renderer.js); animals and opted-out records are skipped.
         window.NpcWardrobe?.captureDefaultOutfitTraits?.(rec); // Covers direct/late walker construction paths that do not pass through the initial database loop.
         window.NpcWardrobe?.applyOutfitOverrideToRecord?.(rec); // Applies a restored manual outfit before profile construction, including deferred/visitor NPCs that had no walker when save restoration ran.
         const guessSpecies = (rec?.species || '').toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, '');
@@ -12035,6 +12037,14 @@
           drunkLossProvider: () => window.HobunjiDrunkGameplayBridge?.npcDrunkFraction?.(rec?.id) || 0,
           drunkBodyRoot: avatarGroup,
         }) || null;
+        // Pants are a skinned mesh on the avatar that follows these procedural legs; attachToLegs hooks them into
+        // legs.update()/dispose(), so every existing leg tick/teardown site drives them (js/pants-garment-renderer.js).
+        if (legs && (rec?.equippedCosmetics || []).includes('pants_basic')) {
+          window.PantsGarmentRenderer?.attachToLegs(THREE, legs, {
+            avatarGroup, speciesId: appearance.speciesId, gender: appearance.gender, name: rec?.id || rec?.name || 'npc',
+            appearance: window.PantsGarmentRenderer.appearanceFromBodyColors(profile?.bodyColors),
+          });
+        }
 
         const walker = {
           root, rec, profile, avatarGroup, avatarHeight, alcoholPoseGroup, groundShadow,
@@ -16843,6 +16853,13 @@
         // Stagger/Footing ragdoll playback (see docs/js/combat/impact-ragdoll-
         // playback.js) writes directly into this same legs handle — re-attach
         // it every time the avatar (and therefore playerLegs) refreshes.
+        const wornPants = gearInventory?.clothing?.pants; // The equipped pants item carries its dye/weave (js/pants-garment-renderer.js).
+        if (playerLegs && wornPants) {
+          window.PantsGarmentRenderer?.attachToLegs(THREE, playerLegs, {
+            avatarGroup, speciesId: _playerData?.appearance?.speciesId, gender: _playerData?.appearance?.gender, name: 'player',
+            appearance: window.PantsGarmentRenderer.appearanceFromItem(wornPants),
+          });
+        }
         window.ImpactRagdollPlayback?.attach(playerMesh, playerLegs);
       }
 
@@ -30150,7 +30167,7 @@
         // new slot is immediately testable without invalidating old saves.
         gearInventory.tools.crossbow ??= true;
         gearInventory.tools.scatterbow ??= true;
-        if (!gearInventory.clothing) gearInventory.clothing = { hat: null, hood: null, torso: null, overwear: null };
+        if (!gearInventory.clothing) gearInventory.clothing = { hat: null, hood: null, torso: null, overwear: null, pants: null };
         if (!gearInventory.charms)   gearInventory.charms   = [];
         if (!gearInventory.whistles || !gearInventory.whistles.length) {
           gearInventory.whistles = [{ id: 'whistle_bingo', creatureKey: 'dabinggi-hound', name: 'Bingo' }];

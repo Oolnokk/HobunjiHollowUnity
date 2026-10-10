@@ -165,6 +165,14 @@
             "conditions": {}
           },
           {
+            "id": "pants_basic",
+            "label": "Basic Pants",
+            "category": "pants",
+            "usesB": false,
+            "price": 35,
+            "conditions": {}
+          },
+          {
             "id": "tankan_tunic",
             "label": "Tankan Tunic",
             "category": "torso",

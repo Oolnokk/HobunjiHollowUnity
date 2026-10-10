@@ -44,6 +44,7 @@ function waitForAuthor() {
     if (changeIds.has(event.target?.id)) notifyHost(`click:${event.target.id}`);
   }, true);
   document.getElementById('legThickness')?.addEventListener('input', () => notifyHost('leg-thickness'), true);
+  document.getElementById('legRollGain')?.addEventListener('input', () => notifyHost('leg-roll-gain'), true);
   document.getElementById('beltScale')?.addEventListener('input', () => notifyHost('belt-scale'), true);
 
   window.__pantsRigAuthorDebug.notifyHostChanged = notifyHost; // Gives mobile diagnostics/manual recovery a direct bridge without DevTools-only private state.

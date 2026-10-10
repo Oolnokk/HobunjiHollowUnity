@@ -1,0 +1,487 @@
+// In-game pants garment: a 2D garment PNG skinned onto the avatar's legs.
+//
+// The Pants Rig Author (docs/tools/pants-rig-author) produces, per garment, a beltline, leg bones and a five-channel
+// weight map, and per species/gender a portrait beltline + leg thickness (window.HOBUNJI_PANTS_RIGS, see
+// docs/config/pants-rigs.js). This module turns that data into a deformable mesh parented to the avatar and, every
+// frame, aligns the garment's 2D thigh/calf bones onto the live procedural 3D leg bones (js/pants-rig-core.js does the
+// maths) and skins the mesh with the painted weights. The belt-weighted part stays rigid with the body.
+//
+// Owners (game.js: NPC walkers, the player avatar) call attach() once the avatar and its procedural legs exist,
+// update() each frame right after the legs tick, setAppearance() when the worn item is re-dyed or re-woven, and
+// dispose() with the avatar. The garment's art is rendered through ClothingWeavingSystem.renderClothingLayers so dye
+// and weaving behave exactly like every other cloth garment.
+(function (global) {
+  'use strict';
+
+  if (global.PantsGarmentRenderer) return;
+
+  const SEGMENTS = 32; // Vertices per side of the garment grid; matches the author's live preview.
+  const LEG_ACROSS_SCALE = 'balanced'; // Same widening rule as the author preview.
+  const DEFAULT_GARMENT_ID = 'pants_basic';
+  const FALLBACK_CHARACTER_KEY = '__default'; // Species/gender without their own authored record share this fit.
+  const DEFAULT_BELT_SCALE = 1.75;
+  const DOUBLE_SIDE = 2;
+  const MESH_NAME = 'PantsGarmentMesh';
+  const handles = new Set(); // Live garments, for diagnostics.
+
+  const core = () => global.HobunjiPantsRig || null;
+  const normalizeSpecies = value => String(value || '').trim().toLowerCase().replace(/_/g, '-');
+  const normalizeGender = value => String(value || '').trim().toLowerCase();
+  const characterKey = (speciesId, gender) => `${normalizeSpecies(speciesId)}::${normalizeGender(gender)}`;
+
+  function rigConfig() {
+    const source = global.HOBUNJI_PANTS_RIGS;
+    return source && typeof source === 'object' ? source : { garments: {}, characters: {} };
+  }
+
+  function resolveCharacter(speciesId, gender) {
+    const characters = rigConfig().characters || {};
+    return characters[characterKey(speciesId, gender)] || characters[FALLBACK_CHARACTER_KEY] || null;
+  }
+
+  function findPortraitPlane(model) {
+    let preferred = null, fallback = null;
+    model?.traverse?.(node => {
+      if (!node?.isMesh || node.userData?.hobunjiPantsGarment) return;
+      if (!fallback && node.geometry) fallback = node;
+      const face = String(node.userData?.hobunjiPlaneFace || '').toLowerCase();
+      const name = String(node.name || '').toLowerCase();
+      if (!preferred && (face === 'front' || /front.*plane|plane.*front/.test(name) || node.isSkinnedMesh)) preferred = node;
+    });
+    return preferred || fallback;
+  }
+
+  function portraitDimensions(model, plane) {
+    const parameters = plane?.geometry?.parameters || {};
+    const width = Number(model?.userData?.portraitModelWidth) || Number(parameters.width) || 0.9;
+    const height = Number(model?.userData?.portraitModelHeight) || Number(parameters.height) || width;
+    return { width: Math.max(0.05, width), height: Math.max(0.05, height) };
+  }
+
+  function portraitsFlipped() {
+    return global.PNGPlaneAvatar?.getPortraitsFlipped?.() === true; // The game mirrors every portrait texture by default; the garment geometry mirrors with it.
+  }
+
+  function findLegNodes(legHandle) {
+    const group = legHandle?.group;
+    if (!group?.getObjectByName) return null;
+    const flipped = portraitsFlipped(); // Mirrored art puts the garment's image-left leg on the screen-right side, where the right_* nodes live.
+    const nodes = {
+      leftThigh: group.getObjectByName(flipped ? 'right_thigh' : 'left_thigh'),
+      leftCalf: group.getObjectByName(flipped ? 'right_calf' : 'left_calf'),
+      rightThigh: group.getObjectByName(flipped ? 'left_thigh' : 'right_thigh'),
+      rightCalf: group.getObjectByName(flipped ? 'left_calf' : 'right_calf'),
+    };
+    return Object.values(nodes).every(Boolean) ? nodes : null;
+  }
+
+  // Static part of the garment for one avatar: rest vertices, weights, 2D bones in avatar-local space.
+  function buildGarmentData(THREE, Core, model, plane, garment, character, zLift = 0) {
+    const transform = Core.solveAffine(garment.pantsBeltSpline, character.portraitBeltSpline);
+    if (!transform) return null;
+    const dimensions = portraitDimensions(model, plane);
+    const weightGrid = garment.weightMap?.encoding === 'rle8' ? Core.decodeWeightGridRle(garment.weightMap) : garment.weightMap;
+    const controls = Core.buildLegOpeningFitControls(garment, Number(character.legThickness) || 1);
+    const flipped = portraitsFlipped();
+    const vertexCount = (SEGMENTS + 1) * (SEGMENTS + 1);
+    const positions = new Float32Array(vertexCount * 3);
+    const basePositions = new Float32Array(vertexCount * 3);
+    const uvs = new Float32Array(vertexCount * 2);
+    const weights = new Float32Array(vertexCount * 5);
+    const indices = [];
+    model.updateMatrixWorld?.(true);
+    plane.updateMatrixWorld?.(true);
+    const point = new THREE.Vector3();
+    const placed = new THREE.Vector3();
+    const placeOnPlane = (u, v) => { // PNG point -> leg-thickness fit -> belt affine -> portrait plane -> avatar-local.
+      const displacement = Core.inverseDistanceDisplacement({ x: u, y: v }, controls.source, controls.target, 2);
+      const fitted = { x: Core.clamp(u + displacement.x), y: Core.clamp(v + displacement.y) };
+      const portrait = Core.applyAffine(transform, fitted);
+      point.set((flipped ? 0.5 - portrait.x : portrait.x - 0.5) * dimensions.width, (0.5 - portrait.y) * dimensions.height, 0.012);
+      placed.copy(point);
+      plane.localToWorld(placed);
+      model.worldToLocal(placed);
+      placed.z += zLift; // In front of the procedural feet's depth, so the garment reads over them (see footFrontLift).
+      return placed;
+    };
+    const portraitToLocal = (px, py) => { // Plain portrait-canvas -> avatar-local mapping (no garment fit), for the overlay mask.
+      point.set((flipped ? 0.5 - px : px - 0.5) * dimensions.width, (0.5 - py) * dimensions.height, 0.012);
+      placed.copy(point);
+      plane.localToWorld(placed);
+      model.worldToLocal(placed);
+      return { x: placed.x, y: placed.y };
+    };
+    let vertex = 0;
+    for (let row = 0; row <= SEGMENTS; row++) {
+      const v = row / SEGMENTS;
+      for (let col = 0; col <= SEGMENTS; col++, vertex++) {
+        const u = col / SEGMENTS;
+        placeOnPlane(u, v);
+        basePositions[vertex * 3] = positions[vertex * 3] = placed.x;
+        basePositions[vertex * 3 + 1] = positions[vertex * 3 + 1] = placed.y;
+        basePositions[vertex * 3 + 2] = positions[vertex * 3 + 2] = placed.z;
+        uvs[vertex * 2] = u;
+        uvs[vertex * 2 + 1] = 1 - v;
+        const sampled = Core.sampleWeights(weightGrid, u, v);
+        let sum = 0;
+        Core.WEIGHT_CHANNELS.forEach((channel, channelIndex) => {
+          const value = Math.max(0, Number(sampled[channel]) || 0);
+          weights[vertex * 5 + channelIndex] = value;
+          sum += value;
+        });
+        if (!(sum > 0)) { weights[vertex * 5] = 1; sum = 1; }
+        if (Math.abs(sum - 1) > 0.0001) for (let channelIndex = 0; channelIndex < 5; channelIndex++) weights[vertex * 5 + channelIndex] /= sum;
+      }
+    }
+    for (let row = 0; row < SEGMENTS; row++) {
+      for (let col = 0; col < SEGMENTS; col++) {
+        const a = row * (SEGMENTS + 1) + col, b = a + 1, c = a + SEGMENTS + 1, d = c + 1;
+        indices.push(a, c, b, b, c, d);
+      }
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    geometry.setIndex(indices);
+    geometry.getAttribute('position').setUsage?.(THREE.DynamicDrawUsage);
+    geometry.computeBoundingSphere();
+    const legBones = Core.normalizeLegBones(garment.legBones);
+    const bones2D = {};
+    for (const side of ['left', 'right']) {
+      bones2D[side] = {};
+      for (const joint of ['hip', 'knee', 'ankle']) {
+        const p = placeOnPlane(legBones[side][joint].x, legBones[side][joint].y);
+        bones2D[side][joint] = { x: p.x, y: p.y, z: p.z };
+      }
+    }
+    const beltCenter = { x: 0, y: 0 };
+    for (const beltPoint of garment.pantsBeltSpline) {
+      const p = placeOnPlane(beltPoint.x, beltPoint.y);
+      beltCenter.x += p.x / garment.pantsBeltSpline.length;
+      beltCenter.y += p.y / garment.pantsBeltSpline.length;
+    }
+    const origin = placeOnPlane(0, 0).clone();
+    const across = placeOnPlane(1, 0).clone().sub(origin);
+    const down = placeOnPlane(0, 1).clone().sub(origin);
+    const normal = across.cross(down).normalize();
+    const o = portraitToLocal(0, 0), ex = portraitToLocal(1, 0), ey = portraitToLocal(0, 1);
+    const m00 = ex.x - o.x, m01 = ey.x - o.x, m10 = ex.y - o.y, m11 = ey.y - o.y;
+    const det = m00 * m11 - m01 * m10 || 1e-9;
+    const maskMapping = { ox: o.x, oy: o.y, inv: [m11 / det, -m01 / det, -m10 / det, m00 / det] }; // portrait px/py (0..1) = inv * (local - origin)
+    return { geometry, basePositions, weights, bones2D, beltCenter, maskMapping, planeNormal: { x: normal.x, y: normal.y, z: normal.z } };
+  }
+
+  // How far in front of the portrait plane the procedural feet reach (avatar-local +z). The garment is lifted past that so
+  // it draws over the foot models (x-ray through the feet) instead of being hidden behind them.
+  function footFrontLift(THREE, model, legHandle) {
+    const group = legHandle?.group;
+    if (!group) return 0;
+    group.updateMatrixWorld?.(true);
+    model.updateMatrixWorld?.(true);
+    const box = new THREE.Box3().setFromObject(group);
+    if (box.isEmpty()) return 0;
+    const corner = new THREE.Vector3();
+    let front = -Infinity;
+    for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) {
+      corner.set(x, y, z);
+      model.worldToLocal(corner);
+      front = Math.max(front, corner.z);
+    }
+    return Math.max(0, Math.min(0.3, front - 0.012 + 0.01));
+  }
+
+  function makeScratch(THREE) {
+    const joint = () => ({ x: 0, y: 0, z: 0 });
+    const leg = () => ({ hip: joint(), knee: joint(), ankle: joint() });
+    return { inverseModel: new THREE.Matrix4(), point: new THREE.Vector3(), bones3D: { left: leg(), right: leg() }, aim: { left: leg(), right: leg() }, transforms: [null, null, null, null, null] };
+  }
+
+  // Live 3D leg bones in avatar-local space. Hip = thigh origin, knee = calf origin, ankle = calf origin + calf-down * calfLength.
+  function readLiveBones(handle) {
+    const { model, nodes, scratch } = handle;
+    model.updateWorldMatrix?.(true, false);
+    const inverseModel = scratch.inverseModel.copy(model.matrixWorld).invert();
+    for (const [side, thigh, calf] of [['left', nodes.leftThigh, nodes.leftCalf], ['right', nodes.rightThigh, nodes.rightCalf]]) {
+      thigh.updateWorldMatrix?.(true, false);
+      calf.updateWorldMatrix?.(true, false);
+      const bones = scratch.bones3D[side];
+      scratch.point.setFromMatrixPosition(thigh.matrixWorld).applyMatrix4(inverseModel);
+      bones.hip.x = scratch.point.x; bones.hip.y = scratch.point.y; bones.hip.z = scratch.point.z;
+      scratch.point.setFromMatrixPosition(calf.matrixWorld).applyMatrix4(inverseModel);
+      bones.knee.x = scratch.point.x; bones.knee.y = scratch.point.y; bones.knee.z = scratch.point.z;
+      const calfLength = Number(calf.userData?.hobunjiCalfLength) > 0 ? Number(calf.userData.hobunjiCalfLength) : Math.abs(calf.position.y);
+      scratch.point.set(0, -calfLength, 0).applyMatrix4(calf.matrixWorld).applyMatrix4(inverseModel);
+      bones.ankle.x = scratch.point.x; bones.ankle.y = scratch.point.y; bones.ankle.z = scratch.point.z;
+    }
+    return scratch.bones3D;
+  }
+
+  function loadImage(url) {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.crossOrigin = 'anonymous'; // Required so the canvas stays readable for the recolor and the WebGL upload.
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error(`Could not load pants texture ${url}`));
+      image.src = url;
+    });
+  }
+
+  function garmentImageUrl(garment) {
+    const path = String(garment?.image || 'assets/cosmetics/clothes/legs/pants_basic.png');
+    return /^(https?:|data:|\.\/|\/)/i.test(path) ? path : `./${path}`;
+  }
+
+  // The garment art for the current dye/weave: the same renderer every cloth garment uses, falling back to the raw PNG.
+  async function renderGarmentCanvas(garmentId, garment, appearance) {
+    const weaving = global.ClothingWeavingSystem;
+    if (weaving?.renderClothingLayers) {
+      try {
+        const rendered = await weaving.renderClothingLayers(garmentId, {
+          primaryHex: appearance.primaryHex || null,
+          secondaryHex: appearance.secondaryHex || null,
+          patternHex: appearance.patternHex || '#ffffff',
+          weaving: appearance.weaving || null,
+          view: 'front',
+          speciesId: appearance.speciesId,
+          gender: appearance.gender,
+        });
+        if (rendered?.canvas) return rendered.canvas;
+      } catch (_) { /* falls through to the plain PNG */ }
+    }
+    const image = await loadImage(garmentImageUrl(garment));
+    const canvas = document.createElement('canvas');
+    canvas.width = image.naturalWidth || image.width || 1;
+    canvas.height = image.naturalHeight || image.height || 1;
+    canvas.getContext('2d').drawImage(image, 0, 0);
+    return canvas;
+  }
+
+  /**
+   * Attach a pants garment to an avatar.
+   * @param THREE            three.js namespace
+   * @param opts.avatarGroup the avatar model (portrait plane lives under it); the garment mesh is parented to it
+   * @param opts.legHandle   the ProceduralLegAnimation handle ({group, ...}) for this avatar
+   * @param opts.speciesId, opts.gender
+   * @param opts.appearance  {primaryHex, secondaryHex, patternHex, weaving}
+   * @returns handle {update, setAppearance, dispose, mesh} or null when pants cannot be drawn for this avatar
+   */
+  function attach(THREE, { avatarGroup, legHandle, speciesId, gender, garmentId = DEFAULT_GARMENT_ID, appearance = {}, name = 'pants', overlayMask = null } = {}) {
+    const Core = core();
+    const garment = rigConfig().garments?.[garmentId];
+    const character = resolveCharacter(speciesId, gender);
+    const plane = findPortraitPlane(avatarGroup);
+    const nodes = findLegNodes(legHandle);
+    if (!THREE || !Core || !garment || !character || !plane || !nodes) return null;
+    const zLift = footFrontLift(THREE, avatarGroup, legHandle);
+    const data = buildGarmentData(THREE, Core, avatarGroup, plane, garment, character, zLift);
+    if (!data) return null;
+    const handle = {
+      name, garmentId, model: avatarGroup, nodes, mesh: null, disposed: false, texture: null, material: null,
+      geometry: data.geometry, basePositions: data.basePositions, weights: data.weights, bones2D: data.bones2D,
+      beltCenter: data.beltCenter, planeNormal: data.planeNormal,
+      beltScale: Math.min(3.5, Math.max(1.7, Number(character.beltScale) || DEFAULT_BELT_SCALE)),
+      legRollGain: Math.min(4, Math.max(1, Number(character.legRollGain) || 2)),
+      maskMapping: data.maskMapping, zLift,
+      maskUniforms: { uPantsMask: { value: null }, uPantsMaskOn: { value: 0 }, uPantsMaskO: { value: new THREE.Vector2(data.maskMapping.ox, data.maskMapping.oy) }, uPantsMaskInv: { value: new THREE.Vector4(...data.maskMapping.inv) } },
+      scratch: makeScratch(THREE), appearance: { ...appearance, speciesId, gender }, renderToken: 0, ready: false,
+    };
+
+    const createMesh = canvas => {
+      const surface = global.HobunjiSpritePngSurface;
+      const texture = surface?.makeCanvasTexture ? surface.makeCanvasTexture(THREE, canvas, `${name}-pants`) : new THREE.CanvasTexture(canvas);
+      const overrides = { side: DOUBLE_SIDE, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 };
+      const material = surface?.makeMaterial ? surface.makeMaterial(THREE, texture, `${name}-pants`, overrides) : new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.01, ...overrides });
+      // Pixels covered by arm/overwear/pauldron/hood art stay in front of the pants: the portrait underneath shows through there.
+      material.onBeforeCompile = shader => {
+        Object.assign(shader.uniforms, handle.maskUniforms);
+        shader.vertexShader = shader.vertexShader
+          .replace('#include <common>', '#include <common>\nvarying vec2 vPantsLocal;')
+          .replace('#include <begin_vertex>', '#include <begin_vertex>\nvPantsLocal = position.xy;');
+        shader.fragmentShader = shader.fragmentShader
+          .replace('#include <common>', '#include <common>\nvarying vec2 vPantsLocal;\nuniform sampler2D uPantsMask;\nuniform float uPantsMaskOn;\nuniform vec2 uPantsMaskO;\nuniform vec4 uPantsMaskInv;')
+          .replace('#include <alphatest_fragment>', 'if (uPantsMaskOn > 0.5) { vec2 pd = vPantsLocal - uPantsMaskO; vec2 pc = vec2(uPantsMaskInv.x * pd.x + uPantsMaskInv.y * pd.y, uPantsMaskInv.z * pd.x + uPantsMaskInv.w * pd.y); diffuseColor.a *= 1.0 - texture2D(uPantsMask, vec2(pc.x, 1.0 - pc.y)).a; }\n#include <alphatest_fragment>');
+      };
+      material.customProgramCacheKey = () => 'pantsOverlayMask';
+      return { texture, material };
+    };
+
+    handle.setAppearance = async next => {
+      handle.appearance = { ...handle.appearance, ...next };
+      const token = ++handle.renderToken;
+      let canvas;
+      try { canvas = await renderGarmentCanvas(garmentId, garment, handle.appearance); } catch (error) { console.warn('[PantsGarmentRenderer] could not render garment art', error); return false; }
+      if (handle.disposed || token !== handle.renderToken) return false;
+      const { texture, material } = createMesh(canvas);
+      if (!handle.mesh) {
+        const mesh = new THREE.Mesh(handle.geometry, material);
+        mesh.name = MESH_NAME;
+        mesh.renderOrder = 28;
+        mesh.frustumCulled = false;
+        mesh.userData.hobunjiPantsGarment = true;
+        avatarGroup.add(mesh);
+        handle.mesh = mesh;
+      } else {
+        handle.material?.dispose?.();
+        handle.texture?.dispose?.();
+        handle.mesh.material = material;
+      }
+      handle.texture = texture;
+      handle.material = material;
+      handle.ready = true;
+      return true;
+    };
+
+    handle.setOverlayMask = canvas => {
+      handle.maskTexture?.dispose?.();
+      handle.maskTexture = null;
+      handle.maskUniforms.uPantsMaskOn.value = 0;
+      if (!canvas) return;
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.minFilter = THREE.LinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      texture.generateMipmaps = false;
+      handle.maskTexture = texture;
+      handle.maskUniforms.uPantsMask.value = texture;
+      handle.maskUniforms.uPantsMaskOn.value = 1;
+    };
+
+    handle.update = () => {
+      if (handle.disposed || !handle.mesh || !handle.model.parent) return;
+      const visible = handle.model.visible !== false && legHandle.group?.visible !== false;
+      if (handle.mesh.visible !== visible) handle.mesh.visible = visible;
+      if (!visible) return;
+      const measured = readLiveBones(handle);
+      const live = handle.scratch.aim; // Aim at the live legs with their sideways (z) swing exaggerated by the roll gain.
+      Core.amplifyLegRoll(measured.left, handle.legRollGain, live.left);
+      Core.amplifyLegRoll(measured.right, handle.legRollGain, live.right);
+      const flat = handle.bones2D;
+      const transforms = handle.scratch.transforms; // Channel order is Core.WEIGHT_CHANNELS: belt, leftThigh, leftCalf, rightThigh, rightCalf.
+      const options = { perpendicularScale: LEG_ACROSS_SCALE, normal: handle.planeNormal };
+      const s = handle.beltScale, c = handle.beltCenter;
+      transforms[0] = s === 1 ? null : { a: 1, b: 0, c: 0, d: s, tx: 0, ty: c.y * (1 - s) }; // Vertical-only scale of the belt-weighted pixels.
+      transforms[1] = Core.alignBoneSegment3D(flat.left.hip, flat.left.knee, live.left.hip, live.left.knee, options);
+      transforms[2] = Core.alignBoneSegment3D(flat.left.knee, flat.left.ankle, live.left.knee, live.left.ankle, options);
+      transforms[3] = Core.alignBoneSegment3D(flat.right.hip, flat.right.knee, live.right.hip, live.right.knee, options);
+      transforms[4] = Core.alignBoneSegment3D(flat.right.knee, flat.right.ankle, live.right.knee, live.right.ankle, options);
+      const position = handle.geometry.getAttribute('position');
+      Core.skinWeightedPositions(handle.basePositions, handle.weights, transforms, position.array);
+      position.needsUpdate = true;
+      handle.geometry.computeBoundingSphere();
+    };
+
+    handle.dispose = () => {
+      if (handle.disposed) return;
+      handle.disposed = true;
+      handles.delete(handle);
+      handle.mesh?.parent?.remove?.(handle.mesh);
+      handle.geometry?.dispose?.();
+      handle.material?.dispose?.();
+      handle.texture?.dispose?.();
+      handle.maskTexture?.dispose?.();
+      handle.mesh = null;
+    };
+
+    handles.add(handle);
+    handle.setAppearance({});
+    if (overlayMask) Promise.resolve(overlayMask).then(canvas => { if (!handle.disposed) handle.setOverlayMask(canvas); }).catch(() => {});
+    return handle;
+  }
+
+  // Coverage mask of the layers that must stay in front of the pants (arm clothing / overwear, pauldrons, hoods): the portrait
+  // is rendered again without them and the pixels that differ are the mask. `fullCanvas` is the portrait as already
+  // rendered for this avatar; `renderOptions` must match the options it was rendered with. Resolves null when the profile
+  // wears none of those layers.
+  async function buildOverlayMask(fullCanvas, profile, renderOptions = {}) {
+    const preview = global.NpcAvatarPreview;
+    const worn = group => !!group && (group.layers?.length || (group.id && group.id !== 'none'));
+    if (!fullCanvas || !profile || !preview?.renderProfileToCanvas || !(worn(profile.armCosmetic) || worn(profile.pauldron) || worn(profile.hood))) return null;
+    const width = fullCanvas.width, height = fullCanvas.height;
+    const stripped = document.createElement('canvas');
+    stripped.width = width;
+    stripped.height = height;
+    await preview.renderProfileToCanvas(stripped, { ...profile, armCosmetic: null, pauldron: null, hood: null }, renderOptions);
+    const full = fullCanvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, width, height).data;
+    const base = stripped.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, width, height).data;
+    const mask = document.createElement('canvas');
+    mask.width = width;
+    mask.height = height;
+    const context = mask.getContext('2d');
+    const out = context.createImageData(width, height);
+    const firstRow = Math.floor(height * 0.35); // Pants never reach the head; ignore expression/hair differences up there.
+    let covered = 0;
+    for (let y = firstRow; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const i = (y * width + x) * 4;
+        const delta = Math.abs(full[i] - base[i]) + Math.abs(full[i + 1] - base[i + 1]) + Math.abs(full[i + 2] - base[i + 2]) + Math.abs(full[i + 3] - base[i + 3]);
+        if (delta > 24) { out.data[i + 3] = 255; covered++; }
+      }
+    }
+    if (!covered) return null;
+    context.putImageData(out, 0, 0);
+    return mask;
+  }
+
+  // Attach pants to an avatar AND hook them into its procedural legs handle, so every existing place that ticks or
+  // disposes the legs (NPC walkers, player, ragdoll playback, scene teardown) drives the garment without any other change:
+  // legs.update() also updates the pants, legs.dispose() also disposes them.
+  function attachToLegs(THREE, legs, options = {}) {
+    if (!legs || legs.pants) return legs?.pants || null;
+    const pants = attach(THREE, { ...options, legHandle: legs });
+    if (!pants) return null;
+    const originalUpdate = legs.update, originalDispose = legs.dispose;
+    legs.pants = pants;
+    legs.update = function updateWithPants(...args) {
+      const result = typeof originalUpdate === 'function' ? originalUpdate.apply(this, args) : undefined;
+      pants.update();
+      return result;
+    };
+    legs.dispose = function disposeWithPants(...args) {
+      pants.dispose();
+      return typeof originalDispose === 'function' ? originalDispose.apply(this, args) : undefined;
+    };
+    return pants;
+  }
+
+  // Dye/weave inputs for one worn garment. Player: the equipped gear item. NPC: the PANTS body color its record's appliedDyes produce.
+  function appearanceFromItem(item) {
+    if (!item) return {};
+    return { primaryHex: item.colorA?.hex || null, secondaryHex: item.colorB?.hex || item.colorA?.hex || null, patternHex: item.colorC?.hex || '#ffffff', weaving: item.weaving || null };
+  }
+  function appearanceFromBodyColors(bodyColors) {
+    const primary = bodyColors?.PANTS?.hex || null;
+    const secondary = bodyColors?.PANTS_B?.hex || primary;
+    return { primaryHex: primary, secondaryHex: secondary, patternHex: bodyColors?.PANTS_C?.hex || '#ffffff', weaving: null };
+  }
+
+  // Humanoid NPC records that should wear the free default pants: everyone but animals and records that opt out.
+  function ensureNpcPants(rec, { garmentId = DEFAULT_GARMENT_ID, isAnimal = false } = {}) {
+    if (!rec || isAnimal || rec.noPants === true || rec.kind === 'animal') return false;
+    if (!Array.isArray(rec.equippedCosmetics)) rec.equippedCosmetics = [];
+    if (rec.equippedCosmetics.includes(garmentId)) return false;
+    rec.equippedCosmetics = [...rec.equippedCosmetics, garmentId];
+    if (!rec.appliedDyes || typeof rec.appliedDyes !== 'object') rec.appliedDyes = {};
+    if (!rec.appliedDyes.PANTS) {
+      const catalog = global.ScratchbonesAccount?.getDyeCatalog?.() || [];
+      const cloth = catalog.filter(dye => dye.acquisition === 'starter');
+      const pool = cloth.length ? cloth : catalog;
+      if (pool.length) {
+        let hash = 2166136261;
+        for (const ch of String(rec.id || rec.name || 'npc')) hash = Math.imul(hash ^ ch.charCodeAt(0), 16777619) >>> 0;
+        rec.appliedDyes.PANTS = pool[hash % pool.length].id; // Deterministic: the same NPC always wears the same shade.
+      }
+    }
+    return true;
+  }
+
+  global.PantsGarmentRenderer = Object.freeze({
+    attach,
+    attachToLegs,
+    buildOverlayMask,
+    appearanceFromItem,
+    appearanceFromBodyColors,
+    ensureNpcPants,
+    resolveCharacter,
+    hasRigFor: (speciesId, gender, garmentId = DEFAULT_GARMENT_ID) => !!(rigConfig().garments?.[garmentId] && resolveCharacter(speciesId, gender)),
+    debugSnapshot: () => ({ live: handles.size, garments: Object.keys(rigConfig().garments || {}), characters: Object.keys(rigConfig().characters || {}) }),
+  });
+})(window);

@@ -150,4 +150,23 @@ assert([out[2], out[5], out[8]].every(z => near(z, 0.012, 1e-6)), 'depth is carr
   assert(near(apply(planar, probe).x, apply3(spatial, probe).x, 1e-9) && near(apply(planar, probe).y, apply3(spatial, probe).y, 1e-9), 'in the plane the 3D transform equals the planar one');
 }
 
+// ---- leg roll gain (z rotation strength) -------------------------------------
+{
+  const mk = (h, k, a) => ({ hip: { x: h[0], y: h[1], z: h[2] }, knee: { x: k[0], y: k[1], z: k[2] }, ankle: { x: a[0], y: a[1], z: a[2] } });
+  const blank = () => mk([0, 0, 0], [0, 0, 0], [0, 0, 0]);
+  const leg = mk([0, 0, 0], [0.1, -0.2, 0.05], [0.2, -0.4, 0.1]); // Swung toward +x by atan(0.5) = 26.6 degrees, with some z.
+  const same = Core.amplifyLegRoll(leg, 1, blank());
+  for (const j of ['hip', 'knee', 'ankle']) assert(near(same[j].x, leg[j].x) && near(same[j].y, leg[j].y) && near(same[j].z, leg[j].z), 'gain 1 must return the live bones exactly');
+  const strong = Core.amplifyLegRoll(leg, 3, blank());
+  const angle = v => Math.atan2(v.x, -v.y);
+  const thighBefore = { x: leg.knee.x - leg.hip.x, y: leg.knee.y - leg.hip.y }, thighAfter = { x: strong.knee.x - strong.hip.x, y: strong.knee.y - strong.hip.y };
+  assert(near(angle(thighAfter), 3 * angle(thighBefore), 1e-9), 'the thigh swings 3x as far from straight down');
+  assert(near(Math.hypot(thighAfter.x, thighAfter.y), Math.hypot(thighBefore.x, thighBefore.y), 1e-9), 'bone length is unchanged');
+  assert(near(strong.ankle.z, leg.ankle.z) && near(strong.knee.z, leg.knee.z), 'depth (x-rotation) is untouched');
+  const calfAfter = { x: strong.ankle.x - strong.knee.x, y: strong.ankle.y - strong.knee.y };
+  assert(near(angle(calfAfter), 3 * angle({ x: leg.ankle.x - leg.knee.x, y: leg.ankle.y - leg.knee.y }), 1e-9), 'the calf is amplified by its own angle');
+  const hanging = Core.amplifyLegRoll(mk([0, 0, 0], [0, -0.2, 0], [0, -0.4, 0]), 5, blank());
+  assert(near(hanging.ankle.x, 0) && near(hanging.ankle.y, -0.4), 'a leg hanging straight down is not moved by any gain');
+}
+
 console.log('Pants rig bone skinning: PASS');

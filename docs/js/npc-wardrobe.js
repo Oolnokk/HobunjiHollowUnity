@@ -57,6 +57,7 @@
     pauldron: ['PAULDRON'],
     torso: ['TORSO'],
     overwear: ['CLOTH', 'CLOTH_B'],
+    pants: ['PANTS', 'PANTS_B'],
   }); // Maps wardrobe clothing slots to the NPC portrait tint channels used by authored appliedDyes.
 
   function tintKeysForSlot(slot) {
@@ -235,6 +236,7 @@
     if (/hood|festivalmask/.test(id)) return 'hood';
     if (/pauldron|shoulder.?armor/.test(id)) return 'pauldron';
     if (/poncho|cloak|wrap|overwear/.test(id)) return 'overwear';
+    if (/pants|trouser|skirt|legging/.test(id)) return 'pants';
     return 'torso';
   }
 

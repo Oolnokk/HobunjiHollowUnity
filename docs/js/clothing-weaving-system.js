@@ -7,8 +7,8 @@
   const LIGHT_WOOL_KEY = 'lightWool'; // Used by loom recipes for low-weight cloth variants.
   const HEAVY_WOOL_KEY = 'puktukWool'; // Existing save-compatible Puktuk item key; presented in-game as Heavy Wool.
   const COMBAT_GRACE_MS = 6000; // Matches the game's quiet-period notion closely enough to limit movement burden to active combat.
-  const STANDARD_WEIGHT_BY_SLOT = Object.freeze({ hat: 1, hood: 2, torso: 3, overwear: 4 }); // Baseline units for ordinary bought/looted cloth.
-  const WOOL_COST_BY_SLOT = Object.freeze({ hat: 1, hood: 2, torso: 3, overwear: 4 }); // Used to price loom copies by garment coverage.
+  const STANDARD_WEIGHT_BY_SLOT = Object.freeze({ hat: 1, hood: 2, pants: 2, torso: 3, overwear: 4 }); // Baseline units for ordinary bought/looted cloth.
+  const WOOL_COST_BY_SLOT = Object.freeze({ hat: 1, hood: 2, pants: 2, torso: 3, overwear: 4 }); // Used to price loom copies by garment coverage.
   const MATERIALS = Object.freeze({
     light: Object.freeze({ id: 'light', label: 'Light Wool', itemKey: LIGHT_WOOL_KEY, weightMul: 0.60 }),
     heavy: Object.freeze({ id: 'heavy', label: 'Heavy Wool', itemKey: HEAVY_WOOL_KEY, weightMul: 1.50 }),
@@ -25,8 +25,8 @@
   }); // Central outfit-weight tuning; all four tradeoffs derive from total equipped clothing/armor weight, regardless of material.
   const CLOTHING_MARKER_KEY = '__hobunjiWovenClothing'; // Temporary bodyColors metadata passed only through avatar render data.
   const CRAFT_ID_MARKER = '#loom:'; // Makes each crafted article unique to legacy duplicate-collapsing logic.
-  const CLOTHING_SLOTS = Object.freeze(['hat', 'hood', 'torso', 'overwear']);
-  const OUTFIT_WEIGHT_SLOTS = Object.freeze(['hat', 'hood', 'pauldron', 'torso', 'overwear']); // All clothing slots contribute to outfit burden when an article supplies a weight; material type is not inferred from slot.
+  const CLOTHING_SLOTS = Object.freeze(['hat', 'hood', 'torso', 'overwear', 'pants']);
+  const OUTFIT_WEIGHT_SLOTS = Object.freeze(['hat', 'hood', 'pauldron', 'torso', 'overwear', 'pants']); // All clothing slots contribute to outfit burden when an article supplies a weight; material type is not inferred from slot.
   const PATTERN_SCALE_REFERENCE = 0.25; // Converts normalized whole-pattern scale to the pre-normalization renderer scale; 1.00 now means the old 0.25.
   const PATTERN_SCALE_MIN = 0.4; // Normalized lower clamp used by woven pattern rendering; equivalent to the old physical 0.10.
   const PATTERN_SCALE_MAX = 3.2; // Normalized upper clamp used by woven pattern rendering; equivalent to the old physical 0.80.
@@ -458,7 +458,7 @@
   }
 
   function thirdTintKey(slot) {
-    return ({ hat: 'HAT_C', hood: 'HOOD_C', torso: 'TORSO_C', overwear: 'CLOTH_C' })[slot] || null;
+    return ({ hat: 'HAT_C', hood: 'HOOD_C', torso: 'TORSO_C', overwear: 'CLOTH_C', pants: 'PANTS_C' })[slot] || null;
   }
 
   function portraitClothingColor(color) {

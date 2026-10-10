@@ -236,7 +236,7 @@
   function makeBoneScratch(Runtime) {
     const joint = () => ({ x: 0, y: 0, z: 0 });
     const leg = () => ({ hip: joint(), knee: joint(), ankle: joint() });
-    return { inverseModel: new Runtime.Matrix4(), point: new Runtime.Vector3(), bones3D: { left: leg(), right: leg() }, transforms: [null, null, null, null, null] };
+    return { inverseModel: new Runtime.Matrix4(), point: new Runtime.Vector3(), bones3D: { left: leg(), right: leg() }, aim: { left: leg(), right: leg() }, transforms: [null, null, null, null, null] };
   }
 
   function forwardStaticFit(Core, garment, character, point) {
@@ -431,6 +431,7 @@
       beltCenter: built.beltCenter,
       planeNormal: built.planeNormal,
       beltScale: Math.min(3.5, Math.max(1.7, Number(character.beltScale) || 1.75)),
+      legRollGain: Math.min(4, Math.max(1, Number(character.legRollGain) || 2)),
       scratch: makeBoneScratch(Runtime),
       garmentId,
       identityKey: identityKey(identity),
@@ -447,7 +448,10 @@
     const preview = state.preview;
     const Core = window.HobunjiPantsRig;
     if (!preview || !preview.model?.parent || !Core) return;
-    const live = readLiveBones(preview);
+    const measured = readLiveBones(preview);
+    const live = preview.scratch.aim; // The garment aims at the live legs with their sideways (z) swing exaggerated by the roll gain.
+    Core.amplifyLegRoll(measured.left, preview.legRollGain, live.left);
+    Core.amplifyLegRoll(measured.right, preview.legRollGain, live.right);
     const flat = preview.bones2D;
     const transforms = preview.scratch.transforms; // Channel order is Core.WEIGHT_CHANNELS: belt, leftThigh, leftCalf, rightThigh, rightCalf.
     const options = { perpendicularScale: LEG_ACROSS_SCALE, normal: preview.planeNormal };
@@ -482,7 +486,11 @@
       setStatus('Waiting for a Procedural Animation avatar…', 'warn');
       return;
     }
-    if (!state.forceRebuild && !identityChanged && !modelChanged && state.preview) return;
+    // Swapping NPCs while Pants is open rebuilds the procedural leg chain (and may keep the same model object), which
+    // leaves the preview skinning against the previous NPC's now-detached leg nodes. Compare against the live chain.
+    const liveNodes = findLegNodes(model);
+    const nodesChanged = !!state.preview && (!liveNodes || Object.keys(liveNodes).some(key => liveNodes[key] !== state.preview.nodes[key]));
+    if (!state.forceRebuild && !identityChanged && !modelChanged && !nodesChanged && state.preview) return;
     const project = currentAuthorProject(); // Export/weight encoding is only paid when an edit/avatar change actually requires a rebuild.
     if (!project) {
       setStatus('Waiting for the embedded Pants Rig Author…', 'warn');
@@ -680,7 +688,8 @@
     const preview = state.preview;
     const Core = window.HobunjiPantsRig;
     if (!preview || !Core) return null;
-    const live = readLiveBones(preview);
+    const measured = readLiveBones(preview);
+    const live = { left: Core.amplifyLegRoll(measured.left, preview.legRollGain, { hip: {}, knee: {}, ankle: {} }), right: Core.amplifyLegRoll(measured.right, preview.legRollGain, { hip: {}, knee: {}, ankle: {} }) };
     const options = { perpendicularScale: LEG_ACROSS_SCALE, normal: preview.planeNormal };
     const distance = (p, q) => Math.hypot(p.x - q.x, p.y - q.y, (p.z || 0) - (q.z || 0));
     const through = (t, p) => ({ x: t.m[0] * p.x + t.m[1] * p.y + t.m[2] * p.z + t.tx, y: t.m[3] * p.x + t.m[4] * p.y + t.m[5] * p.z + t.ty, z: t.m[6] * p.x + t.m[7] * p.y + t.m[8] * p.z + t.tz });

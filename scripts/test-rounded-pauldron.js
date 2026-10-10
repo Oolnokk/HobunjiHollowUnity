@@ -150,7 +150,7 @@ assert(!shopPieces.some(piece => piece.id === 'rounded_pauldron'), 'General Stor
 const onboarding = read('docs/onboarding-core.js');
 assert(onboarding.includes("{ key: 'pauldron', label: '🛡 Pauldrons'"), 'the pauldron slot remains an ordinary clothing category for future non-metal pieces');
 assert(onboarding.includes('PAULDRON: clothDyeColor(clothDyeA)'), 'non-metal pauldrons retain the ordinary dye channel');
-assert(onboarding.includes('clothing: { hat: null, hood: null, pauldron: null, torso: null, overwear: null }'), 'gear schema still owns a dedicated pauldron slot');
+assert(onboarding.includes('clothing: { hat: null, hood: null, pauldron: null, torso: null, overwear: null, pants: null }'), 'gear schema still owns a dedicated pauldron slot');
 assert(onboarding.includes("catalog.filter(i => i.category === slot.category && !i.smithOnly)"), 'character creation can expose future non-metal pauldrons while hiding smith-only metal recipes');
 
 const equipment = read('docs/js/equipment-panel.js');
@@ -169,7 +169,7 @@ assert(portrait.includes('window.resolvePortraitAssetUrl = resolvePortraitAssetU
 assert(portrait.includes("data:|blob:|https?:|file:"), 'portrait loader accepts recolored data/absolute URLs without prefixing the asset root');
 
 const weaving = read('docs/js/clothing-weaving-system.js');
-assert(weaving.includes("OUTFIT_WEIGHT_SLOTS = Object.freeze(['hat', 'hood', 'pauldron', 'torso', 'overwear'])"), 'pauldron weight contributes to outfit burden');
+assert(weaving.includes("OUTFIT_WEIGHT_SLOTS = Object.freeze(['hat', 'hood', 'pauldron', 'torso', 'overwear', 'pants'])"), 'pauldron weight contributes to outfit burden');
 assert(weaving.includes('MetalArmorSystem?.isMetalArmor?.(itemOrBlueprint)'), 'loom craftability rejects literal metal armor regardless of clothing slot');
 assert.match(weaving, /const explicit = Number\(item\?\.weightUnits\);[\s\S]*if \(Number\.isFinite\(explicit\)/, 'explicit smith weight is honored before cloth-only fallback');
 
