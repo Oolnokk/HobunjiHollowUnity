@@ -150,6 +150,8 @@ assert.equal(window.__hobunjiCutscenePreview.stages[0].navigate, true, 'Director
 
 assert.match(gameSource, /if \(entity\.walker\) await window\.NpcHeldEquipment\?\.attachCutsceneWalker\?\.\(entity\.walker\)/, 'real cutscene NPC walkers must pass through the decorated attachment seam');
 assert.match(gameSource, /entity\?\.kind === 'npc'[\s\S]*window\.NpcPathfinding\?\.findNpcPath[\s\S]*window\.NpcPathfinding\.findNpcPath/, 'real cutscene NPC movement must use the swept-edge NPC planner instead of only tile-center pathfinding');
+assert.match(gameSource, /seatMove[\s\S]*allowOccupiedTarget: seatMove/, 'a cutscene move onto the actor\'s own seat tile must plan with allowOccupiedTarget and the seat-overlap exemption, or the scene stalls at the chair');
+assert.match(gameSource, /could not reach[\s\S]*snapping to target so the scene can continue/, 'a blocking cutscene move must have a stall watchdog so a blocked NPC can never freeze the scene');
 
 // NpcHeldEquipment is the existing cutscene-walker attachment seam.
 let attached = false;
