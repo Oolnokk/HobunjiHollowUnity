@@ -198,6 +198,7 @@ function makeLayout() {
       { id: 'animalDen_0', x: 8, y: 70, w: 4, h: 4, mouthAnchor: { x: 10, y: 75 } },
       { id: 'animalDen_1', x: 70, y: 8, w: 4, h: 4, mouthAnchor: { x: 74, y: 10 } },
       { id: 'animalDen_2', x: 70, y: 70, w: 4, h: 4, mouthAnchor: { x: 72, y: 75 } },
+      { id: 'animalDen_3', x: 40, y: 80, w: 4, h: 4, mouthAnchor: { x: 42, y: 85 }, isAnimalDen: false }, // A cave with no animal den (js/cave-site-system.js): never a hunting target.
     ],
     decor: [], furniture: [], transitions: [], rootTotems: [], localeInstances: [],
     toTownExit: { col: 2, row: 2 },
@@ -382,6 +383,7 @@ function hunterDebug(api, zoneId, campId, index) {
       assert(camp.huntingParty.memberCount >= 2 && camp.huntingParty.memberCount <= 3, 'den hunting party uses the configured small group size');
       const den = zoneLayouts.get(zoneId).dens.find(entry => String(entry.id) === String(camp.huntingParty.denId));
       assert(den, 'hunting party owns one specific authored den assignment');
+      assert.notEqual(den.isAnimalDen, false, 'hunting parties only target caves an animal den lives in');
       const t = camp.huntingParty.target;
       const insideDen = t.col >= den.x && t.col < den.x + den.w && t.row >= den.y && t.row < den.y + den.h;
       assert.equal(insideDen, false, 'hunting party target remains outside the den footprint');

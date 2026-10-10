@@ -37,6 +37,10 @@
   function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
 
   function hasTerrainRules(locale) {
+    // Den-entrance templates carry terrain anchors too, but they are rules for
+    // wilderness-map-generator's den placement (js/den-cliff-placement.js),
+    // not locales to stamp — they always go to the base generator.
+    if (locale?.category === 'den_entrance') return false;
     return !!locale && (
       Object.keys(locale.terrainAnchors || {}).length > 0 ||
       Object.keys(locale.embeddedTiles || {}).length > 0

@@ -8,13 +8,15 @@
   const selfUrl = document.currentScript?.src ? new URL('./', document.currentScript.src) : null;
   const base = selfUrl || new URL('./js/', location.href);
   const urls = [
-    new URL('../config/character-rig-scale-defaults.js?v=20261006h76a2693', base).href,
+    new URL('../config/character-rig-scale-defaults.js?v=20261010hd4b4796', base).href,
     new URL('attachment-rig-latest-authored-snapshot-core.js?v=20260904a', base).href,
     new URL('character-rig-maoao-authored-20260905.js?v=20260905b', base).href,
     new URL('mammakhbuur-species-runtime.js?v=20261004mammakhhair1', base).href,
     new URL('nuhongan-species-runtime.js?v=20261006h4e1c09a', base).href,
     new URL('harlyao-species-runtime.js?v=20260909a', base).href,
-    new URL('harlyao-skeleton-species-runtime.js?v=20261008h778e788', base).href,
+    new URL('skeleton-species-runtime.js?v=20261010skelbridge1', base).href,
+    new URL('harlyao-skeleton-species-runtime.js?v=20261010h93464d4', base).href,
+    new URL('mao-ao-skeleton-species-runtime.js?v=20261010maoskel1', base).href,
     new URL('porakaneki-species-runtime.js?v=20260924poracolor2&rearHead=1', base).href,
     new URL('character-rig-scale.js?v=20261007h0c4d7d9', base).href,
     new URL('character-rig-scale-avatar-runtime.js?v=20261007hde9f0b3', base).href,

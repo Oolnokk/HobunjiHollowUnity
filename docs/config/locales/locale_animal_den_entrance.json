@@ -4,12 +4,13 @@
   "name": "Animal Den Entrance",
   "category": "den_entrance",
   "singleton": false,
-  "description": "Authoring template used by every procedurally generated wilderness animal-den entrance. Edit the cave_small object here to change the shared den facade; Automatic collider mode preserves the den doorway-gap collision rule.",
+  "description": "Authoring template used by every procedurally generated wilderness animal-den entrance. Edit the cave_small object here to change the shared den facade; Automatic collider mode preserves the den doorway-gap collision rule. Terrain anchors fit the den into an existing south-facing plateau cliff like Banubu's Cave: the back row sits inside plateau at least 1 tier above the mouth, the full-width row below it is the cliff's low side, and the mouth plus the tiles in front stay free. The plateau must continue one more row behind the cave so the facade (shifted two tiles north) sinks a tile deeper into the cliff; the entry connector sits inside the cave opening, on a walkable column that leads out to the free approach tiles. The connector's insetTiles moves the entry one more (final-grid) tile into the opening, onto the cliff's low-side row, which stays walkable for that column.",
   "tags": [
     "den",
     "entrance",
     "template",
-    "cave_small"
+    "cave_small",
+    "plateau_cliff"
   ],
   "cols": 7,
   "rows": 7,
@@ -36,7 +37,7 @@
       "type": "grass"
     },
     "3,4": {
-      "type": "grass"
+      "type": "path"
     },
     "4,4": {
       "type": "grass"
@@ -63,8 +64,8 @@
         "scaleZ": 2,
         "offsetX": 0,
         "offsetY": 0,
-        "offsetZ": 0,
-        "surface": "auto",
+        "offsetZ": -2,
+        "surface": "cliff",
         "sink": 0.45
       },
       "collision": {
@@ -77,13 +78,178 @@
     {
       "id": "den_mouth_path",
       "col": 3,
-      "row": 5,
+      "row": 4,
       "side": "south",
-      "label": "Den mouth approach"
+      "label": "Den entry (inside the cave opening)",
+      "insetTiles": 1
     }
   ],
-  "terrainAnchors": {},
-  "embeddedTiles": {},
+  "terrainAnchors": {
+    "2,3": {
+      "terrain": "plateauCliff",
+      "strength": "required",
+      "weight": 1,
+      "facing": "south",
+      "height": {
+        "mode": "relativeRange",
+        "min": 0,
+        "max": 0
+      }
+    },
+    "3,3": {
+      "terrain": "plateauCliff",
+      "strength": "required",
+      "weight": 1,
+      "facing": "south",
+      "height": {
+        "mode": "relativeRange",
+        "min": 0,
+        "max": 0
+      }
+    },
+    "4,3": {
+      "terrain": "plateauCliff",
+      "strength": "required",
+      "weight": 1,
+      "facing": "south",
+      "height": {
+        "mode": "relativeRange",
+        "min": 0,
+        "max": 0
+      }
+    },
+    "2,5": {
+      "terrain": "free",
+      "strength": "required",
+      "weight": 1,
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 0,
+        "max": 0
+      }
+    },
+    "3,5": {
+      "terrain": "free",
+      "strength": "required",
+      "weight": 1,
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 0,
+        "max": 0
+      }
+    },
+    "4,5": {
+      "terrain": "free",
+      "strength": "required",
+      "weight": 1,
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 0,
+        "max": 0
+      }
+    },
+    "3,6": {
+      "terrain": "free",
+      "strength": "required",
+      "weight": 1,
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 0,
+        "max": 0
+      }
+    },
+    "2,6": {
+      "terrain": "free",
+      "strength": "preferred",
+      "weight": 1,
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 0,
+        "max": 0
+      }
+    },
+    "4,6": {
+      "terrain": "free",
+      "strength": "preferred",
+      "weight": 1,
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 0,
+        "max": 0
+      }
+    },
+    "2,1": {
+      "terrain": "plateau",
+      "strength": "preferred",
+      "weight": 1,
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": null
+      }
+    },
+    "3,1": {
+      "terrain": "plateau",
+      "strength": "required",
+      "weight": 1,
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": null
+      }
+    },
+    "4,1": {
+      "terrain": "plateau",
+      "strength": "preferred",
+      "weight": 1,
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": null
+      }
+    }
+  },
+  "embeddedTiles": {
+    "2,2": {
+      "terrain": "plateau",
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": null
+      },
+      "carveToLocaleFloor": false
+    },
+    "3,2": {
+      "terrain": "plateau",
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": null
+      },
+      "carveToLocaleFloor": false
+    },
+    "4,2": {
+      "terrain": "plateau",
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": null
+      },
+      "carveToLocaleFloor": false
+    }
+  },
   "placement": {
     "mode": "fixed",
     "maxInstances": 1,
@@ -95,12 +261,176 @@
     "sameSectorAsEntry": false,
     "alwaysVisibleOnMap": false,
     "groundOnly": false,
-    "notes": "Template-only locale. Procedural dens keep their generated positions; zone-den-totem-features clones this object's authored cave transform onto each den entrance.",
-    "terrainAnchors": {},
-    "embeddedTiles": {}
+    "notes": "Template-only locale (category den_entrance, never stamped). wilderness-map-generator.js fits each procedural den to these terrain anchors (js/den-cliff-placement.js): full-size dens need a cliff face 3 tiles wide; narrower faces fall back to locale_animal_den_entrance_small, and zones whose cliffs host neither keep the legacy free-standing den. zone-den-totem-features clones this object's authored cave transform onto each den entrance.",
+    "terrainAnchors": {
+      "2,3": {
+        "terrain": "plateauCliff",
+        "strength": "required",
+        "weight": 1,
+        "facing": "south",
+        "height": {
+          "mode": "relativeRange",
+          "min": 0,
+          "max": 0
+        }
+      },
+      "3,3": {
+        "terrain": "plateauCliff",
+        "strength": "required",
+        "weight": 1,
+        "facing": "south",
+        "height": {
+          "mode": "relativeRange",
+          "min": 0,
+          "max": 0
+        }
+      },
+      "4,3": {
+        "terrain": "plateauCliff",
+        "strength": "required",
+        "weight": 1,
+        "facing": "south",
+        "height": {
+          "mode": "relativeRange",
+          "min": 0,
+          "max": 0
+        }
+      },
+      "2,5": {
+        "terrain": "free",
+        "strength": "required",
+        "weight": 1,
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 0,
+          "max": 0
+        }
+      },
+      "3,5": {
+        "terrain": "free",
+        "strength": "required",
+        "weight": 1,
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 0,
+          "max": 0
+        }
+      },
+      "4,5": {
+        "terrain": "free",
+        "strength": "required",
+        "weight": 1,
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 0,
+          "max": 0
+        }
+      },
+      "3,6": {
+        "terrain": "free",
+        "strength": "required",
+        "weight": 1,
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 0,
+          "max": 0
+        }
+      },
+      "2,6": {
+        "terrain": "free",
+        "strength": "preferred",
+        "weight": 1,
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 0,
+          "max": 0
+        }
+      },
+      "4,6": {
+        "terrain": "free",
+        "strength": "preferred",
+        "weight": 1,
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 0,
+          "max": 0
+        }
+      },
+      "2,1": {
+        "terrain": "plateau",
+        "strength": "preferred",
+        "weight": 1,
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": null
+        }
+      },
+      "3,1": {
+        "terrain": "plateau",
+        "strength": "required",
+        "weight": 1,
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": null
+        }
+      },
+      "4,1": {
+        "terrain": "plateau",
+        "strength": "preferred",
+        "weight": 1,
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": null
+        }
+      }
+    },
+    "embeddedTiles": {
+      "2,2": {
+        "terrain": "plateau",
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": null
+        },
+        "carveToLocaleFloor": false
+      },
+      "3,2": {
+        "terrain": "plateau",
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": null
+        },
+        "carveToLocaleFloor": false
+      },
+      "4,2": {
+        "terrain": "plateau",
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": null
+        },
+        "carveToLocaleFloor": false
+      }
+    }
   },
   "meta": {
     "createdAt": "2026-09-24T19:40:00.000Z",
-    "updatedAt": "2026-09-24T21:06:38.976Z"
+    "updatedAt": "2026-10-10T12:00:00.000Z"
   }
 }

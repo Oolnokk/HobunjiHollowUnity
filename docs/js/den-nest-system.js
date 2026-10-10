@@ -68,7 +68,7 @@
       const zoneId = window.WildlifeSpawn.denCavernZoneOf(deps.getCurrentArea());
       const dens = zoneId ? deps._zoneLayouts.get(zoneId)?.dens : null;
       if (!zoneId || !dens || !dens.length) {
-        deps.showToast("No dens found for this burrow's map.", false);
+        deps.showToast("No caves found for this cave's map.", false);
         return;
       }
       const den = _pickCycledDen(zoneId, dens);
@@ -84,14 +84,14 @@
         deps._snapCameraTarget();
         _addPlayerToScene(deps.buildZoneScene(zoneId, anchor.x, anchor.y)?.scene);
         deps.refreshActionBar();
-        deps.showToast(`Teleported to a den (${dens.length} on this map).`, true);
+        deps.showToast(`Teleported to a cave (${dens.length} on this map).`, true);
         deps.closeMenu();
       });
       return;
     }
     const dens = deps._zoneLayouts.get(deps.getCurrentArea())?.dens;
     if (!dens || !dens.length) {
-      deps.showToast('No dens on this map.', false);
+      deps.showToast('No caves on this map.', false);
       return;
     }
     const den = _pickCycledDen(deps.getCurrentArea(), dens);
@@ -101,7 +101,7 @@
     deps.player.vx = 0; deps.player.vy = 0;
     deps._snapCameraTarget();
     window.WildernessChunks?.primeZone(deps.getCurrentArea(), anchor.x, anchor.y);
-    deps.showToast(`Teleported to a den (${dens.length} on this map).`, true);
+    deps.showToast(`Teleported to a cave (${dens.length} on this map).`, true);
     deps.closeMenu();
   }
 

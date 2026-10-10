@@ -1056,7 +1056,7 @@
 
   function campDens(camp) {
     return Array.isArray(camp?.zoneState?.layoutRef?.dens)
-      ? camp.zoneState.layoutRef.dens.filter(den => den && den.id != null && !den.collapsed)
+      ? camp.zoneState.layoutRef.dens.filter(den => den && den.id != null && !den.collapsed && den.isAnimalDen !== false) // Hunting parties only target caves an animal den lives in (js/cave-site-system.js).
       : [];
   }
   function denExteriorPoint(camp, den) {

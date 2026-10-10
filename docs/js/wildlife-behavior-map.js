@@ -107,9 +107,9 @@
       ctx.fillRect(px, py, Math.max(1, scale), Math.max(1, scale));
     }
 
-    // Dens
-    ctx.fillStyle = '#8a5a3a';
+    // Dens (caves with an animal den; other caves in grey — js/cave-site-system.js)
     for (const den of zoneData.dens || []) {
+      ctx.fillStyle = den.isAnimalDen === false ? '#6b6b6b' : '#8a5a3a';
       const [px, py] = toPx(den.x, den.y);
       ctx.fillRect(px, py, Math.max(2, (den.w || 1) * scale), Math.max(2, (den.h || 1) * scale));
     }

@@ -42,6 +42,7 @@
       }
     }
     cavesByMapId.set(String(mapId || ''), caves);
+    window.CaveSiteSystem?.applyWorkspaceProfiles?.(mapId, workspace); // Tags the generated animal-den anchors with deterministic cave-site profiles (js/cave-site-system.js) without changing their terrain/collision representation.
     return caves;
   }
 

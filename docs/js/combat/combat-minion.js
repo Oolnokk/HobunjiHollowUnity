@@ -43,7 +43,8 @@
   }
 
   function rollRoster(speciesId, name = 'Minion') {
-    const gender = rng() < 0.5 ? 'male' : 'female'; // Current skeleton art authors both genders.
+    const genders = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.species?.[speciesId]?.genders; // Species bridge registers the authored genders (Mao'ao Skeleton is male-only).
+    const gender = Array.isArray(genders) && genders.length === 1 ? genders[0] : (rng() < 0.5 ? 'male' : 'female');
     const equippedCosmetics = []; // Explicit list bypasses BanditCombat's hood/facewrap/headband guarantee.
     const cosmeticSlots = {}; // Needed by portrait rendering, loot conversion, and outfit-weight profiling.
     const appliedDyes = {}; // Tint-slot keyed map consumed by NpcAvatarPreview.

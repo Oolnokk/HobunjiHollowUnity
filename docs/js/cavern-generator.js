@@ -165,7 +165,7 @@
   // mine-reward code) — mining one grants the same Stone/Pebble reward as
   // any other ore rock; oreKind only changes the mound's look and rarity
   // weighting, not a distinct reward, so there's nothing new to invent here.
-  const ORE_KINDS = ['stone', 'stone', 'stone', 'copper', 'tin', 'iron', 'silver'];
+  const ORE_KINDS = ['stone', 'stone', 'stone', 'copper', 'tin', 'lead', 'silver']; // Same length/order as before (deterministic picks); no iron in this world (see game.js ORE_DEFS).
 
   function pickOreRockTiles(rng, floor, excludeSet) {
     const candidates = floor.filter(([c, r]) => !excludeSet.has(`${c},${r}`));

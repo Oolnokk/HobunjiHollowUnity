@@ -976,6 +976,8 @@
     if (openingDebug) lines.push('Opening: ' + JSON.stringify(openingDebug));
     const harlyaoSkeletonDebugLine = window.HobunjiHarlyaoSkeletonSpecies?.formatDebug?.(); // Keeps the NPC-only skeleton bridge's rig/extremity/cosmetic status copyable from the mobile Pixel Probe without DevTools.
     if (harlyaoSkeletonDebugLine) lines.push(harlyaoSkeletonDebugLine);
+    const maoAoSkeletonDebugLine = window.HobunjiMaoAoSkeletonSpecies?.formatDebug?.(); // Same diagnostics for the catacomb Mao'ao Skeleton bridge.
+    if (maoAoSkeletonDebugLine) lines.push(maoAoSkeletonDebugLine);
     const harlyaoLichDebugLine = window.HarlyaoLichCombat?.formatDebug?.(); // Keeps live lich type/projectile/puddle/summon/Entranced state copyable on mobile without DevTools.
     if (harlyaoLichDebugLine) lines.push(harlyaoLichDebugLine);
     const painterlyDebug = window.PainterlyPostprocess?.snapshot?.(); // Makes the live painterly stage/tier state copyable from mobile without a console.

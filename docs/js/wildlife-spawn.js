@@ -421,7 +421,7 @@
       transition = {
         ...(saved || {}),
         id: denTransitionId(den.id),
-        label: saved?.label || 'A dark burrow',
+        label: saved?.label || 'Cave', // Exterior label for every cave; contents are revealed inside (js/cave-site-system.js).
         target: 'building',
         targetMapId: cavernMapId,
       };
@@ -466,15 +466,35 @@
     ring.visible = true;
   }
 
+  // Cliff dens (js/den-cliff-placement.js) keep their entry inside the
+  // footprint, under the arch: that column, entry tile to front row, stays
+  // walkable ground instead of den rock.
+  function denEntryColumnKeys(den) {
+    const keys = new Set();
+    const mouth = den?.mouthAnchor;
+    const bottom = Number(den?.y) + Math.max(1, Number(den?.h) || 1);
+    if (!mouth || !(Number(mouth.y) < bottom)) return keys;
+    for (let row = Number(mouth.y); row < bottom; row++) keys.add(`${Number(mouth.x)},${row}`);
+    return keys;
+  }
+
   function setDenFootprintOverlay(layout, den, present) {
     if (!layout || !den) return;
     const tiles = layoutTileMap(layout); // Used to restore the old generated rock overlay or stamp it at the relocated site.
     const w = Math.max(1, Number(den.w) || 1);
     const h = Math.max(1, Number(den.h) || 1);
+    const entryColumn = present ? denEntryColumnKeys(den) : new Set();
     for (let row = Number(den.y); row < Number(den.y) + h; row++) {
       for (let col = Number(den.x); col < Number(den.x) + w; col++) {
         const tile = tiles.get(`${col},${row}`);
         if (!tile) continue;
+        if (present && entryColumn.has(`${col},${row}`)) {
+          tile.type = 'grass';
+          delete tile.generatedObjectId;
+          delete tile.generatedObjectType;
+          delete tile.incline;
+          continue;
+        }
         if (present) {
           tile.type = 'rock';
           tile.generatedObjectId = den.id;
@@ -537,34 +557,19 @@
     return blockers;
   }
 
-  function denCandidateIsSafe(zoneId, layout, tileMap, reachableTiles, runtimeBlockers, den, x, y, oldDen, activeZone) {
-    const w = Math.max(1, Number(den.w) || 1);
-    const h = Math.max(1, Number(den.h) || 1);
+  // Placement rules every relocated den obeys whatever its terrain: bounds,
+  // a reachable approach tile, distance from its old site and the player, and
+  // clearance from other caves, totems, locales, buildings, transitions and
+  // runtime camps. `approach` is the walkable tile in front of the entrance.
+  function denSiteClearOfNeighbors(zoneId, layout, reachableTiles, runtimeBlockers, den, x, y, w, h, approach, oldDen, activeZone) {
     const cols = Math.max(1, Number(layout?.cols) || 1);
     const rows = Math.max(1, Number(layout?.rows) || 1);
-    const mouth = { x: x + Math.floor(w / 2), y: y + h };
-    if (x < 2 || y < 2 || x + w >= cols - 2 || mouth.y >= rows - 2) return false;
-    if (reachableTiles?.size && !reachableTiles.has(`${mouth.x},${mouth.y}`)) return false; // Replacement mouths must stay on the zone's main traversable terrain network.
+    if (x < 2 || y < 2 || x + w >= cols - 2 || approach.y >= rows - 2) return false;
+    if (reachableTiles?.size && !reachableTiles.has(`${approach.x},${approach.y}`)) return false; // Replacement mouths must stay on the zone's main traversable terrain network.
     if (Math.hypot(x - Number(oldDen.x), y - Number(oldDen.y)) < DEN_RELOCATION_MIN_DISTANCE_TILES) return false;
     if (activeZone && deps.player && Math.hypot((x + w * .5) - deps.player.x / deps.TILE, (y + h * .5) - deps.player.y / deps.TILE) < DEN_RELOCATION_PLAYER_CLEARANCE_TILES) return false;
-
-    const tiles = tileMap; // Reused for every candidate in one relocation search; rebuilding the full-zone lookup hundreds of times caused avoidable hitches.
-    let minElev = Infinity, maxElev = -Infinity;
-    const cells = [];
-    for (let row = y; row < y + h; row++) for (let col = x; col < x + w; col++) cells.push({ col, row });
-    cells.push({ col: mouth.x, row: mouth.y });
-    for (const cell of cells) {
-      const tile = tiles.get(`${cell.col},${cell.row}`);
-      if (!tile || String(tile.type || '').toLowerCase() !== 'grass') return false;
-      if (tile.generatedObjectId || tile.generatedObjectType || tile.water || tile.waterfall || tile.incline || tile.ramp || tile.path || tile.invisiblePath || tile.bridge || tile.navBridge) return false;
-      const elev = Number(tile.elevTier ?? tile.elevation ?? tile.height ?? 0);
-      minElev = Math.min(minElev, elev);
-      maxElev = Math.max(maxElev, elev);
-    }
-    if (maxElev - minElev > 1) return false;
-
     const candidate = { x, y, w, h: h + 1 };
-    for (const other of (layout.dens || [])) {
+    for (const other of (layout.caveAnchors || layout.dens || [])) { // caveAnchors: every cave (js/cave-site-system.js), not just the animal dens this tick sees.
       if (!other || String(other.id) === String(den.id)) continue;
       if (rectsOverlap(candidate, { x:Number(other.x), y:Number(other.y), w:Math.max(1,Number(other.w)||1), h:Math.max(1,Number(other.h)||1)+1 }, 4)) return false;
     }
@@ -583,12 +588,108 @@
     for (const transition of (layout.transitions || [])) {
       if (transition?.targetMapId === denCavernMapId(zoneId, den.id)) continue;
       const tx = Number(transition?.col), ty = Number(transition?.row);
-      if (Number.isFinite(tx) && Number.isFinite(ty) && tx >= x - 2 && tx <= x + w + 2 && ty >= y - 2 && ty <= mouth.y + 2) return false;
+      if (Number.isFinite(tx) && Number.isFinite(ty) && tx >= x - 2 && tx <= x + w + 2 && ty >= y - 2 && ty <= approach.y + 2) return false;
     }
     for (const blocker of (runtimeBlockers || [])) {
       if (rectsOverlap(candidate, blocker, Math.max(0, Number(blocker.margin)||0))) return false;
     }
     return true;
+  }
+
+  function denCandidateIsSafe(zoneId, layout, tileMap, reachableTiles, runtimeBlockers, den, x, y, oldDen, activeZone) {
+    const w = Math.max(1, Number(den.w) || 1);
+    const h = Math.max(1, Number(den.h) || 1);
+    const mouth = { x: x + Math.floor(w / 2), y: y + h };
+    if (!denSiteClearOfNeighbors(zoneId, layout, reachableTiles, runtimeBlockers, den, x, y, w, h, mouth, oldDen, activeZone)) return false;
+
+    const tiles = tileMap; // Reused for every candidate in one relocation search; rebuilding the full-zone lookup hundreds of times caused avoidable hitches.
+    let minElev = Infinity, maxElev = -Infinity;
+    const cells = [];
+    for (let row = y; row < y + h; row++) for (let col = x; col < x + w; col++) cells.push({ col, row });
+    cells.push({ col: mouth.x, row: mouth.y });
+    for (const cell of cells) {
+      const tile = tiles.get(`${cell.col},${cell.row}`);
+      if (!tile || String(tile.type || '').toLowerCase() !== 'grass') return false;
+      if (tile.generatedObjectId || tile.generatedObjectType || tile.water || tile.waterfall || tile.incline || tile.ramp || tile.path || tile.invisiblePath || tile.bridge || tile.navBridge) return false;
+      const elev = Number(tile.elevTier ?? tile.elevation ?? tile.height ?? 0);
+      minElev = Math.min(minElev, elev);
+      maxElev = Math.max(maxElev, elev);
+    }
+    return maxElev - minElev <= 1;
+  }
+
+  // Source-scale view of the zone's density-scaled layout tiles, so the
+  // den-entrance templates' cliff rules (js/den-cliff-placement.js, written
+  // for the generator's source grid) can judge relocation sites. Each
+  // scale x scale block of final tiles becomes one source tile.
+  // The merge folds a plateau's edge ring down to the lower tier as incline
+  // tiles; read them back as the plateau they belong to (the highest
+  // neighbouring tier, at least one step above the fold).
+  function inclinePlateauTier(tileMap, t) {
+    const base = Number(t.elevTier ?? t.elevation ?? 0) || 0;
+    let best = base + 1;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const n = tileMap.get(`${t.c + dx},${t.r + dy}`);
+      if (n && !n.incline) best = Math.max(best, Number(n.elevTier ?? n.elevation ?? 0) || 0);
+    }
+    return best;
+  }
+
+  function sourceScaleTileView(tileMap, scale) {
+    const cache = new Map();
+    return (sx, sy) => {
+      const key = `${sx},${sy}`;
+      if (cache.has(key)) return cache.get(key);
+      const tiers = new Set();
+      const tile = { x: sx, y: sy, elevation: 0 };
+      let present = 0;
+      for (let dy = 0; dy < scale; dy++) for (let dx = 0; dx < scale; dx++) {
+        const t = tileMap.get(`${sx * scale + dx},${sy * scale + dy}`);
+        if (!t) continue;
+        present++;
+        const type = String(t.type || '').toLowerCase();
+        tiers.add(t.incline ? inclinePlateauTier(tileMap, t) : (Number(t.elevTier ?? t.elevation ?? 0) || 0));
+        if (t.water || t.waterfall || type === 'river' || type === 'stream' || type === 'water') tile.water = true;
+        if (t.ramp || type === 'ramp') tile.ramp = true;
+        // Merged layout tiles mark generated rocks (dens, ore, boulders,
+        // statues, totems) with rockKind; runtime den overlays add a
+        // generatedObjectId. Any other unwalkable ground is a cliff face.
+        if (t.generatedObjectId || t.rockKind || t.boulderId || t._banditTentCollisionId || type === 'shrub') tile.occupiedBy = t.generatedObjectId || t.rockKind || 'blocked';
+        else if (type === 'rock' || t.incline) tile.cliffSkirt = true;
+        if (t.borderEscarpment) tile.borderEscarpment = true;
+        if (t.distantBoundaryLandscape) tile.distantBoundaryLandscape = true;
+      }
+      // Highest tier in the block: a source cliff-top block can be mostly
+      // folded ring.
+      const best = Math.max(...tiers.keys());
+      const result = present === scale * scale ? { ...tile, elevation: best } : null;
+      cache.set(key, result);
+      return result;
+    };
+  }
+
+  // Cliff-backed dens relocate into another cliff with the same den-entrance
+  // template (same footprint, so the cave mesh and collision stay valid).
+  function findCliffDenRelocationSite(zoneId, den, oldDen, layout, tileMap, reachableTiles, runtimeBlockers, activeZone) {
+    const api = window.DenCliffPlacement;
+    const template = den?.cliffBacked ? window.ZoneDenTotemFeatures?.denEntranceLocaleFor?.(den) : null;
+    const compiled = template && api?.compileTemplate?.(template);
+    if (!compiled) return null;
+    const w = Math.max(1, Number(den.w) || 1), h = Math.max(1, Number(den.h) || 1);
+    const scale = Math.round(w / compiled.w);
+    if (scale < 1 || compiled.w * scale !== w || compiled.h * scale !== h) return null;
+    const cols = Math.floor((Number(layout.cols) || 0) / scale), rows = Math.floor((Number(layout.rows) || 0) / scale);
+    const sites = api.findSites([compiled], sourceScaleTileView(tileMap, scale), cols, rows);
+    for (let i = sites.length - 1; i > 0; i--) { const j = Math.floor(deps.rnd() * (i + 1)); [sites[i], sites[j]] = [sites[j], sites[i]]; }
+    for (const site of sites) {
+      const x = site.x * scale, y = site.y * scale;
+      const entryInside = site.mouth.y < site.y + compiled.h;
+      const mouthAnchor = { x: site.mouth.x * scale, y: Math.max(y, site.mouth.y * scale - (entryInside ? compiled.entryInsetTiles || 0 : 0)) };
+      const approachAnchor = entryInside ? { x: mouthAnchor.x, y: y + h } : { ...mouthAnchor };
+      if (!denSiteClearOfNeighbors(zoneId, layout, reachableTiles, runtimeBlockers, den, x, y, w, h, approachAnchor, oldDen, activeZone)) continue;
+      return { x, y, mouthAnchor, approachAnchor: entryInside ? approachAnchor : null, cliff: true };
+    }
+    return null;
   }
 
   function findDenRelocationSite(zoneId, den, oldDen) {
@@ -602,6 +703,8 @@
     const tileMap = layoutTileMap(layout); // Shared by random sampling and fallback scanning for this single relocation attempt.
     const reachableTiles = largestWalkableDenComponent(layout, tileMap); // Computed once; prevents a locally-flat but cliff-isolated grass pocket from becoming a new den site.
     const runtimeBlockers = runtimeDenRelocationBlockers(zoneId); // Snapshots active camps/campfire once so candidate tests stay cheap and internally consistent.
+    const cliffSite = findCliffDenRelocationSite(zoneId, den, oldDen, layout, tileMap, reachableTiles, runtimeBlockers, activeZone); // Cliff dens move to another cliff first; open ground is the fallback.
+    if (cliffSite) return cliffSite;
     for (let attempt = 0; attempt < 700; attempt++) {
       const x = 2 + Math.floor(deps.rnd() * Math.max(1, maxX - 1));
       const y = 2 + Math.floor(deps.rnd() * Math.max(1, maxY - 1));
@@ -710,6 +813,8 @@
     }
     setDenFootprintOverlay(layout, oldDen, false);
     den.x = site.x; den.y = site.y; den.mouthAnchor = site.mouthAnchor;
+    if (site.approachAnchor) den.approachAnchor = { ...site.approachAnchor };
+    else delete den.approachAnchor; // Open-ground site: the mouth tile itself is the approach.
     den.collapsed = false; den.turnoverStage = 'active';
     den._collapseEscapeVisual = null; // A relocated live den must never inherit the prior generation's presentation-only escape clutch.
     setDenFootprintOverlay(layout, den, true);
@@ -723,6 +828,7 @@
     record.collapseEscapeVisual = null; // Clears stale presentation metadata once the new den generation becomes active.
     record.x = Number(den.x); record.y = Number(den.y);
     record.mouthAnchor = { ...den.mouthAnchor };
+    record.approachAnchor = den.approachAnchor ? { ...den.approachAnchor } : null;
     syncDenVisual(record.zoneId, den);
     rebuildDenTerrainChunks(record.zoneId, oldDen, den);
     persistDenTurnover();
@@ -769,6 +875,8 @@
         setDenFootprintOverlay(layout, generatedDen, false);
         den.x = Number(record.x); den.y = Number(record.y);
         den.mouthAnchor = record.mouthAnchor ? { ...record.mouthAnchor } : { x:den.x + Math.floor((Number(den.w)||1)/2), y:den.y + (Number(den.h)||1) };
+        if (record.approachAnchor) den.approachAnchor = { ...record.approachAnchor };
+        else delete den.approachAnchor;
         setDenFootprintOverlay(layout, den, true);
       }
       const cavernMapId = denCavernMapId(zoneId, den.id);
@@ -1676,6 +1784,9 @@
       return { zoneId, configuredHerds: herdCount, species: [...(zdef.roamingHerdSpecies || [])], herds };
     },
     __test: Object.freeze({
+      findCliffDenRelocationSite,
+      sourceScaleTileView,
+      setDenFootprintOverlay,
       extendScatteredNestSelection,
       minimumNestSeparationTiles: NEST_TREE_MIN_SEPARATION_TILES,
     }),

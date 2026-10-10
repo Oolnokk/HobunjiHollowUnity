@@ -38,7 +38,9 @@ assert.deepEqual(locale.tiles?.['3,5'], { type:'path' }, 'den mouth approach pat
 const mouthConnector = locale.connectors?.find(connector => connector.id === 'den_mouth_path');
 assert(mouthConnector, 'den entrance template must retain its den-mouth approach connector');
 assert.equal(mouthConnector.col, 3);
-assert.equal(mouthConnector.row, 5, 'den-mouth connector must stay aligned with the recovered 3,5 path tile');
+assert.equal(mouthConnector.row, 4, 'den entry connector sits inside the cave opening, on its front (floor) row');
+assert.deepEqual(locale.tiles?.['3,4'], { type:'path' }, 'den entry tile is a walkable path tile inside the footprint');
+assert(mouthConnector.row >= cave.row && mouthConnector.row < cave.row + cave.h, 'den entry connector is inside the cave footprint');
 assert.equal(cave.collision?.mode, 'auto', 'default template must preserve the legacy doorway-gap collider until explicitly changed');
 assert(localeIndex.locales.some(entry => entry.id === locale.id && entry.category === 'den_entrance'),
   'animal den entrance template must be discoverable in the normal Locale Editor library');

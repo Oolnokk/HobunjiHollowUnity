@@ -5012,6 +5012,7 @@
           _nestHoldT = 0; // getting hit interrupts a den-nest egg/baby take
           player._nestTakeActive = false;
           window.BanditCamps?.interruptTentHold(); // ...and a bandit-tent loot/burn, same reasoning
+          window.CorpseHoldLoot?.interrupt(); // ...and a hold-to-loot body
         }
         const healthBeforeImpact = environmentalImpact ? Math.max(0, Number(player.health) || 0) : 0; // Used before respawn can replace lethal zero Health with a restored value.
         if (window.ResourceSystem) window.ResourceSystem.applyDamage(player, resourceDamage.health, dmgOpts || {});
@@ -8961,7 +8962,7 @@
                 // player actually enters this specific den — see its
                 // _pendingEntrySpawnFromExit handling.
                 return {
-                  id: `den_${den.id}_enter`, label: 'A dark burrow', col: den.mouthAnchor.x, row: den.mouthAnchor.y,
+                  id: `den_${den.id}_enter`, label: 'Cave', col: den.mouthAnchor.x, row: den.mouthAnchor.y, // Contents/inhabitants are revealed on entry (js/cave-site-system.js).
                   target: 'building', targetMapId: cavernMapId,
                 };
               });
@@ -9005,6 +9006,7 @@
             debugLog(`Tothal Shift: ${zoneId} reshaped (entry ${workspace.entry?.side ?? '?'} at ${workspace.entry?.col ?? '?'},${workspace.entry?.row ?? '?'})`);
             await new Promise(resolve => setTimeout(resolve, 0)); // yield between zones
           }
+          remainingLocales = remainingLocales.filter(l => l?.category !== 'den_entrance'); // Den-cliff templates are placement rules, never placed themselves.
           if (remainingLocales.length) {
             debugLog(`Tothal Shift: ${remainingLocales.length} locale(s) found no room in any zone this shift: ${remainingLocales.map(l => l.id).join(', ')}`, 'warn');
           }
@@ -13744,50 +13746,55 @@
           // A den's cavern (mapData.wallStyle === 'cavern') guards a 2x2 nest
           // with a Den-Mother mini-boss that never leaves — see synthesizeCavernMapData
           // / generateCavernFloor for nestCol/nestRow/denMotherKind.
-          if (mapData.wallStyle === 'cavern' && Number.isFinite(mapData.nestCol) && Number.isFinite(mapData.nestRow)) {
-            const nestCol = mapData.nestCol, nestRow = mapData.nestRow;
-            const motherKey = mapData.denMotherKind;
-            const motherDef = CREATURE_DB[motherKey];
-            // Same shared per-family genotype as this den's exterior pack
-            // (see spawnPackAtDen/getOrMakeDenGenotype) — whichever of the
-            // two spawns first rolls it, the other reuses it, so the
-            // Den-Mother and any same-family pack members (and the nest's
-            // eggs/babies) always match. Keyed by family (not just mapId)
-            // since the Den-Mother's species is picked independently of
-            // whatever the exterior pack currently is (see
-            // pickDenMotherKind) — they can genuinely differ.
-            const motherFamily = window.WildlifeSpawn.denGenotypeFamily(motherKey);
-            const denGenotype = motherFamily ? window.WildlifeSpawn.getOrMakeDenGenotype(mapId, motherFamily) : null;
-            if (motherDef) {
-              const homeX = (nestCol + 1) * TILE, homeY = (nestRow + 1) * TILE;
-              const mother = makeCreatureEntity(motherKey, homeX, homeY, {
-                scene: bScene, grid: bGrid, cols, rows,
-                areaId: mapId, homeX, homeY, state: 'idle',
-                isDenMother: true, genotype: denGenotype,
-              });
-              if (mother) hostileObjects.add(mother);
+          // Caves promoted to non-animal histories (js/cave-site-system.js) keep
+          // the cavern shell but drop the nest, so only the Den-Mother/nest part
+          // is gated on it — ore rocks and crawl spawns build for every cavern.
+          if (mapData.wallStyle === 'cavern') {
+            if (Number.isFinite(mapData.nestCol) && Number.isFinite(mapData.nestRow)) {
+              const nestCol = mapData.nestCol, nestRow = mapData.nestRow;
+              const motherKey = mapData.denMotherKind;
+              const motherDef = CREATURE_DB[motherKey];
+              // Same shared per-family genotype as this den's exterior pack
+              // (see spawnPackAtDen/getOrMakeDenGenotype) — whichever of the
+              // two spawns first rolls it, the other reuses it, so the
+              // Den-Mother and any same-family pack members (and the nest's
+              // eggs/babies) always match. Keyed by family (not just mapId)
+              // since the Den-Mother's species is picked independently of
+              // whatever the exterior pack currently is (see
+              // pickDenMotherKind) — they can genuinely differ.
+              const motherFamily = window.WildlifeSpawn.denGenotypeFamily(motherKey);
+              const denGenotype = motherFamily ? window.WildlifeSpawn.getOrMakeDenGenotype(mapId, motherFamily) : null;
+              if (motherDef) {
+                const homeX = (nestCol + 1) * TILE, homeY = (nestRow + 1) * TILE;
+                const mother = makeCreatureEntity(motherKey, homeX, homeY, {
+                  scene: bScene, grid: bGrid, cols, rows,
+                  areaId: mapId, homeX, homeY, state: 'idle',
+                  isDenMother: true, genotype: denGenotype,
+                });
+                if (mother) hostileObjects.add(mother);
+              }
+              const nestRng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng)
+                ? WildernessMapGenerator.makeRng(mapId + '_nestcount') : Math.random;
+              const clutchCfg = window.SCRATCHBONES_CONFIG?.game?.wildlife?.nestClutch || {};
+              const clutchMin = Math.max(1, Math.floor(Number(clutchCfg.min) || 1));
+              const clutchMax = Math.max(clutchMin, Math.floor(Number(clutchCfg.max) || clutchMin));
+              const remaining = clutchMin + Math.floor(nestRng() * (clutchMax - clutchMin + 1));
+              const liveBirth = !!motherDef?.liveBirth;
+              const itemKey = DEN_MOTHER_ITEM_KEYS[motherKey];
+              if (itemKey) {
+                _denNests.set(mapId, {
+                  col: nestCol, row: nestRow, w: 2, h: 2,
+                  itemKey, liveBirth, remaining, genotype: denGenotype,
+                });
+              } else {
+                window.__farmLog?.(`[wildlife] Den-Mother "${motherKey || 'missing'}" has no configured nest reward; nest collection is disabled.`, 'warn');
+              }
+              // Simple nest marker so the 2x2 chamber reads as an objective.
+              const nestMat = new THREE.MeshBasicMaterial({ color: 0x3a2a1a });
+              const nestMarker = new THREE.Mesh(new THREE.BoxGeometry(2, 0.12, 2), nestMat);
+              nestMarker.position.set(nestCol + 1, 0.02, nestRow + 1);
+              bScene.add(nestMarker);
             }
-            const nestRng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng)
-              ? WildernessMapGenerator.makeRng(mapId + '_nestcount') : Math.random;
-            const clutchCfg = window.SCRATCHBONES_CONFIG?.game?.wildlife?.nestClutch || {};
-            const clutchMin = Math.max(1, Math.floor(Number(clutchCfg.min) || 1));
-            const clutchMax = Math.max(clutchMin, Math.floor(Number(clutchCfg.max) || clutchMin));
-            const remaining = clutchMin + Math.floor(nestRng() * (clutchMax - clutchMin + 1));
-            const liveBirth = !!motherDef?.liveBirth;
-            const itemKey = DEN_MOTHER_ITEM_KEYS[motherKey];
-            if (itemKey) {
-              _denNests.set(mapId, {
-                col: nestCol, row: nestRow, w: 2, h: 2,
-                itemKey, liveBirth, remaining, genotype: denGenotype,
-              });
-            } else {
-              window.__farmLog?.(`[wildlife] Den-Mother "${motherKey || 'missing'}" has no configured nest reward; nest collection is disabled.`, 'warn');
-            }
-            // Simple nest marker so the 2x2 chamber reads as an objective.
-            const nestMat = new THREE.MeshBasicMaterial({ color: 0x3a2a1a });
-            const nestMarker = new THREE.Mesh(new THREE.BoxGeometry(2, 0.12, 2), nestMat);
-            nestMarker.position.set(nestCol + 1, 0.02, nestRow + 1);
-            bScene.add(nestMarker);
 
             // A "bigger, tunnely" den (see generateCavernFloor) deserves real
             // content along the crawl to the Den-Mother rather than an empty
@@ -13795,35 +13802,12 @@
             // (non-Den-Mother) creatures from the same native pool, both
             // picked deterministically by synthesizeCavernMapData (see
             // cavern-generator.js's pickOreRockTiles/pickCreatureSpawnTiles).
-            const CAVERN_ORE_TINTS = { stone: 0x8a8680, copper: 0xb0703a, tin: 0x9aa0a6, iron: 0x8a5a42, silver: 0xc4c8ce, gold: 0xd8b23a, crystal: 0x8fd6e0 };
-            // Fresh map each build (rather than reusing any Map left over
-            // from a stale pre-Tothal-Shift cavern of the same mapId — see
-            // forgetZoneDenState) so removeZoneMineableRockVisual never
-            // targets an orphaned rock group from a layout that no longer
-            // exists.
-            const oreRockMeshes = new Map();
-            if (mapData.oreRocks?.length) _zoneMineableRockMeshes.set(mapId, oreRockMeshes);
-            for (const rock of (mapData.oreRocks || [])) {
-              if (bGrid[rock.row]?.[rock.col]) {
-                bGrid[rock.row][rock.col].type = TileType.ROCK;
-                bGrid[rock.row][rock.col].rockKind = 'diggableRockOre';
-                bGrid[rock.row][rock.col].oreKind = rock.oreKind;
-              }
-              const { stoneGeo } = window.TerrainGeometry.buildRockTileGeo(rock.col, rock.row);
-              if (!stoneGeo) continue;
-              const rockMesh = new THREE.Mesh(stoneGeo, new THREE.MeshLambertMaterial({ color: CAVERN_ORE_TINTS[rock.oreKind] || CAVERN_ORE_TINTS.stone }));
-              rockMesh.castShadow = rockMesh.receiveShadow = true;
-              const rockGroup = new THREE.Group();
-              rockGroup.add(rockMesh);
-              rockGroup.position.set(rock.col + 0.5, 0, rock.row + 0.5);
-              bScene.add(rockGroup);
-              _markOutline(rockGroup);
-              // Reuses the same mineableRocksByTile/isMineableRockTile/
-              // removeZoneMineableRockVisual pipeline the outdoor ore rocks
-              // already go through (see mergeZoneTiles/buildMergedZoneGrid),
-              // so mining one here needs no new gameplay code.
-              oreRockMeshes.set(`${rock.col},${rock.row}`, rockGroup);
-            }
+            // Cavern ore-rock placement (tile marking + tinted rock meshes
+            // registered for mining) now lives in js/cavern-ore-rocks.js.
+            window.CavernOreRocks.build(mapId, mapData, bScene, bGrid);
+            // Cave-site history props (catacomb coffins, cache chest, ruin door)
+            // are authored furniture placed by js/cave-site-system.js.
+            window.CaveSiteSystem?.buildInteriorProps?.(mapId, mapData, bScene);
             // Regular wildlife species (e.g. uumkaoii-wild) are hostile:false
             // outdoors — pure fleeable prey, per CREATURE_DB's own comment —
             // with no aggroRangePx/attack stats at all. A den's own pack
@@ -18934,6 +18918,8 @@
         // 'bandit_tent_interact' as a real tile action and always failed
         // with "...cannot be used on that tile."
         if (activeAction === 'bandit_tent_interact') return;
+        // Same again for hold-to-loot bodies (js/corpse-hold-loot.js owns the timer).
+        if (activeAction === 'corpse_hold_loot') return;
         // Climb is no longer an Action 1/tool action. The dodge input owns
         // the forward-dodge climb context; keep this legacy branch inert for
         // saved bindings or stale UI events from older sessions.
@@ -24283,6 +24269,7 @@
           const miscGameplayPerf = window.PerfProfiler?.begin('misc gameplay'); // Dens/climbing/tent interactions and transition-spot checks below.
           window.ClimbSystem?.updateFallenNests?.(dt);
           window.DenNestSystem.updateNestInteraction(dt);
+          window.CorpseHoldLoot?.update(dt); // Short hold-to-loot bodies (cave catacomb skeletons) — js/corpse-hold-loot.js.
           if (_isZoneArea(currentArea)) window.BanditCamps.updateTentInteraction(dt);
 
           // Interior exit detection: player walks onto any door's exit-nub
@@ -25423,6 +25410,7 @@
           || button?.action === 'use_spot'
           || button?.action === 'nest_take'
           || button?.action === 'bandit_tent_interact'
+          || button?.action === 'corpse_hold_loot'
           || button?.action === 'climb_branch'
           || button?.action?.startsWith('obj_');
         const interactionButton = btns.find(isWorldInteraction) || null;
@@ -25622,7 +25610,7 @@
               // Continuous world interactions use the same press-time selected
               // action contract as Drenkirra nests, so their frame timers can
               // begin immediately instead of waiting for pointer release.
-              if (act === 'nest_take' || act === 'bandit_tent_interact') activeAction = act;
+              if (act === 'nest_take' || act === 'bandit_tent_interact' || act === 'corpse_hold_loot') activeAction = act;
               _flaskGesture = act === 'alchemy_flask_primary';
               _flaskCanceled = false;
               if (_flaskGesture && !window.AlchemyFlasks?.aiming) _abtFire(); // Mobile press enters aim without consuming.
@@ -29239,11 +29227,30 @@
         // needs either today.
         player,
         calendar,
+        damagePlayer, // Used by js/cave-site-system.js's one-shot cache traps (it captures this dependency bag).
       });
 
       window.CavernGenerator?.init({
         EXTERIOR_ZONES,
         DEN_MOTHER_DEFS,
+      });
+
+      window.CorpseHoldLoot?.init({
+        getActiveAction: () => activeAction,
+        getActionHeldDown: () => actionHeldDown,
+        getAimedHoldCorpse: () => {
+          const reticle = getReticleTile(); // Same aimed/sticky corpse lookup the Loot button uses.
+          const obj = getCorpseObjectForAction('obj_loot_corpse', reticle.col, reticle.row);
+          return obj?.holdSeconds > 0 ? obj : null;
+        },
+        showToast,
+      });
+
+      window.CavernOreRocks.init({
+        oreDefs: ORE_DEFS, // Cavern ore-look rocks drop their real ore when mined.
+        TileType,
+        markOutline: _markOutline,
+        zoneMineableRockMeshes: _zoneMineableRockMeshes,
       });
 
       window.TownMine?.init({

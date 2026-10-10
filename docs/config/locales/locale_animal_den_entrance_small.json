@@ -1,0 +1,298 @@
+{
+  "schema": "hobunji_locale.v1",
+  "id": "locale_animal_den_entrance_small",
+  "name": "Animal Den Entrance (Small)",
+  "category": "den_entrance",
+  "singleton": false,
+  "description": "Small den entrance for narrow cliff faces: the same cave_small model scaled down (4 tiles wide, lower facade) onto a 2x3 footprint. Needs a 1-tier plateau at least two rows deep behind a single cliff-face tile. The back row sits inside the plateau, the middle row is the cliff's low side, and the entry connector sits on the front (floor) row inside the cave opening, leading out to free approach tiles. The facade is shifted two tiles north and deepened so it sinks into the cliff and still arches over the entry. The connector's insetTiles moves the entry one more (final-grid) tile into the opening, onto the cliff's low-side row, which stays walkable for that column.",
+  "tags": [
+    "den",
+    "entrance",
+    "template",
+    "cave_small",
+    "plateau_cliff",
+    "small"
+  ],
+  "cols": 6,
+  "rows": 7,
+  "tiles": {
+    "2,2": {
+      "type": "grass"
+    },
+    "3,2": {
+      "type": "grass"
+    },
+    "2,3": {
+      "type": "grass"
+    },
+    "3,3": {
+      "type": "grass"
+    },
+    "2,4": {
+      "type": "grass"
+    },
+    "3,4": {
+      "type": "path"
+    },
+    "3,5": {
+      "type": "path"
+    }
+  },
+  "objects": [
+    {
+      "id": "den_entrance_cave",
+      "kind": "cave_entrance",
+      "key": "cave_small",
+      "label": "Small Animal Den Cave Entrance",
+      "col": 2,
+      "row": 2,
+      "w": 2,
+      "h": 3,
+      "rot": 0,
+      "visual": {
+        "renderer": "cave_small",
+        "scaleX": 2,
+        "scaleY": 1.25,
+        "scaleZ": 3,
+        "offsetX": 0,
+        "offsetY": 0,
+        "offsetZ": -2,
+        "surface": "cliff",
+        "sink": 0.35
+      },
+      "collision": {
+        "mode": "auto"
+      }
+    }
+  ],
+  "npcAnchors": [],
+  "connectors": [
+    {
+      "id": "den_mouth_path",
+      "col": 3,
+      "row": 4,
+      "side": "south",
+      "label": "Den entry (inside the cave opening)",
+      "insetTiles": 1
+    }
+  ],
+  "terrainAnchors": {
+    "3,1": {
+      "terrain": "plateau",
+      "strength": "required",
+      "weight": 1,
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": null
+      }
+    },
+    "2,1": {
+      "terrain": "plateau",
+      "strength": "preferred",
+      "weight": 1,
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": null
+      }
+    },
+    "3,3": {
+      "terrain": "plateauCliff",
+      "strength": "required",
+      "weight": 1,
+      "facing": "south",
+      "height": {
+        "mode": "relativeRange",
+        "min": 0,
+        "max": 0
+      }
+    },
+    "2,3": {
+      "terrain": "plateauCliff",
+      "strength": "preferred",
+      "weight": 1,
+      "facing": "south",
+      "height": {
+        "mode": "relativeRange",
+        "min": 0,
+        "max": 0
+      }
+    },
+    "3,5": {
+      "terrain": "free",
+      "strength": "required",
+      "weight": 1,
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 0,
+        "max": 0
+      }
+    },
+    "2,5": {
+      "terrain": "free",
+      "strength": "preferred",
+      "weight": 1,
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 0,
+        "max": 0
+      }
+    },
+    "3,6": {
+      "terrain": "free",
+      "strength": "required",
+      "weight": 1,
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 0,
+        "max": 0
+      }
+    }
+  },
+  "embeddedTiles": {
+    "2,2": {
+      "terrain": "plateau",
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": null
+      },
+      "carveToLocaleFloor": false
+    },
+    "3,2": {
+      "terrain": "plateau",
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": null
+      },
+      "carveToLocaleFloor": false
+    }
+  },
+  "placement": {
+    "mode": "fixed",
+    "maxInstances": 1,
+    "allowedZones": [],
+    "clearanceTiles": 0,
+    "requiresFlatGround": true,
+    "floorMode": "footprint",
+    "minDistanceFromEntry": 0,
+    "sameSectorAsEntry": false,
+    "alwaysVisibleOnMap": false,
+    "groundOnly": false,
+    "notes": "Template-only locale (category den_entrance, never stamped). Used by wilderness-map-generator.js for dens on cliff faces too narrow for locale_animal_den_entrance. Same cave_small.glb, scaled to the 2x2 footprint.",
+    "terrainAnchors": {
+      "3,1": {
+        "terrain": "plateau",
+        "strength": "required",
+        "weight": 1,
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": null
+        }
+      },
+      "2,1": {
+        "terrain": "plateau",
+        "strength": "preferred",
+        "weight": 1,
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": null
+        }
+      },
+      "3,3": {
+        "terrain": "plateauCliff",
+        "strength": "required",
+        "weight": 1,
+        "facing": "south",
+        "height": {
+          "mode": "relativeRange",
+          "min": 0,
+          "max": 0
+        }
+      },
+      "2,3": {
+        "terrain": "plateauCliff",
+        "strength": "preferred",
+        "weight": 1,
+        "facing": "south",
+        "height": {
+          "mode": "relativeRange",
+          "min": 0,
+          "max": 0
+        }
+      },
+      "3,5": {
+        "terrain": "free",
+        "strength": "required",
+        "weight": 1,
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 0,
+          "max": 0
+        }
+      },
+      "2,5": {
+        "terrain": "free",
+        "strength": "preferred",
+        "weight": 1,
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 0,
+          "max": 0
+        }
+      },
+      "3,6": {
+        "terrain": "free",
+        "strength": "required",
+        "weight": 1,
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 0,
+          "max": 0
+        }
+      }
+    },
+    "embeddedTiles": {
+      "2,2": {
+        "terrain": "plateau",
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": null
+        },
+        "carveToLocaleFloor": false
+      },
+      "3,2": {
+        "terrain": "plateau",
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": null
+        },
+        "carveToLocaleFloor": false
+      }
+    }
+  },
+  "meta": {
+    "createdAt": "2026-10-10T00:00:00.000Z",
+    "updatedAt": "2026-10-10T12:00:00.000Z"
+  }
+}

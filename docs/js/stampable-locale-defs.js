@@ -8,7 +8,9 @@
 (() => {
   'use strict';
 
-  const STAMPED_CATEGORIES = new Set(['great_fey_shrine', 'story_poi', 'ruin_entrance']);
+  // den_entrance templates are never stamped themselves; the generator reads
+  // their terrain anchors to fit procedural dens into cliffs (js/den-cliff-placement.js).
+  const STAMPED_CATEGORIES = new Set(['great_fey_shrine', 'story_poi', 'ruin_entrance', 'den_entrance']);
   let deps = null;
   let promise = null;
 

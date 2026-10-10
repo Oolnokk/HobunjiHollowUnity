@@ -95,6 +95,13 @@
       "singleton": false
     },
     {
+      "id": "locale_animal_den_entrance_small",
+      "file": "config/locales/locale_animal_den_entrance_small.json",
+      "name": "Animal Den Entrance (Small)",
+      "category": "den_entrance",
+      "singleton": false
+    },
+    {
       "id": "locale_ruin_entrance",
       "file": "config/locales/locale_ruin_entrance.json",
       "name": "Sealed Ruin",
