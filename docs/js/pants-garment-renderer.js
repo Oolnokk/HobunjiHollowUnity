@@ -461,9 +461,7 @@
     };
     const boneTransform = (side, from, to, aim) => Core.alignBoneWithMotion(
       handle.bones2D[side][from], handle.bones2D[side][to], handle.rest[side][from], handle.rest[side][to], aim[side][from], aim[side][to],
-      handle.fitMode === 'posterior'
-        ? { initial: 'translate', anchorFrom: handle.bones2D[side].hip, anchorTo: handle.rest[side].hip, rotationScale: handle.rotationScale[side] } // The whole-sprite fit already sized and placed the garment: just hang each leg from its hip.
-        : { perpendicularScale: LEG_ACROSS_SCALE, rotationScale: handle.rotationScale[side] });
+      { perpendicularScale: LEG_ACROSS_SCALE, rotationScale: handle.rotationScale[side] }); // Initial 2D warp: each half folds in about the centre so its 2D bone hangs straight down on the 3D bone (the posterior fit already sized the garment, so only a little stretch remains).
 
     handle.update = () => {
       if (handle.disposed || !handle.mesh || !handle.model.parent) return;

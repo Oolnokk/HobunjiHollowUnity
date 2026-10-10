@@ -484,13 +484,11 @@
     return [0.34, 0.42, 0.5, 0.58, 0.66].map((x, index) => ({ x, y: clamp(y + (Number(shape[index]) || 0), 0, 1) }));
   }
 
-  // Makes the whole lower garment follow the legs. Painted/auto-seeded weights fall off with distance from the bone, so the
-  // SIDES of a pant leg (and the crotch between the legs) end up belt-weighted and stay rigid while only the pixels near the
-  // bone move with it; on a species with very short legs the hem then goes concave. Here everything at or below a leg's hip
-  // level is pulled toward that leg's bone weights regardless of its distance from the bone: thigh above the knee, calf
-  // below it, easing in from the hip so the belt-to-leg transition stays soft, and the two legs blending across the
-  // centre line so the crotch stays joined. `weights` is five floats per vertex on a (segments+1)^2 grid in garment (u,v)
-  // order; `strength` 0 leaves the painted weights, 1 fully applies this. In place.
+  // Each leg deforms HALF the garment in its entirety: everything left of the centre line follows the left leg, everything
+  // right of it follows the right leg, and the two halves blend across the central seam so the crotch and waist stay joined.
+  // Within a half, the thigh drives everything down to the knee and the calf takes over below it. This replaces painted
+  // weights wherever it applies (the part above the beltline spline is kept rigid separately). `weights` is five floats per
+  // vertex on a (segments+1)^2 grid in garment (u,v) order; `strength` 0 leaves the painted weights, 1 fully applies this.
   function applyLegAxisWeights(weights, segments, garment, strength = 1) {
     const amount = clamp(Number(strength), 0, 1);
     if (!(amount > 0)) return weights;
@@ -501,22 +499,17 @@
     for (let row = 0, vertex = 0; row <= segments; row++) {
       const v = row / segments;
       for (let col = 0; col <= segments; col++, vertex++) {
-        const leftShare = 1 - smooth(0.42, 0.58, col / segments);
-        let lambda = 0;
+        const leftShare = 1 - smooth(0.42, 0.58, col / segments); // The central seam: the halves blend over a narrow band.
         target.fill(0);
         legs.forEach((leg, index) => {
-          const t = (v - leg.hipY) / leg.span; // 0 at the hip's height, 1 at the ankle's.
           const share = index === 0 ? leftShare : 1 - leftShare;
-          const legStrength = smooth(0, 0.3, t) * share;
-          if (!(legStrength > 0)) return;
-          const thigh = 1 - smooth(0.4, 0.6, t);
-          target[leg.thighChannel] += legStrength * thigh;
-          target[leg.calfChannel] += legStrength * (1 - thigh);
-          lambda += legStrength;
+          if (!(share > 0)) return;
+          const thigh = 1 - smooth(0.4, 0.6, (v - leg.hipY) / leg.span); // Thigh down to the knee, calf below; above the hip it is all thigh.
+          target[leg.thighChannel] += share * thigh;
+          target[leg.calfChannel] += share * (1 - thigh);
         });
-        if (!(lambda > 0)) continue;
-        const blend = lambda * amount, base = vertex * 5;
-        for (let channel = 0; channel < 5; channel++) weights[base + channel] = weights[base + channel] * (1 - blend) + (target[channel] / lambda) * blend;
+        const base = vertex * 5;
+        for (let channel = 0; channel < 5; channel++) weights[base + channel] = weights[base + channel] * (1 - amount) + target[channel] * amount;
       }
     }
     return weights;
