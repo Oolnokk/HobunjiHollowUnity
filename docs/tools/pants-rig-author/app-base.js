@@ -121,10 +121,12 @@ function ensureCharacter() {
     beltScale: 1.75,
     legRollGain: 2,
     weightSharpness: 4,
+    fitMode: 'posterior',
   };
   const record = state.project.characters[key]; // Active per-species/gender fitting record.
   record.portraitBeltSpline = Core.normalizeSpline(record.portraitBeltSpline, defaultPortraitBelt());
   if (!(Number(record.legThickness) > 0)) record.legThickness = 1;
+  if (record.fitMode !== 'posterior') record.fitMode = 'belt'; // Records authored before the posterior fit existed keep fitting to their beltline.
   record.weightSharpness = Core.clamp(Number(record.weightSharpness) || 4, 1, 8); // How hard the painted weights are pushed toward their dominant bone in 3D.
   record.legRollGain = Core.clamp(Number(record.legRollGain) || 2, 1, 4); // How much the garment's legs exaggerate the 3D legs' sideways swing.
   record.beltScale = Core.clamp(Number(record.beltScale) || 1.75, 1.7, 3.5); // Anything below ~1.7 is too short to be useful, so that is the floor.
@@ -211,6 +213,7 @@ function syncControlsFromState() {
     $('legThicknessValue').textContent = `${Number(character.legThickness).toFixed(2)}×`;
     $('beltScale').value = String(character.beltScale);
     $('beltScaleValue').textContent = `${Number(character.beltScale).toFixed(2)}×`;
+    $('fitMode').value = character.fitMode;
     $('weightSharpness').value = String(character.weightSharpness);
     $('weightSharpnessValue').textContent = `${Number(character.weightSharpness).toFixed(1)}`;
     $('legRollGain').value = String(character.legRollGain);
@@ -1028,6 +1031,11 @@ function wire() {
     state.fitCanvas = null;
     persistDraft();
     queueRender({ rebuildFit: true });
+  });
+  $('fitMode').addEventListener('change', () => { // How the garment is hung on this species in the live 3D preview.
+    const character = ensureCharacter();
+    character.fitMode = $('fitMode').value === 'posterior' ? 'posterior' : 'belt';
+    persistDraft();
   });
   $('weightSharpness').addEventListener('input', () => { // Live 3D preview only: how strongly vertices commit to their dominant bone.
     const character = ensureCharacter();

@@ -39,6 +39,22 @@
     return characters[characterKey(speciesId, gender)] || characters[FALLBACK_CHARACTER_KEY] || null;
   }
 
+  // The species' hip pivot and leg length in portrait-canvas terms, from the live legs through the portrait plane.
+  function posteriorGeometry(THREE, model, plane, nodes) {
+    const mapping = portraitMappingFor(THREE, model, plane);
+    const hip = new THREE.Vector3(), ankle = new THREE.Vector3(), down = new THREE.Vector3();
+    nodes.leftThigh.updateWorldMatrix?.(true, false);
+    nodes.leftCalf.updateWorldMatrix?.(true, false);
+    hip.setFromMatrixPosition(nodes.leftThigh.matrixWorld);
+    const calfLength = Number(nodes.leftCalf.userData?.hobunjiCalfLength) > 0 ? Number(nodes.leftCalf.userData.hobunjiCalfLength) : Math.abs(nodes.leftCalf.position.y);
+    down.set(0, -calfLength, 0).applyMatrix4(nodes.leftCalf.matrixWorld);
+    ankle.copy(down);
+    model.worldToLocal(hip);
+    model.worldToLocal(ankle);
+    const hipP = core().portraitPointForLocal(mapping, hip.x, hip.y), ankleP = core().portraitPointForLocal(mapping, ankle.x, ankle.y);
+    return { posterior: hipP, legLength: Math.hypot(ankleP.x - hipP.x, ankleP.y - hipP.y) };
+  }
+
   const hasAuthoredCharacter = (speciesId, gender) => !!(rigConfig().characters || {})[characterKey(speciesId, gender)];
 
   // The species' posterior (hip pivot) height as a portrait-canvas y: the live thigh origin through the portrait plane.
@@ -102,8 +118,8 @@
   }
 
   // Static part of the garment for one avatar: rest vertices, weights, 2D bones in avatar-local space.
-  function buildGarmentData(THREE, Core, model, plane, garment, character) {
-    const transform = Core.solveAffine(garment.pantsBeltSpline, character.portraitBeltSpline);
+  function buildGarmentData(THREE, Core, model, plane, garment, character, fit = null) {
+    const transform = fit || Core.solveAffine(garment.pantsBeltSpline, character.portraitBeltSpline); // `fit`: the posterior fit when this species uses it.
     if (!transform) return null;
     const dimensions = portraitDimensions(model, plane);
     const weightGrid = garment.weightMap?.encoding === 'rle8' ? Core.decodeWeightGridRle(garment.weightMap) : garment.weightMap;
@@ -309,7 +325,13 @@
     }
     const feet = (footObjects || ['left_foot', 'right_foot'].map(foot => legHandle.group?.getObjectByName?.(foot))).filter(Boolean); // The procedural foot models.
     const footLift = footFrontLift(THREE, avatarGroup, feet);
-    const data = buildGarmentData(THREE, Core, avatarGroup, plane, garment, character);
+    const fitMode = character.fitMode || ((characterRecord || hasAuthoredCharacter(speciesId, gender)) ? 'belt' : 'posterior'); // Authored beltlines keep the beltline fit; unauthored species hang from the posterior.
+    let fit = null;
+    if (fitMode === 'posterior') {
+      const geometry = posteriorGeometry(THREE, avatarGroup, plane, nodes);
+      fit = Core.solvePosteriorFit(garment, character.portraitBeltSpline, geometry.posterior, geometry.legLength);
+    }
+    const data = buildGarmentData(THREE, Core, avatarGroup, plane, garment, character, fit);
     if (!data) return null;
     const handle = {
       name, garmentId, model: avatarGroup, nodes, mesh: null, disposed: false, texture: null, material: null,
@@ -393,12 +415,20 @@
     handle.rest = makeJoints();
     handle.restRaw = makeJoints();
     handle.captureRest = () => {
+      // The rest stance is the legs standing straight down from the hips, whatever phase of a stride or sway the legs are in
+      // when this is called: hips as measured, thigh and calf lengths averaged over both legs so the stance is symmetric.
       const measured = readLiveBones(handle);
+      const length = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+      const thigh = (length(measured.left.hip, measured.left.knee) + length(measured.right.hip, measured.right.knee)) / 2;
+      const calf = (length(measured.left.knee, measured.left.ankle) + length(measured.right.knee, measured.right.ankle)) / 2;
       for (const side of ['left', 'right']) {
-        Core.amplifyLegRoll(measured[side], handle.legRollGain, handle.restRaw[side]);
+        const hip = measured[side].hip, raw = handle.restRaw[side];
+        raw.hip.x = hip.x; raw.hip.y = hip.y; raw.hip.z = hip.z;
+        raw.knee.x = hip.x; raw.knee.y = hip.y - thigh; raw.knee.z = hip.z;
+        raw.ankle.x = hip.x; raw.ankle.y = hip.y - thigh - calf; raw.ankle.z = hip.z;
         for (const joint of ['hip', 'knee', 'ankle']) {
-          const raw = handle.restRaw[side][joint], flat = handle.rest[side][joint];
-          flat.x = raw.x; flat.y = raw.y; flat.z = handle.bones2D[side][joint].z; // Flat, at the portrait plane's depth.
+          const flat = handle.rest[side][joint];
+          flat.x = raw[joint].x; flat.y = raw[joint].y; flat.z = handle.bones2D[side][joint].z; // Flat, at the portrait plane's depth.
         }
       }
       handle.restCaptured = true;
