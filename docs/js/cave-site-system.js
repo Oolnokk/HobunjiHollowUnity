@@ -2,56 +2,60 @@
 //
 // Existing wilderness "dens" remain the compatibility anchor that owns a cave
 // mouth, transition, map id, collision footprint, and Den-Mother ecology. This
-// module assigns each anchor a deterministic cave history/occupancy profile and
-// decorates CavernGenerator's existing shell instead of inventing a second
-// interior/dungeon pipeline. Only cave profiles containing animal_den are
-// exposed to WildlifeSpawn's den lifecycle.
+// module rolls each anchor two deterministic layers — contents (ore-rich,
+// mushrooms, hidden cache, catacomb, ruin entrance) and inhabitant (animal
+// den, bandits, none) — and decorates CavernGenerator's existing shell instead
+// of inventing a second interior/dungeon pipeline. Only caves inhabited by an
+// animal den are exposed to WildlifeSpawn's den lifecycle.
 (() => {
   'use strict';
 
   if (window.CaveSiteSystem) return;
 
+  // Every cave rolls two independent layers: what is in it (contents) and who
+  // lives there (inhabitant). Both are deterministic per cave anchor.
   const TYPES = Object.freeze({
-    EMPTY: 'empty',
-    ANIMAL_DEN: 'animal_den',
-    BANDIT_HIDEOUT: 'bandit_hideout',
+    // Contents
+    ORE_MINE: 'ore_mine',
     TRAPPED_CACHE: 'trapped_cache',
     CATACOMB: 'catacomb',
-    ORE_MINE: 'ore_mine',
     RUIN_ENTRANCE: 'ruin_entrance',
+    MUSHROOM_CAVE: 'mushroom_cave',
+    // Inhabitants
+    BANDIT_HIDEOUT: 'bandit_hideout',
+    ANIMAL_DEN: 'animal_den',
+    NONE: 'none',
   });
 
   const TYPE_LABELS = Object.freeze({
-    [TYPES.EMPTY]: 'Natural Cave',
-    [TYPES.ANIMAL_DEN]: 'Animal Den',
-    [TYPES.BANDIT_HIDEOUT]: 'Bandit Hideout',
+    [TYPES.ORE_MINE]: 'Ore-rich Cave',
     [TYPES.TRAPPED_CACHE]: 'Hidden Cache',
     [TYPES.CATACOMB]: 'Ancient Catacomb',
-    [TYPES.ORE_MINE]: 'Ore-rich Cave',
     [TYPES.RUIN_ENTRANCE]: 'Ancient Ruin Entrance',
+    [TYPES.MUSHROOM_CAVE]: 'Mushroom Cave',
+    [TYPES.BANDIT_HIDEOUT]: 'Bandit Hideout',
+    [TYPES.ANIMAL_DEN]: 'Animal Den',
+    [TYPES.NONE]: 'Uninhabited',
   });
 
-  const PRIMARY_WEIGHTS = Object.freeze([
-    [TYPES.ANIMAL_DEN, 35],
-    [TYPES.ORE_MINE, 15],
-    [TYPES.BANDIT_HIDEOUT, 13],
-    [TYPES.TRAPPED_CACHE, 10],
-    [TYPES.CATACOMB, 10],
-    [TYPES.RUIN_ENTRANCE, 9],
-    [TYPES.EMPTY, 8],
+  const CONTENTS_WEIGHTS = Object.freeze([
+    [TYPES.ORE_MINE, 26],
+    [TYPES.MUSHROOM_CAVE, 22],
+    [TYPES.TRAPPED_CACHE, 18],
+    [TYPES.CATACOMB, 18],
+    [TYPES.RUIN_ENTRANCE, 16],
   ]);
 
-  const COMPATIBLE_SECONDARIES = Object.freeze({
-    [TYPES.ANIMAL_DEN]: [], // Legacy Den-Mother collapse/relocation stays isolated so clearing wildlife can never erase an unrelated secondary history.
-    [TYPES.BANDIT_HIDEOUT]: [TYPES.TRAPPED_CACHE, TYPES.ORE_MINE, TYPES.CATACOMB, TYPES.RUIN_ENTRANCE],
-    [TYPES.TRAPPED_CACHE]: [TYPES.CATACOMB, TYPES.ORE_MINE, TYPES.RUIN_ENTRANCE, TYPES.BANDIT_HIDEOUT],
-    [TYPES.CATACOMB]: [TYPES.ORE_MINE, TYPES.RUIN_ENTRANCE, TYPES.BANDIT_HIDEOUT],
-    [TYPES.ORE_MINE]: [TYPES.CATACOMB, TYPES.RUIN_ENTRANCE, TYPES.TRAPPED_CACHE, TYPES.BANDIT_HIDEOUT],
-    [TYPES.RUIN_ENTRANCE]: [TYPES.ORE_MINE, TYPES.CATACOMB, TYPES.BANDIT_HIDEOUT],
-    [TYPES.EMPTY]: [],
-  });
+  const INHABITANT_WEIGHTS = Object.freeze([
+    [TYPES.ANIMAL_DEN, 45],
+    [TYPES.NONE, 33],
+    [TYPES.BANDIT_HIDEOUT, 22],
+  ]);
 
-  const SECONDARY_CHANCE = 0.28; // Used by profile rolls; mixed histories should be notable rather than the majority of caves.
+  const PROFILE_SCHEMA = 2; // contents + inhabitant layers; den.caveSite tags from older schemas are rerolled.
+  const MUSHROOM_REAGENT_KEY = 'duskcapMushroom'; // AlchemySystem reagent the mushroom cave grows (the game's only mushroom item).
+  const MUSHROOM_PICK_RADIUS_TILES = 0.75; // Walk-up harvest radius, like the hidden cache's open radius.
+  const MUSHROOM_REGROW_DAYS = 3; // Picked clusters regrow after this many in-game days.
   const CACHE_OPEN_RADIUS_TILES = 1.05; // Used by runtime proximity interaction for hidden caches without adding another central getWorldObjectAt branch.
   const TRAP_TRIGGER_RADIUS_TILES = 0.48; // Used by one-shot pressure/trip hazards around cache approaches.
   const RUIN_TRIGGER_RADIUS_TILES = 0.90; // Used by the deep ruin threshold; entering is deliberately close-range.
@@ -66,6 +70,7 @@
   const banditSpawnPromises = new Map(); // map id -> in-flight BanditCombat creation promise, preventing duplicate async spawns.
   const banditPopulatedMaps = new Set(); // Session-only map ids that actually spawned a hideout; used to distinguish kills from a fresh page reload.
   const ruinTransitionMaps = new Set(); // Map ids currently transitioning into a ruin; prevents repeated proximity triggers during the fade/generation handoff.
+  const mushroomMeshesByMapId = new Map(); // map id -> (cluster id -> scene group), so a pick can remove exactly that cluster.
   let wildlifeDeps = null; // Captured from WildlifeSpawn.init; used for current area/player/hostile collection and damage helpers.
   let devSpawnerDeps = null; // Captured from DevSpawner.init; used for the existing generalized loot grant helper.
   let caveRuntimeTimer = 0; // Throttles interior proximity/runtime work to CAVE_RUNTIME_INTERVAL_S.
@@ -118,45 +123,41 @@
     return `${zoneId}:${String(den?.id || 'cave')}:${Number(den?.x) || 0},${Number(den?.y) || 0}`;
   }
 
-  function caveTitle(layers) {
-    const meaningful = (layers || []).filter(type => type !== TYPES.EMPTY); // Occupancy/history layers used to build the post-discovery label.
-    if (!meaningful.length) return TYPE_LABELS[TYPES.EMPTY];
-    if (meaningful.length === 1) return TYPE_LABELS[meaningful[0]] || 'Cave';
-    return `Cave — ${meaningful.map(type => TYPE_LABELS[type] || type).join(' / ')}`;
+  function caveTitle(contents, inhabitant) {
+    const contentsLabel = TYPE_LABELS[contents] || 'Cave';
+    return inhabitant && inhabitant !== TYPES.NONE ? `${contentsLabel} — ${TYPE_LABELS[inhabitant] || inhabitant}` : contentsLabel;
+  }
+
+  function profileLayers(contents, inhabitant) {
+    return [contents, inhabitant].filter(type => type && type !== TYPES.NONE);
   }
 
   function rollProfile(zoneId, den) {
     const signature = caveSignature(zoneId, den); // Stable site identity used by deterministic profile generation and persistence.
-    const rng = makeRng(`${signature}:profile`); // Dedicated profile stream so later feature rolls cannot reshuffle cave types.
-    const primary = weightedPick(rng, PRIMARY_WEIGHTS);
-    const secondaryPool = COMPATIBLE_SECONDARIES[primary] || []; // Allowed second histories that can coexist with the primary cave use.
-    const secondary = secondaryPool.length && rng() < SECONDARY_CHANCE
-      ? secondaryPool[Math.floor(rng() * secondaryPool.length)]
-      : null;
-    const layers = [...new Set([primary, secondary].filter(Boolean))];
+    // Separate streams so retuning one layer's weights never reshuffles the other.
+    const contents = weightedPick(makeRng(`${signature}:contents`), CONTENTS_WEIGHTS);
+    const inhabitant = weightedPick(makeRng(`${signature}:inhabitant`), INHABITANT_WEIGHTS);
     return {
+      schema: PROFILE_SCHEMA,
       id: `cave_${String(den?.id || 'site')}`,
       zoneId: String(zoneId || ''),
       denId: String(den?.id || ''),
       mapId: caveMapId(zoneId, den?.id),
       signature,
-      primary,
-      secondary,
-      layers,
+      contents,
+      inhabitant,
+      layers: profileLayers(contents, inhabitant), // Flat list kept for diagnostics.
       exteriorLabel: 'Cave',
-      discoveredLabel: caveTitle(layers),
-      mineableSeparator: !!secondary,
+      discoveredLabel: caveTitle(contents, inhabitant),
       mouthAnchor: den?.mouthAnchor ? clone(den.mouthAnchor) : null,
       source: 'promoted_den_anchor',
     };
   }
 
   function forceAnimalProfile(profile) {
-    profile.primary = TYPES.ANIMAL_DEN;
-    profile.secondary = null;
-    profile.layers = [TYPES.ANIMAL_DEN];
-    profile.mineableSeparator = false;
-    profile.discoveredLabel = caveTitle(profile.layers);
+    profile.inhabitant = TYPES.ANIMAL_DEN;
+    profile.layers = profileLayers(profile.contents, profile.inhabitant);
+    profile.discoveredLabel = caveTitle(profile.contents, profile.inhabitant);
     return profile;
   }
 
@@ -165,8 +166,8 @@
   // the same profiles either way. Dens already tagged keep their profile.
   function assignZoneProfiles(zoneId, dens) {
     const key = String(zoneId || '');
-    const profiles = dens.map(den => den?.caveSite?.mapId ? clone(den.caveSite) : rollProfile(key, den)); // One cave profile per existing den anchor, preserving all old geometry/map ids.
-    if (profiles.length && !profiles.some(profile => profile.layers.includes(TYPES.ANIMAL_DEN))) {
+    const profiles = dens.map(den => den?.caveSite?.mapId && den.caveSite.schema === PROFILE_SCHEMA ? clone(den.caveSite) : rollProfile(key, den)); // One cave profile per existing den anchor, preserving all old geometry/map ids.
+    if (profiles.length && !profiles.some(profile => profile.inhabitant === TYPES.ANIMAL_DEN)) {
       const rng = makeRng(`${key}:animal-den-preservation`); // Stable slot selection guarantees legacy animal ecology survives the promotion to generic caves.
       forceAnimalProfile(profiles[Math.floor(rng() * profiles.length)]);
     }
@@ -174,7 +175,7 @@
       const den = dens[index]; // Existing compatibility record consumed by terrain/collision/turnover systems.
       const profile = profiles[index]; // Cave semantic metadata attached without changing den ids or coordinates.
       den.caveSite = clone(profile);
-      den.isAnimalDen = profile.layers.includes(TYPES.ANIMAL_DEN);
+      den.isAnimalDen = profile.inhabitant === TYPES.ANIMAL_DEN;
       sitesByMapId.set(profile.mapId, profile);
     }
     sitesByZone.set(key, profiles);
@@ -202,7 +203,7 @@
     // A zone regenerated (Tothal Shift) or a den relocated by turnover since
     // the last assignment leaves untagged/changed anchors — re-sync from the
     // live layout so labels/filters never act on a stale list.
-    if (dens && !filteringDens && (!sitesByZone.has(key) || sitesByZone.get(key).length !== dens.length || dens.some(den => !den?.caveSite?.mapId))) {
+    if (dens && !filteringDens && (!sitesByZone.has(key) || sitesByZone.get(key).length !== dens.length || dens.some(den => !den?.caveSite?.mapId || den.caveSite.schema !== PROFILE_SCHEMA))) {
       return assignZoneProfiles(key, dens);
     }
     return sitesByZone.get(key) || [];
@@ -223,8 +224,7 @@
   }
 
   function isAnimalDenSite(profileOrDen) {
-    const layers = profileOrDen?.layers || profileOrDen?.caveSite?.layers || [];
-    return Array.isArray(layers) && layers.includes(TYPES.ANIMAL_DEN);
+    return (profileOrDen?.inhabitant || profileOrDen?.caveSite?.inhabitant) === TYPES.ANIMAL_DEN;
   }
 
   function floorTiles(mapData) {
@@ -355,24 +355,6 @@
     return weightedPick(rng, [['stone', 32], ['copper', 24], ['tin', 18], ['lead', 9], ['arsenic', 6], ['silver', 8], ['gold', 3]]); // Rock looks drawn from game.js ORE_DEFS (no iron in this world).
   }
 
-  function layerRegions(profile, mapData, separator, allTiles) {
-    if (!separator || profile.layers.length < 2) return new Map(profile.layers.map(type => [type, allTiles]));
-    const nearTiles = tilePoolFromKeys(allTiles, separator.nearKeys); // Entrance-side chamber used by the primary history unless animal-den placement dictates otherwise.
-    const farTiles = tilePoolFromKeys(allTiles, separator.farKeys); // Mined-through chamber used by the secondary history.
-    const regions = new Map();
-    const animalType = profile.layers.includes(TYPES.ANIMAL_DEN) ? TYPES.ANIMAL_DEN : null; // Animal layer whose existing nest location must stay on the side where CavernGenerator put it.
-    if (animalType && Number.isFinite(Number(mapData.nestCol)) && Number.isFinite(Number(mapData.nestRow))) {
-      const nestKey = tileKey(mapData.nestCol, mapData.nestRow); // Existing safe 2x2 Den-Mother/nest location used to choose the animal's partition.
-      const animalFar = new Set(separator.farKeys).has(nestKey);
-      regions.set(animalType, animalFar ? farTiles : nearTiles);
-      for (const type of profile.layers) if (type !== animalType) regions.set(type, animalFar ? nearTiles : farTiles);
-      return regions;
-    }
-    regions.set(profile.layers[0], nearTiles);
-    if (profile.layers[1]) regions.set(profile.layers[1], farTiles);
-    return regions;
-  }
-
   function addMineLayer(mapData, rng, candidates, blockedKeys, plan) {
     const target = clamp(Math.round(candidates.length * 0.16), 7, 15); // Ore-rich layer density while preserving walkable floor and mobile object budgets.
     const existing = new Set((mapData.oreRocks || []).map(rock => tileKey(rock.col, rock.row))); // Existing natural ore tiles that must not be duplicated.
@@ -391,6 +373,17 @@
   }
 
   function addCacheLayer(mapData, rng, candidates, blockedKeys, plan) {
+    // A hidden cache is sealed in a side chamber behind a wall of ordinary
+    // mineable ore rocks when the cavern has a chokepoint for one.
+    const separator = findMineableSeparator(mapData);
+    if (separator) {
+      const wallKind = mineOreKind(rng); // Ordinary ore look, so all existing mining/drop/regrowth code applies.
+      const existing = new Set((mapData.oreRocks || []).map(rock => tileKey(rock.col, rock.row)));
+      mapData.oreRocks = [...(mapData.oreRocks || []), ...separator.cells.filter(cell => !existing.has(tileKey(cell.col, cell.row))).map(cell => ({ col: cell.col, row: cell.row, oreKind: wallKind, caveSeparator: true }))];
+      for (const cell of separator.cells) blockedKeys.add(tileKey(cell.col, cell.row));
+      plan.separator = { col: separator.col, row: separator.row, cells: separator.cells, oreKind: wallKind, nearKeys: separator.nearKeys, farKeys: separator.farKeys };
+      candidates = tilePoolFromKeys(candidates, separator.farKeys);
+    }
     const distant = sortTilesByDistance(candidates, mapData.exitCol, mapData.exitRow, true); // Deepest chamber candidates make the cache feel intentionally hidden.
     const cacheTile = distant.find(tile => !blockedKeys.has(tileKey(tile.col, tile.row)));
     if (!cacheTile) return;
@@ -414,7 +407,7 @@
     plan.coffins = coffins.map((tile, index) => ({ id: `cave_coffin_${index + 1}`, col: tile.col, row: tile.row, rotY: Math.floor(rng() * 4) * 90 }));
     for (const coffin of plan.coffins) addProp(mapData, { id: coffin.id, key: 'ruinSanctumCoffin', col: coffin.col, row: coffin.row, rotY: coffin.rotY });
 
-    if (!plan.profile.layers.includes(TYPES.ANIMAL_DEN)) {
+    if (plan.profile.inhabitant === TYPES.NONE) { // Ghouls guard only an otherwise uninhabited catacomb; bandits or a den have claimed the others.
       const ghoulCandidates = candidates.filter(tile => !blockedKeys.has(tileKey(tile.col, tile.row)));
       const ghouls = pickSpacedTiles(rng, ghoulCandidates, Math.min(3, Math.max(1, Math.floor(coffins.length / 2))), blockedKeys, 2.5);
       // Ghouls are a humanoid species, not a CREATURE_DB creature — they spawn
@@ -422,6 +415,13 @@
       plan.ghoulSpawns = ghouls.map((tile, index) => ({ col: tile.col, row: tile.row, rank: 'grunt', tier: 1, ghoul: true, gender: index % 2 ? 'female' : 'male' }));
       mapData.caveGhoulSpawns = clone(plan.ghoulSpawns);
     }
+  }
+
+  function addMushroomLayer(mapData, rng, candidates, blockedKeys, plan) {
+    const count = clamp(Math.round(candidates.length / 9), 6, 12); // Cluster count scaled to the cave, bounded for mobile scene cost.
+    const tiles = pickSpacedTiles(rng, candidates, count, blockedKeys, 1.6);
+    plan.mushrooms = tiles.map((tile, index) => ({ id: `cave_mushroom_${index + 1}`, col: tile.col, row: tile.row, reagentKey: MUSHROOM_REAGENT_KEY, size: 0.8 + rng() * 0.6 }));
+    mapData.caveMushrooms = clone(plan.mushrooms);
   }
 
   function addRuinLayer(mapData, rng, candidates, blockedKeys, plan) {
@@ -445,7 +445,37 @@
   // scene exists. The cave's props are authored furniture JSON (the same
   // pieces DevRandomRuin/RuinSites build), loaded on demand and placed on
   // their tile centres.
+  // Mushroom clusters reuse the wild reagent-plant mesh (ReagentPlants), three
+  // to a tile; clusters picked within the regrow window are skipped.
+  function buildMushroomClusters(mapId, mapData, scene) {
+    const meshes = new Map();
+    mushroomMeshesByMapId.set(String(mapId), meshes);
+    const build = window.ReagentPlants?.buildReagentPlantMesh;
+    const profile = sitesByMapId.get(String(mapId));
+    if (!build || !scene || !mapData?.caveMushrooms?.length) return 0;
+    const state = profile ? stateFor(profile) : null;
+    const rng = makeRng(`${mapId}:mushroom-visuals`);
+    for (const mushroom of mapData.caveMushrooms) {
+      if (state && !mushroomAvailable(state, mushroom)) continue;
+      const group = new window.THREE.Group();
+      for (let i = 0; i < 3; i++) {
+        const stalk = build(mushroom.reagentKey);
+        if (!stalk) continue;
+        stalk.position.set((rng() - 0.5) * 0.6, 0, (rng() - 0.5) * 0.6);
+        stalk.scale.multiplyScalar(Number(mushroom.size) || 1);
+        group.add(stalk);
+      }
+      if (!group.children.length) continue;
+      group.position.set(mushroom.col + 0.5, 0, mushroom.row + 0.5);
+      group.userData.caveSiteMushroom = { mapId, id: mushroom.id };
+      scene.add(group);
+      meshes.set(mushroom.id, group);
+    }
+    return meshes.size;
+  }
+
   function buildInteriorProps(mapId, mapData, scene) {
+    buildMushroomClusters(mapId, mapData, scene);
     const A = window.AuthoredFurniture;
     if (!A?.load || !A?.buildGroup || !scene || !mapData?.caveProps?.length) return Promise.resolve(0);
     return Promise.all(mapData.caveProps.map(prop => Promise.resolve(A.load(prop.key)).then(data => {
@@ -469,37 +499,31 @@
     for (const exit of mapData.exits || []) for (const tile of exit.tiles || []) blockedKeys.add(tileKey(tile[0], tile[1]));
     if (Number.isFinite(Number(mapData.nestCol)) && Number.isFinite(Number(mapData.nestRow))) blockedKeys.add(tileKey(mapData.nestCol, mapData.nestRow));
 
-    if (!profile.layers.includes(TYPES.ANIMAL_DEN)) {
+    if (profile.inhabitant !== TYPES.ANIMAL_DEN) {
       mapData.nestCol = null;
       mapData.nestRow = null;
       mapData.denMotherKind = null;
       mapData.creatureSpawns = [];
     }
 
-    let separator = profile.mineableSeparator ? findMineableSeparator(mapData) : null; // Existing ore-rock mechanic becomes the optional mine-through wall between histories.
-    if (separator) {
-      const separatorKind = mineOreKind(rng); // Ordinary ore kind means all existing mining/tool/loot/regrowth interaction code remains authoritative.
-      const existing = new Set((mapData.oreRocks || []).map(rock => tileKey(rock.col, rock.row)));
-      const wall = separator.cells.filter(cell => !existing.has(tileKey(cell.col, cell.row))).map(cell => ({ col: cell.col, row: cell.row, oreKind: separatorKind, caveSeparator: true }));
-      mapData.oreRocks = [...(mapData.oreRocks || []), ...wall];
-      for (const cell of separator.cells) blockedKeys.add(tileKey(cell.col, cell.row));
-      separator = { ...separator, oreKind: separatorKind };
-    }
-
     const plan = {
       profile: clone(profile),
-      separator: separator ? { col: separator.col, row: separator.row, cells: separator.cells, oreKind: separator.oreKind, nearKeys: separator.nearKeys, farKeys: separator.farKeys } : null,
-      banditSpawns: [], ghoulSpawns: [], traps: [], coffins: [], mineRocks: [], cache: null, ruinEntrance: null,
+      separator: null,
+      banditSpawns: [], ghoulSpawns: [], traps: [], coffins: [], mineRocks: [], mushrooms: [], cache: null, ruinEntrance: null,
     }; // Runtime-only plan mirrors map decorations and drives mechanics that cannot live in static building map data.
-    const regions = layerRegions(profile, mapData, separator, allTiles);
+    const awayFromEntrance = allTiles.filter(tile => Math.hypot(tile.col - Number(mapData.exitCol), tile.row - Number(mapData.exitRow)) >= 3);
 
-    for (const type of profile.layers) {
-      const candidates = (regions.get(type) || allTiles).filter(tile => Math.hypot(tile.col - Number(mapData.exitCol), tile.row - Number(mapData.exitRow)) >= 3);
-      if (type === TYPES.ORE_MINE) addMineLayer(mapData, rng, candidates, blockedKeys, plan);
-      else if (type === TYPES.BANDIT_HIDEOUT) addBanditLayer(mapData, rng, candidates, blockedKeys, plan);
-      else if (type === TYPES.TRAPPED_CACHE) addCacheLayer(mapData, rng, candidates, blockedKeys, plan);
-      else if (type === TYPES.CATACOMB) addCatacombLayer(mapData, rng, candidates, blockedKeys, plan);
-      else if (type === TYPES.RUIN_ENTRANCE) addRuinLayer(mapData, rng, candidates, blockedKeys, plan);
+    // Contents first (a hidden cache may wall off a side chamber), then the
+    // inhabitants on the entrance side of any such wall.
+    const contents = profile.contents;
+    if (contents === TYPES.ORE_MINE) addMineLayer(mapData, rng, awayFromEntrance, blockedKeys, plan);
+    else if (contents === TYPES.TRAPPED_CACHE) addCacheLayer(mapData, rng, awayFromEntrance, blockedKeys, plan);
+    else if (contents === TYPES.CATACOMB) addCatacombLayer(mapData, rng, awayFromEntrance, blockedKeys, plan);
+    else if (contents === TYPES.RUIN_ENTRANCE) addRuinLayer(mapData, rng, awayFromEntrance, blockedKeys, plan);
+    else if (contents === TYPES.MUSHROOM_CAVE) addMushroomLayer(mapData, rng, awayFromEntrance, blockedKeys, plan);
+    if (profile.inhabitant === TYPES.BANDIT_HIDEOUT) {
+      const reachable = plan.separator ? tilePoolFromKeys(awayFromEntrance, plan.separator.nearKeys) : awayFromEntrance;
+      addBanditLayer(mapData, rng, reachable, blockedKeys, plan);
     }
 
     mapData.name = profile.discoveredLabel;
@@ -507,10 +531,10 @@
     mapData.caveSitePlan = {
       separatorRock: plan.separator ? { col: plan.separator.col, row: plan.separator.row, cells: clone(plan.separator.cells), oreKind: plan.separator.oreKind } : null,
       banditSpawns: clone(plan.banditSpawns), ghoulSpawns: clone(plan.ghoulSpawns), traps: clone(plan.traps), cache: clone(plan.cache),
-      coffins: clone(plan.coffins), ruinEntrance: clone(plan.ruinEntrance), mineRockCount: plan.mineRocks.length,
+      coffins: clone(plan.coffins), ruinEntrance: clone(plan.ruinEntrance), mushrooms: clone(plan.mushrooms), mineRockCount: plan.mineRocks.length,
     };
     plansByMapId.set(String(mapId), plan);
-    window.__farmLog?.(`[cave-sites] built ${mapId}: ${profile.layers.join('+')} separator=${plan.separator ? `${plan.separator.col},${plan.separator.row}` : 'none'} ore=${mapData.oreRocks?.length || 0} bandits=${plan.banditSpawns.length} traps=${plan.traps.length}`, 'world');
+    window.__farmLog?.(`[cave-sites] built ${mapId}: ${profile.contents}+${profile.inhabitant} separator=${plan.separator ? `${plan.separator.col},${plan.separator.row}` : 'none'} ore=${mapData.oreRocks?.length || 0} bandits=${plan.banditSpawns.length} traps=${plan.traps.length}`, 'world');
     return mapData;
   }
 
@@ -549,7 +573,7 @@
 
   function stateFor(profile) {
     ensureStateLoaded();
-    if (!runtimeStateBySignature.has(profile.signature)) runtimeStateBySignature.set(profile.signature, { discovered: false, cacheOpened: false, triggeredTraps: [], occupantsCleared: false, ruinEntered: false });
+    if (!runtimeStateBySignature.has(profile.signature)) runtimeStateBySignature.set(profile.signature, { discovered: false, cacheOpened: false, triggeredTraps: [], occupantsCleared: false, ruinEntered: false, mushroomsPickedDay: {} });
     return runtimeStateBySignature.get(profile.signature);
   }
 
@@ -593,8 +617,8 @@
     state.discovered = true;
     persistState();
     wildlifeDeps?.showZoneBanner?.(profile.discoveredLabel.toUpperCase());
-    wildlifeDeps?.showToast?.(profile.layers.includes(TYPES.EMPTY) ? 'This cave appears naturally empty.' : profile.discoveredLabel, false);
-    window.__farmLog?.(`[cave-sites] discovered ${profile.signature}: ${profile.layers.join('+')}`, 'world');
+    wildlifeDeps?.showToast?.(profile.discoveredLabel, false);
+    window.__farmLog?.(`[cave-sites] discovered ${profile.signature}: ${profile.contents}+${profile.inhabitant}`, 'world');
   }
 
   function occupantSpawns(plan) {
@@ -699,6 +723,35 @@
     window.__farmLog?.(`[cave-sites] opened cache ${plan.cache.id}: ${JSON.stringify(gained)}`, 'world');
   }
 
+  function currentDay() {
+    return Number(wildlifeDeps?.calendar?.day) || 0;
+  }
+
+  function mushroomAvailable(state, mushroom) {
+    const picked = state?.mushroomsPickedDay?.[mushroom.id];
+    return picked == null || currentDay() - Number(picked) >= MUSHROOM_REGROW_DAYS;
+  }
+
+  // Walk-up harvest, like the hidden cache: grants the Duskcap reagent through
+  // the same loot grant, with the Foraging bonus roll and XP that wild reagent
+  // plants use. The cluster regrows after MUSHROOM_REGROW_DAYS.
+  function harvestMushrooms(profile, plan, state) {
+    if (!plan.mushrooms?.length) return;
+    for (const mushroom of plan.mushrooms) {
+      if (!mushroomAvailable(state, mushroom) || caveDistanceTiles(mushroom) > MUSHROOM_PICK_RADIUS_TILES) continue;
+      state.mushroomsPickedDay = { ...(state.mushroomsPickedDay || {}), [mushroom.id]: currentDay() };
+      const bonus = Math.random() < (wildlifeDeps?.bonusYieldChance?.('foraging') || 0) ? 1 : 0;
+      const parts = devSpawnerDeps?.grantLoot?.({ [mushroom.reagentKey]: 1 + bonus }) || [];
+      wildlifeDeps?.awardForagingXp?.();
+      const group = mushroomMeshesByMapId.get(profile.mapId)?.get(mushroom.id);
+      group?.parent?.remove(group);
+      mushroomMeshesByMapId.get(profile.mapId)?.delete(mushroom.id);
+      persistState();
+      const label = window.AlchemySystem?.REAGENT_DEFS?.[mushroom.reagentKey]?.label || 'mushrooms';
+      wildlifeDeps?.showToast?.(parts.length ? `Picked ${parts.join(', ')}${bonus ? ' (Foraging bonus)' : ''}` : `Picked ${label}.`, true);
+    }
+  }
+
   function maybeEnterRuin(profile, plan, state) {
     if (!plan.ruinEntrance || ruinTransitionMaps.has(profile.mapId) || caveDistanceTiles(plan.ruinEntrance) > RUIN_TRIGGER_RADIUS_TILES) return;
     const ruin = window.DevRandomRuin;
@@ -736,6 +789,7 @@
     ensureOccupants(profile, plan, state);
     triggerTraps(profile, plan, state);
     grantCacheLoot(profile, plan, state);
+    harvestMushrooms(profile, plan, state);
     maybeEnterRuin(profile, plan, state);
   }
 
@@ -818,10 +872,10 @@
     return {
       ready: integrationsInstalled,
       currentArea,
-      latestChange: 'Legacy den anchors are now generic caves with deterministic occupancy/history layers; only animal-den caves participate in den ecology.',
+      latestChange: 'Caves roll two layers: contents (ore, mushrooms, hidden cache, catacomb, ruin entrance) and inhabitant (animal den, bandits, none); only animal-den caves participate in den ecology.',
       zoneCount: zones.length,
       caveCount: sites.length,
-      caves: sites.map(site => ({ mapId: site.mapId, zoneId: site.zoneId, denId: site.denId, layers: site.layers, separator: !!site.mineableSeparator, label: site.discoveredLabel })),
+      caves: sites.map(site => ({ mapId: site.mapId, zoneId: site.zoneId, denId: site.denId, contents: site.contents, inhabitant: site.inhabitant, label: site.discoveredLabel })),
       currentPlan: plansByMapId.has(currentArea) ? clone({
         profile: plansByMapId.get(currentArea).profile,
         separator: plansByMapId.get(currentArea).separator && { col: plansByMapId.get(currentArea).separator.col, row: plansByMapId.get(currentArea).separator.row, cells: plansByMapId.get(currentArea).separator.cells, oreKind: plansByMapId.get(currentArea).separator.oreKind },
@@ -831,6 +885,7 @@
         cache: plansByMapId.get(currentArea).cache,
         coffins: plansByMapId.get(currentArea).coffins,
         ruinEntrance: plansByMapId.get(currentArea).ruinEntrance,
+        mushrooms: plansByMapId.get(currentArea).mushrooms,
       }) : null,
       currentState: profileForMapId(currentArea) ? clone(stateFor(profileForMapId(currentArea))) : null,
     };

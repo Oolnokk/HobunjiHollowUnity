@@ -86,7 +86,7 @@ function baseMap(id) {
   };
 }
 const separator = Cave.__test.findMineableSeparator(baseMap('separator_test'));
-assert(separator && separator.col === 6 && separator.row === 3, 'mixed cave finds the existing corridor as a mineable partition');
+assert(separator && separator.col === 6 && separator.row === 3, 'separator finder picks the existing corridor as a mineable partition');
 assert(separator.nearKeys.length >= 20 && separator.farKeys.length >= 20, 'separator preserves substantial chambers on both sides');
 
 // Real cavern corridors are usually 2-3 tiles wide: the wall must span the whole corridor.
@@ -104,53 +104,65 @@ assert.equal(wideSeparator.nearKeys.length + wideSeparator.farKeys.length, wideF
 function installProfile(profile) {
   Cave.__test.sitesByMapId.set(profile.mapId, JSON.parse(JSON.stringify(profile)));
 }
-function profile(mapId, layers) {
+function profile(mapId, contents, inhabitant = Cave.TYPES.NONE) {
   return {
-    id: 'cave_manual', zoneId: 'map_test_wilds', denId: mapId,
+    schema: 2, id: 'cave_manual', zoneId: 'map_test_wilds', denId: mapId,
     mapId, signature: `manual:${mapId}`,
-    primary: layers[0], secondary: layers[1] || null,
-    layers: [...layers], exteriorLabel: 'Cave',
-    discoveredLabel: Cave.__test.caveTitle(layers),
-    mineableSeparator: layers.length > 1, mouthAnchor: { x: 1, y: 3 }, source: 'test',
+    contents, inhabitant,
+    layers: [contents, inhabitant].filter(type => type !== Cave.TYPES.NONE), exteriorLabel: 'Cave',
+    discoveredLabel: Cave.__test.caveTitle(contents, inhabitant),
+    mouthAnchor: { x: 1, y: 3 }, source: 'test',
   };
 }
+function decorate(p) {
+  installProfile(p);
+  return Cave.decorateCavernMapData(p.mapId, baseMap(p.mapId));
+}
 
-const mineProfile = profile('map_i_test_mine', [Cave.TYPES.ORE_MINE]);
-installProfile(mineProfile);
-const mineMap = Cave.decorateCavernMapData(mineProfile.mapId, baseMap(mineProfile.mapId));
-assert.equal(mineMap.denMotherKind, null, 'non-animal cave strips Den-Mother');
-assert.equal(mineMap.nestCol, null, 'non-animal cave strips nest');
-assert(mineMap.oreRocks.length >= 7, 'ore-mine cave reuses oreRock mechanic at rich density');
+// Two independent layers: every contents type and every inhabitant occurs.
+const CONTENTS = ['ore_mine', 'trapped_cache', 'catacomb', 'ruin_entrance', 'mushroom_cave'];
+const INHABITANTS = ['animal_den', 'bandit_hideout', 'none'];
+const rolled = Array.from({ length: 400 }, (_, i) => Cave.__test.rollProfile('map_roll_zone', { id: `animalDen_${i}`, x: i * 7, y: i * 3 }));
+for (const type of CONTENTS) assert(rolled.some(p => p.contents === type), `contents ${type} can roll`);
+for (const type of INHABITANTS) assert(rolled.some(p => p.inhabitant === type), `inhabitant ${type} can roll`);
+assert(rolled.every(p => CONTENTS.includes(p.contents) && INHABITANTS.includes(p.inhabitant)), 'every cave has exactly one contents and one inhabitant');
+assert.equal(Cave.__test.caveTitle('mushroom_cave', 'animal_den'), 'Mushroom Cave — Animal Den', 'label names both layers');
+assert.equal(Cave.__test.caveTitle('ore_mine', 'none'), 'Ore-rich Cave', 'uninhabited caves are named by contents only');
 
-const catProfile = profile('map_i_test_catacomb', [Cave.TYPES.CATACOMB]);
-installProfile(catProfile);
-const catMap = Cave.decorateCavernMapData(catProfile.mapId, baseMap(catProfile.mapId));
+const mineMap = decorate(profile('map_i_test_mine', 'ore_mine'));
+assert.equal(mineMap.denMotherKind, null, 'cave without an animal den strips Den-Mother');
+assert.equal(mineMap.nestCol, null, 'cave without an animal den strips nest');
+assert(mineMap.oreRocks.length >= 7, 'ore-rich cave reuses oreRock mechanic at rich density');
+
+const catMap = decorate(profile('map_i_test_catacomb', 'catacomb'));
 assert(catMap.caveProps.filter(item => item.key === 'ruinSanctumCoffin').length >= 3, 'catacomb places authored coffin props');
 assert(!catMap.furniture.some(item => /^ruin/.test(item.itemKey)), 'authored ruin pieces stay out of FURNITURE_DEFS-keyed mapData.furniture');
-assert(catMap.caveGhoulSpawns.length >= 1 && catMap.caveGhoulSpawns.every(spawn => spawn.ghoul), 'catacomb guardians are BanditCombat ghouls, not CREATURE_DB spawns');
-assert.equal(catMap.creatureSpawns.length, 0, 'non-animal cave keeps no den creature spawns');
+assert(catMap.caveGhoulSpawns.length >= 1 && catMap.caveGhoulSpawns.every(spawn => spawn.ghoul), 'uninhabited catacomb is guarded by BanditCombat ghouls');
+assert.equal(catMap.creatureSpawns.length, 0, 'cave without an animal den keeps no den creature spawns');
 
-const cacheProfile = profile('map_i_test_cache', [Cave.TYPES.TRAPPED_CACHE]);
-installProfile(cacheProfile);
-const cacheMap = Cave.decorateCavernMapData(cacheProfile.mapId, baseMap(cacheProfile.mapId));
+const denCatMap = decorate(profile('map_i_test_den_catacomb', 'catacomb', 'animal_den'));
+assert.equal(denCatMap.denMotherKind, 'gar-wolf-den-mother', 'animal-den inhabitant keeps the Den-Mother');
+assert.equal(denCatMap.nestCol, 4, 'animal-den inhabitant keeps the nest');
+assert(denCatMap.caveProps.some(item => item.key === 'ruinSanctumCoffin'), 'contents coexist with an animal den');
+assert(!denCatMap.caveGhoulSpawns, 'an inhabited catacomb has no ghouls');
+
+const cacheMap = decorate(profile('map_i_test_cache', 'trapped_cache', 'bandit_hideout'));
 assert(cacheMap.caveProps.some(item => item.key === 'ruinDungeonChestT2'), 'cache places the authored dungeon chest');
 assert(cacheMap.caveCache && cacheMap.caveTraps.length >= 1, 'cache has functional runtime plan plus at least one trap');
+const wall = cacheMap.caveSitePlan.separatorRock;
+assert(wall && wall.cells.length === cacheMap.oreRocks.filter(rock => rock.caveSeparator).length, 'hidden cache is sealed behind a wall of mineable ore rocks');
+const plan = Cave.__test.plansByMapId.get('map_i_test_cache');
+assert(plan.separator.farKeys.includes(`${cacheMap.caveCache.col},${cacheMap.caveCache.row}`), 'cache sits behind the wall');
+assert(cacheMap.caveBanditSpawns.length >= 2 && cacheMap.caveBanditSpawns.every(s => plan.separator.nearKeys.includes(`${s.col},${s.row}`)), 'bandit inhabitants stay on the entrance side of the wall');
 
-const mixedProfile = profile('map_i_test_mixed', [Cave.TYPES.BANDIT_HIDEOUT, Cave.TYPES.CATACOMB]);
-installProfile(mixedProfile);
-const mixedMap = Cave.decorateCavernMapData(mixedProfile.mapId, baseMap(mixedProfile.mapId));
-assert(mixedMap.oreRocks.some(rock => rock.caveSeparator), 'mixed history is partitioned with an existing mineable ore-rock blocker');
-assert.equal(mixedMap.caveSitePlan.separatorRock.cells.length, mixedMap.oreRocks.filter(rock => rock.caveSeparator).length, 'every wall cell becomes an ore rock');
-assert(mixedMap.caveBanditSpawns.length >= 2, 'bandit hideout supplies runtime BanditCombat spawn points');
-assert(mixedMap.caveProps.some(item => item.key === 'ruinSanctumCoffin'), 'secondary catacomb coexists beyond the same cave shell');
+const mushroomMap = decorate(profile('map_i_test_mushroom', 'mushroom_cave'));
+assert(mushroomMap.caveMushrooms.length >= 6 && mushroomMap.caveMushrooms.every(m => m.reagentKey === 'duskcapMushroom'), 'mushroom cave grows Duskcap Mushroom clusters');
 
-const ruinProfile = profile('map_i_test_ruin', [Cave.TYPES.RUIN_ENTRANCE]);
-installProfile(ruinProfile);
-const ruinMap = Cave.decorateCavernMapData(ruinProfile.mapId, baseMap(ruinProfile.mapId));
+const ruinMap = decorate(profile('map_i_test_ruin', 'ruin_entrance'));
 assert(ruinMap.caveProps.some(item => item.key === 'ruinEntranceDoor'), 'ruin cave places the authored ruin entrance door');
 const ruinSeed = ruinMap.caveRuinEntrance?.seed;
 assert(Number.isInteger(ruinSeed) && ruinSeed > 0 && ruinSeed === ruinSeed >>> 0, 'ruin threshold seed is a uint32 (DevRandomRuin coerces with Number(seed)>>>0)');
-assert.equal(ruinSeed, Cave.decorateCavernMapData(ruinProfile.mapId, baseMap(ruinProfile.mapId)).caveRuinEntrance.seed, 'ruin seed is deterministic');
+assert.equal(ruinSeed, Cave.decorateCavernMapData('map_i_test_ruin', baseMap('map_i_test_ruin')).caveRuinEntrance.seed, 'ruin seed is deterministic');
 
 // Assignment-time hooks must capture dependencies before synchronous game initialization.
 let seenDenCount = -1;
@@ -186,6 +198,25 @@ const census = context.WildlifeSpawn.denNestCensus('map_test_wilds');
 assert.equal(census.caveCount, workspace.animalDens.length, 'wildlife diagnostics expose generic cave total');
 assert.equal(census.denCount, expectedAnimalDens, 'wildlife diagnostics retain true animal-den count');
 
+// Mushroom harvest: walking onto a cluster grants Duskcap via the loot grant, with Foraging XP, once per regrow window.
+{
+  const granted = [];
+  let xp = 0;
+  context.DevSpawner.init({ grantLoot(gained) { granted.push(gained); return Object.keys(gained); } });
+  const cluster = mushroomMap.caveMushrooms[0];
+  Object.assign(deps, { getCurrentArea: () => 'map_i_test_mushroom', calendar: { day: 10 }, awardForagingXp: () => { xp++; }, bonusYieldChance: () => 0, showToast() {} });
+  deps.player.x = (cluster.col + 0.5) * deps.TILE; deps.player.y = (cluster.row + 0.5) * deps.TILE;
+  Cave.updateCurrentCaveRuntime(1);
+  assert.deepEqual(granted, [{ duskcapMushroom: 1 }], 'walking onto a mushroom cluster picks Duskcap Mushroom');
+  assert.equal(xp, 1, 'picking awards Foraging XP');
+  Cave.updateCurrentCaveRuntime(1);
+  assert.equal(granted.length, 1, 'a picked cluster is not picked again the same day');
+  deps.calendar.day = 13;
+  Cave.updateCurrentCaveRuntime(1);
+  assert.equal(granted.length, 2, 'the cluster regrows after three days');
+  deps.getCurrentArea = () => 'map_test_wilds';
+}
+
 // Cached Tothal layouts skip the generator capture; the lazy path must assign the same profiles.
 const freshDens = workspace.animalDens.map(den => ({ id: den.id, x: den.x, y: den.y, w: den.w, h: den.h, mouthAnchor: den.mouthAnchor }));
 zoneLayouts.set('map_cached_wilds', { dens: freshDens, transitions: [] });
@@ -200,7 +231,7 @@ for (const dep of ['wildlife-spawn.js', 'dev-spawner.js', 'cavern-generator.js',
 }
 assert(scriptIndex('cave-site-system.js') < scriptIndex('game.js'), 'cave-site-system.js loads before game.js');
 
-console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${expectedAnimalDens} animal den cave(s), mixed separator at ${separator.col},${separator.row}`);
+console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${expectedAnimalDens} animal den cave(s); contents x inhabitant layers; cache wall ${wall.cells.length} rock(s)`);
 
 // Cavern ore rocks with a real ore look drop that ore (tile.oreKey, the Town
 // Mine path); stone-look rocks stay stone-only. No iron/crystal looks remain.
@@ -220,9 +251,7 @@ console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${
   for (const kind of Object.keys(oreCtx.CavernOreRocks.CAVERN_ORE_TINTS)) assert(kind === 'stone' || ORE_DEFS[kind], `cavern tint ${kind} is a real ore`);
   const mineKinds = new Set();
   for (let i = 0; i < 40; i++) {
-    const p = profile(`map_i_test_ores_${i}`, [Cave.TYPES.ORE_MINE]);
-    installProfile(p);
-    for (const rock of Cave.decorateCavernMapData(p.mapId, baseMap(p.mapId)).oreRocks) mineKinds.add(rock.oreKind);
+    for (const rock of decorate(profile(`map_i_test_ores_${i}`, 'ore_mine')).oreRocks) mineKinds.add(rock.oreKind);
   }
   for (const kind of mineKinds) assert(kind === 'stone' || ORE_DEFS[kind], `ore-mine rock kind ${kind} is stone or a real ore`);
   console.log(`PASS cavern-ore-rocks: real ore drops; mine kinds ${[...mineKinds].sort().join(', ')}`);
