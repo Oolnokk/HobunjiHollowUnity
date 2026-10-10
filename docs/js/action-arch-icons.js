@@ -59,11 +59,16 @@
         filter: brightness(0) invert(1);
       }
 
-      /* Outermost permanent arch: exactly 25% larger hit areas than the authored 0.6-col controls. */
+      /* The selection arch shares one live size; its target control is 20% larger. */
+      #toolSelect { --outer-control-size: clamp(33px, calc(0.75 * var(--col)), 46px); }
       #toolSelect button,
       #btnAmmoSelect, #potionBtn {
-        width: clamp(33px, calc(0.75 * var(--col)), 46px) !important;
-        height: clamp(33px, calc(0.75 * var(--col)), 46px) !important;
+        width: var(--outer-control-size, clamp(33px, calc(0.75 * var(--col)), 46px)) !important;
+        height: var(--outer-control-size, clamp(33px, calc(0.75 * var(--col)), 46px)) !important;
+      }
+      #toolSelect #btnSwapTarget {
+        width: calc(1.2 * var(--outer-control-size)) !important;
+        height: calc(1.2 * var(--outer-control-size)) !important;
       }
       .action-arch-png {
         width: 78%; height: 78%;

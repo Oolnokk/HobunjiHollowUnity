@@ -604,7 +604,11 @@
     if (document.getElementById('socialActionWheelStyles')) return;
     const style = document.createElement('style');
     style.id = 'socialActionWheelStyles';
-    const outerRules = Object.entries(cfg.mobileOuterAnglesDeg || DEFAULTS.mobileOuterAnglesDeg)
+    const outerAngles = { ...DEFAULTS.mobileOuterAnglesDeg, ...cfg.mobileOuterAnglesDeg }; // Shares the live outer-ring positions, including the injected Social Actions control.
+    const lastAngle = Number(outerAngles.btnSocialActions); // Social Actions is the actual preceding control, after Utilities.
+    const normalStep = Math.abs(Number(outerAngles.btnUtilityMenu) - lastAngle) || 10; // Uses configured ring spacing when players customize its angles.
+    outerAngles.btnSwapTarget = lastAngle - normalStep * 1.2; // Targeting always ends the second arch with 20% more center spacing.
+    const outerRules = Object.entries(outerAngles)
       .map(([id, deg]) => `#${id}{right:calc(-1*cos(${Number(deg)}deg)*var(--ar2))!important;bottom:calc(sin(${Number(deg)}deg)*var(--ar2))!important;}`)
       .join('\n');
     style.textContent = `

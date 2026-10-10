@@ -18,7 +18,7 @@ assert.equal(clampPitchOffsetDeg(-120, { cameraRotateClampDeg: 45, cameraRotateU
 assert.equal(clampPitchOffsetDeg(80, { cameraRotateClampDeg: 45, cameraRotateUpClampDeg: 85 }), 45, 'camera module independently clamps downward pitch');
 assert.equal(clampPitchOffsetDeg(-30, { cameraRotateClampDeg: 45, cameraRotateUpClampDeg: 85 }), -30, 'camera module preserves in-range pitch');
 assert.match(game, /function clampCameraPitchOffsetDeg\(value\) \{[\s\S]{0,180}CameraLookClamp\.clampPitchOffsetDeg\(value, desktopControlsConfig\(\)\)/, 'game.js only bridges camera state into the isolated clamp module');
-assert.equal((game.match(/cameraAngleOffsetDeg = clampCameraPitchOffsetDeg\(/g) || []).length, 3, 'mouse, touch, and controller all share the thin camera bridge');
+assert.equal((game.match(/cameraAngleOffsetDeg = clampCameraPitchOffsetDeg\(/g) || []).length, 4, 'mouse, touch, controller, and mobile autotarget share the camera pitch bridge');
 assert.match(game, /cameraAzimuthOffsetDeg = freeRotateCameraActive\(\)[\s\S]{0,260}-clampDeg, clampDeg/, 'yaw keeps symmetric legacy clamp');
 const helperIndex = index.search(/<script src="js\/camera-look-clamp\.js\?v=[A-Za-z0-9_-]+"><\/script>/);
 const gameIndex = index.search(/<script src="game\.js\?v=[A-Za-z0-9_-]+"><\/script>/);

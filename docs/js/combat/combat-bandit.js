@@ -54,7 +54,8 @@
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return await r.json();
       } catch (e) {
-        deps.debugLog('Bandits: gang config load failed: ' + e.message, 'warn');
+        _banditConfigPromise = null; // A failed request must be retryable from the arena instead of caching null for the session.
+        deps?.debugLog?.('Bandits: gang config load failed: ' + e.message, 'warn');
         return null;
       }
     })();
@@ -290,11 +291,13 @@
   }
 
   async function buildBanditAvatar(roster) {
-    if (!window.NpcAvatarPreview || !window.PNGPlaneAvatar) return null;
+    if (!window.NpcAvatarPreview || !window.PNGPlaneAvatar) throw new Error('Humanoid portrait modules are unavailable.');
+    characterBuildStatus.stage = 'cosmetics';
     await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' });
+    characterBuildStatus.stage = 'profile';
     const avatarData = window.MetalArmorSystem?.decorateAvatarDataWithMetalArmor?.(roster, roster.metalArmorItems || []) || roster; // Portrait colors retain the same alloy/Temper state as corpse loot.
     const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(avatarData);
-    if (!profile) return null;
+    if (!profile) throw new Error('Humanoid portrait profile could not be built.');
     const resolvedRosterDyes = applyRosterDyesToProfile(profile, roster); // Final world-avatar authority: visible pixels must use the same appliedDyes record that loot preserves.
     const avatarCfg = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
     const MODEL_W = avatarCfg.worldModelWidth ?? 0.9;
@@ -304,12 +307,14 @@
     // blink roll would leave the bandit permanently squint-eyed.
     const frontCanvas = document.createElement('canvas');
     frontCanvas.width = frontCanvas.height = PORTRAIT_SIZE;
+    characterBuildStatus.stage = 'front-portrait';
     await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, { forceEyesOpen: true });
     const neutralFrontCanvas = document.createElement('canvas'); // Immutable neutral/resting source used to restore this enemy immediately when combat ends.
     neutralFrontCanvas.width = neutralFrontCanvas.height = PORTRAIT_SIZE;
     neutralFrontCanvas.getContext('2d').drawImage(frontCanvas, 0, 0);
     const combatFrownCanvas = document.createElement('canvas'); // Pre-baked frown source used for synchronous combat entry and therefore available before an afterimage snapshots the live texture.
     combatFrownCanvas.width = combatFrownCanvas.height = PORTRAIT_SIZE;
+    characterBuildStatus.stage = 'combat-portrait';
     await window.NpcAvatarPreview.renderProfileToCanvas(combatFrownCanvas, profile, {
       forceEyesOpen: true,
       breathingComposer: COMBAT_FROWN_COMPOSER,
@@ -317,7 +322,9 @@
     });
     const backCanvas = document.createElement('canvas');
     backCanvas.width = backCanvas.height = PORTRAIT_SIZE;
+    characterBuildStatus.stage = 'back-portrait';
     await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
+    characterBuildStatus.stage = 'portrait-model';
     const portrait = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
       THREE, frontCanvas,
       {
@@ -328,7 +335,7 @@
     const assembly = portrait.children[0];
     const frontMesh = assembly?.children?.[0];
     const backMesh = assembly?.children?.[1];
-    if (!frontMesh || !backMesh) return null;
+    if (!frontMesh || !backMesh) throw new Error('Humanoid portrait model has no front/back mesh.');
 
     // updateCreatureMesh, beginCreatureDeath and updateCorpses all assume
     // the ANIMAL two-plane convention: the flat cutout's face-normal lies
@@ -366,6 +373,7 @@
     // buildSkinnedSinglePlaneAssembly already relies on for player/NPC
     // walkers (detectNeckPivotPx's full-body alpha-band scan), rather than
     // requiring one to be painted per species/gender.
+    characterBuildStatus.stage = 'neck-rig';
     const neckPivotPx = window.PNGPlaneAvatar.detectNeckPivotPx?.(frontCanvas, 12);
     const neckPivotNormalized = neckPivotPx
       ? { x: neckPivotPx.x / frontCanvas.width, y: neckPivotPx.y / frontCanvas.height }
@@ -434,6 +442,7 @@
     // dead-zone behavior currently governs the visible sprite (see
     // CREATURE_PLANE_ROT_MODE) instead of drifting out of sync with it,
     // same clipping fix applied to the mounted-rider case.
+    characterBuildStatus.stage = 'leg-rig';
     const legs = window.ProceduralLegAnimation?.attach(THREE, legsPivot, {
       speciesId: roster.appearance.speciesId, gender: roster.appearance.gender,
       bodyColors: profile?.bodyColors || roster.appearance.bodyColors,
@@ -2097,6 +2106,7 @@
     window.ResourceRings?.disposeRingHud?.(entity);
   }
 
+  let characterBuildStatus = { stage: 'idle', speciesId: null, gender: null, error: null }; // Last serialized humanoid portrait stage persists in the mobile spawn report.
   let characterBuildTail = Promise.resolve(); // Serializes portrait builds shared by bandits and Porakaneki camps during zone-entry bursts.
   let characterBuildPending = 0, characterBuildActive = 0; // Scalar diagnostics included in the mobile memory checkpoint.
   async function buildQueuedBanditAvatar(roster, zoneId) {
@@ -2109,8 +2119,15 @@
       if (characterBuildPending > 1 && typeof setTimeout === 'function') await new Promise(resolve => setTimeout(resolve, 0)); // Give entry/combat rendering a turn between queued portrait builds.
       if (zoneId && zoneId !== deps.getCurrentArea()) return null; // Leaving a zone cancels queued work before any portrait allocations.
       characterBuildActive++;
-      try { return await buildBanditAvatar(roster); }
-      finally { characterBuildActive--; }
+      characterBuildStatus = { stage: 'starting', speciesId: roster?.appearance?.speciesId ?? null, gender: roster?.appearance?.gender ?? null, error: null };
+      try {
+        const avatar = await buildBanditAvatar(roster); // Shared factory used by bandits and skeletons.
+        characterBuildStatus.stage = 'complete';
+        return avatar;
+      } catch (error) {
+        characterBuildStatus.error = String(error?.stack || error); // Preserve the actual error and the last successful stage without retaining live objects.
+        throw error;
+      } finally { characterBuildActive--; }
     } finally { characterBuildPending--; unlock(); }
   }
 
@@ -2236,7 +2253,7 @@
     loadGangConfig: loadBanditGangConfig,
     loadCampLocaleDefs: loadBanditCampLocaleDefs,
     makeEntity: makeBanditEntity,
-    characterBuildSnapshot: () => ({ pending: characterBuildPending, active: characterBuildActive }), // Existing debug report reads queue pressure without retaining roster objects.
+    characterBuildSnapshot: () => ({ pending: characterBuildPending, active: characterBuildActive, ...characterBuildStatus }), // Existing debug report reads queue pressure without retaining roster objects.
     discardEntity: discardBanditEntity, // Scene teardown for a built-but-never-registered entity (late async spawns).
     setCombatExpression, // Synchronously swaps the live humanoid hostile portrait between its pre-baked resting and combat-frown canvases.
     applyRosterDyesToProfile, // Shared/testable world-avatar dye reconciliation used by Bandits, Minions, and Liches.
