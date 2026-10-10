@@ -8,9 +8,9 @@
 (() => {
   'use strict';
 
-  const CAVERN_ORE_TINTS = { stone: 0x8a8680, copper: 0xb0703a, tin: 0x9aa0a6, lead: 0x6d7375, arsenic: 0xaaa58f, silver: 0xc4c8ce, gold: 0xd8b23a, crystal: 0x8fd6e0 }; // Ore kinds from game.js ORE_DEFS; no iron in this world.
+  const CAVERN_ORE_TINTS = { stone: 0x8a8680, copper: 0xb0703a, tin: 0x9aa0a6, lead: 0x6d7375, arsenic: 0xaaa58f, silver: 0xc4c8ce, gold: 0xd8b23a }; // Stone plus game.js ORE_DEFS.
 
-  let deps = null; // { TileType, markOutline, zoneMineableRockMeshes } from game.js.
+  let deps = null; // { TileType, markOutline, zoneMineableRockMeshes, oreDefs } from game.js.
 
   function init(injectedDeps) { deps = injectedDeps; }
 
@@ -27,6 +27,10 @@
         grid[rock.row][rock.col].type = deps.TileType.ROCK;
         grid[rock.row][rock.col].rockKind = 'diggableRockOre';
         grid[rock.row][rock.col].oreKind = rock.oreKind;
+        // A real ore look (game.js ORE_DEFS key) drops that ore when mined,
+        // through the same tile.oreKey path Town Mine nodes use; stone-look
+        // rocks keep dropping stone only.
+        grid[rock.row][rock.col].oreKey = deps.oreDefs?.[rock.oreKind] ? rock.oreKind : null;
       }
       const { stoneGeo } = window.TerrainGeometry.buildRockTileGeo(rock.col, rock.row);
       if (!stoneGeo) continue;

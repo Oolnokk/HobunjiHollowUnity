@@ -201,3 +201,29 @@ for (const dep of ['wildlife-spawn.js', 'dev-spawner.js', 'cavern-generator.js',
 assert(scriptIndex('cave-site-system.js') < scriptIndex('game.js'), 'cave-site-system.js loads before game.js');
 
 console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${expectedAnimalDens} animal den cave(s), mixed separator at ${separator.col},${separator.row}`);
+
+// Cavern ore rocks with a real ore look drop that ore (tile.oreKey, the Town
+// Mine path); stone-look rocks stay stone-only. No iron/crystal looks remain.
+{
+  const oreSource = fs.readFileSync(path.join(root, 'docs/js/cavern-ore-rocks.js'), 'utf8');
+  class Obj { constructor() { this.position = { set() {} }; this.children = []; } add(c) { this.children.push(c); } }
+  const oreCtx = { THREE: { Mesh: Obj, Group: Obj, MeshLambertMaterial: class {} }, TerrainGeometry: { buildRockTileGeo: () => ({ stoneGeo: {} }) } };
+  oreCtx.window = oreCtx;
+  vm.createContext(oreCtx);
+  vm.runInContext(oreSource, oreCtx, { filename: 'cavern-ore-rocks.js' });
+  const ORE_DEFS = { copper: {}, tin: {}, arsenic: {}, lead: {}, silver: {}, gold: {} };
+  oreCtx.CavernOreRocks.init({ TileType: { ROCK: 'rock' }, markOutline() {}, zoneMineableRockMeshes: new Map(), oreDefs: ORE_DEFS });
+  const grid = [[{}, {}]];
+  oreCtx.CavernOreRocks.build('map_i_den_test', { oreRocks: [{ col: 0, row: 0, oreKind: 'copper' }, { col: 1, row: 0, oreKind: 'stone' }] }, new Obj(), grid);
+  assert.equal(grid[0][0].oreKey, 'copper', 'copper-look cavern rock drops copper ore');
+  assert.equal(grid[0][1].oreKey, null, 'stone-look cavern rock drops stone only');
+  for (const kind of Object.keys(oreCtx.CavernOreRocks.CAVERN_ORE_TINTS)) assert(kind === 'stone' || ORE_DEFS[kind], `cavern tint ${kind} is a real ore`);
+  const mineKinds = new Set();
+  for (let i = 0; i < 40; i++) {
+    const p = profile(`map_i_test_ores_${i}`, [Cave.TYPES.ORE_MINE]);
+    installProfile(p);
+    for (const rock of Cave.decorateCavernMapData(p.mapId, baseMap(p.mapId)).oreRocks) mineKinds.add(rock.oreKind);
+  }
+  for (const kind of mineKinds) assert(kind === 'stone' || ORE_DEFS[kind], `ore-mine rock kind ${kind} is stone or a real ore`);
+  console.log(`PASS cavern-ore-rocks: real ore drops; mine kinds ${[...mineKinds].sort().join(', ')}`);
+}

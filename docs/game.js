@@ -29231,6 +29231,7 @@
       });
 
       window.CavernOreRocks.init({
+        oreDefs: ORE_DEFS, // Cavern ore-look rocks drop their real ore when mined.
         TileType,
         markOutline: _markOutline,
         zoneMineableRockMeshes: _zoneMineableRockMeshes,

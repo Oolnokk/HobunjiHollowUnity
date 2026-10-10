@@ -180,7 +180,7 @@
         // apart from an undiggable boulder or a plain plateau cliff face
         // (which carries no generatedObjectType at all). Named rockKind (not
         // oreKind) to avoid colliding with the generator's own per-object
-        // oreKind (stone/copper/tin/lead/silver/gold/crystal material pick,
+        // oreKind (stone/copper/tin/lead/silver/gold/arsenic material pick,
         // see wilderness-map-generator.js line ~306) which isn't threaded
         // through to the tile record. See game.js's isMineableRockTile.
         rockKind: type === 'rock' ? (t.generatedObjectType || null) : undefined,
