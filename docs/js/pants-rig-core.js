@@ -522,6 +522,45 @@
     return weights;
   }
 
+  // Weights for the bind-pose (posterior) fit: the waistband (down to the hip row) is rigid and flat in the portrait plane;
+  // below it each leg owns one half of the garment (left of the centre line = left leg), the halves blending across a narrow
+  // central seam; within a half the thigh drives down to the knee and the calf takes over below it. `weights` is five floats
+  // per vertex on a (segments+1)^2 grid in garment (u,v) order. `ease` is the band under the waistband over which rigid
+  // gives way to the legs. In place.
+  function applyHalfLegWeights(weights, segments, garment, ease = 0.03) {
+    const bones = normalizeLegBones(garment?.legBones);
+    const smooth = (e0, e1, x) => { const t = clamp((x - e0) / (e1 - e0)); return t * t * (3 - 2 * t); };
+    const hipV = (bones.left.hip.y + bones.right.hip.y) / 2;
+    const legs = [['left', 1, 2], ['right', 3, 4]].map(([side, thighChannel, calfChannel]) => ({ hipY: bones[side].hip.y, span: Math.max(1e-6, bones[side].ankle.y - bones[side].hip.y), thighChannel, calfChannel }));
+    for (let row = 0, vertex = 0; row <= segments; row++) {
+      const v = row / segments;
+      const rigid = 1 - smooth(0, Math.max(1e-6, ease), v - hipV);
+      for (let col = 0; col <= segments; col++, vertex++) {
+        const leftShare = 1 - smooth(0.42, 0.58, col / segments);
+        const base = vertex * 5;
+        weights.fill(0, base, base + 5);
+        legs.forEach((leg, index) => {
+          const share = (index === 0 ? leftShare : 1 - leftShare) * (1 - rigid);
+          const thigh = 1 - smooth(0.4, 0.6, (v - leg.hipY) / leg.span);
+          weights[base + leg.thighChannel] += share * thigh;
+          weights[base + leg.calfChannel] += share * (1 - thigh);
+        });
+        weights[base] = rigid;
+      }
+    }
+    return weights;
+  }
+
+  // Offset that slides a point onto the infinite line through A and B (its closest point on that line), written into `out`.
+  // Used to keep an ankle ring's centre on the 3D bone ("a ring around a tent pole"). Returns false for a degenerate axis.
+  function offsetOntoAxis(x, y, z, A, B, out) {
+    const ax = B.x - A.x, ay = B.y - A.y, az = B.z - A.z, lengthSq = ax * ax + ay * ay + az * az;
+    if (!(lengthSq > 1e-12)) { out.x = 0; out.y = 0; out.z = 0; return false; }
+    const along = ((x - A.x) * ax + (y - A.y) * ay + (z - A.z) * az) / lengthSq;
+    out.x = A.x + ax * along - x; out.y = A.y + ay * along - y; out.z = A.z + az * along - z;
+    return true;
+  }
+
   // Hardens painted weights so a vertex mostly follows its dominant bone: each weight is raised to `power` and the cell is
   // renormalized (power 1 = as painted). Smooth auto-seeded/painted gradients leave vertices ON a leg bone only ~50%
   // bone-weighted, which dilutes the garment's initial 2D->3D rotation so the leg openings do not end up centered on
@@ -581,7 +620,9 @@
   // (no rotation or stretch): used by the posterior fit, where the garment has already been scaled and placed as a whole
   // sprite and rotating its (flattened) bones to vertical would twist it.
   function alignBoneWithMotion(fromStart, fromEnd, restStart, restEnd, liveStart, liveEnd, { perpendicularScale = 1, initial = 'align', anchorFrom = null, anchorTo = null, rotationScale = 1 } = {}) {
-    const planar = initial === 'translate' && anchorFrom && anchorTo
+    const planar = initial === 'identity'
+      ? { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0, stretch: 1, rotation: 0 } // Bind pose = the art as authored: no initial deformation at all.
+      : initial === 'translate' && anchorFrom && anchorTo
       ? { a: 1, b: 0, c: 0, d: 1, tx: (Number(anchorTo.x) || 0) - (Number(anchorFrom.x) || 0), ty: (Number(anchorTo.y) || 0) - (Number(anchorFrom.y) || 0), stretch: 1, rotation: 0 }
       : alignBoneSegment(fromStart, fromEnd, restStart, restEnd, { perpendicularScale });
     const num = value => Number(value) || 0;
@@ -644,6 +685,19 @@
       stretch: planar.stretch,
       rotation,
     };
+  }
+
+  // Blender-style binding: instead of warping the art onto the 3D legs, the 3D leg is laid onto the art's own bone before
+  // skinning. The garment bone (garmentStart) IS the bind pose, so at rest every vertex stays exactly where the art puts it.
+  // Animation then applies the 3D bone's motion since ITS rest pose (hip travel + rotation, pitch included, + length
+  // change) about the art's own joint. rest*/live* are the 3D bone's rest and live joints (same depth frame).
+  function alignBoneBind(garmentStart, restStart, restEnd, liveStart, liveEnd, options = {}) {
+    const dx = (Number(garmentStart?.x) || 0) - (Number(restStart?.x) || 0);
+    const dy = (Number(garmentStart?.y) || 0) - (Number(restStart?.y) || 0);
+    const dz = (Number(garmentStart?.z) || 0) - (Number(restStart?.z) || 0);
+    const shift = p => ({ x: (Number(p?.x) || 0) + dx, y: (Number(p?.y) || 0) + dy, z: (Number(p?.z) || 0) + dz });
+    const g = shift(restStart);
+    return alignBoneWithMotion(g, g, g, shift(restEnd), shift(liveStart), shift(liveEnd), { initial: 'identity', rotationScale: options.rotationScale });
   }
 
   // Full 3D version of alignBoneSegment: carries the garment's bone onto a live bone that can point anywhere in space, so
@@ -788,8 +842,11 @@
     alignBoneSegment,
     alignBoneSegment3D,
     alignBoneWithMotion,
+    alignBoneBind,
     amplifyLegRoll,
     sharpenWeights,
+    offsetOntoAxis,
+    applyHalfLegWeights,
     applyLegAxisWeights,
     portraitMapping,
     portraitPointForLocal,

@@ -48,16 +48,17 @@ function defaultGarment() {
       { x: 0.34, y: 0.28 }, { x: 0.42, y: 0.27 }, { x: 0.50, y: 0.265 }, { x: 0.58, y: 0.27 }, { x: 0.66, y: 0.28 },
     ],
     legOpenings: {
+      // Both openings run along the pants' lower edge, a few pixels inside the opaque art of pants_basic.png.
       left: [
-        { x: 0.155, y: 0.43 }, { x: 0.15, y: 0.54 }, { x: 0.19, y: 0.625 }, { x: 0.26, y: 0.675 }, { x: 0.34, y: 0.65 },
+        { x: 0.176, y: 0.435 }, { x: 0.18, y: 0.523 }, { x: 0.226, y: 0.587 }, { x: 0.285, y: 0.629 }, { x: 0.335, y: 0.633 },
       ],
       right: [
-        { x: 0.66, y: 0.65 }, { x: 0.74, y: 0.675 }, { x: 0.81, y: 0.625 }, { x: 0.85, y: 0.54 }, { x: 0.845, y: 0.43 },
+        { x: 0.661, y: 0.627 }, { x: 0.707, y: 0.615 }, { x: 0.758, y: 0.573 }, { x: 0.798, y: 0.513 }, { x: 0.808, y: 0.441 },
       ],
     },
     legBones: Core.normalizeLegBones({ // The knee is always the exact midpoint of hip and ankle.
-      left: { hip: { x: 0.39, y: 0.36 }, ankle: { x: 0.17, y: 0.69 } },
-      right: { hip: { x: 0.61, y: 0.36 }, ankle: { x: 0.83, y: 0.69 } },
+      left: { hip: { x: 0.39, y: 0.36 }, ankle: { x: 0.234, y: 0.594 } }, // The ankles sit on opaque art too (they used to hang below the pants).
+      right: { hip: { x: 0.61, y: 0.36 }, ankle: { x: 0.754, y: 0.577 } },
     }),
     weightMap: null,
   };
