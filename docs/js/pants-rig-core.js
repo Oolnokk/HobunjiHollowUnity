@@ -198,6 +198,7 @@
     let scaleY = Math.hypot(c, d);
     if (scaleX > 1e-9) {
       let rebuilt = false;
+      if (a * d - b * c < 0) { c = -c; d = -d; rebuilt = true; } // Curvature mismatch between the belts must never turn the garment upside down.
       if (scaleY < 1e-9) { c = -b; d = a; scaleY = scaleX; rebuilt = true; } // Fully collapsed vertically: fall back to a uniform (similarity) vertical axis.
       const clampedY = Math.max(MIN_VERTICAL_SCALE_RATIO * scaleX, Math.min(MAX_VERTICAL_SCALE_RATIO * scaleX, scaleY));
       if (clampedY !== scaleY || rebuilt) {

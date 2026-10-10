@@ -119,18 +119,14 @@ function ensureCharacter() {
     fighterId: state.fighter.id || '',
     portraitBeltSpline: defaultPortraitBelt(),
     legThickness: 1,
-    beltScale: 1.75,
     legRollGain: 2,
     skinSharpness: 1.5,
-    fitMode: 'belt',
   };
   const record = state.project.characters[key]; // Active per-species/gender fitting record.
   record.portraitBeltSpline = Core.normalizeSpline(record.portraitBeltSpline, defaultPortraitBelt());
   if (!(Number(record.legThickness) > 0)) record.legThickness = 1;
-  if (record.fitMode !== 'posterior') record.fitMode = 'belt'; // Beltline (authored) is the default fit; posterior is opt-in.
   record.skinSharpness = Core.clamp(Number(record.skinSharpness) || 1.5, 1, 8); // How hard the painted weights are pushed toward their dominant bone in 3D.
   record.legRollGain = Core.clamp(Number(record.legRollGain) || 2, 1, 4); // How much the garment's legs exaggerate the 3D legs' sideways swing.
-  record.beltScale = Core.clamp(Number(record.beltScale) || 1.75, 1.7, 3.5); // Anything below ~1.7 is too short to be useful, so that is the floor.
   return record;
 }
 
@@ -212,9 +208,6 @@ function syncControlsFromState() {
   if (character) {
     $('legThickness').value = String(character.legThickness);
     $('legThicknessValue').textContent = `${Number(character.legThickness).toFixed(2)}×`;
-    $('beltScale').value = String(character.beltScale);
-    $('beltScaleValue').textContent = `${Number(character.beltScale).toFixed(2)}×`;
-    $('fitMode').value = character.fitMode;
     $('skinSharpness').value = String(character.skinSharpness);
     $('skinSharpnessValue').textContent = `${Number(character.skinSharpness).toFixed(1)}`;
     $('legRollGain').value = String(character.legRollGain);
@@ -1033,11 +1026,6 @@ function wire() {
     persistDraft();
     queueRender({ rebuildFit: true });
   });
-  $('fitMode').addEventListener('change', () => { // How the garment is hung on this species in the live 3D preview.
-    const character = ensureCharacter();
-    character.fitMode = $('fitMode').value === 'posterior' ? 'posterior' : 'belt';
-    persistDraft();
-  });
   $('skinSharpness').addEventListener('input', () => { // Live 3D preview only: how strongly vertices commit to their dominant bone.
     const character = ensureCharacter();
     character.skinSharpness = Number($('skinSharpness').value) || 1.5;
@@ -1048,12 +1036,6 @@ function wire() {
     const character = ensureCharacter();
     character.legRollGain = Number($('legRollGain').value) || 2;
     $('legRollGainValue').textContent = `${character.legRollGain.toFixed(2)}×`;
-    persistDraft();
-  });
-  $('beltScale').addEventListener('input', () => { // Live 3D preview only: scales the belt-weighted pixels vertically about the beltline.
-    const character = ensureCharacter();
-    character.beltScale = Number($('beltScale').value) || 1.75;
-    $('beltScaleValue').textContent = `${character.beltScale.toFixed(2)}×`;
     persistDraft();
   });
   for (const id of ['showGuides', 'clearBlack', 'showFit']) {
