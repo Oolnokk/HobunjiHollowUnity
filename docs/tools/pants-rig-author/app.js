@@ -30,6 +30,7 @@ async function start() {
   await loadScript('app-base.js', 'pantsRigAuthorBase'); // Loads the preserved original Pants Rig Author only after portrait fighter discovery is complete.
   await loadScript('enhancements.js', 'pantsRigAuthorEnhancements'); // Adds repository-backed pants_basic loading and unmistakable weight-paint feedback.
   await loadScript('workspace-enlarge.js', 'pantsRigAuthorWorkspaceEnlarge'); // Per-workspace Enlarge buttons for precise spline authoring.
+  await loadScript('belt-transform-tools.js', 'pantsRigAuthorBeltTools'); // Whole-belt transforms + upward shrinkwrap on the species portrait workspace.
   await loadScript('host-bridge.js', 'pantsRigAuthorHostBridge'); // Notifies the Procedural Animation host after completed authoring changes so its live 3D mesh can rebuild only when needed.
   window.PantsRigEmbeddedLayout?.refit?.(); // Re-evaluates exact contain sizing now that both canvases and all authoring rows are fully initialized.
 }

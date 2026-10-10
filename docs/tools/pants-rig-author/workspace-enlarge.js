@@ -16,7 +16,7 @@
   style.textContent = `
 .pantsEnlargeBtn,.pantsZoomBtn,.pantsPanBtn{flex:0 0 auto!important;min-height:30px;padding:4px 10px;font-size:12px;white-space:nowrap}
 .pantsZoomBtn,.pantsPanBtn{display:none!important}
-.canvasCard.pantsEnlarged{position:fixed!important;inset:6px!important;z-index:1000!important;height:auto!important;min-height:0!important;display:flex!important;flex-direction:column!important;gap:6px;padding:8px;border:1px solid #4a6a92;border-radius:12px;background:#07101a;box-shadow:0 18px 60px rgba(0,0,0,.7)}
+.canvasCard.pantsEnlarged{position:fixed!important;inset:6px!important;z-index:1000!important;height:auto!important;min-height:0!important;display:flex!important;flex-direction:column!important;gap:6px;padding:8px;border:1px solid #4a6a92;border-radius:12px;background:#07101a;box-shadow:0 0 0 100vmax rgba(2,6,12,.7),0 18px 60px rgba(0,0,0,.7)}
 .canvasCard.pantsEnlarged .canvasWrap{flex:1 1 0!important;min-height:0!important;height:auto!important}
 .canvasCard.pantsEnlarged .pantsZoomBtn{display:inline-block!important}
 .canvasCard.pantsEnlarged.pantsZoomed .pantsPanBtn{display:inline-block!important}
@@ -46,7 +46,8 @@ html.pantsWorkspaceEnlarged .controls,html.pantsWorkspaceEnlarged .inspect,html.
 
   function notifyHost(enlarged) {
     if (window.parent === window) return;
-    try { window.parent.postMessage({ type: 'hobunji-pants-rig-enlarge', enlarged }, window.location.origin); } catch (_) {}
+    const title = active?.card.querySelector('.row strong')?.textContent?.trim() || '';
+    try { window.parent.postMessage({ type: 'hobunji-pants-rig-enlarge', enlarged, title }, window.location.origin); } catch (_) {}
   }
 
   function refitSoon({ center = false } = {}) {

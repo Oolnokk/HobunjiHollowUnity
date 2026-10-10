@@ -1066,6 +1066,9 @@ window.__pantsRigAuthorDebug = { // Mobile-accessible author diagnostics without
   state: () => state,
   rerender: () => queueRender({ rebuildFit: true }),
   validate: () => Core.validateProject(exportProjectObject()),
+  character: ensureCharacter, // Active species/gender record (portraitBeltSpline) for belt-transform-tools.js.
+  persist: persistDraft,
+  snapshotForUndo,
 };
 
 boot().catch(error => {
