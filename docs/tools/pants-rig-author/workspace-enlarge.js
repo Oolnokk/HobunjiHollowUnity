@@ -14,10 +14,7 @@
   const style = document.createElement('style');
   style.id = 'pantsWorkspaceEnlargeStyles';
   style.textContent = `
-/* Phones in "desktop site" mode ignore the viewport meta, so without touch-action the browser holds every tap back to
-   wait for a double-tap zoom: the second tap zooms the page instead of reaching the button. manipulation keeps pan and
-   pinch but removes double-tap zoom and the click delay, page-wide here (the canvases stay touch-action:none). */
-html,body{touch-action:manipulation}
+/* Page-wide touch-action (double-tap zoom / tap delay) is owned by js/tap-reliability.js. */
 .pantsEnlargeBtn,.pantsZoomBtn,.pantsPanBtn{flex:0 0 auto!important;min-height:30px;padding:4px 10px;font-size:12px;white-space:nowrap;touch-action:manipulation;-webkit-tap-highlight-color:rgba(107,169,255,.45);user-select:none;-webkit-user-select:none}
 .pantsEnlargeBtn:active,.pantsZoomBtn:active,.pantsPanBtn:active{transform:scale(.95);background:#2a4a78!important}
 @media(pointer:coarse){.pantsEnlargeBtn,.pantsZoomBtn,.pantsPanBtn{min-height:44px;padding:8px 14px;font-size:14px}}
