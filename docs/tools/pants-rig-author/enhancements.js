@@ -163,7 +163,7 @@ function makeOverlay() {
   pantsCanvas.addEventListener('pointermove', recordBrushPoint, true);
   pantsCanvas.addEventListener('pointerleave', () => { lastBrushCanvasPoint = null; queueOverlayRender(); }, true);
   pantsCanvas.addEventListener('pointerup', () => queueOverlayRender(), true);
-  for (const id of ['weightChannel', 'brushRadius', 'brushStrength', 'autoWeights', 'smoothWeights', 'resetWeights']) {
+  for (const id of ['weightChannel', 'brushRadius', 'brushStrength', 'eraserStrength', 'weightEraser', 'reflectSibling', 'reflectBeltLeftToRight', 'reflectBeltRightToLeft', 'autoWeights', 'smoothWeights', 'resetWeights']) {
     document.getElementById(id)?.addEventListener('input', queueOverlayRender, true);
     document.getElementById(id)?.addEventListener('change', queueOverlayRender, true);
     document.getElementById(id)?.addEventListener('click', queueOverlayRender, true);
