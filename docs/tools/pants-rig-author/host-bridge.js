@@ -34,7 +34,7 @@ function waitForAuthor() {
 
   const changeIds = new Set([
     'fighter', 'garmentId', 'sourcePath', 'pantsFile', 'projectFile', 'legThickness',
-    'weightChannel', 'autoWeights', 'smoothWeights', 'resetWeights', 'undo', 'redo',
+    'weightChannel', 'reflectSibling', 'reflectBeltLeftToRight', 'reflectBeltRightToLeft', 'autoWeights', 'smoothWeights', 'resetWeights', 'undo', 'redo',
     'resetCharacter', 'resetGarment',
   ]); // Controls whose completed changes affect the live 3D garment fit, mapping, or weights.
   document.addEventListener('change', event => {

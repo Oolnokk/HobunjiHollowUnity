@@ -116,6 +116,16 @@ pre{white-space:pre-wrap;word-break:break-word;font:10px/1.35 ui-monospace,monos
         <button id="smoothWeights">Smooth once</button>
         <button id="resetWeights">Reset to belt</button>
       </div>
+      <div class="grid3">
+        <button id="weightEraser" aria-pressed="false" title="Brush removes the selected channel instead of adding it">Eraser: off</button>
+        <button id="reflectSibling" title="Overwrite the opposite leg's matching bone with this channel, flipped horizontally">Reflect to sibling</button>
+      </div>
+      <label>Eraser strength <span id="eraserStrengthValue" class="value">35%</span><input id="eraserStrength" type="range" min="0.03" max="1" step="0.01" value="0.35"></label>
+      <div class="grid3">
+        <button id="reflectBeltLeftToRight" title="Overwrite the right half of the belt weight with the left half, flipped horizontally">Reflect belt left → right</button>
+        <button id="reflectBeltRightToLeft" title="Overwrite the left half of the belt weight with the right half, flipped horizontally">Reflect belt right → left</button>
+      </div>
+      <div class="hint">Eraser uses the brush radius; erased weight returns to the belt. Reflect to sibling copies the selected thigh/calf (left↔right) onto the opposite bone. Belt reflect mirrors only the belt paint, one half over the other. “Left” and “right” are the image’s left and right.</div>
       <div class="hint">Weights always normalize to 100%. “Belt” is the body/waist influence; the other four channels follow the two authored leg-bone segments.</div>
     </div>
 

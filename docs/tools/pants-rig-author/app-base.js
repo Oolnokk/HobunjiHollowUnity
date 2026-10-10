@@ -741,7 +741,8 @@ function paintWeights(point) {
   const channels = grid.channels; // Stable channel order.
   const selected = Math.max(0, channels.indexOf($('weightChannel').value)); // Bone/belt channel receiving paint.
   const radiusPixels = Number($('brushRadius').value) || 7; // Brush radius measured in 64×64 weight-grid cells.
-  const strength = Core.clamp(Number($('brushStrength').value) || 0.3, 0.01, 1); // Blend strength for this pointer sample.
+  const erasing = state.weightEraser === true; // Eraser mode takes the selected channel away instead of adding it.
+  const strength = Core.clamp(Number($(erasing ? 'eraserStrength' : 'brushStrength').value) || 0.3, 0.01, 1); // Blend strength for this pointer sample.
   const centerX = point.x * (grid.width - 1); // Brush center grid x.
   const centerY = point.y * (grid.height - 1); // Brush center grid y.
   const minX = Math.max(0, Math.floor(centerX - radiusPixels)); // Paint bounding-box left.
@@ -754,6 +755,7 @@ function paintWeights(point) {
       if (distance > radiusPixels) continue;
       const falloff = 1 - distance / Math.max(1, radiusPixels); // Soft circular brush falloff.
       const offset = (y * grid.width + x) * channels.length; // First byte of this weight cell.
+      if (erasing) { Core.eraseWeightCell(grid.data, offset, channels.length, selected, strength * falloff); continue; }
       const current = grid.data[offset + selected]; // Current selected-channel influence.
       const next = Math.round(current + (255 - current) * strength * falloff); // New selected influence pulled toward full weight.
       const otherTotal = channels.reduce((sum, _, channelIndex) => channelIndex === selected ? sum : sum + grid.data[offset + channelIndex], 0); // Weight available to redistribute.
@@ -841,6 +843,36 @@ function smoothWeights() {
   }
   persistDraft();
   queueRender();
+}
+
+function toggleWeightEraser() {
+  state.weightEraser = !state.weightEraser;
+  $('weightEraser').textContent = state.weightEraser ? 'Eraser: ON' : 'Eraser: off';
+  $('weightEraser').setAttribute('aria-pressed', String(state.weightEraser));
+  queueRender();
+}
+
+const SIBLING_CHANNEL = { leftThigh: 'rightThigh', rightThigh: 'leftThigh', leftCalf: 'rightCalf', rightCalf: 'leftCalf' };
+
+function reflectToSibling() {
+  const grid = state.weightGrid;
+  const source = $('weightChannel').value;
+  const dest = SIBLING_CHANNEL[source];
+  if (!dest) { status('Reflect to sibling needs a thigh or calf channel selected (the belt has its own reflect buttons).', 'warn'); return; }
+  snapshotForUndo(`reflect ${source} to ${dest}`);
+  Core.reflectWeightChannel(grid, grid.channels.indexOf(source), grid.channels.indexOf(dest), 'all');
+  persistDraft();
+  queueRender();
+  status(`Reflected ${source} onto ${dest}, flipped horizontally.`, 'good');
+}
+
+function reflectBelt(from) { // from: 'left' copies the left half's belt paint onto the right half, flipped.
+  const grid = state.weightGrid;
+  snapshotForUndo(`reflect belt ${from} to ${from === 'left' ? 'right' : 'left'}`);
+  Core.reflectWeightChannel(grid, 0, 0, from === 'left' ? 'right' : 'left');
+  persistDraft();
+  queueRender();
+  status(`Belt weight reflected ${from} → ${from === 'left' ? 'right' : 'left'}.`, 'good');
 }
 
 function resetWeightsToBelt() {
@@ -1012,6 +1044,11 @@ function wire() {
   $('autoWeights').addEventListener('click', autoSeedWeights);
   $('smoothWeights').addEventListener('click', smoothWeights);
   $('resetWeights').addEventListener('click', resetWeightsToBelt);
+  $('weightEraser').addEventListener('click', toggleWeightEraser);
+  $('reflectSibling').addEventListener('click', reflectToSibling);
+  $('reflectBeltLeftToRight').addEventListener('click', () => reflectBelt('left'));
+  $('reflectBeltRightToLeft').addEventListener('click', () => reflectBelt('right'));
+  $('eraserStrength').addEventListener('input', () => $('eraserStrengthValue').textContent = `${Math.round(Number($('eraserStrength').value) * 100)}%`);
   $('undo').addEventListener('click', undo);
   $('redo').addEventListener('click', redo);
   $('downloadJson').addEventListener('click', downloadJson);

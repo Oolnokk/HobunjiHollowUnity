@@ -268,6 +268,80 @@
     data[offset + dominant] = Math.max(0, Math.min(255, data[offset + dominant] + 255 - assigned));
   }
 
+  // Takes `amount` (0..1) of a cell's `selected` channel away. The freed weight goes to the belt (so an erased bone patch
+  // goes back to following the body); erasing the belt itself hands it to the other channels in proportion.
+  function eraseWeightCell(data, offset, channelCount, selected, amount) {
+    const current = data[offset + selected] || 0;
+    const removed = Math.min(current, Math.round(current * Math.max(0, Math.min(1, amount))));
+    if (!removed) return;
+    if (selected !== 0) {
+      data[offset + selected] = current - removed;
+      data[offset] = Math.min(255, (data[offset] || 0) + removed);
+      return;
+    }
+    let others = 0;
+    for (let channelIndex = 1; channelIndex < channelCount; channelIndex++) others += data[offset + channelIndex] || 0;
+    if (!others) return; // Nothing to hand the weight to: a pure-belt cell stays pure belt.
+    data[offset] = current - removed;
+    for (let channelIndex = 1; channelIndex < channelCount; channelIndex++) data[offset + channelIndex] += Math.round(removed * (data[offset + channelIndex] || 0) / others);
+    normalizeWeightCell(data, offset, channelCount, 0);
+  }
+
+  // After rescaling, rounding can leave a cell off 255 by a point or two. Put it on the strongest channel that is NOT the
+  // freshly mirrored one, so the mirrored paint stays exact.
+  function settleRounding(data, offset, channelCount, keep) {
+    let sum = 0, target = -1;
+    for (let channelIndex = 0; channelIndex < channelCount; channelIndex++) {
+      sum += data[offset + channelIndex];
+      if (channelIndex !== keep && (target < 0 || data[offset + channelIndex] > data[offset + target])) target = channelIndex;
+    }
+    if (sum !== 255 && target >= 0) data[offset + target] = Math.max(0, Math.min(255, data[offset + target] + 255 - sum));
+  }
+
+  // Copies `source` onto `dest` mirrored left<->right about the image centre, in place. `region` limits which destination
+  // columns are overwritten: 'all', 'left' (columns on the left half) or 'right'. Every overwritten cell still sums to 255:
+  // the other leg channels keep their paint (scaled down only if they no longer fit) and the belt takes up the slack, or,
+  // when `dest` is the belt itself, the leg channels are scaled to fill what the belt leaves.
+  function reflectWeightChannel(grid, source, dest, region = 'all') {
+    const { width, height, data } = grid;
+    const channelCount = grid.channels.length;
+    const from = new Uint8Array(data); // Reads come from a snapshot, so the overwrite never feeds back into itself.
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        if (region === 'left' && x >= width / 2) continue;
+        if (region === 'right' && x < width / 2) continue;
+        const offset = (y * width + x) * channelCount;
+        const mirrored = from[(y * width + (width - 1 - x)) * channelCount + source];
+        data[offset + dest] = mirrored;
+        if (dest === 0) {
+          let legs = 0;
+          for (let channelIndex = 1; channelIndex < channelCount; channelIndex++) legs += data[offset + channelIndex];
+          if (!legs) { // Nothing to rescale here: the freed weight goes to the mirrored cell's legs, swapped left<->right.
+            const mirrorOffset = (y * width + (width - 1 - x)) * channelCount;
+            for (let channelIndex = 1; channelIndex < channelCount; channelIndex++) data[offset + channelIndex] = from[mirrorOffset + (channelIndex <= 2 ? channelIndex + 2 : channelIndex - 2)] || 0;
+            legs = 0;
+            for (let channelIndex = 1; channelIndex < channelCount; channelIndex++) legs += data[offset + channelIndex];
+            if (!legs) { data[offset] = 255; continue; }
+          }
+          const room = 255 - mirrored;
+          for (let channelIndex = 1; channelIndex < channelCount; channelIndex++) data[offset + channelIndex] = Math.round(data[offset + channelIndex] * room / legs);
+          settleRounding(data, offset, channelCount, 0);
+        } else {
+          let others = 0;
+          for (let channelIndex = 1; channelIndex < channelCount; channelIndex++) if (channelIndex !== dest) others += data[offset + channelIndex];
+          const room = 255 - mirrored;
+          if (others > room) {
+            for (let channelIndex = 1; channelIndex < channelCount; channelIndex++) if (channelIndex !== dest) data[offset + channelIndex] = Math.round(data[offset + channelIndex] * room / others);
+            others = room;
+          }
+          data[offset] = Math.max(0, 255 - mirrored - others);
+          settleRounding(data, offset, channelCount, dest);
+        }
+      }
+    }
+    return grid;
+  }
+
   function sampleWeights(record, u, v) {
     const grid = record?.encoding === 'rle8' ? decodeWeightGridRle(record) : record;
     if (!grid?.data || !grid.width || !grid.height || !grid.channels?.length) {
@@ -411,6 +485,8 @@
     encodeWeightGridRle,
     decodeWeightGridRle,
     normalizeWeightCell,
+    eraseWeightCell,
+    reflectWeightChannel,
     sampleWeights,
     kneeAtMidpoint,
     normalizeLegBones,
