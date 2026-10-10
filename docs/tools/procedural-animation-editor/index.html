@@ -57780,16 +57780,20 @@ function buildLegBonesVisual() {
   const lb = procedural.legBones;
   const root = new THREE.Group();
   root.name = 'LegBonesDebug';
-  const makeLine = color => {
-    const geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()]);
-    const material = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9, depthTest: false });
-    const line = new THREE.Line(geometry, material);
+  const THIGH_COLOR = [0x18, 0xe7, 0xef], CALF_COLOR = [0xff, 0x00, 0xa9]; // Same cyan / magenta as the thigh and calf bones in the 2D Pants Rig Author workspace.
+  const makeLine = () => { // Two separate bones per leg: hip->knee (thigh) and knee->foot (calf).
+    const geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()]);
+    const colors = new Float32Array(4 * 3);
+    [THIGH_COLOR, THIGH_COLOR, CALF_COLOR, CALF_COLOR].forEach((rgb, vertex) => rgb.forEach((channel, i) => { colors[vertex * 3 + i] = channel / 255; }));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    const material = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.95, depthTest: false });
+    const line = new THREE.LineSegments(geometry, material);
     line.renderOrder = 999; // Reads clearly through the avatar plane/foot meshes instead of z-fighting or hiding behind them.
     root.add(line);
     return line;
   };
-  lb.lines.left = makeLine(0x5ec8ff);
-  lb.lines.right = makeLine(0xffa15e);
+  lb.lines.left = makeLine();
+  lb.lines.right = makeLine();
   lb.chains = {}; // Same hip -> thigh -> calf names as docs/js/procedural-leg-animation.js; matrices update while the debug lines are hidden because three still updates invisible nodes.
   for (const side of ['left', 'right']) {
     const hip = new THREE.Group();
@@ -57859,8 +57863,9 @@ function updateLegBonesVisual() {
     }
     const positions = line.geometry.attributes.position;
     positions.setXYZ(0, hip.x, hip.y, hip.z);
-    positions.setXYZ(1, solved.knee.x, solved.knee.y, solved.knee.z);
-    positions.setXYZ(2, foot.position.x, foot.position.y, foot.position.z);
+    positions.setXYZ(1, solved.knee.x, solved.knee.y, solved.knee.z); // Thigh: vertices 0-1.
+    positions.setXYZ(2, solved.knee.x, solved.knee.y, solved.knee.z); // Calf: vertices 2-3.
+    positions.setXYZ(3, foot.position.x, foot.position.y, foot.position.z);
     positions.needsUpdate = true;
     line.geometry.computeBoundingSphere();
   };

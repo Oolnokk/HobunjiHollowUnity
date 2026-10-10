@@ -102,7 +102,7 @@
   }
 
   // Static part of the garment for one avatar: rest vertices, weights, 2D bones in avatar-local space.
-  function buildGarmentData(THREE, Core, model, plane, garment, character, zLift = 0) {
+  function buildGarmentData(THREE, Core, model, plane, garment, character) {
     const transform = Core.solveAffine(garment.pantsBeltSpline, character.portraitBeltSpline);
     if (!transform) return null;
     const dimensions = portraitDimensions(model, plane);
@@ -127,7 +127,6 @@
       placed.copy(point);
       plane.localToWorld(placed);
       model.worldToLocal(placed);
-      placed.z += zLift; // In front of the procedural feet's depth, so the garment reads over them (see footFrontLift).
       return placed;
     };
     let vertex = 0;
@@ -165,6 +164,21 @@
     geometry.getAttribute('position').setUsage?.(THREE.DynamicDrawUsage);
     geometry.computeBoundingSphere();
     Core.sharpenWeights(weights, Math.min(8, Math.max(1, Number(character.weightSharpness) || 4))); // Strong initial 2D->3D alignment (see Core.sharpenWeights).
+    // Everything at or above the beltline spline belongs to the belt (rigid, flat in the portrait plane, however the weights
+    // were painted): the beltline never tilts or leaves the portrait's depth, even where no belt weight touches it.
+    const beltPoints = [...garment.pantsBeltSpline].sort((p, q) => p.x - q.x);
+    const beltYAt = u => {
+      if (u <= beltPoints[0].x) return beltPoints[0].y;
+      for (let i = 1; i < beltPoints.length; i++) {
+        if (u <= beltPoints[i].x) { const t = (u - beltPoints[i - 1].x) / Math.max(1e-9, beltPoints[i].x - beltPoints[i - 1].x); return beltPoints[i - 1].y + (beltPoints[i].y - beltPoints[i - 1].y) * t; }
+      }
+      return beltPoints[beltPoints.length - 1].y;
+    };
+    for (let row = 0, v = 0; row <= SEGMENTS; row++) {
+      for (let col = 0; col <= SEGMENTS; col++, v++) {
+        if (row / SEGMENTS <= beltYAt(col / SEGMENTS) + 1e-6) { weights[v * 5] = 1; for (let c = 1; c < 5; c++) weights[v * 5 + c] = 0; }
+      }
+    }
     const legBones = Core.normalizeLegBones(garment.legBones);
     const bones2D = {};
     for (const side of ['left', 'right']) {
@@ -293,8 +307,8 @@
       character = { ...character, portraitBeltSpline: Core.defaultBeltAtPosterior(posteriorPortraitY(THREE, avatarGroup, plane, nodes)) };
     }
     const feet = (footObjects || ['left_foot', 'right_foot'].map(foot => legHandle.group?.getObjectByName?.(foot))).filter(Boolean); // The procedural foot models.
-    const zLift = footFrontLift(THREE, avatarGroup, feet);
-    const data = buildGarmentData(THREE, Core, avatarGroup, plane, garment, character, zLift);
+    const footLift = footFrontLift(THREE, avatarGroup, feet);
+    const data = buildGarmentData(THREE, Core, avatarGroup, plane, garment, character);
     if (!data) return null;
     const handle = {
       name, garmentId, model: avatarGroup, nodes, mesh: null, disposed: false, texture: null, material: null,
@@ -302,8 +316,8 @@
       beltCenter: data.beltCenter, planeNormal: data.planeNormal,
       beltScale: Math.min(3.5, Math.max(1.7, Number(character.beltScale) || DEFAULT_BELT_SCALE)),
       legRollGain: Math.min(4, Math.max(1, Number(character.legRollGain) || 2)),
-      maskMapping: data.maskMapping, zLift,
-      maskUniforms: { uPantsMask: { value: null }, uPantsMaskOn: { value: 0 }, uPantsMaskO: { value: new THREE.Vector2(data.maskMapping.ox, data.maskMapping.oy) }, uPantsMaskInv: { value: new THREE.Vector4(...data.maskMapping.inv) } },
+      maskMapping: data.maskMapping, footLift, rest: null, restRaw: null,
+      maskUniforms: { uPantsDepthBias: { value: 0 }, uPantsMask: { value: null }, uPantsMaskOn: { value: 0 }, uPantsMaskO: { value: new THREE.Vector2(data.maskMapping.ox, data.maskMapping.oy) }, uPantsMaskInv: { value: new THREE.Vector4(...data.maskMapping.inv) } },
       scratch: makeScratch(THREE), appearance: { ...appearance, speciesId, gender, imageUrl }, renderToken: 0, ready: false, garment,
     };
 
@@ -316,8 +330,11 @@
       material.onBeforeCompile = shader => {
         Object.assign(shader.uniforms, handle.maskUniforms);
         shader.vertexShader = shader.vertexShader
-          .replace('#include <common>', '#include <common>\nvarying vec2 vPantsLocal;')
-          .replace('#include <begin_vertex>', '#include <begin_vertex>\nvPantsLocal = position.xy;');
+          .replace('#include <common>', '#include <common>\nvarying vec2 vPantsLocal;\nuniform float uPantsDepthBias;')
+          .replace('#include <begin_vertex>', '#include <begin_vertex>\nvPantsLocal = position.xy;')
+          // Depth-only pull toward the camera: the garment stays exactly in the portrait plane on screen and in space, but
+          // wins the depth test against the procedural feet, so it reads over (x-rays through) them.
+          .replace('#include <project_vertex>', '#include <project_vertex>\n{ vec4 pantsBiased = projectionMatrix * (mvPosition + vec4(0.0, 0.0, uPantsDepthBias, 0.0)); gl_Position.z = pantsBiased.z / pantsBiased.w * gl_Position.w; }');
         shader.fragmentShader = shader.fragmentShader
           .replace('#include <common>', '#include <common>\nvarying vec2 vPantsLocal;\nuniform sampler2D uPantsMask;\nuniform float uPantsMaskOn;\nuniform vec2 uPantsMaskO;\nuniform vec4 uPantsMaskInv;')
           .replace('#include <alphatest_fragment>', 'if (uPantsMaskOn > 0.5) { vec2 pd = vPantsLocal - uPantsMaskO; vec2 pc = vec2(uPantsMaskInv.x * pd.x + uPantsMaskInv.y * pd.y, uPantsMaskInv.z * pd.x + uPantsMaskInv.w * pd.y); diffuseColor.a *= 1.0 - texture2D(uPantsMask, vec2(pc.x, 1.0 - pc.y)).a; }\n#include <alphatest_fragment>');
@@ -367,41 +384,70 @@
       handle.maskUniforms.uPantsMaskOn.value = 1;
     };
 
+    // Rest pose: the legs' initial stance. The garment's initial warp maps its 2D bones onto this pose with a purely planar
+    // deformation (flat, at the portrait plane's depth); only the legs' motion AWAY from it, including pitch, becomes 3D.
+    // `rest` holds the amplified bones flattened to the garment's depth; `restRaw` keeps their true depth for the per-joint
+    // depth correction applied to the live bones.
+    const makeJoints = () => ({ left: { hip: { x: 0, y: 0, z: 0 }, knee: { x: 0, y: 0, z: 0 }, ankle: { x: 0, y: 0, z: 0 } }, right: { hip: { x: 0, y: 0, z: 0 }, knee: { x: 0, y: 0, z: 0 }, ankle: { x: 0, y: 0, z: 0 } } });
+    handle.rest = makeJoints();
+    handle.restRaw = makeJoints();
+    handle.captureRest = () => {
+      const measured = readLiveBones(handle);
+      for (const side of ['left', 'right']) {
+        Core.amplifyLegRoll(measured[side], handle.legRollGain, handle.restRaw[side]);
+        for (const joint of ['hip', 'knee', 'ankle']) {
+          const raw = handle.restRaw[side][joint], flat = handle.rest[side][joint];
+          flat.x = raw.x; flat.y = raw.y; flat.z = handle.bones2D[side][joint].z; // Flat, at the portrait plane's depth.
+        }
+      }
+      handle.restCaptured = true;
+    };
+
+    // Live bones for this frame: roll-amplified like the rest pose, with depth made relative to rest so that at rest they
+    // coincide exactly with the flattened rest bones.
+    const aimAtLiveLegs = () => {
+      const measured = readLiveBones(handle);
+      const aim = handle.scratch.aim;
+      for (const side of ['left', 'right']) {
+        Core.amplifyLegRoll(measured[side], handle.legRollGain, aim[side]);
+        for (const joint of ['hip', 'knee', 'ankle']) aim[side][joint].z += handle.bones2D[side][joint].z - handle.restRaw[side][joint].z;
+      }
+      return aim;
+    };
+    const boneTransform = (side, from, to, aim) => Core.alignBoneWithMotion(
+      handle.bones2D[side][from], handle.bones2D[side][to], handle.rest[side][from], handle.rest[side][to], aim[side][from], aim[side][to], { perpendicularScale: LEG_ACROSS_SCALE });
+
     handle.update = () => {
       if (handle.disposed || !handle.mesh || !handle.model.parent) return;
       const visible = handle.model.visible !== false && legHandle.group?.visible !== false;
       if (handle.mesh.visible !== visible) handle.mesh.visible = visible;
       if (!visible) return;
-      const measured = readLiveBones(handle);
-      const live = handle.scratch.aim; // Aim at the live legs with their sideways (z) swing exaggerated by the roll gain.
-      Core.amplifyLegRoll(measured.left, handle.legRollGain, live.left);
-      Core.amplifyLegRoll(measured.right, handle.legRollGain, live.right);
-      const flat = handle.bones2D;
+      if (!handle.restCaptured) handle.captureRest();
+      const aim = aimAtLiveLegs();
       const transforms = handle.scratch.transforms; // Channel order is Core.WEIGHT_CHANNELS: belt, leftThigh, leftCalf, rightThigh, rightCalf.
-      const options = { perpendicularScale: LEG_ACROSS_SCALE, normal: handle.planeNormal };
       const s = handle.beltScale, c = handle.beltCenter;
-      transforms[0] = s === 1 ? null : { a: 1, b: 0, c: 0, d: s, tx: 0, ty: c.y * (1 - s) }; // Vertical-only scale of the belt-weighted pixels.
-      transforms[1] = Core.alignBoneSegment3D(flat.left.hip, flat.left.knee, live.left.hip, live.left.knee, options);
-      transforms[2] = Core.alignBoneSegment3D(flat.left.knee, flat.left.ankle, live.left.knee, live.left.ankle, options);
-      transforms[3] = Core.alignBoneSegment3D(flat.right.hip, flat.right.knee, live.right.hip, live.right.knee, options);
-      transforms[4] = Core.alignBoneSegment3D(flat.right.knee, flat.right.ankle, live.right.knee, live.right.ankle, options);
+      transforms[0] = s === 1 ? null : { a: 1, b: 0, c: 0, d: s, tx: 0, ty: c.y * (1 - s) }; // Vertical-only scale of the belt-weighted pixels, flat in the portrait plane.
+      transforms[1] = boneTransform('left', 'hip', 'knee', aim);
+      transforms[2] = boneTransform('left', 'knee', 'ankle', aim);
+      transforms[3] = boneTransform('right', 'hip', 'knee', aim);
+      transforms[4] = boneTransform('right', 'knee', 'ankle', aim);
       const position = handle.geometry.getAttribute('position');
       Core.skinWeightedPositions(handle.basePositions, handle.weights, transforms, position.array);
       position.needsUpdate = true;
       handle.geometry.computeBoundingSphere();
     };
 
-    // Diagnostics: how exactly the garment's 2D bones land on the (roll-amplified) 3D bones this frame.
+    // Diagnostics: how exactly the garment's bones land on the live 3D bones this frame (depth-corrected, roll-amplified).
     handle.alignmentReport = () => {
-      const measured = readLiveBones(handle);
-      const options = { perpendicularScale: LEG_ACROSS_SCALE, normal: handle.planeNormal };
+      if (!handle.restCaptured) handle.captureRest();
+      const aim = aimAtLiveLegs();
       const distance = (p, q) => Math.hypot(p.x - q.x, p.y - q.y, (p.z || 0) - (q.z || 0));
       const through = (t, p) => ({ x: t.m[0] * p.x + t.m[1] * p.y + t.m[2] * p.z + t.tx, y: t.m[3] * p.x + t.m[4] * p.y + t.m[5] * p.z + t.ty, z: t.m[6] * p.x + t.m[7] * p.y + t.m[8] * p.z + t.tz });
       const report = {};
       for (const side of ['left', 'right']) {
-        const l = Core.amplifyLegRoll(measured[side], handle.legRollGain, { hip: {}, knee: {}, ankle: {} }), f = handle.bones2D[side];
-        const thigh = Core.alignBoneSegment3D(f.hip, f.knee, l.hip, l.knee, options);
-        const calf = Core.alignBoneSegment3D(f.knee, f.ankle, l.knee, l.ankle, options);
+        const l = aim[side], f = handle.bones2D[side];
+        const thigh = boneTransform(side, 'hip', 'knee', aim);
+        const calf = boneTransform(side, 'knee', 'ankle', aim);
         report[side] = {
           length2D: { thigh: distance(f.hip, f.knee), calf: distance(f.knee, f.ankle) },
           length3D: { thigh: distance(l.hip, l.knee), calf: distance(l.knee, l.ankle) },
@@ -430,6 +476,10 @@
       handle.mesh = null;
     };
 
+    handle.model.updateMatrixWorld?.(true);
+    const worldElements = handle.model.matrixWorld.elements;
+    handle.maskUniforms.uPantsDepthBias.value = footLift * Math.hypot(worldElements[0], worldElements[1], worldElements[2]); // View-space distance to pull the garment's depth toward the camera.
+    handle.captureRest(); // The legs' stance at attach is the rest pose the initial 2D warp targets.
     handles.add(handle);
     handle.setAppearance({});
     if (overlayMask) Promise.resolve(overlayMask).then(canvas => { if (!handle.disposed) handle.setOverlayMask(canvas); }).catch(() => {});

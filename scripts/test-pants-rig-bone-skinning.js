@@ -150,23 +150,27 @@ assert([out[2], out[5], out[8]].every(z => near(z, 0.012, 1e-6)), 'depth is carr
   assert(near(apply(planar, probe).x, apply3(spatial, probe).x, 1e-9) && near(apply(planar, probe).y, apply3(spatial, probe).y, 1e-9), 'in the plane the 3D transform equals the planar one');
 }
 
-// ---- leg roll gain (z rotation strength) -------------------------------------
+// ---- leg roll gain (lateral swing strength, pitch untouched) ------------------
 {
   const mk = (h, k, a) => ({ hip: { x: h[0], y: h[1], z: h[2] }, knee: { x: k[0], y: k[1], z: k[2] }, ankle: { x: a[0], y: a[1], z: a[2] } });
   const blank = () => mk([0, 0, 0], [0, 0, 0], [0, 0, 0]);
-  const leg = mk([0, 0, 0], [0.1, -0.2, 0.05], [0.2, -0.4, 0.1]); // Swung toward +x by atan(0.5) = 26.6 degrees, with some z.
+  const leg = mk([0, 0, 0], [0.1, -0.2, 0.15], [0.15, -0.35, 0.2]); // Splayed toward +x AND pitched forward (z).
   const same = Core.amplifyLegRoll(leg, 1, blank());
   for (const j of ['hip', 'knee', 'ankle']) assert(near(same[j].x, leg[j].x) && near(same[j].y, leg[j].y) && near(same[j].z, leg[j].z), 'gain 1 must return the live bones exactly');
   const strong = Core.amplifyLegRoll(leg, 3, blank());
-  const angle = v => Math.atan2(v.x, -v.y);
-  const thighBefore = { x: leg.knee.x - leg.hip.x, y: leg.knee.y - leg.hip.y }, thighAfter = { x: strong.knee.x - strong.hip.x, y: strong.knee.y - strong.hip.y };
-  assert(near(angle(thighAfter), 3 * angle(thighBefore), 1e-9), 'the thigh swings 3x as far from straight down');
-  assert(near(Math.hypot(thighAfter.x, thighAfter.y), Math.hypot(thighBefore.x, thighBefore.y), 1e-9), 'bone length is unchanged');
-  assert(near(strong.ankle.z, leg.ankle.z) && near(strong.knee.z, leg.knee.z), 'depth (x-rotation) is untouched');
-  const calfAfter = { x: strong.ankle.x - strong.knee.x, y: strong.ankle.y - strong.knee.y };
-  assert(near(angle(calfAfter), 3 * angle({ x: leg.ankle.x - leg.knee.x, y: leg.ankle.y - leg.knee.y }), 1e-9), 'the calf is amplified by its own angle');
-  const hanging = Core.amplifyLegRoll(mk([0, 0, 0], [0, -0.2, 0], [0, -0.4, 0]), 5, blank());
-  assert(near(hanging.ankle.x, 0) && near(hanging.ankle.y, -0.4), 'a leg hanging straight down is not moved by any gain');
+  const bone = (l, from, to) => ({ x: l[to].x - l[from].x, y: l[to].y - l[from].y, z: l[to].z - l[from].z });
+  const lateral = v => Math.atan2(v.x, Math.hypot(v.y, v.z));
+  const pitch = v => Math.atan2(v.z, -v.y); // Forward/back tilt about x.
+  for (const [from, to] of [['hip', 'knee'], ['knee', 'ankle']]) {
+    const before = bone(leg, from, to), after = bone(strong, from, to);
+    assert(near(lateral(after), 3 * lateral(before), 1e-9), `${to}: lateral splay is multiplied by the gain`);
+    assert(near(pitch(after), pitch(before), 1e-9), `${to}: pitch (forward/back tilt) is untouched`);
+    assert(near(Math.hypot(after.x, after.y, after.z), Math.hypot(before.x, before.y, before.z), 1e-9), `${to}: bone length is unchanged`);
+  }
+  const hanging = Core.amplifyLegRoll(mk([0, 0, 0], [0, -0.2, 0.1], [0, -0.4, 0.2]), 5, blank());
+  assert(near(hanging.ankle.x, 0) && near(hanging.ankle.y, -0.4) && near(hanging.ankle.z, 0.2), 'a leg with no lateral splay is not moved by any gain');
+  const flat = Core.amplifyLegRoll(mk([0, 0, 0], [0.3, 0, 0], [0.6, 0, 0]), 4, blank());
+  assert([flat.knee, flat.ankle].every(j => Number.isFinite(j.x) && Number.isFinite(j.y) && Number.isFinite(j.z)), 'a sideways-horizontal leg stays finite');
 }
 
 // ---- weight sharpening ---------------------------------------------------------
@@ -193,6 +197,43 @@ assert([out[2], out[5], out[8]].every(z => near(z, 0.012, 1e-6)), 'depth is carr
   assert(belt.length === 5 && belt.every(p => p.y >= 0.69 && p.y <= 0.7 + 1e-9), 'default belt sits at the posterior height');
   assert(Core.defaultBeltAtPosterior(1.4).every(p => p.y <= 1), 'a posterior below the image rests on the image edge');
   assert(Core.defaultBeltAtPosterior(NaN).every(p => Number.isFinite(p.y)), 'a missing posterior still yields a belt');
+}
+
+// ---- initial planar warp + animation motion ------------------------------------------
+{
+  const P = (x, y, z = 0) => ({ x, y, z });
+  const through = (t, p) => ({ x: t.m[0] * p.x + t.m[1] * p.y + t.m[2] * p.z + t.tx, y: t.m[3] * p.x + t.m[4] * p.y + t.m[5] * p.z + t.ty, z: t.m[6] * p.x + t.m[7] * p.y + t.m[8] * p.z + t.tz });
+  const g0 = P(0.2, 0.3, 0.012), g1 = P(0.1, 0.6, 0.012); // Garment bone (diagonal in the picture), at the portrait plane depth.
+  const r0 = P(0.5, 1, 0.012), r1 = P(0.5, 0.8, 0.012); // Rest bone: straight down, flattened to the same depth.
+  const planar = Core.alignBoneSegment(g0, g1, r0, r1, { perpendicularScale: 'balanced' });
+  // At rest (live == rest) the result is EXACTLY the planar 2D warp: nothing leaves the portrait plane.
+  const atRest = Core.alignBoneWithMotion(g0, g1, r0, r1, r0, r1, { perpendicularScale: 'balanced' });
+  for (const p of [P(0.2, 0.3, 0.012), P(0.1, 0.6, 0.012), P(0.4, 0.45, 0.012), P(0.15, 0.5, 0.012)]) {
+    const w = through(atRest, p), expected = { x: planar.a * p.x + planar.c * p.y + planar.tx, y: planar.b * p.x + planar.d * p.y + planar.ty };
+    assert(near(w.x, expected.x) && near(w.y, expected.y), 'at rest the warp is the planar warp');
+    assert(near(w.z, 0.012), 'at rest every point stays at the portrait plane depth (parallel, no tilt)');
+  }
+  assert(atRest.m[2] === 0 && atRest.m[5] === 0 && atRest.m[6] === 0 && atRest.m[7] === 0, 'at rest no x/y vs z coupling exists');
+  // Animation: the leg pitches forward 40 degrees about x (pitch), the same length. The joints follow; depth appears.
+  const a = 40 * Math.PI / 180, len = 0.2;
+  const l0 = r0, l1 = P(0.5, 1 - len * Math.cos(a), 0.012 + len * Math.sin(a));
+  const moved = Core.alignBoneWithMotion(g0, g1, r0, r1, l0, l1, { perpendicularScale: 'balanced' });
+  assert(near(through(moved, g0).x, l0.x) && near(through(moved, g0).y, l0.y) && near(through(moved, g0).z, l0.z), 'bone start follows the live joint');
+  const end = through(moved, g1);
+  assert(near(end.x, l1.x) && near(end.y, l1.y) && near(end.z, l1.z), 'bone end follows the live joint (pitch included)');
+  assert(near(moved.rotation, a, 1e-9), 'the motion rotation is the animation pitch, nothing more');
+  // A garment point beside the bone tilts with the pitch instead of staying in the plane.
+  const beside = through(moved, P(0.3, 0.3, 0.012));
+  assert(beside.z > 0.012 || beside.z < 0.012, 'points off the bone move in depth with the pitch');
+  // Lengthening since rest stretches the garment bone along its length.
+  const longer = Core.alignBoneWithMotion(g0, g1, r0, r1, r0, P(0.5, 0.7, 0.012), { perpendicularScale: 1 });
+  assert(near(through(longer, g1).y, 0.7), 'a longer live bone lengthens the garment leg');
+  // Shared knee stays shared: thigh and calf transforms agree on the knee in any pose.
+  const knee = P(0.5, 0.9, 0.012), kneeLive = P(0.52, 0.9 - 0.1 * Math.cos(a), 0.012 + 0.1 * Math.sin(a));
+  const thighT = Core.alignBoneWithMotion(P(0.2, 0.3, 0.012), P(0.15, 0.45, 0.012), r0, knee, l0, kneeLive);
+  const calfT = Core.alignBoneWithMotion(P(0.15, 0.45, 0.012), P(0.1, 0.6, 0.012), knee, r1, kneeLive, l1);
+  const k1 = through(thighT, P(0.15, 0.45, 0.012)), k2 = through(calfT, P(0.15, 0.45, 0.012));
+  assert(near(k1.x, k2.x) && near(k1.y, k2.y) && near(k1.z, k2.z), 'thigh and calf share the knee');
 }
 
 console.log('Pants rig bone skinning: PASS');

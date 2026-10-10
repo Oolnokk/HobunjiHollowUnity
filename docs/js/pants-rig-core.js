@@ -452,26 +452,92 @@
     return weights;
   }
 
-  // Exaggerates how far a live 3D leg swings sideways (rotation about the z axis, the one you see face-on) so the garment's
-  // legs visibly follow it. Each bone (thigh, calf) is turned about z by (gain - 1) times its own angle from straight
-  // down, hip first, the chain re-hung from the hip, so the thigh/calf still share one knee and lengths are unchanged.
-  // gain 1 returns the live bones exactly. `out` ({hip, knee, ankle} of {x,y,z}) is written in place.
+  // Exaggerates how far a live 3D leg splays sideways (the swing you see face-on) so the garment's legs visibly follow it,
+  // WITHOUT touching its pitch (forward/back tilt about x). Each bone is split into a lateral angle (how far it leans out
+  // of the yz plane) and a direction within the yz plane (its pitch); only the lateral angle is multiplied by `gain`, so
+  // the pitch ratio vz:vy and the bone length are exactly the live bone's. The chain is re-hung hip first, so thigh and
+  // calf still share one knee. gain 1 returns the live bones exactly. `out` ({hip, knee, ankle} of {x,y,z}) is written in place.
   function amplifyLegRoll(leg, gain, out) {
     const g = Number.isFinite(gain) && gain > 0 ? gain : 1;
     out.hip.x = leg.hip.x; out.hip.y = leg.hip.y; out.hip.z = leg.hip.z;
     let ax = out.hip.x, ay = out.hip.y, az = out.hip.z;
+    const limit = Math.PI / 2 - 0.05; // Never amplify a leg all the way out of its pitch plane.
     const joints = [['knee', leg.hip, leg.knee], ['ankle', leg.knee, leg.ankle]];
     for (const [name, from, to] of joints) {
       const vx = to.x - from.x, vy = to.y - from.y, vz = to.z - from.z;
-      const roll = Math.atan2(vx, -vy); // Angle about z from straight down: 0 = hanging, + = swung toward +x.
-      const extra = (g - 1) * roll;
-      const cos = Math.cos(extra), sin = Math.sin(extra);
-      ax += vx * cos - vy * sin;
-      ay += vx * sin + vy * cos;
-      az += vz;
+      const length = Math.hypot(vx, vy, vz);
+      const inPlane = Math.hypot(vy, vz); // Length of the bone's projection onto its pitch plane (yz).
+      if (length > 1e-9 && inPlane > 1e-9) {
+        const lateral = Math.atan2(vx, inPlane); // Signed angle out of the yz plane.
+        const amplified = Math.max(-limit, Math.min(limit, g * lateral));
+        const along = length * Math.cos(amplified) / inPlane; // Scales (vy, vz) so pitch is unchanged.
+        ax += length * Math.sin(amplified); ay += vy * along; az += vz * along;
+      } else {
+        ax += vx; ay += vy; az += vz;
+      }
       out[name].x = ax; out[name].y = ay; out[name].z = az;
     }
     return out;
+  }
+
+  // Two-stage alignment used by the live garment: (1) the one-time INITIAL warp maps the garment's 2D bone onto the rest
+  // pose of the 3D bone using a purely planar (x/y) deformation, so at rest the garment is flat, parallel to and at the
+  // same depth as the portrait plane, an extension of the portrait itself; (2) procedural animation then moves it by
+  // the bone's motion since rest: the shortest-arc 3D rotation (pitch included) from the rest direction to the live
+  // direction plus the change in bone length. Points are {x,y,z}; `rest*` must be flattened to the garment's depth and
+  // `live*` expressed relative to rest at that same depth (the caller adds the per-joint depth correction), so at rest the
+  // result is exactly the planar alignment. Returns {m: [9 row-major], tx, ty, tz, stretch, rotation}.
+  function alignBoneWithMotion(fromStart, fromEnd, restStart, restEnd, liveStart, liveEnd, { perpendicularScale = 1 } = {}) {
+    const planar = alignBoneSegment(fromStart, fromEnd, restStart, restEnd, { perpendicularScale });
+    const num = value => Number(value) || 0;
+    const rs = [num(restStart?.x), num(restStart?.y), num(restStart?.z)];
+    const ls = [num(liveStart?.x), num(liveStart?.y), num(liveStart?.z)];
+    const dr = [num(restEnd?.x) - rs[0], num(restEnd?.y) - rs[1], num(restEnd?.z) - rs[2]];
+    const dl = [num(liveEnd?.x) - ls[0], num(liveEnd?.y) - ls[1], num(liveEnd?.z) - ls[2]];
+    const restLength = Math.hypot(dr[0], dr[1], dr[2]), liveLength = Math.hypot(dl[0], dl[1], dl[2]);
+    // Planar alignment as a 3x3 (depth passes through) plus its translation.
+    const A = [planar.a, planar.c, 0, planar.b, planar.d, 0, 0, 0, 1];
+    const t2 = [planar.tx, planar.ty, 0];
+    let Rs = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+    let rotation = 0;
+    if (restLength >= MIN_BONE_LENGTH && liveLength >= MIN_BONE_LENGTH) {
+      const ur = dr.map(v => v / restLength), ul = dl.map(v => v / liveLength);
+      const cosine = Math.max(-1, Math.min(1, ur[0] * ul[0] + ur[1] * ul[1] + ur[2] * ul[2]));
+      rotation = Math.acos(cosine);
+      let R;
+      if (cosine < -0.999999) { // End for end: half turn about any axis across the bone.
+        const axis = Math.abs(ur[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+        const dotAxis = axis[0] * ur[0] + axis[1] * ur[1] + axis[2] * ur[2];
+        let p = [axis[0] - dotAxis * ur[0], axis[1] - dotAxis * ur[1], axis[2] - dotAxis * ur[2]];
+        const pl = Math.hypot(p[0], p[1], p[2]) || 1; p = p.map(v => v / pl);
+        R = [2 * p[0] * p[0] - 1, 2 * p[0] * p[1], 2 * p[0] * p[2], 2 * p[1] * p[0], 2 * p[1] * p[1] - 1, 2 * p[1] * p[2], 2 * p[2] * p[0], 2 * p[2] * p[1], 2 * p[2] * p[2] - 1];
+      } else { // Rodrigues: shortest rotation taking the rest direction onto the live direction.
+        const v = [ur[1] * ul[2] - ur[2] * ul[1], ur[2] * ul[0] - ur[0] * ul[2], ur[0] * ul[1] - ur[1] * ul[0]], k = 1 / (1 + cosine);
+        R = [
+          1 - k * (v[1] * v[1] + v[2] * v[2]), -v[2] + k * v[0] * v[1], v[1] + k * v[0] * v[2],
+          v[2] + k * v[0] * v[1], 1 - k * (v[0] * v[0] + v[2] * v[2]), -v[0] + k * v[1] * v[2],
+          -v[1] + k * v[0] * v[2], v[0] + k * v[1] * v[2], 1 - k * (v[0] * v[0] + v[1] * v[1]),
+        ];
+      }
+      const sm = Math.max(0.4, Math.min(2.5, liveLength / restLength)); // How much the bone has lengthened/shortened since rest.
+      const S = new Array(9);
+      for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) S[row * 3 + col] = (row === col ? 1 : 0) + (sm - 1) * ur[row] * ur[col];
+      Rs = new Array(9);
+      for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) Rs[row * 3 + col] = R[row * 3] * S[col] + R[row * 3 + 1] * S[3 + col] + R[row * 3 + 2] * S[6 + col];
+    } else { // Degenerate bone: translate with the joint only.
+      Rs = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+    }
+    const m = new Array(9);
+    for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) m[row * 3 + col] = Rs[row * 3] * A[col] + Rs[row * 3 + 1] * A[3 + col] + Rs[row * 3 + 2] * A[6 + col];
+    const q = [t2[0] - rs[0], t2[1] - rs[1], t2[2] - rs[2]];
+    return {
+      m,
+      tx: ls[0] + Rs[0] * q[0] + Rs[1] * q[1] + Rs[2] * q[2],
+      ty: ls[1] + Rs[3] * q[0] + Rs[4] * q[1] + Rs[5] * q[2],
+      tz: ls[2] + Rs[6] * q[0] + Rs[7] * q[1] + Rs[8] * q[2],
+      stretch: planar.stretch,
+      rotation,
+    };
   }
 
   // Full 3D version of alignBoneSegment: carries the garment's bone onto a live bone that can point anywhere in space, so
@@ -612,6 +678,7 @@
     normalizeLegBones,
     alignBoneSegment,
     alignBoneSegment3D,
+    alignBoneWithMotion,
     amplifyLegRoll,
     sharpenWeights,
     portraitMapping,

@@ -843,11 +843,11 @@
       hip.add(thigh);
       const hipGuide = makeJointGuide(THREE, 0xffd98f, 0.021);
       hip.add(hipGuide);
-      const thighGuide = makeBoneGuide(THREE, 0xffb267);
+      const thighGuide = makeBoneGuide(THREE, 0x18e7ef);
       thigh.add(thighGuide);
       const kneeGuide = makeJointGuide(THREE, 0xffd39a, 0.022);
       calf.add(kneeGuide);
-      const calfGuide = makeBoneGuide(THREE, 0xff7f50);
+      const calfGuide = makeBoneGuide(THREE, 0xff00a9);
       calf.add(calfGuide);
       return { hip, thigh, calf, hipGuide, thighGuide, kneeGuide, calfGuide };
     }
