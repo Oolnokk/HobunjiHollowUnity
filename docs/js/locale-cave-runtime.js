@@ -42,7 +42,7 @@
       }
     }
     cavesByMapId.set(String(mapId || ''), caves);
-    window.CaveSiteSystem?.applyWorkspaceProfiles?.(mapId, workspace); // Promotes the existing animal-den anchors into generic cave sites without changing their terrain/collision representation.
+    window.CaveSiteSystem?.applyWorkspaceProfiles?.(mapId, workspace); // Tags the generated animal-den anchors with deterministic cave-site profiles (js/cave-site-system.js) without changing their terrain/collision representation.
     return caves;
   }
 
@@ -67,38 +67,6 @@
     };
   }
 
-  function siblingScriptSrc(fileName, version) {
-    const currentSrc = document.currentScript?.src || ''; // Locale runtime script URL used to resolve sibling modules in both docs/ and standalone preview paths.
-    const relative = `${fileName}?v=${version}`; // Cache-busted sibling path used for the requested runtime module.
-    return currentSrc ? new URL(relative, currentSrc).href : `js/${relative}`;
-  }
-
-  function loadCaveSiteSystem() {
-    if (window.CaveSiteSystem || typeof document === 'undefined') return;
-    const src = siblingScriptSrc('cave-site-system.js', '20261009caves1'); // Generic cave occupancy/history module loaded before later gameplay systems initialize.
-    if (document.readyState === 'loading' && typeof document.write === 'function') {
-      document.write(`<script src="${src}"><\/script>`); // Parser-time load guarantees later subsystem assignments are intercepted before game.js initializes them.
-      return;
-    }
-    const script = document.createElement('script'); // Late preview/tool fallback when LocaleCaveRuntime is injected after parsing.
-    script.src = src;
-    script.async = false;
-    document.head?.appendChild(script);
-  }
-
-  function loadCaveRuinSeedBridge() {
-    if (window.CaveRuinSeedBridge || typeof document === 'undefined') return;
-    const src = siblingScriptSrc('cave-ruin-seed-bridge.js', '20261009caveruinseed1'); // Boundary adapter that turns descriptive cave identities into the numeric seeds DevRandomRuin already expects.
-    if (document.readyState === 'loading' && typeof document.write === 'function') {
-      document.write(`<script src="${src}"><\/script>`); // Parser-time load installs the future DevRandomRuin hook before its script assigns the global.
-      return;
-    }
-    const script = document.createElement('script'); // Late preview/tool fallback mirrors CaveSiteSystem's ordered sibling load.
-    script.src = src;
-    script.async = false;
-    document.head?.appendChild(script);
-  }
-
   window.LocaleCaveRuntime = {
     registerWorkspace,
     cavesForZone,
@@ -107,6 +75,4 @@
   };
 
   installGeneratorCapture();
-  loadCaveSiteSystem();
-  loadCaveRuinSeedBridge();
 })();

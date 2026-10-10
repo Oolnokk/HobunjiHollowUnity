@@ -71,6 +71,7 @@
   let caveRuntimeTimer = 0; // Throttles interior proximity/runtime work to CAVE_RUNTIME_INTERVAL_S.
   let stateIdentity = null; // World|Tothal-cycle key used to reload the correct cave discovery/loot state.
   let integrationsInstalled = false; // Prevents double-wrapping subsystem APIs across hot reloads/tests.
+  let filteringDens = false; // True while withAnimalOnlyDens has swapped layout.dens for its filtered view; sitesForZone must not re-sync from that view.
 
   const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
   const tileKey = (col, row) => `${Number(col)},${Number(row)}`;
@@ -159,82 +160,65 @@
     return profile;
   }
 
-  function applyWorkspaceProfiles(zoneId, workspace) {
-    const dens = Array.isArray(workspace?.animalDens)
-      ? workspace.animalDens
-      : Array.isArray(workspace?.dens) ? workspace.dens : [];
-    if (!dens.length) {
-      sitesByZone.set(String(zoneId || ''), []);
-      if (workspace) workspace.caveSites = [];
-      return [];
-    }
-
-    const profiles = dens.map(den => rollProfile(zoneId, den)); // One cave profile per existing den anchor, preserving all old geometry/map ids.
-    if (!profiles.some(profile => profile.layers.includes(TYPES.ANIMAL_DEN))) {
-      const rng = makeRng(`${zoneId}:animal-den-preservation`); // Stable slot selection guarantees legacy animal ecology survives the promotion to generic caves.
+  // One assignment path for both freshly generated workspaces and cached
+  // Tothal layouts (which skip the generator capture), so a zone's caves get
+  // the same profiles either way. Dens already tagged keep their profile.
+  function assignZoneProfiles(zoneId, dens) {
+    const key = String(zoneId || '');
+    const profiles = dens.map(den => den?.caveSite?.mapId ? clone(den.caveSite) : rollProfile(key, den)); // One cave profile per existing den anchor, preserving all old geometry/map ids.
+    if (profiles.length && !profiles.some(profile => profile.layers.includes(TYPES.ANIMAL_DEN))) {
+      const rng = makeRng(`${key}:animal-den-preservation`); // Stable slot selection guarantees legacy animal ecology survives the promotion to generic caves.
       forceAnimalProfile(profiles[Math.floor(rng() * profiles.length)]);
     }
-
     for (let index = 0; index < dens.length; index++) {
       const den = dens[index]; // Existing compatibility record consumed by terrain/collision/turnover systems.
-      const profile = profiles[index]; // New cave semantic metadata attached without changing den ids or coordinates.
+      const profile = profiles[index]; // Cave semantic metadata attached without changing den ids or coordinates.
       den.caveSite = clone(profile);
       den.isAnimalDen = profile.layers.includes(TYPES.ANIMAL_DEN);
       sitesByMapId.set(profile.mapId, profile);
     }
-    workspace.caveSites = profiles.map(profile => clone(profile)); // Explicit new semantic list for future systems/editor migration; `animalDens` remains compatibility data.
-    sitesByZone.set(String(zoneId || ''), profiles);
-    window.__farmLog?.(`[cave-sites] ${zoneId}: ${profiles.length} cave(s) — ${profiles.map(profile => profile.layers.join('+')).join(', ')}`, 'world');
+    sitesByZone.set(key, profiles);
+    return profiles;
+  }
+
+  function applyWorkspaceProfiles(zoneId, workspace) {
+    const dens = Array.isArray(workspace?.animalDens)
+      ? workspace.animalDens
+      : Array.isArray(workspace?.dens) ? workspace.dens : [];
+    const profiles = assignZoneProfiles(zoneId, dens);
+    if (workspace) workspace.caveSites = profiles.map(profile => clone(profile)); // Explicit semantic list for future systems/editor migration; `animalDens` remains compatibility data.
+    if (profiles.length) window.__farmLog?.(`[cave-sites] ${zoneId}: ${profiles.length} cave(s) — ${profiles.map(profile => profile.layers.join('+')).join(', ')}`, 'world');
     return clone(profiles);
   }
 
-  function profileFromLayoutDen(zoneId, den) {
-    if (den?.caveSite?.mapId) {
-      const profile = clone(den.caveSite); // Existing generated/saved metadata reused instead of rerolling a profile.
-      sitesByMapId.set(profile.mapId, profile);
-      return profile;
+  function zoneLayout(zoneId) {
+    return wildlifeDeps?.zoneLayouts?.get?.(String(zoneId || '')) || null;
+  }
+
+  // Live (uncloned) profile list for internal per-frame callers.
+  function zoneSites(zoneId) {
+    const key = String(zoneId || '');
+    const dens = Array.isArray(zoneLayout(key)?.dens) ? zoneLayout(key).dens : null; // Current runtime layout used to repair cached workspaces lacking caveSite tags.
+    // A zone regenerated (Tothal Shift) or a den relocated by turnover since
+    // the last assignment leaves untagged/changed anchors — re-sync from the
+    // live layout so labels/filters never act on a stale list.
+    if (dens && !filteringDens && (!sitesByZone.has(key) || sitesByZone.get(key).length !== dens.length || dens.some(den => !den?.caveSite?.mapId))) {
+      return assignZoneProfiles(key, dens);
     }
-    const profile = rollProfile(zoneId, den);
-    den.caveSite = clone(profile);
-    den.isAnimalDen = profile.layers.includes(TYPES.ANIMAL_DEN);
-    sitesByMapId.set(profile.mapId, profile);
-    return profile;
+    return sitesByZone.get(key) || [];
   }
 
   function sitesForZone(zoneId) {
-    const key = String(zoneId || '');
-    if (sitesByZone.has(key)) return clone(sitesByZone.get(key));
-    const layout = wildlifeDeps?.zoneLayouts?.get?.(key) || wildlifeDeps?._zoneLayouts?.get?.(key); // Current runtime layout used to repair older cached workspaces/saves lacking caveSite tags.
-    const dens = Array.isArray(layout?.dens) ? layout.dens : [];
-    if (!dens.length) return [];
-    const profiles = dens.map(den => profileFromLayoutDen(key, den));
-    if (!profiles.some(profile => profile.layers.includes(TYPES.ANIMAL_DEN))) {
-      forceAnimalProfile(profiles[0]);
-      dens[0].caveSite = clone(profiles[0]);
-      dens[0].isAnimalDen = true;
-      sitesByMapId.set(profiles[0].mapId, profiles[0]);
-    }
-    sitesByZone.set(key, profiles);
-    return clone(profiles);
+    return clone(zoneSites(zoneId));
   }
 
   function profileForMapId(mapId) {
     const id = String(mapId || '');
     if (sitesByMapId.has(id)) return clone(sitesByMapId.get(id));
-    const layouts = wildlifeDeps?.zoneLayouts || wildlifeDeps?._zoneLayouts;
-    if (layouts?.forEach) {
-      layouts.forEach((layout, zoneId) => {
-        if (sitesByMapId.has(id)) return;
-        for (const den of layout?.dens || []) {
-          const candidate = profileFromLayoutDen(zoneId, den);
-          if (candidate.mapId === id) {
-            const existing = sitesByZone.get(String(zoneId)) || [];
-            if (!existing.some(site => site.mapId === id)) sitesByZone.set(String(zoneId), [...existing, candidate]);
-            break;
-          }
-        }
-      });
-    }
+    if (!id.startsWith('map_i_den_')) return null; // Only den caverns can be cave sites; skip the layout scan for every other area (called each runtime tick).
+    wildlifeDeps?.zoneLayouts?.forEach?.((layout, zoneId) => {
+      if (!sitesByMapId.has(id) && layout?.dens?.length) zoneSites(zoneId);
+    });
     return clone(sitesByMapId.get(id) || null);
   }
 
@@ -385,8 +369,7 @@
     blockedKeys.add(tileKey(cacheTile.col, cacheTile.row));
     plan.cache = { id: `cave_cache_${mapData.id}`, col: cacheTile.col, row: cacheTile.row, tier: 2 };
     mapData.caveCache = clone(plan.cache);
-    mapData.furniture = Array.isArray(mapData.furniture) ? mapData.furniture : [];
-    mapData.furniture.push({ id: plan.cache.id, itemKey: 'ruinDungeonChestT2', col: cacheTile.col, row: cacheTile.row, rotY: Math.floor(rng() * 4) * 90 });
+    addProp(mapData, { id: plan.cache.id, key: 'ruinDungeonChestT2', col: cacheTile.col, row: cacheTile.row, rotY: Math.floor(rng() * 4) * 90 });
 
     const trapCandidates = candidates.filter(tile => {
       const d = Math.hypot(tile.col - cacheTile.col, tile.row - cacheTile.row);
@@ -400,15 +383,16 @@
   function addCatacombLayer(mapData, rng, candidates, blockedKeys, plan) {
     const count = clamp(Math.round(candidates.length / 11), 3, 7); // Coffin density scaled to chamber size but bounded for mobile scene cost.
     const coffins = pickSpacedTiles(rng, candidates, count, blockedKeys, 2.15);
-    mapData.furniture = Array.isArray(mapData.furniture) ? mapData.furniture : [];
     plan.coffins = coffins.map((tile, index) => ({ id: `cave_coffin_${index + 1}`, col: tile.col, row: tile.row, rotY: Math.floor(rng() * 4) * 90 }));
-    for (const coffin of plan.coffins) mapData.furniture.push({ id: coffin.id, itemKey: 'ruinSanctumCoffin', col: coffin.col, row: coffin.row, rotY: coffin.rotY });
+    for (const coffin of plan.coffins) addProp(mapData, { id: coffin.id, key: 'ruinSanctumCoffin', col: coffin.col, row: coffin.row, rotY: coffin.rotY });
 
     if (!plan.profile.layers.includes(TYPES.ANIMAL_DEN)) {
       const ghoulCandidates = candidates.filter(tile => !blockedKeys.has(tileKey(tile.col, tile.row)));
       const ghouls = pickSpacedTiles(rng, ghoulCandidates, Math.min(3, Math.max(1, Math.floor(coffins.length / 2))), blockedKeys, 2.5);
-      mapData.creatureSpawns = [...(mapData.creatureSpawns || []), ...ghouls.map(tile => ({ kind: 'ghoul', col: tile.col, row: tile.row }))];
-      plan.catacombCreatures = ghouls.map(tile => ({ kind: 'ghoul', col: tile.col, row: tile.row }));
+      // Ghouls are a humanoid species, not a CREATURE_DB creature — they spawn
+      // at runtime through BanditCombat exactly like Town Mine floor ghouls.
+      plan.ghoulSpawns = ghouls.map((tile, index) => ({ col: tile.col, row: tile.row, rank: 'grunt', tier: 1, ghoul: true, gender: index % 2 ? 'female' : 'male' }));
+      mapData.caveGhoulSpawns = clone(plan.ghoulSpawns);
     }
   }
 
@@ -417,10 +401,34 @@
     const tile = distant.find(candidate => !blockedKeys.has(tileKey(candidate.col, candidate.row)));
     if (!tile) return;
     blockedKeys.add(tileKey(tile.col, tile.row));
-    plan.ruinEntrance = { id: `cave_ruin_${mapData.id}`, col: tile.col, row: tile.row, seed: `${plan.profile.signature}:ruin` };
+    // DevRandomRuin.generate coerces its seed with Number(seed)>>>0, so the
+    // descriptive cave identity is hashed to a stable uint32 here.
+    plan.ruinEntrance = { id: `cave_ruin_${mapData.id}`, col: tile.col, row: tile.row, seed: hashSeed(`${plan.profile.signature}:ruin`) };
     mapData.caveRuinEntrance = clone(plan.ruinEntrance);
-    mapData.furniture = Array.isArray(mapData.furniture) ? mapData.furniture : [];
-    mapData.furniture.push({ id: plan.ruinEntrance.id, itemKey: 'ruinEntranceDoor', col: tile.col, row: tile.row, rotY: Math.floor(rng() * 4) * 90 });
+    addProp(mapData, { id: plan.ruinEntrance.id, key: 'ruinEntranceDoor', col: tile.col, row: tile.row, rotY: Math.floor(rng() * 4) * 90 });
+  }
+
+  function addProp(mapData, prop) {
+    mapData.caveProps = Array.isArray(mapData.caveProps) ? mapData.caveProps : [];
+    mapData.caveProps.push(prop);
+  }
+
+  // Called by game.js's loadBuildingScene cavern branch once the interior
+  // scene exists. The cave's props are authored furniture JSON (the same
+  // pieces DevRandomRuin/RuinSites build), loaded on demand and placed on
+  // their tile centres.
+  function buildInteriorProps(mapId, mapData, scene) {
+    const A = window.AuthoredFurniture;
+    if (!A?.load || !A?.buildGroup || !scene || !mapData?.caveProps?.length) return Promise.resolve(0);
+    return Promise.all(mapData.caveProps.map(prop => Promise.resolve(A.load(prop.key)).then(data => {
+      if (!data) { window.__farmLog?.(`[cave-sites] prop ${prop.key} has no authored data.`, 'warn'); return 0; }
+      const group = A.buildGroup(data);
+      group.position.set(prop.col + 0.5, 0, prop.row + 0.5);
+      group.rotation.y = (Number(prop.rotY) || 0) * Math.PI / 180;
+      group.userData.caveSiteProp = { mapId, id: prop.id, key: prop.key };
+      scene.add(group);
+      return 1;
+    }))).then(built => built.reduce((sum, n) => sum + n, 0));
   }
 
   function decorateCavernMapData(mapId, mapData) {
@@ -451,7 +459,7 @@
     const plan = {
       profile: clone(profile),
       separator: separator ? { col: separator.col, row: separator.row, oreKind: separator.oreKind, nearKeys: separator.nearKeys, farKeys: separator.farKeys } : null,
-      banditSpawns: [], traps: [], coffins: [], mineRocks: [], cache: null, ruinEntrance: null,
+      banditSpawns: [], ghoulSpawns: [], traps: [], coffins: [], mineRocks: [], cache: null, ruinEntrance: null,
     }; // Runtime-only plan mirrors map decorations and drives mechanics that cannot live in static building map data.
     const regions = layerRegions(profile, mapData, separator, allTiles);
 
@@ -468,7 +476,7 @@
     mapData.caveSite = clone(profile);
     mapData.caveSitePlan = {
       separatorRock: plan.separator ? { col: plan.separator.col, row: plan.separator.row, oreKind: plan.separator.oreKind } : null,
-      banditSpawns: clone(plan.banditSpawns), traps: clone(plan.traps), cache: clone(plan.cache),
+      banditSpawns: clone(plan.banditSpawns), ghoulSpawns: clone(plan.ghoulSpawns), traps: clone(plan.traps), cache: clone(plan.cache),
       coffins: clone(plan.coffins), ruinEntrance: clone(plan.ruinEntrance), mineRockCount: plan.mineRocks.length,
     };
     plansByMapId.set(String(mapId), plan);
@@ -478,7 +486,8 @@
 
   function currentStateIdentity() {
     const worldId = String(window.__hobunjiPlayerProfile?.worldId || window.__hobunjiPlayerProfile?.playerId || 'session'); // World/profile id used to isolate cave interaction state.
-    const cycle = Number(window.CalendarSystem?.tothalCycle?.() || 1); // Tothal cycle used because procedural cave anchors/profiles regenerate with wilderness terrain.
+    let cycle = 1; // Tothal cycle used because procedural cave anchors/profiles regenerate with wilderness terrain.
+    try { cycle = Number(window.CalendarSystem?.tothalCycle?.() || 1); } catch (_) { /* CalendarSystem throws until its init() has run during boot. */ }
     return `${worldId}|${cycle}`;
   }
 
@@ -510,21 +519,20 @@
 
   function stateFor(profile) {
     ensureStateLoaded();
-    if (!runtimeStateBySignature.has(profile.signature)) runtimeStateBySignature.set(profile.signature, { discovered: false, cacheOpened: false, triggeredTraps: [], banditCleared: false, ruinEntered: false });
+    if (!runtimeStateBySignature.has(profile.signature)) runtimeStateBySignature.set(profile.signature, { discovered: false, cacheOpened: false, triggeredTraps: [], occupantsCleared: false, ruinEntered: false });
     return runtimeStateBySignature.get(profile.signature);
   }
 
   function syncTransitionLabels(zoneId) {
-    const sites = sitesForZone(zoneId);
-    if (!sites.length) return 0;
-    const byMapId = new Map(sites.map(site => [site.mapId, site])); // Cave lookup used to rename old den transitions without changing ids/targets.
+    if (!zoneSites(zoneId).length) return 0;
+    const byMapId = sitesByMapId; // Cave lookup used to rename old den transitions without changing ids/targets.
     let changed = 0;
-    const layout = wildlifeDeps?.zoneLayouts?.get?.(zoneId) || wildlifeDeps?._zoneLayouts?.get?.(zoneId);
+    const layout = zoneLayout(zoneId);
     for (const transition of layout?.transitions || []) {
       if (!byMapId.has(transition?.targetMapId)) continue;
       if (transition.label !== 'Cave') { transition.label = 'Cave'; changed++; }
     }
-    const info = wildlifeDeps?.zoneScenes?.get?.(zoneId) || wildlifeDeps?._zoneScenes?.get?.(zoneId);
+    const info = wildlifeDeps?.zoneScenes?.get?.(zoneId);
     for (const transition of info?.transitions || []) {
       if (!byMapId.has(transition?.targetMapId)) continue;
       if (transition.label !== 'Cave') { transition.label = 'Cave'; changed++; }
@@ -533,13 +541,14 @@
   }
 
   function withAnimalOnlyDens(zoneId, callback) {
-    const layout = wildlifeDeps?.zoneLayouts?.get?.(zoneId) || wildlifeDeps?._zoneLayouts?.get?.(zoneId);
+    const layout = zoneLayout(zoneId);
     if (!layout || !Array.isArray(layout.dens)) return callback();
-    sitesForZone(zoneId); // Ensures older layouts receive caveSite metadata before filtering.
+    zoneSites(zoneId); // Ensures older layouts receive caveSite metadata before filtering.
     const originalDens = layout.dens; // Full cave-anchor compatibility list restored immediately after legacy wildlife code completes.
     layout.dens = originalDens.filter(den => isAnimalDenSite(den));
+    filteringDens = true;
     try { return callback(); }
-    finally { layout.dens = originalDens; }
+    finally { layout.dens = originalDens; filteringDens = false; }
   }
 
   function caveDistanceTiles(target) {
@@ -558,17 +567,25 @@
     window.__farmLog?.(`[cave-sites] discovered ${profile.signature}: ${profile.layers.join('+')}`, 'world');
   }
 
-  async function ensureBandits(profile, plan, state) {
-    if (!plan.banditSpawns?.length || state.banditCleared) return;
+  function occupantSpawns(plan) {
+    return [...(plan.banditSpawns || []), ...(plan.ghoulSpawns || [])];
+  }
+
+  // Bandit hideouts and catacomb ghouls are both humanoids built by
+  // BanditCombat.makeEntity (ghouls with the same roster/def overrides Town
+  // Mine floors use), spawned once per page session while the player is in
+  // the cave and marked cleared once every one of them has died.
+  function ensureOccupants(profile, plan, state) {
+    const spawns = occupantSpawns(plan); // Logical tiles for every humanoid this cave history owns.
+    if (!spawns.length || state.occupantsCleared) return;
     const mapId = profile.mapId;
     const hostileObjects = wildlifeDeps?.hostileObjects;
     if (!hostileObjects) return;
-    const living = [...hostileObjects].filter(entity => entity?.caveSiteMapId === mapId && entity.health > 0); // Existing cave-bandit entities used to avoid respawning while the hideout is active.
-    if (living.length) return;
+    for (const entity of hostileObjects) if (entity?.caveSiteMapId === mapId && entity.health > 0) return; // Hideout still active.
     if (banditPopulatedMaps.has(mapId)) {
-      state.banditCleared = true;
+      state.occupantsCleared = true;
       persistState();
-      window.__farmLog?.(`[cave-sites] bandit hideout cleared: ${mapId}`, 'world');
+      window.__farmLog?.(`[cave-sites] cave occupants cleared: ${mapId}`, 'world');
       return;
     }
     if (banditSpawnPromises.has(mapId) || !window.BanditCombat?.loadGangConfig || !window.BanditCombat?.makeEntity) return;
@@ -577,15 +594,21 @@
       const cfg = await window.BanditCombat.loadGangConfig(); // Existing gang config owns species/clothing/weapons instead of cave code duplicating bandit construction.
       if (wildlifeDeps?.getCurrentArea?.() !== mapId) return;
       const tileSize = Number(wildlifeDeps?.TILE) || 32;
-      let spawned = 0; // Number of actual BanditCombat entities created for this cave in the current page session.
-      for (let index = 0; index < plan.banditSpawns.length; index++) {
-        const spawn = plan.banditSpawns[index]; // Authored-by-generator logical tile for this bandit.
+      let spawned = 0; // Number of actual entities created for this cave in the current page session.
+      for (const spawn of spawns) {
         const x = (spawn.col + 0.5) * tileSize;
         const y = (spawn.row + 0.5) * tileSize;
-        const entity = await window.BanditCombat.makeEntity(cfg, spawn.rank || 'grunt', spawn.tier || 1, x, y, {
-          zoneId: mapId,
-          extra: { homeX: x, homeY: y, state: 'idle', caveSiteMapId: mapId },
-        });
+        const opts = { zoneId: mapId, extra: { homeX: x, homeY: y, state: 'idle', caveSiteMapId: mapId } };
+        if (spawn.ghoul) {
+          opts.rosterOverride = {
+            name: 'Ghoul',
+            appearance: { speciesId: 'ghoul', gender: spawn.gender || 'male', cosmetics: {}, randomSeed: `cave-ghoul:${profile.signature}:${spawn.col}:${spawn.row}` },
+            equippedCosmetics: [],
+            appliedDyes: {},
+          };
+          opts.defOverride = { label: 'Ghoul', maxHealth: 34, maxStamina: 55, attackDamage: 6, rangedWeaponKey: null, aggroRangePx: tileSize * 8, leashRangePx: tileSize * 30 };
+        }
+        const entity = await window.BanditCombat.makeEntity(cfg, spawn.rank || 'grunt', spawn.tier || 1, x, y, opts);
         if (wildlifeDeps?.getCurrentArea?.() !== mapId) break;
         if (!entity) continue;
         entity.caveSiteMapId = mapId;
@@ -594,8 +617,8 @@
         spawned++;
       }
       if (spawned > 0) banditPopulatedMaps.add(mapId);
-      window.__farmLog?.(`[cave-sites] populated bandit hideout ${mapId} with ${spawned}/${plan.banditSpawns.length} configured bandit(s).`, 'world');
-    })().catch(error => window.__farmLog?.(`[cave-sites] bandit spawn failed for ${mapId}: ${error.message}`, 'warn'))
+      window.__farmLog?.(`[cave-sites] populated ${mapId} with ${spawned}/${spawns.length} occupant(s).`, 'world');
+    })().catch(error => window.__farmLog?.(`[cave-sites] occupant spawn failed for ${mapId}: ${error.message}`, 'warn'))
       .finally(() => banditSpawnPromises.delete(mapId));
     banditSpawnPromises.set(mapId, promise);
   }
@@ -656,7 +679,7 @@
     state.ruinEntered = true; // Discovery/history flag only; revisiting the same threshold remains allowed after returning from the ruin.
     persistState();
     ruinTransitionMaps.add(profile.mapId);
-    const den = (wildlifeDeps?.zoneLayouts?.get?.(profile.zoneId) || wildlifeDeps?._zoneLayouts?.get?.(profile.zoneId))?.dens?.find(candidate => String(candidate.id) === String(profile.denId)); // Exterior cave anchor used as the safe existing return destination after the ruin.
+    const den = zoneLayout(profile.zoneId)?.dens?.find(candidate => String(candidate.id) === String(profile.denId)); // Exterior cave anchor used as the safe existing return destination after the ruin.
     const anchor = den?.mouthAnchor || profile.mouthAnchor || { x: 1, y: 1 };
     const tileSize = Number(wildlifeDeps?.TILE) || 32;
     const returnAnchor = { area: profile.zoneId, x: (Number(anchor.x) + 0.5) * tileSize, y: (Number(anchor.y) + 0.5) * tileSize };
@@ -675,12 +698,12 @@
     if (caveRuntimeTimer > 0) return;
     caveRuntimeTimer = CAVE_RUNTIME_INTERVAL_S;
     const mapId = String(wildlifeDeps?.getCurrentArea?.() || '');
-    const profile = profileForMapId(mapId);
-    const plan = plansByMapId.get(mapId);
-    if (!profile || !plan) return;
+    const plan = plansByMapId.get(mapId); // Only caverns decorated this session have a plan; checked first so open-world ticks do no profile work.
+    const profile = plan && sitesByMapId.get(mapId);
+    if (!profile) return;
     const state = stateFor(profile);
     markDiscovered(profile, state);
-    ensureBandits(profile, plan, state);
+    ensureOccupants(profile, plan, state);
     triggerTraps(profile, plan, state);
     grantCacheLoot(profile, plan, state);
     maybeEnterRuin(profile, plan, state);
@@ -757,20 +780,6 @@
     return ready;
   }
 
-  function installFutureGlobalHook(name) {
-    if (Object.prototype.hasOwnProperty.call(window, name)) return;
-    let value; // Temporary backing value until the real subsystem assigns window[name].
-    Object.defineProperty(window, name, {
-      configurable: true,
-      enumerable: true,
-      get() { return value; },
-      set(next) {
-        value = next;
-        installIntegrations(); // Assignment-time installation happens before later parser scripts can call the new subsystem's init().
-      },
-    });
-  }
-
   function debugSnapshot(zoneId = null) {
     ensureStateLoaded();
     const zones = zoneId ? [String(zoneId)] : [...sitesByZone.keys()]; // Requested/all registered zones included in the mobile-readable diagnostic snapshot.
@@ -787,6 +796,7 @@
         profile: plansByMapId.get(currentArea).profile,
         separator: plansByMapId.get(currentArea).separator && { col: plansByMapId.get(currentArea).separator.col, row: plansByMapId.get(currentArea).separator.row, oreKind: plansByMapId.get(currentArea).separator.oreKind },
         banditSpawns: plansByMapId.get(currentArea).banditSpawns,
+        ghoulSpawns: plansByMapId.get(currentArea).ghoulSpawns,
         traps: plansByMapId.get(currentArea).traps,
         cache: plansByMapId.get(currentArea).cache,
         coffins: plansByMapId.get(currentArea).coffins,
@@ -808,6 +818,7 @@
     updateCurrentCaveRuntime,
     installIntegrations,
     debugSnapshot,
+    buildInteriorProps,
     __test: Object.freeze({
       rollProfile,
       forceAnimalProfile,
@@ -817,17 +828,14 @@
       plansByMapId,
       sitesByZone,
       sitesByMapId,
+      hashSeed,
     }),
   });
 
-  // This module is parser-loaded beside wilderness generation, while CavernGenerator,
-  // WildlifeSpawn, and DevSpawner may appear later in the same document. Hooking
-  // missing globals at assignment time avoids a subtle race where game.js could
-  // synchronously call init() before DOMContentLoaded. The event listeners remain
-  // harmless fallbacks for preview/tools that construct globals differently.
-  installFutureGlobalHook('CavernGenerator');
-  installFutureGlobalHook('WildlifeSpawn');
-  installFutureGlobalHook('DevSpawner');
+  // index.html loads this after wildlife-spawn.js, dev-spawner.js and
+  // cavern-generator.js but before game.js, so the wrappers are in place
+  // before game.js calls any of their init()s. The listeners are fallbacks
+  // for preview/tool pages that create those globals later.
   if (!installIntegrations() && typeof document !== 'undefined') {
     document.addEventListener('DOMContentLoaded', installIntegrations, { once: true });
     window.addEventListener?.('load', installIntegrations, { once: true });

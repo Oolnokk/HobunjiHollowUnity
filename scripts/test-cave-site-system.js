@@ -5,7 +5,7 @@ const path = require('path');
 
 const root = path.join(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'docs/js/cave-site-system.js'), 'utf8');
-const localeSource = fs.readFileSync(path.join(root, 'docs/js/locale-cave-runtime.js'), 'utf8');
+const indexHtml = fs.readFileSync(path.join(root, 'docs/index.html'), 'utf8');
 
 function rngFactory(seedText) {
   let h = 2166136261 >>> 0;
@@ -113,13 +113,15 @@ assert(mineMap.oreRocks.length >= 7, 'ore-mine cave reuses oreRock mechanic at r
 const catProfile = profile('map_i_test_catacomb', [Cave.TYPES.CATACOMB]);
 installProfile(catProfile);
 const catMap = Cave.decorateCavernMapData(catProfile.mapId, baseMap(catProfile.mapId));
-assert(catMap.furniture.filter(item => item.itemKey === 'ruinSanctumCoffin').length >= 3, 'catacomb reuses authored coffin furniture');
-assert(catMap.creatureSpawns.some(spawn => spawn.kind === 'ghoul'), 'catacomb reuses ordinary creature spawn records for guardians');
+assert(catMap.caveProps.filter(item => item.key === 'ruinSanctumCoffin').length >= 3, 'catacomb places authored coffin props');
+assert(!catMap.furniture.some(item => /^ruin/.test(item.itemKey)), 'authored ruin pieces stay out of FURNITURE_DEFS-keyed mapData.furniture');
+assert(catMap.caveGhoulSpawns.length >= 1 && catMap.caveGhoulSpawns.every(spawn => spawn.ghoul), 'catacomb guardians are BanditCombat ghouls, not CREATURE_DB spawns');
+assert.equal(catMap.creatureSpawns.length, 0, 'non-animal cave keeps no den creature spawns');
 
 const cacheProfile = profile('map_i_test_cache', [Cave.TYPES.TRAPPED_CACHE]);
 installProfile(cacheProfile);
 const cacheMap = Cave.decorateCavernMapData(cacheProfile.mapId, baseMap(cacheProfile.mapId));
-assert(cacheMap.furniture.some(item => item.itemKey === 'ruinDungeonChestT2'), 'cache reuses dungeon chest furniture');
+assert(cacheMap.caveProps.some(item => item.key === 'ruinDungeonChestT2'), 'cache places the authored dungeon chest');
 assert(cacheMap.caveCache && cacheMap.caveTraps.length >= 1, 'cache has functional runtime plan plus at least one trap');
 
 const mixedProfile = profile('map_i_test_mixed', [Cave.TYPES.BANDIT_HIDEOUT, Cave.TYPES.CATACOMB]);
@@ -127,13 +129,15 @@ installProfile(mixedProfile);
 const mixedMap = Cave.decorateCavernMapData(mixedProfile.mapId, baseMap(mixedProfile.mapId));
 assert(mixedMap.oreRocks.some(rock => rock.caveSeparator), 'mixed history is partitioned with an existing mineable ore-rock blocker');
 assert(mixedMap.caveBanditSpawns.length >= 2, 'bandit hideout supplies runtime BanditCombat spawn points');
-assert(mixedMap.furniture.some(item => item.itemKey === 'ruinSanctumCoffin'), 'secondary catacomb coexists beyond the same cave shell');
+assert(mixedMap.caveProps.some(item => item.key === 'ruinSanctumCoffin'), 'secondary catacomb coexists beyond the same cave shell');
 
 const ruinProfile = profile('map_i_test_ruin', [Cave.TYPES.RUIN_ENTRANCE]);
 installProfile(ruinProfile);
 const ruinMap = Cave.decorateCavernMapData(ruinProfile.mapId, baseMap(ruinProfile.mapId));
-assert(ruinMap.furniture.some(item => item.itemKey === 'ruinEntranceDoor'), 'ruin cave reuses the authored ruin entrance door');
-assert(ruinMap.caveRuinEntrance?.seed, 'ruin threshold has deterministic DevRandomRuin seed');
+assert(ruinMap.caveProps.some(item => item.key === 'ruinEntranceDoor'), 'ruin cave places the authored ruin entrance door');
+const ruinSeed = ruinMap.caveRuinEntrance?.seed;
+assert(Number.isInteger(ruinSeed) && ruinSeed > 0 && ruinSeed === ruinSeed >>> 0, 'ruin threshold seed is a uint32 (DevRandomRuin coerces with Number(seed)>>>0)');
+assert.equal(ruinSeed, Cave.decorateCavernMapData(ruinProfile.mapId, baseMap(ruinProfile.mapId)).caveRuinEntrance.seed, 'ruin seed is deterministic');
 
 // Assignment-time hooks must capture dependencies before synchronous game initialization.
 let seenDenCount = -1;
@@ -147,6 +151,7 @@ context.WildlifeSpawn = {
 };
 context.CavernGenerator = { synthesizeCavernMapData(id) { return baseMap(id); } };
 context.DevSpawner = { init(deps) { this.deps = deps; } };
+assert(Cave.installIntegrations(), 'integrations install against already-loaded subsystems');
 const deps = {
   zoneLayouts,
   zoneScenes: new Map(),
@@ -168,8 +173,18 @@ const census = context.WildlifeSpawn.denNestCensus('map_test_wilds');
 assert.equal(census.caveCount, workspace.animalDens.length, 'wildlife diagnostics expose generic cave total');
 assert.equal(census.denCount, expectedAnimalDens, 'wildlife diagnostics retain true animal-den count');
 
-// Locale bridge must invoke cave promotion while leaving its existing cave_small registry intact.
-assert(localeSource.includes('window.CaveSiteSystem?.applyWorkspaceProfiles?.(mapId, workspace)'), 'LocaleCaveRuntime wires generated workspaces into CaveSiteSystem');
-assert(localeSource.includes('cave-site-system.js?v=20261009caves1'), 'LocaleCaveRuntime parser-loads CaveSiteSystem before later gameplay systems');
+// Cached Tothal layouts skip the generator capture; the lazy path must assign the same profiles.
+const freshDens = workspace.animalDens.map(den => ({ id: den.id, x: den.x, y: den.y, w: den.w, h: den.h, mouthAnchor: den.mouthAnchor }));
+zoneLayouts.set('map_cached_wilds', { dens: freshDens, transitions: [] });
+const cachedSites = Cave.sitesForZone('map_cached_wilds');
+const freshSites = Cave.applyWorkspaceProfiles('map_cached_wilds', { animalDens: freshDens.map(den => ({ ...den, caveSite: undefined })) });
+assert.deepEqual(cachedSites.map(site => site.layers.join('+')), freshSites.map(site => site.layers.join('+')), 'cached and freshly generated zones get identical cave profiles');
+
+// Load order: every wrapped subsystem must be loaded before this module, and this module before game.js.
+const scriptIndex = name => indexHtml.search(new RegExp(`<script src="(?:js/)?${name.replace('.', '\\.')}\\?v=[A-Za-z0-9_-]+"`));
+for (const dep of ['wildlife-spawn.js', 'dev-spawner.js', 'cavern-generator.js', 'cavern-ore-rocks.js', 'locale-cave-runtime.js']) {
+  assert(scriptIndex(dep) >= 0 && scriptIndex(dep) < scriptIndex('cave-site-system.js'), `${dep} loads before cave-site-system.js`);
+}
+assert(scriptIndex('cave-site-system.js') < scriptIndex('game.js'), 'cave-site-system.js loads before game.js');
 
 console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${expectedAnimalDens} animal den cave(s), mixed separator at ${separator.col},${separator.row}`);

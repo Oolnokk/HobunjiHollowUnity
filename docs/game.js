@@ -13744,50 +13744,55 @@
           // A den's cavern (mapData.wallStyle === 'cavern') guards a 2x2 nest
           // with a Den-Mother mini-boss that never leaves — see synthesizeCavernMapData
           // / generateCavernFloor for nestCol/nestRow/denMotherKind.
-          if (mapData.wallStyle === 'cavern' && Number.isFinite(mapData.nestCol) && Number.isFinite(mapData.nestRow)) {
-            const nestCol = mapData.nestCol, nestRow = mapData.nestRow;
-            const motherKey = mapData.denMotherKind;
-            const motherDef = CREATURE_DB[motherKey];
-            // Same shared per-family genotype as this den's exterior pack
-            // (see spawnPackAtDen/getOrMakeDenGenotype) — whichever of the
-            // two spawns first rolls it, the other reuses it, so the
-            // Den-Mother and any same-family pack members (and the nest's
-            // eggs/babies) always match. Keyed by family (not just mapId)
-            // since the Den-Mother's species is picked independently of
-            // whatever the exterior pack currently is (see
-            // pickDenMotherKind) — they can genuinely differ.
-            const motherFamily = window.WildlifeSpawn.denGenotypeFamily(motherKey);
-            const denGenotype = motherFamily ? window.WildlifeSpawn.getOrMakeDenGenotype(mapId, motherFamily) : null;
-            if (motherDef) {
-              const homeX = (nestCol + 1) * TILE, homeY = (nestRow + 1) * TILE;
-              const mother = makeCreatureEntity(motherKey, homeX, homeY, {
-                scene: bScene, grid: bGrid, cols, rows,
-                areaId: mapId, homeX, homeY, state: 'idle',
-                isDenMother: true, genotype: denGenotype,
-              });
-              if (mother) hostileObjects.add(mother);
+          // Caves promoted to non-animal histories (js/cave-site-system.js) keep
+          // the cavern shell but drop the nest, so only the Den-Mother/nest part
+          // is gated on it — ore rocks and crawl spawns build for every cavern.
+          if (mapData.wallStyle === 'cavern') {
+            if (Number.isFinite(mapData.nestCol) && Number.isFinite(mapData.nestRow)) {
+              const nestCol = mapData.nestCol, nestRow = mapData.nestRow;
+              const motherKey = mapData.denMotherKind;
+              const motherDef = CREATURE_DB[motherKey];
+              // Same shared per-family genotype as this den's exterior pack
+              // (see spawnPackAtDen/getOrMakeDenGenotype) — whichever of the
+              // two spawns first rolls it, the other reuses it, so the
+              // Den-Mother and any same-family pack members (and the nest's
+              // eggs/babies) always match. Keyed by family (not just mapId)
+              // since the Den-Mother's species is picked independently of
+              // whatever the exterior pack currently is (see
+              // pickDenMotherKind) — they can genuinely differ.
+              const motherFamily = window.WildlifeSpawn.denGenotypeFamily(motherKey);
+              const denGenotype = motherFamily ? window.WildlifeSpawn.getOrMakeDenGenotype(mapId, motherFamily) : null;
+              if (motherDef) {
+                const homeX = (nestCol + 1) * TILE, homeY = (nestRow + 1) * TILE;
+                const mother = makeCreatureEntity(motherKey, homeX, homeY, {
+                  scene: bScene, grid: bGrid, cols, rows,
+                  areaId: mapId, homeX, homeY, state: 'idle',
+                  isDenMother: true, genotype: denGenotype,
+                });
+                if (mother) hostileObjects.add(mother);
+              }
+              const nestRng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng)
+                ? WildernessMapGenerator.makeRng(mapId + '_nestcount') : Math.random;
+              const clutchCfg = window.SCRATCHBONES_CONFIG?.game?.wildlife?.nestClutch || {};
+              const clutchMin = Math.max(1, Math.floor(Number(clutchCfg.min) || 1));
+              const clutchMax = Math.max(clutchMin, Math.floor(Number(clutchCfg.max) || clutchMin));
+              const remaining = clutchMin + Math.floor(nestRng() * (clutchMax - clutchMin + 1));
+              const liveBirth = !!motherDef?.liveBirth;
+              const itemKey = DEN_MOTHER_ITEM_KEYS[motherKey];
+              if (itemKey) {
+                _denNests.set(mapId, {
+                  col: nestCol, row: nestRow, w: 2, h: 2,
+                  itemKey, liveBirth, remaining, genotype: denGenotype,
+                });
+              } else {
+                window.__farmLog?.(`[wildlife] Den-Mother "${motherKey || 'missing'}" has no configured nest reward; nest collection is disabled.`, 'warn');
+              }
+              // Simple nest marker so the 2x2 chamber reads as an objective.
+              const nestMat = new THREE.MeshBasicMaterial({ color: 0x3a2a1a });
+              const nestMarker = new THREE.Mesh(new THREE.BoxGeometry(2, 0.12, 2), nestMat);
+              nestMarker.position.set(nestCol + 1, 0.02, nestRow + 1);
+              bScene.add(nestMarker);
             }
-            const nestRng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng)
-              ? WildernessMapGenerator.makeRng(mapId + '_nestcount') : Math.random;
-            const clutchCfg = window.SCRATCHBONES_CONFIG?.game?.wildlife?.nestClutch || {};
-            const clutchMin = Math.max(1, Math.floor(Number(clutchCfg.min) || 1));
-            const clutchMax = Math.max(clutchMin, Math.floor(Number(clutchCfg.max) || clutchMin));
-            const remaining = clutchMin + Math.floor(nestRng() * (clutchMax - clutchMin + 1));
-            const liveBirth = !!motherDef?.liveBirth;
-            const itemKey = DEN_MOTHER_ITEM_KEYS[motherKey];
-            if (itemKey) {
-              _denNests.set(mapId, {
-                col: nestCol, row: nestRow, w: 2, h: 2,
-                itemKey, liveBirth, remaining, genotype: denGenotype,
-              });
-            } else {
-              window.__farmLog?.(`[wildlife] Den-Mother "${motherKey || 'missing'}" has no configured nest reward; nest collection is disabled.`, 'warn');
-            }
-            // Simple nest marker so the 2x2 chamber reads as an objective.
-            const nestMat = new THREE.MeshBasicMaterial({ color: 0x3a2a1a });
-            const nestMarker = new THREE.Mesh(new THREE.BoxGeometry(2, 0.12, 2), nestMat);
-            nestMarker.position.set(nestCol + 1, 0.02, nestRow + 1);
-            bScene.add(nestMarker);
 
             // A "bigger, tunnely" den (see generateCavernFloor) deserves real
             // content along the crawl to the Den-Mother rather than an empty
@@ -13795,35 +13800,12 @@
             // (non-Den-Mother) creatures from the same native pool, both
             // picked deterministically by synthesizeCavernMapData (see
             // cavern-generator.js's pickOreRockTiles/pickCreatureSpawnTiles).
-            const CAVERN_ORE_TINTS = { stone: 0x8a8680, copper: 0xb0703a, tin: 0x9aa0a6, iron: 0x8a5a42, silver: 0xc4c8ce, gold: 0xd8b23a, crystal: 0x8fd6e0 };
-            // Fresh map each build (rather than reusing any Map left over
-            // from a stale pre-Tothal-Shift cavern of the same mapId — see
-            // forgetZoneDenState) so removeZoneMineableRockVisual never
-            // targets an orphaned rock group from a layout that no longer
-            // exists.
-            const oreRockMeshes = new Map();
-            if (mapData.oreRocks?.length) _zoneMineableRockMeshes.set(mapId, oreRockMeshes);
-            for (const rock of (mapData.oreRocks || [])) {
-              if (bGrid[rock.row]?.[rock.col]) {
-                bGrid[rock.row][rock.col].type = TileType.ROCK;
-                bGrid[rock.row][rock.col].rockKind = 'diggableRockOre';
-                bGrid[rock.row][rock.col].oreKind = rock.oreKind;
-              }
-              const { stoneGeo } = window.TerrainGeometry.buildRockTileGeo(rock.col, rock.row);
-              if (!stoneGeo) continue;
-              const rockMesh = new THREE.Mesh(stoneGeo, new THREE.MeshLambertMaterial({ color: CAVERN_ORE_TINTS[rock.oreKind] || CAVERN_ORE_TINTS.stone }));
-              rockMesh.castShadow = rockMesh.receiveShadow = true;
-              const rockGroup = new THREE.Group();
-              rockGroup.add(rockMesh);
-              rockGroup.position.set(rock.col + 0.5, 0, rock.row + 0.5);
-              bScene.add(rockGroup);
-              _markOutline(rockGroup);
-              // Reuses the same mineableRocksByTile/isMineableRockTile/
-              // removeZoneMineableRockVisual pipeline the outdoor ore rocks
-              // already go through (see mergeZoneTiles/buildMergedZoneGrid),
-              // so mining one here needs no new gameplay code.
-              oreRockMeshes.set(`${rock.col},${rock.row}`, rockGroup);
-            }
+            // Cavern ore-rock placement (tile marking + tinted rock meshes
+            // registered for mining) now lives in js/cavern-ore-rocks.js.
+            window.CavernOreRocks.build(mapId, mapData, bScene, bGrid);
+            // Cave-site history props (catacomb coffins, cache chest, ruin door)
+            // are authored furniture placed by js/cave-site-system.js.
+            window.CaveSiteSystem?.buildInteriorProps?.(mapId, mapData, bScene);
             // Regular wildlife species (e.g. uumkaoii-wild) are hostile:false
             // outdoors — pure fleeable prey, per CREATURE_DB's own comment —
             // with no aggroRangePx/attack stats at all. A den's own pack
@@ -29239,11 +29221,18 @@
         // needs either today.
         player,
         calendar,
+        damagePlayer, // Used by js/cave-site-system.js's one-shot cache traps (it captures this dependency bag).
       });
 
       window.CavernGenerator?.init({
         EXTERIOR_ZONES,
         DEN_MOTHER_DEFS,
+      });
+
+      window.CavernOreRocks.init({
+        TileType,
+        markOutline: _markOutline,
+        zoneMineableRockMeshes: _zoneMineableRockMeshes,
       });
 
       window.TownMine?.init({

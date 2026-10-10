@@ -744,6 +744,7 @@
        whose generateCavernFloor calls window.CavernSculptor.carveMazeCavern(...). -->
   <script src="js/cavern-sculptor.js?v=20260923banubuwalls1"></script>
   <script src="js/cavern-generator.js?v=20260925denturnover1"></script>
+  <script src="js/cavern-ore-rocks.js?v=20261010caveore1"></script>
   <script src="js/town-mine.js?v=20261008hf23c45c"></script>
   <!-- A wilderness zone's in-bounds elevated plateau/mesa terrain
        (window.ZonePlateauMesa) — pure scene-graph generation, no other
@@ -770,7 +771,9 @@
        window.ZoneDenTotemFeatures.init(...) alongside its sibling systems
        and its build*(...) functions lazily, from buildZoneScene, never
        synchronously during initial boot. -->
-  <script src="js/locale-cave-runtime.js?v=20260923caveregistry1"></script>
+  <script src="js/locale-cave-runtime.js?v=20261010h40fea5e"></script>
+  <!-- Promotes wilderness den anchors into generic cave sites; wraps WildlifeSpawn/CavernGenerator/DevSpawner, all loaded above. -->
+  <script src="js/cave-site-system.js?v=20261010cavesites1"></script>
   <script src="js/ruin-site-locales.js?v=20261002hb4d3f2d"></script>
   <script src="js/stampable-locale-defs.js?v=20260929ruinsites1"></script>
   <script src="js/ruin-sites.js?v=20261003h12be717"></script>
@@ -2608,7 +2611,7 @@
   <script src="js/romance-wedding.js?v=20261007wedding1"></script>
   <script src="js/romance-system.js?v=20261007romance1"></script>
   <script src="js/npc-command-wheel.js?v=20261008h02bf686"></script>
-  <script src="game.js?v=20261010hfc26059"></script>
+  <script src="game.js?v=20261010h034e90e"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261005h9a94218"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
