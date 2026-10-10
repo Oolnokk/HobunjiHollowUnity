@@ -248,4 +248,30 @@ assert([out[2], out[5], out[8]].every(z => near(z, 0.012, 1e-6)), 'depth is carr
   assert(near(k1.x, k2.x) && near(k1.y, k2.y) && near(k1.z, k2.z), 'thigh and calf share the knee');
 }
 
+// ---- whole-leg weighting (pant sides follow the bone) ----------------------------------
+{
+  const garment = {
+    legBones: { left: { hip: { x: 0.3, y: 0.3 }, knee: { x: 0.3, y: 0.55 }, ankle: { x: 0.3, y: 0.8 } }, right: { hip: { x: 0.7, y: 0.3 }, knee: { x: 0.7, y: 0.55 }, ankle: { x: 0.7, y: 0.8 } } },
+    legOpenings: { left: [0.2, 0.25, 0.3, 0.35, 0.4].map(x => ({ x, y: 0.8 })), right: [0.6, 0.65, 0.7, 0.75, 0.8].map(x => ({ x, y: 0.8 })) },
+  };
+  const segments = 20, count = (segments + 1) * (segments + 1);
+  const belt = () => { const w = new Float32Array(count * 5); for (let i = 0; i < count; i++) w[i * 5] = 1; return w; }; // Everything painted belt, as with default weights.
+  const at = (u, v) => Math.round(v * segments) * (segments + 1) + Math.round(u * segments);
+  const w = belt();
+  Core.applyLegAxisWeights(w, segments, garment, 1);
+  const cell = (u, v) => Array.from(w.slice(at(u, v) * 5, at(u, v) * 5 + 5));
+  const side = cell(0.1, 0.7); // The far outer side of the left leg, low on the leg.
+  assert(side[3] === 0 && side[4] === 0 && side[0] < 0.05 && side[1] + side[2] > 0.95, 'the side of a leg is leg-weighted, not belt-weighted');
+  const middle = cell(0.5, 0.7); // The crotch/between-the-legs region below the hip.
+  assert(middle[0] < 0.05 && middle[1] + middle[2] + middle[3] + middle[4] > 0.95, 'the region between the legs follows the legs too, so the hem cannot go concave');
+  assert(cell(0.3, 0.7)[2] > 0.95 && cell(0.3, 0.7)[1] < 0.05, 'calf below the knee');
+  assert(cell(0.3, 0.4)[1] > 0.5, 'thigh between hip and knee, once past the hip blend');
+  assert(near(cell(0.3, 0.2)[0], 1) && near(cell(0.7, 0.29)[0], 1), 'above the hip stays belt');
+  assert(cell(0.9, 0.7)[3] + cell(0.9, 0.7)[4] > 0.95 && cell(0.9, 0.7)[1] === 0, 'the right leg is handled the same way');
+  const sum = i => w.slice(i * 5, i * 5 + 5).reduce((a, b) => a + b, 0);
+  assert([at(0.1, 0.7), at(0.5, 0.7), at(0.3, 0.35), at(0.8, 0.6)].every(i => near(sum(i), 1, 1e-5)), 'cells stay normalized');
+  const off = belt(); Core.applyLegAxisWeights(off, segments, garment, 0);
+  assert(off.every((value, i) => value === (i % 5 === 0 ? 1 : 0)), 'strength 0 leaves the painted weights alone');
+}
+
 console.log('Pants rig bone skinning: PASS');

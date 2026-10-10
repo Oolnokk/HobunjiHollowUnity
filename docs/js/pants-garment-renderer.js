@@ -163,6 +163,7 @@
     geometry.setIndex(indices);
     geometry.getAttribute('position').setUsage?.(THREE.DynamicDrawUsage);
     geometry.computeBoundingSphere();
+    Core.applyLegAxisWeights(weights, SEGMENTS, garment, character.legCoverage === undefined ? 1 : Number(character.legCoverage)); // Whole pant legs (sides included) follow their bone.
     Core.sharpenWeights(weights, Math.min(8, Math.max(1, Number(character.weightSharpness) || 4))); // Strong initial 2D->3D alignment (see Core.sharpenWeights).
     // Everything at or above the beltline spline belongs to the belt (rigid, flat in the portrait plane, however the weights
     // were painted): the beltline never tilts or leaves the portrait's depth, even where no belt weight touches it.

@@ -457,6 +457,44 @@
     return [0.34, 0.42, 0.5, 0.58, 0.66].map((x, index) => ({ x, y: clamp(y + (Number(shape[index]) || 0), 0, 1) }));
   }
 
+  // Makes the whole lower garment follow the legs. Painted/auto-seeded weights fall off with distance from the bone, so the
+  // SIDES of a pant leg (and the crotch between the legs) end up belt-weighted and stay rigid while only the pixels near the
+  // bone move with it; on a species with very short legs the hem then goes concave. Here everything at or below a leg's hip
+  // level is pulled toward that leg's bone weights regardless of its distance from the bone: thigh above the knee, calf
+  // below it, easing in from the hip so the belt-to-leg transition stays soft, and the two legs blending across the
+  // centre line so the crotch stays joined. `weights` is five floats per vertex on a (segments+1)^2 grid in garment (u,v)
+  // order; `strength` 0 leaves the painted weights, 1 fully applies this. In place.
+  function applyLegAxisWeights(weights, segments, garment, strength = 1) {
+    const amount = clamp(Number(strength), 0, 1);
+    if (!(amount > 0)) return weights;
+    const bones = normalizeLegBones(garment?.legBones);
+    const smooth = (edge0, edge1, x) => { const t = clamp((x - edge0) / (edge1 - edge0)); return t * t * (3 - 2 * t); };
+    const legs = [['left', 1, 2], ['right', 3, 4]].map(([side, thighChannel, calfChannel]) => ({ hipY: bones[side].hip.y, span: Math.max(1e-6, bones[side].ankle.y - bones[side].hip.y), thighChannel, calfChannel }));
+    const target = [0, 0, 0, 0, 0];
+    for (let row = 0, vertex = 0; row <= segments; row++) {
+      const v = row / segments;
+      for (let col = 0; col <= segments; col++, vertex++) {
+        const leftShare = 1 - smooth(0.42, 0.58, col / segments);
+        let lambda = 0;
+        target.fill(0);
+        legs.forEach((leg, index) => {
+          const t = (v - leg.hipY) / leg.span; // 0 at the hip's height, 1 at the ankle's.
+          const share = index === 0 ? leftShare : 1 - leftShare;
+          const legStrength = smooth(0, 0.3, t) * share;
+          if (!(legStrength > 0)) return;
+          const thigh = 1 - smooth(0.4, 0.6, t);
+          target[leg.thighChannel] += legStrength * thigh;
+          target[leg.calfChannel] += legStrength * (1 - thigh);
+          lambda += legStrength;
+        });
+        if (!(lambda > 0)) continue;
+        const blend = lambda * amount, base = vertex * 5;
+        for (let channel = 0; channel < 5; channel++) weights[base + channel] = weights[base + channel] * (1 - blend) + (target[channel] / lambda) * blend;
+      }
+    }
+    return weights;
+  }
+
   // Hardens painted weights so a vertex mostly follows its dominant bone: each weight is raised to `power` and the cell is
   // renormalized (power 1 = as painted). Smooth auto-seeded/painted gradients leave vertices ON a leg bone only ~50%
   // bone-weighted, which dilutes the garment's initial 2D->3D rotation so the leg openings do not end up centered on
@@ -704,6 +742,7 @@
     alignBoneWithMotion,
     amplifyLegRoll,
     sharpenWeights,
+    applyLegAxisWeights,
     portraitMapping,
     portraitPointForLocal,
     defaultBeltAtPosterior,
