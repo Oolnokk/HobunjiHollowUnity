@@ -2090,6 +2090,21 @@ function portraitOptionFromJson(entry, json) {
   return { id: shortId, label, tintSlot: resolvedTintSlot, layers, variantLayers, slot: json.slot || null, portraitSlot, colorRange, hairSlot, tags, materialTag, hoodLayering, specialHeadwearRules, originalId };
 }
 
+const portraitSpeciesLoadStatus = { phase: 'idle', loaded: 0, retryCount: 0, lastError: null }; // Copied by Pixel Probe; species failures must not be cached as a complete portrait registry.
+async function loadPortraitSpeciesJson(url) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const response = await fetch(url, attempt ? { cache: 'reload' } : undefined);
+      if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
+      return await response.json();
+    } catch (error) {
+      if (attempt) throw error;
+      portraitSpeciesLoadStatus.retryCount++;
+    }
+  }
+}
+window.portraitSpeciesLoadSnapshot = () => ({ ...portraitSpeciesLoadStatus, fighters: FIGHTERS.map(fighter => `${fighter.speciesId}:${fighter.gender}`), latestChange: 'Species data retries transient failures; incomplete registries are rejected instead of silently turning a saved character into Mao’ao.' });
+
 /**
  * Fetch cosmetics index and all appearance entries.
  * Returns { hairOptions, eyesOptions, facialHairOptions, indexEntries, optionCache }.
@@ -2205,17 +2220,19 @@ async function loadPortraitCosmetics(configBase) {
   const exclusiveCosmeticsByFighter = {};
   try {
     const speciesIdxUrl = new URL(configBase + 'species/index.json', window.location.href).toString();
-    const speciesIdxResp = await fetch(speciesIdxUrl);
-    if (speciesIdxResp.ok) {
-      const speciesIdx = await speciesIdxResp.json();
+    portraitSpeciesLoadStatus.phase = 'loading';
+    portraitSpeciesLoadStatus.loaded = 0;
+    portraitSpeciesLoadStatus.lastError = null;
+    {
+      const speciesIdx = await loadPortraitSpeciesJson(speciesIdxUrl);
       const speciesEntries = speciesIdx.entries || [];
       const speciesDataById = {};
       await Promise.all(speciesEntries.map(async entry => {
         const sUrl = new URL(entry.path, speciesIdxUrl).toString();
-        const sResp = await fetch(sUrl);
-        if (!sResp.ok) return;
-        const sData = await sResp.json();
-        if (sData?.speciesId) speciesDataById[_normalizeSpeciesKey(sData.speciesId)] = sData;
+        const sData = await loadPortraitSpeciesJson(sUrl);
+        if (!sData?.speciesId) throw new Error(`Missing speciesId in ${sUrl}`);
+        speciesDataById[_normalizeSpeciesKey(sData.speciesId)] = sData;
+        portraitSpeciesLoadStatus.loaded++;
       }));
       LAST_SPECIES_DATA_BY_ID = speciesDataById;
       try {
@@ -2374,9 +2391,10 @@ async function loadPortraitCosmetics(configBase) {
       }
     }
   } catch (e) {
+    portraitSpeciesLoadStatus.phase = 'failed';
+    portraitSpeciesLoadStatus.lastError = String(e?.message || e);
     console.warn('[portrait] Could not load species data', e);
-    LAST_SPECIES_DATA_BY_ID = {};
-    LAST_COSMETIC_FALLBACK_GROUPS = null;
+    throw e; // ensurePortraitCosmetics releases its promise, allowing the next request to retry.
   }
 
   if (Object.keys(fighterPortraitOverrides).length) {
@@ -2397,6 +2415,7 @@ async function loadPortraitCosmetics(configBase) {
     });
   }
 
+  portraitSpeciesLoadStatus.phase = 'ready';
   LAST_RANDOMIZATION_RULES_BY_FIGHTER = randomizationRulesByFighter;
 
   return { hairFrontOptions, hairBackOptions, hairSideOptions, hairSideLOptions, eyesOptions, upperFaceOptions, facialHairOptions, hatOptions, hoodOptions, torsoPortraitOptions, armPortraitOptions, indexEntries, optionCache, bodyColorRangesByGender, allowedCosmeticsByFighter, cosmeticWeightsByFighter, forcedCosmeticsByFighter, conditionalCosmeticsByFighter, randomizationRulesByFighter, mandatoryCosmeticSlotsByFighter, exclusiveCosmeticsByFighter };

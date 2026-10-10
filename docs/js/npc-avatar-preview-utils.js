@@ -71,14 +71,14 @@
     const fighterGender = f => f.gender ?? (f.id === 'M' ? 'male' : f.id === 'F' ? 'female' : null);
     return fighters.find(f =>
       (f.speciesId === normalized || f.speciesId === underscored) && fighterGender(f) === desiredGender
-    ) || fighters[0] || null;
+    ) || null;
   }
 
   function randomProfile(seedText, options = {}) {
     const cosmetics = cosmeticsCache;
     if (!cosmetics || !window.randomPortraitProfileSeeded) return null;
     const fighter = selectFighter(options.speciesId, options.gender);
-    if (!fighter) return null;
+    if (!fighter) throw new Error(`Portrait species unavailable: ${options.speciesId || 'mao-ao'}/${options.gender || 'male'}. Reload to retry species data.`);
     const {
       hairFrontOptions, hairBackOptions, hairSideOptions, hairSideLOptions, eyesOptions,
       upperFaceOptions, facialHairOptions, hatOptions, hoodOptions, torsoPortraitOptions, armPortraitOptions,

@@ -9612,7 +9612,7 @@
       let _dialogueWalker    = null;
       let _playerData        = null;  // set from hobunjiPlayerReady event
       let playerAvatarRefreshGeneration = 0;
-      const playerAvatarRefreshDebug = { started: 0, committed: 0, superseded: 0, lastGeneration: 0, lastPatternedTintDelta: 0, lastRenderScopeDelta: 0, textureHasVariantCanvas: false }; // Mobile-visible proof of which woven render actually became the live player avatar. // Guards async avatar rebuilds from attaching stale planes.
+      const playerAvatarRefreshDebug = { started: 0, committed: 0, superseded: 0, lastGeneration: 0, lastPatternedTintDelta: 0, lastRenderScopeDelta: 0, textureHasVariantCanvas: false, lastError: null }; // Mobile-visible proof of which woven render actually became the live player avatar. // Guards async avatar rebuilds from attaching stale planes.
       // Set at the end of refreshPlayerAvatar() — the world-avatar equivalent
       // of a dialogue portrait's canvas/profile, kept around so
       // _tickPlayerPortraitLife can cheaply re-render just the front texture
@@ -12672,7 +12672,7 @@
       // World-space blink/breathing/default-expression refresh for walking
       // avatars (with distance-scaled refresh rates) now lives in
       // js/world-portrait-life.js.
-      window.__playerAvatarRefreshDebug = () => ({ ...playerAvatarRefreshDebug, currentGeneration: playerAvatarRefreshGeneration, hasGroup: !!playerAvatarGroup, hasFrontCanvas: !!playerAvatarFrontCanvas, profileWovenDescriptors: Array.isArray(playerAvatarProfile?.bodyColors?.__hobunjiWovenClothing) ? playerAvatarProfile.bodyColors.__hobunjiWovenClothing.length : 0, textureHasVariantCanvas: !!playerAvatarGroup?.userData?.frontTexture?.image && playerAvatarGroup.userData.frontTexture.image !== playerAvatarFrontCanvas });
+      window.__playerAvatarRefreshDebug = () => ({ ...playerAvatarRefreshDebug, currentGeneration: playerAvatarRefreshGeneration, savedSpecies: _playerData?.appearance?.speciesId, renderedSpecies: playerAvatarProfile?.fighter?.speciesId, hasGroup: !!playerAvatarGroup, hasFrontCanvas: !!playerAvatarFrontCanvas, profileWovenDescriptors: Array.isArray(playerAvatarProfile?.bodyColors?.__hobunjiWovenClothing) ? playerAvatarProfile.bodyColors.__hobunjiWovenClothing.length : 0, textureHasVariantCanvas: !!playerAvatarGroup?.userData?.frontTexture?.image && playerAvatarGroup.userData.frontTexture.image !== playerAvatarFrontCanvas });
       window.WorldPortraitLife.init({
         getCurrentArea: () => currentArea,
         getPlayerTile: () => ({ x: player.x / TILE, y: player.y / TILE }),
@@ -16705,8 +16705,15 @@
         // pet) pair.
         _petLayeringActive = false;
         _petLayeringPet = null;
-        removePlayerAvatarChildren();
-        const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(window.EquipmentPanel.applyGearClothingToPlayerData(_playerData));
+        let profile; // Keep the last good avatar until the correct saved species can be rebuilt.
+        try {
+          profile = window.NpcAvatarPreview.buildProfileFromNpcExport(window.EquipmentPanel.applyGearClothingToPlayerData(_playerData));
+          playerAvatarRefreshDebug.lastError = null;
+        } catch (error) {
+          playerAvatarRefreshDebug.lastError = String(error?.message || error);
+          showToast(`Character appearance could not load: ${playerAvatarRefreshDebug.lastError}`, true);
+          throw error;
+        }
         if (!profile || refreshGeneration !== playerAvatarRefreshGeneration) return;
         const avatarCfg = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
         const MODEL_W = avatarCfg.worldModelWidth ?? 0.9;
