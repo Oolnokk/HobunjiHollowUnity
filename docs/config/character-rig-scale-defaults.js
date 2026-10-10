@@ -34,7 +34,7 @@
     'mammakhbuur::male': Object.freeze({ x: 0.96, y: 1.69, head: 0.9771, offsetY: -0.095 }),
     'mammakhbuur::female': Object.freeze({ x: 1.0153, y: 1.3331, head: 0.8402, offsetY: -0.02 }),
   });
-  const ALIASES = Object.freeze({ rakakoan: 'kenkari', ghoul: 'mao-ao', 'harlyao-skeleton': 'harlyao' }); // Transform-equivalent NPC-only species inherit shared full-rig defaults; Harlyao Skeleton deliberately shares Harlyao's 1.2x Engh-sho scale.
+  const ALIASES = Object.freeze({ rakakoan: 'kenkari', ghoul: 'mao-ao', 'harlyao-skeleton': 'harlyao', 'mao-ao-skeleton': 'mao-ao' }); // Transform-equivalent NPC-only species inherit shared full-rig defaults; Harlyao Skeleton deliberately shares Harlyao's 1.2x Engh-sho scale.
   const MAOAO_FOOT_SCALE = Object.freeze({ male: 1.3125, female: 1.28125 }); // +25% over the canonical authored Mao-ao foot scales (1.05 male / 1.025 female).
 
   const normalizeSpecies = value => {

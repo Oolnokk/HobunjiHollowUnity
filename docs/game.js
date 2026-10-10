@@ -5012,6 +5012,7 @@
           _nestHoldT = 0; // getting hit interrupts a den-nest egg/baby take
           player._nestTakeActive = false;
           window.BanditCamps?.interruptTentHold(); // ...and a bandit-tent loot/burn, same reasoning
+          window.CorpseHoldLoot?.interrupt(); // ...and a hold-to-loot body
         }
         const healthBeforeImpact = environmentalImpact ? Math.max(0, Number(player.health) || 0) : 0; // Used before respawn can replace lethal zero Health with a restored value.
         if (window.ResourceSystem) window.ResourceSystem.applyDamage(player, resourceDamage.health, dmgOpts || {});
@@ -18917,6 +18918,8 @@
         // 'bandit_tent_interact' as a real tile action and always failed
         // with "...cannot be used on that tile."
         if (activeAction === 'bandit_tent_interact') return;
+        // Same again for hold-to-loot bodies (js/corpse-hold-loot.js owns the timer).
+        if (activeAction === 'corpse_hold_loot') return;
         // Climb is no longer an Action 1/tool action. The dodge input owns
         // the forward-dodge climb context; keep this legacy branch inert for
         // saved bindings or stale UI events from older sessions.
@@ -24266,6 +24269,7 @@
           const miscGameplayPerf = window.PerfProfiler?.begin('misc gameplay'); // Dens/climbing/tent interactions and transition-spot checks below.
           window.ClimbSystem?.updateFallenNests?.(dt);
           window.DenNestSystem.updateNestInteraction(dt);
+          window.CorpseHoldLoot?.update(dt); // Short hold-to-loot bodies (cave catacomb skeletons) — js/corpse-hold-loot.js.
           if (_isZoneArea(currentArea)) window.BanditCamps.updateTentInteraction(dt);
 
           // Interior exit detection: player walks onto any door's exit-nub
@@ -25406,6 +25410,7 @@
           || button?.action === 'use_spot'
           || button?.action === 'nest_take'
           || button?.action === 'bandit_tent_interact'
+          || button?.action === 'corpse_hold_loot'
           || button?.action === 'climb_branch'
           || button?.action?.startsWith('obj_');
         const interactionButton = btns.find(isWorldInteraction) || null;
@@ -25605,7 +25610,7 @@
               // Continuous world interactions use the same press-time selected
               // action contract as Drenkirra nests, so their frame timers can
               // begin immediately instead of waiting for pointer release.
-              if (act === 'nest_take' || act === 'bandit_tent_interact') activeAction = act;
+              if (act === 'nest_take' || act === 'bandit_tent_interact' || act === 'corpse_hold_loot') activeAction = act;
               _flaskGesture = act === 'alchemy_flask_primary';
               _flaskCanceled = false;
               if (_flaskGesture && !window.AlchemyFlasks?.aiming) _abtFire(); // Mobile press enters aim without consuming.
@@ -29228,6 +29233,17 @@
       window.CavernGenerator?.init({
         EXTERIOR_ZONES,
         DEN_MOTHER_DEFS,
+      });
+
+      window.CorpseHoldLoot?.init({
+        getActiveAction: () => activeAction,
+        getActionHeldDown: () => actionHeldDown,
+        getAimedHoldCorpse: () => {
+          const reticle = getReticleTile(); // Same aimed/sticky corpse lookup the Loot button uses.
+          const obj = getCorpseObjectForAction('obj_loot_corpse', reticle.col, reticle.row);
+          return obj?.holdSeconds > 0 ? obj : null;
+        },
+        showToast,
       });
 
       window.CavernOreRocks.init({

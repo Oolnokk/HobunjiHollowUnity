@@ -257,9 +257,46 @@
     }
   }
 
+  // Places an entity straight into the settled, flat corpse pose on its
+  // current tile, with no tumble — for bodies that are already dead when the
+  // player arrives (cave catacomb skeletons). They join corpseObjects and loot
+  // exactly like any other settled corpse.
+  function settleAsCorpse(c, opts = {}) {
+    if (!c?.avatarRef?.group) return false;
+    const TILE = deps.TILE;
+    window.ResourceRings?.disposeRingHud(c);
+    if (c._banditToolHolder) c._banditToolHolder.visible = false;
+    if (c._banditRangedToolHolder) c._banditRangedToolHolder.visible = false;
+    if (c._banditTrailMesh) c._banditTrailMesh.visible = false;
+    const col = deps.clamp(Math.floor(c.x / TILE), 0, (c.areaCols || deps.COLS) - 1);
+    const row = deps.clamp(Math.floor(c.y / TILE), 0, (c.areaRows || deps.ROWS) - 1);
+    c.health = 0;
+    c.state = 'corpse';
+    c.corpseCol = col; c.corpseRow = row;
+    c.deathTargetX = c.x; c.deathTargetY = c.y;
+    c.deathRestRotZ = Math.PI / 2;
+    c.deathRestRotX = Number.isFinite(opts.roll) ? opts.roll : (Math.random() * 2 - 1) * 0.22;
+    c.deathRestRotY = Number.isFinite(opts.yaw) ? opts.yaw : Math.random() * Math.PI * 2;
+    c.scaleY = 1;
+    const grp = c.avatarRef.group;
+    grp.scale.y = 1;
+    if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.y = Math.PI / 2; // Same clean flat face as a settled ragdoll (see beginInternal).
+    if (c.avatarRef.backPlane) c.avatarRef.backPlane.rotation.y = -Math.PI / 2;
+    if (c.avatarRef.legsPivot) c.avatarRef.legsPivot.rotation.y = 0;
+    if (c.avatarRef.legs) c.avatarRef.legs.update(0, 0, true);
+    const g = c.areaGrid || deps.getGrid();
+    const surfY = g[row]?.[col] ? deps.tileSurfaceYInArea(g[row][col], c.areaId) : 0;
+    grp.position.set(c.x / TILE, surfY + c.halfHeight * 0.12, c.y / TILE);
+    grp.rotation.set(c.deathRestRotX, c.deathRestRotY, c.deathRestRotZ);
+    if (c.groundShadow) c.groundShadow.position.set(grp.position.x, surfY + deps.characterGroundShadowSurfaceOffset(), grp.position.z);
+    deps.corpseObjects.add(c);
+    return true;
+  }
+
   window.CreatureDeath = {
     init,
     begin,
+    settleAsCorpse,
     recover,
     updateCorpses,
     getDebug: () => ({ lastBegin: deathDebug.lastBegin && { ...deathDebug.lastBegin }, lastRecovery: deathDebug.lastRecovery && { ...deathDebug.lastRecovery } }),

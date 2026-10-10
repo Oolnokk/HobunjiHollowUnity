@@ -66,6 +66,7 @@
        window.DenNestSystem.init(...) (binds its own devTeleportDenBtn/
        wildlifeDenList listeners) during its own setup. -->
   <script src="js/den-nest-system.js?v=20261008h92095a1"></script>
+  <script src="js/corpse-hold-loot.js?v=20261010corpsehold1"></script>
   <!-- Key HUD row, item-scroll widget, and per-frame status-pill HUD
        refresh, extracted out of game.js; uses window.FormatUtils.
        toolEmoji/actionName/formatClock, so must load after it and before
@@ -172,7 +173,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261007hfd6211c"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261010he515565"></script>
+  <script src="js/held-action-animations.js?v=20261010hcc322f2"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
   <script src="js/character-action-locks.js?v=20261010hb7ed1da"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
@@ -314,7 +315,7 @@
        spawn. -->
   <script src="js/combat/combat-bandit.js?v=20261010h2a44be9"></script>
   <!-- Distinct Minion humanoid category: independent roster/dye/Shambling Footing rules over the shared BanditCombat executor. -->
-  <script src="js/combat/combat-minion.js?v=20261008h2e9a1c3"></script>
+  <script src="js/combat/combat-minion.js?v=20261010h164679d"></script>
   <script src="js/combat/combat-enemy-dodge.js?v=20261001quickdebuff2"></script>
   <!-- Testing Arena-only Harlyao Lich class: wraps the final humanoid AI seam after enemy-dodge, owns elemental projectiles/puddles/Entranced commands, and summons ordinary Minions. -->
   <script src="js/combat/combat-lich.js?v=20261005he55cbf7"></script>
@@ -323,7 +324,7 @@
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
        must load after combat-bandit.js above, and before game.js, which
        calls window.BanditCamps.init(...) during its own setup. -->
-  <script src="js/bandit-camps.js?v=20261008h0c52d84"></script>
+  <script src="js/bandit-camps.js?v=20261010h2c837e7"></script>
   <!-- Bounty board (hunt a named bandit captain, destroy his camp) —
        window.BountyBoard. Reads window.BanditCamps/window.BanditCombat
        directly, so must load after both above, and before game.js, which
@@ -416,7 +417,7 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.CreatureDeath.init(...) during
        its own setup. -->
-  <script src="js/creature-death.js?v=20260929config1"></script>
+  <script src="js/creature-death.js?v=20261010hda6a2eb"></script>
   <!-- Sell Crate + Supply Box farm world objects (window.FarmCrates) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -2202,6 +2203,13 @@
     <div class="nest-take-track"><div class="nest-take-fill" id="tentActionFill"></div></div>
   </div>
 
+  <!-- Hold-to-loot progress bar for bodies that need a short hold (cave
+       catacomb skeletons; see js/corpse-hold-loot.js) — same markup/CSS. -->
+  <div id="corpseLootHud" aria-hidden="true">
+    <div class="nest-take-label" id="corpseLootLabel"></div>
+    <div class="nest-take-track"><div class="nest-take-fill" id="corpseLootFill"></div></div>
+  </div>
+
 
   <!-- Gameplay Text Box: grid x:5 y:14 w:15 h:3 -->
   <div id="gameTextBox" role="status" aria-live="polite"></div>
@@ -2453,7 +2461,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261010h140325f"></script>
+  <script src="js/pixel-probe.js?v=20261010h4d7487b"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls

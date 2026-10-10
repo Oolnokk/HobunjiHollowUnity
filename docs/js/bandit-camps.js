@@ -1257,11 +1257,15 @@
   }
 
   function makeBanditCorpseWorldObject(c) {
+    const holdSeconds = Number(c.lootHoldSeconds) || 0; // Bodies flagged for a short hold (cave catacomb skeletons) loot through js/corpse-hold-loot.js.
     return {
       id: 'corpse_' + c.id,
       type: 'bandit_corpse',
       promptRoot: c.avatarRef?.group || null,
+      holdSeconds,
+      holdLabel: 'Searching ' + (c.name || c.def.label) + '...',
       getButtons() {
+        if (holdSeconds > 0) return [{ icon: c.lootIcon || '🦴', label: 'Hold to Search', action: 'corpse_hold_loot', style: 'primary', allowed: true, worldInteraction: true, promptRoot: c.avatarRef?.group || null }];
         return [{ icon: '🪙', label: 'Loot ' + (c.name || c.def.label), action: 'obj_loot_corpse', style: 'primary', allowed: true }];
       },
       onAction(action) {

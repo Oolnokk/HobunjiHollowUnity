@@ -173,6 +173,7 @@ const windowObject = {
 }; // Minimal browser-shaped host used to exercise the bridge without loading the full game.
 windowObject.window = windowObject;
 const context = vm.createContext(windowObject);
+vm.runInContext(fs.readFileSync('docs/js/skeleton-species-runtime.js', 'utf8'), context, { filename: 'skeleton-species-runtime.js' }); // Shared skeleton bridge the Harlyao config builds on.
 vm.runInContext(runtimeSource, context, { filename: 'harlyao-skeleton-species-runtime.js' });
 
 assert.equal(windowObject.SCRATCHBONES_CONFIG.game.appearanceEditor.species['harlyao-skeleton'].npcOnly, true);

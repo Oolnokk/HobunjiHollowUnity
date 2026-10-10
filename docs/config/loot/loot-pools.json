@@ -93,6 +93,15 @@
         { "id": "scrapMetal", "itemKey": "banditScrapMetal", "min": 0, "max": 2, "chance": 1, "conditions": {} }
       ]
     },
+    "caveSkeletonBody": {
+      "label": "Cave Catacomb Skeleton (Body)",
+      "note": "Grave goods on the Mao'ao skeleton bodies lying in cave catacombs (docs/js/cave-site-system.js); worn rags are added by the bandit corpse loot path.",
+      "entries": [
+        { "id": "gold", "itemKey": "gold", "min": 1, "max": 6, "chance": 0.6, "conditions": {} },
+        { "id": "oreCopper", "itemKey": "ore_copper", "min": 1, "max": 1, "chance": 0.12, "conditions": {} },
+        { "id": "oreTin", "itemKey": "ore_tin", "min": 1, "max": 1, "chance": 0.06, "conditions": {} }
+      ]
+    },
     "bandit_grunt": {
       "label": "Bandit (Grunt)",
       "entries": [

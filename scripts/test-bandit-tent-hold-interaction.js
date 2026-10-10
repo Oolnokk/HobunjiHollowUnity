@@ -16,7 +16,7 @@ assert(
   'tent holds require a continuously held input',
 );
 assert(
-  game.includes("if (act === 'nest_take' || act === 'bandit_tent_interact') activeAction = act;"),
+  /if \(act === 'nest_take' \|\| act === 'bandit_tent_interact'(?: \|\| act === '[a-z_]+')*\) activeAction = act;/.test(game),
   'touch presses select nest and tent hold actions immediately',
 );
 assert(

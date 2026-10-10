@@ -56,6 +56,14 @@
   const MUSHROOM_REAGENT_KEY = 'duskcapMushroom'; // AlchemySystem reagent the mushroom cave grows (the game's only mushroom item).
   const MUSHROOM_PICK_RADIUS_TILES = 0.75; // Walk-up harvest radius, like the hidden cache's open radius.
   const MUSHROOM_REGROW_DAYS = 3; // Picked clusters regrow after this many in-game days.
+  const SKELETON_SPECIES_ID = 'mao-ao-skeleton'; // Catacomb bodies (js/mao-ao-skeleton-species-runtime.js).
+  const SKELETON_NAME = "Mao'ao Skeleton";
+  const SKELETON_LOOT_POOL = 'caveSkeletonBody'; // docs/config/loot/loot-pools.json grave goods.
+  const BODY_LOOT_HOLD_S = 2; // Short hold per body (js/corpse-hold-loot.js).
+  const BODY_RISE_CHANCE = 0.2; // Per body, rolled fresh each visit: most bodies stay bodies.
+  const BODY_RISE_ARM_RADIUS_TILES = 4.5; // Walking this close arms a riser's timer...
+  const BODY_RISE_DELAY_S = Object.freeze([3, 12]); // ...which fires after a random delay, once the player has relaxed...
+  const BODY_RISE_MAX_DISTANCE_TILES = 9; // ...provided they are still around to see it.
   const CACHE_OPEN_RADIUS_TILES = 1.05; // Used by runtime proximity interaction for hidden caches without adding another central getWorldObjectAt branch.
   const TRAP_TRIGGER_RADIUS_TILES = 0.48; // Used by one-shot pressure/trip hazards around cache approaches.
   const RUIN_TRIGGER_RADIUS_TILES = 0.90; // Used by the deep ruin threshold; entering is deliberately close-range.
@@ -71,6 +79,9 @@
   const banditPopulatedMaps = new Set(); // Session-only map ids that actually spawned a hideout; used to distinguish kills from a fresh page reload.
   const ruinTransitionMaps = new Set(); // Map ids currently transitioning into a ruin; prevents repeated proximity triggers during the fade/generation handoff.
   const mushroomMeshesByMapId = new Map(); // map id -> (cluster id -> scene group), so a pick can remove exactly that cluster.
+  const bodiesByMapId = new Map(); // map id -> catacomb body records { body, entity, riser, armedAt, delay, rising, risen } for this page session.
+  const bodySpawnPromises = new Map(); // map id -> in-flight body population.
+  let caveClock = 0; // Seconds of cave runtime; drives riser delays without wall-clock reads.
   let wildlifeDeps = null; // Captured from WildlifeSpawn.init; used for current area/player/hostile collection and damage helpers.
   let devSpawnerDeps = null; // Captured from DevSpawner.init; used for the existing generalized loot grant helper.
   let caveRuntimeTimer = 0; // Throttles interior proximity/runtime work to CAVE_RUNTIME_INTERVAL_S.
@@ -407,14 +418,12 @@
     plan.coffins = coffins.map((tile, index) => ({ id: `cave_coffin_${index + 1}`, col: tile.col, row: tile.row, rotY: Math.floor(rng() * 4) * 90 }));
     for (const coffin of plan.coffins) addProp(mapData, { id: coffin.id, key: 'ruinSanctumCoffin', col: coffin.col, row: coffin.row, rotY: coffin.rotY });
 
-    if (plan.profile.inhabitant === TYPES.NONE) { // Ghouls guard only an otherwise uninhabited catacomb; bandits or a den have claimed the others.
-      const ghoulCandidates = candidates.filter(tile => !blockedKeys.has(tileKey(tile.col, tile.row)));
-      const ghouls = pickSpacedTiles(rng, ghoulCandidates, Math.min(3, Math.max(1, Math.floor(coffins.length / 2))), blockedKeys, 2.5);
-      // Ghouls are a humanoid species, not a CREATURE_DB creature — they spawn
-      // at runtime through BanditCombat exactly like Town Mine floor ghouls.
-      plan.ghoulSpawns = ghouls.map((tile, index) => ({ col: tile.col, row: tile.row, rank: 'grunt', tier: 1, ghoul: true, gender: index % 2 ? 'female' : 'male' }));
-      mapData.caveGhoulSpawns = clone(plan.ghoulSpawns);
-    }
+    // Mao'ao skeleton bodies lie among the coffins: lootable with a short
+    // hold, and now and then one gets back up (see updateBodies).
+    const bodyCandidates = candidates.filter(tile => !blockedKeys.has(tileKey(tile.col, tile.row)));
+    const bodies = pickSpacedTiles(rng, bodyCandidates, clamp(Math.round(candidates.length / 14), 8, 16), blockedKeys, 1.4);
+    plan.bodies = bodies.map((tile, index) => ({ id: `cave_body_${index + 1}`, col: tile.col, row: tile.row, yaw: rng() * Math.PI * 2 }));
+    mapData.caveBodies = clone(plan.bodies);
   }
 
   function addMushroomLayer(mapData, rng, candidates, blockedKeys, plan) {
@@ -509,7 +518,7 @@
     const plan = {
       profile: clone(profile),
       separator: null,
-      banditSpawns: [], ghoulSpawns: [], traps: [], coffins: [], mineRocks: [], mushrooms: [], cache: null, ruinEntrance: null,
+      banditSpawns: [], bodies: [], traps: [], coffins: [], mineRocks: [], mushrooms: [], cache: null, ruinEntrance: null,
     }; // Runtime-only plan mirrors map decorations and drives mechanics that cannot live in static building map data.
     const awayFromEntrance = allTiles.filter(tile => Math.hypot(tile.col - Number(mapData.exitCol), tile.row - Number(mapData.exitRow)) >= 3);
 
@@ -530,7 +539,7 @@
     mapData.caveSite = clone(profile);
     mapData.caveSitePlan = {
       separatorRock: plan.separator ? { col: plan.separator.col, row: plan.separator.row, cells: clone(plan.separator.cells), oreKind: plan.separator.oreKind } : null,
-      banditSpawns: clone(plan.banditSpawns), ghoulSpawns: clone(plan.ghoulSpawns), traps: clone(plan.traps), cache: clone(plan.cache),
+      banditSpawns: clone(plan.banditSpawns), bodies: clone(plan.bodies), traps: clone(plan.traps), cache: clone(plan.cache),
       coffins: clone(plan.coffins), ruinEntrance: clone(plan.ruinEntrance), mushrooms: clone(plan.mushrooms), mineRockCount: plan.mineRocks.length,
     };
     plansByMapId.set(String(mapId), plan);
@@ -573,7 +582,7 @@
 
   function stateFor(profile) {
     ensureStateLoaded();
-    if (!runtimeStateBySignature.has(profile.signature)) runtimeStateBySignature.set(profile.signature, { discovered: false, cacheOpened: false, triggeredTraps: [], occupantsCleared: false, ruinEntered: false, mushroomsPickedDay: {} });
+    if (!runtimeStateBySignature.has(profile.signature)) runtimeStateBySignature.set(profile.signature, { discovered: false, cacheOpened: false, triggeredTraps: [], occupantsCleared: false, ruinEntered: false, mushroomsPickedDay: {}, lootedBodies: [] });
     return runtimeStateBySignature.get(profile.signature);
   }
 
@@ -622,13 +631,12 @@
   }
 
   function occupantSpawns(plan) {
-    return [...(plan.banditSpawns || []), ...(plan.ghoulSpawns || [])];
+    return [...(plan.banditSpawns || [])];
   }
 
-  // Bandit hideouts and catacomb ghouls are both humanoids built by
-  // BanditCombat.makeEntity (ghouls with the same roster/def overrides Town
-  // Mine floors use), spawned once per page session while the player is in
-  // the cave and marked cleared once every one of them has died.
+  // Bandit hideout inhabitants are built by BanditCombat.makeEntity, spawned
+  // once per page session while the player is in the cave and marked cleared
+  // once every one of them has died.
   function ensureOccupants(profile, plan, state) {
     const spawns = occupantSpawns(plan); // Logical tiles for every humanoid this cave history owns.
     if (!spawns.length || state.occupantsCleared) return;
@@ -653,15 +661,6 @@
         const x = (spawn.col + 0.5) * tileSize;
         const y = (spawn.row + 0.5) * tileSize;
         const opts = { zoneId: mapId, extra: { homeX: x, homeY: y, state: 'idle', caveSiteMapId: mapId } };
-        if (spawn.ghoul) {
-          opts.rosterOverride = {
-            name: 'Ghoul',
-            appearance: { speciesId: 'ghoul', gender: spawn.gender || 'male', cosmetics: {}, randomSeed: `cave-ghoul:${profile.signature}:${spawn.col}:${spawn.row}` },
-            equippedCosmetics: [],
-            appliedDyes: {},
-          };
-          opts.defOverride = { label: 'Ghoul', maxHealth: 34, maxStamina: 55, attackDamage: 6, rangedWeaponKey: null, aggroRangePx: tileSize * 8, leashRangePx: tileSize * 30 };
-        }
         const entity = await window.BanditCombat.makeEntity(cfg, spawn.rank || 'grunt', spawn.tier || 1, x, y, opts);
         if (wildlifeDeps?.getCurrentArea?.() !== mapId) break;
         if (!entity) continue;
@@ -752,6 +751,89 @@
     }
   }
 
+  function makeSkeleton(mapId, x, y, extra, roster = null) {
+    const tileSize = Number(wildlifeDeps?.TILE) || 32;
+    return window.MinionCombat.makeEntity({
+      speciesId: SKELETON_SPECIES_ID,
+      name: SKELETON_NAME,
+      tier: 1,
+      x, y,
+      zoneId: mapId,
+      weaponMetalKey: 'nativeCopper',
+      roster: roster || undefined,
+      defOverride: { label: SKELETON_NAME, lootPool: SKELETON_LOOT_POOL, aggroRangePx: tileSize * 8, leashRangePx: tileSize * 30 },
+      extra: { homeX: x, homeY: y, caveSiteMapId: mapId, keepCorpseAfterLoot: true, lootHoldSeconds: BODY_LOOT_HOLD_S, ...extra },
+    });
+  }
+
+  // Lays every catacomb body out as a settled corpse once per page session
+  // (cave scenes and their entities live for the session). Bodies already
+  // searched this Tothal cycle come back searched.
+  function ensureBodies(profile, plan, state) {
+    const mapId = profile.mapId;
+    if (!plan.bodies?.length || bodiesByMapId.has(mapId) || bodySpawnPromises.has(mapId)) return;
+    if (!window.MinionCombat?.makeEntity || !window.CreatureDeath?.settleAsCorpse) return;
+    const tileSize = Number(wildlifeDeps?.TILE) || 32;
+    const looted = new Set(state.lootedBodies || []);
+    const promise = (async () => {
+      const records = [];
+      for (const body of plan.bodies) {
+        const x = (body.col + 0.5) * tileSize, y = (body.row + 0.5) * tileSize;
+        const entity = await makeSkeleton(mapId, x, y, { state: 'idle', caveBodyId: body.id });
+        if (wildlifeDeps?.getCurrentArea?.() !== mapId) { if (entity) devSpawnerDeps?.despawnCreature?.(entity); break; }
+        if (!entity) continue;
+        window.CreatureDeath.settleAsCorpse(entity, { yaw: body.yaw });
+        if (looted.has(body.id)) entity.corpseLooted = true;
+        records.push({ body, entity, riser: Math.random() < BODY_RISE_CHANCE, armedAt: null, delay: 0, rising: false, risen: false });
+      }
+      bodiesByMapId.set(mapId, records);
+      window.__farmLog?.(`[cave-sites] laid out ${records.length} skeleton bodies in ${mapId} (${records.filter(r => r.riser).length} restless).`, 'world');
+    })().catch(error => window.__farmLog?.(`[cave-sites] body spawn failed for ${mapId}: ${error.message}`, 'warn'))
+      .finally(() => bodySpawnPromises.delete(mapId));
+    bodySpawnPromises.set(mapId, promise);
+  }
+
+  // A restless body gets up the same way the sanctum lich raises its dead: a
+  // fresh skeleton from the same roster replaces the corpse where it lies.
+  async function raiseBody(mapId, record) {
+    record.rising = true;
+    const corpse = record.entity;
+    const base = corpse.rosterRecord || null;
+    const roster = base ? (corpse.corpseLooted ? { ...base, equippedCosmetics: [], cosmeticSlots: {}, appliedDyes: {} } : base) : null; // Searched bodies rise without the rags the player took.
+    const minion = await makeSkeleton(mapId, corpse.x, corpse.y, { state: 'chase', caveBodyId: record.body.id }, roster);
+    if (!minion || wildlifeDeps?.getCurrentArea?.() !== mapId) { if (minion) devSpawnerDeps?.despawnCreature?.(minion); record.rising = false; return; }
+    if (corpse.corpseLooted) minion.corpseLooted = true; // Killing it again yields nothing new.
+    devSpawnerDeps?.corpseObjects?.delete?.(corpse);
+    devSpawnerDeps?.despawnCreature?.(corpse);
+    wildlifeDeps?.hostileObjects?.add(minion);
+    record.entity = minion;
+    record.rising = false;
+    record.risen = true;
+    window.__farmLog?.(`[cave-sites] ${record.body.id} rose in ${mapId}.`, 'world');
+  }
+
+  function updateBodies(profile, plan, state) {
+    const records = bodiesByMapId.get(profile.mapId);
+    if (!records?.length) return;
+    let lootedChanged = false;
+    for (const record of records) {
+      if (record.entity?.corpseLooted && !(state.lootedBodies || []).includes(record.body.id)) {
+        state.lootedBodies = [...(state.lootedBodies || []), record.body.id];
+        lootedChanged = true;
+      }
+      if (!record.riser || record.risen || record.rising || record.entity?.state !== 'corpse') continue;
+      const distance = caveDistanceTiles(record.body);
+      if (record.armedAt == null) {
+        if (distance > BODY_RISE_ARM_RADIUS_TILES) continue;
+        record.armedAt = caveClock;
+        record.delay = BODY_RISE_DELAY_S[0] + Math.random() * (BODY_RISE_DELAY_S[1] - BODY_RISE_DELAY_S[0]);
+        continue;
+      }
+      if (caveClock - record.armedAt >= record.delay && distance <= BODY_RISE_MAX_DISTANCE_TILES) raiseBody(profile.mapId, record);
+    }
+    if (lootedChanged) persistState();
+  }
+
   function maybeEnterRuin(profile, plan, state) {
     if (!plan.ruinEntrance || ruinTransitionMaps.has(profile.mapId) || caveDistanceTiles(plan.ruinEntrance) > RUIN_TRIGGER_RADIUS_TILES) return;
     const ruin = window.DevRandomRuin;
@@ -777,6 +859,7 @@
   }
 
   function updateCurrentCaveRuntime(dt = 0) {
+    caveClock += Number(dt) || 0;
     caveRuntimeTimer -= Number(dt) || 0;
     if (caveRuntimeTimer > 0) return;
     caveRuntimeTimer = CAVE_RUNTIME_INTERVAL_S;
@@ -790,6 +873,8 @@
     triggerTraps(profile, plan, state);
     grantCacheLoot(profile, plan, state);
     harvestMushrooms(profile, plan, state);
+    ensureBodies(profile, plan, state);
+    updateBodies(profile, plan, state);
     maybeEnterRuin(profile, plan, state);
   }
 
@@ -880,7 +965,8 @@
         profile: plansByMapId.get(currentArea).profile,
         separator: plansByMapId.get(currentArea).separator && { col: plansByMapId.get(currentArea).separator.col, row: plansByMapId.get(currentArea).separator.row, cells: plansByMapId.get(currentArea).separator.cells, oreKind: plansByMapId.get(currentArea).separator.oreKind },
         banditSpawns: plansByMapId.get(currentArea).banditSpawns,
-        ghoulSpawns: plansByMapId.get(currentArea).ghoulSpawns,
+        bodies: plansByMapId.get(currentArea).bodies,
+        bodyStates: (bodiesByMapId.get(currentArea) || []).map(record => ({ id: record.body.id, riser: record.riser, armed: record.armedAt != null, risen: record.risen, looted: !!record.entity?.corpseLooted, state: record.entity?.state || null })),
         traps: plansByMapId.get(currentArea).traps,
         cache: plansByMapId.get(currentArea).cache,
         coffins: plansByMapId.get(currentArea).coffins,
@@ -914,6 +1000,8 @@
       sitesByZone,
       sitesByMapId,
       hashSeed,
+      bodiesByMapId,
+      bodySpawnPromises,
     }),
   });
 

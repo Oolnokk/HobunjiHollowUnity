@@ -137,14 +137,15 @@ assert(mineMap.oreRocks.length >= 7, 'ore-rich cave reuses oreRock mechanic at r
 const catMap = decorate(profile('map_i_test_catacomb', 'catacomb'));
 assert(catMap.caveProps.filter(item => item.key === 'ruinSanctumCoffin').length >= 3, 'catacomb places authored coffin props');
 assert(!catMap.furniture.some(item => /^ruin/.test(item.itemKey)), 'authored ruin pieces stay out of FURNITURE_DEFS-keyed mapData.furniture');
-assert(catMap.caveGhoulSpawns.length >= 1 && catMap.caveGhoulSpawns.every(spawn => spawn.ghoul), 'uninhabited catacomb is guarded by BanditCombat ghouls');
+assert(catMap.caveBodies.length >= 8, "catacomb has a whole lot of Mao'ao skeleton bodies lying around");
+assert(!catMap.caveGhoulSpawns, 'ghouls are deep-mine morlocks, not catacomb guardians');
 assert.equal(catMap.creatureSpawns.length, 0, 'cave without an animal den keeps no den creature spawns');
 
 const denCatMap = decorate(profile('map_i_test_den_catacomb', 'catacomb', 'animal_den'));
 assert.equal(denCatMap.denMotherKind, 'gar-wolf-den-mother', 'animal-den inhabitant keeps the Den-Mother');
 assert.equal(denCatMap.nestCol, 4, 'animal-den inhabitant keeps the nest');
 assert(denCatMap.caveProps.some(item => item.key === 'ruinSanctumCoffin'), 'contents coexist with an animal den');
-assert(!denCatMap.caveGhoulSpawns, 'an inhabited catacomb has no ghouls');
+assert(denCatMap.caveBodies.length >= 8, 'bodies are contents, present whoever lives in the cave');
 
 const cacheMap = decorate(profile('map_i_test_cache', 'trapped_cache', 'bandit_hideout'));
 assert(cacheMap.caveProps.some(item => item.key === 'ruinDungeonChestT2'), 'cache places the authored dungeon chest');
@@ -256,3 +257,55 @@ console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${
   for (const kind of mineKinds) assert(kind === 'stone' || ORE_DEFS[kind], `ore-mine rock kind ${kind} is stone or a real ore`);
   console.log(`PASS cavern-ore-rocks: real ore drops; mine kinds ${[...mineKinds].sort().join(', ')}`);
 }
+
+// Catacomb bodies: laid out as settled corpses with a short loot hold; a
+// restless one gets up a few seconds after the player first comes near.
+(async () => {
+  const corpseObjects = new Set();
+  const despawned = [];
+  let made = 0;
+  context.MinionCombat = {
+    async makeEntity(opts) {
+      made++;
+      return { id: `skel_${made}`, x: opts.x, y: opts.y, state: opts.extra?.state, health: 10, rosterRecord: { name: opts.name, equippedCosmetics: ['rugged_poncho'] }, speciesId: opts.speciesId, def: { lootPool: opts.defOverride?.lootPool }, ...opts.extra };
+    },
+  };
+  context.CreatureDeath = { settleAsCorpse(entity) { entity.state = 'corpse'; entity.health = 0; corpseObjects.add(entity); return true; } };
+  context.DevSpawner.init({ grantLoot() { return []; }, corpseObjects, despawnCreature(entity) { despawned.push(entity); } });
+  const hostiles = new Set();
+  Object.assign(deps, { getCurrentArea: () => 'map_i_test_catacomb', hostileObjects: hostiles, showToast() {} });
+  const bodiesPlan = Cave.__test.plansByMapId.get('map_i_test_catacomb').bodies;
+  Cave.updateCurrentCaveRuntime(1);
+  await Cave.__test.bodySpawnPromises.get('map_i_test_catacomb');
+  const records = Cave.__test.bodiesByMapId.get('map_i_test_catacomb');
+  assert.equal(records.length, bodiesPlan.length, 'every planned body is laid out');
+  assert(records.every(r => r.entity.state === 'corpse' && corpseObjects.has(r.entity)), 'bodies are settled, lootable corpses');
+  assert(records.every(r => r.entity.speciesId === 'mao-ao-skeleton' && r.entity.lootHoldSeconds === 2 && r.entity.keepCorpseAfterLoot), "Mao'ao skeleton bodies need a 2s hold and stay where they lie once searched");
+  assert(records.every(r => r.entity.def.lootPool === 'caveSkeletonBody'), 'bodies roll the grave-goods loot pool');
+  assert.equal(hostiles.size, 0, 'bodies are not live enemies until one rises');
+
+  // Search one body: the looted state is persisted by id.
+  records[0].entity.corpseLooted = true;
+  Cave.updateCurrentCaveRuntime(1);
+  assert(Cave.debugSnapshot().currentState.lootedBodies.includes(records[0].body.id), 'searched bodies are remembered');
+
+  // Make one body restless and walk up to it.
+  for (const r of records) r.riser = false;
+  const riser = records[1];
+  riser.riser = true;
+  deps.player.x = (riser.body.col + 0.5) * deps.TILE; deps.player.y = (riser.body.row + 0.5) * deps.TILE;
+  Cave.updateCurrentCaveRuntime(1);
+  assert(riser.armedAt != null && riser.delay >= 3 && riser.delay <= 12, 'walking close arms a 3-12s delay');
+  const oldCorpse = riser.entity;
+  Cave.updateCurrentCaveRuntime(riser.delay - 0.5);
+  assert(!riser.risen && !riser.rising, 'nothing happens before the delay runs out');
+  Cave.updateCurrentCaveRuntime(1);
+  await new Promise(resolve => setImmediate(resolve));
+  await new Promise(resolve => setImmediate(resolve));
+  assert(riser.risen, 'the restless body rises after its delay');
+  assert(hostiles.has(riser.entity) && riser.entity.state === 'chase', 'it comes up fighting');
+  assert(!corpseObjects.has(oldCorpse) && despawned.includes(oldCorpse), 'the corpse is replaced where it lay');
+  assert.deepEqual(riser.entity.rosterRecord.equippedCosmetics, ['rugged_poncho'], 'an unsearched body rises in its own rags');
+  console.log(`PASS cave catacomb bodies: ${records.length} bodies, riser up after ${riser.delay.toFixed(1)}s`);
+})().catch(error => { console.error(error); process.exitCode = 1; });
+
