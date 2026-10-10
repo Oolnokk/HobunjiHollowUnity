@@ -5,7 +5,8 @@
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--text);font:14px/1.35 system-ui,-apple-system,Segoe UI,sans-serif}
-button,select,input{font:inherit;min-height:38px;border:1px solid var(--line);border-radius:8px;background:#111923;color:var(--text);padding:7px 9px}
+button,select,input,textarea{font:inherit;min-height:38px;border:1px solid var(--line);border-radius:8px;background:#111923;color:var(--text);padding:7px 9px}
+textarea{width:100%;resize:vertical;font:11px/1.4 ui-monospace,monospace}
 button{cursor:pointer;font-weight:700}button:disabled{opacity:.45;cursor:not-allowed}
 input[type=range]{padding:0}
 .app{max-width:1500px;margin:auto;padding:10px}
