@@ -571,8 +571,13 @@
   // direction plus the change in bone length. Points are {x,y,z}; `rest*` must be flattened to the garment's depth and
   // `live*` expressed relative to rest at that same depth (the caller adds the per-joint depth correction), so at rest the
   // result is exactly the planar alignment. Returns {m: [9 row-major], tx, ty, tz, stretch, rotation}.
-  function alignBoneWithMotion(fromStart, fromEnd, restStart, restEnd, liveStart, liveEnd, { perpendicularScale = 1 } = {}) {
-    const planar = alignBoneSegment(fromStart, fromEnd, restStart, restEnd, { perpendicularScale });
+  // options.initial 'translate' replaces the planar bone alignment by a pure translation of `anchorFrom` onto `anchorTo`
+  // (no rotation or stretch): used by the posterior fit, where the garment has already been scaled and placed as a whole
+  // sprite and rotating its (flattened) bones to vertical would twist it.
+  function alignBoneWithMotion(fromStart, fromEnd, restStart, restEnd, liveStart, liveEnd, { perpendicularScale = 1, initial = 'align', anchorFrom = null, anchorTo = null } = {}) {
+    const planar = initial === 'translate' && anchorFrom && anchorTo
+      ? { a: 1, b: 0, c: 0, d: 1, tx: (Number(anchorTo.x) || 0) - (Number(anchorFrom.x) || 0), ty: (Number(anchorTo.y) || 0) - (Number(anchorFrom.y) || 0), stretch: 1, rotation: 0 }
+      : alignBoneSegment(fromStart, fromEnd, restStart, restEnd, { perpendicularScale });
     const num = value => Number(value) || 0;
     const rs = [num(restStart?.x), num(restStart?.y), num(restStart?.z)];
     const ls = [num(liveStart?.x), num(liveStart?.y), num(liveStart?.z)];

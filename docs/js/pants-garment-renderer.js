@@ -15,7 +15,7 @@
 
   if (global.PantsGarmentRenderer) return;
 
-  const SEGMENTS = 32; // Vertices per side of the garment grid; matches the author's live preview.
+  const SEGMENTS = 64; // Vertices per side of the garment grid: fine enough that weight transitions deform smoothly instead of faceting.
   const LEG_ACROSS_SCALE = 'shrinkUniform'; // A leg shorter than the garment's scales down uniformly (so a short-legged species gets proportionally smaller pants, not wedges); a longer one widens by sqrt of the stretch.
   const DEFAULT_GARMENT_ID = 'pants_basic';
   const FALLBACK_CHARACTER_KEY = '__default'; // Species/gender without their own authored record share this fit.
@@ -180,7 +180,7 @@
     geometry.getAttribute('position').setUsage?.(THREE.DynamicDrawUsage);
     geometry.computeBoundingSphere();
     Core.applyLegAxisWeights(weights, SEGMENTS, garment, character.legCoverage === undefined ? 1 : Number(character.legCoverage)); // Whole pant legs (sides included) follow their bone.
-    Core.sharpenWeights(weights, Math.min(8, Math.max(1, Number(character.weightSharpness) || 4))); // Strong initial 2D->3D alignment (see Core.sharpenWeights).
+    Core.sharpenWeights(weights, Math.min(8, Math.max(1, Number(character.skinSharpness) || 1.5))); // Strong initial 2D->3D alignment (see Core.sharpenWeights).
     // Everything at or above the beltline spline belongs to the belt (rigid, flat in the portrait plane, however the weights
     // were painted): the beltline never tilts or leaves the portrait's depth, even where no belt weight touches it.
     const beltPoints = [...garment.pantsBeltSpline].sort((p, q) => p.x - q.x);
@@ -339,7 +339,7 @@
       beltCenter: data.beltCenter, planeNormal: data.planeNormal,
       beltScale: Math.min(3.5, Math.max(1.7, Number(character.beltScale) || DEFAULT_BELT_SCALE)),
       legRollGain: Math.min(4, Math.max(1, Number(character.legRollGain) || 2)),
-      maskMapping: data.maskMapping, footLift, rest: null, restRaw: null,
+      maskMapping: data.maskMapping, footLift, rest: null, restRaw: null, fitMode,
       maskUniforms: { uPantsDepthBias: { value: 0 }, uPantsMask: { value: null }, uPantsMaskOn: { value: 0 }, uPantsMaskO: { value: new THREE.Vector2(data.maskMapping.ox, data.maskMapping.oy) }, uPantsMaskInv: { value: new THREE.Vector4(...data.maskMapping.inv) } },
       scratch: makeScratch(THREE), appearance: { ...appearance, speciesId, gender, imageUrl }, renderToken: 0, ready: false, garment,
     };
@@ -446,7 +446,8 @@
       return aim;
     };
     const boneTransform = (side, from, to, aim) => Core.alignBoneWithMotion(
-      handle.bones2D[side][from], handle.bones2D[side][to], handle.rest[side][from], handle.rest[side][to], aim[side][from], aim[side][to], { perpendicularScale: LEG_ACROSS_SCALE });
+      handle.bones2D[side][from], handle.bones2D[side][to], handle.rest[side][from], handle.rest[side][to], aim[side][from], aim[side][to],
+      { perpendicularScale: LEG_ACROSS_SCALE }); // (Core also offers initial: 'translate'; tried for the posterior fit, it flattened Tletingan into one band, so the full planar alignment stays.)
 
     handle.update = () => {
       if (handle.disposed || !handle.mesh || !handle.model.parent) return;
@@ -464,8 +465,7 @@
       transforms[4] = boneTransform('right', 'knee', 'ankle', aim);
       const position = handle.geometry.getAttribute('position');
       Core.skinWeightedPositions(handle.basePositions, handle.weights, transforms, position.array);
-      position.needsUpdate = true;
-      handle.geometry.computeBoundingSphere();
+      position.needsUpdate = true; // frustumCulled is off, so no per-frame bounding-sphere work.
     };
 
     // Diagnostics: how exactly the garment's bones land on the live 3D bones this frame (depth-corrected, roll-amplified).
