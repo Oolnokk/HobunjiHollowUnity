@@ -25,7 +25,9 @@
 .canvasCard.pantsEnlarged .pantsBeltTools{display:flex} /* Only in the enlarged window, so the normal portrait canvas keeps its size. */
 .pantsBeltGroup{display:inline-flex;align-items:center;gap:4px}
 .pantsBeltGroup>span{font-size:11px;color:#9eb2cb;margin-right:1px}
-.pantsBeltTools button{flex:0 0 auto!important;min-width:34px;min-height:34px;padding:3px 8px;font-size:13px;white-space:nowrap}
+.pantsBeltTools button{flex:0 0 auto!important;min-width:34px;min-height:34px;padding:3px 8px;font-size:13px;white-space:nowrap;touch-action:manipulation;-webkit-tap-highlight-color:rgba(107,169,255,.45);user-select:none;-webkit-user-select:none}
+.pantsBeltTools button:active{transform:scale(.95);background:#2a4a78!important}
+@media(pointer:coarse){.pantsBeltTools button{min-width:44px;min-height:44px;padding:6px 10px;font-size:15px}}
 .pantsBeltTools button[aria-pressed=true]{outline:2px solid #6ba9ff}
 .pantsBeltTools .pantsShrinkwrapBtn{font-weight:700;border-color:#9cff00;color:#d8ff8a}
 .pantsBeltMsg{flex:1 1 100%;min-height:15px;font-size:11px;line-height:1.35;color:#9edfbf}

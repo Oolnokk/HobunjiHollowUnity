@@ -477,6 +477,9 @@
     style.textContent = `
 #${PANEL_ID}{position:absolute;z-index:120;top:max(8px,env(safe-area-inset-top));right:max(8px,env(safe-area-inset-right));bottom:max(8px,env(safe-area-inset-bottom));width:min(620px,52vw);max-width:calc(100% - 16px);display:none;flex-direction:column;min-height:0;overflow:hidden;border:1px solid rgba(255,255,255,.18);border-radius:15px;background:rgba(7,16,26,.985);box-shadow:0 22px 70px rgba(0,0,0,.62)}
 #${PANEL_ID}.open{display:flex}
+#${PANEL_ID},#${PANEL_ID} iframe{touch-action:manipulation}
+#${PANEL_ID} .pantsRigHostTools button{touch-action:manipulation;-webkit-tap-highlight-color:rgba(107,169,255,.45)}
+@media(pointer:coarse){#${PANEL_ID} .pantsRigHostTools button{min-height:44px}}
 #${PANEL_ID}.pantsRigExpanded{top:max(8px,env(safe-area-inset-top));left:max(8px,env(safe-area-inset-left));right:max(8px,env(safe-area-inset-right));bottom:max(8px,env(safe-area-inset-bottom));width:auto;max-width:none;height:auto;box-shadow:0 0 0 100vmax rgba(2,6,12,.62),0 22px 70px rgba(0,0,0,.7)}
 #${PANEL_ID} .pantsRigHostHeader{flex:0 0 auto;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;padding:7px 9px;border-bottom:1px solid rgba(255,255,255,.12);background:linear-gradient(180deg,rgba(22,37,56,.99),rgba(11,20,31,.99))}
 #${PANEL_ID} .pantsRigHostTitle{font-size:12px;font-weight:800;color:#dce9ff}.pantsRigHostSub{font-size:10px;color:#9eb2cb;margin-top:2px}
