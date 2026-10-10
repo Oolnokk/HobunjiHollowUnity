@@ -4390,6 +4390,7 @@
       // signature's compose is still in flight, callers fall back to the
       // species' plain (uncolored) sprite — see setCreatureFrame below.
       const _genotypeTexCache = { front: new Map(), back: new Map() };
+      const _genotypeTextureResidency = window.CreatureTextureCache.create('wild-and-companion', _genotypeTexCache); // Owns disposal and bounded idle retention while preserving the existing map/debug API.
       window.HobunjiCacheAudit?.register('game.genotypeTexCache', () => _genotypeTexCache.front.size);
       const _genotypeTexPending = new Map(); // Frame-key promises allow scene preparation to await the existing compositor.
       // Every key this function has ever logged a "kicking off compose" line
@@ -4425,7 +4426,7 @@
         const sig = renderer.genotypeSignature(kind, genotype);
         const key = `${kind}|${frame}|${sig}|${blinkShut ? 'b' : 'o'}`;
         if (_genotypeTexCache.front.has(key)) {
-          return { front: _genotypeTexCache.front.get(key), back: _genotypeTexCache.back.get(key) };
+          return _genotypeTextureResidency.get(key);
         }
         // A key that just failed (thrown or resolved null) gets a short
         // cooldown before it's allowed to retry — without this, a
@@ -4438,6 +4439,7 @@
         if (!_genotypeTexPending.has(key)) {
           if (!_genotypeTexLogged.has(key)) {
             _genotypeTexLogged.add(key);
+            if (_genotypeTexLogged.size >= 256) _genotypeTexLogged.delete(_genotypeTexLogged.values().next().value);
             window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): cache miss, sig="${sig}" blink=${blinkShut} — kicking off composeFrame`, 'wildlife');
           }
           _genotypeTexPending.set(key, renderer.composeFrame(kind, frame, genotype, blinkShut).then(canvas => {
@@ -4453,8 +4455,7 @@
             const back = new THREE.CanvasTexture(canvas);
             back.colorSpace = THREE.SRGBColorSpace;
             back.wrapS = THREE.RepeatWrapping; back.repeat.set(-1, 1); back.offset.set(1, 0);
-            _genotypeTexCache.front.set(key, front);
-            _genotypeTexCache.back.set(key, back);
+            _genotypeTextureResidency.put(key, { front, back });
             window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): composited texture cached for sig="${sig}" (canvas ${canvas.width}x${canvas.height})`, 'wildlife');
           }).catch(err => {
             _genotypeTexPending.delete(key);
@@ -4476,17 +4477,19 @@
       // fallback if its own specific frame wasn't ready at that exact
       // moment and nothing else ever bumped the counter again).
       function setCreatureFrame(avatarRef, url, genotypeKind, frameKey, genotype, blinkShut = false) {
+        if (window.CreatureTextureCache.isDisposed(avatarRef)) return false; // Prevent a late visual update from reacquiring removed-avatar memory.
         const genoTex = (genotypeKind && genotype) ? _getGenotypeTextures(genotypeKind, frameKey, genotype, blinkShut) : null;
         const front = genoTex?.front || _getCreatureFrontTexture(url);
         const back = genoTex?.back || _getCreatureBackTexture(url);
         for (const child of [avatarRef.frontPlane, avatarRef.backPlane]) {
-          if (!child.material) continue;
+          if (!child?.material) continue;
           const hadMap = !!child.material.map; // Only a map-presence change requires shader recompilation.
           if (child.name.endsWith('_front_plane')) child.material.map = front;
           else if (child.name.endsWith('_back_plane')) child.material.map = back;
           else continue;
           if (!hadMap) child.material.needsUpdate = true; // Ordinary frame swaps only change the map uniform.
         }
+        _genotypeTextureResidency.retain(avatarRef, genoTex?.key || null); // Pins only the texture pair actually bound on this avatar; previous frames become evictable.
         return !!genoTex;
       }
 
@@ -4557,9 +4560,66 @@
         const halfH = modelHeight * sizeScale.y / 2; // Existing automatic prism floor-to-origin distance, retained as the fallback and physical half-height.
         const groundLift = Number.isFinite(authoredGroundOffset) ? authoredGroundOffset : halfH; // Replaces, rather than adds to/subtracts from, the automatic terrain baseline.
         const idUniq = (performance.now() | 0) + '_' + Math.floor(Math.random() * 100000);
+        const avatarRef = dataCreatureAvatar(); // Data-only wildlife retains an empty transform group, never image/rig allocations.
+        const groundShadow = null; // Allocated with the character rig only when it is promoted into the visible bubble.
+
+        const creature = {
+          id: creatureKey + '_' + idUniq,
+          creatureKey, def, avatarRef, groundShadow,
+          _wildlifeVisualsReleased: true, // Distinguishes data-only wildlife from a live native-resolution rig.
+          _wildlifeVisualLodHidden: !!opts.streamVisuals,
+          x, y, vx: 0, vy: 0,
+          halfHeight: halfH,
+          groundLift, // Floor-to-origin terrain lift: authored per species+size when present, otherwise the original half-height baseline.
+          visualScaleX: sizeScale.x, // Reused whenever attack squash updates the group scale.
+          visualScaleY: sizeScale.y, // Reused whenever attack squash updates the group scale.
+          visualModelWidth: modelWidth * sizeScale.x, // Keeps shadows, rings, and combat reach aligned with visible width.
+          health: def.maxHealth, maxHealth: def.maxHealth,
+          stamina: def.maxStamina, maxStamina: def.maxStamina,
+          facing: 0, groupRot: 0, pngRot: 0, perpState: {},
+          scaleY: 1,
+          attackCooldownT: 0, retreatT: 0, hitFlashT: 0,
+          knockbackT: 0, knockbackVX: 0, knockbackVY: 0,
+          runFrame: 0, runFrameDistPx: 0, currentFrameUrl: def.sprites.idle,
+          isCompanion: false,
+          // Whichever entity this companion follows/defends/anchors to —
+          // {x, y, angle, climbing}, same shape as the real `player` object.
+          // Defaults to null (hostiles/wild creatures have no master); a
+          // companion always gets one passed in via opts (see
+          // syncCompanionFromWhistle). Kept as a plain reference rather than
+          // hardcoding `player` so a future NPC-owned companion (or a second
+          // remote player's companion) can point at any qualifying entity.
+          master: null,
+          name: def.label,
+          state: 'idle',
+          wanderTarget: null, wanderT: 0,
+          homeX: x, homeY: y,
+          scene: targetScene, areaGrid: targetGrid, areaCols: gridCols, areaRows: gridRows, areaId: currentArea,
+          ...restOpts,
+        };
+        window.__farmLog?.(`[size-render] ${creatureKey}: ${sizeScale.sizeClass} at ${Math.round(sizeScale.x * 100)}% × ${Math.round(sizeScale.y * 100)}%`, 'wildlife');
+        window.ResourceSystem?.initEntity(creature);
+        if (!opts.streamVisuals) createCreatureVisuals(creature); // Companions, cinematic actors, and ordinary callers keep immediate construction.
+        return creature;
+      }
+
+      function dataCreatureAvatar() {
+        const group = new THREE.Group(); // Keeps logical actors compatible with targeting/AI transform readers without any renderable children.
+        group.visible = false;
+        return { group, frontPlane: null, backPlane: null, dispose() {} };
+      }
+
+      function createCreatureVisuals(c) {
+        if (!c._wildlifeVisualsReleased) return;
+        const { creatureKey, def, x, y } = c; // Existing creature data is the authority; promotion never respawns or rerolls it.
+        const opts = { genotype: c.genotype }; // Passed through the original appearance path below.
+        const modelWidth = def.modelWidth, modelHeight = modelWidth * (def.spriteAspect || (600 / 1375)); // Native geometry proportions survive retirement.
+        const sizeScale = { x: c.visualScaleX, y: c.visualScaleY }; // Already resolved by the factory, including authored size class.
+        const targetScene = c.scene, targetGrid = c.areaGrid, gridCols = c.areaCols, gridRows = c.areaRows; // Stored area ownership survives town/wilderness transitions.
+        const groundLift = c.groundLift; // Authored floor lift remains unchanged.
         const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, def.sprites.idle, {
           modelWidth, modelHeight,
-          name: creatureKey + '_' + idUniq,
+          name: c.id,
           creatureId: creatureKey,
           headRig: window.CreatureGeneticsRender?.headRigForKind?.(creatureKey) || undefined,
         });
@@ -4598,39 +4658,11 @@
         groundShadow.position.set(x / TILE, surfY + characterGroundShadowSurfaceOffset(), y / TILE);
         targetScene.add(groundShadow);
 
-        const creature = {
-          id: creatureKey + '_' + idUniq,
-          creatureKey, def, avatarRef, groundShadow,
-          x, y, vx: 0, vy: 0,
-          halfHeight: halfH,
-          groundLift, // Floor-to-origin terrain lift: authored per species+size when present, otherwise the original half-height baseline.
-          visualScaleX: sizeScale.x, // Reused whenever attack squash updates the group scale.
-          visualScaleY: sizeScale.y, // Reused whenever attack squash updates the group scale.
-          visualModelWidth: modelWidth * sizeScale.x, // Keeps shadows, rings, and combat reach aligned with visible width.
-          health: def.maxHealth, maxHealth: def.maxHealth,
-          stamina: def.maxStamina, maxStamina: def.maxStamina,
-          facing: 0, groupRot: 0, pngRot: 0, perpState: {},
-          scaleY: 1,
-          attackCooldownT: 0, retreatT: 0, hitFlashT: 0,
-          knockbackT: 0, knockbackVX: 0, knockbackVY: 0,
-          runFrame: 0, runFrameDistPx: 0, currentFrameUrl: def.sprites.idle,
-          isCompanion: false,
-          // Whichever entity this companion follows/defends/anchors to —
-          // {x, y, angle, climbing}, same shape as the real `player` object.
-          // Defaults to null (hostiles/wild creatures have no master); a
-          // companion always gets one passed in via opts (see
-          // syncCompanionFromWhistle). Kept as a plain reference rather than
-          // hardcoding `player` so a future NPC-owned companion (or a second
-          // remote player's companion) can point at any qualifying entity.
-          master: null,
-          name: def.label,
-          state: 'idle',
-          wanderTarget: null, wanderT: 0,
-          homeX: x, homeY: y,
-          scene: targetScene, areaGrid: targetGrid, areaCols: gridCols, areaRows: gridRows, areaId: currentArea,
-          ...restOpts,
-        };
-        window.__farmLog?.(`[size-render] ${creatureKey}: ${sizeScale.sizeClass} at ${Math.round(sizeScale.x * 100)}% × ${Math.round(sizeScale.y * 100)}%`, 'wildlife');
+        c.avatarRef = avatarRef;
+        c.groundShadow = groundShadow;
+        c._wildlifeVisualsReleased = false;
+        c.currentFrameUrl = null;
+        c._genotypeReadyFrames?.clear();
         // Shifts the plane meshes (not the prism/group itself — see
         // creaturePlaneGroundOffset) down once the idle sprite's real
         // opaque bottom edge is known, so the art's actual feet sit on the
@@ -4638,17 +4670,33 @@
         // Fires synchronously if this species' sprite was already scanned
         // by an earlier creature.
         resolveCreatureGroundAnchorRatio(def.sprites.idle, (bottomRatio) => {
+          if (c.avatarRef !== avatarRef) return; // Ignore an opacity scan that completes after this visual rig was retired.
           const offsetY = creaturePlaneGroundOffset(modelHeight, bottomRatio);
           if (avatarRef.frontPlane) avatarRef.frontPlane.position.y = offsetY;
           if (avatarRef.backPlane) avatarRef.backPlane.position.y = offsetY;
         });
-        window.ResourceSystem?.initEntity(creature);
-        return creature;
+        window.WildlifeSpawn?.restoreHerdMotherVisuals?.(c); // Recreates shared-map saddle babies after a data-only mother's promotion.
+      }
+
+      function releaseCreatureVisuals(c) {
+        if (!c.streamVisuals || c.isCompanion || c.health <= 0 || c._wildlifeVisualsReleased) return;
+        disposeCreaturePresentation(c); // Releases only visuals; health, genes, movement state, and population keys remain registered.
+        c.avatarRef = dataCreatureAvatar();
+        c.groundShadow = null;
+        c._carriedBabyVisuals = null;
+        c._wildlifeVisualsReleased = true;
+        c._wildlifeVisualLodHidden = true;
+        c.currentFrameUrl = null;
+        c._genotypeReadyFrames?.clear();
       }
 
       function despawnCreature(c) {
-        window.BurningAfflictionVfx?.disposeEntity?.(c); // Removes any Burning Health emitter before the avatar group leaves its scene.
         clearKnockbackLedgeMotion(c);
+        disposeCreaturePresentation(c); // Ordinary despawns and data-only retirement share one visual disposal owner.
+      }
+
+      function disposeCreaturePresentation(c) {
+        window.BurningAfflictionVfx?.disposeEntity?.(c); // Removes presentation without changing the creature's Burning resource state.
         (c.scene || scene).remove(c.avatarRef.group);
         c.avatarRef.dispose();
         if (c.groundShadow) {
@@ -4835,6 +4883,11 @@
             isBandit: !!c.isBandit, isBarbarian,
             isPredator: !c.isBandit && !isBarbarian && !!c.def?.hostile && c.def?.diet !== 'herbivore',
           });
+        }
+        if (c._wildlifeVisualsReleased) {
+          createCreatureVisuals(c); // Environmental/resource deaths still produce the normal visible, lootable corpse.
+          c._wildlifeVisualLodHidden = false;
+          c.avatarRef.group.visible = true;
         }
         window.CreatureDeath.begin(c, fromX ?? c.x, fromY ?? c.y);
         return true;
@@ -5114,17 +5167,104 @@
         return { hits, message: hits > 1 ? `${verb} ${hits} creatures!` : `${verb} the ${lastName}!` };
       }
 
-      // Ranged weapons retain a player-selected lock; melee targeting exists
-      // only for the few frames between an attack request and its windup.
+      // Mobile weapons share one persistent target; only the reticle tracks it.
       let manualAutoTarget = null;
-      let meleeAttackAlignment = null; // Active transient player alignment consumed by updateMeleeAttackAlignment().
-      let meleeAttackTargetLock = null; // Selected once per transient activation and reused by every melee-target consumer until release.
-      let meleeAttackTargetLockSerial = 0; // Identifies each acquisition in the existing mobile-readable alignment diagnostics.
-      let lastMeleeAttackTargetLock = { serial: 0, targetId: null, releaseReason: 'not-acquired' }; // Reports the latest lock lifecycle after it turns off.
       let meleeAttackFacingCommit = null; // Frozen screen-correct heading carried through the melee windup/attack.
       let gameFrameSerial = 0; // Identifies the current animation frame for shared target and profiler work.
       let autoTargetCacheFrame = -1; // Prevents repeated target searches within the same frame.
       let autoTargetCacheValue = null; // Stores the single target-selection result for autoTargetCacheFrame.
+      let availableAutoTargetCacheFrame = -1; // Caches the disabled-mode eligibility preview once per frame.
+      let availableAutoTargetCacheValue = null; // Stores the target the mobile toggle would acquire without enabling it.
+
+      const autoTargetSightRay = new THREE.Raycaster(); // Reused for mobile target obstruction checks without per-frame vector allocation.
+      const autoTargetSightOrigin = new THREE.Vector3(); // Shared ray origin at the player's combat hitbox center.
+      const autoTargetSightDirection = new THREE.Vector3(); // Shared direction toward each candidate's combat center.
+      const autoTargetSightHits = []; // Reused intersection output for the current area's existing obstacle collection.
+      let autoTargetSightFrame = -1; // Keeps obstacle collection to one lookup per frame.
+      let autoTargetSightObstacles = []; // Cached active-area geometry for all candidate checks in the same frame.
+
+      function mobileAutoTargetEnabled() {
+        return !isDesktop && !!window.Combat?.input?.isAutoTargetEnabled?.();
+      }
+
+      function autoTargetRange() {
+        return activeTool === 'ranged'
+          ? window.RangedWeapons?.playerLockRangePx?.(equipmentSlots.ranged) || TILE * 7
+          : TILE * Math.max(0, Number(combatConfig().autoTargetRangeTiles) || 4);
+      }
+
+      function autoTargetRetentionRange() {
+        return Math.max(TILE * 12, autoTargetRange() * 3); // Acquisition is short-range; an existing lock survives retreat without switching to a closer enemy.
+      }
+
+      const mobileAutoTargetView = new THREE.Vector3(); // Reused target-center vector in camera-local coordinates for automatic yaw/pitch error.
+      let mobileAutoCameraActive = false; // Diagnostic flag; assist steers the existing camera offsets while the reticle stays centered.
+      let mobileAutoCameraResponseS = 0; // Last distance-scaled camera tracking time constant exposed in the copyable mobile report.
+
+      function manualCombatReticleAim() {
+        return Number.isFinite(mobileArchCombatAim?.angle)
+          || (!!meleeAttackFacingCommit && meleeAttackCurrentlyActive());
+      }
+
+      function currentCombatReticleNDC() {
+        return _screenCenterNDC;
+      }
+
+      function updateMobileAutoTargetCamera(dt) {
+        const target = findAutoTarget(); // Keep the selected creature while manual attack-stick input owns camera aim.
+        const suppressed = isDesktop || !target || manualCombatReticleAim() || menuOpen || dialogueOpen || sitInteraction
+          || farmEditMode || characterViewMode.enabled || window.AuthoredCutsceneRuntime?.isActive?.()
+          || window.__mapEditorOrbitActive; // Scripted/menu/editor camera owners remain authoritative.
+        mobileAutoCameraActive = false;
+        mobileAutoCameraResponseS = 0;
+        if (suppressed || !autoTargetVisible(target)) return; // Temporary obstruction pauses camera tracking without selecting another target.
+        const center = window.RangedWeapons?.actorHitbox?.(target)?.center; // Existing species-aware collider supplies the prey/enemy combat center.
+        mobileAutoTargetView.set(target.x / TILE, center?.y ?? activeSurfaceYAtWorld(target.x / TILE, target.y / TILE) + 0.4, target.y / TILE);
+        camera.updateMatrixWorld?.();
+        mobileAutoTargetView.applyMatrix4(camera.matrixWorldInverse);
+        const horizontal = Math.hypot(mobileAutoTargetView.x, mobileAutoTargetView.z); // Camera-local horizontal distance supplies continuous yaw, including targets behind the view.
+        if (![mobileAutoTargetView.x, mobileAutoTargetView.y, mobileAutoTargetView.z, horizontal].every(Number.isFinite) || horizontal < 1e-8) return;
+        const yawError = Math.atan2(mobileAutoTargetView.x, -mobileAutoTargetView.z); // Camera looks along local -Z; a target to screen-right needs a negative orbit azimuth change.
+        const pitchError = Math.atan2(mobileAutoTargetView.y, horizontal); // Positive screen-up error needs a smaller downward camera pitch.
+        const distanceTiles = Math.hypot(target.x - player.x, target.y - player.y) / TILE; // Close sidesteps should take longer to track than distant motion.
+        mobileAutoCameraResponseS = 0.2 + 0.8 / (1 + Math.max(0, distanceTiles));
+        const blend = 1 - Math.exp(-Math.min(0.05, Math.max(0, Number(dt) || 0)) / mobileAutoCameraResponseS); // No instantaneous target snap or catch-up jump after a stalled frame.
+        const orbitGain = Math.max(1, Math.hypot(horizontal, mobileAutoTargetView.y) / Math.max(0.5, distanceTiles)); // Compensates a long camera boom: orbiting the player moves a close target less than rotating a camera in place.
+        const yawCorrection = Math.max(-Math.PI, Math.min(Math.PI, yawError * orbitGain)); // Keeps compensation bounded so a nearby crossing cannot cause an instantaneous flip.
+        const pitchCorrection = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitchError * orbitGain)); // Same bounded correction for a close target's vertical movement.
+        cameraAzimuthOffsetDeg = wrapAzimuthDeg(cameraAzimuthOffsetDeg - yawCorrection * 180 / Math.PI * blend);
+        cameraAngleOffsetDeg = clampCameraPitchOffsetDeg(cameraAngleOffsetDeg - pitchCorrection * 180 / Math.PI * blend);
+        mobileAutoCameraActive = true;
+        _cachedPerspectiveTargetAt = -1;
+      }
+
+      function autoTargetCandidateValid(target, maxDist = autoTargetRange()) {
+        return !!target && target.health > 0 && target.areaId === currentArea
+          && !target._denHidden && !target._grehlrBurrowProtected && !target.isCompanion
+          && Number.isFinite(target.x) && Number.isFinite(target.y)
+          && Math.hypot(target.x - player.x, target.y - player.y) <= maxDist;
+      }
+
+      function autoTargetVisible(target) {
+        if (autoTargetSightFrame !== gameFrameSerial) {
+          autoTargetSightObstacles = currentAreaOcclusionMeshes();
+          if (currentArea === 'interior' && activeCameraMode !== 'seated' && interiorWallGroup) autoTargetSightObstacles.push(interiorWallGroup);
+          autoTargetSightFrame = gameFrameSerial;
+        }
+        if (!autoTargetSightObstacles.length) return true;
+        const origin = window.RangedWeapons?.actorHitbox?.(player)?.center; // Existing collider supplies species-correct targeting height.
+        const center = window.RangedWeapons?.actorHitbox?.(target)?.center; // Existing target collider avoids aiming through the floor at short creatures.
+        autoTargetSightOrigin.set(player.x / TILE, origin?.y ?? activeSurfaceYAtWorld(player.x / TILE, player.y / TILE) + 0.55, player.y / TILE);
+        autoTargetSightDirection.set(target.x / TILE, center?.y ?? activeSurfaceYAtWorld(target.x / TILE, target.y / TILE) + 0.4, target.y / TILE).sub(autoTargetSightOrigin);
+        const distance = autoTargetSightDirection.length(); // Limits occlusion to geometry between the player and target.
+        if (distance < 0.05) return true;
+        autoTargetSightRay.set(autoTargetSightOrigin, autoTargetSightDirection.normalize());
+        autoTargetSightRay.near = 0.03;
+        autoTargetSightRay.far = Math.max(0.03, distance - 0.05);
+        autoTargetSightHits.length = 0;
+        autoTargetSightRay.intersectObjects(autoTargetSightObstacles, true, autoTargetSightHits);
+        return !autoTargetSightHits.some(hit => hit.object?.visible !== false);
+      }
 
       function meleeWeaponOut() {
         return heldMode === 'tool' && activeTool === 'weapon' && !!equipmentSlots.weapon;
@@ -5138,8 +5278,6 @@
 
       function meleeAttackBodyFacingOverride() {
         if (Number.isFinite(mobileArchCombatAim?.angle)) return mobileArchCombatAim.angle;
-        const alignmentFacing = meleeAttackAlignment?.appliedFacing;
-        if (Number.isFinite(alignmentFacing)) return alignmentFacing;
         return Number.isFinite(meleeAttackFacingCommit?.angle) ? meleeAttackFacingCommit.angle : null;
       }
 
@@ -5151,23 +5289,25 @@
           : player.angle;
       }
 
-      function meleeAttackTargetCandidate() {
-        if (!meleeWeaponOut()) return null;
-        if (meleeAttackTargetLock) return meleeAttackTargetLock; // Never rescan surrounding enemies while this activation owns a target.
-        const aimAngle = currentMeleeAimAngle(); // Live camera/stick/body bearing used by the shared ±45° cone.
+      function meleeAttackTargetCandidate(preview = false) {
+        if (isDesktop || (!preview && !mobileAutoTargetEnabled()) || !meleeWeaponOut()) return null;
+        if (autoTargetCandidateValid(manualAutoTarget, autoTargetRetentionRange())) return manualAutoTarget;
+        if (!preview) manualAutoTarget = null;
+        const aimAngle = currentMeleeAimAngle(); // Live camera/stick/body bearing used for initial acquisition in the front half-plane.
         const maxDist = TILE * (Number(combatConfig().autoTargetRangeTiles) || 0); // Existing melee assist range remains authoritative.
         let best = null, bestDist = maxDist, bestAimError = Infinity;
         for (const c of hostileObjects) {
-          if (c.health <= 0 || c.areaId !== currentArea || c._denHidden) continue;
+          if (!autoTargetCandidateValid(c, maxDist)) continue;
           const dx = c.x - player.x, dy = c.y - player.y;
           const dist = Math.hypot(dx, dy);
           if (dist > maxDist) continue;
-          const alignment = window.Combat?.attackAlignmentStep?.(player, c, 0, { facing: aimAngle });
+          const alignment = window.Combat?.attackAlignmentStep?.(player, c, 0, { facing: aimAngle, halfConeRad: Math.PI / 2 });
           if (!alignment?.eligible) continue;
           const aimError = Math.abs(Number(alignment.deltaRad) || 0);
           const clearlyBetterAim = aimError < bestAimError - 1e-4;
           const sameAim = Math.abs(aimError - bestAimError) <= 1e-4;
           if (!clearlyBetterAim && !(sameAim && dist < bestDist)) continue;
+          if (!autoTargetVisible(c)) continue;
           best = c;
           bestDist = dist;
           bestAimError = aimError;
@@ -5175,55 +5315,33 @@
         return best;
       }
 
-      function acquireMeleeAttackTargetLock() {
-        const target = meleeAttackTargetCandidate();
-        if (!target) return null;
-        meleeAttackTargetLock = target;
-        meleeAttackTargetLockSerial++;
-        lastMeleeAttackTargetLock = {
-          serial: meleeAttackTargetLockSerial,
-          targetId: target.id ?? target.creatureKey ?? target.def?.label ?? null,
-          releaseReason: null,
-        };
-        invalidateAutoTargetCache();
-        return target;
-      }
-
-      function releaseMeleeAttackTargetLock(target, reason) {
-        if (meleeAttackTargetLock !== target) return;
-        meleeAttackTargetLock = null;
-        lastMeleeAttackTargetLock = { ...lastMeleeAttackTargetLock, releaseReason: reason };
-        invalidateAutoTargetCache();
-      }
-
-      function computeAutoTarget() {
-        const rangedActive = heldMode === 'tool' && activeTool === 'ranged' && !!equipmentSlots.ranged;
+      function computeAutoTarget(preview = false) {
+        const rangedActive = heldMode === 'tool' && activeTool === 'ranged' && !!equipmentSlots.ranged; // Only equipped mobile combat tools acquire targets.
+        if (isDesktop || (!preview && !mobileAutoTargetEnabled()) || (!meleeWeaponOut() && !rangedActive)) {
+          if (!preview) manualAutoTarget = null;
+          return null;
+        }
         if (meleeWeaponOut()) {
-          const target = meleeAttackTargetLock;
-          if (target?.health > 0 && target.areaId === currentArea && !target._denHidden) return target;
-          return null;
+          const target = meleeAttackTargetCandidate(preview); // The same selection serves attacks and the read-only prey availability preview.
+          if (!preview) manualAutoTarget = target;
+          return target;
         }
-        if (!rangedActive) {
-          manualAutoTarget = null;
-          return null;
-        }
-        const maxDist = window.RangedWeapons?.playerLockRangePx?.(equipmentSlots.ranged) || TILE * 7;
-        if (manualAutoTarget) {
-          if (manualAutoTarget.health > 0 && manualAutoTarget.areaId === currentArea &&
-              Math.hypot(manualAutoTarget.x - player.x, manualAutoTarget.y - player.y) <= maxDist) return manualAutoTarget;
-          manualAutoTarget = null;
-        }
+        const maxDist = autoTargetRange(); // Ranged weapon configuration remains the range authority.
+        if (autoTargetCandidateValid(manualAutoTarget, autoTargetRetentionRange())) return manualAutoTarget;
+        if (!preview) manualAutoTarget = null;
         let best = null, bestDist = maxDist;
         for (const c of hostileObjects) {
-          if (c.health <= 0 || c.areaId !== currentArea || c._denHidden) continue;
-          const dist = Math.hypot(c.x - player.x, c.y - player.y);
-          if (dist <= bestDist) { best = c; bestDist = dist; }
+          if (!autoTargetCandidateValid(c, maxDist)) continue;
+          const dist = Math.hypot(c.x - player.x, c.y - player.y); // Select nearest valid enemy without replacing a still-valid lock.
+          if (dist <= bestDist && autoTargetVisible(c)) { best = c; bestDist = dist; }
         }
+        if (!preview) manualAutoTarget = best;
         return best;
       }
 
       function invalidateAutoTargetCache() {
         autoTargetCacheFrame = -1;
+        availableAutoTargetCacheFrame = -1;
       }
 
       function findAutoTarget() {
@@ -5233,16 +5351,25 @@
         return autoTargetCacheValue;
       }
 
+      function findAvailableAutoTarget() {
+        if (isDesktop) return null;
+        if (mobileAutoTargetEnabled()) return findAutoTarget();
+        if (availableAutoTargetCacheFrame !== gameFrameSerial) {
+          availableAutoTargetCacheValue = computeAutoTarget(true); // Uses ordinary range, visibility, and weapon/cone rules without selecting or turning toward prey.
+          availableAutoTargetCacheFrame = gameFrameSerial;
+        }
+        return availableAutoTargetCacheValue;
+      }
+
       function currentPlayerAimAngle() {
         if (Number.isFinite(mobileArchCombatAim?.angle)) return mobileArchCombatAim.angle;
-        if (activeCameraMode === SHOULDER_SURF_MODE) return shoulderPerspectiveFacingAngle();
-        const target = findAutoTarget();
-        return target ? Math.atan2(target.y - player.y, target.x - player.x) : player.angle;
+        if (activeCameraMode === SHOULDER_SURF_MODE || mobileAutoCameraActive) return shoulderPerspectiveFacingAngle();
+        return player.angle;
       }
 
       const MAX_RANGED_AIM_PITCH_RAD = THREE.MathUtils.degToRad(60);
       function currentPlayerAimPitch() {
-        if (activeCameraMode === SHOULDER_SURF_MODE) {
+        if (activeCameraMode === SHOULDER_SURF_MODE || mobileAutoCameraActive) {
           const direction = currentPlayerPerspectiveDirection();
           if (direction) {
             return window.FormatUtils.clamp(
@@ -5251,14 +5378,6 @@
               MAX_RANGED_AIM_PITCH_RAD,
             );
           }
-        }
-        const target = activeCameraMode === SHOULDER_SURF_MODE ? null : findAutoTarget();
-        if (target) {
-          const originY = activeSurfaceYAtWorld(player.x / TILE, player.y / TILE) + 0.55;
-          const targetY = target.avatarRef?.group?.position?.y ?? (activeSurfaceYAtWorld(target.x / TILE, target.y / TILE) + 0.4);
-          const horizDist = Math.hypot(target.x - player.x, target.y - player.y) / TILE;
-          if (horizDist < 0.05) return 0;
-          return window.FormatUtils.clamp(Math.atan2(targetY - originY, horizDist), -MAX_RANGED_AIM_PITCH_RAD, MAX_RANGED_AIM_PITCH_RAD);
         }
         return window.FormatUtils.clamp(-THREE.MathUtils.degToRad(cameraAngleOffsetDeg), -MAX_RANGED_AIM_PITCH_RAD, MAX_RANGED_AIM_PITCH_RAD);
       }
@@ -5293,20 +5412,24 @@
         return false;
       }
 
-      const SWAP_TARGET_HALF_CONE_RAD = Math.PI / 2;
+      function targetStickWorldAngle(dx, dy) {
+        const azimuth = activeCameraAzimuthRad(); // Rotates screen-stick directions into the same world axes used by the current camera.
+        return Math.atan2(-dx * Math.sin(azimuth) + dy * Math.cos(azimuth), dx * Math.cos(azimuth) + dy * Math.sin(azimuth));
+      }
+
       function swapAutoTarget(aimAngle) {
-        const rangedActive = heldMode === 'tool' && activeTool === 'ranged' && !!equipmentSlots.ranged;
-        if (!rangedActive) return false;
-        const current = findAutoTarget();
-        const maxDist = window.RangedWeapons?.playerLockRangePx?.(equipmentSlots.ranged) || TILE * 7;
-        let best = null, bestDist = Infinity;
+        const rangedActive = heldMode === 'tool' && activeTool === 'ranged' && !!equipmentSlots.ranged; // Shared mobile selector supports either combat weapon.
+        if (!mobileAutoTargetEnabled() || (!rangedActive && !meleeWeaponOut()) || !Number.isFinite(aimAngle)) return false;
+        const maxDist = autoTargetRange(); // Shares acquisition's authored weapon range.
+        let best = null, bestScore = Infinity; // Angular priority picks the indicated enemy rather than a closer one off to the side.
         for (const c of hostileObjects) {
-          if (c.health <= 0 || c.areaId !== currentArea || c === current || c._denHidden) continue;
-          const dx = c.x - player.x, dy = c.y - player.y;
-          const dist = Math.hypot(dx, dy);
-          if (dist > maxDist || dist < 0.001 || dist >= bestDist) continue;
-          if (Math.abs(angleDiff(Math.atan2(dy, dx), aimAngle)) > SWAP_TARGET_HALF_CONE_RAD) continue;
-          bestDist = dist;
+          if (!autoTargetCandidateValid(c, maxDist)) continue;
+          const dx = c.x - player.x, dy = c.y - player.y; // Candidate bearing is compared with the target stick's current direction.
+          const dist = Math.hypot(dx, dy); // Small distance tie-break keeps directional selection deterministic.
+          const error = Math.abs(angleDiff(Math.atan2(dy, dx), aimAngle)); // Directional selection includes the current target to prevent repeated drag oscillation.
+          const score = error + dist / Math.max(1, maxDist) * 0.05; // Angle dominates distance while nearby equal-bearing targets win.
+          if (error > Math.PI / 2 || score >= bestScore || !autoTargetVisible(c)) continue;
+          bestScore = score;
           best = c;
         }
         if (!best) return false;
@@ -5315,96 +5438,15 @@
         return true;
       }
 
-      function finishMeleeAttackAlignment(alignment, runAttack) {
-        if (meleeAttackAlignment !== alignment) return;
-        meleeAttackAlignment = null; // Raw release; combat-input defers this until the windup has inherited the aligned heading.
-        releaseMeleeAttackTargetLock(alignment.target, alignment.cancelled ? 'cancelled' : 'aligned');
-        if (!alignment.cancelled) runAttack();
-      }
-
       function requestMeleeAttackAlignment(runAttack) {
-        const manualArchFacing = mobileArchCombatAim?.angle; // Keeps a touch-stick release heading as the fallback when auto-target finds no eligible enemy.
+        // Attacks start with the current reticle. Never wait for or snap to the target.
+        const manualArchFacing = mobileArchCombatAim?.angle; // Preserves the existing dragged heavy-attack heading through release.
         if (Number.isFinite(manualArchFacing)) commitMeleeAttackFacing(manualArchFacing);
-        else meleeAttackFacingCommit = null; // Every non-touch attack owns a fresh heading.
-        meleeAttackAlignment?.cancel?.(); // End any older activation before the next activation is allowed to select.
-        const target = acquireMeleeAttackTargetLock();
-        if (!target) {
-          runAttack();
-          return null;
-        }
-        const startFacing = currentMeleeAimAngle(); // Stable beginning of the eased camera/body rotation.
-        const initialStep = window.Combat?.attackAlignmentStep?.(player, target, 0, { facing: startFacing }); // Detects an already-aligned target without adding input latency.
-        if (initialStep?.aligned) {
-          commitMeleeAttackFacing(initialStep.desiredFacing);
-          try {
-            runAttack();
-          } finally {
-            releaseMeleeAttackTargetLock(target, 'already-aligned');
-          }
-          return null;
-        }
-        const alignment = {
-          target,
-          startFacing,
-          appliedFacing: startFacing,
-          elapsedS: 0, // Accumulated by updateMeleeAttackAlignment until durationS is reached.
-          durationS: window.Combat?.playerAttackAlignmentDuration?.(initialStep?.deltaRad) ?? 0, // Shared targeting policy owns the distance-scaled glide tuning.
-          cancelled: false,
-          cancel() {
-            if (meleeAttackAlignment !== alignment) return;
-            alignment.cancelled = true;
-            meleeAttackAlignment = null;
-            releaseMeleeAttackTargetLock(alignment.target, 'cancelled');
-          },
-        }; // Handle retained by combat-input while an offensive hold waits to start.
-        meleeAttackAlignment = alignment;
-        alignment.runAttack = () => finishMeleeAttackAlignment(alignment, runAttack);
-        return alignment;
+        else meleeAttackFacingCommit = null;
+        runAttack();
+        return null;
       }
 
-      function updateMeleeAttackAlignment(dt) {
-        const alignment = meleeAttackAlignment;
-        if (!alignment) return;
-        const target = alignment.target;
-        const turnMultiplier = window.Combat?.postAttackTurnMultiplier?.(player) ?? 1; // Slows visible turn after an attack while continuing to consume input.
-        const step = meleeWeaponOut() && target?.areaId === currentArea
-          ? window.Combat?.attackAlignmentStep?.(player, target, 0, { facing: alignment.appliedFacing })
-          : null;
-        if (!step?.eligible) {
-          commitMeleeAttackFacing(alignment.appliedFacing);
-          alignment.runAttack(); // Aim assist never blocks a manual attack when its target leaves the cone.
-          return;
-        }
-
-        alignment.elapsedS = Math.min(alignment.durationS, alignment.elapsedS + Math.max(0, dt) * turnMultiplier);
-        const progress = alignment.durationS > 0 ? alignment.elapsedS / alignment.durationS : 1; // Drives the smoothstep rather than an abrupt constant-rate snap.
-        const easedProgress = window.Combat?.playerAttackAlignmentProgress?.(progress) ?? progress; // Shared targeting policy selects the authored curve.
-        const startToTarget = angleDiff(step.desiredFacing, alignment.startFacing); // Re-evaluated so a moving target remains correctly aligned at the end.
-        const nextFacing = progress >= 1
-          ? step.desiredFacing
-          : alignment.startFacing + startToTarget * easedProgress;
-        alignment.appliedFacing = nextFacing;
-        mouseLookAngle = nextFacing;
-        targetAimAngle = nextFacing;
-        controllerLookAngle = nextFacing;
-        player.angle = nextFacing;
-        facingAngle = nextFacing;
-        if (activeCameraMode === SHOULDER_SURF_MODE) {
-          const baseAzimuthDeg = cameraModeConfig(SHOULDER_SURF_MODE).azimuthDeg ?? 0; // Converts logical facing back into the camera's offset convention.
-          cameraAzimuthOffsetDeg = wrapAzimuthDeg(-(nextFacing * 180 / Math.PI) - 90 - baseAzimuthDeg);
-        } else {
-          mouseLookActive = true;
-          controllerLookActive = true;
-          lastMouseMoveTime = performance.now();
-        }
-        if (progress >= 1) {
-          commitMeleeAttackFacing(nextFacing);
-          alignment.runAttack();
-        }
-      }
-
-      // Shared by hostiles, companions, and wandering creatures — covers every
-      // creature movement path with a single footstep hook.
       function tickCreatureFootsteps(c, distPx) {
         if (c.areaId !== currentArea) return; // not in the player's current area; inaudible
         if (!Number.isFinite(c.x) || !Number.isFinite(c.y)) return; // belt-and-suspenders: see moveCreatureToward/creatureCanEnterTile's own NaN guards
@@ -5646,6 +5688,7 @@
       }
 
       function updateCreatureMesh(c, dt, aimAngle) {
+        if (c._wildlifeVisualsReleased) return; // Coarse logical wildlife has no presentation to update.
         const g = c.areaGrid || grid;
         const col = window.FormatUtils.clamp(Math.floor(c.x / TILE), 0, (c.areaCols || COLS) - 1);
         const row = window.FormatUtils.clamp(Math.floor(c.y / TILE), 0, (c.areaRows || ROWS) - 1);
@@ -5815,6 +5858,8 @@
       const RUN_FRAME_STRIDE_PX = 30;
 
       function updateCreatureAnimFrame(c, dt, moving, runInPlace = false) {
+        if (c._wildlifeVisualsReleased) return; // No asynchronous texture work for data-only actors.
+        c._genotypeTexturesReleased = false; // Active playback reacquires native-resolution frames through the normal cache path.
         // A genotype-bearing creature (gar-wolf/dabinggi-hound with genes —
         // see makeCreatureEntity's opts.genotype) needs its composited
         // texture re-applied once the async compose finishes, even if the
@@ -6110,11 +6155,35 @@
       // function of the creature object and a distance, no closure deps, so
       // it extracted cleanly. wildlifeVisualLodCanHide's old callers (none
       // outside this file) should use window.WildlifeVisualLod.canHide.
-      function updateWildlifeVisualLod(c, distanceTiles) {
-        return window.WildlifeVisualLod.update(c, distanceTiles);
+      function releaseInactiveCreatureTextures(c) {
+        if (!c?.genotype || !c.def?.sprites?.idle || !c.avatarRef || c._wildlifeVisualsReleased || c._genotypeTexturesReleased) return;
+        setCreatureFrame(c.avatarRef, c.def.sprites.idle, null, 'idle', null); // Rebind finite shared species textures before unpinning generated maps.
+        c.currentFrameUrl = null;
+        c._genotypeReadyFrames?.clear();
+        c._genotypeTexturesReleased = true; // Avoids repeating work until this creature actually animates again.
       }
 
+      let _lastInactiveCreatureTextureArea = null; // One pass per area transition releases generated maps retained by inactive scenes.
+      function releasePreviousAreaCreatureTextures() {
+        if (_lastInactiveCreatureTextureArea === currentArea || cutscenePreviewActive) return;
+        _lastInactiveCreatureTextureArea = currentArea;
+        for (const c of hostileObjects) if (c.areaId !== currentArea) {
+          releaseInactiveCreatureTextures(c);
+          releaseCreatureVisuals(c); // An inactive zone keeps creature data, not full animal rigs.
+        }
+      }
+
+      function updateWildlifeVisualLod(c, distanceTiles) {
+        const hidden = window.WildlifeVisualLod.update(c, distanceTiles); // Promotes data-only actors through the same distance owner.
+        if (hidden) releaseInactiveCreatureTextures(c);
+        return hidden;
+      }
+
+      window.WildlifeVisualLod.init({ createVisuals: createCreatureVisuals, releaseVisuals: releaseCreatureVisuals }); // Existing LOD owns streamed wildlife presentation lifetime.
+
       function updateHostiles(dt) {
+        window.WildlifeVisualLod.beginFrame(); // Caps calm character-rig promotions during an entry burst; combatants always wake immediately.
+        releasePreviousAreaCreatureTextures();
         currentHostilesFrame.length = 0;
         if (grazingPreyIndexArea !== currentArea) {
           grazingPreyIndexArea = currentArea;
@@ -9340,11 +9409,7 @@
           dirX = player.inputX;
           dirY = player.inputY;
         } else {
-          const weaponEngaged = heldMode === 'tool' && ((activeTool === 'weapon' && !!equipmentSlots.weapon) || (activeTool === 'ranged' && !!equipmentSlots.ranged));
-          const target = weaponEngaged ? findAutoTarget() : null;
-          const aimAngle = target
-            ? Math.atan2(target.y - player.y, target.x - player.x)
-            : player.angle;
+          const aimAngle = player.angle;
           // A no-input dodge is a forward dodge, matching the direction used
           // to enter a climb instead of unexpectedly zipping backward.
           dirX = Math.cos(aimAngle);
@@ -9547,7 +9612,7 @@
       let _dialogueWalker    = null;
       let _playerData        = null;  // set from hobunjiPlayerReady event
       let playerAvatarRefreshGeneration = 0;
-      const playerAvatarRefreshDebug = { started: 0, committed: 0, superseded: 0, lastGeneration: 0, lastPatternedTintDelta: 0, lastRenderScopeDelta: 0, textureHasVariantCanvas: false }; // Mobile-visible proof of which woven render actually became the live player avatar. // Guards async avatar rebuilds from attaching stale planes.
+      const playerAvatarRefreshDebug = { started: 0, committed: 0, superseded: 0, lastGeneration: 0, lastPatternedTintDelta: 0, lastRenderScopeDelta: 0, textureHasVariantCanvas: false, lastError: null }; // Mobile-visible proof of which woven render actually became the live player avatar. // Guards async avatar rebuilds from attaching stale planes.
       // Set at the end of refreshPlayerAvatar() — the world-avatar equivalent
       // of a dialogue portrait's canvas/profile, kept around so
       // _tickPlayerPortraitLife can cheaply re-render just the front texture
@@ -10654,7 +10719,7 @@
             object.traverse?.(mesh => { if (mesh.isMesh && mesh.userData?.wildernessChunkOwnsGeometry) bakeTargets.push(mesh); });
           }
           for (const mesh of bakeTargets) {
-            const baked = window.TerrainJigsawUV?.bakeMesh?.(mesh);
+            const baked = window.TerrainJigsawUV?.bakeMesh?.(mesh, { shareChunkTexture: true });
             if (baked) mesh.userData.wildernessChunkOwnsMaterial = true;
             yield;
           }
@@ -10713,9 +10778,9 @@
             if (object.userData?.wildernessChunkOwnsMaterial) {
               const materials = Array.isArray(object.material) ? object.material : [object.material];
               for (const material of materials) {
-                material?.map?.dispose?.();
+                if (!material?.map?.userData?.chunkJigsawShared) material?.map?.dispose?.();
                 for (const uniform of Object.values(material?.uniforms || {})) {
-                  if (uniform?.value?.isTexture) uniform.value.dispose?.();
+                  if (uniform?.value?.isTexture && !uniform.value.userData?.chunkJigsawShared) uniform.value.dispose?.();
                 }
                 material?.dispose?.();
               }
@@ -11501,7 +11566,7 @@
       // live in js/npc-scheduling.js (schedule-rule time-window matching);
       // normalizeNpcArea stays here since it's used well beyond scheduling.
       function normalizeNpcArea(area) {
-        if (!area) return 'farm';
+        if (!area || area === 'farm') return 'farm';
         if (area === 'interior') return 'interior';
         if (area === 'town' || area === 'hobunji_main_town' || area === 'map_hobunji_town') return 'town';
         if (_isBuildingArea(area)) return area;
@@ -12607,7 +12672,7 @@
       // World-space blink/breathing/default-expression refresh for walking
       // avatars (with distance-scaled refresh rates) now lives in
       // js/world-portrait-life.js.
-      window.__playerAvatarRefreshDebug = () => ({ ...playerAvatarRefreshDebug, currentGeneration: playerAvatarRefreshGeneration, hasGroup: !!playerAvatarGroup, hasFrontCanvas: !!playerAvatarFrontCanvas, profileWovenDescriptors: Array.isArray(playerAvatarProfile?.bodyColors?.__hobunjiWovenClothing) ? playerAvatarProfile.bodyColors.__hobunjiWovenClothing.length : 0, textureHasVariantCanvas: !!playerAvatarGroup?.userData?.frontTexture?.image && playerAvatarGroup.userData.frontTexture.image !== playerAvatarFrontCanvas });
+      window.__playerAvatarRefreshDebug = () => ({ ...playerAvatarRefreshDebug, currentGeneration: playerAvatarRefreshGeneration, savedSpecies: _playerData?.appearance?.speciesId, renderedSpecies: playerAvatarProfile?.fighter?.speciesId, hasGroup: !!playerAvatarGroup, hasFrontCanvas: !!playerAvatarFrontCanvas, profileWovenDescriptors: Array.isArray(playerAvatarProfile?.bodyColors?.__hobunjiWovenClothing) ? playerAvatarProfile.bodyColors.__hobunjiWovenClothing.length : 0, textureHasVariantCanvas: !!playerAvatarGroup?.userData?.frontTexture?.image && playerAvatarGroup.userData.frontTexture.image !== playerAvatarFrontCanvas });
       window.WorldPortraitLife.init({
         getCurrentArea: () => currentArea,
         getPlayerTile: () => ({ x: player.x / TILE, y: player.y / TILE }),
@@ -13197,9 +13262,8 @@
         for (const creature of [...hostileObjects]) {
           if (creature.areaId !== mapId && creature.zoneId !== mapId) continue;
           hostileObjects.delete(creature);
-          creature.avatarRef?.group?.parent?.remove(creature.avatarRef.group);
+          despawnCreature(creature); // Releases rig, rings, effects, and shared texture pins before discarding this scene.
           creature.mesh?.parent?.remove(creature.mesh);
-          creature.groundShadow?.parent?.remove(creature.groundShadow);
         }
         if (info?.scene) {
           info.scene.traverse(object => object.geometry?.dispose?.());
@@ -13229,9 +13293,8 @@
           for (const creature of [...hostileObjects]) {
             if (creature.areaId !== mapId && creature.zoneId !== mapId) continue;
             hostileObjects.delete(creature);
-            creature.avatarRef?.group?.parent?.remove(creature.avatarRef.group);
+            despawnCreature(creature); // Room replacement owns complete resident cleanup, not just scene detachment.
             creature.mesh?.parent?.remove(creature.mesh);
-            creature.groundShadow?.parent?.remove(creature.groundShadow);
           }
         }
         // NPCs standing in the room survive the rebuild: detach them before the
@@ -16642,8 +16705,15 @@
         // pet) pair.
         _petLayeringActive = false;
         _petLayeringPet = null;
-        removePlayerAvatarChildren();
-        const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(window.EquipmentPanel.applyGearClothingToPlayerData(_playerData));
+        let profile; // Keep the last good avatar until the correct saved species can be rebuilt.
+        try {
+          profile = window.NpcAvatarPreview.buildProfileFromNpcExport(window.EquipmentPanel.applyGearClothingToPlayerData(_playerData));
+          playerAvatarRefreshDebug.lastError = null;
+        } catch (error) {
+          playerAvatarRefreshDebug.lastError = String(error?.message || error);
+          showToast(`Character appearance could not load: ${playerAvatarRefreshDebug.lastError}`, true);
+          throw error;
+        }
         if (!profile || refreshGeneration !== playerAvatarRefreshGeneration) return;
         const avatarCfg = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
         const MODEL_W = avatarCfg.worldModelWidth ?? 0.9;
@@ -17034,7 +17104,7 @@
         if (!meleeAttackFacingCommit) return;
         const active = meleeAttackCurrentlyActive();
         if (active) meleeAttackFacingCommit.attackSeen = true;
-        else if (meleeAttackFacingCommit.attackSeen && !meleeAttackAlignment) meleeAttackFacingCommit = null;
+        else if (meleeAttackFacingCommit.attackSeen) meleeAttackFacingCommit = null;
       }
 
       function shoulderBodyPerspectiveAuthority(movementStrength = player.inputStrength, perspectiveFacing = shoulderPerspectiveFacingAngle()) {
@@ -17213,6 +17283,8 @@
       }
 
       function updateMovement(dt) {
+        syncMobileAutoTargetCombatState();
+        syncMobileAutoTargetButton(); // Target availability refreshes even when prone, mounted, or another mode skips ordinary movement.
         updateMobileArchCombatAimLifecycle();
         updateMeleeAttackFacingCommitLifecycle();
         const viewModeKeyboard = getKeyboardVector();
@@ -17550,9 +17622,6 @@
         }
 
         // ── Facing ────────────────────────────────────────────
-        // Persistent target swapping is ranged-only; melee alignment is automatic and transient.
-        const rangedTargetingEngaged = heldMode === 'tool' && activeTool === 'ranged' && !!equipmentSlots.ranged;
-        btnSwapTarget?.classList.toggle('abt-hidden', !rangedTargetingEngaged);
         btnWeaponSwitch?.classList.toggle('active', heldMode === 'tool' && (activeTool === 'weapon' || activeTool === 'ranged'));
         // Melee aim assist is intentionally invisible and exists only immediately before windup.
         if (characterViewMode.enabled) {
@@ -17569,7 +17638,7 @@
           const perspectiveFacing = shoulderPerspectiveFacingAngle(); // Shared point bearing used by direct alignment and the idle neck-limit boundary.
           const perspectiveAuthority = shoulderBodyPerspectiveAuthority(inputStrength, perspectiveFacing); // Central state boundary shared with the on-demand mobile/debug report below.
           const meleeFacingOverride = meleeAttackBodyFacingOverride();
-          if (Number.isFinite(meleeFacingOverride) && (meleeAttackAlignment || perspectiveAuthority === 'attack')) {
+          if (Number.isFinite(meleeFacingOverride) && perspectiveAuthority === 'attack') {
             facingAngle = meleeFacingOverride;
           } else if (perspectiveAuthority === 'movement' || perspectiveAuthority === 'attack') {
             facingAngle = perspectiveFacing;
@@ -19098,10 +19167,10 @@
       // Other camera modes retain their existing ranged-weapon-only behavior.
       function currentPlayerAimRay() {
         const mobileAimAngle = mobileArchCombatAim?.angle; // Overrides horizontal camera authority only while a combat action-arch drag owns aim.
-        if (!Number.isFinite(mobileAimAngle) && activeCameraMode !== SHOULDER_SURF_MODE
+        if (!mobileAutoCameraActive && !Number.isFinite(mobileAimAngle) && activeCameraMode !== SHOULDER_SURF_MODE
           && (heldMode !== 'tool' || activeTool !== 'ranged' || !equipmentSlots.ranged)) return null;
         camera.updateMatrixWorld?.();
-        _shoulderSurfReticleRaycaster.setFromCamera(_screenCenterNDC, camera);
+        _shoulderSurfReticleRaycaster.setFromCamera(currentCombatReticleNDC(), camera);
         const ray = _shoulderSurfReticleRaycaster.ray;
         if (Number.isFinite(mobileAimAngle)) {
           const pitch = Math.asin(window.FormatUtils.clamp(ray.direction.y, -1, 1)); // Keeps the camera's vertical aim while the 2D arch stick supplies world-space yaw.
@@ -19126,8 +19195,8 @@
             window.Fishing?.state?.active || window.MusicMinigame?.state?.active) return null;
         camera.updateMatrixWorld?.();
         // Desktop normal-camera interactions follow the actual cursor reticle;
-        // shoulder/mobile interactions remain screen-centered.
-        const ndc = activeCameraMode === SHOULDER_SURF_MODE ? _screenCenterNDC : _mouseNDC;
+        // Mobile and shoulder interactions use the fixed screen-center reticle.
+        const ndc = !isDesktop || activeCameraMode === SHOULDER_SURF_MODE ? currentCombatReticleNDC() : _mouseNDC;
         _shoulderSurfReticleRaycaster.setFromCamera(ndc, camera);
         const ray = _shoulderSurfReticleRaycaster.ray;
         return {
@@ -19332,7 +19401,7 @@
           return;
         }
         _shoulderSurfReticleGroundPlane.constant = -_playerGroundY();
-        _shoulderSurfReticleRaycaster.setFromCamera(_screenCenterNDC, camera);
+        _shoulderSurfReticleRaycaster.setFromCamera(currentCombatReticleNDC(), camera);
         if (!_shoulderSurfReticleRaycaster.ray.intersectPlane(_shoulderSurfReticleGroundPlane, _shoulderSurfReticleWorld)) return;
         const dx = _shoulderSurfReticleWorld.x - player.x / TILE;
         const dz = _shoulderSurfReticleWorld.z - player.y / TILE;
@@ -20267,6 +20336,11 @@
       let _seatedOcclusionDistance = null; // smoothed seated-camera distance used while an obstruction clears
       let _seatedOcclusionUpdatedAt = 0; // previous seated occlusion update time used to calculate smoothing delta
       let _seatedCameraDebug = null; // latest seated obstruction solve, exposed to Pixel Probe for mobile diagnosis
+      function cameraSurfaceYAtWorld(x, z) {
+        const ground = activeSurfaceYAtWorld(x, z); // Gameplay ground remains the authority for movement and uncovered tiles.
+        const cover = window.EnvironmentSurfaceMicroPlateau?.cameraSurfaceYAt?.(x, z); // Exact rendered snow/slush height, exclusively for camera clearance.
+        return Number.isFinite(cover) ? Math.max(ground, cover) : ground;
+      }
       // Find the first terrain crossing along the boom, then shorten along
       // that same ray. Sampling local surfaces handles ramps and raised tiles;
       // lifting Y independently would flatten the player's requested pitch.
@@ -20276,13 +20350,13 @@
         let safe = 0; // Last terrain-safe fraction before the first crossing.
         for (let i = 1; i <= steps; i++) {
           let blocked = i / steps; // Candidate fraction, refined only when it crosses the local surface.
-          if (lookAtY + dy * blocked >= activeSurfaceYAtWorld(lookAtX + dx * blocked, lookAtZ + dz * blocked) + clearance) {
+          if (lookAtY + dy * blocked >= cameraSurfaceYAtWorld(lookAtX + dx * blocked, lookAtZ + dz * blocked) + clearance) {
             safe = blocked;
             continue;
           }
           for (let j = 0; j < 12; j++) {
             const mid = (safe + blocked) * 0.5; // Bisects the first crossing to avoid visible stepping while aiming.
-            if (lookAtY + dy * mid >= activeSurfaceYAtWorld(lookAtX + dx * mid, lookAtZ + dz * mid) + clearance) safe = mid;
+            if (lookAtY + dy * mid >= cameraSurfaceYAtWorld(lookAtX + dx * mid, lookAtZ + dz * mid) + clearance) safe = mid;
             else blocked = mid;
           }
           return safe;
@@ -20434,14 +20508,14 @@
           _seatedCameraDebug = null;
         }
         if (shoulderBoom) {
-          const targetFloorY = activeSurfaceYAtWorld(lookAtX, lookAtZ); // Measures terrain under the actual offset target, rather than the player's smoothed floor.
+          const targetFloorY = cameraSurfaceYAtWorld(lookAtX, lookAtZ); // Includes snow/slush under the offset target without lifting the player.
           const clearance = Math.min(CAMERA_FLOOR_CLEARANCE, Math.max(0.01, (lookAtY - targetFloorY) * 0.25)); // Short characters retain vertical room between their neck and the ground.
           const fraction = shoulderCameraGroundFraction(lookAtX, lookAtY, lookAtZ, resultX, resultY, resultZ, clearance); // Preserves pitch and yaw when the ground shortens the boom.
           resultX = lookAtX + (resultX - lookAtX) * fraction;
           resultY = lookAtY + (resultY - lookAtY) * fraction;
           resultZ = lookAtZ + (resultZ - lookAtZ) * fraction;
           _cameraBoomDebug = {
-            latestChange: 'Shoulder boom shortens along the aim ray at walls and local terrain; floor clearance follows target height.',
+            latestChange: 'Camera collision includes snow/slush caps and inclined edges; short-character pivots stay above cover while player ground is unchanged.',
             idealDistance: dist,
             solvedDistance: Math.hypot(resultX - lookAtX, resultY - lookAtY, resultZ - lookAtZ),
             requestedPitchDeg: Math.atan2(-dy, Math.hypot(dx, dz)) * 180 / Math.PI,
@@ -20450,7 +20524,7 @@
             groundLimited: fraction < 1,
             floorClearance: clearance,
             targetY: lookAtY,
-            floorY: activeSurfaceYAtWorld(resultX, resultZ),
+            floorY: cameraSurfaceYAtWorld(resultX, resultZ),
           };
         } else {
           _cameraBoomDebug = null;
@@ -20477,6 +20551,13 @@
             } else {
               resultY = minCameraY;
             }
+          }
+          if (window.EnvironmentSurfaceMicroPlateau?.hasCameraSurface?.()) {
+            const fraction = shoulderCameraGroundFraction(lookAtX, lookAtY, lookAtZ, resultX, resultY, resultZ, 0.01); // Seated/scripted booms also stop at raised snow/slush along their sightline.
+            resultX = lookAtX + (resultX - lookAtX) * fraction;
+            resultY = lookAtY + (resultY - lookAtY) * fraction;
+            resultZ = lookAtZ + (resultZ - lookAtZ) * fraction;
+            resultY = Math.max(resultY, cameraSurfaceYAtWorld(resultX, resultZ) + 0.01); // An authored target buried in cover still cannot leave the camera beneath it.
           }
         }
         return { x: resultX, y: resultY, z: resultZ };
@@ -20589,7 +20670,7 @@
           lookY += s_shoulderSurfOffsetV_current;
           // A lowered Settings offset must not bury the aim pivot: no ground-safe
           // camera position below that pivot could retain an upward sightline.
-          if (!cutscenePreviewActive && !dialogueZoomActive()) lookY = Math.max(lookY, activeSurfaceYAtWorld(lookAtX, lookAtZ) + SHOULDER_CAMERA_MIN_TARGET_HEIGHT);
+          if (!cutscenePreviewActive && !dialogueZoomActive()) lookY = Math.max(lookY, cameraSurfaceYAtWorld(lookAtX, lookAtZ) + SHOULDER_CAMERA_MIN_TARGET_HEIGHT);
         }
         const cameraY = portraitAim?.cameraY ?? (lookY + Math.sin(angle) * distance);
         const groundDistance = Math.cos(angle) * distance;
@@ -23846,12 +23927,21 @@
       // time are already available too, via the adjacent "Performance
       // Profiler" checkbox and its overlay (perfState in that file).
       window.MobileRenderBudget?.attach(renderer, resizeCanvas);
-      document.getElementById('settingResolution').value = window.MobileRenderBudget?.mobile ? 'auto' : '1';
+      document.getElementById('settingResolution').value = '1';
       document.getElementById('settingResolution').addEventListener('change', e => {
         window.MobileRenderBudget?.setMode(e.target.value);
         s_resScale = parseFloat(e.target.value) || 1;
         resizeCanvas();
       });
+
+      const wildlifeDistanceInput = document.getElementById('settingWildlifeDistance'); // Mobile-accessible runtime override owned/persisted by WildlifeVisualLod.
+      if (wildlifeDistanceInput) {
+        wildlifeDistanceInput.value = window.WildlifeVisualLod.wakeRadius();
+        wildlifeDistanceInput.addEventListener('change', () => {
+          window.WildlifeVisualLod.setWakeRadius(wildlifeDistanceInput.value);
+          wildlifeDistanceInput.value = window.WildlifeVisualLod.wakeRadius();
+        });
+      }
 
       // Local Save Folder settings row — see docs/js/local-save-folder.js.
       // window.LocalSaveFolder owns all the actual folder-handle/IndexedDB/
@@ -24124,7 +24214,6 @@
           const inputPerf = window.PerfProfiler?.begin('movement+input'); // Isolates controller polling/camera-look and player movement from everything else below.
           pollControllerInput();
           applyControllerCameraLook(dt);
-          updateMeleeAttackAlignment(dt);
           updateMovement(dt);
           if (window.WallOrnamentPlacement?.isPlayerReticlePlacementActive?.()) {
             window.WallOrnamentPlacement.updatePlayerReticlePreview?.(); // Touch camera/movement retargets wall preview even without a connected controller.
@@ -24302,6 +24391,7 @@
           _shoulderSurfBootSnapped = true;
           snapShoulderSurfAzimuth();
         }
+        if (!paused) updateMobileAutoTargetCamera(dt); // Steer existing offsets before the normal camera pose/collision owner applies them.
         updateCameraPosition();
         // Refreshes the shared head/body/reticle aim point every frame
         // (rather than only on a mousemove/touch event) so it always
@@ -25706,6 +25796,38 @@
 
       function updateDebugPage() { /* debug panel removed from menu */ }
 
+      // Captured only on report requests: no per-frame allocation or serialization.
+      function playerMovementDebugSnapshot() {
+        const keyboard = getKeyboardVector();
+        const locks = (window.CharacterActionLocks?.getDebug?.() || []).filter(lock =>
+          lock.participants.some(participant => participant.id === PLAYER_ACTION_LOCK_ID));
+        const footingTarget = proneRecoveryFootingTarget(player);
+        const speedMul = window.Combat?.getMovementSpeedMul?.() ?? 1;
+        return {
+          area: currentArea, paused, dialogueOpen,
+          input: { x: input.x, y: input.y, keyboard, strength: player.inputStrength, vx: player.vx, vy: player.vy },
+          movementLocks: locks,
+          modes: {
+            chat: !!window.PlayerChat?.isOpen, socialPose: !!window.PlayerSocialPoses?.active,
+            harvesting: !!window.FarmAnimals?.isHarvesting?.(), sitting: !!sitInteraction,
+            fishing: !!window.Fishing?.state?.active, music: !!window.MusicMinigame?.state?.active,
+            mount: window.Mounts?.rideState || 'none', climbing: !!player.climbing, onBranch: !!player.onBranch,
+          },
+          combat: {
+            health: player.health, stamina: player.stamina, footing: player.footing,
+            maxFooting: player.maxFooting, footingTarget,
+            footingFinite: Number.isFinite(player.footing), speedMul, speedMulFinite: Number.isFinite(speedMul),
+            prone: !!player.prone, recovering: !!player.somersaultRecovering,
+            proneThrowT: player.proneThrowT, ledgeFall: !!player._knockbackLedgeFall,
+            knockbackT: player.knockbackT, dodging: !!player.dodging, dodgeT: player.dodgeT,
+            lunging: !!player.lunging, lungeT: player.lungeT,
+            staggered: player.staggered ? { active: !!player.staggered.active, endsAt: player.staggered.endsAt } : null,
+            ragdoll: window.ImpactRagdollPlayback?.getDebug?.() || null,
+          },
+        };
+      }
+      window.__playerMovementDebugSnapshot = playerMovementDebugSnapshot;
+
       async function copyDebugLog() {
         const reticle = getReticleTile();
         const filter = window.__debugLogFilter || 'all';
@@ -25730,7 +25852,11 @@
           `Calendar: ${window.CalendarSystem.formatCalendarDate()} (raw day ${calendar.day}), ${window.FormatUtils.formatClock(window.CalendarSystem.getHour())}, ${calendar.weather}`,
           `Tool/action: ${window.FormatUtils.toolName(activeTool)} / ${window.FormatUtils.actionName(activeAction)}`,
           `Mobile combat arch aim: ${JSON.stringify(window.__mobileArchCombatAimDebug?.snapshot?.() || { active: false })}`,
+          `Mobile autotarget: ${JSON.stringify(window.__hobunjiFurnitureDebug?.meleeAttackAlignmentSnapshot?.() || { ready: false })}`,
+          `Arena spawn: ${JSON.stringify(window.DevSpawner?.spawnSnapshot?.() || { ready: false })}`,
           `Player: x${player.x.toFixed(0)} y${player.y.toFixed(0)}`,
+          `Player movement/status: ${JSON.stringify(playerMovementDebugSnapshot())}`,
+          `Memory/resources: ${JSON.stringify(window.HobunjiCacheAudit?.snapshot?.() || null)}`,
           ...(weavingDiagnostics ? ['', ...String(weavingDiagnostics).split('\n')] : []),
           '--- raw log ---',
           ...filteredLog.map(e => `[${e.t}] [${e.lvl}] ${e.msg}`)
@@ -25894,61 +26020,93 @@
         window.Mounts?.toggleMount();
       });
 
-      // Swap Target button remains ranged-only; melee selects automatically at attack time.
-      // Swap Target button: its own dedicated drag-direction stick (separate
-      // from applyAbt()'s tool/item-action wiring, which had its drag-repeat
-      // behavior disabled). Pushing it toward a hostile swaps auto-targeting
-      // onto it — fires once per drag, no repeat needed since it's a single
-      // selection, not a continuous action.
-      if (btnSwapTarget) {
-        let _stPtId = null, _stCx = 0, _stCy = 0, _stSockR = 0, _stDrag = false, _stSocket = null;
-        const ST_DRAG_THRESH = 10;
-        btnSwapTarget.addEventListener('pointerdown', ev => {
-          if (btnSwapTarget.classList.contains('abt-hidden')) return;
-          ev.preventDefault();
-          // See handleJoystickPointerDown's comment — guarded here too so a
-          // capture failure just loses this one touch instead of throwing.
-          try { btnSwapTarget.setPointerCapture?.(ev.pointerId); } catch (err) { /* degrade gracefully */ }
-          _stPtId = ev.pointerId;
-          const rect = btnSwapTarget.getBoundingClientRect();
-          _stCx = rect.left + rect.width / 2;
-          _stCy = rect.top + rect.height / 2;
-          _stSockR = rect.width * 0.55;
-          _stDrag = false;
-          _stSocket = document.createElement('div');
-          _stSocket.className = 'abt-socket';
-          _stSocket.style.left = _stCx + 'px';
-          _stSocket.style.top = _stCy + 'px';
-          _stSocket.style.width = _stSocket.style.height = (rect.width * 2.2) + 'px';
-          document.body.appendChild(_stSocket);
-          btnSwapTarget.style.transition = 'none';
-        });
-        btnSwapTarget.addEventListener('pointermove', ev => {
-          if (ev.pointerId !== _stPtId) return;
-          const dx = ev.clientX - _stCx, dy = ev.clientY - _stCy;
-          const dist = Math.hypot(dx, dy);
-          const r = Math.min(dist, _stSockR);
-          const nx = dist > 0.5 ? dx / dist * r : 0;
-          const ny = dist > 0.5 ? dy / dist * r : 0;
-          btnSwapTarget.style.transform = `translate(calc(50% + ${nx}px), calc(50% + ${ny}px))`;
-          if (!_stDrag && dist > ST_DRAG_THRESH) {
-            _stDrag = true;
-            swapAutoTarget(Math.atan2(dy, dx));
-          }
-        });
-        function _stUp(ev) {
-          if (ev.pointerId !== _stPtId) return;
-          _stPtId = null;
-          if (_stSocket) { _stSocket.remove(); _stSocket = null; }
-          btnSwapTarget.style.transition = 'transform 0.14s ease-out';
-          btnSwapTarget.style.transform = 'translate(50%, 50%)';
-          setTimeout(() => { btnSwapTarget.style.transition = ''; btnSwapTarget.style.transform = ''; }, 150);
-          if (!_stDrag) swapAutoTarget(player.angle);
-          _stDrag = false;
+      let mobileAutoTargetWasInCombat = false; // Edge tracking allows explicit prey targeting outside an encounter.
+      let mobileAutoTargetWeaponWasOut = false;
+      function syncMobileAutoTargetCombatState() {
+        if (isDesktop) return;
+        const inCombat = isPlayerInCombat();
+        const weaponOut = shoulderSurfCombatStanceActive();
+        const ended = (mobileAutoTargetWasInCombat && !inCombat) || (mobileAutoTargetWeaponWasOut && !weaponOut);
+        mobileAutoTargetWasInCombat = inCombat;
+        mobileAutoTargetWeaponWasOut = weaponOut;
+        if (ended) {
+          window.dispatchEvent(new CustomEvent('hobunji-auto-target-combat-end')); // Cancel a pending tap/hold before it can re-enable targeting.
+          window.Combat?.input?.setAutoTargetEnabled(false);
         }
-        btnSwapTarget.addEventListener('pointerup', _stUp);
-        btnSwapTarget.addEventListener('pointercancel', _stUp);
       }
+
+      function syncMobileAutoTargetButton() {
+        if (!btnSwapTarget) return;
+        const enabled = mobileAutoTargetEnabled(); // Read once to keep the arch's toggle presentation consistent.
+        const hidden = isDesktop || !findAvailableAutoTarget(); // Prey can expose the toggle before combat starts, including while autotarget is disabled.
+        if (btnSwapTarget.classList.contains('abt-hidden') !== hidden) btnSwapTarget.classList.toggle('abt-hidden', hidden);
+        if (btnSwapTarget.classList.contains('active') !== enabled) btnSwapTarget.classList.toggle('active', enabled);
+        const pressed = String(enabled); // Avoids rewriting accessibility state every movement frame.
+        if (btnSwapTarget.getAttribute('aria-pressed') !== pressed) btnSwapTarget.setAttribute('aria-pressed', pressed);
+      }
+
+      window.addEventListener('hobunji-auto-target-change', () => {
+        manualAutoTarget = null;
+        invalidateAutoTargetCache();
+        syncMobileAutoTargetButton();
+      });
+
+      // Tap toggles. Holding enables targeting, then drag chooses a stable target.
+      if (btnSwapTarget && !isDesktop) {
+        let targetStick = null; // Owns one pointer, timer, and socket until release or cancellation.
+        const TARGET_HOLD_MS = 180; // Distinguishes a toggle tap from the target-select hold gesture.
+        function beginTargetHold() {
+          if (!targetStick || targetStick.held) return;
+          if (btnSwapTarget.classList.contains('abt-hidden')) { finishTargetStick(null, true); return; }
+          targetStick.held = true;
+          window.Combat?.input?.setAutoTargetEnabled(true);
+          const socket = document.createElement('div'); // Displays the same fixed socket used by existing arch sticks.
+          socket.className = 'abt-socket';
+          socket.style.left = targetStick.x + 'px';
+          socket.style.top = targetStick.y + 'px';
+          socket.style.width = socket.style.height = targetStick.radius * 4 + 'px';
+          document.body.appendChild(socket);
+          targetStick.socket = socket;
+        }
+        function finishTargetStick(event, cancelled = false) {
+          if (!targetStick || (event && event.pointerId !== targetStick.id)) return;
+          const press = targetStick; // Preserve gesture state while releasing its pointer and timer.
+          targetStick = null;
+          clearTimeout(press.timer);
+          press.socket?.remove();
+          btnSwapTarget.style.transform = '';
+          try { btnSwapTarget.releasePointerCapture?.(press.id); } catch (_) {}
+          if (!cancelled && !press.held && !btnSwapTarget.classList.contains('abt-hidden')) window.Combat?.input?.setAutoTargetEnabled(!mobileAutoTargetEnabled());
+        }
+        btnSwapTarget.addEventListener('pointerdown', event => {
+          if (targetStick || btnSwapTarget.classList.contains('abt-hidden')) return;
+          event.preventDefault();
+          event.stopPropagation();
+          const rect = btnSwapTarget.getBoundingClientRect(); // Fixed gesture center avoids feedback from moving the knob.
+          targetStick = { id: event.pointerId, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, radius: rect.width * 0.55, held: false, socket: null, timer: null };
+          targetStick.timer = setTimeout(beginTargetHold, TARGET_HOLD_MS);
+          try { btnSwapTarget.setPointerCapture?.(event.pointerId); } catch (_) {}
+        });
+        btnSwapTarget.addEventListener('pointermove', event => {
+          if (!targetStick || event.pointerId !== targetStick.id) return;
+          if (btnSwapTarget.classList.contains('abt-hidden')) { finishTargetStick(event, true); return; }
+          event.preventDefault();
+          const dx = event.clientX - targetStick.x, dy = event.clientY - targetStick.y; // Screen-space target-stick vector shares the existing action arch's bearing convention.
+          const distance = Math.hypot(dx, dy); // Movement threshold also enters hold mode promptly without waiting for its timer.
+          if (distance > 10) beginTargetHold();
+          if (!targetStick.held) return;
+          const scale = distance > 0 ? Math.min(distance, targetStick.radius) / distance : 0; // Caps knob travel without limiting target bearing.
+          btnSwapTarget.style.transform = `translate(calc(50% + ${dx * scale}px), calc(50% + ${dy * scale}px))`;
+          if (distance > 10) swapAutoTarget(targetStickWorldAngle(dx, dy));
+        });
+        btnSwapTarget.addEventListener('pointerup', event => finishTargetStick(event));
+        btnSwapTarget.addEventListener('pointercancel', event => finishTargetStick(event, true));
+        btnSwapTarget.addEventListener('lostpointercapture', event => finishTargetStick(event, true));
+        window.addEventListener('hobunji-auto-target-combat-end', () => finishTargetStick(null, true));
+        window.addEventListener('blur', () => finishTargetStick(null, true));
+        document.addEventListener('visibilitychange', () => { if (document.hidden) finishTargetStick(null, true); });
+      }
+      syncMobileAutoTargetButton();
 
       const desktopTapWindowMs = () => Number(desktopControlsConfig().tapWindowMs) || 350;
       let desktopTentInteractHeld = false; // Used to reserve a held desktop Interact press for a nearby bandit tent instead of opening the Tool Select wheel.
@@ -26618,15 +26776,7 @@
       window.MusicMinigame?.renderPatternLoadoutSettings();
       window.MusicMinigame?.renderFreeplayKeySettings();
 
-      // Desktop Shift's dual role: held + mouse movement rotates the camera
-      // (see the mousemove handler's e.shiftKey branch, unchanged), while a
-      // clean TAP — pressed and released within the same tap window as
-      // every other tap/hold gesture here, with no mouse movement in
-      // between — toggles melee auto-target instead. _shiftDragged is set
-      // the instant any mousemove event fires while Shift is down
-      // (regardless of which branch handles it — shoulder-surf's own free
-      // mouselook included), so a hold-to-rotate never gets misread as a
-      // toggle on release.
+      // Desktop Shift remains reserved for camera movement; autotarget is mobile-only.
       let _shiftDownAt = null;
       let _shiftDragged = false;
       window.addEventListener('keydown', (event) => {
@@ -27417,20 +27567,25 @@
         get shoulderSurfCombatStance() { return shoulderSurfCombatStanceActive(); },
         get shoulderSurfOffsets() { return { defaultH: s_shoulderSurfOffsetH_default, defaultV: s_shoulderSurfOffsetV_default, combatH: s_shoulderSurfOffsetH_combat, combatV: s_shoulderSurfOffsetV_combat, currentH: s_shoulderSurfOffsetH_current, currentV: s_shoulderSurfOffsetV_current }; },
         meleeAttackAlignmentSnapshot: () => {
-          const target = meleeAttackTargetLock;
+          const target = manualAutoTarget;
+          const availableTarget = findAvailableAutoTarget(); // Reports the prospective prey/enemy even while the mobile toggle is disabled.
           return {
-            latestChange: 'Momentary melee auto-target selects one entity per activation and never rescans until that activation releases.',
-            active: !!meleeAttackAlignment,
-            targetLocked: !!meleeAttackTargetLock,
-            activationSerial: lastMeleeAttackTargetLock.serial,
-            lastTargetId: lastMeleeAttackTargetLock.targetId,
-            releaseReason: lastMeleeAttackTargetLock.releaseReason,
+            latestChange: 'Mobile autotarget starts off, never enables on combat entry, and switches off on combat exit or weapon stow. Available gray TARGET text pulses; persistent locks gradually steer the camera, more slowly up close; the reticle remains centered and attacks use existing reticle convergence. Manual heavy/ranged drags retain priority. Arena prey now use wild-creature registration instead of being immune player companions.',
+            settings: window.Combat?.input?.autoTargetSettingsSnapshot?.(),
+            controlLayout: ['btnUtilityMenu', 'btnSocialActions', 'btnSwapTarget'].map(id => {
+              const rect = document.getElementById(id)?.getBoundingClientRect?.(); // On-demand copyable diagnostics use actual runtime button sizes and positions.
+              return rect ? { id, width: rect.width, height: rect.height, centerX: rect.left + rect.width / 2, centerY: rect.top + rect.height / 2 } : { id, missing: true };
+            }),
+            selectedTarget: manualAutoTarget?.id ?? manualAutoTarget?.def?.label ?? null,
+            availableTarget: availableTarget?.id ?? availableTarget?.def?.label ?? null,
+            active: mobileAutoCameraActive,
+            targetLocked: !!manualAutoTarget,
             target: target ? { id: target.id ?? target.creatureKey ?? target.def?.label ?? null, x: target.x, y: target.y } : null,
-            elapsedS: meleeAttackAlignment?.elapsedS || 0,
-            durationS: meleeAttackAlignment?.durationS || 0,
-            progress: meleeAttackAlignment?.durationS
-              ? window.FormatUtils.clamp(meleeAttackAlignment.elapsedS / meleeAttackAlignment.durationS, 0, 1)
-              : 0,
+            retentionRangeTiles: autoTargetRetentionRange() / TILE,
+            reticleNDC: { x: 0, y: 0 },
+            cameraOffsetsDeg: { yaw: cameraAzimuthOffsetDeg, pitch: cameraAngleOffsetDeg },
+            trackingResponseS: mobileAutoCameraResponseS,
+            manualAttackAim: manualCombatReticleAim(),
             turnRecoveryMultiplier: window.Combat?.postAttackTurnMultiplier?.(player) ?? 1,
           };
         },
@@ -27651,7 +27806,8 @@
         getPlayerPerspectiveTarget: currentPlayerPerspectiveTarget,
         getHeldMode: () => heldMode,
         getActiveTool: () => activeTool,
-        getMeleeReticleTarget: () => meleeAttackTargetLock || window.RangedWeapons?.focusedHostile?.(24)?.candidate?.data || null,
+        getMeleeReticleTarget: () => window.RangedWeapons?.focusedHostile?.(24)?.candidate?.data || null,
+        getCombatReticleNDC: currentCombatReticleNDC,
         findMeleeAttackCandidate: meleeAttackTargetCandidate,
         requestMeleeAttackAlignment,
         inCone,
@@ -29047,6 +29203,7 @@
       });
 
       window.WildlifeSpawn?.init({
+        despawnCreature, // Den turnover must dispose removed residents through the same owner as ordinary despawns.
         TILE,
         TileType,
         rnd,
@@ -30258,32 +30415,38 @@
       });
 
       async function prepareCutsceneAssets(entities, targetScene) {
-        const jobs = []; // Await the authoritative genotype cache for every idle/run and blink frame used by this cast.
-        for (const entity of entities.values()) {
-          const c = entity.creature, kind = c && (window.CreatureGenetics.SPECIES_ALIAS[c.creatureKey] || c.creatureKey); // Shared alias matches normal animated texture playback.
-          if (!c?.genotype || !window.CreatureGeneticsRender?.SPECIES?.[kind]) continue;
-          for (const frame of ['idle', ...(c.def.sprites.run || []).map((_, i) => 'run' + (i + 1))]) for (const blink of [false, true]) {
-            _getGenotypeTextures(kind, frame, c.genotype, blink);
-            const key = `${kind}|${frame}|${window.CreatureGeneticsRender.genotypeSignature(kind, c.genotype)}|${blink ? 'b' : 'o'}`; // Same cache key as normal gameplay, no duplicate asset pipeline.
-            jobs.push(Promise.resolve(_genotypeTexPending.get(key)).then(() => {
-              if (!_genotypeTexCache.front.has(key)) throw new Error('Introduction animal texture failed: ' + key);
-            }));
+        const preloadPins = []; // Holds each cast frame until shader/texture preparation completes, including setup failures.
+        try {
+          const jobs = []; // Await the authoritative genotype cache for every idle/run and blink frame used by this cast.
+          for (const entity of entities.values()) {
+            const c = entity.creature, kind = c && (window.CreatureGenetics.SPECIES_ALIAS[c.creatureKey] || c.creatureKey); // Shared alias matches normal animated texture playback.
+            if (!c?.genotype || !window.CreatureGeneticsRender?.SPECIES?.[kind]) continue;
+            for (const frame of ['idle', ...(c.def.sprites.run || []).map((_, i) => 'run' + (i + 1))]) for (const blink of [false, true]) {
+              const key = `${kind}|${frame}|${window.CreatureGeneticsRender.genotypeSignature(kind, c.genotype)}|${blink ? 'b' : 'o'}`; // Same cache key as normal gameplay, no duplicate asset pipeline.
+              const pin = {}; // A distinct temporary owner lets every preloaded frame stay resident.
+              preloadPins.push(pin);
+              _genotypeTextureResidency.retain(pin, key);
+              _getGenotypeTextures(kind, frame, c.genotype, blink);
+              jobs.push(Promise.resolve(_genotypeTexPending.get(key)).then(() => {
+                if (!_genotypeTexCache.front.has(key)) throw new Error('Introduction animal texture failed: ' + key);
+              }));
+            }
           }
-        }
-        await Promise.all(jobs);
-        for (const entity of entities.values()) if (entity.creature) updateCreatureAnimFrame(entity.creature, 0, false);
-        const materials = new Set(); // Single setup scan captures streamed terrain, furniture and actor material maps.
-        targetScene.traverse(node => { for (const material of (Array.isArray(node.material) ? node.material : [node.material])) if (material) materials.add(material); });
-        const started = performance.now(); // A failed texture load reports an error rather than revealing half-loaded scenery.
-        while ([...materials].some(material => Object.values(material).some(value => value?.isTexture && (!value.image || (value.image.complete === false))))) {
-          if (performance.now() - started > 45000) throw new Error('Introduction scene textures did not finish loading.');
-          await new Promise(resolve => setTimeout(resolve, 50));
-        }
-        const textures = new Set([...materials].flatMap(material => Object.values(material).filter(value => value?.isTexture))); // Upload each settled texture once while the introduction still covers the viewport.
-        await Promise.all([...textures].map(texture => texture.image?.decode?.()));
-        for (const texture of textures) renderer.initTexture?.(texture);
-        updateCameraPosition();
-        await renderer.compileAsync?.(targetScene, camera); // Warm shaders while the black introduction surface still owns the screen.
+          await Promise.all(jobs);
+          for (const entity of entities.values()) if (entity.creature) updateCreatureAnimFrame(entity.creature, 0, false);
+          const materials = new Set(); // Single setup scan captures streamed terrain, furniture and actor material maps.
+          targetScene.traverse(node => { for (const material of (Array.isArray(node.material) ? node.material : [node.material])) if (material) materials.add(material); });
+          const started = performance.now(); // A failed texture load reports an error rather than revealing half-loaded scenery.
+          while ([...materials].some(material => Object.values(material).some(value => value?.isTexture && (!value.image || (value.image.complete === false))))) {
+            if (performance.now() - started > 45000) throw new Error('Introduction scene textures did not finish loading.');
+            await new Promise(resolve => setTimeout(resolve, 50));
+          }
+          const textures = new Set([...materials].flatMap(material => Object.values(material).filter(value => value?.isTexture))); // Upload each settled texture once while the introduction still covers the viewport.
+          await Promise.all([...textures].map(texture => texture.image?.decode?.()));
+          for (const texture of textures) renderer.initTexture?.(texture);
+          updateCameraPosition();
+          await renderer.compileAsync?.(targetScene, camera); // Warm shaders while the black introduction surface still owns the screen.
+        } finally { for (const pin of preloadPins) _genotypeTextureResidency.release(pin); }
       }
 
       async function runCutscenePreview(payload, runtimeOptions = {}) {

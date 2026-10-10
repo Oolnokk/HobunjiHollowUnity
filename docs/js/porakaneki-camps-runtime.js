@@ -230,11 +230,7 @@
     const entity = hunter?.entity;
     if (!entity) return;
     combatDeps.hostileObjects.delete(entity);
-    entity.avatarRef?.group?.parent?.remove?.(entity.avatarRef.group);
-    entity.groundShadow?.parent?.remove?.(entity.groundShadow);
-    entity._banditToolHolder?.parent?.remove?.(entity._banditToolHolder);
-    entity._banditRangedToolHolder?.parent?.remove?.(entity._banditRangedToolHolder);
-    entity.avatarRef?.dispose?.();
+    window.BanditCombat.discardEntity(entity); // Canonical disposal also releases shadow, weapon-holder, ring, and trail resources.
     hunter.entity = null;
   }
   function disposeObject3D(root) {
@@ -550,17 +546,18 @@
     return stations.length;
   }
 
-  function queueBenchLogMesh(camp, prop, zone, elevationY) {
+  function queueBenchLogMesh(camp, prop, zone, elevationY, failures = 0) {
     if (!window.FoliageFurnitureRenderer?.buildInstance) return;
     const record = benchRecordForProp(camp, prop); // Used by the shared wilderness-log renderer so camps do not duplicate log geometry.
     const generation = buildGeneration; // Used after the async V27 build to discard logs from a torn-down/rebuilt wilderness generation.
-    camp.propMeshes.set(prop.id, { mesh: null, light: null, pending: true, record });
-    window.FoliageFurnitureRenderer.buildInstance(record, camp.zoneState?.layoutRef, {
+    const entry = { mesh: null, light: null, pending: true, record, failures, retryAtMs: 0 };
+    camp.propMeshes.set(prop.id, entry);
+    Promise.resolve().then(() => window.FoliageFurnitureRenderer.buildInstance(record, camp.zoneState?.layoutRef, {
       PLATEAU_UNIT: combatDeps?.PLATEAU_UNIT,
       NORMAL_TOP: combatDeps?.NORMAL_TOP,
-    }).then(({ instance, data }) => {
+    })).then(({ instance, data }) => {
       const liveEntry = camp.propMeshes.get(prop.id); // Used to ensure this result still belongs to the current camp before publishing it.
-      if (generation !== buildGeneration || !liveEntry?.pending || currentArea() !== camp.zoneId) {
+      if (generation !== buildGeneration || liveEntry !== entry || currentArea() !== camp.zoneId) {
         instance.parent?.remove?.(instance);
         return;
       }
@@ -571,7 +568,10 @@
       zone.scene.add(instance);
       camp.propMeshes.set(prop.id, { mesh: instance, light: null, pending: false, record, data, sharedFoliage: true });
     }).catch(error => {
-      if (camp.propMeshes.get(prop.id)?.pending) camp.propMeshes.delete(prop.id);
+      if (generation !== buildGeneration || camp.propMeshes.get(prop.id) !== entry) return;
+      entry.pending = false;
+      entry.failures++;
+      entry.retryAtMs = performance.now() + Math.min(60000, 2000 * 2 ** Math.min(5, entry.failures - 1));
       window.__farmLog?.(`[porakaneki] bench log failed (${prop.id}): ${error?.message || error}`, 'warn', 'wildlife');
     });
   }
@@ -583,6 +583,7 @@
     for (const prop of camp.props) {
       const prior = camp.propMeshes.get(prop.id); // Used to avoid rebuilding both sync props and pending async bench logs every camp tick.
       if (prior?.mesh?.parent === zone.scene || prior?.pending) continue;
+      if (prior?.retryAtMs > performance.now()) continue;
       if (prior) {
         if (prior.light) prior.light.parent?.remove?.(prior.light);
         disposeObject3D(prior.mesh);
@@ -595,7 +596,7 @@
       const elevationY = tile && combatDeps.tileSurfaceYInArea ? num(combatDeps.tileSurfaceYInArea(tile, camp.zoneId), 0) : 0; // Shared world-space surface height for all camp props.
 
       if (prop.key === BENCHLOG_KEY) {
-        queueBenchLogMesh(camp, prop, zone, elevationY);
+        queueBenchLogMesh(camp, prop, zone, elevationY, prior?.failures || 0);
         continue;
       }
 
@@ -1360,7 +1361,10 @@
           porakanekiWeaponShape: weapon.shapeKey,
         },
       });
-      if (!entity || generation !== buildGeneration) { entity?.avatarRef?.dispose?.(); return null; }
+      if (!entity || generation !== buildGeneration || currentArea() !== camp.zoneId || !sharesPlayerChunk(hunter)) {
+        window.BanditCombat.discardEntity?.(entity); // Drop a completed build whose data-only owner moved outside the activation bubble.
+        return null;
+      }
       hunter.entity = entity;
       hunter.lastHealth = entity.health;
       placeEntity(hunter);

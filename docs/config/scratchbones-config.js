@@ -12,6 +12,12 @@ window.SCRATCHBONES_CONFIG = {
   clothingLightOffset: 0,
 
   game: {
+    wildlifeStreaming: { // Data-tracked den/herd actors keep identity and AI; only nearby ones allocate a native-resolution rig.
+      wakeRadiusTiles: 14,
+      releaseRadiusTiles: 18,
+      releaseDelaySeconds: 2,
+      promotionsPerFrame: 1,
+    },
     "socialRelationships": {
       "porakanekiBarter": {
         "mediumFavor": 4,

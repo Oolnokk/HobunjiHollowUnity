@@ -46,7 +46,7 @@
 (() => {
   'use strict';
   if (window.ActionArchIcons?.installed || document.querySelector('script[data-action-arch-icons]')) return;
-  const src = 'js/action-arch-icons.js?v=20261001hc4b55a0';
+  const src = 'js/action-arch-icons.js?v=20261009h9c4cd25';
   if (document.readyState === 'loading' && document.currentScript) {
     document.write(`<script data-action-arch-icons="1" src="${src}"><\/script>`);
     return;

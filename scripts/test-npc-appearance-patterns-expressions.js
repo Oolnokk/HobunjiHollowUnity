@@ -11,7 +11,7 @@ const cosmetics = { optionCache: new Map(), hatOptions: [], hoodOptions: [], tor
 const window = {
   SCRATCHBONES_CONFIG: { game: { portrait: { expressions: { available: ['neutral', 'smile', 'frown', 'laugh'], defaultResting: 'neutral' }, cosmetics: {} }, account: { shopCatalog: [{ id: 'rugged_poncho', category: 'overwear' }] } } },
   loadPortraitCosmetics: async () => cosmetics,
-  getPortraitFighters: () => [{ id: 'mao_m', speciesId: 'mao-ao', gender: 'male' }],
+  getPortraitFighters: () => [{ id: 'mao_m', speciesId: 'mao-ao', gender: 'male' }, { id: 'mammakhbuur_male', speciesId: 'mammakhbuur', gender: 'male' }],
   randomPortraitProfileSeeded: (_rng, fighters) => ({ fighter: fighters[0], bodyColors: {} }),
   renderPortraitProfile: async (_canvas, profile, options) => { renders.push({ seat: options.seatId, expression: window.portraitBreathingComposer.getExpression(options.seatId), view: options.portraitView, profile }); },
 }; // Real modules share one browser-like namespace.

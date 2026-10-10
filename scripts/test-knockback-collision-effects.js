@@ -44,7 +44,8 @@ assert.match(gameSource, /advanceCreatureProneThrow[\s\S]{0,1800}resolveKnockbac
   'Footing-break prone throws use the same wall-impact system');
 assert.match(gameSource, /environmentalImpact = dmgOpts\?\.environmentalImpact === true/,
   'secondary collision Health damage has an explicit environmental-impact path through existing death authority');
-assert.match(gameSource, /function transitionCreatureToDeath[\s\S]{0,2200}_deathTransitionStarted[\s\S]{0,2200}CreatureDeath\.begin/,
+const deathTransitionSource = gameSource.slice(gameSource.indexOf('function transitionCreatureToDeath('), gameSource.indexOf('function damageCreature(')); // Scope the authority instead of limiting its harmless source length.
+assert.match(deathTransitionSource, /_deathTransitionStarted[\s\S]*?CreatureDeath\.begin/,
   'direct hits and lethal resource DoTs share one duplicate-guarded creature-to-corpse handoff');
 assert.match(gameSource, /return \{ applied: appliedImpactHealth, lethal: true \}/,
   'lethal player collision damage reports death before respawn restoration can hide it');

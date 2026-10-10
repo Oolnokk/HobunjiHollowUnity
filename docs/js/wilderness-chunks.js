@@ -64,9 +64,9 @@
       if (object.userData?.wildernessChunkOwnsMaterial) {
         const materials = Array.isArray(object.material) ? object.material : [object.material];
         for (const material of materials) {
-          material?.map?.dispose?.();
+          if (!material?.map?.userData?.chunkJigsawShared) material?.map?.dispose?.();
           for (const uniform of Object.values(material?.uniforms || {})) {
-            if (uniform?.value?.isTexture) uniform.value.dispose?.();
+            if (uniform?.value?.isTexture && !uniform.value.userData?.chunkJigsawShared) uniform.value.dispose?.();
           }
           material?.dispose?.();
         }

@@ -317,21 +317,15 @@
     const genotypeKind = window.CreatureGenetics.SPECIES_ALIAS[creatureKey] || creatureKey;
     const genotype = window.CreatureGenetics.makeDefaultGenotype(genotypeKind);
     const creature = deps.makeCreatureEntity(creatureKey, x, y, { homeX: x, homeY: y, state: 'idle', genotype });
-    if (!creature) { deps.showToast(`Could not spawn "${creatureKey}" — missing CREATURE_DB entry.`, false); return; }
-    // Same real-AI registration the cutscene combat stager uses (see
-    // runCombat's combatOnIds loop) — hostile species chase/attack via
-    // updateHostiles, everything else follows/defends the player via
-    // updateCompanions, instead of a bespoke test-only behavior.
-    if (def.hostile) {
-      deps.hostileObjects.add(creature);
-    } else {
-      creature.isCompanion = true;
-      creature.master = deps.player;
-      deps.companionObjects.add(creature);
-    }
+    if (!creature) { throw new Error(`Could not spawn "${creatureKey}" — missing CREATURE_DB entry.`); }
+    // The wilderness registers prey in this same combat/AI collection. Making
+    // non-hostile arena animals companions excluded them from all weapon hits.
+    creature.isCompanion = false;
+    creature.master = null;
+    deps.hostileObjects.add(creature);
     _arenaSpawnedCreatures.add(creature);
     const renderSupported = !!window.CreatureGeneticsRender?.SPECIES?.[genotypeKind];
-    const msg = `[dev-arena] spawned ${creatureKey} #${creature.id} (aiSet=${def.hostile ? 'hostileObjects' : 'companionObjects'}, genotypeKind=${genotypeKind}, renderSupported=${renderSupported}) genotype=${JSON.stringify(genotype)}`;
+    const msg = `[dev-arena] spawned ${creatureKey} #${creature.id} (aiSet=hostileObjects, genotypeKind=${genotypeKind}, renderSupported=${renderSupported}) genotype=${JSON.stringify(genotype)}`;
     window.__farmLog?.(msg, 'wildlife');
     console.log(msg);
     renderDevSpawnPanel();
@@ -345,7 +339,7 @@
   async function spawnDevArenaBandit(rank, tier) {
     if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) return;
     const cfg = await window.BanditCombat.loadGangConfig();
-    if (!cfg) { deps.showToast('Could not spawn bandit — bandit-gang-config.json failed to load.', false); return; }
+    if (!cfg) { throw new Error('Could not spawn bandit — bandit-gang-config.json failed to load.'); }
     if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) return; // player left mid-await
     const angle = Math.random() * Math.PI * 2;
     const dist = deps.TILE * (1.5 + Math.random() * 2.5);
@@ -355,7 +349,7 @@
       zoneId: DEV_ARENA_ZONE_ID,
       extra: { homeX: x, homeY: y, state: 'idle' },
     });
-    if (!creature) { deps.showToast(`Could not spawn bandit "${rank}" — see console/log for details.`, false); return; }
+    if (!creature) { throw new Error(`Could not spawn bandit "${rank}" — see console/log for details.`); }
     if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) { window.BanditCombat?.discardEntity?.(creature); return; } // Portrait build is async too; drop it if the player left meanwhile.
     deps.hostileObjects.add(creature);
     _arenaSpawnedCreatures.add(creature);
@@ -377,7 +371,7 @@
   async function spawnDevArenaPorakaneki(tier) {
     if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) return;
     const cfg = await window.BanditCombat.loadGangConfig();
-    if (!cfg) { deps.showToast('Could not spawn Porakaneki — bandit-gang-config.json failed to load.', false); return; }
+    if (!cfg) { throw new Error('Could not spawn Porakaneki — bandit-gang-config.json failed to load.'); }
     if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) return; // player left mid-await
     const angle = Math.random() * Math.PI * 2;
     const dist = deps.TILE * (1.5 + Math.random() * 2.5);
@@ -393,7 +387,7 @@
       bodyColorsOverride: window.HobunjiPorakanekiSpecies?.bodyColorsForSeed?.(`dev-porakaneki:${x.toFixed(3)}:${y.toFixed(3)}`, 'male') || null,
       extra: { homeX: x, homeY: y, state: 'idle', isPorakanekiHunter: true },
     });
-    if (!creature) { deps.showToast('Could not spawn Porakaneki Hunter — see console/log for details.', false); return; }
+    if (!creature) { throw new Error('Could not spawn Porakaneki Hunter — see console/log for details.'); }
     if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) { window.BanditCombat?.discardEntity?.(creature); return; } // Portrait build is async too; drop it if the player left meanwhile.
     creature._porakanekiAggroRangePx = creature.def?.aggroRangePx ?? deps.TILE * 6;
     if (creature.def) creature.def.aggroRangePx = 0;
@@ -410,7 +404,7 @@
   // combat executor underneath.
   async function spawnDevArenaHarlyaoSkeleton(tier) {
     if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) return;
-    if (!window.MinionCombat?.makeEntity) { deps.showToast('Could not spawn Harlyao Skeleton — Minion class is unavailable.', false); return; }
+    if (!window.MinionCombat?.makeEntity) { throw new Error('Could not spawn Harlyao Skeleton — Minion class is unavailable.'); }
     const angle = Math.random() * Math.PI * 2; // Used with dist to place the Minion near, but not directly on top of, the player.
     const dist = deps.TILE * (1.5 + Math.random() * 2.5); // Uses the same arena spawn ring as creatures/bandits.
     const x = deps.player.x + Math.cos(angle) * dist; // World X passed to the Minion constructor.
@@ -424,7 +418,7 @@
       weaponMetalKey: 'nativeCopper',
       extra: { homeX: x, homeY: y, state: 'idle' },
     });
-    if (!creature) { deps.showToast('Could not spawn Harlyao Skeleton Minion — see Debug log.', false); return; }
+    if (!creature) { throw new Error('Could not spawn Harlyao Skeleton Minion — see Debug log.'); }
     if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) { window.BanditCombat?.discardEntity?.(creature); return; } // Drops a late async spawn if the player left the arena.
     deps.hostileObjects.add(creature);
     _arenaSpawnedCreatures.add(creature);
@@ -439,13 +433,13 @@
 
   async function spawnDevArenaHarlyaoLich(type, tier) {
     if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) return;
-    if (!window.HarlyaoLichCombat?.makeEntity) { deps.showToast('Could not spawn Harlyao Lich — lich combat class is unavailable.', false); return; }
+    if (!window.HarlyaoLichCombat?.makeEntity) { throw new Error('Could not spawn Harlyao Lich — lich combat class is unavailable.'); }
     const angle = Math.random() * Math.PI * 2; // Used with dist to place the lich on the standard arena spawn ring.
     const dist = deps.TILE * (2.5 + Math.random() * 2); // Slightly farther than melee Minions so the ranged spell is immediately visible.
     const x = deps.player.x + Math.cos(angle) * dist; // World X supplied to the lich constructor.
     const y = deps.player.y + Math.sin(angle) * dist; // World Z-plane coordinate supplied to the lich constructor.
     const creature = await window.HarlyaoLichCombat.makeEntity({ type, tier, x, y }); // Dedicated class owns roster, dyes, spells, commands, puddles, and summoning.
-    if (!creature) { deps.showToast(`Could not spawn ${type} Harlyao Lich — see Debug log.`, false); return; }
+    if (!creature) { throw new Error(`Could not spawn ${type} Harlyao Lich — see Debug log.`); }
     if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) { window.BanditCombat?.discardEntity?.(creature); return; } // Drops a late async spawn if the player left while its portrait rendered.
     deps.hostileObjects.add(creature);
     _arenaSpawnedCreatures.add(creature);
@@ -573,6 +567,52 @@
     window.MapLivePreviewRuntime?.refreshVisibility();
   }
 
+  let spawnRequestSerial = 0; // Identifies the most recent button request in the persistent mobile report.
+  let lastSpawnRequest = { phase: 'idle', selected: null, tier: null, error: null }; // Scalar status survives log scrolling and panel close/reopen.
+
+  function spawnSnapshot() {
+    return { latestChange: 'Arena spawn failures are caught and visible; failed gang configuration requests can retry.', ...lastSpawnRequest,
+      currentArea: deps?.getCurrentArea?.() ?? null, liveFromPanel: _arenaSpawnedCreatures.size,
+      humanoidBuild: window.BanditCombat?.characterBuildSnapshot?.() ?? null };
+  }
+
+  function showSpawnStatus(message) {
+    const button = document.getElementById('devSpawnBtnAction'); // Existing button owns pending state; no additional mobile controls needed.
+    if (button) { button.disabled = lastSpawnRequest.phase === 'pending'; button.textContent = button.disabled ? 'Spawning…' : '➕ Spawn Selected'; }
+    const status = document.getElementById('devSpawnStatus'); // Visible and copyable result under the arena controls.
+    if (status) status.textContent = message;
+  }
+
+  async function spawnSelectedDevArenaCreature() {
+    if (lastSpawnRequest.phase === 'pending') return false;
+    const selected = devSpawnSelectedKey; // Capture selection before an async portrait build so later UI changes cannot alter the requested spawn.
+    const tier = devSpawnBanditTier; // Same capture for difficulty.
+    lastSpawnRequest = { serial: ++spawnRequestSerial, phase: 'pending', selected, tier, error: null };
+    showSpawnStatus(`Spawning ${selected || 'selection'}…`);
+    try {
+      if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) throw new Error('Enter the Testing Arena before spawning.');
+      const before = _arenaSpawnedCreatures.size; // Existing registration is the success authority for every creature class.
+      if (selected?.startsWith('bandit:')) await spawnDevArenaBandit(selected.slice('bandit:'.length), tier);
+      else if (selected === DEV_SPAWN_PORAKANEKI_KEY) await spawnDevArenaPorakaneki(tier);
+      else if (selected === DEV_SPAWN_HARLYAO_SKELETON_KEY) await spawnDevArenaHarlyaoSkeleton(tier);
+      else if (selected?.startsWith('harlyao-lich:')) await spawnDevArenaHarlyaoLich(selected.slice('harlyao-lich:'.length), tier);
+      else await spawnDevArenaCreature(selected);
+      if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) throw new Error('Spawn canceled because you left the Testing Arena.');
+      if (_arenaSpawnedCreatures.size <= before) throw new Error('Spawn did not create an entity; check the humanoid build stage in the debug report.');
+      lastSpawnRequest.phase = 'complete';
+      showSpawnStatus(`Spawned ${selected}.`);
+      return true;
+    } catch (error) {
+      lastSpawnRequest.phase = 'failed';
+      lastSpawnRequest.error = String(error?.stack || error);
+      const message = `Arena spawn failed (${selected}): ${error?.message || error}`; // Mobile users get the failure without needing console access.
+      window.__farmLog?.(`${message}\n${lastSpawnRequest.error}`, 'error');
+      deps?.showToast?.(message, false);
+      showSpawnStatus(message);
+      return false;
+    }
+  }
+
   function _bindListeners() {
     document.getElementById('devTeleportArenaBtn')?.addEventListener('click', teleportToDevArena);
     document.getElementById('devTeleportWildernessLabBtn')?.addEventListener('click', teleportToWildernessLab);
@@ -595,19 +635,7 @@
       devSpawnBanditTier = deps.clamp(Math.round(Number(btn.dataset.tier)) || 0, 0, 3);
       renderDevSpawnPanel();
     });
-    document.getElementById('devSpawnBtnAction')?.addEventListener('click', () => {
-      if (devSpawnSelectedKey?.startsWith('bandit:')) {
-        spawnDevArenaBandit(devSpawnSelectedKey.slice('bandit:'.length), devSpawnBanditTier);
-      } else if (devSpawnSelectedKey === DEV_SPAWN_PORAKANEKI_KEY) {
-        spawnDevArenaPorakaneki(devSpawnBanditTier);
-      } else if (devSpawnSelectedKey === DEV_SPAWN_HARLYAO_SKELETON_KEY) {
-        spawnDevArenaHarlyaoSkeleton(devSpawnBanditTier);
-      } else if (devSpawnSelectedKey?.startsWith('harlyao-lich:')) {
-        spawnDevArenaHarlyaoLich(devSpawnSelectedKey.slice('harlyao-lich:'.length), devSpawnBanditTier);
-      } else {
-        spawnDevArenaCreature(devSpawnSelectedKey);
-      }
-    });
+    document.getElementById('devSpawnBtnAction')?.addEventListener('click', spawnSelectedDevArenaCreature);
     document.getElementById('devKillAllBtn')?.addEventListener('click', devArenaAutoKillAll);
     document.getElementById('devSpawnFoliageBtnAction')?.addEventListener('click', () => {
       spawnDevArenaFoliage(devSpawnFoliageSelectedKey);
@@ -650,6 +678,7 @@
 
   window.DevSpawner = {
     init: initWithBinding,
+    spawnSnapshot,
     DEV_ARENA_ZONE_ID,
     WILDERNESS_LAB_ZONE_ID,
     getArenaSpawnedCreatures: () => _arenaSpawnedCreatures,

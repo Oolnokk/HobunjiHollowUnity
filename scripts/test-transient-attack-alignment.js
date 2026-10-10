@@ -44,31 +44,29 @@ assert.match(input, /ability\?\.category === 'offensiveHold'/, 'offensive holds 
 assert.match(input, /releaseQueued/, 'release input survives an alignment that spans multiple frames');
 assert.match(input, /const startAttackOnce = \(\) =>/, 'windup startup is idempotent across deferred alignment release');
 assert.match(input, /startAttackOnce\(\);[\s\S]{0,260}requestAnimationFrame\(\(\) => \{[\s\S]{0,360}finishAlignment\(\)/, 'windup starts before transient alignment releases on the next frame');
-assert.match(input, /const AUTO_TARGET_STORAGE_KEY = 'hobunjiMeleeAutoTargetEnabled'/, 'combat input owns one persisted auto-target preference');
-assert.match(input, /let autoTargetEnabled = false;/, 'auto-target is disabled by default when no preference exists');
-assert.match(input, /localStorage\.getItem\(AUTO_TARGET_STORAGE_KEY\) === 'true'/, 'only an explicit persisted true enables auto-target on load');
-assert.match(input, /if \(!autoTargetEnabled\) \{[\s\S]{0,320}callback\(\);[\s\S]{0,80}return null;/, 'disabled auto-target bypasses target acquisition and starts the attack directly');
+assert.match(input, /const AUTO_TARGET_STORAGE_KEY = 'hobunjiMobileAutoTargetEnabled'/, 'combat input owns one persisted auto-target preference');
+// Manual activation and session defaults are executed in test-mobile-autotarget.js.
+assert.match(input, /if \(!isAutoTargetEnabled\(\)\) \{[\s\S]{0,320}callback\(\);[\s\S]{0,80}return null;/, 'disabled auto-target bypasses target acquisition and starts the attack directly');
 assert.match(input, /id="settingMeleeAutoTarget"/, 'Settings receives a player-facing Auto-target checkbox');
 assert.match(input, /autoTargetSettingsSnapshot/, 'combat input exposes mobile-readable auto-target diagnostics');
 assert.doesNotMatch(input, /blockedBySwimming|Can't fight while swimming|isPlayerSwimming/, 'combat input does not block attacks or holds while swimming');
 
 assert.match(game, /function requestMeleeAttackAlignment\(/, 'game owns a transient melee alignment request');
-assert.match(game, /let meleeAttackTargetLock = null;/, 'game owns one explicit activation-scoped melee target lock');
-assert.match(game, /if \(meleeAttackTargetLock\) return meleeAttackTargetLock;/, 'candidate consumers reuse the selected entity instead of rescanning a crowd');
-assert.match(game, /const target = acquireMeleeAttackTargetLock\(\);/, 'each activation acquires its target exactly once');
-assert.match(game, /releaseMeleeAttackTargetLock\(alignment\.target, alignment\.cancelled \? 'cancelled' : 'aligned'\)/, 'normal alignment completion releases the selected entity');
-assert.match(game, /try \{[\s\S]{0,80}runAttack\(\);[\s\S]{0,80}finally \{[\s\S]{0,80}releaseMeleeAttackTargetLock\(target, 'already-aligned'\)/, 'an immediate alignment always closes its target-lock lifecycle');
-assert.match(game, /targetLocked: !!meleeAttackTargetLock[\s\S]{0,180}activationSerial:/, 'mobile diagnostics expose target lock state and activation identity');
-assert.match(html, /game\.js\?v=[^"'<>\s]+/, 'game cache key delivers the activation-lock runtime to browsers');
-assert.match(game, /playerAttackAlignmentDuration\?\.\(initialStep\?\.deltaRad\)/, 'game delegates player glide duration to shared targeting policy');
-assert.match(game, /playerAttackAlignmentProgress\?\.\(progress\)/, 'game delegates player easing to shared targeting policy');
-assert.doesNotMatch(game, /PLAYER_ATTACK_ALIGNMENT_(?:MIN|MAX)_S|function easedAttackAlignmentProgress/, 'game has no private alignment tuning');
+const requestContext = { mobileArchCombatAim:null, meleeAttackFacingCommit:{angle:1}, commitMeleeAttackFacing(angle){requestContext.meleeAttackFacingCommit={angle};} }; // Runs the real player handoff without any target lookup or alignment timer.
+vm.createContext(requestContext);
+const requestStart = game.indexOf('      function requestMeleeAttackAlignment('); // Production player attacks immediately inherit the current reticle.
+vm.runInContext(game.slice(requestStart, game.indexOf('\n      function ',requestStart+20)), requestContext);
+let immediateAttacks=0; // Verifies attacks fire immediately rather than waiting for reticle convergence.
+assert.equal(requestContext.requestMeleeAttackAlignment(()=>immediateAttacks++),null);
+assert.equal(immediateAttacks,1);
+assert.equal(requestContext.meleeAttackFacingCommit,null);
+requestContext.mobileArchCombatAim={angle:0.7};
+requestContext.requestMeleeAttackAlignment(()=>immediateAttacks++);
+assert.equal(immediateAttacks,2);
+assert.equal(requestContext.meleeAttackFacingCommit.angle,0.7,'manual heavy drag keeps its release heading');
+assert.doesNotMatch(game,/function updateMeleeAttackAlignment\(/,'player has no target-facing alignment simulation');
 assert.match(core, /configuredEase\(progress, targetingConfig\.alignmentEasing\)/, 'player alignment easing is configurable');
 assert.match(core, /configuredEase\(t, targetingConfig\.postAttackTurnEasing\)/, 'post-attack recovery easing is configurable');
-assert.match(game, /if \(initialStep\?\.aligned\)[\s\S]{0,180}commitMeleeAttackFacing\(initialStep\.desiredFacing\)[\s\S]{0,100}runAttack\(\)/, 'an already-aligned attack commits its heading and still begins without artificial latency');
-assert.match(game, /meleeAttackAlignment = null;/, 'game retains one explicit transient-lock release point');
-assert.match(game, /appliedFacing: startFacing/, 'transient alignment owns the heading it actually applies');
-assert.match(game, /attackAlignmentStep\?\.\(player, target, 0, \{ facing: alignment\.appliedFacing \}\)/, 'alignment does not reread competing controller or mouse look authority each frame');
 assert.match(enemySearch, /function enemyCanSeeTarget\([\s\S]{0,260}targetInsideAttackCone/, 'enemy sight uses the same shared cone');
 assert.match(enemySearch, /state = 'searching'/, 'enemies search after losing sight');
 assert.match(enemySearch, /function updateEnemySearch\(/, 'enemy scanning can reacquire the player');
@@ -140,6 +138,7 @@ const inputRuntime = { // Minimal DOM/browser shell used to execute combat-input
       isStaggered: () => false,
       update: () => {},
     },
+    matchMedia: () => ({ matches: false }),
     addEventListener: () => {},
     dispatchEvent: () => {},
   },
@@ -160,11 +159,13 @@ const inputRuntime = { // Minimal DOM/browser shell used to execute combat-input
   console,
 };
 vm.runInNewContext(input, inputRuntime);
+assert.equal(inputRuntime.window.Combat.input.isAutoTargetEnabled(), false, 'mobile defaults off');
+inputRuntime.window.Combat.input.setAutoTargetEnabled(false, { persist: false });
 inputRuntime.window.Combat.input.fireTap(1);
 assert.equal(alignmentRequests, 0, 'default-off auto-target never asks game.js to select or align a target');
 assert.equal(legacyActions, 1, 'manual/default-off attacks still begin immediately while swimming');
 assert.equal(inputRuntime.window.Combat.input.alignmentHandoffSnapshot().phase, 'disabled-bypass', 'diagnostics report the manual bypass path');
-assert.equal(inputRuntime.window.Combat.input.autoTargetSettingsSnapshot().defaultEnabled, false, 'debug snapshot advertises the default-off contract');
+assert.equal(inputRuntime.window.Combat.input.autoTargetSettingsSnapshot().defaultEnabled, false, 'debug snapshot advertises mobile default-off');
 inputRuntime.window.Combat.input.setAutoTargetEnabled(true, { persist: false });
 inputRuntime.window.Combat.input.fireTap(1);
 assert.equal(alignmentRequests, 1, 'enabling auto-target restores the existing transient target/alignment request');

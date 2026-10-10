@@ -229,7 +229,50 @@ function shouldRenderBlink(headUrl, nowMs) {
 // ── Image loading ──────────────────────────────────────────
 
 let _puAssetBase = './assets/';
-const IMG_CACHE  = new Map();
+// Eviction drops cache references only: active renders keep their full-size pixels.
+class PortraitPixelCache extends Map {
+  constructor(byteLimit, entryLimit = 256) {
+    super();
+    this.byteLimit = byteLimit; // Checked when source images or tint canvases enter this cache.
+    this.entryLimit = entryLimit; // Bounds pending loads and small entries as well as pixel bytes.
+    this.pixelBytes = 0; // Estimated RGBA bytes of retained cache values, exposed in mobile reports.
+    this.bytesByKey = new Map(); // Lets replacement/deletion subtract the original estimate exactly.
+    this.evictions = 0; // Counts reference eviction; this is not a browser-memory measurement.
+  }
+  get(key) {
+    const value = super.get(key); // Promote hits without changing their byte accounting.
+    if (super.has(key)) { super.delete(key); super.set(key, value); }
+    return value;
+  }
+  set(key, value) {
+    this.delete(key);
+    const width = Number(value?.naturalWidth || value?.width) || 0; // Promises have zero pixel bytes until decoded.
+    const height = Number(value?.naturalHeight || value?.height) || 0; // Counts native dimensions without resizing anything.
+    const bytes = Math.max(0, width * height * 4); // Approximate decoded/canvas RGBA storage only.
+    super.set(key, value);
+    this.bytesByKey.set(key, bytes);
+    this.pixelBytes += bytes;
+    while (this.pixelBytes > this.byteLimit || this.size > this.entryLimit) {
+      this.delete(this.keys().next().value);
+      this.evictions++;
+    }
+    return this;
+  }
+  delete(key) {
+    this.pixelBytes -= this.bytesByKey.get(key) || 0;
+    this.bytesByKey.delete(key);
+    return super.delete(key);
+  }
+  clear() {
+    super.clear();
+    this.bytesByKey.clear();
+    this.pixelBytes = 0;
+  }
+  snapshot() {
+    return { entries: this.size, estimatedBytes: this.pixelBytes, budgetBytes: this.byteLimit, evictions: this.evictions };
+  }
+}
+const IMG_CACHE = new PortraitPixelCache(48 * 1024 * 1024);
 
 const DEFAULT_BEHIND_LAYER_ORDER = [
   'sideLeft', 'rightSideHair',
@@ -327,7 +370,9 @@ function loadImg(relPath) {
 
   // Once the image resolves, upgrade the cache entry from Promise → Image so
   // subsequent calls get a synchronous hit and renderProfile can skip await.
-  promise.then(img => IMG_CACHE.set(relPath, img), () => { /* leave failed promise as-is */ });
+  promise.then(img => {
+    if (IMG_CACHE.get(relPath) === promise) IMG_CACHE.set(relPath, img); // Cleared/evicted requests cannot resurrect their cache entries.
+  }, () => { /* leave failed promise as-is */ });
 
   IMG_CACHE.set(relPath, promise);
   return promise;
@@ -370,7 +415,7 @@ function makeCSSFilter(color) {
 // real difference in how "exact" the two produced. See sprite-recolor.js for
 // the original version of this per-pixel approach (used for item icons).
 
-const _HUESAT_FILL_CACHE = new Map();
+const _HUESAT_FILL_CACHE = new PortraitPixelCache(8 * 1024 * 1024);
 const _TARGET_HUESAT_CACHE = new Map();
 
 function parseHexColor(hex) {
@@ -566,7 +611,7 @@ function getHueSatFillCanvas(img, sourceKey, tint) {
   return canvas;
 }
 
-const _SHADE_FILL_CACHE = new Map();
+const _SHADE_FILL_CACHE = new PortraitPixelCache(12 * 1024 * 1024);
 function getShadeFillCanvas(img, sourceKey, tint) {
   if (!img || tint?.mode !== 'shadeFill') return img;
   const options = tint.options || getPortraitTintingConfig();
@@ -654,7 +699,11 @@ function getBodyTintedCanvas(img, sourceKey, color, speciesId = '', slot = 'A') 
 // carved_smooth much darker than its requested target color. Normalize only
 // these surface PNGs into the body's tonal envelope BEFORE the exact same body
 // tint stage. The body sprites themselves are untouched.
-const _AUTHORED_SURFACE_TONE_CACHE = new Map();
+const _AUTHORED_SURFACE_TONE_CACHE = new PortraitPixelCache(4 * 1024 * 1024);
+window.__portraitPixelCacheDebug = () => ({
+  images: IMG_CACHE.snapshot(), hueSat: _HUESAT_FILL_CACHE.snapshot(),
+  shade: _SHADE_FILL_CACHE.snapshot(), surfaceTone: _AUTHORED_SURFACE_TONE_CACHE.snapshot(),
+});
 function _surfaceToneConfig() {
   const cfg = window.SCRATCHBONES_CONFIG?.game?.portrait?.tinting || {};
   return {
@@ -2041,6 +2090,21 @@ function portraitOptionFromJson(entry, json) {
   return { id: shortId, label, tintSlot: resolvedTintSlot, layers, variantLayers, slot: json.slot || null, portraitSlot, colorRange, hairSlot, tags, materialTag, hoodLayering, specialHeadwearRules, originalId };
 }
 
+const portraitSpeciesLoadStatus = { phase: 'idle', loaded: 0, retryCount: 0, lastError: null }; // Copied by Pixel Probe; species failures must not be cached as a complete portrait registry.
+async function loadPortraitSpeciesJson(url) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const response = await fetch(url, attempt ? { cache: 'reload' } : undefined);
+      if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
+      return await response.json();
+    } catch (error) {
+      if (attempt) throw error;
+      portraitSpeciesLoadStatus.retryCount++;
+    }
+  }
+}
+window.portraitSpeciesLoadSnapshot = () => ({ ...portraitSpeciesLoadStatus, fighters: FIGHTERS.map(fighter => `${fighter.speciesId}:${fighter.gender}`), latestChange: 'Species data retries transient failures; incomplete registries are rejected instead of silently turning a saved character into Mao’ao.' });
+
 /**
  * Fetch cosmetics index and all appearance entries.
  * Returns { hairOptions, eyesOptions, facialHairOptions, indexEntries, optionCache }.
@@ -2156,17 +2220,19 @@ async function loadPortraitCosmetics(configBase) {
   const exclusiveCosmeticsByFighter = {};
   try {
     const speciesIdxUrl = new URL(configBase + 'species/index.json', window.location.href).toString();
-    const speciesIdxResp = await fetch(speciesIdxUrl);
-    if (speciesIdxResp.ok) {
-      const speciesIdx = await speciesIdxResp.json();
+    portraitSpeciesLoadStatus.phase = 'loading';
+    portraitSpeciesLoadStatus.loaded = 0;
+    portraitSpeciesLoadStatus.lastError = null;
+    {
+      const speciesIdx = await loadPortraitSpeciesJson(speciesIdxUrl);
       const speciesEntries = speciesIdx.entries || [];
       const speciesDataById = {};
       await Promise.all(speciesEntries.map(async entry => {
         const sUrl = new URL(entry.path, speciesIdxUrl).toString();
-        const sResp = await fetch(sUrl);
-        if (!sResp.ok) return;
-        const sData = await sResp.json();
-        if (sData?.speciesId) speciesDataById[_normalizeSpeciesKey(sData.speciesId)] = sData;
+        const sData = await loadPortraitSpeciesJson(sUrl);
+        if (!sData?.speciesId) throw new Error(`Missing speciesId in ${sUrl}`);
+        speciesDataById[_normalizeSpeciesKey(sData.speciesId)] = sData;
+        portraitSpeciesLoadStatus.loaded++;
       }));
       LAST_SPECIES_DATA_BY_ID = speciesDataById;
       try {
@@ -2325,9 +2391,10 @@ async function loadPortraitCosmetics(configBase) {
       }
     }
   } catch (e) {
+    portraitSpeciesLoadStatus.phase = 'failed';
+    portraitSpeciesLoadStatus.lastError = String(e?.message || e);
     console.warn('[portrait] Could not load species data', e);
-    LAST_SPECIES_DATA_BY_ID = {};
-    LAST_COSMETIC_FALLBACK_GROUPS = null;
+    throw e; // ensurePortraitCosmetics releases its promise, allowing the next request to retry.
   }
 
   if (Object.keys(fighterPortraitOverrides).length) {
@@ -2348,6 +2415,7 @@ async function loadPortraitCosmetics(configBase) {
     });
   }
 
+  portraitSpeciesLoadStatus.phase = 'ready';
   LAST_RANDOMIZATION_RULES_BY_FIGHTER = randomizationRulesByFighter;
 
   return { hairFrontOptions, hairBackOptions, hairSideOptions, hairSideLOptions, eyesOptions, upperFaceOptions, facialHairOptions, hatOptions, hoodOptions, torsoPortraitOptions, armPortraitOptions, indexEntries, optionCache, bodyColorRangesByGender, allowedCosmeticsByFighter, cosmeticWeightsByFighter, forcedCosmeticsByFighter, conditionalCosmeticsByFighter, randomizationRulesByFighter, mandatoryCosmeticSlotsByFighter, exclusiveCosmeticsByFighter };
