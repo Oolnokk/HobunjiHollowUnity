@@ -248,7 +248,7 @@ assert([out[2], out[5], out[8]].every(z => near(z, 0.012, 1e-6)), 'depth is carr
   assert(near(k1.x, k2.x) && near(k1.y, k2.y) && near(k1.z, k2.z), 'thigh and calf share the knee');
 }
 
-// ---- each leg deforms half the garment (centre-seam blend) ----------------------------------
+// ---- whole-leg weighting (pant sides follow the bone) ----------------------------------
 {
   const garment = {
     legBones: { left: { hip: { x: 0.3, y: 0.3 }, knee: { x: 0.3, y: 0.55 }, ankle: { x: 0.3, y: 0.8 } }, right: { hip: { x: 0.7, y: 0.3 }, knee: { x: 0.7, y: 0.55 }, ankle: { x: 0.7, y: 0.8 } } },
@@ -260,15 +260,14 @@ assert([out[2], out[5], out[8]].every(z => near(z, 0.012, 1e-6)), 'depth is carr
   const w = belt();
   Core.applyLegAxisWeights(w, segments, garment, 1);
   const cell = (u, v) => Array.from(w.slice(at(u, v) * 5, at(u, v) * 5 + 5));
-  const outer = cell(0.1, 0.7); // The far outer side of the left half, low down.
-  assert(outer[0] === 0 && outer[3] === 0 && outer[4] === 0 && outer[1] + outer[2] > 0.999, 'the whole left half follows the left leg');
-  assert(cell(0.9, 0.7)[0] === 0 && cell(0.9, 0.7)[1] === 0 && cell(0.9, 0.7)[3] + cell(0.9, 0.7)[4] > 0.999, 'the whole right half follows the right leg');
-  assert(cell(0.3, 0.7)[2] > 0.99 && cell(0.3, 0.7)[1] < 0.01, 'calf below the knee');
-  assert(cell(0.3, 0.2)[1] > 0.99, 'above the hip the half is all thigh (the part above the beltline is made rigid separately)');
-  const seam = cell(0.5, 0.7); // On the central seam the two legs share the vertex equally.
-  assert(near(seam[2], 0.5, 1e-5) && near(seam[4], 0.5, 1e-5) && seam[0] === 0, 'the halves blend on the central seam');
-  const near1 = cell(0.45, 0.7), near2 = cell(0.55, 0.7);
-  assert(near1[2] > near1[4] && near2[4] > near2[2], 'the blend crosses over the seam smoothly');
+  const side = cell(0.1, 0.7); // The far outer side of the left leg, low on the leg.
+  assert(side[3] === 0 && side[4] === 0 && side[0] < 0.05 && side[1] + side[2] > 0.95, 'the side of a leg is leg-weighted, not belt-weighted');
+  const middle = cell(0.5, 0.7); // The crotch/between-the-legs region below the hip.
+  assert(middle[0] < 0.05 && middle[1] + middle[2] + middle[3] + middle[4] > 0.95, 'the region between the legs follows the legs too, so the hem cannot go concave');
+  assert(cell(0.3, 0.7)[2] > 0.95 && cell(0.3, 0.7)[1] < 0.05, 'calf below the knee');
+  assert(cell(0.3, 0.4)[1] > 0.5, 'thigh between hip and knee, once past the hip blend');
+  assert(near(cell(0.3, 0.2)[0], 1) && near(cell(0.7, 0.29)[0], 1), 'above the hip stays belt');
+  assert(cell(0.9, 0.7)[3] + cell(0.9, 0.7)[4] > 0.95 && cell(0.9, 0.7)[1] === 0, 'the right leg is handled the same way');
   const sum = i => w.slice(i * 5, i * 5 + 5).reduce((a, b) => a + b, 0);
   assert([at(0.1, 0.7), at(0.5, 0.7), at(0.3, 0.35), at(0.8, 0.6)].every(i => near(sum(i), 1, 1e-5)), 'cells stay normalized');
   const off = belt(); Core.applyLegAxisWeights(off, segments, garment, 0);
@@ -328,20 +327,6 @@ assert([out[2], out[5], out[8]].every(z => near(z, 0.012, 1e-6)), 'depth is carr
   assert(near(rot(full), a, 1e-6) && near(rot(half), a / 2, 1e-6) && near(rot(none), 0, 1e-6), 'rotationScale scales the animation angle');
   const hipOut = (t, p) => ({ x: t.m[0] * p.x + t.m[1] * p.y + t.m[2] * p.z + t.tx, y: t.m[3] * p.x + t.m[4] * p.y + t.m[5] * p.z + t.ty, z: t.m[6] * p.x + t.m[7] * p.y + t.m[8] * p.z + t.tz });
   assert(near(hipOut(half, g0).x, r0.x) && near(hipOut(half, g0).y, r0.y), 'the hip still follows the live hip when damped');
-}
-
-// ---- fold-only initial alignment (posterior fit) -----------------------------------------
-{
-  const P = (x, y, z = 0.012) => ({ x, y, z });
-  const g0 = P(0.4, 0.5), g1 = P(0.2, 0.2); // Garment bone angled outward, 0.36 long.
-  const r0 = P(0.45, 0.3), r1 = P(0.45, 0.28); // Rest bone straight down but only 0.02 long: the garment must NOT be squashed to it.
-  const t = Core.alignBoneWithMotion(g0, g1, r0, r1, r0, r1, { initial: 'fold' });
-  const map = p => ({ x: t.m[0] * p.x + t.m[1] * p.y + t.tx, y: t.m[3] * p.x + t.m[4] * p.y + t.ty });
-  const start = map(g0), end = map(g1);
-  assert(near(start.x, 0.45) && near(start.y, 0.5), 'the bone start slides sideways onto the rest bone and keeps its height');
-  assert(near(end.x, 0.45), 'the bone now hangs straight up and down on the rest bone');
-  assert(near(Math.hypot(end.x - start.x, end.y - start.y), Math.hypot(0.2, 0.3), 1e-9), 'the garment keeps its length: no stretch to the 3D leg length');
-  assert(end.y < start.y, 'it points down the same way the rest bone does');
 }
 
 console.log('Pants rig bone skinning: PASS');

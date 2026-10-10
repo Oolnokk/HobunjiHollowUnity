@@ -15,7 +15,6 @@
 
   if (global.PantsGarmentRenderer) return;
 
-  const TOP_EDGE_BAND = 0.03; // Easing band under the rigid waistband (the beltline spline down to the hips): flat and rigid in the portrait plane; everything below belongs to a leg.
   const SEGMENTS = 64; // Vertices per side of the garment grid: fine enough that weight transitions deform smoothly instead of faceting.
   const LEG_ACROSS_SCALE = 'shrinkUniform'; // A leg shorter than the garment's scales down uniformly (so a short-legged species gets proportionally smaller pants, not wedges); a longer one widens by sqrt of the stretch.
   const DEFAULT_GARMENT_ID = 'pants_basic';
@@ -182,8 +181,8 @@
     geometry.computeBoundingSphere();
     Core.applyLegAxisWeights(weights, SEGMENTS, garment, character.legCoverage === undefined ? 1 : Number(character.legCoverage)); // Whole pant legs (sides included) follow their bone.
     Core.sharpenWeights(weights, Math.min(8, Math.max(1, Number(character.skinSharpness) || 1.5))); // Strong initial 2D->3D alignment (see Core.sharpenWeights).
-    // The waistband (the beltline spline down to the hips, plus a thin easing band) is rigid: flat in the portrait plane however
-    // the weights were painted. Pinning only the spline's own row would let the band under it arch as the halves fold.
+    // Everything at or above the beltline spline belongs to the belt (rigid, flat in the portrait plane, however the weights
+    // were painted): the beltline never tilts or leaves the portrait's depth, even where no belt weight touches it.
     const beltPoints = [...garment.pantsBeltSpline].sort((p, q) => p.x - q.x);
     const beltYAt = u => {
       if (u <= beltPoints[0].x) return beltPoints[0].y;
@@ -192,15 +191,9 @@
       }
       return beltPoints[beltPoints.length - 1].y;
     };
-    const hipLevel = Core.normalizeLegBones(garment.legBones);
-    const waistbandBottom = (hipLevel.left.hip.y + hipLevel.right.hip.y) / 2; // The legs fold from the hips down; the waistband above them stays flat.
     for (let row = 0, v = 0; row <= SEGMENTS; row++) {
       for (let col = 0; col <= SEGMENTS; col++, v++) {
-        const below = row / SEGMENTS - Math.max(beltYAt(col / SEGMENTS), waistbandBottom); // Distance under the waistband (the beltline spline down to the hips).
-        if (below > TOP_EDGE_BAND) continue;
-        const t = Math.max(0, below) / TOP_EDGE_BAND, rigid = 1 - t * t * (3 - 2 * t); // 1 on the spline, easing to 0 a little below it.
-        weights[v * 5] = rigid;
-        for (let c = 1; c < 5; c++) weights[v * 5 + c] *= 1 - rigid;
+        if (row / SEGMENTS <= beltYAt(col / SEGMENTS) + 1e-6) { weights[v * 5] = 1; for (let c = 1; c < 5; c++) weights[v * 5 + c] = 0; }
       }
     }
     const legBones = Core.normalizeLegBones(garment.legBones);
@@ -469,8 +462,8 @@
     const boneTransform = (side, from, to, aim) => Core.alignBoneWithMotion(
       handle.bones2D[side][from], handle.bones2D[side][to], handle.rest[side][from], handle.rest[side][to], aim[side][from], aim[side][to],
       handle.fitMode === 'posterior'
-        ? { initial: 'fold', rotationScale: handle.rotationScale[side] } // The posterior fit already sized and placed the garment: each half just folds in so its bone hangs straight down on the 3D bone (no squashing to the 3D leg length).
-        : { perpendicularScale: LEG_ACROSS_SCALE, rotationScale: handle.rotationScale[side] }); // Belt fit: the full planar alignment onto the 3D bone.
+        ? { initial: 'translate', anchorFrom: handle.bones2D[side].hip, anchorTo: handle.rest[side].hip, rotationScale: handle.rotationScale[side] } // The whole-sprite fit already sized and placed the garment: just hang each leg from its hip.
+        : { perpendicularScale: LEG_ACROSS_SCALE, rotationScale: handle.rotationScale[side] });
 
     handle.update = () => {
       if (handle.disposed || !handle.mesh || !handle.model.parent) return;
