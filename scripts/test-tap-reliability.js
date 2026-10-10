@@ -13,24 +13,64 @@ const vm = require('vm');
 const read = file => fs.readFileSync(file, 'utf8');
 
 // ---- the shared script ---------------------------------------------------
-function runShared(existing) {
+function makeEnv({ existing = false, tracer = false, hit = null } = {}) {
   const created = [];
+  const handlers = {}; // window listeners by event type (capture phase)
+  const timers = [];
+  const box = { id: '', style: {}, textContent: '' };
   const document = {
+    readyState: 'complete',
     head: { prepend: node => created.push(node) },
-    documentElement: { prepend: node => created.push(node) },
+    documentElement: { prepend: node => created.push(node), appendChild() {} },
+    body: { appendChild() {} },
     getElementById: id => (existing && id === 'hobunjiTapReliability' ? { id } : null),
-    createElement: tag => ({ tag, id: '', textContent: '' }),
+    createElement: tag => (tag === 'style' ? { tag, id: '', textContent: '' } : box),
+    elementFromPoint: () => hit,
+    addEventListener() {},
   };
-  vm.runInNewContext(read('docs/js/tap-reliability.js'), { document });
-  return created;
+  const window = {
+    location: { search: '' },
+    localStorage: { getItem: key => (tracer && key === 'hobunjiTapDebug' ? '1' : null), setItem() {}, removeItem() {} },
+    visualViewport: { scale: 1 },
+    getComputedStyle: el => ({ opacity: el && el.opacity != null ? el.opacity : 1 }),
+    addEventListener: (type, fn) => { handlers[type] = fn; },
+  };
+  vm.runInNewContext(read('docs/js/tap-reliability.js'), { document, window, performance: { now: () => clock.t }, setTimeout: fn => { timers.push(fn); return timers.length; }, URLSearchParams });
+  return { created, handlers, timers, box, window };
 }
-const injected = runShared(false);
+const clock = { t: 1000 };
+
+const injected = makeEnv().created;
 assert.strictEqual(injected.length, 1, 'shared script must inject exactly one style element');
 assert.strictEqual(injected[0].id, 'hobunjiTapReliability');
 assert(/html,body\{touch-action:manipulation\}/.test(injected[0].textContent), 'root must disable double-tap zoom (touch-action: manipulation)');
 assert(/button[^{]*\{[^}]*touch-action:manipulation/.test(injected[0].textContent), 'buttons and other tap targets must disable double-tap zoom too');
 assert(!/touch-action:\s*none/.test(injected[0].textContent), 'the shared rule must never take away raw touch input from canvases');
-assert.strictEqual(runShared(true).length, 0, 'including the script twice must not inject twice');
+assert(/details:not\(\[open\]\)>:not\(summary\)\{display:none!important\}/.test(injected[0].textContent) && /@layer [A-Za-z]+\{details:not\(\[open\]\)>:not\(summary\)\{display:none!important\}\}/.test(injected[0].textContent), 'closed menus must lose their box (plain rule plus a cascade-layer copy that outranks page !important rules)');
+assert.strictEqual(makeEnv({ existing: true }).created.length, 0, 'including the script twice must not inject twice');
+assert.strictEqual(Object.keys(makeEnv().handlers).length, 0, 'the tap tracer must be off unless ?tapdebug=1 / localStorage enables it');
+
+// ---- tap tracer -----------------------------------------------------------
+const down = (x, y) => ({ clientX: x, clientY: y, pointerType: 'touch', target: { tagName: 'BUTTON', id: 'enlarge', className: 'secondary' } });
+function trace(hit, { clickAfter = false, moveBy = 0 } = {}) {
+  const env = makeEnv({ tracer: true, hit });
+  const { handlers } = env;
+  assert(handlers.pointerdown && handlers.pointerup && handlers.click, 'tracer must listen for pointerdown/up and click when enabled');
+  handlers.pointerdown(down(100, 200));
+  clock.t += 90;
+  handlers.pointerup({ clientX: 100 + moveBy, clientY: 200, target: { tagName: 'BUTTON', id: 'enlarge', className: 'secondary' }, defaultPrevented: false });
+  if (clickAfter) handlers.click({ target: { tagName: 'BUTTON', id: 'enlarge', className: 'secondary' } });
+  env.timers.forEach(fn => fn());
+  return env.box.textContent;
+}
+const closedMenu = { tagName: 'DIV', id: 'body', className: 'selectorBody', closest: sel => (sel === 'details:not([open])' ? { tagName: 'DETAILS', id: 'leftPanel', className: 'panel' } : null) };
+const plainButton = { tagName: 'BUTTON', id: 'enlarge', className: 'secondary', closest: () => null };
+assert(/CLICK ok/.test(trace(plainButton, { clickAfter: true })), 'tracer must report a click that arrived');
+assert(!/NO CLICK/.test(trace(plainButton, { clickAfter: true })), 'a delivered click must not be reported as lost');
+assert(/NO CLICK/.test(trace(plainButton)), 'tracer must flag a clean tap that never produced a click');
+assert(!/NO CLICK/.test(trace(plainButton, { moveBy: 60 })), 'a drag is a scroll, not a lost tap');
+assert(/INSIDE A CLOSED MENU \(details#leftPanel/.test(trace(closedMenu)), 'tracer must name a collapsed menu that receives a touch');
+assert(!/CLOSED MENU/.test(trace(plainButton)), 'a normal button is not a hidden menu');
 
 // ---- every real page includes it (game, hub, every tool, the pinned-preview wrapper) -------------------------
 const pages = ['docs/index.html', 'docs/tools/index.html', 'docs/tools/procedural-animation-editor/commit-pinned-preview.html'];

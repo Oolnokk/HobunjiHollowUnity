@@ -546,6 +546,10 @@ header,
    down to a small corner card rearranges its fields into one column
    instead of clipping or overlapping them. */
 #leftPanel .selectorBody { container-type: inline-size; container-name: hobunjiPanelBody; }
+/* The display:flex !important above beats the browser's own hiding of a closed <details>, which left a 301x1108 box
+   for the closed drawer at z-index 70, above the Pants panel (z-index 20), covering its header buttons and both
+   Enlarge buttons. A closed drawer must have no box at all. */
+#leftPanel:not([open]) > .selectorBody { display: none !important; }
 @container hobunjiPanelBody (max-width: 360px) {
   #leftPanel .repoFields,
   #leftPanel .creatureGrid,
