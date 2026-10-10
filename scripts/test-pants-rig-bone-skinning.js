@@ -380,4 +380,48 @@ assert([out[2], out[5], out[8]].every(z => near(z, 0.012, 1e-6)), 'depth is carr
   assert(Core.offsetOntoAxis(1, 1, 1, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }, out) === false && out.x === 0, 'a degenerate pole leaves the ring alone');
 }
 
+// ---- bound pieces are rigid ---------------------------------------------------------------
+{
+  const P = (x, y, z = 0.012) => ({ x, y, z });
+  const art = P(0.3, 0.5);
+  const t = Core.alignBoneBind(art, P(0.5, 1), P(0.5, 0.8), P(0.5, 1), P(0.5, 0.6)); // The live leg is twice as long as at rest.
+  const through = p => ({ x: t.m[0] * p.x + t.m[1] * p.y + t.m[2] * p.z + t.tx, y: t.m[3] * p.x + t.m[4] * p.y + t.m[5] * p.z + t.ty, z: t.m[6] * p.x + t.m[7] * p.y + t.m[8] * p.z + t.tz });
+  const a = through(P(0.1, 0.3)), b = through(P(0.4, 0.7));
+  assert(near(Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z), Math.hypot(0.3, 0.4), 1e-9), 'distances between points of a bound piece never change, even when the leg lengthens');
+}
+
+// ---- where the 2D bone crosses the ankle spline ---------------------------------------------
+{
+  const spline = [{ x: 0.1, y: 0.6 }, { x: 0.2, y: 0.65 }, { x: 0.3, y: 0.66 }, { x: 0.4, y: 0.65 }, { x: 0.5, y: 0.6 }];
+  const crossing = Core.boneSplineCrossing({ x: 0.3, y: 0.3 }, { x: 0.3, y: 0.55 }, spline); // A vertical bone, extended down to the spline.
+  assert(near(crossing.x, 0.3) && near(crossing.y, 0.66), 'the bone line crosses the spline exactly at its own x, not at a nearby vertex');
+  const between = Core.boneSplineCrossing({ x: 0.25, y: 0.3 }, { x: 0.25, y: 0.5 }, spline); // Halfway between two spline vertices.
+  assert(near(between.x, 0.25) && near(between.y, 0.655), 'between vertices it lands on the spline segment');
+  const diagonal = Core.boneSplineCrossing({ x: 0.5, y: 0.3 }, { x: 0.4, y: 0.5 }, spline);
+  assert(diagonal.y > 0.6 && diagonal.y < 0.67, 'a diagonal bone crosses at the right height');
+  const miss = Core.boneSplineCrossing({ x: 0.9, y: 0.3 }, { x: 0.9, y: 0.5 }, spline);
+  assert(near(miss.x, 0.5) && near(miss.y, 0.6), 'with no crossing it falls back to the spline point nearest the bone end');
+}
+
+// ---- bone twist (the spline keeps its orientation relative to the calf) ------------------------
+{
+  const I = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+  const rotY = a => [Math.cos(a), 0, Math.sin(a), 0, 1, 0, -Math.sin(a), 0, Math.cos(a)]; // About the (-Y) bone axis.
+  const rotX = a => [1, 0, 0, 0, Math.cos(a), -Math.sin(a), 0, Math.sin(a), Math.cos(a)];
+  assert(near(Core.boneTwistAngle(I, I), 0), 'no motion, no twist');
+  assert(near(Core.boneTwistAngle(I, rotX(0.7)), 0, 1e-9), 'a pure swing (pitch) is not a twist');
+  assert(near(Math.abs(Core.boneTwistAngle(I, rotY(0.5))), 0.5, 1e-9), 'a roll about the bone axis is reported as the twist');
+  // Roll while swinging: the twist is still the roll alone.
+  const mix = (A, B) => { const o = new Array(9); for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) o[r * 3 + c] = A[r * 3] * B[c] + A[r * 3 + 1] * B[3 + c] + A[r * 3 + 2] * B[6 + c]; return o; };
+  assert(near(Math.abs(Core.boneTwistAngle(I, mix(rotX(0.6), rotY(0.4)))), 0.4, 1e-6), 'twist is separated from the swing');
+  // alignBoneBind with a twist rotates points around the live bone axis (a point on the axis stays put).
+  const P = (x, y, z = 0.012) => ({ x, y, z });
+  const art = P(0.3, 0.5), r0 = P(0.5, 1), r1 = P(0.5, 0.8);
+  const t = Core.alignBoneBind(art, r0, r1, r0, r1, { twist: Math.PI / 2 });
+  const on = { x: t.m[0] * 0.3 + t.m[1] * 0.3 + t.m[2] * 0.012 + t.tx, y: t.m[3] * 0.3 + t.m[4] * 0.3 + t.m[5] * 0.012 + t.ty };
+  assert(near(on.x, 0.3, 1e-9) && near(on.y, 0.3, 1e-9), 'a point on the bone axis does not move when the bone rolls');
+  const out = { x: t.m[0] * 0.5 + t.m[1] * 0.5 + t.m[2] * 0.012 + t.tx, y: t.m[3] * 0.5 + t.m[4] * 0.5 + t.m[5] * 0.012 + t.ty, z: t.m[6] * 0.5 + t.m[7] * 0.5 + t.m[8] * 0.012 + t.tz };
+  assert(Math.abs(out.z - 0.012) > 0.05, 'a point beside the axis swings around it in depth when the bone rolls');
+}
+
 console.log('Pants rig bone skinning: PASS');

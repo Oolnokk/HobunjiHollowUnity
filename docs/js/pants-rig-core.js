@@ -551,6 +551,52 @@
     return weights;
   }
 
+  // The point on a spline (polyline of {x,y}) where a 2D bone (from -> to, extended as a line) crosses it. When the bone crosses
+  // more than once the crossing nearest the bone's end wins; when it never crosses, the spline point nearest the bone's end.
+  function boneSplineCrossing(from, to, polyline) {
+    const dx = to.x - from.x, dy = to.y - from.y;
+    let best = null, bestScore = Infinity;
+    for (let k = 0; k + 1 < polyline.length; k++) {
+      const a = polyline[k], b = polyline[k + 1], ex = b.x - a.x, ey = b.y - a.y;
+      const denom = dx * ey - dy * ex;
+      if (Math.abs(denom) < 1e-12) continue; // Parallel: no crossing on this segment.
+      const t = ((a.x - from.x) * ey - (a.y - from.y) * ex) / denom; // Position along the bone line (1 = its end).
+      const s = ((a.x - from.x) * dy - (a.y - from.y) * dx) / denom; // Position along the spline segment.
+      if (s < 0 || s > 1) continue;
+      const score = Math.abs(t - 1);
+      if (score < bestScore) { bestScore = score; best = { x: from.x + dx * t, y: from.y + dy * t }; }
+    }
+    if (best) return best;
+    let nearest = null, nearestD = Infinity; // No crossing: the point on the spline closest to the bone's end.
+    for (let k = 0; k + 1 < polyline.length; k++) {
+      const a = polyline[k], b = polyline[k + 1], ex = b.x - a.x, ey = b.y - a.y, len2 = ex * ex + ey * ey;
+      const t = len2 > 1e-12 ? clamp(((to.x - a.x) * ex + (to.y - a.y) * ey) / len2) : 0;
+      const p = { x: a.x + ex * t, y: a.y + ey * t }, d = Math.hypot(p.x - to.x, p.y - to.y);
+      if (d < nearestD) { nearestD = d; nearest = p; }
+    }
+    return nearest || { x: to.x, y: to.y };
+  }
+
+  // How far a bone has turned about its OWN axis (roll/twist) between two orientation frames, once the swing of the axis
+  // itself is removed. Frames are row-major 3x3 rotation arrays (a node's world rotation); the bone runs down the frame's -Y
+  // axis. Positive = counter-clockwise about the rest axis. 0 for a pure swing.
+  function boneTwistAngle(restFrame, liveFrame) {
+    const unit = v => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
+    const ar = unit([-restFrame[1], -restFrame[4], -restFrame[7]]), al = unit([-liveFrame[1], -liveFrame[4], -liveFrame[7]]);
+    const mul = (A, B, transposeB) => { const out = new Array(9); for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) { let s = 0; for (let k = 0; k < 3; k++) s += A[r * 3 + k] * (transposeB ? B[c * 3 + k] : B[k * 3 + c]); out[r * 3 + c] = s; } return out; };
+    const full = mul(liveFrame, restFrame, true); // live * rest^T: the whole rotation since rest.
+    const dot = ar[0] * al[0] + ar[1] * al[1] + ar[2] * al[2];
+    let swing = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+    if (dot > -0.999999) { // Shortest arc ar -> al.
+      const v = [ar[1] * al[2] - ar[2] * al[1], ar[2] * al[0] - ar[0] * al[2], ar[0] * al[1] - ar[1] * al[0]], k = 1 / (1 + dot);
+      swing = [1 - k * (v[1] * v[1] + v[2] * v[2]), -v[2] + k * v[0] * v[1], v[1] + k * v[0] * v[2], v[2] + k * v[0] * v[1], 1 - k * (v[0] * v[0] + v[2] * v[2]), -v[0] + k * v[1] * v[2], -v[1] + k * v[0] * v[2], v[0] + k * v[1] * v[2], 1 - k * (v[0] * v[0] + v[1] * v[1])];
+    }
+    const T = new Array(9); // swing^T * full: the rotation left once the swing is removed.
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) { let s = 0; for (let k = 0; k < 3; k++) s += swing[k * 3 + r] * full[k * 3 + c]; T[r * 3 + c] = s; }
+    const vx = (T[7] - T[5]) / 2, vy = (T[2] - T[6]) / 2, vz = (T[3] - T[1]) / 2;
+    return Math.atan2(vx * ar[0] + vy * ar[1] + vz * ar[2], (T[0] + T[4] + T[8] - 1) / 2);
+  }
+
   // Offset that slides a point onto the infinite line through A and B (its closest point on that line), written into `out`.
   // Used to keep an ankle ring's centre on the 3D bone ("a ring around a tent pole"). Returns false for a degenerate axis.
   function offsetOntoAxis(x, y, z, A, B, out) {
@@ -619,7 +665,7 @@
   // options.initial 'translate' replaces the planar bone alignment by a pure translation of `anchorFrom` onto `anchorTo`
   // (no rotation or stretch): used by the posterior fit, where the garment has already been scaled and placed as a whole
   // sprite and rotating its (flattened) bones to vertical would twist it.
-  function alignBoneWithMotion(fromStart, fromEnd, restStart, restEnd, liveStart, liveEnd, { perpendicularScale = 1, initial = 'align', anchorFrom = null, anchorTo = null, rotationScale = 1 } = {}) {
+  function alignBoneWithMotion(fromStart, fromEnd, restStart, restEnd, liveStart, liveEnd, { perpendicularScale = 1, initial = 'align', anchorFrom = null, anchorTo = null, rotationScale = 1, rigid = false, twist = 0 } = {}) {
     const planar = initial === 'identity'
       ? { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0, stretch: 1, rotation: 0 } // Bind pose = the art as authored: no initial deformation at all.
       : initial === 'translate' && anchorFrom && anchorTo
@@ -666,7 +712,14 @@
           -v[1] + k * v[0] * v[2], v[0] + k * v[1] * v[2], 1 - k * (v[0] * v[0] + v[1] * v[1]),
         ];
       }
-      const sm = Math.max(0.4, Math.min(2.5, liveLength / restLength)); // How much the bone has lengthened/shortened since rest.
+      if (twist) { // Roll about the bone's own (live) axis, so whatever is bound to the bone keeps its orientation relative to it.
+        const k = ul, sn = Math.sin(twist), cs = Math.cos(twist), oc = 1 - cs;
+        const Rt = [cs + k[0] * k[0] * oc, k[0] * k[1] * oc - k[2] * sn, k[0] * k[2] * oc + k[1] * sn, k[1] * k[0] * oc + k[2] * sn, cs + k[1] * k[1] * oc, k[1] * k[2] * oc - k[0] * sn, k[2] * k[0] * oc - k[1] * sn, k[2] * k[1] * oc + k[0] * sn, cs + k[2] * k[2] * oc];
+        const prod = new Array(9);
+        for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) prod[row * 3 + col] = Rt[row * 3] * R[col] + Rt[row * 3 + 1] * R[3 + col] + Rt[row * 3 + 2] * R[6 + col];
+        R = prod;
+      }
+      const sm = rigid ? 1 : Math.max(0.4, Math.min(2.5, liveLength / restLength)); // How much the bone has lengthened/shortened since rest (a rigid piece never stretches).
       const S = new Array(9);
       for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) S[row * 3 + col] = (row === col ? 1 : 0) + (sm - 1) * ur[row] * ur[col];
       Rs = new Array(9);
@@ -697,7 +750,7 @@
     const dz = (Number(garmentStart?.z) || 0) - (Number(restStart?.z) || 0);
     const shift = p => ({ x: (Number(p?.x) || 0) + dx, y: (Number(p?.y) || 0) + dy, z: (Number(p?.z) || 0) + dz });
     const g = shift(restStart);
-    return alignBoneWithMotion(g, g, g, shift(restEnd), shift(liveStart), shift(liveEnd), { initial: 'identity', rotationScale: options.rotationScale });
+    return alignBoneWithMotion(g, g, g, shift(restEnd), shift(liveStart), shift(liveEnd), { initial: 'identity', rotationScale: options.rotationScale, rigid: true, twist: options.twist || 0 }); // Bones are rigid: the garment pieces they own only rotate and travel.
   }
 
   // Full 3D version of alignBoneSegment: carries the garment's bone onto a live bone that can point anywhere in space, so
@@ -846,6 +899,8 @@
     amplifyLegRoll,
     sharpenWeights,
     offsetOntoAxis,
+    boneTwistAngle,
+    boneSplineCrossing,
     applyHalfLegWeights,
     applyLegAxisWeights,
     portraitMapping,
