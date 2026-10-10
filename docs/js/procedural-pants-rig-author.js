@@ -497,7 +497,7 @@
     const panel = state.panel;
     if (!panel) return;
     panel.style.removeProperty('top'); // Restores the stylesheet position before measuring.
-    if (window.matchMedia?.('(max-width:700px) and (orientation:portrait)').matches) return; // Portrait phones anchor the panel to the bottom instead.
+    if (!panel.classList.contains('pantsRigExpanded') && window.matchMedia?.('(max-width:700px) and (orientation:portrait)').matches) return; // Portrait phones anchor the panel to the bottom instead, unless an enlarged workspace made it full-screen.
     const hud = document.getElementById('footingHud'); // Sits on a higher layer than the modal root and would cover the host header (Live 3D / Apply to NPC).
     const bottom = hud?.getBoundingClientRect?.().bottom || 0;
     if (bottom > 0) panel.style.top = `${Math.ceil(bottom) + 6}px`;

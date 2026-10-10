@@ -149,6 +149,7 @@ function makeOverlay() {
     imageRendering: 'auto',
   });
   wrap.appendChild(overlayCanvas);
+  window.PantsRigAuthorEnhancementsReady = true; // Tells app-base's renderPants() to skip its unclipped weight heatmap.
 
   const recordBrushPoint = event => {
     const rect = pantsCanvas.getBoundingClientRect(); // Converts mouse/touch position into the backing 760×760 author canvas used by state.pantsImageRect.
@@ -178,8 +179,8 @@ function syncOverlayCss() {
   if (!pantsCanvas || !overlay || !wrap) return;
   const canvasRect = pantsCanvas.getBoundingClientRect();
   const wrapRect = wrap.getBoundingClientRect();
-  overlay.style.left = `${canvasRect.left - wrapRect.left}px`;
-  overlay.style.top = `${canvasRect.top - wrapRect.top}px`;
+  overlay.style.left = `${canvasRect.left - wrapRect.left + wrap.scrollLeft - wrap.clientLeft}px`; // Content coordinates: the overlay lives inside the (possibly zoom-scrolled) wrap.
+  overlay.style.top = `${canvasRect.top - wrapRect.top + wrap.scrollTop - wrap.clientTop}px`;
   overlay.style.width = `${canvasRect.width}px`;
   overlay.style.height = `${canvasRect.height}px`;
 }
@@ -220,7 +221,7 @@ function renderWeightOverlay() {
     pixels[offset] = color.r;
     pixels[offset + 1] = color.g;
     pixels[offset + 2] = color.b;
-    pixels[offset + 3] = weight > 0 ? Math.max(42, Math.round(weight * 0.88)) : 0; // Makes even a light first brush stroke visibly mark the garment.
+    pixels[offset + 3] = weight >= 16 ? Math.max(42, Math.round(weight * 0.88)) : 0; // A light first brush stroke (about 35% strength) stays visible; sub-6% rounding noise stays hidden.
   }
   heatContext.putImageData(image, 0, 0);
   const rect = state.pantsImageRect;

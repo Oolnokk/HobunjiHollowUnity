@@ -258,13 +258,14 @@
       return;
     }
     let assigned = 0;
+    let dominant = 0; // Rounding leftover goes to the strongest channel; dumping it on the last channel left stray 1-2 weights on every cell.
     for (let channelIndex = 0; channelIndex < channelCount; channelIndex++) {
-      const next = channelIndex === channelCount - 1
-        ? 255 - assigned
-        : Math.max(0, Math.min(255, Math.round((data[offset + channelIndex] || 0) * 255 / sum)));
+      const next = Math.max(0, Math.min(255, Math.round((data[offset + channelIndex] || 0) * 255 / sum)));
       data[offset + channelIndex] = next;
       assigned += next;
+      if (next > data[offset + dominant]) dominant = channelIndex;
     }
+    data[offset + dominant] = Math.max(0, Math.min(255, data[offset + dominant] + 255 - assigned));
   }
 
   function sampleWeights(record, u, v) {
