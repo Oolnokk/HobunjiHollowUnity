@@ -14,7 +14,7 @@
   let inventoryUiLoadStarted = false;
   // This guard keeps the capture-phase selection reset from being registered twice.
   let inventorySelectionBridgeInstalled = false;
-  const CLOTHING_SLOTS = ['hat', 'hood', 'pauldron', 'torso', 'overwear']; // Used anywhere gear clothing must be normalized or rendered by slot; pauldrons persist independently from torso/overwear.
+  const CLOTHING_SLOTS = ['hat', 'hood', 'pauldron', 'torso', 'overwear', 'pants']; // Used anywhere gear clothing must be normalized or rendered by slot; pauldrons persist independently from torso/overwear.
   const clothingIconTintUrlCache = new Map(); // Used to reuse SpriteRecolor output instead of re-encoding the same dyed icon every panel rebuild.
 
   function init(injectedDeps) {
@@ -312,6 +312,7 @@
     if (slot === 'pauldron') return ['PAULDRON'];
     if (slot === 'torso') return ['TORSO'];
     if (slot === 'overwear') return ['CLOTH', 'CLOTH_B'];
+    if (slot === 'pants') return ['PANTS', 'PANTS_B'];
     return [];
   }
 
@@ -452,18 +453,35 @@
     renderClothingIcon(iconEl, item, 'ii-cloth-sprite');
   }
 
+  // Every character gets one free pair of Basic Pants, exactly once (new characters and existing saves alike). The flag
+  // lives on the gear record so selling or unequipping the pants never grants a second pair.
+  function ensureStarterPants(gearInventory) {
+    if (gearInventory.starterPantsGranted) return false;
+    const catalogEntry = (window.SCRATCHBONES_CONFIG?.game?.account?.shopCatalog || []).find(entry => entry?.id === 'pants_basic');
+    if (!catalogEntry) return false; // Config not loaded yet: try again next time instead of burning the one-time grant.
+    gearInventory.starterPantsGranted = true;
+    if (gearInventory.clothing?.pants || gearInventory.clothingItems.some(item => item?.cosmeticId === 'pants_basic')) return true;
+    const dye = (window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || []).find(entry => entry.acquisition === 'starter');
+    const colorA = dye ? { ...dye.color, hex: dye.hex, dyeId: dye.id, label: dye.label } : { h: 0, s: -0.70, v: -0.30, label: 'Default' };
+    const entry = makeClothingGearEntry({ cosmeticId: 'pants_basic', slot: 'pants', label: `${colorA.label} ${catalogEntry.label}`, baseLabel: catalogEntry.label, description: catalogEntry.description, colorA, colorB: null });
+    gearInventory.clothing.pants = entry;
+    gearInventory.clothingItems.push(entry);
+    return true;
+  }
+
   function ensureGearClothingCollection() {
     const gearInventory = deps.getGearInventory();
     if (!gearInventory) return false;
     let changed = false; // Used to make legacy clothing migration save itself exactly when needed.
     if (!gearInventory.clothing) {
-      gearInventory.clothing = { hat: null, hood: null, pauldron: null, torso: null, overwear: null };
+      gearInventory.clothing = { hat: null, hood: null, pauldron: null, torso: null, overwear: null, pants: null };
       changed = true;
     }
     if (!Array.isArray(gearInventory.clothingItems)) {
       gearInventory.clothingItems = [];
       changed = true;
     }
+    if (ensureStarterPants(gearInventory)) changed = true;
     for (const slot of CLOTHING_SLOTS) {
       const worn = gearInventory.clothing[slot];
       if (!worn) continue;

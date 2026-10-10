@@ -122,6 +122,7 @@
     if (slot === 'pauldron') return ['PAULDRON'];
     if (slot === 'torso') return ['TORSO'];
     if (slot === 'overwear') return ['CLOTH', 'CLOTH_B'];
+    if (slot === 'pants') return ['PANTS', 'PANTS_B'];
     return [];
   }
 

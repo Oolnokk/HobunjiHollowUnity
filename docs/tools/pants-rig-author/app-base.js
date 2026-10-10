@@ -118,10 +118,12 @@ function ensureCharacter() {
     portraitBeltSpline: defaultPortraitBelt(),
     legThickness: 1,
     beltScale: 1.75,
+    legRollGain: 2,
   };
   const record = state.project.characters[key]; // Active per-species/gender fitting record.
   record.portraitBeltSpline = Core.normalizeSpline(record.portraitBeltSpline, defaultPortraitBelt());
   if (!(Number(record.legThickness) > 0)) record.legThickness = 1;
+  record.legRollGain = Core.clamp(Number(record.legRollGain) || 2, 1, 4); // How much the garment's legs exaggerate the 3D legs' sideways swing.
   record.beltScale = Core.clamp(Number(record.beltScale) || 1.75, 1.7, 3.5); // Anything below ~1.7 is too short to be useful, so that is the floor.
   return record;
 }
@@ -206,6 +208,8 @@ function syncControlsFromState() {
     $('legThicknessValue').textContent = `${Number(character.legThickness).toFixed(2)}×`;
     $('beltScale').value = String(character.beltScale);
     $('beltScaleValue').textContent = `${Number(character.beltScale).toFixed(2)}×`;
+    $('legRollGain').value = String(character.legRollGain);
+    $('legRollGainValue').textContent = `${Number(character.legRollGain).toFixed(2)}×`;
   }
   syncHistoryButtons();
   updateCompletion();
@@ -1019,6 +1023,12 @@ function wire() {
     state.fitCanvas = null;
     persistDraft();
     queueRender({ rebuildFit: true });
+  });
+  $('legRollGain').addEventListener('input', () => { // Live 3D preview only: leg sideways-swing strength.
+    const character = ensureCharacter();
+    character.legRollGain = Number($('legRollGain').value) || 2;
+    $('legRollGainValue').textContent = `${character.legRollGain.toFixed(2)}×`;
+    persistDraft();
   });
   $('beltScale').addEventListener('input', () => { // Live 3D preview only: scales the belt-weighted pixels vertically about the beltline.
     const character = ensureCharacter();

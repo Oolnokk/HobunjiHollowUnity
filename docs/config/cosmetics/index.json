@@ -71,6 +71,10 @@
       "path": "./basic_pants.json"
     },
     {
+      "id": "pants_basic",
+      "path": "./clothes/pants/pants_basic.json"
+    },
+    {
       "id": "appearance::Mao-ao_M::mao-ao_circled_eyes",
       "path": "./appearance/mao-ao/circled_eyes.json"
     },

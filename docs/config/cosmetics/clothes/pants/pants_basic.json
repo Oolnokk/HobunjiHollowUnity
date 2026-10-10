@@ -1,0 +1,29 @@
+{
+  "slot": "pants",
+  "material": "cloth",
+  "tags": ["material:cloth"],
+  "colorRange": {
+    "minH": -180,
+    "maxH": 180,
+    "stops": [
+      { "h": -180, "sMin": 0.05, "sMax": 0.85, "vMin": -0.18, "vMax": 0.28 },
+      { "h": 0, "sMin": 0.05, "sMax": 0.85, "vMin": -0.18, "vMax": 0.28 },
+      { "h": 180, "sMin": 0.05, "sMax": 0.85, "vMin": -0.18, "vMax": 0.28 }
+    ]
+  },
+  "meta": {
+    "name": "Basic Pants",
+    "note": "Not a portrait layer: drawn in-game by js/pants-garment-renderer.js as a skinned mesh on the avatar's legs (rig data in config/pants-rigs.js). This config exists so dyeing, the loom, inventory icons and woven previews can resolve the garment's art."
+  },
+  "parts": {
+    "pants": {
+      "layers": {
+        "base": {
+          "layerRole": "BASE",
+          "paletteColorKey": "A",
+          "image": { "url": "./assets/cosmetics/clothes/legs/pants_basic.png" }
+        }
+      }
+    }
+  }
+}

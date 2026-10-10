@@ -416,6 +416,28 @@
     return { a, b, c, d, tx: tx0 - (a * fx + c * fy), ty: ty0 - (b * fx + d * fy), stretch, rotation };
   }
 
+  // Exaggerates how far a live 3D leg swings sideways (rotation about the z axis, the one you see face-on) so the garment's
+  // legs visibly follow it. Each bone (thigh, calf) is turned about z by (gain - 1) times its own angle from straight
+  // down, hip first, the chain re-hung from the hip, so the thigh/calf still share one knee and lengths are unchanged.
+  // gain 1 returns the live bones exactly. `out` ({hip, knee, ankle} of {x,y,z}) is written in place.
+  function amplifyLegRoll(leg, gain, out) {
+    const g = Number.isFinite(gain) && gain > 0 ? gain : 1;
+    out.hip.x = leg.hip.x; out.hip.y = leg.hip.y; out.hip.z = leg.hip.z;
+    let ax = out.hip.x, ay = out.hip.y, az = out.hip.z;
+    const joints = [['knee', leg.hip, leg.knee], ['ankle', leg.knee, leg.ankle]];
+    for (const [name, from, to] of joints) {
+      const vx = to.x - from.x, vy = to.y - from.y, vz = to.z - from.z;
+      const roll = Math.atan2(vx, -vy); // Angle about z from straight down: 0 = hanging, + = swung toward +x.
+      const extra = (g - 1) * roll;
+      const cos = Math.cos(extra), sin = Math.sin(extra);
+      ax += vx * cos - vy * sin;
+      ay += vx * sin + vy * cos;
+      az += vz;
+      out[name].x = ax; out[name].y = ay; out[name].z = az;
+    }
+    return out;
+  }
+
   // Full 3D version of alignBoneSegment: carries the garment's bone onto a live bone that can point anywhere in space, so
   // a leg that swings forward or back (rotation about the x axis) tilts the garment with it instead of just shrinking in
   // the flat picture. Points are {x,y,z}. `normal` is the garment plane's normal (default +z). The garment rotates by the
@@ -554,6 +576,7 @@
     normalizeLegBones,
     alignBoneSegment,
     alignBoneSegment3D,
+    amplifyLegRoll,
     skinWeightedPositions,
     validateProject,
   });
