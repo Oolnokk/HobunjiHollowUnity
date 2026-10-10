@@ -358,7 +358,13 @@
         bones2D[side][joint] = { x: placed.x, y: placed.y };
       }
     }
-    return { geometry, basePositions, weights, bones2D };
+    const beltCenter = { x: 0, y: 0 }; // Centre of the pants beltline in avatar-local space: the belt scale grows/shrinks the garment about it.
+    for (const point of garment.pantsBeltSpline) {
+      const placed = placeOnPlane(point.x, point.y);
+      beltCenter.x += placed.x / garment.pantsBeltSpline.length;
+      beltCenter.y += placed.y / garment.pantsBeltSpline.length;
+    }
+    return { geometry, basePositions, weights, bones2D, beltCenter };
   }
 
   async function rebuildPreview(model, project, identity) {
@@ -420,6 +426,8 @@
       weights: built.weights,
       nodes,
       bones2D: built.bones2D,
+      beltCenter: built.beltCenter,
+      beltScale: Math.min(2, Math.max(0.5, Number(character.beltScale) || 1)),
       scratch: makeBoneScratch(Runtime),
       garmentId,
       identityKey: identityKey(identity),
@@ -440,6 +448,8 @@
     const flat = preview.bones2D;
     const transforms = preview.scratch.transforms; // Channel order is Core.WEIGHT_CHANNELS: belt, leftThigh, leftCalf, rightThigh, rightCalf.
     const options = { perpendicularScale: LEG_ACROSS_SCALE };
+    const s = preview.beltScale, c = preview.beltCenter; // Belt-weighted pixels scale about the beltline centre; leg-weighted pixels follow their bones.
+    transforms[0] = s === 1 ? null : { a: s, b: 0, c: 0, d: s, tx: c.x * (1 - s), ty: c.y * (1 - s) };
     transforms[1] = Core.alignBoneSegment(flat.left.hip, flat.left.knee, live.left.hip, live.left.knee, options);
     transforms[2] = Core.alignBoneSegment(flat.left.knee, flat.left.ankle, live.left.knee, live.left.ankle, options);
     transforms[3] = Core.alignBoneSegment(flat.right.hip, flat.right.knee, live.right.hip, live.right.knee, options);
