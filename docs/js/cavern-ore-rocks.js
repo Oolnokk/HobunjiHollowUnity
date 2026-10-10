@@ -8,7 +8,7 @@
 (() => {
   'use strict';
 
-  const CAVERN_ORE_TINTS = { stone: 0x8a8680, copper: 0xb0703a, tin: 0x9aa0a6, iron: 0x8a5a42, silver: 0xc4c8ce, gold: 0xd8b23a, crystal: 0x8fd6e0 };
+  const CAVERN_ORE_TINTS = { stone: 0x8a8680, copper: 0xb0703a, tin: 0x9aa0a6, lead: 0x6d7375, arsenic: 0xaaa58f, silver: 0xc4c8ce, gold: 0xd8b23a, crystal: 0x8fd6e0 }; // Ore kinds from game.js ORE_DEFS; no iron in this world.
 
   let deps = null; // { TileType, markOutline, zoneMineableRockMeshes } from game.js.
 

@@ -352,7 +352,7 @@
   }
 
   function mineOreKind(rng) {
-    return weightedPick(rng, [['stone', 32], ['copper', 24], ['tin', 18], ['iron', 15], ['silver', 8], ['gold', 3]]); // Existing ore-rock kinds reused for richer cave mines.
+    return weightedPick(rng, [['stone', 32], ['copper', 24], ['tin', 18], ['lead', 9], ['arsenic', 6], ['silver', 8], ['gold', 3]]); // Rock looks drawn from game.js ORE_DEFS (no iron in this world).
   }
 
   function layerRegions(profile, mapData, separator, allTiles) {

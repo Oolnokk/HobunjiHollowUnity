@@ -76,7 +76,7 @@
     4: '#c687ff',
     5: '#ffb454'
   };
-  const oreKinds = ['stone', 'copper', 'tin', 'iron', 'silver', 'gold', 'crystal'];
+  const oreKinds = ['stone', 'copper', 'tin', 'lead', 'silver', 'gold', 'crystal']; // 'lead' replaced 'iron' in place (keeps seeded picks stable); there is no iron in this world (game.js ORE_DEFS).
 
   // Ported from WildernessMapGeneratorV4412: named terrain presets and boundary
   // cliff modes. Only used when a caller explicitly opts in via overrides (see
