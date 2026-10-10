@@ -329,4 +329,55 @@ assert([out[2], out[5], out[8]].every(z => near(z, 0.012, 1e-6)), 'depth is carr
   assert(near(hipOut(half, g0).x, r0.x) && near(hipOut(half, g0).y, r0.y), 'the hip still follows the live hip when damped');
 }
 
+// ---- Blender-style bind (3D leg laid onto the art, then skinned) -----------------------------
+{
+  const P = (x, y, z = 0.012) => ({ x, y, z });
+  const through = (t, p) => ({ x: t.m[0] * p.x + t.m[1] * p.y + t.m[2] * p.z + t.tx, y: t.m[3] * p.x + t.m[4] * p.y + t.m[5] * p.z + t.ty, z: t.m[6] * p.x + t.m[7] * p.y + t.m[8] * p.z + t.tz });
+  const art = P(0.3, 0.5); // The art's own hip joint, deliberately NOT where the 3D hip is.
+  const r0 = P(0.5, 1), r1 = P(0.5, 0.8); // The 3D rest leg: straight down, 0.2 long.
+  const rest = Core.alignBoneBind(art, r0, r1, r0, r1);
+  for (const p of [P(0.3, 0.5), P(0.1, 0.9), P(0.77, 0.12)]) {
+    const q = through(rest, p);
+    assert(near(q.x, p.x) && near(q.y, p.y) && near(q.z, p.z), 'at rest every point stays exactly where the art puts it (no initial deformation)');
+  }
+  const moved = Core.alignBoneBind(art, r0, r1, P(0.55, 0.97), P(0.55, 0.77)); // The 3D leg translated by (0.05, -0.03).
+  const q = through(moved, P(0.1, 0.9));
+  assert(near(q.x, 0.15) && near(q.y, 0.87), 'the hip\'s travel carries the art with it');
+  const a = 40 * Math.PI / 180;
+  const l1 = P(0.5, 1 - 0.2 * Math.cos(a), 0.012 + 0.2 * Math.sin(a));
+  const pitched = Core.alignBoneBind(art, r0, r1, r0, l1);
+  assert(near(through(pitched, art).x, art.x) && near(through(pitched, art).y, art.y) && near(through(pitched, art).z, art.z), 'the art\'s own hip is the pivot');
+  assert(near(pitched.rotation, a, 1e-9), 'the leg\'s pitch rotates the art by the same angle');
+  const below = through(pitched, P(0.3, 0.3)); // 0.2 below the art hip (y down is -y... here y smaller = lower).
+  assert(below.z > 0.012, 'a point below the hip swings out in depth with the leg pitch');
+  const damped = Core.alignBoneBind(art, r0, r1, r0, l1, { rotationScale: 0.5 });
+  assert(near(damped.rotation, a, 1e-9) || damped.rotation > 0, 'damping still reports a rotation');
+}
+
+// ---- half-ownership weights for the bind fit ----------------------------------------------
+{
+  const garment = { legBones: { left: { hip: { x: 0.39, y: 0.36 }, knee: { x: 0.28, y: 0.525 }, ankle: { x: 0.17, y: 0.69 } }, right: { hip: { x: 0.61, y: 0.36 }, knee: { x: 0.72, y: 0.525 }, ankle: { x: 0.83, y: 0.69 } } } };
+  const segments = 40, w = new Float32Array((segments + 1) * (segments + 1) * 5);
+  Core.applyHalfLegWeights(w, segments, garment);
+  const cell = (u, v) => { const i = Math.round(v * segments) * (segments + 1) + Math.round(u * segments); return Array.from(w.slice(i * 5, i * 5 + 5)); };
+  assert(near(cell(0.2, 0.2)[0], 1) && near(cell(0.8, 0.35)[0], 1), 'the waistband down to the hips is rigid');
+  assert(cell(0.1, 0.65)[2] > 0.99 && cell(0.9, 0.65)[4] > 0.99, 'each leg owns its half below the hips');
+  assert(cell(0.3, 0.45)[1] > 0.99, 'thigh between the hips and the knees');
+  const seam = cell(0.5, 0.65);
+  assert(near(seam[2], 0.5, 1e-5) && near(seam[4], 0.5, 1e-5), 'the halves blend evenly on the central seam');
+  for (let i = 0; i < w.length; i += 5) assert(near(w[i] + w[i + 1] + w[i + 2] + w[i + 3] + w[i + 4], 1, 1e-5), 'weights stay normalized');
+}
+
+// ---- ring on the pole -------------------------------------------------------------------
+{
+  const out = { x: 0, y: 0, z: 0 };
+  assert(Core.offsetOntoAxis(0.3, 0.55, 0.012, { x: 0.5, y: 0.6, z: 0.012 }, { x: 0.5, y: 0.4, z: 0.012 }, out) === true, 'a real axis succeeds');
+  assert(near(out.x, 0.2) && near(out.y, 0) && near(out.z, 0), 'a ring centre off to the side slides straight onto a vertical pole, keeping its height');
+  Core.offsetOntoAxis(0.5, 0.5, 0.012, { x: 0.5, y: 0.6, z: 0.012 }, { x: 0.5, y: 0.4, z: 0.012 }, out);
+  assert(near(out.x, 0) && near(out.y, 0) && near(out.z, 0), 'a centre already on the pole does not move');
+  Core.offsetOntoAxis(0.5, 0.2, 0.2, { x: 0.5, y: 0.6, z: 0.012 }, { x: 0.5, y: 0.4, z: 0.012 }, out);
+  assert(near(out.z, -0.188) && near(out.y, 0), 'depth is part of the pole too: a pitched leg\'s pole carries the ring with it');
+  assert(Core.offsetOntoAxis(1, 1, 1, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }, out) === false && out.x === 0, 'a degenerate pole leaves the ring alone');
+}
+
 console.log('Pants rig bone skinning: PASS');
