@@ -1,105 +1,3 @@
-h).replace(/^\.\//,''),runtimeDocsBase()).href}
-async function fetchRuntimeSource(path,timeoutMs=15000){
-  const url=runtimeUrl(path);
-  const controller=new AbortController();
-  const timer=setTimeout(()=>controller.abort(),timeoutMs);
-  try{
-    const response=await fetch(url,{cache:'no-store',signal:controller.signal});
-    if(!response.ok)throw new Error(`${response.status} ${response.statusText}`);
-    return await response.text();
-  }catch(error){
-    if(error?.name==='AbortError')throw new Error(`Timed out fetching ${path}`);
-    throw new Error(`Could not fetch ${path}: ${error?.message||error}`);
-  }finally{clearTimeout(timer)}
-}
-function patchRuntimeSource(path,source){
-  const docsExpr="new URL(window.__HobunjiRuntimeDocsBase || './', location.href)";
-  let code=String(source||'');
-
-  // Several hand/cloud helpers resolve assets from document.currentScript.
-  // Because V9 executes fetched source directly rather than via a cross-origin
-  // <script> tag, give those helpers the selected repository root explicitly.
-  code=code.replace(
-    /const selfUrl = document\.currentScript\?\.src \? new URL\(document\.currentScript\.src, location\.href\) : null;\s*const docsBase = selfUrl \? new URL\('\.\.\/', selfUrl\) : new URL\('\.\/', location\.href\);/g,
-    `const selfUrl = null;\n  const docsBase = ${docsExpr};`
-  );
-  code=code.replace(
-    /const selfUrl = document\.currentScript\?\.src \? new URL\(document\.currentScript\.src, location\.href\) : null;\s*const docsBase = selfUrl \? new URL\('\.\.\/', selfUrl\)\.href : new URL\('\.\/', location\.href\)\.href;/g,
-    `const selfUrl = null;\n  const docsBase = ${docsExpr}.href;`
-  );
-
-  // procedural-leg-animation already has a repository-tool override; the line
-  // remains untouched and reads __HobunjiProceduralFeetDocsBase.
-  return `${code}\n//# sourceURL=${runtimeUrl(path)}`;
-}
-async function executeRuntimeScript(path,index,total){
-  E.threeStatus.textContent=`Runtime ${index}/${total}: fetching ${path}…`;
-  const source=await fetchRuntimeSource(path);
-  E.threeStatus.textContent=`Runtime ${index}/${total}: starting ${path}…`;
-  try{
-    (0,eval)(patchRuntimeSource(path,source));
-  }catch(error){
-    throw new Error(`${path} threw during startup: ${error?.message||error}`);
-  }
-}
-function installCanonicalCloudMaskScale(){
-  // The live game wraps the ordinary destination-out portrait cloud mask with
-  // this exact 0.60 Y-scale + bottom-anchor compensation. Keep that behavior
-  // available even if the later arm-specific cloud helper elects not to wrap.
-  const original=window.applyPortraitOpacityMask;
-  if(typeof original!=='function'||original.__hobunjiCloudMaskYScaled)return;
-  const wrapped=function(ctx,image,xform={}){
-    const ax=Number(xform.ax)||0;
-    const sy=Number(xform.sy??xform.scaleY)||1;
-    const multiplier=.60;
-    const bottomAnchorCompensation=sy*(1-multiplier)/2;
-    return original(ctx,image,{
-      ...xform,
-      ax:ax-bottomAnchorCompensation,
-      sy:sy*multiplier,
-      scaleY:sy*multiplier
-    });
-  };
-  wrapped.__hobunjiCloudMaskYScaled=true;
-  window.applyPortraitOpacityMask=wrapped;
-}
-async function ensureRigRuntime(){
-  if(R.three.runtimeReadyPromise)return R.three.runtimeReadyPromise;
-  R.three.runtimeReadyPromise=(async()=>{
-    const docs=runtimeDocsBase();
-    R.three.runtimeDocsBase=docs;
-    window.__HobunjiRuntimeDocsBase=docs;
-    window.__HobunjiProceduralFeetDocsBase=docs;
-    window.__HobunjiHandBootstrapDocsBase=docs;
-
-    /*
-      Only load the actual modules needed by this reference.
-      V8 also loaded attachment-rig-latest-authored-snapshot.js, whose job is to
-      bootstrap additional authoring snapshots. config/attachment-rig-profiles.js
-      is already the canonical runtime master, so that extra nested loader is both
-      unnecessary here and was another place the standalone file could stall.
-    */
-    const coreScripts=[
-      'config/scratchbones-config.js',
-      'js/color-fill.js',
-      'config/attachment-rig-profiles.js',
-      'js/GLTFLoader.js',
-      'js/portrait-utils.js',
-      'js/npc-avatar-preview-utils.js',
-      'js/png-plane-avatar.js',
-      'js/leg-bones.js',
-      'js/procedural-leg-animation.js',
-      'config/hand-model-profiles.js',
-      'config/hand-shoulder-points.js',
-      'config/hand-shoulder-pose-profiles.js',
-      'js/procedural-hand-foot-material-roles.js',
-      'js/hand-tool-grips.js',
-      'js/hand-grip-modes.js',
-      'js/hand-shoulder-pose-runtime.js',
-      'js/portrait-arm-cloud-mask.js',
-      'js/portrait-hand-shoulder-scan.js',
-      'js/portrait-hand-shoulder-scan-species.js',
-      'js/procedural-hand-attachments.js',
       'js/procedural-hand-outline-parity.js',
       'js/procedural-hand-scale-free-world.js',
       'js/procedural-hand-shoulder-aim.js',
@@ -130,4 +28,134 @@ async function ensureRigRuntime(){
       ['ProceduralHandFrameDriver',window.ProceduralHandFrameDriver],
     ];
     const missing=required.filter(([,value])=>!value).map(([name])=>name);
-    if(missing.length)throw new Error('Runtime rig dependencies missing after load: '+missing.join
+    if(missing.length)throw new Error('Runtime rig dependencies missing after load: '+missing.join(', '));
+
+    E.threeStatus.textContent='Runtime modules loaded; fetching portrait configuration…';
+    const cosmeticsPromise=window.NpcAvatarPreview.ensurePortraitCosmetics({
+      assetBase:new URL('assets/',docs).href,
+      configBase:new URL('config/',docs).href,
+    });
+    await Promise.race([
+      cosmeticsPromise,
+      new Promise((_,reject)=>setTimeout(()=>reject(new Error('Timed out loading portrait configuration')),20000))
+    ]);
+
+    window.applyHobunjiAttachmentRigProfileCorrections?.();
+    E.threeStatus.textContent='Hobunji runtime rig loaded.';
+    return true;
+  })().catch(error=>{
+    R.three.runtimeReadyPromise=null;
+    E.threeStatus.textContent='Runtime load failed: '+(error?.message||error)+' — tap Retry runtime.';
+    throw error;
+  });
+  return R.three.runtimeReadyPromise;
+}
+function resetRuntimeLoad(){
+  // Modules already executed safely stay installed; retry simply resumes/re-executes
+  // idempotent runtime modules against the same repository root.
+  R.three.runtimeReadyPromise=null;
+  R.three.portraitCache.clear();
+  R.three.buildGeneration++;
+  E.threeStatus.textContent='Retrying runtime…';
+  scheduleThreePreview(0);
+}
+function runtimeProfileKey(){return`${E.species.value}::${E.gender.value}::${R.three.runtimeDocsBase||runtimeDocsBase()}`}
+function blankRuntimeNpc(){
+  return{
+    name:'Clothing fit runtime preview',
+    appearance:{
+      speciesId:E.species.value,
+      gender:E.gender.value,
+      randomSeed:`clothing-fit-runtime:${E.species.value}:${E.gender.value}`,
+      cosmetics:{
+        hairFront:'none',hairBack:'none',hairSide:'none',hairSideL:'none',
+        eyes:'none',upperFace:'none',facialHair:'none'
+      }
+    },
+    equippedCosmetics:[],
+    appliedDyes:{},
+  };
+}
+async function runtimePortraitSet(){
+  await ensureRigRuntime();
+  const profileKey=runtimeProfileKey();
+  const mask=currentMaskTransform();
+  const cacheKey=`${profileKey}::mask:${Number(mask.scaleX).toFixed(4)}:${Number(mask.scaleY).toFixed(4)}:${Number(mask.translateY).toFixed(4)}`;
+  if(R.three.portraitCache.has(cacheKey))return R.three.portraitCache.get(cacheKey);
+
+  const promise=(async()=>{
+    const npc=blankRuntimeNpc();
+    let profile=window.NpcAvatarPreview.buildProfileFromNpcExport(npc);
+    if(!profile){
+      // Keep the random/profile seed independent of mask sliders so changing the
+      // mask never changes body colours or any other appearance choice.
+      profile=window.NpcAvatarPreview.randomProfile(`clothing-fit:${profileKey}`,{
+        speciesId:E.species.value,gender:E.gender.value
+      });
+    }
+    if(!profile)throw new Error(`Could not build runtime portrait profile for ${E.species.value} ${E.gender.value}.`);
+
+    for(const prop of ['hair','hairFront','hairBack','hairSide','hairSideL','eyes','upperFace','facialHair','hat','hood','pauldron','torsoCosmetic','armCosmetic']){
+      if(profile[prop])profile[prop]={id:'none',label:'None',tintSlot:null,layers:[]};
+    }
+
+    const size=Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.previewPortraitCanvasSize)||200;
+    const make=()=>Object.assign(document.createElement('canvas'),{width:size,height:size});
+    const front=make(),back=make(),head=make();
+
+    // This is the important V11 change: the preview transform is installed
+    // while portrait-utils renders the WHOLE front/back portrait. Its canonical
+    // destination-out pass therefore cuts base torso, base arms, torso clothing,
+    // overwear, etc. exactly at the normal full-portrait mask stage.
+    await withPreviewCloudMaskTransform(()=>window.NpcAvatarPreview.renderProfileToCanvas(
+      front,profile,{seatId:'clothing-fit-runtime',forceEyesOpen:true}
+    ));
+    await withPreviewCloudMaskTransform(()=>window.NpcAvatarPreview.renderProfileToCanvas(
+      back,profile,{seatId:'clothing-fit-runtime',portraitView:'behind',forceEyesOpen:true}
+    ));
+
+    // Keep the neck/head-only texture on the ordinary runtime path. The cloud
+    // mask belongs to the body portrait and should not be authored by these sliders.
+    await window.NpcAvatarPreview.renderProfileToCanvas(
+      head,profile,{seatId:'clothing-fit-runtime',onlyHeadSprite:true,forceEyesOpen:true}
+    );
+    return{npc,profile,front,back,head,size};
+  })();
+  R.three.portraitCache.set(cacheKey,promise);
+  try{return await promise}catch(error){R.three.portraitCache.delete(cacheKey);throw error}
+}
+function normalizedLayerXform(raw={}){
+  return{
+    ax:Number(raw.ax)||0,ay:Number(raw.ay)||0,
+    sx:Number(raw.sx??raw.scaleX??raw.scaleMulX)||1,
+    sy:Number(raw.sy??raw.scaleY??raw.scaleMulY)||1,
+  };
+}
+function targetBodyLayerRecord(descriptor=null){
+  const cfg=R.speciesCfg.get(E.species.value)?.[E.gender.value];
+  const layers=cfg?.portraitBodyLayers||[];
+  const wanted=String(descriptor?.layerId||descriptor?.role||'').toLowerCase();
+  if(wanted){
+    const exact=layers.find(layer=>String(layer?.id||'').toLowerCase()===wanted);
+    if(exact)return exact;
+    const normalizedWanted=wanted.replace(/[^a-z0-9]/g,'');
+    const normalized=layers.find(layer=>String(layer?.id||'').toLowerCase().replace(/[^a-z0-9]/g,'')===normalizedWanted);
+    if(normalized)return normalized;
+  }
+  return layers.find(layer=>String(layer.id||'').toLowerCase()==='torso')||layers[0]||null;
+}
+function targetBodyLayerXform(){
+  const torso=targetBodyLayerRecord({layerId:'torso'});
+  return normalizedLayerXform(torso?.xform||{ax:-.2,ay:0,scaleX:2.55,scaleY:2.55});
+}
+function routedBodyTintSlot(descriptor){
+  const layer=targetBodyLayerRecord(descriptor);
+  return String(layer?.tintSlot||descriptor?.tintSlot||'A')||'A';
+}
+function normalizedPortraitAssetKey(value){
+  return String(value||'').replace(/[?#].*$/,'').replace(/^https?:\/\/[^/]+\//i,'').replace(/^\.?\/+/,'').replace(/^docs\//,'').replace(/^assets\//,''); // Used to match the selected body raster even when one side is absolute and the renderer uses a repository-relative source key.
+}
+function samePortraitAsset(a,b){
+  const left=normalizedPortraitAssetKey(a),right=normalizedPortraitAssetKey(b);
+  return !!(left&&right&&(left===right||left.endsWith('/'+right)||right.endsWith('/'+left)));
+}

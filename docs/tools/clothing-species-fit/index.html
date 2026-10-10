@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Hobunji 6x6 Clothing Species Fit Reference V12</title>
+<title>Hobunji 6x6 Clothing Species Fit Reference V24</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="app">
   <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:10px">
     <div>
-      <h1>Hobunji 6×6 Clothing Species Fit Reference V12</h1>
-      <div class="small">Recorded transform + 6×6 fit + extended torso/clothing overlay + repository-runtime full-character preview + cloud-mask transform preview + derived overlay baking from existing species sprites.</div>
+          <h1>Hobunji 6×6 Clothing Species Fit Reference V24</h1>
+      <div class="small">Recorded transform + 6×6 fit + extended torso/clothing overlay + repository-runtime full-character preview + cloud-mask transform preview + behind-sprite patch author.</div>
     </div>
     <div class="small">Repository authoring tool</div>
   </div>
@@ -79,8 +79,8 @@
       </section>
 
       <section>
-        <h2>Cloud mask</h2>
-        <div style="display:none"><div class="field"><label for="maskScaleX">Mask Scale X</label><input id="maskScaleX" type="range" min="0.3" max="2.0" step="0.005" value="1"></div>
+        <h2>Cloud mask preview transform</h2>
+        <div class="field"><label for="maskScaleX">Mask Scale X</label><input id="maskScaleX" type="range" min="0.3" max="2.0" step="0.005" value="1"></div>
         <div class="field"><label for="maskScaleY">Mask Scale Y</label><input id="maskScaleY" type="range" min="0.3" max="2.0" step="0.005" value="1"></div>
         <div class="field"><label for="maskTranslateY">Mask Translate Y (+ down)</label><input id="maskTranslateY" type="range" min="-0.6" max="0.6" step="0.0025" value="0"></div>
         <div class="row">
@@ -91,7 +91,7 @@
           <input id="maskTranslateYNumber" type="number" min="-0.6" max="0.6" step="0.0025" value="0" aria-label="Mask Translate Y value">
           <button id="resetMaskTransform">Reset mask transform</button>
         </div>
-        <div class="small">Cloud masks are disabled globally in the game. The legacy transform controls below are retained only for old exported JSON compatibility.</div></div>
+        <div class="small">Preview-only adjustment stacked onto the selected species+gender canonical full-portrait mask. It is applied during the actual front/back portrait render, including the base torso.</div>
       </section>
 
       <section>
@@ -100,26 +100,21 @@
         <div class="field"><label for="extTorsoClothingFile">Extended torso clothing PNG</label><input id="extTorsoClothingFile" type="file" accept="image/png"></div>
         <div class="field"><label for="extOverwearFile">Extended overwear PNG</label><input id="extOverwearFile" type="file" accept="image/png"></div>
         <div class="row">
-          <label class="small"><input id="extUseCutoff" type="checkbox"> imported PNGs are ordinary species clothing sprites; clear everything above a cutoff and align that cutoff row to the main portrait bottom</label>
-        </div>
-        <div class="field"><label for="extCutoffY">Derived overlay cutoff Y</label><input id="extCutoffY" type="range" min="0" max="300" step="1" value="130"></div>
-        <div class="row">
-          <input id="extCutoffYNumber" type="number" min="0" max="300" step="1" value="130" aria-label="Derived overlay cutoff Y value">
-        </div>
-        <div class="small" style="margin-top:5px">Use this when you import an existing clothing sprite from another species. The tool makes pixels above the cutoff transparent, shifts the remaining pixels downward so the cutoff lines up with the normal portrait cutoff, and then warps the result as an extended overlay.</div>
-        <div class="row">
           <label class="small"><input id="showExtended3D" type="checkbox" checked> show extended overlay in 3D</label>
         </div>
-        <div class="row"><button id="clearExtended">Clear imported sprites</button><button id="downloadExtended">Export baked warped extended overlay PNG</button></div>
+        <div class="row"><button id="clearExtended">Clear imported sprites</button><button id="downloadExtended">Warped extended PNG</button></div>
         <div id="extendedStatus" class="importStatus">No extended sprites imported. Arm sprites are intentionally excluded.</div>
-        <div class="small" style="margin-top:5px">Imports are session-only. Layers are composited in this order: torso → torso clothing → overwear. When cutoff mode is enabled, the imported PNGs are treated as ordinary portrait sprites and baked into an aligned extended-overlay source before warping.</div>
+        <div class="small" style="margin-top:5px">Imports are session-only. Layers are composited top-aligned in this order: torso → torso clothing → overwear.</div>
       </section>
 
       <section>
         <h2>Downloads</h2>
-        <div class="row"><button id="bodyPng">Body PNG</button><button id="clothPng">Warped clothing</button></div>
+        <div class="row"><button id="bodyPng">Body PNG</button><button id="clothPng">Export fitted clothing PNG</button></div>
         <div class="row"><button id="overlayPng">Overlay PNG</button><button id="exportJson">Export grids</button></div>
         <div class="row"><button id="importJson">Import grids</button><input id="file" type="file" accept=".json,application/json" hidden></div>
+        <div class="field" style="margin-top:8px"><label for="diagnosticsInput">Paste Copy diagnostics output</label><textarea id="diagnosticsInput" rows="12" spellcheck="false" placeholder="Paste the complete diagnostics block here"></textarea></div>
+        <button id="importDiagnostics">Import pasted fit</button>
+        <div class="small" style="margin-top:5px">This selects the species, gender, and garment in the pasted report, applies its 6×6 fit, and then the export button saves the fitted clothing PNG.</div>
       </section>
 
       <details>
@@ -155,7 +150,7 @@
         <div class="row"><button id="retry3D">Retry runtime</button><button id="reset3D">Reset 3D view</button></div>
       </div>
       <div id="threeHost" class="threeHost"></div>
-      <div class="small" style="margin-top:7px">Uses the game's PNG-plane avatar, neck rig, procedural hands/feet, and species scaling. Portrait cloud masks are disabled globally; loading progress is shown above.</div>
+      <div class="small" style="margin-top:7px">Uses the game's PNG-plane avatar, neck rig, procedural hands/feet, species scaling, and canonical cloud opacity mask. Runtime JS is fetched from the same repository root as the 2D editor; loading progress is shown above. A preview-only cloud-mask transform lets you test X/Y scale and Y translation.</div>
     </main>
   </div>
 </div>

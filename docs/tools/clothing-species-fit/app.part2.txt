@@ -1,27 +1,3 @@
-hUndo(){undoStack.push(snapshot());if(undoStack.length>50)undoStack.shift();redoStack=[];syncHistory()}
-function restore(raw){
-  const v=JSON.parse(raw);A.baseTransforms=v.baseTransforms||{};A.localOffsets=v.localOffsets||{};A.maskPreviewTransforms=v.maskPreviewTransforms||{};
-  saveState();syncTransformControls();syncMaskTransformControls();render();
-}
-
-function syncHistory(){E.undo.disabled=!undoStack.length;E.redo.disabled=!redoStack.length}
-function log(s){R.logs.unshift(`[${new Date().toLocaleTimeString()}] ${s}`);R.logs=R.logs.slice(0,40);refreshDebug()}
-function status(s){E.status.textContent=s}
-function base(){const s=String(E.repo.value||'').trim();return s.endsWith('/')?s:s+'/'}
-function docsUrl(path){return new URL(String(path).replace(/^\.\//,''),base()).href}
-function assetUrl(path){
-  const p=String(path||'');
-  if(/^https?:/i.test(p))return p;
-  if(p.startsWith('./assets/'))return docsUrl(p.slice(2));
-  if(p.startsWith('assets/'))return docsUrl(p);
-  return docsUrl('assets/'+p.replace(/^\.\//,''));
-}
-async function fetchJson(path){
-  const r=await fetch(docsUrl(path),{cache:'no-store'});
-  if(!r.ok)throw new Error(`${r.status} ${path}`);
-  return r.json();
-}
-function loadImage(url){
   if(R.images.has(url))return R.images.get(url);
   const p=new Promise((ok,bad)=>{
     const img=new Image();img.crossOrigin='anonymous';img.onload=()=>ok(img);img.onerror=()=>bad(new Error('Image failed: '+url));img.src=url;
@@ -40,75 +16,129 @@ function loadLocalImage(file){
 function importedExtendedLayers(){
   return [R.extendedLayers.torso,R.extendedLayers.torsoClothing,R.extendedLayers.overwear].filter(Boolean);
 }
-function extendedSourceUsesCutoffMode(){return !!E.extUseCutoff?.checked}
-function syncExtendedCutoffControls(maxHint){
-  const imported=importedExtendedLayers();
-  const guessedMax=Math.max(300,Math.round(maxHint||Math.max(R.maoBody?.height||173,...imported.map(l=>l.height||0),0)));
-  E.extCutoffY.max=String(guessedMax);E.extCutoffYNumber.max=String(guessedMax);
-  let v=Number(E.extCutoffYNumber?.value??E.extCutoffY?.value??130);
-  if(!Number.isFinite(v))v=130;
-  v=Math.max(0,Math.min(guessedMax,Math.round(v)));
-  E.extCutoffY.value=String(v);E.extCutoffYNumber.value=String(v);
-  return v;
-}
-function buildDerivedOverlayLayer(layer,cutoffY,normalHeight){
-  const clipped=document.createElement('canvas');clipped.width=layer.width;clipped.height=layer.height;
-  const cx=clipped.getContext('2d',{alpha:true});cx.imageSmoothingEnabled=false;
-  cx.drawImage(layer.img,0,0);
-  cx.clearRect(0,0,clipped.width,Math.max(0,Math.min(layer.height,cutoffY)));
-  const shiftY=(normalHeight-cutoffY);
-  const out=document.createElement('canvas');
-  out.width=layer.width;out.height=Math.max(normalHeight,layer.height+shiftY);
-  const ox=out.getContext('2d',{alpha:true});ox.imageSmoothingEnabled=false;
-  ox.drawImage(clipped,0,shiftY);
-  return{
-    img:out,name:layer.name,width:out.width,height:out.height,
-    _sourceHeight:layer.height,_cutoffY:cutoffY,_alignShiftY:shiftY,_derivedFromRegularSprite:true
-  };
-}
 function rebuildExtendedSource(){
-  const imported=importedExtendedLayers();
-  if(!imported.length){R.extendedSource=null;R.extendedWarped=null;updateExtendedStatus();return null}
-  const width=R.maoBody?.width||imported[0].width;
+  const layers=importedExtendedLayers();
+  if(!layers.length){R.extendedSource=null;R.extendedWarped=null;updateExtendedStatus();return null}
+  const width=R.maoBody?.width||layers[0].width;
   const normalHeight=R.maoBody?.height||0;
-  const cutoffY=syncExtendedCutoffControls();
-  const cutoffMode=extendedSourceUsesCutoffMode();
-  const layers=cutoffMode?imported.map(layer=>buildDerivedOverlayLayer(layer,cutoffY,normalHeight)):imported;
-
   const height=Math.max(normalHeight,...layers.map(l=>l.height));
   const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
   const x=canvas.getContext('2d',{alpha:true});x.imageSmoothingEnabled=false;
   const mismatches=[];
   for(const layer of layers){
     if(layer.width!==width)mismatches.push(`${layer.name}: ${layer.width}px wide (portrait is ${width}px)`);
-    x.drawImage(layer.img,0,0);
+    x.drawImage(layer.img,0,0); // Top-left anchored, no resizing; expected extended sprites share portrait width.
   }
   canvas._paths=layers.map(l=>l.name);
-  canvas._overlayMode=cutoffMode?'derived-cutoff':'top-aligned';
-  canvas._cutoffY=cutoffMode?cutoffY:null;
-  canvas._alignShiftY=cutoffMode?(normalHeight-cutoffY):0;
-  canvas._sourceLayerHeights=layers.map(l=>l.height);
   R.extendedSource=canvas;R.extendedWarped=null;
   updateExtendedStatus(mismatches);
   return canvas;
 }
 function updateExtendedStatus(mismatches=[]){
-  const roles=[['torso',R.extendedLayers.torso],['torso clothing',R.extendedLayers.torsoClothing],['overwear',R.extendedLayers.overwear]];
+  const roles=[
+    ['torso',R.extendedLayers.torso],
+    ['torso clothing',R.extendedLayers.torsoClothing],
+    ['overwear',R.extendedLayers.overwear]
+  ];
   const lines=roles.map(([role,v])=>`${role}: ${v?`${v.name} (${v.width}×${v.height})`:'—'}`);
-  const cutoffY=syncExtendedCutoffControls();
-  lines.push(`source mode: ${extendedSourceUsesCutoffMode()?'derive overlay from regular sprite':'direct extended import, top-aligned'}`);
-  lines.push(`cutoff Y: ${cutoffY}`);
-  if(R.extendedSource){
-    if(R.extendedSource._overlayMode==='derived-cutoff'){
-      lines.push(`composite: ${R.extendedSource.width}×${R.extendedSource.height}, cutoff-aligned, shifted by ${R.extendedSource._alignShiftY}px so cutoff row meets portrait bottom`);
-    }else{
-      lines.push(`composite: ${R.extendedSource.width}×${R.extendedSource.height}, top-aligned`);
-    }
-  }
+  if(R.extendedSource)lines.push(`composite: ${R.extendedSource.width}×${R.extendedSource.height}, top-aligned`);
   if(mismatches.length)lines.push('WIDTH WARNING: '+mismatches.join(' | '));
   lines.push('arms: skipped');
-  E.extendedStatus.textContent=lines.join('\\n');
+  E.extendedStatus.textContent=lines.join('\n');
 }
 async function mapLimit(items,n,fn){
   const out=new Array(items.length);let q=0;
-  async function run(){while(true){const i=q++;if(i>=items.length)return;try{out[i]=await fn(
+  async function run(){while(true){const i=q++;if(i>=items.length)return;try{out[i]=await fn(items[i],i)}catch(error){out[i]={error}}}}
+  await Promise.all(Array.from({length:Math.min(n,items.length)},run));return out;
+}
+
+async function loadRepositoryData(){
+  status('Loading repository data…');
+  R.three.portraitCache.clear();
+  if(R.three.runtimeDocsBase&&R.three.runtimeDocsBase!==runtimeDocsBase()){
+    R.three.runtimeReadyPromise=null;
+    R.three.runtimeDocsBase=null;
+    E.threeStatus.textContent='Repository base changed; 3D runtime will reload from the new root.';
+  }
+  R.speciesCfg.clear();R.garments=[];R.images.clear();R.bodyCanvases.clear();R.garmentCanvases.clear();
+  try{
+    const [si,ci]=await Promise.all([fetchJson('config/species/index.json'),fetchJson('config/cosmetics/index.json')]);
+    R.speciesIndex=si.entries||[];
+
+    const speciesResults=await mapLimit(R.speciesIndex,6,async entry=>({
+      entry,cfg:await fetchJson('config/species/'+String(entry.path||'').replace(/^\.\//,''))
+    }));
+    for(const x of speciesResults)if(x&&!x.error)R.speciesCfg.set(x.entry.speciesId,x.cfg);
+
+    const cosmeticResults=await mapLimit(ci.entries||[],8,async entry=>({
+      entry,cfg:await fetchJson('config/cosmetics/'+String(entry.path||'').replace(/^\.\//,''))
+    }));
+    for(const x of cosmeticResults){
+      if(!x||x.error)continue;
+      const cfg=x.cfg,variants=cfg?.speciesVariants||{};
+      if(BODY_SLOTS.has(cfg?.slot)&&(variants['mao-ao_male']||variants['mao-ao_female'])){
+        R.garments.push({id:x.entry.id,label:cfg?.meta?.name||x.entry.id,slot:cfg.slot,cfg});
+      }
+    }
+    R.garments.sort((a,b)=>a.label.localeCompare(b.label));
+    rebuildSelectors();await refreshAssets();
+    status(`Loaded ${R.speciesCfg.size} species and ${R.garments.length} Mao-ao body garments.`);
+    log('Repository load complete.');
+  }catch(error){status('Load failed: '+error.message);log('ERROR '+error.message);console.error(error)}
+}
+function rebuildSelectors(){
+  const wantedSpecies=A.settings?.species||'mao-ao';
+  E.species.innerHTML='';
+  for(const entry of R.speciesIndex){
+    if(!R.speciesCfg.has(entry.speciesId))continue;
+    const o=document.createElement('option');o.value=entry.speciesId;o.textContent=entry.label||entry.speciesId;E.species.appendChild(o);
+  }
+  if([...E.species.options].some(o=>o.value===wantedSpecies))E.species.value=wantedSpecies;
+
+  const wantedGarment=A.settings?.garment||'';
+  E.garment.innerHTML='';
+  for(const garment of R.garments){
+    const o=document.createElement('option');o.value=garment.id;o.textContent=`${garment.label} [${garment.slot}]`;E.garment.appendChild(o);
+  }
+  if([...E.garment.options].some(o=>o.value===wantedGarment))E.garment.value=wantedGarment;
+  if(!E.garment.value&&E.garment.options.length)E.garment.selectedIndex=0;
+}
+function bodyLayers(species,gender){
+  return(R.speciesCfg.get(species)?.[gender]?.portraitBodyLayers||[]).map(x=>({path:x.url,url:assetUrl(x.url)})).filter(x=>x.path);
+}
+async function buildBodyCanvas(species,gender){
+  const key=`${species}::${gender}`;
+  if(R.bodyCanvases.has(key))return R.bodyCanvases.get(key);
+  const p=(async()=>{
+    const layers=bodyLayers(species,gender);
+    if(!layers.length)throw new Error(`No body layers for ${species} ${gender}.`);
+    const images=await Promise.all(layers.map(x=>loadImage(x.url)));
+    const width=Math.max(...images.map(i=>i.naturalWidth||i.width)),height=Math.max(...images.map(i=>i.naturalHeight||i.height));
+    const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
+    const x=canvas.getContext('2d',{alpha:true});x.imageSmoothingEnabled=false;
+    for(const image of images)x.drawImage(image,0,0); // Direct source-pixel compositing of the repository body layers.
+    canvas._paths=layers.map(x=>x.path);return canvas;
+  })();
+  R.bodyCanvases.set(key,p);return p;
+}
+function gatherImages(node,out=[],seen=new Set()){
+  if(!node||typeof node!=='object')return out;
+  if(node.image?.url){
+    const resolved=assetUrl(node.image.url);
+    if(!seen.has(resolved)){seen.add(resolved);out.push({url:resolved,path:node.image.url})}
+  }
+  for(const value of Object.values(node))gatherImages(value,out,seen);
+  return out;
+}
+function garmentRecord(){return R.garments.find(g=>g.id===E.garment.value)||null}
+async function buildVariantGarmentCanvas(id,species,gender,width,height){
+  const key=`${id}::${species}::${gender}::${width}x${height}`;
+  if(R.garmentCanvases.has(key))return R.garmentCanvases.get(key);
+  const p=(async()=>{
+    const garment=R.garments.find(x=>x.id===id),variant=garment?.cfg?.speciesVariants?.[`${species}_${gender}`];
+    if(!variant)return null; // Missing target-species art is normal; comparison overlay simply stays unavailable.
+    const layers=gatherImages(variant);
+    if(!layers.length)return null;
+    const images=await Promise.all(layers.map(x=>loadImage(x.url)));
+    const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
+    const x=canvas.getContext('2d',{alpha:true});x.imageSmoothingEnabled=false;

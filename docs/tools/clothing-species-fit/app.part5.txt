@@ -1,112 +1,10 @@
-gion: continue the deformation vector from the last normal grid row.
-  if(sourceHeight>sourceNormalHeight){
-    const extSub=Math.max(CELL_SUBDIVISIONS,Math.ceil(Math.max(1,extensionFactor)*CELL_SUBDIVISIONS));
-    for(let col=0;col<GRID_SIZE-1;col++){
-      const lastL=targetPx[(GRID_SIZE-1)*GRID_SIZE+col],lastR=targetPx[(GRID_SIZE-1)*GRID_SIZE+col+1];
-      const sTL={x:(col/(GRID_SIZE-1))*sourceWidth,y:sourceNormalHeight};
-      const sTR={x:((col+1)/(GRID_SIZE-1))*sourceWidth,y:sourceNormalHeight};
-      const sBL={x:(col/(GRID_SIZE-1))*sourceWidth,y:sourceHeight};
-      const sBR={x:((col+1)/(GRID_SIZE-1))*sourceWidth,y:sourceHeight};
-      drawBilinearCell(x,source,sTL,sTR,sBL,sBR,lastL,lastR,bottomDest[col],bottomDest[col+1],extSub);
-    }
-  }
-  return output;
 }
-function warpGarment(source,targetNorm,outWidth,outHeight){
-  const output=document.createElement('canvas');output.width=outWidth;output.height=outHeight;
-  const x=output.getContext('2d',{alpha:true});x.imageSmoothingEnabled=false;
-
-  /*
-    Important correction from V4:
-    a 6x6 square was formerly split into only two triangles. A corner node therefore
-    had zero influence over the opposite half of that same square. Here each base cell
-    is treated as a bilinear quad. We sample that bilinear surface into a 4x4 micro-grid,
-    then render the micro-quads as affine triangles. Thus every one of the four authored
-    corner nodes influences every pixel region in its adjacent cell.
-  */
-  for(let row=0;row<GRID_SIZE-1;row++){
-    for(let col=0;col<GRID_SIZE-1;col++){
-      const tl=row*GRID_SIZE+col,tr=tl+1,bl=(row+1)*GRID_SIZE+col,br=bl+1;
-
-      const sTL=SOURCE_GRID[tl],sTR=SOURCE_GRID[tr],sBL=SOURCE_GRID[bl],sBR=SOURCE_GRID[br];
-      const dTL=targetNorm[tl],dTR=targetNorm[tr],dBL=targetNorm[bl],dBR=targetNorm[br];
-
-      for(let sy=0;sy<CELL_SUBDIVISIONS;sy++){
-        const v0=sy/CELL_SUBDIVISIONS,v1=(sy+1)/CELL_SUBDIVISIONS;
-        for(let sx=0;sx<CELL_SUBDIVISIONS;sx++){
-          const u0=sx/CELL_SUBDIVISIONS,u1=(sx+1)/CELL_SUBDIVISIONS;
-
-          const sn00=toWarpPixel(bilerpPoint(sTL,sTR,sBL,sBR,u0,v0),source.width,source.height);
-          const sn10=toWarpPixel(bilerpPoint(sTL,sTR,sBL,sBR,u1,v0),source.width,source.height);
-          const sn01=toWarpPixel(bilerpPoint(sTL,sTR,sBL,sBR,u0,v1),source.width,source.height);
-          const sn11=toWarpPixel(bilerpPoint(sTL,sTR,sBL,sBR,u1,v1),source.width,source.height);
-
-          const dn00=toWarpPixel(bilerpPoint(dTL,dTR,dBL,dBR,u0,v0),outWidth,outHeight);
-          const dn10=toWarpPixel(bilerpPoint(dTL,dTR,dBL,dBR,u1,v0),outWidth,outHeight);
-          const dn01=toWarpPixel(bilerpPoint(dTL,dTR,dBL,dBR,u0,v1),outWidth,outHeight);
-          const dn11=toWarpPixel(bilerpPoint(dTL,dTR,dBL,dBR,u1,v1),outWidth,outHeight);
-
-          // Alternate the micro-cell diagonal to avoid reintroducing a strong one-direction triangle bias.
-          if(((row+col+sx+sy)&1)===0){
-            drawTriangleWarp(x,source,sn00,sn10,sn11,dn00,dn10,dn11);
-            drawTriangleWarp(x,source,sn00,sn11,sn01,dn00,dn11,dn01);
-          }else{
-            drawTriangleWarp(x,source,sn00,sn10,sn01,dn00,dn10,dn01);
-            drawTriangleWarp(x,source,sn10,sn11,sn01,dn10,dn11,dn01);
-          }
-        }
-      }
-    }
-  }
-  return output;
-}
-
-async function refreshAssets(){
-  try{
-    R.body=await buildBodyCanvas(E.species.value,E.gender.value);
-    R.maoBody=await buildBodyCanvas('mao-ao',E.gender.value);
-    R.cloth=E.garment.value?await buildGarmentCanvas(E.garment.value,E.gender.value,R.maoBody.width,R.maoBody.height):null;
-    R.authoredTargetCloth=E.garment.value
-      ?await buildVariantGarmentCanvas(E.garment.value,E.species.value,E.gender.value,R.body.width,R.body.height)
-      :null;
-    E.authoredStatus.textContent=R.authoredTargetCloth
-      ?`Authored ${E.species.value}_${E.gender.value} variant available.`
-      :'No authored target variant for this garment/species/gender.';
-    ensureTargetData(E.species.value,E.gender.value);syncTransformControls();syncMaskTransformControls();
-    saveState();render();
-  }catch(error){status('Refresh failed: '+error.message);log('ERROR '+error.message);console.error(error)}
-}
-function sizeStage(){
-  if(!R.body)return;
-  E.stage.width=R.body.width;E.stage.height=R.body.height;C.imageSmoothingEnabled=false;
-}
-function drawGrid(ctx,points,color,active){
-  const px=toDisplayPixels(points,E.stage.width,E.stage.height);
-  ctx.save();ctx.strokeStyle=color;ctx.fillStyle=color;ctx.globalAlpha=active?1:.58;ctx.lineWidth=1.2;
-
-  for(let row=0;row<GRID_SIZE;row++){
-    ctx.beginPath();
-    for(let col=0;col<GRID_SIZE;col++){
-      const p=px[row*GRID_SIZE+col];
-      col?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y);
-    }
-    ctx.stroke();
-  }
-  for(let col=0;col<GRID_SIZE;col++){
-    ctx.beginPath();
-    for(let row=0;row<GRID_SIZE;row++){
-      const p=px[row*GRID_SIZE+col];
-      row?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y);
-    }
-    ctx.stroke();
-  }
-  for(const p of px){ctx.beginPath();ctx.arc(p.x,p.y,HANDLE_RADIUS,0,Math.PI*2);ctx.fill()}
-  ctx.restore();
-}
-function warpGridForMode(){return mode==='transform'?transformedSourceGrid():targetGrid()}
+function routedPatchIsBody(){return R.patchWorkflow.active&&R.patchWorkflow.descriptor?.kind==='body'}
+function routedPatchIsClothing(){return R.patchWorkflow.active&&R.patchWorkflow.descriptor?.kind==='clothing'}
 function currentWarp(){
-  if(!R.cloth)return null;
-  return warpGarment(R.cloth,warpGridForMode(),R.body.width,R.body.height); // Base Transform previews only the recorded global step; later modes include local offsets.
+  const source=mainClothSource();
+  if(!source)return null;
+  return warpGarment(source,warpGridForMode(),R.body.width,R.body.height); // Routed clothing and body patches share the same live Base Transform / 6×6 fit path before their different avatar-assembly stages.
 }
 function currentExtendedWarp(finalFit=false){
   if(!R.extendedSource)return null;
@@ -115,10 +13,135 @@ function currentExtendedWarp(finalFit=false){
   return R.extendedWarped;
 }
 
+function bodyOut(){return R.body}
+function clothOut(fitState=captureFitState()){
+  const source=mainClothSource();
+  if(!source||!R.body)return null;
+  return warpGarment(source,targetGridFromFitState(fitState),R.body.width,R.body.height); // Final fitted-clothing PNG uses an immutable base-transform + local-fit snapshot.
+}
+function fittedClothingFilename(){
+  if(R.patchWorkflow.active&&R.patchWorkflow.filename)return R.patchWorkflow.filename;
+  return `${safeName(E.garment.value)}_${safeName(E.species.value)}_${E.gender.value}.png`;
+}
+function overlayOut(){
+  const clothing=clothOut();if(!R.body||!clothing)return null;
+  const output=document.createElement('canvas');output.width=R.body.width;output.height=R.body.height;
+  const ctx=output.getContext('2d',{alpha:true});ctx.imageSmoothingEnabled=false;
+  ctx.drawImage(R.body,0,0);ctx.drawImage(clothing,0,0);return output;
+}
+function safeName(value){return String(value||'sprite').trim().replace(/[^a-z0-9_-]+/gi,'_').replace(/^_+|_+$/g,'')||'sprite'}
+function downloadCanvas(canvas,filename){
+  if(!canvas)return;
+  const save=url=>{const link=document.createElement('a');link.href=url;link.download=filename;link.click();setTimeout(()=>URL.revokeObjectURL(url),1500)};
+  if(canvas.toBlob){canvas.toBlob(blob=>{if(blob)save(URL.createObjectURL(blob));else log('ERROR Could not encode PNG.')},'image/png');return}
+  try{const url=canvas.toDataURL('image/png');const link=document.createElement('a');link.href=url;link.download=filename;link.click()}catch(error){log('ERROR PNG export failed: '+error.message)}
+}
+
 function runtimeDocsBase(){
   // Use the SAME raw repository root that already powers the 2D editor.
   // V8 converted this to jsDelivr for <script src>, which could leave mobile/local
   // copies waiting forever on the CDN. V9 fetches source text from repoBase instead.
   return base();
 }
-function runtimeUrl(path){return new URL(String(pat
+function runtimeUrl(path){return new URL(String(path).replace(/^\.\//,''),runtimeDocsBase()).href}
+async function fetchRuntimeSource(path,timeoutMs=15000){
+  const url=runtimeUrl(path);
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),timeoutMs);
+  try{
+    const response=await fetch(url,{cache:'no-store',signal:controller.signal});
+    if(!response.ok)throw new Error(`${response.status} ${response.statusText}`);
+    return await response.text();
+  }catch(error){
+    if(error?.name==='AbortError')throw new Error(`Timed out fetching ${path}`);
+    throw new Error(`Could not fetch ${path}: ${error?.message||error}`);
+  }finally{clearTimeout(timer)}
+}
+function patchRuntimeSource(path,source){
+  const docsExpr="new URL(window.__HobunjiRuntimeDocsBase || './', location.href)";
+  let code=String(source||'');
+
+  // Several hand/cloud helpers resolve assets from document.currentScript.
+  // Because V9 executes fetched source directly rather than via a cross-origin
+  // <script> tag, give those helpers the selected repository root explicitly.
+  code=code.replace(
+    /const selfUrl = document\.currentScript\?\.src \? new URL\(document\.currentScript\.src, location\.href\) : null;\s*const docsBase = selfUrl \? new URL\('\.\.\/', selfUrl\) : new URL\('\.\/', location\.href\);/g,
+    `const selfUrl = null;\n  const docsBase = ${docsExpr};`
+  );
+  code=code.replace(
+    /const selfUrl = document\.currentScript\?\.src \? new URL\(document\.currentScript\.src, location\.href\) : null;\s*const docsBase = selfUrl \? new URL\('\.\.\/', selfUrl\)\.href : new URL\('\.\/', location\.href\)\.href;/g,
+    `const selfUrl = null;\n  const docsBase = ${docsExpr}.href;`
+  );
+
+  // procedural-leg-animation already has a repository-tool override; the line
+  // remains untouched and reads __HobunjiProceduralFeetDocsBase.
+  return `${code}\n//# sourceURL=${runtimeUrl(path)}`;
+}
+async function executeRuntimeScript(path,index,total){
+  E.threeStatus.textContent=`Runtime ${index}/${total}: fetching ${path}…`;
+  const source=await fetchRuntimeSource(path);
+  E.threeStatus.textContent=`Runtime ${index}/${total}: starting ${path}…`;
+  try{
+    (0,eval)(patchRuntimeSource(path,source));
+  }catch(error){
+    throw new Error(`${path} threw during startup: ${error?.message||error}`);
+  }
+}
+function installCanonicalCloudMaskScale(){
+  // The live game wraps the ordinary destination-out portrait cloud mask with
+  // this exact 0.60 Y-scale + bottom-anchor compensation. Keep that behavior
+  // available even if the later arm-specific cloud helper elects not to wrap.
+  const original=window.applyPortraitOpacityMask;
+  if(typeof original!=='function'||original.__hobunjiCloudMaskYScaled)return;
+  const wrapped=function(ctx,image,xform={}){
+    const ax=Number(xform.ax)||0;
+    const sy=Number(xform.sy??xform.scaleY)||1;
+    const multiplier=.60;
+    const bottomAnchorCompensation=sy*(1-multiplier)/2;
+    return original(ctx,image,{
+      ...xform,
+      ax:ax-bottomAnchorCompensation,
+      sy:sy*multiplier,
+      scaleY:sy*multiplier
+    });
+  };
+  wrapped.__hobunjiCloudMaskYScaled=true;
+  window.applyPortraitOpacityMask=wrapped;
+}
+async function ensureRigRuntime(){
+  if(R.three.runtimeReadyPromise)return R.three.runtimeReadyPromise;
+  R.three.runtimeReadyPromise=(async()=>{
+    const docs=runtimeDocsBase();
+    R.three.runtimeDocsBase=docs;
+    window.__HobunjiRuntimeDocsBase=docs;
+    window.__HobunjiProceduralFeetDocsBase=docs;
+    window.__HobunjiHandBootstrapDocsBase=docs;
+
+    /*
+      Only load the actual modules needed by this reference.
+      V8 also loaded attachment-rig-latest-authored-snapshot.js, whose job is to
+      bootstrap additional authoring snapshots. config/attachment-rig-profiles.js
+      is already the canonical runtime master, so that extra nested loader is both
+      unnecessary here and was another place the standalone file could stall.
+    */
+    const coreScripts=[
+      'config/scratchbones-config.js',
+      'js/color-fill.js',
+      'config/attachment-rig-profiles.js',
+      'js/GLTFLoader.js',
+      'js/portrait-utils.js',
+      'js/npc-avatar-preview-utils.js',
+      'js/png-plane-avatar.js',
+      'js/leg-bones.js',
+      'js/procedural-leg-animation.js',
+      'config/hand-model-profiles.js',
+      'config/hand-shoulder-points.js',
+      'config/hand-shoulder-pose-profiles.js',
+      'js/procedural-hand-foot-material-roles.js',
+      'js/hand-tool-grips.js',
+      'js/hand-grip-modes.js',
+      'js/hand-shoulder-pose-runtime.js',
+      'js/portrait-arm-cloud-mask.js',
+      'js/portrait-hand-shoulder-scan.js',
+      'js/portrait-hand-shoulder-scan-species.js',
+      'js/procedural-hand-attachments.js',

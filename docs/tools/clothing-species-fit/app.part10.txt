@@ -1,75 +1,3 @@
-R.three.extendedGroup=extGroup}
-      }
-    }
-
-    R.three.group.add(rigGroup);
-    R.three.rigRoot=rigGroup;R.three.avatarModel=model;R.three.feet=feet;
-
-    // Match the full-character preview contract used elsewhere in the repository.
-    const scale=window.HobunjiCharacterRigScale?.scaleFor?.(E.species.value,E.gender.value)||null;
-    window.HobunjiCharacterRigScale?.applyToParent?.(rigGroup,E.species.value,E.gender.value,scale,0);
-    window.ProceduralHandFrameDriver?.syncNow?.();
-
-    rigGroup.updateMatrixWorld(true);
-    R.three.group.rotation.set(R.three.rotX,R.three.rotY,0);
-    frameRuntimeRig();
-    const cloud=R.speciesCfg.get(E.species.value)?.[E.gender.value]?.portraitOpacityMaskLayer?.url?'arm cloud cut active':'no species arm cloud cut'; // The full-portrait cloud mask was removed; the species layer only shapes the arm cut.
-    const handState=model.userData?.proceduralHandRig?'hands attached':'hands queued';
-    E.threeStatus.textContent=`Runtime rig: portrait + neck + ${handState} + feet + ${cloud}${R.extendedGroup?' + extended overlay':''}.`;
-  }catch(error){
-    if(buildId!==R.three.buildGeneration)return;
-    console.error(error);E.threeStatus.textContent='Runtime rig preview failed: '+error.message;log('3D RUNTIME ERROR '+error.message);
-  }
-}
-function scheduleThreePreview(delay=90){
-  clearTimeout(R.three.buildTimer);
-  R.three.buildTimer=setTimeout(()=>updateThreePreview(),delay);
-}
-function render(){
-  if(!R.body)return;
-  sizeStage();C.setTransform(1,0,0,1,0,0);C.clearRect(0,0,E.stage.width,E.stage.height);C.imageSmoothingEnabled=false;
-  if(E.showBody.checked)C.drawImage(R.body,0,0);
-
-  if(mode==='transform'||mode==='fit'||mode==='preview'){
-    R.warped=currentWarp();
-    if(R.warped&&E.showGarment.checked){
-      C.save();C.globalAlpha=+E.opacity.value;C.drawImage(R.warped,0,0);C.restore();
-    }
-  }
-
-  if(E.showAuthored.checked&&R.authoredTargetCloth){
-    C.save();
-    C.globalAlpha=+E.authoredOpacity.value;
-    C.drawImage(R.authoredTargetCloth,0,0); // Existing hand-authored target-species art overlays the experimental warp for visual matching.
-    C.restore();
-  }
-
-  if(E.showMeshes.checked){
-    drawGrid(C,SOURCE_GRID,'#ffb84a',false); // Fixed Mao-ao source.
-    drawGrid(C,transformedSourceGrid(),'#65d48a',mode==='transform'); // Recorded scale + translation.
-    if(mode!=='transform')drawGrid(C,targetGrid(),'#45c3ff',mode!=='preview'); // Base transform plus local fit.
-  }
-
-  E.label.textContent=
-    mode==='transform'
-      ?`Base Transform • ${garmentRecord()?.label||''} • ${E.species.options[E.species.selectedIndex]?.text||E.species.value} ${E.gender.value}`
-      :mode==='body'
-        ?`Grid only • ${E.species.options[E.species.selectedIndex]?.text||E.species.value} ${E.gender.value}`
-        :mode==='fit'
-          ?`Species Fit • ${garmentRecord()?.label||''} • Mao-ao ${E.gender.value} → ${E.species.options[E.species.selectedIndex]?.text||E.species.value}`
-          :`Preview • recorded base transform + local 6×6 deformation applied to ${garmentRecord()?.label||''}`;
-
-  refreshHelp();refreshDebug();scheduleThreePreview();
-}
-function refreshHelp(){
-  E.help.textContent=
-    mode==='transform'
-      ?'First fit overall size and position: independent Scale X / Scale Y plus translation. Drag the canvas to translate quickly.'
-      :mode==='body'
-        ?'Edit only the local target 6×6 corrections without clothing.'
-        :mode==='fit'
-          ?'Now drag BLUE points for local shape corrections on top of the recorded global transform.'
-          :'Switch garments to verify the same saved global transform and local corrections are reused.';
   E.modeBtns.forEach(b=>b.classList.toggle('active',b.dataset.mode===mode));
 }
 function refreshDebug(){
@@ -94,13 +22,16 @@ function refreshDebug(){
     `stage: ${E.stage.width}x${E.stage.height}`,
     `body sources: ${(R.body?._paths||[]).join(' | ')}`,
     `garment sources: ${(R.cloth?._paths||[]).join(' | ')}`,
+    `main workflow source: ${R.patchWorkflow.active?'PATCHED '+(R.patchWorkflow.descriptor?.label||R.patchWorkflow.descriptor?.sourceUrl||'source'):'repository garment'}`,
+    `main workflow route semantics: ${routedPatchIsBody()?'selected-species body patch → Base Transform + 6×6 fit → isolated canonical body layer → rear base body → clothing':routedPatchIsClothing()?'clothing source + patch → Base Transform + 6×6 fit → garment plane':'repository garment'}`,
+    `main workflow body tint slot: ${routedPatchIsBody()?routedBodyTintSlot(R.patchWorkflow.descriptor):'(n/a)'}`,
+    `main workflow body overlay target: ${routedPatchIsBody()?(targetBodyLayerRecord(R.patchWorkflow.descriptor)?.url||'(unresolved)'):'(n/a)'}`,
+    `main workflow patch: ${R.patchWorkflow.active?(R.patchWorkflow.patchName||'(unnamed)'):'(none)'}`,
     `authored target available: ${!!R.authoredTargetCloth}`,
     `authored target sources: ${(R.authoredTargetCloth?._paths||[]).join(' | ')}`,
     `extended imports: ${importedExtendedLayers().map(x=>x.name).join(' | ')||'(none)'}`,
     `extended source: ${R.extendedSource?`${R.extendedSource.width}x${R.extendedSource.height}`:'(none)'}`,
     `extended warped: ${R.extendedWarped?`${R.extendedWarped.width}x${R.extendedWarped.height}`:'(none)'}`,
-    `extended source mode: ${R.extendedSource?R.extendedSource._overlayMode:'(none)'}`,
-    `extended cutoff: ${R.extendedSource?R.extendedSource._cutoffY:'(none)'}`,
     `3D runtime docs: ${R.three.runtimeDocsBase||'(not loaded yet)'}`,
     `3D runtime rig: ${R.three.rigRoot?.name||'(not built yet)'}`,
     `cloud mask: ${R.speciesCfg.get(E.species.value)?.[E.gender.value]?.portraitOpacityMaskLayer?.url||'(none)'}`,
@@ -117,4 +48,90 @@ function pointer(e){
 }
 function nearest(points,p){
   const px=toDisplayPixels(points,E.stage.width,E.stage.height);let best=-1,bd=Infinity;
-  px.forEach((q,i)=>{const d=Math.hypo
+  px.forEach((q,i)=>{const d=Math.hypot(q.x-p.x,q.y-p.y);if(d<bd){bd=d;best=i}});
+  return bd<=HIT_RADIUS?best:-1;
+}
+function editable(){return mode==='fit'||mode==='body'}
+let transformDrag=null;
+E.stage.addEventListener('pointerdown',e=>{
+  if(mode==='transform'){
+    const p=pointer(e),tr=currentTransform();
+    pushUndo();transformDrag={x:p.x,y:p.y,translateX:tr.translateX,translateY:tr.translateY};
+    E.stage.setPointerCapture(e.pointerId);e.preventDefault();return;
+  }
+  if(!editable())return;
+  const index=nearest(targetGrid(),pointer(e));if(index<0)return;
+  dragIndex=index;dragSnapshotTaken=false;E.stage.setPointerCapture(e.pointerId);e.preventDefault();
+});
+E.stage.addEventListener('pointermove',e=>{
+  if(mode==='transform'&&transformDrag){
+    const p=pointer(e),tr=currentTransform();
+    tr.translateX=transformDrag.translateX+(p.x-transformDrag.x);
+    tr.translateY=transformDrag.translateY+(p.y-transformDrag.y);
+    saveState();syncTransformControls();render();e.preventDefault();return;
+  }
+  if(dragIndex==null||!editable())return;
+  if(!dragSnapshotTaken){pushUndo();dragSnapshotTaken=true}
+  const p=pointer(e),baseGrid=transformedSourceGrid(),offsets=currentOffsets();
+  const desired={
+    x:Math.max(-0.5,Math.min(1.5,p.x/(E.stage.width-1))),
+    y:Math.max(-0.5,Math.min(1.5,p.y/(E.stage.height-1)))
+  };
+  offsets[dragIndex]={x:desired.x-baseGrid[dragIndex].x,y:desired.y-baseGrid[dragIndex].y};
+  saveState();render();e.preventDefault();
+});
+function endDrag(e){
+  dragIndex=null;dragSnapshotTaken=false;transformDrag=null;
+  if(e?.pointerId!=null&&E.stage.hasPointerCapture?.(e.pointerId))E.stage.releasePointerCapture(e.pointerId);
+}
+E.stage.addEventListener('pointerup',endDrag);E.stage.addEventListener('pointercancel',endDrag);
+
+function resetTarget(){
+  pushUndo();A.localOffsets[targetKey(E.species.value,E.gender.value)]=zeroOffsets();saveState();render();log('Reset local 6×6 corrections; base transform preserved.');
+}
+function resetBaseTransform(){
+  pushUndo();A.baseTransforms[targetKey(E.species.value,E.gender.value)]=defaultTransform();saveState();syncTransformControls();render();log('Reset recorded base scale and translation.');
+}
+function setTransformField(field,value){
+  const n=Number(value);if(!Number.isFinite(n))return;
+  currentTransform()[field]=n;saveState();syncTransformControls();render();
+}
+function wireTransformPair(slider,number,field){
+  slider.addEventListener('pointerdown',()=>pushUndo(),{passive:true});
+  number.addEventListener('focus',()=>pushUndo(),{passive:true});
+  slider.addEventListener('input',()=>setTransformField(field,slider.value));
+  number.addEventListener('input',()=>setTransformField(field,number.value));
+}
+function resetMaskTransform(){
+  pushUndo();
+  A.maskPreviewTransforms[targetKey(E.species.value,E.gender.value)]=defaultMaskTransform();
+  R.three.portraitCache.clear();
+  saveState();syncMaskTransformControls();render();log('Reset cloud mask preview transform.');
+}
+function setMaskField(field,value){
+  const tr=currentMaskTransform(),n=Number(value);
+  if(!Number.isFinite(n))return;
+  tr[field]=n;
+  R.three.portraitCache.clear();
+  saveState();syncMaskTransformControls();render();
+}
+function wireMaskPair(slider,number,field){
+  slider.addEventListener('pointerdown',()=>pushUndo(),{passive:true});
+  number.addEventListener('focus',()=>pushUndo(),{passive:true});
+  slider.addEventListener('input',()=>setMaskField(field,slider.value));
+  number.addEventListener('input',()=>setMaskField(field,number.value));
+}
+
+function exportGrids(){
+  const payload={version:3,gridSize:GRID_SIZE,exportedAt:new Date().toISOString(),repoBase:base(),baseTransforms:A.baseTransforms,localOffsets:A.localOffsets,maskPreviewTransforms:A.maskPreviewTransforms};
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download='hobunji_6x6_species_clothing_transforms.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
+function parseDiagnostics(text){
+  const readLine=(name)=>{
+    const match=String(text).match(new RegExp(`^${name}:\\s*(.+)$`,'m'));
+    return match?.[1]?.trim()||'';
+  };
+  if(!/^gridSize:\s*6x6\s*$/m.test(text))throw new Error('Paste the complete diagnostics block from the 6×6 clothing editor.');
+  if(!/^warp model:\s*bilinear 6x6 quads\s*$/m.test(text))throw new Error('The pasted report is not from the supported bilinear 6×6 editor.');

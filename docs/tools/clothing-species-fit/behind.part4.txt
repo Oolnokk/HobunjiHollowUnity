@@ -1,0 +1,131 @@
+  patchTransform.x=drag.startX+(point.x-drag.x);patchTransform.y=drag.startY+(point.y-drag.y);
+  writeTransform();renderPreviews();event.preventDefault();
+}
+function endPatchDrag(event){
+  drag=null;
+  if(event?.pointerId!=null&&ui.sourcePreview.hasPointerCapture?.(event.pointerId))ui.sourcePreview.releasePointerCapture(event.pointerId);
+}
+
+function basename(path){
+  return String(path||'sprite.png').replace(/[?#].*$/,'').split('/').pop()||'sprite.png'; // Extracts a safe filename from config URLs.
+}
+function splitExtension(name){
+  const match=String(name).match(/^(.*?)(\.[^.]+)?$/);return{stem:match?.[1]||name,ext:match?.[2]||'.png'}; // Keeps PNG extension handling centralized.
+}
+function outputNameFor(descriptor){
+  const basis=basename(descriptor.targetUrl||descriptor.sourceUrl);
+  const {stem}=splitExtension(basis);
+  if(descriptor.kind==='body'){
+    const bodyMatch=stem.match(/^(torso|arm-L|arm-R)(_.+)$/i);
+    if(bodyMatch)return `${bodyMatch[1]}-behind${bodyMatch[2]}.png`; // Mirrors the repo's existing head-behind_* naming style for new body rear art.
+    return `${stem}-behind.png`;
+  }
+  if(/(^|[-_])front($|[-_])/i.test(stem))return `${stem.replace(/(^|[-_])front(?=$|[-_])/i,'$1back')}.png`; // Existing clothing configs commonly pair -front/-back rasters.
+  return `${stem}-back.png`;
+}
+function outputRepoPathFor(descriptor,outputName){
+  const target=descriptor.targetUrl||descriptor.sourceUrl||'';
+  const normalized=String(target).replace(/^\.\//,'').replace(/^assets\//,'');
+  const slash=normalized.lastIndexOf('/');
+  return slash>=0?`${normalized.slice(0,slash+1)}${outputName}`:outputName; // Manifest path is relative to docs/assets when the source config uses an asset URL.
+}
+
+function cloneTransform(transform){return{x:transform.x,y:transform.y,scaleX:transform.scaleX,scaleY:transform.scaleY}}
+
+function saveCurrentJob(){
+  if(!currentSource||!patch){renderStatus('Load a corrective PNG before saving this behind sprite.');return}
+  const descriptor={...currentSource.descriptor,layerPath:[...(currentSource.descriptor.layerPath||[])]}; // Snapshot survives later garment/source selection changes.
+  const key=descriptor.id; // One saved job per exact source layer; saving again replaces the older patch.
+  const job={
+    key,
+    descriptor,
+    baseCanvas:currentSource.canvas,
+    patchCanvas:patch.canvas,
+    patchName:patch.name,
+    transform:cloneTransform(patchTransform),
+    fitState:api.captureFitState?.()||null, // Used when this saved job is later baked, even after the editor has changed species or fit values.
+    outputName:outputNameFor(descriptor)
+  };
+  const index=batch.findIndex(item=>item.key===key);
+  if(index>=0)batch[index]=job;else batch.push(job);
+  renderJobs();
+  renderStatus(`Saved ${job.outputName} to the ZIP batch with fit ${job.fitState?.key||'(current)'} base ${JSON.stringify(job.fitState?.transform||{})}.`);
+}
+
+function clearBatch(){
+  batch=[];renderJobs();renderStatus('Cleared behind-sprite ZIP batch.'); // Does not discard the current patch or source preview.
+}
+
+function renderJobs(note=''){
+  if(!ui)return;
+  const lines=[`ZIP batch: ${batch.length||'empty'}`];
+  for(const job of batch)lines.push(`• ${job.outputName} ← ${job.descriptor.label} + ${job.patchName} • ${job.fitState?.key||'(legacy fit)'} ${JSON.stringify(job.fitState?.transform||{})}`);
+  if(note)lines.push(note);
+  ui.jobs.textContent=lines.join('\n');
+  setDisabledState();
+}
+
+function canvasToPngBytes(canvas){
+  return new Promise((resolve,reject)=>{
+    canvas.toBlob(async blob=>{
+      if(!blob){reject(new Error('Browser failed to encode the behind sprite as PNG.'));return}
+      resolve(new Uint8Array(await blob.arrayBuffer())); // Encoded PNG bytes can be stored directly in the ZIP.
+    },'image/png');
+  });
+}
+function downloadBlob(blob,name){
+  const url=URL.createObjectURL(blob); // Temporary browser-local URL triggers a normal mobile/desktop download.
+  const anchor=document.createElement('a');anchor.href=url;anchor.download=name;document.body.appendChild(anchor);anchor.click();anchor.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),2000);
+}
+
+async function exportCurrentPng(){
+  if(!currentSource||!patch){renderStatus('Choose a source and corrective patch first.');return}
+  try{
+    const fitState=api.captureFitState?.()||null;
+    const output=currentFinishedBehindOutput(fitState);
+    const blob=await new Promise((resolve,reject)=>output.toBlob(value=>value?resolve(value):reject(new Error('PNG encoding failed.')),'image/png'));
+    const name=outputNameFor(currentSource.descriptor);
+    downloadBlob(blob,name);
+    const bodyMode=currentSource.descriptor?.kind==='body'; // Used only for the user-visible mobile export diagnostic below.
+    api.logMessage(`Exported behind sprite ${name}${bodyMode?' (body untouched; patch warped)':''}.`);
+    renderStatus(`Exported ${name}.${bodyMode?' Body pixels were copied 1:1; only the corrective patch was transformed/warped.':''}`);
+  }catch(error){reportError(error)}
+}
+
+function crc32(bytes){
+  let crc=0xffffffff; // ZIP-standard CRC-32 over one stored member.
+  for(let index=0;index<bytes.length;index++)crc=crcTable[(crc^bytes[index])&0xff]^(crc>>>8);
+  return(crc^0xffffffff)>>>0;
+}
+function dosDateTime(date){
+  const year=Math.max(1980,date.getFullYear()); // ZIP timestamp fields use DOS local date/time.
+  return{
+    time:((date.getHours()&31)<<11)|((date.getMinutes()&63)<<5)|((Math.floor(date.getSeconds()/2))&31),
+    day:(((year-1980)&127)<<9)|(((date.getMonth()+1)&15)<<5)|(date.getDate()&31)
+  };
+}
+function writeU16(view,offset,value){view.setUint16(offset,value&0xffff,true)}
+function writeU32(view,offset,value){view.setUint32(offset,value>>>0,true)}
+function makeLocalHeader(nameBytes,dataBytes,crc,stamp){
+  const header=new Uint8Array(30+nameBytes.length); // Local file header for an uncompressed/stored member.
+  const view=new DataView(header.buffer);
+  writeU32(view,0,0x04034b50);writeU16(view,4,20);writeU16(view,6,0x0800);writeU16(view,8,0);
+  writeU16(view,10,stamp.time);writeU16(view,12,stamp.day);writeU32(view,14,crc);
+  writeU32(view,18,dataBytes.length);writeU32(view,22,dataBytes.length);writeU16(view,26,nameBytes.length);writeU16(view,28,0);
+  header.set(nameBytes,30);return header;
+}
+function makeCentralHeader(nameBytes,dataBytes,crc,stamp,localOffset){
+  const header=new Uint8Array(46+nameBytes.length); // Central-directory record pointing back to the member's local header.
+  const view=new DataView(header.buffer);
+  writeU32(view,0,0x02014b50);writeU16(view,4,20);writeU16(view,6,20);writeU16(view,8,0x0800);writeU16(view,10,0);
+  writeU16(view,12,stamp.time);writeU16(view,14,stamp.day);writeU32(view,16,crc);
+  writeU32(view,20,dataBytes.length);writeU32(view,24,dataBytes.length);writeU16(view,28,nameBytes.length);
+  writeU16(view,30,0);writeU16(view,32,0);writeU16(view,34,0);writeU16(view,36,0);writeU32(view,38,0);writeU32(view,42,localOffset);
+  header.set(nameBytes,46);return header;
+}
+function buildStoredZip(entries){
+  const localParts=[],centralParts=[],stamp=dosDateTime(new Date()); // PNGs are already compressed, so store them without wasteful recompression.
+  let localOffset=0,centralSize=0;
+  for(const entry of entries){
+    const nameBytes=zipEncoder.encode(entry.name),checksum=crc32(entry.bytes);

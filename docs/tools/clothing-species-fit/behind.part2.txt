@@ -1,0 +1,136 @@
+    add:section.querySelector('#behindPatchAdd'),png:section.querySelector('#behindPatchPng'), // Saves a job or exports the current result.
+    zip:section.querySelector('#behindPatchZip'),clear:section.querySelector('#behindPatchClear'), // Packages all saved jobs or empties the queue.
+    status:section.querySelector('#behindPatchStatus'),jobs:section.querySelector('#behindPatchJobs') // In-tool mobile diagnostics and queue summary.
+  };
+
+  ui.kind.addEventListener('change',()=>{api.clearMainWorkflowPatch?.();refreshCatalog(true)});
+  ui.route.addEventListener('change',syncMainWorkflowRoute);
+  ui.source.addEventListener('change',()=>{api.clearMainWorkflowPatch?.();loadSelectedSource()});
+  const preparePatchPicker=()=>{if(!exporting)ui.file.value=''}; // Clearing before the chooser opens guarantees Android/mobile browsers emit change even when replacing with the same filename.
+  ui.file.addEventListener('pointerdown',preparePatchPicker);
+  ui.file.addEventListener('click',preparePatchPicker);
+  ui.file.addEventListener('change',importPatch);
+  ui.clearCurrent.addEventListener('click',clearCurrentPatch);
+  for(const input of [ui.x,ui.y,ui.scaleX,ui.scaleY])input.addEventListener('input',readTransformAndRender);
+  ui.reset.addEventListener('click',resetPatchPlacement);
+  ui.fit.addEventListener('click',fitPatchToBase);
+  ui.add.addEventListener('click',saveCurrentJob);
+  ui.png.addEventListener('click',exportCurrentPng);
+  ui.zip.addEventListener('click',exportBatchZip);
+  ui.clear.addEventListener('click',clearBatch);
+  ui.sourcePreview.addEventListener('pointerdown',startPatchDrag);
+  ui.sourcePreview.addEventListener('pointermove',movePatchDrag);
+  ui.sourcePreview.addEventListener('pointerup',endPatchDrag);
+  ui.sourcePreview.addEventListener('pointercancel',endPatchDrag);
+}
+
+function coreKey(info){return `${info.targetSpecies||''}::${info.gender||''}`} // One ZIP batch may only use one species+gender deformation grid.
+
+function syncFromCore(){
+  if(!api||!ui)return;
+  const info=api.getOutputInfo();
+  const nextKey=coreKey(info);
+  if(targetKey&&nextKey!==targetKey&&batch.length){
+    batch=[]; // Prevents previously saved sprites from silently being deformed with a newly selected target grid.
+    renderJobs('Target species/gender changed; cleared the ZIP batch so old jobs cannot export with the wrong fit.');
+  }
+  if(nextKey!==targetKey){
+    targetKey=nextKey;
+    refreshCatalog(false);
+  }else{
+    const garmentId=info.garmentId||'';
+    if(ui.kind.value==='clothing'&&ui.section.dataset.garmentId!==garmentId)refreshCatalog(false);
+  }
+  setDisabledState();
+  if(!exporting)renderStatus();
+}
+
+function refreshCatalog(forceSelect){
+  if(!api||!ui)return;
+  sourceLoadGeneration++; // Invalidates any source image still loading for the previous species/gender/garment.
+  const info=api.getOutputInfo();
+  targetKey=coreKey(info);
+  ui.section.dataset.garmentId=info.garmentId||'';
+  const prior=forceSelect?'':ui.source.value;
+  catalog=(api.getBehindPatchCatalog()||[]).filter(item=>item.kind===ui.kind.value&&item.view!=='back'); // Existing dedicated rear layers are not offered as front-art sources.
+  ui.source.innerHTML='';
+  for(const item of catalog){
+    const option=document.createElement('option'); // Shows exact layer identity and target pairing availability.
+    option.value=item.id;
+    option.textContent=`${item.label}${item.targetUrl?'':' • no exact target counterpart'}`;
+    ui.source.appendChild(option);
+  }
+  if(prior&&catalog.some(item=>item.id===prior))ui.source.value=prior;
+  currentSource=null;
+  api.clearMainWorkflowPatch?.(); // Never leave the previous layer routed while target/garment/source selection is changing.
+  if(ui.source.value)loadSelectedSource();else renderPreviews();
+  renderStatus();
+}
+
+async function loadSelectedSource(){
+  if(!ui.source.value){currentSource=null;renderPreviews();renderStatus();return}
+  const generation=++sourceLoadGeneration; // Captures this exact species/gender/source request; only the latest request may become currentSource.
+  const requestedId=ui.source.value;
+  setBusyStatus('Loading existing source layer…');
+  try{
+    const loaded=await api.loadBehindPatchSource(requestedId); // Loads exact source pixels through the editor's repository resolver.
+    if(generation!==sourceLoadGeneration||requestedId!==ui.source.value)return;
+    currentSource=loaded;
+    renderPreviews();
+    renderStatus();
+  }catch(error){
+    if(generation!==sourceLoadGeneration)return;
+    currentSource=null;
+    reportError(error);
+  }
+}
+
+function loadLocalPng(file){
+  return new Promise((resolve,reject)=>{
+    if(!file||(!/\.png$/i.test(file.name)&&file.type!=='image/png')){reject(new Error('Corrective patch must be a PNG.'));return}
+    const url=URL.createObjectURL(file); // Local patch never leaves the browser.
+    const image=new Image(); // Browser decoder preserves the source alpha channel.
+    image.onload=()=>{
+      URL.revokeObjectURL(url);
+      const canvas=document.createElement('canvas'); // Native patch pixels are retained for compositing.
+      canvas.width=image.naturalWidth||image.width;canvas.height=image.naturalHeight||image.height;
+      const context=canvas.getContext('2d',{alpha:true});context.imageSmoothingEnabled=false;context.drawImage(image,0,0);
+      resolve({name:file.name,canvas,width:canvas.width,height:canvas.height});
+    };
+    image.onerror=()=>{URL.revokeObjectURL(url);reject(new Error(`Could not decode ${file.name}.`))};
+    image.src=url;
+  });
+}
+
+async function importPatch(){
+  const file=ui.file.files?.[0]||null;
+  if(!file)return;
+  const generation=++patchImportGeneration; // Only the newest picker result is allowed to replace the current patch.
+  const priorName=patch?.name||'';
+  setBusyStatus(priorName?`Replacing ${priorName} with ${file.name}…`:`Loading corrective patch ${file.name}…`);
+  try{
+    const nextPatch=await loadLocalPng(file); // Decode first so a failed replacement never destroys the currently working patch.
+    if(generation!==patchImportGeneration)return; // A newer selection won the race while this image was decoding.
+    patch=nextPatch;
+    resetPatchPlacement(false);
+    if(!currentSource&&ui.source.value)await loadSelectedSource(); // If the layer selector is already populated, resolve it now so routing can activate immediately.
+    if(generation!==patchImportGeneration)return;
+    renderPreviews();
+    renderStatus(priorName?`Replaced ${priorName} with ${file.name}.`:`Loaded ${file.name}.`);
+    api.logMessage(`${priorName?'Replaced':'Loaded'} behind-sprite corrective patch: ${priorName?`${priorName} → `:''}${file.name}`);
+  }catch(error){
+    if(generation===patchImportGeneration)reportError(error);
+  }finally{
+    if(generation===patchImportGeneration)ui.file.value='';
+  }
+}
+function clearCurrentPatch(){
+  patchImportGeneration++; // Invalidates any in-flight file decode before clearing state.
+  const priorName=patch?.name||'';
+  patch=null;
+  ui.file.value='';
+  resetPatchPlacement(false);
+  api.clearMainWorkflowPatch?.();
+  renderPreviews();
+  renderStatus(priorName?`Cleared ${priorName}. Choose another corrective PNG at any time.`:'No corrective patch is loaded.');
+  if(priorName)api.logMessage(`Cleared behind-sprite corrective patch: ${priorName}`);

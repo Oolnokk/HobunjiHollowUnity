@@ -1,38 +1,3 @@
-)downloadCanvas(c,`${safeName(E.species.value)}_${E.gender.value}_extended_overlay.png`);
-}
-function reset3DView(){
-  if(!ensureThreePreview())return;
-  R.three.rotX=0;R.three.rotY=0;
-  R.three.group.rotation.set(0,0,0);
-  if(R.three.rigRoot)frameRuntimeRig();
-  else{R.three.zoom=3;R.three.camera.position.set(0,.5,3);R.three.camera.lookAt(0,.45,0)}
-}
-
-function patchNodeAtPath(root,path){
-  let node=root; // Resolves the equivalent layer inside the target-species garment variant.
-  for(const key of path||[]){node=node?.[key];if(node==null)break}
-  return node||null;
-}
-function collectPatchImageNodes(node,path=[],out=[]){
-  if(!node||typeof node!=='object')return out;
-  if(node.image?.url)out.push({path:[...path],url:node.image.url,role:node.layerRole||'',drawSlot:node.drawSlot||'',attachBone:node.attachBone||''});
-  for(const [key,value] of Object.entries(node)){
-    if(key==='image')continue;
-    if(value&&typeof value==='object')collectPatchImageNodes(value,[...path,key],out);
-  }
-  return out;
-}
-function inferPatchView(path,url){
-  const hint=`${(path||[]).join(' ')} ${url||''}`.toLowerCase();
-  return /(^|[\s_./-])(back|behind|rear)([\s_./-]|$)/.test(hint)?'back':'front';
-}
-function behindPatchCatalog(){
-  const gender=E.gender.value,targetSpecies=E.species.value;
-  const items=[]; // Exact source layers available to the behind-sprite patch author.
-  const garment=garmentRecord();
-  if(garment){
-    const sourceVariant=garment.cfg?.speciesVariants?.[`mao-ao_${gender}`]||null;
-    const targetVariant=garment.cfg?.speciesVariants?.[`${targetSpecies}_${gender}`]||null;
     for(const [index,leaf] of collectPatchImageNodes(sourceVariant).entries()){
       const targetNode=targetVariant?patchNodeAtPath(targetVariant,leaf.path):null;
       const labelPath=leaf.path.join(' › ')||`layer ${index+1}`;
@@ -54,23 +19,24 @@ function behindPatchCatalog(){
     }
   }
 
-  const sourceBody=R.speciesCfg.get('mao-ao')?.[gender]?.portraitBodyLayers||[];
   const targetBody=R.speciesCfg.get(targetSpecies)?.[gender]?.portraitBodyLayers||[];
-  for(const [index,layer] of sourceBody.entries()){
-    const targetLayer=targetBody.find(candidate=>candidate?.id&&candidate.id===layer?.id)||targetBody[index]||null;
+  const targetSpeciesLabel=E.species.options[E.species.selectedIndex]?.text||targetSpecies; // Used in the body-patch selector so species changes are visible immediately rather than continuing to read Mao-ao.
+  for(const [index,layer] of targetBody.entries()){
     if(!layer?.url)continue;
     items.push({
       id:`body:${gender}:${layer.id||index}`,
       kind:'body',
       layerId:layer.id||`layer${index+1}`,
-      label:`Body • ${layer.id||`layer ${index+1}`} • Mao-ao ${gender}`,
-      sourceSpecies:'mao-ao',
+      label:`Body • ${layer.id||`layer ${index+1}`} • ${targetSpeciesLabel} ${gender}`,
+      sourceSpecies:targetSpecies,
       targetSpecies,
       gender,
       sourceUrl:layer.url,
-      targetUrl:targetLayer?.url||null,
+      targetUrl:layer.url,
       role:layer.id||'',
-      view:'front'
+      tintSlot:layer?.tintSlot||'A',
+      view:'front',
+      nativeBodyPatch:true
     });
   }
   return items;
@@ -85,9 +51,24 @@ async function loadBehindPatchSource(id){
   canvas._paths=[descriptor.sourceUrl];
   return{descriptor,canvas};
 }
-function warpBehindPatchCanvas(sourceCanvas){
+function warpBehindPatchCanvas(sourceCanvas,fitState=null){
   if(!sourceCanvas||!R.body)throw new Error('The clothing species-fit editor is not ready to deform a behind sprite yet.');
-  return warpGarment(sourceCanvas,targetGrid(),R.body.width,R.body.height); // Uses the final base transform + local 6×6 fit, never an intermediate display mode.
+  return warpGarment(sourceCanvas,fitState?targetGridFromFitState(fitState):targetGrid(),R.body.width,R.body.height); // Export callers can pin the exact base transform + 6×6 fit active when the job was authored.
+}
+function setMainWorkflowPatch(sourceCanvas,meta={}){
+  if(!sourceCanvas)throw new Error('Cannot route an empty patch source into the main workflow.');
+  R.patchWorkflow={
+    active:true,canvas:sourceCanvas,descriptor:meta.descriptor||null,
+    filename:String(meta.filename||''),patchName:String(meta.patchName||''),revision:(R.patchWorkflow.revision||0)+1
+  }; // Clothing receives a source+patch composite; body receives patch-only pixels. Both are routed through the same live transform/6×6 warp before avatar assembly.
+  E.clothPng.textContent=meta?.descriptor?.kind==='body'?'Export warped body patch PNG':'Export patched clothing-back PNG';
+  render();
+}
+function clearMainWorkflowPatch(){
+  if(!R.patchWorkflow.active&&!R.patchWorkflow.canvas)return;
+  R.patchWorkflow={active:false,canvas:null,descriptor:null,filename:'',patchName:'',revision:(R.patchWorkflow.revision||0)+1};
+  E.clothPng.textContent='Export fitted clothing PNG';
+  render();
 }
 function behindPatchOutputInfo(){
   return{
@@ -106,6 +87,9 @@ window.ClothingSpeciesFitTool=Object.freeze({
   getBehindPatchCatalog:behindPatchCatalog,
   loadBehindPatchSource,
   warpBehindPatchCanvas,
+  captureFitState,
+  setMainWorkflowPatch,
+  clearMainWorkflowPatch,
   getOutputInfo:behindPatchOutputInfo,
   logMessage:message=>log(String(message||''))
 }); // Narrow bridge for behind-sprite-patch.js; repository loading and deformation math remain owned by the core editor.
@@ -117,25 +101,24 @@ E.showAuthored.onchange=render;E.authoredOpacity.oninput=render;
 E.extTorsoFile.onchange=()=>importExtendedRole('torso',E.extTorsoFile.files?.[0]||null);
 E.extTorsoClothingFile.onchange=()=>importExtendedRole('torsoClothing',E.extTorsoClothingFile.files?.[0]||null);
 E.extOverwearFile.onchange=()=>importExtendedRole('overwear',E.extOverwearFile.files?.[0]||null);
-E.extUseCutoff.onchange=rebuildExtendedImportsFromControls;
-E.extCutoffY.oninput=rebuildExtendedImportsFromControls;
-E.extCutoffYNumber.oninput=rebuildExtendedImportsFromControls;
 E.showExtended3D.onchange=render;E.clearExtended.onclick=clearExtendedImports;E.downloadExtended.onclick=downloadExtendedWarp;E.retry3D.onclick=resetRuntimeLoad;E.reset3D.onclick=reset3DView;
 E.reset.onclick=resetTarget;E.resetTransform.onclick=resetBaseTransform;E.resetMaskTransform.onclick=resetMaskTransform;
 wireTransformPair(E.scaleX,E.scaleXNumber,'scaleX');wireTransformPair(E.scaleY,E.scaleYNumber,'scaleY');
 wireTransformPair(E.translateX,E.translateXNumber,'translateX');wireTransformPair(E.translateY,E.translateYNumber,'translateY');
 wireMaskPair(E.maskScaleX,E.maskScaleXNumber,'scaleX');wireMaskPair(E.maskScaleY,E.maskScaleYNumber,'scaleY');wireMaskPair(E.maskTranslateY,E.maskTranslateYNumber,'translateY');
 E.undo.onclick=()=>{if(!undoStack.length)return;redoStack.push(snapshot());restore(undoStack.pop());syncHistory()};
+E.undo.onclick=()=>{if(!undoStack.length)return;redoStack.push(snapshot());restore(undoStack.pop());syncHistory()};
 E.redo.onclick=()=>{if(!redoStack.length)return;undoStack.push(snapshot());restore(redoStack.pop());syncHistory()};
 E.bodyPng.onclick=()=>R.body&&downloadCanvas(bodyOut(),`${safeName(E.species.value)}_${E.gender.value}_body.png`);
-E.clothPng.onclick=()=>{const c=clothOut();if(c)downloadCanvas(c,`${safeName(E.garment.value)}_${safeName(E.species.value)}_${E.gender.value}.png`)};
+E.clothPng.onclick=()=>{const fit=captureFitState(),c=clothOut(fit);if(c){downloadCanvas(c,fittedClothingFilename());log(`Fitted clothing PNG baked ${fit.key} base ${JSON.stringify(fit.transform)} + ${fit.offsets.length} local offsets.`)}};
 E.overlayPng.onclick=()=>R.body&&downloadCanvas(overlayOut(),`${safeName(E.garment.value)}_${safeName(E.species.value)}_${E.gender.value}_overlay.png`);
 E.exportJson.onclick=exportGrids;E.importJson.onclick=()=>E.file.click();
 E.file.onchange=async()=>{const f=E.file.files?.[0];if(!f)return;try{await importGrids(f)}catch(error){log('ERROR '+error.message)}E.file.value=''};
+E.importDiagnostics.onclick=importPastedDiagnostics;
 E.copyDebug.onclick=async()=>{try{await navigator.clipboard.writeText(E.debug.textContent);log('Diagnostics copied.')}catch(error){log('Clipboard unavailable: '+error.message)}};
 
 if(A.settings?.repo)E.repo.value=A.settings.repo;
 if(A.settings?.gender)E.gender.value=A.settings.gender;
 if(!['transform','body','fit','preview'].includes(mode))mode='transform';
-syncHistory();refreshHelp();syncExtendedCutoffControls();updateExtendedStatus();ensureThreePreview();syncMaskTransformControls();loadRepositoryData();
+syncHistory();refreshHelp();updateExtendedStatus();ensureThreePreview();syncMaskTransformControls();loadRepositoryData();
 })();

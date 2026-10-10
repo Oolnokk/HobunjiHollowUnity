@@ -1,81 +1,62 @@
-t(q.x-p.x,q.y-p.y);if(d<bd){bd=d;best=i}});
-  return bd<=HIT_RADIUS?best:-1;
-}
-function editable(){return mode==='fit'||mode==='body'}
-let transformDrag=null;
-E.stage.addEventListener('pointerdown',e=>{
-  if(mode==='transform'){
-    const p=pointer(e),tr=currentTransform();
-    pushUndo();transformDrag={x:p.x,y:p.y,translateX:tr.translateX,translateY:tr.translateY};
-    E.stage.setPointerCapture(e.pointerId);e.preventDefault();return;
-  }
-  if(!editable())return;
-  const index=nearest(targetGrid(),pointer(e));if(index<0)return;
-  dragIndex=index;dragSnapshotTaken=false;E.stage.setPointerCapture(e.pointerId);e.preventDefault();
-});
-E.stage.addEventListener('pointermove',e=>{
-  if(mode==='transform'&&transformDrag){
-    const p=pointer(e),tr=currentTransform();
-    tr.translateX=transformDrag.translateX+(p.x-transformDrag.x);
-    tr.translateY=transformDrag.translateY+(p.y-transformDrag.y);
-    saveState();syncTransformControls();render();e.preventDefault();return;
-  }
-  if(dragIndex==null||!editable())return;
-  if(!dragSnapshotTaken){pushUndo();dragSnapshotTaken=true}
-  const p=pointer(e),baseGrid=transformedSourceGrid(),offsets=currentOffsets();
-  const desired={
-    x:Math.max(-0.5,Math.min(1.5,p.x/(E.stage.width-1))),
-    y:Math.max(-0.5,Math.min(1.5,p.y/(E.stage.height-1)))
-  };
-  offsets[dragIndex]={x:desired.x-baseGrid[dragIndex].x,y:desired.y-baseGrid[dragIndex].y};
-  saveState();render();e.preventDefault();
-});
-function endDrag(e){
-  dragIndex=null;dragSnapshotTaken=false;transformDrag=null;
-  if(e?.pointerId!=null&&E.stage.hasPointerCapture?.(e.pointerId))E.stage.releasePointerCapture(e.pointerId);
-}
-E.stage.addEventListener('pointerup',endDrag);E.stage.addEventListener('pointercancel',endDrag);
 
-function resetTarget(){
-  pushUndo();A.localOffsets[targetKey(E.species.value,E.gender.value)]=zeroOffsets();saveState();render();log('Reset local 6×6 corrections; base transform preserved.');
-}
-function resetBaseTransform(){
-  pushUndo();A.baseTransforms[targetKey(E.species.value,E.gender.value)]=defaultTransform();saveState();syncTransformControls();render();log('Reset recorded base scale and translation.');
-}
-function setTransformField(field,value){
-  const n=Number(value);if(!Number.isFinite(n))return;
-  currentTransform()[field]=n;saveState();syncTransformControls();render();
-}
-function wireTransformPair(slider,number,field){
-  slider.addEventListener('pointerdown',()=>pushUndo(),{passive:true});
-  number.addEventListener('focus',()=>pushUndo(),{passive:true});
-  slider.addEventListener('input',()=>setTransformField(field,slider.value));
-  number.addEventListener('input',()=>setTransformField(field,number.value));
-}
-function resetMaskTransform(){
-  pushUndo();
-  A.maskPreviewTransforms[targetKey(E.species.value,E.gender.value)]=defaultMaskTransform();
-  R.three.portraitCache.clear();
-  saveState();syncMaskTransformControls();render();log('Reset cloud mask preview transform.');
-}
-function setMaskField(field,value){
-  const tr=currentMaskTransform(),n=Number(value);
-  if(!Number.isFinite(n))return;
-  tr[field]=n;
-  R.three.portraitCache.clear();
-  saveState();syncMaskTransformControls();render();
-}
-function wireMaskPair(slider,number,field){
-  slider.addEventListener('pointerdown',()=>pushUndo(),{passive:true});
-  number.addEventListener('focus',()=>pushUndo(),{passive:true});
-  slider.addEventListener('input',()=>setMaskField(field,slider.value));
-  number.addEventListener('input',()=>setMaskField(field,number.value));
+  const targetKeyText=readLine('target grid');
+  const identity=targetKeyText.match(/^(.+)_(male|female)$/);
+  if(!identity)throw new Error('Could not read the target species and gender from “target grid”.');
+  const [,species,gender]=identity;
+  const garment=readLine('garment');
+  if(!garment||garment==='(none)')throw new Error('The pasted report does not identify a garment.');
+
+  let transform;
+  try{transform=JSON.parse(readLine('base transform'))}catch{throw new Error('Could not parse the base transform JSON.');}
+  for(const key of ['scaleX','scaleY','translateX','translateY']){
+    if(!Number.isFinite(Number(transform?.[key])))throw new Error(`The base transform is missing a valid ${key}.`);
+  }
+
+  const section=text.split('source→target points:')[1]?.split('recent log:')[0];
+  if(!section)throw new Error('The report is missing its source→target point list.');
+  const points=new Array(GRID_SIZE*GRID_SIZE);
+  const pointPattern=/^\s*(\d+):\s*\(([-+\d.eE]+),([-+\d.eE]+)\)\s*->\s*\(([-+\d.eE]+),([-+\d.eE]+)\)\s*$/gm;
+  let match;
+  while((match=pointPattern.exec(section))){
+    const index=Number(match[1]),sx=Number(match[2]),sy=Number(match[3]),x=Number(match[4]),y=Number(match[5]);
+    if(index<0||index>=points.length||points[index])throw new Error(`Point ${index} is duplicated or outside the 6×6 grid.`);
+    const expectedX=(index%GRID_SIZE)/(GRID_SIZE-1),expectedY=Math.floor(index/GRID_SIZE)/(GRID_SIZE-1);
+    if(![sx,sy,x,y].every(Number.isFinite)||Math.abs(sx-expectedX)>.002||Math.abs(sy-expectedY)>.002)
+      throw new Error(`Point ${index} is invalid or does not match the 6×6 source grid.`);
+    if(Math.abs(x)>10||Math.abs(y)>10)throw new Error(`Point ${index} is outside the supported coordinate range.`);
+    points[index]={x,y};
+  }
+  const receivedPointCount=points.filter(Boolean).length;
+  if(receivedPointCount!==points.length)throw new Error(`The report contains ${receivedPointCount} of 36 required grid points.`);
+
+  let maskTransform=null;
+  const maskLine=readLine('cloud mask preview');
+  if(maskLine){try{maskTransform=JSON.parse(maskLine)}catch{}}
+  return{species,gender,garment,transform,points,maskTransform};
 }
 
-function exportGrids(){
-  const payload={version:3,gridSize:GRID_SIZE,exportedAt:new Date().toISOString(),repoBase:base(),baseTransforms:A.baseTransforms,localOffsets:A.localOffsets,maskPreviewTransforms:A.maskPreviewTransforms};
-  const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');
-  a.href=url;a.download='hobunji_6x6_species_clothing_transforms.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+async function importPastedDiagnostics(){
+  try{
+    const imported=parseDiagnostics(E.diagnosticsInput.value);
+    if(!R.speciesCfg.size||!R.garments.length)throw new Error('Wait for repository data to finish loading, then import the pasted report.');
+    if(![...E.species.options].some(option=>option.value===imported.species))throw new Error(`Target species “${imported.species}” is not available in the loaded repository.`);
+    if(![...E.garment.options].some(option=>option.value===imported.garment))throw new Error(`Garment “${imported.garment}” is not available in the loaded repository.`);
+
+    pushUndo();
+    E.gender.value=imported.gender;E.species.value=imported.species;E.garment.value=imported.garment;
+    R.body=null;R.maoBody=null;R.cloth=null;R.authoredTargetCloth=null; // Prevent a failed reload from exporting the previously selected sprite.
+    await refreshAssets();
+    if(!R.body||!R.cloth)throw new Error('Could not load the selected body and source garment; check repository access and try again.');
+
+    const key=ensureTargetData(imported.species,imported.gender);
+    A.baseTransforms[key]={...imported.transform};
+    const baseGrid=transformedSourceGrid();
+    A.localOffsets[key]=imported.points.map((point,index)=>({x:point.x-baseGrid[index].x,y:point.y-baseGrid[index].y}));
+    if(imported.maskTransform&&['scaleX','scaleY','translateY'].every(name=>Number.isFinite(Number(imported.maskTransform[name]))))
+      A.maskPreviewTransforms[key]={...imported.maskTransform};
+    mode='fit';saveState();syncTransformControls();syncMaskTransformControls();render();syncHistory();
+    log(`Imported pasted fit for ${imported.garment} → ${imported.species} ${imported.gender}. Export fitted clothing PNG when ready.`);
+  }catch(error){log('ERROR '+error.message);status('Pasted fit not imported: '+error.message)}
 }
 
 async function importGrids(file){
@@ -108,13 +89,41 @@ function clearExtendedImports(){
   E.extTorsoFile.value='';E.extTorsoClothingFile.value='';E.extOverwearFile.value='';
   updateExtendedStatus();render();log('Cleared all imported extended overlay sprites.');
 }
-function rebuildExtendedImportsFromControls(){
-  syncExtendedCutoffControls();
-  if(importedExtendedLayers().length)rebuildExtendedSource();
-  else updateExtendedStatus();
-  render();
-}
 function downloadExtendedWarp(){
   if(!R.extendedSource){log('No extended overlay imported.');return}
   const c=warpExtendedOverlay(R.extendedSource,targetGrid(),R.body.width,R.body.height);
-  if(c
+  if(c)downloadCanvas(c,`${safeName(E.species.value)}_${E.gender.value}_extended_overlay.png`);
+}
+function reset3DView(){
+  if(!ensureThreePreview())return;
+  R.three.rotX=0;R.three.rotY=0;
+  R.three.group.rotation.set(0,0,0);
+  if(R.three.rigRoot)frameRuntimeRig();
+  else{R.three.zoom=3;R.three.camera.position.set(0,.5,3);R.three.camera.lookAt(0,.45,0)}
+}
+
+function patchNodeAtPath(root,path){
+  let node=root; // Resolves the equivalent layer inside the target-species garment variant.
+  for(const key of path||[]){node=node?.[key];if(node==null)break}
+  return node||null;
+}
+function collectPatchImageNodes(node,path=[],out=[]){
+  if(!node||typeof node!=='object')return out;
+  if(node.image?.url)out.push({path:[...path],url:node.image.url,role:node.layerRole||'',drawSlot:node.drawSlot||'',attachBone:node.attachBone||''});
+  for(const [key,value] of Object.entries(node)){
+    if(key==='image')continue;
+    if(value&&typeof value==='object')collectPatchImageNodes(value,[...path,key],out);
+  }
+  return out;
+}
+function inferPatchView(path,url){
+  const hint=`${(path||[]).join(' ')} ${url||''}`.toLowerCase();
+  return /(^|[\s_./-])(back|behind|rear)([\s_./-]|$)/.test(hint)?'back':'front';
+}
+function behindPatchCatalog(){
+  const gender=E.gender.value,targetSpecies=E.species.value;
+  const items=[]; // Exact source layers available to the behind-sprite patch author.
+  const garment=garmentRecord();
+  if(garment){
+    const sourceVariant=garment.cfg?.speciesVariants?.[`mao-ao_${gender}`]||null;
+    const targetVariant=garment.cfg?.speciesVariants?.[`${targetSpecies}_${gender}`]||null;
