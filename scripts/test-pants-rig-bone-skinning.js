@@ -300,4 +300,14 @@ assert([out[2], out[5], out[8]].every(z => near(z, 0.012, 1e-6)), 'depth is carr
   assert(Core.solvePosteriorFit({ legBones: null, pantsBeltSpline: garment.pantsBeltSpline }, portraitBelt, { x: 0.5, y: 0.9 }, 0.06) !== undefined, 'missing bones never throw');
 }
 
+// ---- translate-only initial alignment (posterior fit) -----------------------------------
+{
+  const P = (x, y, z = 0.012) => ({ x, y, z });
+  const hipG = P(0.4, 0.3), kneeG = P(0.3, 0.32), hipR = P(0.5, 1), kneeR = P(0.5, 0.98);
+  const t = Core.alignBoneWithMotion(hipG, kneeG, hipR, kneeR, hipR, kneeR, { initial: 'translate', anchorFrom: hipG, anchorTo: hipR });
+  const p = { x: 0.35, y: 0.31, z: 0.012 };
+  const out = { x: t.m[0] * p.x + t.m[1] * p.y + t.m[2] * p.z + t.tx, y: t.m[3] * p.x + t.m[4] * p.y + t.m[5] * p.z + t.ty, z: t.m[6] * p.x + t.m[7] * p.y + t.m[8] * p.z + t.tz };
+  assert(near(out.x, 0.45) && near(out.y, 1.01) && near(out.z, 0.012), 'at rest the garment is only translated: shape, size and orientation come from the whole-sprite fit');
+}
+
 console.log('Pants rig bone skinning: PASS');
