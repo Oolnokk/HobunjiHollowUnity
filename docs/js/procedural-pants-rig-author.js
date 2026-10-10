@@ -116,10 +116,35 @@
     return fighter ? { speciesId: fighter.speciesId || fighter.id, gender: fighter.gender } : null;
   }
 
-  function syncAuthorToProceduralIdentity() {
+  // The species' posterior (hip pivot) height as a portrait-canvas y, so an unauthored species starts with its beltline there.
+  function posteriorPortraitYForModel(model) {
+    const Core = window.HobunjiPantsRig;
+    const plane = findPortraitPlane(model);
+    const nodes = findLegNodes(model);
+    const Runtime = plane ? deriveRuntime(model, plane) : null;
+    if (!Core?.portraitMapping || !plane || !nodes || !Runtime) return null;
+    const dimensions = portraitDimensions(model, plane);
+    const flipped = portraitsFlipped();
+    model.updateMatrixWorld?.(true);
+    plane.updateMatrixWorld?.(true);
+    const corner = (px, py) => {
+      const point = new Runtime.Vector3((flipped ? 0.5 - px : px - 0.5) * dimensions.width, (0.5 - py) * dimensions.height, 0.012);
+      plane.localToWorld(point);
+      model.worldToLocal(point);
+      return { x: point.x, y: point.y };
+    };
+    const mapping = Core.portraitMapping(corner(0, 0), corner(1, 0), corner(0, 1));
+    nodes.leftThigh.updateWorldMatrix?.(true, false);
+    const hip = new Runtime.Vector3().setFromMatrixPosition(nodes.leftThigh.matrixWorld);
+    model.worldToLocal(hip);
+    return Core.portraitPointForLocal(mapping, hip.x, hip.y).y;
+  }
+
+  function syncAuthorToProceduralIdentity(model = null) {
     const identity = selectedIdentity(); // Keeps portrait-belt authoring on the same species/gender as the live 3D avatar.
     if (!identity) return null;
-    authorApi()?.setCharacter?.(identity.speciesId, identity.gender);
+    const avatar = model || window.HobunjiGameplayBackdrop?.getAvatarModel?.() || null;
+    authorApi()?.setCharacter?.(identity.speciesId, identity.gender, avatar ? posteriorPortraitYForModel(avatar) : null);
     return identity;
   }
 
@@ -366,6 +391,7 @@
     }
     const origin = placeOnPlane(0, 0).clone(), across = placeOnPlane(1, 0).clone().sub(origin), down = placeOnPlane(0, 1).clone().sub(origin);
     const normal = across.cross(down).normalize(); // The portrait plane's normal in avatar-local space: legs that swing forward/back tilt the garment about it.
+    Core.sharpenWeights(weights, Math.min(8, Math.max(1, Number(character.weightSharpness) || 4))); // Strong initial 2D->3D alignment (see Core.sharpenWeights).
     return { geometry, basePositions, weights, bones2D, beltCenter, planeNormal: { x: normal.x, y: normal.y, z: normal.z } };
   }
 
@@ -479,7 +505,7 @@
       return;
     }
     const model = backdrop?.getAvatarModel?.(); // Exact avatar currently driven by Procedural Animation.
-    const identity = syncAuthorToProceduralIdentity();
+    const identity = syncAuthorToProceduralIdentity(model);
     const identityChanged = identityKey(identity) !== state.lastIdentityKey; // Triggers a new species/gender static fit and belt mapping.
     const modelChanged = model !== state.lastModel; // Triggers rebinding when Procedural Animation swaps its preview avatar.
     if (!model || !identity) {

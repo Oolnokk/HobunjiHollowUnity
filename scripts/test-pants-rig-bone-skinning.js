@@ -169,4 +169,30 @@ assert([out[2], out[5], out[8]].every(z => near(z, 0.012, 1e-6)), 'depth is carr
   assert(near(hanging.ankle.x, 0) && near(hanging.ankle.y, -0.4), 'a leg hanging straight down is not moved by any gain');
 }
 
+// ---- weight sharpening ---------------------------------------------------------
+{
+  const w = new Float32Array([0.25, 0.49, 0.26, 0, 0,   1, 0, 0, 0, 0,   0.5, 0.5, 0, 0, 0]);
+  Core.sharpenWeights(w, 4);
+  const cellSum = v => w[v * 5] + w[v * 5 + 1] + w[v * 5 + 2] + w[v * 5 + 3] + w[v * 5 + 4];
+  assert([0, 1, 2].every(v => near(cellSum(v), 1, 1e-6)), 'cells stay normalized');
+  assert(w[1] > 0.8 && w[0] < 0.1, 'a 49% bone vertex becomes strongly bone-weighted');
+  assert(near(w[5], 1) && near(w[10], 0.5) && near(w[11], 0.5), 'pure and even cells are unchanged');
+  const same = new Float32Array([0.3, 0.7, 0, 0, 0]);
+  Core.sharpenWeights(same, 1);
+  assert(near(same[0], 0.3, 1e-6) && near(same[1], 0.7, 1e-6), 'power 1 leaves weights as painted');
+}
+
+// ---- portrait mapping + species default beltline ----------------------------------
+{
+  const mapping = Core.portraitMapping({ x: -0.45, y: 0.5 }, { x: 0.45, y: 0.5 }, { x: -0.45, y: -0.4 }); // 0.9 wide, y up on screen
+  const mid = Core.portraitPointForLocal(mapping, 0, 0.05);
+  assert(near(mid.x, 0.5) && near(mid.y, 0.5), 'the middle of the plane is the middle of the canvas');
+  const low = Core.portraitPointForLocal(mapping, 0, -0.4);
+  assert(near(low.y, 1), 'the bottom edge of the plane is canvas y = 1');
+  const belt = Core.defaultBeltAtPosterior(0.7);
+  assert(belt.length === 5 && belt.every(p => p.y >= 0.69 && p.y <= 0.7 + 1e-9), 'default belt sits at the posterior height');
+  assert(Core.defaultBeltAtPosterior(1.4).every(p => p.y <= 1), 'a posterior below the image rests on the image edge');
+  assert(Core.defaultBeltAtPosterior(NaN).every(p => Number.isFinite(p.y)), 'a missing posterior still yields a belt');
+}
+
 console.log('Pants rig bone skinning: PASS');

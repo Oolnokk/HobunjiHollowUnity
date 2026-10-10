@@ -416,6 +416,42 @@
     return { a, b, c, d, tx: tx0 - (a * fx + c * fy), ty: ty0 - (b * fx + d * fy), stretch, rotation };
   }
 
+  // Portrait-canvas (0..1, y down) <-> avatar-local mapping of the portrait plane, from the avatar-local positions of three
+  // canvas corners: origin (0,0), x-end (1,0), y-end (0,1). Returns {ox, oy, inv:[a,b,c,d]} where canvas = inv * (local - origin).
+  function portraitMapping(origin, xEnd, yEnd) {
+    const m00 = xEnd.x - origin.x, m01 = yEnd.x - origin.x, m10 = xEnd.y - origin.y, m11 = yEnd.y - origin.y;
+    const det = m00 * m11 - m01 * m10 || 1e-9;
+    return { ox: origin.x, oy: origin.y, inv: [m11 / det, -m01 / det, -m10 / det, m00 / det] };
+  }
+  function portraitPointForLocal(mapping, x, y) {
+    const dx = x - mapping.ox, dy = y - mapping.oy;
+    return { x: mapping.inv[0] * dx + mapping.inv[1] * dy, y: mapping.inv[2] * dx + mapping.inv[3] * dy };
+  }
+  // The default portrait beltline for a species whose beltline has not been authored: a level line at the species'
+  // posterior (hip pivot) height, given as a portrait y (0..1). Below the bottom of the image it rests on the image edge.
+  function defaultBeltAtPosterior(portraitY) {
+    const y = clamp(Number.isFinite(portraitY) ? portraitY : 0.86, 0.05, 1);
+    return [0.34, 0.42, 0.5, 0.58, 0.66].map((x, index) => ({ x, y: index === 2 ? Math.max(0, y - 0.003) : y }));
+  }
+
+  // Hardens painted weights so a vertex mostly follows its dominant bone: each weight is raised to `power` and the cell is
+  // renormalized (power 1 = as painted). Smooth auto-seeded/painted gradients leave vertices ON a leg bone only ~50%
+  // bone-weighted, which dilutes the garment's initial 2D->3D rotation so the leg openings do not end up centered on
+  // the 3D bone; sharpening makes that alignment dominate. In place; `weights` is `channelCount` floats per vertex.
+  function sharpenWeights(weights, power, channelCount = WEIGHT_CHANNELS.length) {
+    const p = Number.isFinite(power) && power > 1 ? power : 1;
+    if (p === 1) return weights;
+    const vertexCount = Math.floor(weights.length / channelCount);
+    for (let vertex = 0; vertex < vertexCount; vertex++) {
+      const base = vertex * channelCount;
+      let sum = 0;
+      for (let channel = 0; channel < channelCount; channel++) { const value = Math.pow(Math.max(0, weights[base + channel]), p); weights[base + channel] = value; sum += value; }
+      if (!(sum > 0)) { weights[base] = 1; continue; }
+      for (let channel = 0; channel < channelCount; channel++) weights[base + channel] /= sum;
+    }
+    return weights;
+  }
+
   // Exaggerates how far a live 3D leg swings sideways (rotation about the z axis, the one you see face-on) so the garment's
   // legs visibly follow it. Each bone (thigh, calf) is turned about z by (gain - 1) times its own angle from straight
   // down, hip first, the chain re-hung from the hip, so the thigh/calf still share one knee and lengths are unchanged.
@@ -577,6 +613,10 @@
     alignBoneSegment,
     alignBoneSegment3D,
     amplifyLegRoll,
+    sharpenWeights,
+    portraitMapping,
+    portraitPointForLocal,
+    defaultBeltAtPosterior,
     skinWeightedPositions,
     validateProject,
   });
