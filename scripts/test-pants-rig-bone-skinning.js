@@ -425,3 +425,11 @@ assert([out[2], out[5], out[8]].every(z => near(z, 0.012, 1e-6)), 'depth is carr
 }
 
 console.log('Pants rig bone skinning: PASS');
+
+{ // A belt that sags where the portrait's arches must not flip the garment vertically.
+  const sagging = [{ x: 0.35, y: 0.296 }, { x: 0.42, y: 0.31 }, { x: 0.5, y: 0.32 }, { x: 0.58, y: 0.31 }, { x: 0.65, y: 0.296 }];
+  const arched = [{ x: 0.36, y: 0.86 }, { x: 0.43, y: 0.86 }, { x: 0.5, y: 0.855 }, { x: 0.57, y: 0.86 }, { x: 0.64, y: 0.86 }];
+  const fit = Core.solveAffine(sagging, arched);
+  assert(fit.a * fit.d - fit.b * fit.c > 0, 'belt affine keeps the garment right way up');
+  assert(Core.applyAffine(fit, { x: 0.5, y: 0.65 }).y > Core.applyAffine(fit, { x: 0.5, y: 0.3 }).y, 'the hem stays below the waistband');
+}
