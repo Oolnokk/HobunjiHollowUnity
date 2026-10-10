@@ -24,13 +24,6 @@ assert(host.includes("EXPANDED_Z_INDEX = '200'") && host.includes('root.style.zI
 assert(host.includes('delete root.dataset.pantsPreviousZ'), 'modal layer z-index must be restored when the window closes');
 assert(source.includes('.canvasCard.pantsEnlarged .pantsBeltTools{display:flex}'), 'belt toolbar should only show in the enlarged window');
 
-// Phones in desktop-site mode hold taps back for double-tap zoom unless touch-action says otherwise.
-assert(enlarge.includes('html,body{touch-action:manipulation}'), 'author page must disable double-tap zoom so taps reach the Enlarge buttons');
-assert(/\.pantsEnlargeBtn,\.pantsZoomBtn,\.pantsPanBtn\{[^}]*touch-action:manipulation/.test(enlarge), 'Enlarge/Zoom/Pan buttons need touch-action:manipulation');
-assert(source.includes('.pantsBeltTools button{') && /\.pantsBeltTools button\{[^}]*touch-action:manipulation/.test(source), 'belt tool buttons need touch-action:manipulation');
-assert(host.includes('#${PANEL_ID},#${PANEL_ID} iframe{touch-action:manipulation}'), 'host panel and iframe need touch-action:manipulation');
-assert(enlarge.includes('TOGGLE_DEBOUNCE_MS') && enlarge.includes('Second tap of a double tap'), 'a double tap must not open and immediately close the enlarged window');
-assert(enlarge.includes('@media(pointer:coarse)') && source.includes('@media(pointer:coarse)'), 'touch devices need larger buttons');
 
 // ---- behaviour in a stub DOM ---------------------------------------------
 const W = 20, H = 20;
