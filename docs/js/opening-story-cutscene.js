@@ -143,12 +143,12 @@
   function buildRescueScene(records, profile) {
     const playerName = String(profile?.nickname || 'Farmer'); // Names the player stand-in in dialogue without depending on unresolved template tokens.
     const actors = [ // Reuses the Director's existing Gar-wolf Rescue cast and blocking.
-      { id: 'player', name: playerName, isPlayer: true, team: 'player', lc: 11, lr: 8, rotation: 270, pose: 'prone' },
+      { id: 'player', name: playerName, isPlayer: true, team: 'player', lc: 11, lr: 8, rotation: 270, pose: 'prone', lantern: true }, // Lantern flags light the player and the two rescuers via CutsceneLanternCarriers.
       { id: 'wolf1', name: 'Gar-wolf', creatureTypeId: 'gar-wolf', team: 'gar_wolves', lookAtActorId: 'player', lc: 9, lr: 9, rotation: 45, pose: 'standing' },
       { id: 'wolf2', name: 'Gar-wolf', creatureTypeId: 'gar-wolf', team: 'gar_wolves', lookAtActorId: 'player', lc: 13, lr: 9, rotation: 270, pose: 'standing' },
       { id: 'wolf3', name: 'Gar-wolf', creatureTypeId: 'gar-wolf', team: 'gar_wolves', lookAtActorId: 'player', lc: 11, lr: 6, rotation: 90, pose: 'standing' },
-      npcActor(records, { id: 'jubmir', name: 'Jubmir', npcId: 'jubmir', lookAtActorId: 'player', lc: 11, lr: 15, rotation: 0, pose: 'standing' }),
-      npcActor(records, { id: 'spearhead', name: 'Spearhead', npcId: 'spearhead_unumanuk', visible: false, lc: 16, lr: 0, rotation: 180, pose: 'standing' }),
+      npcActor(records, { id: 'jubmir', name: 'Jubmir', npcId: 'jubmir', lookAtActorId: 'player', lc: 11, lr: 15, rotation: 0, pose: 'standing', lantern: true }),
+      npcActor(records, { id: 'spearhead', name: 'Spearhead', npcId: 'spearhead_unumanuk', visible: false, lc: 16, lr: 0, rotation: 180, pose: 'standing', lantern: true }),
       { id: 'hound1', name: 'Dabinggi-hound', creatureTypeId: 'dabinggi-hound', team: 'dabinggi_hounds', lookAtActorId: 'player', lc: 9, lr: 15, rotation: 0, pose: 'standing' },
       { id: 'hound2', name: 'Dabinggi-hound', creatureTypeId: 'dabinggi-hound', team: 'dabinggi_hounds', lookAtActorId: 'player', lc: 13, lr: 15, rotation: 0, pose: 'standing' },
     ];

@@ -30508,6 +30508,7 @@
             }
           }
           entities.clear();
+          window.CutsceneLanternCarriers?.clear();
           furniturePlayback?.restore();
           currentArea = previousArea; // Hand synchronization must resolve the restored gameplay scene.
           window.CinematicCameraRuntime?.deactivate?.();
@@ -30781,6 +30782,7 @@
           if (!entity) entity = window.CutscenePreviewHelpers.cutscenePreviewMakePlaceholder(actor, area, targetScene);
           entity.root.visible = actor.visible !== false; // Authored entrances keep the real rig hidden until its reveal stage.
           entities.set(actor.id, entity);
+          if (actor.lantern) window.CutsceneLanternCarriers?.add(entity.root); // Lantern-carrying cutscene rigs light the scene through WeatherFX's lantern mask (docs/js/cutscene-lantern-carriers.js).
           if (entity.walker) await window.NpcHeldEquipment?.attachCutsceneWalker?.(entity.walker);
         }
 
@@ -31135,19 +31137,25 @@
           const speedMul = stage.speed === 'slow' ? 0.6 : stage.speed === 'fast' ? 1.85 : 1;
           const waitForArrival = stage.waitForArrival !== false;
           const tx = goal.c + 0.5, tz = goal.r + 0.5;
+          const seatMove = entity?.kind === 'npc' && !!entity.walker && st.seatTarget?.pose === 'sit' && st.seatTarget.c === goal.c && st.seatTarget.r === goal.r; // Walking onto the actor's own chair tile: the chair is the destination, not an obstacle.
+          const previousScheduleTarget = seatMove ? entity.walker.currentScheduleTarget : null;
+          if (seatMove) entity.walker.currentScheduleTarget = { pose: 'sit', c: goal.c, r: goal.r }; // Same seat-overlap exemption real schedule walkers get in npc-pathfinding.js (_walkerAllowsFurnitureOverlap).
           const navigation = stage.navigate
             ? (entity?.kind === 'npc' && window.NpcPathfinding?.findNpcPath
-              ? window.NpcPathfinding.findNpcPath(area, st.c + 0.5, st.r + 0.5, goal.c, goal.r, { padding: 10, maxNodes: 2200 })
+              ? window.NpcPathfinding.findNpcPath(area, st.c + 0.5, st.r + 0.5, goal.c, goal.r, { padding: 10, maxNodes: 2200, allowOccupiedTarget: seatMove })
               : window.TilePathfinding?.findPath(Math.round(st.c), Math.round(st.r), goal.c, goal.r,
                 (c, r) => isNpcTileWalkable(area, c, r), { bounds: window.TilePathfinding.boxAround(Math.round(st.c), Math.round(st.r), goal.c, goal.r, 8) }))
             : null; // NPC cutscenes use the same swept-edge planner as gameplay; other actor kinds retain the established tile planner.
           let waypoint = 0; // TilePathfinding excludes the start tile, so the first returned col/row hop must be visited.
           let lastT = performance.now();
           let arrivedAlready = false;
+          let stallPos = { x: st.c, z: st.r }, stallSince = lastT; // Watchdog: a blocking move that makes no progress must never freeze the whole scene.
+          const STALL_MS = 3000, STALL_EPS = 0.02;
           externallyDrivenActorIds.add(stage.actorId); // advanceActorToward below owns rotation until arrival
           const onArrive = () => {
             if (arrivedAlready) return;
             arrivedAlready = true;
+            if (seatMove && entity.walker.currentScheduleTarget?.pose === 'sit') entity.walker.currentScheduleTarget = previousScheduleTarget;
             externallyDrivenActorIds.delete(stage.actorId);
             // advanceActorToward's own "arrived" gate (TILE*0.12) is looser
             // than moveCreatureToward's internal one (a flat 1px), so the
@@ -31181,6 +31189,14 @@
             if (arrived) {
               if (navigation && waypoint < navigation.length - 1) waypoint++;
               else { onArrive(); return; }
+            }
+            if (Math.hypot(st.c - stallPos.x, st.r - stallPos.z) > STALL_EPS) { stallPos = { x: st.c, z: st.r }; stallSince = now; }
+            else if (now - stallSince > STALL_MS) { // Blocked by collision with no route: snap to the authored target and continue, and say so in the log.
+              report(`⚠️ ${stage.actorId} could not reach (${goal.c},${goal.r}) in "${stage.id}" — snapping to target so the scene can continue.`, false);
+              if (entity?.kind === 'npc' && entity.walker) { entity.root.position.x = tx; entity.root.position.z = tz; st.c = tx - 0.5; st.r = tz - 0.5; }
+              else { st.c = tx - 0.5; st.r = tz - 0.5; applyState(stage.actorId, 0); }
+              onArrive();
+              return;
             }
             requestAnimationFrame(step);
           };
