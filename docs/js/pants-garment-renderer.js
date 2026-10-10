@@ -339,7 +339,7 @@
       beltCenter: data.beltCenter, planeNormal: data.planeNormal,
       beltScale: Math.min(3.5, Math.max(1.7, Number(character.beltScale) || DEFAULT_BELT_SCALE)),
       legRollGain: Math.min(4, Math.max(1, Number(character.legRollGain) || 2)),
-      maskMapping: data.maskMapping, footLift, rest: null, restRaw: null, fitMode,
+      maskMapping: data.maskMapping, footLift, rest: null, restRaw: null, fitMode, rotationScale: { left: 1, right: 1 },
       maskUniforms: { uPantsDepthBias: { value: 0 }, uPantsMask: { value: null }, uPantsMaskOn: { value: 0 }, uPantsMaskO: { value: new THREE.Vector2(data.maskMapping.ox, data.maskMapping.oy) }, uPantsMaskInv: { value: new THREE.Vector4(...data.maskMapping.inv) } },
       scratch: makeScratch(THREE), appearance: { ...appearance, speciesId, gender, imageUrl }, renderToken: 0, ready: false, garment,
     };
@@ -431,6 +431,19 @@
           flat.x = raw[joint].x; flat.y = raw[joint].y; flat.z = handle.bones2D[side][joint].z; // Flat, at the portrait plane's depth.
         }
       }
+      // Damping: how far the garment reaches from each hip versus how long the leg is. A wide garment on short legs would be
+      // swung far around the hip by a small leg rotation, so the animation rotation is scaled by leg length / reach (min 0.2).
+      for (const side of ['left', 'right']) {
+        const hip = handle.rest[side].hip, base = handle.basePositions, weights = handle.weights;
+        const channels = side === 'left' ? [1, 2] : [3, 4];
+        let reach = 0;
+        for (let v = 0; v < base.length / 3; v++) {
+          if (weights[v * 5 + channels[0]] + weights[v * 5 + channels[1]] < 0.5) continue;
+          reach = Math.max(reach, Math.hypot(base[v * 3] - hip.x, base[v * 3 + 1] - hip.y));
+        }
+        const legLength = Math.hypot(handle.rest[side].ankle.x - hip.x, handle.rest[side].ankle.y - hip.y);
+        handle.rotationScale[side] = reach > 1e-6 ? Math.max(0.2, Math.min(1, legLength / reach)) : 1;
+      }
       handle.restCaptured = true;
     };
 
@@ -447,7 +460,7 @@
     };
     const boneTransform = (side, from, to, aim) => Core.alignBoneWithMotion(
       handle.bones2D[side][from], handle.bones2D[side][to], handle.rest[side][from], handle.rest[side][to], aim[side][from], aim[side][to],
-      { perpendicularScale: LEG_ACROSS_SCALE }); // (Core also offers initial: 'translate'; tried for the posterior fit, it flattened Tletingan into one band, so the full planar alignment stays.)
+      { perpendicularScale: LEG_ACROSS_SCALE, rotationScale: handle.rotationScale[side] }); // (Core also offers initial: 'translate'; tried for the posterior fit, it flattened Tletingan into one band, so the full planar alignment stays.)
 
     handle.update = () => {
       if (handle.disposed || !handle.mesh || !handle.model.parent) return;

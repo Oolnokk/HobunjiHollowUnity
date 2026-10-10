@@ -310,4 +310,19 @@ assert([out[2], out[5], out[8]].every(z => near(z, 0.012, 1e-6)), 'depth is carr
   assert(near(out.x, 0.45) && near(out.y, 1.01) && near(out.z, 0.012), 'at rest the garment is only translated: shape, size and orientation come from the whole-sprite fit');
 }
 
+// ---- rotation damping -------------------------------------------------------------------
+{
+  const P = (x, y, z = 0.012) => ({ x, y, z });
+  const g0 = P(0.2, 0.5), g1 = P(0.2, 0.3), r0 = P(0.5, 1), r1 = P(0.5, 0.8); // Garment bone already points the same way as the rest bone.
+  const a = 40 * Math.PI / 180;
+  const l1 = P(0.5, 1 - 0.2 * Math.cos(a), 0.012 + 0.2 * Math.sin(a));
+  const full = Core.alignBoneWithMotion(g0, g1, r0, r1, r0, l1);
+  const half = Core.alignBoneWithMotion(g0, g1, r0, r1, r0, l1, { rotationScale: 0.5 });
+  const none = Core.alignBoneWithMotion(g0, g1, r0, r1, r0, l1, { rotationScale: 0 });
+  const rot = t => Math.acos(Math.max(-1, Math.min(1, (t.m[0] + t.m[4] + t.m[8] - 1) / 2))); // Angle from the matrix trace (uniform scale 1 here).
+  assert(near(rot(full), a, 1e-6) && near(rot(half), a / 2, 1e-6) && near(rot(none), 0, 1e-6), 'rotationScale scales the animation angle');
+  const hipOut = (t, p) => ({ x: t.m[0] * p.x + t.m[1] * p.y + t.m[2] * p.z + t.tx, y: t.m[3] * p.x + t.m[4] * p.y + t.m[5] * p.z + t.ty, z: t.m[6] * p.x + t.m[7] * p.y + t.m[8] * p.z + t.tz });
+  assert(near(hipOut(half, g0).x, r0.x) && near(hipOut(half, g0).y, r0.y), 'the hip still follows the live hip when damped');
+}
+
 console.log('Pants rig bone skinning: PASS');
