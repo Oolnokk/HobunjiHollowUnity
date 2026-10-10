@@ -120,4 +120,34 @@ assert([out[2], out[5], out[8]].every(z => near(z, 0.012, 1e-6)), 'depth is carr
   assert(near(ankleOut[0], ankle3.x, 1e-6) && near(ankleOut[1], ankle3.y, 1e-6), 'the garment ankle lands on the 3D foot');
 }
 
+// ---- full 3D alignment: legs swinging about the x axis ----------------------
+{
+  const apply3 = (t, p) => ({ x: t.m[0] * p.x + t.m[1] * p.y + t.m[2] * p.z + t.tx, y: t.m[3] * p.x + t.m[4] * p.y + t.m[5] * p.z + t.ty, z: t.m[6] * p.x + t.m[7] * p.y + t.m[8] * p.z + t.tz });
+  const close3 = (p, q, eps = 1e-9) => near(p.x, q.x, eps) && near(p.y, q.y, eps) && near(p.z, q.z, eps);
+  const hip2 = { x: 0.1, y: 0.2, z: 0.012 }, knee2 = { x: 0.1, y: 0.1, z: 0.012 };
+  // The leg swings forward 40 degrees about the x axis: still 0.2 long in 3D, but its y extent shrinks and it gains z.
+  const angle = 40 * Math.PI / 180, length = 0.2;
+  const hip3 = { x: 0.5, y: 1, z: 0 }, knee3 = { x: 0.5, y: 1 - length * Math.cos(angle), z: length * Math.sin(angle) };
+  const t = Core.alignBoneSegment3D(hip2, knee2, hip3, knee3, { normal: { x: 0, y: 0, z: 1 } });
+  assert(close3(apply3(t, hip2), hip3) && close3(apply3(t, knee2), knee3), '3D bone ends land exactly on the live joints');
+  assert(near(t.stretch, 2) && near(t.rotation, angle, 1e-9), 'a 0.1 bone mapped to a 0.2 bone is a 2x stretch turned by the swing angle');
+  // The garment plane tilts with the leg: a point beside the bone stays beside it (x), and a point in front of the plane tilts too.
+  const beside = apply3(t, { x: 0.15, y: 0.2, z: 0.012 }); // 0.05 beside the hip, level with it.
+  assert(near(Math.hypot(beside.x - hip3.x, beside.y - hip3.y, beside.z - hip3.z), 0.05, 1e-9) && near(beside.x - hip3.x, 0.05, 1e-9), 'across the bone stays across it, at the same distance');
+  const front = apply3(t, { x: 0.1, y: 0.2, z: 0.012 + 0.05 });
+  assert(near(Math.hypot(front.x - hip3.x, front.y - hip3.y, front.z - hip3.z), 0.05, 1e-9), 'thickness (distance out of the plane) is kept');
+  // Leg flipped end for end must not produce NaN.
+  const flipped = Core.alignBoneSegment3D(hip2, knee2, { x: 0, y: 0, z: 0 }, { x: 0, y: 0.2, z: 0 });
+  assert(flipped.m.every(Number.isFinite) && close3(apply3(flipped, knee2), { x: 0, y: 0.2, z: 0 }));
+  // Skinning with a 3D transform moves z as well.
+  const baseV = new Float32Array([0.1, 0.1, 0.012]);
+  const outV = Core.skinWeightedPositions(baseV, new Float32Array([0, 1, 0, 0, 0]), [null, t, null, null, null], new Float32Array(3));
+  assert(near(outV[0], knee3.x, 1e-6) && near(outV[1], knee3.y, 1e-6) && near(outV[2], knee3.z, 1e-6), 'skinning carries depth with the swing');
+  // A 2D-only bone (z all equal) behaves like the planar version.
+  const planar = Core.alignBoneSegment({ x: 0.2, y: 0.3 }, { x: 0.2, y: 0.5 }, { x: 1, y: 1 }, { x: 1.5, y: 1.3 }, { perpendicularScale: 'balanced' });
+  const spatial = Core.alignBoneSegment3D({ x: 0.2, y: 0.3, z: 0 }, { x: 0.2, y: 0.5, z: 0 }, { x: 1, y: 1, z: 0 }, { x: 1.5, y: 1.3, z: 0 }, { perpendicularScale: 'balanced' });
+  const probe = { x: 0.3, y: 0.4, z: 0 };
+  assert(near(apply(planar, probe).x, apply3(spatial, probe).x, 1e-9) && near(apply(planar, probe).y, apply3(spatial, probe).y, 1e-9), 'in the plane the 3D transform equals the planar one');
+}
+
 console.log('Pants rig bone skinning: PASS');

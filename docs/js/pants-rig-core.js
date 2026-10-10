@@ -416,6 +416,61 @@
     return { a, b, c, d, tx: tx0 - (a * fx + c * fy), ty: ty0 - (b * fx + d * fy), stretch, rotation };
   }
 
+  // Full 3D version of alignBoneSegment: carries the garment's bone onto a live bone that can point anywhere in space, so
+  // a leg that swings forward or back (rotation about the x axis) tilts the garment with it instead of just shrinking in
+  // the flat picture. Points are {x,y,z}. `normal` is the garment plane's normal (default +z). The garment rotates by the
+  // shortest turn from its bone direction to the live one, then stretches along the bone to the live length and widens
+  // across it by `perpendicularScale` (the plane normal is left at 1 so the garment keeps its thickness).
+  // Returns {m: [9 row-major], tx, ty, tz, stretch, rotation}: p' = m * p + t.
+  function alignBoneSegment3D(fromStart, fromEnd, toStart, toEnd, { perpendicularScale = 1, normal = null } = {}) {
+    const f = [Number(fromStart?.x) || 0, Number(fromStart?.y) || 0, Number(fromStart?.z) || 0];
+    const t0 = [Number(toStart?.x) || 0, Number(toStart?.y) || 0, Number(toStart?.z) || 0];
+    const d2 = [(Number(fromEnd?.x) || 0) - f[0], (Number(fromEnd?.y) || 0) - f[1], (Number(fromEnd?.z) || 0) - f[2]];
+    const d3 = [(Number(toEnd?.x) || 0) - t0[0], (Number(toEnd?.y) || 0) - t0[1], (Number(toEnd?.z) || 0) - t0[2]];
+    const length2 = Math.hypot(d2[0], d2[1], d2[2]), length3 = Math.hypot(d3[0], d3[1], d3[2]);
+    if (length2 < MIN_BONE_LENGTH || length3 < MIN_BONE_LENGTH) {
+      return { m: [1, 0, 0, 0, 1, 0, 0, 0, 1], tx: t0[0] - f[0], ty: t0[1] - f[1], tz: t0[2] - f[2], stretch: 1, rotation: 0 };
+    }
+    const dot = (p, q) => p[0] * q[0] + p[1] * q[1] + p[2] * q[2];
+    const cross = (p, q) => [p[1] * q[2] - p[2] * q[1], p[2] * q[0] - p[0] * q[2], p[0] * q[1] - p[1] * q[0]];
+    const unit = p => { const l = Math.hypot(p[0], p[1], p[2]) || 1; return [p[0] / l, p[1] / l, p[2] / l]; };
+    const u2 = unit(d2), u3 = unit(d3);
+    let n2 = normal ? [Number(normal.x) || 0, Number(normal.y) || 0, Number(normal.z) || 0] : [0, 0, 1];
+    const along = dot(n2, u2);
+    n2 = [n2[0] - along * u2[0], n2[1] - along * u2[1], n2[2] - along * u2[2]];
+    if (Math.hypot(n2[0], n2[1], n2[2]) < 1e-6) n2 = Math.abs(u2[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0], n2 = [n2[0] - dot(n2, u2) * u2[0], n2[1] - dot(n2, u2) * u2[1], n2[2] - dot(n2, u2) * u2[2]];
+    n2 = unit(n2);
+    const p2 = cross(n2, u2); // In-plane direction across the bone.
+    const stretch = Math.max(MIN_STRETCH, Math.min(MAX_STRETCH, length3 / length2));
+    const across = perpendicularScale === 'balanced'
+      ? Math.sqrt(stretch)
+      : (Number.isFinite(perpendicularScale) && perpendicularScale > 0 ? perpendicularScale : 1);
+    const cosine = Math.max(-1, Math.min(1, dot(u2, u3)));
+    let R;
+    if (cosine < -0.999999) { // Bone flipped end for end: half turn about the across axis.
+      R = [2 * p2[0] * p2[0] - 1, 2 * p2[0] * p2[1], 2 * p2[0] * p2[2], 2 * p2[1] * p2[0], 2 * p2[1] * p2[1] - 1, 2 * p2[1] * p2[2], 2 * p2[2] * p2[0], 2 * p2[2] * p2[1], 2 * p2[2] * p2[2] - 1];
+    } else { // Rodrigues: shortest rotation taking u2 onto u3.
+      const v = cross(u2, u3), k = 1 / (1 + cosine);
+      R = [
+        1 - k * (v[1] * v[1] + v[2] * v[2]), -v[2] + k * v[0] * v[1], v[1] + k * v[0] * v[2],
+        v[2] + k * v[0] * v[1], 1 - k * (v[0] * v[0] + v[2] * v[2]), -v[0] + k * v[1] * v[2],
+        -v[1] + k * v[0] * v[2], v[0] + k * v[1] * v[2], 1 - k * (v[0] * v[0] + v[1] * v[1]),
+      ];
+    }
+    const S = new Array(9);
+    for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) S[row * 3 + col] = stretch * u2[row] * u2[col] + across * p2[row] * p2[col] + n2[row] * n2[col];
+    const m = new Array(9);
+    for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) m[row * 3 + col] = R[row * 3] * S[col] + R[row * 3 + 1] * S[3 + col] + R[row * 3 + 2] * S[6 + col];
+    return {
+      m,
+      tx: t0[0] - (m[0] * f[0] + m[1] * f[1] + m[2] * f[2]),
+      ty: t0[1] - (m[3] * f[0] + m[4] * f[1] + m[5] * f[2]),
+      tz: t0[2] - (m[6] * f[0] + m[7] * f[1] + m[8] * f[2]),
+      stretch,
+      rotation: Math.acos(cosine),
+    };
+  }
+
   // Linear-blend skinning of a flat vertex array in place. base/out: Float32Array xyz triples. weights:
   // Float32Array of `channelCount` normalized weights per vertex, in WEIGHT_CHANNELS order. transforms: one entry per
   // channel, an {a,b,c,d,tx,ty} affine or null for "stays rigid" (the belt). Depth (z) is carried through unchanged so
@@ -423,23 +478,30 @@
   function skinWeightedPositions(base, weights, transforms, out, channelCount = WEIGHT_CHANNELS.length) {
     const vertexCount = Math.floor(base.length / 3);
     for (let vertex = 0; vertex < vertexCount; vertex++) {
-      const x = base[vertex * 3], y = base[vertex * 3 + 1];
-      let ox = 0, oy = 0;
+      const x = base[vertex * 3], y = base[vertex * 3 + 1], z = base[vertex * 3 + 2];
+      let ox = 0, oy = 0, oz = 0;
       for (let channel = 0; channel < channelCount; channel++) {
         const weight = weights[vertex * channelCount + channel];
         if (!(weight > 0)) continue;
         const transform = transforms[channel];
-        if (transform) {
+        if (transform && transform.m) { // Full 3D bone transform from alignBoneSegment3D.
+          const m = transform.m;
+          ox += weight * (m[0] * x + m[1] * y + m[2] * z + transform.tx);
+          oy += weight * (m[3] * x + m[4] * y + m[5] * z + transform.ty);
+          oz += weight * (m[6] * x + m[7] * y + m[8] * z + transform.tz);
+        } else if (transform) { // Planar affine: depth carried through.
           ox += weight * (transform.a * x + transform.c * y + transform.tx);
           oy += weight * (transform.b * x + transform.d * y + transform.ty);
+          oz += weight * z;
         } else {
           ox += weight * x;
           oy += weight * y;
+          oz += weight * z;
         }
       }
       out[vertex * 3] = ox;
       out[vertex * 3 + 1] = oy;
-      out[vertex * 3 + 2] = base[vertex * 3 + 2];
+      out[vertex * 3 + 2] = oz;
     }
     return out;
   }
@@ -491,6 +553,7 @@
     kneeAtMidpoint,
     normalizeLegBones,
     alignBoneSegment,
+    alignBoneSegment3D,
     skinWeightedPositions,
     validateProject,
   });

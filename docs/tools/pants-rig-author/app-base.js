@@ -117,12 +117,12 @@ function ensureCharacter() {
     fighterId: state.fighter.id || '',
     portraitBeltSpline: defaultPortraitBelt(),
     legThickness: 1,
-    beltScale: 1,
+    beltScale: 1.75,
   };
   const record = state.project.characters[key]; // Active per-species/gender fitting record.
   record.portraitBeltSpline = Core.normalizeSpline(record.portraitBeltSpline, defaultPortraitBelt());
   if (!(Number(record.legThickness) > 0)) record.legThickness = 1;
-  if (!(Number(record.beltScale) > 0)) record.beltScale = 1;
+  record.beltScale = Core.clamp(Number(record.beltScale) || 1.75, 1.7, 3.5); // Anything below ~1.7 is too short to be useful, so that is the floor.
   return record;
 }
 
@@ -1022,7 +1022,7 @@ function wire() {
   });
   $('beltScale').addEventListener('input', () => { // Live 3D preview only: scales the belt-weighted pixels vertically about the beltline.
     const character = ensureCharacter();
-    character.beltScale = Number($('beltScale').value) || 1;
+    character.beltScale = Number($('beltScale').value) || 1.75;
     $('beltScaleValue').textContent = `${character.beltScale.toFixed(2)}×`;
     persistDraft();
   });
