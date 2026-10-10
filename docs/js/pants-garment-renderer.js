@@ -53,7 +53,7 @@
   function findPortraitPlane(model) {
     let preferred = null, fallback = null;
     model?.traverse?.(node => {
-      if (!node?.isMesh || node.userData?.hobunjiPantsGarment) return;
+      if (!node?.isMesh || node.userData?.hobunjiPantsGarment || node.userData?.hobunjiPantsPreview || node.userData?.hobunjiAppliedPantsPreview) return;
       if (!fallback && node.geometry) fallback = node;
       const face = String(node.userData?.hobunjiPlaneFace || '').toLowerCase();
       const name = String(node.name || '').toLowerCase();
@@ -190,21 +190,21 @@
 
   // How far in front of the portrait plane the procedural feet reach (avatar-local +z). The garment is lifted past that so
   // it draws over the foot models (x-ray through the feet) instead of being hidden behind them.
-  function footFrontLift(THREE, model, legHandle) {
-    const group = legHandle?.group;
-    if (!group) return 0;
-    group.updateMatrixWorld?.(true);
+  function footFrontLift(THREE, model, feet) {
     model.updateMatrixWorld?.(true);
-    const box = new THREE.Box3().setFromObject(group);
-    if (box.isEmpty()) return 0;
     const corner = new THREE.Vector3();
     let front = -Infinity;
-    for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) {
-      corner.set(x, y, z);
-      model.worldToLocal(corner);
-      front = Math.max(front, corner.z);
+    for (const foot of feet) {
+      foot.updateWorldMatrix?.(true, true);
+      const box = new THREE.Box3().setFromObject(foot);
+      if (box.isEmpty()) continue;
+      for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) {
+        corner.set(x, y, z);
+        model.worldToLocal(corner);
+        front = Math.max(front, corner.z);
+      }
     }
-    return Math.max(0, Math.min(0.3, front - 0.012 + 0.01));
+    return Number.isFinite(front) ? Math.max(0, Math.min(0.3, front - 0.012 + 0.01)) : 0;
   }
 
   function makeScratch(THREE) {
@@ -265,7 +265,7 @@
         if (rendered?.canvas) return rendered.canvas;
       } catch (_) { /* falls through to the plain PNG */ }
     }
-    const image = await loadImage(garmentImageUrl(garment));
+    const image = await loadImage(appearance.imageUrl || garmentImageUrl(garment));
     const canvas = document.createElement('canvas');
     canvas.width = image.naturalWidth || image.width || 1;
     canvas.height = image.naturalHeight || image.height || 1;
@@ -282,17 +282,18 @@
    * @param opts.appearance  {primaryHex, secondaryHex, patternHex, weaving}
    * @returns handle {update, setAppearance, dispose, mesh} or null when pants cannot be drawn for this avatar
    */
-  function attach(THREE, { avatarGroup, legHandle, speciesId, gender, garmentId = DEFAULT_GARMENT_ID, appearance = {}, name = 'pants', overlayMask = null } = {}) {
+  function attach(THREE, { avatarGroup, legHandle, speciesId, gender, garmentId = DEFAULT_GARMENT_ID, appearance = {}, name = 'pants', overlayMask = null, garmentRecord = null, characterRecord = null, imageUrl = null, footObjects = null } = {}) {
     const Core = core();
-    const garment = rigConfig().garments?.[garmentId];
-    let character = resolveCharacter(speciesId, gender);
+    const garment = garmentRecord || rigConfig().garments?.[garmentId]; // The editor passes its live, unsaved authoring records here.
+    let character = characterRecord || resolveCharacter(speciesId, gender);
     const plane = findPortraitPlane(avatarGroup);
     const nodes = findLegNodes(legHandle);
     if (!THREE || !Core || !garment || !character || !plane || !nodes) return null;
-    if (!hasAuthoredCharacter(speciesId, gender)) { // No authored beltline for this species: default to its posterior height (or the image edge if that is below the image).
+    if (!characterRecord && !hasAuthoredCharacter(speciesId, gender)) { // No authored beltline for this species: default to its posterior height (or the image edge if that is below the image).
       character = { ...character, portraitBeltSpline: Core.defaultBeltAtPosterior(posteriorPortraitY(THREE, avatarGroup, plane, nodes)) };
     }
-    const zLift = footFrontLift(THREE, avatarGroup, legHandle);
+    const feet = (footObjects || ['left_foot', 'right_foot'].map(foot => legHandle.group?.getObjectByName?.(foot))).filter(Boolean); // The procedural foot models.
+    const zLift = footFrontLift(THREE, avatarGroup, feet);
     const data = buildGarmentData(THREE, Core, avatarGroup, plane, garment, character, zLift);
     if (!data) return null;
     const handle = {
@@ -303,7 +304,7 @@
       legRollGain: Math.min(4, Math.max(1, Number(character.legRollGain) || 2)),
       maskMapping: data.maskMapping, zLift,
       maskUniforms: { uPantsMask: { value: null }, uPantsMaskOn: { value: 0 }, uPantsMaskO: { value: new THREE.Vector2(data.maskMapping.ox, data.maskMapping.oy) }, uPantsMaskInv: { value: new THREE.Vector4(...data.maskMapping.inv) } },
-      scratch: makeScratch(THREE), appearance: { ...appearance, speciesId, gender }, renderToken: 0, ready: false,
+      scratch: makeScratch(THREE), appearance: { ...appearance, speciesId, gender, imageUrl }, renderToken: 0, ready: false, garment,
     };
 
     const createMesh = canvas => {
@@ -338,6 +339,7 @@
         mesh.renderOrder = 28;
         mesh.frustumCulled = false;
         mesh.userData.hobunjiPantsGarment = true;
+        mesh.userData.hobunjiPantsPreview = true; // Also keeps the editor's Apply-to-NPC mesh builder from mistaking this for the portrait plane.
         avatarGroup.add(mesh);
         handle.mesh = mesh;
       } else {
@@ -387,6 +389,33 @@
       Core.skinWeightedPositions(handle.basePositions, handle.weights, transforms, position.array);
       position.needsUpdate = true;
       handle.geometry.computeBoundingSphere();
+    };
+
+    // Diagnostics: how exactly the garment's 2D bones land on the (roll-amplified) 3D bones this frame.
+    handle.alignmentReport = () => {
+      const measured = readLiveBones(handle);
+      const options = { perpendicularScale: LEG_ACROSS_SCALE, normal: handle.planeNormal };
+      const distance = (p, q) => Math.hypot(p.x - q.x, p.y - q.y, (p.z || 0) - (q.z || 0));
+      const through = (t, p) => ({ x: t.m[0] * p.x + t.m[1] * p.y + t.m[2] * p.z + t.tx, y: t.m[3] * p.x + t.m[4] * p.y + t.m[5] * p.z + t.ty, z: t.m[6] * p.x + t.m[7] * p.y + t.m[8] * p.z + t.tz });
+      const report = {};
+      for (const side of ['left', 'right']) {
+        const l = Core.amplifyLegRoll(measured[side], handle.legRollGain, { hip: {}, knee: {}, ankle: {} }), f = handle.bones2D[side];
+        const thigh = Core.alignBoneSegment3D(f.hip, f.knee, l.hip, l.knee, options);
+        const calf = Core.alignBoneSegment3D(f.knee, f.ankle, l.knee, l.ankle, options);
+        report[side] = {
+          length2D: { thigh: distance(f.hip, f.knee), calf: distance(f.knee, f.ankle) },
+          length3D: { thigh: distance(l.hip, l.knee), calf: distance(l.knee, l.ankle) },
+          stretch: { thigh: thigh.stretch, calf: calf.stretch },
+          kneeMidpointError3D: distance(l.knee, Core.kneeAtMidpoint(l.hip, l.ankle)),
+          hipError: distance(through(thigh, f.hip), l.hip),
+          kneeErrorThigh: distance(through(thigh, f.knee), l.knee),
+          kneeErrorCalf: distance(through(calf, f.knee), l.knee),
+          ankleError: distance(through(calf, f.ankle), l.ankle),
+          live3D: { hip: { ...l.hip }, knee: { ...l.knee }, ankle: { ...l.ankle } },
+          rest2D: { hip: { ...f.hip }, knee: { ...f.knee }, ankle: { ...f.ankle } },
+        };
+      }
+      return report;
     };
 
     handle.dispose = () => {
@@ -501,6 +530,7 @@
     appearanceFromBodyColors,
     ensureNpcPants,
     resolveCharacter,
+    posteriorPortraitYForAvatar: (THREE, avatarGroup, legGroup) => { const plane = findPortraitPlane(avatarGroup), nodes = findLegNodes({ group: legGroup }); return plane && nodes ? posteriorPortraitY(THREE, avatarGroup, plane, nodes) : null; },
     hasRigFor: (speciesId, gender, garmentId = DEFAULT_GARMENT_ID) => !!(rigConfig().garments?.[garmentId] && resolveCharacter(speciesId, gender)),
     debugSnapshot: () => ({ live: handles.size, garments: Object.keys(rigConfig().garments || {}), characters: Object.keys(rigConfig().characters || {}) }),
   });

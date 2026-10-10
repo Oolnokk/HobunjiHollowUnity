@@ -60897,6 +60897,8 @@ function prepareGameplayBackdropHost() {
     getCamera() { return state.three.camera; },
     getRenderer() { return state.three.renderer; },
     getAvatarModel() { return state.three.model; },
+    getFootObjects() { return [procedural.feet.left, procedural.feet.right].filter(Boolean); }, // The procedural foot models, so adapters can keep garments in front of them.
+    getThree() { return state.three.THREE; }, // Lets separately-loaded adapters (Pants) build meshes with the editor's own three namespace, which is a module import, not window.THREE.
     getProceduralMovement() { return structuredCloneSafe(animationExportObject()); },
     applyMovementPreset(name) { if (!MOVEMENT_PRESETS[name]) return false; applyAnimationPreset(name); return true; },
     setMovementPlayback(enabled) { setProceduralPlayback(enabled); },
