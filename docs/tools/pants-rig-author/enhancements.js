@@ -117,8 +117,9 @@ async function loadDefaultPantsAsset() {
   return true;
 }
 
-function setCharacter(speciesId, gender) {
+function setCharacter(speciesId, gender, defaultBeltY = null) {
   const state = editorState();
+  if (state) state.defaultBeltY = Number.isFinite(defaultBeltY) ? defaultBeltY : null; // Used only when this species has no authored beltline yet (see defaultPortraitBelt).
   const select = document.getElementById('fighter');
   if (!state || !select) return false;
   const species = normalizeSpecies(speciesId);

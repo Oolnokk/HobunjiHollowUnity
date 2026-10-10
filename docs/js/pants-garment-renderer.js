@@ -39,6 +39,17 @@
     return characters[characterKey(speciesId, gender)] || characters[FALLBACK_CHARACTER_KEY] || null;
   }
 
+  const hasAuthoredCharacter = (speciesId, gender) => !!(rigConfig().characters || {})[characterKey(speciesId, gender)];
+
+  // The species' posterior (hip pivot) height as a portrait-canvas y: the live thigh origin through the portrait plane.
+  function posteriorPortraitY(THREE, model, plane, nodes) {
+    const mapping = portraitMappingFor(THREE, model, plane);
+    nodes.leftThigh.updateWorldMatrix?.(true, false);
+    const hip = new THREE.Vector3().setFromMatrixPosition(nodes.leftThigh.matrixWorld);
+    model.worldToLocal(hip);
+    return core().portraitPointForLocal(mapping, hip.x, hip.y).y;
+  }
+
   function findPortraitPlane(model) {
     let preferred = null, fallback = null;
     model?.traverse?.(node => {
@@ -75,6 +86,21 @@
     return Object.values(nodes).every(Boolean) ? nodes : null;
   }
 
+  // Where the portrait canvas sits in avatar-local space (Core.portraitMapping of its corners), through the real plane.
+  function portraitMappingFor(THREE, model, plane) {
+    const dimensions = portraitDimensions(model, plane);
+    const flipped = portraitsFlipped();
+    model.updateMatrixWorld?.(true);
+    plane.updateMatrixWorld?.(true);
+    const corner = (px, py) => {
+      const point = new THREE.Vector3((flipped ? 0.5 - px : px - 0.5) * dimensions.width, (0.5 - py) * dimensions.height, 0.012);
+      plane.localToWorld(point);
+      model.worldToLocal(point);
+      return { x: point.x, y: point.y };
+    };
+    return core().portraitMapping(corner(0, 0), corner(1, 0), corner(0, 1));
+  }
+
   // Static part of the garment for one avatar: rest vertices, weights, 2D bones in avatar-local space.
   function buildGarmentData(THREE, Core, model, plane, garment, character, zLift = 0) {
     const transform = Core.solveAffine(garment.pantsBeltSpline, character.portraitBeltSpline);
@@ -103,13 +129,6 @@
       model.worldToLocal(placed);
       placed.z += zLift; // In front of the procedural feet's depth, so the garment reads over them (see footFrontLift).
       return placed;
-    };
-    const portraitToLocal = (px, py) => { // Plain portrait-canvas -> avatar-local mapping (no garment fit), for the overlay mask.
-      point.set((flipped ? 0.5 - px : px - 0.5) * dimensions.width, (0.5 - py) * dimensions.height, 0.012);
-      placed.copy(point);
-      plane.localToWorld(placed);
-      model.worldToLocal(placed);
-      return { x: placed.x, y: placed.y };
     };
     let vertex = 0;
     for (let row = 0; row <= SEGMENTS; row++) {
@@ -145,6 +164,7 @@
     geometry.setIndex(indices);
     geometry.getAttribute('position').setUsage?.(THREE.DynamicDrawUsage);
     geometry.computeBoundingSphere();
+    Core.sharpenWeights(weights, Math.min(8, Math.max(1, Number(character.weightSharpness) || 4))); // Strong initial 2D->3D alignment (see Core.sharpenWeights).
     const legBones = Core.normalizeLegBones(garment.legBones);
     const bones2D = {};
     for (const side of ['left', 'right']) {
@@ -164,10 +184,7 @@
     const across = placeOnPlane(1, 0).clone().sub(origin);
     const down = placeOnPlane(0, 1).clone().sub(origin);
     const normal = across.cross(down).normalize();
-    const o = portraitToLocal(0, 0), ex = portraitToLocal(1, 0), ey = portraitToLocal(0, 1);
-    const m00 = ex.x - o.x, m01 = ey.x - o.x, m10 = ex.y - o.y, m11 = ey.y - o.y;
-    const det = m00 * m11 - m01 * m10 || 1e-9;
-    const maskMapping = { ox: o.x, oy: o.y, inv: [m11 / det, -m01 / det, -m10 / det, m00 / det] }; // portrait px/py (0..1) = inv * (local - origin)
+    const maskMapping = portraitMappingFor(THREE, model, plane); // portrait px/py (0..1) = inv * (local - origin)
     return { geometry, basePositions, weights, bones2D, beltCenter, maskMapping, planeNormal: { x: normal.x, y: normal.y, z: normal.z } };
   }
 
@@ -268,10 +285,13 @@
   function attach(THREE, { avatarGroup, legHandle, speciesId, gender, garmentId = DEFAULT_GARMENT_ID, appearance = {}, name = 'pants', overlayMask = null } = {}) {
     const Core = core();
     const garment = rigConfig().garments?.[garmentId];
-    const character = resolveCharacter(speciesId, gender);
+    let character = resolveCharacter(speciesId, gender);
     const plane = findPortraitPlane(avatarGroup);
     const nodes = findLegNodes(legHandle);
     if (!THREE || !Core || !garment || !character || !plane || !nodes) return null;
+    if (!hasAuthoredCharacter(speciesId, gender)) { // No authored beltline for this species: default to its posterior height (or the image edge if that is below the image).
+      character = { ...character, portraitBeltSpline: Core.defaultBeltAtPosterior(posteriorPortraitY(THREE, avatarGroup, plane, nodes)) };
+    }
     const zLift = footFrontLift(THREE, avatarGroup, legHandle);
     const data = buildGarmentData(THREE, Core, avatarGroup, plane, garment, character, zLift);
     if (!data) return null;
