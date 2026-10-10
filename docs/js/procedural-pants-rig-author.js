@@ -223,18 +223,18 @@
       calf.updateWorldMatrix?.(true, false);
       const bones = scratch.bones3D[side];
       scratch.point.setFromMatrixPosition(thigh.matrixWorld).applyMatrix4(inverseModel);
-      bones.hip.x = scratch.point.x; bones.hip.y = scratch.point.y;
+      bones.hip.x = scratch.point.x; bones.hip.y = scratch.point.y; bones.hip.z = scratch.point.z;
       scratch.point.setFromMatrixPosition(calf.matrixWorld).applyMatrix4(inverseModel);
-      bones.knee.x = scratch.point.x; bones.knee.y = scratch.point.y;
+      bones.knee.x = scratch.point.x; bones.knee.y = scratch.point.y; bones.knee.z = scratch.point.z;
       const calfLength = Number(calf.userData?.hobunjiCalfLength) > 0 ? Number(calf.userData.hobunjiCalfLength) : Math.abs(calf.position.y);
       scratch.point.set(0, -calfLength, 0).applyMatrix4(calf.matrixWorld).applyMatrix4(inverseModel);
-      bones.ankle.x = scratch.point.x; bones.ankle.y = scratch.point.y;
+      bones.ankle.x = scratch.point.x; bones.ankle.y = scratch.point.y; bones.ankle.z = scratch.point.z;
     }
     return scratch.bones3D;
   }
 
   function makeBoneScratch(Runtime) {
-    const joint = () => ({ x: 0, y: 0 });
+    const joint = () => ({ x: 0, y: 0, z: 0 });
     const leg = () => ({ hip: joint(), knee: joint(), ankle: joint() });
     return { inverseModel: new Runtime.Matrix4(), point: new Runtime.Vector3(), bones3D: { left: leg(), right: leg() }, transforms: [null, null, null, null, null] };
   }
@@ -355,7 +355,7 @@
       bones2D[side] = {};
       for (const joint of ['hip', 'knee', 'ankle']) {
         const placed = placeOnPlane(legBones[side][joint].x, legBones[side][joint].y);
-        bones2D[side][joint] = { x: placed.x, y: placed.y };
+        bones2D[side][joint] = { x: placed.x, y: placed.y, z: placed.z };
       }
     }
     const beltCenter = { x: 0, y: 0 }; // Centre of the pants beltline in avatar-local space: the belt scale grows/shrinks the garment about it.
@@ -364,7 +364,9 @@
       beltCenter.x += placed.x / garment.pantsBeltSpline.length;
       beltCenter.y += placed.y / garment.pantsBeltSpline.length;
     }
-    return { geometry, basePositions, weights, bones2D, beltCenter };
+    const origin = placeOnPlane(0, 0).clone(), across = placeOnPlane(1, 0).clone().sub(origin), down = placeOnPlane(0, 1).clone().sub(origin);
+    const normal = across.cross(down).normalize(); // The portrait plane's normal in avatar-local space: legs that swing forward/back tilt the garment about it.
+    return { geometry, basePositions, weights, bones2D, beltCenter, planeNormal: { x: normal.x, y: normal.y, z: normal.z } };
   }
 
   async function rebuildPreview(model, project, identity) {
@@ -427,7 +429,8 @@
       nodes,
       bones2D: built.bones2D,
       beltCenter: built.beltCenter,
-      beltScale: Math.min(2, Math.max(0.5, Number(character.beltScale) || 1)),
+      planeNormal: built.planeNormal,
+      beltScale: Math.min(3.5, Math.max(1.7, Number(character.beltScale) || 1.75)),
       scratch: makeBoneScratch(Runtime),
       garmentId,
       identityKey: identityKey(identity),
@@ -447,13 +450,13 @@
     const live = readLiveBones(preview);
     const flat = preview.bones2D;
     const transforms = preview.scratch.transforms; // Channel order is Core.WEIGHT_CHANNELS: belt, leftThigh, leftCalf, rightThigh, rightCalf.
-    const options = { perpendicularScale: LEG_ACROSS_SCALE };
+    const options = { perpendicularScale: LEG_ACROSS_SCALE, normal: preview.planeNormal };
     const s = preview.beltScale, c = preview.beltCenter; // Belt-weighted pixels scale vertically about the beltline centre; leg-weighted pixels follow their bones.
     transforms[0] = s === 1 ? null : { a: 1, b: 0, c: 0, d: s, tx: 0, ty: c.y * (1 - s) }; // Vertical only: the beltline spline already controls width.
-    transforms[1] = Core.alignBoneSegment(flat.left.hip, flat.left.knee, live.left.hip, live.left.knee, options);
-    transforms[2] = Core.alignBoneSegment(flat.left.knee, flat.left.ankle, live.left.knee, live.left.ankle, options);
-    transforms[3] = Core.alignBoneSegment(flat.right.hip, flat.right.knee, live.right.hip, live.right.knee, options);
-    transforms[4] = Core.alignBoneSegment(flat.right.knee, flat.right.ankle, live.right.knee, live.right.ankle, options);
+    transforms[1] = Core.alignBoneSegment3D(flat.left.hip, flat.left.knee, live.left.hip, live.left.knee, options);
+    transforms[2] = Core.alignBoneSegment3D(flat.left.knee, flat.left.ankle, live.left.knee, live.left.ankle, options);
+    transforms[3] = Core.alignBoneSegment3D(flat.right.hip, flat.right.knee, live.right.hip, live.right.knee, options);
+    transforms[4] = Core.alignBoneSegment3D(flat.right.knee, flat.right.ankle, live.right.knee, live.right.ankle, options);
     const position = preview.geometry.getAttribute('position');
     Core.skinWeightedPositions(preview.basePositions, preview.weights, transforms, position.array);
     position.needsUpdate = true;
@@ -678,14 +681,14 @@
     const Core = window.HobunjiPantsRig;
     if (!preview || !Core) return null;
     const live = readLiveBones(preview);
-    const options = { perpendicularScale: LEG_ACROSS_SCALE };
-    const distance = (p, q) => Math.hypot(p.x - q.x, p.y - q.y);
-    const through = (t, p) => ({ x: t.a * p.x + t.c * p.y + t.tx, y: t.b * p.x + t.d * p.y + t.ty });
+    const options = { perpendicularScale: LEG_ACROSS_SCALE, normal: preview.planeNormal };
+    const distance = (p, q) => Math.hypot(p.x - q.x, p.y - q.y, (p.z || 0) - (q.z || 0));
+    const through = (t, p) => ({ x: t.m[0] * p.x + t.m[1] * p.y + t.m[2] * p.z + t.tx, y: t.m[3] * p.x + t.m[4] * p.y + t.m[5] * p.z + t.ty, z: t.m[6] * p.x + t.m[7] * p.y + t.m[8] * p.z + t.tz });
     const report = {};
     for (const side of ['left', 'right']) {
       const l = live[side], f = preview.bones2D[side];
-      const thigh = Core.alignBoneSegment(f.hip, f.knee, l.hip, l.knee, options);
-      const calf = Core.alignBoneSegment(f.knee, f.ankle, l.knee, l.ankle, options);
+      const thigh = Core.alignBoneSegment3D(f.hip, f.knee, l.hip, l.knee, options);
+      const calf = Core.alignBoneSegment3D(f.knee, f.ankle, l.knee, l.ankle, options);
       report[side] = {
         length2D: { thigh: distance(f.hip, f.knee), calf: distance(f.knee, f.ankle) },
         length3D: { thigh: distance(l.hip, l.knee), calf: distance(l.knee, l.ankle) },
