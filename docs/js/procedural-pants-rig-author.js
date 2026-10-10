@@ -18,6 +18,7 @@
     : new URL('../pants-rig-author/index.html?embedded=1', window.location.href).href; // Hosts the existing 2D author inside Procedural Animation.
   const PREVIEW_SEGMENTS = 32; // Gives the garment enough vertices for smooth painted leg weights while staying mobile-friendly.
   const DYNAMIC_DRAW_USAGE = 35048; // Three.js DynamicDrawUsage numeric value used without requiring a global THREE namespace.
+  const LEG_ACROSS_SCALE = 'balanced'; // Garment legs stretch ALONG their bone to meet the 3D leg and widen by the square root of that stretch, so proportions hold for any species' leg length.
   const DOUBLE_SIDE = 2; // Three.js DoubleSide numeric value used without requiring a global THREE namespace.
 
   const state = { // Owns the editor-only Pants UI and preview resources.
@@ -210,31 +211,32 @@
     return { Vector3, Matrix4, BufferGeometry, BufferAttribute, Mesh, sourceMaterial, sourceTexture };
   }
 
-  function relativeMatrix(Runtime, node, model) {
-    model.updateWorldMatrix?.(true, true); // Includes ancestors: the node and model sit on different branches of the locomotion hierarchy.
-    node.updateWorldMatrix?.(true, true);
-    const inverseModel = new Runtime.Matrix4().copy(model.matrixWorld).invert(); // Converts a live procedural-bone transform into avatar-local space.
-    return new Runtime.Matrix4().multiplyMatrices(inverseModel, node.matrixWorld);
-  }
-
-  function captureLegMatrices(Runtime, nodes, model) {
-    if (!Runtime || !nodes) return null;
-    return {
-      leftThigh: relativeMatrix(Runtime, nodes.leftThigh, model),
-      leftCalf: relativeMatrix(Runtime, nodes.leftCalf, model),
-      rightThigh: relativeMatrix(Runtime, nodes.rightThigh, model),
-      rightCalf: relativeMatrix(Runtime, nodes.rightCalf, model),
-    };
-  }
-
-  function legDeltas(Runtime, rest, current) {
-    if (!Runtime || !rest || !current) return null;
-    const deltas = {}; // Rest→current matrices are applied by the four painted leg channels each frame.
-    for (const channel of ['leftThigh', 'leftCalf', 'rightThigh', 'rightCalf']) {
-      const inverseRest = new Runtime.Matrix4().copy(rest[channel]).invert();
-      deltas[channel] = new Runtime.Matrix4().multiplyMatrices(current[channel], inverseRest);
+  // Live 3D leg bones in avatar-local space, written into `scratch.bones3D` (no per-frame allocation). The hip is the
+  // thigh node's origin, the knee is the calf node's origin, and the ankle is the calf origin plus calf-down * calfLength
+  // (the solver publishes calfLength on the calf node; without it the leg is assumed straight, calf as long as thigh).
+  function readLiveBones(preview) {
+    const { model, nodes, scratch } = preview;
+    model.updateWorldMatrix?.(true, false); // Ancestors only: the leg chain and the avatar sit on different branches of the locomotion hierarchy.
+    const inverseModel = scratch.inverseModel.copy(model.matrixWorld).invert();
+    for (const [side, thigh, calf] of [['left', nodes.leftThigh, nodes.leftCalf], ['right', nodes.rightThigh, nodes.rightCalf]]) {
+      thigh.updateWorldMatrix?.(true, false);
+      calf.updateWorldMatrix?.(true, false);
+      const bones = scratch.bones3D[side];
+      scratch.point.setFromMatrixPosition(thigh.matrixWorld).applyMatrix4(inverseModel);
+      bones.hip.x = scratch.point.x; bones.hip.y = scratch.point.y;
+      scratch.point.setFromMatrixPosition(calf.matrixWorld).applyMatrix4(inverseModel);
+      bones.knee.x = scratch.point.x; bones.knee.y = scratch.point.y;
+      const calfLength = Number(calf.userData?.hobunjiCalfLength) > 0 ? Number(calf.userData.hobunjiCalfLength) : Math.abs(calf.position.y);
+      scratch.point.set(0, -calfLength, 0).applyMatrix4(calf.matrixWorld).applyMatrix4(inverseModel);
+      bones.ankle.x = scratch.point.x; bones.ankle.y = scratch.point.y;
     }
-    return deltas;
+    return scratch.bones3D;
+  }
+
+  function makeBoneScratch(Runtime) {
+    const joint = () => ({ x: 0, y: 0 });
+    const leg = () => ({ hip: joint(), knee: joint(), ankle: joint() });
+    return { inverseModel: new Runtime.Matrix4(), point: new Runtime.Vector3(), bones3D: { left: leg(), right: leg() }, transforms: [null, null, null, null, null] };
   }
 
   function forwardStaticFit(Core, garment, character, point) {
@@ -297,16 +299,23 @@
     let vertex = 0;
     const localPoint = new Runtime.Vector3(); // Reused while mapping fitted PNG pixels through the real portrait plane.
     const worldPoint = new Runtime.Vector3(); // Reused to convert that portrait position back into avatar-local space.
+    // One placement for everything on the garment: a PNG-space point -> leg-thickness fit -> belt affine -> portrait
+    // plane -> avatar-local. The 2D bone joints below go through exactly the same path as the vertices, so a joint and
+    // the vertices around it keep their relationship.
+    const placeOnPlane = (u, v) => {
+      const fitted = forwardStaticFit(Core, garment, character, { x: u, y: v });
+      const portrait = Core.applyAffine(transform, fitted);
+      localPoint.set((portraitsFlipped() ? 0.5 - portrait.x : portrait.x - 0.5) * dimensions.width, (0.5 - portrait.y) * dimensions.height, 0.012); // Mirrors with the UV-flipped portrait texture.
+      worldPoint.copy(localPoint);
+      plane.localToWorld(worldPoint); // Includes the exact Procedural Animation portrait assembly transform.
+      model.worldToLocal(worldPoint);
+      return worldPoint;
+    };
     for (let row = 0; row <= PREVIEW_SEGMENTS; row++) {
       const v = row / PREVIEW_SEGMENTS;
       for (let col = 0; col <= PREVIEW_SEGMENTS; col++, vertex++) {
         const u = col / PREVIEW_SEGMENTS;
-        const fitted = forwardStaticFit(Core, garment, character, { x: u, y: v });
-        const portrait = Core.applyAffine(transform, fitted);
-        localPoint.set((portraitsFlipped() ? 0.5 - portrait.x : portrait.x - 0.5) * dimensions.width, (0.5 - portrait.y) * dimensions.height, 0.012); // Mirrors with the UV-flipped portrait texture.
-        worldPoint.copy(localPoint);
-        plane.localToWorld(worldPoint); // Includes the exact Procedural Animation portrait assembly transform.
-        model.worldToLocal(worldPoint);
+        placeOnPlane(u, v);
         basePositions[vertex * 3] = positions[vertex * 3] = worldPoint.x;
         basePositions[vertex * 3 + 1] = positions[vertex * 3 + 1] = worldPoint.y;
         basePositions[vertex * 3 + 2] = positions[vertex * 3 + 2] = worldPoint.z;
@@ -340,7 +349,16 @@
     geometry.setIndex(indices);
     geometry.getAttribute('position').setUsage?.(DYNAMIC_DRAW_USAGE);
     geometry.computeBoundingSphere();
-    return { geometry, basePositions, weights };
+    const legBones = Core.normalizeLegBones(garment.legBones); // Knees are the exact midpoint of hip and ankle, whatever the stored data says.
+    const bones2D = {}; // The authored 2D bones in the garment's rest space (avatar-local), aligned onto the live 3D bones every frame.
+    for (const side of ['left', 'right']) {
+      bones2D[side] = {};
+      for (const joint of ['hip', 'knee', 'ankle']) {
+        const placed = placeOnPlane(legBones[side][joint].x, legBones[side][joint].y);
+        bones2D[side][joint] = { x: placed.x, y: placed.y };
+      }
+    }
+    return { geometry, basePositions, weights, bones2D };
   }
 
   async function rebuildPreview(model, project, identity) {
@@ -401,7 +419,8 @@
       basePositions: built.basePositions,
       weights: built.weights,
       nodes,
-      restMatrices: captureLegMatrices(Runtime, nodes, model),
+      bones2D: built.bones2D,
+      scratch: makeBoneScratch(Runtime),
       garmentId,
       identityKey: identityKey(identity),
     };
@@ -409,32 +428,24 @@
     return true;
   }
 
+  // Every frame each of the four leg bones (left/right thigh and calf) is aligned from its authored 2D position onto
+  // the live 3D bone: rotated to the 3D direction and stretched along the bone so its length matches, so the garment
+  // legs follow the avatar's legs however they are posed. The belt weight stays rigid with the body. Thigh and calf
+  // both carry the knee to the same 3D point, so a vertex at the knee cannot tear apart between them.
   function updatePreviewPose() {
     const preview = state.preview;
-    if (!preview || !preview.model?.parent) return;
-    const Runtime = preview.runtime; // Uses the same native constructors captured when this preview mesh was created.
-    const current = captureLegMatrices(Runtime, preview.nodes, preview.model);
-    const deltas = legDeltas(Runtime, preview.restMatrices, current);
-    if (!deltas) return;
+    const Core = window.HobunjiPantsRig;
+    if (!preview || !preview.model?.parent || !Core) return;
+    const live = readLiveBones(preview);
+    const flat = preview.bones2D;
+    const transforms = preview.scratch.transforms; // Channel order is Core.WEIGHT_CHANNELS: belt, leftThigh, leftCalf, rightThigh, rightCalf.
+    const options = { perpendicularScale: LEG_ACROSS_SCALE };
+    transforms[1] = Core.alignBoneSegment(flat.left.hip, flat.left.knee, live.left.hip, live.left.knee, options);
+    transforms[2] = Core.alignBoneSegment(flat.left.knee, flat.left.ankle, live.left.knee, live.left.ankle, options);
+    transforms[3] = Core.alignBoneSegment(flat.right.hip, flat.right.knee, live.right.hip, live.right.knee, options);
+    transforms[4] = Core.alignBoneSegment(flat.right.knee, flat.right.ankle, live.right.knee, live.right.ankle, options);
     const position = preview.geometry.getAttribute('position');
-    const base = preview.basePositions;
-    const weights = preview.weights;
-    const source = new Runtime.Vector3(); // Neutral source vertex reused across the current deformation pass.
-    const transformed = new Runtime.Vector3(); // Holds one channel's rest→current transformed vertex.
-    const output = new Runtime.Vector3(); // Accumulates the normalized five-channel result.
-    const channels = ['leftThigh', 'leftCalf', 'rightThigh', 'rightCalf'];
-    for (let vertex = 0; vertex < position.count; vertex++) {
-      source.set(base[vertex * 3], base[vertex * 3 + 1], base[vertex * 3 + 2]);
-      const beltWeight = weights[vertex * 5] || 0;
-      output.copy(source).multiplyScalar(beltWeight); // Belt influence stays rigidly attached to the procedural avatar body root.
-      for (let channelIndex = 0; channelIndex < channels.length; channelIndex++) {
-        const weight = weights[vertex * 5 + channelIndex + 1] || 0;
-        if (weight <= 0.0001) continue;
-        transformed.copy(source).applyMatrix4(deltas[channels[channelIndex]]);
-        output.addScaledVector(transformed, weight);
-      }
-      position.setXYZ(vertex, output.x, output.y, output.z);
-    }
+    Core.skinWeightedPositions(preview.basePositions, preview.weights, transforms, position.array);
     position.needsUpdate = true;
     preview.geometry.computeBoundingSphere();
   }
@@ -650,8 +661,41 @@
     }
   }
 
+  // How well the garment's 2D bones currently sit on the live 3D leg bones, per side, in avatar-local units. Every
+  // *Error should be ~0 and kneeMidpointError3D is 0 for an unbent leg (the solver puts the knee at exactly half).
+  function boneAlignmentReport() {
+    const preview = state.preview;
+    const Core = window.HobunjiPantsRig;
+    if (!preview || !Core) return null;
+    const live = readLiveBones(preview);
+    const options = { perpendicularScale: LEG_ACROSS_SCALE };
+    const distance = (p, q) => Math.hypot(p.x - q.x, p.y - q.y);
+    const through = (t, p) => ({ x: t.a * p.x + t.c * p.y + t.tx, y: t.b * p.x + t.d * p.y + t.ty });
+    const report = {};
+    for (const side of ['left', 'right']) {
+      const l = live[side], f = preview.bones2D[side];
+      const thigh = Core.alignBoneSegment(f.hip, f.knee, l.hip, l.knee, options);
+      const calf = Core.alignBoneSegment(f.knee, f.ankle, l.knee, l.ankle, options);
+      report[side] = {
+        length2D: { thigh: distance(f.hip, f.knee), calf: distance(f.knee, f.ankle) },
+        length3D: { thigh: distance(l.hip, l.knee), calf: distance(l.knee, l.ankle) },
+        stretch: { thigh: thigh.stretch, calf: calf.stretch },
+        kneeMidpointError3D: distance(l.knee, Core.kneeAtMidpoint(l.hip, l.ankle)),
+        hipError: distance(through(thigh, f.hip), l.hip),
+        kneeErrorThigh: distance(through(thigh, f.knee), l.knee),
+        kneeErrorCalf: distance(through(calf, f.knee), l.knee),
+        ankleError: distance(through(calf, f.ankle), l.ankle),
+        live3D: { hip: { ...l.hip }, knee: { ...l.knee }, ankle: { ...l.ankle } },
+        rest2D: { hip: { ...f.hip }, knee: { ...f.knee }, ankle: { ...f.ankle } },
+      };
+    }
+    return report;
+  }
+
   window.ProceduralPantsRigAuthor = {
     installed: true,
+    getBoneAlignment: boneAlignmentReport,
+    getPreviewData: () => (state.preview ? { base: state.preview.basePositions, weights: state.preview.weights, positions: state.preview.geometry.getAttribute('position').array } : null),
     open: () => setOpen(true),
     close: () => setOpen(false),
     rebuild: () => { state.forceRebuild = true; },

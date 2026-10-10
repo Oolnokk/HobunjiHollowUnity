@@ -933,6 +933,7 @@
       chain.thigh.quaternion.copy(solved.thighQuaternion);
       chain.calf.position.set(0, -solved.thighLength, 0);
       chain.calf.quaternion.copy(solved.calfLocalQuaternion);
+      chain.calf.userData.hobunjiCalfLength = solved.calfLength; // Lets the Pants rig place the ankle: calf origin + calf-down * calfLength.
       mesh.position.set(0, -solved.calfLength, 0);
       mesh.rotation.x = state[`${side}Roll`];
       applyBoneGuideTransforms(chain, solved.thighLength, solved.calfLength);
