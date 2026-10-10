@@ -398,6 +398,30 @@
       } catch (_) {}
     }
 
+    // A <details> drawer keeps its explicit size while CLOSED too. Once it has been resized (or a saved size is re-applied on
+    // load) the collapsed pill stays a huge transparent box that floats above whatever is underneath and takes every tap in
+    // its area, so buttons beneath it silently stop responding. Only an open drawer may hold the dragged/saved size; a closed
+    // one reverts to its stylesheet size (just its summary) and gets the size back when it opens. The inline !important sizes
+    // set above cannot be overridden from CSS, so this has to be done here.
+    if (el.tagName === 'DETAILS') {
+      const SIZE_PROPS = ['width', 'height', 'min-width', 'min-height', 'max-width', 'max-height'];
+      const held = {};
+      const syncSizeToOpenState = () => {
+        if (el.open) {
+          for (const prop of Object.keys(held)) el.style.setProperty(prop, held[prop].value, held[prop].priority);
+        } else {
+          for (const prop of SIZE_PROPS) {
+            const value = el.style.getPropertyValue(prop);
+            if (!value) continue;
+            held[prop] = { value, priority: el.style.getPropertyPriority(prop) };
+            el.style.removeProperty(prop);
+          }
+        }
+      };
+      el.addEventListener('toggle', syncSizeToOpenState); // Registered before callers' own toggle handlers, so they measure the restored size.
+      syncSizeToOpenState(); // Closed on load: drop the saved size until the drawer is opened.
+    }
+
     return { grip };
   }
 
