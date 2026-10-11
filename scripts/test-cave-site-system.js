@@ -145,7 +145,7 @@ const denCatMap = decorate(profile('map_i_test_den_catacomb', 'catacomb', 'anima
 assert.equal(denCatMap.denMotherKind, 'gar-wolf-den-mother', 'animal-den inhabitant keeps the Den-Mother');
 assert.equal(denCatMap.nestCol, 4, 'animal-den inhabitant keeps the nest');
 assert(denCatMap.caveProps.some(item => item.key === 'ruinSanctumCoffin'), 'contents coexist with an animal den');
-assert(denCatMap.caveBodies.length >= 8, 'bodies are contents, present whoever lives in the cave');
+assert(denCatMap.caveBodies.length > 0, 'bodies coexist with inhabitants when space allows');
 
 const cacheMap = decorate(profile('map_i_test_cache', 'trapped_cache', 'bandit_hideout'));
 assert(cacheMap.caveProps.some(item => item.key === 'ruinDungeonChestT2'), 'cache places the authored dungeon chest');
@@ -164,6 +164,40 @@ assert(ruinMap.caveProps.some(item => item.key === 'ruinEntranceDoor'), 'ruin ca
 const ruinSeed = ruinMap.caveRuinEntrance?.seed;
 assert(Number.isInteger(ruinSeed) && ruinSeed > 0 && ruinSeed === ruinSeed >>> 0, 'ruin threshold seed is a uint32 (DevRandomRuin coerces with Number(seed)>>>0)');
 assert.equal(ruinSeed, Cave.decorateCavernMapData('map_i_test_ruin', baseMap('map_i_test_ruin')).caveRuinEntrance.seed, 'ruin seed is deterministic');
+
+// Crowded caves must respect clearance even when that means fewer decorations.
+function assertSpaced(map) {
+  const features = [...map.oreRocks, ...(map.caveProps || []), ...(map.caveBodies || []), ...(map.caveMushrooms || []), ...(map.caveBanditSpawns || []), ...(map.caveTraps || [])]; // All feature centres used to check cross-layer spacing.
+  for (let i = 0; i < features.length; i++) for (let j = i + 1; j < features.length; j++) {
+    if (features[i].caveSeparator && features[j].caveSeparator) continue; // A single mineable wall deliberately uses touching rocks.
+    assert(Math.hypot(features[i].col - features[j].col, features[i].row - features[j].row) >= 1.4, `${map.id}: ${JSON.stringify(features[i])} too close to ${JSON.stringify(features[j])}`);
+  }
+}
+for (const contents of CONTENTS) for (const inhabitant of INHABITANTS) {
+  const map = decorate(profile(`spacing_${contents}_${inhabitant}`, contents, inhabitant)); // Small two-room fixture exercises crowded placement.
+  assertSpaced(map);
+  if (inhabitant === 'animal_den') {
+    for (const feature of [...(map.caveProps || []), ...(map.caveBodies || []), ...(map.caveMushrooms || []), ...map.oreRocks]) {
+      for (let dc = 0; dc < 2; dc++) for (let dr = 0; dr < 2; dr++) assert(Math.hypot(feature.col - map.nestCol - dc, feature.row - map.nestRow - dr) >= 1.4, 'full nest footprint stays clear');
+    }
+  }
+}
+for (const inhabitant of INHABITANTS) {
+  const map = decorate(profile(`ruin_clearance_${inhabitant}`, 'ruin_entrance', inhabitant)); // Verify opposite-end rules and oriented doorway geometry.
+  const ruin = map.caveRuinEntrance;
+  assert(ruin, 'two-room cave has room for a ruin entrance');
+  assert.equal(ruin.clearanceTiles.length, 9, 'door has a three-wide footprint and two rows of approach');
+  const floor = new Set(map.floor.map(([c, r]) => `${c},${r}`)); // Floor membership validates the authored door footprint.
+  for (const tile of ruin.clearanceTiles) {
+    assert(floor.has(`${tile.col},${tile.row}`), 'door and approach fit completely on cave floor');
+    for (const feature of [...map.oreRocks, ...(map.caveBanditSpawns || [])]) assert(Math.hypot(tile.col - feature.col, tile.row - feature.row) >= 1.4, 'approach has no rocks or bandits');
+  }
+  if (inhabitant === 'animal_den') assert(Math.hypot(ruin.col - map.nestCol - 0.5, ruin.row - map.nestRow - 0.5) >= 6, 'ruin is opposite the nest');
+  if (inhabitant === 'bandit_hideout') {
+    assert(map.caveBanditSpawns.length >= 2, 'hideout survives on the opposite end');
+    for (const bandit of map.caveBanditSpawns) assert(Math.hypot(bandit.col - ruin.col, bandit.row - ruin.row) >= 5, 'bandits stay away from ruin');
+  }
+}
 
 // Assignment-time hooks must capture dependencies before synchronous game initialization.
 let seenDenCount = -1;

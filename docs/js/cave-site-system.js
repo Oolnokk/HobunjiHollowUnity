@@ -302,7 +302,7 @@
     return [...cuts.values()];
   }
 
-  function findMineableSeparator(mapData) {
+  function findMineableSeparator(mapData, reservedKeys = null) {
     const tiles = floorTiles(mapData);
     const floorSet = new Set(tiles.map(tile => tileKey(tile.col, tile.row))); // Full connected cave footprint used by cut testing.
     const exitCol = Number(mapData?.exitCol) || 0, exitRow = Number(mapData?.exitRow) || 0;
@@ -312,6 +312,7 @@
     const candidates = []; // Corridor cuts that split off a meaningful secondary chamber.
     for (const cut of corridorCuts(floorSet)) {
       if (cut.keys.includes(entranceKey)) continue;
+      if (reservedKeys && cut.cells.some(cell => !hasFeatureClearance(cell, reservedKeys, 1.4))) continue;
       if (cut.cells.some(cell => Math.hypot(cell.col - exitCol, cell.row - exitRow) < 5)) continue;
       const blocked = new Set(cut.keys);
       const near = bfsKeys(entranceKey, floorSet, blocked); // Entrance-side component once the cut becomes mineable rock.
@@ -347,6 +348,14 @@
     return filtered.length ? filtered : allTiles;
   }
 
+  function hasFeatureClearance(tile, blockedKeys, minDistance = 1.4) {
+    for (const key of blockedKeys) {
+      const [col, row] = key.split(',').map(Number); // Reserved feature centres used for spacing across all cave layers.
+      if (Math.hypot(col - tile.col, row - tile.row) < minDistance) return false;
+    }
+    return true;
+  }
+
   function pickSpacedTiles(rng, candidates, count, blockedKeys = new Set(), minDistance = 2) {
     const pool = [...candidates]; // Mutable candidate pool used to choose deterministic spaced feature positions.
     const chosen = []; // Final feature tiles used by coffins, bandits, ore, traps, etc.
@@ -354,7 +363,7 @@
       const index = Math.floor(rng() * pool.length); // Deterministic candidate index for this feature roll.
       const tile = pool.splice(index, 1)[0];
       const key = tileKey(tile.col, tile.row);
-      if (blockedKeys.has(key)) continue;
+      if (!hasFeatureClearance(tile, blockedKeys, minDistance)) continue;
       if (chosen.some(other => Math.hypot(other.col - tile.col, other.row - tile.row) < minDistance)) continue;
       chosen.push(tile);
       blockedKeys.add(key);
@@ -386,7 +395,7 @@
   function addCacheLayer(mapData, rng, candidates, blockedKeys, plan) {
     // A hidden cache is sealed in a side chamber behind a wall of ordinary
     // mineable ore rocks when the cavern has a chokepoint for one.
-    const separator = findMineableSeparator(mapData);
+    const separator = findMineableSeparator(mapData, blockedKeys);
     if (separator) {
       const wallKind = mineOreKind(rng); // Ordinary ore look, so all existing mining/drop/regrowth code applies.
       const existing = new Set((mapData.oreRocks || []).map(rock => tileKey(rock.col, rock.row)));
@@ -396,7 +405,7 @@
       candidates = tilePoolFromKeys(candidates, separator.farKeys);
     }
     const distant = sortTilesByDistance(candidates, mapData.exitCol, mapData.exitRow, true); // Deepest chamber candidates make the cache feel intentionally hidden.
-    const cacheTile = distant.find(tile => !blockedKeys.has(tileKey(tile.col, tile.row)));
+    const cacheTile = distant.find(tile => hasFeatureClearance(tile, blockedKeys, 2));
     if (!cacheTile) return;
     blockedKeys.add(tileKey(cacheTile.col, cacheTile.row));
     plan.cache = { id: `cave_cache_${mapData.id}`, col: cacheTile.col, row: cacheTile.row, tier: 2 };
@@ -434,15 +443,29 @@
   }
 
   function addRuinLayer(mapData, rng, candidates, blockedKeys, plan) {
-    const distant = sortTilesByDistance(candidates, mapData.exitCol, mapData.exitRow, true); // Deep chamber used as the threshold into the existing random-ruin generator.
-    const tile = distant.find(candidate => !blockedKeys.has(tileKey(candidate.col, candidate.row)));
-    if (!tile) return;
-    blockedKeys.add(tileKey(tile.col, tile.row));
-    // DevRandomRuin.generate coerces its seed with Number(seed)>>>0, so the
-    // descriptive cave identity is hashed to a stable uint32 here.
-    plan.ruinEntrance = { id: `cave_ruin_${mapData.id}`, col: tile.col, row: tile.row, seed: hashSeed(`${plan.profile.signature}:ruin`) };
-    mapData.caveRuinEntrance = clone(plan.ruinEntrance);
-    addProp(mapData, { id: plan.ruinEntrance.id, key: 'ruinEntranceDoor', col: tile.col, row: tile.row, rotY: Math.floor(rng() * 4) * 90 });
+    const floorSet = new Set(floorTiles(mapData).map(tile => tileKey(tile.col, tile.row))); // Valid floor for the three-wide doorway and its two-tile approach.
+    const hasNest = mapData.nestCol != null && mapData.nestRow != null; // Animal objective is a 2x2 footprint; its centre defines the occupied end.
+    const anchorCol = hasNest ? Number(mapData.nestCol) + 0.5 : Number(mapData.exitCol); // Opposite-end scoring anchor.
+    const anchorRow = hasNest ? Number(mapData.nestRow) + 0.5 : Number(mapData.exitRow); // Opposite-end scoring anchor.
+    const distant = sortTilesByDistance(candidates, anchorCol, anchorRow, true); // Prefer the opposite end from the nest, or deep end for bandit/uninhabited caves.
+    for (const tile of distant) {
+      if (hasNest && Math.hypot(tile.col - anchorCol, tile.row - anchorRow) < 6) continue;
+      for (const [dc, dr, rotY] of [[0, 1, 0], [1, 0, 90], [0, -1, 180], [-1, 0, 270]]) {
+        const clearing = []; // Entire doorway footprint plus approach, reserved before inhabitants are placed.
+        for (let depth = 0; depth <= 2; depth++) for (let side = -1; side <= 1; side++) {
+          clearing.push({ col: tile.col + dc * depth + dr * side, row: tile.row + dr * depth - dc * side });
+        }
+        if (!clearing.every(cell => floorSet.has(tileKey(cell.col, cell.row)) && hasFeatureClearance(cell, blockedKeys, 1.4))) continue;
+        plan.ruinEntrance = { id: `cave_ruin_${mapData.id}`, col: tile.col, row: tile.row, rotY, clearanceTiles: clearing, seed: hashSeed(`${plan.profile.signature}:ruin`) };
+        // Clear natural rocks in the approach halo and prevent later layers from filling it.
+        mapData.oreRocks = (mapData.oreRocks || []).filter(rock => clearing.every(cell => Math.hypot(rock.col - cell.col, rock.row - cell.row) >= 1.4));
+        for (const cell of clearing) blockedKeys.add(tileKey(cell.col, cell.row));
+        mapData.caveRuinEntrance = clone(plan.ruinEntrance);
+        addProp(mapData, { id: plan.ruinEntrance.id, key: 'ruinEntranceDoor', col: tile.col, row: tile.row, rotY });
+        return;
+      }
+    }
+    window.__farmLog?.(`[cave-sites] ${mapData.id}: no safe ruin doorway footprint; threshold omitted.`, 'warn');
   }
 
   function addProp(mapData, prop) {
@@ -504,9 +527,12 @@
     const rng = makeRng(`${profile.signature}:interior`); // Feature stream isolated from profile selection, stable across reloads.
     const allTiles = floorTiles(mapData);
     const blockedKeys = new Set(); // Reserved logical tiles preventing generated layers from stacking physical features.
-    for (const rock of mapData.oreRocks || []) blockedKeys.add(tileKey(rock.col, rock.row));
     for (const exit of mapData.exits || []) for (const tile of exit.tiles || []) blockedKeys.add(tileKey(tile[0], tile[1]));
-    if (Number.isFinite(Number(mapData.nestCol)) && Number.isFinite(Number(mapData.nestRow))) blockedKeys.add(tileKey(mapData.nestCol, mapData.nestRow));
+    for (const item of [...(mapData.furniture || []), ...(mapData.caveProps || [])]) blockedKeys.add(tileKey(item.col, item.row));
+    if (profile.inhabitant === TYPES.ANIMAL_DEN && mapData.nestCol != null && mapData.nestRow != null) {
+      for (let dc = 0; dc < 2; dc++) for (let dr = 0; dr < 2; dr++) blockedKeys.add(tileKey(Number(mapData.nestCol) + dc, Number(mapData.nestRow) + dr));
+      for (const spawn of mapData.creatureSpawns || []) blockedKeys.add(tileKey(spawn.col, spawn.row));
+    }
 
     if (profile.inhabitant !== TYPES.ANIMAL_DEN) {
       mapData.nestCol = null;
@@ -514,6 +540,14 @@
       mapData.denMotherKind = null;
       mapData.creatureSpawns = [];
     }
+
+    const rockReservations = new Set(blockedKeys); // Keep natural rocks clear of objectives and one another before generating extra layers.
+    mapData.oreRocks = (mapData.oreRocks || []).filter(rock => {
+      if (!hasFeatureClearance(rock, rockReservations, 1.4)) return false;
+      rockReservations.add(tileKey(rock.col, rock.row));
+      return true;
+    });
+    if (profile.contents !== TYPES.RUIN_ENTRANCE) for (const rock of mapData.oreRocks) blockedKeys.add(tileKey(rock.col, rock.row));
 
     const plan = {
       profile: clone(profile),
@@ -531,7 +565,13 @@
     else if (contents === TYPES.RUIN_ENTRANCE) addRuinLayer(mapData, rng, awayFromEntrance, blockedKeys, plan);
     else if (contents === TYPES.MUSHROOM_CAVE) addMushroomLayer(mapData, rng, awayFromEntrance, blockedKeys, plan);
     if (profile.inhabitant === TYPES.BANDIT_HIDEOUT) {
-      const reachable = plan.separator ? tilePoolFromKeys(awayFromEntrance, plan.separator.nearKeys) : awayFromEntrance;
+      let reachable = plan.separator ? tilePoolFromKeys(awayFromEntrance, plan.separator.nearKeys) : awayFromEntrance;
+      if (plan.ruinEntrance) {
+        const ruin = plan.ruinEntrance; // Ruin end stays free of the hideout, including its reserved approach.
+        const farthest = Math.max(...reachable.map(tile => Math.hypot(tile.col - ruin.col, tile.row - ruin.row)), 0); // Cave span determines the opposite-end bandit region.
+        reachable = reachable.filter(tile => Math.hypot(tile.col - ruin.col, tile.row - ruin.row) >= Math.max(5, farthest * 0.65));
+      }
+      for (const rock of mapData.oreRocks || []) blockedKeys.add(tileKey(rock.col, rock.row));
       addBanditLayer(mapData, rng, reachable, blockedKeys, plan);
     }
 
@@ -958,7 +998,7 @@
     return {
       ready: integrationsInstalled,
       currentArea,
-      latestChange: 'Caves roll two layers: contents (ore, mushrooms, hidden cache, catacomb, ruin entrance) and inhabitant (animal den, bandits, none); only animal-den caves participate in den ecology.',
+      latestChange: 'Cave features share spacing across layers; ruins reserve a three-wide doorway and clear approach opposite nests or bandits. Crowded caves place fewer features.',
       zoneCount: zones.length,
       caveCount: sites.length,
       caves: sites.map(site => ({ mapId: site.mapId, zoneId: site.zoneId, denId: site.denId, contents: site.contents, inhabitant: site.inhabitant, label: site.discoveredLabel })),
