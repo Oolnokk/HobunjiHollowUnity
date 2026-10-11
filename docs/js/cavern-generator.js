@@ -351,7 +351,8 @@
     const cavern = locale?.cavern || {};
     const mapId = String(cavern.mapId || '');
     if (!mapId) throw new Error('cave_interior locale is missing cavern.mapId');
-    const floor = localeFootprint(locale);
+    const clearances = [cavern.clearanceFootprints, cavern.generation?.clearanceFootprints].filter(Array.isArray).flat(); // Both authored locale data and the editor's generation JSON use the same growth requests.
+    const floor = window.CavernSculptor.expandFootprint(localeFootprint(locale), clearances);
     if (!floor.length) throw new Error(locale.id + ' has no painted cavern footprint');
     const connectors = Array.isArray(locale.connectors) ? locale.connectors : [];
     const primary = connectors.find(connector => connector.id === cavern.primaryEntranceConnectorId) || connectors[0];
@@ -420,8 +421,8 @@
       schema: 'hobunji_building_interior.v1',
       id: mapId,
       name: locale.name || mapId,
-      cols: Number(locale.cols) || (Math.max(...floor.map(tile => tile[0])) + 2),
-      rows: Number(locale.rows) || (Math.max(...floor.map(tile => tile[1])) + 2),
+      cols: Math.max(Number(locale.cols) || 0, Math.max(...floor.map(tile => tile[0])) + 2),
+      rows: Math.max(Number(locale.rows) || 0, Math.max(...floor.map(tile => tile[1])) + 2),
       floor,
       floorSurfaceByTile: floorSurface.byTile,
       floorSurfaceY: floorSurface.median,
@@ -449,6 +450,34 @@
       cavernFeatures: cavern.features || {},
       isLocaleCavern: true,
     };
+  }
+
+  function expandCavernMapData(mapData, clearances, rng) {
+    const floor = window.CavernSculptor.expandFootprint(mapData.floor, clearances); // Locale carver rebuilds visual rock and collision from the same expanded usable footprint.
+    const cacheKey = `${mapData.id}:clearance`, signature = JSON.stringify([floor, mapData.exitCol, mapData.exitRow]); // Existing cave cache keeps one expanded shell per map, replacing it when its footprint or entrance changes.
+    const cached = _cavernFloorCache.get(cacheKey); // Re-entry reuses the expensive SDF carve without caching runtime loot/inhabitant state.
+    const generated = cached?.signature === signature ? cached.generated : window.CavernSculptor.carveFootprintCavern(floor,
+      { tileSize: 0.5, gridN: 32, organicJitter: 0, hitsPerStep: 1, probeDigBursts: 2, probeMaxPasses: 45, enforceWalkableClearance: 1,
+        entrance: { col: mapData.exitCol, row: mapData.exitRow, side: 'south' } }, rng);
+    if (cached?.signature !== signature) _cavernFloorCache.set(cacheKey, { signature, generated });
+    const rim = new Map(), floorKeys = new Set(floor.map(tile => tile.join(','))); // The newly carved room moves the protected boundary outward rather than making old wall tiles both floor and collider.
+    for (const [col, row] of floor) for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+      const cell = [col + dc, row + dr], key = cell.join(','); // Adjacent solid cells remain unavailable to every feature-placement pool.
+      if (!floorKeys.has(key) && cell[0] >= 0 && cell[1] >= 0) rim.set(key, cell);
+    }
+    const surface = floorSurfaceMap(floor, generated.mesh); // Re-sample the new geometry so movement, props, and targeting agree with the expanded floor.
+    mapData.floor = floor;
+    mapData.outerRimTiles = [...rim.values()];
+    mapData.colliders = mapData.outerRimTiles.slice();
+    mapData.cols = Math.max(mapData.cols, ...mapData.outerRimTiles.map(tile => tile[0] + 2), ...floor.map(tile => tile[0] + 2));
+    mapData.rows = Math.max(mapData.rows, ...mapData.outerRimTiles.map(tile => tile[1] + 2), ...floor.map(tile => tile[1] + 2));
+    mapData.floorSurfaceByTile = surface.byTile;
+    mapData.floorSurfaceY = surface.median;
+    mapData.mesh = { ...generated.mesh, surfaceMaterial: mapData.mesh?.surfaceMaterial,
+      wallHeightScale: mapData.wallHeightScale || 1,
+      wallHeightBaseY: Math.max(surface.median, ...Object.values(surface.byTile)) + 0.01 };
+    mapData.cavernClearanceFootprints = clearances;
+    return mapData;
   }
 
   function synthesizeCavernMapData(mapId) {
@@ -490,6 +519,7 @@
     init,
     generateCavernFloor,
     entranceConnectedFloor,
+    expandCavernMapData,
     pickDenMotherKind,
     synthesizeCavernMapData,
     loadLocaleCavernDefinition,
