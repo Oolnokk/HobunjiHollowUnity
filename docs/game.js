@@ -13545,7 +13545,7 @@
             bScene.add(cavernMesh);
             const cavernFloorMesh = InteriorSceneBuilder.buildCavernFloorMesh?.(
               THREE, mapData.floor || [], mapData.floorSurfaceByTile || {},
-              { ...cavernMaterialOpts, surfaceMaterial: mapData.mesh?.surfaceMaterial || '', defaultY: mapData.floorSurfaceY, name: mapId + '_walkable_floor' },
+              { ...cavernMaterialOpts, wallMaterial: cavernMesh.material, surfaceMaterial: mapData.mesh?.surfaceMaterial || '', defaultY: mapData.floorSurfaceY, name: mapId + '_walkable_floor' },
             ); // Explicit surface guarantees the entire logical footprint has visible textured ground at the exact Y used by player/NPC grounding.
             if (cavernFloorMesh) bScene.add(cavernFloorMesh);
           } else {
