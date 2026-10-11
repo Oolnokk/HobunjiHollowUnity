@@ -1002,10 +1002,21 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
   installDependencyInitHooks();
   installTransitionHook();
 
+  // True only while the black loading screen is actually painted over the
+  // whole canvas (not the transparent pre-world-sky variant, and not hidden
+  // behind onboarding), so game.js can skip redrawing a world nobody sees.
+  function coversWorld() {
+    if (!state.visible || !state.els?.root?.classList?.contains('visible')) return false;
+    if (state.suppressedByOnboarding) return false;
+    const htmlClasses = document.documentElement?.classList;
+    return !(htmlClasses?.contains('hobunji-preworld-sky-active') || htmlClasses?.contains('hobunji-onboarding-foreground'));
+  }
+
   window.LoadingScreenRuntime = Object.freeze({
     installed: true,
     show,
     hide,
+    coversWorld,
     beginIntroduction,
     setProgress,
     shouldLoadForTransition,

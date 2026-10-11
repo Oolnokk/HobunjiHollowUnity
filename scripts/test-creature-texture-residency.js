@@ -2,7 +2,8 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const context = { window: {} };
+let clock = 0; // Drives the cache's working-set window deterministically.
+const context = { window: {}, performance: { now: () => clock } };
 vm.runInNewContext(fs.readFileSync('docs/js/creature-texture-cache.js', 'utf8'), context);
 const manager = context.window.CreatureTextureCache;
 const mirrors = { front: new Map(), back: new Map() };
@@ -45,4 +46,64 @@ const duplicate = pair(1);
 const canonical = tiny.get('999');
 assert.equal(tiny.put('999', duplicate), canonical);
 assert.equal(duplicate.front.disposals, 1, 'overlapping uploads dispose the redundant pair');
+
+// A walking/blinking animal cycles through every frame of its genotype. Each
+// composite is ~12MB (1375x600 sprites), so pinning only the bound frame let
+// the 24MB idle budget evict the frames it had just left, and every frame
+// swap recomposed colors/patterns/eyes from scratch.
+assert.equal(manager.genotypeFrameSetKey('gar-wolf|run1|#aa|colorpoint:#22||paint:x|o'), 'gar-wolf|#aa|colorpoint:#22||paint:x');
+assert.equal(manager.genotypeFrameSetKey('plain-key'), 'plain-key');
+{
+  const sets = manager.create('frame-sets', { front: new Map(), back: new Map() }, new Map(), { frameSetOf: manager.genotypeFrameSetKey });
+  const sig = '#884422|colorpoint:#222222|foxtail:';
+  const frames = ['idle|' + sig + '|o', 'run1|' + sig + '|o', 'run2|' + sig + '|o', 'idle|' + sig + '|b'].map(rest => 'gar-wolf|' + rest);
+  const pairs = frames.map(() => pair(1375));
+  const wolf = {};
+  sets.retain(wolf, frames[0]); // The animal binds its first frame (still composing); siblings compose while it is on screen.
+  frames.forEach((key, i) => sets.put(key, pairs[i]));
+  for (let step = 0; step < 20; step++) {
+    sets.retain(wolf, frames[step % frames.length]); // Walk + blink cycle.
+    for (let i = 0; i < 3; i++) sets.put(`other|idle|noise${step}-${i}|o`, pair(1375)); // Unrelated idle pressure.
+  }
+  assert.ok(pairs.every(p => p.front.disposals === 0), 'an on-screen animal keeps every frame of its genotype resident');
+  assert.ok(frames.every(key => sets.get(key)), 'each walk/blink frame is still a cache hit');
+  assert.equal(sets.snapshot().pinnedFrameSets, 1);
+  const boundKey = frames[19 % frames.length];
+  assert.equal(sets.keyFor(wolf), boundKey);
+
+  // The animal stands still on one frame for longer than the working-set
+  // window: its other frames become ordinary evictable entries again, so
+  // memory tracks what animals are actually cycling through.
+  clock += 31000;
+  for (let i = 0; i < 6; i++) sets.put(`still|idle|n${i}|o`, pair(1375));
+  assert.ok(frames.filter(key => key !== boundKey).every(key => !sets.get(key)), 'frames unused for the working-set window can be evicted');
+  assert.ok(sets.get(boundKey), 'the frame on screen is never evicted');
+
+  manager.releaseOwner(wolf);
+  assert.equal(sets.snapshot().pinnedFrameSets, 0);
+  for (let i = 0; i < 6; i++) sets.put(`later|idle|n${i}|o`, pair(1375));
+  assert.ok(pairs.every(p => p.front.disposals === 1), 'once the animal is gone its frames are ordinary evictable idle entries');
+}
+
+// Generated frames are cached at display size: long side clamped to half the
+// game canvas width within [512, 1024], never upscaled, aspect preserved.
+{
+  const drawn = [];
+  context.document = { createElement: () => ({ width: 0, height: 0, getContext: () => ({ drawImage: (src, x, y, w, h) => drawn.push({ src, w, h }) }) }) };
+  const fit = manager.fitGeneratedCanvas;
+  const native = { width: 1375, height: 600 };
+  context.window.__hobunjiGameRenderer = { domElement: { width: 1600 } };
+  let out = fit(native);
+  assert.deepEqual([out.width, out.height], [800, 349], 'half of a 1600px canvas');
+  assert.equal(drawn.at(-1).src, native, 'the scaled copy is drawn from the full composite');
+  context.window.__hobunjiGameRenderer = { domElement: { width: 600 } };
+  out = fit(native);
+  assert.deepEqual([out.width, out.height], [512, 223], 'small canvases keep at least 512px for close-ups');
+  context.window.__hobunjiGameRenderer = { domElement: { width: 5000 } };
+  out = fit({ width: 3000, height: 2250 });
+  assert.deepEqual([out.width, out.height], [1024, 768], 'very wide canvases cap at 1024px');
+  const small = { width: 400, height: 300 };
+  assert.equal(fit(small), small, 'composites already within the bound are used as-is');
+  delete context.document;
+}
 console.log('Animal texture residency, shared lifetime, preload pins, and memory pressure passed.');

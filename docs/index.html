@@ -29,7 +29,7 @@
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
        extracted out of game.js; must load before game.js and before every
        other module whose init(deps) is handed window.FormatUtils.clamp/esc. -->
-  <script src="js/format-utils.js?v=20261008hb3bd086"></script>
+  <script src="js/format-utils.js?v=20261011hee0eb7c"></script>
   <!-- Movement virtual-joystick handlers extracted out of game.js; uses
        window.FormatUtils.clamp, so must load after it and before game.js. -->
   <script src="js/virtual-joystick.js?v=20260902mod1"></script>
@@ -145,6 +145,8 @@
   <script src="config/scratchbones-config.js?v=20261009h1c69d65"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
+  <!-- Shared frame-budget yield for long async pixel jobs (clothing weaving, creature genetics). -->
+  <script src="js/pixel-work-yield.js?v=20261010pwy1"></script>
   <script src="js/tool-metal-recolor.js?v=20261001c6751543"></script>
   <script src="js/metal-armor-system.js?v=20261008h99621ca"></script>
   <script src="config/colors/config.js?v=20260930h1b2e2e2"></script>
@@ -165,7 +167,7 @@
   <script src="js/portrait-utils.js?v=20261010h545295b"></script>
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20261010h76d5f7b"></script>
-  <script src="js/png-plane-avatar.js?v=20261009hba7e3f2"></script>
+  <script src="js/png-plane-avatar.js?v=20261011h5faa803"></script>
   <script src="js/species-pose-scaling.js?v=20260920height2"></script>
   <script src="js/character-dimensions.js?v=20261007he86e7d1"></script>
   <!-- Keeps the portrait plane's occlusion-depth redraws (used so its silhouette can
@@ -174,7 +176,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261007hfd6211c"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261010hcc322f2"></script>
+  <script src="js/held-action-animations.js?v=20261010hb9f2468"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
   <script src="js/character-action-locks.js?v=20261010hb7ed1da"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
@@ -200,8 +202,8 @@
   <script src="js/voorg-ass-registration.js?v=20260923baseanchor1"></script> <!-- Shared Voorg-Ass creature/renderer/herd registration used by the three scripts below. -->
   <script src="js/creature-genetics.js?v=20261002h5fdf0c4"></script>
   <!-- Creature genotype recolor + pattern-overlay compositing. -->
-  <script src="js/creature-texture-cache.js?v=20261009memory1"></script>
-  <script src="js/creature-genetics-render.js?v=20261009h8a62350"></script>
+  <script src="js/creature-texture-cache.js?v=20261011h0a4170f"></script>
+  <script src="js/creature-genetics-render.js?v=20261010h19c4ac7"></script>
   <!-- Shared per-frame "where is this creature/character's head" cache — see
        its own file header for why. No dependencies of its own; must load
        before anything that calls window.CreatureHeadCache. -->
@@ -231,7 +233,7 @@
   <!-- Generic post-generation locale placement (window.TemporaryLocales) —
        scans an already-generated wilderness zone for a site instead of
        reserving one before generation; used by bandit camps. -->
-  <script src="js/temporary-locales.js?v=20260924chunkecology1"></script>
+  <script src="js/temporary-locales.js?v=20261010h8ce6c23"></script>
   <!-- Banubu's quest dialogue defaults load before LocalDBOverrides so the
        editor/runtime database composition can replace his generic chatter. -->
   <script src="js/banubu-quest-content.js?v=20260925banubuvisual2"></script>
@@ -333,7 +335,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261009h4153ea8"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261010h7e89e8e"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -389,7 +391,7 @@
        window.FarmAnimals.init(...) during its own setup. -->
   <script src="js/farm-production.js?v=20261008h34e9cde"></script>
   <script src="js/world-meta-store.js?v=20260930livestockwalk1"></script>
-  <script src="js/farm-animals.js?v=20261009h30fd1c5"></script>
+  <script src="js/farm-animals.js?v=20261011he48edd6"></script>
   <!-- Farm buildings: barn placement/construction/demolition
        (window.FarmBuildings) — self-contained aside from deps injected
        via init(), and reads window.FarmAnimals at call time (already
@@ -404,7 +406,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmTroughs.init(...) during its own setup. -->
-  <script src="js/farm-troughs.js?v=20261008hc8713b4"></script>
+  <script src="js/farm-troughs.js?v=20261011h4b94386"></script>
   <!-- Modular player house (window.HousePieces) — barn-shaped foundation/
        build/demolish pipeline for house-piece deeds bought from the
        Carpenter, replacing the old singular Highland House GLB. Depends on
@@ -2495,7 +2497,7 @@
   <!-- Lore loading-screen overlay, shown while a wilderness zone or mine
        floor rebuilds from scratch. Content authored via
        tools/loading-screen-editor/index.html. -->
-  <script src="js/loading-screen-runtime.js?v=20261006h0666190"></script>
+  <script src="js/loading-screen-runtime.js?v=20261010hb1c1f39"></script>
   <!-- Secondary proximity dialogue: NPC chathead greetings, companion
        onomatopoeia, and reusable crowd cheer/jeer hooks. -->
   <script src="js/ambient-dialogue.js?v=20261007h291caf2"></script>
@@ -2621,7 +2623,7 @@
   <script src="js/romance-wedding.js?v=20261007wedding1"></script>
   <script src="js/romance-system.js?v=20261007romance1"></script>
   <script src="js/npc-command-wheel.js?v=20261008h02bf686"></script>
-  <script src="game.js?v=20261010h4da2a7a"></script>
+  <script src="game.js?v=20261010h28f553c"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261010h8448517"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

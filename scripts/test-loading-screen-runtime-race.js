@@ -148,9 +148,15 @@ async function settle(promise) {
 
   const third = runtime.show();
   for (let i = 0; i < 10; i++) await Promise.resolve();
+  assert.equal(runtime.coversWorld(), true, 'the opaque loading screen covers the world while visible');
+  documentStub.documentElement = makeEl();
+  documentStub.documentElement.classList.add('hobunji-preworld-sky-active');
+  assert.equal(runtime.coversWorld(), false, 'the transparent pre-world-sky variant leaves the world visible');
+  delete documentStub.documentElement;
   await runtime.hide();
   await settle(third);
   assert.ok(!rootEl.classList.contains('visible'), 'an explicit hide() must still win when it targets the current show()');
+  assert.equal(runtime.coversWorld(), false, 'a hidden loading screen must not throttle the world render');
   assert.equal(runtime.getProgress(), 100, 'completion drives the displayed percentage to 100');
 
   console.log('Loading screen map/building timing, Tankan spacing, race, and progress guard passed.');

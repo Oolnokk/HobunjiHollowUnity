@@ -4390,7 +4390,7 @@
       // signature's compose is still in flight, callers fall back to the
       // species' plain (uncolored) sprite — see setCreatureFrame below.
       const _genotypeTexCache = { front: new Map(), back: new Map() };
-      const _genotypeTextureResidency = window.CreatureTextureCache.create('wild-and-companion', _genotypeTexCache); // Owns disposal and bounded idle retention while preserving the existing map/debug API.
+      const _genotypeTextureResidency = window.CreatureTextureCache.create('wild-and-companion', _genotypeTexCache, undefined, { frameSetOf: window.CreatureTextureCache.genotypeFrameSetKey }); // Owns disposal and bounded idle retention while preserving the existing map/debug API.
       window.HobunjiCacheAudit?.register('game.genotypeTexCache', () => _genotypeTexCache.front.size);
       const _genotypeTexPending = new Map(); // Frame-key promises allow scene preparation to await the existing compositor.
       // Every key this function has ever logged a "kicking off compose" line
@@ -4450,6 +4450,7 @@
               return;
             }
             _genotypeTexFailedAt.delete(key);
+            canvas = window.CreatureTextureCache.fitGeneratedCanvas?.(canvas) || canvas; // Cached at display size, not native sprite size.
             const front = new THREE.CanvasTexture(canvas);
             front.colorSpace = THREE.SRGBColorSpace;
             const back = new THREE.CanvasTexture(canvas);
@@ -4476,16 +4477,31 @@
       // frame/genotype completed, permanently stranding it on the plain
       // fallback if its own specific frame wasn't ready at that exact
       // moment and nothing else ever bumped the counter again).
+      function _showingSameGenotype(avatarRef, kind, genotype) {
+        const boundKey = _genotypeTextureResidency.keyFor(avatarRef);
+        if (!boundKey || !_genotypeTexCache.front.has(boundKey)) return false; // Nothing colored is actually on screen yet.
+        const sig = window.CreatureGeneticsRender?.genotypeSignature?.(kind, genotype);
+        return sig != null && window.CreatureTextureCache.genotypeFrameSetKey(boundKey) === `${kind}|${sig}`;
+      }
       function setCreatureFrame(avatarRef, url, genotypeKind, frameKey, genotype, blinkShut = false) {
         if (window.CreatureTextureCache.isDisposed(avatarRef)) return false; // Prevent a late visual update from reacquiring removed-avatar memory.
         const genoTex = (genotypeKind && genotype) ? _getGenotypeTextures(genotypeKind, frameKey, genotype, blinkShut) : null;
+        if (!genoTex && genotypeKind && genotype && _showingSameGenotype(avatarRef, genotypeKind, genotype)) {
+          // This pose/blink frame is still composing, but the animal already
+          // shows a colored frame of the same genotype: keep it on screen
+          // (callers retry every tick) rather than flashing the plain sprite
+          // and dropping its colors, patterns and eyes until the compose lands.
+          return false;
+        }
         const front = genoTex?.front || _getCreatureFrontTexture(url);
-        const back = genoTex?.back || _getCreatureBackTexture(url);
+        // The pre-mirrored back copy is only fetched for back cards that can't
+        // mirror the front texture themselves (see PNGPlaneAvatar.backMapFor).
+        const pair = genoTex || { front, get back() { return _getCreatureBackTexture(url); } };
         for (const child of [avatarRef.frontPlane, avatarRef.backPlane]) {
           if (!child?.material) continue;
           const hadMap = !!child.material.map; // Only a map-presence change requires shader recompilation.
           if (child.name.endsWith('_front_plane')) child.material.map = front;
-          else if (child.name.endsWith('_back_plane')) child.material.map = back;
+          else if (child.name.endsWith('_back_plane')) child.material.map = window.PNGPlaneAvatar?.backMapFor?.(child.material, pair) || pair.back; // Mirror-capable back cards reuse the front texture (one GPU upload).
           else continue;
           if (!hadMap) child.material.needsUpdate = true; // Ordinary frame swaps only change the map uniform.
         }
@@ -9875,6 +9891,8 @@
       // re-fetching config/maps/<id>.json.
       const _rawMapDataByMapId = new Map();
       let _layoutSwapInProgress = false;
+      const COVERED_WORLD_RENDER_INTERVAL_MS = 250; // World render cadence while a loading screen hides the canvas — see gameLoop.
+      let _lastCoveredWorldRenderAt = -Infinity;
       let _layoutCheckAccumS = 0; // Real seconds since checkMapLayoutChanges last ran — see its call in gameLoop.
       const _denNests = new Map(); // mapId → { col, row, w, h, itemKey, liveBirth, label, remaining }
       // Some placed furniture opens a custom panel on interact instead of
@@ -24520,6 +24538,42 @@
         window.RuntimeFrameScheduler.checkpoint('pre-render');
 
         // ── Render active scene ──────────────────────────────────
+        // An opaque loading/introduction screen covers the whole canvas, so
+        // redrawing the world underneath it (up to ~10 scene passes with
+        // outlines + the held overlay) every frame is wasted. Keep a slow
+        // cadence instead of stopping outright so a freshly loaded area still
+        // compiles shaders and uploads textures before the screen lifts.
+        const worldCovered = window.LoadingScreenRuntime?.coversWorld?.() === true;
+        if (!worldCovered || now - _lastCoveredWorldRenderAt >= COVERED_WORLD_RENDER_INTERVAL_MS) {
+          if (worldCovered) _lastCoveredWorldRenderAt = now;
+          renderWorldPasses(now);
+        }
+        // Optional diagnostic hook (off by default, see performance-debug.js):
+        // everything timed above only measures how long the CPU took to
+        // *issue* this frame's draw calls, not how long the GPU actually
+        // took to execute them. A forced readback here blocks until the GPU
+        // has really finished, so toggling this on can reveal GPU-bound
+        // frame time that's otherwise invisible to CPU-side profiling.
+        window.__hobunjiGpuSyncDiagnostic?.(renderer);
+
+        // ── 2D overlays (combat/debug/lightning, plus lighting) ──
+        const overlayPerf = window.PerfProfiler?.begin('overlays+hud');
+        drawOverlays();
+        window.WeatherFX.drawLightingOverlay();
+
+        window.DialogueContent?.updateNpcDialoguePortrait(now);
+        window.HudUpdate.updateHud();
+        if (!preworldBackdropReleased) {
+          preworldBackdropReleased = !window.HobunjiTitleScreen?.releaseBackdrop
+            || window.HobunjiTitleScreen.releaseBackdrop('first-world-frame') === true;
+        }
+        window.PerfProfiler?.end(overlayPerf);
+        window.PerfProfiler?.end(gameLoopTotalPerf);
+      }
+
+      // gameLoop's world render: the main pass plus, with outlines on, the
+      // occluder/outline/mist/seam passes and the post-process composite.
+      function renderWorldPasses(now) {
         // "Render CPU" in the overlay only shows the average cost of a single
         // renderer.render() call; s_outlines below can chain up to 6 of them
         // in one frame, so this bucket captures the true per-frame total.
@@ -24631,27 +24685,6 @@
         }
         window.PerfProfiler?.end(renderPassPerf);
         window.MobileRenderBudget?.sample(now, !paused && !window.PixelProbe?.armed);
-        // Optional diagnostic hook (off by default, see performance-debug.js):
-        // everything timed above only measures how long the CPU took to
-        // *issue* this frame's draw calls, not how long the GPU actually
-        // took to execute them. A forced readback here blocks until the GPU
-        // has really finished, so toggling this on can reveal GPU-bound
-        // frame time that's otherwise invisible to CPU-side profiling.
-        window.__hobunjiGpuSyncDiagnostic?.(renderer);
-
-        // ── 2D overlays (combat/debug/lightning, plus lighting) ──
-        const overlayPerf = window.PerfProfiler?.begin('overlays+hud');
-        drawOverlays();
-        window.WeatherFX.drawLightingOverlay();
-
-        window.DialogueContent?.updateNpcDialoguePortrait(now);
-        window.HudUpdate.updateHud();
-        if (!preworldBackdropReleased) {
-          preworldBackdropReleased = !window.HobunjiTitleScreen?.releaseBackdrop
-            || window.HobunjiTitleScreen.releaseBackdrop('first-world-frame') === true;
-        }
-        window.PerfProfiler?.end(overlayPerf);
-        window.PerfProfiler?.end(gameLoopTotalPerf);
       }
 
       // Debug hitbox/collider overlay (Settings → Dev Tools → Show Hitboxes)

@@ -729,11 +729,54 @@
   // Back texture is the same sprite UV-flipped horizontally; no runtime setFlipped() needed.
   // Returns { group, dispose() }.
   const animalSourceTextures = new Map(); // Native sprite pairs shared by live animal avatars; zero-owner pairs are removed immediately.
+  // Shared-face mirroring: a back plane's material can mirror the front
+  // texture in its own vertex shader, so both cards sample ONE texture (one
+  // GPU upload) instead of a second, horizontally pre-mirrored copy of the
+  // same image. The mirror only engages when the bound map is a texture
+  // registered here as a shared front face; any caller that still assigns a
+  // pre-mirrored back texture (repeat.x = -1) renders exactly as before.
+  const sharedFaceTextures = new WeakSet(); // Front textures handed to mirror-capable back materials.
+  const sharedFaceMirrorMaterials = new WeakSet(); // Back materials whose shader mirrors shared-face maps.
+  const SHARED_FACE_UV_VERTEX = [
+    '#ifdef USE_UV',
+    '\tvUv = ( uvTransform * vec3( mix( uv.x, 1.0 - uv.x, hobunjiSharedFaceMirror ), uv.y, 1.0 ) ).xy;',
+    '#endif',
+  ].join('\n');
+  function enableSharedFaceMirror(material) {
+    if (!material || sharedFaceMirrorMaterials.has(material)) return material;
+    sharedFaceMirrorMaterials.add(material);
+    const previousOnBeforeCompile = material.onBeforeCompile; // Chained so later/earlier shader customizations keep working.
+    material.onBeforeCompile = function sharedFaceMirrorCompile(shader, renderer) {
+      previousOnBeforeCompile?.call(this, shader, renderer);
+      const owner = this; // Clones compile with their own map binding.
+      shader.uniforms.hobunjiSharedFaceMirror = { get value() { return sharedFaceTextures.has(owner.map) ? 1 : 0; } }; // Read on every uniform upload, same cadence as the map itself.
+      shader.vertexShader = 'uniform float hobunjiSharedFaceMirror;\n'
+        + shader.vertexShader.replace('#include <uv_vertex>', SHARED_FACE_UV_VERTEX);
+    };
+    const previousCacheKey = material.customProgramCacheKey;
+    material.customProgramCacheKey = function sharedFaceMirrorCacheKey() {
+      return 'hobunji-shared-face-mirror|' + (previousCacheKey ? previousCacheKey.call(this) : '');
+    };
+    const baseClone = material.clone; // Material.copy drops onBeforeCompile, so clones (fades, depth occluders) re-enable it.
+    if (typeof baseClone === 'function') material.clone = function sharedFaceMirrorClone() { return enableSharedFaceMirror(baseClone.call(this)); };
+    return material;
+  }
+  // The map a back-plane material should bind for a {front, back} pair.
+  function backMapFor(material, pair) {
+    if (!pair) return null;
+    if (pair.front && sharedFaceMirrorMaterials.has(material)) {
+      sharedFaceTextures.add(pair.front);
+      return pair.front;
+    }
+    return pair.back || null;
+  }
+
   function acquireAnimalSourceTextures(THREE, spriteUrl) {
     let entry = animalSourceTextures.get(spriteUrl); // Same species art should consume one front/back GPU pair, not one pair per herd member.
     if (!entry) {
       const loader = new THREE.TextureLoader(); // Existing source-image loader and material settings stay unchanged.
-      const front = loader.load(spriteUrl), back = loader.load(spriteUrl); // Faces retain independent mirrored UV settings.
+      const back = new THREE.Texture(); // Pre-mirrored copy for callers without shared-face mirroring; shares the front's image and only uploads if bound.
+      const front = loader.load(spriteUrl, loaded => { back.image = loaded.image; back.needsUpdate = true; });
       front.colorSpace = back.colorSpace = THREE.SRGBColorSpace;
       back.wrapS = THREE.RepeatWrapping;
       back.repeat.set(-1, 1); back.offset.set(1, 0);
@@ -762,7 +805,8 @@
     // See makeSpriteMaterial above for why depthWrite is true here.
     const matOpts = { transparent: true, alphaTest: cfg().alphaTest ?? 0.001, side: THREE.FrontSide, depthWrite: true };
     const frontMat = new THREE.MeshBasicMaterial({ ...matOpts, name: 'animal_front_mat', map: frontTex });
-    const backMat  = new THREE.MeshBasicMaterial({ ...matOpts, name: 'animal_back_mat',  map: backTex  });
+    const backMat  = enableSharedFaceMirror(new THREE.MeshBasicMaterial({ ...matOpts, name: 'animal_back_mat' }));
+    backMat.map = backMapFor(backMat, sourceTextures) || backTex; // Mirrors the shared front texture in-shader; backTex stays for compatibility.
 
     const frontGeo = new THREE.PlaneGeometry(modelWidth, modelHeight);
     const backGeo  = frontGeo.clone();
@@ -1199,6 +1243,8 @@
 
   window.PNGPlaneAvatar = {
     PORTRAIT_FLIP_STORAGE_KEY,
+    backMapFor,
+    enableSharedFaceMirror,
     makeVariantCanvas,
     refreshSinglePlaneAvatarModel,
     buildAnimalPlaneAvatarModel,

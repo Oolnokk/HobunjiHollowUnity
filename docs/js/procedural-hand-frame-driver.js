@@ -621,6 +621,7 @@
       // that OTHER renderer's own pass left behind and stomp the correct
       // pose with it (visible as a one-frame hand pop).
       const frameId = global.RuntimeFrameScheduler?.frameId?.();
+      if (frameId != null) record._lastRenderedFrameId = frameId; // Lets updateManagedRigs skip rigs nobody is drawing.
       if (frameId != null && record._lastHandSyncFrameId === frameId) return;
       record._lastHandSyncFrameId = frameId;
       if (inHandCalibrationMode()) {
@@ -633,6 +634,19 @@
     };
     record.rig.parent.add(sentinel);
     record.syncSentinel = sentinel;
+    record._lastRenderedFrameId = global.RuntimeFrameScheduler?.frameId?.() ?? null; // A rig that never draws stops costing pre-render work after the grace window.
+  }
+
+  // The sentinel only fires when its rig is actually drawn, so a rig whose
+  // sentinel hasn't fired for a couple of frames is in another area's scene,
+  // hidden, or detached. Its pose isn't visible, so skip the pre-render pose
+  // work for it; the sentinel still syncs it on the first frame it draws
+  // again, and pre-render takes over from the next frame.
+  const UNRENDERED_GRACE_FRAMES = 2;
+  function rigRecentlyRendered(record) {
+    const frameId = global.RuntimeFrameScheduler?.frameId?.();
+    if (frameId == null || record._lastRenderedFrameId == null) return true; // No frame scheduler (tool pages): keep the old every-frame behavior.
+    return frameId - record._lastRenderedFrameId <= UNRENDERED_GRACE_FRAMES;
   }
 
   function updateManagedRigs() {
@@ -643,6 +657,17 @@
         continue;
       }
       ensureSyncSentinel(record);
+      if (!rigRecentlyRendered(record)) {
+        record._poseSyncSkipped = true;
+        continue;
+      }
+      if (record._poseSyncSkipped && record.fallback) {
+        // Resume gait sampling from here instead of reading the whole off-screen
+        // gap as one stride's worth of movement.
+        record.fallback.hasWorldPosition = false;
+        record.fallback.lastSampleMs = null;
+      }
+      record._poseSyncSkipped = false;
       updateFallbackMotion(record);
       if (inHandCalibrationMode()) {
         syncCalibrationWorkspace(record);
@@ -721,6 +746,7 @@
         secondaryGrip: toolGrips.secondaryGripForTool(record.lastToolKey, toolGrips.currentGripContext?.(), { speciesId: record.speciesId, gender: record.gender }) || null,
         hand: record.rig?.getDebug?.() || null,
         hasPreRenderSentinel: !!record.syncSentinel,
+        poseSyncSkipped: !!record._poseSyncSkipped,
       }));
     },
   };
