@@ -655,6 +655,7 @@
       const _controllerInputCfg = window.SCRATCHBONES_CONFIG?.game?.input || {}; // Used by both stick response curves and right-stick camera rotation.
       const CONTROLLER_MOVE_RESPONSE = Number(_controllerInputCfg.controllerMoveResponse) || 1.25;
       const CONTROLLER_LOOK_RESPONSE = Number(_controllerInputCfg.controllerLookResponse) || 1.45;
+      const MOBILE_ARCH_LOOK_RESPONSE = 6; // Combat arch camera look stays gentle through most of its throw and accelerates near the rim.
       const CONTROLLER_LOOK_DEG_PER_SEC = Number(_controllerInputCfg.controllerLookDegPerSec) || 190;
       const CONTROLLER_LOOK_VERTICAL_SCALE = Number(_controllerInputCfg.controllerLookVerticalScale) || 0.8;
       const ACTION_FX_LIMIT = 90; // used by spawnActionParticles()/updateActionParticles() to cap mobile effects.
@@ -17015,7 +17016,7 @@
 
       function setMobileArchCombatAim(pointerId, dx, dy, radius, action, slot = null) {
         if (!Number.isFinite(dx) || !Number.isFinite(dy) || !Number.isFinite(radius)) return;
-        const look = window.ControllerInput.normalizeStick(dx / Math.max(1, radius), dy / Math.max(1, radius), INPUT_DEFAULTS.deadzone, CONTROLLER_LOOK_RESPONSE); // Uses the physical right stick's radial deadzone and response curve.
+        const look = window.ControllerInput.normalizeStick(dx / Math.max(1, radius), dy / Math.max(1, radius), INPUT_DEFAULTS.deadzone, MOBILE_ARCH_LOOK_RESPONSE); // Shares controller normalization with a softer mobile arch curve that ramps up near the rim.
         mobileArchCombatAim = {
           pointerId,
           angle: cameraFacingAngleRad(),
@@ -17059,7 +17060,7 @@
 
       window.__mobileArchCombatAimDebug = {
         snapshot: () => ({
-          latestChange: 'Ranged and heavy-attack arch drags use controller right-stick camera look, including pitch, continuous turn rate, deadzone, sensitivity and inversion.',
+          latestChange: 'Ranged and heavy-attack arch aiming turns gently near center and ramps up near the rim; full-speed yaw/pitch and controller settings are preserved.',
           dragPointerId: mobileArchDragPointerId,
           dragAngle: mobileArchDragAngle,
           active: !!mobileArchCombatAim,
