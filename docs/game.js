@@ -17004,6 +17004,8 @@
       let cardinalHoldTimer = 0;
       let lastMoveAngle = -Math.PI / 2;
       let targetAimAngle = -Math.PI / 2;
+      let mobileArchDragPointerId = null; // Owns one arch gesture through release, including capture-failure fallback.
+      let mobileArchDragAngle = null; // Preserves deliberate tool/combat stick aim against movement and camera updates.
       let mobileArchCombatAim = null; // Live action-arch stick yaw used by ranged fire and melee hold/tap aiming until their release contract is complete.
       let lastMobileArchCombatAimEvent = { reason: 'not-used', at: 0 }; // Exposed in the mobile-copyable debug snapshot so touch-input failures can be diagnosed without DevTools.
 
@@ -17068,7 +17070,9 @@
 
       window.__mobileArchCombatAimDebug = {
         snapshot: () => ({
-          latestChange: 'Mobile ranged fire and melee attack holds now reuse the action-arch stick for live aiming and commit on finger release.',
+          latestChange: 'Arch drags own their pointer through release/cancel, measure travel from the finger press, and preserve aim against movement and camera updates.',
+          dragPointerId: mobileArchDragPointerId,
+          dragAngle: mobileArchDragAngle,
           active: !!mobileArchCombatAim,
           state: mobileArchCombatAim ? { ...mobileArchCombatAim } : null,
           lastEvent: { ...lastMobileArchCombatAimEvent },
@@ -17480,7 +17484,7 @@
           ix /= inputLen;
           iy /= inputLen;
           const aimDeadzone = Number(window.SCRATCHBONES_CONFIG?.game?.input?.targeting?.inputAimDeadzone) || 0.08;
-          if (inputStrength >= aimDeadzone && !controllerLookActive && !(isDesktop && mouseLookActive)) targetAimAngle = Math.atan2(iy, ix);
+          if (!Number.isFinite(mobileArchDragAngle) && inputStrength >= aimDeadzone && !controllerLookActive && !(isDesktop && mouseLookActive)) targetAimAngle = Math.atan2(iy, ix);
         }
 
         // Universal stuck-recovery: the instant the player first presses a
@@ -17611,6 +17615,11 @@
         if (characterViewMode.enabled) {
           facingAngle = characterViewMode.lockedFacingAngle;
           player.angle = characterViewMode.lockedPlayerAngle;
+        } else if (Number.isFinite(mobileArchDragAngle)) {
+          facingAngle = mobileArchDragAngle;
+          player.angle = mobileArchDragAngle;
+          targetAimAngle = mobileArchDragAngle;
+          lastMoveAngle = mobileArchDragAngle;
         } else if (activeCameraMode === SHOULDER_SURF_MODE) {
           // The head and attack rays remain camera-authored at all times. The
           // physical body/root inherits that direction immediately during
@@ -19375,6 +19384,7 @@
       }
 
       function updateShoulderSurfReticleAim() {
+        if (Number.isFinite(mobileArchDragAngle)) return;
         const rangedAim = heldMode === 'tool' && activeTool === 'ranged'
           ? window.RangedWeapons?.playerAimSolution?.(equipmentSlots.ranged)
           : null;
@@ -25520,6 +25530,7 @@
           if (!el._abtDragInit) {
             el._abtDragInit = true;
             let _ptId = null, _cx = 0, _cy = 0, _sockR = 0;
+            let _downX = 0, _downY = 0, _resetTimer = null; // Finger origin drives stick travel; timer restores the button after release.
             let _drag = false, _rtimer = null, _socket = null;
             let _chargeFiredOnPress = false;
             let _pressSlot = null; // 1 or 2 while a weapon tool-action button is mid-press
@@ -25580,8 +25591,21 @@
             }
 
             el.addEventListener('pointerdown', ev => {
-              if (_ptId !== null) return;
+              ev.preventDefault();
+              ev.stopPropagation();
+              if (_ptId !== null || mobileArchDragPointerId !== null || el.classList.contains('abt-hidden')) return;
               _ptId = ev.pointerId;
+              mobileArchDragPointerId = ev.pointerId;
+              mobileArchDragAngle = null;
+              _downX = ev.clientX;
+              _downY = ev.clientY;
+              if (_resetTimer !== null) { clearTimeout(_resetTimer); _resetTimer = null; }
+              el.style.transform = 'translate(50%, 50%)';
+              window.addEventListener('pointermove', _abtMove, { capture: true, passive: false });
+              window.addEventListener('pointerup', _abtUp, true);
+              window.addEventListener('pointercancel', _abtUp, true);
+              window.addEventListener('blur', _abtCancel);
+              document.addEventListener('visibilitychange', _abtHidden);
               // See handleJoystickPointerDown's comment.
               try { el.setPointerCapture(ev.pointerId); } catch (err) { /* degrade gracefully */ }
               const rect = el.getBoundingClientRect();
@@ -25640,9 +25664,12 @@
               }
             });
 
-            el.addEventListener('pointermove', ev => {
+            function _abtMove(ev) {
               if (ev.pointerId !== _ptId) return;
-              const dx = ev.clientX - _cx, dy = ev.clientY - _cy;
+              ev.preventDefault();
+              ev.stopPropagation();
+              if (_claimedInputAction) return;
+              const dx = ev.clientX - _downX, dy = ev.clientY - _downY;
               const dist = Math.hypot(dx, dy);
               const r = Math.min(dist, _sockR);
               const nx = dist > 0.5 ? dx / dist * r : 0;
@@ -25671,6 +25698,7 @@
               if (_heldItemPress) return;
               if (dist > DRAG_THRESH) {
                 const ang = Math.atan2(dy, dx);
+                mobileArchDragAngle = ang;
                 facingAngle = ang;
                 lastMoveAngle = ang;
                 player.angle = ang;
@@ -25693,11 +25721,24 @@
                   }
                 }
               }
-            });
+            }
 
+            function _abtCancel() {
+              if (_ptId !== null) _abtUp({ pointerId: _ptId, type: 'pointercancel' });
+            }
+            function _abtHidden() {
+              if (document.hidden) _abtCancel();
+            }
             function _abtUp(ev) {
               if (ev.pointerId !== _ptId) return;
+              ev.preventDefault?.();
+              ev.stopPropagation?.();
               _ptId = null;
+              window.removeEventListener('pointermove', _abtMove, true);
+              window.removeEventListener('pointerup', _abtUp, true);
+              window.removeEventListener('pointercancel', _abtUp, true);
+              window.removeEventListener('blur', _abtCancel);
+              document.removeEventListener('visibilitychange', _abtHidden);
               actionHeldDown = false;
               if (_selectorHoldTimer) { clearTimeout(_selectorHoldTimer); _selectorHoldTimer = null; }
               if (_rtimer) { clearInterval(_rtimer); _rtimer = null; }
@@ -25705,8 +25746,8 @@
               if (_socket) { _socket.remove(); _socket = null; }
               el.style.transition = 'transform 0.14s ease-out';
               el.style.transform  = 'translate(50%, 50%)';
-              setTimeout(() => { el.style.transition = ''; el.style.transform = ''; }, 150);
-              const pointerCanceled = ev.type === 'pointercancel'; // Cancellation tears down combat aim without committing a shot or melee release.
+              _resetTimer = setTimeout(() => { el.style.transition = ''; el.style.transform = ''; _resetTimer = null; }, 150);
+              const pointerCanceled = ev.type === 'pointercancel' || ev.type === 'lostpointercapture'; // Cancellation tears down combat aim without committing a shot or melee release.
               const combatAimOwned = _combatAimRelease; // Preserve ownership through cleanup below even after the specific input path has fired.
               if (_claimedInputAction) {
                 dispatchWorldInputClaim(_claimedInputAction,pointerCanceled?'cancel':'release','touch-arch');
@@ -25717,7 +25758,8 @@
                   else window._desktopSelectionArc?.releaseSelection();
                 }
               } else if (_flaskGesture) {
-                if (!_flaskCanceled && window.AlchemyFlasks?.aiming) window.AlchemyFlasks.confirmThrow();
+                if (pointerCanceled) window.AlchemyFlasks?.cancelAim();
+                else if (!_flaskCanceled && window.AlchemyFlasks?.aiming) window.AlchemyFlasks.confirmThrow();
               } else if (!_chargeFiredOnPress) {
                 if (_pressSlot) {
                   if (pointerCanceled) window.Combat.input.abortPress(_pressSlot);
@@ -25727,7 +25769,10 @@
                     }
                     window.Combat.input.pressEnd(_pressSlot);
                   }
-                } else if (_heldItemPress) window.HeldItemActionInput?.release();
+                } else if (_heldItemPress) {
+                  if (pointerCanceled) window.HeldItemActionInput?.abort();
+                  else window.HeldItemActionInput?.release();
+                }
                 else if (!_drag || combatAimOwned) {
                   if (!pointerCanceled) _abtFire();
                 }
@@ -25749,8 +25794,12 @@
               _flaskCanceled = false;
               _combatAimRelease = false;
               _pressSlot = null;
+              mobileArchDragPointerId = null;
+              mobileArchDragAngle = null;
+              try { if (el.hasPointerCapture?.(ev.pointerId)) el.releasePointerCapture(ev.pointerId); } catch (err) { /* already lost */ }
             }
 
+            el.addEventListener('lostpointercapture', _abtUp);
             el.addEventListener('pointerup', _abtUp);
             el.addEventListener('pointercancel', _abtUp);
           }
@@ -27130,7 +27179,8 @@
       // elements that catch their own pointerdown before it could bubble to
       // #threeContainer, so nothing extra is needed to exclude them.
       function cameraDragRequested(e) {
-        return e.pointerType === 'touch' && e.clientX >= window.innerWidth / 2;
+        return e.pointerId !== mobileArchDragPointerId && !e.target?.closest?.('.abt, #actionStack, #selectStack')
+          && e.pointerType === 'touch' && e.clientX >= window.innerWidth / 2;
       }
       function hideCameraJoystick() {
         cameraJoystickZone.style.display = 'none';
@@ -27159,7 +27209,7 @@
         try { threeContainer.setPointerCapture?.(e.pointerId); } catch (err) { /* see above — degrade gracefully */ }
       });
       threeContainer.addEventListener('pointermove', (e) => {
-        if (e.pointerId !== cameraDragPointerId || !cameraDragAllowed()) return;
+        if (e.pointerId === mobileArchDragPointerId || e.pointerId !== cameraDragPointerId || !cameraDragAllowed()) return;
         // Base stays put where the thumb first touched down — only the knob
         // (and the resulting turn rate) tracks the finger from there, same
         // clamp/deadzone/response-curve shape as updateJoystick() below.
