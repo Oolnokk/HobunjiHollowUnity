@@ -17875,7 +17875,11 @@
       }
 
       function canUseAction(tool, action, col, row) {
-        const tile = window.GridTileAccessors.getActiveGrid()[row][col];
+        // Combat and its selectors target actors/world space, including when
+        // the centered camera reticle reaches a cave wall or leaves the grid.
+        if (tool === 'weapon' || tool === 'ranged') return true;
+        const tile = window.GridTileAccessors.getActiveGrid()?.[row]?.[col]; // Terrain tools require an actual aimed tile.
+        if (!tile) return false;
         // A mineable ore rock is the one ROCK-tile exception to the blanket
         // solid-rock block below — everything else (cliff faces, boulders)
         // stays impassable/inert to every tool, mining included.
@@ -17902,8 +17906,6 @@
           if (action === 'till') return tile.type === TileType.GRASS && !tile.crop;
           if (action === 'smooth') return [TileType.TILLED, TileType.RAISED, TileType.PADDY].includes(tile.type) && !tile.crop;
         }
-        if (tool === 'weapon') return true; // combat hits are cone-based, not tile-gated
-        if (tool === 'ranged') return true; // projectile targeting is world-space, not tile-gated
         if (tool === 'harpoon' && action === 'fish') {
           return tile.type === TileType.RIVER || tile.type === TileType.STREAM;
         }
@@ -25766,54 +25768,59 @@
               _resetTimer = setTimeout(() => { el.style.transition = ''; el.style.transform = ''; _resetTimer = null; }, 150);
               const pointerCanceled = ev.type === 'pointercancel' || ev.type === 'lostpointercapture'; // Cancellation tears down combat aim without committing a shot or melee release.
               const combatAimOwned = _combatAimRelease; // Preserve ownership through cleanup below even after the specific input path has fired.
-              if (_claimedInputAction) {
-                dispatchWorldInputClaim(_claimedInputAction,pointerCanceled?'cancel':'release','touch-arch');
-                _claimedInputAction=null;
-              } else if (_selectorKind) {
-                if (_selectorArcOpen) {
-                  if (pointerCanceled) window._desktopSelectionArc?.close();
-                  else window._desktopSelectionArc?.releaseSelection();
-                }
-              } else if (_flaskGesture) {
-                if (pointerCanceled) window.AlchemyFlasks?.cancelAim();
-                else if (!_flaskCanceled && window.AlchemyFlasks?.aiming) window.AlchemyFlasks.confirmThrow();
-              } else if (!_chargeFiredOnPress) {
-                if (_pressSlot) {
-                  if (pointerCanceled) window.Combat.input.abortPress(_pressSlot);
-                  else {
-                    if (combatAimOwned && _drag && Number.isFinite(mobileArchCombatAim?.angle)) {
-                      commitMeleeAttackFacing(currentMeleeAimAngle());
-                    }
-                    window.Combat.input.pressEnd(_pressSlot);
+              try {
+                if (_claimedInputAction) {
+                  dispatchWorldInputClaim(_claimedInputAction,pointerCanceled?'cancel':'release','touch-arch');
+                  _claimedInputAction=null;
+                } else if (_selectorKind) {
+                  if (_selectorArcOpen) {
+                    if (pointerCanceled) window._desktopSelectionArc?.close();
+                    else window._desktopSelectionArc?.releaseSelection();
                   }
-                } else if (_heldItemPress) {
-                  if (pointerCanceled) window.HeldItemActionInput?.abort();
-                  else window.HeldItemActionInput?.release();
+                } else if (_flaskGesture) {
+                  if (pointerCanceled) window.AlchemyFlasks?.cancelAim();
+                  else if (!_flaskCanceled && window.AlchemyFlasks?.aiming) window.AlchemyFlasks.confirmThrow();
+                } else if (!_chargeFiredOnPress) {
+                  if (_pressSlot) {
+                    if (pointerCanceled) window.Combat.input.abortPress(_pressSlot);
+                    else {
+                      if (combatAimOwned && _drag && Number.isFinite(mobileArchCombatAim?.angle)) {
+                        commitMeleeAttackFacing(currentMeleeAimAngle());
+                      }
+                      window.Combat.input.pressEnd(_pressSlot);
+                    }
+                  } else if (_heldItemPress) {
+                    if (pointerCanceled) window.HeldItemActionInput?.abort();
+                    else window.HeldItemActionInput?.release();
+                  }
+                  else if (!_drag || combatAimOwned) {
+                    if (!pointerCanceled) _abtFire();
+                  }
                 }
-                else if (!_drag || combatAimOwned) {
-                  if (!pointerCanceled) _abtFire();
+              } finally {
+                // Release global ownership before optional selector/aim cleanup.
+                mobileArchDragPointerId = null;
+                mobileArchDragAngle = null;
+                _claimedInputAction = null;
+                if (combatAimOwned) {
+                  if (pointerCanceled) clearMobileArchCombatAim(ev.pointerId, 'pointer-cancel');
+                  else if (_pressSlot) clearMobileArchCombatAim(ev.pointerId, 'melee-release');
+                  else releaseMobileArchCombatAim(ev.pointerId);
                 }
+                _heldItemPress = false;
+                _drag = false;
+                _chargeFiredOnPress = false;
+                _selectorArcOpen = false;
+                _selectorMoved = false;
+                if (_selectorKind) window._desktopSelectionArc?.endHeldSelection?.();
+                _selectorKind = null;
+                document.querySelectorAll('.flask-cancel-hover').forEach(button => button.classList.remove('flask-cancel-hover'));
+                _flaskGesture = false;
+                _flaskCanceled = false;
+                _combatAimRelease = false;
+                _pressSlot = null;
+                try { if (el.hasPointerCapture?.(ev.pointerId)) el.releasePointerCapture(ev.pointerId); } catch (err) { /* already lost */ }
               }
-              if (combatAimOwned) {
-                if (pointerCanceled) clearMobileArchCombatAim(ev.pointerId, 'pointer-cancel');
-                else if (_pressSlot) clearMobileArchCombatAim(ev.pointerId, 'melee-release');
-                else releaseMobileArchCombatAim(ev.pointerId);
-              }
-              _heldItemPress = false;
-              _drag = false;
-              _chargeFiredOnPress = false;
-              _selectorArcOpen = false;
-              _selectorMoved = false;
-              if (_selectorKind) window._desktopSelectionArc?.endHeldSelection?.();
-              _selectorKind = null;
-              document.querySelectorAll('.flask-cancel-hover').forEach(button => button.classList.remove('flask-cancel-hover'));
-              _flaskGesture = false;
-              _flaskCanceled = false;
-              _combatAimRelease = false;
-              _pressSlot = null;
-              mobileArchDragPointerId = null;
-              mobileArchDragAngle = null;
-              try { if (el.hasPointerCapture?.(ev.pointerId)) el.releasePointerCapture(ev.pointerId); } catch (err) { /* already lost */ }
             }
 
             el.addEventListener('lostpointercapture', _abtUp);
@@ -27632,7 +27639,19 @@
           const target = manualAutoTarget;
           const availableTarget = findAvailableAutoTarget(); // Reports the prospective prey/enemy even while the mobile toggle is disabled.
           return {
-            latestChange: 'Mobile autotarget starts off, never enables on combat entry, and switches off on combat exit or weapon stow. Available gray TARGET text pulses; persistent locks gradually steer the camera, more slowly up close; the reticle remains centered and attacks use existing reticle convergence. Manual heavy/ranged drags retain priority. Arena prey now use wild-creature registration instead of being immune player companions.',
+            latestChange: 'Combat and potion actions remain available when aiming at cave walls or beyond the map. Canceled holds release ability windups; weapon and mobile pointer release state is cleared even if an action throws.',
+            area: currentArea,
+            inputSlots: [1, 2].map(slot => window.Combat?.input?.getState?.(slot)),
+            swing: { remainingS: toolSwingT, held: combatSwingHeld },
+            bandage: window.BandageSystem?.debugSnapshot?.(),
+            potionSelector: window.ContextualPotionSelector?.diagnostics?.(),
+            candidates: Array.from(hostileObjects).filter(c => c.areaId === currentArea && c.health > 0).map(c => {
+              const eligible = autoTargetCandidateValid(c); // On-demand report distinguishes range/hidden filtering from cave-wall obstruction.
+              const visible = eligible && autoTargetVisible(c); // Uses the actual shared sight test, rather than a second targeting policy.
+              return { id: c.id ?? c.creatureKey ?? c.def?.label, eligible, visible, hidden: !!c._denHidden, companion: !!c.isCompanion,
+                distanceTiles: Math.hypot(c.x - player.x, c.y - player.y) / TILE,
+                obstruction: eligible && !visible ? autoTargetSightHits.find(hit => hit.object?.visible !== false)?.object?.name || 'unnamed geometry' : null };
+            }),
             settings: window.Combat?.input?.autoTargetSettingsSnapshot?.(),
             controlLayout: ['btnUtilityMenu', 'btnSocialActions', 'btnSwapTarget'].map(id => {
               const rect = document.getElementById(id)?.getBoundingClientRect?.(); // On-demand copyable diagnostics use actual runtime button sizes and positions.

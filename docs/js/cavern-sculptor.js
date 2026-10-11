@@ -1739,11 +1739,32 @@
   // mesh extractor produces the final rock shell. Only the primary connector
   // cuts a vestibule through the outer wall; secondary/keyed connectors remain
   // solid wall boundaries until their runtime door/transition is revealed.
+  function expandFootprint(footprintTiles, clearances = []) {
+    const tiles = new Map(); // Shared locale/objective footprint, deduplicated before allocating the sculpt volume.
+    const add = tile => {
+      const col = Number(tile?.[0]), row = Number(tile?.[1]); // Reject invalid authored clearance cells instead of carving NaN coordinates.
+      if (Number.isInteger(col) && Number.isInteger(row)) tiles.set(`${col},${row}`, [col, row]);
+    };
+    for (const tile of footprintTiles || []) add(tile);
+    for (const clearance of Array.isArray(clearances) ? clearances : []) {
+      if (!clearance || typeof clearance !== 'object') continue;
+      if (Array.isArray(clearance.tiles)) {
+        for (const tile of clearance.tiles) add(tile);
+        continue;
+      }
+      const col = Number(clearance.col), row = Number(clearance.row); // Rectangle origin in ordinary locale tile coordinates.
+      const width = Number(clearance.width), depth = Number(clearance.depth); // Authored usable area including the desired object berth.
+      if (![col, row, width, depth].every(Number.isInteger) || width < 1 || depth < 1 || width > 64 || depth > 64) continue;
+      for (let dr = 0; dr < depth; dr++) for (let dc = 0; dc < width; dc++) add([col + dc, row + dr]);
+    }
+    return [...tiles.values()];
+  }
+
   function carveFootprintCavern(footprintTiles, options = {}, rng = Math.random) {
     const opts = Object.assign({}, DEFAULT_OPTS, options || {});
     const seen = new Set();
     const authored = [];
-    for (const tile of (footprintTiles || [])) {
+    for (const tile of expandFootprint(footprintTiles, options.clearanceFootprints)) {
       const c = Math.trunc(Number(tile?.[0])), r = Math.trunc(Number(tile?.[1]));
       if (!Number.isFinite(c) || !Number.isFinite(r)) continue;
       const key = c + ',' + r;
@@ -1884,6 +1905,6 @@
     createSculptState, carveHook, carveSphere, buildMazePaths, sampleSpline,
     carveAlongSpline2D, snapClaimTiles, carveTileColumn, solidifyBoundaryWalls,
     computeTouchedTiles, classifyDeformedBoundaryTiles,
-    extractMesh, carveMazeCavern, carveFootprintCavern, reserveOuterRim,
+    extractMesh, carveMazeCavern, carveFootprintCavern, expandFootprint, reserveOuterRim,
   };
 })();

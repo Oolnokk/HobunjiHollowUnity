@@ -188,7 +188,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
         <!-- CAVERN INTERIOR -->
         <div class="section" id="cavernSettingsSection" style="--sec:#64748b;--secBg:rgba(100,116,139,.10);display:none">
           <div class="sect-head"><b>Cavern Generation</b><span class="sect-tag">cave_interior</span></div>
-          <p class="muted">For cave interiors, painted locale cells are the authoritative walkable footprint. The shared cavern SDF generator carves that footprint with this fixed seed; only the primary connector cuts a physical opening through the rock.</p>
+          <p class="muted">For cave interiors, painted cells define the base footprint. Generation options can add clearanceFootprints: rectangles with col, row, width and depth, or explicit tiles arrays. These expand both carved rock and walkable floor around placed features. Only the primary connector cuts a physical opening through the outer rock.</p>
           <div class="g2" style="margin-top:7px">
             <div><label>Runtime map id</label><input id="cavernMapId" placeholder="map_i_example_cave"></div>
             <div><label>Fixed cavern seed</label><input id="cavernSeed" placeholder="example-cave-v1"></div>

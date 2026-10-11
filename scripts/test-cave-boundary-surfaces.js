@@ -38,11 +38,15 @@ const caveMap=CavernGenerator.synthesizeCavernMapData('rim-integration-10'); // 
 CaveSiteSystem.__test.sitesByMapId.set(caveMap.id,{mapId:caveMap.id,signature:caveMap.id,zoneId:'test-zone',denId:'den_0',contents:'ruin_entrance',inhabitant:'bandit_hideout'});
 CaveSiteSystem.decorateCavernMapData(caveMap.id,caveMap);
 assert(caveMap.caveRuinEntrance,'the narrow-throat regression cave must still have room for its requested ruin');
-assert.equal(caveMap.mesh.wallHeightScale,1.5);
-for(const cell of caveMap.caveRuinEntrance.tunnelTiles) assert(!floorKeys.has(`${cell.col},${cell.row}`),'the entire rear tunnel stays inside rock');
+assert.equal(caveMap.mesh.wallHeightScale,2.5);
+assert(caveMap.floor.length > generated.floor.length, 'door berth expands the actual floor');
+for (const cell of caveMap.caveRuinEntrance.clearanceTiles) assert(caveMap.floorSurfaceByTile[`${cell.col},${cell.row}`] != null, 'new approach cells have sampled grounding');
+assert.equal(CavernGenerator.entranceConnectedFloor(caveMap.floor,caveMap.exitCol,caveMap.exitRow).removed,0,'expansion stays connected to the entrance');
+const expandedFloorKeys = new Set(caveMap.floor.map(tile=>tile.join(','))); // Recarved clearances create new placement-safe floor cells.
+for(const cell of caveMap.caveRuinEntrance.tunnelTiles) assert(!expandedFloorKeys.has(`${cell.col},${cell.row}`),'the entire rear tunnel stays inside rock');
 const colliderKeys=new Set(caveMap.colliders.map(tile=>tile.join(','))); // Runtime collision uses the same protected rim as generation.
 for(const tile of caveMap.outerRimTiles) assert(colliderKeys.has(tile.join(',')));
-for(const feature of [...caveMap.oreRocks,...(caveMap.caveBanditSpawns||[]),...(caveMap.caveProps||[]).filter(prop=>!prop.embedded)]) assert(floorKeys.has(`${feature.col},${feature.row}`),'every generated floor feature remains off solid rock');
+for(const feature of [...caveMap.oreRocks,...(caveMap.caveBanditSpawns||[]),...(caveMap.caveProps||[]).filter(prop=>!prop.embedded)]) assert(expandedFloorKeys.has(`${feature.col},${feature.row}`),'every generated floor feature remains off solid rock');
 
 class Attribute { constructor(array, size) { this.array = new Float32Array(array); this.itemSize = size; } }
 class Geometry {
@@ -63,9 +67,9 @@ const context = { console, THREE:three, NaturalSurfaceMaterials:{naturalizeMesh(
 context.window=context;
 vm.runInNewContext(fs.readFileSync('docs/js/interior-scene-builder.js','utf8'), context);
 const builder=context.InteriorSceneBuilder; // Actual shared renderer used by game.js.
-const raw={positions:[0,-1,0, 1,0,0, 0,2,1],indices:[0,1,2],wallHeightBaseY:0,wallHeightScale:1.5}; // A floor, underside, and wall sample isolate upward-only growth.
+const raw={positions:[0,-1,0, 1,0,0, 0,2,1],indices:[0,1,2],wallHeightBaseY:0,wallHeightScale:2.5}; // A floor, underside, and wall sample isolate upward-only growth.
 const wall=builder.buildCarvedCavernMesh(three,raw);
-assert.deepEqual(Array.from(wall.geometry.attributes.position.array),[0,-1,0,1,0,0,0,3,1]);
+assert.deepEqual(Array.from(wall.geometry.attributes.position.array),[0,-1,0,1,0,0,0,5,1]);
 assert.equal(raw.positions[7],2,'height changes never mutate the cached generated shell');
 const normal=builder.buildCarvedCavernMesh(three,{...raw,wallHeightScale:1}); // Ordinary cave height remains unchanged.
 assert.equal(normal.geometry.attributes.position.array[7],2);
@@ -78,4 +82,4 @@ const standalone=builder.buildCavernFloorMesh(three,[[0,0]],{},{}); // Editor/st
 assert.equal(standalone.material,canonical);
 assert(naturalCalls.every(([family,mode])=>family==='rocks' && mode==='planar-stretch'));
 assert(mappingCalls.every(call=>call.maxPatchWorldSize===6));
-console.log('PASS solid cave rim, connected floor, complete nest, shared wall/floor material and stretch, upward-only 50% ruin wall growth');
+console.log('PASS solid cave rim, connected floor, complete nest, shared wall/floor material and stretch, upward-only 2.5x ruin wall growth');
