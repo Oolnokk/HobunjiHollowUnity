@@ -8561,6 +8561,7 @@
           member.cookingState = window.CookingSystem.serialize();
           member.wildBerryState = window.WildBerries.serializeState();
           member.zoneTreasureState = window.WildTreasure.serializeState();
+          member.surfaceLootState = window.SurfaceLootSystem?.serialize?.() || [];
           member.wildernessChunkState = serializeWildernessChunkState();
           member.wildernessCampfireState = window.WildernessCampfire?.serialize?.() || null;
           member.felledTreeState = serializeZoneFelledTreeState();
@@ -16378,6 +16379,14 @@
             b.textContent = label; b.onclick = fn;
             actEl.appendChild(b);
           }
+          if (def.scrapYield) mkBtn('♻️ Scrap 1', 'equip', () => {
+            const result = window.SurfaceLootSystem.scrapItem(key); // Inventory action shares the same atomic salvage transaction as Crafting.
+            if (!result.ok) showToast(result.message, false);
+          });
+          if (window.SurfaceLootSystem?.SCRAP_DEFS[key]) mkBtn('Combine 5 → 1 material', 'equip', () => {
+            const result = window.SurfaceLootSystem.combineScraps(key); // Random output is chosen only at this action.
+            if (!result.ok) showToast(result.message, false);
+          });
           // Mystery Dye items unlock a random unowned dye from their pool
           // straight into the character's permanent dye collection.
           if (MYSTERY_DYE_POOL_BY_ITEM_KEY[key] && count > 0) {
@@ -18804,6 +18813,7 @@
         if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'actions')) return;
         if (sitInteraction) { if (activeAction === 'obj_stand') endSitInteraction(); return; }
         if (dialogueOpen) { window.DialogueContent?.advanceNpcDialogue(); return; }
+        if (activeAction === 'surface_loot_take') { window.SurfaceLootSystem?.pickupTarget(); return; }
         // Dispatch for the fish_primary/fish_cancel arc buttons computeActionButtons()
         // builds while fishing is active — mirrors runInputAction's existing
         // window.Fishing?.state?.active special-case for keyboard/controller.
@@ -25008,7 +25018,9 @@
       function computeActionButtons() {
         const _cabStart = performance.now();
         try {
-          return computeActionButtonsImpl();
+          const buttons = computeActionButtonsImpl(); // Also advertises only visible surface-loot input claims.
+          window.SurfaceLootSystem?.syncClaims(buttons);
+          return buttons;
         } finally {
           window.PerfProfiler?.record('computeActionButtons', performance.now() - _cabStart);
         }
@@ -25108,6 +25120,10 @@
           }
           return btns;
         }
+
+        const surfaceLootButtons = !farmEditMode && !menuOpen && !dialogueOpen && !isPlayerInCombat()
+          ? window.SurfaceLootSystem?.getActionButtons?.() : []; // Individual aimed planes use the ordinary world action arch.
+        if (surfaceLootButtons?.length && !_pendingSpotTransition) return surfaceLootButtons;
 
         // Interior: exit button near any door's exit threshold + interact button for interior world objects
         if (currentArea === 'interior') {
@@ -28384,6 +28400,16 @@
         getInCombat: () => isPlayerInCombat(),
       });
 
+      window.SurfaceLootSystem?.init({
+        ITEM_DEFS, inventory, inventoryItems, TILE, random: rnd, clampInventoryStack,
+        getCurrentArea: () => currentArea, getScene: () => window.GridTileAccessors.getActiveScene(),
+        getCamera: () => camera, getPlayer: () => player, getPlayerMesh: () => playerMesh,
+        canInteract: () => !menuOpen && !dialogueOpen && !farmEditMode && !window.AuthoredCutsceneRuntime?.isActive?.(),
+        getDeadzone: () => window.SCRATCHBONES_CONFIG?.game?.movement?.perpRotDeadzoneDeg ?? 40,
+        showToast, buildInventoryGrid, refreshItemScroll: window.HudUpdate.refreshItemScroll,
+        refreshActionBar, saveMemberWorldData,
+      });
+
       window.TeaGrinder?.init({
         ITEM_DEFS,
         inventory,
@@ -30247,6 +30273,7 @@
         window.ReagentPlants.restoreZoneReagentState(playerData.alchemyReagentState);
         window.WildBerries.restoreState(playerData.wildBerryState);
         window.WildTreasure.restoreState(playerData.zoneTreasureState);
+        window.SurfaceLootSystem?.restore(playerData.surfaceLootState);
         restoreWildernessChunkState(playerData.wildernessChunkState);
         window.WildernessCampfire?.restore(playerData.wildernessCampfireState);
         restoreZoneFelledTreeState(playerData.felledTreeState);

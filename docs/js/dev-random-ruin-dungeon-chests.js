@@ -100,6 +100,8 @@
     group.rotation.y = Number(options.yaw) || 0;
     (options.parent || null)?.add?.(group);
 
+    window.SurfaceLootSystem?.scatter(group, { id: `dungeon:${options.id || group.name}`, y: .025, z: .8 }); // Loose dungeon loot uses the authoring placement renderer beside each reward chest.
+
     const chest = {
       id:String(options.id || group.name),
       tier,

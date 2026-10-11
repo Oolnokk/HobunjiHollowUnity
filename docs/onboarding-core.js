@@ -1432,6 +1432,7 @@
       // session, since nothing here re-derives them from anywhere else.
       wildBerryState:    { ...(memberState.wildBerryState || {}) },
       zoneTreasureState: { ...(memberState.zoneTreasureState || {}) },
+      surfaceLootState: [...(Array.isArray(memberState.surfaceLootState) ? memberState.surfaceLootState : [])],
       wildernessChunkState: { ...(memberState.wildernessChunkState || {}) },
       felledTreeState:   { ...(memberState.felledTreeState || {}) },
       minedRockState:    { ...(memberState.minedRockState || {}) },
@@ -1800,6 +1801,7 @@
       // shape identical rather than leaving these undefined on this path.
       playerData.wildBerryState = { ...(memberState.wildBerryState || {}) };
       playerData.zoneTreasureState = { ...(memberState.zoneTreasureState || {}) };
+      playerData.surfaceLootState = [...(Array.isArray(memberState.surfaceLootState) ? memberState.surfaceLootState : [])];
       playerData.wildernessChunkState = { ...(memberState.wildernessChunkState || {}) };
       playerData.felledTreeState = { ...(memberState.felledTreeState || {}) };
       playerData.minedRockState = { ...(memberState.minedRockState || {}) };
