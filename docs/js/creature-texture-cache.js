@@ -155,7 +155,37 @@
     return api;
   }
 
+  // Genotype composites are built at native sprite size (1375x600 and up)
+  // because every mask/recolor pass works per source pixel, but on screen a
+  // creature never covers more than about half the game canvas. Storing the
+  // full-size canvas plus its two GPU textures only adds mip levels the GPU
+  // never samples, so the cached copy is scaled to that display bound.
+  const MIN_DISPLAY_EDGE = 512; // Keeps close-ups on small or low-pixel-ratio canvases sharp.
+  const MAX_DISPLAY_EDGE = 1024; // Upper bound even on very wide/high-DPI canvases.
+  function displayEdgeCap() {
+    const canvasWidth = Number(window.__hobunjiGameRenderer?.domElement?.width)
+      || (Number(window.innerWidth) || 0) * (Number(window.devicePixelRatio) || 1);
+    return Math.max(MIN_DISPLAY_EDGE, Math.min(MAX_DISPLAY_EDGE, Math.ceil((canvasWidth || 0) / 2)));
+  }
+
+  function fitGeneratedCanvas(canvas) {
+    const width = Number(canvas?.width) || 0, height = Number(canvas?.height) || 0;
+    if (!width || !height || typeof document === 'undefined') return canvas;
+    const scale = displayEdgeCap() / Math.max(width, height);
+    if (scale >= 1) return canvas;
+    const out = document.createElement('canvas');
+    out.width = Math.max(1, Math.round(width * scale));
+    out.height = Math.max(1, Math.round(height * scale));
+    const ctx = out.getContext('2d');
+    if (!ctx) return canvas;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(canvas, 0, 0, out.width, out.height);
+    return out;
+  }
+
   window.CreatureTextureCache = {
+    fitGeneratedCanvas,
     create,
     genotypeFrameSetKey,
     isDisposed: owner => disposedOwners.has(owner),

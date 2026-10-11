@@ -4450,6 +4450,7 @@
               return;
             }
             _genotypeTexFailedAt.delete(key);
+            canvas = window.CreatureTextureCache.fitGeneratedCanvas?.(canvas) || canvas; // Cached at display size, not native sprite size.
             const front = new THREE.CanvasTexture(canvas);
             front.colorSpace = THREE.SRGBColorSpace;
             const back = new THREE.CanvasTexture(canvas);

@@ -250,6 +250,7 @@
         // with awake eyes while an authored conversation is active.
         canvas = await renderer.composeFrame(kind, descriptor.frame, genotype || null, eyesClosed);
       } catch (_) {}
+      if (canvas) canvas = window.CreatureTextureCache?.fitGeneratedCanvas?.(canvas) || canvas; // Same display-size bound as awake genotype frames.
       const pair = canvas ? pairFromCanvas(canvas) : null;
       entry.pair = pair;
       return pair;

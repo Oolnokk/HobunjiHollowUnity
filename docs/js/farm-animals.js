@@ -191,6 +191,7 @@
     if (_farmGenotypeTexPending.has(key)) return _farmGenotypeTexPending.get(key).then(tex => tex ? applyCached(tex) : false);
     const pending = window.CreatureGeneticsRender.composeFrame(kind, frame, genotype, blinkShut).then(canvas => { // One GPU texture pair per key even when multiple animals blink together.
       if (!canvas) return null;
+      canvas = window.CreatureTextureCache.fitGeneratedCanvas?.(canvas) || canvas; // Cached at display size, not native sprite size.
       const frontTex = new THREE.CanvasTexture(canvas); frontTex.colorSpace = THREE.SRGBColorSpace;
       const backTex = new THREE.CanvasTexture(canvas); backTex.colorSpace = THREE.SRGBColorSpace;
       backTex.wrapS = THREE.RepeatWrapping; backTex.repeat.set(-1, 1); backTex.offset.set(1, 0);

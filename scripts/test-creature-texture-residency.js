@@ -84,4 +84,26 @@ assert.equal(manager.genotypeFrameSetKey('plain-key'), 'plain-key');
   for (let i = 0; i < 6; i++) sets.put(`later|idle|n${i}|o`, pair(1375));
   assert.ok(pairs.every(p => p.front.disposals === 1), 'once the animal is gone its frames are ordinary evictable idle entries');
 }
+
+// Generated frames are cached at display size: long side clamped to half the
+// game canvas width within [512, 1024], never upscaled, aspect preserved.
+{
+  const drawn = [];
+  context.document = { createElement: () => ({ width: 0, height: 0, getContext: () => ({ drawImage: (src, x, y, w, h) => drawn.push({ src, w, h }) }) }) };
+  const fit = manager.fitGeneratedCanvas;
+  const native = { width: 1375, height: 600 };
+  context.window.__hobunjiGameRenderer = { domElement: { width: 1600 } };
+  let out = fit(native);
+  assert.deepEqual([out.width, out.height], [800, 349], 'half of a 1600px canvas');
+  assert.equal(drawn.at(-1).src, native, 'the scaled copy is drawn from the full composite');
+  context.window.__hobunjiGameRenderer = { domElement: { width: 600 } };
+  out = fit(native);
+  assert.deepEqual([out.width, out.height], [512, 223], 'small canvases keep at least 512px for close-ups');
+  context.window.__hobunjiGameRenderer = { domElement: { width: 5000 } };
+  out = fit({ width: 3000, height: 2250 });
+  assert.deepEqual([out.width, out.height], [1024, 768], 'very wide canvases cap at 1024px');
+  const small = { width: 400, height: 300 };
+  assert.equal(fit(small), small, 'composites already within the bound are used as-is');
+  delete context.document;
+}
 console.log('Animal texture residency, shared lifetime, preload pins, and memory pressure passed.');
