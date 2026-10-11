@@ -84,6 +84,9 @@ const context = {
 };
 context.window = context;
 vm.createContext(context);
+const stubCarve = context.CavernSculptor.carveFootprintCavern; // Preserve the lightweight mesh fixture while using the real clearance parser.
+vm.runInContext(read('docs/js/cavern-sculptor.js'), context, { filename: 'cavern-sculptor.js' });
+context.CavernSculptor.carveFootprintCavern = stubCarve;
 vm.runInContext(read('docs/js/cavern-generator.js'), context, { filename: 'cavern-generator.js' });
 const built = context.CavernGenerator.synthesizeLocaleCavernMapData(banubu);
 assert.strictEqual(built.id, 'map_i_den_banubu');
