@@ -794,7 +794,7 @@
       const state = focused.state;
       _removeContentRecord(state, content);
       nest.remaining = Math.max(0, Number(nest.remaining) - 1);
-      window.WildlifeSpawn?.updateClearedDenClutchVisual?.(deps.getCurrentArea(), nest); // Keeps the cleared-den collapse's reload fallback aligned with post-kill egg/baby collection.
+      window.WildlifeSpawn?.updateDenClutchState?.(deps.getCurrentArea(), nest); // Persists remaining clutch contents until the cave reaches its discovery-based deadline.
       deps.inventory[nest.itemKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[nest.itemKey] || 0) + 1);
       window.HobunjiActivityEvents?.emit('nest_stolen', { liveBirth: !!nest.liveBirth, itemKey: nest.itemKey });
       window.FarmAnimals.queueItemGenotype(nest.itemKey, nest.genotype);

@@ -82,3 +82,20 @@ assert(source.includes("requestMidnightReview({ source: 'natural'"), 'natural cl
 assert(source.includes("if (cancel) cancel.click()"), 'custom sleep/wait path reuses CalendarSystem Cancel cleanup for private timer/lock release');
 
 console.log('day-progress-review regression tests passed');
+
+windowStub.WildlifeSpawn = { caveReviewStatuses: () => ['Whispering Stone Cave will collapse in 2 days','Hidden Moon Cave is about to collapse','Broken Thorn Cave has collapsed','<Unsafe> Cave has collapsed'] }; // Runtime cave status provider used by real snapshot and HTML rendering.
+const caveSnapshot = test.buildReviewSnapshot({ source:'debug-current' });
+assert.equal(caveSnapshot.caves.length,4,'day review includes entered cave lifecycle statuses');
+const caveHtml = test.buildReviewHtml(caveSnapshot);
+assert(caveHtml.includes('Whispering Stone Cave will collapse in 2 days'));
+assert(caveHtml.includes('Hidden Moon Cave is about to collapse'));
+assert(caveHtml.includes('Broken Thorn Cave has collapsed'));
+assert(caveHtml.includes('&lt;Unsafe&gt; Cave has collapsed'),'cave names are HTML escaped');
+
+// Exercise the actual review request to prove the lifecycle uses the civil-midnight gate, not the 06:00 day callback.
+const requestSource = source.slice(source.indexOf('  function requestMidnightReview('),source.indexOf('  function sampleSnapshot(')); // Real request function executed with lightweight presentation stand-ins.
+const midnightCalls = []; // Captures the midnight ordinal supplied before the snapshot is shown.
+const requestContext = { window:{WildlifeSpawn:{advanceCaveMidnight(day){midnightCalls.push(day);return ['Test Cave has collapsed'];}}}, loadState(){}, syncLedgerDay(){}, currentDayKey:()=> 'world:14', civilOrdinal:()=>14, state:{reviewedDayKey:null}, activeReviewPromise:null, buildReviewSnapshot:meta=>meta, showSnapshot:snapshot=>snapshot, log(){} }; // Snapshot stand-ins avoid unrelated DOM animation in the gate regression.
+vm.runInNewContext(requestSource+'result=requestMidnightReview({source:"natural"});',requestContext);
+assert.deepEqual(midnightCalls,[15],'review advances the arriving civil midnight exactly once');
+assert.equal(requestContext.result.caveStatuses[0],'Test Cave has collapsed','the same midnight result is displayed in the review');

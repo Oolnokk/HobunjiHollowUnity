@@ -65,7 +65,7 @@
        extracted out of game.js. Must load before game.js, which calls
        window.DenNestSystem.init(...) (binds its own devTeleportDenBtn/
        wildlifeDenList listeners) during its own setup. -->
-  <script src="js/den-nest-system.js?v=20261010h7890450"></script>
+  <script src="js/den-nest-system.js?v=20261011h8031c61"></script>
   <script src="js/corpse-hold-loot.js?v=20261010corpsehold1"></script>
   <!-- Key HUD row, item-scroll widget, and per-frame status-pill HUD
        refresh, extracted out of game.js; uses window.FormatUtils.
@@ -335,7 +335,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261010h7e89e8e"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261011h07707a7"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -512,8 +512,8 @@
        at draw time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildernessMap.init(...) during its own setup. -->
-  <script src="js/wilderness-map.js?v=20260929ruinsites1"></script>
-  <script src="js/navigation-compass.js?v=20261008h6b805df"></script>
+  <script src="js/wilderness-map.js?v=20261011h44009cf"></script>
+  <script src="js/navigation-compass.js?v=20261011hd3d5a67"></script>
   <!-- Dead-zone rotation math shared by player/NPC/creature PNG-plane
        avatars (window.PerpRotation) — self-contained aside from deps
        injected via init(), so load order relative to the other systems
@@ -575,7 +575,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20261010h03b982b"></script>
+  <script src="js/wildlife-spawn.js?v=20261011h6c150ef"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
@@ -683,7 +683,7 @@
   <script src="js/tasks-panel.js?v=20260807a"></script>
   <script src="js/supply-page.js?v=20260807a"></script>
   <script src="js/whistle-equip.js?v=20260807a"></script>
-  <script src="js/wildlife-debug-panel.js?v=20260925denturnover1"></script>
+  <script src="js/wildlife-debug-panel.js?v=20261011h8125e8f"></script>
   <script src="js/wildlife-behavior-map.js?v=20261010hb5092df"></script>
   <!-- Shipping tab (player bag <-> shipping-box transfer UI, window.
        ShippingPanel) — pure DOM/state, no other window.* system reads;
@@ -748,7 +748,7 @@
        Framework-agnostic pure data/math — must load before cavern-generator.js,
        whose generateCavernFloor calls window.CavernSculptor.carveMazeCavern(...). -->
   <script src="js/cavern-sculptor.js?v=20260923banubuwalls1"></script>
-  <script src="js/cavern-generator.js?v=20261010h54591e8"></script>
+  <script src="js/cavern-generator.js?v=20261011hc2ddd2c"></script>
   <script src="js/cavern-ore-rocks.js?v=20261010caveore1"></script>
   <script src="js/town-mine.js?v=20261008hf23c45c"></script>
   <!-- A wilderness zone's in-bounds elevated plateau/mesa terrain
@@ -778,11 +778,11 @@
        synchronously during initial boot. -->
   <script src="js/locale-cave-runtime.js?v=20261010h40fea5e"></script>
   <!-- Promotes wilderness den anchors into generic cave sites; wraps WildlifeSpawn/CavernGenerator/DevSpawner, all loaded above. -->
-  <script src="js/cave-site-system.js?v=20261010cavesites1"></script>
+  <script src="js/cave-site-system.js?v=20261011h5a02404"></script>
   <script src="js/ruin-site-locales.js?v=20261002hb4d3f2d"></script>
   <script src="js/stampable-locale-defs.js?v=20261010h93ea9d8"></script>
   <script src="js/ruin-sites.js?v=20261003h12be717"></script>
-  <script src="js/zone-den-totem-features.js?v=20261010hf30ec1f"></script>
+  <script src="js/zone-den-totem-features.js?v=20261011h19f1bfc"></script>
   <script src="js/transition-markers.js?v=20261004h46d3bfb"></script>
   <!-- Wilderness-zone grass and rich-foliage-patch billboards
        (window.ZoneGrassBillboards) — pure scene-graph generation, no
@@ -2623,7 +2623,7 @@
   <script src="js/romance-wedding.js?v=20261007wedding1"></script>
   <script src="js/romance-system.js?v=20261007romance1"></script>
   <script src="js/npc-command-wheel.js?v=20261008h02bf686"></script>
-  <script src="game.js?v=20261011h28f4600"></script>
+  <script src="game.js?v=20261011he50e62b"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261010h8448517"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
