@@ -241,10 +241,11 @@
   }
 
   function floorTiles(mapData) {
+    const solid = new Set([...(mapData?.outerRimTiles || []), ...(mapData?.colliders || [])].map(tile => tileKey(tile[0], tile[1]))); // Every placement/connectivity helper ignores explicitly solid cells, even in imported map data.
     return (mapData?.floor || []).map(tile => Array.isArray(tile)
       ? { col: Number(tile[0]), row: Number(tile[1]) }
       : { col: Number(tile?.col ?? tile?.c), row: Number(tile?.row ?? tile?.r) })
-      .filter(tile => Number.isFinite(tile.col) && Number.isFinite(tile.row));
+      .filter(tile => Number.isFinite(tile.col) && Number.isFinite(tile.row) && !solid.has(tileKey(tile.col, tile.row)));
   }
 
   function neighborsOf(key, floorSet) {
@@ -445,7 +446,8 @@
   }
 
   function addRuinLayer(mapData, rng, candidates, blockedKeys, plan) {
-    const floorSet = new Set(floorTiles(mapData).map(tile => tileKey(tile.col, tile.row))); // Valid floor for the three-wide doorway and its two-tile approach.
+    const floorSet = new Set(window.CavernSculptor.expandFootprint(mapData.floor, plan.clearanceFootprints).map(tile => tile.join(','))); // Include the planned nest room when checking that the rear tunnel stays in rock.
+    const occupiedKeys = new Set([...blockedKeys].filter(key => floorSet.has(key))); // The doorway may abut its own reserved rim, but must keep clearance from actual cave features.
     const hasNest = mapData.nestCol != null && mapData.nestRow != null; // Animal objective is a 2x2 footprint; its centre defines the occupied end.
     const anchorCol = hasNest ? Number(mapData.nestCol) + 0.5 : Number(mapData.exitCol); // Opposite-end scoring anchor.
     const anchorRow = hasNest ? Number(mapData.nestRow) + 0.5 : Number(mapData.exitRow); // Opposite-end scoring anchor.
@@ -454,16 +456,26 @@
       if (hasNest && Math.hypot(tile.col - anchorCol, tile.row - anchorRow) < 6) continue;
       for (const [dc, dr, rotY] of [[0, 1, 0], [1, 0, 90], [0, -1, 180], [-1, 0, 270]]) {
         const clearing = []; // Entire doorway footprint plus approach, reserved before inhabitants are placed.
-        for (let depth = 0; depth <= 2; depth++) for (let side = -1; side <= 1; side++) {
+        for (let depth = 0; depth <= 5; depth++) for (let side = -3; side <= 3; side++) {
           clearing.push({ col: tile.col + dc * depth + dr * side, row: tile.row + dr * depth - dc * side });
         }
-        if (!clearing.every(cell => floorSet.has(tileKey(cell.col, cell.row)) && hasFeatureClearance(cell, blockedKeys, 1.4))) continue;
-        plan.ruinEntrance = { id: `cave_ruin_${mapData.id}`, col: tile.col, row: tile.row, rotY, clearanceTiles: clearing, seed: hashSeed(`${plan.profile.signature}:ruin`) };
+        if (!clearing.every(cell => cell.col >= 1 && cell.row >= 1 && hasFeatureClearance(cell, occupiedKeys, 1.4))) continue;
+        const tunnelTiles = []; // The long rear passage must enter solid rock without crossing another playable tunnel.
+        for (let depth = 1; depth <= 6; depth++) for (let side = -1; side <= 1; side++) tunnelTiles.push({ col: tile.col - dc * depth + dr * side, row: tile.row - dr * depth - dc * side });
+        if (tunnelTiles.some(cell => floorSet.has(tileKey(cell.col, cell.row)))) continue;
+        plan.ruinEntrance = { id: `cave_ruin_${mapData.id}`, col: tile.col, row: tile.row, rotY, clearanceTiles: clearing, tunnelTiles, seed: hashSeed(`${plan.profile.signature}:ruin`) };
+        plan.clearanceFootprints.push({ id: 'ruin-approach', tiles: clearing.map(cell => [cell.col, cell.row]) });
         // Clear natural rocks in the approach halo and prevent later layers from filling it.
         mapData.oreRocks = (mapData.oreRocks || []).filter(rock => clearing.every(cell => Math.hypot(rock.col - cell.col, rock.row - cell.row) >= 1.4));
         for (const cell of clearing) blockedKeys.add(tileKey(cell.col, cell.row));
         mapData.caveRuinEntrance = clone(plan.ruinEntrance);
         addProp(mapData, { id: plan.ruinEntrance.id, key: 'ruinEntranceDoor', col: tile.col, row: tile.row, rotY });
+        addProp(mapData, { id: plan.ruinEntrance.id + '_tunnel', key: 'ruinEntranceTunnel', col: tile.col - dc * 1.2, row: tile.row - dr * 1.2, rotY, scaleX: 0.75, scaleZ: 1.5, embedded: true });
+        mapData.wallHeightScale = 2.5;
+        if (mapData.mesh) {
+          const floorHeights = Object.values(mapData.floorSurfaceByTile || {}).filter(Number.isFinite); // Preserve every sampled standing surface while lifting only the walls above them.
+          mapData.mesh = { ...mapData.mesh, wallHeightScale: 2.5, wallHeightBaseY: Math.max(Number(mapData.floorSurfaceY) || 0, ...floorHeights) + 0.01 };
+        }
         return;
       }
     }
@@ -517,6 +529,7 @@
       const group = A.buildGroup(data);
       group.position.set(prop.col + 0.5, 0, prop.row + 0.5);
       group.rotation.y = (Number(prop.rotY) || 0) * Math.PI / 180;
+      group.scale.set(Number(prop.scaleX) || 1, 1, Number(prop.scaleZ) || 1); // Ruin rear tunnels extend into the solid rim while fitting the three-tile doorway width.
       group.userData.caveSiteProp = { mapId, id: prop.id, key: prop.key };
       scene.add(group);
       return 1;
@@ -527,12 +540,18 @@
     const profile = profileForMapId(mapId);
     if (!profile || !mapData) return mapData;
     const rng = makeRng(`${profile.signature}:interior`); // Feature stream isolated from profile selection, stable across reloads.
-    const allTiles = floorTiles(mapData);
-    const blockedKeys = new Set(); // Reserved logical tiles preventing generated layers from stacking physical features.
+    const solidTiles = new Set([...(mapData.outerRimTiles || []), ...(mapData.colliders || [])].map(tile => tileKey(tile[0], tile[1]))); // Static walls and the untouchable rim never enter any feature pool.
+    let allTiles = floorTiles(mapData).filter(tile => !solidTiles.has(tileKey(tile.col, tile.row))); // Rebuilt after the locale carver expands objective rooms.
+    const clearanceFootprints = []; // Nest and doorway requests are collected before a single shared geometry rebuild.
+    const blockedKeys = new Set(solidTiles); // Reserved logical tiles preventing generated layers from stacking physical features or occupying the rim.
     for (const exit of mapData.exits || []) for (const tile of exit.tiles || []) blockedKeys.add(tileKey(tile[0], tile[1]));
     for (const item of [...(mapData.furniture || []), ...(mapData.caveProps || [])]) blockedKeys.add(tileKey(item.col, item.row));
     if (profile.inhabitant === TYPES.ANIMAL_DEN && mapData.nestCol != null && mapData.nestRow != null) {
-      for (let dc = 0; dc < 2; dc++) for (let dr = 0; dr < 2; dr++) blockedKeys.add(tileKey(Number(mapData.nestCol) + dc, Number(mapData.nestRow) + dr));
+      mapData.nestCol = Math.max(4, Number(mapData.nestCol));
+      mapData.nestRow = Math.max(4, Number(mapData.nestRow));
+      const nestRoom = { id: 'nest-room', col: mapData.nestCol - 3, row: mapData.nestRow - 3, width: 8, depth: 8 }; // Three tiles of maneuvering room on every side of the 2x2 nest.
+      clearanceFootprints.push(nestRoom);
+      for (const [col, row] of window.CavernSculptor.expandFootprint([], [nestRoom])) blockedKeys.add(tileKey(col, row));
       for (const spawn of mapData.creatureSpawns || []) blockedKeys.add(tileKey(spawn.col, spawn.row));
     }
 
@@ -553,9 +572,19 @@
 
     const plan = {
       profile: clone(profile),
+      clearanceFootprints,
       separator: null,
       banditSpawns: [], bodies: [], traps: [], coffins: [], mineRocks: [], mushrooms: [], cache: null, ruinEntrance: null,
     }; // Runtime-only plan mirrors map decorations and drives mechanics that cannot live in static building map data.
+    if (profile.contents === TYPES.RUIN_ENTRANCE) addRuinLayer(mapData, rng,
+      allTiles.filter(tile => Math.hypot(tile.col - Number(mapData.exitCol), tile.row - Number(mapData.exitRow)) >= 3), blockedKeys, plan);
+    if (clearanceFootprints.length) {
+      window.CavernGenerator.expandCavernMapData(mapData, clearanceFootprints, makeRng(`${profile.signature}:clearance`));
+      for (const key of solidTiles) blockedKeys.delete(key);
+      for (const tile of mapData.outerRimTiles) blockedKeys.add(tileKey(tile[0], tile[1]));
+      for (const [col, row] of window.CavernSculptor.expandFootprint([], clearanceFootprints)) blockedKeys.add(tileKey(col, row));
+      allTiles = floorTiles(mapData);
+    }
     const awayFromEntrance = allTiles.filter(tile => Math.hypot(tile.col - Number(mapData.exitCol), tile.row - Number(mapData.exitRow)) >= 3);
 
     // Contents first (a hidden cache may wall off a side chamber), then the
@@ -564,7 +593,6 @@
     if (contents === TYPES.ORE_MINE) addMineLayer(mapData, rng, awayFromEntrance, blockedKeys, plan);
     else if (contents === TYPES.TRAPPED_CACHE) addCacheLayer(mapData, rng, awayFromEntrance, blockedKeys, plan);
     else if (contents === TYPES.CATACOMB) addCatacombLayer(mapData, rng, awayFromEntrance, blockedKeys, plan);
-    else if (contents === TYPES.RUIN_ENTRANCE) addRuinLayer(mapData, rng, awayFromEntrance, blockedKeys, plan);
     else if (contents === TYPES.MUSHROOM_CAVE) addMushroomLayer(mapData, rng, awayFromEntrance, blockedKeys, plan);
     if (profile.inhabitant === TYPES.BANDIT_HIDEOUT) {
       let reachable = plan.separator ? tilePoolFromKeys(awayFromEntrance, plan.separator.nearKeys) : awayFromEntrance;
@@ -576,6 +604,9 @@
       for (const rock of mapData.oreRocks || []) blockedKeys.add(tileKey(rock.col, rock.row));
       addBanditLayer(mapData, rng, reachable, blockedKeys, plan);
     }
+
+    plan.outerRimTileCount = mapData.outerRimTiles?.length || 0;
+    plan.wallHeightScale = mapData.wallHeightScale || 1;
 
     mapData.name = window.WildlifeSpawn?.denTurnoverStateForCavern?.(mapId)?.name || 'Unexplored cave';
     mapData.caveSite = clone(profile);
@@ -1050,12 +1081,15 @@
     return {
       ready: integrationsInstalled,
       currentArea,
-      latestChange: 'Entered caves receive names and individual midnight timers; overdue cave collapse/relocation waits until the wilderness and its caves are unoccupied. Shared feature spacing and clear ruin approaches are preserved.',
+      latestChange: 'Locale clearance footprints now expand the actual cave carving: nests have 8x8 rooms, ruin doors have 7x6 approaches, and ruin walls are 2.5 times their original height. Expanded floors, grounding, and the protected rock rim share one rebuild.',
       zoneCount: zones.length,
       caveCount: sites.length,
       caves: sites.map(site => ({ mapId: site.mapId, zoneId: site.zoneId, denId: site.denId, contents: site.contents, inhabitant: site.inhabitant, label: site.discoveredLabel })),
       currentPlan: plansByMapId.has(currentArea) ? clone({
         profile: plansByMapId.get(currentArea).profile,
+        outerRimTileCount: plansByMapId.get(currentArea).outerRimTileCount,
+        wallHeightScale: plansByMapId.get(currentArea).wallHeightScale,
+        clearanceFootprints: plansByMapId.get(currentArea).clearanceFootprints,
         separator: plansByMapId.get(currentArea).separator && { col: plansByMapId.get(currentArea).separator.col, row: plansByMapId.get(currentArea).separator.row, cells: plansByMapId.get(currentArea).separator.cells, oreKind: plansByMapId.get(currentArea).separator.oreKind },
         banditSpawns: plansByMapId.get(currentArea).banditSpawns,
         bodies: plansByMapId.get(currentArea).bodies,

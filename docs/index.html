@@ -23,7 +23,7 @@
   <script src="js/GLTFLoader.js?v=20260712d"></script>
   <script src="js/WallBuilder.js?v=20261006h9c26ecb"></script>
   <script src="js/HousePieceGen.js?v=20261007h7b668c0&window=20260926rebase1"></script>
-  <script src="js/interior-scene-builder.js?v=20261006h6327b82&window=20260926rebase1"></script>
+  <script src="js/interior-scene-builder.js?v=20261011h25fb4e2&window=20260926rebase1"></script>
   <script src="js/building-door.js?v=20260725a"></script>
   <script src="js/tile-pathfinding.js?v=20260808a"></script>
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
@@ -288,7 +288,7 @@
   <script src="js/combat/combat-attack-events.js?v=20261001quickbonus1"></script>
   <!-- Shared companion offensive-stat aggregation (Engraved Whistle × Sicced). -->
   <script src="js/combat/companion-offense.js?v=20260930ench1"></script>
-  <script src="js/combat/combat-input.js?v=20261010had5611e"></script>
+  <script src="js/combat/combat-input.js?v=20261011h77b50a6"></script>
   <script src="js/combat/combat-combo.js?v=20261005heb94de5"></script>
   <script src="js/combat/combat-quickattacks.js?v=20261001quickdebuff2"></script>
   <script src="js/combat/combat-counter-shield.js?v=20261005h66f4dee"></script>
@@ -683,7 +683,7 @@
   <script src="js/tasks-panel.js?v=20260807a"></script>
   <script src="js/supply-page.js?v=20260807a"></script>
   <script src="js/whistle-equip.js?v=20260807a"></script>
-  <script src="js/wildlife-debug-panel.js?v=20261011h8125e8f"></script>
+  <script src="js/wildlife-debug-panel.js?v=20261011h33f8dd7"></script>
   <script src="js/wildlife-behavior-map.js?v=20261010hb5092df"></script>
   <!-- Shipping tab (player bag <-> shipping-box transfer UI, window.
        ShippingPanel) — pure DOM/state, no other window.* system reads;
@@ -747,8 +747,8 @@
        CavernSculptor), ported from docs/references/(HA)TunnelSculptorV1.html.
        Framework-agnostic pure data/math — must load before cavern-generator.js,
        whose generateCavernFloor calls window.CavernSculptor.carveMazeCavern(...). -->
-  <script src="js/cavern-sculptor.js?v=20260923banubuwalls1"></script>
-  <script src="js/cavern-generator.js?v=20261011hc2ddd2c"></script>
+  <script src="js/cavern-sculptor.js?v=20261011h8fd18d9"></script>
+  <script src="js/cavern-generator.js?v=20261011h18fe2f0"></script>
   <script src="js/cavern-ore-rocks.js?v=20261010caveore1"></script>
   <script src="js/town-mine.js?v=20261008hf23c45c"></script>
   <!-- A wilderness zone's in-bounds elevated plateau/mesa terrain
@@ -778,7 +778,7 @@
        synchronously during initial boot. -->
   <script src="js/locale-cave-runtime.js?v=20261010h40fea5e"></script>
   <!-- Promotes wilderness den anchors into generic cave sites; wraps WildlifeSpawn/CavernGenerator/DevSpawner, all loaded above. -->
-  <script src="js/cave-site-system.js?v=20261011h5a02404"></script>
+  <script src="js/cave-site-system.js?v=20261011hbf98172"></script>
   <script src="js/ruin-site-locales.js?v=20261002hb4d3f2d"></script>
   <script src="js/stampable-locale-defs.js?v=20261010h93ea9d8"></script>
   <script src="js/ruin-sites.js?v=20261003h12be717"></script>
@@ -2623,7 +2623,7 @@
   <script src="js/romance-wedding.js?v=20261007wedding1"></script>
   <script src="js/romance-system.js?v=20261007romance1"></script>
   <script src="js/npc-command-wheel.js?v=20261008h02bf686"></script>
-  <script src="game.js?v=20261011he50e62b"></script>
+  <script src="game.js?v=20261011hc7ca27b"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261010h8448517"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

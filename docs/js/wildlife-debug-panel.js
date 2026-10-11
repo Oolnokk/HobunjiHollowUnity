@@ -88,11 +88,22 @@
     </div>`;
   }
 
+  function renderCaveGeometryCensus() {
+    const cave = window.CaveSiteSystem?.debugSnapshot?.(); // Existing mobile Wildlife tab exposes the latest cave geometry changes without a console.
+    if (!cave?.caveCount) return '';
+    const plan = cave.currentPlan; // Interior-only details come from the same generated plan used by actual cave mechanics.
+    return `<div style="padding:8px 10px;margin-bottom:8px;border:1px solid rgba(196,151,84,.3);border-radius:6px;font-size:12px">
+      <div style="font-weight:600">Cave Geometry</div>
+      <div>${deps.esc(cave.latestChange)}</div>
+      ${plan ? `<div>Solid rim: ${plan.outerRimTileCount} tiles · wall height: ${plan.wallHeightScale}× · embedded ruin tunnel: ${plan.ruinEntrance ? 'yes' : 'none'}</div>` : ''}
+    </div>`;
+  }
+
   function renderWildlifeDebugPanel() {
     syncWildlifeTabVisibility();
     const container = document.getElementById('wildlifeDenList');
     if (!container) return;
-    const censusHtml = renderDenNestCensus() + renderDenTurnoverCensus() + renderRoamingHerdCensus();
+    const censusHtml = renderDenNestCensus() + renderDenTurnoverCensus() + renderRoamingHerdCensus() + renderCaveGeometryCensus();
     if (!window.WildlifeSpawn.getDenGenotypes().size) {
       container.innerHTML = censusHtml + '<div style="opacity:.6;padding:8px 0">No den-family genotypes generated yet this session. Roaming herds are reported separately above because they do not belong to caverns.</div>';
       return;
