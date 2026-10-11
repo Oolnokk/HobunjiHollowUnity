@@ -108,6 +108,9 @@
       slotIndex,
       down: s.down,
       holding: s.holding,
+      holdStarted: s.holdStarted,
+      alignmentPending: !!s.alignmentRequest,
+      releaseQueued: s.releaseQueued,
       downForS: s.down ? Math.max(0, now() - s.downAt) : 0,
       holdThresholdS: HOLD_THRESHOLD_S,
     };
@@ -247,7 +250,13 @@
     }
     if (s.holdStarted) {
       const finish = cancelled ? (s.holdAbility?.onHoldCancel || s.holdAbility?.onHoldEnd) : s.holdAbility?.onHoldEnd; // Canceled holds use cleanup without release attacks when the ability supports it.
-      finish?.({ slotIndex, slotId, cancelled });
+      try {
+        finish?.({ slotIndex, slotId, cancelled });
+      } finally {
+        s.holdStarted = false;
+        s.releaseQueued = false;
+        s.holdAbility = null;
+      }
     }
     s.holdStarted = false;
     s.releaseQueued = false;
@@ -273,50 +282,48 @@
   function pressEnd(slotIndex) {
     const s = slots[slotIndex];
     if (!s || !s.down) return;
-    if (s.holding) {
-      endHold(slotIndex);
-    } else {
-      fireTap(slotIndex);
+    try {
+      if (s.holding) endHold(slotIndex);
+      else fireTap(slotIndex);
+    } finally {
+      s.down = false;
+      s.holding = false;
+      emitState(slotIndex, 'press-end');
     }
-    s.down = false;
-    s.holding = false;
-    emitState(slotIndex, 'press-end');
   }
 
-  // Resets a slot's press state without firing a tap or hold-end — for
-  // input paths (like the mobile action bar's drag-to-aim) that take over
-  // firing themselves and need to disarm the tap/hold timer mid-press.
+  // Disarms a press without firing a tap or release attack. Equipment
+  // stowing uses the same cancellation cleanup as physical input loss.
   function cancelPress(slotIndex) {
-    const s = slots[slotIndex];
-    if (!s) return;
-    s.alignmentRequest?.cancel?.();
-    s.alignmentRequest = null;
-    s.down = false;
-    s.holding = false;
-    s.holdAbility = null;
-    s.holdStarted = false;
-    s.releaseQueued = false;
-    emitState(slotIndex, 'press-cancel');
+    // Disarming a started hold must also release the ability's stance/windup.
+    abortPress(slotIndex);
   }
 
   // Ends an already-started hold, but never turns a canceled pending press
   // into a tap. Used when the browser loses ownership of the physical input.
   function abortPress(slotIndex) {
     const s = slots[slotIndex];
-    if (!s || !s.down) return;
-    if (s.holding) endHold(slotIndex, true);
-    s.alignmentRequest?.cancel?.();
-    s.alignmentRequest = null;
-    s.down = false;
-    s.holding = false;
-    s.holdAbility = null;
-    s.holdStarted = false;
-    s.releaseQueued = false;
-    emitState(slotIndex, 'press-abort');
+    if (!s || (!s.down && !s.holdStarted && !s.alignmentRequest)) return;
+    try {
+      if (s.holdStarted) endHold(slotIndex, true);
+    } finally {
+      try {
+        s.alignmentRequest?.cancel?.();
+      } finally {
+        s.alignmentRequest = null;
+        s.down = false;
+        s.holding = false;
+        s.holdAbility = null;
+        s.holdStarted = false;
+        s.releaseQueued = false;
+        emitState(slotIndex, 'press-abort');
+      }
+    }
   }
 
   function abortAllPresses() {
-    for (const slotIndex of [1, 2]) abortPress(slotIndex);
+    try { abortPress(1); }
+    finally { abortPress(2); }
   }
 
   // Ticked once per frame from Combat.update(dt) (wired in combat-core.js).
