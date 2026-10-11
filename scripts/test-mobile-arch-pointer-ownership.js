@@ -130,3 +130,15 @@ assert.equal(cameraContext.cameraDragRequested({ pointerId: 5, pointerType: 'tou
 assert.equal(cameraContext.cameraDragRequested({ pointerId: 6, pointerType: 'touch', clientX: 300, target: { closest: () => ({}) } }), false);
 assert.equal(cameraContext.cameraDragRequested({ pointerId: 6, pointerType: 'touch', clientX: 300 }), true);
 console.log('Mobile arch pointer ownership, capture fallback, aim and cancellation passed.');
+
+const failedRelease = setup(); // A gameplay error must not reserve all arch buttons for the old finger.
+failedRelease.win.Combat.input.pressEnd = () => { throw Error('release callback failed'); };
+failedRelease.el.emit('pointerdown', event(41,130,130));
+failedRelease.win.emit('pointermove', event(41,170,130));
+assert.throws(()=>failedRelease.win.emit('pointerup',event(41,170,130)),/release callback failed/);
+assert.equal(failedRelease.ctx.mobileArchDragPointerId,null,'release exception clears global pointer ownership');
+assert.equal(failedRelease.ctx.mobileArchCombatAim,null,'release exception clears manual aim so autotarget can resume');
+assert.equal(failedRelease.win.listenerCount(),0,'release exception removes fallback handlers');
+failedRelease.el.emit('pointerdown',event(42,130,130));
+assert.equal(failedRelease.ctx.mobileArchDragPointerId,42,'next touch can own the attack button');
+console.log('throwing mobile release recovery checks passed');

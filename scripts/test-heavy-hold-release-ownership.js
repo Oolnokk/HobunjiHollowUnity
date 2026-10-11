@@ -33,11 +33,8 @@ assert.match(
   /desktopWeaponPointerSlots\.has\(2\) && \(Number\(e\.buttons\) & 2\) === 0[\s\S]*?finishDesktopMouseAction\(\{ button: 2, pointerType: 'mouse' \}\)/,
   'the live mouse button bitmask repairs a missing right-button release event',
 );
-assert.match(
-  combatInput,
-  /function abortPress\(slotIndex\)[\s\S]*?if \(s\.holding\) endHold\(slotIndex, true\)[\s\S]*?emitState\(slotIndex, 'press-abort'\)/,
-  'cancellation lowers a started heavy hold without firing a pending tap',
-);
+// Started-hold cancellation now executes in test-combat-input-recovery.js,
+// including holstering, callback errors, and released pending alignment.
 assert.match(
   combatInput,
   /window\.addEventListener\('blur', abortAllPresses\)[\s\S]*?if \(document\.hidden\) abortAllPresses\(\)/,
@@ -49,4 +46,4 @@ assert.match(
   'both changed browser modules are cache-invalidated together',
 );
 
-console.log('heavy-hold release ownership contracts: 8 checks passed');
+console.log('heavy-hold release ownership contracts: 7 checks passed');

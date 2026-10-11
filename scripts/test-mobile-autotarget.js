@@ -217,3 +217,18 @@ const beforeExitRelease=transitions;handlers.pointerup(event(20));
 assert.equal(transitions,beforeExitRelease,'combat exit cancels a pending toggle');
 assert.equal(timers.size,0,'combat exit clears hold timer');
 console.log('manual activation and combat-exit lifecycle checks passed');
+
+for (const area of ['map_i_den_test','map_i_story_cave']) {
+  targetContext.currentArea=area;targetContext.isDesktop=false;targetContext.enabled=true;
+  near.areaId=area;near.x=15;near.y=0;near.health=10;near.blocked=false;
+  targetContext.hostileObjects=[near];targetContext.equipmentSlots.weapon='sword';
+  targetContext.manualAutoTarget=null;
+  for (const tool of ['weapon','ranged']) {
+    targetContext.activeTool=tool;
+    assert.equal(targetContext.computeAutoTarget(),near,`${area}: ${tool} acquires cave resident`);
+    near.areaId='map_western_slope';targetContext.manualAutoTarget=null;
+    assert.equal(targetContext.computeAutoTarget(),null,'exterior actors never become indoor targets');
+    near.areaId=area;
+  }
+}
+console.log('cave resident auto-target acquisition checks passed');

@@ -36,6 +36,14 @@ context.window = context;
 context.WildernessMapGenerator = context.window.WildernessMapGenerator = { makeRng: rngFactory };
 context.__farmLog = () => {};
 vm.createContext(context);
+vm.runInContext(fs.readFileSync(path.join(root, 'docs/js/cavern-sculptor.js'), 'utf8'), context);
+// Placement fixtures use a flat shell; the boundary integration test runs the real SDF carve.
+context.CavernSculptor.carveFootprintCavern = floor => {
+  const cols = Math.max(...floor.map(tile => tile[0])) + 1, rows = Math.max(...floor.map(tile => tile[1])) + 1; // Flat test surface covers every requested tile.
+  return { mesh:{ positions:[0,0,0, cols,0,0, 0,0,rows, cols,0,rows], indices:[0,2,1,1,2,3] } };
+};
+vm.runInContext(fs.readFileSync(path.join(root, 'docs/js/cavern-generator.js'), 'utf8'), context);
+const expandCavernMapData = context.CavernGenerator.expandCavernMapData; // Keep the real footprint/collision/grounding owner when testing later installation hooks.
 vm.runInContext(source, context, { filename: 'cave-site-system.js' });
 const Cave = context.CaveSiteSystem;
 assert(Cave, 'CaveSiteSystem exports');
@@ -116,7 +124,12 @@ function profile(mapId, contents, inhabitant = Cave.TYPES.NONE) {
 }
 function decorate(p) {
   installProfile(p);
-  return Cave.decorateCavernMapData(p.mapId, baseMap(p.mapId));
+  const map = baseMap(p.mapId); // Multi-goal animal fixtures need a second room outside the new eight-tile nest berth.
+  if (p.inhabitant === 'animal_den' || p.contents === 'ruin_entrance') for (let row = 6; row <= 15; row++) {
+    for (let col = 1; col <= 5; col++) map.floor.push([col,row]);
+    if (p.contents === 'ruin_entrance') for (let col = 7; col <= 11; col++) map.floor.push([col,row]);
+  }
+  return Cave.decorateCavernMapData(p.mapId, map);
 }
 
 // Two independent layers: every contents type and every inhabitant occurs.
@@ -144,6 +157,11 @@ assert.equal(catMap.creatureSpawns.length, 0, 'cave without an animal den keeps 
 const denCatMap = decorate(profile('map_i_test_den_catacomb', 'catacomb', 'animal_den'));
 assert.equal(denCatMap.denMotherKind, 'gar-wolf-den-mother', 'animal-den inhabitant keeps the Den-Mother');
 assert.equal(denCatMap.nestCol, 4, 'animal-den inhabitant keeps the nest');
+const nestFloor = new Set(denCatMap.floor.map(tile=>tile.join(','))); // Full three-tile berth must become actual walkable geometry.
+for (let row=denCatMap.nestRow-3; row<=denCatMap.nestRow+4; row++) for(let col=denCatMap.nestCol-3; col<=denCatMap.nestCol+4; col++) {
+  assert(nestFloor.has(`${col},${row}`),'nest has a complete 8x8 room');
+  assert(!(denCatMap.colliders||[]).some(tile=>tile[0]===col&&tile[1]===row),'nest berth has no old wall colliders');
+}
 assert(denCatMap.caveProps.some(item => item.key === 'ruinSanctumCoffin'), 'contents coexist with an animal den');
 assert(denCatMap.caveBodies.length > 0, 'bodies coexist with inhabitants when space allows');
 
@@ -167,7 +185,7 @@ assert.equal(ruinSeed, Cave.decorateCavernMapData('map_i_test_ruin', baseMap('ma
 
 // Crowded caves must respect clearance even when that means fewer decorations.
 function assertSpaced(map) {
-  const features = [...map.oreRocks, ...(map.caveProps || []), ...(map.caveBodies || []), ...(map.caveMushrooms || []), ...(map.caveBanditSpawns || []), ...(map.caveTraps || [])]; // All feature centres used to check cross-layer spacing.
+  const features = [...map.oreRocks, ...(map.caveProps || []).filter(prop => !prop.embedded), ...(map.caveBodies || []), ...(map.caveMushrooms || []), ...(map.caveBanditSpawns || []), ...(map.caveTraps || [])]; // All feature centres used to check cross-layer spacing.
   for (let i = 0; i < features.length; i++) for (let j = i + 1; j < features.length; j++) {
     if (features[i].caveSeparator && features[j].caveSeparator) continue; // A single mineable wall deliberately uses touching rocks.
     assert(Math.hypot(features[i].col - features[j].col, features[i].row - features[j].row) >= 1.4, `${map.id}: ${JSON.stringify(features[i])} too close to ${JSON.stringify(features[j])}`);
@@ -186,8 +204,13 @@ for (const inhabitant of INHABITANTS) {
   const map = decorate(profile(`ruin_clearance_${inhabitant}`, 'ruin_entrance', inhabitant)); // Verify opposite-end rules and oriented doorway geometry.
   const ruin = map.caveRuinEntrance;
   assert(ruin, 'two-room cave has room for a ruin entrance');
-  assert.equal(ruin.clearanceTiles.length, 9, 'door has a three-wide footprint and two rows of approach');
+  assert.equal(map.wallHeightScale, 2.5, 'actual ruin entrances request substantially taller walls');
+  const tunnel = map.caveProps.find(prop => prop.key === 'ruinEntranceTunnel'); // Rear extension belongs to the doorway assembly, not a separate floor feature.
+  assert(tunnel?.embedded && tunnel.scaleZ === 1.5);
+  assert.equal(ruin.tunnelTiles.length, 18, 'rear tunnel reserves six three-wide rows of solid rock');
+  assert.equal(ruin.clearanceTiles.length, 42, 'door has a seven-wide clearing with five rows of approach');
   const floor = new Set(map.floor.map(([c, r]) => `${c},${r}`)); // Floor membership validates the authored door footprint.
+  for (const tile of ruin.tunnelTiles) assert(!floor.has(`${tile.col},${tile.row}`), 'rear tunnel embeds in rock and never crosses another passage');
   for (const tile of ruin.clearanceTiles) {
     assert(floor.has(`${tile.col},${tile.row}`), 'door and approach fit completely on cave floor');
     for (const feature of [...map.oreRocks, ...(map.caveBanditSpawns || [])]) assert(Math.hypot(tile.col - feature.col, tile.row - feature.row) >= 1.4, 'approach has no rocks or bandits');
@@ -224,7 +247,7 @@ context.WildlifeSpawn = {
   onZoneEntered() {},
   denNestCensus() { return { denCount: 999, nestTreesAlive: 0 }; },
 };
-context.CavernGenerator = { synthesizeCavernMapData(id) { return baseMap(id); } };
+context.CavernGenerator = { expandCavernMapData, synthesizeCavernMapData(id) { return baseMap(id); } };
 context.DevSpawner = { init(deps) { this.deps = deps; } };
 assert(Cave.installIntegrations(), 'integrations install against already-loaded subsystems');
 const deps = {
