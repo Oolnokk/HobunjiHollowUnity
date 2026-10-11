@@ -289,12 +289,19 @@
     return state;
   }
 
+  // Mirror-capable back cards reuse the front texture (see PNGPlaneAvatar.backMapFor).
+  function mapForSide(entry, pair) {
+    if (!pair) return null;
+    if (entry.side !== 'back') return pair.front;
+    return window.PNGPlaneAvatar?.backMapFor?.(entry.material, pair) || pair.back;
+  }
+
   function applyPair(group, pair, cachedMaterials = null) {
     if (!pair || !group) return false;
     let applied = 0;
     const materials = cachedMaterials || animalPlaneMaterials(group); // Static sleepers may not have a live entity state; live sleepers reuse their cached plane list.
     for (const entry of materials) {
-      const map = entry.side === 'back' ? pair.back : pair.front;
+      const map = mapForSide(entry, pair);
       if (!map || entry.material.map === map) continue;
       entry.material.map = map;
       entry.material.needsUpdate = true;
@@ -316,7 +323,7 @@
         const original = state.originals[index];
         if (!original.material) continue;
         const plane = state.planeMaterials[index];
-        const sleepMap = state.entry?.pair && plane ? (plane.side === 'back' ? state.entry.pair.back : state.entry.pair.front) : null;
+        const sleepMap = state.entry?.pair && plane ? mapForSide(plane, state.entry.pair) : null;
         // Normal farm/wilderness animation runs before this checkpoint. If it
         // already replaced the sleep texture with a fresh awake/blink frame,
         // leave that authoritative map alone instead of resurrecting the

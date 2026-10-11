@@ -4494,12 +4494,14 @@
           return false;
         }
         const front = genoTex?.front || _getCreatureFrontTexture(url);
-        const back = genoTex?.back || _getCreatureBackTexture(url);
+        // The pre-mirrored back copy is only fetched for back cards that can't
+        // mirror the front texture themselves (see PNGPlaneAvatar.backMapFor).
+        const pair = genoTex || { front, get back() { return _getCreatureBackTexture(url); } };
         for (const child of [avatarRef.frontPlane, avatarRef.backPlane]) {
           if (!child?.material) continue;
           const hadMap = !!child.material.map; // Only a map-presence change requires shader recompilation.
           if (child.name.endsWith('_front_plane')) child.material.map = front;
-          else if (child.name.endsWith('_back_plane')) child.material.map = back;
+          else if (child.name.endsWith('_back_plane')) child.material.map = window.PNGPlaneAvatar?.backMapFor?.(child.material, pair) || pair.back; // Mirror-capable back cards reuse the front texture (one GPU upload).
           else continue;
           if (!hadMap) child.material.needsUpdate = true; // Ordinary frame swaps only change the map uniform.
         }

@@ -181,7 +181,7 @@
         if (!child.material) continue;
         const hadMap = !!child.material.map; // Preserve initial shader setup while avoiding recompilation on blink swaps.
         if (child.name.endsWith('_front_plane')) { child.material.map = tex.front; }
-        else if (child.name.endsWith('_back_plane')) { child.material.map = tex.back; }
+        else if (child.name.endsWith('_back_plane')) { child.material.map = window.PNGPlaneAvatar?.backMapFor?.(child.material, tex) || tex.back; } // Mirror-capable back cards reuse the front texture.
         if (!hadMap && child.material.map) child.material.needsUpdate = true;
       }
       return true;
