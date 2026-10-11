@@ -13781,7 +13781,7 @@
               // pickDenMotherKind) — they can genuinely differ.
               const motherFamily = window.WildlifeSpawn.denGenotypeFamily(motherKey);
               const denGenotype = motherFamily ? window.WildlifeSpawn.getOrMakeDenGenotype(mapId, motherFamily) : null;
-              if (motherDef) {
+              if (motherDef && !mapData.denMotherDefeated) {
                 const homeX = (nestCol + 1) * TILE, homeY = (nestRow + 1) * TILE;
                 const mother = makeCreatureEntity(motherKey, homeX, homeY, {
                   scene: bScene, grid: bGrid, cols, rows,
@@ -13801,7 +13801,7 @@
               if (itemKey) {
                 _denNests.set(mapId, {
                   col: nestCol, row: nestRow, w: 2, h: 2,
-                  itemKey, liveBirth, remaining, genotype: denGenotype,
+                  itemKey, liveBirth, remaining: mapData.nestState ? Math.max(0, Number(mapData.nestState.remaining) || 0) : remaining, genotype: denGenotype,
                 });
               } else {
                 window.__farmLog?.(`[wildlife] Den-Mother "${motherKey || 'missing'}" has no configured nest reward; nest collection is disabled.`, 'warn');
@@ -29265,6 +29265,7 @@
       });
 
       window.WildlifeSpawn?.init({
+        corpseObjects, // Cave renewal removes cached corpse entities along with living residents.
         despawnCreature, // Den turnover must dispose removed residents through the same owner as ordinary despawns.
         TILE,
         TileType,

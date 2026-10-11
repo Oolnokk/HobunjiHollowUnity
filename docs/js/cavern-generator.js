@@ -461,8 +461,8 @@
     const excludeSet = new Set([...exitTiles, [nestCol, nestRow], [nestCol + 1, nestRow], [nestCol, nestRow + 1], [nestCol + 1, nestRow + 1]].map(([c, r]) => c + ',' + r));
     const { nativeSpecies } = nativeSpeciesFor(mapId);
     const oreRocks = pickOreRockTiles(decorRng, floor, excludeSet);
-    const turnover = window.WildlifeSpawn?.denTurnoverStateForCavern?.(mapId) || null; // A killed Den-Mother must stay dead across a save/reload before the player exits.
-    const denCleared = !!turnover && turnover.stage !== 'active';
+    const turnover = window.WildlifeSpawn?.denTurnoverStateForCavern?.(mapId) || null; // A killed Den-Mother stays dead across reloads until this cave expires.
+    const denCleared = !!turnover?.motherDefeated;
     const creatureSpawns = denCleared ? [] : pickCreatureSpawnTiles(decorRng, floor, excludeSet, nativeSpecies);
 
     return {
@@ -478,7 +478,8 @@
       disconnectedFloorTilesRemoved,
       mesh,
       oreRocks, creatureSpawns,
-      nestCol: denCleared ? null : nestCol, nestRow: denCleared ? null : nestRow,
+      nestCol, nestRow,
+      denMotherDefeated: denCleared, nestState: turnover?.clutch || null,
       denMotherKind: pickDenMotherKind(mapId),
     };
   }

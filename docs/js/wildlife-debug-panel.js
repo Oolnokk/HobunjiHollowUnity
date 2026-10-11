@@ -62,10 +62,10 @@
     const records = window.WildlifeSpawn.denTurnoverDebug?.(zoneId) || [];
     if (!records.length) return '';
     const rows = records.map(record => {
-      const days = record.stage === 'collapsed' ? ` · relocates in <b>${record.daysRemaining}</b> day(s)` : '';
-      const clutch = record.stage === 'cleared' && record.clutchLostOnExit > 0 ? ` · <b>${record.clutchLostOnExit}</b> clutch item(s) still inside` : '';
+      const days = record.entered ? (record.queued ? ' · collapse queued until you leave the wilderness' : ` · collapses in <b>${record.daysRemaining}</b> day(s)`) : ' · no timer';
+      const clutch = record.motherDefeated ? ' · Den-Mother defeated' : '';
       const site = Number.isFinite(Number(record.x)) && Number.isFinite(Number(record.y)) ? `(${record.x},${record.y})` : '(generated site)';
-      return `<div><b>${deps.esc(record.denId)}</b>: ${deps.esc(record.stage)} · generation ${record.generation} · site ${deps.esc(site)}${days}${clutch}</div>`;
+      return `<div><b>${deps.esc(record.name || record.denId)}</b>: ${deps.esc(record.stage)} · generation ${record.generation} · site ${deps.esc(site)}${days}${clutch}</div>`;
     }).join('');
     return `<div style="padding:8px 10px;margin-bottom:8px;background:rgba(196,151,84,.08);border:1px solid rgba(196,151,84,.3);border-radius:6px;font-size:12px">
       <div style="font-weight:600;color:#e5e7eb;margin-bottom:2px">Den Turnover — ${deps.esc(zoneId)}</div>
