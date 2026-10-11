@@ -223,7 +223,11 @@
   function buildCarvedCavernMesh(THREE, meshData, options = {}) {
     if (!meshData || !meshData.positions || !meshData.positions.length) return new THREE.Group();
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(meshData.positions, 3));
+    const positions = new Float32Array(meshData.positions); // Scene-local copy keeps height adjustments out of the cached generated shell.
+    const heightScale = Math.max(1, Number(meshData.wallHeightScale) || 1); // Ruin caves stretch their walls upward while ordinary caves retain authored height.
+    const heightBase = Number(meshData.wallHeightBaseY) || 0; // Highest walkable floor sample anchors wall growth without moving the floor.
+    if (heightScale !== 1) for (let i = 1; i < positions.length; i += 3) if (positions[i] > heightBase) positions[i] = heightBase + (positions[i] - heightBase) * heightScale;
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     // Keep fallback UVs for standalone tools that do not load the natural-
     // surface stack. In the game, NaturalSurfaceMaterials (and its shared
     // furniture-style surface mapper wrapper) replaces these with the same
@@ -299,19 +303,13 @@
     geometry.setIndex(indices);
     geometry.computeVertexNormals();
 
-    const texture = options.textureUrl ? cavernFloorTexture(THREE, options.textureUrl, Number(options.textureRepeat) || 0.35) : null; // Standalone fallback retains the old repeated texture until the gameplay surface mapper successfully owns these UVs.
-    const farmCliffParity = (options.surfaceMaterial || '') === 'farm-cliff'; // Banubu + Color Pools also use the farm's canonical unlit rock material; mines/dens retain their authored material family.
-    const fallbackMaterial = farmCliffParity
-      ? new THREE.MeshBasicMaterial({ color: options.color ?? 0x5f5a56, map: texture, side: THREE.DoubleSide })
-      : new THREE.MeshLambertMaterial({ color: options.color ?? 0x5f5a56, map: texture, side: THREE.DoubleSide });
+    const texture = !options.wallMaterial && options.textureUrl ? cavernFloorTexture(THREE, options.textureUrl, Number(options.textureRepeat) || 0.35) : null; // Gameplay reuses the wall's already-loaded material and PNG.
+    const farmCliffParity = (options.surfaceMaterial || 'farm-cliff') === 'farm-cliff'; // Match the shell's default natural-surface preset exactly.
+    const fallbackMaterial = options.wallMaterial || new THREE.MeshBasicMaterial({ color: options.color ?? 0x5f5a56, map: texture, side: THREE.FrontSide }); // Upward floor triangles share the shell's unlit material, tint, and lighting model.
     const mesh = new THREE.Mesh(geometry, fallbackMaterial);
     mesh.name = options.name || 'cavern_walkable_floor';
 
-    if (farmCliffParity) {
-      const natural = root.NaturalSurfaceMaterials;
-      if (typeof natural?.naturalizeMesh === 'function') natural.naturalizeMesh(mesh, 'rocks', 'planar-stretch');
-      root.FacetedNaturalSurfaceShellReduction?.suppressMesh?.(mesh, 'rocks');
-    }
+    if (!options.wallMaterial) applyTownCliffMaterial(THREE, mesh, fallbackMaterial, options.surfaceMaterial || 'farm-cliff');
 
     const mapper = root.HobunjiSurfaceStretchUV; // Shared current 32%-edge mapper used by farm/town natural surfaces; this replaces the floor's old tiled world UVs for mines, dens, Banubu, and Color Pools alike.
     if (typeof mapper?.mapMesh === 'function') {

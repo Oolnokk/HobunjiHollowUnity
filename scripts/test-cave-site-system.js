@@ -167,7 +167,7 @@ assert.equal(ruinSeed, Cave.decorateCavernMapData('map_i_test_ruin', baseMap('ma
 
 // Crowded caves must respect clearance even when that means fewer decorations.
 function assertSpaced(map) {
-  const features = [...map.oreRocks, ...(map.caveProps || []), ...(map.caveBodies || []), ...(map.caveMushrooms || []), ...(map.caveBanditSpawns || []), ...(map.caveTraps || [])]; // All feature centres used to check cross-layer spacing.
+  const features = [...map.oreRocks, ...(map.caveProps || []).filter(prop => !prop.embedded), ...(map.caveBodies || []), ...(map.caveMushrooms || []), ...(map.caveBanditSpawns || []), ...(map.caveTraps || [])]; // All feature centres used to check cross-layer spacing.
   for (let i = 0; i < features.length; i++) for (let j = i + 1; j < features.length; j++) {
     if (features[i].caveSeparator && features[j].caveSeparator) continue; // A single mineable wall deliberately uses touching rocks.
     assert(Math.hypot(features[i].col - features[j].col, features[i].row - features[j].row) >= 1.4, `${map.id}: ${JSON.stringify(features[i])} too close to ${JSON.stringify(features[j])}`);
@@ -186,8 +186,13 @@ for (const inhabitant of INHABITANTS) {
   const map = decorate(profile(`ruin_clearance_${inhabitant}`, 'ruin_entrance', inhabitant)); // Verify opposite-end rules and oriented doorway geometry.
   const ruin = map.caveRuinEntrance;
   assert(ruin, 'two-room cave has room for a ruin entrance');
+  assert.equal(map.wallHeightScale, 1.5, 'only actual ruin entrances request 50% taller walls');
+  const tunnel = map.caveProps.find(prop => prop.key === 'ruinEntranceTunnel'); // Rear extension belongs to the doorway assembly, not a separate floor feature.
+  assert(tunnel?.embedded && tunnel.scaleZ === 1.5);
+  assert.equal(ruin.tunnelTiles.length, 18, 'rear tunnel reserves six three-wide rows of solid rock');
   assert.equal(ruin.clearanceTiles.length, 9, 'door has a three-wide footprint and two rows of approach');
   const floor = new Set(map.floor.map(([c, r]) => `${c},${r}`)); // Floor membership validates the authored door footprint.
+  for (const tile of ruin.tunnelTiles) assert(!floor.has(`${tile.col},${tile.row}`), 'rear tunnel embeds in rock and never crosses another passage');
   for (const tile of ruin.clearanceTiles) {
     assert(floor.has(`${tile.col},${tile.row}`), 'door and approach fit completely on cave floor');
     for (const feature of [...map.oreRocks, ...(map.caveBanditSpawns || [])]) assert(Math.hypot(tile.col - feature.col, tile.row - feature.row) >= 1.4, 'approach has no rocks or bandits');

@@ -102,17 +102,18 @@
       : generationOptions.fast
         ? { branchCount, entranceLength, tileSize, gridN: 32, splineSamples: 5, hitsPerStep: 1, probeDigBursts: 2, probeMaxPasses: 45, enforceWalkableClearance: 1 }
         : { branchCount, entranceLength, tileSize };
-    const result = window.CavernSculptor.carveMazeCavern(sculptOptions, rng);
+    const result = window.CavernSculptor.carveMazeCavern({ ...sculptOptions, solidOuterRim: true }, rng);
 
     // Shift every tile coordinate (and the mesh's X/Z) from the sculptor's
     // arbitrary centered local space into positive grid space, same +1
     // margin convention the old blob-growth generator used so nothing sits
     // flush against col/row 0.
     let minX = Infinity, minY = Infinity;
-    for (const key of result.claimed) { const [x, y] = key.split(',').map(Number); if (x < minX) minX = x; if (y < minY) minY = y; }
+    for (const key of [...result.claimed, ...(result.solidRim || [])]) { const [x, y] = key.split(',').map(Number); if (x < minX) minX = x; if (y < minY) minY = y; }
     const shiftX = -minX + 1, shiftY = -minY + 1;
 
     const carvedFloor = [...result.claimed].map(key => { const [x, y] = key.split(',').map(Number); return [x + shiftX, y + shiftY]; });
+    const outerRimTiles = [...(result.solidRim || [])].map(key => { const [x, y] = key.split(',').map(Number); return [x + shiftX, y + shiftY]; }); // Solid former edge tiles are never candidates for creatures, loot, or ore.
     const exitTiles = result.entranceTiles.map(([x, y]) => [x + shiftX, y + shiftY]);
     const [nfx, nfy] = result.nestTile;
 
@@ -134,10 +135,11 @@
     const [exitCol, exitRow] = exitTiles[Math.floor(exitTiles.length / 2)];
     const connected = entranceConnectedFloor(carvedFloor, exitCol, exitRow); // Used as the authoritative collision floor so an isolated SDF pocket can never become a spawnable room.
     const floor = connected.floor;
-    const cols = Math.max(...floor.map(f => f[0])) + 2, rows = Math.max(...floor.map(f => f[1])) + 2;
+    const footprint = [...floor, ...outerRimTiles]; // Grid bounds include the protected rock around the walkable cave.
+    const cols = Math.max(...footprint.map(f => f[0])) + 2, rows = Math.max(...footprint.map(f => f[1])) + 2;
     const floorKeys = new Set(floor.map(([col, row]) => `${col},${row}`));
     let nestCol = nfx + shiftX, nestRow = nfy + shiftY;
-    if (!floorKeys.has(`${nestCol},${nestRow}`)) {
+    if (![[nestCol, nestRow], [nestCol + 1, nestRow], [nestCol, nestRow + 1], [nestCol + 1, nestRow + 1]].every(tile => floorKeys.has(tile.join(',')))) {
       const nestCandidates = floor.filter(([col, row]) => floorKeys.has(`${col + 1},${row}`) && floorKeys.has(`${col},${row + 1}`) && floorKeys.has(`${col + 1},${row + 1}`)); // Used to preserve the Den-Mother's complete 2x2 objective footprint after pocket removal.
       [nestCol, nestRow] = (nestCandidates.length ? nestCandidates : floor).reduce((best, tile) => {
         const bestDistance = Math.abs(best[0] - exitCol) + Math.abs(best[1] - exitRow);
@@ -147,7 +149,7 @@
     }
 
     const floorResult = {
-      floor, cols, rows,
+      floor, cols, rows, outerRimTiles,
       exitCol, exitRow,
       exitTiles,
       nestCol, nestRow,
@@ -454,7 +456,7 @@
     // authored as cave_interior locales and use synthesizeLocaleCavernMapData
     // instead, so this generic path no longer knows about Banubu or any other
     // individual cave by map id.
-    const { floor, cols, rows, exitCol, exitRow, exitTiles, nestCol, nestRow, disconnectedFloorTilesRemoved, mesh } = generateCavernFloor(mapId, { fast: true });
+    const { floor, cols, rows, exitCol, exitRow, exitTiles, nestCol, nestRow, disconnectedFloorTilesRemoved, mesh, outerRimTiles } = generateCavernFloor(mapId, { fast: true });
     const floorSurface = floorSurfaceMap(floor, mesh); // Ordinary dens now share the same rendered-surface grounding contract as authored locale caverns.
     const makeRng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng) ? WildernessMapGenerator.makeRng : (() => Math.random);
     const decorRng = makeRng(mapId + '_decor');
@@ -470,7 +472,7 @@
       id: mapId, name: 'A Dark Burrow',
       cols, rows,
       exits: [{ id: 'den_exit', label: 'Back outside', tiles: exitTiles, targetMap: '', spawnCol: 0, spawnRow: 0 }],
-      colliders: [], floor,
+      colliders: outerRimTiles, outerRimTiles, floor,
       floorSurfaceByTile: floorSurface.byTile, floorSurfaceY: floorSurface.median,
       furniture: [],
       wallStyle: 'cavern',
