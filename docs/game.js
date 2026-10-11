@@ -4390,7 +4390,7 @@
       // signature's compose is still in flight, callers fall back to the
       // species' plain (uncolored) sprite — see setCreatureFrame below.
       const _genotypeTexCache = { front: new Map(), back: new Map() };
-      const _genotypeTextureResidency = window.CreatureTextureCache.create('wild-and-companion', _genotypeTexCache); // Owns disposal and bounded idle retention while preserving the existing map/debug API.
+      const _genotypeTextureResidency = window.CreatureTextureCache.create('wild-and-companion', _genotypeTexCache, undefined, { frameSetOf: window.CreatureTextureCache.genotypeFrameSetKey }); // Owns disposal and bounded idle retention while preserving the existing map/debug API.
       window.HobunjiCacheAudit?.register('game.genotypeTexCache', () => _genotypeTexCache.front.size);
       const _genotypeTexPending = new Map(); // Frame-key promises allow scene preparation to await the existing compositor.
       // Every key this function has ever logged a "kicking off compose" line
@@ -4476,9 +4476,22 @@
       // frame/genotype completed, permanently stranding it on the plain
       // fallback if its own specific frame wasn't ready at that exact
       // moment and nothing else ever bumped the counter again).
+      function _showingSameGenotype(avatarRef, kind, genotype) {
+        const boundKey = _genotypeTextureResidency.keyFor(avatarRef);
+        if (!boundKey || !_genotypeTexCache.front.has(boundKey)) return false; // Nothing colored is actually on screen yet.
+        const sig = window.CreatureGeneticsRender?.genotypeSignature?.(kind, genotype);
+        return sig != null && window.CreatureTextureCache.genotypeFrameSetKey(boundKey) === `${kind}|${sig}`;
+      }
       function setCreatureFrame(avatarRef, url, genotypeKind, frameKey, genotype, blinkShut = false) {
         if (window.CreatureTextureCache.isDisposed(avatarRef)) return false; // Prevent a late visual update from reacquiring removed-avatar memory.
         const genoTex = (genotypeKind && genotype) ? _getGenotypeTextures(genotypeKind, frameKey, genotype, blinkShut) : null;
+        if (!genoTex && genotypeKind && genotype && _showingSameGenotype(avatarRef, genotypeKind, genotype)) {
+          // This pose/blink frame is still composing, but the animal already
+          // shows a colored frame of the same genotype: keep it on screen
+          // (callers retry every tick) rather than flashing the plain sprite
+          // and dropping its colors, patterns and eyes until the compose lands.
+          return false;
+        }
         const front = genoTex?.front || _getCreatureFrontTexture(url);
         const back = genoTex?.back || _getCreatureBackTexture(url);
         for (const child of [avatarRef.frontPlane, avatarRef.backPlane]) {

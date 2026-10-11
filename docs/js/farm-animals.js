@@ -155,7 +155,7 @@
   // sessions) and how long the farm stays loaded, which is exactly what
   // was crashing long-lived saves on mobile from GPU-memory exhaustion.
   const _farmGenotypeTexCache = new Map();
-  const _farmTextureResidency = window.CreatureTextureCache.create('farm', null, _farmGenotypeTexCache); // Shares the lifecycle/idle-memory policy used by wild animals.
+  const _farmTextureResidency = window.CreatureTextureCache.create('farm', null, _farmGenotypeTexCache, { frameSetOf: window.CreatureTextureCache.genotypeFrameSetKey }); // Shares the lifecycle/idle-memory policy used by wild animals.
   const _farmGenotypeTexPending = new Map(); // Shares one compose/upload among animals requesting the same signature concurrently.
   window.HobunjiCacheAudit?.register('FarmAnimals.genotypeTexCache', () => _farmGenotypeTexCache.size);
 
