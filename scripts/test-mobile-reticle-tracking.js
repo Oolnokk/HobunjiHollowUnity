@@ -63,5 +63,6 @@ vm.runInContext(game.slice(rayStart,game.indexOf('      function currentPlayerIn
 assert.equal(rayFixture.currentPlayerAimRay().direction.x,0.1,'existing camera ray remains attack authority');
 assert.deepEqual(usedNDC,{x:0,y:0});
 rayFixture.mobileArchCombatAim={angle:Math.PI/2};
-assert(Math.abs(rayFixture.currentPlayerAimRay().direction.x)<1e-10,'manual attack yaw still takes priority');
+assert.equal(rayFixture.currentPlayerAimRay().direction.x,0.1,'manual arch turns the camera rather than overriding the camera ray');
+assert.equal(rayFixture.currentPlayerAimRay().direction.y,0.2,'manual arch preserves the camera elevation used by controller attacks');
 console.log('mobile centered reticle, camera lag/proximity, frame-rate consistency, and manual attack priority passed');

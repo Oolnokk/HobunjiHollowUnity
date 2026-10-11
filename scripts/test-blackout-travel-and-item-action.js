@@ -62,7 +62,7 @@ assert.match(game, /function isHoldToCommitAction\(action\)[\s\S]*?holdToCommit/
   'holdToCommit eligibility is read from whichever button currently occupies the pressed slot');
 assert.match(game, /isHoldToCommitAction\(act\)[\s\S]*?_heldItemPress = beginHeldItemActionDescriptor\(act\)/,
   'the mobile/desktop action-button pointer path claims a holdToCommit press before it can fall through to immediate dispatch');
-assert.match(game, /else if \(_heldItemPress\) window\.HeldItemActionInput\?\.release\(\);/,
+assert.match(game, /else if \(_heldItemPress\)\s*\{[\s\S]*?else window\.HeldItemActionInput\?\.release\(\);/,
   'releasing a claimed action-button press resolves through the hold controller instead of firing immediately');
 assert.match(game, /const actionSlot = \/\^action\(\\d\+\)\$\/\.exec\(actionId\);[\s\S]{0,50}if \(actionSlot\) \{[\s\S]{0,200}holdToCommit/,
   'controller press/release for a holdToCommit slot routes through the hold controller too');
