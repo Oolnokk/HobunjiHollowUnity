@@ -1,54 +1,80 @@
 'use strict';
-
-// Static regression guard for the mobile action-arch combat aim/release contract.
-// Run with: node scripts/test-mobile-combat-arch-aim.js
-const fs = require('fs');
-const path = require('path');
-
-const gamePath = path.join(__dirname, '..', 'docs', 'game.js');
-const source = fs.readFileSync(gamePath, 'utf8');
-
-function assertIncludes(fragment, message) {
-  if (!source.includes(fragment)) throw new Error(message + ` (missing: ${fragment})`);
+const fs = require('node:fs'); // Loads the runtime implementations under test.
+const assert = require('node:assert/strict'); // Checks shared physical/virtual right-stick behavior.
+const vm = require('node:vm'); // Executes the production camera input without WebGL boot.
+const source = fs.readFileSync('docs/game.js', 'utf8'); // Current arch and camera owner.
+const controllerSource = fs.readFileSync('docs/js/controller-input.js', 'utf8'); // Canonical radial normalization.
+const normalizeSource = controllerSource.slice(controllerSource.indexOf('  function normalizeStick('), controllerSource.indexOf('  // Indexed loops')); // Real stick response helper.
+const archResponseSource = source.split('\n').find(line => line.includes('const MOBILE_ARCH_LOOK_RESPONSE =')); // Read the authored curve from the runtime.
+const setterSource = source.slice(source.indexOf('      function setMobileArchCombatAim('), source.indexOf('      function clearMobileArchCombatAim(')); // Real touch-to-stick adapter.
+const cameraSource = source.slice(source.indexOf('      function applyControllerCameraLook('), source.indexOf('      function pollControllerInput(')); // Single yaw/pitch consumer shared by both devices.
+function cameraContext(invert = false, free = true) {
+  const ctx = { // Supplies camera settings and lifecycle dependencies of production code.
+    mobileArchCombatAim: null, controllerCameraX: 0, controllerCameraY: 0,
+    cameraAzimuthOffsetDeg: 0, cameraAngleOffsetDeg: 0, controllerLookAngle: 0,
+    targetAimAngle: 0, controllerLookActive: false, activeTool: 'ranged', player: {},
+    INPUT_DEFAULTS: { deadzone: 0.24 }, CONTROLLER_LOOK_RESPONSE: 1.45,
+    CONTROLLER_LOOK_DEG_PER_SEC: 140, CONTROLLER_LOOK_VERTICAL_SCALE: 0.7,
+    s_controllerLookSensitivity: 1.3, s_controllerInvertY: invert,
+    lastMobileArchCombatAimEvent: null, invalidateMobileArchAimPerspectiveCache() {},
+    cameraDragAllowed: () => true, desktopControlsConfig: () => ({ cameraRotateClampDeg: 45 }),
+    freeRotateCameraActive: () => free, wrapAzimuthDeg: v => ((v + 180) % 360 + 360) % 360 - 180,
+    clampCameraPitchOffsetDeg: v => Math.max(-85, Math.min(45, v)),
+    window: { FormatUtils: { clamp: (v, a, b) => Math.max(a, Math.min(b, v)) }, Combat: { postAttackTurnMultiplier: () => 0.6 } },
+  };
+  ctx.cameraFacingAngleRad = () => -ctx.cameraAzimuthOffsetDeg * Math.PI / 180;
+  vm.createContext(ctx);
+  vm.runInContext(normalizeSource, ctx);
+  ctx.window.ControllerInput = { normalizeStick: ctx.normalizeStick };
+  vm.runInContext(archResponseSource + '\n' + setterSource + cameraSource, ctx);
+  return ctx;
 }
-function assertExcludes(fragment, message) {
-  if (source.includes(fragment)) throw new Error(message + ` (unexpected: ${fragment})`);
+for (const invert of [false, true]) for (const free of [false, true]) for (const [x, y] of [[1, 0], [0, -1], [0.65, 0.75], [0.12, 0.12], [-0.5, 0.4]]) {
+  const physical = cameraContext(invert, free), touch = cameraContext(invert, free); // Same settings and normalized camera axes exercise the shared consumer.
+  touch.setMobileArchCombatAim(7, x * 42, y * 42, 42, 'shoot');
+  const look = { x: touch.mobileArchCombatAim.lookX, y: touch.mobileArchCombatAim.lookY }; // The arch intentionally softens its throw before the shared controller camera path.
+  physical.controllerCameraX = look.x;
+  physical.controllerCameraY = look.y;
+  assert.equal(touch.cameraAzimuthOffsetDeg, 0, 'touch sample does not snap to a world heading');
+  assert.equal(touch.mobileArchCombatAim.lookX, look.x);
+  assert.equal(touch.mobileArchCombatAim.lookY, look.y);
+  for (const dt of [1 / 60, 1 / 30, 0.08, 1]) {
+    physical.applyControllerCameraLook(dt);
+    touch.applyControllerCameraLook(dt);
+    assert.equal(touch.cameraAzimuthOffsetDeg, physical.cameraAzimuthOffsetDeg, 'same continuous horizontal turn');
+    assert.equal(touch.cameraAngleOffsetDeg, physical.cameraAngleOffsetDeg, 'same pitch and inversion');
+    assert.equal(touch.targetAimAngle, physical.targetAimAngle, 'same target bearing');
+  }
+  const azimuth = touch.cameraAzimuthOffsetDeg, pitch = touch.cameraAngleOffsetDeg; // Centering stops look immediately without clearing the held attack.
+  touch.setMobileArchCombatAim(7, 0, 0, 42, 'shoot');
+  touch.applyControllerCameraLook(0.5);
+  assert.equal(touch.cameraAzimuthOffsetDeg, azimuth);
+  assert.equal(touch.cameraAngleOffsetDeg, pitch);
+  touch.mobileArchCombatAim.released = true;
+  touch.applyControllerCameraLook(0.5);
+  assert.equal(touch.cameraAzimuthOffsetDeg, azimuth, 'released arch no longer turns camera');
 }
-
-assertIncludes('let mobileArchCombatAim = null;', 'mobile combat aim state must exist');
-assertIncludes("_combatAimRelease = Boolean(_pressSlot || (activeTool === 'ranged' && act === 'shoot'));", 'ranged shoot and melee slots must opt into release-owned aiming');
-assertIncludes('setMobileArchCombatAim(ev.pointerId, ang, el.dataset.action, _pressSlot);', 'combat drags must feed the existing action-arch stick vector into shared aim');
-assertIncludes('window.Combat.input.pressEnd(_pressSlot);', 'melee press/hold state must survive drag and release normally');
-assertExcludes('window.Combat.input.cancelPress(_pressSlot);', 'combat arch drag must never cancel the live melee press/hold state');
-assertIncludes('commitMeleeAttackFacing(mobileArchCombatAim.angle);', 'dragged melee release must latch the chosen direction through its strike');
-assertIncludes('if (Number.isFinite(mobileArchCombatAim?.angle)) return mobileArchCombatAim.angle;', 'live stick yaw must override an older auto-target facing commit while a melee hold is still being aimed');
-assertIncludes('if (Number.isFinite(manualArchFacing)) commitMeleeAttackFacing(manualArchFacing);', 'auto-target fallback must preserve the manual release heading when no target is acquired');
-assertIncludes('else if (!_drag || combatAimOwned)', 'dragged ranged input must fire on release instead of threshold-cross');
-assertIncludes("clearMobileArchCombatAim(ev.pointerId, 'pointer-cancel');", 'pointer cancellation must not commit an attack');
-assertIncludes('updateMobileArchCombatAimLifecycle();', 'released ranged aim must stay latched through the authored fire animation');
-assertExcludes('With a weapon equipped, action buttons are tap/hold only', 'legacy weapon drag suppression must stay removed');
-
-console.log('mobile combat arch aim/release regression checks passed');
-
-const assert = require('node:assert/strict'); // Checks production aim and cancellation behavior below.
-const vm = require('node:vm'); // Executes browser helpers with minimal runtime dependencies.
-const rayContext = {
-  mobileArchCombatAim: null, mobileAutoCameraActive:false, currentCombatReticleNDC:()=>({x:0,y:0}),
-  activeCameraMode: 'orbit', SHOULDER_SURF_MODE: 'shoulder',
-  heldMode: 'tool', activeTool: 'weapon', equipmentSlots: {},
-  camera: { updateMatrixWorld() {} }, _screenCenterNDC: {},
-  _shoulderSurfReticleRaycaster: { setFromCamera() {}, ray: { origin: {x:1,y:2,z:3}, direction: {x:0,y:0,z:-1} } },
-  window: { FormatUtils: { clamp: (v,a,b) => Math.max(a,Math.min(b,v)) } },
-}; // Supplies only the real camera-ray helper's dependencies.
+const curve = cameraContext(); // Mid-throw remains precise while the outer rim still permits fast turning.
+const turnAt = throwFraction => {
+  curve.setMobileArchCombatAim(7, throwFraction * 42, 0, 42, 'shoot');
+  return curve.mobileArchCombatAim.lookX;
+}; // Samples the production radial response without duplicating its formula.
+assert.equal(turnAt(0.2), 0, 'center remains inside the controller deadzone');
+assert(turnAt(0.5) < 0.01, 'half throw stays below one percent speed');
+assert(turnAt(0.75) < 0.1, 'three-quarter throw stays below ten percent speed');
+assert(turnAt(0.9) > 0.4, 'turn speed ramps up near the outer edge');
+assert.equal(turnAt(1), 1, 'maximum turn speed is unchanged');
+assert.equal(turnAt(1.5), 1, 'dragging beyond the socket clamps to full speed');
+const rayContext = { // Camera pitch and yaw must reach attacks without a separate arch heading override.
+  mobileArchCombatAim: { angle: 0 }, mobileAutoCameraActive: false,
+  currentCombatReticleNDC: () => ({ x: 0, y: 0 }), activeCameraMode: 'orbit', SHOULDER_SURF_MODE: 'shoulder',
+  heldMode: 'tool', activeTool: 'weapon', equipmentSlots: {}, camera: { updateMatrixWorld() {} },
+  _shoulderSurfReticleRaycaster: { setFromCamera() {}, ray: { origin: { x: 1, y: 2, z: 3 }, direction: { x: 0.3, y: 0.4, z: -0.8 } } },
+};
 vm.createContext(rayContext);
 vm.runInContext(source.slice(source.indexOf('      function currentPlayerAimRay()'), source.indexOf('      function currentPlayerInteractionRay()')), rayContext);
-assert.equal(rayContext.currentPlayerAimRay(), null, 'idle arch leaves ordinary melee camera behavior unchanged');
-rayContext.activeCameraMode = 'shoulder';
-assert.equal(rayContext.currentPlayerAimRay().direction.z, -1, 'idle arch retains shoulder camera direction');
-rayContext.mobileArchCombatAim = {angle:0};
-assert.equal(rayContext.currentPlayerAimRay().direction.x, 1, 'explicit zero yaw is a valid manual aim');
-rayContext.mobileArchCombatAim = {angle:Math.PI/2};
-assert.equal(rayContext.currentPlayerAimRay().direction.z, 1, 'drag yaw reaches the production aim ray');
+assert.deepEqual(JSON.parse(JSON.stringify(rayContext.currentPlayerAimRay().direction)), { x: 0.3, y: 0.4, z: -0.8 }, 'virtual right stick uses the actual camera ray including elevation');
+console.log('Physical and arch right-stick yaw/pitch, deadzone, rate, settings and camera-ray parity passed.');
 
 const inputSource = fs.readFileSync('docs/js/combat/combat-input.js', 'utf8'); // Real hold termination state machine under test.
 let releases = 0, cancellations = 0, alignmentCancels = 0; // Counters distinguish a normal release from a canceled input.

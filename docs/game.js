@@ -655,6 +655,7 @@
       const _controllerInputCfg = window.SCRATCHBONES_CONFIG?.game?.input || {}; // Used by both stick response curves and right-stick camera rotation.
       const CONTROLLER_MOVE_RESPONSE = Number(_controllerInputCfg.controllerMoveResponse) || 1.25;
       const CONTROLLER_LOOK_RESPONSE = Number(_controllerInputCfg.controllerLookResponse) || 1.45;
+      const MOBILE_ARCH_LOOK_RESPONSE = 6; // Combat arch camera look stays gentle through most of its throw and accelerates near the rim.
       const CONTROLLER_LOOK_DEG_PER_SEC = Number(_controllerInputCfg.controllerLookDegPerSec) || 190;
       const CONTROLLER_LOOK_VERTICAL_SCALE = Number(_controllerInputCfg.controllerLookVerticalScale) || 0.8;
       const ACTION_FX_LIMIT = 90; // used by spawnActionParticles()/updateActionParticles() to cap mobile effects.
@@ -5278,12 +5279,10 @@
       }
 
       function meleeAttackBodyFacingOverride() {
-        if (Number.isFinite(mobileArchCombatAim?.angle)) return mobileArchCombatAim.angle;
         return Number.isFinite(meleeAttackFacingCommit?.angle) ? meleeAttackFacingCommit.angle : null;
       }
 
       function currentMeleeAimAngle() {
-        if (Number.isFinite(mobileArchCombatAim?.angle)) return mobileArchCombatAim.angle;
         return activeCameraMode === SHOULDER_SURF_MODE ? mouseLookAngle
           : controllerLookActive ? controllerLookAngle
           : (isDesktop && mouseLookActive) ? mouseLookAngle
@@ -5363,7 +5362,6 @@
       }
 
       function currentPlayerAimAngle() {
-        if (Number.isFinite(mobileArchCombatAim?.angle)) return mobileArchCombatAim.angle;
         if (activeCameraMode === SHOULDER_SURF_MODE || mobileAutoCameraActive) return shoulderPerspectiveFacingAngle();
         return player.angle;
       }
@@ -5441,7 +5439,7 @@
 
       function requestMeleeAttackAlignment(runAttack) {
         // Attacks start with the current reticle. Never wait for or snap to the target.
-        const manualArchFacing = mobileArchCombatAim?.angle; // Preserves the existing dragged heavy-attack heading through release.
+        const manualArchFacing = mobileArchCombatAim ? currentMeleeAimAngle() : null; // Release uses the camera bearing reached by the shared right-stick path.
         if (Number.isFinite(manualArchFacing)) commitMeleeAttackFacing(manualArchFacing);
         else meleeAttackFacingCommit = null;
         runAttack();
@@ -17004,7 +17002,9 @@
       let cardinalHoldTimer = 0;
       let lastMoveAngle = -Math.PI / 2;
       let targetAimAngle = -Math.PI / 2;
-      let mobileArchCombatAim = null; // Live action-arch stick yaw used by ranged fire and melee hold/tap aiming until their release contract is complete.
+      let mobileArchDragPointerId = null; // Owns one arch gesture through release, including capture-failure fallback.
+      let mobileArchDragAngle = null; // Preserves deliberate farm-tool stick aim against movement and camera updates.
+      let mobileArchCombatAim = null; // Virtual controller right-stick vector while a combat arch gesture owns camera look.
       let lastMobileArchCombatAimEvent = { reason: 'not-used', at: 0 }; // Exposed in the mobile-copyable debug snapshot so touch-input failures can be diagnosed without DevTools.
 
       function invalidateMobileArchAimPerspectiveCache() {
@@ -17014,28 +17014,20 @@
         _cachedPerspectiveTargetAt = -1;
       }
 
-      function setMobileArchCombatAim(pointerId, angle, action, slot = null) {
-        const normalizedAngle = angleDiff(Number(angle), 0); // Shared world-space yaw consumed by body, melee and ranged aim while this touch owns the arch stick.
-        if (!Number.isFinite(normalizedAngle)) return;
+      function setMobileArchCombatAim(pointerId, dx, dy, radius, action, slot = null) {
+        if (!Number.isFinite(dx) || !Number.isFinite(dy) || !Number.isFinite(radius)) return;
+        const look = window.ControllerInput.normalizeStick(dx / Math.max(1, radius), dy / Math.max(1, radius), INPUT_DEFAULTS.deadzone, MOBILE_ARCH_LOOK_RESPONSE); // Shares controller normalization with a softer mobile arch curve that ramps up near the rim.
         mobileArchCombatAim = {
           pointerId,
-          angle: normalizedAngle,
+          angle: cameraFacingAngleRad(),
+          lookX: look.x,
+          lookY: look.y,
           action: action || null,
           slot: Number(slot) || null,
           tool: activeTool,
           released: false,
         };
-        targetAimAngle = normalizedAngle;
-        facingAngle = normalizedAngle;
-        lastMoveAngle = normalizedAngle;
-        player.angle = normalizedAngle;
-        mouseLookAngle = normalizedAngle;
-        controllerLookAngle = normalizedAngle;
-        if (activeCameraMode === SHOULDER_SURF_MODE) {
-          const baseAzimuthDeg = cameraModeConfig(SHOULDER_SURF_MODE).azimuthDeg ?? 0; // Keeps the screen-center reticle horizontally aligned with the arch-stick yaw in shoulder view.
-          cameraAzimuthOffsetDeg = wrapAzimuthDeg(-(normalizedAngle * 180 / Math.PI) - 90 - baseAzimuthDeg);
-        }
-        lastMobileArchCombatAimEvent = { reason: 'aim', at: Date.now() };
+        lastMobileArchCombatAimEvent = { reason: 'camera-stick', at: Date.now() };
         invalidateMobileArchAimPerspectiveCache();
       }
 
@@ -17068,7 +17060,9 @@
 
       window.__mobileArchCombatAimDebug = {
         snapshot: () => ({
-          latestChange: 'Mobile ranged fire and melee attack holds now reuse the action-arch stick for live aiming and commit on finger release.',
+          latestChange: 'Ranged and heavy-attack arch aiming turns gently near center and ramps up near the rim; full-speed yaw/pitch and controller settings are preserved.',
+          dragPointerId: mobileArchDragPointerId,
+          dragAngle: mobileArchDragAngle,
           active: !!mobileArchCombatAim,
           state: mobileArchCombatAim ? { ...mobileArchCombatAim } : null,
           lastEvent: { ...lastMobileArchCombatAimEvent },
@@ -17480,7 +17474,7 @@
           ix /= inputLen;
           iy /= inputLen;
           const aimDeadzone = Number(window.SCRATCHBONES_CONFIG?.game?.input?.targeting?.inputAimDeadzone) || 0.08;
-          if (inputStrength >= aimDeadzone && !controllerLookActive && !(isDesktop && mouseLookActive)) targetAimAngle = Math.atan2(iy, ix);
+          if (!Number.isFinite(mobileArchDragAngle) && inputStrength >= aimDeadzone && !controllerLookActive && !(isDesktop && mouseLookActive)) targetAimAngle = Math.atan2(iy, ix);
         }
 
         // Universal stuck-recovery: the instant the player first presses a
@@ -17611,6 +17605,11 @@
         if (characterViewMode.enabled) {
           facingAngle = characterViewMode.lockedFacingAngle;
           player.angle = characterViewMode.lockedPlayerAngle;
+        } else if (Number.isFinite(mobileArchDragAngle)) {
+          facingAngle = mobileArchDragAngle;
+          player.angle = mobileArchDragAngle;
+          targetAimAngle = mobileArchDragAngle;
+          lastMoveAngle = mobileArchDragAngle;
         } else if (activeCameraMode === SHOULDER_SURF_MODE) {
           // The head and attack rays remain camera-authored at all times. The
           // physical body/root inherits that direction immediately during
@@ -19152,24 +19151,12 @@
       // in updateShoulderSurfReticleAim; it is no longer an aim authority.
       // Other camera modes retain their existing ranged-weapon-only behavior.
       function currentPlayerAimRay() {
-        const mobileAimAngle = mobileArchCombatAim?.angle; // Overrides horizontal camera authority only while a combat action-arch drag owns aim.
+        const mobileAimAngle = mobileArchCombatAim?.angle; // Keeps held combat on the camera ray in every view mode, matching controller aiming.
         if (!mobileAutoCameraActive && !Number.isFinite(mobileAimAngle) && activeCameraMode !== SHOULDER_SURF_MODE
           && (heldMode !== 'tool' || activeTool !== 'ranged' || !equipmentSlots.ranged)) return null;
         camera.updateMatrixWorld?.();
         _shoulderSurfReticleRaycaster.setFromCamera(currentCombatReticleNDC(), camera);
         const ray = _shoulderSurfReticleRaycaster.ray;
-        if (Number.isFinite(mobileAimAngle)) {
-          const pitch = Math.asin(window.FormatUtils.clamp(ray.direction.y, -1, 1)); // Keeps the camera's vertical aim while the 2D arch stick supplies world-space yaw.
-          const horizontal = Math.cos(pitch); // Converts the retained camera pitch back into a normalized horizontal magnitude for the stick yaw.
-          return {
-            origin: { x: ray.origin.x, y: ray.origin.y, z: ray.origin.z },
-            direction: {
-              x: Math.cos(mobileAimAngle) * horizontal,
-              y: Math.sin(pitch),
-              z: Math.sin(mobileAimAngle) * horizontal,
-            },
-          };
-        }
         return {
           origin: { x: ray.origin.x, y: ray.origin.y, z: ray.origin.z },
           direction: { x: ray.direction.x, y: ray.direction.y, z: ray.direction.z },
@@ -19375,6 +19362,7 @@
       }
 
       function updateShoulderSurfReticleAim() {
+        if (Number.isFinite(mobileArchDragAngle)) return;
         const rangedAim = heldMode === 'tool' && activeTool === 'ranged'
           ? window.RangedWeapons?.playerAimSolution?.(equipmentSlots.ranged)
           : null;
@@ -25520,6 +25508,7 @@
           if (!el._abtDragInit) {
             el._abtDragInit = true;
             let _ptId = null, _cx = 0, _cy = 0, _sockR = 0;
+            let _downX = 0, _downY = 0, _resetTimer = null; // Finger origin drives stick travel; timer restores the button after release.
             let _drag = false, _rtimer = null, _socket = null;
             let _chargeFiredOnPress = false;
             let _pressSlot = null; // 1 or 2 while a weapon tool-action button is mid-press
@@ -25580,8 +25569,21 @@
             }
 
             el.addEventListener('pointerdown', ev => {
-              if (_ptId !== null) return;
+              ev.preventDefault();
+              ev.stopPropagation();
+              if (_ptId !== null || mobileArchDragPointerId !== null || el.classList.contains('abt-hidden')) return;
               _ptId = ev.pointerId;
+              mobileArchDragPointerId = ev.pointerId;
+              mobileArchDragAngle = null;
+              _downX = ev.clientX;
+              _downY = ev.clientY;
+              if (_resetTimer !== null) { clearTimeout(_resetTimer); _resetTimer = null; }
+              el.style.transform = 'translate(50%, 50%)';
+              window.addEventListener('pointermove', _abtMove, { capture: true, passive: false });
+              window.addEventListener('pointerup', _abtUp, true);
+              window.addEventListener('pointercancel', _abtUp, true);
+              window.addEventListener('blur', _abtCancel);
+              document.addEventListener('visibilitychange', _abtHidden);
               // See handleJoystickPointerDown's comment.
               try { el.setPointerCapture(ev.pointerId); } catch (err) { /* degrade gracefully */ }
               const rect = el.getBoundingClientRect();
@@ -25640,9 +25642,12 @@
               }
             });
 
-            el.addEventListener('pointermove', ev => {
+            function _abtMove(ev) {
               if (ev.pointerId !== _ptId) return;
-              const dx = ev.clientX - _cx, dy = ev.clientY - _cy;
+              ev.preventDefault();
+              ev.stopPropagation();
+              if (_claimedInputAction) return;
+              const dx = ev.clientX - _downX, dy = ev.clientY - _downY;
               const dist = Math.hypot(dx, dy);
               const r = Math.min(dist, _sockR);
               const nx = dist > 0.5 ? dx / dist * r : 0;
@@ -25669,8 +25674,17 @@
               // target whatever the reticle was aimed at on press — no
               // drag-to-aim for these, unlike farm tools.
               if (_heldItemPress) return;
+              if (_combatAimRelease) {
+                setMobileArchCombatAim(ev.pointerId, dx, dy, _sockR, el.dataset.action, _pressSlot);
+                if (Math.hypot(mobileArchCombatAim.lookX, mobileArchCombatAim.lookY) > 0.001 && !_drag) {
+                  _drag = true;
+                  _stack.classList.add('drag-active');
+                }
+                return;
+              }
               if (dist > DRAG_THRESH) {
                 const ang = Math.atan2(dy, dx);
+                mobileArchDragAngle = ang;
                 facingAngle = ang;
                 lastMoveAngle = ang;
                 player.angle = ang;
@@ -25678,10 +25692,7 @@
                 // targetAimAngle, not facingAngle/player.angle — see its
                 // declaration) so this drag genuinely aims farm-tool actions
                 // like axe chop / pick mine at a specific tile on mobile.
-                // Combat presses reuse that same stick vector, but keep their
-                // press/hold state armed and defer the actual attack to finger-up.
                 targetAimAngle = ang;
-                if (_combatAimRelease) setMobileArchCombatAim(ev.pointerId, ang, el.dataset.action, _pressSlot);
                 if (!_drag) {
                   _drag = true;
                   _stack.classList.add('drag-active');
@@ -25693,11 +25704,24 @@
                   }
                 }
               }
-            });
+            }
 
+            function _abtCancel() {
+              if (_ptId !== null) _abtUp({ pointerId: _ptId, type: 'pointercancel' });
+            }
+            function _abtHidden() {
+              if (document.hidden) _abtCancel();
+            }
             function _abtUp(ev) {
               if (ev.pointerId !== _ptId) return;
+              ev.preventDefault?.();
+              ev.stopPropagation?.();
               _ptId = null;
+              window.removeEventListener('pointermove', _abtMove, true);
+              window.removeEventListener('pointerup', _abtUp, true);
+              window.removeEventListener('pointercancel', _abtUp, true);
+              window.removeEventListener('blur', _abtCancel);
+              document.removeEventListener('visibilitychange', _abtHidden);
               actionHeldDown = false;
               if (_selectorHoldTimer) { clearTimeout(_selectorHoldTimer); _selectorHoldTimer = null; }
               if (_rtimer) { clearInterval(_rtimer); _rtimer = null; }
@@ -25705,8 +25729,8 @@
               if (_socket) { _socket.remove(); _socket = null; }
               el.style.transition = 'transform 0.14s ease-out';
               el.style.transform  = 'translate(50%, 50%)';
-              setTimeout(() => { el.style.transition = ''; el.style.transform = ''; }, 150);
-              const pointerCanceled = ev.type === 'pointercancel'; // Cancellation tears down combat aim without committing a shot or melee release.
+              _resetTimer = setTimeout(() => { el.style.transition = ''; el.style.transform = ''; _resetTimer = null; }, 150);
+              const pointerCanceled = ev.type === 'pointercancel' || ev.type === 'lostpointercapture'; // Cancellation tears down combat aim without committing a shot or melee release.
               const combatAimOwned = _combatAimRelease; // Preserve ownership through cleanup below even after the specific input path has fired.
               if (_claimedInputAction) {
                 dispatchWorldInputClaim(_claimedInputAction,pointerCanceled?'cancel':'release','touch-arch');
@@ -25717,17 +25741,21 @@
                   else window._desktopSelectionArc?.releaseSelection();
                 }
               } else if (_flaskGesture) {
-                if (!_flaskCanceled && window.AlchemyFlasks?.aiming) window.AlchemyFlasks.confirmThrow();
+                if (pointerCanceled) window.AlchemyFlasks?.cancelAim();
+                else if (!_flaskCanceled && window.AlchemyFlasks?.aiming) window.AlchemyFlasks.confirmThrow();
               } else if (!_chargeFiredOnPress) {
                 if (_pressSlot) {
                   if (pointerCanceled) window.Combat.input.abortPress(_pressSlot);
                   else {
                     if (combatAimOwned && _drag && Number.isFinite(mobileArchCombatAim?.angle)) {
-                      commitMeleeAttackFacing(mobileArchCombatAim.angle);
+                      commitMeleeAttackFacing(currentMeleeAimAngle());
                     }
                     window.Combat.input.pressEnd(_pressSlot);
                   }
-                } else if (_heldItemPress) window.HeldItemActionInput?.release();
+                } else if (_heldItemPress) {
+                  if (pointerCanceled) window.HeldItemActionInput?.abort();
+                  else window.HeldItemActionInput?.release();
+                }
                 else if (!_drag || combatAimOwned) {
                   if (!pointerCanceled) _abtFire();
                 }
@@ -25749,8 +25777,12 @@
               _flaskCanceled = false;
               _combatAimRelease = false;
               _pressSlot = null;
+              mobileArchDragPointerId = null;
+              mobileArchDragAngle = null;
+              try { if (el.hasPointerCapture?.(ev.pointerId)) el.releasePointerCapture(ev.pointerId); } catch (err) { /* already lost */ }
             }
 
+            el.addEventListener('lostpointercapture', _abtUp);
             el.addEventListener('pointerup', _abtUp);
             el.addEventListener('pointercancel', _abtUp);
           }
@@ -26535,7 +26567,10 @@
         window.__farmLog?.(`[controller] gameplay input ${reason}`, 'input');
       }
       function applyControllerCameraLook(dt) {
-        const magnitude = Math.hypot(controllerCameraX, controllerCameraY); // Used to distinguish live camera input from an idle stick without a second deadzone pass.
+        const archLook = mobileArchCombatAim && !mobileArchCombatAim.released ? mobileArchCombatAim : null; // The held arch supplies the same normalized axes as a physical right stick.
+        const lookX = archLook ? archLook.lookX : controllerCameraX; // Shared yaw input, with the arch owning its held gesture.
+        const lookY = archLook ? archLook.lookY : controllerCameraY; // Shared pitch input; returning to center stops camera turning.
+        const magnitude = Math.hypot(lookX, lookY); // Both devices pass through the same camera turn path without a second deadzone.
         if (magnitude <= 0.001 || !cameraDragAllowed() || window.ControllerUI?.isActive?.()) {
           controllerLookActive = false;
           return;
@@ -26544,13 +26579,17 @@
         const turnMultiplier = window.Combat?.postAttackTurnMultiplier?.(player) ?? 1; // Inputs remain live; only their visible turn rate is eased after attacks.
         const turnRate = CONTROLLER_LOOK_DEG_PER_SEC * s_controllerLookSensitivity * turnMultiplier; // Used for frame-rate-independent right-stick yaw and pitch.
         cameraAzimuthOffsetDeg = freeRotateCameraActive()
-          ? wrapAzimuthDeg(cameraAzimuthOffsetDeg - controllerCameraX * turnRate * dt)
-          : window.FormatUtils.clamp(cameraAzimuthOffsetDeg - controllerCameraX * turnRate * dt, -clampDeg, clampDeg);
-        const pitchDirection = s_controllerInvertY ? -1 : 1; // Applied only to controller Y so changing this setting cannot invert touch or mouse input.
-        cameraAngleOffsetDeg = clampCameraPitchOffsetDeg(cameraAngleOffsetDeg + controllerCameraY * pitchDirection * turnRate * CONTROLLER_LOOK_VERTICAL_SCALE * dt);
+          ? wrapAzimuthDeg(cameraAzimuthOffsetDeg - lookX * turnRate * dt)
+          : window.FormatUtils.clamp(cameraAzimuthOffsetDeg - lookX * turnRate * dt, -clampDeg, clampDeg);
+        const pitchDirection = s_controllerInvertY ? -1 : 1; // Physical and virtual right sticks share the same invert-Y preference; ordinary screen drag remains independent.
+        cameraAngleOffsetDeg = clampCameraPitchOffsetDeg(cameraAngleOffsetDeg + lookY * pitchDirection * turnRate * CONTROLLER_LOOK_VERTICAL_SCALE * dt);
         controllerLookAngle = cameraFacingAngleRad();
         targetAimAngle = controllerLookAngle;
         controllerLookActive = true;
+        if (archLook) {
+          archLook.angle = controllerLookAngle;
+          invalidateMobileArchAimPerspectiveCache();
+        }
       }
       function pollControllerInput() {
         if (!gamepadState.focused) return;
@@ -27130,7 +27169,8 @@
       // elements that catch their own pointerdown before it could bubble to
       // #threeContainer, so nothing extra is needed to exclude them.
       function cameraDragRequested(e) {
-        return e.pointerType === 'touch' && e.clientX >= window.innerWidth / 2;
+        return e.pointerId !== mobileArchDragPointerId && !e.target?.closest?.('.abt, #actionStack, #selectStack')
+          && e.pointerType === 'touch' && e.clientX >= window.innerWidth / 2;
       }
       function hideCameraJoystick() {
         cameraJoystickZone.style.display = 'none';
@@ -27159,7 +27199,7 @@
         try { threeContainer.setPointerCapture?.(e.pointerId); } catch (err) { /* see above — degrade gracefully */ }
       });
       threeContainer.addEventListener('pointermove', (e) => {
-        if (e.pointerId !== cameraDragPointerId || !cameraDragAllowed()) return;
+        if (e.pointerId === mobileArchDragPointerId || e.pointerId !== cameraDragPointerId || !cameraDragAllowed()) return;
         // Base stays put where the thumb first touched down — only the knob
         // (and the resulting turn rate) tracks the finger from there, same
         // clamp/deadzone/response-curve shape as updateJoystick() below.
