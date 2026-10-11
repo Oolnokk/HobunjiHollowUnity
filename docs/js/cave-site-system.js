@@ -81,6 +81,8 @@
   const mushroomMeshesByMapId = new Map(); // map id -> (cluster id -> scene group), so a pick can remove exactly that cluster.
   const bodiesByMapId = new Map(); // map id -> catacomb body records { body, entity, riser, armedAt, delay, rising, risen } for this page session.
   const bodySpawnPromises = new Map(); // map id -> in-flight body population.
+  let lastCaveArea = null; // Arrival banners run once per cave entry, including returning to a known cave.
+  let ruinParentZone = null; // Keeps a cave's wilderness protected while the player explores its connected generated ruin.
   let caveClock = 0; // Seconds of cave runtime; drives riser delays without wall-clock reads.
   let wildlifeDeps = null; // Captured from WildlifeSpawn.init; used for current area/player/hostile collection and damage helpers.
   let devSpawnerDeps = null; // Captured from DevSpawner.init; used for the existing generalized loot grant helper.
@@ -575,7 +577,7 @@
       addBanditLayer(mapData, rng, reachable, blockedKeys, plan);
     }
 
-    mapData.name = profile.discoveredLabel;
+    mapData.name = window.WildlifeSpawn?.denTurnoverStateForCavern?.(mapId)?.name || 'Unexplored cave';
     mapData.caveSite = clone(profile);
     mapData.caveSitePlan = {
       separatorRock: plan.separator ? { col: plan.separator.col, row: plan.separator.row, cells: clone(plan.separator.cells), oreKind: plan.separator.oreKind } : null,
@@ -633,12 +635,14 @@
     const layout = zoneLayout(zoneId);
     for (const transition of layout?.transitions || []) {
       if (!byMapId.has(transition?.targetMapId)) continue;
-      if (transition.label !== 'Cave') { transition.label = 'Cave'; changed++; }
+      const label = window.WildlifeSpawn?.denTurnoverStateForCavern?.(transition.targetMapId)?.name || 'Unexplored cave'; // Exterior labels reveal the name only after entry.
+      if (transition.label !== label) { transition.label = label; changed++; }
     }
     const info = wildlifeDeps?.zoneScenes?.get?.(zoneId);
     for (const transition of info?.transitions || []) {
       if (!byMapId.has(transition?.targetMapId)) continue;
-      if (transition.label !== 'Cave') { transition.label = 'Cave'; changed++; }
+      const label = window.WildlifeSpawn?.denTurnoverStateForCavern?.(transition.targetMapId)?.name || 'Unexplored cave'; // Exterior labels reveal the name only after entry.
+      if (transition.label !== label) { transition.label = label; changed++; }
     }
     return changed;
   }
@@ -662,13 +666,60 @@
     return Math.hypot(player.x / tileSize - (target.col + 0.5), player.y / tileSize - (target.row + 0.5));
   }
 
+  function generatedCaveName(profile) {
+    const prefixes = ['Whispering', 'Hollow', 'Broken', 'Mossy', 'Sunken', 'Echoing', 'Shrouded', 'Twisted', 'Silent', 'Weeping', 'Cold', 'Hidden', 'Winding', 'Damp', 'Forgotten', 'Shattered']; // Descriptive name parts shared by all cave contents.
+    const places = ['Stone', 'Root', 'Tooth', 'Vein', 'Lantern', 'Shadow', 'Water', 'Bone', 'Thorn', 'Ash', 'Claw', 'Ember', 'Mist', 'Crag', 'Moon', 'Flint']; // Second name part keeps the generated name independent of undiscovered inhabitants/loot.
+    const generation = window.WildlifeSpawn?.denTurnoverStateForCavern?.(profile.mapId)?.generation || 0; // Renewed cave slots receive a fresh deterministic name.
+    const rng = makeRng(`${profile.signature}:name:${generation}`);
+    return `${prefixes[Math.floor(rng() * prefixes.length)]} ${places[Math.floor(rng() * places.length)]} Cave`;
+  }
+
+  function mapLabelFor(mapId) {
+    const record = window.WildlifeSpawn?.denTurnoverStateForCavern?.(mapId); // The discovery record is authoritative for both the name and timer visibility.
+    if (!record?.name) return 'Unexplored cave';
+    return record.stage === 'ready' ? `${record.name} is about to collapse` : `${record.name} will collapse in ${record.daysRemaining} days`;
+  }
+
+  function isZoneOccupied(zoneId) {
+    return ruinParentZone === zoneId && wildlifeDeps?.getCurrentArea?.() === window.DevRandomRuin?.getState?.()?.mapId;
+  }
+
+  function resetCave(mapId) {
+    ensureStateLoaded();
+    const profile = sitesByMapId.get(mapId); // Old signature's discovery/loot state must not follow the relocated cave slot.
+    if (profile) runtimeStateBySignature.delete(profile.signature);
+    for (const record of bodiesByMapId.get(mapId) || []) {
+      const resident = wildlifeDeps?.hostileObjects?.has?.(record.entity) || devSpawnerDeps?.corpseObjects?.has?.(record.entity); // Wildlife renewal may already have removed this entity through the shared despawn owner.
+      wildlifeDeps?.hostileObjects?.delete?.(record.entity);
+      devSpawnerDeps?.corpseObjects?.delete?.(record.entity);
+      if (resident) devSpawnerDeps?.despawnCreature?.(record.entity);
+    }
+    plansByMapId.delete(mapId);
+    bodiesByMapId.delete(mapId);
+    bodySpawnPromises.delete(mapId);
+    banditSpawnPromises.delete(mapId);
+    banditPopulatedMaps.delete(mapId);
+    mushroomMeshesByMapId.delete(mapId);
+    ruinTransitionMaps.delete(mapId);
+    sitesByMapId.delete(mapId);
+    persistState();
+  }
+
   function markDiscovered(profile, state) {
-    if (state.discovered) return;
+    const record = window.WildlifeSpawn?.enterCave?.(profile.mapId, state.name || generatedCaveName(profile)); // Only physical entry creates an individual timer.
+    const name = record?.name || state.name || generatedCaveName(profile); // Stable cave identity shown on arrival and remembered in the map key.
+    if (lastCaveArea !== profile.mapId) {
+      wildlifeDeps?.showZoneBanner?.(name.toUpperCase());
+      lastCaveArea = profile.mapId;
+    }
+    if (state.discovered && state.name === name) return;
+    state.name = name;
     state.discovered = true;
     persistState();
-    wildlifeDeps?.showZoneBanner?.(profile.discoveredLabel.toUpperCase());
-    wildlifeDeps?.showToast?.(profile.discoveredLabel, false);
-    window.__farmLog?.(`[cave-sites] discovered ${profile.signature}: ${profile.contents}+${profile.inhabitant}`, 'world');
+    const den = zoneLayout(profile.zoneId)?.dens?.find(candidate => String(candidate.id) === String(profile.denId)); // Entered caves become map landmarks even without companion perception.
+    if (den) window.WildernessMap?.rememberDiscoveredThreat?.(`den:${profile.zoneId}:${profile.denId}`, { discoveryKey:`den:${profile.zoneId}:${profile.denId}`, kind:'den', zoneId:profile.zoneId, denKey:`${profile.zoneId}:${profile.denId}`, col:Number(den.mouthAnchor?.x ?? den.x) + 0.5, row:Number(den.mouthAnchor?.y ?? den.y) + 0.5, label:name });
+    wildlifeDeps?.showToast?.(name, false);
+    window.__farmLog?.(`[cave-sites] entered ${name}: ${profile.contents}+${profile.inhabitant}`, 'world');
   }
 
   function occupantSpawns(plan) {
@@ -695,7 +746,7 @@
 
     const promise = (async () => {
       const cfg = await window.BanditCombat.loadGangConfig(); // Existing gang config owns species/clothing/weapons instead of cave code duplicating bandit construction.
-      if (wildlifeDeps?.getCurrentArea?.() !== mapId) return;
+      if (wildlifeDeps?.getCurrentArea?.() !== mapId || plansByMapId.get(mapId) !== plan) return;
       const tileSize = Number(wildlifeDeps?.TILE) || 32;
       let spawned = 0; // Number of actual entities created for this cave in the current page session.
       for (const spawn of spawns) {
@@ -703,17 +754,17 @@
         const y = (spawn.row + 0.5) * tileSize;
         const opts = { zoneId: mapId, extra: { homeX: x, homeY: y, state: 'idle', caveSiteMapId: mapId } };
         const entity = await window.BanditCombat.makeEntity(cfg, spawn.rank || 'grunt', spawn.tier || 1, x, y, opts);
-        if (wildlifeDeps?.getCurrentArea?.() !== mapId) break;
+        if (wildlifeDeps?.getCurrentArea?.() !== mapId || plansByMapId.get(mapId) !== plan) { if (entity) devSpawnerDeps?.despawnCreature?.(entity); break; }
         if (!entity) continue;
         entity.caveSiteMapId = mapId;
         entity.caveSiteSignature = profile.signature;
         hostileObjects.add(entity);
         spawned++;
       }
-      if (spawned > 0) banditPopulatedMaps.add(mapId);
+      if (spawned > 0 && plansByMapId.get(mapId) === plan) banditPopulatedMaps.add(mapId);
       window.__farmLog?.(`[cave-sites] populated ${mapId} with ${spawned}/${spawns.length} occupant(s).`, 'world');
     })().catch(error => window.__farmLog?.(`[cave-sites] occupant spawn failed for ${mapId}: ${error.message}`, 'warn'))
-      .finally(() => banditSpawnPromises.delete(mapId));
+      .finally(() => { if (banditSpawnPromises.get(mapId) === promise) banditSpawnPromises.delete(mapId); });
     banditSpawnPromises.set(mapId, promise);
   }
 
@@ -821,16 +872,16 @@
       for (const body of plan.bodies) {
         const x = (body.col + 0.5) * tileSize, y = (body.row + 0.5) * tileSize;
         const entity = await makeSkeleton(mapId, x, y, { state: 'idle', caveBodyId: body.id });
-        if (wildlifeDeps?.getCurrentArea?.() !== mapId) { if (entity) devSpawnerDeps?.despawnCreature?.(entity); break; }
+        if (wildlifeDeps?.getCurrentArea?.() !== mapId || plansByMapId.get(mapId) !== plan) { if (entity) devSpawnerDeps?.despawnCreature?.(entity); break; }
         if (!entity) continue;
         window.CreatureDeath.settleAsCorpse(entity, { yaw: body.yaw });
         if (looted.has(body.id)) entity.corpseLooted = true;
         records.push({ body, entity, riser: Math.random() < BODY_RISE_CHANCE, armedAt: null, delay: 0, rising: false, risen: false });
       }
-      bodiesByMapId.set(mapId, records);
+      if (plansByMapId.get(mapId) === plan) bodiesByMapId.set(mapId, records);
       window.__farmLog?.(`[cave-sites] laid out ${records.length} skeleton bodies in ${mapId} (${records.filter(r => r.riser).length} restless).`, 'world');
     })().catch(error => window.__farmLog?.(`[cave-sites] body spawn failed for ${mapId}: ${error.message}`, 'warn'))
-      .finally(() => bodySpawnPromises.delete(mapId));
+      .finally(() => { if (bodySpawnPromises.get(mapId) === promise) bodySpawnPromises.delete(mapId); });
     bodySpawnPromises.set(mapId, promise);
   }
 
@@ -842,7 +893,7 @@
     const base = corpse.rosterRecord || null;
     const roster = base ? (corpse.corpseLooted ? { ...base, equippedCosmetics: [], cosmeticSlots: {}, appliedDyes: {} } : base) : null; // Searched bodies rise without the rags the player took.
     const minion = await makeSkeleton(mapId, corpse.x, corpse.y, { state: 'chase', caveBodyId: record.body.id }, roster);
-    if (!minion || wildlifeDeps?.getCurrentArea?.() !== mapId) { if (minion) devSpawnerDeps?.despawnCreature?.(minion); record.rising = false; return; }
+    if (!minion || wildlifeDeps?.getCurrentArea?.() !== mapId || !bodiesByMapId.get(mapId)?.includes(record)) { if (minion) devSpawnerDeps?.despawnCreature?.(minion); record.rising = false; return; }
     if (corpse.corpseLooted) minion.corpseLooted = true; // Killing it again yields nothing new.
     devSpawnerDeps?.corpseObjects?.delete?.(corpse);
     devSpawnerDeps?.despawnCreature?.(corpse);
@@ -888,6 +939,7 @@
     const den = zoneLayout(profile.zoneId)?.dens?.find(candidate => String(candidate.id) === String(profile.denId)); // Exterior cave anchor used as the safe existing return destination after the ruin.
     const anchor = den?.approachAnchor || den?.mouthAnchor || profile.mouthAnchor || { x: 1, y: 1 }; // Cliff dens' mouth is the entry transition itself; return in front of it.
     const tileSize = Number(wildlifeDeps?.TILE) || 32;
+    ruinParentZone = profile.zoneId;
     const returnAnchor = { area: profile.zoneId, x: (Number(anchor.x) + 0.5) * tileSize, y: (Number(anchor.y) + 0.5) * tileSize };
     Promise.resolve(ruin.generate(plan.ruinEntrance.seed, { site: true, label: 'Ancient Ruin', returnAnchor }))
       .then(ok => {
@@ -907,7 +959,7 @@
     const mapId = String(wildlifeDeps?.getCurrentArea?.() || '');
     const plan = plansByMapId.get(mapId); // Only caverns decorated this session have a plan; checked first so open-world ticks do no profile work.
     const profile = plan && sitesByMapId.get(mapId);
-    if (!profile) return;
+    if (!profile) { lastCaveArea = null; return; }
     const state = stateFor(profile);
     markDiscovered(profile, state);
     ensureOccupants(profile, plan, state);
@@ -998,7 +1050,7 @@
     return {
       ready: integrationsInstalled,
       currentArea,
-      latestChange: 'Cave features share spacing across layers; ruins reserve a three-wide doorway and clear approach opposite nests or bandits. Crowded caves place fewer features.',
+      latestChange: 'Entered caves receive names and individual midnight timers; overdue cave collapse/relocation waits until the wilderness and its caves are unoccupied. Shared feature spacing and clear ruin approaches are preserved.',
       zoneCount: zones.length,
       caveCount: sites.length,
       caves: sites.map(site => ({ mapId: site.mapId, zoneId: site.zoneId, denId: site.denId, contents: site.contents, inhabitant: site.inhabitant, label: site.discoveredLabel })),
@@ -1031,6 +1083,9 @@
     installIntegrations,
     debugSnapshot,
     buildInteriorProps,
+    resetCave,
+    isZoneOccupied,
+    mapLabelFor,
     __test: Object.freeze({
       rollProfile,
       forceAnimalProfile,
@@ -1041,6 +1096,9 @@
       sitesByZone,
       sitesByMapId,
       hashSeed,
+      generatedCaveName,
+      runtimeStateBySignature,
+      banditPopulatedMaps,
       bodiesByMapId,
       bodySpawnPromises,
     }),

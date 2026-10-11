@@ -280,11 +280,12 @@
   // next day (game.js's advanceDay/sleepInBed clear these) rather than
   // instantly refilling.
   const pendingDenRespawn = new Set();
-  const DEN_RELOCATION_DELAY_DAYS = 2; // Used by the Den-Mother turnover lifecycle before a cleared den may reappear at a new site.
+  const DEN_RELOCATION_DELAY_DAYS = 2; // Full days of cave life after the first midnight following entry.
   const DEN_RELOCATION_MIN_DISTANCE_TILES = 12; // Used by relocation candidate filtering so a replacement den visibly moves instead of shifting a few tiles.
   const DEN_RELOCATION_PLAYER_CLEARANCE_TILES = 18; // Used while the player is in the same zone so a replacement cave never pops into view nearby.
-  const denTurnoverByKey = new Map(); // denKey -> persistent Den-Mother clear/collapse/relocation state.
+  const denTurnoverByKey = new Map(); // denKey -> persistent discovery, individual midnight deadline, and relocation state.
   const processedDenMotherDeaths = new WeakSet(); // Used by the CreatureDeath wrapper to make begin/recover handoffs idempotent.
+  let lastTurnoverArea = null; // Area changes release queued cave renewals on the first gameplay frame after wilderness exit.
   let denTurnoverIdentity = null; // Used to detect world/year changes before reading or writing persisted den turnover state.
   let creatureDeathHookInstalled = false; // Used to avoid stacking CreatureDeath wrappers if WildlifeSpawn.init runs more than once.
   const roamingHerdEverSpawned = new Set(); // Used to avoid refilling a partially/wiped herd immediately during the same day.
@@ -318,6 +319,13 @@
       }
       for (const record of saved.records) {
         if (!record?.denKey || !record?.zoneId || record.denId == null) continue;
+        if (Number(saved.version) < 2) {
+          record.motherDefeated = record.stage !== 'active'; // Migrate old killed mothers without restoring the obsolete collapse-on-exit behavior.
+          if (record.motherDefeated) record.clutch = { remaining:record.stage === 'cleared' ? Math.max(0, Number(record.collapseEscapeVisual?.count) || 0) : 0 }; // Do not regenerate already-collected or previously-lost clutches on migration.
+          record.stage = 'active';
+          record.daysRemaining = null;
+          delete record.collapseEscapeVisual;
+        }
         denTurnoverByKey.set(String(record.denKey), record);
       }
     } catch (error) {
@@ -334,7 +342,7 @@
       const world = (meta?.worlds || []).find(entry => entry.id === identity.worldId);
       if (!world) return;
       world.denTurnover = {
-        version: 1,
+        version: 2,
         year: identity.year,
         records: [...denTurnoverByKey.values()],
       }; // Stored inside the portable world metadata captured by local-folder/cloud save snapshots.
@@ -354,18 +362,42 @@
 
   function denTurnoverStateForCavern(cavernMapId) {
     const record = turnoverRecordForCavern(cavernMapId);
-    return record ? { stage:record.stage, daysRemaining:record.daysRemaining, generation:Number(record.generation)||0 } : null;
+    return record ? { stage:record.stage, daysRemaining:record.daysRemaining, generation:Number(record.generation)||0, motherDefeated:!!record.motherDefeated, name:record.name || null, clutch:record.clutch ? JSON.parse(JSON.stringify(record.clutch)) : null } : null;
   }
 
-  function updateClearedDenClutchVisual(cavernMapId, nest) {
-    const record = turnoverRecordForCavern(cavernMapId); // Cleared turnover record whose reload fallback must follow post-kill clutch collection.
-    if (!record || record.stage !== 'cleared') return false;
-    const count = Math.max(0, Math.floor(Number(nest?.remaining) || 0)); // Current uncollected clutch count written after each successful nest take.
-    const itemKey = String(nest?.itemKey || record.collapseEscapeVisual?.itemKey || ''); // Species-bearing item id retained even when the count reaches zero.
-    const genotype = nest?.genotype || record.collapseEscapeVisual?.genotype || null; // Family appearance reused only if a later collapse needs cosmetic babies.
-    record.collapseEscapeVisual = count > 0 && itemKey ? { count, itemKey, genotype } : null;
+  function updateDenClutchState(cavernMapId, nest) {
+    const record = ensureActiveDenTurnoverRecord(cavernMapId, { persist: false }); // Clutch contents survive revisits/reloads until this cave expires.
+    if (!record || !nest) return false;
+    record.clutch = { remaining:Math.max(0, Math.floor(Number(nest.remaining) || 0)), itemKey:String(nest.itemKey || ''), liveBirth:!!nest.liveBirth, genotype:nest.genotype || null };
     persistDenTurnover();
     return true;
+  }
+
+  function caveCivilDay() {
+    const day = Number(deps.calendar?.day) || 1; // Raw days roll at 06:00; cave deadlines follow actual civil midnight.
+    const hour = Number(window.CalendarSystem?.getHour?.()); // Wrapped display hour distinguishes the midnight-to-morning part of a raw day.
+    return day + (Number.isFinite(hour) && ((hour % 24) + 24) % 24 < 6 ? 1 : 0);
+  }
+
+  function enterCave(cavernMapId, name) {
+    const record = ensureActiveDenTurnoverRecord(cavernMapId, { persist: false }); // Only actual entry arms a timer; ecology/genotype lookup never does.
+    if (!record) return null;
+    if (record.enteredCivilDay == null) {
+      record.enteredCivilDay = caveCivilDay();
+      record.firstMidnight = record.enteredCivilDay + 1;
+      record.collapseMidnight = record.firstMidnight + DEN_RELOCATION_DELAY_DAYS;
+      record.name = String(name || 'Unnamed Cave');
+      record.daysRemaining = DEN_RELOCATION_DELAY_DAYS;
+      persistDenTurnover();
+    }
+    return denTurnoverStateForCavern(cavernMapId);
+  }
+
+  function caveZoneOccupied(zoneId) {
+    const area = deps.getCurrentArea(); // Protect the entire exterior and all its caves, including cold-load identities.
+    return area === zoneId || _denCavernZoneOf.get(area) === zoneId
+      || [...denTurnoverByKey.values()].some(record => record.zoneId === zoneId && record.cavernMapId === area)
+      || window.CaveSiteSystem?.isZoneOccupied?.(zoneId) === true;
   }
 
   function ensureActiveDenTurnoverRecord(cavernMapId, { persist = true } = {}) {
@@ -374,13 +406,13 @@
     const zoneId = _denCavernZoneOf.get(cavernMapId);
     const denId = _denCavernDenIdOf.get(cavernMapId);
     const den = zoneId != null && denId != null
-      ? deps.zoneLayouts.get(zoneId)?.dens?.find(candidate => String(candidate.id) === String(denId))
+      ? (deps.zoneLayouts.get(zoneId)?.caveAnchors || deps.zoneLayouts.get(zoneId)?.dens)?.find(candidate => String(candidate.id) === String(denId))
       : null; // Generation-zero persistence needs the live den identity/site; ordinary cavern setup populates both side tables before genotype resolution.
     if (!den) return null;
     const key = denKeyFor(zoneId, den);
     const record = {
       denKey:key, zoneId, denId:String(den.id), cavernMapId,
-      stage:'active', daysRemaining:null, generation:0, genotypes:{},
+      stage:'active', daysRemaining:null, generation:0, genotypes:{}, motherDefeated:false,
       x:Number(den.x), y:Number(den.y),
       w:Math.max(1, Number(den.w)||1), h:Math.max(1, Number(den.h)||1),
       mouthAnchor:den.mouthAnchor ? { ...den.mouthAnchor } : null,
@@ -748,9 +780,10 @@
 
   function purgeClearedDenCavernResidents(cavernMapId, denKey) {
     let removed = 0; // Reported in the mobile-readable wildlife log so stale interior populations are diagnosable without devtools.
-    for (const creature of [...deps.hostileObjects]) {
-      if (!creature || creature.isDenMother || creature.areaId !== cavernMapId) continue;
+    for (const creature of new Set([...deps.hostileObjects, ...(deps.corpseObjects || [])])) {
+      if (!creature || (creature.areaId !== cavernMapId && creature.denKey !== denKey)) continue;
       deps.hostileObjects.delete(creature);
+      deps.corpseObjects?.delete?.(creature);
       if (deps.despawnCreature) deps.despawnCreature(creature);
       else { creature.avatarRef?.group?.parent?.remove?.(creature.avatarRef.group); creature.avatarRef?.dispose?.(); }
       removed++;
@@ -759,47 +792,10 @@
     return removed;
   }
 
-  function collapseClearedDen(record) {
-    const layout = deps.zoneLayouts.get(record.zoneId);
-    const den = layout?.dens?.find(candidate => String(candidate.id) === String(record.denId));
-    if (!layout || !den || record.stage !== 'cleared') return false;
-    den.collapsed = true;
-    den.turnoverStage = 'collapsed';
-    den._collapsePresentationPending = true; // Consumed by ZoneDenTotemFeatures to delay/lerp the visible cave-in after the exterior has loaded.
-    const cavernMapId = denCavernMapId(record.zoneId, den.id);
-    const liveNest = deps.denNests.get(cavernMapId) || null; // Final clutch state at exit; reflects any eggs/babies the player collected after killing the Den-Mother.
-    const fallbackEscape = record.collapseEscapeVisual || null; // Reload fallback retained from Den-Mother death if the cleared cavern was reconstructed without its transient nest object.
-    const escapeCount = liveNest
-      ? Math.max(0, Math.floor(Number(liveNest.remaining) || 0))
-      : Math.max(0, Math.floor(Number(fallbackEscape?.count) || 0));
-    const escapeItemKey = String(liveNest?.itemKey || fallbackEscape?.itemKey || '');
-    const escapeGenotype = liveNest?.genotype || fallbackEscape?.genotype || null;
-    den._collapseEscapeVisual = escapeCount > 0 && escapeItemKey ? {
-      count:escapeCount,
-      itemKey:escapeItemKey,
-      genotype:escapeGenotype,
-    } : null; // Session-facing copy consumed by the cave renderer so only the actually-uncollected clutch can visibly escape.
-    record.collapseEscapeVisual = den._collapseEscapeVisual ? { ...den._collapseEscapeVisual } : null; // Persists the resolved final presentation snapshot without creating gameplay entities.
-    record.transition = takeDenTransition(layout, cavernMapId, den.id) || record.transition || null;
-    syncSceneDenTransition(record.zoneId, den, cavernMapId, null);
-    record.stage = 'collapsed';
-    record.daysRemaining = DEN_RELOCATION_DELAY_DAYS;
-    record.x = Number(den.x); record.y = Number(den.y);
-    record.w = Math.max(1, Number(den.w)||1); record.h = Math.max(1, Number(den.h)||1);
-    record.mouthAnchor = den.mouthAnchor ? { ...den.mouthAnchor } : null;
-    window.BanditCamps?.forgetDenPerception?.(record.denKey); // Removes a companion-discovered map marker/waypoint at the abandoned physical entrance.
-    purgeClearedDenCavernResidents(cavernMapId, record.denKey);
-    resetDenPopulationCaches(record.zoneId, den.id, cavernMapId);
-    syncDenVisual(record.zoneId, den);
-    persistDenTurnover();
-    window.__farmLog?.(`[den-turnover] collapsed ${record.denKey} at (${den.x},${den.y}); relocation in ${record.daysRemaining} day(s).`, 'wildlife');
-    return true;
-  }
-
   function relocateDenRecord(record) {
-    if (!record || record.stage !== 'ready') return false;
+    if (!record || record.stage !== 'ready' || caveZoneOccupied(record.zoneId)) return false;
     const layout = deps.zoneLayouts.get(record.zoneId);
-    const den = layout?.dens?.find(candidate => String(candidate.id) === String(record.denId));
+    const den = (layout?.caveAnchors || layout?.dens)?.find(candidate => String(candidate.id) === String(record.denId));
     if (!layout || !den) return false;
     const oldDen = {
       id:den.id, x:Number(den.x), y:Number(den.y),
@@ -811,24 +807,38 @@
       window.__farmLog?.(`[den-turnover] no safe relocation site found for ${record.denKey}; will retry when ecology ticks again.`, 'warn');
       return false;
     }
+    record.collapsedName = record.name; // Retain the expired name for the next day review after the slot is reused.
+    record.collapseReportPending = true;
+    window.BanditCamps?.forgetDenPerception?.(record.denKey);
+    purgeClearedDenCavernResidents(record.cavernMapId, record.denKey);
+    window.CaveSiteSystem?.resetCave?.(record.cavernMapId);
     setDenFootprintOverlay(layout, oldDen, false);
     den.x = site.x; den.y = site.y; den.mouthAnchor = site.mouthAnchor;
     if (site.approachAnchor) den.approachAnchor = { ...site.approachAnchor };
     else delete den.approachAnchor; // Open-ground site: the mouth tile itself is the approach.
     den.collapsed = false; den.turnoverStage = 'active';
-    den._collapseEscapeVisual = null; // A relocated live den must never inherit the prior generation's presentation-only escape clutch.
+    delete den._collapseEscapeVisual;
+    delete den._collapsePresentationPending;
     setDenFootprintOverlay(layout, den, true);
     const cavernMapId = denCavernMapId(record.zoneId, den.id);
     syncSceneDenTransition(record.zoneId, den, cavernMapId, ensureDenTransition(layout, den, cavernMapId, record.transition));
     resetDenPopulationCaches(record.zoneId, den.id, cavernMapId);
     record.stage = 'active';
     record.daysRemaining = null;
+    record.motherDefeated = false;
+    record.clutch = null;
+    record.name = null;
+    record.enteredCivilDay = null;
+    record.firstMidnight = null;
+    record.collapseMidnight = null;
     record.generation = Math.max(0, Number(record.generation)||0) + 1;
     record.genotypes = {};
-    record.collapseEscapeVisual = null; // Clears stale presentation metadata once the new den generation becomes active.
+    delete record.collapseEscapeVisual; // Removes legacy collapse presentation metadata from migrated saves.
     record.x = Number(den.x); record.y = Number(den.y);
     record.mouthAnchor = { ...den.mouthAnchor };
     record.approachAnchor = den.approachAnchor ? { ...den.approachAnchor } : null;
+    delete den.caveSite; // Relocated contents/profile are rerolled from the new anchor instead of keeping stale loot ownership.
+    window.CaveSiteSystem?.applyWorkspaceProfiles?.(record.zoneId, { dens:layout.caveAnchors || layout.dens });
     syncDenVisual(record.zoneId, den);
     rebuildDenTerrainChunks(record.zoneId, oldDen, den);
     persistDenTurnover();
@@ -836,65 +846,74 @@
     return true;
   }
 
-  function advanceDenTurnoverDay() {
+  function processDueCaves() {
     ensureDenTurnoverLoaded();
-    let changed = false;
     for (const record of denTurnoverByKey.values()) {
-      if (record.stage !== 'collapsed') continue;
-      record.daysRemaining = Math.max(0, Number(record.daysRemaining) - 1);
-      if (record.daysRemaining <= 0) record.stage = 'ready';
-      changed = true;
-    }
-    if (changed) persistDenTurnover();
-    const active = deps.getCurrentArea();
-    for (const record of denTurnoverByKey.values()) {
-      if (record.stage !== 'ready' || record.zoneId === active) continue;
-      relocateDenRecord(record); // Inactive zones can safely move immediately on the day tick because nothing there is visible to the player.
+      if (record.stage === 'ready') relocateDenRecord(record); // The relocation owner checks whole-zone occupancy before changing anything.
     }
   }
 
-  function processDenTurnoverForZone(zoneId) {
+  function caveReviewStatuses(midnight = null) {
     ensureDenTurnoverLoaded();
+    return [...denTurnoverByKey.values()].flatMap(record => {
+      if (midnight != null && record.reviewMidnight === midnight) return [record.reviewText];
+      if (record.collapseReportPending && record.collapsedName) return [`${record.collapsedName} has collapsed`];
+      if (record.enteredCivilDay == null) return [];
+      return [record.stage === 'ready' ? `${record.name} is about to collapse` : `${record.name} will collapse in ${record.daysRemaining} days`];
+    });
+  }
+
+  function advanceCaveMidnight(midnight) {
+    ensureDenTurnoverLoaded();
+    const ordinal = Math.floor(Number(midnight)); // Civil midnight ordinal supplied by the shared day-review clock for natural and sleep/wait passage.
+    if (!Number.isFinite(ordinal)) return [];
     for (const record of denTurnoverByKey.values()) {
-      if (record.zoneId !== zoneId) continue;
-      if (record.stage === 'cleared') collapseClearedDen(record);
-      else if (record.stage === 'ready') relocateDenRecord(record);
+      if (record.reviewMidnight === ordinal) continue; // Repeated gate calls and reloads cannot charge another day.
+      if (record.enteredCivilDay != null && ordinal >= record.firstMidnight) {
+        record.daysRemaining = Math.max(0, record.collapseMidnight - ordinal);
+        if (record.daysRemaining === 0) record.stage = 'ready';
+      }
     }
+    processDueCaves();
+    for (const record of denTurnoverByKey.values()) {
+      if (record.reviewMidnight === ordinal) continue;
+      const text = record.collapseReportPending && record.collapsedName ? `${record.collapsedName} has collapsed`
+        : record.enteredCivilDay != null ? (record.stage === 'ready' ? `${record.name} is about to collapse` : `${record.name} will collapse in ${record.daysRemaining} days`) : null; // One stable row per entered cave for this review, even after relocation clears its timer.
+      if (!text) continue;
+      record.reviewMidnight = ordinal;
+      record.reviewText = text;
+      record.collapseReportPending = false;
+    }
+    persistDenTurnover();
+    return caveReviewStatuses(ordinal);
   }
 
   function reapplyPersistedDenTurnover(zoneId) {
     ensureDenTurnoverLoaded();
     const layout = deps.zoneLayouts.get(zoneId);
-    if (!layout?.dens?.length) return;
+    const anchors = layout?.caveAnchors || layout?.dens; // Restore every cave even while wildlife temporarily filters non-animal anchors.
+    if (!anchors?.length) return;
     for (const record of denTurnoverByKey.values()) {
       if (record.zoneId !== zoneId) continue;
-      const den = layout.dens.find(candidate => String(candidate.id) === String(record.denId));
+      const den = anchors.find(candidate => String(candidate.id) === String(record.denId));
       if (!den) continue;
       const generatedDen = { id:den.id, x:Number(den.x), y:Number(den.y), w:Math.max(1,Number(den.w)||1), h:Math.max(1,Number(den.h)||1), mouthAnchor:den.mouthAnchor ? {...den.mouthAnchor}:null }; // Used to remove the same-year generator's original den overlay before restoring saved relocation coordinates.
       if (Number.isFinite(Number(record.x)) && Number.isFinite(Number(record.y)) && (Number(record.x) !== generatedDen.x || Number(record.y) !== generatedDen.y)) {
         setDenFootprintOverlay(layout, generatedDen, false);
         den.x = Number(record.x); den.y = Number(record.y);
+        delete den.caveSite; // Saved relocation coordinates also determine the regenerated contents signature.
         den.mouthAnchor = record.mouthAnchor ? { ...record.mouthAnchor } : { x:den.x + Math.floor((Number(den.w)||1)/2), y:den.y + (Number(den.h)||1) };
         if (record.approachAnchor) den.approachAnchor = { ...record.approachAnchor };
         else delete den.approachAnchor;
         setDenFootprintOverlay(layout, den, true);
       }
       const cavernMapId = denCavernMapId(zoneId, den.id);
-      const collapsed = record.stage === 'cleared' || record.stage === 'collapsed' || record.stage === 'ready';
-      den.collapsed = collapsed;
-      den.turnoverStage = record.stage;
-      if (record.stage === 'cleared') {
-        den._collapsePresentationPending = true; // Reloading after the mother dies still gets the delayed exterior cave-in instead of reopening the entrance.
-        den._collapseEscapeVisual = record.collapseEscapeVisual?.count > 0 ? {
-          count:Math.max(0, Math.floor(Number(record.collapseEscapeVisual.count) || 0)),
-          itemKey:String(record.collapseEscapeVisual.itemKey || ''),
-          genotype:record.collapseEscapeVisual.genotype || null,
-        } : null; // Restores the purely visual escape snapshot if the game reloads before the player exits the cleared cavern.
-      }
-      if (collapsed) {
-        record.transition = takeDenTransition(layout, cavernMapId, den.id) || record.transition || null;
-        syncSceneDenTransition(zoneId, den, cavernMapId, null);
-      } else syncSceneDenTransition(zoneId, den, cavernMapId, ensureDenTransition(layout, den, cavernMapId, record.transition));
+      den.collapsed = false;
+      den.turnoverStage = record.motherDefeated ? 'cleared' : 'active';
+      delete den._collapsePresentationPending;
+      delete den._collapseEscapeVisual;
+      syncSceneDenTransition(zoneId, den, cavernMapId, ensureDenTransition(layout, den, cavernMapId, record.transition));
+      syncDenVisual(zoneId, den);
     }
   }
 
@@ -958,35 +977,18 @@
     processedDenMotherDeaths.add(mother);
     ensureDenTurnoverLoaded();
     const key = denKeyFor(zoneId, { id: denId });
-    const existing = denTurnoverByKey.get(key);
-    const nest = deps.denNests.get(cavernMapId) || null; // Captures the clutch before the cleared cavern is later discarded; collapse presentation uses this only to spawn temporary escape visuals.
-    const nestRemaining = Math.max(0, Number(nest?.remaining) || 0);
+    const record = ensureActiveDenTurnoverRecord(cavernMapId, { persist:false }); // Killing a mother never arms/restarts the cave's discovery timer.
+    if (!record) return false;
     const displaced = markDenSurvivorsAsPrey(cavernMapId, key, mother);
-    const record = {
-      ...(existing || {}),
-      denKey:key, zoneId, denId:String(denId), cavernMapId,
-      stage:'cleared',
-      daysRemaining:DEN_RELOCATION_DELAY_DAYS,
-      generation:Math.max(0, Number(existing?.generation)||0),
-      genotypes: existing?.genotypes || {},
-      clearedDay:Number(deps.calendar?.day) || 0,
-      collapseEscapeVisual: nestRemaining > 0 && nest?.itemKey ? {
-        count:nestRemaining,
-        itemKey:String(nest.itemKey),
-        genotype:nest.genotype || null,
-      } : null, // Presentation-only snapshot: eggs are intentionally rendered as hatched babies during the exterior cave-in; no inventory/ecology state is changed.
-    }; // Stored before the player exits so a reload cannot forget that this Den-Mother was killed.
-    denTurnoverByKey.set(key, record);
-    denCheckTimer = 0; // Used so the very first exterior frame after leaving processes the pending collapse instead of leaving a brief re-entry window.
+    record.motherDefeated = true;
+    const nest = deps.denNests.get(cavernMapId); // Remaining eggs/babies remain collectible after leaving and re-entering.
+    if (nest) updateDenClutchState(cavernMapId, nest);
+    const den = (deps.zoneLayouts.get(zoneId)?.caveAnchors || deps.zoneLayouts.get(zoneId)?.dens)?.find(candidate => String(candidate.id) === String(denId));
+    if (den) den.turnoverStage = 'cleared';
     persistDenTurnover();
-    if (nestRemaining > 0) {
-      deps.showZoneBanner?.('DEN CLEARED — Collect any eggs or babies you want before leaving.');
-      deps.showToast('The Den-Mother is dead. Collect the eggs or babies before you leave — the burrow will collapse.', true);
-    } else {
-      deps.showZoneBanner?.('DEN CLEARED');
-      deps.showToast('The Den-Mother is dead. The burrow will collapse after you leave.', true);
-    }
-    window.__farmLog?.(`[den-turnover] cleared ${key}; clutchRemaining=${nestRemaining} displacedSurvivors=${displaced}. Collapse waits until the player leaves.`, 'wildlife');
+    deps.showZoneBanner?.('DEN CLEARED');
+    deps.showToast('The Den-Mother is dead. The cave remains open until its scheduled collapse.', false);
+    window.__farmLog?.(`[den-turnover] mother defeated ${key}; displacedSurvivors=${displaced}; discovery deadline unchanged.`, 'wildlife');
     return true;
   }
 
@@ -1017,7 +1019,7 @@
         denKey:record.denKey, zoneId:record.zoneId, denId:record.denId,
         stage:record.stage, daysRemaining:record.daysRemaining,
         generation:Number(record.generation)||0, x:record.x, y:record.y,
-        clutchLostOnExit: record.stage === 'cleared' ? Math.max(0, Number(deps.denNests.get(record.cavernMapId)?.remaining)||0) : 0,
+        name:record.name || 'Unexplored cave', entered:record.enteredCivilDay != null, motherDefeated:!!record.motherDefeated, collapseMidnight:record.collapseMidnight ?? null, queued:record.stage === 'ready', protected:caveZoneOccupied(record.zoneId), latestChange:'Cave timers begin at the first midnight after entry; collapse and relocation wait until the entire wilderness zone is unoccupied.',
       }));
   }
   function roamingHerdKeyFor(zoneId, index) { return `${zoneId}:roaming-herd:${index}`; } // Stable per-zone slot, independent of cave/den ids.
@@ -1689,14 +1691,15 @@
     // authored cutscene once this scene finally lives on a real
     // wilderness zone map — the combat card's own wolves are added to
     // hostileObjects explicitly (see game.js's runCombat).
-    if (deps.getCutscenePreviewActive()) return;
     const currentArea = deps.getCurrentArea();
-    if (!deps._isZoneArea(currentArea)) return;
+    if (currentArea !== lastTurnoverArea) { lastTurnoverArea = currentArea; processDueCaves(); }
+    if (deps.getCutscenePreviewActive()) return;
     denCheckTimer -= dt;
     if (denCheckTimer > 0) return;
     denCheckTimer = DEN_CHECK_INTERVAL_S;
+    processDueCaves();
+    if (!deps._isZoneArea(currentArea)) return;
     if (!deps.buildZoneScene(currentArea)) return;
-    processDenTurnoverForZone(currentArea);
     ensureCurrentZoneDenPacks();
     ensureCurrentZoneRoamingHerds();
     ensureCurrentZoneNestTrees();
@@ -1710,12 +1713,9 @@
     }
   }
 
-  // Called from game.js's enterZone. Turnover is processed synchronously so
-  // a just-cleared den loses its exterior transition before the player can
-  // interact with the newly loaded zone; ordinary population checks still
-  // run on the next frame.
+  // Leaving a protected wilderness region releases already-queued cave renewals; entry alone never starts a timer.
   function onZoneEntered(mapId) {
-    if (deps._isZoneArea(mapId)) processDenTurnoverForZone(mapId);
+    processDueCaves();
     denCheckTimer = 0;
     _zoneEntryAnimalLogPending = mapId;
   }
@@ -1758,7 +1758,10 @@
     getDenGenotypes: () => _denGenotypes,
     denTurnoverDebug,
     denTurnoverStateForCavern,
-    updateClearedDenClutchVisual,
+    updateDenClutchState,
+    enterCave,
+    advanceCaveMidnight,
+    caveReviewStatuses,
     onDenMotherDeath,
     forgetZoneDenState,
     isDenPackAlive,
@@ -1798,7 +1801,7 @@
       pendingDenRespawn.clear();
       pendingNestTreeRespawn.clear();
       pendingRoamingHerdRespawn.clear();
-      advanceDenTurnoverDay();
+      processDueCaves(); // 06:00 raw-day rollover never advances the civil-midnight cave countdown.
     },
   };
 })();

@@ -267,6 +267,7 @@
     markers[threatKey] = {
       kind: info.kind === 'den' ? 'den' : 'camp',
       zoneId: info.zoneId, col: info.col, row: info.row,
+      ...(info.kind === 'den' ? { denKey:info.denKey || String(threatKey).replace(/^den:/, '') } : {}),
       label: info.label || (info.kind === 'den' ? 'Animal Den' : 'Bandit Camp'),
     };
     _saveDiscoveredThreats(markers);
@@ -318,6 +319,7 @@
         col: inst.col + 0.5, row: inst.row + 0.5,
       });
     }
+    const caveMaps = new Map((window.CaveSiteSystem?.sitesForZone?.(zoneId) || []).map(site => [`${zoneId}:${site.denId}`,site.mapId])); // Single identity lookup covers live and saved cave markers in this map key.
     const threats = new Map(Object.entries(_loadDiscoveredThreats()));
     for (const [runtimeKey, info] of window.BanditCamps?.perceivedThreats || []) {
       threats.set(info.discoveryKey || runtimeKey, info);
@@ -326,7 +328,7 @@
       if (info.zoneId !== zoneId) continue;
       landmarks.push({
         id: `threat:${key}`, source: 'threat', threatKey: key,
-        label: info.label || (info.kind === 'den' ? 'Animal Den' : 'Bandit Camp'),
+        label: info.kind === 'den' ? (window.CaveSiteSystem?.mapLabelFor?.(caveMaps.get(info.denKey || String(key).replace(/^den:/, ''))) || 'Unexplored cave') : (info.label || 'Bandit Camp'),
         category: info.kind === 'den' ? 'den' : 'camp', zoneId,
         col: info.col, row: info.row, year: deps.currentTothalYear(),
       });
@@ -637,6 +639,7 @@
     reconcileDiscoveredCamps,
     getDiscoveredThreats: () => ({ ..._loadDiscoveredThreats() }),
     getCompassWaypoint,
+    _test: Object.freeze({ visibleLandmarks:_visibleLandmarks }),
     getDebug: () => ({ activeZone: _wmapActiveZone, waypoint: _resolvedWaypoint(), visibleLandmarks: _wmapActiveZone ? _visibleLandmarks(_wmapActiveZone).length : 0, rememberedThreats: Object.keys(_loadDiscoveredThreats()).length }),
   };
 })();

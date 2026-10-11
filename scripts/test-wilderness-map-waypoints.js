@@ -44,6 +44,12 @@ const den = {
 context.WildernessMap.rememberDiscoveredThreat(den.threatKey, { ...den, kind: 'den' });
 assert(context.WildernessMap.getDiscoveredThreats()[den.threatKey], 'companion-discovered den should be written to the world save');
 assert(JSON.parse(saveMeta).worlds[0].discoveredThreats.markers[den.threatKey], 'saved den marker should survive a page reload through save metadata');
+context.CaveSiteSystem = { sitesForZone: () => [{denId:'1',mapId:'cave_1'}], mapLabelFor: () => 'Unexplored cave' }; // Map labels must conceal unentered cave identities even when a companion senses them.
+assert.equal(context.WildernessMap._test.visibleLandmarks('zone-a')[0].label,'Unexplored cave');
+context.CaveSiteSystem.mapLabelFor=()=> 'Whispering Stone Cave will collapse in 2 days';
+assert.equal(context.WildernessMap._test.visibleLandmarks('zone-a')[0].label,'Whispering Stone Cave will collapse in 2 days','saved markers resolve live names/deadlines');
+context.CaveSiteSystem.mapLabelFor=()=> 'Whispering Stone Cave is about to collapse';
+assert.equal(context.WildernessMap._test.visibleLandmarks('zone-a')[0].label,'Whispering Stone Cave is about to collapse');
 context.WildernessMap.setWaypoint(den);
 assert.deepEqual(
   JSON.parse(JSON.stringify(context.WildernessMap.getCompassWaypoint())),

@@ -9,37 +9,10 @@ const vm = require('node:vm');
 const ROOT = process.env.HOBUNJI_TEST_ROOT || process.cwd(); // Used by CI/local runs to resolve this checked-out branch.
 const wildlifeSource = fs.readFileSync(path.join(ROOT, 'docs/js/wildlife-spawn.js'), 'utf8'); // Runtime under behavioral test below.
 const gameSource = fs.readFileSync(path.join(ROOT, 'docs/game.js'), 'utf8'); // Guards combat-state filtering for den-hidden/displaced residents.
-const cavernSource = fs.readFileSync(path.join(ROOT, 'docs/js/cavern-generator.js'), 'utf8'); // Guards cold-load suppression after the Den-Mother has already been killed.
-const denVisualSource = fs.readFileSync(path.join(ROOT, 'docs/js/zone-den-totem-features.js'), 'utf8'); // Guards delayed smooth collapse height/audio presentation without horizontal footprint distortion.
-const denNestSource = fs.readFileSync(path.join(ROOT, 'docs/js/den-nest-system.js'), 'utf8'); // Guards post-kill clutch collection updating the collapse presentation reload fallback.
-const gridSource = fs.readFileSync(path.join(ROOT, 'docs/js/grid-tile-accessors.js'), 'utf8'); // Guards removal of the usable collapsed doorway.
-const porakanekiSource = fs.readFileSync(path.join(ROOT, 'docs/js/porakaneki-camps-runtime.js'), 'utf8'); // Guards den-hunting AI against stale/moved sites.
-const banditSource = fs.readFileSync(path.join(ROOT, 'docs/js/bandit-camps.js'), 'utf8'); // Guards companion-discovered den markers when the physical den disappears.
 const debugSource = fs.readFileSync(path.join(ROOT, 'docs/js/wildlife-debug-panel.js'), 'utf8'); // Mobile-visible lifecycle diagnostics.
 
-assert.match(cavernSource, /denTurnoverStateForCavern/, 'cavern synthesis must consult persisted den turnover before spawning a new objective');
-assert.match(cavernSource, /nestCol: denCleared \? null : nestCol/, 'a cleared den must not reconstruct its mother/nest objective on reload');
-assert.match(denVisualSource, /DEN_COLLAPSED_HEIGHT_MULTIPLIER = 0\.4/, 'collapsed cave facade must retain 40% of its normal height');
-assert.doesNotMatch(denVisualSource, /DEN_COLLAPSED_FOOTPRINT_MULTIPLIER/, 'collapsed cave facade must not alter its X/Z footprint');
-assert.match(denVisualSource, /mesh\.scale\.set\(baseScaleX, nextScaleY, baseScaleZ\)/, 'collapse lerp must modify only Y scale');
-assert.match(denVisualSource, /DEN_COLLAPSE_DELAY_MS = 2000[\s\S]*?DEN_COLLAPSE_LERP_MS = 900/, 'fresh collapse waits two seconds then uses a real timed lerp');
-assert.match(denVisualSource, /playObjectSfxKey\?\.\('breakRock', DEN_COLLAPSE_SFX_VOLUME_SCALE, DEN_COLLAPSE_SFX_PITCH\)/, 'collapse reuses the mined-rock break cue with authored louder\/lower tuning');
-assert.match(denVisualSource, /const runUrl = species\?\.base\?\.run1 \|\| species\?\.base\?\.idle/, 'collapse escape resolves the real species run art with an idle fallback');
-assert.match(denVisualSource, /function prepareDenCollapseEscape\([\s\S]*?buildAnimalPlaneAvatarModel/, 'collapse prebuilds temporary baby avatars before the cave-in starts');
-assert.match(denVisualSource, /startDenCollapseEscape\(mesh\.userData\.denCollapseEscapeState\)/, 'baby scatter starts on the same beat as the visible\/audible cave-in');
-assert.match(denVisualSource, /DEN_ESCAPE_FADE_START[\s\S]*?setDenEscapeOpacity\(record, fade\)/, 'escaped babies fade out instead of becoming persistent world creatures');
-assert.match(denVisualSource, /denCollapseEscapeDebug/, 'collapse escape exposes a mobile-readable debug snapshot');
-assert.doesNotMatch(denVisualSource, /THREE\.RepeatWrapping/, 'den renderer must preserve the cave UV no-repeat invariant; baby rear art is mirrored in canvas pixels instead');
-assert.match(denNestSource, /updateClearedDenClutchVisual\?\.\(deps\.getCurrentArea\(\), nest\)/, 'taking a clutch member after Den-Mother death must update the persisted cosmetic escape fallback');
-assert.match(denVisualSource, /function syncAnimalDenVisual\(/, 'den facade/furniture must have a runtime relocation synchronizer');
-assert.match(gameSource, /function isPlayerInCombat\(\)[\s\S]{0,240}!c\._denHidden[\s\S]{0,120}!c\.denDisplacedPrey/, 'hidden den residents and displaced prey cannot keep combat BGM active');
-assert.match(gridSource, /if \(den\.collapsed\)[\s\S]*?return true/, 'collapsed den footprint must close its former doorway gap');
-assert.match(porakanekiSource, /filter\(den => den && den\.id != null && !den\.collapsed(?: && [^)]+)?\)/, 'Porakaneki hunting routes must exclude collapsed dens');
-assert.match(porakanekiSource, /const liveTarget = denExteriorPoint\(camp, liveDen\)/, 'Porakaneki active parties must refresh a relocated den target');
-assert.match(porakanekiSource, /function occupiedSites\(zoneId\)/, 'Porakaneki must expose exact active camp footprints to den relocation');
-assert.match(banditSource, /function forgetDenPerception\(denKey\)/, 'collapsed dens must be removable from companion-discovered map markers');
-assert.match(wildlifeSource, /const tileMap = layoutTileMap\(layout\)/, 'one relocation search must reuse a single tile lookup instead of rebuilding it per candidate');
-assert.match(debugSource, /Den Turnover/, 'Wildlife debug panel must expose den turnover on mobile');
+assert.match(gameSource, /function isPlayerInCombat\(\)[\s\S]{0,240}!c\._denHidden[\s\S]{0,120}!c\.denDisplacedPrey/, 'hidden residents/displaced prey do not keep combat music active');
+assert.match(debugSource, /Den Turnover/, 'lifecycle diagnostics remain available on mobile');
 
 const zoneId = 'map_northern_cliffs';
 const den = { id:'animalDen_0', x:5, y:5, w:3, h:3, mouthAnchor:{x:6,y:8} };
@@ -71,6 +44,8 @@ const hostiles = new Set();
 const denNests = new Map();
 const buildingScenes = new Map();
 const creatureDeathCalls = [];
+const resetCaves = []; // Records resets of the cave contents when its old incarnation expires.
+const corpseObjects = new Set(); // Renewal must purge dead mothers and bodies too.
 const forgottenDenMarkers = []; // Captures the exact stable den key invalidated when the old physical entrance collapses.
 
 const localStorage = {
@@ -103,6 +78,7 @@ const windowStub = {
     ensureCreatureDefs(){}, ensureRendererSpecies(){},
     ensureNorthernCliffsHerds(){ return { ready:true, zone:null, roaming:[] }; },
   },
+  CaveSiteSystem:{ resetCave(mapId){ resetCaves.push(mapId); }, applyWorkspaceProfiles(){} },
   CreatureDeath:{
     begin(creature){ creatureDeathCalls.push(['begin',creature.id]); return true; },
     recover(creature){ creatureDeathCalls.push(['recover',creature.id]); return true; },
@@ -140,6 +116,7 @@ const deps = {
   zoneLayouts:new Map([[zoneId,layout]]),
   zoneScenes:new Map([[zoneId,{scene:{}}]]),
   hostileObjects:hostiles,
+  corpseObjects,
   denNests,
   buildingScenes,
   rnd,
@@ -189,11 +166,12 @@ windowStub.CreatureDeath.begin(mother);
 assert.equal(creatureDeathCalls.length,1,'ordinary CreatureDeath.begin still executes');
 let debug = windowStub.WildlifeSpawn.denTurnoverDebug(zoneId);
 assert.equal(debug.length,1);
-assert.equal(debug[0].stage,'cleared','Den-Mother death starts cleared stage without collapsing while player is inside');
-assert.equal(windowStub.WildlifeSpawn.denTurnoverStateForCavern(cavernMapId).stage,'cleared','cold-load cavern synthesis can recover cleared state directly from persisted cavern identity');
-assert.equal(debug[0].clutchLostOnExit,2,'debug state exposes uncollected clutch before exit');
-assert.match(toasts.at(-1).message,/Collect the eggs or babies before you leave/i,'player gets explicit clutch warning');
-assert.match(banners.at(-1),/^DEN CLEARED.*Collect any eggs or babies/i,'Den-Mother death also gets a large on-screen clear\/clutch warning');
+assert.equal(debug[0].stage,'active','mother death does not start collapse or change discovery stage');
+assert.equal(debug[0].motherDefeated,true,'killed mother is remembered independently of timer');
+assert.equal(windowStub.WildlifeSpawn.denTurnoverStateForCavern(cavernMapId).motherDefeated,true,'cold reload can suppress only the defeated mother');
+assert.equal(debug[0].entered,false,'killing alone does not start a cave timer');
+assert.doesNotMatch(toasts.at(-1).message,/collapse after you leave|before you leave/,'obsolete exit warning is removed');
+assert.equal(banners.at(-1),'DEN CLEARED');
 for(const survivor of [cavernAdd,exteriorAdd]){
   assert.equal(survivor.wildlifeRole,'prey');
   assert.equal(survivor.denDisplacedPrey,true);
@@ -208,42 +186,58 @@ for(const survivor of [cavernAdd,exteriorAdd]){
 }
 assert.equal(hostiles.has(malformedAdd),false,'identity-less stale resident is discarded instead of becoming an undefined attacker');
 
-denNests.get(cavernMapId).remaining = 1; // Simulates taking one clutch member after the Den-Mother dies but before leaving the cavern.
-assert.equal(windowStub.WildlifeSpawn.updateClearedDenClutchVisual(cavernMapId, denNests.get(cavernMapId)),true,'post-kill clutch collection updates the persisted presentation fallback');
-denNests.delete(cavernMapId); // Simulates a save/reload that reconstructs the cleared cavern without its transient nest object.
+// Unentered cave slots never acquire deadlines, even when midnight passes.
+windowStub.WildlifeSpawn.advanceCaveMidnight(14);
+assert.equal(windowStub.WildlifeSpawn.denTurnoverDebug(zoneId)[0].daysRemaining,null);
+const entry = windowStub.WildlifeSpawn.enterCave(cavernMapId,'Whispering Stone Cave');
+assert.equal(entry.name,'Whispering Stone Cave');
+assert.equal(entry.daysRemaining,2);
+assert.equal(windowStub.WildlifeSpawn.enterCave(cavernMapId,'Changed Name').name,entry.name,'repeat entry preserves name/deadline');
+denNests.get(cavernMapId).remaining = 1;
+assert.equal(windowStub.WildlifeSpawn.updateDenClutchState(cavernMapId,denNests.get(cavernMapId)),true);
+assert.equal(windowStub.WildlifeSpawn.denTurnoverStateForCavern(cavernMapId).clutch.remaining,1,'remaining clutch is persisted after collection');
 currentArea=zoneId;
 windowStub.WildlifeSpawn.onZoneEntered(zoneId);
-debug=windowStub.WildlifeSpawn.denTurnoverDebug(zoneId);
-assert.equal(debug[0].stage,'collapsed','entering the exterior collapses a cleared den synchronously, before a re-entry interaction can occur');
-assert.equal(debug[0].daysRemaining,2);
-assert.equal(den.collapsed,true);
-assert.equal(layout.transitions.some(t=>t.targetMapId===cavernMapId),false,'collapsed den removes its entrance transition');
-assert.equal(zoneSceneInfo.transitions.some(t=>t.targetMapId===cavernMapId),false,'collapse also removes the entrance from the already-built zone scene pool the player actually walks into');
-assert.equal(zoneSceneInfo.transitions.some(t=>t.id===zoneId+'_exit'),true,'unrelated zone exits stay in the live scene pool');
-assert.equal(denRing.visible,false,'collapsed den hides its entrance ring marker');
-assert.equal(denNests.has(cavernMapId),false,'uncollected clutch is discarded once collapse executes');
-assert.equal(den._collapseEscapeVisual?.count,1,'collapse resolves the clutch at exit so a baby/egg collected after Den-Mother death is not duplicated by the cosmetic escape');
-assert.equal(den._collapseEscapeVisual?.itemKey,'garWolfBaby','egg and live-birth clutches preserve their species item identity for cosmetic baby rendering');
-assert.deepEqual(den._collapseEscapeVisual?.genotype,initialGenotype,'temporary escape babies keep the den family appearance without becoming real entities');
-assert.deepEqual(forgottenDenMarkers,[windowStub.WildlifeSpawn.denKeyFor(zoneId,den)],'collapse clears the companion-discovered map marker for the abandoned entrance');
-assert(visualSync.some(call=>call.collapsed && call.pending),'collapse queues the delayed facade presentation while closing the den logically immediately');
-assert.equal(hostiles.has(cavernAdd),false,'collapse purges stale residents from the discarded cavern scene');
-assert.equal(hostiles.has(exteriorAdd),true,'valid displaced exterior prey survives as a normal identified animal');
-assert.equal(genotypeRoll,1,'collapse itself does not invent another bloodline');
-
+assert.equal(den.collapsed,false,'exiting a killed den never collapses the entrance');
+assert(layout.transitions.some(t=>t.targetMapId===cavernMapId),'entrance stays usable');
+assert(denNests.has(cavernMapId),'remaining nest stays available after exit');
+assert(hostiles.has(cavernAdd),'interior survivors remain until the timed reset');
+assert.equal(resetCaves.length,0);
+assert.deepEqual(JSON.parse(JSON.stringify(windowStub.WildlifeSpawn.advanceCaveMidnight(15))),['Whispering Stone Cave will collapse in 2 days'],'first midnight STARTS the full two-day countdown');
+assert.deepEqual(JSON.parse(JSON.stringify(windowStub.WildlifeSpawn.advanceCaveMidnight(15))),['Whispering Stone Cave will collapse in 2 days'],'repeat calls cannot tick twice');
 windowStub.WildlifeSpawn.clearPendingDenRespawn();
-debug=windowStub.WildlifeSpawn.denTurnoverDebug(zoneId);
-assert.equal(debug[0].daysRemaining,1,'first new day advances collapse countdown once');
-assert.equal(den.collapsed,true);
-
+assert.equal(windowStub.WildlifeSpawn.denTurnoverDebug(zoneId)[0].daysRemaining,2,'06:00 daily ecology does not charge a cave day');
+assert.deepEqual(JSON.parse(JSON.stringify(windowStub.WildlifeSpawn.advanceCaveMidnight(16))),['Whispering Stone Cave will collapse in 1 days']);
+currentArea=cavernMapId;
+assert.deepEqual(JSON.parse(JSON.stringify(windowStub.WildlifeSpawn.advanceCaveMidnight(17))),['Whispering Stone Cave is about to collapse'],'deadline queues while inside the cave');
+assert.equal(windowStub.WildlifeSpawn.denTurnoverDebug(zoneId)[0].generation,0);
+const siblingMapId=windowStub.WildlifeSpawn.denCavernMapId(zoneId,'animalDen_sibling'); // Any other cave on the same wilderness protects the pending cave too.
+currentArea=siblingMapId;
+windowStub.WildlifeSpawn.clearPendingDenRespawn();
+assert.equal(windowStub.WildlifeSpawn.denTurnoverDebug(zoneId)[0].generation,0);
+currentArea=zoneId;
+windowStub.WildlifeSpawn.onZoneEntered(zoneId);
+assert.equal(windowStub.WildlifeSpawn.denTurnoverDebug(zoneId)[0].generation,0,'walking on the wilderness keeps the expired cave accessible');
+assert(layout.transitions.some(t=>t.targetMapId===cavernMapId));
 currentArea='map_hobunji_town';
 forceRelocationFallback=true;
-windowStub.WildlifeSpawn.clearPendingDenRespawn();
+corpseObjects.add(mother);
+windowStub.WildlifeSpawn.onZoneEntered(currentArea);
 debug=windowStub.WildlifeSpawn.denTurnoverDebug(zoneId);
-assert.equal(debug[0].stage,'active','second new day relocates the den while its zone is safely inactive');
-assert.equal(debug[0].generation,1);
-assert.equal(den.collapsed,false);
-assert(Math.hypot(den.x-5,den.y-5)>=12,'replacement den visibly relocates away from the cleared site');
+assert.equal(debug[0].generation,1,'leaving the wilderness immediately collapses and relocates the queued cave');
+assert.equal(debug[0].stage,'active');
+assert.equal(debug[0].entered,false,'replacement is unexplored and has no timer');
+assert.equal(debug[0].name,'Unexplored cave');
+assert.equal(den.collapsed,false,'replacement is open immediately');
+assert.equal(resetCaves.length,1,'cave contents reset exactly once');
+assert.equal(hostiles.has(cavernAdd),false,'old interior residents are removed on reset');
+assert.equal(corpseObjects.has(mother),false,'old mother corpse is removed on reset');
+assert.equal(hostiles.has(exteriorAdd),true,'displaced exterior prey stays ordinary wildlife');
+assert.deepEqual(forgottenDenMarkers,[windowStub.WildlifeSpawn.denKeyFor(zoneId,den)],'relocation forgets the old map marker and waypoint');
+assert.deepEqual(JSON.parse(JSON.stringify(windowStub.WildlifeSpawn.advanceCaveMidnight(18))),['Whispering Stone Cave has collapsed'],'next review reports an offscreen queued collapse by its old name');
+assert.equal(windowStub.WildlifeSpawn.advanceCaveMidnight(19).length,0,'collapse report is not repeated on following days');
+assert.equal(windowStub.WildlifeSpawn.denTurnoverDebug(zoneId)[0].generation,1,'unexplored replacement never globally resets');
+assert(Math.hypot(den.x-5,den.y-5)>=12,'replacement moves away from the old cave');
 const relocatedRect = { x:den.x, y:den.y, w:den.w, h:den.h + 1 }; // Includes the new mouth row when checking live runtime occupancy clearance.
 const overlaps = (a,b,margin=0) => a.x-margin < b.x+b.w && a.x+a.w+margin > b.x && a.y-margin < b.y+b.h && a.y+a.h+margin > b.y;
 assert.equal(overlaps(relocatedRect,{x:20,y:20,w:7,h:7},3),false,'fallback relocation avoids a live bandit camp footprint');
@@ -271,7 +265,48 @@ const savedTurnover = savedMeta.worlds.find(world=>world.id==='world-den-test')?
 assert.equal(savedTurnover?.year,3,'den turnover is stored inside the portable active-world save metadata');
 assert(savedTurnover?.records?.length===1,'portable world metadata retains the den generation record');
 assert(![...storage.keys()].some(key=>key.startsWith('hobunjiDenTurnoverV1:')),'den turnover must not escape the cloud/local-folder snapshot boundary into a device-only storage key');
-assert(logs.some(entry=>/\[den-turnover\] collapsed/.test(entry.message)));
+assert(!logs.some(entry=>/\[den-turnover\] collapsed/.test(entry.message)),'no kill-triggered collapse path remains');
 assert(logs.some(entry=>/\[den-turnover\] relocated/.test(entry.message)));
 
-console.log('PASS Den-Mother clear -> loot warning -> prey survivors -> collapsed den -> two-day relocation -> persistent fresh bloodline');
+// A replacement gets its own first-entry timer and may expire without any mother kill.
+deps.calendar.day=19;
+windowStub.WildlifeSpawn.enterCave(cavernMapId,'Hidden Moon Cave');
+currentArea='map_hobunji_town';
+const deadline=windowStub.WildlifeSpawn.denTurnoverDebug(zoneId)[0].collapseMidnight;
+assert.equal(windowStub.WildlifeSpawn.denTurnoverDebug(zoneId)[0].motherDefeated,false);
+assert.deepEqual(JSON.parse(JSON.stringify(windowStub.WildlifeSpawn.advanceCaveMidnight(deadline))),['Hidden Moon Cave has collapsed'],'uncleared caves collapse and relocate at midnight offscreen');
+assert.equal(windowStub.WildlifeSpawn.denTurnoverDebug(zoneId)[0].generation,2);
+// Reload the real owner against the portable save, then enter after civil midnight.
+const reloadContext = vm.createContext({ window:windowStub, localStorage, console, Math, Map, Set, WeakSet, JSON, performance:{now:()=>1000} });
+vm.runInContext(wildlifeSource, reloadContext);
+windowStub.WildlifeSpawn.init(deps);
+assert.equal(windowStub.WildlifeSpawn.denTurnoverDebug(zoneId)[0].generation,2,'cold reload preserves the renewed generation');
+windowStub.CalendarSystem.getHour=()=>25;
+deps.calendar.day=24;
+windowStub.WildlifeSpawn.enterCave(cavernMapId,'After Midnight Cave');
+assert.equal(windowStub.WildlifeSpawn.denTurnoverDebug(zoneId)[0].collapseMidnight,28,'01:00 entry waits until the following civil midnight to start');
+windowStub.WildlifeSpawn.advanceCaveMidnight(26);
+const reloadAgain = vm.createContext({ window:windowStub, localStorage, console, Math, Map, Set, WeakSet, JSON, performance:{now:()=>1000} });
+vm.runInContext(wildlifeSource, reloadAgain);
+windowStub.WildlifeSpawn.init(deps);
+assert.equal(windowStub.WildlifeSpawn.denTurnoverStateForCavern(cavernMapId).name,'After Midnight Cave','cold reload keeps the discovered name');
+assert.deepEqual(JSON.parse(JSON.stringify(windowStub.WildlifeSpawn.advanceCaveMidnight(26))),['After Midnight Cave will collapse in 2 days'],'cold reload cannot charge the same midnight twice');
+
+// Legacy kill-triggered collapse saves retain the defeated mother without arming a timer.
+const legacyMeta=JSON.parse(storage.get('hobunjiSaveMeta'));
+const legacyTurnover=legacyMeta.worlds[0].denTurnover;
+legacyTurnover.version=1;
+Object.assign(legacyTurnover.records[0],{stage:'cleared',collapseEscapeVisual:{count:2}});
+for (const key of ['name','enteredCivilDay','firstMidnight','collapseMidnight','reviewMidnight','reviewText']) delete legacyTurnover.records[0][key];
+storage.set('hobunjiSaveMeta',JSON.stringify(legacyMeta));
+const legacyContext=vm.createContext({window:windowStub,localStorage,console,Math,Map,Set,WeakSet,JSON,performance:{now:()=>1000}});
+vm.runInContext(wildlifeSource,legacyContext);
+windowStub.WildlifeSpawn.init(deps);
+const migrated=windowStub.WildlifeSpawn.denTurnoverStateForCavern(cavernMapId);
+assert.equal(migrated.stage,'active');
+assert.equal(migrated.motherDefeated,true);
+assert.equal(migrated.daysRemaining,null,'old kill-triggered timers are discarded');
+assert.equal(migrated.clutch.remaining,2,'old uncollected clutch remains available');
+assert.equal(windowStub.WildlifeSpawn.advanceCaveMidnight(40).length,0,'legacy mother defeat cannot expire an unentered cave');
+
+console.log('PASS individual entry -> first midnight -> two full days -> protected cave/zone -> immediate relocation -> one-time report; uncleared expiry and persistent bloodlines');

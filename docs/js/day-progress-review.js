@@ -14,7 +14,7 @@
   const REVIEW_ROOT_ID = 'hobunjiDayProgressReview'; // Used to reuse one full-screen modal across every midnight.
   const DEBUG_BUTTON_ID = 'dayProgressReviewDebugButton'; // Used to keep the mobile-accessible test control idempotent.
   const DEBUG_PANEL_ID = 'devSpawnPanel'; // Existing in-game Dev Tools panel receiving the review test button.
-  const CHANGE_SUMMARY = 'Fixed midnight review triggering and post-midnight ledger ownership against the full-day clock\'s wrapped 0-23 display hour.'; // Exposed in debug output as the latest change summary.
+  const CHANGE_SUMMARY = 'Day review now advances individual cave deadlines at civil midnight and reports named caves that will collapse, have collapsed, or are awaiting wilderness exit.'; // Exposed in debug output as the latest change summary.
 
   let calendarApi = null; // Captured CalendarSystem namespace used by civil-time checks and formatting.
   let calendarDeps = null; // Captured CalendarSystem.init dependencies used by the review-aware sleep/wait passage runner.
@@ -724,6 +724,7 @@
       petXp: aggregateRows(ledger.petXp),
       relationships,
       items: aggregateRows(ledger.items),
+      caves: meta.caveStatuses || window.WildlifeSpawn?.caveReviewStatuses?.() || [],
     };
   }
 
@@ -865,6 +866,7 @@
       sectionHtml('Currency & Experience', gainHtml),
       sectionHtml('Relationships', relationshipHtml),
       sectionHtml('Received Items', itemHtml),
+      (snapshot.caves || []).length ? sectionHtml('Caves', snapshot.caves.map(text => `<div class="day-review-row day-review-pending"><span>${htmlEscape(text)}</span></div>`).join('')) : '',
     ].join('');
   }
 
@@ -959,7 +961,8 @@
     const dayKey = currentDayKey(); // Civil day being closed out by this midnight boundary.
     if (state.reviewedDayKey === dayKey) return Promise.resolve(false);
     if (activeReviewPromise) return activeReviewPromise;
-    const snapshot = buildReviewSnapshot(meta); // Frozen pre-midnight totals and relationship conversion values shown to the player.
+    const caveStatuses = window.WildlifeSpawn?.advanceCaveMidnight?.(civilOrdinal() + 1) || []; // The actual midnight gate owns cave deadlines for natural time and sleep/wait, independently of raw-day rollover.
+    const snapshot = buildReviewSnapshot({ ...meta, caveStatuses }); // Frozen pre-midnight totals and relationship conversion values shown to the player.
     log(`opening ${meta.source || 'midnight'} review for ${snapshot.dateLabel}`);
     return showSnapshot(snapshot);
   }
@@ -1056,7 +1059,7 @@
     debugSnapshot,
     showSampleReview,
     resetLedger,
-    _test: Object.freeze({ parseRewardText, rewardBucket, representedHour, crossesCivilMidnight, rapportConversion }),
+    _test: Object.freeze({ buildReviewHtml, buildReviewSnapshot, parseRewardText, rewardBucket, representedHour, crossesCivilMidnight, rapportConversion }),
   });
   window.__dayProgressReviewDebug = Object.freeze({ snapshot: debugSnapshot, showCurrent: () => showSnapshot(buildReviewSnapshot({ source: 'debug-current' }), { markReviewed: false }), showSample: showSampleReview, reset: resetLedger });
 })();

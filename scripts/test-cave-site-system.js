@@ -199,6 +199,20 @@ for (const inhabitant of INHABITANTS) {
   }
 }
 
+// Names are stable per incarnation, and resetting a slot discards all old content state.
+const nameProfile=profile('map_i_name_test','trapped_cache'); // Seeded name fixture used independently of loot/inhabitants.
+assert.equal(Cave.__test.generatedCaveName(nameProfile),Cave.__test.generatedCaveName(nameProfile));
+assert.match(Cave.__test.generatedCaveName(nameProfile),/ Cave$/);
+assert.equal(Cave.mapLabelFor('unentered'),'Unexplored cave');
+Cave.__test.runtimeStateBySignature.set(nameProfile.signature,{discovered:true,cacheOpened:true,triggeredTraps:['trap'],lootedBodies:['body']});
+Cave.__test.sitesByMapId.set(nameProfile.mapId,nameProfile);
+Cave.__test.plansByMapId.set(nameProfile.mapId,{profile:nameProfile});
+Cave.__test.banditPopulatedMaps.add(nameProfile.mapId);
+Cave.resetCave(nameProfile.mapId);
+assert(!Cave.__test.runtimeStateBySignature.has(nameProfile.signature),'discovery/loot/traps are removed');
+assert(!Cave.__test.plansByMapId.has(nameProfile.mapId),'old placements are discarded');
+assert(!Cave.__test.banditPopulatedMaps.has(nameProfile.mapId),'replacement bandits can populate again');
+
 // Assignment-time hooks must capture dependencies before synchronous game initialization.
 let seenDenCount = -1;
 let seenCaveAnchors = -1;
@@ -231,7 +245,7 @@ assert.equal(zoneLayouts.get('map_test_wilds').dens.length, workspace.animalDens
 assert.equal(seenCaveAnchors, workspace.animalDens.length, 'wildlife tick still sees every cave footprint (caveAnchors) for den relocation');
 assert.equal(zoneLayouts.get('map_test_wilds').caveAnchors, undefined, 'caveAnchors only exists during the filtered tick');
 context.WildlifeSpawn.onZoneEntered('map_test_wilds');
-assert(zoneLayouts.get('map_test_wilds').transitions.every(transition => transition.label === 'Cave'), 'exterior transition label no longer advertises a den/burrow');
+assert(zoneLayouts.get('map_test_wilds').transitions.every(transition => transition.label === 'Unexplored cave'), 'exterior transition label no longer advertises a den/burrow');
 const census = context.WildlifeSpawn.denNestCensus('map_test_wilds');
 assert.equal(census.caveCount, workspace.animalDens.length, 'wildlife diagnostics expose generic cave total');
 assert.equal(census.denCount, expectedAnimalDens, 'wildlife diagnostics retain true animal-den count');
