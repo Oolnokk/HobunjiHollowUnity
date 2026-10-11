@@ -2493,7 +2493,8 @@
     const directMaskPass = exactDirectMaskPass(active); // Exact garment trim masks must bypass every generic repeating-pattern translation/scaling seam.
     const pad = patternWorkPad(directMaskPass);
     const maskWidth = width + pad * 2, maskHeight = height + pad * 2;
-    const patternCanvases = active.map(({ pattern, motif }) => buildPatternMask(maskWidth, maskHeight, pattern, motif)); // Direct mask receives exact sprite dimensions; reusable motifs retain padded work space.
+    // Snapshot the source (and shading source) pixels before the first yield
+    // below, so the composite never mixes two states of a caller's canvas.
     const out = Object.assign(document.createElement('canvas'), { width, height });
     const ctx = out.getContext('2d');
     ctx.drawImage(imageOrCanvas, 0, 0, width, height);
@@ -2509,6 +2510,15 @@
         shadeSourceData = base.data;
       }
     }
+    // The steps below are pure pixel math on private buffers; between them,
+    // give the browser a frame if this job has hogged the main thread (see
+    // pixel-work-yield.js). Output pixels are unchanged.
+    const patternCanvases = [];
+    for (const { pattern, motif } of active) {
+      await window.PixelWorkYield?.maybeYield();
+      patternCanvases.push(buildPatternMask(maskWidth, maskHeight, pattern, motif)); // Direct mask receives exact sprite dimensions; reusable motifs retain padded work space.
+    }
+    await window.PixelWorkYield?.maybeYield();
     const [r, g, b] = hexRgb(colorHex);
     const directShadeFill = window.ColorFill?.shadeFillPixels;
     const pixelCount = width * height;
@@ -2523,6 +2533,7 @@
     }
 
     const { labels: cellLabels } = labelPatternCells(garmentMask, width, height);
+    await window.PixelWorkYield?.maybeYield();
     const sampledMasks = []; // Used below to apply the Celtic-knot-style overpass before any visible black outline is generated.
     const sampledSeparators = [];
     for (const patternCanvas of patternCanvases) {
@@ -2542,6 +2553,7 @@
       }
       sampledMasks.push(mask);
       sampledSeparators.push(separator);
+      await window.PixelWorkYield?.maybeYield();
     }
 
     const combinedMask = new Uint8Array(sampledMasks[0]); // Primary motif is the under-strand when an overpass exists.
@@ -2558,6 +2570,7 @@
         overpassOutlineWidth * clearanceMultiplier, // Invisible clearance uses the authored 3×..12× multiple through the exact same raster-outline function as the visible border.
         sampledSeparators[1],
       );
+      await window.PixelWorkYield?.maybeYield();
       for (let p = 0; p < pixelCount; p++) {
         if (clearanceMask[p] || overpassMask[p]) combinedMask[p] = 0; // Punch the under-strand before any black outline exists.
       }
@@ -2585,6 +2598,7 @@
     }
 
     if (typeof directShadeFill !== 'function') throw new Error('ColorFill unavailable during woven pattern composition');
+    await window.PixelWorkYield?.maybeYield();
     directShadeFill(base.data, [r, g, b], {
       sourceData: shadeSourceData,
       debugLabel,
@@ -2595,6 +2609,7 @@
       },
     });
 
+    await window.PixelWorkYield?.maybeYield();
     const outlineWidth = scaledOutlineWidth(PATTERN_OUTLINE_WIDTH, active[0]?.pattern, debugLabel, width, height);
     const outlineGarmentMask = directOutlineSurfaceMask || garmentMask;
     let outlinePatternMask = combinedMask;

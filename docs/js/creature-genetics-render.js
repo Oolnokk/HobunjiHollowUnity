@@ -199,6 +199,7 @@
     if (_recolorCache.has(key)) return cachedRecolor(key);
     const promise = (async () => {
       const img = await loadImage(url);
+      await window.PixelWorkYield?.maybeYield(); // Lets a frame present between queued recolor passes (see pixel-work-yield.js).
       const maskMatches = !!mask && mask.width === img.naturalWidth && mask.height === img.naturalHeight; // Used to choose authored-region recolor versus an explicitly allowed full-sprite recolor.
       if (!maskMatches && !allowUnmasked) return img;
       const c = makeCanvas(img.naturalWidth, img.naturalHeight), ctx = c.getContext('2d', { willReadFrequently: true });
@@ -222,6 +223,7 @@
     if (_recolorCache.has(key)) return cachedRecolor(key);
     const promise = (async () => {
       const img = await loadImage(url);
+      await window.PixelWorkYield?.maybeYield();
       const c = makeCanvas(img.naturalWidth, img.naturalHeight), ctx = c.getContext('2d', { willReadFrequently: true });
       ctx.drawImage(img, 0, 0);
       const data = ctx.getImageData(0, 0, c.width, c.height), px = data.data;
@@ -359,6 +361,7 @@
         setPatternPaintDebug(regionId, { ...debugBase, status: 'failed', reason: 'weaving stack compositor unavailable', motifRefs });
         return null;
       }
+      if (regionMask) await window.PixelWorkYield?.maybeYield();
       const clippedSource = regionMask ? maskedRegionCanvas(imageOrCanvas, regionMask) : imageOrCanvas;
       const rendered = await compositor(clippedSource, patterns, dyeHex, cachePrefix, null, 'animal-surface-pattern');
       const applied = !!rendered && rendered !== clippedSource;

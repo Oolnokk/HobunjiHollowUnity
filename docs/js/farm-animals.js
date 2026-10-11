@@ -155,7 +155,7 @@
   // sessions) and how long the farm stays loaded, which is exactly what
   // was crashing long-lived saves on mobile from GPU-memory exhaustion.
   const _farmGenotypeTexCache = new Map();
-  const _farmTextureResidency = window.CreatureTextureCache.create('farm', null, _farmGenotypeTexCache); // Shares the lifecycle/idle-memory policy used by wild animals.
+  const _farmTextureResidency = window.CreatureTextureCache.create('farm', null, _farmGenotypeTexCache, { frameSetOf: window.CreatureTextureCache.genotypeFrameSetKey }); // Shares the lifecycle/idle-memory policy used by wild animals.
   const _farmGenotypeTexPending = new Map(); // Shares one compose/upload among animals requesting the same signature concurrently.
   window.HobunjiCacheAudit?.register('FarmAnimals.genotypeTexCache', () => _farmGenotypeTexCache.size);
 
@@ -181,7 +181,7 @@
         if (!child.material) continue;
         const hadMap = !!child.material.map; // Preserve initial shader setup while avoiding recompilation on blink swaps.
         if (child.name.endsWith('_front_plane')) { child.material.map = tex.front; }
-        else if (child.name.endsWith('_back_plane')) { child.material.map = tex.back; }
+        else if (child.name.endsWith('_back_plane')) { child.material.map = window.PNGPlaneAvatar?.backMapFor?.(child.material, tex) || tex.back; } // Mirror-capable back cards reuse the front texture.
         if (!hadMap && child.material.map) child.material.needsUpdate = true;
       }
       return true;
@@ -191,6 +191,7 @@
     if (_farmGenotypeTexPending.has(key)) return _farmGenotypeTexPending.get(key).then(tex => tex ? applyCached(tex) : false);
     const pending = window.CreatureGeneticsRender.composeFrame(kind, frame, genotype, blinkShut).then(canvas => { // One GPU texture pair per key even when multiple animals blink together.
       if (!canvas) return null;
+      canvas = window.CreatureTextureCache.fitGeneratedCanvas?.(canvas) || canvas; // Cached at display size, not native sprite size.
       const frontTex = new THREE.CanvasTexture(canvas); frontTex.colorSpace = THREE.SRGBColorSpace;
       const backTex = new THREE.CanvasTexture(canvas); backTex.colorSpace = THREE.SRGBColorSpace;
       backTex.wrapS = THREE.RepeatWrapping; backTex.repeat.set(-1, 1); backTex.offset.set(1, 0);
