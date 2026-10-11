@@ -5,7 +5,7 @@ const vm = require('node:vm'); // Executes the production camera input without W
 const source = fs.readFileSync('docs/game.js', 'utf8'); // Current arch and camera owner.
 const controllerSource = fs.readFileSync('docs/js/controller-input.js', 'utf8'); // Canonical radial normalization.
 const normalizeSource = controllerSource.slice(controllerSource.indexOf('  function normalizeStick('), controllerSource.indexOf('  // Indexed loops')); // Real stick response helper.
-const archResponseSource = source.split('\n').find(line => line.includes('const MOBILE_ARCH_LOOK_RESPONSE =')); // Read the authored curve from the runtime.
+const archResponseSource = source.split('\n').filter(line => /const MOBILE_ARCH_LOOK_(RESPONSE|DEADZONE) =/.test(line)).join('\n'); // Read the authored curve from the runtime.
 const setterSource = source.slice(source.indexOf('      function setMobileArchCombatAim('), source.indexOf('      function clearMobileArchCombatAim(')); // Real touch-to-stick adapter.
 const cameraSource = source.slice(source.indexOf('      function applyControllerCameraLook('), source.indexOf('      function pollControllerInput(')); // Single yaw/pitch consumer shared by both devices.
 function cameraContext(invert = false, free = true) {
@@ -29,7 +29,7 @@ function cameraContext(invert = false, free = true) {
   vm.runInContext(archResponseSource + '\n' + setterSource + cameraSource, ctx);
   return ctx;
 }
-for (const invert of [false, true]) for (const free of [false, true]) for (const [x, y] of [[1, 0], [0, -1], [0.65, 0.75], [0.12, 0.12], [-0.5, 0.4]]) {
+for (const invert of [false, true]) for (const free of [false, true]) for (const [x, y] of [[1, 0], [0, -1], [0.65, 0.75], [0.02, 0.02], [-0.5, 0.4]]) {
   const physical = cameraContext(invert, free), touch = cameraContext(invert, free); // Same settings and normalized camera axes exercise the shared consumer.
   touch.setMobileArchCombatAim(7, x * 42, y * 42, 42, 'shoot');
   const look = { x: touch.mobileArchCombatAim.lookX, y: touch.mobileArchCombatAim.lookY }; // The arch intentionally softens its throw before the shared controller camera path.
@@ -59,9 +59,14 @@ const turnAt = throwFraction => {
   curve.setMobileArchCombatAim(7, throwFraction * 42, 0, 42, 'shoot');
   return curve.mobileArchCombatAim.lookX;
 }; // Samples the production radial response without duplicating its formula.
-assert.equal(turnAt(0.2), 0, 'center remains inside the controller deadzone');
-assert(turnAt(0.5) < 0.01, 'half throw stays below one percent speed');
-assert(turnAt(0.75) < 0.1, 'three-quarter throw stays below ten percent speed');
+assert.equal(turnAt(0.03), 0, 'tiny center jitter remains inside the button deadzone');
+assert(turnAt(0.06) > 0, 'button drag starts responding well inside the controller deadzone');
+assert.equal(curve.normalizeStick(0.06, 0, curve.INPUT_DEFAULTS.deadzone, curve.CONTROLLER_LOOK_RESPONSE).magnitude, 0, 'physical controller retains its original center deadzone');
+turnAt(0.2);
+curve.applyControllerCameraLook(1 / 60);
+assert(curve.cameraAzimuthOffsetDeg < 0, 'shared camera consumer must not swallow slow near-center button aim');
+assert(turnAt(0.5) < 0.02, 'half throw stays below two percent speed');
+assert(turnAt(0.75) < 0.2, 'three-quarter throw remains gentle');
 assert(turnAt(0.9) > 0.4, 'turn speed ramps up near the outer edge');
 assert.equal(turnAt(1), 1, 'maximum turn speed is unchanged');
 assert.equal(turnAt(1.5), 1, 'dragging beyond the socket clamps to full speed');

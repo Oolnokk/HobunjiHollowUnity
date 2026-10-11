@@ -655,6 +655,7 @@
       const _controllerInputCfg = window.SCRATCHBONES_CONFIG?.game?.input || {}; // Used by both stick response curves and right-stick camera rotation.
       const CONTROLLER_MOVE_RESPONSE = Number(_controllerInputCfg.controllerMoveResponse) || 1.25;
       const CONTROLLER_LOOK_RESPONSE = Number(_controllerInputCfg.controllerLookResponse) || 1.45;
+      const MOBILE_ARCH_LOOK_DEADZONE = 0.04; // Only combat button drag uses this small center deadzone; physical controller sticks retain their configured deadzone.
       const MOBILE_ARCH_LOOK_RESPONSE = 6; // Combat arch camera look stays gentle through most of its throw and accelerates near the rim.
       const CONTROLLER_LOOK_DEG_PER_SEC = Number(_controllerInputCfg.controllerLookDegPerSec) || 190;
       const CONTROLLER_LOOK_VERTICAL_SCALE = Number(_controllerInputCfg.controllerLookVerticalScale) || 0.8;
@@ -17016,7 +17017,7 @@
 
       function setMobileArchCombatAim(pointerId, dx, dy, radius, action, slot = null) {
         if (!Number.isFinite(dx) || !Number.isFinite(dy) || !Number.isFinite(radius)) return;
-        const look = window.ControllerInput.normalizeStick(dx / Math.max(1, radius), dy / Math.max(1, radius), INPUT_DEFAULTS.deadzone, MOBILE_ARCH_LOOK_RESPONSE); // Shares controller normalization with a softer mobile arch curve that ramps up near the rim.
+        const look = window.ControllerInput.normalizeStick(dx / Math.max(1, radius), dy / Math.max(1, radius), MOBILE_ARCH_LOOK_DEADZONE, MOBILE_ARCH_LOOK_RESPONSE); // Uses shared radial normalization with the button-only deadzone and gentle near-center curve.
         mobileArchCombatAim = {
           pointerId,
           angle: cameraFacingAngleRad(),
@@ -17060,7 +17061,7 @@
 
       window.__mobileArchCombatAimDebug = {
         snapshot: () => ({
-          latestChange: 'Ranged and heavy-attack arch aiming turns gently near center and ramps up near the rim; full-speed yaw/pitch and controller settings are preserved.',
+          latestChange: 'Combat button drag uses a 4% center deadzone and retains its gentle near-center, fast-edge response; physical controller deadzones are unchanged.',
           dragPointerId: mobileArchDragPointerId,
           dragAngle: mobileArchDragAngle,
           active: !!mobileArchCombatAim,
@@ -25676,7 +25677,7 @@
               if (_heldItemPress) return;
               if (_combatAimRelease) {
                 setMobileArchCombatAim(ev.pointerId, dx, dy, _sockR, el.dataset.action, _pressSlot);
-                if (Math.hypot(mobileArchCombatAim.lookX, mobileArchCombatAim.lookY) > 0.001 && !_drag) {
+                if (Math.hypot(mobileArchCombatAim.lookX, mobileArchCombatAim.lookY) > 0 && !_drag) {
                   _drag = true;
                   _stack.classList.add('drag-active');
                 }
@@ -26571,7 +26572,7 @@
         const lookX = archLook ? archLook.lookX : controllerCameraX; // Shared yaw input, with the arch owning its held gesture.
         const lookY = archLook ? archLook.lookY : controllerCameraY; // Shared pitch input; returning to center stops camera turning.
         const magnitude = Math.hypot(lookX, lookY); // Both devices pass through the same camera turn path without a second deadzone.
-        if (magnitude <= 0.001 || !cameraDragAllowed() || window.ControllerUI?.isActive?.()) {
+        if (magnitude <= (archLook ? 0 : 0.001) || !cameraDragAllowed() || window.ControllerUI?.isActive?.()) {
           controllerLookActive = false;
           return;
         }
