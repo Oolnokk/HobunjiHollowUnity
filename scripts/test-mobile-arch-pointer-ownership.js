@@ -52,7 +52,8 @@ function setup(action = 'cut', tool = 'weapon', claimed = false) {
     dispatchWorldInputClaim: (action, phase) => { calls.push(`claim:${phase}`); return claimed; },
     wouldStartCharge: () => false, isHoldToCommitAction: () => action === 'consume_held_item', beginHeldItemActionDescriptor: () => true,
     useActiveAction: () => calls.push('fire'), commitMeleeAttackFacing: () => calls.push('commit'),
-    setMobileArchCombatAim: (pointerId, angle) => { ctx.mobileArchCombatAim = { pointerId, angle }; },
+    setMobileArchCombatAim: (pointerId, dx, dy, radius) => { ctx.mobileArchCombatAim = { pointerId, angle: 0, lookX: Math.abs(dx) > 10 ? dx / radius : 0, lookY: Math.abs(dy) > 10 ? dy / radius : 0 }; },
+    currentMeleeAimAngle: () => 0,
     clearMobileArchCombatAim: () => { ctx.mobileArchCombatAim = null; }, releaseMobileArchCombatAim() {},
     npcDialogueAction: () => 'talk', smithyAction: () => 'smithy', generalStoreAction: () => 'shop', carpenterAction: () => 'carpenter',
   };
@@ -75,7 +76,8 @@ melee.win.emit('pointermove', otherFinger);
 assert.equal(otherFinger.stopped, false);
 const drag = event(7, 152, 180); // World direction derives from finger travel, not the button center.
 melee.win.emit('pointermove', drag);
-assert.equal(melee.ctx.mobileArchDragAngle, Math.PI / 2);
+assert.equal(melee.ctx.mobileArchDragAngle, null, 'combat stick never chooses an absolute world heading');
+assert(melee.ctx.mobileArchCombatAim.lookY > 0, 'vertical drag supplies right-stick pitch');
 assert(drag.prevented && drag.stopped);
 assert(!melee.calls.includes('release') && !melee.calls.includes('tap'));
 melee.win.emit('pointerup', event(7, 152, 180));
@@ -114,6 +116,13 @@ for (const [action, canceled, expected] of [
   const actions = held.calls.filter(c => !c.startsWith('claim:')); // Claim probing does not represent gameplay effects.
   assert.deepEqual(actions, expected ? [expected] : []);
 }
+const farm = setup('chop', 'axe'); // Farm targeting retains its existing direction-stick contract.
+farm.el.emit('pointerdown', event(3, 152, 130));
+farm.win.emit('pointermove', event(3, 152, 180));
+assert.equal(farm.ctx.mobileArchDragAngle, Math.PI / 2);
+assert.deepEqual(farm.calls.filter(c => !c.startsWith('claim:')), ['fire']);
+farm.win.emit('pointerup', event(3, 152, 180));
+assert.equal(farm.ctx.mobileArchDragAngle, null);
 const cameraContext = { mobileArchDragPointerId: 5, window: { innerWidth: 400 } }; // Execute the actual camera input gate.
 vm.createContext(cameraContext);
 vm.runInContext(source.slice(source.indexOf('      function cameraDragRequested('), source.indexOf('      function hideCameraJoystick(')), cameraContext);

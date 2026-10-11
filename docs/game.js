@@ -5278,12 +5278,10 @@
       }
 
       function meleeAttackBodyFacingOverride() {
-        if (Number.isFinite(mobileArchCombatAim?.angle)) return mobileArchCombatAim.angle;
         return Number.isFinite(meleeAttackFacingCommit?.angle) ? meleeAttackFacingCommit.angle : null;
       }
 
       function currentMeleeAimAngle() {
-        if (Number.isFinite(mobileArchCombatAim?.angle)) return mobileArchCombatAim.angle;
         return activeCameraMode === SHOULDER_SURF_MODE ? mouseLookAngle
           : controllerLookActive ? controllerLookAngle
           : (isDesktop && mouseLookActive) ? mouseLookAngle
@@ -5363,7 +5361,6 @@
       }
 
       function currentPlayerAimAngle() {
-        if (Number.isFinite(mobileArchCombatAim?.angle)) return mobileArchCombatAim.angle;
         if (activeCameraMode === SHOULDER_SURF_MODE || mobileAutoCameraActive) return shoulderPerspectiveFacingAngle();
         return player.angle;
       }
@@ -5441,7 +5438,7 @@
 
       function requestMeleeAttackAlignment(runAttack) {
         // Attacks start with the current reticle. Never wait for or snap to the target.
-        const manualArchFacing = mobileArchCombatAim?.angle; // Preserves the existing dragged heavy-attack heading through release.
+        const manualArchFacing = mobileArchCombatAim ? currentMeleeAimAngle() : null; // Release uses the camera bearing reached by the shared right-stick path.
         if (Number.isFinite(manualArchFacing)) commitMeleeAttackFacing(manualArchFacing);
         else meleeAttackFacingCommit = null;
         runAttack();
@@ -17005,8 +17002,8 @@
       let lastMoveAngle = -Math.PI / 2;
       let targetAimAngle = -Math.PI / 2;
       let mobileArchDragPointerId = null; // Owns one arch gesture through release, including capture-failure fallback.
-      let mobileArchDragAngle = null; // Preserves deliberate tool/combat stick aim against movement and camera updates.
-      let mobileArchCombatAim = null; // Live action-arch stick yaw used by ranged fire and melee hold/tap aiming until their release contract is complete.
+      let mobileArchDragAngle = null; // Preserves deliberate farm-tool stick aim against movement and camera updates.
+      let mobileArchCombatAim = null; // Virtual controller right-stick vector while a combat arch gesture owns camera look.
       let lastMobileArchCombatAimEvent = { reason: 'not-used', at: 0 }; // Exposed in the mobile-copyable debug snapshot so touch-input failures can be diagnosed without DevTools.
 
       function invalidateMobileArchAimPerspectiveCache() {
@@ -17016,28 +17013,20 @@
         _cachedPerspectiveTargetAt = -1;
       }
 
-      function setMobileArchCombatAim(pointerId, angle, action, slot = null) {
-        const normalizedAngle = angleDiff(Number(angle), 0); // Shared world-space yaw consumed by body, melee and ranged aim while this touch owns the arch stick.
-        if (!Number.isFinite(normalizedAngle)) return;
+      function setMobileArchCombatAim(pointerId, dx, dy, radius, action, slot = null) {
+        if (!Number.isFinite(dx) || !Number.isFinite(dy) || !Number.isFinite(radius)) return;
+        const look = window.ControllerInput.normalizeStick(dx / Math.max(1, radius), dy / Math.max(1, radius), INPUT_DEFAULTS.deadzone, CONTROLLER_LOOK_RESPONSE); // Uses the physical right stick's radial deadzone and response curve.
         mobileArchCombatAim = {
           pointerId,
-          angle: normalizedAngle,
+          angle: cameraFacingAngleRad(),
+          lookX: look.x,
+          lookY: look.y,
           action: action || null,
           slot: Number(slot) || null,
           tool: activeTool,
           released: false,
         };
-        targetAimAngle = normalizedAngle;
-        facingAngle = normalizedAngle;
-        lastMoveAngle = normalizedAngle;
-        player.angle = normalizedAngle;
-        mouseLookAngle = normalizedAngle;
-        controllerLookAngle = normalizedAngle;
-        if (activeCameraMode === SHOULDER_SURF_MODE) {
-          const baseAzimuthDeg = cameraModeConfig(SHOULDER_SURF_MODE).azimuthDeg ?? 0; // Keeps the screen-center reticle horizontally aligned with the arch-stick yaw in shoulder view.
-          cameraAzimuthOffsetDeg = wrapAzimuthDeg(-(normalizedAngle * 180 / Math.PI) - 90 - baseAzimuthDeg);
-        }
-        lastMobileArchCombatAimEvent = { reason: 'aim', at: Date.now() };
+        lastMobileArchCombatAimEvent = { reason: 'camera-stick', at: Date.now() };
         invalidateMobileArchAimPerspectiveCache();
       }
 
@@ -17070,7 +17059,7 @@
 
       window.__mobileArchCombatAimDebug = {
         snapshot: () => ({
-          latestChange: 'Arch drags own their pointer through release/cancel, measure travel from the finger press, and preserve aim against movement and camera updates.',
+          latestChange: 'Ranged and heavy-attack arch drags use controller right-stick camera look, including pitch, continuous turn rate, deadzone, sensitivity and inversion.',
           dragPointerId: mobileArchDragPointerId,
           dragAngle: mobileArchDragAngle,
           active: !!mobileArchCombatAim,
@@ -19161,24 +19150,12 @@
       // in updateShoulderSurfReticleAim; it is no longer an aim authority.
       // Other camera modes retain their existing ranged-weapon-only behavior.
       function currentPlayerAimRay() {
-        const mobileAimAngle = mobileArchCombatAim?.angle; // Overrides horizontal camera authority only while a combat action-arch drag owns aim.
+        const mobileAimAngle = mobileArchCombatAim?.angle; // Keeps held combat on the camera ray in every view mode, matching controller aiming.
         if (!mobileAutoCameraActive && !Number.isFinite(mobileAimAngle) && activeCameraMode !== SHOULDER_SURF_MODE
           && (heldMode !== 'tool' || activeTool !== 'ranged' || !equipmentSlots.ranged)) return null;
         camera.updateMatrixWorld?.();
         _shoulderSurfReticleRaycaster.setFromCamera(currentCombatReticleNDC(), camera);
         const ray = _shoulderSurfReticleRaycaster.ray;
-        if (Number.isFinite(mobileAimAngle)) {
-          const pitch = Math.asin(window.FormatUtils.clamp(ray.direction.y, -1, 1)); // Keeps the camera's vertical aim while the 2D arch stick supplies world-space yaw.
-          const horizontal = Math.cos(pitch); // Converts the retained camera pitch back into a normalized horizontal magnitude for the stick yaw.
-          return {
-            origin: { x: ray.origin.x, y: ray.origin.y, z: ray.origin.z },
-            direction: {
-              x: Math.cos(mobileAimAngle) * horizontal,
-              y: Math.sin(pitch),
-              z: Math.sin(mobileAimAngle) * horizontal,
-            },
-          };
-        }
         return {
           origin: { x: ray.origin.x, y: ray.origin.y, z: ray.origin.z },
           direction: { x: ray.direction.x, y: ray.direction.y, z: ray.direction.z },
@@ -25696,6 +25673,14 @@
               // target whatever the reticle was aimed at on press — no
               // drag-to-aim for these, unlike farm tools.
               if (_heldItemPress) return;
+              if (_combatAimRelease) {
+                setMobileArchCombatAim(ev.pointerId, dx, dy, _sockR, el.dataset.action, _pressSlot);
+                if (Math.hypot(mobileArchCombatAim.lookX, mobileArchCombatAim.lookY) > 0.001 && !_drag) {
+                  _drag = true;
+                  _stack.classList.add('drag-active');
+                }
+                return;
+              }
               if (dist > DRAG_THRESH) {
                 const ang = Math.atan2(dy, dx);
                 mobileArchDragAngle = ang;
@@ -25706,10 +25691,7 @@
                 // targetAimAngle, not facingAngle/player.angle — see its
                 // declaration) so this drag genuinely aims farm-tool actions
                 // like axe chop / pick mine at a specific tile on mobile.
-                // Combat presses reuse that same stick vector, but keep their
-                // press/hold state armed and defer the actual attack to finger-up.
                 targetAimAngle = ang;
-                if (_combatAimRelease) setMobileArchCombatAim(ev.pointerId, ang, el.dataset.action, _pressSlot);
                 if (!_drag) {
                   _drag = true;
                   _stack.classList.add('drag-active');
@@ -25765,7 +25747,7 @@
                   if (pointerCanceled) window.Combat.input.abortPress(_pressSlot);
                   else {
                     if (combatAimOwned && _drag && Number.isFinite(mobileArchCombatAim?.angle)) {
-                      commitMeleeAttackFacing(mobileArchCombatAim.angle);
+                      commitMeleeAttackFacing(currentMeleeAimAngle());
                     }
                     window.Combat.input.pressEnd(_pressSlot);
                   }
@@ -26584,7 +26566,10 @@
         window.__farmLog?.(`[controller] gameplay input ${reason}`, 'input');
       }
       function applyControllerCameraLook(dt) {
-        const magnitude = Math.hypot(controllerCameraX, controllerCameraY); // Used to distinguish live camera input from an idle stick without a second deadzone pass.
+        const archLook = mobileArchCombatAim && !mobileArchCombatAim.released ? mobileArchCombatAim : null; // The held arch supplies the same normalized axes as a physical right stick.
+        const lookX = archLook ? archLook.lookX : controllerCameraX; // Shared yaw input, with the arch owning its held gesture.
+        const lookY = archLook ? archLook.lookY : controllerCameraY; // Shared pitch input; returning to center stops camera turning.
+        const magnitude = Math.hypot(lookX, lookY); // Both devices pass through the same camera turn path without a second deadzone.
         if (magnitude <= 0.001 || !cameraDragAllowed() || window.ControllerUI?.isActive?.()) {
           controllerLookActive = false;
           return;
@@ -26593,13 +26578,17 @@
         const turnMultiplier = window.Combat?.postAttackTurnMultiplier?.(player) ?? 1; // Inputs remain live; only their visible turn rate is eased after attacks.
         const turnRate = CONTROLLER_LOOK_DEG_PER_SEC * s_controllerLookSensitivity * turnMultiplier; // Used for frame-rate-independent right-stick yaw and pitch.
         cameraAzimuthOffsetDeg = freeRotateCameraActive()
-          ? wrapAzimuthDeg(cameraAzimuthOffsetDeg - controllerCameraX * turnRate * dt)
-          : window.FormatUtils.clamp(cameraAzimuthOffsetDeg - controllerCameraX * turnRate * dt, -clampDeg, clampDeg);
-        const pitchDirection = s_controllerInvertY ? -1 : 1; // Applied only to controller Y so changing this setting cannot invert touch or mouse input.
-        cameraAngleOffsetDeg = clampCameraPitchOffsetDeg(cameraAngleOffsetDeg + controllerCameraY * pitchDirection * turnRate * CONTROLLER_LOOK_VERTICAL_SCALE * dt);
+          ? wrapAzimuthDeg(cameraAzimuthOffsetDeg - lookX * turnRate * dt)
+          : window.FormatUtils.clamp(cameraAzimuthOffsetDeg - lookX * turnRate * dt, -clampDeg, clampDeg);
+        const pitchDirection = s_controllerInvertY ? -1 : 1; // Physical and virtual right sticks share the same invert-Y preference; ordinary screen drag remains independent.
+        cameraAngleOffsetDeg = clampCameraPitchOffsetDeg(cameraAngleOffsetDeg + lookY * pitchDirection * turnRate * CONTROLLER_LOOK_VERTICAL_SCALE * dt);
         controllerLookAngle = cameraFacingAngleRad();
         targetAimAngle = controllerLookAngle;
         controllerLookActive = true;
+        if (archLook) {
+          archLook.angle = controllerLookAngle;
+          invalidateMobileArchAimPerspectiveCache();
+        }
       }
       function pollControllerInput() {
         if (!gamepadState.focused) return;
