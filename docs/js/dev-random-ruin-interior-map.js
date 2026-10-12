@@ -845,6 +845,7 @@
         }
 
         await window.RepoPatternLibrary?.load?.(); // Author-exported collectible definitions must be ready before deterministic ruin selection.
+        await window.RuinPatternSurfaceRules?.ready; await window.RuinPatternSurfaceRules?.preloadPieces?.(ruin.localeRoot); // Per-piece enable/scale rules (Dev Companion + Furniture Author patternScale).
         window.FurniturePatternSurfaces?.decorateRuin?.(ruin.localeRoot, candidateSeed);
         lastGenerationAudit.acceptedSeed=candidateSeed;
         await enterRuin(); updateBadge();

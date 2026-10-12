@@ -3,6 +3,8 @@
 (() => {
   'use strict';
   const TILE_PX = 256; // Raster density for one pattern tile, independent of furniture dimensions.
+  const MAX_ATLAS_PX = 1024; // Default longest atlas edge; ruin decorations may lower it through RuinPatternSurfaceRules.
+  const ATLAS_QUANTUM_PX = 64; // Atlas edges round up to this step so similarly sized surfaces share one composited GPU tile.
   const textureCache = new WeakMap(); // Identical tiles share one GPU texture while any furniture material still uses it.
   const tileCache = new Map(); // Bounded composite promises shared by identical pattern/palette definitions.
   const hex = (value, fallback) => /^#[0-9a-f]{6}$/i.test(value || '') ? value : fallback;
@@ -223,8 +225,9 @@
     const records = Array.isArray(part?.patternSurfaces) ? part.patternSurfaces : []; // Unknown metadata survives the base editor's part normalization.
     if (!records.length || !mesh) return mesh;
     const THREE = window.THREE, png = window.HobunjiSpritePngSurface; // Reuses the canonical canvas texture and unlit surface factories.
+    const pieceScale = Number(part.patternScale) > 0 ? Number(part.patternScale) : null; // Furniture Author per-piece override for every pattern on this part.
     for (const raw of records) {
-      const record = normalize(raw); // Copy per-instance settings; authored recipes remain immutable.
+      const record = normalize({...raw, scale: Number(raw.scaleOverride) > 0 ? raw.scaleOverride : pieceScale ?? raw.scale}); // Copy per-instance settings; authored recipes remain immutable. Dev rule > piece override > slot scale.
       const complete = surfaceGeometry(mesh, record, part);
       if (!complete) continue;
       for(const {geometry,index:materialIndex} of splitSurfaceMaterials(complete)) {
@@ -238,7 +241,7 @@
       overlay.raycast = () => {}; // Visual decoration does not claim interactions, collision or Pixel Probe hits.
       material.polygonOffset = true; material.polygonOffsetFactor = -1; material.polygonOffsetUnits = -1;
       if (part.kind === 'banner') installBannerWind(overlay, part);
-      retainPatternScale(overlay);
+      retainPatternScale(overlay, record);
       installBlackTextureMask(overlay,mesh,materialIndex);
       mesh.add(overlay);
       let ownedTexture = null; // Material disposal releases exactly one reference to a shared GPU tile.
@@ -256,6 +259,7 @@
         }).catch(error => { if (!disposed && request === generation) { overlay.visible = false; overlay.userData.furniturePattern.status = error.message; } });
       };
       overlay.onBeforeRender(); // Build the first atlas while invisible; later render hooks react only to resizing.
+      if (overlay.userData.furniturePattern.status === 'skipped') { mesh.remove(overlay); material.dispose(); geometry.dispose(); } // Slivers too small to show a motif cost a draw call and an atlas for nothing.
       }
     }
     return mesh;
@@ -271,7 +275,7 @@
     }
   }
 
-  function retainPatternScale(mesh) {
+  function retainPatternScale(mesh, record = {}) {
     const base = mesh.geometry.userData.patternBaseUvs, axes = mesh.geometry.userData.patternUvAxes; // Rest UVs retain authored coordinates without cumulative drift.
     const previous = [-1, -1, -1], lengths = [1, 1, 1]; // Reused scale scratch; no per-frame vector allocations.
     const beforeRender = mesh.onBeforeRender; // Preserve the banner's existing time update.
@@ -291,9 +295,12 @@
       }
       for(let i=0;i<base.length;i++)uv.array[i]=i%2 || axes[i]===3 ? base[i]*lengths[axes[i]] : weights[i]*lengths[0]+weights[i+1]*lengths[2];
       const width=Math.max(.001,maxU-minU),height=Math.max(.001,maxV-minV); // World dimensions determine pixel extent while authored meshScale determines motif density.
-      const density=Math.min(TILE_PX,1024/Math.max(width,height)); // Bound mobile GPU allocation while preserving aspect and pattern size.
-      const size=[Math.max(1,Math.ceil(width*density)),Math.max(1,Math.ceil(height*density)),density/TILE_PX]; // One atlas per actual surface extent.
-      for(let i=0;i<base.length;i+=2) {uv.array[i]=(uv.array[i]-minU)/width;uv.array[i+1]=(uv.array[i+1]-minV)/height;}
+      if (record.minSurfaceTiles > 0 && Math.min(width,height) < record.minSurfaceTiles) { mesh.visible = false; mesh.userData.furniturePattern.status = 'skipped'; return; } // Ruin-only: a strip thinner than a fraction of one tile cannot show a motif.
+      const density=Math.min(Number(record.tilePx) > 0 ? Number(record.tilePx) : TILE_PX,(Number(record.maxAtlasPx) > 0 ? Number(record.maxAtlasPx) : MAX_ATLAS_PX)/Math.max(width,height)); // Bound mobile GPU allocation while preserving aspect and pattern size.
+      const quantize=px=>px>ATLAS_QUANTUM_PX?Math.ceil(px/ATLAS_QUANTUM_PX)*ATLAS_QUANTUM_PX:Math.max(1,Math.ceil(px)); // Shared atlas sizes let repeated pieces reuse one tile.
+      const size=[quantize(width*density),quantize(height*density),density/TILE_PX]; // The surface uses the lower-left part of its (possibly padded) atlas at the exact density.
+      const fillU=width*density/size[0],fillV=height*density/size[1];
+      for(let i=0;i<base.length;i+=2) {uv.array[i]=(uv.array[i]-minU)/width*fillU;uv.array[i+1]=(uv.array[i+1]-minV)/height*fillV;}
       mesh.userData.refreshPatternAtlas?.(size);
       uv.needsUpdate = true;
       for (let axis = 0; axis < 3; axis++) previous[axis] = lengths[axis];
@@ -322,12 +329,20 @@
     if (!root) return [];
     const catalog = [...(window.PatternLibrary?.getCatalog?.() || []), ...(window.RepoPatternLibrary?.listCached?.() || []).filter(entry=>entry.collectible)]; // Engravings grant exactly the reusable catalog motif rendered on the ruin.
     const ids = new Set(), meshes = []; // Collect first so adding overlay children cannot extend traversal.
+    const rules = window.RuinPatternSurfaceRules; // Optional per-piece enable/scale/atlas rules (docs/js/ruin-pattern-surface-rules.js).
+    const types = new Map(), overlays = []; // Per repeated piece type, for the Dev Companion's live surface list.
+    root.userData.ruinPatternSeed = seed; // Rule edits re-run decoration with the same deterministic choices.
     root.traverse(node => { if (node.isMesh && !node.userData?.furniturePattern) meshes.push(node); });
     for (let index = 0; index < meshes.length; index++) {
       const mesh = meshes[index];
       let node = mesh, role = ''; // Walk ancestors only once at generation to find renderer-owned structural semantics.
       while (node && node !== root) { role += ` ${node.name || ''} ${node.userData?.interiorRuinRole || ''} ${node.userData?.ruinFurnitureKey || ''}`; if (node.userData?.ruinInteriorWall) role += ' wall'; node = node.parent; }
       if (!/wall|pillar|pedestal|platform/i.test(role) || /seal|glyph|decal|fire|ceiling/i.test(mesh.name || '') || !catalog.length) continue;
+      for (const child of [...mesh.children]) if (child.userData?.furniturePattern?.mode === 'engraving') { mesh.remove(child); child.geometry?.dispose(); child.material?.map?.dispose(); child.material?.dispose(); } // Re-decoration (rule edits) starts clean, including types now switched off.
+      const rule = rules?.resolve?.(mesh, root) || null; // { key, label, context, enabled, scale, partScale, maxAtlasPx, minSurfaceTiles }
+      const type = rule ? (types.get(rule.key) || types.set(rule.key, { key: rule.key, label: rule.label, meshes: 0, overlays: 0, contexts: new Set(), enabled: rule.enabled, scale: rule.scale, partScale: rule.partScale }).get(rule.key)) : null;
+      if (type) { type.meshes++; if (rule.context) type.contexts.add(rule.context); }
+      if (rule && !rule.enabled) continue;
       const authoredSlots = mesh.userData?.authoredPart?.patternSurfaces?.filter(record => record.mode === 'engraving'); // Explicit author slots replace the generic structural defaults.
       const slots = /pedestal|platform/i.test(role) ? ['sides', 'top'] : ['sides']; // Bases and tops roll separately, alongside walls and pillars.
       const templates = authoredSlots?.length ? authoredSlots : slots.map(slot => ({slot,selector:slot,mode:'engraving',random:true})); // No mutation of shared part recipes.
@@ -335,12 +350,15 @@
         const slot = template.slot; // Independent deterministic choice for each authored surface slot.
         const entry = catalog[hash(`${seed}|${index}|${slot}`) % catalog.length]; // Stable per-element/per-slot selection.
         const patternId = template.random === false && template.patternId ? template.patternId : entry.id; // Completion grants the actual displayed motif.
-        ids.add(patternId);
-        return { ...template, pattern: template.random === false ? template.pattern : null, patternId, palette: template.palette || ['#b7a185', '#625447'], scale: template.scale || 1.5 };
+        return { ...template, pattern: template.random === false ? template.pattern : null, patternId, palette: template.palette || ['#b7a185', '#625447'], scale: template.scale || 1.5,
+          ...(rule?.scale > 0 ? { scaleOverride: rule.scale } : {}), ...(rule ? { maxAtlasPx: rule.maxAtlasPx, minSurfaceTiles: rule.minSurfaceTiles, tilePx: rule.tilePx } : {}) };
       });
-      for (const child of [...mesh.children]) if (child.userData?.furniturePattern?.mode === 'engraving') { mesh.remove(child); child.geometry?.dispose(); child.material?.map?.dispose(); child.material?.dispose(); }
-      applyPart(mesh, { ...mesh.userData?.authoredPart, patternSurfaces: records });
+      const authored = mesh.userData?.authoredPart; // Piece JSON data for V50 repo pieces is preloaded by the rules module.
+      applyPart(mesh, { ...authored, patternScale: authored?.patternScale ?? rule?.partScale, patternSurfaces: records });
+      for (const child of mesh.children) if (child.userData?.furniturePattern?.mode === 'engraving') { ids.add(child.userData.furniturePattern.patternId); overlays.push(child); if (type) type.overlays++; } // Only motifs actually shown are granted on completion.
     }
+    root.userData.ruinPatternTypes = types;
+    root.userData.ruinPatternOverlays = overlays;
     root.userData.ruinPatternIds = [...ids];
     return [...ids];
   }
