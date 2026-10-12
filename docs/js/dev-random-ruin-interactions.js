@@ -417,12 +417,29 @@
     return true;
   }
 
+  // Box3.setFromObject walks every descendant mesh; it ran for every nearby
+  // owner several times per frame and was the ruin's biggest per-frame cost.
+  // Boxes are reused until the owner's world matrix changes, re-measured at
+  // most every OWNER_BOX_MAX_AGE_MS for animated children (doors, cubes).
+  const OWNER_BOX_MAX_AGE_MS = 400;
+  const ownerBoxes = new WeakMap(); // owner -> { box, at, matrix:Float32Array(16) }
   function ownerBox(owner) {
     if (!owner) return null;
+    const now = performance.now(), cached = ownerBoxes.get(owner), m = owner.matrixWorld?.elements;
+    if (cached && now - cached.at < OWNER_BOX_MAX_AGE_MS && m) {
+      let same = true;
+      for (let i = 0; i < 16; i++) if (cached.matrix[i] !== m[i]) { same = false; break; }
+      if (same) return cached.box;
+    }
     try {
       owner.updateWorldMatrix?.(true, true);
       const box = new THREE.Box3().setFromObject(owner);
-      return box.isEmpty() ? null : box.expandByScalar(.12);
+      const result = box.isEmpty() ? null : box.expandByScalar(.12);
+      const entry = cached || { matrix: new Float32Array(16) };
+      entry.box = result; entry.at = now;
+      if (owner.matrixWorld) entry.matrix.set(owner.matrixWorld.elements);
+      ownerBoxes.set(owner, entry);
+      return result;
     } catch (_) { return null; }
   }
 
@@ -626,6 +643,7 @@
     const changed=signature!==lastRowsSignature;
     const hadRows=lastRows.length>0;
     lastRows=rows;
+    lastRowsAt=performance.now();
     lastRowsSignature=signature;
     lastAnchor=rows[0]?.owner||nearestOwnerForKind(rows[0]?.kind)||ruinRoot()||null;
     syncInputClaims(rows);
@@ -642,6 +660,7 @@
   }
 
 
+  let lastRowsAt=-Infinity; // getActionButtons() reuses rows built within the same 12.5 Hz window instead of rescanning every frame.
   let lastInteractionListAt=-Infinity; // Proximity/floating-prompt discovery is UI work, not physics; keep controller edge polling per-frame but rebuild rows at 12.5 Hz.
   DS.addBeforeRenderClient(() => {
     const now=performance.now();
@@ -662,7 +681,9 @@
     climbLedge,
     refresh:renderWorldList,
     getActionButtons() {
-      return actionButtonsFromRows(refreshRows(false)); // Called from game.js's ordinary building-interior action provider path.
+      // Called from game.js's action bar every frame; rows only need the 12.5 Hz refresh below.
+      const rows = inRuin() && performance.now() - lastRowsAt < 80 ? lastRows : refreshRows(false);
+      return actionButtonsFromRows(rows);
     },
     invoke(index = 0) {
       const row = lastRows[index];

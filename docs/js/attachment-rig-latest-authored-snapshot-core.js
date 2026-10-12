@@ -141,8 +141,25 @@
     return true;
   }
 
+  // The retry timer below calls apply() every 50 ms for up to 600 ticks (the
+  // Animation Author import never completes in the game). Re-applying and
+  // forcing a hand-rig resync each tick was a steady startup cost, so it only
+  // happens when a profile entry this snapshot overrides is new or replaced.
+  const appliedTargets = new WeakSet();
+  function libraryNeedsApply(library) {
+    const characters = library?.characters;
+    if (!characters) return false;
+    for (const key of [...Object.keys(OVERRIDES), ...Object.keys(ALIASES)]) {
+      const target = characters[key];
+      if (target && !appliedTargets.has(target)) return true;
+    }
+    return false;
+  }
   function apply() {
-    const applied = applyToLibrary(window.HOBUNJI_ATTACHMENT_RIG_PROFILES);
+    const library = window.HOBUNJI_ATTACHMENT_RIG_PROFILES;
+    if (!libraryNeedsApply(library)) return !!library?.characters;
+    const applied = applyToLibrary(library);
+    for (const key of [...Object.keys(OVERRIDES), ...Object.keys(ALIASES)]) if (library.characters[key]) appliedTargets.add(library.characters[key]);
     window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS ||= {};
     window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.latestAuthoredSnapshot = {
       version: SNAPSHOT_VERSION,

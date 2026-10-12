@@ -9,7 +9,7 @@
   const base = selfUrl || new URL('./js/', location.href);
   const urls = [
     new URL('../config/character-rig-scale-defaults.js?v=20261010hd4b4796', base).href,
-    new URL('attachment-rig-latest-authored-snapshot-core.js?v=20260904a', base).href,
+    new URL('attachment-rig-latest-authored-snapshot-core.js?v=20261012h02be7fe', base).href,
     new URL('character-rig-maoao-authored-20260905.js?v=20260905b', base).href,
     new URL('mammakhbuur-species-runtime.js?v=20261004mammakhhair1', base).href,
     new URL('nuhongan-species-runtime.js?v=20261006h4e1c09a', base).href,

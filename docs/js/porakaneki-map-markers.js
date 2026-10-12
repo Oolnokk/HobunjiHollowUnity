@@ -14,7 +14,7 @@
   let lastSignature = ''; // Avoids rewriting layout.localeInstances on every 0.2 s camp tick when nothing moved.
 
   function snapshot() {
-    try { return window.PorakanekiCamps?.debugSnapshot?.() || null; }
+    try { return window.PorakanekiCamps?.campCenters?.() || window.PorakanekiCamps?.debugSnapshot?.() || null; } // Runs every fog update; campCenters() avoids building the full debug snapshot.
     catch { return null; }
   }
 
