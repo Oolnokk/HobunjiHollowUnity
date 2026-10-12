@@ -178,7 +178,6 @@
     geometry.setIndex(indices);
     geometry.getAttribute('position').setUsage?.(THREE.DynamicDrawUsage);
     geometry.computeBoundingSphere();
-    Core.applyLegAxisWeights(weights, SEGMENTS, garment, character.legCoverage === undefined ? 1 : Number(character.legCoverage)); // Whole pant legs (sides included) follow their bone.
     Core.sharpenWeights(weights, Math.min(8, Math.max(1, Number(character.skinSharpness) || 1.5))); // Strong initial 2D->3D alignment (see Core.sharpenWeights).
     // Everything at or above the beltline spline belongs to the belt (rigid, flat in the portrait plane, however the weights
     // were painted): the beltline never tilts or leaves the portrait's depth, even where no belt weight touches it.
@@ -629,6 +628,16 @@
     const worldElements = handle.model.matrixWorld.elements;
     handle.maskUniforms.uPantsDepthBias.value = footLift * Math.hypot(worldElements[0], worldElements[1], worldElements[2]); // View-space distance to pull the garment's depth toward the camera.
     handle.captureRest(); // The legs' stance at attach is the rest pose the initial 2D warp targets.
+    // Initial alignment (purely 2D): each thigh and calf is laid onto the matching 3D bone at rest (position, direction and length
+    // along the bone; its width is the art's own). The waistband stays as authored. The garment is then bound in this pose.
+    {
+      const legWarp = (side, from, to) => Core.alignBoneSegment(handle.bones2D[side][from], handle.bones2D[side][to], handle.rest[side][from], handle.rest[side][to], { perpendicularScale: 1 });
+      const warp = [null, legWarp('left', 'hip', 'knee'), legWarp('left', 'knee', 'ankle'), legWarp('right', 'hip', 'knee'), legWarp('right', 'knee', 'ankle')];
+      const warped = Core.skinWeightedPositions(handle.basePositions, handle.weights, warp, new Float32Array(handle.basePositions.length));
+      handle.basePositions.set(warped);
+      handle.geometry.getAttribute('position').array.set(warped);
+      for (const side of ['left', 'right']) for (const joint of ['hip', 'knee', 'ankle']) { const r = handle.rest[side][joint]; handle.bones2D[side][joint] = { x: r.x, y: r.y, z: r.z }; }
+    }
     handles.add(handle);
     handle.setAppearance({});
     if (overlayMask) Promise.resolve(overlayMask).then(canvas => { if (!handle.disposed) handle.setOverlayMask(canvas); }).catch(() => {});

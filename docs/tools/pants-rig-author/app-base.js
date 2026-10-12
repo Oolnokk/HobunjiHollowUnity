@@ -172,6 +172,7 @@ function syncHistoryButtons() {
 }
 
 function persistDraft() {
+  state.revision = (state.revision || 0) + 1;
   const garment = ensureGarment(); // Active garment receives the dense weights before local persistence.
   garment.weightMap = Core.encodeWeightGridRle(state.weightGrid);
   try {
@@ -577,6 +578,7 @@ function debugSnapshot() {
 }
 
 function queueRender({ rebuildFit = false } = {}) {
+  state.revision = (state.revision || 0) + 1; // Every edit bumps this so the host preview can notice changes no event covers.
   if (rebuildFit) state.fitCanvas = null;
   if (state.renderQueued) return;
   state.renderQueued = true;
@@ -796,31 +798,13 @@ function autoSeedWeights() {
   const garment = ensureGarment(); // Bone and belt guides used to seed the weight field.
   const grid = state.weightGrid; // Weight field overwritten by auto seeding.
   const channels = grid.channels; // Weight channel order.
-  for (let y = 0; y < grid.height; y++) {
-    for (let x = 0; x < grid.width; x++) {
-      const point = { x: x / (grid.width - 1), y: y / (grid.height - 1) }; // Grid cell in normalized garment space.
-      const leftThighDistance = distanceToSegment(point, garment.legBones.left.hip, garment.legBones.left.knee); // Left thigh proximity.
-      const leftCalfDistance = distanceToSegment(point, garment.legBones.left.knee, garment.legBones.left.ankle); // Left calf proximity.
-      const rightThighDistance = distanceToSegment(point, garment.legBones.right.hip, garment.legBones.right.knee); // Right thigh proximity.
-      const rightCalfDistance = distanceToSegment(point, garment.legBones.right.knee, garment.legBones.right.ankle); // Right calf proximity.
-      const beltDistance = Math.min(...garment.pantsBeltSpline.map(node => Math.hypot(point.x - node.x, point.y - node.y))); // Beltline proximity.
-      const raw = [
-        Math.exp(-(beltDistance ** 2) / 0.025),
-        Math.exp(-(leftThighDistance ** 2) / 0.012),
-        Math.exp(-(leftCalfDistance ** 2) / 0.012),
-        Math.exp(-(rightThighDistance ** 2) / 0.012),
-        Math.exp(-(rightCalfDistance ** 2) / 0.012),
-      ]; // Soft initial influences; paint can refine them.
-      raw[0] += Math.max(0, 0.55 - point.y) * 1.8;
-      const sum = raw.reduce((total, value) => total + value, 0) || 1; // Normalization denominator.
-      const offset = (y * grid.width + x) * channels.length; // First byte for this cell.
-      for (let channelIndex = 0; channelIndex < channels.length; channelIndex++) grid.data[offset + channelIndex] = Math.round(raw[channelIndex] * 255 / sum);
-      Core.normalizeWeightCell(grid.data, offset, channels.length, 0);
-    }
-  }
+  const seeded = new Float32Array(grid.width * grid.height * channels.length); // Rigid waistband, then each leg owns one half (Core.applyHalfLegWeights).
+  Core.applyHalfLegWeights(seeded, grid.width - 1, garment);
+  for (let index = 0; index < seeded.length; index++) grid.data[index] = Math.round(Core.clamp(seeded[index], 0, 1) * 255);
+  for (let cell = 0; cell < grid.width * grid.height; cell++) Core.normalizeWeightCell(grid.data, cell * channels.length, channels.length, 0);
   persistDraft();
   queueRender();
-  status('Auto-seeded weights from the authored belt and leg bones. Paint to refine.', 'good');
+  status('Auto-seeded weights: rigid waistband, each leg owns one half. Paint to refine.', 'good');
 }
 
 function smoothWeights() {
@@ -1148,6 +1132,7 @@ window.__pantsRigAuthorDebug = { // Mobile-accessible author diagnostics without
   validate: () => Core.validateProject(exportProjectObject()),
   character: ensureCharacter, // Active species/gender record (portraitBeltSpline) for belt-transform-tools.js.
   persist: persistDraft,
+  revision: () => state.revision || 0,
   snapshotForUndo,
 };
 

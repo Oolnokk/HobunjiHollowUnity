@@ -426,10 +426,25 @@
     return true;
   }
 
+  // Any edit in the author (slider, weight stroke, undo, bone drag...) bumps its revision; once it has been quiet for a moment
+  // (or has been changing for a while) the preview is rebuilt, so no setting depends on a specific event being forwarded.
+  function noticeAuthorEdits() {
+    let revision = 0;
+    try { revision = state.iframe?.contentWindow?.__pantsRigAuthorDebug?.revision?.() || 0; } catch (_) { return; }
+    const now = performance.now();
+    if (revision !== state.seenRevision) { state.seenRevision = revision; state.revisionChangedAt = now; state.revisionPending = true; }
+    if (state.revisionPending && (now - state.revisionChangedAt > 150 || now - (state.lastRevisionBuild || 0) > 700)) {
+      state.revisionPending = false;
+      state.lastRevisionBuild = now;
+      state.forceRebuild = true;
+    }
+  }
+
   async function frame() {
     state.frameCount++;
     if (state.open && state.liveToggle?.checked) {
       updatePreviewPose(); // Reads the procedural IK transforms every rendered frame.
+      noticeAuthorEdits();
       if (state.forceRebuild || state.frameCount % 30 === 0) await syncPreviewBinding(); // Periodic check catches avatar swaps even if no authoring event fired.
     }
     requestAnimationFrame(() => { frame().catch(error => editorLog('Pants Rig frame error', 'warn', error)); });
