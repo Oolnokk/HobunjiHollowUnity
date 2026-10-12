@@ -337,9 +337,10 @@
       const mesh = meshes[index];
       let node = mesh, role = ''; // Walk ancestors only once at generation to find renderer-owned structural semantics.
       while (node && node !== root) { role += ` ${node.name || ''} ${node.userData?.interiorRuinRole || ''} ${node.userData?.ruinFurnitureKey || ''}`; if (node.userData?.ruinInteriorWall) role += ' wall'; node = node.parent; }
-      if (!/wall|pillar|pedestal|platform/i.test(role) || /seal|glyph|decal|fire|ceiling/i.test(mesh.name || '') || !catalog.length) continue;
+      const structural = /wall|pillar|pedestal|platform/i.test(role) && !/seal|glyph|decal|fire|ceiling/i.test(mesh.name || ''); // Built-in eligibility when no rules module is loaded.
+      if ((!rules && !structural) || !catalog.length) continue;
       for (const child of [...mesh.children]) if (child.userData?.furniturePattern?.mode === 'engraving') { mesh.remove(child); child.geometry?.dispose(); child.material?.map?.dispose(); child.material?.dispose(); } // Re-decoration (rule edits) starts clean, including types now switched off.
-      const rule = rules?.resolve?.(mesh, root) || null; // { key, label, context, enabled, scale, partScale, maxAtlasPx, minSurfaceTiles }
+      const rule = rules?.resolve?.(mesh, root, structural) || null; // { key, label, context, enabled, scale, partScale, defaultScale, maxAtlasPx, minSurfaceTiles, tilePx }; every ruin mesh gets a type so the Dev Companion can list it.
       const type = rule ? (types.get(rule.key) || types.set(rule.key, { key: rule.key, label: rule.label, meshes: 0, overlays: 0, contexts: new Set(), enabled: rule.enabled, scale: rule.scale, partScale: rule.partScale }).get(rule.key)) : null;
       if (type) { type.meshes++; if (rule.context) type.contexts.add(rule.context); }
       if (rule && !rule.enabled) continue;
@@ -350,7 +351,7 @@
         const slot = template.slot; // Independent deterministic choice for each authored surface slot.
         const entry = catalog[hash(`${seed}|${index}|${slot}`) % catalog.length]; // Stable per-element/per-slot selection.
         const patternId = template.random === false && template.patternId ? template.patternId : entry.id; // Completion grants the actual displayed motif.
-        return { ...template, pattern: template.random === false ? template.pattern : null, patternId, palette: template.palette || ['#b7a185', '#625447'], scale: template.scale || 1.5,
+        return { ...template, pattern: template.random === false ? template.pattern : null, patternId, palette: template.palette || ['#b7a185', '#625447'], scale: template.scale || rule?.defaultScale || 1.5,
           ...(rule?.scale > 0 ? { scaleOverride: rule.scale } : {}), ...(rule ? { maxAtlasPx: rule.maxAtlasPx, minSurfaceTiles: rule.minSurfaceTiles, tilePx: rule.tilePx } : {}) };
       });
       const authored = mesh.userData?.authoredPart; // Piece JSON data for V50 repo pieces is preloaded by the rules module.

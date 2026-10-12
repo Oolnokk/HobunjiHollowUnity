@@ -46,7 +46,7 @@ const window={THREE,
 };
 const document={createElement(){const c={width:0,height:0,getContext:()=>({fillRect(){},drawImage(){}}),click(){},remove(){}};return c;},body:{appendChild(){}}};
 const context={window,document,console,performance:{now:()=>Date.now()},localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,String(v))},
-  fetch:async url=>{const id=String(url).match(/data\/([^/]+)\.json$/)?.[1];if(url.includes('ruin-surface-rules'))return{ok:true,json:async()=>({minSurfaceTiles:.25,maxAtlasPx:512,rules:{'pillar_square › Broad Stone Capital':{enabled:false}}})};return id&&pieceJson[id]?{ok:true,json:async()=>pieceJson[id]}:{ok:false};},
+  fetch:async url=>{const id=String(url).match(/data\/([^/]+)\.json$/)?.[1];if(url.includes('ruin-surface-rules'))return{ok:true,json:async()=>({defaultEnabledPattern:'wall|shaft|capital',defaultScale:4,minSurfaceTiles:.25,maxAtlasPx:512,rules:{'pillar_square › Broad Stone Capital':{enabled:false},'pillar_square › Pedestal Body':{enabled:true}}})};return id&&pieceJson[id]?{ok:true,json:async()=>pieceJson[id]}:{ok:false};},
   setTimeout,URL:{createObjectURL:()=>'blob:x',revokeObjectURL(){}},Blob:class{},encodeURIComponent};
 vm.createContext(context);
 vm.runInContext(fs.readFileSync('docs/js/furniture-pattern-surfaces.js','utf8'),context);
@@ -57,8 +57,9 @@ const S=window.FurniturePatternSurfaces,R=window.RuinPatternSurfaceRules;
   await R.ready;
   // Two copies of a repo pillar (same type) + a wall; thin plinth strip is a sliver.
   const root=group('ruin_interior_complex');
-  const pillars=[0,1].map(()=>{const p=group('repo_furniture_pillar_square',{interiorRuinRole:'baseboard'});p.add(sideMesh('Square Tapered Shaft',1.2,1.4));p.add(sideMesh('Wide Stone Plinth',.8,.11));p.add(sideMesh('Broad Stone Capital',.7,.6));root.add(p);return p;});
-  const wall=sideMesh('ruin_wall_wn_0',4,2);wall.userData.ruinInteriorWall=true;root.add(wall);
+  const pillars=[0,1].map(()=>{const p=group('repo_furniture_pillar_square',{interiorRuinRole:'baseboard'});p.add(sideMesh('Square Tapered Shaft',4,4));p.add(sideMesh('Wide Stone Plinth',.8,.11));p.add(sideMesh('Broad Stone Capital',3,3));p.add(sideMesh('Pedestal Body',3,3));p.add(sideMesh('Raised Stone Foot',3,3));root.add(p);return p;});
+  const ladder=sideMesh('dev_ruin_stone_ladder_3',3,3);root.add(ladder);
+  const wall=sideMesh('ruin_wall_wn_0',8,4);wall.userData.ruinInteriorWall=true;root.add(wall);
   window.DevRandomRuin={getRuntimeContext:()=>({root})};
   assert.equal(R.identify(wall,root).key,'ruin_wall','per-instance wall suffixes collapse into one type');
   assert.equal(R.identify(pillars[0].children[0],root).key,'pillar_square › Square Tapered Shaft');
@@ -75,6 +76,12 @@ const S=window.FurniturePatternSurfaces,R=window.RuinPatternSurfaceRules;
   assert.equal(pillars[0].children[1].children.length,0,'skipped slivers leave no overlay mesh');
   assert.equal(types.get('pillar_square › Broad Stone Capital').overlays,0,'repo rule disables a type');
   assert.equal(types.get('ruin_wall').overlays,1);
+  assert.equal(types.get('pillar_square › Pedestal Body').overlays,2,'explicit rule enables a type outside the name filter');
+  assert.equal(types.get('pillar_square › Raised Stone Foot').overlays,0,'types outside the wall/shaft filter are off by default');
+  assert.equal(types.get('dev_ruin_stone_ladder').meshes,1,'non-structural ruin meshes are listed too');
+  assert.equal(types.get('dev_ruin_stone_ladder').overlays,0);
+  assert.equal(pillars[0].children[0].children[0].userData.furniturePattern.scale,3,'piece scale beats the default tile 4');
+  assert.equal(wall.children[0].userData.furniturePattern.scale,4,'default tile size is 4');
   assert(sizes.every(([w,h])=>Math.max(w,h)<=512),'repo maxAtlasPx caps atlas size');
   assert(sizes.every(([w,h])=>(w<=64||w%64===0)&&(h<=64||h%64===0)),'atlas sizes are quantized for sharing');
 
@@ -82,19 +89,26 @@ const S=window.FurniturePatternSurfaces,R=window.RuinPatternSurfaceRules;
   assert(panel&&panel.when(),'Dev Companion panel shows while a decorated ruin is loaded');
   const body=panel.render();
   assert(body.actions.some(a=>a.id==='toggle'&&a.args.key==='ruin_wall'));
-  // Turn the wall off: it is removed live, and the edit persists locally.
+  // Panel edits are staged until Apply settings.
   panel.onAction('toggle',{key:'ruin_wall'});
+  assert.equal(wall.children.filter(c=>c.userData.furniturePattern).length,1,'staged edit does not touch the ruin');
+  assert(panel.render().summary.includes('unapplied'));
+  panel.onAction('apply',{});
   assert.equal(wall.children.filter(c=>c.userData.furniturePattern).length,0,'toggling off removes the overlays immediately');
   assert.equal(root.userData.ruinPatternTypes.get('ruin_wall').overlays,0);
   assert(JSON.parse(storage.get('hobunjiRuinPatternRules.v1')).rules.ruin_wall.enabled===false);
   // Re-enable the repo-disabled capital locally, and override the shaft scale above the piece value.
+  panel.onAction('live',{}); // Live update: every click applies.
   panel.onAction('toggle',{key:'pillar_square › Broad Stone Capital'});
   assert.equal(root.userData.ruinPatternTypes.get('pillar_square › Broad Stone Capital').overlays,2,'local edit overrides a repo-disabled type');
   panel.onAction('scale',{key:'pillar_square › Square Tapered Shaft',direction:1,from:3});
   assert.equal(pillars[1].children[0].children[0].userData.furniturePattern.scale,4,'rule scale overrides the piece scale');
   assert.equal(R.mergedConfig().rules['pillar_square › Broad Stone Capital'],undefined,'export replaces the repo file, so a re-enabled type drops out');assert.equal(R.mergedConfig().rules.ruin_wall.enabled,false);
-  panel.onAction('reset',{key:'pillar_square › Square Tapered Shaft'});
-  assert.equal(pillars[1].children[0].children[0].userData.furniturePattern.scale,3);
-  assert.equal(R.stepScale(1.5,-1),1.25);assert.equal(R.stepScale(1.4,1),1.5);
+  panel.onAction('scale-all',{scale:2});
+  assert.equal(wall.children.length,0);assert.equal(root.userData.ruinPatternTypes.get('pillar_square › Pedestal Body').overlays,2);
+  assert.equal(pillars[0].children[3].children[0].userData.furniturePattern.scale,2,'Tile for all sets every type');
+  assert.equal(R.mergedConfig().rules['pillar_square › Square Tapered Shaft']?.scale,undefined,'Tile for all clears per-type sizes');
+  assert.equal(pillars[1].children[0].children[0].userData.furniturePattern.scale,3,'piece scale still wins over the all-types default');
+  assert.equal(R.stepScale(1.5,-1),1.25);assert.equal(R.stepScale(1.4,1),1.5);assert.equal(R.stepScale(4,1),5);
   console.log('ruin pattern surface rules ok');
 })().catch(error=>{console.error(error);process.exit(1);});
