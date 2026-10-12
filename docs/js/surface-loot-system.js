@@ -37,7 +37,7 @@
   let claimedTarget = null; // Avoid re-advertising identical world input claims on every UI refresh.
   let target = null; // The currently advertised world interaction, revalidated at pickup time.
   let scratch = null; // Allocated once when THREE is available, never during a frame callback.
-  let lastChange = 'Household loot uses authored dining, bedside, linen, dresser, desk, and storage surfaces; taking items is currently allowed.'; // Copyable mobile diagnostic.
+  let lastChange = 'Surface loot pickup prioritizes aim and proximity for short characters; items cast player-style round contact shadows. House items remain legal to take.'; // Copyable mobile diagnostic.
 
   const finite = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
   const amount = value => Math.max(0, Math.floor(finite(value)));
@@ -52,6 +52,7 @@
       deps.ITEM_DEFS[key] = { ...definition, cat: 'material', tags: definition.scrapYield ? ['Junk', 'Salvage'] : ['Jewelry', 'Valuable'],
         desc: definition.scrapYield ? `Sell it or scrap it into ${yieldLabel(definition.scrapYield)}.` : 'Found jewelry. Sell it for gold.' };
     }
+    for (const entry of entries) attachShadow(entry); // Furniture built before inventory services becomes shadowed once the shared factory is ready.
     for (const key of [...Object.keys(SCRAP_DEFS), ...Object.keys(LOOT_ITEMS)]) {
       if (!deps.inventoryItems.some(item => item.key === key)) deps.inventoryItems.push({ key, icon: deps.ITEM_DEFS[key].icon, label: deps.ITEM_DEFS[key].label, max: 99 });
     }
@@ -200,6 +201,7 @@
       holder.add(mesh);
       const entry = { group, holder, mesh, record, placementId: String(record.id || `placement_${index}`), normal: worldNormal, deadzone: finite(data.globalCharacterDeadzoneDeg, 40), part, basePosition: point, surfaceOrigin: point.clone().addScaledVector(worldNormal, -finite(record.position?.normal, .015)), inverse, aspect: 1, id: null, disposed: false, area: null }; // Per-instance state never mutates the shared authored JSON.
       entries.add(entry);
+      attachShadow(entry);
       meshEntries.set(mesh, entry);
       mesh.onBeforeRender = () => updateEntry(entry); // Rendering owns billboard work; no new RAF loop or scheduler callback.
       const source = imageSource(record) || iconSource(record.lootItemKey || record.itemKey); // Authored PNG or visibly identifiable placeholder.
@@ -207,10 +209,29 @@
         if (entry.disposed) return;
         mesh.geometry.dispose(); mesh.geometry = new THREE.PlaneGeometry(loaded.aspect, 1);
         material.map = loaded.texture; material.needsUpdate = true; entry.aspect = loaded.aspect; mesh.visible = true;
+        if (entry.shadow) entry.shadow.visible = entry.holder.visible;
         updateEntry(entry, true);
       });
     }
     return group;
+  }
+
+  function attachShadow(entry) {
+    if (entry.shadow || entry.disposed || !deps?.makeGroundShadow) return;
+    const shadow = deps.makeGroundShadow('surface_item_shadow'); // Reuses the player's round shadow geometry, color, opacity, and depth behavior.
+    if (!shadow) return;
+    const radius = Math.max(.035, finite(entry.record.scale, .25) * .32); // Small contact footprint beneath the item rather than a full character-sized disc.
+    const point = entry.surfaceOrigin.clone().addScaledVector(entry.normal, .003); // Above the actual furniture surface and below the item, not projected onto the room floor.
+    const rotation = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), entry.normal); // Match tilted authored surfaces too.
+    shadow.matrixAutoUpdate = false;
+    shadow.matrix.copy(new THREE.Matrix4().compose(point, rotation, new THREE.Vector3(radius, 1, radius)).premultiply(entry.inverse));
+    shadow.matrix.decompose(shadow.position, shadow.quaternion, shadow.scale);
+    shadow.userData.surfaceLootShadow = true;
+    shadow.userData.surfaceLoot = true; // Contact shadows never obstruct item aiming or become pickup candidates.
+    shadow.userData.devRuinFootprintIgnore = true;
+    shadow.visible = entry.mesh.visible && entry.holder.visible; // Failed or pending images must not leave an unexplained shadow.
+    entry.part.add(shadow);
+    entry.shadow = shadow;
   }
 
   function sceneOf(object) {
@@ -234,7 +255,7 @@
     const activeScene = deps.getScene?.(); // Offscreen scene instances never bind to the wrong area.
     if (sceneOf(entry.holder) !== activeScene) return;
     entry.area ||= deps.getCurrentArea();
-    if (collected.has(entryId(entry))) { entry.holder.visible = false; return; }
+    if (collected.has(entryId(entry))) { entry.holder.visible = false; if (entry.shadow) entry.shadow.visible = false; return; }
     if (entry.record.cameraRelativeDeadzone && entry.record.placementPreset === 'tall') {
       deps.getCamera()?.getWorldPosition(scratch.camera);
       entry.group.worldToLocal(scratch.camera);
@@ -308,18 +329,10 @@
     const qty = Math.max(1, amount(entry.record.quantity)); // Default stack size is one physical object.
     const id = entryId(entry); // Same ID used by save restore and render visibility.
     if (!key || collected.has(id)) return false;
-    // Validate obstruction at interaction time; avoid raycasting every scene mesh on each UI refresh.
-    const distance = scratch.hits[0]?.distance || Infinity; // Camera ray distance to the aimed sprite.
-    const blockers = scratch.raycaster.intersectObjects(deps.getScene().children, true); // Existing world geometry is the occlusion authority.
-    const blocked = blockers.some(hit => {
-      if (hit.distance >= distance - .025 || hit.object.userData?.surfaceLoot || hit.object.material?.visible === false || hit.object.userData?.devRuinFootprintIgnore) return false;
-      for (let node = hit.object; node; node = node.parent) if (!node.visible || node === deps.getPlayerMesh?.()) return false;
-      return true;
-    }); // A supporting surface behind the plane does not block it.
-    if (blocked) { deps.showToast?.('That item is behind a surface.', false); return false; }
+    // Aimed loot within reach is collectible even when a low camera sees the supporting tabletop first.
     if (capacity(key) < qty) { deps.showToast?.('Not enough inventory space.', false); return false; }
     deps.inventory[key] = count(key) + qty;
-    collected.add(id); entry.holder.visible = false;
+    collected.add(id); entry.holder.visible = false; if (entry.shadow) entry.shadow.visible = false;
     finish(`Picked up ${qty} ${deps.ITEM_DEFS[key].label}.`);
     return true;
   }
@@ -328,14 +341,19 @@
   function restore(saved) {
     collected = new Set(Array.isArray(saved) ? saved.filter(value => typeof value === 'string') : []);
     target = null;
-    for (const entry of entries) if (!entry.disposed) entry.holder.visible = entry.record.visible !== false && !(entry.id && collected.has(entry.id));
+    for (const entry of entries) if (!entry.disposed) {
+      entry.holder.visible = entry.record.visible !== false && !(entry.id && collected.has(entry.id));
+      if (entry.shadow) entry.shadow.visible = entry.mesh.visible && entry.holder.visible;
+    }
     claimedTarget = null;
     window.WorldActionInputClaims?.clearClaims('surface-loot');
   }
 
   function disposeEntry(entry) {
     entry.disposed = true;
-    entry.mesh.geometry.dispose(); entry.mesh.material.dispose(); entries.delete(entry);
+    entry.mesh.geometry.dispose(); entry.mesh.material.dispose();
+    if (entry.shadow) { entry.shadow.parent?.remove(entry.shadow); entry.shadow.geometry.dispose(); entry.shadow.material.dispose(); }
+    entries.delete(entry);
   }
 
   function disposeGroup(group) {
@@ -429,7 +447,7 @@
 
   function diagnostics() {
     return { latestChange: lastChange, livePlacements: entries.size, collected: collected.size, target: target?.record.lootItemKey || target?.record.itemKey || null,
-      scrapCounts: Object.fromEntries(Object.keys(SCRAP_DEFS).map(key => [key, count(key)])), housePlacements: [...entries].filter(entry => entry.record.lootPurpose).length, houseItems: [...entries].filter(entry => entry.record.lootPurpose).slice(0, 20).map(entry => ({ item: entry.record.itemKey, purpose: entry.record.lootPurpose, ownerArea: entry.record.ownerArea })), takingHouseItemsIsCrime: false, metalGroups: METAL_GROUPS, townValue: window.TownMine?.getTownValue?.() || 0 };
+      scrapCounts: Object.fromEntries(Object.keys(SCRAP_DEFS).map(key => [key, count(key)])), housePlacements: [...entries].filter(entry => entry.record.lootPurpose).length, houseItems: [...entries].filter(entry => entry.record.lootPurpose).slice(0, 20).map(entry => ({ item: entry.record.itemKey, purpose: entry.record.lootPurpose, ownerArea: entry.record.ownerArea })), takingHouseItemsIsCrime: false, pickupRule: 'aim + proximity', contactShadows: [...entries].filter(entry => entry.shadow).length, metalGroups: METAL_GROUPS, townValue: window.TownMine?.getTownValue?.() || 0 };
   }
 
   window.SurfaceLootSystem = Object.freeze({ init, buildPlacements, getActionButtons, syncClaims, pickupTarget, scrapItem, combineScraps, availableRecipes, serialize, restore, disposeGroup, scatter, planFurnitureLoot, populateFurniture, diagnostics, iconSource, imageSource, resolveItemKey, outputKeys, SCRAPS_PER_MATERIAL, SCRAP_DEFS, METAL_GROUPS, LOOT_ITEMS, eligibleLootKeys });

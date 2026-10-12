@@ -2449,9 +2449,9 @@
       // These are placed inside the house. Each has a GLB model in assets/models/furniture/.
       // area: 'interior' = house only, 'farm' = farm only, 'any' = either
       const DECORATIVE_FURNITURE_DEFS = {
-        basicBed:      { itemKey: 'basicBedFurniture',      icon: '🛏️', name: 'Single Bed',          modelFile: 'basicbed_single_refined.glb',  price: 35, fw: 1, fd: 2, color: 0x8b6540, area: 'interior', desc: 'A comfortable single bed for restful sleep.' },
-        doubleBed:     { itemKey: 'doubleBedFurniture',     icon: '🛏️', name: 'Double Bed',           modelFile: 'basicbed_double_refined.glb',  price: 55, fw: 2, fd: 2, color: 0x8b6540, area: 'interior', desc: 'A spacious double bed.' },
-        bedroll:       { itemKey: 'bedrollFurniture',       icon: '🛌', name: 'Bedroll',              modelFile: 'bedroll_folded.glb',            price: 12, fw: 1, fd: 1, color: 0x6b8c5e, area: 'interior', desc: 'A simple folded bedroll for sleeping rough.' },
+        basicBed:      { itemKey: 'basicBedFurniture',      icon: '🛏️', name: 'Single Bed',          modelFile: 'basicbed_single_refined.glb',  price: 35, fw: 1, fd: 2, color: 0x8b6540, area: 'interior', walkable: true, desc: 'A comfortable single bed for restful sleep.' },
+        doubleBed:     { itemKey: 'doubleBedFurniture',     icon: '🛏️', name: 'Double Bed',           modelFile: 'basicbed_double_refined.glb',  price: 55, fw: 2, fd: 2, color: 0x8b6540, area: 'interior', walkable: true, desc: 'A spacious double bed.' },
+        bedroll:       { itemKey: 'bedrollFurniture',       icon: '🛌', name: 'Bedroll',              modelFile: 'bedroll_folded.glb',            price: 12, fw: 1, fd: 1, color: 0x6b8c5e, area: 'interior', walkable: true, desc: 'A simple folded bedroll for sleeping rough.' },
         bench:         { itemKey: 'benchFurniture',         icon: '🪑', name: 'Short Bench',          modelFile: 'bench_short.glb',              price: 18, fw: 2, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A short wooden bench.', sit: true },
         bookshelf:     { itemKey: 'bookshelfFurniture',     icon: '📚', name: 'Bookshelf',            modelFile: 'bookshelf_low.glb',            price: 28, fw: 2, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A low bookshelf.' },
         babyBasket:    { itemKey: 'babyBasketFurniture',    icon: '🧺', name: 'Baby Basket',          price: 0,  fw: 1, fd: 1, color: 0xb08a4e, area: 'interior', desc: 'A woven basket where your newborn sleeps for their first month.', fixture: true },
@@ -3599,6 +3599,11 @@
         _markOutline(group);
         _markFurnitureEdgeId(group);
         targetScene.add(group);
+        if (['basicBed', 'doubleBed', 'bedroll'].includes(furnitureKey)) {
+          group.userData.walkableElevation = true; // Player-placed beds use the same geometry-derived support system as the inn stage.
+          group.userData.walkableElevationArea = area;
+          window.HobunjiWalkableElevation?.refreshFurniture?.();
+        }
 
         let light = null;
         if (def.light) {
@@ -3689,6 +3694,7 @@
       function disposeDecorativeFurniture(obj, refundToInventory = false) {
         const targetScene = obj.area === 'interior' ? interiorScene : scene;
         targetScene.remove(obj.mesh);
+        if (obj.mesh.userData?.walkableElevation) window.HobunjiWalkableElevation?.refreshFurniture?.(); // Removed beds release their support footprint.
         obj.mesh?.traverse?.(child => {
           if (child.geometry) child.geometry.dispose();
           if (child.material) child.material.dispose();
@@ -3718,6 +3724,7 @@
         const centerZ = row + fd * 0.5; // Moved furniture center paired with centerX for the continuous height sample.
         const surfaceY = furnitureSurfaceYAtWorld(obj.area, centerX, centerZ); // Recomputed so moving onto/off the farmhouse incline cannot retain stale Y.
         obj.mesh.position.set(centerX, surfaceY, centerZ);
+        if (obj.mesh.userData?.walkableElevation) window.HobunjiWalkableElevation?.refreshFurniture?.(); // Bed support follows furniture edits.
         if (obj.light) obj.light.position.set(centerX, surfaceY + (def?.light?.height || 0.6), centerZ);
         window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
         obj.sfxSource = window.Music?.registerFurnitureSfxSource(obj.area, col + fw * 0.5, row + fd * 0.5, window.Music?.resolveFurnitureSfx(def));
@@ -3755,6 +3762,7 @@
         const centerZ = obj.row + fd * 0.5; // Rotated footprint center paired with centerX for exact surface grounding.
         const surfaceY = furnitureSurfaceYAtWorld(obj.area, centerX, centerZ); // Prevents a 45°/90° rotation from snapping the object back to Y=0.
         obj.mesh.position.set(centerX, surfaceY, centerZ);
+        if (obj.mesh.userData?.walkableElevation) window.HobunjiWalkableElevation?.refreshFurniture?.(); // Bed support follows furniture edits.
         if (obj.light) obj.light.position.set(centerX, surfaceY + (def?.light?.height || 0.6), centerZ);
         window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
         obj.sfxSource = window.Music?.registerFurnitureSfxSource(obj.area, obj.col + fw * 0.5, obj.row + fd * 0.5, window.Music?.resolveFurnitureSfx(def));
@@ -10994,7 +11002,7 @@
         return window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.groundShadow || {};
       }
 
-      function makeCharacterGroundShadow(name = 'character_ground_shadow') {
+      function makeCharacterGroundShadow(name = 'character_ground_shadow', options = {}) {
         const cfg = pngAvatarGroundShadowConfig();
         const geo = new THREE.CircleGeometry(1, 40);
         geo.rotateX(-Math.PI / 2);
@@ -11007,7 +11015,7 @@
         const shadow = new THREE.Mesh(geo, mat);
         shadow.name = name;
         shadow.renderOrder = -1;
-        window.EnvironmentSurfaceMicroPlateau?.bindGroundProjection(shadow);
+        if (options.projectToGround !== false) window.EnvironmentSurfaceMicroPlateau?.bindGroundProjection(shadow); // Furniture contact shadows stay on their supporting surface.
         shadow.scale.set(cfg.radiusX ?? 0.34, 1, cfg.radiusZ ?? 0.22);
         return shadow;
       }
@@ -20171,7 +20179,7 @@
       _postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), _postMat));
       loadOutlineRenderingConfig();
 
-      let s_zoomScale = 1.5; // camera zoom level — higher = camera sits closer to the player (default 150%)
+      let s_zoomScale = window.matchMedia?.('(pointer: coarse)')?.matches ? 1.25 : 1.5; // Initial mobile framing is 125%; desktop retains 150% before adaptive zoom services start.
       // Declared up here (rather than down by the rest of the Cutscene
       // Preview Mode section) because updateCameraPosition below reads both
       // directly — it's called during normal synchronous boot (well before
@@ -28410,6 +28418,7 @@
 
       window.SurfaceLootSystem?.init({
         ITEM_DEFS, inventory, inventoryItems, TILE, random: rnd, clampInventoryStack,
+        makeGroundShadow: name => makeCharacterGroundShadow(name, { projectToGround: false }), // Shared player-style shadow factory, without floor projection for tabletop loot.
         getCurrentArea: () => currentArea, getScene: () => window.GridTileAccessors.getActiveScene(),
         getCamera: () => camera, getPlayer: () => player, getPlayerMesh: () => playerMesh,
         canInteract: () => !menuOpen && !dialogueOpen && !farmEditMode && !window.AuthoredCutsceneRuntime?.isActive?.(),

@@ -16,8 +16,7 @@
       "postZ": 0,
       "postSX": 1,
       "postSY": 1,
-      "postSZ": 1
-    },
+      "postSZ": 1, "walkableElevation": true, "nonColliding": true },
     {
       "id": "f_ginjuroom_nightstand",
       "itemKey": "nightstandFurniture",

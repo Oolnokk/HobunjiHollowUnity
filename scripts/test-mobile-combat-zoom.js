@@ -118,19 +118,19 @@ function buildContext({ coarsePointer }) {
   const scheduledFrame = entry.fn;
   scheduledFrame({ timestamp: 0 });
   assert.equal(context.MobileCombatZoom.getState().active, true, 'first scheduled frame initializes to the mobile default zoom');
-  assert.equal(context.MobileCombatZoom.getState().currentZoom, 2.0, 'initializes to the 200% out-of-combat zoom');
+  assert.equal(context.MobileCombatZoom.getState().currentZoom, 1.25, 'initializes to the 125% out-of-combat zoom');
   assert(select.value, 'applyZoom actually drove the settings zoom select on first frame');
 
   // No hostiles -> target stays at the out-of-combat zoom; lerp keeps it there.
   scheduledFrame({ timestamp: 16 });
-  assert.equal(context.MobileCombatZoom.getState().targetZoom, 2.0, 'stays at out-of-combat zoom with no hostiles present');
+  assert.equal(context.MobileCombatZoom.getState().targetZoom, 1.25, 'stays at out-of-combat zoom with no hostiles present');
 
   // A close hostile pulls target zoom toward combat framing once the scan fires.
   context.Combat.deps.hostileObjects = [{
     health: 10, areaId: 'zone', avatarRef: { group: { parent: {} } },
   }];
   scheduledFrame({ timestamp: 100 }); // >= SCAN_INTERVAL_MS (70) since the previous scan at t=0.
-  assert(context.MobileCombatZoom.getState().targetZoom < 2.0, 'a relevant nearby hostile narrows the target zoom toward combat framing');
+  assert.equal(context.MobileCombatZoom.getState().targetZoom, 1.75, 'nearby hostiles retain the existing 175% combat framing independently of the 125% resting default');
   assert.equal(context.MobileCombatZoom.getState().influencingHostiles, 1, 'the hostile is counted as influencing framing');
 }
 

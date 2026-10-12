@@ -531,7 +531,7 @@ if (/\/tools\/procedural-animation-editor\/(?:index\.html)?$/.test(location.path
 // a tool-specific extension instead of duplicating/restructuring that editor.
 if (/\/tools\/building-interior-author\/(?:index\.html)?$/.test(location.pathname)) {
   const npcWardrobeScript = document.createElement('script'); // Used to add instance-level npcWardrobeFor authoring to the selected-furniture inspector.
-  npcWardrobeScript.src = '../../js/building-interior-npc-wardrobe-editor.js?v=20261011h9b12f23';
+  npcWardrobeScript.src = '../../js/building-interior-npc-wardrobe-editor.js?v=20261012h3b988bc';
   npcWardrobeScript.defer = true;
   document.head.appendChild(npcWardrobeScript);
 }

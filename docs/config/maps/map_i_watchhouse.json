@@ -74,8 +74,7 @@
       "postZ": 0,
       "postSX": 1,
       "postSY": 1,
-      "postSZ": 1
-    },
+      "postSZ": 1, "walkableElevation": true, "nonColliding": true },
     {
       "id": "f_watch_cell_b_roll",
       "itemKey": "bedrollFurniture",
@@ -87,8 +86,7 @@
       "postZ": 0,
       "postSX": 1,
       "postSY": 1,
-      "postSZ": 1
-    }
+      "postSZ": 1, "walkableElevation": true, "nonColliding": true }
   ],
   "floor": [
     [

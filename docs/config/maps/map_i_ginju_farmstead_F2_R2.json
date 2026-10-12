@@ -16,8 +16,7 @@
       "postZ": 0,
       "postSX": 1,
       "postSY": 1,
-      "postSZ": 1
-    },
+      "postSZ": 1, "walkableElevation": true, "nonColliding": true },
     {
       "id": "f_ginjuroom_nightstand_aliri",
       "itemKey": "nightstandFurniture",
@@ -31,7 +30,7 @@
       "postSY": 1,
       "postSZ": 1
     },
-    { "id": "f_ginjuroom_bed_gantami", "itemKey": "basicBedFurniture", "col": 11, "row": 6, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1, "gridRot": 180, "gridW": 1, "gridD": 2 },
+    { "id": "f_ginjuroom_bed_gantami", "itemKey": "basicBedFurniture", "col": 11, "row": 6, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1, "gridRot": 180, "gridW": 1, "gridD": 2, "walkableElevation": true, "nonColliding": true },
     {
       "id": "f_ginjuroom_nightstand_gantami",
       "itemKey": "nightstandFurniture",
