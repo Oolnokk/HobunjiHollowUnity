@@ -888,7 +888,17 @@
     return raw;
   }
 
-  function hasAnimalVoice(c) { return !!ANIMAL_VOICE_POOLS[animalVoiceSpeciesKey(c)]?.length; }
+  function hasAnimalVoice(c) {
+    if (ANIMAL_VOICE_POOLS[animalVoiceSpeciesKey(c)]?.length) return true;
+    const profile = window.AnimalVocalizations?.profileForDebug?.(c); // The cached authored profile owns voices for species added after the legacy pools.
+    return !!(profile?.chatter?.allowedClips?.length
+      || profile?.warning?.allowedClips?.length || profile?.growl?.allowedClips?.length);
+  }
+
+  function animalVoicePool(c, opts) {
+    const authored = opts.allowedClips ?? window.AnimalVocalizations?.profileForDebug?.(c)?.[opts.meaning || 'chatter']?.allowedClips; // Semantic requests supply their authored clips; direct calls use the same profile authority.
+    return Array.isArray(authored) ? authored : ANIMAL_VOICE_POOLS[animalVoiceSpeciesKey(c)];
+  }
 
   function preloadAnimalVoices() {
     if (typeof Audio !== 'function') return;
@@ -974,7 +984,7 @@
   // means and when each utterance is due; AudioSystem resolves the asset,
   // distance mix, tempo/pitch playback, and browser Audio lifecycle.
   function playAnimalVoiceUtterance(c, opts = {}) {
-    const pool = ANIMAL_VOICE_POOLS[animalVoiceSpeciesKey(c)];
+    const pool = animalVoicePool(c, opts); // Authored species must pass the native preparation gate before independent tempo/pitch playback can start.
     if (!pool?.length || !deps || c?.areaId !== deps.getCurrentArea()) return false;
     const audioCfg = gameAudioConfig();
     if (audioCfg.enabled === false || combatSfxConfig().enabled === false) return false;
@@ -982,7 +992,8 @@
     const earshot = deps.TILE * Math.max(1, Number(opts.earshotTiles) || 16);
     const distance = animalVoiceAcousticDistancePx(c, opts); // Optional override lets authored fixed emitters include vertical separation without changing ordinary creature calls.
     if (distance > earshot) return false;
-    const url = pool[Math.floor(Math.random() * pool.length)];
+    const clip = pool[Math.floor(Math.random() * pool.length)]; // Authored filenames live in the shared utterance library; legacy pools already contain paths.
+    const url = clip.includes('/') ? clip : `assets/audio/sfx/utterances/${clip}`; // Used for preloaded/native preparation and as the direct playback fallback.
     const preload = animalVoicePreloads.get(url);
     const snd = trackActiveSfx(preload?.cloneNode?.(true) || new Audio(url));
     disablePitchPreservation(snd);
