@@ -73,6 +73,7 @@
   });
 
   const debug = {
+    latestChange: 'Authored animal voice profiles now pass audio eligibility and preparation, including wild and companion Puktuk calls.',
     requested: 0,
     rendered: 0,
     pulsed: 0,
