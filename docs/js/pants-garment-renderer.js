@@ -169,10 +169,14 @@
         if (Math.abs(sum - 1) > 0.0001) for (let channelIndex = 0; channelIndex < 5; channelIndex++) weights[vertex * 5 + channelIndex] /= sum;
       }
     }
-    for (let row = 0; row < SEGMENTS; row++) {
-      for (let col = 0; col < SEGMENTS; col++) {
-        const a = row * (SEGMENTS + 1) + col, b = a + 1, c = a + SEGMENTS + 1, d = c + 1;
-        indices.push(a, c, b, b, c, d);
+    // Draw order is index order within the mesh: the left half first, then the right half, so wherever the legs cross or run
+    // parallel the right leg is drawn over the left.
+    for (const [from, to] of [[0, SEGMENTS >> 1], [SEGMENTS >> 1, SEGMENTS]]) {
+      for (let row = 0; row < SEGMENTS; row++) {
+        for (let col = from; col < to; col++) {
+          const a = row * (SEGMENTS + 1) + col, b = a + 1, c = a + SEGMENTS + 1, d = c + 1;
+          indices.push(a, c, b, b, c, d);
+        }
       }
     }
     const geometry = new THREE.BufferGeometry();
@@ -645,8 +649,14 @@
       };
       const belt = sortedByX(garment.pantsBeltSpline);
       const sides = ['left', 'right'].map(side => {
-        const anchor = handle.rings?.[side]?.anchor, rest = handle.rest[side].ankle;
+        const ring = handle.rings?.[side], anchor = ring?.anchor;
         if (!anchor) return null;
+        // Where the opening sits ALONG the bone: the art's bone may run past its opening (shin below the hem), and the 3D leg is
+        // treated the same way, so the opening lands at the same fraction of the 3D bone rather than on its end.
+        const bone = Core.normalizeLegBones(garment.legBones)[side], bx = bone.ankle.x - bone.knee.x, by = bone.ankle.y - bone.knee.y;
+        const along = Math.max(0, Math.min(1, ((ring.crossing.x - bone.knee.x) * bx + (ring.crossing.y - bone.knee.y) * by) / Math.max(1e-9, bx * bx + by * by)));
+        const knee3 = handle.rest[side].knee, ankle3 = handle.rest[side].ankle;
+        const rest = { x: knee3.x + (ankle3.x - knee3.x) * along, y: knee3.y + (ankle3.y - knee3.y) * along };
         const at = k => { const i = anchor.i * 3 + k, j = (anchor.i + 1) * 3 + k, m = (anchor.i + stride) * 3 + k, n = (anchor.i + stride + 1) * 3 + k; const top = base[i] + (base[j] - base[i]) * anchor.fx, bottom = base[m] + (base[n] - base[m]) * anchor.fx; return top + (bottom - top) * anchor.fy; };
         return { opening: sortedByX(garment.legOpenings[side]), dx: rest.x - at(0), dy: rest.y - at(1) };
       });
@@ -686,12 +696,12 @@
   async function buildOverlayMask(fullCanvas, profile, renderOptions = {}) {
     const preview = global.NpcAvatarPreview;
     const worn = group => !!group && (group.layers?.length || (group.id && group.id !== 'none'));
-    if (!fullCanvas || !profile || !preview?.renderProfileToCanvas || !(worn(profile.armCosmetic) || worn(profile.pauldron) || worn(profile.hood))) return null;
+    if (!fullCanvas || !profile || !preview?.renderProfileToCanvas || !(worn(profile.armCosmetic) || worn(profile.torsoCosmetic) || worn(profile.pauldron) || worn(profile.hood))) return null;
     const width = fullCanvas.width, height = fullCanvas.height;
     const stripped = document.createElement('canvas');
     stripped.width = width;
     stripped.height = height;
-    await preview.renderProfileToCanvas(stripped, { ...profile, armCosmetic: null, pauldron: null, hood: null }, renderOptions);
+    await preview.renderProfileToCanvas(stripped, { ...profile, armCosmetic: null, torsoCosmetic: null, pauldron: null, hood: null }, renderOptions);
     const full = fullCanvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, width, height).data;
     const base = stripped.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, width, height).data;
     const mask = document.createElement('canvas');
