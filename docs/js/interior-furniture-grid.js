@@ -4,6 +4,9 @@
   if (window.InteriorFurnitureGrid) return;
 
   const DEFAULT_FOOTPRINTS = Object.freeze({
+    incubatorSmallFurniture: [2, 2],
+    incubatorFurniture: [5, 2],
+    incubatorLargeFurniture: [8, 4],
     basicBedFurniture: [1, 2],
     doubleBedFurniture: [2, 2],
     bedrollFurniture: [1, 1],

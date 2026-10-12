@@ -13660,6 +13660,7 @@
           for (const f of buildingFurniture) {
             const def = allFurnDefs[f.itemKey];
             const furnitureKey = furnKeyByItemKey[f.itemKey];
+            if (f.incubatorId) await window.AuthoredFurniture?.load?.(def?.procKey || furnitureKey); // Incubator nests must be ready before the first interior build chooses geometry or a placeholder.
             if (furnitureKey === 'mineLadder') await window.AuthoredFurniture?.load?.('mineLadder'); // Used to guarantee the supplied ladder is ready on the safe room's first visit, not merely on later cached visits.
             const color = def?.color || 0x888888;
             const scX = f.postSX != null ? f.postSX : (f.postScale != null ? f.postScale : 1);

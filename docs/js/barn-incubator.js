@@ -26,7 +26,7 @@
   let piecePromise = null; // Caches the authored incubator exterior piece JSON.
   let furniturePromise = null; // Caches the authored incubator crib JSON + animal anchors.
   let allowReservedTroughKey = null; // Temporarily permits completion into the slot's own reserved trough.
-  let lastDebugChange = 'Incubator system loaded.'; // Mobile-visible most recent lifecycle/debug change.
+  let lastDebugChange = 'Incubator nests centered in their rooms; Farm tab offers direct management and slot status.'; // Mobile-visible most recent lifecycle/debug change.
 
   const exteriorMeshes = new Map(); // additionId -> THREE.Group for live farm exterior additions.
   const exteriorObjects = new Map(); // additionId -> one interactable footprint object registered across its tiles.
@@ -134,16 +134,17 @@
   function ensureFurnitureDef() {
     const defs = panelDeps?.DECORATIVE_FURNITURE_DEFS; // Used by interior-scene furniture lookup for the authored crib.
     if (!defs) return;
-    for (const [tier, fw, fd] of [['small',2,2],['large',8,4]]) { const key = 'incubator' + tier[0].toUpperCase() + tier.slice(1) + 'Furniture'; if (!defs[key]) defs[key] = { name: tierDef(tier).label + ' Crib', icon: '🪺', fw, fd, procKey: 'incubator' + tier[0].toUpperCase() + tier.slice(1), desc: 'Tiered maturation crib with independently authored baby anchors.' }; } // Tier-specific assets remain editable furniture.
-    if (defs[CONFIG.interior.furnitureKey]) return;
-    defs[CONFIG.interior.furnitureKey] = {
-      name: 'Incubator Crib',
-      icon: '🪺',
-      fw: 5,
-      fd: 2,
-      procKey: CONFIG.interior.furnitureAuthoredKey,
-      desc: 'A fenced nest with three authored sleeping-animal attachment points.',
-    };
+    for (const tier of Object.keys(CONFIG.tiers)) {
+      const key = tier === 'medium' ? CONFIG.interior.furnitureKey : 'incubator' + tier[0].toUpperCase() + tier.slice(1) + 'Furniture'; // Item identity shared by synthesized interiors and furniture lookup.
+      const footprint = tierDef(tier).furnitureFootprint; // Matches the tier's authored nest arrangement.
+      defs[key] = Object.assign(defs[key] || {}, {
+        itemKey: key, name: tierDef(tier).label + ' Nests', icon: '🪺',
+        fw: footprint.w, fd: footprint.d,
+        procKey: tier === 'medium' ? CONFIG.interior.furnitureAuthoredKey : 'incubator' + tier[0].toUpperCase() + tier.slice(1),
+        color: 0xc9a227,
+        desc: 'Woven maturation nests with one sleeping-animal attachment point per slot.',
+      });
+    }
   }
 
   function makeSlots(tier = selectedTier) {
@@ -511,7 +512,7 @@
       slot.troughBarnId = null;
       slot.troughIndex = null;
       saveState(`Cleared trough reservation for ${additionId} slot ${slotIndex + 1}.`);
-      refreshManagement();
+      refreshAllUi();
       return { ok: true, message: 'Trough reservation cleared.' };
     }
     const numericIndex = Number(index); // Normalized select value used by trough lookup.
@@ -519,7 +520,7 @@
     slot.troughBarnId = barnId;
     slot.troughIndex = numericIndex;
     saveState(`Reserved ${barnId} trough ${numericIndex + 1} for ${additionId} slot ${slotIndex + 1}.`);
-    refreshManagement();
+    refreshAllUi();
     return { ok: true, message: `Reserved trough ${numericIndex + 1}.` };
   }
 
@@ -818,10 +819,16 @@
     const baseRow = (addition.localRow - extents.minRow) * scale; // Expanded-map room top edge.
     const width = addition.w * scale; // Addition room interior width in cells.
     const height = addition.h * scale; // Addition room interior depth in cells.
-    if (addition.side === 'north') return { col: baseCol + Math.floor(width / 2), row: baseRow, rotY: 0 };
-    if (addition.side === 'south') return { col: baseCol + Math.floor(width / 2), row: baseRow + height - 1, rotY: 180 };
-    if (addition.side === 'west') return { col: baseCol, row: baseRow + Math.floor(height / 2), rotY: 90 };
-    return { col: baseCol + width - 1, row: baseRow + Math.floor(height / 2), rotY: 270 };
+    const footprint = tierDef(addition.tier).furnitureFootprint; // Unrotated authored nest footprint.
+    const rotY = addition.side === 'west' ? 90 : addition.side === 'east' ? 270 : addition.side === 'south' ? 180 : 0; // Nests follow the room's orientation.
+    const gridW = rotY % 180 ? footprint.d : footprint.w; // Rotated occupied width used by the grid adapter.
+    const gridD = rotY % 180 ? footprint.w : footprint.d; // Rotated occupied depth used by the grid adapter.
+    const col = baseCol + Math.floor((width - gridW) / 2); // Integer tile origin leaves fractional centering to postX.
+    const row = baseRow + Math.floor((height - gridD) / 2); // Integer tile origin leaves fractional centering to postZ.
+    return { col, row, rotY, gridW, gridD,
+      postX: baseCol + width / 2 - col - gridW / 2,
+      postZ: baseRow + height / 2 - row - gridD / 2 };
+
   }
 
   function extendBarnInterior(mapId, map) {
@@ -847,16 +854,16 @@
       for (let row = 0; row < addition.h * scale; row++) {
         for (let col = 0; col < addition.w * scale; col++) floorSet.add(`${startCol + col},${startRow + row}`);
       }
-      const placement = interiorFurniturePlacement(barn, addition, extents); // Authored crib placed against the addition's outside/back wall.
+      const placement = interiorFurniturePlacement(barn, addition, extents); // Nest arrangement centered within the addition room.
       map.furniture.push({
         id: `f_barn_incubator_${addition.id}`,
         itemKey: addition.tier === 'medium' ? CONFIG.interior.furnitureKey : 'incubator' + addition.tier[0].toUpperCase() + addition.tier.slice(1) + 'Furniture',
         col: placement.col,
         row: placement.row,
-        rotY: placement.rotY,
+        rotY: 0, gridRot: placement.rotY, gridW: placement.gridW, gridD: placement.gridD,
         barnId,
         incubatorId: addition.id,
-        postX: 0, postY: 0, postZ: 0, postSX: 1, postSY: 1, postSZ: 1,
+        postX: placement.postX, postY: 0, postZ: placement.postZ, postSX: 1, postSY: 1, postSZ: 1,
       });
     }
     map.floor = [...floorSet].map(key => key.split(',').map(Number));
@@ -961,7 +968,7 @@
     const localX = anchor.x, localZ = anchor.z; // Unrotated anchor offset from furniture center.
     const rx = localX * Math.cos(angle) + localZ * Math.sin(angle); // Rotated interior X offset.
     const rz = -localX * Math.sin(angle) + localZ * Math.cos(angle); // Rotated interior Z offset.
-    avatarRef.group.position.set(placement.col + 0.5 + rx, Math.max(0.05, anchor.y), placement.row + 0.5 + rz);
+    avatarRef.group.position.set(placement.col + placement.gridW / 2 + placement.postX + rx, Math.max(0.05, anchor.y), placement.row + placement.gridD / 2 + placement.postZ + rz);
     avatarRef.group.rotation.y = angle + anchor.rotY * Math.PI / 180;
     scene.add(avatarRef.group);
     sleepingBabies.set(key, { avatarRef, babyId: slot.baby.id });
@@ -1406,6 +1413,7 @@
     if (typeof document === 'undefined') return;
     const list = document.getElementById('farmBuildingsList'); // Existing Buildings section anchor.
     if (!list) return;
+    ensureStyles();
     document.getElementById('barnLayoutEditorLaunchers')?.remove();
     const barns = regularBarns(); // Each built adult barn gets its own sub-editor launcher.
     if (!barns.length) return;
@@ -1424,6 +1432,27 @@
       button.textContent = `Edit ${label}${barns.length > 1 ? ` ${index + 1}` : ''} Layout`;
       button.addEventListener('click', () => openBarnEditor(barn.id));
       wrap.appendChild(button);
+      for (const addition of additionsForBarn(barn.id)) {
+        const card = document.createElement('div'); // Farm-tab status and direct management for this installed incubator.
+        card.className = 'incubator-slot';
+        const title = document.createElement('strong'); // Distinguishes tiers and owning barns in the Farm tab.
+        title.textContent = `${label}${barns.length > 1 ? ` ${index + 1}` : ''} · ${tierDef(addition.tier).label}`;
+        card.appendChild(title);
+        for (const slot of addition.slots) {
+          const status = document.createElement('div'); // Shows progress and failures without opening the layout editor.
+          status.className = 'farm-note';
+          status.textContent = `Slot ${slot.index + 1}: ${slot.baby
+            ? `${slot.baby.name || slot.baby.kind} · ${slot.daysRemaining ?? 0} days remaining${slot.blockedReason ? ` · BLOCKED: ${slot.blockedReason}` : ''}`
+            : slot.troughBarnId ? 'Ready for a Nursery baby' : 'Empty · reserve an unused trough'}`;
+          card.appendChild(status);
+        }
+        const manage = document.createElement('button'); // One tap opens the existing reservation/start/cancel manager.
+        manage.className = 'settings-small-btn';
+        manage.textContent = '🪺 Manage Incubator';
+        manage.addEventListener('click', () => openIncubatorMenu(addition.id));
+        card.appendChild(manage);
+        wrap.appendChild(card);
+      }
     });
     list.insertAdjacentElement('afterend', wrap);
   }
