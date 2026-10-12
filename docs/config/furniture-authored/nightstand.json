@@ -104,5 +104,71 @@
   "particleEmitters": [],
   "processingWarps": [],
   "processTimelines": [],
-  "stompAttachPoints": []
+  "stompAttachPoints": [],
+  "recognizedSurfaces": [
+    {
+      "id": "part_msc11akl_mhz4j:surface:2",
+      "partId": "part_msc11akl_mhz4j",
+      "recognizedType": "upward top",
+      "faceIndices": [
+        2,
+        3
+      ],
+      "area": 0.9025,
+      "localCentroid": [
+        0,
+        0.275,
+        0
+      ],
+      "localNormal": [
+        0,
+        1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.475,
+        "maxU": 0.475,
+        "minV": -0.475,
+        "maxV": 0.475
+      },
+      "label": "nightstand usable top",
+      "role": "loot",
+      "lootSlots": [
+        {
+          "id": "bedside_0",
+          "purpose": "bedside",
+          "u": 0.22,
+          "v": 0.22,
+          "chance": 0.9,
+          "maxSize": 0.22
+        }
+      ]
+    }
+  ],
+  "surfaceSettings": {
+    "part_msc11akl_mhz4j:surface:2": {
+      "label": "nightstand usable top",
+      "role": "loot",
+      "lootSlots": [
+        {
+          "id": "bedside_0",
+          "purpose": "bedside",
+          "u": 0.22,
+          "v": 0.22,
+          "chance": 0.9,
+          "maxSize": 0.22
+        }
+      ]
+    }
+  }
 }

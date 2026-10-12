@@ -153,5 +153,71 @@
   "particleEmitters": [],
   "processingWarps": [],
   "processTimelines": [],
-  "stompAttachPoints": []
+  "stompAttachPoints": [],
+  "recognizedSurfaces": [
+    {
+      "id": "part_msc118ns_znu68:surface:2",
+      "partId": "part_msc118ns_znu68",
+      "recognizedType": "upward top",
+      "faceIndices": [
+        2,
+        3
+      ],
+      "area": 0.36090496,
+      "localCentroid": [
+        0,
+        0.04,
+        0
+      ],
+      "localNormal": [
+        0,
+        1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.23920000000000002,
+        "maxU": 0.23920000000000002,
+        "minV": -0.3772,
+        "maxV": 0.3772
+      },
+      "label": "chest usable top",
+      "role": "loot",
+      "lootSlots": [
+        {
+          "id": "storage_0",
+          "purpose": "storage",
+          "u": 0.08,
+          "v": 0,
+          "chance": 0.65,
+          "maxSize": 0.22
+        }
+      ]
+    }
+  ],
+  "surfaceSettings": {
+    "part_msc118ns_znu68:surface:2": {
+      "label": "chest usable top",
+      "role": "loot",
+      "lootSlots": [
+        {
+          "id": "storage_0",
+          "purpose": "storage",
+          "u": 0.08,
+          "v": 0,
+          "chance": 0.65,
+          "maxSize": 0.22
+        }
+      ]
+    }
+  }
 }

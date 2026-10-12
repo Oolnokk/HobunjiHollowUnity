@@ -106,5 +106,71 @@
   "particleEmitters": [],
   "processingWarps": [],
   "processTimelines": [],
-  "stompAttachPoints": []
+  "stompAttachPoints": [],
+  "recognizedSurfaces": [
+    {
+      "id": "part_msc117e3_0ypvr:surface:2",
+      "partId": "part_msc117e3_0ypvr",
+      "recognizedType": "upward top",
+      "faceIndices": [
+        2,
+        3
+      ],
+      "area": 1.0495360000000002,
+      "localCentroid": [
+        0,
+        0.05,
+        0
+      ],
+      "localNormal": [
+        0,
+        1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.7130000000000001,
+        "maxU": 0.7130000000000001,
+        "minV": -0.36800000000000005,
+        "maxV": 0.36800000000000005
+      },
+      "label": "bedroll usable top",
+      "role": "loot",
+      "lootSlots": [
+        {
+          "id": "linen_0",
+          "purpose": "linen",
+          "u": 0.48,
+          "v": 0,
+          "chance": 0.9,
+          "maxSize": 0.22
+        }
+      ]
+    }
+  ],
+  "surfaceSettings": {
+    "part_msc117e3_0ypvr:surface:2": {
+      "label": "bedroll usable top",
+      "role": "loot",
+      "lootSlots": [
+        {
+          "id": "linen_0",
+          "purpose": "linen",
+          "u": 0.48,
+          "v": 0,
+          "chance": 0.9,
+          "maxSize": 0.22
+        }
+      ]
+    }
+  }
 }

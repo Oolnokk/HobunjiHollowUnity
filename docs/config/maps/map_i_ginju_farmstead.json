@@ -1816,5 +1816,6 @@
       "wanderMode": "radius",
       "wanderRadiusTiles": 2
     }
-  ]
+  ],
+  "surfaceLootProfile": "house"
 }

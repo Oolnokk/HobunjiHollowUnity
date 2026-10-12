@@ -341,5 +341,71 @@
   "particleEmitters": [],
   "processingWarps": [],
   "processTimelines": [],
-  "stompAttachPoints": []
+  "stompAttachPoints": [],
+  "recognizedSurfaces": [
+    {
+      "id": "part_msc1173o_d5qdd:surface:2",
+      "partId": "part_msc1173o_d5qdd",
+      "recognizedType": "upward top",
+      "faceIndices": [
+        2,
+        3
+      ],
+      "area": 2.698634133504,
+      "localCentroid": [
+        0,
+        0.11,
+        0
+      ],
+      "localNormal": [
+        0,
+        1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.821376,
+        "maxU": 0.821376,
+        "minV": -0.821376,
+        "maxV": 0.821376
+      },
+      "label": "doubleBed usable top",
+      "role": "loot",
+      "lootSlots": [
+        {
+          "id": "linen_0",
+          "purpose": "linen",
+          "u": 0.55,
+          "v": 0.35,
+          "chance": 0.9,
+          "maxSize": 0.22
+        }
+      ]
+    }
+  ],
+  "surfaceSettings": {
+    "part_msc1173o_d5qdd:surface:2": {
+      "label": "doubleBed usable top",
+      "role": "loot",
+      "lootSlots": [
+        {
+          "id": "linen_0",
+          "purpose": "linen",
+          "u": 0.55,
+          "v": 0.35,
+          "chance": 0.9,
+          "maxSize": 0.22
+        }
+      ]
+    }
+  }
 }

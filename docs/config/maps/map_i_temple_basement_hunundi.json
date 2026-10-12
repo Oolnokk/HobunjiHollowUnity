@@ -239,5 +239,6 @@
       "blendSeconds": 0.35,
       "targetNpcId": "father_hunundi_hodu"
     }
-  ]
+  ],
+  "surfaceLootProfile": "house"
 }

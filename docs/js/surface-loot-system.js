@@ -15,6 +15,9 @@
     rareMetalScraps: { icon: '✨', label: 'Rare Metal Scraps' },
   }); // Stable inventory keys keep fragments generic until the combine action.
   const LOOT_ITEMS = Object.freeze({
+    lootMetalCup: { icon: '🥣', label: 'Metal Cup', sellPrice: 2, minTownValue: 0, scrapYield: { cheapMetalScraps: 2 } },
+    lootFoldedCloth: { icon: '🧣', label: 'Folded Cloth', sellPrice: 2, minTownValue: 0, scrapYield: { clothScraps: 3 } },
+    lootSewingKit: { icon: '🧵', label: 'Sewing Kit', sellPrice: 3, minTownValue: 0, scrapYield: { clothScraps: 2, cheapMetalScraps: 1 } },
     lootCopperRing: { icon: '💍', label: 'Copper Ring', sellPrice: 12, minTownValue: 0 },
     lootSilverPendant: { icon: '📿', label: 'Silver Pendant', sellPrice: 38, minTownValue: 3 },
     lootGoldBrooch: { icon: '💎', label: 'Gold Brooch', sellPrice: 85, minTownValue: 6 },
@@ -34,7 +37,7 @@
   let claimedTarget = null; // Avoid re-advertising identical world input claims on every UI refresh.
   let target = null; // The currently advertised world interaction, revalidated at pickup time.
   let scratch = null; // Allocated once when THREE is available, never during a frame callback.
-  let lastChange = 'Surface item loot, jewelry, junk scrapping, and five-to-one generic scrap combining.'; // Copyable mobile diagnostic.
+  let lastChange = 'Household loot uses authored dining, bedside, linen, dresser, desk, and storage surfaces; taking items is currently allowed.'; // Copyable mobile diagnostic.
 
   const finite = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
   const amount = value => Math.max(0, Math.floor(finite(value)));
@@ -367,17 +370,67 @@
     parent.add(host);
     const data = { recognizedSurfaces: [{ id: 'loot_top', partId: 'loot_surface', localCentroid: [0, 0, 0], localNormal: [0, 1, 0], basisU: [1, 0, 0], basisV: [0, 0, 1] }],
       itemPlacements: keys.map((key, index) => ({ id: `loot_${index}`, lootItemKey: key, itemKey: key, surfaceId: 'loot_top', quantity: 1,
-        position: { u: (index % 3 - 1) * .26, v: Math.floor(index / 3) * .30 - .15, normal: .015 }, scale: .21, rotation: { x: -90, y: rng() * 360, z: 0 }, placementPreset: 'flat',
+        position: { u: (index % 3 - 1) * .26, v: Math.floor(index / 3) * .30 - .15, normal: .015 }, scale: .21, rotation: { x: -90, y: 0, z: rng() * 360 }, placementPreset: 'flat',
         imageUrl: key.startsWith('alchemy_') ? 'assets/objectsprites/bottle_potion.png' : iconSource(key), visible: true, lootable: true })) }; // Starter scatter leaves room between selectable silhouettes.
     host.userData.surfaceLootPlacements = data.itemPlacements; // Inspectable encounter content; no shared catalog mutations.
     buildPlacements(host, data);
     return host;
   }
 
-  function diagnostics() {
-    return { latestChange: lastChange, livePlacements: entries.size, collected: collected.size, target: target?.record.lootItemKey || target?.record.itemKey || null,
-      scrapCounts: Object.fromEntries(Object.keys(SCRAP_DEFS).map(key => [key, count(key)])), metalGroups: METAL_GROUPS, townValue: window.TownMine?.getTownValue?.() || 0 };
+  const HOUSE_POOLS = Object.freeze({
+    dining: [['lootMetalCup', 1]],
+    bedside: [['alchemy_healingPotion_p0', 3], ['lootMetalCup', 2]],
+    linen: [['lootFoldedCloth', 1]],
+    desk: [['lootSewingKit', 4], ['lootCopperRing', 1]],
+    dresser: [['lootCopperRing', 5], ['lootSilverPendant', 2], ['lootGoldBrooch', 1], ['lootSewingKit', 4]],
+    storage: [['lootFoldedCloth', 3], ['junkFrayedRope', 2], ['lootSewingKit', 2]],
+  }); // Semantic surface purposes choose household belongings, without combat flasks on dinner tables.
+
+  function planFurnitureLoot(data, context = {}) {
+    if (context.profile !== 'house' || !context.id) return [];
+    const records = []; // A fresh per-instance plan never alters shared furniture definitions.
+    const value = Math.max(0, amount(context.townValue ?? window.TownMine?.getTownValue?.())); // Only encountered valuables are gated.
+    for (const surface of Array.isArray(data?.recognizedSurfaces) ? data.recognizedSurfaces : []) {
+      if (!surface || !Array.isArray(surface.lootSlots)) continue;
+      if ((Array.isArray(data.itemPlacements) ? data.itemPlacements : []).some(record => record.surfaceId === surface.id && record.visible !== false)) continue;
+      for (const slot of surface.lootSlots || []) {
+        if (!slot || !Number.isFinite(slot.u) || !Number.isFinite(slot.v)) continue;
+        const pool = HOUSE_POOLS[slot.purpose]?.filter(([key]) => !LOOT_ITEMS[key] || value >= LOOT_ITEMS[key].minTownValue); // One meaningful pool for each authored spot.
+        if (!pool?.length || !slot.id) continue;
+        const rng = window.WildernessMapGenerator?.makeRng?.(`house-loot:${context.id}:${surface.id}:${slot.id}`); // Slot-local seeds keep other slots unchanged when one is edited.
+        if (!rng || rng() >= Math.max(0, Math.min(1, finite(slot.chance, .65)))) continue;
+        const total = pool.reduce((sum, pair) => sum + pair[1], 0); // Common belongings outweigh precious jewelry.
+        let roll = rng() * total; // A weighted roll chooses the inventory item once for this slot.
+        const key = pool.find(pair => (roll -= pair[1]) < 0)?.[0] || pool[pool.length - 1][0]; // Protect the endpoint of custom RNGs.
+        const scale = Math.max(.01, Math.min(.22, finite(slot.maxSize, .22))); // Authored slots reserve room for the entire sprite footprint.
+        const radius = scale / Math.sqrt(2); // Reject moved/resized slots whose complete sprite no longer fits its authored bounds.
+        const bounds = surface.bounds; // Furniture-local U/V bounds exported by the same authoring tool.
+        if (!bounds || !['minU', 'maxU', 'minV', 'maxV'].every(key => Number.isFinite(bounds[key])) || slot.u - radius < bounds.minU || slot.u + radius > bounds.maxU || slot.v - radius < bounds.minV || slot.v + radius > bounds.maxV) continue;
+        if (records.some(record => record.surfaceId === surface.id && Math.hypot(record.position.u - slot.u, record.position.v - slot.v) < (record.scale + scale) / Math.sqrt(2))) continue;
+        const tall = key.startsWith('alchemy_') || key === 'lootMetalCup'; // Bottles and cups stand upright; jewelry, cloth, rope, and sewing supplies lie flat.
+        records.push({ id: `house:${surface.id}:${slot.id}`, surfaceId: surface.id, itemKey: key, lootItemKey: key, quantity: 1,
+          position: { u: finite(slot.u), v: finite(slot.v), normal: .015 }, scale,
+          rotation: { x: tall ? 0 : -90, y: 0, z: tall ? 0 : (rng() - .5) * 16 }, placementPreset: tall ? 'tall' : 'flat',
+          cameraRelativeDeadzone: tall, tallClearance: .015, imageUrl: key.startsWith('alchemy_') ? 'assets/objectsprites/bottle_potion.png' : iconSource(key),
+          visible: true, lootable: true, ownerArea: context.area, lootPurpose: slot.purpose });
+      }
+    }
+    return records;
   }
 
-  window.SurfaceLootSystem = Object.freeze({ init, buildPlacements, getActionButtons, syncClaims, pickupTarget, scrapItem, combineScraps, availableRecipes, serialize, restore, disposeGroup, scatter, diagnostics, iconSource, imageSource, resolveItemKey, outputKeys, SCRAPS_PER_MATERIAL, SCRAP_DEFS, METAL_GROUPS, LOOT_ITEMS, eligibleLootKeys });
+  function populateFurniture(group, data, context) {
+    if (!group || !data || group.userData.houseLootPopulated || context?.profile !== 'house') return group;
+    const records = planFurnitureLoot(data, context); // The plan uses the same recognized-surface/item-placement renderer as explicit editor placements.
+    group.userData.houseLootPopulated = true;
+    group.userData.surfaceLootInstanceId = String(context.id);
+    group.userData.surfaceLootPlacements = records; // Copyable diagnostics show the purpose, item, and owner; ownership has no penalty yet.
+    return buildPlacements(group, { ...data, itemPlacements: records });
+  }
+
+  function diagnostics() {
+    return { latestChange: lastChange, livePlacements: entries.size, collected: collected.size, target: target?.record.lootItemKey || target?.record.itemKey || null,
+      scrapCounts: Object.fromEntries(Object.keys(SCRAP_DEFS).map(key => [key, count(key)])), housePlacements: [...entries].filter(entry => entry.record.lootPurpose).length, houseItems: [...entries].filter(entry => entry.record.lootPurpose).slice(0, 20).map(entry => ({ item: entry.record.itemKey, purpose: entry.record.lootPurpose, ownerArea: entry.record.ownerArea })), takingHouseItemsIsCrime: false, metalGroups: METAL_GROUPS, townValue: window.TownMine?.getTownValue?.() || 0 };
+  }
+
+  window.SurfaceLootSystem = Object.freeze({ init, buildPlacements, getActionButtons, syncClaims, pickupTarget, scrapItem, combineScraps, availableRecipes, serialize, restore, disposeGroup, scatter, planFurnitureLoot, populateFurniture, diagnostics, iconSource, imageSource, resolveItemKey, outputKeys, SCRAPS_PER_MATERIAL, SCRAP_DEFS, METAL_GROUPS, LOOT_ITEMS, eligibleLootKeys });
 })();

@@ -104,5 +104,87 @@
   "particleEmitters": [],
   "processingWarps": [],
   "processTimelines": [],
-  "stompAttachPoints": []
+  "stompAttachPoints": [],
+  "recognizedSurfaces": [
+    {
+      "id": "part_msc11cyj_rf8uh:surface:2",
+      "partId": "part_msc11cyj_rf8uh",
+      "recognizedType": "upward top",
+      "faceIndices": [
+        2,
+        3
+      ],
+      "area": 2.8024999999999993,
+      "localCentroid": [
+        0,
+        0.03,
+        0
+      ],
+      "localNormal": [
+        0,
+        1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.4749999999999999,
+        "maxU": 0.4749999999999999,
+        "minV": -1.4749999999999999,
+        "maxV": 1.4749999999999999
+      },
+      "label": "counter usable top",
+      "role": "loot",
+      "lootSlots": [
+        {
+          "id": "dining_0",
+          "purpose": "dining",
+          "u": 0.2,
+          "v": -0.85,
+          "chance": 0.65,
+          "maxSize": 0.22
+        },
+        {
+          "id": "dining_1",
+          "purpose": "dining",
+          "u": 0.2,
+          "v": 0.85,
+          "chance": 0.65,
+          "maxSize": 0.22
+        }
+      ]
+    }
+  ],
+  "surfaceSettings": {
+    "part_msc11cyj_rf8uh:surface:2": {
+      "label": "counter usable top",
+      "role": "loot",
+      "lootSlots": [
+        {
+          "id": "dining_0",
+          "purpose": "dining",
+          "u": 0.2,
+          "v": -0.85,
+          "chance": 0.65,
+          "maxSize": 0.22
+        },
+        {
+          "id": "dining_1",
+          "purpose": "dining",
+          "u": 0.2,
+          "v": 0.85,
+          "chance": 0.65,
+          "maxSize": 0.22
+        }
+      ]
+    }
+  }
 }

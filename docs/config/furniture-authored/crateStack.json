@@ -106,5 +106,71 @@
   "particleEmitters": [],
   "processingWarps": [],
   "processTimelines": [],
-  "stompAttachPoints": []
+  "stompAttachPoints": [],
+  "recognizedSurfaces": [
+    {
+      "id": "part_msc118xe_10l7z:surface:2",
+      "partId": "part_msc118xe_10l7z",
+      "recognizedType": "upward top",
+      "faceIndices": [
+        2,
+        3
+      ],
+      "area": 0.12222016000000002,
+      "localCentroid": [
+        0,
+        0.13,
+        0
+      ],
+      "localNormal": [
+        0,
+        1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.1748,
+        "maxU": 0.1748,
+        "minV": -0.1748,
+        "maxV": 0.1748
+      },
+      "label": "crateStack usable top",
+      "role": "loot",
+      "lootSlots": [
+        {
+          "id": "storage_0",
+          "purpose": "storage",
+          "u": 0,
+          "v": 0,
+          "chance": 0.65,
+          "maxSize": 0.17
+        }
+      ]
+    }
+  ],
+  "surfaceSettings": {
+    "part_msc118xe_10l7z:surface:2": {
+      "label": "crateStack usable top",
+      "role": "loot",
+      "lootSlots": [
+        {
+          "id": "storage_0",
+          "purpose": "storage",
+          "u": 0,
+          "v": 0,
+          "chance": 0.65,
+          "maxSize": 0.17
+        }
+      ]
+    }
+  }
 }

@@ -212,5 +212,6 @@
       "toolAnimStyle": ""
     }
   ],
-  "npcPaths": []
+  "npcPaths": [],
+  "surfaceLootProfile": "house"
 }

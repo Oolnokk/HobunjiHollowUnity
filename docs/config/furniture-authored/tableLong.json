@@ -426,5 +426,103 @@
   "particleEmitters": [],
   "processingWarps": [],
   "processTimelines": [],
-  "stompAttachPoints": []
+  "stompAttachPoints": [],
+  "recognizedSurfaces": [
+    {
+      "id": "part_msc11blm_eq29f:surface:2",
+      "partId": "part_msc11blm_eq29f",
+      "recognizedType": "upward top",
+      "faceIndices": [
+        2,
+        3
+      ],
+      "area": 3.7525,
+      "localCentroid": [
+        0,
+        0.06,
+        0
+      ],
+      "localNormal": [
+        0,
+        1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.475,
+        "maxU": 0.475,
+        "minV": -1.975,
+        "maxV": 1.975
+      },
+      "label": "tableLong usable top",
+      "role": "loot",
+      "lootSlots": [
+        {
+          "id": "dining_0",
+          "purpose": "dining",
+          "u": 0.2,
+          "v": -1.2,
+          "chance": 0.65,
+          "maxSize": 0.22
+        },
+        {
+          "id": "dining_1",
+          "purpose": "dining",
+          "u": 0.2,
+          "v": 0,
+          "chance": 0.65,
+          "maxSize": 0.22
+        },
+        {
+          "id": "dining_2",
+          "purpose": "dining",
+          "u": 0.2,
+          "v": 1.2,
+          "chance": 0.65,
+          "maxSize": 0.22
+        }
+      ]
+    }
+  ],
+  "surfaceSettings": {
+    "part_msc11blm_eq29f:surface:2": {
+      "label": "tableLong usable top",
+      "role": "loot",
+      "lootSlots": [
+        {
+          "id": "dining_0",
+          "purpose": "dining",
+          "u": 0.2,
+          "v": -1.2,
+          "chance": 0.65,
+          "maxSize": 0.22
+        },
+        {
+          "id": "dining_1",
+          "purpose": "dining",
+          "u": 0.2,
+          "v": 0,
+          "chance": 0.65,
+          "maxSize": 0.22
+        },
+        {
+          "id": "dining_2",
+          "purpose": "dining",
+          "u": 0.2,
+          "v": 1.2,
+          "chance": 0.65,
+          "maxSize": 0.22
+        }
+      ]
+    }
+  }
 }

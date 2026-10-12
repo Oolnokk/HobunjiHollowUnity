@@ -334,5 +334,87 @@
   "particleEmitters": [],
   "processingWarps": [],
   "processTimelines": [],
-  "stompAttachPoints": []
+  "stompAttachPoints": [],
+  "recognizedSurfaces": [
+    {
+      "id": "part_msc119qz_cv7c6:surface:2",
+      "partId": "part_msc119qz_cv7c6",
+      "recognizedType": "upward top",
+      "faceIndices": [
+        2,
+        3
+      ],
+      "area": 1.748,
+      "localCentroid": [
+        0,
+        0.425,
+        0
+      ],
+      "localNormal": [
+        0,
+        1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.46,
+        "maxU": 0.46,
+        "minV": -0.95,
+        "maxV": 0.95
+      },
+      "label": "dresser usable top",
+      "role": "loot",
+      "lootSlots": [
+        {
+          "id": "dresser_0",
+          "purpose": "dresser",
+          "u": 0.2,
+          "v": -0.55,
+          "chance": 0.65,
+          "maxSize": 0.22
+        },
+        {
+          "id": "dresser_1",
+          "purpose": "dresser",
+          "u": 0.2,
+          "v": 0.55,
+          "chance": 0.65,
+          "maxSize": 0.22
+        }
+      ]
+    }
+  ],
+  "surfaceSettings": {
+    "part_msc119qz_cv7c6:surface:2": {
+      "label": "dresser usable top",
+      "role": "loot",
+      "lootSlots": [
+        {
+          "id": "dresser_0",
+          "purpose": "dresser",
+          "u": 0.2,
+          "v": -0.55,
+          "chance": 0.65,
+          "maxSize": 0.22
+        },
+        {
+          "id": "dresser_1",
+          "purpose": "dresser",
+          "u": 0.2,
+          "v": 0.55,
+          "chance": 0.65,
+          "maxSize": 0.22
+        }
+      ]
+    }
+  }
 }

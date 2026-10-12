@@ -1829,5 +1829,6 @@
       "postSZ": 1
     }
   ],
-  "npcStations": []
+  "npcStations": [],
+  "surfaceLootProfile": "house"
 }

@@ -13286,6 +13286,7 @@
           creature.mesh?.parent?.remove(creature.mesh);
         }
         if (info?.scene) {
+          window.SurfaceLootSystem?.disposeGroup?.(info.scene); // Scene teardown also releases collected-item render records.
           info.scene.traverse(object => object.geometry?.dispose?.());
           info.scene.clear();
         }
@@ -13329,6 +13330,7 @@
         // Drop the outgoing layout's seats/stations (e.g. wedding pews) so a
         // rebuilt room only advertises what it actually contains.
         for (const id of info.registeredStationIds || []) npcStationsById.delete(id);
+        window.SurfaceLootSystem?.disposeGroup?.(info.scene); // Rebuilt house layouts must not retain the old loot meshes.
         info.scene.traverse(object => object.geometry?.dispose?.());
         info.scene.clear();
         _buildingScenes.delete(mapId);
@@ -13662,6 +13664,8 @@
             const def = allFurnDefs[f.itemKey];
             const furnitureKey = furnKeyByItemKey[f.itemKey];
             if (furnitureKey === 'mineLadder') await window.AuthoredFurniture?.load?.('mineLadder'); // Used to guarantee the supplied ladder is ready on the safe room's first visit, not merely on later cached visits.
+            const houseLoot = mapData.surfaceLootProfile === 'house'; // Only authored residential maps receive household belongings; purchased player furniture creates no free loot.
+            const houseFurnitureData = houseLoot && furnitureKey ? await window.AuthoredFurniture?.load?.(furnitureKey) : null; // Resolve the actual surfaces before the visual builder so async fallback adoption cannot orphan loot.
             const color = def?.color || 0x888888;
             const scX = f.postSX != null ? f.postSX : (f.postScale != null ? f.postScale : 1);
             const scY = f.postSY != null ? f.postSY : (f.postScale != null ? f.postScale : 1);
@@ -13716,6 +13720,10 @@
               postX: f.postX || 0, postY: f.postY || 0, postZ: f.postZ || 0, rotY: f.rotY || 0,
               postSX: scX, postSY: scY, postSZ: scZ,
             };
+            window.SurfaceLootSystem?.populateFurniture?.(renderedFurniture, houseFurnitureData, {
+              profile: mapData.surfaceLootProfile, area: mapId,
+              id: `${mapId}:${f.id || `${f.itemKey}:${f.col},${f.row}`}`,
+            }); // Stable furniture IDs keep collected house items gone across reloads and layout changes; taking them currently has no crime consequence.
             renderedFurniture.userData.buildingFurnitureGrounding = {
               mapId,
               furnitureId: f.id || null,
