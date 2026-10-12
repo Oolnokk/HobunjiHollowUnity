@@ -233,4 +233,73 @@ assert.equal(starter.addition.tier,'small');
 assert.equal(JSON.stringify(inventory),plansBeforeStarter);
 assert.equal(B.ensureStarterIncubator(barn.id,'small').addition.id,starter.addition.id,'retry preserves the existing starter addition');
 assert.equal(B.getState().barns[barn.id].additions.length,1,'starter installation is idempotent');
+// Exercise the real synthesis and grid adapter for every tier and wall orientation.
+vm.runInContext(fs.readFileSync('docs/js/interior-furniture-grid.js', 'utf8'), context);
+assert.equal(B.removeIncubator(starter.addition.id, false).ok, true);
+barn.w = 5; barn.h = 5; // A larger test barn permits the large wing on all four walls.
+for (const tier of ['small', 'medium', 'large']) {
+  B.selectTier(tier);
+  inventory[window.BARN_INCUBATOR_CONFIG.tiers[tier].planItem] = 1;
+  const installed = B.placeIncubator(barn.id, B.candidatePlacementsForBarn(barn)[0]); // Real placement and plan consumption for this tier.
+  assert.equal(installed.ok, true);
+  for (const side of ['north', 'south', 'west', 'east']) {
+    const candidate = B.candidatePlacementsForBarn(barn).find(entry => entry.side === side); // Existing placement authority validates each wall.
+    assert(candidate, `${tier}: ${side} has a candidate`);
+    assert.equal(B.moveIncubator(installed.addition.id, candidate).ok, true);
+    const expanded = B.extendBarnInterior('map_i_barn_barn_test', window.FarmTroughs.synthesizeBarnInteriorMapData('map_i_barn_missing') || {
+      cols: 8, rows: 6, floor: [], furniture: [], exits: [], colliders: [],
+    }); // Fresh base avoids applying an expansion twice.
+    const record = expanded.furniture[0]; // Actual generated furniture record.
+    const rendered = window.InteriorFurnitureGrid.legacyRecordFor(record); // Actual runtime rotation/centering adaptation.
+    const def = panelDeps.DECORATIVE_FURNITURE_DEFS[record.itemKey]; // Renderer lookup requires a matching itemKey.
+    const addition = B.getState().barns[barn.id].additions[0]; // Persisted room footprint after moving.
+    assert.equal(def.itemKey, record.itemKey);
+    assert.equal(rendered.col + def.fw / 2 + rendered.postX,
+      (addition.localCol + addition.w / 2) * 2 + expanded.farmBarnOriginShift.col, `${tier}/${side}: nest center X`);
+    assert.equal(rendered.row + def.fd / 2 + rendered.postZ,
+      (addition.localRow + addition.h / 2) * 2 + expanded.farmBarnOriginShift.row, `${tier}/${side}: nest center Z`);
+    assert.equal(rendered.postSX, 1, 'rotation does not stretch the woven nests');
+    assert.equal(rendered.postSZ, 1, 'rotation does not stretch the woven nests');
+  }
+  const authored = JSON.parse(fs.readFileSync(`docs/config/furniture-authored/${tier === 'medium' ? 'incubator' : 'incubator' + tier[0].toUpperCase() + tier.slice(1)}.json`, 'utf8')); // Runtime tier asset including sleeping anchors.
+  assert.equal(authored.parts.length, installed.addition.slots.length * 2, 'one wild nest body and rim per slot');
+  for (const anchor of authored.stompAttachPoints) {
+    const parent = authored.parts.find(part => part.id === anchor.parentPartId); // Every sleeping anchor resolves to its own nest body.
+    assert.equal(parent.kind, 'cup');
+    assert.equal(anchor.position.x, 0);
+    assert.equal(anchor.position.z, 0);
+    assert(parent.transform.y + anchor.position.y < .19, 'baby rests inside the shallow nest');
+    assert(Math.abs(parent.transform.x) + parent.transform.sx * .54 <= authored.footprint.w / 2);
+    assert(Math.abs(parent.transform.z) + parent.transform.sz * .54 <= authored.footprint.d / 2);
+  }
+  assert.equal(B.removeIncubator(installed.addition.id, false).ok, true);
+}
+
+// A lightweight DOM exercises the Farm-tab button and existing slot manager.
+const elements = new Map(); // Nodes resolved by the actual UI functions.
+function element(tag = 'div') {
+  const node = { tag, children: [], style: {}, listeners: {}, textContent: '',
+    classList: { values: new Set(), add(value) { this.values.add(value); }, remove(value) { this.values.delete(value); }, contains(value) { return this.values.has(value); } },
+    appendChild(child) { this.children.push(child); if (child.id) elements.set(child.id, child); return child; },
+    addEventListener(event, handler) { this.listeners[event] = handler; },
+    insertAdjacentElement(_, child) { elements.set(child.id, child); },
+    querySelector(selector) { return elements.get(selector.slice(1)) || null; },
+    remove() { elements.delete(this.id); },
+  }; // Only the DOM operations used by the real manager and launcher.
+  Object.defineProperty(node, 'innerHTML', { set(html) {
+    this.children = [];
+    for (const match of html.matchAll(/id="([^"]+)"/g)) { const child = element(); child.id = match[1]; elements.set(child.id, child); }
+  } });
+  return node;
+}
+const uiAddition = B.ensureStarterIncubator(barn.id, 'small'); // A real installed incubator for the Farm tab.
+context.document = { getElementById: id => elements.get(id) || null, createElement: element, head: element(), body: element() };
+elements.set('farmBuildingsList', element());
+window.FarmPanel.render();
+const launchers = elements.get('barnLayoutEditorLaunchers'); // Farm panel's actual decorated UI.
+const card = launchers.children.find(node => node.className === 'incubator-slot'); // Direct status card, alongside the layout launcher.
+assert(card.children.some(node => node.textContent.includes('Empty')));
+card.children.find(node => node.textContent.includes('Manage Incubator')).listeners.click();
+assert(elements.get('barnIncubatorManageModal').classList.contains('open'), 'Farm-tab Manage opens the existing manager directly');
+assert.equal(elements.get('barnIncubatorSlots').children.length, uiAddition.addition.slots.length);
 console.log('barn incubator tests passed');
