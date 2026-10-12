@@ -17,6 +17,7 @@
 
   const HOOP_CORE = 0.03, HOOP_FADE = 0.07; // Distance (garment units) around an ankle spline that is fully rigid, and where that fades out.
   const SEGMENTS = 64; // Vertices per side of the garment grid: fine enough that weight transitions deform smoothly instead of faceting.
+  const PANTLESS_SPECIES = new Set(['kenkari', 'rakakoan']); // Their legs are far too short/small for the garment, so for now they never wear pants in the game.
   const DEFAULT_GARMENT_ID = 'pants_basic';
   const FALLBACK_CHARACTER_KEY = '__default'; // Species/gender without their own authored record share this fit.
   const DOUBLE_SIDE = 2;
@@ -25,7 +26,9 @@
 
   const core = () => global.HobunjiPantsRig || null;
   const normalizeSpecies = value => String(value || '').trim().toLowerCase().replace(/_/g, '-');
+  const isPantlessSpecies = speciesId => PANTLESS_SPECIES.has(normalizeSpecies(speciesId));
   const normalizeGender = value => String(value || '').trim().toLowerCase();
+  
   const characterKey = (speciesId, gender) => `${normalizeSpecies(speciesId)}::${normalizeGender(gender)}`;
 
   function rigConfig() {
@@ -373,6 +376,7 @@
    * @returns handle {update, setAppearance, dispose, mesh} or null when pants cannot be drawn for this avatar
    */
   function attach(THREE, { avatarGroup, legHandle, speciesId, gender, garmentId = DEFAULT_GARMENT_ID, appearance = {}, name = 'pants', overlayMask = null, garmentRecord = null, characterRecord = null, imageUrl = null, footObjects = null, debugSplines = false } = {}) {
+    if (!characterRecord && isPantlessSpecies(speciesId)) return null; // The author's live preview (explicit records) can still show them.
     const Core = core();
     const garment = garmentRecord || rigConfig().garments?.[garmentId]; // The editor passes its live, unsaved authoring records here.
     let character = characterRecord || resolveCharacter(speciesId, gender);
@@ -712,7 +716,7 @@
 
   // Humanoid NPC records that should wear the free default pants: everyone but animals and records that opt out.
   function ensureNpcPants(rec, { garmentId = DEFAULT_GARMENT_ID, isAnimal = false } = {}) {
-    if (!rec || isAnimal || rec.noPants === true || rec.kind === 'animal') return false;
+    if (!rec || isAnimal || rec.noPants === true || rec.kind === 'animal' || isPantlessSpecies(rec.speciesId || rec.species)) return false;
     if (!Array.isArray(rec.equippedCosmetics)) rec.equippedCosmetics = [];
     if (rec.equippedCosmetics.includes(garmentId)) return false;
     rec.equippedCosmetics = [...rec.equippedCosmetics, garmentId];
