@@ -471,11 +471,7 @@
         mapData.caveRuinEntrance = clone(plan.ruinEntrance);
         addProp(mapData, { id: plan.ruinEntrance.id, key: 'ruinEntranceDoor', col: tile.col, row: tile.row, rotY });
         addProp(mapData, { id: plan.ruinEntrance.id + '_tunnel', key: 'ruinEntranceTunnel', col: tile.col - dc * 1.2, row: tile.row - dr * 1.2, rotY, scaleX: 0.75, scaleZ: 1.5, embedded: true });
-        mapData.wallHeightScale = 2.5;
-        if (mapData.mesh) {
-          const floorHeights = Object.values(mapData.floorSurfaceByTile || {}).filter(Number.isFinite); // Preserve every sampled standing surface while lifting only the walls above them.
-          mapData.mesh = { ...mapData.mesh, wallHeightScale: 2.5, wallHeightBaseY: Math.max(Number(mapData.floorSurfaceY) || 0, ...floorHeights) + 0.01 };
-        }
+        mapData.wallHeightScale = 2.5; // Consumed by the clearance recarve (always queued above), which sweeps the carving probe 2.5x higher.
         return;
       }
     }
@@ -1081,7 +1077,7 @@
     return {
       ready: integrationsInstalled,
       currentArea,
-      latestChange: 'Locale clearance footprints now expand the actual cave carving: nests have 8x8 rooms, ruin doors have 7x6 approaches, and ruin walls are 2.5 times their original height. Expanded floors, grounding, and the protected rock rim share one rebuild.',
+      latestChange: 'Locale clearance footprints now expand the actual cave carving: nests have 8x8 rooms, ruin doors have 7x6 approaches, and ruin caves are carved 2.5x taller (probe sweep extended upward, not a vertex stretch). Expanded floors, grounding, and the protected rock rim share one rebuild.',
       zoneCount: zones.length,
       caveCount: sites.length,
       caves: sites.map(site => ({ mapId: site.mapId, zoneId: site.zoneId, denId: site.denId, contents: site.contents, inhabitant: site.inhabitant, label: site.discoveredLabel })),

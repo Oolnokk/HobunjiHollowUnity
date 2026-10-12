@@ -35,10 +35,14 @@ global.WildlifeSpawn={denCavernZoneOf:()=> 'test-zone',denSpeciesFor:()=> 'gar-w
 CavernGenerator.init({EXTERIOR_ZONES:{'test-zone':{packSpecies:['gar-wolf']}},DEN_MOTHER_DEFS:{'gar-wolf':{creatureKey:'gar-wolf-den-mother'}}});
 require('../docs/js/cave-site-system.js');
 const caveMap=CavernGenerator.synthesizeCavernMapData('rim-integration-10'); // Reuses the real carve above, including collision and native placement generation.
+const plainTopY=Math.max(...caveMap.mesh.positions.filter((_,i)=>i%3===1)); // Ordinary carved shell height before the ruin requests a taller cave.
 CaveSiteSystem.__test.sitesByMapId.set(caveMap.id,{mapId:caveMap.id,signature:caveMap.id,zoneId:'test-zone',denId:'den_0',contents:'ruin_entrance',inhabitant:'bandit_hideout'});
 CaveSiteSystem.decorateCavernMapData(caveMap.id,caveMap);
 assert(caveMap.caveRuinEntrance,'the narrow-throat regression cave must still have room for its requested ruin');
-assert.equal(caveMap.mesh.wallHeightScale,2.5);
+assert.equal(caveMap.cavernCarvedHeightScale,2.5,'the clearance recarve sweeps the probe 2.5x higher');
+assert.equal(caveMap.mesh.wallHeightScale,undefined,'ruin height is carved, never stretched from the shorter shell');
+assert(Math.max(...caveMap.mesh.positions.filter((_,i)=>i%3===1)) > plainTopY*2.5,'taller sculpt volume carves walls above the old stretched height');
+assert(Math.abs(caveMap.floorSurfaceY) < 0.1,'taller carve keeps the floor at its original height');
 assert(caveMap.floor.length > generated.floor.length, 'door berth expands the actual floor');
 for (const cell of caveMap.caveRuinEntrance.clearanceTiles) assert(caveMap.floorSurfaceByTile[`${cell.col},${cell.row}`] != null, 'new approach cells have sampled grounding');
 assert.equal(CavernGenerator.entranceConnectedFloor(caveMap.floor,caveMap.exitCol,caveMap.exitRow).removed,0,'expansion stays connected to the entrance');
