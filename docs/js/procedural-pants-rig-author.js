@@ -219,8 +219,14 @@
       return false;
     }
     disposePreview();
+    const backdrop = window.HobunjiGameplayBackdrop;
+    const portrait = backdrop?.getPortraitRender?.(); // Overwear/arm clothing/pauldron/hood art stays in front of the pants here exactly as in the game.
+    const seatNpc = backdrop?.getSelectedNpc?.();
+    const overlayMask = portrait?.profile && portrait?.front
+      ? Renderer.buildOverlayMask(portrait.front, portrait.profile, { seatId: seatNpc?.id || seatNpc?.name || 'npc' }).catch(() => null)
+      : null;
     const handle = Renderer.attach(THREE, {
-      avatarGroup: model, legHandle: { group: legSearchRoot(model) }, speciesId: identity.speciesId, gender: identity.gender,
+      overlayMask, avatarGroup: model, legHandle: { group: legSearchRoot(model) }, speciesId: identity.speciesId, gender: identity.gender,
       garmentId, garmentRecord: garment, characterRecord: character, imageUrl: garmentSourceUrl(garment), name: 'pantsLivePreview',
       footObjects: window.HobunjiGameplayBackdrop?.getFootObjects?.() || null, debugSplines: state.splinesToggle ? state.splinesToggle.checked : true,
     });

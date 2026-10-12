@@ -56002,7 +56002,8 @@ function profileWithoutClothingForPlacement(profile) { // Produces an anatomy-re
 async function buildAvatarRender(npc, options = {}) {
   const bodyOnly = options.bodyOnly === true;
   const cacheKey = `${state.resolvedSha}:${npc.id || npc.name}:${JSON.stringify(npc.appearance || {})}:${JSON.stringify(npc.equippedCosmetics || [])}:${JSON.stringify(npc.appliedDyes || {})}:placementBodyOnly=${bodyOnly}`;
-  if (state.renderCache.has(cacheKey)) return state.renderCache.get(cacheKey);
+  const remember = result => { if (!result.bodyOnly) state.lastPortraitRender = result; return result; }; // The Pants adapter builds its overwear mask from the avatar's own profile + front portrait.
+  if (state.renderCache.has(cacheKey)) return state.renderCache.get(cacheKey).then(remember);
   const promise = (async () => {
     const exportNpc = portraitExportFor(npc);
     let profile = window.NpcAvatarPreview.buildProfileFromNpcExport(exportNpc);
@@ -56025,7 +56026,7 @@ async function buildAvatarRender(npc, options = {}) {
     return { exportNpc, profile, front, back, head, bodyOnly };
   })();
   state.renderCache.set(cacheKey, promise);
-  try { return await promise; }
+  try { return remember(await promise); }
   catch (error) { state.renderCache.delete(cacheKey); throw error; }
 }
 
@@ -60881,6 +60882,7 @@ function prepareGameplayBackdropHost() {
     getRenderer() { return state.three.renderer; },
     getAvatarModel() { return state.three.model; },
     getFootObjects() { return [procedural.feet.left, procedural.feet.right].filter(Boolean); }, // The procedural foot models, so adapters can keep garments in front of them.
+    getPortraitRender() { return state.lastPortraitRender || null; }, // {profile, front (canvas)} of the avatar on stage, for the overwear-over-pants mask.
     getThree() { return state.three.THREE; }, // Lets separately-loaded adapters (Pants) build meshes with the editor's own three namespace, which is a module import, not window.THREE.
     getProceduralMovement() { return structuredCloneSafe(animationExportObject()); },
     applyMovementPreset(name) { if (!MOVEMENT_PRESETS[name]) return false; applyAnimationPreset(name); return true; },

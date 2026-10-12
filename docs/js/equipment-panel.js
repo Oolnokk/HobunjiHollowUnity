@@ -461,8 +461,12 @@
     if (!catalogEntry) return false; // Config not loaded yet: try again next time instead of burning the one-time grant.
     gearInventory.starterPantsGranted = true;
     if (gearInventory.clothing?.pants || gearInventory.clothingItems.some(item => item?.cosmeticId === 'pants_basic')) return true;
-    const dye = (window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || []).find(entry => entry.acquisition === 'starter');
-    const colorA = dye ? { ...dye.color, hex: dye.hex, dyeId: dye.id, label: dye.label } : { h: 0, s: -0.70, v: -0.30, label: 'Default' };
+    // The starter pants match the player's overwear dye (the one picked in character creation, or the worn overwear's colour);
+    // with no overwear they are brown.
+    const dyeSystem = window.DyeSystem;
+    const overwearDye = gearInventory.clothing?.overwear?.colorA || dyeSystem?.toClothingColor?.(dyeSystem.getById?.(window.__hobunjiPlayerProfile?.appliedDyes?.CLOTH)) || null;
+    const brown = dyeSystem?.toClothingColor?.(dyeSystem.getById?.('dye:CLOTH:brown'));
+    const colorA = overwearDye ? { ...overwearDye } : brown || { h: -113, s: -0.45, v: -0.45, label: 'Brown' };
     const entry = makeClothingGearEntry({ cosmeticId: 'pants_basic', slot: 'pants', label: `${colorA.label} ${catalogEntry.label}`, baseLabel: catalogEntry.label, description: catalogEntry.description, colorA, colorB: null });
     gearInventory.clothing.pants = entry;
     gearInventory.clothingItems.push(entry);

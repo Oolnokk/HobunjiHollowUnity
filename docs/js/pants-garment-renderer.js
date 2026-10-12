@@ -17,7 +17,8 @@
 
   const HOOP_CORE = 0.03, HOOP_FADE = 0.07; // Distance (garment units) around an ankle spline that is fully rigid, and where that fades out.
   const SEGMENTS = 64; // Vertices per side of the garment grid: fine enough that weight transitions deform smoothly instead of faceting.
-  const PANTLESS_SPECIES = new Set(['kenkari', 'rakakoan']); // Their legs are far too short/small for the garment, so for now they never wear pants in the game.
+  const NPC_DEFAULT_PANTS_DYE = 'dye:CLOTH:brown'; // Same dye-reference format as the NPC overwear dye (appliedDyes.CLOTH).
+  const PANTLESS_SPECIES = new Set(); // Species that never wear pants in the game (none at the moment).
   const DEFAULT_GARMENT_ID = 'pants_basic';
   const FALLBACK_CHARACTER_KEY = '__default'; // Species/gender without their own authored record share this fit.
   const DOUBLE_SIDE = 2;
@@ -759,19 +760,14 @@
   function ensureNpcPants(rec, { garmentId = DEFAULT_GARMENT_ID, isAnimal = false } = {}) {
     if (!rec || isAnimal || rec.noPants === true || rec.kind === 'animal' || isPantlessSpecies(rec.speciesId || rec.species)) return false;
     if (!Array.isArray(rec.equippedCosmetics)) rec.equippedCosmetics = [];
+    if (!rec.appliedDyes || typeof rec.appliedDyes !== 'object') rec.appliedDyes = {};
+    // Pants match the NPC's overwear dye; with no overwear they are brown. An authored PANTS dye is left alone.
+    if (!rec.appliedDyes.PANTS || rec.pantsDyeAuto === true) {
+      rec.appliedDyes.PANTS = rec.appliedDyes.CLOTH || NPC_DEFAULT_PANTS_DYE;
+      rec.pantsDyeAuto = true;
+    }
     if (rec.equippedCosmetics.includes(garmentId)) return false;
     rec.equippedCosmetics = [...rec.equippedCosmetics, garmentId];
-    if (!rec.appliedDyes || typeof rec.appliedDyes !== 'object') rec.appliedDyes = {};
-    if (!rec.appliedDyes.PANTS) {
-      const catalog = global.ScratchbonesAccount?.getDyeCatalog?.() || [];
-      const cloth = catalog.filter(dye => dye.acquisition === 'starter');
-      const pool = cloth.length ? cloth : catalog;
-      if (pool.length) {
-        let hash = 2166136261;
-        for (const ch of String(rec.id || rec.name || 'npc')) hash = Math.imul(hash ^ ch.charCodeAt(0), 16777619) >>> 0;
-        rec.appliedDyes.PANTS = pool[hash % pool.length].id; // Deterministic: the same NPC always wears the same shade.
-      }
-    }
     return true;
   }
 
