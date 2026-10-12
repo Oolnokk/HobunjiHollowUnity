@@ -242,5 +242,71 @@
   "particleEmitters": [],
   "processingWarps": [],
   "processTimelines": [],
-  "stompAttachPoints": []
+  "stompAttachPoints": [],
+  "recognizedSurfaces": [
+    {
+      "id": "part_msc11c4z_an9an:surface:2",
+      "partId": "part_msc11c4z_an9an",
+      "recognizedType": "upward top",
+      "faceIndices": [
+        2,
+        3
+      ],
+      "area": 0.9025,
+      "localCentroid": [
+        0,
+        0.05,
+        0
+      ],
+      "localNormal": [
+        0,
+        1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.475,
+        "maxU": 0.475,
+        "minV": -0.475,
+        "maxV": 0.475
+      },
+      "label": "tableSmall usable top",
+      "role": "loot",
+      "lootSlots": [
+        {
+          "id": "dining_0",
+          "purpose": "dining",
+          "u": 0.18,
+          "v": 0.22,
+          "chance": 0.65,
+          "maxSize": 0.22
+        }
+      ]
+    }
+  ],
+  "surfaceSettings": {
+    "part_msc11c4z_an9an:surface:2": {
+      "label": "tableSmall usable top",
+      "role": "loot",
+      "lootSlots": [
+        {
+          "id": "dining_0",
+          "purpose": "dining",
+          "u": 0.18,
+          "v": 0.22,
+          "chance": 0.65,
+          "maxSize": 0.22
+        }
+      ]
+    }
+  }
 }

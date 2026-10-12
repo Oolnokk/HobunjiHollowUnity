@@ -200,5 +200,87 @@
   "particleEmitters": [],
   "processingWarps": [],
   "processTimelines": [],
-  "stompAttachPoints": []
+  "stompAttachPoints": [],
+  "recognizedSurfaces": [
+    {
+      "id": "part_msc117op_vsuan:surface:2",
+      "partId": "part_msc117op_vsuan",
+      "recognizedType": "upward top",
+      "faceIndices": [
+        2,
+        3
+      ],
+      "area": 1.2230480000000001,
+      "localCentroid": [
+        0,
+        0.75,
+        0
+      ],
+      "localNormal": [
+        0,
+        1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.391,
+        "maxU": 0.391,
+        "minV": -0.782,
+        "maxV": 0.782
+      },
+      "label": "bookshelf usable top",
+      "role": "loot",
+      "lootSlots": [
+        {
+          "id": "storage_0",
+          "purpose": "storage",
+          "u": 0.18,
+          "v": -0.5,
+          "chance": 0.65,
+          "maxSize": 0.22
+        },
+        {
+          "id": "storage_1",
+          "purpose": "storage",
+          "u": 0.18,
+          "v": 0.5,
+          "chance": 0.65,
+          "maxSize": 0.22
+        }
+      ]
+    }
+  ],
+  "surfaceSettings": {
+    "part_msc117op_vsuan:surface:2": {
+      "label": "bookshelf usable top",
+      "role": "loot",
+      "lootSlots": [
+        {
+          "id": "storage_0",
+          "purpose": "storage",
+          "u": 0.18,
+          "v": -0.5,
+          "chance": 0.65,
+          "maxSize": 0.22
+        },
+        {
+          "id": "storage_1",
+          "purpose": "storage",
+          "u": 0.18,
+          "v": 0.5,
+          "chance": 0.65,
+          "maxSize": 0.22
+        }
+      ]
+    }
+  }
 }

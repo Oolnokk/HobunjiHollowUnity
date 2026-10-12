@@ -150,5 +150,109 @@
   "particleEmitters": [],
   "processingWarps": [],
   "processTimelines": [],
-  "stompAttachPoints": []
+  "stompAttachPoints": [],
+  "recognizedSurfaces": [
+    {
+      "id": "part_msc11bvn_4rbac:surface:3",
+      "partId": "part_msc11bvn_4rbac",
+      "recognizedType": "upward top",
+      "faceIndices": [
+        3,
+        7,
+        11,
+        15,
+        19,
+        23,
+        27,
+        31,
+        35,
+        39,
+        43,
+        47,
+        51,
+        55,
+        59,
+        63,
+        67,
+        71,
+        75,
+        79,
+        83,
+        87,
+        91,
+        95
+      ],
+      "area": 1.6092179999999996,
+      "localCentroid": [
+        0,
+        0.06,
+        0
+      ],
+      "localNormal": [
+        0,
+        1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.9749999999999999,
+        "maxU": 0.9749999999999999,
+        "minV": -0.9749999999999999,
+        "maxV": 0.9749999999999999
+      },
+      "label": "tableRound usable top",
+      "role": "loot",
+      "lootSlots": [
+        {
+          "id": "dining_0",
+          "purpose": "dining",
+          "u": 0.2,
+          "v": -0.35,
+          "chance": 0.65,
+          "maxSize": 0.22
+        },
+        {
+          "id": "dining_1",
+          "purpose": "dining",
+          "u": 0.2,
+          "v": 0.35,
+          "chance": 0.65,
+          "maxSize": 0.22
+        }
+      ]
+    }
+  ],
+  "surfaceSettings": {
+    "part_msc11bvn_4rbac:surface:3": {
+      "label": "tableRound usable top",
+      "role": "loot",
+      "lootSlots": [
+        {
+          "id": "dining_0",
+          "purpose": "dining",
+          "u": 0.2,
+          "v": -0.35,
+          "chance": 0.65,
+          "maxSize": 0.22
+        },
+        {
+          "id": "dining_1",
+          "purpose": "dining",
+          "u": 0.2,
+          "v": 0.35,
+          "chance": 0.65,
+          "maxSize": 0.22
+        }
+      ]
+    }
+  }
 }

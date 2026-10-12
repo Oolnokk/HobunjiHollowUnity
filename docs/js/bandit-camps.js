@@ -271,6 +271,7 @@
       zScene.remove(entry.mesh);
       if (entry.light) zScene.remove(entry.light);
     }
+    window.SurfaceLootSystem?.disposeGroup(entry.mesh);
     entry.mesh.traverse?.(o => { if (o.userData?.banditFireEffect) _banditFireEffects.delete(o); if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose?.(); });
     if (entry.sfxSource) window.Music?.unregisterFurnitureSfxSource(entry.sfxSource);
     window.NearbyVolumeCollision?.invalidate?.();
@@ -298,6 +299,8 @@
           mesh.position.set(center.x / deps.TILE, y, center.y / deps.TILE);
           deps.markOutline(mesh);
           zi.scene.add(mesh);
+          window.SurfaceLootSystem?.scatter(mesh, { id: `${zoneId}:${rec.instance.id}:${obj.id}`,
+            x: 0, y: .025, z: (obj.h || 1) * .5 + .20 }); // Physical loose valuables, potions/flasks, and salvage at the tent entrance.
           const collisionTiles = _applyBanditTentGridCollision(zoneId, obj); // Stored on this prop entry so burn/re-roll restores the exact prior tile data.
           meshes.set(obj.id, { mesh, light: null, sfxSource: null, collisionTiles, propId: obj.id });
           window.NearbyVolumeCollision?.invalidate?.();

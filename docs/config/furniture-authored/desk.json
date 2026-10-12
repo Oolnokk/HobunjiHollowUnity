@@ -288,5 +288,71 @@
   "particleEmitters": [],
   "processingWarps": [],
   "processTimelines": [],
-  "stompAttachPoints": []
+  "stompAttachPoints": [],
+  "recognizedSurfaces": [
+    {
+      "id": "part_msc119h0_l6n6m:surface:2",
+      "partId": "part_msc119h0_l6n6m",
+      "recognizedType": "upward top",
+      "faceIndices": [
+        2,
+        3
+      ],
+      "area": 1.8524999999999998,
+      "localCentroid": [
+        0,
+        0.04,
+        0
+      ],
+      "localNormal": [
+        0,
+        1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.475,
+        "maxU": 0.475,
+        "minV": -0.975,
+        "maxV": 0.975
+      },
+      "label": "desk usable top",
+      "role": "loot",
+      "lootSlots": [
+        {
+          "id": "desk_0",
+          "purpose": "desk",
+          "u": 0.18,
+          "v": -0.55,
+          "chance": 0.65,
+          "maxSize": 0.22
+        }
+      ]
+    }
+  ],
+  "surfaceSettings": {
+    "part_msc119h0_l6n6m:surface:2": {
+      "label": "desk usable top",
+      "role": "loot",
+      "lootSlots": [
+        {
+          "id": "desk_0",
+          "purpose": "desk",
+          "u": 0.18,
+          "v": -0.55,
+          "chance": 0.65,
+          "maxSize": 0.22
+        }
+      ]
+    }
+  }
 }

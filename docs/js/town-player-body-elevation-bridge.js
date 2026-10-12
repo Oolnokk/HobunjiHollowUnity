@@ -433,6 +433,7 @@
     const roots = candidateFurnitureRoots(scene);
     let registered = 0;
     let missing = 0;
+    const registeredRoots = new Set(); // Avoid registering player-tagged roots twice when an authored map record already owns them.
     records.forEach((record, index) => {
       const root = matchFurnitureRoot(record, roots);
       if (!root) {
@@ -446,8 +447,13 @@
         sourceId: record.id || null,
         sourceKey: record.itemKey || record.key || null,
       });
-      if (id) registered += 1;
+      if (id) { registered += 1; registeredRoots.add(root); }
     });
+    for (const root of roots) {
+      if (registeredRoots.has(root) || !root.userData?.walkableElevation || root.userData.walkableElevationArea !== area) continue;
+      const id = registerObject(root, { id: `furniture:${area}:${root.uuid}`, kind: 'furniture', area, sourceKey: root.userData.authoredFurnitureKey }); // Player-placed beds share the stage support registry, including in the farmhouse.
+      if (id) registered += 1;
+    }
     lastFurnitureSyncArea = records.length && missing > 0 ? null : area;
     return { area, registered, missing, authored: records.length };
   }

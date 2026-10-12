@@ -341,5 +341,71 @@
   "particleEmitters": [],
   "processingWarps": [],
   "processTimelines": [],
-  "stompAttachPoints": []
+  "stompAttachPoints": [],
+  "recognizedSurfaces": [
+    {
+      "id": "part_msc116t0_mfb4i:surface:2",
+      "partId": "part_msc116t0_mfb4i",
+      "recognizedType": "upward top",
+      "faceIndices": [
+        2,
+        3
+      ],
+      "area": 1.349317066752,
+      "localCentroid": [
+        0,
+        0.11,
+        0
+      ],
+      "localNormal": [
+        0,
+        1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.821376,
+        "maxU": 0.821376,
+        "minV": -0.410688,
+        "maxV": 0.410688
+      },
+      "label": "basicBed usable top",
+      "role": "loot",
+      "lootSlots": [
+        {
+          "id": "linen_0",
+          "purpose": "linen",
+          "u": 0.48,
+          "v": 0,
+          "chance": 0.9,
+          "maxSize": 0.22
+        }
+      ]
+    }
+  ],
+  "surfaceSettings": {
+    "part_msc116t0_mfb4i:surface:2": {
+      "label": "basicBed usable top",
+      "role": "loot",
+      "lootSlots": [
+        {
+          "id": "linen_0",
+          "purpose": "linen",
+          "u": 0.48,
+          "v": 0,
+          "chance": 0.9,
+          "maxSize": 0.22
+        }
+      ]
+    }
+  }
 }

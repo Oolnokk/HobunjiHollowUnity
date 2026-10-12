@@ -29,8 +29,7 @@
       "postZ": 0,
       "postSX": 1,
       "postSY": 1,
-      "postSZ": 1
-    },
+      "postSZ": 1, "walkableElevation": true, "nonColliding": true },
     {
       "id": "f_map_i_carpenters_F2_dzahiri_wardrobe",
       "itemKey": "wardrobeFurniture",
@@ -195,5 +194,6 @@
       "toolAnimStyle": ""
     }
   ],
-  "npcPaths": []
+  "npcPaths": [],
+  "surfaceLootProfile": "house"
 }

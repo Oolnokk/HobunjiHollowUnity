@@ -16,8 +16,7 @@
       "postZ": 0,
       "postSX": 1,
       "postSY": 1,
-      "postSZ": 1
-    },
+      "postSZ": 1, "walkableElevation": true, "nonColliding": true },
     {
       "id": "f_unmhbed_roll_spearhead",
       "itemKey": "bedrollFurniture",
@@ -29,8 +28,7 @@
       "postZ": 0,
       "postSX": 1,
       "postSY": 1,
-      "postSZ": 1
-    },
+      "postSZ": 1, "walkableElevation": true, "nonColliding": true },
     {
       "id": "f_unmhbed_roll_oddclaw",
       "itemKey": "bedrollFurniture",
@@ -42,8 +40,7 @@
       "postZ": 0,
       "postSX": 1,
       "postSY": 1,
-      "postSZ": 1
-    },
+      "postSZ": 1, "walkableElevation": true, "nonColliding": true },
     {
       "id": "f_unmhbed_roll_binding",
       "itemKey": "bedrollFurniture",
@@ -55,8 +52,7 @@
       "postZ": 0,
       "postSX": 1,
       "postSY": 1,
-      "postSZ": 1
-    },
+      "postSZ": 1, "walkableElevation": true, "nonColliding": true },
     {
       "id": "f_unmhbed_roll_tooth",
       "itemKey": "bedrollFurniture",
@@ -68,8 +64,7 @@
       "postZ": 0,
       "postSX": 1,
       "postSY": 1,
-      "postSZ": 1
-    },
+      "postSZ": 1, "walkableElevation": true, "nonColliding": true },
     {
       "id": "f_unmhbed_nightstand",
       "itemKey": "nightstandFurniture",
@@ -320,5 +315,6 @@
       "toolAnimStyle": ""
     }
   ],
-  "npcPaths": []
+  "npcPaths": [],
+  "surfaceLootProfile": "house"
 }

@@ -75,7 +75,7 @@
     group.userData.partById = partById;
     group.userData.authoredParticleEmitters = (data.particleEmitters || []).map(record => JSON.parse(JSON.stringify(record))); // FurniturePuzzleRuntime scales these between OFF/ON emission states.
     group.userData.timelineLiquidStates = new Map(); // Used by the live stomp anchor to follow the animated surface level.
-    return group;
+    return window.SurfaceLootSystem?.buildPlacements(group, data) || group;
   }
 
   const _clamp01 = (value) => Math.max(0, Math.min(1, Number(value) || 0));

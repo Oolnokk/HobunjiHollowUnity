@@ -914,7 +914,7 @@
   function clearRuntime(removeMap=true) {
     ruin?.occupancy?.destroy?.();
     DS.clearScope(SCOPE);
-    if(ruin){detach(ruin.localeRoot);detach(ruin.particleRoot);detach(ruin.ceilingMesh);ruin.ceilingMesh?.geometry?.dispose?.();} if(removeMap) buildingScenes?.delete(MAP_ID);
+    if(ruin){window.SurfaceLootSystem?.disposeGroup(ruin.scene);detach(ruin.localeRoot);detach(ruin.particleRoot);detach(ruin.ceilingMesh);ruin.ceilingMesh?.geometry?.dispose?.();} if(removeMap) buildingScenes?.delete(MAP_ID);
     ruin=null;
     clearRuinPresentationHeight();
     // A reroll deliberately keeps the hidden V50 realm alive. Its API's

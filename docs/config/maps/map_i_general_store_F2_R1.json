@@ -9,8 +9,7 @@
       "rotY": 0,
       "postX": 0,
       "postY": 0,
-      "postZ": 0
-    },
+      "postZ": 0, "walkableElevation": true, "nonColliding": true },
     {
       "id": "fmqfm5w5wz7sx",
       "itemKey": "wardrobeFurniture",
@@ -104,5 +103,6 @@
       "toolAnimStyle": ""
     }
   ],
-  "npcPaths": []
+  "npcPaths": [],
+  "surfaceLootProfile": "house"
 }

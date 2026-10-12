@@ -104,7 +104,9 @@
     const visible = deps.FURNITURE_BLUEPRINT_CATALOG.filter(bp => craftingActiveCategory === 'all' || bp.category === craftingActiveCategory);
     const owned = visible.filter(ownsBlueprint);
     const metalRecipes = showMetallurgy ? visibleMetalRecipes() : [];
-    if (!owned.length && !metalRecipes.length) {
+    const scrapRecipes = (craftingActiveCategory === 'all' || craftingActiveCategory === 'metallurgy')
+      ? (window.SurfaceLootSystem?.availableRecipes?.() || []) : []; // Existing Crafting panel is the home for five-to-one salvage recovery.
+    if (!owned.length && !metalRecipes.length && !scrapRecipes.length) {
       const empty = document.createElement('div');
       empty.className = 'ii-empty';
       empty.textContent = craftingActiveCategory === 'metallurgy'
@@ -113,6 +115,17 @@
       list.appendChild(empty);
       return;
     }
+    scrapRecipes.forEach(recipe => {
+      const row = document.createElement('div'); // Ordinary recipe row retains mobile/controller navigation support.
+      row.className = 'shop-row';
+      row.innerHTML = `<div class="sh-icon">${recipe.icon}</div><div class="sh-info"><div class="sh-name">Combine ${deps.esc(recipe.label)}</div><div class="sh-desc">5 scraps (have ${recipe.count}) → 1 random material: ${recipe.outputs.map(deps.esc).join(', ')}</div></div><button class="shop-buy-btn" ${recipe.canCraft ? '' : 'disabled'}>Combine</button>`;
+      row.querySelector('button').onclick = () => {
+        const result = window.SurfaceLootSystem.combineScraps(recipe.key); // Same transaction as the Pack Combine action.
+        if (!result.ok) deps.showToast(result.message, false);
+        renderCraftingPanel();
+      };
+      list.appendChild(row);
+    });
     metalRecipes.forEach(([metalKey, ingredients]) => {
       const metal = deps.METAL_DEFS[metalKey];
       const ingredientRows = Object.entries(ingredients).map(([oreKey, amount]) => {
