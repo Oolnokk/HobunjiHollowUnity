@@ -632,15 +632,46 @@
     const worldElements = handle.model.matrixWorld.elements;
     handle.maskUniforms.uPantsDepthBias.value = footLift * Math.hypot(worldElements[0], worldElements[1], worldElements[2]); // View-space distance to pull the garment's depth toward the camera.
     handle.captureRest(); // The legs' stance at attach is the rest pose the initial 2D warp targets.
-    // Initial alignment (purely 2D): each thigh and calf is laid onto the matching 3D bone at rest (position, direction and length
-    // along the bone; its width is the art's own). The waistband stays as authored. The garment is then bound in this pose.
+    // Initial alignment (purely 2D): each leg is a quad whose top is the beltline and whose bottom is its leg opening. The belt
+    // stays exactly where the portrait puts it and the opening (ankle spline, shape and width intact) is moved onto the 3D ankle
+    // at rest; everything in between is carried proportionally down the quad, so the pants stretch or compress to fit the leg.
     {
-      const legWarp = (side, from, to) => Core.alignBoneSegment(handle.bones2D[side][from], handle.bones2D[side][to], handle.rest[side][from], handle.rest[side][to], { perpendicularScale: 1 });
-      const warp = [null, legWarp('left', 'hip', 'knee'), legWarp('left', 'knee', 'ankle'), legWarp('right', 'hip', 'knee'), legWarp('right', 'knee', 'ankle')];
-      const warped = Core.skinWeightedPositions(handle.basePositions, handle.weights, warp, new Float32Array(handle.basePositions.length));
-      handle.basePositions.set(warped);
-      handle.geometry.getAttribute('position').array.set(warped);
-      for (const side of ['left', 'right']) for (const joint of ['hip', 'knee', 'ankle']) { const r = handle.rest[side][joint]; handle.bones2D[side][joint] = { x: r.x, y: r.y, z: r.z }; }
+      const stride = SEGMENTS + 1, base = handle.basePositions;
+      const sortedByX = points => [...points].sort((p, q) => p.x - q.x);
+      const yAt = (points, u) => { // Piecewise-linear y of an x-sorted polyline, clamped at its ends.
+        if (u <= points[0].x) return points[0].y;
+        for (let i = 1; i < points.length; i++) if (u <= points[i].x) { const t = (u - points[i - 1].x) / Math.max(1e-9, points[i].x - points[i - 1].x); return points[i - 1].y + (points[i].y - points[i - 1].y) * t; }
+        return points[points.length - 1].y;
+      };
+      const belt = sortedByX(garment.pantsBeltSpline);
+      const sides = ['left', 'right'].map(side => {
+        const anchor = handle.rings?.[side]?.anchor, rest = handle.rest[side].ankle;
+        if (!anchor) return null;
+        const at = k => { const i = anchor.i * 3 + k, j = (anchor.i + 1) * 3 + k, m = (anchor.i + stride) * 3 + k, n = (anchor.i + stride + 1) * 3 + k; const top = base[i] + (base[j] - base[i]) * anchor.fx, bottom = base[m] + (base[n] - base[m]) * anchor.fx; return top + (bottom - top) * anchor.fy; };
+        return { opening: sortedByX(garment.legOpenings[side]), dx: rest.x - at(0), dy: rest.y - at(1) };
+      });
+      if (sides[0] && sides[1]) {
+        const smooth = (e0, e1, x) => { const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
+        const displace = (u, v) => {
+          const leftShare = 1 - smooth(0.42, 0.58, u);
+          let dx = 0, dy = 0;
+          sides.forEach((side, index) => {
+            const top = yAt(belt, u), t = Math.max(0, Math.min(1, (v - top) / Math.max(1e-3, yAt(side.opening, u) - top)));
+            const share = index === 0 ? leftShare : 1 - leftShare;
+            dx += side.dx * t * share; dy += side.dy * t * share;
+          });
+          return [dx, dy];
+        };
+        const position = handle.geometry.getAttribute('position').array;
+        for (let row = 0, i = 0; row <= SEGMENTS; row++) {
+          for (let col = 0; col <= SEGMENTS; col++, i++) {
+            const [dx, dy] = displace(col / SEGMENTS, row / SEGMENTS);
+            base[i * 3] += dx; base[i * 3 + 1] += dy;
+            position[i * 3] = base[i * 3]; position[i * 3 + 1] = base[i * 3 + 1];
+          }
+        }
+      }
+      for (const side of ['left', 'right']) for (const joint of ['hip', 'knee', 'ankle']) { const r = handle.rest[side][joint]; handle.bones2D[side][joint] = { x: r.x, y: r.y, z: r.z }; } // The 2D bones now lie on the 3D rest bones.
     }
     handles.add(handle);
     handle.setAppearance({});
