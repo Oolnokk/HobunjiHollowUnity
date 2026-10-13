@@ -32,8 +32,11 @@ jobs:
           marker = "          python3 - <<'PY'\n"
           start = src.index(marker) + len(marker)
           end = src.index("\n          PY\n      - name: Syntax checks", start)
-          lines = src[start:end].splitlines()
-          script = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines) + '\n'
+          lines = [line[10:] if line.startswith('          ') else line for line in src[start:end].splitlines()]
+          for i, line in enumerate(lines):
+              if 'function stopPreview' in line and 'async function playOneShot' in line:
+                  lines[i] = '    r"  function stopPreview\\(\\)\\{.*?(?=^  function renderAuditions\\(\\))",'
+          script = '\n'.join(lines) + '\n'
           Path('/tmp/patch-combat-pitch.py').write_text(script)
           PY
           python3 -m py_compile /tmp/patch-combat-pitch.py
