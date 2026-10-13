@@ -9,6 +9,11 @@ This file records project-specific implementation rules that are easy to miss wh
 - Don't add a new `.github/workflows/*.yml` for a new test. `scripts/test-*.js` files are picked up automatically by `.github/workflows/regression-suite.yml`.
 - Prefer tests that execute the code over tests that assert exact source text with `includes(...)`/regex. Source-text assertions break on harmless refactors.
 
+## Driving the game headlessly
+
+- Use the `headless-game-test` skill. A new world opens with a long, input-gated introduction: skip it with `?skipIntro=1` on the URL or `window.LoadingScreenRuntime.skipIntroduction()` (dev/test only; the loading work still completes).
+- Don't wrap `THREE.WebGLRenderer` from an init script to find scenes — the game's own renderer hook breaks on it ("reading 'bind'" in `dynamic-surfaces.js`). Hook `window.__hobunjiGameRenderer.render` after it exists instead.
+
 ## Recurring mistakes — check these before finishing
 
 Drawn from the commit history (~9k commits) and the periodic review-fix commits. Each has shipped more than once.
