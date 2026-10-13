@@ -46,6 +46,6 @@
   window[PATCH_ID] = Object.freeze({
     version: 1,
     install,
-    latestChange: 'Combat Vocalizations is a lazy Tool Hub tab with charge-sampler slicing and global utterance modulation authoring.',
+    latestChange: 'Combat Vocalizations is a lazy Tool Hub tab with full-clip charge stretching, 2× normal-speed early-release catch-up, and global utterance modulation authoring.',
   });
 })();

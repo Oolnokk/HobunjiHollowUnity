@@ -96,6 +96,7 @@ context.window.RuntimeFrameScheduler = {
 };
 context.window.Combat = {
   deps: { player },
+  chargedBreakerData: { MAX_CHARGE_S: 4 },
   abilities: {
     register,
     unregister: id => abilities.delete(id),
@@ -112,8 +113,16 @@ vm.createContext(context);
 vm.runInContext(source, context, { filename: 'combat-vocalizations.js' });
 
 assert(context.window.CombatVocalizations, 'runtime API should install');
-assert.equal(context.window.CombatVocalizations.version, 1);
+assert.equal(context.window.CombatVocalizations.version, 2);
 assert.equal(typeof scheduledBreath, 'function', 'breath loop should use shared scheduler');
+
+const chargePlan = context.window.CombatVocalizations.chargeRatePlan(1.2, 4, 1.25);
+assert(Math.abs(chargePlan.stretchedRate - 0.375) < 1e-9, 'full clip should stretch across the authored charge duration');
+assert(Math.abs(chargePlan.catchUpRate - 2.5) < 1e-9, 'early release must switch to 2x NORMAL speed, not 2x stretched speed');
+assert(Math.abs(chargePlan.catchUpRate - chargePlan.stretchedRate * 2) > 1, 'catch-up rate must be independent of the stretched rate');
+assert.equal(chargePlan.earlyReleaseNormalSpeedMul, 2);
+assert.equal(context.window.CombatVocalizations.liveChargeTargetDurationS('chargedBreaker'), 4, 'live charge should reuse Charged Breaker MAX_CHARGE_S');
+assert.equal(context.window.CombatVocalizations.getConfig().chargeSampler, undefined, 'legacy start/middle/end sampler config should be gone');
 
 // Full stamina fast path: no vocal playback.
 now = 1000;

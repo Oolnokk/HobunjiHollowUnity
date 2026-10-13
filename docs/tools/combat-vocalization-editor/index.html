@@ -39,7 +39,7 @@ input[type=range]{padding:0}input[type=number]{text-align:right}
 <header>
   <div>
     <h1>🎙 Combat Vocalization Editor</h1>
-    <div class="muted">Charge-grunt sustain slicing · breath/pain cadence · species + gender utterance modulation</div>
+    <div class="muted">Full-clip charge stretching · early-release catch-up · breath/pain cadence · species + gender utterance modulation</div>
   </div>
   <div class="actions">
     <button id="reload">↻ Reload repo JSON</button>
@@ -53,30 +53,20 @@ input[type=range]{padding:0}input[type=number]{text-align:right}
 <div class="grid">
   <main>
     <section class="card">
-      <h2>Charge Grunt Sustain Sampler</h2>
-      <div class="muted">Drag either vertical marker. The middle region loops while a hold is sustained; the End region is scheduled to finish at a predetermined strike, or begins when a live hold is released.</div>
-      <div id="waveWrap">
-        <canvas id="wave"></canvas>
-        <div class="markerLabel" id="startLabel">START → MIDDLE</div>
-        <div class="markerLabel" id="endLabel">MIDDLE → END</div>
-      </div>
-      <div id="samplerStatus">Loading charge grunt…</div>
-      <div class="two">
-        <div class="row"><label>Start → Middle (seconds)</label><input id="startEnd" type="number" min="0" step="0.005"></div>
-        <div class="row"><label>Middle → End (seconds)</label><input id="middleEnd" type="number" min="0" step="0.005"></div>
-      </div>
-      <div class="row"><label>Loop release crossfade (seconds)</label><input id="crossfade" type="number" min="0" max=".12" step=".001"></div>
-      <h3>Sampler preview</h3>
-      <div class="audition">
-        <button data-preview=".18">Quick 0.18s</button>
-        <button data-preview=".4">0.40s</button>
-        <button data-preview=".8">0.80s</button>
-        <button data-preview="1.5">1.50s</button>
-        <button id="holdPreview">Hold Sustain</button>
-        <button id="releasePreview">Release</button>
-        <button id="stopPreview">Stop</button>
-      </div>
-    </section>
+    <h2>Charge Grunt Stretch Playback</h2>
+    <div class="muted">The entire charge grunt plays once and is stretched across the attack's 0→100% charge duration. Releasing a live hold early keeps the same playhead and plays the remainder at a multiple of <b>normal</b> voice speed—not a multiple of the stretched speed.</div>
+    <div id="waveWrap"><canvas id="wave"></canvas></div>
+    <div id="samplerStatus">Loading charge grunt…</div>
+    <div class="row"><label>Early-release remainder × normal speed</label><input id="chargeCatchup" type="number" min=".1" max="8" step=".1"></div>
+    <h3>Charged Breaker preview</h3>
+    <div class="audition">
+      <button id="fullPreview">Full 0→100%</button>
+      <button data-release=".25">Release at 25%</button>
+      <button data-release=".5">Release at 50%</button>
+      <button data-release=".75">Release at 75%</button>
+      <button id="stopPreview">Stop</button>
+    </div>
+  </section>
 
     <section class="card">
       <h2>Heavy Breathing</h2>
@@ -137,34 +127,25 @@ input[type=range]{padding:0}input[type=number]{text-align:right}
   </aside>
 </div>
 
+
 <script>
 (() => {
   'use strict';
   const CONFIG_URL='../../config/combat/combat-vocalizations.json';
   const SPECIES_URL='../../config/species/index.json';
+  const ATTACK_VALUES_URL='../../config/combat/attack-values.json';
   const LOCAL_OVERRIDE_KEY='hobunji_combat_vocalizations_override_v1';
   const ASSET_PREFIX='../../';
   const $=id=>document.getElementById(id);
-  let cfg=null;
-  let chargeBuffer=null;
-  let ctx=null;
-  let currentPreview=null;
-  let dragMarker=null;
-  let waveformPeaks=null;
-  let speciesEntries=[];
-
+  let cfg=null,chargeBuffer=null,ctx=null,currentPreview=null,waveformPeaks=null,speciesEntries=[],fullChargeDurationS=4;
   const controls={
-    startEnd:['chargeSampler','startEndS'], middleEnd:['chargeSampler','middleEndS'], crossfade:['chargeSampler','crossfadeS'],
-    breathHigh:['breath','intervalHighStaminaS'], breathLow:['breath','intervalLowStaminaS'], breathExhausted:['breath','exhaustedIntervalS'],
-    breathPitch:['breath','pitchRandomSemitones'], breathVolume:['breath','volume'],
-    painDot:['pain','dotRepeatS'], painPitch:['pain','pitchRandomSemitones'], painVolume:['pain','volume'],
-    gruntPitch:['grunts','pitchRandomSemitones'], gruntVolume:['grunts','volume'],
+    chargeCatchup:['chargePlayback','earlyReleaseNormalSpeedMul'],
+    breathHigh:['breath','intervalHighStaminaS'],breathLow:['breath','intervalLowStaminaS'],breathExhausted:['breath','exhaustedIntervalS'],
+    breathPitch:['breath','pitchRandomSemitones'],breathVolume:['breath','volume'],
+    painDot:['pain','dotRepeatS'],painPitch:['pain','pitchRandomSemitones'],painVolume:['pain','volume'],
+    gruntPitch:['grunts','pitchRandomSemitones'],gruntVolume:['grunts','volume'],
   };
-
-  function log(message,kind=''){
-    const line=document.createElement('div');line.textContent=`[${new Date().toLocaleTimeString()}] ${message}`;if(kind)line.className=kind;
-    $('log').appendChild(line);$('log').scrollTop=$('log').scrollHeight;
-  }
+  function log(message,kind=''){const line=document.createElement('div');line.textContent=`[${new Date().toLocaleTimeString()}] ${message}`;if(kind)line.className=kind;$('log').appendChild(line);$('log').scrollTop=$('log').scrollHeight}
   function latest(message){$('latest').textContent=`Latest change: ${message}`;log(message)}
   function clamp(v,min,max){return Math.max(min,Math.min(max,Number(v)||0))}
   function valueAt(path){return path.reduce((v,k)=>v?.[k],cfg)}
@@ -172,153 +153,34 @@ input[type=range]{padding:0}input[type=number]{text-align:right}
   function audioContext(){if(!ctx){const C=window.AudioContext||window.webkitAudioContext;if(!C)throw new Error('Web Audio is unavailable');ctx=new C()}ctx.resume?.();return ctx}
   function assetUrl(path){return new URL(ASSET_PREFIX+String(path||'').replace(/^\/+/,''),location.href).href}
   function selectedIdentity(){return{speciesId:$('species').value,gender:$('gender').value}}
-  function profileFor(identity=selectedIdentity()){
-    const root=cfg.utteranceModulation||(cfg.utteranceModulation={default:{},species:{}});
-    const fallback=root.default?.[identity.gender]||root.default?.male||{pitchSemitones:0,tempo:1,gain:1};
-    const authored=identity.speciesId==='default'?root.default?.[identity.gender]:root.species?.[identity.speciesId]?.[identity.gender];
-    return{pitchSemitones:Number(authored?.pitchSemitones??fallback.pitchSemitones??0),tempo:Number(authored?.tempo??fallback.tempo??1),gain:Number(authored?.gain??fallback.gain??1)};
-  }
-  function playbackRate(randomSpan=0){
-    const p=profileFor();const random=(Math.random()*2-1)*Math.max(0,Number(randomSpan)||0);
-    return clamp(p.tempo*Math.pow(2,(p.pitchSemitones+random)/12),.3,3);
-  }
-
-  async function decodeUrl(url){
-    const res=await fetch(url);if(!res.ok)throw new Error(`HTTP ${res.status} for ${url}`);
-    return new Promise((resolve,reject)=>{const c=audioContext();const bytesPromise=res.arrayBuffer();bytesPromise.then(bytes=>{let settled=false;const ok=b=>{if(!settled){settled=true;resolve(b)}};const bad=e=>{if(!settled){settled=true;reject(e)}};try{const r=c.decodeAudioData(bytes.slice(0),ok,bad);r?.then?.(ok,bad)}catch(e){bad(e)}}).catch(reject)});
-  }
-
-  async function loadCharge(){
-    try{
-      $('samplerStatus').textContent='Loading charge grunt…';
-      chargeBuffer=await decodeUrl(assetUrl(cfg.assets.chargeGrunt));
-      buildPeaks();drawWaveform();
-      $('samplerStatus').textContent=`${chargeBuffer.duration.toFixed(3)}s · ${chargeBuffer.sampleRate} Hz · drag markers directly on waveform`;
-      latest(`charge grunt decoded (${chargeBuffer.duration.toFixed(3)}s)`);
-    }catch(e){$('samplerStatus').textContent=`Charge decode failed: ${e.message}`;$('samplerStatus').className='bad';log(e.message,'bad')}
-  }
-
-  function buildPeaks(){
-    if(!chargeBuffer)return;const data=chargeBuffer.getChannelData(0);const bins=1200;const step=Math.max(1,Math.floor(data.length/bins));waveformPeaks=[];
-    for(let x=0;x<bins;x++){let min=1,max=-1;const start=x*step,end=Math.min(data.length,start+step);for(let i=start;i<end;i++){const v=data[i];if(v<min)min=v;if(v>max)max=v}waveformPeaks.push([min,max])}
-  }
-
-  function drawWaveform(){
-    const canvas=$('wave'),wrap=$('waveWrap'),rect=wrap.getBoundingClientRect(),dpr=devicePixelRatio||1;
-    canvas.width=Math.max(1,Math.round(rect.width*dpr));canvas.height=Math.max(1,Math.round(parseFloat(getComputedStyle(canvas).height)*dpr));
-    const g=canvas.getContext('2d');g.setTransform(dpr,0,0,dpr,0,0);const w=rect.width,h=canvas.height/dpr;
-    g.clearRect(0,0,w,h);g.strokeStyle='rgba(159,180,207,.72)';g.beginPath();
-    if(waveformPeaks?.length){for(let x=0;x<w;x++){const idx=Math.floor(x/w*waveformPeaks.length),p=waveformPeaks[idx]||[0,0];g.moveTo(x,h/2+p[0]*h*.43);g.lineTo(x,h/2+p[1]*h*.43)}}g.stroke();
-    const dur=chargeBuffer?.duration||Math.max(.001,Number(cfg?.chargeSampler?.middleEndS)||1);
-    const markers=[
-      {v:clamp(cfg?.chargeSampler?.startEndS,0,dur),color:'#6aa7ff',label:$('startLabel')},
-      {v:clamp(cfg?.chargeSampler?.middleEndS,0,dur),color:'#fbbf24',label:$('endLabel')},
-    ];
-    markers.forEach((m,i)=>{const x=m.v/dur*w;g.strokeStyle=m.color;g.lineWidth=2;g.beginPath();g.moveTo(x,0);g.lineTo(x,h);g.stroke();m.label.style.left=`${Math.min(w-112,Math.max(2,x+4))}px`;m.label.style.color=m.color});
-    g.fillStyle='rgba(106,167,255,.07)';const x1=markers[0].v/dur*w,x2=markers[1].v/dur*w;g.fillRect(x1,0,Math.max(0,x2-x1),h);
-  }
-
-  function markerFromPointer(e){
-    if(!chargeBuffer)return null;const rect=$('wave').getBoundingClientRect(),x=clamp(e.clientX-rect.left,0,rect.width),t=x/rect.width*chargeBuffer.duration;
-    const a=Number(cfg.chargeSampler.startEndS)||0,b=Number(cfg.chargeSampler.middleEndS)||0;
-    return{which:Math.abs(t-a)<=Math.abs(t-b)?'start':'end',time:t};
-  }
-  function moveMarker(which,time){
-    if(!chargeBuffer)return;const dur=chargeBuffer.duration;
-    if(which==='start'){cfg.chargeSampler.startEndS=clamp(time,.005,Math.max(.006,cfg.chargeSampler.middleEndS-.005));$('startEnd').value=cfg.chargeSampler.startEndS.toFixed(3)}
-    else{cfg.chargeSampler.middleEndS=clamp(time,cfg.chargeSampler.startEndS+.005,Math.max(cfg.chargeSampler.startEndS+.006,dur-.001));$('middleEnd').value=cfg.chargeSampler.middleEndS.toFixed(3)}
-    updateJson();drawWaveform();
-  }
-  $('waveWrap').addEventListener('pointerdown',e=>{const m=markerFromPointer(e);if(!m)return;dragMarker=m.which;$('waveWrap').setPointerCapture?.(e.pointerId);moveMarker(dragMarker,m.time)});
-  $('waveWrap').addEventListener('pointermove',e=>{if(!dragMarker)return;const m=markerFromPointer(e);if(m)moveMarker(dragMarker,m.time)});
-  const endDrag=e=>{if(dragMarker){latest(`${dragMarker==='start'?'Start→Middle':'Middle→End'} slice marker moved`);dragMarker=null;$('waveWrap').releasePointerCapture?.(e.pointerId)}};
-  $('waveWrap').addEventListener('pointerup',endDrag);$('waveWrap').addEventListener('pointercancel',endDrag);
-  new ResizeObserver(drawWaveform).observe($('waveWrap'));
-
-  function stopPreview(){
-    if(!currentPreview)return;clearTimeout(currentPreview.timer);for(const n of currentPreview.nodes||[]){try{n.stop()}catch(_){}}try{currentPreview.output?.disconnect()}catch(_){}
-    currentPreview=null;
-  }
-  function releaseSamplerPreview(){
-    if(!currentPreview||currentPreview.released)return;currentPreview.released=true;clearTimeout(currentPreview.timer);
-    const c=audioContext(),now=c.currentTime,fade=clamp(cfg.chargeSampler.crossfadeS,0,.12);
-    if(currentPreview.middleGain){const gain=currentPreview.middleGain.gain;gain.cancelScheduledValues(now);gain.setValueAtTime(Math.max(.0001,gain.value),now);gain.linearRampToValueAtTime(.0001,now+fade)}
-    try{currentPreview.middle?.stop(now+fade+.003)}catch(_){}
-    try{currentPreview.start?.stop(now+fade+.003)}catch(_){}
-    const src=c.createBufferSource();src.buffer=chargeBuffer;src.playbackRate.value=currentPreview.rate;src.connect(currentPreview.output);src.start(now,cfg.chargeSampler.middleEndS);
-    currentPreview.nodes.push(src);src.onended=()=>{if(currentPreview?.released)stopPreview()};
-  }
-  function previewSampler(durationS=null){
-    if(!chargeBuffer){log('Charge grunt is not decoded yet.','bad');return}stopPreview();const c=audioContext(),profile=profileFor(),rate=playbackRate(cfg.grunts.pitchRandomSemitones),output=c.createGain();
-    output.gain.value=clamp(cfg.grunts.volume*profile.gain,0,3);output.connect(c.destination);
-    const startEnd=clamp(cfg.chargeSampler.startEndS,.005,chargeBuffer.duration-.002),middleEnd=clamp(cfg.chargeSampler.middleEndS,startEnd+.001,chargeBuffer.duration-.001),now=c.currentTime+.005;
-    const start=c.createBufferSource();start.buffer=chargeBuffer;start.playbackRate.value=rate;start.connect(output);start.start(now,0,startEnd);
-    const middle=c.createBufferSource();middle.buffer=chargeBuffer;middle.playbackRate.value=rate;middle.loop=true;middle.loopStart=startEnd;middle.loopEnd=middleEnd;const middleGain=c.createGain();middle.connect(middleGain).connect(output);middle.start(now+startEnd/rate,startEnd);
-    currentPreview={nodes:[start,middle],start,middle,middleGain,output,rate,released:false,timer:0};
-    if(durationS!=null){const tail=(chargeBuffer.duration-middleEnd)/rate;currentPreview.timer=setTimeout(releaseSamplerPreview,Math.max(0,durationS-tail)*1000)}
-    log(durationS==null?'Live sustain preview started.':`Predetermined ${durationS.toFixed(2)}s preview started.`);
-  }
-
-  async function playOneShot(path,volume,pitchSpan){
-    try{const a=new Audio(assetUrl(path));const p=profileFor();a.volume=clamp(Number(volume)*p.gain,0,1);a.playbackRate=playbackRate(pitchSpan);if('preservesPitch'in a)a.preservesPitch=false;if('webkitPreservesPitch'in a)a.webkitPreservesPitch=false;await a.play();log(`Audition: ${path.split('/').pop()} @ ${a.playbackRate.toFixed(3)}×`)}catch(e){log(`Audition failed: ${e.message}`,'bad')}
-  }
-
-  function renderAuditions(){
-    $('breathAudition').innerHTML='';Object.entries(cfg.assets.breath||{}).forEach(([level,path])=>{const b=document.createElement('button');b.textContent=`Breath ${level}`;b.onclick=()=>playOneShot(path,cfg.breath.volume,cfg.breath.pitchRandomSemitones);$('breathAudition').appendChild(b)});
-    $('painAudition').innerHTML='';Object.entries(cfg.assets.pain||{}).forEach(([level,path])=>{const b=document.createElement('button');b.textContent=`Pain ${level}`;b.onclick=()=>playOneShot(path,cfg.pain.volume,cfg.pain.pitchRandomSemitones);$('painAudition').appendChild(b)});
-  }
-
-  function renderControls(){
-    for(const [id,path]of Object.entries(controls))$(id).value=valueAt(path);
-    renderAuditions();renderProfile();updateJson();drawWaveform();
-  }
+  function profileFor(identity=selectedIdentity()){const root=cfg.utteranceModulation||(cfg.utteranceModulation={default:{},species:{}}),fallback=root.default?.[identity.gender]||root.default?.male||{pitchSemitones:0,tempo:1,gain:1},authored=identity.speciesId==='default'?root.default?.[identity.gender]:root.species?.[identity.speciesId]?.[identity.gender];return{pitchSemitones:Number(authored?.pitchSemitones??fallback.pitchSemitones??0),tempo:Number(authored?.tempo??fallback.tempo??1),gain:Number(authored?.gain??fallback.gain??1)}}
+  function playbackRate(randomSpan=0){const p=profileFor(),random=(Math.random()*2-1)*Math.max(0,Number(randomSpan)||0);return clamp(p.tempo*Math.pow(2,(p.pitchSemitones+random)/12),.3,3)}
+  function chargeRatePlan(bufferDurationS,targetDurationS,normalRate){const clip=Math.max(.001,Number(bufferDurationS)||.001),target=Number(targetDurationS)>0?Number(targetDurationS):clip,normal=Math.max(.02,Number(normalRate)||1),mul=Math.max(.1,Number(cfg.chargePlayback?.earlyReleaseNormalSpeedMul)||2);return{normalRate:normal,stretchedRate:clamp(normal*(clip/target),.02,32),catchUpRate:clamp(normal*mul,.02,32),mul}}
+  async function decodeUrl(url){const res=await fetch(url);if(!res.ok)throw new Error(`HTTP ${res.status} for ${url}`);return new Promise((resolve,reject)=>{const c=audioContext();res.arrayBuffer().then(bytes=>{let settled=false;const ok=b=>{if(!settled){settled=true;resolve(b)}},bad=e=>{if(!settled){settled=true;reject(e)}};try{const r=c.decodeAudioData(bytes.slice(0),ok,bad);r?.then?.(ok,bad)}catch(e){bad(e)}}).catch(reject)})}
+  function buildPeaks(){if(!chargeBuffer)return;const data=chargeBuffer.getChannelData(0),bins=1200,step=Math.max(1,Math.floor(data.length/bins));waveformPeaks=[];for(let x=0;x<bins;x++){let min=1,max=-1;const start=x*step,end=Math.min(data.length,start+step);for(let i=start;i<end;i++){const v=data[i];if(v<min)min=v;if(v>max)max=v}waveformPeaks.push([min,max])}}
+  function drawWaveform(){const canvas=$('wave'),rect=$('waveWrap').getBoundingClientRect(),dpr=devicePixelRatio||1;canvas.width=Math.max(1,Math.round(rect.width*dpr));canvas.height=Math.max(1,Math.round(parseFloat(getComputedStyle(canvas).height)*dpr));const g=canvas.getContext('2d');g.setTransform(dpr,0,0,dpr,0,0);const w=rect.width,h=canvas.height/dpr;g.clearRect(0,0,w,h);g.strokeStyle='rgba(159,180,207,.72)';g.beginPath();if(waveformPeaks?.length){for(let x=0;x<w;x++){const idx=Math.floor(x/w*waveformPeaks.length),p=waveformPeaks[idx]||[0,0];g.moveTo(x,h/2+p[0]*h*.43);g.lineTo(x,h/2+p[1]*h*.43)}}g.stroke();g.fillStyle='rgba(106,167,255,.9)';g.font='11px system-ui';g.fillText('0% charge',8,h-9);const label='100% charge';g.fillText(label,Math.max(8,w-g.measureText(label).width-8),h-9)}
+  function renderChargeStatus(){if(!chargeBuffer)return;const p=chargeRatePlan(chargeBuffer.duration,fullChargeDurationS,1);$('samplerStatus').textContent=`Source ${chargeBuffer.duration.toFixed(3)}s · 0→100% ${fullChargeDurationS.toFixed(3)}s · default stretch ${p.stretchedRate.toFixed(3)}× · early release ${p.mul.toFixed(2)}× normal`}
+  async function loadCharge(){try{$('samplerStatus').className='';$('samplerStatus').textContent='Loading charge grunt…';chargeBuffer=await decodeUrl(assetUrl(cfg.assets.chargeGrunt));buildPeaks();drawWaveform();renderChargeStatus();latest(`charge grunt decoded; full-charge duration ${fullChargeDurationS.toFixed(3)}s`)}catch(e){$('samplerStatus').textContent=`Charge decode failed: ${e.message}`;$('samplerStatus').className='bad';log(e.message,'bad')}}
+  function stopPreview(){if(!currentPreview)return;clearTimeout(currentPreview.timer);try{currentPreview.source?.stop()}catch(_){}try{currentPreview.output?.disconnect()}catch(_){}currentPreview=null}
+  function releaseChargePreview(){if(!currentPreview||currentPreview.released)return;currentPreview.released=true;clearTimeout(currentPreview.timer);const now=audioContext().currentTime,p=currentPreview.source.playbackRate;try{p.cancelScheduledValues(now);p.setValueAtTime(currentPreview.plan.catchUpRate,now)}catch(_){p.value=currentPreview.plan.catchUpRate}log(`Early release: remainder ${currentPreview.plan.catchUpRate.toFixed(3)}× = ${currentPreview.plan.mul.toFixed(2)}× normal (${currentPreview.plan.normalRate.toFixed(3)}×), not 2× stretched.`)}
+  function previewCharge(releaseFraction=null){if(!chargeBuffer){log('Charge grunt is not decoded yet.','bad');return}stopPreview();const c=audioContext(),profile=profileFor(),normalRate=playbackRate(cfg.grunts.pitchRandomSemitones),plan=chargeRatePlan(chargeBuffer.duration,fullChargeDurationS,normalRate),output=c.createGain();output.gain.value=clamp(cfg.grunts.volume*profile.gain,0,3);output.connect(c.destination);const source=c.createBufferSource();source.buffer=chargeBuffer;source.playbackRate.value=plan.stretchedRate;source.connect(output);source.start(c.currentTime+.005);currentPreview={source,output,plan,released:false,timer:0};source.onended=()=>{if(currentPreview?.source===source){log('Charge preview finished.');currentPreview=null;try{output.disconnect()}catch(_){}}};if(Number(releaseFraction)>0&&Number(releaseFraction)<1){currentPreview.timer=setTimeout(releaseChargePreview,fullChargeDurationS*Number(releaseFraction)*1000);log(`Preview: release at ${(Number(releaseFraction)*100).toFixed(0)}% (${(fullChargeDurationS*Number(releaseFraction)).toFixed(2)}s).`)}else log(`Preview: full 0→100% charge over ${fullChargeDurationS.toFixed(2)}s.`)}
+  async function playOneShot(path,volume,pitchSpan){try{const a=new Audio(assetUrl(path)),p=profileFor();a.volume=clamp(Number(volume)*p.gain,0,1);a.playbackRate=playbackRate(pitchSpan);if('preservesPitch'in a)a.preservesPitch=false;if('webkitPreservesPitch'in a)a.webkitPreservesPitch=false;await a.play();log(`Audition: ${path.split('/').pop()} @ ${a.playbackRate.toFixed(3)}×`)}catch(e){log(`Audition failed: ${e.message}`,'bad')}}
+  function renderAuditions(){$('breathAudition').innerHTML='';Object.entries(cfg.assets.breath||{}).forEach(([level,path])=>{const b=document.createElement('button');b.textContent=`Breath ${level}`;b.onclick=()=>playOneShot(path,cfg.breath.volume,cfg.breath.pitchRandomSemitones);$('breathAudition').appendChild(b)});$('painAudition').innerHTML='';Object.entries(cfg.assets.pain||{}).forEach(([level,path])=>{const b=document.createElement('button');b.textContent=`Pain ${level}`;b.onclick=()=>playOneShot(path,cfg.pain.volume,cfg.pain.pitchRandomSemitones);$('painAudition').appendChild(b)})}
+  function renderControls(){for(const[id,path]of Object.entries(controls))$(id).value=valueAt(path);renderAuditions();renderProfile();updateJson();drawWaveform();renderChargeStatus()}
   function updateJson(){$('json').value=JSON.stringify(cfg,null,2)}
-  function renderProfile(){
-    const p=profileFor();$('profilePitch').value=p.pitchSemitones;$('profileTempo').value=p.tempo;$('profileGain').value=p.gain;
-    $('removeProfile').disabled=$('species').value==='default';
-  }
-
-  function populateSpecies(){
-    const options=[{speciesId:'default',label:'Default'}].concat(speciesEntries);$('species').innerHTML=options.map(e=>`<option value="${e.speciesId}">${e.label||e.speciesId}</option>`).join('');
-  }
-
-  async function loadAll(){
-    stopPreview();
-    try{
-      const [configRes,speciesRes]=await Promise.all([fetch(CONFIG_URL,{cache:'no-store'}),fetch(SPECIES_URL,{cache:'no-store'})]);
-      if(!configRes.ok)throw new Error(`config HTTP ${configRes.status}`);cfg=await configRes.json();
-      speciesEntries=speciesRes.ok?(await speciesRes.json()).entries||[]:[];populateSpecies();renderControls();await loadCharge();latest('repo configuration loaded');
-    }catch(e){log(`Load failed: ${e.message}`,'bad');$('latest').textContent=`Load failed: ${e.message}`}
-  }
-
-  for(const [id,path]of Object.entries(controls)){
-    $(id).addEventListener('input',()=>{setAt(path,Number($(id).value));if(id==='startEnd'||id==='middleEnd')drawWaveform();updateJson()});
-    $(id).addEventListener('change',()=>latest(`${id} = ${$(id).value}`));
-  }
-  $('species').addEventListener('change',renderProfile);$('gender').addEventListener('change',renderProfile);
-  $('saveProfile').addEventListener('click',()=>{
-    const id=selectedIdentity(),record={pitchSemitones:Number($('profilePitch').value)||0,tempo:clamp($('profileTempo').value,.35,3),gain:clamp($('profileGain').value,0,3)};
-    cfg.utteranceModulation=cfg.utteranceModulation||{default:{},species:{}};
-    if(id.speciesId==='default')cfg.utteranceModulation.default[id.gender]=record;
-    else{cfg.utteranceModulation.species=cfg.utteranceModulation.species||{};const s=cfg.utteranceModulation.species[id.speciesId]||(cfg.utteranceModulation.species[id.speciesId]={});s[id.gender]=record}
-    updateJson();latest(`${id.speciesId}/${id.gender} modulation saved`);
-  });
-  $('removeProfile').addEventListener('click',()=>{
-    const id=selectedIdentity();if(id.speciesId==='default')return;const s=cfg.utteranceModulation?.species?.[id.speciesId];if(s){delete s[id.gender];if(!Object.keys(s).length)delete cfg.utteranceModulation.species[id.speciesId]}renderProfile();updateJson();latest(`${id.speciesId}/${id.gender} now inherits default`);
-  });
-
-  document.querySelectorAll('[data-preview]').forEach(b=>b.addEventListener('click',()=>previewSampler(Number(b.dataset.preview))));
-  $('holdPreview').onclick=()=>previewSampler(null);$('releasePreview').onclick=releaseSamplerPreview;$('stopPreview').onclick=stopPreview;
-  $('attackGrunt').onclick=()=>playOneShot(cfg.assets.comboAttackGrunts?.[0],cfg.grunts.volume,cfg.grunts.pitchRandomSemitones);
-  $('releaseGrunt').onclick=()=>playOneShot(cfg.assets.releaseGrunt,cfg.grunts.volume,cfg.grunts.pitchRandomSemitones);
-  $('reload').onclick=loadAll;
-  $('applyLocal').onclick=()=>{try{localStorage.setItem(LOCAL_OVERRIDE_KEY,JSON.stringify(cfg));latest('local game preview override saved; reload/open game to use it')}catch(e){log(e.message,'bad')}};
-  $('clearLocal').onclick=()=>{localStorage.removeItem(LOCAL_OVERRIDE_KEY);latest('local game preview override cleared')};
-  $('copyJson').onclick=async()=>{try{await navigator.clipboard.writeText(JSON.stringify(cfg,null,2));latest('JSON copied to clipboard')}catch(e){log(e.message,'bad')}};
-  $('downloadJson').onclick=()=>{const blob=new Blob([JSON.stringify(cfg,null,2)+'\n'],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='combat-vocalizations.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);latest('combat-vocalizations.json downloaded')};
+  function renderProfile(){const p=profileFor();$('profilePitch').value=p.pitchSemitones;$('profileTempo').value=p.tempo;$('profileGain').value=p.gain;$('removeProfile').disabled=$('species').value==='default'}
+  function populateSpecies(){const options=[{speciesId:'default',label:'Default'}].concat(speciesEntries);$('species').innerHTML=options.map(e=>`<option value="${e.speciesId}">${e.label||e.speciesId}</option>`).join('')}
+  async function loadAll(){stopPreview();try{const[configRes,speciesRes,attackRes]=await Promise.all([fetch(CONFIG_URL,{cache:'no-store'}),fetch(SPECIES_URL,{cache:'no-store'}),fetch(ATTACK_VALUES_URL,{cache:'no-store'})]);if(!configRes.ok)throw new Error(`config HTTP ${configRes.status}`);cfg=await configRes.json();speciesEntries=speciesRes.ok?(await speciesRes.json()).entries||[]:[];const attacks=attackRes.ok?await attackRes.json():{};fullChargeDurationS=Math.max(.05,Number(attacks?.chargedBreaker?.MAX_CHARGE_S)||Number(cfg.chargePlayback?.fullChargeDurationByAbility?.chargedBreaker)||4);populateSpecies();renderControls();await loadCharge();latest('repo configuration loaded')}catch(e){log(`Load failed: ${e.message}`,'bad');$('latest').textContent=`Load failed: ${e.message}`}}
+  for(const[id,path]of Object.entries(controls)){$(id).addEventListener('input',()=>{setAt(path,Number($(id).value));updateJson();if(id==='chargeCatchup')renderChargeStatus()});$(id).addEventListener('change',()=>latest(`${id} = ${$(id).value}`))}
+  $('species').addEventListener('change',()=>{renderProfile();renderChargeStatus()});$('gender').addEventListener('change',()=>{renderProfile();renderChargeStatus()});
+  $('saveProfile').addEventListener('click',()=>{const id=selectedIdentity(),record={pitchSemitones:Number($('profilePitch').value)||0,tempo:clamp($('profileTempo').value,.35,3),gain:clamp($('profileGain').value,0,3)};cfg.utteranceModulation=cfg.utteranceModulation||{default:{},species:{}};if(id.speciesId==='default')cfg.utteranceModulation.default[id.gender]=record;else{cfg.utteranceModulation.species=cfg.utteranceModulation.species||{};const s=cfg.utteranceModulation.species[id.speciesId]||(cfg.utteranceModulation.species[id.speciesId]={});s[id.gender]=record}updateJson();renderChargeStatus();latest(`${id.speciesId}/${id.gender} modulation saved`)});
+  $('removeProfile').addEventListener('click',()=>{const id=selectedIdentity();if(id.speciesId==='default')return;const s=cfg.utteranceModulation?.species?.[id.speciesId];if(s){delete s[id.gender];if(!Object.keys(s).length)delete cfg.utteranceModulation.species[id.speciesId]}renderProfile();updateJson();renderChargeStatus();latest(`${id.speciesId}/${id.gender} now inherits default`)});
+  $('fullPreview').onclick=()=>previewCharge(null);document.querySelectorAll('[data-release]').forEach(b=>b.onclick=()=>previewCharge(Number(b.dataset.release)));$('stopPreview').onclick=stopPreview;
+  $('attackGrunt').onclick=()=>playOneShot(cfg.assets.comboAttackGrunts?.[0],cfg.grunts.volume,cfg.grunts.pitchRandomSemitones);$('releaseGrunt').onclick=()=>playOneShot(cfg.assets.releaseGrunt,cfg.grunts.volume,cfg.grunts.pitchRandomSemitones);
+  $('reload').onclick=loadAll;$('applyLocal').onclick=()=>{try{localStorage.setItem(LOCAL_OVERRIDE_KEY,JSON.stringify(cfg));latest('local game preview override saved; reload/open game to use it')}catch(e){log(e.message,'bad')}};$('clearLocal').onclick=()=>{localStorage.removeItem(LOCAL_OVERRIDE_KEY);latest('local game preview override cleared')};
+  $('copyJson').onclick=async()=>{try{await navigator.clipboard.writeText(JSON.stringify(cfg,null,2));latest('JSON copied to clipboard')}catch(e){log(e.message,'bad')}};$('downloadJson').onclick=()=>{const blob=new Blob([JSON.stringify(cfg,null,2)+'\n'],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='combat-vocalizations.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);latest('combat-vocalizations.json downloaded')};
   $('json').addEventListener('change',()=>{try{cfg=JSON.parse($('json').value);renderControls();loadCharge();latest('JSON textarea parsed and applied')}catch(e){log(`JSON parse failed: ${e.message}`,'bad')}});
-
-  loadAll();
+  new ResizeObserver(drawWaveform).observe($('waveWrap'));loadAll();
 })();
 </script>
 </body>
