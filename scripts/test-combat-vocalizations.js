@@ -4,6 +4,7 @@ const vm = require('vm');
 const assert = require('assert');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'combat', 'combat-vocalizations.js'), 'utf8');
+const animalPlaybackSource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'animal-voice-independent-playback.js'), 'utf8');
 let now = 0;
 let scheduledBreath = null;
 let stagedSpec = null;
@@ -81,6 +82,12 @@ context.window.dispatchEvent = event => emit(listeners, event.type, event.detail
 context.document = {
   addEventListener: (type, fn) => addListener(docListeners, type, fn),
 };
+context.window.AnimalVoiceIndependentPlayback = {
+  playIndependent(url, opts = {}) {
+    played.push({ url, ...opts, pitchPreserved: true });
+    return { stop() {} };
+  },
+};
 context.window.AudioSystem = {
   gameAudioConfig: () => ({ enabled: true, sfxVolume: 1 }),
   playOneShotSfx(cfg, volumeScale, pitch) {
@@ -113,14 +120,16 @@ vm.createContext(context);
 vm.runInContext(source, context, { filename: 'combat-vocalizations.js' });
 
 assert(context.window.CombatVocalizations, 'runtime API should install');
-assert.equal(context.window.CombatVocalizations.version, 2);
+assert.equal(context.window.CombatVocalizations.version, 3);
 assert.equal(typeof scheduledBreath, 'function', 'breath loop should use shared scheduler');
 
 const chargePlan = context.window.CombatVocalizations.chargeRatePlan(1.2, 4, 1.25);
-assert(Math.abs(chargePlan.stretchedRate - 0.375) < 1e-9, 'full clip should stretch across the authored charge duration');
-assert(Math.abs(chargePlan.catchUpRate - 2.5) < 1e-9, 'early release must switch to 2x NORMAL speed, not 2x stretched speed');
-assert(Math.abs(chargePlan.catchUpRate - chargePlan.stretchedRate * 2) > 1, 'catch-up rate must be independent of the stretched rate');
+assert(Math.abs(chargePlan.stretchedTempo - 0.375) < 1e-9, 'full clip should stretch across the authored charge duration');
+assert(Math.abs(chargePlan.catchUpTempo - 2.5) < 1e-9, 'early release must switch to 2x NORMAL tempo, not 2x stretched tempo');
+assert(Math.abs(chargePlan.catchUpTempo - chargePlan.stretchedTempo * 2) > 1, 'catch-up tempo must be independent of the stretched tempo');
 assert.equal(chargePlan.earlyReleaseNormalSpeedMul, 2);
+assert.match(animalPlaybackSource, /renderDecodedIndependentBuffer/, 'combat should reuse the animal-call independent tempo/pitch renderer');
+assert.match(source, /AnimalVoiceIndependentPlayback\?\.playIndependent/, 'combat one-shots should route through the animal-call pitch-preserving player');
 assert.equal(context.window.CombatVocalizations.liveChargeTargetDurationS('chargedBreaker'), 4, 'live charge should reuse Charged Breaker MAX_CHARGE_S');
 assert.equal(context.window.CombatVocalizations.getConfig().chargeSampler, undefined, 'legacy start/middle/end sampler config should be gone');
 
@@ -135,6 +144,9 @@ scheduledBreath({ timestamp: 2000 }); // schedules first breath
 scheduledBreath({ timestamp: 10000 }); // plays it
 assert(played.at(-1).url.includes('heavybreath_medium_intensity3'), 'non-exhausted low stamina should top out at intensity 3');
 assert(!played.at(-1).url.includes('intensity4') && !played.at(-1).url.includes('intensity5'));
+assert.equal(played.at(-1).pitchPreserved, true, 'breath tempo changes must use independent pitch preservation');
+assert.equal(played.at(-1).tempo, 1, 'default vocal tempo remains 1x');
+assert(Number.isFinite(played.at(-1).pitchSemitones), 'explicit/random pitch is carried as a separate semitone axis');
 
 // Exhausted state can reach intensity 5.
 player.exhaustion.active = true;

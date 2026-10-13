@@ -7,6 +7,7 @@
   // contours, splice-tempo or behavior-specific modulation remain.
   const MIN_TEMPO = 1 / 9; // Allows Banubu's Grehlr snore to run three times longer than its prior one-third tempo.
   const MAX_TEMPO = 2;
+  const GENERIC_MAX_TEMPO = 4; // Shared pitch-preserving renderer may serve faster non-animal one-shots without changing animal authoring limits.
   const MAX_SHIFT_SEMITONES = 12;
   const WSOLA_FRAME_S = 0.056;
   const WSOLA_OVERLAP_RATIO = 0.62;
@@ -89,7 +90,8 @@
     return Number.isFinite(number) ? number : fallback;
   }
   function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
-  function clampTempo(value) { return clamp(finite(value, 1), MIN_TEMPO, MAX_TEMPO); }
+  function clampTempoFor(value, maxTempo = MAX_TEMPO) { return clamp(finite(value, 1), MIN_TEMPO, maxTempo); }
+  function clampTempo(value) { return clampTempoFor(value, MAX_TEMPO); }
   function clampPitch(value) { return clamp(finite(value, 0), -MAX_SHIFT_SEMITONES, MAX_SHIFT_SEMITONES); }
   function absoluteUrl(url) {
     try { return new URL(url, document.baseURI).href; }
@@ -300,26 +302,27 @@
     });
   }
 
-  function processConstantAxes(buffer, tempo, pitchSemitones) {
+  function processConstantAxes(buffer, tempo, pitchSemitones, maxTempo = MAX_TEMPO) {
     const channels = Array.from({ length: buffer.numberOfChannels }, (_, index) => buffer.getChannelData(index).slice());
-    const pitchRatio = Math.pow(2, clampPitch(pitchSemitones) / 12); // Sets how much source playback will transpose after WSOLA preserves the requested final duration.
-    const stretched = wsolaStretch(channels, pitchRatio / clampTempo(tempo), buffer.sampleRate); // Full-source stretch guarantees the final source frame survives both compression and expansion.
+    const pitchRatio = Math.pow(2, clampPitch(pitchSemitones) / 12); // Explicit pitch remains independent from tempo; only this final resample transposes it.
+    const safeTempo = clampTempoFor(tempo, maxTempo);
+    const stretched = wsolaStretch(channels, pitchRatio / safeTempo, buffer.sampleRate); // WSOLA changes wall-clock speed while compensating for the later pitch resample.
     return applyOutputEdgeEnvelope(stretched, buffer.sampleRate);
   }
 
-  function renderCacheKey(url, tempo, pitchSemitones) {
-    return `${absoluteUrl(url)}|${clampTempo(tempo).toFixed(4)}|${clampPitch(pitchSemitones).toFixed(3)}`;
+  function renderCacheKey(url, tempo, pitchSemitones, maxTempo = MAX_TEMPO) {
+    return `${absoluteUrl(url)}|${clampTempoFor(tempo, maxTempo).toFixed(4)}|${clampPitch(pitchSemitones).toFixed(3)}`;
   }
   function pruneRenderCache() {
     while (renderedByKey.size > MAX_RENDER_CACHE) renderedByKey.delete(renderedByKey.keys().next().value);
   }
-  function renderBufferFor(url, decoded, context, tempo, pitchSemitones) {
-    const key = renderCacheKey(url, tempo, pitchSemitones);
+  function renderBufferFor(url, decoded, context, tempo, pitchSemitones, maxTempo = MAX_TEMPO) {
+    const key = renderCacheKey(url, tempo, pitchSemitones, maxTempo);
     if (renderedByKey.has(key)) return renderedByKey.get(key);
     const pending = Promise.resolve().then(() => {
       const clock = typeof performance !== 'undefined' && performance?.now ? performance : Date;
       const started = clock.now();
-      const channels = processConstantAxes(decoded, tempo, pitchSemitones);
+      const channels = processConstantAxes(decoded, tempo, pitchSemitones, maxTempo);
       const length = Math.max(1, channels[0]?.length || 1);
       const rendered = context.createBuffer(channels.length, length, decoded.sampleRate);
       for (let channelIndex = 0; channelIndex < channels.length; channelIndex++) rendered.copyToChannel(channels[channelIndex], channelIndex);
@@ -332,6 +335,28 @@
     renderedByKey.set(key, pending);
     pruneRenderCache();
     return pending;
+  }
+
+  function renderDecodedIndependentBuffer(decoded, context, opts = {}) {
+    if (!decoded || !context?.createBuffer) return Promise.reject(new Error('Pitch-preserving render requires a decoded AudioBuffer and AudioContext'));
+    const tempo = clampTempoFor(opts.tempo ?? 1, GENERIC_MAX_TEMPO);
+    const pitchSemitones = clampPitch(opts.pitchSemitones ?? 0);
+    const pitchRatio = Math.pow(2, pitchSemitones / 12);
+    return Promise.resolve().then(() => {
+      const channels = processConstantAxes(decoded, tempo, pitchSemitones, GENERIC_MAX_TEMPO);
+      const length = Math.max(1, channels[0]?.length || 1);
+      const rendered = context.createBuffer(channels.length, length, decoded.sampleRate);
+      for (let channelIndex = 0; channelIndex < channels.length; channelIndex++) rendered.copyToChannel(channels[channelIndex], channelIndex);
+      return {
+        buffer: rendered,
+        playbackRate: pitchRatio,
+        durationS: rendered.duration / Math.max(0.0001, pitchRatio),
+        sourceDurationS: decoded.duration,
+        tempo,
+        pitchSemitones,
+        independentPitch: true,
+      };
+    });
   }
 
   function scheduleProcessedBuffer(context, buffer, opts, onFinished) {
@@ -413,7 +438,7 @@
     const audio = fallbackAudio || (typeof Audio === 'function' ? new Audio(url) : null);
     if (!audio) return null;
     if (audio.src !== url && audio.currentSrc !== url) audio.src = url;
-    const tempo = clampTempo(opts.tempo);
+    const tempo = clampTempoFor(opts.tempo, opts.tempoMax ?? MAX_TEMPO);
     const pitch = clampPitch(opts.pitchSemitones);
     const pitchRatio = Math.pow(2, pitch / 12);
     audio.volume = clamp(finite(opts.volume, 0.7), 0, 1);
@@ -458,10 +483,10 @@
     };
   }
 
-  function play(url, opts = {}) {
+  function playWithTempoLimit(url, opts = {}, maxTempo = MAX_TEMPO) {
     if (!url || window.AudioSystem?.gameAudioConfig?.()?.enabled === false) return null;
     const resolved = absoluteUrl(url);
-    const tempo = clampTempo(opts.tempo ?? 1);
+    const tempo = clampTempoFor(opts.tempo ?? 1, maxTempo);
     const pitchSemitones = clampPitch(opts.pitchSemitones ?? 0);
     const context = ensureContext();
     lastUrl = resolved;
@@ -481,10 +506,13 @@
     };
     activeHandles.add(handle);
     const completed = () => { activeHandles.delete(handle); opts.onFinished?.(); }; // Shared cleanup for decoded buffers and native fallback.
-    if (!context || context.state !== 'running') { active = playNativeFallback(resolved, { ...opts, tempo, pitchSemitones, onFinished: completed }, opts.fallbackAudio || null); return handle; }
+    if (!context || context.state !== 'running') {
+      active = playNativeFallback(resolved, { ...opts, tempo, tempoMax: maxTempo, pitchSemitones, onFinished: completed }, opts.fallbackAudio || null);
+      return handle;
+    }
     lastBackend = 'fixed render pending';
     decodeUrl(resolved, context)
-      .then(decoded => renderBufferFor(resolved, decoded, context, tempo, pitchSemitones))
+      .then(decoded => renderBufferFor(resolved, decoded, context, tempo, pitchSemitones, maxTempo))
       .then(rendered => {
         if (stopped) return;
         active = scheduleProcessedBuffer(context, rendered, { ...opts, tempo, pitchSemitones }, completed);
@@ -492,9 +520,17 @@
       .catch(error => {
         if (stopped) return;
         lastPlaybackError = error;
-        active = playNativeFallback(resolved, { ...opts, tempo, pitchSemitones, onFinished: completed }, opts.fallbackAudio || null);
+        active = playNativeFallback(resolved, { ...opts, tempo, tempoMax: maxTempo, pitchSemitones, onFinished: completed }, opts.fallbackAudio || null);
       });
     return handle;
+  }
+
+  function play(url, opts = {}) {
+    return playWithTempoLimit(url, opts, MAX_TEMPO);
+  }
+
+  function playIndependent(url, opts = {}) {
+    return playWithTempoLimit(url, opts, GENERIC_MAX_TEMPO);
   }
 
   function normalizedAllowed(c, opts) {
@@ -668,6 +704,8 @@
 
   window.AnimalVoiceIndependentPlayback = {
     play,
+    playIndependent,
+    renderDecodedIndependentBuffer,
     preview,
     stopAllPreviews,
     stopAll() { for (const handle of [...activeHandles]) handle.stop(); },

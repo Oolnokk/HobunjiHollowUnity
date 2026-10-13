@@ -3,7 +3,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 2;
+  const VERSION = 3;
   const CONFIG_URL = 'config/combat/combat-vocalizations.json';
   const LOCAL_OVERRIDE_KEY = 'hobunji_combat_vocalizations_override_v1';
   const SCHEDULER_ID = 'combat-vocalizations-breath';
@@ -145,29 +145,48 @@
     return amount > 0 ? (Math.random() * 2 - 1) * amount : 0;
   }
 
-  function playbackRateFor(randomSemitones = 0) {
+  function voicePlaybackPlan(randomSemitones = 0) {
     const mod = voiceModulation();
-    const semitones = mod.pitchSemitones + randomSemitones;
-    return clamp(mod.tempo * Math.pow(2, semitones / 12), 0.3, 3);
+    return {
+      modulation: mod,
+      tempo: clamp(mod.tempo, 0.35, 3),
+      pitchSemitones: clamp(mod.pitchSemitones + randomSemitones, -24, 24),
+    };
+  }
+
+  function setPitchPreservation(audio, enabled) {
+    try { audio.preservesPitch = enabled; } catch (_) {}
+    try { audio.mozPreservesPitch = enabled; } catch (_) {}
+    try { audio.webkitPreservesPitch = enabled; } catch (_) {}
   }
 
   function playOneShot(url, baseVolume, pitchRandomSemitones, debugKind, detail = {}) {
     if (!url) return null;
     const audio = audioConfig();
     if (audio.enabled === false || Number(audio.sfxVolume ?? 1) <= 0) return null;
-    const mod = voiceModulation();
-    const rate = playbackRateFor(randomPitchSemitones(pitchRandomSemitones));
-    const cfgEntry = { url, volume: clamp(baseVolume, 0, 1), pitchVarianceMul: 0 };
+    const plan = voicePlaybackPlan(randomPitchSemitones(pitchRandomSemitones));
+    const volume = clamp(
+      Number(baseVolume ?? 1) * plan.modulation.gain * Number(audio.sfxVolume ?? 1),
+      0,
+      1,
+    );
     let snd = null;
     try {
-      if (window.AudioSystem?.playOneShotSfx) {
-        snd = window.AudioSystem.playOneShotSfx(cfgEntry, mod.gain, rate);
+      const renderer = window.AnimalVoiceIndependentPlayback?.playIndependent
+        || window.AnimalVoiceIndependentPlayback?.play;
+      if (renderer) {
+        snd = renderer(url, {
+tempo: plan.tempo,
+pitchSemitones: plan.pitchSemitones,
+volume,
+        });
       } else if (typeof Audio === 'function') {
+        // Emergency fallback preserves pitch while changing tempo. Explicit pitch
+        // authoring waits for the shared renderer rather than being coupled to speed.
         snd = new Audio(url);
-        snd.volume = clamp(cfgEntry.volume * mod.gain * Number(audio.sfxVolume ?? 1), 0, 1);
-        snd.playbackRate = rate;
-        if ('preservesPitch' in snd) snd.preservesPitch = false;
-        if ('webkitPreservesPitch' in snd) snd.webkitPreservesPitch = false;
+        snd.volume = volume;
+        setPitchPreservation(snd, true);
+        snd.playbackRate = plan.tempo;
         const result = snd.play();
         result?.catch?.(error => recordPlaybackFailure(debugKind, error, url));
       }
@@ -175,7 +194,14 @@
       recordPlaybackFailure(debugKind, error, url);
       return null;
     }
-    return { snd, rate, modulation: mod, ...detail };
+    return {
+      snd,
+      tempo: plan.tempo,
+      pitchSemitones: plan.pitchSemitones,
+      modulation: plan.modulation,
+      independentPitch: true,
+      ...detail,
+    };
   }
 
   function recordPlaybackFailure(kind, error, url) {
@@ -234,7 +260,8 @@
       stamina: Number(p.stamina) || 0,
       maxStamina: Number(p.maxStamina) || 0,
       exhausted: !!p.exhaustion?.active,
-      playbackRate: played?.rate ?? null,
+      tempo: played?.tempo ?? null,
+      pitchSemitones: played?.pitchSemitones ?? null,
     };
   }
 
@@ -302,7 +329,8 @@
       delta,
       health: Number(p.health) || 0,
       maxHealth: Number(p.maxHealth) || 0,
-      playbackRate: played?.rate ?? null,
+      tempo: played?.tempo ?? null,
+      pitchSemitones: played?.pitchSemitones ?? null,
     };
   }
 
@@ -376,16 +404,18 @@
     return gain;
   }
 
-  function startChargeSource(ctx, buffer, output, when, offset, rate) {
+  function startChargeSource(ctx, rendered, output, when, progress = 0) {
   const source = ctx.createBufferSource();
-  source.buffer = buffer;
-  source.playbackRate.value = rate;
+  source.buffer = rendered.buffer;
+  source.playbackRate.value = rendered.playbackRate; // Only explicit pitch transposition lives here; tempo was already WSOLA-rendered.
   source.connect(output);
-  source.start(when, clamp(offset, 0, Math.max(0, buffer.duration - 0.0001)));
+  const offset = clamp(progress, 0, 0.999999) * Math.max(0, rendered.buffer.duration - 0.0001);
+  source.start(when, offset);
   return source;
 }
 
 function stopSource(source, when = 0) {
+  try { if (source) source.onended = null; } catch (_) {}
   try { source?.stop?.(when || undefined); } catch (_) {}
   try { source?.disconnect?.(); } catch (_) {}
 }
@@ -399,23 +429,21 @@ function liveChargeTargetDurationS(abilityId) {
   return fallback > 0 ? fallback : null;
 }
 
-function chargeRatePlan(bufferDurationS, targetDurationS, normalRate) {
+function chargeRatePlan(bufferDurationS, targetDurationS, normalTempo) {
   const clipDurationS = Math.max(0.001, Number(bufferDurationS) || 0.001);
   const targetS = Number(targetDurationS) > 0 ? Number(targetDurationS) : clipDurationS;
-  const baseNormalRate = Math.max(0.02, Number(normalRate) || 1);
-  const stretchedRate = clamp(baseNormalRate * (clipDurationS / targetS), 0.02, 32);
+  const baseNormalTempo = Math.max(0.02, Number(normalTempo) || 1);
   const earlyReleaseNormalSpeedMul = Math.max(
     0.1,
     Number(config.chargePlayback?.earlyReleaseNormalSpeedMul) || 2,
   );
-  const catchUpRate = clamp(baseNormalRate * earlyReleaseNormalSpeedMul, 0.02, 32);
   return {
     clipDurationS,
     targetDurationS: targetS,
-    normalRate: baseNormalRate,
-    stretchedRate,
+    normalTempo: baseNormalTempo,
+    stretchedTempo: clamp(baseNormalTempo * (clipDurationS / targetS), 1 / 9, 4),
     earlyReleaseNormalSpeedMul,
-    catchUpRate,
+    catchUpTempo: clamp(baseNormalTempo * earlyReleaseNormalSpeedMul, 1 / 9, 4),
   };
 }
 
@@ -449,33 +477,34 @@ function releaseCharge(token) {
       action: 'planned-release',
       abilityId: token.abilityId,
       targetDurationS: token.targetDurationS,
-      stretchedRate: token.stretchedRate ?? null,
+      stretchedTempo: token.stretchedTempo ?? null,
+      pitchSemitones: token.pitchSemitones ?? null,
       atMs: Math.round(nowMs()),
     };
     return;
   }
-  if (!token.ready || !token.ctx || !token.source) {
+  if (!token.ready || !token.ctx || !token.source || !token.catchUpRendered) {
     finishChargeToken(token);
     return;
   }
 
-  const now = token.ctx.currentTime;
-  const param = token.source.playbackRate;
-  try {
-    param.cancelScheduledValues(now);
-    param.setValueAtTime(token.catchUpRate, now);
-  } catch (_) {
-    param.value = token.catchUpRate;
-  }
+  const elapsedS = Math.max(0, (nowMs() - token.createdAtMs) / 1000);
+  const progress = clamp(elapsedS / Math.max(0.001, token.fullDurationS || token.targetDurationS || 1), 0, 0.999999);
+  const switchAt = token.ctx.currentTime + 0.003;
+  stopSource(token.source, token.ctx.currentTime + 0.002);
+  token.source = startChargeSource(token.ctx, token.catchUpRendered, token.output, switchAt, progress);
+  token.source.onended = () => finishChargeToken(token);
   debug.lastCharge = {
     id: token.id,
     action: 'early-release-catch-up',
     abilityId: token.abilityId,
     targetDurationS: token.targetDurationS,
-    normalRate: token.normalRate,
-    stretchedRate: token.stretchedRate,
-    catchUpRate: token.catchUpRate,
+    normalTempo: token.normalTempo,
+    stretchedTempo: token.stretchedTempo,
+    catchUpTempo: token.catchUpTempo,
+    pitchSemitones: token.pitchSemitones,
     earlyReleaseNormalSpeedMul: token.earlyReleaseNormalSpeedMul,
+    progress,
     atMs: Math.round(nowMs()),
   };
 }
@@ -498,23 +527,38 @@ function beginCharge(options = {}) {
   };
   activeChargeTokens.add(token);
 
-  preloadChargeBuffer().then(buffer => {
+  preloadChargeBuffer().then(async buffer => {
     if (!buffer || token.cancelled || token.released || token.done) {
       activeChargeTokens.delete(token);
       return;
     }
 
     const ctx = ensureAudioContext();
-    if (!ctx) {
+    const renderIndependent = window.AnimalVoiceIndependentPlayback?.renderDecodedIndependentBuffer;
+    if (!ctx || !renderIndependent) {
       finishChargeToken(token);
+      recordPlaybackFailure('charge-renderer', new Error('Animal-call pitch-preserving renderer unavailable'), config.assets?.chargeGrunt);
       return;
     }
-    const normalRate = playbackRateFor(randomPitchSemitones(config.grunts?.pitchRandomSemitones ?? 0));
-    const plan = chargeRatePlan(buffer.duration, token.targetDurationS, normalRate);
+
+    const voice = voicePlaybackPlan(randomPitchSemitones(config.grunts?.pitchRandomSemitones ?? 0));
+    const plan = chargeRatePlan(buffer.duration, token.targetDurationS, voice.tempo);
+    const renderOpts = { pitchSemitones: voice.pitchSemitones };
+    const [fullRendered, catchUpRendered] = await Promise.all([
+      renderIndependent(buffer, ctx, { ...renderOpts, tempo: plan.stretchedTempo }),
+      token.catchUpOnRelease
+        ? renderIndependent(buffer, ctx, { ...renderOpts, tempo: plan.catchUpTempo })
+        : Promise.resolve(null),
+    ]);
+    if (token.cancelled || token.released || token.done) {
+      activeChargeTokens.delete(token);
+      return;
+    }
+
     const elapsedS = Math.max(0, (nowMs() - token.createdAtMs) / 1000);
-    const sourceOffsetS = elapsedS * plan.stretchedRate;
-    if (sourceOffsetS >= buffer.duration) {
-      finishChargeToken(token); // Do not start stale audio if first-use decoding outlives the authored windup.
+    const progress = clamp(elapsedS / Math.max(0.001, fullRendered.durationS), 0, 1);
+    if (progress >= 1) {
+      finishChargeToken(token); // Do not start stale audio if first-use decode/render outlives the authored windup.
       return;
     }
 
@@ -523,12 +567,16 @@ function beginCharge(options = {}) {
     token.ctx = ctx;
     token.buffer = buffer;
     token.output = output;
-    token.normalRate = plan.normalRate;
-    token.stretchedRate = plan.stretchedRate;
-    token.catchUpRate = plan.catchUpRate;
+    token.normalTempo = plan.normalTempo;
+    token.stretchedTempo = plan.stretchedTempo;
+    token.catchUpTempo = plan.catchUpTempo;
+    token.pitchSemitones = voice.pitchSemitones;
     token.earlyReleaseNormalSpeedMul = plan.earlyReleaseNormalSpeedMul;
+    token.fullRendered = fullRendered;
+    token.catchUpRendered = catchUpRendered;
+    token.fullDurationS = fullRendered.durationS;
     token.ready = true;
-    token.source = startChargeSource(ctx, buffer, output, when, sourceOffsetS, plan.stretchedRate);
+    token.source = startChargeSource(ctx, fullRendered, output, when, progress);
     token.source.onended = () => finishChargeToken(token);
 
     debug.lastCharge = {
@@ -537,10 +585,14 @@ function beginCharge(options = {}) {
       abilityId: token.abilityId,
       targetDurationS: token.targetDurationS,
       bufferDurationS: buffer.duration,
-      normalRate: plan.normalRate,
-      stretchedRate: plan.stretchedRate,
-      catchUpRate: plan.catchUpRate,
+      fullDurationS: fullRendered.durationS,
+      normalTempo: plan.normalTempo,
+      stretchedTempo: plan.stretchedTempo,
+      catchUpTempo: plan.catchUpTempo,
+      pitchSemitones: voice.pitchSemitones,
       earlyReleaseNormalSpeedMul: plan.earlyReleaseNormalSpeedMul,
+      progress,
+      independentPitch: true,
       atMs: Math.round(nowMs()),
     };
   }).catch(error => {
@@ -568,7 +620,8 @@ function beginCharge(options = {}) {
       abilityId,
       category,
       url,
-      playbackRate: played?.rate ?? null,
+      tempo: played?.tempo ?? null,
+      pitchSemitones: played?.pitchSemitones ?? null,
     };
   }
 
@@ -709,7 +762,7 @@ function beginCharge(options = {}) {
     } catch (_) {}
 
     const request = typeof fetch === 'function'
-      ? fetch(`${CONFIG_URL}?v=20261013vocal2`).then(response => response.ok ? response.json() : null)
+      ? fetch(`${CONFIG_URL}?v=20261013vocal3`).then(response => response.ok ? response.json() : null)
       : Promise.resolve(null);
 
     return request.then(authored => {
@@ -772,9 +825,10 @@ function beginCharge(options = {}) {
         category: token.category,
         targetDurationS: token.targetDurationS,
         catchUpOnRelease: token.catchUpOnRelease,
-        normalRate: token.normalRate ?? null,
-        stretchedRate: token.stretchedRate ?? null,
-        catchUpRate: token.catchUpRate ?? null,
+        normalTempo: token.normalTempo ?? null,
+        stretchedTempo: token.stretchedTempo ?? null,
+        catchUpTempo: token.catchUpTempo ?? null,
+        pitchSemitones: token.pitchSemitones ?? null,
         ready: token.ready,
         released: token.released,
         cancelled: token.cancelled,
