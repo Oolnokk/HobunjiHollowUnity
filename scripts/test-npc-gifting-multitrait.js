@@ -23,6 +23,9 @@ const windowStub = {
     isTraitDiscovered() { return true; },
     getTraitLabel(id) { return id; },
   },
+  MetalArmorSystem: {
+    isMetalArmor(item) { return item?.materialKind === 'metal'; },
+  },
   NpcRapport: {
     config: { rapportMax: 100 },
     adjust(npcId, amount, reason) { rapportAdjustments.push({ npcId, amount, reason }); },
@@ -75,6 +78,33 @@ const accumulatedLikes = gifting.evaluateGiftReaction({ loved: [], liked: ['a', 
 assert.equal(accumulatedLikes.score, 12, 'each liked trait contributes independently');
 assert.equal(accumulatedLikes.tier, 'loved', 'a sufficiently strong positive net result escalates the dialogue verdict');
 
+const metalArmor = { // Used to exercise the category override without depending on a specific authored armor blueprint.
+  kind: 'clothing',
+  instance: { cosmeticId: 'test_metal_armor', label: 'Test Metal Armor', materialKind: 'metal' },
+};
+const genericArmorPrefs = { loved: ['warm'], liked: [], disliked: ['blue'], hated: [] };
+for (const npcId of ['oddclaw_unumanuk', 'spearhead_unumanuk', 'jubmir', 'gantami_ginju', 'porakaneki_chief']) {
+  const result = gifting.evaluateHeldGift({ id: npcId, gifts: genericArmorPrefs }, metalArmor);
+  assert.equal(result.tier, 'loved', `${npcId} loves metal armor`);
+  assert.equal(result.favorDelta, 10, `${npcId} receives the loved Favor value`);
+  assert.deepEqual(Array.from(result.matches.loved), ['metalArmor'], `${npcId} discovers the Metal Armor preference`);
+}
+for (const npcId of ['leaf', 'pahu', 'garanki_gabu']) {
+  const result = gifting.evaluateHeldGift({ id: npcId, gifts: genericArmorPrefs }, metalArmor);
+  assert.equal(result.tier, 'liked', `${npcId} likes metal armor`);
+  assert.equal(result.favorDelta, 4, `${npcId} receives the liked Favor value`);
+  assert.deepEqual(Array.from(result.matches.liked), ['metalArmor'], `${npcId} discovers the Metal Armor preference`);
+}
+const indifferentArmor = gifting.evaluateHeldGift({ id: 'father_hunundi_hodu', gifts: genericArmorPrefs }, metalArmor);
+assert.equal(indifferentArmor.tier, 'neutral', 'unlisted NPCs are indifferent to metal armor even when they love another trait on the garment');
+assert.equal(indifferentArmor.favorDelta, 1, 'indifferent metal armor uses the ordinary neutral gift Favor value');
+assert.equal(gifting.relationshipId({ rec: { id: 'porakaneki_hunter_test', species: 'porakaneki' } }), 'porakaneki_chief', 'all Porakaneki continue sharing the chief relationship/preference identity');
+assert.equal(gifting.getPreferenceLabel('metalArmor'), 'Metal Armor', 'relationship discovery shows a readable Metal Armor label');
+
+const nonMetalClothing = { kind: 'clothing', instance: { cosmeticId: 'warm_cloth', label: 'Warm Cloth', materialKind: 'cloth' } };
+const ordinaryClothing = gifting.evaluateHeldGift({ id: 'test_npc', gifts: { loved: ['warm'], liked: [], disliked: [], hated: [] } }, nonMetalClothing);
+assert.equal(ordinaryClothing.tier, 'loved', 'non-metal clothing still uses the ordinary multi-trait gift evaluator');
+
 const walker = { rec: { id: 'test_npc', name: 'Test NPC', gifts: prefs } };
 assert.equal(gifting.offerGift(walker), true, 'mixed gift is accepted');
 assert.deepEqual(favorAdjustments, [{ npcId: 'test_npc', amount: 4, reason: 'gift_liked' }], 'runtime applies the balanced permanent Favor result once, not once per winning trait');
@@ -86,4 +116,4 @@ const discovered = gifting.getDiscoveredGiftTraits('test_npc');
 assert.deepEqual(Array.from(discovered.liked), ['warm', 'bright'], 'relationship discovery records every liked trait on the gift');
 assert.deepEqual(Array.from(discovered.disliked), ['blue'], 'relationship discovery records every disliked trait on the gift');
 
-console.log('Multi-trait NPC gifting regression checks passed.');
+console.log('Multi-trait and metal-armor NPC gifting regression checks passed.');
