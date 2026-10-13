@@ -24,7 +24,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+Oolnokk@users.noreply.github.com"
           git fetch origin main
-      - name: Merge latest main
+      - name: Merge latest main and resolve expected cache-parent conflict
         shell: bash
         run: |
           set +e
@@ -32,9 +32,17 @@ jobs:
           status=$?
           set -e
           if [ "$status" -ne 0 ]; then
-            echo "Unexpected conflicts:"
-            git diff --name-only --diff-filter=U
-            exit 1
+            unresolved="$(git diff --name-only --diff-filter=U)"
+            if [ "$unresolved" != "docs/index.html" ]; then
+              echo "Unexpected conflicts:"
+              printf '%s\n' "$unresolved"
+              exit 1
+            fi
+            # Both sides only differ here because combat-config-loader's cache token changed.
+            # Keep the branch parent temporarily; check-cache-busts --fix below regenerates it
+            # from the successfully merged loader, preserving both latest-main and vocal changes.
+            git checkout --ours -- docs/index.html
+            git add docs/index.html
           fi
       - name: Refresh and validate cache busts
         run: |
