@@ -15,6 +15,7 @@
   const SLOT_KEYS = Object.freeze({
     manual: MANUAL_KEY,
     campfire: CAMPFIRE_KEY,
+    mapChange: 'hobunjiSaveCheckpoint.mapChange.v1', // Travel saves never rotate ordinary autosaves.
     auto: AUTO_KEY,
     autoPrevious: AUTO_PREVIOUS_KEY,
     preRestore: PRE_RESTORE_KEY,
@@ -22,6 +23,7 @@
   const RECOVERY_IMPORT_FILES = Object.freeze({ // Filenames accepted from an exported recovery folder/ZIP without using File System Access.
     'manual.json': 'manual',
     'campfire.json': 'campfire',
+    'map-change.json': 'mapChange',
     'autosave-latest.json': 'auto',
     'autosave-previous.json': 'autoPrevious',
     'pre-restore.json': 'preRestore',
@@ -254,7 +256,8 @@
       memberInventoryUnits: numericInventoryTotal(memberInventory),
       worldStorageKeys: Object.keys(worldStorage).length,
       worldStorageUnits: numericInventoryTotal(worldStorage),
-      livestockCount: Array.isArray(world?.livestock) ? world.livestock.length : 0,
+      livestockCount: (Array.isArray(world?.livestock) ? world.livestock.length : 0)
+        + Object.values(world?.incubators?.barns || {}).reduce((count, barn) => count + (barn.additions || []).reduce((n, addition) => n + (addition.slots || []).filter(slot => slot.baby).length, 0), 0), // Nursery-to-incubator transfers do not look like lost livestock.
       stableCount: Array.isArray(character?.stable) ? character.stable.length : 0,
     };
   }
@@ -324,7 +327,7 @@
   }
 
   function baselineRecord() {
-    return readSlot('auto') || readSlot('manual') || readSlot('campfire');
+    return readSlot('auto') || readSlot('mapChange') || readSlot('manual') || readSlot('campfire');
   }
 
   function evaluateSnapshotForFolderWrite(snapshot, { recoveryKind = 'auto', force = false, automatic = false } = {}) {
@@ -378,8 +381,15 @@
     return record;
   }
 
-  async function onFolderSnapshotWritten(snapshot, { automatic = false, savedAt = Date.now(), recoveryKind = 'auto' } = {}) {
+  async function onFolderSnapshotWritten(snapshot, { automatic = false, savedAt = Date.now(), recoveryKind = 'auto', reason = null } = {}) {
     if (!folderIsPrimary() || recoveryKind === 'restore') return;
+    if (recoveryKind === 'mapChange') {
+      const record = createRecord('map-change', snapshot, reason || 'Map changed', savedAt); // Canonical write succeeded before advancing the independent travel slot.
+      writeSlot('mapChange', record);
+      await writeFolderSlot('mapChange', record);
+      lastAction = 'map-change-saved';
+      return record;
+    }
     if (recoveryKind === 'manual') {
       const record = createRecord('manual', snapshot, 'manual-folder-save', savedAt);
       writeSlot('manual', record); // Canonical write has already succeeded, so the browser mirror can now advance safely.
@@ -399,7 +409,7 @@
       return record;
     }
     return promoteAutosave(snapshot, {
-      reason: automatic ? 'folder-autosync' : 'folder-save',
+      reason: reason || (automatic ? 'folder-autosync' : 'folder-save'),
       savedAt,
       writeFolder: true,
     });
@@ -586,7 +596,7 @@
     }
   }
 
-  async function saveAuto({ reason = 'timer' } = {}) {
+  async function saveAuto({ reason = 'timer', mapChange = false } = {}) {
     markHydrated();
     if (window.HobunjiAutosavePause?.isPaused?.()) { // Dev Companion autosave pause keeps rolling recovery history at its pre-pause checkpoints.
       autosavesSkipped++;
@@ -599,7 +609,7 @@
       lastAction = 'autosave-skipped-not-hydrated';
       return { ok: false, skipped: true, reason: 'not-hydrated' };
     }
-    if (Date.now() - hydratedAt < AUTO_GRACE_MS) {
+    if (!mapChange && Date.now() - hydratedAt < AUTO_GRACE_MS) {
       autosavesSkipped++;
       lastAction = 'autosave-skipped-grace';
       return { ok: false, skipped: true, reason: 'load-grace' };
@@ -616,7 +626,7 @@
       const snapshot = api?.capture?.({ strict: true });
       if (!snapshot) throw new Error('Save snapshot system is unavailable.');
       const fingerprint = api.fingerprint(snapshot);
-      if (!folderIsPrimary() && fingerprint === lastAutosaveFingerprint) {
+      if (!mapChange && !folderIsPrimary() && fingerprint === lastAutosaveFingerprint) {
         autosavesSkipped++;
         lastAction = 'autosave-skipped-unchanged';
         return { ok: true, skipped: true, reason: 'unchanged' };
@@ -632,17 +642,19 @@
       }
 
       if (folderIsPrimary()) {
-        const status = await folderApi().syncSnapshot(snapshot, { automatic: true, recoveryKind: 'auto' });
+        const status = await folderApi().syncSnapshot(snapshot, { automatic: true, recoveryKind: mapChange ? 'mapChange' : 'auto', reason });
         if (status?.lastError && !canonicalSucceededWithRecoveryWarning(status)) {
           lastError = status.lastError;
           lastAction = 'autosave-folder-error';
           return { ok: false, error: lastError };
         }
         lastError = status?.lastError || '';
-        return { ok: true, record: readSlot('auto'), folder: true, warning: status?.lastError || null };
+        return { ok: true, record: readSlot(mapChange ? 'mapChange' : 'auto'), folder: true, warning: status?.lastError || null };
       }
 
-      const record = await promoteAutosave(snapshot, { reason, savedAt: Date.now(), writeFolder: false });
+      const record = mapChange ? createRecord('map-change', snapshot, reason)
+        : await promoteAutosave(snapshot, { reason, savedAt: Date.now(), writeFolder: false }); // Browser-only travel saves stay independent too.
+      if (mapChange) { writeSlot('mapChange', record); lastAction = 'map-change-saved'; }
       return { ok: true, record, folder: false };
     } catch (error) {
       lastError = String(error?.message || error);
@@ -794,7 +806,8 @@
     const s = record.summary || {};
     const stats = record.stats || {};
     const farmCounts = `bag ${stats.memberInventoryUnits || 0} · storage ${stats.worldStorageUnits || 0} · livestock ${stats.livestockCount || 0} · stable ${stats.stableCount || 0}`;
-    return `${fmtTime(record)} · ${s.characterCount || 0} farmer(s) · ${s.worldCount || 0} world(s) · ${farmCounts}`;
+    const trigger = ({ timer: '30-second autosave timer', 'folder-timer': '30-second folder autosave timer', 'folder-change': 'Save data changed', 'folder-unload': 'Leaving or reloading the page', 'visibility-hidden': 'Page hidden or switched away', 'folder-autosync': 'Automatic folder sync', 'folder-save': 'Save to folder', 'folder-baseline': 'Initial folder recovery checkpoint' })[record.reason] || record.reason || 'Unknown (older save)'; // Human-readable triggers preserve custom event descriptions.
+    return `Triggered by: ${trigger} · ${fmtTime(record)} · ${s.characterCount || 0} farmer(s) · ${s.worldCount || 0} world(s) · ${farmCounts}`;
   }
 
   function closeRecoveryModal() {
@@ -807,6 +820,7 @@
         choices: [
           { slot: 'manual', record: readSlot('manual'), title: 'Manual Save', note: 'Imported recovery checkpoint; the stuck primary folder is not being read.', readError: '' },
           { slot: 'campfire', record: readSlot('campfire'), title: 'Campfire Save', note: 'Imported recovery checkpoint; the stuck primary folder is not being read.', readError: '' },
+          { slot: 'mapChange', record: readSlot('mapChange'), title: 'Map Change Autosave', note: 'Independent travel checkpoint.', readError: '' },
           { slot: 'auto', record: readSlot('auto'), title: 'Latest Autosave', note: 'Imported recovery checkpoint; the stuck primary folder is not being read.', readError: '' },
           { slot: 'autoPrevious', record: readSlot('autoPrevious'), title: 'Earlier Autosave', note: 'Imported recovery checkpoint; the stuck primary folder is not being read.', readError: '' },
           { slot: 'preRestore', record: readSlot('preRestore'), title: 'Before Last Restore', note: 'Imported recovery checkpoint; the stuck primary folder is not being read.', readError: '' },
@@ -841,6 +855,7 @@
         { slot: 'current', record: currentFolder, title: 'Current Folder Save', note: 'The canonical save currently used by the folder-first workflow.', current: true, readError: currentReadError },
         { slot: 'manual', record: readSlot('manual'), title: 'Manual Save', note: 'Only changes when you explicitly press the pause-menu manual save button.', readError: lastRecoveryReadErrors.manual || '' },
         { slot: 'campfire', record: readSlot('campfire'), title: 'Campfire Save', note: 'Only changes when you explicitly save at a campfire.', readError: lastRecoveryReadErrors.campfire || '' },
+        { slot: 'mapChange', record: readSlot('mapChange'), title: 'Map Change Autosave', note: 'Saved after the latest completed map change; regular autosaves do not overwrite it.', readError: lastRecoveryReadErrors.mapChange || '' },
         { slot: 'auto', record: readSlot('auto'), title: 'Latest Autosave', note: 'Latest good rolling checkpoint accepted by the integrity guard.', readError: lastRecoveryReadErrors.auto || '' },
         { slot: 'autoPrevious', record: readSlot('autoPrevious'), title: 'Earlier Autosave', note: 'Older rolling checkpoint retained separately from the latest autosave.', readError: lastRecoveryReadErrors.autoPrevious || '' },
         { slot: 'preRestore', record: readSlot('preRestore'), title: 'Before Last Restore', note: 'Safety copy of the canonical save immediately before the most recent recovery.', readError: lastRecoveryReadErrors.preRestore || '' },
@@ -1073,6 +1088,7 @@
           choices: [
             { slot: 'manual', record: readSlot('manual'), title: 'Manual Save', note: 'Browser mirror.' },
             { slot: 'campfire', record: readSlot('campfire'), title: 'Campfire Save', note: 'Browser mirror.' },
+            { slot: 'mapChange', record: readSlot('mapChange'), title: 'Map Change Autosave', note: 'Browser mirror.' },
             { slot: 'auto', record: readSlot('auto'), title: 'Latest Autosave', note: 'Browser mirror.' },
             { slot: 'autoPrevious', record: readSlot('autoPrevious'), title: 'Earlier Autosave', note: 'Browser mirror.' },
             { slot: 'preRestore', record: readSlot('preRestore'), title: 'Before Last Restore', note: 'Browser mirror.' },
@@ -1191,6 +1207,10 @@
     saveManual,
     saveCampfire,
     saveAuto,
+    saveMapChange: ({ fromArea, toArea } = {}) => {
+      if (!fromArea || !toArea || fromArea === toArea) return Promise.resolve({ ok: true, skipped: true });
+      return saveAuto({ mapChange: true, reason: `Map changed: ${fromArea} → ${toArea}` });
+    },
     openRecoveryModal,
     evaluateSnapshotForFolderWrite,
     onFolderSnapshotWritten,

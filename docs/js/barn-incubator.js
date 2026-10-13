@@ -26,7 +26,7 @@
   let piecePromise = null; // Caches the authored incubator exterior piece JSON.
   let furniturePromise = null; // Caches the authored incubator crib JSON + animal anchors.
   let allowReservedTroughKey = null; // Temporarily permits completion into the slot's own reserved trough.
-  let lastDebugChange = 'Incubator nests centered in their rooms; Farm tab offers direct management and slot status.'; // Mobile-visible most recent lifecycle/debug change.
+  let lastDebugChange = 'Incubation is included in world saves and recovery; detached incubators remain manageable from the Farm tab.'; // Mobile-visible most recent lifecycle/debug change.
 
   const exteriorMeshes = new Map(); // additionId -> THREE.Group for live farm exterior additions.
   const exteriorObjects = new Map(); // additionId -> one interactable footprint object registered across its tiles.
@@ -58,17 +58,22 @@
 
   function loadState() {
     try {
-      const parsed = JSON.parse(localStorage.getItem(storageKey()) || 'null'); // Used to restore additions and in-flight babies for the active world.
-      state = parsed?.version === CONFIG.persistence.version && parsed.barns ? parsed : freshState();
-    } catch (_) {
-      state = freshState();
+      const canonical = window.WorldMetaStore?.loadIncubators?.(worldId()); // Canonical state wins over any stale legacy sidecar after a restore.
+      const parsed = canonical ?? JSON.parse(localStorage.getItem(storageKey()) || 'null'); // Used to restore additions and in-flight babies for the active world.
+      if (parsed != null && (parsed.version !== CONFIG.persistence.version || !parsed.barns || typeof parsed.barns !== 'object' || Array.isArray(parsed.barns))) throw new Error('Unsupported or invalid incubator state.');
+      state = parsed || freshState();
+      if (parsed && canonical == null && window.WorldMetaStore?.saveIncubators?.(worldId(), state)) localStorage.removeItem(storageKey());
+    } catch (error) {
+      lastDebugChange = `Incubator save could not be loaded: ${error?.message || error}`;
+      throw new Error(lastDebugChange); // Preserve unreadable data rather than replacing it with an empty state.
     }
     return state;
   }
 
   function saveState(reason = null, saveMember = true) { // Starter grants occur before member inventory hydration and only checkpoint addition state.
     if (!state) loadState();
-    localStorage.setItem(storageKey(), JSON.stringify(state));
+    if (window.WorldMetaStore?.saveIncubators?.(worldId(), state)) localStorage.removeItem(storageKey());
+    else localStorage.setItem(storageKey(), JSON.stringify(state));
     if (reason) lastDebugChange = reason;
     if (saveMember) buildingDeps?.saveMemberWorldData?.();
   }
@@ -554,13 +559,14 @@
     const list = livestockList(); // Nursery list from which the selected baby is physically moved into the incubator state.
     const index = list.findIndex(entry => entry.id === babyId && isFarmBaby(entry)); // Exact baby record location.
     if (index < 0) return { ok: false, message: 'That Nursery baby is no longer available.' };
-    const [baby] = list.splice(index, 1); // Full genetics/name record retained verbatim in the slot.
-    animalDeps?.saveWorldLivestock?.(list);
-    cleanupBreedingRefs(baby.id);
+    const baby = list[index]; // Persist the full baby before removing its Nursery copy.
     slot.baby = deepClone(baby);
     slot.daysRemaining = CONFIG.gameplay.maturationDays;
     slot.blockedReason = null;
     saveState(`Started incubating ${baby.name || baby.id} in ${additionId} slot ${slotIndex + 1}.`);
+    list.splice(index, 1);
+    animalDeps?.saveWorldLivestock?.(list);
+    cleanupBreedingRefs(baby.id);
     window.FarmPanel?.render?.();
     refreshManagement();
     syncSleepingBabies(true);
@@ -1416,7 +1422,8 @@
     ensureStyles();
     document.getElementById('barnLayoutEditorLaunchers')?.remove();
     const barns = regularBarns(); // Each built adult barn gets its own sub-editor launcher.
-    if (!barns.length) return;
+    const detached = allAdditions().filter(addition => additionHasBaby(addition) && !owningBarnOfAddition(addition.id)); // Layout replacement must not hide the only copy of a baby.
+    if (!barns.length && !detached.length) return;
     const wrap = document.createElement('div'); // Dedicated launcher block avoids fragile matching against existing barn rows.
     wrap.id = 'barnLayoutEditorLaunchers';
     wrap.className = 'farm-list';
@@ -1454,6 +1461,13 @@
         wrap.appendChild(card);
       }
     });
+    for (const addition of detached) {
+      const button = document.createElement('button'); // Allows return to Nursery even when the owning barn is absent.
+      button.className = 'settings-small-btn';
+      button.textContent = `🪺 Detached incubator · ${addition.slots.filter(slot => slot.baby).length} babies · Manage / Return to Nursery`;
+      button.addEventListener('click', () => openIncubatorMenu(addition.id));
+      wrap.appendChild(button);
+    }
     list.insertAdjacentElement('afterend', wrap);
   }
 
@@ -1519,6 +1533,7 @@
           })),
         })),
       })),
+      detachedIncubators: allAdditions().filter(addition => !owningBarnOfAddition(addition.id)), // Reports babies excluded from the visible barn list.
       reservedTroughs: [...reservedTroughMap().keys()],
       nurseryBabyCount: nurseryBabies().length,
       currentArea: currentArea(),

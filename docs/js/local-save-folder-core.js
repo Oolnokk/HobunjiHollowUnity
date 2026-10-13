@@ -20,6 +20,7 @@
   const RECOVERY_FILES = Object.freeze({ // Stable recovery slot filenames used by the checkpoint manager and recovery UI.
     manual: 'manual.json',
     campfire: 'campfire.json',
+    mapChange: 'map-change.json', // Independent map transition recovery checkpoint.
     auto: 'autosave-latest.json',
     autoPrevious: 'autosave-previous.json',
     preRestore: 'pre-restore.json',
@@ -229,13 +230,13 @@
     if (_changePollTimer) clearInterval(_changePollTimer);
     _autoSyncArmed = true;
     _lastObservedFingerprint = browserFingerprint(_folderSupportsFarmLayouts);
-    _autoTimer = setInterval(() => { syncNow({ automatic: true }); }, AUTO_SYNC_MS);
+    _autoTimer = setInterval(() => { syncNow({ automatic: true, reason: 'folder-timer' }); }, AUTO_SYNC_MS);
     _changePollTimer = setInterval(() => {
       if (_state !== 'ready' || !_autoSyncArmed) return;
       const nextFingerprint = browserFingerprint(_folderSupportsFarmLayouts);
       if (nextFingerprint === _lastObservedFingerprint) return;
       _lastObservedFingerprint = nextFingerprint;
-      syncNow({ automatic: true });
+      syncNow({ automatic: true, reason: 'folder-change' });
     }, CHANGE_POLL_MS);
   }
 
@@ -587,7 +588,7 @@
     }
   }
 
-  async function _syncNowImpl({ automatic = false, force = false, snapshot = null, recoveryKind = 'auto' } = {}) {
+  async function _syncNowImpl({ automatic = false, force = false, snapshot = null, recoveryKind = 'auto', reason = null } = {}) {
     if (_state !== 'ready' || !_handle) return getStatus();
     if (automatic && !_autoSyncArmed) return getStatus();
     if (automatic && window.HobunjiAutosavePause?.isPaused?.()) { // Dev Companion autosave pause freezes the canonical folder; explicit saves still pass.
@@ -657,7 +658,7 @@
       const checkpointWriter = window.HobunjiSaveCheckpoints?.onFolderSnapshotWritten; // Recovery history advances only after the canonical folder write succeeds.
       if (typeof checkpointWriter === 'function') {
         try {
-          await checkpointWriter(saveSnapshot, { automatic, savedAt, recoveryKind });
+          await checkpointWriter(saveSnapshot, { automatic, savedAt, recoveryKind, reason });
         } catch (checkpointError) {
           _lastError = `Primary folder save succeeded, but recovery history could not be updated: ${String(checkpointError?.message || checkpointError)}`;
           _lastAction = automatic ? 'autosaved-primary-recovery-error' : 'saved-primary-recovery-error';
@@ -932,7 +933,7 @@
   }
 
   window.addEventListener('beforeunload', () => {
-    if (_state === 'ready' && _autoSyncArmed) syncNow({ automatic: true });
+    if (_state === 'ready' && _autoSyncArmed) syncNow({ automatic: true, reason: 'folder-unload' });
   });
 
   window.LocalSaveFolder = {

@@ -15491,7 +15491,10 @@
             return;
           }
           sceneTransAlpha = Math.max(0, sceneTransAlpha - dt * 2.5);
-          if (sceneTransAlpha <= 0) sceneTransDir = 0;
+          if (sceneTransAlpha <= 0) {
+            sceneTransDir = 0;
+            window.HobunjiSaveCheckpoints?.saveMapChange?.({ fromArea: sceneTransFromArea, toArea: currentArea }); // Capture only after destination loading and transition work finish.
+          }
         }
       }
 
