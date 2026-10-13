@@ -53,6 +53,7 @@
   // result is deterministic per seed and no caller mutates the returned
   // floor/mesh data after receiving it.
   const _cavernFloorCache = new Map();
+  const CAVERN_SCULPT_SIZE_Y = 3.0, CAVERN_PATH_Y_SHIFT_FRAC = 0.3; // Mirrors CavernSculptor DEFAULT_OPTS sizeY/pathYShiftFrac; taller clearance carves scale from these.
 
   function entranceConnectedFloor(floor, exitCol, exitRow) {
     const floorSet = new Set(floor.map(([col, row]) => `${col},${row}`)); // Used to discard any isolated carved pocket that cannot be reached from the cave mouth.
@@ -311,6 +312,9 @@
     return Number.isFinite(bestY) ? bestY : null;
   }
 
+  const FLOOR_INSET_OFFSETS = [[-0.3, -0.3], [0.3, -0.3], [-0.3, 0.3], [0.3, 0.3]]; // Fallback probes when a tile centre has no standable floor.
+  const MAX_FLOOR_STEP_ABOVE_MEDIAN = 0.5; // Higher samples are wall curve or the rock block's top, never standing ground.
+
   function floorSurfaceMap(floor, mesh) {
     const bins = new Map(); // Index only requested tile centers so sampling no longer scans the full mesh for every floor tile.
     for (const [col, row] of floor || []) bins.set(`${col},${row}`, []);
@@ -334,16 +338,30 @@
       }
     }
     const byTile = {}; // Serialized onto mapData for shared gameplay and rendering grounding.
-    const samples = [], missing = []; // Missing samples use the median of valid samples instead of dragging it toward zero.
+    const sampleTile = (key, col, row, offsets) => { // Lowest upward-facing sample among the given tile-local probes.
+      let y = null;
+      for (const [ox, oz] of offsets) {
+        const sampled = sampleMeshSurfaceAt(bins.get(key), Number(col) + 0.5 + ox, Number(row) + 0.5 + oz);
+        if (sampled !== null && (y === null || sampled < y)) y = sampled;
+      }
+      return y;
+    };
+    const centre = new Map(); // Exact centre samples keep authored/tessellated floor heights unchanged.
+    for (const [col, row] of floor || []) centre.set(`${col},${row}`, sampleTile(`${col},${row}`, col, row, [[0, 0]]));
+    const valid = [...centre.values()].filter(y => y !== null).sort((a, b) => a - b);
+    const median = valid.length ? valid[Math.floor(valid.length / 2)] : 0; // Stable fallback for missing/degenerate mesh coverage.
+    // Edge tiles narrower than the SDF lattice can have no floor triangle at
+    // their centre, leaving only wall curve or the rock block's top face
+    // underneath. Anything more than a step above the cave's own floor is
+    // never standing ground: try inset probes for a real floor patch, else
+    // fall back to the median instead of lifting characters onto the wall.
+    const cap = median + MAX_FLOOR_STEP_ABOVE_MEDIAN;
     for (const [col, row] of floor || []) {
-      const key = `${col},${row}`; // Lookup for this tile's triangles and final height.
-      const y = sampleMeshSurfaceAt(bins.get(key), Number(col) + 0.5, Number(row) + 0.5);
-      if (y === null) missing.push(key);
-      else { byTile[key] = y; samples.push(y); }
+      const key = `${col},${row}`;
+      let y = centre.get(key);
+      if (y === null || y > cap) y = sampleTile(key, col, row, FLOOR_INSET_OFFSETS);
+      byTile[key] = y !== null && y <= cap ? y : median;
     }
-    samples.sort((a, b) => a - b);
-    const median = samples.length ? samples[Math.floor(samples.length / 2)] : 0; // Stable fallback for missing/degenerate mesh coverage.
-    for (const key of missing) byTile[key] = median;
     return { byTile, median };
   }
 
@@ -454,10 +472,16 @@
 
   function expandCavernMapData(mapData, clearances, rng) {
     const floor = window.CavernSculptor.expandFootprint(mapData.floor, clearances); // Locale carver rebuilds visual rock and collision from the same expanded usable footprint.
-    const cacheKey = `${mapData.id}:clearance`, signature = JSON.stringify([floor, mapData.exitCol, mapData.exitRow]); // Existing cave cache keeps one expanded shell per map, replacing it when its footprint or entrance changes.
+    const heightScale = Math.max(1, Number(mapData.wallHeightScale) || 1); // Taller caves are carved taller, not stretched after the fact.
+    const cacheKey = `${mapData.id}:clearance`, signature = JSON.stringify([floor, mapData.exitCol, mapData.exitRow, heightScale]); // Existing cave cache keeps one expanded shell per map, replacing it when its footprint, entrance, or height changes.
     const cached = _cavernFloorCache.get(cacheKey); // Re-entry reuses the expensive SDF carve without caching runtime loot/inhabitant state.
+    // Growing sizeY extends the probe's vertical sweep levels upward so the
+    // ceiling is genuinely carved at the new height; pathYShiftFrac is divided
+    // by the same factor so the floor keeps its absolute offset from the
+    // volume bottom and all of the added height goes above it.
     const generated = cached?.signature === signature ? cached.generated : window.CavernSculptor.carveFootprintCavern(floor,
-      { tileSize: 0.5, gridN: 32, organicJitter: 0, hitsPerStep: 1, probeDigBursts: 2, probeMaxPasses: 45, enforceWalkableClearance: 1,
+      { tileSize: 0.5, gridN: 32, organicJitter: 0, hitsPerStep: 1, probeDigBursts: 2, probeMaxPasses: 45, enforceWalkableClearance: 1, refineFullColumn: true,
+        sizeY: CAVERN_SCULPT_SIZE_Y * heightScale, pathYShiftFrac: CAVERN_PATH_Y_SHIFT_FRAC / heightScale,
         entrance: { col: mapData.exitCol, row: mapData.exitRow, side: 'south' } }, rng);
     if (cached?.signature !== signature) _cavernFloorCache.set(cacheKey, { signature, generated });
     const rim = new Map(), floorKeys = new Set(floor.map(tile => tile.join(','))); // The newly carved room moves the protected boundary outward rather than making old wall tiles both floor and collider.
@@ -473,9 +497,8 @@
     mapData.rows = Math.max(mapData.rows, ...mapData.outerRimTiles.map(tile => tile[1] + 2), ...floor.map(tile => tile[1] + 2));
     mapData.floorSurfaceByTile = surface.byTile;
     mapData.floorSurfaceY = surface.median;
-    mapData.mesh = { ...generated.mesh, surfaceMaterial: mapData.mesh?.surfaceMaterial,
-      wallHeightScale: mapData.wallHeightScale || 1,
-      wallHeightBaseY: Math.max(surface.median, ...Object.values(surface.byTile)) + 0.01 };
+    mapData.mesh = { ...generated.mesh, surfaceMaterial: mapData.mesh?.surfaceMaterial }; // Height is already carved in; no render-time vertex stretch.
+    mapData.cavernCarvedHeightScale = heightScale;
     mapData.cavernClearanceFootprints = clearances;
     return mapData;
   }

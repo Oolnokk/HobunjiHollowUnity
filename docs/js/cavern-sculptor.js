@@ -635,7 +635,13 @@
     // actually needs — every claimed tile's own floor, not most of them.
     if (opts.adaptive !== false && opts.levels) {
       const rr = Math.max(opts.probeRadius || 0, ts * .75);
-      for (const y of opts.levels) ensureLocalResolution(st, { x: cx, y, z: cz }, rr, opts);
+      for (const y of opts.levels) {
+        // Footprint carves opt into an unconditional refine at every level:
+        // the gated pass can leave a coarse leaf high in the column, which
+        // dual-contours into a floating rock slab across an open tile.
+        if (opts.refineFullColumn) refineNear(st, { x: cx, y, z: cz }, rr, opts.minCell, false);
+        else ensureLocalResolution(st, { x: cx, y, z: cz }, rr, opts);
+      }
       if (opts.floorY != null) refineNear(st, { x: cx, y: opts.floorY, z: cz }, rr, opts.minCell, false);
     }
   }
