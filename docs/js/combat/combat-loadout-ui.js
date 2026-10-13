@@ -369,6 +369,8 @@
         const select = document.createElement('select');
         select.className = 'settings-select';
         select.id = 'combatLoadout_' + slot.id;
+        select.setAttribute('data-ctrl-skip', ''); // Controller focus goes to the ◀/▶ buttons; the native select can't be opened from a pad.
+        select.setAttribute('data-no-select-stepper', ''); // Already flanked by its own ◀/▶ buttons; keeps js/controller-select-steppers.js from adding a second pair.
         select.style.minWidth = '0';
         select.style.flex = '1 1 auto';
         for (const ability of abilities) {
@@ -405,7 +407,7 @@
       } else {
         const note = document.createElement('div'); // Used to make the controller path discoverable instead of depending on hidden native-select behavior.
         note.className = 'loadout-slot-combo-note';
-        note.textContent = 'Controller: focus ◀ / ▶ and press Confirm to swap attacks. Left/right on the dropdown also changes it.';
+        note.textContent = 'Controller: focus ◀ / ▶ and press Confirm to swap attacks.';
         card.appendChild(note);
       }
 

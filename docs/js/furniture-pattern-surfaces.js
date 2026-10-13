@@ -416,8 +416,9 @@
     });
     if (!candidates.length) return false;
     const panel = document.createElement('div'); // Touch-sized controls share the player's unlocked/saved pattern library.
+    panel.setAttribute('data-ctrl-panel', ''); // Lets controller navigation reach the surface dropdown and buttons.
     panel.style.cssText = 'position:fixed;inset:10% 5%;z-index:9400;background:#172126;color:white;padding:18px;overflow:auto;border:2px solid #b7a185;border-radius:12px';
-    panel.innerHTML = '<h3>Furniture pattern</h3><label>Surface <select data-part></select></label><br><label>Pattern tile size <input data-scale type="number" min="0.05" max="20" step="0.05"></label><br><label>Base dye <input data-base type="color"></label><br><label>Pattern dye <input data-dye type="color"></label><br><button data-edit>Choose / draw pattern</button> <button data-apply>Apply settings</button> <button data-close>Close</button><pre data-debug style="white-space:pre-wrap"></pre>';
+    panel.innerHTML = '<h3>Furniture pattern</h3><label>Surface <select data-part></select></label><br><label>Pattern tile size <input data-scale type="number" min="0.05" max="20" step="0.05"></label><br><label>Base dye <input data-base type="color"></label><br><label>Pattern dye <input data-dye type="color"></label><br><button data-edit>Choose / draw pattern</button> <button data-apply>Apply settings</button> <button data-close data-ctrl-cancel>Close</button><pre data-debug style="white-space:pre-wrap"></pre>';
     const find = name => panel.querySelector(`[data-${name}]`); // Dialog-scoped lookup avoids collisions with the furniture editor.
     candidates.forEach(({part}, index) => { const option = document.createElement('option'); option.value = index; option.textContent = part.name || part.id; find('part').appendChild(option); });
     const selected = () => candidates[Number(find('part').value) || 0]; // Selection is read at each action, never inferred from a global mesh name.

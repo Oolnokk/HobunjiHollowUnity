@@ -282,6 +282,7 @@ function element(tag = 'div') {
     classList: { values: new Set(), add(value) { this.values.add(value); }, remove(value) { this.values.delete(value); }, contains(value) { return this.values.has(value); } },
     appendChild(child) { this.children.push(child); if (child.id) elements.set(child.id, child); return child; },
     addEventListener(event, handler) { this.listeners[event] = handler; },
+    setAttribute(name, value) { (this.attributes ||= {})[name] = String(value); },
     insertAdjacentElement(_, child) { elements.set(child.id, child); },
     querySelector(selector) { return elements.get(selector.slice(1)) || null; },
     remove() { elements.delete(this.id); },
