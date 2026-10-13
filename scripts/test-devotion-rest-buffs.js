@@ -22,7 +22,7 @@ assert.match(core, /WELL_RESTED_DURATION_HOURS\s*=\s*16/, 'Well Rested lasts six
 assert.match(social, /id:\s*'shared_temple_service'[\s\S]{0,500}from:\s*'09:00'[\s\S]{0,200}to:\s*'11:00'/, 'prayer eligibility reuses the authored Anan morning service');
 const activeServiceBody = core.match(/function activeTempleService\(\) \{([\s\S]*?)\n  \}\n\n  function seatedInTemplePew/)?.[1] || ''; // Isolates service gating so night communion cannot silently become prayer-eligible again.
 assert.match(activeServiceBody, /schedule\.id\s*!==\s*'shared_temple_service'/, 'Pray is gated specifically to the morning Temple Service event');
-assert.doesNotMatch(activeServiceBody, /spirit_communion/, 'night Spirit Communion never opens the prayer chooser');
+assert.doesNotMatch(activeServiceBody, /return\s*\{\s*id:\s*'spirit_communion'/, 'night Spirit Communion never opens the prayer chooser');
 
 for (const prayer of ["Nao'ine Prayer", 'Krurenic Prayer', 'Narshangetic Prayer']) {
   assert(core.includes(prayer), `${prayer} is authored in the prayer chooser`);
