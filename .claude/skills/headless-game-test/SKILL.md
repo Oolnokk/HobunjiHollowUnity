@@ -54,6 +54,18 @@ timeout 10 bash -c 'until curl -sf http://localhost:8792/index.html >/dev/null; 
 Stop it later with `lsof -ti:8792 -sTCP:LISTEN | xargs -r kill` — not a broad
 `pkill` pattern.
 
+## Skipping the opening sequence
+
+A brand-new world plays a long black-screen introduction (several pages of text, each gated on Enter/Space) that hides the game
+for minutes of headless time. For dev/test use only, skip it:
+
+- Load the page with `?skipIntro=1` (e.g. `http://localhost:8792/index.html?skipIntro=1`), **or**
+- call `window.LoadingScreenRuntime.skipIntroduction()` from the console / `page.evaluate` (it also fast-forwards an introduction that
+  is already showing, and stays on for the rest of the page's life).
+
+Every page's hold time and Continue prompt is bypassed; the loading work each stage waits on still finishes, so the world is built
+exactly as after a normal read-through. (Implemented in `docs/js/loading-screen-runtime.js`.)
+
 ## Driving it with Playwright
 
 Chromium is pre-installed at `/opt/pw-browsers/chromium` (a symlink to the

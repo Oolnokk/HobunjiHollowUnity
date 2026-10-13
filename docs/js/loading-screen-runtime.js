@@ -728,6 +728,10 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
     const introAudio = window.AudioSystem?.beginIntroductionMix?.(); // Foreground text owns the exclusive wind mix and releases it with the same session.
     const inputLock = window.CharacterActionLocks?.acquire?.({ owner: 'introduction-loading', participants: [{ id: 'player', channels: ['movement', 'tools', 'actions'] }] }); // Covers stage one before the Director obtains its own action lock.
     let stages = [], startedAt = 0, stageIndex = -1, pageIndex = 0, ready = false, cancelled = false; // Stage/page clocks and input gate never reuse old input.
+    // Dev/test skip (?skipIntro=1 in the URL, or LoadingScreenRuntime.skipIntroduction() from the console): every page's hold time and
+    // Continue prompt is bypassed; the loading work each stage waits on still completes, so the world is exactly as after a normal read.
+    let skipping = state.skipIntroduction === true || (typeof URLSearchParams === 'function' && typeof location !== 'undefined' && new URLSearchParams(location.search).get('skipIntro') === '1');
+    const skipWaiters = new Set();
     let continueStage = null, rejectStage = null, unsubscribe = null; // Input subscription and outstanding page wait are released on success/error.
     let pageTimers = []; // Delayed line reveals are cancelled whenever the page, session, or opening changes.
     let pageVisiblePromise = Promise.resolve(); // First-page timing starts only once the violent wind has actually begun playing.
@@ -824,16 +828,18 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
       if (frame.pressed?.has('Button0')) { frame.pressed.delete('Button0'); accept(); }
     }, 1000);
     const waitForPageInput = async (page, requiredWork) => {
+      if (skipping) { await Promise.race([cancellation, requiredWork]); if (cancelled) throw new Error('Introduction loading cancelled'); return; }
       await pageVisiblePromise; // A page's clock does not start while the screen is still waiting for audible wind.
       const authoredReveals = Array.isArray(page?.delayedReveals) ? page.delayedReveals : [];
       const delayedTail = Math.max(0, ...authoredReveals.map(reveal => Math.max(MIN_INTRA_SLIDE_DELAY_SECONDS, Number(reveal?.afterSeconds) || 0))); // Four seconds applies only to text revealed inside the current slide.
       const authoredMinimum = Math.max(0, Number(page?.minimumSeconds) || Number(stages[stageIndex]?.minimumSeconds) || 0);
       const minimumSeconds = Math.max(authoredMinimum, delayedTail + (delayedTail > 0 ? INTRO_FADE_MS / 1000 : 0)); // Continue can appear as soon as the authored page hold and final intra-slide fade are complete.
       const minimum = minimumSeconds * 1000;
-      await Promise.race([cancellation, Promise.all([requiredWork, new Promise(resolve => setTimeout(resolve, Math.max(0, minimum - (nowMs() - startedAt))))])]);
+      await Promise.race([cancellation, Promise.all([requiredWork, new Promise(resolve => { const timer = setTimeout(resolve, Math.max(0, minimum - (nowMs() - startedAt))); skipWaiters.add(() => { clearTimeout(timer); resolve(); }); })])]);
       if (cancelled) throw new Error('Introduction loading cancelled');
       await new Promise((resolve, reject) => {
         continueStage = resolve; rejectStage = reject; ready = true; // Earlier taps are discarded; a fresh input is required for each visible page.
+        if (skipping) queueMicrotask(() => accept());
         continueButton.disabled = false;
         continueButton.style.pointerEvents = 'auto';
         continueButton.setAttribute?.('aria-hidden', 'false');
@@ -868,6 +874,7 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
         if (window.ControllerInput?.owner === 'introduction-loading') window.ControllerInput.setOwner('gameplay');
         if (state.introduction === session) { state.introduction = null; state.introductionStage = 0; finalizeHide(state.generation); }
       },
+      skip() { skipping = true; for (const wake of [...skipWaiters]) wake(); skipWaiters.clear(); if (continueStage && ready) accept(); },
       cancel() { const error = new Error('Introduction loading cancelled'); rejectCancellation(error); rejectStage?.(error); session.finish(); },
       getDebug: () => ({ audio: introAudio?.debug?.(), presetId, stage: stageIndex + 1, page: pageIndex + 1, pageCount: stagePages(stages[stageIndex]).length, ready, minimumSeconds: stagePages(stages[stageIndex])[pageIndex]?.minimumSeconds ?? stages[stageIndex]?.minimumSeconds, latestChange: 'Opening narration waits for audible wind before first paint; four seconds applies only to intra-slide reveals, the proverb is bold/bronze, and its authored ten-second black inter-slide pause precedes the carriage crash.' }),
     };
@@ -1018,6 +1025,7 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
     hide,
     coversWorld,
     beginIntroduction,
+    skipIntroduction() { state.skipIntroduction = true; state.introduction?.skip?.(); return !!state.introduction; }, // Dev/test: also ?skipIntro=1. Skips the opening's holds and Continue prompts.
     setProgress,
     shouldLoadForTransition,
     installTransitionHook,

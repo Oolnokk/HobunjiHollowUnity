@@ -843,11 +843,11 @@
       hip.add(thigh);
       const hipGuide = makeJointGuide(THREE, 0xffd98f, 0.021);
       hip.add(hipGuide);
-      const thighGuide = makeBoneGuide(THREE, 0xffb267);
+      const thighGuide = makeBoneGuide(THREE, 0x18e7ef);
       thigh.add(thighGuide);
       const kneeGuide = makeJointGuide(THREE, 0xffd39a, 0.022);
       calf.add(kneeGuide);
-      const calfGuide = makeBoneGuide(THREE, 0xff7f50);
+      const calfGuide = makeBoneGuide(THREE, 0xff00a9);
       calf.add(calfGuide);
       return { hip, thigh, calf, hipGuide, thighGuide, kneeGuide, calfGuide };
     }
@@ -929,10 +929,12 @@
       const bend = legBend[side];
       const solved = window.LegBones.solveTwoBoneLeg(THREE, {
         hip: chain.hip.position, foot: target, bendDegX: bend.x, bendDegZ: bend.z,
+        foldMaxLength: state.gaitStrideLength > 0.001 ? (standingLegLength() + Math.hypot(standingLegLength(), state.gaitStrideLength * 0.5)) * 0.5 : 0, // Legs just straighten (and slightly extend) at the extremes of a stride; the knees fold forward in between.
       });
       chain.thigh.quaternion.copy(solved.thighQuaternion);
       chain.calf.position.set(0, -solved.thighLength, 0);
       chain.calf.quaternion.copy(solved.calfLocalQuaternion);
+      chain.calf.userData.hobunjiCalfLength = solved.calfLength; // Lets the Pants rig place the ankle: calf origin + calf-down * calfLength.
       mesh.position.set(0, -solved.calfLength, 0);
       mesh.rotation.x = state[`${side}Roll`];
       applyBoneGuideTransforms(chain, solved.thighLength, solved.calfLength);
@@ -1290,7 +1292,7 @@
       state.gaitStrength = damp(state.gaitStrength, gaitTarget, gaitTarget > state.gaitStrength ? 8 : 12, dt);
 
       const gaitLegLength = standingLegLength(); // Used as the stride reach basis so species proportions, not total sprite height, determine step length.
-      const strideCurve = 0.24 + 0.34 * Math.sqrt(speedRatio); // Preserves the existing speed-to-stride response before anatomical normalization.
+      const strideCurve = 0.32 + 0.44 * Math.sqrt(speedRatio); // Long, confident steps (about 1.3x the original curve); cadence drops to keep ground speed.
       const fullStride = (gaitLegLength / STRIDE_REFERENCE_LEG_FRACTION) * strideCurve;
       const strideLength = fullStride * state.gaitStrength;
       const cadenceHz = isGaiting && fullStride > 0.001
@@ -1386,6 +1388,16 @@
 
     return {
       group: root, update, dispose, applyRecordedLegPose, getStandingPoseDebug,
+      // The legs' standing stance (hip and idle-foot positions, group-local), independent of whatever pose they are in right now:
+      // the Pants garment binds to this so it fits the same whether the avatar is seated, mid-stride or just spawned.
+      getRestStance: () => {
+        const stance = {};
+        for (const side of ['left', 'right']) {
+          const hip = legChains[side].hip.position;
+          stance[side] = { hip: { x: hip.x, y: hip.y, z: hip.z }, ankle: { x: side === 'left' ? state.idleLeftX : state.idleRightX, y: side === 'left' ? state.leftContactY : state.rightContactY, z: 0 } };
+        }
+        return stance;
+      },
       setHoverMode, isHoverMode,
       standingPosteriorY: posteriorY, // Used by NPC chair stations to lower the whole avatar onto the authored seat.
       getSeatedPoseDebug: () => lastSeatedPoseDebug,

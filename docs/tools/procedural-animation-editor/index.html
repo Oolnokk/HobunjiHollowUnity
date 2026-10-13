@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<script src="../../js/tap-reliability.js?v=20261010a"></script>
 <title>Hobunji Procedural Movement Animator</title>
 <style>
 :root {
@@ -545,6 +546,10 @@ header,
    down to a small corner card rearranges its fields into one column
    instead of clipping or overlapping them. */
 #leftPanel .selectorBody { container-type: inline-size; container-name: hobunjiPanelBody; }
+/* The display:flex !important above beats the browser's own hiding of a closed <details>, which left a 301x1108 box
+   for the closed drawer at z-index 70, above the Pants panel (z-index 20), covering its header buttons and both
+   Enlarge buttons. A closed drawer must have no box at all. */
+#leftPanel:not([open]) > .selectorBody { display: none !important; }
 @container hobunjiPanelBody (max-width: 360px) {
   #leftPanel .repoFields,
   #leftPanel .creatureGrid,
@@ -54975,10 +54980,19 @@ const REQUIRED_SCRIPTS = [
   'config/scratchbones-config.js',
   'config/attachment-rig-profiles.js',
   'config/hand-model-profiles.js',
+  // The game loads these through held-action-animations.js -> attachment-rig-latest-authored-snapshot.js.
+  // Without them the editor kept the stale base anatomy (e.g. Mao-ao male placement 0.95 / portrait
+  // scale 1.0 instead of the game's 1.1 / 0.8) and posterior heights, so the portrait sat at the wrong
+  // height relative to the feet and hands. Order mirrors the game's bootstrap.
+  'config/character-rig-scale-defaults.js',
+  'js/attachment-rig-latest-authored-snapshot-core.js',
+  'js/character-rig-maoao-authored-20260905.js',
+  'js/color-fill.js', // portrait-utils.js throws unless ColorFill is already loaded.
   'js/portrait-utils.js',
   'js/portrait-breathing.js',
   'js/npc-avatar-preview-utils.js',
   'js/png-plane-avatar.js',
+  'js/character-rig-scale.js', // Whole-character body x/y scale + neck-rig head compensation applied to the floor root in bindProceduralModel().
   'js/leg-bones.js',
   CREATURE_RENDER_SCRIPT,
 ];
@@ -55164,7 +55178,11 @@ const procedural = { // Holds live input, motion, playback, and recording state 
     rightPhase: 'idle', // Exposes whether the right foot is planted, swinging, or settling.
   },
   hands: {
-    root: null, // Parents both generated hand GLBs directly under the avatar model (same frame as handAttachX/Y), for Dance's generated arm bones to find and drive by name.
+    root: null, // Parents both generated hand GLBs directly under the avatar model, for Dance's generated arm bones to find and drive by name.
+    left: null, // Left hand socket wrapper (see applyFreeHandPose).
+    right: null, // Right hand socket wrapper.
+    rest: null, // gameFreeHandRestLocal() result for the current model.
+    motion: { phase: 0, gaitStrength: 0 }, // Free-hand swing state mirroring procedural-hand-frame-driver.js.
   },
   legBones: { // Invisible hip->thigh->calf debug visualization + authored-bend gizmo (see docs/js/leg-bones.js).
     enabled: true, // "Show leg bones" toggle.
@@ -55173,6 +55191,7 @@ const procedural = { // Holds live input, motion, playback, and recording state 
     defaultFrame: null, // Object3D re-oriented every frame to the unauthored (straight-at-the-foot) left-thigh direction.
     proxy: null, // Child of defaultFrame; its LOCAL quaternion IS the authored bend (so it survives defaultFrame's own per-frame gait tracking).
     lines: { left: null, right: null }, // THREE.Line (hip -> knee -> foot), one per leg.
+    chains: null, // Invisible left/right {hip, thigh, calf} Object3D chains solved every frame (named like the game runtime's), so Pants Rig and other adapters can read real bone transforms.
     transformControls: null,
     transformHelper: null,
   },
@@ -55372,6 +55391,8 @@ async function loadRepositoryRuntime(settings) {
     await executeClassicScript(code, rawUrl(path));
     log(`Loaded runtime script ${path}`);
   }
+
+  window.applyHobunjiAttachmentRigProfileCorrections?.(); // Same post-bootstrap call held-action-animations.js makes in the game: pushes snapshot anatomy into the live pngPlaneAvatar config.
 
   if (!window.NpcAvatarPreview) throw new Error('npc-avatar-preview-utils.js did not expose window.NpcAvatarPreview.');
   if (!window.PNGPlaneAvatar) throw new Error('png-plane-avatar.js did not expose window.PNGPlaneAvatar.');
@@ -55981,7 +56002,8 @@ function profileWithoutClothingForPlacement(profile) { // Produces an anatomy-re
 async function buildAvatarRender(npc, options = {}) {
   const bodyOnly = options.bodyOnly === true;
   const cacheKey = `${state.resolvedSha}:${npc.id || npc.name}:${JSON.stringify(npc.appearance || {})}:${JSON.stringify(npc.equippedCosmetics || [])}:${JSON.stringify(npc.appliedDyes || {})}:placementBodyOnly=${bodyOnly}`;
-  if (state.renderCache.has(cacheKey)) return state.renderCache.get(cacheKey);
+  const remember = result => { if (!result.bodyOnly) state.lastPortraitRender = result; return result; }; // The Pants adapter builds its overwear mask from the avatar's own profile + front portrait.
+  if (state.renderCache.has(cacheKey)) return state.renderCache.get(cacheKey).then(remember);
   const promise = (async () => {
     const exportNpc = portraitExportFor(npc);
     let profile = window.NpcAvatarPreview.buildProfileFromNpcExport(exportNpc);
@@ -55999,10 +56021,12 @@ async function buildAvatarRender(npc, options = {}) {
     const back = Object.assign(document.createElement('canvas'), { width: size, height: size });
     await renderPortraitSerial(front, profile, { seatId: npc.id || npc.name || 'npc' });
     await renderPortraitSerial(back, profile, { seatId: npc.id || npc.name || 'npc', portraitView: 'behind' });
-    return { exportNpc, profile, front, back, bodyOnly };
+    const head = Object.assign(document.createElement('canvas'), { width: size, height: size }); // Locates the neck pivot, exactly like game.js's NPC walker build.
+    await renderPortraitSerial(head, profile, { seatId: npc.id || npc.name || 'npc', onlyHeadSprite: true, forceEyesOpen: true });
+    return { exportNpc, profile, front, back, head, bodyOnly };
   })();
   state.renderCache.set(cacheKey, promise);
-  try { return await promise; }
+  try { return remember(await promise); }
   catch (error) { state.renderCache.delete(cacheKey); throw error; }
 }
 
@@ -57646,7 +57670,7 @@ function updateExperimentalFeetGait(dt, movingSpeed, characterMotion, input) { /
 
   const modelHeight = Math.max(0.1, Number(analysis.gameModelHeight) || 0.9); // Scales gait dimensions from the exact game world model after species/child scaling.
   const stanceFraction = 0.62; // Keeps each foot planted longer than it is airborne, like ordinary walking.
-  const fullStride = modelHeight * (0.24 + 0.34 * Math.sqrt(speedRatio)); // Lengthens the step continuously from a shuffle into a sprint stride.
+  const fullStride = modelHeight * (0.32 + 0.44 * Math.sqrt(speedRatio)); // Lengthens the step continuously from a shuffle into a sprint stride (long, confident steps).
   const strideLength = fullStride * procedural.feet.gaitStrength; // Fades horizontal travel at movement start and stop.
   const cadenceHz = movingSpeed > 0.025 && fullStride > 0.001
     ? clampNumber((movingSpeed * stanceFraction) / fullStride, 0.55, input.sprint ? 3.2 : 2.8)
@@ -57725,6 +57749,7 @@ function disposeLegBonesVisual() {
   lb.proxy = null;
   lb.lines.left = null;
   lb.lines.right = null;
+  lb.chains = null;
 }
 
 function buildLegBonesVisual() {
@@ -57734,16 +57759,33 @@ function buildLegBonesVisual() {
   const lb = procedural.legBones;
   const root = new THREE.Group();
   root.name = 'LegBonesDebug';
-  const makeLine = color => {
-    const geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()]);
-    const material = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9, depthTest: false });
-    const line = new THREE.Line(geometry, material);
+  const THIGH_COLOR = [0x18, 0xe7, 0xef], CALF_COLOR = [0xff, 0x00, 0xa9]; // Same cyan / magenta as the thigh and calf bones in the 2D Pants Rig Author workspace.
+  const makeLine = () => { // Two separate bones per leg: hip->knee (thigh) and knee->foot (calf).
+    const geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()]);
+    const colors = new Float32Array(4 * 3);
+    [THIGH_COLOR, THIGH_COLOR, CALF_COLOR, CALF_COLOR].forEach((rgb, vertex) => rgb.forEach((channel, i) => { colors[vertex * 3 + i] = channel / 255; }));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    const material = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.95, depthTest: false });
+    const line = new THREE.LineSegments(geometry, material);
     line.renderOrder = 999; // Reads clearly through the avatar plane/foot meshes instead of z-fighting or hiding behind them.
     root.add(line);
     return line;
   };
-  lb.lines.left = makeLine(0x5ec8ff);
-  lb.lines.right = makeLine(0xffa15e);
+  lb.lines.left = makeLine();
+  lb.lines.right = makeLine();
+  lb.chains = {}; // Same hip -> thigh -> calf names as docs/js/procedural-leg-animation.js; matrices update while the debug lines are hidden because three still updates invisible nodes.
+  for (const side of ['left', 'right']) {
+    const hip = new THREE.Group();
+    hip.name = `${side}_hip`;
+    const thigh = new THREE.Group();
+    thigh.name = `${side}_thigh`;
+    const calf = new THREE.Group();
+    calf.name = `${side}_calf`;
+    thigh.add(calf);
+    hip.add(thigh);
+    root.add(hip);
+    lb.chains[side] = { hip, thigh, calf };
+  }
   lb.defaultFrame = new THREE.Object3D();
   lb.defaultFrame.name = 'LeftThighDefaultFrame';
   root.add(lb.defaultFrame);
@@ -57787,18 +57829,30 @@ function updateLegBonesVisual() {
   const bendEuler = lb.proxy ? new THREE.Euler().setFromQuaternion(lb.proxy.quaternion, 'XYZ') : new THREE.Euler();
   const bendDegX = THREE.MathUtils.radToDeg(bendEuler.x);
   const bendDegZ = THREE.MathUtils.radToDeg(bendEuler.z);
-  const drawLeg = (hip, foot, line, sideBendDegX) => {
+  const drawLeg = (side, hip, foot, line, sideBendDegX) => {
     if (!foot || !line) return;
-    const solved = window.LegBones.solveTwoBoneLeg(THREE, { hip, foot: foot.position, bendDegX: sideBendDegX, bendDegZ });
+    const groundY = Math.min(leftFoot?.position?.y ?? Infinity, rightFoot?.position?.y ?? Infinity); // The planted foot sits on the ground.
+    const standingLength = Math.max(0.001, hip.y - groundY);
+    const strideNow = Number(procedural.feet.strideLength) || 0;
+    const solved = window.LegBones.solveTwoBoneLeg(THREE, { hip, foot: foot.position, bendDegX: sideBendDegX, bendDegZ, foldMaxLength: strideNow > 0.001 ? (standingLength + Math.hypot(standingLength, strideNow * 0.5)) * 0.5 : 0 }); // Knees fold forward between the extremes of a stride.
+    const chain = lb.chains?.[side]; // Drives the invisible bone nodes from the exact same solve that draws the debug line.
+    if (chain) {
+      chain.hip.position.set(hip.x, hip.y, hip.z);
+      chain.thigh.quaternion.copy(solved.thighQuaternion);
+      chain.calf.position.set(0, -solved.thighLength, 0);
+      chain.calf.quaternion.copy(solved.calfLocalQuaternion);
+      chain.calf.userData.hobunjiCalfLength = solved.calfLength; // Lets the Pants rig place the ankle: calf origin + calf-down * calfLength.
+    }
     const positions = line.geometry.attributes.position;
     positions.setXYZ(0, hip.x, hip.y, hip.z);
-    positions.setXYZ(1, solved.knee.x, solved.knee.y, solved.knee.z);
-    positions.setXYZ(2, foot.position.x, foot.position.y, foot.position.z);
+    positions.setXYZ(1, solved.knee.x, solved.knee.y, solved.knee.z); // Thigh: vertices 0-1.
+    positions.setXYZ(2, solved.knee.x, solved.knee.y, solved.knee.z); // Calf: vertices 2-3.
+    positions.setXYZ(3, foot.position.x, foot.position.y, foot.position.z);
     positions.needsUpdate = true;
     line.geometry.computeBoundingSphere();
   };
-  drawLeg(leftHip, leftFoot, lb.lines.left, bendDegX);
-  drawLeg(rightHip, rightFoot, lb.lines.right, -bendDegX); // Right leg mirrors the left's lateral (x) bend, matching legBendForSpecies' own mirroring.
+  drawLeg('left', leftHip, leftFoot, lb.lines.left, bendDegX);
+  drawLeg('right', rightHip, rightFoot, lb.lines.right, -bendDegX); // Right leg mirrors the left's lateral (x) bend, matching legBendForSpecies' own mirroring.
 }
 
 function syncLegBonesVisibility() {
@@ -58086,16 +58140,110 @@ function disposeExperimentalHands() { // Removes the generated hand GLBs before 
     disposeObjectResources(handsRoot);
   }
   procedural.hands.root = null;
+  procedural.hands.left = null;
+  procedural.hands.right = null;
+  procedural.hands.rest = null;
 }
 
-// Builds simple GLB hand markers — one per side, named `${model.name}_LeftHand`/
-// `_RightHand` and parented directly to the model (the same local space
-// handAttachX/handAttachY already live in) — for Dance's generated arm bones
-// (docs/js/procedural-dance-mode-core.js) to find by name and drive every
-// frame. Unlike the feet, nothing in this editor's own native gait moves
-// these; they simply sit at the idle hand-attach point until Dance (or
-// nothing) repositions them, mirroring how the real game's own hand system
-// is a single flat socket with no owned animation of its own either.
+// Game free-hand rule (docs/js/procedural-hand-shoulder-aim.js
+// alignFreeHandToFallbackAnchor + procedural-hand-attachments.js setSideIdle):
+// an empty hand sits at its attachment-rig shoulder anchor's X and at
+// posteriorY - modelHeight * anatomy.armLengthHeightPercentOffset / 100, in the
+// floor-relative character parent. The hands here are parented under the model
+// (Dance finds them by name), which sits avatarLiftY above that floor parent, so
+// every floor-relative value is shifted down by the lift. handAttachY is itself
+// floor-relative; using it directly under the lifted model is what left the
+// hands at shoulder height with no arm length.
+const FREE_HAND_IDLE_MEDIAL_YAW_DEG = 90; // procedural-hand-attachments.js IDLE_MEDIAL_YAW_DEG.
+const FREE_HAND_RIGHT_TWIST_DEG = 180; // procedural-hand-attachments.js RIGHT_SHOULDER_AXIS_TWIST_DEG.
+const FREE_HAND_REFERENCE_SPEED = 3.2; // procedural-hand-frame-driver.js FALLBACK_REFERENCE_SPEED.
+
+function gameFreeHandRestLocal(model, speciesId, gender) { // Returns { left/right: { hand, shoulder } } in model-local space plus the source used.
+  const modelHeight = Number(model?.userData?.portraitModelHeight) || 0.9;
+  const lift = model === state.three.model && Number.isFinite(procedural.avatarLiftY) ? procedural.avatarLiftY : modelHeight / 2;
+  const handAttachX = Number(model?.userData?.handAttachX);
+  const handAttachY = Number(model?.userData?.handAttachY);
+  const safeHandAttachX = Number.isFinite(handAttachX) ? handAttachX : -modelHeight * 0.28;
+  const safeHandAttachY = Number.isFinite(handAttachY) ? handAttachY : modelHeight * 0.45;
+  const transformSpecies = typeof window.hobunjiTransformSpeciesId === 'function' ? window.hobunjiTransformSpeciesId(speciesId) : speciesId;
+  const lib = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters || {};
+  const profile = lib[`${transformSpecies}::${gender}`] || lib[`${speciesId}::${gender}`] || null;
+  const posteriorY = posteriorYForAnalysis({ gameModelHeight: modelHeight, handAttachY: safeHandAttachY, speciesId: profile?.species || transformSpecies, gender });
+  const armOffset = Number(profile?.anatomy?.armLengthHeightPercentOffset);
+  const wristY = posteriorY - modelHeight * (Number.isFinite(armOffset) ? armOffset : 0) / 100;
+  const result = { source: profile ? 'attachment-rig-profile' : 'handAttach-fallback', modelHeight, lift, posteriorY, wristY };
+  for (const side of ['left', 'right']) {
+    const anchor = profile?.anchors?.[`${side}HandShoulder`]?.position;
+    const hasAnchor = anchor && [anchor.x, anchor.y, anchor.z].every(value => Number.isFinite(Number(value)));
+    const idleX = side === 'left' ? -safeHandAttachX : safeHandAttachX; // procedural-hand-attachments.js idlePositions sign convention.
+    const shoulder = hasAnchor
+      ? { x: Number(anchor.x), y: Number(anchor.y) - lift, z: Number(anchor.z) }
+      : { x: idleX * 0.72, y: safeHandAttachY + modelHeight * 0.08 - lift, z: 0 };
+    const hand = { x: hasAnchor ? Number(anchor.x) : idleX, y: (profile ? wristY : safeHandAttachY) - lift, z: 0 };
+    result[side] = { hand, shoulder };
+  }
+  return result;
+}
+
+const ARM_SWING_DEG = 38; // Peak forward/back arm swing about the shoulder.
+const ARM_LENGTH_FRACTION = 0.26; // Shoulder-to-wrist distance as a fraction of model height (the arc's radius).
+
+function freeHandFallbackPose(side, motion, nowMs, modelHeight) { // Same formula as procedural-hand-frame-driver.js fallbackPose().
+  const sidePhase = motion.phase + (side === 'right' ? Math.PI : 0);
+  const swing = Math.sin(sidePhase);
+  const liftWave = Math.max(0, Math.cos(sidePhase));
+  const idlePhase = nowMs * 0.0017 + (side === 'right' ? 0.28 : 0);
+  const idleBreath = Math.sin(idlePhase);
+  const h = modelHeight;
+  const gait = motion.gaitStrength;
+    const swingAngle = ARM_SWING_DEG * Math.PI / 180 * swing; // Arm swing about the shoulder: the hand's position and its pitch share this angle, so the arm turns as one piece.
+  return {
+    position: {
+      y: h * 0.0045 * idleBreath * (1 - gait) + ARM_LENGTH_FRACTION * h * (1 - Math.cos(swingAngle)) * gait, // The hand rides an arc about its shoulder: it rises as the arm swings away from hanging.
+      z: ARM_LENGTH_FRACTION * h * Math.sin(swingAngle) * gait + h * 0.003 * Math.cos(idlePhase) * (1 - gait),
+    },
+    rotationDeg: {
+      pitch: ARM_SWING_DEG * swing * gait + 2.5 * idleBreath * (1 - gait),
+      yaw: (side === 'right' ? -1 : 1) * 3 * gait * Math.abs(swing),
+      roll: (side === 'right' ? -1 : 1) * (5 * liftWave * gait + 1.5 * idleBreath * (1 - gait)),
+    },
+  };
+}
+
+function applyFreeHandPose(dt = 0, movingSpeed = 0) { // Drives both free hands like the game's empty-hand fallback (idle breathing, walk swing).
+  const hands = procedural.hands;
+  const rest = hands.rest;
+  const THREE = state.three.THREE;
+  if (!hands.root || !rest || !THREE) return;
+  const motion = hands.motion;
+  const damp = (current, target, rate) => current + (target - current) * (1 - Math.exp(-Math.max(0, rate) * Math.max(0, dt)));
+  const speedRatio = Math.max(0, Math.min(1.25, movingSpeed / FREE_HAND_REFERENCE_SPEED));
+  const targetStrength = movingSpeed > 0.035 ? Math.sqrt(speedRatio) : 0;
+  motion.gaitStrength = damp(motion.gaitStrength, targetStrength, targetStrength > motion.gaitStrength ? 9 : 13);
+  const fullStride = Math.max(rest.modelHeight * (0.32 + 0.44 * Math.sqrt(speedRatio)), 0.12); // The legs' stride, so each arm swings once per leg cycle.
+  const cadenceHz = movingSpeed > 0.035 ? Math.max(0.55, Math.min(3.2, movingSpeed * 0.62 / fullStride)) : 0;
+  if (cadenceHz > 0 && dt > 0) motion.phase = (motion.phase + dt * cadenceHz * Math.PI * 2) % (Math.PI * 2);
+  const nowMs = performance.now();
+  const idleQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, THREE.MathUtils.degToRad(FREE_HAND_IDLE_MEDIAL_YAW_DEG), 0, 'YXZ'));
+  for (const side of ['left', 'right']) {
+    const wrapper = hands[side];
+    if (!wrapper) continue;
+    const pose = freeHandFallbackPose(side, motion, nowMs, rest.modelHeight);
+    wrapper.position.set(rest[side].hand.x, rest[side].hand.y + pose.position.y, rest[side].hand.z + pose.position.z);
+    const fallbackQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(
+      THREE.MathUtils.degToRad(pose.rotationDeg.pitch),
+      THREE.MathUtils.degToRad(pose.rotationDeg.yaw),
+      THREE.MathUtils.degToRad(pose.rotationDeg.roll),
+      'YXZ',
+    ));
+    wrapper.quaternion.copy(idleQuaternion).multiply(fallbackQuaternion);
+  }
+}
+
+// Builds the GLB hands — one per side, named `${model.name}_LeftHand`/
+// `_RightHand` and parented directly to the model — for Dance's generated arm
+// bones (docs/js/procedural-dance-mode-core.js) to find by name. Outside Dance
+// they follow the game's free-hand rule above via applyFreeHandPose().
 async function buildExperimentalHandsForAvatar(model, avatar) {
   disposeExperimentalHands();
   if (!model || state.previewMode !== 'npc' || !window.HobunjiHandModelProfiles) return;
@@ -58117,15 +58265,15 @@ async function buildExperimentalHandsForAvatar(model, avatar) {
   const targetHeight = modelHeight * handHeightFraction;
   const effectiveScale = Number(window.HobunjiHandModelProfiles.effectiveScaleFor?.(speciesId, gender)) || 1; // model.scale (per-GLB import correction) * species/gender scale — the exact factor docs/js/procedural-hand-attachments.js's own buildGlbHand() multiplies on top of its own canonicalFit.
   const sourceIsLeft = handProfile.mirrorX !== false; // Matches docs/js/procedural-hand-attachments.js's own sourceIsLeft convention (authored GLBs default to a left-hand basis).
-  const handAttachX = Number(model.userData?.handAttachX);
-  const handAttachY = Number(model.userData?.handAttachY);
-  const safeHandAttachX = Number.isFinite(handAttachX) ? handAttachX : -modelHeight * 0.28;
-  const safeHandAttachY = Number.isFinite(handAttachY) ? handAttachY : modelHeight * 0.45;
+  const rest = gameFreeHandRestLocal(model, speciesId, gender);
+  model.userData.gameFreeHandRest = rest; // Read by Dance's arm rig so its relaxed pose and shoulders match this placement.
 
   const handsRoot = new THREE.Group();
   handsRoot.name = `${model.name || 'Avatar'}_procedural_hands`;
   model.add(handsRoot);
   procedural.hands.root = handsRoot;
+  procedural.hands.rest = rest;
+  procedural.hands.motion = { phase: 0, gaitStrength: 0 };
 
   for (const side of ['left', 'right']) {
     const mesh = state.footGlb.skeletonClone ? state.footGlb.skeletonClone(gltf.scene) : gltf.scene.clone(true);
@@ -58144,13 +58292,18 @@ async function buildExperimentalHandsForAvatar(model, avatar) {
     // Deliberately NOT recentering on the mesh's own bounds: per
     // procedural-hand-attachments.js's own comment, the GLB's authored 0,0,0
     // is the grip/wrist origin and must stay the pivot Dance positions.
-    const wrapper = new THREE.Group(); // Dance sets this wrapper's position/quaternion each frame; the mesh itself stays at its authored rest orientation and pivot inside it.
+    const visual = new THREE.Group(); // Same visual group as buildGlbHand(), including the right hand's shoulder-axis twist.
+    visual.name = `${model.name || 'Avatar'}_${side}_hand_visual`;
+    if (side === 'right') visual.rotation.y = THREE.MathUtils.degToRad(FREE_HAND_RIGHT_TWIST_DEG);
+    visual.add(mesh);
+    const wrapper = new THREE.Group(); // Socket equivalent: Dance or applyFreeHandPose() sets its position/quaternion.
     wrapper.name = `${model.name || 'Avatar'}_${side === 'left' ? 'Left' : 'Right'}Hand`;
-    wrapper.add(mesh);
-    wrapper.position.set(side === 'left' ? -Math.abs(safeHandAttachX) : Math.abs(safeHandAttachX), safeHandAttachY, 0);
+    wrapper.add(visual);
     handsRoot.add(wrapper);
+    procedural.hands[side] = wrapper;
   }
-  log(`Generated ${speciesId} hand markers from ${handProfile.glb} at effective scale ${effectiveScale.toFixed(3)}.`);
+  applyFreeHandPose(0, 0);
+  log(`Generated ${speciesId} hands from ${handProfile.glb} at effective scale ${effectiveScale.toFixed(3)}; free-hand rest from ${rest.source}: posterior ${rest.posteriorY.toFixed(3)}, wrist ${rest.wristY.toFixed(3)} above floor.`);
 }
 
 function disposeCurrentThreeModel() {
@@ -58856,8 +59009,8 @@ function identityTransformRecord() { // Supplies the neutral center of the four-
 
 function createDefaultDirectionalPoses() { // Gives each endpoint a visible but conservative starting lean that can be replaced with the gizmo.
   return {
-    forward: { position: vectorRecord(0, -0.015, 0.025), rotationDeg: vectorRecord(-8, 0, 0), scale: vectorRecord(1, 1, 1) },
-    backward: { position: vectorRecord(0, -0.01, -0.015), rotationDeg: vectorRecord(7, 0, 0), scale: vectorRecord(1, 1, 1) },
+    forward: { position: vectorRecord(0, -0.015, 0.025), rotationDeg: vectorRecord(8, 0, 0), scale: vectorRecord(1, 1, 1) },
+    backward: { position: vectorRecord(0, -0.01, -0.015), rotationDeg: vectorRecord(-7, 0, 0), scale: vectorRecord(1, 1, 1) },
     left: { position: vectorRecord(-0.025, -0.01, 0), rotationDeg: vectorRecord(0, 0, 8), scale: vectorRecord(1, 1, 1) },
     right: { position: vectorRecord(0.025, -0.01, 0), rotationDeg: vectorRecord(0, 0, -8), scale: vectorRecord(1, 1, 1) },
   };
@@ -59356,11 +59509,24 @@ function bindProceduralModel(model, options = {}) { // Wraps the repository avat
   const modelHeight = Number(model.userData?.portraitModelHeight) || 0; // Supplies the final scaled avatarHeight returned by PNGPlaneAvatar.
   procedural.baseModelY = useGameGrounding ? previewGroundWorldY() : 0;
   procedural.avatarLiftY = useGameGrounding ? modelHeight / 2 : 0;
+  // Whole-character body x/y scale around the floor, on the root that owns the
+  // portrait lift, feet, leg bones and hands — the same single floor-relative
+  // parent character-rig-scale.js scales in the game (also compensates the head).
+  procedural.bodyRigScale = null;
+  if (useGameGrounding && window.HobunjiCharacterRigScale?.applyToParent && model.userData?.speciesId) {
+    const rigSpecies = model.userData.speciesId;
+    const rigGender = model.userData.gender || 'male';
+    const age = window.HobunjiCharacterRigScale.ageFor?.({ avatarRoot: model }) || 0;
+    if (window.HobunjiCharacterRigScale.applyToParent(locomotionRoot, rigSpecies, rigGender, null, age)) {
+      procedural.bodyRigScale = { ...locomotionRoot.userData.hobunjiCharacterRigScaleState.factor, species: rigSpecies, gender: rigGender };
+    }
+  }
   model.userData.gameGrounding = {
     enabled: useGameGrounding,
     floorY: procedural.baseModelY,
     avatarHeight: modelHeight,
     avatarHeightHalfLift: procedural.avatarLiftY,
+    bodyRigScale: procedural.bodyRigScale,
     formula: 'locomotion floor root Y + avatarHeight / 2 lift root, matching makeNpcWalker / refreshPlayerAvatar',
   };
   resetProceduralMovement({ resetCamera: true, preservePlayback: true });
@@ -59683,6 +59849,7 @@ function updateProceduralMovement(dt) { // Advances input, movement physics, pos
   syncPosteriorPoseRotationOrigin(); // Recomputes the pivot-compensated position now that sway/counter-wave rotation was applied directly, after applyTransformRecord already ran.
   removeFootingDrunkenLegPlacement();
   updateExperimentalFeetGait(dt, movingSpeed, characterMotion, input);
+  applyFreeHandPose(dt, movingSpeed);
   applyFootingDrunkenLegPlacement(dt, movingSpeed);
   updateLegBonesVisual();
   applyAutoWalkBakedBlendOverlay();
@@ -60290,6 +60457,8 @@ async function placeThreeModel(npc, avatar) {
   const worldModelHeight = worldModelWidth * (avatar.front.height / Math.max(1, avatar.front.width)); // Preserves non-square source aspect before species/child scaling.
   t.model = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(t.THREE, avatar.front, {
     backCanvas: avatar.back,
+    headCanvas: avatar.head,
+    neckRig: true, // Game NPC walkers build a neck rig; the body rig scale's head compensation needs it.
     profile: avatar.profile,
     appearance: avatar.exportNpc.appearance,
     npcRecord: npc,
@@ -60719,6 +60888,9 @@ function prepareGameplayBackdropHost() {
     getCamera() { return state.three.camera; },
     getRenderer() { return state.three.renderer; },
     getAvatarModel() { return state.three.model; },
+    getFootObjects() { return [procedural.feet.left, procedural.feet.right].filter(Boolean); }, // The procedural foot models, so adapters can keep garments in front of them.
+    getPortraitRender() { return state.lastPortraitRender || null; }, // {profile, front (canvas)} of the avatar on stage, for the overwear-over-pants mask.
+    getThree() { return state.three.THREE; }, // Lets separately-loaded adapters (Pants) build meshes with the editor's own three namespace, which is a module import, not window.THREE.
     getProceduralMovement() { return structuredCloneSafe(animationExportObject()); },
     applyMovementPreset(name) { if (!MOVEMENT_PRESETS[name]) return false; applyAnimationPreset(name); return true; },
     setMovementPlayback(enabled) { setProceduralPlayback(enabled); },

@@ -87,7 +87,10 @@
   // thigh) and `calfLength` for the calf bone and the foot mesh rigged to
   // its end. The returned object is reused across calls — copy its fields
   // out immediately, as every current caller already does.
-  function solveTwoBoneLeg(THREE, { hip, foot, bendDegX = 0, bendDegZ = 0 } = {}) {
+  // foldMaxLength (optional, > 0): the leg's fully extended length. When the hip-to-foot distance is SHORTER than that, the leg is
+  // no longer telescoped: both bones keep length foldMaxLength/2 and the knee is pushed out toward foldForward (default +Z) so the
+  // knee visibly bends; at full extension (or beyond) the leg is the usual straight line.
+  function solveTwoBoneLeg(THREE, { hip, foot, bendDegX = 0, bendDegZ = 0, foldMaxLength = 0, foldForward = null } = {}) {
     const s = scratchFor(THREE);
     const hipVec = s.hipVec.set(hip?.x || 0, hip?.y || 0, hip?.z || 0);
     const footVec = s.footVec.set(foot?.x || 0, foot?.y || 0, foot?.z || 0);
@@ -107,6 +110,22 @@
 
     const thighDirWorld = s.thighDirWorld.set(DOWN.x, DOWN.y, DOWN.z).applyQuaternion(thighQuaternion);
     const knee = result.knee.copy(hipVec).addScaledVector(thighDirWorld, thighLength);
+    let boneThighLength = thighLength;
+    if (foldMaxLength > fullLength + 1e-6 && fullLength > 1e-6) { // Folded: a real two-bone knee instead of a telescoping line.
+      const half = foldMaxLength * 0.5, along = fullLength * 0.5;
+      const fx = foldForward?.x ?? 0, fy = foldForward?.y ?? 0, fz = foldForward?.z ?? 1;
+      const dot = fx * straightDir.x + fy * straightDir.y + fz * straightDir.z;
+      let px = fx - dot * straightDir.x, py = fy - dot * straightDir.y, pz = fz - dot * straightDir.z;
+      const pl = Math.hypot(px, py, pz);
+      if (pl > 1e-6) {
+        px /= pl; py /= pl; pz /= pl;
+        const h = Math.sqrt(Math.max(0, half * half - along * along));
+        knee.set(hipVec.x + straightDir.x * along + px * h, hipVec.y + straightDir.y * along + py * h, hipVec.z + straightDir.z * along + pz * h);
+        thighDirWorld.copy(knee).sub(hipVec).normalize();
+        quatFromDown(thighDirWorld, thighQuaternion, s.quatFromDownDown, s.quatFromDownDir);
+        boneThighLength = half;
+      }
+    }
 
     const kneeToFoot = s.kneeToFoot.copy(footVec).sub(knee);
     const calfLength = kneeToFoot.length();
@@ -120,7 +139,7 @@
     // place) so result.thighQuaternion keeps its own world-space value.
     const calfLocalQuaternion = result.calfLocalQuaternion.copy(thighQuaternion).invert().multiply(calfWorldQuaternion);
 
-    result.thighLength = thighLength;
+    result.thighLength = boneThighLength;
     result.calfLength = calfLength;
     return result;
   }
