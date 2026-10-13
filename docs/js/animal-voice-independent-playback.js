@@ -9,6 +9,7 @@
   const MAX_TEMPO = 2;
   const GENERIC_MAX_TEMPO = 4; // Shared pitch-preserving renderer may serve faster non-animal one-shots without changing animal authoring limits.
   const MAX_SHIFT_SEMITONES = 12;
+  const GENERIC_MAX_SHIFT_SEMITONES = 24; // Combat profiles can exceed animal authoring pitch limits without changing animal-call behavior.
   const WSOLA_FRAME_S = 0.056;
   const WSOLA_OVERLAP_RATIO = 0.62;
   const WSOLA_SEARCH_S = 0.018;
@@ -92,7 +93,8 @@
   function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
   function clampTempoFor(value, maxTempo = MAX_TEMPO) { return clamp(finite(value, 1), MIN_TEMPO, maxTempo); }
   function clampTempo(value) { return clampTempoFor(value, MAX_TEMPO); }
-  function clampPitch(value) { return clamp(finite(value, 0), -MAX_SHIFT_SEMITONES, MAX_SHIFT_SEMITONES); }
+  function clampPitchFor(value, maxShiftSemitones = MAX_SHIFT_SEMITONES) { return clamp(finite(value, 0), -maxShiftSemitones, maxShiftSemitones); }
+  function clampPitch(value) { return clampPitchFor(value, MAX_SHIFT_SEMITONES); }
   function absoluteUrl(url) {
     try { return new URL(url, document.baseURI).href; }
     catch (_) { return String(url || ''); }
@@ -302,27 +304,27 @@
     });
   }
 
-  function processConstantAxes(buffer, tempo, pitchSemitones, maxTempo = MAX_TEMPO) {
+  function processConstantAxes(buffer, tempo, pitchSemitones, maxTempo = MAX_TEMPO, maxPitchSemitones = MAX_SHIFT_SEMITONES) {
     const channels = Array.from({ length: buffer.numberOfChannels }, (_, index) => buffer.getChannelData(index).slice());
-    const pitchRatio = Math.pow(2, clampPitch(pitchSemitones) / 12); // Explicit pitch remains independent from tempo; only this final resample transposes it.
+    const pitchRatio = Math.pow(2, clampPitchFor(pitchSemitones, maxPitchSemitones) / 12); // Explicit pitch remains independent from tempo; only this final resample transposes it.
     const safeTempo = clampTempoFor(tempo, maxTempo);
     const stretched = wsolaStretch(channels, pitchRatio / safeTempo, buffer.sampleRate); // WSOLA changes wall-clock speed while compensating for the later pitch resample.
     return applyOutputEdgeEnvelope(stretched, buffer.sampleRate);
   }
 
-  function renderCacheKey(url, tempo, pitchSemitones, maxTempo = MAX_TEMPO) {
-    return `${absoluteUrl(url)}|${clampTempoFor(tempo, maxTempo).toFixed(4)}|${clampPitch(pitchSemitones).toFixed(3)}`;
+  function renderCacheKey(url, tempo, pitchSemitones, maxTempo = MAX_TEMPO, maxPitchSemitones = MAX_SHIFT_SEMITONES) {
+    return `${absoluteUrl(url)}|${clampTempoFor(tempo, maxTempo).toFixed(4)}|${clampPitchFor(pitchSemitones, maxPitchSemitones).toFixed(3)}`;
   }
   function pruneRenderCache() {
     while (renderedByKey.size > MAX_RENDER_CACHE) renderedByKey.delete(renderedByKey.keys().next().value);
   }
-  function renderBufferFor(url, decoded, context, tempo, pitchSemitones, maxTempo = MAX_TEMPO) {
-    const key = renderCacheKey(url, tempo, pitchSemitones, maxTempo);
+  function renderBufferFor(url, decoded, context, tempo, pitchSemitones, maxTempo = MAX_TEMPO, maxPitchSemitones = MAX_SHIFT_SEMITONES) {
+    const key = renderCacheKey(url, tempo, pitchSemitones, maxTempo, maxPitchSemitones);
     if (renderedByKey.has(key)) return renderedByKey.get(key);
     const pending = Promise.resolve().then(() => {
       const clock = typeof performance !== 'undefined' && performance?.now ? performance : Date;
       const started = clock.now();
-      const channels = processConstantAxes(decoded, tempo, pitchSemitones, maxTempo);
+      const channels = processConstantAxes(decoded, tempo, pitchSemitones, maxTempo, maxPitchSemitones);
       const length = Math.max(1, channels[0]?.length || 1);
       const rendered = context.createBuffer(channels.length, length, decoded.sampleRate);
       for (let channelIndex = 0; channelIndex < channels.length; channelIndex++) rendered.copyToChannel(channels[channelIndex], channelIndex);
@@ -340,10 +342,10 @@
   function renderDecodedIndependentBuffer(decoded, context, opts = {}) {
     if (!decoded || !context?.createBuffer) return Promise.reject(new Error('Pitch-preserving render requires a decoded AudioBuffer and AudioContext'));
     const tempo = clampTempoFor(opts.tempo ?? 1, GENERIC_MAX_TEMPO);
-    const pitchSemitones = clampPitch(opts.pitchSemitones ?? 0);
+    const pitchSemitones = clampPitchFor(opts.pitchSemitones ?? 0, GENERIC_MAX_SHIFT_SEMITONES);
     const pitchRatio = Math.pow(2, pitchSemitones / 12);
     return Promise.resolve().then(() => {
-      const channels = processConstantAxes(decoded, tempo, pitchSemitones, GENERIC_MAX_TEMPO);
+      const channels = processConstantAxes(decoded, tempo, pitchSemitones, GENERIC_MAX_TEMPO, GENERIC_MAX_SHIFT_SEMITONES);
       const length = Math.max(1, channels[0]?.length || 1);
       const rendered = context.createBuffer(channels.length, length, decoded.sampleRate);
       for (let channelIndex = 0; channelIndex < channels.length; channelIndex++) rendered.copyToChannel(channels[channelIndex], channelIndex);
@@ -368,7 +370,7 @@
     // pinned to one side).
     const panner = typeof context.createStereoPanner === 'function' ? context.createStereoPanner() : null;
     const startAt = context.currentTime + 0.012;
-    const pitchRatio = Math.pow(2, clampPitch(opts.pitchSemitones) / 12); // Used by native BufferSource resampling so audible transposition avoids the custom cubic resampler.
+    const pitchRatio = Math.pow(2, clampPitchFor(opts.pitchSemitones, opts.pitchMaxSemitones ?? MAX_SHIFT_SEMITONES) / 12); // Used by native BufferSource resampling so audible transposition avoids the custom cubic resampler.
     const effectiveDurationS = buffer.duration / pitchRatio; // Used for completion timing after playbackRate changes the stretched buffer's wall-clock duration.
     let stopped = false;
     let finishTimer = null;
@@ -439,7 +441,7 @@
     if (!audio) return null;
     if (audio.src !== url && audio.currentSrc !== url) audio.src = url;
     const tempo = clampTempoFor(opts.tempo, opts.tempoMax ?? MAX_TEMPO);
-    const pitch = clampPitch(opts.pitchSemitones);
+    const pitch = clampPitchFor(opts.pitchSemitones, opts.pitchMaxSemitones ?? MAX_SHIFT_SEMITONES);
     const pitchRatio = Math.pow(2, pitch / 12);
     audio.volume = clamp(finite(opts.volume, 0.7), 0, 1);
     if (Math.abs(pitch) < 0.05) {
@@ -483,11 +485,11 @@
     };
   }
 
-  function playWithTempoLimit(url, opts = {}, maxTempo = MAX_TEMPO) {
+  function playWithTempoLimit(url, opts = {}, maxTempo = MAX_TEMPO, maxPitchSemitones = MAX_SHIFT_SEMITONES) {
     if (!url || window.AudioSystem?.gameAudioConfig?.()?.enabled === false) return null;
     const resolved = absoluteUrl(url);
     const tempo = clampTempoFor(opts.tempo ?? 1, maxTempo);
-    const pitchSemitones = clampPitch(opts.pitchSemitones ?? 0);
+    const pitchSemitones = clampPitchFor(opts.pitchSemitones ?? 0, maxPitchSemitones);
     const context = ensureContext();
     lastUrl = resolved;
     lastTempo = tempo;
@@ -507,30 +509,30 @@
     activeHandles.add(handle);
     const completed = () => { activeHandles.delete(handle); opts.onFinished?.(); }; // Shared cleanup for decoded buffers and native fallback.
     if (!context || context.state !== 'running') {
-      active = playNativeFallback(resolved, { ...opts, tempo, tempoMax: maxTempo, pitchSemitones, onFinished: completed }, opts.fallbackAudio || null);
+      active = playNativeFallback(resolved, { ...opts, tempo, tempoMax: maxTempo, pitchSemitones, pitchMaxSemitones: maxPitchSemitones, onFinished: completed }, opts.fallbackAudio || null);
       return handle;
     }
     lastBackend = 'fixed render pending';
     decodeUrl(resolved, context)
-      .then(decoded => renderBufferFor(resolved, decoded, context, tempo, pitchSemitones, maxTempo))
+      .then(decoded => renderBufferFor(resolved, decoded, context, tempo, pitchSemitones, maxTempo, maxPitchSemitones))
       .then(rendered => {
         if (stopped) return;
-        active = scheduleProcessedBuffer(context, rendered, { ...opts, tempo, pitchSemitones }, completed);
+        active = scheduleProcessedBuffer(context, rendered, { ...opts, tempo, pitchSemitones, pitchMaxSemitones: maxPitchSemitones }, completed);
       })
       .catch(error => {
         if (stopped) return;
         lastPlaybackError = error;
-        active = playNativeFallback(resolved, { ...opts, tempo, tempoMax: maxTempo, pitchSemitones, onFinished: completed }, opts.fallbackAudio || null);
+        active = playNativeFallback(resolved, { ...opts, tempo, tempoMax: maxTempo, pitchSemitones, pitchMaxSemitones: maxPitchSemitones, onFinished: completed }, opts.fallbackAudio || null);
       });
     return handle;
   }
 
   function play(url, opts = {}) {
-    return playWithTempoLimit(url, opts, MAX_TEMPO);
+    return playWithTempoLimit(url, opts, MAX_TEMPO, MAX_SHIFT_SEMITONES);
   }
 
   function playIndependent(url, opts = {}) {
-    return playWithTempoLimit(url, opts, GENERIC_MAX_TEMPO);
+    return playWithTempoLimit(url, opts, GENERIC_MAX_TEMPO, GENERIC_MAX_SHIFT_SEMITONES);
   }
 
   function normalizedAllowed(c, opts) {

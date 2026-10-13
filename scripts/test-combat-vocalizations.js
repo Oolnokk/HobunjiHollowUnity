@@ -129,6 +129,8 @@ assert(Math.abs(chargePlan.catchUpTempo - 2.5) < 1e-9, 'early release must switc
 assert(Math.abs(chargePlan.catchUpTempo - chargePlan.stretchedTempo * 2) > 1, 'catch-up tempo must be independent of the stretched tempo');
 assert.equal(chargePlan.earlyReleaseNormalSpeedMul, 2);
 assert.match(animalPlaybackSource, /renderDecodedIndependentBuffer/, 'combat should reuse the animal-call independent tempo/pitch renderer');
+assert.match(animalPlaybackSource, /GENERIC_MAX_SHIFT_SEMITONES = 24/, 'combat may use +14 semitone profiles without raising the animal-call +/-12 ceiling');
+assert.equal(context.window.CombatVocalizations.getConfig().utteranceModulation.species.nuhongan.female.pitchSemitones, 14, 'authored Nuhongan female combat voice keeps its +14 semitone profile');
 assert.match(source, /AnimalVoiceIndependentPlayback\?\.playIndependent/, 'combat one-shots should route through the animal-call pitch-preserving player');
 assert.equal(context.window.CombatVocalizations.liveChargeTargetDurationS('chargedBreaker'), 4, 'live charge should reuse Charged Breaker MAX_CHARGE_S');
 assert.equal(context.window.CombatVocalizations.getConfig().chargeSampler, undefined, 'legacy start/middle/end sampler config should be gone');
@@ -160,16 +162,16 @@ emit(listeners, 'hobunji-resource-change', { entity: player, delta: -30, immedia
 assert.equal(played.length, beforeDirect + 1);
 assert(played.at(-1).url.includes('sfx_pain_'));
 
-// DoT vocalizations throttle to one per second.
+// DoT vocalizations throttle to the authored half-second cadence.
 now = 30000;
 const beforeDot = played.length;
 emit(listeners, 'hobunji-resource-change', { entity: player, delta: -1, immediate: false, reason: 'resource-tick' });
-now = 30500;
+now = 30499;
 emit(listeners, 'hobunji-resource-change', { entity: player, delta: -1, immediate: false, reason: 'resource-tick' });
-assert.equal(played.length, beforeDot + 1, 'second DoT tick inside one second must be silent');
-now = 31001;
+assert.equal(played.length, beforeDot + 1, 'second DoT tick inside half a second must be silent');
+now = 30501;
 emit(listeners, 'hobunji-resource-change', { entity: player, delta: -1, immediate: false, reason: 'resource-tick' });
-assert.equal(played.length, beforeDot + 2, 'DoT pain should repeat after one second');
+assert.equal(played.length, beforeDot + 2, 'DoT pain should repeat after half a second');
 
 // Combo strikes use attackgrunt, quick/held strikes use releasegrunt.
 abilities.get('swingCombo').onTap();

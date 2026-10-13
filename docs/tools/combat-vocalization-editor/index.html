@@ -82,7 +82,7 @@ input[type=range]{padding:0}input[type=number]{text-align:right}
 
     <section class="card">
       <h2>Pain</h2>
-      <div class="muted">Direct Health damage vocalizes every hit. Net DoT Health loss is throttled to one vocalization per second. Intensity is chosen from a three-slot weighted window around remaining Health.</div>
+      <div class="muted">Direct Health damage vocalizes every hit. Net DoT Health loss is throttled to the configured repeat interval. Intensity is chosen from a three-slot weighted window around remaining Health.</div>
       <div class="row"><label>DoT repeat (s)</label><input id="painDot" type="number" min=".1" step=".05"></div>
       <div class="row"><label>Random pitch ± semitones</label><input id="painPitch" type="number" min="0" max="12" step=".01"></div>
       <div class="row"><label>Volume</label><input id="painVolume" type="number" min="0" max="1" step=".01"></div>
