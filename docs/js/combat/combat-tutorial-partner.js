@@ -25,6 +25,13 @@
   }
   function maintain(target, lesson) {
     target.combatTutorialPreview = !!lesson?.preview; // Preserve real damage, afflictions and movement while comparing upgrade effects.
+    const stagedAttackPhase = target._banditAction?.phase || null; // Used by tutorial Quick Attack readiness so Oddclaw's real staged windup/strike remains visible even when the bandit adapter has not mirrored phase into telegraphState yet.
+    if (target.combatTutorialHostile && (stagedAttackPhase === 'windup' || stagedAttackPhase === 'strike')) {
+      target.telegraphState = stagedAttackPhase;
+    } else if (target.combatTutorialHostile && stagedAttackPhase === 'recover') {
+      target.telegraphState = null;
+    }
+    target.combatTutorialAttackWindow = stagedAttackPhase || target.telegraphState || null; // Mobile/debug reports can show the exact tutorial attack phase without devtools.
     if (!lesson?.preview) {
       target.health = lesson?.condition === 'lowHealth' ? 2000 : target.maxHealth; target.afflictions = {};
       target.footing = target.maxFooting; target.prone = false;
