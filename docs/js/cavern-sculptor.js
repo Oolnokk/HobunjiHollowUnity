@@ -718,7 +718,6 @@
     const s = vault.facetSize;
     const x0 = -st.domainHalf.x - s, z0 = -st.domainHalf.z - s;
     const nI = Math.ceil((2 * st.domainHalf.x + 2 * s) / s) + 1, nJ = Math.ceil((2 * st.domainHalf.z + 2 * s) / s) + 1;
-    const band = vault.topY - vault.startY;
     const pts = [];
     for (let j = 0; j < nJ; j++) for (let i = 0; i < nI; i++) {
       const x = x0 + (i + (hash01(i, j, seed) - .5) * .6) * s;
@@ -728,7 +727,8 @@
       // neighbouring facets fold by more than the mapper's split angle.
       const r = hash01(i, j, seed + 2);
       const rise = ((i + j) % 2 ? .55 + .45 * r : .03 + .27 * r) * (.55 + .45 * inward);
-      pts.push({ x, z, y: vault.startY + band * rise });
+      const start = vault.startAt(x, z);
+      pts.push({ x, z, y: start + (vault.topAt(x, z) - start) * rise });
     }
     const planes = [];
     const planeOf = (a, b, c) => {
@@ -822,6 +822,210 @@
     if (changed) rebuildLeafData(st);
   }
 
+  // Low-poly chaos and a gentle concave bow for the walls, matching the
+  // faceted roof. Wall vertices move horizontally, away from the walkable
+  // tiles, by a piecewise-linear offset: a coarse Kuhn-tetrahedralised 3D
+  // grid of seeded values (flat inside each tetrahedron, folding between
+  // them) plus a bow that is 0 at the floor, deepest a little above
+  // mid-height and eases back toward the roof, in straight segments. The
+  // offset is mostly a recess into the rock tiles (which collide anyway) and
+  // at most a sliver into the floor, so walls stay on their tile edges for
+  // collision. Floor-level vertices stay put so the wall foot stays sealed.
+  //   Like the roof, the fine dual-contour rows would cut across every fold
+  // and smear it into slivers, so each wall face is assigned the facet
+  // (tetrahedron + bow segment) under its centroid and every vertex is first
+  // seated on the exact wall (0.05 outside the tiles, the carve margin), then
+  // slid along the wall onto the fold it shares with neighbouring facets.
+  // Runs before snapRoofToFacets, which then re-seats the roof's corners.
+  function facetWalls(mesh, openTiles, ts, floorY, topY, bowTop, seed, roofHeightAt) {
+    const P = mesh.positions, I = mesh.indices;
+    const distance = regionDistance2D(openTiles, ts, 3);
+    const SX = 1.2, SY = 1.4; // facet spacing in sculpt units (horizontal, vertical)
+    const node = (i, j, k) => { // mostly shallow corners with occasional deep pockets, so folds vary in strength
+      const r = hash01(i * 7 + k, j, seed + 11);
+      return (i + j + k) % 2 ? .02 + .13 * r * r : -.03 + .06 * r;
+    };
+    // A rotated, sheared grid keeps the folds from lining up with the walls
+    // or with each other into a visible diamond pattern (a linear map keeps
+    // the offset piecewise-linear, so facets stay flat).
+    const ang = hash01(seed, 3, 5) * Math.PI, ca = Math.cos(ang), sa = Math.sin(ang);
+    const grid = (x, y, z) => {
+      const u = ca * x + sa * z, w = -sa * x + ca * z;
+      return [u / SX, (y - floorY + .45 * u - .3 * w) / SY, (w + .25 * (y - floorY)) / SX];
+    };
+    const BOW = [[0, 0], [.2, .55], [.5, 1], [.8, .8], [1, .45]], BOW_DEPTH = .2;
+    const bowSpan = Math.max(.5, bowTop - floorY);
+    const bowSeg = y => {
+      const t = (y - floorY) / bowSpan;
+      for (let n = 1; n < BOW.length; n++) if (t <= BOW[n][0]) return n;
+      return BOW.length; // flat beyond the last point
+    };
+    const bowOn = (seg, y) => { // the segment's line, extended linearly
+      if (seg >= BOW.length) return BOW_DEPTH * BOW[BOW.length - 1][1];
+      const [t0, v0] = BOW[seg - 1], [t1, v1] = BOW[seg], t = (y - floorY) / bowSpan;
+      return BOW_DEPTH * (v0 + (v1 - v0) * (t - t0) / (t1 - t0));
+    };
+    const facetAt = (x, y, z) => {
+      const g = grid(x, y, z), c = g.map(Math.floor);
+      const perm = [0, 1, 2].sort((a, b) => (g[b] - c[b]) - (g[a] - c[a]));
+      return { c, perm, seg: bowSeg(y), key: c.join(',') + ':' + perm.join('') + ':' + bowSeg(y) };
+    };
+    const offsetOn = (F, x, y, z) => { // the facet's linear offset, valid anywhere
+      const g = grid(x, y, z), at = F.c.slice();
+      let prev = node(at[0], at[1], at[2]), value = prev;
+      for (const axis of F.perm) { at[axis]++; const next = node(at[0], at[1], at[2]); value += (next - prev) * (g[axis] - F.c[axis]); prev = next; }
+      return value + bowOn(F.seg, y);
+    };
+    const onWallFace = new Uint8Array(P.length / 3); // roof-only and floor-only vertices are left alone
+    for (let t = 0; t < I.length; t += 3) {
+      const a = I[t] * 3, b = I[t + 1] * 3, c = I[t + 2] * 3;
+      const ux = P[b] - P[a], uy = P[b + 1] - P[a + 1], uz = P[b + 2] - P[a + 2], vx = P[c] - P[a], vy = P[c + 1] - P[a + 1], vz = P[c + 2] - P[a + 2];
+      const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx, len = Math.hypot(nx, ny, nz);
+      if (len > 1e-12 && Math.abs(ny) <= .5 * len) { for (const v of [I[t], I[t + 1], I[t + 2]]) onWallFace[v] |= 1; }
+      else if (len > 1e-12 && ny < -.3 * len) { for (const v of [I[t], I[t + 1], I[t + 2]]) onWallFace[v] |= 2; } // touches the roof
+    }
+    const h = .04, wall = new Map(); // vertex -> { g: into-room direction }
+    const gradAt = (x, z) => { // horizontal direction into the room
+      const gx = distance(x + h, z) - distance(x - h, z), gz = distance(x, z + h) - distance(x, z - h), len = Math.hypot(gx, gz);
+      return len < 1e-6 ? null : [gx / len, gz / len];
+    };
+    // 1 along a straight wall, 0 near a corner: the wall direction a short
+    // way to either side (and the diagonal gradient of an outside corner)
+    // must match, or seating would collapse neighbours onto the corner.
+    const straightAt = (x, z, gx, gz) => {
+      let worst = 1;
+      for (const s of [-.25, .25]) { const g = gradAt(x - gz * s, z + gx * s); worst = Math.min(worst, g ? g[0] * gx + g[1] * gz : 0); }
+      return clampNum((worst - .9) / .08, 0, 1) * clampNum((.3 - Math.min(Math.abs(gx), Math.abs(gz))) / .2, 0, 1);
+    };
+    for (let v = 0; v < P.length / 3; v++) {
+      if (onWallFace[v] !== 1) continue; // wall faces only; the roof seam is handled below
+      const x = P[v * 3], y = P[v * 3 + 1], z = P[v * 3 + 2];
+      if (y < floorY + .05 || y > topY) continue;
+      if (roofHeightAt && y > roofHeightAt(x, z) - .15) continue; // a steep roof facet, not wall
+      const D = distance(x, z);
+      if (D > .45 || D < -.6) continue; // only the shell near the walkable boundary
+      let gx = distance(x + h, z) - distance(x - h, z), gz = distance(x, z + h) - distance(x, z - h);
+      const len = Math.hypot(gx, gz);
+      if (len < 1e-6) continue;
+      gx /= len; gz /= len;
+      const seatFade = roofHeightAt ? clampNum((roofHeightAt(x, z) - y) / .3, 0, 1) : 1;
+      // Passages under ~3 tiles wide keep plain walls: bowing both sides of a
+      // narrow gap in would fold them into each other.
+      const across = distance(x + gx * (-.05 - D + .75), z + gz * (-.05 - D + .75));
+      // At wall corners the distance gradient turns diagonal; seating there
+      // would collapse neighbouring vertices onto the same corner point.
+      const straight = straightAt(x, z, gx, gz);
+      const roomy = clampNum((across - .25) / .4, 0, 1) * straight;
+      P[v * 3] = x + gx * (-.05 - D) * seatFade * straight; P[v * 3 + 2] = z + gz * (-.05 - D) * seatFade * straight; // seat on the exact wall
+      wall.set(v, { gx, gz, facets: [], roomy });
+    }
+    const facets = new Map(), wallTris = [];
+    const normalY = t => {
+      const a = I[t] * 3, b = I[t + 1] * 3, c = I[t + 2] * 3;
+      const ux = P[b] - P[a], uy = P[b + 1] - P[a + 1], uz = P[b + 2] - P[a + 2], vx = P[c] - P[a], vy = P[c + 1] - P[a + 1], vz = P[c + 2] - P[a + 2];
+      const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+      return { nx, ny, nz, len: Math.hypot(nx, ny, nz) };
+    };
+    for (let t = 0; t < I.length; t += 3) {
+      if (!wall.has(I[t]) || !wall.has(I[t + 1]) || !wall.has(I[t + 2])) continue;
+      const n = normalY(t);
+      if (!(n.len > 1e-12) || Math.abs(n.ny) > .5 * n.len) continue; // wall-like faces only
+      const a = I[t] * 3, b = I[t + 1] * 3, c = I[t + 2] * 3;
+      const F = facetAt((P[a] + P[b] + P[c]) / 3, (P[a + 1] + P[b + 1] + P[c + 1]) / 3, (P[a + 2] + P[b + 2] + P[c + 2]) / 3);
+      if (!facets.has(F.key)) facets.set(F.key, F);
+      wallTris.push({ t, key: F.key, nx: n.nx, ny: n.ny, nz: n.nz });
+      for (const v of [I[t], I[t + 1], I[t + 2]]) { const fs = wall.get(v).facets; if (!fs.includes(F.key)) fs.push(F.key); }
+    }
+    const maxMove = .25; // longer slides start crossing neighbouring rows
+    // Only vertices whose whole neighbourhood gets the full offset may slide:
+    // sliding next to the roof's fade band folds faces that aren't coplanar.
+    const full = v => {
+      const info = wall.get(v); // junction entries have no roomy flag and never slide
+      return !!info && info.roomy >= 1 && (!roofHeightAt || roofHeightAt(P[v * 3], P[v * 3 + 2]) - P[v * 3 + 1] >= .6);
+    };
+    const canSlide = new Set([...wall.keys()].filter(full));
+    for (let t = 0; t < I.length; t += 3) {
+      const tri = [I[t], I[t + 1], I[t + 2]];
+      if (tri.some(v => !full(v))) for (const v of tri) canSlide.delete(v);
+    }
+    for (const [v, info] of wall) {
+      let x = P[v * 3], y = P[v * 3 + 1], z = P[v * 3 + 2];
+      const { gx, gz } = info;
+      const keys = info.facets.length ? info.facets : [facetAt(x, y, z).key];
+      for (const key of keys) if (!facets.has(key)) { const F = facetAt(x, y, z); facets.set(F.key, F); }
+      const [A, B, C] = keys.slice(0, 3).map(key => facets.get(key));
+      // Near the roof, vertices neither slide nor count as exactly on their
+      // facet (the seam row above them is offset but not seated).
+      const fade = roofHeightAt ? clampNum((roofHeightAt(x, z) - y) / .3, 0, 1) : 1;
+      if (B && fade >= 1 && canSlide.has(v) && y > floorY + .05) {
+        const tx = -gz, tz = gx; // along the wall
+        const delta = (F1, F2, s, u) => offsetOn(F1, x + tx * s, y + u, z + tz * s) - offsetOn(F2, x + tx * s, y + u, z + tz * s);
+        const lin = (F1, F2) => { const d0 = delta(F1, F2, 0, 0); return [d0, delta(F1, F2, 1, 0) - d0, delta(F1, F2, 0, 1) - d0]; };
+        let move = null;
+        if (C) {
+          const [d1, a1, b1] = lin(A, B), [d2, a2, b2] = lin(A, C), det = a1 * b2 - b1 * a2;
+          if (Math.abs(det) > 1e-9) move = [(-d1 * b2 + b1 * d2) / det, (-a1 * d2 + d1 * a2) / det];
+          if (move && Math.hypot(move[0], move[1]) > maxMove) move = null;
+        }
+        if (!move) {
+          const [d1, a1, b1] = lin(A, B), n2 = a1 * a1 + b1 * b1;
+          if (n2 > 1e-12) move = [-d1 * a1 / n2, -d1 * b1 / n2];
+          if (move && Math.hypot(move[0], move[1]) > maxMove) move = null;
+        }
+        if (move && y + move[1] > floorY + .05) {
+          // Never slide around a corner: the wall direction must match at the destination.
+          const nx = x + tx * move[0], nz = z + tz * move[0];
+          const hx = distance(nx + h, nz) - distance(nx - h, nz), hz = distance(nx, nz + h) - distance(nx, nz - h), hl = Math.hypot(hx, hz);
+          const belowFade = !roofHeightAt || roofHeightAt(nx, nz) - (y + move[1]) >= .3;
+          if (belowFade && hl > 1e-6 && (hx * gx + hz * gz) / hl > .97 && Math.abs(distance(nx, nz) + .05) < .05) { x = nx; z = nz; y += move[1]; }
+        }
+      }
+      const d = offsetOn(A, x, y, z) * info.roomy; // full bow right up to the roof; only seating and sliding ease out there
+      info.exact = fade >= 1 && info.roomy >= 1 && (!roofHeightAt || roofHeightAt(x, z) - y >= .3); // sits exactly on facet A's plane
+      P[v * 3] = x - gx * d; P[v * 3 + 1] = y; P[v * 3 + 2] = z - gz * d;
+    }
+    // A face that folded over while sliding still lies in its facet's plane
+    // (its neighbours cover the area), so drop it rather than keep a
+    // reversed face.
+    const dropped = new Set();
+    for (const w of wallTris) {
+      const n = normalY(w.t);
+      if (n.nx * w.nx + n.ny * w.ny + n.nz * w.nz <= 0) {
+        const shared = [I[w.t], I[w.t + 1], I[w.t + 2]].every(v => wall.get(v).exact && wall.get(v).facets.includes(w.key));
+        if (shared) dropped.add(w.t);
+      }
+    }
+    if (dropped.size) {
+      const kept = [];
+      for (let t = 0; t < I.length; t += 3) if (!dropped.has(t)) kept.push(I[t], I[t + 1], I[t + 2]);
+      mesh.indices = kept;
+    }
+    // Roof-wall seam: carry the wall's offset into these vertices so the wall
+    // meets the roof flush (no inward lip), without seating or sliding them;
+    // snapRoofToFacets then only drops the moved ones vertically onto the roof.
+    for (let v = 0; v < onWallFace.length; v++) {
+      if (onWallFace[v] !== 3) continue;
+      const x = P[v * 3], y = P[v * 3 + 1], z = P[v * 3 + 2];
+      const D = distance(x, z);
+      if (y >= floorY + .05 && y <= topY && D <= .45 && D >= -.6) {
+        let gx = distance(x + h, z) - distance(x - h, z), gz = distance(x, z + h) - distance(x, z - h);
+        const len = Math.hypot(gx, gz);
+        if (len > 1e-6) {
+          gx /= len; gz /= len;
+          const across = distance(x + gx * (-.05 - D + .75), z + gz * (-.05 - D + .75));
+          const straight = straightAt(x, z, gx, gz);
+          const d = offsetOn(facetAt(x, y, z), x, y, z) * clampNum((across - .25) / .4, 0, 1) * straight;
+          if (Math.abs(d) > 1e-6) { // only seam vertices that actually moved are pinned for the roof snap
+            P[v * 3] = x - gx * d; P[v * 3 + 2] = z - gz * d;
+            wall.set(v, { junction: true, facets: [] });
+          }
+        }
+      }
+    }
+
+    return wall;
+  }
+
   // Dual contouring places each vertex at the average of its cell's surface
   // crossings, which rounds every facet fold into a band of in-between
   // faces (and the stretch mapper would flood straight across it). Snap the
@@ -830,10 +1034,11 @@
   // plane, one shared by two moves onto their fold line, and one shared by
   // three onto their common corner. Every roof triangle then lies exactly in
   // its facet's plane, so folds stay sharp. Runs in sculpt coordinates.
-  function snapRoofToFacets(mesh, vault, cell) {
+  function snapRoofToFacets(mesh, vault, cell, pinned) {
     if (!vault?.roof) return 0;
     const P = mesh.positions, I = mesh.indices, roof = vault.roof;
     const facetsByVertex = new Map();
+    const roofTris = new Set(); // faces that looked down into the cave before snapping
     const minY = vault.startY - cell * .25;
     for (let t = 0; t < I.length; t += 3) {
       const a = I[t] * 3, b = I[t + 1] * 3, c = I[t + 2] * 3;
@@ -843,6 +1048,7 @@
       const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
       if (!(ny < -.3 * Math.hypot(nx, ny, nz))) continue; // only faces looking down into the cave
       const facet = roof.locate((P[a] + P[b] + P[c]) / 3, (P[a + 2] + P[b + 2] + P[c + 2]) / 3);
+      roofTris.add(t);
       for (const v of [I[t], I[t + 1], I[t + 2]]) {
         let set = facetsByVertex.get(v);
         if (!set) facetsByVertex.set(v, set = []);
@@ -860,6 +1066,7 @@
     for (const [v, ids] of facetsByVertex) {
       const x = P[v * 3], z = P[v * 3 + 2];
       const [A, B, C] = ids.slice(0, 3).map(id => roof.planes[id]);
+      if (pinned?.has(v)) { P[v * 3 + 1] = A.k0 + A.kx * x + A.kz * z; moved++; continue; } // wall-top corner: keep its place on the wall, only drop onto the roof
       let to = null;
       if (C) {
         const m00 = A.kx - B.kx, m01 = A.kz - B.kz, m10 = A.kx - C.kx, m11 = A.kz - C.kz, det = m00 * m11 - m01 * m10;
@@ -885,6 +1092,7 @@
     // probes and the stretch mapper to trip over.
     const dropped = new Set();
     for (let t = 0; t < I.length; t += 3) {
+      if (!roofTris.has(t)) continue; // a wall face flattened at the seam still closes the seam; keep it
       if (!facetsByVertex.has(I[t]) || !facetsByVertex.has(I[t + 1]) || !facetsByVertex.has(I[t + 2])) continue; // only faces lying wholly on the snapped roof
       const a = I[t] * 3, b = I[t + 1] * 3, c = I[t + 2] * 3;
       if ((P[b + 2] - P[a + 2]) * (P[c] - P[a]) - (P[b] - P[a]) * (P[c + 2] - P[a + 2]) > -1e-9) dropped.add(t);
@@ -899,16 +1107,39 @@
 
   // Roof geometry for a sculpt volume: a rock cap a couple of lattice cells
   // thick stays under the volume's top, and the faceted roof spans the top
-  // vaultFrac of the floor-to-cap height. vaultFacetSize is the facet
+  // vaultFrac of the floor-to-roof height. vaultFacetSize is the facet
   // spacing in sculpt units.
+  //   opts.vaultTallPoints (sculpt-space {x, z}) makes the height vary: the
+  // roof reaches the volume's full height within vaultTallRadius[0] of a
+  // point and eases down to vaultMinHeightFrac of it by vaultTallRadius[1]
+  // (ruin caves: tall at the door, lower elsewhere). heightFracAt is that
+  // 0..1 blend; startY is the lowest roof start anywhere, topY the highest.
   function vaultFor(st, opts, floorY) {
     if (!opts.vaultCeiling) return null;
     const dy = 2 * st.domainHalf.y / st.N;
     const topY = st.dims.y / 2 - Math.max(.5, dy * 2.5);
     const height = topY - floorY;
     if (!(height > 1)) return null;
-    const frac = clampNum(Number(opts.vaultFrac) || .4, .05, .9);
-    return { topY, startY: topY - height * frac, facetSize: Number(opts.vaultFacetSize) || 1.8, seed: (Number(opts.vaultSeed) || 0) | 0, roof: null };
+    const frac = clampNum(Number(opts.vaultFrac) || .5, .05, .9);
+    const points = Array.isArray(opts.vaultTallPoints) ? opts.vaultTallPoints.filter(p => Number.isFinite(p?.x) && Number.isFinite(p?.z)) : [];
+    const minFrac = points.length ? clampNum(Number(opts.vaultMinHeightFrac) || .6, .2, 1) : 1;
+    const [r0, r1] = Array.isArray(opts.vaultTallRadius) ? opts.vaultTallRadius.map(Number) : [3, 8];
+    const heightFracAt = (x, z) => {
+      if (!points.length) return 1;
+      let near = Infinity;
+      for (const p of points) near = Math.min(near, Math.hypot(x - p.x, z - p.z));
+      const t = clampNum((r1 - near) / Math.max(1e-6, r1 - r0), 0, 1);
+      return minFrac + (1 - minFrac) * t * t * (3 - 2 * t);
+    };
+    const topAt = (x, z) => floorY + height * heightFracAt(x, z);
+    const startAt = (x, z) => topAt(x, z) - (topAt(x, z) - floorY) * frac;
+    return {
+      topY, startY: floorY + height * minFrac * (1 - frac), topAt, startAt,
+      // Facets shrink with a shallower roof band so their tilt (and the folds
+      // the stretch mapper splits on) stays steep enough.
+      facetSize: Number(opts.vaultFacetSize) || clampNum(height * minFrac * frac * 1.05, 1.4, 1.8),
+      seed: (Number(opts.vaultSeed) || 0) | 0, roof: null,
+    };
   }
 
   // Claims every tile in boundsRect whose floor is open enough (nine-point
@@ -1967,7 +2198,9 @@
     const touched = computeTouchedTiles(st, ts, opts.cullTouchTolerance);
     for (const key of claimed) touched.add(key); // claimed tiles are always touched by construction; union defensively
     const mesh = extractMesh(st, touched, skipCapEdges, ts, claimed, floorY, opts.enforceWalkableClearance, vault ? vault.startY - 2 * st.domainHalf.y / st.N : Infinity);
-    const roofVerticesSnapped = snapRoofToFacets(mesh, vault, Math.max(2 * st.domainHalf.x / st.N, 2 * st.domainHalf.z / st.N));
+    const wallVertices = vault ? facetWalls(mesh, new Set([...claimed, ...vestibuleTiles]), ts, floorY, vault.topY, vault.startY, vault.seed, vault.roof?.heightAt) : null;
+    const wallVerticesFaceted = wallVertices ? [...wallVertices.values()].filter(info => !info.junction).length : 0;
+    const roofVerticesSnapped = snapRoofToFacets(mesh, vault, Math.max(2 * st.domainHalf.x / st.N, 2 * st.domainHalf.z / st.N), wallVertices);
 
     // Shift Y so the floor sits at y=0 — the game's floor-referenced
     // convention (see interior-scene-builder.js's panelCornersFor). X/Z
@@ -1998,7 +2231,7 @@
       claimed, entranceTiles, nestTile: [nfx, nfy], mesh, solidRim,
       levels: levels.map(l => l - floorY), probeYRadius, dims,
       domainTopY: dims.y * .5 * 1.08 - floorY,
-      vaultCeiling: vault ? { startY: vault.startY - floorY, topY: vault.topY - floorY, facetSize: vault.facetSize, roofVerticesSnapped } : null,
+      vaultCeiling: vault ? { startY: vault.startY - floorY, topY: vault.topY - floorY, facetSize: vault.facetSize, roofVerticesSnapped, wallVerticesFaceted } : null,
       deformedTilesDropped,
       walkableSculptFragmentsSmoothed: mesh.walkableSculptFragmentsSmoothed || 0,
       walkableSculptVerticesMoved: mesh.walkableSculptVerticesMoved || 0,
@@ -2075,7 +2308,11 @@
     const pathYShift = dims.y * (opts.pathYShiftFrac ?? DEFAULT_OPTS.pathYShiftFrac);
     const lowLevel = -halfY + probeYRadius * 1.05 + pathYShift;
     const floorY = lowLevel - probeYRadius + (Number(opts.floorOffset) || 0);
-    const vault = vaultFor(st, opts, floorY); // Same optional vaulted roof as carveMazeCavern.
+    const tallTiles = Array.isArray(opts.vaultTallTiles) ? opts.vaultTallTiles : []; // authored col/row -> sculpt space
+    const vault = vaultFor(st, tallTiles.length ? Object.assign({}, opts, {
+      vaultTallPoints: tallTiles.map(([c, r]) => ({ x: (Number(c) - offsetC + .5) * ts, z: (Number(r) - offsetR + .5) * ts })),
+      vaultTallRadius: (opts.vaultTallRadiusTiles || [6, 16]).map(n => Number(n) * ts),
+    }) : opts, floorY); // Same optional faceted roof as carveMazeCavern.
     const highLevel = vault ? Math.max(lowLevel, vault.startY - probeYRadius * .5) : halfY + probeYRadius * 1.3 + pathYShift;
     const levelSpacing = probeYRadius * 1.6;
     const levelCount = Math.max(1, Math.ceil((highLevel - lowLevel) / levelSpacing) + 1);
@@ -2140,7 +2377,9 @@
     const touched = computeTouchedTiles(st, ts, opts.cullTouchTolerance ?? DEFAULT_OPTS.cullTouchTolerance);
     for (const key of localClaimed) touched.add(key);
     const mesh = extractMesh(st, touched, skipCapEdges, ts, localClaimed, floorY, opts.enforceWalkableClearance, vault ? vault.startY - 2 * st.domainHalf.y / st.N : Infinity);
-    const roofVerticesSnapped = snapRoofToFacets(mesh, vault, Math.max(2 * st.domainHalf.x / st.N, 2 * st.domainHalf.z / st.N));
+    const wallVertices = vault ? facetWalls(mesh, new Set([...localClaimed, ...vestibuleTiles]), ts, floorY, vault.topY, vault.startY, vault.seed, vault.roof?.heightAt) : null;
+    const wallVerticesFaceted = wallVertices ? [...wallVertices.values()].filter(info => !info.junction).length : 0;
+    const roofVerticesSnapped = snapRoofToFacets(mesh, vault, Math.max(2 * st.domainHalf.x / st.N, 2 * st.domainHalf.z / st.N), wallVertices);
 
     // Convert the centered sculptor coordinate frame back to the Locale
     // Editor's authored col/row frame while preserving floor-at-y=0.
@@ -2178,7 +2417,7 @@
       probeYRadius,
       dims,
       domainTopY: dims.y * 0.5 * 1.08 - floorY,
-      vaultCeiling: vault ? { startY: vault.startY - floorY, topY: vault.topY - floorY, facetSize: vault.facetSize, roofVerticesSnapped } : null,
+      vaultCeiling: vault ? { startY: vault.startY - floorY, topY: vault.topY - floorY, facetSize: vault.facetSize, roofVerticesSnapped, wallVerticesFaceted } : null,
       footprintBounds: { minC, minR, maxC, maxR },
       authoredTileCount: authored.length,
     };

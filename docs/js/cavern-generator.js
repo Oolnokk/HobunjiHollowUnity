@@ -54,7 +54,9 @@
   // floor/mesh data after receiving it.
   const _cavernFloorCache = new Map();
   const CAVERN_SCULPT_SIZE_Y = 3.0, CAVERN_PATH_Y_SHIFT_FRAC = 0.3; // Mirrors CavernSculptor DEFAULT_OPTS sizeY/pathYShiftFrac; taller clearance carves scale from these.
-  const CAVE_HEIGHT_SCALE = 2.5; // Every procedural cave and mine is carved this much taller than the original shell.
+  const CAVE_HEIGHT_SCALE = 2.5; // Full carved height (ruin caves near their door) relative to the original shell.
+  const CAVE_MIN_HEIGHT_FRAC = 0.6; // Everywhere else caves are carved at this fraction of the full height.
+  const CAVE_BASE_HEIGHT_SCALE = CAVE_HEIGHT_SCALE * CAVE_MIN_HEIGHT_FRAC;
   // Shared sculpt options for the tall, roofed cave shell. Growing sizeY
   // extends the probe's vertical sweep upward so the walls are genuinely
   // carved at the new height; pathYShiftFrac is divided by the same factor so
@@ -99,15 +101,24 @@
       let blocked = 0;
       for (let si = 0; si < ROCK_PROBE_GRID; si++) for (let sj = 0; sj < ROCK_PROBE_GRID; sj++) {
         const x = col + (si + .5) / ROCK_PROBE_GRID, z = row + (sj + .5) / ROCK_PROBE_GRID;
-        const nearest = ROCK_PROBE_HEIGHTS.map(() => ({ y: Infinity, up: false }));
+        const hits = []; // every shell crossing above the lowest probe height
         for (const { a, b, c, denom, up } of tris) {
           const wa = ((P[b + 2] - P[c + 2]) * (x - P[c]) + (P[c] - P[b]) * (z - P[c + 2])) / denom;
           const wb = ((P[c + 2] - P[a + 2]) * (x - P[c]) + (P[a] - P[c]) * (z - P[c + 2])) / denom;
           const wc = 1 - wa - wb;
           if (wa < 0 || wb < 0 || wc < 0) continue;
           const y = wa * P[a + 1] + wb * P[b + 1] + wc * P[c + 1];
-          ROCK_PROBE_HEIGHTS.forEach((h, n) => { if (y > h && y < nearest[n].y) nearest[n] = { y, up }; });
+          if (y > ROCK_PROBE_HEIGHTS[0]) hits.push({ y, up });
         }
+        hits.sort((p, q) => p.y - q.y || p.up - q.up); // on a tie the downward face comes first
+        const nearest = ROCK_PROBE_HEIGHTS.map(h => {
+          const i = hits.findIndex(hit => hit.y > h);
+          if (i < 0) return { up: false };
+          // A folded face just under the roof (a downward face within 0.3
+          // above it) is a snapping artefact the roof covers, not rock.
+          if (hits[i].up && hits.slice(i + 1).some(hit => !hit.up && hit.y - hits[i].y < .3)) return { up: false };
+          return hits[i];
+        });
         if (nearest.some(hit => hit.up)) blocked++;
       }
       if (blocked * 2 >= ROCK_PROBE_GRID * ROCK_PROBE_GRID) covered.add(key);
@@ -163,7 +174,7 @@
       : generationOptions.fast
         ? { branchCount, entranceLength, tileSize, gridN: 32, splineSamples: 5, hitsPerStep: 1, probeDigBursts: 2, probeMaxPasses: 45, enforceWalkableClearance: 1 }
         : { branchCount, entranceLength, tileSize };
-    const result = window.CavernSculptor.carveMazeCavern({ ...sculptOptions, ...tallCaveSculptOptions(CAVE_HEIGHT_SCALE, seedText), solidOuterRim: true }, rng);
+    const result = window.CavernSculptor.carveMazeCavern({ ...sculptOptions, ...tallCaveSculptOptions(CAVE_BASE_HEIGHT_SCALE, seedText), solidOuterRim: true }, rng);
 
     // Shift every tile coordinate (and the mesh's X/Z) from the sculptor's
     // arbitrary centered local space into positive grid space, same +1
@@ -538,12 +549,16 @@
 
   function expandCavernMapData(mapData, clearances, rng) {
     const expandedFloor = window.CavernSculptor.expandFootprint(mapData.floor, clearances); // Locale carver rebuilds visual rock and collision from the same expanded usable footprint.
-    const heightScale = Math.max(CAVE_HEIGHT_SCALE, Number(mapData.wallHeightScale) || 1); // Taller caves are carved taller, not stretched after the fact.
-    const cacheKey = `${mapData.id}:clearance`, signature = JSON.stringify([expandedFloor, mapData.exitCol, mapData.exitRow, heightScale]); // Existing cave cache keeps one expanded shell per map, replacing it when its footprint, entrance, or height changes.
+    // Tall points (ruin doors) get the full height, easing down to the base
+    // height away from them; without any, the cave keeps the base height.
+    const tallTiles = (Array.isArray(mapData.cavernTallTiles) ? mapData.cavernTallTiles : []).filter(tile => Number.isFinite(tile?.[0]) && Number.isFinite(tile?.[1]));
+    const heightScale = tallTiles.length ? CAVE_HEIGHT_SCALE : Math.max(CAVE_BASE_HEIGHT_SCALE, Number(mapData.wallHeightScale) || 1); // Taller caves are carved taller, not stretched after the fact.
+    const cacheKey = `${mapData.id}:clearance`, signature = JSON.stringify([expandedFloor, mapData.exitCol, mapData.exitRow, heightScale, tallTiles]); // Existing cave cache keeps one expanded shell per map, replacing it when its footprint, entrance, height, or tall points change.
     const cached = _cavernFloorCache.get(cacheKey); // Re-entry reuses the expensive SDF carve without caching runtime loot/inhabitant state.
     const generated = cached?.signature === signature ? cached.generated : window.CavernSculptor.carveFootprintCavern(expandedFloor,
       { tileSize: 0.5, gridN: 32, organicJitter: 0, hitsPerStep: 1, probeDigBursts: 2, probeMaxPasses: 45, enforceWalkableClearance: 1, refineFullColumn: true,
         ...tallCaveSculptOptions(heightScale, mapData.id),
+        vaultTallTiles: tallTiles, vaultTallRadiusTiles: [6, 16], vaultMinHeightFrac: CAVE_MIN_HEIGHT_FRAC,
         entrance: { col: mapData.exitCol, row: mapData.exitRow, side: 'south' } }, rng);
     if (cached?.signature !== signature) _cavernFloorCache.set(cacheKey, { signature, generated });
     const rockCovered = rockCoveredFloorTiles(expandedFloor, generated.mesh, new Set([`${mapData.exitCol},${mapData.exitRow}`])); // Same geometry/collision agreement as generateCavernFloor.
@@ -609,6 +624,7 @@
     expandCavernMapData,
     rockCoveredFloorTiles,
     CAVE_HEIGHT_SCALE,
+    CAVE_BASE_HEIGHT_SCALE,
     pickDenMotherKind,
     synthesizeCavernMapData,
     loadLocaleCavernDefinition,
