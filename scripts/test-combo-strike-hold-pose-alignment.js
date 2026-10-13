@@ -26,6 +26,7 @@ global.window = {
     },
     isStaggered: () => false,
     beginStagedAction(opts) { stagedCall = opts; return { opts }; },
+    playerMeleeThreat: () => null, // Telegraph metadata for hostile reactions; not under test here.
     deps: {
       player: { angle: 0 },
       TILE: 32,

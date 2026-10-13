@@ -7,8 +7,9 @@ const fs = require('node:fs');
 const game = fs.readFileSync('docs/game.js', 'utf8');
 const index = fs.readFileSync('docs/index.html', 'utf8');
 const pixelProbe = fs.readFileSync('docs/js/pixel-probe.js', 'utf8');
+const actionArc = fs.readFileSync('docs/js/action-arc-ui.js', 'utf8'); // The utilities wheel now lives here.
 
-assert.match(game, /id: 'character-view'[\s\S]*setCharacterViewMode\(!characterViewMode\.enabled\)/, 'the utilities wheel exposes the character-view toggle');
+assert.match(actionArc, /id: 'character-view'[\s\S]*deps\.setCharacterViewMode\(!deps\.characterViewMode\.enabled\)/, 'the utilities wheel exposes the character-view toggle');
 assert.match(game, /characterViewMode\.enabled \|\| cameraModeConfig\(activeCameraMode\)\.freeRotate === true/, 'character view grants full camera orbit');
 assert.match(game, /viewModeMoveMagnitude > 0\.08 \|\| viewModeForcedMovement[\s\S]*setCharacterViewMode\(false, 'movement'\)/, 'manual or forced movement disables character view');
 assert.match(game, /if \(characterViewMode\.enabled\) \{[\s\S]*facingAngle = characterViewMode\.lockedFacingAngle;[\s\S]*player\.angle = characterViewMode\.lockedPlayerAngle;/, 'logical face and aim yaw stay pinned while viewing');

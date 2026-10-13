@@ -12,8 +12,7 @@ function replayReticle(source, kind) {
   let hitCalls = 0; // Ensures DOM optimizations never throttle targeting queries.
   let drawn = true; // Simulates drawing and putting away the selected weapon.
   let hits = true; // Changes readiness while the same target remains selected.
-  let frameId = 0; // Allocates browser-style RAF handles for disposal checks.
-  const frames = new Map(); // Keeps the original private frame callback cadence observable.
+  const frames = new Map(); // RuntimeFrameScheduler registrations, keyed by scheduler id.
   const nodes = new Map(); // Supplies id-based lookup and replacement of disconnected roots.
   const outputs = []; // Captures every tested player's-visible state and diagnostic snapshot.
   function node() {
@@ -39,6 +38,10 @@ function replayReticle(source, kind) {
   const target = { id: 'fallback-hostile', x: 32, y: 0, health: 100, areaId: 'town' }; // Exercises the broad melee fallback, not just explicit combat targets.
   const loadout = { tap1: 'combo', tap2: 'quick', hold1: 'chargedBreaker', hold2: 'counterShield' }; // Mutable selection verifies uncached loadout changes.
   const window = {
+    RuntimeFrameScheduler: {
+      register(id, callback) { frames.set(id, callback); },
+      unregister(id) { frames.delete(id); },
+    },
     RangedWeapons: { equippedRangedKey: () => 'crossbow', wouldHitHostile: () => { hitCalls++; return hits; } },
     Combat: {
       deps: {
@@ -53,8 +56,6 @@ function replayReticle(source, kind) {
   }; // Browser globals shared by the actual reticle code.
   const context = { window, console, THREE: { Vector3, MathUtils: { degToRad: d => d * Math.PI / 180 } },
     document: { readyState: 'complete', getElementById: id => nodes.get(id), createElement: node },
-    requestAnimationFrame(callback) { frames.set(++frameId, callback); return frameId; },
-    cancelAnimationFrame(id) { frames.delete(id); },
   }; // Deterministic browser environment for unmodified module execution.
   vm.runInNewContext(source, context);
   const api = window[kind === 'ranged' ? 'RangedHudReticle' : 'MeleeHudReticle']; // Public runtime API under test.
@@ -65,9 +66,9 @@ function replayReticle(source, kind) {
     outputs.push({ snapshot, appearance: appearance(nodes.get(kind + 'HudReticle')), hitCalls });
   }
   function tick() {
-    assert.equal(frames.size, 1, 'exactly the original one private RAF remains scheduled');
-    const [id, callback] = frames.entries().next().value; // Executes one real browser callback at a time.
-    frames.delete(id); callback(); capture();
+    assert.equal(frames.size, 1, 'exactly one scheduler callback remains registered');
+    const callback = frames.values().next().value; // Executes one real frame callback at a time.
+    callback(); capture();
   }
   capture();
   writes = 0;
@@ -83,7 +84,7 @@ function replayReticle(source, kind) {
   // Include root replacement in parity checks; do not bundle unrelated visual fixes.
   nodes.get(kind + 'HudReticle').remove(); tick();
   api.dispose();
-  assert.equal(frames.size, 0, 'dispose cancels the scheduled callback');
+  assert.equal(frames.size, 0, 'dispose unregisters the scheduler callback');
   return { outputs, steadyWrites };
 }
 
@@ -148,7 +149,7 @@ function replayHandSync(source, diagnostic) {
   const context = {
     syncing: false, global: { HobunjiHandGripModes: { currentModeKey: () => 'test' } },
     JSON: { stringify: value => { copies++; return JSON.stringify(value); }, parse: JSON.parse },
-    currentToolKey: () => 'axe',
+    currentToolKey: () => 'axe', currentGripContext: () => 'melee',
     toolGrips: { primaryGripForTool: () => primaryGrip, secondaryGripForTool: () => useSecondary ? secondaryGrip : null },
     toolSocketWorld: (_record, _holder, grip) => grip,
     handWorldFromSocket: (_record, grip) => ({ position: grip.position, quaternion: { w: 1 }, authored: {}, visualBasis: 'test' }), // Baseline helper retained for PERF_BASE_REF replay.

@@ -94,7 +94,7 @@ const cookingSource = fs.readFileSync('docs/js/cooking-system.js', 'utf8');
 const processingSource = fs.readFileSync('docs/js/food-processing.js', 'utf8');
 const authoredRuntimeSource = fs.readFileSync('docs/js/authored-furniture-runtime.js', 'utf8');
 const farmAnimalsSource = fs.readFileSync('docs/js/farm-animals.js', 'utf8');
-const farmPanelSource = fs.readFileSync('docs/js/farm-panel.js', 'utf8');
+const farmPanelSource = fs.readFileSync('docs/js/farm-panel-core.js', 'utf8'); // The Farm tab renderer; farm-panel.js now only adds stable training.
 const dewVatsSource = fs.readFileSync('docs/js/dew-vats.js', 'utf8');
 const squeezerAuthored = JSON.parse(fs.readFileSync('docs/config/furniture-authored/squeezer.json', 'utf8'));
 const alchemySource = fs.readFileSync('docs/js/alchemy-system.js', 'utf8');
@@ -145,7 +145,7 @@ assert.match(dewVatsSource, /function _pruneInvalidVatAssignments\(/, 'stale inv
 assert.match(dewVatsSource, /stale non-Small\/unhoused livestock assignments/, 'old stasis-worker assignments are explicitly cleared');
 assert.match(dewVatsSource, /function _guardSqueezingVatStart\(/, 'squeezing vats install a shared worker-required start guard');
 assert.match(dewVatsSource, /!assignedWorkerForVat\(vat\.id\)/, 'manual and timed vat starts are blocked until a valid housed worker is already assigned');
-assert.match(farmPanelSource, /vatCanAccept\(entry\.kind, entry\.genotype\)/, 'the Farm tab hides squeezing-vat assignment from non-Small livestock');
+assert.match(farmPanelSource, /entry\.barnId && window\.DewVats\.vatCanAccept\(entry\.kind, entry\.genotype\)/, 'the Farm tab hides squeezing-vat assignment from non-Small livestock');
 assert.match(dewVatsSource, /return result\?\.ok \? 'started' : false/, 'automatic dew squeezing uses the same delayed vat job boundary');
 
 console.log('skill and hearth cooking tests passed');

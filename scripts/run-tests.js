@@ -32,37 +32,10 @@ const BROWSER = new Set([
   'test-dev-random-ruin-collision-browser.js',
 ]);
 
-// Already failing on main when the suite was consolidated (2026-09): they assert
-// source text or APIs that have since moved. Fix one and drop it from this list,
-// or delete the file — don't spend a task chasing these.
-const KNOWN_BROKEN = new Set([
-  'test-animal-head-rig-uploaded-species.js',
-  'test-behavior-preserving-performance.js',
-  'test-branch-reticle-interactions.js',
-  'test-character-view-mode.js',
-  'test-clothing-weaving-system.js',
-  'test-combat-sfx-wiring.js',
-  'test-combo-strike-hold-pose-alignment.js',
-  'test-dialogue-presentation.js',
-  'test-environment-surface-runtime.js',
-  'test-furniture-tankan-decals.js',
-  'test-hand-inverse-authoring.js',
-  'test-indoor-companions.js',
-  'test-item-quality-and-blackout-wander.js',
-  'test-mounted-rider-render-sync.js',
-  'test-nearby-volume-collision.js',
-  'test-npc-agenda-data-integrity.js',
-  'test-npc-schedule-overrides.js',
-  'test-png-portrait-flip-setting.js',
-  'test-porch-stage-material.js',
-  'test-ranged-weapons.js',
-  'test-skill-and-hearth-cooking.js',
-  'test-startup-asset-path-regressions.js',
-  'test-tool-action-sfx-wiring.js',
-  'test-town-render-hotpaths.js',
-  'test-waterfall-river-surface-connector.js',
-  'test-wilderness-chunks.js',
-]);
+// Tests that fail on main and are skipped until fixed. Keep this empty: a
+// test that asserts moved/retired code should be updated or deleted, not
+// parked here. (The 2026-09 backlog was cleared in 2026-10.)
+const KNOWN_BROKEN = new Set([]);
 
 // Non test-*.js checks the old per-feature workflows also ran.
 const EXTRA_CHECKS = [

@@ -72,8 +72,11 @@ assert.ok(stageStation, 'Foroji inn music station exists');
 const stageTable = inn.furniture.find(piece => piece.id === 'fmss04iltqngq');
 assert.ok(stageTable, 'Foroji stage table exists');
 assert.equal(stageTable.itemKey, 'tableLongFurniture');
-assert.equal(stageTable.col, stageStation.col);
-assert.equal(stageTable.row, stageStation.row);
+const stageW = (stageTable.gridRot / 90) % 2 ? (stageTable.gridD || 1) : (stageTable.gridW || 1);
+const stageD = (stageTable.gridRot / 90) % 2 ? (stageTable.gridW || 1) : (stageTable.gridD || 1);
+assert.ok(stageStation.col >= stageTable.col && stageStation.col < stageTable.col + stageW
+  && stageStation.row >= stageTable.row && stageStation.row < stageTable.row + stageD,
+  'Foroji\'s music station stands on the stage table footprint');
 assert.equal(stageTable.walkableElevation, true, 'Foroji stage table keeps geometry-derived elevation');
 assert.deepEqual(inn.furniture.filter(piece => piece.walkableElevation).map(piece => piece.id), ['fmss04iltqngq'], 'no other inn furniture is made walkable');
 

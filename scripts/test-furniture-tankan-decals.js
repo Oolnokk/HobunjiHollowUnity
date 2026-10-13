@@ -29,7 +29,7 @@ assert.equal(layout.defaults.glyphScale, 1, 'legacy shared glyph scale should re
 assert.equal(layout.defaults.glyphScaleX, 1, 'shared X glyph scale should remain neutral');
 assert.equal(layout.defaults.glyphScaleY, 1, 'shared Y glyph scale should remain neutral');
 assert(layout.fontUrl.includes('tankanscript_rotated_flipped_horiz.otf'), 'must use the rotated/flipped Tankan font');
-assert(!layoutSource.includes('document.fonts.check('), 'do not preflight Tankan with FontFaceSet.check; it can silently accept fallback rendering');
+assert(!layoutSource.split('\n').some(line => !/^\s*\/\//.test(line) && line.includes('document.fonts.check(')), 'do not preflight Tankan with FontFaceSet.check; it can silently accept fallback rendering');
 assert(layoutSource.includes('refusing to rasterize with a fallback font'), 'canvas renderer must fail closed instead of drawing a fallback font');
 assert(layoutSource.includes('document.fonts.add(loadedFace)'), 'the loaded Tankan FontFace must be explicitly registered before canvas rendering');
 assert(layoutSource.includes('fitToContainer'), 'shared Tankan layout must expose UI-like container fitting');

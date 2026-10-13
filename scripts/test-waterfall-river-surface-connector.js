@@ -97,7 +97,8 @@ function finalHorizontalYs() {
   assert.ok(mergedCells, 'expected merged horizontal water cells to be produced');
   assert.ok(mergedOptions, 'expected merged horizontal water options to be produced');
   assert.strictEqual(mergedOptions.yOffset, 0.015, 'zone water should pin the same final-render offset used by waterfall curtains');
-  return mergedCells.map(cell => Number((cell.surfaceY + mergedOptions.yOffset).toFixed(4))).sort((a, b) => a - b);
+  // Array.from: mergedCells was built inside the vm context, so its .map() result would carry that realm's Array prototype and fail deepStrictEqual.
+  return Array.from(mergedCells, cell => Number((cell.surfaceY + mergedOptions.yOffset).toFixed(4))).sort((a, b) => a - b);
 }
 
 // River -> waterfall is the exact seam visible in game: a deep-water river on

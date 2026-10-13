@@ -264,7 +264,7 @@ function makeSeededRandom(seed) {
     CookingSystem: fakeCookingSystem,
     addEventListener() {}, dispatchEvent() {},
   };
-  const ctx = { window: windowStub, document: { readyState: 'loading', addEventListener() {}, getElementById() { return null; } }, performance: { now: () => 0 }, requestAnimationFrame() {}, setTimeout() {}, CustomEvent: function CustomEvent() {}, console };
+  const ctx = { window: windowStub, document: { readyState: 'loading', addEventListener() {}, getElementById() { return null; } }, performance: { now: () => 0 }, requestAnimationFrame() {}, setTimeout() {}, setInterval() {}, CustomEvent: function CustomEvent() {}, console };
   vm.createContext(ctx);
   vm.runInContext(src, ctx);
 
@@ -350,7 +350,7 @@ function makeSeededRandom(seed) {
     Combat: { deps: { player: devDeps.player } },
     addEventListener() {}, dispatchEvent() {},
   };
-  const ctx = { window: windowStub, document: { addEventListener() {}, getElementById() { return null; } }, THREE, performance: { now: () => 0 }, requestAnimationFrame() {}, setTimeout() {}, console, CustomEvent: function CustomEvent() {} };
+  const ctx = { window: windowStub, document: { addEventListener() {}, getElementById() { return null; } }, THREE, performance: { now: () => 0 }, requestAnimationFrame() {}, setTimeout() {}, setInterval() {}, console, CustomEvent: function CustomEvent() {} };
   vm.createContext(ctx);
   vm.runInContext(src, ctx);
 

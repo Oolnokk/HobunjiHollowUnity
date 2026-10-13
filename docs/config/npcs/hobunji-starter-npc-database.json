@@ -6619,8 +6619,8 @@
                               "activity": "sleep",
                               "obligation": "plan",
                               "window": ["22:00", "06:00"],
-                              "destinationStationId": "station_inn_dorm_bed",
-                              "destinationArea": "map_i_inn_F2",
+                              "destinationStationId": "station_inn_hreesh_bed",
+                              "destinationArea": "map_i_inn_F2_hreesh",
                               "activityLabel": "resting"
                         }
                   ],

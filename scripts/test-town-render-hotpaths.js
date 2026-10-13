@@ -133,11 +133,20 @@ for (const path of [
   'docs/js/relationships-panel.js',
 ]) {
   const source = read(path); // Inspected by index so intervening onload/onerror handlers do not make the ordering assertion brittle.
-  const imageAt = source.indexOf('new Image()');
-  const corsAt = source.indexOf("crossOrigin = 'anonymous'", imageAt);
-  const srcAt = source.indexOf('.src =', imageAt);
-  assert.ok(imageAt >= 0 && corsAt > imageAt && srcAt > corsAt,
-    `${path} selects anonymous CORS before assigning a canvas-bound image source`);
+  let checked = 0;
+  for (let imageAt = source.indexOf('new Image()'); imageAt >= 0; imageAt = source.indexOf('new Image()', imageAt + 1)) {
+    const lineStart = source.lastIndexOf('\n', imageAt) + 1;
+    if (/^\s*\/\//.test(source.slice(lineStart, imageAt))) continue; // Mentioned in a comment, not code.
+    const srcAt = source.indexOf('.src =', imageAt);
+    if (srcAt < 0) continue;
+    const srcLine = source.slice(srcAt, source.indexOf('\n', srcAt));
+    if (/toDataURL\(|['"`]data:/.test(srcLine)) continue; // Same-origin data URLs cannot taint a canvas.
+    const corsAt = source.indexOf("crossOrigin = 'anonymous'", imageAt);
+    assert.ok(corsAt > imageAt && corsAt < srcAt,
+      `${path} selects anonymous CORS before assigning a canvas-bound image source (new Image() at offset ${imageAt})`);
+    checked++;
+  }
+  assert.ok(checked > 0, `${path} still loads at least one canvas-bound image`);
 }
 
 const context = { window: {} }; // Receives GridTileAccessors for an allocation/cache behavior test without loading the game.

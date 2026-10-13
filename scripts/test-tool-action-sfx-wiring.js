@@ -30,6 +30,7 @@ assert(!/anim: 'toss'[^\n]*sfxKey/.test(game), 'dirt toss stages must stay silen
 
 class FakeAudio {
   static loads = 0;
+  static loadsByUrl = new Map();
   static clones = 0;
   static plays = 0;
   constructor(src) {
@@ -38,7 +39,7 @@ class FakeAudio {
     this.readyState = 4;
     this.networkState = 1;
   }
-  load() { FakeAudio.loads++; }
+  load() { FakeAudio.loads++; FakeAudio.loadsByUrl.set(this.src, (FakeAudio.loadsByUrl.get(this.src) || 0) + 1); }
   cloneNode() { FakeAudio.clones++; return new FakeAudio(this.src); }
   addEventListener() {}
   play() { FakeAudio.plays++; return Promise.resolve(); }
@@ -59,9 +60,8 @@ audioContext.window.AudioSystem.init({
   isRealMediaError: () => false,
   markAudioUrlFailed: () => {},
 });
-// 1 configured object-SFX cue, plus the 3 runtime-owned hard-footstep
-// recordings (always preloaded regardless of config) x their 2-voice pool.
-assert.equal(FakeAudio.loads, 7, 'preloaded tool cue should call load once during AudioSystem init');
+// Footstep recordings preload their own voice pools too, so count only the tool cue's URL.
+assert.equal(FakeAudio.loadsByUrl.get('dig.mp3'), 1, 'preloaded tool cue should call load once during AudioSystem init');
 audioContext.window.AudioSystem.playObjectSfxKey('dig');
 assert.equal(FakeAudio.clones, 1, 'keyed playback should clone the retained preloaded element');
 assert.equal(FakeAudio.plays, 1, 'keyed playback should start the cloned cue');

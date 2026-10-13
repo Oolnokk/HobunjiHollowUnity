@@ -12,7 +12,7 @@ assert.match(gameSource,
   /HOBUNJI_ATTACHMENT_RIG_MATH\?\.characterPosteriorY\(rec\.posteriorRule, modelHeight, playerToolBaseY\)/,
   'mounted riders must resolve posterior Y with the same floor-relative math as Shoulder Rig and procedural limbs');
 assert.match(gameSource,
-  /playerMesh\.position\.y \+= \(targetY - playerMesh\.position\.y\) \* 0\.18;[\s\S]{0,700}Mounts\?\.pinMountedRiderMesh\(playerMesh, mountSeatLift\);/,
+  /const smoothedY = playerMesh\.position\.y \+ \(targetY - playerMesh\.position\.y\) \* _playerMeshSmoothY;[\s\S]{0,900}Mounts\?\.pinMountedRiderMesh\(playerMesh, mountSeatLift\);/,
   'the rider is pinned after its ordinary independent render lerp');
 assert.match(mountSource,
   /mountRideState !== 'mounted'[\s\S]{0,900}riderMesh\.position\.set\(carrierPosition\.x, targetY, carrierPosition\.z\);/,
