@@ -1388,6 +1388,16 @@
 
     return {
       group: root, update, dispose, applyRecordedLegPose, getStandingPoseDebug,
+      // The legs' standing stance (hip and idle-foot positions, group-local), independent of whatever pose they are in right now:
+      // the Pants garment binds to this so it fits the same whether the avatar is seated, mid-stride or just spawned.
+      getRestStance: () => {
+        const stance = {};
+        for (const side of ['left', 'right']) {
+          const hip = legChains[side].hip.position;
+          stance[side] = { hip: { x: hip.x, y: hip.y, z: hip.z }, ankle: { x: side === 'left' ? state.idleLeftX : state.idleRightX, y: side === 'left' ? state.leftContactY : state.rightContactY, z: 0 } };
+        }
+        return stance;
+      },
       setHoverMode, isHoverMode,
       standingPosteriorY: posteriorY, // Used by NPC chair stations to lower the whole avatar onto the authored seat.
       getSeatedPoseDebug: () => lastSeatedPoseDebug,

@@ -473,14 +473,36 @@
     // `rest` holds the amplified bones flattened to the garment's depth; `restRaw` keeps their true depth for the per-joint
     // depth correction applied to the live bones.
     const makeJoints = () => ({ left: { hip: { x: 0, y: 0, z: 0 }, knee: { x: 0, y: 0, z: 0 }, ankle: { x: 0, y: 0, z: 0 } }, right: { hip: { x: 0, y: 0, z: 0 }, knee: { x: 0, y: 0, z: 0 }, ankle: { x: 0, y: 0, z: 0 } } });
+    // Analytic standing stance in avatar-local space (straight legs from each hip down to its idle foot), plus the orientation frame
+    // of a leg pointing straight down (the leg group's own axes).
+    const restScratch = { bones: { left: makeJoints().left, right: makeJoints().right }, frame: new Array(9).fill(0), signature: '' };
+    const restStanceBones = h => {
+      const legs = legHandle.getRestStance?.();
+      if (!legs || !legHandle.group) return null;
+      h.model.updateWorldMatrix?.(true, false);
+      legHandle.group.updateWorldMatrix?.(true, false);
+      const inverseModel = h.scratch.inverseModel.copy(h.model.matrixWorld).invert();
+      const toModel = (p, out) => { h.scratch.point.set(p.x, p.y, p.z).applyMatrix4(legHandle.group.matrixWorld).applyMatrix4(inverseModel); out.x = h.scratch.point.x; out.y = h.scratch.point.y; out.z = h.scratch.point.z; };
+      for (const side of ['left', 'right']) {
+        const bones = restScratch.bones[side];
+        toModel(legs[side].hip, bones.hip);
+        toModel(legs[side].ankle, bones.ankle);
+        bones.knee.x = (bones.hip.x + bones.ankle.x) / 2; bones.knee.y = (bones.hip.y + bones.ankle.y) / 2; bones.knee.z = (bones.hip.z + bones.ankle.z) / 2;
+      }
+      const e = h.scratch.m4.multiplyMatrices(inverseModel, legHandle.group.matrixWorld).elements;
+      for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) restScratch.frame[row * 3 + col] = e[col * 4 + row];
+      return restScratch;
+    };
     handle.rest = makeJoints();
     handle.restRaw = makeJoints();
     handle.captureRest = () => {
       // The rest stance is the legs' pose at this moment (a fresh avatar stands idle). The garment is bound to it: at rest every
       // vertex sits exactly where the art puts it, and only the motion away from this pose moves the garment.
-      const measured = readLiveBones(handle);
+      const stance = restStanceBones(handle); // The legs' standing stance when the leg system can say what it is, else their pose right now.
+      const measured = stance ? stance.bones : readLiveBones(handle);
+      if (stance) { handle.lastStance = []; for (const side of ['left', 'right']) for (const joint of ['hip', 'ankle']) handle.lastStance.push(stance.bones[side][joint].x, stance.bones[side][joint].y, stance.bones[side][joint].z); } // Raw stance the rebind check compares against.
       for (const side of ['left', 'right']) {
-        for (const name of ['thigh', 'calf']) handle.restFrames[side][name] = handle.scratch.frames[side][name].slice();
+        for (const name of ['thigh', 'calf']) handle.restFrames[side][name] = (stance ? stance.frame : handle.scratch.frames[side][name]).slice();
         Core.amplifyLegRoll(measured[side], handle.legRollGain, handle.restRaw[side]);
         for (const joint of ['hip', 'knee', 'ankle']) {
           const raw = handle.restRaw[side][joint], flat = handle.rest[side][joint];
@@ -556,6 +578,12 @@
       if (handle.mesh.visible !== visible) handle.mesh.visible = visible;
       if (!visible) return;
       if (!handle.restCaptured) handle.captureRest();
+      else if (legHandle.getRestStance) { // The leg group may be repositioned/rescaled after attach (placement, seats): rebind to the stance as it is now.
+        const stance = restStanceBones(handle);
+        let moved = 0, k = 0;
+        for (const side of ['left', 'right']) for (const joint of ['hip', 'ankle']) { const p = stance.bones[side][joint]; moved = Math.max(moved, Math.abs(p.x - handle.lastStance[k]), Math.abs(p.y - handle.lastStance[k + 1]), Math.abs(p.z - handle.lastStance[k + 2])); k += 3; }
+        if (moved > 2e-4) { handle.captureRest(); handle.alignToRest(); handle.dirty = true; }
+      }
       const aim = aimAtLiveLegs();
       // Standing still (most NPCs, most of the time) nothing about the legs changes: skip the skin + upload when this frame's
       // bones and orientation frames are identical to the last frame's.
@@ -649,57 +677,63 @@
     const worldElements = handle.model.matrixWorld.elements;
     handle.maskUniforms.uPantsDepthBias.value = footLift * Math.hypot(worldElements[0], worldElements[1], worldElements[2]); // View-space distance to pull the garment's depth toward the camera.
     handle.captureRest(); // The legs' stance at attach is the rest pose the initial 2D warp targets.
-    // Initial alignment (purely 2D): each leg is a quad whose top is the beltline and whose bottom is its leg opening. The belt
-    // stays exactly where the portrait puts it and the opening (ankle spline, shape and width intact) is moved onto the 3D ankle
-    // at rest; everything in between is carried proportionally down the quad, so the pants stretch or compress to fit the leg.
-    {
-      const stride = SEGMENTS + 1, base = handle.basePositions;
-      const sortedByX = points => [...points].sort((p, q) => p.x - q.x);
-      const yAt = (points, u) => { // Piecewise-linear y of an x-sorted polyline, clamped at its ends.
-        if (u <= points[0].x) return points[0].y;
-        for (let i = 1; i < points.length; i++) if (u <= points[i].x) { const t = (u - points[i - 1].x) / Math.max(1e-9, points[i].x - points[i - 1].x); return points[i - 1].y + (points[i].y - points[i - 1].y) * t; }
-        return points[points.length - 1].y;
-      };
-      const belt = sortedByX(garment.pantsBeltSpline);
-      const sides = ['left', 'right'].map(side => {
-        const ring = handle.rings?.[side], anchor = ring?.anchor;
-        if (!anchor) return null;
-        // Where the opening sits ALONG the bone: the art's bone may run past its opening (shin below the hem), and the 3D leg is
-        // treated the same way, so the opening lands at the same fraction of the 3D bone rather than on its end.
-        const bone = Core.normalizeLegBones(garment.legBones)[side], bx = bone.ankle.x - bone.knee.x, by = bone.ankle.y - bone.knee.y;
-        const along = Math.max(0, Math.min(1, ((ring.crossing.x - bone.knee.x) * bx + (ring.crossing.y - bone.knee.y) * by) / Math.max(1e-9, bx * bx + by * by)));
-        const knee3 = handle.rest[side].knee, ankle3 = handle.rest[side].ankle;
-        const rest = { x: knee3.x + (ankle3.x - knee3.x) * along, y: knee3.y + (ankle3.y - knee3.y) * along };
-        const at = k => { const i = anchor.i * 3 + k, j = (anchor.i + 1) * 3 + k, m = (anchor.i + stride) * 3 + k, n = (anchor.i + stride + 1) * 3 + k; const top = base[i] + (base[j] - base[i]) * anchor.fx, bottom = base[m] + (base[n] - base[m]) * anchor.fx; return top + (bottom - top) * anchor.fy; };
-        return { opening: sortedByX(garment.legOpenings[side]), dx: rest.x - at(0), dy: rest.y - at(1) };
-      });
-      if (sides[0] && sides[1]) {
-        const smooth = (e0, e1, x) => { const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
-        // The seam between the legs lies strictly between the two openings, so each opening moves with its own leg alone and
-        // keeps its shape (blending the legs across an opening would shear it).
-        const leftInner = Math.max(...sides[0].opening.map(p => p.x)), rightInner = Math.min(...sides[1].opening.map(p => p.x));
-        const seam0 = rightInner > leftInner + 1e-3 ? leftInner : (leftInner + rightInner) / 2 - 0.01, seam1 = rightInner > leftInner + 1e-3 ? rightInner : (leftInner + rightInner) / 2 + 0.01;
-        const displace = (u, v) => {
-          const leftShare = 1 - smooth(seam0, seam1, u);
-          let dx = 0, dy = 0;
-          sides.forEach((side, index) => {
-            const top = yAt(belt, u), t = Math.max(0, Math.min(1, (v - top) / Math.max(1e-3, yAt(side.opening, u) - top)));
-            const share = index === 0 ? leftShare : 1 - leftShare;
-            dx += side.dx * t * share; dy += side.dy * t * share;
-          });
-          return [dx, dy];
+    handle.baseOriginal = new Float32Array(handle.basePositions); // The art as the portrait places it, before the alignment below (which is redone whenever the rest stance changes).
+    handle.alignToRest = () => {
+      handle.basePositions.set(handle.baseOriginal);
+      // Initial alignment (purely 2D): each leg is a quad whose top is the beltline and whose bottom is its leg opening. The belt
+      // stays exactly where the portrait puts it and the opening (ankle spline, shape and width intact) is moved onto the 3D ankle
+      // at rest; everything in between is carried proportionally down the quad, so the pants stretch or compress to fit the leg.
+      {
+        const stride = SEGMENTS + 1, base = handle.basePositions;
+        const sortedByX = points => [...points].sort((p, q) => p.x - q.x);
+        const yAt = (points, u) => { // Piecewise-linear y of an x-sorted polyline, clamped at its ends.
+          if (u <= points[0].x) return points[0].y;
+          for (let i = 1; i < points.length; i++) if (u <= points[i].x) { const t = (u - points[i - 1].x) / Math.max(1e-9, points[i].x - points[i - 1].x); return points[i - 1].y + (points[i].y - points[i - 1].y) * t; }
+          return points[points.length - 1].y;
         };
-        const position = handle.geometry.getAttribute('position').array;
-        for (let row = 0, i = 0; row <= SEGMENTS; row++) {
-          for (let col = 0; col <= SEGMENTS; col++, i++) {
-            const [dx, dy] = displace(col / SEGMENTS, row / SEGMENTS);
-            base[i * 3] += dx; base[i * 3 + 1] += dy;
-            position[i * 3] = base[i * 3]; position[i * 3 + 1] = base[i * 3 + 1];
+        const belt = sortedByX(garment.pantsBeltSpline);
+        const sides = ['left', 'right'].map(side => {
+          const ring = handle.rings?.[side], anchor = ring?.anchor;
+          if (!anchor) return null;
+          // Where the opening sits ALONG the bone: the art's bone may run past its opening (shin below the hem), and the 3D leg is
+          // treated the same way, so the opening lands at the same fraction of the 3D bone rather than on its end.
+          const bone = Core.normalizeLegBones(garment.legBones)[side], bx = bone.ankle.x - bone.knee.x, by = bone.ankle.y - bone.knee.y;
+          const along = Math.max(0, Math.min(1, ((ring.crossing.x - bone.knee.x) * bx + (ring.crossing.y - bone.knee.y) * by) / Math.max(1e-9, bx * bx + by * by)));
+          const knee3 = handle.rest[side].knee, ankle3 = handle.rest[side].ankle;
+          const rest = { x: knee3.x + (ankle3.x - knee3.x) * along, y: knee3.y + (ankle3.y - knee3.y) * along };
+          const at = k => { const i = anchor.i * 3 + k, j = (anchor.i + 1) * 3 + k, m = (anchor.i + stride) * 3 + k, n = (anchor.i + stride + 1) * 3 + k; const top = base[i] + (base[j] - base[i]) * anchor.fx, bottom = base[m] + (base[n] - base[m]) * anchor.fx; return top + (bottom - top) * anchor.fy; };
+          return { opening: sortedByX(garment.legOpenings[side]), dx: rest.x - at(0), dy: rest.y - at(1) };
+        });
+        if (sides[0] && sides[1]) {
+          const smooth = (e0, e1, x) => { const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
+          // The seam between the legs lies strictly between the two openings, so each opening moves with its own leg alone and
+          // keeps its shape (blending the legs across an opening would shear it).
+          const leftInner = Math.max(...sides[0].opening.map(p => p.x)), rightInner = Math.min(...sides[1].opening.map(p => p.x));
+          const seam0 = rightInner > leftInner + 1e-3 ? leftInner : (leftInner + rightInner) / 2 - 0.01, seam1 = rightInner > leftInner + 1e-3 ? rightInner : (leftInner + rightInner) / 2 + 0.01;
+          const displace = (u, v) => {
+            const leftShare = 1 - smooth(seam0, seam1, u);
+            let dx = 0, dy = 0;
+            sides.forEach((side, index) => {
+              const top = yAt(belt, u), t = Math.max(0, Math.min(1, (v - top) / Math.max(1e-3, yAt(side.opening, u) - top)));
+              const share = index === 0 ? leftShare : 1 - leftShare;
+              dx += side.dx * t * share; dy += side.dy * t * share;
+            });
+            return [dx, dy];
+          };
+          const position = handle.geometry.getAttribute('position').array;
+          for (let row = 0, i = 0; row <= SEGMENTS; row++) {
+            for (let col = 0; col <= SEGMENTS; col++, i++) {
+              const [dx, dy] = displace(col / SEGMENTS, row / SEGMENTS);
+              base[i * 3] += dx; base[i * 3 + 1] += dy;
+              position[i * 3] = base[i * 3]; position[i * 3 + 1] = base[i * 3 + 1];
+            }
           }
         }
+        for (const side of ['left', 'right']) for (const joint of ['hip', 'knee', 'ankle']) { const r = handle.rest[side][joint]; handle.bones2D[side][joint] = { x: r.x, y: r.y, z: r.z }; } // The 2D bones now lie on the 3D rest bones.
       }
-      for (const side of ['left', 'right']) for (const joint of ['hip', 'knee', 'ankle']) { const r = handle.rest[side][joint]; handle.bones2D[side][joint] = { x: r.x, y: r.y, z: r.z }; } // The 2D bones now lie on the 3D rest bones.
-    }
+
+    };
+    handle.alignToRest();
     handles.add(handle);
     handle.setAppearance({});
     if (overlayMask) Promise.resolve(overlayMask).then(canvas => { if (!handle.disposed) handle.setOverlayMask(canvas); }).catch(() => {});
