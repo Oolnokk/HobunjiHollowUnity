@@ -31,7 +31,7 @@ assert.match(core, /applyHealthRecovery\s*=\s*function templeBlessingHealthRecov
 assert.match(core, /applyDamage\s*=\s*function templeBlessingApplyDamage/, 'Krurenic wraps shared direct player damage');
 assert.match(core, /addAffliction\s*=\s*function templeBlessingAddAffliction/, 'Narshangetic wraps shared DoT-affliction application');
 
-assert.match(core, /data\.ctrlPanel\s*=\s*'templePrayerMenu'/, 'prayer chooser uses the existing controller-panel navigation contract');
+assert.match(core, /panel\.dataset\.ctrlPanel\s*=\s*'templePrayerMenu'/, 'prayer chooser uses the existing controller-panel navigation contract');
 assert.match(core, /role',\s*'dialog'[\s\S]{0,100}aria-modal/, 'prayer chooser is a semantic modal for controller/keyboard navigation');
 assert.match(integration, /syncInteractionPrompts\s*=\s*wrapped/, 'Pray is added to the same floating world-interaction prompt pipeline as targeted objects');
 assert.match(integration, /buttons\.push\(\{ action: 'temple_pray', label: 'Pray', worldInteraction: true \}\)/, 'floating prompt contains a real Pray world action');
