@@ -13575,11 +13575,13 @@
             ); // Explicit surface guarantees the entire logical footprint has visible textured ground at the exact Y used by player/NPC grounding.
             if (cavernFloorMesh) bScene.add(cavernFloorMesh);
           } else {
-            const floorMat = InteriorSceneBuilder.buildFloorMaterial(THREE, mapData.wallStyle, 'assets/');
+            const farmNaturalColors = mapId.startsWith('map_i_barn_') ? window.FarmWorldSettings.current() : null; // Generated barn rooms, including incubators, use the selected farm finishes.
+            const floorMat = InteriorSceneBuilder.buildFloorMaterial(THREE, mapData.wallStyle, 'assets/', null, farmNaturalColors);
             // Floor tiles only for defined floor set
             for (const [c, r] of (mapData.floor || [])) {
               const fl = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), floorMat);
               fl.position.set(c + 0.5, -0.05, r + 0.5);
+              if (farmNaturalColors) fl.userData.farmMaterialRole = 'wood';
               bScene.add(fl);
             }
             // Irregular brick walls with gaps at all exit tiles, or for a
@@ -13589,7 +13591,7 @@
             // brick.
             const wallPanels = InteriorSceneBuilder.buildWallPanels(floorSet, exitTileSet, INTERIOR_WALL_HEIGHT);
             if (wallPanels.length) {
-              const wallGroup = InteriorSceneBuilder.buildWallGroup(THREE, houseWallBuilder, wallPanels, mapData.wallStyle, { usePlaceholder: false, mineTextureUrl: 'assets/textures/carved_smooth.png' });
+              const wallGroup = InteriorSceneBuilder.buildWallGroup(THREE, houseWallBuilder, wallPanels, mapData.wallStyle, { usePlaceholder: false, mineTextureUrl: 'assets/textures/carved_smooth.png', farmNaturalColors });
               _markOutline(wallGroup);
               bScene.add(wallGroup);
             }
@@ -19700,6 +19702,7 @@
       // (see loadBuildingScene's hobunji_building_interior.v1 branch).
       function rebuildInteriorGeometry() {
         _interiorGeometryBuilt = true;
+        window.FarmWorldSettings.tintMaterial(interiorFloorMaterial, 'wood'); // Existing shared floor material follows the current world even after a world switch.
         const { floorSet, exitSet, hearths } = window.HousePieces.computeInteriorLayout();
         _interiorExitTiles = exitSet;
 
@@ -19738,6 +19741,7 @@
           const fl = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), interiorFloorMaterial);
           fl.position.set(c + 0.5, -0.05, r + 0.5);
           fl.receiveShadow = true;
+          fl.userData.farmMaterialRole = 'wood';
           interiorFloorGroup.add(fl);
         });
         interiorScene.add(interiorFloorGroup);
@@ -19751,6 +19755,7 @@
           preScale: [1, 1, 0.6],
           brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 },
           wallOpenings: houseWindowOpenings,
+          farmNaturalColors: window.FarmWorldSettings.current(),
         });
         _markOutline(interiorWallGroup);
         interiorScene.add(interiorWallGroup);
@@ -19760,7 +19765,7 @@
 
       // Floor material — boards.png if present, warm brown placeholder
       // otherwise; shared by every rebuildInteriorGeometry() floor tile.
-      const interiorFloorMaterial = InteriorSceneBuilder.buildFloorMaterial(THREE, '', 'assets/');
+      const interiorFloorMaterial = InteriorSceneBuilder.buildFloorMaterial(THREE, '', 'assets/', null, window.FarmWorldSettings.current());
 
       // ── Outline rendering tuning (config/outline-rendering.json) ──────
       // Every numeric/color knob across the three outline sources below
@@ -30170,7 +30175,15 @@
       resizeCanvas();
       refreshActionBar();
       window.HudUpdate.refreshItemScroll();
-      window.FarmWorldSettings.init({ getPlayerData: () => _playerData, isFarmOwner, showToast, debugLog });
+      window.FarmWorldSettings.init({
+        getPlayerData: () => _playerData, isFarmOwner, showToast, debugLog,
+        refreshInteriorColors: () => {
+          window.FarmWorldSettings.tintInterior(interiorScene); // Refresh the live house without disturbing its furniture or occupants.
+          for (const [mapId, info] of _buildingScenes) {
+            if (mapId.startsWith('map_i_barn_')) window.FarmWorldSettings.tintInterior(info?.scene); // Cached/live connected barns receive the same update immediately.
+          }
+        },
+      });
       window.FarmProduction.init({ getPlayerData: () => _playerData, calendar, inventory, ITEM_DEFS, cropData, COLS, ROWS, TileType, MAX_WATER,
         scene, worldObjects, hasFarmPermission, isFarmOwner, showToast, debugLog, getGrid: () => grid,
         loadStorage: _loadWorldStorage, saveStorage: _saveWorldStorage, consumeInput: consumeProcessingInput,

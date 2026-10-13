@@ -41,8 +41,41 @@
     window.HousePieces?.rebuildStructureMeshes?.();
     window.FarmProduction?.refreshColors?.();
     window.BarnIncubator?.rebuildExteriorAll?.();
-    deps.debugLog?.('Farm building colors updated for free.');
+    deps.refreshInteriorColors?.();
+    deps.debugLog?.('Farm building colors updated for free, including house and barn interiors.');
     return { ok: true, message: 'Farm building colors updated.' };
+  }
+  function cloneTintMaterial(material) {
+    const copy = material.clone(); // Three.js clones metadata but does not clone shader callbacks; reinstall tint treatment on the private material.
+    delete copy.userData.surfaceTintTreatment;
+    delete copy.userData.surfaceTintColor;
+    return copy;
+  }
+  function tintMaterial(material, role, colors = current()) {
+    if (!material || !colors[role]) return material;
+    if (!window.SurfaceTint?.applyGrassLuminance?.(material, colors[role], role === 'wood')) material.color?.set(colors[role]);
+    return material;
+  }
+  function tintInterior(group, colors = current()) {
+    if (!group?.traverse) return;
+    const copies = new Map(); // Clone shared brick templates once per refresh, retaining sharing within this interior.
+    group.traverse(mesh => {
+      if (!mesh.isMesh || !mesh.material) return;
+      const role = mesh.userData?.farmMaterialRole; // Only tagged wall/floor meshes receive farm colors; furniture remains authored.
+      if (!colors[role]) return;
+      const tint = material => { // Floor materials are created privately; brick template materials must first be isolated.
+        if (!material.userData?.farmInteriorTintOwned) {
+          if (!copies.has(material)) {
+            const copy = cloneTintMaterial(material); // Keeps town and other interiors from sharing the farm's color mutations.
+            copy.userData = { ...copy.userData, farmInteriorTintOwned: true };
+            copies.set(material, copy);
+          }
+          material = copies.get(material);
+        }
+        return tintMaterial(material, role, colors);
+      };
+      mesh.material = Array.isArray(mesh.material) ? mesh.material.map(tint) : tint(mesh.material);
+    });
   }
   function tintStructure(group, colors = current()) {
     if (!group) return;
@@ -51,7 +84,7 @@
       let role = mesh.userData.farmMaterialRole; // Semantic roles are assigned by the shared structure builder.
       for (let parent = mesh.parent; parent && parent !== group; parent = parent.parent) if (parent.userData.isWallBricks) role = 'stone';
       if (!colors[role]) return;
-      const tint = material => { const result = material.clone(); window.SurfaceTint?.applyGrassLuminance?.(result, colors[role], role === 'wood'); if (!window.SurfaceTint) result.color?.set(colors[role]); return result; }; // Clone per structure; wood keeps the named palette value instead of the grass shader's 150% brightness boost.
+      const tint = material => tintMaterial(cloneTintMaterial(material), role, colors); // Clone per structure; wood keeps the named palette value instead of the grass shader's 150% brightness boost.
       mesh.material = Array.isArray(mesh.material) ? mesh.material.map(tint) : tint(mesh.material);
     });
   }
@@ -73,5 +106,5 @@
     }
     container.append(section);
   }
-  window.FarmWorldSettings = { init, randomName, normalize, initializeWorld, current, read, saveColors, colorSelect, renderOwnerControls, tintStructure };
+  window.FarmWorldSettings = { init, randomName, normalize, initializeWorld, current, read, saveColors, colorSelect, renderOwnerControls, tintStructure, tintMaterial, tintInterior };
 })();
