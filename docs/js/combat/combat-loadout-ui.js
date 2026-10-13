@@ -369,6 +369,7 @@
         const select = document.createElement('select');
         select.className = 'settings-select';
         select.id = 'combatLoadout_' + slot.id;
+        select.setAttribute('data-no-select-stepper', ''); // Already flanked by its own ◀/▶ buttons; keeps js/controller-select-steppers.js from adding a second pair.
         select.style.minWidth = '0';
         select.style.flex = '1 1 auto';
         for (const ability of abilities) {

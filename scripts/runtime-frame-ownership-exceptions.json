@@ -628,5 +628,14 @@
     "reason": "Defers clearing the startup cover opacity to the next paint once the opening scene is ready; it never reschedules.",
     "migrationStage": "not-planned",
     "line": 63
+  },
+  {
+    "file": "docs/js/controller-select-steppers.js",
+    "owner": "SelectSteppers",
+    "classification": "one-shot",
+    "function": "onArrow",
+    "reason": "After a ◀/▶ press, checks once on the next frame whether the owning panel rerendered away the focused arrow and, if so, hands focus to the replacement select's arrow; it never reschedules.",
+    "migrationStage": "not-planned",
+    "line": 233
   }
 ]

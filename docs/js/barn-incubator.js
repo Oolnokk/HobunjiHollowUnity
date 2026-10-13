@@ -1128,6 +1128,7 @@
     modal = document.createElement('div');
     modal.id = 'barnIncubatorLayoutModal';
     modal.className = 'barn-incubator-modal';
+    modal.setAttribute('data-ctrl-panel', ''); // Controller navigation (js/controller-ui-nav.js) owns focus while this modal is open.
     modal.innerHTML = `
       <div class="barn-incubator-shell">
         <div class="barn-incubator-stage">
@@ -1144,7 +1145,7 @@
             <button class="settings-small-btn" id="barnIncubatorMoveBtn">Move Selected</button>
             <button class="settings-small-btn" id="barnIncubatorManageBtn">Manage Selected</button>
             <button class="settings-small-btn" id="barnIncubatorRemoveBtn">Remove Selected</button>
-            <button class="settings-small-btn" id="barnIncubatorEditorClose">Close</button>
+            <button class="settings-small-btn" id="barnIncubatorEditorClose" data-ctrl-cancel>Close</button>
           </div>
           <button class="settings-small-btn" id="barnIncubatorDebugBtn">Copy Incubator Debug</button>
         </div>
@@ -1313,6 +1314,7 @@
     modal = document.createElement('div');
     modal.id = 'barnIncubatorManageModal';
     modal.className = 'barn-incubator-modal';
+    modal.setAttribute('data-ctrl-panel', ''); // Controller navigation (js/controller-ui-nav.js) owns focus while this modal is open.
     modal.innerHTML = `
       <div class="barn-incubator-shell" style="grid-template-columns:1fr">
         <div class="barn-incubator-sidebar">
@@ -1321,7 +1323,7 @@
           <div id="barnIncubatorSlots"></div>
           <div class="barn-incubator-actions">
             <button class="settings-small-btn" id="barnIncubatorManageDebug">Copy Debug</button>
-            <button class="settings-small-btn" id="barnIncubatorManageClose">Close</button>
+            <button class="settings-small-btn" id="barnIncubatorManageClose" data-ctrl-cancel>Close</button>
           </div>
         </div>
       </div>`;
