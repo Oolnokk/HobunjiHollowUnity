@@ -19,6 +19,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Tighten helper target
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('.github/scripts/temp_apply_combat_vocal_config.py')
+          text = p.read_text()
+          old = """playback = replace_once(playback,\n    '    const pitchSemitones = clampPitch(opts.pitchSemitones ?? 0);',\n    '    const pitchSemitones = clampPitchFor(opts.pitchSemitones ?? 0, GENERIC_MAX_SHIFT_SEMITONES);'\n)"""
+          new = """playback = playback.replace(\n    '    const pitchSemitones = clampPitch(opts.pitchSemitones ?? 0);',\n    '    const pitchSemitones = clampPitchFor(opts.pitchSemitones ?? 0, GENERIC_MAX_SHIFT_SEMITONES);',\n    1\n)"""
+          if old not in text:
+              raise SystemExit('Could not find generic decoded-buffer pitch clamp patch')
+          p.write_text(text.replace(old, new, 1))
+          PY
       - name: Apply authored config and runtime support
         run: python3 .github/scripts/temp_apply_combat_vocal_config.py
       - name: Refresh cache busts
