@@ -58,13 +58,22 @@ jobs:
           python3 scripts/audit-fix-flasker-integration.py
           python3 - <<'PY'
           from pathlib import Path
-          path = Path('scripts/test-bandit-flasker.js')
-          text = path.read_text(encoding='utf-8')
+
+          flask_test = Path('scripts/test-bandit-flasker.js')
+          text = flask_test.read_text(encoding='utf-8')
           old = "assert.match(bandits, /makeBanditFlaskToolHolder[\\s\\S]*?throwing_flask\\.png/, 'Flaskers render the actual throwing-flask sprite while attacking');"
           new = "assert.match(bandits, /BANDIT_FLASK_SPRITE\\s*=\\s*['\"]assets\\/objectsprites\\/throwing_flask\\.png['\"]/, 'Flasker visual uses the actual throwing-flask sprite');\nassert.match(bandits, /function makeBanditFlaskToolHolder\\(/, 'Flaskers build a dedicated inventory-flask holder instead of pretending the flask is a tool definition');"
           if old not in text:
               raise SystemExit('Expected stale Flasker visual assertion not found')
-          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          flask_test.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          lich_test = Path('scripts/test-harlyao-liches.js')
+          text = lich_test.read_text(encoding='utf-8')
+          old = "assert.match(combatBanditSource, /proceduralHandToolHolder = useRanged \\? c\\._banditRangedToolHolder : c\\._banditToolHolder/, 'hostile hand owner must publish its live melee/ranged holder every animation update');"
+          new = "assert.match(combatBanditSource, /proceduralHandToolHolder = flaskActive \\? c\\._banditFlaskToolHolder : \\(useRanged \\? c\\._banditRangedToolHolder : c\\._banditToolHolder\\)/, 'hostile hand owner must publish its live flask/ranged/melee holder every animation update');"
+          if old not in text:
+              raise SystemExit('Expected stale hostile hand-holder assertion not found')
+          lich_test.write_text(text.replace(old, new, 1), encoding='utf-8')
           PY
       - name: Syntax and focused regressions
         shell: bash
@@ -76,7 +85,8 @@ jobs:
           node --check docs/js/hand-tool-grips.js
           node --check docs/js/held-action-animations.js
           node --check scripts/test-bandit-flasker.js
-          node scripts/run-tests.js bandit-flasker trait-alchemy-refactor enemy-weapon-stances weapon-trust-bandit-loadouts attack-animation-editor-history-grips
+          node --check scripts/test-harlyao-liches.js
+          node scripts/run-tests.js bandit-flasker harlyao-liches trait-alchemy-refactor enemy-weapon-stances weapon-trust-bandit-loadouts attack-animation-editor-history-grips
       - name: Refresh and verify cache busts
         shell: bash
         run: |
