@@ -15,7 +15,8 @@
   let deps = null;
   const decoratedWalkers = new WeakSet(); // Prevents wrapping the same gameplay/cutscene walker more than once.
   const lastBlockLogAt = new WeakMap(); // Rate-limits mobile-visible collision diagnostics per walker.
-  const debugStats = { decoratedWalkers: 0, blockedMoves: 0, pathReplans: 0, cutsceneMovesUpgraded: 0, lastBlock: null }; // Read by debugSnapshot() for mobile diagnostics.
+  const debugStats = { decoratedWalkers: 0, blockedMoves: 0, pathReplans: 0, pathFailuresSkipped: 0, cutsceneMovesUpgraded: 0, lastBlock: null }; // Read by debugSnapshot() for mobile diagnostics.
+  const PATH_FAILURE_RETRY_MS = 750; // How long a walker waits before repeating a grid search that just failed from the same tile.
 
   function init(injectedDeps) { deps = injectedDeps; }
 
@@ -328,11 +329,23 @@
     if (typeof walker._tryStartGridPath === 'function') {
       walker._tryStartGridPath = function collisionAwareNpcGridPath(target) {
         if (!target || !this.root?.position) return false;
+        // The scheduler retries this every frame while a target is unreachable
+        // (occupied seat, walled-off tile), and a failed swept A* explores its
+        // whole bounded box. Remember the failure briefly; a new target, area or
+        // start tile searches again immediately.
+        const failKey = this.area + '|' + target.c + ',' + target.r + '|' + Math.floor(this.root.position.x) + ',' + Math.floor(this.root.position.z) + '|' + (target.pose === 'sit');
+        const now = Date.now();
+        if (this._npcPathFailKey === failKey && now < this._npcPathFailUntil) { debugStats.pathFailuresSkipped++; return false; }
         const path = findNpcPath(this.area, this.root.position.x, this.root.position.z, target.c, target.r, {
           padding: 6,
           allowOccupiedTarget: target.pose === 'sit',
         });
-        if (!path?.length) return false;
+        if (!path?.length) {
+          this._npcPathFailKey = failKey;
+          this._npcPathFailUntil = now + PATH_FAILURE_RETRY_MS;
+          return false;
+        }
+        this._npcPathFailKey = null;
         this._gridPath = path;
         this._gridPathTargetKey = target.routeId + '|' + target.c + ',' + target.r;
         debugStats.pathReplans++;

@@ -88,6 +88,18 @@ walker.root.position.x = 1.5; walker.root.position.z = 1.5;
 assert.equal(walker._tryStartGridPath({ c: 3, r: 1, routeId: 'test' }), true);
 assert.ok(walker._gridPath.some(p => p.row >= 2), 'gameplay fallback path uses edge-aware detour');
 
+// An unreachable target (occupied chair, not a seat approach) is retried every
+// frame by the scheduler; a repeat from the same tile must not re-run the search.
+const skippedBefore = window.NpcPathfinding.debugSnapshot().pathFailuresSkipped;
+assert.equal(walker._tryStartGridPath({ c: 4, r: 4, routeId: 'test' }), false, 'occupied chair is unreachable for a non-seat target');
+assert.equal(walker._tryStartGridPath({ c: 4, r: 4, routeId: 'test' }), false, 'repeat attempt still fails');
+assert.equal(window.NpcPathfinding.debugSnapshot().pathFailuresSkipped, skippedBefore + 1, 'repeat failure from the same tile is skipped, not re-searched');
+walker.root.position.x = 2.5; walker.root.position.z = 2.5;
+assert.equal(walker._tryStartGridPath({ c: 4, r: 4, routeId: 'test' }), false);
+assert.equal(window.NpcPathfinding.debugSnapshot().pathFailuresSkipped, skippedBefore + 1, 'moving to a new tile searches again');
+walker.root.position.x = 1.5; walker.root.position.z = 1.5;
+assert.equal(walker._tryStartGridPath({ c: 3, r: 1, routeId: 'test' }), true, 'a reachable target is not held back by an earlier failure');
+
 const chairEscapeWalker = {
   area: 'interior',
   rec: { id: 'chair_escape_npc' },
