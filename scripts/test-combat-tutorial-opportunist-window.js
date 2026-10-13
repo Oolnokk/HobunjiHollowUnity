@@ -58,7 +58,21 @@ const ResourceSystem = {
     return target[`effective_${resource}_max`] ?? target[`max${resource[0].toUpperCase()}${resource.slice(1)}`];
   },
 };
-const window = { Combat, ResourceSystem };
+let playerRangedAction = null; // Live ranged action exposed through the same borrowed state used by gameplay animation.
+let thrownChargeItemKey = null; // Held thrown-weapon windup used to verify pre-release Opportunist timing.
+const RangedWeapons = {
+  playerActionState: () => playerRangedAction,
+  startPlayerAction(itemKey) {
+    playerRangedAction = { itemKey, kind: 'fire', t: 0, durationS: 1, fired: false };
+    return true;
+  },
+  cancelPlayerAction() { playerRangedAction = null; },
+  update() {},
+  updateBanditAI() {},
+  cancelBanditAction(actor) { actor._rangedAction = null; },
+};
+const HobunjiRangedWeaponArchetypes = { activeThrownChargeItemKey: () => thrownChargeItemKey };
+const window = { Combat, ResourceSystem, RangedWeapons, HobunjiRangedWeaponArchetypes };
 vm.runInNewContext(
   fs.readFileSync('docs/js/combat/combat-tutorial-partner.js', 'utf8'),
   { window, console, Math },
@@ -153,6 +167,28 @@ assert.equal(Combat.attackOpportunityPhase(player), 'recover', 'player staged at
 assert.equal(Combat.getQuickAttackConditions(Combat.deps, player, frontAttacker).enemyStriking, false, 'recovery is not an Opportunist opening');
 playerAction.cancel();
 assert.equal(Combat.attackOpportunityPhase(player), null, 'cancelled player attack clears the opening');
+
+RangedWeapons.startPlayerAction('crossbow');
+assert.equal(Combat.attackOpportunityPhase(player), 'windup', 'player ranged pre-release fire exposes an Opportunist windup');
+assert.equal(player.telegraphState, 'windup', 'legacy Quick Attack readers see player ranged windup');
+playerRangedAction.fired = true;
+RangedWeapons.update(0);
+assert.equal(Combat.attackOpportunityPhase(player), 'recover', 'projectile release ends the player ranged opportunity');
+assert.equal(Combat.getQuickAttackConditions(Combat.deps, player, frontAttacker).enemyStriking, false, 'post-shot ranged recovery does not qualify');
+RangedWeapons.cancelPlayerAction();
+
+thrownChargeItemKey = 'throwing_spear';
+assert.equal(Combat.attackOpportunityPhase(player), 'windup', 'held thrown-weapon charge is an Opportunist windup');
+thrownChargeItemKey = null;
+
+const rangedEnemy = actor({ id: 'ranged-enemy', _rangedAction: { kind: 'fire', t: 0, durationS: 1, fired: false } });
+RangedWeapons.updateBanditAI(rangedEnemy, 0, player, 100);
+assert.equal(Combat.attackOpportunityPhase(rangedEnemy), 'windup', 'enemy ranged pre-release fire exposes an Opportunist windup');
+assert.equal(Combat.getQuickAttackConditions(Combat.deps, rangedEnemy, player).enemyStriking, true);
+rangedEnemy._rangedAction.fired = true;
+RangedWeapons.updateBanditAI(rangedEnemy, 0, player, 100);
+assert.equal(Combat.attackOpportunityPhase(rangedEnemy), 'recover', 'enemy projectile release ends the Opportunist opening');
+assert.equal(Combat.getQuickAttackConditions(Combat.deps, rangedEnemy, player).enemyStriking, false);
 
 const stagedEnemy = actor({ id: 'humanoid-enemy' });
 const enemyAction = Combat.beginStagedAction({
