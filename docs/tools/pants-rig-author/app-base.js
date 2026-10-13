@@ -33,6 +33,15 @@ const state = { // Complete mutable authoring session; exported data is kept sep
   portraitImageRect: null,
 };
 
+// Identifies the shipped rig data a draft was started from. A draft made against older shipped data is stale: restoring it would
+// hide the splines/bones/beltlines that were shipped since (typically on a phone, whose browser keeps its draft indefinitely).
+function shippedRigHash() {
+  const text = JSON.stringify(window.HOBUNJI_PANTS_RIGS || null);
+  let hash = 2166136261;
+  for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 16777619) >>> 0;
+  return String(hash);
+}
+
 function freshProject() {
   const authored = window.HOBUNJI_PANTS_RIGS;
   return authored && authored.schema === Core.SCHEMA
@@ -181,6 +190,7 @@ function persistDraft() {
       garmentId: state.garmentId,
       fighterKey: fighterKey(),
       sourceName: state.sourceName,
+      baseHash: state.baseHash || shippedRigHash(),
     }));
     $('draftState').textContent = 'draft saved';
   } catch (error) {
@@ -191,6 +201,12 @@ function persistDraft() {
 function restoreDraft() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'); // Last local authoring draft, if any.
+    state.baseHash = shippedRigHash();
+    if (saved?.project?.schema === Core.SCHEMA && saved.baseHash !== state.baseHash) {
+      try { localStorage.setItem(`${STORAGE_KEY}.backup`, JSON.stringify(saved)); } catch (_) {} // Keeps the old draft recoverable, but the shipped rig wins.
+      try { localStorage.removeItem(STORAGE_KEY); } catch (_) {}
+      return '';
+    }
     if (saved?.project?.schema === Core.SCHEMA) {
       state.project = saved.project;
       state.garmentId = saved.garmentId || state.garmentId;
