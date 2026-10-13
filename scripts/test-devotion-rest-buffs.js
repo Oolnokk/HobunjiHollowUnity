@@ -40,6 +40,7 @@ assert.match(integration, /syncInteractionPrompts\s*=\s*wrapped/, 'Pray is added
 assert.match(integration, /action:\s*'temple_pray'[\s\S]{0,100}label:\s*'Pray'[\s\S]{0,100}worldInteraction:\s*true/, 'floating prompt contains a real Pray world action');
 assert.match(integration, /prayerSlot\s*=\s*buttons\.findIndex[\s\S]{0,500}promptInputs\[prayerSlot\]/, 'Pray keeps its input hint aligned with the actual action-bar slot');
 assert.match(integration, /function prayerPromptRoot\(\)[\s\S]{0,900}forwardDistance\s*=\s*1\.05[\s\S]{0,900}root:\s*prayerPromptRoot\(\)\s*\|\|\s*options\.root/, 'Pray prompt uses a reusable world anchor positioned in front of the seated player');
+assert.match(integration, /prayerSlot:\s*state\.lastPrayerSlot/, 'mobile diagnostics expose the live Pray action slot');
 assert.match(integration, /sitState[\s\S]{0,150}sitInteraction/, 'integration aliases the prayer core to the game’s actual seated-interaction state');
 
 assert.match(sleepBridge, /OWNED_BED_SLEEP_PENDING_KEY\s*=\s*'__hobunjiOwnedBedSleepPending'/, 'the real player-bed Sleep action owns a one-shot Well Rested token');
