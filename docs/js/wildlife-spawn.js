@@ -549,7 +549,7 @@
     const walkable = new Set(); // Runtime movement-equivalent terrain used to reject isolated relocation pockets without rebuilding generator navigation.
     for (const [key, tile] of tileMap) {
       const type = String(tile?.type || '').toLowerCase();
-      if (type === 'rock' || type === 'shrub' || tile?.incline || tile?._banditTentCollisionId) continue;
+      if (type === 'rock' || type === 'shrub' || tile?.incline || tile?.mapBoundary || tile?._banditTentCollisionId) continue;
       walkable.add(key);
     }
     let largest = new Set();
@@ -642,7 +642,7 @@
     for (const cell of cells) {
       const tile = tiles.get(`${cell.col},${cell.row}`);
       if (!tile || String(tile.type || '').toLowerCase() !== 'grass') return false;
-      if (tile.generatedObjectId || tile.generatedObjectType || tile.water || tile.waterfall || tile.incline || tile.ramp || tile.path || tile.invisiblePath || tile.bridge || tile.navBridge) return false;
+      if (tile.mapBoundary || tile.generatedObjectId || tile.generatedObjectType || tile.water || tile.waterfall || tile.incline || tile.ramp || tile.path || tile.invisiblePath || tile.bridge || tile.navBridge) return false;
       const elev = Number(tile.elevTier ?? tile.elevation ?? tile.height ?? 0);
       minElev = Math.min(minElev, elev);
       maxElev = Math.max(maxElev, elev);
@@ -688,7 +688,7 @@
         // generatedObjectId. Any other unwalkable ground is a cliff face.
         if (t.generatedObjectId || t.rockKind || t.boulderId || t._banditTentCollisionId || type === 'shrub') tile.occupiedBy = t.generatedObjectId || t.rockKind || 'blocked';
         else if (type === 'rock' || t.incline) tile.cliffSkirt = true;
-        if (t.borderEscarpment) tile.borderEscarpment = true;
+        if (t.borderEscarpment || t.mapBoundary) tile.borderEscarpment = true;
         if (t.distantBoundaryLandscape) tile.distantBoundaryLandscape = true;
       }
       // Highest tier in the block: a source cliff-top block can be mostly

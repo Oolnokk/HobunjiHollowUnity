@@ -4569,6 +4569,10 @@
         const targetGrid  = optGrid  || window.GridTileAccessors.getActiveGrid();
         const gridCols = optCols || window.GridTileAccessors.getActiveCols();
         const gridRows = optRows || window.GridTileAccessors.getActiveRows();
+        // Single choke point for every creature spawn: nothing ever appears
+        // on top of a map-boundary escarpment (js/map-boundary-guard.js).
+        const offBoundary = window.MapBoundaryGuard?.relocateOffBoundary?.(targetGrid, gridCols, gridRows, x, y, TILE, { isSolid });
+        if (offBoundary) { x = offBoundary.x; y = offBoundary.y; }
         const modelWidth = def.modelWidth;
         // New creature art is not required to use the legacy 1375×600 canvas.
         // Definitions with a different source canvas provide its width/height
@@ -4915,6 +4919,7 @@
       function damageCreature(c, amount, fromX, fromY, knockbackPxS, dmgOpts) {
         const environmentalImpact = dmgOpts?.environmentalImpact === true; // Wall/furniture collision damage keeps death cleanup but is not a second attack.
         if (!environmentalImpact && performance.now() < (Number(c?.invulnUntil) || 0) && !dmgOpts?.ignoreDodge) return false; // Enemy dodge iframes reject the complete direct hit before damage, afflictions, Footing, or stagger side effects.
+        if (dmgOpts?.ranged && !environmentalImpact) window.CreatureCliffClimb?.knockOff?.(c, 'shot while climbing'); // A projectile hit mid-climb peels an attacker off the cliff face.
         // Player melee must overlap the target vertically as well as pass its
         // existing top-down cone/range test. Ranged projectiles already run
         // their own swept 3D Box3 collision and deliberately bypass this.
@@ -5510,7 +5515,7 @@
       // already does axis-separated movement, so a creature blocked here
       // slides along the obstacle's edge instead of freezing, exactly like
       // the player's own wall collision.
-      function creatureCanEnterTile(def, wx, wy) {
+      function creatureCanEnterTile(def, wx, wy, fromX = NaN, fromY = NaN) {
         // A NaN/Infinite coordinate compares false against every bound
         // check below (NaN is never < or >= anything), so without this it
         // would silently pass through as "allowed" and let a corrupted
@@ -5525,6 +5530,9 @@
         if (currentArea === 'farm' && (worldObjects.has(col + ',' + row) || window.GridTileAccessors.isHouseFootprint(col, row))) return false;
         if (currentArea === 'town' && window.GridTileAccessors.isTownBuildingCollisionTile(col, row)) return false;
         if (_isZoneArea(currentArea) && window.GridTileAccessors.isTownBuildingCollisionTile(col, row, currentArea)) return false;
+        // Map-boundary escarpments are airtight to creatures too (fromX/Y lets
+        // one that is already standing on one walk off it).
+        if (window.MapBoundaryGuard?.blocksCreatureStep?.(window.GridTileAccessors.getActiveGrid(), TILE, fromX, fromY, wx, wy)) return false;
         return true;
       }
 
@@ -5595,9 +5603,9 @@
         // gets one short lateral/backoff escape attempt below.
         const prevX = c.x, prevY = c.y;
         const desiredX = c.x + nx * step, desiredY = c.y + ny * step;
-        const canMoveX = creatureCanEnterTile(c.def, desiredX, c.y); // Used both to apply the normal X slide and to identify the blocking axis for escape diagnostics.
+        const canMoveX = creatureCanEnterTile(c.def, desiredX, c.y, prevX, prevY); // Used both to apply the normal X slide and to identify the blocking axis for escape diagnostics.
         if (canMoveX) c.x = desiredX;
-        const canMoveY = creatureCanEnterTile(c.def, c.x, desiredY); // Used after X resolution so the ordinary axis-separated slide keeps its existing behavior.
+        const canMoveY = creatureCanEnterTile(c.def, c.x, desiredY, prevX, prevY); // Used after X resolution so the ordinary axis-separated slide keeps its existing behavior.
         if (canMoveY) c.y = desiredY;
         const blockedX = Math.abs(desiredX - prevX) > 0.001 && !canMoveX; // Used below to detect a real collision rather than a zero-length axis request.
         const blockedY = Math.abs(desiredY - prevY) > 0.001 && !canMoveY; // Used with blockedX to distinguish collision stalls from ordinary target arrival.
@@ -5734,6 +5742,7 @@
         const dynamicSurfaceY = Number(c.surfaceYOverride?.()); // Optional per-entity world-height authority for generated/moving interiors whose 2D gameplay grid intentionally has no elevation tiers.
         const ordinarySurfY = c.onBranch ? c.branchSurfaceY
           : c._climbLeap ? c._climbLeap.surfaceY
+          : c._cliffClimb ? c._cliffClimb.surfaceY
           : Number.isFinite(dynamicSurfaceY) ? dynamicSurfaceY
           : (g[row]?.[col] ? tileSurfaceYInArea(g[row][col], c.areaId) : 0);
         const surfY = knockbackVisualSurfaceY(c, ordinarySurfY);
@@ -6284,6 +6293,9 @@
           if (c.state !== 'chase' && c.state !== 'searching') c.targetPlayer = null;
           const targetPlayer = c.targetPlayer || nearestPlayer(c.x, c.y);
           if (window.ClimbSystem?.updateBranchDefender?.(c, entityDt, targetPlayer)) continue;
+          // Attackers scale cliffs after a target that climbed away from them
+          // (js/creature-cliff-climb.js); the scripted climb owns position.
+          if (window.CreatureCliffClimb?.update?.(c, entityDt, targetPlayer)) { updateCreatureMesh(c, entityDt, c.facing); continue; }
           // Cloud-forest schedule AI (js/wildlife-cloud-forest-behavior.js)
           // parks a drenkirra on a branch to forage/sleep, outside the
           // player-facing defend hop above — same "skip ordinary ground AI
@@ -10559,12 +10571,15 @@
         // elevTier (rendered below as continuous heightfield mesas, one per tier
         // transition, in the same visual style as the distant boundary terrain beyond
         // the playable area) and, for ramp tiles, its own slope-following rampElevation.
-        for (const { c, r, type, elevTier, rampElevation, skipFloor, incline, floraKind, rockKind, boulderId } of (zoneData?.tiles || [])) {
+        for (const { c, r, type, elevTier, rampElevation, skipFloor, incline, floraKind, rockKind, boulderId, mapBoundary } of (zoneData?.tiles || [])) {
           if (!zGrid[r]?.[c]) continue;
           zGrid[r][c].type = type || TileType.GRASS;
           zGrid[r][c].elevTier = elevTier || 0;
           zGrid[r][c].skipFloor = !!skipFloor;
           zGrid[r][c].incline = !!incline;
+          // Map-boundary escarpment (js/map-boundary-guard.js): solid to
+          // movement, climbing and spawning alike.
+          if (mapBoundary) zGrid[r][c].mapBoundary = true;
           if (type === TileType.RAMP) zGrid[r][c].rampElevation = rampElevation || 0;
           // Which generated object (copse/bush/fruitBush/mushroomPatch/beehive)
           // produced this SHRUB tile — see terrain-preview.js's floraKind and
@@ -10678,6 +10693,10 @@
           target: 'town', targetCol: zdef?.townReturnCol, targetRow: zdef?.townReturnRow,
         }] : [];
         const transitions = [...backToTown, ...(zoneData?.transitions || [])];
+        // Never let a boundary escarpment seal an exit authored at the map edge.
+        for (const t of [...transitions, zoneData?.tradeExit].filter(Boolean)) {
+          window.MapBoundaryGuard?.clearAround?.(zGrid, ZCOLS, ZROWS, Number(t.col ?? t.x), Number(t.row ?? t.y), 3);
+        }
 
         // Gold ring markers for zone transitions, matching town's
         const ringGeo = new THREE.RingGeometry(0.22, 0.36, 24);
@@ -13076,6 +13095,7 @@
             if (!zm) continue;
             const outTiles = new Map(), mesas = [], outBuildings = [], outDecor = [], outFurniture = [];
             mergeZoneTiles(zm, 0, 0, 0, outTiles, mesas, outBuildings, outDecor, outFurniture);
+            window.MapBoundaryGuard?.markMergedTiles?.(zm, outTiles); // Border escarpments stay unclimbable/unwalkable (js/map-boundary-guard.js).
             const zTiles = [...outTiles.values()];
             for (const b of outBuildings) {
               const t = outTiles.get(`${b.gridX},${b.gridZ}`);
@@ -19493,6 +19513,10 @@
         // Auto-reserved plateau cliff-face ring — impassable except where a
         // ramp tile explicitly cuts through it (which never sets `incline`).
         if (tile.incline) return null;
+        // Map-boundary escarpment tops are airtight scenery. A player who is
+        // somehow already standing on one (old save, teleport) may still walk
+        // off it rather than being welded in place.
+        if (tile.mapBoundary && !window.GridTileAccessors.getActiveGrid()[Math.floor(player.y / TILE)]?.[Math.floor(player.x / TILE)]?.mapBoundary) return null;
         // Rivers/streams are swimmable, not blocked — the player has no
         // canSwim tag of their own (see CREATURE_DB's comment on the flag),
         // so this is always the slow "non-swimmer" pace; see isPlayerSwimming
@@ -25290,7 +25314,31 @@
 
         if (_isZoneArea(currentArea) && !player.climbing) {
           const climbTarget = window.ClimbSystem?.getClimbTarget?.();
-          if (climbTarget && (climbTarget.type === 'branch' || climbTarget.type === 'branchJumpDown')) {
+          if (climbTarget?.type === 'wall') {
+            // Cliff face: the prompt floats on the wall itself, straight
+            // ahead at camera height (same placement the Random Test Ruin
+            // interaction list uses), so it reads as a mark on the rock.
+            const rideState = window.Mounts?.rideState ?? 'none';
+            const mounted = rideState === 'mounted';
+            const wallAllowed = rideState === 'none' || mounted;
+            const dir = climbTarget.dir;
+            const startCol = Math.floor(player.x / TILE), startRow = Math.floor(player.y / TILE);
+            const faceX = dir.x ? (startCol + (dir.x > 0 ? 1 : 0)) * TILE - dir.x * TILE * 0.12 : player.x;
+            const faceY = dir.y ? (startRow + (dir.y > 0 ? 1 : 0)) * TILE - dir.y * TILE * 0.12 : player.y;
+            const floorY = activeSurfaceYAtWorld(player.x / TILE, player.y / TILE);
+            const cameraY = camera?.position?.y;
+            const promptY = Math.max(floorY + 0.9, Math.min(floorY + 2.4, Number.isFinite(cameraY) ? cameraY : floorY + 1.5));
+            _climbPromptAnchor.position.set(faceX / TILE, promptY, faceY / TILE);
+            const wallLabel = climbTarget.descending
+              ? (mounted ? 'Leap Down' : 'Jump Down')
+              : (mounted ? 'Leap Up' : 'Climb');
+            btns.push({
+              icon: climbTarget.descending ? '🪂' : '🧗',
+              label: wallAllowed ? wallLabel : 'Dismount to Climb',
+              action: 'climb_branch', style: 'secondary', allowed: wallAllowed,
+              worldInteraction: true, promptRoot: _climbPromptAnchor,
+            });
+          } else if (climbTarget && (climbTarget.type === 'branch' || climbTarget.type === 'branchJumpDown')) {
             const branch = climbTarget.branch;
             const anchorX = branch ? (branch.baseX + branch.tipX) / 2 : player.x;
             const anchorY = branch ? (branch.baseY + branch.tipY) / 2 : player.y;
@@ -29491,6 +29539,19 @@
         isZoneArea: _isZoneArea,
         player,
         TILE,
+      });
+
+      // Hostiles scaling cliffs after the player (and being shot off them)
+      // lives in js/creature-cliff-climb.js.
+      window.CreatureCliffClimb?.init({
+        TILE,
+        isSolid,
+        tileSurfaceYInArea,
+        isZoneArea: _isZoneArea,
+        getCurrentArea: () => currentArea,
+        getActiveGrid: window.GridTileAccessors.getActiveGrid,
+        getActiveCols: window.GridTileAccessors.getActiveCols,
+        getActiveRows: window.GridTileAccessors.getActiveRows,
       });
 
       window.ClimbSystem?.init({

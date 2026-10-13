@@ -71,6 +71,7 @@
     const t = tileAt(zone, x, y);
     if (!t) return true;
     if (t.water || t.path || t.ramp || t.waterfall || t.invisiblePath) return true;
+    if (t.borderEscarpment || t.mapBoundary) return true; // Map-boundary escarpment: nothing is ever placed on top of it.
     if (!t.occupiedBy) return false;
     const obj = objectsById ? (objectsById.get(t.occupiedBy) || null) : objectAt(zone, t.occupiedBy);
     // An occupied tile with no resolvable object (e.g. a locale's own
