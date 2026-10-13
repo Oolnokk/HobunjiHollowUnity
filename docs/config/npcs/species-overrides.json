@@ -194,13 +194,15 @@
           "rounded_pauldron",
           "fine_poncho",
           "bandolier1",
-          "appearance::hat::basic_headband"
+          "appearance::hat::basic_headband",
+          "pants_basic"
         ],
         "appliedDyes": {
           "CLOTH": "dye:CLOTH:deep_green_blue",
           "CLOTH_B": "dye:CLOTH:pure_yellow_orange",
           "CLOTH_C": "dye:CLOTH:pure_yellow_orange",
-          "HAT": "dye:CLOTH:smoky_orange"
+          "HAT": "dye:CLOTH:smoky_orange",
+          "PANTS": "dye:CLOTH:deep_green_blue"
         },
         "restingExpression": "frown",
         "clothingPatterns": {
