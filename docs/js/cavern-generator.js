@@ -54,9 +54,20 @@
   // floor/mesh data after receiving it.
   const _cavernFloorCache = new Map();
   const CAVERN_SCULPT_SIZE_Y = 3.0, CAVERN_PATH_Y_SHIFT_FRAC = 0.3; // Mirrors CavernSculptor DEFAULT_OPTS sizeY/pathYShiftFrac; taller clearance carves scale from these.
-  const CAVE_HEIGHT_SCALE = 2.5; // Full carved height (ruin caves near their door) relative to the original shell.
-  const CAVE_MIN_HEIGHT_FRAC = 0.6; // Everywhere else caves are carved at this fraction of the full height.
-  const CAVE_BASE_HEIGHT_SCALE = CAVE_HEIGHT_SCALE * CAVE_MIN_HEIGHT_FRAC;
+  // Cave heights come from docs/config/cave-shape.js (window.
+  // HobunjiCaveShapeConfig), read at carve time; these defaults apply when
+  // it isn't loaded (tools, tests). fullHeightScale is the roof height at a
+  // ruin door relative to the original shell; every other cave is carved at
+  // minHeightFraction of it.
+  function caveShape() {
+    const config = window.HobunjiCaveShapeConfig || {};
+    const full = Math.min(4, Math.max(1, Number(config.fullHeightScale) || 2.5));
+    const minFraction = Math.min(1, Math.max(.3, Number(config.minHeightFraction) || .6));
+    const radius = Array.isArray(config.tallRadiusTiles) ? config.tallRadiusTiles.map(Number) : [];
+    const inner = Number.isFinite(radius[0]) && radius[0] >= 0 ? radius[0] : 6;
+    const outer = Number.isFinite(radius[1]) && radius[1] > inner ? radius[1] : Math.max(inner + 1, 16);
+    return { full, minFraction, base: Math.max(1, full * minFraction), radius: [inner, outer] };
+  }
   // Shared sculpt options for the tall, roofed cave shell. Growing sizeY
   // extends the probe's vertical sweep upward so the walls are genuinely
   // carved at the new height; pathYShiftFrac is divided by the same factor so
@@ -146,7 +157,8 @@
 
   function generateCavernFloor(seedText, generationOptions = {}) {
     const singleRoom = generationOptions.singleRoom === true; // Explicit callers may request a compact room; named story caves no longer leak into the generic generator through map-id special cases.
-    const cacheKey = `${seedText}${generationOptions.fast ? ':fast' : ''}${singleRoom ? ':single-room' : ''}`; // Used to prevent a normal den carve from poisoning the one-room cache.
+    const shape = caveShape(); // Height is part of the cache key so a config change re-carves.
+    const cacheKey = `${seedText}${generationOptions.fast ? ':fast' : ''}${singleRoom ? ':single-room' : ''}:h${shape.base}`; // Used to prevent a normal den carve from poisoning the one-room cache.
     const useCache = generationOptions.cache !== false; // Regenerating roguelike floors opt out so one cache entry is not retained for every visit.
     if (useCache && _cavernFloorCache.has(cacheKey)) return _cavernFloorCache.get(cacheKey);
     const makeRng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng) ? WildernessMapGenerator.makeRng : (s => { let a = 1; for (let i = 0; i < s.length; i++) a = (a * 33 + s.charCodeAt(i)) >>> 0; return () => (a = (a * 1664525 + 1013904223) >>> 0) / 4294967296; });
@@ -174,7 +186,7 @@
       : generationOptions.fast
         ? { branchCount, entranceLength, tileSize, gridN: 32, splineSamples: 5, hitsPerStep: 1, probeDigBursts: 2, probeMaxPasses: 45, enforceWalkableClearance: 1 }
         : { branchCount, entranceLength, tileSize };
-    const result = window.CavernSculptor.carveMazeCavern({ ...sculptOptions, ...tallCaveSculptOptions(CAVE_BASE_HEIGHT_SCALE, seedText), solidOuterRim: true }, rng);
+    const result = window.CavernSculptor.carveMazeCavern({ ...sculptOptions, ...tallCaveSculptOptions(shape.base, seedText), solidOuterRim: true }, rng);
 
     // Shift every tile coordinate (and the mesh's X/Z) from the sculptor's
     // arbitrary centered local space into positive grid space, same +1
@@ -552,13 +564,14 @@
     // Tall points (ruin doors) get the full height, easing down to the base
     // height away from them; without any, the cave keeps the base height.
     const tallTiles = (Array.isArray(mapData.cavernTallTiles) ? mapData.cavernTallTiles : []).filter(tile => Number.isFinite(tile?.[0]) && Number.isFinite(tile?.[1]));
-    const heightScale = tallTiles.length ? CAVE_HEIGHT_SCALE : Math.max(CAVE_BASE_HEIGHT_SCALE, Number(mapData.wallHeightScale) || 1); // Taller caves are carved taller, not stretched after the fact.
+    const shape = caveShape();
+    const heightScale = tallTiles.length ? shape.full : shape.base; // Taller caves are carved taller, not stretched after the fact.
     const cacheKey = `${mapData.id}:clearance`, signature = JSON.stringify([expandedFloor, mapData.exitCol, mapData.exitRow, heightScale, tallTiles]); // Existing cave cache keeps one expanded shell per map, replacing it when its footprint, entrance, height, or tall points change.
     const cached = _cavernFloorCache.get(cacheKey); // Re-entry reuses the expensive SDF carve without caching runtime loot/inhabitant state.
     const generated = cached?.signature === signature ? cached.generated : window.CavernSculptor.carveFootprintCavern(expandedFloor,
       { tileSize: 0.5, gridN: 32, organicJitter: 0, hitsPerStep: 1, probeDigBursts: 2, probeMaxPasses: 45, enforceWalkableClearance: 1, refineFullColumn: true,
         ...tallCaveSculptOptions(heightScale, mapData.id),
-        vaultTallTiles: tallTiles, vaultTallRadiusTiles: [6, 16], vaultMinHeightFrac: CAVE_MIN_HEIGHT_FRAC,
+        vaultTallTiles: tallTiles, vaultTallRadiusTiles: shape.radius, vaultMinHeightFrac: shape.minFraction,
         entrance: { col: mapData.exitCol, row: mapData.exitRow, side: 'south' } }, rng);
     if (cached?.signature !== signature) _cavernFloorCache.set(cacheKey, { signature, generated });
     const rockCovered = rockCoveredFloorTiles(expandedFloor, generated.mesh, new Set([`${mapData.exitCol},${mapData.exitRow}`])); // Same geometry/collision agreement as generateCavernFloor.
@@ -623,8 +636,7 @@
     entranceConnectedFloor,
     expandCavernMapData,
     rockCoveredFloorTiles,
-    CAVE_HEIGHT_SCALE,
-    CAVE_BASE_HEIGHT_SCALE,
+    caveShape,
     pickDenMotherKind,
     synthesizeCavernMapData,
     loadLocaleCavernDefinition,

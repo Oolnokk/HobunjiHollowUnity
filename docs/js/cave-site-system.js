@@ -474,7 +474,7 @@
         mapData.caveRuinEntrance = clone(plan.ruinEntrance);
         addProp(mapData, { id: plan.ruinEntrance.id, key: 'ruinEntranceDoor', col: tile.col, row: tile.row, rotY });
         addProp(mapData, { id: plan.ruinEntrance.id + '_tunnel', key: 'ruinEntranceTunnel', col: tile.col - dc * 1.2, row: tile.row - dr * 1.2, rotY, scaleX: 0.75, scaleZ: 1.5, embedded: true });
-        mapData.wallHeightScale = 2.5; // Full carved height at the door (CavernGenerator CAVE_HEIGHT_SCALE); kept for save/diagnostic readers.
+        mapData.wallHeightScale = window.CavernGenerator?.caveShape?.().full || 2.5; // Full carved height at the door (docs/config/cave-shape.js); kept for save/diagnostic readers.
         mapData.cavernTallTiles = [[tile.col, tile.row]]; // The clearance recarve lifts the roof to full height around the door and eases it down away from it.
         return;
       }
@@ -606,7 +606,7 @@
     }
 
     plan.outerRimTileCount = mapData.outerRimTiles?.length || 0;
-    plan.wallHeightScale = mapData.cavernCarvedHeightScale || window.CavernGenerator?.CAVE_BASE_HEIGHT_SCALE || mapData.wallHeightScale || 1; // Peak carved height (ruin caves: at the door).
+    plan.wallHeightScale = mapData.cavernCarvedHeightScale || window.CavernGenerator?.caveShape?.().base || mapData.wallHeightScale || 1; // Peak carved height (ruin caves: at the door).
 
     mapData.name = window.WildlifeSpawn?.denTurnoverStateForCavern?.(mapId)?.name || 'Unexplored cave';
     mapData.caveSite = clone(profile);

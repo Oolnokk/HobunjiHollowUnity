@@ -145,4 +145,12 @@ const standalone=builder.buildCavernFloorMesh(three,[[0,0]],{},{}); // Editor/st
 assert.equal(standalone.material,canonical);
 assert(naturalCalls.every(([family,mode])=>family==='rocks' && mode==='planar-stretch'));
 assert(mappingCalls.every(call=>call.maxPatchWorldSize===6));
+{ // docs/config/cave-shape.js drives the carved height: a higher minimum re-carves ordinary caves taller.
+  global.HobunjiCaveShapeConfig={fullHeightScale:2.5,minHeightFraction:.8,tallRadiusTiles:[6,16]};
+  const taller=CavernGenerator.generateCavernFloor('rim-integration-10',{fast:true});
+  const tallerTop=Math.max(...taller.mesh.positions.filter((_,i)=>i%3===1));
+  assert(tallerTop > plainTopY*1.2,`minHeightFraction 0.8 carves ordinary caves taller (${tallerTop.toFixed(2)} vs ${plainTopY.toFixed(2)})`);
+  assert.equal(CavernGenerator.caveShape().base,2,'configured minimum height is 0.8 of 2.5');
+  delete global.HobunjiCaveShapeConfig;
+}
 console.log('PASS solid cave rim, connected floor, complete nest, shared wall/floor material and stretch, upward-only 2.5x ruin wall growth, faceted low-poly roofs and walls, ruin caves tall at the door, walls on tile edges');

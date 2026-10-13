@@ -836,7 +836,10 @@
   // (tetrahedron + bow segment) under its centroid and every vertex is first
   // seated on the exact wall (0.05 outside the tiles, the carve margin), then
   // slid along the wall onto the fold it shares with neighbouring facets.
-  // Runs before snapRoofToFacets, which then re-seats the roof's corners.
+  // Narrow passages, corners and the last 0.3 below the roof ease all of
+  // this out (the roof seam stays exactly where snapRoofToFacets puts it),
+  // and any face that still folds over has its vertices put back. Runs
+  // before snapRoofToFacets; the returned vertices are pinned there.
   function facetWalls(mesh, openTiles, ts, floorY, topY, bowTop, seed, roofHeightAt) {
     const P = mesh.positions, I = mesh.indices;
     const distance = regionDistance2D(openTiles, ts, 3);
@@ -885,6 +888,7 @@
       else if (len > 1e-12 && ny < -.3 * len) { for (const v of [I[t], I[t + 1], I[t + 2]]) onWallFace[v] |= 2; } // touches the roof
     }
     const h = .04, wall = new Map(); // vertex -> { g: into-room direction }
+    const original = Float32Array.from(P); // every face this pass bends is checked against its original orientation
     const gradAt = (x, z) => { // horizontal direction into the room
       const gx = distance(x + h, z) - distance(x - h, z), gz = distance(x, z + h) - distance(x, z - h), len = Math.hypot(gx, gz);
       return len < 1e-6 ? null : [gx / len, gz / len];
@@ -919,7 +923,7 @@
       P[v * 3] = x + gx * (-.05 - D) * seatFade * straight; P[v * 3 + 2] = z + gz * (-.05 - D) * seatFade * straight; // seat on the exact wall
       wall.set(v, { gx, gz, facets: [], roomy });
     }
-    const facets = new Map(), wallTris = [];
+    const facets = new Map();
     const normalY = t => {
       const a = I[t] * 3, b = I[t + 1] * 3, c = I[t + 2] * 3;
       const ux = P[b] - P[a], uy = P[b + 1] - P[a + 1], uz = P[b + 2] - P[a + 2], vx = P[c] - P[a], vy = P[c + 1] - P[a + 1], vz = P[c + 2] - P[a + 2];
@@ -933,14 +937,13 @@
       const a = I[t] * 3, b = I[t + 1] * 3, c = I[t + 2] * 3;
       const F = facetAt((P[a] + P[b] + P[c]) / 3, (P[a + 1] + P[b + 1] + P[c + 1]) / 3, (P[a + 2] + P[b + 2] + P[c + 2]) / 3);
       if (!facets.has(F.key)) facets.set(F.key, F);
-      wallTris.push({ t, key: F.key, nx: n.nx, ny: n.ny, nz: n.nz });
       for (const v of [I[t], I[t + 1], I[t + 2]]) { const fs = wall.get(v).facets; if (!fs.includes(F.key)) fs.push(F.key); }
     }
     const maxMove = .25; // longer slides start crossing neighbouring rows
     // Only vertices whose whole neighbourhood gets the full offset may slide:
     // sliding next to the roof's fade band folds faces that aren't coplanar.
     const full = v => {
-      const info = wall.get(v); // junction entries have no roomy flag and never slide
+      const info = wall.get(v);
       return !!info && info.roomy >= 1 && (!roofHeightAt || roofHeightAt(P[v * 3], P[v * 3 + 2]) - P[v * 3 + 1] >= .6);
     };
     const canSlide = new Set([...wall.keys()].filter(full));
@@ -954,8 +957,8 @@
       const keys = info.facets.length ? info.facets : [facetAt(x, y, z).key];
       for (const key of keys) if (!facets.has(key)) { const F = facetAt(x, y, z); facets.set(F.key, F); }
       const [A, B, C] = keys.slice(0, 3).map(key => facets.get(key));
-      // Near the roof, vertices neither slide nor count as exactly on their
-      // facet (the seam row above them is offset but not seated).
+      // Near the roof vertices don't slide (the seam row above them is
+      // offset but not seated).
       const fade = roofHeightAt ? clampNum((roofHeightAt(x, z) - y) / .3, 0, 1) : 1;
       if (B && fade >= 1 && canSlide.has(v) && y > floorY + .05) {
         const tx = -gz, tz = gx; // along the wall
@@ -980,49 +983,47 @@
           if (belowFade && hl > 1e-6 && (hx * gx + hz * gz) / hl > .97 && Math.abs(distance(nx, nz) + .05) < .05) { x = nx; z = nz; y += move[1]; }
         }
       }
-      const d = offsetOn(A, x, y, z) * info.roomy; // full bow right up to the roof; only seating and sliding ease out there
-      info.exact = fade >= 1 && info.roomy >= 1 && (!roofHeightAt || roofHeightAt(x, z) - y >= .3); // sits exactly on facet A's plane
+      { // the unslid position, kept as the fallback if sliding folds a face over
+        const x0 = P[v * 3], y0 = P[v * 3 + 1], z0 = P[v * 3 + 2], d0 = offsetOn(A, x0, y0, z0) * info.roomy * fade;
+        info.unslid = [x0 - gx * d0, y0, z0 - gz * d0];
+      }
+      const d = offsetOn(A, x, y, z) * info.roomy * fade; // eases out just below the roof, so the seam stays where the roof snap puts it
       P[v * 3] = x - gx * d; P[v * 3 + 1] = y; P[v * 3 + 2] = z - gz * d;
     }
-    // A face that folded over while sliding still lies in its facet's plane
-    // (its neighbours cover the area), so drop it rather than keep a
-    // reversed face.
-    const dropped = new Set();
-    for (const w of wallTris) {
-      const n = normalY(w.t);
-      if (n.nx * w.nx + n.ny * w.ny + n.nz * w.nz <= 0) {
-        const shared = [I[w.t], I[w.t + 1], I[w.t + 2]].every(v => wall.get(v).exact && wall.get(v).facets.includes(w.key));
-        if (shared) dropped.add(w.t);
-      }
-    }
-    if (dropped.size) {
-      const kept = [];
-      for (let t = 0; t < I.length; t += 3) if (!dropped.has(t)) kept.push(I[t], I[t + 1], I[t + 2]);
-      mesh.indices = kept;
-    }
-    // Roof-wall seam: carry the wall's offset into these vertices so the wall
-    // meets the roof flush (no inward lip), without seating or sliding them;
-    // snapRoofToFacets then only drops the moved ones vertically onto the roof.
-    for (let v = 0; v < onWallFace.length; v++) {
-      if (onWallFace[v] !== 3) continue;
-      const x = P[v * 3], y = P[v * 3 + 1], z = P[v * 3 + 2];
-      const D = distance(x, z);
-      if (y >= floorY + .05 && y <= topY && D <= .45 && D >= -.6) {
-        let gx = distance(x + h, z) - distance(x - h, z), gz = distance(x, z + h) - distance(x, z - h);
-        const len = Math.hypot(gx, gz);
-        if (len > 1e-6) {
-          gx /= len; gz /= len;
-          const across = distance(x + gx * (-.05 - D + .75), z + gz * (-.05 - D + .75));
-          const straight = straightAt(x, z, gx, gz);
-          const d = offsetOn(facetAt(x, y, z), x, y, z) * clampNum((across - .25) / .4, 0, 1) * straight;
-          if (Math.abs(d) > 1e-6) { // only seam vertices that actually moved are pinned for the roof snap
-            P[v * 3] = x - gx * d; P[v * 3 + 2] = z - gz * d;
-            wall.set(v, { junction: true, facets: [] });
-          }
+    // Any face this pass folded over (it would render as a hole once culled)
+    // is undone: first its vertices' slides, then, if it is still flipped,
+    // their whole offset - repeated until nothing touched is flipped.
+    const normalOf = (Q, t) => {
+      const a = I[t] * 3, b = I[t + 1] * 3, c = I[t + 2] * 3;
+      const ux = Q[b] - Q[a], uy = Q[b + 1] - Q[a + 1], uz = Q[b + 2] - Q[a + 2], vx = Q[c] - Q[a], vy = Q[c + 1] - Q[a + 1], vz = Q[c + 2] - Q[a + 2];
+      return [uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx];
+    };
+    const faceFlipped = t => {
+      const n0 = normalOf(original, t), n1 = normalOf(P, t);
+      return Math.hypot(n0[0], n0[1], n0[2]) > 1e-12 && n0[0] * n1[0] + n0[1] * n1[1] + n0[2] * n1[2] <= 0;
+    };
+    const touched = [];
+    for (let t = 0; t < I.length; t += 3) if (wall.has(I[t]) || wall.has(I[t + 1]) || wall.has(I[t + 2])) touched.push(t);
+    const restore = (v, to) => {
+      if (P[v * 3] === to[0] && P[v * 3 + 1] === to[1] && P[v * 3 + 2] === to[2]) return 0;
+      P[v * 3] = to[0]; P[v * 3 + 1] = to[1]; P[v * 3 + 2] = to[2];
+      return 1;
+    };
+    for (let pass = 0; pass < 8; pass++) {
+      let reverted = 0;
+      for (const t of touched) {
+        if (!faceFlipped(t)) continue;
+        const vs = [I[t], I[t + 1], I[t + 2]].filter(v => wall.has(v));
+        let undoneSlides = 0;
+        for (const v of vs) if (wall.get(v).unslid) undoneSlides += restore(v, wall.get(v).unslid);
+        if (!undoneSlides) for (const v of vs) {
+          reverted += restore(v, [original[v * 3], original[v * 3 + 1], original[v * 3 + 2]]);
+          wall.delete(v); // back at its carved position: no longer pinned for the roof snap
         }
+        reverted += undoneSlides;
       }
+      if (!reverted) break;
     }
-
     return wall;
   }
 
@@ -1034,15 +1035,18 @@
   // plane, one shared by two moves onto their fold line, and one shared by
   // three onto their common corner. Every roof triangle then lies exactly in
   // its facet's plane, so folds stay sharp. Runs in sculpt coordinates.
+  const MAX_ROOF_SNAP = .8; // sculpt units
   function snapRoofToFacets(mesh, vault, cell, pinned) {
     if (!vault?.roof) return 0;
     const P = mesh.positions, I = mesh.indices, roof = vault.roof;
     const facetsByVertex = new Map();
     const roofTris = new Set(); // faces that looked down into the cave before snapping
-    const minY = vault.startY - cell * .25;
     for (let t = 0; t < I.length; t += 3) {
       const a = I[t] * 3, b = I[t + 1] * 3, c = I[t + 2] * 3;
-      if (Math.min(P[a + 1], P[b + 1], P[c + 1]) < minY) continue;
+      // Roof band starts at the local roof start: where the roof is tall
+      // (ruin doors), downward slivers halfway up the wall are not roof.
+      const startY = vault.startAt((P[a] + P[b] + P[c]) / 3, (P[a + 2] + P[b + 2] + P[c + 2]) / 3);
+      if (Math.min(P[a + 1], P[b + 1], P[c + 1]) < startY - cell * .25) continue;
       const ux = P[b] - P[a], uy = P[b + 1] - P[a + 1], uz = P[b + 2] - P[a + 2];
       const vx = P[c] - P[a], vy = P[c + 1] - P[a + 1], vz = P[c + 2] - P[a + 2];
       const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
@@ -1066,6 +1070,9 @@
     for (const [v, ids] of facetsByVertex) {
       const x = P[v * 3], z = P[v * 3 + 2];
       const [A, B, C] = ids.slice(0, 3).map(id => roof.planes[id]);
+      // A real roof vertex sits within about a lattice cell of its facet; a
+      // downward ledge far below the roof is not roof and is left alone.
+      if (Math.abs(A.k0 + A.kx * x + A.kz * z - P[v * 3 + 1]) > MAX_ROOF_SNAP) { facetsByVertex.delete(v); continue; }
       if (pinned?.has(v)) { P[v * 3 + 1] = A.k0 + A.kx * x + A.kz * z; moved++; continue; } // wall-top corner: keep its place on the wall, only drop onto the roof
       let to = null;
       if (C) {
@@ -1097,11 +1104,9 @@
       const a = I[t] * 3, b = I[t + 1] * 3, c = I[t + 2] * 3;
       if ((P[b + 2] - P[a + 2]) * (P[c] - P[a]) - (P[b] - P[a]) * (P[c + 2] - P[a + 2]) > -1e-9) dropped.add(t);
     }
-    if (dropped.size) {
-      const kept = [];
-      for (let t = 0; t < I.length; t += 3) if (!dropped.has(t)) kept.push(I[t], I[t + 1], I[t + 2]);
-      mesh.indices = kept;
-    }
+    const kept = [];
+    for (let t = 0; t < I.length; t += 3) if (!dropped.has(t)) kept.push(I[t], I[t + 1], I[t + 2]);
+    mesh.indices = kept;
     return moved;
   }
 
@@ -2199,7 +2204,7 @@
     for (const key of claimed) touched.add(key); // claimed tiles are always touched by construction; union defensively
     const mesh = extractMesh(st, touched, skipCapEdges, ts, claimed, floorY, opts.enforceWalkableClearance, vault ? vault.startY - 2 * st.domainHalf.y / st.N : Infinity);
     const wallVertices = vault ? facetWalls(mesh, new Set([...claimed, ...vestibuleTiles]), ts, floorY, vault.topY, vault.startY, vault.seed, vault.roof?.heightAt) : null;
-    const wallVerticesFaceted = wallVertices ? [...wallVertices.values()].filter(info => !info.junction).length : 0;
+    const wallVerticesFaceted = wallVertices ? wallVertices.size : 0;
     const roofVerticesSnapped = snapRoofToFacets(mesh, vault, Math.max(2 * st.domainHalf.x / st.N, 2 * st.domainHalf.z / st.N), wallVertices);
 
     // Shift Y so the floor sits at y=0 — the game's floor-referenced
@@ -2378,7 +2383,7 @@
     for (const key of localClaimed) touched.add(key);
     const mesh = extractMesh(st, touched, skipCapEdges, ts, localClaimed, floorY, opts.enforceWalkableClearance, vault ? vault.startY - 2 * st.domainHalf.y / st.N : Infinity);
     const wallVertices = vault ? facetWalls(mesh, new Set([...localClaimed, ...vestibuleTiles]), ts, floorY, vault.topY, vault.startY, vault.seed, vault.roof?.heightAt) : null;
-    const wallVerticesFaceted = wallVertices ? [...wallVertices.values()].filter(info => !info.junction).length : 0;
+    const wallVerticesFaceted = wallVertices ? wallVertices.size : 0;
     const roofVerticesSnapped = snapRoofToFacets(mesh, vault, Math.max(2 * st.domainHalf.x / st.N, 2 * st.domainHalf.z / st.N), wallVertices);
 
     // Convert the centered sculptor coordinate frame back to the Locale
