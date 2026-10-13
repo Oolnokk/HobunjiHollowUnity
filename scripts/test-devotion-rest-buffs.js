@@ -41,7 +41,10 @@ assert.match(integration, /action:\s*'temple_pray'[\s\S]{0,100}label:\s*'Pray'[\
 const promptHookBody = integration.match(/const wrapped = function syncPrayerPrompt\(options = \{\}\) \{([\s\S]*?)\n    \};/)?.[1] || ''; // Isolates prompt-slot bookkeeping so assertion length does not depend on nearby comments/branches.
 assert.match(promptHookBody, /prayerSlot\s*=\s*buttons\.findIndex/, 'Pray resolves its actual action-bar slot');
 assert.match(promptHookBody, /promptInputs\[prayerSlot\]\s*=\s*\{\s*actionId:\s*'temple_pray'/, 'Pray keeps its input hint aligned with the resolved action-bar slot');
-assert.match(integration, /function prayerPromptRoot\(\)[\s\S]{0,900}forwardDistance\s*=\s*1\.05[\s\S]{0,900}root:\s*prayerPromptRoot\(\)\s*\|\|\s*options\.root/, 'Pray prompt uses a reusable world anchor positioned in front of the seated player');
+const promptRootBody = integration.match(/function prayerPromptRoot\(\) \{([\s\S]*?)\n  \}\n\n  function action3Hint/)?.[1] || ''; // Isolates the synthetic world anchor so source growth elsewhere cannot invalidate this regression.
+assert.match(promptRootBody, /forwardDistance\s*=\s*1\.05/, 'Pray prompt anchor stays in front of the seated player');
+assert.match(promptRootBody, /return\s+prayerPromptAnchor/, 'Pray prompt reuses the synthetic world anchor');
+assert.match(promptHookBody, /root:\s*prayerPromptRoot\(\)\s*\|\|\s*options\.root/, 'floating Pray prompt passes that world anchor into the existing prompt renderer');
 assert.match(integration, /prayerSlot:\s*state\.lastPrayerSlot/, 'mobile diagnostics expose the live Pray action slot');
 assert.match(integration, /sitState[\s\S]{0,150}sitInteraction/, 'integration aliases the prayer core to the game’s actual seated-interaction state');
 
