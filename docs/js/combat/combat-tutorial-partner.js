@@ -124,6 +124,16 @@
     return null;
   }
 
+  function rangedAttackPhase(actor) {
+    if (!actor) return null;
+    if (actor === combat.deps?.player && window.HobunjiRangedWeaponArchetypes?.activeThrownChargeItemKey?.()) return 'windup';
+    const action = actor === combat.deps?.player
+      ? window.RangedWeapons?.playerActionState?.()
+      : actor._rangedAction; // Player and humanoid ranged systems expose equivalent live fire records through different owners.
+    if (!action || action.kind !== 'fire') return null;
+    return action.fired ? 'recover' : 'windup'; // Projectile release ends the opening; reloads and post-shot recovery are not attacks.
+  }
+
   function attackOpportunityPhase(actor) {
     if (!actor) return null;
     const tracked = trackedOpportunityPhase(actor); // Shared staged attacks include player, humanoids, liches, and other modular attackers.
@@ -131,6 +141,8 @@
     if (actor.telegraphState === 'strike' || actor.telegraphState === 'windup') return actor.telegraphState;
     const banditPhase = actionPhase(actor._banditAction); // Compatibility for an already-started humanoid action created before this wrapper installed.
     if (banditPhase) return banditPhase;
+    const rangedPhase = rangedAttackPhase(actor); // Crossbows, scatterbows, blowguns, and held thrown weapons participate in Opportunist too.
+    if (rangedPhase) return rangedPhase;
     return modularAnimalPhase(actor);
   }
 
@@ -181,6 +193,65 @@
     return result;
   };
   combat.update.__hobunjiQuickAttackConditionContract = true;
+
+  function syncRangedLegacyTelegraph(actor) {
+    if (!actor) return;
+    const rangedPhase = rangedAttackPhase(actor); // Live ranged action mirrored for the older player Quick Attack evaluator.
+    const stagedPhase = trackedOpportunityPhase(actor); // Melee/cast staged actions take precedence when systems overlap for a frame.
+    if (!stagedPhase && rangedPhase === 'windup') {
+      actor.telegraphState = 'windup';
+      actor._quickAttackRangedOwnsTelegraph = true;
+      return;
+    }
+    if (actor._quickAttackRangedOwnsTelegraph && rangedPhase !== 'windup') {
+      if (actor.telegraphState === 'windup' || actor.telegraphState === 'strike') actor.telegraphState = null;
+      actor._quickAttackRangedOwnsTelegraph = false;
+    }
+  }
+
+  const ranged = window.RangedWeapons; // Existing ranged state machine exposes both player and humanoid fire actions.
+  if (ranged) {
+    if (typeof ranged.startPlayerAction === 'function') {
+      const originalStartPlayerAction = ranged.startPlayerAction.bind(ranged); // Preserves archetype-aware held/thrown routing.
+      ranged.startPlayerAction = function quickConditionTrackedStartPlayerAction(...args) {
+        const result = originalStartPlayerAction(...args);
+        syncRangedLegacyTelegraph(combat.deps?.player);
+        return result;
+      };
+    }
+    if (typeof ranged.cancelPlayerAction === 'function') {
+      const originalCancelPlayerAction = ranged.cancelPlayerAction.bind(ranged); // Preserves ranged cleanup before the condition tell is cleared.
+      ranged.cancelPlayerAction = function quickConditionTrackedCancelPlayerAction(...args) {
+        const result = originalCancelPlayerAction(...args);
+        syncRangedLegacyTelegraph(combat.deps?.player);
+        return result;
+      };
+    }
+    if (typeof ranged.update === 'function') {
+      const originalRangedUpdate = ranged.update.bind(ranged); // Preserves projectile/action ticking, then mirrors the resulting player phase.
+      ranged.update = function quickConditionTrackedRangedUpdate(...args) {
+        const result = originalRangedUpdate(...args);
+        syncRangedLegacyTelegraph(combat.deps?.player);
+        return result;
+      };
+    }
+    if (typeof ranged.updateBanditAI === 'function') {
+      const originalUpdateBanditAI = ranged.updateBanditAI.bind(ranged); // Preserves enemy ranged AI while publishing its real pre-release windup.
+      ranged.updateBanditAI = function quickConditionTrackedBanditRangedUpdate(actor, ...args) {
+        const result = originalUpdateBanditAI(actor, ...args);
+        syncRangedLegacyTelegraph(actor);
+        return result;
+      };
+    }
+    if (typeof ranged.cancelBanditAction === 'function') {
+      const originalCancelBanditAction = ranged.cancelBanditAction.bind(ranged); // Preserves enemy ranged cleanup before clearing its tell.
+      ranged.cancelBanditAction = function quickConditionTrackedBanditRangedCancel(actor, ...args) {
+        const result = originalCancelBanditAction(actor, ...args);
+        syncRangedLegacyTelegraph(actor);
+        return result;
+      };
+    }
+  }
 
   function depletionCurrent(target, resource) {
     const adjusted = window.ResourceSystem?.getDepletionEquivalentCurrent?.(target, resource); // Canonical visible/usable resource reading including affliction bands and max reducers.
