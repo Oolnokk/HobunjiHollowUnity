@@ -368,14 +368,28 @@
     particle?.sprite?.material?.dispose?.();
   }
 
+  // Expired particles park their sprite (and its own material, needed for the
+  // per-particle opacity fade) in the emitter's pool instead of disposing it,
+  // so a steady 7-18 spawns/s per blade allocates nothing once warm.
+  function retireParticle(emitter, particle) {
+    const sprite = particle?.sprite;
+    if (!sprite) return;
+    sprite.visible = false;
+    if (emitter?.pool && emitter.pool.length < MAX_PARTICLES_PER_PLANE) emitter.pool.push(sprite);
+    else disposeParticle(particle);
+  }
+
   function clearEmitter(emitter) {
-    for (const particle of emitter?.particles || []) disposeParticle(particle);
+    for (const particle of emitter?.particles || []) retireParticle(emitter, particle);
     if (emitter) emitter.particles.length = 0;
   }
 
   function disposeEmitter(emitter) {
     if (!emitter) return;
-    clearEmitter(emitter);
+    for (const particle of emitter.particles) disposeParticle(particle);
+    emitter.particles.length = 0;
+    for (const sprite of emitter.pool || []) disposeParticle({ sprite });
+    if (emitter.pool) emitter.pool.length = 0;
     emitter.group?.parent?.remove?.(emitter.group);
   }
 
@@ -386,7 +400,7 @@
     group.userData.weaponEnchantmentVfx = true;
     group.position.z = 0.012;
     plane.add(group);
-    return { plane, group, particles: [], accumulator: 0, token: '', lastTime: performance.now() };
+    return { plane, group, particles: [], pool: [], accumulator: 0, token: '', lastTime: performance.now() };
   }
 
   function styleFor(state) {
@@ -402,15 +416,26 @@
     if (!alignment || !effect) return;
     const texture = shapeTexture(effect); // Used as the white-alpha attack-inspired particle silhouette.
     if (!texture) return;
-    const material = new THREE.SpriteMaterial({
-      map: texture,
-      color: dyeHex(state.dyeId),
-      transparent: true,
-      opacity: alignment.opacity,
-      depthWrite: false,
-      blending: effect.blend === 'additive' ? THREE.AdditiveBlending : THREE.NormalBlending,
-    }); // Per-particle material is intentionally owned because opacity is animated independently.
-    const sprite = new THREE.Sprite(material); // Used as a camera-legible mote whose position still follows the weapon's local plane transform.
+    const blending = effect.blend === 'additive' ? THREE.AdditiveBlending : THREE.NormalBlending;
+    let sprite = emitter.pool.pop() || null; // Reuses a retired mote (sprite + its own material) when one is parked.
+    if (sprite) {
+      const material = sprite.material;
+      if (material.map !== texture || material.blending !== blending) { material.map = texture; material.blending = blending; material.needsUpdate = true; }
+      material.color.set(dyeHex(state.dyeId));
+      material.opacity = alignment.opacity;
+      material.rotation = 0;
+      sprite.visible = true;
+    } else {
+      const material = new THREE.SpriteMaterial({
+        map: texture,
+        color: dyeHex(state.dyeId),
+        transparent: true,
+        opacity: alignment.opacity,
+        depthWrite: false,
+        blending,
+      }); // Per-particle material is intentionally owned because opacity is animated independently.
+      sprite = new THREE.Sprite(material); // Used as a camera-legible mote whose position still follows the weapon's local plane transform.
+    }
     sprite.name = `weapon_enchantment_${effect.id}`;
     sprite.renderOrder = Number(emitter.plane.renderOrder || 0) + 4;
 
@@ -522,17 +547,17 @@
     }
   }
 
-  function updateEmitters(dt, snapshot) {
+  function updateEmitters(dt, snapshot, emitters = EMITTERS.values()) {
     if (!snapshot?.mask?.indices?.length) return;
     const effect = styleFor(snapshot.visual); // Used to ensure a malformed state cannot emit.
     if (!effect) return;
     const totalEnchantments = Object.values(snapshot.counts || {}).reduce((sum, value) => sum + Math.max(0, Number(value) || 0), 0); // Used to make multiply-enchanted weapons a little denser without changing style.
     const emissionPerSecond = Math.min(18, 7 + totalEnchantments * 2.5); // Used as the bounded spawn cadence per visible blade plane.
-    for (const emitter of EMITTERS.values()) {
+    for (const emitter of emitters) {
       for (let index = emitter.particles.length - 1; index >= 0; index--) {
         const particle = emitter.particles[index]; // Used as the current pooled particle advanced this frame.
         if (updateParticle(particle, dt)) continue;
-        disposeParticle(particle);
+        retireParticle(emitter, particle);
         emitter.particles.splice(index, 1);
       }
       emitter.accumulator += dt * emissionPerSecond;
@@ -756,6 +781,7 @@
     debugSnapshot,
     copyDebug,
     forceRefresh() { scanGeneration++; lastScanAt = -Infinity; activeSnapshot = null; clearAllEmitters(); },
+    _test: Object.freeze({ makeEmitter, updateEmitters, clearEmitter, disposeEmitter }), // Particle lifecycle/pooling regression hooks.
   });
 
   bootstrap();

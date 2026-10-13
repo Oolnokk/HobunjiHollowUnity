@@ -15,7 +15,8 @@
   let deps = null;
   const decoratedWalkers = new WeakSet(); // Prevents wrapping the same gameplay/cutscene walker more than once.
   const lastBlockLogAt = new WeakMap(); // Rate-limits mobile-visible collision diagnostics per walker.
-  const debugStats = { decoratedWalkers: 0, blockedMoves: 0, pathReplans: 0, cutsceneMovesUpgraded: 0, lastBlock: null }; // Read by debugSnapshot() for mobile diagnostics.
+  const debugStats = { decoratedWalkers: 0, blockedMoves: 0, pathReplans: 0, pathFailuresSkipped: 0, cutsceneMovesUpgraded: 0, lastBlock: null }; // Read by debugSnapshot() for mobile diagnostics.
+  const PATH_FAILURE_RETRY_MS = 750; // How long a walker waits before repeating a grid search that just failed from the same tile.
 
   function init(injectedDeps) { deps = injectedDeps; }
 
@@ -328,11 +329,23 @@
     if (typeof walker._tryStartGridPath === 'function') {
       walker._tryStartGridPath = function collisionAwareNpcGridPath(target) {
         if (!target || !this.root?.position) return false;
+        // The scheduler retries this every frame while a target is unreachable
+        // (occupied seat, walled-off tile), and a failed swept A* explores its
+        // whole bounded box. Remember the failure briefly; a new target, area or
+        // start tile searches again immediately.
+        const failKey = this.area + '|' + target.c + ',' + target.r + '|' + Math.floor(this.root.position.x) + ',' + Math.floor(this.root.position.z) + '|' + (target.pose === 'sit');
+        const now = Date.now();
+        if (this._npcPathFailKey === failKey && now < this._npcPathFailUntil) { debugStats.pathFailuresSkipped++; return false; }
         const path = findNpcPath(this.area, this.root.position.x, this.root.position.z, target.c, target.r, {
           padding: 6,
           allowOccupiedTarget: target.pose === 'sit',
         });
-        if (!path?.length) return false;
+        if (!path?.length) {
+          this._npcPathFailKey = failKey;
+          this._npcPathFailUntil = now + PATH_FAILURE_RETRY_MS;
+          return false;
+        }
+        this._npcPathFailKey = null;
         this._gridPath = path;
         this._gridPathTargetKey = target.routeId + '|' + target.c + ',' + target.r;
         debugStats.pathReplans++;
@@ -362,7 +375,9 @@
     return walker;
   }
 
-  function _patchWalkerArray(array) {
+  // game.js hands its live walker array here once (where it is created);
+  // every walker pushed afterwards gets the collision-aware movement wrappers.
+  function trackWalkerArray(array) {
     if (!Array.isArray(array) || array.__npcCollisionAwarePush) return array;
     for (const walker of array) decorateWalkerCollision(walker);
     const originalPush = array.push;
@@ -374,7 +389,9 @@
     return array;
   }
 
-  function _upgradeCutscenePayload(payload) {
+  // game.js's runCutscenePreview (live cutscenes and Director previews) runs
+  // every payload through this before playing it.
+  function upgradeCutscenePayload(payload) {
     if (!payload || !Array.isArray(payload.stages)) return payload;
     let changed = false;
     const stages = payload.stages.map(stage => {
@@ -388,59 +405,6 @@
     });
     return changed ? { ...payload, stages } : payload;
   }
-
-  function _installAssignmentHook(name, transform) {
-    const existing = window[name];
-    let stored = transform(existing);
-    const descriptor = Object.getOwnPropertyDescriptor(window, name);
-    if (descriptor && descriptor.configurable === false) {
-      if (existing) transform(existing);
-      return;
-    }
-    try {
-      Object.defineProperty(window, name, {
-        configurable: true,
-        enumerable: descriptor?.enumerable ?? true,
-        get() { return stored; },
-        set(value) { stored = transform(value); },
-      });
-    } catch (_) {
-      if (existing) transform(existing);
-    }
-  }
-
-  function _wrapAuthoredCutsceneRuntime(api) {
-    if (!api?.run || api.__npcCollisionAwareRun) return api;
-    const wrapped = {
-      ...api,
-      run(payload, options = {}) {
-        return api.run(_upgradeCutscenePayload(payload), options);
-      },
-    };
-    Object.defineProperty(wrapped, '__npcCollisionAwareRun', { value: true });
-    return Object.freeze(wrapped);
-  }
-
-  function _wrapNpcHeldEquipment(api) {
-    if (!api?.attachCutsceneWalker || api.__npcCollisionAwareAttach) return api;
-    const originalAttach = api.attachCutsceneWalker;
-    try {
-      api.attachCutsceneWalker = function collisionAwareAttachCutsceneWalker(walker, ...args) {
-        decorateWalkerCollision(walker);
-        return originalAttach.call(this, walker, ...args);
-      };
-      Object.defineProperty(api, '__npcCollisionAwareAttach', { value: true, configurable: true });
-    } catch (_) {}
-    return api;
-  }
-
-  // These globals are assigned after this module loads. Intercepting the
-  // assignment keeps integration at the existing module seam instead of
-  // adding collision code back into game.js's walker/cutscene monolith.
-  _installAssignmentHook('_npcWalkers', _patchWalkerArray);
-  _installAssignmentHook('NpcHeldEquipment', _wrapNpcHeldEquipment);
-  _installAssignmentHook('AuthoredCutsceneRuntime', _wrapAuthoredCutsceneRuntime);
-  _installAssignmentHook('__hobunjiCutscenePreview', _upgradeCutscenePayload);
 
   // One-hop links reachable directly from `area`, in the shape
   // { toArea, exit:{c,r}, spawn:{c,r} } — the raw edges of the area graph
@@ -503,6 +467,8 @@
     canNpcEscapeExistingOverlap,
     findNpcPath,
     decorateWalkerCollision,
+    trackWalkerArray,
+    upgradeCutscenePayload,
     areaLinksFrom,
     findNpcAreaLink,
     debugSnapshot,

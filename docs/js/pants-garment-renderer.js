@@ -24,6 +24,8 @@
   const DOUBLE_SIDE = 2;
   const MESH_NAME = 'PantsGarmentMesh';
   const handles = new Set(); // Live garments, for diagnostics.
+  const REST_RECHECK_FRAMES = 30; // A still garment re-checks its legs' rest stance this often (any leg motion checks at once).
+  const LEG_SIDES = Object.freeze(['left', 'right']), LEG_JOINTS = Object.freeze(['hip', 'knee', 'ankle']), BONE_NAMES = Object.freeze(['thigh', 'calf']); // Shared per-frame loop lists (no per-frame array literals).
 
   const core = () => global.HobunjiPantsRig || null;
   const normalizeSpecies = value => String(value || '').trim().toLowerCase().replace(/_/g, '-');
@@ -516,6 +518,16 @@
 
     // Live bones for this frame: roll-amplified like the rest pose, with depth made relative to rest so that at rest they
     // coincide exactly with the flattened rest bones.
+    const legSignature = aim => {
+      let signature = 0;
+      for (const side of LEG_SIDES) {
+        const leg = aim[side], frames = handle.scratch.frames[side];
+        for (const joint of LEG_JOINTS) signature = signature * 1.0000001 + leg[joint].x * 3.1 + leg[joint].y * 5.3 + leg[joint].z * 7.7;
+        for (const name of BONE_NAMES) for (let k = 0; k < 9; k++) signature = signature * 1.0000001 + frames[name][k] * (k + 1.7);
+      }
+      return signature;
+    };
+    handle.restRecheckIn = REST_RECHECK_FRAMES;
     const aimAtLiveLegs = () => {
       const measured = readLiveBones(handle);
       const aim = handle.scratch.aim;
@@ -579,20 +591,18 @@
       if (handle.mesh.visible !== visible) handle.mesh.visible = visible;
       if (!visible) return;
       if (!handle.restCaptured) handle.captureRest();
-      else if (legHandle.getRestStance) { // The leg group may be repositioned/rescaled after attach (placement, seats): rebind to the stance as it is now.
+      let aim = aimAtLiveLegs();
+      // Standing still (most NPCs, most of the time) nothing about the legs changes: skip the skin + upload when this frame's
+      // bones and orientation frames are identical to the last frame's.
+      let signature = legSignature(aim);
+      // The leg group may be repositioned/rescaled after attach (placement, seats): rebind to the stance as it is now. Moving
+      // the group also moves the live bones (so the signature changes); a still NPC only re-checks every REST_RECHECK_FRAMES.
+      if (legHandle.getRestStance && handle.lastStance && (signature !== handle.lastSignature || handle.dirty || --handle.restRecheckIn <= 0)) {
+        handle.restRecheckIn = REST_RECHECK_FRAMES;
         const stance = restStanceBones(handle);
         let moved = 0, k = 0;
         for (const side of ['left', 'right']) for (const joint of ['hip', 'ankle']) { const p = stance.bones[side][joint]; moved = Math.max(moved, Math.abs(p.x - handle.lastStance[k]), Math.abs(p.y - handle.lastStance[k + 1]), Math.abs(p.z - handle.lastStance[k + 2])); k += 3; }
-        if (moved > 2e-4) { handle.captureRest(); handle.alignToRest(); handle.dirty = true; }
-      }
-      const aim = aimAtLiveLegs();
-      // Standing still (most NPCs, most of the time) nothing about the legs changes: skip the skin + upload when this frame's
-      // bones and orientation frames are identical to the last frame's.
-      let signature = 0;
-      for (const side of ['left', 'right']) {
-        const leg = aim[side], frames = handle.scratch.frames[side];
-        for (const joint of ['hip', 'knee', 'ankle']) signature = signature * 1.0000001 + leg[joint].x * 3.1 + leg[joint].y * 5.3 + leg[joint].z * 7.7;
-        for (const name of ['thigh', 'calf']) for (let k = 0; k < 9; k++) signature = signature * 1.0000001 + frames[name][k] * (k + 1.7);
+        if (moved > 2e-4) { handle.captureRest(); handle.alignToRest(); handle.dirty = true; aim = aimAtLiveLegs(); signature = legSignature(aim); } // aim offsets depend on the rest pose just captured.
       }
       if (signature === handle.lastSignature && !handle.dirty) return;
       handle.lastSignature = signature;

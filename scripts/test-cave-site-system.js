@@ -364,7 +364,7 @@ console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${
   assert(Cave.debugSnapshot().currentState.lootedBodies.includes(records[0].body.id), 'searched bodies are remembered');
 
   // Make one body restless and walk up to it.
-  for (const r of records) r.riser = false;
+  for (const r of records) { r.riser = false; r.armedAt = null; } // An earlier update may already have armed a randomly chosen riser; start its timer fresh.
   const riser = records[1];
   riser.riser = true;
   deps.player.x = (riser.body.col + 0.5) * deps.TILE; deps.player.y = (riser.body.row + 0.5) * deps.TILE;

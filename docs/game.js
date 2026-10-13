@@ -5265,7 +5265,21 @@
           && Math.hypot(target.x - player.x, target.y - player.y) <= maxDist;
       }
 
+      // A sight ray against the whole area's occluders runs for every
+      // candidate, and the mobile camera re-checks its target every frame.
+      // Reuse each target's answer for a tenth of a second (same area only).
+      const AUTO_TARGET_SIGHT_REUSE_MS = 100;
+      const autoTargetSightCache = new WeakMap(); // target -> { area, at, visible }
       function autoTargetVisible(target) {
+        if (!target || typeof target !== 'object') return computeAutoTargetVisible(target);
+        const now = performance.now();
+        const cached = autoTargetSightCache.get(target);
+        if (cached && cached.area === currentArea && now - cached.at < AUTO_TARGET_SIGHT_REUSE_MS) return cached.visible;
+        const visible = computeAutoTargetVisible(target);
+        autoTargetSightCache.set(target, { area: currentArea, at: now, visible });
+        return visible;
+      }
+      function computeAutoTargetVisible(target) {
         if (autoTargetSightFrame !== gameFrameSerial) {
           autoTargetSightObstacles = currentAreaOcclusionMeshes();
           if (currentArea === 'interior' && activeCameraMode !== 'seated' && interiorWallGroup) autoTargetSightObstacles.push(interiorWallGroup);
@@ -8568,6 +8582,7 @@
           member.minedRockState = serializeZoneMinedRockState();
           member.townMineState = window.TownMine?.serialize?.() || null;
           member.slagothimTradersState = window.SlagothimTraders?.serialize?.() || null;
+          member.caveSiteState = window.CaveSiteSystem?.serialize?.() || null;
           member.doorstepVisitState = window.DoorstepVisits?.serialize?.() || {};
           member.romanceState = window.RomanceSystem?.serialize?.() || null;
           // Only ever consumed on the next boot if it lands in a wilderness
@@ -9619,7 +9634,7 @@
       const npcWalkers         = [];
       const scheduledNpcRecords = new Map(); // Used to respawn recurring visitors at their authored entrance on later visits.
       const visitorSpawnPending = new Set(); // Used to prevent duplicate asynchronous visitor avatar builds.
-      window._npcWalkers = npcWalkers;
+      window._npcWalkers = window.NpcPathfinding?.trackWalkerArray?.(npcWalkers) || npcWalkers; // Pushed walkers get collision-aware movement (js/npc-pathfinding.js).
       const PLAYER_ACTION_LOCK_ID = 'player'; // Used by shared interaction locks at player movement/tool/action chokepoints.
       // dialogueOpen/_dialogueWalker are read/written both here (camera/
       // staging code) and by js/dialogue-content.js (via deps.getDialogueOpen/
@@ -29606,6 +29621,9 @@
         saveMemberWorldData,
       });
 
+      // Cave discovery/cache/trap state is saved with the world (js/cave-site-system.js).
+      window.CaveSiteSystem?.init?.({ save: saveMemberWorldData });
+
       // Slagothim trade caravans (road travel, trading, notices, compass)
       // live in js/slagothim-traders.js.
       window.SlagothimTraders?.init({
@@ -30253,6 +30271,7 @@
         restoreZoneMinedRockState(playerData.minedRockState);
         window.TownMine?.restore?.(playerData.townMineState);
         window.SlagothimTraders?.restore?.(playerData.slagothimTradersState);
+        window.CaveSiteSystem?.restore?.(playerData.caveSiteState);
         // Potion items just restored into `inventory` above have no ITEM_DEFS
         // entry yet this page load (ITEM_DEFS starts empty of them every
         // session, unlike the static reagent/furniture/fish tables) — rebuild
@@ -30551,6 +30570,7 @@
       }
 
       async function runCutscenePreview(payload, runtimeOptions = {}) {
+        payload = window.NpcPathfinding?.upgradeCutscenePayload?.(payload) ?? payload; // Move stages navigate around walls/furniture unless they opt out (collisionAware:false).
         const liveMode = runtimeOptions.live === true; // Switches the Director's existing stage engine from disposable preview semantics to a gameplay-safe authored cutscene.
         const previousArea = currentArea; // Restored after a live cutscene so its temporary scene swap never strands normal gameplay on the cinematic map.
         const previousCameraMode = activeCameraMode; // Restored with previousArea after live playback completes.
@@ -30877,6 +30897,7 @@
           entity.root.visible = actor.visible !== false; // Authored entrances keep the real rig hidden until its reveal stage.
           entities.set(actor.id, entity);
           if (actor.lantern) window.CutsceneLanternCarriers?.add(entity.root); // Lantern-carrying cutscene rigs light the scene through WeatherFX's lantern mask (docs/js/cutscene-lantern-carriers.js).
+          if (entity.walker) window.NpcPathfinding?.decorateWalkerCollision?.(entity.walker); // Cutscene NPCs share gameplay walkers' swept collision.
           if (entity.walker) await window.NpcHeldEquipment?.attachCutsceneWalker?.(entity.walker);
         }
 

@@ -88,6 +88,9 @@
   let devSpawnerDeps = null; // Captured from DevSpawner.init; used for the existing generalized loot grant helper.
   let caveRuntimeTimer = 0; // Throttles interior proximity/runtime work to CAVE_RUNTIME_INTERVAL_S.
   let stateIdentity = null; // World|Tothal-cycle key used to reload the correct cave discovery/loot state.
+  let savedCaveState = null; // { version, identity, sites } — the world-save payload (see ensureStateLoaded).
+  let saveDeps = null; // { save } from game.js; persistState() asks the game to write the world save.
+  const CAVE_SAVE_VERSION = 2;
   let integrationsInstalled = false; // Prevents double-wrapping subsystem APIs across hot reloads/tests.
   let filteringDens = false; // True while withAnimalOnlyDens has swapped layout.dens for its filtered view; sitesForZone must not re-sync from that view.
 
@@ -623,31 +626,52 @@
     return `${worldId}|${cycle}`;
   }
 
-  function saveStateKey(identity) { return `hobunji.caveSites.v1:${identity}`; }
+  // Before cave progress joined the world save it lived under its own
+  // localStorage key, which cloud/folder saves never carried. Still read once
+  // so existing progress is adopted into the save.
+  function legacySaveStateKey(identity) { return `hobunji.caveSites.v1:${identity}`; }
 
+  // Cave discovery/cache/trap/cleared flags travel in the world save
+  // (member.caveSiteState in game.js's saveMemberWorldData). `savedCaveState`
+  // is that payload: set by restore(), replaced on every real change, and
+  // returned as-is by serialize() — so a save made before the calendar is
+  // ready (wrong Tothal cycle) can never overwrite real progress with nothing.
   function ensureStateLoaded() {
     const identity = currentStateIdentity();
     if (stateIdentity === identity) return;
     stateIdentity = identity;
     runtimeStateBySignature.clear();
-    if (identity.startsWith('session|') || typeof localStorage === 'undefined') return;
-    try {
-      const saved = JSON.parse(localStorage.getItem(saveStateKey(identity)) || '{}'); // Persisted discovery/cache/trap/cleared flags for this world and Tothal cave generation.
-      for (const [signature, state] of Object.entries(saved || {})) runtimeStateBySignature.set(signature, state || {});
-    } catch (error) {
-      window.__farmLog?.(`[cave-sites] state load failed: ${error.message}`, 'warn');
+    if (identity.startsWith('session|')) return;
+    let sites = savedCaveState?.identity === identity ? savedCaveState.sites : null;
+    if (!sites && typeof localStorage !== 'undefined') {
+      try {
+        const legacy = JSON.parse(localStorage.getItem(legacySaveStateKey(identity)) || 'null');
+        if (legacy && typeof legacy === 'object') { sites = legacy; savedCaveState = { version: CAVE_SAVE_VERSION, identity, sites: clone(legacy) }; }
+      } catch (error) {
+        window.__farmLog?.(`[cave-sites] legacy state load failed: ${error.message}`, 'warn');
+      }
     }
+    for (const [signature, state] of Object.entries(sites || {})) runtimeStateBySignature.set(signature, clone(state) || {});
   }
 
   function persistState() {
     ensureStateLoaded();
-    if (!stateIdentity || stateIdentity.startsWith('session|') || typeof localStorage === 'undefined') return;
+    if (!stateIdentity || stateIdentity.startsWith('session|')) return;
+    savedCaveState = { version: CAVE_SAVE_VERSION, identity: stateIdentity, sites: clone(Object.fromEntries(runtimeStateBySignature)) };
     try {
-      localStorage.setItem(saveStateKey(stateIdentity), JSON.stringify(Object.fromEntries(runtimeStateBySignature)));
+      saveDeps?.save?.();
     } catch (error) {
       window.__farmLog?.(`[cave-sites] state save failed: ${error.message}`, 'warn');
     }
   }
+
+  function serialize() { return savedCaveState ? clone(savedCaveState) : null; }
+  function restore(saved) {
+    savedCaveState = saved && typeof saved === 'object' && typeof saved.identity === 'string' && saved.sites && typeof saved.sites === 'object' ? clone(saved) : null;
+    stateIdentity = null; // Next access reloads from the restored payload (or the legacy key).
+    runtimeStateBySignature.clear();
+  }
+  function init(injectedDeps) { saveDeps = injectedDeps || null; }
 
   function stateFor(profile) {
     ensureStateLoaded();
@@ -1116,6 +1140,9 @@
     resetCave,
     isZoneOccupied,
     mapLabelFor,
+    init,
+    serialize,
+    restore,
     __test: Object.freeze({
       rollProfile,
       forceAnimalProfile,
@@ -1128,6 +1155,8 @@
       hashSeed,
       generatedCaveName,
       runtimeStateBySignature,
+      ensureStateLoaded,
+      persistState,
       banditPopulatedMaps,
       bodiesByMapId,
       bodySpawnPromises,

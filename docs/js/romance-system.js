@@ -372,17 +372,50 @@
         { label: 'Will you marry me?', goto: 1 },
         { label: 'Never mind.', goto: 'end' },
       ] },
-      { text: "Yes! Yes, of course I will! Meet me at the Life Temple — Father Hunundi can marry us from tomorrow, any time during the day.", expression: 'smile',
+      { text: `Yes! Yes, of course I will! Meet me at the Life Temple — Father Hunundi can marry us ${weddingDelayPhrase()}, any time during the day.`, expression: 'smile',
         choices: [{ label: "I'll be there.", run: () => { engage(npcId); return null; }, goto: 'end' }] },
     ]);
     return true;
   }
 
+  function weddingDelayDays() { return Math.max(0, Math.floor(num(cfg().weddingDelayDays, 1))); }
+  // "from tomorrow" was hard-coded while the delay is configurable.
+  function weddingDelayPhrase(days = weddingDelayDays()) {
+    if (days <= 0) return 'from today';
+    if (days === 1) return 'from tomorrow';
+    return `in ${days} days`;
+  }
+
   function engage(npcId) {
-    state.engagement = { npcId, proposedRawDay: rawDay(), weddingFromRawDay: rawDay() + Math.max(0, num(cfg().weddingDelayDays, 1)) };
+    state.engagement = { npcId, proposedRawDay: rawDay(), weddingFromRawDay: rawDay() + weddingDelayDays() };
     if (state.date?.npcId === npcId) endDate('dismissed');
-    toast(`💍 You're engaged to ${npcName(npcId)}! Meet at the Life Temple from tomorrow.`, true);
+    toast(`💍 You're engaged to ${npcName(npcId)}! Meet at the Life Temple ${weddingDelayPhrase()}.`, true);
     persist();
+  }
+
+  // Calling off an engagement: asks first, costs Romance (config loss
+  // 'engagement_broken'), and frees the player to court or propose again.
+  function breakEngagement(walker) {
+    const npcId = walker?.rec?.id;
+    if (!npcId || state.engagement?.npcId !== npcId || weddingInProgress) return false;
+    converse(walker, [{
+      text: 'You want to… call off the wedding?', expression: 'surprised',
+      choices: [
+        { label: 'I\'m sorry. I can\'t marry you.', run: () => { endEngagement(npcId); return null; }, goto: 'end' },
+        { label: 'No, forget I said anything.', goto: 'end' },
+      ],
+    }]);
+    return true;
+  }
+  function endEngagement(npcId) {
+    if (state.engagement?.npcId !== npcId || weddingInProgress) return false;
+    state.engagement = null;
+    weddingSnoozed = false;
+    applyLoss(npcId, 'engagement_broken');
+    window.DialogueContent?.recordNpcMemory?.(npcId, 'engagement_broken');
+    toast(`💔 You called off your engagement to ${npcName(npcId)}.`, false);
+    persist();
+    return true;
   }
 
   function weddingWindowOpen() {
@@ -587,6 +620,9 @@
     } else if (isRomanceable(npcId)) {
       const check = askEligibility(npcId);
       options.push({ id: 'date', icon: '💕', label: 'Ask on a Date', muted: !check.ok, run: () => askOnDate(walker) });
+    }
+    if (state.engagement?.npcId === npcId && !weddingInProgress) {
+      options.push({ id: 'break_engagement', icon: '💔', label: 'Call Off Wedding', run: () => breakEngagement(walker) });
     }
     const familyOptions = window.RomanceFamily?.commandOptionsFor?.(walker) || [];
     options.push(...familyOptions);

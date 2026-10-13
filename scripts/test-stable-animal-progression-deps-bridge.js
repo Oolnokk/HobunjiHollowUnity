@@ -40,6 +40,7 @@ context.StableTrainingCompendiumPatch = {};
 context.JubmirDabinggiHounds = { install() {} }; // Jubmir's hounds are bridge-installed and must not trigger the dynamic-loader trap.
 context.BARN_INCUBATOR_CONFIG = {};
 context.BarnIncubator = { install() {} };
+context.BarnLayoutEditorParity = { install() {} }; // Barn layout editing (#957) is bridge-installed and must not trigger the dynamic-loader trap.
 context.FarmMenuLayout = { install() {} }; // Keeps this bridge-only regression focused on dependency mirroring rather than dynamic feature loading.
 context.FarmGlancePalette = { install() {} }; // Keeps the newly loaded map-palette feature from triggering this test's intentional dynamic-loader trap.
 context.LivestockNurseryGrid = { install() {} }; // Keeps the Nursery presentation/economy feature from becoming an unrelated dynamic-load dependency in this bridge regression.
