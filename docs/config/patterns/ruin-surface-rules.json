@@ -6,5 +6,13 @@
   "defaultScale": 4,
   "minRegionHeight": 1,
   "minRegionWidth": 0.3,
-  "rules": {}
+  "rules": {
+    "ruin_interior_complex (part)": {
+      "scale": 8,
+      "enabled": false
+    },
+    "ruinDisplayPedestal › Shaft": {
+      "enabled": false
+    }
+  }
 }
