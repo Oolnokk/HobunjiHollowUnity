@@ -1,0 +1,64 @@
+name: Temp Character Voice Priority
+
+on:
+  push:
+    branches:
+      - feat/combat-vocalizations
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/combat-vocalizations
+          fetch-depth: 0
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: Confirm main ancestry
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor origin/main HEAD
+      - name: Apply patch
+        run: python3 scripts/temp_patch_character_voice_priority.py
+      - name: Refresh cache tokens
+        run: node scripts/check-cache-busts.js --fix origin/main
+      - name: Syntax checks
+        run: |
+          node --check docs/js/character-voice-owner.js
+          node --check docs/js/animal-voice-independent-playback.js
+          node --check docs/js/dialogue-content.js
+          node --check docs/js/combat/combat-vocalizations.js
+          node --check docs/js/combat/combat-bandit.js
+          node --check docs/js/combat/combat-config-loader.js
+      - name: Focused voice tests
+        run: |
+          node scripts/test-character-voice-owner.js
+          node scripts/test-combat-vocalizations.js
+          node scripts/test-dialogue-syllable-cadence.js
+          node scripts/test-dialogue-rich-text.js
+          node scripts/test-animal-vocalizations.js
+          node scripts/test-animal-authored-voice-routing.js
+          node scripts/test-environmental-reverb.js
+          node scripts/test-minion-enemies.js
+      - name: Cache validation
+        run: node scripts/check-cache-busts.js origin/main
+      - name: Full suite
+        run: node scripts/run-tests.js
+      - name: Remove temporary patch machinery
+        run: |
+          git rm -f scripts/temp_patch_character_voice_priority.py
+          git rm -f .github/workflows/temp-character-voice-priority.yml
+      - name: Commit validated patch
+        run: |
+          git add -A
+          git status --short
+          git commit -m "Share prioritized combat voices across player and NPCs"
+          git push origin HEAD:feat/combat-vocalizations
