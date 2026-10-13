@@ -187,6 +187,14 @@
         {"id": "trinket_harlyaoBloodPact", "itemKey": "trinket_harlyaoBloodPact", "min": 1, "max": 1, "chance": 0.08, "conditions": {}},
         {"id": "trinket_harlyaoWarCrown", "itemKey": "trinket_harlyaoWarCrown", "min": 1, "max": 1, "chance": 0.06, "conditions": {}}
       ]
+    },
+    "bandit_flasker": {
+      "label": "Bandit (Flasker)",
+      "note": "Base corpse valuables. The exact two combat flask loadout types are granted separately by bandit-camps.js so death loot always matches what this Flasker was throwing.",
+      "entries": [
+        { "id": "gold", "itemKey": "gold", "min": 4, "max": 12, "chance": 1, "conditions": {} },
+        { "id": "scrapMetal", "itemKey": "banditScrapMetal", "min": 0, "max": 2, "chance": 1, "conditions": {} }
+      ]
     }
   }
 }

@@ -70,6 +70,15 @@
         rangedSecondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
         rangedGripMode: null,
       },
+      throwingflask: {
+        toolScale: 0.82, // Used by gameplay and the Attack Editor to keep the squat flask at a one-hand throwing scale.
+        primaryGrip: { position: { x: -0.04, y: -0.04, z: 0.17 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } }, // Used to put the right hand around the flask's narrow neck/handle.
+        gripMode: null,
+        secondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
+        rangedPrimaryGrip: { position: { x: -0.04, y: -0.04, z: 0.17 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } }, // Same neck grip is used by the hatchet-style throw.
+        rangedSecondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
+        rangedGripMode: null,
+      },
       hoe: {
         primaryGrip: { position: { x: -0.04, y: -0.04, z: 0 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         gripMode: null,
@@ -179,6 +188,7 @@
     if (key.includes('pickshovel') || key.includes('pick-shovel')) return 'pickshovel';
     if (key.includes('fishingspear') || key.includes('fishing-spear')) return 'fishingspear';
     if (key.includes('fishingmace') || key.includes('fishing-mace')) return 'fishingmace';
+    if (key.includes('flask')) return 'throwingflask'; // Alchemy recipe stack ids and the Attack Editor tool share one neck-grip profile.
     if (key === 'dagger-sword') return 'daggersword';
     if (key === 'war-cleaver') return 'warcleaver';
     return key;
@@ -188,7 +198,7 @@
   function isDualWieldWeapon(value) { return DUAL_WIELD_WEAPONS.has(toolKeyFor(value)); }
   function weaponHandModeForTool(value) {
     const key = toolKeyFor(value); // Resolves the applicable pose flag in editor previews and gameplay.
-    return key === 'fishingmace' ? 'single' : (isDualWieldWeapon(key) ? 'dual' : 'two-hand');
+    return (key === 'fishingmace' || key === 'throwingflask') ? 'single' : (isDualWieldWeapon(key) ? 'dual' : 'two-hand');
   }
 
   function numberOrZero(value) {

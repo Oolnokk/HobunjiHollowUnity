@@ -1,6 +1,6 @@
 {
   "schema": "hobunji_bandit_gang_config.v1",
-  "description": "Tunable data for bandit gang generation (docs/js/bandit-gang-generator.js). No code lives here -- species/clothing pools, rank composition, and mastery/difficulty scaling are all data so gangs can be rebalanced without touching game.js. Corpse loot per rank now lives in docs/config/loot/loot-pools.json (pools bandit_grunt/bandit_lieutenant/bandit_captain), alongside every other drop table.",
+  "description": "Tunable data for bandit gang generation (docs/js/bandit-gang-generator.js). No code lives here -- species/clothing pools, rank composition, and mastery/difficulty scaling are all data so gangs can be rebalanced without touching game.js. Corpse loot per rank now lives in docs/config/loot/loot-pools.json (pools bandit_grunt/bandit_flasker/bandit_lieutenant/bandit_captain), alongside every other drop table.",
   "speciesWeights": {
     "mao-ao": 40,
     "mashtzarr": 35,
@@ -60,7 +60,8 @@
     "fillProbabilityByRank": {
       "grunt": 0.5,
       "lieutenant": 0.7,
-      "captain": 0.9
+      "captain": 0.9,
+      "flasker": 0.65
     },
     "_fillComment": "4 slots x 0.5 = 2 average filled slots for a grunt, per design. Each slot is rolled independently; if a roll comes up with zero slots filled, one random slot is force-filled so every bandit wears at least one clothing item. On top of that, hat and hood are independently guaranteed: every bandit ends up wearing a fine_hood, a facewrap, or a headband -- if that first pass leaves both empty, one is force-filled from whichever the bandit's species/gender allows."
   },
@@ -69,7 +70,9 @@
     "gruntsMax": 6,
     "lieutenantsMin": 1,
     "lieutenantsMax": 2,
-    "captains": 1
+    "captains": 1,
+    "flaskersMin": 1,
+    "flaskersMax": 2
   },
   "gruntVariants": {
     "_comment": "Rare grunt replacements. The Slagothim Beastmaster uses the Tletingan avatar/species data (Tletingans use Slagothim culture and names) and brings one deliberately weak Dabinggi-hound driven by the normal companion follow/fight cadence.",
@@ -98,13 +101,18 @@
     "captain": [
       4,
       7
+    ],
+    "flasker": [
+      1,
+      3
     ]
   },
   "rangedWeaponChanceByRank": {
     "_comment": "Bandits that pass this roll keep their normal melee weapon and also receive a ranged-slot weapon.",
     "grunt": 0.3,
     "lieutenant": 0.65,
-    "captain": 1
+    "captain": 1,
+    "flasker": 0
   },
   "rangedWeaponWeightsByRank": {
     "grunt": {
@@ -118,31 +126,39 @@
     "captain": {
       "crossbow": 1,
       "scatterbow": 3
+    },
+    "flasker": {
+      "crossbow": 0,
+      "scatterbow": 0
     }
   },
   "culturalRangedWeightByRank": {
     "_comment": "After a bandit passes rangedWeaponChanceByRank, each trust-dialogue weapon that both belongs to that bandit's species and has a real ranged definition is added beside crossbow/scatterbow with this weight. This changes only the weapon mix, never the chance of receiving a ranged weapon.",
     "grunt": 1,
     "lieutenant": 2,
-    "captain": 3
+    "captain": 3,
+    "flasker": 0
   },
   "masteryBaseByRank": {
     "_comment": "Added to the current difficulty tier (see difficultyTiers below) and clamped to the tool mastery system's real 0-5 range (game.js MASTERY_XP_THRESHOLDS) to get a bandit's weapon mastery level.",
     "grunt": 0,
     "lieutenant": 1,
-    "captain": 2
+    "captain": 2,
+    "flasker": 1
   },
   "heldAbilitiesByRank": {
     "_comment": "How many hold-family abilities (hold1/hold2 slots, see docs/js/combat/combat-loadout.js SLOT_CATEGORIES) this rank is given. Grunts get none (tap-only, weakest fighters); only the gang's lieutenants and captain fight with a held ability, and only the captain gets both slots filled.",
     "grunt": 0,
     "lieutenant": 1,
-    "captain": 2
+    "captain": 2,
+    "flasker": 0
   },
   "statWeakenMultiplierByRank": {
     "_comment": "Applied to attackDamage/maxHealth relative to the tier-scaled captain baseline -- 'their abilities are weakened for all except their camp's bandit captain'. Grunts in particular should read as genuinely weak fodder next to a captain, not just a smaller version of the same fighter.",
     "grunt": 0.35,
     "lieutenant": 0.62,
-    "captain": 1
+    "captain": 1,
+    "flasker": 0.5
   },
   "difficultyTiers": {
     "_comment": "tier = floor(distanceFromWildernessEntrance / tierDistanceTiles), clamped to maxTier. Added to masteryBaseByRank per rank, and multiplies statWeakenMultiplierByRank's result by (1 + tier*tierStatBonus) so camps farther from town hit harder in both mastery-driven ability access and raw stats.",
@@ -176,6 +192,21 @@
       1.26,
       1.23,
       1.2
+    ],
+    "flasker": [
+      0.45,
+      0.52,
+      0.59,
+      0.66
     ]
+  },
+  "flasker": {
+    "_comment": "Flaskers roll two distinct authored throwable alchemy recipes once at spawn. AI throws do not consume this loadout; corpse loot guarantees several of the same two types.",
+    "loadoutSize": 2,
+    "minThrowRangeTiles": 2.25,
+    "maxThrowRangeTiles": 10,
+    "throwCooldownSeconds": 2.35,
+    "lootMinPerType": 2,
+    "lootMaxPerType": 4
   }
 }

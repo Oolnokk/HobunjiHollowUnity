@@ -538,7 +538,7 @@
   // gearInventory and never touch the player's tool-mastery XP system) --
   // it only ever scales damage, at this much per level.
   const BANDIT_MASTERY_DAMAGE_PER_LEVEL = 0.06;
-  const BANDIT_RANK_LABEL = { grunt: 'Bandit', lieutenant: 'Bandit Lieutenant', captain: 'Bandit Captain' };
+  const BANDIT_RANK_LABEL = { grunt: 'Bandit', flasker: 'Bandit Flasker', lieutenant: 'Bandit Lieutenant', captain: 'Bandit Captain' };
   // opportunistJab is excluded -- its bonus condition (target mid-strike-
   // telegraph) has no equivalent on the player, who has no telegraphState.
   const BANDIT_QUICK_ATTACK_IDS = ['exhaustCutter', 'backstabFlick', 'mercySpike'];
@@ -608,6 +608,78 @@
     };
   }
 
+  function availableBanditFlaskRecipeIds() {
+    return Object.values(window.AlchemySystem?.RECIPE_DEFS || {})
+      .filter(definition => definition?.useMode === 'throw')
+      .map(definition => definition.id);
+  }
+
+  function rollBanditFlaskLoadout(cfg) {
+    const available = availableBanditFlaskRecipeIds(); // Used to keep Flaskers automatically in sync with every authored throwable Afflict recipe.
+    const requested = Math.max(1, Math.floor(Number(cfg?.flasker?.loadoutSize) || 2)); // Used to author loadout size in the existing bandit config.
+    const pool = [...available]; // Per-bandit copy used for sampling without replacement.
+    const picked = []; // Used by AI and corpse loot; exactly two entries with the current authored tuning when possible.
+    while (picked.length < requested && pool.length) {
+      const index = Math.min(pool.length - 1, Math.floor((deps?.rnd?.() ?? Math.random()) * pool.length));
+      picked.push(pool.splice(index, 1)[0]);
+    }
+    return picked;
+  }
+
+  function banditFlaskerTuning(cfg) {
+    const authored = cfg?.flasker || {}; // Single tuning authority shared by AI and corpse-loot metadata.
+    return {
+      loadoutSize: Math.max(1, Math.floor(Number(authored.loadoutSize) || 2)),
+      minThrowRangeTiles: Math.max(0.5, Number(authored.minThrowRangeTiles) || 2.25),
+      maxThrowRangeTiles: Math.max(2, Number(authored.maxThrowRangeTiles) || 10),
+      throwCooldownSeconds: Math.max(0.25, Number(authored.throwCooldownSeconds) || 2.35),
+      lootMinPerType: Math.max(1, Math.floor(Number(authored.lootMinPerType) || 2)),
+      lootMaxPerType: Math.max(1, Math.floor(Number(authored.lootMaxPerType) || 4)),
+    };
+  }
+
+  function updateBanditFlaskAI(c, dt, targetPlayer, distToPlayer) {
+    if (c?.banditRank !== 'flasker') return null;
+    const loadout = c.def?.banditFlaskLoadout || []; // Two recipe ids rolled once for this Flasker and never consumed by AI use.
+    if (!loadout.length || !window.AlchemyFlasks?.throwFromEntity) return null;
+    const tuning = c.def?.banditFlaskerTuning || banditFlaskerTuning(null); // Spawn-authored tuning survives config reloads consistently with other bandit defs.
+    const towardAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x); // Used to keep the hostile facing its current flask target while winding up.
+    const minRangePx = tuning.minThrowRangeTiles * deps.TILE; // Inside this range Flaskers fall back to their normal melee weapon.
+    const maxRangePx = tuning.maxThrowRangeTiles * deps.TILE; // Outside this range ordinary bandit approach logic closes distance first.
+    c._banditFlaskCooldownT = Math.max(0, (c._banditFlaskCooldownT || 0) - dt);
+
+    if (c._banditFlaskWindupT > 0) {
+      c.facing = towardAngle;
+      c._banditFlaskWindupT = Math.max(0, c._banditFlaskWindupT - dt);
+      if (c._banditFlaskWindupT <= 0) {
+        const recipeId = c._banditFlaskPendingRecipeId; // Captured at windup start so alternating loadout order cannot change mid-throw.
+        const launched = window.AlchemyFlasks.throwFromEntity(c, recipeId, c.def?.banditFlaskPotencyTier || 0, targetPlayer.x, targetPlayer.y);
+        c._banditFlaskPendingRecipeId = null;
+        c._banditFlaskCooldownT = tuning.throwCooldownSeconds;
+        c.telegraphState = launched ? 'strike' : null;
+      }
+      return { handled: true, aimAngle: towardAngle, moving: false, flasker: true };
+    }
+
+    if (distToPlayer < minRangePx || distToPlayer > maxRangePx) return null;
+    if (c._banditFlaskCooldownT > 0) {
+      if (c.telegraphState === 'strike') c.telegraphState = null;
+      c.facing = towardAngle;
+      return { handled: true, aimAngle: towardAngle, moving: false, flasker: true };
+    }
+
+    const recipeId = loadout[c._banditFlaskIndex % loadout.length]; // Alternates the two persistent loadout types instead of randomly starving one.
+    c._banditFlaskIndex = (c._banditFlaskIndex + 1) % Math.max(1, loadout.length);
+    const throwAnimation = window.HeldActionAnimations?.throwFlask || window.HeldActionAnimations?.weaponThrowSpin; // Exact player/Attack-Editor hatchet throw is the timing authority.
+    const windupSeconds = Math.max(0.12, Number(throwAnimation?.durationS || 1.04) * Number(throwAnimation?.windupFrac || 0.49)); // Used to give the player the same readable hatchet-style windup window.
+    c._banditFlaskWindupT = windupSeconds;
+    c._banditFlaskPendingRecipeId = recipeId;
+    c._banditFlaskAnimationKey = 'throwFlask'; // Mobile/debug proof that Flaskers use the shared flask→hatchet animation identity.
+    c.telegraphState = 'windup';
+    c.facing = towardAngle;
+    return { handled: true, aimAngle: towardAngle, moving: false, flasker: true };
+  }
+
   function makeBanditDef(cfg, rank, tier, mastery, modelWidth) {
     const tierRankMultipliers = cfg?.statMultiplierByRankAndTier?.[rank];
     // Tier-indexed rank curves keep low-star camps weak while preserving
@@ -620,7 +692,10 @@
     const tierMul = 1 + tier * Number(cfg?.difficultyTiers?.tierStatBonusPerTier ?? 0);
     const statMul = weaken * tierMul;
     const weapon = banditWeaponFor(cfg, rank, tier);
-    const rangedWeaponKey = banditRangedWeaponFor(cfg, rank);
+    const isFlasker = rank === 'flasker'; // Used to reserve this rank's ranged role for its infinite two-flask loadout.
+    const rangedWeaponKey = isFlasker ? null : banditRangedWeaponFor(cfg, rank);
+    const banditFlaskLoadout = isFlasker ? rollBanditFlaskLoadout(cfg) : []; // Per-entity definition; uses never decrement it.
+    const flaskerTuning = isFlasker ? banditFlaskerTuning(cfg) : null; // Shared AI/loot tuning stored with this spawned hostile.
     const dmgMul = statMul * (1 + mastery * BANDIT_MASTERY_DAMAGE_PER_LEVEL) * weapon.dmgMultiplier;
     const held = Number(cfg?.heldAbilitiesByRank?.[rank] ?? 0);
     return {
@@ -638,6 +713,9 @@
       attackTag: weapon.dmgType,
       weaponKey: weapon.weaponKey,
       rangedWeaponKey,
+      banditFlaskLoadout,
+      banditFlaskerTuning: flaskerTuning,
+      banditFlaskPotencyTier: isFlasker ? Math.max(0, Math.min(4, tier)) : 0, // Used for both infinite AI throws and the matching corpse drops.
       banditAbilityLoadout: banditAbilityLoadout(weapon.shapeKey, held),
       aiType: 'vigilantProtector',
       aggroRangePx: deps.TILE * (6.2 + (rank === 'captain' ? 1.1 : rank === 'lieutenant' ? 0.5 : 0)),
@@ -1521,6 +1599,8 @@
     const def = c.def, loadout = def.banditAbilityLoadout;
     _updateBanditLookAtTarget(c, dt, targetPlayer);
     const towardAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
+    const flaskResult = updateBanditFlaskAI(c, dt, targetPlayer, distToPlayer); // Flaskers get first refusal on ranged combat before ordinary crossbow/melee logic.
+    if (flaskResult?.handled) return flaskResult;
     const rangedResult = window.RangedWeapons?.updateBanditAI?.(c, dt, targetPlayer, distToPlayer);
     if (rangedResult?.handled) return rangedResult;
     if (c._banditHold1CdT > 0) c._banditHold1CdT = Math.max(0, c._banditHold1CdT - dt);
@@ -2205,6 +2285,7 @@
       _banditToolHolder: banditToolHolder,
       _banditRangedToolHolder: banditRangedToolHolder,
       _rangedLoaded: true, _rangedMode: false, _rangedAction: null, _rangedCooldownT: 0,
+      _banditFlaskIndex: 0, _banditFlaskCooldownT: 0, _banditFlaskWindupT: 0, _banditFlaskPendingRecipeId: null, _banditFlaskAnimationKey: null, // Flasker infinite-loadout AI state; inert on every other rank.
       // Idle/approach rest pose matches the weapon's own natural swing
       // style (see banditNaturalSwing) until an ability fire overwrites
       // these with its own (see fireBanditComboStep/fireBanditQuickAttack
@@ -2253,6 +2334,8 @@
     loadGangConfig: loadBanditGangConfig,
     loadCampLocaleDefs: loadBanditCampLocaleDefs,
     makeEntity: makeBanditEntity,
+    rollFlaskLoadout: rollBanditFlaskLoadout,
+    availableFlaskRecipeIds: availableBanditFlaskRecipeIds,
     characterBuildSnapshot: () => ({ pending: characterBuildPending, active: characterBuildActive, ...characterBuildStatus }), // Existing debug report reads queue pressure without retaining roster objects.
     discardEntity: discardBanditEntity, // Scene teardown for a built-but-never-registered entity (late async spawns).
     setCombatExpression, // Synchronously swaps the live humanoid hostile portrait between its pre-baked resting and combat-frown canvases.

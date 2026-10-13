@@ -10,6 +10,7 @@
   let targetRing = null; // Green ground ring shown only while aiming/releasing.
   let lastImpact = null; // Mobile-accessible impact diagnostic snapshot.
   let lastSfxCue = null; // Mobile-accessible proof that a decoupled sound cue fired.
+  let lastNpcThrow = null; // Used by mobile diagnostics to inspect the most recent infinite-use enemy/NPC flask launch.
   const MAX_THROW_RADIUS_TILES = 14; // Shoulder-view interaction-ray range around the player.
   const INTERACTION_RAY_MAX_DISTANCE = 36; // World-unit terrain sampling limit used by shoulder aim.
   const INTERACTION_RAY_STEP = 0.22; // Fine enough to catch narrow raised terrain without per-frame mesh raycasts.
@@ -214,16 +215,62 @@
     return true;
   }
 
+  function throwFromEntity(sourceEntity, recipeId, potencyTier = 0, targetX = null, targetY = null) {
+    const definition = window.AlchemySystem?.RECIPE_DEFS?.[recipeId]; // Used to reject non-flask recipes before creating any projectile state.
+    if (!sourceEntity || definition?.useMode !== 'throw') return false;
+    const tile = deps?.TILE || 64; // Shared gameplay-pixel to Three-unit conversion.
+    const sourceX = Number(sourceEntity.x); // Used as the independent NPC throw origin instead of the player position.
+    const sourceY = Number(sourceEntity.y); // Used as the independent NPC throw origin instead of the player position.
+    const requestedX = Number(targetX); // Used to aim at the live combat target without touching player aim state.
+    const requestedY = Number(targetY); // Used to aim at the live combat target without touching player aim state.
+    if (![sourceX, sourceY, requestedX, requestedY].every(Number.isFinite)) return false;
+    const dx = requestedX - sourceX; // Used to preserve direction when clamping an NPC throw to the ordinary flask range.
+    const dy = requestedY - sourceY; // Used to preserve direction when clamping an NPC throw to the ordinary flask range.
+    const distancePx = Math.hypot(dx, dy); // Used by both range clamping and distance-scaled flight timing.
+    const maxDistancePx = MAX_THROW_RADIUS_TILES * tile; // NPC Flaskers intentionally obey the same physical throw ceiling as the player.
+    const clampScale = distancePx > maxDistancePx && distancePx > 0 ? maxDistancePx / distancePx : 1; // Used to clamp without changing aim direction.
+    const landingX = sourceX + dx * clampScale; // Final gameplay-pixel landing X.
+    const landingY = sourceY + dy * clampScale; // Final gameplay-pixel landing Y.
+    const sourceGroundY = Number(deps.getGroundY?.(sourceX, sourceY) ?? 0); // Used to launch from a readable chest/hand height above local terrain.
+    const origin = { x: sourceX / tile, y: sourceGroundY + 1.05, z: sourceY / tile }; // NPC hand approximation; no player held-item transform is required.
+    const target = {
+      x: landingX / tile,
+      y: deps.getGroundYAtWorld?.(landingX / tile, landingY / tile) ?? deps.getGroundY?.(landingX, landingY) ?? 0.05,
+      z: landingY / tile,
+    }; // Same terrain-aware landing representation as player throws.
+    const distanceTiles = Math.hypot(target.x - origin.x, target.z - origin.z); // Used to share the player's readable flight-time curve.
+    const durationS = Math.min(PROJECTILE_MAX_TRAVEL_S, Math.max(PROJECTILE_MIN_TRAVEL_S, PROJECTILE_MIN_TRAVEL_S + distanceTiles * 0.034)); // Same deterministic travel timing as player flasks.
+    const safeTier = Math.max(0, Math.min(4, Math.floor(Number(potencyTier) || 0))); // Used to keep enemy potency inside the stored potion-tier range.
+    projectiles.push(makeProjectile({
+      itemKey: `npc_flask_${recipeId}_p${safeTier}`,
+      payload: { recipeId, potencyTier: safeTier },
+      definition,
+      area: sourceEntity.areaId ?? deps.getCurrentArea?.(),
+      sourceEntity,
+      playerOwned: false,
+      t: 0,
+      durationS,
+      distanceTiles,
+      trailAccumulator: 0,
+      origin,
+      target,
+    }));
+    lastNpcThrow = { recipeId, potencyTier: safeTier, sourceId: sourceEntity.id || null, targetX: landingX, targetY: landingY, at: performance.now() }; // Mobile-safe proof of Flasker loadout use.
+    emitSfx('release', { itemKey: `npc_flask_${recipeId}_p${safeTier}`, recipeId, x: origin.x, y: origin.y, z: origin.z, npc: true });
+    return true;
+  }
+
   function impact(projectile) {
     const tile = deps.TILE || 64; // Three-unit to gameplay-pixel conversion.
     const x = projectile.target.x * tile; // Splash center X.
     const y = projectile.target.z * tile; // Splash center Y.
-    const empowerFlasksRank = window.PerkSystem?.rank('alchemy', 'empowerFlasks') || 0; // Widens the splash alongside its magnitude/batch bonuses.
+    const playerOwned = projectile.playerOwned !== false; // Used to keep enemy Flaskers from borrowing the player's Empower Flasks perk.
+    const empowerFlasksRank = playerOwned ? (window.PerkSystem?.rank('alchemy', 'empowerFlasks') || 0) : 0; // Only player-owned throws widen from the player's perk.
     const radiusTiles = (projectile.definition.splashRadius || window.AlchemySystem.DEFAULT_SPLASH_RADIUS_TILES) * (1 + empowerFlasksRank * 0.1); // Authored radius.
     const entities = deps.getSplashEntities?.(projectile.area, x, y, radiusTiles * tile) || []; // Existing entity/friendly-fire query adapter.
     let affected = 0; // Impact diagnostic count.
     entities.forEach(entity => {
-      const result = window.AlchemySystem.applyRecipeToEntity(projectile.definition.id, window.AlchemySystem.potencyMultiplier(projectile.payload.potencyTier), entity, { splash: true, potencyTier: projectile.payload.potencyTier }); // ResourceSystem-backed gameplay resolution.
+      const result = window.AlchemySystem.applyRecipeToEntity(projectile.definition.id, window.AlchemySystem.potencyMultiplier(projectile.payload.potencyTier), entity, { splash: true, potencyTier: projectile.payload.potencyTier, skipEmpower: !playerOwned }); // ResourceSystem-backed gameplay resolution; NPC throws never inherit player perk magnitude.
       if (result.ok) affected++;
     });
     deps.spawnImpactPresentation?.({ x, y, radiusTiles, definition: projectile.definition }); // Presentation-only burst.
@@ -372,9 +419,9 @@
   }
 
   function primaryAction() { return aimState ? confirmThrow() : beginAim(); }
-  function diagnostics() { return { aiming: !!aimState, phase: aimState?.phase || null, itemKey: aimState?.itemKey || null, target: aimState ? { x: aimState.targetX, y: aimState.targetY } : null, shoulderRayTargeting:!!(aimState && shoulderViewActive()), projectileCount: projectiles.length, trailCount:projectileTrails.length, impactEffectCount:impactEffects.length, lastSfxCue, lastImpact }; }
+  function diagnostics() { return { aiming: !!aimState, phase: aimState?.phase || null, itemKey: aimState?.itemKey || null, target: aimState ? { x: aimState.targetX, y: aimState.targetY } : null, shoulderRayTargeting:!!(aimState && shoulderViewActive()), projectileCount: projectiles.length, trailCount:projectileTrails.length, impactEffectCount:impactEffects.length, lastNpcThrow, lastSfxCue, lastImpact }; }
 
-  window.AlchemyFlasks = { init, beginAim, setTarget, setTargetFromVector, cancelAim, confirmThrow, primaryAction, heldActions, update, diagnostics, SFX_CUES, get aiming() { return !!aimState; }, MAX_THROW_RADIUS_TILES };
+  window.AlchemyFlasks = { init, beginAim, setTarget, setTargetFromVector, cancelAim, confirmThrow, throwFromEntity, primaryAction, heldActions, update, diagnostics, SFX_CUES, get aiming() { return !!aimState; }, MAX_THROW_RADIUS_TILES };
 })();
 
 // The shared selector presentation and contextual Potion Select adapter both

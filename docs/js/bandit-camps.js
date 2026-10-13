@@ -625,6 +625,7 @@
   function simpleHydraRank(rec) {
     const choices = [];
     if ((rec.reserveByRank.lieutenant || 0) > 0) choices.push('lieutenant');
+    if ((rec.reserveByRank.flasker || 0) > 0) choices.push('flasker');
     if ((rec.reserveByRank.grunt || 0) > 0) choices.push('grunt');
     return choices.length ? choices[Math.floor(deps.rnd() * choices.length)] : null;
   }
@@ -795,6 +796,7 @@
         && (simpleHydraAllTentsBurning(rec)
           || ((rec.reserveByRank.grunt || 0) === 0
             && (rec.reserveByRank.lieutenant || 0) === 0
+            && (rec.reserveByRank.flasker || 0) === 0
             && livingNonCaptains === 0));
       if (captainReady) {
         rec.captainSpawnInFlight = true;
@@ -894,7 +896,7 @@
       props: view.objects.filter(o => o.temporaryLocaleInstanceId === instance.id),
       homeX: (instance.site.x + instance.site.w / 2) * deps.TILE,
       homeY: (instance.site.y + instance.site.h / 2) * deps.TILE,
-      reserveByRank: { grunt: 0, lieutenant: 0, captain: 0 },
+      reserveByRank: { grunt: 0, flasker: 0, lieutenant: 0, captain: 0 },
       activeRanksById: new Map(),
       reinforcementPending: false,
       reinforcementTimer: 0,
@@ -909,7 +911,9 @@
     const comp = cfg?.gangComposition || {};
     const grunts = (comp.gruntsMin ?? 3) + Math.floor(deps.rnd() * Math.max(1, (comp.gruntsMax ?? 6) - (comp.gruntsMin ?? 3) + 1));
     const lieutenants = (comp.lieutenantsMin ?? 1) + Math.floor(deps.rnd() * Math.max(1, (comp.lieutenantsMax ?? 2) - (comp.lieutenantsMin ?? 1) + 1));
+    const flaskers = (comp.flaskersMin ?? 1) + Math.floor(deps.rnd() * Math.max(1, (comp.flaskersMax ?? 2) - (comp.flaskersMin ?? 1) + 1)); // Supporting Flaskers are guaranteed in ordinary camps.
     rec.reserveByRank.grunt = grunts;
+    rec.reserveByRank.flasker = flaskers;
     rec.reserveByRank.lieutenant = lieutenants;
     rec.reserveByRank.captain = Math.max(0, Number(comp.captains ?? 1));
     rec.captainName = (pinThisCamp ? bountyPin.captainName : null)
@@ -924,7 +928,7 @@
     if (!initialGuards) {
       window.__farmLog?.('[bandits] simple hydra: initial guards could not spawn.', 'warn');
     }
-    const total = grunts + lieutenants + rec.reserveByRank.captain;
+    const total = grunts + flaskers + lieutenants + rec.reserveByRank.captain;
     window.__farmLog?.(
       '[bandits] zone "' + zoneId + '": camp ' + instance.id
         + ' staged with ' + initialGuards + ' exterior guard(s); ' + Math.max(0, total - initialGuards)
@@ -1231,6 +1235,24 @@
     return { id: cosmeticId, label: pretty, category: rolledSlot, usesB: false, price: 40 };
   }
 
+  function grantFlaskerLoadoutLoot(c, parts) {
+    if (c?.banditRank !== 'flasker') return parts;
+    const recipeIds = [...new Set(c.def?.banditFlaskLoadout || [])]; // Exact two combat loadout types become the guaranteed corpse drops.
+    const tuning = c.def?.banditFlaskerTuning || {}; // Spawn-time tuning keeps quantity stable even if config hot-reloads before looting.
+    const minQty = Math.max(1, Math.floor(Number(tuning.lootMinPerType) || 2)); // Used to make every loadout type drop several flasks.
+    const maxQty = Math.max(minQty, Math.floor(Number(tuning.lootMaxPerType) || 4)); // Upper bound for each of the two guaranteed stacks.
+    for (const recipeId of recipeIds) {
+      const key = window.AlchemySystem?.ensureRecipeItemDef?.(recipeId, c.def?.banditFlaskPotencyTier || 0); // Registers the ordinary inventory item before granting it.
+      if (!key) continue;
+      const qty = minQty + Math.floor(deps.rnd() * (maxQty - minQty + 1));
+      const maxStack = Number(window.InventoryStacks?.MAX_TOTAL) || 999999;
+      deps.inventory[key] = Math.min(maxStack, (Number(deps.inventory[key]) || 0) + qty);
+      const label = window.AlchemySystem?.RECIPE_DEFS?.[recipeId]?.label || 'Flask';
+      parts.push(`🧪 ${label}×${qty}`);
+    }
+    return parts;
+  }
+
   function banditWornClothingItems(roster) {
     const catalog = deps.getDyeCatalog();
     const items = [];
@@ -1274,6 +1296,7 @@
         const parts = grantBanditLoot(deps.rollLootPool(c.def.lootPool));
         const specialAmmo = window.RangedWeapons?.rollSpecialAmmoLoot?.() || 0;
         if (specialAmmo) parts.push(`🏹 Special Ammo×${specialAmmo}`);
+        grantFlaskerLoadoutLoot(c, parts); // Flaskers always surrender several of both infinite combat loadout types on death.
         for (const item of banditWornClothingItems(c.rosterRecord)) {
           deps.getPackClothing().push(item);
           window.MetalArmorSystem?.learnBlueprints?.([item]); // Unlock at acquisition even if the player sells the loot before visiting the smith.

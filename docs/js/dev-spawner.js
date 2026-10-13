@@ -180,7 +180,7 @@
   // ensureCurrentZoneBanditCamps's DEV_ARENA_ZONE_ID exclusion, same
   // reasoning as packSpecies/herbivoreSpecies being empty there) so this
   // panel is the only way to get a bandit into it.
-  const DEV_SPAWN_BANDIT_RANKS = ['grunt', 'lieutenant', 'captain'];
+  const DEV_SPAWN_BANDIT_RANKS = ['grunt', 'flasker', 'lieutenant', 'captain'];
   let devSpawnBanditTier = 0;
 
   // Porakaneki hunters aren't a CREATURE_DB entry either (see

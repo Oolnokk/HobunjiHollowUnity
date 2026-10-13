@@ -209,6 +209,14 @@ assert.strictEqual(impactCount, 1, 'impact presentation must occur once without 
 assert.ok(R.getAffliction(player, 'poisonedHealth') > 0 && R.getAffliction(victim, 'poisonedHealth') > 0, 'splash must affect valid nearby entities including the thrower through ResourceSystem');
 assert.strictEqual(window.AlchemyFlasks.diagnostics().lastImpact.radiusTiles, A.RECIPE_DEFS.venomFlask.splashRadius, 'splash must use the recipe radius');
 assert.ok(flaskSfxCues.includes('flask_throw_release') && flaskSfxCues.includes('flask_impact'), 'release and impact must emit decoupled semantic SFX placeholders');
+const npcSource = { id:'flasker-test', x:-128, y:0, areaId:'farm' }; // Enemy source proves throwFromEntity does not depend on player inventory.
+const inventoryBeforeNpcThrow = inventory[flaskKey] || 0;
+const npcPoisonBefore = R.getAffliction(victim, 'poisonedHealth');
+assert.ok(window.AlchemyFlasks.throwFromEntity(npcSource, 'venomFlask', 1, 128, 0), 'NPCs can launch authored throwable recipes through the shared flask projectile owner');
+window.AlchemyFlasks.update(1.2);
+assert.strictEqual(inventory[flaskKey] || 0, inventoryBeforeNpcThrow, 'NPC flask throws are infinite-use and never consume the player inventory stack');
+assert.ok(R.getAffliction(victim, 'poisonedHealth') > npcPoisonBefore, 'NPC flask projectiles resolve the same splash affliction gameplay');
+assert.strictEqual(window.AlchemyFlasks.diagnostics().lastNpcThrow.recipeId, 'venomFlask', 'NPC throw diagnostics expose the launched loadout type');
 
 // Breeding resolves normal genetics first, then applies one clamped pending
 // class shift and consumes both parent modifiers.

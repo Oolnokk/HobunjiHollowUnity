@@ -6,7 +6,7 @@
 
   const VERSION = 1;
   const DEFAULTS = Object.freeze({
-    chanceByRank: Object.freeze({ grunt: 0.34, lieutenant: 0.52, captain: 0.70 }),
+    chanceByRank: Object.freeze({ grunt: 0.34, flasker: 0.44, lieutenant: 0.52, captain: 0.70 }),
     reactionDelayS: 0.055,
     cooldownS: 1.15,
     staminaCost: 18,
