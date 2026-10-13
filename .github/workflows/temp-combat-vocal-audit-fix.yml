@@ -1,0 +1,80 @@
+name: Temp Combat Vocal Audit Fix
+
+on:
+  push:
+    branches: [feat/combat-vocalizations]
+
+permissions:
+  contents: write
+
+jobs:
+  fix-and-validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: feat/combat-vocalizations
+      - name: Sync current main without committing yet
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git merge --no-commit --no-ff origin/main
+      - name: Apply audit fixes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re, subprocess
+
+          runtime = Path('docs/js/combat/combat-vocalizations.js')
+          text = runtime.read_text()
+          old = 'stretchedTempo: clamp(baseNormalTempo * (clipDurationS / targetS), 1 / 9, 4),'
+          new = 'stretchedTempo: clamp(clipDurationS / targetS, 1 / 9, 4), // Full charge duration is gameplay-authored; species voice tempo only defines normal/catch-up speed.'
+          assert text.count(old) == 1, f'runtime charge formula matches: {text.count(old)}'
+          runtime.write_text(text.replace(old, new))
+
+          editor = Path('docs/tools/combat-vocalization-editor/index.html')
+          text = editor.read_text()
+          old = 'stretchedTempo:clamp(normal*(clip/target),1/9,4),catchUpTempo:clamp(normal*mul,1/9,4)'
+          new = 'stretchedTempo:clamp(clip/target,1/9,4),catchUpTempo:clamp(normal*mul,1/9,4)'
+          assert text.count(old) == 1, f'editor charge formula matches: {text.count(old)}'
+          editor.write_text(text.replace(old, new))
+
+          test = Path('scripts/test-combat-vocalizations.js')
+          text = test.read_text()
+          old = "assert(Math.abs(chargePlan.stretchedTempo - 0.375) < 1e-9, 'full clip should stretch across the authored charge duration');"
+          new = "assert(Math.abs(chargePlan.stretchedTempo - 0.3) < 1e-9, 'full charge stretch must be based on clip/target duration, independent of normal voice tempo');\nassert(Math.abs((1.2 / chargePlan.stretchedTempo) - 4) < 1e-9, 'full charge vocal must still span exactly 4 seconds when normal voice tempo is not 1x');"
+          assert text.count(old) == 1, f'test charge assertion matches: {text.count(old)}'
+          test.write_text(text.replace(old, new))
+
+          # The earlier branch sync accidentally reverted this unrelated cache token.
+          # Copy the exact current-main script tag so the combat PR does not carry a social-system rollback.
+          main_index = subprocess.check_output(['git', 'show', 'origin/main:docs/index.html'], text=True)
+          current = Path('docs/index.html').read_text()
+          pattern = r'<script src="config/npcs/social-relations\.js\?v=[^"]+"></script>'
+          main_match = re.search(pattern, main_index)
+          branch_match = re.search(pattern, current)
+          assert main_match and branch_match, 'social-relations script tag not found'
+          current = current[:branch_match.start()] + main_match.group(0) + current[branch_match.end():]
+          Path('docs/index.html').write_text(current)
+          PY
+      - name: Refresh and validate cache tokens
+        run: |
+          node scripts/check-cache-busts.js --fix
+          node scripts/check-cache-busts.js origin/main
+      - name: Validate combat and shared animal voice behavior
+        run: |
+          node --check docs/js/combat/combat-vocalizations.js
+          node --check docs/js/animal-voice-independent-playback.js
+          node scripts/test-combat-vocalizations.js
+          node scripts/test-animal-vocalizations.js
+          node scripts/test-animal-authored-voice-routing.js
+          node scripts/run-tests.js
+      - name: Commit validated merge and remove temporary workflow
+        run: |
+          git rm .github/workflows/temp-combat-vocal-audit-fix.yml
+          git add docs scripts
+          git commit -m "Audit combat vocalization integration"
+          git push origin HEAD:feat/combat-vocalizations
