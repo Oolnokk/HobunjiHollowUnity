@@ -13,6 +13,7 @@ const game = read('docs/game.js');
 const basicHeadband = JSON.parse(read('docs/config/cosmetics/basic_headband.json'));
 const leatherHeadband = JSON.parse(read('docs/config/cosmetics/leather_headband.json'));
 const wideKasa = JSON.parse(read('docs/config/cosmetics/riverlandskasa_wide.json'));
+const tangedCirclet = JSON.parse(read('docs/config/cosmetics/clothes/hat/tangedcirclet.json')); // Used below to guard its species-specific behind-the-head band art.
 
 const forbiddenAngleBehavior = /TILT_CUTOFF|yawCutoff|tiltCutoff|FacingGate|facingUniform|worldFront|worldUp|toCamera|uprightDot|yawDot|smoothstep\s*\(|hobunjiFrontHatless|material\.opacity\s*=|currentMaterial\.opacity\s*=/i;
 assert.doesNotMatch(hats, forbiddenAngleBehavior, 'normal hats have no camera/head-angle visibility system');
@@ -43,5 +44,32 @@ const headLayers = json => Object.keys(json?.parts?.head?.layers || {});
 assert.deepEqual(headLayers(basicHeadband), ['front'], 'Basic Headband is authored front-only');
 assert.deepEqual(headLayers(leatherHeadband), ['front'], 'Leather Headband is authored front-only');
 assert.ok(headLayers(wideKasa).includes('front') && headLayers(wideKasa).includes('back'), 'Riverland Kasa keeps authored front and back art');
+assert.deepEqual(headLayers(tangedCirclet), ['back', 'front'], 'Tanged Circlet composes a regular-headband layer behind its metal front art');
+
+const expectedTangedBack = { // Used by the loop below to keep circlet rear bands aligned with Basic Headband species art.
+  'mao-ao_male': 'headband.png',
+  'mao-ao_female': 'headband.png',
+  'tletingan_male': 'tl_headband.png',
+  'tletingan_female': 'tl_headband.png',
+  'kenkari_male': 'kenk_headband_m.png',
+  'kenkari_female': 'kenk_headband_f.png',
+  'rakakoan_male': 'kenk_headband_m.png',
+  'rakakoan_female': 'kenk_headband_f.png',
+  'engh-sho_male': 'headband.png',
+  'engh-sho_female': 'headband.png',
+  'harlyao_male': 'headband.png',
+  'harlyao_female': 'headband.png',
+  'harlyao-skeleton_male': 'headband.png',
+  'harlyao-skeleton_female': 'headband.png',
+  'mashtzarr_male': 'mashtz_headband_m.png',
+  'mashtzarr_female': 'mashtz_headband_m.png',
+};
+assert.equal(tangedCirclet.parts.head.layers.back.image.url, './assets/cosmetics/clothes/hat/headband.png', 'generic Tanged Circlet reuses the generic Basic Headband sprite behind the skull');
+assert.equal(tangedCirclet.parts.head.layers.back.layerRole, 'base', 'generic rear band stays in the circlet base material role for metal/verdigris processing');
+for (const [variant, filename] of Object.entries(expectedTangedBack)) {
+  const backLayer = tangedCirclet.speciesVariants?.[variant]?.parts?.head?.layers?.back;
+  assert.equal(backLayer?.image?.url, './assets/cosmetics/clothes/hat/' + filename, variant + ' reuses its regular headband art behind the circlet');
+  assert.equal(backLayer?.layerRole, 'base', variant + ' rear band stays in the circlet base material role');
+}
 
 console.log('Headwear angle-visibility removal checks passed.');

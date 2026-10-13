@@ -19,6 +19,25 @@
   "parts": {
     "head": {
       "layers": {
+        "back": {
+          "image": {
+            "url": "./assets/cosmetics/clothes/hat/headband.png"
+          },
+          "spriteStyle": {
+            "base": {
+              "xform": {
+                "head": {
+                  "ax": -0.2,
+                  "ay": 0,
+                  "scaleX": 2.55,
+                  "scaleY": 2.55,
+                  "rotDeg": 0
+                }
+              }
+            }
+          },
+          "layerRole": "base"
+        },
         "front": {
           "image": {
             "url": "./assets/cosmetics/clothes/hat/tangedcirclet_m.png"
@@ -46,6 +65,25 @@
       "parts": {
         "head": {
           "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/headband.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            },
             "front": {
               "image": {
                 "url": "./assets/cosmetics/clothes/hat/tangedcirclet_m.png"
@@ -73,6 +111,25 @@
       "parts": {
         "head": {
           "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/headband.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            },
             "front": {
               "image": {
                 "url": "./assets/cosmetics/clothes/hat/tangedcirclet_m.png"
@@ -100,6 +157,25 @@
       "parts": {
         "head": {
           "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/tl_headband.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            },
             "front": {
               "image": {
                 "url": "./assets/cosmetics/clothes/hat/tl_tangedcirclet_m.png"
@@ -127,6 +203,25 @@
       "parts": {
         "head": {
           "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/tl_headband.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            },
             "front": {
               "image": {
                 "url": "./assets/cosmetics/clothes/hat/tl_tangedcirclet_m.png"
@@ -154,6 +249,25 @@
       "parts": {
         "head": {
           "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/kenk_headband_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            },
             "front": {
               "image": {
                 "url": "./assets/cosmetics/clothes/hat/kenk_tangedcirclet_m.png"
@@ -181,6 +295,25 @@
       "parts": {
         "head": {
           "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/kenk_headband_f.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            },
             "front": {
               "image": {
                 "url": "./assets/cosmetics/clothes/hat/kenk_tangedcirclet_f.png"
@@ -208,6 +341,25 @@
       "parts": {
         "head": {
           "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/kenk_headband_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            },
             "front": {
               "image": {
                 "url": "./assets/cosmetics/clothes/hat/kenk_tangedcirclet_m.png"
@@ -235,6 +387,25 @@
       "parts": {
         "head": {
           "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/kenk_headband_f.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            },
             "front": {
               "image": {
                 "url": "./assets/cosmetics/clothes/hat/kenk_tangedcirclet_f.png"
@@ -262,6 +433,25 @@
       "parts": {
         "head": {
           "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/headband.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            },
             "front": {
               "image": {
                 "url": "./assets/cosmetics/clothes/hat/engh_tangedcirclet_m.png"
@@ -289,6 +479,25 @@
       "parts": {
         "head": {
           "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/headband.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            },
             "front": {
               "image": {
                 "url": "./assets/cosmetics/clothes/hat/engh_tangedcirclet_m.png"
@@ -316,6 +525,25 @@
       "parts": {
         "head": {
           "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/headband.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            },
             "front": {
               "image": {
                 "url": "./assets/cosmetics/clothes/hat/engh_tangedcirclet_m.png"
@@ -343,6 +571,25 @@
       "parts": {
         "head": {
           "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/headband.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            },
             "front": {
               "image": {
                 "url": "./assets/cosmetics/clothes/hat/engh_tangedcirclet_m.png"
@@ -370,6 +617,25 @@
       "parts": {
         "head": {
           "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/headband.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            },
             "front": {
               "image": {
                 "url": "./assets/cosmetics/clothes/hat/hskel_tangedcirclet_m.png"
@@ -397,6 +663,25 @@
       "parts": {
         "head": {
           "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/headband.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            },
             "front": {
               "image": {
                 "url": "./assets/cosmetics/clothes/hat/hskel_tangedcirclet_f.png"
@@ -424,6 +709,25 @@
       "parts": {
         "head": {
           "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/mashtz_headband_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            },
             "front": {
               "image": {
                 "url": "./assets/cosmetics/clothes/hat/mashtz_tangedcirclet_m.png"
@@ -451,6 +755,25 @@
       "parts": {
         "head": {
           "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/mashtz_headband_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            },
             "front": {
               "image": {
                 "url": "./assets/cosmetics/clothes/hat/mashtz_tangedcirclet_m.png"

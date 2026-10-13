@@ -32,6 +32,9 @@ const listeners = { window: {}, document: {} };
 const buttons = new Map();
 let opened = [];
 const documentStub = {
+  baseURI: 'https://example.test/docs/',
+  head: { appendChild() {} },
+  createElement() { return { dataset: {}, addEventListener() {} }; },
   getElementById(id) { return buttons.get(id) || null; },
   querySelector() { return null; },
   addEventListener(type, handler) { listeners.document[type] = handler; },
@@ -44,15 +47,17 @@ const windowStub = {
 vm.runInNewContext(bridgeSource, {
   window: windowStub,
   document: documentStub,
+  URL,
   Object,
   Number,
   String,
   RegExp,
+  Date,
   console,
 }, { filename: 'sleep-passage-action-bridge.js' });
 
 const bridge = windowStub.HobunjiSleepPassageActionBridge;
-assert.equal(bridge?.version, 1, 'bridge installs');
+assert.equal(bridge?.version, 2, 'bridge installs');
 
 const f3Sleep = makeButton('btnAction3', 'Sleep', 'F3');
 buttons.set('btnAction3', f3Sleep);
@@ -80,8 +85,10 @@ assert.deepEqual(opened, [], 'shared passage waits for key release like the exis
 const f3Up = inputEvent('F3');
 listeners.window.keyup(f3Up);
 assert.deepEqual(opened, ['sleep'], 'releasing the displayed Sleep key opens CalendarSystem shared Sleep passage');
+assert.equal(windowStub.__hobunjiOwnedBedSleepPending?.source, 'player-bed', 'non-E bed Sleep arms the one-shot Well Rested token');
 
 opened = [];
+windowStub.__hobunjiOwnedBedSleepPending = null;
 buttons.clear();
 const eSleep = makeButton('btnAction1', 'Sleep', 'E');
 buttons.set('btnAction1', eSleep);
@@ -89,7 +96,10 @@ const eDown = inputEvent('KeyE');
 listeners.window.keydown(eDown);
 assert.equal(eDown.prevented, false, 'E remains delegated to CalendarSystem existing tap/hold interceptor');
 assert.deepEqual(opened, [], 'bridge does not double-open E Sleep');
+assert.equal(windowStub.__hobunjiOwnedBedSleepPending?.source, 'player-bed', 'legacy E bed Sleep arms the same Well Rested token');
 
+opened = [];
+windowStub.__hobunjiOwnedBedSleepPending = null;
 buttons.clear();
 const qSleep = makeButton('btnAction2', 'Sleep', 'Q');
 buttons.set('btnAction2', qSleep);
@@ -98,6 +108,7 @@ const click = inputEvent('', nested);
 listeners.document.click(click);
 assert.equal(click.prevented, true, 'pointer/click fallback blocks legacy Sleep action');
 assert.deepEqual(opened, ['sleep'], 'pointer/click fallback opens the same shared Sleep passage');
+assert.equal(windowStub.__hobunjiOwnedBedSleepPending?.source, 'player-bed', 'pointer bed Sleep arms the Well Rested token');
 
 buttons.clear();
 const inspect = makeButton('btnAction1', 'Inspect', 'E', 'obj_interact');
