@@ -111,7 +111,8 @@
   function canonicalGiftPreferences(npcId) {
     const rec = deps?.getNpcRecordById?.(npcId); // Used to rebuild both ordinary trait preferences and current food-like defaults for discovery reconciliation.
     if (!rec) return null;
-    return window.NpcFoodGiftPreferences?.compiledGiftPreferencesForRecord?.(rec) || rec.gifts || null;
+    const base = window.NpcFoodGiftPreferences?.compiledGiftPreferencesForRecord?.(rec) || rec.gifts || null; // Metal armor's authored override is merged only for discovery reconciliation/UI.
+    return withMetalArmorPreference(npcId, base);
   }
 
   function reconcileDiscoveredBucket(npcId, bucket) {
@@ -168,7 +169,61 @@
     disliked: 'isn\'t thrilled with',
     hated: 'is upset by',
   };
+  const METAL_ARMOR_TRAIT = 'metalArmor'; // Used only by gift evaluation/discovery so other item-trait consumers keep their normal clothing traits.
+  const METAL_ARMOR_LOVED_NPCS = new Set([ // Used by metalArmorPreferenceTier to make these characters love any canonical metal armor piece.
+    'oddclaw_unumanuk',
+    'spearhead_unumanuk',
+    'jubmir',
+    'gantami_ginju',
+    'porakaneki_chief',
+  ]);
+  const METAL_ARMOR_LIKED_NPCS = new Set([ // Used by metalArmorPreferenceTier to make these characters like any canonical metal armor piece.
+    'leaf',
+    'pahu',
+    'garanki_gabu',
+  ]);
 
+  function metalArmorPreferenceTier(npcId) {
+    if (METAL_ARMOR_LOVED_NPCS.has(npcId)) return 'loved';
+    if (METAL_ARMOR_LIKED_NPCS.has(npcId)) return 'liked';
+    return 'neutral';
+  }
+
+  function isHeldMetalArmor(held) {
+    return held?.kind === 'clothing' && window.MetalArmorSystem?.isMetalArmor?.(held.instance) === true;
+  }
+
+  function withMetalArmorPreference(npcId, preferences) {
+    if (!preferences) return preferences;
+    const tier = metalArmorPreferenceTier(npcId);
+    if (tier === 'neutral') return preferences;
+    const merged = { // Used only for learned-preference reconciliation and warning/UI lookups; authored NPC data remains untouched.
+      loved: [...(preferences.loved || [])],
+      liked: [...(preferences.liked || [])],
+      disliked: [...(preferences.disliked || [])],
+      hated: [...(preferences.hated || [])],
+    };
+    merged[tier] = [...new Set([...merged[tier], METAL_ARMOR_TRAIT])];
+    return merged;
+  }
+
+  function metalArmorGiftEvaluation(rec, held) {
+    if (!isHeldMetalArmor(held)) return null;
+    const tier = metalArmorPreferenceTier(rec?.id);
+    const matches = { loved: [], liked: [], disliked: [], hated: [] }; // Metal armor intentionally ignores every unrelated color/clothing trait for this reaction.
+    if (tier !== 'neutral') matches[tier].push(METAL_ARMOR_TRAIT);
+    const score = tier === 'neutral' ? 0 : TIER_FAVOR[tier];
+    return {
+      tier,
+      score,
+      matchedCount: tier === 'neutral' ? 0 : 1,
+      matches,
+      favorDelta: tier === 'neutral' ? TIER_FAVOR.neutral : score,
+      traits: [METAL_ARMOR_TRAIT],
+      foodContext: null,
+      foodScore: 0,
+    };
+  }
 
   function itemDefFor(held) {
     if (held.kind === 'clothing') return null; // Clothing isn't in ITEM_DEFS — see js/equipment-panel.js.
@@ -192,12 +247,14 @@
     return window.ItemTraits?.computeItemTraits(held.key, null) || [];
   }
 
-
   function getPreferenceLabel(id) {
+    if (id === METAL_ARMOR_TRAIT) return 'Metal Armor';
     return window.NpcFoodGiftPreferences?.getPreferenceLabel?.(id) || window.ItemTraits?.getTraitLabel?.(id) || id;
   }
 
   function evaluateHeldGift(rec, held) {
+    const metalArmorEvaluation = metalArmorGiftEvaluation(rec, held); // Category-specific rule takes precedence so every unlisted NPC is truly indifferent to metal armor.
+    if (metalArmorEvaluation) return metalArmorEvaluation;
     const traits = traitsForHeld(held); // Used to preserve the original item-trait reaction alongside food-specific scoring.
     if (held?.kind === 'clothing') return { ...evaluateGiftReaction(rec?.gifts || {}, traits), traits, foodContext: null, foodScore: 0 };
     const foodContext = window.NpcFoodGiftPreferences?.foodPreferenceContextForItem?.(held?.key, itemDefFor(held)) || null; // Extracted runtime owns ingredient lineage/artisan classification.
@@ -214,6 +271,7 @@
       score: evaluation.score,
       foodScore: evaluation.foodScore,
       foodContext: evaluation.foodContext,
+      traits: evaluation.traits,
       matches: evaluation.matches,
       favorDelta: evaluation.favorDelta,
       positiveGiftRapport: evaluation.favorDelta > 0 ? giftRapportAmount() : 0,
@@ -301,8 +359,10 @@
     if (!npcId) return null;
     const held = deps.getHeldGiftItem();
     if (!isItemGiftable(held)) return null;
-    const traits = traitsForHeld(held);
-    const npcGifts = preferenceRecord(walker)?.gifts || {};
+    const prefRec = preferenceRecord(walker); // Reused by both armor-specific and ordinary warning calculations.
+    const metalArmor = isHeldMetalArmor(held); // Prevents unrelated clothing/color dislikes from leaking into the metal-armor prompt.
+    const traits = metalArmor ? [METAL_ARMOR_TRAIT] : traitsForHeld(held);
+    const npcGifts = metalArmor ? withMetalArmorPreference(prefRec?.id, {}) : prefRec?.gifts || {};
     const warning = warningSuffix(npcGifts, traits);
     const name = walker.rec.name || walker.rec.displayName || 'them';
     return {
@@ -406,5 +466,7 @@
     getPreferenceLabel,
     evaluateHeldGift,
     debugGiftEvaluation,
+    isHeldMetalArmor,
+    metalArmorPreferenceTier,
   };
 })();
