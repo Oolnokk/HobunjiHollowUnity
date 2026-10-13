@@ -65,6 +65,18 @@ jobs:
           PY
       - name: Apply patch
         run: python3 scripts/temp_patch_character_voice_priority.py
+      - name: Update legacy dialogue ownership regression
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/test-dialogue-syllable-cadence.js')
+          text = p.read_text()
+          old = "assert.match(dialogueContent, /if \\(previous\\) _fadeNpcSpeechHandle\\(previous\\)/, 'a new vowel replaces the same NPC previous utterance instead of layering');"
+          new = "assert.match(dialogueContent, /CharacterVoiceOwner\\?\\.request/, 'NPC dialogue participates in the shared per-character voice owner instead of layering around combat vocals');\nassert.match(dialogueContent, /CharacterVoiceOwner\\?\\.bindStop/, 'shared voice preemption drives the same click-safe NPC utterance fade');\nassert.match(dialogueContent, /if \\(!window\\.CharacterVoiceOwner && previous\\) _fadeNpcSpeechHandle\\(previous\\)/, 'dialogue keeps the legacy local one-speaker fallback when the shared owner is unavailable');"
+          if old not in text:
+              raise SystemExit('legacy dialogue ownership assertion not found')
+          p.write_text(text.replace(old, new, 1))
+          PY
       - name: Refresh cache tokens
         run: node scripts/check-cache-busts.js --fix origin/main
       - name: Syntax checks
