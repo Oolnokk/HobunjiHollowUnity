@@ -38,7 +38,9 @@ assert.match(core, /panel\.dataset\.ctrlPanel\s*=\s*'templePrayerMenu'/, 'prayer
 assert.match(core, /role',\s*'dialog'[\s\S]{0,100}aria-modal/, 'prayer chooser is a semantic modal for controller/keyboard navigation');
 assert.match(integration, /syncInteractionPrompts\s*=\s*wrapped/, 'Pray is added to the same floating world-interaction prompt pipeline as targeted objects');
 assert.match(integration, /action:\s*'temple_pray'[\s\S]{0,100}label:\s*'Pray'[\s\S]{0,100}worldInteraction:\s*true/, 'floating prompt contains a real Pray world action');
-assert.match(integration, /prayerSlot\s*=\s*buttons\.findIndex[\s\S]{0,500}promptInputs\[prayerSlot\]/, 'Pray keeps its input hint aligned with the actual action-bar slot');
+const promptHookBody = integration.match(/const wrapped = function syncPrayerPrompt\(options = \{\}\) \{([\s\S]*?)\n    \};/)?.[1] || ''; // Isolates prompt-slot bookkeeping so assertion length does not depend on nearby comments/branches.
+assert.match(promptHookBody, /prayerSlot\s*=\s*buttons\.findIndex/, 'Pray resolves its actual action-bar slot');
+assert.match(promptHookBody, /promptInputs\[prayerSlot\]\s*=\s*\{\s*actionId:\s*'temple_pray'/, 'Pray keeps its input hint aligned with the resolved action-bar slot');
 assert.match(integration, /function prayerPromptRoot\(\)[\s\S]{0,900}forwardDistance\s*=\s*1\.05[\s\S]{0,900}root:\s*prayerPromptRoot\(\)\s*\|\|\s*options\.root/, 'Pray prompt uses a reusable world anchor positioned in front of the seated player');
 assert.match(integration, /prayerSlot:\s*state\.lastPrayerSlot/, 'mobile diagnostics expose the live Pray action slot');
 assert.match(integration, /sitState[\s\S]{0,150}sitInteraction/, 'integration aliases the prayer core to the game’s actual seated-interaction state');
