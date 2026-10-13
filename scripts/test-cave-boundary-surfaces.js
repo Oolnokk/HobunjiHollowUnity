@@ -43,6 +43,16 @@ assert.equal(caveMap.cavernCarvedHeightScale,2.5,'the clearance recarve sweeps t
 assert.equal(caveMap.mesh.wallHeightScale,undefined,'ruin height is carved, never stretched from the shorter shell');
 assert(Math.max(...caveMap.mesh.positions.filter((_,i)=>i%3===1)) > plainTopY*2.5,'taller sculpt volume carves walls above the old stretched height');
 assert(Math.abs(caveMap.floorSurfaceY) < 0.1,'taller carve keeps the floor at its original height');
+for(const [key,y] of Object.entries(caveMap.floorSurfaceByTile)) assert(y <= 0.5,`edge tile ${key} grounds on the floor, not the rock top (${y})`);
+const overheadSlabTiles=caveMap.floor.filter(([col,row])=>{ // Downward-facing rock hanging above an open tile's floor.
+  const x=col+.5,z=row+.5,P=caveMap.mesh.positions,I=caveMap.mesh.indices; let floorHit=false,slab=false;
+  for(let i=0;i<I.length;i+=3){const a=I[i]*3,b=I[i+1]*3,c=I[i+2]*3;const den=(P[b+2]-P[c+2])*(P[a]-P[c])+(P[c]-P[b])*(P[a+2]-P[c+2]);if(Math.abs(den)<1e-12)continue;
+    const wa=((P[b+2]-P[c+2])*(x-P[c])+(P[c]-P[b])*(z-P[c+2]))/den,wb=((P[c+2]-P[a+2])*(x-P[c])+(P[a]-P[c])*(z-P[c+2]))/den,wc=1-wa-wb;if(wa<0||wb<0||wc<0)continue;
+    const y=wa*P[a+1]+wb*P[b+1]+wc*P[c+1],up=(P[b+2]-P[a+2])*(P[c]-P[a])-(P[b]-P[a])*(P[c+2]-P[a+2])>0;
+    if(up&&Math.abs(y)<.1)floorHit=true; else if(!up&&y>.5)slab=true;}
+  return floorHit&&slab;
+});
+assert(overheadSlabTiles.length <= caveMap.floor.length*.02,`taller carve refines every column instead of leaving floating slabs (${overheadSlabTiles.length})`);
 assert(caveMap.floor.length > generated.floor.length, 'door berth expands the actual floor');
 for (const cell of caveMap.caveRuinEntrance.clearanceTiles) assert(caveMap.floorSurfaceByTile[`${cell.col},${cell.row}`] != null, 'new approach cells have sampled grounding');
 assert.equal(CavernGenerator.entranceConnectedFloor(caveMap.floor,caveMap.exitCol,caveMap.exitRow).removed,0,'expansion stays connected to the entrance');

@@ -1077,7 +1077,7 @@
     return {
       ready: integrationsInstalled,
       currentArea,
-      latestChange: 'Locale clearance footprints now expand the actual cave carving: nests have 8x8 rooms, ruin doors have 7x6 approaches, and ruin caves are carved 2.5x taller (probe sweep extended upward, not a vertex stretch). Expanded floors, grounding, and the protected rock rim share one rebuild.',
+      latestChange: 'Locale clearance footprints now expand the actual cave carving: nests have 8x8 rooms, ruin doors have 7x6 approaches, and ruin caves are carved 2.5x taller (probe sweep extended upward, every column refined so no floating slabs). Edge tiles without a centre floor triangle ground on the floor, not the rock top. Expanded floors, grounding, and the protected rock rim share one rebuild.',
       zoneCount: zones.length,
       caveCount: sites.length,
       caves: sites.map(site => ({ mapId: site.mapId, zoneId: site.zoneId, denId: site.denId, contents: site.contents, inhabitant: site.inhabitant, label: site.discoveredLabel })),
