@@ -42,7 +42,17 @@ jobs:
           test -z "$(git diff --name-only --diff-filter=U)"
 
       - name: Apply patch
-        run: python scripts/temp-combat-vocal-acoustics-polish.py
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/temp-combat-vocal-acoustics-polish.py')
+          text = p.read_text()
+          old = "updated, count = re.subn(pattern, replacement, text, count=1, flags=re.S)"
+          new = "updated, count = re.subn(pattern, lambda _match: replacement, text, count=1, flags=re.S)"
+          assert text.count(old) == 1
+          p.write_text(text.replace(old, new, 1))
+          PY
+          python scripts/temp-combat-vocal-acoustics-polish.py
 
       - name: Refresh cache tokens
         run: |
