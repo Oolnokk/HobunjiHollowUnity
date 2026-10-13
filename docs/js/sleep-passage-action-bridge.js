@@ -6,7 +6,7 @@
   const ACTION_BUTTON_IDS = Object.freeze(['btnAction1', 'btnAction2', 'btnAction3', 'btnItemAction1', 'btnItemAction2']); // Existing action-bar slots searched for the live Sleep interaction.
   const KEY_CODE_BY_LABEL = Object.freeze({ E: 'KeyE', Q: 'KeyQ', F3: 'F3', F4: 'F4' }); // Mirrors game.js DESK_KEYS without assuming Sleep always occupies Action 1.
   const OWNED_BED_SLEEP_PENDING_KEY = '__hobunjiOwnedBedSleepPending'; // One-shot token consumed by the blessing core only after Sleep was initiated from the player's bed interaction.
-  const CHANGE_SUMMARY = 'Farmhouse-bed Sleep now arms a one-shot Well Rested token, preventing debug/other sleep passages from granting the 16-hour rest buff.'; // Mobile-visible diagnostics summary.
+  const CHANGE_SUMMARY = 'Player-bed Sleep arms a one-shot Well Rested token; generic/debug sleep passages cannot grant the 16-hour rest buff.'; // Mobile-visible diagnostics summary.
   const BRIDGE_SCRIPT_URL = document.currentScript?.src || document.baseURI || ''; // Used to resolve the companion devotion/rest runtime beside this bridge regardless of deployment base path.
 
   let armedKeyCode = null; // Non-E Sleep key held until release so the shared passage still opens on release like CalendarSystem tap actions.
