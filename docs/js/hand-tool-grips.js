@@ -71,13 +71,15 @@
         rangedGripMode: null,
       },
       throwingflask: {
-        toolScale: 0.82, // Used by gameplay and the Attack Editor to keep the squat flask at a one-hand throwing scale.
-        primaryGrip: { position: { x: -0.04, y: -0.04, z: 0.17 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } }, // Used to put the right hand around the flask's narrow neck/handle.
+        toolScale: 0.82, // Authored flask scale from the user's grip export; shared by gameplay and the Attack Editor.
+        primaryGrip: { position: { x: -0.03, y: -0.04, z: -0.0929 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } }, // Authored normal held-flask grip at the neck/handle.
         gripMode: null,
         secondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
-        rangedPrimaryGrip: { position: { x: -0.04, y: -0.04, z: 0.17 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } }, // Same neck grip is used by the hatchet-style throw.
+        rangedPrimaryGrip: { position: { x: -0.01, y: -0.05, z: -0.09 }, rotationDeg: { pitch: 90, yaw: 0, roll: 0 } }, // Independently authored ranged/throw grip from the same export.
         rangedSecondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
         rangedGripMode: null,
+        heightMultiplier: 0.5,
+        primaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
       },
       hoe: {
         primaryGrip: { position: { x: -0.04, y: -0.04, z: 0 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
