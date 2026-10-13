@@ -512,7 +512,8 @@
 
       if (token.durationS != null) {
         const tailRealS = Math.max(0.001, (buffer.duration - middleEndS) / rate);
-        const releaseDelayS = Math.max(0, token.durationS - tailRealS);
+        const elapsedS = Math.max(0, (nowMs() - token.createdAtMs) / 1000); // Keeps first-use decode time from extending a predetermined gameplay windup.
+        const releaseDelayS = Math.max(0, token.durationS - elapsedS - tailRealS);
         token.releaseTimer = setTimeout(() => releaseCharge(token), releaseDelayS * 1000);
       }
       debug.lastCharge = {
@@ -712,20 +713,12 @@
   }
 
   function installBreathScheduler() {
-    if (window.RuntimeFrameScheduler?.register) {
-      window.RuntimeFrameScheduler.register(SCHEDULER_ID, breathFrame, {
-        phase: 'post-game',
-        owner: 'CombatVocalizations',
-        description: 'Schedules player heavy-breath one-shots only while ordinary stamina is below 100%.',
-      });
-      return;
-    }
-    if (typeof requestAnimationFrame !== 'function') return;
-    const fallbackFrame = timestamp => {
-      breathFrame({ timestamp });
-      requestAnimationFrame(fallbackFrame);
-    };
-    requestAnimationFrame(fallbackFrame);
+    if (!window.RuntimeFrameScheduler?.register) return; // Shared scheduler owns shipped frame loops; do not create a second RAF owner.
+    window.RuntimeFrameScheduler.register(SCHEDULER_ID, breathFrame, {
+      phase: 'post-game',
+      owner: 'CombatVocalizations',
+      description: 'Schedules player heavy-breath one-shots only while ordinary stamina is below 100%.',
+    });
   }
 
   window.addEventListener?.('hobunji-resource-change', onResourceChange);
