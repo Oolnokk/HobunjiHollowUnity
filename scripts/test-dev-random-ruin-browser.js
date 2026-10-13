@@ -26,7 +26,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
 
 (async () => {
   const browser = await chromium.launch({ headless:true });
-  const page = await browser.newPage();
+  const page = await browser.newPage({ viewport:{ width:800, height:600 } }); // Keep real WebGL draws affordable on software-rendered CI workers.
   const dependencyFiles = { // Explicit URL/file pairs keep CI independent of CDN timing without intercepting game assets.
     'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js': 'three/build/three.min.js',
     'https://unpkg.com/three@0.128.0/build/three.min.js': 'three/build/three.min.js',
@@ -106,9 +106,13 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         const yaw = THREE.MathUtils.radToDeg(Math.atan2(local.x, -local.z));
         const pitch = THREE.MathUtils.radToDeg(Math.atan2(local.y, Math.hypot(local.x, local.z)));
         if (Math.abs(yaw) < .25 && Math.abs(pitch) < .25) break;
-        container.dispatchEvent(new MouseEvent('mousemove', { bubbles:true, movementX:yaw/degreesPerPixel, movementY:-pitch/degreesPerPixel }));
+        container.dispatchEvent(new MouseEvent('mousemove', { bubbles:true, shiftKey:true, movementX:yaw/degreesPerPixel, movementY:-pitch/degreesPerPixel }));
         await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
       }
+      const camera=window.__ruinBrowserCamera;
+      const rect=container.getBoundingClientRect();
+      container.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:rect.left+rect.width/2,clientY:rect.top+rect.height/2})); // Normal-camera interactions also need the ordinary desktop cursor on the centered reticle.
+      return { target:point.toArray(), camera:camera.position.toArray(), local:point.clone().applyMatrix4(camera.matrixWorldInverse).toArray() };
     };
   });
 
@@ -738,13 +742,13 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         const sleep=frames=>new Promise(resolve=>{let left=frames;const step=()=>{if(--left<=0)resolve();else requestAnimationFrame(step);};requestAnimationFrame(step);});
         const door=window.DevRandomRuin.getState()?.transitDoors?.[0]||null;
         if(!door?.center)return null;
-        const x=door.center.x+(door.axis==='x'?1.05:0),z=door.center.z+(door.axis==='z'?1.05:0);
+        const x=door.center.x-(door.axis==='x'?1.05:0),z=door.center.z-(door.axis==='z'?1.05:0); // Approach from the hall side; the reward brazier beyond this doorway otherwise intercepts the real reticle ray.
         window.DevRandomRuin.setPlayerWorldPoint?.({x,z},{grounded:true});
         await sleep(4);
         const control=window.DevRandomRuin.getInteractionControls().find(entry=>entry.kind==='transitDoor'&&entry.object?.id===door.id);
         if(!control?.object)throw new Error('Transit-door smoke has no interaction owner');
         control.object.updateWorldMatrix(true,true);
-        await window.__ruinBrowserAimAtPoint(new THREE.Box3().setFromObject(control.object).getCenter(new THREE.Vector3()));
+        const aim=await window.__ruinBrowserAimAtPoint(new THREE.Box3().setFromObject(control.object).getCenter(new THREE.Vector3()));
         window.DevRandomRuinInteractions.refresh();
         await sleep(2);
         const interaction=window.DevRandomRuinInteractions.snapshot();
@@ -765,7 +769,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         await sleep(28);
         const afterDoor=window.DevRandomRuin.getState()?.transitDoors?.find(entry=>entry.id===door.id)||null;
         const afterBlocked=hasSource(window.DevRandomRuin.getOccupancySnapshot?.());
-        return {door,row,popupVisible:popupBefore.interactionRows?.some(entry=>entry.label==='Open Hallway Door')===true,beforeBlocked,sourceTiles,beforePanelHits,afterPanelHits:panelHits(),centerClear:!window.DevRandomRuinTileOccupancy.solidAt(door.center.x,door.center.z,.02,.5),beforeGridTypes,afterGridTypes:gridTypes(),afterDoor,afterBlocked};
+        return {door,row,aim,focus:interaction.focus,player:{x:window.Combat.deps.player.x/window.Combat.deps.TILE,z:window.Combat.deps.player.y/window.Combat.deps.TILE},popupVisible:popupBefore.interactionRows?.some(entry=>entry.label==='Open Hallway Door')===true,beforeBlocked,sourceTiles,beforePanelHits,afterPanelHits:panelHits(),centerClear:!window.DevRandomRuinTileOccupancy.solidAt(door.center.x,door.center.z,.02,.5),beforeGridTypes,afterGridTypes:gridTypes(),afterDoor,afterBlocked};
       });
       assert.ok(transitDoorRuntime,'generated hallway must expose at least one plain transit-exit door: '+JSON.stringify(active));
       assert.equal(transitDoorRuntime.row?.label,'Open Hallway Door','closed hallway transit door must expose the standard floating open-door prompt: '+JSON.stringify(transitDoorRuntime));
@@ -776,7 +780,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       assert.ok((transitDoorRuntime.afterDoor?.open||0)>.78,'using the hallway door prompt must visibly retract the door: '+JSON.stringify(transitDoorRuntime));
       assert.equal(transitDoorRuntime.afterBlocked,false,'opened hallway door must release its occupancy blocker: '+JSON.stringify(transitDoorRuntime));
       assert.equal(transitDoorRuntime.centerClear,true,'opening the door must clear the center of the physical passage: '+JSON.stringify(transitDoorRuntime));
-      assert.ok(transitDoorRuntime.afterPanelHits.length<transitDoorRuntime.beforePanelHits.length&&transitDoorRuntime.afterPanelHits.every(hit=>hit.tag==='door-frame'),'opening the panel preserves only the solid doorway jambs: '+JSON.stringify(transitDoorRuntime));
+      assert.ok(transitDoorRuntime.afterPanelHits.length<transitDoorRuntime.beforePanelHits.length&&transitDoorRuntime.afterPanelHits.every(hit=>hit.tag!=='door'&&transitDoorRuntime.beforePanelHits.some(before=>before.key===hit.key&&before.tag===hit.tag)),'opening the panel preserves only the existing solid doorway jambs: '+JSON.stringify(transitDoorRuntime));
       assert.deepEqual(transitDoorRuntime.afterGridTypes,transitDoorRuntime.beforeGridTypes,'door motion preserves the underlying grid instead of replacing its tiles with coarse ROCK collision');
 
       const towerInteraction = await page.evaluate(async () => {
