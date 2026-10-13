@@ -422,7 +422,7 @@
   // Boxes are reused until the owner's world matrix changes, re-measured at
   // most every OWNER_BOX_MAX_AGE_MS for animated children (doors, cubes).
   const OWNER_BOX_MAX_AGE_MS = 400;
-  const ownerBoxes = new WeakMap(); // owner -> { box, at, matrix:Float32Array(16) }
+  const ownerBoxes = new WeakMap(); // owner -> { box, at, matrix:Float64Array(16) }
   function ownerBox(owner) {
     if (!owner) return null;
     const now = performance.now(), cached = ownerBoxes.get(owner), m = owner.matrixWorld?.elements;
@@ -435,7 +435,7 @@
       owner.updateWorldMatrix?.(true, true);
       const box = new THREE.Box3().setFromObject(owner);
       const result = box.isEmpty() ? null : box.expandByScalar(.12);
-      const entry = cached || { matrix: new Float32Array(16) };
+      const entry = cached || { matrix: new Float64Array(16) }; // Float64: matrixWorld elements are doubles, so a Float32 copy would never compare equal.
       entry.box = result; entry.at = now;
       if (owner.matrixWorld) entry.matrix.set(owner.matrixWorld.elements);
       ownerBoxes.set(owner, entry);
