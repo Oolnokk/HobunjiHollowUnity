@@ -1,0 +1,10 @@
+{
+  "schema": "hobunji_ruin_pattern_surface_rules.v2",
+  "minSurfaceTiles": 0.25,
+  "maxAtlasPx": 512,
+  "tilePx": 256,
+  "defaultScale": 4,
+  "minRegionHeight": 1,
+  "minRegionWidth": 0.3,
+  "rules": {}
+}

@@ -10989,45 +10989,12 @@
       }
 
 
-      function pngAvatarGroundShadowConfig() {
-        return window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.groundShadow || {};
-      }
-
-      function makeCharacterGroundShadow(name = 'character_ground_shadow') {
-        const cfg = pngAvatarGroundShadowConfig();
-        const geo = new THREE.CircleGeometry(1, 40);
-        geo.rotateX(-Math.PI / 2);
-        const mat = new THREE.MeshBasicMaterial({
-          color: new THREE.Color(cfg.color || '#1b1712'),
-          transparent: true,
-          opacity: cfg.opacity ?? 0.28,
-          depthWrite: false,
-        });
-        const shadow = new THREE.Mesh(geo, mat);
-        shadow.name = name;
-        shadow.renderOrder = -1;
-        window.EnvironmentSurfaceMicroPlateau?.bindGroundProjection(shadow);
-        shadow.scale.set(cfg.radiusX ?? 0.34, 1, cfg.radiusZ ?? 0.22);
-        return shadow;
-      }
-
-      function characterGroundShadowSurfaceOffset() {
-        return pngAvatarGroundShadowConfig().surfaceOffsetY ?? 0.018;
-      }
-
-      // Ties a creature's shadow footprint to the same modelWidth used for
-      // its own hit cone/collision radius (see creatureHitboxHalfSizePx)
-      // instead of the player/NPC's fixed humanoid size, so e.g. a gar-wolf
-      // alpha visibly casts a bigger shadow than a dabinggi-hound. Keeps the
-      // configured player shadow's X:Z squash ratio rather than introducing
-      // a separate tunable.
-      function creatureGroundShadowRadii(def, sizeScaleX = 1) {
-        const cfg = pngAvatarGroundShadowConfig();
-        const baseRadiusX = cfg.radiusX ?? 0.34;
-        const baseRadiusZ = cfg.radiusZ ?? 0.22;
-        const radiusX = (def.modelWidth || 2) * sizeScaleX * 0.3;
-        return { radiusX, radiusZ: radiusX * (baseRadiusZ / baseRadiusX) };
-      }
+      // Character/creature ground shadows now live in js/character-ground-shadow.js
+      // (window.CharacterGroundShadow); these names stay because modules receive them as deps.
+      function pngAvatarGroundShadowConfig() { return window.CharacterGroundShadow.config(); }
+      function makeCharacterGroundShadow(name) { return window.CharacterGroundShadow.make(name); }
+      function characterGroundShadowSurfaceOffset() { return window.CharacterGroundShadow.surfaceOffset(); }
+      function creatureGroundShadowRadii(def, sizeScaleX) { return window.CharacterGroundShadow.creatureRadii(def, sizeScaleX); }
 
       // ── Schedule-driven NPCs: beeline first, shared routes as fallback ─
       const NPC_SPECIES_IDS = ['mao-ao', 'tletingan', 'kenkari', 'engh-sho', 'rakakoan'];
@@ -11912,6 +11879,7 @@
       // (the walker's only LOD gate before this) left every NPC on the far
       // side of a large area paying full gait/wander cost for no reason.
       const NPC_LOD_NEAR_TILES = 24; // Nearer wake boundary so a walker doesn't flicker in and out of the cheap tier at one exact distance.
+      const NPC_OFF_AREA_LEGS_INTERVAL_S = 0.5; // Off-area walkers' procedural legs only settle their resting pose at this cadence.
       const NPC_LOD_FAR_TILES = 28;
 
       function npcSeatTransformForTarget(target) {
@@ -12086,6 +12054,12 @@
               const planeDelta = this.animalPngRot - this.rot;
               if (this.animalAvatarRef.frontPlane) this.animalAvatarRef.frontPlane.rotation.y = planeDelta + Math.PI / 2;
               if (this.animalAvatarRef.backPlane) this.animalAvatarRef.backPlane.rotation.y = planeDelta - Math.PI / 2;
+              return;
+            }
+            if (this._offAreaForFacing) { // Set by update() for schedule walkers in another area: nobody can see them, so skip the camera-relative deadzone.
+              this.rot = rawRot;
+              root.rotation.y = this.rot;
+              if (this.legs?.group) this.legs.group.rotation.y = 0;
               return;
             }
             const stanceYaw = Number(this._heldBodyYawRad) || 0; // The portrait may also be turned by its held-weapon wrapper.
@@ -12346,7 +12320,13 @@
             const distanceTiles = sameArea ? Math.hypot(root.position.x - player.x / TILE, root.position.z - player.y / TILE) : Infinity;
             this._npcLodFar = sameArea && window.EntityDistanceLod.isFar(!!this._npcLodFar, distanceTiles, NPC_LOD_NEAR_TILES, NPC_LOD_FAR_TILES);
             const isVisibleArea = sameArea && !this._npcLodFar;
-            if (this.legs) this.legs.update(dt, this._moveSpeedTiles, !isVisibleArea, seatedPose);
+            this._offAreaForFacing = !sameArea && typeof this.area === 'string' && !!this.area; // Cutscene doubles never pass through here, so they keep the camera-relative facing.
+            // Off-area walkers can't be seen at all: settle their resting pose
+            // at ~2 Hz instead of solving it (plus the drunk layer) every frame.
+            if (this.legs) {
+              if (sameArea) { this._offAreaLegsDt = 0; this.legs.update(dt, this._moveSpeedTiles, !isVisibleArea, seatedPose); }
+              else if ((this._offAreaLegsDt = (this._offAreaLegsDt || 0) + dt) >= NPC_OFF_AREA_LEGS_INTERVAL_S) { this.legs.update(this._offAreaLegsDt, this._moveSpeedTiles, true, seatedPose); this._offAreaLegsDt = 0; }
+            }
             const seatedStationKey = seatedAtTarget ? (target.stationId || target.id || `${target.area}_${target.c}_${target.r}`) : null;
             if (seatedStationKey !== this._seatedStationKey) {
               window.__farmLog?.(`[schedule] ${rec?.id || 'npc'} ${seatedStationKey ? `sat at ${seatedStationKey}` : `stood from ${this._seatedStationKey}`}`, 'info');

@@ -1691,6 +1691,19 @@
       }),
     };
   }
+  // Cheap per-frame accessors: callers that only need these used to build the
+  // whole debugSnapshot() (every camp, hunter and party) every frame.
+  function attackOnSight(relation = relationshipState()) {
+    return !!relation && !!cfg && !peacefulRapport() && num(relation.favor, 0) <= num(cfg.reputation?.attackOnSightFavor, -5);
+  }
+  // Same zones/camps shape as debugSnapshot(), limited to id/kind/center.
+  function campCenters() {
+    const zones = {};
+    for (const [zoneId, zoneState] of state.zones) {
+      zones[zoneId] = { camps: activeCamps(zoneState).map(camp => ({ id: camp.id, kind: camp.kind, center: { col: Number(camp.center.col.toFixed(1)), row: Number(camp.center.row.toFixed(1)) } })) };
+    }
+    return { zones };
+  }
   function debugSnapshot() {
     const relation = relationshipState();
     const player = playerTilePosition();
@@ -1718,7 +1731,7 @@
       chiefZoneId: state.chiefZoneId,
       favor: relation ? num(relation.favor, 0) : null,
       rapport: num(window.NpcRapport?.get?.(cfg?.reputation?.npcId || 'porakaneki_chief'), 0),
-      attackOnSight: !!relation && !!cfg && !peacefulRapport() && num(relation.favor, 0) <= num(cfg.reputation?.attackOnSightFavor, -5),
+      attackOnSight: attackOnSight(relation),
       chunkSizeTiles: chunkSizeTiles(),
       fullSimulationRadiusTiles: fullSimulationRadiusTiles(),
       fullSimulationReleaseRadiusTiles: fullSimulationReleaseRadiusTiles(),
@@ -1753,6 +1766,8 @@
     reduceHuntingCampsForBandit,
     occupiedSites,
     hasSharedEnemyNearby,
+    attackOnSight: () => attackOnSight(),
+    campCenters,
     debugSnapshot,
     formatDebug: () => {
       const d = debugSnapshot();

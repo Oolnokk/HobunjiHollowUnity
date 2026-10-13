@@ -315,7 +315,7 @@
     group.visible = active;
     if (!active) return;
 
-    const skyRoot = activeScene?.getObjectByName?.('hobunji_dynamic_skydome');
+    const skyRoot = namedInScene(activeScene, 'hobunji_dynamic_skydome');
     if (skyRoot) skyRoot.visible = false;
     updateFogLighting(activeScene);
 
@@ -391,6 +391,26 @@
     return isMineArea(area) || isDenArea(area);
   }
 
+  // scene.getObjectByName walks the whole scene graph (and a miss walks all of
+  // it); these lookups ran every frame. Results, misses included, are reused
+  // per scene for a second, or until a found object leaves that scene.
+  const NAMED_LOOKUP_TTL_MS = 1000;
+  const namedLookups = new WeakMap(); // scene -> Map(name -> { object, at })
+  function namedInScene(scene, name) {
+    if (!scene?.getObjectByName) return null;
+    let byName = namedLookups.get(scene);
+    if (!byName) namedLookups.set(scene, byName = new Map());
+    const now = performance.now(), hit = byName.get(name);
+    if (hit && now - hit.at < NAMED_LOOKUP_TTL_MS) {
+      let attached = !hit.object;
+      for (let node = hit.object; node; node = node.parent) if (node === scene) { attached = true; break; }
+      if (attached) return hit.object;
+    }
+    const object = scene.getObjectByName(name) || null;
+    byName.set(name, { object, at: now });
+    return object;
+  }
+
   if (window.RainPlanes) {
     const priorRainInit = window.RainPlanes.init;
     const priorRainUpdate = window.RainPlanes.update;
@@ -402,9 +422,9 @@
       const result = priorRainUpdate.call(this, dt);
       const scene = skyPolicyDeps?.getActiveScene?.();
       const area = skyPolicyDeps?.getCurrentArea?.();
-      const playerLanternLight = scene?.getObjectByName?.('mine_player_torch'); // Used here to override game.js's legacy mine-floor-only visibility before the active scene renders.
+      const playerLanternLight = namedInScene(scene, 'mine_player_torch'); // Used here to override game.js's legacy mine-floor-only visibility before the active scene renders.
       if (playerLanternLight) playerLanternLight.visible = isUndergroundLanternArea(area);
-      const skyRoot = scene?.getObjectByName?.('hobunji_dynamic_skydome');
+      const skyRoot = namedInScene(scene, 'hobunji_dynamic_skydome');
       if (skyRoot) {
         const outside = skyPolicyDeps?.isOutdoorArea?.() !== false;
         skyRoot.visible = outside && !isNoSkyArea(area);

@@ -44,11 +44,11 @@
     // Porakaneki temporary locales can clear ordinary procedural shrub/rock clutter and relax only their own placement margins when dense wilderness would otherwise prevent any camp from existing.
     ['PorakanekiCampPlacementPolicy', 'porakaneki-camp-placement-policy.js?v=20260924chunkecology2'],
     // Porakaneki camp network: distance/hysteresis LOD, shared den-to-den hunting parties, planner-owned destinations, shared hostile-loop locomotion/rendering, and seasonal chief migration.
-    ['PorakanekiCamps', 'porakaneki-camps-runtime.js?v=20261010hb1a2f98'],
+    ['PorakanekiCamps', 'porakaneki-camps-runtime.js?v=20261012h59a1659'],
     // Keeps neutral Porakaneki off companion target lists, classifies self-defense vs initiated kills, applies Omgurku rivalry favor, and composes the faction rename into NPC database loads.
-    ['PorakanekiFactionRules', 'porakaneki-faction-rules.js?v=20261002h478c6d7'],
+    ['PorakanekiFactionRules', 'porakaneki-faction-rules.js?v=20261012h76657f9'],
     // Map-only locale proxies: chief camp is always known; each little camp gets its own independent discovery identity through the existing wilderness-map fog/discovery system.
-    ['PorakanekiMapMarkers', 'porakaneki-map-markers.js?v=20260912a'],
+    ['PorakanekiMapMarkers', 'porakaneki-map-markers.js?v=20261012h601b36f'],
     // Draws one all-distance serpentine spectral locator at the army chunk; once soldiers are visible it follows their actual formation centroid.
     ['HarlyaoNightMarchBeacon', 'harlyao-night-march-beacon.js?v=20260911a'],
     // Makes the Ghoul mine-floor track the Music scheduler's exclusive looping BGM owner; chunk-distance checks are cached/throttled while gain interpolation remains smooth.

@@ -13,6 +13,12 @@
     <label>Base dye <input id="fpBase" type="color" value="#b7a185"></label>
     <label>Pattern dye <input id="fpDye" type="color" value="#315b67"></label>
     <label>Engraving core opacity <input id="fpCoreOpacity" type="number" min="0" max="1" step="0.05" value="0.85"></label>
+    <fieldset id="fpPieceScaleBox"><legend>Pattern scale override</legend>
+      <p>Overrides the tile size of every pattern on the selected piece, including random ruin engravings. Leave blank to use each slot's own size. The Dev Companion's ruin surface list can override it again.</p>
+      <label>Piece pattern scale <input id="fpPieceScale" type="number" min="0.05" max="20" step="0.05" placeholder="slot size"></label>
+      <button id="fpPieceScaleApply" type="button">Set on selected piece</button>
+      <button id="fpPieceScaleAll" type="button">Set on all pieces</button>
+    </fieldset>
     <button id="fpAuthor" type="button">Choose / draw pattern</button>
     <label>Export name <input id="fpExportName" value="Furniture pattern"></label>
     <label><input id="fpCollectible" type="checkbox" checked>Collectible ruin pattern</label>
@@ -70,8 +76,17 @@
     rebuildFurnitureMeshes(); queueUndoHistory('edit furniture pattern');
     refresh();
   }
+  function setPieceScale(parts) {
+    const value = Number(input('fpPieceScale').value); // Blank/zero clears the override.
+    if (!parts.length) { log('Select a furniture piece first.', 'warn'); return; }
+    for (const part of parts) { if (value > 0) part.patternScale = Math.max(.05, Math.min(20, value)); else delete part.patternScale; }
+    rebuildFurnitureMeshes(); queueUndoHistory('edit piece pattern scale');
+    refresh();
+  }
   function refresh() {
     const record = currentRecord(); // No animation polling or competing selection model is needed.
+    const scalePart = target().part; // Piece-level override is shown for the selected piece even when it has no pattern slot yet.
+    if (document.activeElement !== input('fpPieceScale')) input('fpPieceScale').value = Number(scalePart?.patternScale) > 0 ? scalePart.patternScale : '';
     if (record) {
       input('fpSlot').value = record.slot;
       input('fpMode').value = record.mode;
@@ -180,6 +195,8 @@
   input('fpAuthor').onclick=author;
   input('fpApply').onclick=()=>commit(settings());
   input('fpClear').onclick=()=>{ const {part}=target(), record=currentRecord(); if(part&&record) { part.patternSurfaces=part.patternSurfaces.filter(entry=>entry!==record); rebuildFurnitureMeshes(); queueUndoHistory('clear furniture pattern'); } };
+  input('fpPieceScaleApply').onclick=()=>setPieceScale([target().part].filter(Boolean));
+  input('fpPieceScaleAll').onclick=()=>setPieceScale(state.parts);
   input('fpCarpet').onclick=addCarpet; input('fpBanner').onclick=loadBannerPreset;
   window.FurniturePatternAuthor = { refresh, loadBannerPreset };
   rebuildFurnitureMeshes();

@@ -719,6 +719,13 @@
       object.castShadow=false; object.receiveShadow=false; // There are deliberately no real light/shadow semantics in this test scene.
     });
 
+    root.traverse(object=>{ // V50's prepareRuntimeWallPlanes makes walls double-sided so both faces render; the stone/unlit swap above must not undo that.
+      if(!object?.isMesh||!object.userData?.ruinInteriorWall)return;
+      for(const material of Array.isArray(object.material)?object.material:[object.material]){
+        if(material&&material.side!==THREE.DoubleSide){material.side=THREE.DoubleSide;material.needsUpdate=true;}
+      }
+    });
+
     root.traverse(node=>{ // V50 glyph/obelisk decal lists referenced the pre-conversion materials, so recolouring them changed nothing visible (decals rendered black).
       const list=node.userData?.decalMaterials;
       if(Array.isArray(list))node.userData.decalMaterials=list.map(material=>replaced.get(material)||material);
@@ -845,6 +852,7 @@
         }
 
         await window.RepoPatternLibrary?.load?.(); // Author-exported collectible definitions must be ready before deterministic ruin selection.
+        await window.RuinPatternSurfaceRules?.ready; await window.RuinPatternSurfaceRules?.preloadPieces?.(ruin.localeRoot); // Per-piece enable/scale rules (Dev Companion + Furniture Author patternScale).
         window.FurniturePatternSurfaces?.decorateRuin?.(ruin.localeRoot, candidateSeed);
         lastGenerationAudit.acceptedSeed=candidateSeed;
         await enterRuin(); updateBadge();
@@ -987,8 +995,19 @@
     }
   }
 
+  // Plates and the linked signal roots mechanisms read are fixed at generation;
+  // collecting them once replaces a whole-ruin traversal every frame.
+  function mechanismSignalRoots(){
+    if(ruin.pressurePlateRoots)return;
+    const plates=[],signals=new Set();
+    ruin.localeRoot.traverse(o=>{const u=o.userData;if(!u)return;if(u.previewMotion?.type==='pressurePlate')plates.push(o);if(u.linkedCubePuzzleRoot)signals.add(u.linkedCubePuzzleRoot);if(u.linkedPressurePlateRoot)signals.add(u.linkedPressurePlateRoot);});
+    for(const plate of plates)signals.add(plate);
+    ruin.pressurePlateRoots=plates;ruin.mechanismSignalRoots=[...signals];
+  }
+  const MECHANISM_REAPPLY_MS=1000; // Safety net: unchanged mechanisms are still re-posed once a second.
   function updateMechanisms(dt){
-    ruin.api.syncPressurePlates(ruin.localeRoot);
+    mechanismSignalRoots();
+    for(const plate of ruin.pressurePlateRoots)ruin.api.syncPressurePlates(plate);
     ruin.api.tickRuntime(dt);
     for(const m of ruin.mechanisms.values()){
       const linkedPlate=m.root.userData?.linkedPressurePlateRoot;
@@ -1012,11 +1031,16 @@
         if(linkedSignal)linkedSignal.userData.solveProgress=m.progress;
         else if(linkedPlate)linkedPlate.userData.weightProgress=m.progress;
       }
-      ruin.api.applyProgress(m.root,m.progress);
     }
+    // applyProgress re-traverses each mechanism; it is a pure function of its
+    // progress and the plate/glyph signals, so it only runs when those change.
+    let signals='';for(const root of ruin.mechanismSignalRoots)signals+=(root.userData.weightProgress??'')+','+(root.userData.solveProgress??'')+';';
+    const now=performance.now();
+    const due=(owner,progress)=>{const st=owner.userData;if(st.__appliedProgress===progress&&st.__appliedSignals===signals&&now-st.__appliedAt<MECHANISM_REAPPLY_MS)return false;st.__appliedProgress=progress;st.__appliedSignals=signals;st.__appliedAt=now;return true;};
+    for(const m of ruin.mechanisms.values())if(due(m.root,m.progress))ruin.api.applyProgress(m.root,m.progress);
     for(const a of ruin.activators){
       const m=ruin.mechanisms.get(a.userData?.linkedMechanismId);
-      if(m&&!['pressurePlate','linkedCubePillars'].includes(a.userData?.activatorType))ruin.api.applyProgress(a,m.progress);
+      if(m&&!['pressurePlate','linkedCubePillars'].includes(a.userData?.activatorType)&&due(a,m.progress))ruin.api.applyProgress(a,m.progress);
     }
     if(ruin.occupancy?.refresh())updateBadge();
   }

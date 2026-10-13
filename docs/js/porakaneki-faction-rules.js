@@ -390,7 +390,8 @@
       const favorBefore = favorOf(PORAKANEKI_CHIEF_ID);
       const result = updateCampBanners(dt, ...args);
       const entities = porakanekiEntities();
-      const attackOnSight = !!window.PorakanekiCamps?.debugSnapshot?.().attackOnSight;
+      const camps = window.PorakanekiCamps; // Per-frame tick: use the cheap accessor, not the full debug snapshot.
+      const attackOnSight = !!(camps?.attackOnSight ? camps.attackOnSight() : camps?.debugSnapshot?.().attackOnSight);
       classifyCampOrigins(entities, attackOnSight);
       processDeaths(entities, favorBefore);
       refreshEntityState(entities);
