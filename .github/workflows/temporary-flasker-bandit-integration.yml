@@ -21,7 +21,9 @@ jobs:
         with:
           node-version: 22
       - name: Apply Flasker integration
-        run: python3 scripts/apply-flasker-bandit-integration.py
+        run: |
+          python3 scripts/fix-flasker-helper-regex.py
+          python3 scripts/apply-flasker-bandit-integration.py
       - name: Syntax and focused tests
         run: |
           node --check docs/js/held-action-animations.js
@@ -45,7 +47,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm .github/workflows/temporary-flasker-bandit-integration.yml scripts/apply-flasker-bandit-integration.py
+          git rm .github/workflows/temporary-flasker-bandit-integration.yml scripts/apply-flasker-bandit-integration.py scripts/fix-flasker-helper-regex.py
           git add -A
           git commit -m "Add Flasker bandits and throwing flask attack grip"
           git push origin HEAD:benjam/afflict-flask-dual-colors
