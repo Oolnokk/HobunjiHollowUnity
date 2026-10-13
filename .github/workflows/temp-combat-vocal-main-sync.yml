@@ -1,0 +1,76 @@
+name: Temp Combat Vocal Main Sync
+
+on:
+  push:
+    branches:
+      - feat/combat-vocalizations
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/combat-vocalizations
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Fetch main
+        run: git fetch origin main
+      - name: Merge main and resolve expected cache conflicts
+        shell: bash
+        run: |
+          set +e
+          git merge --no-commit --no-ff origin/main
+          merge_status=$?
+          set -e
+          if [ "$merge_status" -ne 0 ]; then
+            unresolved="$(git diff --name-only --diff-filter=U)"
+            for file in $unresolved; do
+              case "$file" in
+                docs/index.html|docs/js/combat/combat-config-loader.js) ;;
+                *) echo "Unexpected merge conflict: $file"; exit 1 ;;
+              esac
+            done
+            git checkout --ours -- docs/index.html docs/js/combat/combat-config-loader.js
+            git add docs/index.html docs/js/combat/combat-config-loader.js
+          fi
+      - name: Apply combined loader and source polish
+        shell: bash
+        run: |
+          echo 'ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCgpkZWYgcmVwbGFjZV9vbmNlKHRleHQsIG9sZCwgbmV3LCBsYWJlbCk6CiAgICBpZiBvbGQgbm90IGluIHRleHQ6CiAgICAgICAgcmFpc2UgU3lzdGVtRXhpdChmIntsYWJlbH06IGV4cGVjdGVkIHRleHQgbm90IGZvdW5kIikKICAgIHJldHVybiB0ZXh0LnJlcGxhY2Uob2xkLCBuZXcsIDEpCgpydW50aW1lX3BhdGggPSBQYXRoKCJkb2NzL2pzL2NvbWJhdC9jb21iYXQtdm9jYWxpemF0aW9ucy5qcyIpCnJ1bnRpbWUgPSBydW50aW1lX3BhdGgucmVhZF90ZXh0KCkKcnVudGltZSA9IHJlcGxhY2Vfb25jZSgKICAgIHJ1bnRpbWUsCiAgICAiICAgIGNoYXJnZVBsYXliYWNrOiB7XG4gICAgZWFybHlSZWxlYXNlTm9ybWFsU3BlZWRNdWw6IDIsXG4gICAgZnVsbENoYXJnZUR1cmF0aW9uQnlBYmlsaXR5OiB7IGNoYXJnZWRCcmVha2VyOiA0IH0sXG4gIH0sIiwKICAgICIgICAgY2hhcmdlUGxheWJhY2s6IHtcbiAgICAgIGVhcmx5UmVsZWFzZU5vcm1hbFNwZWVkTXVsOiAyLFxuICAgICAgZnVsbENoYXJnZUR1cmF0aW9uQnlBYmlsaXR5OiB7IGNoYXJnZWRCcmVha2VyOiA0IH0sXG4gICAgfSwiLAogICAgImNoYXJnZVBsYXliYWNrIGluZGVudGF0aW9uIiwKKQoKc3RhcnQgPSBydW50aW1lLmluZGV4KCIgIGZ1bmN0aW9uIHN0YXJ0Q2hhcmdlU291cmNlKCIpCmVuZCA9IHJ1bnRpbWUuaW5kZXgoIiAgZnVuY3Rpb24gcGxheVN0cmlrZUhydW50KCIsIHN0YXJ0KQpibG9jayA9IHJ1bnRpbWVbc3RhcnQ6ZW5kXQpsaW5lcyA9IGJsb2NrLnNwbGl0bGluZXMoKQppZiBub3QgbGluZXMgb3Igbm90IGxpbmVzWzBdLnN0YXJ0c3dpdGgoIiAgZnVuY3Rpb24gc3RhcnRDaGFyZ2VTb3VyY2UoIik6CiAgICByYWlzZSBTeXN0ZW1FeGl0KCJ1bmV4cGVjdGVkIGNoYXJnZSBibG9jayBpbmRlbnRhdGlvbiIpCmxpbmVzWzBdID0gbGluZXNbMF1bMjpdCmJsb2NrID0gIlxuIi5qb2luKCgiICAiICsgbGluZSBpZiBsaW5lIGVsc2UgbGluZSkgZm9yIGxpbmUgaW4gbGluZXMpICsgIlxuXG4iCnJ1bnRpbWUgPSBydW50aW1lWzpzdGFydF0gKyBibG9jayArIHJ1bnRpbWVbZW5kOl0KCnJ1bnRpbWUgPSByZXBsYWNlX29uY2UoCiAgICBydW50aW1lLAogICAgIiAgZnVuY3Rpb24gaXNMaXZlU3RyZXRjaEFiaWxpdHkoaWQpIHtcbiAgY29uc3QgaWRzID0gY29uZmlnLmdydW50cz8ubGl2ZVN0cmV0Y2hBYmlsaXRpZXMgfHwgY29uZmlnLmdydW50cz8ubGl2ZVN1c3RhaW5BYmlsaXRpZXMgfHwgW107XG4gIHJldHVybiBpZHMuaW5jbHVkZXMoaWQpO1xufSIsCiAgICAiICBmdW5jdGlvbiBpc0xpdmVTdHJldGNoQWJpbGl0eShpZCkge1xuICAgIGNvbnN0IGlkcyA9IGNvbmZpZy5ncnVudHM/LmxpdmVTdHJldGNoQWJpbGl0aWVzIHx8IGNvbmZpZy5ncnVudHM/LmxpdmVTdXN0YWluQWJpbGl0aWVzIHx8IFtdO1xuICAgIHJldHVybiBpZHMuaW5jbHVkZXMoaWQpO1xuICB9IiwKICAgICJsaXZlIHN0cmV0Y2ggaGVscGVyIGluZGVudGF0aW9uIiwKKQpydW50aW1lID0gcmVwbGFjZV9vbmNlKAogICAgcnVudGltZSwKICAgICJyZWxlYXNlQ2hhcmdlKGNoYXJnZSk7IC8vIEhvbGQtcmVsZWFzZTogc3RvcCBzdXN0YWluaW5nIHRoZSBpbnN0YW50IGdhbWVwbGF5IGxlYXZlcyB0aGUgaGVsZCB3aW5kdXAuIiwKICAgICJyZWxlYXNlQ2hhcmdlKGNoYXJnZSk7IC8vIEhvbGQtcmVsZWFzZToga2VlcCB0aGUgc2FtZSBwbGF5aGVhZCBhbmQgc3dpdGNoIHRoZSByZW1haW5kZXIgdG8gY2F0Y2gtdXAgc3BlZWQuIiwKICAgICJob2xkLXJlbGVhc2UgY29tbWVudCIsCikKcnVudGltZV9wYXRoLndyaXRlX3RleHQocnVudGltZSkKCmxvYWRlcl9wYXRoID0gUGF0aCgiZG9jcy9qcy9jb21iYXQvY29tYmF0LWNvbmZpZy1sb2FkZXIuanMiKQpsb2FkZXIgPSBsb2FkZXJfcGF0aC5yZWFkX3RleHQoKQpsb2FkZXIgPSByZXBsYWNlX29uY2UoCiAgICBsb2FkZXIsCiAgICAiWydqcy9jb21iYXQvY29tYmF0LXZvY2FsaXphdGlvbnMuanM/dj0yMDI2MTAxM3ZvY2FsMScsICgpID0+IE51bWJlcih3aW5kb3cuQ29tYmF0Vm9jYWxpemF0aW9ucz8udmVyc2lvbikgPj0gMV0iLAogICAgIlsnanMvY29tYmF0L2NvbWJhdC12b2NhbGl6YXRpb25zLmpzP3Y9MjAyNjEwMTN2b2NhbDInLCAoKSA9PiBOdW1iZXIod2luZG93LkNvbWJhdFZvY2FsaXphdGlvbnM/LnZlcnNpb24pID49IDJdIiwKICAgICJjb21iYXQgdm9jYWwgcnVudGltZSBjYWNoZSB0b2tlbiIsCikKbG9hZGVyID0gcmVwbGFjZV9vbmNlKAogICAgbG9hZGVyLAogICAgIlsnanMvbnBjLWdpZnRpbmcuanM/dj0yMDI2MTAwOWgxZmIwNjk4JywgKCkgPT4gISF3aW5kb3cuTnBjR2lmdGluZ10iLAogICAgIlsnanMvbnBjLWdpZnRpbmcuanM/dj0yMDI2MTAxM2g2ZmYxZmIyJywgKCkgPT4gISF3aW5kb3cuTnBjR2lmdGluZ10iLAogICAgIm1haW4gbnBjIGdpZnRpbmcgY2FjaGUgdG9rZW4iLAopCmxvYWRlcl9wYXRoLndyaXRlX3RleHQobG9hZGVyKQoKZWRpdG9yX3BhdGggPSBQYXRoKCJkb2NzL3Rvb2xzL2NvbWJhdC12b2NhbGl6YXRpb24tZWRpdG9yL2luZGV4Lmh0bWwiKQplZGl0b3IgPSBlZGl0b3JfcGF0aC5yZWFkX3RleHQoKQpvbGQgPSAiIiIgICAgPHNlY3Rpb24gY2xhc3M9XCJjYXJkXCI+CiAgICA8aDI+Q2hhcmdlIEdydW50IFN0cmV0Y2ggUGxheWJhY2s8L2gyPgogICAgPGRpdiBjbGFzcz1cIm11dGVkXCI+VGhlIGVudGlyZSBjaGFyZ2UgZ3J1bnQgcGxheXMgb25jZSBhbmQgaXMgc3RyZXRjaGVkIGFjcm9zcyB0aGUgYXR0YWNrJ3MgMOKGkjEwMCUgY2hhcmdlIGR1cmF0aW9uLiBSZWxlYXNpbmcgYSBsaXZlIGhvbGQgZWFybHkga2VlcHMgdGhlIHNhbWUgcGxheWhlYWQgYW5kIHBsYXlzIHRoZSByZW1haW5kZXIgYXQgYSBtdWx0aXBsZSBvZiA8Yj5ub3JtYWw8L2I+IHZvaWNlIHNwZWVk4oCUbm90IGEgbXVsdGlwbGUgb2YgdGhlIHN0cmV0Y2hlZCBzcGVlZC48L2Rpdj4KICAgIDxkaXYgaWQ9XCJ3YXZlV3JhcFwiPjxjYW52YXMgaWQ9XCJ3YXZlXCI+PC9jYW52YXM+PC9kaXY+CiAgICA8ZGl2IGlkPVwic2FtcGxlclN0YXR1c1wiPkxvYWRpbmcgY2hhcmdlIGdydW504oCmPC9kaXY+CiAgICA8ZGl2IGNsYXNzPVwicm93XCI+PGxhYmVsPkVhcmx5LXJlbGVhc2UgcmVtYWluZGVyIMOXIG5vcm1hbCBzcGVlZDwvbGFiZWw+PGlucHV0IGlkPVwiY2hhcmdlQ2F0Y2h1cFwiIHR5cGU9XCJudW1iZXJcIiBtaW49XCIuMVwiIG1heD1cIjhcIiBzdGVwPVwiLjFcIj48L2Rpdj4KICAgIDxoMz5DaGFyZ2VkIEJyZWFrZXIgcHJldmlldzwvaDM+CiAgICA8ZGl2IGNsYXNzPVwiYXVkaXRpb25cIj4KICAgICAgPGJ1dHRvbiBpZD1cImZ1bGxQcmV2aWV3XCI+RnVsbCAw4oaSMTAwJTwvYnV0dG9uPgogICAgICA8YnV0dG9uIGRhdGEtcmVsZWFzZT1cIi4yNVwiPlJlbGVhc2UgYXQgMjUlPC9idXR0b24+CiAgICAgIDxidXR0b24gZGF0YS1yZWxlYXNlPVwiLjVcIj5SZWxlYXNlIGF0IDUwJTwvYnV0dG9uPgogICAgICA8YnV0dG9uIGRhdGEtcmVsZWFzZT1cIi43NVwiPlJlbGVhc2UgYXQgNzUlPC9idXR0b24+CiAgICAgIDxidXR0b24gaWQ9XCJzdG9wUHJldmlld1wiPlN0b3A8L2J1dHRvbj4KICAgIDwvZGl2PgogIDwvc2VjdGlvbj4iIiIKbmV3ID0gIiIiICAgIDxzZWN0aW9uIGNsYXNzPVwiY2FyZFwiPgogICAgICA8aDI+Q2hhcmdlIEdydW50IFN0cmV0Y2ggUGxheWJhY2s8L2gyPgogICAgICA8ZGl2IGNsYXNzPVwibXV0ZWRcIj5UaGUgZW50aXJlIGNoYXJnZSBncnVudCBwbGF5cyBvbmNlIGFuZCBpcyBzdHJldGNoZWQgYWNyb3NzIHRoZSBhdHRhY2sncyAw4oaSMTAwJSBjaGFyZ2UgZHVyYXRpb24uIFJlbGVhc2luZyBhIGxpdmUgaG9sZCBlYXJseSBrZWVwcyB0aGUgc2FtZSBwbGF5aGVhZCBhbmQgcGxheXMgdGhlIHJlbWFpbmRlciBhdCBhIG11bHRpcGxlIG9mIDxiPm5vcm1hbDwvYj4gdm9pY2Ugc3BlZWTigJRub3QgYSBtdWx0aXBsZSBvZiB0aGUgc3RyZXRjaGVkIHNwZWVkLjwvZGl2PgogICAgICA8ZGl2IGlkPVwid2F2ZVdyYXBcIj48Y2FudmFzIGlkPVwid2F2ZVwiPjwvY2FudmFzPjwvZGl2PgogICAgICA8ZGl2IGlkPVwic2FtcGxlclN0YXR1c1wiPkxvYWRpbmcgY2hhcmdlIGdydW504oCmPC9kaXY+CiAgICAgIDxkaXYgY2xhc3M9XCJyb3dcIj48bGFiZWw+RWFybHktcmVsZWFzZSByZW1haW5kZXIgw5cgbm9ybWFsIHNwZWVkPC9sYWJlbD48aW5wdXQgaWQ9XCJjaGFyZ2VDYXRjaHVwXCIgdHlwZT1cIm51bWJlclwiIG1pbj1cIi4xXCIgbWF4PVwiOFwiIHN0ZXA9XCIuMVwiPjwvZGl2PgogICAgICA8aDM+Q2hhcmdlZCBCcmVha2VyIHByZXZpZXc8L2gzPgogICAgICA8ZGl2IGNsYXNzPVwiYXVkaXRpb25cIj4KICAgICAgICA8YnV0dG9uIGlkPVwiZnVsbFByZXZpZXdcIj5GdWxsIDDigJkxMDAlPC9idXR0b24+CiAgICAgICAgPGJ1dHRvbiBkYXRhLXJlbGVhc2U9XCIuMjVcIj5SZWxlYXNlIGF0IDI1JTwvYnV0dG9uPgogICAgICAgIDxidXR0b24gZGF0YS1yZWxlYXNlPVwiLjVcIj5SZWxlYXNlIGF0IDUwJTwvYnV0dG9uPgogICAgICAgIDxidXR0b24gZGF0YS1yZWxlYXNlPVwiLjc1XCI+UmVsZWFzZSBhdCA3NSU8L2J1dHRvbj4KICAgICAgICA8YnV0dG9uIGlkPVwic3RvcFByZXZpZXdcIj5TdG9wPC9idXR0b24+CiAgICAgIDwvZGl2PgogICAgPC9zZWN0aW9uPiIiIgplZGl0b3IgPSByZXBsYWNlX29uY2UoZWRpdG9yLCBvbGQsIG5ldywgImNoYXJnZSBlZGl0b3IgbWFya3VwIikKZWRpdG9yID0gcmVwbGFjZV9vbmNlKAogICAgZWRpdG9yLAogICAgIkFwcGxpZWQgdG8gYnJlYXRoLCBwYWluLCBjaGFyZ2UsIGF0dGFjaywgYW5kIHJlbGVhc2Ugdm9jYWxzLiBUZW1wbyBhbmQgcGl0Y2ggY29tYmluZSBpbnRvIHBsYXliYWNrIHJhdGU7IHRoaXMgaW50ZW50aW9uYWxseSBiZWhhdmVzIGxpa2UgYSBzYW1wbGVyLCB3aXRoIG5vIGZvcm1hbnQgY29ycmVjdGlvbi4iLAogICAgIkFwcGxpZWQgdG8gYnJlYXRoLCBwYWluLCBjaGFyZ2UsIGF0dGFjaywgYW5kIHJlbGVhc2Ugdm9jYWxzLiBDaGFyZ2Ugc3RyZXRjaGluZyBzdGFydHMgZnJvbSB0aGlzIHNlbGVjdGVkIG5vcm1hbCB2b2ljZSByYXRlOyBhbiBlYXJseSByZWxlYXNlIHN3aXRjaGVzIHRoZSByZW1haW5kZXIgdG8gdGhlIGNvbmZpZ3VyZWQgbXVsdGlwbGUgb2YgdGhhdCBub3JtYWwgcmF0ZSwgbm90IHRoZSBzdHJldGNoZWQgcmF0ZS4iLAogICAgInByb2ZpbGUgZXhwbGFuYXRpb24iLAopCmVkaXRvcl9wYXRoLndyaXRlX3RleHQoZWRpdG9yKQo=' | base64 -d > /tmp/combat-vocal-sync.py
+          python3 /tmp/combat-vocal-sync.py
+      - name: Syntax checks
+        run: |
+          node --check docs/js/combat/combat-vocalizations.js
+          node --check docs/js/combat/combat-config-loader.js
+          node --check docs/js/tool-hub-combat-vocalization-tab.js
+          python3 - <<'PY'
+          from pathlib import Path
+          page = Path('docs/tools/combat-vocalization-editor/index.html').read_text()
+          start = page.rfind('<script>') + len('<script>')
+          end = page.find('</script>', start)
+          Path('/tmp/combat-vocal-editor.js').write_text(page[start:end])
+          PY
+          node --check /tmp/combat-vocal-editor.js
+      - name: Refresh cache busts
+        run: node scripts/check-cache-busts.js --fix
+      - name: Remove temporary workflow
+        run: git rm .github/workflows/temp-combat-vocal-main-sync.yml
+      - name: Validate cache busts
+        run: node scripts/check-cache-busts.js origin/main
+      - name: Run focused test
+        run: node scripts/test-combat-vocalizations.js
+      - name: Run full suite
+        run: node scripts/run-tests.js
+      - name: Commit merge and validated changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+Oolnokk@users.noreply.github.com"
+          git add -A
+          git commit -m "Sync combat vocalizations with main"
+          git push origin HEAD:feat/combat-vocalizations
