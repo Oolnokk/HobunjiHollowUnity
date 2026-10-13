@@ -111,7 +111,7 @@
       texture.repeat.set(1, 1); texture.offset.set(0, 0);
       if (texture.center) texture.center.set(0, 0);
       texture.rotation = 0; texture.matrixAutoUpdate = true;
-      texture.userData = Object.assign({}, texture.userData, { chunkJigsawShared: true });
+      texture.userData = Object.assign({}, source.userData, { chunkJigsawShared: true }); // r128 Texture.clone drops custom metadata, including authored furniture texture identity.
       texture.needsUpdate = true;
       entry = { texture, refs: 0 };
       variants.set(wallLike, entry);
@@ -139,6 +139,7 @@
       out.addEventListener('dispose', () => { if (!released) { released = true; lease.release(); } });
     } else if (mat.map) {
       const tex = mat.map.clone();
+      tex.userData = Object.assign({}, mat.map.userData);
       tex.wrapS = wallLike ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
       tex.wrapT = THREE.ClampToEdgeWrapping;
       tex.repeat.set(1, 1);

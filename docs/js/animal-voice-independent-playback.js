@@ -16,6 +16,9 @@
   const WSOLA_CORRELATION_STEP = 2;
   const OUTPUT_EDGE_FADE_S = 0.006;
   const OUTPUT_TAIL_PAD_S = 0.018;
+  const SILENCE_TRIM_ABSOLUTE_FLOOR = 0.0005; // Keeps codec noise/dead air out of vocal timing without shaving quiet breath consonants.
+  const SILENCE_TRIM_RELATIVE_FLOOR = 0.002; // -54 dB relative to each decoded clip peak; intentionally conservative for breath tails.
+  const SILENCE_TRIM_PAD_MS = 4; // Retains a tiny acoustic margin around the first/last real waveform sample.
   const MAX_RENDER_CACHE = 32;
   const ANIMAL_EXTRA_WET = 0.026;
   const UTTERANCE_BASE = 'assets/audio/sfx/utterances/';
@@ -65,6 +68,7 @@
 
   const decodedByUrl = new Map();
   const renderedByKey = new Map();
+  const silenceTrimCache = new WeakMap(); // Decoded AudioBuffer -> WeakMap(AudioContext -> Map(settings -> trimmed result)); repeated breathing never rescans the same clip.
   const previewHandles = new Set();
   let sharedContext = null;
   let adapterInstalled = false;
@@ -287,11 +291,77 @@
     return outputs;
   }
 
-  function applyOutputEdgeEnvelope(channels, sampleRate) {
+  function trimDecodedSilence(buffer, context, opts = {}) {
+    if (!buffer || !context?.createBuffer || !(buffer.numberOfChannels > 0) || !(buffer.length > 0)) {
+      return { buffer, sourceDurationS: Number(buffer?.duration) || 0, trimmedDurationS: Number(buffer?.duration) || 0, trimStartS: 0, trimEndS: 0, trimmed: false };
+    }
+    const absoluteFloor = Math.max(0, finite(opts.absoluteFloor, SILENCE_TRIM_ABSOLUTE_FLOOR));
+    const relativeFloor = Math.max(0, finite(opts.relativeFloor, SILENCE_TRIM_RELATIVE_FLOOR));
+    const padMs = clamp(finite(opts.padMs, SILENCE_TRIM_PAD_MS), 0, 40);
+    const signature = `${absoluteFloor.toFixed(7)}|${relativeFloor.toFixed(7)}|${padMs.toFixed(3)}`;
+    let byContext = silenceTrimCache.get(buffer);
+    if (!byContext) { byContext = new WeakMap(); silenceTrimCache.set(buffer, byContext); }
+    let bySettings = byContext.get(context);
+    if (!bySettings) { bySettings = new Map(); byContext.set(context, bySettings); }
+    if (bySettings.has(signature)) return bySettings.get(signature);
+
+    const sourceLength = buffer.length;
+    const sampleRate = Math.max(1, Number(buffer.sampleRate) || 44100);
+    const channels = Array.from({ length: buffer.numberOfChannels }, (_, channelIndex) => buffer.getChannelData(channelIndex));
+    let peak = 0;
+    for (const channel of channels) for (let i = 0; i < sourceLength; i++) peak = Math.max(peak, Math.abs(channel[i] || 0));
+    const threshold = Math.max(absoluteFloor, peak * relativeFloor);
+    let first = sourceLength;
+    let last = -1;
+    for (let i = 0; i < sourceLength; i++) {
+      let audible = false;
+      for (const channel of channels) {
+        if (Math.abs(channel[i] || 0) >= threshold) { audible = true; break; }
+      }
+      if (!audible) continue;
+      if (first === sourceLength) first = i;
+      last = i;
+    }
+    if (last < first) {
+      const silent = { buffer, sourceDurationS: buffer.duration, trimmedDurationS: buffer.duration, trimStartS: 0, trimEndS: 0, threshold, trimmed: false };
+      bySettings.set(signature, silent);
+      return silent;
+    }
+    const padSamples = Math.max(0, Math.round(sampleRate * padMs / 1000));
+    first = Math.max(0, first - padSamples);
+    last = Math.min(sourceLength - 1, last + padSamples);
+    if (first === 0 && last === sourceLength - 1) {
+      const unchanged = { buffer, sourceDurationS: buffer.duration, trimmedDurationS: buffer.duration, trimStartS: 0, trimEndS: 0, threshold, trimmed: false };
+      bySettings.set(signature, unchanged);
+      return unchanged;
+    }
+    const length = Math.max(1, last - first + 1);
+    const trimmedBuffer = context.createBuffer(buffer.numberOfChannels, length, sampleRate);
+    for (let channelIndex = 0; channelIndex < channels.length; channelIndex++) {
+      trimmedBuffer.copyToChannel(channels[channelIndex].subarray(first, last + 1), channelIndex);
+    }
+    const result = {
+      buffer: trimmedBuffer,
+      sourceDurationS: buffer.duration,
+      trimmedDurationS: trimmedBuffer.duration,
+      trimStartS: first / sampleRate,
+      trimEndS: Math.max(0, sourceLength - 1 - last) / sampleRate,
+      threshold,
+      trimmed: true,
+    };
+    bySettings.set(signature, result);
+    return result;
+  }
+
+  function applyOutputEdgeEnvelope(channels, sampleRate, opts = {}) {
     const length = channels[0]?.length || 0;
     if (!length) return channels;
-    const fadeSamples = Math.min(Math.max(1, Math.round(sampleRate * OUTPUT_EDGE_FADE_S)), Math.max(1, Math.floor(length / 4)));
-    const padSamples = Math.max(1, Math.round(sampleRate * OUTPUT_TAIL_PAD_S));
+    const edgeFadeS = clamp(finite(opts.edgeFadeS, OUTPUT_EDGE_FADE_S), 0, 0.05);
+    const tailPadS = clamp(finite(opts.tailPadS, OUTPUT_TAIL_PAD_S), 0, 0.1);
+    const fadeSamples = edgeFadeS > 0
+      ? Math.min(Math.max(1, Math.round(sampleRate * edgeFadeS)), Math.max(1, Math.floor(length / 4)))
+      : 0;
+    const padSamples = Math.max(0, Math.round(sampleRate * tailPadS));
     return channels.map(channel => {
       const output = new Float32Array(length + padSamples);
       output.set(channel);
@@ -304,12 +374,12 @@
     });
   }
 
-  function processConstantAxes(buffer, tempo, pitchSemitones, maxTempo = MAX_TEMPO, maxPitchSemitones = MAX_SHIFT_SEMITONES) {
+  function processConstantAxes(buffer, tempo, pitchSemitones, maxTempo = MAX_TEMPO, maxPitchSemitones = MAX_SHIFT_SEMITONES, renderOpts = {}) {
     const channels = Array.from({ length: buffer.numberOfChannels }, (_, index) => buffer.getChannelData(index).slice());
     const pitchRatio = Math.pow(2, clampPitchFor(pitchSemitones, maxPitchSemitones) / 12); // Explicit pitch remains independent from tempo; only this final resample transposes it.
     const safeTempo = clampTempoFor(tempo, maxTempo);
     const stretched = wsolaStretch(channels, pitchRatio / safeTempo, buffer.sampleRate); // WSOLA changes wall-clock speed while compensating for the later pitch resample.
-    return applyOutputEdgeEnvelope(stretched, buffer.sampleRate);
+    return applyOutputEdgeEnvelope(stretched, buffer.sampleRate, renderOpts);
   }
 
   function renderCacheKey(url, tempo, pitchSemitones, maxTempo = MAX_TEMPO, maxPitchSemitones = MAX_SHIFT_SEMITONES) {
@@ -318,13 +388,13 @@
   function pruneRenderCache() {
     while (renderedByKey.size > MAX_RENDER_CACHE) renderedByKey.delete(renderedByKey.keys().next().value);
   }
-  function renderBufferFor(url, decoded, context, tempo, pitchSemitones, maxTempo = MAX_TEMPO, maxPitchSemitones = MAX_SHIFT_SEMITONES) {
+  function renderBufferFor(url, decoded, context, tempo, pitchSemitones, maxTempo = MAX_TEMPO, maxPitchSemitones = MAX_SHIFT_SEMITONES, renderOpts = {}) {
     const key = renderCacheKey(url, tempo, pitchSemitones, maxTempo, maxPitchSemitones);
     if (renderedByKey.has(key)) return renderedByKey.get(key);
     const pending = Promise.resolve().then(() => {
       const clock = typeof performance !== 'undefined' && performance?.now ? performance : Date;
       const started = clock.now();
-      const channels = processConstantAxes(decoded, tempo, pitchSemitones, maxTempo, maxPitchSemitones);
+      const channels = processConstantAxes(decoded, tempo, pitchSemitones, maxTempo, maxPitchSemitones, renderOpts);
       const length = Math.max(1, channels[0]?.length || 1);
       const rendered = context.createBuffer(channels.length, length, decoded.sampleRate);
       for (let channelIndex = 0; channelIndex < channels.length; channelIndex++) rendered.copyToChannel(channels[channelIndex], channelIndex);
@@ -345,15 +415,25 @@
     const pitchSemitones = clampPitchFor(opts.pitchSemitones ?? 0, GENERIC_MAX_SHIFT_SEMITONES);
     const pitchRatio = Math.pow(2, pitchSemitones / 12);
     return Promise.resolve().then(() => {
-      const channels = processConstantAxes(decoded, tempo, pitchSemitones, GENERIC_MAX_TEMPO, GENERIC_MAX_SHIFT_SEMITONES);
+      const trimOpts = opts.trimSilence && typeof opts.trimSilence === 'object' ? opts.trimSilence : {};
+      const trim = opts.trimSilence ? trimDecodedSilence(decoded, context, trimOpts) : {
+        buffer: decoded, sourceDurationS: decoded.duration, trimmedDurationS: decoded.duration,
+        trimStartS: 0, trimEndS: 0, trimmed: false,
+      };
+      const working = trim.buffer || decoded;
+      const channels = processConstantAxes(working, tempo, pitchSemitones, GENERIC_MAX_TEMPO, GENERIC_MAX_SHIFT_SEMITONES, opts);
       const length = Math.max(1, channels[0]?.length || 1);
-      const rendered = context.createBuffer(channels.length, length, decoded.sampleRate);
+      const rendered = context.createBuffer(channels.length, length, working.sampleRate);
       for (let channelIndex = 0; channelIndex < channels.length; channelIndex++) rendered.copyToChannel(channels[channelIndex], channelIndex);
       return {
         buffer: rendered,
         playbackRate: pitchRatio,
         durationS: rendered.duration / Math.max(0.0001, pitchRatio),
-        sourceDurationS: decoded.duration,
+        sourceDurationS: working.duration,
+        untrimmedSourceDurationS: decoded.duration,
+        trimStartS: trim.trimStartS || 0,
+        trimEndS: trim.trimEndS || 0,
+        silenceTrimmed: !!trim.trimmed,
         tempo,
         pitchSemitones,
         independentPitch: true,
@@ -392,7 +472,7 @@
     // echoey," not just quieter.
     wet = window.EnvironmentalReverb?.connectWetNode?.(context, master, {
       volume: 1,
-      extraWet: ANIMAL_EXTRA_WET + Math.max(0, finite(opts.extraWetBoost, 0)),
+      extraWet: Math.max(0, finite(opts.extraWetBase, ANIMAL_EXTRA_WET)) + Math.max(0, finite(opts.extraWetBoost, 0)),
       area: opts.area || null,
     }) || null;
     function cleanup() {
@@ -514,7 +594,12 @@
     }
     lastBackend = 'fixed render pending';
     decodeUrl(resolved, context)
-      .then(decoded => renderBufferFor(resolved, decoded, context, tempo, pitchSemitones, maxTempo, maxPitchSemitones))
+      .then(decoded => {
+        const trimOpts = opts.trimSilence && typeof opts.trimSilence === 'object' ? opts.trimSilence : {};
+        const trim = opts.trimSilence ? trimDecodedSilence(decoded, context, trimOpts) : { buffer: decoded, trimStartS: 0, trimEndS: 0, trimmed: false };
+        const renderUrl = `${resolved}#trim=${trim.trimmed ? `${Number(trim.trimStartS).toFixed(5)}-${Number(trim.trimEndS).toFixed(5)}` : 'raw'};pad=${Number(opts.tailPadS ?? OUTPUT_TAIL_PAD_S).toFixed(4)};fade=${Number(opts.edgeFadeS ?? OUTPUT_EDGE_FADE_S).toFixed(4)}`;
+        return renderBufferFor(renderUrl, trim.buffer || decoded, context, tempo, pitchSemitones, maxTempo, maxPitchSemitones, opts);
+      })
       .then(rendered => {
         if (stopped) return;
         active = scheduleProcessedBuffer(context, rendered, { ...opts, tempo, pitchSemitones, pitchMaxSemitones: maxPitchSemitones }, completed);
@@ -532,7 +617,12 @@
   }
 
   function playIndependent(url, opts = {}) {
-    return playWithTempoLimit(url, opts, GENERIC_MAX_TEMPO, GENERIC_MAX_SHIFT_SEMITONES);
+    return playWithTempoLimit(url, {
+      ...opts,
+      trimSilence: opts.trimSilence !== false,
+      tailPadS: opts.tailPadS == null ? 0 : opts.tailPadS,
+      extraWetBase: opts.extraWetBase == null ? 0 : opts.extraWetBase,
+    }, GENERIC_MAX_TEMPO, GENERIC_MAX_SHIFT_SEMITONES);
   }
 
   function normalizedAllowed(c, opts) {
@@ -708,6 +798,7 @@
     play,
     playIndependent,
     renderDecodedIndependentBuffer,
+    trimDecodedSilence,
     preview,
     stopAllPreviews,
     stopAll() { for (const handle of [...activeHandles]) handle.stop(); },

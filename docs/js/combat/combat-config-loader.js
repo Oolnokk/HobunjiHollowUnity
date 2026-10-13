@@ -118,7 +118,7 @@
     ['js/generic-hud-icons.js?v=20260915perf1', () => Number(window.HobunjiGenericHudIcons?.version) >= 1],
     ['js/hud-x-control-polish.js?v=20260915a', () => Number(window.HudXControlPolish?.version) >= 1],
     ['js/favor-popup-points-bridge.js?v=20261007h99b53f8', () => Number(window.FavorPopupPointsBridge?.version) >= 2],
-    ['js/sleep-passage-action-bridge.js?v=20261013h1612a4c', () => Number(window.HobunjiSleepPassageActionBridge?.version) >= 1],
+    ['js/sleep-passage-action-bridge.js?v=20261013h5f8c1cb', () => Number(window.HobunjiSleepPassageActionBridge?.version) >= 1],
     ['js/day-progress-review.js?v=20261011h7217f32', () => Number(window.DayProgressReview?.version) >= 1],
     ['js/day-progress-review-relationship-ui.js?v=20260914a', () => Number(window.DayProgressReviewRelationshipUi?.version) >= 1],
     ['js/menu-tab-icon-only.js?v=20260915perf1', () => Number(window.HobunjiMenuTabIcons?.version) >= 1],

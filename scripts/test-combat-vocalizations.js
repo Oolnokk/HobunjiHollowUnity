@@ -131,6 +131,10 @@ assert(Math.abs(chargePlan.catchUpTempo - chargePlan.stretchedTempo * 2) > 1, 'c
 assert.equal(chargePlan.earlyReleaseNormalSpeedMul, 2);
 assert.match(animalPlaybackSource, /renderDecodedIndependentBuffer/, 'combat should reuse the animal-call independent tempo/pitch renderer');
 assert.match(animalPlaybackSource, /GENERIC_MAX_SHIFT_SEMITONES = 24/, 'combat may use +14 semitone profiles without raising the animal-call +/-12 ceiling');
+assert.match(animalPlaybackSource, /function trimDecodedSilence/, 'shared pitch-preserving playback trims decoded leading/trailing silence before combat timing');
+assert.match(animalPlaybackSource, /extraWetBase/, 'generic combat one-shots route through the environmental reverb send without inheriting animal-only extra wetness');
+assert.match(source, /__combatVocalWet = window\.EnvironmentalReverb\?\.connectWetNode/, 'custom charge playback also sends into the current environmental reverb space');
+assert.match(source, /chargeRatePlan\(audibleBuffer\.duration/, 'charge duration math uses the silence-trimmed audible buffer');
 assert.equal(context.window.CombatVocalizations.getConfig().utteranceModulation.species.nuhongan.female.pitchSemitones, 14, 'authored Nuhongan female combat voice keeps its +14 semitone profile');
 assert.match(source, /AnimalVoiceIndependentPlayback\?\.playIndependent/, 'combat one-shots should route through the animal-call pitch-preserving player');
 assert.equal(context.window.CombatVocalizations.liveChargeTargetDurationS('chargedBreaker'), 4, 'live charge should reuse Charged Breaker MAX_CHARGE_S');
@@ -141,15 +145,21 @@ now = 1000;
 scheduledBreath({ timestamp: now });
 assert.equal(played.length, 0, '100% stamina must perform no breath playback');
 
-// Non-exhausted low stamina must stay inside intensities 1..3.
+// Non-exhausted low stamina starts immediately and keeps breathing while stamina stays below max.
+context.window.__hobunjiPlayerProfile = { appearance: { speciesId: 'nuhongan', gender: 'female' } };
 player.stamina = 10;
-scheduledBreath({ timestamp: 2000 }); // schedules first breath
-scheduledBreath({ timestamp: 10000 }); // plays it
+const beforeBreathing = played.length;
+scheduledBreath({ timestamp: 2000 });
+assert.equal(played.length, beforeBreathing + 1, 'dropping below max stamina should start breathing immediately');
+scheduledBreath({ timestamp: 4000 });
+assert.equal(played.length, beforeBreathing + 2, 'breathing should continue on cadence while stamina remains below max without another stamina event');
 assert(played.at(-1).url.includes('heavybreath_medium_intensity3'), 'non-exhausted low stamina should top out at intensity 3');
 assert(!played.at(-1).url.includes('intensity4') && !played.at(-1).url.includes('intensity5'));
 assert.equal(played.at(-1).pitchPreserved, true, 'breath tempo changes must use independent pitch preservation');
 assert.equal(played.at(-1).tempo, 1, 'default vocal tempo remains 1x');
-assert(Number.isFinite(played.at(-1).pitchSemitones), 'explicit/random pitch is carried as a separate semitone axis');
+assert(played.at(-1).pitchSemitones > 14 && played.at(-1).pitchSemitones < 14.3, 'breathing receives the same Nuhongan female species pitch shift plus small authored random variation');
+assert.equal(played.at(-1).trimSilence, true, 'combat vocals request decoded silence trimming');
+assert.equal(played.at(-1).tailPadS, 0, 'combat vocals add no artificial silent tail after trimming');
 
 // Exhausted state can reach intensity 5.
 player.exhaustion.active = true;

@@ -5968,6 +5968,8 @@
 
   function hobunjiOverlayTypeForObject(object) {
     if (!object) return null;
+    // Locale carriers reserve a clearing and supply metadata; their real building/decor owns collision.
+    if (object.type === 'structure' && object.localeMeta) return null;
     if (object.type === 'copse' || object.type === 'bush' || object.type === 'fruitBush' || object.type === 'mushroomPatch' || object.type === 'beehive') return 'shrub';
     if (object.type === 'foragePlant' || object.type === 'rareHerb' || object.type === 'treasureDigspot') return 'weeds';
     if (object.type === 'diggableRockOre' || object.type === 'undiggableBoulder' || object.type === 'statue' || object.type === 'submergedPillar' || object.type === 'caveOpening' || object.type === 'secretCaveOpening' || object.type === 'structure' || object.type === 'animalDen' || object.type === 'rootTotem') return 'rock';

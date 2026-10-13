@@ -75,6 +75,11 @@ assert.match(scratchbonesConfig, /\"syllablesPerSecond\": 10/, 'default dialogue
 assert.match(dialogueContent, /syllablesPerSecond: finiteClamped\(cfg\.syllablesPerSecond, 10, 1, 20\)/, 'dialogue fallback matches the configured faster cadence');
 assert.match(dialogueContent, /_npcDialogueVisibleCharacters \+= unit\.text\.length/, 'NPC dialogue reveals a whole cadence unit per timer');
 assert.match(dialogueContent, /_playNpcDialogueLetterSfx\(unit\.vowels\[index\]\)/, 'NPC dialogue plays exactly one tick for every vowel in a syllable');
+assert.match(dialogueContent, /_npcSpeechBySpeaker = new Map/, 'NPC speech keeps one active utterance owner per speaker');
+assert.match(dialogueContent, /if \(previous\) _fadeNpcSpeechHandle\(previous\)/, 'a new vowel replaces the same NPC previous utterance instead of layering');
+assert.match(dialogueContent, /NPC_SPEECH_FADE_OUT_S = 0\.008/, 'replacement uses a sudden click-safe fade rather than an audible hard cut');
+assert.match(dialogueContent, /EnvironmentalReverb\?\.connectWetNode/, 'NPC utterances are sent through the current physical acoustic space');
+assert.match(dialogueContent, /dataset\.environmentalReverb = 'off'/, 'WebAudio-routed NPC clips suppress the duplicate media-element reverb wrapper');
 assert.match(dialogueContent, /portraitBreathingComposer\?\.triggerYap/, 'the same vowel reveal directly triggers one mouth yap');
 assert.doesNotMatch(dialogueContent, /while \(_npcDialogueTypeIndex < _npcDialogueTypeText\.length/, 'the regressed multi-character catch-up loop is removed');
 assert.match(dialogueContent, /setTimeout\(\(\) => \{[\s\S]{0,260}_npcDialogueVisibleCharacters \+= unit\.text\.length[\s\S]{0,240}\}, unit\.revealAtMs\)/, 'each NPC syllable receives an independent deadline from the sequence start');

@@ -347,9 +347,12 @@
         || window.AnimalVoiceIndependentPlayback?.play;
       if (renderer) {
         snd = renderer(url, {
-tempo: plan.tempo,
-pitchSemitones: plan.pitchSemitones,
-volume,
+          tempo: plan.tempo,
+          pitchSemitones: plan.pitchSemitones,
+          volume,
+          trimSilence: true,
+          tailPadS: 0,
+          extraWetBase: 0, // Combat voices use the area's physical reverb profile without the animal-call extra-wet boost.
         });
       } else if (typeof Audio === 'function') {
         // Emergency fallback preserves pitch while changing tempo. Explicit pitch
@@ -451,8 +454,10 @@ volume,
     const atMs = Number(frameContext?.timestamp) || nowMs();
     const intervalS = breathIntervalS(p);
     if (!(nextBreathAtMs > 0)) {
-      nextBreathAtMs = atMs + intervalS * 1000;
-      lastBreathIntervalS = intervalS;
+      playBreath(p, atMs); // Crossing below max stamina begins the ongoing breathing loop immediately instead of waiting through one silent interval.
+      const nextInterval = breathIntervalS(p);
+      lastBreathIntervalS = nextInterval;
+      nextBreathAtMs = atMs + nextInterval * 1000;
       return;
     }
 
@@ -572,6 +577,7 @@ volume,
       3,
     );
     gain.connect(ctx.destination);
+    gain.__combatVocalWet = window.EnvironmentalReverb?.connectWetNode?.(ctx, gain, { volume: 1 }) || null; // Charge grunts use the same room/cavern/temple acoustic space as ordinary world SFX.
     return gain;
   }
 
@@ -622,6 +628,7 @@ function finishChargeToken(token) {
   if (!token || token.done) return;
   token.done = true;
   activeChargeTokens.delete(token);
+  try { token.output?.__combatVocalWet?.send?.disconnect?.(); } catch (_) {}
   try { token.output?.disconnect?.(); } catch (_) {}
 }
 
@@ -712,13 +719,18 @@ function beginCharge(options = {}) {
       return;
     }
 
+    const trimDecoded = window.AnimalVoiceIndependentPlayback?.trimDecodedSilence;
+    const trim = trimDecoded ? trimDecoded(buffer, ctx, { padMs: 4 }) : {
+      buffer, sourceDurationS: buffer.duration, trimmedDurationS: buffer.duration, trimStartS: 0, trimEndS: 0, trimmed: false,
+    };
+    const audibleBuffer = trim.buffer || buffer; // Charge math uses actual audible waveform duration, not leading/trailing silence or codec padding.
     const voice = voicePlaybackPlan(randomPitchSemitones(config.grunts?.pitchRandomSemitones ?? 0));
-    const plan = chargeRatePlan(buffer.duration, token.targetDurationS, voice.tempo);
-    const renderOpts = { pitchSemitones: voice.pitchSemitones };
+    const plan = chargeRatePlan(audibleBuffer.duration, token.targetDurationS, voice.tempo);
+    const renderOpts = { pitchSemitones: voice.pitchSemitones, tailPadS: 0, trimSilence: false };
     const [fullRendered, catchUpRendered] = await Promise.all([
-      renderIndependent(buffer, ctx, { ...renderOpts, tempo: plan.stretchedTempo }),
+      renderIndependent(audibleBuffer, ctx, { ...renderOpts, tempo: plan.stretchedTempo }),
       token.catchUpOnRelease
-        ? renderIndependent(buffer, ctx, { ...renderOpts, tempo: plan.catchUpTempo })
+        ? renderIndependent(audibleBuffer, ctx, { ...renderOpts, tempo: plan.catchUpTempo })
         : Promise.resolve(null),
     ]);
     if (token.cancelled || token.released || token.done) {
@@ -736,7 +748,9 @@ function beginCharge(options = {}) {
     const output = chargeOutputGain(ctx);
     const when = ctx.currentTime + 0.003;
     token.ctx = ctx;
-    token.buffer = buffer;
+    token.rawBuffer = buffer;
+    token.buffer = audibleBuffer;
+    token.trim = trim;
     token.output = output;
     token.normalTempo = plan.normalTempo;
     token.stretchedTempo = plan.stretchedTempo;
@@ -755,7 +769,10 @@ function beginCharge(options = {}) {
       action: token.catchUpOnRelease ? 'begin-live-stretch' : 'begin-predetermined-stretch',
       abilityId: token.abilityId,
       targetDurationS: token.targetDurationS,
-      bufferDurationS: buffer.duration,
+      rawBufferDurationS: buffer.duration,
+      bufferDurationS: audibleBuffer.duration,
+      trimmedLeadingSilenceS: trim.trimStartS || 0,
+      trimmedTrailingSilenceS: trim.trimEndS || 0,
       fullDurationS: fullRendered.durationS,
       normalTempo: plan.normalTempo,
       stretchedTempo: plan.stretchedTempo,

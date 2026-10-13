@@ -9,9 +9,10 @@
 //   HOBUNJI_RUIN_FIXED_SEEDS=0x2468ace0 HOBUNJI_RUIN_AUDIT_SEEDS=0 node ...
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs'); // Serves the exact pinned Three.js dependencies to both gameplay and the embedded generator.
 const { chromium } = require('playwright');
 
-const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.html';
+const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.html?skipIntro=1';
 const DEFAULT_FIXED_SEEDS = [0x5eed1234, 0x13579bdf, 0x2468ace0, 0x0badc0de];
 function parseFixedSeeds(value) {
   if (!value) return DEFAULT_FIXED_SEEDS;
@@ -25,7 +26,16 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
 
 (async () => {
   const browser = await chromium.launch({ headless:true });
-  const page = await browser.newPage();
+  const page = await browser.newPage({ viewport:{ width:800, height:600 } }); // Keep real WebGL draws affordable on software-rendered CI workers.
+  const dependencyFiles = { // Explicit URL/file pairs keep CI independent of CDN timing without intercepting game assets.
+    'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js': 'three/build/three.min.js',
+    'https://unpkg.com/three@0.128.0/build/three.min.js': 'three/build/three.min.js',
+    'https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js': 'three/examples/js/controls/TransformControls.js',
+    'https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js': 'three/examples/js/controls/OrbitControls.js',
+    'https://unpkg.com/three@0.128.0/examples/js/loaders/GLTFLoader.js': 'three/examples/js/loaders/GLTFLoader.js',
+    'https://unpkg.com/three@0.128.0/examples/js/exporters/GLTFExporter.js': 'three/examples/js/exporters/GLTFExporter.js',
+  };
+  for (const [url, file] of Object.entries(dependencyFiles)) await page.route(url, route => route.fulfill({ contentType:'application/javascript', body:fs.readFileSync(require.resolve(file)) }));
   const pageErrors = [];
   const consoleMessages = [];
   const forbiddenEmbeddedRequests = [];
@@ -45,6 +55,19 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   });
 
   await page.addInitScript(() => {
+    // A gameplay interaction test needs an actual player; the onboarding/title-only scene has no live interaction camera.
+    window.__hobunjiPlayerProfile = {
+      playerId:'ruin-browser-player', characterId:'ruin-browser-character',
+      worldId:'ruin-browser-world', worldLabel:'Ruin Browser',
+      worldOwnerCharacterId:'ruin-browser-character', isWorldOwner:true,
+      nickname:'Ruin Browser', farmhandPermissions:{},
+      appearance:{ speciesId:'mao-ao', gender:'male', cosmetics:{} },
+      equippedCosmetics:[], appliedDyes:{}, nonGearInventory:{},
+      packClothing:[], npcRelationships:{}, questProgress:{}, isNewWorld:false,
+    };
+    // This fixture represents an established world, so rescue/farm-tour cinematics cannot redirect a generated test ruin.
+    localStorage.setItem('hobunjiOpeningStory.v1:ruin-browser-world', 'complete');
+    localStorage.setItem('hobunjiOpeningStory.v1:ruin-browser-world:farm-tour', 'complete');
     localStorage.setItem('hobunjiDevMode', '1');
     localStorage.removeItem('hobunjiDevRandomRuinWallPlanes');
     localStorage.removeItem('hobunji.devRandomRuinDarkness.v1');
@@ -61,8 +84,37 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     !!window.DevRandomRuinSimplePuzzles &&
     !!window.DevRandomRuinRuntimeCoverage,
   null, { timeout:30000 });
+  await page.waitForFunction(() => window.__hobunjiGameStarted === true, null, { timeout:120000 });
+  await page.waitForFunction(() => window.GridTileAccessors.getCurrentArea() === 'interior', null, { timeout:120000 }); // Login's async farmhouse placement must finish before the test changes maps.
   await page.evaluate(() => window.HobunjiTitleScreen?.start?.());
-  await page.waitForFunction(() => !window.HobunjiTitleScreen?.isActive?.(), null, { timeout:5000 });
+  await page.waitForFunction(() => !window.HobunjiTitleScreen?.isActive?.(), null, { timeout:15000, polling:100 });
+  await page.evaluate(() => {
+    const renderer = window.__hobunjiGameRenderer; // Observe the real camera after initialization without replacing THREE.WebGLRenderer.
+    const render = renderer.render;
+    renderer.render = function(scene, camera) {
+      if (scene === window.GridTileAccessors.getActiveScene() && window.GridTileAccessors.getCurrentArea() === 'map_i_dev_random_ruin') window.__ruinBrowserCamera = camera;
+      return render.call(this, scene, camera);
+    };
+    window.__ruinBrowserAimAtPoint = async point => {
+      const container = document.getElementById('threeContainer'); // Aim through the ordinary shoulder-camera mouse-look handler.
+      const degreesPerPixel = Number(window.SCRATCHBONES_CONFIG?.game?.desktopControls?.cameraRotateDegPerPx) || .15;
+      for (let attempt = 0; attempt < 32; attempt++) { // Orbiting around the player converges more slowly than rotating a camera in place for nearby targets.
+        const camera = window.__ruinBrowserCamera; // The actual gameplay camera, including collision adjustments made after teleporting.
+        if (!camera) throw new Error('Interaction smoke has no gameplay camera');
+        camera.updateMatrixWorld(true);
+        const local = point.clone().applyMatrix4(camera.matrixWorldInverse); // Angular screen-center error becomes a real mouse-look movement.
+        const yaw = THREE.MathUtils.radToDeg(Math.atan2(local.x, -local.z));
+        const pitch = THREE.MathUtils.radToDeg(Math.atan2(local.y, Math.hypot(local.x, local.z)));
+        if (Math.abs(yaw) < .25 && Math.abs(pitch) < .25) break;
+        container.dispatchEvent(new MouseEvent('mousemove', { bubbles:true, shiftKey:true, movementX:yaw/degreesPerPixel, movementY:-pitch/degreesPerPixel }));
+        await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+      }
+      const camera=window.__ruinBrowserCamera;
+      const rect=container.getBoundingClientRect();
+      container.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:rect.left+rect.width/2,clientY:rect.top+rect.height/2})); // Normal-camera interactions also need the ordinary desktop cursor on the centered reticle.
+      return { target:point.toArray(), camera:camera.position.toArray(), local:point.clone().applyMatrix4(camera.matrixWorldInverse).toArray() };
+    };
+  });
 
   const puzzlePanel = await page.evaluate(() => {
     const details = document.getElementById('devRandomRuinPuzzleOptions');
@@ -101,8 +153,12 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     safePath:false,ropeSwing:false,hallwayTraps:false,lavaBasin:false,sanctum:false,maxPerRoom:1,
   }, JSON.stringify(projectileOnlySettings));
   const constrainedSeed = 0x51a7cafe;
-  assert.equal(await page.evaluate(async seed => window.DevRandomRuin.generate(seed), constrainedSeed), true);
-  await page.waitForFunction(() => window.GridTileAccessors.getCurrentArea() === 'map_i_dev_random_ruin', null, { timeout:30000 });
+  const constrainedEntry = await page.evaluate(async seed => { // Observe scene entry in the same task that finishes the awaited transition, before shader warmup.
+    const ok = await window.DevRandomRuin.generate(seed);
+    return { ok, area:window.GridTileAccessors.getCurrentArea() };
+  }, constrainedSeed);
+  assert.equal(constrainedEntry.ok, true);
+  assert.equal(constrainedEntry.area, 'map_i_dev_random_ruin');
   const constrained = await page.evaluate(() => {
     const state = window.DevRandomRuin.getState();
     const scene = window.GridTileAccessors.getActiveScene();
@@ -265,8 +321,11 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
 
   const activeRuns = [];
   for (const seed of FIXED_SEEDS) {
-    const ok = await page.evaluate(async value => window.DevRandomRuin.generate(value), seed);
-    if (!ok) {
+    const entry = await page.evaluate(async value => { // The generator guarantees a completed transition; no animation-frame polling is needed to verify its result.
+      const ok = await window.DevRandomRuin.generate(value);
+      return { ok, area:window.GridTileAccessors.getCurrentArea() };
+    }, seed);
+    if (!entry.ok) {
       const diagnostics = await failureDiagnostics(seed);
       throw new Error(
         `generate(${seed}) failed\nDIAGNOSTICS\n${JSON.stringify(diagnostics, null, 2)}` +
@@ -275,18 +334,14 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         `\nFORBIDDEN REQUESTS\n${JSON.stringify(forbiddenEmbeddedRequests, null, 2)}`,
       );
     }
-    await page.waitForFunction(
-      () => window.GridTileAccessors.getCurrentArea() === 'map_i_dev_random_ruin',
-      null,
-      { timeout:30000 },
-    );
+    assert.equal(entry.area, 'map_i_dev_random_ruin', 'successful generation must complete its actual scene transition');
     await page.waitForFunction(() =>
       window.DevRandomRuinPrototypeHooks.snapshot().active &&
       window.DevRandomRuinHitPuzzles.snapshot().active &&
       window.DevRandomRuinMotionRuntime.snapshot().active &&
       window.DevRandomRuinSimplePuzzles.snapshot().active &&
       window.DevRandomRuinRuntimeCoverage.snapshot().active,
-    null, { timeout:10000 });
+    null, { timeout:90000, polling:100 });
 
     const active = await page.evaluate(() => {
       const scene = window.GridTileAccessors.getActiveScene();
@@ -461,7 +516,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
           requestAnimationFrame(step);
         });
         const place=(point)=>{
-          if(window.DevRandomRuin?.setPlayerWorldPoint?.(point,{snapCamera:false,grounded:true}))return; // Browser smoke teleports must update the ruin's accepted-position/support authority just like a legitimate grounded arrival.
+          if(window.DevRandomRuin?.setPlayerWorldPoint?.(point,{grounded:true}))return; // Browser smoke teleports must update the ruin's accepted-position/support authority just like a legitimate grounded arrival.
           deps.player.x=point.x*deps.TILE;
           deps.player.y=point.z*deps.TILE;
           deps.player.vx=0;deps.player.vy=0;
@@ -490,6 +545,8 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
             const box=new THREE.Box3().setFromObject(button);
             const center=box.getCenter(new THREE.Vector3());
             place({x:box.max.x+.45,z:center.z,y:center.y});
+            await sleep(3);
+            await window.__ruinBrowserAimAtPoint(center);
             window.DevRandomRuinInteractions.refresh();
             await sleep(3);
             const interaction=window.DevRandomRuinInteractions.snapshot();
@@ -520,6 +577,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
           deps.player.health=1;
           rs.addAffliction?.(deps.player,'burningHealth',Number(deps.player.maxHealth)||100);
           window.PlayerVitals.updatePlayerVitals(1);
+          const healthAtRespawn=deps.player.health; // Capture the recovery result before ordinary rendered frames regenerate Health.
           await sleep(3);
           const cp=window.DevRandomRuinSimplePuzzles.snapshot().checkpoints;
           respawn={
@@ -528,6 +586,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
             area:window.GridTileAccessors.getCurrentArea(),
             x:deps.player.x/deps.TILE,z:deps.player.y/deps.TILE,
             health:deps.player.health,maxHealth:deps.player.maxHealth,
+            healthAtRespawn,
             activePoint:cp.activePoint,
             respawnCount:cp.respawnCount,
           };
@@ -590,6 +649,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
           await sleep(2);
           const afterRelease=window.DevRandomRuinSimplePuzzles.snapshot();
           ropeAttach={
+            sourceId:rope.id,
             grabRow,
             grabPopupVisible:grabPopup.interactionRows?.some(row=>row.label==='Grab Rope')===true,
             grabClaim,
@@ -637,7 +697,8 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       assert.equal(simpleRuntime.respawn?.reason,'resource-tick','Burning Health death must route through the real PlayerVitals checkpoint seam: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.respawn?.area,'map_i_dev_random_ruin','checkpoint death recovery must stay inside the generated ruin: '+JSON.stringify(simpleRuntime));
       assert.ok(Math.abs(simpleRuntime.respawn.x-simpleRuntime.respawn.activePoint.x)<.02&&Math.abs(simpleRuntime.respawn.z-simpleRuntime.respawn.activePoint.z)<.02,'checkpoint respawn must land at the last crossed doorway: '+JSON.stringify(simpleRuntime));
-      assert.equal(simpleRuntime.respawn.health,Math.max(1,Math.round(simpleRuntime.respawn.maxHealth*.5)),'checkpoint respawn should match the game half-Health recovery convention: '+JSON.stringify(simpleRuntime));
+      assert.equal(simpleRuntime.respawn.healthAtRespawn,Math.max(1,Math.round(simpleRuntime.respawn.maxHealth*.5)),'checkpoint respawn should match the game half-Health recovery convention before regeneration: '+JSON.stringify(simpleRuntime));
+      assert.ok(simpleRuntime.respawn.health>=simpleRuntime.respawn.healthAtRespawn&&simpleRuntime.respawn.health<=simpleRuntime.respawn.maxHealth,'post-respawn frames may regenerate Health within its normal bounds');
       assert.equal(simpleRuntime.respawn?.directHit?.handled,true,'direct-hit death must pass through canonical respawnPlayer and stay at the ruin checkpoint: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.respawn?.directHit?.reason,'death','canonical direct-hit checkpoint recovery must identify the normal death path: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.respawn?.directHit?.area,'map_i_dev_random_ruin','direct-hit checkpoint recovery must not send the player to a Root Totem/farm: '+JSON.stringify(simpleRuntime));
@@ -659,7 +720,14 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       assert.equal(simpleRuntime.ropeAttach?.worldPopupVisible,true,'rope controls must render through WorldPopupText: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.ceilingMounted,true,'rope must visibly attach to the authored room ceiling: '+JSON.stringify(simpleRuntime));
       assert.ok(Math.abs((simpleRuntime.ropeAttach?.ceilingY||0)-(simpleRuntime.ropeAttach?.anchorY||0))<.001,'rope line origin must equal the ceiling mount datum: '+JSON.stringify(simpleRuntime));
-      assert.ok((simpleRuntime.ropeAttach?.endTopY||0)-(simpleRuntime.ropeAttach?.startTopY||0)>.42,'rope destination must be visibly above the ordinary ruin step limit: '+JSON.stringify(simpleRuntime));
+      const ropeBasin=simpleRuntime.initial.composers?.ropeRewards?.basins?.find(basin=>basin.ropes.includes(simpleRuntime.ropeAttach.sourceId));
+      if(ropeBasin){
+        const nodeIndex=ropeBasin.ropes.indexOf(simpleRuntime.ropeAttach.sourceId);
+        assert.equal(simpleRuntime.ropeAttach.startTopY,ropeBasin.nodes[nodeIndex].topY,'basin rope starts at its authored launch pad');
+        assert.equal(simpleRuntime.ropeAttach.endTopY,ropeBasin.nodes[nodeIndex+1].topY,'basin rope reaches its authored pillar across the lava gap');
+      }else{
+        assert.ok((simpleRuntime.ropeAttach?.endTopY||0)-(simpleRuntime.ropeAttach?.startTopY||0)>.42,'hallway rope destination must be visibly above the ordinary ruin step limit: '+JSON.stringify(simpleRuntime));
+      }
       assert.ok(Math.abs((simpleRuntime.ropeAttach?.grabY||0)-((simpleRuntime.ropeAttach?.startTopY||0)+.86))<.08,'idle rope grip must stay at reachable launch-side height instead of inheriting the raised destination: '+JSON.stringify(simpleRuntime));
       assert.ok((simpleRuntime.ropeAttach?.ceilingY||0)>(simpleRuntime.ropeAttach?.bobY||0),'rope must hang downward from the ceiling: '+JSON.stringify(simpleRuntime));
       assert.ok((simpleRuntime.final?.ropes?.[0]?.bottomY??-Infinity)>=(simpleRuntime.final?.ropes?.[0]?.minBobY??Infinity)-.02,'rope pendulum bottom must stay above its authored floor-clearance datum: '+JSON.stringify(simpleRuntime.final?.ropes?.[0]));
@@ -669,13 +737,18 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       if(simpleRuntime.final.trapHallways.length>0) assert.ok(simpleRuntime.final.liveProjectiles>0,'a selected projectile-hallway module must actively emit projectiles: '+JSON.stringify(simpleRuntime.final));
       else assert.ok(simpleRuntime.final.chordPlateSets.some(set=>set.slotKind==='hallway'),'a non-trap hallway slot must contain its selected reusable module: '+JSON.stringify(simpleRuntime.final));
 
+      await page.waitForFunction(() => !window.DevRandomRuinSimplePuzzles.snapshot().flight && !window.Combat.deps.player.dodging, null, { timeout:30000, polling:100 }); // Finish the rope jump before teleporting for an independent door interaction.
       const transitDoorRuntime = await page.evaluate(async () => {
         const sleep=frames=>new Promise(resolve=>{let left=frames;const step=()=>{if(--left<=0)resolve();else requestAnimationFrame(step);};requestAnimationFrame(step);});
         const door=window.DevRandomRuin.getState()?.transitDoors?.[0]||null;
         if(!door?.center)return null;
-        const x=door.center.x+(door.axis==='x'?1.05:0),z=door.center.z+(door.axis==='z'?1.05:0);
-        window.DevRandomRuin.setPlayerWorldPoint?.({x,z},{snapCamera:false,grounded:true});
+        const x=door.center.x-(door.axis==='x'?1.05:0),z=door.center.z-(door.axis==='z'?1.05:0); // Approach from the hall side; the reward brazier beyond this doorway otherwise intercepts the real reticle ray.
+        window.DevRandomRuin.setPlayerWorldPoint?.({x,z},{grounded:true});
         await sleep(4);
+        const control=window.DevRandomRuin.getInteractionControls().find(entry=>entry.kind==='transitDoor'&&entry.object?.id===door.id);
+        if(!control?.object)throw new Error('Transit-door smoke has no interaction owner');
+        control.object.updateWorldMatrix(true,true);
+        const aim=await window.__ruinBrowserAimAtPoint(new THREE.Box3().setFromObject(control.object).getCenter(new THREE.Vector3()));
         window.DevRandomRuinInteractions.refresh();
         await sleep(2);
         const interaction=window.DevRandomRuinInteractions.snapshot();
@@ -686,25 +759,29 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         const hasSource=snapshot=>Object.values(snapshot?.sources||{}).some(list=>Array.isArray(list)&&list.includes(sourceId));
         const sourceTiles=Object.entries(beforeOcc?.sources||{}).filter(([,list])=>Array.isArray(list)&&list.includes(sourceId)).map(([key])=>key);
         const grid=window.GridTileAccessors.getActiveGrid();
-        const solidGridTiles=sourceTiles.filter(key=>{const [col,row]=key.split(',').map(Number);return grid[row]?.[col]?.type==='rock';});
+        const gridTypes=()=>sourceTiles.map(key=>{const [col,row]=key.split(',').map(Number);return grid[row]?.[col]?.type;});
+        const beforeGridTypes=gridTypes();
+        const panelHits=()=>sourceTiles.flatMap(key=>{const [col,row]=key.split(',').map(Number);const hit=window.DevRandomRuinTileOccupancy.solidAt(door.axis==='x'?door.center.x:col+.5,door.axis==='z'?door.center.z:row+.5,.02,.5);return hit?[{key,tag:hit.tag}]:[];}); // Exact panels and jambs block closed-door samples; navigation still uses tile sources.
+        const beforePanelHits=panelHits();
         const popupBefore=window.WorldPopupText.debugSnapshot();
         const beforeBlocked=hasSource(beforeOcc);
         if(rowIndex>=0)window.DevRandomRuinInteractions.invoke(rowIndex);
         await sleep(28);
         const afterDoor=window.DevRandomRuin.getState()?.transitDoors?.find(entry=>entry.id===door.id)||null;
         const afterBlocked=hasSource(window.DevRandomRuin.getOccupancySnapshot?.());
-        const restoredGridTiles=sourceTiles.filter(key=>{const [col,row]=key.split(',').map(Number);return grid[row]?.[col]?.type!=='rock';});
-        return {door,row,popupVisible:popupBefore.interactionRows?.some(entry=>entry.label==='Open Hallway Door')===true,beforeBlocked,sourceTiles,solidGridTiles,restoredGridTiles,afterDoor,afterBlocked};
+        return {door,row,aim,focus:interaction.focus,player:{x:window.Combat.deps.player.x/window.Combat.deps.TILE,z:window.Combat.deps.player.y/window.Combat.deps.TILE},popupVisible:popupBefore.interactionRows?.some(entry=>entry.label==='Open Hallway Door')===true,beforeBlocked,sourceTiles,beforePanelHits,afterPanelHits:panelHits(),centerClear:!window.DevRandomRuinTileOccupancy.solidAt(door.center.x,door.center.z,.02,.5),beforeGridTypes,afterGridTypes:gridTypes(),afterDoor,afterBlocked};
       });
       assert.ok(transitDoorRuntime,'generated hallway must expose at least one plain transit-exit door: '+JSON.stringify(active));
       assert.equal(transitDoorRuntime.row?.label,'Open Hallway Door','closed hallway transit door must expose the standard floating open-door prompt: '+JSON.stringify(transitDoorRuntime));
       assert.equal(transitDoorRuntime.popupVisible,true,'hallway door prompt must be rendered by the normal WorldPopupText action-bar path: '+JSON.stringify(transitDoorRuntime));
       assert.equal(transitDoorRuntime.beforeBlocked,true,'visibly closed hallway door must contribute authoritative collision: '+JSON.stringify(transitDoorRuntime));
       assert.ok((transitDoorRuntime.sourceTiles?.length||0)>1,'a visually wide hallway door must block its whole doorway run rather than one center tile: '+JSON.stringify(transitDoorRuntime));
-      assert.equal(transitDoorRuntime.solidGridTiles?.length,transitDoorRuntime.sourceTiles?.length,'closed-door occupancy must be stamped into the ordinary interior ROCK grid used by movement and knockback: '+JSON.stringify(transitDoorRuntime));
+      assert.equal(transitDoorRuntime.beforePanelHits?.length,transitDoorRuntime.sourceTiles?.length,'closed-door panel collision must cover the full visible doorway run: '+JSON.stringify(transitDoorRuntime));
       assert.ok((transitDoorRuntime.afterDoor?.open||0)>.78,'using the hallway door prompt must visibly retract the door: '+JSON.stringify(transitDoorRuntime));
       assert.equal(transitDoorRuntime.afterBlocked,false,'opened hallway door must release its occupancy blocker: '+JSON.stringify(transitDoorRuntime));
-      assert.equal(transitDoorRuntime.restoredGridTiles?.length,transitDoorRuntime.sourceTiles?.length,'opening the door must restore the original walkable interior grid cells: '+JSON.stringify(transitDoorRuntime));
+      assert.equal(transitDoorRuntime.centerClear,true,'opening the door must clear the center of the physical passage: '+JSON.stringify(transitDoorRuntime));
+      assert.ok(transitDoorRuntime.afterPanelHits.length<transitDoorRuntime.beforePanelHits.length&&transitDoorRuntime.afterPanelHits.every(hit=>hit.tag!=='door'&&transitDoorRuntime.beforePanelHits.some(before=>before.key===hit.key&&before.tag===hit.tag)),'opening the panel preserves only the existing solid doorway jambs: '+JSON.stringify(transitDoorRuntime));
+      assert.deepEqual(transitDoorRuntime.afterGridTypes,transitDoorRuntime.beforeGridTypes,'door motion preserves the underlying grid instead of replacing its tiles with coarse ROCK collision');
 
       const towerInteraction = await page.evaluate(async () => {
         const scene=window.GridTileAccessors.getActiveScene();
@@ -736,6 +813,23 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       }
 
       const rangedMobile = await page.evaluate(async () => {
+        const context=window.DevRandomRuin.getRuntimeContext();
+        const occupancy=window.DevRandomRuin.getOccupancySnapshot();
+        const blocked=new Set(occupancy.blocked);
+        const controls=window.DevRandomRuin.getInteractionControls().map(control=>{
+          if(control.object){control.object.updateWorldMatrix(true,true);return {box:new THREE.Box3().setFromObject(control.object),range:Number(control.range)||2};}
+          return {point:control.point,range:Number(control.range)||2};
+        });
+        const points=occupancy.floor.filter(key=>!blocked.has(key)).map(key=>{const [x,z]=key.split(',').map(Number);return {x:x+.5,z:z+.5};});
+        points.sort((a,b)=>Math.hypot(a.x-context.spawn.x,a.z-context.spawn.z)-Math.hypot(b.x-context.spawn.x,b.z-context.spawn.z));
+        const clearPoint=points.find(point=>!window.DynamicSurfaces.blockerAt(point.x,point.z,{radius:.2,actorHeight:1.25})&&controls.every(control=>{
+          const x=control.box?Math.max(control.box.min.x,Math.min(control.box.max.x,point.x)):control.point?.x;
+          const z=control.box?Math.max(control.box.min.z,Math.min(control.box.max.z,point.z)):control.point?.z;
+          return !Number.isFinite(x)||!Number.isFinite(z)||Math.hypot(point.x-x,point.z-z)>control.range+.5;
+        })); // Native weapon controls are only available when no nearby world interaction owns the same physical slot.
+        if(!clearPoint||!window.DevRandomRuin.setPlayerWorldPoint(clearPoint,{grounded:true}))throw new Error('Ranged-control smoke could not reach clear floor space');
+        await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+        window.DevRandomRuinInteractions.refresh();
         const switchButton=document.getElementById('btnWeaponSwitch'); // Uses the same mobile combat-toggle control a touch player uses.
         for(let i=0;i<3 && window.Combat?.deps?.getActiveTool?.()!=='ranged';i++){
           switchButton?.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,cancelable:true,pointerId:700+i,pointerType:'touch',clientX:8,clientY:8}));
@@ -774,19 +868,24 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       assert.ok(active.ladders > 0, `negative floor tiers require ladder access: ${JSON.stringify(active)}`);
       const ladderStart = await page.evaluate(() => { // Used to prove one authored ladder starts the shared ClimbSystem path from the live generated ruin.
         const scene = window.GridTileAccessors.getActiveScene(); // Used to locate a live V50 stone-ladder root without relying on devtools.
-        let ladder = null; // Used to retain the first authored ladder discovered in the active ruin hierarchy.
-        scene?.traverse?.(object => { if (!ladder && object.userData?.generatedAccessType === 'stoneLadder') ladder = object; });
+        const basins=window.DevRandomRuinSimplePuzzles.snapshot().composers?.ropeRewards?.basins||[];
+        const safeLanding=point=>basins.every(basin=>point.x<basin.bounds.minX-.25||point.x>basin.bounds.maxX+.25||point.z<basin.bounds.minZ-.25||point.z>basin.bounds.maxZ+.25);
+        const candidate=window.DevRandomRuinInteractions.debugLadders().find(entry=>entry.endpoints&&safeLanding(entry.endpoints.top)&&safeLanding(entry.endpoints.bottom)); // A ladder into a lava basin correctly triggers recovery; height-persistence coverage needs safe endpoints.
+        const ladder=candidate&&scene.getObjectByName(candidate.name);
+        const endpoints=candidate?.endpoints;
+        if(!endpoints||!window.DevRandomRuin.setPlayerWorldPoint(endpoints.top,{grounded:true}))throw new Error('Ladder smoke could not reach the authored upper landing'); // Start beside the ladder, rather than crossing the ruin from the previous combat test's position.
         const before = window.DevRandomRuin.getState()?.presentation || null; // Used to detect any post-climb snapback to the original floor.
         const started = !!ladder && window.DevRandomRuinInteractions.climbStoneLadder(ladder); // Used to require the same action path exposed to normal player input.
-        return { started, climbing:window.ClimbSystem?.debug?.playerClimbing === true, before };
+        return { started, climbing:window.ClimbSystem?.debug?.playerClimbing === true, before, targetY:endpoints.bottom.y };
       });
       assert.equal(ladderStart.started, true, 'authored ruin ladder must resolve endpoints and start traversal: '+JSON.stringify(ladderStart));
       assert.equal(ladderStart.climbing, true, 'authored ruin ladder must use the shared animated ClimbSystem path: '+JSON.stringify(ladderStart));
-      await page.waitForFunction(() => window.ClimbSystem?.debug?.playerClimbing === false, null, { timeout:30000 }); // A tallest 12-hop ladder is ~7 s at full cadence; heavy generated-ruin rendering can make headless CI advance its clamped gameplay dt much more slowly, so allow scheduling headroom without changing gameplay cadence.
-      await page.waitForTimeout(650);
+      await page.waitForFunction(() => window.ClimbSystem?.debug?.playerClimbing === false, null, { timeout:120000, polling:100 }); // A tallest 12-hop ladder is ~7 s of gameplay; software WebGL advances the clamped simulation slowly, and interval polling can observe completion independently of a delayed render frame.
+      await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))); // Reconcile and render the completed landing before inspecting presentation; wall-clock time alone does not guarantee a software WebGL frame.
       const ladderAfter = await page.evaluate(() => window.DevRandomRuin.getState()?.presentation || null); // Used after reconciliation has resumed to prove the landing elevation remains authoritative.
       assert.ok(Number.isFinite(ladderAfter?.elevation) && Number.isFinite(ladderStart.before?.elevation), JSON.stringify({ ladderStart, ladderAfter }));
       assert.ok(Math.abs(ladderAfter.elevation - ladderStart.before.elevation) > .12, 'completed ladder traversal must remain on the opposite elevation instead of snapping back: '+JSON.stringify({ ladderStart, ladderAfter }));
+      assert.ok(Math.abs(ladderAfter.elevation-ladderStart.targetY)<.12,'completed ladder traversal must settle onto the authored lower landing: '+JSON.stringify({ladderStart,ladderAfter}));
       assert.ok(Math.abs(ladderAfter.bodyY - ladderAfter.elevation) < .20, 'canonical player body must settle onto the ruin support elevation: '+JSON.stringify(ladderAfter));
       if (Number.isFinite(ladderAfter.resourceRingY) && Number.isFinite(ladderAfter.shadowY)) {
         assert.ok(Math.abs(ladderAfter.resourceRingY - ladderAfter.shadowY) < .04, 'resource ring and ground-relative presentation must share one ruin elevation authority: '+JSON.stringify(ladderAfter));

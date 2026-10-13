@@ -58,7 +58,7 @@
        window.LootRolling.init(...) and .loadLootShopConfig() during its
        own setup, and before every other module whose init(deps) is handed
        window.LootRolling.rollItemStars/starRatingText/etc. -->
-  <script src="js/loot-rolling.js?v=20260902mod1"></script>
+  <script src="js/loot-rolling.js?v=20261013h0b0a184"></script>
   <!-- Seed planting/crop harvesting, extracted out of game.js. Must load
        before game.js, which calls window.CropPlanting.init(...). -->
   <script src="js/crop-planting.js?v=20261008hc238a6f"></script>
@@ -224,7 +224,7 @@
   <script src="js/furniture-puzzle-runtime.js?v=20260929glowdecals1"></script>
   <!-- Loads the richer per-piece data authored by furniture-avatar-author (seat
        anchors, processing VFX/warps, livestock stomp points) on top of it -->
-  <script src="js/authored-furniture-runtime.js?v=20260922twostate1"></script>
+  <script src="js/authored-furniture-runtime.js?v=20261013h8710218"></script>
   <script src="js/furniture-pattern-surfaces.js?v=20261013hbbc2aae"></script>
   <script src="js/ruin-pattern-surface-rules.js?v=20261012rps3"></script>
   <!-- Shared plateau/ramp fold math (Map Editor preview + Tothal Shift) and the
@@ -232,7 +232,7 @@
   <script src="js/map-boundary-guard.js?v=1"></script>
   <script src="js/terrain-preview.js?v=20261013he41c002"></script>
   <script src="js/den-cliff-placement.js?v=20261010h1a6266f"></script>
-  <script src="js/wilderness-map-generator.js?v=20261010hf733d1a"></script>
+  <script src="js/wilderness-map-generator.js?v=20261013h80d4318"></script>
   <!-- Terrain-aware authored locales inspect the finished wilderness and place against existing host terrain. Must load after WildernessMapGenerator so its wrapper installs in the game, not only in editor/tests. -->
   <script src="js/locale-terrain-placement.js?v=20261010h185827e"></script>
   <script src="js/foliage-furniture-renderer.js?v=20260816a"></script>
@@ -247,7 +247,7 @@
   <!-- Local database overrides (window.LocalDBOverrides) — lets docs/tools/
        editors save edited repo-tracked JSON into localStorage and have the
        game load that instead of the repo file when Local source is selected. -->
-  <script src="js/local-db-overrides.js?v=20261007h364016d"></script>
+  <script src="js/local-db-overrides.js?v=20261013ha525e98"></script>
   <script>
     // species-pose-scaling parser-loads earlier for avatar consumers, then
     // re-resolves its config now that LocalDBOverrides knows the selected
@@ -342,7 +342,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261013he26e763"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261013h6290697"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -397,7 +397,7 @@
        doesn't matter; must load before game.js, which calls
        window.FarmAnimals.init(...) during its own setup. -->
   <script src="js/farm-production.js?v=20261008h34e9cde"></script>
-  <script src="js/world-meta-store.js?v=20261013h3f16618"></script>
+  <script src="js/world-meta-store.js?v=20261013h27ea706"></script>
   <script src="js/farm-animals.js?v=20261011he48edd6"></script>
   <!-- Farm buildings: barn placement/construction/demolition
        (window.FarmBuildings) — self-contained aside from deps injected
@@ -421,7 +421,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261012hecffb57&surfaceUv=20261006cliffparity1"></script>
+  <script src="js/house-pieces.js?v=20261013h01337e0&surfaceUv=20261006cliffparity1"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -454,7 +454,8 @@
        calls window.JubmirShop.init(...) during its own setup. -->
   <script src="js/jubmir-shop.js?v=20261008h176df45"></script>
   <!-- Bound Harlyao relic weapons + Garanki Gabu's unbinding/enchanting panel. -->
-  <script src="js/harlyao-relics.js?v=20260930ench1"></script>
+  <script src="js/artifact-collection.js?v=20261013h17d9d3b"></script>
+  <script src="js/harlyao-relics.js?v=20261013h18a078f"></script>
   <!-- Smithy / General Store / Carpenter shop-counter buttons (window.NpcShopButtons),
        initialized by game.js. -->
   <script src="js/npc-shop-buttons.js?v=20261008shopbtn1"></script>
@@ -469,7 +470,7 @@
        relative to the other systems above doesn't matter; must load before
        game.js, which calls window.CalendarSystem.init(...) during its own
        setup. -->
-  <script src="js/calendar-system.js?v=20261013h0b1e46a"></script>
+  <script src="js/calendar-system.js?v=20261013h7fa739b"></script>
   <!-- Resolves a map/interior's active alternate `layouts` entry (see
        docs/config/maps/map_i_temple.json's spirit_communion layout) against
        the current calendar time — window.MapLayoutSystem. Pure/stateless, no
@@ -520,7 +521,7 @@
        at draw time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildernessMap.init(...) during its own setup. -->
-  <script src="js/wilderness-map.js?v=20261013ha184364"></script>
+  <script src="js/wilderness-map.js?v=20261011h44009cf"></script>
   <script src="js/navigation-compass.js?v=20261013hf6393a3"></script>
   <!-- Dead-zone rotation math shared by player/NPC/creature PNG-plane
        avatars (window.PerpRotation) — self-contained aside from deps
@@ -592,7 +593,7 @@
        calls window.TownZoneBuildings.init(...) during its own setup (and
        reads window.TownZoneBuildings.loadHousePieceFaceTexture as one of
        window.FarmBuildings' own init deps, at that same call-time point). -->
-  <script src="js/town-zone-buildings.js?v=20261009h04898b3"></script>
+  <script src="js/town-zone-buildings.js?v=20261013h2c12a83"></script>
   <!-- Same-origin live Map Editor transport + runtime bridge. Loaded before
        game.js so its private scene state can be injected during setup. -->
   <script src="js/map-live-preview.js?v=20260909a&window=20260926rebase1"></script>
@@ -1551,7 +1552,7 @@
           <div class="wallet-display"><div class="wallet-icon">💰</div><div class="wallet-label">Current gold</div><div class="wallet-amount" id="gkGoldDisplay">0<span class="wallet-unit">g</span></div></div>
         </div>
         <div class="menu-section supply-shop-section">
-          <div class="menu-section-title">Garanki Gabu — Unbinding &amp; Enchanting</div>
+          <div class="menu-section-title">Garanki Gabu — Artifacts &amp; Enchanting</div>
           <div id="garankiEnchanterList" class="supply-list"></div>
         </div>
       </div><!-- /mpGarankiEnchanter -->
@@ -2487,7 +2488,7 @@
   <script src="js/dialogue-camera-framing.js?v=20261002hba1474a"></script>
   <script src="js/dialogue-templates.js?v=20260929mastery1"></script>
   <script src="js/dialogue-rich-text.js?v=20260929colors1"></script>
-  <script src="js/dialogue-content.js?v=20261009h14e8360"></script>
+  <script src="js/dialogue-content.js?v=20261013h8377e46"></script>
   <script src="js/combat/combat-tutorial-content.js?v=20261001cae883e8"></script>
   <script src="js/combat/combat-tutorial-mastery.js?v=20260929mastery1-goals1"></script>
   <script src="js/combat/combat-tutorial-partner.js?v=20261009hdbd0721"></script>
@@ -2609,7 +2610,7 @@
   <!-- Directional camera pitch policy is isolated from controller bindings/gameplay dispatch. -->
   <script src="js/camera-look-clamp.js?v=20260923review2"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261013rbs5"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261013hd84a447"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
@@ -2634,7 +2635,7 @@
   <script src="js/romance-wedding.js?v=20261007wedding1"></script>
   <script src="js/romance-system.js?v=20261013h23504d0"></script>
   <script src="js/npc-command-wheel.js?v=20261008h02bf686"></script>
-  <script src="game.js?v=20261013h1baa65c"></script>
+  <script src="game.js?v=20261013h20597ac"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261010h8448517"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
