@@ -21,19 +21,53 @@ jobs:
           node-version: '22'
       - name: Fetch current main
         run: git fetch origin main
+      - name: Apply integration fixes
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+
+          function replaceExact(path, before, after, label) {
+            const source = fs.readFileSync(path, 'utf8');
+            if (!source.includes(before)) throw new Error(`${label}: expected source block not found in ${path}`);
+            fs.writeFileSync(path, source.replace(before, after));
+          }
+
+          replaceExact(
+            'docs/js/combat/combat-vocalizations.js',
+            `        const tailRealS = Math.max(0.001, (buffer.duration - middleEndS) / rate);\n        const releaseDelayS = Math.max(0, token.durationS - tailRealS);\n        token.releaseTimer = setTimeout(() => releaseCharge(token), releaseDelayS * 1000);`,
+            `        const tailRealS = Math.max(0.001, (buffer.duration - middleEndS) / rate);\n        const elapsedS = Math.max(0, (nowMs() - token.createdAtMs) / 1000); // Keeps first-use decode time from extending a predetermined gameplay windup.\n        const releaseDelayS = Math.max(0, token.durationS - elapsedS - tailRealS);\n        token.releaseTimer = setTimeout(() => releaseCharge(token), releaseDelayS * 1000);`,
+            'charge decode timing fix',
+          );
+
+          replaceExact(
+            'docs/js/combat/combat-vocalizations.js',
+            `  function installBreathScheduler() {\n    if (window.RuntimeFrameScheduler?.register) {\n      window.RuntimeFrameScheduler.register(SCHEDULER_ID, breathFrame, {\n        phase: 'post-game',\n        owner: 'CombatVocalizations',\n        description: 'Schedules player heavy-breath one-shots only while ordinary stamina is below 100%.',\n      });\n      return;\n    }\n    if (typeof requestAnimationFrame !== 'function') return;\n    const fallbackFrame = timestamp => {\n      breathFrame({ timestamp });\n      requestAnimationFrame(fallbackFrame);\n    };\n    requestAnimationFrame(fallbackFrame);\n  }`,
+            `  function installBreathScheduler() {\n    if (!window.RuntimeFrameScheduler?.register) return; // Shared scheduler owns shipped frame loops; do not create a second RAF owner.\n    window.RuntimeFrameScheduler.register(SCHEDULER_ID, breathFrame, {\n      phase: 'post-game',\n      owner: 'CombatVocalizations',\n      description: 'Schedules player heavy-breath one-shots only while ordinary stamina is below 100%.',\n    });\n  }`,
+            'runtime frame ownership fix',
+          );
+
+          replaceExact(
+            'docs/tools/combat-vocalization-editor/index.html',
+            `<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">\n<title>Combat Vocalization Editor — Hobunji Hollow</title>`,
+            `<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">\n<script src="../../js/tap-reliability.js?v=20261010a"></script>\n<title>Combat Vocalization Editor — Hobunji Hollow</title>`,
+            'tool tap reliability fix',
+          );
+          NODE
       - name: Refresh cache-bust chain
         run: node scripts/check-cache-busts.js --fix
       - name: Restore temporary helper workflow
         run: git checkout origin/main -- .github/workflows/temp-mammakh-cache-fix.yml
       - name: Validate cache-bust chain
         run: node scripts/check-cache-busts.js origin/main
-      - name: Run regression suite
+      - name: Run combat vocalization regression
+        run: node scripts/test-combat-vocalizations.js
+      - name: Run full regression suite
         run: node scripts/run-tests.js
-      - name: Commit validated cache refresh
+      - name: Commit validated integration fixes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+Oolnokk@users.noreply.github.com"
-          git add docs/index.html .github/workflows/temp-mammakh-cache-fix.yml
+          git add -A
           git diff --cached --quiet && exit 0
-          git commit -m "Refresh combat vocalization cache bust"
+          git commit -m "Fix combat vocalization integration checks"
           git push origin HEAD:feat/combat-vocalizations
