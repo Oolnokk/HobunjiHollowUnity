@@ -11,8 +11,8 @@ document.write('<script src="js/folder-save-primary.js?v=20260930hf3fb70d"><\/sc
 document.write('<script src="js/folder-save-empty-bootstrap.js?v=20260914a"><\/script>');
 document.write('<script src="js/folder-save-device-provenance.js?v=20260914a"><\/script>');
 document.write('<script src="js/folder-save-runtime-flush.js?v=20260914a"><\/script>');
-document.write('<script src="js/save-checkpoint-manager.js?v=20261013hbbd7f49"><\/script>');
-document.write('<script src="js/folder-save-quit-guard.js?v=20261001hf4554e3"><\/script>');
+document.write('<script src="js/save-checkpoint-manager.js?v=20261013hfc2fe51"><\/script>');
+document.write('<script src="js/folder-save-quit-guard.js?v=20261013hb61cc3b"><\/script>');
 document.write('<script src="js/folder-save-debug-ui.js?v=20261013h31a30a7"><\/script>');
 document.write('<script src="js/netlify-cloud-save.js?v=20260920startup4"><\/script>');
 document.write('<script src="js/local-save-flow.js?v=20260812a"><\/script>');

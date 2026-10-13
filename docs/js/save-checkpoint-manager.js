@@ -52,6 +52,9 @@
   let folderBaselineSeeds = 0; // Counts primary-folder baselines created when upgrading folders with no history.
   let restoreRollbacks = 0; // Counts failed restores that successfully rolled the folder back.
   let lastAction = 'initialized'; // Latest checkpoint operation shown in diagnostics.
+  const folderOnlyRecords = new Map(); // Keeps disk-backed checkpoints usable for rotation and recovery when their browser mirrors do not fit.
+  let browserMirrorsSkipped = 0; // Mobile diagnostics count optional mirrors rejected by the browser quota.
+  let lastBrowserMirrorWarning = ''; // Recovery UI explains why checkpoints are available from the folder only.
   let lastError = ''; // Latest checkpoint/recovery failure shown in diagnostics.
   let lastIntegrityWarning = ''; // Latest suspicious-state reason shown in diagnostics.
   let lastRecoveryReadErrors = {}; // Per-slot folder-read failures distinguish "could not read" from a genuinely absent checkpoint.
@@ -201,17 +204,41 @@
 
   function readSlot(slot) {
     const key = SLOT_KEYS[slot]; // Shared slot names keep browser fallback aligned with folder recovery filenames.
-    return key ? readRecord(key) : null;
+    const browserRecord = key ? readRecord(key) : null; // Browser fallback stays independent when the folder is disconnected or imports are active.
+    if (browserRecord) return browserRecord;
+    return !emergencyRecoveryImportActive && folderRecoveryAvailable() ? folderOnlyRecords.get(slot) || null : null;
   }
 
   function writeSlot(slot, record) {
     const key = SLOT_KEYS[slot];
     if (!key) throw new Error(`Unknown checkpoint slot: ${String(slot)}`);
     writeRecord(key, record);
+    folderOnlyRecords.delete(slot);
     return record;
   }
 
+  function mirrorFolderRecord(slot, record) {
+    try {
+      writeSlot(slot, record);
+      folderOnlyRecords.set(slot, record); // Retain readable disk history even if a later mirror evicts this browser copy.
+      return record;
+    } catch (error) {
+      if (!window.HobunjiStorageQuota?.isQuotaError?.(error)) throw error;
+      localStorage.removeItem(SLOT_KEYS[slot]); // An outdated browser mirror must not hide the newer disk-backed record.
+      folderOnlyRecords.set(slot, record);
+      browserMirrorsSkipped++;
+      lastBrowserMirrorWarning = 'Browser storage is full. Recovery checkpoints are saved in the Primary Save Folder; some browser copies were skipped.';
+      return record;
+    }
+  }
+
+  async function persistFolderRecord(slot, record) {
+    if (!await writeFolderSlot(slot, record)) throw new Error('The recovery folder is unavailable.');
+    return mirrorFolderRecord(slot, record);
+  }
+
   function removeSlot(slot) {
+    folderOnlyRecords.delete(slot);
     const key = SLOT_KEYS[slot]; // Folder authority clears stale browser history for recovery slots the folder does not contain.
     if (key) localStorage.removeItem(key);
   }
@@ -358,26 +385,22 @@
   }
 
   async function promoteAutosave(snapshot, { reason = 'folder-sync', savedAt = Date.now(), writeFolder = false } = {}) {
-    const current = readSlot('auto');
-    const previous = readSlot('autoPrevious');
-    let promotedPrevious = null;
+    const current = writeFolder ? safeValidateRecord(await folderApi().readRecoveryCheckpoint('auto')) : readSlot('auto'); // Disk remains authoritative when quota eviction removed a successful browser mirror.
+    const previous = writeFolder ? safeValidateRecord(await folderApi().readRecoveryCheckpoint('autoPrevious')) : readSlot('autoPrevious'); // Rotation must preserve the folder history too.
     if (current && (!previous || current.savedAt - previous.savedAt >= AUTO_PREVIOUS_MIN_AGE_MS)) {
-      promotedPrevious = current;
-      writeSlot('autoPrevious', current);
+      if (writeFolder) await persistFolderRecord('autoPrevious', current);
+      else writeSlot('autoPrevious', current);
     }
 
     const record = createRecord('autosave', snapshot, reason, savedAt);
-    writeSlot('auto', record);
+    if (writeFolder) await persistFolderRecord('auto', record);
+    else writeSlot('auto', record);
     lastAutosaveFingerprint = snapshotApi()?.fingerprint?.(snapshot) || '';
     autosavesWritten++;
     lastIntegrityWarning = '';
     lastError = '';
     lastAction = 'autosaved';
 
-    if (writeFolder) {
-      if (promotedPrevious) await writeFolderSlot('autoPrevious', promotedPrevious);
-      await writeFolderSlot('auto', record);
-    }
     return record;
   }
 
@@ -385,25 +408,22 @@
     if (!folderIsPrimary() || recoveryKind === 'restore') return;
     if (recoveryKind === 'mapChange') {
       const record = createRecord('map-change', snapshot, reason || 'Map changed', savedAt); // Canonical write succeeded before advancing the independent travel slot.
-      writeSlot('mapChange', record);
-      await writeFolderSlot('mapChange', record);
+      await persistFolderRecord('mapChange', record);
       lastAction = 'map-change-saved';
       return record;
     }
     if (recoveryKind === 'manual') {
       const record = createRecord('manual', snapshot, 'manual-folder-save', savedAt);
-      writeSlot('manual', record); // Canonical write has already succeeded, so the browser mirror can now advance safely.
+      await persistFolderRecord('manual', record); // Disk recovery succeeds before its optional browser mirror.
       manualSavesWritten++;
-      await writeFolderSlot('manual', record);
       lastAction = 'manual-saved-folder';
       lastError = '';
       return record;
     }
     if (recoveryKind === 'campfire') {
       const record = createRecord('campfire', snapshot, 'campfire-folder-save', savedAt);
-      writeSlot('campfire', record); // Campfire saves advance only their own recovery point, never the pause-menu manual slot.
+      await persistFolderRecord('campfire', record); // Campfire saves advance only their own recovery point.
       campfireSavesWritten++;
-      await writeFolderSlot('campfire', record);
       lastAction = 'campfire-saved-folder';
       lastError = '';
       return record;
@@ -428,8 +448,7 @@
     if (!characters.some(entry => String(entry?.id || '') === ids.characterId)) return false;
     if (!worlds.some(entry => String(entry?.id || '') === ids.worldId)) return false;
     const record = createRecord('autosave', primary.snapshot, 'folder-baseline', primary.savedAt || Date.now());
-    writeSlot('auto', record);
-    await writeFolderSlot('auto', record);
+    await persistFolderRecord('auto', record);
     lastAutosaveFingerprint = snapshotApi()?.fingerprint?.(primary.snapshot) || '';
     autosavesWritten++;
     folderBaselineSeeds++;
@@ -454,6 +473,7 @@
     if (typeof localSave?.readRecoveryCheckpoint !== 'function' || typeof localSave?.readPrimarySnapshot !== 'function') return false;
     recoveryMirrorPromise = (async () => {
       const warnings = [];
+      lastBrowserMirrorWarning = '';
       lastRecoveryReadErrors = {};
       try {
         folderRecoveryReads++;
@@ -474,7 +494,7 @@
           }
           const folderRecord = safeValidateRecord(folderRaw);
           if (folderRecord) {
-            writeSlot(slot, folderRecord); // Valid folder history is the only history mirrored into browser storage once armed.
+            mirrorFolderRecord(slot, folderRecord); // Valid folder history is the only history mirrored into browser storage once armed.
           } else {
             if (folderRaw) warnings.push(`${slot}: invalid recovery record preserved in folder`);
             removeSlot(slot); // Missing/invalid folder slots do not import browser history from another folder or fallback session.
@@ -835,6 +855,7 @@
     const warnings = [];
     const mirrorPromise = folderRecoveryAvailable()
       ? syncRecoveryMirrorsFromFolder().then(() => {
+          if (lastBrowserMirrorWarning) warnings.push(lastBrowserMirrorWarning);
           if (lastError) warnings.push(lastError); // Slot-level timeouts/read failures stay visible while healthy checkpoints remain usable.
         })
       : Promise.resolve();
@@ -1253,6 +1274,9 @@
       restoresApplied,
       folderRecoveryReads,
       folderRecoveryWrites,
+      browserMirrorsSkipped,
+      lastBrowserMirrorWarning: lastBrowserMirrorWarning || null,
+      latestChange: 'Folder recovery writes survive a full browser quota; folder-only checkpoints remain available for recovery and rotation.',
       folderBaselineSeeds,
       restoreRollbacks,
       hasManual: !!readSlot('manual'),

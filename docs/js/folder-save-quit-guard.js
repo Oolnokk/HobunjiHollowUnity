@@ -19,6 +19,7 @@
   let busy = false; // Prevents double-clicks from starting overlapping runtime/folder saves.
   let quitAttempts = 0; // Mobile-visible count of guarded quit attempts.
   let successfulFolderFlushes = 0; // Mobile-visible count of folder writes completed before a quit reload.
+  let lastRecoveryWarning = ''; // Diagnostics distinguish successful primary saves with secondary recovery failures.
   let lastError = ''; // Mobile-visible latest guarded-quit error.
   let menuControlsObserver = null; // Watches menu children and open/close state because controls are dynamic.
   let manualSaveBusyTimer = null; // Polls the existing Manual Save disabled state without feeding disabled mutations back into the menu observer.
@@ -219,7 +220,9 @@
       if (!overwrite) return { ok: false, cancelled: true };
       status = await save.syncNow({ force: true });
     }
-    if (status.lastError) return { ok: false, error: status.lastError };
+    const primarySaved = ['saved-primary-recovery-error', 'autosaved-primary-recovery-error'].includes(status.lastAction); // These actions are set only after the canonical folder write succeeds.
+    if (status.lastError && !primarySaved) return { ok: false, error: status.lastError };
+    lastRecoveryWarning = primarySaved ? status.lastError || '' : '';
     successfulFolderFlushes++;
     return { ok: true, fallbackOnly: false };
   }
@@ -314,11 +317,12 @@
       quitAttempts,
       successfulFolderFlushes,
       lastError: lastError || null,
+      lastRecoveryWarning: lastRecoveryWarning || null,
       menuControlsCompact,
       menuTabsFit: !menuTabsOverflow(),
       menuControlRelayouts,
       relayoutPending: Boolean(menuControlRelayoutTimer),
-      latestChange: 'Phone rotation relayout is debounced and menu label mutations no longer feed back into the menu observer.',
+      latestChange: 'Quit proceeds after a successful primary folder save even if secondary recovery history fails.',
       farmResetDisabled: typeof document?.getElementById === 'function' && document.getElementById(RESET_BUTTON_ID)?.disabled === true,
       labeledMenuButtons: typeof document?.getElementById === 'function'
         ? MENU_CONTROL_LABELS.filter(spec => {

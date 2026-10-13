@@ -157,6 +157,7 @@ async function main() {
       location: { reload() { sequence.push('reload'); } },
       document: {
         addEventListener() {},
+        querySelector() { return null; },
       },
       window: {
         LocalSaveFolder: {
@@ -173,7 +174,21 @@ async function main() {
     vm.runInContext(source, context, { filename: 'folder-save-quit-guard.js' });
     await context.window.FolderSaveQuitGuard.guardedQuit(button);
     assert.deepEqual(sequence, ['runtime', 'folder', 'reload'], 'Quit must save runtime → folder → reload, in that order');
-    console.log('OK  guarded Quit flushes live runtime before the primary folder and reload');
+    for (const lastAction of ['saved-primary-recovery-error', 'autosaved-primary-recovery-error']) {
+      sequence.length = 0;
+      folderStatus.lastAction = lastAction;
+      folderStatus.lastError = 'Primary folder save succeeded, but recovery history could not be updated: quota exceeded';
+      await context.window.FolderSaveQuitGuard.guardedQuit(button);
+      assert.deepEqual(sequence, ['runtime', 'folder', 'reload'], 'secondary recovery errors do not block a successful primary save');
+      assert.equal(context.window.__hobunjiFolderSaveQuitDebug.snapshot().lastRecoveryWarning, folderStatus.lastError);
+    }
+    sequence.length = 0;
+    folderStatus.lastAction = 'save-error';
+    folderStatus.lastError = 'disk write failed';
+    context.alert = message => { sequence.push('alert'); assert.match(message, /disk write failed/); };
+    await context.window.FolderSaveQuitGuard.guardedQuit(button);
+    assert.deepEqual(sequence, ['runtime', 'folder', 'alert'], 'a real primary save failure still blocks quit');
+    console.log('OK  guarded Quit distinguishes primary failure from recovery warnings');
   }
 
   console.log('\nFolder save runtime integrity checks passed.');

@@ -436,6 +436,25 @@ const vm = require('node:vm');
   assert.match(window.__hobunjiSaveCheckpointDebug.snapshot().lastError || '', /manual: Recovery "manual" read timed out after 3s.*showing browser fallback copy/, 'diagnostics expose the timeout and browser fallback provenance');
   assert.match(window.__hobunjiSaveCheckpointDebug.snapshot().recoveryReadErrors.manual || '', /timed out after 3s/, 'per-slot diagnostics distinguish unreadable history from an absent checkpoint');
 
+  // Full browser storage must not interrupt disk-backed recovery or rolling history.
+  const originalSetItem = localStorage.setItem; // Restored before browser-only import checks.
+  window.HobunjiStorageQuota = { isQuotaError: error => error.name === 'QuotaExceededError' };
+  localStorage.setItem = () => { const error = new Error('quota exceeded'); error.name = 'QuotaExceededError'; throw error; };
+  for (const recoveryKind of ['manual', 'campfire', 'mapChange', 'auto']) {
+    now += 400_000;
+    await api.onFolderSnapshotWritten(structuredClone(originalSnapshot), { recoveryKind, savedAt: now, reason: 'quota regression' });
+    assert.equal(folderRecovery.get(recoveryKind).savedAt, now, `${recoveryKind} reaches disk despite mirror quota`);
+  }
+  const previousDiskAuto = structuredClone(folderRecovery.get('auto')); // The next rotation must use the disk-backed record even without a browser mirror.
+  now += 400_000;
+  await api.onFolderSnapshotWritten(structuredClone(originalSnapshot), { savedAt: now });
+  assert.equal(folderRecovery.get('autoPrevious').savedAt, previousDiskAuto.savedAt, 'rotation retains the prior folder-only autosave');
+  await api.syncRecoveryMirrorsFromFolder();
+  assert.ok(window.__hobunjiSaveCheckpointDebug.snapshot().browserMirrorsSkipped >= 5, 'quota skips are visible in diagnostics');
+  assert.match(window.__hobunjiSaveCheckpointDebug.snapshot().lastBrowserMirrorWarning, /Primary Save Folder/);
+  localStorage.setItem = originalSetItem;
+  await api.syncRecoveryMirrorsFromFolder(); // Rehydrate browser mirrors after space becomes available.
+
   // Emergency recovery import bypasses File System Access entirely. This is the Opera fallback
   // when showDirectoryPicker is wedged in an already-active state.
   const importedManual = structuredClone(legacyManualCheckpoint);
