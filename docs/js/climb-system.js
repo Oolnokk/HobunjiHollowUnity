@@ -79,11 +79,15 @@
       if (col < 0 || row < 0 || col >= aC || row >= aR) return null;
       const t = grid[row][col];
       if (!t) return null;
+      // Map-boundary escarpments (MapBoundaryGuard) are scenery, never a
+      // route: neither their face nor their top can be climbed.
+      if (window.MapBoundaryGuard?.isBoundaryTile?.(t)) return null;
       if (!t.incline) {
         if (wallTiles === 0) return null; // nothing but open ground ahead
         if (deps.isSolid(t.type)) return null;
         if ((t.elevTier || 0) === startElevTier) return null;
-        return { type: 'wall', dir, landCol: col, landRow: row, startElevTier, landElevTier: t.elevTier || 0, wallTiles };
+        const landElevTier = t.elevTier || 0;
+        return { type: 'wall', dir, landCol: col, landRow: row, startElevTier, landElevTier, wallTiles, descending: landElevTier < startElevTier };
       }
       wallTiles++;
     }
@@ -241,6 +245,16 @@
   const CLIMB_HOP_ACTIVE_S = 0.32;
   const CLIMB_HOP_PAUSE_S  = 0.26;
   const CLIMB_HOP_BOUNCE_UNITS = 0.4;
+  // Going DOWN a cliff is one quick leap off the edge that lands into a
+  // forward roll, instead of the slow staggered hop sequence an ascent uses.
+  const CLIFF_JUMP_DOWN_ACTIVE_S = 0.34;
+  const CLIFF_JUMP_DOWN_BOUNCE_UNITS = 0.55;
+  // Holding the stick/keys away from the wall mid-ascent lets go: a quick
+  // drop straight back to the ground the climb started from.
+  const CLIMB_CANCEL_HOLD_S = 0.12;
+  const CLIMB_CANCEL_MIN_ELAPSED_S = 0.1;
+  const CLIMB_CANCEL_BACK_DOT = -0.55;
+  const CLIMB_DROP_ACTIVE_S = 0.26;
   // Non-grid climbables (Random Test Ruin ledges, ...) register a provider
   // returning { start() } for the ledge the player faces, or null. game.js
   // starts it from a forward dodge, exactly like a cliff (performContextAction).
@@ -256,6 +270,17 @@
       try { const target = provider(); if (target?.start) return target; } catch (_) {}
     }
     return null;
+  }
+
+  // Per-climb timing/cancel state, reset by every climb starter so one
+  // climb's jump-down timing or dropped flag never leaks into the next.
+  function resetClimbTiming(player, { activeS = CLIMB_HOP_ACTIVE_S, pauseS = CLIMB_HOP_PAUSE_S, bounce = CLIMB_HOP_BOUNCE_UNITS, cancelable = false } = {}) {
+    player._climbHopActiveS = activeS;
+    player._climbHopPauseS = pauseS;
+    player._climbHopBounceUnits = bounce;
+    player._climbCancelable = cancelable;
+    player._climbCancelHoldS = 0;
+    player._climbDropped = false;
   }
 
   function startScriptedWorldClimb(config = {}) {
@@ -292,6 +317,7 @@
     player._climbTargetBranch = null;
     player._climbJumpDownAxis = null;
     player._climbLastHopIndex = -1;
+    resetClimbTiming(player, { cancelable: endWorldY > startWorldY + 0.05 });
     climbSafetyDebug.lastBlockReason = null;
     climbSafetyDebug.lastBlockRideState = 'none';
     return true;
@@ -326,9 +352,10 @@
     const startCol = Math.floor(player.x / deps.TILE), startRow = Math.floor(player.y / deps.TILE);
     const startTile = grid[startRow][startCol];
     const landTile = grid[climb.landRow][climb.landCol];
+    const descending = climb.descending ?? ((climb.landElevTier || 0) < (climb.startElevTier || 0));
     player.climbing = true;
     player.climbElapsed = 0;
-    player.climbHopCount = Math.max(3, climb.wallTiles + 1);
+    player.climbHopCount = descending ? 1 : Math.max(3, climb.wallTiles + 1);
     player.climbStartX = player.x;
     player.climbStartY = player.y;
     player.climbEndX = (climb.landCol + 0.5) * deps.TILE;
@@ -343,9 +370,14 @@
     deps.setTargetAimAngle(player.angle);
     deps.setLastMoveAngle(player.angle);
     player._climbTargetBranch = null;
+    // A descent lands into the same forward roll a branch jump-down uses.
+    player._climbJumpDownAxis = descending ? { x: climb.dir.x, y: climb.dir.y } : null;
     // -1 so updateClimb's hopIndex-change check always fires for hop 0
     // (the very first stagger) instead of only from hop 1 onward.
     player._climbLastHopIndex = -1;
+    if (descending) resetClimbTiming(player, { activeS: CLIFF_JUMP_DOWN_ACTIVE_S, pauseS: 0, bounce: CLIFF_JUMP_DOWN_BOUNCE_UNITS });
+    else resetClimbTiming(player, { cancelable: true });
+    climbSafetyDebug.lastJumpMode = descending ? 'cliff' : null;
     climbSafetyDebug.lastBlockReason = null;
     climbSafetyDebug.lastBlockRideState = 'none';
     return true;
@@ -381,7 +413,9 @@
     deps.setTargetAimAngle(player.angle);
     deps.setLastMoveAngle(player.angle);
     player._climbTargetBranch = branch;
+    player._climbJumpDownAxis = null;
     player._climbLastHopIndex = -1;
+    resetClimbTiming(player, { cancelable: true });
     climbSafetyDebug.lastBlockReason = null;
     climbSafetyDebug.lastBlockRideState = 'none';
     return true;
@@ -418,6 +452,7 @@
     player._climbTargetBranch = null;
     player._climbJumpDownAxis = jumpDir;
     player._climbLastHopIndex = -1;
+    resetClimbTiming(player);
     climbSafetyDebug.lastJumpMode = climb.mode || 'tip';
     climbSafetyDebug.lastBlockReason = null;
     climbSafetyDebug.lastBlockRideState = 'none';
@@ -521,9 +556,49 @@
     return { fell: true, x: groundX, y: groundY };
   }
 
+  // Moving away from the wall mid-ascent lets go. The remaining crossing is
+  // retargeted into one short drop from the current height straight back to
+  // where the climb started (the incline tiles it is passing through are
+  // impassable, so the start point is the only safe place to land).
+  function climbCancelRequested(player, dt) {
+    if (!player._climbCancelable || player._climbDropped) return false;
+    if (player.climbElapsed < CLIMB_CANCEL_MIN_ELAPSED_S) return false;
+    const dx = player.climbEndX - player.climbStartX, dy = player.climbEndY - player.climbStartY;
+    const len = Math.hypot(dx, dy);
+    const raw = deps.getMovementInput?.() || { x: 0, y: 0 };
+    const rawLen = Math.hypot(raw.x, raw.y);
+    const backward = len > 0.001 && rawLen > 0.35 && ((raw.x * dx + raw.y * dy) / (len * rawLen)) <= CLIMB_CANCEL_BACK_DOT;
+    player._climbCancelHoldS = backward ? (player._climbCancelHoldS || 0) + dt : 0;
+    return player._climbCancelHoldS >= CLIMB_CANCEL_HOLD_S;
+  }
+
+  function dropFromClimb(player) {
+    const groundX = player.climbStartX, groundY = player.climbStartY;
+    const groundSurfaceY = player.climbSurfaceStartY;
+    player.climbStartX = player.x;
+    player.climbStartY = player.y;
+    player.climbSurfaceStartY = player.climbSurfaceY;
+    player.climbEndX = groundX;
+    player.climbEndY = groundY;
+    player.climbSurfaceEndY = groundSurfaceY;
+    player.climbElapsed = 0;
+    player.climbHopCount = 1;
+    player._climbLastHopIndex = -1;
+    player._climbTargetBranch = null;
+    player._climbJumpDownAxis = null;
+    resetClimbTiming(player, { activeS: CLIMB_DROP_ACTIVE_S, pauseS: 0, bounce: 0.12 });
+    player._climbDropped = true;
+    climbSafetyDebug.lastJumpMode = 'cancel-drop';
+    window.__farmLog?.('[climb] cancelled by moving away from the wall; dropping back down', 'wildlife');
+  }
+
   function updateClimb(dt) {
     const player = deps.player;
-    const cycle = CLIMB_HOP_ACTIVE_S + CLIMB_HOP_PAUSE_S;
+    if (climbCancelRequested(player, dt)) dropFromClimb(player);
+    const hopActiveS = player._climbHopActiveS ?? CLIMB_HOP_ACTIVE_S;
+    const hopPauseS = player._climbHopPauseS ?? CLIMB_HOP_PAUSE_S;
+    const hopBounce = player._climbHopBounceUnits ?? CLIMB_HOP_BOUNCE_UNITS;
+    const cycle = hopActiveS + hopPauseS;
     const totalDur = player.climbHopCount * cycle;
     player.climbElapsed = Math.min(player.climbElapsed + dt, totalDur);
     const hopIndex = Math.min(player.climbHopCount - 1, Math.floor(player.climbElapsed / cycle));
@@ -536,15 +611,15 @@
       window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().climbStep);
     }
     const withinCycle = player.climbElapsed - hopIndex * cycle;
-    const hopActive = withinCycle < CLIMB_HOP_ACTIVE_S;
-    const hopLocalT = hopActive ? deps.clamp(withinCycle / CLIMB_HOP_ACTIVE_S, 0, 1) : 1;
+    const hopActive = withinCycle < hopActiveS;
+    const hopLocalT = hopActive ? deps.clamp(withinCycle / hopActiveS, 0, 1) : 1;
     const eased = 1 - Math.pow(1 - hopLocalT, 2); // quick lift-off, settles into each landing
     const overall = deps.clamp((hopIndex + eased) / player.climbHopCount, 0, 1);
 
     player.x = player.climbStartX + (player.climbEndX - player.climbStartX) * overall;
     player.y = player.climbStartY + (player.climbEndY - player.climbStartY) * overall;
     player.climbSurfaceY = player.climbSurfaceStartY + (player.climbSurfaceEndY - player.climbSurfaceStartY) * overall;
-    player.climbHopBounce = hopActive ? Math.sin(hopLocalT * Math.PI) * CLIMB_HOP_BOUNCE_UNITS : 0;
+    player.climbHopBounce = hopActive ? Math.sin(hopLocalT * Math.PI) * hopBounce : 0;
     player.vx = 0; player.vy = 0;
 
     if (player.climbElapsed >= totalDur) {
@@ -553,6 +628,8 @@
       player.climbSurfaceY = player.climbSurfaceEndY;
       player.climbHopBounce = 0;
       player.climbing = false;
+      player._climbCancelable = false;
+      player._climbDropped = false;
       if (player._climbTargetBranch) {
         const branch = player._climbTargetBranch;
         player._climbTargetBranch = null;

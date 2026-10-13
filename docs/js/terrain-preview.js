@@ -220,6 +220,10 @@
     const plateauElevById = new Map((ws.plateauGroups || []).map(g => [g.id, g.elevation || 0]));
 
     mergeZoneTilesInto(rootMap, 0, 0, 0, outTiles, mesas, childByParentGroup, plateauElevById, outBuildings, visualHeights);
+    // Carries the generator's border-escarpment flag through the fold as
+    // `mapBoundary` (unclimbable, unwalkable, unspawnable — see
+    // js/map-boundary-guard.js).
+    (typeof window !== 'undefined' ? window : globalThis).MapBoundaryGuard?.markMergedTiles?.(rootMap, outTiles);
     for (const b of outBuildings) {
       const t = outTiles.get(`${b.gridX},${b.gridZ}`);
       b.elevTier = (t && typeof t.elevTier === 'number') ? t.elevTier : (b._baseTier || 0);

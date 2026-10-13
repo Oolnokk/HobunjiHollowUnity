@@ -57,6 +57,7 @@
         waterfall: t.type === deps.TileType.WATERFALL,
         terrain: t.type,
         occupiedBy: null,
+        borderEscarpment: !!t.mapBoundary, // Camps never stamp onto map-boundary escarpments (js/map-boundary-guard.js).
       };
       tiles[t.r][t.c] = view;
       srcByKey.set(`${t.c},${t.r}`, t);
