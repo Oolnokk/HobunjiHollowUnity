@@ -453,6 +453,7 @@
     const pitchRatio = Math.pow(2, clampPitchFor(opts.pitchSemitones, opts.pitchMaxSemitones ?? MAX_SHIFT_SEMITONES) / 12); // Used by native BufferSource resampling so audible transposition avoids the custom cubic resampler.
     const effectiveDurationS = buffer.duration / pitchRatio; // Used for completion timing after playbackRate changes the stretched buffer's wall-clock duration.
     let stopped = false;
+    let stopping = false; // A priority handoff may ramp this voice out for a few milliseconds before final cleanup.
     let finishTimer = null;
     let startTimer = null;
     let wet = null;
@@ -478,6 +479,7 @@
     function cleanup() {
       if (stopped) return;
       stopped = true;
+      stopping = false;
       clearTimeout(finishTimer);
       clearTimeout(startTimer);
       try { source.disconnect(); } catch (_) {}
@@ -486,10 +488,31 @@
       try { wet?.send?.disconnect?.(); } catch (_) {}
       onFinished?.();
     }
-    function stop() {
-      if (stopped) return;
-      try { source.stop(); } catch (_) {}
-      cleanup();
+    function stop(fadeOutS = 0) {
+      if (stopped || stopping) return;
+      const fade = clamp(finite(fadeOutS, 0), 0, 0.08);
+      if (!(fade > 0) || !master?.gain) {
+        try { source.stop(); } catch (_) {}
+        cleanup();
+        return;
+      }
+      stopping = true;
+      const at = context.currentTime;
+      try {
+        if (typeof master.gain.cancelAndHoldAtTime === 'function') master.gain.cancelAndHoldAtTime(at);
+        else {
+          master.gain.cancelScheduledValues?.(at);
+          master.gain.setValueAtTime(Math.max(0.0001, Number(master.gain.value) || 0.0001), at);
+        }
+        master.gain.linearRampToValueAtTime(0.0001, at + fade);
+        source.stop(at + fade + 0.001);
+      } catch (_) {
+        try { source.stop(); } catch (_) {}
+        cleanup();
+        return;
+      }
+      clearTimeout(finishTimer);
+      finishTimer = setTimeout(cleanup, Math.max(1, Math.ceil((fade + 0.004) * 1000)));
     }
     source.onended = cleanup;
     try { source.start(startAt); }
@@ -535,6 +558,7 @@
     }
     let finished = false;
     let started = false;
+    let fadeTimer = null; // Native fallback uses a tiny volume ramp when a higher-priority voice preempts it.
     const notifyStarted = () => {
       if (started) return;
       started = true;
@@ -545,6 +569,8 @@
     const cleanup = () => {
       if (finished) return;
       finished = true;
+      if (fadeTimer) clearInterval(fadeTimer);
+      fadeTimer = null;
       opts.onFinished?.();
     };
     audio.addEventListener?.('playing', notifyStarted, { once: true });
@@ -558,9 +584,25 @@
     return {
       audio,
       independentPitch: Math.abs(pitch) < 0.05,
-      stop() {
-        try { audio.pause(); audio.currentTime = 0; } catch (_) {}
-        cleanup();
+      stop(fadeOutS = 0) {
+        const fade = clamp(finite(fadeOutS, 0), 0, 0.08);
+        if (!(fade > 0) || finished) {
+          try { audio.pause(); audio.currentTime = 0; } catch (_) {}
+          cleanup();
+          return;
+        }
+        const startedAt = Date.now();
+        const startVolume = Math.max(0, Number(audio.volume) || 0);
+        if (fadeTimer) clearInterval(fadeTimer);
+        fadeTimer = setInterval(() => {
+          const t = Math.min(1, (Date.now() - startedAt) / Math.max(1, fade * 1000));
+          try { audio.volume = startVolume * (1 - t); } catch (_) {}
+          if (t < 1) return;
+          clearInterval(fadeTimer);
+          fadeTimer = null;
+          try { audio.pause(); audio.currentTime = 0; } catch (_) {}
+          cleanup();
+        }, 2);
       },
     };
   }
@@ -579,10 +621,10 @@
     let active = null;
     const handle = {
       independentPitch: true,
-      stop() {
+      stop(fadeOutS = 0) {
         if (stopped) return;
         stopped = true;
-        active?.stop?.();
+        active?.stop?.(fadeOutS);
         activeHandles.delete(handle);
       },
     };

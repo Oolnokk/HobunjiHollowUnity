@@ -3,7 +3,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 3;
+  const VERSION = 4;
   const CONFIG_URL = 'config/combat/combat-vocalizations.json';
   const LOCAL_OVERRIDE_KEY = 'hobunji_combat_vocalizations_override_v1';
   const SCHEDULER_ID = 'combat-vocalizations-breath';
@@ -233,17 +233,19 @@
   let configSource = 'defaults';
   let configError = null;
   let installedCombatHooks = false;
-  let nextBreathAtMs = 0;
-  let lastBreathIntervalS = 0;
-  let lastDotPainAtMs = -Infinity;
+  let lastDotPainAtMsByEntity = new WeakMap(); // Pain cadence is per character so one NPC's DoT cannot silence another's.
   let activeAbilityContext = null;
   let originalBeginStagedAction = null;
   let originalRegisterAbility = null;
   let chargeBufferPromise = null;
   let chargeBufferUrl = null;
   let chargeTokenSerial = 0;
-  const liveChargesByAbility = new Map(); // Used by hold-release abilities to stretch one charge vocal across the full charge window.
+  const liveChargesByAbility = new Map(); // Player held abilities keyed by ability id; NPC attacks use per-action tokens below.
   const activeChargeTokens = new Set(); // Used for cleanup/debug without coupling tokens to one combat archetype.
+  const trackedBreathers = new Set(); // Only non-player humanoids currently below max Stamina stay in the frame scheduler set.
+  const breathStateByEntity = new WeakMap(); // Per-character cadence prevents NPCs from sharing the player's next-breath clock.
+  const VOICE_FADE_OUT_S = 0.008; // Same sudden anti-pop handoff used by dialogue ownership.
+  const BREATH_RETRY_AFTER_SUPPRESSION_MS = 100; // Resume passive breathing promptly once pain/attack vocals release the mouth.
   const debug = {
     lastBreath: null,
     lastPain: null,
@@ -289,16 +291,32 @@
       || {};
   }
 
-  function playerVoiceIdentity() {
-    const appearance = window.__hobunjiPlayerProfile?.appearance || {};
+  function appearanceForEntity(entity) {
+    if (entity === player()) return window.__hobunjiPlayerProfile?.appearance || {};
+    return entity?.rosterRecord?.appearance
+      || entity?.rec?.appearance
+      || entity?.npcRecord?.appearance
+      || entity?.appearance
+      || {};
+  }
+
+  function isHumanoidVocalEntity(entity) {
+    if (!entity) return false;
+    if (entity === player()) return true;
+    const appearance = appearanceForEntity(entity);
+    return !!(appearance?.speciesId || entity?.npcId || entity?.rosterRecord?.appearance || entity?.rec?.appearance);
+  }
+
+  function voiceIdentity(entity = player()) {
+    const appearance = appearanceForEntity(entity);
     return {
       speciesId: String(appearance.speciesId || 'default'),
       gender: appearance.gender === 'female' ? 'female' : 'male',
     };
   }
 
-  function voiceModulation() {
-    const { speciesId, gender } = playerVoiceIdentity();
+  function voiceModulation(entity = player()) {
+    const { speciesId, gender } = voiceIdentity(entity);
     const root = config.utteranceModulation || {};
     const fallback = root.default?.[gender] || root.default?.male || {};
     const authored = root.species?.[speciesId]?.[gender] || {};
@@ -316,8 +334,8 @@
     return amount > 0 ? (Math.random() * 2 - 1) * amount : 0;
   }
 
-  function voicePlaybackPlan(randomSemitones = 0) {
-    const mod = voiceModulation();
+  function voicePlaybackPlan(randomSemitones = 0, entity = player()) {
+    const mod = voiceModulation(entity);
     return {
       modulation: mod,
       tempo: clamp(mod.tempo, 0.35, 3),
@@ -331,16 +349,62 @@
     try { audio.webkitPreservesPitch = enabled; } catch (_) {}
   }
 
-  function playOneShot(url, baseVolume, pitchRandomSemitones, debugKind, detail = {}) {
-    if (!url) return null;
+  function voicePriority(kind) {
+    const shared = window.CharacterVoiceOwner?.priorities || {};
+    if (kind === 'active') return Number(shared.active ?? 3);
+    if (kind === 'pain') return Number(shared.pain ?? 2);
+    return Number(shared.breath ?? 1);
+  }
+
+  function voiceSpatialOptions(entity) {
+    if (!entity || entity === player()) return { panX: 0, extraWetBoost: 0, area: entity?.areaId || entity?.area || null };
+    const spatial = window.AudioSystem?.creatureAudioSpatial?.(entity, {}) || {};
+    return {
+      panX: clamp(spatial.panX ?? 0, -1, 1),
+      extraWetBoost: Math.max(0, Number(spatial.extraWetBoost) || 0),
+      area: entity.areaId || entity.area || null,
+    };
+  }
+
+  function fadeNativeVoice(audio, fadeOutS = VOICE_FADE_OUT_S, onFinished = null) {
+    if (!audio) { onFinished?.(); return; }
+    const fade = Math.max(0, Number(fadeOutS) || 0);
+    if (!(fade > 0)) {
+      try { audio.pause?.(); audio.currentTime = 0; } catch (_) {}
+      onFinished?.();
+      return;
+    }
+    const startVolume = Math.max(0, Number(audio.volume) || 0);
+    const startedAt = Date.now();
+    const timer = setInterval(() => {
+      const t = Math.min(1, (Date.now() - startedAt) / Math.max(1, fade * 1000));
+      try { audio.volume = startVolume * (1 - t); } catch (_) {}
+      if (t < 1) return;
+      clearInterval(timer);
+      try { audio.pause?.(); audio.currentTime = 0; } catch (_) {}
+      onFinished?.();
+    }, 2);
+  }
+
+  function playOneShot(entity, url, baseVolume, pitchRandomSemitones, debugKind, detail = {}, voiceKind = 'active') {
+    if (!url || !isHumanoidVocalEntity(entity)) return null;
     const audio = audioConfig();
     if (audio.enabled === false || Number(audio.sfxVolume ?? 1) <= 0) return null;
-    const plan = voicePlaybackPlan(randomPitchSemitones(pitchRandomSemitones));
+    const claim = window.CharacterVoiceOwner?.request?.(entity, {
+      kind: voiceKind,
+      priority: voicePriority(voiceKind),
+      fadeOutS: VOICE_FADE_OUT_S,
+    }) || null;
+    if (window.CharacterVoiceOwner && !claim) return { suppressed: true, reason: 'voice-priority', voiceKind, ...detail };
+
+    const plan = voicePlaybackPlan(randomPitchSemitones(pitchRandomSemitones), entity);
     const volume = clamp(
       Number(baseVolume ?? 1) * plan.modulation.gain * Number(audio.sfxVolume ?? 1),
       0,
       1,
     );
+    const spatial = voiceSpatialOptions(entity);
+    const finish = () => window.CharacterVoiceOwner?.release?.(claim);
     let snd = null;
     try {
       const renderer = window.AnimalVoiceIndependentPlayback?.playIndependent
@@ -352,28 +416,38 @@
           volume,
           trimSilence: true,
           tailPadS: 0,
-          extraWetBase: 0, // Combat voices use the area's physical reverb profile without the animal-call extra-wet boost.
+          extraWetBase: 0, // Character combat voices use the area's normal wet profile; NPC distance contributes only the shared distance wet boost.
+          panX: spatial.panX,
+          extraWetBoost: spatial.extraWetBoost,
+          area: spatial.area,
+          onFinished: finish,
         });
+        window.CharacterVoiceOwner?.bindStop?.(claim, fadeS => snd?.stop?.(fadeS));
       } else if (typeof Audio === 'function') {
-        // Emergency fallback preserves pitch while changing tempo. Explicit pitch
-        // authoring waits for the shared renderer rather than being coupled to speed.
         snd = new Audio(url);
         snd.volume = volume;
         setPitchPreservation(snd, true);
         snd.playbackRate = plan.tempo;
+        snd.addEventListener?.('ended', finish, { once: true });
+        window.CharacterVoiceOwner?.bindStop?.(claim, fadeS => fadeNativeVoice(snd, fadeS, finish));
         const result = snd.play();
-        result?.catch?.(error => recordPlaybackFailure(debugKind, error, url));
+        result?.catch?.(error => { finish(); recordPlaybackFailure(debugKind, error, url); });
       }
     } catch (error) {
+      finish();
       recordPlaybackFailure(debugKind, error, url);
       return null;
     }
+    if (!snd) finish();
     return {
       snd,
+      claim,
+      entity,
       tempo: plan.tempo,
       pitchSemitones: plan.pitchSemitones,
       modulation: plan.modulation,
       independentPitch: true,
+      suppressed: false,
       ...detail,
     };
   }
@@ -418,61 +492,91 @@
     return slow + (fast - slow) * depletion;
   }
 
-  function playBreath(p, atMs) {
-    const intensity = chooseBreathIntensity(p);
+  function playBreath(entity, atMs) {
+    const intensity = chooseBreathIntensity(entity);
     const url = config.assets?.breath?.[intensity];
     const played = playOneShot(
+      entity,
       url,
       config.breath?.volume ?? 0.72,
       config.breath?.pitchRandomSemitones ?? 0,
       'breath',
       { intensity },
+      'breath',
     );
     debug.lastBreath = {
       atMs: Math.round(atMs),
+      entity: entity?.id || entity?.npcId || entity?.name || (entity === player() ? 'player' : 'npc'),
       intensity,
-      stamina: Number(p.stamina) || 0,
-      maxStamina: Number(p.maxStamina) || 0,
-      exhausted: !!p.exhaustion?.active,
+      stamina: Number(entity.stamina) || 0,
+      maxStamina: Number(entity.maxStamina) || 0,
+      exhausted: !!entity.exhaustion?.active,
+      suppressed: !!played?.suppressed,
       tempo: played?.tempo ?? null,
       pitchSemitones: played?.pitchSemitones ?? null,
     };
+    return played;
+  }
+
+  function trackBreather(entity) {
+    if (!isHumanoidVocalEntity(entity) || !(Number(entity?.maxStamina) > 0) || !(Number(entity?.health) > 0)) return;
+    if (entity.exhaustion?.active || Number(entity.stamina) < Number(entity.maxStamina)) trackedBreathers.add(entity);
+  }
+
+  function breathState(entity) {
+    let state = breathStateByEntity.get(entity);
+    if (!state) {
+      state = { nextAtMs: 0, lastIntervalS: 0 };
+      breathStateByEntity.set(entity, state);
+    }
+    return state;
+  }
+
+  function serviceBreathing(entity, atMs) {
+    if (!isHumanoidVocalEntity(entity) || !(Number(entity?.maxStamina) > 0) || !(Number(entity?.health) > 0)) {
+      trackedBreathers.delete(entity);
+      return;
+    }
+    const state = breathState(entity);
+    if (!entity.exhaustion?.active && Number(entity.stamina) >= Number(entity.maxStamina)) {
+      state.nextAtMs = 0;
+      state.lastIntervalS = 0;
+      trackedBreathers.delete(entity);
+      return; // Full-stamina fast path: no profile/intensity/audio work.
+    }
+    if (entity !== player()) trackedBreathers.add(entity);
+
+    const intervalS = breathIntervalS(entity);
+    if (!(state.nextAtMs > 0)) {
+      const played = playBreath(entity, atMs);
+      if (played?.suppressed) {
+        state.nextAtMs = atMs + BREATH_RETRY_AFTER_SUPPRESSION_MS;
+        return;
+      }
+      state.lastIntervalS = intervalS;
+      state.nextAtMs = atMs + intervalS * 1000;
+      return;
+    }
+    if (intervalS < state.lastIntervalS) state.nextAtMs = Math.min(state.nextAtMs, atMs + intervalS * 1000);
+    state.lastIntervalS = intervalS;
+    if (atMs < state.nextAtMs) return;
+
+    const played = playBreath(entity, atMs);
+    if (played?.suppressed) {
+      state.nextAtMs = atMs + BREATH_RETRY_AFTER_SUPPRESSION_MS;
+      return;
+    }
+    state.nextAtMs = atMs + intervalS * 1000;
   }
 
   function breathFrame(frameContext) {
-    const p = player();
-    if (!p || !(Number(p.maxStamina) > 0) || !(Number(p.health) > 0)) return;
-
-    // Performance fast path: at exactly full ordinary stamina there is no
-    // intensity/rate/profile/audio work at all. Only the due-time sentinel is reset.
-    if (!p.exhaustion?.active && Number(p.stamina) >= Number(p.maxStamina)) {
-      nextBreathAtMs = 0;
-      lastBreathIntervalS = 0;
-      return;
-    }
-
     const atMs = Number(frameContext?.timestamp) || nowMs();
-    const intervalS = breathIntervalS(p);
-    if (!(nextBreathAtMs > 0)) {
-      playBreath(p, atMs); // Crossing below max stamina begins the ongoing breathing loop immediately instead of waiting through one silent interval.
-      const nextInterval = breathIntervalS(p);
-      lastBreathIntervalS = nextInterval;
-      nextBreathAtMs = atMs + nextInterval * 1000;
-      return;
+    const p = player();
+    if (p) serviceBreathing(p, atMs);
+    for (const entity of [...trackedBreathers]) {
+      if (entity === p) continue;
+      serviceBreathing(entity, atMs);
     }
-
-    // If stamina suddenly falls, shorten an already-scheduled calm breath so
-    // cadence reacts immediately instead of waiting out the old high-stamina gap.
-    if (intervalS < lastBreathIntervalS) {
-      nextBreathAtMs = Math.min(nextBreathAtMs, atMs + intervalS * 1000);
-    }
-    lastBreathIntervalS = intervalS;
-    if (atMs < nextBreathAtMs) return;
-
-    playBreath(p, atMs);
-    const nextInterval = breathIntervalS(p);
-    lastBreathIntervalS = nextInterval;
-    nextBreathAtMs = atMs + nextInterval * 1000;
   }
 
   function choosePainIntensity(p) {
@@ -488,23 +592,27 @@
     return candidates[Math.floor(Math.random() * candidates.length)];
   }
 
-  function playPain(p, kind, delta, atMs) {
-    const intensity = choosePainIntensity(p);
+  function playPain(entity, kind, delta, atMs) {
+    const intensity = choosePainIntensity(entity);
     if (intensity == null) return;
     const played = playOneShot(
+      entity,
       config.assets?.pain?.[intensity],
       config.pain?.volume ?? 0.9,
       config.pain?.pitchRandomSemitones ?? 0,
       'pain',
       { intensity, kind },
+      'pain',
     );
     debug.lastPain = {
       atMs: Math.round(atMs),
       kind,
       intensity,
       delta,
-      health: Number(p.health) || 0,
-      maxHealth: Number(p.maxHealth) || 0,
+      entity: entity?.id || entity?.npcId || entity?.name || (entity === player() ? 'player' : 'npc'),
+      health: Number(entity.health) || 0,
+      maxHealth: Number(entity.maxHealth) || 0,
+      suppressed: !!played?.suppressed,
       tempo: played?.tempo ?? null,
       pitchSemitones: played?.pitchSemitones ?? null,
     };
@@ -512,17 +620,19 @@
 
   function onResourceChange(event) {
     const detail = event?.detail || {};
-    const p = player();
-    if (!p || detail.entity !== p || !(Number(detail.delta) < 0)) return;
+    const entity = detail.entity;
+    if (!isHumanoidVocalEntity(entity) || !(Number(detail.delta) < 0)) return;
+    trackBreather(entity);
     const atMs = nowMs();
     if (detail.immediate === true) {
-      playPain(p, 'direct', Number(detail.delta) || 0, atMs);
+      playPain(entity, 'direct', Number(detail.delta) || 0, atMs);
       return;
     }
     const repeatMs = Math.max(100, (Number(config.pain?.dotRepeatS) || 1) * 1000);
-    if (atMs - lastDotPainAtMs < repeatMs) return;
-    lastDotPainAtMs = atMs;
-    playPain(p, 'dot', Number(detail.delta) || 0, atMs);
+    const previous = Number(lastDotPainAtMsByEntity.get(entity));
+    if (Number.isFinite(previous) && atMs - previous < repeatMs) return;
+    lastDotPainAtMsByEntity.set(entity, atMs);
+    playPain(entity, 'dot', Number(detail.delta) || 0, atMs);
   }
 
   function ensureAudioContext() {
@@ -567,17 +677,24 @@
     return chargeBufferPromise;
   }
 
-  function chargeOutputGain(ctx) {
+  function chargeOutputGain(ctx, entity) {
     const audio = audioConfig();
-    const mod = voiceModulation();
+    const mod = voiceModulation(entity);
     const gain = ctx.createGain();
     gain.gain.value = clamp(
       Number(config.grunts?.volume ?? 0.86) * mod.gain * Number(audio.sfxVolume ?? 1),
       0,
       3,
     );
-    gain.connect(ctx.destination);
-    gain.__combatVocalWet = window.EnvironmentalReverb?.connectWetNode?.(ctx, gain, { volume: 1 }) || null; // Charge grunts use the same room/cavern/temple acoustic space as ordinary world SFX.
+    const spatial = voiceSpatialOptions(entity);
+    const panner = typeof ctx.createStereoPanner === 'function' ? ctx.createStereoPanner() : null;
+    if (panner) {
+      panner.pan.value = spatial.panX;
+      gain.connect(panner);
+      panner.connect(ctx.destination);
+      gain.__combatVocalPanner = panner;
+    } else gain.connect(ctx.destination);
+    gain.__combatVocalWet = window.EnvironmentalReverb?.connectWetNode?.(ctx, gain, { volume: 1, extraWet: spatial.extraWetBoost, area: spatial.area }) || null; // NPC charge grunts originate from their world position and still use the current physical acoustic space.
     return gain;
   }
 
@@ -627,23 +744,49 @@ function chargeRatePlan(bufferDurationS, targetDurationS, normalTempo) {
 function finishChargeToken(token) {
   if (!token || token.done) return;
   token.done = true;
+  clearTimeout(token.stopTimer);
   activeChargeTokens.delete(token);
+  window.CharacterVoiceOwner?.release?.(token.voiceClaim);
   try { token.output?.__combatVocalWet?.send?.disconnect?.(); } catch (_) {}
+  try { token.output?.__combatVocalPanner?.disconnect?.(); } catch (_) {}
   try { token.output?.disconnect?.(); } catch (_) {}
 }
 
-function cancelCharge(token) {
+function stopChargeToken(token, fadeOutS = VOICE_FADE_OUT_S, action = 'cancel') {
   if (!token || token.cancelled || token.done) return;
   token.cancelled = true;
-  const stopAt = token.ctx ? token.ctx.currentTime + 0.002 : 0;
-  stopSource(token.source, stopAt);
-  finishChargeToken(token);
+  const fade = Math.max(0, Number(fadeOutS) || 0);
+  if (token.ctx && token.source && token.output?.gain && fade > 0) {
+    const at = token.ctx.currentTime;
+    try {
+      const param = token.output.gain;
+      if (typeof param.cancelAndHoldAtTime === 'function') param.cancelAndHoldAtTime(at);
+      else {
+        param.cancelScheduledValues?.(at);
+        param.setValueAtTime(Math.max(0.0001, Number(param.value) || 0.0001), at);
+      }
+      param.linearRampToValueAtTime(0.0001, at + fade);
+      stopSource(token.source, at + fade + 0.001);
+      token.stopTimer = setTimeout(() => finishChargeToken(token), Math.ceil((fade + 0.004) * 1000));
+    } catch (_) {
+      stopSource(token.source);
+      finishChargeToken(token);
+    }
+  } else {
+    stopSource(token.source);
+    finishChargeToken(token);
+  }
   debug.lastCharge = {
     id: token.id,
-    action: 'cancel',
+    action,
     abilityId: token.abilityId,
+    entity: token.entity?.id || token.entity?.npcId || token.entity?.name || (token.entity === player() ? 'player' : 'npc'),
     atMs: Math.round(nowMs()),
   };
+}
+
+function cancelCharge(token) {
+  stopChargeToken(token, VOICE_FADE_OUT_S, 'cancel');
 }
 
 function releaseCharge(token) {
@@ -689,8 +832,10 @@ function releaseCharge(token) {
 
 function beginCharge(options = {}) {
   const requestedTarget = options.targetDurationS ?? options.durationS;
+  const entity = options.entity || player();
   const token = {
     id: ++chargeTokenSerial,
+    entity,
     abilityId: options.abilityId || null,
     category: options.category || null,
     targetDurationS: Number.isFinite(Number(requestedTarget)) && Number(requestedTarget) > 0
@@ -703,11 +848,20 @@ function beginCharge(options = {}) {
     cancelled: false,
     done: false,
   };
+  if (!isHumanoidVocalEntity(entity)) { token.done = true; token.suppressed = true; return token; }
+  token.voiceClaim = window.CharacterVoiceOwner?.request?.(entity, {
+    kind: 'active',
+    priority: voicePriority('active'),
+    fadeOutS: VOICE_FADE_OUT_S,
+  }) || null;
+  if (window.CharacterVoiceOwner && !token.voiceClaim) { token.done = true; token.suppressed = true; return token; }
+  window.CharacterVoiceOwner?.bindStop?.(token.voiceClaim, fadeS => stopChargeToken(token, fadeS, 'priority-preempted'));
+  trackBreather(entity);
   activeChargeTokens.add(token);
 
   preloadChargeBuffer().then(async buffer => {
     if (!buffer || token.cancelled || token.released || token.done) {
-      activeChargeTokens.delete(token);
+      finishChargeToken(token);
       return;
     }
 
@@ -724,7 +878,7 @@ function beginCharge(options = {}) {
       buffer, sourceDurationS: buffer.duration, trimmedDurationS: buffer.duration, trimStartS: 0, trimEndS: 0, trimmed: false,
     };
     const audibleBuffer = trim.buffer || buffer; // Charge math uses actual audible waveform duration, not leading/trailing silence or codec padding.
-    const voice = voicePlaybackPlan(randomPitchSemitones(config.grunts?.pitchRandomSemitones ?? 0));
+    const voice = voicePlaybackPlan(randomPitchSemitones(config.grunts?.pitchRandomSemitones ?? 0), entity);
     const plan = chargeRatePlan(audibleBuffer.duration, token.targetDurationS, voice.tempo);
     const renderOpts = { pitchSemitones: voice.pitchSemitones, tailPadS: 0, trimSilence: false };
     const [fullRendered, catchUpRendered] = await Promise.all([
@@ -745,7 +899,7 @@ function beginCharge(options = {}) {
       return;
     }
 
-    const output = chargeOutputGain(ctx);
+    const output = chargeOutputGain(ctx, entity);
     const when = ctx.currentTime + 0.003;
     token.ctx = ctx;
     token.rawBuffer = buffer;
@@ -790,21 +944,24 @@ function beginCharge(options = {}) {
   return token;
 }
 
-  function playStrikeGrunt(category, abilityId) {
+  function playStrikeGrunt(entity, category, abilityId) {
     const isCombo = category === 'combo';
     const urls = isCombo ? (config.assets?.comboAttackGrunts || []) : [config.assets?.releaseGrunt];
     const available = urls.filter(Boolean);
     if (!available.length) return;
     const url = available[Math.floor(Math.random() * available.length)];
     const played = playOneShot(
+      entity,
       url,
       config.grunts?.volume ?? 0.86,
       config.grunts?.pitchRandomSemitones ?? 0,
       isCombo ? 'combo-grunt' : 'release-grunt',
       { abilityId, category },
+      'active',
     );
     debug.lastStrike = {
       atMs: Math.round(nowMs()),
+      entity: entity?.id || entity?.npcId || entity?.name || (entity === player() ? 'player' : 'npc'),
       abilityId,
       category,
       url,
@@ -822,23 +979,35 @@ function beginCharge(options = {}) {
   return ids.includes(id);
 }
 
+  function stagedVoiceContext(spec = {}) {
+    if (activeAbilityContext) return { ...activeAbilityContext, entity: player() };
+    const entity = spec.data?.attacker || null;
+    const category = spec.data?.voiceCategory || null;
+    if (!isHumanoidVocalEntity(entity) || !isOffensiveVocalCategory(category)) return null;
+    return {
+      entity,
+      id: spec.data?.voiceAbilityId || spec.data?.comboId || 'npcAttack',
+      category,
+      phase: 'npc-staged-action',
+    };
+  }
+
   function wrapBeginStagedAction() {
     if (!window.Combat?.beginStagedAction || window.Combat.beginStagedAction.__combatVocalWrapped) return;
     originalBeginStagedAction = window.Combat.beginStagedAction;
     const wrapped = function combatVocalStagedAction(spec = {}) {
-      const context = activeAbilityContext;
-      if (!context || !isOffensiveVocalCategory(context.category)) {
-        return originalBeginStagedAction.call(this, spec);
-      }
+      const context = stagedVoiceContext(spec);
+      if (!context) return originalBeginStagedAction.call(this, spec);
+      trackBreather(context.entity);
 
-      let charge = liveChargesByAbility.get(context.id) || null;
+      let charge = context.entity === player() ? (liveChargesByAbility.get(context.id) || null) : null;
       if (charge) {
         liveChargesByAbility.delete(context.id);
-        releaseCharge(charge); // Hold-release: stop sustaining the instant gameplay leaves the held windup.
+        releaseCharge(charge); // Held player release keeps the same conceptual vocal playhead for catch-up.
       } else {
         const preImpactS = Math.max(0, Number(spec.windupS) || 0) + Math.max(0, Number(spec.strikeS) || 0);
         if (preImpactS > 0) {
-          charge = beginCharge({ targetDurationS: preImpactS, abilityId: context.id, category: context.category });
+          charge = beginCharge({ entity: context.entity, targetDurationS: preImpactS, abilityId: context.id, category: context.category });
         }
       }
 
@@ -848,7 +1017,7 @@ function beginCharge(options = {}) {
         ...spec,
         onStrike: (...args) => {
           Promise.resolve(charge).then(token => releaseCharge(token));
-          playStrikeGrunt(context.category, context.id);
+          playStrikeGrunt(context.entity, context.category, context.id);
           return originalStrike?.(...args);
         },
         onCancel: (...args) => {
@@ -884,6 +1053,7 @@ function beginCharge(options = {}) {
             const previousLive = liveChargesByAbility.get(id);
             if (previousLive) Promise.resolve(previousLive).then(token => cancelCharge(token));
             liveChargesByAbility.set(id, beginCharge({
+              entity: player(),
               abilityId: id,
               category,
               targetDurationS: liveChargeTargetDurationS(id),
@@ -934,12 +1104,12 @@ function beginCharge(options = {}) {
   }
 
   function resetTransientState() {
-    nextBreathAtMs = 0;
-    lastBreathIntervalS = 0;
-    lastDotPainAtMs = -Infinity;
+    lastDotPainAtMsByEntity = new WeakMap();
+    trackedBreathers.clear();
     for (const value of liveChargesByAbility.values()) Promise.resolve(value).then(token => cancelCharge(token));
     liveChargesByAbility.clear();
     for (const token of [...activeChargeTokens]) cancelCharge(token);
+    window.CharacterVoiceOwner?.stop?.(player(), VOICE_FADE_OUT_S);
   }
 
   function loadConfig() {
@@ -979,7 +1149,7 @@ function beginCharge(options = {}) {
     window.RuntimeFrameScheduler.register(SCHEDULER_ID, breathFrame, {
       phase: 'post-game',
       owner: 'CombatVocalizations',
-      description: 'Schedules player heavy-breath one-shots only while ordinary stamina is below 100%.',
+      description: 'Schedules player + humanoid NPC heavy breathing only while each character is below max Stamina.',
     });
   }
 
@@ -1000,13 +1170,16 @@ function beginCharge(options = {}) {
     chargeRatePlan,
     liveChargeTargetDurationS,
     getConfig: () => clone(config),
-    getVoiceModulation: () => ({ ...voiceModulation() }),
+    getVoiceModulation: entity => ({ ...voiceModulation(entity || player()) }),
+    getVoicePriority: kind => voicePriority(kind),
     debugSnapshot: () => ({
       version: VERSION,
       configSource,
       configError,
-      nextBreathInMs: nextBreathAtMs > 0 ? Math.max(0, Math.round(nextBreathAtMs - nowMs())) : null,
-      lastBreathIntervalS,
+      nextBreathInMs: (() => { const p = player(); const s = p ? breathStateByEntity.get(p) : null; return s?.nextAtMs > 0 ? Math.max(0, Math.round(s.nextAtMs - nowMs())) : null; })(),
+      lastBreathIntervalS: (() => { const p = player(); return p ? breathStateByEntity.get(p)?.lastIntervalS || 0 : 0; })(),
+      trackedNpcBreathers: [...trackedBreathers].filter(entity => entity !== player()).length,
+      activeVoiceOwner: window.CharacterVoiceOwner?.current?.(player()) || null,
       activeCharges: [...activeChargeTokens].map(token => ({
         id: token.id,
         abilityId: token.abilityId,

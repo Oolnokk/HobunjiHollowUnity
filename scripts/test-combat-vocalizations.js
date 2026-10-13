@@ -5,6 +5,8 @@ const assert = require('assert');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'combat', 'combat-vocalizations.js'), 'utf8');
 const animalPlaybackSource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'animal-voice-independent-playback.js'), 'utf8');
+const voiceOwnerSource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'character-voice-owner.js'), 'utf8');
+const banditSource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'combat', 'combat-bandit.js'), 'utf8');
 let now = 0;
 let scheduledBreath = null;
 let stagedSpec = null;
@@ -84,12 +86,21 @@ context.document = {
 };
 context.window.AnimalVoiceIndependentPlayback = {
   playIndependent(url, opts = {}) {
-    played.push({ url, ...opts, pitchPreserved: true });
-    return { stop() {} };
+    const entry = { url, ...opts, pitchPreserved: true, stopped: false, fadeOutS: null, handle: null };
+    let finished = false;
+    const finish = () => { if (finished) return; finished = true; opts.onFinished?.(); };
+    const handle = {
+      stop(fadeOutS = 0) { entry.stopped = true; entry.fadeOutS = fadeOutS; finish(); },
+      finish,
+    };
+    entry.handle = handle;
+    played.push(entry);
+    return handle;
   },
 };
 context.window.AudioSystem = {
   gameAudioConfig: () => ({ enabled: true, sfxVolume: 1 }),
+  creatureAudioSpatial: entity => ({ panX: entity === player ? 0 : 0.5, extraWetBoost: entity === player ? 0 : 0.2, distance: entity === player ? 0 : 100 }),
   playOneShotSfx(cfg, volumeScale, pitch) {
     played.push({ url: cfg.url, volumeScale, pitch });
     return { url: cfg.url };
@@ -117,10 +128,11 @@ context.window.Combat = {
 };
 
 vm.createContext(context);
+vm.runInContext(voiceOwnerSource, context, { filename: 'character-voice-owner.js' });
 vm.runInContext(source, context, { filename: 'combat-vocalizations.js' });
 
 assert(context.window.CombatVocalizations, 'runtime API should install');
-assert.equal(context.window.CombatVocalizations.version, 3);
+assert.equal(context.window.CombatVocalizations.version, 4);
 assert.equal(typeof scheduledBreath, 'function', 'breath loop should use shared scheduler');
 
 const chargePlan = context.window.CombatVocalizations.chargeRatePlan(1.2, 4, 1.25);
@@ -134,6 +146,10 @@ assert.match(animalPlaybackSource, /GENERIC_MAX_SHIFT_SEMITONES = 24/, 'combat m
 assert.match(animalPlaybackSource, /function trimDecodedSilence/, 'shared pitch-preserving playback trims decoded leading/trailing silence before combat timing');
 assert.match(animalPlaybackSource, /extraWetBase/, 'generic combat one-shots route through the environmental reverb send without inheriting animal-only extra wetness');
 assert.match(source, /__combatVocalWet = window\.EnvironmentalReverb\?\.connectWetNode/, 'custom charge playback also sends into the current environmental reverb space');
+assert.match(animalPlaybackSource, /function stop\(fadeOutS = 0\)/, 'shared processed voice handles must support click-safe fade stops');
+assert.match(banditSource, /voiceCategory: 'combo'/, 'NPC combo attacks must carry semantic vocal metadata');
+assert.match(banditSource, /voiceCategory: 'quickAttack'/, 'NPC quick attacks must carry semantic vocal metadata');
+assert.match(banditSource, /voiceCategory: 'offensiveHold'/, 'NPC charged attacks must carry semantic vocal metadata');
 assert.match(source, /chargeRatePlan\(audibleBuffer\.duration/, 'charge duration math uses the silence-trimmed audible buffer');
 assert.equal(context.window.CombatVocalizations.getConfig().utteranceModulation.species.nuhongan.female.pitchSemitones, 14, 'authored Nuhongan female combat voice keeps its +14 semitone profile');
 assert.match(source, /AnimalVoiceIndependentPlayback\?\.playIndependent/, 'combat one-shots should route through the animal-call pitch-preserving player');
@@ -207,6 +223,56 @@ stagedSpec.onStrike();
 assert.equal(context.window.__heldStrike, 1, 'original held strike must still execute');
 assert.equal(played.length, beforeHeld + 1);
 assert(played.at(-1).url.includes('sfx_releasegrunt'));
+
+
+// One owned voice per character: active grunts beat pain and breathing.
+const priorityPlayer = context.window.CombatVocalizations.playStrikeGrunt(player, 'combo', 'priority-test');
+const activeEntry = played.at(-1);
+const beforeSuppressedPain = played.length;
+emit(listeners, 'hobunji-resource-change', { entity: player, delta: -3, immediate: true, reason: 'priority-test-hit' });
+assert.equal(played.length, beforeSuppressedPain, 'damage vocal must not overlap an active grunt from the same character');
+player.stamina = 5;
+scheduledBreath({ timestamp: 41000 });
+assert.equal(played.length, beforeSuppressedPain, 'breathing must not overlap an active grunt from the same character');
+activeEntry.handle.finish();
+scheduledBreath({ timestamp: 41150 });
+assert.equal(played.length, beforeSuppressedPain + 1, 'suppressed breathing should retry promptly after the active voice releases');
+played.at(-1).handle.finish();
+
+// NPCs use the same species/gender modulation, spatial acoustics, damage voice,
+// breathing loop, and staged attack grunts as the player.
+const npc = {
+  id: 'npc-voice-test', name: 'NPC Voice Test', x: 12, y: 7, areaId: 'test-area',
+  health: 80, maxHealth: 100, stamina: 35, maxStamina: 100,
+  exhaustion: { active: false, blackStamina: 100 },
+  rosterRecord: { appearance: { speciesId: 'tletingan', gender: 'female' } },
+};
+now = 50000;
+const beforeNpcPain = played.length;
+emit(listeners, 'hobunji-resource-change', { entity: npc, delta: -5, immediate: true, reason: 'npc-hit' });
+assert.equal(played.length, beforeNpcPain + 1, 'humanoid NPC direct damage should vocalize');
+assert(played.at(-1).pitchSemitones > 7.5, 'NPC pain uses the NPC species/gender pitch profile');
+assert.equal(played.at(-1).panX, 0.5, 'NPC voice uses world-position stereo panning');
+assert.equal(played.at(-1).extraWetBoost, 0.2, 'NPC voice uses distance-aware environmental wet boost');
+assert.equal(played.at(-1).area, 'test-area', 'NPC voice forwards its physical area to reverb');
+played.at(-1).handle.finish();
+
+scheduledBreath({ timestamp: 51000 });
+assert(played.at(-1).url.includes('heavybreath_'), 'tracked winded NPC should emit heavy breathing');
+assert(played.at(-1).pitchSemitones > 7.5, 'NPC breathing uses NPC species/gender pitch');
+played.at(-1).handle.finish();
+
+const npcAttackBefore = played.length;
+context.window.Combat.beginStagedAction({
+  windupS: 0.1, strikeS: 0.05,
+  data: { isBandit: true, attacker: npc, voiceCategory: 'combo', voiceAbilityId: 'swingCombo' },
+  onStrike() { context.window.__npcStrike = (context.window.__npcStrike || 0) + 1; },
+});
+stagedSpec.onStrike();
+assert.equal(context.window.__npcStrike, 1, 'NPC original staged strike still executes');
+assert.equal(played.length, npcAttackBefore + 1, 'NPC staged combo strike should emit the attack grunt');
+assert(played.at(-1).url.includes('sfx_attackgrunt_1'));
+assert(played.at(-1).pitchSemitones > 7.5, 'NPC attack grunt uses NPC species/gender pitch');
 
 const debug = context.window.CombatVocalizations.debugSnapshot();
 assert(debug.wrappedAbilities.some(entry => entry.id === 'swingCombo'));

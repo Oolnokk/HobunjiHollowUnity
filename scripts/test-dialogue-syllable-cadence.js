@@ -76,7 +76,9 @@ assert.match(dialogueContent, /syllablesPerSecond: finiteClamped\(cfg\.syllables
 assert.match(dialogueContent, /_npcDialogueVisibleCharacters \+= unit\.text\.length/, 'NPC dialogue reveals a whole cadence unit per timer');
 assert.match(dialogueContent, /_playNpcDialogueLetterSfx\(unit\.vowels\[index\]\)/, 'NPC dialogue plays exactly one tick for every vowel in a syllable');
 assert.match(dialogueContent, /_npcSpeechBySpeaker = new Map/, 'NPC speech keeps one active utterance owner per speaker');
-assert.match(dialogueContent, /if \(previous\) _fadeNpcSpeechHandle\(previous\)/, 'a new vowel replaces the same NPC previous utterance instead of layering');
+assert.match(dialogueContent, /CharacterVoiceOwner\?\.request/, 'NPC dialogue participates in the shared per-character voice owner instead of layering around combat vocals');
+assert.match(dialogueContent, /CharacterVoiceOwner\?\.bindStop/, 'shared voice preemption drives the same click-safe NPC utterance fade');
+assert.match(dialogueContent, /if \(!window\.CharacterVoiceOwner && previous\) _fadeNpcSpeechHandle\(previous\)/, 'dialogue keeps the legacy local one-speaker fallback when the shared owner is unavailable');
 assert.match(dialogueContent, /NPC_SPEECH_FADE_OUT_S = 0\.008/, 'replacement uses a sudden click-safe fade rather than an audible hard cut');
 assert.match(dialogueContent, /EnvironmentalReverb\?\.connectWetNode/, 'NPC utterances are sent through the current physical acoustic space');
 assert.match(dialogueContent, /dataset\.environmentalReverb = 'off'/, 'WebAudio-routed NPC clips suppress the duplicate media-element reverb wrapper');
