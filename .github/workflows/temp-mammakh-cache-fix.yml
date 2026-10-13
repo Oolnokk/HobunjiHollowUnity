@@ -1,33 +1,371 @@
-name: Temp Mammakh Main Merge
+name: Temp Combat Vocal Stretch Validation
 
 on:
   push:
-    branches: [mammakhbuur-head-placeholders]
+    branches: [feat/combat-vocalizations]
 
 permissions:
   contents: write
 
 jobs:
-  merge-main-test:
+  update-and-validate:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: mammakhbuur-head-placeholders
+          ref: feat/combat-vocalizations
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Merge current main
+      - name: Fetch current main
+        run: git fetch origin main
+      - name: Replace sustain sampler with full-clip stretch playback
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import json
+
+          def replace_once(text, old, new, label):
+              if old not in text:
+                  raise SystemExit(f'{label}: expected text not found')
+              return text.replace(old, new, 1)
+
+          runtime_path = Path('docs/js/combat/combat-vocalizations.js')
+          runtime = runtime_path.read_text()
+          runtime = replace_once(runtime, '  const VERSION = 1;', '  const VERSION = 2;', 'runtime version')
+          runtime = replace_once(runtime, "    schema: 'hobunji_combat_vocalizations.v1',", "    schema: 'hobunji_combat_vocalizations.v2',", 'runtime schema')
+          runtime = replace_once(runtime, '''    chargeSampler: {
+              startEndS: 0.12,
+              middleEndS: 0.5,
+              crossfadeS: 0.018,
+            },''', '''    chargePlayback: {
+              earlyReleaseNormalSpeedMul: 2,
+              fullChargeDurationByAbility: { chargedBreaker: 4 },
+            },''', 'runtime charge config')
+          runtime = replace_once(runtime, "      liveSustainAbilities: ['chargedBreaker'],", "      liveStretchAbilities: ['chargedBreaker'],", 'runtime live ability config')
+
+          start = runtime.index('  function startBufferSlice(')
+          end = runtime.index('  function playStrikeGrunt(', start)
+          new_charge_block = r'''  function startChargeSource(ctx, buffer, output, when, offset, rate) {
+            const source = ctx.createBufferSource();
+            source.buffer = buffer;
+            source.playbackRate.value = rate;
+            source.connect(output);
+            source.start(when, clamp(offset, 0, Math.max(0, buffer.duration - 0.0001)));
+            return source;
+          }
+
+          function stopSource(source, when = 0) {
+            try { source?.stop?.(when || undefined); } catch (_) {}
+            try { source?.disconnect?.(); } catch (_) {}
+          }
+
+          function liveChargeTargetDurationS(abilityId) {
+            if (abilityId === 'chargedBreaker') {
+              const authoritative = Number(window.Combat?.chargedBreakerData?.MAX_CHARGE_S);
+              if (authoritative > 0) return authoritative;
+            }
+            const fallback = Number(config.chargePlayback?.fullChargeDurationByAbility?.[abilityId]);
+            return fallback > 0 ? fallback : null;
+          }
+
+          function chargeRatePlan(bufferDurationS, targetDurationS, normalRate) {
+            const clipDurationS = Math.max(0.001, Number(bufferDurationS) || 0.001);
+            const targetS = Number(targetDurationS) > 0 ? Number(targetDurationS) : clipDurationS;
+            const baseNormalRate = Math.max(0.02, Number(normalRate) || 1);
+            const stretchedRate = clamp(baseNormalRate * (clipDurationS / targetS), 0.02, 32);
+            const earlyReleaseNormalSpeedMul = Math.max(
+              0.1,
+              Number(config.chargePlayback?.earlyReleaseNormalSpeedMul) || 2,
+            );
+            const catchUpRate = clamp(baseNormalRate * earlyReleaseNormalSpeedMul, 0.02, 32);
+            return {
+              clipDurationS,
+              targetDurationS: targetS,
+              normalRate: baseNormalRate,
+              stretchedRate,
+              earlyReleaseNormalSpeedMul,
+              catchUpRate,
+            };
+          }
+
+          function finishChargeToken(token) {
+            if (!token || token.done) return;
+            token.done = true;
+            activeChargeTokens.delete(token);
+            try { token.output?.disconnect?.(); } catch (_) {}
+          }
+
+          function cancelCharge(token) {
+            if (!token || token.cancelled || token.done) return;
+            token.cancelled = true;
+            const stopAt = token.ctx ? token.ctx.currentTime + 0.002 : 0;
+            stopSource(token.source, stopAt);
+            finishChargeToken(token);
+            debug.lastCharge = {
+              id: token.id,
+              action: 'cancel',
+              abilityId: token.abilityId,
+              atMs: Math.round(nowMs()),
+            };
+          }
+
+          function releaseCharge(token) {
+            if (!token || token.cancelled || token.released || token.done) return;
+            token.released = true;
+            if (!token.catchUpOnRelease) {
+              debug.lastCharge = {
+                id: token.id,
+                action: 'planned-release',
+                abilityId: token.abilityId,
+                targetDurationS: token.targetDurationS,
+                stretchedRate: token.stretchedRate ?? null,
+                atMs: Math.round(nowMs()),
+              };
+              return;
+            }
+            if (!token.ready || !token.ctx || !token.source) {
+              finishChargeToken(token);
+              return;
+            }
+
+            const now = token.ctx.currentTime;
+            const param = token.source.playbackRate;
+            try {
+              param.cancelScheduledValues(now);
+              param.setValueAtTime(token.catchUpRate, now);
+            } catch (_) {
+              param.value = token.catchUpRate;
+            }
+            debug.lastCharge = {
+              id: token.id,
+              action: 'early-release-catch-up',
+              abilityId: token.abilityId,
+              targetDurationS: token.targetDurationS,
+              normalRate: token.normalRate,
+              stretchedRate: token.stretchedRate,
+              catchUpRate: token.catchUpRate,
+              earlyReleaseNormalSpeedMul: token.earlyReleaseNormalSpeedMul,
+              atMs: Math.round(nowMs()),
+            };
+          }
+
+          function beginCharge(options = {}) {
+            const requestedTarget = options.targetDurationS ?? options.durationS;
+            const token = {
+              id: ++chargeTokenSerial,
+              abilityId: options.abilityId || null,
+              category: options.category || null,
+              targetDurationS: Number.isFinite(Number(requestedTarget)) && Number(requestedTarget) > 0
+                ? Number(requestedTarget)
+                : null,
+              catchUpOnRelease: options.catchUpOnRelease === true,
+              createdAtMs: nowMs(),
+              ready: false,
+              released: false,
+              cancelled: false,
+              done: false,
+            };
+            activeChargeTokens.add(token);
+
+            preloadChargeBuffer().then(buffer => {
+              if (!buffer || token.cancelled || token.released || token.done) {
+                activeChargeTokens.delete(token);
+                return;
+              }
+
+              const ctx = ensureAudioContext();
+              if (!ctx) {
+                finishChargeToken(token);
+                return;
+              }
+              const normalRate = playbackRateFor(randomPitchSemitones(config.grunts?.pitchRandomSemitones ?? 0));
+              const plan = chargeRatePlan(buffer.duration, token.targetDurationS, normalRate);
+              const elapsedS = Math.max(0, (nowMs() - token.createdAtMs) / 1000);
+              const sourceOffsetS = elapsedS * plan.stretchedRate;
+              if (sourceOffsetS >= buffer.duration) {
+                finishChargeToken(token); // A delayed first decode must never start a vocal after its authored windup has already elapsed.
+                return;
+              }
+
+              const output = chargeOutputGain(ctx);
+              const when = ctx.currentTime + 0.003;
+              token.ctx = ctx;
+              token.buffer = buffer;
+              token.output = output;
+              token.normalRate = plan.normalRate;
+              token.stretchedRate = plan.stretchedRate;
+              token.catchUpRate = plan.catchUpRate;
+              token.earlyReleaseNormalSpeedMul = plan.earlyReleaseNormalSpeedMul;
+              token.ready = true;
+              token.source = startChargeSource(ctx, buffer, output, when, sourceOffsetS, plan.stretchedRate);
+              token.source.onended = () => finishChargeToken(token);
+
+              debug.lastCharge = {
+                id: token.id,
+                action: token.catchUpOnRelease ? 'begin-live-stretch' : 'begin-predetermined-stretch',
+                abilityId: token.abilityId,
+                targetDurationS: token.targetDurationS,
+                bufferDurationS: buffer.duration,
+                normalRate: plan.normalRate,
+                stretchedRate: plan.stretchedRate,
+                catchUpRate: plan.catchUpRate,
+                earlyReleaseNormalSpeedMul: plan.earlyReleaseNormalSpeedMul,
+                atMs: Math.round(nowMs()),
+              };
+            }).catch(error => {
+              finishChargeToken(token);
+              recordPlaybackFailure('charge-start', error, config.assets?.chargeGrunt);
+            });
+            return token;
+          }
+
+          '''
+          runtime = runtime[:start] + new_charge_block + runtime[end:]
+
+          runtime = replace_once(runtime, '''  function isLiveSustainAbility(id) {
+            return (config.grunts?.liveSustainAbilities || []).includes(id);
+          }''', '''  function isLiveStretchAbility(id) {
+            const ids = config.grunts?.liveStretchAbilities || config.grunts?.liveSustainAbilities || [];
+            return ids.includes(id);
+          }''', 'runtime live helper')
+          runtime = replace_once(runtime, '          charge = beginCharge({ durationS: preImpactS, abilityId: context.id, category: context.category });', '          charge = beginCharge({ targetDurationS: preImpactS, abilityId: context.id, category: context.category });', 'predetermined charge start')
+          runtime = replace_once(runtime, "          if (name === 'onHoldStart' && category === 'offensiveHold' && isLiveSustainAbility(id)) {", "          if (name === 'onHoldStart' && category === 'offensiveHold' && isLiveStretchAbility(id)) {", 'live helper call')
+          runtime = replace_once(runtime, "            liveChargesByAbility.set(id, beginCharge({ abilityId: id, category }));", "            liveChargesByAbility.set(id, beginCharge({\n              abilityId: id,\n              category,\n              targetDurationS: liveChargeTargetDurationS(id),\n              catchUpOnRelease: true,\n            }));", 'live charge start')
+          runtime = replace_once(runtime, '    playStrikeGrunt,\n    getConfig:', '    playStrikeGrunt,\n    chargeRatePlan,\n    liveChargeTargetDurationS,\n    getConfig:', 'runtime debug helpers export')
+          runtime = replace_once(runtime, '''        durationS: token.durationS,
+                ready: token.ready,
+                released: token.released,
+                cancelled: token.cancelled,''', '''        targetDurationS: token.targetDurationS,
+                catchUpOnRelease: token.catchUpOnRelease,
+                normalRate: token.normalRate ?? null,
+                stretchedRate: token.stretchedRate ?? null,
+                catchUpRate: token.catchUpRate ?? null,
+                ready: token.ready,
+                released: token.released,
+                cancelled: token.cancelled,''', 'runtime debug token fields')
+          runtime_path.write_text(runtime)
+
+          config_path = Path('docs/config/combat/combat-vocalizations.json')
+          config = json.loads(config_path.read_text())
+          config['schema'] = 'hobunji_combat_vocalizations.v2'
+          config.pop('chargeSampler', None)
+          config['chargePlayback'] = {
+              'earlyReleaseNormalSpeedMul': 2,
+              'fullChargeDurationByAbility': {'chargedBreaker': 4}
+          }
+          grunts = config.setdefault('grunts', {})
+          grunts.pop('liveSustainAbilities', None)
+          grunts['liveStretchAbilities'] = ['chargedBreaker']
+          config_path.write_text(json.dumps(config, indent=2) + '\n')
+
+          tool_hub_path = Path('docs/js/tool-hub-combat-vocalization-tab.js')
+          tool_hub = tool_hub_path.read_text()
+          tool_hub = replace_once(
+              tool_hub,
+              "latestChange: 'Combat Vocalizations is a lazy Tool Hub tab with charge-sampler slicing and global utterance modulation authoring.',",
+              "latestChange: 'Combat Vocalizations is a lazy Tool Hub tab with full-clip charge stretching, 2× normal-speed early-release catch-up, and global utterance modulation authoring.',",
+              'tool hub latest change',
+          )
+          tool_hub_path.write_text(tool_hub)
+
+          editor = r'''<!DOCTYPE html>
+          <html lang="en">
+          <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+          <script src="../../js/tap-reliability.js?v=20261010a"></script>
+          <title>Combat Vocalization Editor — Hobunji Hollow</title>
+          <style>
+          *{box-sizing:border-box}
+          :root{--bg:#07101a;--panel:#111b28;--border:rgba(255,255,255,.13);--text:#edf5ff;--muted:#9fb4cf;--acc:#6aa7ff;--ok:#34d399;--warn:#fbbf24;--bad:#fb7185}
+          html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:13px}
+          body{padding:12px}header{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}h1{font-size:17px;margin:0}.muted{color:var(--muted)}
+          .actions{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}button{border:1px solid rgba(106,167,255,.35);background:rgba(106,167,255,.13);color:var(--text);border-radius:8px;padding:7px 10px;font:inherit;font-weight:700;cursor:pointer}button:hover{background:rgba(106,167,255,.23)}button.good{border-color:rgba(52,211,153,.45);background:rgba(52,211,153,.12)}button.warn{border-color:rgba(251,191,36,.5);background:rgba(251,191,36,.1)}
+          .grid{display:grid;grid-template-columns:minmax(320px,1.2fr) minmax(300px,.8fr);gap:10px;align-items:start}.card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:11px;margin-bottom:10px}.card h2{font-size:13px;margin:0 0 8px}.card h3{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin:12px 0 6px}.row{display:grid;grid-template-columns:minmax(150px,1fr) minmax(100px,160px);gap:8px;align-items:center;margin:6px 0}.row label{color:var(--muted)}
+          input,select,textarea{width:100%;border:1px solid var(--border);border-radius:7px;background:rgba(255,255,255,.055);color:var(--text);padding:7px;font:inherit}input[type=number]{text-align:right}.profileBanner{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+          #waveWrap{position:relative;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:#050b12}#wave{display:block;width:100%;height:180px}#samplerStatus{margin-top:6px;color:var(--muted);font-size:11px}.audition{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}.audition button{font-size:11px;padding:5px 8px}#json{height:260px;font:11px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre}#log{height:105px;overflow:auto;background:#050b12;border:1px solid var(--border);border-radius:7px;padding:7px;font:11px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;color:#bed0e7}.bad{color:var(--bad)}.ok{color:var(--ok)}
+          @media(max-width:850px){body{padding:8px}.grid{grid-template-columns:1fr}.actions{margin-left:0}.row{grid-template-columns:1fr 120px}#wave{height:145px}}
+          </style>
+          </head>
+          <body>
+          <header><div><h1>🎙 Combat Vocalization Editor</h1><div class="muted">Full-clip charge stretching · early-release catch-up · breath/pain cadence · species + gender utterance modulation</div></div><div class="actions"><button id="reload">↻ Reload repo JSON</button><button class="good" id="applyLocal">Apply local game preview</button><button class="warn" id="clearLocal">Clear local preview</button><button id="copyJson">Copy JSON</button><button id="downloadJson">Download JSON</button></div></header>
+          <div class="grid"><main>
+            <section class="card"><h2>Charge Grunt Stretch Playback</h2><div class="muted">The entire charge grunt plays once. At the default voice profile it is stretched or compressed so the whole clip spans the attack's 0→100% charge duration. Releasing a live hold early does not restart or jump the clip: the remaining audio continues from its current playhead at the configured multiple of <b>normal</b> playback speed.</div><div id="waveWrap"><canvas id="wave"></canvas></div><div id="samplerStatus">Loading charge grunt…</div><div class="row"><label>Early-release remainder × normal speed</label><input id="chargeCatchup" type="number" min=".1" max="8" step=".1"></div><h3>Charged Breaker preview</h3><div class="audition"><button id="fullPreview">Full 0→100%</button><button data-release=".25">Release at 25%</button><button data-release=".5">Release at 50%</button><button data-release=".75">Release at 75%</button><button id="stopPreview">Stop</button></div></section>
+            <section class="card"><h2>Heavy Breathing</h2><div class="muted">At exactly 100% stamina the runtime exits before intensity, cadence, profile, or audio work. Non-exhausted breaths choose randomly from a three-slot weighted window using intensities 1–3. Intensities 4–5 are reachable only while Exhausted.</div><div class="row"><label>Interval near full stamina (s)</label><input id="breathHigh" type="number" min=".15" step=".05"></div><div class="row"><label>Interval near empty stamina (s)</label><input id="breathLow" type="number" min=".15" step=".05"></div><div class="row"><label>Exhausted interval (s)</label><input id="breathExhausted" type="number" min=".15" step=".05"></div><div class="row"><label>Random pitch ± semitones</label><input id="breathPitch" type="number" min="0" max="12" step=".01"></div><div class="row"><label>Volume</label><input id="breathVolume" type="number" min="0" max="1" step=".01"></div><div class="audition" id="breathAudition"></div></section>
+            <section class="card"><h2>Pain</h2><div class="muted">Direct Health damage vocalizes every hit. Net DoT Health loss is throttled to one vocalization per second. Intensity is chosen from a three-slot weighted window around remaining Health.</div><div class="row"><label>DoT repeat (s)</label><input id="painDot" type="number" min=".1" step=".05"></div><div class="row"><label>Random pitch ± semitones</label><input id="painPitch" type="number" min="0" max="12" step=".01"></div><div class="row"><label>Volume</label><input id="painVolume" type="number" min="0" max="1" step=".01"></div><div class="audition" id="painAudition"></div></section>
+            <section class="card"><h2>Attack Grunts</h2><div class="row"><label>Random pitch ± semitones</label><input id="gruntPitch" type="number" min="0" max="12" step=".01"></div><div class="row"><label>Volume</label><input id="gruntVolume" type="number" min="0" max="1" step=".01"></div><div class="audition"><button id="attackGrunt">Combo attack grunt</button><button id="releaseGrunt">Quick / held release grunt</button></div></section>
+          </main><aside>
+            <section class="card"><h2>Global Utterance Modulation</h2><div class="muted">Applied to breath, pain, charge, attack, and release vocals. Charge stretching multiplies the selected normal voice rate by the duration-stretch factor; an early release switches the remainder to exactly the catch-up multiplier of that selected normal voice rate.</div><div class="profileBanner"><select id="species"></select><select id="gender"><option value="male">Male</option><option value="female">Female</option></select></div><div class="row"><label>Pitch shift (semitones)</label><input id="profilePitch" type="number" min="-24" max="24" step=".1"></div><div class="row"><label>Tempo multiplier</label><input id="profileTempo" type="number" min=".35" max="3" step=".01"></div><div class="row"><label>Gain multiplier</label><input id="profileGain" type="number" min="0" max="3" step=".01"></div><button class="good" id="saveProfile">Save this profile</button><button id="removeProfile">Use default instead</button></section>
+            <section class="card"><h2>Current JSON</h2><textarea id="json" spellcheck="false"></textarea></section><section class="card"><h2>Debug</h2><div id="latest" class="muted">Latest change: editor boot</div><div id="log"></div></section>
+          </aside></div>
+          <script>
+          (()=>{'use strict';
+            const CONFIG_URL='../../config/combat/combat-vocalizations.json',SPECIES_URL='../../config/species/index.json',ATTACK_VALUES_URL='../../config/combat/attack-values.json',LOCAL_OVERRIDE_KEY='hobunji_combat_vocalizations_override_v1',ASSET_PREFIX='../../';
+            const $=id=>document.getElementById(id);let cfg=null,chargeBuffer=null,ctx=null,currentPreview=null,waveformPeaks=null,speciesEntries=[],fullChargeDurationS=4;
+            const controls={chargeCatchup:['chargePlayback','earlyReleaseNormalSpeedMul'],breathHigh:['breath','intervalHighStaminaS'],breathLow:['breath','intervalLowStaminaS'],breathExhausted:['breath','exhaustedIntervalS'],breathPitch:['breath','pitchRandomSemitones'],breathVolume:['breath','volume'],painDot:['pain','dotRepeatS'],painPitch:['pain','pitchRandomSemitones'],painVolume:['pain','volume'],gruntPitch:['grunts','pitchRandomSemitones'],gruntVolume:['grunts','volume']};
+            function log(message,kind=''){const line=document.createElement('div');line.textContent=`[${new Date().toLocaleTimeString()}] ${message}`;if(kind)line.className=kind;$('log').appendChild(line);$('log').scrollTop=$('log').scrollHeight}function latest(message){$('latest').textContent=`Latest change: ${message}`;log(message)}function clamp(v,min,max){return Math.max(min,Math.min(max,Number(v)||0))}function valueAt(path){return path.reduce((v,k)=>v?.[k],cfg)}function setAt(path,value){let node=cfg;for(let i=0;i<path.length-1;i++)node=node[path[i]]||(node[path[i]]={});node[path[path.length-1]]=value}function audioContext(){if(!ctx){const C=window.AudioContext||window.webkitAudioContext;if(!C)throw new Error('Web Audio is unavailable');ctx=new C()}ctx.resume?.();return ctx}function assetUrl(path){return new URL(ASSET_PREFIX+String(path||'').replace(/^\/+/,''),location.href).href}
+            function selectedIdentity(){return{speciesId:$('species').value,gender:$('gender').value}}function profileFor(identity=selectedIdentity()){const root=cfg.utteranceModulation||(cfg.utteranceModulation={default:{},species:{}}),fallback=root.default?.[identity.gender]||root.default?.male||{pitchSemitones:0,tempo:1,gain:1},authored=identity.speciesId==='default'?root.default?.[identity.gender]:root.species?.[identity.speciesId]?.[identity.gender];return{pitchSemitones:Number(authored?.pitchSemitones??fallback.pitchSemitones??0),tempo:Number(authored?.tempo??fallback.tempo??1),gain:Number(authored?.gain??fallback.gain??1)}}function playbackRate(randomSpan=0){const p=profileFor(),random=(Math.random()*2-1)*Math.max(0,Number(randomSpan)||0);return clamp(p.tempo*Math.pow(2,(p.pitchSemitones+random)/12),.3,3)}
+            function chargeRatePlan(bufferDurationS,targetDurationS,normalRate){const clip=Math.max(.001,Number(bufferDurationS)||.001),target=Number(targetDurationS)>0?Number(targetDurationS):clip,normal=Math.max(.02,Number(normalRate)||1),mul=Math.max(.1,Number(cfg.chargePlayback?.earlyReleaseNormalSpeedMul)||2);return{normalRate:normal,stretchedRate:clamp(normal*(clip/target),.02,32),catchUpRate:clamp(normal*mul,.02,32),mul}}
+            async function decodeUrl(url){const res=await fetch(url);if(!res.ok)throw new Error(`HTTP ${res.status} for ${url}`);return new Promise((resolve,reject)=>{const c=audioContext();res.arrayBuffer().then(bytes=>{let settled=false;const ok=b=>{if(!settled){settled=true;resolve(b)}},bad=e=>{if(!settled){settled=true;reject(e)}};try{const r=c.decodeAudioData(bytes.slice(0),ok,bad);r?.then?.(ok,bad)}catch(e){bad(e)}}).catch(reject)})}
+            async function loadCharge(){try{$('samplerStatus').className='';$('samplerStatus').textContent='Loading charge grunt…';chargeBuffer=await decodeUrl(assetUrl(cfg.assets.chargeGrunt));buildPeaks();drawWaveform();const p=chargeRatePlan(chargeBuffer.duration,fullChargeDurationS,1);$('samplerStatus').textContent=`Source ${chargeBuffer.duration.toFixed(3)}s · Charged Breaker 0→100% ${fullChargeDurationS.toFixed(3)}s · default stretch ${p.stretchedRate.toFixed(3)}× · early release ${p.mul.toFixed(2)}× normal`;latest(`charge grunt decoded; full-charge stretch ${fullChargeDurationS.toFixed(3)}s`)}catch(e){$('samplerStatus').textContent=`Charge decode failed: ${e.message}`;$('samplerStatus').className='bad';log(e.message,'bad')}}
+            function buildPeaks(){if(!chargeBuffer)return;const data=chargeBuffer.getChannelData(0),bins=1200,step=Math.max(1,Math.floor(data.length/bins));waveformPeaks=[];for(let x=0;x<bins;x++){let min=1,max=-1;const start=x*step,end=Math.min(data.length,start+step);for(let i=start;i<end;i++){const v=data[i];if(v<min)min=v;if(v>max)max=v}waveformPeaks.push([min,max])}}
+            function drawWaveform(){const canvas=$('wave'),rect=$('waveWrap').getBoundingClientRect(),dpr=devicePixelRatio||1;canvas.width=Math.max(1,Math.round(rect.width*dpr));canvas.height=Math.max(1,Math.round(parseFloat(getComputedStyle(canvas).height)*dpr));const g=canvas.getContext('2d');g.setTransform(dpr,0,0,dpr,0,0);const w=rect.width,h=canvas.height/dpr;g.clearRect(0,0,w,h);g.strokeStyle='rgba(159,180,207,.72)';g.beginPath();if(waveformPeaks?.length){for(let x=0;x<w;x++){const idx=Math.floor(x/w*waveformPeaks.length),p=waveformPeaks[idx]||[0,0];g.moveTo(x,h/2+p[0]*h*.43);g.lineTo(x,h/2+p[1]*h*.43)}}g.stroke();g.fillStyle='rgba(106,167,255,.9)';g.font='11px system-ui';g.fillText('0% charge',8,h-9);const label='100% charge';g.fillText(label,Math.max(8,w-g.measureText(label).width-8),h-9)}
+            function stopPreview(){if(!currentPreview)return;clearTimeout(currentPreview.timer);try{currentPreview.source?.stop()}catch(_){}try{currentPreview.output?.disconnect()}catch(_){}currentPreview=null}
+            function releaseChargePreview(){if(!currentPreview||currentPreview.released)return;currentPreview.released=true;clearTimeout(currentPreview.timer);const now=audioContext().currentTime,p=currentPreview.source.playbackRate;try{p.cancelScheduledValues(now);p.setValueAtTime(currentPreview.plan.catchUpRate,now)}catch(_){p.value=currentPreview.plan.catchUpRate}log(`Early release: remainder switched from ${currentPreview.plan.stretchedRate.toFixed(3)}× stretched rate to ${currentPreview.plan.catchUpRate.toFixed(3)}× = ${currentPreview.plan.mul.toFixed(2)}× normal (${currentPreview.plan.normalRate.toFixed(3)}×).`)}
+            function previewCharge(releaseFraction=null){if(!chargeBuffer){log('Charge grunt is not decoded yet.','bad');return}stopPreview();const c=audioContext(),profile=profileFor(),normalRate=playbackRate(cfg.grunts.pitchRandomSemitones),plan=chargeRatePlan(chargeBuffer.duration,fullChargeDurationS,normalRate),output=c.createGain();output.gain.value=clamp(cfg.grunts.volume*profile.gain,0,3);output.connect(c.destination);const source=c.createBufferSource();source.buffer=chargeBuffer;source.playbackRate.value=plan.stretchedRate;source.connect(output);source.start(c.currentTime+.005);currentPreview={source,output,plan,released:false,timer:0};source.onended=()=>{if(currentPreview?.source===source){log('Charge preview finished.');currentPreview=null;try{output.disconnect()}catch(_){}}};if(Number(releaseFraction)>0&&Number(releaseFraction)<1){currentPreview.timer=setTimeout(releaseChargePreview,fullChargeDurationS*Number(releaseFraction)*1000);log(`Preview: release at ${(Number(releaseFraction)*100).toFixed(0)}% (${(fullChargeDurationS*Number(releaseFraction)).toFixed(2)}s).`)}else log(`Preview: full 0→100% charge over ${fullChargeDurationS.toFixed(2)}s.`)}
+            async function playOneShot(path,volume,pitchSpan){try{const a=new Audio(assetUrl(path)),p=profileFor();a.volume=clamp(Number(volume)*p.gain,0,1);a.playbackRate=playbackRate(pitchSpan);if('preservesPitch'in a)a.preservesPitch=false;if('webkitPreservesPitch'in a)a.webkitPreservesPitch=false;await a.play();log(`Audition: ${path.split('/').pop()} @ ${a.playbackRate.toFixed(3)}×`)}catch(e){log(`Audition failed: ${e.message}`,'bad')}}
+            function renderAuditions(){$('breathAudition').innerHTML='';Object.entries(cfg.assets.breath||{}).forEach(([level,path])=>{const b=document.createElement('button');b.textContent=`Breath ${level}`;b.onclick=()=>playOneShot(path,cfg.breath.volume,cfg.breath.pitchRandomSemitones);$('breathAudition').appendChild(b)});$('painAudition').innerHTML='';Object.entries(cfg.assets.pain||{}).forEach(([level,path])=>{const b=document.createElement('button');b.textContent=`Pain ${level}`;b.onclick=()=>playOneShot(path,cfg.pain.volume,cfg.pain.pitchRandomSemitones);$('painAudition').appendChild(b)})}
+            function renderControls(){for(const[id,path]of Object.entries(controls))$(id).value=valueAt(path);renderAuditions();renderProfile();updateJson();drawWaveform()}function updateJson(){$('json').value=JSON.stringify(cfg,null,2)}function renderProfile(){const p=profileFor();$('profilePitch').value=p.pitchSemitones;$('profileTempo').value=p.tempo;$('profileGain').value=p.gain;$('removeProfile').disabled=$('species').value==='default'}function populateSpecies(){const options=[{speciesId:'default',label:'Default'}].concat(speciesEntries);$('species').innerHTML=options.map(e=>`<option value="${e.speciesId}">${e.label||e.speciesId}</option>`).join('')}
+            async function loadAll(){stopPreview();try{const[configRes,speciesRes,attackRes]=await Promise.all([fetch(CONFIG_URL,{cache:'no-store'}),fetch(SPECIES_URL,{cache:'no-store'}),fetch(ATTACK_VALUES_URL,{cache:'no-store'})]);if(!configRes.ok)throw new Error(`config HTTP ${configRes.status}`);cfg=await configRes.json();speciesEntries=speciesRes.ok?(await speciesRes.json()).entries||[]:[];const attacks=attackRes.ok?await attackRes.json():{};fullChargeDurationS=Math.max(.05,Number(attacks?.chargedBreaker?.MAX_CHARGE_S)||Number(cfg.chargePlayback?.fullChargeDurationByAbility?.chargedBreaker)||4);populateSpecies();renderControls();await loadCharge();latest('repo configuration loaded')}catch(e){log(`Load failed: ${e.message}`,'bad');$('latest').textContent=`Load failed: ${e.message}`}}
+            for(const[id,path]of Object.entries(controls)){$(id).addEventListener('input',()=>{setAt(path,Number($(id).value));updateJson();if(id==='chargeCatchup'&&chargeBuffer)loadCharge()});$(id).addEventListener('change',()=>latest(`${id} = ${$(id).value}`))}
+            $('species').addEventListener('change',renderProfile);$('gender').addEventListener('change',renderProfile);$('saveProfile').addEventListener('click',()=>{const id=selectedIdentity(),record={pitchSemitones:Number($('profilePitch').value)||0,tempo:clamp($('profileTempo').value,.35,3),gain:clamp($('profileGain').value,0,3)};cfg.utteranceModulation=cfg.utteranceModulation||{default:{},species:{}};if(id.speciesId==='default')cfg.utteranceModulation.default[id.gender]=record;else{cfg.utteranceModulation.species=cfg.utteranceModulation.species||{};const s=cfg.utteranceModulation.species[id.speciesId]||(cfg.utteranceModulation.species[id.speciesId]={});s[id.gender]=record}updateJson();latest(`${id.speciesId}/${id.gender} modulation saved`)});$('removeProfile').addEventListener('click',()=>{const id=selectedIdentity();if(id.speciesId==='default')return;const s=cfg.utteranceModulation?.species?.[id.speciesId];if(s){delete s[id.gender];if(!Object.keys(s).length)delete cfg.utteranceModulation.species[id.speciesId]}renderProfile();updateJson();latest(`${id.speciesId}/${id.gender} now inherits default`)})
+            $('fullPreview').onclick=()=>previewCharge(null);document.querySelectorAll('[data-release]').forEach(b=>b.onclick=()=>previewCharge(Number(b.dataset.release)));$('stopPreview').onclick=stopPreview;$('attackGrunt').onclick=()=>playOneShot(cfg.assets.comboAttackGrunts?.[0],cfg.grunts.volume,cfg.grunts.pitchRandomSemitones);$('releaseGrunt').onclick=()=>playOneShot(cfg.assets.releaseGrunt,cfg.grunts.volume,cfg.grunts.pitchRandomSemitones);$('reload').onclick=loadAll;$('applyLocal').onclick=()=>{try{localStorage.setItem(LOCAL_OVERRIDE_KEY,JSON.stringify(cfg));latest('local game preview override saved; reload/open game to use it')}catch(e){log(e.message,'bad')}};$('clearLocal').onclick=()=>{localStorage.removeItem(LOCAL_OVERRIDE_KEY);latest('local game preview override cleared')};$('copyJson').onclick=async()=>{try{await navigator.clipboard.writeText(JSON.stringify(cfg,null,2));latest('JSON copied to clipboard')}catch(e){log(e.message,'bad')}};$('downloadJson').onclick=()=>{const blob=new Blob([JSON.stringify(cfg,null,2)+'\n'],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='combat-vocalizations.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);latest('combat-vocalizations.json downloaded')};$('json').addEventListener('change',()=>{try{cfg=JSON.parse($('json').value);renderControls();loadCharge();latest('JSON textarea parsed and applied')}catch(e){log(`JSON parse failed: ${e.message}`,'bad')}});new ResizeObserver(drawWaveform).observe($('waveWrap'));loadAll();
+          })();
+          </script></body></html>
+          '''
+          # Strip workflow indentation while keeping the editor source readable.
+          editor = '\n'.join(line[10:] if line.startswith('          ') else line for line in editor.splitlines()) + '\n'
+          Path('docs/tools/combat-vocalization-editor/index.html').write_text(editor)
+
+          test_path = Path('scripts/test-combat-vocalizations.js')
+          test = test_path.read_text()
+          test = replace_once(test, "assert.equal(context.window.CombatVocalizations.version, 1);", "assert.equal(context.window.CombatVocalizations.version, 2);", 'test runtime version')
+          test = replace_once(test, '''context.window.Combat = {
+            deps: { player },''', '''context.window.Combat = {
+            deps: { player },
+            chargedBreakerData: { MAX_CHARGE_S: 4 },''', 'test charged data')
+          anchor = "assert.equal(typeof scheduledBreath, 'function', 'breath loop should use shared scheduler');\n"
+          insertion = r'''
+          const chargePlan = context.window.CombatVocalizations.chargeRatePlan(1.2, 4, 1.25);
+          assert(Math.abs(chargePlan.stretchedRate - 0.375) < 1e-9, 'full clip should stretch across the authored charge duration');
+          assert(Math.abs(chargePlan.catchUpRate - 2.5) < 1e-9, 'early release must switch to 2x NORMAL speed, not 2x stretched speed');
+          assert(Math.abs(chargePlan.catchUpRate - chargePlan.stretchedRate * 2) > 1, 'catch-up rate must be independent of the stretched rate');
+          assert.equal(chargePlan.earlyReleaseNormalSpeedMul, 2);
+          assert.equal(context.window.CombatVocalizations.liveChargeTargetDurationS('chargedBreaker'), 4, 'live charge should reuse Charged Breaker MAX_CHARGE_S');
+          assert.equal(context.window.CombatVocalizations.getConfig().chargeSampler, undefined, 'legacy start/middle/end sampler config should be gone');
+          '''
+          test = replace_once(test, anchor, anchor + insertion, 'test charge plan assertions')
+          test_path.write_text(test)
+          PY
+      - name: Refresh cache-bust chain
+        run: node scripts/check-cache-busts.js --fix
+      - name: Restore temporary helper workflow
+        run: git checkout origin/main -- .github/workflows/temp-mammakh-cache-fix.yml
+      - name: Validate cache-bust chain
+        run: node scripts/check-cache-busts.js origin/main
+      - name: Run focused combat vocalization regression
+        run: node scripts/test-combat-vocalizations.js
+      - name: Run full regression suite
+        run: node scripts/run-tests.js
+      - name: Commit validated charge playback redesign
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+Oolnokk@users.noreply.github.com"
-          git fetch origin main
-          git merge origin/main --no-edit
-      - name: Validate cache-bust chain
-        run: node scripts/check-cache-busts.js $(git merge-base HEAD origin/main)
-      - name: Run regression suite
-        run: node scripts/run-tests.js
-      - name: Push resolved branch
-        run: git push origin HEAD:mammakhbuur-head-placeholders
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m "Redesign charge grunt as stretch playback"
+          git push origin HEAD:feat/combat-vocalizations
