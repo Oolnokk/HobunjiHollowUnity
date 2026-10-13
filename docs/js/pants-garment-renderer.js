@@ -792,6 +792,7 @@
     appearanceFromItem,
     appearanceFromBodyColors,
     ensureNpcPants,
+    liveHandles: () => [...handles], // Diagnostics: every garment currently attached (headless game checks read alignmentReport() from these).
     resolveCharacter,
     posteriorPortraitYForAvatar: (THREE, avatarGroup, legGroup) => { const plane = findPortraitPlane(avatarGroup), nodes = findLegNodes({ group: legGroup }); return plane && nodes ? posteriorPortraitY(THREE, avatarGroup, plane, nodes) : null; },
     hasRigFor: (speciesId, gender, garmentId = DEFAULT_GARMENT_ID) => !!(rigConfig().garments?.[garmentId] && resolveCharacter(speciesId, gender)),
