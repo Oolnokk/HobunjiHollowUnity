@@ -366,20 +366,45 @@
   let _houseLayoutPlacementMode = null;      // { type: 'placeHouseDeed', pieceKey } — armed by a Deeds Place button, consumed by the next plain (non-drag) tap
   let _houseLayoutDrag = null;               // { entry, moved, grabDX, grabDZ, candidateCol, candidateRow, isWholeHouse } while a pointer is down on a piece
   let _houseLayoutFeatureMode = null;        // 'entrance' | 'chimney' | 'remove' — armed by an Architecture toggle button, consumed by the next plain (non-drag) tap; stays armed across multiple taps (unlike deed placement) so placing several fixtures doesn't need re-arming each time
+  let _layoutCancelPointer = null; // Closing/switching editors releases captured gestures before another building is opened.
+  let _layoutAdapter = null; // Barn-specific data/actions use the same house modal, renderer, and pointer handlers.
   const HOUSE_LAYOUT_MARGIN = 2;
+  function _layoutPieces() { return _layoutAdapter ? _layoutAdapter.getPieces() : deps.getHousePieces(); }
 
-  function openHouseLayoutModal() {
+  function openHouseLayoutModal(adapter = null) {
     const modal = document.getElementById('houseLayoutModal');
     if (!modal) return;
+    closeHouseLayoutModal();
+    _layoutAdapter = adapter;
+    _houseLayoutSelectedId = adapter?.selectedId || null;
+    const title = adapter?.title || 'House Layout'; // Shared header reflects the currently edited building.
+    modal.querySelector('.house-layout-title').textContent = title;
+    modal.setAttribute('aria-label', title);
     modal.classList.add('open');
     modal.setAttribute('aria-hidden', 'false');
     const closeBtn = document.getElementById('houseLayoutClose');
+    if (!document.getElementById('houseLayoutDebug')) {
+      const debugBtn = document.createElement('button'); // Shared mobile-accessible diagnostics for either editor.
+      debugBtn.id = 'houseLayoutDebug'; debugBtn.className = 'settings-small-btn'; debugBtn.textContent = 'Copy Layout Debug';
+      debugBtn.addEventListener('click', async () => {
+        const report = JSON.stringify({ layout: window.FarmPanel.layoutEditorDebug(), farmColors: window.FarmWorldSettings?.current?.(), barn: _layoutAdapter ? window.BarnIncubator?.debugSnapshot?.() : null }, null, 2); // Full report is produced only on demand.
+        try { await navigator.clipboard.writeText(report); deps.showToast('Layout debug copied.', true); }
+        catch (_) { window.prompt?.('Copy layout debug:', report); }
+      });
+      closeBtn.before(debugBtn);
+    }
     if (closeBtn && !closeBtn.dataset.bound) {
       closeBtn.dataset.bound = '1';
       closeBtn.addEventListener('click', closeHouseLayoutModal);
     }
     if (!window.__houseLayoutResizeBound) {
       window.__houseLayoutResizeBound = true;
+      window.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && modal.classList.contains('open')) {
+          event.preventDefault();
+          closeHouseLayoutModal();
+        }
+      });
       window.addEventListener('resize', () => {
         if (document.getElementById('houseLayoutModal')?.classList.contains('open')) _renderHouseLayout3d();
       });
@@ -394,8 +419,10 @@
     modal.setAttribute('aria-hidden', 'true');
     _houseLayoutPlacementMode = null;
     _houseLayoutFeatureMode = null;
+    _layoutCancelPointer?.();
     _houseLayoutDrag = null;
     _houseLayoutSelectedId = null;
+    _layoutAdapter = null;
     _hideGhost();
     if (_houseLayoutRafId !== null) { cancelAnimationFrame(_houseLayoutRafId); _houseLayoutRafId = null; }
   }
@@ -404,7 +431,7 @@
   // built) plus a fixed margin, clamped to the farm's own bounds — defines
   // the 3D camera's framing.
   function _houseLayoutViewBounds() {
-    const pieces = deps.getHousePieces();
+    const pieces = _layoutAdapter?.getViewPieces?.() || _layoutPieces(); // Include possible addition positions when framing the shared editor.
     if (!pieces.length) return { col: 0, row: 0, w: Math.min(deps.COLS, 10), h: Math.min(deps.ROWS, 10) };
     let minC = Infinity, minR = Infinity, maxC = -Infinity, maxR = -Infinity;
     pieces.forEach(p => {
@@ -495,11 +522,17 @@
     if (!ctx3d) return;
     _resizeAndFrameHouseLayout3d();
     const { renderer, camera, overlayScene, selectBox, fillLight } = ctx3d;
-    const selected = deps.getHousePieces().find(p => p.id === _houseLayoutSelectedId);
+    const selected = _layoutPieces().find(p => p.id === _houseLayoutSelectedId);
     if (selected) {
       selectBox.visible = true;
-      selectBox.geometry.dispose();
-      selectBox.geometry = new THREE.EdgesGeometry(new THREE.BoxGeometry(selected.w, 1.6, selected.h));
+      const sizeKey = `${selected.w},${selected.h}`; // Rebuild the selection outline only when its dimensions change.
+      if (selectBox.userData.sizeKey !== sizeKey) {
+        selectBox.geometry.dispose();
+        const box = new THREE.BoxGeometry(selected.w, 1.6, selected.h); // Temporary source geometry for the shared selection edges.
+        selectBox.geometry = new THREE.EdgesGeometry(box);
+        box.dispose();
+        selectBox.userData.sizeKey = sizeKey;
+      }
       selectBox.position.set(selected.col + selected.w / 2, 0.8, selected.row + selected.h / 2);
     } else {
       selectBox.visible = false;
@@ -542,11 +575,15 @@
       // together), not just the one piece the pointer happens to be over.
       const dCol = drag.candidateCol - drag.entry.col, dRow = drag.candidateRow - drag.entry.row;
       let minC = Infinity, minR = Infinity, maxC = -Infinity, maxR = -Infinity;
-      deps.getHousePieces().filter(p => p.pieceKey === 'starter').forEach(p => {
+      _layoutPieces().filter(p => p.pieceKey === 'starter').forEach(p => {
         minC = Math.min(minC, p.col); minR = Math.min(minR, p.row);
         maxC = Math.max(maxC, p.col + p.w); maxR = Math.max(maxR, p.row + p.h);
       });
       gCol = minC + dCol; gRow = minR + dRow; gw = maxC - minC; gh = maxR - minR;
+    }
+    if (_layoutAdapter) {
+      const preview = _layoutAdapter.resolveMove(drag.entry, gCol, gRow); // Barn wall snapping previews the same placement used on release.
+      if (preview) { gCol = preview.col; gRow = preview.row; gw = preview.w; gh = preview.h; }
     }
     const { ghostMesh } = ctx3d;
     ghostMesh.geometry.dispose();
@@ -559,7 +596,7 @@
     // releasing the pointer here actually does. Whole-house drags skip the
     // tint (stay gold) since there's no cheap non-mutating moveHouse check.
     if (!drag.isWholeHouse) {
-      const valid = deps.canMovePieceTo(drag.entry.id, drag.candidateCol, drag.candidateRow);
+      const valid = _layoutAdapter ? _layoutAdapter.canMove(drag.entry, drag.candidateCol, drag.candidateRow) : deps.canMovePieceTo(drag.entry.id, drag.candidateCol, drag.candidateRow);
       ghostMesh.material.color.set(valid ? 0x8ef98a : 0xf95a5a);
     } else {
       ghostMesh.material.color.set(0xf9e28a);
@@ -585,7 +622,7 @@
     return { x: world.x, z: world.z };
   }
   function _housePieceAt(worldX, worldZ) {
-    const pieces = deps.getHousePieces();
+    const pieces = _layoutPieces();
     for (let i = pieces.length - 1; i >= 0; i--) {
       const p = pieces[i];
       if (worldX >= p.col && worldX < p.col + p.w && worldZ >= p.row && worldZ < p.row + p.h) return p;
@@ -598,6 +635,11 @@
     if (!canvas || canvas.dataset.pointerBound) return;
     canvas.dataset.pointerBound = '1';
     let ptrId = null, startX = 0, startY = 0;
+    _layoutCancelPointer = () => {
+      const captured = ptrId; // Release before a reopen so a lost pointerup cannot leave the next editor stuck.
+      ptrId = null;
+      if (captured !== null) { try { canvas.releasePointerCapture(captured); } catch (_) {} }
+    };
 
     canvas.addEventListener('pointerdown', (e) => {
       if (ptrId !== null) return;
@@ -606,7 +648,8 @@
       if (_houseLayoutPlacementMode || _houseLayoutFeatureMode || !deps.hasFarmPermission('alterFarm')) return;
       const world = _screenToWorldXZ(e.clientX, e.clientY);
       const piece = world && _housePieceAt(world.x, world.z);
-      if (!piece) return;
+      if (!piece || (_layoutAdapter && !_layoutAdapter.canDrag(piece))) return;
+      _houseLayoutSelectedId = piece.id;
       _houseLayoutDrag = {
         entry: piece, moved: false,
         grabDX: world.x - piece.col, grabDZ: world.z - piece.row,
@@ -615,7 +658,7 @@
         // whole cluster — every other piece, including the starter annex,
         // moves independently (still validated to end up touching the rest
         // of the house, same as any bought piece).
-        isWholeHouse: piece.id === 'house_starter',
+        isWholeHouse: !_layoutAdapter && piece.id === 'house_starter',
       };
     });
 
@@ -637,14 +680,16 @@
       _hideGhost();
       if (drag && drag.moved) {
         let result;
-        if (drag.isWholeHouse) {
+        if (_layoutAdapter) {
+          result = _layoutAdapter.move(drag.entry, drag.candidateCol, drag.candidateRow);
+        } else if (drag.isWholeHouse) {
           // drag.candidateCol/Row track whichever starter-tagged piece was
           // actually grabbed (main room or annex) — moveHouse always wants
           // the MAIN room's new position, so translate by the same delta
           // _updateGhost already uses for the preview, not the raw grabbed
           // piece's own candidate position.
           const dCol = drag.candidateCol - drag.entry.col, dRow = drag.candidateRow - drag.entry.row;
-          const starter = deps.getHousePieces().find(p => p.id === 'house_starter');
+          const starter = _layoutPieces().find(p => p.id === 'house_starter');
           result = starter ? deps.moveHouse(starter.col + dCol, starter.row + dRow) : { ok: false, message: 'House not found.' };
         } else {
           result = deps.movePiece(drag.entry.id, drag.candidateCol, drag.candidateRow);
@@ -659,6 +704,18 @@
       // under the tap.
       const world = _screenToWorldXZ(e.clientX, e.clientY);
       if (!world) return;
+      if (_layoutAdapter && _houseLayoutPlacementMode) {
+        if (!deps.hasFarmPermission('alterFarm')) return;
+        const result = _layoutAdapter.place(world, _houseLayoutPlacementMode); // Uses existing plan-consumption and placement validation.
+        deps.showToast(result.message, result.ok);
+        if (result.ok) {
+          _houseLayoutPlacementMode = null;
+          _houseLayoutSelectedId = result.addition?.id || _houseLayoutSelectedId;
+        }
+        renderHouseLayoutModal();
+        renderFarmBuildings();
+        return;
+      }
       if (_houseLayoutPlacementMode?.type === 'placeHouseDeed') {
         if (!deps.hasFarmPermission('alterFarm')) return;
         const result = deps.placeHouseDeed(_houseLayoutPlacementMode.pieceKey, Math.floor(world.x), Math.floor(world.z));
@@ -690,11 +747,18 @@
       if (e.pointerId !== ptrId) return;
       ptrId = null; _houseLayoutDrag = null; _hideGhost();
     });
+    canvas.addEventListener('lostpointercapture', () => {
+      ptrId = null; _houseLayoutDrag = null; _hideGhost();
+    });
   }
 
   function _renderHouseLayoutHint() {
     const hint = document.getElementById('houseLayoutHint');
     if (!hint) return;
+    if (_layoutAdapter) {
+      hint.textContent = !deps.hasFarmPermission('alterFarm') ? "Only the farm's owner (or a granted farmhand) can edit the barn." : _layoutAdapter.getHint(_houseLayoutPlacementMode);
+      return;
+    }
     const HOUSE_PIECE_CATALOG = deps.getHousePieceCatalog();
     const featureHints = {
       entrance: 'Tap an outer wall tile to place an entrance. Tap an existing one to swap it there instead.',
@@ -711,11 +775,11 @@
     const list = document.getElementById('houseLayoutPieceList');
     if (!list) return;
     list.innerHTML = '';
-    deps.getHousePieces().forEach(p => {
+    _layoutPieces().forEach(p => {
       const row = document.createElement('div');
       row.className = 'house-layout-piece-row' + (p.id === _houseLayoutSelectedId ? ' selected' : '');
-      const nameText = deps.housePieceLabel(p) + (p.stage === 'foundation' ? ' (foundation)' : '');
-      row.innerHTML = `<span class="name">🏠 ${deps.esc(nameText)}</span><span class="size">${p.w}×${p.h}</span>`;
+      const nameText = (_layoutAdapter ? _layoutAdapter.label(p) : deps.housePieceLabel(p)) + (p.stage === 'foundation' ? ' (foundation)' : '');
+      row.innerHTML = `<span class="name">${_layoutAdapter ? '🪺' : '🏠'} ${deps.esc(nameText)}</span><span class="size">${p.w}×${p.h}</span>`;
       row.addEventListener('click', () => { _houseLayoutSelectedId = p.id; renderHouseLayoutModal(); });
       list.appendChild(row);
     });
@@ -725,7 +789,7 @@
     const wrap = document.getElementById('houseLayoutSelectedActions');
     if (!wrap) return;
     wrap.innerHTML = '';
-    const entry = deps.getHousePieces().find(p => p.id === _houseLayoutSelectedId);
+    const entry = _layoutPieces().find(p => p.id === _houseLayoutSelectedId);
     if (!entry || !deps.hasFarmPermission('alterFarm')) return;
     const mk = (text, onClick) => {
       const btn = document.createElement('button');
@@ -849,12 +913,25 @@
   }
 
   function renderHouseLayoutModal() {
+    _layoutAdapter?.refresh?.(); // Barn pieces/view bounds are refreshed on edits, not allocated every render frame.
     _bindHouseLayoutPointer();
     _renderHouseLayoutHint();
     _renderHouseLayoutPieceList();
-    _renderHouseLayoutSelectedActions();
-    _renderHouseLayoutArchitecture();
-    _renderHouseLayoutDeeds();
+    if (_layoutAdapter) {
+      _layoutAdapter.renderSidebar({
+        selectedId: _houseLayoutSelectedId, mode: _houseLayoutPlacementMode,
+        actions: document.getElementById('houseLayoutSelectedActions'),
+        architecture: document.getElementById('houseLayoutArchitecture'),
+        deeds: document.getElementById('houseLayoutDeeds'),
+        arm: mode => { _houseLayoutPlacementMode = mode; renderHouseLayoutModal(); },
+        select: id => { _houseLayoutSelectedId = id; },
+        refresh: renderHouseLayoutModal,
+      });
+    } else {
+      _renderHouseLayoutSelectedActions();
+      _renderHouseLayoutArchitecture();
+      _renderHouseLayoutDeeds();
+    }
   }
 
   function stableBreedingCandidates(stable) {
@@ -1620,6 +1697,15 @@
     renderStablePanel,
     renderFarmProcessors,
     activeStableIdForRole,
+    openLayoutEditor: openHouseLayoutModal,
+    closeLayoutEditor: closeHouseLayoutModal,
+    refreshLayoutEditor: () => { if (document.getElementById('houseLayoutModal')?.classList.contains('open')) renderHouseLayoutModal(); },
+    layoutEditorDebug: () => ({
+      mostRecentChange: 'House and barn layouts share one live 3D viewport, selection, drag preview, and responsive controls.',
+      editor: _layoutAdapter?.kind || 'house', selectedId: _houseLayoutSelectedId,
+      open: !!document.getElementById('houseLayoutModal')?.classList.contains('open'),
+      placing: _houseLayoutPlacementMode, draggingId: _houseLayoutDrag?.entry?.id || null,
+    }),
     cancelBarnPlacement: () => { _farmPlacementMode = null; },
   };
 })();

@@ -474,7 +474,8 @@
         mapData.caveRuinEntrance = clone(plan.ruinEntrance);
         addProp(mapData, { id: plan.ruinEntrance.id, key: 'ruinEntranceDoor', col: tile.col, row: tile.row, rotY });
         addProp(mapData, { id: plan.ruinEntrance.id + '_tunnel', key: 'ruinEntranceTunnel', col: tile.col - dc * 1.2, row: tile.row - dr * 1.2, rotY, scaleX: 0.75, scaleZ: 1.5, embedded: true });
-        mapData.wallHeightScale = 2.5; // Consumed by the clearance recarve (always queued above), which sweeps the carving probe 2.5x higher.
+        mapData.wallHeightScale = window.CavernGenerator?.caveShape?.().full || 2.5; // Full carved height at the door (docs/config/cave-shape.js); kept for save/diagnostic readers.
+        mapData.cavernTallTiles = [[tile.col, tile.row]]; // The clearance recarve lifts the roof to full height around the door and eases it down away from it.
         return;
       }
     }
@@ -605,7 +606,7 @@
     }
 
     plan.outerRimTileCount = mapData.outerRimTiles?.length || 0;
-    plan.wallHeightScale = mapData.wallHeightScale || 1;
+    plan.wallHeightScale = mapData.cavernCarvedHeightScale || window.CavernGenerator?.caveShape?.().base || mapData.wallHeightScale || 1; // Peak carved height (ruin caves: at the door).
 
     mapData.name = window.WildlifeSpawn?.denTurnoverStateForCavern?.(mapId)?.name || 'Unexplored cave';
     mapData.caveSite = clone(profile);
@@ -1101,7 +1102,7 @@
     return {
       ready: integrationsInstalled,
       currentArea,
-      latestChange: 'Locale clearance footprints now expand the actual cave carving: nests have 8x8 rooms, ruin doors have 7x6 approaches, and ruin caves are carved 2.5x taller (probe sweep extended upward, every column refined so no floating slabs). Edge tiles without a centre floor triangle ground on the floor, not the rock top. Expanded floors, grounding, and the protected rock rim share one rebuild.',
+      latestChange: 'Procedural caves and mines are carved 1.5x tall (2.5x around ruin doors, easing down away from them) under a low-poly roof of irregular flat facets, with faceted, gently concave walls, so the stretch-to-fit rock texture finds many large surfaces. Walls land on tile edges, and any walkable tile still inside rendered rock becomes solid, so cave geometry and collision agree. Nests keep 8x8 rooms and ruin doors 7x6 approaches.',
       zoneCount: zones.length,
       caveCount: sites.length,
       caves: sites.map(site => ({ mapId: site.mapId, zoneId: site.zoneId, denId: site.denId, contents: site.contents, inhabitant: site.inhabitant, label: site.discoveredLabel })),

@@ -24,13 +24,13 @@
   <script src="js/GLTFLoader.js?v=20260712d"></script>
   <script src="js/WallBuilder.js?v=20261006h9c26ecb"></script>
   <script src="js/HousePieceGen.js?v=20261007h7b668c0&window=20260926rebase1"></script>
-  <script src="js/interior-scene-builder.js?v=20261011h25fb4e2&window=20260926rebase1"></script>
+  <script src="js/interior-scene-builder.js?v=20261013hf195e54&window=20260926rebase1"></script>
   <script src="js/building-door.js?v=20260725a"></script>
   <script src="js/tile-pathfinding.js?v=20260808a"></script>
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
        extracted out of game.js; must load before game.js and before every
        other module whose init(deps) is handed window.FormatUtils.clamp/esc. -->
-  <script src="js/format-utils.js?v=20261013he3e62d9"></script>
+  <script src="js/format-utils.js?v=20261013h4cfe5b3"></script>
   <!-- Movement virtual-joystick handlers extracted out of game.js; uses
        window.FormatUtils.clamp, so must load after it and before game.js. -->
   <script src="js/virtual-joystick.js?v=20260902mod1"></script>
@@ -270,7 +270,7 @@
   <link rel="stylesheet" href="onboarding.css?v=20261005h64e87e5">
   <script src="config/farm-specializations.js?v=20261008h817d2c1"></script>
   <script src="config/crop-economy.js?v=20261008crop1"></script>
-  <script src="js/farm-world-settings.js?v=20261007hf674925"></script>
+  <script src="js/farm-world-settings.js?v=20261013h4299425"></script>
   <script src="onboarding.js?v=20261010h06df65a"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
   <script src="js/combat/resource-system.js?v=20261001quickdebuff2"></script>
@@ -413,7 +413,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmTroughs.init(...) during its own setup. -->
-  <script src="js/farm-troughs.js?v=20261013h8c74069"></script>
+  <script src="js/farm-troughs.js?v=20261013h2da19dc"></script>
   <!-- Modular player house (window.HousePieces) — barn-shaped foundation/
        build/demolish pipeline for house-piece deeds bought from the
        Carpenter, replacing the old singular Highland House GLB. Depends on
@@ -679,7 +679,7 @@
        so load order relative to the other systems above doesn't matter;
        must load before game.js, which calls window.FarmPanel.init(...)
        during its own setup. -->
-  <script src="js/farm-panel.js?v=20261008h5b036f9"></script>
+  <script src="js/farm-panel.js?v=20261013haa60eb6"></script>
   <!-- Tasks tab (window.TasksPanel), Supplies tab (window.SupplyPage),
        whistle-equip row (window.WhistleEquip), and the Wildlife/genotype
        debug panel (window.WildlifeDebugPanel) — all read
@@ -755,8 +755,10 @@
        CavernSculptor), ported from docs/references/(HA)TunnelSculptorV1.html.
        Framework-agnostic pure data/math — must load before cavern-generator.js,
        whose generateCavernFloor calls window.CavernSculptor.carveMazeCavern(...). -->
-  <script src="js/cavern-sculptor.js?v=20261013hb8959de"></script>
-  <script src="js/cavern-generator.js?v=20261012h580b603"></script>
+  <!-- Cave height tuning (window.HobunjiCaveShapeConfig), read by cavern-generator.js at carve time. -->
+  <script src="config/cave-shape.js?v=20261013caveshape1"></script>
+  <script src="js/cavern-sculptor.js?v=20261013hae568c9"></script>
+  <script src="js/cavern-generator.js?v=20261013hfdce263"></script>
   <script src="js/cavern-ore-rocks.js?v=20261010caveore1"></script>
   <script src="js/town-mine.js?v=20261008hf23c45c"></script>
   <!-- A wilderness zone's in-bounds elevated plateau/mesa terrain
@@ -787,7 +789,7 @@
        synchronously during initial boot. -->
   <script src="js/locale-cave-runtime.js?v=20261010h40fea5e"></script>
   <!-- Promotes wilderness den anchors into generic cave sites; wraps WildlifeSpawn/CavernGenerator/DevSpawner, all loaded above. -->
-  <script src="js/cave-site-system.js?v=20261013hf09de08"></script>
+  <script src="js/cave-site-system.js?v=20261013h2b93be6"></script>
   <script src="js/ruin-site-locales.js?v=20261002hb4d3f2d"></script>
   <script src="js/stampable-locale-defs.js?v=20261010h93ea9d8"></script>
   <script src="js/ruin-sites.js?v=20261003h12be717"></script>
@@ -2550,7 +2552,7 @@
        referencing it at all until now — the seating bridge it feeds was
        consequently always inert in the shipped game (see that file's own
        header). -->
-  <script src="config/npcs/social-relations.js?v=20260905layouts1"></script>
+  <script src="config/npcs/social-relations.js?v=20261013h9b7e0bc"></script>
   <!-- Social seating (window.NpcSocialSeating) — decorates
        NpcActivities.resolveDestination so a "sit" destination picks the
        best-scoring free seat (nearby family/partner/friends weighted in)
@@ -2632,7 +2634,7 @@
   <script src="js/romance-wedding.js?v=20261007wedding1"></script>
   <script src="js/romance-system.js?v=20261013h23504d0"></script>
   <script src="js/npc-command-wheel.js?v=20261008h02bf686"></script>
-  <script src="game.js?v=20261013he47732e"></script>
+  <script src="game.js?v=20261013h1baa65c"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261010h8448517"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

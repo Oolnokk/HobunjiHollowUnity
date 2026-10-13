@@ -124,7 +124,8 @@ assert.equal(context.window.CombatVocalizations.version, 3);
 assert.equal(typeof scheduledBreath, 'function', 'breath loop should use shared scheduler');
 
 const chargePlan = context.window.CombatVocalizations.chargeRatePlan(1.2, 4, 1.25);
-assert(Math.abs(chargePlan.stretchedTempo - 0.375) < 1e-9, 'full clip should stretch across the authored charge duration');
+assert(Math.abs(chargePlan.stretchedTempo - 0.3) < 1e-9, 'full charge stretch must be based on clip/target duration, independent of normal voice tempo');
+assert(Math.abs((1.2 / chargePlan.stretchedTempo) - 4) < 1e-9, 'full charge vocal must still span exactly 4 seconds when normal voice tempo is not 1x');
 assert(Math.abs(chargePlan.catchUpTempo - 2.5) < 1e-9, 'early release must switch to 2x NORMAL tempo, not 2x stretched tempo');
 assert(Math.abs(chargePlan.catchUpTempo - chargePlan.stretchedTempo * 2) > 1, 'catch-up tempo must be independent of the stretched tempo');
 assert.equal(chargePlan.earlyReleaseNormalSpeedMul, 2);

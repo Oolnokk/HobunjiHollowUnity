@@ -612,7 +612,7 @@ function chargeRatePlan(bufferDurationS, targetDurationS, normalTempo) {
     clipDurationS,
     targetDurationS: targetS,
     normalTempo: baseNormalTempo,
-    stretchedTempo: clamp(baseNormalTempo * (clipDurationS / targetS), 1 / 9, 4),
+    stretchedTempo: clamp(clipDurationS / targetS, 1 / 9, 4), // Full charge duration is gameplay-authored; species voice tempo only defines normal/catch-up speed.
     earlyReleaseNormalSpeedMul,
     catchUpTempo: clamp(baseNormalTempo * earlyReleaseNormalSpeedMul, 1 / 9, 4),
   };
