@@ -868,9 +868,11 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       assert.ok(active.ladders > 0, `negative floor tiers require ladder access: ${JSON.stringify(active)}`);
       const ladderStart = await page.evaluate(() => { // Used to prove one authored ladder starts the shared ClimbSystem path from the live generated ruin.
         const scene = window.GridTileAccessors.getActiveScene(); // Used to locate a live V50 stone-ladder root without relying on devtools.
-        let ladder = null; // Used to retain the first authored ladder discovered in the active ruin hierarchy.
-        scene?.traverse?.(object => { if (!ladder && object.userData?.generatedAccessType === 'stoneLadder') ladder = object; });
-        const endpoints=ladder&&window.DevRandomRuinInteractions.debugLadders().find(entry=>entry.name===ladder.name)?.endpoints;
+        const basins=window.DevRandomRuinSimplePuzzles.snapshot().composers?.ropeRewards?.basins||[];
+        const safeLanding=point=>basins.every(basin=>point.x<basin.bounds.minX-.25||point.x>basin.bounds.maxX+.25||point.z<basin.bounds.minZ-.25||point.z>basin.bounds.maxZ+.25);
+        const candidate=window.DevRandomRuinInteractions.debugLadders().find(entry=>entry.endpoints&&safeLanding(entry.endpoints.top)&&safeLanding(entry.endpoints.bottom)); // A ladder into a lava basin correctly triggers recovery; height-persistence coverage needs safe endpoints.
+        const ladder=candidate&&scene.getObjectByName(candidate.name);
+        const endpoints=candidate?.endpoints;
         if(!endpoints||!window.DevRandomRuin.setPlayerWorldPoint(endpoints.top,{grounded:true}))throw new Error('Ladder smoke could not reach the authored upper landing'); // Start beside the ladder, rather than crossing the ruin from the previous combat test's position.
         const before = window.DevRandomRuin.getState()?.presentation || null; // Used to detect any post-climb snapback to the original floor.
         const started = !!ladder && window.DevRandomRuinInteractions.climbStoneLadder(ladder); // Used to require the same action path exposed to normal player input.
