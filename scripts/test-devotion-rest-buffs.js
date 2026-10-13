@@ -66,4 +66,46 @@ assert.match(core, /prayerRestSnapshot\s*=\s*debugSnapshot/, 'core state is avai
 assert.match(integration, /prayerRestIntegrationSnapshot\s*=\s*debugSnapshot/, 'integration-hook status is separately visible without devtools');
 assert.match(sleepBridge, /ownedBedSleepPending[\s\S]{0,100}ownedBedSleepArmCount/, 'sleep debug snapshot exposes whether a real bed sleep was armed');
 
+// Exercise the parser-time boot with a real saved blessing and a calendar whose
+// public reads throw until init. Boot must neither throw nor discard the save.
+let calendarReady = false;
+let calendarDay = 10;
+let calendarTime = .25;
+let calendarReads = 0;
+const savedMeta = { characters: [{ id: 'clock-test', templePrayerRestBlessings: {
+  prayer: { id: 'naoine', startedAtGameHour: 240, expiresAtGameHour: 250 },
+  wellRested: { startedAtGameHour: 240, expiresAtGameHour: 250 },
+} }] };
+const storage = new Map([['hobunjiSaveMeta', JSON.stringify(savedMeta)]]);
+const clockWindow = {
+  __hobunjiPlayerProfile: { characterId: 'clock-test' },
+  CalendarSystem: {
+    isInitialized: () => calendarReady,
+    timeDebugSnapshot: () => {
+      calendarReads++;
+      if (!calendarReady) throw new Error('calendar read before init');
+      return { rawDay: calendarDay, time01: calendarTime };
+    },
+    getHour: () => { throw new Error('must use monotonic calendar snapshot'); },
+  },
+  addEventListener() {}, setInterval() {},
+};
+const clockContext = {
+  window: clockWindow,
+  document: { addEventListener() {}, getElementById: () => null },
+  localStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) },
+};
+assert.doesNotThrow(() => vm.runInNewContext(core, clockContext));
+assert.equal(calendarReads, 0, 'parser-time boot defers calendar reads');
+assert.equal(clockWindow.TemplePrayerRestBlessings.activePrayer()?.id, 'naoine');
+assert.equal(clockWindow.TemplePrayerRestBlessings.isWellRested(), true);
+calendarReady = true;
+assert.equal(clockWindow.TemplePrayerRestBlessings.debugSnapshot().gameHour, 246);
+assert.equal(clockWindow.TemplePrayerRestBlessings.isWellRested(), true);
+calendarTime = .5;
+assert.equal(clockWindow.TemplePrayerRestBlessings._test.expireState(), true);
+assert.equal(clockWindow.TemplePrayerRestBlessings.activePrayer(), null);
+assert.equal(clockWindow.TemplePrayerRestBlessings.isWellRested(), false);
+assert.equal(JSON.parse(storage.get('hobunjiSaveMeta')).characters[0].templePrayerRestBlessings.prayer, null);
+
 console.log('temple prayer and Well Rested regression passed');

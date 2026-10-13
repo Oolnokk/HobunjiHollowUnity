@@ -36,9 +36,10 @@
   const clamp = (value, lo, hi) => Math.max(lo, Math.min(hi, finite(value)));
 
   function currentGameHour() {
+    if (!window.CalendarSystem || window.CalendarSystem.isInitialized?.() === false) return NaN; // Parser-time loading precedes game.js calendar injection; preserve saved timers until the clock is ready.
     const snap = window.CalendarSystem?.timeDebugSnapshot?.(); // Uses the calendar's monotonic raw day/time so timers survive month/season boundaries.
     const rawDay = finite(snap?.rawDay, NaN);
-    const rawTime01 = finite(snap?.rawTime01, NaN);
+    const rawTime01 = finite(snap?.time01 ?? snap?.rawTime01, NaN);
     if (Number.isFinite(rawDay) && Number.isFinite(rawTime01)) return rawDay * 24 + rawTime01 * 24;
     const hour = finite(window.CalendarSystem?.getHour?.(), NaN);
     return Number.isFinite(hour) ? hour : 0;
@@ -90,6 +91,7 @@
 
   function expireState(persist = true) {
     const now = currentGameHour(); // One read keeps prayer/rest expiry comparisons internally consistent for this sync.
+    if (!Number.isFinite(now)) return false;
     let changed = false;
     if (state.prayer && !(state.prayer.expiresAtGameHour > now)) { state.prayer = null; changed = true; }
     if (state.wellRested && !(state.wellRested.expiresAtGameHour > now)) { state.wellRested = null; changed = true; }

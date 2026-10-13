@@ -574,6 +574,7 @@
         sfxOffsetZ: result.sfxSource ? result.sfxSource.z - result.mesh.position.z : 0,
       };
       meshes.push(result.mesh);
+      if (d.key === 'artifactPedestal' && Number.isInteger(d.artifactDisplaySlot)) window.ArtifactCollection?.attachDisplay?.(result.mesh, d.artifactDisplaySlot);
     }
     for (const f of furnitureDefs) {
       const def = deps.PROCESSING_FURNITURE_DEFS[f.key];

@@ -21,10 +21,13 @@ const a = source.indexOf('  const chunkJigsawTextures'), b = source.indexOf('  c
 const context = { THREE: { RepeatWrapping: 1000, ClampToEdgeWrapping: 1001 }, WeakMap, Map };
 vm.runInNewContext(source.slice(a, b) + '\nthis.clone = cloneJigsawMaterial; this.stats = () => ({ textures: chunkJigsawTextureCount, refs: chunkJigsawTextureRefs });', context);
 const original = texture(), mat = material(original);
+original.userData.furnitureTexture = 'carved_smooth.png';
 const floors = Array.from({ length: 1000 }, () => context.clone(mat, false, true));
 assert.equal(textureClones, 1, 'one thousand chunk meshes use one texture clone');
 assert.equal(context.stats().refs, 1000);
 assert.equal(floors[0].map.image, original.image, 'native source pixels remain unchanged');
+assert.equal(floors[0].map.userData.furnitureTexture, 'carved_smooth.png', 'shared sampler preserves authored texture identity');
+assert.notEqual(floors[0].map.userData, original.userData, 'sampler metadata is independent of the source');
 assert.equal(floors[0].map.repeat.x, 1); assert.equal(floors[0].map.offset.x, 0);
 const wall = context.clone(mat, true, true);
 assert.notEqual(wall.map, floors[0].map, 'different wrapping keeps a separate sampler');
@@ -40,6 +43,7 @@ assert.notEqual(rebuilt.map, floors[0].map, 'returning to an unloaded region get
 rebuilt.dispose();
 const standaloneA = context.clone(mat, false), standaloneB = context.clone(mat, false);
 assert.notEqual(standaloneA.map, standaloneB.map, 'tools and non-chunk callers retain independent ownership');
+assert.equal(standaloneA.map.userData.furnitureTexture, 'carved_smooth.png', 'standalone sampler preserves authored texture identity');
 
 // Execute both actual chunk cleanup owners, which must release shared maps via their materials.
 for (const file of ['docs/game.js', 'docs/js/wilderness-chunks.js']) {

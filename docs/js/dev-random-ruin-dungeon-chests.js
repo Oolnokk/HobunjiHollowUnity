@@ -1,6 +1,6 @@
 // Dungeon Chests for the Random Test Ruin. Each chest rolls its tier's pool
 // from docs/config/loot/loot-pools.json (dungeonChest_tier1..4, authored in
-// the loot-shop editor and intentionally empty for now) through the shared
+// the loot-shop editor) through the shared
 // LootRolling.rollLootPool(), and grants the result with DevSpawner's
 // grantLoot dep. Puzzle modules create chests with create(); opening is an
 // ordinary nearby world interaction supplied by the owning module.
@@ -125,12 +125,16 @@
     chest.opened = true;
     window.HobunjiActivityEvents?.emit('chest_opened', { buried: false, boss: !!chest.boss });
     const gained = window.LootRolling?.rollLootPool?.(chest.poolId) || {};
+    // Old/local pool overrides and config load failures still award a guaranteed artifact batch.
+    if (!Object.keys(gained).some(key => window.ArtifactCollection?.ARTIFACTS?.[key] && gained[key] > 0)) {
+      Object.assign(gained, window.ArtifactCollection?.rollArtifacts?.(chest.tier) || { harlyaoCopperCoin: 1 });
+    }
     const trinketParts = window.TrinketSystem?.claimLoot?.(gained, 'harlyaoRuin') || []; // trinket_<id> entries become gear, never inventory stacks.
     const relicParts = chest.boss ? (window.HarlyaoRelics?.rollBossChestRelic?.(chest) || []) : [];
     const parts = [...(deps?.grantLoot?.(gained) || []), ...trinketParts, ...relicParts];
     chest.loot = gained;
     const title = `${chest.tierName} Dungeon Chest`;
-    deps?.showToast?.(parts.length ? `${title}: ${parts.join(', ')}` : `${title} — empty (loot pool ${chest.poolId} has no entries yet).`, true);
+    deps?.showToast?.(parts.length ? `${title}: ${parts.join(', ')}` : `${title}: artifact recovered.`, true);
     window.__farmLog?.(`[random-ruin] opened ${chest.id} tier ${chest.tier}: ${JSON.stringify(gained)}`, 'world');
     return true;
   }

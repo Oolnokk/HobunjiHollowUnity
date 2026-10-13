@@ -75,7 +75,85 @@
     group.userData.partById = partById;
     group.userData.authoredParticleEmitters = (data.particleEmitters || []).map(record => JSON.parse(JSON.stringify(record))); // FurniturePuzzleRuntime scales these between OFF/ON emission states.
     group.userData.timelineLiquidStates = new Map(); // Used by the live stomp anchor to follow the animated surface level.
+    setItemPlacements(group, data, data.itemPlacements || []);
     return group;
+  }
+
+  // Furniture Author's recognizedSurfaces + itemPlacements are the authority
+  // for display positions, including Tall/Flat presets. No world-grid offsets.
+  function setItemPlacements(group, data, records) {
+    const previous = group.userData.authoredItemPlacements; // Disposed only on donation/rebuild, never per frame.
+    if (previous) {
+      group.remove(previous);
+      previous.traverse(node => { node.geometry?.dispose?.(); node.material?.map?.dispose?.(); node.material?.dispose?.(); });
+    }
+    const layer = new THREE.Group(); // Separate from authored parts so displays cannot alter their collision geometry.
+    layer.name = 'authored_surface_items';
+    group.userData.authoredItemPlacements = layer;
+    group.add(layer);
+    for (const record of records || []) {
+      if (!record.itemKey || record.visible === false) continue;
+      const surface = data.recognizedSurfaces?.find(entry => entry.id === record.surfaceId); // Same part-local face frame exported by Furniture Author.
+      let partMesh = group.userData.meshById?.get?.(surface?.partId);
+      if (!partMesh && surface) group.traverse(node => { if (node.userData?.authoredPartId === surface.partId) partMesh = node; });
+      const png = window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit; // Shared appearance/CORS-safe canvas pipeline.
+      if (!surface || !partMesh || !png) continue;
+      group.updateWorldMatrix(true, true);
+      const relative = new THREE.Matrix4().copy(group.matrixWorld).invert().multiply(partMesh.matrixWorld); // Resolve fallback-upgraded child parts into furniture-root space.
+      const center = new THREE.Vector3().fromArray(surface.localCentroid).applyMatrix4(relative);
+      const u = new THREE.Vector3().fromArray(surface.basisU).transformDirection(relative);
+      const v = new THREE.Vector3().fromArray(surface.basisV).transformDirection(relative);
+      const normal = new THREE.Vector3().fromArray(surface.localNormal).transformDirection(relative);
+      const holder = new THREE.Group(); // Keeps normal/u/v placement separate from the item plane's alpha-bottom grounding.
+      holder.position.copy(center).addScaledVector(u, Number(record.position?.u) || 0).addScaledVector(v, Number(record.position?.v) || 0).addScaledVector(normal, Number(record.position?.normal) || 0);
+      const scale = Math.max(.001, Number(record.scale) || .25); // Authored sprite height in furniture-local units.
+      holder.scale.setScalar(scale);
+      holder.rotation.set((record.rotation?.x || 0) * Math.PI / 180, (record.rotation?.y || 0) * Math.PI / 180, (record.rotation?.z || 0) * Math.PI / 180);
+      const canvas = document.createElement('canvas'); // Icon placeholder remains readable until an authored imageUrl is supplied.
+      canvas.width = canvas.height = 256;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.font = '190px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(record.icon || '🏺', 128, 128);
+      const material = png.makeMaterial(THREE, png.makeCanvasTexture(THREE, canvas, 'furniture-item'), 'furniture-item', { side: THREE.DoubleSide });
+      const plane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material); // Same independent PNG plane as the editor preview.
+      plane.userData.isSurfaceItemSprite = true;
+      plane.userData.itemKey = record.itemKey;
+      plane.userData.itemName = record.itemName;
+      holder.add(plane); layer.add(holder);
+      function groundImage(image) {
+        canvas.width = image.naturalWidth || image.width;
+        canvas.height = image.naturalHeight || image.height;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(image, 0, 0);
+        updatePlane();
+      }
+      function updatePlane() {
+        const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data; // Tall placement rests its lowest opaque pixel on the surface.
+        let bottom = canvas.height - 1;
+        outer: for (; bottom >= 0; bottom--) for (let x = 0; x < canvas.width; x++) if (pixels[(bottom * canvas.width + x) * 4 + 3] >= 8) break outer;
+        plane.geometry.dispose(); plane.geometry = new THREE.PlaneGeometry(canvas.width / canvas.height, 1);
+        if (record.placementPreset === 'tall') plane.position.y = (Math.max(0, bottom) + 1) / canvas.height - .5;
+        material.map?.dispose?.(); material.map = png.makeCanvasTexture(THREE, canvas, 'furniture-item'); material.needsUpdate = true;
+      }
+      updatePlane();
+      if (record.imageUrl) {
+        const image = new Image(); // CORS precedes src because alpha scanning and WebGL both need an origin-clean canvas.
+        image.crossOrigin = 'anonymous';
+        image.onload = () => { if (group.userData.authoredItemPlacements !== layer) return; try { groundImage(image); } catch (error) { console.warn('[furniture-item] image unavailable', record.itemKey, error); } };
+        image.src = record.imageUrl;
+      }
+      if (record.cameraRelativeDeadzone) {
+        const cameraPosition = new THREE.Vector3(); // Reused during the existing render pass; no frame callback or per-frame allocation.
+        let yaw = null; // Last snapped camera yaw, using the editor's default deadzone.
+        plane.onBeforeRender = (_renderer, _scene, camera) => {
+          camera.getWorldPosition(cameraPosition); group.worldToLocal(cameraPosition); cameraPosition.sub(holder.position);
+          const desired = Math.atan2(cameraPosition.x, cameraPosition.z) + (record.rotation?.y || 0) * Math.PI / 180;
+          const delta = yaw == null ? Infinity : Math.abs(Math.atan2(Math.sin(desired - yaw), Math.cos(desired - yaw)));
+          if (delta > (Number(data.globalCharacterDeadzoneDeg) || 15) * Math.PI / 180) { yaw = desired; holder.rotation.y = yaw; holder.updateMatrixWorld(true); }
+        };
+      }
+    }
+    return layer;
   }
 
   const _clamp01 = (value) => Math.max(0, Math.min(1, Number(value) || 0));
@@ -468,6 +546,7 @@
     load,
     peek,
     buildGroup,
+    setItemPlacements,
     seatAnchorFor,
     seatCount,
     applyWarp,

@@ -2478,6 +2478,7 @@
         hangingBanner: { itemKey:'hangingBannerFurniture',icon:'🎏',name:'Hanging Banner',price:25,fw:2,fd:1,color:0x8b6540,area:'any',desc:'Patterned cloth suspended from a wooden beam; its free edge moves with the wind.' },
         rug:           { itemKey: 'rugFurniture',           icon: '🧶', name: 'Woven Rug',            modelFile: 'rug_woven_small.glb',          price: 22, fw: 2, fd: 2, color: 0x8a5a3a, area: 'interior', walkable: true, desc: 'A small decorative woven rug.' },
         standingLamp:  { itemKey: 'standingLampFurniture',  icon: '💡', name: 'Bronze Standing Lamp', modelFile: 'standing_lamp_bronze.glb',     price: 28, fw: 1, fd: 1, color: 0xb87333, area: 'interior', desc: 'A tall bronze oil lamp.', light: { color: 0xffc266, intensity: 0.9, distance: 6, height: 1.3 } },
+        artifactPedestal: { itemKey: 'artifactPedestalFurniture', icon: '🏛️', name: 'Artifact Pedestal', price: 0, fw: 1, fd: 1, color: 0x7b7466, area: 'any', fixture: true, desc: 'Garanki’s display pedestal for donated artifacts.' },
         statue:        { itemKey: 'statueFurniture',        icon: '🗿', name: 'Weathered Statue',     modelFile: 'statue_weathered.glb',         price: 30, fw: 1, fd: 1, color: 0x54585e, area: 'any',      desc: 'A weathered stone statue, worn by time.' },
         stonePedestal: { itemKey: 'colorPoolsAltarFurniture', icon: '🎨', name: 'Color Pools Altar', price: 0, fw: 1, fd: 1, color: 0x7b7466, area: 'interior', desc: 'A strange stone altar used to paint trained animals in Banubu’s hidden Color Pools.', fixture: true },
         stool:         { itemKey: 'stoolFurniture',         icon: '🪑', name: 'Round Stool',          modelFile: 'stool_round.glb',              price: 10, fw: 1, fd: 1, color: 0x7a5c3a, area: 'any',      desc: 'A simple round stool.', sit: true },
@@ -2547,7 +2548,7 @@
         'chest', 'crateStack', 'copperBarrel', 'desk', 'dresser', 'hearth', 'loom',
         'nightstand', 'rug', 'hangingBanner', 'standingLamp', 'statue', 'tableLong', 'tableRound',
         'tableSmall', 'wardrobe', 'washTub', 'counter', 'alchemyTable', 'bulletinBoard',
-        'feedGrinder', 'trough', 'campfire', 'mineLadder', 'stonePedestal',
+        'feedGrinder', 'trough', 'campfire', 'mineLadder', 'stonePedestal', 'artifactPedestal',
         // Town business signs, placed as ordinary map_hobunji_town decor
         // (see DECORATIVE_FURNITURE_DEFS above). Without these, buildFurnitureVisual
         // falls back to ProceduralFurniture, which has no recipe for either
@@ -8869,6 +8870,12 @@
             // rather than sitting at a fixed spot the tent may no longer
             // occupy.
             const tentInstance = localeInstances.find(inst => inst.localeId === 'locale_researchers_tent');
+            // Migrate cached generation: old locale metadata carriers exported the tent footprint as rocks.
+            const cachedTentStructure = tentInstance?.objects?.find(object => object.id === 'obj_structure'); // Exported object bounds already include generation scale.
+            if (cachedTentStructure) for (let row = cachedTentStructure.y; row < cachedTentStructure.y + cachedTentStructure.h; row++) for (let col = cachedTentStructure.x; col < cachedTentStructure.x + cachedTentStructure.w; col++) {
+              const tile = merged.tiles.get(`${col},${row}`); // Preserve genuine boulders/cliffs; only the obsolete structure overlay is ground.
+              if (tile?.type === 'rock' && tile.rockKind === 'structure') { tile.type = 'grass'; tile.rockKind = null; }
+            }
             // The actual tent mesh (docs/config/pieces/researchers-tent.json),
             // fed through the same zoneData.buildings pipeline _spawnZoneBuildings
             // already uses for authored zone buildings -- without this, stampLocale's
@@ -8916,7 +8923,10 @@
             // stamped position instead of a coordinate that stops matching once the
             // tent moves.
             const tentDecorObjs = tentInstance ? tentInstance.objects.filter(o => o.kind === 'decor' || o.kind === 'prop') : [];
-            const tentDecor = tentDecorObjs.map(o => ({ col: o.x, row: o.y, key: o.key, elevTier: merged.tiles.get(`${o.x},${o.y}`)?.elevTier || 0 }));
+            const tentDecor = tentDecorObjs.map(o => ({ id: o.id, col: o.x, row: o.y,
+              key: o.key === 'statue' ? 'artifactPedestal' : o.key, // Upgrade the three displays in cached camp locales too.
+              artifactDisplaySlot: /^obj_statue_[123]$/.test(o.id) ? Number(o.id.slice(-1)) - 1 : undefined,
+              elevTier: merged.tiles.get(`${o.x},${o.y}`)?.elevTier || 0 }));
             if (tentInstance) {
               const findObj = id => tentInstance.objects.find(o => o.id === id);
               const desk = findObj('obj_desk');
@@ -8931,7 +8941,7 @@
               // Planner's WAITING_FOR_WORLD/replan handling now covers that
               // gap gracefully instead of the NPC needing to freeze or defer.
               if (desk) stations.push({ id: 'station_researchers_tent_desk', label: "Garanki's Desk", area: zoneId, c: desk.x, r: desk.y, pose: 'stand', roles: ['garanki-research'] });
-              statues.forEach((s, i) => { if (s) stations.push({ id: `station_researchers_tent_statue_${i + 1}`, label: `Specimen Statue ${i + 1}`, area: zoneId, c: s.x, r: s.y, pose: 'stand', roles: ['garanki-research'] }); });
+              statues.forEach((s, i) => { if (s) stations.push({ id: `station_researchers_tent_statue_${i + 1}`, label: `Artifact Pedestal ${i + 1}`, area: zoneId, c: s.x, r: s.y, pose: 'stand', roles: ['garanki-research'] }); });
               // station_researchers_tent_sleep is NOT registered here — it lives
               // inside config/maps/map_i_researchers_tent.json's own npcStations
               // (auto-registered by loadBuildingScene once that interior loads).
@@ -29662,6 +29672,14 @@
 
       // Harlyao relic weapons + Garanki Gabu's unbinding/enchanting panel
       // now live in js/harlyao-relics.js.
+      window.ArtifactCollection?.init({
+        ITEM_DEFS, inventoryItems, inventory, tothalWorldId: _tothalWorldId,
+        saveMemberWorldData, buildInventoryGrid, showToast,
+        showUnlockDialogue: () => {
+          const walker = npcWalkers.find(w => w.rec?.id === 'garanki_gabu'); // Reuse the real NPC dialogue camera, portrait and input handling.
+          if (walker) { closeMenu(); openNpcDialogue(walker); }
+        },
+      });
       window.HarlyaoRelics?.init({
         TOOL_ITEM_DEFS,
         ITEM_DEFS,
