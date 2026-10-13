@@ -1,7 +1,7 @@
 // localStorage quota guard.
 //
 // Browser recovery checkpoints (save-checkpoint-manager.js) each hold a full
-// save snapshot, and up to five of them are mirrored into localStorage. On a
+// save snapshot, and up to six of them are mirrored into localStorage. On a
 // large save they can fill the ~5 MB quota, after which the canonical save
 // itself (hobunjiSaveMeta, farm layouts, ...) fails to write with
 // "QuotaExceededError" -- which is far worse than losing a recovery copy.
@@ -23,6 +23,7 @@
   const CHECKPOINT_EVICTION_ORDER = Object.freeze([
     'hobunjiSaveCheckpoint.autoPrevious.v1',
     'hobunjiSaveCheckpoint.auto.v1',
+    'hobunjiSaveCheckpoint.mapChange.v1', // Travel checkpoints are optional mirrors too.
     'hobunjiSaveCheckpoint.campfire.v1',
     'hobunjiSaveCheckpoint.preRestore.v1',
     'hobunjiSaveCheckpoint.manual.v1',

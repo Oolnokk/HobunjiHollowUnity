@@ -24,7 +24,7 @@ const win = { Storage, localStorage, sessionStorage, console: { warn() {} } };
 win.window = win;
 vm.runInNewContext(fs.readFileSync('docs/js/storage-quota-guard.js', 'utf8'), win, { filename: 'storage-quota-guard.js' });
 const Q = win.HobunjiStorageQuota;
-const [autoPrev, auto, campfire, preRestore, manual] = Q.CHECKPOINT_EVICTION_ORDER;
+const [autoPrev, auto, mapChange, campfire, preRestore, manual] = Q.CHECKPOINT_EVICTION_ORDER;
 const fill = n => 'x'.repeat(n);
 
 localStorage._limit = 400;
