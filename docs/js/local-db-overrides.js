@@ -355,7 +355,7 @@
           type: 'choice',
           choices: [
             {
-              label: 'Shop',
+              label: shop.accessLabel || 'Shop',
               next: accessNodeId,
               actions: [{ type: 'openShop', pool: poolId, sourceNodeId: accessNodeId }],
             },

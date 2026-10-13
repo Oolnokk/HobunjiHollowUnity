@@ -64,10 +64,16 @@ jobs:
               });
               // Keep the smoke independent of third-party CDN availability while
               // serving the exact Three.js r128 files used by docs/index.html.
-              await page.route('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js', route =>
-                route.fulfill({ contentType:'application/javascript', body:fs.readFileSync(process.cwd() + '/node_modules/three/build/three.min.js') }));
-              await page.route('https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js', route =>
-                route.fulfill({ contentType:'application/javascript', body:fs.readFileSync(process.cwd() + '/node_modules/three/examples/js/controls/TransformControls.js') }));
+              const dependencyFiles = { // Gameplay and embedded generator must share the exact installed r128 scripts.
+                'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js':'three/build/three.min.js',
+                'https://unpkg.com/three@0.128.0/build/three.min.js':'three/build/three.min.js',
+                'https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js':'three/examples/js/controls/TransformControls.js',
+                'https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js':'three/examples/js/controls/OrbitControls.js',
+                'https://unpkg.com/three@0.128.0/examples/js/loaders/GLTFLoader.js':'three/examples/js/loaders/GLTFLoader.js',
+                'https://unpkg.com/three@0.128.0/examples/js/exporters/GLTFExporter.js':'three/examples/js/exporters/GLTFExporter.js',
+              };
+              for (const [url,file] of Object.entries(dependencyFiles)) await page.route(url, route =>
+                route.fulfill({ contentType:'application/javascript', body:fs.readFileSync(require.resolve(file, { paths:[process.cwd()] })) }));
               await page.addInitScript(() => {
                 localStorage.setItem('hobunjiDevMode', '1');
                 // game.js only starts its render loop after onboarding supplies a
@@ -81,10 +87,13 @@ jobs:
                   appearance:{ speciesId:'mao-ao', gender:'male', cosmetics:{} },
                   equippedCosmetics:[], appliedDyes:{}, nonGearInventory:{},
                   packClothing:[], npcRelationships:{}, questProgress:{},
-                  isNewWorld:true,
+                  isNewWorld:false,
                 };
+                // Established-world fixture: the opening and farm tour must not take control of the smoke's scene.
+                localStorage.setItem('hobunjiOpeningStory.v1:ruin-smoke-world', 'complete');
+                localStorage.setItem('hobunjiOpeningStory.v1:ruin-smoke-world:farm-tour', 'complete');
               });
-              await page.goto('http://127.0.0.1:4173/index.html', { waitUntil:'domcontentloaded', timeout:90000 });
+              await page.goto('http://127.0.0.1:4173/index.html?skipIntro=1', { waitUntil:'domcontentloaded', timeout:90000 });
               await page.waitForFunction(() =>
                 !!window.DevRandomRuin?.generate &&
                 !!window.DevRandomRuinWallPlanes?.snapshot &&
@@ -95,8 +104,9 @@ jobs:
                 null, { timeout:90000 });
 
               await page.waitForFunction(() => window.__hobunjiGameStarted === true, null, { timeout:120000 });
+              await page.waitForFunction(() => window.GridTileAccessors.getCurrentArea() === 'interior', null, { timeout:120000 }); // Wait for asynchronous login placement before generating another map.
               await page.evaluate(() => window.HobunjiTitleScreen?.start?.());
-              await page.waitForFunction(() => !window.HobunjiTitleScreen?.isActive?.(), null, { timeout:15000 });
+              await page.waitForFunction(() => !window.HobunjiTitleScreen?.isActive?.(), null, { timeout:15000, polling:100 });
 
               // Capture the exact camera used when the gameplay renderer draws
               // the generated ruin. The production runtime deliberately keeps
@@ -113,13 +123,16 @@ jobs:
                 };
               });
 
-              const generated = await page.evaluate(async () => await window.DevRandomRuin.generate(0x5eed1234));
-              assert.equal(generated, true, 'ruin generation should succeed');
-              await page.waitForFunction(() => window.GridTileAccessors.getCurrentArea() === 'map_i_dev_random_ruin', null, { timeout:30000 });
+              const generated = await page.evaluate(async () => {
+                const ok = await window.DevRandomRuin.generate(0x5eed1234); // Generation already awaits its scene-transition midpoint.
+                return { ok, area:window.GridTileAccessors.getCurrentArea() };
+              });
+              assert.equal(generated.ok, true, 'ruin generation should succeed');
+              assert.equal(generated.area, 'map_i_dev_random_ruin', 'generation must finish in the actual gameplay ruin');
               await page.waitForFunction(() =>
                 !!window.__ruinSmokeRenderedCamera &&
                 window.DevRandomRuinWallRenderProxy.snapshot().nativeSourceMeshCount > 0,
-              null, { timeout:30000 });
+              null, { timeout:90000, polling:100 }); // The first real ruin draw may compile many native materials in software WebGL.
               await page.waitForTimeout(250);
 
               const state = await page.evaluate(() => ({

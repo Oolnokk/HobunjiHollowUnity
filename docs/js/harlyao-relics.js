@@ -234,10 +234,19 @@
     return true;
   }
 
+  function requireService(id) {
+    if (window.ArtifactCollection?.unlocked?.(id) === true) return true;
+    const milestone = window.ArtifactCollection?.UNLOCKS?.find(entry => entry.id === id); // Same thresholds as collection UI/dialogue.
+    deps?.showToast?.(`Donate ${milestone?.count || 1} different artifact${milestone?.count > 1 ? 's' : ''} to Garanki to unlock ${milestone?.label || 'this service'}.`, false);
+    return false;
+  }
+
   function unbind(boundKey) {
+    if (!requireService('unbind')) return { ok: false, reason: 'collection' };
     const relic = decodeBoundKey(boundKey);
     if (!relic || !((deps?.inventory?.[boundKey] || 0) > 0)) return { ok: false, reason: 'not-owned' };
     const price = unbindPrice(relic.enchantments);
+    if (!gear()) return { ok: false, reason: 'gear' };
     if (!spendGold(price)) return { ok: false, reason: 'gold', price };
     const g = gear();
     const toolKey = relicToolKey(relic);
@@ -269,8 +278,10 @@
   }
 
   function applyBase(weaponKey, slotIndex, id) {
+    if (!requireService('base')) return { ok: false, reason: 'collection' };
     const es = ES();
     if (!es || !ownedWeaponKeys().includes(weaponKey)) return { ok: false, reason: 'weapon' };
+    if (!Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex >= es.BASE_LIMIT) return { ok: false, reason: 'slot' };
     if (!es.isBaseUnlocked(id)) return { ok: false, reason: 'locked' };
     const current = es.stateFor(weaponKey).base;
     if (current[slotIndex] === id) return { ok: false, reason: 'unchanged' };
@@ -287,8 +298,10 @@
   }
 
   function applyFlourish(weaponKey, slotId, id) {
+    if (!requireService('flourish')) return { ok: false, reason: 'collection' };
     const es = ES();
     if (!es || !ownedWeaponKeys().includes(weaponKey)) return { ok: false, reason: 'weapon' };
+    if (!slotIds().includes(slotId)) return { ok: false, reason: 'slot' };
     if (!es.isFlourishUnlocked(id, slotId)) return { ok: false, reason: 'locked' };
     if (es.flourishForSlot(slotId, weaponKey) === id) return { ok: false, reason: 'unchanged' };
     if (!spendGold(TUNING.APPLY_FLOURISH_PRICE)) return { ok: false, reason: 'gold' };
@@ -298,8 +311,11 @@
   }
 
   function clearSlot(weaponKey, kind, slot) {
+    if (!requireService('remove')) return { ok: false, reason: 'collection' };
     const es = ES();
     if (!es || !ownedWeaponKeys().includes(weaponKey)) return { ok: false, reason: 'weapon' };
+    if (kind !== 'base' && kind !== 'flourish') return { ok: false, reason: 'kind' };
+    if (kind === 'base' ? !Number.isInteger(slot) || slot < 0 || slot >= es.BASE_LIMIT : !slotIds().includes(slot)) return { ok: false, reason: 'slot' };
     const has = kind === 'base' ? !!es.stateFor(weaponKey).base[slot] : !!es.flourishForSlot(slot, weaponKey);
     if (!has) return { ok: false, reason: 'empty' };
     if (!spendGold(TUNING.REMOVE_PRICE)) return { ok: false, reason: 'gold' };
@@ -387,8 +403,10 @@
     const es = ES();
     const defs = es?.DEFINITIONS || {};
 
+    window.ArtifactCollection?.render?.(list, { heading, note, row, button });
     // Bound relics
     list.appendChild(heading('Bound Harlyao relics'));
+    if (!window.ArtifactCollection?.unlocked?.('unbind')) list.appendChild(note('Donate your first artifact to unlock weapon unbinding.'));
     const bound = boundRelicsInInventory();
     if (!bound.length) list.appendChild(note('Bring Garanki a bound relic from a Harlyao ruin’s boss vault and he will break its old owner’s claim.'));
     for (const relic of bound) {
@@ -396,7 +414,7 @@
       const shape = SHAPES[relic.shape];
       list.appendChild(row(shape.icon, esc(`Bound ${shape.label}`),
         esc(describeEnchantments(relic.enchantments).join(' · ') || 'No enchantments'),
-        [button(`Unbind (${price}g)`, () => unbind(relic.key), (deps.inventory.gold || 0) < price)]));
+        [button(`Unbind (${price}g)`, () => unbind(relic.key), !window.ArtifactCollection?.unlocked?.('unbind') || (deps.inventory.gold || 0) < price)]));
     }
 
     // Enchant a weapon
@@ -419,8 +437,8 @@
       const options = [{ value: '', label: '— choose a learned Base enchantment —' }]
         .concat(unlocked.base.filter(id => id === current || !state.base.includes(id)).map(id => ({ value: id, label: `${defs[id].icon || ''} ${defs[id].displayName} · ${defs[id].alignment}` })));
       const pick = select(options, current);
-      const controls = [pick, button(`Apply (${TUNING.APPLY_BASE_PRICE}g)`, () => pick.value && applyBase(selectedWeaponKey, i, pick.value), !unlocked.base.length)];
-      if (current) controls.push(button(`Remove (${TUNING.REMOVE_PRICE}g)`, () => clearSlot(selectedWeaponKey, 'base', i)));
+      const controls = [pick, button(`Apply (${TUNING.APPLY_BASE_PRICE}g)`, () => pick.value && applyBase(selectedWeaponKey, i, pick.value), !window.ArtifactCollection?.unlocked?.('base') || !unlocked.base.length)];
+      if (current) controls.push(button(`Remove (${TUNING.REMOVE_PRICE}g)`, () => clearSlot(selectedWeaponKey, 'base', i), !window.ArtifactCollection?.unlocked?.('remove')));
       list.appendChild(row('✦', `Base Enchantment ${i + 1}`,
         esc(current ? `${defs[current].displayName} (${defs[current].alignment}) — ${defs[current].description}` : 'Empty. Applies to every qualifying hit.'), controls));
     }
@@ -431,8 +449,8 @@
         .concat(unlocked.flourish.filter(entry => entry.slotId === slotId).map(entry => ({ value: entry.id, label: `${defs[entry.id].icon || ''} ${defs[entry.id].displayName} · ${defs[entry.id].alignment}` })));
       const pick = select(options, current);
       const any = options.length > 1;
-      const controls = [pick, button(`Apply (${TUNING.APPLY_FLOURISH_PRICE}g)`, () => pick.value && applyFlourish(selectedWeaponKey, slotId, pick.value), !any)];
-      if (current) controls.push(button(`Remove (${TUNING.REMOVE_PRICE}g)`, () => clearSlot(selectedWeaponKey, 'flourish', slotId)));
+      const controls = [pick, button(`Apply (${TUNING.APPLY_FLOURISH_PRICE}g)`, () => pick.value && applyFlourish(selectedWeaponKey, slotId, pick.value), !window.ArtifactCollection?.unlocked?.('flourish') || !any)];
+      if (current) controls.push(button(`Remove (${TUNING.REMOVE_PRICE}g)`, () => clearSlot(selectedWeaponKey, 'flourish', slotId), !window.ArtifactCollection?.unlocked?.('remove')));
       list.appendChild(row('❋', `${esc(flourishTriggerLabel(slotId, selectedWeaponKey))} Flourish`,
         esc(current ? `${defs[current].displayName} (${defs[current].alignment}) — ${defs[current].description}` : any ? 'Empty.' : `Garanki has not learned any Flourish for ${slotId.toUpperCase()} yet.`), controls));
     }
@@ -443,6 +461,7 @@
 
     if (deps.isDevMode?.()) {
       list.appendChild(heading('[Dev]'));
+      list.appendChild(button('Copy artifact/enchanting diagnostics', () => window.navigator?.clipboard?.writeText(JSON.stringify(debugSnapshot(), null, 2))));
       list.appendChild(button('[Dev] Grant random bound relic', () => { grantBoundRelic(); render(); }));
     }
   }
@@ -452,6 +471,7 @@
       bound: boundRelicsInInventory().map(entry => ({ key: entry.key, shape: entry.shape, enchantments: entry.enchantments, price: unbindPrice(entry.enchantments) })),
       unbound: Object.keys(gear()?.harlyaoRelics || {}),
       unlocks: ES()?.unlockedOptions?.() || null,
+      collection: window.ArtifactCollection?.debugSnapshot?.() || null,
     };
   }
 

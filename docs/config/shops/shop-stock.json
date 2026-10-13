@@ -410,14 +410,16 @@
       ]
     },
     "garankiEnchanting": {
-      "label": "Garanki Gabu's Unbinding & Enchanting",
+      "label": "Garanki Gabu's Artifacts & Enchanting",
       "menuId": "garankiEnchanter",
+      "accessLabel": "Artifacts & Enchanting",
       "dialogueAccess": {
         "sellerIds": [
           "garanki_gabu"
         ],
         "businessMaps": [
-          "map_i_researchers_tent"
+          "map_i_researchers_tent",
+          "map_northern_cliffs"
         ]
       },
       "goods": []
