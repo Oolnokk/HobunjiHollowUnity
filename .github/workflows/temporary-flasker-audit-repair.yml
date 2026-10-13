@@ -1,0 +1,82 @@
+name: Temporary Flasker audit repair
+
+on:
+  push:
+    branches: [benjam/afflict-flask-dual-colors]
+    paths:
+      - '.github/workflows/temporary-flasker-audit-repair.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: benjam/afflict-flask-dual-colors
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Sync current main without touching main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch --no-tags origin main
+          set +e
+          git merge --no-edit origin/main
+          merge_status=$?
+          set -e
+          if [ "$merge_status" -ne 0 ]; then
+            conflicts="$(git diff --name-only --diff-filter=U)"
+            echo "Merge conflicts:"
+            echo "$conflicts"
+            while IFS= read -r file; do
+              [ -z "$file" ] && continue
+              case "$file" in
+                docs/index.html|docs/tools/cutscene-director/index.html)
+                  git checkout --theirs -- "$file"
+                  git add "$file"
+                  ;;
+                *)
+                  echo "Unexpected conflict: $file" >&2
+                  exit 1
+                  ;;
+              esac
+            done <<< "$conflicts"
+            git commit --no-edit
+          fi
+      - name: Apply audited Flasker fixes
+        run: python3 scripts/audit-fix-flasker-integration.py
+      - name: Syntax and focused regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check docs/js/combat/combat-bandit.js
+          node --check docs/js/combat/combat-enemy-dodge.js
+          node --check docs/js/alchemy-flasks.js
+          node --check docs/js/hand-tool-grips.js
+          node --check docs/js/held-action-animations.js
+          node --check scripts/test-bandit-flasker.js
+          node scripts/run-tests.js bandit-flasker trait-alchemy-refactor enemy-weapon-stances weapon-trust-bandit-loadouts attack-animation-editor-history-grips
+      - name: Refresh and verify cache busts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/check-cache-busts.js --fix origin/main
+          node scripts/check-cache-busts.js origin/main
+      - name: Full fast regression suite
+        run: node scripts/run-tests.js
+      - name: Commit audited implementation and remove temporary helpers
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm -f .github/workflows/temporary-flasker-audit-repair.yml scripts/audit-fix-flasker-integration.py
+          git add -A
+          git commit -m "Audit and fix Flasker integration"
+          git push origin HEAD:benjam/afflict-flask-dual-colors
