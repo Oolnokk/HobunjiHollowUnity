@@ -53,6 +53,23 @@ jobs:
           p.write_text(text.replace(old, new, 1))
           PY
           python scripts/temp-combat-vocal-acoustics-polish.py
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('docs/js/dialogue-content.js')
+          text = p.read_text()
+          old = """  function stopNpcDialogueTypewriter(showFullText = false) {
+            const currentSpeech = _npcSpeechBySpeaker.get(_npcSpeechOwnerKey());
+            if (currentSpeech) _fadeNpcSpeechHandle(currentSpeech);
+            _npcDialogueSequenceId++;"""
+          new = """  function stopNpcDialogueTypewriter(showFullText = false) {
+            if (typeof _npcSpeechBySpeaker !== 'undefined' && typeof _npcSpeechOwnerKey === 'function') {
+              const currentSpeech = _npcSpeechBySpeaker.get(_npcSpeechOwnerKey());
+              if (currentSpeech) _fadeNpcSpeechHandle(currentSpeech);
+            }
+            _npcDialogueSequenceId++;"""
+          assert text.count(old) == 1
+          p.write_text(text.replace(old, new, 1))
+          PY
 
       - name: Refresh cache tokens
         run: |
