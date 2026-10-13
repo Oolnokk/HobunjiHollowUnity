@@ -390,6 +390,9 @@
     return current + (target - current) * (1 - Math.exp(-Math.max(0, rate) * Math.max(0, dt)));
   }
 
+  const ARM_SWING_DEG = 38; // Peak forward/back arm swing about the shoulder.
+  const ARM_LENGTH_FRACTION = 0.26; // Shoulder-to-wrist distance as a fraction of model height (the arc's radius).
+
   function fallbackPose(state, side, nowMs) {
     const sidePhase = state.phase + (side === 'right' ? Math.PI : 0); // Opposes left/right swings for a natural alternating gait.
     const swing = Math.sin(sidePhase);
@@ -398,14 +401,15 @@
     const idleBreath = Math.sin(idlePhase);
     const h = state.modelHeight;
     const gait = state.gaitStrength;
+    const swingAngle = ARM_SWING_DEG * Math.PI / 180 * swing; // Arm swing about the shoulder: the hand's position and its pitch share this angle, so the arm turns as one piece.
     return {
       position: {
         x: 0, // Shoulder-aim wrapper replaces the authored T-pose X with this side's resolved shoulder X.
-        y: h * (0.0045 * idleBreath * (1 - gait) + 0.018 * liftWave * gait),
-        z: h * 0.16 * swing * gait + h * 0.003 * Math.cos(idlePhase) * (1 - gait),
+        y: h * 0.0045 * idleBreath * (1 - gait) + ARM_LENGTH_FRACTION * h * (1 - Math.cos(swingAngle)) * gait, // The hand rides an arc about its shoulder: it rises as the arm swings away from hanging.
+        z: ARM_LENGTH_FRACTION * h * Math.sin(swingAngle) * gait + h * 0.003 * Math.cos(idlePhase) * (1 - gait),
       },
       rotationDeg: {
-        pitch: 38 * swing * gait + 2.5 * idleBreath * (1 - gait),
+        pitch: ARM_SWING_DEG * swing * gait + 2.5 * idleBreath * (1 - gait),
         yaw: (side === 'right' ? -1 : 1) * 3 * gait * Math.abs(swing),
         roll: (side === 'right' ? -1 : 1) * (5 * liftWave * gait + 1.5 * idleBreath * (1 - gait)),
       },
