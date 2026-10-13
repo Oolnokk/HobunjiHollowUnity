@@ -1,33 +1,39 @@
-name: Temp Mammakh Main Merge
+name: Temp Combat Vocal Cache Fix
 
 on:
   push:
-    branches: [mammakhbuur-head-placeholders]
+    branches: [feat/combat-vocalizations]
 
 permissions:
   contents: write
 
 jobs:
-  merge-main-test:
+  fix-cache-and-validate:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: mammakhbuur-head-placeholders
+          ref: feat/combat-vocalizations
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Merge current main
+      - name: Fetch current main
+        run: git fetch origin main
+      - name: Refresh cache-bust chain
+        run: node scripts/check-cache-busts.js --fix
+      - name: Restore temporary helper workflow
+        run: git checkout origin/main -- .github/workflows/temp-mammakh-cache-fix.yml
+      - name: Validate cache-bust chain
+        run: node scripts/check-cache-busts.js origin/main
+      - name: Run regression suite
+        run: node scripts/run-tests.js
+      - name: Commit validated cache refresh
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+Oolnokk@users.noreply.github.com"
-          git fetch origin main
-          git merge origin/main --no-edit
-      - name: Validate cache-bust chain
-        run: node scripts/check-cache-busts.js $(git merge-base HEAD origin/main)
-      - name: Run regression suite
-        run: node scripts/run-tests.js
-      - name: Push resolved branch
-        run: git push origin HEAD:mammakhbuur-head-placeholders
+          git add docs/index.html .github/workflows/temp-mammakh-cache-fix.yml
+          git diff --cached --quiet && exit 0
+          git commit -m "Refresh combat vocalization cache bust"
+          git push origin HEAD:feat/combat-vocalizations
