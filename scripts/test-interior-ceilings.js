@@ -71,6 +71,18 @@ for (const gable of pitched.gables) {
   assert(gable.side === 'north' ? nz > 0 : nz < 0, `${gable.side} gable faces inward`);
 }
 
+// Brick gable ends: one triangle-clipped WallBuilder panel per gable, on the
+// wall top, with the same yaw as that side's wall panels.
+const brickPanels = IC.gableBrickPanels(pitched.gables, 1.75);
+assert.equal(brickPanels.length, 2);
+const northPanel = brickPanels.find(p => p.id.startsWith('gable_north'));
+assert.deepEqual(northPanel.position, [4, 1.75, 0]);
+assert.deepEqual(northPanel.rotationDeg, [0, 0, 0]);
+assert.equal(northPanel.width, 8);
+assert.equal(northPanel.height, 1.5);
+assert.equal(northPanel.triangleClip, true);
+assert.deepEqual(brickPanels.find(p => p.id.startsWith('gable_south')).rotationDeg, [0, 180, 0]);
+
 // Clicking the same stretch again removes it.
 assert.equal(IC.toggleGableAt(toggled.ceiling, floor, 4, 0.1).action, 'removed');
 

@@ -27,7 +27,9 @@
 // dev-random-ruin-interior-map.js's buildTexturedCeiling: visible from inside
 // the room, back-face culled (and ignored by raycasts) from the overhead
 // follow camera. Editors pass includeCeiling:false to show only the gable
-// infill walls.
+// ends, or preview:true for a see-through double-sided ceiling. Brick rooms
+// build their gable ends from the same WallBuilder bricks as the walls
+// (WallBuilder's triangleClip panels) over a dark backing triangle.
 (function (root) {
   'use strict';
 
@@ -250,26 +252,36 @@
   }
 
   // ── THREE wrapper ────────────────────────────────────────────────────
-  const _materials = new Map(); // style|basePath|role -> shared material; one decoded texture across every interior.
+  const _materials = new Map(); // style|basePath|role|preview -> shared material; one decoded texture across every interior.
+  const GABLE_PANEL_ROTATION = { north: [0, 0, 0], south: [0, 180, 0], west: [0, 90, 0], east: [0, -90, 0] }; // Same yaw per side as InteriorSceneBuilder.buildWallPanels.
 
-  function surfaceMaterial(THREE, wallStyle, texturesBasePath, role) {
+  function surfaceMaterial(THREE, wallStyle, texturesBasePath, role, preview) {
     const canvas = wallStyle === 'canvas';
     const base = texturesBasePath || 'assets/';
-    const key = `${canvas ? 'canvas' : 'boards'}|${base}|${role}`;
+    const key = `${canvas ? 'canvas' : 'boards'}|${base}|${role}|${preview ? 'preview' : 'live'}`;
     if (_materials.has(key)) return _materials.get(key);
     // Ceilings face away from the directional key light, so they read a
     // shade darker than the floor — tinted rafters/planks, not a bright lid.
-    const tint = canvas ? 0xd8c7a0 : role === 'gable' ? 0xa08868 : 0x8a7458;
-    const material = new THREE.MeshLambertMaterial({ color: tint, side: THREE.FrontSide });
-    material.name = `interior-ceiling-${role}`;
-    try {
-      new THREE.TextureLoader().load(base + (canvas ? 'textures/canvas.png' : 'textures/boards.png'), tex => {
-        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-        if ('colorSpace' in tex && THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBColorSpace;
-        material.map = tex;
-        material.needsUpdate = true;
-      }, undefined, () => {});
-    } catch (_) { /* untextured tint is an acceptable fallback */ }
+    // A brick gable's backing is a dark mortar fill behind the stepped
+    // brick edge, so it carries no texture.
+    const backing = role === 'gable-backing';
+    const tint = backing ? 0x3e3128 : canvas ? 0xd8c7a0 : role === 'gable' ? 0xa08868 : 0x8a7458;
+    // Editor preview: seen from the overhead orbit camera, so draw both
+    // sides, see-through, without hiding the room under it.
+    const material = new THREE.MeshLambertMaterial(preview
+      ? { color: tint, side: THREE.DoubleSide, transparent: true, opacity: 0.55, depthWrite: false }
+      : { color: tint, side: THREE.FrontSide });
+    material.name = `interior-ceiling-${role}${preview ? '-preview' : ''}`;
+    if (!backing) {
+      try {
+        new THREE.TextureLoader().load(base + (canvas ? 'textures/canvas.png' : 'textures/boards.png'), tex => {
+          tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+          if ('colorSpace' in tex && THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBColorSpace;
+          material.map = tex;
+          material.needsUpdate = true;
+        }, undefined, () => {});
+      } catch (_) { /* untextured tint is an acceptable fallback */ }
+    }
     _materials.set(key, material);
     return material;
   }
@@ -285,25 +297,61 @@
     return mesh;
   }
 
+  // WallBuilder panels for brick gable ends: one rectangle per gable sitting
+  // on the wall top, which WallBuilder clips to its triangle (triangleClip).
+  function gableBrickPanels(gables, wallHeight) {
+    return gables.map(g => {
+      const mid = (g.from + g.to) / 2;
+      const horizontal = g.side === 'north' || g.side === 'south';
+      return {
+        id: `gable_${g.side}_${g.line}_${g.from}`,
+        width: g.to - g.from,
+        height: g.rise,
+        position: horizontal ? [mid, wallHeight, g.line] : [g.line, wallHeight, mid],
+        rotationDeg: GABLE_PANEL_ROTATION[g.side],
+        triangleClip: true,
+      };
+    });
+  }
+
   // options: { floor (Set or [[c,r]]), wallHeight, ceiling, wallStyle,
-  //            texturesBasePath, includeCeiling (default true) }
+  //            texturesBasePath, includeCeiling (default true),
+  //            preview (editor: double-sided see-through ceiling),
+  //            wallBuilder + wallBuildOptions (brick gable ends; omit for plain plank gables) }
   // Cavern/mine interiors return an empty group — their carved shell is the roof.
   function buildCeilingGroup(THREE, options = {}) {
     const group = new THREE.Group();
     group.name = 'InteriorCeiling';
     if (options.wallStyle === 'cavern' || options.wallStyle === 'mine') return group;
     const data = buildCeilingGeometryData(options.floor, options.wallHeight, options.ceiling);
-    group.userData.interiorCeiling = { enabled: data.enabled, wallHeight: data.wallHeight, maxY: data.maxY, gableCount: data.gableCount };
+    const preview = !!options.preview;
+    // Brick (default-style) rooms get brick gable ends to match the walls
+    // below; canvas tents keep a cloth triangle.
+    const brickGables = !!options.wallBuilder && options.wallStyle !== 'canvas' && data.gables.length > 0;
+    group.userData.interiorCeiling = { enabled: data.enabled, wallHeight: data.wallHeight, maxY: data.maxY, gableCount: data.gableCount, brickGables };
     if (options.includeCeiling !== false && data.ceiling.indices.length) {
-      const mesh = meshFrom(THREE, data.ceiling, surfaceMaterial(THREE, options.wallStyle, options.texturesBasePath, 'ceiling'), 'InteriorCeilingSurface');
+      const mesh = meshFrom(THREE, data.ceiling, surfaceMaterial(THREE, options.wallStyle, options.texturesBasePath, 'ceiling', preview), 'InteriorCeilingSurface');
       mesh.userData.interiorCeilingSurface = true;
+      if (preview) mesh.renderOrder = 2; // Transparent preview draws after the opaque room.
       group.add(mesh);
     }
     for (const gable of data.gables) {
-      const mesh = meshFrom(THREE, gable, surfaceMaterial(THREE, options.wallStyle, options.texturesBasePath, 'gable'), `InteriorGable_${gable.side}_${gable.line}`);
+      const role = brickGables ? 'gable-backing' : 'gable';
+      const mesh = meshFrom(THREE, gable, surfaceMaterial(THREE, options.wallStyle, options.texturesBasePath, role, false), `InteriorGable_${gable.side}_${gable.line}`);
       mesh.userData.interiorGable = { side: gable.side, line: gable.line, from: gable.from, to: gable.to, rise: gable.rise };
       mesh.userData.cameraObstacle = true; // It's wall: pull the follow camera in front of it like the brick below.
       group.add(mesh);
+    }
+    if (brickGables) {
+      const wallOptions = Object.assign({}, root.InteriorSceneBuilder?.DEFAULT_WB_OPTS || {}, options.wallBuildOptions || {});
+      try {
+        const bricks = options.wallBuilder.build(gableBrickPanels(data.gables, data.wallHeight), wallOptions);
+        bricks.name = 'InteriorGableBricks';
+        bricks.userData.interiorGableBricks = true;
+        group.add(bricks);
+      } catch (error) {
+        console.warn('InteriorCeilings: brick gable build failed, keeping plain gable ends:', error);
+      }
     }
     return group;
   }
@@ -315,6 +363,7 @@
     findStretchNear,
     toggleGableAt,
     buildCeilingGeometryData,
+    gableBrickPanels,
     buildCeilingGroup,
   });
 })(typeof window !== 'undefined' ? window : globalThis);

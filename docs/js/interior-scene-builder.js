@@ -567,7 +567,7 @@
   }
 
   root.InteriorSceneBuilder = {
-    buildWallPanels, buildRoomWallPanels, buildWallGroup, buildFloorMaterial, applyWallOpenings,
+    DEFAULT_WB_OPTS, buildWallPanels, buildRoomWallPanels, buildWallGroup, buildFloorMaterial, applyWallOpenings,
     buildCavernWalls, buildCanvasWalls, buildFallbackBoxWalls, panelCornersFor,
     buildCarvedCavernMesh, buildCavernFloorMesh,
   };

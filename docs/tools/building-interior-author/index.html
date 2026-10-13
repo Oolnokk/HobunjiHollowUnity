@@ -120,8 +120,9 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
         <button id="toolGable">Gable</button>
         <div class="field" style="margin:0"><label>Gable rise (tiles)</label><input id="gableRise" type="number" min="0.1" max="8" step="0.05" value="1.25" style="width:90px"></div>
         <label class="hint" style="display:flex;align-items:center;gap:4px"><input id="ceilingDisabled" type="checkbox"> No ceiling (open to sky)</label>
+        <label class="hint" style="display:flex;align-items:center;gap:4px"><input id="ceilingPreview" type="checkbox"> Preview ceiling</label>
       </div>
-      <p class="hint" style="margin-top:6px" id="gableStatus">Rooms get a flat ceiling at wall height (hidden in this editor). With the Gable tool, click next to a wall to raise that whole wall stretch into a triangular gable; click it again to remove it. Opposite gables make a pitched roof; a lone gable slopes down to the flat wall facing it. Rise edits apply to gables you add next.</p>
+      <p class="hint" style="margin-top:6px" id="gableStatus">Rooms get a flat ceiling at wall height (hidden in this editor unless Preview ceiling is on, where it shows see-through). With the Gable tool, click next to a wall to raise that whole wall stretch into a triangular gable; click it again to remove it. Opposite gables make a pitched roof; a lone gable slopes down to the flat wall facing it. Rise edits apply to gables you add next.</p>
     </div>
 
     <div class="section">
@@ -846,6 +847,7 @@ function writeCeiling(ceiling){
   else if(c && !c.enabled) state.interior.ceiling={enabled:false,gables:c.gables};
   else state.interior.ceiling={gables:c.gables};
 }
+$('ceilingPreview').addEventListener('change',function(){ rebuild3D(); });
 $('ceilingDisabled').addEventListener('change',function(){
   pushUndo();
   var IC=window.InteriorCeilings, c=IC?IC.normalizeCeiling(state.interior.ceiling):{gables:[]};
@@ -1485,11 +1487,13 @@ function rebuild3D(){
     }
   }
 
-  // Gable ends only — the ceiling itself is hidden in the editor so the
-  // overhead preview camera can still see into the room.
+  // Gable ends always; the ceiling itself only with "Preview ceiling" on,
+  // drawn see-through and double-sided so the overhead orbit camera can
+  // still see into the room (in game it's one-sided and hidden from above).
   if(window.InteriorCeilings){
     var previewWallH=Number(window.__hobunjiInteriorWallHeightOverride)||Number(interior.wallHeight)||WALL_H;
-    previewGroup.add(InteriorCeilings.buildCeilingGroup(THREE,{floor:floorSet,wallHeight:previewWallH,ceiling:interior.ceiling,wallStyle:interior.wallStyle,texturesBasePath:'../../assets/',includeCeiling:false}));
+    var showCeiling=$('ceilingPreview').checked;
+    previewGroup.add(InteriorCeilings.buildCeilingGroup(THREE,{floor:floorSet,wallHeight:previewWallH,ceiling:interior.ceiling,wallStyle:interior.wallStyle,texturesBasePath:'../../assets/',includeCeiling:showCeiling,preview:showCeiling,wallBuilder:wb,wallBuildOptions:{usePlaceholder:!wbReady}}));
   }
 
   // Furniture — use real GLBs if cached, placeholder boxes otherwise

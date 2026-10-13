@@ -13561,8 +13561,14 @@
               ceiling: mapData.ceiling,
               wallStyle: mapData.wallStyle,
               texturesBasePath: 'assets/',
+              wallBuilder: houseWallBuilder, // Gable ends get the same bricks as the walls below.
+              wallBuildOptions: { usePlaceholder: false },
             });
-            if (ceilingGroup) bScene.add(ceilingGroup);
+            if (ceilingGroup) {
+              const gableBricks = ceilingGroup.getObjectByName('InteriorGableBricks');
+              if (gableBricks) _markOutline(gableBricks);
+              bScene.add(ceilingGroup);
+            }
           }
           // A den's cavern entrance had no visual distinguishing it from any
           // other dark corner of the cave (see generateCavernFloor's
