@@ -1,0 +1,76 @@
+name: Temp Character Voice Identity Audit
+
+on:
+  push:
+    branches:
+      - feat/combat-vocalizations
+
+permissions:
+  contents: write
+
+jobs:
+  audit-fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/combat-vocalizations
+          fetch-depth: 0
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: Patch canonical NPC identity precedence
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          owner = Path('docs/js/character-voice-owner.js')
+          text = owner.read_text()
+          old = '''    const stableId = subject.voiceOwnerKey
+                || subject.npcId
+                || subject.id
+                || subject.rec?.id
+                || subject.rosterRecord?.id
+                || subject.rosterRecord?.name
+                || subject.name;'''
+          new = '''    const stableId = subject.voiceOwnerKey
+                || subject.npcId
+                || subject.rec?.id // Ordinary town walkers use rec.id as their canonical identity even if a runtime id is also present.
+                || subject.id
+                || subject.rosterRecord?.id
+                || subject.rosterRecord?.name
+                || subject.name;'''
+          if old not in text:
+              raise SystemExit('voice owner key block not found')
+          owner.write_text(text.replace(old, new, 1))
+
+          test = Path('scripts/test-character-voice-owner.js')
+          text = test.read_text()
+          old = "assert.equal(owner.keyFor({ id: 'npc-a' }), owner.keyFor({ rec: { id: 'npc-a' } }), 'dialogue records and combat entities with the same NPC id must share one slot');"
+          new = old + "\nassert.equal(owner.keyFor({ id: 'runtime-42', rec: { id: 'npc-a' } }), 'actor:npc-a', 'ordinary walkers prefer canonical rec.id over a separate runtime object id');"
+          if old not in text:
+              raise SystemExit('voice owner identity assertion not found')
+          test.write_text(text.replace(old, new, 1))
+          PY
+      - name: Refresh cache token
+        run: node scripts/check-cache-busts.js --fix origin/main
+      - name: Validate focused voice stack
+        run: |
+          node --check docs/js/character-voice-owner.js
+          node scripts/test-character-voice-owner.js
+          node scripts/test-combat-vocalizations.js
+          node scripts/test-dialogue-syllable-cadence.js
+          node scripts/test-dialogue-rich-text.js
+          node scripts/test-environmental-reverb.js
+      - name: Validate cache tokens
+        run: node scripts/check-cache-busts.js origin/main
+      - name: Full suite
+        run: node scripts/run-tests.js
+      - name: Clean runner and commit
+        run: |
+          git rm -f .github/workflows/temp-character-voice-identity-audit.yml
+          git add -A
+          git commit -m "Use canonical NPC identity for shared voice ownership"
+          git push origin HEAD:feat/combat-vocalizations
