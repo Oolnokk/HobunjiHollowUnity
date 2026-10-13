@@ -98,8 +98,11 @@
     return (day - 1) + GAME_START_CIVIL_DAY_OFFSET;
   }
 
-  function getHour(time01 = deps.calendar.time01) {
-    return deps.MORNING_HOUR + time01 * (deps.NIGHT_HOUR - deps.MORNING_HOUR);
+  function getHour(time01 = deps?.calendar?.time01 ?? 0) {
+    const morningHour = Number.isFinite(Number(deps?.MORNING_HOUR)) ? Number(deps.MORNING_HOUR) : 6; // Parser-time callers use the authored opening-hour fallback until game.js injects live calendar deps.
+    const nightHour = Number.isFinite(Number(deps?.NIGHT_HOUR)) ? Number(deps.NIGHT_HOUR) : 22; // Paired fallback keeps pre-init clock reads deterministic without pretending runtime state exists.
+    const normalizedTime = Number.isFinite(Number(time01)) ? Number(time01) : 0; // Invalid/pre-init time reads resolve to the start of the represented day.
+    return morningHour + normalizedTime * (nightHour - morningHour);
   }
 
   // ── Calendar derivations ───────────────────────────────────────────
@@ -165,7 +168,7 @@
   }
 
   function currentSeason() {
-    return seasonForDay(deps.calendar.day);
+    return seasonForDay(deps?.calendar?.day ?? 1); // Startup audio/visual callers may ask before game.js injects the live calendar; opening day is a harmless deterministic placeholder.
   }
 
   function weekOfSeason(day = deps.calendar.day) {
@@ -1001,6 +1004,16 @@
   }
 
   function timeDebugSnapshot() {
+    if (!isInitialized()) {
+      return {
+        rawDay: null, time01: null, shortDate: null, fullDateTime: null, aotYear: null, tothalCycle: null, civilDayOfYear: null,
+        monthNumber: null, monthName: null, dayOfMonth: null, regionalSeason: null, regionalSeasonWeek: null, isFirstriseNewYear: null,
+        nextTothalShiftRawDay: null, nextTothalShiftDate: null, nextTothalSeedCycle: null,
+        naturalClockTargetSecondsPerRepresentedDay: TARGET_DAY_LENGTH_SECONDS, naturalClockScale: NATURAL_TIME_WRITE_SCALE,
+        modalKind: _timePassageKind, selectedHours: _selectedPassageHours, preview: null, seatedWaitReady: false, sleepTargetReady: false,
+        playerRuntimeReady: !!window.PlayerSocialPoses?.getPlayerEntity?.(), worldId: window.__hobunjiPlayerProfile?.worldId || null, initialized: false,
+      }; // Diagnostics are polled during parser/startup time; expose "not ready" state instead of dereferencing null deps.
+    }
     const nextShiftDay = nextTothalShiftDay(); // Raw day used by the next-Tothal-Shift debug fields below.
     const target = previewAfterHours(_selectedPassageHours); // Current modal selection used by the preview debug field below.
     return {
@@ -1029,6 +1042,7 @@
       sleepTargetReady: !!findSleepActionButton(),
       playerRuntimeReady: !!window.PlayerSocialPoses?.getPlayerEntity?.(),
       worldId: window.__hobunjiPlayerProfile?.worldId || null,
+      initialized: true,
     };
   }
 

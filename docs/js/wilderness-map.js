@@ -380,6 +380,7 @@
   }
 
   function getCompassWaypoint() {
+    if (!deps) return null; // NavigationCompass starts polling before game.js injects WildernessMap deps; no world means no valid waypoint yet.
     const waypoint = _resolvedWaypoint();
     return waypoint ? { ...waypoint } : null;
   }

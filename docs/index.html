@@ -73,7 +73,7 @@
        toolEmoji/actionName/formatClock, so must load after it and before
        game.js, which calls window.HudUpdate.init(...) (binds its own
        itemPrev/itemNext listeners) during its own setup. -->
-  <script src="js/hud-update.js?v=20261008h91861af"></script>
+  <script src="js/hud-update.js?v=20261013h0d4aaee"></script>
   <!-- Desktop/touch radial arc selector (tool/item wheels, ammo/potion
        entry menus, utilities wheel), extracted out of game.js; uses
        window.HudUpdate.refreshItemScroll, so must load after it and before
@@ -469,7 +469,7 @@
        relative to the other systems above doesn't matter; must load before
        game.js, which calls window.CalendarSystem.init(...) during its own
        setup. -->
-  <script src="js/calendar-system.js?v=20261009h0ee0528"></script>
+  <script src="js/calendar-system.js?v=20261013h0b1e46a"></script>
   <!-- Resolves a map/interior's active alternate `layouts` entry (see
        docs/config/maps/map_i_temple.json's spirit_communion layout) against
        the current calendar time — window.MapLayoutSystem. Pure/stateless, no
@@ -520,8 +520,8 @@
        at draw time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildernessMap.init(...) during its own setup. -->
-  <script src="js/wilderness-map.js?v=20261011h44009cf"></script>
-  <script src="js/navigation-compass.js?v=20261011hd3d5a67"></script>
+  <script src="js/wilderness-map.js?v=20261013ha184364"></script>
+  <script src="js/navigation-compass.js?v=20261013hf6393a3"></script>
   <!-- Dead-zone rotation math shared by player/NPC/creature PNG-plane
        avatars (window.PerpRotation) — self-contained aside from deps
        injected via init(), so load order relative to the other systems
