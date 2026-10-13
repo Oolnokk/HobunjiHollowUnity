@@ -7,6 +7,9 @@
   const core = new URL('./panel-ui-core.js?v=20261013h9bd5e1c', src).href; // Used as the unchanged historical PanelUI implementation expected synchronously by existing tools.
   const mapEditorTextureFix = new URL('./map-editor-terrain-texture-fix.js?v=20260914terrain4', src).href; // Used only on Map Editor to preserve async preview materials and redraw after PNG loads.
   const terrainParity = new URL('./tool-terrain-preview-parity.js?v=20261004h365b521', src).href; // Used to install shared game-material/UV parity and unstretched-pixel scale controls in terrain tools.
+  const isToolHub = /\/tools\/(?:index\.html)?$/.test(location.pathname); // Used to keep Tool Hub-only tab extensions out of nested authoring tools.
+  const toolHubCombatVocalizations = new URL('./tool-hub-combat-vocalization-tab.js?v=20261013vocal1', src).href; // Adds the Combat Vocalizations tab after the hub's own static tab list initializes.
+  const toolHubCombatVocalizationsTag = isToolHub ? `<script src="${toolHubCombatVocalizations}"></script>` : '';
   const isCutsceneDirector = /\/tools\/cutscene-director\//.test(location.pathname); // Used to keep repo-scene authoring hooks isolated to the Cutscene Director iframe.
   const cutsceneRepoScenes = new URL('./cutscene-director-repo-scenes.js?v=20261010h46000a7', src).href; // Used only by Cutscene Director to load shipping repo cutscene builders into its existing JSON import path.
   const cutsceneRepoTag = isCutsceneDirector ? `<script src="${cutsceneRepoScenes}"></script>` : '';
@@ -17,7 +20,7 @@
   const characterStudioMammakhbuur = new URL('./character-studio-mammakhbuur-config.js?v=20261005nuhonganreview2', src).href; // Supplies Mammakhbuur plus full Nuhongan/Tletingan inheritance before Character Studio initializes.
   const characterStudioMammakhbuurTag = isCharacterStudio ? `<script src="${characterStudioMammakhbuur}"></script>` : ''; // Parser-time hook must run before the later scratchbones-config assignment.
   if (document.readyState === 'loading') {
-    document.write(`${characterStudioMammakhbuurTag}${animationAuthorColorFillTag}<script src="${core}"></script><script src="${mapEditorTextureFix}"></script><script src="${terrainParity}"></script>${cutsceneRepoTag}`);
+    document.write(`${characterStudioMammakhbuurTag}${animationAuthorColorFillTag}<script src="${core}"></script><script src="${mapEditorTextureFix}"></script><script src="${terrainParity}"></script>${cutsceneRepoTag}${toolHubCombatVocalizationsTag}`);
     return;
   }
 
@@ -35,6 +38,11 @@
           const repoScript = document.createElement('script'); // Used by late-loaded Director pages to install the same repo-scene selector as the normal parser-time path.
           repoScript.src = cutsceneRepoScenes;
           (document.head || document.documentElement).appendChild(repoScript);
+        }
+        if (isToolHub) {
+          const hubScript = document.createElement('script'); // Late-loaded Tool Hub pages receive the same Combat Vocalizations tab extension.
+          hubScript.src = toolHubCombatVocalizations;
+          (document.head || document.documentElement).appendChild(hubScript);
         }
       }, { once: true });
       (document.head || document.documentElement).appendChild(fixScript);
