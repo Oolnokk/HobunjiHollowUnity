@@ -672,6 +672,7 @@
 
   window.DevRandomRuinInteractions = Object.freeze({
     resolveInteractionOwner,
+    activeCamera:()=>deps?.getActiveCamera?.()||null, // Used by the Dev Companion surface picker (ruin-pattern-surface-rules.js).
     climbStoneLadder:climbLadder, // Canonical authored-stone-ladder action; uses ClimbSystem's cliff-style hop animation.
     debugLadders() { // Diagnostics: every stone ladder's support probes and the endpoints climbLadder would use.
       prepareSemanticObjects(-Infinity);

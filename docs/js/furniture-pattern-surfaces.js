@@ -82,6 +82,14 @@
     catch (error) { tileCache.delete(key); throw error; }
   }
 
+  // Planar-region identity of a triangle (rounded normal + plane offset), in
+  // mesh-local space. Ruin rules pass the regions they want patterned as
+  // record.allowRegions so trims, insides and slivers of a mesh can be left plain.
+  function regionKey(nx, ny, nz, d) {
+    const r = v => Math.round(v * 20) / 20 + 0;
+    return `${r(nx)},${r(ny)},${r(nz)}@${Math.round(d * 50) / 50 + 0}`;
+  }
+
   function matches(record, nx, ny, nz) {
     if (Array.isArray(record.normal)) {
       const length = Math.hypot(...record.normal); // Recognized editor surfaces retain their own local direction.
@@ -103,6 +111,7 @@
     const indices = source.index; // Both imported indexed geometry and editor triangle soup are supported.
     const count = indices ? indices.count : position.count;
     const vertices = [], uvs = [], axes = [], weights = [], baseUvs = [], materialIds = []; // Temporary arrays exist only during construction, never per frame.
+    const allowRegions = record.allowRegions ? new Set(record.allowRegions) : null; // Optional planar-region whitelist (ruin rules).
     const bounds = {x:0,z:0}; // Dimensions of the actual source geometry anchor the continuous side unwrap.
     for (let i=0;i<position.count;i++) { bounds.x=Math.max(bounds.x,Math.abs(position.array[i*3])); bounds.z=Math.max(bounds.z,Math.abs(position.array[i*3+2])); }
     const curved = ['cylinder','disc','legRound','barrel','cup','sphere'].includes(part.kind); // Curved side groups use angular coordinates rather than switching box planes.
@@ -115,6 +124,7 @@
       c.fromBufferAttribute(position, indices ? indices.getX(first + 2) : first + 2);
       edge.subVectors(b, a); normal.subVectors(c, a).cross(edge).negate().normalize();
       if (!matches(record, normal.x, normal.y, normal.z)) continue;
+      if (allowRegions && !allowRegions.has(regionKey(normal.x, normal.y, normal.z, normal.dot(a)))) continue;
       if (record.localCentroid && record.dimensions) {
         const center = record.localCentroid.map((value, axis) => value * finite(part.transform?.[['sx','sy','sz'][axis]], record.dimensions[axis]) / Math.max(.001, record.dimensions[axis])); // Keep the authored face plane attached during piece resizing.
         if (Math.abs(normal.dot(a) - normal.x * center[0] - normal.y * center[1] - normal.z * center[2]) > .02) continue;
@@ -332,6 +342,8 @@
     const rules = window.RuinPatternSurfaceRules; // Optional per-piece enable/scale/atlas rules (docs/js/ruin-pattern-surface-rules.js).
     const types = new Map(), overlays = []; // Per repeated piece type, for the Dev Companion's live surface list.
     root.userData.ruinPatternSeed = seed; // Rule edits re-run decoration with the same deterministic choices.
+    root.updateMatrixWorld?.(true); // Rules measure faces in world space (a sideways pillar's faces are short, not tall).
+    const groupIndex = new Map(); // Pattern group (e.g. one false pillar's housing walls) -> index of its first mesh, so the group shares one motif.
     root.traverse(node => { if (node.isMesh && !node.userData?.furniturePattern) meshes.push(node); });
     for (let index = 0; index < meshes.length; index++) {
       const mesh = meshes[index];
@@ -341,18 +353,29 @@
       if ((!rules && !structural) || !catalog.length) continue;
       for (const child of [...mesh.children]) if (child.userData?.furniturePattern?.mode === 'engraving') { mesh.remove(child); child.geometry?.dispose(); child.material?.map?.dispose(); child.material?.dispose(); } // Re-decoration (rule edits) starts clean, including types now switched off.
       const rule = rules?.resolve?.(mesh, root, structural) || null; // { key, label, context, enabled, scale, partScale, defaultScale, maxAtlasPx, minSurfaceTiles, tilePx }; every ruin mesh gets a type so the Dev Companion can list it.
-      const type = rule ? (types.get(rule.key) || types.set(rule.key, { key: rule.key, label: rule.label, meshes: 0, overlays: 0, contexts: new Set(), enabled: rule.enabled, scale: rule.scale, partScale: rule.partScale }).get(rule.key)) : null;
-      if (type) { type.meshes++; if (rule.context) type.contexts.add(rule.context); }
+      const type = rule ? (types.get(rule.key) || types.set(rule.key, { key: rule.key, label: rule.label, meshes: 0, overlays: 0, contexts: new Set(), classes: new Set(), nameExcluded: !!rule.nameExcluded, enabled: rule.enabled, scale: rule.scale, partScale: rule.partScale }).get(rule.key)) : null;
+      if (type) { type.meshes++; if (rule.context) type.contexts.add(rule.context); for (const cls of rule.classes || []) type.classes.add(cls); }
       if (rule && !rule.enabled) continue;
       const authoredSlots = mesh.userData?.authoredPart?.patternSurfaces?.filter(record => record.mode === 'engraving'); // Explicit author slots replace the generic structural defaults.
-      const slots = /pedestal|platform/i.test(role) ? ['sides', 'top'] : ['sides']; // Bases and tops roll separately, alongside walls and pillars.
-      const templates = authoredSlots?.length ? authoredSlots : slots.map(slot => ({slot,selector:slot,mode:'engraving',random:true})); // No mutation of shared part recipes.
+      let templates;
+      if (authoredSlots?.length) templates = authoredSlots;
+      else if (rule?.sideRegions || rule?.topRegions) { // Rules pick exact face regions: broad sides by default, tops/narrow faces only when enabled.
+        templates = [];
+        if (rule.sideRegions?.length) templates.push({slot:'sides',selector:'sides',mode:'engraving',random:true,allowRegions:rule.sideRegions});
+        if (rule.topRegions?.length) templates.push({slot:'top',selector:'top',mode:'engraving',random:true,allowRegions:rule.topRegions});
+      } else {
+        const slots = /pedestal|platform/i.test(role) ? ['sides', 'top'] : ['sides']; // Bases and tops roll separately, alongside walls and pillars.
+        templates = slots.map(slot => ({slot,selector:slot,mode:'engraving',random:true})); // No mutation of shared part recipes.
+      }
+      if (!templates.length) continue;
+      if (rule?.patternGroup && !groupIndex.has(rule.patternGroup)) groupIndex.set(rule.patternGroup, index);
+      const choiceIndex = rule?.patternGroup ? groupIndex.get(rule.patternGroup) : index; // Grouped meshes (a false pillar's walls) share one motif like a real pillar's single shaft.
       const records = templates.map(template => {
         const slot = template.slot; // Independent deterministic choice for each authored surface slot.
-        const entry = catalog[hash(`${seed}|${index}|${slot}`) % catalog.length]; // Stable per-element/per-slot selection.
+        const entry = catalog[hash(`${seed}|${choiceIndex}|${slot}`) % catalog.length]; // Stable per-element/per-slot selection.
         const patternId = template.random === false && template.patternId ? template.patternId : entry.id; // Completion grants the actual displayed motif.
         return { ...template, pattern: template.random === false ? template.pattern : null, patternId, palette: template.palette || ['#b7a185', '#625447'], scale: template.scale || rule?.defaultScale || 1.5,
-          ...(rule?.scale > 0 ? { scaleOverride: rule.scale } : {}), ...(rule ? { maxAtlasPx: rule.maxAtlasPx, minSurfaceTiles: rule.minSurfaceTiles, tilePx: rule.tilePx } : {}) };
+          ...(rule?.scale > 0 ? { scaleOverride: rule.scale } : {}), ...(rule ? { maxAtlasPx: rule.maxAtlasPx, minSurfaceTiles: template.allowRegions ? 0 : rule.minSurfaceTiles, tilePx: rule.tilePx } : {}) }; // Region-picked faces were size-checked in world space already.
       });
       const authored = mesh.userData?.authoredPart; // Piece JSON data for V50 repo pieces is preloaded by the rules module.
       applyPart(mesh, { ...authored, patternScale: authored?.patternScale ?? rule?.partScale, patternSurfaces: records });
@@ -428,5 +451,5 @@
     return records;
   }
 
-  window.FurniturePatternSurfaces = { normalize, resolvePattern, editablePattern, renderTile, surfaceGeometry, applyPart, decorateRuin, unlockRuin, applyOverrides, editInstance, debug, hash };
+  window.FurniturePatternSurfaces = { regionKey, normalize, resolvePattern, editablePattern, renderTile, surfaceGeometry, applyPart, decorateRuin, unlockRuin, applyOverrides, editInstance, debug, hash };
 })();
