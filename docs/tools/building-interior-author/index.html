@@ -122,6 +122,18 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
         <label class="hint" style="display:flex;align-items:center;gap:4px"><input id="ceilingDisabled" type="checkbox"> No ceiling (open to sky)</label>
         <label class="hint" style="display:flex;align-items:center;gap:4px"><input id="ceilingPreview" type="checkbox"> Preview ceiling</label>
       </div>
+      <div class="row" style="flex-wrap:wrap;gap:6px;align-items:flex-end;margin-top:6px">
+        <div class="field" style="margin:0"><label>Ceiling material</label>
+          <select id="ceilingMaterial">
+            <option value="">Default (planks / tent canvas)</option>
+            <option value="boards">Planks</option>
+            <option value="carved">Carved roof (eave-to-ridge, tiles gable to gable)</option>
+            <option value="canvas">Canvas</option>
+          </select>
+        </div>
+        <div class="field" style="margin:0"><label>Tint</label><input id="ceilingTint" type="color" value="#0e0d06" style="width:52px;height:30px;padding:0"></div>
+        <label class="hint" style="display:flex;align-items:center;gap:4px"><input id="ceilingTintDefault" type="checkbox" checked> Use exterior roof colour</label>
+      </div>
       <p class="hint" style="margin-top:6px" id="gableStatus">Rooms get a flat ceiling at wall height (hidden in this editor unless Preview ceiling is on, where it shows see-through). With the Gable tool, click next to a wall to raise that whole wall stretch into a triangular gable; click it again to remove it. Opposite gables make a pitched roof; a lone gable slopes down to the flat wall facing it. Rise edits apply to gables you add next.</p>
     </div>
 
@@ -359,6 +371,7 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
 <script src="../../js/WallBuilder.js"></script>
 <script src="../../js/terrain-preview.js"></script>
 <script src="../../js/interior-scene-builder.js?v=20261013h2de9e2d"></script>
+<script src="../../js/color-fill.js?v=20260923colorfill7"></script>
 <script src="../../js/interior-ceilings.js?v=20261013a"></script>
 <script src="../../js/procedural-furniture.js"></script>
 <script src="../../js/interior-furniture-grid.js?v=20261012heb9cb96"></script>
@@ -366,8 +379,8 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
      Static order avoids the old map-live-preview injection race and gives
      nested tool pages the same wall/window runtime as the game. -->
 <script src="../../js/wall-ornament-placement.js?v=20260926rebase1"></script>
-<script src="../../js/daylight-window-runtime.js?v=20261005hde1ce1f"></script>
-<script src="../../js/building-interior-wall-ornament-editor.js?v=20261005h00eac97"></script>
+<script src="../../js/daylight-window-runtime.js?v=20261013h3b89898"></script>
+<script src="../../js/building-interior-wall-ornament-editor.js?v=20261013h3d2cf84"></script>
 
 <script>
 (function () {
@@ -843,10 +856,34 @@ function gableAction(e){
 // Omit the key entirely for the default flat ceiling so untouched maps export unchanged.
 function writeCeiling(ceiling){
   var IC=window.InteriorCeilings, c=IC?IC.normalizeCeiling(ceiling):ceiling;
-  if(c && c.enabled && !c.gables.length) delete state.interior.ceiling;
-  else if(c && !c.enabled) state.interior.ceiling={enabled:false,gables:c.gables};
-  else state.interior.ceiling={gables:c.gables};
+  if(c && c.enabled && !c.gables.length && !c.material && !c.tint){ delete state.interior.ceiling; return; }
+  var out={};
+  if(c && !c.enabled) out.enabled=false;
+  out.gables=c.gables;
+  if(c.material) out.material=c.material;
+  if(c.tint) out.tint=c.tint;
+  state.interior.ceiling=out;
 }
+function syncCeilingControls(){
+  var IC=window.InteriorCeilings, c=IC?IC.normalizeCeiling(state.interior.ceiling):{};
+  $('ceilingDisabled').checked=c.enabled===false;
+  $('ceilingMaterial').value=c.material||'';
+  $('ceilingTintDefault').checked=!c.tint;
+  $('ceilingTint').value=c.tint||(IC?IC.ROOF_TINTS.town:'#0e0d06');
+  $('ceilingTint').disabled=!c.tint;
+}
+function onCeilingMaterialChange(){
+  pushUndo();
+  var IC=window.InteriorCeilings, c=IC?IC.normalizeCeiling(state.interior.ceiling):{gables:[]};
+  c.material=$('ceilingMaterial').value||null;
+  c.tint=$('ceilingTintDefault').checked?null:$('ceilingTint').value;
+  writeCeiling(c); syncCeilingControls();
+  if(!$('ceilingPreview').checked){ $('ceilingPreview').checked=true; } // Show what changed.
+  rebuild3D(); refreshExport();
+}
+$('ceilingMaterial').addEventListener('change',onCeilingMaterialChange);
+$('ceilingTint').addEventListener('change',onCeilingMaterialChange);
+$('ceilingTintDefault').addEventListener('change',onCeilingMaterialChange);
 $('ceilingPreview').addEventListener('change',function(){ rebuild3D(); });
 $('ceilingDisabled').addEventListener('change',function(){
   pushUndo();
@@ -1476,9 +1513,11 @@ function rebuild3D(){
   var exitTileSet=new Set();
   (interior.exits||[]).forEach(function(ez){ (ez.tiles||[]).forEach(function(p){ exitTileSet.add(p[0]+','+p[1]); }); });
   var panels=InteriorSceneBuilder.buildWallPanels(floorSet,exitTileSet,WALL_H);
+  // Wall-mounted windows punch their frame outline out of the bricks (same as in game).
+  var windowOpenings=InteriorSceneBuilder.windowWallOpenings?InteriorSceneBuilder.windowWallOpenings(furniture,{footprintOf:function(f){return catOf(f.itemKey);}}):[];
   if(panels.length){
     try{
-      var wallGroup=InteriorSceneBuilder.buildWallGroup(THREE, wb, panels, interior.wallStyle, {usePlaceholder:!wbReady});
+      var wallGroup=InteriorSceneBuilder.buildWallGroup(THREE, wb, panels, interior.wallStyle, {usePlaceholder:!wbReady,wallOpenings:windowOpenings});
       wallGroup.userData.biaInteriorWallGroup=true; previewGroup.add(wallGroup);
     } catch(e){
       log('Wall build error: '+e.message,'warn');
@@ -1493,7 +1532,10 @@ function rebuild3D(){
   if(window.InteriorCeilings){
     var previewWallH=Number(window.__hobunjiInteriorWallHeightOverride)||Number(interior.wallHeight)||WALL_H;
     var showCeiling=$('ceilingPreview').checked;
-    previewGroup.add(InteriorCeilings.buildCeilingGroup(THREE,{floor:floorSet,wallHeight:previewWallH,ceiling:interior.ceiling,wallStyle:interior.wallStyle,texturesBasePath:'../../assets/',includeCeiling:showCeiling,preview:showCeiling,wallBuilder:wb,wallBuildOptions:{usePlaceholder:!wbReady}}));
+    var ceilingPreviewGroup=InteriorCeilings.buildCeilingGroup(THREE,{floor:floorSet,wallHeight:previewWallH,ceiling:interior.ceiling,wallStyle:interior.wallStyle,texturesBasePath:'../../assets/',includeCeiling:showCeiling,preview:showCeiling,wallBuilder:wb,wallBuildOptions:{usePlaceholder:!wbReady,excludeQuads:InteriorSceneBuilder.openingExcludeQuads?InteriorSceneBuilder.openingExcludeQuads(windowOpenings):[]}});
+    // Gable ends are wall: let wall-ornament placement (windows) click onto them.
+    ceilingPreviewGroup.children.forEach(function(child){ if(child.userData.interiorGable||child.userData.interiorGableBricks) child.userData.biaInteriorWallGroup=true; });
+    previewGroup.add(ceilingPreviewGroup);
   }
 
   // Furniture — use real GLBs if cached, placeholder boxes otherwise
@@ -1719,7 +1761,7 @@ function afterLoad(){
   });
   $('mapId').value=i.id||''; $('mapName').value=i.name||'';
   $('wallStyle').value=i.wallStyle||'';
-  $('ceilingDisabled').checked=!!(i.ceiling&&i.ceiling.enabled===false);
+  syncCeilingControls();
   $('gridCols').value=i.cols||12; $('gridRows').value=i.rows||10;
   state.activeExitId=null; state.activeVendorId=null; state.activeEntryId=null; state.editingLayoutId=null;
   $('exitZoneFields').classList.add('hidden'); $('vendorZoneFields').classList.add('hidden');

@@ -153,13 +153,22 @@
     if (!attachment || !record?.wallAttachment || !window.WallOrnamentPlacement?.deriveTransform) return false;
     const derived = window.WallOrnamentPlacement.deriveTransform(attachment, record.wallAttachment, basePosition(record, preset));
     if (!derived) return false;
-    record.postX = round(derived.postX);
-    record.postY = round(derived.postY);
-    record.postZ = round(derived.postZ);
+    // Wall-space X/Y scale (postSX along the wall, postSY up it) grows the
+    // piece about its attachment anchor, so it stays centred on the picked
+    // wall point instead of creeping up/sideways from its floor-level origin.
+    const sx = finite(record.postSX, 1) || 1, sy = finite(record.postSY, 1) || 1, sz = finite(record.postSZ, 1) || 1;
+    const anchor = Array.isArray(attachment.anchor) ? attachment.anchor : [0, 0, 0];
+    const yaw = finite(derived.rotY) * DEG, cos = Math.cos(yaw), sin = Math.sin(yaw);
+    const ax = finite(anchor[0]), ay = finite(anchor[1]), az = finite(anchor[2]);
+    const shiftX = (ax * cos + az * sin) - (ax * sx * cos + az * sz * sin);
+    const shiftZ = (-ax * sin + az * cos) - (-ax * sx * sin + az * sz * cos);
+    record.postX = round(derived.postX + shiftX);
+    record.postY = round(derived.postY + ay - ay * sy);
+    record.postZ = round(derived.postZ + shiftZ);
     record.rotY = round(derived.rotY, 1);
-    record.postSX = finite(record.postSX, 1) || 1;
-    record.postSY = finite(record.postSY, 1) || 1;
-    record.postSZ = finite(record.postSZ, 1) || 1;
+    record.postSX = sx;
+    record.postSY = sy;
+    record.postSZ = sz;
     delete record.postScale;
     return true;
   }
@@ -232,13 +241,45 @@
     return { point, normal, distance: t, panel };
   }
 
+  // Wall ornaments face one of the four wall directions (90° steps). A
+  // rendered brick hit's face normal can't be trusted for that: bricks are
+  // InstancedMesh instances, so face.normal is the brick model's local normal
+  // without the instance's rotation (every window used to come out facing the
+  // same way), and brick jitter tilts it anyway. Take the normal of the
+  // canonical wall panel the hit lies on instead, or failing that snap to the
+  // nearest axis — always pointing back toward the clicker.
+  function snapHitToWallDirection(hit, panels, ray) {
+    const THREE = window.THREE;
+    if (!hit?.point || !THREE?.Vector3) return hit;
+    let bestPanel = null, bestDepth = Infinity;
+    for (const panel of panels) {
+      const yaw = finite(panel.rotationDeg?.[1]) * DEG;
+      const nx = Math.sin(yaw), nz = Math.cos(yaw);
+      const dx = hit.point.x - finite(panel.position?.[0]), dz = hit.point.z - finite(panel.position?.[2]);
+      const depth = Math.abs(dx * nx + dz * nz);
+      const along = Math.abs(dx * nz - dz * nx);
+      if (along > finite(panel.width) / 2 + 0.25 || depth > 0.6) continue; // Gable bricks sit above the panel, so height is not checked.
+      if (depth < bestDepth) { bestDepth = depth; bestPanel = panel; }
+    }
+    let normal;
+    if (bestPanel) {
+      const yaw = finite(bestPanel.rotationDeg?.[1]) * DEG;
+      normal = new THREE.Vector3(Math.round(Math.sin(yaw)), 0, Math.round(Math.cos(yaw)));
+    } else {
+      const n = hit.normal || new THREE.Vector3(0, 0, 1);
+      normal = Math.abs(n.x) >= Math.abs(n.z) ? new THREE.Vector3(Math.sign(n.x) || 1, 0, 0) : new THREE.Vector3(0, 0, Math.sign(n.z) || 1);
+    }
+    if (ray && normal.dot(ray.direction) > 0) normal.negate();
+    return Object.assign({}, hit, { normal, panel: bestPanel || hit.panel });
+  }
+
   function wallHitFromPointer(event) {
     const interior = readInterior();
     const ray = pointerRay(event);
     if (!interior || !ray) return null;
-    const rendered = renderedWallHitFromPointer(event); // What the author sees is authoritative; canonical math remains a fallback for sparse/placeholder wall geometry.
-    let best = rendered;
     const panels = canonicalWallPanels(interior);
+    const rendered = snapHitToWallDirection(renderedWallHitFromPointer(event), panels, ray); // What the author sees is authoritative; canonical math remains a fallback for sparse/placeholder wall geometry.
+    let best = rendered;
     if (!best) {
       for (const panel of panels) {
         const hit = intersectCanonicalPanel(ray, panel);
@@ -368,6 +409,7 @@
         postSX: 1,
         postSY: 1,
         postSZ: 1,
+        nonColliding: true, // Hangs on the wall: never block the floor tile its anchor cell happens to land on.
       };
       activeFurniture(interior, layoutId).push(record);
       selectedId = record.id;
@@ -418,6 +460,8 @@
     record.wallAttachment.offsetU = finite(byId('biaWallOffsetU')?.value);
     record.wallAttachment.offsetV = finite(byId('biaWallOffsetV')?.value);
     record.wallAttachment.normalOffset = finite(byId('biaWallOffsetN')?.value);
+    record.postSX = Math.max(0.1, finite(byId('biaWallScaleX')?.value, 1) || 1);
+    record.postSY = Math.max(0.1, finite(byId('biaWallScaleY')?.value, 1) || 1);
     await deriveRecordTransform(record, preset);
     saveInterior(interior, layoutId, '3D Interior wall offset edit');
     setStatus(`${preset.label} offsets updated.`, 'ok');
@@ -466,9 +510,13 @@
         <div class="field"><label>Wall Y</label><input id="biaWallOffsetV" type="number" step="0.01" value="0"></div>
         <div class="field"><label>Normal offset</label><input id="biaWallOffsetN" type="number" step="0.005" value="0"></div>
       </div>
-      <div class="row"><button id="biaWallApply" disabled>Apply offsets</button><button id="biaWallDelete" class="danger" disabled>Delete</button></div>
+      <div class="grid2" style="margin-top:6px">
+        <div class="field"><label>Scale X (along wall)</label><input id="biaWallScaleX" type="number" min="0.1" step="0.05" value="1"></div>
+        <div class="field"><label>Scale Y (up wall)</label><input id="biaWallScaleY" type="number" min="0.1" step="0.05" value="1"></div>
+      </div>
+      <div class="row"><button id="biaWallApply" disabled>Apply offsets &amp; scale</button><button id="biaWallDelete" class="danger" disabled>Delete</button></div>
       <div id="biaWallStatus" class="hint">Choose a preset, click Place on wall, then click the rendered interior wall.</div>
-      <div class="hint" style="margin-top:5px">The click stores the canonical wall plane. Normal offset alone controls how far the furniture sits in front of or inside that plane. Records live in the room/layout currently selected under Alternate layouts.</div>`;
+      <div class="hint" style="margin-top:5px">The click stores the canonical wall plane and turns the piece to face out of that wall (90° steps). Normal offset alone controls how far the furniture sits in front of or inside that plane. Scale X/Y grow it across/up the wall around its centre; a window's brick opening scales with it. Records live in the room/layout currently selected under Alternate layouts.</div>`;
     panel.insertBefore(section, panel.firstChild);
     statusEl = byId('biaWallStatus');
     ui = section;
@@ -494,12 +542,16 @@
     const record = recordById(interior, selectedId);
     const preset = presetForRecord(record);
     const placement = record?.wallAttachment;
-    const offsetInputsKey = `${selectedId}|${placement?.offsetU}|${placement?.offsetV}|${placement?.normalOffset}`;
+    const offsetInputsKey = `${selectedId}|${placement?.offsetU}|${placement?.offsetV}|${placement?.normalOffset}|${record?.postSX}|${record?.postSY}`;
     if (offsetInputsKey !== lastOffsetInputsKey) {
       lastOffsetInputsKey = offsetInputsKey;
       for (const [id, value] of [['biaWallOffsetU', placement?.offsetU], ['biaWallOffsetV', placement?.offsetV], ['biaWallOffsetN', placement?.normalOffset]]) {
         const input = byId(id);
         if (input) input.value = placement ? round(value) : 0;
+      }
+      for (const [id, value] of [['biaWallScaleX', record?.postSX], ['biaWallScaleY', record?.postSY]]) {
+        const input = byId(id);
+        if (input) input.value = placement ? round(finite(value, 1) || 1) : 1;
       }
     }
     const hasSelection = !!record && !!preset;

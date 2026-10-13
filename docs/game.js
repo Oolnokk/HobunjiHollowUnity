@@ -13547,9 +13547,17 @@
             // cloth-colored panels matching the exterior tent piece's
             // 'canvas' material (see HousePieceGen's matCanvas) instead of
             // brick.
-            const wallPanels = InteriorSceneBuilder.buildWallPanels(floorSet, exitTileSet, INTERIOR_WALL_HEIGHT);
+            // Walls are built at the authored wall height (InteriorEnvironmentRuntime
+            // then sees a source height equal to it and leaves the group unscaled),
+            // so window openings and gable bricks line up with real brick courses
+            // instead of a stretched 1.75-tile wall.
+            const authoredWallHeight = window.InteriorEnvironmentRuntime?.normalizeEnvironment?.(mapData)?.wallHeight ?? INTERIOR_WALL_HEIGHT;
+            // Wall-mounted windows punch their frame outline out of the bricks,
+            // the same way the farmhouse's linked windows do.
+            const windowOpenings = InteriorSceneBuilder.windowWallOpenings?.(mapData.furniture) || [];
+            const wallPanels = InteriorSceneBuilder.buildWallPanels(floorSet, exitTileSet, authoredWallHeight);
             if (wallPanels.length) {
-              const wallGroup = InteriorSceneBuilder.buildWallGroup(THREE, houseWallBuilder, wallPanels, mapData.wallStyle, { usePlaceholder: false, mineTextureUrl: 'assets/textures/carved_smooth.png' });
+              const wallGroup = InteriorSceneBuilder.buildWallGroup(THREE, houseWallBuilder, wallPanels, mapData.wallStyle, { usePlaceholder: false, mineTextureUrl: 'assets/textures/carved_smooth.png', wallOpenings: windowOpenings });
               _markOutline(wallGroup);
               bScene.add(wallGroup);
             }
@@ -13557,12 +13565,13 @@
             // gables (mapData.ceiling) — see js/interior-ceilings.js.
             const ceilingGroup = window.InteriorCeilings?.buildCeilingGroup?.(THREE, {
               floor: floorSet,
-              wallHeight: window.InteriorEnvironmentRuntime?.normalizeEnvironment?.(mapData)?.wallHeight ?? INTERIOR_WALL_HEIGHT,
+              wallHeight: authoredWallHeight,
               ceiling: mapData.ceiling,
               wallStyle: mapData.wallStyle,
               texturesBasePath: 'assets/',
+              roofStyle: mapId.startsWith('map_i_barn_') ? 'farm' : 'town', // A carved ceiling defaults to its building's exterior roof colour.
               wallBuilder: houseWallBuilder, // Gable ends get the same bricks as the walls below.
-              wallBuildOptions: { usePlaceholder: false },
+              wallBuildOptions: { usePlaceholder: false, excludeQuads: InteriorSceneBuilder.openingExcludeQuads?.(windowOpenings) || [] },
             });
             if (ceilingGroup) {
               const gableBricks = ceilingGroup.getObjectByName('InteriorGableBricks');
@@ -19738,7 +19747,7 @@
 
         // Flat ceiling over the merged house footprint (js/interior-ceilings.js).
         if (interiorCeilingGroup) { interiorScene.remove(interiorCeilingGroup); interiorCeilingGroup.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
-        interiorCeilingGroup = window.InteriorCeilings?.buildCeilingGroup?.(THREE, { floor: floorSet, wallHeight: INTERIOR_WALL_HEIGHT, texturesBasePath: 'assets/' }) || null;
+        interiorCeilingGroup = window.InteriorCeilings?.buildCeilingGroup?.(THREE, { floor: floorSet, wallHeight: INTERIOR_WALL_HEIGHT, texturesBasePath: 'assets/', roofStyle: 'farm' }) || null;
         if (interiorCeilingGroup) interiorScene.add(interiorCeilingGroup);
 
         debugLog(`rebuildInteriorGeometry: ${floorSet.size} floor cells, ${panels.length} wall panels`);

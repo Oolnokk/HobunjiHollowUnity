@@ -415,6 +415,22 @@
     };
   }
 
+  // Visible outer bounds (frame + pane + mullions) of a window recipe in
+  // furniture-local units. The farmhouse linkage and authored-interior wall
+  // openings both cut bricks to exactly this outline.
+  function windowSilhouette(key) {
+    const parts = WINDOW_PARTS[key];
+    if (!Array.isArray(parts) || !parts.length) return null;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    parts.forEach(part => {
+      const t = part?.transform || {};
+      const x = finite(t.x), y = finite(t.y), sx = Math.abs(finite(t.sx)), sy = Math.abs(finite(t.sy));
+      minX = Math.min(minX, x - sx * 0.5); maxX = Math.max(maxX, x + sx * 0.5);
+      minY = Math.min(minY, y - sy * 0.5); maxY = Math.max(maxY, y + sy * 0.5);
+    });
+    return { minX, maxX, minY, maxY, width: maxX - minX, height: maxY - minY };
+  }
+
   window.DaylightWindowRuntime = Object.freeze({
     version: VERSION,
     role: ROLE,
@@ -424,6 +440,7 @@
     updatePaneTint,
     drawAtmosphere,
     registerDecorDefs,
+    windowSilhouette,
     debugSnapshot,
     __test: Object.freeze({ WINDOW_KEYS, WINDOW_PARTS, FALLBACK_SURFACES, AMBIENT_WINDOW_WEIGHT, isOrdinaryBuildingInterior, ensureWindowVisualRoot }),
   });

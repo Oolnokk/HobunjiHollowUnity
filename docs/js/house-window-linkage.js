@@ -152,20 +152,8 @@
   }
 
   function windowSilhouette(key) {
-    const parts = window.DaylightWindowRuntime?.__test?.WINDOW_PARTS?.[key]; // Authored/procedural fallback parts provide the real outer frame, not only the glass pane.
-    if (!Array.isArray(parts) || !parts.length) return FALLBACK_SILHOUETTES[key] || { width: 1, height: 1 };
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity; // Bounds accumulate every visible frame/pane/mullion part.
-    parts.forEach(part => {
-      const transform = part?.transform || {}; // Part-local center and dimensions from the same recipe used to render the window.
-      const x = finite(transform.x); // Part center X used for silhouette horizontal extent.
-      const y = finite(transform.y); // Part center Y used for silhouette vertical extent.
-      const sx = Math.abs(finite(transform.sx)); // Part width in furniture-local units.
-      const sy = Math.abs(finite(transform.sy)); // Part height in furniture-local units.
-      minX = Math.min(minX, x - sx * 0.5); maxX = Math.max(maxX, x + sx * 0.5);
-      minY = Math.min(minY, y - sy * 0.5); maxY = Math.max(maxY, y + sy * 0.5);
-    });
-    if (!Number.isFinite(minX) || !Number.isFinite(minY)) return FALLBACK_SILHOUETTES[key] || { minX: -0.5, maxX: 0.5, minY: 0, maxY: 1, width: 1, height: 1 };
-    return { minX, maxX, minY, maxY, width: maxX - minX, height: maxY - minY }; // Exact visible bounds let the exterior brick gap share the frame's real lower edge.
+    return window.DaylightWindowRuntime?.windowSilhouette?.(key) // Single owner of the window part recipes.
+      || FALLBACK_SILHOUETTES[key] || { minX: -0.5, maxX: 0.5, minY: 0, maxY: 1, width: 1, height: 1 };
   }
 
   function exteriorWindowSilhouette(key) {

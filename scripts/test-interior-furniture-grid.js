@@ -186,7 +186,8 @@ function auditFurniture(furniture, label, mapData) {
         const col = Number(piece.col) + dc;
         const row = Number(piece.row) + dr;
         assert.ok(col >= 0 && row >= 0 && col < mapData.cols && row < mapData.rows, `${label} ${piece.id || piece.itemKey}: grid footprint must stay inside the map`);
-        assert.ok(floor.has(`${col},${row}`), `${label} ${piece.id || piece.itemKey}: grid footprint must stay on authored floor`);
+        // Wall-mounted pieces (windows, signs) anchor on the wall line, so their tile is often the wall itself.
+        if (!piece.wallAttachment) assert.ok(floor.has(`${col},${row}`), `${label} ${piece.id || piece.itemKey}: grid footprint must stay on authored floor`);
         if (!piece.nonColliding && !piece.walkableElevation) covered.add(`${col},${row}`);
       }
     }
