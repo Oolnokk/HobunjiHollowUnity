@@ -1,0 +1,76 @@
+name: Temp Combat Vocal Pitch Runner
+
+on:
+  push:
+    branches:
+      - feat/combat-vocalizations
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/combat-vocalizations
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+Oolnokk@users.noreply.github.com"
+          git fetch origin main
+      - name: Extract and apply patch script
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          src = Path('.github/workflows/temp-combat-vocal-pitch-preserve.yml').read_text()
+          marker = "          python3 - <<'PY'\n"
+          start = src.index(marker) + len(marker)
+          end = src.index("\n          PY\n      - name: Syntax checks", start)
+          lines = src[start:end].splitlines()
+          script = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines) + '\n'
+          Path('/tmp/patch-combat-pitch.py').write_text(script)
+          PY
+          python3 -m py_compile /tmp/patch-combat-pitch.py
+          python3 /tmp/patch-combat-pitch.py
+      - name: Syntax checks
+        run: |
+          node --check docs/js/animal-voice-independent-playback.js
+          node --check docs/js/combat/combat-vocalizations.js
+          node --check docs/js/combat/combat-config-loader.js
+          python3 - <<'PY'
+          from pathlib import Path
+          page = Path('docs/tools/combat-vocalization-editor/index.html').read_text()
+          start = page.rfind('<script>') + len('<script>')
+          end = page.find('</script>', start)
+          if start < len('<script>') or end < 0:
+              raise SystemExit('combat vocal editor script block not found')
+          Path('/tmp/combat-vocal-editor.js').write_text(page[start:end])
+          PY
+          node --check /tmp/combat-vocal-editor.js
+      - name: Refresh cache busts
+        run: node scripts/check-cache-busts.js --fix
+      - name: Remove temporary workflows
+        run: |
+          git rm .github/workflows/temp-combat-vocal-pitch-preserve.yml
+          git rm .github/workflows/temp-combat-vocal-pitch-runner.yml
+      - name: Validate cache busts
+        run: node scripts/check-cache-busts.js origin/main
+      - name: Focused combat vocal regression
+        run: node scripts/test-combat-vocalizations.js
+      - name: Animal voice regressions
+        run: |
+          node scripts/test-animal-vocalizations.js
+          node scripts/test-animal-authored-voice-routing.js
+      - name: Full regression suite
+        run: node scripts/run-tests.js
+      - name: Commit validated pitch-preserving playback
+        run: |
+          git add -A
+          git commit -m "Preserve combat vocal pitch during tempo changes"
+          git push origin HEAD:feat/combat-vocalizations
