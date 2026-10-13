@@ -41,7 +41,7 @@
       const value = Number(config[key]); // Candidate authored number validated before it can replace a safe fallback.
       if (Number.isFinite(value) && value >= 0) next[key] = value;
     }
-    for (const rank of ['grunt', 'lieutenant', 'captain']) {
+    for (const rank of ['grunt', 'flasker', 'lieutenant', 'captain']) {
       const value = Number(config.chanceByRank?.[rank]); // Rank-specific reaction chance preserves the intended gang hierarchy.
       if (Number.isFinite(value)) next.chanceByRank[rank] = clamp01(value);
     }

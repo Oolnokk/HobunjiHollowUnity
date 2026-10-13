@@ -643,40 +643,60 @@
     const loadout = c.def?.banditFlaskLoadout || []; // Two recipe ids rolled once for this Flasker and never consumed by AI use.
     if (!loadout.length || !window.AlchemyFlasks?.throwFromEntity) return null;
     const tuning = c.def?.banditFlaskerTuning || banditFlaskerTuning(null); // Spawn-authored tuning survives config reloads consistently with other bandit defs.
-    const towardAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x); // Used to keep the hostile facing its current flask target while winding up.
+    const towardAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x); // Used to keep the hostile facing its current flask target during the shared staged throw.
     const minRangePx = tuning.minThrowRangeTiles * deps.TILE; // Inside this range Flaskers fall back to their normal melee weapon.
     const maxRangePx = tuning.maxThrowRangeTiles * deps.TILE; // Outside this range ordinary bandit approach logic closes distance first.
     c._banditFlaskCooldownT = Math.max(0, (c._banditFlaskCooldownT || 0) - dt);
 
-    if (c._banditFlaskWindupT > 0) {
+    if (c._banditFlaskActionActive) {
       c.facing = towardAngle;
-      c._banditFlaskWindupT = Math.max(0, c._banditFlaskWindupT - dt);
-      if (c._banditFlaskWindupT <= 0) {
-        const recipeId = c._banditFlaskPendingRecipeId; // Captured at windup start so alternating loadout order cannot change mid-throw.
-        const launched = window.AlchemyFlasks.throwFromEntity(c, recipeId, c.def?.banditFlaskPotencyTier || 0, targetPlayer.x, targetPlayer.y);
-        c._banditFlaskPendingRecipeId = null;
-        c._banditFlaskCooldownT = tuning.throwCooldownSeconds;
-        c.telegraphState = launched ? 'strike' : null;
-      }
       return { handled: true, aimAngle: towardAngle, moving: false, flasker: true };
     }
 
     if (distToPlayer < minRangePx || distToPlayer > maxRangePx) return null;
     if (c._banditFlaskCooldownT > 0) {
-      if (c.telegraphState === 'strike') c.telegraphState = null;
       c.facing = towardAngle;
       return { handled: true, aimAngle: towardAngle, moving: false, flasker: true };
     }
 
     const recipeId = loadout[c._banditFlaskIndex % loadout.length]; // Alternates the two persistent loadout types instead of randomly starving one.
     c._banditFlaskIndex = (c._banditFlaskIndex + 1) % Math.max(1, loadout.length);
-    const throwAnimation = window.HeldActionAnimations?.throwFlask || window.HeldActionAnimations?.weaponThrowSpin; // Exact player/Attack-Editor hatchet throw is the timing authority.
-    const windupSeconds = Math.max(0.12, Number(throwAnimation?.durationS || 1.04) * Number(throwAnimation?.windupFrac || 0.49)); // Used to give the player the same readable hatchet-style windup window.
-    c._banditFlaskWindupT = windupSeconds;
+    const throwAnimation = window.HeldActionAnimations?.throwFlask || window.HeldActionAnimations?.weaponThrowSpin; // Exact player/Attack-Editor hatchet throw is both pose and timing authority.
+    if (!throwAnimation?.poses || !window.Combat?.beginStagedAction) return null;
+    const durationS = Math.max(0.2, Number(throwAnimation.durationS) || 1.04); // Used for the same total throw cadence authored in the Attack Editor.
+    const windupS = Math.max(0.12, durationS * Math.max(0.05, Math.min(0.95, Number(throwAnimation.windupFrac) || 0.49))); // Projectile release begins where the shared hatchet animation enters its strike.
+    const strikeS = Math.max(0.05, durationS - windupS); // Keeps the authored strike/follow-through visible after release.
     c._banditFlaskPendingRecipeId = recipeId;
-    c._banditFlaskAnimationKey = 'throwFlask'; // Mobile/debug proof that Flaskers use the shared flask→hatchet animation identity.
+    c._banditFlaskAnimationKey = 'throwFlask'; // Mobile/debug proof of the shared animation identity.
+    c._banditFlaskActionActive = true; // Used by the tool renderer to swap the melee weapon for the held flask during this staged action.
+    c._banditSwingAnim = throwAnimation.style || 'chop'; // updateBanditToolMesh consumes the exact shared animation style instead of a Flasker-only pose approximation.
+    c._banditSwingPose = throwAnimation.poses; // Exact authored neutral/windup/strike poses from HeldActionAnimations.throwFlask.
+    c._banditSwingDirSign = 1;
+    c._banditSwingPower = 1;
+    c._banditSwingPoseScale = 1;
     c.telegraphState = 'windup';
     c.facing = towardAngle;
+    c._banditAction = window.Combat.beginStagedAction({
+      windupS, strikeS, recoverS: 0,
+      data: { isBandit: true, attacker: c, flasker: true, recipeId, animationKey: 'throwFlask' },
+      onStrike: () => {
+        const pendingRecipeId = c._banditFlaskPendingRecipeId || recipeId; // Captured at windup start so alternating order cannot change mid-throw.
+        c._banditFlaskPendingRecipeId = null;
+        const launched = window.AlchemyFlasks.throwFromEntity(c, pendingRecipeId, c.def?.banditFlaskPotencyTier || 0, targetPlayer.x, targetPlayer.y);
+        c.telegraphState = launched ? 'strike' : null;
+      },
+      onComplete: () => {
+        c._banditFlaskActionActive = false;
+        c._banditFlaskCooldownT = tuning.throwCooldownSeconds;
+        finishBanditAction(c);
+      },
+      onCancel: () => {
+        c._banditFlaskActionActive = false;
+        c._banditFlaskPendingRecipeId = null;
+        c._banditFlaskCooldownT = Math.min(0.5, tuning.throwCooldownSeconds);
+        finishBanditAction(c);
+      },
+    });
     return { handled: true, aimAngle: towardAngle, moving: false, flasker: true };
   }
 
@@ -1821,6 +1841,42 @@
     return holder;
   }
 
+
+  const BANDIT_FLASK_TOOL_KEY = 'throwingflask'; // Used by the shared hand-grip registry while the Flasker visually holds an inventory flask.
+  const BANDIT_FLASK_SPRITE = 'assets/objectsprites/throwing_flask.png'; // Used by the runtime Flasker holder; Attack Editor uses the same source PNG.
+  function makeBanditFlaskToolHolder(scene) {
+    if (!scene || !THREE?.Group) return null;
+    const holder = new THREE.Group();
+    holder.name = 'banditFlaskToolHolder';
+    holder.visible = false;
+    const visual = new THREE.Group(); // Grip-scaled child matching makeBanditToolHolder's visual-child convention.
+    visual.name = 'banditFlaskGripVisual';
+    visual.userData = { toolPlane: null };
+    holder.userData = { toolPlane: null, banditFlaskHolder: true };
+    holder.add(visual);
+    scene.add(holder);
+    new THREE.TextureLoader().load(BANDIT_FLASK_SPRITE, texture => {
+      if (!holder.parent) { texture.dispose?.(); return; }
+      texture.magFilter = THREE.NearestFilter;
+      texture.minFilter = THREE.NearestFilter;
+      if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
+      else if ('encoding' in texture && THREE.sRGBEncoding) texture.encoding = THREE.sRGBEncoding;
+      texture.needsUpdate = true;
+      const widthPx = texture.image?.naturalWidth || texture.image?.width || 1;
+      const heightPx = texture.image?.naturalHeight || texture.image?.height || 1;
+      const width = 0.5;
+      const plane = new THREE.Mesh(
+        new THREE.PlaneGeometry(width, width * heightPx / Math.max(1, widthPx)),
+        new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide }),
+      );
+      plane.rotation.x = -Math.PI / 2;
+      visual.add(plane);
+      visual.userData.toolPlane = plane;
+      holder.userData.toolPlane = plane;
+    }, undefined, error => window.__farmLog?.(`[bandits] throwing flask sprite failed to load: ${error?.message || error}`, 'warn', 'combat'));
+    return holder;
+  }
+
   // Two-phase version of updateToolMesh's fourPhaseLerp: 0->wf rises from
   // neutral to the windup pose (identical formula), then HOLDS at the
   // strike pose for the rest of the action instead of also modeling a
@@ -1920,25 +1976,34 @@
   }
 
   function updateBanditToolMesh(c) {
-    const handDriverRoot = c?.avatarRef?.handRigAvatarRoot; // Final pre-render hand driver reads this live holder/key selection after ordinary bandit pose logic decides melee vs ranged.
+    const handDriverRoot = c?.avatarRef?.handRigAvatarRoot; // Final pre-render hand driver reads the live melee/ranged/flask holder selected below.
+    const flaskActive = !!c._banditFlaskActionActive && !!c._banditFlaskToolHolder; // During a staged Flasker throw the held flask replaces the backup melee weapon.
+    const useRanged = !flaskActive && !!c._rangedMode && !!c._banditRangedToolHolder;
     if (handDriverRoot?.userData) {
-      const useRanged = !!c._rangedMode && !!c._banditRangedToolHolder;
-      handDriverRoot.userData.proceduralHandToolHolder = useRanged ? c._banditRangedToolHolder : c._banditToolHolder;
-      handDriverRoot.userData.proceduralHandToolKey = useRanged ? c.def?.rangedWeaponKey : c.def?.weaponKey;
-      handDriverRoot.userData.proceduralHandGripContext = useRanged ? 'ranged' : 'melee';
-      if (useRanged) handDriverRoot.userData.proceduralHandAnimationGrip = null; // Ranged poses never opt into the melee 2H ranges.
+      handDriverRoot.userData.proceduralHandToolHolder = flaskActive ? c._banditFlaskToolHolder : (useRanged ? c._banditRangedToolHolder : c._banditToolHolder);
+      handDriverRoot.userData.proceduralHandToolKey = flaskActive ? BANDIT_FLASK_TOOL_KEY : (useRanged ? c.def?.rangedWeaponKey : c.def?.weaponKey);
+      handDriverRoot.userData.proceduralHandGripContext = (flaskActive || useRanged) ? 'ranged' : 'melee';
+      if (useRanged) handDriverRoot.userData.proceduralHandAnimationGrip = null; // Ordinary ranged poses never opt into the melee 2H ranges; Flaskers intentionally keep throw animation grip metadata.
     }
     syncBanditWeaponScale(c, c._banditToolHolder, c.def?.weaponKey);
     syncBanditWeaponScale(c, c._banditRangedToolHolder, c.def?.rangedWeaponKey, 'ranged');
-    const holder = c._banditToolHolder;
+    syncBanditWeaponScale(c, c._banditFlaskToolHolder, BANDIT_FLASK_TOOL_KEY, 'ranged');
+    const holder = flaskActive ? c._banditFlaskToolHolder : c._banditToolHolder;
     if (!holder) return;
-    if (c._rangedMode) {
+    if (flaskActive) {
+      if (c._banditToolHolder) c._banditToolHolder.visible = false;
+      if (c._banditRangedToolHolder) c._banditRangedToolHolder.visible = false;
+      c._banditFlaskToolHolder.visible = true;
+    } else if (c._rangedMode) {
       holder.visible = false;
+      if (c._banditFlaskToolHolder) c._banditFlaskToolHolder.visible = false;
       window.RangedWeapons?.updateBanditVisual?.(c);
       return;
+    } else {
+      holder.visible = true;
+      if (c._banditRangedToolHolder) c._banditRangedToolHolder.visible = false;
+      if (c._banditFlaskToolHolder) c._banditFlaskToolHolder.visible = false;
     }
-    holder.visible = true;
-    if (c._banditRangedToolHolder) c._banditRangedToolHolder.visible = false;
     const action = c._banditAction;
     if (!action) {
       if (performance.now() < (c._banditToolSettleUntil || 0)) {
@@ -2038,8 +2103,8 @@
     // same +base.y offset needs feet-level Y here too, not center Y.
     const feetY = c.avatarRef.group.position.y - (c.halfHeight || 0);
 
-    if (anim === 'sweep' && pose) {
-      const styleNeutral = deps.STYLE_NEUTRAL_POSE.sweep;
+    if ((anim === 'sweep' || anim === 'chop') && pose) {
+      const styleNeutral = deps.STYLE_NEUTRAL_POSE?.[anim] || deps.STYLE_NEUTRAL_POSE.sweep;
       const neutral = { ...styleNeutral, ...(pose.neutral || {}) };
       const chan = (ch, mirror = false) => {
         const w = (neutral[ch] + ((pose.windup?.[ch] ?? neutral[ch]) - neutral[ch]) * power) * (mirror ? dirSign : 1);
@@ -2175,7 +2240,7 @@
     if (window.Combat?.deps?.despawnCreature) { window.Combat.deps.despawnCreature(entity); return; }
     entity.avatarRef?.group?.parent?.remove?.(entity.avatarRef.group);
     entity.avatarRef?.dispose?.();
-    for (const root of [entity.groundShadow, entity._banditToolHolder, entity._banditRangedToolHolder, entity._banditTrailMesh]) {
+    for (const root of [entity.groundShadow, entity._banditToolHolder, entity._banditRangedToolHolder, entity._banditFlaskToolHolder, entity._banditTrailMesh]) {
       root?.parent?.remove?.(root);
       root?.traverse?.(object => {
         object.geometry?.dispose?.();
@@ -2248,6 +2313,7 @@
     if (!banditToolHolder) window.__farmLog?.(`[bandits] tool holder failed to build for "${def.weaponKey}" -- toolTextures entry missing? (fallback: bandit renders unarmed)`, 'wildlife');
     const banditRangedToolHolder = def.rangedWeaponKey ? makeBanditToolHolder(targetScene, def.rangedWeaponKey) : null;
     if (banditRangedToolHolder) banditRangedToolHolder.visible = false;
+    const banditFlaskToolHolder = rank === 'flasker' ? makeBanditFlaskToolHolder(targetScene) : null; // Separate inventory-flask visual uses the same authored grip as the Attack Editor.
     const handDriverRoot = avatarRef.handRigAvatarRoot; // Original PNGPlaneAvatar root retained solely as the shared procedural-hand driver's identity/ownership record.
     if (handDriverRoot?.userData) {
       handDriverRoot.userData.proceduralHandToolHolder = banditToolHolder || null;
@@ -2284,8 +2350,9 @@
       banditWeaponMeshAttached: !!banditToolHolder,
       _banditToolHolder: banditToolHolder,
       _banditRangedToolHolder: banditRangedToolHolder,
+      _banditFlaskToolHolder: banditFlaskToolHolder,
       _rangedLoaded: true, _rangedMode: false, _rangedAction: null, _rangedCooldownT: 0,
-      _banditFlaskIndex: 0, _banditFlaskCooldownT: 0, _banditFlaskWindupT: 0, _banditFlaskPendingRecipeId: null, _banditFlaskAnimationKey: null, // Flasker infinite-loadout AI state; inert on every other rank.
+      _banditFlaskIndex: 0, _banditFlaskCooldownT: 0, _banditFlaskActionActive: false, _banditFlaskPendingRecipeId: null, _banditFlaskAnimationKey: null, // Flasker staged throw + infinite-loadout state; inert on every other rank.
       // Idle/approach rest pose matches the weapon's own natural swing
       // style (see banditNaturalSwing) until an ability fire overwrites
       // these with its own (see fireBanditComboStep/fireBanditQuickAttack
