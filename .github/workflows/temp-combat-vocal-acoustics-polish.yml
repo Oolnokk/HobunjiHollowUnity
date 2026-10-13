@@ -55,20 +55,14 @@ jobs:
           python scripts/temp-combat-vocal-acoustics-polish.py
           python - <<'PY'
           from pathlib import Path
+          import re
           p = Path('docs/js/dialogue-content.js')
           text = p.read_text()
-          old = """  function stopNpcDialogueTypewriter(showFullText = false) {
-            const currentSpeech = _npcSpeechBySpeaker.get(_npcSpeechOwnerKey());
-            if (currentSpeech) _fadeNpcSpeechHandle(currentSpeech);
-            _npcDialogueSequenceId++;"""
-          new = """  function stopNpcDialogueTypewriter(showFullText = false) {
-            if (typeof _npcSpeechBySpeaker !== 'undefined' && typeof _npcSpeechOwnerKey === 'function') {
-              const currentSpeech = _npcSpeechBySpeaker.get(_npcSpeechOwnerKey());
-              if (currentSpeech) _fadeNpcSpeechHandle(currentSpeech);
-            }
-            _npcDialogueSequenceId++;"""
-          assert text.count(old) == 1
-          p.write_text(text.replace(old, new, 1))
+          pattern = r"(  function stopNpcDialogueTypewriter\(showFullText = false\) \{\n)\s*const currentSpeech = _npcSpeechBySpeaker\.get\(_npcSpeechOwnerKey\(\)\);\n\s*if \(currentSpeech\) _fadeNpcSpeechHandle\(currentSpeech\);\n"
+          replacement = r"\1    if (typeof _npcSpeechBySpeaker !== 'undefined' && typeof _npcSpeechOwnerKey === 'function') {\n      const currentSpeech = _npcSpeechBySpeaker.get(_npcSpeechOwnerKey());\n      if (currentSpeech) _fadeNpcSpeechHandle(currentSpeech);\n    }\n"
+          text, count = re.subn(pattern, replacement, text, count=1)
+          assert count == 1, 'expected generated dialogue stop cleanup block'
+          p.write_text(text)
           PY
 
       - name: Refresh cache tokens
