@@ -1,11 +1,12 @@
 (() => {
   'use strict';
 
-  if (Number(window.DevotionRestBuffs?.version) >= 2) return;
+  if (Number(window.DevotionRestBuffs?.version) >= 3) return;
 
-  const CHANGE_SUMMARY = 'Consolidated temple prayer/rest gameplay onto TemplePrayerRestBlessings; this bridge adds exact pew detection, floating Pray prompts, Well Rested movement speed, and rounded potion-tier bonuses.'; // Used by mobile diagnostics to identify the latest integration layer.
-  const CORE_URL = 'js/temple-prayer-rest-blessings.js?v=20261013prayer2'; // Used to load the single blessing/save/menu authority before installing integration-only fixes.
-  const state = { coreLoaded: false, sitAliasInstalled: false, promptHookInstalled: false, movementHookInstalled: false, potionHooksInstalled: false, lastError: null }; // Used by the in-game diagnostic snapshot.
+  const CHANGE_SUMMARY = 'Prayer/rest integration now anchors Pray in world space in front of the seated player, while retaining exact pew detection, Well Rested movement speed, and rounded potion-tier bonuses.'; // Used by mobile diagnostics to identify the latest integration layer.
+  const CORE_URL = 'js/temple-prayer-rest-blessings.js?v=20261013prayer3'; // Used to load the single blessing/save/menu authority before installing integration-only fixes.
+  const state = { coreLoaded: false, sitAliasInstalled: false, promptHookInstalled: false, movementHookInstalled: false, potionHooksInstalled: false, lastPromptAnchor: null, lastError: null }; // Used by the in-game diagnostic snapshot.
+  let prayerPromptAnchor = null; // Reused world-space anchor that makes Pray float ahead of the player like a targeted-object interaction.
 
   function finite(value, fallback = 0) {
     const number = Number(value);
@@ -44,6 +45,24 @@
     return player?.root || player?.mesh || window.Combat?.deps?.playerMesh || null;
   }
 
+  function prayerPromptRoot() {
+    const root = playerRoot();
+    if (!root?.position || !window.THREE?.Object3D) return root || null;
+    if (!prayerPromptAnchor) {
+      prayerPromptAnchor = new window.THREE.Object3D(); // Synthetic target root used only by WorldPopupText; it is repositioned from the live player each prompt sync.
+      prayerPromptAnchor.name = 'templePrayerPromptAnchor';
+    }
+    const yaw = finite(root.rotation?.y, 0); // Matches the player's current world-facing direction so the prompt stays physically in front of the seated body.
+    const forwardDistance = 1.05; // Keeps the list clear of the portrait while still reading as the currently targeted interaction.
+    prayerPromptAnchor.position.set(
+      finite(root.position.x) - Math.sin(yaw) * forwardDistance,
+      finite(root.position.y) + 0.72,
+      finite(root.position.z) - Math.cos(yaw) * forwardDistance,
+    );
+    state.lastPromptAnchor = { x: prayerPromptAnchor.position.x, y: prayerPromptAnchor.position.y, z: prayerPromptAnchor.position.z };
+    return prayerPromptAnchor;
+  }
+
   function action3Hint() {
     const button = document.getElementById?.('btnAction3');
     const desktop = String(button?.querySelector?.('.abt-key')?.textContent || '').replace(/[\[\]\s]/g, '');
@@ -63,7 +82,7 @@
         buttons.push({ action: 'temple_pray', label: 'Pray', worldInteraction: true });
         promptInputs.push({ actionId: 'temple_pray', label: action3Hint(), color: '#c9a6ff' });
       }
-      return original({ ...options, buttons, promptInputs });
+      return original({ ...options, root: prayerPromptRoot() || options.root, buttons, promptInputs });
     };
     wrapped.__templePrayerWrapped = true;
     popup.syncInteractionPrompts = wrapped;
@@ -156,6 +175,7 @@
       prayerCore: window.TemplePrayerRestBlessings?.debugSnapshot?.() || null,
       promptEligible: prayerEligible(),
       action3Hint: action3Hint(),
+      promptAnchor: state.lastPromptAnchor,
       hooks: { sitAliasInstalled: state.sitAliasInstalled, promptHookInstalled: state.promptHookInstalled, movementHookInstalled: state.movementHookInstalled, potionHooksInstalled: state.potionHooksInstalled },
       lastError: state.lastError,
     };
@@ -165,7 +185,7 @@
   const installTimer = window.setInterval(installAll, 250); // Used to catch game-owned debug/combat/alchemy objects that initialize after this parser-time compatibility bridge.
 
   window.DevotionRestBuffs = Object.freeze({
-    version: 2,
+    version: 3,
     debugSnapshot,
     potionStackScale,
     _installTimer: installTimer,
