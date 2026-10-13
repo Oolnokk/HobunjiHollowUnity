@@ -477,8 +477,9 @@
     // of a leg pointing straight down (the leg group's own axes).
     const restScratch = { bones: { left: makeJoints().left, right: makeJoints().right }, frame: new Array(9).fill(0), signature: '' };
     const restStanceBones = h => {
-      const legs = legHandle.getRestStance?.();
-      if (!legs || !legHandle.group) return null;
+      const raw = legHandle.getRestStance?.();
+      if (!raw || !legHandle.group) return null;
+      const legs = portraitsFlipped() ? { left: raw.right, right: raw.left } : raw; // Same left/right swap as findLegNodes: mirrored art puts the garment's left leg on the right_* leg.
       h.model.updateWorldMatrix?.(true, false);
       legHandle.group.updateWorldMatrix?.(true, false);
       const inverseModel = h.scratch.inverseModel.copy(h.model.matrixWorld).invert();
