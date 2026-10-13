@@ -4744,6 +4744,7 @@
                   "appliedDyes": {
                         "CLOTH": "dye:CLOTH:dark_muted_green_blue",
                         "CLOTH_B": "dye:CLOTH:smoky_green",
+                        "PANTS": "dye:CLOTH:smoky_green",
                         "CLOTH_C": "dye:CLOTH:dark_muted_green_blue",
                         "TORSO": "dye:CLOTH:smoky_red_orange",
                         "TORSO_B": "dye:CLOTH:smoky_red_orange",
@@ -4891,6 +4892,7 @@
                               "appliedDyes": {
                                     "CLOTH": "dye:CLOTH:dark_muted_green_blue",
                                     "CLOTH_B": "dye:CLOTH:smoky_green",
+                                    "PANTS": "dye:CLOTH:smoky_green",
                                     "CLOTH_C": "dye:CLOTH:dark_muted_green_blue",
                                     "TORSO": "dye:CLOTH:smoky_red_orange",
                                     "TORSO_B": "dye:CLOTH:smoky_red_orange",
@@ -6924,6 +6926,7 @@
                   "appliedDyes": {
                         "CLOTH": "dye:CLOTH:dark_muted_green_blue",
                         "CLOTH_B": "dye:CLOTH:bright_orange",
+                        "PANTS": "dye:CLOTH:bright_orange",
                         "HAT": "dye:CLOTH:dusty_yellow",
                         "HOOD": "dye:CLOTH:dark_muted_green_blue",
                         "HOOD_B": "dye:CLOTH:bright_orange"
@@ -6975,6 +6978,7 @@
                               "appliedDyes": {
                                     "CLOTH": "dye:CLOTH:dark_muted_green_blue",
                                     "CLOTH_B": "dye:CLOTH:bright_orange",
+                                    "PANTS": "dye:CLOTH:bright_orange",
                                     "HAT": "dye:CLOTH:dusty_yellow",
                                     "HOOD": "dye:CLOTH:dark_muted_green_blue",
                                     "HOOD_B": "dye:CLOTH:bright_orange"
@@ -7374,6 +7378,7 @@
                         "TORSO": "dye:CLOTH:muted_yellow_green",
                         "CLOTH": "dye:CLOTH:smoky_yellow_orange",
                         "CLOTH_B": "dye:CLOTH:dark_muted_yellow_green",
+                        "PANTS": "dye:CLOTH:dark_muted_yellow_green",
                         "HAT": "dye:CLOTH:smoky_yellow_orange",
                         "HOOD_B": "dye:CLOTH:dark_muted_yellow_green",
                         "HAT_B": "dye:CLOTH:dark_muted_yellow_green",
@@ -7429,6 +7434,7 @@
                                     "TORSO": "dye:CLOTH:muted_yellow_green",
                                     "CLOTH": "dye:CLOTH:smoky_yellow_orange",
                                     "CLOTH_B": "dye:CLOTH:dark_muted_yellow_green",
+                                    "PANTS": "dye:CLOTH:dark_muted_yellow_green",
                                     "HAT": "dye:CLOTH:smoky_yellow_orange",
                                     "HOOD_B": "dye:CLOTH:dark_muted_yellow_green",
                                     "HAT_B": "dye:CLOTH:dark_muted_yellow_green",
@@ -8549,6 +8555,7 @@
                   "appliedDyes": {
                         "CLOTH": "dye:CLOTH:smoky_green_blue",
                         "CLOTH_B": "dye:CLOTH:smoky_green",
+                        "PANTS": "dye:CLOTH:smoky_green",
                         "HAT": "dye:CLOTH:smoky_green_blue"
                   },
                   "avatarEditor": {
@@ -8596,6 +8603,7 @@
                               "appliedDyes": {
                                     "CLOTH": "dye:CLOTH:smoky_green_blue",
                                     "CLOTH_B": "dye:CLOTH:smoky_green",
+                                    "PANTS": "dye:CLOTH:smoky_green",
                                     "HAT": "dye:CLOTH:smoky_green_blue"
                               }
                         }
@@ -9701,6 +9709,7 @@
                   "appliedDyes": {
                         "CLOTH": "dye:CLOTH:muted_indigo",
                         "CLOTH_B": "dye:CLOTH:dusty_indigo_violet",
+                        "PANTS": "dye:CLOTH:dusty_indigo_violet",
                         "HOOD": "dye:CLOTH:dusty_indigo_violet",
                         "HOOD_B": "dye:CLOTH:muted_indigo"
                   },
@@ -9748,6 +9757,7 @@
                               "appliedDyes": {
                                     "CLOTH": "dye:CLOTH:muted_indigo",
                                     "CLOTH_B": "dye:CLOTH:dusty_indigo_violet",
+                                    "PANTS": "dye:CLOTH:dusty_indigo_violet",
                                     "HOOD": "dye:CLOTH:dusty_indigo_violet",
                                     "HOOD_B": "dye:CLOTH:muted_indigo"
                               }
@@ -10353,6 +10363,7 @@
                   ],
                   "appliedDyes": {
                         "CLOTH_B": "dye:CLOTH:dark_muted_yellow_green",
+                        "PANTS": "dye:CLOTH:dark_muted_yellow_green",
                         "CLOTH": "dye:CLOTH:bright_blue_indigo"
                   },
                   "avatarEditor": {
@@ -10398,6 +10409,7 @@
                               ],
                               "appliedDyes": {
                                     "CLOTH_B": "dye:CLOTH:dark_muted_yellow_green",
+                                    "PANTS": "dye:CLOTH:dark_muted_yellow_green",
                                     "CLOTH": "dye:CLOTH:bright_blue_indigo"
                               }
                         }
@@ -11900,7 +11912,8 @@
                         "HOOD": "dye:CLOTH:gray",
                         "HOOD_B": "dye:CLOTH:pale_green_blue",
                         "CLOTH": "dye:CLOTH:gray",
-                        "CLOTH_B": "dye:CLOTH:pale_green_blue"
+                        "CLOTH_B": "dye:CLOTH:pale_green_blue",
+                        "PANTS": "dye:CLOTH:pale_green_blue"
                   },
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
@@ -11948,7 +11961,8 @@
                                     "HOOD": "dye:CLOTH:gray",
                                     "HOOD_B": "dye:CLOTH:pale_green_blue",
                                     "CLOTH": "dye:CLOTH:gray",
-                                    "CLOTH_B": "dye:CLOTH:pale_green_blue"
+                                    "CLOTH_B": "dye:CLOTH:pale_green_blue",
+                                    "PANTS": "dye:CLOTH:pale_green_blue"
                               }
                         }
                   },
@@ -12946,6 +12960,7 @@
                   "appliedDyes": {
                         "CLOTH": "dye:CLOTH:dark_muted_orange",
                         "CLOTH_B": "dye:CLOTH:muted_yellow_orange",
+                        "PANTS": "dye:CLOTH:muted_yellow_orange",
                         "HOOD": "dye:CLOTH:muted_yellow_orange",
                         "HOOD_B": "dye:CLOTH:dark_muted_orange"
                   },
@@ -12995,6 +13010,7 @@
                               "appliedDyes": {
                                     "CLOTH": "dye:CLOTH:dark_muted_orange",
                                     "CLOTH_B": "dye:CLOTH:muted_yellow_orange",
+                                    "PANTS": "dye:CLOTH:muted_yellow_orange",
                                     "HOOD": "dye:CLOTH:muted_yellow_orange",
                                     "HOOD_B": "dye:CLOTH:dark_muted_orange"
                               }
@@ -13522,6 +13538,7 @@
                   "appliedDyes": {
                         "CLOTH": "dye:CLOTH:smoky_yellow_green",
                         "CLOTH_B": "dye:CLOTH:smoky_green_blue",
+                        "PANTS": "dye:CLOTH:smoky_green_blue",
                         "HAT": "dye:CLOTH:smoky_green",
                         "HOOD": "dye:CLOTH:smoky_yellow_green",
                         "HOOD_B": "dye:CLOTH:smoky_green_blue"
@@ -13573,6 +13590,7 @@
                               "appliedDyes": {
                                     "CLOTH": "dye:CLOTH:smoky_yellow_green",
                                     "CLOTH_B": "dye:CLOTH:smoky_green_blue",
+                                    "PANTS": "dye:CLOTH:smoky_green_blue",
                                     "HAT": "dye:CLOTH:smoky_green",
                                     "HOOD": "dye:CLOTH:smoky_yellow_green",
                                     "HOOD_B": "dye:CLOTH:smoky_green_blue"
