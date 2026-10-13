@@ -1,0 +1,83 @@
+name: Temp Resume Combat Vocal Stretch
+
+on:
+  push:
+    branches: [feat/combat-vocalizations]
+
+permissions:
+  contents: write
+
+jobs:
+  resume-and-validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/combat-vocalizations
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Fetch current main
+        run: git fetch origin main
+      - name: Run corrected redesign patch
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          workflow = Path('.github/workflows/temp-mammakh-cache-fix.yml').read_text()
+          marker = "          python3 <<'PY'\n"
+          start = workflow.index(marker) + len(marker)
+          end = workflow.index("\n          PY", start)
+          script = textwrap.dedent(workflow[start:end])
+          bad_start = script.index("runtime = replace_once(runtime, '''        durationS: token.durationS,")
+          bad_end = script.index("runtime = runtime.replace('?v=20261013vocal1'", bad_start)
+          corrected = '''runtime = replace_once(
+              runtime,
+              '        durationS: token.durationS,',
+              ''' + "'''" + '''        targetDurationS: token.targetDurationS,
+                  catchUpOnRelease: token.catchUpOnRelease,
+                  normalRate: token.normalRate ?? null,
+                  stretchedRate: token.stretchedRate ?? null,
+                  catchUpRate: token.catchUpRate ?? null,'''.replace('                ', '        ') + "'''" + ''',
+              'runtime debug token fields',
+          )
+          '''
+          script = script[:bad_start] + corrected + script[bad_end:]
+          exec(compile(script, '<combat-vocal-stretch-patch>', 'exec'), {'__name__': '__main__'})
+          PY
+      - name: Syntax checks
+        run: |
+          node --check docs/js/combat/combat-vocalizations.js
+          node --check docs/js/tool-hub-combat-vocalization-tab.js
+          python3 - <<'PY'
+          from pathlib import Path
+          page = Path('docs/tools/combat-vocalization-editor/index.html').read_text()
+          start = page.rfind('<script>') + len('<script>')
+          end = page.find('</script>', start)
+          Path('/tmp/combat-vocal-editor.js').write_text(page[start:end])
+          PY
+          node --check /tmp/combat-vocal-editor.js
+      - name: Refresh cache-bust chain
+        run: node scripts/check-cache-busts.js --fix
+      - name: Restore temporary workflows
+        run: |
+          git checkout origin/main -- .github/workflows/temp-mammakh-cache-fix.yml
+          git rm .github/workflows/temp-combat-vocal-stretch2.yml
+      - name: Validate cache-bust chain
+        run: node scripts/check-cache-busts.js origin/main
+      - name: Run focused combat vocalization regression
+        run: node scripts/test-combat-vocalizations.js
+      - name: Run full regression suite
+        run: node scripts/run-tests.js
+      - name: Commit validated charge playback redesign
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+Oolnokk@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m "Redesign charge grunt as stretch playback"
+          git push origin HEAD:feat/combat-vocalizations
