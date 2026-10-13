@@ -719,6 +719,13 @@
       object.castShadow=false; object.receiveShadow=false; // There are deliberately no real light/shadow semantics in this test scene.
     });
 
+    root.traverse(object=>{ // V50's prepareRuntimeWallPlanes makes walls double-sided so both faces render; the stone/unlit swap above must not undo that.
+      if(!object?.isMesh||!object.userData?.ruinInteriorWall)return;
+      for(const material of Array.isArray(object.material)?object.material:[object.material]){
+        if(material&&material.side!==THREE.DoubleSide){material.side=THREE.DoubleSide;material.needsUpdate=true;}
+      }
+    });
+
     root.traverse(node=>{ // V50 glyph/obelisk decal lists referenced the pre-conversion materials, so recolouring them changed nothing visible (decals rendered black).
       const list=node.userData?.decalMaterials;
       if(Array.isArray(list))node.userData.decalMaterials=list.map(material=>replaced.get(material)||material);
