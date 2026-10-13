@@ -135,6 +135,51 @@
     return panels;
   }
 
+  // Rectangular-room wall panels (moved out of game.js's
+  // buildWallPanelsForRoom): walls always sit at the footprint boundary, with
+  // a 2-tile door gap cut in whichever wall the exit transition sits on,
+  // centred on the transition column/row.
+  function buildRoomWallPanels(cols, rows, wallHeight, exitTransition) {
+    const DOOR_W = 2;
+    const panels = [];
+    // Determine which wall the exit is on (S/N/W/E) by proximity to boundary
+    let doorWall = null, doorPos = 0;
+    if (exitTransition) {
+      const { col: ec, row: er } = exitTransition;
+      const dS = rows - 1 - er, dN = er, dE = cols - 1 - ec, dW = ec;
+      const minD = Math.min(dS, dN, dE, dW);
+      if      (minD === dS) { doorWall = 'S'; doorPos = ec; }
+      else if (minD === dN) { doorWall = 'N'; doorPos = ec; }
+      else if (minD === dE) { doorWall = 'E'; doorPos = er; }
+      else                  { doorWall = 'W'; doorPos = er; }
+    }
+    const splitH = (wallId, z, rot, along) => {
+      if (doorWall === along) {
+        const gapStart = Math.max(0, doorPos - Math.floor(DOOR_W / 2));
+        const gapEnd   = Math.min(cols, gapStart + DOOR_W);
+        if (gapStart > 0)    panels.push({ id: wallId + '_l', width: gapStart,        height: wallHeight, position: [gapStart / 2,            0, z], rotationDeg: rot });
+        if (gapEnd < cols)   panels.push({ id: wallId + '_r', width: cols - gapEnd,   height: wallHeight, position: [(gapEnd + cols) / 2,     0, z], rotationDeg: rot });
+      } else {
+        panels.push({ id: wallId, width: cols, height: wallHeight, position: [cols / 2, 0, z], rotationDeg: rot });
+      }
+    };
+    const splitV = (wallId, x, rot, along) => {
+      if (doorWall === along) {
+        const gapStart = Math.max(0, doorPos - Math.floor(DOOR_W / 2));
+        const gapEnd   = Math.min(rows, gapStart + DOOR_W);
+        if (gapStart > 0)    panels.push({ id: wallId + '_l', width: gapStart,        height: wallHeight, position: [x, 0, gapStart / 2],            rotationDeg: rot });
+        if (gapEnd < rows)   panels.push({ id: wallId + '_r', width: rows - gapEnd,   height: wallHeight, position: [x, 0, (gapEnd + rows) / 2],     rotationDeg: rot });
+      } else {
+        panels.push({ id: wallId, width: rows, height: wallHeight, position: [x, 0, rows / 2], rotationDeg: rot });
+      }
+    };
+    splitH('wn', 0,    [0, 0,    0], 'N');
+    splitH('ws', rows, [0, 180,  0], 'S');
+    splitV('ww', 0,    [0, 90,   0], 'W');
+    splitV('we', cols, [0, -90,  0], 'E');
+    return panels;
+  }
+
   // Same corner math as WallBuilder.js's panelCorners/panelMatrix (kept
   // duplicated rather than imported — WallBuilder's build() pipeline is built
   // around scattering instanced brick props onto this quad, not exposing the
@@ -522,7 +567,7 @@
   }
 
   root.InteriorSceneBuilder = {
-    buildWallPanels, buildWallGroup, buildFloorMaterial, applyWallOpenings,
+    buildWallPanels, buildRoomWallPanels, buildWallGroup, buildFloorMaterial, applyWallOpenings,
     buildCavernWalls, buildCanvasWalls, buildFallbackBoxWalls, panelCornersFor,
     buildCarvedCavernMesh, buildCavernFloorMesh,
   };

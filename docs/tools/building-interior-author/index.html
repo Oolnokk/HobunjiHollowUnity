@@ -115,6 +115,16 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
     </div>
 
     <div class="section">
+      <h2>3a. Ceiling &amp; gables</h2>
+      <div class="row" style="flex-wrap:wrap;gap:6px;align-items:center">
+        <button id="toolGable">Gable</button>
+        <div class="field" style="margin:0"><label>Gable rise (tiles)</label><input id="gableRise" type="number" min="0.1" max="8" step="0.05" value="1.25" style="width:90px"></div>
+        <label class="hint" style="display:flex;align-items:center;gap:4px"><input id="ceilingDisabled" type="checkbox"> No ceiling (open to sky)</label>
+      </div>
+      <p class="hint" style="margin-top:6px" id="gableStatus">Rooms get a flat ceiling at wall height (hidden in this editor). With the Gable tool, click next to a wall to raise that whole wall stretch into a triangular gable; click it again to remove it. Opposite gables make a pitched roof; a lone gable slopes down to the flat wall facing it. Rise edits apply to gables you add next.</p>
+    </div>
+
+    <div class="section">
       <h2>3b. Exit zones</h2>
       <div class="row" style="flex-wrap:wrap;gap:5px">
         <button id="addExitBtn">+ New exit</button>
@@ -347,7 +357,8 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
 <script src="../../js/WallBuilder.js"></script>
 <script src="../../js/terrain-preview.js"></script>
-<script src="../../js/interior-scene-builder.js?v=20261011h25fb4e2"></script>
+<script src="../../js/interior-scene-builder.js?v=20261013h2de9e2d"></script>
+<script src="../../js/interior-ceilings.js?v=20261013a"></script>
 <script src="../../js/procedural-furniture.js"></script>
 <script src="../../js/interior-furniture-grid.js?v=20261012heb9cb96"></script>
 <!-- These sidecars require Three.js and the editor's furniture builders above.
@@ -667,6 +678,7 @@ function drawGrid(){
   gx.strokeStyle='#1e2d45'; gx.lineWidth=0.5;
   for(var c=0;c<=cols;c++){ gx.beginPath(); gx.moveTo(c*cw,0); gx.lineTo(c*cw,H); gx.stroke(); }
   for(var r=0;r<=rows;r++){ gx.beginPath(); gx.moveTo(0,r*ch); gx.lineTo(W,r*ch); gx.stroke(); }
+  drawGablesOverlay(cw,ch);
 
   var nColl=(state.interior.colliders||[]).length, nEZ=(state.interior.exits||[]).length, nVZ=(state.interior.vendorZones||[]).length;
   var lay=currentLayoutObj();
@@ -809,8 +821,59 @@ function gridAction(e){
 
 gc.addEventListener('pointerdown',function(e){
   beginUndo(); state.dragging=true;
+  if(state.tool==='gable'){ gableAction(e); return; }
   gridAction(e);
 });
+
+// ─── Ceiling gables (js/interior-ceilings.js) ───────────────────────────────
+// Clicks resolve to the wall stretch nearest the cursor, so a wall that sits
+// on the grid's outer edge is still reachable from the floor tile inside it.
+function gableAction(e){
+  var IC=window.InteriorCeilings; if(!IC){ log('interior-ceilings.js not loaded.','warn'); return; }
+  var rect=gc.getBoundingClientRect();
+  var x=(e.clientX-rect.left)/rect.width*state.interior.cols, z=(e.clientY-rect.top)/rect.height*state.interior.rows;
+  var result=IC.toggleGableAt(state.interior.ceiling,state.floorSet,x,z,+$('gableRise').value);
+  if(result.action==='none'){ log('No wall near that spot — click beside a wall edge.','warn'); return; }
+  writeCeiling(result.ceiling);
+  var s=result.stretch;
+  log('Gable '+result.action+': '+s.side+' wall at '+(s.side==='north'||s.side==='south'?'row line ':'col line ')+s.line+' ('+s.from+'–'+s.to+').');
+  drawGrid(); rebuild3D(); refreshExport();
+}
+// Omit the key entirely for the default flat ceiling so untouched maps export unchanged.
+function writeCeiling(ceiling){
+  var IC=window.InteriorCeilings, c=IC?IC.normalizeCeiling(ceiling):ceiling;
+  if(c && c.enabled && !c.gables.length) delete state.interior.ceiling;
+  else if(c && !c.enabled) state.interior.ceiling={enabled:false,gables:c.gables};
+  else state.interior.ceiling={gables:c.gables};
+}
+$('ceilingDisabled').addEventListener('change',function(){
+  pushUndo();
+  var IC=window.InteriorCeilings, c=IC?IC.normalizeCeiling(state.interior.ceiling):{gables:[]};
+  c.enabled=!$('ceilingDisabled').checked; writeCeiling(c);
+  drawGrid(); rebuild3D(); refreshExport();
+});
+function drawGablesOverlay(cw,ch){
+  var IC=window.InteriorCeilings; if(!IC) return;
+  var ceiling=IC.normalizeCeiling(state.interior.ceiling);
+  gx.save();
+  ceiling.gables.forEach(function(g){
+    var horiz=g.side==='north'||g.side==='south', inward=(g.side==='north'||g.side==='west')?1:-1;
+    var depth=Math.min(0.45,0.15*g.rise+0.2); // Taller gables draw a taller wedge so rises read at a glance.
+    gx.beginPath();
+    if(horiz){
+      gx.moveTo(g.from*cw,g.line*ch); gx.lineTo(g.to*cw,g.line*ch); gx.lineTo((g.from+g.to)/2*cw,(g.line+inward*depth)*ch);
+    } else {
+      gx.moveTo(g.line*cw,g.from*ch); gx.lineTo(g.line*cw,g.to*ch); gx.lineTo((g.line+inward*depth)*cw,(g.from+g.to)/2*ch);
+    }
+    gx.closePath();
+    gx.fillStyle=ceiling.enabled?'rgba(255,196,92,0.55)':'rgba(160,160,160,0.35)'; gx.fill();
+    gx.strokeStyle='#ffc45c'; gx.lineWidth=2; gx.stroke();
+    var mx=horiz?(g.from+g.to)/2*cw:(g.line+inward*depth*0.45)*cw, my=horiz?(g.line+inward*depth*0.45)*ch:(g.from+g.to)/2*ch;
+    gx.font='bold '+Math.max(8,Math.min(11,cw*0.3))+'px system-ui'; gx.textAlign='center'; gx.textBaseline='middle';
+    gx.fillStyle='#1b1205'; gx.fillText('▲'+(+g.rise.toFixed(2)),mx,my);
+  });
+  gx.restore();
+}
 gc.addEventListener('pointermove',function(e){
   if(!state.dragging) return;
   if(state.tool==='select' && state.dragFurn){
@@ -835,7 +898,7 @@ gc.addEventListener('pointerleave',function(){
 });
 
 // ─── Tools ────────────────────────────────────────────────────────────────────
-var TOOL_IDS={paintFloor:'toolPaintFloor',eraseFloor:'toolEraseFloor',paintCollider:'toolPaintCollider',eraseCollider:'toolEraseCollider',furniture:'toolFurniture',select:'toolSelect',erase:'toolErase',paintExit:'toolPaintExit',eraseExit:'toolEraseExit',paintVendor:'toolPaintVendor',eraseVendor:'toolEraseVendor',placeEntry:'toolPlaceEntry'};
+var TOOL_IDS={paintFloor:'toolPaintFloor',eraseFloor:'toolEraseFloor',paintCollider:'toolPaintCollider',eraseCollider:'toolEraseCollider',furniture:'toolFurniture',select:'toolSelect',erase:'toolErase',paintExit:'toolPaintExit',eraseExit:'toolEraseExit',paintVendor:'toolPaintVendor',eraseVendor:'toolEraseVendor',placeEntry:'toolPlaceEntry',gable:'toolGable'};
 function setTool(t){
   state.tool=t;
   Object.keys(TOOL_IDS).forEach(function(k){ $(TOOL_IDS[k]).classList.toggle('active',k===t); });
@@ -1422,6 +1485,13 @@ function rebuild3D(){
     }
   }
 
+  // Gable ends only — the ceiling itself is hidden in the editor so the
+  // overhead preview camera can still see into the room.
+  if(window.InteriorCeilings){
+    var previewWallH=Number(window.__hobunjiInteriorWallHeightOverride)||Number(interior.wallHeight)||WALL_H;
+    previewGroup.add(InteriorCeilings.buildCeilingGroup(THREE,{floor:floorSet,wallHeight:previewWallH,ceiling:interior.ceiling,wallStyle:interior.wallStyle,texturesBasePath:'../../assets/',includeCeiling:false}));
+  }
+
   // Furniture — use real GLBs if cached, placeholder boxes otherwise
   furniture.forEach(function(f){
     var cat=catOf(f.itemKey);
@@ -1645,6 +1715,7 @@ function afterLoad(){
   });
   $('mapId').value=i.id||''; $('mapName').value=i.name||'';
   $('wallStyle').value=i.wallStyle||'';
+  $('ceilingDisabled').checked=!!(i.ceiling&&i.ceiling.enabled===false);
   $('gridCols').value=i.cols||12; $('gridRows').value=i.rows||10;
   state.activeExitId=null; state.activeVendorId=null; state.activeEntryId=null; state.editingLayoutId=null;
   $('exitZoneFields').classList.add('hidden'); $('vendorZoneFields').classList.add('hidden');
