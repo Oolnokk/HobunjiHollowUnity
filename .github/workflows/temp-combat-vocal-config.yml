@@ -47,7 +47,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm .github/workflows/temp-combat-vocal-config.yml .github/scripts/temp_apply_combat_vocal_config.py
+          git rm -f .github/workflows/temp-combat-vocal-config.yml .github/scripts/temp_apply_combat_vocal_config.py
           git add -A
           git commit -m "Apply authored combat vocalization tuning"
           git push origin HEAD:feat/combat-vocalizations
