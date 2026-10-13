@@ -1,0 +1,88 @@
+name: Temporary Flask Grip Update
+on:
+  push:
+    branches:
+      - benjam/afflict-flask-dual-colors
+    paths:
+      - .github/workflows/temporary-flask-grips-update.yml
+permissions:
+  contents: write
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: benjam/afflict-flask-dual-colors
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply authored normal and ranged flask grips
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('docs/js/hand-tool-grips.js')
+          text = path.read_text(encoding='utf-8')
+          old = """      throwingflask: {
+        toolScale: 0.82, // Used by gameplay and the Attack Editor to keep the squat flask at a one-hand throwing scale.
+        primaryGrip: { position: { x: -0.04, y: -0.04, z: 0.17 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } }, // Used to put the right hand around the flask's narrow neck/handle.
+        gripMode: null,
+        secondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
+        rangedPrimaryGrip: { position: { x: -0.04, y: -0.04, z: 0.17 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } }, // Same neck grip is used by the hatchet-style throw.
+        rangedSecondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
+        rangedGripMode: null,
+      },
+"""
+          new = """      throwingflask: {
+        toolScale: 0.82, // Authored flask scale from the user's grip export; shared by gameplay and the Attack Editor.
+        primaryGrip: { position: { x: -0.03, y: -0.04, z: -0.0929 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } }, // Authored normal held-flask grip at the neck/handle.
+        gripMode: null,
+        secondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
+        rangedPrimaryGrip: { position: { x: -0.01, y: -0.05, z: -0.09 }, rotationDeg: { pitch: 90, yaw: 0, roll: 0 } }, // Independently authored ranged/throw grip from the same export.
+        rangedSecondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
+        rangedGripMode: null,
+        heightMultiplier: 0.5,
+        primaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
+      },
+"""
+          if old not in text:
+              raise SystemExit('Expected current throwingflask grip block not found')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          test_path = Path('scripts/test-bandit-flasker.js')
+          test = test_path.read_text(encoding='utf-8')
+          old_assert = "assert.match(grips, /throwingflask:\\s*\\{[\\s\\S]*?primaryGrip:[\\s\\S]*?z: 0\\.17/, 'throwing flask has an authored neck grip');"
+          new_asserts = """assert.match(grips, /throwingflask:\\s*\\{[\\s\\S]*?toolScale: 0\\.82[\\s\\S]*?primaryGrip:[\\s\\S]*?x: -0\\.03[\\s\\S]*?y: -0\\.04[\\s\\S]*?z: -0\\.0929[\\s\\S]*?yaw: -90/, 'throwing flask uses the authored normal grip export');
+assert.match(grips, /throwingflask:\\s*\\{[\\s\\S]*?rangedPrimaryGrip:[\\s\\S]*?x: -0\\.01[\\s\\S]*?y: -0\\.05[\\s\\S]*?z: -0\\.09[\\s\\S]*?yaw: 0/, 'throwing flask uses the independently authored ranged throw grip export');
+assert.match(grips, /throwingflask:\\s*\\{[\\s\\S]*?heightMultiplier: 0\\.5[\\s\\S]*?primaryGripSpan: \\{ enabled: false, startZ: 0, endZ: 0 \\}/, 'throwing flask retains the authored height multiplier and disabled primary span');"""
+          if old_assert not in test:
+              raise SystemExit('Expected stale flask grip assertion not found')
+          test_path.write_text(test.replace(old_assert, new_asserts, 1), encoding='utf-8')
+          PY
+      - name: Validate focused grip integration
+        run: |
+          set -euo pipefail
+          node --check docs/js/hand-tool-grips.js
+          node --check scripts/test-bandit-flasker.js
+          node scripts/run-tests.js bandit-flasker attack-animation-editor-history-grips authored-grip-overrides
+      - name: Refresh and verify cache busts
+        run: |
+          set -euo pipefail
+          node scripts/check-cache-busts.js --fix origin/main
+          node scripts/check-cache-busts.js origin/main
+      - name: Full fast regression suite
+        run: node scripts/run-tests.js
+      - name: Commit authored grips and remove temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -f .github/workflows/temporary-flask-grips-update.yml
+          git add -A
+          git commit -m "Use authored flask grips"
+          git push origin HEAD:benjam/afflict-flask-dual-colors
