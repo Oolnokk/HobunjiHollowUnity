@@ -170,6 +170,7 @@
     hated: 'is upset by',
   };
   const METAL_ARMOR_TRAIT = 'metalArmor'; // Used only by gift evaluation/discovery so other item-trait consumers keep their normal clothing traits.
+  const METAL_ARMOR_VALUE_KEYS = Object.freeze(['nativeCopper', 'lowTinBronze', 'tinBronze', 'highTinBronze', 'arsenicalBronze', 'leadedBronze']); // Used to multiply metal-armor Favor by the canonical smith alloy tier.
   const METAL_ARMOR_LOVED_NPCS = new Set([ // Used by metalArmorPreferenceTier to make these characters love any canonical metal armor piece.
     'oddclaw_unumanuk',
     'spearhead_unumanuk',
@@ -193,6 +194,12 @@
     return held?.kind === 'clothing' && window.MetalArmorSystem?.isMetalArmor?.(held.instance) === true;
   }
 
+  function metalArmorValueTier(held) {
+    const metalKey = String(held?.instance?.metalKey || 'nativeCopper'); // Base alloy, not cosmetic plating, controls the gift's material-value multiplier.
+    const index = METAL_ARMOR_VALUE_KEYS.indexOf(metalKey); // Canonical smith ordering maps Native Copper→1 through Leaded Bronze→6.
+    return index >= 0 ? index + 1 : 1;
+  }
+
   function withMetalArmorPreference(npcId, preferences) {
     if (!preferences) return preferences;
     const tier = metalArmorPreferenceTier(npcId);
@@ -210,15 +217,19 @@
   function metalArmorGiftEvaluation(rec, held) {
     if (!isHeldMetalArmor(held)) return null;
     const tier = metalArmorPreferenceTier(rec?.id);
+    const metalTier = metalArmorValueTier(held); // Higher-tier alloys multiply the relationship value of the otherwise identical armor preference.
     const matches = { loved: [], liked: [], disliked: [], hated: [] }; // Metal armor intentionally ignores every unrelated color/clothing trait for this reaction.
     if (tier !== 'neutral') matches[tier].push(METAL_ARMOR_TRAIT);
-    const score = tier === 'neutral' ? 0 : TIER_FAVOR[tier];
+    const baseFavor = tier === 'neutral' ? TIER_FAVOR.neutral : TIER_FAVOR[tier];
+    const favorDelta = baseFavor * metalTier;
+    const score = tier === 'neutral' ? 0 : favorDelta;
     return {
       tier,
       score,
       matchedCount: tier === 'neutral' ? 0 : 1,
       matches,
-      favorDelta: tier === 'neutral' ? TIER_FAVOR.neutral : score,
+      favorDelta,
+      metalTier,
       traits: [METAL_ARMOR_TRAIT],
       foodContext: null,
       foodScore: 0,
@@ -269,6 +280,7 @@
       itemKey: held?.key || held?.instance?.cosmeticId || null,
       tier: evaluation.tier,
       score: evaluation.score,
+      metalTier: evaluation.metalTier || null,
       foodScore: evaluation.foodScore,
       foodContext: evaluation.foodContext,
       traits: evaluation.traits,
@@ -468,5 +480,6 @@
     debugGiftEvaluation,
     isHeldMetalArmor,
     metalArmorPreferenceTier,
+    metalArmorValueTier,
   };
 })();
