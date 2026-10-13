@@ -21,8 +21,8 @@
     if (subject === window.Combat?.deps?.player) return 'actor:player';
     const stableId = subject.voiceOwnerKey
       || subject.npcId
+      || subject.rec?.id // Ordinary town walkers use rec.id as their canonical identity even if a runtime id is also present.
       || subject.id
-      || subject.rec?.id
       || subject.rosterRecord?.id
       || subject.rosterRecord?.name
       || subject.name;

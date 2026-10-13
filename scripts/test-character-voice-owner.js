@@ -14,6 +14,7 @@ const owner = context.CharacterVoiceOwner;
 assert(owner && owner.version >= 1, 'shared CharacterVoiceOwner must install');
 assert.equal(owner.keyFor(player), 'actor:player');
 assert.equal(owner.keyFor({ id: 'npc-a' }), owner.keyFor({ rec: { id: 'npc-a' } }), 'dialogue records and combat entities with the same NPC id must share one slot');
+assert.equal(owner.keyFor({ id: 'runtime-42', rec: { id: 'npc-a' } }), 'actor:npc-a', 'ordinary walkers prefer canonical rec.id over a separate runtime object id');
 
 const fades = [];
 const breath = owner.request(player, { kind: 'breath', priority: owner.priorities.breath });
