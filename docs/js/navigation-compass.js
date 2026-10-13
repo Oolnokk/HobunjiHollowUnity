@@ -19,7 +19,7 @@
       ? new URL('.', navigationCompassScriptUrl)
       : new URL('js/', document.baseURI); // Used to retry from the same runtime directory even when the game is hosted below a nested path.
     const retryScript = document.createElement('script'); // Used for one cache-busted recovery attempt after the parser-time wilderness-map script was missed.
-    retryScript.src = new URL('wilderness-map.js?v=20261011h44009cf', baseUrl).href;
+    retryScript.src = new URL('wilderness-map.js?v=20261013ha184364', baseUrl).href;
     retryScript.async = true;
     retryScript.onload = () => {
       wildernessMapFallbackState.retryFinished = true;

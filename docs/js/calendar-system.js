@@ -98,18 +98,21 @@
     return (day - 1) + GAME_START_CIVIL_DAY_OFFSET;
   }
 
-  function getHour(time01 = deps.calendar.time01) {
-    return deps.MORNING_HOUR + time01 * (deps.NIGHT_HOUR - deps.MORNING_HOUR);
+  function getHour(time01 = deps?.calendar?.time01 ?? 0) {
+    const morningHour = Number.isFinite(Number(deps?.MORNING_HOUR)) ? Number(deps.MORNING_HOUR) : 6; // Parser-time callers use the authored opening-hour fallback until game.js injects live calendar deps.
+    const nightHour = Number.isFinite(Number(deps?.NIGHT_HOUR)) ? Number(deps.NIGHT_HOUR) : 22; // Paired fallback keeps pre-init clock reads deterministic without pretending runtime state exists.
+    const normalizedTime = Number.isFinite(Number(time01)) ? Number(time01) : 0; // Invalid/pre-init time reads resolve to the start of the represented day.
+    return morningHour + normalizedTime * (nightHour - morningHour);
   }
 
   // ── Calendar derivations ───────────────────────────────────────────
-  function dayOfYear(day = deps.calendar.day) {
+  function dayOfYear(day = deps?.calendar?.day ?? 1) {
     return positiveModulo(civilDayOffset(day), YEAR_LENGTH_DAYS) + 1;
   }
 
   // 1-based civil year cycle (increments on Firstrise 1). The Tothal seed
   // cycle used to be this; it is now the monthly tothalCycle() below.
-  function yearNumber(day = deps.calendar.day) {
+  function yearNumber(day = deps?.calendar?.day ?? 1) {
     return Math.floor(civilDayOffset(day) / YEAR_LENGTH_DAYS) + 1;
   }
 
@@ -117,46 +120,46 @@
   // locales, dens, camps, ruins) now reshuffles every civil month instead of
   // every year. Raw day 1 is still cycle 1, so an untouched cycle-1 world
   // keeps rebuilding from seed y1; months start on raw days 1, 29, 57, ...
-  function tothalCycle(day = deps.calendar.day) {
+  function tothalCycle(day = deps?.calendar?.day ?? 1) {
     return Math.floor(civilDayOffset(day) / DAYS_PER_MONTH) - GAME_START_MONTH_INDEX + 1;
   }
 
-  function nextTothalShiftDay(day = deps.calendar.day) {
+  function nextTothalShiftDay(day = deps?.calendar?.day ?? 1) {
     return (tothalCycle(day)) * DAYS_PER_MONTH + 1;
   }
 
   // Player-facing era number. This is intentionally separate from the stable
   // internal Tothal seed cycle above: cycle 1 displays as 1154 AoT, cycle 2
   // as 1155 AoT, and so on.
-  function aotYearNumber(day = deps.calendar.day) {
+  function aotYearNumber(day = deps?.calendar?.day ?? 1) {
     return FIRST_AOT_YEAR + yearNumber(day) - 1;
   }
 
-  function weekOfYear(day = deps.calendar.day) {
+  function weekOfYear(day = deps?.calendar?.day ?? 1) {
     return Math.floor((dayOfYear(day) - 1) / DAYS_PER_WEEK) + 1;
   }
 
-  function seasonCycleWeek(day = deps.calendar.day) {
+  function seasonCycleWeek(day = deps?.calendar?.day ?? 1) {
     return Math.floor(positiveModulo(day - 1, YEAR_LENGTH_DAYS) / DAYS_PER_WEEK) + 1;
   }
 
-  function monthIndex(day = deps.calendar.day) {
+  function monthIndex(day = deps?.calendar?.day ?? 1) {
     return Math.floor((dayOfYear(day) - 1) / DAYS_PER_MONTH);
   }
 
-  function monthNumber(day = deps.calendar.day) {
+  function monthNumber(day = deps?.calendar?.day ?? 1) {
     return monthIndex(day) + 1;
   }
 
-  function monthName(day = deps.calendar.day) {
+  function monthName(day = deps?.calendar?.day ?? 1) {
     return MONTH_NAMES[monthIndex(day)];
   }
 
-  function dayOfMonth(day = deps.calendar.day) {
+  function dayOfMonth(day = deps?.calendar?.day ?? 1) {
     return positiveModulo(dayOfYear(day) - 1, DAYS_PER_MONTH) + 1;
   }
 
-  function seasonForDay(day = deps.calendar.day) {
+  function seasonForDay(day = deps?.calendar?.day ?? 1) {
     const wk = seasonCycleWeek(day); // Used to keep regional seasons on their pre-epoch-change phase.
     return seasons.find(season => season.startWeek <= season.endWeek
       ? (wk >= season.startWeek && wk <= season.endWeek)
@@ -165,10 +168,10 @@
   }
 
   function currentSeason() {
-    return seasonForDay(deps.calendar.day);
+    return seasonForDay(deps?.calendar?.day ?? 1); // Startup audio/visual callers may ask before game.js injects the live calendar; opening day is a harmless deterministic placeholder.
   }
 
-  function weekOfSeason(day = deps.calendar.day) {
+  function weekOfSeason(day = deps?.calendar?.day ?? 1) {
     const wk = seasonCycleWeek(day); // Used with the selected regional season's wrapped week band below.
     const season = seasonForDay(day); // Used to translate absolute regional week into week-within-season.
     if (season.startWeek <= season.endWeek) return wk - season.startWeek + 1;
@@ -179,16 +182,16 @@
     return positiveModulo(day - 1, DAYS_PER_WEEK);
   }
 
-  function weekdayNameForDay(day = deps.calendar.day) {
+  function weekdayNameForDay(day = deps?.calendar?.day ?? 1) {
     return WEEKDAY_NAMES[weekdayIndexForCalendarDay(day)];
   }
 
   function currentWeekdayIndex() {
-    return weekdayIndexForCalendarDay(deps.calendar.day);
+    return weekdayIndexForCalendarDay(deps?.calendar?.day ?? 1);
   }
 
   function currentWeekdayName() {
-    return weekdayNameForDay(deps.calendar.day);
+    return weekdayNameForDay(deps?.calendar?.day ?? 1);
   }
 
   function ordinalSuffix(n) {
@@ -203,13 +206,13 @@
   }
 
   // HUD-friendly short date. Numeric dates are month/day by design.
-  function formatCalendarDate(day = deps.calendar.day) {
+  function formatCalendarDate(day = deps?.calendar?.day ?? 1) {
     const dom = dayOfMonth(day); // Used in the month/day numeric date below.
     const wk = weekOfSeason(day); // Used in the regional-season week suffix below.
     return `${weekdayNameForDay(day)}, ${monthNumber(day)}/${dom}, ${aotYearNumber(day)} AoT, ${wk}${ordinalSuffix(wk)} week of ${seasonForDay(day).name}`;
   }
 
-  function formatCalendarDateFull(day = deps.calendar.day) {
+  function formatCalendarDateFull(day = deps?.calendar?.day ?? 1) {
     const dom = dayOfMonth(day); // Used in the named civil date below.
     const wk = weekOfSeason(day); // Used in the regional-season week suffix below.
     return `${weekdayNameForDay(day)}, ${monthName(day)} ${dom}${ordinalSuffix(dom)}, ${aotYearNumber(day)} AoT — ${wk}${ordinalSuffix(wk)} week of ${seasonForDay(day).name}`;
@@ -224,7 +227,7 @@
     return `${hours12}:${String(minutes).padStart(2, '0')} ${suffix}`;
   }
 
-  function formatCalendarDateTimeFull(day = deps.calendar.day, time01 = deps.calendar.time01) {
+  function formatCalendarDateTimeFull(day = deps?.calendar?.day ?? 1, time01 = deps?.calendar?.time01 ?? 0) {
     return `${formatCalendarDateFull(day)} · ${formatClockTime(getHour(time01))}`;
   }
 
@@ -237,11 +240,11 @@
       - GAME_START_CIVIL_DAY_OFFSET;
   }
 
-  function isCivilYearStart(day = deps.calendar.day) {
+  function isCivilYearStart(day = deps?.calendar?.day ?? 1) {
     return monthIndex(day) === 0 && dayOfMonth(day) === 1;
   }
 
-  function nextCivilYearStartDay(day = deps.calendar.day) {
+  function nextCivilYearStartDay(day = deps?.calendar?.day ?? 1) {
     const displayYear = aotYearNumber(day); // Used to resolve this civil year's Firstrise boundary in raw game-day space.
     const currentYearStart = absDayForMonthStart(displayYear, 0); // Used to decide whether this year's boundary is still ahead or already passed.
     return currentYearStart > day ? currentYearStart : absDayForMonthStart(displayYear + 1, 0);
@@ -289,7 +292,7 @@
     return deps.NIGHT_HOUR - deps.MORNING_HOUR;
   }
 
-  function previewAfterHours(hours, day = deps.calendar.day, time01 = deps.calendar.time01) {
+  function previewAfterHours(hours, day = deps?.calendar?.day ?? 1, time01 = deps?.calendar?.time01 ?? 0) {
     const safeHours = Math.max(0, Number(hours) || 0); // Used to reject negative/invalid passage durations.
     const total = time01 + safeHours / activeClockHours(); // Used to split the requested passage into day rollover(s) plus within-day remainder.
     const dayOffset = Math.floor(total); // Used to advance the raw world day when the represented clock crosses its end.
@@ -1001,6 +1004,16 @@
   }
 
   function timeDebugSnapshot() {
+    if (!isInitialized()) {
+      return {
+        rawDay: null, time01: null, shortDate: null, fullDateTime: null, aotYear: null, tothalCycle: null, civilDayOfYear: null,
+        monthNumber: null, monthName: null, dayOfMonth: null, regionalSeason: null, regionalSeasonWeek: null, isFirstriseNewYear: null,
+        nextTothalShiftRawDay: null, nextTothalShiftDate: null, nextTothalSeedCycle: null,
+        naturalClockTargetSecondsPerRepresentedDay: TARGET_DAY_LENGTH_SECONDS, naturalClockScale: NATURAL_TIME_WRITE_SCALE,
+        modalKind: _timePassageKind, selectedHours: _selectedPassageHours, preview: null, seatedWaitReady: false, sleepTargetReady: false,
+        playerRuntimeReady: !!window.PlayerSocialPoses?.getPlayerEntity?.(), worldId: window.__hobunjiPlayerProfile?.worldId || null, initialized: false,
+      }; // Diagnostics are polled during parser/startup time; expose "not ready" state instead of dereferencing null deps.
+    }
     const nextShiftDay = nextTothalShiftDay(); // Raw day used by the next-Tothal-Shift debug fields below.
     const target = previewAfterHours(_selectedPassageHours); // Current modal selection used by the preview debug field below.
     return {
@@ -1029,6 +1042,7 @@
       sleepTargetReady: !!findSleepActionButton(),
       playerRuntimeReady: !!window.PlayerSocialPoses?.getPlayerEntity?.(),
       worldId: window.__hobunjiPlayerProfile?.worldId || null,
+      initialized: true,
     };
   }
 

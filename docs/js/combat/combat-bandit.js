@@ -972,7 +972,7 @@
       // (on the final combo step) retreatT/resets comboIndex -- a
       // landing bandit attack was silently skipping its own cooldown
       // and never retreating after its 3-hit combo.
-      data: { isBandit: true, attacker: c, comboId: loadout.tap1, comboStep, sfxPitch },
+      data: { isBandit: true, attacker: c, comboId: loadout.tap1, comboStep, sfxPitch, voiceCategory: 'combo', voiceAbilityId: loadout.tap1 },
       onStrike: () => {
         c.telegraphState = 'strike';
         // The hit and trail use the facing frozen when pre-windup alignment completed.
@@ -1033,7 +1033,7 @@
     let techHit = false;
     c._banditAction = window.Combat.beginStagedAction({
       windupS: qa.WINDUP_S, strikeS: qa.STRIKE_S, recoverS: 0,
-      data: { isBandit: true, attacker: c }, // see fireBanditComboStep's matching comment
+      data: { isBandit: true, attacker: c, voiceCategory: 'quickAttack', voiceAbilityId: loadout.tap2 }, // Shared vocal owner gives NPC quick attacks the same release grunt as the player.
       onStrike: () => {
         c.telegraphState = 'strike';
         // The hit and trail use the facing frozen when pre-windup alignment completed.
@@ -1096,7 +1096,7 @@
       windupS,
       strikeS: cb.STRIKE_S,
       recoverS: 0,
-      data: { isBandit: true, attacker: c },
+      data: { isBandit: true, attacker: c, voiceCategory: 'offensiveHold', voiceAbilityId: 'chargedBreaker' },
       onStrike: () => {
         c.telegraphState = 'strike';
         spawnBanditTrailArc(c, rangePx, halfConeRad, c.facing);
@@ -1152,7 +1152,7 @@
     // parallel progress channel just for this) is an acceptable gap.
     window.Combat.beginStagedAction({
       windupS: 0.05, strikeS: 0.15, recoverS: 0,
-      data: { isBandit: true, attacker: c }, // see fireBanditComboStep's matching comment
+      data: { isBandit: true, attacker: c, voiceCategory: 'quickAttack', voiceAbilityId: 'counterShield' }, // Counter ripostes are active NPC voice events too.
       onStrike: () => {
         // def.attackTag (bandit's real weapon material) drives both the
         // affliction and the impact sound -- matches

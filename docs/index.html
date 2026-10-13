@@ -73,7 +73,7 @@
        toolEmoji/actionName/formatClock, so must load after it and before
        game.js, which calls window.HudUpdate.init(...) (binds its own
        itemPrev/itemNext listeners) during its own setup. -->
-  <script src="js/hud-update.js?v=20261008h91861af"></script>
+  <script src="js/hud-update.js?v=20261013h0d4aaee"></script>
   <!-- Desktop/touch radial arc selector (tool/item wheels, ammo/potion
        entry menus, utilities wheel), extracted out of game.js; uses
        window.HudUpdate.refreshItemScroll, so must load after it and before
@@ -323,7 +323,7 @@
        (at fight time, not load time), so exact ordering against those two
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
-  <script src="js/combat/combat-bandit.js?v=20261010h2a44be9"></script>
+  <script src="js/combat/combat-bandit.js?v=20261013h61b827f"></script>
   <!-- Distinct Minion humanoid category: independent roster/dye/Shambling Footing rules over the shared BanditCombat executor. -->
   <script src="js/combat/combat-minion.js?v=20261010h164679d"></script>
   <script src="js/combat/combat-enemy-dodge.js?v=20261001quickdebuff2"></script>
@@ -342,7 +342,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261013h1b7102b"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261013h6290697"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -439,7 +439,7 @@
        via init(), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.ProceduralTasks.init(...) during its own setup. -->
-  <script src="js/procedural-tasks.js?v=20260831spearheadaccept1"></script>
+  <script src="js/procedural-tasks.js?v=20261013h1950542"></script>
   <!-- Alchemy reagent plant scatter/pick (window.ReagentPlants) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -470,7 +470,7 @@
        relative to the other systems above doesn't matter; must load before
        game.js, which calls window.CalendarSystem.init(...) during its own
        setup. -->
-  <script src="js/calendar-system.js?v=20261009h0ee0528"></script>
+  <script src="js/calendar-system.js?v=20261013h7fa739b"></script>
   <!-- Resolves a map/interior's active alternate `layouts` entry (see
        docs/config/maps/map_i_temple.json's spirit_communion layout) against
        the current calendar time — window.MapLayoutSystem. Pure/stateless, no
@@ -478,7 +478,7 @@
        from loadBuildingScene/_loadTownFromWorkspace and its own live-swap
        check. -->
   <script src="js/festival-calendar.js?v=20261008festivals1"></script>
-  <script src="js/map-layout-system.js?v=20261009h87dfae4"></script>
+  <script src="js/map-layout-system.js?v=20261013h2f0076c"></script>
   <!-- Gives interior furniture an authored tile footprint/quarter-turn transform and derives occupied-tile collision before the scene consumes the effective layout. -->
   <script src="js/interior-furniture-grid.js?v=20261012heb9cb96"></script>
   <!-- Keeps authored seat anchors/surfaces on the same post-placement transform as interior-editor furniture visuals. -->
@@ -522,7 +522,7 @@
        other systems above doesn't matter; must load before game.js, which
        calls window.WildernessMap.init(...) during its own setup. -->
   <script src="js/wilderness-map.js?v=20261011h44009cf"></script>
-  <script src="js/navigation-compass.js?v=20261011hd3d5a67"></script>
+  <script src="js/navigation-compass.js?v=20261013hf6393a3"></script>
   <!-- Dead-zone rotation math shared by player/NPC/creature PNG-plane
        avatars (window.PerpRotation) — self-contained aside from deps
        injected via init(), so load order relative to the other systems
@@ -2488,7 +2488,8 @@
   <script src="js/dialogue-camera-framing.js?v=20261002hba1474a"></script>
   <script src="js/dialogue-templates.js?v=20260929mastery1"></script>
   <script src="js/dialogue-rich-text.js?v=20260929colors1"></script>
-  <script src="js/dialogue-content.js?v=20261009h14e8360"></script>
+  <script src="js/character-voice-owner.js?v=20261013voiceowner1"></script>
+  <script src="js/dialogue-content.js?v=20261013h8377e46"></script>
   <script src="js/combat/combat-tutorial-content.js?v=20261001cae883e8"></script>
   <script src="js/combat/combat-tutorial-mastery.js?v=20260929mastery1-goals1"></script>
   <script src="js/combat/combat-tutorial-partner.js?v=20261009hdbd0721"></script>
