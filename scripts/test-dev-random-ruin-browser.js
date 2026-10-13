@@ -870,17 +870,20 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         const scene = window.GridTileAccessors.getActiveScene(); // Used to locate a live V50 stone-ladder root without relying on devtools.
         let ladder = null; // Used to retain the first authored ladder discovered in the active ruin hierarchy.
         scene?.traverse?.(object => { if (!ladder && object.userData?.generatedAccessType === 'stoneLadder') ladder = object; });
+        const endpoints=ladder&&window.DevRandomRuinInteractions.debugLadders().find(entry=>entry.name===ladder.name)?.endpoints;
+        if(!endpoints||!window.DevRandomRuin.setPlayerWorldPoint(endpoints.top,{grounded:true}))throw new Error('Ladder smoke could not reach the authored upper landing'); // Start beside the ladder, rather than crossing the ruin from the previous combat test's position.
         const before = window.DevRandomRuin.getState()?.presentation || null; // Used to detect any post-climb snapback to the original floor.
         const started = !!ladder && window.DevRandomRuinInteractions.climbStoneLadder(ladder); // Used to require the same action path exposed to normal player input.
-        return { started, climbing:window.ClimbSystem?.debug?.playerClimbing === true, before };
+        return { started, climbing:window.ClimbSystem?.debug?.playerClimbing === true, before, targetY:endpoints.bottom.y };
       });
       assert.equal(ladderStart.started, true, 'authored ruin ladder must resolve endpoints and start traversal: '+JSON.stringify(ladderStart));
       assert.equal(ladderStart.climbing, true, 'authored ruin ladder must use the shared animated ClimbSystem path: '+JSON.stringify(ladderStart));
-      await page.waitForFunction(() => window.ClimbSystem?.debug?.playerClimbing === false, null, { timeout:30000 }); // A tallest 12-hop ladder is ~7 s at full cadence; heavy generated-ruin rendering can make headless CI advance its clamped gameplay dt much more slowly, so allow scheduling headroom without changing gameplay cadence.
-      await page.waitForTimeout(650);
+      await page.waitForFunction(() => window.ClimbSystem?.debug?.playerClimbing === false, null, { timeout:120000, polling:100 }); // A tallest 12-hop ladder is ~7 s of gameplay; software WebGL advances the clamped simulation slowly, and interval polling can observe completion independently of a delayed render frame.
+      await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))); // Reconcile and render the completed landing before inspecting presentation; wall-clock time alone does not guarantee a software WebGL frame.
       const ladderAfter = await page.evaluate(() => window.DevRandomRuin.getState()?.presentation || null); // Used after reconciliation has resumed to prove the landing elevation remains authoritative.
       assert.ok(Number.isFinite(ladderAfter?.elevation) && Number.isFinite(ladderStart.before?.elevation), JSON.stringify({ ladderStart, ladderAfter }));
       assert.ok(Math.abs(ladderAfter.elevation - ladderStart.before.elevation) > .12, 'completed ladder traversal must remain on the opposite elevation instead of snapping back: '+JSON.stringify({ ladderStart, ladderAfter }));
+      assert.ok(Math.abs(ladderAfter.elevation-ladderStart.targetY)<.12,'completed ladder traversal must settle onto the authored lower landing: '+JSON.stringify({ladderStart,ladderAfter}));
       assert.ok(Math.abs(ladderAfter.bodyY - ladderAfter.elevation) < .20, 'canonical player body must settle onto the ruin support elevation: '+JSON.stringify(ladderAfter));
       if (Number.isFinite(ladderAfter.resourceRingY) && Number.isFinite(ladderAfter.shadowY)) {
         assert.ok(Math.abs(ladderAfter.resourceRingY - ladderAfter.shadowY) < .04, 'resource ring and ground-relative presentation must share one ruin elevation authority: '+JSON.stringify(ladderAfter));

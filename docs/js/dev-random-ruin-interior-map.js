@@ -932,7 +932,15 @@
     const badge=document.getElementById('devRandomRuinBadge'); if(badge) badge.style.display='none';
   }
 
-  function positionInfo(px,py){const x=px/deps.TILE,z=py/deps.TILE;return{x,z,pit:DS.pointInPit(x,z,PLAYER_RADIUS*.25),support:DS.sampleSupport(x,z,{minY:-4,maxY:5,pad:.02})};} // Horizontal collision is already resolved by the ordinary registered interior grid; this helper owns only ruin-specific vertical support/pit state.
+  function positionInfo(px,py){
+    const x=px/deps.TILE,z=py/deps.TILE;
+    // A lower ladder landing can overlap an upper floor at a tile seam. Prefer
+    // support within step reach of the accepted height; retain the broad probe
+    // as a fallback so an unsupported high ledge still rejects the move.
+    const support=DS.sampleSupport(x,z,{minY:-4,maxY:Math.min(5,ruin.supportY+MAX_STEP_HEIGHT),pad:.02})
+      || DS.sampleSupport(x,z,{minY:-4,maxY:5,pad:.02});
+    return {x,z,pit:DS.pointInPit(x,z,PLAYER_RADIUS*.25),support};
+  }
   function reconcilePlayer(now){
     if(window.DevRandomRuinSimplePuzzles?.ownsPlayerMotion?.())return;
     if(deps.player?.climbing){
