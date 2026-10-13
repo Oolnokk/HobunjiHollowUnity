@@ -1,9 +1,9 @@
 (() => {
   'use strict';
 
-  if (Number(window.DevotionRestBuffs?.version) >= 3) return;
+  if (Number(window.DevotionRestBuffs?.version) >= 4) return;
 
-  const CHANGE_SUMMARY = 'Prayer/rest integration now anchors Pray in world space in front of the seated player, while retaining exact pew detection, Well Rested movement speed, and rounded potion-tier bonuses.'; // Used by mobile diagnostics to identify the latest integration layer.
+  const CHANGE_SUMMARY = 'Prayer/rest integration anchors Pray in world space in front of the seated player and preserves action-slot input alignment while adding the prompt.'; // Used by mobile diagnostics to identify the latest integration layer.
   const CORE_URL = 'js/temple-prayer-rest-blessings.js?v=20261013prayer3'; // Used to load the single blessing/save/menu authority before installing integration-only fixes.
   const state = { coreLoaded: false, sitAliasInstalled: false, promptHookInstalled: false, movementHookInstalled: false, potionHooksInstalled: false, lastPromptAnchor: null, lastError: null }; // Used by the in-game diagnostic snapshot.
   let prayerPromptAnchor = null; // Reused world-space anchor that makes Pray float ahead of the player like a targeted-object interaction.
@@ -78,10 +78,15 @@
       if (!prayerEligible()) return original(options);
       const buttons = Array.isArray(options.buttons) ? [...options.buttons] : [];
       const promptInputs = Array.isArray(options.promptInputs) ? [...options.promptInputs] : [];
-      if (!buttons.some(button => button?.action === 'temple_pray')) {
+      let prayerSlot = buttons.findIndex(button => button?.action === 'temple_pray'); // Keeps promptInputs indexed to the actual action-bar slot instead of appending a mismatched hint row.
+      if (prayerSlot < 0) {
+        prayerSlot = buttons.length;
         buttons.push({ action: 'temple_pray', label: 'Pray', worldInteraction: true });
-        promptInputs.push({ actionId: 'temple_pray', label: action3Hint(), color: '#c9a6ff' });
+      } else {
+        buttons[prayerSlot] = { ...buttons[prayerSlot], action: 'temple_pray', label: 'Pray', worldInteraction: true };
       }
+      while (promptInputs.length <= prayerSlot) promptInputs.push(null);
+      promptInputs[prayerSlot] = { actionId: 'temple_pray', label: action3Hint(), color: '#c9a6ff' };
       return original({ ...options, root: prayerPromptRoot() || options.root, buttons, promptInputs });
     };
     wrapped.__templePrayerWrapped = true;
@@ -185,7 +190,7 @@
   const installTimer = window.setInterval(installAll, 250); // Used to catch game-owned debug/combat/alchemy objects that initialize after this parser-time compatibility bridge.
 
   window.DevotionRestBuffs = Object.freeze({
-    version: 3,
+    version: 4,
     debugSnapshot,
     potionStackScale,
     _installTimer: installTimer,
