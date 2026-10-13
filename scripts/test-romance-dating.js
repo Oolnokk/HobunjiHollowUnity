@@ -235,6 +235,24 @@ choose(0, 0); // "Will you marry me?" → step 1
 choose(1, 0); // "I'll be there."
 assert.equal(W.RomanceSystem.getEngagement()?.npcId, 'tooth_hatayap');
 assert.equal(W.RomanceSystem.activeDate(), null, 'getting engaged ends the date');
+assert.ok(toasts.some(t => /Life Temple from tomorrow/.test(t.message)), 'default one-day delay reads "from tomorrow"');
+// Calling it off: offered on the wheel, confirmed in dialogue, costs Romance, frees the player.
+assert.ok(ids(W.RomanceSystem.commandOptionsFor(tooth)).includes('break_engagement'), 'the fiancé offers Call Off Wedding');
+W.RomanceSystem.commandOptionsFor(tooth).find(o => o.id === 'break_engagement').run();
+choose(0, 1); // "No, forget I said anything."
+assert.equal(W.RomanceSystem.getEngagement()?.npcId, 'tooth_hatayap', 'declining the confirmation keeps the engagement');
+W.RomanceSystem.commandOptionsFor(tooth).find(o => o.id === 'break_engagement').run();
+choose(0, 0);
+assert.equal(W.RomanceSystem.getEngagement(), null, 'confirming calls off the engagement');
+assert.ok(toasts.some(t => /broke off the engagement/.test(t.message)), 'calling it off costs Romance');
+assert.ok(!ids(W.RomanceSystem.commandOptionsFor(tooth)).includes('break_engagement'), 'no engagement, no Call Off option');
+relState('tooth_hatayap').favor = 400; // Restore hearts for the re-proposal below.
+clock.rawDay = 15;
+W.RomanceSystem.startDate('tooth_hatayap');
+W.RomanceSystem.propose(tooth);
+choose(0, 0);
+choose(1, 0);
+assert.equal(W.RomanceSystem.getEngagement()?.npcId, 'tooth_hatayap', 'the player may propose again after calling it off');
 W.RomanceSystem.completeWedding('tooth_hatayap');
 assert.equal(W.RomanceSystem.getSpouse()?.npcId, 'tooth_hatayap');
 clock.hour = 23;

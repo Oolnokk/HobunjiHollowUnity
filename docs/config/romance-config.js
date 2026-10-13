@@ -39,6 +39,7 @@
       { id: 'date_dismissed_early', label: 'cut the date short', who: 'all', amount: -10 }, // Dismissed before half the date's time was up.
       { id: 'barbarian_killed', label: 'killed a barbarian', who: ['tooth_hatayap', 'namui_u_hakaru', 'takua_ao_hakaru'], amount: -20 },
       { id: 'nest_stolen', label: 'stole from a nest', who: ['aliri_ginju', 'foroji_funji', 'jubmir'], amount: -15 },
+      { id: 'engagement_broken', label: 'broke off the engagement', who: 'all', amount: -40 }, // Player called off the wedding from the command wheel.
     ],
 
     // ── Likes ────────────────────────────────────────────────────────────

@@ -92,7 +92,7 @@ window.ClothingSpeciesFitTool=Object.freeze({
   clearMainWorkflowPatch,
   getOutputInfo:behindPatchOutputInfo,
   logMessage:message=>log(String(message||''))
-}); // Narrow bridge for behind-sprite-patch.js; repository loading and deformation math remain owned by the core editor.
+}); // Narrow bridge for the behind.part1-5.txt patch author; repository loading and deformation math remain owned by the core editor.
 
 E.modeBtns.forEach(b=>b.onclick=()=>{mode=b.dataset.mode;saveState();render()});
 E.reload.onclick=loadRepositoryData;E.gender.onchange=refreshAssets;E.species.onchange=refreshAssets;E.garment.onchange=refreshAssets;

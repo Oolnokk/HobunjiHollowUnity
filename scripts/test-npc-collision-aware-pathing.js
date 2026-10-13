@@ -70,8 +70,9 @@ assert.equal(window.NpcPathfinding.findNpcPath('interior', 3.5, 3.5, 4, 4, { pad
 const seatPath = window.NpcPathfinding.findNpcPath('interior', 3.5, 3.5, 4, 4, { padding: 2, allowOccupiedTarget: true });
 assert.ok(seatPath?.length, 'seat pathing may enter occupied furniture only inside its final target tile');
 
-// Existing live-walker seam is patched when game.js assigns/pushes walkers.
-window._npcWalkers = [];
+// game.js hands its live walker array to trackWalkerArray where it creates it.
+assert.match(gameSource, /window\._npcWalkers = window\.NpcPathfinding\?\.trackWalkerArray\?\.\(npcWalkers\)/, 'game.js must register its live walker array for collision-aware movement');
+window._npcWalkers = window.NpcPathfinding.trackWalkerArray([]);
 const walker = {
   area: 'interior',
   rec: { id: 'live_npc' },
@@ -145,31 +146,21 @@ wanderWalker._updateStationWander({}, 1 / 60);
 assert.ok(wanderWalker._wanderGridPath.some(p => p.row >= 2), 'station wandering replaces a tile-only route with an edge-aware detour before the next movement tick');
 
 // Cutscene move stages navigate by default; explicit collision opt-out survives.
-let received = null;
-window.AuthoredCutsceneRuntime = Object.freeze({
-  run(payload) { received = payload; return Promise.resolve(payload); },
-  debugSnapshot() { return {}; },
-});
-window.AuthoredCutsceneRuntime.run({ stages: [
+const upgraded = window.NpcPathfinding.upgradeCutscenePayload({ stages: [
   { id: 'a', type: 'move', targetWorld: { c: 2, r: 2 } },
   { id: 'b', type: 'move', collisionAware: false, targetWorld: { c: 3, r: 3 } },
 ]});
-assert.equal(received.stages[0].navigate, true);
-assert.equal(received.stages[1].navigate, undefined);
+assert.equal(upgraded.stages[0].navigate, true);
+assert.equal(upgraded.stages[1].navigate, undefined);
+assert.match(gameSource, /async function runCutscenePreview\(payload, runtimeOptions = \{\}\) \{\s*payload = window\.NpcPathfinding\?\.upgradeCutscenePayload\?\.\(payload\)/, 'live cutscenes and Director previews both pass through the navigation upgrade');
+assert.equal(Object.getOwnPropertyDescriptor(window, 'AuthoredCutsceneRuntime'), undefined, 'no assignment hooks are installed on window globals');
 
-window.__hobunjiCutscenePreview = { stages: [{ id: 'preview', type: 'move', targetWorld: { c: 2, r: 2 } }] };
-assert.equal(window.__hobunjiCutscenePreview.stages[0].navigate, true, 'Director preview receives same navigation default');
-
-assert.match(gameSource, /if \(entity\.walker\) await window\.NpcHeldEquipment\?\.attachCutsceneWalker\?\.\(entity\.walker\)/, 'real cutscene NPC walkers must pass through the decorated attachment seam');
+assert.match(gameSource, /if \(entity\.walker\) window\.NpcPathfinding\?\.decorateWalkerCollision\?\.\(entity\.walker\)/, 'real cutscene NPC walkers must get the collision guard where they are attached');
 assert.match(gameSource, /entity\?\.kind === 'npc'[\s\S]*window\.NpcPathfinding\?\.findNpcPath[\s\S]*window\.NpcPathfinding\.findNpcPath/, 'real cutscene NPC movement must use the swept-edge NPC planner instead of only tile-center pathfinding');
 assert.match(gameSource, /seatMove[\s\S]*allowOccupiedTarget: seatMove/, 'a cutscene move onto the actor\'s own seat tile must plan with allowOccupiedTarget and the seat-overlap exemption, or the scene stalls at the chair');
 assert.match(gameSource, /could not reach[\s\S]*snapping to target so the scene can continue/, 'a blocking cutscene move must have a stall watchdog so a blocked NPC can never freeze the scene');
 
-// NpcHeldEquipment is the existing cutscene-walker attachment seam.
-let attached = false;
-window.NpcHeldEquipment = {
-  async attachCutsceneWalker(w) { attached = w === cutWalker; },
-};
+// Cutscene walkers are decorated directly (see the game.js assertion above).
 const cutWalker = {
   area: 'interior',
   rec: { id: 'cutscene_npc' },
@@ -177,8 +168,7 @@ const cutWalker = {
   moveToward(tx, tz) { this.root.position.x = tx; this.root.position.z = tz; return true; },
 };
 (async () => {
-  await window.NpcHeldEquipment.attachCutsceneWalker(cutWalker);
-  assert.equal(attached, true);
+  window.NpcPathfinding.decorateWalkerCollision(cutWalker);
   cutWalker.moveToward(3.5, 1.5, 1);
   assert.notEqual(cutWalker.root.position.x, 3.5, 'cutscene walker receives same collision guard');
 

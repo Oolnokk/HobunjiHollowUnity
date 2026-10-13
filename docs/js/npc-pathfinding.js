@@ -375,7 +375,9 @@
     return walker;
   }
 
-  function _patchWalkerArray(array) {
+  // game.js hands its live walker array here once (where it is created);
+  // every walker pushed afterwards gets the collision-aware movement wrappers.
+  function trackWalkerArray(array) {
     if (!Array.isArray(array) || array.__npcCollisionAwarePush) return array;
     for (const walker of array) decorateWalkerCollision(walker);
     const originalPush = array.push;
@@ -387,7 +389,9 @@
     return array;
   }
 
-  function _upgradeCutscenePayload(payload) {
+  // game.js's runCutscenePreview (live cutscenes and Director previews) runs
+  // every payload through this before playing it.
+  function upgradeCutscenePayload(payload) {
     if (!payload || !Array.isArray(payload.stages)) return payload;
     let changed = false;
     const stages = payload.stages.map(stage => {
@@ -401,59 +405,6 @@
     });
     return changed ? { ...payload, stages } : payload;
   }
-
-  function _installAssignmentHook(name, transform) {
-    const existing = window[name];
-    let stored = transform(existing);
-    const descriptor = Object.getOwnPropertyDescriptor(window, name);
-    if (descriptor && descriptor.configurable === false) {
-      if (existing) transform(existing);
-      return;
-    }
-    try {
-      Object.defineProperty(window, name, {
-        configurable: true,
-        enumerable: descriptor?.enumerable ?? true,
-        get() { return stored; },
-        set(value) { stored = transform(value); },
-      });
-    } catch (_) {
-      if (existing) transform(existing);
-    }
-  }
-
-  function _wrapAuthoredCutsceneRuntime(api) {
-    if (!api?.run || api.__npcCollisionAwareRun) return api;
-    const wrapped = {
-      ...api,
-      run(payload, options = {}) {
-        return api.run(_upgradeCutscenePayload(payload), options);
-      },
-    };
-    Object.defineProperty(wrapped, '__npcCollisionAwareRun', { value: true });
-    return Object.freeze(wrapped);
-  }
-
-  function _wrapNpcHeldEquipment(api) {
-    if (!api?.attachCutsceneWalker || api.__npcCollisionAwareAttach) return api;
-    const originalAttach = api.attachCutsceneWalker;
-    try {
-      api.attachCutsceneWalker = function collisionAwareAttachCutsceneWalker(walker, ...args) {
-        decorateWalkerCollision(walker);
-        return originalAttach.call(this, walker, ...args);
-      };
-      Object.defineProperty(api, '__npcCollisionAwareAttach', { value: true, configurable: true });
-    } catch (_) {}
-    return api;
-  }
-
-  // These globals are assigned after this module loads. Intercepting the
-  // assignment keeps integration at the existing module seam instead of
-  // adding collision code back into game.js's walker/cutscene monolith.
-  _installAssignmentHook('_npcWalkers', _patchWalkerArray);
-  _installAssignmentHook('NpcHeldEquipment', _wrapNpcHeldEquipment);
-  _installAssignmentHook('AuthoredCutsceneRuntime', _wrapAuthoredCutsceneRuntime);
-  _installAssignmentHook('__hobunjiCutscenePreview', _upgradeCutscenePayload);
 
   // One-hop links reachable directly from `area`, in the shape
   // { toArea, exit:{c,r}, spawn:{c,r} } — the raw edges of the area graph
@@ -516,6 +467,8 @@
     canNpcEscapeExistingOverlap,
     findNpcPath,
     decorateWalkerCollision,
+    trackWalkerArray,
+    upgradeCutscenePayload,
     areaLinksFrom,
     findNpcAreaLink,
     debugSnapshot,

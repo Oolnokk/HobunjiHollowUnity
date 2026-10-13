@@ -989,7 +989,7 @@
     const leader = caravan.members[0]?.name || 'the traders';
     panel.querySelector('[data-title]').textContent = `⚖ ${leader}'s Caravan`;
     panel.querySelector('[data-summary]').textContent = 'Slagothim traders from past the southern road. What they carry is all they have until they come back another day.';
-    panel.querySelector('[data-gold]').textContent = `Ganang: ${num(deps?.inventory?.gold, 0)}g`;
+    panel.querySelector('[data-gold]').textContent = `Ganang: ${num(deps?.inventory?.gold, 0)}g`; // Rebuilt after each buy, so Need/Buy labels track the remaining gold.
     const list = panel.querySelector('[data-list]');
     list.innerHTML = '';
     const available = caravan.stock.filter(entry => entry.qty > 0);
@@ -997,7 +997,9 @@
       list.innerHTML = '<div style="color:#bbb;padding:8px">They have sold everything they brought.</div>';
       return;
     }
+    const gold = num(deps?.inventory?.gold, 0);
     for (const entry of available) {
+      const short = Math.max(0, entry.price - gold); // Shown on the button so an unaffordable item reads as such before tapping.
       const row = document.createElement('div');
       row.className = 'shop-row';
       row.innerHTML = `
@@ -1007,7 +1009,7 @@
           <div class="sh-desc">${entry.note ? `${esc(entry.note)}. ` : ''}${esc(entry.desc || '')} In stock: ${entry.qty}</div>
           <div class="sh-price">${entry.price}g</div>
         </div>
-        <button class="shop-buy-btn" type="button">Buy</button>`;
+        <button class="shop-buy-btn" type="button"${short ? ` disabled title="You need ${short}g more" style="opacity:.55"` : ''}>${short ? `Need ${short}g` : 'Buy'}</button>`;
       row.querySelector('button').addEventListener('click', () => { buy(caravan.id, entry.id); });
       list.appendChild(row);
     }

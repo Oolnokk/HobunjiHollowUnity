@@ -36,7 +36,7 @@ function refreshDebug(){
     `3D runtime rig: ${R.three.rigRoot?.name||'(not built yet)'}`,
     `cloud mask: ${R.speciesCfg.get(E.species.value)?.[E.gender.value]?.portraitOpacityMaskLayer?.url||'(none)'}`,
     `cloud mask preview: ${JSON.stringify(currentMaskTransform())}`,
-    `cloud mask scope: full runtime front/back portrait (base torso included)`,
+    `cloud mask scope: not applied in game (arm-cut source only)`,
     `source→target points:`,...ops,'',
     `recent log:`,...R.logs
   ].join('\n');
