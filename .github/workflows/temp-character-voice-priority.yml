@@ -26,6 +26,43 @@ jobs:
         run: |
           git fetch origin main
           git merge-base --is-ancestor origin/main HEAD
+      - name: Repair NPC attack patch matcher
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/temp_patch_character_voice_priority.py')
+          text = p.read_text()
+          old = '''# Quick and charged both used identical data text; replace in order.
+          quick_old = "data: { isBandit: true, attacker: c }, // see fireBanditComboStep's matching comment"
+          quick_new = "data: { isBandit: true, attacker: c, voiceCategory: 'quickAttack', voiceAbilityId: loadout.tap2 }, // Shared vocal owner gives NPC quick attacks the same release grunt as the player."
+          bandit = replace_once(bandit, quick_old, quick_new, 'bandit quick vocal metadata')
+          charged_old = '      data: { isBandit: true, attacker: c },\\n      onStrike: () => {'
+          charged_new = "      data: { isBandit: true, attacker: c, voiceCategory: 'offensiveHold', voiceAbilityId: 'chargedBreaker' },\\n      onStrike: () => {"
+          bandit = replace_once(bandit, charged_old, charged_new, 'bandit charged vocal metadata')
+          '''
+          new = '''# Quick, charged, and counter-riposte attacks all run through the shared staged-action vocal path.
+          quick_old = """      windupS: qa.WINDUP_S, strikeS: qa.STRIKE_S, recoverS: 0,
+                data: { isBandit: true, attacker: c }, // see fireBanditComboStep's matching comment
+                onStrike: () => {"""
+          quick_new = """      windupS: qa.WINDUP_S, strikeS: qa.STRIKE_S, recoverS: 0,
+                data: { isBandit: true, attacker: c, voiceCategory: 'quickAttack', voiceAbilityId: loadout.tap2 }, // Shared vocal owner gives NPC quick attacks the same release grunt as the player.
+                onStrike: () => {"""
+          bandit = replace_once(bandit, quick_old, quick_new, 'bandit quick vocal metadata')
+          charged_old = '      data: { isBandit: true, attacker: c },\\n      onStrike: () => {'
+          charged_new = "      data: { isBandit: true, attacker: c, voiceCategory: 'offensiveHold', voiceAbilityId: 'chargedBreaker' },\\n      onStrike: () => {"
+          bandit = replace_once(bandit, charged_old, charged_new, 'bandit charged vocal metadata')
+          counter_old = """      windupS: 0.05, strikeS: 0.15, recoverS: 0,
+                data: { isBandit: true, attacker: c }, // see fireBanditComboStep's matching comment
+                onStrike: () => {"""
+          counter_new = """      windupS: 0.05, strikeS: 0.15, recoverS: 0,
+                data: { isBandit: true, attacker: c, voiceCategory: 'quickAttack', voiceAbilityId: 'counterShield' }, // Counter ripostes are active NPC voice events too.
+                onStrike: () => {"""
+          bandit = replace_once(bandit, counter_old, counter_new, 'bandit counter vocal metadata')
+          '''
+          if old not in text:
+              raise SystemExit('expected matcher block not found')
+          p.write_text(text.replace(old, new, 1))
+          PY
       - name: Apply patch
         run: python3 scripts/temp_patch_character_voice_priority.py
       - name: Refresh cache tokens
