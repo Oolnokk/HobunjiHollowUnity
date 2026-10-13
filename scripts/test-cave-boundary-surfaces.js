@@ -35,13 +35,37 @@ global.WildlifeSpawn={denCavernZoneOf:()=> 'test-zone',denSpeciesFor:()=> 'gar-w
 CavernGenerator.init({EXTERIOR_ZONES:{'test-zone':{packSpecies:['gar-wolf']}},DEN_MOTHER_DEFS:{'gar-wolf':{creatureKey:'gar-wolf-den-mother'}}});
 require('../docs/js/cave-site-system.js');
 const caveMap=CavernGenerator.synthesizeCavernMapData('rim-integration-10'); // Reuses the real carve above, including collision and native placement generation.
-const plainTopY=Math.max(...caveMap.mesh.positions.filter((_,i)=>i%3===1)); // Ordinary carved shell height before the ruin requests a taller cave.
+const plainTopY=Math.max(...caveMap.mesh.positions.filter((_,i)=>i%3===1)); // Every procedural cave is now carved at the tall height, ruin or not.
+assert(plainTopY > 5,'ordinary caves share the 2.5x carved height');
+const nearestAbove=(mesh,x,z,fromY)=>{ // Closest shell surface above a point, and whether it faces up (rock below) or down (air below).
+  const P=mesh.positions,I=mesh.indices; let best=null;
+  for(let i=0;i<I.length;i+=3){const a=I[i]*3,b=I[i+1]*3,c=I[i+2]*3;const den=(P[b+2]-P[c+2])*(P[a]-P[c])+(P[c]-P[b])*(P[a+2]-P[c+2]);if(Math.abs(den)<1e-12)continue;
+    const wa=((P[b+2]-P[c+2])*(x-P[c])+(P[c]-P[b])*(z-P[c+2]))/den,wb=((P[c+2]-P[a+2])*(x-P[c])+(P[a]-P[c])*(z-P[c+2]))/den,wc=1-wa-wb;if(wa<0||wb<0||wc<0)continue;
+    const y=wa*P[a+1]+wb*P[b+1]+wc*P[c+1];if(y<=fromY||(best&&y>=best.y))continue;
+    best={y,up:(P[b+2]-P[a+2])*(P[c]-P[a])-(P[b]-P[a])*(P[c+2]-P[a+2])>0};}
+  return best;
+};
+const assertRoofed=(map,label)=>{ // Each walkable tile sits under the vaulted roof, never an open shaft.
+  const vault=map.mesh.vaultCeiling;
+  assert(vault && vault.topY > vault.startY && vault.startY > 3,`${label} carves a vaulted roof above full-height walls`);
+  let coveLower=0;
+  for(const [col,row] of map.floor){
+    const hit=nearestAbove(map.mesh,col+.5,row+.5,1);
+    assert(hit && !hit.up,`${label} tile ${col},${row} has a roof over open air`);
+    if(hit.y<vault.topY-.05) coveLower++;
+  }
+  assert(coveLower>0 && coveLower<map.floor.length,`${label} roof curves down into coves at the walls but stays flat over rooms`);
+  assert.equal(CavernGenerator.rockCoveredFloorTiles(map.floor,map.mesh,new Set([`${map.exitCol},${map.exitRow}`])).size,0,`${label} has no walkable tile inside rendered rock`);
+};
+assertRoofed(caveMap,'ordinary cave');
+assert(generated.rockCoveredFloorTiles <= generated.floor.length*.03,`walls land on tile edges, so few tiles need the rock-covered collision fallback (${generated.rockCoveredFloorTiles})`);
 CaveSiteSystem.__test.sitesByMapId.set(caveMap.id,{mapId:caveMap.id,signature:caveMap.id,zoneId:'test-zone',denId:'den_0',contents:'ruin_entrance',inhabitant:'bandit_hideout'});
 CaveSiteSystem.decorateCavernMapData(caveMap.id,caveMap);
 assert(caveMap.caveRuinEntrance,'the narrow-throat regression cave must still have room for its requested ruin');
 assert.equal(caveMap.cavernCarvedHeightScale,2.5,'the clearance recarve sweeps the probe 2.5x higher');
 assert.equal(caveMap.mesh.wallHeightScale,undefined,'ruin height is carved, never stretched from the shorter shell');
-assert(Math.max(...caveMap.mesh.positions.filter((_,i)=>i%3===1)) > plainTopY*2.5,'taller sculpt volume carves walls above the old stretched height');
+assert(Math.abs(Math.max(...caveMap.mesh.positions.filter((_,i)=>i%3===1)) - plainTopY) < .2,'the ruin recarve keeps the shared tall height');
+assertRoofed(caveMap,'ruin cave');
 assert(Math.abs(caveMap.floorSurfaceY) < 0.1,'taller carve keeps the floor at its original height');
 for(const [key,y] of Object.entries(caveMap.floorSurfaceByTile)) assert(y <= 0.5,`edge tile ${key} grounds on the floor, not the rock top (${y})`);
 const overheadSlabTiles=caveMap.floor.filter(([col,row])=>{ // Downward-facing rock hanging above an open tile's floor.
@@ -49,12 +73,17 @@ const overheadSlabTiles=caveMap.floor.filter(([col,row])=>{ // Downward-facing r
   for(let i=0;i<I.length;i+=3){const a=I[i]*3,b=I[i+1]*3,c=I[i+2]*3;const den=(P[b+2]-P[c+2])*(P[a]-P[c])+(P[c]-P[b])*(P[a+2]-P[c+2]);if(Math.abs(den)<1e-12)continue;
     const wa=((P[b+2]-P[c+2])*(x-P[c])+(P[c]-P[b])*(z-P[c+2]))/den,wb=((P[c+2]-P[a+2])*(x-P[c])+(P[a]-P[c])*(z-P[c+2]))/den,wc=1-wa-wb;if(wa<0||wb<0||wc<0)continue;
     const y=wa*P[a+1]+wb*P[b+1]+wc*P[c+1],up=(P[b+2]-P[a+2])*(P[c]-P[a])-(P[b]-P[a])*(P[c+2]-P[a+2])>0;
-    if(up&&Math.abs(y)<.1)floorHit=true; else if(!up&&y>.5)slab=true;}
+    if(up&&Math.abs(y)<.1)floorHit=true; else if(!up&&y>.5&&y<caveMap.mesh.vaultCeiling.startY-.3)slab=true;} // The vaulted roof itself is not a slab.
   return floorHit&&slab;
 });
 assert(overheadSlabTiles.length <= caveMap.floor.length*.02,`taller carve refines every column instead of leaving floating slabs (${overheadSlabTiles.length})`);
 assert(caveMap.floor.length > generated.floor.length, 'door berth expands the actual floor');
-for (const cell of caveMap.caveRuinEntrance.clearanceTiles) assert(caveMap.floorSurfaceByTile[`${cell.col},${cell.row}`] != null, 'new approach cells have sampled grounding');
+{ // The approach stays open along the door's axis; only rock-rounded outer corners may become solid.
+  const ruin=caveMap.caveRuinEntrance, grounded=cell=>caveMap.floorSurfaceByTile[`${cell.col},${cell.row}`] != null;
+  const axis=ruin.clearanceTiles.filter(cell=>ruin.rotY%180===0 ? cell.col===ruin.col : cell.row===ruin.row);
+  assert(axis.length>=5 && axis.every(grounded),'every approach cell in front of the door is grounded floor');
+  assert(ruin.clearanceTiles.filter(grounded).length >= ruin.clearanceTiles.length*.9,'new approach cells have sampled grounding');
+}
 assert.equal(CavernGenerator.entranceConnectedFloor(caveMap.floor,caveMap.exitCol,caveMap.exitRow).removed,0,'expansion stays connected to the entrance');
 const expandedFloorKeys = new Set(caveMap.floor.map(tile=>tile.join(','))); // Recarved clearances create new placement-safe floor cells.
 for(const cell of caveMap.caveRuinEntrance.tunnelTiles) assert(!expandedFloorKeys.has(`${cell.col},${cell.row}`),'the entire rear tunnel stays inside rock');
@@ -96,4 +125,4 @@ const standalone=builder.buildCavernFloorMesh(three,[[0,0]],{},{}); // Editor/st
 assert.equal(standalone.material,canonical);
 assert(naturalCalls.every(([family,mode])=>family==='rocks' && mode==='planar-stretch'));
 assert(mappingCalls.every(call=>call.maxPatchWorldSize===6));
-console.log('PASS solid cave rim, connected floor, complete nest, shared wall/floor material and stretch, upward-only 2.5x ruin wall growth');
+console.log('PASS solid cave rim, connected floor, complete nest, shared wall/floor material and stretch, upward-only 2.5x ruin wall growth, tall vaulted roofs in every cave, walls on tile edges');

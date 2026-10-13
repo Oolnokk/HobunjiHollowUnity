@@ -418,6 +418,25 @@
     return st.field[idxP(st, i, j, k)];
   }
 
+  // Signed horizontal distance from (x, z) to a set of tile rects: positive
+  // inside the region (distance to the nearest tile outside it), negative
+  // outside (distance to the nearest region tile), clamped to reach tiles.
+  function regionDistance2D(tiles, ts, reach) {
+    return (x, z) => {
+      const c0 = Math.floor(x / ts), r0 = Math.floor(z / ts);
+      const inside = tiles.has(c0 + ',' + r0);
+      let best = reach * ts;
+      for (let dr = -reach; dr <= reach; dr++) for (let dc = -reach; dc <= reach; dc++) {
+        const c = c0 + dc, r = r0 + dr;
+        if (tiles.has(c + ',' + r) === inside) continue;
+        const ex = Math.max(c * ts - x, 0, x - (c + 1) * ts), ez = Math.max(r * ts - z, 0, z - (r + 1) * ts);
+        const d = Math.hypot(ex, ez);
+        if (d < best) best = d;
+      }
+      return inside ? best : -best;
+    };
+  }
+
   // The organic spline carve doesn't know or care about tile boundaries —
   // a hook stamp near a claimed tile's edge can bleed into an unclaimed
   // neighbor and thin (or erase) the wall that should separate them, even
@@ -438,6 +457,40 @@
     const ts = tileSize || 1;
     const hx = st.dims.x * .5, hy = st.dims.y * .5, hz = st.dims.z * .5;
     const pristineAt = (x, y, z) => Math.min(hx - Math.abs(x), hy - Math.abs(y), hz - Math.abs(z));
+    // Exact heal: restore a healed sample to its horizontal distance from the
+    // open tiles rather than all the way to pristine. The SDF lattice is
+    // coarser than a tile (up to ~3 tiles per cell in fast carves), and dual
+    // contouring places the wall by interpolating between an open sample
+    // (about -0.1) and this healed one; a pristine value (~2) dragged the
+    // wall right up against the open sample — often a whole tile into the
+    // walkable floor. A true distance puts the zero crossing on the tile edge.
+    let openDistance = null;
+    if (refineOpts?.exactBoundaryHeal) {
+      const openTiles = new Set(claimed);
+      for (const key of protectedUnclaimed || []) openTiles.add(key);
+      const cell = Math.max(2 * st.domainHalf.x / st.N, 2 * st.domainHalf.z / st.N);
+      const margin = refineOpts.wallGridMargin ?? .05;
+      const distance = regionDistance2D(openTiles, ts, Math.ceil(cell / ts) + 2);
+      openDistance = (x, z) => -distance(x, z) - margin;
+      // The probe's organic bleed can reach further out than the one-tile
+      // strips healed below, leaving open air (or a gap in the wall) in rock
+      // tiles that still collide. Since the exact target is never above
+      // pristine, every lattice column outside the open tiles can be raised
+      // to it safely; the strip pass below then only adds refinement.
+      for (let k = 0; k <= st.N; k++) {
+        const z = lerp(-st.domainHalf.z, st.domainHalf.z, k / st.N);
+        for (let i = 0; i <= st.N; i++) {
+          const x = lerp(-st.domainHalf.x, st.domainHalf.x, i / st.N);
+          if (openTiles.has(Math.floor(x / ts) + ',' + Math.floor(z / ts))) continue;
+          const cap = openDistance(x, z);
+          for (let j = 0; j <= st.N; j++) {
+            const id = idxP(st, i, j, k);
+            const target = Math.min(pristineAt(x, lerp(-st.domainHalf.y, st.domainHalf.y, j / st.N), z), cap);
+            if (target > st.field[id]) st.field[id] = target;
+          }
+        }
+      }
+    }
     // The heal itself must never reach past the immediate unclaimed
     // neighbor's own far edge — depth (a physical margin derived from
     // brush/probe radius, independent of tileSize) can be, and often is,
@@ -482,14 +535,15 @@
       for (let k = k0; k <= k1; k++) {
         const z = lerp(-st.domainHalf.z, st.domainHalf.z, k / st.N);
         if (z < z0 - eps || z > z1 + eps) continue;
-        for (let j = 0; j <= st.N; j++) {
-          const y = lerp(-st.domainHalf.y, st.domainHalf.y, j / st.N);
-          for (let i = i0; i <= i1; i++) {
-            const x = lerp(-st.domainHalf.x, st.domainHalf.x, i / st.N);
-            if (x < x0 - eps || x > x1 + eps) continue;
+        for (let i = i0; i <= i1; i++) {
+          const x = lerp(-st.domainHalf.x, st.domainHalf.x, i / st.N);
+          if (x < x0 - eps || x > x1 + eps) continue;
+          const cap = openDistance ? openDistance(x, z) : Infinity; // see openDistance above
+          for (let j = 0; j <= st.N; j++) {
+            const y = lerp(-st.domainHalf.y, st.domainHalf.y, j / st.N);
             const id = idxP(st, i, j, k);
-            const pristine = pristineAt(x, y, z);
-            if (pristine > st.field[id]) st.field[id] = pristine; // only ever restore, never carve
+            const target = Math.min(pristineAt(x, y, z), cap);
+            if (target > st.field[id]) st.field[id] = target; // only ever restore, never carve
           }
         }
       }
@@ -644,6 +698,81 @@
       }
       if (opts.floorY != null) refineNear(st, { x: cx, y: opts.floorY, z: cz }, rr, opts.minCell, false);
     }
+  }
+
+  // Closes the cave with a vaulted ceiling instead of letting the tile
+  // columns punch straight out through the volume's top. The columns and
+  // probe sweeps stop at vault.startY (carveOpts.ceilingY clips them there);
+  // this pass then writes the walkable region's true horizontal wall
+  // distance from the floor up. Over the top band a sample opens only while
+  // that distance exceeds a cove inset growing from 0 at startY to
+  // vault.inset at topY along a quarter circle, so walls lean inward over
+  // the top quarter of their height and meet a flat ceiling over wide rooms,
+  // while passages narrower than the cove close into arches below it. Rock
+  // between topY and the volume's top gives dual contouring a solid roof.
+  //   Writing true distances below startY matters as much as the roof: the
+  // lattice is coarser than a tile, and each column only knows the distance
+  // to its own tile's box (~-0.1 deep), so interpolating against the rock
+  // outside dragged walls up to a tile into the floor. The whole band is
+  // refined to the finest octree level in one batch so no coarse leaf
+  // turns into a floating slab.
+  function carveVaultCeiling(st, openTiles, ts, vault, floorY, minCell, margin = .05) {
+    const cell = Math.max(2 * st.domainHalf.x / st.N, 2 * st.domainHalf.z / st.N);
+    const reach = Math.ceil(Math.max(vault.inset, cell) / ts) + 2;
+    const distance = regionDistance2D(openTiles, ts, reach);
+    const band = Math.max(1e-6, vault.topY - vault.startY);
+    const dy = 2 * st.domainHalf.y / st.N;
+    const jLo = Math.max(0, Math.floor(worldToGrid(st, { x: 0, y: floorY, z: 0 }).y));
+    const jHi = Math.min(st.N, Math.ceil(worldToGrid(st, { x: 0, y: vault.topY + 2 * dy, z: 0 }).y));
+    const insetAt = [];
+    for (let j = jLo; j <= jHi; j++) {
+      const t = clampNum((lerp(-st.domainHalf.y, st.domainHalf.y, j / st.N) - vault.startY) / band, 0, 1);
+      insetAt[j] = vault.inset * (1 - Math.sqrt(1 - t * t));
+    }
+    for (let k = 0; k <= st.N; k++) {
+      const z = lerp(-st.domainHalf.z, st.domainHalf.z, k / st.N);
+      for (let i = 0; i <= st.N; i++) {
+        const x = lerp(-st.domainHalf.x, st.domainHalf.x, i / st.N);
+        const D = distance(x, z) + margin; // Same small outward wall margin as carveTileColumn.
+        if (D <= -reach * ts + margin + 1e-9) continue; // far from any open tile: leave pristine rock alone
+        for (let j = jLo; j <= jHi; j++) {
+          const y = lerp(-st.domainHalf.y, st.domainHalf.y, j / st.N);
+          if (y < floorY) continue;
+          const f = Math.max(insetAt[j] - D, y - vault.topY);
+          const id = idxP(st, i, j, k);
+          if (f < st.field[id]) st.field[id] = f;
+        }
+      }
+    }
+    const rr = Math.max(ts * .75, dy * 2);
+    let changed = false;
+    for (const key of openTiles) {
+      const [c, r] = key.split(',').map(Number);
+      const cx = (c + .5) * ts, cz = (r + .5) * ts;
+      for (let y = floorY; y <= vault.topY + rr; y += rr) {
+        const stack = [st.root];
+        while (stack.length) {
+          const n = stack.pop();
+          if (!sphereIntersectsNode(st, { x: cx, y, z: cz }, rr, n)) continue;
+          if (n.children) { for (const child of n.children) stack.push(child); continue; }
+          if (n.size > minCell && splitNode(n)) { changed = true; for (const child of n.children) stack.push(child); }
+        }
+      }
+    }
+    if (changed) rebuildLeafData(st);
+  }
+
+  // Vault geometry for a sculpt volume: the roof keeps a rock cap a couple of
+  // lattice cells thick under the volume's top, and the cove occupies the top
+  // vaultFrac of the floor-to-roof height.
+  function vaultFor(st, opts, floorY) {
+    if (!opts.vaultCeiling) return null;
+    const dy = 2 * st.domainHalf.y / st.N;
+    const topY = st.dims.y / 2 - Math.max(.5, dy * 2.5);
+    const height = topY - floorY;
+    if (!(height > 1)) return null;
+    const frac = clampNum(Number(opts.vaultFrac) || .25, .05, .9);
+    return { topY, startY: topY - height * frac, inset: Number(opts.vaultInset) || height * frac }; // Default cove is a quarter circle as wide as it is tall.
   }
 
   // Claims every tile in boundsRect whose floor is open enough (nine-point
@@ -932,7 +1061,7 @@
   const WALKABLE_SURFACE_MAX_ABOVE_FLOOR = 0.18;
   const WALKABLE_SMOOTH_SCULPT_STRENGTH = 0.96; // Used to pull intrusive geometry back toward its wall while retaining a soft bevel.
 
-  function clipAndStitch(st, positions, indices, keepTiles, skipCapEdges, tileSize, claimed, floorY, enforceWalkableClearance) {
+  function clipAndStitch(st, positions, indices, keepTiles, skipCapEdges, tileSize, claimed, floorY, enforceWalkableClearance, clearanceTopY = Infinity) {
     const ts = tileSize || 1;
     const outPositions = []; const outIndices = []; const vmap = new Map();
     const sculptFragmentsByTile = new Map(); // Groups welded intrusion triangles into per-tile wall patches below.
@@ -972,7 +1101,8 @@
       if (!poly?.length || !vertexIds) return;
       const isWall = yRange > WALL_YRANGE_THRESHOLD;
       const isOverhang = floorY != null && poly.every(v => v.y > floorY + WALKABLE_SURFACE_MAX_ABOVE_FLOOR);
-      const shouldSculpt = floorY != null && claimed?.has(key) && (isWall || isOverhang);
+      const belowVault = poly.some(v => v.y < clearanceTopY); // A vaulted ceiling's cove and roof hang over the floor on purpose.
+      const shouldSculpt = floorY != null && claimed?.has(key) && belowVault && (isWall || isOverhang);
       for (const id of vertexIds) {
         let usage = sculptVertexUsage.get(id);
         if (!usage) { usage = { sculpted: false, anchored: false }; sculptVertexUsage.set(id, usage); }
@@ -1200,7 +1330,7 @@
     if (enforceWalkableClearance && claimed && floorY != null) {
       for (let id = 0; id < outPositions.length / 3; id++) {
         const x = outPositions[id * 3], y = outPositions[id * 3 + 1], z = outPositions[id * 3 + 2];
-        if (y <= floorY + WALKABLE_SURFACE_MAX_ABOVE_FLOOR) continue;
+        if (y <= floorY + WALKABLE_SURFACE_MAX_ABOVE_FLOOR || y >= clearanceTopY) continue;
         const c = Math.floor((x + 1e-8) / ts), r = Math.floor((z + 1e-8) / ts);
         if (!claimed.has(`${c},${r}`)) continue;
         const edges = [
@@ -1226,7 +1356,7 @@
     };
   }
 
-  function extractMesh(st, keepTiles, skipCapEdges, tileSize, claimed, floorY, enforceWalkableClearance) {
+  function extractMesh(st, keepTiles, skipCapEdges, tileSize, claimed, floorY, enforceWalkableClearance, clearanceTopY) {
     const leafVertexIndex = new Map();
     const positions = [];
     for (const leaf of st.leaves) {
@@ -1272,7 +1402,7 @@
     }
 
     if (!keepTiles) return { positions: new Float32Array(positions), indices };
-    return clipAndStitch(st, positions, indices, keepTiles, skipCapEdges, tileSize, claimed, floorY, enforceWalkableClearance);
+    return clipAndStitch(st, positions, indices, keepTiles, skipCapEdges, tileSize, claimed, floorY, enforceWalkableClearance, clearanceTopY);
   }
 
   // ── Top-level orchestration ─────────────────────────────────────────
@@ -1534,14 +1664,18 @@
     // so it stays proportional if sizeY ever changes.
     const pathYShift = opts.sizeY * (opts.pathYShiftFrac ?? .2);
     const lowLevel = -halfY + probeYRadius * 1.05 + pathYShift;
-    const highLevel = halfY + probeYRadius * 1.3 + pathYShift;
+    const floorY = lowLevel - probeYRadius + opts.floorOffset;
+    // opts.vaultCeiling replaces the open top with a vaulted roof (see
+    // carveVaultCeiling): the sweep then stops where the cove begins instead
+    // of overshooting the volume's top.
+    const vault = vaultFor(st, opts, floorY);
+    const highLevel = vault ? Math.max(lowLevel, vault.startY - probeYRadius * .5) : halfY + probeYRadius * 1.3 + pathYShift;
     const levelSpacing = probeYRadius * 1.6;
     const levelCount = Math.max(1, Math.ceil((highLevel - lowLevel) / levelSpacing) + 1);
     const levels = Array.from({ length: levelCount }, (_, i) =>
       levelCount > 1 ? lerp(lowLevel, highLevel, i / (levelCount - 1)) : lowLevel);
-    const floorY = lowLevel - probeYRadius + opts.floorOffset;
     const carveOpts = Object.assign({}, opts, {
-      floorY, ceilingY: null, probeYRadius,
+      floorY, ceilingY: vault ? vault.startY : null, probeYRadius,
       levels,
     });
     for (const points of denseLocal) carveAlongSpline2D(st, points, carveOpts, rng);
@@ -1666,6 +1800,7 @@
     // vestibule tile from every direction a claimed tile might approach
     // it from, not just the entrance tile's own straight-ahead edge.
     const solidRim = opts.solidOuterRim ? reserveOuterRim(claimed, entranceTiles) : new Set(); // Remove the untouchable rim before healing so its collision agrees with the visible wall.
+    if (vault) carveVaultCeiling(st, new Set([...claimed, ...vestibuleTiles]), ts, vault, floorY, opts.minCell);
     solidifyBoundaryWalls(st, claimed, Math.max(opts.brushRadius, opts.probeRadius) + opts.wallGridMargin, vestibuleTiles, ts, carveOpts);
 
     // Drop any boundary claimed tile whose own footprint reads as mostly
@@ -1695,7 +1830,7 @@
     // instead of being clipped down to a flat stitched cap.
     const touched = computeTouchedTiles(st, ts, opts.cullTouchTolerance);
     for (const key of claimed) touched.add(key); // claimed tiles are always touched by construction; union defensively
-    const mesh = extractMesh(st, touched, skipCapEdges, ts, claimed, floorY, opts.enforceWalkableClearance);
+    const mesh = extractMesh(st, touched, skipCapEdges, ts, claimed, floorY, opts.enforceWalkableClearance, vault ? vault.startY - 2 * st.domainHalf.y / st.N : Infinity);
 
     // Shift Y so the floor sits at y=0 — the game's floor-referenced
     // convention (see interior-scene-builder.js's panelCornersFor). X/Z
@@ -1726,6 +1861,7 @@
       claimed, entranceTiles, nestTile: [nfx, nfy], mesh, solidRim,
       levels: levels.map(l => l - floorY), probeYRadius, dims,
       domainTopY: dims.y * .5 * 1.08 - floorY,
+      vaultCeiling: vault ? { startY: vault.startY - floorY, topY: vault.topY - floorY, inset: vault.inset } : null,
       deformedTilesDropped,
       walkableSculptFragmentsSmoothed: mesh.walkableSculptFragmentsSmoothed || 0,
       walkableSculptVerticesMoved: mesh.walkableSculptVerticesMoved || 0,
@@ -1801,13 +1937,14 @@
     const halfY = dims.y / 2;
     const pathYShift = dims.y * (opts.pathYShiftFrac ?? DEFAULT_OPTS.pathYShiftFrac);
     const lowLevel = -halfY + probeYRadius * 1.05 + pathYShift;
-    const highLevel = halfY + probeYRadius * 1.3 + pathYShift;
+    const floorY = lowLevel - probeYRadius + (Number(opts.floorOffset) || 0);
+    const vault = vaultFor(st, opts, floorY); // Same optional vaulted roof as carveMazeCavern.
+    const highLevel = vault ? Math.max(lowLevel, vault.startY - probeYRadius * .5) : halfY + probeYRadius * 1.3 + pathYShift;
     const levelSpacing = probeYRadius * 1.6;
     const levelCount = Math.max(1, Math.ceil((highLevel - lowLevel) / levelSpacing) + 1);
     const levels = Array.from({ length: levelCount }, (_, i) =>
       levelCount > 1 ? lerp(lowLevel, highLevel, i / (levelCount - 1)) : lowLevel);
-    const floorY = lowLevel - probeYRadius + (Number(opts.floorOffset) || 0);
-    const carveOpts = Object.assign({}, opts, { tileSize: ts, floorY, ceilingY: null, probeYRadius, levels });
+    const carveOpts = Object.assign({}, opts, { tileSize: ts, floorY, ceilingY: vault ? vault.startY : null, probeYRadius, levels });
 
     // A light organic pre-carve gives the dual-contour field the same rounded
     // language as generated dens; carveTileColumn then guarantees every
@@ -1853,6 +1990,7 @@
     }
     const skipCapEdges = new Set([localEntrance[0] + ',' + localEntrance[1] + ',' + entranceSide.cap]);
 
+    if (vault) carveVaultCeiling(st, new Set([...localClaimed, ...vestibuleTiles]), ts, vault, floorY, Number(opts.minCell) || DEFAULT_OPTS.minCell);
     solidifyBoundaryWalls(
       st,
       localClaimed,
@@ -1864,7 +2002,7 @@
 
     const touched = computeTouchedTiles(st, ts, opts.cullTouchTolerance ?? DEFAULT_OPTS.cullTouchTolerance);
     for (const key of localClaimed) touched.add(key);
-    const mesh = extractMesh(st, touched, skipCapEdges, ts, localClaimed, floorY, opts.enforceWalkableClearance);
+    const mesh = extractMesh(st, touched, skipCapEdges, ts, localClaimed, floorY, opts.enforceWalkableClearance, vault ? vault.startY - 2 * st.domainHalf.y / st.N : Infinity);
 
     // Convert the centered sculptor coordinate frame back to the Locale
     // Editor's authored col/row frame while preserving floor-at-y=0.
@@ -1902,6 +2040,7 @@
       probeYRadius,
       dims,
       domainTopY: dims.y * 0.5 * 1.08 - floorY,
+      vaultCeiling: vault ? { startY: vault.startY - floorY, topY: vault.topY - floorY, inset: vault.inset } : null,
       footprintBounds: { minC, minR, maxC, maxR },
       authoredTileCount: authored.length,
     };

@@ -54,6 +54,64 @@
   // floor/mesh data after receiving it.
   const _cavernFloorCache = new Map();
   const CAVERN_SCULPT_SIZE_Y = 3.0, CAVERN_PATH_Y_SHIFT_FRAC = 0.3; // Mirrors CavernSculptor DEFAULT_OPTS sizeY/pathYShiftFrac; taller clearance carves scale from these.
+  const CAVE_HEIGHT_SCALE = 2.5; // Every procedural cave and mine is carved this much taller than the original shell.
+  // Shared sculpt options for the tall, roofed cave shell. Growing sizeY
+  // extends the probe's vertical sweep upward so the walls are genuinely
+  // carved at the new height; pathYShiftFrac is divided by the same factor so
+  // the floor keeps its absolute offset from the volume bottom. vaultCeiling
+  // closes the top with a cove-edged roof instead of an open shaft, and
+  // exactBoundaryHeal keeps the coarse SDF lattice's walls on tile edges.
+  function tallCaveSculptOptions(heightScale) {
+    return { sizeY: CAVERN_SCULPT_SIZE_Y * heightScale, pathYShiftFrac: CAVERN_PATH_Y_SHIFT_FRAC / heightScale, vaultCeiling: true, exactBoundaryHeal: true };
+  }
+
+  // Collision is per tile, but the dual-contoured shell is only as precise as
+  // the SDF lattice, which is coarser than a tile. Any walkable tile whose
+  // body-height band is mostly inside the rendered rock is made solid, so a
+  // wall that bulges over the floor always collides. A sample is inside rock
+  // when the nearest shell surface above it faces up (the shell's winding
+  // faces the carved air, so a downward face above means open air below it);
+  // unlike crossing parity this tolerates holes in the shell's own floor,
+  // which the separate per-tile floor mesh covers anyway.
+  const ROCK_PROBE_HEIGHTS = [0.6, 1.2]; // Above floor bumps, below the shortest wall's cove.
+  const ROCK_PROBE_GRID = 4; // 4x4 samples per tile.
+  function rockCoveredFloorTiles(floor, mesh, protectedKeys = new Set()) {
+    const bins = new Map(); // Triangles grouped by the floor tiles their XZ bounds overlap.
+    for (const [col, row] of floor || []) bins.set(`${col},${row}`, []);
+    const P = mesh?.positions || [], I = mesh?.indices || [];
+    for (let i = 0; i + 2 < I.length; i += 3) {
+      const a = I[i] * 3, b = I[i + 1] * 3, c = I[i + 2] * 3;
+      const denom = (P[b + 2] - P[c + 2]) * (P[a] - P[c]) + (P[c] - P[b]) * (P[a + 2] - P[c + 2]);
+      if (!Number.isFinite(denom) || Math.abs(denom) < 1e-12) continue; // Vertical faces never cross a vertical ray.
+      const up = (P[b + 2] - P[a + 2]) * (P[c] - P[a]) - (P[b] - P[a]) * (P[c + 2] - P[a + 2]) > 0; // Normal's Y sign.
+      const tri = { a, b, c, denom, up };
+      for (let row = Math.floor(Math.min(P[a + 2], P[b + 2], P[c + 2])); row <= Math.floor(Math.max(P[a + 2], P[b + 2], P[c + 2])); row++) {
+        for (let col = Math.floor(Math.min(P[a], P[b], P[c])); col <= Math.floor(Math.max(P[a], P[b], P[c])); col++) bins.get(`${col},${row}`)?.push(tri);
+      }
+    }
+    const covered = new Set();
+    for (const [col, row] of floor || []) {
+      const key = `${col},${row}`;
+      if (protectedKeys.has(key)) continue;
+      const tris = bins.get(key);
+      let blocked = 0;
+      for (let si = 0; si < ROCK_PROBE_GRID; si++) for (let sj = 0; sj < ROCK_PROBE_GRID; sj++) {
+        const x = col + (si + .5) / ROCK_PROBE_GRID, z = row + (sj + .5) / ROCK_PROBE_GRID;
+        const nearest = ROCK_PROBE_HEIGHTS.map(() => ({ y: Infinity, up: false }));
+        for (const { a, b, c, denom, up } of tris) {
+          const wa = ((P[b + 2] - P[c + 2]) * (x - P[c]) + (P[c] - P[b]) * (z - P[c + 2])) / denom;
+          const wb = ((P[c + 2] - P[a + 2]) * (x - P[c]) + (P[a] - P[c]) * (z - P[c + 2])) / denom;
+          const wc = 1 - wa - wb;
+          if (wa < 0 || wb < 0 || wc < 0) continue;
+          const y = wa * P[a + 1] + wb * P[b + 1] + wc * P[c + 1];
+          ROCK_PROBE_HEIGHTS.forEach((h, n) => { if (y > h && y < nearest[n].y) nearest[n] = { y, up }; });
+        }
+        if (nearest.some(hit => hit.up)) blocked++;
+      }
+      if (blocked * 2 >= ROCK_PROBE_GRID * ROCK_PROBE_GRID) covered.add(key);
+    }
+    return covered;
+  }
 
   function entranceConnectedFloor(floor, exitCol, exitRow) {
     const floorSet = new Set(floor.map(([col, row]) => `${col},${row}`)); // Used to discard any isolated carved pocket that cannot be reached from the cave mouth.
@@ -103,7 +161,7 @@
       : generationOptions.fast
         ? { branchCount, entranceLength, tileSize, gridN: 32, splineSamples: 5, hitsPerStep: 1, probeDigBursts: 2, probeMaxPasses: 45, enforceWalkableClearance: 1 }
         : { branchCount, entranceLength, tileSize };
-    const result = window.CavernSculptor.carveMazeCavern({ ...sculptOptions, solidOuterRim: true }, rng);
+    const result = window.CavernSculptor.carveMazeCavern({ ...sculptOptions, ...tallCaveSculptOptions(CAVE_HEIGHT_SCALE), solidOuterRim: true }, rng);
 
     // Shift every tile coordinate (and the mesh's X/Z) from the sculptor's
     // arbitrary centered local space into positive grid space, same +1
@@ -113,13 +171,18 @@
     for (const key of [...result.claimed, ...(result.solidRim || [])]) { const [x, y] = key.split(',').map(Number); if (x < minX) minX = x; if (y < minY) minY = y; }
     const shiftX = -minX + 1, shiftY = -minY + 1;
 
-    const carvedFloor = [...result.claimed].map(key => { const [x, y] = key.split(',').map(Number); return [x + shiftX, y + shiftY]; });
+    const claimedFloor = [...result.claimed].map(key => { const [x, y] = key.split(',').map(Number); return [x + shiftX, y + shiftY]; });
     const outerRimTiles = [...(result.solidRim || [])].map(key => { const [x, y] = key.split(',').map(Number); return [x + shiftX, y + shiftY]; }); // Solid former edge tiles are never candidates for creatures, loot, or ore.
-    const exitTiles = result.entranceTiles.map(([x, y]) => [x + shiftX, y + shiftY]);
+    const entranceTiles = result.entranceTiles.map(([x, y]) => [x + shiftX, y + shiftY]);
     const [nfx, nfy] = result.nestTile;
 
     const positions = result.mesh.positions;
     for (let i = 0; i < positions.length; i += 3) { positions[i] += shiftX; positions[i + 2] += shiftY; }
+    const spawnTile = entranceTiles[Math.floor(entranceTiles.length / 2)]; // The guaranteed-walkable middle of the doorway.
+    const rockCovered = rockCoveredFloorTiles(claimedFloor, result.mesh, new Set([spawnTile.join(',')])); // Walkable tiles the shell still bulges over collide like the rock they render as.
+    const carvedFloor = claimedFloor.filter(tile => !rockCovered.has(tile.join(',')));
+    for (const tile of claimedFloor) if (rockCovered.has(tile.join(','))) outerRimTiles.push(tile);
+    const exitTiles = entranceTiles.filter(tile => !rockCovered.has(tile.join(','))); // A doorway end tile buried in the rock is not an exit.
 
     // exitCol/exitRow used to be hardcoded to local (0,0)+shift — a leftover
     // from before the entrance moved off the origin (see carveMazeCavern's
@@ -133,7 +196,7 @@
     // player overlapping solid rock at the entrance. The middle exitTiles
     // entry is the same guaranteed-walkable tile carveMazeCavern itself
     // already treats as "the" entrance (see its own startKey).
-    const [exitCol, exitRow] = exitTiles[Math.floor(exitTiles.length / 2)];
+    const [exitCol, exitRow] = spawnTile;
     const connected = entranceConnectedFloor(carvedFloor, exitCol, exitRow); // Used as the authoritative collision floor so an isolated SDF pocket can never become a spawnable room.
     const floor = connected.floor;
     const footprint = [...floor, ...outerRimTiles]; // Grid bounds include the protected rock around the walkable cave.
@@ -155,7 +218,8 @@
       exitTiles,
       nestCol, nestRow,
       disconnectedFloorTilesRemoved: connected.removed,
-      mesh: { positions, indices: result.mesh.indices },
+      rockCoveredFloorTiles: rockCovered.size,
+      mesh: { positions, indices: result.mesh.indices, vaultCeiling: result.vaultCeiling },
     };
     if (useCache) _cavernFloorCache.set(cacheKey, floorResult);
     return floorResult;
@@ -471,19 +535,17 @@
   }
 
   function expandCavernMapData(mapData, clearances, rng) {
-    const floor = window.CavernSculptor.expandFootprint(mapData.floor, clearances); // Locale carver rebuilds visual rock and collision from the same expanded usable footprint.
-    const heightScale = Math.max(1, Number(mapData.wallHeightScale) || 1); // Taller caves are carved taller, not stretched after the fact.
-    const cacheKey = `${mapData.id}:clearance`, signature = JSON.stringify([floor, mapData.exitCol, mapData.exitRow, heightScale]); // Existing cave cache keeps one expanded shell per map, replacing it when its footprint, entrance, or height changes.
+    const expandedFloor = window.CavernSculptor.expandFootprint(mapData.floor, clearances); // Locale carver rebuilds visual rock and collision from the same expanded usable footprint.
+    const heightScale = Math.max(CAVE_HEIGHT_SCALE, Number(mapData.wallHeightScale) || 1); // Taller caves are carved taller, not stretched after the fact.
+    const cacheKey = `${mapData.id}:clearance`, signature = JSON.stringify([expandedFloor, mapData.exitCol, mapData.exitRow, heightScale]); // Existing cave cache keeps one expanded shell per map, replacing it when its footprint, entrance, or height changes.
     const cached = _cavernFloorCache.get(cacheKey); // Re-entry reuses the expensive SDF carve without caching runtime loot/inhabitant state.
-    // Growing sizeY extends the probe's vertical sweep levels upward so the
-    // ceiling is genuinely carved at the new height; pathYShiftFrac is divided
-    // by the same factor so the floor keeps its absolute offset from the
-    // volume bottom and all of the added height goes above it.
-    const generated = cached?.signature === signature ? cached.generated : window.CavernSculptor.carveFootprintCavern(floor,
+    const generated = cached?.signature === signature ? cached.generated : window.CavernSculptor.carveFootprintCavern(expandedFloor,
       { tileSize: 0.5, gridN: 32, organicJitter: 0, hitsPerStep: 1, probeDigBursts: 2, probeMaxPasses: 45, enforceWalkableClearance: 1, refineFullColumn: true,
-        sizeY: CAVERN_SCULPT_SIZE_Y * heightScale, pathYShiftFrac: CAVERN_PATH_Y_SHIFT_FRAC / heightScale,
+        ...tallCaveSculptOptions(heightScale),
         entrance: { col: mapData.exitCol, row: mapData.exitRow, side: 'south' } }, rng);
     if (cached?.signature !== signature) _cavernFloorCache.set(cacheKey, { signature, generated });
+    const rockCovered = rockCoveredFloorTiles(expandedFloor, generated.mesh, new Set([`${mapData.exitCol},${mapData.exitRow}`])); // Same geometry/collision agreement as generateCavernFloor.
+    const floor = entranceConnectedFloor(expandedFloor.filter(tile => !rockCovered.has(tile.join(','))), mapData.exitCol, mapData.exitRow).floor;
     const rim = new Map(), floorKeys = new Set(floor.map(tile => tile.join(','))); // The newly carved room moves the protected boundary outward rather than making old wall tiles both floor and collider.
     for (const [col, row] of floor) for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
       const cell = [col + dc, row + dr], key = cell.join(','); // Adjacent solid cells remain unavailable to every feature-placement pool.
@@ -497,7 +559,7 @@
     mapData.rows = Math.max(mapData.rows, ...mapData.outerRimTiles.map(tile => tile[1] + 2), ...floor.map(tile => tile[1] + 2));
     mapData.floorSurfaceByTile = surface.byTile;
     mapData.floorSurfaceY = surface.median;
-    mapData.mesh = { ...generated.mesh, surfaceMaterial: mapData.mesh?.surfaceMaterial }; // Height is already carved in; no render-time vertex stretch.
+    mapData.mesh = { ...generated.mesh, vaultCeiling: generated.vaultCeiling, surfaceMaterial: mapData.mesh?.surfaceMaterial }; // Height is already carved in; no render-time vertex stretch.
     mapData.cavernCarvedHeightScale = heightScale;
     mapData.cavernClearanceFootprints = clearances;
     return mapData;
@@ -543,6 +605,8 @@
     generateCavernFloor,
     entranceConnectedFloor,
     expandCavernMapData,
+    rockCoveredFloorTiles,
+    CAVE_HEIGHT_SCALE,
     pickDenMotherKind,
     synthesizeCavernMapData,
     loadLocaleCavernDefinition,

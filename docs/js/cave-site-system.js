@@ -474,7 +474,7 @@
         mapData.caveRuinEntrance = clone(plan.ruinEntrance);
         addProp(mapData, { id: plan.ruinEntrance.id, key: 'ruinEntranceDoor', col: tile.col, row: tile.row, rotY });
         addProp(mapData, { id: plan.ruinEntrance.id + '_tunnel', key: 'ruinEntranceTunnel', col: tile.col - dc * 1.2, row: tile.row - dr * 1.2, rotY, scaleX: 0.75, scaleZ: 1.5, embedded: true });
-        mapData.wallHeightScale = 2.5; // Consumed by the clearance recarve (always queued above), which sweeps the carving probe 2.5x higher.
+        mapData.wallHeightScale = 2.5; // Same as the tall height every procedural cave is now carved at (CavernGenerator CAVE_HEIGHT_SCALE); kept for save/diagnostic readers.
         return;
       }
     }
@@ -605,7 +605,7 @@
     }
 
     plan.outerRimTileCount = mapData.outerRimTiles?.length || 0;
-    plan.wallHeightScale = mapData.wallHeightScale || 1;
+    plan.wallHeightScale = mapData.cavernCarvedHeightScale || window.CavernGenerator?.CAVE_HEIGHT_SCALE || mapData.wallHeightScale || 1; // Every procedural cave is carved at the shared tall height.
 
     mapData.name = window.WildlifeSpawn?.denTurnoverStateForCavern?.(mapId)?.name || 'Unexplored cave';
     mapData.caveSite = clone(profile);
@@ -1101,7 +1101,7 @@
     return {
       ready: integrationsInstalled,
       currentArea,
-      latestChange: 'Locale clearance footprints now expand the actual cave carving: nests have 8x8 rooms, ruin doors have 7x6 approaches, and ruin caves are carved 2.5x taller (probe sweep extended upward, every column refined so no floating slabs). Edge tiles without a centre floor triangle ground on the floor, not the rock top. Expanded floors, grounding, and the protected rock rim share one rebuild.',
+      latestChange: 'Every procedural cave and mine is now carved 2.5x tall under a vaulted roof (walls lean inward over their top quarter into a flat ceiling; narrow passages close into arches). Walls land on tile edges, and any walkable tile still inside rendered rock becomes solid, so cave geometry and collision agree. Nests keep 8x8 rooms and ruin doors 7x6 approaches.',
       zoneCount: zones.length,
       caveCount: sites.length,
       caves: sites.map(site => ({ mapId: site.mapId, zoneId: site.zoneId, denId: site.denId, contents: site.contents, inhabitant: site.inhabitant, label: site.discoveredLabel })),
