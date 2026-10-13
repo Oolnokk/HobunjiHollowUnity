@@ -1,0 +1,607 @@
+name: Temp Combat Vocal Pitch Preserve
+
+on:
+  push:
+    branches:
+      - feat/combat-vocalizations
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/combat-vocalizations
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+Oolnokk@users.noreply.github.com"
+          git fetch origin main
+      - name: Reuse animal pitch-preserving time stretch for combat vocals
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          def replace_once(text, old, new, label):
+              if old not in text:
+                  raise SystemExit(f'{label}: expected text not found')
+              return text.replace(old, new, 1)
+
+          def sub_once(text, pattern, repl, label, flags=re.S | re.M):
+              out, count = re.subn(pattern, repl, text, count=1, flags=flags)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one match, got {count}')
+              return out
+
+          # 1) Expose the animal-call WSOLA renderer as a reusable, pitch-independent seam.
+          animal_path = Path('docs/js/animal-voice-independent-playback.js')
+          animal = animal_path.read_text()
+          animal = replace_once(
+              animal,
+              '  const MAX_TEMPO = 2;\n  const MAX_SHIFT_SEMITONES = 12;',
+              '  const MAX_TEMPO = 2;\n  const GENERIC_MAX_TEMPO = 4; // Shared pitch-preserving renderer may serve faster non-animal one-shots without changing animal authoring limits.\n  const MAX_SHIFT_SEMITONES = 12;',
+              'animal generic tempo constant',
+          )
+          animal = replace_once(
+              animal,
+              '  function clampTempo(value) { return clamp(finite(value, 1), MIN_TEMPO, MAX_TEMPO); }',
+              '  function clampTempoFor(value, maxTempo = MAX_TEMPO) { return clamp(finite(value, 1), MIN_TEMPO, maxTempo); }\n  function clampTempo(value) { return clampTempoFor(value, MAX_TEMPO); }',
+              'animal tempo clamp helper',
+          )
+          animal = sub_once(
+              animal,
+              r"  function processConstantAxes\(buffer, tempo, pitchSemitones\) \{.*?^  \}\n\n  function renderCacheKey\(url, tempo, pitchSemitones\) \{.*?^  \}\n  function pruneRenderCache\(\) \{.*?^  \}\n  function renderBufferFor\(url, decoded, context, tempo, pitchSemitones\) \{.*?^  \}\n",
+              '''  function processConstantAxes(buffer, tempo, pitchSemitones, maxTempo = MAX_TEMPO) {
+    const channels = Array.from({ length: buffer.numberOfChannels }, (_, index) => buffer.getChannelData(index).slice());
+    const pitchRatio = Math.pow(2, clampPitch(pitchSemitones) / 12); // Explicit pitch remains independent from tempo; only this final resample transposes it.
+    const safeTempo = clampTempoFor(tempo, maxTempo);
+    const stretched = wsolaStretch(channels, pitchRatio / safeTempo, buffer.sampleRate); // WSOLA changes wall-clock speed while compensating for the later pitch resample.
+    return applyOutputEdgeEnvelope(stretched, buffer.sampleRate);
+  }
+
+  function renderCacheKey(url, tempo, pitchSemitones, maxTempo = MAX_TEMPO) {
+    return `${absoluteUrl(url)}|${clampTempoFor(tempo, maxTempo).toFixed(4)}|${clampPitch(pitchSemitones).toFixed(3)}`;
+  }
+  function pruneRenderCache() {
+    while (renderedByKey.size > MAX_RENDER_CACHE) renderedByKey.delete(renderedByKey.keys().next().value);
+  }
+  function renderBufferFor(url, decoded, context, tempo, pitchSemitones, maxTempo = MAX_TEMPO) {
+    const key = renderCacheKey(url, tempo, pitchSemitones, maxTempo);
+    if (renderedByKey.has(key)) return renderedByKey.get(key);
+    const pending = Promise.resolve().then(() => {
+      const clock = typeof performance !== 'undefined' && performance?.now ? performance : Date;
+      const started = clock.now();
+      const channels = processConstantAxes(decoded, tempo, pitchSemitones, maxTempo);
+      const length = Math.max(1, channels[0]?.length || 1);
+      const rendered = context.createBuffer(channels.length, length, decoded.sampleRate);
+      for (let channelIndex = 0; channelIndex < channels.length; channelIndex++) rendered.copyToChannel(channels[channelIndex], channelIndex);
+      lastRenderMs = Math.round(clock.now() - started);
+      return rendered;
+    }).catch(error => {
+      renderedByKey.delete(key);
+      throw error;
+    });
+    renderedByKey.set(key, pending);
+    pruneRenderCache();
+    return pending;
+  }
+
+  function renderDecodedIndependentBuffer(decoded, context, opts = {}) {
+    if (!decoded || !context?.createBuffer) return Promise.reject(new Error('Pitch-preserving render requires a decoded AudioBuffer and AudioContext'));
+    const tempo = clampTempoFor(opts.tempo ?? 1, GENERIC_MAX_TEMPO);
+    const pitchSemitones = clampPitch(opts.pitchSemitones ?? 0);
+    const pitchRatio = Math.pow(2, pitchSemitones / 12);
+    return Promise.resolve().then(() => {
+      const channels = processConstantAxes(decoded, tempo, pitchSemitones, GENERIC_MAX_TEMPO);
+      const length = Math.max(1, channels[0]?.length || 1);
+      const rendered = context.createBuffer(channels.length, length, decoded.sampleRate);
+      for (let channelIndex = 0; channelIndex < channels.length; channelIndex++) rendered.copyToChannel(channels[channelIndex], channelIndex);
+      return {
+        buffer: rendered,
+        playbackRate: pitchRatio,
+        durationS: rendered.duration / Math.max(0.0001, pitchRatio),
+        sourceDurationS: decoded.duration,
+        tempo,
+        pitchSemitones,
+        independentPitch: true,
+      };
+    });
+  }
+''',
+              'animal shared renderer block',
+          )
+          animal = replace_once(
+              animal,
+              '    const tempo = clampTempo(opts.tempo);',
+              '    const tempo = clampTempoFor(opts.tempo, opts.tempoMax ?? MAX_TEMPO);',
+              'animal native fallback tempo clamp',
+          )
+          animal = sub_once(
+              animal,
+              r"  function play\(url, opts = \{\}\) \{.*?^  \}\n\n  function normalizedAllowed",
+              '''  function playWithTempoLimit(url, opts = {}, maxTempo = MAX_TEMPO) {
+    if (!url || window.AudioSystem?.gameAudioConfig?.()?.enabled === false) return null;
+    const resolved = absoluteUrl(url);
+    const tempo = clampTempoFor(opts.tempo ?? 1, maxTempo);
+    const pitchSemitones = clampPitch(opts.pitchSemitones ?? 0);
+    const context = ensureContext();
+    lastUrl = resolved;
+    lastTempo = tempo;
+    lastPitchSemitones = pitchSemitones;
+    if (!context || context.state !== 'running') primeAudioContext();
+    let stopped = false;
+    let active = null;
+    const handle = {
+      independentPitch: true,
+      stop() {
+        if (stopped) return;
+        stopped = true;
+        active?.stop?.();
+        activeHandles.delete(handle);
+      },
+    };
+    activeHandles.add(handle);
+    const completed = () => { activeHandles.delete(handle); opts.onFinished?.(); }; // Shared cleanup for decoded buffers and native fallback.
+    if (!context || context.state !== 'running') {
+      active = playNativeFallback(resolved, { ...opts, tempo, tempoMax: maxTempo, pitchSemitones, onFinished: completed }, opts.fallbackAudio || null);
+      return handle;
+    }
+    lastBackend = 'fixed render pending';
+    decodeUrl(resolved, context)
+      .then(decoded => renderBufferFor(resolved, decoded, context, tempo, pitchSemitones, maxTempo))
+      .then(rendered => {
+        if (stopped) return;
+        active = scheduleProcessedBuffer(context, rendered, { ...opts, tempo, pitchSemitones }, completed);
+      })
+      .catch(error => {
+        if (stopped) return;
+        lastPlaybackError = error;
+        active = playNativeFallback(resolved, { ...opts, tempo, tempoMax: maxTempo, pitchSemitones, onFinished: completed }, opts.fallbackAudio || null);
+      });
+    return handle;
+  }
+
+  function play(url, opts = {}) {
+    return playWithTempoLimit(url, opts, MAX_TEMPO);
+  }
+
+  function playIndependent(url, opts = {}) {
+    return playWithTempoLimit(url, opts, GENERIC_MAX_TEMPO);
+  }
+
+  function normalizedAllowed''',
+              'animal play wrapper',
+          )
+          animal = replace_once(
+              animal,
+              '    play,\n    preview,',
+              '    play,\n    playIndependent,\n    renderDecodedIndependentBuffer,\n    preview,',
+              'animal public independent renderer exports',
+          )
+          animal_path.write_text(animal)
+
+          # 2) Route all combat vocal tempo through that pitch-preserving renderer.
+          combat_path = Path('docs/js/combat/combat-vocalizations.js')
+          combat = combat_path.read_text()
+          combat = replace_once(combat, '  const VERSION = 2;', '  const VERSION = 3;', 'combat runtime version')
+          combat = sub_once(
+              combat,
+              r"  function playbackRateFor\(randomSemitones = 0\) \{.*?^  \}\n\n  function playOneShot\(url, baseVolume, pitchRandomSemitones, debugKind, detail = \{\}\) \{.*?^  \}\n",
+              '''  function voicePlaybackPlan(randomSemitones = 0) {
+    const mod = voiceModulation();
+    return {
+      modulation: mod,
+      tempo: clamp(mod.tempo, 0.35, 3),
+      pitchSemitones: clamp(mod.pitchSemitones + randomSemitones, -24, 24),
+    };
+  }
+
+  function setPitchPreservation(audio, enabled) {
+    try { audio.preservesPitch = enabled; } catch (_) {}
+    try { audio.mozPreservesPitch = enabled; } catch (_) {}
+    try { audio.webkitPreservesPitch = enabled; } catch (_) {}
+  }
+
+  function playOneShot(url, baseVolume, pitchRandomSemitones, debugKind, detail = {}) {
+    if (!url) return null;
+    const audio = audioConfig();
+    if (audio.enabled === false || Number(audio.sfxVolume ?? 1) <= 0) return null;
+    const plan = voicePlaybackPlan(randomPitchSemitones(pitchRandomSemitones));
+    const volume = clamp(
+      Number(baseVolume ?? 1) * plan.modulation.gain * Number(audio.sfxVolume ?? 1),
+      0,
+      1,
+    );
+    let snd = null;
+    try {
+      const renderer = window.AnimalVoiceIndependentPlayback?.playIndependent
+        || window.AnimalVoiceIndependentPlayback?.play;
+      if (renderer) {
+        snd = renderer(url, {
+          tempo: plan.tempo,
+          pitchSemitones: plan.pitchSemitones,
+          volume,
+        });
+      } else if (typeof Audio === 'function') {
+        // Emergency fallback preserves pitch while changing tempo. Explicit pitch
+        // authoring waits for the shared renderer rather than being coupled to speed.
+        snd = new Audio(url);
+        snd.volume = volume;
+        setPitchPreservation(snd, true);
+        snd.playbackRate = plan.tempo;
+        const result = snd.play();
+        result?.catch?.(error => recordPlaybackFailure(debugKind, error, url));
+      }
+    } catch (error) {
+      recordPlaybackFailure(debugKind, error, url);
+      return null;
+    }
+    return {
+      snd,
+      tempo: plan.tempo,
+      pitchSemitones: plan.pitchSemitones,
+      modulation: plan.modulation,
+      independentPitch: true,
+      ...detail,
+    };
+  }
+''',
+              'combat one-shot independent tempo block',
+          )
+          combat = combat.replace(
+              '      playbackRate: played?.rate ?? null,',
+              '      tempo: played?.tempo ?? null,\n      pitchSemitones: played?.pitchSemitones ?? null,',
+          )
+          combat = sub_once(
+              combat,
+              r"function startChargeSource\(ctx, buffer, output, when, offset, rate\) \{.*?^\}\n\n  function playStrikeGrunt",
+              '''function startChargeSource(ctx, rendered, output, when, progress = 0) {
+  const source = ctx.createBufferSource();
+  source.buffer = rendered.buffer;
+  source.playbackRate.value = rendered.playbackRate; // Only explicit pitch transposition lives here; tempo was already WSOLA-rendered.
+  source.connect(output);
+  const offset = clamp(progress, 0, 0.999999) * Math.max(0, rendered.buffer.duration - 0.0001);
+  source.start(when, offset);
+  return source;
+}
+
+function stopSource(source, when = 0) {
+  try { if (source) source.onended = null; } catch (_) {}
+  try { source?.stop?.(when || undefined); } catch (_) {}
+  try { source?.disconnect?.(); } catch (_) {}
+}
+
+function liveChargeTargetDurationS(abilityId) {
+  if (abilityId === 'chargedBreaker') {
+    const authoritative = Number(window.Combat?.chargedBreakerData?.MAX_CHARGE_S);
+    if (authoritative > 0) return authoritative;
+  }
+  const fallback = Number(config.chargePlayback?.fullChargeDurationByAbility?.[abilityId]);
+  return fallback > 0 ? fallback : null;
+}
+
+function chargeRatePlan(bufferDurationS, targetDurationS, normalTempo) {
+  const clipDurationS = Math.max(0.001, Number(bufferDurationS) || 0.001);
+  const targetS = Number(targetDurationS) > 0 ? Number(targetDurationS) : clipDurationS;
+  const baseNormalTempo = Math.max(0.02, Number(normalTempo) || 1);
+  const earlyReleaseNormalSpeedMul = Math.max(
+    0.1,
+    Number(config.chargePlayback?.earlyReleaseNormalSpeedMul) || 2,
+  );
+  return {
+    clipDurationS,
+    targetDurationS: targetS,
+    normalTempo: baseNormalTempo,
+    stretchedTempo: clamp(baseNormalTempo * (clipDurationS / targetS), 1 / 9, 4),
+    earlyReleaseNormalSpeedMul,
+    catchUpTempo: clamp(baseNormalTempo * earlyReleaseNormalSpeedMul, 1 / 9, 4),
+  };
+}
+
+function finishChargeToken(token) {
+  if (!token || token.done) return;
+  token.done = true;
+  activeChargeTokens.delete(token);
+  try { token.output?.disconnect?.(); } catch (_) {}
+}
+
+function cancelCharge(token) {
+  if (!token || token.cancelled || token.done) return;
+  token.cancelled = true;
+  const stopAt = token.ctx ? token.ctx.currentTime + 0.002 : 0;
+  stopSource(token.source, stopAt);
+  finishChargeToken(token);
+  debug.lastCharge = {
+    id: token.id,
+    action: 'cancel',
+    abilityId: token.abilityId,
+    atMs: Math.round(nowMs()),
+  };
+}
+
+function releaseCharge(token) {
+  if (!token || token.cancelled || token.released || token.done) return;
+  token.released = true;
+  if (!token.catchUpOnRelease) {
+    debug.lastCharge = {
+      id: token.id,
+      action: 'planned-release',
+      abilityId: token.abilityId,
+      targetDurationS: token.targetDurationS,
+      stretchedTempo: token.stretchedTempo ?? null,
+      pitchSemitones: token.pitchSemitones ?? null,
+      atMs: Math.round(nowMs()),
+    };
+    return;
+  }
+  if (!token.ready || !token.ctx || !token.source || !token.catchUpRendered) {
+    finishChargeToken(token);
+    return;
+  }
+
+  const elapsedS = Math.max(0, (nowMs() - token.createdAtMs) / 1000);
+  const progress = clamp(elapsedS / Math.max(0.001, token.fullDurationS || token.targetDurationS || 1), 0, 0.999999);
+  const switchAt = token.ctx.currentTime + 0.003;
+  stopSource(token.source, token.ctx.currentTime + 0.002);
+  token.source = startChargeSource(token.ctx, token.catchUpRendered, token.output, switchAt, progress);
+  token.source.onended = () => finishChargeToken(token);
+  debug.lastCharge = {
+    id: token.id,
+    action: 'early-release-catch-up',
+    abilityId: token.abilityId,
+    targetDurationS: token.targetDurationS,
+    normalTempo: token.normalTempo,
+    stretchedTempo: token.stretchedTempo,
+    catchUpTempo: token.catchUpTempo,
+    pitchSemitones: token.pitchSemitones,
+    earlyReleaseNormalSpeedMul: token.earlyReleaseNormalSpeedMul,
+    progress,
+    atMs: Math.round(nowMs()),
+  };
+}
+
+function beginCharge(options = {}) {
+  const requestedTarget = options.targetDurationS ?? options.durationS;
+  const token = {
+    id: ++chargeTokenSerial,
+    abilityId: options.abilityId || null,
+    category: options.category || null,
+    targetDurationS: Number.isFinite(Number(requestedTarget)) && Number(requestedTarget) > 0
+      ? Number(requestedTarget)
+      : null,
+    catchUpOnRelease: options.catchUpOnRelease === true,
+    createdAtMs: nowMs(),
+    ready: false,
+    released: false,
+    cancelled: false,
+    done: false,
+  };
+  activeChargeTokens.add(token);
+
+  preloadChargeBuffer().then(async buffer => {
+    if (!buffer || token.cancelled || token.released || token.done) {
+      activeChargeTokens.delete(token);
+      return;
+    }
+
+    const ctx = ensureAudioContext();
+    const renderIndependent = window.AnimalVoiceIndependentPlayback?.renderDecodedIndependentBuffer;
+    if (!ctx || !renderIndependent) {
+      finishChargeToken(token);
+      recordPlaybackFailure('charge-renderer', new Error('Animal-call pitch-preserving renderer unavailable'), config.assets?.chargeGrunt);
+      return;
+    }
+
+    const voice = voicePlaybackPlan(randomPitchSemitones(config.grunts?.pitchRandomSemitones ?? 0));
+    const plan = chargeRatePlan(buffer.duration, token.targetDurationS, voice.tempo);
+    const renderOpts = { pitchSemitones: voice.pitchSemitones };
+    const [fullRendered, catchUpRendered] = await Promise.all([
+      renderIndependent(buffer, ctx, { ...renderOpts, tempo: plan.stretchedTempo }),
+      token.catchUpOnRelease
+        ? renderIndependent(buffer, ctx, { ...renderOpts, tempo: plan.catchUpTempo })
+        : Promise.resolve(null),
+    ]);
+    if (token.cancelled || token.released || token.done) {
+      activeChargeTokens.delete(token);
+      return;
+    }
+
+    const elapsedS = Math.max(0, (nowMs() - token.createdAtMs) / 1000);
+    const progress = clamp(elapsedS / Math.max(0.001, fullRendered.durationS), 0, 1);
+    if (progress >= 1) {
+      finishChargeToken(token); // Do not start stale audio if first-use decode/render outlives the authored windup.
+      return;
+    }
+
+    const output = chargeOutputGain(ctx);
+    const when = ctx.currentTime + 0.003;
+    token.ctx = ctx;
+    token.buffer = buffer;
+    token.output = output;
+    token.normalTempo = plan.normalTempo;
+    token.stretchedTempo = plan.stretchedTempo;
+    token.catchUpTempo = plan.catchUpTempo;
+    token.pitchSemitones = voice.pitchSemitones;
+    token.earlyReleaseNormalSpeedMul = plan.earlyReleaseNormalSpeedMul;
+    token.fullRendered = fullRendered;
+    token.catchUpRendered = catchUpRendered;
+    token.fullDurationS = fullRendered.durationS;
+    token.ready = true;
+    token.source = startChargeSource(ctx, fullRendered, output, when, progress);
+    token.source.onended = () => finishChargeToken(token);
+
+    debug.lastCharge = {
+      id: token.id,
+      action: token.catchUpOnRelease ? 'begin-live-stretch' : 'begin-predetermined-stretch',
+      abilityId: token.abilityId,
+      targetDurationS: token.targetDurationS,
+      bufferDurationS: buffer.duration,
+      fullDurationS: fullRendered.durationS,
+      normalTempo: plan.normalTempo,
+      stretchedTempo: plan.stretchedTempo,
+      catchUpTempo: plan.catchUpTempo,
+      pitchSemitones: voice.pitchSemitones,
+      earlyReleaseNormalSpeedMul: plan.earlyReleaseNormalSpeedMul,
+      progress,
+      independentPitch: true,
+      atMs: Math.round(nowMs()),
+    };
+  }).catch(error => {
+    finishChargeToken(token);
+    recordPlaybackFailure('charge-start', error, config.assets?.chargeGrunt);
+  });
+  return token;
+}
+
+  function playStrikeGrunt''',
+              'combat charge playback block',
+          )
+          combat = replace_once(
+              combat,
+              "fetch(`${CONFIG_URL}?v=20261013vocal2`)",
+              "fetch(`${CONFIG_URL}?v=20261013vocal3`)",
+              'combat config cache token',
+          )
+          combat = replace_once(
+              combat,
+              '        normalRate: token.normalRate ?? null,\n        stretchedRate: token.stretchedRate ?? null,\n        catchUpRate: token.catchUpRate ?? null,',
+              '        normalTempo: token.normalTempo ?? null,\n        stretchedTempo: token.stretchedTempo ?? null,\n        catchUpTempo: token.catchUpTempo ?? null,\n        pitchSemitones: token.pitchSemitones ?? null,',
+              'combat debug active charge fields',
+          )
+          combat_path.write_text(combat)
+
+          # 3) Loader must require the new runtime API.
+          loader_path = Path('docs/js/combat/combat-config-loader.js')
+          loader = loader_path.read_text()
+          loader = replace_once(
+              loader,
+              "['js/combat/combat-vocalizations.js?v=20261013vocal2', () => Number(window.CombatVocalizations?.version) >= 2]",
+              "['js/combat/combat-vocalizations.js?v=20261013vocal3', () => Number(window.CombatVocalizations?.version) >= 3]",
+              'combat loader vocal runtime version',
+          )
+          loader_path.write_text(loader)
+
+          # 4) Editor previews must use the same renderer, so authoring matches runtime.
+          editor_path = Path('docs/tools/combat-vocalization-editor/index.html')
+          editor = editor_path.read_text()
+          editor = replace_once(
+              editor,
+              '<script src="../../js/tap-reliability.js?v=20261010a"></script>',
+              '<script src="../../js/tap-reliability.js?v=20261010a"></script>\n<script src="../../js/animal-voice-independent-playback.js?v=20261013combatvoice3"></script>',
+              'combat editor shared renderer script',
+          )
+          editor = replace_once(
+              editor,
+              'Applied to breath, pain, charge, attack, and release vocals. Tempo and pitch combine into playback rate; this intentionally behaves like a sampler, with no formant correction.',
+              'Applied to breath, pain, charge, attack, and release vocals. Tempo uses the same pitch-preserving WSOLA stretch as animal calls; authored pitch remains a separate axis.',
+              'combat editor modulation copy',
+          )
+          editor = replace_once(
+              editor,
+              "  function playbackRate(randomSpan=0){const p=profileFor(),random=(Math.random()*2-1)*Math.max(0,Number(randomSpan)||0);return clamp(p.tempo*Math.pow(2,(p.pitchSemitones+random)/12),.3,3)}\n  function chargeRatePlan(bufferDurationS,targetDurationS,normalRate){const clip=Math.max(.001,Number(bufferDurationS)||.001),target=Number(targetDurationS)>0?Number(targetDurationS):clip,normal=Math.max(.02,Number(normalRate)||1),mul=Math.max(.1,Number(cfg.chargePlayback?.earlyReleaseNormalSpeedMul)||2);return{normalRate:normal,stretchedRate:clamp(normal*(clip/target),.02,32),catchUpRate:clamp(normal*mul,.02,32),mul}}",
+              "  function voicePlan(randomSpan=0){const p=profileFor(),random=(Math.random()*2-1)*Math.max(0,Number(randomSpan)||0);return{profile:p,tempo:clamp(p.tempo,.35,3),pitchSemitones:clamp(p.pitchSemitones+random,-24,24)}}\n  function chargeTempoPlan(bufferDurationS,targetDurationS,normalTempo){const clip=Math.max(.001,Number(bufferDurationS)||.001),target=Number(targetDurationS)>0?Number(targetDurationS):clip,normal=Math.max(.02,Number(normalTempo)||1),mul=Math.max(.1,Number(cfg.chargePlayback?.earlyReleaseNormalSpeedMul)||2);return{normalTempo:normal,stretchedTempo:clamp(normal*(clip/target),1/9,4),catchUpTempo:clamp(normal*mul,1/9,4),mul}}",
+              'combat editor independent voice plan',
+          )
+          editor = replace_once(
+              editor,
+              "  function renderChargeStatus(){if(!chargeBuffer)return;const p=chargeRatePlan(chargeBuffer.duration,fullChargeDurationS,1);$('samplerStatus').textContent=`Source ${chargeBuffer.duration.toFixed(3)}s · 0→100% ${fullChargeDurationS.toFixed(3)}s · default stretch ${p.stretchedRate.toFixed(3)}× · early release ${p.mul.toFixed(2)}× normal`}",
+              "  function renderChargeStatus(){if(!chargeBuffer)return;const p=chargeTempoPlan(chargeBuffer.duration,fullChargeDurationS,1);$('samplerStatus').textContent=`Source ${chargeBuffer.duration.toFixed(3)}s · 0→100% ${fullChargeDurationS.toFixed(3)}s · WSOLA tempo ${p.stretchedTempo.toFixed(3)}× · early release ${p.mul.toFixed(2)}× normal · pitch preserved`}",
+              'combat editor charge status',
+          )
+          editor = sub_once(
+              editor,
+              r"  function stopPreview\(\)\{.*?^  async function playOneShot\(path,volume,pitchSpan\)\{.*?^  \}",
+              '''  function stopPreview(){previewSerial++;if(!currentPreview)return;clearTimeout(currentPreview.timer);try{currentPreview.source?.stop()}catch(_){}try{currentPreview.output?.disconnect()}catch(_){}currentPreview=null}
+  function startRenderedPreview(c,rendered,output,progress=0){const source=c.createBufferSource();source.buffer=rendered.buffer;source.playbackRate.value=rendered.playbackRate;source.connect(output);source.start(c.currentTime+.005,clamp(progress,0,.999999)*Math.max(0,rendered.buffer.duration-.0001));return source}
+  function releaseChargePreview(){if(!currentPreview||currentPreview.released||!currentPreview.catchUpRendered)return;currentPreview.released=true;clearTimeout(currentPreview.timer);const preview=currentPreview;try{preview.source.onended=null;preview.source.stop()}catch(_){}preview.source=startRenderedPreview(audioContext(),preview.catchUpRendered,preview.output,preview.releaseFraction);preview.source.onended=()=>{if(currentPreview===preview){log('Charge preview finished.');try{preview.output.disconnect()}catch(_){}currentPreview=null}};log(`Early release: remainder ${preview.plan.catchUpTempo.toFixed(3)}× tempo = ${preview.plan.mul.toFixed(2)}× normal (${preview.plan.normalTempo.toFixed(3)}×); pitch stays ${preview.pitchSemitones.toFixed(2)} st.`)}
+  async function previewCharge(releaseFraction=null){if(!chargeBuffer){log('Charge grunt is not decoded yet.','bad');return}stopPreview();const serial=++previewSerial,c=audioContext(),voice=voicePlan(cfg.grunts.pitchRandomSemitones),plan=chargeTempoPlan(chargeBuffer.duration,fullChargeDurationS,voice.tempo),render=window.AnimalVoiceIndependentPlayback?.renderDecodedIndependentBuffer;if(!render){log('Animal-call pitch-preserving renderer is unavailable.','bad');return}try{const[fullRendered,catchUpRendered]=await Promise.all([render(chargeBuffer,c,{tempo:plan.stretchedTempo,pitchSemitones:voice.pitchSemitones}),Number(releaseFraction)>0&&Number(releaseFraction)<1?render(chargeBuffer,c,{tempo:plan.catchUpTempo,pitchSemitones:voice.pitchSemitones}):Promise.resolve(null)]);if(serial!==previewSerial)return;const output=c.createGain();output.gain.value=clamp(cfg.grunts.volume*voice.profile.gain,0,3);output.connect(c.destination);const source=startRenderedPreview(c,fullRendered,output,0);currentPreview={source,output,plan,pitchSemitones:voice.pitchSemitones,catchUpRendered,releaseFraction:Number(releaseFraction)||0,released:false,timer:0};source.onended=()=>{if(currentPreview?.source===source){log('Charge preview finished.');currentPreview=null;try{output.disconnect()}catch(_){}}};if(Number(releaseFraction)>0&&Number(releaseFraction)<1){currentPreview.timer=setTimeout(releaseChargePreview,fullRendered.durationS*Number(releaseFraction)*1000);log(`Preview: release at ${(Number(releaseFraction)*100).toFixed(0)}% (${(fullRendered.durationS*Number(releaseFraction)).toFixed(2)}s), pitch preserved.`)}else log(`Preview: full WSOLA-stretched charge over ${fullRendered.durationS.toFixed(2)}s, pitch preserved.`)}catch(e){log(`Charge preview failed: ${e.message}`,'bad')}}
+  async function playOneShot(path,volume,pitchSpan){try{const p=voicePlan(pitchSpan),play=window.AnimalVoiceIndependentPlayback?.playIndependent||window.AnimalVoiceIndependentPlayback?.play;if(!play)throw new Error('Animal-call pitch-preserving renderer unavailable');play(assetUrl(path),{tempo:p.tempo,pitchSemitones:p.pitchSemitones,volume:clamp(Number(volume)*p.profile.gain,0,1)});log(`Audition: ${path.split('/').pop()} · tempo ${p.tempo.toFixed(3)}× · pitch ${p.pitchSemitones.toFixed(2)} st (independent)`) }catch(e){log(`Audition failed: ${e.message}`,'bad')}}''',
+              'combat editor preview playback',
+          )
+          editor = replace_once(
+              editor,
+              '  let cfg=null,chargeBuffer=null,ctx=null,currentPreview=null,waveformPeaks=null,speciesEntries=[],fullChargeDurationS=4;',
+              '  let cfg=null,chargeBuffer=null,ctx=null,currentPreview=null,waveformPeaks=null,speciesEntries=[],fullChargeDurationS=4,previewSerial=0;',
+              'combat editor preview serial',
+          )
+          editor_path.write_text(editor)
+
+          # 5) Focused regression now guards independent tempo/pitch semantics.
+          test_path = Path('scripts/test-combat-vocalizations.js')
+          test = test_path.read_text()
+          test = replace_once(
+              test,
+              "const source = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'combat', 'combat-vocalizations.js'), 'utf8');",
+              "const source = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'combat', 'combat-vocalizations.js'), 'utf8');\nconst animalPlaybackSource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'animal-voice-independent-playback.js'), 'utf8');",
+              'test animal playback source',
+          )
+          test = replace_once(
+              test,
+              "context.window.AudioSystem = {",
+              "context.window.AnimalVoiceIndependentPlayback = {\n  playIndependent(url, opts = {}) {\n    played.push({ url, ...opts, pitchPreserved: true });\n    return { stop() {} };\n  },\n};\ncontext.window.AudioSystem = {",
+              'test pitch-preserved renderer stub',
+          )
+          test = replace_once(test, 'assert.equal(context.window.CombatVocalizations.version, 2);', 'assert.equal(context.window.CombatVocalizations.version, 3);', 'test runtime version')
+          test = replace_once(
+              test,
+              "const chargePlan = context.window.CombatVocalizations.chargeRatePlan(1.2, 4, 1.25);\nassert(Math.abs(chargePlan.stretchedRate - 0.375) < 1e-9, 'full clip should stretch across the authored charge duration');\nassert(Math.abs(chargePlan.catchUpRate - 2.5) < 1e-9, 'early release must switch to 2x NORMAL speed, not 2x stretched speed');\nassert(Math.abs(chargePlan.catchUpRate - chargePlan.stretchedRate * 2) > 1, 'catch-up rate must be independent of the stretched rate');",
+              "const chargePlan = context.window.CombatVocalizations.chargeRatePlan(1.2, 4, 1.25);\nassert(Math.abs(chargePlan.stretchedTempo - 0.375) < 1e-9, 'full clip should stretch across the authored charge duration');\nassert(Math.abs(chargePlan.catchUpTempo - 2.5) < 1e-9, 'early release must switch to 2x NORMAL tempo, not 2x stretched tempo');\nassert(Math.abs(chargePlan.catchUpTempo - chargePlan.stretchedTempo * 2) > 1, 'catch-up tempo must be independent of the stretched tempo');",
+              'test charge tempo plan',
+          )
+          test = replace_once(
+              test,
+              "assert.equal(chargePlan.earlyReleaseNormalSpeedMul, 2);",
+              "assert.equal(chargePlan.earlyReleaseNormalSpeedMul, 2);\nassert.match(animalPlaybackSource, /renderDecodedIndependentBuffer/, 'combat should reuse the animal-call independent tempo/pitch renderer');\nassert.match(source, /AnimalVoiceIndependentPlayback\\?\\.playIndependent/, 'combat one-shots should route through the animal-call pitch-preserving player');",
+              'test shared renderer guards',
+          )
+          test = replace_once(
+              test,
+              "assert(!played.at(-1).url.includes('intensity4') && !played.at(-1).url.includes('intensity5'));",
+              "assert(!played.at(-1).url.includes('intensity4') && !played.at(-1).url.includes('intensity5'));\nassert.equal(played.at(-1).pitchPreserved, true, 'breath tempo changes must use independent pitch preservation');\nassert.equal(played.at(-1).tempo, 1, 'default vocal tempo remains 1x');\nassert(Number.isFinite(played.at(-1).pitchSemitones), 'explicit/random pitch is carried as a separate semitone axis');",
+              'test one-shot independent axes',
+          )
+          test_path.write_text(test)
+          PY
+      - name: Syntax checks
+        run: |
+          node --check docs/js/animal-voice-independent-playback.js
+          node --check docs/js/combat/combat-vocalizations.js
+          node --check docs/js/combat/combat-config-loader.js
+          python3 - <<'PY'
+          from pathlib import Path
+          page = Path('docs/tools/combat-vocalization-editor/index.html').read_text()
+          start = page.rfind('<script>') + len('<script>')
+          end = page.find('</script>', start)
+          if start < len('<script>') or end < 0:
+              raise SystemExit('combat vocal editor script block not found')
+          Path('/tmp/combat-vocal-editor.js').write_text(page[start:end])
+          PY
+          node --check /tmp/combat-vocal-editor.js
+      - name: Refresh cache busts
+        run: node scripts/check-cache-busts.js --fix
+      - name: Remove temporary workflow
+        run: git rm .github/workflows/temp-combat-vocal-pitch-preserve.yml
+      - name: Validate cache busts
+        run: node scripts/check-cache-busts.js origin/main
+      - name: Focused combat vocal regression
+        run: node scripts/test-combat-vocalizations.js
+      - name: Animal voice regressions
+        run: |
+          node scripts/test-animal-vocalizations.js
+          node scripts/test-animal-authored-voice-routing.js
+      - name: Full regression suite
+        run: node scripts/run-tests.js
+      - name: Commit validated pitch-preserving playback
+        run: |
+          git add -A
+          git commit -m "Preserve combat vocal pitch during tempo changes"
+          git push origin HEAD:feat/combat-vocalizations
