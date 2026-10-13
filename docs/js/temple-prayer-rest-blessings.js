@@ -1,16 +1,17 @@
 (() => {
   'use strict';
 
-  if (Number(window.TemplePrayerRestBlessings?.version) >= 1) return;
+  if (Number(window.TemplePrayerRestBlessings?.version) >= 2) return;
 
-  const VERSION = 1;
+  const VERSION = 2;
   const SAVE_FIELD = 'templePrayerRestBlessings'; // Stored on the active character so prayer/rest timers survive reloads with that character.
   const PRAYER_DURATION_HOURS = 7 * 24; // Used by all three temple prayers: one full in-game week.
   const WELL_RESTED_DURATION_HOURS = 16; // Used after a completed farmhouse-bed Sleep passage.
-  const ACTION_ID = 'temple_pray'; // Used by Action 3 while the player is seated in a temple pew during a service.
+  const ACTION_ID = 'temple_pray'; // Used by Action 3 while the player is seated in a temple pew during the morning service.
   const ACTION_BUTTON_ID = 'btnAction3'; // Leaves Action 1 Stand and Action 2 Wait untouched while seated.
+  const OWNED_BED_SLEEP_PENDING_KEY = '__hobunjiOwnedBedSleepPending'; // One-shot token armed only by the player's real bed Sleep interaction.
   const DOT_AFFLICTIONS = new Set(['bleedingHealth', 'poisonedHealth', 'burningHealth', 'kindlingHealth', 'corrodedHealth']); // Narshangetic resistance applies only to Health DoT buildup, not every Damage-family affliction.
-  const CHANGE_SUMMARY = 'Temple pews now offer three weeklong prayers during services; farmhouse sleep grants a 16-hour Well Rested buff.'; // Shown in mobile-readable diagnostics.
+  const CHANGE_SUMMARY = 'Morning Temple Service pews offer three weeklong prayers; only player-bed Sleep grants the 16-hour Well Rested buff.'; // Shown in mobile-readable diagnostics.
 
   const PRAYERS = Object.freeze({
     naoine: Object.freeze({ id: 'naoine', name: "Nao'ine Prayer", icon: '🌿', healingMultiplier: 1.20, skillStacks: Object.freeze({ foraging: 3, farming: 3 }), description: '+20% healing; +3 Foraging and Farming.' }),
@@ -23,6 +24,7 @@
   let actionInjected = false; // Prevents repeated snapshots while the prompt sync loop is active.
   let lastPromptEligible = false; // Exposed in diagnostics to make mobile service/seat failures visible.
   let lastServiceId = null; // Exposed in diagnostics to show which authored service window matched.
+  let lastRestSource = null; // Exposed in diagnostics to prove Well Rested came from the player-bed token.
   let lastError = null; // Captures nonfatal hook/storage errors for the in-game debug report.
   let resourceHooksInstalled = false; // Ensures ResourceSystem wrappers install once after late game boot.
   let cookingHookInstalled = false; // Ensures food/skill stack wrapping installs once.
@@ -119,16 +121,15 @@
 
   function activeTempleService() {
     if (window.__hobunjiFurnitureDebug?.getCurrentArea?.() !== 'map_i_temple') return null;
-    const weekday = window.CalendarSystem?.currentWeekdayName?.(); // Used by both morning Temple Service and the night Spirit Communion window.
+    const weekday = window.CalendarSystem?.currentWeekdayName?.(); // Morning service follows the same authored weekday as NPC congregation attendance.
     const now = Math.floor(finite(window.CalendarSystem?.getHour?.(), -1) * 60);
     for (const schedule of window.SCRATCHBONES_CONFIG?.game?.communitySchedules || []) {
       if ((schedule.area || '') !== 'map_i_temple') continue;
+      if (schedule.id !== 'shared_temple_service') continue; // Spirit Communion is deliberately not a prayer-menu service.
       if (schedule.day && schedule.day !== weekday) continue;
       if (!withinWindow(now, parseMinutes(schedule.from), parseMinutes(schedule.to))) continue;
-      return { id: schedule.id || 'temple_service', label: schedule.label || 'Temple Service' };
+      return { id: schedule.id, label: schedule.label || 'Temple Service' };
     }
-    // Spirit Communion is an authored alternate temple layout rather than a communitySchedule entry.
-    if (weekday === 'Anan' && withinWindow(now, 0, 3 * 60)) return { id: 'spirit_communion', label: 'Spirit Communion' };
     return null;
   }
 
@@ -138,7 +139,7 @@
   }
 
   function promptEligible() {
-    const service = activeTempleService(); // A prayer prompt only exists while an actual temple service window is active.
+    const service = activeTempleService(); // A prayer prompt only exists while the authored morning Temple Service window is active.
     lastServiceId = service?.id || null;
     lastPromptEligible = !!service && seatedInTemplePew();
     return lastPromptEligible;
@@ -260,7 +261,7 @@
   }
 
   function grantWellRested() {
-    const now = currentGameHour(); // Every completed Sleep refreshes the full 16-hour timer rather than stacking copies.
+    const now = currentGameHour(); // Every qualifying player-bed Sleep refreshes the full 16-hour timer rather than stacking copies.
     state.wellRested = { startedAtGameHour: now, expiresAtGameHour: now + WELL_RESTED_DURATION_HOURS };
     persistState();
     window.EffectBuffBar?.refresh?.(true);
@@ -431,8 +432,18 @@
     openMenu();
   }
 
+  function consumeOwnedBedSleepToken() {
+    const token = window[OWNED_BED_SLEEP_PENDING_KEY]; // Token exists only when the visible player-bed Sleep interaction was activated.
+    window[OWNED_BED_SLEEP_PENDING_KEY] = null;
+    if (!token || token.source !== 'player-bed') return false;
+    lastRestSource = token.source;
+    return true;
+  }
+
   function onTimePassage(event) {
-    if (event?.detail?.kind === 'sleep') grantWellRested(); // CalendarSystem fires this only after the real Sleep passage completes and restoration is applied.
+    if (event?.detail?.kind !== 'sleep') return;
+    if (!consumeOwnedBedSleepToken()) return; // Debug or other generic Sleep passages must not grant Well Rested.
+    grantWellRested();
   }
 
   function installDebugHook() {
@@ -448,6 +459,7 @@
       seated: seatedInTemplePew(), actionInjected,
       prayer: state.prayer ? { ...state.prayer, name: PRAYERS[state.prayer.id]?.name || state.prayer.id, remainingHours: Math.max(0, state.prayer.expiresAtGameHour - currentGameHour()) } : null,
       wellRested: state.wellRested ? { ...state.wellRested, remainingHours: Math.max(0, state.wellRested.expiresAtGameHour - currentGameHour()) } : null,
+      ownedBedSleepPending: !!window[OWNED_BED_SLEEP_PENDING_KEY], lastRestSource,
       hooks: { resourceHooksInstalled, cookingHookInstalled, alchemyHooksInstalled, hudProviderInstalled },
       currentBonuses: {
         healingMultiplier: activePrayer()?.healingMultiplier || 1,
@@ -495,6 +507,6 @@
     potionEffectScale,
     debugSnapshot,
     openMenu,
-    _test: Object.freeze({ choosePrayer, grantWellRested, activeTempleService, seatedInTemplePew, promptEligible, expireState, strengthenPotionMultiplier, sync }),
+    _test: Object.freeze({ choosePrayer, grantWellRested, activeTempleService, seatedInTemplePew, promptEligible, expireState, strengthenPotionMultiplier, consumeOwnedBedSleepToken, sync }),
   });
 })();
