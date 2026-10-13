@@ -129,6 +129,7 @@ const vm = require('node:vm');
         automatic: !!options.automatic,
         savedAt: now,
         recoveryKind: options.recoveryKind || 'auto',
+        reason: options.reason,
       });
       return { ...folderStatus };
     },
@@ -202,11 +203,26 @@ const vm = require('node:vm');
   assert.equal(autoResult.reason, 'load-grace');
   assert.equal(store.has('hobunjiSaveCheckpoint.auto.v1'), false);
 
+  const earlyTravel = await api.saveMapChange({ fromArea: 'farm', toArea: 'town' }); // Completed travel must work during the ordinary timer grace period.
+  assert.equal(earlyTravel.ok, true);
+  assert.equal(earlyTravel.skipped, undefined);
+  assert.equal(store.has('hobunjiSaveCheckpoint.auto.v1'), false);
+
   now += 46_000;
   autoResult = await api.saveAuto({ reason: 'test-first-auto' });
   assert.equal(autoResult.ok, true);
   const firstAutoRaw = store.get('hobunjiSaveCheckpoint.auto.v1');
   assert.ok(firstAutoRaw, 'first post-grace browser autosave is written');
+
+  const travel = await api.saveMapChange({ fromArea: 'farm', toArea: 'town' }); // Exercise the public transition entry point, separate from rolling saves.
+  assert.equal(travel.ok, true);
+  assert.equal(store.get('hobunjiSaveCheckpoint.auto.v1'), firstAutoRaw);
+  assert.match(travel.record.reason, /farm → town/);
+  const travelRaw = store.get('hobunjiSaveCheckpoint.mapChange.v1'); // Timer writes must preserve this travel checkpoint.
+  now += 60000;
+  await api.saveAuto({ reason: 'timer' });
+  assert.equal(store.get('hobunjiSaveCheckpoint.mapChange.v1'), travelRaw);
+  assert((await api.listRecoveryChoices()).choices.some(choice => choice.slot === 'mapChange'));
 
   const legacyMeshRecord = JSON.parse(firstAutoRaw); // Simulates a recovery checkpoint written before treasure meshes were excluded from save data.
   legacyMeshRecord.snapshot.meta.worlds[0].members.char_a.zoneTreasureState = {
@@ -441,6 +457,34 @@ const vm = require('node:vm');
   assert.equal(emergencyRestore.ok, true, 'imported checkpoint restores to the browser');
   assert.equal(emergencyRestore.browserOnly, true, 'imported restore never writes through the stuck folder');
   assert.equal(window.__hobunjiSaveCheckpointDebug.snapshot().emergencyRecoveryImportActive, false, 'emergency import mode ends once its restore has forgotten the wedged handle, so a later folder is not bypassed/forgotten');
+
+  folderStatus.state = 'ready';
+  folderStatus.autoSyncArmed = true;
+  window.__hobunjiGameStarted = true;
+  const autoBeforeTravel = store.get('hobunjiSaveCheckpoint.auto.v1'); // Folder travel callbacks must keep regular recovery untouched.
+  const folderTravel = await api.saveMapChange({ fromArea: 'town', toArea: 'map_i_temple' });
+  assert.equal(folderTravel.ok, true);
+  assert.equal(store.get('hobunjiSaveCheckpoint.auto.v1'), autoBeforeTravel);
+  assert.match(folderRecovery.get('mapChange').reason, /town → map_i_temple/);
+
+  const gameSource = fs.readFileSync(path.join(repoRoot, 'docs/game.js'), 'utf8'); // Run the real transition functions to verify the save wiring and loading boundary.
+  const transitionSource = gameSource.slice(gameSource.indexOf('      function startSceneTransition(callback)'), gameSource.indexOf('      // ── Enter / exit the interior'));
+  const travelCalls = []; // Captures completed transitions without needing the WebGL game.
+  const transitionContext = vm.createContext({ window: { HobunjiSaveCheckpoints: { saveMapChange: entry => travelCalls.push(entry) } }, travelCalls });
+  vm.runInContext(`let sceneTransAlpha = 0, sceneTransDir = 0, sceneTransCb = null, sceneTransFromArea = null, currentArea = 'farm';
+    const _buildingScenes = new Map();
+    const _isBuildingArea = area => area.startsWith('map_i_');
+    function catchNpcsOnPlayerAreaTransition() {}
+    function debugLog(message) { throw new Error(message); }
+    ${transitionSource}
+    startSceneTransition(() => { currentArea = 'map_i_barn'; _buildingScenes.set(currentArea, null); });
+    updateSceneTransition(1);
+    updateSceneTransition(1);`, transitionContext);
+  assert.equal(travelCalls.length, 0, 'destination still loading: no checkpoint');
+  vm.runInContext("_buildingScenes.set(currentArea, {}); updateSceneTransition(1); updateSceneTransition(1);", transitionContext);
+  assert.equal(travelCalls.length, 1, 'one checkpoint after destination is ready');
+  assert.equal(travelCalls[0].fromArea, 'farm');
+  assert.equal(travelCalls[0].toArea, 'map_i_barn');
 
   console.log('save checkpoint manager folder-first regression: ok');
 })().catch(error => {

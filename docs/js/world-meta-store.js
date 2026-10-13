@@ -81,6 +81,14 @@
     setLivestockFrameCache: (list) => { livestockFrameCache = list || null; },
     loadBreedingPairs,
     saveBreedingPairs: (worldId, list) => writeField(worldId, 'breedingPairs', list),
+    loadIncubators: worldId => readWorld(worldId).world?.incubators, // Incubation travels with the canonical world and every recovery snapshot.
+    saveIncubators(worldId, value) {
+      const { meta, world } = readWorld(worldId); // Use the same world authority as livestock.
+      if (!world) return false;
+      world.incubators = value;
+      localStorage.setItem(META_KEY, JSON.stringify(meta));
+      return true;
+    },
     loadStorage,
     saveStorage: (worldId, store) => writeField(worldId, 'storage', store),
   });

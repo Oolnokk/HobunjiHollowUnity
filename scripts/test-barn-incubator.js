@@ -303,3 +303,27 @@ card.children.find(node => node.textContent.includes('Manage Incubator')).listen
 assert(elements.get('barnIncubatorManageModal').classList.contains('open'), 'Farm-tab Manage opens the existing manager directly');
 assert.equal(elements.get('barnIncubatorSlots').children.length, uiAddition.addition.slots.length);
 console.log('barn incubator tests passed');
+
+// Move the live state to the world authority and prove the portable snapshot contains it.
+localStorage.setItem('hobunjiSaveMeta', JSON.stringify({ characters: [], worlds: [{ id: 'world_test' }] }));
+vm.runInContext(fs.readFileSync('docs/js/world-meta-store.js', 'utf8'), context);
+vm.runInContext(fs.readFileSync('docs/js/save-snapshot-core.js', 'utf8'), context);
+window.FarmBuildings.init(buildingDeps); // Reinitialization migrates the legacy browser sidecar.
+assert.equal(localStorage.getItem('hobunji_barn_incubators_v1:world_test'), null);
+const canonical = window.HobunjiSaveSnapshot.capture(); // Same boundary used by folder, cloud, and recovery saves.
+assert.deepEqual(JSON.parse(JSON.stringify(canonical.meta.worlds[0].incubators)), window.BarnIncubator.getState());
+const occupied = window.BarnIncubator.getState().barns[barn.id].additions[0]; // Give the remaining room an in-flight baby with full genetics.
+const savedBaby = { id: 'saved_baby', name: 'Pebble', kind: 'grehlr', lifeStage: 'baby', genotype: { coat: 'blue' } };
+occupied.slots[0].baby = savedBaby;
+occupied.slots[0].daysRemaining = 2;
+canonical.meta.worlds[0].incubators.barns[barn.id].additions[0] = occupied;
+window.HobunjiSaveSnapshot.apply(canonical);
+window.FarmBuildings.init(buildingDeps);
+assert.equal(window.BarnIncubator.getState().barns[barn.id].additions[0].slots[0].baby.name, 'Pebble');
+assert.equal(window.BarnIncubator.getState().barns[barn.id].additions[0].slots[0].daysRemaining, 2);
+buildings.splice(0); // A replacement layout no longer has the original barn.
+window.FarmPanel.render();
+assert(elements.get('barnLayoutEditorLaunchers').children.some(node => node.textContent.includes('Detached incubator')));
+assert.equal(window.BarnIncubator.cancelMaturation(occupied.id, 0).ok, true);
+assert.equal(livestock.find(entry => entry.id === 'saved_baby').genotype.coat, 'blue');
+console.log('Incubator canonical migration, snapshot restore, and detached layout recovery passed.');
