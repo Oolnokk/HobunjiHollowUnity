@@ -242,7 +242,7 @@ function makeContext(extra = {}) {
   // ── Calendar time skips use the same time-of-day bands as conditions ─
   {
     const fishing = read('js/fishing-minigame.js');
-    assert.match(fishing, /function fishingTimeOfDay\(hour = deps\.getHour\(\)\)/);
+    assert.match(fishing, /function fishingTimeOfDay\(hour = deps\?\.getHour\?\.\(\)\)/);
     const calendar = read('js/calendar-system.js');
     assert.match(calendar, /registerPanel\(\{\s*id: 'time-weather'/);
     assert.match(read('js/dialogue-content.js'), /id: 'conversation'/);

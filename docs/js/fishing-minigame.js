@@ -385,8 +385,9 @@
     return null;
   }
 
-  function fishingTimeOfDay(hour = deps.getHour()) { // Optional hour lets callers (Dev Companion time skips) classify a future time with the same bands.
-    const h = hour;
+  function fishingTimeOfDay(hour = deps?.getHour?.()) { // Optional hour lets callers (Dev Companion time skips) classify a future time with the same bands.
+    const h = Number.isFinite(Number(hour)) ? Number(hour) : 12; // Before the minigame is initialised (frame callbacks such as the Banubu snore check run during boot) there is no clock yet: treat it as midday instead of throwing every frame.
+
     if (h < 8)  return 'dawn';
     if (h < 17) return 'day';
     if (h < 20) return 'dusk';
