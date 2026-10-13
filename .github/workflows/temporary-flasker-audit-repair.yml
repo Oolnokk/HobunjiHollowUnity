@@ -52,7 +52,20 @@ jobs:
             git commit --no-edit
           fi
       - name: Apply audited Flasker fixes
-        run: python3 scripts/audit-fix-flasker-integration.py
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/audit-fix-flasker-integration.py
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/test-bandit-flasker.js')
+          text = path.read_text(encoding='utf-8')
+          old = "assert.match(bandits, /makeBanditFlaskToolHolder[\\s\\S]*?throwing_flask\\.png/, 'Flaskers render the actual throwing-flask sprite while attacking');"
+          new = "assert.match(bandits, /BANDIT_FLASK_SPRITE\\s*=\\s*['\"]assets\\/objectsprites\\/throwing_flask\\.png['\"]/, 'Flasker visual uses the actual throwing-flask sprite');\nassert.match(bandits, /function makeBanditFlaskToolHolder\\(/, 'Flaskers build a dedicated inventory-flask holder instead of pretending the flask is a tool definition');"
+          if old not in text:
+              raise SystemExit('Expected stale Flasker visual assertion not found')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
       - name: Syntax and focused regressions
         shell: bash
         run: |
