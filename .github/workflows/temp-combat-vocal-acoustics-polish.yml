@@ -86,8 +86,8 @@ jobs:
 
       - name: Commit validated polish and remove temporary helpers
         run: |
-          git rm .github/workflows/temp-combat-vocal-acoustics-polish.yml
-          git rm scripts/temp-combat-vocal-acoustics-polish.py
+          git rm -f .github/workflows/temp-combat-vocal-acoustics-polish.yml
+          git rm -f scripts/temp-combat-vocal-acoustics-polish.py
           git add -A
           git commit -m "Polish combat vocal acoustics and NPC utterances"
           git push origin HEAD:feat/combat-vocalizations
