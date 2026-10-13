@@ -5,7 +5,7 @@
 
   const CHANGE_SUMMARY = 'Prayer/rest integration anchors Pray in world space in front of the seated player and preserves action-slot input alignment while adding the prompt.'; // Used by mobile diagnostics to identify the latest integration layer.
   const CORE_URL = 'js/temple-prayer-rest-blessings.js?v=20261013prayer3'; // Used to load the single blessing/save/menu authority before installing integration-only fixes.
-  const state = { coreLoaded: false, sitAliasInstalled: false, promptHookInstalled: false, movementHookInstalled: false, potionHooksInstalled: false, lastPromptAnchor: null, lastError: null }; // Used by the in-game diagnostic snapshot.
+  const state = { coreLoaded: false, sitAliasInstalled: false, promptHookInstalled: false, movementHookInstalled: false, potionHooksInstalled: false, lastPromptAnchor: null, lastPrayerSlot: null, lastError: null }; // Used by the in-game diagnostic snapshot.
   let prayerPromptAnchor = null; // Reused world-space anchor that makes Pray float ahead of the player like a targeted-object interaction.
 
   function finite(value, fallback = 0) {
@@ -75,7 +75,7 @@
     if (popup.syncInteractionPrompts.__templePrayerWrapped) { state.promptHookInstalled = true; return true; }
     const original = popup.syncInteractionPrompts.bind(popup); // Used so Pray participates in the exact same floating targeted-object list as all other world interactions.
     const wrapped = function syncPrayerPrompt(options = {}) {
-      if (!prayerEligible()) return original(options);
+      if (!prayerEligible()) { state.lastPrayerSlot = null; return original(options); }
       const buttons = Array.isArray(options.buttons) ? [...options.buttons] : [];
       const promptInputs = Array.isArray(options.promptInputs) ? [...options.promptInputs] : [];
       let prayerSlot = buttons.findIndex(button => button?.action === 'temple_pray'); // Keeps promptInputs indexed to the actual action-bar slot instead of appending a mismatched hint row.
@@ -85,6 +85,7 @@
       } else {
         buttons[prayerSlot] = { ...buttons[prayerSlot], action: 'temple_pray', label: 'Pray', worldInteraction: true };
       }
+      state.lastPrayerSlot = prayerSlot;
       while (promptInputs.length <= prayerSlot) promptInputs.push(null);
       promptInputs[prayerSlot] = { actionId: 'temple_pray', label: action3Hint(), color: '#c9a6ff' };
       return original({ ...options, root: prayerPromptRoot() || options.root, buttons, promptInputs });
@@ -180,6 +181,7 @@
       prayerCore: window.TemplePrayerRestBlessings?.debugSnapshot?.() || null,
       promptEligible: prayerEligible(),
       action3Hint: action3Hint(),
+      prayerSlot: state.lastPrayerSlot,
       promptAnchor: state.lastPromptAnchor,
       hooks: { sitAliasInstalled: state.sitAliasInstalled, promptHookInstalled: state.promptHookInstalled, movementHookInstalled: state.movementHookInstalled, potionHooksInstalled: state.potionHooksInstalled },
       lastError: state.lastError,
