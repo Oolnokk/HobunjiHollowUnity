@@ -147,6 +147,17 @@
 
     CS.timeDebugSnapshot = function (...args) {
       const snapshot = originals.timeDebugSnapshot.apply(this, args) || {};
+      if (snapshot.initialized === false || !calendar) {
+        return {
+          ...snapshot,
+          civilMidnightRollover: true,
+          civilDay: null,
+          rawDayRolloverHour: RAW_DAY_ROLLOVER_HOUR,
+          civilDayRolloverHour: CIVIL_DAY_ROLLOVER_HOUR,
+          representedWeekday: null,
+          representedDate: null,
+        }; // The bridge itself loads before CalendarSystem.init(); do not re-enter date helpers while the base snapshot is explicitly not ready.
+      }
       return {
         ...snapshot,
         civilMidnightRollover: true,

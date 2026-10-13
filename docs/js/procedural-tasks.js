@@ -489,8 +489,9 @@
     _candidateCacheInvalidations++;
   }
   function _refreshCandidatesIfNeeded() {
+    if (!deps?.calendar) return false; // NavigationCompass begins polling before ProceduralTasks.init(); there is no quest-hour cache to refresh until game.js injects the live calendar.
     const hourKey = `${deps.calendar.day}:${Math.floor((deps.calendar.time01 || 0) * 24)}`;
-    if (_candidateCache.hourKey === hourKey) return;
+    if (_candidateCache.hourKey === hourKey) return true;
     const activeByNpc = new Map(); // Used to collapse multiple active requests/favors for the same NPC into one compass marker.
     const pendingByNpc = [];
     for (const [id, state] of Object.entries(deps?.getQuestProgress?.() || {})) {
@@ -509,9 +510,10 @@
       }
     }
     _candidateCache = { hourKey, activeByNpc: [...activeByNpc.values()], pendingByNpc };
+    return true;
   }
   function _resolveLive(candidate, labelFn) {
-    const walker = deps.npcWalkers.find(w => w.rec?.id === candidate.npcId);
+    const walker = (deps?.npcWalkers || []).find(w => w.rec?.id === candidate.npcId);
     if (!walker?.root?.position) return null;
     return {
       ...candidate,
@@ -522,7 +524,7 @@
     };
   }
   function _scanCompassTargets() {
-    _refreshCandidatesIfNeeded();
+    if (!_refreshCandidatesIfNeeded()) return { active: [], pending: [] }; // Parser/startup polling is expected; expose no quest markers until task deps are ready.
     const active = _candidateCache.activeByNpc
       .map(c => _resolveLive(c, (c, w) => `Quest: ${c.npcName || w.rec?.name || c.npcId}`))
       .filter(Boolean);

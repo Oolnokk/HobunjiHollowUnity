@@ -27,6 +27,18 @@ const timeDebug = calendar.window.CalendarSystem.timeDebugSnapshot();
 assert.equal(timeDebug.initialized, false, 'pre-init time debug should explicitly report not-ready state');
 assert.equal(timeDebug.rawDay, null, 'pre-init time debug should not invent live save state');
 assert.equal(timeDebug.nextTothalShiftRawDay, null, 'pre-init time debug must not call shift math through null deps');
+assert.equal(calendar.window.CalendarSystem.currentWeekdayName(), 'Anan', 'pre-init public weekday helper should safely use the opening-day placeholder');
+assert.equal(calendar.window.CalendarSystem.formatCalendarDate().startsWith('Anan, 4/1, 1154 AoT'), true, 'pre-init date formatter should not dereference null calendar deps');
+vm.runInContext(fs.readFileSync('docs/js/map-layout-system.js', 'utf8'), calendar, { filename: 'docs/js/map-layout-system.js' });
+const bridgedTimeDebug = calendar.window.CalendarSystem.timeDebugSnapshot();
+assert.equal(bridgedTimeDebug.initialized, false, 'civil-midnight bridge must preserve pre-init not-ready state');
+assert.equal(bridgedTimeDebug.representedWeekday, null, 'civil-midnight bridge must not re-enter weekday formatting before init');
+assert.equal(bridgedTimeDebug.representedDate, null, 'civil-midnight bridge must not invent a represented date before init');
+
+const procedural = runModule('docs/js/procedural-tasks.js');
+const preInitCompassTargets = procedural.window.ProceduralTasks.allCompassTargets();
+assert.equal(preInitCompassTargets.active.length, 0, 'pre-init procedural task compass scan should expose no active targets');
+assert.equal(preInitCompassTargets.pending.length, 0, 'pre-init procedural task compass scan should expose no pending targets');
 
 const wilderness = runModule('docs/js/wilderness-map.js');
 assert.equal(wilderness.window.WildernessMap.getCompassWaypoint(), null, 'pre-init wilderness map should expose no waypoint instead of dereferencing null deps');
