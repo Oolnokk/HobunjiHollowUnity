@@ -42,7 +42,9 @@ assert.match(core, /movementSpeedMultiplier\(\) \{ return isWellRested\(\) \? 1\
 assert.match(integration, /getMovementSpeedMul[\s\S]{0,450}movementSpeedMultiplier/, 'Well Rested movement speed is connected to the actual Combat movement multiplier');
 assert.match(core, /staminaRegenPerSec[\s\S]{0,120}\* 1\.30/, 'Well Rested gives a substantial Stamina-recovery bonus');
 assert.match(core, /Math\.floor\(base \/ 3\)/, 'food buffs gain one third of their stack count, rounded down');
-assert.match(integration, /baseStacks[\s\S]{0,160}Math\.floor\(baseStacks \/ 3\)/, 'potion potency tiers use the same rounded one-third stack-equivalent rule');
+const potionStackScaleBody = integration.match(/function potionStackScale\(effect\) \{([\s\S]*?)\n  \}/)?.[1] || ''; // Isolates the exact potion stack-equivalent calculation instead of depending on comment length between its statements.
+assert.match(potionStackScaleBody, /potencyTier/, 'potion stack-equivalent derives from the stored potency tier');
+assert.match(potionStackScaleBody, /Math\.floor\(baseStacks \/ 3\)/, 'potion potency tiers gain exactly one third of their stack-equivalent, rounded down');
 assert.match(core, /registerProvider\('temple-prayer-rest'/, 'prayers and Well Rested render through the existing EffectBuffBar');
 
 assert.match(core, /prayerRestSnapshot\s*=\s*debugSnapshot/, 'core state is available in the existing mobile debug surface');
