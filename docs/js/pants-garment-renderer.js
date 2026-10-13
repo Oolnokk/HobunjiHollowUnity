@@ -663,8 +663,12 @@
       });
       if (sides[0] && sides[1]) {
         const smooth = (e0, e1, x) => { const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
+        // The seam between the legs lies strictly between the two openings, so each opening moves with its own leg alone and
+        // keeps its shape (blending the legs across an opening would shear it).
+        const leftInner = Math.max(...sides[0].opening.map(p => p.x)), rightInner = Math.min(...sides[1].opening.map(p => p.x));
+        const seam0 = rightInner > leftInner + 1e-3 ? leftInner : (leftInner + rightInner) / 2 - 0.01, seam1 = rightInner > leftInner + 1e-3 ? rightInner : (leftInner + rightInner) / 2 + 0.01;
         const displace = (u, v) => {
-          const leftShare = 1 - smooth(0.42, 0.58, u);
+          const leftShare = 1 - smooth(seam0, seam1, u);
           let dx = 0, dy = 0;
           sides.forEach((side, index) => {
             const top = yAt(belt, u), t = Math.max(0, Math.min(1, (v - top) / Math.max(1e-3, yAt(side.opening, u) - top)));

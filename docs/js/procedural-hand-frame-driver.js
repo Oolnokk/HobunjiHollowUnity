@@ -402,10 +402,10 @@
       position: {
         x: 0, // Shoulder-aim wrapper replaces the authored T-pose X with this side's resolved shoulder X.
         y: h * (0.0045 * idleBreath * (1 - gait) + 0.018 * liftWave * gait),
-        z: h * 0.085 * swing * gait + h * 0.003 * Math.cos(idlePhase) * (1 - gait),
+        z: h * 0.16 * swing * gait + h * 0.003 * Math.cos(idlePhase) * (1 - gait),
       },
       rotationDeg: {
-        pitch: 22 * swing * gait + 2.5 * idleBreath * (1 - gait),
+        pitch: 38 * swing * gait + 2.5 * idleBreath * (1 - gait),
         yaw: (side === 'right' ? -1 : 1) * 3 * gait * Math.abs(swing),
         roll: (side === 'right' ? -1 : 1) * (5 * liftWave * gait + 1.5 * idleBreath * (1 - gait)),
       },
@@ -432,8 +432,8 @@
     const speedRatio = Math.max(0, Math.min(1.25, state.speed / FALLBACK_REFERENCE_SPEED));
     const targetStrength = state.speed > 0.035 ? Math.sqrt(speedRatio) : 0;
     state.gaitStrength = damp(state.gaitStrength, targetStrength, targetStrength > state.gaitStrength ? 9 : 13, elapsed);
-    const strideWorld = Math.max(state.modelHeight * 0.48, 0.12); // Approximate full step length used only to derive arm cadence.
-    const cadenceHz = state.speed > 0.035 ? Math.max(0.55, Math.min(3.1, state.speed / strideWorld)) : 0;
+    const fullStride = Math.max(state.modelHeight * (0.32 + 0.44 * Math.sqrt(speedRatio)), 0.12); // The legs' stride (procedural-leg-animation.js), so each arm swings once per leg cycle.
+    const cadenceHz = state.speed > 0.035 ? Math.max(0.55, Math.min(3.2, state.speed * 0.62 / fullStride)) : 0;
     if (cadenceHz > 0 && elapsed > 0) state.phase = (state.phase + elapsed * cadenceHz * Math.PI * 2) % (Math.PI * 2);
     state.mode = state.gaitStrength > 0.04 ? 'walk' : 'idle';
     state.poses.left = fallbackPose(state, 'left', nowMs);

@@ -929,6 +929,7 @@
       const bend = legBend[side];
       const solved = window.LegBones.solveTwoBoneLeg(THREE, {
         hip: chain.hip.position, foot: target, bendDegX: bend.x, bendDegZ: bend.z,
+        foldMaxLength: state.gaitStrideLength > 0.001 ? (standingLegLength() + Math.hypot(standingLegLength(), state.gaitStrideLength * 0.5)) * 0.5 : 0, // Legs just straighten (and slightly extend) at the extremes of a stride; the knees fold forward in between.
       });
       chain.thigh.quaternion.copy(solved.thighQuaternion);
       chain.calf.position.set(0, -solved.thighLength, 0);
@@ -1291,7 +1292,7 @@
       state.gaitStrength = damp(state.gaitStrength, gaitTarget, gaitTarget > state.gaitStrength ? 8 : 12, dt);
 
       const gaitLegLength = standingLegLength(); // Used as the stride reach basis so species proportions, not total sprite height, determine step length.
-      const strideCurve = 0.24 + 0.34 * Math.sqrt(speedRatio); // Preserves the existing speed-to-stride response before anatomical normalization.
+      const strideCurve = 0.32 + 0.44 * Math.sqrt(speedRatio); // Long, confident steps (about 1.3x the original curve); cadence drops to keep ground speed.
       const fullStride = (gaitLegLength / STRIDE_REFERENCE_LEG_FRACTION) * strideCurve;
       const strideLength = fullStride * state.gaitStrength;
       const cadenceHz = isGaiting && fullStride > 0.001
