@@ -52,6 +52,15 @@ const random = () => {
   return seed / 0x100000000;
 };
 let captured = null;
+let townValue = 0; // Drives the production Town Value metal ceiling used by Harlyao skeleton armor.
+const harlyaoArmorMetalKeys = ['nativeCopper', 'lowTinBronze', 'tinBronze', 'highTinBronze', 'arsenicalBronze', 'leadedBronze']; // Expected canonical armor progression.
+const TownMine = {
+  getTownValue: () => townValue,
+  filterMetalKeysForTownValue(metalKeys, value) {
+    const maximumTier = Math.max(1, Math.min(10, Math.floor(Number(value) || 0) + 1));
+    return (metalKeys || []).filter((metalKey, index) => index < maximumTier);
+  },
+};
 const ResourceSystem = {
   setImmutableAffliction(entity, id, amount) {
     entity.afflictions ||= {};
@@ -83,12 +92,13 @@ const BanditCombat = {
     };
   },
 };
-const windowObject = { GameRandom: { random }, ResourceSystem, BanditCombat };
+const windowObject = { GameRandom: { random }, ResourceSystem, BanditCombat, TownMine };
 windowObject.window = windowObject;
 vm.runInContext(fs.readFileSync('docs/js/metal-armor-system.js', 'utf8'), vm.createContext(windowObject));
 vm.runInContext(minionSource, vm.createContext(windowObject), { filename: 'combat-minion.js' });
 const api = windowObject.MinionCombat;
 assert(api);
+assert.deepEqual(Array.from(api.harlyaoArmorMetalKeys), harlyaoArmorMetalKeys, 'Minion armor progression exposes the canonical smith-alloy order for diagnostics/tests');
 
 const allowedClothes = new Set(['tankan_bodywrap', 'rugged_poncho', 'bandolier1', 'rounded_pauldron', 'tangedcirclet']);
 const allowedDyes = new Set(authoredDyes);
@@ -105,10 +115,22 @@ for (let i = 0; i < 300; i++) {
   if (overwear === 'rugged_poncho') sawPoncho = true;
   if (!roster.equippedCosmetics.some(id => ['tankan_bodywrap', 'rugged_poncho', 'bandolier1'].includes(id))) sawNoClothes = true;
   assert.equal(roster.metalArmorItems.length, 2);
-  for (const armor of roster.metalArmorItems) assert.equal(windowObject.MetalArmorSystem.temperLevel(armor), 5);
+  for (const armor of roster.metalArmorItems) {
+    assert.equal(windowObject.MetalArmorSystem.temperLevel(armor), 5);
+    assert.equal(armor.metalKey, 'nativeCopper', 'Town Value 0 skeletons wear Native Copper armor');
+  }
   assert.deepEqual(Array.from(windowObject.MetalArmorSystem.decorateAvatarDataWithMetalArmor(roster, roster.metalArmorItems).appearance.bodyColors.__hobunjiMetalArmor, item => item.temperXp), [300, 300]);
 }
 assert(sawNoOverwear && sawBodywrap && sawPoncho && sawNoClothes);
+
+const expectedMetalByTownValue = ['nativeCopper', 'lowTinBronze', 'tinBronze', 'highTinBronze', 'arsenicalBronze', 'leadedBronze', 'leadedBronze'];
+for (townValue = 0; townValue < expectedMetalByTownValue.length; townValue++) {
+  const expectedMetal = expectedMetalByTownValue[townValue];
+  assert.equal(api.harlyaoArmorMetalKey(), expectedMetal, `Town Value ${townValue} resolves to ${expectedMetal}`);
+  const roster = api.rollRoster('harlyao-skeleton', 'Skeleton');
+  assert.deepEqual(Array.from(roster.metalArmorItems, item => item.metalKey), [expectedMetal, expectedMetal], `Town Value ${townValue} gives both Harlyao armor articles the same highest unlocked alloy`);
+}
+townValue = 0;
 
 (async () => {
   const entity = await api.makeEntity({ speciesId: 'harlyao-skeleton', name: 'Harlyao Skeleton', tier: 2, x: 10, y: 20, zoneId: 'map_dev_arena' });
@@ -125,7 +147,7 @@ assert(sawNoOverwear && sawBodywrap && sawPoncho && sawNoClothes);
   assert.equal(captured.opts.defOverride.rangedWeaponKey, null);
   assert.equal(captured.opts.enemyClass, 'minion');
   assert(!captured.opts.rosterOverride.equippedCosmetics.some(id => /hood|facewrap|headband/i.test(id)));
-  console.log('Minion enemy class regression checks passed.');
+  console.log('Minion enemy class and Town Value armor regression checks passed.');
 })().catch(error => {
   console.error(error);
   process.exitCode = 1;
