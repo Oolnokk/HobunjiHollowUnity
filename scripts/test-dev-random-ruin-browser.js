@@ -813,6 +813,23 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       }
 
       const rangedMobile = await page.evaluate(async () => {
+        const context=window.DevRandomRuin.getRuntimeContext();
+        const occupancy=window.DevRandomRuin.getOccupancySnapshot();
+        const blocked=new Set(occupancy.blocked);
+        const controls=window.DevRandomRuin.getInteractionControls().map(control=>{
+          if(control.object){control.object.updateWorldMatrix(true,true);return {box:new THREE.Box3().setFromObject(control.object),range:Number(control.range)||2};}
+          return {point:control.point,range:Number(control.range)||2};
+        });
+        const points=occupancy.floor.filter(key=>!blocked.has(key)).map(key=>{const [x,z]=key.split(',').map(Number);return {x:x+.5,z:z+.5};});
+        points.sort((a,b)=>Math.hypot(a.x-context.spawn.x,a.z-context.spawn.z)-Math.hypot(b.x-context.spawn.x,b.z-context.spawn.z));
+        const clearPoint=points.find(point=>!window.DynamicSurfaces.blockerAt(point.x,point.z,{radius:.2,actorHeight:1.25})&&controls.every(control=>{
+          const x=control.box?Math.max(control.box.min.x,Math.min(control.box.max.x,point.x)):control.point?.x;
+          const z=control.box?Math.max(control.box.min.z,Math.min(control.box.max.z,point.z)):control.point?.z;
+          return !Number.isFinite(x)||!Number.isFinite(z)||Math.hypot(point.x-x,point.z-z)>control.range+.5;
+        })); // Native weapon controls are only available when no nearby world interaction owns the same physical slot.
+        if(!clearPoint||!window.DevRandomRuin.setPlayerWorldPoint(clearPoint,{grounded:true}))throw new Error('Ranged-control smoke could not reach clear floor space');
+        await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+        window.DevRandomRuinInteractions.refresh();
         const switchButton=document.getElementById('btnWeaponSwitch'); // Uses the same mobile combat-toggle control a touch player uses.
         for(let i=0;i<3 && window.Combat?.deps?.getActiveTool?.()!=='ranged';i++){
           switchButton?.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,cancelable:true,pointerId:700+i,pointerType:'touch',clientX:8,clientY:8}));
