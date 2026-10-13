@@ -377,16 +377,9 @@
     refreshFocusIfStale();
     const control = currentTarget;
     if (!control) return false;
-    if (control.tagName === 'SELECT') {
-      const enabledOptions = Array.from(control.options || []).filter(option => !option.disabled); // Used to keep controller adjustment out of disabled placeholder choices.
-      const current = enabledOptions.indexOf(control.options[control.selectedIndex]);
-      if (!enabledOptions.length) return false;
-      const next = enabledOptions[Math.max(0, Math.min(enabledOptions.length - 1, (current < 0 ? 0 : current) + delta))]; // Used for deterministic left/right select changes without opening a mouse-oriented native picker.
-      if (!next || next === control.options[control.selectedIndex]) return true;
-      control.value = next.value;
-      dispatchControlChange(control);
-      return true;
-    }
+    // Dropdowns are deliberately not adjusted here: left/right moves focus, and
+    // the value changes only by confirming the ◀/▶ buttons beside each select
+    // (js/controller-select-steppers.js).
     if (control.tagName === 'INPUT' && (control.type === 'range' || control.type === 'number')) {
       const step = control.step && control.step !== 'any' ? Number(control.step) : 1; // Used to respect the same granularity mouse/keyboard users receive.
       const min = control.min === '' ? -Infinity : Number(control.min);
@@ -406,7 +399,7 @@
   }
 
   function moveVectorOrAdjust(x, y) {
-    const horizontalIntent = Math.abs(x) >= Math.abs(y) * 1.15; // Prevents a diagonal meant for another row from accidentally changing a slider/select value.
+    const horizontalIntent = Math.abs(x) >= Math.abs(y) * 1.15; // Prevents a diagonal meant for another row from accidentally changing a slider value.
     if (horizontalIntent && Math.abs(x) > 0.01 && adjustFocusedControl(x < 0 ? -1 : 1)) return true;
     return moveVector(x, y);
   }

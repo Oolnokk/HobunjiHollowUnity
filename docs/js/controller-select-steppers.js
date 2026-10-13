@@ -1,8 +1,10 @@
 // ◀ / ▶ stepper buttons beside every dropdown in the game UI.
 //
-// Native <select> popups are mouse/touch-only: a controller can't open one,
-// and ControllerUI's left/right "adjust the focused select" path only helps
-// when the select itself is a reachable nav target. The combat loadout pane
+// Native <select> popups are mouse/touch-only, so a controller can't open
+// one. Left/right never changes a dropdown directly (it only moves focus);
+// the value changes only when the player focuses ◀ or ▶ and presses
+// Confirm. The decorated select itself is marked data-ctrl-skip so focus
+// steps straight from ◀ to ▶; mouse/touch can still open it normally. The combat loadout pane
 // solved this locally with explicit previous/next buttons on each side of its
 // dropdowns (js/combat/combat-loadout-ui.js); this module applies that same
 // pattern to every <select> in the game page — pause-menu tabs, world-
@@ -168,6 +170,7 @@
     const hadFocus = document.activeElement === select;
     parent.insertBefore(wrap, select);
     wrap.append(prev, select, next);
+    if (!select.hasAttribute('data-ctrl-skip')) select.setAttribute('data-ctrl-skip', ''); // Controller focus goes to the arrows, not the unopenable native select.
     if (hadFocus) { try { select.focus({ preventScroll: true }); } catch (_) {} }
     wrapped.set(select, { wrap, prev, next });
     decoratedCount += 1;
