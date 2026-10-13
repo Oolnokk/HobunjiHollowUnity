@@ -232,22 +232,47 @@
 
   function itemKeyForRecipe(recipeId, tier = 0) { return `alchemy_${recipeId}_p${Math.max(0, Math.min(4, Math.floor(Number(tier) || 0)))}`; }
   function parseBrewedItemKey(key) { const match = /^alchemy_([A-Za-z0-9]+)_p([0-4])$/.exec(String(key || '')); return match && RECIPE_DEFS[match[1]] ? { recipeId: match[1], potencyTier: Number(match[2]) } : null; } // Immutable potency parser.
-  function mixColor(keys) {
+  function mixColor(keys, fallback = 0x8a5fb0) {
     let red = 0, green = 0, blue = 0, count = 0; // Existing reagent-color average.
     (keys || []).forEach(key => { const color = REAGENT_DEFS[key]?.color; if (color == null) return; red += color >> 16 & 255; green += color >> 8 & 255; blue += color & 255; count++; });
-    return count ? Math.round(red / count) << 16 | Math.round(green / count) << 8 | Math.round(blue / count) : 0x8a5fb0;
+    return count ? Math.round(red / count) << 16 | Math.round(green / count) << 8 | Math.round(blue / count) : fallback;
+  }
+  function throwingFlaskColors(reagentKeys) {
+    const validKeys = [...(reagentKeys || [])].filter(key => REAGENT_DEFS[key]); // Used to keep stale/unknown reagent keys out of procedural flask colors.
+    const afflictKeys = validKeys.filter(key => REAGENT_DEFS[key].traits?.drive === 'afflict'); // Used exclusively for the throwing flask's yellow Afflict-color target.
+    const otherKeys = validKeys.filter(key => REAGENT_DEFS[key].traits?.drive !== 'afflict'); // Used exclusively for the original green bottle-color target.
+    const allColor = mixColor(validKeys); // Used as the truthful fallback when one side of the Afflict/non-Afflict split is empty.
+    const afflictColor = mixColor(afflictKeys, allColor); // Used to mix every ingredient whose native Drive is Afflict.
+    const primaryColor = mixColor(otherKeys, allColor); // Used to mix every remaining ingredient, regardless of the trait category it supplied to the recipe.
+    return { validKeys, afflictKeys, otherKeys, primaryColor, afflictColor };
+  }
+  function flaskColorHex(color) { return (Number(color) & 0xffffff).toString(16).padStart(6, '0'); } // Used by spriteMode metadata and mobile-readable diagnostics.
+  function applyThrowingFlaskSprite(itemDef, colors, colorSource) {
+    itemDef.spriteIcon = 'throwing_flask.png';
+    itemDef.spriteColor = colors.primaryColor;
+    itemDef.spriteSecondaryColor = colors.afflictColor; // Used by diagnostics/future renderers; current shared rendering carries the same value in spriteMode.
+    itemDef.spriteMode = `dual-keyed:${flaskColorHex(colors.afflictColor)}`;
+    itemDef.alchemyFlaskColorSource = colorSource; // Used to let a real brew replace a provenance-free shop/treasure fallback exactly once.
+    itemDef.alchemyFlaskAfflictKeys = [...colors.afflictKeys]; // Used by mobile diagnostics to show which ingredients supplied the secondary color.
+    itemDef.alchemyFlaskOtherKeys = [...colors.otherKeys]; // Used by mobile diagnostics to show which ingredients supplied the original color.
+    return itemDef;
   }
   function ensureRecipeItemDef(recipeId, tier = 0, reagentKeys = null) {
     const definition = RECIPE_DEFS[recipeId]; // Single item metadata source.
     if (!definition) return null;
     const safeTier = Math.max(0, Math.min(4, Math.floor(Number(tier) || 0))); // Stored tier.
     const key = itemKeyForRecipe(recipeId, safeTier); // Stack identity.
+    const isThrowingFlask = definition.useMode === 'throw'; // Used to select the authored two-color flask without affecting Afflict narcotics or ordinary potions.
+    const flaskColors = isThrowingFlask ? throwingFlaskColors(reagentKeys) : null; // Used to split Afflict vs. remaining ingredient colors for throwable recipes.
+    const hasIngredientColors = !!flaskColors?.validKeys.length; // Used to distinguish a real brew from provenance-free shop/treasure/save registration.
     POTION_ITEMS[key] = Object.freeze({ recipeId, potencyTier: safeTier });
     if (deps?.ITEM_DEFS && !deps.ITEM_DEFS[key]) {
-      const modeTag = definition.useMode === 'throw' ? 'Flask' : definition.useMode === 'livestock' ? 'Livestock' : 'Potion'; // Inventory filter tag.
-      const color = mixColor(reagentKeys); // Procedural bottle tint.
+      const modeTag = isThrowingFlask ? 'Flask' : definition.useMode === 'livestock' ? 'Livestock' : 'Potion'; // Inventory filter tag.
+      const color = mixColor(reagentKeys); // Procedural bottle tint for ordinary potions and the initial fallback before flask-specific splitting.
       deps.ITEM_DEFS[key] = { icon: definition.icon, label: `${definition.label}${safeTier ? ` · Potency ${safeTier + 1}` : ''}`, cat: 'processed', sellPrice: 0, tags: ['Alchemy', modeTag, definition.traits.drive, definition.traits.magnetism], desc: definition.desc, alchemyRecipeId: recipeId, alchemyPotencyTier: safeTier, useMode: definition.useMode, spriteIcon: 'bottle_potion.png', spriteColor: color, spriteMode: 'keyed' };
     }
+    const itemDef = deps?.ITEM_DEFS?.[key]; // Used to upgrade throwables from the generic bottle/fallback once ingredient provenance is available.
+    if (isThrowingFlask && itemDef && itemDef.alchemyFlaskColorSource !== 'ingredients') applyThrowingFlaskSprite(itemDef, flaskColors, hasIngredientColors ? 'ingredients' : 'fallback');
     return key;
   }
   function recipeScrollKey(recipeId) { return RECIPE_DEFS[recipeId] ? `alchemy_recipe_${recipeId}` : null; } // Common shops/quests/treasure recipe-item key.
@@ -316,7 +341,9 @@
     window.SkillSystem?.award?.('alchemy', window.SkillSystem?.XP_GAINS?.alchemyBrew || 8, 'brewed potion');
     window.HobunjiActivityEvents?.emit('potion_brewed', { itemKey, recipeId: chosen.recipeId });
     if (target && chosen.recipeId === target) window.SkillSystem?.award?.('alchemy', window.SkillSystem?.XP_GAINS?.alchemyTarget || 5, 'targeted recipe');
-    lastBrewDiagnostics = { keys, outcomes, target, probability: target ? targetingProbability(targetLevel, outcomes, target) : null, chosenRecipeId: chosen.recipeId, potencyTier: tier, batch, everyIngredientContributes: outcomes.every(outcome => outcome.assignments.every(a => Object.values(a.contributes).every(list => list.length))) }; // Dev report.
+    const brewedItemDef = deps?.ITEM_DEFS?.[itemKey]; // Used to expose the actual stored flask colors in mobile-safe diagnostics.
+    const flaskSprite = RECIPE_DEFS[chosen.recipeId]?.useMode === 'throw' ? { spriteIcon: brewedItemDef?.spriteIcon || null, primaryColor: brewedItemDef?.spriteColor == null ? null : `#${flaskColorHex(brewedItemDef.spriteColor)}`, afflictColor: brewedItemDef?.spriteSecondaryColor == null ? null : `#${flaskColorHex(brewedItemDef.spriteSecondaryColor)}`, afflictKeys: [...(brewedItemDef?.alchemyFlaskAfflictKeys || [])], otherKeys: [...(brewedItemDef?.alchemyFlaskOtherKeys || [])], colorSource: brewedItemDef?.alchemyFlaskColorSource || null } : null; // Dev report for the special throwing-flask palette split.
+    lastBrewDiagnostics = { keys, outcomes, target, probability: target ? targetingProbability(targetLevel, outcomes, target) : null, chosenRecipeId: chosen.recipeId, potencyTier: tier, batch, flaskSprite, everyIngredientContributes: outcomes.every(outcome => outcome.assignments.every(a => Object.values(a.contributes).every(list => list.length))) }; // Dev report.
     document.dispatchEvent(new CustomEvent('hobunji-alchemy-change', { detail: { type: 'brew', recipeId: chosen.recipeId, itemKey } }));
     return { ok: true, message: `⚗️ Brewed ${batch > 1 ? `${batch}× ` : ''}${RECIPE_DEFS[chosen.recipeId].label}${discovered ? ' — new reaction discovered!' : ''}`, consumed: keys, recipeId: chosen.recipeId, itemKey, potencyTier: tier, batch, outcomes };
   }
@@ -510,7 +537,7 @@
     RECIPE_DEFS,RECIPE_BY_TRAITS,REAGENT_DEFS,POTION_ITEMS,
     init,reagentsForZone,validateTraits,nativeRecipeForReagent,enumerateRecipes,canCompleteSelection,canAddReagent,outcomeWeight,weightedOutcome,targetingProbability,potencyTierForLevel,potencyMultiplier,setTargetRecipe,chooseOutcome,
     brewFrom,brew,setCampfireBrewing,herbalistPrecisionFraction,batchCountFor,discoverRecipe,isRecipeKnown,discoveryCount,serializeKnownRecipes,restoreKnownRecipes,serializeKnownEffects,restoreKnownEffects,
-    itemKeyForRecipe,parseBrewedItemKey,ensureRecipeItemDef,recipeScrollKey,ensureRecipeScrollItemDef,readRecipeItem,ensurePotionItemDef,getPotionEffectsFromKey,migrateLegacyPotionInventory,consumeRawReagent,drinkPotion,consumeBrewedItem:drinkPotion,applyRecipeToEntity,
+    itemKeyForRecipe,parseBrewedItemKey,throwingFlaskColors,ensureRecipeItemDef,recipeScrollKey,ensureRecipeScrollItemDef,readRecipeItem,ensurePotionItemDef,getPotionEffectsFromKey,migrateLegacyPotionInventory,consumeRawReagent,drinkPotion,consumeBrewedItem:drinkPotion,applyRecipeToEntity,
     serializeActiveEffects,restoreActiveEffects,update,getActiveStatMagnitude:statMagnitude,getMovementSpeedMultiplier,getSpeedMul,getAttackSpeedMultiplier,getOutgoingDamageMultiplier,getStaminaSpendMultiplier,getHealthRegenMultiplier,getStaminaRegenMultiplier,getMaxFootingMultiplier,getMaxStaminaMultiplier,getIncomingDamageAfflictionMultiplier,getPositiveFavorMultiplier,getPerceptionMultiplier,getFootingDamageMultiplier,getWorkSpeedMultiplier,
     afflictionTotals,restorativeScore,contextualRestoratives,cureCoverage,potionCategoryState,toggleReagent,renderPanel,diagnosticsSnapshot,diagnosticsText,
     get selectedReagents(){return [...selectedReagents];}, get targetedRecipeId(){return targetedRecipeId;}, get activeEffects(){return activeEffects.map(effect=>({...effect}));},
