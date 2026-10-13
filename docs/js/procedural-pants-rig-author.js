@@ -222,9 +222,11 @@
     const backdrop = window.HobunjiGameplayBackdrop;
     const portrait = backdrop?.getPortraitRender?.(); // Overwear/arm clothing/pauldron/hood art stays in front of the pants here exactly as in the game.
     const seatNpc = backdrop?.getSelectedNpc?.();
-    const overlayMask = portrait?.profile && portrait?.front
-      ? Renderer.buildOverlayMask(portrait.front, portrait.profile, { seatId: seatNpc?.id || seatNpc?.name || 'npc' }).catch(() => null)
-      : null;
+    let overlayMask = null; // Rebuilt only when the avatar's portrait changes: every author edit rebuilds the preview, and the mask costs a second portrait render.
+    if (portrait?.profile && portrait?.front) {
+      if (state.maskCache?.front !== portrait.front) state.maskCache = { front: portrait.front, promise: Renderer.buildOverlayMask(portrait.front, portrait.profile, { seatId: seatNpc?.id || seatNpc?.name || 'npc' }).catch(() => null) };
+      overlayMask = state.maskCache.promise;
+    }
     const handle = Renderer.attach(THREE, {
       overlayMask, avatarGroup: model, legHandle: { group: legSearchRoot(model) }, speciesId: identity.speciesId, gender: identity.gender,
       garmentId, garmentRecord: garment, characterRecord: character, imageUrl: garmentSourceUrl(garment), name: 'pantsLivePreview',

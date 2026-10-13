@@ -546,6 +546,7 @@
     };
     handle.setDebugSplines = on => {
       handle.showSplines = !!on;
+      handle.dirty = true;
       if (!handle.showSplines && handle.debugLines) for (const entry of Object.values(handle.debugLines)) entry.line.visible = entry.points.visible = false;
     };
 
@@ -556,6 +557,17 @@
       if (!visible) return;
       if (!handle.restCaptured) handle.captureRest();
       const aim = aimAtLiveLegs();
+      // Standing still (most NPCs, most of the time) nothing about the legs changes: skip the skin + upload when this frame's
+      // bones and orientation frames are identical to the last frame's.
+      let signature = 0;
+      for (const side of ['left', 'right']) {
+        const leg = aim[side], frames = handle.scratch.frames[side];
+        for (const joint of ['hip', 'knee', 'ankle']) signature = signature * 1.0000001 + leg[joint].x * 3.1 + leg[joint].y * 5.3 + leg[joint].z * 7.7;
+        for (const name of ['thigh', 'calf']) for (let k = 0; k < 9; k++) signature = signature * 1.0000001 + frames[name][k] * (k + 1.7);
+      }
+      if (signature === handle.lastSignature && !handle.dirty) return;
+      handle.lastSignature = signature;
+      handle.dirty = false;
       const transforms = handle.scratch.transforms; // Channel order is Core.WEIGHT_CHANNELS: belt, leftThigh, leftCalf, rightThigh, rightCalf.
       transforms[0] = null; // The waistband is rigid, exactly as authored.
       transforms[1] = boneTransform('left', 'hip', 'knee', aim);
