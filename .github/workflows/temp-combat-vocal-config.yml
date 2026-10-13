@@ -1,0 +1,41 @@
+name: Temp Combat Vocal Config
+
+on:
+  push:
+    branches:
+      - feat/combat-vocalizations
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/combat-vocalizations
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply authored config and runtime support
+        run: python3 .github/scripts/temp_apply_combat_vocal_config.py
+      - name: Refresh cache busts
+        run: node scripts/check-cache-busts.js --fix
+      - name: Validate focused vocal regressions
+        run: |
+          node scripts/test-combat-vocalizations.js
+          node scripts/test-animal-vocalizations.js
+          node scripts/test-animal-authored-voice-routing.js
+          node scripts/check-cache-busts.js origin/main
+      - name: Run full regression suite
+        run: node scripts/run-tests.js
+      - name: Commit validated config
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/temp-combat-vocal-config.yml .github/scripts/temp_apply_combat_vocal_config.py
+          git add -A
+          git commit -m "Apply authored combat vocalization tuning"
+          git push origin HEAD:feat/combat-vocalizations
