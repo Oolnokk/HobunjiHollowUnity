@@ -327,8 +327,8 @@
     const builder = window.InteriorSceneBuilder; // Used to tag every future interior floor material for per-map restyling.
     const existingBuilder = builder?.buildFloorMaterial; // Used beneath the additive floorStyle-aware wrapper.
     if (!existingBuilder || existingBuilder.__hobunjiFloorStyleWrapped) return !!existingBuilder;
-    function buildFloorMaterialWithStyle(threeArg, wallStyle, basePath, floorStyle) {
-      const material = existingBuilder.call(builder, threeArg, wallStyle, basePath); // Preserves all legacy brick/cavern/mine/canvas defaults.
+    function buildFloorMaterialWithStyle(threeArg, wallStyle, basePath, floorStyle, farmNaturalColors) {
+      const material = existingBuilder.call(builder, threeArg, wallStyle, basePath, floorStyle, farmNaturalColors); // Preserves all legacy brick/cavern/mine/canvas defaults.
       material.userData = material.userData || {};
       material.userData.hobunjiInteriorFloorMaterial = true;
       material.userData.hobunjiInteriorWallStyle = wallStyle || '';

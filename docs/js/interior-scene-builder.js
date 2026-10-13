@@ -480,14 +480,24 @@
     const buildOptions = Object.assign({}, DEFAULT_WB_OPTS, wbOpts); // Copy keeps house-window-only options from leaking into WallBuilder.
     const renderPanels = applyWallOpenings(wallPanels, buildOptions.wallOpenings); // Silhouette holes are resolved before any brick/canvas/fallback geometry is created.
     delete buildOptions.wallOpenings;
+    const farmColors = buildOptions.farmNaturalColors; // Farm-only finish never leaks into the WallBuilder options or other interiors.
+    delete buildOptions.farmNaturalColors;
+    const finishWalls = group => { // Uses the same semantic stone role and shader as farm exterior bricks.
+      markInteriorWallSurfaceGroup(group);
+      if (farmColors) {
+        group.traverse(mesh => { if (mesh.isMesh) mesh.userData.farmMaterialRole = 'stone'; });
+        root.FarmWorldSettings?.tintInterior?.(group, farmColors);
+      }
+      return group;
+    };
     if (wallStyle === 'cavern') return markInteriorWallSurfaceGroup(buildCavernWalls(THREE, renderPanels));
     if (wallStyle === 'mine') return markInteriorWallSurfaceGroup(buildCavernWalls(THREE, renderPanels, { textureUrl: buildOptions.mineTextureUrl || 'assets/textures/carved_smooth.png', color: 0x8a8d91, textureRepeat: .42 }));
     if (wallStyle === 'canvas') return markInteriorWallSurfaceGroup(buildCanvasWalls(THREE, renderPanels));
     if (wallBuilder) {
-      try { return markInteriorWallSurfaceGroup(wallBuilder.build(renderPanels, buildOptions)); }
+      try { return finishWalls(wallBuilder.build(renderPanels, buildOptions)); }
       catch (e) { console.warn('InteriorSceneBuilder.buildWallGroup: WallBuilder error, using fallback boxes: ' + e.message); }
     }
-    return markInteriorWallSurfaceGroup(buildFallbackBoxWalls(THREE, renderPanels));
+    return finishWalls(buildFallbackBoxWalls(THREE, renderPanels));
   }
 
   // wallStyle-aware floor material — boards.png-textured plank floor by
@@ -495,7 +505,7 @@
   // (packed dirt under a groundsheet). texturesBasePath should point at the
   // directory containing textures/boards.png (e.g. 'assets/' from game.js,
   // '../../assets/' from a docs/tools/<tool>/ page).
-  function buildFloorMaterial(THREE, wallStyle, texturesBasePath) {
+  function buildFloorMaterial(THREE, wallStyle, texturesBasePath, floorStyle = null, farmNaturalColors = null) {
     const mat = wallStyle === 'cavern'
       ? new THREE.MeshLambertMaterial({ color: 0x4a463f })
       : wallStyle === 'mine'
@@ -503,6 +513,11 @@
       : wallStyle === 'canvas'
       ? new THREE.MeshLambertMaterial({ color: 0x8a7a5c })
       : new THREE.MeshLambertMaterial({ color: 0x8b6914 });
+    const isFarmWood = !!farmNaturalColors && !['cavern', 'mine', 'canvas'].includes(wallStyle); // Only house and barn floors share the farm's natural wood finish.
+    if (isFarmWood) {
+      mat.userData = { ...mat.userData, farmInteriorTintOwned: true, farmMaterialRole: 'wood' };
+      root.FarmWorldSettings?.tintMaterial?.(mat, 'wood', farmNaturalColors);
+    }
     if (wallStyle === 'mine') {
       const base = texturesBasePath || 'assets/'; // Used to resolve the same stone texture from both the game and editor tool paths.
       new THREE.TextureLoader().load(base + 'textures/carved_smooth.png', (tex) => {
@@ -515,7 +530,10 @@
       const base = texturesBasePath || 'assets/';
       new THREE.TextureLoader().load(base + 'textures/boards.png', (tex) => {
         tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-        mat.map = tex; mat.color.set(0xffffff); mat.needsUpdate = true;
+        mat.map = tex;
+        if (isFarmWood) root.FarmWorldSettings?.tintMaterial?.(mat, 'wood', root.FarmWorldSettings.current());
+        else mat.color.set(0xffffff);
+        mat.needsUpdate = true;
       }, undefined, () => {});
     }
     return mat;

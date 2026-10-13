@@ -303,6 +303,27 @@ assert(card.children.some(node => node.textContent.includes('Empty')));
 card.children.find(node => node.textContent.includes('Manage Incubator')).listeners.click();
 assert(elements.get('barnIncubatorManageModal').classList.contains('open'), 'Farm-tab Manage opens the existing manager directly');
 assert.equal(elements.get('barnIncubatorSlots').children.length, uiAddition.addition.slots.length);
+// Barn domain adapters reuse the existing validated placement/move rules.
+let canEditLayout = true; // The same live permission can change while the editor remains open.
+panelDeps.hasFarmPermission = () => canEditLayout;
+const layout = B.createBarnLayoutAdapter(barn.id); // Real adapter supplied to the shared house renderer.
+const layoutAddition = layout.getPieces().find(piece => piece.id === uiAddition.addition.id); // Installed incubator in farm coordinates.
+assert.equal(layoutAddition.col, barn.col + uiAddition.addition.localCol);
+assert.equal(layoutAddition.row, barn.row + uiAddition.addition.localRow);
+assert.equal(layout.getPieces(), layout.getPieces(), 'render frames reuse the piece array');
+assert.equal(layout.getViewPieces(), layout.getViewPieces(), 'render frames reuse view bounds');
+const layoutPreview = layout.resolveMove(layoutAddition, barn.col, barn.row); // Snaps to an existing clear wall candidate.
+assert(layoutPreview?.placement);
+assert(layout.canMove(layoutAddition, barn.col, barn.row));
+canEditLayout = false;
+assert.equal(layout.canDrag(layoutAddition), false);
+assert.equal(layout.move(layoutAddition, barn.col, barn.row).ok, false);
+canEditLayout = true;
+let openedLayout = null; // Opening a barn must pass its adapter to the actual FarmPanel entrypoint.
+window.FarmPanel.openLayoutEditor = adapter => { openedLayout = adapter; };
+assert.equal(B.openBarnEditor(barn.id).ok, true);
+assert.equal(openedLayout.kind, 'barn');
+assert.equal(elements.has('barnIncubatorLayoutModal'), false, 'legacy 2D modal is no longer created');
 console.log('barn incubator tests passed');
 
 // Move the live state to the world authority and prove the portable snapshot contains it.
@@ -322,6 +343,11 @@ window.HobunjiSaveSnapshot.apply(canonical);
 window.FarmBuildings.init(buildingDeps);
 assert.equal(window.BarnIncubator.getState().barns[barn.id].additions[0].slots[0].baby.name, 'Pebble');
 assert.equal(window.BarnIncubator.getState().barns[barn.id].additions[0].slots[0].daysRemaining, 2);
+layout.refresh();
+const maturingPiece = layout.getPieces().find(piece => piece.id === occupied.id); // Restored baby occupies this editor piece.
+assert.equal(layout.canDrag(maturingPiece), false, 'maturing additions cannot start a drag');
+assert.equal(B.moveIncubator(occupied.id, layoutPreview.placement).ok, false, 'movement authority itself protects maturing babies');
+assert.equal(window.BarnIncubator.getState().barns[barn.id].additions[0].slots[0].baby.name, 'Pebble');
 buildings.splice(0); // A replacement layout no longer has the original barn.
 window.FarmPanel.render();
 assert(elements.get('barnLayoutEditorLaunchers').children.some(node => node.textContent.includes('Detached incubator')));
