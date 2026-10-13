@@ -169,14 +169,16 @@
                   "equippedCosmetics": [
                         "fine_hood",
                         "tankan_tunic",
-                        "tankan_bodywrap"
+                        "tankan_bodywrap",
+                        "pants_basic"
                   ],
                   "appliedDyes": {
                         "HOOD": "dye:CLOTH:dark_muted_blue",
                         "HOOD_B": "dye:CLOTH:bright_yellow_orange",
                         "CLOTH": "dye:CLOTH:dark_muted_blue",
                         "TORSO": "dye:CLOTH:pure_yellow_orange",
-                        "TORSO_B": "dye:CLOTH:bright_yellow_orange"
+                        "TORSO_B": "dye:CLOTH:bright_yellow_orange",
+                        "PANTS": "dye:CLOTH:dark_muted_blue"
                   },
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
@@ -220,14 +222,16 @@
                               "equippedCosmetics": [
                                     "fine_hood",
                                     "tankan_tunic",
-                                    "tankan_bodywrap"
+                                    "tankan_bodywrap",
+                                    "pants_basic"
                               ],
                               "appliedDyes": {
                                     "HOOD": "dye:CLOTH:dark_muted_blue",
                                     "HOOD_B": "dye:CLOTH:bright_yellow_orange",
                                     "CLOTH": "dye:CLOTH:dark_muted_blue",
                                     "TORSO": "dye:CLOTH:pure_yellow_orange",
-                                    "TORSO_B": "dye:CLOTH:bright_yellow_orange"
+                                    "TORSO_B": "dye:CLOTH:bright_yellow_orange",
+                                    "PANTS": "dye:CLOTH:dark_muted_blue"
                               }
                         }
                   },
@@ -746,12 +750,14 @@
                   },
                   "equippedCosmetics": [
                         "tankan_bodywrap",
-                        "appearance::hat::riverlandskasa_wide"
+                        "appearance::hat::riverlandskasa_wide",
+                        "pants_basic"
                   ],
                   "appliedDyes": {
                         "TORSO": "dye:CLOTH:dark_muted_yellow",
                         "CLOTH": "dye:CLOTH:smoky_yellow_orange",
-                        "HAT": "dye:CLOTH:dusty_yellow_orange"
+                        "HAT": "dye:CLOTH:dusty_yellow_orange",
+                        "PANTS": "dye:CLOTH:smoky_yellow_orange"
                   },
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
@@ -794,12 +800,14 @@
                               },
                               "equippedCosmetics": [
                                     "tankan_bodywrap",
-                                    "appearance::hat::riverlandskasa_wide"
+                                    "appearance::hat::riverlandskasa_wide",
+                                    "pants_basic"
                               ],
                               "appliedDyes": {
                                     "TORSO": "dye:CLOTH:dark_muted_yellow",
                                     "CLOTH": "dye:CLOTH:smoky_yellow_orange",
-                                    "HAT": "dye:CLOTH:dusty_yellow_orange"
+                                    "HAT": "dye:CLOTH:dusty_yellow_orange",
+                                    "PANTS": "dye:CLOTH:smoky_yellow_orange"
                               }
                         }
                   },
@@ -1303,12 +1311,14 @@
                   },
                   "equippedCosmetics": [
                         "tankan_tunic",
-                        "tankan_bodywrap"
+                        "tankan_bodywrap",
+                        "pants_basic"
                   ],
                   "appliedDyes": {
                         "TORSO": "dye:CLOTH:pure_green_blue",
                         "CLOTH": "dye:CLOTH:bright_blue",
-                        "CLOTH_B": "dye:CLOTH:bright_blue"
+                        "CLOTH_B": "dye:CLOTH:bright_blue",
+                        "PANTS": "dye:CLOTH:bright_blue"
                   },
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
@@ -1350,12 +1360,14 @@
                               },
                               "equippedCosmetics": [
                                     "tankan_tunic",
-                                    "tankan_bodywrap"
+                                    "tankan_bodywrap",
+                                    "pants_basic"
                               ],
                               "appliedDyes": {
                                     "TORSO": "dye:CLOTH:pure_green_blue",
                                     "CLOTH": "dye:CLOTH:bright_blue",
-                                    "CLOTH_B": "dye:CLOTH:bright_blue"
+                                    "CLOTH_B": "dye:CLOTH:bright_blue",
+                                    "PANTS": "dye:CLOTH:bright_blue"
                               }
                         }
                   },
@@ -1850,10 +1862,12 @@
                         }
                   },
                   "equippedCosmetics": [
-                        "tankan_tunic"
+                        "tankan_tunic",
+                        "pants_basic"
                   ],
                   "appliedDyes": {
-                        "TORSO": "dye:CLOTH:pale_yellow"
+                        "TORSO": "dye:CLOTH:pale_yellow",
+                        "PANTS": "dye:CLOTH:brown"
                   },
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
@@ -1894,10 +1908,12 @@
                                     }
                               },
                               "equippedCosmetics": [
-                                    "tankan_tunic"
+                                    "tankan_tunic",
+                                    "pants_basic"
                               ],
                               "appliedDyes": {
-                                    "TORSO": "dye:CLOTH:pale_yellow"
+                                    "TORSO": "dye:CLOTH:pale_yellow",
+                                    "PANTS": "dye:CLOTH:brown"
                               }
                         }
                   },
@@ -2353,10 +2369,12 @@
                         }
                   },
                   "equippedCosmetics": [
-                        "bandolier1"
+                        "bandolier1",
+                        "pants_basic"
                   ],
                   "appliedDyes": {
-                        "HAT": "dye:CLOTH:smoky_orange"
+                        "HAT": "dye:CLOTH:smoky_orange",
+                        "PANTS": "dye:CLOTH:brown"
                   },
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
@@ -2397,10 +2415,12 @@
                                     }
                               },
                               "equippedCosmetics": [
-                                    "bandolier1"
+                                    "bandolier1",
+                                    "pants_basic"
                               ],
                               "appliedDyes": {
-                                    "HAT": "dye:CLOTH:smoky_orange"
+                                    "HAT": "dye:CLOTH:smoky_orange",
+                                    "PANTS": "dye:CLOTH:brown"
                               }
                         }
                   },
@@ -2829,7 +2849,8 @@
                         "appearance::hat::basic_headband",
                         "tankan_bodywrap",
                         "bandolier1",
-                        "fine_hood"
+                        "fine_hood",
+                        "pants_basic"
                   ],
                   "appliedDyes": {
                         "HAT": "dye:CLOTH:smoky_orange",
@@ -2837,7 +2858,8 @@
                         "CLOTH_B": "dye:CLOTH:smoky_yellow",
                         "HOOD": "dye:CLOTH:smoky_yellow",
                         "HOOD_B": "dye:CLOTH:cream",
-                        "CLOTH_C": "dye:CLOTH:smoky_yellow"
+                        "CLOTH_C": "dye:CLOTH:smoky_yellow",
+                        "PANTS": "dye:CLOTH:smoky_yellow"
                   },
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
@@ -2882,7 +2904,8 @@
                                     "appearance::hat::basic_headband",
                                     "tankan_bodywrap",
                                     "bandolier1",
-                                    "fine_hood"
+                                    "fine_hood",
+                                    "pants_basic"
                               ],
                               "appliedDyes": {
                                     "HAT": "dye:CLOTH:smoky_orange",
@@ -2890,7 +2913,8 @@
                                     "CLOTH_B": "dye:CLOTH:smoky_yellow",
                                     "HOOD": "dye:CLOTH:smoky_yellow",
                                     "HOOD_B": "dye:CLOTH:cream",
-                                    "CLOTH_C": "dye:CLOTH:smoky_yellow"
+                                    "CLOTH_C": "dye:CLOTH:smoky_yellow",
+                                    "PANTS": "dye:CLOTH:smoky_yellow"
                               }
                         }
                   },
@@ -3361,14 +3385,16 @@
                         "appearance::hat::kenk_riverlandskasa_wide",
                         "fine_poncho",
                         "fine_hood",
-                        "appearance::hat::basic_headband"
+                        "appearance::hat::basic_headband",
+                        "pants_basic"
                   ],
                   "appliedDyes": {
                         "CLOTH": "dye:CLOTH:pure_green_blue",
                         "CLOTH_B": "dye:CLOTH:pale_green",
                         "HOOD": "dye:CLOTH:pure_green_blue",
                         "HOOD_B": "dye:CLOTH:pale_green",
-                        "HAT": "dye:CLOTH:dusty_yellow_green"
+                        "HAT": "dye:CLOTH:dusty_yellow_green",
+                        "PANTS": "dye:CLOTH:pure_green_blue"
                   },
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
@@ -3413,14 +3439,16 @@
                                     "appearance::hat::kenk_riverlandskasa_wide",
                                     "fine_poncho",
                                     "fine_hood",
-                                    "appearance::hat::basic_headband"
+                                    "appearance::hat::basic_headband",
+                                    "pants_basic"
                               ],
                               "appliedDyes": {
                                     "CLOTH": "dye:CLOTH:pure_green_blue",
                                     "CLOTH_B": "dye:CLOTH:pale_green",
                                     "HOOD": "dye:CLOTH:pure_green_blue",
                                     "HOOD_B": "dye:CLOTH:pale_green",
-                                    "HAT": "dye:CLOTH:dusty_yellow_green"
+                                    "HAT": "dye:CLOTH:dusty_yellow_green",
+                                    "PANTS": "dye:CLOTH:pure_green_blue"
                               }
                         }
                   },
@@ -3988,13 +4016,15 @@
                         ]
                   },
                   "equippedCosmetics": [
-                        "tankan_tunic"
+                        "tankan_tunic",
+                        "pants_basic"
                   ],
                   "appliedDyes": {
                         "CLOTH": "dye:CLOTH:smoky_orange",
                         "CLOTH_B": "dye:CLOTH:smoky_orange",
                         "TORSO": "dye:CLOTH:smoky_red_orange",
-                        "TORSO_B": "dye:CLOTH:smoky_red_orange"
+                        "TORSO_B": "dye:CLOTH:smoky_red_orange",
+                        "PANTS": "dye:CLOTH:smoky_orange"
                   },
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
@@ -4134,13 +4164,15 @@
                                     ]
                               },
                               "equippedCosmetics": [
-                                    "tankan_tunic"
+                                    "tankan_tunic",
+                                    "pants_basic"
                               ],
                               "appliedDyes": {
                                     "CLOTH": "dye:CLOTH:smoky_orange",
                                     "CLOTH_B": "dye:CLOTH:smoky_orange",
                                     "TORSO": "dye:CLOTH:smoky_red_orange",
-                                    "TORSO_B": "dye:CLOTH:smoky_red_orange"
+                                    "TORSO_B": "dye:CLOTH:smoky_red_orange",
+                                    "PANTS": "dye:CLOTH:smoky_orange"
                               }
                         }
                   },
@@ -4739,7 +4771,8 @@
                         ]
                   },
                   "equippedCosmetics": [
-                        "rugged_poncho"
+                        "rugged_poncho",
+                        "pants_basic"
                   ],
                   "appliedDyes": {
                         "CLOTH": "dye:CLOTH:dark_muted_green_blue",
@@ -4887,7 +4920,8 @@
                                     ]
                               },
                               "equippedCosmetics": [
-                                    "rugged_poncho"
+                                    "rugged_poncho",
+                                    "pants_basic"
                               ],
                               "appliedDyes": {
                                     "CLOTH": "dye:CLOTH:dark_muted_green_blue",
@@ -5338,11 +5372,13 @@
                   },
                   "equippedCosmetics": [
                         "bandolier1",
-                        "tankan_bodywrap"
+                        "tankan_bodywrap",
+                        "pants_basic"
                   ],
                   "appliedDyes": {
                         "CLOTH": "dye:CLOTH:charcoal",
-                        "CLOTH_B": "dye:CLOTH:charcoal"
+                        "CLOTH_B": "dye:CLOTH:charcoal",
+                        "PANTS": "dye:CLOTH:charcoal"
                   },
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
@@ -5384,11 +5420,13 @@
                               },
                               "equippedCosmetics": [
                                     "bandolier1",
-                                    "tankan_bodywrap"
+                                    "tankan_bodywrap",
+                                    "pants_basic"
                               ],
                               "appliedDyes": {
                                     "CLOTH": "dye:CLOTH:charcoal",
-                                    "CLOTH_B": "dye:CLOTH:charcoal"
+                                    "CLOTH_B": "dye:CLOTH:charcoal",
+                                    "PANTS": "dye:CLOTH:charcoal"
                               }
                         }
                   },
@@ -5868,11 +5906,13 @@
                   "equippedCosmetics": [
                         "bandolier1",
                         "facewrap",
-                        "tankan_bodywrap"
+                        "tankan_bodywrap",
+                        "pants_basic"
                   ],
                   "appliedDyes": {
                         "CLOTH": "dye:CLOTH:dusty_yellow",
-                        "HOOD": "dye:CLOTH:pale_indigo"
+                        "HOOD": "dye:CLOTH:pale_indigo",
+                        "PANTS": "dye:CLOTH:dusty_yellow"
                   },
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
@@ -5914,11 +5954,13 @@
                               "equippedCosmetics": [
                                     "bandolier1",
                                     "facewrap",
-                                    "tankan_bodywrap"
+                                    "tankan_bodywrap",
+                                    "pants_basic"
                               ],
                               "appliedDyes": {
                                     "CLOTH": "dye:CLOTH:dusty_yellow",
-                                    "HOOD": "dye:CLOTH:pale_indigo"
+                                    "HOOD": "dye:CLOTH:pale_indigo",
+                                    "PANTS": "dye:CLOTH:dusty_yellow"
                               }
                         }
                   },
@@ -6391,12 +6433,14 @@
                   },
                   "equippedCosmetics": [
                         "tankan_bodywrap",
-                        "fine_hood"
+                        "fine_hood",
+                        "pants_basic"
                   ],
                   "appliedDyes": {
                         "CLOTH": "dye:CLOTH:bright_orange",
                         "HOOD": "dye:CLOTH:deep_yellow_orange",
-                        "HOOD_B": "dye:CLOTH:dark_muted_orange"
+                        "HOOD_B": "dye:CLOTH:dark_muted_orange",
+                        "PANTS": "dye:CLOTH:bright_orange"
                   },
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
@@ -6438,12 +6482,14 @@
                               },
                               "equippedCosmetics": [
                                     "tankan_bodywrap",
-                                    "fine_hood"
+                                    "fine_hood",
+                                    "pants_basic"
                               ],
                               "appliedDyes": {
                                     "CLOTH": "dye:CLOTH:bright_orange",
                                     "HOOD": "dye:CLOTH:deep_yellow_orange",
-                                    "HOOD_B": "dye:CLOTH:dark_muted_orange"
+                                    "HOOD_B": "dye:CLOTH:dark_muted_orange",
+                                    "PANTS": "dye:CLOTH:bright_orange"
                               }
                         }
                   },
@@ -6921,7 +6967,8 @@
                         "bandolier1",
                         "rugged_poncho",
                         "fine_hood",
-                        "appearance::hat::riverlandskasa_wide"
+                        "appearance::hat::riverlandskasa_wide",
+                        "pants_basic"
                   ],
                   "appliedDyes": {
                         "CLOTH": "dye:CLOTH:dark_muted_green_blue",
@@ -6973,7 +7020,8 @@
                                     "bandolier1",
                                     "rugged_poncho",
                                     "fine_hood",
-                                    "appearance::hat::riverlandskasa_wide"
+                                    "appearance::hat::riverlandskasa_wide",
+                                    "pants_basic"
                               ],
                               "appliedDyes": {
                                     "CLOTH": "dye:CLOTH:dark_muted_green_blue",
@@ -7371,7 +7419,8 @@
                         "tankan_tunic",
                         "rugged_poncho",
                         "appearance::hat::basic_headband",
-                        "fine_hood"
+                        "fine_hood",
+                        "pants_basic"
                   ],
                   "appliedDyes": {
                         "TORSO_B": "dye:CLOTH:dark_muted_orange",
@@ -7427,7 +7476,8 @@
                                     "tankan_tunic",
                                     "rugged_poncho",
                                     "appearance::hat::basic_headband",
-                                    "fine_hood"
+                                    "fine_hood",
+                                    "pants_basic"
                               ],
                               "appliedDyes": {
                                     "TORSO_B": "dye:CLOTH:dark_muted_orange",
@@ -7986,11 +8036,13 @@
                         }
                   },
                   "equippedCosmetics": [
-                        "fine_poncho"
+                        "fine_poncho",
+                        "pants_basic"
                   ],
                   "appliedDyes": {
                         "CLOTH": "dye:CLOTH:bright_yellow_orange",
-                        "CLOTH_B": "dye:CLOTH:bright_blue"
+                        "CLOTH_B": "dye:CLOTH:bright_blue",
+                        "PANTS": "dye:CLOTH:bright_yellow_orange"
                   },
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
@@ -8029,11 +8081,13 @@
                                     }
                               },
                               "equippedCosmetics": [
-                                    "fine_poncho"
+                                    "fine_poncho",
+                                    "pants_basic"
                               ],
                               "appliedDyes": {
                                     "CLOTH": "dye:CLOTH:bright_yellow_orange",
-                                    "CLOTH_B": "dye:CLOTH:bright_blue"
+                                    "CLOTH_B": "dye:CLOTH:bright_blue",
+                                    "PANTS": "dye:CLOTH:bright_yellow_orange"
                               }
                         }
                   },
@@ -8550,7 +8604,8 @@
                   },
                   "equippedCosmetics": [
                         "rugged_poncho",
-                        "appearance::hat::basic_headband"
+                        "appearance::hat::basic_headband",
+                        "pants_basic"
                   ],
                   "appliedDyes": {
                         "CLOTH": "dye:CLOTH:smoky_green_blue",
@@ -8598,7 +8653,8 @@
                               },
                               "equippedCosmetics": [
                                     "rugged_poncho",
-                                    "appearance::hat::basic_headband"
+                                    "appearance::hat::basic_headband",
+                                    "pants_basic"
                               ],
                               "appliedDyes": {
                                     "CLOTH": "dye:CLOTH:smoky_green_blue",
@@ -9080,10 +9136,12 @@
                         }
                   },
                   "equippedCosmetics": [
-                        "tankan_tunic"
+                        "tankan_tunic",
+                        "pants_basic"
                   ],
                   "appliedDyes": {
-                        "TORSO": "dye:CLOTH:smoky_yellow_green"
+                        "TORSO": "dye:CLOTH:smoky_yellow_green",
+                        "PANTS": "dye:CLOTH:brown"
                   },
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
@@ -9125,10 +9183,12 @@
                                     }
                               },
                               "equippedCosmetics": [
-                                    "tankan_tunic"
+                                    "tankan_tunic",
+                                    "pants_basic"
                               ],
                               "appliedDyes": {
-                                    "TORSO": "dye:CLOTH:smoky_yellow_green"
+                                    "TORSO": "dye:CLOTH:smoky_yellow_green",
+                                    "PANTS": "dye:CLOTH:brown"
                               }
                         }
                   },
@@ -9704,7 +9764,8 @@
                         }
                   },
                   "equippedCosmetics": [
-                        "rugged_poncho"
+                        "rugged_poncho",
+                        "pants_basic"
                   ],
                   "appliedDyes": {
                         "CLOTH": "dye:CLOTH:muted_indigo",
@@ -9752,7 +9813,8 @@
                                     }
                               },
                               "equippedCosmetics": [
-                                    "rugged_poncho"
+                                    "rugged_poncho",
+                                    "pants_basic"
                               ],
                               "appliedDyes": {
                                     "CLOTH": "dye:CLOTH:muted_indigo",
@@ -10359,7 +10421,8 @@
                         }
                   },
                   "equippedCosmetics": [
-                        "rugged_poncho"
+                        "rugged_poncho",
+                        "pants_basic"
                   ],
                   "appliedDyes": {
                         "CLOTH_B": "dye:CLOTH:dark_muted_yellow_green",
@@ -10405,7 +10468,8 @@
                                     }
                               },
                               "equippedCosmetics": [
-                                    "rugged_poncho"
+                                    "rugged_poncho",
+                                    "pants_basic"
                               ],
                               "appliedDyes": {
                                     "CLOTH_B": "dye:CLOTH:dark_muted_yellow_green",
@@ -10908,11 +10972,13 @@
                   "equippedCosmetics": [
                         "bandolier1",
                         "tankan_bodywrap",
-                        "appearance::hat::basic_headband"
+                        "appearance::hat::basic_headband",
+                        "pants_basic"
                   ],
                   "appliedDyes": {
                         "CLOTH": "dye:CLOTH:muted_blue",
-                        "HAT": "dye:CLOTH:bright_yellow"
+                        "HAT": "dye:CLOTH:bright_yellow",
+                        "PANTS": "dye:CLOTH:muted_blue"
                   },
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
@@ -10949,11 +11015,13 @@
                               "equippedCosmetics": [
                                     "bandolier1",
                                     "tankan_bodywrap",
-                                    "appearance::hat::basic_headband"
+                                    "appearance::hat::basic_headband",
+                                    "pants_basic"
                               ],
                               "appliedDyes": {
                                     "CLOTH": "dye:CLOTH:muted_blue",
-                                    "HAT": "dye:CLOTH:bright_yellow"
+                                    "HAT": "dye:CLOTH:bright_yellow",
+                                    "PANTS": "dye:CLOTH:muted_blue"
                               }
                         }
                   },
@@ -11415,11 +11483,13 @@
                         }
                   },
                   "equippedCosmetics": [
-                        "tankan_bodywrap"
+                        "tankan_bodywrap",
+                        "pants_basic"
                   ],
                   "appliedDyes": {
                         "CLOTH": "dye:CLOTH:bright_indigo",
-                        "CLOTH_B": "dye:CLOTH:deep_indigo"
+                        "CLOTH_B": "dye:CLOTH:deep_indigo",
+                        "PANTS": "dye:CLOTH:bright_indigo"
                   },
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
@@ -11454,11 +11524,13 @@
                                     }
                               },
                               "equippedCosmetics": [
-                                    "tankan_bodywrap"
+                                    "tankan_bodywrap",
+                                    "pants_basic"
                               ],
                               "appliedDyes": {
                                     "CLOTH": "dye:CLOTH:bright_indigo",
-                                    "CLOTH_B": "dye:CLOTH:deep_indigo"
+                                    "CLOTH_B": "dye:CLOTH:deep_indigo",
+                                    "PANTS": "dye:CLOTH:bright_indigo"
                               }
                         }
                   },
@@ -11905,7 +11977,8 @@
                         }
                   },
                   "equippedCosmetics": [
-                        "rugged_poncho"
+                        "rugged_poncho",
+                        "pants_basic"
                   ],
                   "appliedDyes": {
                         "TORSO": "dye:CLOTH:gray",
@@ -11954,7 +12027,8 @@
                                     }
                               },
                               "equippedCosmetics": [
-                                    "rugged_poncho"
+                                    "rugged_poncho",
+                                    "pants_basic"
                               ],
                               "appliedDyes": {
                                     "TORSO": "dye:CLOTH:gray",
@@ -12431,13 +12505,15 @@
                   "equippedCosmetics": [
                         "tankan_bodywrap",
                         "tankan_tunic",
-                        "fine_hood"
+                        "fine_hood",
+                        "pants_basic"
                   ],
                   "appliedDyes": {
                         "CLOTH": "dye:CLOTH:bright_blue",
                         "TORSO": "dye:CLOTH:bright_green_blue",
                         "HOOD": "dye:CLOTH:bright_green_blue",
-                        "HOOD_B": "dye:CLOTH:bright_blue"
+                        "HOOD_B": "dye:CLOTH:bright_blue",
+                        "PANTS": "dye:CLOTH:bright_blue"
                   },
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
@@ -12479,13 +12555,15 @@
                               "equippedCosmetics": [
                                     "tankan_bodywrap",
                                     "tankan_tunic",
-                                    "fine_hood"
+                                    "fine_hood",
+                                    "pants_basic"
                               ],
                               "appliedDyes": {
                                     "CLOTH": "dye:CLOTH:bright_blue",
                                     "TORSO": "dye:CLOTH:bright_green_blue",
                                     "HOOD": "dye:CLOTH:bright_green_blue",
-                                    "HOOD_B": "dye:CLOTH:bright_blue"
+                                    "HOOD_B": "dye:CLOTH:bright_blue",
+                                    "PANTS": "dye:CLOTH:bright_blue"
                               }
                         }
                   },
@@ -12955,7 +13033,8 @@
                   },
                   "equippedCosmetics": [
                         "rugged_poncho",
-                        "fine_hood"
+                        "fine_hood",
+                        "pants_basic"
                   ],
                   "appliedDyes": {
                         "CLOTH": "dye:CLOTH:dark_muted_orange",
@@ -13005,7 +13084,8 @@
                               },
                               "equippedCosmetics": [
                                     "rugged_poncho",
-                                    "fine_hood"
+                                    "fine_hood",
+                                    "pants_basic"
                               ],
                               "appliedDyes": {
                                     "CLOTH": "dye:CLOTH:dark_muted_orange",
@@ -13533,7 +13613,8 @@
                         "appearance::hat::basic_headband",
                         "bandolier1",
                         "rugged_poncho",
-                        "fine_hood"
+                        "fine_hood",
+                        "pants_basic"
                   ],
                   "appliedDyes": {
                         "CLOTH": "dye:CLOTH:smoky_yellow_green",
@@ -13585,7 +13666,8 @@
                                     "appearance::hat::basic_headband",
                                     "bandolier1",
                                     "rugged_poncho",
-                                    "fine_hood"
+                                    "fine_hood",
+                                    "pants_basic"
                               ],
                               "appliedDyes": {
                                     "CLOTH": "dye:CLOTH:smoky_yellow_green",
@@ -14113,13 +14195,15 @@
                   },
                   "equippedCosmetics": [
                         "appearance::hat::basic_headband",
-                        "tankan_bodywrap"
+                        "tankan_bodywrap",
+                        "pants_basic"
                   ],
                   "appliedDyes": {
                         "TORSO": "dye:CLOTH:deep_green_blue",
                         "HAT": "dye:CLOTH:muted_green_blue",
                         "CLOTH": "dye:CLOTH:pale_violet",
-                        "CLOTH_B": "dye:CLOTH:dusty_indigo_violet"
+                        "CLOTH_B": "dye:CLOTH:dusty_indigo_violet",
+                        "PANTS": "dye:CLOTH:pale_violet"
                   },
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
@@ -14161,13 +14245,15 @@
                               },
                               "equippedCosmetics": [
                                     "appearance::hat::basic_headband",
-                                    "tankan_bodywrap"
+                                    "tankan_bodywrap",
+                                    "pants_basic"
                               ],
                               "appliedDyes": {
                                     "TORSO": "dye:CLOTH:deep_green_blue",
                                     "HAT": "dye:CLOTH:muted_green_blue",
                                     "CLOTH": "dye:CLOTH:pale_violet",
-                                    "CLOTH_B": "dye:CLOTH:dusty_indigo_violet"
+                                    "CLOTH_B": "dye:CLOTH:dusty_indigo_violet",
+                                    "PANTS": "dye:CLOTH:pale_violet"
                               }
                         }
                   },
@@ -14680,8 +14766,8 @@
                               "l": 68
                         }
                   },
-                  "equippedCosmetics": [],
-                  "appliedDyes": {},
+                  "equippedCosmetics": ["pants_basic"],
+                  "appliedDyes": {"PANTS": "dye:CLOTH:brown"},
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
                         "rawExport": {
@@ -14716,8 +14802,8 @@
                                           "l": 68
                                     }
                               },
-                              "equippedCosmetics": [],
-                              "appliedDyes": {}
+                              "equippedCosmetics": ["pants_basic"],
+                              "appliedDyes": {"PANTS": "dye:CLOTH:brown"}
                         }
                   },
                   "relationship": {
@@ -15129,8 +15215,8 @@
                               "l": 68
                         }
                   },
-                  "equippedCosmetics": [],
-                  "appliedDyes": {},
+                  "equippedCosmetics": ["pants_basic"],
+                  "appliedDyes": {"PANTS": "dye:CLOTH:brown"},
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
                         "rawExport": {
@@ -15165,8 +15251,8 @@
                                           "l": 68
                                     }
                               },
-                              "equippedCosmetics": [],
-                              "appliedDyes": {}
+                              "equippedCosmetics": ["pants_basic"],
+                              "appliedDyes": {"PANTS": "dye:CLOTH:brown"}
                         }
                   },
                   "relationship": {
@@ -15575,8 +15661,8 @@
                               "l": 68
                         }
                   },
-                  "equippedCosmetics": [],
-                  "appliedDyes": {},
+                  "equippedCosmetics": ["pants_basic"],
+                  "appliedDyes": {"PANTS": "dye:CLOTH:brown"},
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
                         "rawExport": {
@@ -15611,8 +15697,8 @@
                                           "l": 68
                                     }
                               },
-                              "equippedCosmetics": [],
-                              "appliedDyes": {}
+                              "equippedCosmetics": ["pants_basic"],
+                              "appliedDyes": {"PANTS": "dye:CLOTH:brown"}
                         }
                   },
                   "relationship": {
@@ -16019,8 +16105,8 @@
                               "l": 68
                         }
                   },
-                  "equippedCosmetics": [],
-                  "appliedDyes": {},
+                  "equippedCosmetics": ["pants_basic"],
+                  "appliedDyes": {"PANTS": "dye:CLOTH:brown"},
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
                         "rawExport": {
@@ -16053,8 +16139,8 @@
                                           "l": 68
                                     }
                               },
-                              "equippedCosmetics": [],
-                              "appliedDyes": {}
+                              "equippedCosmetics": ["pants_basic"],
+                              "appliedDyes": {"PANTS": "dye:CLOTH:brown"}
                         }
                   },
                   "relationship": {
@@ -16479,8 +16565,8 @@
                               "l": 68
                         }
                   },
-                  "equippedCosmetics": [],
-                  "appliedDyes": {},
+                  "equippedCosmetics": ["pants_basic"],
+                  "appliedDyes": {"PANTS": "dye:CLOTH:brown"},
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
                         "rawExport": {
@@ -16513,8 +16599,8 @@
                                           "l": 68
                                     }
                               },
-                              "equippedCosmetics": [],
-                              "appliedDyes": {}
+                              "equippedCosmetics": ["pants_basic"],
+                              "appliedDyes": {"PANTS": "dye:CLOTH:brown"}
                         }
                   },
                   "relationship": {
@@ -16927,8 +17013,8 @@
                               "l": 68
                         }
                   },
-                  "equippedCosmetics": [],
-                  "appliedDyes": {},
+                  "equippedCosmetics": ["pants_basic"],
+                  "appliedDyes": {"PANTS": "dye:CLOTH:brown"},
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
                         "rawExport": {
@@ -16961,8 +17047,8 @@
                                           "l": 68
                                     }
                               },
-                              "equippedCosmetics": [],
-                              "appliedDyes": {}
+                              "equippedCosmetics": ["pants_basic"],
+                              "appliedDyes": {"PANTS": "dye:CLOTH:brown"}
                         }
                   },
                   "relationship": {
@@ -17382,8 +17468,8 @@
                               "l": 68
                         }
                   },
-                  "equippedCosmetics": [],
-                  "appliedDyes": {},
+                  "equippedCosmetics": ["pants_basic"],
+                  "appliedDyes": {"PANTS": "dye:CLOTH:brown"},
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
                         "rawExport": {
@@ -17416,8 +17502,8 @@
                                           "l": 68
                                     }
                               },
-                              "equippedCosmetics": [],
-                              "appliedDyes": {}
+                              "equippedCosmetics": ["pants_basic"],
+                              "appliedDyes": {"PANTS": "dye:CLOTH:brown"}
                         }
                   },
                   "relationship": {
@@ -17835,8 +17921,8 @@
                               "l": 68
                         }
                   },
-                  "equippedCosmetics": [],
-                  "appliedDyes": {},
+                  "equippedCosmetics": ["pants_basic"],
+                  "appliedDyes": {"PANTS": "dye:CLOTH:brown"},
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
                         "rawExport": {
@@ -17869,8 +17955,8 @@
                                           "l": 68
                                     }
                               },
-                              "equippedCosmetics": [],
-                              "appliedDyes": {}
+                              "equippedCosmetics": ["pants_basic"],
+                              "appliedDyes": {"PANTS": "dye:CLOTH:brown"}
                         }
                   },
                   "relationship": {
@@ -17961,8 +18047,8 @@
                               "l": 68
                         }
                   },
-                  "equippedCosmetics": [],
-                  "appliedDyes": {},
+                  "equippedCosmetics": ["pants_basic"],
+                  "appliedDyes": {"PANTS": "dye:CLOTH:brown"},
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
                         "rawExport": {
@@ -17995,8 +18081,8 @@
                                           "l": 68
                                     }
                               },
-                              "equippedCosmetics": [],
-                              "appliedDyes": {}
+                              "equippedCosmetics": ["pants_basic"],
+                              "appliedDyes": {"PANTS": "dye:CLOTH:brown"}
                         }
                   },
                   "relationship": {
@@ -18414,8 +18500,8 @@
                               "l": 68
                         }
                   },
-                  "equippedCosmetics": [],
-                  "appliedDyes": {},
+                  "equippedCosmetics": ["pants_basic"],
+                  "appliedDyes": {"PANTS": "dye:CLOTH:brown"},
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
                         "rawExport": {
@@ -18448,8 +18534,8 @@
                                           "l": 68
                                     }
                               },
-                              "equippedCosmetics": [],
-                              "appliedDyes": {}
+                              "equippedCosmetics": ["pants_basic"],
+                              "appliedDyes": {"PANTS": "dye:CLOTH:brown"}
                         }
                   },
                   "relationship": {
@@ -18866,8 +18952,8 @@
                               "l": 68
                         }
                   },
-                  "equippedCosmetics": [],
-                  "appliedDyes": {},
+                  "equippedCosmetics": ["pants_basic"],
+                  "appliedDyes": {"PANTS": "dye:CLOTH:brown"},
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
                         "rawExport": {
@@ -18900,8 +18986,8 @@
                                           "l": 68
                                     }
                               },
-                              "equippedCosmetics": [],
-                              "appliedDyes": {}
+                              "equippedCosmetics": ["pants_basic"],
+                              "appliedDyes": {"PANTS": "dye:CLOTH:brown"}
                         }
                   },
                   "relationship": {
@@ -19329,13 +19415,15 @@
                         "rounded_pauldron",
                         "fine_poncho",
                         "bandolier1",
-                        "appearance::hat::basic_headband"
+                        "appearance::hat::basic_headband",
+                        "pants_basic"
                   ],
                   "appliedDyes": {
                         "CLOTH": "dye:CLOTH:deep_green_blue",
                         "CLOTH_B": "dye:CLOTH:pure_yellow_orange",
                         "CLOTH_C": "dye:CLOTH:pure_yellow_orange",
-                        "HAT": "dye:CLOTH:smoky_orange"
+                        "HAT": "dye:CLOTH:smoky_orange",
+                        "PANTS": "dye:CLOTH:deep_green_blue"
                   },
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
@@ -19380,13 +19468,15 @@
                                     "rounded_pauldron",
                                     "fine_poncho",
                                     "bandolier1",
-                                    "appearance::hat::basic_headband"
+                                    "appearance::hat::basic_headband",
+                                    "pants_basic"
                               ],
                               "appliedDyes": {
                                     "CLOTH": "dye:CLOTH:deep_green_blue",
                                     "CLOTH_B": "dye:CLOTH:pure_yellow_orange",
                                     "CLOTH_C": "dye:CLOTH:pure_yellow_orange",
-                                    "HAT": "dye:CLOTH:smoky_orange"
+                                    "HAT": "dye:CLOTH:smoky_orange",
+                                    "PANTS": "dye:CLOTH:deep_green_blue"
                               },
                               "restingExpression": "frown",
                               "clothingPatterns": {
@@ -20101,8 +20191,8 @@
                               "l": 68
                         }
                   },
-                  "equippedCosmetics": [],
-                  "appliedDyes": {},
+                  "equippedCosmetics": ["pants_basic"],
+                  "appliedDyes": {"PANTS": "dye:CLOTH:brown"},
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
                         "rawExport": {
@@ -20135,8 +20225,8 @@
                                           "l": 68
                                     }
                               },
-                              "equippedCosmetics": [],
-                              "appliedDyes": {}
+                              "equippedCosmetics": ["pants_basic"],
+                              "appliedDyes": {"PANTS": "dye:CLOTH:brown"}
                         }
                   },
                   "relationship": {

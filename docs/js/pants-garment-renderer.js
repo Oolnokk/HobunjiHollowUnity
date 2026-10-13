@@ -772,18 +772,16 @@
     return { primaryHex: primary, secondaryHex: secondary, patternHex: bodyColors?.PANTS_C?.hex || '#ffffff', weaving: null };
   }
 
-  // Humanoid NPC records that should wear the free default pants: everyone but animals and records that opt out.
+  // Pants and their dye are AUTHORED per NPC (equippedCosmetics 'pants_basic' + appliedDyes.PANTS in the NPC database, via the
+  // authoring tools), so a record from the database is never touched here. This is only the fallback for runtime-generated
+  // humanoids that have no authored record (no avatarEditor): they get the free pants, dyed like their overwear (brown without).
   function ensureNpcPants(rec, { garmentId = DEFAULT_GARMENT_ID, isAnimal = false } = {}) {
-    if (!rec || isAnimal || rec.noPants === true || rec.kind === 'animal' || isPantlessSpecies(rec.speciesId || rec.species)) return false;
+    if (!rec || isAnimal || rec.noPants === true || rec.kind === 'animal' || rec.avatarEditor || isPantlessSpecies(rec.speciesId || rec.species)) return false;
     if (!Array.isArray(rec.equippedCosmetics)) rec.equippedCosmetics = [];
-    if (!rec.appliedDyes || typeof rec.appliedDyes !== 'object') rec.appliedDyes = {};
-    // Pants match the NPC's overwear dye; with no overwear they are brown. An authored PANTS dye is left alone.
-    if (!rec.appliedDyes.PANTS || rec.pantsDyeAuto === true) {
-      rec.appliedDyes.PANTS = rec.appliedDyes.CLOTH || NPC_DEFAULT_PANTS_DYE;
-      rec.pantsDyeAuto = true;
-    }
     if (rec.equippedCosmetics.includes(garmentId)) return false;
     rec.equippedCosmetics = [...rec.equippedCosmetics, garmentId];
+    if (!rec.appliedDyes || typeof rec.appliedDyes !== 'object') rec.appliedDyes = {};
+    if (!rec.appliedDyes.PANTS) rec.appliedDyes.PANTS = rec.appliedDyes.CLOTH || NPC_DEFAULT_PANTS_DYE;
     return true;
   }
 

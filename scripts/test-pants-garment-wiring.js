@@ -28,9 +28,9 @@ assert.strictEqual(Renderer.ensureNpcPants(npc), false, 'idempotent');
 const matched = { id: 'matcher', appliedDyes: { CLOTH: 'dye:CLOTH:teal' } };
 Renderer.ensureNpcPants(matched);
 assert.strictEqual(matched.appliedDyes.PANTS, 'dye:CLOTH:teal', 'pants match the overwear dye');
-matched.appliedDyes.CLOTH = 'dye:CLOTH:red';
-Renderer.ensureNpcPants(matched);
-assert.strictEqual(matched.appliedDyes.PANTS, 'dye:CLOTH:red', 'auto-matched pants follow a changed overwear dye');
+const dbNpc = { id: 'authored_npc', avatarEditor: {}, equippedCosmetics: ['tankan_tunic'] };
+assert.strictEqual(Renderer.ensureNpcPants(dbNpc), false, 'database NPCs are authored: the renderer never adds pants to them');
+assert(!dbNpc.equippedCosmetics.includes('pants_basic'));
 const authored = { id: 'dyed', appliedDyes: { PANTS: 'dye_c' } };
 Renderer.ensureNpcPants(authored);
 assert.strictEqual(authored.appliedDyes.PANTS, 'dye_c', 'an authored pants dye is never overwritten');
@@ -50,3 +50,13 @@ assert.strictEqual(cosmetic.slot, 'pants');
 assert(cosmetic.parts.pants.layers.base.paletteColorKey === 'A', 'the garment layer takes the primary dye');
 
 console.log('Pants garment wiring: PASS');
+
+// Authoring data: every NPC in the starter database wears authored pants with an authored dye; poncho wearers use their secondary dye.
+{
+  const db = JSON.parse(fs.readFileSync('docs/config/npcs/hobunji-starter-npc-database.json', 'utf8'));
+  for (const rec of db.npcs) {
+    assert(rec.equippedCosmetics.includes('pants_basic'), `${rec.id} has authored pants`);
+    assert(rec.appliedDyes.PANTS, `${rec.id} has an authored pants dye`);
+    if (rec.equippedCosmetics.includes('rugged_poncho')) assert.strictEqual(rec.appliedDyes.PANTS, rec.appliedDyes.CLOTH_B, `${rec.id}: poncho wearers' pants use the secondary dye`);
+  }
+}
