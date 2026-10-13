@@ -32,6 +32,9 @@ const listeners = { window: {}, document: {} };
 const buttons = new Map();
 let opened = [];
 const documentStub = {
+  baseURI: 'https://example.test/docs/',
+  head: { appendChild() {} },
+  createElement() { return { dataset: {}, addEventListener() {} }; },
   getElementById(id) { return buttons.get(id) || null; },
   querySelector() { return null; },
   addEventListener(type, handler) { listeners.document[type] = handler; },
@@ -44,6 +47,7 @@ const windowStub = {
 vm.runInNewContext(bridgeSource, {
   window: windowStub,
   document: documentStub,
+  URL,
   Object,
   Number,
   String,
