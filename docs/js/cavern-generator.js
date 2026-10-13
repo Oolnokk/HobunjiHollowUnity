@@ -59,10 +59,12 @@
   // extends the probe's vertical sweep upward so the walls are genuinely
   // carved at the new height; pathYShiftFrac is divided by the same factor so
   // the floor keeps its absolute offset from the volume bottom. vaultCeiling
-  // closes the top with a cove-edged roof instead of an open shaft, and
+  // closes the top with a faceted low-poly roof instead of an open shaft, and
   // exactBoundaryHeal keeps the coarse SDF lattice's walls on tile edges.
-  function tallCaveSculptOptions(heightScale) {
-    return { sizeY: CAVERN_SCULPT_SIZE_Y * heightScale, pathYShiftFrac: CAVERN_PATH_Y_SHIFT_FRAC / heightScale, vaultCeiling: true, exactBoundaryHeal: true };
+  function tallCaveSculptOptions(heightScale, seedText) {
+    let vaultSeed = 7; // Per-cave roof facet layout, stable for the same cave.
+    for (const ch of String(seedText || '')) vaultSeed = Math.imul(vaultSeed ^ ch.charCodeAt(0), 16777619);
+    return { sizeY: CAVERN_SCULPT_SIZE_Y * heightScale, pathYShiftFrac: CAVERN_PATH_Y_SHIFT_FRAC / heightScale, vaultCeiling: true, vaultSeed, exactBoundaryHeal: true };
   }
 
   // Collision is per tile, but the dual-contoured shell is only as precise as
@@ -73,7 +75,7 @@
   // faces the carved air, so a downward face above means open air below it);
   // unlike crossing parity this tolerates holes in the shell's own floor,
   // which the separate per-tile floor mesh covers anyway.
-  const ROCK_PROBE_HEIGHTS = [0.6, 1.2]; // Above floor bumps, below the shortest wall's cove.
+  const ROCK_PROBE_HEIGHTS = [0.6, 1.2]; // Above floor bumps, below where the roof facets begin.
   const ROCK_PROBE_GRID = 4; // 4x4 samples per tile.
   function rockCoveredFloorTiles(floor, mesh, protectedKeys = new Set()) {
     const bins = new Map(); // Triangles grouped by the floor tiles their XZ bounds overlap.
@@ -161,7 +163,7 @@
       : generationOptions.fast
         ? { branchCount, entranceLength, tileSize, gridN: 32, splineSamples: 5, hitsPerStep: 1, probeDigBursts: 2, probeMaxPasses: 45, enforceWalkableClearance: 1 }
         : { branchCount, entranceLength, tileSize };
-    const result = window.CavernSculptor.carveMazeCavern({ ...sculptOptions, ...tallCaveSculptOptions(CAVE_HEIGHT_SCALE), solidOuterRim: true }, rng);
+    const result = window.CavernSculptor.carveMazeCavern({ ...sculptOptions, ...tallCaveSculptOptions(CAVE_HEIGHT_SCALE, seedText), solidOuterRim: true }, rng);
 
     // Shift every tile coordinate (and the mesh's X/Z) from the sculptor's
     // arbitrary centered local space into positive grid space, same +1
@@ -541,7 +543,7 @@
     const cached = _cavernFloorCache.get(cacheKey); // Re-entry reuses the expensive SDF carve without caching runtime loot/inhabitant state.
     const generated = cached?.signature === signature ? cached.generated : window.CavernSculptor.carveFootprintCavern(expandedFloor,
       { tileSize: 0.5, gridN: 32, organicJitter: 0, hitsPerStep: 1, probeDigBursts: 2, probeMaxPasses: 45, enforceWalkableClearance: 1, refineFullColumn: true,
-        ...tallCaveSculptOptions(heightScale),
+        ...tallCaveSculptOptions(heightScale, mapData.id),
         entrance: { col: mapData.exitCol, row: mapData.exitRow, side: 'south' } }, rng);
     if (cached?.signature !== signature) _cavernFloorCache.set(cacheKey, { signature, generated });
     const rockCovered = rockCoveredFloorTiles(expandedFloor, generated.mesh, new Set([`${mapData.exitCol},${mapData.exitRow}`])); // Same geometry/collision agreement as generateCavernFloor.

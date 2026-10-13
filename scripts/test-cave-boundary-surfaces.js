@@ -45,16 +45,25 @@ const nearestAbove=(mesh,x,z,fromY)=>{ // Closest shell surface above a point, a
     best={y,up:(P[b+2]-P[a+2])*(P[c]-P[a])-(P[b]-P[a])*(P[c+2]-P[a+2])>0};}
   return best;
 };
-const assertRoofed=(map,label)=>{ // Each walkable tile sits under the vaulted roof, never an open shaft.
+const assertRoofed=(map,label)=>{ // Each walkable tile sits under the faceted roof, never an open shaft.
   const vault=map.mesh.vaultCeiling;
-  assert(vault && vault.topY > vault.startY && vault.startY > 3,`${label} carves a vaulted roof above full-height walls`);
-  let coveLower=0;
+  assert(vault && vault.topY > vault.startY && vault.startY > 3,`${label} carves a faceted roof above full-height walls`);
   for(const [col,row] of map.floor){
     const hit=nearestAbove(map.mesh,col+.5,row+.5,1);
     assert(hit && !hit.up,`${label} tile ${col},${row} has a roof over open air`);
-    if(hit.y<vault.topY-.05) coveLower++;
   }
-  assert(coveLower>0 && coveLower<map.floor.length,`${label} roof curves down into coves at the walls but stays flat over rooms`);
+  // Low-poly roof: downward faces in the roof band lie on a limited set of
+  // shared flat planes (so the stretch mapper finds large surfaces), not a smooth curve.
+  const P=map.mesh.positions,I=map.mesh.indices,planes=new Map(); let roofArea=0;
+  for(let i=0;i<I.length;i+=3){const a=I[i]*3,b=I[i+1]*3,c=I[i+2]*3;
+    if(Math.min(P[a+1],P[b+1],P[c+1])<vault.startY-.2)continue;
+    const ux=P[b]-P[a],uy=P[b+1]-P[a+1],uz=P[b+2]-P[a+2],vx=P[c]-P[a],vy=P[c+1]-P[a+1],vz=P[c+2]-P[a+2];
+    const nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx,l=Math.hypot(nx,ny,nz);if(l<1e-9||ny/l>-.3)continue;
+    const n=[nx/l,ny/l,nz/l],d=n[0]*P[a]+n[1]*P[a+1]+n[2]*P[a+2],key=[...n,d].map(v=>Math.round(v*50)).join(',');
+    planes.set(key,(planes.get(key)||0)+l/2);roofArea+=l/2;}
+  const facets=[...planes.values()].filter(area=>area>=2);
+  assert(facets.length>=10,`${label} roof has many flat facets (${facets.length})`);
+  assert(facets.reduce((sum,area)=>sum+area,0)>=roofArea*.6,`${label} most roof area lies on shared flat facets`);
   assert.equal(CavernGenerator.rockCoveredFloorTiles(map.floor,map.mesh,new Set([`${map.exitCol},${map.exitRow}`])).size,0,`${label} has no walkable tile inside rendered rock`);
 };
 assertRoofed(caveMap,'ordinary cave');
@@ -125,4 +134,4 @@ const standalone=builder.buildCavernFloorMesh(three,[[0,0]],{},{}); // Editor/st
 assert.equal(standalone.material,canonical);
 assert(naturalCalls.every(([family,mode])=>family==='rocks' && mode==='planar-stretch'));
 assert(mappingCalls.every(call=>call.maxPatchWorldSize===6));
-console.log('PASS solid cave rim, connected floor, complete nest, shared wall/floor material and stretch, upward-only 2.5x ruin wall growth, tall vaulted roofs in every cave, walls on tile edges');
+console.log('PASS solid cave rim, connected floor, complete nest, shared wall/floor material and stretch, upward-only 2.5x ruin wall growth, tall faceted low-poly roofs in every cave, walls on tile edges');

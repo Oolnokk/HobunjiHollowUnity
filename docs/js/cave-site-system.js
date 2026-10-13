@@ -1101,7 +1101,7 @@
     return {
       ready: integrationsInstalled,
       currentArea,
-      latestChange: 'Every procedural cave and mine is now carved 2.5x tall under a vaulted roof (walls lean inward over their top quarter into a flat ceiling; narrow passages close into arches). Walls land on tile edges, and any walkable tile still inside rendered rock becomes solid, so cave geometry and collision agree. Nests keep 8x8 rooms and ruin doors 7x6 approaches.',
+      latestChange: 'Every procedural cave and mine is now carved 2.5x tall under a low-poly roof of irregular flat facets with sharp folds (lower near the walls), so the stretch-to-fit rock texture finds many large surfaces. Walls land on tile edges, and any walkable tile still inside rendered rock becomes solid, so cave geometry and collision agree. Nests keep 8x8 rooms and ruin doors 7x6 approaches.',
       zoneCount: zones.length,
       caveCount: sites.length,
       caves: sites.map(site => ({ mapId: site.mapId, zoneId: site.zoneId, denId: site.denId, contents: site.contents, inhabitant: site.inhabitant, label: site.discoveredLabel })),

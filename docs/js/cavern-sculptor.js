@@ -700,16 +700,80 @@
     }
   }
 
-  // Closes the cave with a vaulted ceiling instead of letting the tile
-  // columns punch straight out through the volume's top. The columns and
-  // probe sweeps stop at vault.startY (carveOpts.ceilingY clips them there);
-  // this pass then writes the walkable region's true horizontal wall
-  // distance from the floor up. Over the top band a sample opens only while
-  // that distance exceeds a cove inset growing from 0 at startY to
-  // vault.inset at topY along a quarter circle, so walls lean inward over
-  // the top quarter of their height and meet a flat ceiling over wide rooms,
-  // while passages narrower than the cove close into arches below it. Rock
-  // between topY and the volume's top gives dual contouring a solid roof.
+  // Deterministic 0..1 hash so the roof facets never consume the carve rng.
+  function hash01(i, j, salt) {
+    let h = Math.imul(i | 0, 374761393) ^ Math.imul(j | 0, 668265263) ^ Math.imul(salt | 0, 2246822519);
+    h = Math.imul(h ^ (h >>> 13), 1274126177);
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+  }
+
+  // The roof is a coarse, jittered triangle mesh (a TIN) of flat facets
+  // rather than a smooth curve: the natural-surface stretch mapper floods
+  // across neighbouring faces until it meets a fold sharper than its split
+  // angle, so a smooth vault became one huge stretched surface. Facet
+  // corners near the walls sit low and interior ones high (with random
+  // variation), so the roof still leans in over the top band of the walls,
+  // just as irregular planes instead of a quarter-circle cove.
+  function buildRoofFacets(st, vault, wallDistance, seed) {
+    const s = vault.facetSize;
+    const x0 = -st.domainHalf.x - s, z0 = -st.domainHalf.z - s;
+    const nI = Math.ceil((2 * st.domainHalf.x + 2 * s) / s) + 1, nJ = Math.ceil((2 * st.domainHalf.z + 2 * s) / s) + 1;
+    const band = vault.topY - vault.startY;
+    const pts = [];
+    for (let j = 0; j < nJ; j++) for (let i = 0; i < nI; i++) {
+      const x = x0 + (i + (hash01(i, j, seed) - .5) * .6) * s;
+      const z = z0 + (j + (hash01(i, j, seed + 1) - .5) * .6) * s;
+      const inward = clampNum(wallDistance(x, z) / (s * 1.2), 0, 1); // 0 at or beyond a wall, 1 well inside a room.
+      // Alternating high and low corners give every facet a real tilt, so
+      // neighbouring facets fold by more than the mapper's split angle.
+      const r = hash01(i, j, seed + 2);
+      const rise = ((i + j) % 2 ? .55 + .45 * r : .03 + .27 * r) * (.55 + .45 * inward);
+      pts.push({ x, z, y: vault.startY + band * rise });
+    }
+    const planes = [];
+    const planeOf = (a, b, c) => {
+      const den = (b.z - c.z) * (a.x - c.x) + (c.x - b.x) * (a.z - c.z);
+      return { a, b, c, den };
+    };
+    for (let j = 0; j + 1 < nJ; j++) for (let i = 0; i + 1 < nI; i++) {
+      const p00 = pts[j * nI + i], p10 = pts[j * nI + i + 1], p01 = pts[(j + 1) * nI + i], p11 = pts[(j + 1) * nI + i + 1];
+      if (hash01(i, j, seed + 3) < .5) planes.push(planeOf(p00, p10, p11), planeOf(p00, p11, p01));
+      else planes.push(planeOf(p00, p10, p01), planeOf(p10, p11, p01));
+    }
+    for (const pl of planes) { // y = k0 + kx * x + kz * z, solved once per facet.
+      const { a, b, c } = pl;
+      const ux = b.x - a.x, uz = b.z - a.z, uy = b.y - a.y, vx = c.x - a.x, vz = c.z - a.z, vy = c.y - a.y;
+      const det = ux * vz - uz * vx;
+      pl.kx = (uy * vz - uz * vy) / det;
+      pl.kz = (ux * vy - uy * vx) / det;
+      pl.k0 = a.y - pl.kx * a.x - pl.kz * a.z;
+    }
+    const locate = (x, z) => {
+      const ci = Math.floor((x - x0) / s), cj = Math.floor((z - z0) / s);
+      let best = null, bestMin = -Infinity;
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+        const i = ci + di, j = cj + dj;
+        if (i < 0 || j < 0 || i + 1 >= nI || j + 1 >= nJ) continue;
+        for (let t = 0; t < 2; t++) {
+          const id = (j * (nI - 1) + i) * 2 + t, { a, b, c, den } = planes[id];
+          const wa = ((b.z - c.z) * (x - c.x) + (c.x - b.x) * (z - c.z)) / den;
+          const wb = ((c.z - a.z) * (x - c.x) + (a.x - c.x) * (z - c.z)) / den;
+          const m = Math.min(wa, wb, 1 - wa - wb); // >= 0 inside; the largest wins on shared edges.
+          if (m > bestMin) { bestMin = m; best = id; }
+        }
+      }
+      return best;
+    };
+    return { planes, locate, heightAt: (x, z) => { const pl = planes[locate(x, z)]; return pl.k0 + pl.kx * x + pl.kz * z; } };
+  }
+
+  // Closes the cave with a faceted roof instead of letting the tile columns
+  // punch straight out through the volume's top. The columns and probe
+  // sweeps stop at vault.startY (carveOpts.ceilingY clips them there); this
+  // pass then writes the walkable region's true horizontal wall distance
+  // from the floor up, and above startY a sample stays open only below the
+  // roof facets (buildRoofFacets). Rock between the roof and the volume's
+  // top gives dual contouring a solid cap.
   //   Writing true distances below startY matters as much as the roof: the
   // lattice is coarser than a tile, and each column only knows the distance
   // to its own tile's box (~-0.1 deep), so interpolating against the rock
@@ -718,27 +782,23 @@
   // turns into a floating slab.
   function carveVaultCeiling(st, openTiles, ts, vault, floorY, minCell, margin = .05) {
     const cell = Math.max(2 * st.domainHalf.x / st.N, 2 * st.domainHalf.z / st.N);
-    const reach = Math.ceil(Math.max(vault.inset, cell) / ts) + 2;
+    const reach = Math.ceil(Math.max(vault.facetSize * 1.2, cell) / ts) + 2;
     const distance = regionDistance2D(openTiles, ts, reach);
-    const band = Math.max(1e-6, vault.topY - vault.startY);
+    vault.roof = buildRoofFacets(st, vault, distance, vault.seed);
     const dy = 2 * st.domainHalf.y / st.N;
     const jLo = Math.max(0, Math.floor(worldToGrid(st, { x: 0, y: floorY, z: 0 }).y));
     const jHi = Math.min(st.N, Math.ceil(worldToGrid(st, { x: 0, y: vault.topY + 2 * dy, z: 0 }).y));
-    const insetAt = [];
-    for (let j = jLo; j <= jHi; j++) {
-      const t = clampNum((lerp(-st.domainHalf.y, st.domainHalf.y, j / st.N) - vault.startY) / band, 0, 1);
-      insetAt[j] = vault.inset * (1 - Math.sqrt(1 - t * t));
-    }
     for (let k = 0; k <= st.N; k++) {
       const z = lerp(-st.domainHalf.z, st.domainHalf.z, k / st.N);
       for (let i = 0; i <= st.N; i++) {
         const x = lerp(-st.domainHalf.x, st.domainHalf.x, i / st.N);
         const D = distance(x, z) + margin; // Same small outward wall margin as carveTileColumn.
         if (D <= -reach * ts + margin + 1e-9) continue; // far from any open tile: leave pristine rock alone
+        const roofY = vault.roof.heightAt(x, z);
         for (let j = jLo; j <= jHi; j++) {
           const y = lerp(-st.domainHalf.y, st.domainHalf.y, j / st.N);
           if (y < floorY) continue;
-          const f = Math.max(insetAt[j] - D, y - vault.topY);
+          const f = Math.max(-D, y - roofY);
           const id = idxP(st, i, j, k);
           if (f < st.field[id]) st.field[id] = f;
         }
@@ -762,17 +822,93 @@
     if (changed) rebuildLeafData(st);
   }
 
-  // Vault geometry for a sculpt volume: the roof keeps a rock cap a couple of
-  // lattice cells thick under the volume's top, and the cove occupies the top
-  // vaultFrac of the floor-to-roof height.
+  // Dual contouring places each vertex at the average of its cell's surface
+  // crossings, which rounds every facet fold into a band of in-between
+  // faces (and the stretch mapper would flood straight across it). Snap the
+  // roof back onto its facets: each downward-facing roof triangle belongs to
+  // the facet under its centroid; a vertex used by one facet drops onto that
+  // plane, one shared by two moves onto their fold line, and one shared by
+  // three onto their common corner. Every roof triangle then lies exactly in
+  // its facet's plane, so folds stay sharp. Runs in sculpt coordinates.
+  function snapRoofToFacets(mesh, vault, cell) {
+    if (!vault?.roof) return 0;
+    const P = mesh.positions, I = mesh.indices, roof = vault.roof;
+    const facetsByVertex = new Map();
+    const minY = vault.startY - cell * .25;
+    for (let t = 0; t < I.length; t += 3) {
+      const a = I[t] * 3, b = I[t + 1] * 3, c = I[t + 2] * 3;
+      if (Math.min(P[a + 1], P[b + 1], P[c + 1]) < minY) continue;
+      const ux = P[b] - P[a], uy = P[b + 1] - P[a + 1], uz = P[b + 2] - P[a + 2];
+      const vx = P[c] - P[a], vy = P[c + 1] - P[a + 1], vz = P[c + 2] - P[a + 2];
+      const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+      if (!(ny < -.3 * Math.hypot(nx, ny, nz))) continue; // only faces looking down into the cave
+      const facet = roof.locate((P[a] + P[b] + P[c]) / 3, (P[a + 2] + P[b + 2] + P[c + 2]) / 3);
+      for (const v of [I[t], I[t + 1], I[t + 2]]) {
+        let set = facetsByVertex.get(v);
+        if (!set) facetsByVertex.set(v, set = []);
+        if (!set.includes(facet)) set.push(facet);
+      }
+    }
+    const maxMove = cell * 1.5;
+    const onLine = (x, z, A, B) => { // closest xz point where planes A and B meet
+      const nx = A.kx - B.kx, nz = A.kz - B.kz, n2 = nx * nx + nz * nz;
+      if (n2 < 1e-8) return null;
+      const t = -((A.k0 - B.k0) + nx * x + nz * z) / n2;
+      return { x: x + t * nx, z: z + t * nz };
+    };
+    let moved = 0;
+    for (const [v, ids] of facetsByVertex) {
+      const x = P[v * 3], z = P[v * 3 + 2];
+      const [A, B, C] = ids.slice(0, 3).map(id => roof.planes[id]);
+      let to = null;
+      if (C) {
+        const m00 = A.kx - B.kx, m01 = A.kz - B.kz, m10 = A.kx - C.kx, m11 = A.kz - C.kz, det = m00 * m11 - m01 * m10;
+        if (Math.abs(det) > 1e-8) {
+          const r0 = B.k0 - A.k0, r1 = C.k0 - A.k0;
+          to = { x: (r0 * m11 - m01 * r1) / det, z: (m00 * r1 - r0 * m10) / det };
+          if (Math.hypot(to.x - x, to.z - z) > maxMove) to = null;
+        }
+      }
+      if (!to && B) {
+        to = onLine(x, z, A, B);
+        if (to && Math.hypot(to.x - x, to.z - z) > maxMove) to = null;
+      }
+      if (!to) to = { x, z };
+      P[v * 3] = to.x; P[v * 3 + 2] = to.z;
+      P[v * 3 + 1] = A.k0 + A.kx * to.x + A.kz * to.z;
+      moved++;
+    }
+    // A sideways move onto a fold can fold a thin roof triangle over (or
+    // flatten it). Every corner still lies on that triangle's facet plane,
+    // so the downward-facing neighbours already cover its area; drop it
+    // rather than leave a reversed coplanar face for culling, grounding
+    // probes and the stretch mapper to trip over.
+    const dropped = new Set();
+    for (let t = 0; t < I.length; t += 3) {
+      if (!facetsByVertex.has(I[t]) || !facetsByVertex.has(I[t + 1]) || !facetsByVertex.has(I[t + 2])) continue; // only faces lying wholly on the snapped roof
+      const a = I[t] * 3, b = I[t + 1] * 3, c = I[t + 2] * 3;
+      if ((P[b + 2] - P[a + 2]) * (P[c] - P[a]) - (P[b] - P[a]) * (P[c + 2] - P[a + 2]) > -1e-9) dropped.add(t);
+    }
+    if (dropped.size) {
+      const kept = [];
+      for (let t = 0; t < I.length; t += 3) if (!dropped.has(t)) kept.push(I[t], I[t + 1], I[t + 2]);
+      mesh.indices = kept;
+    }
+    return moved;
+  }
+
+  // Roof geometry for a sculpt volume: a rock cap a couple of lattice cells
+  // thick stays under the volume's top, and the faceted roof spans the top
+  // vaultFrac of the floor-to-cap height. vaultFacetSize is the facet
+  // spacing in sculpt units.
   function vaultFor(st, opts, floorY) {
     if (!opts.vaultCeiling) return null;
     const dy = 2 * st.domainHalf.y / st.N;
     const topY = st.dims.y / 2 - Math.max(.5, dy * 2.5);
     const height = topY - floorY;
     if (!(height > 1)) return null;
-    const frac = clampNum(Number(opts.vaultFrac) || .25, .05, .9);
-    return { topY, startY: topY - height * frac, inset: Number(opts.vaultInset) || height * frac }; // Default cove is a quarter circle as wide as it is tall.
+    const frac = clampNum(Number(opts.vaultFrac) || .4, .05, .9);
+    return { topY, startY: topY - height * frac, facetSize: Number(opts.vaultFacetSize) || 1.8, seed: (Number(opts.vaultSeed) || 0) | 0, roof: null };
   }
 
   // Claims every tile in boundsRect whose floor is open enough (nine-point
@@ -1831,6 +1967,7 @@
     const touched = computeTouchedTiles(st, ts, opts.cullTouchTolerance);
     for (const key of claimed) touched.add(key); // claimed tiles are always touched by construction; union defensively
     const mesh = extractMesh(st, touched, skipCapEdges, ts, claimed, floorY, opts.enforceWalkableClearance, vault ? vault.startY - 2 * st.domainHalf.y / st.N : Infinity);
+    const roofVerticesSnapped = snapRoofToFacets(mesh, vault, Math.max(2 * st.domainHalf.x / st.N, 2 * st.domainHalf.z / st.N));
 
     // Shift Y so the floor sits at y=0 — the game's floor-referenced
     // convention (see interior-scene-builder.js's panelCornersFor). X/Z
@@ -1861,7 +1998,7 @@
       claimed, entranceTiles, nestTile: [nfx, nfy], mesh, solidRim,
       levels: levels.map(l => l - floorY), probeYRadius, dims,
       domainTopY: dims.y * .5 * 1.08 - floorY,
-      vaultCeiling: vault ? { startY: vault.startY - floorY, topY: vault.topY - floorY, inset: vault.inset } : null,
+      vaultCeiling: vault ? { startY: vault.startY - floorY, topY: vault.topY - floorY, facetSize: vault.facetSize, roofVerticesSnapped } : null,
       deformedTilesDropped,
       walkableSculptFragmentsSmoothed: mesh.walkableSculptFragmentsSmoothed || 0,
       walkableSculptVerticesMoved: mesh.walkableSculptVerticesMoved || 0,
@@ -2003,6 +2140,7 @@
     const touched = computeTouchedTiles(st, ts, opts.cullTouchTolerance ?? DEFAULT_OPTS.cullTouchTolerance);
     for (const key of localClaimed) touched.add(key);
     const mesh = extractMesh(st, touched, skipCapEdges, ts, localClaimed, floorY, opts.enforceWalkableClearance, vault ? vault.startY - 2 * st.domainHalf.y / st.N : Infinity);
+    const roofVerticesSnapped = snapRoofToFacets(mesh, vault, Math.max(2 * st.domainHalf.x / st.N, 2 * st.domainHalf.z / st.N));
 
     // Convert the centered sculptor coordinate frame back to the Locale
     // Editor's authored col/row frame while preserving floor-at-y=0.
@@ -2040,7 +2178,7 @@
       probeYRadius,
       dims,
       domainTopY: dims.y * 0.5 * 1.08 - floorY,
-      vaultCeiling: vault ? { startY: vault.startY - floorY, topY: vault.topY - floorY, inset: vault.inset } : null,
+      vaultCeiling: vault ? { startY: vault.startY - floorY, topY: vault.topY - floorY, facetSize: vault.facetSize, roofVerticesSnapped } : null,
       footprintBounds: { minC, minR, maxC, maxR },
       authoredTileCount: authored.length,
     };
