@@ -55,17 +55,22 @@ const byId = id => composed.npcs.find(npc => npc.id === id);
 assert.equal(composed.npcs.filter(npc => npc.id === 'hammerhead_tuhupnuk').length, 0, 'all duplicate Hammerhead records are removed before runtime spawning');
 assert(overrides.removeNpcIds.includes('hammerhead_tuhupnuk'), 'Hammerhead is explicitly marked removed in the runtime NPC corrections');
 
-for (const [npcId, stationId] of [
-  ['dzibim_khibu', 'furniture_chair_map_i_carpenters_12_8'],
-  ['dzahiri_khibu', 'furniture_chair_map_i_carpenters_13_8'],
-  ['nashka_khibu', 'furniture_chair_map_i_carpenters_12_9'],
+for (const [npcId, stationId, mapId] of [
+  ['dzibim_khibu', 'station_car_home_dzibim_bed', 'map_i_carpenters_F2_dzibim'],
+  ['dzahiri_khibu', 'station_car_home_dzahiri_bed', 'map_i_carpenters_F2_dzahiri'],
+  ['nashka_khibu', 'station_car_home_nashka_bed', 'map_i_carpenters_F2_nashka'],
 ]) {
   const npc = byId(npcId);
-  assert.equal(npc.scheduleHooks.defaultStationId, stationId, `${npcId} default is an indoor stool`);
-  for (const rule of npc.scheduleHooks.rules.filter(r => r.sourceStationId)) {
-    assert.equal(rule.mapId, 'map_i_carpenters', `${npcId} redirected home rule is indoors`);
-    assert.equal(rule.stationId, stationId, `${npcId} redirected home rule uses its stool`);
+  assert.equal(npc.scheduleHooks.defaultStationId, stationId, `${npcId} default is their own bed`);
+  assert.equal(npc.scheduleHooks.defaultMapId, mapId, `${npcId} default map is their bedroom`);
+  const redirected = npc.scheduleHooks.rules.filter(r => r.sourceStationId);
+  assert(redirected.length, `${npcId} has redirected home rules`);
+  for (const rule of redirected) {
+    assert.equal(rule.mapId, mapId, `${npcId} redirected home rule is in their bedroom`);
+    assert.equal(rule.stationId, stationId, `${npcId} redirected home rule uses their bed`);
   }
+  const bedroom = JSON.parse(fs.readFileSync(`docs/config/maps/${mapId}.json`, 'utf8'));
+  assert((bedroom.npcStations || []).some(st => st.id === stationId), `${mapId} defines ${stationId}`);
 }
 
 for (const rule of byId('foroji_funji').scheduleHooks.rules.filter(r => r.sourceStationId === 'station_foroji_music')) {

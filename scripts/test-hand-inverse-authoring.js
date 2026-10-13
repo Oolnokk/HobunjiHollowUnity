@@ -2,7 +2,7 @@
 const fs = require('fs');
 
 function read(path) { return fs.readFileSync(path, 'utf8'); }
-function assert(condition, message) { if (!condition) throw new Error(message); }
+const assert = require('assert');
 
 const config = read('docs/config/hand-model-profiles.js');
 const attachments = read('docs/js/procedural-hand-attachments.js');
@@ -28,7 +28,7 @@ assert(attachments.includes("side === 'right'"), 'runtime must build distinct le
 assert(!attachments.includes('solveTwoBoneArm'), 'direct attachment runtime must not solve arm bones');
 
 assert(driver.includes("placeHandWorld?.('right'"), 'right hand must attach directly to the primary tool socket');
-assert(driver.includes('secondaryGripForTool(toolKey)'), 'driver must resolve optional secondary tool grip');
+assert(/secondaryGripForTool\(toolKey[,)]/.test(driver), 'driver must resolve optional secondary tool grip');
 assert(driver.includes("placeHandWorld?.('left'"), 'enabled secondary grip must drive the left hand');
 assert(driver.includes("applyFallbackSide(record, 'left')"), 'left hand must return to locomotion fallback when no secondary grip is enabled');
 assert(driver.includes('noArmIK: true'), 'driver debug must visibly report no arm IK');
@@ -44,14 +44,14 @@ assert(directEditor.includes('Attach left hand to secondary grip'), 'Attack Edit
 assert(!directEditor.includes('handShowArmBones'), 'Attack Editor must not restore the old arm-bone toggle');
 assert(directEditor.includes('handSecondaryGripEnabled'), 'Attack Editor must provide a secondary grip enable toggle');
 assert(directEditor.includes('NO ARM IK'), 'Attack Editor must visibly report the simplified attachment model');
-assert(editor.includes('Hand position relative to tool grip'), 'fine hand-from-tool authoring must remain available as a direct grip transform');
-assert(editor.includes('The tool is never moved by the hand system'), 'editor must state direct-hand authority clearly');
+assert(editor.includes('handFromToolPositionFields') && editor.includes('handFromToolRotationFields'), 'per-GLB hand-from-tool calibration must remain authorable');
+assert(editor.includes('No arm IK, reach clamp'), 'editor must state direct-hand authority clearly');
 
 assert(gripModes.includes("'palm-parallel'"), 'palm-parallel grip mode must remain');
 assert(gripModes.includes("'palm-perpendicular'"), 'palm-perpendicular grip mode must remain');
 assert(!gripModes.includes("key.includes('pickshovel')"), 'pick-shovel must default to the same palm-parallel 1H grip mode as the spear.');
 assert.match(gripModes, /'palm-perpendicular'[\s\S]*rotationDeg:\s*Object\.freeze\(\{\s*pitch:\s*0,\s*yaw:\s*0,\s*roll:\s*-90\s*\}\)/, 'palm-perpendicular must rotate around the weapon\'s own Z (shaft) axis, not local X');
-assert(gripModes.includes('multiplyQuat(rotationQuaternion, inverseQuat(fineQ))'), 'grip mode must derive a rigid quaternion delta from the fine transform');
+assert(gripModes.includes('multiplyQuat(modeQ, calibrationQ)'), 'grip mode must compose its rigid rotation on top of the per-model calibration');
 
 assert(materialRoles.includes("pachyderm: 'mashtzarr'"), 'pachyderm hand materials must inherit foot slot roles');
 assert(materialRoles.includes("sloth: 'tletingan'"), 'sloth hand materials must inherit foot slot roles');

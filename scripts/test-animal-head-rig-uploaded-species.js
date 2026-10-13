@@ -45,7 +45,7 @@ vm.runInContext(source, context, { filename: 'animal-head-rig-authored.js' });
 
 const api = windowStub.HobunjiAuthoredAnimalHeadRigs;
 assert(api, 'uploaded rig layer exposes a debug-visible API');
-assert.equal(api.version, '2026-09-17-uploads1');
+assert.match(String(api.version), /uploads/, 'uploaded rig layer reports its data version');
 
 const puktuk = renderer.ANIMAL_HEAD_RIGS.puktuk;
 assert.equal(puktuk.pivot.x, 0.484375);

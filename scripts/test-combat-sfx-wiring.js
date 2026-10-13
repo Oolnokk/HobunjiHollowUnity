@@ -50,6 +50,7 @@ assert(game.includes('playCounterShieldBlockSfx(c.x, c.y, c.areaId)'), 'guarding
 
 class FakeAudio {
   static loads = 0;
+  static loadsByUrl = new Map();
   static plays = 0;
   constructor(src) {
     this.src = src;
@@ -59,7 +60,7 @@ class FakeAudio {
     this.paused = true;
     this.ended = false;
   }
-  load() { FakeAudio.loads++; }
+  load() { FakeAudio.loads++; FakeAudio.loadsByUrl.set(this.src, (FakeAudio.loadsByUrl.get(this.src) || 0) + 1); }
   pause() { this.paused = true; }
   addEventListener() {}
   play() { FakeAudio.plays++; this.paused = false; return Promise.resolve(); }
@@ -91,9 +92,14 @@ context.window.AudioSystem.init({
   isRealMediaError: () => false,
   markAudioUrlFailed: () => {},
 });
-// 6 combat cues x 2-voice pool, plus the 3 runtime-owned hard-footstep
-// recordings (always preloaded regardless of config) x their own 2-voice pool.
-assert.equal(FakeAudio.loads, 20, 'each configured low-latency combat cue should fill its two-voice pool');
+// Each preload:true combat cue fills a 2-voice pool; cues without preload
+// stay lazy. (Footstep recordings preload their own pools too, so only the
+// combat URLs are counted here.)
+for (const entry of Object.values(combatSfx)) {
+  if (!entry || typeof entry !== 'object') continue;
+  assert.equal(FakeAudio.loadsByUrl.get(entry.url) || 0, entry.preload ? 2 : 0,
+    `combat cue ${entry.url} should ${entry.preload ? 'fill its two-voice pool' : 'not preload'}`);
+}
 
 const bandageLoopVoice = context.window.AudioSystem.playCombatSfxKey('bandageLoop');
 assert(bandageLoopVoice instanceof FakeAudio, 'semantic combat-SFX playback should return its started voice for lifecycle control');

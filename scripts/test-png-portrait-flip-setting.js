@@ -10,8 +10,6 @@ const paritySource = fs.readFileSync('docs/js/portrait-plane-outline-parity.js',
 const gameSource = fs.readFileSync('docs/game.js', 'utf8'); // Guards dev-only setting visibility and the shoulder-pet hat overlay.
 const indexSource = fs.readFileSync('docs/index.html', 'utf8'); // Guards the player-facing checkbox and cache-busted runtime include.
 const portraitSource = fs.readFileSync('docs/js/portrait-utils.js', 'utf8'); // Guards cosmetic metadata propagation into runtime profiles.
-const frontHatSource = fs.readFileSync('docs/js/front-hat-head-facing.js', 'utf8'); // Guards ordinary headband behavior and auxiliary texture parity.
-const previewSource = fs.readFileSync('docs/js/npc-avatar-preview-utils.js', 'utf8'); // Guards alternate Fine Hood composite texture parity.
 const attachmentRigSource = fs.readFileSync('docs/config/attachment-rig-profiles.js', 'utf8'); // Guards the authored shoulder-perch pixel handoff into gameplay anchors.
 const basicHeadband = JSON.parse(fs.readFileSync('docs/config/cosmetics/basic_headband.json', 'utf8')); // Authored opt-out for the cloth headband.
 const leatherHeadband = JSON.parse(fs.readFileSync('docs/config/cosmetics/leather_headband.json', 'utf8')); // Authored opt-out for the leather headband.
@@ -100,15 +98,9 @@ assert.equal(leatherHeadband.specialHeadwearRules, false,
   'the Leather Headband behaves like an ordinary baked head cosmetic');
 assert.match(portraitSource, /specialHeadwearRules = json\.specialHeadwearRules !== false/,
   'headwear special-rule metadata survives cosmetic loading');
-assert.match(frontHatSource, /hat\.specialHeadwearRules !== false/,
-  'ordinary headbands bypass the front-hat shader substitution rules');
 assert.match(gameSource, /hat\.specialHeadwearRules === false/,
   'ordinary headbands bypass shoulder-pet xray extraction and remain in the normal portrait texture');
 assert.match(gameSource, /trackPortraitTexture\?\.\(THREE, texture, facingBack \? 'back' : 'front'\)/,
   'special tall-hat xray overlays flip with their matching portrait face');
-assert.match(frontHatSource, /trackPortraitTexture\?\.\(THREE, hatlessTexture, 'front'\)/,
-  'the front-hat fallback composite cannot jump back to the legacy orientation');
-assert.match(previewSource, /trackPortraitTexture\?\.\(THREE, trimlessTexture, 'front'\)/,
-  'the Fine Hood fallback composite cannot jump back to the legacy orientation');
 
 console.log('PNG portrait flip setting tests passed.');

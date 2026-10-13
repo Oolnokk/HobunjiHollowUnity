@@ -70,7 +70,11 @@ for (const f of mapFiles) mapIds.add(f.replace(/\.json$/, ''));
 for (const f of mapFiles) {
   const m = JSON.parse(fs.readFileSync(path.join(mapsDir, f), 'utf8'));
   const areaId = f.replace(/\.json$/, ''); // see mapIds note above — filename, not m.id
-  for (const st of (m.npcStations || [])) {
+  // Conditional layouts (js/map-layout-system.js) replace furniture/
+  // npcStations while active — e.g. the temple's Anan-night Spirit
+  // Communion pews — so their seats and stations are real too.
+  const variants = [m, ...(Array.isArray(m.layouts) ? m.layouts : [])];
+  for (const st of variants.flatMap(v => v.npcStations || [])) {
     if (!st.id) continue;
     stationIds.add(st.id);
     for (const r of (st.roles || [])) addRole(r, st.id);
@@ -83,7 +87,7 @@ for (const f of mapFiles) {
   // never actually gets registered, but nothing here schedules an NPC to
   // "sit" at one, so treating every furniture entry as a valid seat id is
   // safe and avoids duplicating DECORATIVE_FURNITURE_DEFS's sit-flag table.
-  for (const furn of (m.furniture || [])) {
+  for (const furn of variants.flatMap(v => v.furniture || [])) {
     if (!Number.isFinite(furn.col) || !Number.isFinite(furn.row)) continue;
     const fid = `furniture_chair_${areaId}_${furn.col}_${furn.row}`;
     stationIds.add(fid);
@@ -155,10 +159,16 @@ function issuesFor(npc) {
   return issues;
 }
 
+// LocalDBOverrides replaces a visitor's whole routine (scheduleHooks) and
+// clears their agenda[] at load (schedule-overrides.json visitorSchedules),
+// so that agenda content never runs.
+const scheduleOverrides = JSON.parse(fs.readFileSync(path.join(ROOT, 'docs/config/npcs/schedule-overrides.json'), 'utf8'));
+const agendaClearedIds = new Set((scheduleOverrides.visitorSchedules || []).map(v => v.npcId));
+
 const allIssues = [];
 let npcsWithAgenda = 0;
 for (const npc of npcs) {
-  if (!(Array.isArray(npc.agenda) && npc.agenda.length)) continue;
+  if (!(Array.isArray(npc.agenda) && npc.agenda.length) || agendaClearedIds.has(npc.id)) continue;
   npcsWithAgenda++;
   for (const msg of issuesFor(npc)) allIssues.push(`${npc.id}: ${msg}`);
 }

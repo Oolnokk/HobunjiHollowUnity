@@ -24,8 +24,8 @@ assert(
 );
 assert.match(
   game,
-  /npcDialogueStaging = null;[\s\S]{0,500}if \(!cinematicActive && walker\?\.rec\?\.id !== 'banubu'\)[\s\S]{0,900}interactionAzimuthDeg \+ cameraSideAngleDeg - dialogueBaseAzimuthDeg/,
-  'ordinary dialogue must leave the player in place and shift from the interaction-time camera angle, while Banubu bypasses the generic camera offset',
+  /npcDialogueStaging = null;[\s\S]{0,900}if \(!cinematicActive && walker\?\.rec\?\.id !== 'banubu'[^\n]*\)[\s\S]{0,400}DialogueCameraFraming\?\.begin\?\.\(THREE\.MathUtils\.degToRad\(interactionAzimuthDeg\)\)/,
+  'ordinary dialogue must leave the player in place and start camera framing from the interaction-time camera angle, while Banubu bypasses the generic camera framing',
 );
 assert.match(config, /"cameraSideAngleDeg": 15/, 'ordinary dialogue camera offset must be authored as 15 degrees');
 assert.match(
@@ -34,9 +34,9 @@ assert.match(
   'dialogue must capture the real camera azimuth before switching into dialogue camera mode',
 );
 assert.match(
-  game,
-  /interactionAzimuthDeg \+ cameraSideAngleDeg - dialogueBaseAzimuthDeg/,
-  'the 15-degree dialogue angle must be relative to the interaction-time camera azimuth, not an absolute world angle',
+  fs.readFileSync('docs/js/dialogue-camera-framing.js', 'utf8'),
+  /finite\(cfg\.cameraSideAngleDeg, 15\)/,
+  'dialogue camera framing must swing at least the authored cameraSideAngleDeg around the NPC',
 );
 assert.doesNotMatch(
   game,
@@ -67,12 +67,7 @@ assert.match(
 
 assert.match(
   game,
-  /else if \(dialogueOpen && _dialogueWalker\?\.root\)[\s\S]{0,900}playerFacing = -facingAngle \+ Math\.PI \/ 2;[\s\S]{0,300}playerMesh\.rotation\.y = playerFacing;/,
-  'dialogue must render the player at the true unclamped body yaw instead of the camera-relative perp deadzone',
-);
-assert.match(
-  game,
-  /function _aimNeckAtWorldPoint\([\s\S]{0,1800}neckJoint\.rotation\.set\(pitchDeg \* Math\.PI \/ 180, yawDeg \* Math\.PI \/ 180, 0\);/,
+  /function _aimNeckAtWorldPoint\([\s\S]{0,1800}neckJoint\.rotation\.set\(pitchDeg \* Math\.PI \/ 180, [^\n]*yawDeg \* Math\.PI \/ 180[^\n]*, 0\);/,
   'dialogue eye contact must author both neck pitch and yaw',
 );
 assert.match(

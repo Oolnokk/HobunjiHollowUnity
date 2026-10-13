@@ -78,7 +78,7 @@ assert.doesNotMatch(actionArcUi.match(/scrollAmmo\(dir\)[\s\S]*?\n\s*},\n\s*scro
 assert.match(game, /rangedAmmoAction2Press\.held\) window\._desktopSelectionArc\?\.releaseSelection\(\)/, 'releasing the original held ammo input must commit the highlighted ammo');
 assert.match(actionArcUi, /_openAmmoArc\(\)[\s\S]*_openEntries\('ammo',[\s\S]*ordinary-radius arch primitive/, 'special ammo must use the normal shared arch radius and icon presentation');
 assert.match(editor, /heavy_weapon_idle[\s\S]*light_weapon_idle/, 'attack editor must expose the two runtime Heavy/Light weapon stances');
-assert.match(editor, /neutralWeight[\s\S]*toolPlane\.rotation\.z = anim\.style === 'sweep'/, 'attack editor weapon orientation must derive from the previewed animation and runtime Neutral correction');
+assert.match(editor, /neutralWeight[\s\S]*const sweepBasisZ = anim\.style === 'sweep'[\s\S]*toolPlane\.rotation\.z = [^\n]*sweepBasisZ/, 'attack editor weapon orientation must derive from the previewed animation and runtime Neutral correction');
 
 assert.match(editor, /value="load">Load: Neutral → Windup → Neutral/, 'editor must expose loading playback');
 assert.match(editor, /value="fire">Fire: Neutral → Strike → Neutral/, 'editor must expose firing playback');
@@ -89,7 +89,7 @@ assert.match(editor, /neutralOnly:\s*true/, 'tool scale must only be authored on
 assert.match(editor, /id="neckStrength"[^>]*min="0"[^>]*max="2"[^>]*value="1"/, 'editor must expose a safe preview-only neck strength slider');
 assert.match(editor, /id="neckRadius"[^>]*min="0\.01"[^>]*max="0\.30"[^>]*value="0\.30"/, 'editor must default to the selected broad 30% neck blend');
 assert.match(editor, /function applyPreviewNeckWeights\(\)[\s\S]*weights\.setXYZW\(index, 1 - headWeight, headWeight, 0, 0\)/, 'neck radius preview must update only the root/head skin weights');
-assert.match(editor, /neckJoint\.rotation\.y = -rig\.rotation\.y \* neckPreviewStrength/, 'neck strength preview must scale the automatic body-yaw counter-turn');
+assert.match(editor, /neckJoint\.rotation\.y = [^\n]*-rig\.rotation\.y \* neckPreviewStrength/, 'neck strength preview must scale the automatic body-yaw counter-turn');
 assert.match(editor, /id="showHeadSkinVertices"/, 'editor must expose a head-skinned vertex overlay toggle');
 assert.match(editor, /function rebuildHeadSkinVertexOverlay\(\)[\s\S]*weights\.getY\(index\)[\s\S]*new THREE\.Points/, 'head overlay must visualize the actual head-bone weight at each unique vertex');
 assert.match(editor, /function updateHeadSkinVertexOverlay\(\)[\s\S]*(?:boneTransform|applyBoneTransform)/, 'head overlay markers must follow the live skinned deformation');

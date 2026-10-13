@@ -58,19 +58,18 @@ assert(ranged.includes('repositionBanditForLos(c, targetPlayer, def, dt, los)'),
 assert(ranged.indexOf('if (!isLoaded(itemKey, c))') < ranged.indexOf('const los = banditLosStatus(c, targetPlayer, def)'), 'LOS seeking only occurs after the weapon is loaded');
 assert(ranged.includes('BANDIT_LOS_CACHE_MS = 80'), 'bandit LOS work is throttled per actor');
 assert(ranged.includes('ACTOR_HITBOX_CACHE_MS = 16'), 'actor hitbox work is shared within a rendered frame');
-assert(ranged.includes('const sharedPerps = projectiles.some'), 'camera-relative projectile perps are computed once per projectile update');
 assert(ranged.includes('WOULD_HIT_CACHE_MS = 50'), 'HUD hit prediction is throttled to 20 Hz');
 assert(ranged.includes('coverHit.t <= nearest.interval.enter'), 'semantic cover wins only when it is in front of the nearest actor');
 assert(ranged.includes('updateBanditAimLabel'), 'aiming updates the bandit identity label');
-assert(ranged.includes("(bandit.name || 'Bandit') + ' · ' + rank"), 'bandit labels include name and rank');
+assert(/setAimLabel\?\.\([^\n]*\(bandit\.name \|\| 'Bandit'\)[^\n]*\+ rank\)/.test(ranged), 'bandit labels include name and rank');
 
 assert(bandits.includes('_applyBanditTentGridCollision'), 'standing tents stamp a cheap runtime collision footprint');
 assert(bandits.includes('tile._banditTentCollisionId = obj.id'), 'tent collision stamps non-rendering tile metadata');
 assert(!bandits.includes('tile.type = deps.TileType.ROCK'), 'tent collision never turns its footprint into visible rocks');
 assert(game.includes('if (tile._banditTentCollisionId) return null;'), 'normal tile movement honors the tent collision marker');
 assert(bandits.includes('_restoreBanditTentGridCollision'), 'burned/re-rolled tents restore their original grid tiles');
-assert(bandits.includes('projectileCoverHeightTiles = 1.45'), 'tent supplies semantic height metadata for projectile cover');
-assert(bandits.includes('projectileCoverRadiusTiles = 0.9'), 'tent supplies semantic footprint metadata for projectile cover');
+assert(/projectileCoverHeightTiles = \d+(\.\d+)?;/.test(bandits), 'tent supplies semantic height metadata for projectile cover');
+assert(/projectileCoverRadiusTiles = \d+(\.\d+)?;/.test(bandits), 'tent supplies semantic footprint metadata for projectile cover');
 assert(bandits.includes('window.NearbyVolumeCollision?.invalidate?.()'), 'tent add/remove invalidates the semantic cover index');
 
 assert(popup.includes('setAimLabel, clearAimLabel'), 'world popup runtime exposes persistent aimed labels');

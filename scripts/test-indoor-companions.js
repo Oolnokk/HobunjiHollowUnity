@@ -11,7 +11,7 @@ assert.match(gameSource,
   /const companionSceneReady = !_isBuildingArea\(currentArea\) \|\| !!_buildingScenes\.get\(currentArea\);[\s\S]{0,180}syncCompanionFromWhistle\(\);[\s\S]{0,80}updateCompanions\(dt\);/,
   'companions and shoulder pets sync in ready building scenes');
 assert.match(gameSource,
-  /window\.Mounts\?\.updateMountRide\(dt\);[\s\S]{0,180}currentArea === 'farm'/,
+  /window\.Mounts\?\.updateMountRide\(dt\);[\s\S]{0,700}currentArea === 'farm'/,
   'mount cleanup runs before exterior-only wildlife systems are gated');
 assert.match(mountSource,
   /return area === 'farm' \|\| area === 'town' \|\| deps\._isZoneArea\(area\);/,
