@@ -1,0 +1,30 @@
+name: Temporary cache-bust fix
+
+on:
+  push:
+    branches:
+      - fix/weapon-reward-odds-cave-entry-clearance
+
+permissions:
+  contents: write
+
+jobs:
+  fix-cache-busts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Bump stale shipped tokens
+        run: |
+          git fetch --no-tags origin main
+          node scripts/check-cache-busts.js --fix origin/main
+          if git diff --quiet; then
+            echo "No cache-bust updates needed."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs scripts
+          git commit -m "Bump cache-bust tokens"
+          git push
