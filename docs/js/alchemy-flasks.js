@@ -101,10 +101,19 @@
     return true;
   }
 
+  function groundAt(x, z) {
+    return Number(deps.getGroundYAtWorld?.(x, z) ?? deps.getGroundY?.(x * (deps.TILE || 64), z * (deps.TILE || 64))) || 0;
+  }
+
+  function splashRadius(definition, playerOwned = true) {
+    const rank = playerOwned ? (window.PerkSystem?.rank('alchemy', 'empowerFlasks') || 0) : 0; // Shared preview/impact perk authority.
+    return (definition.splashRadius || window.AlchemySystem.DEFAULT_SPLASH_RADIUS_TILES) * (1 + rank * 0.1);
+  }
+
   function makeTargetRing() {
     if (targetRing || !deps?.THREE) return targetRing;
-    const geometry = new deps.THREE.RingGeometry(0.2, 0.27, 40); // Readable fixed-width green ground ring.
-    const material = new deps.THREE.MeshBasicMaterial({ color: 0x55ff82, transparent: true, opacity: 0.82, side: deps.THREE.DoubleSide, depthWrite: false }); // Aim-only presentation material.
+    const geometry = new deps.THREE.RingGeometry(0, 1, 48, 6); // Filled AoE plane with radial subdivisions for terrain projection.
+    const material = new deps.THREE.MeshBasicMaterial({ color: 0x55ff82, transparent: true, opacity: 0.24, side: deps.THREE.DoubleSide, depthWrite: false }); // Aim-only presentation material.
     targetRing = new deps.THREE.Mesh(geometry, material);
     window.EnvironmentSurfaceMicroPlateau?.bindGroundProjection(targetRing);
     targetRing.rotation.x = -Math.PI / 2;
@@ -120,9 +129,22 @@
     ring.visible = !!aimState;
     if (!aimState) return;
     const tile = deps.TILE || 64; // World-pixel to Three-unit conversion.
-    ring.position.set(aimState.targetX / tile, deps.getGroundY?.(aimState.targetX, aimState.targetY) ?? 0.025, aimState.targetY / tile);
-    const radius = aimState.definition.splashRadius || window.AlchemySystem.DEFAULT_SPLASH_RADIUS_TILES; // Authored radius.
-    ring.scale.setScalar(radius / 0.27);
+    const groundY = groundAt(aimState.targetX / tile, aimState.targetY / tile); // Landing surface shared with the projectile.
+    const radius = splashRadius(aimState.definition); // Preview includes the player's radius perk, just like impact.
+    const changed = ring.userData?.targetX !== aimState.targetX || ring.userData?.targetY !== aimState.targetY || ring.userData?.radius !== radius || ring.userData?.groundY !== groundY; // Avoid resampling an unchanged aim plane every frame.
+    ring.position.set(aimState.targetX / tile, groundY + 0.035, aimState.targetY / tile);
+    ring.scale.setScalar(radius);
+    if (changed) {
+      const positions = ring.geometry.attributes.position; // Local XY plane rotates onto world XZ; local Z supplies terrain height.
+      if (positions) {
+        for (let index = 0; index < positions.count; index++) {
+          positions.setZ(index, (groundAt(ring.position.x + positions.getX(index) * radius, ring.position.z - positions.getY(index) * radius) - groundY) / radius);
+        }
+        positions.needsUpdate = true;
+        ring.geometry.computeBoundingSphere?.();
+      }
+      if (ring.userData) Object.assign(ring.userData, { targetX: aimState.targetX, targetY: aimState.targetY, radius, groundY });
+    }
   }
 
   function beginAim() {
@@ -131,7 +153,7 @@
     const player = deps.getPlayer?.(); // Default target origin/direction.
     const direction = deps.getAimAngle?.() ?? (Number(player?.angle) || 0); // Existing targeting language.
     const distance = 3 * (deps.TILE || 64); // Readable initial aim distance.
-    aimState = { ...held, targetX: player.x + Math.cos(direction) * distance, targetY: player.y + Math.sin(direction) * distance, phase: 'aim', releaseT: 0 };
+    aimState = { ...held, area: deps.getCurrentArea?.(), targetX: player.x + Math.cos(direction) * distance, targetY: player.y + Math.sin(direction) * distance, phase: 'aim', releaseT: 0 };
     syncShoulderRayTarget();
     deps.startThrowWindup?.(held.itemKey);
     emitSfx('aimStart', { itemKey: held.itemKey, recipeId: held.definition.id });
@@ -142,7 +164,7 @@
   }
 
   function setTarget(worldX, worldY) {
-    if (!aimState || aimState.phase !== 'aim') return false;
+    if (!aimState || aimState.phase !== 'aim' || !Number.isFinite(worldX) || !Number.isFinite(worldY)) return false;
     const target = clampTarget(worldX, worldY); // Authoritative clamped ground point.
     aimState.targetX = target.x; aimState.targetY = target.y;
     syncTargetRing();
@@ -150,7 +172,7 @@
   }
 
   function setTargetFromVector(dx, dy, magnitude = 1) {
-    if (!aimState) return false;
+    if (!aimState || ![dx, dy, magnitude].every(Number.isFinite)) return false;
     const player = deps.getPlayer?.(); // Controller/mobile cursor origin.
     const length = Math.hypot(dx, dy); // Direction normalization.
     if (length < 0.01) return true;
@@ -171,6 +193,7 @@
 
   function confirmThrow() {
     if (!aimState || aimState.phase !== 'aim') return false;
+    syncShoulderRayTarget(); // Freeze the live camera target on release.
     aimState.phase = 'releasing';
     aimState.releaseT = RELEASE_DELAY_S;
     deps.confirmThrowAnimation?.(aimState.itemKey);
@@ -180,19 +203,19 @@
 
   function makeProjectile(record) {
     const THREE = deps.THREE; // Runtime Three namespace.
-    const group = new THREE.Group(); // Luminous proxy keeps the thrown flask readable against terrain.
-    const geometry = new THREE.SphereGeometry(0.095, 10, 8); // Small low-cost readable flask core.
-    const color = record.definition.particleColors?.[0] || '#7eea90'; // Recipe presentation color.
-    const material = new THREE.MeshBasicMaterial({ color }); // Projectile core material.
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.renderOrder = 35;
-    group.add(mesh);
-    const auraGeometry = new THREE.SphereGeometry(0.16, 10, 8); // Used only by the projectile's additive glow.
-    const auraMaterial = new THREE.MeshBasicMaterial({ color, transparent:true, opacity:0.28, depthWrite:false, blending:THREE.AdditiveBlending }); // Additive flight aura.
+    const group = new THREE.Group(); // Actual authored flask, with a recipe-colored glow around its silhouette.
+    const itemKey = window.AlchemySystem.ensureRecipeItemDef(record.definition.id, record.payload.potencyTier); // NPC and player throws use the same bottle definition.
+    const mesh = deps.makeFlaskProjectile?.(itemKey); // Reuses held-item art, including brewed ingredient colors.
+    if (mesh) group.add(mesh);
+    const color = record.definition.particleColors?.[0] || '#7eea90'; // Glow follows the unchanged splash palette.
+    const auraGeometry = new THREE.SphereGeometry(0.22, 10, 8); // Soft additive halo behind the visible bottle.
+    const auraMaterial = new THREE.MeshBasicMaterial({ color, transparent:true, opacity:0.18, depthWrite:false, blending:THREE.AdditiveBlending }); // Recipe-colored glow without a particle core.
     group.add(new THREE.Mesh(auraGeometry, auraMaterial));
+    record.sprite = mesh;
+    record.visual = mesh ? 'authored-flask' : 'unavailable'; // Exposed by mobile diagnostics to detect missing sprite adapters.
     deps.getActiveScene?.()?.add(group);
     record.mesh = group;
-    record.disposables = [geometry, material, auraGeometry, auraMaterial]; // Released at impact with the projectile group.
+    record.disposables = [auraGeometry, auraMaterial]; // Released at impact with the projectile group.
     return record;
   }
 
@@ -265,8 +288,7 @@
     const x = projectile.target.x * tile; // Splash center X.
     const y = projectile.target.z * tile; // Splash center Y.
     const playerOwned = projectile.playerOwned !== false; // Used to keep enemy Flaskers from borrowing the player's Empower Flasks perk.
-    const empowerFlasksRank = playerOwned ? (window.PerkSystem?.rank('alchemy', 'empowerFlasks') || 0) : 0; // Only player-owned throws widen from the player's perk.
-    const radiusTiles = (projectile.definition.splashRadius || window.AlchemySystem.DEFAULT_SPLASH_RADIUS_TILES) * (1 + empowerFlasksRank * 0.1); // Authored radius.
+    const radiusTiles = splashRadius(projectile.definition, playerOwned); // Same radius as the ground preview.
     const entities = deps.getSplashEntities?.(projectile.area, x, y, radiusTiles * tile) || []; // Existing entity/friendly-fire query adapter.
     let affected = 0; // Impact diagnostic count.
     entities.forEach(entity => {
@@ -277,8 +299,13 @@
     spawnImpactEffect(projectile, radiusTiles);
     emitSfx('impact', { itemKey: projectile.itemKey, recipeId: projectile.definition.id, x: projectile.target.x, y: projectile.target.y, z: projectile.target.z, radiusTiles, affected });
     lastImpact = { recipeId: projectile.definition.id, x, y, radiusTiles, affected, at: performance.now() };
+    disposeProjectile(projectile);
+  }
+
+  function disposeProjectile(projectile) {
     projectile.mesh?.parent?.remove?.(projectile.mesh);
     projectile.disposables?.forEach(resource => resource?.dispose?.());
+    deps.disposeFlaskProjectile?.(projectile.sprite, projectile.mesh);
   }
 
   function makePointCloud(color, count, radiusTiles, verticalBias) {
@@ -355,14 +382,18 @@
   }
 
   function update(dt) {
+    if (!Number.isFinite(dt) || dt < 0) return;
+    if (aimState && (aimState.area !== deps.getCurrentArea?.() || heldPayload()?.itemKey !== aimState.itemKey)) cancelAim(); // Selection/map changes cannot release a stale held flask.
     if (aimState?.phase === 'releasing') {
       aimState.releaseT -= Math.max(0, dt); // Windup→strike release countdown.
       if (aimState.releaseT <= 0) releaseProjectile();
     }
+    if (!aimState && !projectiles.length && !projectileTrails.length && !impactEffects.length) return; // Idle combat pays no flask presentation cost.
     syncShoulderRayTarget();
     syncTargetRing();
     for (let index = projectiles.length - 1; index >= 0; index--) {
       const projectile = projectiles[index]; // Active deterministic flight.
+      if (deps.getCurrentArea?.() !== projectile.area) { disposeProjectile(projectile); projectiles.splice(index, 1); continue; } // Never render an old-area splash in the new scene.
       projectile.t += Math.max(0, dt);
       const ratio = Math.min(1, projectile.t / projectile.durationS); // Authoritative destination progress.
       const arc = Math.sin(Math.PI * ratio) * Math.min(1.65, 0.72 + projectile.distanceTiles * 0.065); // Taller arc for distant shoulder throws.
@@ -419,7 +450,9 @@
   }
 
   function primaryAction() { return aimState ? confirmThrow() : beginAim(); }
-  function diagnostics() { return { aiming: !!aimState, phase: aimState?.phase || null, itemKey: aimState?.itemKey || null, target: aimState ? { x: aimState.targetX, y: aimState.targetY } : null, shoulderRayTargeting:!!(aimState && shoulderViewActive()), projectileCount: projectiles.length, trailCount:projectileTrails.length, impactEffectCount:impactEffects.length, lastNpcThrow, lastSfxCue, lastImpact }; }
+  function diagnostics() { return { aiming: !!aimState, phase: aimState?.phase || null, itemKey: aimState?.itemKey || null, target: aimState ? { x: aimState.targetX, y: aimState.targetY } : null, latestChange:'Terrain-projected filled splash preview and authored flask projectile; existing impact particles retained.', previewRadius:aimState ? splashRadius(aimState.definition) : null, shoulderRayTargeting:!!(aimState && shoulderViewActive()), projectileCount: projectiles.length, projectileVisuals:projectiles.map(projectile => projectile.visual), trailCount:projectileTrails.length, impactEffectCount:impactEffects.length, lastNpcThrow, lastSfxCue, lastImpact }; }
+
+  addEventListener('blur', cancelAim); // Losing input focus cancels without consuming a flask.
 
   window.AlchemyFlasks = { init, beginAim, setTarget, setTargetFromVector, cancelAim, confirmThrow, throwFromEntity, primaryAction, heldActions, update, diagnostics, SFX_CUES, get aiming() { return !!aimState; }, MAX_THROW_RADIUS_TILES };
 })();

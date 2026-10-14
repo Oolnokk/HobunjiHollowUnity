@@ -22210,12 +22210,7 @@
               if (image) plane.scale.y = image.naturalHeight / Math.max(1, image.naturalWidth);
             }, undefined, error => window.__farmLog?.(`[held-item] ${item.key} source sprite failed: ${error.message}`, 'warn'))
           : _getItemIconTexture(item.icon);
-        const mat = new THREE.MeshBasicMaterial({
-          map: fallbackTexture,
-          transparent: true,
-          alphaTest: 0.05,
-          side: THREE.DoubleSide,
-        });
+        const mat = window.HobunjiSpritePngSurface.makeMaterial(THREE, fallbackTexture, 'held-item-' + item.key); // Shared authored PNG appearance for held items and thrown flasks.
         plane = new THREE.Mesh(geo, mat);
         plane.renderOrder = HELD_OBJECT_RENDER_ORDER;
         plane.userData.ownsTexture = !!spritePath;
@@ -22226,9 +22221,7 @@
             .then(canvas => {
               if (plane.userData.disposed) return;
               // Authored texture replaces the emoji without rebuilding the held item.
-              const spriteTexture = new THREE.CanvasTexture(canvas);
-              spriteTexture.magFilter = THREE.NearestFilter;
-              spriteTexture.minFilter = THREE.NearestFilter;
+              const spriteTexture = window.HobunjiSpritePngSurface.makeCanvasTexture(THREE, canvas, 'held-item-' + item.key); // Shared color/alpha path, also used by flask projectiles.
               const sourceTexture = plane.userData.ownsTexture ? plane.material.map : null;
               plane.material.map = spriteTexture;
               plane.material.needsUpdate = true;
@@ -25737,6 +25730,7 @@
               _flaskGesture = act === 'alchemy_flask_primary';
               _flaskCanceled = false;
               if (_flaskGesture && !window.AlchemyFlasks?.aiming) _abtFire(); // Mobile press enters aim without consuming.
+              if (_flaskGesture) setMobileArchCombatAim(ev.pointerId, 0, 0, _sockR, act); // Claim the camera ray before the first drag.
               if (act === 'ammo_select' || act === 'potion_select') {
                 _selectorKind = act === 'ammo_select' ? 'ammo' : 'potions';
                 _selectorDownX = ev.clientX; _selectorDownY = ev.clientY; _selectorMoved = false; // A tap stays centered logically even if the browser emits tiny pointermove jitter.
@@ -25775,12 +25769,13 @@
               const ny = dist > 0.5 ? dy / dist * r : 0;
               el.style.transform = `translate(calc(50% + ${nx}px), calc(50% + ${ny}px))`;
               if (_flaskGesture && window.AlchemyFlasks?.aiming) {
-                window.AlchemyFlasks.setTargetFromVector(dx, dy, Math.min(1, dist / Math.max(1, _sockR)));
+                setMobileArchCombatAim(ev.pointerId, dx, dy, _sockR, el.dataset.action); // Same camera-stick aiming as thrown weapons.
                 const cancelButton = [...document.querySelectorAll('[data-action="alchemy_flask_cancel"]')][0]; // Current Item Action 2 cancel region.
                 const cancelRect = cancelButton?.getBoundingClientRect(); // Used for continuous drag-over cancellation.
                 if (cancelRect && ev.clientX >= cancelRect.left && ev.clientX <= cancelRect.right && ev.clientY >= cancelRect.top && ev.clientY <= cancelRect.bottom) {
                   cancelButton.classList.add('flask-cancel-hover');
                   window.AlchemyFlasks.cancelAim();
+                  clearMobileArchCombatAim(ev.pointerId, 'flask-cancel');
                   _flaskCanceled = true;
                 }
                 return;
@@ -25852,7 +25847,7 @@
               el.style.transform  = 'translate(50%, 50%)';
               _resetTimer = setTimeout(() => { el.style.transition = ''; el.style.transform = ''; _resetTimer = null; }, 150);
               const pointerCanceled = ev.type === 'pointercancel' || ev.type === 'lostpointercapture'; // Cancellation tears down combat aim without committing a shot or melee release.
-              const combatAimOwned = _combatAimRelease; // Preserve ownership through cleanup below even after the specific input path has fired.
+              const combatAimOwned = _combatAimRelease || _flaskGesture; // Preserve ownership through cleanup below even after the specific input path has fired.
               try {
                 if (_claimedInputAction) {
                   dispatchWorldInputClaim(_claimedInputAction,pointerCanceled?'cancel':'release','touch-arch');
@@ -25997,6 +25992,8 @@
           `Action FX: particles=${actionParticles.length} tileFlashes=${actionTileEffects.length} slashTrails=${weaponTrailEffects.length}`,
           `Calendar: ${window.CalendarSystem.formatCalendarDate()} (raw day ${calendar.day}), ${window.FormatUtils.formatClock(window.CalendarSystem.getHour())}, ${calendar.weather}`,
           `Tool/action: ${window.FormatUtils.toolName(activeTool)} / ${window.FormatUtils.actionName(activeAction)}`,
+          `Flask aim/projectile: ${JSON.stringify(window.AlchemyFlasks?.diagnostics?.() || null)}`,
+          `Voice render timing: ${JSON.stringify(window.AnimalVoiceIndependentPlayback?.debugSnapshot?.().chargeRendering || null)}`,
           `Mobile combat arch aim: ${JSON.stringify(window.__mobileArchCombatAimDebug?.snapshot?.() || { active: false })}`,
           `Mobile autotarget: ${JSON.stringify(window.__hobunjiFurnitureDebug?.meleeAttackAlignmentSnapshot?.() || { ready: false })}`,
           `Arena spawn: ${JSON.stringify(window.DevSpawner?.spawnSnapshot?.() || { ready: false })}`,
@@ -26471,6 +26468,7 @@
         return consumed===true;
       }
       const visibleWeaponContextPresses = new Set(); // Used to pair a context override's press/release without sending an unmatched release into Combat.input.
+      const flaskActionPresses = new Set(); // Pairs physical flask holds with exactly one release across keyboard, controller, and mouse.
       const heldItemActionPresses = new Set(); // Pairs a holdToCommit action's press with its release even if the arch's displayed button changes mid-hold.
       const furniturePlacementActionPresses = new Set(); // Owns controller/keyboard placement confirms through release so a last-item placement cannot leak a release into weapon input.
       const rangedAmmoAction2Press = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Shared keyboard/controller hold state for the ordinary ammo-selection arch.
@@ -26588,6 +26586,7 @@
           return;
         }
         if (phase === 'release') {
+          if (flaskActionPresses.delete(actionId)) { window.AlchemyFlasks?.confirmThrow(); return; }
           if (actionId === 'action1') actionHeldDown = false;
           if (visibleWeaponContextPresses.delete(actionId)) return;
           const releaseSlot = weaponActionSlot(actionId);
@@ -26608,6 +26607,11 @@
         }
         if (menuOpen || farmEditMode) return;
         if(dispatchWorldInputClaim(actionId,'press','game-input'))return; // Explicit world claims outrank weapon/tool actions, but menus, selectors, fishing, and placement retain their higher-level ownership.
+        if (heldMode === 'item' && actionId === 'action1' && window.AlchemyFlasks?.heldActions?.().length) {
+          if (window.AlchemyFlasks.beginAim()) flaskActionPresses.add(actionId);
+          return;
+        }
+        if (heldMode === 'item' && actionId === 'action2' && window.AlchemyFlasks?.aiming) { window.AlchemyFlasks.cancelAim(); return; }
         if (actionId === 'interact') { runInteractAction(); return; }
         const visibleOverride = visibleActionOverrideForWeaponSlot(actionId); // Used so Loot/Harvest/other displayed context actions outrank the weapon normally bound to this slot.
         if (visibleOverride) {
@@ -26787,8 +26791,7 @@
           }
         }
         if (window.AlchemyFlasks?.aiming) {
-          controllerCameraX = 0; controllerCameraY = 0; rightStickOwner = 'flask aim';
-          window.AlchemyFlasks.setTargetFromVector(rx, ry, Math.min(1, Math.hypot(rx, ry)));
+          rightStickOwner = 'flask aim'; // Right stick rotates the camera exactly as thrown weapons do; the ground ray owns landing aim.
         }
         if (rangedAmmoAction2Press.held) {
           controllerCameraX = 0; controllerCameraY = 0; rightStickOwner = 'ammo selection';
@@ -27403,6 +27406,7 @@
           }
           if (mouseAction === 'action2' && heldMode === 'tool' && activeTool === 'ranged') { runInputAction('action2', 'press'); return; }
           if (mouseAction === 'action1') {
+            if (heldMode === 'item' && window.AlchemyFlasks?.heldActions?.().length) { runInputAction(mouseAction, 'press'); return; }
             actionHeldDown = true;
             if (isHoldToCommitAction(activeAction)) {
               const started = beginHeldItemActionDescriptor(activeAction);
@@ -27452,6 +27456,7 @@
         }
         if (mouseAction === 'action2' && heldMode === 'tool' && activeTool === 'ranged') { runInputAction('action2', 'release'); return; }
         if (mouseAction === 'action1') {
+          if (flaskActionPresses.has(mouseAction)) { runInputAction(mouseAction, 'release'); return; }
           actionHeldDown = false;
           if (desktopHeldItemMousePresses.delete(e.button)) {
             window.HeldItemActionInput?.release();
@@ -28514,7 +28519,12 @@
         getCurrentArea: () => currentArea,
         getActiveScene: window.GridTileAccessors.getActiveScene,
         getAimAngle: () => controllerLookActive ? controllerLookAngle : mouseLookActive ? mouseLookAngle : targetAimAngle,
-        getGroundY: () => _playerGroundY() + 0.025,
+        getGroundY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE),
+        getGroundYAtWorld: activeSurfaceYAtWorld,
+        getPlayerInteractionRay: currentPlayerInteractionRay,
+        isShoulderView: () => activeCameraMode === SHOULDER_SURF_MODE || !isDesktop || lastInputDevice === 'controller' || !!mobileArchCombatAim,
+        makeFlaskProjectile: itemKey => makeHeldItemPlaneMesh({ key: itemKey }),
+        disposeFlaskProjectile: disposeHeldItemPlaneMesh,
         getSelectedItemKey: () => getActiveInventoryItem()?.key || null,
         getHeldWorldPosition: () => {
           const position = new THREE.Vector3(); // Used to release the rendered flask from the player's hand.
