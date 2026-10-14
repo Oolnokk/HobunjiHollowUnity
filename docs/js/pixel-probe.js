@@ -1099,6 +1099,10 @@
     if (weaponGlowDebug?.requests?.length) {
       lines.push(`Weapon charge glow: ${weaponGlowDebug.requests.map(request => `${request.label || request.owner} ${Math.round(Number(request.intensity || 0) * 100)}% / ${Math.round(Number(request.expansion || 0) * 100)}% expansion`).join(', ')}`);
     }
+    const chargeRenderDebug = window.AnimalVoiceIndependentPlayback?.debugSnapshot?.().chargeRendering; // On-demand mobile evidence for cooperative DSP and cache reuse.
+    if (chargeRenderDebug) lines.push(`Charge audio: cached=${chargeRenderDebug.cachedVariants} hits=${chargeRenderDebug.cacheHits} yields=${chargeRenderDebug.yields} maxSlice=${Number(chargeRenderDebug.maxSliceMs || 0).toFixed(1)}ms · ${chargeRenderDebug.latestChange}`);
+    const combatVoiceDebug = window.CombatVocalizations?.debugSnapshot?.(); // Reports retained winded NPCs after leaving an area.
+    if (combatVoiceDebug) lines.push(`Combat voices: tracked NPC breathers=${combatVoiceDebug.trackedNpcBreathers}`);
     const animalVoiceDebug = window.AnimalVocalizations?.debugSnapshot?.(); // Copyable proof of semantic intent routing on mobile.
     if (animalVoiceDebug) {
       const last = animalVoiceDebug.last;
@@ -1209,6 +1213,7 @@
     if (bandageDebug) {
       const healthNow = bandageDebug.currentHealth == null ? '-' : Number(bandageDebug.currentHealth).toFixed(1); // Used only in the copyable Bandage status line below.
       const healthMax = bandageDebug.currentMaxHealth == null ? '-' : Number(bandageDebug.currentMaxHealth).toFixed(1); // Paired with healthNow so effective max-health changes are visible.
+      if (bandageDebug.latestChange) lines.push(`Bandage update: ${bandageDebug.latestChange}`);
       const bandageEnd = bandageDebug.lastEnd?.reason || '-'; // Shows whether the prior attempt completed, was hit-cancelled, or stopped for another reason.
       lines.push(`Bandage: ${bandageDebug.active ? 'ACTIVE' : 'idle'} elapsed=${(Number(bandageDebug.elapsedMs || 0) / 1000).toFixed(2)}s/${(Number(bandageDebug.durationMs || 8000) / 1000).toFixed(2)}s hp=${healthNow}/${healthMax} curve=${Math.round(Number(bandageDebug.curveProgress || 0) * 100)}% hands=${bandageDebug.playerHandCaptured ? 'yes' : 'no'} lock=${bandageDebug.actionLocked ? 'yes' : 'no'} last=${bandageEnd} error=${bandageDebug.lastError || '-'}`);
     }

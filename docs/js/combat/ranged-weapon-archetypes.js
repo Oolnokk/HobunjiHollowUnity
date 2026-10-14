@@ -457,6 +457,7 @@
   }
 
   function beginThrownCharge(itemKey, source = 'ranged-action', pointerId = null) {
+    window.BandageSystem?.cancel?.('attack');
     if (!isThrown(itemKey)) return false;
     if (thrownCharge?.itemKey === itemKey) return true;
     if (window.__rangedDebug?.playerAction) return false;

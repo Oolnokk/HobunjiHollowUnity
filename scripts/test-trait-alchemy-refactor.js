@@ -296,3 +296,21 @@ assert.match(game, /flask-cancel-hover[\s\S]*cancelAim/, 'mobile drag-over Actio
 assert.match(style, /cure-family-grid[\s\S]*grid-template-columns:1fr 1fr/, 'Cures must display four compact family indicators');
 
 console.log('trait alchemy refactor tests passed');
+
+// Load the actual rest integration against the actual alchemy owner.
+let wellRested = false; // Toggles the effect without recreating or mutating saved potions.
+window.TemplePrayerRestBlessings = { isWellRested:()=>wellRested };
+window.setInterval = () => 1; // No installation polling is needed in this synchronous fixture.
+require(path.join(root,'docs/js/devotion-rest-buffs.js'));
+A.restoreActiveEffects([{recipeId:'potionOfStrength',remainingS:90,magnitude:.5,potencyTier:2}]);
+assert.equal(A.getWorkSpeedMultiplier(),1.75,'Strength work bonus survives rest-module installation');
+assert.equal(A.getFootingDamageMultiplier(),1.75,'Strength Footing bonus survives rest-module installation');
+wellRested = true;
+assert.equal(A.getWorkSpeedMultiplier(),2,'rested tier scaling applies to Strength secondary work bonus');
+assert.equal(A.getFootingDamageMultiplier(),2,'rested tier scaling applies to Strength secondary Footing bonus');
+assert(Math.abs(A.getOutgoingDamageMultiplier()-(1+2/3))<1e-12);
+assert.equal(A.activeEffects[0].magnitude,.5,'stored potion potency stays unchanged');
+wellRested = false;
+assert.equal(A.getWorkSpeedMultiplier(),1.75,'rest expiry restores original magnitude');
+A.restoreActiveEffects([{recipeId:'thickbloodPotion',remainingS:90,magnitude:2,potencyTier:2}]);
+assert.equal(A.getIncomingDamageAfflictionMultiplier(),.15,'existing Thickblood cap remains authoritative');

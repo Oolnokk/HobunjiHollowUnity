@@ -418,8 +418,8 @@
     return { ok: true, message: `🧪 Drank preserved legacy potion (${payload.legacyEffects?.join(', ') || 'unknown effect'}).` };
   }
 
-  function statMagnitude(stat) { const now = performance.now() / 1000; return activeEffects.filter(effect => effect.expiresAt > now && (effect.stat === stat || effect.secondaryStat === stat)).reduce((sum, effect) => sum + effect.magnitude, 0); } // Central buff query.
-  function recipeMagnitude(recipeId) { const now = performance.now() / 1000; return activeEffects.filter(effect => effect.expiresAt > now && effect.recipeId === recipeId).reduce((sum, effect) => sum + effect.magnitude, 0); } // Used by Strength's recipe-specific secondary effects while preserving stored potency.
+  function statMagnitude(stat) { const now = performance.now() / 1000; return activeEffects.filter(effect => effect.expiresAt > now && (effect.stat === stat || effect.secondaryStat === stat)).reduce((sum, effect) => sum + effect.magnitude * (window.DevotionRestBuffs?.potionStackScale?.(effect) ?? 1), 0); } // Central buff query.
+  function recipeMagnitude(recipeId) { const now = performance.now() / 1000; return activeEffects.filter(effect => effect.expiresAt > now && effect.recipeId === recipeId).reduce((sum, effect) => sum + effect.magnitude * (window.DevotionRestBuffs?.potionStackScale?.(effect) ?? 1), 0); } // Used by Strength's recipe-specific secondary effects while preserving stored potency.
   const getMovementSpeedMultiplier = () => 1 + statMagnitude('movementSpeed');
   const getSpeedMul = getMovementSpeedMultiplier;
   const getAttackSpeedMultiplier = () => 1 + statMagnitude('attackSpeed');

@@ -3,7 +3,7 @@
 
   if (Number(window.DevotionRestBuffs?.version) >= 4) return;
 
-  const CHANGE_SUMMARY = 'Morning-service Prayer is anchored in world space in front of the seated player with action-slot-safe input hints; Well Rested integration remains shared with food, potion, movement, and Stamina systems.'; // Used by mobile diagnostics to identify the latest integration layer.
+  const CHANGE_SUMMARY = 'Strength secondary bonuses and potion caps remain owned by Alchemy; rested tiers scale at the shared magnitude query. Morning-service Prayer is anchored in world space in front of the seated player with action-slot-safe input hints; Well Rested integration remains shared with food, potion, movement, and Stamina systems.'; // Used by mobile diagnostics to identify the latest integration layer.
   const CORE_URL = 'js/temple-prayer-rest-blessings.js?v=20261013hae7c187'; // Used to load the single blessing/save/menu authority before installing integration-only fixes.
   const state = { coreLoaded: false, sitAliasInstalled: false, promptHookInstalled: false, movementHookInstalled: false, potionHooksInstalled: false, lastPromptAnchor: null, lastPrayerSlot: null, lastError: null }; // Used by the in-game diagnostic snapshot.
   let prayerPromptAnchor = null; // Reused world-space anchor that makes Pray float ahead of the player like a targeted-object interaction.
@@ -118,42 +118,6 @@
     return (baseStacks + extraStacks) / baseStacks;
   }
 
-  function boostedMagnitude(stat) {
-    const now = performance.now() / 1000;
-    return (window.AlchemySystem?.activeEffects || [])
-      .filter(effect => effect?.expiresAt > now && (effect.stat === stat || effect.secondaryStat === stat))
-      .reduce((sum, effect) => sum + finite(effect.magnitude) * potionStackScale(effect), 0);
-  }
-
-  function installPotionHooks() {
-    const alchemy = window.AlchemySystem;
-    if (!alchemy || state.potionHooksInstalled) return state.potionHooksInstalled;
-    const positive = {
-      getMovementSpeedMultiplier: 'movementSpeed', getSpeedMul: 'movementSpeed', getAttackSpeedMultiplier: 'attackSpeed',
-      getOutgoingDamageMultiplier: 'outgoingDamage', getHealthRegenMultiplier: 'healthRegen', getStaminaRegenMultiplier: 'staminaRegen',
-      getMaxFootingMultiplier: 'maxFooting', getMaxStaminaMultiplier: 'maxStamina', getPositiveFavorMultiplier: 'positiveFavor',
-      getPerceptionMultiplier: 'perception', getFootingDamageMultiplier: 'footingDamage', getWorkSpeedMultiplier: 'workSpeed',
-    }; // Used to recompute public potion multipliers from stored effect magnitudes with rounded Well Rested tier scaling.
-    const inverse = { getStaminaSpendMultiplier: 'staminaSpend', getIncomingDamageAfflictionMultiplier: 'incomingDamageAffliction' }; // Used for potion stats whose magnitude reduces a burden rather than raising a multiplier.
-    let wrappedCount = 0; // Used to report whether at least one current Alchemy public getter was successfully replaced.
-    for (const [method, stat] of Object.entries(positive)) {
-      if (typeof alchemy[method] !== 'function') continue;
-      const wrapped = function roundedRestedPotionPositive() { return 1 + boostedMagnitude(stat); };
-      wrapped.__templeRestPotionWrapped = true;
-      alchemy[method] = wrapped;
-      wrappedCount++;
-    }
-    for (const [method, stat] of Object.entries(inverse)) {
-      if (typeof alchemy[method] !== 'function') continue;
-      const wrapped = function roundedRestedPotionInverse() { return Math.max(0.2, 1 - boostedMagnitude(stat)); };
-      wrapped.__templeRestPotionWrapped = true;
-      alchemy[method] = wrapped;
-      wrappedCount++;
-    }
-    state.potionHooksInstalled = wrappedCount > 0;
-    return state.potionHooksInstalled;
-  }
-
   function installDebugHook() {
     if (!window.__farmDebugTools) return false;
     window.__farmDebugTools.prayerRestIntegrationSnapshot = debugSnapshot;
@@ -166,7 +130,7 @@
       installSitAlias();
       installFloatingPromptHook();
       installMovementHook();
-      installPotionHooks();
+      state.potionHooksInstalled = !!window.AlchemySystem; // Alchemy owns all formulas and reads potionStackScale directly.
       installDebugHook();
     } catch (error) {
       state.lastError = String(error?.stack || error?.message || error);

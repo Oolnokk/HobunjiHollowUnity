@@ -203,3 +203,17 @@ assert.equal(lastLock.released, true);
 assert.equal(timers.size, 0);
 
 console.log('Bandage system curve, affliction cleanse/full-Health cleanse, pause/resume, audio, and cancellation tests passed.');
+
+player.health = 20;
+const cancelledOwners = []; // Verifies that pre-existing attacks are disarmed before healing begins.
+window.Combat.input = { abortAllPresses: () => cancelledOwners.push('input') };
+window.Combat.cancelStagedForAttacker = entity => { assert.equal(entity,player); cancelledOwners.push('staged'); };
+window.Combat.deps.cancelPlayerToolAnimation = () => cancelledOwners.push('legacy');
+window.RangedWeapons = {cancelPlayerHold:()=>cancelledOwners.push('ranged-hold'),cancelPlayerAction:()=>cancelledOwners.push('ranged-action')};
+window.AlchemyFlasks = {cancelAim:()=>cancelledOwners.push('flask')};
+assert(bandage.start());
+assert.deepEqual(cancelledOwners,['input','staged','legacy','ranged-hold','ranged-action','flask']);
+bandage.cancel();
+window.Combat.input.abortAllPresses = () => { throw Error('cleanup failed'); };
+assert.equal(bandage.start(),false);
+assert.equal(lastLock.released,true,'failed cancellation cannot leave an invisible permanent action lock');

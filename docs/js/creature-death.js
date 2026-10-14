@@ -76,6 +76,7 @@
     // place, disconnected from the corpse, once the fall starts.
     if (c._banditToolHolder) c._banditToolHolder.visible = false;
     if (c._banditRangedToolHolder) c._banditRangedToolHolder.visible = false;
+    if (c._banditFlaskToolHolder) c._banditFlaskToolHolder.visible = false;
     if (c._banditTrailMesh) c._banditTrailMesh.visible = false;
     const awayAngle = fromX !== undefined ? Math.atan2(c.y - fromY, c.x - fromX) : (c.facing || 0);
     const rest = _findRestTile(c, awayAngle);
@@ -145,6 +146,7 @@
     try { window.ResourceRings?.disposeRingHud(c); } catch (_) {}
     if (c._banditToolHolder) c._banditToolHolder.visible = false;
     if (c._banditRangedToolHolder) c._banditRangedToolHolder.visible = false;
+    if (c._banditFlaskToolHolder) c._banditFlaskToolHolder.visible = false;
     if (c._banditTrailMesh) c._banditTrailMesh.visible = false;
     c.health = 0;
     c.state = 'corpse';
@@ -267,6 +269,7 @@
     window.ResourceRings?.disposeRingHud(c);
     if (c._banditToolHolder) c._banditToolHolder.visible = false;
     if (c._banditRangedToolHolder) c._banditRangedToolHolder.visible = false;
+    if (c._banditFlaskToolHolder) c._banditFlaskToolHolder.visible = false;
     if (c._banditTrailMesh) c._banditTrailMesh.visible = false;
     const col = deps.clamp(Math.floor(c.x / TILE), 0, (c.areaCols || deps.COLS) - 1);
     const row = deps.clamp(Math.floor(c.y / TILE), 0, (c.areaRows || deps.ROWS) - 1);

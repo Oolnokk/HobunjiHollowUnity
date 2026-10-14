@@ -4720,6 +4720,7 @@
       }
 
       function disposeCreaturePresentation(c) {
+        window.CombatVocalizations?.forgetEntity?.(c);
         window.BurningAfflictionVfx?.disposeEntity?.(c); // Removes presentation without changing the creature's Burning resource state.
         (c.scene || scene).remove(c.avatarRef.group);
         c.avatarRef.dispose();
@@ -4737,6 +4738,11 @@
           (c.scene || scene).remove(c._banditRangedToolHolder);
           c._banditRangedToolHolder.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
           c._banditRangedToolHolder = null;
+        }
+        if (c._banditFlaskToolHolder) {
+          c._banditFlaskToolHolder.parent?.remove(c._banditFlaskToolHolder);
+          c._banditFlaskToolHolder.traverse(o => { o.geometry?.dispose(); o.material?.map?.dispose(); o.material?.dispose(); });
+          c._banditFlaskToolHolder = null;
         }
         if (c._banditTrailMesh) {
           (c.scene || scene).remove(c._banditTrailMesh);
@@ -18841,6 +18847,7 @@
       }
 
       function useActiveAction() {
+        if ((activeTool === 'weapon' && (activeAction === toolActions.weapon[0] || activeAction === toolActions.weapon[1])) || (activeTool === 'ranged' && activeAction === 'shoot')) window.BandageSystem?.cancel?.('attack');
         if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'actions')) return;
         if (sitInteraction) { if (activeAction === 'obj_stand') endSitInteraction(); return; }
         if (dialogueOpen) { window.DialogueContent?.advanceNpcDialogue(); return; }
@@ -27993,6 +28000,7 @@
         getWeaponSwingWindupPoseProgress,
         releaseWeaponSwingHold,
         cancelWeaponSwingHold,
+        cancelPlayerToolAnimation: cancelPlayerToolAnimationForInteraction, // Bandaging clears legacy pending strikes alongside staged attacks.
         beginCombatLunge,
         setCombatSwingCone,
         spawnBurstEffect,

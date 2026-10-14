@@ -375,6 +375,18 @@
       return false;
     }
 
+    try {
+      global.Combat?.input?.abortAllPresses?.();
+      global.Combat?.cancelStagedForAttacker?.(player);
+      global.Combat?.deps?.cancelPlayerToolAnimation?.();
+      global.RangedWeapons?.cancelPlayerHold?.();
+      global.RangedWeapons?.cancelPlayerAction?.();
+      global.AlchemyFlasks?.cancelAim?.();
+    } catch (error) {
+      actionLock.release?.();
+      state.lastError = `attack-cancel-failed: ${error?.message || error}`;
+      return false;
+    }
     state.active = true;
     state.player = player;
     state.elapsedMs = 0;
@@ -478,6 +490,7 @@
         active: state.active,
         paused: state.active && state.paused,
         clock: 'gameplay-delta',
+        latestChange: 'Starting a melee or ranged attack cancels bandaging immediately, then the attack proceeds normally.',
         cost: 'time-and-interruption-only',
         durationMs: DURATION_MS,
         midpointMs: DURATION_MS / 2,

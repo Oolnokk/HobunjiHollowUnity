@@ -532,7 +532,21 @@
     return state;
   }
 
+  function forgetEntity(entity) {
+    trackedBreathers.delete(entity);
+    breathStateByEntity.delete(entity);
+    lastDotPainAtMsByEntity.delete(entity);
+    window.CharacterVoiceOwner?.stop?.(entity, VOICE_FADE_OUT_S);
+    for (const token of activeChargeTokens) if (token.entity === entity) cancelCharge(token);
+  }
+
   function serviceBreathing(entity, atMs) {
+    const currentArea = window.Combat?.deps?.getCurrentArea?.() ?? player()?.areaId; // Live map identity gates retained NPC breathers.
+    const entityArea = entity?.areaId ?? entity?.area; // Runtime NPC map identity; fixtures without one retain legacy behavior.
+    if (entity !== player() && (entity?._banditDisposed || (currentArea != null && entityArea != null && entityArea !== currentArea))) {
+      forgetEntity(entity);
+      return;
+    }
     if (!isHumanoidVocalEntity(entity) || !(Number(entity?.maxStamina) > 0) || !(Number(entity?.health) > 0)) {
       trackedBreathers.delete(entity);
       return;
@@ -573,7 +587,7 @@
     const atMs = Number(frameContext?.timestamp) || nowMs();
     const p = player();
     if (p) serviceBreathing(p, atMs);
-    for (const entity of [...trackedBreathers]) {
+    for (const entity of trackedBreathers) {
       if (entity === p) continue;
       serviceBreathing(entity, atMs);
     }
@@ -1161,8 +1175,10 @@ function beginCharge(options = {}) {
 
   window.CombatVocalizations = {
     version: VERSION,
+    latestChange: 'Off-map/despawned NPC voices stop; charge rendering yields and caches identical buffers.',
     configPromise,
     reloadConfig: loadConfig,
+    forgetEntity,
     beginCharge,
     releaseCharge,
     cancelCharge,

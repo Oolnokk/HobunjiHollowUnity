@@ -279,3 +279,18 @@ assert(debug.wrappedAbilities.some(entry => entry.id === 'swingCombo'));
 assert(debug.wrappedAbilities.some(entry => entry.id === 'chargedBreaker'));
 
 console.log('combat vocalizations: ok');
+
+player.stamina = player.maxStamina; // Keep the probe focused on NPC playback.
+player.exhaustion.active = false;
+for (const entry of played) entry.handle?.finish();
+context.window.Combat.deps.getCurrentArea = () => 'another-map';
+const beforeOffMapBreath = played.length; // An old-map NPC must be removed, not merely silenced for one frame.
+scheduledBreath({ timestamp:90000 });
+assert.equal(played.length, beforeOffMapBreath, 'off-map NPC does not breathe into the current map');
+assert.equal(W.CombatVocalizations.debugSnapshot().trackedNpcBreathers, 0);
+context.window.Combat.deps.getCurrentArea = () => npc.areaId;
+emit(listeners, 'hobunji-resource-change', {entity:npc,delta:-1,immediate:true});
+assert.equal(W.CombatVocalizations.debugSnapshot().trackedNpcBreathers, 1);
+W.CombatVocalizations.forgetEntity(npc);
+assert.equal(W.CombatVocalizations.debugSnapshot().trackedNpcBreathers, 0, 'despawn releases retained NPC references');
+assert.equal(played.at(-1).stopped, true, 'despawn fades the current NPC voice');
