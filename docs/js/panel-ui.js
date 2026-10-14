@@ -19,10 +19,27 @@
   const isCharacterStudio = /\/tools\/character-studio\/(?:index\.html)?$/.test(location.pathname); // Used to install derived-species appearance metadata before Character Studio reads scratchbones-config.js.
   const characterStudioMammakhbuur = new URL('./character-studio-mammakhbuur-config.js?v=20261005nuhonganreview2', src).href; // Supplies Mammakhbuur plus full Nuhongan/Tletingan inheritance before Character Studio initializes.
   const characterStudioMammakhbuurTag = isCharacterStudio ? `<script src="${characterStudioMammakhbuur}"></script>` : ''; // Parser-time hook must run before the later scratchbones-config assignment.
+  const isWallBuilder = /\/tools\/wall-builder\/(?:index\.html)?$/.test(location.pathname); // Used to isolate log-cabin authoring controls to the Wall Builder page.
+  const logWallExtension = new URL('./log-wall-extension.js?v=20261014logwall1', src).href; // Shared deterministic generated/baked log-wall authority used by runtime and the Wall Builder tool.
+  const wallBuilderLogTool = new URL('./wall-builder-log-tool.js?v=20261014logwall1', src).href; // Wall Builder-only UI that exports the generated log GLB and paired live/baked recipes.
+  const wallBuilderLogTag = isWallBuilder ? `<script src="${logWallExtension}"></script><script src="${wallBuilderLogTool}"></script>` : ''; // Parser-time tool extension tags preserving extension-before-UI ordering.
   if (document.readyState === 'loading') {
-    document.write(`${characterStudioMammakhbuurTag}${animationAuthorColorFillTag}<script src="${core}"></script><script src="${mapEditorTextureFix}"></script><script src="${terrainParity}"></script>${cutsceneRepoTag}${toolHubCombatVocalizationsTag}`);
+    document.write(`${characterStudioMammakhbuurTag}${animationAuthorColorFillTag}<script src="${core}"></script><script src="${mapEditorTextureFix}"></script><script src="${terrainParity}"></script>${cutsceneRepoTag}${toolHubCombatVocalizationsTag}${wallBuilderLogTag}`);
     return;
   }
+
+  const loadWallBuilderLogTools = () => { // Late-load equivalent of wallBuilderLogTag for dynamically opened/embedded Wall Builder pages.
+    if (!isWallBuilder || window.__hobunjiWallBuilderLogToolLoading) return;
+    window.__hobunjiWallBuilderLogToolLoading = true;
+    const extensionScript = document.createElement('script'); // Runtime/tool-shared log geometry authority loaded before its authoring UI.
+    extensionScript.src = logWallExtension;
+    extensionScript.addEventListener('load', () => {
+      const toolScript = document.createElement('script'); // Wall Builder controls loaded after LogWallExtension is available.
+      toolScript.src = wallBuilderLogTool;
+      (document.head || document.documentElement).appendChild(toolScript);
+    }, { once: true });
+    (document.head || document.documentElement).appendChild(extensionScript);
+  };
 
   const loadPanelCore = () => { // Continues the existing late-load chain after any tool-specific prerequisite is ready.
     const coreScript = document.createElement('script'); // Used only by rare late/dynamic PanelUI loads where document.write would replace the page.
@@ -50,6 +67,7 @@
     (document.head || document.documentElement).appendChild(coreScript);
   };
 
+  loadWallBuilderLogTools();
   if (isCharacterStudio) {
     const mammakhbuurScript = document.createElement('script'); // Late-loaded Character Studio pages need the same derived-species config hook before PanelUI hands control back to the page.
     mammakhbuurScript.src = characterStudioMammakhbuur;
