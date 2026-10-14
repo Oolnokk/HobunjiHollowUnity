@@ -1,0 +1,36 @@
+name: Temporary rebase PR 999
+on:
+  push:
+    branches: [benjam/afflict-flask-dual-colors]
+    paths: ['.github/workflows/temporary-rebase-pr999.yml']
+permissions:
+  contents: write
+jobs:
+  rebase:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: benjam/afflict-flask-dual-colors
+          fetch-depth: 0
+      - name: Attempt rebase and report conflicts
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch --no-tags origin main
+          set +e
+          GIT_EDITOR=true git rebase origin/main
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            echo '=== CONFLICT FILES ==='
+            git diff --name-only --diff-filter=U
+            echo '=== CONFLICT HUNKS ==='
+            git diff --cc --no-ext-diff
+            git rebase --abort
+            exit 1
+          fi
+          echo "REBASED_HEAD=$(git rev-parse HEAD)"
+          git push --force-with-lease=benjam/afflict-flask-dual-colors:${GITHUB_SHA} origin HEAD:benjam/afflict-flask-dual-colors
