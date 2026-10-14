@@ -135,7 +135,14 @@
         const meta = api.recipeLogMeta(recipe); // Generated log metadata, or null for ordinary/baked wall recipes.
         if (meta?.sourceMode === 'generated') ensureTreeMaterialPrototype(this, THREE, meta);
       }
-      return previousBuild.call(this, inputPanels, options);
+      const result = previousBuild.call(this, inputPanels, options); // Existing extension build result retained while adding mobile-visible material diagnostics below.
+      if (result?.userData?.logWallStats) {
+        result.userData.logWallStats.materialBridge = MATERIAL_BRIDGE_VERSION;
+        result.userData.logWallStats.barkMaterial = 'tree wood · emissive floor 0.3 · metalness 0 · roughness 1';
+        result.userData.logWallStats.capMaterial = 'cut wood';
+        result.userData.latestChange = 'Log sides use in-game tree bark response; end caps use cut wood.';
+      }
+      return result;
     };
 
     Object.defineProperty(prototype, INSTALL_FLAG, { value: true, configurable: false });
