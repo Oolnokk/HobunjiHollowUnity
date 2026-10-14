@@ -135,7 +135,7 @@ assert.match(gameSource, /gamepadState\.actionByButton\.set\(button, actionId\)[
 assert.match(gameSource, /window\.HOBUNJI_CONTROLLER_STATUS = status/, 'controller state is exposed to in-game diagnostics');
 assert.doesNotMatch(gameSource, /meleeAutoTargetToggle|meleeTargetPrev|meleeTargetNext/, 'removed persistent melee targeting has no gameplay input path');
 assert.match(probeSource, /Controller: #\$\{controllerDebug\.index\}[\s\S]{0,260}owner=\$\{controllerDebug\.owner\}/, 'Pixel Probe includes controller identity and current input owner');
-assert.match(uiSource, /function adjustFocusedControl\(delta\)/, 'menu sliders and number inputs are controller-adjustable');
+assert.match(uiSource, /function moveOrAdjust\(dir\)/, 'menu directional input uses the shared navigation path');
 assert.match(loadoutUiSource, /combatLoadoutPrev_[\s\S]{0,1800}cycleSlotChoice\(slot\.id, -1, 'controller-prev'/, 'combat loadout exposes a controller-confirmable previous-attack control');
 assert.match(loadoutUiSource, /combatLoadoutNext_[\s\S]{0,1800}cycleSlotChoice\(slot\.id, 1, 'controller-next'/, 'combat loadout exposes a controller-confirmable next-attack control');
 assert.match(loadoutUiSource, /const restoreFocusId = requestedFocusId \|\| focusedLoadoutControlId\(pane\)/, 'loadout rerenders remember the controller focus target before rebuilding the pane');

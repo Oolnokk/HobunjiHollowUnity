@@ -94,7 +94,7 @@
     let node = el;
     while (node && node.nodeType === 1) {
       const cs = getComputedStyle(node);
-      if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') return false;
+      if (node.hidden || node.getAttribute('aria-hidden') === 'true' || cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') return false;
       node = node.parentElement;
     }
     return true;
@@ -119,14 +119,11 @@
   let currentTarget = null;
   const navigationPerf = { targetCount: 0, rectReads: 0 }; // Used by ControllerUI.debugState() to expose the most recent spatial-navigation scan cost without browser devtools.
 
-  // Registered panel roots are ordinarily appended directly to <body>, so
-  // unlike isVisible() above — which has to walk ancestors for a nav target
-  // that can sit many levels deep inside a hidden .mp-pane — checking the
-  // panel's own computed style is already the full answer, no ancestor walk
-  // needed. Reconciliation is mutation-driven; isActive() itself stays a
-  // constant-time hot-path read.
+  // Reconciliation checks panel roots and their ancestors so nested menus
+  // disappear with their parents. It is mutation-driven; isActive() stays
+  // a constant-time hot-path read during gameplay.
   function panelVisible(el) {
-    if (!el || !el.isConnected) return false;
+    if (!el || !el.isConnected || el.hidden || el.getAttribute('aria-hidden') === 'true') return false;
     const cs = getComputedStyle(el);
     if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') return false;
     const rect = el.getBoundingClientRect();
@@ -140,7 +137,7 @@
         knownPanels.delete(panel);
         continue;
       }
-      if (panelVisible(panel)) visible.push(panel);
+      if (panelVisible(panel) && isVisible(panel)) visible.push(panel);
     }
     return visible;
   }
@@ -191,8 +188,8 @@
     const notCancel = el => el && !el.hasAttribute('data-ctrl-cancel') && el;
     const remembered = lastFocusedByPanel.get(panel);
     const startFocus =
-      notCancel(document.activeElement && panel.contains(document.activeElement) && isNavTarget(document.activeElement) && document.activeElement)
-      || notCancel(remembered && panel.contains(remembered) && isVisible(remembered) && !isDisabled(remembered) && remembered)
+      notCancel(document.activeElement && belongsToNavigation(document.activeElement, panel) && isNavTarget(document.activeElement) && document.activeElement)
+      || notCancel(remembered && belongsToNavigation(remembered, panel) && isVisible(remembered) && !isDisabled(remembered) && remembered)
       || pickDefaultTarget(panel);
     setFocus(startFocus, { scroll: false });
   }
@@ -215,16 +212,10 @@
     return Array.from(panel.querySelectorAll(NAV_SELECTOR)).filter(isNavTarget);
   }
 
-  function isModalPanel(panel) {
-    return !!(panel?.matches?.(SEMANTIC_PANEL_SELECTOR) || panel?.getAttribute?.('aria-modal') === 'true');
-  }
 
   function navigationTargets(panel) {
-    // Modal dialogs own focus; otherwise the already-reconciled visible panel
-    // stack supplies peer roots without forcing another style/layout pass.
-    if (isModalPanel(panel)) return targetsInPanel(panel);
-    const peers = stack.filter(other => !isModalPanel(other)); // Used to gather controls across visible menu containers from cached visibility state.
-    return [...new Set(peers.flatMap(targetsInPanel))];
+    // The top menu owns controller focus until it closes, including non-modal submenus.
+    return targetsInPanel(panel).filter(el => belongsToNavigation(el, panel));
   }
 
   function owningRegisteredPanel(el) {
@@ -236,14 +227,13 @@
   function belongsToNavigation(el, panel) {
     const owner = owningRegisteredPanel(el); // Used for constant-small-stack membership checks on focusin/stale-focus paths.
     if (!owner) return false;
-    if (isModalPanel(panel)) return owner === panel;
-    return stack.includes(owner) && !isModalPanel(owner);
+    return owner === panel;
   }
 
   function pickDefaultTarget(panel, availableTargets = null) {
     const explicit = panel.querySelector('[data-ctrl-default]');
-    if (explicit && isNavTarget(explicit) && (!availableTargets || availableTargets.includes(explicit))) return explicit;
-    const targets = availableTargets || targetsInPanel(panel);
+    if (explicit && isNavTarget(explicit) && belongsToNavigation(explicit, panel) && (!availableTargets || availableTargets.includes(explicit))) return explicit;
+    const targets = availableTargets || navigationTargets(panel);
     // Never default-focus the panel's own close/cancel button — a stray A
     // press on first opening a panel shouldn't be able to instantly back
     // back out of it again.
@@ -368,39 +358,14 @@
     }
   }
 
-  function dispatchControlChange(control) {
-    control.dispatchEvent(new Event('input', { bubbles: true }));
-    control.dispatchEvent(new Event('change', { bubbles: true }));
-  }
 
-  function adjustFocusedControl(delta) {
-    refreshFocusIfStale();
-    const control = currentTarget;
-    if (!control) return false;
-    // Dropdowns are deliberately not adjusted here: left/right moves focus, and
-    // the value changes only by confirming the ◀/▶ buttons beside each select
-    // (js/controller-select-steppers.js).
-    if (control.tagName === 'INPUT' && (control.type === 'range' || control.type === 'number')) {
-      const step = control.step && control.step !== 'any' ? Number(control.step) : 1; // Used to respect the same granularity mouse/keyboard users receive.
-      const min = control.min === '' ? -Infinity : Number(control.min);
-      const max = control.max === '' ? Infinity : Number(control.max);
-      const next = Math.max(min, Math.min(max, (Number(control.value) || 0) + (Number.isFinite(step) ? step : 1) * delta));
-      control.value = String(next);
-      dispatchControlChange(control);
-      return true;
-    }
-    return false;
-  }
 
   function moveOrAdjust(dir) {
-    const delta = dir === 'left' ? -1 : dir === 'right' ? 1 : 0;
-    if (delta && adjustFocusedControl(delta)) return;
-    move(dir);
+    // Directional input only navigates; value changes belong to confirmed stepper arrows.
+    return move(dir);
   }
 
   function moveVectorOrAdjust(x, y) {
-    const horizontalIntent = Math.abs(x) >= Math.abs(y) * 1.15; // Prevents a diagonal meant for another row from accidentally changing a slider value.
-    if (horizontalIntent && Math.abs(x) > 0.01 && adjustFocusedControl(x < 0 ? -1 : 1)) return true;
     return moveVector(x, y);
   }
 
@@ -767,6 +732,7 @@
         targetId: currentTarget?.id || null,
         targetText: (currentTarget?.textContent || '').trim().slice(0, 40),
         navigationMode: 'vector-cone',
+        latestChange: 'Top menu owns focus; numeric values change only by confirming their arrows.',
         coneHalfAngleDeg: Math.round(CONE_HALF_ANGLE * 180 / Math.PI),
         navigationTargetCount: navigationPerf.targetCount,
         navigationRectReads: navigationPerf.rectReads,

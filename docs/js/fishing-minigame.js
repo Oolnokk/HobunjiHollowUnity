@@ -848,8 +848,7 @@
     if (btnWeaponSwitchEl) btnWeaponSwitchEl.style.display = display;
     const btnUtilityMenuEl = document.getElementById('btnUtilityMenu');
     if (btnUtilityMenuEl) btnUtilityMenuEl.style.display = display;
-    const dodgeBtnEl = document.getElementById('dodgeBtn');
-    if (dodgeBtnEl) dodgeBtnEl.style.display = display;
+    // Dodge stays available as the universal fishing cancel action.
   }
 
   function closeFishingMinigame() {
@@ -1070,6 +1069,7 @@
       el,
       stars: document.getElementById('fcvStars'),
       text: document.getElementById('fcvText'),
+      rewards: document.getElementById('fcvRewards'), // Displays the treasure actually granted during this cast.
       continueBtn: document.getElementById('fcvContinueBtn'),
     };
     fishCatchViewEls.continueBtn.addEventListener('pointerup', (e) => { e.stopPropagation(); continueFromFishCatch(); });
@@ -1118,8 +1118,16 @@
     if (!fishCatchViewEls) return;
     fishCatchViewEls.stars.textContent = deps.starRatingText(stars);
     fishCatchViewEls.text.textContent = `You caught a ${stars} Star ${fm.fishDef.label}`;
+    refreshCatchRewards();
     fishCatchViewEls.el.classList.add('open');
     fishCatchViewEls.el.setAttribute('aria-hidden', 'false');
+  }
+
+  function refreshCatchRewards() {
+    if (!fishCatchViewEls?.rewards) return;
+    const rewards = fishingMinigame?.gulletRewards || []; // Granted reward labels persist on this cast through the caught phase.
+    fishCatchViewEls.rewards.textContent = rewards.length ? `Gullet Fish treasure:\n${rewards.join('\n')}` : '';
+    fishCatchViewEls.rewards.hidden = rewards.length === 0;
   }
 
   function hideFishCatchView() {
@@ -1580,6 +1588,7 @@
     beginCast: beginFishingCast,
     close: closeFishingMinigame,
     primaryAction: fishingPrimaryAction,
+    refreshCatchRewards,
     update: updateFishingMinigame,
     updateFx: updateFishingFxParticles,
     // Bucket-by-hour helper, also read by _lootShopWorldState/
