@@ -33,3 +33,18 @@ throwsOnEnd=false;input.pressStart(1);input.pressEnd(1);assert.equal(tapCount,2,
 hold(1);hold(2);throwsOnCancel=true;assert.throws(()=>input.abortAllPresses(),/cancel failed/);assert(!input.getState(1).down && !input.getState(2).down,'both slots reset even when cancellation throws');
 throwsOnCancel=false;input.setAutoTargetEnabled(true,{persist:false});hold();input.pressEnd(1);assert(alignment && !holdActive,'release can be queued while alignment is pending');input.abortPress(1);assert(canceledAlignment,'cancellation cleans a released-but-pending alignment');alignment.runAttack();assert(!holdActive,'canceled alignment cannot start a delayed windup');
 console.log('combat terrain policy and interrupted input recovery checks passed');
+
+let actionLocked = true; // Simulates the bandage-owned shared lock across all input routes.
+context.window.CharacterActionLocks = { isLocked: () => actionLocked };
+input.setAutoTargetEnabled(false, { persist:false });
+const tapsBeforeLock = tapCount; // No tap should commit while the bandage owns both hands.
+input.pressStart(1); input.pressEnd(1); input.fireTap(2); hold();
+assert.equal(tapCount, tapsBeforeLock);
+assert.equal(holdActive, false);
+assert.equal(input.getState(1).down, false);
+actionLocked = false; hold(); assert(holdActive);
+actionLocked = true; input.pressEnd(1); assert(!holdActive, 'lock acquired mid-hold cancels instead of releasing a strike');
+actionLocked = false; input.setAutoTargetEnabled(true, { persist:false }); input.fireTap(1);
+actionLocked = true; alignment.runAttack(); assert.equal(tapCount, tapsBeforeLock, 'delayed tap alignment rechecks the lock');
+actionLocked = false; input.setAutoTargetEnabled(false, { persist:false }); input.pressStart(1); input.pressEnd(1);
+assert.equal(tapCount, tapsBeforeLock + 1, 'bandage completion restores ordinary attack input');

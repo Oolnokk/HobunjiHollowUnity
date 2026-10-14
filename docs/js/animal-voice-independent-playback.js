@@ -197,7 +197,7 @@
     return dot / Math.sqrt(refEnergy * candidateEnergy);
   }
 
-  function wsolaStretch(channels, stretch, sampleRate) {
+  function* wsolaStretchSteps(channels, stretch, sampleRate) {
     const sourceLength = channels[0]?.length || 0;
     if (!sourceLength) {
       lastStretchSourceSamples = 0;
@@ -282,6 +282,7 @@
         }
         for (let index = crossfade; index < usable; index++) output[outputPos + index] = input[bestInputPos + index];
       }
+      yield; // One grain is the cooperative scheduling unit for uncached charge renders.
       finalInputEnd = Math.max(finalInputEnd, bestInputPos + usableForCoverage);
       previousOutputPos = outputPos;
       if (isFinalFrame) break;
@@ -289,6 +290,44 @@
     }
     lastStretchCoverage = clamp(finalInputEnd / sourceLength, 0, 1);
     return outputs;
+  }
+
+  function wsolaStretch(channels, stretch, sampleRate) {
+    const steps = wsolaStretchSteps(channels, stretch, sampleRate); // Existing animal rendering retains its synchronous API.
+    let result = steps.next(); // Holds the generator's completed channel buffers.
+    while (!result.done) result = steps.next();
+    return result.value;
+  }
+
+  const chargeRenderStats = { cacheHits: 0, yields: 0, maxSliceMs: 0 }; // Mobile diagnostics for repeated render reuse and cooperative processing.
+
+  async function processConstantAxesCooperatively(buffer, tempo, pitchSemitones, opts) {
+    const channels = Array.from({ length: buffer.numberOfChannels }, (_, index) => buffer.getChannelData(index).slice()); // Private processing buffers.
+    const pitchRatio = Math.pow(2, pitchSemitones / 12); // Matches the synchronous renderer's independent pitch math.
+    const steps = wsolaStretchSteps(channels, pitchRatio / tempo, buffer.sampleRate); // Shares every DSP calculation with animal playback.
+    let sliceStartedAt = performance.now(); // Measures CPU slices between task yields.
+    let deadline = sliceStartedAt + 4; // Yield between grains once this task has used its short processing budget.
+    let result = steps.next(); // Final value contains the stretched channels.
+    while (!result.done) {
+      if (performance.now() >= deadline) {
+        chargeRenderStats.maxSliceMs = Math.max(chargeRenderStats.maxSliceMs, performance.now() - sliceStartedAt);
+        chargeRenderStats.yields++;
+        await new Promise(resolve => setTimeout(resolve, 0));
+        sliceStartedAt = performance.now();
+        deadline = sliceStartedAt + 4;
+      }
+      result = steps.next();
+    }
+    chargeRenderStats.maxSliceMs = Math.max(chargeRenderStats.maxSliceMs, performance.now() - sliceStartedAt);
+    return applyOutputEdgeEnvelope(result.value, buffer.sampleRate, opts);
+  }
+
+  const decodedRenderCache = new Map(); // Bounded LRU of decoded charge renders, including in-flight work.
+  const decodedRenderIds = new WeakMap(); // Stable buffer/context identity without retaining evicted sources.
+  let nextDecodedRenderId = 1; // Allocates identity keys for the bounded cache.
+  function decodedRenderId(value) {
+    if (!decodedRenderIds.has(value)) decodedRenderIds.set(value, nextDecodedRenderId++);
+    return decodedRenderIds.get(value);
   }
 
   function trimDecodedSilence(buffer, context, opts = {}) {
@@ -414,14 +453,25 @@
     const tempo = clampTempoFor(opts.tempo ?? 1, GENERIC_MAX_TEMPO);
     const pitchSemitones = clampPitchFor(opts.pitchSemitones ?? 0, GENERIC_MAX_SHIFT_SEMITONES);
     const pitchRatio = Math.pow(2, pitchSemitones / 12);
-    return Promise.resolve().then(() => {
+    const trimSettings = opts.trimSilence && typeof opts.trimSilence === 'object' ? opts.trimSilence : {}; // Normalize only options that affect rendered samples.
+    const key = [decodedRenderId(decoded), decodedRenderId(context), tempo, pitchSemitones,
+      !!opts.trimSilence, trimSettings.padMs, trimSettings.absoluteFloor, trimSettings.relativeFloor,
+      opts.edgeFadeS ?? OUTPUT_EDGE_FADE_S, opts.tailPadS ?? OUTPUT_TAIL_PAD_S].join('|'); // Exact rendering identity; different pitch/timing never shares a waveform.
+    if (decodedRenderCache.has(key)) {
+      chargeRenderStats.cacheHits++;
+      const cached = decodedRenderCache.get(key); // Refresh LRU order on a cache hit.
+      decodedRenderCache.delete(key);
+      decodedRenderCache.set(key, cached);
+      return cached;
+    }
+    const pending = Promise.resolve().then(async () => {
       const trimOpts = opts.trimSilence && typeof opts.trimSilence === 'object' ? opts.trimSilence : {};
       const trim = opts.trimSilence ? trimDecodedSilence(decoded, context, trimOpts) : {
         buffer: decoded, sourceDurationS: decoded.duration, trimmedDurationS: decoded.duration,
         trimStartS: 0, trimEndS: 0, trimmed: false,
       };
       const working = trim.buffer || decoded;
-      const channels = processConstantAxes(working, tempo, pitchSemitones, GENERIC_MAX_TEMPO, GENERIC_MAX_SHIFT_SEMITONES, opts);
+      const channels = await processConstantAxesCooperatively(working, tempo, pitchSemitones, opts);
       const length = Math.max(1, channels[0]?.length || 1);
       const rendered = context.createBuffer(channels.length, length, working.sampleRate);
       for (let channelIndex = 0; channelIndex < channels.length; channelIndex++) rendered.copyToChannel(channels[channelIndex], channelIndex);
@@ -438,7 +488,13 @@
         pitchSemitones,
         independentPitch: true,
       };
+    }).catch(error => {
+      if (decodedRenderCache.get(key) === pending) decodedRenderCache.delete(key);
+      throw error;
     });
+    decodedRenderCache.set(key, pending);
+    while (decodedRenderCache.size > MAX_RENDER_CACHE) decodedRenderCache.delete(decodedRenderCache.keys().next().value);
+    return pending;
   }
 
   function scheduleProcessedBuffer(context, buffer, opts, onFinished) {
@@ -807,6 +863,7 @@
       previewCount: previewHandles.size,
       decodedClipCount: decodedByUrl.size,
       renderedVariantCount: renderedByKey.size,
+      chargeRendering: { ...chargeRenderStats, cachedVariants: decodedRenderCache.size, latestChange: 'Charge waveforms yield between grains and reuse identical renders in a bounded cache.' },
       lastTempo,
       lastPitchSemitones,
       lastClipTempo,

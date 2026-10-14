@@ -429,6 +429,7 @@
   }
 
   function startPlayerAction(itemKey, options = {}) {
+    if (window.CharacterActionLocks?.isLocked?.('player', 'actions') || window.CharacterActionLocks?.isLocked?.('player', 'tools')) return false;
     const def = defFor(itemKey);
     if (!def || playerAction) return false;
     const loaded = isLoaded(itemKey);
@@ -480,6 +481,7 @@
 
   function updatePlayerAction(dt) {
     if (!playerAction) return;
+    if (window.CharacterActionLocks?.isLocked?.('player', 'actions') || window.CharacterActionLocks?.isLocked?.('player', 'tools')) { cancelPlayerAction(); return; }
     const action = playerAction;
     action.t += dt;
     if (action.kind === 'fire' && !action.fired && action.t >= action.durationS * action.def.fireAtFrac) {

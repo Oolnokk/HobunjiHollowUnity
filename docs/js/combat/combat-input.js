@@ -147,6 +147,10 @@
   // each carry their own isStaggered guard at their actual attack-commit
   // point, since a hold ability like Charged Breaker can still be staggered
   // AFTER startHold already passed this check but before it releases).
+  function blockedByActionLock() {
+    return !!(window.CharacterActionLocks?.isLocked?.('player', 'actions') || window.CharacterActionLocks?.isLocked?.('player', 'tools'));
+  }
+
   function blockedByStagger() {
     const deps = window.Combat.deps;
     if (!window.Combat.isStaggered(deps?.player)) return false;
@@ -196,10 +200,11 @@
   }
 
   function fireTap(slotIndex) {
-    if (blockedByStagger()) return;
+    if (blockedByActionLock() || blockedByStagger()) return;
     const slotId = 'tap' + slotIndex;
     const ability = abilityForSlot(slotId);
     runAfterAttackAlignment(() => {
+      if (blockedByActionLock()) return;
       if (ability?.onTap) ability.onTap({ slotIndex, slotId });
       else legacyTapFallback(slotIndex);
     });
@@ -207,7 +212,7 @@
 
   function startHold(slotIndex) {
     const s = slots[slotIndex];
-    if (!s || blockedByStagger()) return;
+    if (!s || blockedByActionLock() || blockedByStagger()) return;
     const slotId = 'hold' + slotIndex;
     const ability = abilityForSlot(slotId);
     s.holdAbility = ability;
@@ -215,7 +220,7 @@
     s.releaseQueued = false;
     const start = () => {
       s.alignmentRequest = null;
-      if ((!s.down && !s.releaseQueued) || !ability?.onHoldStart) return;
+      if (blockedByActionLock() || (!s.down && !s.releaseQueued) || !ability?.onHoldStart) return;
       s.holdStarted = true;
       ability.onHoldStart({ slotIndex, slotId });
       if (s.releaseQueued) {
@@ -266,7 +271,7 @@
   // Call on pointerdown/touch-start for the given slot (1 or 2).
   function pressStart(slotIndex) {
     const s = slots[slotIndex];
-    if (!s || s.down) return;
+    if (!s || s.down || blockedByActionLock()) return;
     s.down = true;
     s.downAt = now();
     s.holding = false;
@@ -282,6 +287,7 @@
   function pressEnd(slotIndex) {
     const s = slots[slotIndex];
     if (!s || !s.down) return;
+    if (blockedByActionLock()) { abortPress(slotIndex); return; }
     try {
       if (s.holding) endHold(slotIndex);
       else fireTap(slotIndex);
@@ -328,6 +334,7 @@
 
   // Ticked once per frame from Combat.update(dt) (wired in combat-core.js).
   function update(dt) {
+    if (blockedByActionLock()) { abortAllPresses(); return; }
     for (const slotIndex of [1, 2]) {
       const s = slots[slotIndex];
       if (!s.down) continue;

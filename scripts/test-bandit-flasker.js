@@ -42,3 +42,40 @@ assert.match(bandits, /beginStagedAction\(\{[\s\S]*?flasker: true/, 'Flasker thr
 assert.match(camps, /grantFlaskerLoadoutLoot\(c, parts\)/, 'corpse looting grants the exact Flasker loadout types');
 assert.match(camps, /reserveByRank: \{ grunt: 0, flasker: 0, lieutenant: 0, captain: 0 \}/, 'camp lifecycle tracks Flaskers beside the existing ranks');
 console.log('ok: throwing flask editor grip + Flasker bandit integration');
+
+const vm = require('node:vm'); // Executes the Flasker decision and normal visual teardown without WebGL.
+let flaskStarts = 0; // Counts actual staged-action requests.
+const aiContext = {window:{AlchemyFlasks:{throwFromEntity(){}},HeldActionAnimations:{throwFlask:{poses:{},durationS:1}},Combat:{beginStagedAction(spec){flaskStarts++;return {spec};}}},deps:{TILE:64},finishBanditAction(){}}; // Runtime seams for the isolated owner function.
+vm.createContext(aiContext);
+vm.runInContext(bandits.slice(bandits.indexOf('  function updateBanditFlaskAI('),bandits.indexOf('  function makeBanditDef(')),aiContext);
+const flasker = {banditRank:'flasker',x:0,y:0,_banditFlaskIndex:0,def:{banditFlaskLoadout:['venom'],banditFlaskerTuning:{minThrowRangeTiles:2.25,maxThrowRangeTiles:10,throwCooldownSeconds:2}}}; // Player has backed away into throwing range.
+const meleeAction = {name:'active-melee'}; // The existing action must remain owned by its original staged callback.
+flasker._banditAction=meleeAction;
+assert.equal(aiContext.updateBanditFlaskAI(flasker,.016,{x:192,y:0},192),null);
+assert.equal(flasker._banditAction,meleeAction);
+assert.equal(flaskStarts,0);
+flasker._banditAction=null;
+flasker._banditLunging=true;
+assert.equal(aiContext.updateBanditFlaskAI(flasker,.016,{x:192,y:0},192),null);
+flasker._banditLunging=false;
+assert(aiContext.updateBanditFlaskAI(flasker,.016,{x:192,y:0},192).handled);
+assert.equal(flaskStarts,1,'finished melee can hand off to a flask throw');
+
+const game = read('docs/game.js'); // Normal despawn, which the fallback cleanup delegates to.
+const cleanupEvents = []; // Check removal and GPU resource disposal exactly once.
+const holder = {parent:{remove(){cleanupEvents.push('remove');}},traverse(fn){fn({geometry:{dispose(){cleanupEvents.push('geometry');}},material:{map:{dispose(){cleanupEvents.push('texture');}},dispose(){cleanupEvents.push('material');}}});}}; // Dedicated per-Flasker texture ownership.
+const cleanupContext = {window:{CombatVocalizations:{forgetEntity(){cleanupEvents.push('voice');}}},scene:{remove(){}}}; // Minimal regular presentation owner dependencies.
+vm.createContext(cleanupContext);
+vm.runInContext(game.slice(game.indexOf('      function disposeCreaturePresentation('),game.indexOf('      // ── Loot & Shop config')),cleanupContext);
+const discarded = {avatarRef:{group:{},dispose(){}},_banditFlaskToolHolder:holder}; // Otherwise already-empty creature presentation.
+cleanupContext.disposeCreaturePresentation(discarded);
+cleanupContext.disposeCreaturePresentation(discarded);
+assert.equal(discarded._banditFlaskToolHolder,null);
+for(const event of ['remove','geometry','texture','material']) assert.equal(cleanupEvents.filter(value=>value===event).length,1,event+' released exactly once');
+
+const deathContext = {window:{},performance:{now:()=>0}}; // Exercise real death transition rather than searching for a hide statement.
+vm.runInNewContext(read('docs/js/creature-death.js'),deathContext);
+deathContext.window.CreatureDeath.init({TILE:64,COLS:10,ROWS:10,clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),canOccupyAt:()=>false,corpseObjects:new Set()});
+const dying = {x:64,y:64,health:0,_banditFlaskToolHolder:{visible:true},avatarRef:{group:{scale:{y:1}}}}; // Kill during a visible flask animation.
+deathContext.window.CreatureDeath.begin(dying);
+assert.equal(dying._banditFlaskToolHolder.visible,false,'death immediately hides the flask');

@@ -98,3 +98,15 @@ assert.equal(AI.enemyAttackBusy({ _banditLunging: true }), true);
 assert.equal(AI.enemyAttackBusy({}), false);
 
 console.log('combat review fixes: all checks passed');
+
+let actionLocked = false; // Models bandaging starting during a player windup.
+let lockedPlayerStrikes = 0; // Counts actual callbacks rather than source patterns.
+coreRuntime.window.CharacterActionLocks = { isLocked: () => actionLocked };
+Combat.beginStagedAction({ windupS:0.2, onStrike:()=>lockedPlayerStrikes++ });
+actionLocked = true;
+Combat.update(0.3);
+assert.equal(lockedPlayerStrikes, 0, 'player windup cancels if bandaging acquires the action lock');
+Combat.beginStagedAction({ windupS:0, onStrike:()=>lockedPlayerStrikes++ });
+assert.equal(lockedPlayerStrikes, 0, 'zero-duration player actions also respect locks');
+Combat.beginStagedAction({ windupS:0, data:{isBandit:true,attacker:bandit}, onStrike:()=>lockedPlayerStrikes++ });
+assert.equal(lockedPlayerStrikes, 1, 'player bandaging never suppresses hostile attacks');

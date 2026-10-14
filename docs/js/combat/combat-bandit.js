@@ -653,6 +653,7 @@
       return { handled: true, aimAngle: towardAngle, moving: false, flasker: true };
     }
 
+    if (c._banditAction || c._banditLunging || c.retreatT > 0) return null; // Existing melee/recovery owns the actor until it finishes.
     if (distToPlayer < minRangePx || distToPlayer > maxRangePx) return null;
     if (c._banditFlaskCooldownT > 0) {
       c.facing = towardAngle;
