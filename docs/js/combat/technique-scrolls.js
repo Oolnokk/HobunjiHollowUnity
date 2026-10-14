@@ -103,13 +103,17 @@
   function loadUnlocks(data) {
     const hasUnlockSave = Array.isArray(data?.combatTechniqueUnlocks); // Used to distinguish post-scroll saves from legacy saves whose loadout may contain implicit defaults.
     const saved = hasUnlockSave ? data.combatTechniqueUnlocks : []; // Used so old saves migrate to the new locked-by-default rules rather than being grandfathered.
-    unlocked = new Set(saved.filter(id => typeof id === 'string' && id));
+    unlocked = new Set(saved.filter(id => typeof id === 'string' && id).map(id => id === 'opportunistJab' ? 'exhaustCutter' : id));
     if (rawLoadoutLoad) {
       const source = hasUnlockSave && data?.combatLoadout && typeof data.combatLoadout === 'object' ? data.combatLoadout : {}; // Used to discard legacy implicit defaults while preserving explicit learned choices from new-format saves.
       const clean = {}; // Used to keep only saved slots whose techniques are currently learned.
       Object.entries(source).forEach(([weapon, slots]) => {
         const kept = {};
-        ['tap2', 'hold1', 'hold2'].forEach(slot => { const id = slots?.[slot]; if (typeof id === 'string' && isUnlocked(id)) kept[slot] = id; });
+        ['tap2', 'hold1', 'hold2'].forEach(slot => {
+          const savedId = slots?.[slot]; // Saved technique used to migrate disabled Jab slots.
+          const id = savedId === 'opportunistJab' ? 'exhaustCutter' : savedId; // Replacement follows the migrated learned technique.
+          if (typeof id === 'string' && isUnlocked(id)) kept[slot] = id;
+        });
         if (Object.keys(kept).length) clean[weapon] = kept;
       });
       rawLoadoutLoad(clean);
@@ -121,6 +125,7 @@
         if (ch) { ch.combatLoadout = clean; localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta)); }
       } catch (_) {}
     }
+    if (saved.includes('opportunistJab')) saveUnlocks(); // Persist the replacement so migrated slots stay learned after restarting.
     queueDecorate();
   }
   function unlockAbility(id, source = 'Technique Scroll') {

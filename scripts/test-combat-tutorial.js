@@ -22,19 +22,33 @@ function harness() {
   let area = 'map_i_watchhouse', dialogue = false, combatLevel = 0, mastery = 0, target = null, saves = 0, restores = 0, failTravel = false; // Harness-owned game closures.
   const walker = { area, pause: 0, root: { position: { x: 8.5, z: 11.5 } }, transferToArea(next, pos) { this.area = next; this.root.position = { x: pos.c + 0.5, z: pos.r + 0.5 }; } }; // Real controller moves and restores this actor.
   const body = new Element(); // Captures the mobile panel and its enabled controls.
-  const document = { body, head: new Element(), createElement: () => new Element(), addEventListener() {}, querySelector: () => null, getElementById: () => null }; // No browser-only dependency is needed for the state-machine tests.
+  const listeners = {}; // Player-ready listeners exercise saved technique migrations.
+  const document = { body, head: new Element(), createElement: () => new Element(), addEventListener(name, fn) { (listeners[name] ||= []).push(fn); }, querySelector: () => null, getElementById: () => null }; // No browser-only dependency is needed for the state-machine tests.
   const window = { Combat: { deps: { toolMasteryLevel: () => mastery, weaponDamageTypeForTool: () => 'sharp', currentWeaponKey: () => equipment.weapon, currentComboAbilityId: () => equipment.weapon === 'fishingspear' ? 'pokeCombo' : 'swingCombo' }, input: { abortAllPresses() {} }, cancelAllStaged() {} }, DialogueContent: { registerTreeProvider() {}, registerNodeEnterHandler() {}, registerActionHandler() {} }, SkillSystem: { level: () => combatLevel }, dispatchEvent() {}, __hobunjiPlayerProfile: { characterId: 'test' } }; // Production modules attach to this namespace.
   const context = vm.createContext({ window, document, console, performance: { now: () => clock }, localStorage: { getItem: key => learned[key] || null, setItem: (key, value) => { learned[key] = value; } }, requestAnimationFrame: fn => fn(), CustomEvent: function () {}, Event: function () {}, MutationObserver: function () { this.observe = () => {}; } }); // Runtime API shims for the existing unlock module.
   vm.runInContext(fs.readFileSync('docs/js/dialogue-templates.js', 'utf8'), context);
   const rangedSource = fs.readFileSync('docs/js/combat/ranged-weapons.js', 'utf8'); // Real ammo choices feed generated preview stages.
   vm.runInContext(rangedSource.slice(rangedSource.indexOf('  const BASIC_AMMO_EFFECTS'), rangedSource.indexOf('  const AUTHORED_FIRE_POSE')) + ';window.RangedWeapons = { BASIC_AMMO_EFFECTS, SPECIAL_AMMO_TYPES };', context);
   for (const path of ['combat-loadout', 'technique-scrolls', 'combat-progression', 'combat-tutorial-content', 'combat-tutorial-mastery', 'combat-tutorial']) vm.runInContext(fs.readFileSync(`docs/js/combat/${path}.js`, 'utf8'), context, { filename: path });
-  for (const [id, category] of Object.entries({ swingCombo: 'combo', pokeCombo: 'combo', opportunistJab: 'quickAttack', exhaustCutter: 'quickAttack', mercySpike: 'quickAttack', backstabFlick: 'quickAttack', chargedBreaker: 'offensiveHold', acceleratingFlurry: 'offensiveHold', counterShield: 'defensiveHold', blinkDodge: 'defensiveHold' })) window.Combat.abilities.register(id, { category, slotFamily: category === 'combo' || category === 'quickAttack' ? 'tap' : 'hold', label: id });
+  for (const [id, category] of Object.entries({ swingCombo: 'combo', pokeCombo: 'combo', exhaustCutter: 'quickAttack', mercySpike: 'quickAttack', backstabFlick: 'quickAttack', chargedBreaker: 'offensiveHold', acceleratingFlurry: 'offensiveHold', counterShield: 'defensiveHold', blinkDodge: 'defensiveHold' })) window.Combat.abilities.register(id, { category, slotFamily: category === 'combo' || category === 'quickAttack' ? 'tap' : 'hold', label: id });
   const api = window.CombatTutorial; // Actual controller under test.
   api.init({ getQuestProgress: () => progress, getArea: () => area, getGear: () => gear, equipment, toolDefs: { hatchet: { label: 'Test Hatchet', slots: ['weapon'], dmgType: 'sharp' }, crossbow: { label: 'Test Crossbow', slots: ['ranged'] } }, mastery: () => mastery, save: () => { saves++; }, getWalker: () => walker, closeDialogue: () => { dialogue = false; }, openDialogue: async () => { dialogue = true; dialogueCount++; }, dialogueOpen: () => dialogue, toast() {}, capture: () => ({ equipmentSlots: { ...equipment }, activeTool: 'weapon' }), restore: original => { Object.assign(equipment, original.equipmentSlots); restores++; }, enterArena: async practice => { if (failTravel) throw new Error('map unavailable'); area = practice?.area || window.CombatTutorialContent.ARENA; }, exitArena: async () => { area = 'map_i_watchhouse'; }, resetPractice() {}, equip: (key, slot) => { equipment[slot] = key; }, spawnTarget: lesson => { target = { lesson }; return spawnWait ? spawnWait.then(() => target) : target; }, removeTarget: () => { target = null; }, maintainTarget() {} });
-  return { setSpawnWait(value) { spawnWait = value; }, advance(ms) { for (let remaining = ms; remaining > 0; remaining -= 100) { clock += Math.min(100, remaining); api.update(); } }, get dialogueCount() { return dialogueCount; }, closeDialogue() { dialogue = false; }, document, api, window, progress, gear, equipment, walker, body, setLevel: value => { combatLevel = value; }, setMastery: value => { mastery = value; }, setFailTravel: value => { failTravel = value; }, setArea: value => { area = value; }, get saves() { return saves; }, get restores() { return restores; }, get target() { return target; }, explain() { api.onNode({ combatTutorialPractice: true }, {}); dialogue = false; api.update(); }, finishStep() { const lesson = api.debugSnapshot().steps.find(s => s.id === api.debugSnapshot().step); this.explain(); for (let i = 0; i < (lesson.count || 1); i++) api.observe(lesson.check, { target, abilityId: lesson.ability, ammoId: lesson.preview?.kind === 'specialAmmo' ? lesson.preview.optionId : 'basic' }); return api.next(); } };
+  return { loadProfile(profile) { Object.assign(window.__hobunjiPlayerProfile, profile); (listeners.hobunjiPlayerReady || []).forEach(fn => fn({ detail: window.__hobunjiPlayerProfile })); }, setSpawnWait(value) { spawnWait = value; }, advance(ms) { for (let remaining = ms; remaining > 0; remaining -= 100) { clock += Math.min(100, remaining); api.update(); } }, get dialogueCount() { return dialogueCount; }, closeDialogue() { dialogue = false; }, document, api, window, progress, gear, equipment, walker, body, setLevel: value => { combatLevel = value; }, setMastery: value => { mastery = value; }, setFailTravel: value => { failTravel = value; }, setArea: value => { area = value; }, get saves() { return saves; }, get restores() { return restores; }, get target() { return target; }, explain() { api.onNode({ combatTutorialPractice: true }, {}); dialogue = false; api.update(); }, finishStep() { const lesson = api.debugSnapshot().steps.find(s => s.id === api.debugSnapshot().step); this.explain(); for (let i = 0; i < (lesson.count || 1); i++) api.observe(lesson.check, { target, abilityId: lesson.ability, ammoId: lesson.preview?.kind === 'specialAmmo' ? lesson.preview.optionId : 'basic' }); return api.next(); } };
 }
 (async () => {
+  const migrated = harness(); // Existing Jab owners retain an unlocked, equipped quick attack.
+  migrated.loadProfile({ combatTechniqueUnlocks: ['opportunistJab'], combatLoadout: { hatchet: { tap2: 'opportunistJab' } } });
+  assert.equal(migrated.window.Combat.loadout.getSlot('tap2'), 'exhaustCutter');
+  assert.equal(migrated.window.TechniqueScrolls.isUnlocked('exhaustCutter'), true);
+  assert.equal(migrated.window.Combat.loadout.setSlot('tap2', 'opportunistJab'), false);
+  assert.deepEqual([...migrated.window.__hobunjiPlayerProfile.combatTechniqueUnlocks], ['exhaustCutter']);
+  assert.equal(migrated.window.CombatTutorialContent.quests.some(quest => quest.steps.some(step => step.ability === 'opportunistJab')), false);
+  const registry = new Map(); // Real Quick Attack registration must exclude the disabled technique, even after config reload.
+  const quickWindow = { Combat: { abilities: { register(id, def) { registry.set(id, def); } } } }; // Minimal production registration boundary.
+  vm.runInNewContext(fs.readFileSync('docs/js/combat/combat-quickattacks.js', 'utf8'), { window: quickWindow, document: { addEventListener() {} }, performance: { now: () => 0 }, console });
+  quickWindow.Combat.applyQuickAttackConfig(JSON.parse(fs.readFileSync('docs/config/combat/attack-values.json', 'utf8')).quickAttacks);
+  assert.equal(registry.has('opportunistJab'), false);
+  assert.equal(registry.has('exhaustCutter'), true);
   const festival = harness(); // World-space sparring reuses the complete controller without adding a permanent quest.
   let festivalActive = true, festivalRewards = 0; // Simulate event rollover and verified completion.
   const practiceQuest = { id: 'festival_test', title: 'Friendly duel', transient: true, practice: { area: 'town', c: 53, r: 44 }, isAvailable: () => festivalActive, steps: [{ id: 'fearless', title: 'Friendly duel', text: 'Land three hits.', check: 'hit', count: 3, hostile: true, weapon: 'hatchet' }], onComplete: () => { festivalRewards++; } };
@@ -105,9 +119,9 @@ function harness() {
   h.setLevel(2);
   assert.equal(await h.api.start('spearhead_openings', h.walker), true);
   await h.finishStep(); h.explain();
-  h.api.hit(h.target, { abilityId: 'opportunistJab', conditionBonusUsed: false });
-  assert.equal(h.api.debugSnapshot().hits, 0, 'ordinary jab cannot satisfy the conditional practice');
-  h.api.hit(h.target, { abilityId: 'opportunistJab', conditionBonusUsed: true });
+  h.api.hit(h.target, { abilityId: 'exhaustCutter', conditionBonusUsed: false });
+  assert.equal(h.api.debugSnapshot().hits, 0, 'ordinary quick attack cannot satisfy the conditional practice');
+  h.api.hit(h.target, { abilityId: 'exhaustCutter', conditionBonusUsed: true });
   assert.equal(h.api.debugSnapshot().hits, 1);
   await h.api.leave();
   h.setMastery(1);
@@ -226,9 +240,9 @@ function harness() {
   assert.equal(talking.api.debugSnapshot().phase, 'explain', 'talking pauses the exercise');
   assert.equal(talking.api.debugSnapshot().hits, 1, 'talking keeps verified progress');
   talking.explain();
-  talking.api.hit(talking.target, { abilityId: 'opportunistJab' });
+  talking.api.hit(talking.target, { abilityId: 'exhaustCutter' });
   talking.advance(100);
-  assert.match(talking.body.children[0].children.map(child => child.children?.map(line => line.textContent).join('|')).join(''), /That was opportunistJab\. This exercise needs swingCombo\./, 'the objective card names a wrong technique immediately');
+  assert.match(talking.body.children[0].children.map(child => child.children?.map(line => line.textContent).join('|')).join(''), /That was exhaustCutter\. This exercise needs swingCombo\./, 'the objective card names a wrong technique immediately');
   await talking.api.leave();
 
   const travelling = harness(); // A slow avatar build must not strand borrowed state after the player walks out.
