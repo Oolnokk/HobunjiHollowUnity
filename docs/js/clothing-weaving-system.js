@@ -570,6 +570,16 @@
     });
   }
 
+  function baseClothingSellPrice(baseId, source = null) {
+    const directSell = Number(source?.sellPrice); // Used first so found/bought clothing teaches the loom its existing star-neutral resale value.
+    if (Number.isFinite(directSell) && directSell > 0) return Math.floor(directSell);
+    const catalogEntry = (window.SCRATCHBONES_CONFIG?.game?.account?.shopCatalog || []).find(entry => entry?.id === baseId); // Used as the migration/fallback authority for already-known loom blueprints.
+    const authoredSell = Number(catalogEntry?.sellPrice); // Used when a clothing catalog explicitly authors resale value.
+    if (Number.isFinite(authoredSell) && authoredSell > 0) return Math.floor(authoredSell);
+    const retail = Number(catalogEntry?.price); // Existing bought/found clothing uses 40% of retail as its star-neutral Pack resale base.
+    return Number.isFinite(retail) && retail > 0 ? Math.floor(retail * 0.4) : 0;
+  }
+
   function learnOwnedBlueprints() {
     const gear = gearInventory();
     if (!gear) return [];
@@ -581,8 +591,16 @@
     ];
     const packCandidates = packClothing(); // Pack records are world-scoped and need saveMemberWorldData after migration.
     const candidates = [...gearCandidates, ...packCandidates]; // Combined only for permanent blueprint discovery.
-    let gearChanged = false; // Tracks blueprint additions and pattern snapshot migrations in Gear.
+    let gearChanged = false; // Tracks blueprint additions, value migration, and pattern snapshot migrations in Gear.
     let packChanged = false; // Tracks pattern snapshot migrations in Pack clothing.
+    for (const entry of known) {
+      const candidate = candidates.find(item => baseCosmeticId(item) === entry?.baseCosmeticId) || null; // Used to migrate old blueprint saves from an owned garment before falling back to the shop catalog.
+      const sellPrice = baseClothingSellPrice(entry?.baseCosmeticId, candidate || entry); // Used as the star-neutral sale base for future woven copies.
+      if (sellPrice > 0 && Number(entry?.sellPrice) !== sellPrice) {
+        entry.sellPrice = sellPrice;
+        gearChanged = true;
+      }
+    }
     for (const item of gearCandidates) if (materializeWeavingLibrarySnapshots(item)) gearChanged = true;
     for (const item of packCandidates) if (materializeWeavingLibrarySnapshots(item)) packChanged = true;
     for (const item of candidates) {
@@ -595,6 +613,7 @@
         label: articleLabel(item),
         baseLabel: articleLabel(item),
         sprite: item.sprite || window.EquipmentPanel?.clothingSpriteForCosmetic?.(id) || null,
+        sellPrice: baseClothingSellPrice(id, item), // Star-neutral resale base; the visible Pack item's quality multiplier is applied only at sale time.
       });
       gearChanged = true;
     }
@@ -1341,8 +1360,8 @@
       colorC: dyeC ? window.DyeSystem.toClothingColor(dyeC) : null,
       articleDyeIds: [...new Set([state.dyeA, needsDyeB ? state.dyeB : null, needsDyeC ? state.dyeC : null].filter(Boolean))],
       sprite: bp.sprite || window.EquipmentPanel?.clothingSpriteForCosmetic?.(bp.baseCosmeticId) || null,
-      sellPrice: 0,
-      qualityStars: materialQuality.stars, // Literal woven garment quality is the rounded weighted average of every cloth unit consumed by this craft.
+      sellPrice: baseClothingSellPrice(bp.baseCosmeticId, bp), // Star-neutral resale base; Pack UI applies the shared quality multiplier when selling.
+      qualityStars: materialQuality.stars, // Visible only while this literal woven garment remains a Pack/inventory item.
       weaveMaterial: material.id,
       weightUnits,
       weaving: weavingHasAnyDecoration(weaving) ? clone(weaving) : null, // May contain reusable per-role patterns, fixed authored trim metadata, or both.

@@ -252,7 +252,13 @@ equipmentDeps.inventory.lightWool = qualityInventoryBefore;
 
 const craftSource = fs.readFileSync('docs/js/clothing-weaving-system.js', 'utf8'); // Used to guard the private loom path that stores the averaged result on the literal garment.
 assert.ok(craftSource.includes('const materialQuality = consumeWoolWithQuality(material.itemKey, cost)'), 'loom crafting resolves material quality before constructing the garment');
-assert.ok(craftSource.includes('qualityStars: materialQuality.stars'), 'loom-crafted garments persist their averaged material quality');
+assert.ok(craftSource.includes('qualityStars: materialQuality.stars'), 'loom-crafted garments expose their averaged material quality while they remain Pack inventory items');
+assert.ok(craftSource.includes('sellPrice: baseClothingSellPrice(bp.baseCosmeticId, bp)'), 'loom-crafted garments retain a star-neutral resale base for Pack sale valuation');
+const equipmentPanelQualitySource = fs.readFileSync('docs/js/equipment-panel.js', 'utf8'); // Used to guard the Pack-visible/Gear-hidden quality boundary.
+assert.ok(equipmentPanelQualitySource.includes('valuationQualityStars: clothingValuationQualityStars(item)'), 'Pack → Gear converts visible item quality into internal valuation metadata');
+assert.ok(equipmentPanelQualitySource.includes("delete item.qualityStars"), 'Gear migration removes visible qualityStars from clothing records');
+assert.ok(equipmentPanelQualitySource.includes('const starText = packClothingStarText(item)'), 'Pack clothing visibly renders its star quality');
+assert.ok(equipmentPanelQualitySource.includes('window.CookingSystem?.valueMultiplierForStars?.(stars)'), 'Pack clothing sale value reuses the canonical shared star-quality economy multiplier');
 
 const lightTunic = {
   uid: 'woven-1',

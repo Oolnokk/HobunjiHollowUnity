@@ -179,7 +179,7 @@
     const held = giftingDeps?.getHeldGiftItem?.(); // Used to snapshot the exact held stack before NpcGifting consumes it.
     if (!held) return null;
     if (held.kind === 'clothing') {
-      const wovenQuality = held?.instance?.qualityStars; // Used to distinguish authored/unstarred clothing from literal woven garments that actually carry quality.
+      const wovenQuality = held?.instance?.valuationQualityStars ?? held?.instance?.qualityStars; // Gear keeps quality as internal valuation metadata; Pack clothing still exposes normal visible qualityStars.
       const wovenStars = wovenQuality == null ? NaN : Number(wovenQuality); // Prevents null from coercing to 0 and accidentally turning ordinary clothing into a 1★ gift.
       return { kind: 'clothing', key: held?.instance?.uid || held.key || null, stars: Number.isFinite(wovenStars) ? clamp(Math.round(wovenStars), 1, 5) : null, held };
     }
