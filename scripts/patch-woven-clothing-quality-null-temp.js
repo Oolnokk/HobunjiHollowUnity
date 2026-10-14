@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
+// Temporary branch-only patch runner; removed after its validated implementation commit lands.
 const fs = require('node:fs');
 
 function replaceOnce(file, before, after) {
