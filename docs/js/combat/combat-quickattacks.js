@@ -71,8 +71,6 @@
   // fixed halfConeDeg/rangeMul) so docs/config/combat/attack-values.json's
   // `quickAttacks.techniques` section can override them wholesale.
   const TECHNIQUES = {
-    opportunistJab: { label: 'Opportunist Jab', condKey: 'enemyStriking', halfConeDeg: 16, rangeMul: 0.95,
-      base: { damageMul: 0.5, knockbackMul: 0.9 }, bonus: { damageMul: 4.0, knockbackMul: 2.4 }, bonusText: 'bonus: target was winding up or striking' },
     exhaustCutter: { label: 'Exhaust Cutter', condKey: 'exhausted', halfConeDeg: 18, rangeMul: 1.0,
       base: { damageMul: 0.57, knockbackMul: 1.0 }, bonus: { damageMul: 3.9, knockbackMul: 2.5 }, bonusText: 'bonus: target stamina was empty' },
     backstabFlick: { label: 'Backstab Flick', condKey: 'behind', halfConeDeg: 39, rangeMul: 1.25,

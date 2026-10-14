@@ -6,7 +6,6 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const abilityDefs = [
-  ['opportunistJab', 'Opportunist Jab', 'quickAttack'],
   ['exhaustCutter', 'Exhaust Cutter', 'quickAttack'],
   ['backstabFlick', 'Backstab Flick', 'quickAttack'],
   ['mercySpike', 'Mercy Spike', 'quickAttack'],

@@ -375,10 +375,6 @@
           "conditions": {}
         },
         {
-          "key": "combatManualOpportunistJab", "abilityId": "opportunistJab", "icon": "📕", "name": "Opportunist Jab Combat Manual",
-          "desc": "A practical manual that permanently teaches Opportunist Jab.", "price": 90, "restockDays": 1, "maxPerRestock": 1, "conditions": {}
-        },
-        {
           "key": "combatManualExhaustCutter", "abilityId": "exhaustCutter", "icon": "📕", "name": "Exhaust Cutter Combat Manual",
           "desc": "A practical manual that permanently teaches Exhaust Cutter.", "price": 90, "restockDays": 1, "maxPerRestock": 1, "conditions": {}
         },

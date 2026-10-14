@@ -46,7 +46,7 @@
   // see getSlot()/setSlot() below. Applied to any weapon key that hasn't
   // been configured yet — see weaponLoadout() below.
   const DEFAULT_SLOT_LOADOUT = {
-    tap2: 'opportunistJab',
+    tap2: 'exhaustCutter',
     hold1: 'chargedBreaker',
     hold2: 'counterShield',
   };
@@ -121,6 +121,7 @@
   function setSlot(slotId, abilityId) {
     if (slotId === 'tap1') return false;
     if (!SLOT_IDS.includes(slotId)) return false;
+    if (abilityId === 'opportunistJab') return false; // Disabled technique cannot be assigned by stale callers.
     const def = abilities.get(abilityId);
     if (def && def.slotFamily !== SLOT_FAMILY[slotId]) return false;
     if (def && !SLOT_CATEGORIES[slotId].includes(def.category)) return false;
@@ -142,7 +143,7 @@
       if (!slots || typeof slots !== 'object') continue;
       const clean = {};
       for (const slotId of ['tap2', 'hold1', 'hold2']) {
-        if (typeof slots[slotId] === 'string' && slots[slotId]) clean[slotId] = slots[slotId];
+        if (typeof slots[slotId] === 'string' && slots[slotId]) clean[slotId] = slots[slotId] === 'opportunistJab' ? 'exhaustCutter' : slots[slotId];
       }
       if (Object.keys(clean).length) loadoutsByWeapon[key] = clean;
     }
