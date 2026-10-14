@@ -50,6 +50,7 @@
   let activeClothingUid = null; // Updated before EquipmentPanel's private detail click handler runs; used to extend redye for woven gear.
   let loomOverlay = null; // Current floating loom UI root; null while closed.
   let lastError = null; // Most recent recoverable integration/rendering error for mobile diagnostics.
+  let lastCraftQuality = null; // Mobile-visible record of the cloth quality groups consumed by the most recent loom craft.
   let armorHooksInstalled = false; // Prevents duplicate ResourceSystem/Combat wrapping.
   let portraitHooksInstalled = false; // Prevents duplicate render/tint wrapping.
   let stylesInjected = false; // Prevents duplicate loom modal CSS.
@@ -787,6 +788,26 @@
     return Math.max(1, Math.ceil(fullCost / 2)); // Wool is an indivisible stack item, so odd half-costs round up instead of introducing fractional inventory counts.
   }
 
+  function consumeWoolWithQuality(itemKey, amount) {
+    const units = Math.max(1, Math.floor(Number(amount) || 1)); // Used as the exact wool count consumed by this garment.
+    const consumeTrackedQuality = window.CookingSystem?.consumeQualityByPolicy; // Reuses the shared 1–5★ inventory buckets instead of creating a second cloth-quality store.
+    if (typeof consumeTrackedQuality === 'function') {
+      const result = consumeTrackedQuality.call(window.CookingSystem, itemKey, units, 'lowest'); // Ordinary automatic consumption protects the player's best-quality stock, matching the rest of inventory crafting.
+      if (!result || !Number.isFinite(Number(result.stars))) return null;
+      return {
+        stars: clamp(Math.round(Number(result.stars)), 1, 5),
+        groups: Array.isArray(result.groups) ? result.groups.map(group => ({ stars: clamp(Math.round(Number(group?.stars)), 1, 5), amount: Math.max(0, Math.floor(Number(group?.amount) || 0)) })).filter(group => group.amount > 0) : [],
+        fallback: false,
+      };
+    }
+
+    const inventory = equipmentDeps?.inventory; // Legacy/bootstrap fallback keeps loom crafting usable if CookingSystem is genuinely unavailable.
+    if (!inventory || Number(inventory[itemKey]) < units) return null;
+    inventory[itemKey] -= units;
+    equipmentDeps?.clampInventoryStack?.(itemKey);
+    return { stars: 3, groups: [{ stars: 3, amount: units }], fallback: true };
+  }
+
   function clothingColorHex(color, fallback = '#ffffff') {
     const direct = String(color?.hex || '').trim();
     if (/^#[0-9a-f]{6}$/i.test(direct)) return direct;
@@ -1295,8 +1316,13 @@
       equipmentDeps?.showToast?.('Choose all required dyes.', false);
       return false;
     }
-    inventory[material.itemKey] -= cost;
-    equipmentDeps?.clampInventoryStack?.(material.itemKey);
+    const materialQuality = consumeWoolWithQuality(material.itemKey, cost); // Consumes the same wool units from the shared quality buckets and returns their weighted-average star result.
+    if (!materialQuality) {
+      lastError = `Could not resolve ${cost} ${material.label} quality unit${cost === 1 ? '' : 's'}.`;
+      equipmentDeps?.showToast?.('Could not resolve cloth quality for this craft.', false);
+      return false;
+    }
+    lastCraftQuality = { itemKey: material.itemKey, cost, stars: materialQuality.stars, groups: clone(materialQuality.groups), fallback: materialQuality.fallback }; // Used by Pixel Probe/mobile diagnostics to verify exactly which quality units fed the garment.
     const uid = 'gcloth_loom_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7); // Unique instance id keeps weight/pattern/dyes bound to this literal garment.
     const baseLabel = bp.label || bp.baseLabel || bp.baseCosmeticId;
     const patternSummary = summarizeWeavingLabel(weaving); // null for plain cloth.
@@ -1316,6 +1342,7 @@
       articleDyeIds: [...new Set([state.dyeA, needsDyeB ? state.dyeB : null, needsDyeC ? state.dyeC : null].filter(Boolean))],
       sprite: bp.sprite || window.EquipmentPanel?.clothingSpriteForCosmetic?.(bp.baseCosmeticId) || null,
       sellPrice: 0,
+      qualityStars: materialQuality.stars, // Literal woven garment quality is the rounded weighted average of every cloth unit consumed by this craft.
       weaveMaterial: material.id,
       weightUnits,
       weaving: weavingHasAnyDecoration(weaving) ? clone(weaving) : null, // May contain reusable per-role patterns, fixed authored trim metadata, or both.
@@ -2880,6 +2907,7 @@
       blueprints: currentBlueprints().map(bp => ({ id: bp.baseCosmeticId, slot: bp.slot, label: bp.label })),
       wool: { light: Number(equipmentDeps?.inventory?.[LIGHT_WOOL_KEY]) || 0, heavy: Number(equipmentDeps?.inventory?.[HEAVY_WOOL_KEY]) || 0 },
       portraitPatterns: { ...portraitPatternStats, cacheSize: patternedCanvasCache.size, pending: pendingPatternCanvasPromises.size, gateReaders: portraitGateReaders, gateWriterActive: portraitGateWriterActive, gateWaitingWriters: portraitGateWaitingWriters, gatePreferReaders: portraitGatePreferReaders }, // Mobile-visible counters expose cache behavior plus ordinary-vs-woven gate ownership without a console.
+      lastCraftQuality: clone(lastCraftQuality), // Mobile-visible proof of the input quality groups and averaged star result used by the latest loom craft.
       lastError,
     };
   }
@@ -2916,7 +2944,7 @@
     hasAddedTrim: item => weavingHasOptionalTrim(item?.weaving),
     reweaveMaterialCost,
     debugSnapshot,
-    __test: Object.freeze({ clothingColorHex, resolvePatternHex, baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, applyPatternStackToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, resolveIconLayerUrls, patternRolesForLayers, layersUseSecondaryDye, iconLayersForView, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingPatternsForRole, normalizePatternStack, forcedOverpassPatternForWeaving, withForcedOverpass, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, weavingHasOptionalTrim, weavingHasAnyDecoration, normalizeTrimDyeSlot, clothingTrimConfig, authoredTrimPatternFromManifest, authoredTrimPatternForCosmetic, variantKeyForSourceUrl, trimColorHexForDescriptor, weavingCarriesSavedPattern, gearHasEquippedWovenClothing, requestSessionReadyPlayerAvatarRefresh, decorateAvatarDataWithWovenItems, materializeWeavingLibrarySnapshots, docsRelativeUrl, standaloneAssetUrl, frameShapeFor, wovenIconVisualKey, reweaveMaterialCost, resolvedPatternMeshScale, buildMotifClusterSeparatorMask, adjustMaskThickness, buildPatternOutlineMask, scaledOutlineWidth, overpassClearanceMultiplier, exactDirectMaskPass, patternWorkPad, patternGarmentPixelEligible, directTrimOutlineSurfacePixelEligible, directTrimAuthoredOutlinePixel, suppressGeneratedOutlineAgainstAuthoredOutline, patternCellOffset }),
+    __test: Object.freeze({ clothingColorHex, resolvePatternHex, baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, applyPatternStackToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, resolveIconLayerUrls, patternRolesForLayers, layersUseSecondaryDye, iconLayersForView, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingPatternsForRole, normalizePatternStack, forcedOverpassPatternForWeaving, withForcedOverpass, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, weavingHasOptionalTrim, weavingHasAnyDecoration, normalizeTrimDyeSlot, clothingTrimConfig, authoredTrimPatternFromManifest, authoredTrimPatternForCosmetic, variantKeyForSourceUrl, trimColorHexForDescriptor, weavingCarriesSavedPattern, gearHasEquippedWovenClothing, requestSessionReadyPlayerAvatarRefresh, decorateAvatarDataWithWovenItems, materializeWeavingLibrarySnapshots, docsRelativeUrl, standaloneAssetUrl, frameShapeFor, wovenIconVisualKey, reweaveMaterialCost, consumeWoolWithQuality, craftFromLoom, resolvedPatternMeshScale, buildMotifClusterSeparatorMask, adjustMaskThickness, buildPatternOutlineMask, scaledOutlineWidth, overpassClearanceMultiplier, exactDirectMaskPass, patternWorkPad, patternGarmentPixelEligible, directTrimOutlineSurfacePixelEligible, directTrimAuthoredOutlinePixel, suppressGeneratedOutlineAgainstAuthoredOutline, patternCellOffset }),
   });
   window.__clothingWeavingDebug = debugSnapshot;
 

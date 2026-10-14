@@ -233,6 +233,27 @@ const equipmentDeps = {
   showToast() {},
 };
 windowStub.EquipmentPanel.init(equipmentDeps);
+
+// Loom cloth quality uses the shared bucket consumer, averages every required unit, and consumes exactly once.
+const wovenQualityCalls = [];
+windowStub.CookingSystem = {
+  consumeQualityByPolicy(key, amount, policy) {
+    wovenQualityCalls.push({ key, amount, policy });
+    equipmentDeps.inventory[key] = Math.max(0, Number(equipmentDeps.inventory[key]) - amount);
+    return { stars: 4, groups: [{ stars: 3, amount: 1 }, { stars: 4, amount: 1 }, { stars: 5, amount: 1 }] };
+  },
+};
+const qualityInventoryBefore = equipmentDeps.inventory.lightWool; // Used to prove the quality-aware consumer replaces, rather than duplicates, the old raw wool decrement.
+const qualityResult = api.__test.consumeWoolWithQuality('lightWool', 3);
+assert.deepEqual(wovenQualityCalls.at(-1), { key: 'lightWool', amount: 3, policy: 'lowest' }, 'woven clothing consumes every required cloth unit through the shared lowest-quality-first policy');
+assert.equal(qualityResult.stars, 4, 'three consumed cloth qualities resolve to their shared rounded weighted-average star quality');
+assert.equal(equipmentDeps.inventory.lightWool, qualityInventoryBefore - 3, 'quality-aware cloth consumption removes exactly the recipe cost once');
+equipmentDeps.inventory.lightWool = qualityInventoryBefore;
+
+const craftSource = fs.readFileSync('docs/js/clothing-weaving-system.js', 'utf8'); // Used to guard the private loom path that stores the averaged result on the literal garment.
+assert.ok(craftSource.includes('const materialQuality = consumeWoolWithQuality(material.itemKey, cost)'), 'loom crafting resolves material quality before constructing the garment');
+assert.ok(craftSource.includes('qualityStars: materialQuality.stars'), 'loom-crafted garments persist their averaged material quality');
+
 const lightTunic = {
   uid: 'woven-1',
   cosmeticId: 'tankan_tunic#loom:woven-1',

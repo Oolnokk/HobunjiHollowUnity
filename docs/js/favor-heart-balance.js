@@ -57,8 +57,8 @@
   }
 
   function activeGiftStars() {
-    if (activeGiftContext?.kind !== 'item') return null;
-    return activeGiftContext.stars;
+    if (activeGiftContext?.kind !== 'item' && activeGiftContext?.kind !== 'clothing') return null;
+    return Number.isFinite(Number(activeGiftContext.stars)) ? Number(activeGiftContext.stars) : null;
   }
 
   function giftQualityMultiplier() {
@@ -177,6 +177,10 @@
   function captureHeldGift() {
     const held = giftingDeps?.getHeldGiftItem?.(); // Used to snapshot the exact held stack before NpcGifting consumes it.
     if (!held) return null;
+    if (held.kind === 'clothing') {
+      const wovenStars = Number(held?.instance?.qualityStars); // Used to make literal woven garment quality participate in the same Favor multiplier as other starred gifts.
+      return { kind: 'clothing', key: held?.instance?.uid || held.key || null, stars: Number.isFinite(wovenStars) ? clamp(Math.round(wovenStars), 1, 5) : null, held };
+    }
     if (held.kind !== 'item') return { kind: held.kind || 'other', key: held.key || null, stars: null, held };
     const trackedStars = Number(window.CookingSystem?.peekLowestQuality?.(held.key)); // Used to match the quality bucket NpcGifting is about to consume.
     const fallbackStars = Number(held?.def?.qualityStars ?? held?.def?.cookingDefaultStars ?? 3); // Used for items without tracked cooking quality.
