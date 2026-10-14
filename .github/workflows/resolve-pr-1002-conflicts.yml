@@ -1,0 +1,98 @@
+name: Resolve PR 1002 conflicts
+
+on:
+  push:
+    branches:
+      - claude/trusting-thompson-211uaz
+
+permissions:
+  contents: write
+
+jobs:
+  resolve:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Merge current main and preserve both sides
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git merge --no-commit --no-ff -X ours origin/main
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import subprocess
+
+          # These files were touched independently after PR #1002 branched.
+          # Keep the ceiling branch's structural edits while taking current
+          # main's latest cache-bust values for modules main updated meanwhile.
+          sync = {
+              'docs/index.html': [
+                  'afk-tile-navigation.js',
+                  'animal-avatar-builder.js',
+                  'building-procedural-ornaments.js',
+                  'building-procedural-runtime.js',
+                  'wildlife-visual-lod.js',
+              ],
+              'docs/js/building-interior-wall-ornament-editor.js': [
+                  'daylight-window-runtime.js',
+              ],
+              'docs/tools/building-interior-author/index.html': [
+                  'interior-layout-runtime.js',
+              ],
+          }
+
+          for path, assets in sync.items():
+              main = subprocess.check_output(
+                  ['git', 'show', f'origin/main:{path}'], text=True
+              )
+              work_path = Path(path)
+              work = work_path.read_text()
+              for asset in assets:
+                  token = re.compile(re.escape(asset) + r'\?v=[^\"\'&<>\s]+')
+                  found = token.search(main)
+                  if not found:
+                      raise SystemExit(f'main version token not found: {path}: {asset}')
+                  replacement = found.group(0)
+                  work, count = token.subn(replacement, work)
+                  if count == 0:
+                      raise SystemExit(f'branch version token not found: {path}: {asset}')
+              work_path.write_text(work)
+          PY
+
+          # The temporary resolver must not remain in the PR diff.
+          git rm .github/workflows/resolve-pr-1002-conflicts.yml
+
+          # Guard the two independent feature sets that matter in the overlap.
+          grep -q 'runAnimalAvatarBuildCompat' docs/game.js
+          grep -q 'InteriorCeilings.buildCeilingGeometryData' docs/game.js
+          grep -q 'authoredWallHeight' docs/game.js
+          grep -q 'interior-ceilings.js' docs/index.html
+          grep -q 'function gableAction' docs/tools/building-interior-author/index.html
+          grep -q 'function writeCeiling' docs/tools/building-interior-author/index.html
+          grep -q 'windowSilhouette' docs/js/building-interior-wall-ornament-editor.js
+
+          node - <<'NODE'
+          const fs = require('fs');
+          const temple = JSON.parse(fs.readFileSync('docs/config/maps/map_i_temple.json', 'utf8'));
+          if (temple.wallHeight !== 3.5) throw new Error('Temple wallHeight lost');
+          if (temple.ceiling?.material !== 'carved') throw new Error('Temple carved ceiling lost');
+          if (!Array.isArray(temple.ceiling?.gables) || temple.ceiling.gables.length !== 2) {
+            throw new Error('Temple gables lost');
+          }
+          NODE
+
+          git diff --check
+          node scripts/test-interior-ceilings.js
+
+          git add -A
+          git commit -m "Merge current main into interior ceilings"
+          git push origin HEAD:claude/trusting-thompson-211uaz
