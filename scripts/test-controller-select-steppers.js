@@ -70,3 +70,18 @@ assert.equal(api.step(off, 1), false, 'disabled dropdown is left alone');
 assert.equal(off.value, 'a');
 
 console.log('controller select steppers: ok');
+
+const numericEvents = []; // Confirms that continuous numeric steppers obey bounds and emit owner events only for changes.
+const numeric = { tagName: 'INPUT', type: 'number', step: 'any', min: '1', max: '3', value: '2', dispatchEvent(event) { numericEvents.push(event.type); } };
+assert.equal(api.step(numeric, 1), true);
+assert.equal(numeric.value, '3');
+assert.equal(api.step(numeric, 1), false, 'numeric max is clamped without duplicate events');
+assert.deepEqual(numericEvents, ['input', 'change']);
+assert.equal(api.step(numeric, -1), true);
+numeric.readOnly = true;
+assert.equal(api.step(numeric, -1), false, 'readonly numeric values cannot change');
+numeric.readOnly = false;
+numeric.step = '0.25';
+numeric.stepUp = () => { numeric.value = '2.25'; };
+assert.equal(api.step(numeric, 1), true, 'authored fractional stepping uses the native input API');
+assert.equal(numeric.value, '2.25');

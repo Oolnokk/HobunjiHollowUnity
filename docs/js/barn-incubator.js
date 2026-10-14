@@ -15,12 +15,9 @@
   let carpenterDeps = null; // Captures CarpenterShop's wallet/inventory UI seam.
   let installed = false; // Keeps all public wrappers idempotent.
   let state = null; // Holds this world's serialized barn-addition/incubation state.
-  let selectedBarnId = null; // Identifies the barn currently open in the Barn Layout editor.
-  let selectedAdditionId = null; // Identifies the selected incubator piece in that editor.
   let interiorRoomMapId = null, interiorRoomOffsets = {}; // Joined barn interior offsets supplied by the existing map synthesis owner.
   let selectedTier = 'medium'; // New additions use the selected tier; legacy saved additions remain medium.
   const tierDef = tier => CONFIG.tiers?.[tier] || CONFIG.tiers?.medium || { slots: CONFIG.gameplay.slots, footprint: CONFIG.addition.canonicalFootprint }; // One tier authority for slots and footprint.
-  let editorMode = null; // 'place'|'move' while the next canvas tap should reposition a piece.
   let managementAdditionId = null; // Identifies the incubator whose 3 maturation slots are being managed.
   let interiorSyncTimer = null; // Periodically reconciles visible sleeping babies in loaded barn interiors.
   let piecePromise = null; // Caches the authored incubator exterior piece JSON.
@@ -323,6 +320,7 @@
     const barn = owningBarnOfAddition(additionId); // Barn whose local coordinate system owns the piece.
     const addition = additionById(additionId); // Existing addition being moved.
     if (!barn || !addition) return { ok: false, message: 'Incubator addition not found.' };
+    if (additionHasBaby(addition)) return { ok: false, message: 'Finish every maturing baby before moving the incubator.' };
     const valid = validatePlacement(barn, placement, additionId); // Reuses the same farm collision rules as first placement.
     if (!valid.ok) return valid;
     Object.assign(addition, {
@@ -713,6 +711,17 @@
     return true;
   }
 
+  function canMoveBarnTo(barnId, col, row) {
+    const barn = barnById(barnId); // Current record is read for both drag previews and final moves.
+    if (!barn || !Number.isInteger(col) || !Number.isInteger(row)) return false;
+    const candidate = { ...barn, col, row }; // Tests all attached rooms at the proposed base position without changing persisted coordinates.
+    unregisterAllAdditionObjects();
+    try {
+      return [candidate, ...additionsForBarn(barnId).map(addition => absoluteRect(candidate, addition))]
+        .every(rect => window.FarmBuildings.canPlaceAt(rect.col, rect.row, rect.w, rect.h, barn.id));
+    } finally { registerAllAdditionObjects(); }
+  }
+
   function wrapFarmBuildings(api) {
     if (!api || api.__barnIncubatorWrapped) return !!api;
     api.__barnIncubatorWrapped = true;
@@ -743,18 +752,9 @@
       api.move = function incubatorAwareBarnMove(barnId, col, row, ...args) {
         const barn = barnById(barnId); // Current base position used to test every addition at the candidate base position.
         if (!barn || !additionsForBarn(barnId).length) return original.moveBarn.call(this, barnId, col, row, ...args);
+        if (!canMoveBarnTo(barnId, col, row)) return { ok: false, message: 'That barn move would put the barn or an attached incubator on blocked ground.' };
         unregisterAllAdditionObjects();
-        const old = { col: barn.col, row: barn.row }; // Used to restore extension registrations if the core move fails.
-        let valid = true; // Candidate aggregate addition-placement result.
-        for (const addition of additionsForBarn(barnId)) {
-          const candidateBarn = { ...barn, col, row }; // Temporary base used only for absolute extension coordinates.
-          const rect = absoluteRect(candidateBarn, addition); // Candidate extension footprint.
-          if (!window.FarmBuildings.canPlaceAt(rect.col, rect.row, rect.w, rect.h, barn.id)) { valid = false; break; }
-        }
-        if (!valid) {
-          registerAllAdditionObjects();
-          return { ok: false, message: 'That barn move would put an attached incubator on blocked ground.' };
-        }
+        const old = { col: barn.col, row: barn.row }; // Restores coordinates if the core move fails.
         const result = original.moveBarn.call(this, barnId, col, row, ...args);
         if (!result?.ok) {
           barn.col = old.col; barn.row = old.row;
@@ -1104,7 +1104,7 @@
 
   function ensureStyles() {
     if (document.getElementById('barnIncubatorStyles')) return;
-    const style = document.createElement('style'); // Shared responsive styles for both full-screen barn editor and slot manager.
+    const style = document.createElement('style'); // Responsive styles for the existing incubation slot manager.
     style.id = 'barnIncubatorStyles';
     style.textContent = `
       .barn-incubator-modal{position:fixed;inset:0;z-index:10080;background:rgba(10,10,12,.92);display:none;align-items:stretch;justify-content:center;padding:12px;box-sizing:border-box}
@@ -1121,190 +1121,100 @@
     document.head.appendChild(style);
   }
 
-  function ensureEditorModal() {
-    ensureStyles();
-    let modal = document.getElementById('barnIncubatorLayoutModal'); // Full-screen barn-layout editor, created lazily.
-    if (modal) return modal;
-    modal = document.createElement('div');
-    modal.id = 'barnIncubatorLayoutModal';
-    modal.className = 'barn-incubator-modal';
-    modal.setAttribute('data-ctrl-panel', ''); // Controller navigation (js/controller-ui-nav.js) owns focus while this modal is open.
-    modal.innerHTML = `
-      <div class="barn-incubator-shell">
-        <div class="barn-incubator-stage">
-          <div class="menu-section-title" id="barnIncubatorEditorTitle">Barn Layout</div>
-          <canvas id="barnIncubatorLayoutCanvas" class="barn-incubator-canvas"></canvas>
-          <div class="farm-note" id="barnIncubatorEditorHint"></div>
-        </div>
-        <div class="barn-incubator-sidebar">
-          <div class="settings-section-title">Barn Additions</div>
-          <div id="barnIncubatorEditorSummary" class="farm-note"></div>
-          <div id="barnIncubatorEditorList" class="farm-list"></div>
-          <div class="barn-incubator-actions">
-            <button class="settings-small-btn" id="barnIncubatorPlaceBtn">Place Incubator</button>
-            <button class="settings-small-btn" id="barnIncubatorMoveBtn">Move Selected</button>
-            <button class="settings-small-btn" id="barnIncubatorManageBtn">Manage Selected</button>
-            <button class="settings-small-btn" id="barnIncubatorRemoveBtn">Remove Selected</button>
-            <button class="settings-small-btn" id="barnIncubatorEditorClose" data-ctrl-cancel>Close</button>
-          </div>
-          <button class="settings-small-btn" id="barnIncubatorDebugBtn">Copy Incubator Debug</button>
-        </div>
-      </div>`;
-    document.body.appendChild(modal);
-    modal.querySelector('#barnIncubatorEditorClose')?.addEventListener('click', closeBarnEditor);
-    modal.querySelector('#barnIncubatorPlaceBtn')?.addEventListener('click', () => { editorMode = 'place'; renderBarnEditor(); });
-    modal.querySelector('#barnIncubatorMoveBtn')?.addEventListener('click', () => { if (selectedAdditionId) { editorMode = 'move'; renderBarnEditor(); } });
-    modal.querySelector('#barnIncubatorManageBtn')?.addEventListener('click', () => { if (selectedAdditionId) openIncubatorMenu(selectedAdditionId); });
-    modal.querySelector('#barnIncubatorRemoveBtn')?.addEventListener('click', () => {
-      if (!selectedAdditionId) return;
-      const result = removeIncubator(selectedAdditionId, true); // Existing selected piece removed only after active-baby gate.
-      (panelDeps || animalDeps)?.showToast?.(result.message, result.ok !== false);
-      if (result.ok) selectedAdditionId = null;
-      renderBarnEditor();
-    });
-    modal.querySelector('#barnIncubatorDebugBtn')?.addEventListener('click', copyDebug);
-    modal.querySelector('#barnIncubatorLayoutCanvas')?.addEventListener('click', onEditorCanvasClick);
-    window.addEventListener('resize', () => { if (modal.classList.contains('open')) drawEditorCanvas(); });
-    return modal;
-  }
-
-  function editorViewport(barn) {
-    const candidates = candidatePlacementsForBarn(barn); // Potential wall slots included so the whole editable perimeter is visible.
-    const rects = [{ col: barn.col, row: barn.row, w: barn.w, h: barn.h }, ...candidates.map(candidate => absoluteRect(barn, candidate))];
-    const minCol = Math.min(...rects.map(rect => rect.col)) - 1; // One-tile visual margin.
-    const minRow = Math.min(...rects.map(rect => rect.row)) - 1; // One-tile visual margin.
-    const maxCol = Math.max(...rects.map(rect => rect.col + rect.w)) + 1; // Right visual boundary.
-    const maxRow = Math.max(...rects.map(rect => rect.row + rect.h)) + 1; // Bottom visual boundary.
-    return { minCol, minRow, maxCol, maxRow };
-  }
-
-  function drawEditorCanvas() {
-    const canvas = document.getElementById('barnIncubatorLayoutCanvas'); // Top-down layout surface.
-    const barn = barnById(selectedBarnId); // Barn currently being edited.
-    if (!canvas || !barn) return;
-    const rect = canvas.getBoundingClientRect(); // CSS size converted to backing-pixel resolution.
-    const dpr = window.devicePixelRatio || 1; // Keeps mobile high-DPI lines/text readable.
-    canvas.width = Math.max(1, Math.round(rect.width * dpr));
-    canvas.height = Math.max(1, Math.round(rect.height * dpr));
-    const ctx = canvas.getContext('2d'); // Simple top-down editor rendering.
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const view = editorViewport(barn); // Farm-grid extent shown by the canvas.
-    const cols = view.maxCol - view.minCol, rows = view.maxRow - view.minRow; // View dimensions in farm tiles.
-    const cell = Math.max(14, Math.min(rect.width / cols, rect.height / rows)); // Uniform square tile size.
-    const ox = (rect.width - cols * cell) / 2, oy = (rect.height - rows * cell) / 2; // Centered viewport origin.
-    canvas.__incubatorView = { ...view, cell, ox, oy }; // Click handler uses exact draw transform.
-
-    ctx.clearRect(0, 0, rect.width, rect.height);
-    ctx.fillStyle = '#171717';
-    ctx.fillRect(0, 0, rect.width, rect.height);
-    ctx.strokeStyle = 'rgba(255,255,255,.10)';
-    ctx.lineWidth = 1;
-    for (let c = 0; c <= cols; c++) { ctx.beginPath(); ctx.moveTo(ox + c * cell, oy); ctx.lineTo(ox + c * cell, oy + rows * cell); ctx.stroke(); }
-    for (let r = 0; r <= rows; r++) { ctx.beginPath(); ctx.moveTo(ox, oy + r * cell); ctx.lineTo(ox + cols * cell, oy + r * cell); ctx.stroke(); }
-
-    const drawRect = (farmRect, fill, stroke, label) => { // Shared base/addition rectangle renderer.
-      const x = ox + (farmRect.col - view.minCol) * cell, y = oy + (farmRect.row - view.minRow) * cell;
-      ctx.fillStyle = fill; ctx.fillRect(x, y, farmRect.w * cell, farmRect.h * cell);
-      ctx.strokeStyle = stroke; ctx.lineWidth = 2; ctx.strokeRect(x, y, farmRect.w * cell, farmRect.h * cell);
-      ctx.fillStyle = '#fff'; ctx.font = `${Math.max(10, Math.min(14, cell * .35))}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(label, x + farmRect.w * cell / 2, y + farmRect.h * cell / 2);
+  function createBarnLayoutAdapter(barnId) {
+    const rooms = () => window.FarmBuildings?.connectedBarnRooms?.(barnId) || [barnById(barnId)].filter(Boolean); // Connected adult barns share one layout view, with their own persisted identities.
+    let cachedPieces = null, cachedView = null; // Shared 3D frames reuse these arrays until an editor action refreshes the state.
+    const pieces = () => cachedPieces || (cachedPieces = rooms().flatMap(barn => [
+      { id: barn.id, barnId: barn.id, kind: 'barn', col: barn.col, row: barn.row, w: barn.w, h: barn.h },
+      ...additionsForBarn(barn.id).map(addition => ({ ...absoluteRect(barn, addition), id: addition.id, barnId: barn.id, kind: 'incubator', tier: addition.tier })),
+    ])); // Farm coordinates let the existing house hit-testing and selection outline work unchanged.
+    const canAlter = () => (panelDeps || buildingDeps)?.hasFarmPermission?.('alterFarm') === true; // Every editor action rechecks the existing permission authority.
+    const resolveMove = (piece, col, row) => {
+      if (piece.kind === 'barn') return { col, row, w: piece.w, h: piece.h };
+      const barn = barnById(piece.barnId); // Addition remains attached to its own barn when dragged.
+      const placement = closestCandidate(barn, col + piece.w / 2, row + piece.h / 2, piece.id); // Reuses existing full-edge snapping and collision validation.
+      return placement ? { ...absoluteRect(barn, placement), placement } : null;
     };
-    drawRect({ col: barn.col, row: barn.row, w: barn.w, h: barn.h }, '#55483d', '#b9a58e', 'Barn');
-    for (const addition of additionsForBarn(barn.id)) {
-      const chosen = addition.id === selectedAdditionId; // Selected piece gets a brighter editor outline.
-      drawRect(absoluteRect(barn, addition), chosen ? '#826e52' : '#665944', chosen ? '#ffe2a7' : '#c9b28a', 'Incubator');
-    }
-  }
-
-  function onEditorCanvasClick(event) {
-    const canvas = event.currentTarget; // Layout canvas owning the stored transform.
-    const barn = barnById(selectedBarnId); // Barn currently being edited.
-    const view = canvas.__incubatorView; // Exact draw transform produced above.
-    if (!barn || !view) return;
-    const rect = canvas.getBoundingClientRect(); // Pointer coordinates relative to CSS canvas.
-    const x = event.clientX - rect.left, y = event.clientY - rect.top; // Local CSS pixels.
-    const farmCol = view.minCol + (x - view.ox) / view.cell; // Fractional farm-grid X used for nearest slot snapping.
-    const farmRow = view.minRow + (y - view.oy) / view.cell; // Fractional farm-grid Z.
-    if (editorMode === 'place' || editorMode === 'move') {
-      const candidate = closestCandidate(barn, farmCol, farmRow, editorMode === 'move' ? selectedAdditionId : null); // Nearest valid full-edge wall attachment.
-      if (!candidate) {
-        (panelDeps || animalDeps)?.showToast?.('No clear incubator position near that wall.', false);
-        return;
-      }
-      const result = editorMode === 'move' ? moveIncubator(selectedAdditionId, candidate) : placeIncubator(barn.id, candidate); // Shared validated placement operations.
-      (panelDeps || animalDeps)?.showToast?.(result.message, result.ok !== false);
-      if (result.ok) {
-        selectedAdditionId = result.addition?.id || selectedAdditionId;
-        editorMode = null;
-      }
-      renderBarnEditor();
-      return;
-    }
-    const hit = additionsForBarn(barn.id).find(addition => {
-      const r = absoluteRect(barn, addition); // Existing addition rectangle used for selection hit-test.
-      return farmCol >= r.col && farmCol < r.col + r.w && farmRow >= r.row && farmRow < r.row + r.h;
-    });
-    selectedAdditionId = hit?.id || null;
-    renderBarnEditor();
-  }
-
-  function renderBarnEditor() {
-    const barn = barnById(selectedBarnId); // Barn currently open.
-    const modal = document.getElementById('barnIncubatorLayoutModal'); // Existing editor DOM.
-    if (!barn || !modal) { closeBarnEditor(); return; }
-    const definition = stockDefinition(); // Authored plan label/price description.
-    const key = ensurePlanItemDef(); // Unplaced plan stack.
-    const owned = Number((panelDeps || carpenterDeps || animalDeps)?.inventory?.[key]) || 0; // Current plans available for new placement.
-    let tierPicker = document.getElementById('barnIncubatorTierPicker'); // Compact tier choice beside the existing placement actions.
-    if (!tierPicker) {
-      tierPicker = document.createElement('select'); tierPicker.id = 'barnIncubatorTierPicker'; tierPicker.setAttribute('aria-label', 'Incubator tier');
-      for (const [tier, def] of Object.entries(CONFIG.tiers)) { const option = document.createElement('option'); option.value = tier; option.textContent = def.label + ' · ' + def.slots + (def.slots === 1 ? ' slot' : ' slots'); tierPicker.append(option); }
-      document.getElementById('barnIncubatorPlaceBtn').before(tierPicker);
-      tierPicker.onchange = () => { selectedTier = tierPicker.value; editorMode = null; renderBarnEditor(); };
-    }
-    tierPicker.value = selectedTier;
-    for (const tier of Object.keys(CONFIG.tiers)) ensurePlanItemDef(tier);
-    const additions = additionsForBarn(barn.id); // Installed additions rendered in list/canvas.
-    const selected = additionById(selectedAdditionId); // Selected piece, if any.
-    document.getElementById('barnIncubatorEditorTitle').textContent = `${buildingDeps?.getBarnTiers?.()?.[barn.tier]?.label || 'Barn'} Layout`;
-    document.getElementById('barnIncubatorEditorSummary').textContent =
-      `${definition?.label || CONFIG.addition.label}: ${owned} unplaced · ${additions.length}/${CONFIG.addition.maxPerBarn} installed.`;
-    document.getElementById('barnIncubatorEditorHint').textContent = editorMode
-      ? `Tap the desired barn wall. The ${tierDef(selectedTier).footprint.w}-tile side snaps flat against the wall automatically.`
-      : 'Select an installed addition, or place a purchased one. Moving the barn later carries its additions with it.';
-    const list = document.getElementById('barnIncubatorEditorList'); // Installed room list.
-    list.innerHTML = additions.length ? '' : '<div class="farm-note">No barn additions installed.</div>';
-    additions.forEach(addition => {
-      const row = document.createElement('button'); // Mobile-friendly list selection alternative to canvas tapping.
-      row.type = 'button';
-      row.className = `settings-small-btn${addition.id === selectedAdditionId ? ' active' : ''}`;
-      const active = addition.slots.filter(slot => slot.baby).length; // Current maturation occupancy.
-      row.textContent = `🪺 ${tierDef(addition.tier).label} · ${active}/${addition.slots.length} maturing`;
-      row.addEventListener('click', () => { selectedAdditionId = addition.id; editorMode = null; renderBarnEditor(); });
-      list.appendChild(row);
-    });
-    document.getElementById('barnIncubatorPlaceBtn').disabled = owned < 1 || additions.length >= CONFIG.addition.maxPerBarn;
-    document.getElementById('barnIncubatorMoveBtn').disabled = !selected || additionHasBaby(selected);
-    document.getElementById('barnIncubatorManageBtn').disabled = !selected;
-    document.getElementById('barnIncubatorRemoveBtn').disabled = !selected || additionHasBaby(selected);
-    drawEditorCanvas();
+    const canMove = (piece, col, row) => {
+      if (!canAlter()) return false;
+      if (piece.kind === 'barn') return canMoveBarnTo(piece.id, col, row);
+      return !additionHasBaby(additionById(piece.id)) && !!resolveMove(piece, col, row);
+    };
+    return {
+      kind: 'barn', title: `${buildingDeps?.getBarnTiers?.()?.[barnById(barnId)?.tier]?.label || 'Barn'} Layout`,
+      selectedId: barnId, getPieces: pieces,
+      refresh: () => { cachedPieces = null; cachedView = null; },
+      getViewPieces: () => cachedView || (cachedView = [...pieces(), ...rooms().flatMap(barn => candidatePlacementsForBarn(barn).map(candidate => absoluteRect(barn, candidate)))]),
+      label: piece => piece.kind === 'barn' ? (window.FarmBuildings?.label?.(barnById(piece.id)) || 'Barn') : tierDef(piece.tier).label,
+      canDrag: piece => canAlter() && (piece.kind === 'barn' || !additionHasBaby(additionById(piece.id))),
+      resolveMove, canMove,
+      move(piece, col, row) {
+        if (!canMove(piece, col, row)) return { ok: false, message: 'That move is blocked, or the incubator is maturing a baby.' };
+        return piece.kind === 'barn' ? window.FarmBuildings.move(piece.id, col, row) : moveIncubator(piece.id, resolveMove(piece, col, row).placement);
+      },
+      place(world, mode) {
+        if (!canAlter()) return { ok: false, message: 'You do not have permission to edit this barn.' };
+        if (mode.type === 'moveIncubator') {
+          const piece = pieces().find(entry => entry.id === mode.id); // Non-drag fallback uses the same movement authority.
+          if (!piece) return { ok: false, message: 'Incubator not found.' };
+          return this.move(piece, world.x - piece.w / 2, world.z - piece.h / 2);
+        }
+        selectedTier = mode.tier;
+        const candidates = rooms().map(barn => ({ barn, placement: closestCandidate(barn, world.x, world.z) })).filter(entry => entry.placement); // Owned plans may attach to any visible connected barn.
+        candidates.sort((a, b) => {
+          const distance = entry => { const rect = absoluteRect(entry.barn, entry.placement); return Math.hypot(world.x - rect.col - rect.w / 2, world.z - rect.row - rect.h / 2); }; // Pick the nearest valid attachment across rooms.
+          return distance(a) - distance(b);
+        });
+        const target = candidates[0]; // Plan is consumed only by the normal validated placement API.
+        return target ? placeIncubator(target.barn.id, target.placement) : { ok: false, message: 'No clear incubator position near that wall.' };
+      },
+      getHint: mode => mode ? 'Tap the desired barn wall. The incubator snaps flat against a clear wall.' : 'Drag a barn room or an empty incubator to move it. Tap a room for its options. Moving a barn carries its incubators with it.',
+      renderSidebar(ui) {
+        ui.actions.innerHTML = ''; ui.architecture.innerHTML = ''; ui.deeds.innerHTML = '';
+        const button = (parent, label, action, disabled = false) => { // Uses the house editor's existing button classes and sidebar containers.
+          const node = document.createElement('button'); // Accessible action for touch, keyboard, and controller navigation.
+          node.type = 'button'; node.className = 'settings-small-btn'; node.textContent = label; node.disabled = disabled;
+          node.addEventListener('click', action); parent.appendChild(node); return node;
+        };
+        const selected = pieces().find(piece => piece.id === ui.selectedId); // Fresh state preserves selection after moves/rebuilds.
+        const addition = selected?.kind === 'incubator' ? additionById(selected.id) : null; // Controls retain existing baby-safety gates.
+        if (addition) {
+          const active = addition.slots.filter(slot => slot.baby).length; // Visible maturation occupancy for the selected addition.
+          const note = document.createElement('div'); // Same compact notes as the house sidebar.
+          note.className = 'farm-note'; note.textContent = `${active}/${addition.slots.length} maturing`; ui.architecture.appendChild(note);
+          button(ui.actions, 'Manage Incubator', () => openIncubatorMenu(addition.id));
+          button(ui.actions, ui.mode?.type === 'moveIncubator' ? 'Cancel Move' : 'Move Selected', () => ui.arm(ui.mode?.type === 'moveIncubator' ? null : { type: 'moveIncubator', id: addition.id }), !canAlter() || additionHasBaby(addition));
+          button(ui.actions, 'Remove Selected', () => {
+            if (!canAlter()) return;
+            const result = removeIncubator(addition.id, true); // Existing authority refunds the correct tier's plan and protects babies.
+            (panelDeps || animalDeps)?.showToast?.(result.message, result.ok);
+            if (result.ok) ui.select(null);
+            ui.refresh();
+          }, !canAlter() || additionHasBaby(addition));
+        }
+        const title = document.createElement('div'); // Owned plans occupy the same section used for house deeds.
+        title.className = 'house-layout-section-title'; title.textContent = 'Incubator Plans'; ui.deeds.appendChild(title);
+        for (const [tier, def] of Object.entries(CONFIG.tiers)) {
+          const key = ensurePlanItemDef(tier); // Item registration and stock use the existing tier definitions.
+          const count = Number((panelDeps || carpenterDeps || animalDeps)?.inventory?.[key]) || 0; // Missing inventory keys never grant free plans.
+          if (count < 1) continue;
+          const row = document.createElement('div'); // Matches the house deed row layout.
+          row.className = 'farm-row';
+          const label = document.createElement('span'); // Plain text avoids rendering names as HTML.
+          label.className = 'farm-row-name'; label.textContent = `📜 ${def.label} · ${count} owned`; row.appendChild(label);
+          const armed = ui.mode?.type === 'placeIncubator' && ui.mode.tier === tier; // Plan placement toggles like a house deed.
+          button(row, armed ? 'Cancel' : 'Place', () => { selectedTier = tier; ui.arm(armed ? null : { type: 'placeIncubator', tier }); }, !canAlter() || rooms().every(barn => additionsForBarn(barn.id).length >= CONFIG.addition.maxPerBarn));
+          ui.deeds.appendChild(row);
+        }
+      },
+    };
   }
 
   function openBarnEditor(barnId) {
-    const barn = barnById(barnId); // Requested regular built barn.
-    if (!barn) return { ok: false, message: 'Built barn not found.' };
-    const modal = ensureEditorModal(); // Lazily created full-screen sub-editor.
-    selectedBarnId = barnId;
-    selectedAdditionId = additionsForBarn(barnId)[0]?.id || null;
-    editorMode = null;
-    modal.classList.add('open');
-    renderBarnEditor();
+    if (!barnById(barnId)) return { ok: false, message: 'Built barn not found.' };
+    if (!window.FarmPanel?.openLayoutEditor) return { ok: false, message: 'Layout editor is not ready.' };
+    window.FarmPanel.openLayoutEditor(createBarnLayoutAdapter(barnId));
     return { ok: true, message: 'Opened barn layout editor.' };
-  }
-
-  function closeBarnEditor() {
-    document.getElementById('barnIncubatorLayoutModal')?.classList.remove('open');
-    editorMode = null;
   }
 
   function ensureManagementModal() {
@@ -1540,12 +1450,13 @@
       nurseryBabyCount: nurseryBabies().length,
       currentArea: currentArea(),
       sleepingVisuals: [...sleepingBabies.keys()],
+      layoutEditor: window.FarmPanel?.layoutEditorDebug?.() || null,
     };
   }
 
   function refreshAllUi() {
     if (typeof document === 'undefined') return;
-    if (document.getElementById('barnIncubatorLayoutModal')?.classList.contains('open')) renderBarnEditor();
+    window.FarmPanel?.refreshLayoutEditor?.();
     refreshManagement();
     if (document.getElementById('mpFarm')?.classList.contains('active')) decorateFarmPanel();
     carpenterDeps && decorateCarpenterShop();
@@ -1578,6 +1489,7 @@
   window.BarnIncubator = {
     install,
     openBarnEditor,
+    createBarnLayoutAdapter,
     openIncubatorMenu,
     candidatePlacementsForBarn,
     placeIncubator,

@@ -303,10 +303,11 @@
   }
 
   function contextualActionLabel(action, tile) {
-    if (action === 'dig')   return tile.type === deps.TileType.TRENCH ? 'Redig' : 'Dig';
+    const tileTypes = deps?.TileType; // Input can ask for a label during parser/startup time before HudUpdate.init() supplies the authoritative tile enum.
+    if (action === 'dig')   return tileTypes && tile?.type === tileTypes.TRENCH ? 'Redig' : 'Dig';
     if (action === 'fill')  return 'Fill';
-    if (action === 'raise') return tile.type === deps.TileType.RAISED ? 'Lower' : 'Raise';
-    if (action === 'till')  return tile.type === deps.TileType.TILLED ? 'Untill' : 'Till';
+    if (action === 'raise') return tileTypes && tile?.type === tileTypes.RAISED ? 'Lower' : 'Raise';
+    if (action === 'till')  return tileTypes && tile?.type === tileTypes.TILLED ? 'Untill' : 'Till';
     if (action === 'smooth') return 'Smooth';
     if (action === 'cut')   return 'Cut';
     if (action === 'slash') return 'Slash 3×';

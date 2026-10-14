@@ -81,6 +81,11 @@
     const eligible = window.ConditionRegistry.rollIndependentEligible(pool.entries || [], world);
     const gained = {};
     for (const entry of eligible) {
+      if (entry.kind === 'generator' && entry.generatorKey === 'harlyaoArtifact') {
+        const artifacts = window.ArtifactCollection?.rollArtifacts?.(entry.tier) || {}; // Configured guaranteed batch of weighted Harlyao artifacts, alongside existing optional loot.
+        for (const [key, qty] of Object.entries(artifacts)) gained[key] = (gained[key] || 0) + qty;
+        continue;
+      }
       if (!entry.itemKey) continue; // generator-only entries (see treasureChest) are rolled by name, not through this generic path
       const min = entry.min || 0, max = entry.max != null ? entry.max : min;
       let qty;

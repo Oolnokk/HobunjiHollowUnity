@@ -1,0 +1,221 @@
+{
+  "schema": "hobunji_combat_vocalizations.v2",
+  "assets": {
+    "chargeGrunt": "assets/audio/sfx/combat/sfx_chargegrunt.m4a",
+    "releaseGrunt": "assets/audio/sfx/combat/sfx_releasegrunt.m4a",
+    "comboAttackGrunts": [
+      "assets/audio/sfx/combat/sfx_attackgrunt_1.m4a"
+    ],
+    "breath": {
+      "1": "assets/audio/sfx/combat/sfx_heavybreath_intensity1.m4a",
+      "2": "assets/audio/sfx/combat/sfx_heavybreath_intensity2.m4a",
+      "3": "assets/audio/sfx/combat/sfx_heavybreath_medium_intensity3.m4a",
+      "4": "assets/audio/sfx/combat/sfx_heavybreath_intensity4.m4a",
+      "5": "assets/audio/sfx/combat/sfx_heavybreath_intensity5.m4a"
+    },
+    "pain": {
+      "1": "assets/audio/sfx/combat/sfx_pain_intensity1.m4a",
+      "2": "assets/audio/sfx/combat/sfx_pain_intensity2.m4a",
+      "4": "assets/audio/sfx/combat/sfx_pain_intensity4.m4a",
+      "5": "assets/audio/sfx/combat/sfx_pain_intensity5.m4a",
+      "6": "assets/audio/sfx/combat/sfx_pain_instensity6.m4a"
+    }
+  },
+  "breath": {
+    "intervalHighStaminaS": 4.5,
+    "intervalLowStaminaS": 1.25,
+    "exhaustedIntervalS": 0.85,
+    "pitchRandomSemitones": 0.22,
+    "volume": 0.72
+  },
+  "pain": {
+    "dotRepeatS": 0.5,
+    "pitchRandomSemitones": 1.5,
+    "volume": 0.9
+  },
+  "grunts": {
+    "pitchRandomSemitones": 1.5,
+    "volume": 0.86,
+    "liveStretchAbilities": [
+      "chargedBreaker"
+    ]
+  },
+  "utteranceModulation": {
+    "default": {
+      "male": {
+        "pitchSemitones": 0,
+        "tempo": 1,
+        "gain": 1
+      },
+      "female": {
+        "pitchSemitones": 0,
+        "tempo": 1,
+        "gain": 1
+      }
+    },
+    "species": {
+      "mao-ao": {
+        "female": {
+          "pitchSemitones": 6,
+          "tempo": 1,
+          "gain": 1
+        },
+        "male": {
+          "pitchSemitones": 1,
+          "tempo": 1,
+          "gain": 1
+        }
+      },
+      "ghoul": {
+        "male": {
+          "pitchSemitones": 1,
+          "tempo": 1,
+          "gain": 1
+        },
+        "female": {
+          "pitchSemitones": 6,
+          "tempo": 1,
+          "gain": 1
+        }
+      },
+      "mao-ao-skeleton": {
+        "female": {
+          "pitchSemitones": 0,
+          "tempo": 1,
+          "gain": 0
+        },
+        "male": {
+          "pitchSemitones": 0,
+          "tempo": 1,
+          "gain": 0
+        }
+      },
+      "harlyao-skeleton": {
+        "male": {
+          "pitchSemitones": 0,
+          "tempo": 1,
+          "gain": 0
+        },
+        "female": {
+          "pitchSemitones": 0,
+          "tempo": 1,
+          "gain": 0
+        }
+      },
+      "harlyao": {
+        "female": {
+          "pitchSemitones": 3,
+          "tempo": 1,
+          "gain": 1
+        },
+        "male": {
+          "pitchSemitones": -5,
+          "tempo": 1,
+          "gain": 1
+        }
+      },
+      "porakaneki": {
+        "male": {
+          "pitchSemitones": 9,
+          "tempo": 1,
+          "gain": 1
+        },
+        "female": {
+          "pitchSemitones": 11,
+          "tempo": 1,
+          "gain": 1
+        }
+      },
+      "tletingan": {
+        "male": {
+          "pitchSemitones": 3,
+          "tempo": 1,
+          "gain": 1
+        },
+        "female": {
+          "pitchSemitones": 7.5,
+          "tempo": 1,
+          "gain": 1
+        }
+      },
+      "nuhongan": {
+        "female": {
+          "pitchSemitones": 14,
+          "tempo": 1,
+          "gain": 1
+        },
+        "male": {
+          "pitchSemitones": 7,
+          "tempo": 1,
+          "gain": 1
+        }
+      },
+      "kenkari": {
+        "male": {
+          "pitchSemitones": 4,
+          "tempo": 1,
+          "gain": 1
+        },
+        "female": {
+          "pitchSemitones": 8.5,
+          "tempo": 1,
+          "gain": 1
+        }
+      },
+      "rakakoan": {
+        "female": {
+          "pitchSemitones": 8.5,
+          "tempo": 1,
+          "gain": 1
+        },
+        "male": {
+          "pitchSemitones": 4,
+          "tempo": 1,
+          "gain": 1
+        }
+      },
+      "mashtzarr": {
+        "male": {
+          "pitchSemitones": -6,
+          "tempo": 1,
+          "gain": 1
+        },
+        "female": {
+          "pitchSemitones": 5,
+          "tempo": 1,
+          "gain": 1
+        }
+      },
+      "mammakhbuur": {
+        "female": {
+          "pitchSemitones": 4,
+          "tempo": 1,
+          "gain": 1
+        },
+        "male": {
+          "pitchSemitones": -9,
+          "tempo": 1,
+          "gain": 1
+        }
+      },
+      "engh-sho": {
+        "female": {
+          "pitchSemitones": 4.5,
+          "tempo": 1,
+          "gain": 1
+        },
+        "male": {
+          "pitchSemitones": 0.5,
+          "tempo": 1,
+          "gain": 1
+        }
+      }
+    }
+  },
+  "chargePlayback": {
+    "earlyReleaseNormalSpeedMul": 2,
+    "fullChargeDurationByAbility": {
+      "chargedBreaker": 4
+    }
+  }
+}

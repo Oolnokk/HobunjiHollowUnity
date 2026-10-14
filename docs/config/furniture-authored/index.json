@@ -1,6 +1,7 @@
 {
   "schema": "hobunji-furniture-authored-index/v1",
   "furniture": [
+    { "key": "artifactPedestal", "file": "config/furniture-authored/artifactPedestal.json" },
     {
       "key": "agingBarrel",
       "file": "config/furniture-authored/agingBarrel.json"

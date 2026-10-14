@@ -50,6 +50,9 @@
   const _dialogueNodeEnterHandlers = new Map(); // npcId → handler(node, context), used by feature-owned world presentation when an authored node becomes current.
   const _npcBaseDispositions = {}; // npcId → baseDisposition from NPC database config
   let _favorRescaleApplied = true; // see loadNpcRelationships/_applyLegacyFavorRescale
+  const _npcSpeechBySpeaker = new Map(); // One live vowel/utterance per NPC; new speech replaces the same speaker instead of layering over itself.
+  const NPC_SPEECH_FADE_IN_S = 0.004; // Fast ramps remove onset clicks without making dialogue feel delayed.
+  const NPC_SPEECH_FADE_OUT_S = 0.008; // Abrupt-but-clickless handoff when the next syllable arrives.
 
   function npcDialogueTextConfig() {
     return window.SCRATCHBONES_CONFIG?.game?.npcDialogue?.text || {};
@@ -723,6 +726,72 @@
     return !available.length || available.includes(authored) ? authored : fallback;
   }
 
+  function _npcSpeechOwnerKey(rec = _dlgNpcRec || deps?.getDialogueWalker?.()?.rec) {
+    return window.CharacterVoiceOwner?.keyFor?.(rec) || String(rec?.id || rec?.name || 'npc-dialogue');
+  }
+
+  function _npcSpeechAudioContext() {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return null;
+    const ctx = window._npcDialogueAudioCtx || (window._npcDialogueAudioCtx = new AudioCtx());
+    if (ctx.state === 'suspended') ctx.resume?.().catch?.(() => {});
+    return ctx;
+  }
+
+  function _finishNpcSpeechHandle(handle) {
+    if (!handle || handle.finished) return;
+    handle.finished = true;
+    clearTimeout(handle.startTimer);
+    clearTimeout(handle.stopTimer);
+    if (handle.nativeFadeTimer) clearInterval(handle.nativeFadeTimer);
+    handle.nativeFadeTimer = null;
+    try { handle.audio?.pause?.(); } catch (_) {}
+    try { if (handle.audio) handle.audio.currentTime = 0; } catch (_) {}
+    try { handle.osc?.stop?.(); } catch (_) {}
+    try { handle.source?.disconnect?.(); } catch (_) {}
+    try { handle.osc?.disconnect?.(); } catch (_) {}
+    try { handle.gain?.disconnect?.(); } catch (_) {}
+    try { handle.wet?.send?.disconnect?.(); } catch (_) {}
+    window.CharacterVoiceOwner?.release?.(handle.voiceClaim);
+    if (_npcSpeechBySpeaker.get(handle.ownerKey) === handle) _npcSpeechBySpeaker.delete(handle.ownerKey);
+  }
+
+  function _fadeNpcSpeechHandle(handle, fadeOutS = NPC_SPEECH_FADE_OUT_S) {
+    if (!handle || handle.finished || handle.stopping) return;
+    handle.stopping = true;
+    clearTimeout(handle.startTimer);
+    const fade = Math.max(0, Number(fadeOutS) || 0);
+    const ctx = handle.ctx;
+    const param = handle.gain?.gain;
+    if (!ctx || !param) {
+      if (handle.audio && fade > 0) {
+        const startVolume = Math.max(0, Number(handle.audio.volume) || Number(handle.volume) || 0);
+        const startedAt = Date.now();
+        handle.nativeFadeTimer = setInterval(() => {
+          const t = Math.min(1, (Date.now() - startedAt) / Math.max(1, fade * 1000));
+          try { handle.audio.volume = startVolume * (1 - t); } catch (_) {}
+          if (t < 1) return;
+          clearInterval(handle.nativeFadeTimer);
+          handle.nativeFadeTimer = null;
+          _finishNpcSpeechHandle(handle);
+        }, 2);
+        return;
+      }
+      _finishNpcSpeechHandle(handle);
+      return;
+    }
+    const now = ctx.currentTime;
+    try {
+      if (typeof param.cancelAndHoldAtTime === 'function') param.cancelAndHoldAtTime(now);
+      else {
+        param.cancelScheduledValues?.(now);
+        param.setValueAtTime(Math.max(0.0001, Number(param.value) || Number(handle.volume) || 0.0001), now);
+      }
+      param.linearRampToValueAtTime(0.0001, now + fade);
+    } catch (_) {}
+    handle.stopTimer = setTimeout(() => _finishNpcSpeechHandle(handle), Math.ceil(fade * 1000) + 2);
+  }
+
   function _playNpcDialogueLetterSfx(char, rec = _dlgNpcRec || deps.getDialogueWalker()?.rec) {
     const cfg = npcDialogueLetterSfxConfig(rec);
     if (cfg.enabled === false || !char || /\s/.test(char)) return;
@@ -730,31 +799,79 @@
     if (audioCfg.enabled === false) return;
     const volume = Math.max(0, Math.min(1, Number(cfg.volume) || 0.18)) * Math.max(0, Number(audioCfg.sfxVolume ?? 1));
     if (volume <= 0) return;
+
+    const ownerKey = _npcSpeechOwnerKey(rec);
+    const voicePriority = window.CharacterVoiceOwner?.priorities?.dialogue ?? 1.5;
+    const voiceClaim = window.CharacterVoiceOwner?.request?.(rec, { kind: 'dialogue', priority: voicePriority, fadeOutS: NPC_SPEECH_FADE_OUT_S }) || null;
+    if (window.CharacterVoiceOwner && !voiceClaim) return; // A pain/grunt already owns this NPC's mouth; dialogue waits for a later syllable.
+    const previous = _npcSpeechBySpeaker.get(ownerKey) || null;
+    if (!window.CharacterVoiceOwner && previous) _fadeNpcSpeechHandle(previous);
+    const ctx = _npcSpeechAudioContext();
+    const replaceDelayMs = Math.ceil(Math.max(previous ? NPC_SPEECH_FADE_OUT_S : 0, Number(voiceClaim?.handoffDelayS) || 0) * 1000);
+
     if (cfg.url) {
       const snd = new Audio(cfg.url);
-      snd.volume = volume;
       snd.playbackRate = Math.max(0.25, Number(cfg.playbackRate) || 1);
-      snd.play().catch(() => {});
+      if (!ctx?.createMediaElementSource) {
+        snd.volume = volume;
+        const handle = { ownerKey, voiceClaim, audio: snd, ctx: null, gain: null, volume, startTimer: 0, stopTimer: 0, nativeFadeTimer: null, finished: false, stopping: false };
+        _npcSpeechBySpeaker.set(ownerKey, handle);
+        window.CharacterVoiceOwner?.bindStop?.(voiceClaim, fadeS => _fadeNpcSpeechHandle(handle, fadeS));
+        snd.addEventListener?.('ended', () => _finishNpcSpeechHandle(handle), { once: true });
+        handle.startTimer = setTimeout(() => snd.play().catch?.(() => _finishNpcSpeechHandle(handle)), replaceDelayMs);
+        return;
+      }
+      snd.volume = 1;
+      snd.dataset.environmentalReverb = 'off'; // This voice is routed into the room bus below; disable the HTMLMediaElement wet-copy wrapper to avoid double reverb.
+      const source = ctx.createMediaElementSource(snd);
+      const gain = ctx.createGain();
+      gain.gain.value = 0.0001;
+      source.connect(gain).connect(ctx.destination);
+      const wet = window.EnvironmentalReverb?.connectWetNode?.(ctx, gain, { volume: 1 }) || null;
+      const handle = { ownerKey, voiceClaim, audio: snd, source, ctx, gain, wet, volume, startTimer: 0, stopTimer: 0, nativeFadeTimer: null, finished: false, stopping: false };
+      _npcSpeechBySpeaker.set(ownerKey, handle);
+      window.CharacterVoiceOwner?.bindStop?.(voiceClaim, fadeS => _fadeNpcSpeechHandle(handle, fadeS));
+      snd.addEventListener?.('ended', () => _finishNpcSpeechHandle(handle), { once: true });
+      handle.startTimer = setTimeout(() => {
+        if (handle.finished || handle.stopping) return;
+        const at = ctx.currentTime;
+        try {
+          gain.gain.cancelScheduledValues?.(at);
+          gain.gain.setValueAtTime(0.0001, at);
+          gain.gain.linearRampToValueAtTime(volume, at + NPC_SPEECH_FADE_IN_S);
+        } catch (_) { gain.gain.value = volume; }
+        Promise.resolve(snd.play()).catch(() => _finishNpcSpeechHandle(handle));
+      }, replaceDelayMs);
       return;
     }
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    if (!AudioCtx) return;
-    const ctx = window._npcDialogueAudioCtx || (window._npcDialogueAudioCtx = new AudioCtx());
-    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+
+    if (!ctx) return;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     const variance = Math.max(0, Number(cfg.frequencyVarianceHz) || 35);
     const base = Math.max(20, Number(cfg.frequencyHz) || 520);
+    const durationS = Math.max(0.005, (Math.max(5, Number(cfg.durationMs) || 24) / 1000));
+    const startAt = ctx.currentTime + replaceDelayMs / 1000;
     osc.type = cfg.waveform || 'square';
     osc.frequency.value = base + (Math.random() * 2 - 1) * variance;
-    gain.gain.setValueAtTime(volume, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + (Math.max(5, Number(cfg.durationMs) || 24) / 1000));
+    gain.gain.setValueAtTime(0.0001, startAt);
+    gain.gain.linearRampToValueAtTime(volume, startAt + Math.min(NPC_SPEECH_FADE_IN_S, durationS * 0.35));
+    gain.gain.exponentialRampToValueAtTime(0.001, startAt + durationS);
     osc.connect(gain).connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + (Math.max(5, Number(cfg.durationMs) || 24) / 1000));
+    const wet = window.EnvironmentalReverb?.connectWetNode?.(ctx, gain, { volume: 1 }) || null;
+    const handle = { ownerKey, voiceClaim, osc, ctx, gain, wet, volume, startTimer: 0, stopTimer: 0, nativeFadeTimer: null, finished: false, stopping: false };
+    _npcSpeechBySpeaker.set(ownerKey, handle);
+    window.CharacterVoiceOwner?.bindStop?.(voiceClaim, fadeS => _fadeNpcSpeechHandle(handle, fadeS));
+    osc.onended = () => _finishNpcSpeechHandle(handle);
+    osc.start(startAt);
+    osc.stop(startAt + durationS);
   }
 
   function stopNpcDialogueTypewriter(showFullText = false) {
+    if (typeof _npcSpeechBySpeaker !== 'undefined' && typeof _npcSpeechOwnerKey === 'function') {
+      const currentSpeech = _npcSpeechBySpeaker.get(_npcSpeechOwnerKey());
+      if (currentSpeech) _fadeNpcSpeechHandle(currentSpeech);
+    }
     _npcDialogueSequenceId++;
     for (const timer of _npcDialogueTypeTimers) clearTimeout(timer);
     _npcDialogueTypeTimers = [];

@@ -89,6 +89,19 @@
       localStorage.setItem(META_KEY, JSON.stringify(meta));
       return true;
     },
+    loadArtifactCollection(worldId) { // Shared by every member of the world and preserved in folder/recovery saves.
+      try { return readWorld(worldId).world?.artifactCollection || null; } catch { return null; }
+    },
+    saveArtifactCollection(worldId, value) {
+      try {
+        const { meta, world } = readWorld(worldId); // Save success must be observable before a donation consumes an item.
+        if (!world) return false;
+        world.artifactCollection = value;
+        world.artifactCollectionValue = value.donated.length;
+        localStorage.setItem(META_KEY, JSON.stringify(meta));
+        return true;
+      } catch { return false; }
+    },
     loadStorage,
     saveStorage: (worldId, store) => writeField(worldId, 'storage', store),
   });

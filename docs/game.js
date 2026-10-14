@@ -2478,6 +2478,7 @@
         hangingBanner: { itemKey:'hangingBannerFurniture',icon:'🎏',name:'Hanging Banner',price:25,fw:2,fd:1,color:0x8b6540,area:'any',desc:'Patterned cloth suspended from a wooden beam; its free edge moves with the wind.' },
         rug:           { itemKey: 'rugFurniture',           icon: '🧶', name: 'Woven Rug',            modelFile: 'rug_woven_small.glb',          price: 22, fw: 2, fd: 2, color: 0x8a5a3a, area: 'interior', walkable: true, desc: 'A small decorative woven rug.' },
         standingLamp:  { itemKey: 'standingLampFurniture',  icon: '💡', name: 'Bronze Standing Lamp', modelFile: 'standing_lamp_bronze.glb',     price: 28, fw: 1, fd: 1, color: 0xb87333, area: 'interior', desc: 'A tall bronze oil lamp.', light: { color: 0xffc266, intensity: 0.9, distance: 6, height: 1.3 } },
+        artifactPedestal: { itemKey: 'artifactPedestalFurniture', icon: '🏛️', name: 'Artifact Pedestal', price: 0, fw: 1, fd: 1, color: 0x7b7466, area: 'any', fixture: true, desc: 'Garanki’s display pedestal for donated artifacts.' },
         statue:        { itemKey: 'statueFurniture',        icon: '🗿', name: 'Weathered Statue',     modelFile: 'statue_weathered.glb',         price: 30, fw: 1, fd: 1, color: 0x54585e, area: 'any',      desc: 'A weathered stone statue, worn by time.' },
         stonePedestal: { itemKey: 'colorPoolsAltarFurniture', icon: '🎨', name: 'Color Pools Altar', price: 0, fw: 1, fd: 1, color: 0x7b7466, area: 'interior', desc: 'A strange stone altar used to paint trained animals in Banubu’s hidden Color Pools.', fixture: true },
         stool:         { itemKey: 'stoolFurniture',         icon: '🪑', name: 'Round Stool',          modelFile: 'stool_round.glb',              price: 10, fw: 1, fd: 1, color: 0x7a5c3a, area: 'any',      desc: 'A simple round stool.', sit: true },
@@ -2547,7 +2548,7 @@
         'chest', 'crateStack', 'copperBarrel', 'desk', 'dresser', 'hearth', 'loom',
         'nightstand', 'rug', 'hangingBanner', 'standingLamp', 'statue', 'tableLong', 'tableRound',
         'tableSmall', 'wardrobe', 'washTub', 'counter', 'alchemyTable', 'bulletinBoard',
-        'feedGrinder', 'trough', 'campfire', 'mineLadder', 'stonePedestal',
+        'feedGrinder', 'trough', 'campfire', 'mineLadder', 'stonePedestal', 'artifactPedestal',
         // Town business signs, placed as ordinary map_hobunji_town decor
         // (see DECORATIVE_FURNITURE_DEFS above). Without these, buildFurnitureVisual
         // falls back to ProceduralFurniture, which has no recipe for either
@@ -8869,6 +8870,12 @@
             // rather than sitting at a fixed spot the tent may no longer
             // occupy.
             const tentInstance = localeInstances.find(inst => inst.localeId === 'locale_researchers_tent');
+            // Migrate cached generation: old locale metadata carriers exported the tent footprint as rocks.
+            const cachedTentStructure = tentInstance?.objects?.find(object => object.id === 'obj_structure'); // Exported object bounds already include generation scale.
+            if (cachedTentStructure) for (let row = cachedTentStructure.y; row < cachedTentStructure.y + cachedTentStructure.h; row++) for (let col = cachedTentStructure.x; col < cachedTentStructure.x + cachedTentStructure.w; col++) {
+              const tile = merged.tiles.get(`${col},${row}`); // Preserve genuine boulders/cliffs; only the obsolete structure overlay is ground.
+              if (tile?.type === 'rock' && tile.rockKind === 'structure') { tile.type = 'grass'; tile.rockKind = null; }
+            }
             // The actual tent mesh (docs/config/pieces/researchers-tent.json),
             // fed through the same zoneData.buildings pipeline _spawnZoneBuildings
             // already uses for authored zone buildings -- without this, stampLocale's
@@ -8916,7 +8923,10 @@
             // stamped position instead of a coordinate that stops matching once the
             // tent moves.
             const tentDecorObjs = tentInstance ? tentInstance.objects.filter(o => o.kind === 'decor' || o.kind === 'prop') : [];
-            const tentDecor = tentDecorObjs.map(o => ({ col: o.x, row: o.y, key: o.key, elevTier: merged.tiles.get(`${o.x},${o.y}`)?.elevTier || 0 }));
+            const tentDecor = tentDecorObjs.map(o => ({ id: o.id, col: o.x, row: o.y,
+              key: o.key === 'statue' ? 'artifactPedestal' : o.key, // Upgrade the three displays in cached camp locales too.
+              artifactDisplaySlot: /^obj_statue_[123]$/.test(o.id) ? Number(o.id.slice(-1)) - 1 : undefined,
+              elevTier: merged.tiles.get(`${o.x},${o.y}`)?.elevTier || 0 }));
             if (tentInstance) {
               const findObj = id => tentInstance.objects.find(o => o.id === id);
               const desk = findObj('obj_desk');
@@ -8931,7 +8941,7 @@
               // Planner's WAITING_FOR_WORLD/replan handling now covers that
               // gap gracefully instead of the NPC needing to freeze or defer.
               if (desk) stations.push({ id: 'station_researchers_tent_desk', label: "Garanki's Desk", area: zoneId, c: desk.x, r: desk.y, pose: 'stand', roles: ['garanki-research'] });
-              statues.forEach((s, i) => { if (s) stations.push({ id: `station_researchers_tent_statue_${i + 1}`, label: `Specimen Statue ${i + 1}`, area: zoneId, c: s.x, r: s.y, pose: 'stand', roles: ['garanki-research'] }); });
+              statues.forEach((s, i) => { if (s) stations.push({ id: `station_researchers_tent_statue_${i + 1}`, label: `Artifact Pedestal ${i + 1}`, area: zoneId, c: s.x, r: s.y, pose: 'stand', roles: ['garanki-research'] }); });
               // station_researchers_tent_sleep is NOT registered here — it lives
               // inside config/maps/map_i_researchers_tent.json's own npcStations
               // (auto-registered by loadBuildingScene once that interior loads).
@@ -9509,6 +9519,7 @@
       }
 
       function performContextAction() {
+        if (window.Fishing?.state?.active) { window.Fishing.close(); return; } // Dodge dismisses every fishing phase through the shared camera/pose cleanup.
         if (window.DevRandomRuinSimplePuzzles?.releaseActiveRope?.()) return; // Rope traversal outranks climb/door context while attached.
         if (player.climbing || player.dodging) return;
         if (_pendingSpotTransition) { startSceneTransition(() => performTravel(_pendingSpotTransition)); return; }
@@ -13535,11 +13546,13 @@
             ); // Explicit surface guarantees the entire logical footprint has visible textured ground at the exact Y used by player/NPC grounding.
             if (cavernFloorMesh) bScene.add(cavernFloorMesh);
           } else {
-            const floorMat = InteriorSceneBuilder.buildFloorMaterial(THREE, mapData.wallStyle, 'assets/');
+            const farmNaturalColors = mapId.startsWith('map_i_barn_') ? window.FarmWorldSettings.current() : null; // Generated barn rooms, including incubators, use the selected farm finishes.
+            const floorMat = InteriorSceneBuilder.buildFloorMaterial(THREE, mapData.wallStyle, 'assets/', null, farmNaturalColors);
             // Floor tiles only for defined floor set
             for (const [c, r] of (mapData.floor || [])) {
               const fl = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), floorMat);
               fl.position.set(c + 0.5, -0.05, r + 0.5);
+              if (farmNaturalColors) fl.userData.farmMaterialRole = 'wood';
               bScene.add(fl);
             }
             // Irregular brick walls with gaps at all exit tiles, or for a
@@ -13557,7 +13570,7 @@
             const windowOpenings = InteriorSceneBuilder.windowWallOpenings?.(mapData.furniture) || [];
             const wallPanels = InteriorSceneBuilder.buildWallPanels(floorSet, exitTileSet, authoredWallHeight);
             if (wallPanels.length) {
-              const wallGroup = InteriorSceneBuilder.buildWallGroup(THREE, houseWallBuilder, wallPanels, mapData.wallStyle, { usePlaceholder: false, mineTextureUrl: 'assets/textures/carved_smooth.png', wallOpenings: windowOpenings });
+              const wallGroup = InteriorSceneBuilder.buildWallGroup(THREE, houseWallBuilder, wallPanels, mapData.wallStyle, { usePlaceholder: false, mineTextureUrl: 'assets/textures/carved_smooth.png', farmNaturalColors, wallOpenings: windowOpenings });
               _markOutline(wallGroup);
               bScene.add(wallGroup);
             }
@@ -19690,6 +19703,7 @@
       // (see loadBuildingScene's hobunji_building_interior.v1 branch).
       function rebuildInteriorGeometry() {
         _interiorGeometryBuilt = true;
+        window.FarmWorldSettings.tintMaterial(interiorFloorMaterial, 'wood'); // Existing shared floor material follows the current world even after a world switch.
         const { floorSet, exitSet, hearths } = window.HousePieces.computeInteriorLayout();
         _interiorExitTiles = exitSet;
 
@@ -19728,6 +19742,7 @@
           const fl = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), interiorFloorMaterial);
           fl.position.set(c + 0.5, -0.05, r + 0.5);
           fl.receiveShadow = true;
+          fl.userData.farmMaterialRole = 'wood';
           interiorFloorGroup.add(fl);
         });
         interiorScene.add(interiorFloorGroup);
@@ -19741,6 +19756,7 @@
           preScale: [1, 1, 0.6],
           brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 },
           wallOpenings: houseWindowOpenings,
+          farmNaturalColors: window.FarmWorldSettings.current(),
         });
         _markOutline(interiorWallGroup);
         interiorScene.add(interiorWallGroup);
@@ -19755,7 +19771,7 @@
 
       // Floor material — boards.png if present, warm brown placeholder
       // otherwise; shared by every rebuildInteriorGeometry() floor tile.
-      const interiorFloorMaterial = InteriorSceneBuilder.buildFloorMaterial(THREE, '', 'assets/');
+      const interiorFloorMaterial = InteriorSceneBuilder.buildFloorMaterial(THREE, '', 'assets/', null, window.FarmWorldSettings.current());
 
       // ── Outline rendering tuning (config/outline-rendering.json) ──────
       // Every numeric/color knob across the three outline sources below
@@ -25569,7 +25585,8 @@
           // Compare first: this runs every frame (see checkTransitionSpots), and an
           // unconditional textContent write queues childList mutations that wake
           // every action-arch MutationObserver (arch-button-labels, action-arch-icons...).
-          const dodgeIcon = climbBtn ? climbBtn.icon : '💨', dodgeLabel = climbBtn ? climbBtn.label : 'Dodge';
+          const fishingCancel = !!window.Fishing?.state?.active; // Fishing owns Dodge regardless of nearby climb context.
+          const dodgeIcon = fishingCancel ? '🏳️' : climbBtn ? climbBtn.icon : '💨', dodgeLabel = fishingCancel ? 'Exit fishing' : climbBtn ? climbBtn.label : 'Dodge';
           if (icon && icon.textContent !== dodgeIcon) icon.textContent = dodgeIcon;
           if (label && label.textContent !== dodgeLabel) label.textContent = dodgeLabel;
         }
@@ -26120,8 +26137,8 @@
       joystickZone.addEventListener('pointercancel', window.VirtualJoystick.handleJoystickPointerUp);
 
       // Dodge button: a plain tap, dodging in the current facing direction.
-      // Always visible on touch (see #dodgeBtn in style.css); hidden only
-      // during fishing, same as the other arc controls.
+      // Always visible on touch (see #dodgeBtn in style.css);
+      // while fishing it dismisses the cast or catch view.
       dodgeBtn?.addEventListener('pointerdown', ev => {
         ev.preventDefault();
         performContextAction();
@@ -26458,6 +26475,10 @@
           && computeActionButtons().some(button => button.action === 'potion_select' && button.allowed);
       }
       function runInputAction(actionId, phase = 'press') {
+        if (actionId === 'dodge' && window.Fishing?.state?.active) {
+          if (phase === 'press') performContextAction(); // Fishing cancel outranks placement, selectors and weapon handlers.
+          return;
+        }
         if (window.DevMapFurniture?.handleGameplayAction?.(actionId, phase)) {
           if (phase === 'press') refreshActionBar();
           return;
@@ -26914,6 +26935,7 @@
         if (window.Fishing?.state?.active) {
           if (key === 'escape') { event.preventDefault(); window.Fishing?.close(); return; }
           const fishingBoundAction = getActionForButton('desktop', event.code);
+          if (fishingBoundAction === 'dodge') { event.preventDefault(); window.Fishing.close(); return; }
           if (fishingBoundAction === 'interact' || fishingBoundAction === 'action1' || key === ' ' || key === 'enter') {
             event.preventDefault();
             window.Fishing?.primaryAction();
@@ -29648,10 +29670,22 @@
         calPrevMonth,
         calNextMonth,
         calWeeks,
+        isReviewBlocked: () => menuOpen || dialogueOpen || paused || farmEditMode || isPlayerInCombat() ||
+          sceneTransDir !== 0 || _layoutSwapInProgress || !!window.CombatTutorial?.active?.() ||
+          !!window.MusicMinigame?.state?.active || !!window.FurniturePlacer?.isOpen?.() ||
+          !!window._desktopSelectionArc?.entryMenuOpen?.() || !!window._desktopSelectionArc?.toolMenuOpen?.(), // Review uses existing gameplay/menu ownership signals only at midnight.
       });
 
       // Harlyao relic weapons + Garanki Gabu's unbinding/enchanting panel
       // now live in js/harlyao-relics.js.
+      window.ArtifactCollection?.init({
+        ITEM_DEFS, inventoryItems, inventory, tothalWorldId: _tothalWorldId,
+        saveMemberWorldData, buildInventoryGrid, showToast,
+        showUnlockDialogue: () => {
+          const walker = npcWalkers.find(w => w.rec?.id === 'garanki_gabu'); // Reuse the real NPC dialogue camera, portrait and input handling.
+          if (walker) { closeMenu(); openNpcDialogue(walker); }
+        },
+      });
       window.HarlyaoRelics?.init({
         TOOL_ITEM_DEFS,
         ITEM_DEFS,
@@ -30165,7 +30199,15 @@
       resizeCanvas();
       refreshActionBar();
       window.HudUpdate.refreshItemScroll();
-      window.FarmWorldSettings.init({ getPlayerData: () => _playerData, isFarmOwner, showToast, debugLog });
+      window.FarmWorldSettings.init({
+        getPlayerData: () => _playerData, isFarmOwner, showToast, debugLog,
+        refreshInteriorColors: () => {
+          window.FarmWorldSettings.tintInterior(interiorScene); // Refresh the live house without disturbing its furniture or occupants.
+          for (const [mapId, info] of _buildingScenes) {
+            if (mapId.startsWith('map_i_barn_')) window.FarmWorldSettings.tintInterior(info?.scene); // Cached/live connected barns receive the same update immediately.
+          }
+        },
+      });
       window.FarmProduction.init({ getPlayerData: () => _playerData, calendar, inventory, ITEM_DEFS, cropData, COLS, ROWS, TileType, MAX_WATER,
         scene, worldObjects, hasFarmPermission, isFarmOwner, showToast, debugLog, getGrid: () => grid,
         loadStorage: _loadWorldStorage, saveStorage: _saveWorldStorage, consumeInput: consumeProcessingInput,

@@ -7,13 +7,18 @@
   // contours, splice-tempo or behavior-specific modulation remain.
   const MIN_TEMPO = 1 / 9; // Allows Banubu's Grehlr snore to run three times longer than its prior one-third tempo.
   const MAX_TEMPO = 2;
+  const GENERIC_MAX_TEMPO = 4; // Shared pitch-preserving renderer may serve faster non-animal one-shots without changing animal authoring limits.
   const MAX_SHIFT_SEMITONES = 12;
+  const GENERIC_MAX_SHIFT_SEMITONES = 24; // Combat profiles can exceed animal authoring pitch limits without changing animal-call behavior.
   const WSOLA_FRAME_S = 0.056;
   const WSOLA_OVERLAP_RATIO = 0.62;
   const WSOLA_SEARCH_S = 0.018;
   const WSOLA_CORRELATION_STEP = 2;
   const OUTPUT_EDGE_FADE_S = 0.006;
   const OUTPUT_TAIL_PAD_S = 0.018;
+  const SILENCE_TRIM_ABSOLUTE_FLOOR = 0.0005; // Keeps codec noise/dead air out of vocal timing without shaving quiet breath consonants.
+  const SILENCE_TRIM_RELATIVE_FLOOR = 0.002; // -54 dB relative to each decoded clip peak; intentionally conservative for breath tails.
+  const SILENCE_TRIM_PAD_MS = 4; // Retains a tiny acoustic margin around the first/last real waveform sample.
   const MAX_RENDER_CACHE = 32;
   const ANIMAL_EXTRA_WET = 0.026;
   const UTTERANCE_BASE = 'assets/audio/sfx/utterances/';
@@ -63,6 +68,7 @@
 
   const decodedByUrl = new Map();
   const renderedByKey = new Map();
+  const silenceTrimCache = new WeakMap(); // Decoded AudioBuffer -> WeakMap(AudioContext -> Map(settings -> trimmed result)); repeated breathing never rescans the same clip.
   const previewHandles = new Set();
   let sharedContext = null;
   let adapterInstalled = false;
@@ -89,8 +95,10 @@
     return Number.isFinite(number) ? number : fallback;
   }
   function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
-  function clampTempo(value) { return clamp(finite(value, 1), MIN_TEMPO, MAX_TEMPO); }
-  function clampPitch(value) { return clamp(finite(value, 0), -MAX_SHIFT_SEMITONES, MAX_SHIFT_SEMITONES); }
+  function clampTempoFor(value, maxTempo = MAX_TEMPO) { return clamp(finite(value, 1), MIN_TEMPO, maxTempo); }
+  function clampTempo(value) { return clampTempoFor(value, MAX_TEMPO); }
+  function clampPitchFor(value, maxShiftSemitones = MAX_SHIFT_SEMITONES) { return clamp(finite(value, 0), -maxShiftSemitones, maxShiftSemitones); }
+  function clampPitch(value) { return clampPitchFor(value, MAX_SHIFT_SEMITONES); }
   function absoluteUrl(url) {
     try { return new URL(url, document.baseURI).href; }
     catch (_) { return String(url || ''); }
@@ -283,11 +291,77 @@
     return outputs;
   }
 
-  function applyOutputEdgeEnvelope(channels, sampleRate) {
+  function trimDecodedSilence(buffer, context, opts = {}) {
+    if (!buffer || !context?.createBuffer || !(buffer.numberOfChannels > 0) || !(buffer.length > 0)) {
+      return { buffer, sourceDurationS: Number(buffer?.duration) || 0, trimmedDurationS: Number(buffer?.duration) || 0, trimStartS: 0, trimEndS: 0, trimmed: false };
+    }
+    const absoluteFloor = Math.max(0, finite(opts.absoluteFloor, SILENCE_TRIM_ABSOLUTE_FLOOR));
+    const relativeFloor = Math.max(0, finite(opts.relativeFloor, SILENCE_TRIM_RELATIVE_FLOOR));
+    const padMs = clamp(finite(opts.padMs, SILENCE_TRIM_PAD_MS), 0, 40);
+    const signature = `${absoluteFloor.toFixed(7)}|${relativeFloor.toFixed(7)}|${padMs.toFixed(3)}`;
+    let byContext = silenceTrimCache.get(buffer);
+    if (!byContext) { byContext = new WeakMap(); silenceTrimCache.set(buffer, byContext); }
+    let bySettings = byContext.get(context);
+    if (!bySettings) { bySettings = new Map(); byContext.set(context, bySettings); }
+    if (bySettings.has(signature)) return bySettings.get(signature);
+
+    const sourceLength = buffer.length;
+    const sampleRate = Math.max(1, Number(buffer.sampleRate) || 44100);
+    const channels = Array.from({ length: buffer.numberOfChannels }, (_, channelIndex) => buffer.getChannelData(channelIndex));
+    let peak = 0;
+    for (const channel of channels) for (let i = 0; i < sourceLength; i++) peak = Math.max(peak, Math.abs(channel[i] || 0));
+    const threshold = Math.max(absoluteFloor, peak * relativeFloor);
+    let first = sourceLength;
+    let last = -1;
+    for (let i = 0; i < sourceLength; i++) {
+      let audible = false;
+      for (const channel of channels) {
+        if (Math.abs(channel[i] || 0) >= threshold) { audible = true; break; }
+      }
+      if (!audible) continue;
+      if (first === sourceLength) first = i;
+      last = i;
+    }
+    if (last < first) {
+      const silent = { buffer, sourceDurationS: buffer.duration, trimmedDurationS: buffer.duration, trimStartS: 0, trimEndS: 0, threshold, trimmed: false };
+      bySettings.set(signature, silent);
+      return silent;
+    }
+    const padSamples = Math.max(0, Math.round(sampleRate * padMs / 1000));
+    first = Math.max(0, first - padSamples);
+    last = Math.min(sourceLength - 1, last + padSamples);
+    if (first === 0 && last === sourceLength - 1) {
+      const unchanged = { buffer, sourceDurationS: buffer.duration, trimmedDurationS: buffer.duration, trimStartS: 0, trimEndS: 0, threshold, trimmed: false };
+      bySettings.set(signature, unchanged);
+      return unchanged;
+    }
+    const length = Math.max(1, last - first + 1);
+    const trimmedBuffer = context.createBuffer(buffer.numberOfChannels, length, sampleRate);
+    for (let channelIndex = 0; channelIndex < channels.length; channelIndex++) {
+      trimmedBuffer.copyToChannel(channels[channelIndex].subarray(first, last + 1), channelIndex);
+    }
+    const result = {
+      buffer: trimmedBuffer,
+      sourceDurationS: buffer.duration,
+      trimmedDurationS: trimmedBuffer.duration,
+      trimStartS: first / sampleRate,
+      trimEndS: Math.max(0, sourceLength - 1 - last) / sampleRate,
+      threshold,
+      trimmed: true,
+    };
+    bySettings.set(signature, result);
+    return result;
+  }
+
+  function applyOutputEdgeEnvelope(channels, sampleRate, opts = {}) {
     const length = channels[0]?.length || 0;
     if (!length) return channels;
-    const fadeSamples = Math.min(Math.max(1, Math.round(sampleRate * OUTPUT_EDGE_FADE_S)), Math.max(1, Math.floor(length / 4)));
-    const padSamples = Math.max(1, Math.round(sampleRate * OUTPUT_TAIL_PAD_S));
+    const edgeFadeS = clamp(finite(opts.edgeFadeS, OUTPUT_EDGE_FADE_S), 0, 0.05);
+    const tailPadS = clamp(finite(opts.tailPadS, OUTPUT_TAIL_PAD_S), 0, 0.1);
+    const fadeSamples = edgeFadeS > 0
+      ? Math.min(Math.max(1, Math.round(sampleRate * edgeFadeS)), Math.max(1, Math.floor(length / 4)))
+      : 0;
+    const padSamples = Math.max(0, Math.round(sampleRate * tailPadS));
     return channels.map(channel => {
       const output = new Float32Array(length + padSamples);
       output.set(channel);
@@ -300,26 +374,27 @@
     });
   }
 
-  function processConstantAxes(buffer, tempo, pitchSemitones) {
+  function processConstantAxes(buffer, tempo, pitchSemitones, maxTempo = MAX_TEMPO, maxPitchSemitones = MAX_SHIFT_SEMITONES, renderOpts = {}) {
     const channels = Array.from({ length: buffer.numberOfChannels }, (_, index) => buffer.getChannelData(index).slice());
-    const pitchRatio = Math.pow(2, clampPitch(pitchSemitones) / 12); // Sets how much source playback will transpose after WSOLA preserves the requested final duration.
-    const stretched = wsolaStretch(channels, pitchRatio / clampTempo(tempo), buffer.sampleRate); // Full-source stretch guarantees the final source frame survives both compression and expansion.
-    return applyOutputEdgeEnvelope(stretched, buffer.sampleRate);
+    const pitchRatio = Math.pow(2, clampPitchFor(pitchSemitones, maxPitchSemitones) / 12); // Explicit pitch remains independent from tempo; only this final resample transposes it.
+    const safeTempo = clampTempoFor(tempo, maxTempo);
+    const stretched = wsolaStretch(channels, pitchRatio / safeTempo, buffer.sampleRate); // WSOLA changes wall-clock speed while compensating for the later pitch resample.
+    return applyOutputEdgeEnvelope(stretched, buffer.sampleRate, renderOpts);
   }
 
-  function renderCacheKey(url, tempo, pitchSemitones) {
-    return `${absoluteUrl(url)}|${clampTempo(tempo).toFixed(4)}|${clampPitch(pitchSemitones).toFixed(3)}`;
+  function renderCacheKey(url, tempo, pitchSemitones, maxTempo = MAX_TEMPO, maxPitchSemitones = MAX_SHIFT_SEMITONES) {
+    return `${absoluteUrl(url)}|${clampTempoFor(tempo, maxTempo).toFixed(4)}|${clampPitchFor(pitchSemitones, maxPitchSemitones).toFixed(3)}`;
   }
   function pruneRenderCache() {
     while (renderedByKey.size > MAX_RENDER_CACHE) renderedByKey.delete(renderedByKey.keys().next().value);
   }
-  function renderBufferFor(url, decoded, context, tempo, pitchSemitones) {
-    const key = renderCacheKey(url, tempo, pitchSemitones);
+  function renderBufferFor(url, decoded, context, tempo, pitchSemitones, maxTempo = MAX_TEMPO, maxPitchSemitones = MAX_SHIFT_SEMITONES, renderOpts = {}) {
+    const key = renderCacheKey(url, tempo, pitchSemitones, maxTempo, maxPitchSemitones);
     if (renderedByKey.has(key)) return renderedByKey.get(key);
     const pending = Promise.resolve().then(() => {
       const clock = typeof performance !== 'undefined' && performance?.now ? performance : Date;
       const started = clock.now();
-      const channels = processConstantAxes(decoded, tempo, pitchSemitones);
+      const channels = processConstantAxes(decoded, tempo, pitchSemitones, maxTempo, maxPitchSemitones, renderOpts);
       const length = Math.max(1, channels[0]?.length || 1);
       const rendered = context.createBuffer(channels.length, length, decoded.sampleRate);
       for (let channelIndex = 0; channelIndex < channels.length; channelIndex++) rendered.copyToChannel(channels[channelIndex], channelIndex);
@@ -334,6 +409,38 @@
     return pending;
   }
 
+  function renderDecodedIndependentBuffer(decoded, context, opts = {}) {
+    if (!decoded || !context?.createBuffer) return Promise.reject(new Error('Pitch-preserving render requires a decoded AudioBuffer and AudioContext'));
+    const tempo = clampTempoFor(opts.tempo ?? 1, GENERIC_MAX_TEMPO);
+    const pitchSemitones = clampPitchFor(opts.pitchSemitones ?? 0, GENERIC_MAX_SHIFT_SEMITONES);
+    const pitchRatio = Math.pow(2, pitchSemitones / 12);
+    return Promise.resolve().then(() => {
+      const trimOpts = opts.trimSilence && typeof opts.trimSilence === 'object' ? opts.trimSilence : {};
+      const trim = opts.trimSilence ? trimDecodedSilence(decoded, context, trimOpts) : {
+        buffer: decoded, sourceDurationS: decoded.duration, trimmedDurationS: decoded.duration,
+        trimStartS: 0, trimEndS: 0, trimmed: false,
+      };
+      const working = trim.buffer || decoded;
+      const channels = processConstantAxes(working, tempo, pitchSemitones, GENERIC_MAX_TEMPO, GENERIC_MAX_SHIFT_SEMITONES, opts);
+      const length = Math.max(1, channels[0]?.length || 1);
+      const rendered = context.createBuffer(channels.length, length, working.sampleRate);
+      for (let channelIndex = 0; channelIndex < channels.length; channelIndex++) rendered.copyToChannel(channels[channelIndex], channelIndex);
+      return {
+        buffer: rendered,
+        playbackRate: pitchRatio,
+        durationS: rendered.duration / Math.max(0.0001, pitchRatio),
+        sourceDurationS: working.duration,
+        untrimmedSourceDurationS: decoded.duration,
+        trimStartS: trim.trimStartS || 0,
+        trimEndS: trim.trimEndS || 0,
+        silenceTrimmed: !!trim.trimmed,
+        tempo,
+        pitchSemitones,
+        independentPitch: true,
+      };
+    });
+  }
+
   function scheduleProcessedBuffer(context, buffer, opts, onFinished) {
     const source = context.createBufferSource();
     const master = context.createGain();
@@ -343,9 +450,10 @@
     // pinned to one side).
     const panner = typeof context.createStereoPanner === 'function' ? context.createStereoPanner() : null;
     const startAt = context.currentTime + 0.012;
-    const pitchRatio = Math.pow(2, clampPitch(opts.pitchSemitones) / 12); // Used by native BufferSource resampling so audible transposition avoids the custom cubic resampler.
+    const pitchRatio = Math.pow(2, clampPitchFor(opts.pitchSemitones, opts.pitchMaxSemitones ?? MAX_SHIFT_SEMITONES) / 12); // Used by native BufferSource resampling so audible transposition avoids the custom cubic resampler.
     const effectiveDurationS = buffer.duration / pitchRatio; // Used for completion timing after playbackRate changes the stretched buffer's wall-clock duration.
     let stopped = false;
+    let stopping = false; // A priority handoff may ramp this voice out for a few milliseconds before final cleanup.
     let finishTimer = null;
     let startTimer = null;
     let wet = null;
@@ -365,12 +473,13 @@
     // echoey," not just quieter.
     wet = window.EnvironmentalReverb?.connectWetNode?.(context, master, {
       volume: 1,
-      extraWet: ANIMAL_EXTRA_WET + Math.max(0, finite(opts.extraWetBoost, 0)),
+      extraWet: Math.max(0, finite(opts.extraWetBase, ANIMAL_EXTRA_WET)) + Math.max(0, finite(opts.extraWetBoost, 0)),
       area: opts.area || null,
     }) || null;
     function cleanup() {
       if (stopped) return;
       stopped = true;
+      stopping = false;
       clearTimeout(finishTimer);
       clearTimeout(startTimer);
       try { source.disconnect(); } catch (_) {}
@@ -379,10 +488,31 @@
       try { wet?.send?.disconnect?.(); } catch (_) {}
       onFinished?.();
     }
-    function stop() {
-      if (stopped) return;
-      try { source.stop(); } catch (_) {}
-      cleanup();
+    function stop(fadeOutS = 0) {
+      if (stopped || stopping) return;
+      const fade = clamp(finite(fadeOutS, 0), 0, 0.08);
+      if (!(fade > 0) || !master?.gain) {
+        try { source.stop(); } catch (_) {}
+        cleanup();
+        return;
+      }
+      stopping = true;
+      const at = context.currentTime;
+      try {
+        if (typeof master.gain.cancelAndHoldAtTime === 'function') master.gain.cancelAndHoldAtTime(at);
+        else {
+          master.gain.cancelScheduledValues?.(at);
+          master.gain.setValueAtTime(Math.max(0.0001, Number(master.gain.value) || 0.0001), at);
+        }
+        master.gain.linearRampToValueAtTime(0.0001, at + fade);
+        source.stop(at + fade + 0.001);
+      } catch (_) {
+        try { source.stop(); } catch (_) {}
+        cleanup();
+        return;
+      }
+      clearTimeout(finishTimer);
+      finishTimer = setTimeout(cleanup, Math.max(1, Math.ceil((fade + 0.004) * 1000)));
     }
     source.onended = cleanup;
     try { source.start(startAt); }
@@ -413,8 +543,8 @@
     const audio = fallbackAudio || (typeof Audio === 'function' ? new Audio(url) : null);
     if (!audio) return null;
     if (audio.src !== url && audio.currentSrc !== url) audio.src = url;
-    const tempo = clampTempo(opts.tempo);
-    const pitch = clampPitch(opts.pitchSemitones);
+    const tempo = clampTempoFor(opts.tempo, opts.tempoMax ?? MAX_TEMPO);
+    const pitch = clampPitchFor(opts.pitchSemitones, opts.pitchMaxSemitones ?? MAX_SHIFT_SEMITONES);
     const pitchRatio = Math.pow(2, pitch / 12);
     audio.volume = clamp(finite(opts.volume, 0.7), 0, 1);
     if (Math.abs(pitch) < 0.05) {
@@ -428,6 +558,7 @@
     }
     let finished = false;
     let started = false;
+    let fadeTimer = null; // Native fallback uses a tiny volume ramp when a higher-priority voice preempts it.
     const notifyStarted = () => {
       if (started) return;
       started = true;
@@ -438,6 +569,8 @@
     const cleanup = () => {
       if (finished) return;
       finished = true;
+      if (fadeTimer) clearInterval(fadeTimer);
+      fadeTimer = null;
       opts.onFinished?.();
     };
     audio.addEventListener?.('playing', notifyStarted, { once: true });
@@ -451,18 +584,34 @@
     return {
       audio,
       independentPitch: Math.abs(pitch) < 0.05,
-      stop() {
-        try { audio.pause(); audio.currentTime = 0; } catch (_) {}
-        cleanup();
+      stop(fadeOutS = 0) {
+        const fade = clamp(finite(fadeOutS, 0), 0, 0.08);
+        if (!(fade > 0) || finished) {
+          try { audio.pause(); audio.currentTime = 0; } catch (_) {}
+          cleanup();
+          return;
+        }
+        const startedAt = Date.now();
+        const startVolume = Math.max(0, Number(audio.volume) || 0);
+        if (fadeTimer) clearInterval(fadeTimer);
+        fadeTimer = setInterval(() => {
+          const t = Math.min(1, (Date.now() - startedAt) / Math.max(1, fade * 1000));
+          try { audio.volume = startVolume * (1 - t); } catch (_) {}
+          if (t < 1) return;
+          clearInterval(fadeTimer);
+          fadeTimer = null;
+          try { audio.pause(); audio.currentTime = 0; } catch (_) {}
+          cleanup();
+        }, 2);
       },
     };
   }
 
-  function play(url, opts = {}) {
+  function playWithTempoLimit(url, opts = {}, maxTempo = MAX_TEMPO, maxPitchSemitones = MAX_SHIFT_SEMITONES) {
     if (!url || window.AudioSystem?.gameAudioConfig?.()?.enabled === false) return null;
     const resolved = absoluteUrl(url);
-    const tempo = clampTempo(opts.tempo ?? 1);
-    const pitchSemitones = clampPitch(opts.pitchSemitones ?? 0);
+    const tempo = clampTempoFor(opts.tempo ?? 1, maxTempo);
+    const pitchSemitones = clampPitchFor(opts.pitchSemitones ?? 0, maxPitchSemitones);
     const context = ensureContext();
     lastUrl = resolved;
     lastTempo = tempo;
@@ -472,29 +621,50 @@
     let active = null;
     const handle = {
       independentPitch: true,
-      stop() {
+      stop(fadeOutS = 0) {
         if (stopped) return;
         stopped = true;
-        active?.stop?.();
+        active?.stop?.(fadeOutS);
         activeHandles.delete(handle);
       },
     };
     activeHandles.add(handle);
     const completed = () => { activeHandles.delete(handle); opts.onFinished?.(); }; // Shared cleanup for decoded buffers and native fallback.
-    if (!context || context.state !== 'running') { active = playNativeFallback(resolved, { ...opts, tempo, pitchSemitones, onFinished: completed }, opts.fallbackAudio || null); return handle; }
+    if (!context || context.state !== 'running') {
+      active = playNativeFallback(resolved, { ...opts, tempo, tempoMax: maxTempo, pitchSemitones, pitchMaxSemitones: maxPitchSemitones, onFinished: completed }, opts.fallbackAudio || null);
+      return handle;
+    }
     lastBackend = 'fixed render pending';
     decodeUrl(resolved, context)
-      .then(decoded => renderBufferFor(resolved, decoded, context, tempo, pitchSemitones))
+      .then(decoded => {
+        const trimOpts = opts.trimSilence && typeof opts.trimSilence === 'object' ? opts.trimSilence : {};
+        const trim = opts.trimSilence ? trimDecodedSilence(decoded, context, trimOpts) : { buffer: decoded, trimStartS: 0, trimEndS: 0, trimmed: false };
+        const renderUrl = `${resolved}#trim=${trim.trimmed ? `${Number(trim.trimStartS).toFixed(5)}-${Number(trim.trimEndS).toFixed(5)}` : 'raw'};pad=${Number(opts.tailPadS ?? OUTPUT_TAIL_PAD_S).toFixed(4)};fade=${Number(opts.edgeFadeS ?? OUTPUT_EDGE_FADE_S).toFixed(4)}`;
+        return renderBufferFor(renderUrl, trim.buffer || decoded, context, tempo, pitchSemitones, maxTempo, maxPitchSemitones, opts);
+      })
       .then(rendered => {
         if (stopped) return;
-        active = scheduleProcessedBuffer(context, rendered, { ...opts, tempo, pitchSemitones }, completed);
+        active = scheduleProcessedBuffer(context, rendered, { ...opts, tempo, pitchSemitones, pitchMaxSemitones: maxPitchSemitones }, completed);
       })
       .catch(error => {
         if (stopped) return;
         lastPlaybackError = error;
-        active = playNativeFallback(resolved, { ...opts, tempo, pitchSemitones, onFinished: completed }, opts.fallbackAudio || null);
+        active = playNativeFallback(resolved, { ...opts, tempo, tempoMax: maxTempo, pitchSemitones, pitchMaxSemitones: maxPitchSemitones, onFinished: completed }, opts.fallbackAudio || null);
       });
     return handle;
+  }
+
+  function play(url, opts = {}) {
+    return playWithTempoLimit(url, opts, MAX_TEMPO, MAX_SHIFT_SEMITONES);
+  }
+
+  function playIndependent(url, opts = {}) {
+    return playWithTempoLimit(url, {
+      ...opts,
+      trimSilence: opts.trimSilence !== false,
+      tailPadS: opts.tailPadS == null ? 0 : opts.tailPadS,
+      extraWetBase: opts.extraWetBase == null ? 0 : opts.extraWetBase,
+    }, GENERIC_MAX_TEMPO, GENERIC_MAX_SHIFT_SEMITONES);
   }
 
   function normalizedAllowed(c, opts) {
@@ -668,6 +838,9 @@
 
   window.AnimalVoiceIndependentPlayback = {
     play,
+    playIndependent,
+    renderDecodedIndependentBuffer,
+    trimDecodedSilence,
     preview,
     stopAllPreviews,
     stopAll() { for (const handle of [...activeHandles]) handle.stop(); },

@@ -1,0 +1,235 @@
+{
+  "schema": "hobunji_furniture_authored_runtime.v1",
+  "key": "artifactPedestal",
+  "id": "artifactPedestal",
+  "name": "Artifact Pedestal",
+  "sourceSchema": "hobunji_furniture_surface_author.v58",
+  "notes": "Garanki camp display. Item placements use the furniture editor Tall preset.",
+  "footprint": {
+    "w": 1,
+    "d": 1
+  },
+  "tileBase": {
+    "visible": true,
+    "tileSize": 1,
+    "footprintW": 1,
+    "footprintD": 1,
+    "y": 0,
+    "gridOpacity": 0.55
+  },
+  "parts": [
+    {
+      "id": "base",
+      "kind": "box",
+      "name": "Base",
+      "transform": {
+        "x": 0,
+        "y": 0.06,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.7150000000000001,
+        "sy": 0.12,
+        "sz": 0.65
+      },
+      "color": "#5d5850",
+      "segments": 1,
+      "taperAxis": "y",
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "surfaceOpacity": 1,
+      "substanceColor": "#5d5850",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1,
+      "materialLighting": "unlit",
+      "materialFillMode": "never",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6
+    },
+    {
+      "id": "shaft",
+      "kind": "box",
+      "name": "Shaft",
+      "transform": {
+        "x": 0,
+        "y": 0.36,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.481,
+        "sy": 0.48,
+        "sz": 0.42900000000000005
+      },
+      "color": "#7a746b",
+      "segments": 1,
+      "taperAxis": "y",
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "surfaceOpacity": 1,
+      "substanceColor": "#7a746b",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1,
+      "materialLighting": "unlit",
+      "materialFillMode": "never",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6
+    },
+    {
+      "id": "cap",
+      "kind": "box",
+      "name": "Cap",
+      "transform": {
+        "x": 0,
+        "y": 0.66,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.7150000000000001,
+        "sy": 0.12,
+        "sz": 0.65
+      },
+      "color": "#8a847a",
+      "segments": 1,
+      "taperAxis": "y",
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "surfaceOpacity": 1,
+      "substanceColor": "#8a847a",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1,
+      "materialLighting": "unlit",
+      "materialFillMode": "never",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6
+    }
+  ],
+  "recognizedSurfaces": [
+    {
+      "id": "artifact_cap_top",
+      "partId": "cap",
+      "recognizedType": "top",
+      "faceIndices": [
+        4,
+        5
+      ],
+      "area": 1,
+      "localCentroid": [
+        0,
+        0.06,
+        0
+      ],
+      "localNormal": [
+        0,
+        1,
+        0
+      ],
+      "basisU": [
+        1,
+        0,
+        0
+      ],
+      "basisV": [
+        0,
+        0,
+        1
+      ],
+      "bounds": {
+        "minU": -0.5,
+        "maxU": 0.5,
+        "minV": -0.5,
+        "maxV": 0.5
+      },
+      "label": "Artifact display",
+      "role": "decorTop"
+    }
+  ],
+  "decals": [],
+  "decalAuthoring": {
+    "version": 4
+  },
+  "itemPlacements": [
+    {
+      "id": "artifact_display",
+      "surfaceId": "artifact_cap_top",
+      "itemKey": "",
+      "itemName": "Artifact",
+      "position": {
+        "u": 0,
+        "v": 0,
+        "normal": 0.01
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "scale": 0.42,
+      "placementPreset": "tall",
+      "cameraRelativeDeadzone": true,
+      "gridSnapped": false
+    }
+  ]
+}

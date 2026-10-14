@@ -87,6 +87,7 @@ context.__hobunjiPlayerProfile = { abilityProgression: { plain: { chargedBreaker
 load('docs/js/combat/combat-progression.js');
 delete context.__hobunjiPlayerProfile;
 load('docs/js/trinket-system.js');
+load('docs/js/artifact-collection.js');
 load('docs/js/harlyao-relics.js');
 const { EnchantmentSystem: ES, CombatAttackEvents: CAE, TrinketSystem: TS, CompanionOffense: CO, HarlyaoRelics: HR, PerkSystem } = context;
 const same = (actual, expected, message) => assert.equal(JSON.stringify(actual), JSON.stringify(expected), message); // VM-realm arrays/objects fail strict cross-realm deepEqual.
@@ -496,6 +497,11 @@ HR.init({
   getGearInventory: () => gear, saveGearInventory: () => {}, saveMemberWorldData: () => {},
   ensureToolTexture: key => texturesRequested.push(key), showToast: () => {},
 });
+let collectionSave = null; // Real collection progression supplies service gates for the relic/enchantment behavior tests below.
+context.WorldMetaStore = { loadArtifactCollection: () => collectionSave, saveArtifactCollection: (_id, value) => { collectionSave = value; return true; } };
+context.ArtifactCollection.init({ ITEM_DEFS, inventoryItems: [], inventory, tothalWorldId: () => 'test-world' });
+assert.equal(HR.unbind('missing').reason, 'collection', 'unbinding starts locked');
+for (const key of Object.keys(context.ArtifactCollection.ARTIFACTS).slice(0, 6)) { inventory[key] = 1; assert.equal(context.ArtifactCollection.donate(key).ok, true); }
 gear.tools = { sword: true };
 const relic = { shape: 'longsword', uid: 'abc123', enchantments: { base: ['burning', 'livingGust'], flourishes: { tap1: 'sicced', hold2: 'fury' } } };
 const boundKey = HR.grantBoundRelic(relic);

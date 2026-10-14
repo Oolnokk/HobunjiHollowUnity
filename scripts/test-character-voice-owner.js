@@ -1,0 +1,34 @@
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+const assert = require('assert');
+
+const source = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'character-voice-owner.js'), 'utf8');
+const player = { id: 'player-runtime' };
+const context = { console, window: null };
+context.window = context;
+context.Combat = { deps: { player } };
+vm.createContext(context);
+vm.runInContext(source, context, { filename: 'character-voice-owner.js' });
+const owner = context.CharacterVoiceOwner;
+assert(owner && owner.version >= 1, 'shared CharacterVoiceOwner must install');
+assert.equal(owner.keyFor(player), 'actor:player');
+assert.equal(owner.keyFor({ id: 'npc-a' }), owner.keyFor({ rec: { id: 'npc-a' } }), 'dialogue records and combat entities with the same NPC id must share one slot');
+assert.equal(owner.keyFor({ id: 'runtime-42', rec: { id: 'npc-a' } }), 'actor:npc-a', 'ordinary walkers prefer canonical rec.id over a separate runtime object id');
+
+const fades = [];
+const breath = owner.request(player, { kind: 'breath', priority: owner.priorities.breath });
+owner.bindStop(breath, fade => fades.push(['breath', fade]));
+const pain = owner.request(player, { kind: 'pain', priority: owner.priorities.pain });
+owner.bindStop(pain, fade => fades.push(['pain', fade]));
+assert.deepEqual(fades[0], ['breath', owner.defaultFadeOutS], 'pain must preempt breathing with the anti-pop fade');
+const active = owner.request(player, { kind: 'active', priority: owner.priorities.active });
+owner.bindStop(active, fade => fades.push(['active', fade]));
+assert.deepEqual(fades[1], ['pain', owner.defaultFadeOutS], 'active grunt must preempt pain with the anti-pop fade');
+assert.equal(owner.request(player, { kind: 'pain', priority: owner.priorities.pain }), null, 'pain cannot talk over an active grunt');
+assert.equal(owner.request(player, { kind: 'breath', priority: owner.priorities.breath }), null, 'breathing cannot talk over an active grunt');
+const laterActive = owner.request(player, { kind: 'active', priority: owner.priorities.active });
+assert.deepEqual(fades[2], ['active', owner.defaultFadeOutS], 'same-priority active vocals replace one another cleanly');
+owner.release(laterActive);
+assert.equal(owner.current(player), null, 'released voice must free the character slot');
+console.log('character voice owner: ok');
