@@ -13,7 +13,10 @@ jobs:
         with:
           ref: benjam/afflict-flask-dual-colors
           fetch-depth: 0
-      - name: Attempt rebase and report conflicts
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Rebase and resolve known cache-token conflicts
         shell: bash
         run: |
           set -euo pipefail
@@ -24,13 +27,57 @@ jobs:
           GIT_EDITOR=true git rebase origin/main
           status=$?
           set -e
-          if [ "$status" -ne 0 ]; then
-            echo '=== CONFLICT FILES ==='
-            git diff --name-only --diff-filter=U
-            echo '=== CONFLICT HUNKS ==='
-            git diff --cc --no-ext-diff
-            git rebase --abort
-            exit 1
-          fi
+          while [ "$status" -ne 0 ]; do
+            mapfile -t conflicts < <(git diff --name-only --diff-filter=U)
+            echo "Stopped at: $(git show -s --format='%h %s' REBASE_HEAD 2>/dev/null || true)"
+            printf 'Conflict: %s\n' "${conflicts[@]}"
+            allowed=1
+            for file in "${conflicts[@]}"; do
+              case "$file" in
+                docs/index.html|docs/tools/character-studio/index.html|docs/tools/cutscene-director/index.html|docs/tools/foliage-generator/index.html)
+                  ;;
+                *) allowed=0 ;;
+              esac
+            done
+            if [ "$allowed" -eq 1 ] && [ "$(git show -s --format='%s' REBASE_HEAD 2>/dev/null || true)" = "Integrate dual-color Afflict throwing flasks" ]; then
+              # These hunks only disagree on stale vs current cache tokens. Keep current main's loader lines.
+              for file in "${conflicts[@]}"; do
+                git checkout --ours -- "$file"
+                git add "$file"
+              done
+            else
+              echo '=== UNRESOLVED CONFLICT HUNKS ==='
+              git diff --cc --no-ext-diff
+              git rebase --abort
+              exit 1
+            fi
+            set +e
+            GIT_EDITOR=true git rebase --continue
+            status=$?
+            set -e
+          done
           echo "REBASED_HEAD=$(git rev-parse HEAD)"
+      - name: Validate rebased tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check docs/js/alchemy-flasks.js
+          node --check docs/js/alchemy-system.js
+          node --check docs/js/bandit-camps.js
+          node --check docs/js/combat/combat-bandit.js
+          node --check docs/js/combat/combat-enemy-dodge.js
+          node --check docs/js/hand-tool-grips.js
+          node --check docs/js/held-action-animations.js
+          node --check docs/js/sprite-recolor.js
+          node scripts/run-tests.js bandit-flasker harlyao-liches trait-alchemy-refactor alchemy-flask-colors enemy-weapon-stances weapon-trust-bandit-loadouts attack-animation-editor-history-grips
+          node scripts/check-cache-busts.js --fix origin/main
+          node scripts/check-cache-busts.js origin/main
+          node scripts/run-tests.js
+      - name: Remove helper and publish rebased branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm -f .github/workflows/temporary-rebase-pr999.yml
+          git add -A
+          git commit -m "Finish rebase onto current main"
           git push --force-with-lease=benjam/afflict-flask-dual-colors:${GITHUB_SHA} origin HEAD:benjam/afflict-flask-dual-colors
