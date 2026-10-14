@@ -25,12 +25,26 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch origin main
 
-          # The previous dry run proved this three-way merge is clean. Do not
-          # choose either side wholesale: let Git retain both independent edits.
-          git merge --no-commit --no-ff origin/main
+          # Preserve all non-conflicting current-main work. Inside a genuinely
+          # conflicting hunk, keep PR #1002's ceiling-side edit; the assertions
+          # below prove the important newer-main runtime code survives too.
+          git merge --no-commit --no-ff -X ours origin/main
 
-          # The temporary resolver must not remain in the PR diff.
+          # PR #1002 does not intentionally own this tool. Its conflict comes
+          # only from branch ancestry, so current main is authoritative here.
+          git checkout origin/main -- docs/tools/cutscene-director/index.html
+
+          # The resolver is one-shot scaffolding and must not remain in the PR.
           git rm .github/workflows/resolve-pr-1002-conflicts.yml
+
+          if git grep -nF '<<<<<<<' -- . ':!docs/assets'; then
+            echo 'Conflict marker remains after merge' >&2
+            exit 1
+          fi
+          if git grep -nF '>>>>>>>' -- . ':!docs/assets'; then
+            echo 'Conflict marker remains after merge' >&2
+            exit 1
+          fi
 
           # Guard newer main runtime work and PR #1002's ceiling integration.
           grep -q 'runAnimalAvatarBuildCompat' docs/game.js
@@ -40,6 +54,9 @@ jobs:
           grep -q 'function gableAction' docs/tools/building-interior-author/index.html
           grep -q 'function writeCeiling' docs/tools/building-interior-author/index.html
           grep -q 'windowSilhouette' docs/js/building-interior-wall-ornament-editor.js
+
+          # This unrelated file must be byte-for-byte current main after resolve.
+          git diff --quiet origin/main -- docs/tools/cutscene-director/index.html
 
           node - <<'NODE'
           const fs = require('fs');
