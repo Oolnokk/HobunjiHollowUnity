@@ -1,0 +1,163 @@
+'use strict';
+const fs = require('fs');
+
+function patchFile(path, patches) {
+  let source = fs.readFileSync(path, 'utf8');
+  for (const [before, after, label] of patches) {
+    if (!source.includes(before)) throw new Error(`${path}: missing patch anchor: ${label}`);
+    source = source.replace(before, after);
+  }
+  fs.writeFileSync(path, source);
+}
+
+patchFile('docs/js/equipment-panel.js', [
+  [
+    "\n  function makeClothingGearEntry(item) {",
+    `
+  function normalizedClothingQualityStars(value) {
+    if (value == null) return null;
+    const stars = Number(value); // Used by Pack presentation and Gear valuation metadata without coercing null into a fake 1★ rating.
+    return Number.isFinite(stars) ? Math.max(1, Math.min(5, Math.round(stars))) : null;
+  }
+
+  function clothingValuationQualityStars(item) {
+    return normalizedClothingQualityStars(item?.valuationQualityStars ?? item?.qualityStars); // Pack uses visible qualityStars; Gear persists only this valuation-specific copy for gifts.
+  }
+
+  function migrateGearClothingQuality(item) {
+    if (!item || typeof item !== 'object') return false;
+    const stars = clothingValuationQualityStars(item); // Used to migrate the first implementation's visible Gear quality into internal valuation metadata.
+    let changed = false; // Used to save only when a legacy/feature-branch Gear record actually changes.
+    if (stars != null && item.valuationQualityStars !== stars) {
+      item.valuationQualityStars = stars;
+      changed = true;
+    }
+    if (Object.prototype.hasOwnProperty.call(item, 'qualityStars')) {
+      delete item.qualityStars;
+      changed = true;
+    }
+    return changed;
+  }
+
+  function packClothingQualityStars(item) {
+    return normalizedClothingQualityStars(item?.qualityStars); // Only Pack clothing exposes star quality as an inventory-item property.
+  }
+
+  function packClothingStarText(item) {
+    const stars = packClothingQualityStars(item); // Used by Pack rows and the Pack detail panel, never Gear presentation.
+    if (stars == null) return '';
+    return window.SkillSystem?.starRatingText?.(stars) || (String(stars) + '★');
+  }
+
+  function packClothingSalePrice(item) {
+    const basePrice = Math.max(0, Math.floor(Number(item?.sellPrice) || 0)); // Star-neutral clothing value authored/stored on the literal Pack item.
+    const stars = packClothingQualityStars(item); // Used only while the clothing remains an inventory item.
+    if (!basePrice || stars == null) return basePrice;
+    const multiplier = Number(window.CookingSystem?.valueMultiplierForStars?.(stars)); // Reuses the game's canonical 1★–5★ economy curve instead of inventing a clothing-only scale.
+    return Math.max(1, Math.round(basePrice * (Number.isFinite(multiplier) ? multiplier : 1)));
+  }
+
+  function makeClothingGearEntry(item) {`,
+    'insert quality/value helpers'
+  ],
+  [
+    "      qualityStars: item.qualityStars != null && Number.isFinite(Number(item.qualityStars)) ? Math.max(1, Math.min(5, Math.round(Number(item.qualityStars)))) : null, // Preserves literal woven quality while keeping ordinary unstarred clothing unstarred during Pack → Gear transfer.",
+    "      valuationQualityStars: clothingValuationQualityStars(item), // Internal valuation metadata only; Gear presentation intentionally has no visible star-quality stat.",
+    'hide quality in gear record'
+  ],
+  [
+    "    for (const item of sourceItems) {\n      if (window.MetalArmorSystem?.normalizeItem?.(item)) changed = true;",
+    "    for (const item of sourceItems) {\n      if (migrateGearClothingQuality(item)) changed = true;\n      if (window.MetalArmorSystem?.normalizeItem?.(item)) changed = true;",
+    'migrate owned gear quality'
+  ],
+  [
+    "    for (const slot of CLOTHING_SLOTS) {\n      const worn = gearInventory.clothing[slot];\n      if (!worn) continue;\n      const wornEntry = makeClothingGearEntry({ ...worn, slot });",
+    "    for (const slot of CLOTHING_SLOTS) {\n      const worn = gearInventory.clothing[slot];\n      if (!worn) continue;\n      if (migrateGearClothingQuality(worn)) changed = true;\n      const wornEntry = makeClothingGearEntry({ ...worn, slot });",
+    'migrate equipped gear quality'
+  ],
+  [
+    "    const item = packClothing.find(c => c.uid === uid);\n    if (!item) return;\n    deps.clearInvSelection();",
+    "    const item = packClothing.find(c => c.uid === uid);\n    if (!item) return;\n    const starText = packClothingStarText(item); // Used to keep quality visible while this garment is still a Pack/inventory item.\n    const salePrice = packClothingSalePrice(item); // Used by both the displayed value and the actual sale transaction.\n    deps.clearInvSelection();",
+    'resolve visible pack quality and sale value'
+  ],
+  [
+    "    set('iiName',  item.label);\n    set('iiPrice', item.sellPrice ? item.sellPrice + 'g' : '');\n    set('iiTags',  '');",
+    "    set('iiName',  starText ? (starText + ' ' + item.label) : item.label);\n    set('iiPrice', salePrice ? salePrice + 'g' : '');\n    set('iiTags',  starText ? ('Quality ' + starText) : '');",
+    'show pack stars in detail'
+  ],
+  [
+    "      if (item.sellPrice > 0) {\n        mkBtn('Sell (' + item.sellPrice + 'g)', 'sell', () => {\n          deps.setPackClothing(deps.getPackClothing().filter(c => c.uid !== uid));\n          deps.inventory.gold = (deps.inventory.gold || 0) + item.sellPrice;\n          deps.showToast('Sold ' + item.label + ' for ' + item.sellPrice + 'g', true);",
+    "      if (salePrice > 0) {\n        mkBtn('Sell (' + salePrice + 'g)', 'sell', () => {\n          deps.setPackClothing(deps.getPackClothing().filter(c => c.uid !== uid));\n          deps.inventory.gold = (deps.inventory.gold || 0) + salePrice;\n          deps.showToast('Sold ' + item.label + ' for ' + salePrice + 'g', true);",
+    'apply quality-scaled pack sale value'
+  ],
+  [
+    "      name.className = 'ipc-name';\n      name.textContent = item.label;",
+    "      name.className = 'ipc-name';\n      const starText = packClothingStarText(item); // Used to expose woven quality directly in the Pack clothing list.\n      name.textContent = starText ? (starText + ' ' + item.label) : item.label;",
+    'show pack stars in row'
+  ],
+]);
+
+patchFile('docs/js/favor-heart-balance.js', [
+  [
+    "      const wovenQuality = held?.instance?.qualityStars; // Used to distinguish authored/unstarred clothing from literal woven garments that actually carry quality.",
+    "      const wovenQuality = held?.instance?.valuationQualityStars ?? held?.instance?.qualityStars; // Gear keeps quality as internal valuation metadata; Pack clothing still exposes normal visible qualityStars.",
+    'gift reads hidden gear valuation quality'
+  ],
+]);
+
+patchFile('docs/js/clothing-weaving-system.js', [
+  [
+    "\n  function learnOwnedBlueprints() {",
+    `
+  function baseClothingSellPrice(baseId, source = null) {
+    const directSell = Number(source?.sellPrice); // Used first so found/bought clothing teaches the loom its existing star-neutral resale value.
+    if (Number.isFinite(directSell) && directSell > 0) return Math.floor(directSell);
+    const catalogEntry = (window.SCRATCHBONES_CONFIG?.game?.account?.shopCatalog || []).find(entry => entry?.id === baseId); // Used as the migration/fallback authority for already-known loom blueprints.
+    const authoredSell = Number(catalogEntry?.sellPrice); // Used when a clothing catalog explicitly authors resale value.
+    if (Number.isFinite(authoredSell) && authoredSell > 0) return Math.floor(authoredSell);
+    const retail = Number(catalogEntry?.price); // Existing bought/found clothing uses 40% of retail as its star-neutral Pack resale base.
+    return Number.isFinite(retail) && retail > 0 ? Math.floor(retail * 0.4) : 0;
+  }
+
+  function learnOwnedBlueprints() {`,
+    'insert clothing base sell price helper'
+  ],
+  [
+    "    let gearChanged = false; // Tracks blueprint additions and pattern snapshot migrations in Gear.\n    let packChanged = false; // Tracks pattern snapshot migrations in Pack clothing.\n    for (const item of gearCandidates) if (materializeWeavingLibrarySnapshots(item)) gearChanged = true;",
+    "    let gearChanged = false; // Tracks blueprint additions, value migration, and pattern snapshot migrations in Gear.\n    let packChanged = false; // Tracks pattern snapshot migrations in Pack clothing.\n    for (const entry of known) {\n      const candidate = candidates.find(item => baseCosmeticId(item) === entry?.baseCosmeticId) || null; // Used to migrate old blueprint saves from an owned garment before falling back to the shop catalog.\n      const sellPrice = baseClothingSellPrice(entry?.baseCosmeticId, candidate || entry); // Used as the star-neutral sale base for future woven copies.\n      if (sellPrice > 0 && Number(entry?.sellPrice) !== sellPrice) {\n        entry.sellPrice = sellPrice;\n        gearChanged = true;\n      }\n    }\n    for (const item of gearCandidates) if (materializeWeavingLibrarySnapshots(item)) gearChanged = true;",
+    'migrate blueprint sale value'
+  ],
+  [
+    "        sprite: item.sprite || window.EquipmentPanel?.clothingSpriteForCosmetic?.(id) || null,\n      });",
+    "        sprite: item.sprite || window.EquipmentPanel?.clothingSpriteForCosmetic?.(id) || null,\n        sellPrice: baseClothingSellPrice(id, item), // Star-neutral resale base; the visible Pack item's quality multiplier is applied only at sale time.\n      });",
+    'store blueprint base sale value'
+  ],
+  [
+    "      sellPrice: 0,\n      qualityStars: materialQuality.stars, // Literal woven garment quality is the rounded weighted average of every cloth unit consumed by this craft.",
+    "      sellPrice: baseClothingSellPrice(bp.baseCosmeticId, bp), // Star-neutral resale base; Pack UI applies the shared quality multiplier when selling.\n      qualityStars: materialQuality.stars, // Visible only while this literal woven garment remains a Pack/inventory item.",
+    'give woven pack item a neutral resale base'
+  ],
+]);
+
+patchFile('scripts/test-favor-heart-balance.js', [
+  [
+    "held = { kind: 'clothing', key: 'wovenGift', instance: { uid: 'woven-gift-4star', qualityStars: 4 } };",
+    "held = { kind: 'clothing', key: 'wovenGift', instance: { uid: 'woven-gift-4star', qualityStars: 4 } }; // Pack clothing exposes its quality normally.",
+    'clarify pack gift quality fixture'
+  ],
+  [
+    "assert.equal(consumedQuality.length, consumedBeforeWovenGift, 'woven clothing quality is instance metadata and does not consume a CookingSystem quality bucket');\n\nheld = { kind: 'clothing', key: 'ordinaryClothing', instance: { uid: 'ordinary-clothing', qualityStars: null } };",
+    "assert.equal(consumedQuality.length, consumedBeforeWovenGift, 'woven clothing quality is instance metadata and does not consume a CookingSystem quality bucket');\n\nheld = { kind: 'clothing', key: 'gearWovenGift', instance: { uid: 'woven-gear-5star', valuationQualityStars: 5 } }; // Gear hides stars from its normal data/UI surface but retains valuation metadata for gifting.\ninventory.gearWovenGift = 1;\nNpcGifting.offerGift({ rec: { id: 'gear_woven_quality' }, giftScore: 10 });\nassert.equal(rawState('gear_woven_quality').favor, 10, 'hidden Gear valuation quality still drives gift value when the garment is gifted');\n\nheld = { kind: 'clothing', key: 'ordinaryClothing', instance: { uid: 'ordinary-clothing' } };",
+    'test hidden gear valuation quality'
+  ],
+]);
+
+patchFile('scripts/test-clothing-weaving-system.js', [
+  [
+    "assert.ok(craftSource.includes('qualityStars: materialQuality.stars'), 'loom-crafted garments persist their averaged material quality');\n",
+    "assert.ok(craftSource.includes('qualityStars: materialQuality.stars'), 'loom-crafted garments expose their averaged material quality while they remain Pack inventory items');\nassert.ok(craftSource.includes('sellPrice: baseClothingSellPrice(bp.baseCosmeticId, bp)'), 'loom-crafted garments retain a star-neutral resale base for Pack sale valuation');\nconst equipmentPanelSource = fs.readFileSync('docs/js/equipment-panel.js', 'utf8'); // Used to guard the Pack-visible/Gear-hidden quality boundary.\nassert.ok(equipmentPanelSource.includes('valuationQualityStars: clothingValuationQualityStars(item)'), 'Pack → Gear converts visible item quality into internal valuation metadata');\nassert.ok(equipmentPanelSource.includes(\"delete item.qualityStars\"), 'Gear migration removes visible qualityStars from clothing records');\nassert.ok(equipmentPanelSource.includes('const starText = packClothingStarText(item)'), 'Pack clothing visibly renders its star quality');\nassert.ok(equipmentPanelSource.includes('window.CookingSystem?.valueMultiplierForStars?.(stars)'), 'Pack clothing sale value reuses the canonical shared star-quality economy multiplier');\n",
+    'test pack-visible gear-hidden boundary and sale scaling'
+  ],
+]);
+
+console.log('Applied Pack-visible/Gear-hidden woven quality patch.');
