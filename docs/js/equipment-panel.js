@@ -182,7 +182,7 @@
       articleDyeIds: Array.isArray(item.articleDyeIds) ? [...item.articleDyeIds] : [],
       sprite: item.sprite || clothingSpriteForCosmetic(item.cosmeticId),
       sellPrice: item.sellPrice || 0,
-      qualityStars: Number.isFinite(Number(item.qualityStars)) ? Math.max(1, Math.min(5, Math.round(Number(item.qualityStars)))) : null, // Preserves literal woven quality when moving a garment from Pack into permanent Gear.
+      qualityStars: item.qualityStars != null && Number.isFinite(Number(item.qualityStars)) ? Math.max(1, Math.min(5, Math.round(Number(item.qualityStars)))) : null, // Preserves literal woven quality while keeping ordinary unstarred clothing unstarred during Pack → Gear transfer.
       // A loom-crafted article (see ClothingWeavingSystem.craftFromLoom) carries these — preserved here so
       // transferring it from the pack into permanent gear doesn't silently drop its weight/armor math or its
       // woven pattern(s).

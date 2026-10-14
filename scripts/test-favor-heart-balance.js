@@ -130,6 +130,12 @@ assert.equal(rawState('woven_quality').favor, 8, 'four-star woven clothing scale
 assert.equal(rewards.at(-1)?.text, '+8 Favor', 'woven clothing quality scales the player-facing Favor reward too');
 assert.equal(consumedQuality.length, consumedBeforeWovenGift, 'woven clothing quality is instance metadata and does not consume a CookingSystem quality bucket');
 
+held = { kind: 'clothing', key: 'ordinaryClothing', instance: { uid: 'ordinary-clothing', qualityStars: null } };
+inventory.ordinaryClothing = 1;
+NpcGifting.offerGift({ rec: { id: 'ordinary_clothing' }, giftScore: 10 });
+assert.equal(rawState('ordinary_clothing').favor, 10, 'ordinary unstarred clothing keeps full authored gift value instead of coercing null quality into 1★');
+assert.equal(rewards.at(-1)?.text, '+10 Favor', 'ordinary clothing gift feedback remains unchanged when no star quality exists');
+
 // NpcRapport already mutates state.favor by point deltas; v4 deliberately leaves that point-space mutation alone.
 const rapportState = DialogueContent.getNpcDlgState('rapport_npc');
 rapportState.favor = rapportState.favor + 10;

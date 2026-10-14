@@ -58,7 +58,8 @@
 
   function activeGiftStars() {
     if (activeGiftContext?.kind !== 'item' && activeGiftContext?.kind !== 'clothing') return null;
-    return Number.isFinite(Number(activeGiftContext.stars)) ? Number(activeGiftContext.stars) : null;
+    const stars = activeGiftContext.stars; // Used to keep an explicitly unstarred gift distinct from numeric star quality before coercion.
+    return stars != null && Number.isFinite(Number(stars)) ? Number(stars) : null;
   }
 
   function giftQualityMultiplier() {
@@ -178,7 +179,8 @@
     const held = giftingDeps?.getHeldGiftItem?.(); // Used to snapshot the exact held stack before NpcGifting consumes it.
     if (!held) return null;
     if (held.kind === 'clothing') {
-      const wovenStars = Number(held?.instance?.qualityStars); // Used to make literal woven garment quality participate in the same Favor multiplier as other starred gifts.
+      const wovenQuality = held?.instance?.qualityStars; // Used to distinguish authored/unstarred clothing from literal woven garments that actually carry quality.
+      const wovenStars = wovenQuality == null ? NaN : Number(wovenQuality); // Prevents null from coercing to 0 and accidentally turning ordinary clothing into a 1★ gift.
       return { kind: 'clothing', key: held?.instance?.uid || held.key || null, stars: Number.isFinite(wovenStars) ? clamp(Math.round(wovenStars), 1, 5) : null, held };
     }
     if (held.kind !== 'item') return { kind: held.kind || 'other', key: held.key || null, stars: null, held };
