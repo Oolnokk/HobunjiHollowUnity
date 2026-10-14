@@ -9519,6 +9519,7 @@
       }
 
       function performContextAction() {
+        if (window.Fishing?.state?.active) { window.Fishing.close(); return; } // Dodge dismisses every fishing phase through the shared camera/pose cleanup.
         if (window.DevRandomRuinSimplePuzzles?.releaseActiveRope?.()) return; // Rope traversal outranks climb/door context while attached.
         if (player.climbing || player.dodging) return;
         if (_pendingSpotTransition) { startSceneTransition(() => performTravel(_pendingSpotTransition)); return; }
@@ -25589,7 +25590,8 @@
           // Compare first: this runs every frame (see checkTransitionSpots), and an
           // unconditional textContent write queues childList mutations that wake
           // every action-arch MutationObserver (arch-button-labels, action-arch-icons...).
-          const dodgeIcon = climbBtn ? climbBtn.icon : '💨', dodgeLabel = climbBtn ? climbBtn.label : 'Dodge';
+          const fishingCancel = !!window.Fishing?.state?.active; // Fishing owns Dodge regardless of nearby climb context.
+          const dodgeIcon = fishingCancel ? '🏳️' : climbBtn ? climbBtn.icon : '💨', dodgeLabel = fishingCancel ? 'Exit fishing' : climbBtn ? climbBtn.label : 'Dodge';
           if (icon && icon.textContent !== dodgeIcon) icon.textContent = dodgeIcon;
           if (label && label.textContent !== dodgeLabel) label.textContent = dodgeLabel;
         }
@@ -26140,8 +26142,8 @@
       joystickZone.addEventListener('pointercancel', window.VirtualJoystick.handleJoystickPointerUp);
 
       // Dodge button: a plain tap, dodging in the current facing direction.
-      // Always visible on touch (see #dodgeBtn in style.css); hidden only
-      // during fishing, same as the other arc controls.
+      // Always visible on touch (see #dodgeBtn in style.css);
+      // while fishing it dismisses the cast or catch view.
       dodgeBtn?.addEventListener('pointerdown', ev => {
         ev.preventDefault();
         performContextAction();
@@ -26478,6 +26480,10 @@
           && computeActionButtons().some(button => button.action === 'potion_select' && button.allowed);
       }
       function runInputAction(actionId, phase = 'press') {
+        if (actionId === 'dodge' && window.Fishing?.state?.active) {
+          if (phase === 'press') performContextAction(); // Fishing cancel outranks placement, selectors and weapon handlers.
+          return;
+        }
         if (window.DevMapFurniture?.handleGameplayAction?.(actionId, phase)) {
           if (phase === 'press') refreshActionBar();
           return;
@@ -26934,6 +26940,7 @@
         if (window.Fishing?.state?.active) {
           if (key === 'escape') { event.preventDefault(); window.Fishing?.close(); return; }
           const fishingBoundAction = getActionForButton('desktop', event.code);
+          if (fishingBoundAction === 'dodge') { event.preventDefault(); window.Fishing.close(); return; }
           if (fishingBoundAction === 'interact' || fishingBoundAction === 'action1' || key === ' ' || key === 'enter') {
             event.preventDefault();
             window.Fishing?.primaryAction();
@@ -29668,6 +29675,10 @@
         calPrevMonth,
         calNextMonth,
         calWeeks,
+        isReviewBlocked: () => menuOpen || dialogueOpen || paused || farmEditMode || isPlayerInCombat() ||
+          sceneTransDir !== 0 || _layoutSwapInProgress || !!window.CombatTutorial?.active?.() ||
+          !!window.MusicMinigame?.state?.active || !!window.FurniturePlacer?.isOpen?.() ||
+          !!window._desktopSelectionArc?.entryMenuOpen?.() || !!window._desktopSelectionArc?.toolMenuOpen?.(), // Review uses existing gameplay/menu ownership signals only at midnight.
       });
 
       // Harlyao relic weapons + Garanki Gabu's unbinding/enchanting panel

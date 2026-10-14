@@ -955,12 +955,18 @@
     return activeReviewPromise;
   }
 
+  function reviewInterruptionBlocked() {
+    return !!(window.Fishing?.state?.active || window.ControllerUI?.isActive?.() || calendarDeps?.isReviewBlocked?.());
+  }
+
   function requestMidnightReview(meta = {}) {
     loadState();
     syncLedgerDay();
     const dayKey = currentDayKey(); // Civil day being closed out by this midnight boundary.
     if (state.reviewedDayKey === dayKey) return Promise.resolve(false);
     if (activeReviewPromise) return activeReviewPromise;
+    // The natural clock stays at the boundary and retries after the current activity/menu ends.
+    if (meta.source === 'natural' && reviewInterruptionBlocked()) return Promise.resolve(false);
     const caveStatuses = window.WildlifeSpawn?.advanceCaveMidnight?.(civilOrdinal() + 1) || []; // The actual midnight gate owns cave deadlines for natural time and sleep/wait, independently of raw-day rollover.
     const snapshot = buildReviewSnapshot({ ...meta, caveStatuses }); // Frozen pre-midnight totals and relationship conversion values shown to the player.
     log(`opening ${meta.source || 'midnight'} review for ${snapshot.dateLabel}`);
@@ -1013,6 +1019,8 @@
       ledgerDayKey: state?.dayKey || null,
       reviewedDayKey: state?.reviewedDayKey || null,
       blocking: !!activeReviewPromise,
+      interruptionBlocked: reviewInterruptionBlocked(),
+      latestChange: 'Midnight review waits for fishing, combat and open menus to finish.',
       naturalGateInstalled: !!calendarDeps?.calendar?.__dayProgressReviewTimeGate,
       passageGateInstalled: document.getElementById('timePassageConfirm')?.dataset?.dayProgressReviewGate === '1',
       ledger: state ? JSON.parse(JSON.stringify(state.ledger)) : null,
@@ -1059,7 +1067,7 @@
     debugSnapshot,
     showSampleReview,
     resetLedger,
-    _test: Object.freeze({ buildReviewHtml, buildReviewSnapshot, parseRewardText, rewardBucket, representedHour, crossesCivilMidnight, rapportConversion }),
+    _test: Object.freeze({ buildReviewHtml, buildReviewSnapshot, parseRewardText, rewardBucket, representedHour, crossesCivilMidnight, reviewInterruptionBlocked, rapportConversion }),
   });
   window.__dayProgressReviewDebug = Object.freeze({ snapshot: debugSnapshot, showCurrent: () => showSnapshot(buildReviewSnapshot({ source: 'debug-current' }), { markReviewed: false }), showSample: showSampleReview, reset: resetLedger });
 })();

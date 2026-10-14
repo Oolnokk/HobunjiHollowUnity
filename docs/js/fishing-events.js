@@ -640,6 +640,8 @@
     }
     const parts = grantTreasureBundle(bundle) || []; // Used as the exact list of granted treasure for UI feedback.
     gulletState.treasureGranted = true;
+    if (window.Fishing?.state) window.Fishing.state.gulletRewards = parts.length ? parts.slice() : ['Nothing this time'];
+    window.Fishing?.refreshCatchRewards?.(); // A late surface retrieval also updates an already-open catch view.
     fishingDeps?.showToast?.(`Gullet Fish treasure: ${parts.length ? parts.join(', ') : 'nothing this time'}`, true);
     window.__farmLog?.(`[fishing-events] Gullet treasure granted: ${parts.join(', ')}`, 'fish');
   }
