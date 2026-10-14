@@ -17,61 +17,22 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Merge current main and preserve both sides
+      - name: Merge current main and validate both feature sets
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch origin main
-          git merge --no-commit --no-ff -X ours origin/main
 
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-          import subprocess
-
-          # These files were touched independently after PR #1002 branched.
-          # Keep the ceiling branch's structural edits while taking current
-          # main's latest cache-bust values for modules main updated meanwhile.
-          sync = {
-              'docs/index.html': [
-                  'afk-tile-navigation.js',
-                  'animal-avatar-builder.js',
-                  'building-procedural-ornaments.js',
-                  'building-procedural-runtime.js',
-                  'wildlife-visual-lod.js',
-              ],
-              'docs/js/building-interior-wall-ornament-editor.js': [
-                  'daylight-window-runtime.js',
-              ],
-              'docs/tools/building-interior-author/index.html': [
-                  'interior-layout-runtime.js',
-              ],
-          }
-
-          for path, assets in sync.items():
-              main = subprocess.check_output(
-                  ['git', 'show', f'origin/main:{path}'], text=True
-              )
-              work_path = Path(path)
-              work = work_path.read_text()
-              for asset in assets:
-                  token = re.compile(re.escape(asset) + r'\?v=[^\"\'&<>\s]+')
-                  found = token.search(main)
-                  if not found:
-                      raise SystemExit(f'main version token not found: {path}: {asset}')
-                  replacement = found.group(0)
-                  work, count = token.subn(replacement, work)
-                  if count == 0:
-                      raise SystemExit(f'branch version token not found: {path}: {asset}')
-              work_path.write_text(work)
-          PY
+          # The previous dry run proved this three-way merge is clean. Do not
+          # choose either side wholesale: let Git retain both independent edits.
+          git merge --no-commit --no-ff origin/main
 
           # The temporary resolver must not remain in the PR diff.
           git rm .github/workflows/resolve-pr-1002-conflicts.yml
 
-          # Guard the two independent feature sets that matter in the overlap.
+          # Guard newer main runtime work and PR #1002's ceiling integration.
           grep -q 'runAnimalAvatarBuildCompat' docs/game.js
           grep -q 'InteriorCeilings.buildCeilingGeometryData' docs/game.js
           grep -q 'authoredWallHeight' docs/game.js
