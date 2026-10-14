@@ -99,8 +99,6 @@ jobs:
                 git rebase --abort
                 exit 1
               fi
-              # The old audit commit only cleaned accidental loot JSON churn. The rebased side already has
-              # that clean structure plus current-main Harlyao artifact generators and the Flasker pool.
               git checkout --ours -- docs/config/loot/loot-pools.json
               node -e "const p=require('./docs/config/loot/loot-pools.json'); if(!p.pools.bandit_flasker) process.exit(1); for(let t=1;t<=4;t++){const e=p.pools['dungeonChest_tier'+t].entries; if(!e.some(x=>x.generatorKey==='harlyaoArtifact'&&x.tier===t)) process.exit(2)}"
               git add docs/config/loot/loot-pools.json
@@ -132,7 +130,38 @@ jobs:
           node --check docs/js/sprite-recolor.js
           node scripts/run-tests.js bandit-flasker harlyao-liches trait-alchemy-refactor alchemy-flask-colors enemy-weapon-stances weapon-trust-bandit-loadouts attack-animation-editor-history-grips
           node scripts/check-cache-busts.js --fix origin/main
+
+          # held-action-animations.js is a shared bootstrap consumed directly by all three authoring/runtime entry points.
+          # Rebase conflict resolution can leave those HTML references on different historical tokens even after the
+          # module-chain cache fixer runs, so derive one fresh token from the rebased file and apply it to all three.
+          held_hash="$(git hash-object docs/js/held-action-animations.js | cut -c1-7)"
+          held_token="20261014h${held_hash}"
+          python3 - "$held_token" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+          token = sys.argv[1]
+          paths = [
+              Path('docs/index.html'),
+              Path('docs/tools/animation-author/index.html'),
+              Path('docs/tools/attack-animation-editor/index.html'),
+          ]
+          for path in paths:
+              text = path.read_text(encoding='utf-8')
+              updated, count = re.subn(
+                  r'(held-action-animations\.js\?v=)[A-Za-z0-9_-]+',
+                  rf'\g<1>{token}',
+                  text,
+              )
+              if count != 1:
+                  raise SystemExit(f'{path}: expected exactly one held-action token, found {count}')
+              path.write_text(updated, encoding='utf-8')
+          print(f'Synchronized held-action token: {token}')
+          PY
+
           node scripts/check-cache-busts.js origin/main
+          node scripts/run-tests.js dual-wield-weapon-visuals bandit-flasker harlyao-liches trait-alchemy-refactor alchemy-flask-colors enemy-weapon-stances weapon-trust-bandit-loadouts attack-animation-editor-history-grips
+          git diff --check
           node scripts/run-tests.js
       - name: Remove helper and publish rebased branch
         shell: bash
