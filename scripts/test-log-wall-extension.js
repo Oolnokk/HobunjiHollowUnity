@@ -125,5 +125,8 @@ assert.match(toolSource, /Download live recipe/);
 assert.match(toolSource, /Download baked recipe/);
 assert.match(toolSource, /applyPreview\('generated'\)/);
 assert.match(toolSource, /applyPreview\('glb'\)/);
+assert.match(toolSource, /exporter\.parse\(root,[\s\S]*?\}, \{ binary: true, onlyVisible: true \}\);/, 'Three.js r128 GLTFExporter options must be the third parse argument');
+assert.doesNotMatch(toolSource, /\},\s*reject,\s*\{\s*binary:\s*true/, 'r128 must not receive an onError callback in the options slot');
+assert.match(panelUiSource, /wall-builder-log-tool\.js\?v=20261014logwall2/, 'fixed exporter must receive a fresh Wall Builder cache token');
 
 console.log('log wall extension tests passed');
