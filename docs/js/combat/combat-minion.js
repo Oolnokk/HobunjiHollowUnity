@@ -10,6 +10,7 @@
   const DEFAULT_WEAPON_SHAPES = Object.freeze(['daggerSword', 'fishingspear', 'hatchet']); // Default Harlyao Skeleton Minion melee pool.
   const OVERWEAR_OPTIONS = Object.freeze([null, 'tankan_bodywrap', 'rugged_poncho']); // Equal-choice overwear pool; null intentionally allows unclothed skeletons.
   const BANDOLIER_CHANCE = 0.5; // Independent torso roll creates six common silhouettes with the three overwear states.
+  const HARLYAO_ARMOR_METAL_KEYS = Object.freeze(['nativeCopper', 'lowTinBronze', 'tinBronze', 'highTinBronze', 'arsenicalBronze', 'leadedBronze']); // Ordered smith alloys used to map Town Value onto skeleton armor quality.
   const SHAMBLING_FOOTING_FRACTION = 0.70; // Permanent Footing reservation applied after ResourceSystem initializes the entity; only the remaining 30% is ordinarily usable.
   const DYE_WEIGHTS = Object.freeze({ // Mostly low-saturation warm peasant/workwear hues with a smaller neutral tail.
     'dye:CLOTH:muted_red_orange': 4,
@@ -42,6 +43,12 @@
     return entries[entries.length - 1]?.[0] || null;
   }
 
+  function harlyaoArmorMetalKey() {
+    const townValue = Math.max(0, Math.floor(Number(window.TownMine?.getTownValue?.()) || 0)); // Current town progression selects the strongest skeleton armor alloy available.
+    const eligible = window.TownMine?.filterMetalKeysForTownValue?.(HARLYAO_ARMOR_METAL_KEYS, townValue); // Reuses the canonical Town Value metal ceiling used by treasure and other progression systems.
+    return Array.isArray(eligible) && eligible.length ? eligible[eligible.length - 1] : HARLYAO_ARMOR_METAL_KEYS[0];
+  }
+
   function rollRoster(speciesId, name = 'Minion') {
     const genders = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.species?.[speciesId]?.genders; // Species bridge registers the authored genders (Mao'ao Skeleton is male-only).
     const gender = Array.isArray(genders) && genders.length === 1 ? genders[0] : (rng() < 0.5 ? 'male' : 'female');
@@ -61,8 +68,9 @@
     }
     const metalArmorItems = []; // These same maximum-temper records feed the portrait and corpse loot.
     if (speciesId === 'harlyao-skeleton') {
+      const metalKey = harlyaoArmorMetalKey(); // Both articles share the town-scaled alloy so a skeleton's armor reads as one coherent set.
       for (const id of ['rounded_pauldron', 'tangedcirclet']) {
-        const item = window.MetalArmorSystem?.makeCraftedItem?.(id, 'nativeCopper'); // Shared smith article factory supplies weight and alloy metadata.
+        const item = window.MetalArmorSystem?.makeCraftedItem?.(id, metalKey); // Shared smith article factory supplies weight and alloy metadata.
         if (!item) throw new Error('MetalArmorSystem must load before skeleton equipment is generated.');
         item.temperXp = window.MetalArmorSystem.MAX_TEMPER_XP;
         item.sprite = window.MetalArmorSystem.spriteForBlueprintAppearance(id, { speciesId, gender });
@@ -117,6 +125,8 @@
     defaultWeaponShapes: DEFAULT_WEAPON_SHAPES,
     overwearOptions: OVERWEAR_OPTIONS,
     bandolierChance: BANDOLIER_CHANCE,
+    harlyaoArmorMetalKeys: HARLYAO_ARMOR_METAL_KEYS,
+    harlyaoArmorMetalKey,
     shamblingFootingFraction: SHAMBLING_FOOTING_FRACTION,
     dyeWeights: DYE_WEIGHTS,
     rollRoster,
