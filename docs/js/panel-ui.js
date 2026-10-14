@@ -21,7 +21,7 @@
   const characterStudioMammakhbuurTag = isCharacterStudio ? `<script src="${characterStudioMammakhbuur}"></script>` : ''; // Parser-time hook must run before the later scratchbones-config assignment.
   const isWallBuilder = /\/tools\/wall-builder\/(?:index\.html)?$/.test(location.pathname); // Used to isolate log-cabin authoring controls to the Wall Builder page.
   const logWallExtension = new URL('./log-wall-extension.js?v=20261014logwall1', src).href; // Shared deterministic generated/baked log-wall authority used by runtime and the Wall Builder tool.
-  const wallBuilderLogTool = new URL('./wall-builder-log-tool.js?v=20261014logwall1', src).href; // Wall Builder-only UI that exports the generated log GLB and paired live/baked recipes.
+  const wallBuilderLogTool = new URL('./wall-builder-log-tool.js?v=20261014logwall2', src).href; // Wall Builder-only UI that exports the generated log GLB and paired live/baked recipes.
   const wallBuilderLogTag = isWallBuilder ? `<script src="${logWallExtension}"></script><script src="${wallBuilderLogTool}"></script>` : ''; // Parser-time tool extension tags preserving extension-before-UI ordering.
   if (document.readyState === 'loading') {
     document.write(`${characterStudioMammakhbuurTag}${animationAuthorColorFillTag}<script src="${core}"></script><script src="${mapEditorTextureFix}"></script><script src="${terrainParity}"></script>${cutsceneRepoTag}${toolHubCombatVocalizationsTag}${wallBuilderLogTag}`);
