@@ -110,3 +110,13 @@ Combat.beginStagedAction({ windupS:0, onStrike:()=>lockedPlayerStrikes++ });
 assert.equal(lockedPlayerStrikes, 0, 'zero-duration player actions also respect locks');
 Combat.beginStagedAction({ windupS:0, data:{isBandit:true,attacker:bandit}, onStrike:()=>lockedPlayerStrikes++ });
 assert.equal(lockedPlayerStrikes, 1, 'player bandaging never suppresses hostile attacks');
+
+coreRuntime.window.BandageSystem = {cancel(reason){assert.equal(reason,'attack');actionLocked=false;}};
+Combat.beginStagedAction({windupS:0,onStrike:()=>lockedPlayerStrikes++});
+assert.equal(lockedPlayerStrikes,2,'a direct player attack interrupts bandaging and executes');
+
+const rangedInterrupt = {window:{BandageSystem:{cancel(reason){assert.equal(reason,'attack');rangedInterrupt.locked=false;}},CharacterActionLocks:{isLocked:()=>rangedInterrupt.locked}},locked:true,defFor:()=>({label:'Crossbow',fireDurationS:.3,fireAtFrac:.5}),playerAction:null,isLoaded:()=>true,poseForAction:()=>({}),deps:{player:{},refreshActionBar(){}},lastEvent:null}; // Executes the real ranged start owner with its ordinary animation suppressed.
+vm.createContext(rangedInterrupt);
+vm.runInContext(ranged.slice(ranged.indexOf('  function startPlayerAction('),ranged.indexOf('  function restoreHeldThrownWeapon(')),rangedInterrupt);
+assert.equal(rangedInterrupt.startPlayerAction('crossbow',{suppressVisual:true}),true,'ranged fire stops bandaging before checking action locks');
+assert.equal(rangedInterrupt.playerAction.kind,'fire');

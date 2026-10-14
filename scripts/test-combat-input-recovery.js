@@ -48,3 +48,18 @@ actionLocked = false; input.setAutoTargetEnabled(true, { persist:false }); input
 actionLocked = true; alignment.runAttack(); assert.equal(tapCount, tapsBeforeLock, 'delayed tap alignment rechecks the lock');
 actionLocked = false; input.setAutoTargetEnabled(false, { persist:false }); input.pressStart(1); input.pressEnd(1);
 assert.equal(tapCount, tapsBeforeLock + 1, 'bandage completion restores ordinary attack input');
+
+let interruptedBandages = 0; // An attack owns the next action after releasing only the bandage lock.
+context.window.BandageSystem = {cancel(reason){assert.equal(reason,'attack');if(actionLocked){actionLocked=false;interruptedBandages++;}}};
+actionLocked=true;
+const beforeInterruptTap = tapCount; // Same press must both stop healing and execute its attack.
+input.pressStart(1);input.pressEnd(1);
+assert.equal(interruptedBandages,1);
+assert.equal(tapCount,beforeInterruptTap+1,'attack interrupts bandaging without swallowing the tap');
+actionLocked=true;hold();
+assert.equal(interruptedBandages,2);
+assert(holdActive,'held attack starts after interrupting bandaging');
+input.cancelPress(1);
+actionLocked=true;input.fireTap(2);
+assert.equal(interruptedBandages,3);
+assert.equal(tapCount,beforeInterruptTap+2,'direct/mobile tap interrupts bandaging too');

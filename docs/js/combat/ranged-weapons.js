@@ -429,6 +429,7 @@
   }
 
   function startPlayerAction(itemKey, options = {}) {
+    window.BandageSystem?.cancel?.('attack');
     if (window.CharacterActionLocks?.isLocked?.('player', 'actions') || window.CharacterActionLocks?.isLocked?.('player', 'tools')) return false;
     const def = defFor(itemKey);
     if (!def || playerAction) return false;

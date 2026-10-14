@@ -200,6 +200,7 @@
   }
 
   function fireTap(slotIndex) {
+    window.BandageSystem?.cancel?.('attack');
     if (blockedByActionLock() || blockedByStagger()) return;
     const slotId = 'tap' + slotIndex;
     const ability = abilityForSlot(slotId);
@@ -270,6 +271,7 @@
 
   // Call on pointerdown/touch-start for the given slot (1 or 2).
   function pressStart(slotIndex) {
+    window.BandageSystem?.cancel?.('attack');
     const s = slots[slotIndex];
     if (!s || s.down || blockedByActionLock()) return;
     s.down = true;

@@ -18847,6 +18847,7 @@
       }
 
       function useActiveAction() {
+        if ((activeTool === 'weapon' && (activeAction === toolActions.weapon[0] || activeAction === toolActions.weapon[1])) || (activeTool === 'ranged' && activeAction === 'shoot')) window.BandageSystem?.cancel?.('attack');
         if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'actions')) return;
         if (sitInteraction) { if (activeAction === 'obj_stand') endSitInteraction(); return; }
         if (dialogueOpen) { window.DialogueContent?.advanceNpcDialogue(); return; }

@@ -643,6 +643,7 @@
     };
     activeStaged.add(action);
     const playerOwned = !action.data?.isBandit && (!action.data?.attacker || action.data.attacker === deps?.player); // Lock applies to immediate strikes as well as timed windups.
+    if (playerOwned) window.BandageSystem?.cancel?.('attack');
     if (playerOwned && (window.CharacterActionLocks?.isLocked?.('player', 'actions') || window.CharacterActionLocks?.isLocked?.('player', 'tools'))) { action.cancel(); return action; }
     if (action.totalS <= 0) {
       fireStagedStrike(action);

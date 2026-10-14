@@ -490,7 +490,7 @@
         active: state.active,
         paused: state.active && state.paused,
         clock: 'gameplay-delta',
-        latestChange: 'Bandaging cancels pending attacks and locks melee/ranged input until it ends.',
+        latestChange: 'Starting a melee or ranged attack cancels bandaging immediately, then the attack proceeds normally.',
         cost: 'time-and-interruption-only',
         durationMs: DURATION_MS,
         midpointMs: DURATION_MS / 2,
