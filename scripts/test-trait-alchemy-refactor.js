@@ -161,28 +161,33 @@ assert.strictEqual(player.footing, 45, 'Rush must immediately apply its Footing 
 // A small Three.js stand-in exercises consumption, cancel, deterministic
 // travel, self-splash, and ResourceSystem application without a browser.
 class Vec { set(x, y, z) { this.x = x; this.y = y; this.z = z; } setScalar(v) { this.scalar = v; } copy(v) { this.x = v.x; this.y = v.y; this.z = v.z; } }
-class Object3D { constructor() { this.position = new Vec(); this.rotation = new Vec(); this.scale = new Vec(); this.parent = null; this.children = []; this.visible = true; } add(child) { child.parent = this; this.children.push(child); } }
+class Object3D { constructor() { this.position = new Vec(); this.rotation = new Vec(); this.scale = new Vec(); this.parent = null; this.children = []; this.visible = true; this.userData = {}; } add(child) { child.parent = this; this.children.push(child); } }
 class Group extends Object3D {}
 class Mesh extends Object3D { constructor(geometry, material) { super(); this.geometry = geometry; this.material = material; } }
 class Points extends Mesh {}
 class Geometry { constructor() { this.attributes = {}; } setAttribute(key, value) { this.attributes[key] = value; } dispose() {} }
-class BufferAttribute { constructor(array, itemSize) { this.array = array; this.itemSize = itemSize; this.needsUpdate = false; } }
+class BufferAttribute { constructor(array, itemSize) { this.array = array; this.itemSize = itemSize; this.needsUpdate = false; } get count() { return this.array.length / this.itemSize; } getX(i) { return this.array[i * 3]; } getY(i) { return this.array[i * 3 + 1]; } setZ(i, z) { this.array[i * 3 + 2] = z; } }
 class Material { constructor(options) { Object.assign(this, options); } dispose() {} }
-const scene = { add(mesh) { mesh.parent = this; }, remove(mesh) { mesh.parent = null; } };
-window.THREE = { Group, Mesh, Points, BufferGeometry:Geometry, BufferAttribute, PointsMaterial:Material, RingGeometry: Geometry, SphereGeometry: Geometry, MeshBasicMaterial: Material, DoubleSide: 2, AdditiveBlending:2 };
+class RingGeometry extends Geometry { constructor(inner, outer) { super(); this.innerRadius = inner; this.setAttribute('position', new BufferAttribute(new Float32Array([0, 0, 0, outer, 0, 0, 0, outer, 0]), 3)); } }
+const scene = { children: [], add(mesh) { mesh.parent = this; this.children.push(mesh); }, remove(mesh) { mesh.parent = null; this.children = this.children.filter(child => child !== mesh); } };
+window.THREE = { Group, Mesh, Points, BufferGeometry:Geometry, BufferAttribute, PointsMaterial:Material, RingGeometry, SphereGeometry: Geometry, MeshBasicMaterial: Material, DoubleSide: 2, AdditiveBlending:2 };
 require(path.join(root, 'docs/js/alchemy-flasks.js'));
 const flaskKey = A.ensureRecipeItemDef('venomFlask', 0);
 inventory[flaskKey] = 3;
 let heldKey = flaskKey;
 const victim = { health:100,maxHealth:100,stamina:100,maxStamina:100,footing:100,maxFooting:100 };
 R.initEntity(victim);
+let terrainSlope = 0; // Enables raised-ground preview checks without changing the flat-ground gameplay fixtures.
+let disposedFlasks = 0; // Verifies projectile sprite ownership ends at impact.
 let impactCount = 0;
 let shoulderView = false; // Switches the harness between legacy cursor aim and centered shoulder-ray aim.
 const flaskSfxCues = []; // Captures semantic audio placeholders without requiring AudioSystem or media files.
 window.AlchemyFlasks.init({
   THREE: window.THREE, TILE:64, inventory, getPlayer:() => player, getCurrentArea:() => 'farm', getActiveScene:() => scene,
-  getAimAngle:() => 0, getGroundY:() => 0, getGroundYAtWorld:() => 0, getSelectedItemKey:() => heldKey,
+  getAimAngle:() => 0, getGroundY:() => 0, getGroundYAtWorld:(x) => x * terrainSlope, getSelectedItemKey:() => heldKey,
   isShoulderView:() => shoulderView,
+  makeFlaskProjectile:() => new Mesh(new Geometry(), new Material({ map: 'authored-flask-sprite' })),
+  disposeFlaskProjectile:() => { disposedFlasks++; },
   getPlayerInteractionRay:() => ({ origin:{x:0,y:5,z:-2}, direction:{x:0,y:-0.2,z:1} }),
   getHeldWorldPosition:() => ({x:player.x / 64 || 0,y:1,z:player.y / 64 || 0}),
   getSplashEntities:() => [player, victim], spawnImpactPresentation:() => { impactCount++; },
@@ -191,6 +196,17 @@ window.AlchemyFlasks.init({
 });
 player.x = 0; player.y = 0;
 assert.ok(window.AlchemyFlasks.beginAim(), 'first action must enter aim');
+const preview = scene.children.find(mesh => mesh.geometry?.innerRadius === 0); // Filled splash plane created by the actual owner.
+assert.ok(preview, 'flask reticle must fill the AoE rather than only mark its edge');
+window.PerkSystem = { rank: () => 2 };
+terrainSlope = 0.3;
+window.AlchemyFlasks.setTarget(128, 0);
+assert.equal(window.AlchemyFlasks.setTarget(NaN, 0), false, 'invalid target input must not poison aim');
+assert.equal(preview.scale.scalar, A.RECIPE_DEFS.venomFlask.splashRadius * 1.2, 'preview must include Empower Flasks radius');
+assert.ok(Math.abs(preview.geometry.attributes.position.array[5] - terrainSlope) < 0.00001, 'plane edge height must conform to target terrain');
+assert.ok(Math.abs(preview.position.y - (2 * terrainSlope + 0.035)) < 0.00001, 'preview uses landing terrain rather than player ground');
+terrainSlope = 0;
+delete window.PerkSystem;
 assert.strictEqual(inventory[flaskKey], 3, 'entering aim must consume nothing');
 assert.ok(window.AlchemyFlasks.cancelAim(), 'cancel must exit aim');
 assert.strictEqual(inventory[flaskKey], 3, 'cancel must consume zero flasks');
@@ -203,10 +219,12 @@ window.AlchemyFlasks.beginAim();
 window.AlchemyFlasks.setTarget(128, 0);
 window.AlchemyFlasks.confirmThrow();
 window.AlchemyFlasks.update(.3);
+assert.deepEqual(window.AlchemyFlasks.diagnostics().projectileVisuals, ['authored-flask'], 'flight must show the flask sprite instead of a particle core');
 assert.strictEqual(inventory[flaskKey], 2, 'release must consume exactly one flask');
 window.AlchemyFlasks.update(.5);
 assert.strictEqual(impactCount, 1, 'impact presentation must occur once without owning gameplay resolution');
 assert.ok(R.getAffliction(player, 'poisonedHealth') > 0 && R.getAffliction(victim, 'poisonedHealth') > 0, 'splash must affect valid nearby entities including the thrower through ResourceSystem');
+assert.equal(disposedFlasks, 1, 'the rendered flask must release its sprite at impact');
 assert.strictEqual(window.AlchemyFlasks.diagnostics().lastImpact.radiusTiles, A.RECIPE_DEFS.venomFlask.splashRadius, 'splash must use the recipe radius');
 assert.ok(flaskSfxCues.includes('flask_throw_release') && flaskSfxCues.includes('flask_impact'), 'release and impact must emit decoupled semantic SFX placeholders');
 const npcSource = { id:'flasker-test', x:-128, y:0, areaId:'farm' }; // Enemy source proves throwFromEntity does not depend on player inventory.
@@ -290,8 +308,8 @@ assert.match(actionArcUi, /_openPotionRoot\(\)[\s\S]*_outerR\(\)[\s\S]*function 
 assert.doesNotMatch(actionArcUi, /_openPotion(?:Root|Branch|Items)[\s\S]{0,1400}_innerR\(/, 'potion selectors must not use the smaller inner-ring radius');
 assert.match(read('docs/js/alchemy-system.js'), /alchemy:\{level:alchemyLevel\(\),xp:/, 'Alchemy diagnostics must expose both level and XP');
 assert.match(game, /setTarget\(_mouseWorld\.x \* TILE/, 'mouse must control the flask ground cursor');
-assert.match(game, /setTargetFromVector\(rx, ry/, 'controller right stick must control the flask ground cursor');
-assert.match(game, /setTargetFromVector\(dx, dy/, 'mobile Action 1 drag must control the flask ground cursor');
+assert.match(game, /rightStickOwner = 'flask aim'/, 'controller flask aim must share camera-stick ownership');
+assert.match(game, /setMobileArchCombatAim\(ev.pointerId, dx, dy, _sockR, el.dataset.action\); \/\/ Same camera-stick aiming as thrown weapons/, 'mobile flask drag uses thrown-weapon camera aiming');
 assert.match(game, /flask-cancel-hover[\s\S]*cancelAim/, 'mobile drag-over Action 2 must cancel continuously');
 assert.match(style, /cure-family-grid[\s\S]*grid-template-columns:1fr 1fr/, 'Cures must display four compact family indicators');
 

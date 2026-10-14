@@ -266,6 +266,7 @@
         for (let candidatePos = searchStart; candidatePos <= searchEnd; candidatePos += WSOLA_CORRELATION_STEP) {
           const score = correlation(referenceOutput, referenceChannel, outputPos, candidatePos, overlapLength);
           if (score > bestScore) { bestScore = score; bestInputPos = candidatePos; }
+          if ((candidatePos - searchStart) % (WSOLA_CORRELATION_STEP * 16) === 0) yield; // Bound correlation-search slices, including on slower mobile CPUs.
         }
       }
 
@@ -306,7 +307,7 @@
     const pitchRatio = Math.pow(2, pitchSemitones / 12); // Matches the synchronous renderer's independent pitch math.
     const steps = wsolaStretchSteps(channels, pitchRatio / tempo, buffer.sampleRate); // Shares every DSP calculation with animal playback.
     let sliceStartedAt = performance.now(); // Measures CPU slices between task yields.
-    let deadline = sliceStartedAt + 4; // Yield between grains once this task has used its short processing budget.
+    let deadline = sliceStartedAt + 2; // Yield between grains once this task has used its short processing budget.
     let result = steps.next(); // Final value contains the stretched channels.
     while (!result.done) {
       if (performance.now() >= deadline) {
@@ -314,7 +315,7 @@
         chargeRenderStats.yields++;
         await new Promise(resolve => setTimeout(resolve, 0));
         sliceStartedAt = performance.now();
-        deadline = sliceStartedAt + 4;
+        deadline = sliceStartedAt + 2;
       }
       result = steps.next();
     }
@@ -430,10 +431,10 @@
   function renderBufferFor(url, decoded, context, tempo, pitchSemitones, maxTempo = MAX_TEMPO, maxPitchSemitones = MAX_SHIFT_SEMITONES, renderOpts = {}) {
     const key = renderCacheKey(url, tempo, pitchSemitones, maxTempo, maxPitchSemitones);
     if (renderedByKey.has(key)) return renderedByKey.get(key);
-    const pending = Promise.resolve().then(() => {
+    const pending = Promise.resolve().then(async () => {
       const clock = typeof performance !== 'undefined' && performance?.now ? performance : Date;
       const started = clock.now();
-      const channels = processConstantAxes(decoded, tempo, pitchSemitones, maxTempo, maxPitchSemitones, renderOpts);
+      const channels = await processConstantAxesCooperatively(decoded, clampTempoFor(tempo, maxTempo), clampPitchFor(pitchSemitones, maxPitchSemitones), renderOpts);
       const length = Math.max(1, channels[0]?.length || 1);
       const rendered = context.createBuffer(channels.length, length, decoded.sampleRate);
       for (let channelIndex = 0; channelIndex < channels.length; channelIndex++) rendered.copyToChannel(channels[channelIndex], channelIndex);
@@ -863,7 +864,7 @@
       previewCount: previewHandles.size,
       decodedClipCount: decodedByUrl.size,
       renderedVariantCount: renderedByKey.size,
-      chargeRendering: { ...chargeRenderStats, cachedVariants: decodedRenderCache.size, latestChange: 'Charge waveforms yield between grains and reuse identical renders in a bounded cache.' },
+      chargeRendering: { ...chargeRenderStats, cachedVariants: decodedRenderCache.size, latestChange: 'All voice waveforms yield during correlation searches and reuse identical renders in a bounded cache.' },
       lastTempo,
       lastPitchSemitones,
       lastClipTempo,
