@@ -93,10 +93,17 @@
     root.add(mesh);
     const exporter = new GLTFExporter(); // Binary glTF exporter producing the reusable baked prototype asset.
     const buffer = await new Promise((resolve, reject) => {
-      exporter.parse(root, (result) => {
-        if (!(result instanceof ArrayBuffer)) return reject(new Error('Expected binary GLB output.'));
-        resolve(result);
-      }, reject, { binary: true, onlyVisible: true });
+      try {
+        // Three.js r128 uses parse(input, onDone, options). Passing an onError
+        // callback as the third argument makes r128 treat that function as the
+        // options object, silently ignores {binary:true}, and returns JSON.
+        exporter.parse(root, (result) => {
+          if (!(result instanceof ArrayBuffer)) return reject(new Error('Expected binary GLB output from the Three.js r128 exporter.'));
+          resolve(result);
+        }, { binary: true, onlyVisible: true });
+      } catch (error) {
+        reject(error);
+      }
     });
     lastPrototype = { key, buffer, meta: { ...meta } };
     return buffer;
@@ -254,7 +261,7 @@
         <button id="logWallExportLiveRecipe" class="secondary">Download live recipe</button>
         <button id="logWallExportBakedRecipe" class="secondary">Download baked recipe</button>
       </div>
-      <div id="logWallToolStatus" class="help" style="margin-top:8px;white-space:pre-wrap">Latest change: generated and exported logs now share one deterministic geometry signature.</div>
+      <div id="logWallToolStatus" class="help" style="margin-top:8px;white-space:pre-wrap">Latest change: fixed Three.js r128 binary GLB export so log previews and exported prototypes use real GLB bytes.</div>
     `;
     transformCard.parentNode.insertBefore(card, transformCard);
 
