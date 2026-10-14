@@ -1,13 +1,13 @@
-// ◀ / ▶ stepper buttons beside every dropdown in the game UI.
+// ◀ / ▶ confirm-only steppers beside dropdowns and numeric controls in the game UI.
 //
 // Native <select> popups are mouse/touch-only, so a controller can't open
 // one. Left/right never changes a dropdown directly (it only moves focus);
 // the value changes only when the player focuses ◀ or ▶ and presses
-// Confirm. The decorated select itself is marked data-ctrl-skip so focus
+// Confirm. The decorated control itself is marked data-ctrl-skip so focus
 // steps straight from ◀ to ▶; mouse/touch can still open it normally. The combat loadout pane
 // solved this locally with explicit previous/next buttons on each side of its
 // dropdowns (js/combat/combat-loadout-ui.js); this module applies that same
-// pattern to every <select> in the game page — pause-menu tabs, world-
+// pattern to every dropdown and numeric input in the game page — pause-menu tabs, world-
 // interaction panels (loom, incubator, shops, color pools, ...), onboarding —
 // including ones built after this file loads.
 //
@@ -19,7 +19,8 @@
 // the dropdown whenever the label text was clicked. ControllerUI already
 // navigates [role="button"]/[tabindex] and activates them with .click().
 //
-// Stepping wraps around (same as the loadout pane), skips disabled options,
+// Dropdown stepping wraps and skips disabled options; numeric stepping
+// respects native min/max/step bounds. Both use confirmed arrows
 // and fires the same input+change events a real pick does, so every owning
 // module's existing change handler stays the single authority. When that
 // handler rerenders its panel and the focused arrow is replaced, focus is
@@ -35,6 +36,7 @@
   if (window.SelectSteppers?.installed) return;
 
   const SKIP_SELECTOR = '[data-no-select-stepper]';
+  const CONTROL_SELECTOR = 'select, input[type="number"], input[type="range"]'; // Shared discovery and rerender lookup for confirm-only value controls.
   const PANEL_SELECTOR = '[data-ctrl-panel], [role="dialog"]'; // Used to scope focus-restore lookups to the panel that owned the stepped select.
   const KEY_ATTRS = ['id', 'name', 'data-field', 'data-part', 'data-ob-slot', 'data-ob-equip-cat', 'aria-label']; // Used to find the same logical select again after its owner rerenders.
   const LAYOUT_PROPS = ['flex', 'flex-grow', 'flex-shrink', 'flex-basis', 'width', 'min-width', 'max-width', 'align-self', 'justify-self', 'grid-column', 'grid-area', 'margin', 'margin-left', 'margin-right', 'margin-top', 'margin-bottom']; // Inline placement moves from the select to its wrapper so the row keeps its slot in the parent layout.
@@ -49,7 +51,7 @@
     style.textContent = `
       .select-stepper { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; min-width: 0; vertical-align: middle; }
       .select-stepper.select-stepper-block { display: flex; width: 100%; }
-      .select-stepper > select { flex: 1 1 auto; min-width: 0; }
+      .select-stepper > select, .select-stepper > input { flex: 1 1 auto; min-width: 0; }
       .select-stepper-btn {
         flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
         min-width: 24px; height: 24px; padding: 0 4px; box-sizing: border-box;
@@ -64,7 +66,7 @@
   }
 
   function eligible(select) {
-    if (!select || select.tagName !== 'SELECT' || !select.isConnected) return false;
+    if (!select || !select.matches(CONTROL_SELECTOR) || !select.isConnected) return false;
     if (wrapped.has(select)) return false;
     if (select.multiple || Number(select.size) > 1) return false;
     if (select.closest(SKIP_SELECTOR)) return false;
@@ -78,7 +80,22 @@
   // Wraps around and skips disabled options; fires input+change only when
   // the value actually moved.
   function step(select, delta) {
-    if (!select || select.disabled) return false;
+    if (!select || select.disabled || select.readOnly) return false;
+    if (select.tagName === 'INPUT') {
+      const before = select.value; // Used to avoid events when a numeric control is already at its bound.
+      if (select.step === 'any') {
+        const min = select.min === '' ? (select.type === 'range' ? 0 : -Infinity) : Number(select.min); // Numeric bounds retain the range input's native defaults.
+        const max = select.max === '' ? (select.type === 'range' ? 100 : Infinity) : Number(select.max); // Used to clamp explicit unit steps for continuous inputs.
+        select.value = String(Math.max(min, Math.min(max, (Number(select.value) || 0) + (delta < 0 ? -1 : 1))));
+      } else {
+        try { delta < 0 ? select.stepDown() : select.stepUp(); } catch (_) { return false; }
+      }
+      if (select.value === before) return false;
+      select.dispatchEvent(new Event('input', { bubbles: true }));
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      lastStep = { id: select.id || null, delta: delta < 0 ? -1 : 1, value: select.value, label: 'numeric value' };
+      return true;
+    }
     const options = enabledOptions(select);
     if (!options.length) return false;
     const current = options.indexOf(select.options[select.selectedIndex]);
@@ -112,8 +129,9 @@
     btn.tabIndex = 0;
     btn.textContent = dir < 0 ? '◀' : '▶';
     const name = select.getAttribute('aria-label') || select.title || '';
-    btn.setAttribute('aria-label', (dir < 0 ? 'Previous' : 'Next') + (name ? ' ' + name : ' option'));
-    btn.title = dir < 0 ? 'Previous option' : 'Next option';
+    const action = select.tagName === 'INPUT' ? (dir < 0 ? 'Decrease' : 'Increase') : (dir < 0 ? 'Previous' : 'Next'); // Accessible labels match numeric versus dropdown stepping.
+    btn.setAttribute('aria-label', action + (name ? ' ' + name : select.tagName === 'INPUT' ? ' value' : ' option'));
+    btn.title = action + (select.tagName === 'INPUT' ? ' value' : ' option');
     btn.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation(); // A click on the arrow is not a click on whatever row/card the dropdown sits in.
@@ -131,7 +149,7 @@
   function syncState(select) {
     const entry = wrapped.get(select);
     if (!entry) return;
-    const disabled = select.disabled || enabledOptions(select).length < 2;
+    const disabled = select.disabled || select.readOnly || (select.tagName === 'SELECT' && enabledOptions(select).length < 2);
     for (const btn of [entry.prev, entry.next]) {
       const want = disabled ? 'true' : 'false';
       if (btn.getAttribute('aria-disabled') !== want) btn.setAttribute('aria-disabled', want);
@@ -145,7 +163,7 @@
     ? new MutationObserver((records) => {
       const seen = new Set();
       for (const record of records) {
-        const select = record.target.tagName === 'SELECT' ? record.target : record.target.closest?.('select');
+        const select = record.target.matches?.(CONTROL_SELECTOR) ? record.target : record.target.closest?.(CONTROL_SELECTOR);
         if (select && !seen.has(select)) { seen.add(select); syncState(select); }
       }
     })
@@ -175,15 +193,15 @@
     wrapped.set(select, { wrap, prev, next });
     decoratedCount += 1;
     syncState(select);
-    selectObserver?.observe(select, { attributes: true, attributeFilter: ['disabled', 'hidden', 'style'], childList: true, subtree: true });
+    selectObserver?.observe(select, { attributes: true, attributeFilter: ['disabled', 'readonly', 'hidden', 'style'], childList: true, subtree: true });
     return true;
   }
 
   function decorateWithin(node) {
     if (!node || node.nodeType !== 1) return;
-    if (node.tagName === 'SELECT') { decorate(node); return; }
+    if (node.matches?.(CONTROL_SELECTOR)) { decorate(node); return; }
     if (!node.querySelectorAll) return;
-    for (const select of node.querySelectorAll('select')) decorate(select);
+    for (const select of node.querySelectorAll(CONTROL_SELECTOR)) decorate(select);
   }
 
   // ── focus hand-off across owner rerenders ───────────────────────────
@@ -194,15 +212,15 @@
       const value = select.getAttribute(attr);
       if (value) attrs[attr] = value;
     }
-    return { root, attrs, className: select.className || '', index: Array.from(root.querySelectorAll('select')).indexOf(select) };
+    return { root, attrs, className: select.className || '', index: Array.from(root.querySelectorAll(CONTROL_SELECTOR)).indexOf(select) };
   }
 
   function findReplacement(loc) {
     const root = loc.root.isConnected ? loc.root : document.body;
-    const all = Array.from(root.querySelectorAll('select'));
+    const all = Array.from(root.querySelectorAll(CONTROL_SELECTOR));
     if (loc.attrs.id) {
       const byId = document.getElementById(loc.attrs.id);
-      if (byId?.tagName === 'SELECT') return byId;
+      if (byId?.matches(CONTROL_SELECTOR)) return byId;
     }
     const keyed = Object.entries(loc.attrs).filter(([attr]) => attr !== 'id');
     if (keyed.length) {
@@ -219,7 +237,8 @@
     decorate(select);
     const entry = wrapped.get(select);
     const target = entry && (dir < 0 ? entry.prev : entry.next);
-    const focusEl = target && target.getAttribute('aria-disabled') !== 'true' ? target : select;
+    const focusEl = target && target.getAttribute('aria-disabled') !== 'true' ? target : null;
+    if (!focusEl) return;
     try { focusEl.focus({ preventScroll: true }); } catch (_) {} // ControllerUI's focusin listener adopts this as its highlighted target.
   }
 

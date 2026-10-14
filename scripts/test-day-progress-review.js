@@ -95,7 +95,28 @@ assert(caveHtml.includes('&lt;Unsafe&gt; Cave has collapsed'),'cave names are HT
 // Exercise the actual review request to prove the lifecycle uses the civil-midnight gate, not the 06:00 day callback.
 const requestSource = source.slice(source.indexOf('  function requestMidnightReview('),source.indexOf('  function sampleSnapshot(')); // Real request function executed with lightweight presentation stand-ins.
 const midnightCalls = []; // Captures the midnight ordinal supplied before the snapshot is shown.
-const requestContext = { window:{WildlifeSpawn:{advanceCaveMidnight(day){midnightCalls.push(day);return ['Test Cave has collapsed'];}}}, loadState(){}, syncLedgerDay(){}, currentDayKey:()=> 'world:14', civilOrdinal:()=>14, state:{reviewedDayKey:null}, activeReviewPromise:null, buildReviewSnapshot:meta=>meta, showSnapshot:snapshot=>snapshot, log(){} }; // Snapshot stand-ins avoid unrelated DOM animation in the gate regression.
+const requestContext = { window:{WildlifeSpawn:{advanceCaveMidnight(day){midnightCalls.push(day);return ['Test Cave has collapsed'];}}}, loadState(){}, syncLedgerDay(){}, currentDayKey:()=> 'world:14', civilOrdinal:()=>14, state:{reviewedDayKey:null}, activeReviewPromise:null, reviewInterruptionBlocked:()=>false, buildReviewSnapshot:meta=>meta, showSnapshot:snapshot=>snapshot, log(){} }; // Snapshot stand-ins avoid unrelated DOM animation in the gate regression.
 vm.runInNewContext(requestSource+'result=requestMidnightReview({source:"natural"});',requestContext);
 assert.deepEqual(midnightCalls,[15],'review advances the arriving civil midnight exactly once');
 assert.equal(requestContext.result.caveStatuses[0],'Test Cave has collapsed','the same midnight result is displayed in the review');
+
+// Blocked natural requests neither finalize cave deadlines nor freeze a premature snapshot.
+requestContext.reviewInterruptionBlocked = () => true;
+midnightCalls.length = 0;
+vm.runInNewContext(requestSource+'result=requestMidnightReview({source:"natural"});',requestContext);
+assert.equal(midnightCalls.length, 0, 'blocked review leaves cave deadlines untouched until it opens');
+windowStub.Fishing = { state: { active: true, phase: 'waiting' } };
+assert.equal(test.reviewInterruptionBlocked(), true, 'waiting for a bite blocks interruption');
+windowStub.Fishing.state.phase = 'caught';
+assert.equal(test.reviewInterruptionBlocked(), true, 'catch showoff also blocks interruption');
+windowStub.Fishing.state = null;
+windowStub.ControllerUI = { isActive: () => true };
+assert.equal(test.reviewInterruptionBlocked(), true, 'open controller menus block interruption');
+windowStub.ControllerUI.isActive = () => false;
+assert.equal(test.reviewInterruptionBlocked(), false, 'review can resume after activity closes');
+const guardSource = source.slice(source.indexOf('  function reviewInterruptionBlocked('), source.indexOf('  function requestMidnightReview(')); // Executes the injected gameplay guard as shipped.
+const guardContext = { window: {}, calendarDeps: { isReviewBlocked: () => true } }; // Combat/menu ownership is provided by the live game closure.
+vm.runInNewContext(guardSource, guardContext);
+assert.equal(guardContext.reviewInterruptionBlocked(), true, 'gameplay combat/menu guard defers review');
+guardContext.calendarDeps.isReviewBlocked = () => false;
+assert.equal(guardContext.reviewInterruptionBlocked(), false, 'review unblocks when combat and menus finish');
