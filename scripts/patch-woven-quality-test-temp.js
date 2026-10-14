@@ -1,0 +1,10 @@
+'use strict';
+const fs = require('fs');
+const path = 'scripts/test-clothing-weaving-system.js';
+let source = fs.readFileSync(path, 'utf8');
+const before = `const equipmentPanelSource = fs.readFileSync('docs/js/equipment-panel.js', 'utf8'); // Used to guard the Pack-visible/Gear-hidden quality boundary.\nassert.ok(equipmentPanelSource.includes('valuationQualityStars: clothingValuationQualityStars(item)'), 'Pack → Gear converts visible item quality into internal valuation metadata');\nassert.ok(equipmentPanelSource.includes("delete item.qualityStars"), 'Gear migration removes visible qualityStars from clothing records');\nassert.ok(equipmentPanelSource.includes('const starText = packClothingStarText(item)'), 'Pack clothing visibly renders its star quality');\nassert.ok(equipmentPanelSource.includes('window.CookingSystem?.valueMultiplierForStars?.(stars)'), 'Pack clothing sale value reuses the canonical shared star-quality economy multiplier');`;
+const after = `const equipmentPanelQualitySource = fs.readFileSync('docs/js/equipment-panel.js', 'utf8'); // Used to guard the Pack-visible/Gear-hidden quality boundary.\nassert.ok(equipmentPanelQualitySource.includes('valuationQualityStars: clothingValuationQualityStars(item)'), 'Pack → Gear converts visible item quality into internal valuation metadata');\nassert.ok(equipmentPanelQualitySource.includes("delete item.qualityStars"), 'Gear migration removes visible qualityStars from clothing records');\nassert.ok(equipmentPanelQualitySource.includes('const starText = packClothingStarText(item)'), 'Pack clothing visibly renders its star quality');\nassert.ok(equipmentPanelQualitySource.includes('window.CookingSystem?.valueMultiplierForStars?.(stars)'), 'Pack clothing sale value reuses the canonical shared star-quality economy multiplier');`;
+if (!source.includes(before)) throw new Error('missing woven quality test fixture block');
+source = source.replace(before, after);
+fs.writeFileSync(path, source);
+console.log('Renamed woven quality regression fixture.');
