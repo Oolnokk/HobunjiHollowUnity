@@ -20,7 +20,7 @@
         source: 'gulletFish',
         shapeKey: 'fishingmace',
         metalKey: 'nativeCopper',
-        chance: 0.20,
+        chance: 0.15,
         label: 'Fishing Mace',
       },
       {
@@ -28,7 +28,7 @@
         source: 'treasureChest',
         shapeKey: 'dagger',
         metalKey: 'nativeCopper',
-        chance: 0.20,
+        chance: 0.15,
         label: 'Dagger',
       },
     ],
