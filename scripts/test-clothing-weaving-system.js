@@ -233,6 +233,33 @@ const equipmentDeps = {
   showToast() {},
 };
 windowStub.EquipmentPanel.init(equipmentDeps);
+
+// Loom cloth quality uses the shared bucket consumer, averages every required unit, and consumes exactly once.
+const wovenQualityCalls = [];
+windowStub.CookingSystem = {
+  consumeQualityByPolicy(key, amount, policy) {
+    wovenQualityCalls.push({ key, amount, policy });
+    equipmentDeps.inventory[key] = Math.max(0, Number(equipmentDeps.inventory[key]) - amount);
+    return { stars: 4, groups: [{ stars: 3, amount: 1 }, { stars: 4, amount: 1 }, { stars: 5, amount: 1 }] };
+  },
+};
+const qualityInventoryBefore = equipmentDeps.inventory.lightWool; // Used to prove the quality-aware consumer replaces, rather than duplicates, the old raw wool decrement.
+const qualityResult = api.__test.consumeWoolWithQuality('lightWool', 3);
+assert.deepEqual(wovenQualityCalls.at(-1), { key: 'lightWool', amount: 3, policy: 'lowest' }, 'woven clothing consumes every required cloth unit through the shared lowest-quality-first policy');
+assert.equal(qualityResult.stars, 4, 'three consumed cloth qualities resolve to their shared rounded weighted-average star quality');
+assert.equal(equipmentDeps.inventory.lightWool, qualityInventoryBefore - 3, 'quality-aware cloth consumption removes exactly the recipe cost once');
+equipmentDeps.inventory.lightWool = qualityInventoryBefore;
+
+const craftSource = fs.readFileSync('docs/js/clothing-weaving-system.js', 'utf8'); // Used to guard the private loom path that stores the averaged result on the literal garment.
+assert.ok(craftSource.includes('const materialQuality = consumeWoolWithQuality(material.itemKey, cost)'), 'loom crafting resolves material quality before constructing the garment');
+assert.ok(craftSource.includes('qualityStars: materialQuality.stars'), 'loom-crafted garments expose their averaged material quality while they remain Pack inventory items');
+assert.ok(craftSource.includes('sellPrice: baseClothingSellPrice(bp.baseCosmeticId, bp)'), 'loom-crafted garments retain a star-neutral resale base for Pack sale valuation');
+const equipmentPanelQualitySource = fs.readFileSync('docs/js/equipment-panel.js', 'utf8'); // Used to guard the Pack-visible/Gear-hidden quality boundary.
+assert.ok(equipmentPanelQualitySource.includes('valuationQualityStars: clothingValuationQualityStars(item)'), 'Pack → Gear converts visible item quality into internal valuation metadata');
+assert.ok(equipmentPanelQualitySource.includes("delete item.qualityStars"), 'Gear migration removes visible qualityStars from clothing records');
+assert.ok(equipmentPanelQualitySource.includes('const starText = packClothingStarText(item)'), 'Pack clothing visibly renders its star quality');
+assert.ok(equipmentPanelQualitySource.includes('window.CookingSystem?.valueMultiplierForStars?.(stars)'), 'Pack clothing sale value reuses the canonical shared star-quality economy multiplier');
+
 const lightTunic = {
   uid: 'woven-1',
   cosmeticId: 'tankan_tunic#loom:woven-1',

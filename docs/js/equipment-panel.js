@@ -166,6 +166,49 @@
     return stripClothingDyePrefix(item?.label) || 'Clothing';
   }
 
+  function normalizedClothingQualityStars(value) {
+    if (value == null) return null;
+    const stars = Number(value); // Used by Pack presentation and Gear valuation metadata without coercing null into a fake 1★ rating.
+    return Number.isFinite(stars) ? Math.max(1, Math.min(5, Math.round(stars))) : null;
+  }
+
+  function clothingValuationQualityStars(item) {
+    return normalizedClothingQualityStars(item?.valuationQualityStars ?? item?.qualityStars); // Pack uses visible qualityStars; Gear persists only this valuation-specific copy for gifts.
+  }
+
+  function migrateGearClothingQuality(item) {
+    if (!item || typeof item !== 'object') return false;
+    const stars = clothingValuationQualityStars(item); // Used to migrate the first implementation's visible Gear quality into internal valuation metadata.
+    let changed = false; // Used to save only when a legacy/feature-branch Gear record actually changes.
+    if (stars != null && item.valuationQualityStars !== stars) {
+      item.valuationQualityStars = stars;
+      changed = true;
+    }
+    if (Object.prototype.hasOwnProperty.call(item, 'qualityStars')) {
+      delete item.qualityStars;
+      changed = true;
+    }
+    return changed;
+  }
+
+  function packClothingQualityStars(item) {
+    return normalizedClothingQualityStars(item?.qualityStars); // Only Pack clothing exposes star quality as an inventory-item property.
+  }
+
+  function packClothingStarText(item) {
+    const stars = packClothingQualityStars(item); // Used by Pack rows and the Pack detail panel, never Gear presentation.
+    if (stars == null) return '';
+    return window.SkillSystem?.starRatingText?.(stars) || (String(stars) + '★');
+  }
+
+  function packClothingSalePrice(item) {
+    const basePrice = Math.max(0, Math.floor(Number(item?.sellPrice) || 0)); // Star-neutral clothing value authored/stored on the literal Pack item.
+    const stars = packClothingQualityStars(item); // Used only while the clothing remains an inventory item.
+    if (!basePrice || stars == null) return basePrice;
+    const multiplier = Number(window.CookingSystem?.valueMultiplierForStars?.(stars)); // Reuses the game's canonical 1★–5★ economy curve instead of inventing a clothing-only scale.
+    return Math.max(1, Math.round(basePrice * (Number.isFinite(multiplier) ? multiplier : 1)));
+  }
+
   function makeClothingGearEntry(item) {
     if (!item) return null;
     const entry = { // Used as the persistent canonical gear record for one clothing article.
@@ -182,6 +225,7 @@
       articleDyeIds: Array.isArray(item.articleDyeIds) ? [...item.articleDyeIds] : [],
       sprite: item.sprite || clothingSpriteForCosmetic(item.cosmeticId),
       sellPrice: item.sellPrice || 0,
+      valuationQualityStars: clothingValuationQualityStars(item), // Internal valuation metadata only; Gear presentation intentionally has no visible star-quality stat.
       // A loom-crafted article (see ClothingWeavingSystem.craftFromLoom) carries these — preserved here so
       // transferring it from the pack into permanent gear doesn't silently drop its weight/armor math or its
       // woven pattern(s).
@@ -249,6 +293,7 @@
     const wornUidByCosmeticId = new Map(); // Used to preserve whichever dyed copy is currently visible during migration.
 
     for (const item of sourceItems) {
+      if (migrateGearClothingQuality(item)) changed = true;
       if (window.MetalArmorSystem?.normalizeItem?.(item)) changed = true;
       const articleLabel = clothingArticleLabel(item); // Used to clean stale dye prefixes from legacy baseLabel fields while migrating.
       if (articleLabel && item.baseLabel !== articleLabel) {
@@ -489,6 +534,7 @@
     for (const slot of CLOTHING_SLOTS) {
       const worn = gearInventory.clothing[slot];
       if (!worn) continue;
+      if (migrateGearClothingQuality(worn)) changed = true;
       const wornEntry = makeClothingGearEntry({ ...worn, slot });
       if (!worn.uid) {
         gearInventory.clothing[slot] = wornEntry;
@@ -646,6 +692,8 @@
     const packClothing = deps.getPackClothing();
     const item = packClothing.find(c => c.uid === uid);
     if (!item) return;
+    const starText = packClothingStarText(item); // Used to keep quality visible while this garment is still a Pack/inventory item.
+    const salePrice = packClothingSalePrice(item); // Used by both the displayed value and the actual sale transaction.
     deps.clearInvSelection();
     const emptyEl  = document.getElementById('iiEmpty');
     const detailEl = document.getElementById('iiDetail');
@@ -653,9 +701,9 @@
     if (detailEl) detailEl.style.display  = '';
     const set = (id, val) => { const el = document.getElementById(id); if (el) el[typeof val === 'string' ? 'textContent' : 'innerHTML'] = val; };
     setInventoryDetailClothingIcon(item);
-    set('iiName',  item.label);
-    set('iiPrice', item.sellPrice ? item.sellPrice + 'g' : '');
-    set('iiTags',  '');
+    set('iiName',  starText ? (starText + ' ' + item.label) : item.label);
+    set('iiPrice', salePrice ? salePrice + 'g' : '');
+    set('iiTags',  starText ? ('Quality ' + starText) : '');
     set('iiDesc',  [item.description, 'Transfer to gear to wear it (permanent). Can sell while in pack.'].filter(Boolean).join(' '));
     const actEl = document.getElementById('iiActions');
     if (actEl) {
@@ -664,11 +712,11 @@
         const b = document.createElement('button'); b.className = 'ii-btn' + (cls ? ' ' + cls : ''); b.textContent = label; b.onclick = fn; actEl.appendChild(b);
       };
       mkBtn('Transfer to Gear (permanent)', 'equip', () => transferClothingToGear(uid));
-      if (item.sellPrice > 0) {
-        mkBtn('Sell (' + item.sellPrice + 'g)', 'sell', () => {
+      if (salePrice > 0) {
+        mkBtn('Sell (' + salePrice + 'g)', 'sell', () => {
           deps.setPackClothing(deps.getPackClothing().filter(c => c.uid !== uid));
-          deps.inventory.gold = (deps.inventory.gold || 0) + item.sellPrice;
-          deps.showToast('Sold ' + item.label + ' for ' + item.sellPrice + 'g', true);
+          deps.inventory.gold = (deps.inventory.gold || 0) + salePrice;
+          deps.showToast('Sold ' + item.label + ' for ' + salePrice + 'g', true);
           buildPackClothingSection(); deps.buildInventoryGrid(); deps.clearInventoryDetail();
           deps.saveMemberWorldData();
         });
@@ -921,7 +969,8 @@
       renderClothingIcon(btn, item, 'ipc-sprite');
       const name = document.createElement('span');
       name.className = 'ipc-name';
-      name.textContent = item.label;
+      const starText = packClothingStarText(item); // Used to expose woven quality directly in the Pack clothing list.
+      name.textContent = starText ? (starText + ' ' + item.label) : item.label;
       btn.appendChild(name);
       btn.addEventListener('click', () => selectPackClothingItem(item.uid));
       sec.appendChild(btn);

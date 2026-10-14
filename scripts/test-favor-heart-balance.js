@@ -121,6 +121,26 @@ assert.equal(rawState('quality').favor, 6, 'three-star loved gift stores six Fav
 assert.equal(rewards.at(-1)?.text, '+6 Favor', 'three-star quality scales the visible Favor-point award');
 assert.equal(inventory.egg, 0, 'quality bookkeeping still consumes one inventory unit per gift');
 
+// Woven clothing carries literal star quality instead of an inventory quality bucket; it uses the same stars/5 Favor authority without trying to consume CookingSystem quality.
+const consumedBeforeWovenGift = consumedQuality.length; // Used to prove instance clothing never removes a second stack-quality unit.
+held = { kind: 'clothing', key: 'wovenGift', instance: { uid: 'woven-gift-4star', qualityStars: 4 } }; // Pack clothing exposes its quality normally.
+inventory.wovenGift = 1;
+NpcGifting.offerGift({ rec: { id: 'woven_quality' }, giftScore: 10 });
+assert.equal(rawState('woven_quality').favor, 8, 'four-star woven clothing scales a loved +10 gift to +8 Favor');
+assert.equal(rewards.at(-1)?.text, '+8 Favor', 'woven clothing quality scales the player-facing Favor reward too');
+assert.equal(consumedQuality.length, consumedBeforeWovenGift, 'woven clothing quality is instance metadata and does not consume a CookingSystem quality bucket');
+
+held = { kind: 'clothing', key: 'gearWovenGift', instance: { uid: 'woven-gear-5star', valuationQualityStars: 5 } }; // Gear hides stars from its normal data/UI surface but retains valuation metadata for gifting.
+inventory.gearWovenGift = 1;
+NpcGifting.offerGift({ rec: { id: 'gear_woven_quality' }, giftScore: 10 });
+assert.equal(rawState('gear_woven_quality').favor, 10, 'hidden Gear valuation quality still drives gift value when the garment is gifted');
+
+held = { kind: 'clothing', key: 'ordinaryClothing', instance: { uid: 'ordinary-clothing' } };
+inventory.ordinaryClothing = 1;
+NpcGifting.offerGift({ rec: { id: 'ordinary_clothing' }, giftScore: 10 });
+assert.equal(rawState('ordinary_clothing').favor, 10, 'ordinary unstarred clothing keeps full authored gift value instead of coercing null quality into 1★');
+assert.equal(rewards.at(-1)?.text, '+10 Favor', 'ordinary clothing gift feedback remains unchanged when no star quality exists');
+
 // NpcRapport already mutates state.favor by point deltas; v4 deliberately leaves that point-space mutation alone.
 const rapportState = DialogueContent.getNpcDlgState('rapport_npc');
 rapportState.favor = rapportState.favor + 10;
