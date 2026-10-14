@@ -437,7 +437,7 @@ assert.match(lichSource, /rig\.placeHandWorld\('right', handPosition, handQuater
 assert.match(combatBanditSource, /portrait\.userData\.proceduralHandParent = handsPivot[\s\S]*group\.add\(portrait\)/, 'shared hostile builder must keep the PNGPlaneAvatar hand-driver root parented in the visible entity hierarchy');
 assert.match(combatBanditSource, /handRigAvatarRoot: portrait/, 'lich avatarRef must expose the registered procedural hand root');
 assert.match(lichSource, /const registeredRoot = entity\?\.avatarRef\?\.handRigAvatarRoot/, 'lich cast-hand lookup must prefer the retained registered hand root');
-assert.match(combatBanditSource, /proceduralHandToolHolder = useRanged \? c\._banditRangedToolHolder : c\._banditToolHolder/, 'hostile hand owner must publish its live melee/ranged holder every animation update');
+assert.match(combatBanditSource, /proceduralHandToolHolder = flaskActive \? c\._banditFlaskToolHolder : \(useRanged \? c\._banditRangedToolHolder : c\._banditToolHolder\)/, 'hostile hand owner must publish its live flask/ranged/melee holder every animation update');
 assert.match(handFrameSource, /proceduralHandToolHolder[\s\S]*ownedHolder\?\.parent/, 'final-render procedural hand driver must accept a hostile-owned held object');
 assert.match(handFrameSource, /const playerOwnedHolder = !ownedHolder[\s\S]*toolHolder === gameDeps\.toolHolder/, 'lich hand record must never read the player\'s baked weapon-holder matrix');
 assert.match(handFrameSource, /holderAuthority: record\?\.avatarRoot\?\.userData\?\.proceduralHandToolHolder \? 'actor-owned-world-transform'/, 'hand diagnostics must identify actor-owned hostile transform authority');

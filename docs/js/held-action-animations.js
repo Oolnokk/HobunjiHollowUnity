@@ -22,22 +22,6 @@
     },
   };
 
-  const throwFlask = {
-    version: 1,
-    kind: 'hobunji_held_action_animation',
-    name: 'Overhead Flask Throw',
-    style: 'throw',
-    durationS: 0.62,
-    windupFrac: 0.44,
-    strikeFrac: 0.62,
-    holdFrac: 0.68,
-    releaseFrac: 0.62,
-    poses: {
-      neutral: { x: 0, y: 0, z: -0.05, pitch: 10.31, yaw: 0, roll: 0, bodyYaw: 0, secondaryGrip: { enabled: false, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
-      windup: { x: 0.12, y: 0.46, z: -0.16, pitch: -126, yaw: -8, roll: 10, bodyYaw: -12, secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
-      strike: { x: 0.18, y: 0.3, z: 0.5, pitch: 34, yaw: 4, roll: -6, bodyYaw: 8, secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
-    },
-  }; // Used by held flask aim/confirm; intentionally simple for later authoring tweaks.
 
   // Shared temporary throw animation for every thrown weapon until dedicated
   // per-shape throws are authored. Runtime charge holds at its Windup endpoint,
@@ -77,6 +61,8 @@
       },
     },
   };
+
+  const throwFlask = weaponThrowSpin; // Throwing-flask necks are handles: every flask throw intentionally reuses the exact hatchet/dagger/Kylie spin throw.
 
   // Fishing spears use the same arm/body path, but the weapon's in-plane
   // spinning basis is rotated 90° counterclockwise. On release the projectile
@@ -201,7 +187,7 @@
     new URL('config/hand-shoulder-points.js?v=20260818b', docsBase).href,
     new URL('config/hand-shoulder-pose-profiles.js?v=20260920localhinge1', docsBase).href,
     new URL('js/procedural-hand-foot-material-roles.js?v=20260821e', docsBase).href,
-    new URL('js/hand-tool-grips.js?v=20261007h29c5f6d', docsBase).href,
+    new URL('js/hand-tool-grips.js?v=20261013h0bcc620', docsBase).href,
     new URL('js/hand-tool-grip-authored-overrides.js?v=20261007h0531ae6', docsBase).href, // Must follow hand-tool-grips.js: migrates authored spear/bshuakauitl grips onto its live data.
     new URL('js/dual-wield-weapon-visuals.js?v=20261006hc088ca4', docsBase).href,
     new URL('js/hand-grip-modes.js?v=20261005h2e47f31', docsBase).href,

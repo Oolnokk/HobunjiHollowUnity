@@ -206,7 +206,7 @@
     "attackCooldownSCaptain": 0.95, "attackCooldownSOther": 1.15,
     "targetTurnRateRadS": 6,
     "enemyDodge": {
-      "chanceByRank": { "grunt": 0.34, "lieutenant": 0.52, "captain": 0.7 },
+      "chanceByRank": { "grunt": 0.34, "flasker": 0.44, "lieutenant": 0.52, "captain": 0.7 },
       "reactionDelayS": 0.055,
       "cooldownS": 1.15,
       "staminaCost": 18,

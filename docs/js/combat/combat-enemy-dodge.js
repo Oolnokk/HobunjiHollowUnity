@@ -6,7 +6,7 @@
 
   const VERSION = 1;
   const DEFAULTS = Object.freeze({
-    chanceByRank: Object.freeze({ grunt: 0.34, lieutenant: 0.52, captain: 0.70 }),
+    chanceByRank: Object.freeze({ grunt: 0.34, flasker: 0.44, lieutenant: 0.52, captain: 0.70 }),
     reactionDelayS: 0.055,
     cooldownS: 1.15,
     staminaCost: 18,
@@ -41,7 +41,7 @@
       const value = Number(config[key]); // Candidate authored number validated before it can replace a safe fallback.
       if (Number.isFinite(value) && value >= 0) next[key] = value;
     }
-    for (const rank of ['grunt', 'lieutenant', 'captain']) {
+    for (const rank of ['grunt', 'flasker', 'lieutenant', 'captain']) {
       const value = Number(config.chanceByRank?.[rank]); // Rank-specific reaction chance preserves the intended gang hierarchy.
       if (Number.isFinite(value)) next.chanceByRank[rank] = clamp01(value);
     }
