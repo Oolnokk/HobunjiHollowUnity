@@ -47,7 +47,6 @@ jobs:
                 git rebase --abort
                 exit 1
               fi
-              # These hunks only disagree on stale vs current cache tokens. Keep current main's loader lines.
               for file in "${conflicts[@]}"; do
                 git checkout --ours -- "$file"
                 git add "$file"
@@ -69,26 +68,25 @@ jobs:
               fi
 
               if printf '%s\n' "${conflicts[@]}" | grep -qx 'docs/index.html'; then
-                # Preserve current main's Minion loader and newer surrounding loader tokens.
                 git checkout --ours -- docs/index.html
                 git add docs/index.html
               fi
 
               if printf '%s\n' "${conflicts[@]}" | grep -qx 'docs/config/loot/loot-pools.json'; then
-                # Main now guarantees Harlyao artifact generator drops in all four dungeon tiers.
-                # Preserve that entire current-main loot file, then append only this feature's Flasker pool.
                 git checkout --ours -- docs/config/loot/loot-pools.json
                 python3 - <<'PY'
           from pathlib import Path
           path = Path('docs/config/loot/loot-pools.json')
           text = path.read_text(encoding='utf-8')
           if '"bandit_flasker"' not in text:
+              trailing = '\n' if text.endswith('\n') else ''
+              body = text.rstrip('\n')
               suffix = '\n    }\n  }\n}'
-              if not text.endswith(suffix):
+              if not body.endswith(suffix):
                   raise SystemExit('Unexpected loot-pools.json ending; refusing broad rewrite')
               flasker = '''\n    },\n    "bandit_flasker": {\n      "label": "Bandit (Flasker)",\n      "note": "Base corpse valuables. The exact two combat flask loadout types are granted separately by bandit-camps.js so death loot always matches what this Flasker was throwing.",\n      "entries": [\n        { "id": "gold", "itemKey": "gold", "min": 4, "max": 12, "chance": 1, "conditions": {} },\n        { "id": "scrapMetal", "itemKey": "banditScrapMetal", "min": 0, "max": 2, "chance": 1, "conditions": {} }\n      ]\n    }\n  }\n}'''
-              text = text[:-len(suffix)] + flasker
-              path.write_text(text, encoding='utf-8')
+              body = body[:-len(suffix)] + flasker
+              path.write_text(body + trailing, encoding='utf-8')
           PY
                 node -e "const p=require('./docs/config/loot/loot-pools.json'); if(!p.pools.bandit_flasker) process.exit(1); for(let t=1;t<=4;t++){const e=p.pools['dungeonChest_tier'+t].entries; if(!e.some(x=>x.generatorKey==='harlyaoArtifact'&&x.tier===t)) process.exit(2)}"
                 git add docs/config/loot/loot-pools.json
