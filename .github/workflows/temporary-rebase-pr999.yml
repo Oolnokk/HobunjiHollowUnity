@@ -92,6 +92,19 @@ jobs:
                 git add docs/config/loot/loot-pools.json
               fi
 
+            elif [ "$subject" = "Audit and fix Flasker integration" ]; then
+              if [ "${#conflicts[@]}" -ne 1 ] || [ "${conflicts[0]}" != "docs/config/loot/loot-pools.json" ]; then
+                echo 'Unexpected conflict in Flasker audit cleanup' >&2
+                git diff --cc --no-ext-diff
+                git rebase --abort
+                exit 1
+              fi
+              # The old audit commit only cleaned accidental loot JSON churn. The rebased side already has
+              # that clean structure plus current-main Harlyao artifact generators and the Flasker pool.
+              git checkout --ours -- docs/config/loot/loot-pools.json
+              node -e "const p=require('./docs/config/loot/loot-pools.json'); if(!p.pools.bandit_flasker) process.exit(1); for(let t=1;t<=4;t++){const e=p.pools['dungeonChest_tier'+t].entries; if(!e.some(x=>x.generatorKey==='harlyaoArtifact'&&x.tier===t)) process.exit(2)}"
+              git add docs/config/loot/loot-pools.json
+
             else
               echo '=== UNRESOLVED CONFLICT HUNKS ==='
               git diff --cc --no-ext-diff
