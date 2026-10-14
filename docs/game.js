@@ -13236,49 +13236,9 @@
 
       // ── Building interior scenes ─────────────────────────────────────
 
-      // Generates WallBuilder panels for a rectangular room. Walls always sit at
-      // the footprint boundary. A 2-tile door gap is cut in whichever wall the exit
-      // transition sits on; the gap is centred on the transition column/row.
-      function buildWallPanelsForRoom(cols, rows, wallHeight, exitTransition) {
-        const DOOR_W = 2;
-        const panels = [];
-        // Determine which wall the exit is on (S/N/W/E) by proximity to boundary
-        let doorWall = null, doorPos = 0;
-        if (exitTransition) {
-          const { col: ec, row: er } = exitTransition;
-          const dS = rows - 1 - er, dN = er, dE = cols - 1 - ec, dW = ec;
-          const minD = Math.min(dS, dN, dE, dW);
-          if      (minD === dS) { doorWall = 'S'; doorPos = ec; }
-          else if (minD === dN) { doorWall = 'N'; doorPos = ec; }
-          else if (minD === dE) { doorWall = 'E'; doorPos = er; }
-          else                  { doorWall = 'W'; doorPos = er; }
-        }
-        const splitH = (wallId, z, rot, along) => {
-          if (doorWall === along) {
-            const gapStart = Math.max(0, doorPos - Math.floor(DOOR_W / 2));
-            const gapEnd   = Math.min(cols, gapStart + DOOR_W);
-            if (gapStart > 0)    panels.push({ id: wallId + '_l', width: gapStart,        height: wallHeight, position: [gapStart / 2,            0, z], rotationDeg: rot });
-            if (gapEnd < cols)   panels.push({ id: wallId + '_r', width: cols - gapEnd,   height: wallHeight, position: [(gapEnd + cols) / 2,     0, z], rotationDeg: rot });
-          } else {
-            panels.push({ id: wallId, width: cols, height: wallHeight, position: [cols / 2, 0, z], rotationDeg: rot });
-          }
-        };
-        const splitV = (wallId, x, rot, along) => {
-          if (doorWall === along) {
-            const gapStart = Math.max(0, doorPos - Math.floor(DOOR_W / 2));
-            const gapEnd   = Math.min(rows, gapStart + DOOR_W);
-            if (gapStart > 0)    panels.push({ id: wallId + '_l', width: gapStart,        height: wallHeight, position: [x, 0, gapStart / 2],            rotationDeg: rot });
-            if (gapEnd < rows)   panels.push({ id: wallId + '_r', width: rows - gapEnd,   height: wallHeight, position: [x, 0, (gapEnd + rows) / 2],     rotationDeg: rot });
-          } else {
-            panels.push({ id: wallId, width: rows, height: wallHeight, position: [x, 0, rows / 2], rotationDeg: rot });
-          }
-        };
-        splitH('wn', 0,    [0, 0,    0], 'N');
-        splitH('ws', rows, [0, 180,  0], 'S');
-        splitV('ww', 0,    [0, 90,   0], 'W');
-        splitV('we', cols, [0, -90,  0], 'E');
-        return panels;
-      }
+      // buildWallPanelsForRoom (rectangular-room wall panels with a door gap)
+      // now lives in js/interior-scene-builder.js as
+      // InteriorSceneBuilder.buildRoomWallPanels.
       // Interior wall-panel derivation (run-merged brick/cavern/canvas quads),
       // panel corner math, and the wallStyle-aware floor material now live in
       // js/interior-scene-builder.js as window.InteriorSceneBuilder — shared
@@ -13600,11 +13560,36 @@
             // cloth-colored panels matching the exterior tent piece's
             // 'canvas' material (see HousePieceGen's matCanvas) instead of
             // brick.
-            const wallPanels = InteriorSceneBuilder.buildWallPanels(floorSet, exitTileSet, INTERIOR_WALL_HEIGHT);
+            // Walls are built at the authored wall height (InteriorEnvironmentRuntime
+            // then sees a source height equal to it and leaves the group unscaled),
+            // so window openings and gable bricks line up with real brick courses
+            // instead of a stretched 1.75-tile wall.
+            const authoredWallHeight = window.InteriorEnvironmentRuntime?.normalizeEnvironment?.(mapData)?.wallHeight ?? INTERIOR_WALL_HEIGHT;
+            // Wall-mounted windows punch their frame outline out of the bricks,
+            // the same way the farmhouse's linked windows do.
+            const windowOpenings = InteriorSceneBuilder.windowWallOpenings?.(mapData.furniture) || [];
+            const wallPanels = InteriorSceneBuilder.buildWallPanels(floorSet, exitTileSet, authoredWallHeight);
             if (wallPanels.length) {
-              const wallGroup = InteriorSceneBuilder.buildWallGroup(THREE, houseWallBuilder, wallPanels, mapData.wallStyle, { usePlaceholder: false, mineTextureUrl: 'assets/textures/carved_smooth.png', farmNaturalColors });
+              const wallGroup = InteriorSceneBuilder.buildWallGroup(THREE, houseWallBuilder, wallPanels, mapData.wallStyle, { usePlaceholder: false, mineTextureUrl: 'assets/textures/carved_smooth.png', farmNaturalColors, wallOpenings: windowOpenings });
               _markOutline(wallGroup);
               bScene.add(wallGroup);
+            }
+            // Flat ceiling at the authored wall height, optionally rising into
+            // gables (mapData.ceiling) — see js/interior-ceilings.js.
+            const ceilingGroup = window.InteriorCeilings?.buildCeilingGroup?.(THREE, {
+              floor: floorSet,
+              wallHeight: authoredWallHeight,
+              ceiling: mapData.ceiling,
+              wallStyle: mapData.wallStyle,
+              texturesBasePath: 'assets/',
+              roofStyle: mapId.startsWith('map_i_barn_') ? 'farm' : 'town', // A carved ceiling defaults to its building's exterior roof colour.
+              wallBuilder: houseWallBuilder, // Gable ends get the same bricks as the walls below.
+              wallBuildOptions: { usePlaceholder: false, excludeQuads: InteriorSceneBuilder.openingExcludeQuads?.(windowOpenings) || [] },
+            });
+            if (ceilingGroup) {
+              const gableBricks = ceilingGroup.getObjectByName('InteriorGableBricks');
+              if (gableBricks) _markOutline(gableBricks);
+              bScene.add(ceilingGroup);
             }
           }
           // A den's cavern entrance had no visual distinguishing it from any
@@ -14122,12 +14107,16 @@
         }
         // Brick walls at footprint boundary with a door gap at the exit transition
         const exitT = transitions.find(t => t.target === 'exit_building');
-        const wallPanels = buildWallPanelsForRoom(cols, rows, INTERIOR_WALL_HEIGHT, exitT);
+        const wallPanels = InteriorSceneBuilder.buildRoomWallPanels(cols, rows, INTERIOR_WALL_HEIGHT, exitT);
         if (wallPanels.length) {
           const wallGroup = houseWallBuilder.build(wallPanels, { usePlaceholder: false, unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } });
           _markOutline(wallGroup);
           bScene.add(wallGroup);
         }
+        const roomFloor = [];
+        for (let r2 = 0; r2 < rows; r2++) for (let c2 = 0; c2 < cols; c2++) roomFloor.push([c2, r2]);
+        const roomCeiling = window.InteriorCeilings?.buildCeilingGroup?.(THREE, { floor: roomFloor, wallHeight: INTERIOR_WALL_HEIGHT, texturesBasePath: 'assets/' });
+        if (roomCeiling) bScene.add(roomCeiling);
         const occlusionMeshes = [];
         bScene.traverse(o => { if (o.userData?.cameraObstacle) occlusionMeshes.push(o); });
         const info = { scene: bScene, grid: bGrid, cols, rows, transitions, loadSource, fallback: loadSource !== 'config', name: mapData?.name || mapId, occlusionMeshes };
@@ -19616,6 +19605,7 @@
       const houseWallBuilder = new WallBuilder({ glbBasePath: 'assets/models/' });
       let interiorWallGroup  = null;
       let interiorFloorGroup = null;
+      let interiorCeilingGroup = null; // flat ceiling over the merged house footprint, rebuilt with the walls
       let _interiorGeometryBuilt = false; // becomes true once the starter piece has spawned at least one rebuild
       // One mesh (+ optional light) per chimney's derived hearth — rebuilt
       // fresh every rebuildInteriorGeometry() pass alongside the floor/wall
@@ -19770,6 +19760,11 @@
         });
         _markOutline(interiorWallGroup);
         interiorScene.add(interiorWallGroup);
+
+        // Flat ceiling over the merged house footprint (js/interior-ceilings.js).
+        if (interiorCeilingGroup) { interiorScene.remove(interiorCeilingGroup); interiorCeilingGroup.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
+        interiorCeilingGroup = window.InteriorCeilings?.buildCeilingGroup?.(THREE, { floor: floorSet, wallHeight: INTERIOR_WALL_HEIGHT, texturesBasePath: 'assets/', roofStyle: 'farm' }) || null;
+        if (interiorCeilingGroup) interiorScene.add(interiorCeilingGroup);
 
         debugLog(`rebuildInteriorGeometry: ${floorSet.size} floor cells, ${panels.length} wall panels`);
       }

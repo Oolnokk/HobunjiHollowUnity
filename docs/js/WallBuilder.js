@@ -647,6 +647,9 @@
         const s = (tmpPos.x + p.width * 0.5) / p.width;
         const t = tmpPos.y / p.height;
         if (s < -0.02 || s > 1.02 || t < -0.02 || t > 1.02) continue;
+        // Gable ends (js/interior-ceilings.js): keep only the bricks under the
+        // triangle rising from both bottom corners to the top-centre.
+        if (p.triangleClip && t > 1 - Math.abs(2 * s - 1)) continue;
 
         const wp = quadPoint(a, b, c, d, s, t);
         const basis = quadBasis(a, b, c, d, s, t);

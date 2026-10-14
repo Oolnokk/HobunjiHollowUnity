@@ -135,6 +135,51 @@
     return panels;
   }
 
+  // Rectangular-room wall panels (moved out of game.js's
+  // buildWallPanelsForRoom): walls always sit at the footprint boundary, with
+  // a 2-tile door gap cut in whichever wall the exit transition sits on,
+  // centred on the transition column/row.
+  function buildRoomWallPanels(cols, rows, wallHeight, exitTransition) {
+    const DOOR_W = 2;
+    const panels = [];
+    // Determine which wall the exit is on (S/N/W/E) by proximity to boundary
+    let doorWall = null, doorPos = 0;
+    if (exitTransition) {
+      const { col: ec, row: er } = exitTransition;
+      const dS = rows - 1 - er, dN = er, dE = cols - 1 - ec, dW = ec;
+      const minD = Math.min(dS, dN, dE, dW);
+      if      (minD === dS) { doorWall = 'S'; doorPos = ec; }
+      else if (minD === dN) { doorWall = 'N'; doorPos = ec; }
+      else if (minD === dE) { doorWall = 'E'; doorPos = er; }
+      else                  { doorWall = 'W'; doorPos = er; }
+    }
+    const splitH = (wallId, z, rot, along) => {
+      if (doorWall === along) {
+        const gapStart = Math.max(0, doorPos - Math.floor(DOOR_W / 2));
+        const gapEnd   = Math.min(cols, gapStart + DOOR_W);
+        if (gapStart > 0)    panels.push({ id: wallId + '_l', width: gapStart,        height: wallHeight, position: [gapStart / 2,            0, z], rotationDeg: rot });
+        if (gapEnd < cols)   panels.push({ id: wallId + '_r', width: cols - gapEnd,   height: wallHeight, position: [(gapEnd + cols) / 2,     0, z], rotationDeg: rot });
+      } else {
+        panels.push({ id: wallId, width: cols, height: wallHeight, position: [cols / 2, 0, z], rotationDeg: rot });
+      }
+    };
+    const splitV = (wallId, x, rot, along) => {
+      if (doorWall === along) {
+        const gapStart = Math.max(0, doorPos - Math.floor(DOOR_W / 2));
+        const gapEnd   = Math.min(rows, gapStart + DOOR_W);
+        if (gapStart > 0)    panels.push({ id: wallId + '_l', width: gapStart,        height: wallHeight, position: [x, 0, gapStart / 2],            rotationDeg: rot });
+        if (gapEnd < rows)   panels.push({ id: wallId + '_r', width: rows - gapEnd,   height: wallHeight, position: [x, 0, (gapEnd + rows) / 2],     rotationDeg: rot });
+      } else {
+        panels.push({ id: wallId, width: rows, height: wallHeight, position: [x, 0, rows / 2], rotationDeg: rot });
+      }
+    };
+    splitH('wn', 0,    [0, 0,    0], 'N');
+    splitH('ws', rows, [0, 180,  0], 'S');
+    splitV('ww', 0,    [0, 90,   0], 'W');
+    splitV('we', cols, [0, -90,  0], 'E');
+    return panels;
+  }
+
   // Same corner math as WallBuilder.js's panelCorners/panelMatrix (kept
   // duplicated rather than imported — WallBuilder's build() pipeline is built
   // around scattering instanced brick props onto this quad, not exposing the
@@ -465,6 +510,58 @@
     return panels;
   }
 
+  // Wall openings (the same { center, normal, width, height } apertures the
+  // farmhouse gets from HouseWindowLinkage) for every wall-mounted window in
+  // an authored interior. Each opening is the window's visible frame outline
+  // under its placed transform — root at (col + fw/2 + postX, floorY + postY,
+  // row + fd/2 + postZ), yaw rotY, scale postSX/postSY — projected onto the
+  // wall plane its wallAttachment was picked on.
+  //   options.footprintOf(record) -> { fw, fd }   (defaults to 1x1)
+  //   options.floorY                             (defaults to 0)
+  const WINDOW_ORNAMENT_KEYS = { simpleWindowFurniture: 'simpleWindow', crossbarWindowFurniture: 'crossbarWindow', wideWindowFurniture: 'wideWindow' };
+  function windowWallOpenings(furniture, options = {}) {
+    const silhouetteOf = root.DaylightWindowRuntime?.windowSilhouette;
+    if (typeof silhouetteOf !== 'function') return [];
+    const openings = [];
+    for (const f of (Array.isArray(furniture) ? furniture : [])) {
+      const key = f?.wallOrnamentKey || WINDOW_ORNAMENT_KEYS[f?.itemKey];
+      const attachment = f?.wallAttachment;
+      const silhouette = key ? silhouetteOf(key) : null;
+      if (!silhouette || !attachment || !Array.isArray(attachment.wallPoint)) continue;
+      const nx0 = Number(attachment.wallNormal?.[0]) || 0, nz0 = Number(attachment.wallNormal?.[2]) || 0;
+      const nLen = Math.hypot(nx0, nz0);
+      if (nLen < 1e-6) continue;
+      const nx = nx0 / nLen, nz = nz0 / nLen;
+      const fp = options.footprintOf?.(f) || {};
+      const sx = Number.isFinite(Number(f.postSX)) ? Number(f.postSX) : (Number.isFinite(Number(f.postScale)) ? Number(f.postScale) : 1);
+      const sy = Number.isFinite(Number(f.postSY)) ? Number(f.postSY) : (Number.isFinite(Number(f.postScale)) ? Number(f.postScale) : 1);
+      const rootX = (Number(f.col) || 0) + (Number(fp.fw) || 1) * 0.5 + (Number(f.postX) || 0);
+      const rootY = (Number(options.floorY) || 0) + (Number(f.postY) || 0);
+      const rootZ = (Number(f.row) || 0) + (Number(fp.fd) || 1) * 0.5 + (Number(f.postZ) || 0);
+      const yaw = (Number(f.rotY) || 0) * Math.PI / 180;
+      const lx = (silhouette.minX + silhouette.maxX) * 0.5 * sx, ly = (silhouette.minY + silhouette.maxY) * 0.5 * sy;
+      let cx = rootX + lx * Math.cos(yaw), cz = rootZ - lx * Math.sin(yaw); // THREE yaw: x' = x cos + z sin, z' = -x sin + z cos (local z = 0).
+      // Snap onto the wall plane the window was attached to (normalOffset can push the frame well off it).
+      const px = Number(attachment.wallPoint[0]) || 0, pz = Number(attachment.wallPoint[2]) || 0;
+      const depth = (cx - px) * nx + (cz - pz) * nz;
+      cx -= depth * nx; cz -= depth * nz;
+      openings.push({ id: f.id || key, center: [cx, rootY + ly, cz], normal: [nx, 0, nz], width: silhouette.width * Math.abs(sx), height: silhouette.height * Math.abs(sy) });
+    }
+    return openings;
+  }
+
+  // WallBuilder excludeQuads ([bottom-left, top-left, top-right, bottom-right])
+  // for the same openings, for brick panels that can't be split into
+  // rectangles (triangle-clipped gable ends).
+  function openingExcludeQuads(openings) {
+    return (Array.isArray(openings) ? openings : []).map(o => {
+      const nx = Number(o.normal?.[0]) || 0, nz = Number(o.normal?.[2]) || 0;
+      const tx = nz, tz = -nx, hw = (Number(o.width) || 0) / 2, hh = (Number(o.height) || 0) / 2;
+      const [cx, cy, cz] = o.center;
+      return [[cx - tx * hw, cy - hh, cz - tz * hw], [cx - tx * hw, cy + hh, cz - tz * hw], [cx + tx * hw, cy + hh, cz + tz * hw], [cx + tx * hw, cy - hh, cz + tz * hw]];
+    });
+  }
+
   // wallStyle dispatch — brick (default, via WallBuilder) / cavern / canvas.
   // wbOpts defaults match game.js's INTERIOR_WALL_PANELS build() call exactly
   // (50% brick size, 4x density via rockScale, 60% depth, micro-jitter).
@@ -540,7 +637,7 @@
   }
 
   root.InteriorSceneBuilder = {
-    buildWallPanels, buildWallGroup, buildFloorMaterial, applyWallOpenings,
+    DEFAULT_WB_OPTS, windowWallOpenings, openingExcludeQuads, buildWallPanels, buildRoomWallPanels, buildWallGroup, buildFloorMaterial, applyWallOpenings,
     buildCavernWalls, buildCanvasWalls, buildFallbackBoxWalls, panelCornersFor,
     buildCarvedCavernMesh, buildCavernFloorMesh,
   };

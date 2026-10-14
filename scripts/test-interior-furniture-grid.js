@@ -178,7 +178,8 @@ function auditFurniture(furniture, label, mapData) {
     const info = placement(piece);
     const fineRot = Number(piece.rotY) || 0;
     const isQuarterFineRotation = Math.abs(fineRot) > 1e-6 && Math.abs(fineRot / 90 - Math.round(fineRot / 90)) < 1e-6;
-    assert.ok(!isQuarterFineRotation, `${label} ${piece.id || piece.itemKey}: exact 90-degree rotation must use gridRot, not fine rotY`);
+    // Surface-mounted ornaments store wall-normal yaw in rotY; gridRot is for floor footprints.
+    assert.ok(piece.wallAttachment || !isQuarterFineRotation, `${label} ${piece.id || piece.itemKey}: exact 90-degree rotation must use gridRot, not fine rotY`);
     if (piece.walkableElevation) assert.strictEqual(piece.nonColliding, true, `${label} ${piece.id || piece.itemKey}: walkable elevation must be non-colliding`);
     if (piece.itemKey === 'rugFurniture') assert.strictEqual(piece.nonColliding, true, `${label} ${piece.id || piece.itemKey}: existing floor rugs must preserve walk-through behavior`);
     for (let dc = 0; dc < info.gridW; dc++) {
@@ -186,7 +187,8 @@ function auditFurniture(furniture, label, mapData) {
         const col = Number(piece.col) + dc;
         const row = Number(piece.row) + dr;
         assert.ok(col >= 0 && row >= 0 && col < mapData.cols && row < mapData.rows, `${label} ${piece.id || piece.itemKey}: grid footprint must stay inside the map`);
-        assert.ok(floor.has(`${col},${row}`), `${label} ${piece.id || piece.itemKey}: grid footprint must stay on authored floor`);
+        // Wall-mounted pieces (windows, signs) anchor on the wall line, so their tile is often the wall itself.
+        if (!piece.wallAttachment) assert.ok(floor.has(`${col},${row}`), `${label} ${piece.id || piece.itemKey}: grid footprint must stay on authored floor`);
         if (!piece.nonColliding && !piece.walkableElevation) covered.add(`${col},${row}`);
       }
     }
