@@ -18,6 +18,8 @@ jobs:
           node-version: '24'
       - name: Apply patch
         run: node scripts/patch-woven-quality-visibility-temp.js
+      - name: Fix regression fixture
+        run: node scripts/patch-woven-quality-test-temp.js
       - name: Refresh cache-bust tokens
         run: node scripts/check-cache-busts.js --fix origin/main
       - name: Syntax check shipped scripts
@@ -31,6 +33,7 @@ jobs:
           set -e
           rm -f .github/workflows/patch-woven-quality-visibility.yml
           rm -f scripts/patch-woven-quality-visibility-temp.js
+          rm -f scripts/patch-woven-quality-test-temp.js
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
