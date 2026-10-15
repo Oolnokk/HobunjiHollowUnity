@@ -63,3 +63,29 @@ input.cancelPress(1);
 actionLocked=true;input.fireTap(2);
 assert.equal(interruptedBandages,3);
 assert.equal(tapCount,beforeInterruptTap+2,'direct/mobile tap interrupts bandaging too');
+
+let gruntDelay = 1; // Simulates the vocal runtime's shared duration gate.
+context.window.CombatVocalizations = {attackStartDelayS:()=>gruntDelay};
+const beforeQueued = tapCount; // Repeated taps refresh the pending slot instead of firing or accumulating attacks.
+input.fireTap(1); input.fireTap(1); input.update(0.01);
+assert.equal(tapCount,beforeQueued);
+assert.equal(input.queueSnapshot().length,1);
+gruntDelay=0; input.update(0.01); input.update(0.01);
+assert.equal(tapCount,beforeQueued+1,'queued tap fires exactly once after the grunt duration');
+gruntDelay=1; hold(); input.pressEnd(1);
+assert(!holdActive,'held windup waits for the grunt gate');
+assert(input.getState(1).releaseQueued,'early release is remembered while waiting');
+gruntDelay=0; input.update(0.01);
+assert(!holdActive,'queued early release completes after the windup starts');
+assert(!input.getState(1).releaseQueued);
+gruntDelay=1; input.fireTap(1); input.abortAllPresses(); gruntDelay=0; input.update(0.01);
+assert.equal(tapCount,beforeQueued+1,'blur/holster cancellation clears queued taps');
+gruntDelay=1; hold(); input.pressEnd(1); input.cancelPress(1); gruntDelay=0; input.update(0.01);
+assert(!holdActive,'canceled queued hold cannot start later');
+gruntDelay=1; input.fireTap(1); actionLocked=true; input.update(0.01); actionLocked=false; gruntDelay=0; input.update(0.01);
+assert.equal(tapCount,beforeQueued+1,'new action locks discard buffered attacks');
+gruntDelay=1; hold(); input.pressEnd(1); input.setAutoTargetEnabled(true,{persist:false}); gruntDelay=0; input.update(0.01);
+assert(input.getState(1).alignmentPending,'buffered hold hands off to alignment');
+input.cancelPress(1); alignment.runAttack();
+assert(!holdActive,'cancellation after queue-to-alignment handoff prevents delayed windup');
+console.log('grunt-duration input queue checks passed');

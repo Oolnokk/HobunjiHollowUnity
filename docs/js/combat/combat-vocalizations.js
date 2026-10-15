@@ -246,6 +246,8 @@
   const breathStateByEntity = new WeakMap(); // Per-character cadence prevents NPCs from sharing the player's next-breath clock.
   const VOICE_FADE_OUT_S = 0.008; // Same sudden anti-pop handoff used by dialogue ownership.
   const BREATH_RETRY_AFTER_SUPPRESSION_MS = 100; // Resume passive breathing promptly once pain/attack vocals release the mouth.
+  const attackActions = new Set(); // Player staged attacks whose windup/strike/recovery still blocks buffered starts.
+  const strikeBuffers = new Map(); // Decoded release/combo clips reused by the same timed renderer as charge vocals.
   const debug = {
     lastBreath: null,
     lastPain: null,
@@ -856,13 +858,13 @@ function beginCharge(options = {}) {
       ? Number(requestedTarget)
       : null,
     catchUpOnRelease: options.catchUpOnRelease === true,
-    createdAtMs: nowMs(),
+    createdAtMs: Number.isFinite(options.createdAtMs) ? options.createdAtMs : nowMs(),
     ready: false,
     released: false,
     cancelled: false,
     done: false,
   };
-  if (!isHumanoidVocalEntity(entity)) { token.done = true; token.suppressed = true; return token; }
+  if (!isHumanoidVocalEntity(entity) || audioConfig().enabled === false || Number(audioConfig().sfxVolume ?? 1) <= 0) { token.done = true; token.suppressed = true; return token; }
   token.voiceClaim = window.CharacterVoiceOwner?.request?.(entity, {
     kind: 'active',
     priority: voicePriority('active'),
@@ -873,7 +875,7 @@ function beginCharge(options = {}) {
   trackBreather(entity);
   activeChargeTokens.add(token);
 
-  preloadChargeBuffer().then(async buffer => {
+  (options.assetUrl ? preloadStrikeBuffer(options.assetUrl) : preloadChargeBuffer()).then(async buffer => {
     if (!buffer || token.cancelled || token.released || token.done) {
       finishChargeToken(token);
       return;
@@ -958,13 +960,39 @@ function beginCharge(options = {}) {
   return token;
 }
 
-  function playStrikeGrunt(entity, category, abilityId) {
+  function preloadStrikeBuffer(url) {
+    if (!url) return Promise.resolve(null);
+    if (strikeBuffers.has(url)) return strikeBuffers.get(url);
+    const pending = (async () => { // Decode each configured strike clip once, outside frame updates.
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`strike grunt HTTP ${response.status}`);
+      const ctx = ensureAudioContext(); // Charge and release voices share pitch-preserving rendering and trimming.
+      if (!ctx) return null;
+      return decodeAudioData(ctx, await response.arrayBuffer());
+    })().catch(error => { recordPlaybackFailure('strike-decode', error, url); return null; });
+    strikeBuffers.set(url, pending);
+    return pending;
+  }
+
+  function attackStartDelayS() {
+    let delayS = 0; // Gameplay animation timing owns the queue even when audio is muted, suppressed, or unavailable.
+    for (const action of attackActions) {
+      if (action.cancelled || action.phase === 'done') attackActions.delete(action);
+      else delayS = Math.max(delayS, Math.max(0, (Number(action.totalS) || 0) - (Number(action.t) || 0)));
+    }
+    return Math.max(delayS, Number(window.Combat?.deps?.getWeaponAttackTimeline?.()?.remainingS) || 0);
+  }
+
+  function playStrikeGrunt(entity, category, abilityId, durationS = 0, elapsedS = 0) {
     const isCombo = category === 'combo';
     const urls = isCombo ? (config.assets?.comboAttackGrunts || []) : [config.assets?.releaseGrunt];
     const available = urls.filter(Boolean);
     if (!available.length) return;
     const url = available[Math.floor(Math.random() * available.length)];
-    const played = playOneShot(
+    const played = durationS > 0 ? beginCharge({
+      entity, category, abilityId, assetUrl: url, targetDurationS: durationS,
+      createdAtMs: nowMs() - Math.max(0, elapsedS) * 1000,
+    }) : playOneShot(
       entity,
       url,
       config.grunts?.volume ?? 0.86,
@@ -979,9 +1007,11 @@ function beginCharge(options = {}) {
       abilityId,
       category,
       url,
+      durationS,
       tempo: played?.tempo ?? null,
       pitchSemitones: played?.pitchSemitones ?? null,
     };
+    return played;
   }
 
   function isOffensiveVocalCategory(category) {
@@ -1014,31 +1044,50 @@ function beginCharge(options = {}) {
       if (!context) return originalBeginStagedAction.call(this, spec);
       trackBreather(context.entity);
 
-      let charge = context.entity === player() ? (liveChargesByAbility.get(context.id) || null) : null;
-      if (charge) {
-        liveChargesByAbility.delete(context.id);
-        releaseCharge(charge); // Held player release keeps the same conceptual vocal playhead for catch-up.
-      } else {
-        const preImpactS = Math.max(0, Number(spec.windupS) || 0) + Math.max(0, Number(spec.strikeS) || 0);
-        if (preImpactS > 0) {
-          charge = beginCharge({ entity: context.entity, targetDurationS: preImpactS, abilityId: context.id, category: context.category });
-        }
-      }
-
-      const originalStrike = spec.onStrike;
-      const originalCancel = spec.onCancel;
-      return originalBeginStagedAction.call(this, {
+      const isPlayer = context.entity === player(); // Player visuals expose the complete authored hold and return tail.
+      const timeline = isPlayer ? window.Combat.deps?.getWeaponAttackTimeline?.() : null; // Captured after the ability starts or releases its animation.
+      const totalS = Math.max(0, Number(timeline?.remainingS) || (Number(spec.windupS) || 0) + (Number(spec.strikeS) || 0) + (Number(spec.recoverS) || 0));
+      const windupS = Math.min(totalS, Math.max(0, Number(timeline?.windupRemainingS ?? spec.windupS) || 0)); // Neutral to Windup endpoint only; excludes the Strike interpolation.
+      const releaseS = Math.max(0, totalS - windupS); // Windup to Strike to Neutral, including authored strike hold and return easing.
+      let charge = isPlayer ? (liveChargesByAbility.get(context.id) || null) : null; // Reuse a held charge until its release boundary.
+      let release = null; // Cancellation handle for the second voice phase.
+      let releaseStarted = false; // A low frame rate or strike callback must not play the second grunt twice.
+      if (charge) liveChargesByAbility.delete(context.id);
+      if (windupS > 0 && !charge) charge = beginCharge({ entity: context.entity, targetDurationS: windupS, abilityId: context.id, category: context.category });
+      const startRelease = elapsedS => {
+        if (releaseStarted) return;
+        releaseStarted = true;
+        cancelCharge(charge);
+        release = playStrikeGrunt(context.entity, context.category, context.id, releaseS, elapsedS);
+      };
+      if (windupS <= 0) startRelease(0);
+      const originalStrike = spec.onStrike; // Gameplay hit callbacks retain their authored impact time.
+      const originalCancel = spec.onCancel; // Canceling either phase stops its audio as well as queued starts.
+      const action = originalBeginStagedAction.call(this, {
         ...spec,
+        recoverS: Math.max(Number(spec.recoverS) || 0, totalS - (Number(spec.windupS) || 0) - (Number(spec.strikeS) || 0)),
+        onUpdate: action => {
+          if (action.t >= windupS) startRelease(Math.max(0, action.t - windupS));
+          spec.onUpdate?.(action);
+        },
         onStrike: (...args) => {
-          Promise.resolve(charge).then(token => releaseCharge(token));
-          playStrikeGrunt(context.entity, context.category, context.id);
+          // Fallback for immediate staged actions, which have no update tick.
+          if (!releaseStarted) startRelease(Math.max(0, (Number(args[0]?.t) || windupS) - windupS));
           return originalStrike?.(...args);
         },
+        onComplete: (...args) => {
+          cancelCharge(charge);
+          cancelCharge(release);
+          return spec.onComplete?.(...args);
+        },
         onCancel: (...args) => {
-          Promise.resolve(charge).then(token => cancelCharge(token));
+          cancelCharge(charge);
+          cancelCharge(release);
           return originalCancel?.(...args);
         },
       });
+      if (context.entity === player() && action) attackActions.add(action);
+      return action;
     };
     wrapped.__combatVocalWrapped = true;
     window.Combat.beginStagedAction = wrapped;
@@ -1118,6 +1167,8 @@ function beginCharge(options = {}) {
   }
 
   function resetTransientState() {
+    attackActions.clear();
+    window.Combat?.input?.abortAllPresses?.();
     lastDotPainAtMsByEntity = new WeakMap();
     trackedBreathers.clear();
     for (const value of liveChargesByAbility.values()) Promise.resolve(value).then(token => cancelCharge(token));
@@ -1148,12 +1199,14 @@ function beginCharge(options = {}) {
       chargeBufferPromise = null;
       chargeBufferUrl = null;
       preloadChargeBuffer();
+      for (const url of [config.assets?.releaseGrunt, ...(config.assets?.comboAttackGrunts || [])]) preloadStrikeBuffer(url);
       return config;
     }).catch(error => {
       configError = error?.message || String(error);
       config = merge(clone(DEFAULT_CONFIG), localOverride || {});
       configSource = localOverride ? 'defaults+local' : 'defaults';
       preloadChargeBuffer();
+      for (const url of [config.assets?.releaseGrunt, ...(config.assets?.comboAttackGrunts || [])]) preloadStrikeBuffer(url);
       return config;
     });
   }
@@ -1175,7 +1228,7 @@ function beginCharge(options = {}) {
 
   window.CombatVocalizations = {
     version: VERSION,
-    latestChange: 'Off-map/despawned NPC voices stop; charge rendering yields and caches identical buffers.',
+    latestChange: 'Charge spans neutral to windup; release spans windup through strike and return. Attack starts queue until neutral.',
     configPromise,
     reloadConfig: loadConfig,
     forgetEntity,
@@ -1183,6 +1236,7 @@ function beginCharge(options = {}) {
     releaseCharge,
     cancelCharge,
     playStrikeGrunt,
+    attackStartDelayS,
     chargeRatePlan,
     liveChargeTargetDurationS,
     getConfig: () => clone(config),
@@ -1192,6 +1246,8 @@ function beginCharge(options = {}) {
       version: VERSION,
       configSource,
       configError,
+      attackStartDelayS: attackStartDelayS(),
+      queuedAttacks: window.Combat?.input?.queueSnapshot?.() || [],
       nextBreathInMs: (() => { const p = player(); const s = p ? breathStateByEntity.get(p) : null; return s?.nextAtMs > 0 ? Math.max(0, Math.round(s.nextAtMs - nowMs())) : null; })(),
       lastBreathIntervalS: (() => { const p = player(); return p ? breathStateByEntity.get(p)?.lastIntervalS || 0 : 0; })(),
       trackedNpcBreathers: [...trackedBreathers].filter(entity => entity !== player()).length,

@@ -123,7 +123,7 @@ context.window.Combat = {
   },
   beginStagedAction(spec) {
     stagedSpec = spec;
-    return { spec };
+    return { spec, totalS:(spec.windupS||0)+(spec.strikeS||0)+(spec.recoverS||0), t:0, phase:'windup' };
   },
 };
 
@@ -206,23 +206,22 @@ assert(stagedSpec, 'wrapped combo should still stage');
 const beforeCombo = played.length;
 stagedSpec.onStrike();
 assert.equal(context.window.__comboStrike, 1, 'original combo strike must still execute');
-assert.equal(played.length, beforeCombo + 1);
-assert(played.at(-1).url.includes('sfx_attackgrunt_1'));
+assert(W.CombatVocalizations.debugSnapshot().lastStrike.url.includes('sfx_attackgrunt_1'));
+assert(Math.abs(W.CombatVocalizations.debugSnapshot().lastStrike.durationS-0.1)<1e-9);
 
 abilities.get('opportunistJab').onTap();
 const beforeQuick = played.length;
 stagedSpec.onStrike();
 assert.equal(context.window.__quickStrike, 1, 'original quick strike must still execute');
-assert.equal(played.length, beforeQuick + 1);
-assert(played.at(-1).url.includes('sfx_releasegrunt'));
+assert(W.CombatVocalizations.debugSnapshot().lastStrike.url.includes('sfx_releasegrunt'));
+assert(Math.abs(W.CombatVocalizations.debugSnapshot().lastStrike.durationS-0.1)<1e-9);
 
 abilities.get('chargedBreaker').onHoldStart();
 abilities.get('chargedBreaker').onHoldEnd();
 const beforeHeld = played.length;
 stagedSpec.onStrike();
 assert.equal(context.window.__heldStrike, 1, 'original held strike must still execute');
-assert.equal(played.length, beforeHeld + 1);
-assert(played.at(-1).url.includes('sfx_releasegrunt'));
+assert(W.CombatVocalizations.debugSnapshot().lastStrike.url.includes('sfx_releasegrunt'));
 
 
 // One owned voice per character: active grunts beat pain and breathing.
@@ -270,9 +269,8 @@ context.window.Combat.beginStagedAction({
 });
 stagedSpec.onStrike();
 assert.equal(context.window.__npcStrike, 1, 'NPC original staged strike still executes');
-assert.equal(played.length, npcAttackBefore + 1, 'NPC staged combo strike should emit the attack grunt');
-assert(played.at(-1).url.includes('sfx_attackgrunt_1'));
-assert(played.at(-1).pitchSemitones > 7.5, 'NPC attack grunt uses NPC species/gender pitch');
+assert(W.CombatVocalizations.debugSnapshot().lastStrike.url.includes('sfx_attackgrunt_1'));
+assert.equal(W.CombatVocalizations.debugSnapshot().lastStrike.category,'combo');
 
 const debug = context.window.CombatVocalizations.debugSnapshot();
 assert(debug.wrappedAbilities.some(entry => entry.id === 'swingCombo'));
@@ -294,3 +292,36 @@ assert.equal(W.CombatVocalizations.debugSnapshot().trackedNpcBreathers, 1);
 W.CombatVocalizations.forgetEntity(npc);
 assert.equal(W.CombatVocalizations.debugSnapshot().trackedNpcBreathers, 0, 'despawn releases retained NPC references');
 assert.equal(played.at(-1).stopped, true, 'despawn fades the current NPC voice');
+
+// The full visual timeline, rather than clip tempo or hit timing, owns both voice phases and the queue.
+emit(docListeners, 'hobunjiPlayerReady');
+let visualRemainingS = 1.3; // Includes 0.2s windup, 0.1s strike, 0.7s hold, and 0.3s return.
+W.Combat.deps.getWeaponAttackTimeline=()=>({remainingS:visualRemainingS,windupRemainingS:0.2});
+W.AudioSystem.gameAudioConfig=()=>({enabled:false});
+abilities.get('swingCombo').onTap();
+assert(Math.abs(W.CombatVocalizations.attackStartDelayS()-1.3)<1e-9,'muted attacks wait until visual neutral');
+assert(Math.abs(stagedSpec.recoverS-1)<1e-9,'staged recovery includes visual hold and return');
+const beforePhase = W.CombatVocalizations.debugSnapshot().lastStrike; // Windup must retain its charge voice until the exact boundary.
+stagedSpec.onUpdate({t:0.19});
+assert.deepEqual(W.CombatVocalizations.debugSnapshot().lastStrike,beforePhase);
+stagedSpec.onUpdate({t:0.2});
+assert(Math.abs(W.CombatVocalizations.debugSnapshot().lastStrike.durationS-1.1)<1e-9,'second grunt spans Windup to Strike to Neutral');
+assert.equal(W.CombatVocalizations.debugSnapshot().lastStrike.category,'combo');
+stagedSpec.onStrike({t:0.3});
+assert(Math.abs(W.CombatVocalizations.debugSnapshot().lastStrike.durationS-1.1)<1e-9,'impact does not restart the release voice');
+visualRemainingS=0;
+emit(docListeners, 'hobunjiPlayerReady');
+assert.equal(W.CombatVocalizations.attackStartDelayS(),0,'new player/save clears old attack timing');
+console.log('shared animation timeline voice and queue timing: ok');
+
+const gameSource = fs.readFileSync(path.join(__dirname,'..','docs','game.js'),'utf8'); // Executes the real visual timeline bridge, including additive hold and return time.
+const timelineContext = {activeTool:'weapon',combatSwingAnim:'thrust',toolSwingT:1.3,toolSwingDur:1.3,combatSwingWindupFrac:0.2/1.3,combatSwingHeld:false}; // Animation clock at Neutral.
+vm.createContext(timelineContext);
+vm.runInContext(gameSource.slice(gameSource.indexOf('      function getWeaponAttackTimeline()'),gameSource.indexOf('      // Ranged actions supply separate load/fire pose sets')),timelineContext);
+assert.equal(timelineContext.getWeaponAttackTimeline().remainingS,1.3);
+assert(Math.abs(timelineContext.getWeaponAttackTimeline().windupRemainingS-0.2)<1e-9);
+timelineContext.toolSwingT=1.1;
+assert(Math.abs(timelineContext.getWeaponAttackTimeline().windupRemainingS)<1e-9,'Windup endpoint begins the second sound');
+assert.equal(timelineContext.getWeaponAttackTimeline().remainingS,1.1,'second phase includes strike, hold, and return');
+timelineContext.toolSwingT=0;
+assert.equal(timelineContext.getWeaponAttackTimeline(),null,'reaching Neutral releases the animation gate');

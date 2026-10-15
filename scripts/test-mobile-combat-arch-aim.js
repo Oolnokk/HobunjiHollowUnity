@@ -84,7 +84,7 @@ console.log('Physical and arch right-stick yaw/pitch, deadzone, rate, settings a
 const inputSource = fs.readFileSync('docs/js/combat/combat-input.js', 'utf8'); // Real hold termination state machine under test.
 let releases = 0, cancellations = 0, alignmentCancels = 0; // Counters distinguish a normal release from a canceled input.
 const makeHeldSlot = () => ({down:true,holding:true,holdStarted:true,holdAbility:{onHoldEnd(){releases++;},onHoldCancel(){cancellations++;}}}); // Started charge-like ability with separate cancellation cleanup.
-const holdContext = {slots:{1:makeHeldSlot()},emitState(){}}; // Minimal shared-input slot state.
+const holdContext = {slots:{1:makeHeldSlot()},queuedAttacks:new Map(),emitState(){}}; // Minimal shared-input slot state.
 vm.createContext(holdContext);
 vm.runInContext(inputSource.slice(inputSource.indexOf('  function endHold('), inputSource.indexOf('  // Call on pointerdown')), holdContext);
 vm.runInContext(inputSource.slice(inputSource.indexOf('  function abortPress('), inputSource.indexOf('  function abortAllPresses(')), holdContext);
