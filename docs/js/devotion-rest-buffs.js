@@ -1,10 +1,10 @@
 (() => {
   'use strict';
 
-  if (Number(window.DevotionRestBuffs?.version) >= 4) return;
+  if (Number(window.DevotionRestBuffs?.version) >= 5) return;
 
-  const CHANGE_SUMMARY = 'Strength secondary bonuses and potion caps remain owned by Alchemy; rested tiers scale at the shared magnitude query. Morning-service Prayer is anchored in world space in front of the seated player with action-slot-safe input hints; Well Rested integration remains shared with food, potion, movement, and Stamina systems.'; // Used by mobile diagnostics to identify the latest integration layer.
-  const CORE_URL = 'js/temple-prayer-rest-blessings.js?v=20261013hae7c187'; // Used to load the single blessing/save/menu authority before installing integration-only fixes.
+  const CHANGE_SUMMARY = 'Prayer remains anchored in world space with action-slot-safe input hints, and temple benches now permit prayer throughout Anan, including Spirit Communion; Well Rested integration remains shared with food, potion, movement, and Stamina systems.'; // Used by mobile diagnostics to identify the latest integration layer.
+  const CORE_URL = 'js/temple-prayer-rest-blessings.js?v=20261015hanan1'; // Used to load the single blessing/save/menu authority before installing integration-only fixes.
   const state = { coreLoaded: false, sitAliasInstalled: false, promptHookInstalled: false, movementHookInstalled: false, potionHooksInstalled: false, lastPromptAnchor: null, lastPrayerSlot: null, lastError: null }; // Used by the in-game diagnostic snapshot.
   let prayerPromptAnchor = null; // Reused world-space anchor that makes Pray float ahead of the player like a targeted-object interaction.
 
@@ -14,7 +14,7 @@
   }
 
   function ensureCoreLoaded() {
-    if (window.TemplePrayerRestBlessings) { state.coreLoaded = true; return true; }
+    if (Number(window.TemplePrayerRestBlessings?.version) >= 3) { state.coreLoaded = true; return true; }
     if (document.querySelector?.('script[data-hobunji-temple-prayer-core="1"]')) return false;
     const script = document.createElement('script'); // Used to keep the already-authored core module authoritative instead of maintaining a second blessing engine.
     script.dataset.hobunjiTemplePrayerCore = '1';
@@ -156,7 +156,7 @@
   const installTimer = window.setInterval(installAll, 250); // Used to catch game-owned debug/combat/alchemy objects that initialize after this parser-time compatibility bridge.
 
   window.DevotionRestBuffs = Object.freeze({
-    version: 4,
+    version: 5,
     debugSnapshot,
     potionStackScale,
     _installTimer: installTimer,

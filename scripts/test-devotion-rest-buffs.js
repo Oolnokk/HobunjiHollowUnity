@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict'); // Deterministic source-level regression assertions for the prayer/rest feature.
-const fs = require('node:fs'); // Reads the shipped core, integration shim, and bootstrap source.
+const fs = require('node:fs'); // Reads the shipped core, integration shim, bootstrap sources, and temple map.
 const path = require('node:path'); // Resolves repository-relative paths.
 const vm = require('node:vm'); // Syntax-checks browser modules without requiring a renderer.
 
@@ -9,20 +9,33 @@ const root = path.resolve(__dirname, '..'); // Used as the common repository roo
 const core = fs.readFileSync(path.join(root, 'docs/js/temple-prayer-rest-blessings.js'), 'utf8'); // Single authority for saves, prayer effects, menu, sleep timing, and buff-bar entries.
 const integration = fs.readFileSync(path.join(root, 'docs/js/devotion-rest-buffs.js'), 'utf8'); // Compatibility layer for seat detection, floating prompt, movement, and rounded potion tiers.
 const sleepBridge = fs.readFileSync(path.join(root, 'docs/js/sleep-passage-action-bridge.js'), 'utf8'); // Existing guaranteed bootstrap used to load the feature.
-const social = fs.readFileSync(path.join(root, 'docs/config/npcs/social-relations.js'), 'utf8'); // Authored morning-service schedule consumed by the prayer core.
+const combatBootstrap = fs.readFileSync(path.join(root, 'docs/js/combat/combat-config-loader.js'), 'utf8'); // Parser-time module loader that must request the current Sleep bridge URL/version.
+const social = fs.readFileSync(path.join(root, 'docs/config/npcs/social-relations.js'), 'utf8'); // Authored Anan morning-service schedule kept separate from all-day prayer eligibility.
+const temple = JSON.parse(fs.readFileSync(path.join(root, 'docs/config/maps/map_i_temple.json'), 'utf8')); // Alternate Spirit Communion layout used to verify its moved benches remain prayer-capable.
 
 assert.doesNotThrow(() => new vm.Script(core), 'temple prayer/rest core parses');
 assert.doesNotThrow(() => new vm.Script(integration), 'prayer/rest integration parses');
 assert.doesNotThrow(() => new vm.Script(sleepBridge), 'sleep bridge still parses');
+assert.doesNotThrow(() => new vm.Script(combatBootstrap), 'parser-time compatibility bootstrap still parses');
 
-assert.match(sleepBridge, /devotion-rest-buffs\.js\?v=[A-Za-z0-9_.-]+/, 'existing Sleep bootstrap loads the prayer/rest integration');
-assert.match(integration, /temple-prayer-rest-blessings\.js\?v=[A-Za-z0-9_.-]+/, 'integration loads exactly one prayer/rest core authority');
+assert.match(combatBootstrap, /sleep-passage-action-bridge\.js\?v=[A-Za-z0-9_.-]+[\s\S]{0,120}HobunjiSleepPassageActionBridge\?\.version\)\s*>=\s*3/, 'parser-time loader requests a cache-busted Sleep bridge and requires the current bridge version');
+assert.match(sleepBridge, /devotion-rest-buffs\.js\?v=[A-Za-z0-9_.-]+/, 'Sleep bridge cache-busts the prayer/rest integration');
+assert.match(integration, /temple-prayer-rest-blessings\.js\?v=[A-Za-z0-9_.-]+/, 'integration cache-busts the prayer/rest core authority');
 assert.match(core, /PRAYER_DURATION_HOURS\s*=\s*7\s*\*\s*24/, 'prayers last one in-game week');
 assert.match(core, /WELL_RESTED_DURATION_HOURS\s*=\s*16/, 'Well Rested lasts sixteen in-game hours');
-assert.match(social, /id:\s*'shared_temple_service'[\s\S]{0,500}from:\s*'09:00'[\s\S]{0,200}to:\s*'11:00'/, 'prayer eligibility reuses the authored Anan morning service');
-const activeServiceBody = core.match(/function activeTempleService\(\) \{([\s\S]*?)\n  \}\n\n  function seatedInTemplePew/)?.[1] || ''; // Isolates service gating so night communion cannot silently become prayer-eligible again.
-assert.match(activeServiceBody, /schedule\.id\s*!==\s*'shared_temple_service'/, 'Pray is gated specifically to the morning Temple Service event');
-assert.doesNotMatch(activeServiceBody, /return\s*\{\s*id:\s*'spirit_communion'/, 'night Spirit Communion never opens the prayer chooser');
+assert.match(social, /id:\s*'shared_temple_service'[\s\S]{0,300}day:\s*'Anan'[\s\S]{0,300}from:\s*'09:00'[\s\S]{0,200}to:\s*'11:00'/, 'formal Temple Service remains an Anan morning event rather than expanding to all day');
+const prayerDayBody = core.match(/function activeTemplePrayerDay\(\) \{([\s\S]*?)\n  \}\n\n  function seatedInTemplePew/)?.[1] || ''; // Isolates day gating so service-hour checks cannot silently return.
+assert.match(prayerDayBody, /currentWeekdayName\?\.\(\)/, 'prayer eligibility reads the public civil weekday');
+assert.match(prayerDayBody, /weekday\s*===\s*'Anan'/, 'Pray is available throughout Anan');
+assert.doesNotMatch(prayerDayBody, /shared_temple_service|parseMinutes|withinWindow|getHour/, 'all-day Anan prayer no longer depends on the morning service window');
+const seatedBody = core.match(/function seatedInTemplePew\(\) \{([\s\S]*?)\n  \}\n\n  function promptEligible/)?.[1] || ''; // Isolates seat qualification for both ordinary and alternate temple layouts.
+assert.match(seatedBody, /sit\.furnitureKey\s*===\s*'benchFurniture'/, 'any temple bench can serve as a prayer pew');
+assert.match(seatedBody, /getCurrentArea\?\.\(\)\s*===\s*'map_i_temple'/, 'bench prayer remains temple-only');
+const communion = (temple.layouts || []).find(layout => layout.id === 'spirit_communion');
+assert(communion, 'temple retains the Spirit Communion alternate layout');
+assert((communion.conditions || []).some(condition => condition.from === '00:00' && condition.to === '03:00' && (condition.days || []).includes('Anan')), 'Spirit Communion is authored on Anan from midnight to 03:00');
+const communionPrayerBench = (communion.furniture || []).find(piece => piece.id === 'sc_bench_w1');
+assert.equal(communionPrayerBench?.itemKey, 'benchFurniture', 'a known moved Spirit Communion pew uses the generic bench key consumed by prayer eligibility');
 
 for (const prayer of ["Nao'ine Prayer", 'Krurenic Prayer', 'Narshangetic Prayer']) {
   assert(core.includes(prayer), `${prayer} is authored in the prayer chooser`);
@@ -64,6 +77,7 @@ assert.match(potionStackScaleBody, /Math\.floor\(baseStacks \/ 3\)/, 'potion pot
 assert.match(core, /registerProvider\('temple-prayer-rest'/, 'prayers and Well Rested render through the existing EffectBuffBar');
 
 assert.match(core, /prayerRestSnapshot\s*=\s*debugSnapshot/, 'core state is available in the existing mobile debug surface');
+assert.match(core, /prayerWeekday:\s*lastPrayerWeekday/, 'prayer diagnostics expose the weekday used for eligibility');
 assert.match(integration, /prayerRestIntegrationSnapshot\s*=\s*debugSnapshot/, 'integration-hook status is separately visible without devtools');
 assert.match(sleepBridge, /ownedBedSleepPending[\s\S]{0,100}ownedBedSleepArmCount/, 'sleep debug snapshot exposes whether a real bed sleep was armed');
 
@@ -73,6 +87,7 @@ let calendarReady = false;
 let calendarDay = 10;
 let calendarTime = .25;
 let calendarReads = 0;
+let prayerWeekday = 'Anan';
 const savedMeta = { characters: [{ id: 'clock-test', templePrayerRestBlessings: {
   prayer: { id: 'naoine', startedAtGameHour: 240, expiresAtGameHour: 250 },
   wellRested: { startedAtGameHour: 240, expiresAtGameHour: 250 },
@@ -88,6 +103,7 @@ const clockWindow = {
       return { rawDay: calendarDay, time01: calendarTime };
     },
     getHour: () => { throw new Error('must use monotonic calendar snapshot'); },
+    currentWeekdayName: () => prayerWeekday,
   },
   addEventListener() {}, setInterval() {},
 };
@@ -101,6 +117,14 @@ assert.equal(calendarReads, 0, 'parser-time boot defers calendar reads');
 assert.equal(clockWindow.TemplePrayerRestBlessings.activePrayer()?.id, 'naoine');
 assert.equal(clockWindow.TemplePrayerRestBlessings.isWellRested(), true);
 calendarReady = true;
+clockWindow.__hobunjiFurnitureDebug = {
+  getCurrentArea: () => 'map_i_temple',
+  sitState: { phase: 'in', furnitureKey: 'benchFurniture', furnitureId: 'sc_bench_w1' },
+};
+assert.equal(clockWindow.TemplePrayerRestBlessings._test.promptEligible(), true, 'generic Spirit Communion bench is prayer-eligible on Anan');
+prayerWeekday = 'Uung';
+assert.equal(clockWindow.TemplePrayerRestBlessings._test.promptEligible(), false, 'same temple bench is not prayer-eligible off Anan');
+prayerWeekday = 'Anan';
 assert.equal(clockWindow.TemplePrayerRestBlessings.debugSnapshot().gameHour, 246);
 assert.equal(clockWindow.TemplePrayerRestBlessings.isWellRested(), true);
 calendarTime = .5;
