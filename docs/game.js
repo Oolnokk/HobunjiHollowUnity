@@ -13612,6 +13612,8 @@
             ex = ex / entranceLightTileSet.size + 0.5; ez = ez / entranceLightTileSet.size + 0.5;
             const doorLight = new THREE.PointLight(0xfff2d0, 1.4, 7, 2);
             doorLight.position.set(ex, 1.6, ez + 0.6);
+            doorLight.userData.furnitureLightMask = true; // Local lights only reach the screen through the 2D fake-light overlay (js/furniture-light-registry.js).
+            window.FurnitureLightRegistry?.register(doorLight);
             bScene.add(doorLight);
             const glowMat = new THREE.MeshBasicMaterial({ color: 0xe9dcb8, transparent: true, opacity: 0.35 });
             const glow = new THREE.Mesh(new THREE.CircleGeometry(1.8, 20), glowMat);
@@ -19539,18 +19541,7 @@
       // Layered rain audio (rainLayerWeights/updateRainAudio) now lives in
       // js/music-system.js (window.Music).
 
-      function projectileTileCoverBase(tile) {
-        return Number.isFinite(Number(tile.surfaceY)) ? Number(tile.surfaceY) : NORMAL_TOP + (tile.elevTier || 0) * PLATEAU_UNIT;
-      }
-
-      function projectileTileCoverTop(tile, col, row) {
-        if (tile?.type === TileType.SHRUB) return isChoppableTreeTile(col, row) ? Infinity : null;
-        if (tile?.type !== TileType.ROCK) return null;
-        if (_isCavernBuildingArea(currentArea) && tile.rockKind !== 'diggableRockOre') return Infinity;
-        const baseY = projectileTileCoverBase(tile); // Same base used by rock renderers and debug volumes.
-        const coverHeight = Number(tile.projectileCoverHeightTiles) || (tile.rockKind === 'undiggableBoulder' ? 1.46 : ROCK_H); // Cached generated mound/shell height, with finite defaults before chunks load.
-        return baseY + coverHeight;
-      }
+      // Projectile tile-cover heights (projectileTileCoverBase/Top) now live in js/projectile-tile-cover.js.
 
       function tileSpeedAt(wx, wy, worldY = null) {
         const aC = window.GridTileAccessors.getActiveCols(), aR = window.GridTileAccessors.getActiveRows();
@@ -19568,7 +19559,7 @@
         }
         if (isSolid(type)) {
           if (!projectile) return null;
-          const coverTopY = projectileTileCoverTop(tile, col, row); // One authority shared with the visible projectile-cover overlay.
+          const coverTopY = window.ProjectileTileCover.coverTop(tile, col, row); // One authority shared with the visible projectile-cover overlay.
           if (coverTopY != null && worldY <= coverTopY + 0.01) return null;
         }
         // Auto-reserved plateau cliff-face ring — impassable except where a
@@ -20308,6 +20299,7 @@
       // the same shrub/weed slab height (one for its geometry, this one for
       // tileYCenter/tileSurfaceY's Y-placement math).
       const VEG_H = 0.18;
+      window.ProjectileTileCover.init({ TileType, NORMAL_TOP, PLATEAU_UNIT, ROCK_H, isChoppableTreeTile, isCavernBuildingArea: _isCavernBuildingArea, getCurrentArea: () => currentArea });
 
       // Camera — mode-driven, with the default preserving the original isometric follow.
       const camera = new THREE.PerspectiveCamera(cameraModeConfig('default').fovDeg ?? 42, 1, 0.1, 200);
@@ -22273,7 +22265,7 @@
               if (image) plane.scale.y = image.naturalHeight / Math.max(1, image.naturalWidth);
             }, undefined, error => window.__farmLog?.(`[held-item] ${item.key} source sprite failed: ${error.message}`, 'warn'))
           : _getItemIconTexture(item.icon);
-        const mat = window.HobunjiSpritePngSurface.makeMaterial(THREE, fallbackTexture, 'held-item-' + item.key); // Shared authored PNG appearance for held items and thrown flasks.
+        const mat = window.HobunjiSpritePngSurface.makeMaterial(THREE, fallbackTexture, 'held-item-' + item.key, { side: THREE.DoubleSide }); // Shared authored PNG appearance; double-sided because held poses lay the plane flat and thrown flasks tumble.
         plane = new THREE.Mesh(geo, mat);
         plane.renderOrder = HELD_OBJECT_RENDER_ORDER;
         plane.userData.ownsTexture = !!spritePath;
@@ -29728,8 +29720,8 @@
 
       window.DebugHitboxes?.init({
         getActiveGrid: window.GridTileAccessors.getActiveGrid,
-        projectileTileCoverTop,
-        projectileTileCoverBase,
+        projectileTileCoverTop: window.ProjectileTileCover.coverTop,
+        projectileTileCoverBase: window.ProjectileTileCover.coverBase,
         getActiveTileAt: window.GridTileAccessors.getActiveTileAt,
         tileSurfaceY,
         surfaceYAtWorld: activeSurfaceYAtWorld,

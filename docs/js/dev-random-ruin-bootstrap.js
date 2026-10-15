@@ -25,7 +25,7 @@
   document.write('<script src="js/dev-random-ruin-furniture-pieces.js?v=20261015h7327f5e"></scr' + 'ipt>'); // Door seals, glyph plaques, Great Door as authored furniture.
   document.write('<script src="js/dev-random-ruin-hit-puzzles.js?v=20261015h65cbbc1"></scr' + 'ipt>'); // Plain source (formerly nine base64 part files reassembled with eval).
   document.write('<script src="js/dev-random-ruin-prototype-hooks.js?v=20260927interiorparity1"></scr' + 'ipt>');
-  document.write('<script src="js/dev-random-ruin-solid-footprints.js?v=20261015ghostfootprint1"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-solid-footprints.js?v=20261015hd0935ed"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-tile-occupancy.js?v=20260928puzzles2"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-solvability.js?v=20260926lighting1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-interior-map.js?v=20261015h134fbe9"></scr' + 'ipt>');

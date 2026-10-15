@@ -610,6 +610,8 @@
       if (isBonfire || prop.key === 'campfire') {
         light = new THREE.PointLight(0xff7722, isBonfire ? 1.75 : 1.1, isBonfire ? 7.5 : 3.2);
         light.position.set(col, elevationY + (isBonfire ? 0.8 : 0.45), row);
+        light.userData.furnitureLightMask = true; // Local lights only show through the 2D fake-light overlay, same as bandit campfires.
+        window.FurnitureLightRegistry?.register(light);
         zone.scene.add(light);
       }
       camp.propMeshes.set(prop.id, { mesh, light, pending: false });

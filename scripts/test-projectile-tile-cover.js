@@ -21,7 +21,9 @@ const context = { TileType, TILE:32, NORMAL_TOP:0, ROCK_H:0.75, PLATEAU_UNIT:0.5
 }; // Minimal runtime dependencies keep tests focused on collision behavior.
 Object.defineProperty(context, 'currentArea', {get:()=>state.area});
 vm.createContext(context);
-vm.runInContext(`${functionSource('projectileTileCoverBase')}\n${functionSource('projectileTileCoverTop')}\n${functionSource('tileSpeedAt')}\n${functionSource('canOccupyAt')}`, context);
+vm.runInContext(fs.readFileSync('docs/js/projectile-tile-cover.js', 'utf8'), context); // Shared cover-height module game.js initializes at boot.
+context.window.ProjectileTileCover.init({ TileType, NORMAL_TOP:0, PLATEAU_UNIT:0.5, ROCK_H:0.75, isChoppableTreeTile:()=>state.tree, isCavernBuildingArea:()=>state.area === 'cavern', getCurrentArea:()=>state.area });
+vm.runInContext(`${functionSource('tileSpeedAt')}\n${functionSource('canOccupyAt')}`, context);
 const occupy = worldY => context.canOccupyAt(48,48,2,worldY); // Exercise the same radius/height handoff used by actual projectile sweeps.
 assert(occupy(0.5), 'ordinary grass never blocks shots');
 grid[1][1] = {type:'shrub'};

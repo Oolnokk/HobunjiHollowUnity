@@ -19,7 +19,6 @@ assert.match(registrationSource, /BASE_RECOLOR_KEY_HEX\s*=\s*'#99BF99'/, 'Voorg-
 assert.match(registrationSource, /prefix:\s*KIND[\s\S]*?baseShadeReferenceHex:\s*BASE_RECOLOR_KEY_HEX/, 'Voorg-Ass shade-fill normalization uses the keyed source color');
 assert.match(registrationSource, /prefix:\s*KIND[\s\S]*?baseRecolorKeyHex:\s*BASE_RECOLOR_KEY_HEX/, 'Voorg-Ass renderer metadata exposes the authored source recolor key');
 assert.match(registrationSource, /prefix:\s*KIND[\s\S]*?fullBaseRecolor:\s*false/, 'Voorg-Ass no longer recolors every opaque base pixel');
-assert.match(registrationSource, /renderer\.recolorPixels\([\s\S]*BASE_RECOLOR_KEY_HEX[\s\S]*animal-base:\$\{KIND\}:hex-target/, 'Voorg-Ass keyed pass reuses CreatureGeneticsRender shade-fill math');
 assert.match(geneticsSource, /resources\[VOORG_ASS_KIND\]\s*=\s*\{\s*itemKey:\s*LIGHT_WOOL_ITEM_KEY,\s*cooldownDays:\s*1,\s*verb:\s*'Shear'/, 'Voorg-Ass uses the generic one-day shearing path');
 assert.deepEqual(loot.pools?.['creature_voorg-ass']?.entries?.map(entry => entry.itemKey), ['voorgAssMeat'], 'Voorg-Ass has its own meat drop pool');
 
@@ -69,7 +68,7 @@ const creatureDb = {
   },
 };
 windowStub.CreatureGenetics.init({ creatureDb, CREATURE_DB: creatureDb, clamp: (value, min, max) => Math.max(min, Math.min(max, value)) });
-const originalComposeFrame = async () => null; // Canonical compositor stub used to prove Voorg-Ass installs one idempotent keyed wrapper around it.
+const originalComposeFrame = async () => null; // Canonical compositor stub used to prove Voorg-Ass leaves it unwrapped.
 windowStub.CreatureGeneticsRender = {
   SPECIES: { grehlr: { patterns: [] } },
   composeFrame: originalComposeFrame,
@@ -92,11 +91,8 @@ assert.deepEqual(JSON.parse(JSON.stringify(voorgRendererSpec.patterns)), ['belly
 assert.equal(voorgRendererSpec.baseShadeReferenceHex, '#99BF99');
 assert.equal(voorgRendererSpec.baseRecolorKeyHex, '#99BF99');
 assert.equal(voorgRendererSpec.fullBaseRecolor, false);
-assert.equal(windowStub.CreatureGeneticsRender.composeFrame.__voorgAssHexTargeted, true, 'Voorg-Ass installs the keyed compositor wrapper');
-assert.equal(windowStub.CreatureGeneticsRender.composeFrame.__voorgAssOriginalComposeFrame, originalComposeFrame, 'Keyed wrapper preserves the canonical compositor underneath');
-const installedComposeFrame = windowStub.CreatureGeneticsRender.composeFrame; // Used to verify repeated registration cannot stack another wrapper.
-assert.equal(windowStub.VoorgAssRegistration.installHexTargetedBaseRecolor(windowStub.CreatureGeneticsRender), true);
-assert.equal(windowStub.CreatureGeneticsRender.composeFrame, installedComposeFrame, 'Hex-targeted compositor install is idempotent');
+assert.equal(voorgRendererSpec.baseRecolorHueTolerance, 20);
+assert.equal(windowStub.CreatureGeneticsRender.composeFrame, originalComposeFrame, 'Voorg-Ass coat keying lives in the shared renderer, not a compositor wrapper (see test-voorg-ass-keyed-coat-recolor.js)');
 assert.equal(windowStub.HobunjiCookingData.items.puktukWool.name, 'Heavy Wool', 'Puktuk wool presents as Heavy Wool while retaining its save-compatible key');
 assert.equal(windowStub.HobunjiCookingData.items.lightWool.name, 'Light Wool');
 assert(windowStub.HobunjiCookingData.items.lightWool.categories.includes('wool'));
@@ -149,4 +145,4 @@ for (let i = 0; i < 500; i++) {
 assert.deepEqual(JSON.parse(JSON.stringify(windowStub.CreatureGenetics.creatureSizeScale('voorg-ass', 'large'))), { sizeClass: 'large', x: 1.2, y: 1.2 });
 assert.equal(windowStub.CreatureGenetics.creatureGroundOffset('voorg-ass', 'large'), 0.46);
 
-console.log('PASS Voorg-Ass Northern Cliffs + Light Wool + hex-targeted recolor integration');
+console.log('PASS Voorg-Ass Northern Cliffs + Light Wool + keyed coat recolor registration');
