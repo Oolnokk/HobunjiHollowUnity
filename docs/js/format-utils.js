@@ -78,20 +78,36 @@
   })();
 
   // WallBuilder is already loaded before HousePieceGen/FormatUtils in the main
-  // game page. Install the log-wall bridge synchronously here so builders made
-  // during game boot can consume either deterministic generated foliage logs
-  // or the exact reusable GLB exported by the Wall Builder authoring tool.
+  // game page. Install the base log-wall bridge and then its tree-material layer
+  // synchronously so generated runtime logs use the same wood response as trees.
   (function loadLogWallExtension() {
     if (typeof document === 'undefined') return;
-    const src = 'js/log-wall-extension.js?v=20261014logwall1'; // Cache-busts the generated/baked log-cabin wall parity runtime.
-    if (window.LogWallExtension || document.querySelector('script[data-log-wall-extension]')) return;
+    const extensionSrc = 'js/log-wall-extension.js?v=20261014logwall1'; // Base generated/baked log-cabin wall runtime authority.
+    const materialsSrc = 'js/log-wall-materials.js?v=20261014logwallmat1'; // Tree-bark + cut-end material bridge layered over the base generated log prototype.
+    const hasExtension = !!window.LogWallExtension || !!document.querySelector('script[data-log-wall-extension]'); // Existing base bridge state used to avoid duplicate script insertion.
+    const hasMaterials = !!window.LogWallMaterials || !!document.querySelector('script[data-log-wall-materials]'); // Existing material bridge state used by parser-time and late-load paths.
+    if (hasExtension && hasMaterials) return;
     if (document.readyState === 'loading') {
-      document.write(`<script src="${src}" data-log-wall-extension="1"><\/script>`);
+      const extensionTag = hasExtension ? '' : `<script src="${extensionSrc}" data-log-wall-extension="1"><\/script>`; // Base bridge tag emitted before the dependent material bridge.
+      const materialsTag = hasMaterials ? '' : `<script src="${materialsSrc}" data-log-wall-materials="1"><\/script>`; // Material bridge tag emitted immediately after the base bridge.
+      document.write(`${extensionTag}${materialsTag}`);
       return;
     }
-    const script = document.createElement('script'); // Used only when FormatUtils itself is loaded after initial HTML parsing.
-    script.src = src;
+    const loadMaterials = () => { // Late-load helper preserving base-extension-before-material ordering.
+      if (window.LogWallMaterials || document.querySelector('script[data-log-wall-materials]')) return;
+      const materialScript = document.createElement('script'); // Late-loaded tree material bridge used when FormatUtils runs after parsing.
+      materialScript.src = materialsSrc;
+      materialScript.dataset.logWallMaterials = '1';
+      document.head.appendChild(materialScript);
+    };
+    if (window.LogWallExtension) {
+      loadMaterials();
+      return;
+    }
+    const script = document.createElement('script'); // Late-loaded base log extension whose load event chains the material bridge.
+    script.src = extensionSrc;
     script.dataset.logWallExtension = '1';
+    script.addEventListener('load', loadMaterials, { once: true });
     document.head.appendChild(script);
   })();
 
