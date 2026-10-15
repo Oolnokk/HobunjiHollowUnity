@@ -885,12 +885,13 @@
   // presence, resource cooldown paused) until assigned to a built barn
   // with an open slot from the Farm tab's Livestock panel (see
   // assignToBarn), which is what actually spawns it.
-  function addFromItem(itemKey) {
+  function addFromItem(itemKey, options = {}) {
     if (!deps.hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can add livestock." };
     const kind = deps.LIVESTOCK_ITEM_KINDS[itemKey];
     if (!kind) return { ok: false, message: 'That item cannot be added to the farm.' };
     if ((deps.inventory[itemKey] || 0) < 1) return { ok: false, message: 'None of that item in bag.' };
-    const genotype = _consumeLivestockItemGenotype(itemKey) || window.CreatureGenetics.makeDefaultGenotype(kind);
+    if (options.inventoryVariant != null && !window.LivestockItemGenotypePersistence?.groupsFor(itemKey, deps.inventory[itemKey])?.some(group => group.variant === options.inventoryVariant && group.count > 0)) return { ok: false, message: 'That animal stack is no longer available.' };
+    const genotype = (Object.prototype.hasOwnProperty.call(options, 'carriedGenotype') ? options.carriedGenotype : _consumeLivestockItemGenotype(itemKey)) || window.CreatureGenetics.makeDefaultGenotype(kind);
     deps.inventory[itemKey]--;
     deps.clampInventoryStack(itemKey);
     // Livestock belongs to the world, not this character — persisted
@@ -1229,15 +1230,16 @@
   // can do this with their own bag item), unlike addFromItem() above. A
   // stabled animal is untradeable and can never be placed on any farm;
   // it becomes a nameable, eventually-levelable companion instead.
-  function addToStable(itemKey) {
+  function addToStable(itemKey, options = {}) {
     const kind = deps.LIVESTOCK_ITEM_KINDS[itemKey];
     if (!kind) return { ok: false, message: 'That item cannot be added to a stable.' };
     if ((deps.inventory[itemKey] || 0) < 1) return { ok: false, message: 'None of that item in bag.' };
+    if (options.inventoryVariant != null && !window.LivestockItemGenotypePersistence?.groupsFor(itemKey, deps.inventory[itemKey])?.some(group => group.variant === options.inventoryVariant && group.count > 0)) return { ok: false, message: 'That animal stack is no longer available.' };
     deps.inventory[itemKey]--;
     deps.clampInventoryStack(itemKey);
     const entry = {
       id: 'stable_' + Math.random().toString(36).slice(2, 10),
-      kind, name: window.CreatureGenetics.defaultLivestockName(kind), genotype: _consumeLivestockItemGenotype(itemKey) || window.CreatureGenetics.makeDefaultGenotype(kind),
+      kind, name: window.CreatureGenetics.defaultLivestockName(kind), genotype: (Object.prototype.hasOwnProperty.call(options, 'carriedGenotype') ? options.carriedGenotype : _consumeLivestockItemGenotype(itemKey)) || window.CreatureGenetics.makeDefaultGenotype(kind),
       aiType: deps.companionAiTypeForKind(kind), level: 0, stabledAt: Date.now(),
     };
     deps.getStable().push(entry);

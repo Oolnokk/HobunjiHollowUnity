@@ -440,7 +440,7 @@
   if (window.LivestockItemGenotypePersistence?.install) { window.LivestockItemGenotypePersistence.install(); return; }
   if (document.querySelector('script[data-hobunji-livestock-genotypes]')) return;
   const script = document.createElement('script'); // Used to load the persistent creature-item lineage adapter once.
-  script.src = 'js/livestock-item-genotype-persistence.js?v=20260826a';
+  script.src = 'js/livestock-item-genotype-persistence.js?v=20261015h817dfd0';
   script.async = false;
   script.dataset.hobunjiLivestockGenotypes = 'true';
   script.onload = () => window.LivestockItemGenotypePersistence?.install?.();

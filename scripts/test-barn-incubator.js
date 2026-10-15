@@ -176,6 +176,18 @@ let available = B.availableTroughsForSlot(placed.addition.id, 0);
 assert(!available.some(entry => entry.troughIndex === 0), 'already assigned adult trough is not reservable');
 assert(available.some(entry => entry.troughIndex === 1), 'unused trough is reservable');
 
+const nurseryChoices = B.nurseryIncubationChoices(); // Nursery selection offers actual free slots/troughs only.
+assert(nurseryChoices.length > 0);
+assert(nurseryChoices.every(choice => choice.troughIndex !== 0), 'occupied adult troughs never appear in the Nursery picker');
+assert.equal(B.startFromNursery('baby_1', { ...nurseryChoices[0], troughIndex: 999 }).ok, false, 'stale destinations are rejected');
+assert.equal(B.startFromNursery('missing_baby', nurseryChoices[0]).ok, false, 'stale baby selection changes no reservations');
+const nurseryStart = B.startFromNursery('baby_1', nurseryChoices[0]);
+assert.equal(nurseryStart.ok, true, 'Nursery card selection directly reserves a trough and starts maturation');
+assert(!livestock.some(entry => entry.id === 'baby_1'), 'only the selected baby moves out of Nursery');
+assert.equal(B.startFromNursery('baby_1', nurseryChoices[0]).ok, false, 'double activation cannot duplicate a baby');
+assert.equal(B.cancelMaturation(nurseryChoices[0].additionId, nurseryChoices[0].slotIndex).ok, true, 'new Nursery action preserves the existing cancel lifecycle');
+assert(livestock.some(entry => entry.id === 'baby_1'));
+
 const reserved = B.reserveTrough(placed.addition.id, 0, barn.id, 1);
 assert.equal(reserved.ok, true, 'unused trough can be reserved ahead of maturation');
 assert(B.debugSnapshot().reservedTroughs.includes('barn_test:1'), 'reservation is visible in mobile debug state');

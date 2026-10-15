@@ -1121,17 +1121,19 @@
       list.appendChild(Object.assign(document.createElement('div'), { className: 'farm-note', textContent: 'No livestock crates, eggs, or babies in your bag.' }));
       return;
     }
-    owned.forEach(key => {
+    owned.flatMap(key => window.InventoryStacks.variants(key, deps.inventory[key])).forEach(stack => {
+      const { key, count } = stack; // Each carried bloodline is independently selectable for the Nursery.
       const def = deps.ITEM_DEFS[key];
       const row = document.createElement('div');
       row.className = 'farm-row';
       row.innerHTML =
         `<span class="farm-row-icon">${def?.icon || '📦'}</span>` +
         `<span class="farm-row-name" style="padding:2px 4px">${deps.esc(def?.label || key)}</span>` +
-        `<span class="farm-note">×${deps.inventory[key]}</span>` +
+        `<span class="farm-note">×${count}</span>` +
         `<button class="settings-small-btn">Add</button>`;
+      window.InventoryStacks.applyHeadIcon(row.querySelector('.farm-row-icon'), deps.LIVESTOCK_ITEM_KINDS[key], stack.genotype, stack.variant);
       row.querySelector('button').addEventListener('click', () => {
-        const result = window.FarmAnimals.addFromItem(key);
+        const result = window.FarmAnimals.addFromItem(key, { inventoryVariant: stack.variant });
         deps.showToast(result.message, result.ok);
         if (result.ok) {
           renderFarmLivestock(); renderFarmGridGlance(); deps.buildInventoryGrid(); deps.refreshActionBar();
