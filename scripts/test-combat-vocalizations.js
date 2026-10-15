@@ -10,6 +10,7 @@ const banditSource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'c
 let now = 0;
 let scheduledBreath = null;
 let stagedSpec = null;
+let stagedAction = null; // Advances the actual action retained by the vocal input gate.
 const played = [];
 const listeners = new Map();
 const docListeners = new Map();
@@ -123,7 +124,8 @@ context.window.Combat = {
   },
   beginStagedAction(spec) {
     stagedSpec = spec;
-    return { spec, totalS:(spec.windupS||0)+(spec.strikeS||0)+(spec.recoverS||0), t:0, phase:'windup' };
+    stagedAction = { spec, totalS:(spec.windupS||0)+(spec.strikeS||0)+(spec.recoverS||0), t:0, phase:'windup' };
+    return stagedAction;
   },
 };
 
@@ -293,35 +295,51 @@ W.CombatVocalizations.forgetEntity(npc);
 assert.equal(W.CombatVocalizations.debugSnapshot().trackedNpcBreathers, 0, 'despawn releases retained NPC references');
 assert.equal(played.at(-1).stopped, true, 'despawn fades the current NPC voice');
 
-// The full visual timeline, rather than clip tempo or hit timing, owns both voice phases and the queue.
+// Active visual phases own both voice timing and the queue; the return tail is cosmetic.
 emit(docListeners, 'hobunjiPlayerReady');
 let visualRemainingS = 1.3; // Includes 0.2s windup, 0.1s strike, 0.7s hold, and 0.3s return.
-W.Combat.deps.getWeaponAttackTimeline=()=>({remainingS:visualRemainingS,windupRemainingS:0.2});
+W.Combat.deps.getWeaponAttackTimeline=()=>({remainingS:visualRemainingS,activeRemainingS:Math.max(0,visualRemainingS-0.3),windupRemainingS:0.2});
 W.AudioSystem.gameAudioConfig=()=>({enabled:false});
 abilities.get('swingCombo').onTap();
-assert(Math.abs(W.CombatVocalizations.attackStartDelayS()-1.3)<1e-9,'muted attacks wait until visual neutral');
-assert(Math.abs(stagedSpec.recoverS-1)<1e-9,'staged recovery includes visual hold and return');
+assert(Math.abs(W.CombatVocalizations.attackStartDelayS()-1)<1e-9,'muted attacks wait through Hold only');
+assert(Math.abs(stagedSpec.recoverS-0.7)<1e-9,'staged recovery includes hold but excludes return');
 const beforePhase = W.CombatVocalizations.debugSnapshot().lastStrike; // Windup must retain its charge voice until the exact boundary.
 stagedSpec.onUpdate({t:0.19});
 assert.deepEqual(W.CombatVocalizations.debugSnapshot().lastStrike,beforePhase);
 stagedSpec.onUpdate({t:0.2});
-assert(Math.abs(W.CombatVocalizations.debugSnapshot().lastStrike.durationS-1.1)<1e-9,'second grunt spans Windup to Strike to Neutral');
+assert(Math.abs(W.CombatVocalizations.debugSnapshot().lastStrike.durationS-0.8)<1e-9,'second grunt spans Windup to Strike through Hold');
 assert.equal(W.CombatVocalizations.debugSnapshot().lastStrike.category,'combo');
 stagedSpec.onStrike({t:0.3});
-assert(Math.abs(W.CombatVocalizations.debugSnapshot().lastStrike.durationS-1.1)<1e-9,'impact does not restart the release voice');
-visualRemainingS=0;
+assert(Math.abs(W.CombatVocalizations.debugSnapshot().lastStrike.durationS-0.8)<1e-9,'impact does not restart the release voice');
+stagedAction.t=0.99;
+visualRemainingS=0.31;
+assert(Math.abs(W.CombatVocalizations.attackStartDelayS()-0.01)<1e-9,'queue still waits during the final Hold interval');
+stagedAction.t=1;
+visualRemainingS=0.3;
+assert.equal(W.CombatVocalizations.attackStartDelayS(),0,'tracked action and visual timeline both release the queue before return');
+stagedSpec.onComplete(stagedAction);
+stagedAction.phase='done';
+assert.equal(W.CombatVocalizations.attackStartDelayS(),0,'completed actions cannot reinstate the return delay');
 emit(docListeners, 'hobunjiPlayerReady');
-assert.equal(W.CombatVocalizations.attackStartDelayS(),0,'new player/save clears old attack timing');
+assert.equal(W.CombatVocalizations.attackStartDelayS(),0,'return tail does not gate attacks after old actions are cleared');
 console.log('shared animation timeline voice and queue timing: ok');
 
-const gameSource = fs.readFileSync(path.join(__dirname,'..','docs','game.js'),'utf8'); // Executes the real visual timeline bridge, including additive hold and return time.
-const timelineContext = {activeTool:'weapon',combatSwingAnim:'thrust',toolSwingT:1.3,toolSwingDur:1.3,combatSwingWindupFrac:0.2/1.3,combatSwingHeld:false}; // Animation clock at Neutral.
+const gameSource = fs.readFileSync(path.join(__dirname,'..','docs','game.js'),'utf8'); // Executes the real visual timeline bridge, including explicit and automatic hold endpoints.
+const timelineContext = {activeTool:'weapon',combatSwingAnim:'thrust',toolSwingT:1.3,toolSwingDur:1.3,combatSwingWindupFrac:0.2/1.3,combatSwingStrikeFrac:0.3/1.3,combatSwingHoldS:0.7,combatSwingHeld:false}; // Animation clock at Neutral.
 vm.createContext(timelineContext);
 vm.runInContext(gameSource.slice(gameSource.indexOf('      function getWeaponAttackTimeline()'),gameSource.indexOf('      // Ranged actions supply separate load/fire pose sets')),timelineContext);
 assert.equal(timelineContext.getWeaponAttackTimeline().remainingS,1.3);
+assert(Math.abs(timelineContext.getWeaponAttackTimeline().activeRemainingS-1)<1e-9);
 assert(Math.abs(timelineContext.getWeaponAttackTimeline().windupRemainingS-0.2)<1e-9);
 timelineContext.toolSwingT=1.1;
 assert(Math.abs(timelineContext.getWeaponAttackTimeline().windupRemainingS)<1e-9,'Windup endpoint begins the second sound');
 assert.equal(timelineContext.getWeaponAttackTimeline().remainingS,1.1,'second phase includes strike, hold, and return');
+timelineContext.toolSwingT=0.3;
+assert.equal(timelineContext.getWeaponAttackTimeline().activeRemainingS,0,'Hold endpoint releases input while the return animation remains active');
+timelineContext.combatSwingHoldS=0;
+timelineContext.toolSwingT=1.3;
+assert(Math.abs(timelineContext.getWeaponAttackTimeline().activeRemainingS-0.6)<1e-9,'automatic hold ends after 30% of the post-strike tail');
+timelineContext.combatSwingStrikeFrac=1;
+assert(Math.abs(timelineContext.getWeaponAttackTimeline().activeRemainingS-1.287)<1e-9,'hold endpoint uses the renderer clamp');
 timelineContext.toolSwingT=0;
 assert.equal(timelineContext.getWeaponAttackTimeline(),null,'reaching Neutral releases the animation gate');
