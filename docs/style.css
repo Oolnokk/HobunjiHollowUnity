@@ -3435,3 +3435,17 @@
 
 /* Developer controls stay out of player Settings, including late-injected tools. */
 body:not([data-dev-mode="true"]) [data-dev-only] { display: none !important; }
+
+/* ── Perception Mode (js/perception-mode.js) ── a cool vignette and a small
+   label while the sense is active; highlights themselves are drawn in WebGL. */
+#perceptionModeOverlay {
+  position: absolute; inset: 0; pointer-events: none; z-index: 4;
+  opacity: 0; transition: opacity 0.25s ease;
+  background: radial-gradient(ellipse at center, rgba(8,14,30,0) 45%, rgba(8,14,30,0.55) 100%);
+}
+#perceptionModeOverlay.active { opacity: 1; }
+#perceptionModeOverlay .perception-mode-label {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+  font: 700 12px/1 'DM Mono', monospace; letter-spacing: 0.18em; text-transform: uppercase;
+  color: rgba(220,235,255,0.85); text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+}

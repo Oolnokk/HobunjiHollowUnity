@@ -580,7 +580,12 @@
     }
     if (action === 'obj_alchemy_' + animal.id) return administerBreedingPotion(animal.livestockId, deps.getHeldItemKey?.());
     if (action === 'obj_pet_' + animal.id) {
-      const rec = deps.loadWorldLivestock().find(l => l.id === animal.livestockId);
+      const list = deps.loadWorldLivestock();
+      const rec = list.find(l => l.id === animal.livestockId);
+      if (rec && Number.isFinite(deps.calendar?.day)) {
+        rec.lastPettedDay = deps.calendar.day; // Read by livestockStatus (Perception Mode's "Petted today").
+        deps.saveWorldLivestock(list);
+      }
       window.HobunjiActivityEvents?.emit('animal_petted', { farm: true, kind: rec?.kind || null, livestockId: animal.livestockId });
       return { ok: true, message: `🤚 You give ${rec?.name || 'them'} a good scratch. They lean right into it.` };
     }
@@ -1123,6 +1128,44 @@
     }
   }
 
+  // Read-only care summary for one or more live livestock records, used by
+  // Perception Mode's info lists. "fed" means the animal's assigned trough
+  // holds feed its diet eats, i.e. tickHearts will feed it tonight.
+  function livestockStatus(livestockIds) {
+    const wanted = new Set(livestockIds || []);
+    const out = new Map();
+    if (!wanted.size || !deps) return out;
+    const list = deps.loadWorldLivestock();
+    const barnsById = new Map((deps.getFarmBuildings() || []).filter(b => b.kind === 'barn').map(b => [b.id, b]));
+    const today = deps.calendar?.day;
+    for (const rec of list) {
+      if (!wanted.has(rec.id)) continue;
+      const barn = rec.barnId ? barnsById.get(rec.barnId) : null;
+      const troughs = barn ? _ensureBarnTroughs(barn) : null;
+      const trough = troughs && rec.troughIndex != null ? troughs[rec.troughIndex] : null;
+      const eatable = feedKeysForDiet(dietFor(rec.kind));
+      const feedDays = trough?.slots ? trough.slots.filter(slot => slot && eatable.includes(slot)).length : 0;
+      const resDef = deps.LIVESTOCK_RESOURCE_DEFS[rec.kind] || null;
+      out.set(rec.id, {
+        name: rec.name || rec.kind,
+        kind: rec.kind,
+        hearts: Number.isFinite(rec.heartLevel) ? rec.heartLevel : HEART_DEFAULT,
+        heartMax: HEART_MAX,
+        hasTrough: !!trough,
+        fed: feedDays > 0,
+        feedDays,
+        pettedToday: Number.isFinite(today) && rec.lastPettedDay === today,
+        resourceLabel: resDef ? (deps.ITEM_DEFS[resDef.itemKey]?.label || resDef.itemKey) : null,
+        resourceReady: !!(resDef && rec.resourceReady),
+        daysUntilResource: resDef && !rec.resourceReady && Number.isFinite(rec.daysUntilResource) ? Math.max(0, rec.daysUntilResource) : null,
+        housed: !!rec.barnId,
+        dewReady: rec.kind === 'uumkaoii' ? !!rec.dewReady : null,
+        dewDaysUntil: rec.kind === 'uumkaoii' && !rec.dewReady && Number.isFinite(rec.dewDaysUntil) ? Math.max(0, rec.dewDaysUntil) : null,
+      });
+    }
+    return out;
+  }
+
   // ── Livestock harvest interaction (milking/venom/stink-oil extraction) ──
   // Modeled on the NPC dialogue system's own player-staging
   // (game.js's updateNpcDialogueStaging/faceNpcDialogueParticipants):
@@ -1532,6 +1575,7 @@
     feedKeysForDiet,
     tickResources,
     tickHearts,
+    livestockStatus,
     isHarvesting,
     updateHarvestInteraction,
     addToStable,

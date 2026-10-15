@@ -17693,7 +17693,7 @@
         // while it's converting movement into zips; 1 (no change) otherwise.
         const combatSpeedMul = window.Combat?.getMovementSpeedMul ? window.Combat.getMovementSpeedMul() : 1;
         const footingSpeedMul = getFootingSpeedMul(player);
-        const targetSpeed = MOVE_SPEED * speedMul * analogEase * combatSpeedMul * footingSpeedMul * window.AlchemySystem.getSpeedMul() * window.CookingSystem.getSpeedMultiplier() * (window.FestivalSystem?.blessingMultiplier?.('speed') || 1) * devGlobalSpeedMul;
+        const targetSpeed = MOVE_SPEED * speedMul * analogEase * combatSpeedMul * footingSpeedMul * window.AlchemySystem.getSpeedMul() * window.CookingSystem.getSpeedMultiplier() * (window.FestivalSystem?.blessingMultiplier?.('speed') || 1) * devGlobalSpeedMul * (window.PerceptionMode?.speedMultiplier() ?? 1);
         if (inputStrength > 0.001) {
           const targetVx = ix * targetSpeed;
           const targetVy = iy * targetSpeed;
@@ -21486,6 +21486,45 @@
         playerRoot: playerMesh,
         getActiveScene: window.GridTileAccessors.getActiveScene,
       });
+      // Perception Mode (eagle-vision highlights, crop/livestock info lists,
+      // half-speed movement) now lives in js/perception-mode.js. It only
+      // reads these registries; gameLoop calls update() and renderWorldPasses
+      // calls renderOverlay().
+      window.PerceptionMode?.init({
+        THREE,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
+        getPlayerTile: () => ({ x: player.x / TILE, z: player.y / TILE }),
+        getSources: () => {
+          const zone = _isZoneArea(currentArea) ? currentArea : null;
+          const interactables = currentArea === 'interior' ? [...interiorWorldObjects.values()]
+            : zone ? [
+              ...(_zoneReagentObjects.get(zone)?.values() || []),
+              ...(_zoneBerryObjects.get(zone)?.values() || []),
+              ...(_zoneTreasureObjects.get(zone)?.values() || []),
+            ]
+            : currentArea === 'farm' ? [...new Set(worldObjects.values())] : [];
+          const crops = [];
+          if (currentArea === 'farm') {
+            const cropMeshes = window.VegetationCropRendering?.cropMeshes || [];
+            for (let row = 0; row < ROWS; row++) {
+              for (let col = 0; col < COLS; col++) {
+                const tile = grid[row]?.[col];
+                const root = tile?.crop ? cropMeshes[row * COLS + col] : null;
+                if (root) crops.push({ col, row, root, tile, data: cropData[tile.crop], maxWater: MAX_WATER });
+              }
+            }
+          }
+          return {
+            creatures: hostileObjects,
+            companions: companionObjects,
+            npcs: npcWalkers,
+            livestock: currentArea === 'farm' ? animalObjects : [],
+            corpses: [...corpseObjects].filter(c => c.state === 'corpse' && c.areaId === currentArea && !c.corpseLooted),
+            interactables,
+            crops,
+          };
+        },
+      });
       // ambientDialogueRuntime owns only lightweight proximity checks and
       // its temporary world-space speech planes. Game state, NPC routing,
       // and creature treasure movement remain authoritative here in game.js.
@@ -24361,6 +24400,7 @@
         }
 
         const prePausePerf = window.PerfProfiler?.begin('popups+music'); // Runs even while paused, so kept separate from the gated gameplay buckets below.
+        window.PerceptionMode?.update(now); // Syncs its info lists before WorldPopupText positions them.
         worldPopupRuntime?.update(now);
 
         updateSceneTransition(dt);
@@ -24799,6 +24839,9 @@
             camera.layers.enableAll();
             window.PerfProfiler?.end(rpMistPerf);
           }
+          // Perception Mode silhouettes, drawn into _mainRT so the composite
+          // (and the world-text overlay drawn with it) still lands on top.
+          window.PerceptionMode?.renderOverlay(renderer, activeScene, camera);
           renderer.autoClearColor = true;
           renderer.autoClearDepth = true;
 
@@ -24849,6 +24892,7 @@
             renderer.autoClearColor = true;
             renderer.autoClearDepth = true;
           }
+          window.PerceptionMode?.renderOverlay(renderer, activeScene, camera);
         }
         window.PerfProfiler?.end(renderPassPerf);
         window.MobileRenderBudget?.sample(now, !paused && !window.PixelProbe?.armed);
@@ -24994,45 +25038,17 @@
       // Weather rolling (chooseWeatherForDay/updateRainState) now lives
       // in js/weather-fx.js — call via window.WeatherFX.*.
 
-      function tickCropDay() {
-        window.FarmProduction?.irrigate(grid, calendar, RAIN_RATE, true); // Analytic irrigation handles sleep/day skips before crops evaluate their water.
-        for (let row = 0; row < ROWS; row++) {
-          for (let col = 0; col < COLS; col++) {
-            const tile = grid[row][col];
-            if (!tile.crop) continue;
-            const data = cropData[tile.crop];
-            const mul = cropGrowthMultiplier(tile, col, row);
-            const ditchStress = data.needsAdjacentDitch && !hasAdjacentDitch(col, row) ? 'needs ditch' : '';
-            tile.stress = ditchStress || (mul < 0.15 ? (tile.water < data.idealMin ? 'too dry' : 'waterlogged')
-                        : mul < 0.6  ? (tile.water < data.idealMin ? 'dry'     : 'too wet')
-                        : '');
-            tile.cropAge += mul * (tile.fertilized ? 1.25 : 1); // Compost improves one crop cycle without overriding water stress.
-            tile.cropReady = tile.cropAge >= data.growDays;
-          }
-        }
-      }
+      // Daily crop growth (tickCropDay/cropGrowthMultiplier/hasAdjacentDitch)
+      // now lives in js/crop-growth.js — call via window.CropGrowth.*.
+      window.CropGrowth.init({
+        getGrid: () => grid, getCalendar: () => calendar, cropData, TileType,
+        MAX_WATER, RAIN_RATE, ROWS, COLS, cardinalNeighbors,
+      });
+      function tickCropDay() { window.CropGrowth.tickCropDay(); }
 
-      // Returns 0..1 growth rate based on how close tile.water is to crop ideal band.
       function canPlantCropOnTile(crop, tile) {
         if (!cropData[crop]) return false;
         return [TileType.TILLED, TileType.RAISED].includes(tile.type) && !tile.crop;
-      }
-
-      function hasAdjacentDitch(col, row) {
-        return cardinalNeighbors(col, row).some(point => grid[point.row][point.col].type === TileType.TRENCH);
-      }
-
-      function cropGrowthMultiplier(tile, col, row) {
-        if (!tile.crop) return 0;
-        const data = cropData[tile.crop];
-        const { idealMin, idealMax } = data;
-        const w = tile.water / MAX_WATER;
-        let waterMul;
-        if (w >= idealMin && w <= idealMax) waterMul = 1.0;
-        else if (w < idealMin) waterMul = Math.max(0, (w - (idealMin - 0.4)) / 0.4);
-        else waterMul = Math.max(0, ((idealMax + 0.4) - w) / 0.4);
-        const ditchMul = data.needsAdjacentDitch && !hasAdjacentDitch(col, row) ? 0.65 : 1.0;
-        return waterMul * ditchMul;
       }
 
       // The water simulation itself (avgGridWaterLevel/recomputeWater) now
@@ -26607,6 +26623,10 @@
           && computeActionButtons().some(button => button.action === 'potion_select' && button.allowed);
       }
       function runInputAction(actionId, phase = 'press') {
+        if (actionId === 'perceptionMode') {
+          if (phase === 'press') window.PerceptionMode?.toggle(); // No cooldown; the cost is half movement speed while active.
+          return;
+        }
         if (actionId === 'dodge' && window.Fishing?.state?.active) {
           if (phase === 'press') performContextAction(); // Fishing cancel outranks placement, selectors and weapon handlers.
           return;

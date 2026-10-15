@@ -315,6 +315,7 @@ window.SCRATCHBONES_CONFIG = {
         { "id": "action8", "label": "Tool/Item Action 8", "desktop": "Digit0", "controller": "Button15" },
         { "id": "swapTarget", "label": "Swap Target", "desktop": "KeyG", "controller": "Button5" },
         { "id": "toggleMount", "label": "Call/Dismiss Mount", "desktop": "KeyV", "controller": "Button13" },
+        { "id": "perceptionMode", "label": "Perception Mode", "desktop": "KeyB", "controller": null },
         { "id": "weaponSwitch", "label": "Swap Melee / Ranged", "desktop": "KeyR", "controller": "Button11" },
         { "id": "utilityMenu", "label": "Utility Menu", "desktop": "KeyC", "controller": null },
         { "id": "toolSelect", "label": "Tool Select", "desktop": "KeyT", "controller": "Button10" },
