@@ -105,17 +105,17 @@ function makeScene(initialChildren = []) {
 
 (async () => {
   const map = new Map();
-  const environmentCalls = [];
+  const environmentCalls = []; // Records the simulated pre-existing environment wrapper so ordering against the flat-lighting wrapper is testable.
+  const rawSet = map.set.bind(map); // Used below to mimic InteriorEnvironmentRuntime's real Map.set wrapper without loading the whole module into this focused test.
+  map.set = function simulatedEnvironmentSet(mapId, sceneRecord) {
+    const result = rawSet(mapId, sceneRecord);
+    queueMicrotask(() => environmentCalls.push({ mapId, flatAlreadyInstalled: sceneRecord?.scene?.userData?.farmhouseFlatLighting === true }));
+    return result;
+  };
   let refreshCalls = 0;
   const flatWindow = {
     THREE: { AmbientLight },
     GridTileAccessors: { init() {} },
-    InteriorEnvironmentRuntime: {
-      applyEnvironmentToScene(mapId) {
-        environmentCalls.push(mapId);
-        return Promise.resolve();
-      },
-    },
     CloudForestFog: { refreshLightingOverlay() { refreshCalls += 1; } },
     DaylightWindowRuntime: { version: 3 },
     WeatherFX: { __singleFullDayLightingAuthority: true },
@@ -124,6 +124,7 @@ function makeScene(initialChildren = []) {
   const context = vm.createContext({
     window: flatWindow,
     performance: { now: () => 0 },
+    queueMicrotask,
     setInterval(fn) { timers.push(fn); return timers.length; },
     clearInterval() {},
     Promise,
@@ -141,8 +142,9 @@ function makeScene(initialChildren = []) {
   await Promise.resolve();
   await Promise.resolve();
 
-  assert.strictEqual(environmentCalls.includes('map_i_temple'), true,
-    'authored-building flat lighting must wait through the legacy environment pass before taking authority');
+  const templeEnvironmentCall = environmentCalls.find(entry => entry.mapId === 'map_i_temple');
+  assert(templeEnvironmentCall && templeEnvironmentCall.flatAlreadyInstalled === false,
+    'authored-building flat lighting must queue after the existing environment Map.set microtask instead of racing or applying it twice');
   assert.strictEqual(templeScene.userData.farmhouseFlatLighting, true,
     'Life Temple and other authored buildings must use the farmhouse flat-lighting baseline');
   assert.strictEqual(authoredDirectional.layers.value, 31,
@@ -166,7 +168,7 @@ function makeScene(initialChildren = []) {
     'dens/mines/caverns must stay on their separate underground-lighting policy rather than masquerading as authored buildings');
 
   assert.match(windowsSource,
-    /return area === 'interior' \|\| !!lightingDeps\?_isBuildingArea\?\.\(area\)/,
+    /return area === 'interior' \|\| !!lightingDeps\?\._isBuildingArea\?\.\(area\)/,
     'daylight-window runtime must route every ordinary authored building through the farmhouse window/time-of-day effect');
   assert.match(windowsSource, /updatePaneTint\(currentOutdoorLighting\(\)\)/,
     'building window panes must continue sampling the shared outdoor time/weather color');
