@@ -34,7 +34,7 @@
     trunkNoiseOctaves: 3,
     radialSegments: 8,
     ringSegments: 12,
-    barkColor: '#6d472d',
+    barkColor: '#372f18',
     overhang: 0.12,
     courseGap: -0.03,
     rowRollDeg: 1.5,
@@ -264,7 +264,7 @@
     const meta = normalizeLogMeta(raw); // Canonical metadata attached to the generated mesh and exported GLB extras.
     const geometry = createLogGeometry(THREE, meta); // Deterministic foliage-style log geometry reused by every course.
     const color = Number.parseInt(meta.barkColor.slice(1), 16); // Numeric Three.js bark color matching the authored hex value.
-    const material = new THREE.MeshLambertMaterial({ color: Number.isFinite(color) ? color : 0x6d472d }); // Lightweight bark material analogous to procedural foliage wood.
+    const material = new THREE.MeshLambertMaterial({ color: Number.isFinite(color) ? color : 0x372f18 }); // Lightweight bark material analogous to procedural foliage wood.
     const mesh = new THREE.Mesh(geometry, material); // Reusable generated log prototype registered as a WallBuilder model.
     mesh.name = 'GeneratedCabinLog';
     mesh.castShadow = true;

@@ -21,6 +21,7 @@ vm.createContext(context);
 vm.runInContext(stackedSource, context, { filename: 'stacked-log-walls.js' });
 const api = context.StackedLogWalls;
 assert(api, 'StackedLogWalls publishes its shared runtime API');
+assert.equal(api.DEFAULTS.barkColor, '#372f18', 'stacked architecture default bark color matches the approved dark-olive swatch');
 
 const triangle = [[0, 0, 0], [4, 0, 0], [2, 2, 0], [2, 2, 0]];
 assert.equal(api.horizontalSpanAtY(triangle, 0.5).length, 3, 'gable course at y=.5 shortens from 4 to 3 world units');
@@ -35,6 +36,9 @@ assert.match(stackedSource, /foliage\.buildLogMesh\(/, 'stacked walls ask Foliag
 assert.match(stackedSource, /mesh\.scale\.set\(1, 1, 1\)/, 'stacked wall placement never length-scales generated source geometry');
 assert.doesNotMatch(stackedSource, /GLTFLoader|loadGlb|glbName/, 'stacked architecture has no baked-GLB dependency');
 assert.match(stackedSource, /visibleSegmentsAroundOpenings/, 'stacked logs split real source geometry around wall openings');
+assert.match(stackedSource, /Math\.ceil\(panelHeight \/ nominalPitch\)/, 'short gables choose enough rows that course spacing never becomes looser than the authored pitch');
+assert.match(stackedSource, /EDGE_SPAN_RECLAIM = 0\.8/, 'gable edge fill reclaims most of the overly conservative full-diameter slope inset');
+assert.match(stackedSource, /meta\.logDiameter \* 0\.2/, 'narrow ridge courses are retained instead of being dropped at the old wide-span threshold');
 assert.match(stackedSource, /leftOverhang = touchesLeftWallEnd \? meta\.overhang : 0/, 'outside overhang is not allowed to extend a log into a window or door opening');
 assert.match(logExtensionSource, /FoliageGenerator[\s\S]{0,1000}buildLogMesh/, 'legacy live log-wall prototype delegates to FoliageGenerator when available');
 
