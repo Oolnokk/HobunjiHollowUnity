@@ -699,7 +699,7 @@
         : _wallPanels(minC, maxC, minR, maxR, y0, baseH, tile);
       var gablePanels = _gablePanels(faces);
       if (generatedLogStyle && global.StackedLogWalls?.buildGroup) {
-        const logSettings = Object.assign({}, opts.logWall || {}); // Generated foliage settings authored by the structure editor or caller.
+        const logSettings = Object.assign({}, opts.logWall || {}, { excludeQuads: openingQuads }); // Generated foliage settings plus the exact window/door cuts already used by WallBuilder bricks.
         const logGroup = global.StackedLogWalls.buildGroup(THREE, bodyPanels.concat(gablePanels), logSettings); // One real exact-length foliage mesh per course; gable/taper spans shorten naturally.
         logGroup.userData.isWallLogs = true;
         _markOutlineLayer(logGroup);

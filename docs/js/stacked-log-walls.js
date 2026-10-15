@@ -128,6 +128,48 @@
     return bestLength > EPS ? { a: bestA, b: bestB, length: bestLength } : null;
   }
 
+
+
+  function exclusionIntervalsAtCourse(quads, centerY, lowerY, upperY, midpoint, direction, halfSafeSpan) {
+    const intervals = []; // Signed course-axis intervals occupied by windows/doors at any sampled height through this round log.
+    for (const quad of quads) {
+      let minAlong = Infinity; // Lowest projected opening edge across center/lower/upper samples.
+      let maxAlong = -Infinity; // Highest projected opening edge across center/lower/upper samples.
+      for (const sampleY of [centerY, lowerY, upperY]) {
+        const span = horizontalSpanAtY(quad, sampleY); // Opening chord at this vertical sample; null means the opening does not overlap the course here.
+        if (!span) continue;
+        for (const point of [span.a, span.b]) {
+          const along = (point[0] - midpoint.x) * direction.x + (point[2] - midpoint.z) * direction.z; // Opening endpoint projected onto the wall course axis.
+          minAlong = Math.min(minAlong, along);
+          maxAlong = Math.max(maxAlong, along);
+        }
+      }
+      if (!Number.isFinite(minAlong) || !Number.isFinite(maxAlong)) continue;
+      const start = Math.max(-halfSafeSpan, minAlong); // Opening clipped to this course's safe horizontal wall span.
+      const end = Math.min(halfSafeSpan, maxAlong); // Opening clipped to this course's safe horizontal wall span.
+      if (end - start > EPS) intervals.push({ start, end });
+    }
+    intervals.sort((a, b) => a.start - b.start);
+    const merged = []; // Overlapping window/door cuts merged before visible log segments are derived.
+    for (const interval of intervals) {
+      const previous = merged[merged.length - 1]; // Last merged cut checked for overlap with the next opening.
+      if (previous && interval.start <= previous.end + EPS) previous.end = Math.max(previous.end, interval.end);
+      else merged.push({ start: interval.start, end: interval.end });
+    }
+    return merged;
+  }
+
+  function visibleSegmentsAroundOpenings(halfSafeSpan, exclusions) {
+    const segments = []; // Remaining source-log axis ranges after windows/doors are removed.
+    let cursor = -halfSafeSpan; // Leftmost unconsumed position on the safe wall course.
+    for (const exclusion of exclusions) {
+      if (exclusion.start > cursor + EPS) segments.push({ start: cursor, end: exclusion.start });
+      cursor = Math.max(cursor, exclusion.end);
+    }
+    if (cursor < halfSafeSpan - EPS) segments.push({ start: cursor, end: halfSafeSpan });
+    return segments;
+  }
+
   function panelCorners(THREE, panel) {
     if (Array.isArray(panel?.corners) && panel.corners.length >= 3) return panel.corners.map(point => [Number(point[0]) || 0, Number(point[1]) || 0, Number(point[2]) || 0]);
     const width = Math.max(0.001, Number(panel?.width) || 0.001); // Canonical rectangular panel width used when no explicit polygon is supplied.
@@ -200,6 +242,7 @@
     group.name = 'StackedGeneratedLogWalls';
     const panels = Array.isArray(panelsInput) ? panelsInput.filter(Boolean) : []; // Wall polygons/rectangles supplied by house or interior renderers.
     const meta = normalizeOptions(rawOptions); // Canonical authored log settings shared by every panel in this wall group.
+    const exclusionQuads = Array.isArray(rawOptions?.excludeQuads) ? rawOptions.excludeQuads.filter(quad => Array.isArray(quad) && quad.length >= 3) : []; // Same world-space window/door cut polygons used by WallBuilder bricks.
     const pitch = Math.max(meta.logDiameter * 0.35, meta.logDiameter + meta.courseGap); // Vertical center-to-center course spacing; negative gap means intentional overlap.
     let courseCount = 0; // Diagnostic count of generated visible log courses.
     let uniqueSpanCount = 0; // Diagnostic count of prototype keys actually requested by this build.
@@ -228,37 +271,52 @@
         const direction = new THREE.Vector3(centerSpan.b[0] - centerSpan.a[0], 0, centerSpan.b[2] - centerSpan.a[2]); // Horizontal course direction derived from the center slice.
         if (direction.lengthSq() <= EPS * EPS) continue;
         direction.normalize();
-        const generatedLength = safeSpan + meta.overhang * 2; // Final requested foliage spine length; no post-generation X scaling occurs.
+        const baseMidpoint = new THREE.Vector3((centerSpan.a[0] + centerSpan.b[0]) * 0.5, centerY, (centerSpan.a[2] + centerSpan.b[2]) * 0.5); // Unswayed world-space center used as the projection origin for opening cuts.
+        const halfSafeSpan = safeSpan * 0.5; // Symmetric safe wall extent around the center chord after gable/thickness clipping.
+        const exclusions = exclusionIntervalsAtCourse(exclusionQuads, centerY, lowerY, upperY, baseMidpoint, direction, halfSafeSpan); // Window/door intervals overlapping this round log's vertical thickness.
+        const visibleSegments = visibleSegmentsAroundOpenings(halfSafeSpan, exclusions); // One or more real source-log pieces remaining around those openings.
         const seedVariant = courseIndex % 4; // Four repeating shapes keep straight walls varied while allowing same-length geometry reuse.
-        const courseSeed = `${meta.seed}|${panel?.id || panelIndex}|${seedVariant}`; // Stable seed shared by runtime/editor for this wall/course variant.
-        const prototype = prototypeFor(THREE, generatedLength, meta, courseSeed); // Exact-length foliage prototype, possibly reused from cache.
-        const mesh = prototype.clone(); // Cheap Object3D clone shares immutable generated geometry/material buffers.
-        const midpoint = new THREE.Vector3((centerSpan.a[0] + centerSpan.b[0]) * 0.5, centerY, (centerSpan.a[2] + centerSpan.b[2]) * 0.5); // World-space course center.
-        const depthShift = (hashUnit(`${courseSeed}|depth`) * 2 - 1) * meta.rowDepthJitter; // Tiny deterministic in/out variation preventing machine-flat rows.
-        midpoint.addScaledVector(normal, depthShift);
-        const orientation = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1, 0, 0), direction); // Rotates foliage generator's +X spine onto this wall chord.
-        const roll = (hashUnit(`${courseSeed}|roll`) * 2 - 1) * meta.rowRollDeg * Math.PI / 180; // Deterministic per-row roll around the log's own axis.
-        if (Math.abs(roll) > EPS) orientation.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), roll));
-        mesh.position.copy(midpoint);
-        mesh.quaternion.copy(orientation);
-        mesh.scale.set(1, 1, 1); // Deliberate: length already exists in generated geometry; never stretch a GLB/prototype to fit the wall.
-        mesh.name = `StackedLog_${panel?.id || panelIndex}_${courseIndex}`;
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        mesh.layers?.enable?.(1);
-        mesh.userData = Object.assign({}, mesh.userData, {
-          stackedLogWall: true,
-          generatedLength,
-          safeWallSpan: safeSpan,
-          panelId: panel?.id || null,
-          courseIndex,
-          farmMaterialRole: 'wood',
-          source: 'FoliageGenerator.buildLogMesh',
+
+        visibleSegments.forEach((segment, segmentIndex) => {
+          const touchesLeftWallEnd = Math.abs(segment.start + halfSafeSpan) <= EPS * 10; // True only for the physical outside end of the whole wall chord.
+          const touchesRightWallEnd = Math.abs(segment.end - halfSafeSpan) <= EPS * 10; // True only for the physical outside end of the whole wall chord.
+          const leftOverhang = touchesLeftWallEnd ? meta.overhang : 0; // Cabin overhang is allowed outside the wall, never inward across a window/door cut.
+          const rightOverhang = touchesRightWallEnd ? meta.overhang : 0; // Cabin overhang is allowed outside the wall, never inward across a window/door cut.
+          const generatedLength = Math.max(0, segment.end - segment.start + leftOverhang + rightOverhang); // Final foliage source length for this visible piece; no post-generation X scale.
+          if (generatedLength < Math.max(0.04, meta.logDiameter * 0.2)) return;
+          const segmentCenterAlong = (segment.start + segment.end) * 0.5 + (rightOverhang - leftOverhang) * 0.5; // Axis offset including asymmetric outside-wall overhang.
+          const courseSeed = `${meta.seed}|${panel?.id || panelIndex}|${seedVariant}|${segmentIndex}`; // Stable source seed differentiates pieces split around openings.
+          const prototype = prototypeFor(THREE, generatedLength, meta, courseSeed); // Exact-length foliage prototype, possibly reused from cache.
+          const mesh = prototype.clone(); // Cheap Object3D clone shares immutable generated geometry/material buffers.
+          const midpoint = baseMidpoint.clone().addScaledVector(direction, segmentCenterAlong); // Visible piece center shifted along the course around openings.
+          const depthShift = (hashUnit(`${courseSeed}|depth`) * 2 - 1) * meta.rowDepthJitter; // Tiny deterministic in/out variation preventing machine-flat rows.
+          midpoint.addScaledVector(normal, depthShift);
+          const orientation = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1, 0, 0), direction); // Rotates foliage generator's +X spine onto this wall chord.
+          const roll = (hashUnit(`${courseSeed}|roll`) * 2 - 1) * meta.rowRollDeg * Math.PI / 180; // Deterministic per-piece roll around the log's own axis.
+          if (Math.abs(roll) > EPS) orientation.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), roll));
+          mesh.position.copy(midpoint);
+          mesh.quaternion.copy(orientation);
+          mesh.scale.set(1, 1, 1); // Deliberate: length already exists in generated geometry; never stretch a GLB/prototype to fit the wall.
+          mesh.name = `StackedLog_${panel?.id || panelIndex}_${courseIndex}_${segmentIndex}`;
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
+          mesh.layers?.enable?.(1);
+          mesh.userData = Object.assign({}, mesh.userData, {
+            stackedLogWall: true,
+            generatedLength,
+            safeWallSpan: safeSpan,
+            panelId: panel?.id || null,
+            courseIndex,
+            segmentIndex,
+            splitAroundOpening: exclusions.length > 0,
+            farmMaterialRole: 'wood',
+            source: 'FoliageGenerator.buildLogMesh',
+          });
+          group.add(mesh);
+          courseCount++;
+          const diagnosticKey = `${Math.round(generatedLength * 10000) / 10000}|${seedVariant}|${segmentIndex}`; // Build-local prototype variety key reported to debug UI.
+          if (!usedKeys.has(diagnosticKey)) { usedKeys.add(diagnosticKey); uniqueSpanCount++; }
         });
-        group.add(mesh);
-        courseCount++;
-        const diagnosticKey = `${Math.round(generatedLength * 10000) / 10000}|${seedVariant}`; // Build-local prototype variety key reported to debug UI.
-        if (!usedKeys.has(diagnosticKey)) { usedKeys.add(diagnosticKey); uniqueSpanCount++; }
       }
     });
 
@@ -270,7 +328,8 @@
       logWall: meta,
       source: 'FoliageGenerator.buildLogMesh',
       noGlbLengthScaling: true,
-      latestChange: 'Each course is foliage-generated at its actual horizontal span; tapered walls and gables shorten the source geometry itself.',
+      openingCutCount: exclusionQuads.length,
+      latestChange: 'Each course is foliage-generated at its actual horizontal span and physically split around openings; tapered walls and gables shorten the source geometry itself.',
     });
     return group;
   }
@@ -280,6 +339,6 @@
     normalizeOptions,
     horizontalSpanAtY,
     buildGroup,
-    latestChange: 'Stacked logs now regenerate at exact per-course spans through FoliageGenerator instead of scaling a GLB.',
+    latestChange: 'Stacked logs regenerate at exact per-course spans through FoliageGenerator and split into shorter generated pieces around openings instead of scaling/clipping a GLB.',
   });
 })(typeof window !== 'undefined' ? window : globalThis);
