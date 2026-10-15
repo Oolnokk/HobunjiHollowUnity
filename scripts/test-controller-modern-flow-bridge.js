@@ -49,6 +49,7 @@ class FakeNode {
     if (this.kind === 'review' && selector === '#dayReviewContinue') return reviewContinue;
     if (this.kind === 'trough' && selector === '#troughPanelClose') return troughClose;
     if (this.kind === 'wardrobe' && selector === '#npcWardrobeClose') return wardrobeClose;
+    if (selector === '.abt-label' && typeof this.actionLabel === 'string') return { textContent: this.actionLabel };
     return null;
   }
   closest() { return null; }
@@ -81,12 +82,19 @@ const wardrobeClose = new FakeNode('button');
 const reviewContinue = new FakeNode('button');
 reviewContinue.classList = { contains: () => false };
 const waitButton = new FakeNode('button');
+waitButton.id = 'btnAction2';
 waitButton.dataset.action = 'calendar_wait';
 waitButton.classList = { contains: () => false };
 const wardrobeActionButton = new FakeNode('button');
 wardrobeActionButton.id = 'btnAction3';
 wardrobeActionButton.dataset.action = 'npc_open_wardrobe';
 wardrobeActionButton.classList = { contains: () => false };
+const sleepActionButton = new FakeNode('button');
+sleepActionButton.id = 'btnAction1';
+sleepActionButton.dataset.action = 'obj_interact';
+sleepActionButton.actionLabel = 'Sleep';
+sleepActionButton.textContent = 'Sleep';
+sleepActionButton.classList = { contains: () => false };
 
 let subscriber = null;
 let subscriberPriority = null;
@@ -94,6 +102,8 @@ let owner = 'gameplay';
 let reviewOpen = true;
 let reviewFastForward = 0;
 let waitOpened = 0;
+let sleepOpened = 0;
+let sleepVisible = false; // Used to switch Action 1 between the test bed Sleep context and ordinary gameplay without rebuilding the fake DOM.
 let domLookupCount = 0;
 let bindingReadCount = 0;
 const document = {
@@ -104,6 +114,7 @@ const document = {
     if (id === 'hobunjiDayProgressReview') return reviewOpen ? review : null;
     if (id === 'troughPanelOverlay') return trough;
     if (id === 'npcWardrobeOverlay') return wardrobe;
+    if (id === 'btnAction1') return sleepVisible ? sleepActionButton : null;
     if (id === 'btnAction2') return waitButton;
     if (id === 'btnAction3') return wardrobeActionButton;
     return null;
@@ -123,7 +134,7 @@ const window = {
   InputBindings: {
     getCurrentBindings: () => {
       bindingReadCount += 1;
-      return { controller: { uiConfirm: 'Button0', action2: 'LeftTrigger', action3: 'Button2' } };
+      return { controller: { uiConfirm: 'Button0', action1: 'Button1', action2: 'LeftTrigger', action3: 'Button2' } };
     },
     getDefaultBindings: () => ({}),
   },
@@ -140,13 +151,14 @@ const window = {
   },
   ControllerUI: { isActive: () => false, activePanel: () => null },
   CalendarSystem: { openTimePassage: kind => { assert.equal(kind, 'wait'); waitOpened += 1; return true; } },
+  HobunjiSleepPassageActionBridge: { openSharedSleepPassage: () => { sleepOpened += 1; return true; } },
 };
 
 const context = { window, document, Event, PointerEvent, console, Object, Number, Boolean, Math };
 vm.createContext(context);
 vm.runInContext(bridgeSource, context);
 window.ControllerModernFlowBridge.refresh();
-assert.equal(window.ControllerModernFlowBridge.version, 2, 'expanded compatibility bridge reports version 2');
+assert.equal(window.ControllerModernFlowBridge.version, 3, 'expanded compatibility bridge reports version 3');
 assert.equal(onboarding.hasAttribute('data-ctrl-panel'), true, 'onboarding is opted into universal controller navigation');
 assert.equal(backButton.hasAttribute('data-ctrl-cancel'), true, 'onboarding Back buttons are mapped to controller cancel');
 assert.equal(review.hasAttribute('data-ctrl-panel'), true, 'midnight review is opted into universal controller navigation');
@@ -172,6 +184,14 @@ subscriber({ focused: true, pad: {}, pressed: new Set(['Button0']) });
 assert.equal(reviewFastForward, 1, 'uiConfirm fast-forwards a staged midnight review');
 assert.equal(waitOpened, 0, 'day review owns its confirm frame');
 reviewOpen = false;
+
+sleepVisible = true;
+subscriber({ focused: true, pad: {}, pressed: new Set(['Button1']) });
+assert.equal(sleepOpened, 1, 'remapped rendered Action 1 opens bed Sleep through the shared passage bridge');
+assert.equal(owner, 'menu', 'bed Sleep claims controller ownership before gameplay can run legacy sleepInBed');
+sleepVisible = false;
+
+owner = 'gameplay';
 subscriber({ focused: true, pad: {}, pressed: new Set(['LeftTrigger']) });
 assert.equal(waitOpened, 1, 'remapped Action 2 opens seated Wait');
 assert.equal(owner, 'menu', 'Wait claims controller ownership before gameplay can reuse Action 2');
