@@ -3,6 +3,7 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const vm = require('node:vm'); // Executes the shared portrait parser and rear-view replacement rules.
 
 const read = path => fs.readFileSync(path, 'utf8');
 const avatarPreview = read('docs/js/npc-avatar-preview-utils.js');
@@ -44,7 +45,7 @@ const headLayers = json => Object.keys(json?.parts?.head?.layers || {});
 assert.deepEqual(headLayers(basicHeadband), ['front'], 'Basic Headband is authored front-only');
 assert.deepEqual(headLayers(leatherHeadband), ['front'], 'Leather Headband is authored front-only');
 assert.ok(headLayers(wideKasa).includes('front') && headLayers(wideKasa).includes('back'), 'Riverland Kasa keeps authored front and back art');
-assert.deepEqual(headLayers(tangedCirclet), ['back', 'front'], 'Tanged Circlet composes a regular-headband layer behind its metal front art');
+assert.deepEqual(headLayers(tangedCirclet), ['front'], 'Tanged Circlet has one sprite per portrait view');
 
 const expectedTangedBack = { // Used by the loop below to keep circlet rear bands aligned with Basic Headband species art.
   'mao-ao_male': 'headband.png',
@@ -64,12 +65,19 @@ const expectedTangedBack = { // Used by the loop below to keep circlet rear band
   'mashtzarr_male': 'mashtz_headband_m.png',
   'mashtzarr_female': 'mashtz_headband_m.png',
 };
-assert.equal(tangedCirclet.parts.head.layers.back.image.url, './assets/cosmetics/clothes/hat/headband.png', 'generic Tanged Circlet reuses the generic Basic Headband sprite behind the skull');
-assert.equal(tangedCirclet.parts.head.layers.back.layerRole, 'base', 'generic rear band stays in the circlet base material role for metal/verdigris processing');
+const portraitContext = vm.createContext({ window: {}, console }); // Uses the shipped config and portrait implementation, including species variants.
+vm.runInContext(read('docs/config/scratchbones-config.js'), portraitContext);
+vm.runInContext(read('docs/js/portrait-utils.js'), portraitContext);
+const circletOption = portraitContext.portraitOptionFromJson({ id: 'tangedcirclet' }, tangedCirclet); // Actual runtime option, with no extra rear layer.
 for (const [variant, filename] of Object.entries(expectedTangedBack)) {
-  const backLayer = tangedCirclet.speciesVariants?.[variant]?.parts?.head?.layers?.back;
-  assert.equal(backLayer?.image?.url, './assets/cosmetics/clothes/hat/' + filename, variant + ' reuses its regular headband art behind the circlet');
-  assert.equal(backLayer?.layerRole, 'base', variant + ' rear band stays in the circlet base material role');
+  const layers = circletOption.variantLayers[variant]; // Exactly one front sprite is replaced when rendering the back plane.
+  assert.equal(layers.length, 1, variant + ' has no additive headband layer');
+  assert.equal(layers[0].pos, 'front');
+  assert.equal(layers[0].paletteColorKey, 'A', 'rear replacement retains metal material routing');
+  assert.equal(portraitContext._getBehindLayerUrl(layers[0], circletOption, variant.split('_').at(-1)), 'cosmetics/clothes/hat/' + filename);
+  assert(layers[0].url.includes('tangedcirclet'), 'rear lookup does not mutate front art');
+  assert(fs.existsSync('docs/assets/cosmetics/clothes/hat/' + filename));
 }
+assert.equal(portraitContext._getBehindLayerUrl(circletOption.layers[0], circletOption, 'male'), 'cosmetics/clothes/hat/headband.png');
 
 console.log('Headwear angle-visibility removal checks passed.');

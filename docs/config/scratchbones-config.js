@@ -4073,6 +4073,54 @@ window.SCRATCHBONES_CONFIG = {
           },
           "layerReplacements": [
             {
+              "urlIncludes": [
+                "cosmetics/clothes/hat/tangedcirclet_m.png"
+              ],
+              "url": "cosmetics/clothes/hat/headband.png"
+            },
+            {
+              "urlIncludes": [
+                "cosmetics/clothes/hat/tl_tangedcirclet_m.png"
+              ],
+              "url": "cosmetics/clothes/hat/tl_headband.png"
+            },
+            {
+              "urlIncludes": [
+                "cosmetics/clothes/hat/kenk_tangedcirclet_m.png"
+              ],
+              "url": "cosmetics/clothes/hat/kenk_headband_m.png"
+            },
+            {
+              "urlIncludes": [
+                "cosmetics/clothes/hat/kenk_tangedcirclet_f.png"
+              ],
+              "url": "cosmetics/clothes/hat/kenk_headband_f.png"
+            },
+            {
+              "urlIncludes": [
+                "cosmetics/clothes/hat/engh_tangedcirclet_m.png"
+              ],
+              "url": "cosmetics/clothes/hat/headband.png"
+            },
+            {
+              "urlIncludes": [
+                "cosmetics/clothes/hat/hskel_tangedcirclet_m.png"
+              ],
+              "url": "cosmetics/clothes/hat/headband.png"
+            },
+            {
+              "urlIncludes": [
+                "cosmetics/clothes/hat/hskel_tangedcirclet_f.png"
+              ],
+              "url": "cosmetics/clothes/hat/headband.png"
+            },
+            {
+              "urlIncludes": [
+                "cosmetics/clothes/hat/mashtz_tangedcirclet_m.png"
+              ],
+              "url": "cosmetics/clothes/hat/mashtz_headband_m.png"
+            },
+            {
               "idIncludes": ["snowgoggles"],
               "genderUrls": {
                 "male": "cosmetics/appearance/engh-sho-m/snowgoggles-behind_m.png",
