@@ -116,7 +116,7 @@
     ['config/npcs/social-relations.js?v=20261013h9b7e0bc', () => !!window.HobunjiNpcSocialRelationsConfig],
     ['js/npc-social-relationship-bridge-v2.js?v=20261007h9386d11', () => !!window.NpcRapport?.eventDriven],
     ['js/generic-hud-icons.js?v=20260915perf1', () => Number(window.HobunjiGenericHudIcons?.version) >= 1],
-    ['js/hud-x-control-polish.js?v=20260915a', () => Number(window.HobunjiHudXControlPolish?.version) >= 1],
+    ['js/hud-x-control-polish.js?v=20260915a', () => Number(window.HudXControlPolish?.version) >= 1],
     ['js/favor-popup-points-bridge.js?v=20261007h99b53f8', () => Number(window.FavorPopupPointsBridge?.version) >= 2],
     ['js/sleep-passage-action-bridge.js?v=20261015hanan2', () => Number(window.HobunjiSleepPassageActionBridge?.version) >= 3],
     ['js/day-progress-review.js?v=20261014h628ff81', () => Number(window.DayProgressReview?.version) >= 1],
