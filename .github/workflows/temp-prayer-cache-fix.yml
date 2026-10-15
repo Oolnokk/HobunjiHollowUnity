@@ -20,7 +20,9 @@ jobs:
         with:
           node-version: '22'
       - name: Fix cache-bust chain
-        run: node scripts/check-cache-busts.js --fix HEAD^ || true
+        run: |
+          git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+          node scripts/check-cache-busts.js --fix origin/main
       - name: Commit generated cache tokens
         run: |
           if git diff --quiet; then
