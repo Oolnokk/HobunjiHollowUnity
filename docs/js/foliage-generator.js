@@ -1805,7 +1805,7 @@ window.FoliageGenerator = (() => {
     geometry.computeVertexNormals();
     geometry.userData = { ...(geometry.userData || {}), foliageGeneratedLog: true, requestedLength: length, ringSegments, radialSegments };
 
-    const barkColor = new T.Color(options.barkColor ?? '#6d472d'); // Canonical bark tint accepted as CSS hex, integer, or THREE.Color-compatible input.
+    const barkColor = new T.Color(options.barkColor ?? '#372f18'); // Canonical bark tint accepted as CSS hex, integer, or THREE.Color-compatible input.
     const barkHex = `#${barkColor.getHexString()}`; // Hex form consumed by shared tree PNG atlas helpers.
     const wood = typeof window !== 'undefined' ? window.WoodCutSurfaces : null; // Optional shared PNG/cap material bridge present in game and architecture editors.
     let material = options.material || null; // Optional caller-shared atlas material avoids one texture canvas per unique course length.

@@ -20,7 +20,7 @@
     trunkNoiseOctaves: 3,
     radialSegments: 8,
     ringSegments: 12,
-    barkColor: '#6d472d',
+    barkColor: '#372f18',
     overhang: 0.12,
     courseGap: -0.03,
     rowRollDeg: 1.5,
@@ -29,6 +29,7 @@
   const prototypeCaches = new WeakMap(); // THREE namespace -> exact-length generated-log prototypes reused by matching wall courses.
   const materialCaches = new WeakMap(); // THREE namespace -> bark color -> shared PNG atlas material, avoiding one canvas texture per course length.
   const EPS = 1e-6; // Geometry tolerance shared by horizontal polygon intersection and point dedupe.
+  const EDGE_SPAN_RECLAIM = 0.8; // Reclaims most of the old full-diameter gable inset so round courses visually reach sloped edges while retaining a small clipping guard.
 
   function finite(value, fallback) {
     const number = Number(value); // Normalized numeric setting used by every generated course.
@@ -243,7 +244,7 @@
     const panels = Array.isArray(panelsInput) ? panelsInput.filter(Boolean) : []; // Wall polygons/rectangles supplied by house or interior renderers.
     const meta = normalizeOptions(rawOptions); // Canonical authored log settings shared by every panel in this wall group.
     const exclusionQuads = Array.isArray(rawOptions?.excludeQuads) ? rawOptions.excludeQuads.filter(quad => Array.isArray(quad) && quad.length >= 3) : []; // Same world-space window/door cut polygons used by WallBuilder bricks.
-    const pitch = Math.max(meta.logDiameter * 0.35, meta.logDiameter + meta.courseGap); // Vertical center-to-center course spacing; negative gap means intentional overlap.
+    const nominalPitch = Math.max(meta.logDiameter * 0.35, meta.logDiameter + meta.courseGap); // Maximum requested center-to-center spacing; each panel may tighten it slightly so short gables do not lose a whole course.
     let courseCount = 0; // Diagnostic count of generated visible log courses.
     let uniqueSpanCount = 0; // Diagnostic count of prototype keys actually requested by this build.
     const usedKeys = new Set(); // Build-local exact-length/variant keys used only for diagnostics.
@@ -254,19 +255,21 @@
       const minY = Math.min(...ys); // Lowest point of this wall polygon.
       const maxY = Math.max(...ys); // Highest point of this wall polygon.
       const normal = panelNormal(THREE, corners); // Face normal used only for small deterministic depth jitter.
-      const firstCenter = minY + meta.logDiameter * 0.5; // Lowest course center keeps the full log radius inside the wall's vertical span.
-      const lastCenter = maxY - meta.logDiameter * 0.5; // Highest course center similarly avoids poking above the authored polygon.
-      let courseIndex = 0; // Per-panel course index used for deterministic seed variants.
+      const panelHeight = Math.max(EPS, maxY - minY); // Full vertical extent used to choose a dense course count before any radius inset can discard a row.
+      const rowCount = Math.max(1, Math.ceil(panelHeight / nominalPitch)); // Guarantees actual spacing is never looser than the authored pitch, especially on short gables.
+      const pitch = panelHeight / rowCount; // Even per-panel spacing centers the first/last round logs symmetrically inside the full wall/gable height.
 
-      for (let centerY = firstCenter; centerY <= lastCenter + EPS; centerY += pitch, courseIndex++) {
+      for (let courseIndex = 0; courseIndex < rowCount; courseIndex++) {
+        const centerY = minY + pitch * (courseIndex + 0.5); // Dense center distribution prevents small triangular planes from losing an entire top/bottom course.
         const centerSpan = horizontalSpanAtY(corners, centerY); // Placement chord at the actual center of this course.
         if (!centerSpan) continue;
         const lowerY = Math.max(minY + EPS, centerY - meta.logDiameter * 0.45); // Lower silhouette sample used to keep thick logs inside sloped polygons.
         const upperY = Math.min(maxY - EPS, centerY + meta.logDiameter * 0.45); // Upper silhouette sample; usually the limiting width on gables/tapered walls.
         const lowerSpan = horizontalSpanAtY(corners, lowerY); // Available horizontal width near the bottom of the circular log.
         const upperSpan = horizontalSpanAtY(corners, upperY); // Available horizontal width near the top of the circular log.
-        const safeSpan = Math.min(centerSpan.length, lowerSpan?.length ?? centerSpan.length, upperSpan?.length ?? centerSpan.length); // Shortest sampled width prevents a fat course from clipping through a narrowing gable edge.
-        if (safeSpan < Math.max(0.04, meta.logDiameter * 0.35)) continue;
+        const strictSpan = Math.min(centerSpan.length, lowerSpan?.length ?? centerSpan.length, upperSpan?.length ?? centerSpan.length); // Old full-diameter containment width retained as the conservative reference.
+        const safeSpan = strictSpan + (centerSpan.length - strictSpan) * EDGE_SPAN_RECLAIM; // Keep only a small portion of that inset; end overhang can now visually meet the roof slope instead of leaving large triangular gaps.
+        if (safeSpan < Math.max(0.04, meta.logDiameter * 0.2)) continue; // Allow short ridge courses instead of dropping them solely because the gable is narrow.
 
         const direction = new THREE.Vector3(centerSpan.b[0] - centerSpan.a[0], 0, centerSpan.b[2] - centerSpan.a[2]); // Horizontal course direction derived from the center slice.
         if (direction.lengthSq() <= EPS * EPS) continue;
@@ -305,6 +308,9 @@
             stackedLogWall: true,
             generatedLength,
             safeWallSpan: safeSpan,
+            strictWallSpan: strictSpan,
+            edgeSpanReclaim: EDGE_SPAN_RECLAIM,
+            panelCoursePitch: pitch,
             panelId: panel?.id || null,
             courseIndex,
             segmentIndex,
@@ -329,7 +335,7 @@
       source: 'FoliageGenerator.buildLogMesh',
       noGlbLengthScaling: true,
       openingCutCount: exclusionQuads.length,
-      latestChange: 'Each course is foliage-generated at its actual horizontal span and physically split around openings; tapered walls and gables shorten the source geometry itself.',
+      latestChange: 'Short gables now keep dense evenly distributed courses and reclaim conservative slope inset so logs fill near roof edges; every visible piece is still foliage-generated at its final source length.',
     });
     return group;
   }
@@ -339,6 +345,6 @@
     normalizeOptions,
     horizontalSpanAtY,
     buildGroup,
-    latestChange: 'Stacked logs regenerate at exact per-course spans through FoliageGenerator and split into shorter generated pieces around openings instead of scaling/clipping a GLB.',
+    latestChange: 'Stacked logs regenerate at exact per-course spans; short gables use dense row packing and fuller slope coverage while openings still split source geometry.',
   });
 })(typeof window !== 'undefined' ? window : globalThis);
