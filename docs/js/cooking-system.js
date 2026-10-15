@@ -12,6 +12,7 @@
   let deps = null; // Used as the only bridge to inventory, saving, and the host game's UI refreshes.
   let selectedRecipeId = null; // Used to preserve the selected recipe while rerendering.
   let selectedSlots = {}; // Used to hold one item-quality choice per recipe slot.
+  let heldQuality = null; // Explicit Pack Hold selection; automatic consumption uses this tier while available.
   let qualityBuckets = {}; // Used to persist actual 1–5-star quantities without changing the game's stack inventory shape.
   let cookedDefinitions = {}; // Used to restore procedurally named food item definitions on reload.
   let activeFoodEffects = []; // Used as an independent timed effect source beside alchemy.
@@ -135,9 +136,18 @@
     return VALUE_MULTIPLIERS[safeStars] || 1;
   }
 
+  function setHeldQuality(key, stars) {
+    heldQuality = key && stars >= 1 && stars <= 5 ? { key, stars } : null;
+  }
+
+  function lowestQualityOrder(key) {
+    const order = [1, 2, 3, 4, 5]; // Ordinary automatic actions protect the highest tiers unless the player explicitly holds one.
+    return heldQuality?.key === key ? [heldQuality.stars, ...order.filter(stars => stars !== heldQuality.stars)] : order;
+  }
+
   function peekLowestQuality(key) {
     const bucket = reconcileQuality(key); // Used so callers can preview quality without consuming it (e.g. opening a fresh bottle).
-    const tier = [1, 2, 3, 4, 5].find(stars => (bucket[stars] || 0) > 0);
+    const tier = lowestQualityOrder(key).find(stars => (bucket[stars] || 0) > 0);
     return tier || Math.max(1, Math.min(5, Number(deps.ITEM_DEFS[key]?.cookingDefaultStars) || 3));
   }
 
@@ -149,7 +159,7 @@
   function consumeQualityGroups(key, amount = 1, policy = 'lowest') {
     const requested = Math.max(1, Math.floor(Number(amount) || 1));
     if ((deps.inventory[key] || 0) < requested) return null;
-    const order = policy === 'highest' ? [5, 4, 3, 2, 1] : [1, 2, 3, 4, 5];
+    const order = policy === 'highest' ? [5, 4, 3, 2, 1] : lowestQualityOrder(key);
     let remaining = requested;
     const groups = [];
     for (const stars of order) {
@@ -427,11 +437,11 @@
     }, 1800);
   }
 
-  function eat(key) {
+  function eat(key, selectedStars = null) {
     const definition = deps.ITEM_DEFS[key];
     if (!definition?.isCookedFood || (deps.inventory[key] || 0) < 1) return { ok: false, message: 'Nothing edible is selected.' };
-    const quality = availableQualityEntries(key)[0]?.stars || definition.foodQuality || 3; // Used to consume the best remaining serving first.
-    consumeQuality(key, quality, 1);
+    const quality = selectedStars ?? availableQualityEntries(key)[0]?.stars ?? definition.foodQuality ?? 3; // Used to consume the best remaining serving first.
+    if (!consumeQuality(key, quality, 1)) return { ok: false, message: 'That quality stack is no longer available.' };
     const now = performance.now() / 1000; // Used to refresh each matching food-effect timer.
     Object.entries(definition.foodEffects || {}).forEach(([effect, stacks]) => {
       const existing = activeFoodEffects.find(entry => entry.key === effect);
@@ -479,6 +489,7 @@
   }
 
   function restore(saved = {}) {
+    heldQuality = null;
     qualityBuckets = saved.qualityBuckets && typeof saved.qualityBuckets === 'object' ? JSON.parse(JSON.stringify(saved.qualityBuckets)) : {};
     unlockedRecipeIds = new Set(Array.isArray(saved.unlockedRecipeIds) ? saved.unlockedRecipeIds : []); // Used to restore opt-in recipe visibility before the next hearth render.
     cookedDefinitions = {};
@@ -616,7 +627,7 @@
   window.CookingSystem = {
     init, restore, serialize, update, openAtHearth, close, isOpen, eat, recordItemQuality, consumeBestQuality,
     registerCookedDefinition, recordItemQuality, getFoodEffectStacks, getSpeedMultiplier, getStaminaRegenMultiplier, registerIngredientItems, availableQualityEntries,
-    consumeQuality, consumeLowestQuality, consumeQualityByPolicy, peekLowestQuality, valueMultiplierForStars, cookedSellPrice,
+    setHeldQuality, consumeQuality, consumeLowestQuality, consumeQualityByPolicy, peekLowestQuality, valueMultiplierForStars, cookedSellPrice,
     unlockRecipe, isRecipeUnlocked, listIngredientDefinitions, listCookedInventory, consumeCookedInventoryItem, effectLabel,
     FOOD_EFFECT_STRENGTH_TIERS, effectStrengthLabel, formatEffectStrength, ingredientEffectTotals, ingredientBuffText,
   };

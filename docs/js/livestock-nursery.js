@@ -918,7 +918,14 @@
 
   function installPanelObserver() {
     if (panelObserver || typeof MutationObserver === 'undefined' || !document.body) return;
-    panelObserver = new MutationObserver(() => queuePanelDecoration());
+    panelObserver = new MutationObserver(records => {
+      const relevant = records.some(record => {
+        if (record.target?.closest?.('[data-nursery-incubation]')) return false;
+        const changed = [...record.addedNodes, ...record.removedNodes]; // The grid owns its inline incubation controls; their updates must not recreate the Nursery.
+        return changed.some(node => !node.matches?.('[data-nursery-incubation]'));
+      });
+      if (relevant) queuePanelDecoration();
+    });
     // #farmLivestockList/#farmBuildingsList only ever exist inside #menuPanel
     // (see decoratePanelNow's comment), so watching document.body's entire
     // subtree meant any HUD/UI mutation anywhere queued this check for no

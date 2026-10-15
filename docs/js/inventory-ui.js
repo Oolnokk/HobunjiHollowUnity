@@ -867,6 +867,7 @@
     const combatDeps = window.Combat?.deps || null;
     return {
       mode,
+      stackIcons: window.InventoryStacks?.getDebug?.() || null,
       packItems: document.querySelectorAll('#invGrid .inv-item-box:not(.empty)').length,
       integratedPackClothing: document.querySelectorAll('#invGrid .pack-clothing-tile').length,
       gearLoadoutColumns: document.querySelectorAll('#invEquipSection .gear-loadout-grid > .gear-loadout-column').length,

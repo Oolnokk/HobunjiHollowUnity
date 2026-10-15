@@ -30,6 +30,9 @@
     errors: [],
   }; // Used by mobile-safe diagnostics when console access is unavailable.
 
+  const groupCache = new Map(); // Invalidated only when durable lineage queues change.
+  const geneKeys = new WeakMap(); // Cloned saved genotypes are immutable; serialize each once when grouping.
+
   let activeIdentity = null; // Used to prevent one character/world from reusing another's loaded lineage queue.
   let queues = Object.create(null); // Used as the in-memory mirror of the persisted per-item genotype FIFOs.
   const injectedIntoFarmAnimals = new Set(); // Used when a failed deployment leaves a seeded genotype in FarmAnimals' private queue.
@@ -74,6 +77,7 @@
     activeIdentity = ids.identity;
     debug.activeIdentity = ids.identity;
     queues = Object.create(null);
+    groupCache.clear();
     injectedIntoFarmAnimals.clear();
 
     const meta = loadMeta();
@@ -149,6 +153,7 @@
     const copy = clonePlain(genotype);
     if (!copy) return;
     (queues[itemKey] || (queues[itemKey] = [])).push(copy);
+    groupCache.delete(itemKey);
     debug.queued++;
     debug.lastItemKey = itemKey;
     debug.lastAction = 'queue';
@@ -173,6 +178,7 @@
     const list = queues[itemKey];
     if (!list?.length) return;
     list.shift();
+    groupCache.delete(itemKey);
     if (!list.length) delete queues[itemKey];
     injectedIntoFarmAnimals.delete(itemKey);
     debug.consumed++;
@@ -182,19 +188,47 @@
     window.__farmLog?.(`[genotype] consumed persisted carried lineage for ${itemKey} (${queues[itemKey]?.length || 0} queued)`, 'wildlife');
   }
 
-  function wrapDeployment(original, itemKey, args) {
-    const hadPersisted = seedOriginalQueueIfNeeded(itemKey);
-    let result;
-    try {
-      result = original.call(window.FarmAnimals, itemKey, ...args);
-    } catch (error) {
-      debug.errors.push('deploy: ' + (error?.message || String(error)));
-      throw error;
+  function groupsFor(itemKey, total) {
+    ensureLoaded();
+    if (!window.SCRATCHBONES_CONFIG?.game?.livestock?.itemKinds?.[itemKey]) return null;
+    const count = Math.max(0, Math.floor(Number(total) || 0)); // Bag count bounds legacy/stale metadata.
+    const cached = groupCache.get(itemKey); // Reuses grouping until acquisition, deployment, or bag total changes.
+    if (cached?.total === count) return cached.groups;
+    const grouped = new Map(); // Same full genotype shares a stack even if property order differs.
+    const list = queues[itemKey] || []; // Remaining units without metadata stay in a separate generic stack.
+    for (const genotype of list.slice(0, count)) {
+      let signature = geneKeys.get(genotype); // Avoid repeated serialization of painted genotype objects.
+      if (!signature) { signature = window.InventoryStacks.genotypeKey(genotype); geneKeys.set(genotype, signature); }
+      const group = grouped.get(signature); // Accumulates exact inherited alleles, including hidden carriers.
+      if (group) group.count++;
+      else grouped.set(signature, { variant: signature, genotype, count: 1 });
     }
-    // addFromItem/addToStable both validate all failure gates before they
-    // consume FarmAnimals' private FIFO. Therefore a failed attempt leaves
-    // the injected head in place; the Set above prevents duplicate seeding
-    // on the next attempt. Only a successful deployment consumes persistence.
+    const groups = [...grouped.values()]; // Stable first-acquired ordering for the inventory UI.
+    if (count > list.length) groups.push({ variant: 'generic', genotype: null, count: count - list.length });
+    groupCache.set(itemKey, { total: count, groups });
+    return groups;
+  }
+
+  function wrapDeployment(original, itemKey, args) {
+    const selection = args[0]?.inventoryVariant; // Optional exact stack selected in Pack; old Farm actions retain FIFO behavior.
+    if (selection != null) {
+      ensureLoaded();
+      const list = queues[itemKey] || []; // Validate again at activation time, after any previous menu action.
+      const index = selection === 'generic' ? -1 : list.findIndex(gene => window.InventoryStacks.genotypeKey(gene) === selection);
+      if (selection !== 'generic' && index < 0) return { ok: false, message: 'That animal stack is no longer available.' };
+      if (injectedIntoFarmAnimals.has(itemKey)) return { ok: false, message: 'Retry the pending animal deployment first.' };
+      const result = original.call(window.FarmAnimals, itemKey, { ...args[0], carriedGenotype: index < 0 ? null : clonePlain(list[index]) }, ...args.slice(1)); // Explicit null skips private FIFO for a generic unit.
+      if (result?.ok) {
+        if (index >= 0) list.splice(index, 1);
+        if (!list.length) delete queues[itemKey];
+        groupCache.delete(itemKey);
+        debug.consumed++;
+        saveQueues({ consumedItemKey: itemKey });
+      }
+      return result;
+    }
+    const hadPersisted = seedOriginalQueueIfNeeded(itemKey); // Compatibility for existing callers that do not select a stack.
+    const result = original.call(window.FarmAnimals, itemKey, ...args);
     if (result?.ok && hadPersisted) consumePersistedHead(itemKey);
     else if (result?.ok) injectedIntoFarmAnimals.delete(itemKey);
     return result;
@@ -253,6 +287,7 @@
 
   window.LivestockItemGenotypePersistence = {
     install,
+    groupsFor,
     flush: saveQueues,
     reload() { activeIdentity = null; return ensureLoaded(); },
     getDebug() {

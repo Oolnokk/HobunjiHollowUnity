@@ -1255,7 +1255,6 @@
     const addition = additionById(managementAdditionId); // Incubator whose slots populate the manager.
     const host = document.getElementById('barnIncubatorSlots'); // Slot list container.
     if (!addition || !host) { modal.classList.remove('open'); return; }
-    const babies = nurseryBabies(); // Available Nursery babies not currently inside an incubator.
     host.innerHTML = '';
     addition.slots.forEach((slot, slotIndex) => {
       const card = document.createElement('div'); // One independent maturation/reservation slot.
@@ -1296,25 +1295,50 @@
         });
         card.appendChild(cancel);
       } else {
-        const babySelect = document.createElement('select'); // Nursery baby chosen only after a trough is reserved.
-        babySelect.className = 'settings-select';
-        babySelect.disabled = !currentTroughKey || !babies.length;
-        babySelect.innerHTML = '<option value="">— Choose Nursery baby —</option>' + babies.map(baby =>
-          `<option value="${baby.id}">${baby.name || baby.kind} · ${baby.kind}</option>`).join('');
-        card.appendChild(babySelect);
-        const start = document.createElement('button'); // Starts the no-tonic multi-day maturation.
-        start.className = 'settings-small-btn';
-        start.textContent = `Start ${CONFIG.gameplay.maturationDays}-day Maturation`;
-        start.disabled = !currentTroughKey || !babies.length;
-        start.addEventListener('click', () => {
-          if (!babySelect.value) { (panelDeps || animalDeps)?.showToast?.('Choose a baby first.', false); return; }
-          const result = startMaturation(addition.id, slotIndex, babySelect.value);
-          (panelDeps || animalDeps)?.showToast?.(result.message, result.ok !== false);
+        const hint = document.createElement('div'); // Animal selection belongs to the Farm tab's Nursery grid.
+        hint.className = 'farm-note';
+        hint.textContent = 'Select a baby in the Nursery inventory on the left, then choose its incubation space there.';
+        card.appendChild(hint);
+        const nursery = document.createElement('button'); // Leaves the floating manager before selecting an animal.
+        nursery.className = 'settings-small-btn';
+        nursery.textContent = 'Choose in Nursery';
+        nursery.addEventListener('click', () => {
+          modal.classList.remove('open');
+          document.querySelector('#livestockNurserySection .nursery-grid-card')?.focus?.();
         });
-        card.appendChild(start);
+        card.appendChild(nursery);
       }
       host.appendChild(card);
     });
+  }
+
+  function nurseryIncubationChoices() {
+    const choices = []; // Inline Nursery picker combines the incubator slot with its future adult trough.
+    for (const addition of allAdditions()) {
+      if (!owningBarnOfAddition(addition.id)) continue;
+      addition.slots.forEach((slot, slotIndex) => {
+        if (slot.baby) return;
+        for (const trough of availableTroughsForSlot(addition.id, slotIndex)) {
+          choices.push({ additionId: addition.id, slotIndex, barnId: trough.barnId, troughIndex: trough.troughIndex,
+            label: `${tierDef(addition.tier).label} · Slot ${slotIndex + 1} → ${troughLabel(trough)}` });
+        }
+      });
+    }
+    return choices;
+  }
+
+  function startFromNursery(babyId, choice) {
+    if ((panelDeps || animalDeps)?.hasFarmPermission?.('livestock') === false) return { ok: false, message: 'Livestock permission required.' };
+    const valid = nurseryIncubationChoices().find(entry => entry.additionId === choice?.additionId && entry.slotIndex === choice?.slotIndex && entry.barnId === choice?.barnId && entry.troughIndex === choice?.troughIndex); // Reject stale selections rather than changing a different reservation.
+    if (!valid) return { ok: false, message: 'That incubation space is no longer available.' };
+    if (!nurseryBabies().some(baby => baby.id === babyId)) return { ok: false, message: 'Select an available Nursery baby first.' };
+    const slot = additionById(valid.additionId)?.slots[valid.slotIndex]; // Preserve an existing reservation if starting fails.
+    const previous = { barnId: slot.troughBarnId, troughIndex: slot.troughIndex }; // Rollback target.
+    const result = reserveTrough(valid.additionId, valid.slotIndex, valid.barnId, valid.troughIndex);
+    if (!result.ok) return result;
+    const started = startMaturation(valid.additionId, valid.slotIndex, babyId); // Same permission/capacity/lifecycle authority as the manager.
+    if (!started.ok) reserveTrough(valid.additionId, valid.slotIndex, previous.barnId, previous.troughIndex);
+    return started;
   }
 
   function openIncubatorMenu(additionId) {
@@ -1491,6 +1515,8 @@
     openBarnEditor,
     createBarnLayoutAdapter,
     openIncubatorMenu,
+    nurseryIncubationChoices,
+    startFromNursery,
     candidatePlacementsForBarn,
     placeIncubator,
     ensureStarterIncubator,

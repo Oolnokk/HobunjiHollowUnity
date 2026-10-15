@@ -36,7 +36,6 @@
     puktuk: '🦊',
     'voorg-ass': '🫏',
   }); // Used only until/if an accurate composed genetics portrait cannot be produced.
-  const PORTRAIT_CACHE_LIMIT = 128; // Used to bound data-URL portrait memory on very long breeding saves.
 
   let animalDeps = null; // Captured from FarmAnimals.init; used for Nursery records, permissions, persistence, breeding cleanup, and toasts.
   let panelDeps = null; // Captured from FarmPanel.init; used for wallet persistence/HUD refresh and shared inventory state.
@@ -51,7 +50,6 @@
   let decorateQueued = false; // Coalesces render/observer requests into one Nursery enhancement microtask.
   let installed = false; // Makes repeated parser/runtime bridge installs idempotent.
   let mostRecentChange = 'Nursery grid module loaded.'; // Included in mobile-visible diagnostics after every state-changing action.
-  const portraitCache = new Map(); // genotype signature -> Promise<string|null>; reused by grid cards and the selected-baby portrait.
 
   const roundTo = (value, step) => Math.max(step, Math.round(Number(value || 0) / step) * step);
   const currentDeps = () => panelDeps || animalDeps;
@@ -147,41 +145,8 @@
     return { traits, colors, patterns, size, badges, specials };
   }
 
-  function genotypePortraitKey(entry) {
-    const renderer = window.CreatureGeneticsRender;
-    try {
-      const signature = renderer?.genotypeSignature?.(entry.kind, entry.genotype);
-      if (signature) return `${entry.kind}|${signature}`;
-    } catch (_) {}
-    try { return `${entry.kind}|${JSON.stringify(entry.genotype || {})}`; }
-    catch (_) { return `${entry.kind}|${entry.id}`; }
-  }
-
-  function trimPortraitCache() {
-    while (portraitCache.size > PORTRAIT_CACHE_LIMIT) {
-      const oldest = portraitCache.keys().next().value;
-      portraitCache.delete(oldest);
-    }
-  }
-
   function portraitUrlFor(entry) {
-    const renderer = window.CreatureGeneticsRender;
-    if (!renderer?.composeFrame || !entry?.kind || !entry?.genotype) return Promise.resolve(null);
-    const key = genotypePortraitKey(entry);
-    if (portraitCache.has(key)) return portraitCache.get(key);
-    const promise = Promise.resolve(renderer.composeFrame(entry.kind, 'idle', entry.genotype, false))
-      .then(canvas => {
-        if (!canvas?.toDataURL) return null;
-        try { return canvas.toDataURL('image/png'); }
-        catch (_) { return null; }
-      })
-      .catch(error => {
-        console.warn('[NurseryGrid] portrait compose failed:', entry.kind, error);
-        return null;
-      });
-    portraitCache.set(key, promise);
-    trimPortraitCache();
-    return promise;
+    return entry?.kind ? window.InventoryStacks.headIcon(entry.kind, entry.genotype) : Promise.resolve(null);
   }
 
   function applyCardPortrait(section, card, entry) {
@@ -469,9 +434,51 @@
     portrait.style.backgroundImage = url ? `url("${url}")` : '';
   }
 
+  function renderIncubationAction(actions, entry) {
+    const choices = window.BarnIncubator?.nurseryIncubationChoices?.() || []; // Recomputed only when selection or Farm state changes.
+    const signature = JSON.stringify([entry.id, hasLivestockPermission(), choices]); // Menu-event comparison keeps legacy body observers from causing a rebuild loop.
+    const previous = actions.querySelector('[data-nursery-incubation]'); // Preserve destination/focus across harmless decoration passes.
+    if (previous?.dataset.incubationSignature === signature) return;
+    previous?.remove();
+    const host = document.createElement('div'); // Light DOM keeps the picker and activation button reachable by controller/mobile.
+    host.dataset.nurseryIncubation = '1';
+    host.style.cssText = 'display:grid;gap:4px;width:100%;min-width:0;';
+    host.dataset.incubationSignature = signature;
+    const select = document.createElement('select'); // Incubator/trough destination; the baby comes exclusively from the left grid selection.
+    select.className = 'settings-select';
+    select.style.cssText = 'width:100%;min-width:0;';
+    select.setAttribute('aria-label', 'Incubation destination');
+    const placeholder = document.createElement('option'); // Requires a deliberate destination choice.
+    placeholder.value = '';
+    placeholder.textContent = choices.length ? '— Incubation space —' : 'No unused incubation space';
+    select.appendChild(placeholder);
+    choices.forEach((choice, index) => {
+      const option = document.createElement('option'); // Uses textContent for authored animal/barn labels.
+      option.value = String(index);
+      option.textContent = choice.label;
+      select.appendChild(option);
+    });
+    select.disabled = !hasLivestockPermission() || !choices.length;
+    const start = document.createElement('button'); // Starts maturation for the selected Nursery card only.
+    start.className = 'settings-small-btn';
+    start.textContent = '🪺 Incubate Selected Baby';
+    start.disabled = true;
+    select.addEventListener('change', () => { start.disabled = select.disabled || select.value === ''; });
+    start.addEventListener('click', event => {
+      event.stopPropagation();
+      if (selectedBabyId !== entry.id || select.value === '') return;
+      const result = window.BarnIncubator?.startFromNursery?.(entry.id, choices[Number(select.value)]) || { ok: false, message: 'Incubator unavailable.' };
+      currentDeps()?.showToast?.(result.message, result.ok);
+      mostRecentChange = result.message;
+    });
+    host.append(select, start);
+    actions.appendChild(host);
+  }
+
   function updateActionState(section, entry) {
     const actions = findActionContainer(section);
     if (!actions || !entry) return;
+    renderIncubationAction(actions, entry);
     const buttons = [...actions.querySelectorAll(':scope > button')];
     const rename = buttons.find(button => button.dataset.nurseryAction === 'rename');
     const grow = buttons.find(button => button.dataset.nurseryAction === 'grow');
@@ -835,7 +842,8 @@
           adultSale: value.adultAmount,
         };
       }),
-      portraitCacheSize: portraitCache.size,
+      portraitCacheSize: window.InventoryStacks?.getDebug?.().cachedHeads || 0,
+      animalIcons: window.InventoryStacks?.getDebug?.() || null,
       lazyPortraitObserverActive: !!portraitObserver,
       sectionEnhanced: typeof document !== 'undefined' && document.getElementById('livestockNurserySection')?.dataset?.nurseryGridEnhanced === '1',
       nursery: window.LivestockNursery?.debugSnapshot?.() || null,

@@ -70,6 +70,13 @@ function makeSeededRandom(seed) {
   assert.equal(CookingSystem.valueMultiplierForStars(3), 1.00);
   assert.equal(CookingSystem.valueMultiplierForStars(5), 1.60);
 
+  CookingSystem.setHeldQuality('redberries', 5);
+  assert.equal(CookingSystem.peekLowestQuality('redberries'), 5, 'explicitly held quality controls the next ordinary item use');
+  assert.equal(CookingSystem.consumeLowestQuality('redberries'), 5, 'holding a quality stack consumes that tier');
+  assert.equal(CookingSystem.peekLowestQuality('redberries'), 3, 'empty selected quality safely falls back to available stock');
+  CookingSystem.setHeldQuality(null);
+  assert.equal(CookingSystem.consumeQuality('redberries', 5, 1), false, 'an empty exact tier never consumes a different stack');
+
   console.log('cooking-system.js quality API checks passed.');
 }
 
