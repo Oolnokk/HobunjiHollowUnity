@@ -1,12 +1,12 @@
 // Adds separate Reset to Defaults controls beneath the keyboard and controller
-// binding lists and owns the final player-facing Settings section order.
+// binding lists and owns Settings order, developer visibility, and companion controls.
 //
 // This file keeps the historical input-default-reset-ui.js path because the
 // controller helper loader already owns it, but SettingsMenuOrder below is the
 // single presentation-order authority for #mpSettings. Feature modules remain
-// responsible for creating and wiring their own controls; this module only
-// groups/reorders the finished sections so script load order cannot scramble
-// the menu.
+// responsible for creating and wiring their own controls. This module groups
+// their finished sections, gates developer UI, and forwards companion edits
+// through the original handlers so there is still one owner per setting.
 (() => {
   'use strict';
 
@@ -30,6 +30,8 @@
     'Weeds',
     'Performance',
     'Progression',
+    'World testing',
+    'Audio calibration',
     'Cloud Forest (perf testing)',
     'Nearby Projectile Cover (perf testing)',
     'Dev Tools',
@@ -37,6 +39,18 @@
 
   const SETTINGS_SECTION_RANKS = new Map(SETTINGS_SECTION_ORDER.map((label, index) => [label, index * 100])); // Used by organizeSettingsPane() to sort known headings while leaving future/unknown sections in a predictable slot.
   SETTINGS_SECTION_RANKS.set('Local Save Folder', SETTINGS_SECTION_RANKS.get('Primary Save Folder')); // The folder-save module renames this heading after boot; both labels must sort identically before/after that rename.
+
+  const DEV_SECTION_LABELS = new Set(['Weeds', 'Cloud Forest (perf testing)', 'Nearby Projectile Cover (perf testing)', 'Audio calibration', 'Progression', 'World testing']); // Audited authoring/test sections; player graphics, saves, camera, and bindings stay available.
+  const DIAGNOSTIC_TOGGLES = ['settingUiEditMode', 'settingShowHitboxes', 'settingShowInteractionRaycast', 'settingShowShoulderPetAttachmentPoints', 'settingPerfProfiler', 'settingTraceLivestockCallers', 'settingDisableBackdropBlur', 'settingForceHiddenPanels', 'settingGpuSyncDiagnostic']; // Turned off through their existing change handlers when leaving Dev Mode.
+  const COMPANION_SETTINGS = [
+    { id: 'display', title: 'Developer display', controls: ['settingUiEditMode', 'settingShowHitboxes', 'settingShowInteractionRaycast', 'settingShowShoulderPetAttachmentPoints', 'settingFlipPngPortraits'] },
+    { id: 'world', title: 'World testing', controls: ['settingWeed3D', 'settingBanditCamps', 'devWildernessLabSize', 'devTeleportDenBtn', 'devTeleportArenaBtn', 'devTeleportWildernessLabBtn', 'devRegenerateWildernessLabBtn', 'devRandomTestRuinBtn', 'devRandomRuinDarknessEnabled', 'devRandomRuinDarknessSeverity', 'devRandomRuinDebugMarkers'] },
+    { id: 'cloud-forest', title: 'Cloud Forest tuning', controls: ['settingCloudForestFog', 'settingCloudForestWideCull', 'settingCloudForestCullRadius', 'settingCloudForestFadeStart', 'settingCloudForestOutlineRadius', 'settingCloudForestFogInnerRadius', 'settingCloudForestFogInnerOpacity', 'settingCloudForestFogMiddleRadius', 'settingCloudForestFogMiddleOpacity', 'settingCloudForestFogOuterRadius', 'settingCloudForestFogOuterOpacity', 'settingCloudForestBgForest', 'settingCloudForestResetDefaults'] },
+    { id: 'projectile-cover', title: 'Projectile cover testing', controls: ['settingVolumeCollisionMaster', 'settingVolumeCollisionProjectiles', 'settingVolumeCollisionAlpha'] },
+    { id: 'audio-calibration', title: 'Audio calibration', controls: ['settingMusicTrackGainSong', 'settingMusicTrackGain', 'settingMusicTrackGainReset'] },
+    { id: 'performance', title: 'Performance diagnostics', controls: [], rootId: 'hobunjiPerfDebugSettings' },
+  ]; // Mirrors existing controls through their owning event handlers; no gameplay setting is reimplemented here.
+  let devModeControl = null; // Tracks the one checkbox listener even if a later Settings renderer replaces its node.
 
   let observer = null; // Watches Settings re-renders because InputSettingsPanel and several runtime helpers add/replace Settings content after boot.
   let refreshQueued = false; // Coalesces bursts of DOM mutations into one reset-button + Settings-order refresh per animation frame.
@@ -90,7 +104,7 @@
   }
 
   function ensureWorldSection() {
-    const banditToggle = document.getElementById('settingBanditCamps'); // Existing player-facing world-generation toggle that currently sits inside the projectile-cover performance block.
+    const banditToggle = document.getElementById('settingBanditCamps'); // Developer world-generation switch kept separate from projectile collision testing.
     const banditRow = banditToggle?.closest?.('.settings-row'); // Used to move only the Bandit Camps setting without touching its behavior or input id.
     if (!banditRow) return false;
 
@@ -100,7 +114,8 @@
       title.id = 'worldSettingsTitle';
       title.className = 'settings-section-title';
       title.style.marginTop = '10px';
-      title.textContent = 'World';
+      title.textContent = 'World testing';
+      title.setAttribute('data-dev-only', '');
       banditRow.before(title);
       return true;
     }
@@ -160,12 +175,94 @@
     return 950 + (section.originalIndex / 1000); // Future/unknown sections stay after normal player settings but before the explicit Progression/advanced/developer blocks.
   }
 
+  function devModeEnabled() {
+    return !!document.getElementById('settingDevMode')?.checked;
+  }
+
+  function markDeveloperSettings(pane) {
+    for (const section of collectSettingsSections(pane)) {
+      if (!DEV_SECTION_LABELS.has(section.label) && section.label !== 'Dev Tools') continue;
+      for (const node of section.nodes) {
+        if (section.label === 'Dev Tools' && (node === section.title || node.contains(document.getElementById('settingDevMode')))) continue;
+        if (!node.hasAttribute('data-dev-only')) node.setAttribute('data-dev-only', '');
+      }
+    }
+  }
+
+  function syncDeveloperVisibility() {
+    const enabled = devModeEnabled(); // Uses the authoritative game checkbox, including its restored preference after boot.
+    if (document.body?.dataset.devMode !== String(enabled)) document.body.dataset.devMode = String(enabled);
+    if (enabled) return;
+    for (const id of DIAGNOSTIC_TOGGLES) {
+      const control = document.getElementById(id); // Clearing hidden live diagnostics also stops their renderer/profiler overhead.
+      if (!control?.checked) continue;
+      control.checked = false;
+      control.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    const debugTab = document.querySelector('.mp-tab[data-mpanel="debug"]'); // Returning from a hidden developer pane must leave controller focus on an available menu.
+    if (debugTab?.classList.contains('active')) document.querySelector('.mp-tab[data-mpanel="settings"]')?.click();
+  }
+
+  function companionControls(spec) {
+    const ids = spec.rootId // Diagnostic controls are injected by PerformanceDebug after game boot.
+      ? [...(document.getElementById(spec.rootId)?.querySelectorAll('input[id], select[id]') || [])].map(control => control.id)
+      : spec.controls;
+    return ids.map(id => document.getElementById(id)).filter(Boolean);
+  }
+
+  function settingAction(control) {
+    const row = control.closest('.settings-row') || control.closest('label'); // Reuses the owner's visible label instead of exposing internal ids in the companion.
+    const label = control.getAttribute('aria-label') || row?.querySelector('.settings-name')?.textContent?.trim() || row?.querySelector('span')?.textContent?.trim() || control.textContent?.trim() || control.id;
+    const args = { controlId: control.id }; // Binds every companion action to an explicitly audited control.
+    if (control.type === 'checkbox') return { id: 'toggle', label, args: { ...args, checked: !control.checked }, active: control.checked };
+    if (control.tagName === 'SELECT') return { id: 'value', label, args, value: control.value, options: [...control.options].filter(option => !option.disabled).map(option => ({ value: option.value, label: option.textContent })) };
+    if (control.type === 'range' || control.type === 'number') return { id: 'value', label, args, value: control.value, input: { min: control.min, max: control.max, step: control.step || 'any' } };
+    if (control.tagName === 'BUTTON') return { id: 'click', label: row ? `${label} · ${control.textContent.trim()}` : label, args };
+    return null;
+  }
+
+  function applyCompanionSetting(spec, action, args) {
+    const control = companionControls(spec).find(element => element.id === args.controlId); // Rejects forged ids, stale controls, and disabled controls before invoking their owners.
+    if (!devModeEnabled() || !control || control.disabled) return { ok: false, error: 'This developer setting is unavailable.' };
+    if (action === 'click' && control.tagName === 'BUTTON') {
+      control.click();
+      return { ok: true };
+    }
+    if (action === 'toggle' && control.type === 'checkbox' && typeof args.checked === 'boolean') control.checked = args.checked;
+    else if (action === 'value' && control.tagName === 'SELECT') {
+      if (![...control.options].some(option => !option.disabled && option.value === String(args.value))) return { ok: false, error: 'Choose an available option.' };
+      control.value = String(args.value);
+    } else if (action === 'value' && ['range', 'number'].includes(control.type)) {
+      const value = Number(args.value); // Validates bounds before range inputs could silently clamp an invalid request.
+      if (!['number', 'string'].includes(typeof args.value) || String(args.value).trim() === '' || !Number.isFinite(value) || (control.min !== '' && value < Number(control.min)) || (control.max !== '' && value > Number(control.max))) return { ok: false, error: 'Value is outside this setting’s range.' };
+      const step = control.step === 'any' ? 0 : Number(control.step || 1); // Checks before native range inputs can silently round a fractional request.
+      const steps = step > 0 ? (value - Number(control.min || 0)) / step : 0; // Uses the input's authored minimum as its step base.
+      if (Math.abs(steps - Math.round(steps)) > 1e-7) return { ok: false, error: 'Value does not match this setting’s step.' };
+      const previous = control.value; // Restored if the native input rejects a fractional step or other constraint.
+      control.value = String(value);
+      if (control.validity && !control.validity.valid) { control.value = previous; return { ok: false, error: 'Value does not match this setting’s step.' }; }
+    } else return { ok: false, error: 'Unsupported setting action.' };
+    control.dispatchEvent(new Event('input', { bubbles: true }));
+    control.dispatchEvent(new Event('change', { bubbles: true }));
+    return { ok: true };
+  }
+
+  function registerCompanionSettings() {
+    COMPANION_SETTINGS.forEach((spec, index) => window.DevCompanion?.registerCheatPanel?.({
+      id: `settings-${spec.id}`, title: spec.title, order: 50 + index,
+      when: () => companionControls(spec).length > 0,
+      render: () => ({ actions: companionControls(spec).filter(control => !control.disabled).map(settingAction).filter(Boolean) }),
+      onAction: (action, args) => applyCompanionSetting(spec, action, args),
+    }));
+  }
+
   function organizeSettingsPane() {
     const pane = document.querySelector('#mpSettings > .settings-pane'); // Only the real Settings pane is reordered; similarly styled Farm/Stable sections are intentionally ignored.
     if (!pane) return false;
 
     ensureWorldSection();
     ensureProgressionBoundary();
+    markDeveloperSettings(pane);
     const sections = collectSettingsSections(pane);
     if (sections.length < 2) return false;
 
@@ -188,8 +285,15 @@
 
   function refreshSettingsUi() {
     refreshQueued = false;
+    const control = document.getElementById('settingDevMode'); // Binds the existing switch once; its normal game listener remains the state/persistence owner.
+    if (control && control !== devModeControl) {
+      devModeControl?.removeEventListener('change', syncDeveloperVisibility);
+      control.addEventListener('change', syncDeveloperVisibility);
+      devModeControl = control;
+    }
     for (const target of TARGETS) appendResetControl(target);
     organizeSettingsPane();
+    syncDeveloperVisibility();
   }
 
   function queueRefresh() {
@@ -213,6 +317,7 @@
   }
 
   function boot() {
+    registerCompanionSettings();
     refreshSettingsUi();
     if (observer || !document.body || typeof MutationObserver !== 'function') return;
     observer = new MutationObserver(queueRefresh); // Re-adds missing reset rows and re-applies deterministic section order after late runtime injections.
@@ -229,6 +334,9 @@
     refresh: organizeSettingsPane,
     getDebug: () => ({
       currentOrder: currentSettingsOrder(),
+      devMode: devModeEnabled(),
+      hiddenDeveloperNodes: devModeEnabled() ? 0 : document.querySelectorAll('#mpSettings [data-dev-only]').length,
+      latestChange: 'Developer tuning, diagnostics, teleports, and progression resets are hidden outside Dev Mode; companion settings reuse the original controls.',
       intendedOrder: [...SETTINGS_SECTION_ORDER],
       worldSectionPresent: Boolean(document.getElementById('worldSettingsTitle')),
       banditCampsUnderWorld: document.getElementById('worldSettingsTitle')?.nextElementSibling?.contains?.(document.getElementById('settingBanditCamps')) || false,

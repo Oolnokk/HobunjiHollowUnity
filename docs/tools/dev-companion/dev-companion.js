@@ -441,29 +441,60 @@
   }
 
   // Generic renderer for DevCompanion.registerPanel() panels.
+  const panelCards = new Map(); // Keeps unchanged cards and focused dropdowns mounted while the clock panel updates.
   function renderPanels() {
     const host = $('panelHost');
     const panels = state.game.panels || [];
-    if (!changed('panels', { panels, connected: state.connected })) return panels.length > 0;
-    host.replaceChildren(...panels.map(panel => {
+    const nodes = panels.map(panel => { // Reconciles only changed cards so unrelated state polls cannot close an open dropdown.
+      const signature = JSON.stringify({ panel, connected: state.connected }); // Compared at the existing companion poll rate, never in the game frame loop.
+      const previous = panelCards.get(panel.id); // Retains controls while their card's state and connection are unchanged.
+      if (previous && (previous.signature === signature || (state.connected && previous.node.contains(document.activeElement)))) return previous.node;
       const groups = new Map();
       for (const action of panel.actions || []) {
         const group = action.group || '';
         if (!groups.has(group)) groups.set(group, []);
         groups.get(group).push(action);
       }
-      return el('div', { class: 'card' },
+      const node = el('div', { class: 'card' }, // Cached below for state polling without rebuilding every selector.
         el('div', { class: 'card-title' }, panel.title, el('span', { class: 'spacer' }), panel.summary ? el('span', { class: 'muted small-text', text: panel.summary }) : null),
         panel.rows?.length ? el('dl', { class: 'kv small-text' }, ...panel.rows.flatMap(([label, value]) => [el('dt', { text: label }), el('dd', { text: value })])) : null,
         ...[...groups.entries()].map(([group, actions]) => el('div', { class: 'group' },
           group ? el('span', { class: 'group-label', text: group }) : null,
-          ...actions.map(action => button(action.label, async () => {
+          ...actions.map(action => action.input ? el('label', { class: 'group' }, action.label,
+            el('input', { type: 'number', value: action.value, min: action.input.min, max: action.input.max, step: action.input.step,
+              'aria-label': action.label, disabled: !state.connected, style: 'width:90px',
+              onchange: async event => {
+                const input = event.target; // Sends one completed edit rather than applying a setting on each keystroke.
+                const ok = await run('panel-action', { panel: panel.id, action: action.id, args: { ...action.args, value: input.value } });
+                if (!ok) input.value = action.value;
+                else input.blur?.();
+              } })) : action.options ? el('label', { class: 'group' }, action.label,
+            el('select', { 'aria-label': action.label, disabled: !state.connected,
+              onchange: async event => {
+                const select = event.target; // Reads the chosen value and restores grant pickers after execution.
+                const ok = await run('panel-action', { panel: panel.id, action: action.id, args: { ...action.args, value: select.value } });
+                if (!ok || action.reset) select.value = action.value || '';
+                if (ok) select.blur?.();
+              } }, ...action.options.map(option => el('option', {
+                value: option.value, text: option.label, selected: String(option.value) === String(action.value || ''),
+              })))) : button(action.label, async () => {
             if (action.confirm && !confirm(action.confirm)) return;
             await run('panel-action', { panel: panel.id, action: action.id, args: action.args || {} }, { timeoutMs: LONG_COMMAND_TIMEOUT_MS });
           }, { title: action.title || null, active: !!action.active })))),
         panel.note ? el('div', { class: 'muted small-text', text: panel.note }) : null,
       );
-    }));
+      previous?.node.replaceWith(node);
+      panelCards.set(panel.id, { node, signature });
+      return node;
+    });
+    for (const [id, entry] of panelCards) {
+      if (panels.some(panel => panel.id === id)) continue;
+      entry.node.remove();
+      panelCards.delete(id);
+    }
+    nodes.forEach((node, index) => {
+      if (host.children[index] !== node) host.insertBefore(node, host.children[index] || null);
+    });
     return panels.length > 0;
   }
 

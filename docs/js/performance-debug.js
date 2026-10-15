@@ -1039,6 +1039,7 @@
 
     const box = document.createElement('div');
     box.id = 'hobunjiPerfDebugSettings';
+    box.setAttribute('data-dev-only', '');
     box.style.cssText = 'margin:8px 0 4px;padding:9px 10px;border:1px solid rgba(255,255,255,.13);border-radius:8px;background:rgba(0,0,0,.12)';
     const title = document.createElement('div');
     title.textContent = 'Performance & diagnostics';

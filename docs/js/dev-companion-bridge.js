@@ -373,6 +373,16 @@
     panels.set(String(spec.id), spec);
     return true;
   }
+  // Cheat controls live only in the companion and recheck Dev Mode on use.
+  function registerCheatPanel(spec) {
+    return registerPanel({
+      ...spec,
+      when: () => window.__hobunjiGameStarted === true
+        && !!document.getElementById('settingDevMode')?.checked
+        && (!spec.when || spec.when()),
+    });
+  }
+
   registerStateProvider('panels', () => {
     const out = [];
     for (const spec of panels.values()) {
@@ -389,6 +399,7 @@
   registerCommand('panel-action', async args => {
     const spec = panels.get(String(args.panel || ''));
     if (!spec?.onAction) throw new Error(`Panel "${args.panel}" has no actions.`);
+    if (spec.when && !spec.when()) throw new Error('This companion control is not currently available.');
     const result = await spec.onAction(String(args.action || ''), args.args || {});
     return result ?? { ok: true };
   });
@@ -419,6 +430,7 @@
     registerCommand,
     registerStateProvider,
     registerPanel,
+    registerCheatPanel,
     runCommand,
     collectState,
     pushState: () => pushState(true),

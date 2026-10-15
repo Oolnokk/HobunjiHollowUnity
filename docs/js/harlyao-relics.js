@@ -462,7 +462,6 @@
     if (deps.isDevMode?.()) {
       list.appendChild(heading('[Dev]'));
       list.appendChild(button('Copy artifact/enchanting diagnostics', () => window.navigator?.clipboard?.writeText(JSON.stringify(debugSnapshot(), null, 2))));
-      list.appendChild(button('[Dev] Grant random bound relic', () => { grantBoundRelic(); render(); }));
     }
   }
 
@@ -474,6 +473,15 @@
       collection: window.ArtifactCollection?.debugSnapshot?.() || null,
     };
   }
+
+  window.DevCompanion?.registerCheatPanel?.({
+    id: 'relic-grants', title: 'Harlyao relics', order: 35,
+    render: () => ({ actions: [{ id: 'grant', label: 'Grant random bound relic' }] }),
+    onAction: action => {
+      if (action !== 'grant') return { ok: false };
+      return { ok: !!grantBoundRelic() };
+    },
+  });
 
   window.HarlyaoRelics = Object.freeze({
     SHAPES,

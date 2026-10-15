@@ -13,6 +13,31 @@
   "use strict";
   if (!window.Combat?.loadout) { console.error('combat-loadout-ui.js requires combat-core.js + combat-loadout.js to load first'); return; }
 
+  window.DevCompanion?.registerCheatPanel?.({
+    id: 'combat-grants', title: 'Combat grants', order: 30,
+    render: () => ({
+      summary: `${window.Combat.deps?.getMotesOfProwess?.() || 0} Motes of Prowess`,
+      note: 'Developer grants moved here so player menus show the normal gameplay controls.',
+      actions: [
+        { id: 'mote', label: '+1 Mote of Prowess' },
+        ...[1, 2, 3].map(tier => ({ id: 'scroll', label: `+T${tier} Technique Scroll`, args: { tier } })),
+        ...(window.RangedWeapons?.equippedRangedKey?.() ? [
+          { id: 'ranged-mastery', label: '+1 Ranged Mastery', args: { key: window.RangedWeapons.equippedRangedKey() } },
+          { id: 'ammo', label: '+1 Special Ammo' },
+        ] : []),
+      ],
+    }),
+    onAction: (action, args) => {
+      if (action === 'mote') window.Combat.deps.awardMotesOfProwess(1);
+      else if (action === 'scroll' && [1, 2, 3].includes(args.tier)) window.TechniqueScrolls?.devGrantScroll?.(args.tier);
+      else if (action === 'ranged-mastery' && args.key === window.RangedWeapons?.equippedRangedKey?.()) window.RangedWeapons.devBumpMastery(args.key);
+      else if (action === 'ammo') window.RangedWeapons?.grantSpecialAmmo?.(1);
+      else return { ok: false };
+      render();
+      return { ok: true };
+    },
+  });
+
   const SLOTS = [
     { id: 'tap1', name: 'Combo', desc: 'Left click (desktop) tapped quickly. Always your equipped weapon’s own 3-hit combo — not player-chosen.', readOnly: true },
     { id: 'tap2', name: 'Quick Attack', desc: 'Right click (desktop) tapped quickly. Choose which conditional technique fires.' },
@@ -127,19 +152,6 @@
     note.style.marginBottom = '8px';
     note.textContent = `${weaponLabel} — Mastery ${view.mastery}/5 · Special Ammo ${view.specialAmmo}/${view.specialAmmoMax}`;
     pane.appendChild(note);
-
-    if (window.Combat.deps?.isDevMode?.()) {
-      const row = document.createElement('div');
-      row.className = 'ranged-loadout-dev-row';
-      const masteryBtn = document.createElement('button');
-      masteryBtn.type = 'button'; masteryBtn.className = 'ii-btn'; masteryBtn.textContent = '[Dev] +1 Ranged Mastery';
-      masteryBtn.addEventListener('click', () => { ranged.devBumpMastery(itemKey); render(); });
-      const ammoBtn = document.createElement('button');
-      ammoBtn.type = 'button'; ammoBtn.className = 'ii-btn'; ammoBtn.textContent = '[Dev] +1 Special Ammo';
-      ammoBtn.addEventListener('click', () => { ranged.grantSpecialAmmo(1); render(); });
-      row.append(masteryBtn, ammoBtn);
-      pane.appendChild(row);
-    }
 
     for (const rank of [1, 2, 3, 4, 5]) {
       const isBasic = rank % 2 === 1;
@@ -289,23 +301,9 @@
     weaponNote.textContent = `${weaponLabel} — Mastery ${mastery}/5 · ${motes}◆ Motes of Prowess`;
     pane.appendChild(weaponNote);
 
-    // Motes are otherwise earned only through play (see MOTES_PER_KILL in
-    // game.js's damageCreature) — no starting stipend — so testing anything
-    // past level-1 upgrade choices needs a way to mint some. Mirrors the
-    // gear-tool item panel's own "[Dev] +1 Mastery" button: hidden unless
-    // the global dev-mode toggle (Settings pane) is on.
     if (window.Combat.deps?.isDevMode?.()) {
       const devRow = document.createElement('div'); // Used to keep loadout test actions together without introducing another stylesheet dependency.
       devRow.className = 'ranged-loadout-dev-row';
-      const devBtn = document.createElement('button');
-      devBtn.type = 'button';
-      devBtn.className = 'ii-btn';
-      devBtn.id = 'combatLoadoutDevMote';
-      devBtn.textContent = '[Dev] +1 Mote of Prowess';
-      devBtn.addEventListener('click', () => {
-        window.Combat.deps?.awardMotesOfProwess?.(1);
-        render(devBtn.id);
-      });
       const debugBtn = document.createElement('button'); // Used for controller testing on mobile where the browser console is unavailable.
       debugBtn.type = 'button';
       debugBtn.id = 'combatLoadoutControllerDebug';
@@ -316,7 +314,7 @@
         debugBtn.textContent = copied ? '[Dev] Copied Loadout Controller Debug' : '[Dev] Copy Failed';
         setTimeout(() => { if (debugBtn.isConnected) debugBtn.textContent = '[Dev] Copy Loadout Controller Debug'; }, 1200);
       });
-      devRow.append(devBtn, debugBtn);
+      devRow.append(debugBtn);
       pane.appendChild(devRow);
     }
 
