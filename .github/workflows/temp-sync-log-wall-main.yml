@@ -1,0 +1,27 @@
+name: Temporary sync log wall branch
+on:
+  push:
+    branches:
+      - feature/log-cabin-wall-generator
+permissions:
+  contents: write
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/log-cabin-wall-generator
+          fetch-depth: 0
+      - name: Merge current main into feature branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          if git merge --no-edit origin/main; then
+            git push origin HEAD:feature/log-cabin-wall-generator
+          else
+            echo "Conflicted files:"
+            git diff --name-only --diff-filter=U
+            exit 1
+          fi
