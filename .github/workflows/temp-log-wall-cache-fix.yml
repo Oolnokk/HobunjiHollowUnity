@@ -1,0 +1,32 @@
+name: Temporary log wall cache fix
+
+on:
+  push:
+    branches:
+      - feature/log-cabin-wall-generator
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: ${{ !contains(github.event.head_commit.message, '[log-wall-cache-fix]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Propagate cache busts
+        run: |
+          set -e
+          git fetch origin main
+          node scripts/check-cache-busts.js --fix origin/main
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add docs scripts
+          if git diff --cached --quiet; then
+            echo "No cache-bust changes needed."
+            exit 0
+          fi
+          git commit -m "Propagate log wall cache busts [log-wall-cache-fix]"
+          git push origin HEAD:feature/log-cabin-wall-generator
