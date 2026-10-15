@@ -1,0 +1,42 @@
+name: Temp Farmhouse Bed Sleep Fix
+
+on:
+  push:
+    branches: [fix/starting-farmhouse-bed-sleep-20261015]
+
+permissions:
+  contents: write
+
+jobs:
+  fix-cache-and-test:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/starting-farmhouse-bed-sleep-20261015
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply repository cache-bust chain
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+Oolnokk@users.noreply.github.com"
+          git fetch origin main
+          rm .github/workflows/temp-farmhouse-bed-sleep-fix.yml
+          node scripts/check-cache-busts.js --fix origin/main
+      - name: Syntax check touched runtime bridges
+        run: |
+          node --check docs/js/sleep-passage-action-bridge.js
+          node --check docs/js/controller-modern-flow-bridge.js
+          node --check docs/js/combat/combat-config-loader.js
+      - name: Run farmhouse sleep regression
+        run: node scripts/test-sleep-passage-action-bridge.js
+      - name: Run full regression suite
+        run: node scripts/run-tests.js
+      - name: Commit cache-bust chain and remove temporary workflow
+        run: |
+          git add -A
+          git commit -m "Refresh farmhouse sleep cache-bust chain"
+          git push origin HEAD:fix/starting-farmhouse-bed-sleep-20261015
