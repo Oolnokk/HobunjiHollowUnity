@@ -1,28 +1,36 @@
 (() => {
   'use strict';
 
-  // Central registry for furniture/lantern-mask point lights: game.js's
-  // makeFurniturePointLight, and the inline PointLight creations in
-  // bandit-camps.js, porakaneki-camps-runtime.js and deadzone-billboard.js
-  // that also tag userData.furnitureLightMask, all register() here at
-  // creation. WeatherFX's lantern-glow overlay (see game.js's
-  // getFurnitureLightSources) used to find these by traversing the whole
-  // active scene every couple of seconds — real, avoidable cost in a
-  // decor-dense area since it scales with total scene size, not light
-  // count. list() below walks only this small registry instead.
+  // Central registry for positional fake-light sources. PointLights remain as
+  // compact world-space data holders (position/distance/intensity/color), but
+  // register() moves them to a layer gameplay cameras never render so they
+  // cannot shade Three.js materials. WeatherFX/CloudForestFog then consumes
+  // that same data for the shared 2D darkness/light compositor.
   //
   // Pruning is lazy and lifecycle-agnostic: an entry is dropped only once
   // its light is no longer attached to any THREE.Scene at all (its root
-  // has no .parent and isn't itself a Scene), which is what a real despawn
-  // (parent.remove(light)) leaves behind. A light whose root is some
-  // *other* still-alive scene is kept — areas each keep their own
-  // persistent scene and swap which one is "active" rather than rebuilding
-  // on transition, so a light temporarily in an inactive one must not be
-  // dropped just because it isn't the scene being asked about right now.
-  const lights = [];
+  // has no .parent and isn't itself a Scene). A light in another persistent
+  // area scene stays registered until that scene/object is actually removed.
+  const OVERLAY_ONLY_LIGHT_LAYER = 31; // Used by register() to retain light-source metadata without allowing real WebGL lighting.
+  const lights = []; // Registered point-light data sources scanned by list() instead of traversing the active scene.
+  let routedToOverlay = 0; // Mobile/debug count of point lights removed from Three.js rendering by this registry.
+
+  function makeOverlayOnly(light) {
+    if (!light?.isPointLight) return light;
+    light.layers?.set?.(OVERLAY_ONLY_LIGHT_LAYER);
+    light.castShadow = false;
+    light.userData = light.userData || {};
+    if (!light.userData.overlayOnlyLightSource) {
+      light.userData.overlayOnlyLightSource = true;
+      routedToOverlay += 1;
+    }
+    return light;
+  }
 
   function register(light) {
-    if (light?.isPointLight) lights.push(light);
+    if (!light?.isPointLight) return light;
+    makeOverlayOnly(light);
+    if (!lights.includes(light)) lights.push(light);
     return light;
   }
 
@@ -41,5 +49,11 @@
     return alive;
   }
 
-  window.FurnitureLightRegistry = { register, list };
+  window.FurnitureLightRegistry = {
+    register,
+    list,
+    makeOverlayOnly,
+    OVERLAY_ONLY_LIGHT_LAYER,
+    debugSnapshot: () => ({ registered: lights.length, routedToOverlay }),
+  };
 })();
