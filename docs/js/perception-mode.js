@@ -54,6 +54,7 @@
   let postScene = null, postCamera = null, postMaterial = null;
   let overlayEl = null;
   let lastStats = { targets: 0, meshes: 0, infoLists: 0, rendered: 0 };
+  let lastRenderer = null; // Kept only for debugMaskCoverage().
 
   // ── Helpers ──────────────────────────────────────────────────────────
   const THREE = () => deps?.THREE || window.THREE;
@@ -101,7 +102,8 @@
 
   function meshesOf(root, now) {
     const cached = meshCache.get(root);
-    if (cached && now - cached.at < 1000) return cached.meshes;
+    // Visual LOD / respawn can rebuild a root's children; drop the cache as soon as any cached mesh is detached.
+    if (cached && now - cached.at < 1000 && cached.meshes.every(mesh => mesh.parent)) return cached.meshes;
     const meshes = [];
     root.traverse(child => { if (isMaskableMesh(child)) meshes.push(child); });
     meshCache.set(root, { at: now, meshes });
@@ -324,6 +326,7 @@
   function renderOverlay(renderer, scene, camera) {
     lastStats.rendered = 0;
     if (!active || !targets.length || !renderer || !scene || !camera) return;
+    lastRenderer = renderer;
     ensurePost();
     const T = THREE();
     if (!_size.v) _size.v = new T.Vector2();
@@ -455,6 +458,28 @@
       ...lastStats,
       byCategory: targets.reduce((acc, t) => { acc[t.category] = (acc[t.category] || 0) + 1; return acc; }, {}),
     }),
+    // Dev/test only: reads back the last silhouette mask and counts covered texels by colour.
+    debugMaskCoverage: () => {
+      if (!lastRenderer || !maskRT) return null;
+      const w = maskRT.width, h = maskRT.height;
+      const px = new Uint8Array(w * h * 4);
+      lastRenderer.readRenderTargetPixels(maskRT, 0, 0, w, h, px);
+      const out = { width: w, height: h, covered: 0, byColor: {} };
+      for (let i = 0; i < px.length; i += 4) {
+        if (px[i + 3] < 128) continue;
+        out.covered++;
+        const key = `${px[i]},${px[i + 1]},${px[i + 2]}`;
+        out.byColor[key] = (out.byColor[key] || 0) + 1;
+      }
+      out.targets = targets.map(t => ({
+        category: t.category, dist: Math.round(t.dist * 10) / 10,
+        meshes: (t.meshes || []).slice(0, 6).map(m => {
+          const mat = Array.isArray(m.material) ? m.material[0] : m.material;
+          return { type: m.type, mat: mat?.type, map: !!sourceMap(mat), alphaTest: mat?.alphaTest, attached: !!m.parent, visible: m.visible };
+        }),
+      }));
+      return out;
+    },
     __test: Object.freeze({ creatureCategory, cropRows, livestockRows, lerpHex }),
   };
   window.PerceptionMode = api;
