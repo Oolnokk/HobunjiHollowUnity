@@ -248,7 +248,13 @@
 
   function isItemGiftable(held) {
     if (!held || !deps) return false;
-    if (held.kind === 'clothing') return true;
+    if (held.kind === 'clothing') {
+      const uid = held.instance?.uid; // Ownership is checked live so stale holds cannot remove permanent gear.
+      if (!uid) return false;
+      const gear = deps.getGearInventory?.(); // Includes equipped records from older saves, even if the collection is missing.
+      if (gear?.clothingItems?.some(item => item?.uid === uid) || Object.values(gear?.clothing || {}).some(item => item?.uid === uid)) return false;
+      return !!deps.getPackClothing?.()?.some(item => item?.uid === uid);
+    }
     const def = itemDefFor(held);
     return !!def && !def.noGift && (Number(deps.inventory?.[held.key]) || 0) > 0;
   }
@@ -278,6 +284,8 @@
     const report = evaluation ? {
       npcId: rec?.id || null,
       itemKey: held?.key || held?.instance?.cosmeticId || null,
+      giftable: isItemGiftable(held),
+      latestChange: 'Permanent gear cannot be held or given away; pack clothing remains giftable.',
       tier: evaluation.tier,
       score: evaluation.score,
       metalTier: evaluation.metalTier || null,
@@ -416,28 +424,9 @@
 
     if (held.kind === 'clothing') {
       if (kept) {
-        // The held instance came from one of two places (see
-        // game.js's getHeldGiftItem) — gear (collected/possibly worn) or
-        // the pack (found/bought, not yet collected) — remove it from
-        // whichever one actually has it.
-        const gearInventory = deps.getGearInventory();
-        let removedFromGear = false;
-        if (gearInventory?.clothingItems?.some(c => c.uid === held.instance.uid)) {
-          for (const slot of Object.keys(gearInventory.clothing || {})) {
-            if (gearInventory.clothing[slot]?.uid === held.instance.uid) gearInventory.clothing[slot] = null;
-          }
-          gearInventory.clothingItems = gearInventory.clothingItems.filter(c => c.uid !== held.instance.uid);
-          deps.saveGearInventory?.();
-          deps.refreshPlayerAvatar?.();
-          removedFromGear = true;
-        }
-        if (!removedFromGear) {
-          const packClothing = deps.getPackClothing?.() || [];
-          if (packClothing.some(c => c.uid === held.instance.uid)) {
-            deps.setPackClothing?.(packClothing.filter(c => c.uid !== held.instance.uid));
-            deps.buildPackClothingSection?.();
-          }
-        }
+        // Gift eligibility guarantees this article is still in the pack.
+        deps.setPackClothing?.(deps.getPackClothing().filter(item => item.uid !== held.instance.uid));
+        deps.buildPackClothingSection?.();
       }
       deps.clearManualHeldItem?.();
     } else {

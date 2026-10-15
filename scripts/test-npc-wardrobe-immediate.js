@@ -337,7 +337,7 @@ wardrobe.init({
   let held = {
     kind: 'clothing',
     instance: {
-      uid: 'gear_gift',
+      uid: 'pack_gift',
       label: 'Fine Poncho',
       cosmeticId: 'fine_poncho',
       slot: 'overwear',
@@ -345,8 +345,9 @@ wardrobe.init({
       colorB: { dyeId: 'dye:CLOTH:gift_trim' },
     },
   };
-  gearInventory.clothingItems = [held.instance];
-  gearInventory.clothing.overwear = held.instance;
+  gearInventory.clothingItems = [];
+  gearInventory.clothing.overwear = null;
+  let giftPack = [held.instance]; // Successful wardrobe integration gifts an uncollected pack article.
   let giftingSaves = 0;
   vm.runInContext(giftingSource, context, { filename: 'npc-gifting.js' });
   context.NpcGifting.init({
@@ -356,8 +357,8 @@ wardrobe.init({
     clearManualHeldItem() { held = null; },
     getGearInventory: () => gearInventory,
     saveGearInventory() {},
-    getPackClothing: () => [],
-    setPackClothing() {},
+    getPackClothing: () => giftPack,
+    setPackClothing(items) { giftPack = items; },
     refreshPlayerAvatar() {},
     inventory: {},
     clampInventoryStack() {},
@@ -372,7 +373,8 @@ wardrobe.init({
   assert.equal(context.NpcGifting.offerGift(walker), true, 'real gifting flow accepts and processes the clothing gift');
   assert.equal(giftingSaves, 1, 'real gifting flow persists the immediate wardrobe/outfit mutation exactly once');
   assert.equal(held, null, 'accepted clothing gift clears the held instance');
-  assert.equal(gearInventory.clothingItems.length, 0, 'accepted clothing gift leaves player gear ownership');
+  assert.equal(giftPack.length, 0, 'accepted clothing gift leaves the pack');
+  assert.equal(gearInventory.clothingItems.length, 0, 'pack gifting does not change permanent gear');
   assert.deepEqual(Array.from(rec.equippedCosmetics), ['fine_poncho'], 'real gifting flow leaves the accepted garment immediately equipped');
   assert.deepEqual(Array.from(wardrobe.serialize().outfits.test_npc.equippedCosmetics), ['fine_poncho'], 'real gifting save snapshot contains the immediately equipped garment');
   assert.match(gameSource, /NpcWardrobe\?\.captureDefaultOutfitTraits\?\.\(rec\)/, 'NPC loading snapshots authored default clothing before saved outfit overrides apply');
