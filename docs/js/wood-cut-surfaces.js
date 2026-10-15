@@ -22,7 +22,9 @@
   }
 
   function sourceColorHex(material, fallback = '#6d472d') {
-    const source = Array.isArray(material) ? material[0] : material; // First source wood material carries the procedural per-tree bark tint.
+    const source = Array.isArray(material) ? material[0] : material; // First source wood material or naturalized bark material carries the source tint metadata.
+    const mappedTint = String(source?.map?.userData?.naturalSurfaceBodySpriteTintTarget || ''); // NaturalSurfaceMaterials stores the pre-white-material bark tint on its body-tinted PNG texture.
+    if (/^#[0-9a-f]{6}$/i.test(mappedTint)) return mappedTint.toLowerCase();
     if (!source?.color?.isColor) return fallback;
     return `#${source.color.getHexString()}`;
   }
