@@ -16507,11 +16507,14 @@
             }
           }
 
-          // Undeployed creature items: anyone, anywhere, can add one straight
-          // to their personal stable — no farm/ownership involved. Adding to
-          // a farm's own livestock (tradeable, ownership-gated) instead
-          // happens from the Farm tab, not here.
+          // Both destinations use the existing deployment paths, preserving
+          // the selected genotype stack and the farm's livestock permission.
           if (LIVESTOCK_ITEM_KINDS[key] && count > 0) {
+            mkBtn('Add to Nursery', 'equip', () => {
+              const result = window.FarmAnimals.addFromItem(key, stack ? { inventoryVariant: stack.variant } : {}); // Shared farm transfer keeps genetics and consumes exactly one selected animal/egg.
+              showToast(result.message, result.ok);
+              if (result.ok) { buildInventoryGrid(); window.HudUpdate.refreshItemScroll(); refreshActionBar(); saveMemberWorldData(); window.FarmPanel?.render?.(); }
+            });
             mkBtn('Add to Stable', 'equip', () => {
               const result = window.FarmAnimals.addToStable(key, stack ? { inventoryVariant: stack.variant } : {});
               showToast(result.message, result.ok);

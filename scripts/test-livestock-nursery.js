@@ -160,6 +160,12 @@ context.window.FarmPanel.init({});
 let snapshot = context.window.LivestockNursery.debugSnapshot();
 assert.equal(snapshot.babies.length, 1, 'explicit former-stasis records migrate to Nursery babies');
 assert.equal(snapshot.adults, 1, 'legacy free-roaming records remain adults');
+assert.equal(snapshot.farmBabyInventoryCollapsed, true, 'Nursery starts collapsed');
+context.window.LivestockNursery.toggleFarmInventory();
+assert.equal(context.window.LivestockNursery.debugSnapshot().farmBabyInventoryCollapsed, false, 'enhanced header can open the authoritative Nursery inventory');
+context.window.LivestockNursery.toggleFarmInventory();
+assert.equal(context.window.LivestockNursery.debugSnapshot().farmBabyInventoryCollapsed, true, 'enhanced header can close the authoritative Nursery inventory again');
+assert.equal(context.window.LivestockNursery.debugSnapshot().babies.length, 1, 'disclosure changes never remove saved babies');
 
 context.window.FarmAnimals.respawnWorldLivestock();
 const nursery = buildings.find(entry => entry.id === 'farm_nursery');
