@@ -302,6 +302,93 @@
 
   const chargeRenderStats = { cacheHits: 0, yields: 0, maxSliceMs: 0 }; // Mobile diagnostics for repeated render reuse and cooperative processing.
 
+  let renderWorker = null; // One shared worker processes uncached voices without blocking combat or waiting on timer slices.
+  let renderWorkerFailed = false; // Unsupported/CSP-blocked workers retain the cooperative fallback for this session.
+  let nextRenderJobId = 0; // Correlates worker replies with concurrent voice requests.
+  const renderJobs = new Map(); // Pending worker jobs retain only their completion callbacks.
+  const workerRenderStats = { completed: 0, failures: 0, lastMs: 0 }; // Exposed in the existing mobile audio diagnostics.
+
+  function disableRenderWorker(error) {
+    renderWorkerFailed = true;
+    workerRenderStats.failures++;
+    renderWorker?.terminate();
+    renderWorker = null;
+    for (const job of renderJobs.values()) job.reject(error);
+    renderJobs.clear();
+  }
+
+  function ensureRenderWorker() {
+    if (renderWorker || renderWorkerFailed) return renderWorker;
+    if (typeof Worker !== 'function' || typeof Blob !== 'function' || !URL.createObjectURL) return null;
+    // Serialize the existing pure DSP functions so worker and fallback cannot drift.
+    const code = `
+      'use strict';
+      const WSOLA_FRAME_S = ${WSOLA_FRAME_S}, WSOLA_OVERLAP_RATIO = ${WSOLA_OVERLAP_RATIO},
+        WSOLA_SEARCH_S = ${WSOLA_SEARCH_S}, WSOLA_CORRELATION_STEP = ${WSOLA_CORRELATION_STEP},
+        OUTPUT_EDGE_FADE_S = ${OUTPUT_EDGE_FADE_S}, OUTPUT_TAIL_PAD_S = ${OUTPUT_TAIL_PAD_S};
+      let lastStretchSourceSamples = 0, lastStretchTargetSamples = 0, lastStretchCoverage = 1;
+      ${[finite, clamp, smoothBlendWeight, cubicSample, correlation, wsolaStretchSteps, wsolaStretch, applyOutputEdgeEnvelope].map(fn => fn.toString()).join('\n')}
+      self.onmessage = ({ data }) => {
+        try {
+          const started = performance.now();
+          const stretched = wsolaStretch(data.channels, Math.pow(2, data.pitchSemitones / 12) / data.tempo, data.sampleRate);
+          const channels = applyOutputEdgeEnvelope(stretched, data.sampleRate, data.opts);
+          self.postMessage({ id: data.id, channels, elapsedMs: performance.now() - started,
+            sourceSamples: lastStretchSourceSamples, targetSamples: lastStretchTargetSamples, coverage: lastStretchCoverage }, channels.map(channel => channel.buffer));
+        } catch (error) {
+          self.postMessage({ id: data.id, error: error.message || String(error) });
+        }
+      };
+    `;
+    let workerUrl = null; // Revoke the generated script URL after the worker has acquired it.
+    try {
+      workerUrl = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
+      renderWorker = new Worker(workerUrl);
+      renderWorker.onmessage = ({ data }) => {
+        const job = renderJobs.get(data.id); // Ignore replies for jobs already rejected by a worker failure.
+        if (!job) return;
+        renderJobs.delete(data.id);
+        if (data.error) { job.reject(new Error(data.error)); return; }
+        workerRenderStats.completed++;
+        workerRenderStats.lastMs = Math.round(data.elapsedMs);
+        lastStretchSourceSamples = data.sourceSamples;
+        lastStretchTargetSamples = data.targetSamples;
+        lastStretchCoverage = data.coverage;
+        job.resolve(data.channels);
+      };
+      renderWorker.onerror = event => {
+        event.preventDefault?.();
+        disableRenderWorker(new Error(event.message || 'Voice render worker failed'));
+      };
+      renderWorker.onmessageerror = () => disableRenderWorker(new Error('Voice render worker message failed'));
+    } catch (error) {
+      disableRenderWorker(error);
+    } finally {
+      if (workerUrl) URL.revokeObjectURL(workerUrl);
+    }
+    return renderWorker;
+  }
+
+  async function processConstantAxesOffThread(buffer, tempo, pitchSemitones, opts = {}) {
+    const worker = ensureRenderWorker(); // Decode stays in WebAudio; only waveform processing moves to the worker.
+    if (worker) {
+      try {
+        const channels = Array.from({ length: buffer.numberOfChannels }, (_, index) => buffer.getChannelData(index).slice()); // Transfer private copies; never detach cached decoded audio.
+        return await new Promise((resolve, reject) => {
+          const id = ++nextRenderJobId; // Stable completion identity even when multiple characters vocalize together.
+          renderJobs.set(id, { resolve, reject });
+          try {
+            worker.postMessage({ id, channels, sampleRate: buffer.sampleRate, tempo, pitchSemitones,
+              opts: { edgeFadeS: opts.edgeFadeS, tailPadS: opts.tailPadS } }, channels.map(channel => channel.buffer));
+          } catch (error) {
+            disableRenderWorker(error);
+          }
+        });
+      } catch (_) { /* CSP/runtime failures preserve the yielding renderer below. */ }
+    }
+    return processConstantAxesCooperatively(buffer, tempo, pitchSemitones, opts);
+  }
+
   async function processConstantAxesCooperatively(buffer, tempo, pitchSemitones, opts) {
     const channels = Array.from({ length: buffer.numberOfChannels }, (_, index) => buffer.getChannelData(index).slice()); // Private processing buffers.
     const pitchRatio = Math.pow(2, pitchSemitones / 12); // Matches the synchronous renderer's independent pitch math.
@@ -313,7 +400,9 @@
       if (performance.now() >= deadline) {
         chargeRenderStats.maxSliceMs = Math.max(chargeRenderStats.maxSliceMs, performance.now() - sliceStartedAt);
         chargeRenderStats.yields++;
-        await new Promise(resolve => setTimeout(resolve, 0));
+        // scheduler.yield avoids nested timer clamping while still allowing input/render work.
+        if (typeof window.scheduler?.yield === 'function') await window.scheduler.yield();
+        else await new Promise(resolve => setTimeout(resolve, 0));
         sliceStartedAt = performance.now();
         deadline = sliceStartedAt + 2;
       }
@@ -434,7 +523,7 @@
     const pending = Promise.resolve().then(async () => {
       const clock = typeof performance !== 'undefined' && performance?.now ? performance : Date;
       const started = clock.now();
-      const channels = await processConstantAxesCooperatively(decoded, clampTempoFor(tempo, maxTempo), clampPitchFor(pitchSemitones, maxPitchSemitones), renderOpts);
+      const channels = await processConstantAxesOffThread(decoded, clampTempoFor(tempo, maxTempo), clampPitchFor(pitchSemitones, maxPitchSemitones), renderOpts);
       const length = Math.max(1, channels[0]?.length || 1);
       const rendered = context.createBuffer(channels.length, length, decoded.sampleRate);
       for (let channelIndex = 0; channelIndex < channels.length; channelIndex++) rendered.copyToChannel(channels[channelIndex], channelIndex);
@@ -472,7 +561,7 @@
         trimStartS: 0, trimEndS: 0, trimmed: false,
       };
       const working = trim.buffer || decoded;
-      const channels = await processConstantAxesCooperatively(working, tempo, pitchSemitones, opts);
+      const channels = await processConstantAxesOffThread(working, tempo, pitchSemitones, opts);
       const length = Math.max(1, channels[0]?.length || 1);
       const rendered = context.createBuffer(channels.length, length, working.sampleRate);
       for (let channelIndex = 0; channelIndex < channels.length; channelIndex++) rendered.copyToChannel(channels[channelIndex], channelIndex);
@@ -864,7 +953,7 @@
       previewCount: previewHandles.size,
       decodedClipCount: decodedByUrl.size,
       renderedVariantCount: renderedByKey.size,
-      chargeRendering: { ...chargeRenderStats, cachedVariants: decodedRenderCache.size, latestChange: 'All voice waveforms yield during correlation searches and reuse identical renders in a bounded cache.' },
+      chargeRendering: { ...chargeRenderStats, cachedVariants: decodedRenderCache.size, worker: { ...workerRenderStats, available: !!renderWorker, failed: renderWorkerFailed, pending: renderJobs.size }, latestChange: 'Uncached voices render in one worker without combat-frame blocking or timer-clamped startup; yielding fallback retained.' },
       lastTempo,
       lastPitchSemitones,
       lastClipTempo,
