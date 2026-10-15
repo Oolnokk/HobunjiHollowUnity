@@ -121,7 +121,7 @@
     ['js/sleep-passage-action-bridge.js?v=20261015hanan2', () => Number(window.HobunjiSleepPassageActionBridge?.version) >= 3],
     ['js/day-progress-review.js?v=20261014h628ff81', () => Number(window.DayProgressReview?.version) >= 1],
     ['js/day-progress-review-relationship-ui.js?v=20260914a', () => Number(window.DayProgressReviewRelationshipUi?.version) >= 1],
-    ['js/menu-tab-icon-only.js?v=20260915perf1', () => Number(window.HobunjiMenuTabIcons?.version) >= 1],
+    ['js/menu-tab-icon-only.js?v=20261015ha32cef0', () => Number(window.HobunjiMenuTabIcons?.version) >= 1],
     ['js/npc-social-seating-bridge.js?v=20260904a', () => !!window.HobunjiNpcSocialSeating],
     ['js/performance-loop-optimizations.js?v=20260818a', () => !!window.HobunjiPerformanceLoopOptimizations],
     ['js/combat/enemy-target-facing.js?v=20260906a', () => Number(window.EnemyTargetFacing?.version) >= 1],

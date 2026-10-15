@@ -671,8 +671,8 @@
       display: flex; align-items: center; gap: 10px;
       padding: 14px 16px;
       border-radius: var(--r);
-      background: linear-gradient(135deg, rgba(40,30,8,0.9), rgba(60,48,10,0.9));
-      border: 1px solid rgba(240,200,60,0.35);
+      background: linear-gradient(135deg, rgba(14,36,31,0.9), rgba(24,52,44,0.9));
+      border: 1px solid rgba(111,174,155,0.35);
       margin-bottom: 16px;
     }
     .wallet-icon  { font-size: 28px; }
@@ -680,10 +680,10 @@
     .wallet-amount {
       font-family: 'KhymeryyanRomanLetters+Numbers', 'Pixelify Sans', monospace;
       font-size: 24px;
-      color: #f0d040;
+      color: #6fae9b;
       letter-spacing: 0.02em;
     }
-    .wallet-unit { font-size: 13px; color: rgba(240,200,60,0.6); margin-left: 2px; }
+    .wallet-unit { font-size: 13px; color: #6fae9b; margin-left: 2px; }
 
     /* ── Inventory sell rows ────────────────────────────── */
     .sell-row {
