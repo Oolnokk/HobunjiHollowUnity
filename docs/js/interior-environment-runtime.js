@@ -17,7 +17,7 @@
   const DEFAULT_WALL_HEIGHT = 1.75; // Existing authored-interior wall height; maps without wallHeight stay unchanged.
   const EDITOR_SYNC_MS = 500; // Matches the existing external floor-control sync cadence.
   const LIGHTING_UPDATE_MS = 250; // Smooth enough for the slow game clock without doing light work every render frame.
-  const OVERLAY_ONLY_LIGHTING_MAPS = new Set(['map_i_temple']); // Runtime uses the shared 2D darkness/light-mask overlay for these interiors instead of mutating Three.js lights.
+  let isOrdinaryBuildingArea = () => false; // Captured from GridTileAccessors so runtime authored-lighting metadata follows the same ordinary-building policy as the farmhouse overlay route.
   const configCache = new Map(); // mapId -> Promise<normalized environment|null>, avoiding repeated config fetches.
   const lightingRecords = new Map(); // mapId -> captured light references/base values for time-varying daylight updates.
   const editorTrackedLights = new Set(); // Tracks preview lights created through the constructor bridge so sliders can update them live.
@@ -219,7 +219,7 @@
   }
 
   function usesOverlayOnlyLighting(mapId) {
-    return OVERLAY_ONLY_LIGHTING_MAPS.has(String(mapId || '').trim());
+    return !IS_INTERIOR_EDITOR && !!isOrdinaryBuildingArea(String(mapId || '').trim()); // Every ordinary authored building uses the shared fake-light compositor at runtime; the editor keeps its lighting preview controls.
   }
 
   function loadEnvironmentForMap(mapId) {
@@ -276,9 +276,10 @@
     });
   }
 
-  function hookBuildingSceneMap(map) {
+  function hookBuildingSceneMap(map, buildingPredicate) {
     if (!map?.set || map.__hobunjiInteriorEnvironmentSetHook) return false;
     buildingSceneMap = map;
+    if (typeof buildingPredicate === 'function') isOrdinaryBuildingArea = buildingPredicate;
     const originalSet = map.set.bind(map); // Preserves the existing floor-style Map.set wrapper when both are installed.
     map.set = function setBuildingSceneWithEnvironment(mapId, sceneRecord) {
       const result = originalSet(mapId, sceneRecord);
@@ -295,7 +296,7 @@
     if (!namespace?.init || namespace.__hobunjiInteriorEnvironmentInitHook) return false;
     const originalInit = namespace.init;
     namespace.init = function initWithInteriorEnvironment(injectedDeps) {
-      hookBuildingSceneMap(injectedDeps?._buildingScenes);
+      hookBuildingSceneMap(injectedDeps?._buildingScenes, injectedDeps?._isBuildingArea);
       return originalInit.call(this, injectedDeps);
     };
     namespace.__hobunjiInteriorEnvironmentInitHook = true;
@@ -488,7 +489,7 @@
       defaultWallHeight: DEFAULT_WALL_HEIGHT,
       buildingSceneMapHooked: !!buildingSceneMap?.__hobunjiInteriorEnvironmentSetHook,
       configCacheKeys: [...configCache.keys()],
-      overlayOnlyLightingMaps: [...OVERLAY_ONLY_LIGHTING_MAPS],
+      overlayOnlyLightingPolicy: IS_INTERIOR_EDITOR ? 'editor-preview' : 'ordinary-authored-buildings',
       lightingMaps: [...lightingRecords.keys()],
       daylightFactor: daylightFactor(),
       lastMapId,
