@@ -162,17 +162,22 @@
     if (!scene || !player) return [];
     const out = [];
     const seenRoots = new Set();
+    const rejected = { noRoot: 0, offScene: 0, outOfRange: 0 }; // Diagnostics only (debugSnapshot).
     const consider = (root, category, extra) => {
-      if (!root || seenRoots.has(root)) return;
-      if (sceneOf(root) !== scene) return;
+      if (!root) { rejected.noRoot++; return; }
+      if (seenRoots.has(root)) return;
+      if (sceneOf(root) !== scene) { rejected.offScene++; return; }
       const p = worldPos(root);
       const dist = Math.hypot(p.x - player.x, p.z - player.z);
-      if (dist > RANGE_TILES) return;
+      if (dist > RANGE_TILES) { rejected.outOfRange++; return; }
       seenRoots.add(root);
       out.push({ root, category, dist, ...extra });
     };
 
     const sources = deps.getSources();
+    const count = list => (list ? (list.size ?? list.length ?? 0) : 0);
+    lastStats.sources = Object.fromEntries(Object.entries(sources).map(([key, list]) => [key, count(list)]));
+    lastStats.rejected = rejected;
     for (const c of sources.companions || []) if (isAliveCreature(c)) consider(rootOf(c), 'friendly');
     for (const c of sources.creatures || []) if (isAliveCreature(c)) consider(rootOf(c), creatureCategory(c));
     for (const walker of sources.npcs || []) consider(walker?.root || rootOf(walker), 'friendly');
