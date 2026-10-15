@@ -16,6 +16,15 @@
       },
       "goods": [
         {
+          "key": "workhammer_nativeCopper",
+          "icon": "🔨",
+          "name": "Native Copper Work Hammer",
+          "desc": "A simple two-handed blunt hammer. Equip it as a pick or weapon; owning it unlocks smithing this shape in better metals.",
+          "price": 45,
+          "givesTool": "workhammer_nativeCopper",
+          "conditions": {}
+        },
+        {
           "key": "mulchBag",
           "icon": "🍂",
           "name": "Mulch Bag",

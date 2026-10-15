@@ -1822,6 +1822,7 @@
       // verdigris/plating/reinforcement tracking for free since all of that
       // state is already keyed by itemKey.
       const TOOL_SHAPE_DEFS = {
+        workhammer: { label: 'Work Hammer', icon: '🔨', baseSprite: 'assets/toolsprites/work_hammer.png', slots: ['pick', 'weapon'], animStyle: 'sweep', dmgType: 'blunt', weaponIdleClass: 'heavy', requiresDiscovery: true },
         hoe:          { label: 'Hoe',           icon: '🪓', baseSprite: 'assets/toolsprites/hoe_bronzehoe.png',        slots: ['hoe'],                     animStyle: 'chop'   },
         hatchet:      { label: 'Hatchet',       icon: '🪓', baseSprite: 'assets/toolsprites/axe_hatchet.png',          slots: ['axe', 'weapon'],           animStyle: 'sweep',  dmgType: 'sharp' },
         fishingmace:  { label: 'Fishing Mace',  icon: '🎣', baseSprite: 'assets/toolsprites/harpoon_fishingmace.png',  slots: ['harpoon', 'weapon'],        animStyle: 'sweep', spinning: true, dmgType: 'blunt'  },
@@ -1832,6 +1833,9 @@
       // They still enter the shared smithing/item pipeline through HELD_SHAPE_DEFS
       // below, but future weapons no longer have to masquerade as tool definitions.
       const MELEE_WEAPON_SHAPE_DEFS = {
+        warhammer: { label: 'Warhammer', icon: '🔨', baseSprite: 'assets/toolsprites/warhammer.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'blunt', weaponIdleClass: 'heavy', requiresDiscovery: true },
+        harlyaoLongsword: { label: 'Harlyao Longsword', icon: '🗡️', baseSprite: 'assets/toolsprites/harlyao_longsword.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'heavy', requiresDiscovery: true },
+        harlyaoBroadsword: { label: 'Harlyao Broadsword', icon: '🗡️', baseSprite: 'assets/toolsprites/harlyao_broadsword.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'heavy', requiresDiscovery: true },
         bshuakauitl:  { label: "B'shuakauitl", icon: '🗡️', baseSprite: "assets/toolsprites/b'shuakauitl.png",       slots: ['weapon'], animStyle: 'sweep',  dmgType: 'sharp', weaponIdleClass: 'light' },
         daggerSword:  { label: 'Dagger-Sword',  icon: '🗡️', baseSprite: 'assets/toolsprites/dagger-sword_sweep.png', slots: ['weapon'], animStyle: 'sweep',  comboStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'light' },
         plainsSword:  { label: 'Plains-Sword',  icon: '🗡️', baseSprite: 'assets/toolsprites/plains-sword.png',       slots: ['weapon'], animStyle: 'sweep',  dmgType: 'sharp', weaponIdleClass: 'heavy' },
@@ -1840,7 +1844,8 @@
         warCleaver:   { label: 'War-Cleaver',   icon: '🗡️', baseSprite: 'assets/toolsprites/war-cleaver.png',        slots: ['weapon'], animStyle: 'sweep',  dmgType: 'sharp', weaponIdleClass: 'light' },
       };
       const HELD_SHAPE_DEFS = { ...TOOL_SHAPE_DEFS, ...MELEE_WEAPON_SHAPE_DEFS }; // Shared smithing/equipment catalog used by the existing generated-item pipeline.
-      // Every shape is unlocked from the start — "you unlock all the current
+      // Full catalog; WeaponTrustVisits filters discovery/friendship gates.
+      // Legacy tool shapes are unlocked from the start — "you unlock all the current
       // ones by default" — this is just the set Sloomi/Kzubug's crafting
       // counter offers; it's never spent/consumed so it isn't gearInventory
       // state the way owned tools/mastery/plating are.
@@ -1872,6 +1877,8 @@
           };
         }
       }
+
+      window.ModularWeapons?.registerDefinitions(TOOL_ITEM_DEFS, HELD_SHAPE_DEFS, METAL_DEFS, VERDIGRIS_METAL_KEYS);
 
       // Drives the weapon-tool loadout's Combo slot (see combat-loadout.js) —
       // a sweep-style weapon (hatchet, fishing mace) plays the 3-Swing Combo,
@@ -2195,7 +2202,7 @@
             ensureMetalToolIconSource(def.itemKey);
           }
         }
-        return def?.sprite || '';
+        return def?.modular ? '' : (def?.sprite || '');
       }
       // Plain sprite path for an ordinary tool, or a synthetic
       // ToolIconRender key for a smith-crafted verdigris tool — see above.
@@ -2531,7 +2538,8 @@
         .filter(([, def]) => !def.fixture)
         .map(([, def]) => ({
           key: def.itemKey, icon: def.icon, name: def.name, desc: def.desc,
-          price: def.price, gives: { [def.itemKey]: 1 }, category: 'furniture'
+          price: def.price, gives: { [def.itemKey]: 1 }, category: 'furniture',
+          moteOnly: !!def.moteOnly, masteryUnlockId: def.masteryUnlockId || null, // Preserve mastery gates when projecting definitions into shop/blueprint catalogs.
         }));
 
       // ── Authored furniture (docs/config/furniture-authored/*.json) ────
@@ -2572,18 +2580,58 @@
       // Every processing station (PROCESSING_FURNITURE_CATALOG) and
       // decorative piece (DECORATIVE_FURNITURE_CATALOG) is built from a
       // blueprint — bought from the carpenter's shop instead of the
-      // finished piece itself — plus wood and stone gathered with the axe
-      // and pick. See renderCarpenterShopPage (sells the blueprint) and
+      // finished piece itself — plus authored materials. The carpenter shows
+      // those costs; the Crafting tab checks and spends them. See
       // renderCraftingPanel/craftFurnitureFromBlueprint (builds the
       // finished item from an owned blueprint + materials, in the
       // Inventory's Crafting tab).
       function blueprintItemKey(furnitureItemKey) {
         return furnitureItemKey + 'Blueprint';
       }
-      // A rough-and-ready cost curve derived from the old outright price —
-      // about a sixth of it in wood, a tenth in stone, at least 1 of each.
-      function furnitureCraftCost(price) {
-        return { wood: Math.max(1, Math.round(price / 6)), stone: Math.max(1, Math.round(price / 10)) };
+      // Authored material costs: common joinery stays accessible; metal vessels
+      // and mechanisms use the existing copper/tin/bronze hierarchy, never rare
+      // weapon-tier alloys merely for decoration. Wool supplies actual textiles.
+      const FURNITURE_MATERIAL_COSTS = { // Used by the shared blueprint catalog and all Crafting-tab material checks.
+        pestleFurniture: { wood: 2, stone: 4 },
+        squeezerFurniture: { wood: 4, bar_nativeCopper: 1 },
+        handMillFurniture: { wood: 3, stone: 5, bar_lowTinBronze: 1 },
+        dryingRackFurniture: { wood: 3 },
+        smokerFurniture: { wood: 4, stone: 4, bar_nativeCopper: 1 },
+        agingBarrelFurniture: { wood: 6, bar_nativeCopper: 2 },
+        agingVaseFurniture: { stone: 6 },
+        basicBedFurniture: { wood: 6, puktukWool: 4 },
+        doubleBedFurniture: { wood: 9, puktukWool: 8 },
+        bedrollFurniture: { puktukWool: 3 },
+        benchFurniture: { wood: 3 },
+        bookshelfFurniture: { wood: 5 },
+        bucketFurniture: { bar_tin: 2 },
+        candleTableFurniture: { wood: 2, bar_nativeCopper: 1 },
+        chairSimpleFurniture: { wood: 2 },
+        chairCushionFurniture: { wood: 3, puktukWool: 2 },
+        chestFurniture: { wood: 5, bar_lowTinBronze: 1 },
+        crateStackFurniture: { wood: 3 },
+        copperBarrelFurniture: { wood: 3, bar_nativeCopper: 2 },
+        deskFurniture: { wood: 6, bar_nativeCopper: 1 },
+        dresserFurniture: { wood: 5, bar_nativeCopper: 1 },
+        hearthFurniture: { stone: 10, bar_tinBronze: 1 },
+        campfireKitFurniture: { wood: 3, stone: 3 },
+        loomFurniture: { wood: 7, bar_lowTinBronze: 1, lightWool: 2 },
+        advancedLoomFurniture: { wood: 12, bar_tinBronze: 2, lightWool: 4 },
+        nightstandFurniture: { wood: 3 },
+        hangingBannerFurniture: { wood: 2, lightWool: 4 },
+        rugFurniture: { puktukWool: 5 },
+        standingLampFurniture: { bar_tinBronze: 2 },
+        statueFurniture: { stone: 8 },
+        stoolFurniture: { wood: 2 },
+        tableLongFurniture: { wood: 8 },
+        tableRoundFurniture: { wood: 5 },
+        tableSmallFurniture: { wood: 3 },
+        wardrobeFurniture: { wood: 8, bar_lowTinBronze: 2 },
+        washTubFurniture: { bar_nativeCopper: 3 },
+        counterFurniture: { wood: 7 },
+      };
+      function furnitureCraftCost(item) {
+        return { wood: 0, stone: 0, ...(FURNITURE_MATERIAL_COSTS[item.key] || { wood: Math.max(1, Math.round(item.price / 6)) }) };
       }
       const FURNITURE_BLUEPRINT_CATALOG = [
         ...PROCESSING_FURNITURE_CATALOG.map(item => ({ item, category: 'processing' })),
@@ -2597,11 +2645,11 @@
         moteOnly: !!item.moteOnly, // Used to keep Mote-only mastery blueprints out of the gold Carpenter inventory.
         masteryUnlockId: item.masteryUnlockId || null, // Used by CraftingPanel to treat the world-scoped mastery purchase as permanent blueprint ownership.
         // A permanent, reusable unlock (see craftFurnitureFromBlueprint —
-        // building from a blueprint only ever spends Wood/Stone, never the
+        // building from a blueprint only ever spends materials, never the
         // blueprint itself), so it's priced above the finished piece's own
         // price rather than a fraction of it.
         price: Math.max(15, Math.round(item.price * 1.5)),
-        craftCost: furnitureCraftCost(item.price),
+        craftCost: furnitureCraftCost(item),
         category,
       }));
 
@@ -15858,7 +15906,7 @@
       Object.entries(TOOL_ITEM_DEFS).forEach(([key, def]) => {
         if (!def.metalKey || ITEM_DEFS[key]) return;
         const shape = HELD_SHAPE_DEFS[def.shapeKey];
-        const tags = [MELEE_WEAPON_SHAPE_DEFS[def.shapeKey] ? 'Weapon' : 'Tool', shape?.label || def.shapeKey];
+        const tags = [def.modular || MELEE_WEAPON_SHAPE_DEFS[def.shapeKey] ? 'Weapon' : 'Tool', shape?.label || def.shapeKey];
         if (def.slots?.includes('weapon') && tags[0] !== 'Weapon') tags.push('Weapon');
         ITEM_DEFS[key] = {
           icon: def.icon,
@@ -15866,7 +15914,7 @@
           cat: 'tool',
           sellPrice: 0,
           tags,
-          desc: `A ${METAL_DEFS[def.metalKey]?.label.toLowerCase()} ${shape?.label.toLowerCase()}, smithed by Sloomi or Kzubug. Its verdigris grows with this item's own mastery.`,
+          desc: def.modular ? `${def.label}, custom-forged at the Foundry. Its head determines damage type; its shaft supplies the grip and stance.` : `A ${METAL_DEFS[def.metalKey]?.label.toLowerCase()} ${shape?.label.toLowerCase()}, smithed by Sloomi or Kzubug. Its verdigris grows with this item's own mastery.`,
         };
       });
 
@@ -22055,12 +22103,22 @@
       const _toolTexLoader = new THREE.TextureLoader();
       const toolTextures = {};
       const loadedToolTextures = {};
+      const modularToolGeometries = new Map(); // Shared per-item quads let an asynchronous canvas expansion update both hands and every held copy.
       // One loader path for every TOOL_ITEM_DEFS entry: boot-time keys
       // below, and keys registered later at runtime (unbound Harlyao relic
       // weapons, js/harlyao-relics.js) through ensureToolTexture().
       function ensureToolTexture(key) {
         const def = TOOL_ITEM_DEFS[key];
         if (!def || toolTextures[key]) return toolTextures[key] || null;
+        if (def.modular) {
+          const canvas = document.createElement('canvas'); // Placeholder uses the donor frame until asynchronous composition finishes.
+          canvas.width = 450; canvas.height = 1204;
+          const texture = window.HobunjiSpritePngSurface.makeCanvasTexture(THREE, canvas, key); // Canonical authored PNG surface.
+          toolTextures[key] = texture;
+          def._imgW = 450; def._imgH = 1204;
+          refreshMetalToolWorldTexture(key);
+          return texture;
+        }
         const tex = _toolTexLoader.load(def.sprite, (t) => {
           const img = t.image;
           def._imgW = img.naturalWidth  || img.width  || 1;
@@ -22089,7 +22147,7 @@
         }
         return tex;
       }
-      for (const key of Object.keys(TOOL_ITEM_DEFS)) ensureToolTexture(key);
+      for (const key of Object.keys(TOOL_ITEM_DEFS)) if (!TOOL_ITEM_DEFS[key].modular) ensureToolTexture(key);
 
       // Swaps a crafted tool's in-hand mesh texture to its current metal/
       // verdigris/plating recolor — called once its base texture finishes
@@ -22108,7 +22166,8 @@
         window.ToolMetalRecolor?.getRecoloredCanvas(def.sprite, quantizedOpts).then(canvas => {
           tex.image = canvas;
           tex.needsUpdate = true;
-        });
+          if (def.modular && modularToolGeometries.has(itemKey)) window.ModularWeapons.fitPlaneGeometry(modularToolGeometries.get(itemKey), canvas, TOOL_MODEL_WIDTH);
+        }).catch(error => { window.__farmLog?.(`[Foundry/metal sprite] ${error.message}`, 'error'); });
       }
 
       // Build a PNG plane mesh sized to the sprite's pixel aspect ratio.
@@ -22119,20 +22178,22 @@
       // resource-ring layers (<1.1) while remaining below avatar planes (2+).
       const HELD_OBJECT_RENDER_ORDER = 1.5;
       function makeToolPlaneMesh(itemKey, opts = {}) {
-        if (!itemKey || !toolTextures[itemKey]) return null;
+        if (!itemKey || !ensureToolTexture(itemKey)) return null;
         const def  = TOOL_ITEM_DEFS[itemKey];
         const imgW = def?._imgW || 1;
         const imgH = def?._imgH || 1;
         const planeW = TOOL_MODEL_WIDTH;
         const planeH = planeW * (imgH / imgW);   // e.g. 450×1204 → 0.5 × 1.338
         const g   = new THREE.Group();
-        const geo = new THREE.PlaneGeometry(planeW, planeH);
-        const mat = new THREE.MeshBasicMaterial({
-          map: toolTextures[itemKey],
-          transparent: true,
-          alphaTest: 0.08,
-          side: THREE.DoubleSide,
-        });
+        let geo = def?.modular ? modularToolGeometries.get(itemKey) : null; // Reuse the same geometry object so existing dual-wield copies receive layout updates.
+        if (!geo) {
+          geo = new THREE.PlaneGeometry(planeW, planeH);
+          if (def?.modular) modularToolGeometries.set(itemKey, geo);
+        }
+        if (def?.modular) window.ModularWeapons.fitPlaneGeometry(geo, toolTextures[itemKey].image, TOOL_MODEL_WIDTH);
+        const mat = def?.modular
+          ? window.HobunjiSpritePngSurface.makeMaterial(THREE, toolTextures[itemKey], itemKey, { side: THREE.DoubleSide })
+          : new THREE.MeshBasicMaterial({ map: toolTextures[itemKey], transparent: true, alphaTest: 0.08, side: THREE.DoubleSide });
         const plane = new THREE.Mesh(geo, mat);
         // The PNG's fixed -90° X basis makes it lie in the tool's XZ plane.
         // Tool End Flip is an in-plane 180° turn on the visible sprite, so
@@ -28630,6 +28691,11 @@
         buildInventoryGrid,
         saveMemberWorldData,
         getGeneralStoreCatalog: () => GENERAL_STORE_CATALOG,
+        TOOL_ITEM_DEFS,
+        getGearInventory: () => gearInventory,
+        saveGearInventory,
+        buildEquipmentSlots,
+        refreshMetalToolWorldTexture,
         lootShopWorldState: window.LootRolling.lootShopWorldState,
         getStoreClothingPieces: () => STORE_CLOTHING_PIECES,
         getGeneralStoreClothingSlots: () => GENERAL_STORE_CLOTHING_SLOTS,
@@ -29126,6 +29192,7 @@
 
       window.CraftingPanel?.init({
         inventory,
+        ITEM_DEFS, // Supplies shared material labels and commission sale-value estimates.
         clampInventoryStack,
         FURNITURE_BLUEPRINT_CATALOG,
         ORE_DEFS,

@@ -24,14 +24,14 @@
   <script src="js/GLTFLoader.js?v=20260712d"></script>
   <script src="js/WallBuilder.js?v=20261013hd467097"></script>
   <script src="js/HousePieceGen.js?v=20261015h7ba4ec2&window=20260926rebase1"></script>
-  <script src="js/interior-scene-builder.js?v=20261015hb802584&window=20260926rebase1"></script>
+  <script src="js/interior-scene-builder.js?v=20261015h6bcbacd&window=20260926rebase1"></script>
   <script src="js/interior-ceilings.js?v=20261015h5328b1c"></script>
   <script src="js/building-door.js?v=20260725a"></script>
   <script src="js/tile-pathfinding.js?v=20260808a"></script>
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
        extracted out of game.js; must load before game.js and before every
        other module whose init(deps) is handed window.FormatUtils.clamp/esc. -->
-  <script src="js/format-utils.js?v=20261015hc13b4de"></script>
+  <script src="js/format-utils.js?v=20261015h49947ec"></script>
   <!-- Movement virtual-joystick handlers extracted out of game.js; uses
        window.FormatUtils.clamp, so must load after it and before game.js. -->
   <script src="js/virtual-joystick.js?v=20260902mod1"></script>
@@ -149,11 +149,11 @@
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
   <!-- Shared frame-budget yield for long async pixel jobs (clothing weaving, creature genetics). -->
   <script src="js/pixel-work-yield.js?v=20261010pwy1"></script>
-  <script src="js/tool-metal-recolor.js?v=20261001c6751543"></script>
+  <script src="js/tool-metal-recolor.js?v=20261015hd172faa"></script>
   <script src="js/metal-armor-system.js?v=20261008h99621ca"></script>
   <script src="config/colors/config.js?v=20260930h1b2e2e2"></script>
   <script src="config/attachment-rig-profiles.js?v=20261002h6d814a9"></script>
-  <link rel="stylesheet" href="style.css?v=20261015hfb1e507">
+  <link rel="stylesheet" href="style.css?v=20261015h24e5740">
   <link rel="stylesheet" href="cooking-ui.css?v=20261009mobiletarget3">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
   <!-- Shared gameplay presentation: mirrors the outlined text + light translucent containers used by character/save select. -->
@@ -178,7 +178,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261007hfd6211c"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261015hf121d57"></script>
+  <script src="js/held-action-animations.js?v=20261015h9704344"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
   <script src="js/character-action-locks.js?v=20261015hc73ec7d"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
@@ -262,7 +262,7 @@
   <!-- Shared condition-axis schema/evaluators (window.ConditionRegistry) —
        single source of truth for the dialogue system's and the Loot & Shop
        system's condition gating, also loaded by their respective dev tools. -->
-  <script src="js/condition-registry.js?v=20261014he68ed9c"></script>
+  <script src="js/condition-registry.js?v=20261015h7841a1a"></script>
   <!-- Optional local-folder save mirror (window.LocalSaveFolder) — self-contained,
        only reads/writes the same hobunjiSaveMeta localStorage key onboarding.js/
        game.js already use. See docs/js/local-save-folder.js. -->
@@ -326,9 +326,9 @@
        (at fight time, not load time), so exact ordering against those two
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
-  <script src="js/combat/combat-bandit.js?v=20261014h726fd73"></script>
+  <script src="js/combat/combat-bandit.js?v=20261015h7b3f6e9"></script>
   <!-- Distinct Minion humanoid category: independent roster/dye/Shambling Footing rules over the shared BanditCombat executor. -->
-  <script src="js/combat/combat-minion.js?v=20261014h481470a"></script>
+  <script src="js/combat/combat-minion.js?v=20261015h2a5bcf5"></script>
   <script src="js/combat/combat-enemy-dodge.js?v=20261014h4b88a3f"></script>
   <!-- Testing Arena-only Harlyao Lich class: wraps the final humanoid AI seam after enemy-dodge, owns elemental projectiles/puddles/Entranced commands, and summons ordinary Minions. -->
   <script src="js/combat/combat-lich.js?v=20261015h3faef6c"></script>
@@ -345,7 +345,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261015h3441510"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261015h131d617"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -355,7 +355,7 @@
   <!-- Trinkets + shared 8-point Attunement budget; registers stat/perk/companion providers. -->
   <script src="js/trinket-system.js?v=20261015h587b47e"></script>
   <script src="js/cooking-data.js?v=20260811a"></script>
-  <script src="js/food-processing.js?v=20261001foodgift2"></script>
+  <script src="js/food-processing.js?v=20261015hc6ddbcf"></script>
   <script src="js/cooking-system.js?v=20261015hf625da8"></script>
   <script src="js/key-item-system.js?v=20260918banubu1"></script>
   <!-- Alchemy (reagent/effect defs, potion brewing, shared timed effects) —
@@ -458,15 +458,15 @@
   <script src="js/jubmir-shop.js?v=20261008h176df45"></script>
   <!-- Bound Harlyao relic weapons + Garanki Gabu's unbinding/enchanting panel. -->
   <script src="js/artifact-collection.js?v=20261013h17d9d3b"></script>
-  <script src="js/harlyao-relics.js?v=20261015h4c239a4"></script>
+  <script src="js/harlyao-relics.js?v=20261015h8d40d96"></script>
   <!-- Smithy / General Store / Carpenter shop-counter buttons (window.NpcShopButtons),
        initialized by game.js. -->
-  <script src="js/npc-shop-buttons.js?v=20261008shopbtn1"></script>
+  <script src="js/npc-shop-buttons.js?v=20261015hf042488"></script>
   <!-- Slagothim trade caravans: town-value-gated road traders (window.SlagothimTraders).
        game.js calls window.SlagothimTraders.init(...); the name generator supplies
        Slagothim culture names for caravan members. -->
   <script src="js/scratchbones-name-generator.js?v=20261008slagothim1"></script>
-  <script src="js/slagothim-traders.js?v=20261013hc7d71c0"></script>
+  <script src="js/slagothim-traders.js?v=20261015h43733c9"></script>
   <!-- Khymeryyan civil calendar (day/week/month/year derivations + regional
        seasons) and the Calendar tab UI (window.CalendarSystem) —
        self-contained aside from deps injected via init(), so load order
@@ -538,14 +538,14 @@
        load order relative to the other systems above doesn't matter; must
        load before game.js, which calls window.GeneralStore.init(...)
        during its own setup. -->
-  <script src="js/general-store.js?v=20261008hd4c78fb"></script>
+  <script src="js/general-store.js?v=20261015h21b7037"></script>
   <!-- Carpenter's shop: barn plans + furniture blueprints
        (window.CarpenterShop) — self-contained aside from deps injected via
        init(), and reads window.ConditionRegistry at render time (already
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.CarpenterShop.init(...) during its own setup. -->
-  <script src="js/carpenter-shop.js?v=20261008h4f574b3"></script>
+  <script src="js/carpenter-shop.js?v=20261015h7b5db8d"></script>
   <!-- Off-save storage for a per-item "Custom" pattern's motif PNG
        (window.MotifStore) — see the file's own header comment. No deps
        injection and everything on it fails soft, so load order doesn't
@@ -580,7 +580,10 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.MetalCraftShop.init(...) during
        its own setup. -->
-  <script src="js/metal-craft-shop.js?v=20261008h500d39f"></script>
+  <script src="config/modular-weapons.js?v=20261015h07f17b8"></script>
+  <script src="js/modular-weapons.js?v=20261015h07f17b8"></script>
+  <script src="js/foundry-shop.js?v=20261015h745caca"></script>
+  <script src="js/metal-craft-shop.js?v=20261015h7842bfe"></script>
   <!-- Ambient wildlife den spawning, per-den shared genotype rolls, and
        wildlife-vs-wildlife skirmish damage (window.WildlifeSpawn) — reads
        window.BanditCamps/window.CreatureGenetics/window.CreatureGeneticsRender
@@ -714,7 +717,7 @@
   <!-- Crafting tab (Inventory panel's Crafting sub-tab, window.CraftingPanel)
        — furniture blueprints plus discovered ore-to-bar recipes; pure DOM/state,
        must load before game.js, which injects inventory and metallurgy data. -->
-  <script src="js/crafting-panel.js?v=20261008h3f8fc5c"></script>
+  <script src="js/crafting-panel.js?v=20261015hc140b14"></script>
   <!-- Tool/weapon equipment-slot assignment and gear clothing (collection,
        equip/de-equip, redye panel — window.EquipmentPanel) — its
        buildEquipmentSlots() calls window.WhistleEquip.build() at render
@@ -764,7 +767,7 @@
   <script src="js/cavern-sculptor.js?v=20261013hae568c9"></script>
   <script src="js/cavern-generator.js?v=20261013hfdce263"></script>
   <script src="js/cavern-ore-rocks.js?v=20261010caveore1"></script>
-  <script src="js/town-mine.js?v=20261008hf23c45c"></script>
+  <script src="js/town-mine.js?v=20261015h57682f9"></script>
   <!-- A wilderness zone's in-bounds elevated plateau/mesa terrain
        (window.ZonePlateauMesa) — pure scene-graph generation, no other
        window.* system reads; must load before game.js, which calls
@@ -1470,7 +1473,7 @@
       <!-- ── Supply shop pane ──────────────────────────────── -->
       <div class="mp-pane" id="mpSupplies">
         <div class="supply-top-row">
-          <div class="wallet-display"><div class="wallet-icon">💰</div><div class="wallet-label">Current gold</div><div class="wallet-amount" id="supplyGoldDisplay">0<span class="wallet-unit">g</span></div></div>
+          <div class="wallet-display"><div class="wallet-icon">💰</div><div class="wallet-label">Current bronze</div><div class="wallet-amount" id="supplyGoldDisplay">0<span class="wallet-unit">g</span></div></div>
           <div class="supply-tabs" role="tablist" aria-label="Supply shop category filters" data-ctrl-tabs>
             <button class="supply-tab active" data-supply-cat="seeds" type="button">Seeds</button>
             <button class="supply-tab" data-supply-cat="furniture" type="button">Furniture</button>
@@ -1491,7 +1494,7 @@
       <!-- ── General Store pane ─────────────────────────────── -->
       <div class="mp-pane" id="mpGeneralStore">
         <div class="supply-top-row">
-          <div class="wallet-display"><div class="wallet-icon">💰</div><div class="wallet-label">Current gold</div><div class="wallet-amount" id="gsGoldDisplay">0<span class="wallet-unit">g</span></div></div>
+          <div class="wallet-display"><div class="wallet-icon">💰</div><div class="wallet-label">Current bronze</div><div class="wallet-amount" id="gsGoldDisplay">0<span class="wallet-unit">g</span></div></div>
           <div class="supply-tabs" role="tablist" aria-label="General store category filters">
             <button class="supply-tab general-store-tab active" data-general-store-cat="goods" type="button">Goods</button>
             <button class="supply-tab general-store-tab" data-general-store-cat="clothing" type="button">Clothing</button>
@@ -1510,7 +1513,7 @@
            renderCarpenterShopPage() in game.js. ───────────────────────── -->
       <div class="mp-pane" id="mpCarpenterShop">
         <div class="supply-top-row">
-          <div class="wallet-display"><div class="wallet-icon">💰</div><div class="wallet-label">Current gold</div><div class="wallet-amount" id="cpGoldDisplay">0<span class="wallet-unit">g</span></div></div>
+          <div class="wallet-display"><div class="wallet-icon">💰</div><div class="wallet-label">Current bronze</div><div class="wallet-amount" id="cpGoldDisplay">0<span class="wallet-unit">g</span></div></div>
         </div>
         <div class="menu-section supply-shop-section">
           <div class="menu-section-title">Dzibim Khibu's Carpentry — Plans &amp; Blueprints</div>
@@ -1524,7 +1527,7 @@
            renderJubmirShopPage() in game.js. ───────────────────────────── -->
       <div class="mp-pane" id="mpJubmirShop">
         <div class="supply-top-row">
-          <div class="wallet-display"><div class="wallet-icon">💰</div><div class="wallet-label">Current gold</div><div class="wallet-amount" id="jmGoldDisplay">0<span class="wallet-unit">g</span></div></div>
+          <div class="wallet-display"><div class="wallet-icon">💰</div><div class="wallet-label">Current bronze</div><div class="wallet-amount" id="jmGoldDisplay">0<span class="wallet-unit">g</span></div></div>
         </div>
         <div class="menu-section supply-shop-section">
           <div class="menu-section-title">Jubmir's Wares</div>
@@ -1539,7 +1542,7 @@
            renderMetalCraftShopPage() in game.js. ───────────────────────── -->
       <div class="mp-pane" id="mpMetalCraftShop">
         <div class="supply-top-row">
-          <div class="wallet-display"><div class="wallet-icon">💰</div><div class="wallet-label">Current gold</div><div class="wallet-amount" id="mcGoldDisplay">0<span class="wallet-unit">g</span></div></div>
+          <div class="wallet-display"><div class="wallet-icon">💰</div><div class="wallet-label">Current bronze</div><div class="wallet-amount" id="mcGoldDisplay">0<span class="wallet-unit">g</span></div></div>
         </div>
         <div class="menu-section supply-shop-section">
           <div class="menu-section-title">Sloomi &amp; Kzubug's Smithing Counter</div>
@@ -1552,7 +1555,7 @@
            config/shops/shop-stock.json). See js/harlyao-relics.js. ────────── -->
       <div class="mp-pane" id="mpGarankiEnchanter">
         <div class="supply-top-row">
-          <div class="wallet-display"><div class="wallet-icon">💰</div><div class="wallet-label">Current gold</div><div class="wallet-amount" id="gkGoldDisplay">0<span class="wallet-unit">g</span></div></div>
+          <div class="wallet-display"><div class="wallet-icon">💰</div><div class="wallet-label">Current bronze</div><div class="wallet-amount" id="gkGoldDisplay">0<span class="wallet-unit">g</span></div></div>
         </div>
         <div class="menu-section supply-shop-section">
           <div class="menu-section-title">Garanki Gabu — Artifacts &amp; Enchanting</div>
@@ -2480,7 +2483,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261015h9629c80"></script>
+  <script src="js/pixel-probe.js?v=20261015h823e0f5"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2640,7 +2643,7 @@
   <script src="js/romance-wedding.js?v=20261007wedding1"></script>
   <script src="js/romance-system.js?v=20261013h23504d0"></script>
   <script src="js/npc-command-wheel.js?v=20261008h02bf686"></script>
-  <script src="game.js?v=20261015hd8c873f"></script>
+  <script src="game.js?v=20261015hcfa4218"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261010h8448517"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

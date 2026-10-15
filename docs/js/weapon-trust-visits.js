@@ -225,7 +225,12 @@
   function syncSmithingShapeUnlocks() {
     if (!craftDeps?.UNLOCKED_TOOL_SHAPES) return;
     if (!allSmithShapeKeys) allSmithShapeKeys = [...craftDeps.UNLOCKED_TOOL_SHAPES];
+    const gear = craftDeps.getGearInventory?.(); // Owned shapes unlock smithing regardless of their source or metal.
+    const ownedShapes = new Set(Object.entries(gear?.tools || {}).filter(([, owned]) => owned).map(([key]) => craftDeps.TOOL_ITEM_DEFS?.[key]).filter(def => def && !def.modular).map(def => def.shapeKey)); // Foundry combinations do not bypass donor discovery.
+    for (const record of Object.values(gear?.harlyaoRelics || {})) ownedShapes.add(record.shape === 'warhammer' ? 'warhammer' : record.shape === 'longsword' ? 'harlyaoLongsword' : record.shape === 'broadsword' ? 'harlyaoBroadsword' : null);
     const available = allSmithShapeKeys.filter(shapeKey => {
+      if (ownedShapes.has(shapeKey)) return true;
+      if (craftDeps.TOOL_SHAPE_DEFS?.[shapeKey]?.requiresDiscovery) return false;
       if (!gatedShapeKeys.has(shapeKey)) return true;
       const gift = giftByShape.get(shapeKey);
       return gift ? giftCompleted(gift) : false;

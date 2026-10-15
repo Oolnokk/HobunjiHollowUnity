@@ -46,7 +46,7 @@
     const ids = Array.isArray(cfg.npcIds) ? cfg.npcIds : ['kzubug', 'sloomi'];
     return deps?.getCurrentArea?.() === (cfg.areaId || 'map_i_smithy') && ids.includes(walker?.rec?.id || '');
   }
-  function smithyButton() { return shopButton(smithyButtonConfig(), '🔨', 'Smithy', smithyAction()); }
+  function smithyButton() { return shopButton(window.TownMine?.hasImprovement?.('foundry') ? { ...smithyButtonConfig(), label: 'Foundry' } : smithyButtonConfig(), '🔨', 'Smithy', smithyAction()); }
 
   function generalStoreButtonConfig() { return mobileControls().generalStoreButton || {}; }
   function generalStoreAction() { return generalStoreButtonConfig().action || 'open_general_store'; }

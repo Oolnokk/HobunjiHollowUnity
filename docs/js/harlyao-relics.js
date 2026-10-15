@@ -25,6 +25,10 @@
       label: 'Harlyao Longsword', sprite: 'assets/toolsprites/harlyao_longsword.png', icon: '🗡️',
       animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'heavy',
     }),
+    warhammer: Object.freeze({
+      label: 'Harlyao Warhammer', sprite: 'assets/toolsprites/warhammer.png', icon: '🔨',
+      animStyle: 'sweep', dmgType: 'blunt', weaponIdleClass: 'heavy',
+    }),
     broadsword: Object.freeze({
       label: 'Harlyao Broadsword', sprite: 'assets/toolsprites/harlyao_broadsword.png', icon: '🗡️',
       animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'heavy',
@@ -204,6 +208,7 @@
         animStyle: shape.animStyle,
         dmgType: shape.dmgType,
         weaponIdleClass: shape.weaponIdleClass,
+        shapeKey: record.shape === 'warhammer' ? 'warhammer' : record.shape === 'longsword' ? 'harlyaoLongsword' : 'harlyaoBroadsword',
         harlyaoRelic: true,
         itemKey: toolKey,
       };
@@ -263,6 +268,7 @@
       for (const [slot, id] of Object.entries(relic.enchantments.flourishes)) es.setFlourish(toolKey, slot, id);
     }
     const learned = es?.unlockFromState?.(relic.enchantments) || [];
+    window.WeaponTrustVisits?.syncSmithingShapeUnlocks?.();
     deps.saveGearInventory?.();
     deps.saveMemberWorldData?.();
     deps.buildInventoryGrid?.();

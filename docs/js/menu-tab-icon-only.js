@@ -121,6 +121,8 @@
         pointer-events: none;
       }
       #mpInventory .inv-wallet-amount,
+      .wallet-amount,
+      .wallet-unit,
       ${HUD_GOLD_AMOUNT_SELECTOR} {
         color: ${CURRENCY_VERDIGRIS_COLOR} !important;
         text-shadow:
@@ -134,6 +136,14 @@
           1px 1px 0 #000,
           0 0 4px ${CURRENCY_VERDIGRIS_GLOW},
           0 0 8px rgba(112, 235, 198, .72);
+      }
+      .wallet-icon {
+        width: 28px; height: 28px; flex: 0 0 28px;
+        font-size: 0;
+        background: ${CURRENCY_VERDIGRIS_COLOR};
+        -webkit-mask: url('${iconUrl('generic', CURRENCY_ICON_FILE)}') center / contain no-repeat;
+        mask: url('${iconUrl('generic', CURRENCY_ICON_FILE)}') center / contain no-repeat;
+        filter: drop-shadow(0 0 3px ${CURRENCY_VERDIGRIS_GLOW});
       }
       ${HUD_GOLD_SELECTOR} {
         display: inline-flex;
@@ -514,6 +524,7 @@
       currencyColor: CURRENCY_VERDIGRIS_COLOR,
       currencyGlowColor: CURRENCY_VERDIGRIS_GLOW,
       currencyOutlined: true,
+      latestChange: 'Shop wallets use Current bronze and share inventory verdigris amount styling.',
       currencyIconScale: CURRENCY_ICON_SCALE,
       currencyIconAnchor: 'bottom-left',
     };
