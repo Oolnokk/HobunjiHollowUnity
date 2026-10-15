@@ -578,6 +578,7 @@
     }
     gearInventory.clothing[equippedItem.slot] = equippedItem;
     packClothing.splice(idx, 1);
+    if (deps.getManualHeldItem?.()?.kind === 'clothing' && deps.getManualHeldItem().uid === uid) deps.setManualHeldItem?.(null);
     deps.saveGearInventory();
     deps.saveMemberWorldData(); // packClothing (world-scoped) lost the item saveGearInventory just persisted to gear
     deps.refreshPlayerAvatar();
@@ -722,7 +723,7 @@
         });
       }
       // Giftable straight from the pack too — see getHeldGiftItem in
-      // game.js, which checks packClothing as well as gear.
+      // game.js, which resolves only clothing still in the pack.
       const heldNow = deps.getManualHeldItem?.();
       const isHeld = heldNow?.kind === 'clothing' && heldNow?.uid === uid;
       mkBtn(isHeld ? '✋ Holding — Stop' : '✋ Hold', isHeld ? '' : 'secondary', () => {
@@ -754,7 +755,7 @@
     const set = (id, val) => { const el = document.getElementById(id); if (el) el[typeof val === 'string' ? 'textContent' : 'innerHTML'] = val; };
     setInventoryDetailClothingIcon(item);
     set('iiName',  clothingArticleLabel(item));
-    set('iiPrice', 'Permanent gear — not sellable');
+    set('iiPrice', 'Permanent gear — cannot sell or give away');
     set('iiTags',  '');
     const gearInventory = deps.getGearInventory();
     const isWorn = gearInventory?.clothing?.[slot]?.uid === item.uid;
@@ -791,20 +792,6 @@
         actEl.appendChild(redyeBtn);
       }
 
-      // Clothing never enters the item wheel (see getHeldGiftItem in
-      // game.js), so this is the only way to hold a piece of it out for an
-      // interaction like gifting — worn or not, equip status is unrelated
-      // to whether it's currently "held".
-      const heldNow = deps.getManualHeldItem?.();
-      const isHeld = heldNow?.kind === 'clothing' && heldNow?.uid === item.uid;
-      const holdBtn = document.createElement('button');
-      holdBtn.className = 'ii-btn' + (isHeld ? '' : ' secondary');
-      holdBtn.textContent = isHeld ? '✋ Holding — Stop' : '✋ Hold';
-      holdBtn.onclick = () => {
-        deps.setManualHeldItem?.(isHeld ? null : { kind: 'clothing', uid: item.uid });
-        selectGearClothing(slot, item);
-      };
-      actEl.appendChild(holdBtn);
     }
   }
 

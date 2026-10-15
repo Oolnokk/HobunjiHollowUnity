@@ -16207,12 +16207,19 @@
       // enters inventory/inventoryItems (see gearInventory.clothingItems in
       // js/equipment-panel.js), so there's no wheel slot to select it from.
       // Set from the Equipment panel's clothing detail view ("Hold" button,
-      // see selectGearClothing in js/equipment-panel.js). Explicit only:
+      // see selectPackClothingItem in js/equipment-panel.js). Explicit only:
       // switching the item wheel does not clear it, and it does not clear
       // itself — the player (or a successful gift) clears it back to "let
       // the wheel decide" via clearManualHeldItem.
       let manualHeldItem = null; // { kind: 'clothing', uid } | null
-      function setManualHeldItem(item) { manualHeldItem = item || null; refreshActionBar(); }
+      function setManualHeldItem(item) {
+        if (item?.kind === 'clothing' && !window.NpcGifting?.isItemGiftable?.({ kind: 'clothing', instance: { uid: item.uid } })) {
+          showToast('Only clothing in your pack can be held or given away.', false);
+          return;
+        }
+        manualHeldItem = item || null;
+        refreshActionBar();
+      }
       function clearManualHeldItem() { if (!manualHeldItem) return; manualHeldItem = null; refreshActionBar(); }
       function getManualHeldItem() { return manualHeldItem; }
 
@@ -16221,13 +16228,8 @@
       // manual hold first, falling back to the ordinary wheel selection.
       function getHeldGiftItem() {
         if (manualHeldItem?.kind === 'clothing') {
-          // Checks packClothing too — found/bought clothing sits there
-          // (see js/equipment-panel.js's selectPackClothingItem) until the
-          // player explicitly Transfers it to Gear, and it's held/giftable
-          // either way.
-          const item = (gearInventory?.clothingItems || []).find(c => c.uid === manualHeldItem.uid)
-            || packClothing.find(c => c.uid === manualHeldItem.uid);
-          if (item) return { kind: 'clothing', instance: item };
+          const item = packClothing.find(c => c.uid === manualHeldItem.uid); // Only uncollected pack clothing may be offered.
+          if (item && window.NpcGifting?.isItemGiftable?.({ kind: 'clothing', instance: item })) return { kind: 'clothing', instance: item };
           manualHeldItem = null; // Stale reference (sold/gifted away since) — fall through to the wheel.
         }
         // A wheel-ineligible material/etc explicitly held via the Inventory
