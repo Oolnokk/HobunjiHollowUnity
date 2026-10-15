@@ -40,7 +40,7 @@ assert.equal(ed.grips.currentDualWieldAnimationState().influence, 1);
 ed.window.HobunjiDualWieldWeaponVisuals.setEditorIdlePreview(false);
 assert.equal(JSON.stringify(ed.grips.currentDualWieldAnimationState()), checkboxState, 'preview before/after authoring yields the same result');
 ed.grips.loadEditorAnimationGrip({});
-for (const key of ['kylie', 'dagger', 'daggerSword', 'dagger-sword-tinbronze', 'warCleaver', 'war-cleaver', 'warcleaver-nativecopper', 'war-cleaver-tinbronze']) {
+for (const key of ['kylie', 'dagger', 'daggerSword', 'dagger-sword-tinbronze', 'warCleaver', 'war-cleaver', 'warcleaver-nativecopper', 'war-cleaver-tinbronze', 'fishingmace', 'fishingmace_nativeCopper', 'fishing-mace-tinbronze']) {
   assert(ed.grips.isDualWieldWeapon(key), key);
   ed.window.HobunjiAttackEditorToolContext.toolKey = key;
   ed.grips.editorToolChanged();
@@ -70,7 +70,7 @@ assert.equal(ed.grips.currentSecondaryGripAnimationState().influence, 1, 'ordina
 ed.controls.toolSpriteSelect.value = 'dagger';
 assert.equal(ed.grips.currentDualWieldAnimationState().influence, 0);
 const game = fixture(false);
-for (const key of ['kylie', 'dagger-nativecopper', 'daggersword-tinbronze', 'warCleaver', 'war-cleaver-tinbronze']) {
+for (const key of ['kylie', 'dagger-nativecopper', 'daggersword-tinbronze', 'warCleaver', 'war-cleaver-tinbronze', 'fishingmace', 'fishingmace_nativeCopper', 'fishing-mace-tinbronze']) {
   game.setSnapshot({ activeSlot: 'weapon', itemKey: key, combatNeutralInjected: false });
   assert.equal(game.grips.currentDualWieldAnimationState().influence, 1, 'game equip starts paired before any attack');
   game.window.Combat.deps.triggerWeaponSwingVisual(1, { pose: { windup: { dualWield: true, secondaryGrip: { enabled: true } } } });
@@ -210,14 +210,14 @@ for (const order of ['dual-first', '2h-first']) {
   assert.equal(modes.windup.dualWield, true);
   assert.equal(modes.neutral.dualWield, undefined, 'one pose never changes a different pose');
 }
-// Fishing mace remains single-handed in the game even with every authored flag on.
+// Fishing mace uses paired melee hands even when 2H is also authored.
 game.window.Combat.deps.triggerWeaponSwingVisual(1, { pose: bothFlags });
 game.setSnapshot({ activeSlot: 'weapon', itemKey: 'fishingmace', combatNeutralInjected: true, combatProgress: 0.55 });
-assert.equal(game.grips.currentDualWieldAnimationState().influence, 0);
+assert.equal(game.grips.currentDualWieldAnimationState().influence, 1);
 assert.equal(game.grips.currentSecondaryGripAnimationState().influence, 0);
-assert.equal(game.grips.dualWieldStateForTool('fishingmace'), null);
+assert(game.grips.dualWieldStateForTool('fishingmace'));
 assert.equal(game.grips.secondaryGripForTool('fishingmace'), null);
-game.setSnapshot({ activeSlot: 'ranged', itemKey: 'dagger', combatNeutralInjected: true, combatProgress: 0.55 });
+game.setSnapshot({ activeSlot: 'ranged', itemKey: 'fishingmace', combatNeutralInjected: true, combatProgress: 0.55 });
 assert.equal(game.grips.currentDualWieldAnimationState().influence, 0);
 // Verify the actual authored definitions rather than relying on runtime defaults.
 function assertAuthoredFlags(poses, name) {
