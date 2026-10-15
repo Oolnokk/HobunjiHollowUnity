@@ -6,7 +6,7 @@
   const SAFE_ROOM_ID = 'map_i_town_mine_safe'; // Used as the permanent hub between town and unlocked tier shortcuts.
   let configPromise = null; // Used to share the single mine-config request among map loading, loot gating, and diagnostics.
   let deps = null; // Used by runtime progression helpers while pure generation remains independently testable.
-  let progression = { deepestFloor: 0, unlockedShortcutTiers: [], townValue: 0, discoveredOreKeys: [] }; // Used as the world-member mine progression and permanent ore-recipe discovery saved alongside inventory and quests.
+  let progression = { deepestFloor: 0, unlockedShortcutTiers: [], townValue: 0, improvements: [], discoveredOreKeys: [] }; // Used as the world-member mine progression and permanent ore-recipe discovery saved alongside inventory and quests.
   const floorVisitCounts = new Map(); // Used to give every entry a fresh layout/content seed instead of treating a numbered floor as a permanent map.
   const ghoulBgmFloorIds = new Set(); // Generated floors whose actual spawn plan contains at least one Ghoul.
   const GHOUL_BGM_TRACK = { url: 'assets/audio/music/bgm/bgm_just_beyond_the_torchlight.ogg', volumeMultiplier: 2, exclusiveSoundtrack: true }; // Ghoul-floor music deliberately plays at twice the ordinary BGM base level and keeps its existing soundtrack ownership while it is playing.
@@ -199,12 +199,13 @@
   }
 
   function serialize() {
-    return { deepestFloor: progression.deepestFloor, unlockedShortcutTiers: [...progression.unlockedShortcutTiers], townValue: progression.townValue, discoveredOreKeys: [...progression.discoveredOreKeys] };
+    return { deepestFloor: progression.deepestFloor, unlockedShortcutTiers: [...progression.unlockedShortcutTiers], townValue: progression.townValue, improvements: [...(progression.improvements || [])], discoveredOreKeys: [...progression.discoveredOreKeys] };
   }
 
   function restore(saved) {
     const shortcutTiers = Array.isArray(saved?.unlockedShortcutTiers) ? saved.unlockedShortcutTiers : []; // Used to reject malformed save data without losing valid progression.
     progression = {
+      improvements: Array.isArray(saved?.improvements) && saved.improvements.includes('foundry') ? ['foundry'] : [],
       deepestFloor: Math.max(0, Math.min(100, Math.floor(Number(saved?.deepestFloor) || 0))),
       unlockedShortcutTiers: [...new Set(shortcutTiers.map(Number).filter(tier => Number.isInteger(tier) && tier >= 1 && tier <= 9))].sort((a, b) => a - b),
       townValue: Math.max(0, Math.floor(Number(saved?.townValue) || 0)),
@@ -234,16 +235,39 @@
     return 1 + (rng() < 0.5 ? 1 : 0) + Math.max(0, Math.floor(Number(bonus) || 0)); // One/two ore at equal odds gives exactly 1.5 base yield before additive Mining bonuses.
   }
 
-  function getTownValue() { return progression.townValue; }
+  function hasImprovement(id) { return (progression.improvements || []).includes(id); }
+
+  function improvementStatus(id) {
+    const upgrade = window.ModularWeapons?.getConfig?.().upgrade; // Configured town investment offered by the smith.
+    if (!upgrade || upgrade.id !== id) return null;
+    const resources = { ...deps?.inventory, wood: woodCount() }; // Pooled existing log materials.
+    return { ...upgrade, built: hasImprovement(id), affordable: Object.entries(upgrade.cost).every(([key, cost]) => Number.isFinite(Number(resources[key])) && Number(resources[key]) >= cost) };
+  }
+
+  function buildImprovement(id) {
+    const status = improvementStatus(id); // Recheck every resource at purchase time; duplicate clicks cannot charge twice.
+    if (!status || status.built) return { ok: false, message: 'That improvement is unavailable or already built.' };
+    if (!status.affordable) return { ok: false, message: 'You need all of the bronze and materials for this improvement.' };
+    for (const [key, cost] of Object.entries(status.cost)) {
+      if (key === 'wood') spendWood(cost);
+      else deps.inventory[key] -= cost;
+    }
+    progression.improvements = [...(progression.improvements || []), id];
+    deps?.refreshInventory?.();
+    deps?.save?.();
+    return { ok: true, message: `Smithy upgraded to a Foundry! Town Value +${status.townValue}.` };
+  }
+
+  function getTownValue() { return progression.townValue + (hasImprovement('foundry') ? 3 : 0); }
 
   // Town Value perk: everything the player sells (shipping box, store
   // counter, livestock) fetches a little more as the town grows.
   const SALE_BONUS_PER_TOWN_VALUE = 0.03; // +3% per Town Value…
   const SALE_BONUS_MAX = 0.3; // …capped at +30% (Town Value 10).
-  function salePriceMultiplier(townValue = progression.townValue) {
+  function salePriceMultiplier(townValue = getTownValue()) {
     return 1 + Math.min(SALE_BONUS_MAX, Math.max(0, Math.floor(Number(townValue) || 0)) * SALE_BONUS_PER_TOWN_VALUE);
   }
-  function applySaleBonus(amount, townValue = progression.townValue) {
+  function applySaleBonus(amount, townValue = getTownValue()) {
     const value = Number(amount) || 0;
     return value > 0 ? Math.round(value * salePriceMultiplier(townValue)) : value;
   }
@@ -272,7 +296,7 @@
     let remaining = amount;
     for (const key of (deps?.woodItemKeys || [])) {
       const take = Math.min(remaining, Math.max(0, Number(deps.inventory?.[key]) || 0));
-      deps.inventory[key] -= take;
+      deps.inventory[key] = (Number(deps.inventory[key]) || 0) - take;
       remaining -= take;
       if (!remaining) break;
     }
@@ -314,7 +338,7 @@
     progression.townValue += 1;
     deps?.refreshInventory?.();
     deps?.save?.();
-    return { ok: true, message: `Ladder extended to Floor ${row.targetFloor}. Town Value is now ${progression.townValue}.` };
+    return { ok: true, message: `Ladder extended to Floor ${row.targetFloor}. Town Value is now ${getTownValue()}.` };
   }
 
   function ensureLadderPanel() {
@@ -337,7 +361,7 @@
     panel.style.display = 'flex';
     const rows = await ladderRows();
     const saleBonusPercent = Math.round((salePriceMultiplier() - 1) * 100); // Shown here because extending the ladder is how Town Value rises.
-    panel.querySelector('[data-summary]').textContent = `Deepest floor: ${progression.deepestFloor} · Town Value: ${progression.townValue}${saleBonusPercent ? ` (sale prices +${saleBonusPercent}%)` : ''}. Completed tiers permit costly permanent shortcuts; a growing town draws Slagothim traders and unlocks larger carpentry plans.`;
+    panel.querySelector('[data-summary]').textContent = `Deepest floor: ${progression.deepestFloor} · Town Value: ${getTownValue()}${saleBonusPercent ? ` (sale prices +${saleBonusPercent}%)` : ''}. Completed tiers permit costly permanent shortcuts; a growing town draws Slagothim traders and unlocks larger carpentry plans.`;
     const shortcuts = panel.querySelector('[data-shortcuts]');
     shortcuts.innerHTML = '<h3>Descend</h3>';
     const destinations = [{ floor: 1, label: 'Floor 1' }, ...rows.filter(row => row.unlocked).map(row => ({ floor: row.targetFloor, label: `Floor ${row.targetFloor}` }))];
@@ -410,6 +434,9 @@
     maximumMetalTierForTownValue,
     filterMetalKeysForTownValue,
     recordFloorReached,
+    hasImprovement,
+    improvementStatus,
+    buildImprovement,
     serialize,
     restore,
     getTownValue,

@@ -810,6 +810,9 @@
   window.HobunjiCacheAudit?.register('ToolMetalRecolor.canvasCache', () => _canvasCache.size);
 
   function loadImage(spritePath, opts = {}) {
+    const modular = window.ModularWeapons?.decode?.(spritePath); // Virtual sprites reuse the normal metal/plating/icon recolor cache.
+    if (modular) return window.ModularWeapons.compose(modular.shaft, modular.head);
+
     let promise = _imgCache.get(spritePath);
     if (promise) {
       debugLog(opts, 'image cache hit', { spritePath });
