@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict'); // Deterministic source-level regression assertions for the prayer/rest feature.
-const fs = require('node:fs'); // Reads the shipped core, integration shim, bootstrap source, and temple map.
+const fs = require('node:fs'); // Reads the shipped core, integration shim, bootstrap sources, and temple map.
 const path = require('node:path'); // Resolves repository-relative paths.
 const vm = require('node:vm'); // Syntax-checks browser modules without requiring a renderer.
 
@@ -9,15 +9,18 @@ const root = path.resolve(__dirname, '..'); // Used as the common repository roo
 const core = fs.readFileSync(path.join(root, 'docs/js/temple-prayer-rest-blessings.js'), 'utf8'); // Single authority for saves, prayer effects, menu, sleep timing, and buff-bar entries.
 const integration = fs.readFileSync(path.join(root, 'docs/js/devotion-rest-buffs.js'), 'utf8'); // Compatibility layer for seat detection, floating prompt, movement, and rounded potion tiers.
 const sleepBridge = fs.readFileSync(path.join(root, 'docs/js/sleep-passage-action-bridge.js'), 'utf8'); // Existing guaranteed bootstrap used to load the feature.
+const combatBootstrap = fs.readFileSync(path.join(root, 'docs/js/combat/combat-config-loader.js'), 'utf8'); // Parser-time module loader that must request the current Sleep bridge URL/version.
 const social = fs.readFileSync(path.join(root, 'docs/config/npcs/social-relations.js'), 'utf8'); // Authored Anan morning-service schedule kept separate from all-day prayer eligibility.
 const temple = JSON.parse(fs.readFileSync(path.join(root, 'docs/config/maps/map_i_temple.json'), 'utf8')); // Alternate Spirit Communion layout used to verify its moved benches remain prayer-capable.
 
 assert.doesNotThrow(() => new vm.Script(core), 'temple prayer/rest core parses');
 assert.doesNotThrow(() => new vm.Script(integration), 'prayer/rest integration parses');
 assert.doesNotThrow(() => new vm.Script(sleepBridge), 'sleep bridge still parses');
+assert.doesNotThrow(() => new vm.Script(combatBootstrap), 'parser-time compatibility bootstrap still parses');
 
-assert.match(sleepBridge, /devotion-rest-buffs\.js\?v=[A-Za-z0-9_.-]+/, 'existing Sleep bootstrap loads the prayer/rest integration');
-assert.match(integration, /temple-prayer-rest-blessings\.js\?v=[A-Za-z0-9_.-]+/, 'integration loads exactly one prayer/rest core authority');
+assert.match(combatBootstrap, /sleep-passage-action-bridge\.js\?v=20261015hanan2[\s\S]{0,120}HobunjiSleepPassageActionBridge\?\.version\)\s*>=\s*3/, 'parser-time loader requests the current Sleep bridge instead of accepting a stale cached version');
+assert.match(sleepBridge, /devotion-rest-buffs\.js\?v=20261015hanan1/, 'Sleep bridge cache-busts the current prayer/rest integration');
+assert.match(integration, /temple-prayer-rest-blessings\.js\?v=20261015hanan1/, 'integration cache-busts the current prayer/rest core authority');
 assert.match(core, /PRAYER_DURATION_HOURS\s*=\s*7\s*\*\s*24/, 'prayers last one in-game week');
 assert.match(core, /WELL_RESTED_DURATION_HOURS\s*=\s*16/, 'Well Rested lasts sixteen in-game hours');
 assert.match(social, /id:\s*'shared_temple_service'[\s\S]{0,300}day:\s*'Anan'[\s\S]{0,300}from:\s*'09:00'[\s\S]{0,200}to:\s*'11:00'/, 'formal Temple Service remains an Anan morning event rather than expanding to all day');
