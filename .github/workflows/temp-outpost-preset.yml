@@ -24,39 +24,39 @@ jobs:
 
           editor_path = Path('docs/tools/house-piece-author/index.html')
           editor = editor_path.read_text()
-
           option_anchor = '<option value="plain">Plain rectangular prism</option>'
-          option_insert = option_anchor + '<option value="outpost">Outpost</option>'
           if '<option value="outpost">Outpost</option>' not in editor:
               if option_anchor not in editor:
                   raise SystemExit('base preset option anchor missing')
-              editor = editor.replace(option_anchor, option_insert, 1)
+              editor = editor.replace(option_anchor, option_anchor + '<option value="outpost">Outpost</option>', 1)
 
           function_marker = 'function generateFlatSlabFromFootprint(recordUndo=true){'
           if 'function generateOutpostBaseFromFootprint(recordUndo=true){' not in editor:
               if function_marker not in editor:
                   raise SystemExit('flat slab function marker missing')
-              outpost_fn = '''function generateOutpostBaseFromFootprint(recordUndo=true){
-  const info=footprintInfo(); // Footprint bounds used to build the six-face Outpost prism.
-  if(!info){ log('Paint footprint cells before generating an Outpost.', 'warn'); return false; }
-  if(recordUndo) pushUndo('Generate Outpost six-face base');
-  const y0=finite($('groundY').value,0), y1=y0+finite($('baseHeight').value,2.6); // Vertical prism limits shared by all six Outpost faces.
-  const p=(x,y,z)=>new THREE.Vector3(x,y,z); // Corner helper used only while constructing the Outpost box faces.
-  state.piece.base.height=finite($('baseHeight').value,2.6); state.piece.base.wallThickness=finite($('wallThickness').value,.15); state.piece.base.groundY=y0;
-  state.piece.base.faces=[
-    addFace([p(info.minX,y0,info.maxZ),p(info.minX,y0,info.minZ),p(info.maxX,y0,info.minZ),p(info.maxX,y0,info.maxZ)], 'wall', {outpostFace:'bottom'}),
-    addFace([p(info.minX,y1,info.minZ),p(info.minX,y1,info.maxZ),p(info.maxX,y1,info.maxZ),p(info.maxX,y1,info.minZ)], 'wall', {outpostFace:'top'}),
-    addFace([p(info.minX,y0,info.maxZ),p(info.maxX,y0,info.maxZ),p(info.maxX,y1,info.maxZ),p(info.minX,y1,info.maxZ)], 'wall', {outpostFace:'south'}),
-    addFace([p(info.maxX,y0,info.minZ),p(info.minX,y0,info.minZ),p(info.minX,y1,info.minZ),p(info.maxX,y1,info.minZ)], 'wall', {outpostFace:'north'}),
-    addFace([p(info.minX,y0,info.minZ),p(info.minX,y0,info.maxZ),p(info.minX,y1,info.maxZ),p(info.minX,y1,info.minZ)], 'wall', {outpostFace:'west'}),
-    addFace([p(info.maxX,y0,info.maxZ),p(info.maxX,y0,info.minZ),p(info.maxX,y1,info.minZ),p(info.maxX,y1,info.maxZ)], 'wall', {outpostFace:'east'}),
-  ];
-  state.selectedFaceIds.clear(); rebuildFaceMeshes(); rebuildRoofPreview(); frameScene(); refreshExport();
-  log('Generated Outpost: exactly six wall-tagged prism faces; stacked generated logs are the preset default.');
-  return true;
-}
-'''
-              editor = editor.replace(function_marker, outpost_fn + function_marker, 1)
+              outpost_lines = [
+                  "function generateOutpostBaseFromFootprint(recordUndo=true){",
+                  "  const info=footprintInfo(); // Footprint bounds used to build the six-face Outpost prism.",
+                  "  if(!info){ log('Paint footprint cells before generating an Outpost.', 'warn'); return false; }",
+                  "  if(recordUndo) pushUndo('Generate Outpost six-face base');",
+                  "  const y0=finite($('groundY').value,0), y1=y0+finite($('baseHeight').value,2.6); // Vertical prism limits shared by all six Outpost faces.",
+                  "  const p=(x,y,z)=>new THREE.Vector3(x,y,z); // Corner helper used only while constructing the Outpost box faces.",
+                  "  state.piece.base.height=finite($('baseHeight').value,2.6); state.piece.base.wallThickness=finite($('wallThickness').value,.15); state.piece.base.groundY=y0;",
+                  "  state.piece.base.faces=[",
+                  "    addFace([p(info.minX,y0,info.maxZ),p(info.minX,y0,info.minZ),p(info.maxX,y0,info.minZ),p(info.maxX,y0,info.maxZ)], 'wall', {outpostFace:'bottom'}),",
+                  "    addFace([p(info.minX,y1,info.minZ),p(info.minX,y1,info.maxZ),p(info.maxX,y1,info.maxZ),p(info.maxX,y1,info.minZ)], 'wall', {outpostFace:'top'}),",
+                  "    addFace([p(info.minX,y0,info.maxZ),p(info.maxX,y0,info.maxZ),p(info.maxX,y1,info.maxZ),p(info.minX,y1,info.maxZ)], 'wall', {outpostFace:'south'}),",
+                  "    addFace([p(info.maxX,y0,info.minZ),p(info.minX,y0,info.minZ),p(info.minX,y1,info.minZ),p(info.maxX,y1,info.minZ)], 'wall', {outpostFace:'north'}),",
+                  "    addFace([p(info.minX,y0,info.minZ),p(info.minX,y0,info.maxZ),p(info.minX,y1,info.maxZ),p(info.minX,y1,info.minZ)], 'wall', {outpostFace:'west'}),",
+                  "    addFace([p(info.maxX,y0,info.maxZ),p(info.maxX,y0,info.minZ),p(info.maxX,y1,info.minZ),p(info.maxX,y1,info.maxZ)], 'wall', {outpostFace:'east'}),",
+                  "  ];",
+                  "  state.selectedFaceIds.clear(); rebuildFaceMeshes(); rebuildRoofPreview(); frameScene(); refreshExport();",
+                  "  log('Generated Outpost: exactly six wall-tagged prism faces; stacked generated logs are the preset default.');",
+                  "  return true;",
+                  "}",
+                  "",
+              ]
+              editor = editor.replace(function_marker, '\n'.join(outpost_lines) + function_marker, 1)
 
           apply_anchor = "  if(preset==='plain') return generatePlainBaseFromFootprint(false);"
           if "if(preset==='outpost')" not in editor:
@@ -64,7 +64,6 @@ jobs:
                   raise SystemExit('applyBasePreset plain anchor missing')
               outpost_apply = "  if(preset==='outpost'){ if($('wallStyle')) $('wallStyle').value='logs'; state.piece.wallStyle='logs'; return generateOutpostBaseFromFootprint(false); }\n"
               editor = editor.replace(apply_anchor, outpost_apply + apply_anchor, 1)
-
           editor_path.write_text(editor)
 
           test_path = Path('scripts/test-stacked-log-walls.js')
@@ -73,22 +72,23 @@ jobs:
           if 'Outpost preset is available in the House Editor' not in test:
               if test_anchor not in test:
                   raise SystemExit('stacked-log House Editor test anchor missing')
-              addition = """assert.match(houseEditorSource, /<option value=\"outpost\">Outpost<\\/option>/, 'Outpost preset is available in the House Editor');
-const outpostStart = houseEditorSource.indexOf('function generateOutpostBaseFromFootprint(recordUndo=true){'); // Start of the dedicated Outpost generator inspected below.
-const outpostEnd = houseEditorSource.indexOf('function generateFlatSlabFromFootprint(recordUndo=true){', outpostStart); // End boundary keeps assertions scoped only to Outpost generation.
-const outpostSource = houseEditorSource.slice(outpostStart, outpostEnd); // Outpost-only source used to verify its exact six-face contract.
-assert.ok(outpostStart >= 0 && outpostEnd > outpostStart, 'Outpost owns a dedicated base-shape generator');
-assert.equal((outpostSource.match(/addFace\\(/g) || []).length, 6, 'Outpost generates exactly six faces');
-assert.equal((outpostSource.match(/'wall', \\{outpostFace:/g) || []).length, 6, 'all six Outpost faces are tagged as walls');
-assert.doesNotMatch(outpostSource, /addFootprintShellFaces|addHouseExtensionsToFaces/, 'Outpost stays a simple six-face bounding prism instead of subdividing the footprint');
-assert.match(houseEditorSource, /preset==='outpost'[\\s\\S]{0,180}wallStyle'\\)\\.value='logs'[\\s\\S]{0,180}state\\.piece\\.wallStyle='logs'/, 'Outpost defaults its wall construction to stacked generated logs');
-"""
-              test = test.replace(test_anchor, test_anchor + addition, 1)
+              test_lines = [
+                  "assert.match(houseEditorSource, /<option value=\"outpost\">Outpost<\\/option>/, 'Outpost preset is available in the House Editor');",
+                  "const outpostStart = houseEditorSource.indexOf('function generateOutpostBaseFromFootprint(recordUndo=true){'); // Start of the dedicated Outpost generator inspected below.",
+                  "const outpostEnd = houseEditorSource.indexOf('function generateFlatSlabFromFootprint(recordUndo=true){', outpostStart); // End boundary keeps assertions scoped only to Outpost generation.",
+                  "const outpostSource = houseEditorSource.slice(outpostStart, outpostEnd); // Outpost-only source used to verify its exact six-face contract.",
+                  "assert.ok(outpostStart >= 0 && outpostEnd > outpostStart, 'Outpost owns a dedicated base-shape generator');",
+                  "assert.equal((outpostSource.match(/addFace\\(/g) || []).length, 6, 'Outpost generates exactly six faces');",
+                  "assert.equal((outpostSource.match(/'wall', \\{outpostFace:/g) || []).length, 6, 'all six Outpost faces are tagged as walls');",
+                  "assert.doesNotMatch(outpostSource, /addFootprintShellFaces|addHouseExtensionsToFaces/, 'Outpost stays a simple six-face bounding prism instead of subdividing the footprint');",
+                  "assert.match(houseEditorSource, /preset==='outpost'[\\s\\S]{0,180}wallStyle'\\)\\.value='logs'[\\s\\S]{0,180}state\\.piece\\.wallStyle='logs'/, 'Outpost defaults its wall construction to stacked generated logs');",
+                  "",
+              ]
+              test = test.replace(test_anchor, test_anchor + '\n'.join(test_lines), 1)
           test_path.write_text(test)
           PY
       - name: Validate focused change
-        run: |
-          node scripts/test-stacked-log-walls.js
+        run: node scripts/test-stacked-log-walls.js
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
