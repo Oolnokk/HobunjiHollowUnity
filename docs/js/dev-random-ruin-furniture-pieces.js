@@ -43,6 +43,7 @@
     if (!data) return null;
     const group = A.buildGroup(data);
     group.userData.ruinFurnitureKey = key;
+    group.userData.authoredFurnitureKey = null; // Visual overlays are not standalone furniture cover; the decorated door/target remains the collision authority.
     group.traverse(node => { node.userData.devRuinFootprintIgnore = true; }); // Visual overlays; collision stays with the piece they decorate.
     return group;
   }
