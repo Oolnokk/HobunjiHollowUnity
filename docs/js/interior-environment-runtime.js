@@ -17,6 +17,7 @@
   const DEFAULT_WALL_HEIGHT = 1.75; // Existing authored-interior wall height; maps without wallHeight stay unchanged.
   const EDITOR_SYNC_MS = 500; // Matches the existing external floor-control sync cadence.
   const LIGHTING_UPDATE_MS = 250; // Smooth enough for the slow game clock without doing light work every render frame.
+  let isOrdinaryBuildingArea = () => false; // Captured from GridTileAccessors so runtime authored-lighting metadata follows the same ordinary-building policy as the farmhouse overlay route.
   const configCache = new Map(); // mapId -> Promise<normalized environment|null>, avoiding repeated config fetches.
   const lightingRecords = new Map(); // mapId -> captured light references/base values for time-varying daylight updates.
   const editorTrackedLights = new Set(); // Tracks preview lights created through the constructor bridge so sliders can update them live.
@@ -25,6 +26,7 @@
   let lastMapId = null; // Mobile-friendly diagnostic: most recently applied authored environment.
   let lastWallGroupCount = 0; // Diagnostic count proving the authored wall height reached built wall groups.
   let lastLightCount = 0; // Diagnostic count proving custom lighting found actual Three.js lights.
+  let lastLightingMode = 'default'; // Debug snapshot/log state showing whether the latest map used authored Three.js lighting or overlay-only darkness.
   let lastError = null; // Most recent config/runtime error without requiring desktop devtools.
   let editorLastSignature = null; // Prevents repeated native reimports while polling Server Layout / Library loads.
   let editorReimports = 0; // Diagnostic count for the editor's native import bridge.
@@ -216,6 +218,10 @@
     return count;
   }
 
+  function usesOverlayOnlyLighting(mapId) {
+    return !IS_INTERIOR_EDITOR && !!isOrdinaryBuildingArea(String(mapId || '').trim()); // Every ordinary authored building uses the shared fake-light compositor at runtime; the editor keeps its lighting preview controls.
+  }
+
   function loadEnvironmentForMap(mapId) {
     const key = String(mapId || '').trim();
     if (!/^map_i_[A-Za-z0-9_-]+$/.test(key)) return Promise.resolve(null);
@@ -236,9 +242,11 @@
     return loadEnvironmentForMap(mapId).then(environment => {
       if (!environment) return null;
       const needsWallHeight = environment.wallHeight != null;
-      const needsLighting = !!environment.interiorLighting;
+      const overlayOnlyLighting = usesOverlayOnlyLighting(mapId); // Used below to leave baseline Three.js lighting untouched on maps whose darkness comes from the shared overlay.
+      const needsLighting = !!environment.interiorLighting && !overlayOnlyLighting;
       let wallGroups = 0;
       let lights = 0;
+      if (overlayOnlyLighting) lightingRecords.delete(mapId);
       if (needsWallHeight && needsLighting) {
         // One shared scan instead of two — wall-group rescaling and light
         // collection are independent checks per node, so a single interior
@@ -260,16 +268,18 @@
       lastMapId = mapId;
       lastWallGroupCount = wallGroups;
       lastLightCount = lights;
+      lastLightingMode = overlayOnlyLighting ? 'overlay-only' : (needsLighting ? 'three-authored' : 'default');
       window.__farmLog?.(
-        `[interior-env] ${mapId} wall=${environment.wallHeight ?? 'default'} base=${environment.interiorLighting?.baseLightLevel ?? 'default'} daylight=${environment.interiorLighting?.daylightInfluence ?? 'default'} radius=${environment.interiorLighting?.lightRadiusMultiplier ?? 'default'} wallGroups=${wallGroups} lights=${lights}`
+        `[interior-env] ${mapId} wall=${environment.wallHeight ?? 'default'} lighting=${lastLightingMode} base=${environment.interiorLighting?.baseLightLevel ?? 'default'} daylight=${environment.interiorLighting?.daylightInfluence ?? 'default'} radius=${environment.interiorLighting?.lightRadiusMultiplier ?? 'default'} wallGroups=${wallGroups} lights=${lights}`
       );
-      return { environment, wallGroups, lights };
+      return { environment, wallGroups, lights, lightingMode: lastLightingMode };
     });
   }
 
-  function hookBuildingSceneMap(map) {
+  function hookBuildingSceneMap(map, buildingPredicate) {
     if (!map?.set || map.__hobunjiInteriorEnvironmentSetHook) return false;
     buildingSceneMap = map;
+    if (typeof buildingPredicate === 'function') isOrdinaryBuildingArea = buildingPredicate;
     const originalSet = map.set.bind(map); // Preserves the existing floor-style Map.set wrapper when both are installed.
     map.set = function setBuildingSceneWithEnvironment(mapId, sceneRecord) {
       const result = originalSet(mapId, sceneRecord);
@@ -286,7 +296,7 @@
     if (!namespace?.init || namespace.__hobunjiInteriorEnvironmentInitHook) return false;
     const originalInit = namespace.init;
     namespace.init = function initWithInteriorEnvironment(injectedDeps) {
-      hookBuildingSceneMap(injectedDeps?._buildingScenes);
+      hookBuildingSceneMap(injectedDeps?._buildingScenes, injectedDeps?._isBuildingArea);
       return originalInit.call(this, injectedDeps);
     };
     namespace.__hobunjiInteriorEnvironmentInitHook = true;
@@ -479,11 +489,13 @@
       defaultWallHeight: DEFAULT_WALL_HEIGHT,
       buildingSceneMapHooked: !!buildingSceneMap?.__hobunjiInteriorEnvironmentSetHook,
       configCacheKeys: [...configCache.keys()],
+      overlayOnlyLightingPolicy: IS_INTERIOR_EDITOR ? 'editor-preview' : 'ordinary-authored-buildings',
       lightingMaps: [...lightingRecords.keys()],
       daylightFactor: daylightFactor(),
       lastMapId,
       lastWallGroupCount,
       lastLightCount,
+      lastLightingMode,
       lastError,
       editor: IS_INTERIOR_EDITOR ? {
         controlsInstalled: !!document.getElementById('biaInteriorEnvironmentSection'),
@@ -513,6 +525,7 @@
     normalizeLighting,
     normalizeEnvironment,
     daylightFactor,
+    usesOverlayOnlyLighting,
     applyWallHeight,
     applyEnvironmentToScene,
     debugSnapshot,

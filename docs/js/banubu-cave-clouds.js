@@ -121,6 +121,9 @@
       if (index % 2 === 0) {
         const light = new THREE.PointLight(0x8dbbdf, 0.45, 3.8, 2); // Soft local light that follows its cloud, rather than brightening the entire cave.
         light.position.set(0, 0, -0.1);
+        light.userData.intentionalFakeLightSource = true; // Banubu cloud glow is intentionally visible through the shared 2D fake-light compositor.
+        light.userData.furnitureLightMask = true;
+        window.FurnitureLightRegistry?.register(light);
         cloud.add(light);
       }
     });

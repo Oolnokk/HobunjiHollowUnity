@@ -37,8 +37,8 @@
     if (window.InteriorEnvironmentRuntime || typeof document === 'undefined') return;
     const currentSrc = document.currentScript?.src || ''; // Resolves correctly from both docs/index.html and the nested Interior Editor.
     const src = currentSrc
-      ? new URL('interior-environment-runtime.js?v=20260908a', currentSrc).href
-      : 'js/interior-environment-runtime.js?v=20260908a';
+      ? new URL('interior-environment-runtime.js?v=20261014a', currentSrc).href
+      : 'js/interior-environment-runtime.js?v=20261014a';
     const alreadyRequested = [...document.scripts].some(script => script.src?.includes('/interior-environment-runtime.js'));
     if (alreadyRequested) return;
     if (document.readyState === 'loading') {

@@ -1,29 +1,66 @@
 (() => {
   'use strict';
 
-  // Central registry for furniture/lantern-mask point lights: game.js's
-  // makeFurniturePointLight, and the inline PointLight creations in
-  // bandit-camps.js, porakaneki-camps-runtime.js and deadzone-billboard.js
-  // that also tag userData.furnitureLightMask, all register() here at
-  // creation. WeatherFX's lantern-glow overlay (see game.js's
-  // getFurnitureLightSources) used to find these by traversing the whole
-  // active scene every couple of seconds — real, avoidable cost in a
-  // decor-dense area since it scales with total scene size, not light
-  // count. list() below walks only this small registry instead.
-  //
-  // Pruning is lazy and lifecycle-agnostic: an entry is dropped only once
-  // its light is no longer attached to any THREE.Scene at all (its root
-  // has no .parent and isn't itself a Scene), which is what a real despawn
-  // (parent.remove(light)) leaves behind. A light whose root is some
-  // *other* still-alive scene is kept — areas each keep their own
-  // persistent scene and swap which one is "active" rather than rebuilding
-  // on transition, so a light temporarily in an inactive one must not be
-  // dropped just because it isn't the scene being asked about right now.
-  const lights = [];
+  // Central registry for positional fake-light sources. Point/Spot lights stay
+  // available as compact world-space data holders (position/distance/intensity/
+  // color), but are moved to a layer gameplay cameras never render so they
+  // cannot shade Three.js materials. Sources that deliberately set
+  // userData.furnitureLightMask are then consumed by WeatherFX/CloudForestFog
+  // as fake 2D light pools.
+  const OVERLAY_ONLY_LIGHT_LAYER = 31; // Used by every constructed local light so local lighting stays out of WebGLRenderer's light list.
+  const lights = []; // Registered local-light data sources scanned by list() instead of traversing the active scene.
+  let routedToOverlay = 0; // Mobile/debug count of local lights removed from Three.js rendering by this registry.
+  const bridgedConstructors = new Set(); // Debug set proving PointLight/SpotLight construction is routed away from WebGL lighting.
+
+  function isLocalLight(light) {
+    return !!(light?.isPointLight || light?.isSpotLight);
+  }
+
+  function makeOverlayOnly(light) {
+    if (!isLocalLight(light)) return light;
+    light.layers?.set?.(OVERLAY_ONLY_LIGHT_LAYER);
+    light.castShadow = false;
+    light.userData = light.userData || {};
+    if (!light.userData.overlayOnlyLightSource) {
+      light.userData.overlayOnlyLightSource = true;
+      routedToOverlay += 1;
+    }
+    return light;
+  }
 
   function register(light) {
-    if (light?.isPointLight) lights.push(light);
+    if (!isLocalLight(light)) return light;
+    makeOverlayOnly(light);
+    if (!lights.includes(light)) lights.push(light);
     return light;
+  }
+
+  function bridgeConstructor(name) {
+    const THREE = window.THREE;
+    const Original = THREE?.[name];
+    if (!Original) return false;
+    if (Original.__hobunjiOverlayOnlyBridge) {
+      bridgedConstructors.add(name);
+      return true;
+    }
+    function OverlayOnlyLocalLight(...args) {
+      const light = new Original(...args);
+      register(light); // Every local Three.js light is retained as data but removed from the renderer; creators opt into a visible fake pool with furnitureLightMask.
+      return light;
+    }
+    Object.setPrototypeOf(OverlayOnlyLocalLight, Original);
+    OverlayOnlyLocalLight.prototype = Original.prototype;
+    OverlayOnlyLocalLight.__hobunjiOverlayOnlyBridge = true;
+    OverlayOnlyLocalLight.__hobunjiOverlayOnlyOriginal = Original;
+    THREE[name] = OverlayOnlyLocalLight;
+    bridgedConstructors.add(name);
+    return true;
+  }
+
+  function installLocalLightConstructorBridge() {
+    const point = bridgeConstructor('PointLight');
+    const spot = bridgeConstructor('SpotLight'); // GLTF punctual spot lights must obey the same fake-light-only rule even though current authored gameplay rarely uses them.
+    return point || spot;
   }
 
   function list(activeScene) {
@@ -41,5 +78,14 @@
     return alive;
   }
 
-  window.FurnitureLightRegistry = { register, list };
+  installLocalLightConstructorBridge();
+
+  window.FurnitureLightRegistry = {
+    register,
+    list,
+    makeOverlayOnly,
+    installLocalLightConstructorBridge,
+    OVERLAY_ONLY_LIGHT_LAYER,
+    debugSnapshot: () => ({ registered: lights.length, routedToOverlay, bridgedConstructors: [...bridgedConstructors] }),
+  };
 })();
