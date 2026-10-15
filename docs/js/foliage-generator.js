@@ -1709,11 +1709,136 @@ window.FoliageGenerator = (() => {
     return { a: toWorld(local.a), b: toWorld(local.b), radius: local.radius * scale };
   }
 
+
+  // Arbitrary-length generated log used by stacked architecture, fallen logs,
+  // and any other system that needs a real foliage spine rather than a scaled
+  // baked cylinder. The caller supplies the FINAL world-space length.
+  function buildGeneratedLogMesh(options = {}) {
+    const length = Math.max(0.04, Number(options.length) || 1); // Final unscaled spine length requested by the wall/furniture caller.
+    const diameter = Math.max(0.02, Number(options.logDiameter ?? options.diameter) || 0.34); // Final unscaled log diameter used directly by radiusFn.
+    const radialSegments = Math.max(5, Math.min(32, Math.round(Number(options.radialSegments) || 8))); // Circumference resolution shared with wall recipes.
+    const ringSegments = Math.max(4, Math.min(64, Math.round(Number(options.ringSegments) || 12))); // Longitudinal foliage-spine resolution shared with wall recipes.
+    const seedText = String(options.seed ?? 'generated-log'); // Stable authored seed used by real foliage noise.
+    const seedU32 = xfnv1a(seedText); // Real foliage-generator FNV seed, rather than a duplicate wall-only hash implementation.
+    const taper = clamp(Number.isFinite(Number(options.trunkTaper)) ? Number(options.trunkTaper) : 0.99, 0.5, 1.2); // End radius multiplier applied continuously along the generated spine.
+    const wonk = clamp(Number.isFinite(Number(options.trunkWonk ?? options.wonkiness)) ? Number(options.trunkWonk ?? options.wonkiness) : 0.18, 0, 3); // Centerline organic displacement strength.
+    const wonkScale = Math.max(0.01, Number(options.trunkWonkScale ?? options.wonkScale) || 1.35); // Frequency of real foliage centerline noise.
+    const twist = Number.isFinite(Number(options.trunkTwist)) ? Number(options.trunkTwist) : 0.08; // Axial twist passed straight to buildWonkyChain.
+    const noiseAmt = clamp(Number.isFinite(Number(options.trunkNoise ?? options.surfaceNoise)) ? Number(options.trunkNoise ?? options.surfaceNoise) : 0.35, 0, 3); // Radial bark silhouette noise strength.
+    const noiseScale = Math.max(0.01, Number(options.trunkNoiseScale ?? options.surfaceNoiseScale) || 2.2); // Radial bark noise scale.
+    const noiseOctaves = Math.max(1, Math.min(6, Math.round(Number(options.trunkNoiseOctaves) || 3))); // Radial bark fBm octave count.
+    const baseRadius = diameter * 0.5; // Final world-space radius used by every real generated course.
+    const chain = buildWonkyChain({ // Existing foliage spine/tube implementation remains the geometry authority.
+      seedU32,
+      length,
+      ringSegments,
+      origin: new T.Vector3(-length * 0.5, 0, 0),
+      direction: new T.Vector3(1, 0, 0),
+      bend: 0,
+      wonk,
+      wonkScale,
+      gravityDir: new T.Vector3(0, -1, 0),
+      curl: 0,
+      radiusFn: (t01) => baseRadius * lerp(1, taper, clamp01(t01)),
+      radialSegments,
+      twist,
+      noiseAmt,
+      noiseScale,
+      noiseOctaves,
+    });
+    const sourcePosition = chain.geom.getAttribute('position'); // Side-only foliage vertices returned by buildWonkyChain before architectural caps/UVs are added.
+    const positions = Array.from(sourcePosition.array); // Mutable side vertex copy used to lock the longitudinal span to the requested final length.
+
+    // buildSpine intentionally lets its noise perturb the centerline in X as
+    // well as Y/Z. Architecture needs exact endpoints, so keep the SAME real
+    // foliage Y/Z wonk while removing only that axial drift. The two endpoint
+    // rings are additionally flattened onto exact X cap planes.
+    for (let ring = 0; ring < ringSegments; ring++) {
+      const t01 = ringSegments <= 1 ? 0 : ring / (ringSegments - 1); // Normalized ring position used to restore its authored axial center.
+      const targetX = -length * 0.5 + length * t01; // Exact final center X of this ring; no post-generation mesh scaling required.
+      const sourceCenterX = chain.spine.pts[ring].x; // Foliage spine's noisy axial center before architecture correction.
+      const correctionX = targetX - sourceCenterX; // Axial-only correction that leaves foliage lateral wonk untouched.
+      for (let side = 0; side < radialSegments; side++) {
+        const vertex = (ring * radialSegments + side) * 3; // Position-array offset for this side vertex.
+        positions[vertex] += correctionX;
+        if (ring === 0 || ring === ringSegments - 1) positions[vertex] = targetX; // Flat end rings guarantee exact cap planes at +/- length/2.
+      }
+    }
+
+    const uvs = []; // Cylindrical side UVs followed by planar cap UVs, matching WoodCutSurfaces.remapLogAtlasUv's layout contract.
+    for (let ring = 0; ring < ringSegments; ring++) {
+      const t01 = ringSegments <= 1 ? 0 : ring / (ringSegments - 1); // Side U coordinate running along the actual generated length.
+      for (let side = 0; side < radialSegments; side++) uvs.push(t01, side / radialSegments);
+    }
+    const indices = Array.from(chain.geom.index.array); // Existing real foliage side triangles retained verbatim before caps are appended.
+    for (const ring of [0, ringSegments - 1]) {
+      const sideStart = ring * radialSegments; // Source perimeter ring used by this exposed cut end.
+      const capStart = positions.length / 3; // First duplicated perimeter vertex for this hard-normal cap.
+      let centerY = 0; // Average perimeter Y used as the planar cap fan center.
+      let centerZ = 0; // Average perimeter Z used as the planar cap fan center.
+      const centerX = ring === 0 ? -length * 0.5 : length * 0.5; // Exact architectural end plane for this cut face.
+      for (let side = 0; side < radialSegments; side++) {
+        const source = (sideStart + side) * 3; // Side-ring vertex offset copied into the independent cap surface.
+        positions.push(positions[source], positions[source + 1], positions[source + 2]);
+        centerY += positions[source + 1];
+        centerZ += positions[source + 2];
+        const angle = side / radialSegments * Math.PI * 2; // Disk angle used for log.png planar UVs.
+        uvs.push(0.5 + Math.cos(angle) * 0.5, 0.5 + Math.sin(angle) * 0.5);
+      }
+      centerY /= radialSegments;
+      centerZ /= radialSegments;
+      const centerIndex = positions.length / 3; // Fan center index shared by every triangle on this cap.
+      positions.push(centerX, centerY, centerZ);
+      uvs.push(0.5, 0.5);
+      for (let side = 0; side < radialSegments; side++) {
+        const current = capStart + side; // Current duplicated perimeter vertex.
+        const next = capStart + (side + 1) % radialSegments; // Next duplicated perimeter vertex.
+        if (ring === 0) indices.push(centerIndex, next, current);
+        else indices.push(centerIndex, current, next);
+      }
+    }
+
+    let geometry = new T.BufferGeometry(); // Complete sides+caps generated geometry returned to architecture/furniture callers.
+    geometry.setAttribute('position', new T.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('uv', new T.Float32BufferAttribute(uvs, 2));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    geometry.userData = { ...(geometry.userData || {}), foliageGeneratedLog: true, requestedLength: length, ringSegments, radialSegments };
+
+    const barkColor = new T.Color(options.barkColor ?? '#372f18'); // Canonical bark tint accepted as CSS hex, integer, or THREE.Color-compatible input.
+    const barkHex = `#${barkColor.getHexString()}`; // Hex form consumed by shared tree PNG atlas helpers.
+    const wood = typeof window !== 'undefined' ? window.WoodCutSurfaces : null; // Optional shared PNG/cap material bridge present in game and architecture editors.
+    let material = options.material || null; // Optional caller-shared atlas material avoids one texture canvas per unique course length.
+    if (options.useWoodAtlas !== false && wood?.remapLogAtlasUv && wood?.makeLogAtlasMaterial) {
+      geometry = wood.remapLogAtlasUv(geometry, { ringSegments, radialSegments });
+      if (!material) material = wood.makeLogAtlasMaterial(T, barkHex);
+    }
+    if (!material) material = hexBarkMat(barkHex);
+
+    const mesh = new T.Mesh(geometry, material); // Final foliage-generated log; callers may rotate/translate but must not length-scale it.
+    mesh.name = 'FoliageGeneratedLog';
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.userData = {
+      ...(mesh.userData || {}),
+      foliageGeneratedLog: true,
+      generatedLength: length,
+      seed: seedText,
+      logDiameter: diameter,
+      noLongitudinalScaling: true,
+      latestChange: 'Real buildWonkyChain foliage geometry generated at final requested length with cut-wood caps.',
+    };
+    return mesh;
+  }
+
   function degToRad(d) { return d * Math.PI / 180; }
 
   // ─── Public API ───────────────────────────────────────────────────────────
   return {
     getClimbBranchWorld,
+    buildLogMesh(options) {
+      return buildGeneratedLogMesh(options);
+    },
     buildNeedlegrainMesh(growth01, col, row) {
       const seedU32 = xfnv1a(`ng_${col}_${row}`);
       return buildNeedlegrainGroup(growth01, seedU32);

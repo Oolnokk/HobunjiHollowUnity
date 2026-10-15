@@ -562,7 +562,7 @@
     });
   }
 
-  // wallStyle dispatch — brick (default, via WallBuilder) / cavern / canvas.
+  // wallStyle dispatch — brick (default) / generated stacked logs / cavern / canvas.
   // wbOpts defaults match game.js's INTERIOR_WALL_PANELS build() call exactly
   // (50% brick size, 4x density via rockScale, 60% depth, micro-jitter).
   const DEFAULT_WB_OPTS = { unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
@@ -579,10 +579,14 @@
     delete buildOptions.wallOpenings;
     const farmColors = buildOptions.farmNaturalColors; // Farm-only finish never leaks into the WallBuilder options or other interiors.
     delete buildOptions.farmNaturalColors;
-    const finishWalls = group => { // Uses the same semantic stone role and shader as farm exterior bricks.
+    const logWall = buildOptions.logWall || {}; // Serialized foliage-log settings consumed only by the generated-log wall style.
+    delete buildOptions.logWall;
+    const generatedLogStyle = ['log', 'logs', 'stackedlogs', 'stacked-logs'].includes(String(wallStyle || '').toLowerCase()); // Interior wall construction selector shared with the editor.
+    const finishWalls = group => { // Uses the same semantic farm material role as the selected wall construction.
       markInteriorWallSurfaceGroup(group);
       if (farmColors) {
-        group.traverse(mesh => { if (mesh.isMesh) mesh.userData.farmMaterialRole = 'stone'; });
+        const farmRole = generatedLogStyle ? 'wood' : 'stone'; // Log cabins inherit the farm's natural wood finish; brick walls retain natural stone.
+        group.traverse(mesh => { if (mesh.isMesh) mesh.userData.farmMaterialRole = farmRole; });
         root.FarmWorldSettings?.tintInterior?.(group, farmColors);
       }
       return group;
@@ -590,7 +594,11 @@
     if (wallStyle === 'cavern') return markInteriorWallSurfaceGroup(buildCavernWalls(THREE, renderPanels));
     if (wallStyle === 'mine') return markInteriorWallSurfaceGroup(buildCavernWalls(THREE, renderPanels, { textureUrl: buildOptions.mineTextureUrl || 'assets/textures/carved_smooth.png', color: 0x8a8d91, textureRepeat: .42 }));
     if (wallStyle === 'canvas') return markInteriorWallSurfaceGroup(buildCanvasWalls(THREE, renderPanels));
-    if (wallBuilder) {
+    if (generatedLogStyle && root.StackedLogWalls?.buildGroup) {
+      try { return finishWalls(root.StackedLogWalls.buildGroup(THREE, renderPanels, logWall)); }
+      catch (e) { console.warn('InteriorSceneBuilder.buildWallGroup: generated log build failed, using fallback boxes: ' + e.message); }
+    }
+    if (wallBuilder && !generatedLogStyle) {
       try { return finishWalls(wallBuilder.build(renderPanels, buildOptions)); }
       catch (e) { console.warn('InteriorSceneBuilder.buildWallGroup: WallBuilder error, using fallback boxes: ' + e.message); }
     }

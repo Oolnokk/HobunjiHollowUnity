@@ -79,10 +79,16 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
         <div class="field"><label>Wall style</label>
           <select id="wallStyle">
             <option value="">Brick (default)</option>
+            <option value="logs">Stacked generated logs</option>
             <option value="cavern">Cavern (rock — dens)</option>
             <option value="canvas">Canvas (tent cloth)</option>
           </select>
         </div>
+
+        <div class="field"><label>Log seed</label><input id="logWallSeed" value="cabin-log-1"></div>
+        <div class="field"><label>Log diameter</label><input id="logWallDiameter" type="number" min="0.08" step="0.01" value="0.34"></div>
+        <div class="field"><label>Log wonkiness</label><input id="logWallWonk" type="number" min="0" max="3" step="0.01" value="0.18"></div>
+        <div class="field"><label>Course gap / overlap</label><input id="logWallGap" type="number" step="0.01" value="-0.03"></div>
       </div>
     </div>
 
@@ -369,10 +375,13 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
 <script src="../../js/WallBuilder.js"></script>
+<script src="../../js/foliage-generator.js"></script>
+<script src="../../js/wood-cut-surfaces.js"></script>
+<script src="../../js/stacked-log-walls.js"></script>
 <script src="../../js/terrain-preview.js"></script>
-<script src="../../js/interior-scene-builder.js?v=20261013h2de9e2d"></script>
+<script src="../../js/interior-scene-builder.js?v=20261015h6bcbacd"></script>
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
-<script src="../../js/interior-ceilings.js?v=20261013a"></script>
+<script src="../../js/interior-ceilings.js?v=20261015h5328b1c"></script>
 <script src="../../js/procedural-furniture.js"></script>
 <script src="../../js/interior-furniture-grid.js?v=20261012heb9cb96"></script>
 <!-- These sidecars require Three.js and the editor's furniture builders above.
@@ -1517,7 +1526,7 @@ function rebuild3D(){
   var windowOpenings=InteriorSceneBuilder.windowWallOpenings?InteriorSceneBuilder.windowWallOpenings(furniture,{footprintOf:function(f){return catOf(f.itemKey);}}):[];
   if(panels.length){
     try{
-      var wallGroup=InteriorSceneBuilder.buildWallGroup(THREE, wb, panels, interior.wallStyle, {usePlaceholder:!wbReady,wallOpenings:windowOpenings});
+      var wallGroup=InteriorSceneBuilder.buildWallGroup(THREE, wb, panels, interior.wallStyle, {usePlaceholder:!wbReady,wallOpenings:windowOpenings,logWall:interior.logWall||{}});
       wallGroup.userData.biaInteriorWallGroup=true; previewGroup.add(wallGroup);
     } catch(e){
       log('Wall build error: '+e.message,'warn');
@@ -1532,9 +1541,9 @@ function rebuild3D(){
   if(window.InteriorCeilings){
     var previewWallH=Number(window.__hobunjiInteriorWallHeightOverride)||Number(interior.wallHeight)||WALL_H;
     var showCeiling=$('ceilingPreview').checked;
-    var ceilingPreviewGroup=InteriorCeilings.buildCeilingGroup(THREE,{floor:floorSet,wallHeight:previewWallH,ceiling:interior.ceiling,wallStyle:interior.wallStyle,texturesBasePath:'../../assets/',includeCeiling:showCeiling,preview:showCeiling,wallBuilder:wb,wallBuildOptions:{usePlaceholder:!wbReady,excludeQuads:InteriorSceneBuilder.openingExcludeQuads?InteriorSceneBuilder.openingExcludeQuads(windowOpenings):[]}});
+    var ceilingPreviewGroup=InteriorCeilings.buildCeilingGroup(THREE,{floor:floorSet,wallHeight:previewWallH,ceiling:interior.ceiling,wallStyle:interior.wallStyle,texturesBasePath:'../../assets/',includeCeiling:showCeiling,preview:showCeiling,wallBuilder:wb,wallBuildOptions:{usePlaceholder:!wbReady,excludeQuads:InteriorSceneBuilder.openingExcludeQuads?InteriorSceneBuilder.openingExcludeQuads(windowOpenings):[]},logWall:interior.logWall||{}});
     // Gable ends are wall: let wall-ornament placement (windows) click onto them.
-    ceilingPreviewGroup.children.forEach(function(child){ if(child.userData.interiorGable||child.userData.interiorGableBricks) child.userData.biaInteriorWallGroup=true; });
+    ceilingPreviewGroup.children.forEach(function(child){ if(child.userData.interiorGable||child.userData.interiorGableBricks||child.userData.interiorGableLogs) child.userData.biaInteriorWallGroup=true; });
     previewGroup.add(ceilingPreviewGroup);
   }
 
@@ -1730,6 +1739,7 @@ $('updateMapEditorBtn').addEventListener('click',updateMapEditor);
 $('mapId').addEventListener('change',function(){state.interior.id=$('mapId').value.trim();});
 $('mapName').addEventListener('change',function(){state.interior.name=$('mapName').value.trim();});
 $('wallStyle').addEventListener('change',function(){pushUndo(); state.interior.wallStyle=$('wallStyle').value||undefined; rebuild3D(); refreshExport();});
+['logWallSeed','logWallDiameter','logWallWonk','logWallGap'].forEach(function(id){ $(id).addEventListener('change',function(){ pushUndo(); state.interior.logWall={seed:$('logWallSeed').value.trim()||'cabin-log-1',logDiameter:Math.max(.08,finite($('logWallDiameter').value,.34)),trunkWonk:Math.max(0,finite($('logWallWonk').value,.18)),courseGap:finite($('logWallGap').value,-.03)}; rebuild3D(); refreshExport(); }); });
 
 // ─── afterLoad ────────────────────────────────────────────────────────────────
 function afterLoad(){
@@ -1760,7 +1770,7 @@ function afterLoad(){
     });
   });
   $('mapId').value=i.id||''; $('mapName').value=i.name||'';
-  $('wallStyle').value=i.wallStyle||'';
+  $('wallStyle').value=i.wallStyle||''; const loadedLogWall=i.logWall||{}; $('logWallSeed').value=loadedLogWall.seed||'cabin-log-1'; $('logWallDiameter').value=finite(loadedLogWall.logDiameter,.34); $('logWallWonk').value=finite(loadedLogWall.trunkWonk,.18); $('logWallGap').value=finite(loadedLogWall.courseGap,-.03);
   syncCeilingControls();
   $('gridCols').value=i.cols||12; $('gridRows').value=i.rows||10;
   state.activeExitId=null; state.activeVendorId=null; state.activeEntryId=null; state.editingLayoutId=null;
