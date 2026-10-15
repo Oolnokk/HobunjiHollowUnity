@@ -51,6 +51,15 @@ assert.match(ceilingsSource, /gableLogPanels\(data\.gables, data\.wallHeight\)/,
 assert.match(ceilingsSource, /excludeQuads: options\.wallBuildOptions\?\.excludeQuads \|\| \[\]/, 'interior log gables inherit authored window and door cuts');
 
 assert.match(houseEditorSource, /<option value="logs">Stacked generated logs<\/option>/, 'House Editor exposes stacked generated logs as a wall construction choice');
+assert.match(houseEditorSource, /<option value="outpost">Outpost<\/option>/, 'Outpost preset is available in the House Editor');
+const outpostStart = houseEditorSource.indexOf('function generateOutpostBaseFromFootprint(recordUndo=true){'); // Start of the dedicated Outpost generator inspected below.
+const outpostEnd = houseEditorSource.indexOf('function generateFlatSlabFromFootprint(recordUndo=true){', outpostStart); // End boundary keeps assertions scoped only to Outpost generation.
+const outpostSource = houseEditorSource.slice(outpostStart, outpostEnd); // Outpost-only source used to verify its exact six-face contract.
+assert.ok(outpostStart >= 0 && outpostEnd > outpostStart, 'Outpost owns a dedicated base-shape generator');
+assert.equal((outpostSource.match(/addFace\(/g) || []).length, 6, 'Outpost generates exactly six faces');
+assert.equal((outpostSource.match(/'wall', \{outpostFace:/g) || []).length, 6, 'all six Outpost faces are tagged as walls');
+assert.doesNotMatch(outpostSource, /addFootprintShellFaces|addHouseExtensionsToFaces/, 'Outpost stays a simple six-face bounding prism instead of subdividing the footprint');
+assert.match(houseEditorSource, /preset==='outpost'[\s\S]{0,180}wallStyle'\)\.value='logs'[\s\S]{0,180}state\.piece\.wallStyle='logs'/, 'Outpost defaults its wall construction to stacked generated logs');
 assert.match(houseEditorSource, /state\.piece\.wallStyle=.*wallStyle/, 'House Editor serializes the wall construction choice');
 assert.match(houseEditorSource, /state\.piece\.logWall=/, 'House Editor serializes log diameter/wonk/gap settings');
 assert.match(interiorEditorSource, /<option value="logs">Stacked generated logs<\/option>/, 'Building Interior Editor exposes stacked generated logs');
