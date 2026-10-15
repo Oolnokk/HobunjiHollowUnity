@@ -107,6 +107,15 @@
 
   function init(injectedDeps = {}) {
     deps = injectedDeps; // Used by every side-effecting operation after game boot.
+    window.DevCompanion?.registerCheatPanel?.({
+      id: 'skill-xp', title: 'Skill XP', order: 34,
+      render: () => ({ actions: Object.entries(SKILLS).map(([key, def]) => ({ id: 'xp', label: `+10 ${def.label} XP`, args: { key } })) }),
+      onAction: (action, { key }) => {
+        if (action !== 'xp' || !Object.hasOwn(SKILLS, key)) return { ok: false };
+        award(key, 10, 'Dev companion', false);
+        return { ok: true };
+      },
+    });
     installCombatTagHooks();
     queueMicrotask(installCombatTagHooks); // Used to catch Combat/Ranged/CreatureDeath initialization later in the same synchronous game boot if SkillSystem initializes first.
     render();
@@ -361,14 +370,7 @@
         <div class="skill-bar-wrap"><div class="skill-bar-fill" style="width:${percent.toFixed(2)}%"></div></div>
         <div class="skill-level">Lv ${currentLevel}${buffText}</div>
       </div>`;
-    }).join('') + `<details class="skill-diagnostics"><summary>Skill diagnostics</summary><pre>${diagnosticsText()}</pre>${deps?.isDevMode?.() ? debugButtonsHtml() : ''}</details>`;
-    if (deps?.isDevMode?.()) {
-      container.querySelectorAll('[data-skill-debug]').forEach(button => button.addEventListener('click', () => award(button.dataset.skillDebug, 10, 'debug button', false)));
-    }
-  }
-
-  function debugButtonsHtml() {
-    return `<div class="skill-debug-actions">${Object.entries(SKILLS).map(([key, definition]) => `<button type="button" data-skill-debug="${key}">+10 ${definition.label} XP</button>`).join('')}</div>`;
+    }).join('') + `<details class="skill-diagnostics"><summary>Skill diagnostics</summary><pre>${diagnosticsText()}</pre></details>`;
   }
 
   function diagnosticsText() {

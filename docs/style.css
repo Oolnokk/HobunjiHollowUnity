@@ -3422,3 +3422,6 @@
     body.authored-cutscene #rangedHudReticle, body.introduction-loading #rangedHudReticle {
       display: none !important;
     }
+
+/* Developer controls stay out of player Settings, including late-injected tools. */
+body:not([data-dev-mode="true"]) [data-dev-only] { display: none !important; }

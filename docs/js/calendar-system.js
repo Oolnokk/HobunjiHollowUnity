@@ -53,6 +53,7 @@
     { name: 'Coldmuck', emoji: '🌬️', rainChance: 0.12, stormChance: 0.10, startWeek: 39, endWeek: 46, grassColor: new THREE.Color().setHSL(165 / 360, 0.15, 0.46), grassDensity: 0.45 },
   ]; // Used by weather/season display and existing regional simulation callers.
 
+  let devTimeSpeed = 1; // Companion-only natural clock multiplier; reload restores the normal player pace.
   let _rawTimeWrite = false; // Used by setTime01Raw() so explicit time jumps are not slowed by the natural-time accessor.
   let _timeScaleInstalled = false; // Used by installNaturalTimeScale() to avoid redefining calendar.time01 on repeated init calls.
   let _timePassageUi = null; // Populated by buildTimePassageUi(); reused by both Sleep and seated Wait.
@@ -274,7 +275,7 @@
         const passageOwnsClock = !!_timePassageKind && !!_timePassageUi
           && (_timePassageUi.backdrop.classList.contains('open') || _timePassageUi.iris.style.display === 'block'); // Used to freeze drift while choosing/transitioning without blocking explicit rollover writes.
         value = isNaturalFrameWrite
-          ? (passageOwnsClock ? value : value + delta * NATURAL_TIME_WRITE_SCALE)
+          ? (passageOwnsClock ? value : value + delta * NATURAL_TIME_WRITE_SCALE * devTimeSpeed)
           : numeric;
       },
     });
@@ -676,8 +677,10 @@
         const override = window.WeatherFX?.getDebugWeatherOwner?.() === 'dev-companion' ? window.WeatherFX.getDebugWeather() : null;
         return {
           summary: `${formatClockTime()} · ${band || '?'} · ${currentWeekdayName()} · ${currentSeason()?.name || '?'} · ${deps.calendar.weather}${override ? ' (forced)' : ''}`,
+          rows: [['Clock speed', `${devTimeSpeed}× normal (calendar only; reload resets to 1×)`]],
           note: _devAdvanceBusy ? 'Advancing time…' : 'Skips run the real hour-by-hour time passage (crops, schedules, day rollover).',
           actions: [
+            ...[0, 0.25, 0.5, 1, 2, 5, 10, 30, 60].map(speed => ({ id: 'speed', label: speed === 0 ? 'Paused' : `${speed}×`, args: { speed }, active: devTimeSpeed === speed, group: 'Clock speed' })),
             { id: 'hours', label: '+1h', args: { hours: 1 }, group: 'Skip' },
             { id: 'hours', label: '+3h', args: { hours: 3 }, group: 'Skip' },
             ...bands.map(target => ({ id: 'band', label: `→ ${target}`, args: { band: target }, active: band === target, group: 'Skip' })),
@@ -689,6 +692,12 @@
         };
       },
       onAction: (action, args) => {
+        if (action === 'speed') {
+          const speed = Number(args.speed); // Validates companion requests before changing the natural clock rate.
+          if (!Number.isFinite(speed) || speed < 0 || speed > 60) return { ok: false, error: 'Clock speed must be between 0 and 60.' };
+          devTimeSpeed = speed;
+          return { ok: true, speed };
+        }
         if (action === 'weather') {
           if (args.mode) window.WeatherFX?.setDebugWeather?.(args.mode, 'dev-companion');
           else window.WeatherFX?.clearDebugWeather?.('dev-companion');
@@ -1009,7 +1018,7 @@
         rawDay: null, time01: null, shortDate: null, fullDateTime: null, aotYear: null, tothalCycle: null, civilDayOfYear: null,
         monthNumber: null, monthName: null, dayOfMonth: null, regionalSeason: null, regionalSeasonWeek: null, isFirstriseNewYear: null,
         nextTothalShiftRawDay: null, nextTothalShiftDate: null, nextTothalSeedCycle: null,
-        naturalClockTargetSecondsPerRepresentedDay: TARGET_DAY_LENGTH_SECONDS, naturalClockScale: NATURAL_TIME_WRITE_SCALE,
+        naturalClockTargetSecondsPerRepresentedDay: TARGET_DAY_LENGTH_SECONDS, naturalClockScale: NATURAL_TIME_WRITE_SCALE, devTimeSpeed,
         modalKind: _timePassageKind, selectedHours: _selectedPassageHours, preview: null, seatedWaitReady: false, sleepTargetReady: false,
         playerRuntimeReady: !!window.PlayerSocialPoses?.getPlayerEntity?.(), worldId: window.__hobunjiPlayerProfile?.worldId || null, initialized: false,
       }; // Diagnostics are polled during parser/startup time; expose "not ready" state instead of dereferencing null deps.
@@ -1034,7 +1043,7 @@
       nextTothalShiftDate: deps ? formatCalendarDateFull(nextShiftDay) : null,
       nextTothalSeedCycle: deps ? tothalCycle(nextShiftDay) : null,
       naturalClockTargetSecondsPerRepresentedDay: TARGET_DAY_LENGTH_SECONDS,
-      naturalClockScale: NATURAL_TIME_WRITE_SCALE,
+      naturalClockScale: NATURAL_TIME_WRITE_SCALE, devTimeSpeed,
       modalKind: _timePassageKind,
       selectedHours: _selectedPassageHours,
       preview: deps ? formatCalendarDateTimeFull(target.day, target.time01) : null,

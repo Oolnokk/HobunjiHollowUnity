@@ -587,25 +587,6 @@
     return Object.values(DEFINITIONS).filter(def => def.type === type);
   }
 
-  function makeSelect(type, value, onChange) {
-    const select = document.createElement('select');
-    select.className = 'settings-select';
-    const none = document.createElement('option');
-    none.value = '';
-    none.textContent = '— None —';
-    select.appendChild(none);
-    for (const def of definitionOptions(type)) {
-      const option = document.createElement('option');
-      option.value = def.id;
-      option.textContent = `${def.icon || ''} ${def.displayName} · ${def.alignment}`;
-      option.title = def.description;
-      option.selected = def.id === value;
-      select.appendChild(option);
-    }
-    select.addEventListener('change', () => onChange(select.value || null));
-    return select;
-  }
-
   function readOnlyValue(id) {
     const el = document.createElement('div');
     el.className = 'settings-desc';
@@ -648,11 +629,10 @@
     section.appendChild(title);
 
     const state = stateFor(key);
-    const editable = !!window.Combat?.deps?.isDevMode?.(); // Players enchant through Garanki Gabu; dev mode edits freely for testing.
     const summary = document.createElement('div');
     summary.className = 'loadout-slot-combo-note';
     summary.textContent = `Immundanity ${getWeaponImmundanity(key)} · Enchantment power ×${getEnchantmentPowerMultiplier(key).toFixed(2)} · Mastery effects ×${getMasteryPowerMultiplier(key).toFixed(2)}`
-      + (editable ? ' · [Dev] free editing' : ' · Garanki Gabu applies enchantments');
+      + ' · Garanki Gabu applies enchantments';
     section.appendChild(summary);
     for (let i = 0; i < BASE_LIMIT; i++) {
       const row = document.createElement('div');
@@ -660,9 +640,7 @@
       const label = document.createElement('div');
       label.className = 'settings-label';
       label.innerHTML = `<div class="settings-name">Base Enchantment ${i + 1}</div><div class="settings-desc">Applies to every qualifying hit made with this weapon.</div>`;
-      row.append(label, editable
-        ? makeSelect('Base', state.base[i] || '', id => { equipBase(key, i, id); window.CombatLoadoutUI?.render?.(); })
-        : readOnlyValue(state.base[i]));
+      row.append(label, readOnlyValue(state.base[i]));
       section.appendChild(row);
     }
 
@@ -673,9 +651,7 @@
       label.className = 'settings-label';
       const ability = window.Combat?.abilities?.get?.(window.Combat?.loadout?.getSlot?.(slotId));
       label.innerHTML = `<div class="settings-name">${slotId.toUpperCase()} Flourish · ${ability?.label || 'Empty'}</div><div class="settings-desc">${flourishTriggerText(slotId)}</div>`;
-      row.append(label, editable
-        ? makeSelect('Flourish', state.flourishes?.[slotId] || '', id => { setFlourish(key, slotId, id); window.CombatLoadoutUI?.render?.(); })
-        : readOnlyValue(state.flourishes?.[slotId]));
+      row.append(label, readOnlyValue(state.flourishes?.[slotId]));
       section.appendChild(row);
     }
 
@@ -728,6 +704,28 @@
       return mul > 1 ? { damage: mul, footing: mul, affliction: mul } : null;
     });
   }
+
+  window.DevCompanion?.registerCheatPanel?.({
+    id: 'enchantment-editing', title: 'Free enchantment editing', order: 32,
+    when: () => weaponKey() !== 'none',
+    render: () => {
+      const key = weaponKey(); // Captures which weapon these selectors edit, including while another weapon is equipped.
+      const state = stateFor(key); // Reads canonical enchantments for the companion dropdowns.
+      const options = type => [{ value: '', label: '— None —' }, ...definitionOptions(type).map(def => ({ value: def.id, label: `${def.displayName} · ${def.alignment}` }))]; // Shares the same authored options as the former player-menu editors.
+      return { summary: key, actions: [
+        ...Array.from({ length: BASE_LIMIT }, (_, index) => ({ id: 'base', label: `Base ${index + 1}`, args: { key, index }, value: state.base[index] || '', options: options('Base') })),
+        ...(window.Combat?.loadout?.SLOT_IDS || ['tap1','tap2','hold1','hold2']).map(slot => ({ id: 'flourish', label: `${slot.toUpperCase()} Flourish`, args: { key, slot }, value: state.flourishes?.[slot] || '', options: options('Flourish') })),
+      ] };
+    },
+    onAction: (action, args) => {
+      if (args.key !== weaponKey()) return { ok: false, error: 'Equipped weapon changed; choose again.' };
+      const ok = action === 'base' && Number.isInteger(args.index) && args.index >= 0 && args.index < BASE_LIMIT
+        ? equipBase(args.key, args.index, args.value)
+        : action === 'flourish' ? setFlourish(args.key, args.slot, args.value) : false; // Uses the existing validation and persistence paths.
+      if (ok) renderLoadoutUiIfPresent();
+      return { ok };
+    },
+  });
 
   window.EnchantmentSystem = Object.freeze({
     PLANES,

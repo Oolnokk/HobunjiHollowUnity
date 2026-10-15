@@ -391,7 +391,7 @@
     requestAnimationFrame(() => { decoratePending = false; decorateLoadout(); });
   }
   function decorateLoadout() {
-    const pane = document.getElementById('combatLoadoutPane'); // Used for visible learned-count guidance, empty-slot clarity, and mobile dev grants.
+    const pane = document.getElementById('combatLoadoutPane'); // Used for visible learned-count guidance and empty-slot clarity.
     if (!pane) return;
     const all = allTechniques(); // Used to calculate visible learned/total progression.
     let status = pane.querySelector('[data-technique-scroll-status]'); // Used to avoid duplicate status blocks across pane rerenders.
@@ -411,12 +411,6 @@
       if (!option) { option = document.createElement('option'); option.value = ''; option.textContent = 'No technique equipped'; option.disabled = true; option.dataset.techniquePlaceholder = '1'; select.prepend(option); }
       option.selected = true;
     });
-    if (window.Combat?.deps?.isDevMode?.() && !pane.querySelector('[data-technique-scroll-dev]')) {
-      const row = document.createElement('div'); // Used to grant exact scroll tiers from the in-game menu on mobile without DevTools.
-      row.dataset.techniqueScrollDev = '1'; row.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px';
-      [1, 2, 3].forEach(tier => { const b = document.createElement('button'); b.type = 'button'; b.className = 'ii-btn'; b.textContent = `[Dev] +T${tier} Scroll`; b.addEventListener('click', () => grantScroll(tier, 'Dev loadout test')); row.appendChild(b); });
-      status.after(row);
-    }
   }
 
   patchLoadout(); patchCaptains(window.BanditCamps); patchBounties(window.BountyBoard);

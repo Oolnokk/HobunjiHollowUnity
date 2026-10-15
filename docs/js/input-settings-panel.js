@@ -72,6 +72,7 @@
   }
 
   function resetSkillLevelsAndPerks() {
+    if (!document.getElementById('settingDevMode')?.checked) return;
     const skillSystem = window.SkillSystem; // Used to clear every persisted skill XP value through the existing character-save adapter.
     const perkSystem = window.PerkSystem; // Used to refund/remove every purchased perk rank through the existing character-save adapter.
     if (!skillSystem?.SKILLS || !skillSystem?.restore || !skillSystem?.snapshot || !perkSystem?.TREES || !perkSystem?.resetTree) {
@@ -89,6 +90,7 @@
   }
 
   function resetMotesOfProwess() {
+    if (!document.getElementById('settingDevMode')?.checked) return;
     const combatDeps = window.Combat?.deps; // Used to reuse the same mote getter/spender and save path as ability progression.
     if (!combatDeps?.getMotesOfProwess || !combatDeps?.spendMotesOfProwess) {
       setProgressionResetStatus('Mote reset is unavailable because combat progression did not finish loading.', true);
@@ -115,6 +117,7 @@
 
     const title = document.createElement('div'); // Used as the heading for destructive character-progression reset controls.
     title.id = 'progressionResetSettingsTitle';
+    title.setAttribute('data-dev-only', '');
     title.className = 'settings-section-title';
     title.style.marginTop = '10px';
     title.textContent = 'Progression';
@@ -135,6 +138,7 @@
     status.style.margin = '4px 0 8px';
     status.hidden = true;
 
+    for (const node of [skillRow, moteRow, status]) node.setAttribute('data-dev-only', '');
     anchorRow.after(title, skillRow, moteRow, status);
     document.getElementById('resetSkillProgressBtn')?.addEventListener('click', resetSkillLevelsAndPerks);
     document.getElementById('resetMotesOfProwessBtn')?.addEventListener('click', resetMotesOfProwess);
@@ -257,7 +261,8 @@
   }
 
   function appendJsonCopyControl(el, device) {
-    const row = document.createElement('div'); // Used to keep the JSON export directly beneath the corresponding keyboard/controller binding list.
+    const row = document.createElement('div'); // Keeps diagnostic JSON exports beneath their corresponding binding lists.
+    row.setAttribute('data-dev-only', '');
     row.className = 'input-binding-row';
     const spacer = document.createElement('span'); // Used to preserve the existing binding-row alignment without adding a new stylesheet rule.
     const button = document.createElement('button'); // Used to copy this device's complete controls into JSON.

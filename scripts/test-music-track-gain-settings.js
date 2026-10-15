@@ -14,8 +14,8 @@ const gainSettingsSource = source('docs/js/audio-track-gain-settings.js');
 const musicSource = source('docs/js/music-system.js');
 const indexSource = source('docs/index.html');
 
-assert.match(indexSource, />Audio<\/div>[\s\S]*?id="settingMusicTrackGainSong"[\s\S]*?id="settingMusicTrackGain"[^>]*max="500"/,
-  'Settings exposes an Audio section with one song dropdown and a gain slider reaching 500%');
+assert.match(indexSource, /id="settingMusicTrackGainSong"[\s\S]*?id="settingMusicTrackGain"[^>]*max="500"/,
+  'Audio calibration retains its song dropdown and gain slider reaching 500%');
 assert.match(indexSource, /audio-track-gain-settings\.js\?v=[A-Za-z0-9_.-]+/,
   'the per-song gain settings runtime is loaded by the game page');
 assert.match(musicSource, /window\._footstepAudioCtx = _musicAudioCtx/,
