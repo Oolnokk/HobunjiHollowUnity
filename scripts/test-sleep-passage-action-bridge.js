@@ -7,10 +7,14 @@ const vm = require('node:vm'); // Executes the browser bridge against a small fa
 
 const root = path.resolve(__dirname, '..');
 const bridgeSource = fs.readFileSync(path.join(root, 'docs/js/sleep-passage-action-bridge.js'), 'utf8');
+const controllerBridgeSource = fs.readFileSync(path.join(root, 'docs/js/controller-modern-flow-bridge.js'), 'utf8'); // Verifies controller Sleep is claimed before legacy gameplay dispatch.
 const loaderSource = fs.readFileSync(path.join(root, 'docs/js/combat/combat-config-loader.js'), 'utf8');
 
 assert.doesNotThrow(() => new vm.Script(bridgeSource), 'sleep passage action bridge parses');
+assert.doesNotThrow(() => new vm.Script(controllerBridgeSource), 'controller modern-flow bridge parses');
 assert.match(loaderSource, /sleep-passage-action-bridge\.js\?v=[A-Za-z0-9_.-]+/, 'runtime bootstrap loads the bed sleep bridge with a cache-busted URL');
+assert.match(controllerBridgeSource, /function tryOpenBedSleep\(frame\)[\s\S]*?openSharedSleepPassage/, 'controller bridge routes rendered bed Sleep through the shared passage bridge');
+assert.match(controllerBridgeSource, /if \(tryOpenBedSleep\(frame\)\) return;/, 'controller bed Sleep is claimed before generic gameplay action dispatch');
 
 function makeButton(id, label, key, action = 'obj_interact') {
   const button = {
