@@ -78,36 +78,50 @@
   })();
 
   // WallBuilder is already loaded before HousePieceGen/FormatUtils in the main
-  // game page. Install the base log-wall bridge and then its tree-material layer
-  // synchronously so generated runtime logs use the same wood response as trees.
+  // game page. Install base log geometry, the shared wood PNG/cap repair, then
+  // the log-wall atlas bridge synchronously. WoodCutSurfaces also hooks future
+  // FoliageGenerator/FoliageFurnitureRenderer publication, so the same cap fix
+  // reaches direct procedural stumps and V27-authored fallen logs/stumps.
   (function loadLogWallExtension() {
     if (typeof document === 'undefined') return;
     const extensionSrc = 'js/log-wall-extension.js?v=20261014logwall1'; // Base generated/baked log-cabin wall runtime authority.
-    const materialsSrc = 'js/log-wall-materials.js?v=20261014logwallmat1'; // Tree-bark + cut-end material bridge layered over the base generated log prototype.
+    const woodSrc = 'js/wood-cut-surfaces.js?v=20261014woodcaps1'; // Shared wavy_surface.png bark + log.png end-cap repair across walls/stumps/logs.
+    const materialsSrc = 'js/log-wall-materials.js?v=20261014logwallmat2'; // One-material PNG atlas bridge layered over generated log geometry.
     const hasExtension = !!window.LogWallExtension || !!document.querySelector('script[data-log-wall-extension]'); // Existing base bridge state used to avoid duplicate script insertion.
+    const hasWood = !!window.WoodCutSurfaces || !!document.querySelector('script[data-wood-cut-surfaces]'); // Shared cap/material repair state used by game and nested tools.
     const hasMaterials = !!window.LogWallMaterials || !!document.querySelector('script[data-log-wall-materials]'); // Existing material bridge state used by parser-time and late-load paths.
-    if (hasExtension && hasMaterials) return;
+    if (hasExtension && hasWood && hasMaterials) return;
     if (document.readyState === 'loading') {
-      const extensionTag = hasExtension ? '' : `<script src="${extensionSrc}" data-log-wall-extension="1"><\/script>`; // Base bridge tag emitted before the dependent material bridge.
-      const materialsTag = hasMaterials ? '' : `<script src="${materialsSrc}" data-log-wall-materials="1"><\/script>`; // Material bridge tag emitted immediately after the base bridge.
-      document.write(`${extensionTag}${materialsTag}`);
+      const extensionTag = hasExtension ? '' : `<script src="${extensionSrc}" data-log-wall-extension="1"><\/script>`; // Base bridge tag emitted first.
+      const woodTag = hasWood ? '' : `<script src="${woodSrc}" data-wood-cut-surfaces="1"><\/script>`; // Shared wood helper emitted before dependent atlas material bridge.
+      const materialsTag = hasMaterials ? '' : `<script src="${materialsSrc}" data-log-wall-materials="1"><\/script>`; // Atlas bridge emitted after base + shared wood helpers.
+      document.write(`${extensionTag}${woodTag}${materialsTag}`);
       return;
     }
-    const loadMaterials = () => { // Late-load helper preserving base-extension-before-material ordering.
+    const loadMaterials = () => { // Late-load helper preserving base -> shared wood -> atlas ordering.
       if (window.LogWallMaterials || document.querySelector('script[data-log-wall-materials]')) return;
-      const materialScript = document.createElement('script'); // Late-loaded tree material bridge used when FormatUtils runs after parsing.
+      const materialScript = document.createElement('script'); // Late-loaded log-wall PNG atlas bridge.
       materialScript.src = materialsSrc;
       materialScript.dataset.logWallMaterials = '1';
       document.head.appendChild(materialScript);
     };
+    const loadWood = () => { // Late-load helper installs cross-board foliage cap repair before log-wall materials.
+      if (window.WoodCutSurfaces) { loadMaterials(); return; }
+      if (document.querySelector('script[data-wood-cut-surfaces]')) return;
+      const woodScript = document.createElement('script'); // Shared wood repair loaded before the dependent atlas layer.
+      woodScript.src = woodSrc;
+      woodScript.dataset.woodCutSurfaces = '1';
+      woodScript.addEventListener('load', loadMaterials, { once: true });
+      document.head.appendChild(woodScript);
+    };
     if (window.LogWallExtension) {
-      loadMaterials();
+      loadWood();
       return;
     }
-    const script = document.createElement('script'); // Late-loaded base log extension whose load event chains the material bridge.
+    const script = document.createElement('script'); // Late-loaded base log extension whose load event chains shared wood + atlas layers.
     script.src = extensionSrc;
     script.dataset.logWallExtension = '1';
-    script.addEventListener('load', loadMaterials, { once: true });
+    script.addEventListener('load', loadWood, { once: true });
     document.head.appendChild(script);
   })();
 
@@ -135,7 +149,6 @@
     context.arcTo(x + width, y, x + width, y + height, radius);
     context.arcTo(x + width, y + height, x, y + height, radius);
     context.arcTo(x, y + height, x, y, radius);
-    context.arcTo(x, y, x + width, y, radius);
     context.closePath();
   }
 
@@ -155,7 +168,7 @@
   function toolEmoji(tool) {
     const equipped = deps.equipmentSlots[tool];
     if (equipped && deps.TOOL_ITEM_DEFS[equipped]) return deps.TOOL_ITEM_DEFS[equipped].icon;
-    return { shovel:'⛏️', hoe:'🪓', axe:'🪓', pick:'⛏️', harpoon:'🎣', weapon:'🗡️', ranged:'🏹', machete:'🗡️', seeds:'🌱' }[tool] || '❔';
+    return { shovel:'⛏️', hoe:'🪓 Axe', axe:'🪓', pick:'⛏️', harpoon:'🎣', weapon:'🗡️', ranged:'🏹', machete:'🗡️', seeds:'🌱' }[tool] || '❔';
   }
 
   function toolName(tool) {
