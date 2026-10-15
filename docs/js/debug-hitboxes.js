@@ -633,20 +633,50 @@
     if (p.previous) _drawDebugSegment3D(p.previous, p, '#ffe45c', true);
   }
 
+  function _projectileCoverDebugIdentity(cover) {
+    const key = String(cover.key || cover.kind || cover.source || 'terrain');
+    const x = Number.isFinite(cover.x) ? cover.x.toFixed(2) : '?';
+    const z = Number.isFinite(cover.z) ? cover.z.toFixed(2) : '?';
+    return `${key}@${x},${z}`;
+  }
+
+  function _projectileCoverDebugColor(cover) {
+    if (!cover.key && !cover.source) return '#b58cff'; // Tile terrain remains the familiar purple; semantic objects get distinct stable colors.
+    const identity = _projectileCoverDebugIdentity(cover);
+    let hash = 2166136261; // FNV-like stable hash so the same collider keeps its color between frames.
+    for (let i = 0; i < identity.length; i++) {
+      hash ^= identity.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return `hsl(${Math.abs(hash) % 360} 88% 70%)`;
+  }
+
+  function _projectileCoverDebugLabel(cover) {
+    if (!cover.key && !cover.source) return null;
+    const key = String(cover.key || cover.kind || cover.source || 'cover');
+    return key.length > 26 ? `${key.slice(0, 25)}…` : key;
+  }
+
   function _drawProjectileCover(cover) {
     const topY = Number.isFinite(cover.topY) ? cover.topY : cover.bottomY + 6; // Infinite trunks/walls get a labeled six-tile display, never a fake finite gameplay top.
+    const color = _projectileCoverDebugColor(cover); // Stable per-volume color makes overlapping ruin cover readable instead of one purple wire tangle.
     if (cover.shape === 'circle') {
       for (let step = 0; step < 16; step++) {
         const a = step * Math.PI / 8, b = (step + 1) * Math.PI / 8; // Cylinder edges match the semantic footprint rather than its bounding box.
         const p = { x: cover.x + Math.cos(a) * cover.radius, z: cover.z + Math.sin(a) * cover.radius }; // First ring endpoint.
         const q = { x: cover.x + Math.cos(b) * cover.radius, z: cover.z + Math.sin(b) * cover.radius }; // Next ring endpoint.
-        for (const y of [cover.bottomY, topY]) _drawDebugSegment3D({ ...p, y }, { ...q, y }, '#b58cff');
-        if (step % 4 === 0) _drawDebugSegment3D({ ...p, y: cover.bottomY }, { ...p, y: topY }, '#b58cff');
+        for (const y of [cover.bottomY, topY]) _drawDebugSegment3D({ ...p, y }, { ...q, y }, color);
+        if (step % 4 === 0) _drawDebugSegment3D({ ...p, y: cover.bottomY }, { ...p, y: topY }, color);
       }
     } else {
-      _drawDebugBox3({ box: { min: { x: cover.x - cover.halfX, y: cover.bottomY, z: cover.z - cover.halfZ }, max: { x: cover.x + cover.halfX, y: topY, z: cover.z + cover.halfZ } } }, '#b58cff');
+      _drawDebugBox3({ box: { min: { x: cover.x - cover.halfX, y: cover.bottomY, z: cover.z - cover.halfZ }, max: { x: cover.x + cover.halfX, y: topY, z: cover.z + cover.halfZ } } }, color);
     }
-    if (!Number.isFinite(cover.topY)) _drawDebugPoint3D({ x: cover.x, y: topY, z: cover.z }, '#b58cff', 'cover ↑∞', 2);
+    if (!Number.isFinite(cover.topY)) _drawDebugPoint3D({ x: cover.x, y: topY, z: cover.z }, color, 'cover ↑∞', 2);
+    const label = _projectileCoverDebugLabel(cover); // Nearby semantic covers get their runtime key directly on the volume; far cover stays color-only to avoid replacing one kind of clutter with another.
+    const playerX = deps.player.x / deps.TILE, playerZ = deps.player.y / deps.TILE;
+    if (label && Math.hypot(cover.x - playerX, cover.z - playerZ) <= 3.5) {
+      _drawDebugPoint3D({ x: cover.x, y: (cover.bottomY + topY) * 0.5, z: cover.z }, color, label, 2);
+    }
   }
 
   function _drawProjectileColliders() {
@@ -715,7 +745,7 @@
     get interactionRay() { return _interactionRaySnapshot(); },
     get shoulderPetAttachment() { return _activeShoulderPetAttachmentSnapshot(); },
     snapshot: () => ({
-      latestChange: 'Show Hitboxes now draws projectile collision spheres in yellow and nearby projectile cover in purple; grass has no cover volume. Infinite walls/trunks are labeled ↑∞.',
+      latestChange: 'Show Hitboxes draws projectile spheres in yellow; semantic projectile-cover volumes use stable per-collider colors and nearby labels, while terrain cover remains purple.',
       actors: debugSnapshot(),
       projectileColliders: _projectileColliders(),
       meleeColliders: (window.Combat?.debugMeleeColliders?.() || []).map(collider => ({
