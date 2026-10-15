@@ -1748,7 +1748,7 @@
         // which only fires for entries with a metalKey). Held by Foroji at
         // station_foroji_music (see map_hobunji_town.map.json's toolKey) so
         // he visibly has his instrument out while playing.
-        kurraya:      { label: 'Kurraya',       icon: '🎵', sprite: 'assets/toolsprites/kurraya_front.png',        slots: [], animStyle: 'strum' },
+        kurraya:      { label: 'Kurraya',       icon: '🎵', sprite: 'assets/toolsprites/kurraya_front.png',        slots: ['instrument'], animStyle: 'strum' },
       };
 
       // ── Metal registry (crafted bars, the verdigris hierarchy) ─────────
@@ -2255,6 +2255,7 @@
         weapon:  null,
         ranged:  null,
         whistle: null,
+        instrument: null, // Saved gear assignment used by Play instrument.
       };
 
       // equipmentSlots/TOOL_ITEM_DEFS/actionLabels/calendar are all declared
@@ -15710,11 +15711,9 @@
         blackMustard: { icon: '⚫', label: 'Black Mustard', cat: 'crop', sellPrice: CROP_SELL_PRICES.blackMustard, tags: ['Crop', 'Sellable', 'Mustard'], desc: 'Hot mustard crop. Can be processed into pungent paste later.' },
         greenMustard: { icon: '🥬', label: 'Green Mustard', cat: 'crop', sellPrice: CROP_SELL_PRICES.greenMustard, tags: ['Crop', 'Sellable', 'Mustard'], desc: 'Fresh mustard crop. Can be processed into pungent paste later.' },
         mulch: { icon: '🍂', label: 'Mulch', cat: 'material', sellPrice: 2, tags: ['Material', 'Organic'], desc: 'Organic matter from cleared vegetation. Useful by-product of land clearing.' },
-        // isInstrument gates the held-item "Play" action button (see
-        // computeActionButtons' item-context section) — held it opens the
-        // music minigame instead of any tool-slot behavior, so this is
-        // deliberately not also a TOOL_ITEM_DEFS entry.
-        kurraya: { icon: '🎵', label: 'Kurraya', cat: 'instrument', sellPrice: 250, tags: ['Instrument'], isInstrument: true, desc: "A simple lyre, like the one Foroji always has on him. Hold it and play — solo, or fall in behind whoever's already playing nearby." },
+        // Instrument metadata pairs with TOOL_ITEM_DEFS for permanent gear assignment.
+        // Playback validates the equipped Instrument slot through MusicMinigame.
+        kurraya: { icon: '🎵', label: 'Kurraya', cat: 'instrument', sellPrice: 250, tags: ['Instrument'], isInstrument: true, desc: "A simple lyre, like the one Foroji always has on him. Transfer it to gear, assign it as your Instrument, and play — solo, or fall in behind whoever's already playing nearby." },
         pineLog:      { icon: '🪵', label: 'Pine Log',      cat: 'material', sellPrice: 6,  tags: ['Material', 'Wood', 'Northern Cliffs'],   desc: "A rough-cut log felled from a Northern Cliffs crowned pine. Good building timber." },
         shadewoodLog: { icon: '🪵', label: 'Shadewood Log', cat: 'material', sellPrice: 9,  tags: ['Material', 'Wood', 'Cloud Forest'],       desc: 'A dense, dark log felled from a Southern Cloud Forest shadewood tree. Prized building timber.' },
         stone:  { icon: '🪨', label: 'Stone',  cat: 'material', sellPrice: 5, tags: ['Material', 'Stone'], desc: 'Rough building stone broken from an ore rock with a pick. A carpenter can build with it.' },
@@ -18876,6 +18875,7 @@
       }
 
       function useActiveAction() {
+        if (activeAction === 'dance_spin' && !menuOpen && !dialogueOpen && !paused) { window.SocialActionWheel?.spin?.(); return; }
         if ((activeTool === 'weapon' && (activeAction === toolActions.weapon[0] || activeAction === toolActions.weapon[1])) || (activeTool === 'ranged' && activeAction === 'shoot')) window.BandageSystem?.cancel?.('attack');
         if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'actions')) return;
         if (sitInteraction) { if (activeAction === 'obj_stand') endSitInteraction(); return; }
@@ -22477,7 +22477,8 @@
       });
 
       function updateHeldItemHolder(dt = 0) {
-        const item = getActiveInventoryItem();
+        const item = window.MusicMinigame?.state?.instrumentItem
+          || getActiveInventoryItem(); // Performance reuses its equipped prop descriptor instead of allocating one every frame.
         if (_heldDrinkPhase && _heldItemPlane) {
           const animation = window.HeldActionAnimations.drink;
           const durationS = Math.max(0.1, Number(animation.durationS) || _heldDrinkAnimDuration || 0.95);
@@ -22810,6 +22811,11 @@
         if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'tools')) {
           toolHolder.visible = false;
           heldItemHolder.visible = false;
+          return;
+        }
+        if (window.MusicMinigame?.state?.instrumentKey) {
+          toolHolder.visible = false;
+          updateHeldItemHolder(dt);
           return;
         }
         if (heldMode === 'none') {
@@ -25126,6 +25132,10 @@
         }
       }
       function computeActionButtonsImpl() {
+        if (window.SocialActionWheel?.isDancing?.()) return [
+          { icon: '♫', label: 'Dancing', action: 'dance_active', style: 'primary', allowed: false },
+          { icon: '↻', label: 'Spin', action: 'dance_spin', style: 'secondary', inputAction: 'action2', allowed: true },
+        ];
         // Sitting overrides every other action — Stand is the only way out,
         // same tier as fishing/dialogue below.
         if (sitInteraction) {
@@ -28376,6 +28386,7 @@
 
       window.MusicMinigame?.init({
         refreshActionBar,
+        getEquippedInstrument: () => gearInventory.tools[equipmentSlots.instrument] && ITEM_DEFS[equipmentSlots.instrument]?.isInstrument ? equipmentSlots.instrument : null,
         getCurrentArea: () => currentArea,
         listInstrumentPerformers,
         getNpcFootstepSampleUrl: npcFootstepSampleUrl,

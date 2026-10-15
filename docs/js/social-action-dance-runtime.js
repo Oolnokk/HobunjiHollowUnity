@@ -8,7 +8,6 @@
   if (global.SocialActionDanceRuntime?.installed) return;
 
   const PLAYER_ID = 'player';
-  const KURRAYA_KEY = 'kurraya';
   const DANCE_STIM_ID = 'player-dance';
   const WEAPON_IDLE_CHANNEL = 'weapon-idle-stance-body-yaw';
   const STYLE = Object.freeze({
@@ -57,14 +56,8 @@
     return false;
   }
 
-  function ownsKurraya() {
-    return Number(dep('inventory')?.[KURRAYA_KEY]) > 0;
-  }
-
-  function toast(message, good = true) {
-    const showToast = dep('showToast');
-    if (typeof showToast === 'function') showToast(message, good);
-    else global.__farmLog?.(`[Social Actions] ${message}`, good ? 'info' : 'warn');
+  function ownsInstrument() {
+    return !!global.MusicMinigame?.getEquippedInstrument?.();
   }
 
   function chainGlobal(name, install) {
@@ -336,24 +329,14 @@
     api.setChannel.__socialDanceRuntimeWrapped = true;
   }
 
-  function patchMusic(api) {
-    if (!api?.beginPlayerSession || api.beginPlayerSession.__socialKurrayaOwnershipGuard) return;
-    const original = api.beginPlayerSession.bind(api);
-    api.beginPlayerSession = function ownedKurrayaSession(...args) {
-      if (!ownsKurraya()) { toast('You need a Kurraya before you can play one.', false); return false; }
-      return original(...args);
-    };
-    api.beginPlayerSession.__socialKurrayaOwnershipGuard = true;
-  }
-
   // Runs every frame from maintainDanceState: look the wheel up by id (it only
   // exists while open) instead of scanning the whole document, and compare
   // before writing so an unchanged wedge queues no attribute mutations.
-  function syncKurrayaWedge() {
+  function syncInstrumentWedge() {
     const wheel = document.getElementById?.('socialActionWheel');
     const sector = wheel?.querySelector?.('.socialActionSector[data-social-index="0"]');
     if (!sector) return;
-    const owned = ownsKurraya();
+    const owned = ownsInstrument();
     if (sector.classList.contains('blocked') === owned) sector.classList.toggle('blocked', !owned);
     const ariaDisabled = owned ? 'false' : 'true';
     if (sector.getAttribute('aria-disabled') !== ariaDisabled) sector.setAttribute('aria-disabled', ariaDisabled);
@@ -425,13 +408,12 @@
     if (active) { suppressHeldVisual(); emitDanceStimulus(timestamp); clock(timestamp); }
     else if (state.lastDancing) endDanceOwnership();
     state.lastDancing = active;
-    syncKurrayaWedge();
+    syncInstrumentWedge();
   }
 
   chainGlobal('ProceduralLegAnimation', patchLegApi);
   chainGlobal('ProceduralHandAttachments', patchHandApi);
   chainGlobal('PlayerBodyTransformComposer', patchComposer);
-  chainGlobal('MusicMinigame', patchMusic);
 
   const style = document.createElement('style');
   style.textContent = '.socialActionSector.blocked{filter:grayscale(1)}.socialActionSector.blocked.active{background:rgba(255,255,255,.055)!important}';
@@ -445,7 +427,7 @@
 
   global.SocialActionDanceRuntime = {
     installed: true,
-    ownsKurraya,
+    ownsInstrument,
     getDebug: () => ({
       dancing: dancing(),
       playerLegCaptured: !!state.legHandle,

@@ -23,7 +23,6 @@
     'gentle-twirl': { intensity: 1.18, legAmount: 0.82 },
     'loose-sway': { intensity: 0.96, legAmount: 0.48 },
   });
-  const DANCE_STYLES = Object.freeze(Object.keys(STYLE));
   const ARM_STYLES = Object.freeze(['overhead-punch', 'tpose-jiggle']);
 
   // These are deliberate character reads from the current NPC database bios.
@@ -344,6 +343,7 @@
       danceThreshold: Math.round(danceThreshold * 10) / 10,
       willingnessDraw: Math.round(willingnessDraw * 10) / 10,
       danceProbability: Math.round((100 - danceThreshold) * 10) / 10,
+      preferredDance: deterministicDancePresentation(rec),
       dance,
       blocked,
       atWork: work.working,
@@ -366,11 +366,12 @@
   }
 
   function deterministicDancePresentation(rec, stimulus) {
-    const day = Number(state.plannerDeps?.calendar?.day) || 0;
-    const style = STYLE[stimulus?.danceStyle] ? stimulus.danceStyle
-      : DANCE_STYLES[Math.floor(deterministic01(rec?.id, day, `dance-style:${stimulus?.id}`) * DANCE_STYLES.length) % DANCE_STYLES.length];
-    const armStyle = ARM_STYLES.includes(stimulus?.armStyle) ? stimulus.armStyle
-      : ARM_STYLES[Math.floor(deterministic01(rec?.id, day, `dance-arms:${stimulus?.id}`) * ARM_STYLES.length) % ARM_STYLES.length];
+    const preference = rec?.preferredDance || {}; // Database-authored movement and arms take precedence over the dance starter.
+    const preferredStyle = preference.style === 'gentle-twirl' ? 'side-step' : preference.style; // Migrate older spin presets to their base dance.
+    const style = STYLE[preferredStyle] ? preferredStyle
+      : ['side-step', 'loose-sway'][Math.floor(deterministic01(rec?.id, 0, 'preferred-dance') * 2) % 2];
+    const armStyle = ARM_STYLES.includes(preference.armStyle) ? preference.armStyle
+      : ARM_STYLES[Math.floor(deterministic01(rec?.id, 0, 'preferred-dance-arms') * ARM_STYLES.length) % ARM_STYLES.length];
     return { style, armStyle };
   }
 

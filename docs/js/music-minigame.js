@@ -284,6 +284,8 @@
 
   function beginPlayerSession() {
     if (playerSession || !overlayEl || !frameEl || !deps) return;
+    const instrumentKey = deps.getEquippedInstrument?.(); // Captured for the performance prop and ownership validation.
+    if (!instrumentKey) { deps.showToast?.('Equip an instrument in your gear before playing.', false); return false; }
     const area = deps.getCurrentArea();
     const nearbyPerformer = deps.listInstrumentPerformers().find(p => p.area === area);
     if (nearbyPerformer) {
@@ -298,6 +300,8 @@
       leaderByArea.set(area, { type: 'player', id: 'player', startedAt: Date.now() });
       playerSession = { active: true, mode: 'lead', area };
     }
+    playerSession.instrumentKey = instrumentKey;
+    playerSession.instrumentItem = { key: instrumentKey }; // Reused by the held-instrument renderer for the whole session.
     overlayEl.classList.add('open');
     frameEl.src = MUSIC_MINIGAME_SRC;
     deps.beginMusicCamera?.(playerSession.npcId || null);
@@ -1191,6 +1195,7 @@
   window.MusicMinigame = {
     init,
     beginPlayerSession,
+    getEquippedInstrument: () => deps?.getEquippedInstrument?.() || null,
     close,
     tick,
     renderNoteKeySettings, // Called once at boot by game.js, the same way it calls window.InputSettingsPanel.render().
