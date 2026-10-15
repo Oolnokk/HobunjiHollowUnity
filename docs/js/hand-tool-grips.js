@@ -197,11 +197,11 @@
     return key;
   }
 
-  const DUAL_WIELD_WEAPONS = new Set(['dagger', 'daggersword', 'kylie', 'warcleaver']);
+  const DUAL_WIELD_WEAPONS = new Set(['dagger', 'daggersword', 'kylie', 'warcleaver', 'fishingmace']);
   function isDualWieldWeapon(value) { return DUAL_WIELD_WEAPONS.has(toolKeyFor(value)); }
   function weaponHandModeForTool(value) {
     const key = toolKeyFor(value); // Resolves the applicable pose flag in editor previews and gameplay.
-    return (key === 'fishingmace' || key === 'throwingflask') ? 'single' : (isDualWieldWeapon(key) ? 'dual' : 'two-hand');
+    return key === 'throwingflask' ? 'single' : (isDualWieldWeapon(key) ? 'dual' : 'two-hand');
   }
 
   function numberOrZero(value) {
@@ -1145,7 +1145,7 @@
       <div id="handSecondarySpanFields"></div>
       <div class="hr"></div>
       <div class="poseGroupHead"><span class="dot" style="background:#f59e0b"></span>Animation hand mode</div>
-      <div class="help" style="margin-bottom:6px">Melee attacks default to <b>2H when the equipped weapon has both ranges</b>. <b>2H</b> and <b>Dual wield</b> are independent pose flags. Kylies, daggers, dagger-swords, and war-cleavers read Dual Wield; other melee weapons read 2H. Fishing mace uses neither. Neutral Dual Wield uses the authored Dual Wield idle pair, while Windup/Strike use the attack duplicate path. Ranged/load/fire poses use neither mode.</div>
+      <div class="help" style="margin-bottom:6px">Melee attacks default to <b>2H when the equipped weapon has both ranges</b>. <b>2H</b> and <b>Dual wield</b> are independent pose flags. Kylies, daggers, dagger-swords, war-cleavers, and fishing maces read Dual Wield; other melee weapons read 2H. Neutral Dual Wield uses the authored Dual Wield idle pair, while Windup/Strike use the attack duplicate path. Ranged/load/fire poses use neither mode.</div>
       <div id="handSecondaryAnimationFields"></div>
       <div class="help" id="handSecondarySpanStatus" style="padding:7px;border:1px solid rgba(245,158,11,.24);border-radius:8px;margin:6px 0"></div>`;
     host.insertBefore(panel, status);
@@ -1218,7 +1218,7 @@
     document.getElementById('loadPresetBtn')?.addEventListener('click', () => setTimeout(() => loadEditorAnimationGrip({}), 0));
 
     const topHelp = host.closest('.card')?.querySelector('.sectionTitle')?.nextElementSibling;
-    if (topHelp?.classList.contains('help')) topHelp.innerHTML = 'The fixed <b>primary grip</b> is used for 1H, idle, ranged, and each duplicated Dual Wield weapon. Kylies, daggers, dagger-swords, and war-cleavers use <b>Dual Wield</b>. Other melee weapons read the independent <b>2H</b> flag when both ranges exist. Fishing mace uses neither flag. Base scale and calculated-height influence remain shared held-item metadata.';
+    if (topHelp?.classList.contains('help')) topHelp.innerHTML = 'The fixed <b>primary grip</b> is used for 1H, idle, ranged, and each duplicated Dual Wield weapon. Kylies, daggers, dagger-swords, war-cleavers, and fishing maces use <b>Dual Wield</b>. Other melee weapons read the independent <b>2H</b> flag when both ranges exist. Base scale and calculated-height influence remain shared held-item metadata.';
     syncEditorSpanUi(); patchEditorJsonView(); return true;
   }
 
