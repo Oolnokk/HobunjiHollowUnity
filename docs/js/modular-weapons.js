@@ -2,7 +2,7 @@
 (function (global) {
   'use strict';
   const SCHEMA = 'hobunji_modular_weapons.v1'; // Validated editor import format.
-  const DRAFT_KEY = 'hobunji.modularWeapons.v1'; // Shared editor/game attachment draft.
+  const DRAFT_KEY = 'hobunji.modularWeapons.v2'; // New calibration/rules baseline; the old draft remains stored separately.
   const transforms = ['scaleX', 'scaleY', 'flipX', 'flipY', 'x', 'y', 'rotation']; // Inheritable head placement fields.
   const images = new Map(); // CORS image promises reused across combinations.
   const canvases = new Map(); // Bounded composed sprites, created only when requested.
@@ -16,13 +16,15 @@
   function point(raw) {
     return { x: finite(raw?.x, 225, 0, 450), y: finite(raw?.y, 602, 0, 1204) };
   }
-  function cleanTransform(raw, partial = false) {
+  function cleanTransform(raw, partial = false, fallbackAnimation = 'sweep') {
     const result = {}; // Sparse overrides preserve unchecked inheritance.
     for (const key of transforms) {
       if (partial && !Object.hasOwn(raw || {}, key)) continue;
       result[key] = key.startsWith('flip') ? raw?.[key] === true
         : finite(raw?.[key], key.startsWith('scale') ? 1 : 0, key.startsWith('scale') ? 0.05 : -2400, key.startsWith('scale') ? 8 : 2400);
     }
+    if (raw?.animation === 'thrust' || raw?.animation === 'sweep') result.animation = raw.animation;
+    else if (!partial) result.animation = fallbackAnimation;
     return result;
   }
   function replace(data, persist = false) {
@@ -31,10 +33,23 @@
     for (const [key, head] of Object.entries(next.heads)) head.attach = point(data.heads[key]?.attach || head.attach);
     for (const [key, shaft] of Object.entries(next.shafts)) {
       const raw = data.shafts[key] || shaft; // Missing imported entries retain committed defaults.
-      shaft.attachments = (Array.isArray(raw.attachments) && raw.attachments.length ? raw.attachments : shaft.attachments).slice(0, 8).map(value => ({ ...point(value), rotation: finite(value.rotation, 0, -360, 360) }));
-      shaft.defaults = cleanTransform(raw.defaults);
+      shaft.attachments = (Array.isArray(raw.attachments) && raw.attachments.length ? raw.attachments : shaft.attachments).slice(0, shaft.maxAttachments || 8).map(value => ({ ...point(value), rotation: finite(value.rotation, 0, -360, 360) }));
+      shaft.defaults = cleanTransform(raw.defaults, false, shaft.defaults.animation || 'sweep');
+      const committedOverrides = shaft.overrides; // Missing legacy flags inherit the committed pair restrictions.
       shaft.overrides = {};
-      for (const [head, values] of Object.entries(raw.overrides || {})) if (next.heads[head]) shaft.overrides[head] = cleanTransform(values, true);
+      for (const [head, values] of Object.entries(raw.overrides || {})) if (Object.hasOwn(next.heads, head)) {
+        shaft.overrides[head] = cleanTransform(values, true);
+        if (typeof values.disallow === 'boolean') shaft.overrides[head].disallow = values.disallow;
+      }
+      for (const [head, values] of Object.entries(committedOverrides || {})) {
+        if (values.animation && !raw.defaults?.animation && !shaft.overrides[head]?.animation) {
+          if (!shaft.overrides[head]) shaft.overrides[head] = {};
+          shaft.overrides[head].animation = values.animation;
+        }
+        if (typeof values.disallow !== 'boolean' || typeof shaft.overrides[head]?.disallow === 'boolean') continue;
+        if (!shaft.overrides[head]) shaft.overrides[head] = {};
+        shaft.overrides[head].disallow = values.disallow;
+      }
     }
     config = next;
     revision++;
@@ -52,6 +67,9 @@
     return parts ? config.shafts[parts.shaft].sourceShape : null;
   }
   function settings(shaft, head) { return { ...config.shafts[shaft].defaults, ...config.shafts[shaft].overrides[head] }; }
+  function isDisallowed(shaft, head) {
+    return !Object.hasOwn(config.shafts, shaft) || !Object.hasOwn(config.heads, head) || config.shafts[shaft].overrides[head]?.disallow === true;
+  }
   function loadImage(path, base = '') {
     const url = base + path; // Editors supply the docs-relative prefix.
     if (!images.has(url)) images.set(url, new Promise((resolve, reject) => {
@@ -99,7 +117,8 @@
       const source = shapes[shaft.sourceShape] || { animStyle: 'sweep', weaponIdleClass: 'heavy' }; // Future/relic source shapes still get a usable baseline.
       for (const [headKey, head] of Object.entries(config.heads)) for (const metalKey of metalKeys) {
         const key = itemKey(shaftKey, headKey, metalKey); // Pre-register metadata only; no image loads for unowned combinations.
-        defs[key] = { ...source, label: `${metals[metalKey].label} ${head.label} / ${shaft.label}`, icon: '⚒️', sprite: key,
+        const animation = settings(shaftKey, headKey).animation; // Authored pair override or shaft default drives attacks and combo selection.
+        defs[key] = { ...source, animStyle: animation, comboStyle: animation, label: `${metals[metalKey].label} ${head.label} / ${shaft.label}`, icon: '⚒️', sprite: key,
           slots: ['weapon'], dmgType: head.dmgType, spinning: false, shapeKey: shaft.sourceShape, metalKey, itemKey: key,
           modular: { shaft: shaftKey, head: headKey }, weaponIdleClass: source.weaponIdleClass || 'light' };
       }
@@ -120,6 +139,6 @@
       shafts: Object.keys(config.shafts).filter(key => sources.has(config.shafts[key].sourceShape)) };
   }
   try { const draft = global.localStorage?.getItem(DRAFT_KEY); if (draft) replace(JSON.parse(draft)); } catch (error) { global.__farmLog?.(`[Foundry] Ignored invalid attachment draft: ${error.message}`, 'warn'); }
-  global.ModularWeapons = { getConfig: () => config, replace, settings, transforms, decode, itemKey, sourceShape, compose, loadImage, registerDefinitions, unlockedParts,
+  global.ModularWeapons = { getConfig: () => config, replace, settings, isDisallowed, transforms, decode, itemKey, sourceShape, compose, loadImage, registerDefinitions, unlockedParts,
     diagnostics: key => ({ parts: decode(key), gripSource: sourceShape(key), cachedSprites: canvases.size, revision }) };
 })(window);

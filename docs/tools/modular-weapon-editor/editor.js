@@ -35,7 +35,7 @@
         if (id === 'shaft-canvas') shaft.attachments.forEach((point, index) => marker(context, point, index === socketIndex ? '#ffd16c' : '#63e1cf'));
         if (id === 'head-canvas') marker(context, head.attach, '#ffd16c');
       }
-      byId('debug').textContent = JSON.stringify({ shaft: shaftKey, head: headKey, sourceWeapon: shaft.sourceShape, sockets: shaft.attachments, headPivot: head.attach, effective: api.settings(shaftKey, headKey), revision: api.diagnostics('').revision }, null, 2);
+      byId('debug').textContent = JSON.stringify({ shaft: shaftKey, head: headKey, sourceWeapon: shaft.sourceShape, sockets: shaft.attachments, headPivot: head.attach, effective: api.settings(shaftKey, headKey), disallowed: api.isDisallowed(shaftKey, headKey), revision: api.diagnostics('').revision }, null, 2);
     } catch (error) { if (request === serial) message(`Preview failed: ${error.message}`); }
   }
   function render() {
@@ -51,7 +51,8 @@
     });
     byId('socket').value = socketIndex;
     byId('remove').disabled = shaft.attachments.length <= 1;
-    byId('add').disabled = shaft.attachments.length >= 8;
+    byId('add').disabled = shaft.attachments.length >= (shaft.maxAttachments || 8);
+    byId('disallow').checked = api.isDisallowed(byId('shaft').value, headKey);
     byId('attach-controls').replaceChildren();
     for (const key of ['x', 'y', 'rotation']) {
       const label = document.createElement('label'), input = document.createElement('input'); // Numeric alternative to tapping, including per-socket rotation.
@@ -60,14 +61,24 @@
       label.appendChild(input); byId('attach-controls').appendChild(label);
     }
     byId('fields').replaceChildren();
-    for (const key of api.transforms) {
+    for (const key of [...api.transforms, 'animation']) {
       const row = document.createElement('tr'), title = document.createElement('td'), toggleCell = document.createElement('td'), valueCell = document.createElement('td'); // One inheritance control per value.
-      const toggle = document.createElement('input'), input = document.createElement('input'); // Checkbox and its editable transform value.
+      const toggle = document.createElement('input'), input = document.createElement(key === 'animation' ? 'select' : 'input'); // Checkbox and its editable transform value.
       const boolean = key.startsWith('flip'); // Flip transforms use a checkbox rather than a numeric flag.
       title.textContent = key; toggle.type = 'checkbox'; toggle.checked = !overrideMode || Object.hasOwn(values, key); toggle.disabled = !overrideMode;
       toggle.setAttribute('aria-label', `Override ${key}`);
-      input.type = boolean ? 'checkbox' : 'number'; input.step = key.startsWith('scale') ? '.01' : '1'; input.setAttribute('aria-label', key);
-      if (boolean) input.checked = overrideMode ? effective[key] : values[key]; else input.value = overrideMode ? effective[key] : values[key];
+      input.setAttribute('aria-label', key === 'animation' ? 'Attack animation' : key);
+      if (key === 'animation') {
+        title.textContent = 'Attack animation';
+        for (const style of ['thrust', 'sweep']) {
+          const option = document.createElement('option'); // Named motion styles, authored without code.
+          option.value = style; option.textContent = style === 'thrust' ? 'Thrust' : 'Sweep'; input.appendChild(option);
+        }
+        input.value = overrideMode ? effective[key] : values[key];
+      } else {
+        input.type = boolean ? 'checkbox' : 'number'; input.step = key.startsWith('scale') ? '.01' : '1';
+        if (boolean) input.checked = overrideMode ? effective[key] : values[key]; else input.value = overrideMode ? effective[key] : values[key];
+      }
       input.disabled = !toggle.checked;
       toggle.onchange = () => {
         if (!shaft.overrides[headKey]) shaft.overrides[headKey] = {};
@@ -76,7 +87,7 @@
       };
       input.onchange = () => {
         if (overrideMode && !shaft.overrides[headKey]) shaft.overrides[headKey] = {};
-        (overrideMode ? shaft.overrides[headKey] : shaft.defaults)[key] = boolean ? input.checked : Number(input.value);
+        (overrideMode ? shaft.overrides[headKey] : shaft.defaults)[key] = boolean ? input.checked : key === 'animation' ? input.value : Number(input.value);
         save();
       };
       toggleCell.appendChild(toggle); valueCell.appendChild(input); row.append(title, toggleCell, valueCell); byId('fields').appendChild(row);
@@ -94,7 +105,12 @@
   byId('shaft').onchange = () => { socketIndex = 0; render(); };
   byId('head').onchange = render; byId('mode').onchange = render;
   byId('socket').onchange = () => { socketIndex = Number(byId('socket').value); render(); };
-  byId('add').onclick = () => { selectedShaft().attachments.push({ x: 225, y: 50, rotation: 180 }); socketIndex = selectedShaft().attachments.length - 1; save(); };
+  byId('disallow').onchange = () => {
+    const shaft = selectedShaft(), head = byId('head').value; // Pair policy is independent of which transform editing mode is selected.
+    if (!shaft.overrides[head]) shaft.overrides[head] = {};
+    shaft.overrides[head].disallow = byId('disallow').checked; save();
+  };
+  byId('add').onclick = () => { if (selectedShaft().attachments.length >= (selectedShaft().maxAttachments || 8)) return; selectedShaft().attachments.push({ x: 225, y: 50, rotation: 180 }); socketIndex = selectedShaft().attachments.length - 1; save(); };
   byId('remove').onclick = () => { if (selectedShaft().attachments.length > 1) { selectedShaft().attachments.splice(socketIndex, 1); socketIndex = 0; save(); } };
   place('shaft-canvas', point => Object.assign(selectedShaft().attachments[socketIndex], point));
   place('head-canvas', point => { selectedHead().attach = point; });

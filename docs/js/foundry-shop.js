@@ -16,6 +16,7 @@
     const barKey = deps.metalBarItemKey(metal); // Existing metal-tier material.
     if (!global.TownMine?.hasImprovement('foundry') || !available.shafts.includes(shaft) || !available.heads.includes(head)
       || !deps.VERDIGRIS_METAL_KEYS.includes(metal) || !deps.TOOL_ITEM_DEFS[key]) return { ok: false, message: 'Unlock the foundry and both parts first.' };
+    if (global.ModularWeapons.isDisallowed(shaft, head)) return { ok: false, message: 'That head is disallowed on this shaft.' };
     const gear = deps.getGearInventory(); // Gear ownership persists through the ordinary equipment save.
     if (gear?.tools?.[key]) return { ok: false, message: 'You already own this combination in that metal.' };
     if (count('gold') < cost.gold || count(barKey) < cost.bars || woodCount() < cost.wood) return { ok: false, message: 'Not enough bronze, metal bars, or wood.' };
@@ -78,10 +79,12 @@
       return;
     }
     if (!available.shafts.includes(selection.shaft)) selection.shaft = available.shafts[0];
-    if (!available.heads.includes(selection.head)) selection.head = available.heads[0];
+    const allowedHeads = available.heads.filter(head => !global.ModularWeapons.isDisallowed(selection.shaft, head)); // Shared pair restrictions apply to the menu and purchase validation.
+    if (!allowedHeads.includes(selection.head)) selection.head = allowedHeads[0] || '';
     if (!deps.VERDIGRIS_METAL_KEYS.includes(selection.metal)) selection.metal = deps.VERDIGRIS_METAL_KEYS[0];
     section.appendChild(select('Shaft', available.shafts, key => config.shafts[key].label, selection.shaft, value => { selection.shaft = value; }));
-    section.appendChild(select('Head', available.heads, key => `${config.heads[key].label} (${config.heads[key].dmgType})`, selection.head, value => { selection.head = value; }));
+    if (!allowedHeads.length) { section.appendChild(element('p', 'No unlocked heads are allowed on this shaft. Choose another shaft.')); return; }
+    section.appendChild(select('Head', allowedHeads, key => `${config.heads[key].label} (${config.heads[key].dmgType})`, selection.head, value => { selection.head = value; }));
     section.appendChild(select('Metal', deps.VERDIGRIS_METAL_KEYS, key => deps.METAL_DEFS[key].label, selection.metal, value => { selection.metal = value; }));
     const image = document.createElement('img'); // Cached composition uses exactly the runtime sprite; metal uses the existing recolorer.
     const serial = ++previewSerial; // Ignore older selections resolving after the current one.
@@ -93,7 +96,7 @@
     }).catch(error => { if (image.isConnected) { image.alt = error.message; deps.showToast(error.message, false); } });
     const donor = config.shafts[selection.shaft].sourceShape; // Explain the donor rules before spending resources.
     const handMode = global.HobunjiHandToolGrips?.weaponHandModeForTool?.(donor) || 'two-hand'; // Shared runtime handedness.
-    section.appendChild(element('p', `${handMode} · ${config.heads[selection.head].dmgType} · Grip, scale, idle stance and attacks follow ${config.shafts[selection.shaft].label}.`));
+    section.appendChild(element('p', `${handMode} · ${config.heads[selection.head].dmgType} · Attacks: ${deps.TOOL_ITEM_DEFS[item].animStyle} · Grip, scale and idle stance follow ${config.shafts[selection.shaft].label}.`));
     const cost = config.craftCost; // Authored new-weapon cost.
     const owned = !!deps.getGearInventory()?.tools?.[item]; // One owned weapon per part/material combination, matching normal smithing.
     const button = element('button', owned ? 'Already forged' : `Forge — ${cost.gold} bronze + ${cost.bars} bars + ${cost.wood} wood`, 'shop-buy-btn'); // Final purchase action.
