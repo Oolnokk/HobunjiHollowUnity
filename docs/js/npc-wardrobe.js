@@ -128,6 +128,9 @@
       colorB: item?.colorB || null,
       colorC: item?.colorC || null,
       weaving: item?.weaving || null,
+      metalKey: item?.metalKey || null,
+      temperXp: item?.temperXp || 0,
+      smithTreatment: item?.smithTreatment || null,
     }); // Same cosmetic + different weave/pattern dye is a real swap rather than a false no-op.
   }
 
@@ -232,7 +235,9 @@
   // ── Immediate outfit editing ─────────────────────────────────────
   function guessSlot(cosmeticId) {
     const id = String(cosmeticId || '').toLowerCase();
-    if (/hat|kasa|helmet|headband/.test(id)) return 'hat';
+    const blueprint = window.MetalArmorSystem?.blueprintForItem?.({ cosmeticId: id }); // Uses the smith's canonical slot, including circlets and crafted instance IDs.
+    if (blueprint?.slot) return blueprint.slot;
+    if (/hat|kasa|helmet|headband|circlet/.test(id)) return 'hat';
     if (/hood|festivalmask/.test(id)) return 'hood';
     if (/pauldron|shoulder.?armor/.test(id)) return 'pauldron';
     if (/poncho|cloak|wrap|overwear/.test(id)) return 'overwear';
