@@ -611,6 +611,60 @@
     for (const animal of deps.animalObjects || []) _drawEntityLookAtDebug(animal);
   }
 
+  function _projectileColliders() {
+    const actors = [...(deps.hostileObjects || []), ...(deps.companionObjects || [])].filter(actor => actor.areaId === deps.getCurrentArea()); // Named animal attacks store their live projectiles on the owning actor.
+    return [
+      ...(window.RangedWeapons?.debugProjectileColliders?.() || []),
+      ...(window.HobunjiDrenkirraPellet?.debugProjectileColliders?.(actors, deps.TILE) || []),
+      ...(window.HarlyaoLichCombat?.debugProjectileColliders?.() || []),
+    ];
+  }
+
+  function _drawProjectileSphere(p) {
+    if (![p.x, p.y, p.z, p.radius].every(Number.isFinite) || p.radius < 0) return;
+    for (let plane = 0; plane < 3; plane++) for (let step = 0; step < 16; step++) {
+      const points = [step, step + 1].map(index => { // Three great circles show the real collision sphere, independent of sprite size.
+        const angle = index * Math.PI / 8; // Sixteen edges per circle keep mobile debug drawing bounded.
+        const a = Math.cos(angle) * p.radius, b = Math.sin(angle) * p.radius; // Offsets in the selected world-space plane.
+        return { x: p.x + (plane === 2 ? 0 : a), y: p.y + (plane === 0 ? 0 : (plane === 1 ? b : a)), z: p.z + (plane === 1 ? 0 : b) };
+      });
+      _drawDebugSegment3D(points[0], points[1], '#ffe45c');
+    }
+    if (p.previous) _drawDebugSegment3D(p.previous, p, '#ffe45c', true);
+  }
+
+  function _drawProjectileCover(cover) {
+    const topY = Number.isFinite(cover.topY) ? cover.topY : cover.bottomY + 6; // Infinite trunks/walls get a labeled six-tile display, never a fake finite gameplay top.
+    if (cover.shape === 'circle') {
+      for (let step = 0; step < 16; step++) {
+        const a = step * Math.PI / 8, b = (step + 1) * Math.PI / 8; // Cylinder edges match the semantic footprint rather than its bounding box.
+        const p = { x: cover.x + Math.cos(a) * cover.radius, z: cover.z + Math.sin(a) * cover.radius }; // First ring endpoint.
+        const q = { x: cover.x + Math.cos(b) * cover.radius, z: cover.z + Math.sin(b) * cover.radius }; // Next ring endpoint.
+        for (const y of [cover.bottomY, topY]) _drawDebugSegment3D({ ...p, y }, { ...q, y }, '#b58cff');
+        if (step % 4 === 0) _drawDebugSegment3D({ ...p, y: cover.bottomY }, { ...p, y: topY }, '#b58cff');
+      }
+    } else {
+      _drawDebugBox3({ box: { min: { x: cover.x - cover.halfX, y: cover.bottomY, z: cover.z - cover.halfZ }, max: { x: cover.x + cover.halfX, y: topY, z: cover.z + cover.halfZ } } }, '#b58cff');
+    }
+    if (!Number.isFinite(cover.topY)) _drawDebugPoint3D({ x: cover.x, y: topY, z: cover.z }, '#b58cff', 'cover ↑∞', 2);
+  }
+
+  function _drawProjectileColliders() {
+    for (const p of _projectileColliders()) _drawProjectileSphere(p);
+    const x = deps.player.x / deps.TILE, z = deps.player.y / deps.TILE; // Local debug window avoids drawing an entire wilderness worth of cover.
+    for (const cover of window.NearbyVolumeCollision?.debugVolumes?.(x, z, 8) || []) _drawProjectileCover(cover);
+    const grid = deps.getActiveGrid?.(); // The tile overlay reads the exact same cover top/base helpers as flight collision.
+    if (!grid || !deps.projectileTileCoverTop) return;
+    for (let row = Math.max(0, Math.floor(z) - 8); row <= Math.min(grid.length - 1, Math.floor(z) + 8); row++) {
+      for (let col = Math.max(0, Math.floor(x) - 8); col <= Math.min(grid[row].length - 1, Math.floor(x) + 8); col++) {
+        const tile = grid[row][col]; // Source terrain tile whose walking and projectile colliders may differ.
+        const topY = deps.projectileTileCoverTop(tile, col, row); // Null means decorative foliage, so it must not appear as cover.
+        if (topY == null) continue;
+        _drawProjectileCover({ x: col + 0.5, z: row + 0.5, bottomY: deps.projectileTileCoverBase(tile), topY, shape: 'aabb', halfX: 0.5, halfZ: 0.5 });
+      }
+    }
+  }
+
   function drawDebugOverlays() {
     if (deps.getShowHitboxes?.()) {
       const player = deps.player;
@@ -625,6 +679,7 @@
         if (c.health > 0 && c.areaId === deps.getCurrentArea()) _drawCreatureDebug(c, DEBUG_HITBOX_COLOR_COMPANION);
       }
       _drawMeleeColliders();
+      _drawProjectileColliders();
     }
     _drawInteractionRaycast();
     _drawPlayerMovementAlignmentRays();
@@ -660,8 +715,9 @@
     get interactionRay() { return _interactionRaySnapshot(); },
     get shoulderPetAttachment() { return _activeShoulderPetAttachmentSnapshot(); },
     snapshot: () => ({
-      latestChange: 'Shoulder body/root stays idle-free inside the 60° independent neck range, then catches up without restricting the camera; movement and attacks still converge immediately.',
+      latestChange: 'Show Hitboxes now draws projectile collision spheres in yellow and nearby projectile cover in purple; grass has no cover volume. Infinite walls/trunks are labeled ↑∞.',
       actors: debugSnapshot(),
+      projectileColliders: _projectileColliders(),
       meleeColliders: (window.Combat?.debugMeleeColliders?.() || []).map(collider => ({
         actor: collider.actor?.id || collider.actor?.name || (collider.actor === deps?.player ? 'player' : 'actor'),
         pitchDeg: THREE.MathUtils.radToDeg(collider.pitch),

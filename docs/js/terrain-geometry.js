@@ -917,7 +917,7 @@
       g.computeVertexNormals();
       return g;
     };
-    return { stoneGeo: makeGeo(stoneIdx), grassGeo: makeGeo(grassIdx) };
+    return { stoneGeo: makeGeo(stoneIdx), grassGeo: makeGeo(grassIdx), heightTiles: Math.max(...Y) };
   }
 
   function buildTerrainTileGeo(col, row, type, srcGrid = deps.getGrid(), options = {}) {

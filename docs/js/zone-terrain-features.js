@@ -321,12 +321,15 @@
 
       for (const [c, r] of renderCells) {
         const tile = zGrid[r][c]; // Source tile supplies the base elevation for this shell patch.
+        let coverTopY = -Infinity; // Maximum rendered shell height over this tile, cached for projectile occupancy.
         for (let j = 0; j < BOULDER_SUBDIVISIONS; j++) for (let i = 0; i < BOULDER_SUBDIVISIONS; i++) {
           const x0 = c + i / BOULDER_SUBDIVISIONS, x1 = c + (i + 1) / BOULDER_SUBDIVISIONS; // Horizontal limits of one exterior quad.
           const z0 = r + j / BOULDER_SUBDIVISIONS, z1 = r + (j + 1) / BOULDER_SUBDIVISIONS; // Vertical limits of one exterior quad.
           const a = vertexAt(x0, z0, tile), b = vertexAt(x1, z0, tile), d = vertexAt(x0, z1, tile), e = vertexAt(x1, z1, tile); // Welded quad corners.
+          coverTopY = Math.max(coverTopY, pos[a * 3 + 1], pos[b * 3 + 1], pos[d * 3 + 1], pos[e * 3 + 1]);
           idx.push(a, d, e, a, e, b);
         }
+        tile.projectileCoverHeightTiles = coverTopY - (deps.NORMAL_TOP + (tile.elevTier || 0) * deps.PLATEAU_UNIT);
         topTileCount++;
 
         for (const edge of boundaryEdges) if (edge.owner === c + ',' + r) perimeterEdgeCount++; // Count only true outer edges; the tapered top already meets the ground there.

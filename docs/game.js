@@ -10350,7 +10350,8 @@
             // (ZoneTerrainFeatures.buildUndiggableBoulderMeshes, called per chunk
             // below) instead of a per-tile mound each.
             if (tile.rockKind === 'undiggableBoulder') continue;
-            const { stoneGeo, grassGeo } = window.TerrainGeometry.buildRockTileGeo(c, r);
+            const { stoneGeo, grassGeo, heightTiles } = window.TerrainGeometry.buildRockTileGeo(c, r);
+            tile.projectileCoverHeightTiles = heightTiles; // Projectile tile checks reuse the generated mound height without inspecting meshes per frame.
             if (tile.rockKind === 'diggableRockOre') {
               // Keep resource rocks out of the merged terrain buckets so a
               // completed pick swing can remove exactly one mound without a
@@ -17777,10 +17778,11 @@
         // than the mover cannot slip between two corner samples. worldY is
         // only passed by projectile sweeps, so shots can clear low props.
         if (window.AreaFootprintBlockers?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE, worldY)) return false;
-        return tileSpeedAt(wx - radius, wy - radius) !== null
-            && tileSpeedAt(wx + radius, wy - radius) !== null
-            && tileSpeedAt(wx - radius, wy + radius) !== null
-            && tileSpeedAt(wx + radius, wy + radius) !== null;
+        const tileWorldY = Number.isFinite(worldY) ? worldY - radius / TILE : worldY; // Include the projectile underside when testing finite tile cover.
+        return tileSpeedAt(wx - radius, wy - radius, tileWorldY) !== null
+            && tileSpeedAt(wx + radius, wy - radius, tileWorldY) !== null
+            && tileSpeedAt(wx - radius, wy + radius, tileWorldY) !== null
+            && tileSpeedAt(wx + radius, wy + radius, tileWorldY) !== null;
       }
 
       function canPlayerOccupy(wx, wy) {
@@ -19537,7 +19539,20 @@
       // Layered rain audio (rainLayerWeights/updateRainAudio) now lives in
       // js/music-system.js (window.Music).
 
-      function tileSpeedAt(wx, wy) {
+      function projectileTileCoverBase(tile) {
+        return Number.isFinite(Number(tile.surfaceY)) ? Number(tile.surfaceY) : NORMAL_TOP + (tile.elevTier || 0) * PLATEAU_UNIT;
+      }
+
+      function projectileTileCoverTop(tile, col, row) {
+        if (tile?.type === TileType.SHRUB) return isChoppableTreeTile(col, row) ? Infinity : null;
+        if (tile?.type !== TileType.ROCK) return null;
+        if (_isCavernBuildingArea(currentArea) && tile.rockKind !== 'diggableRockOre') return Infinity;
+        const baseY = projectileTileCoverBase(tile); // Same base used by rock renderers and debug volumes.
+        const coverHeight = Number(tile.projectileCoverHeightTiles) || (tile.rockKind === 'undiggableBoulder' ? 1.46 : ROCK_H); // Cached generated mound/shell height, with finite defaults before chunks load.
+        return baseY + coverHeight;
+      }
+
+      function tileSpeedAt(wx, wy, worldY = null) {
         const aC = window.GridTileAccessors.getActiveCols(), aR = window.GridTileAccessors.getActiveRows();
         if (wx < 0 || wy < 0 || wx >= aC * TILE || wy >= aR * TILE) return null;
         const col  = Math.floor(wx / TILE);
@@ -19547,8 +19562,15 @@
         // Runtime tent collision is metadata, not terrain. Keeping it out of
         // tile.type prevents the zone ground renderer from generating a rock
         // mound on every occupied footprint tile.
-        if (tile._banditTentCollisionId) return null;
-        if (isSolid(type)) return null;
+        const projectile = Number.isFinite(worldY); // Projectile sweeps use finite cover heights; walkers retain their full tile blockers.
+        if (!projectile) {
+          if (tile._banditTentCollisionId) return null;
+        }
+        if (isSolid(type)) {
+          if (!projectile) return null;
+          const coverTopY = projectileTileCoverTop(tile, col, row); // One authority shared with the visible projectile-cover overlay.
+          if (coverTopY != null && worldY <= coverTopY + 0.01) return null;
+        }
         // Auto-reserved plateau cliff-face ring — impassable except where a
         // ramp tile explicitly cuts through it (which never sets `incline`).
         if (tile.incline) return null;
@@ -19565,7 +19587,7 @@
         if (currentArea === 'farm' && (window.GridTileAccessors.isHouseFootprint(col, row) || window.GridTileAccessors.isFarmBuildingCollisionTile(col, row))) return null;
         if (currentArea === 'town' && window.GridTileAccessors.isTownBuildingCollisionTile(col, row)) return null;
         if (_isZoneArea(currentArea) && window.GridTileAccessors.isTownBuildingCollisionTile(col, row, currentArea)) return null;
-        if (furnitureBlocksMovementAt(currentArea, wx / TILE, wy / TILE)) return null;
+        if (!projectile && furnitureBlocksMovementAt(currentArea, wx / TILE, wy / TILE)) return null;
         // Farm terrain no longer slows movement — keeps farm traversal feeling
         // as snappy as town, matching the player's uniform GRASS speed there.
         if (currentArea === 'farm') return 1.00;
@@ -28159,7 +28181,9 @@
           const grid = window.GridTileAccessors.getActiveGrid();
           const col = window.FormatUtils.clamp(Math.floor(x / TILE), 0, window.GridTileAccessors.getActiveCols() - 1);
           const row = window.FormatUtils.clamp(Math.floor(y / TILE), 0, window.GridTileAccessors.getActiveRows() - 1);
-          return grid[row]?.[col] ? tileSurfaceYInArea(grid[row][col], currentArea) : 0;
+          const tile = grid[row]?.[col]; // Projectile ground is the floor beneath a rock; its raised cover is checked by canOccupyAt.
+          if (tile?.type === TileType.ROCK && !Number.isFinite(Number(tile.surfaceY))) return NORMAL_TOP + (tile.elevTier || 0) * PLATEAU_UNIT;
+          return tile ? tileSurfaceYInArea(tile, currentArea) : 0;
         },
         canOccupyAt,
         damageCreature,
@@ -29688,6 +29712,9 @@
       });
 
       window.DebugHitboxes?.init({
+        getActiveGrid: window.GridTileAccessors.getActiveGrid,
+        projectileTileCoverTop,
+        projectileTileCoverBase,
         getActiveTileAt: window.GridTileAccessors.getActiveTileAt,
         tileSurfaceY,
         surfaceYAtWorld: activeSurfaceYAtWorld,

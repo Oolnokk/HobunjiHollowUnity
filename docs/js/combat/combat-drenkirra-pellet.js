@@ -398,7 +398,8 @@
       projectile.prevWorldY = projectile.worldY;
       const dx = projectile.vx * dt, dy = projectile.vy * dt; // Used as this frame's crossbow-style straight-line flight step.
       const nextX = projectile.x + dx, nextY = projectile.y + dy;
-      if (deps.canOccupyAt && !deps.canOccupyAt(nextX, nextY, tuning.PROJECTILE_RADIUS_PX)) {
+      const nextWorldY = projectile.worldY + projectile.vyWorld * dt; // Shared tile cover must see the pellet height at the proposed endpoint.
+      if (deps.canOccupyAt && !deps.canOccupyAt(nextX, nextY, tuning.PROJECTILE_RADIUS_PX, nextWorldY)) {
         if (state.lastResult === 'IN FLIGHT') state.lastResult = 'BLOCKED';
         playPelletImpactSfx(projectile, creature, deps, state, false, nextX, nextY); // Cover collision: wet splat only, from the obstruction point.
         disposeProjectile(projectile);
@@ -560,7 +561,16 @@
     return originalStart(creature, resolvedId, context);
   };
 
-  window.HobunjiDrenkirraPellet = { applyConfig, tuning, spritePath: PELLET_SPRITE, sfx: PELLET_SFX, isDrenkirra }; // Used by debug/editor integrations, loader already-loaded checks, and the wildlife AI's ranged-vs-melee trigger range (see updateHostiles).
+  function debugProjectileColliders(actors = [], tileSize = 32) {
+    const colliders = []; // Only allocated on demand by the hitbox overlay/mobile debug snapshot.
+    for (const actor of actors) for (const p of actor._animalAttack?.state?.projectiles || []) {
+      if (p.dead || actor._animalAttack.id !== 'causticPellet') continue;
+      colliders.push({ x: p.x / tileSize, y: p.worldY, z: p.y / tileSize, radius: tuning.PROJECTILE_RADIUS_PX / tileSize });
+    }
+    return colliders;
+  }
+
+  window.HobunjiDrenkirraPellet = { debugProjectileColliders, applyConfig, tuning, spritePath: PELLET_SPRITE, sfx: PELLET_SFX, isDrenkirra }; // Used by debug/editor integrations, loader already-loaded checks, and the wildlife AI's ranged-vs-melee trigger range (see updateHostiles).
 
   const initialConfig = window.__attackValuesConfig?.creatureAttacks?.causticPellet; // Used when authored combat config finished loading before this module executed.
   if (initialConfig) applyConfig(initialConfig);

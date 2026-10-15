@@ -39,6 +39,11 @@ assert.equal(shell.topTileCount, 4, 'every footprint tile should contribute exte
 assert.equal(shell.perimeterEdgeCount, 12, 'the L-shaped footprint plus isolated tile should emit outer edges only');
 assert.equal(shell.idx.length / 3, 128, 'only exterior top quads should remain; there are no buried bases or between-tile walls');
 assert(shell.pos.every(Number.isFinite), 'every generated shell position should be finite');
+for (const [row, cells] of grid.entries()) for (const [col, tile] of cells.entries()) {
+  if (tile.type !== 'rock') continue;
+  const tops = shell.pos.filter((_, index) => index % 3 === 1 && shell.pos[index - 1] >= col && shell.pos[index - 1] <= col + 1 && shell.pos[index + 1] >= row && shell.pos[index + 1] <= row + 1); // Rendered vertex heights over this tile must match its cached projectile top.
+  assert(Math.abs(tile.projectileCoverHeightTiles + (tile.elevTier || 0) * 0.5 - Math.max(...tops)) < 1e-6, 'projectile cover height matches the generated shell');
+}
 assert(Math.max(...shell.pos.filter((_, index) => index % 3 === 1)) > 0.5, 'the combined surface should rise into a visible summit');
 assert.deepEqual(repeated, shell, 'cached reconstruction should remain deterministic');
 assert.equal(afterFirst.indexBuilds - before.indexBuilds, 1, 'the first request should index its grid exactly once');

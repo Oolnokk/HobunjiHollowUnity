@@ -1872,6 +1872,7 @@
 
   window.HarlyaoLichCombat = {
     CLASS_ID, ARENA_ID, TYPE_ORDER, TYPE_DEFS,
+    debugProjectileColliders: () => [...projectiles].map(p => ({ x: p.x / deps.TILE, y: p.worldY, z: p.y / deps.TILE, radius: p.payload.radiusWorld })),
     allowArea: areaId => { if (areaId) allowedAreas.add(String(areaId)); }, // Opt another area in (e.g. the Random Test Ruin's boss sanctum).
     disallowArea: areaId => { if (areaId && areaId !== ARENA_ID) allowedAreas.delete(String(areaId)); },
     installWrappers, makeEntity, rosterFor, rollDye,

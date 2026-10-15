@@ -162,6 +162,7 @@
   function semanticCoverFor(node) {
     if (!node || node.visible === false) return null;
     const data = node.userData || {};
+    if (data.isBillboard || data.isRichFoliageBillboard || data.isWildernessGrassChunkGroup) return null;
     if (data.actor || data.creature || data.isPlayerAvatar || Number.isFinite(data.portraitModelHeight)) return null;
     if (data.projectileCoverUsesTile) {
       return {
@@ -460,6 +461,14 @@
     };
   }
 
+  function debugVolumes(x, z, radius = 8) {
+    if (!deps || !options.enabled || !options.projectiles) return [];
+    const scene = deps.getActiveScene?.(); // Debugging can inspect cover outside combat without enabling gameplay collision.
+    if (scene !== cachedScene) rebuild();
+    return querySegmentCandidates({ x: x - radius, z: z - radius }, { x: x + radius, z: z + radius }, 0)
+      .filter(candidate => candidate.node?.visible !== false && candidate.node?.parent);
+  }
+
   function debugSnapshot() {
     return {
       mode: deps?.isCombatActive?.() ? 'combat-height-cover' : 'inactive',
@@ -489,6 +498,7 @@
     invalidate,
     segmentHit,
     debugSnapshot,
+    debugVolumes,
     constants: { SPATIAL_CELL_TILES, TREE_HALF_TILE, HEAD_CACHE_MS },
   };
 })();

@@ -50,7 +50,6 @@
   const BANDIT_LOS_CACHE_MS = 80; // LOS only needs tactical responsiveness, not a full scene query every render frame for every loaded bandit.
   const BANDIT_LOS_STRAFE_TILES = 1.25; // Side-step target used after loading when an ally or obstacle blocks the shot.
   const BANDIT_LOS_TERRAIN_STEP_TILES = 0.75; // Coarse tile-only LOS sampling; precise render geometry is intentionally never consulted.
-  const BANDIT_LOS_TERRAIN_OBSTACLE_CLEARANCE_WORLD = 1.7; // A shot only trips a solid ground tile while it's still near that tile's own surface — an upward shot toward a tree sails clean over low terrain it would otherwise be flattened against.
   const WOULD_HIT_CACHE_MS = 50; // HUD prediction at 20 Hz is visually immediate while removing redundant per-frame collision work.
   // A shot doesn't just vanish once it passes a weapon's tuned rangeTiles —
   // it keeps flying, shedding damage/knockback as it goes, until it
@@ -1489,13 +1488,8 @@
       for (let travel = stepPx; travel < distancePx - stepPx * 0.35; travel += stepPx) {
         const x = c.x + ux * travel;
         const y = c.y + uy * travel;
-        if (deps.canOccupyAt(x, y, def.projectileRadiusPx)) continue;
-        // A blocked ground tile only stops the shot while the ray is still
-        // near that tile's own surface — an elevated shot climbing toward a
-        // tree sails clean over low terrain that would flatten a shot fired
-        // at ground level.
-        const rayWorldY = segment.start.y + dWorldY * (travel / distancePx);
-        if (rayWorldY <= deps.worldSurfaceY(x, y) + BANDIT_LOS_TERRAIN_OBSTACLE_CLEARANCE_WORLD) {
+        const rayWorldY = segment.start.y + dWorldY * (travel / distancePx); // AI visibility uses the same finite-height cover check as projectile flight.
+        if (!deps.canOccupyAt(x, y, def.projectileRadiusPx, rayWorldY)) {
           return { clear: false, kind: 'tile', id: 'solid-tile' };
         }
       }
@@ -1716,6 +1710,10 @@
     isLoaded, setLoaded, update, updateBanditAI, updateBanditVisual,
     cancelBanditAction, disposeOwner, playerLockRangePx, playerIdlePose: itemKey => idlePose(itemKey),
     isPlayerAttacking: () => playerAction?.kind === 'fire', // Lets shared body-facing logic distinguish firing from the visually similar reload action.
+    debugProjectileColliders: () => projectiles.filter(p => !p.dead && !p.embedded && p.areaId === deps?.getCurrentArea()).map(p => ({
+      x: p.x / deps.TILE, y: p.worldY, z: p.y / deps.TILE, radius: p.def.projectileRadiusPx / deps.TILE,
+      previous: { x: p.prevX / deps.TILE, y: p.prevWorldY, z: p.prevY / deps.TILE },
+    })),
     wouldHitHostile, playerAimSolution, actorHitbox,
     focusCandidates, focusedHostile, meleeReachCheck, canMeleeReach,
     ammoChoices, activeAmmoId, setActiveAmmo, cycleAmmo, ammoActionLabel,
@@ -1763,7 +1761,7 @@
     firePlayer: (itemKey) => startPlayerAction(itemKey),
     idlePose: itemKey => ({ ...idlePose(itemKey) }),
     snapshot: () => ({
-      latestChange: 'Ranged flight is now per-weapon configurable. Thrown weapons default to faster six-tile-straight ballistic arcs and can embed in terrain/cover for ten seconds with a three-copy fading cap.',
+      latestChange: 'Decorative grass billboards no longer provide cover. Projectile tile checks now use shot height and generated rock heights, allowing shots over rocks while retaining low impacts, tree trunks, and cave walls.',
       lastEvent, lastAudioEvent, projectileDeadzoneDeg: PROJECTILE_PERP_DEAD_DEG, defaultProjectileSpeedMultiplier: DEFAULT_PROJECTILE_SPEED_MULTIPLIER,
       equippedRanged: deps?.getEquippedRangedKey?.() || null,
       activeAmmo: activeAmmoId(), specialAmmo: specialAmmoCount(), specialAmmoMax: SPECIAL_AMMO_MAX,
