@@ -77,6 +77,24 @@
     document.head.appendChild(script);
   })();
 
+  // WallBuilder is already loaded before HousePieceGen/FormatUtils in the main
+  // game page. Install the log-wall bridge synchronously here so builders made
+  // during game boot can consume either deterministic generated foliage logs
+  // or the exact reusable GLB exported by the Wall Builder authoring tool.
+  (function loadLogWallExtension() {
+    if (typeof document === 'undefined') return;
+    const src = 'js/log-wall-extension.js?v=20261014logwall1'; // Cache-busts the generated/baked log-cabin wall parity runtime.
+    if (window.LogWallExtension || document.querySelector('script[data-log-wall-extension]')) return;
+    if (document.readyState === 'loading') {
+      document.write(`<script src="${src}" data-log-wall-extension="1"><\/script>`);
+      return;
+    }
+    const script = document.createElement('script'); // Used only when FormatUtils itself is loaded after initial HTML parsing.
+    script.src = src;
+    script.dataset.logWallExtension = '1';
+    document.head.appendChild(script);
+  })();
+
   // Small formatting/math helpers extracted out of game.js following the
   // same window.<Namespace> + init(deps) pattern already used by
   // js/dye-system.js and js/bounty-board.js. equipmentSlots/TOOL_ITEM_DEFS/
