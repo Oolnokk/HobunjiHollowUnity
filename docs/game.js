@@ -6520,7 +6520,7 @@
                 const isRangedDrenkirra = window.HobunjiDrenkirraPellet?.isDrenkirra?.(c);
                 const triggerRangePx = isRangedDrenkirra
                   ? TILE * (window.HobunjiDrenkirraPellet.tuning.PROJECTILE_RANGE_TILES * 0.92)
-                  : creatureAimColliderReachPx(c);
+                  : (window.HobunjiGrehlrStink?.attackTriggerRangePx(c, creatureAimColliderReachPx(c), TILE) ?? creatureAimColliderReachPx(c));
                 if (dist > triggerRangePx || c.attackCooldownT > 0 || c.stamina < def.attackStaminaCost || isCreatureSwimming(c)) return false;
                 const alignment = enemyAttackAlignment(c, targetPlayer, entityDt); // Delays the named attack until the shared cone turn is complete.
                 if (!alignment.eligible || !alignment.aligned) {

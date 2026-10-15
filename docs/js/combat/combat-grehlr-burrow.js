@@ -293,9 +293,18 @@
   }
 
   function setDivePose(creature, amount) {
-    const pitch = -(tuning.DIVE_TILT_DEG * Math.PI / 180) * clamp01(amount); // Used as the temporary nose-down sprite-plane pitch.
+    const pitch = (tuning.DIVE_TILT_DEG * Math.PI / 180) * clamp01(amount); // Used as the temporary nose-down sprite-plane pitch.
     if (creature.avatarRef?.frontPlane) creature.avatarRef.frontPlane.rotation.x = pitch;
     if (creature.avatarRef?.backPlane) creature.avatarRef.backPlane.rotation.x = pitch;
+  }
+
+  function setUnderground(creature, state, hidden) {
+    // Hide presentation roots, leaving scene-owned dirt particles visible.
+    for (const entry of state.presentation) {
+      if (entry.object) entry.object.visible = hidden ? false : entry.visible;
+    }
+    state.hidden = hidden;
+    if (!hidden) creature._wildlifeVisualLodJustWoke = true; // Snaps the rendered body to the locked emergence point before revealing it.
   }
 
   function resetPose(creature) {
@@ -431,7 +440,8 @@
     const inside = status.valid && hitRadiusPx > 0 && distancePx <= hitRadiusPx; // Used as the live mobile-visible hit eligibility indicator.
     const distanceText = Number.isFinite(distancePx) ? `${Math.round(distancePx)}/${Math.round(hitRadiusPx)}px` : `--/${Math.round(hitRadiusPx)}px`; // Used as compact circle-distance diagnostics.
     const result = state.exhaustionApplied ? ` | ${state.hit ? 'HIT' : 'MISS'}${state.damageAttempted ? ' DAMAGE SENT' : ''}` : ''; // Used to preserve the last resolution result during emergence.
-    element.textContent = `Grehlr Burrow: ${state.stage}\nremaining ${remaining.toFixed(2)}s | ring ${Math.round(visualRadiusPx)}px | particles ${state.dirtParticles.length}\ntarget ${state.targetKind || '?'} ${status.valid ? 'valid' : status.reason} | ${inside ? 'INSIDE' : 'OUTSIDE'} ${distanceText}\nfooting ${Math.round(creature.footing ?? 0)}/${Math.round(creature.maxFooting ?? 0)} | stamina ${Math.round(creature.stamina ?? 0)}/${Math.round(creature.maxStamina ?? 0)}${result}`;
+    const text = `Grehlr Burrow: ${state.stage}\nremaining ${remaining.toFixed(2)}s | ring ${Math.round(visualRadiusPx)}px | particles ${state.dirtParticles.length} | hidden ${state.hidden ? 'YES' : 'no'}\ntarget ${state.targetKind || '?'} ${status.valid ? 'valid' : status.reason} | ${inside ? 'INSIDE' : 'OUTSIDE'} ${distanceText}\nfooting ${Math.round(creature.footing ?? 0)}/${Math.round(creature.maxFooting ?? 0)} | stamina ${Math.round(creature.stamina ?? 0)}/${Math.round(creature.maxStamina ?? 0)}${result}`;
+    if (element.textContent !== text) element.textContent = text;
   }
 
   function start(creature, state, context, deps) {
@@ -439,6 +449,9 @@
     const modelWidth = creature.visualModelWidth || creature.def.modelWidth || 2; // Used to enlarge the Den-Mother's danger circle without a separate attack.
     const radiusTiles = Math.max(tuning.MIN_RADIUS_TILES, modelWidth * tuning.MODEL_RADIUS_MULTIPLIER); // Used as the fixed telegraph/bite radius in tile units.
 
+    state.presentation = [creature.avatarRef?.group, creature.groundShadow, creature._ringHud]
+      .map(object => ({ object, visible: object?.visible !== false })); // Restores pre-attack visibility on emergence and interruption.
+    state.hidden = false;
     state.stage = 'dive';
     state.t = 0;
     state.target = context?.target || null;
@@ -482,6 +495,7 @@
       }
 
       if (progress >= 1) {
+        setUnderground(creature, state, true);
         state.stage = 'burrow';
         state.t = 0;
         creature.scaleY = tuning.HIDDEN_SCALE_Y;
@@ -517,6 +531,7 @@
       if (state.telegraphVisualRadiusPx <= 0) {
         state.telegraphVisualRadiusPx = 0;
         resolveBite(creature, state, deps);
+        setUnderground(creature, state, false);
         state.stage = 'emerge';
         state.t = 0;
       }
@@ -532,12 +547,14 @@
     if (progress < 1) return true;
 
     clearDirt(state);
+    if (state.hidden) setUnderground(creature, state, false);
     resetPose(creature);
     return false;
   }
 
   function cancel(creature, state) {
     clearDirt(state);
+    if (state.hidden) setUnderground(creature, state, false);
     resetPose(creature);
   }
 

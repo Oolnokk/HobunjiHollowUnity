@@ -313,6 +313,13 @@
     if (Number.isFinite(state?.sprayAngle)) creature.facing = state.sprayAngle;
   }
 
+  function attackTriggerRangePx(creature, fallbackRangePx, tileSize) {
+    if (!isGrehlr(creature) || !tileSize) return fallbackRangePx;
+    if (creature.isCompanion && !isMediumCompanionGrehlr(creature)) return fallbackRangePx;
+    // Decide between spray and burrow where either move can actually be selected.
+    return Math.min(fallbackRangePx, tuning.MAX_SELECTION_RANGE_TILES * tileSize);
+  }
+
   function shouldUseStink(creature, attackId, context, deps) {
     if (!isGrehlr(creature) || (attackId !== 'pounce' && attackId !== 'grehlrBurrow')) return false;
     if (creature.isCompanion && !isMediumCompanionGrehlr(creature)) return false; // Medium animal companions share the wild Grehlr stink selector; other companion sizes keep their normal behavior.
@@ -430,6 +437,7 @@
     tuning,
     STINK_OIL_COLOR,
     isBurrowProtected,
+    attackTriggerRangePx,
     isMediumCompanionGrehlr,
     staminaAfflictionId: 'windedStamina',
   }; // Used by mobile/manual diagnostics and the compatibility loader's already-loaded check.
