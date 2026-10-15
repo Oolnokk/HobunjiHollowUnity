@@ -34,9 +34,12 @@ assert.match(foliageSource, /targetX = -length \* 0\.5 \+ length \* t01/, 'folia
 assert.match(stackedSource, /foliage\.buildLogMesh\(/, 'stacked walls ask FoliageGenerator for each source log');
 assert.match(stackedSource, /mesh\.scale\.set\(1, 1, 1\)/, 'stacked wall placement never length-scales generated source geometry');
 assert.doesNotMatch(stackedSource, /GLTFLoader|loadGlb|glbName/, 'stacked architecture has no baked-GLB dependency');
+assert.match(stackedSource, /visibleSegmentsAroundOpenings/, 'stacked logs split real source geometry around wall openings');
+assert.match(stackedSource, /leftOverhang = touchesLeftWallEnd \? meta\.overhang : 0/, 'outside overhang is not allowed to extend a log into a window or door opening');
 assert.match(logExtensionSource, /FoliageGenerator[\s\S]{0,1000}buildLogMesh/, 'legacy live log-wall prototype delegates to FoliageGenerator when available');
 
 assert.match(houseSource, /generatedLogStyle[\s\S]{0,1800}StackedLogWalls\.buildGroup/, 'generated Highland structure walls use stacked foliage logs');
+assert.match(houseSource, /excludeQuads: openingQuads/, 'generated exterior log walls inherit the same window and door cuts as brick walls');
 assert.match(houseSource, /authoredWallStyle[\s\S]{0,3000}generatedLogMode/, 'authored house pieces persist/select generated log construction');
 assert.match(interiorSource, /generatedLogStyle[\s\S]{0,1600}StackedLogWalls\.buildGroup/, 'interior base walls use the same generated log renderer');
 assert.match(ceilingsSource, /function gableLogPanels[\s\S]{0,4000}StackedLogWalls\.buildGroup/, 'interior gables feed explicit triangle spans into the same generated log renderer');

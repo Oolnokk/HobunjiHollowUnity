@@ -463,7 +463,8 @@
     }
     if (logGables) {
       try {
-        const logs = root.StackedLogWalls.buildGroup(THREE, gableLogPanels(data.gables, data.wallHeight), options.logWall || {}); // Exact-length source logs shorten automatically toward every gable apex.
+        const logOptions = Object.assign({}, options.logWall || {}, { excludeQuads: options.wallBuildOptions?.excludeQuads || [] }); // Reuse the same authored window/door cut quads that brick gables receive.
+        const logs = root.StackedLogWalls.buildGroup(THREE, gableLogPanels(data.gables, data.wallHeight), logOptions); // Exact-length source logs shorten automatically toward every gable apex and physically stop at openings.
         logs.name = 'InteriorGableLogs';
         logs.userData.interiorGableLogs = true;
         group.add(logs);
