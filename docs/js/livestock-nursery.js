@@ -725,6 +725,11 @@
     };
   }
 
+  function toggleFarmInventory() {
+    farmBabyInventoryCollapsed = !farmBabyInventoryCollapsed;
+    queuePanelDecoration();
+  }
+
   function renderBabyCompactList(container) {
     const babyList = babies();
     if (selectedBabyId && !babyList.some(entry => entry.id === selectedBabyId)) selectedBabyId = null;
@@ -809,8 +814,7 @@
     const inventoryToggle = section.querySelector('.livestock-nursery-toggle'); // Controls every Farm Nursery baby-management element as one collapsed inventory.
     inventoryToggle?.addEventListener('click', event => {
       event.stopPropagation();
-      farmBabyInventoryCollapsed = !farmBabyInventoryCollapsed;
-      queuePanelDecoration();
+      toggleFarmInventory();
     });
     inventoryToggle?.setAttribute('aria-expanded', farmBabyInventoryCollapsed ? 'false' : 'true');
     for (const detail of [...section.children].slice(1)) {
@@ -818,6 +822,18 @@
       detail.hidden = true;
       detail.style.setProperty('display', 'none', 'important'); // Overrides existing compact-list inline flex styles while collapsed.
     }
+    const gridToggle = document.createElement('button'); // Light-DOM disclosure stays discoverable by the shared controller navigation after grid enhancement.
+    gridToggle.type = 'button';
+    gridToggle.className = 'nursery-grid-disclosure';
+    gridToggle.slot = 'disclosure';
+    gridToggle.textContent = `${farmBabyInventoryCollapsed ? '▸' : '▾'} 🍼 Nursery · ${babyList.length} babies`;
+    gridToggle.hidden = true;
+    gridToggle.style.cssText = 'border:0;background:transparent;color:inherit;padding:0;text-align:left;font:inherit;font-weight:700;cursor:pointer;';
+    gridToggle.addEventListener('click', event => {
+      event.stopPropagation();
+      toggleFarmInventory();
+    });
+    section.appendChild(gridToggle);
     container.prepend(section);
   }
 
@@ -921,6 +937,7 @@
     panelObserver = new MutationObserver(records => {
       const relevant = records.some(record => {
         if (record.target?.closest?.('[data-nursery-incubation]')) return false;
+        if (record.target?.closest?.('.nursery-grid-disclosure')) return false; // Header label updates belong to the grid and must not rebuild their own section.
         const changed = [...record.addedNodes, ...record.removedNodes]; // The grid owns its inline incubation controls; their updates must not recreate the Nursery.
         return changed.some(node => !node.matches?.('[data-nursery-incubation]'));
       });
@@ -1188,6 +1205,7 @@
     adultCount,
     adultCapacity,
     rerollSwarm,
+    toggleFarmInventory,
     debugSnapshot,
     constants: {
       NURSERY_ID, NURSERY_MAP_ID, NURSERY_VISIBLE_LIMIT,

@@ -49,7 +49,7 @@
   let selectedBabyId = null; // Used by mouse/controller focus so the right-side detail rail follows the active grid square without rebuilding the Farm panel.
   let decorateQueued = false; // Coalesces render/observer requests into one Nursery enhancement microtask.
   let installed = false; // Makes repeated parser/runtime bridge installs idempotent.
-  let mostRecentChange = 'Nursery grid module loaded.'; // Included in mobile-visible diagnostics after every state-changing action.
+  let mostRecentChange = 'Restored the Nursery inventory disclosure in the grid header.'; // Included in mobile-visible diagnostics after every state-changing action.
 
   const roundTo = (value, step) => Math.max(step, Math.round(Number(value || 0) / step) * step);
   const currentDeps = () => panelDeps || animalDeps;
@@ -310,6 +310,11 @@
         .grid-pane { display:flex;flex-direction:column; }
         .header { display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:0 0 5px; }
         .title { font-weight:700;font-size:12px; }
+        :host([data-nursery-collapsed="1"]) .layout { grid-template-columns:minmax(0,1fr); }
+        :host([data-nursery-collapsed="1"]) .hint,
+        :host([data-nursery-collapsed="1"]) .detail-pane,
+        :host([data-nursery-collapsed="1"]) slot[name="grid"],
+        :host([data-nursery-collapsed="1"]) slot[name="help"] { display:none; }
         .capacity { font-size:10px;color:var(--muted,#999);text-align:right; }
         .capacity.warn { color:#ff9b80;font-weight:700; }
         .hint { font-size:9px;line-height:1.25;color:var(--muted,#999);margin:0 0 6px; }
@@ -333,7 +338,7 @@
       </style>
       <div class="layout">
         <div class="grid-pane">
-          <div class="header"><div class="title" id="title"></div><div class="capacity" id="capacity"></div></div>
+          <div class="header"><slot name="disclosure"></slot><div class="capacity" id="capacity"></div></div>
           <div class="hint">Focus a portrait to inspect it. The grid uses Inventory-style square slots and pages only when needed.</div>
           <slot name="grid"></slot>
         </div>
@@ -583,9 +588,16 @@
     if (!shadow) return;
     const adults = Number(window.LivestockNursery?.adultCount?.()) || 0;
     const capacity = Number(window.LivestockNursery?.adultCapacity?.()) || 0;
-    const title = shadow.getElementById('title');
+    const title = section.querySelector('.nursery-grid-disclosure'); // Slotted light-DOM button supports touch, keyboard, and controller discovery.
     const capacityEl = shadow.getElementById('capacity');
-    if (title) title.textContent = `🍼 Nursery · ${records.length} babies`;
+    const collapsed = section.querySelector('.livestock-nursery-toggle')?.getAttribute('aria-expanded') === 'false'; // Mirrors the authoritative Farm inventory state into the visible shadow header.
+    section.dataset.nurseryCollapsed = collapsed ? '1' : '0';
+    if (title) {
+      title.hidden = false;
+      const label = `${collapsed ? '▸' : '▾'} 🍼 Nursery · ${records.length} babies`; // Deduplicates light-DOM writes while synchronizing the visible disclosure.
+      if (title.textContent !== label) title.textContent = label;
+      title.setAttribute('aria-expanded', String(!collapsed));
+    }
     if (capacityEl) {
       capacityEl.textContent = `Adults ${adults}/${capacity} barn spaces`;
       capacityEl.classList.toggle('warn', adults > capacity);
