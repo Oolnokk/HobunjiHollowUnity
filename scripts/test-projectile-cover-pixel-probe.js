@@ -5,7 +5,7 @@ const vm = require('node:vm');
 
 const adapterSource = fs.readFileSync('docs/js/projectile-cover-pixel-probe.js', 'utf8'); // Production adapter under test.
 const bootstrapSource = fs.readFileSync('docs/js/dev-random-ruin-bootstrap.js', 'utf8'); // Confirms normal ruin runtime loads the adapter before game.js init.
-assert(bootstrapSource.includes('projectile-cover-pixel-probe.js?v=20261015semanticprobe1'), 'runtime bootstrap loads semantic cover Pixel Probe adapter');
+assert(/projectile-cover-pixel-probe\.js\?v=[A-Za-z0-9_-]+/.test(bootstrapSource), 'runtime bootstrap loads versioned semantic cover Pixel Probe adapter');
 
 const platform = { key:'floating-platform', kind:'furniture', source:'authored-parts', shape:'aabb', x:5, z:0, halfX:2, halfZ:2, bottomY:2, topY:3 }; // Deliberately has no mesh/material; models the reported floating ruin platform volume.
 const highCircle = { key:'circle-cover', kind:'furniture', source:'explicit-metadata', shape:'circle', x:9, z:0, radius:1, bottomY:2, topY:4 }; // Second semantic collider verifies ordered multi-hit reporting.
