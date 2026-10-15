@@ -624,7 +624,7 @@
     return (camp?.props || []).filter(prop => prop.type === 'tent').map(prop => ({ col: prop.x + (prop.w || 1) * 0.5, row: prop.y + (prop.h || 1) * 0.5 }));
   }
 
-  function getNearbyGiftWalker(x, z, radius = 2) {
+  function getNearbyGiftWalker(x, z, radius = 2, considerWalker = null) {
     if (window.NpcRapport?.canGiftToday?.('porakaneki_chief') === false) return null;
     let closest = null; // Reuses cached hunter proxies so the action bar does not refresh every frame.
     let distance = radius; // The nearest named NPC already limits this search radius.
@@ -633,10 +633,11 @@
       if (!entity || entity.health <= 0 || entity._porakanekiPlannerControlled !== true || entity._chunkCombatTarget || !entity.avatarRef?.group?.visible || entity.areaId !== currentArea()) continue;
       const nextDistance = Math.hypot(entity.x / combatDeps.TILE - x, entity.y / combatDeps.TILE - z); // Matches named NPC interaction distances.
       if (nextDistance >= distance) continue;
-      distance = nextDistance;
+      if (!considerWalker) distance = nextDistance;
       entity._porakanekiGiftWalker ||= { rec: { ...entity.rosterRecord, id: hunter.id, name: 'Porakaneki Hunter', species: 'porakaneki' }, isPorakanekiHunter: true }; // Cached interaction-only proxy shares the actual hunter root.
       entity._porakanekiGiftWalker.root = entity.avatarRef.group;
       entity._porakanekiGiftWalker.area = entity.areaId;
+      considerWalker?.(entity._porakanekiGiftWalker);
       closest = entity._porakanekiGiftWalker;
     }
     return closest;

@@ -12743,6 +12743,30 @@
       const _tickNpcPortraitLife = window.WorldPortraitLife.tickNpc;
       const _tickPlayerPortraitLife = window.WorldPortraitLife.tickPlayer;
 
+      // Padded upright bounds keep interaction aim forgiving without selecting behind the reticle.
+      function npcInteractionAimDistance(walker, ray) {
+        if (!ray || !walker?.root || walker.root.visible === false) return Infinity;
+        const avatar = walker.avatarGroup || (walker.isPorakanekiHunter ? walker.root : null); // Authored dimensions and live placement drive named NPC bounds.
+        const height = (avatar?.userData?.portraitModelHeight || 1) * Math.abs(avatar?.scale?.y || 1); // Used for the upright aim bounds.
+        const width = (avatar?.userData?.portraitModelWidth || 0.6) * Math.abs(avatar?.scale?.x || 1); // Used for horizontal aim tolerance.
+        let enter = 0, exit = Infinity; // Ray interval shared across the three slab checks.
+        for (const axis of ['x', 'y', 'z']) {
+          const center = walker.root.position[axis] + (axis === 'y' && !walker.isPorakanekiHunter ? (avatar?.position?.y ?? height / 2) : 0); // World-space center of this bounds axis.
+          const half = (axis === 'y' ? height : width) / 2 + 0.45; // Forgiving world-space padding around the visible NPC.
+          const origin = ray.origin[axis], direction = ray.direction[axis]; // Current reticle ray components.
+          if (!Number.isFinite(origin) || !Number.isFinite(direction)) return Infinity;
+          if (Math.abs(direction) < 1e-8) {
+            if (origin < center - half || origin > center + half) return Infinity;
+            continue;
+          }
+          const a = (center - half - origin) / direction, b = (center + half - origin) / direction; // Entry/exit on this axis.
+          enter = Math.max(enter, Math.min(a, b));
+          exit = Math.min(exit, Math.max(a, b));
+          if (enter > exit) return Infinity;
+        }
+        return enter;
+      }
+
       function updateNpcWalkers(dt) {
         const previousNearbyNpcWalker = nearbyNpcWalker;
         // Dev Testing Switchbox "NPC & Creature AI" switch: skip schedule/
@@ -12762,16 +12786,19 @@
           }
           _logGarankiDiagnostic(dt);
         }
-        let closest = null, closestDist = npcMovementConfig().interactionRadiusTiles ?? 2.0;
+        const radius = npcMovementConfig().interactionRadiusTiles ?? 2.0; // Preserve the existing proximity limit.
+        const ray = currentPlayerInteractionRay(); // Same reticle authority used by other world interactions.
+        let closest = null, closestAim = Infinity; // Select the first padded NPC bounds along the reticle ray.
         const px = player.x / TILE, pz = player.y / TILE;
-        for (const w of npcWalkers) {
-          if (w.combatTutorialSuspended || w.area !== currentArea) continue;
-          const d = Math.hypot(w.root.position.x - px, w.root.position.z - pz);
-          if (d < closestDist) { closestDist = d; closest = w; }
-        }
+        const considerNpc = w => { // Shared selection for named NPCs and procedural gift recipients.
+          if (w.combatTutorialSuspended || w.area !== currentArea) return;
+          if (Math.hypot(w.root.position.x - px, w.root.position.z - pz) >= radius) return;
+          const aim = npcInteractionAimDistance(w, ray); // Rejects off-reticle and behind-camera candidates.
+          if (aim < closestAim) { closestAim = aim; closest = w; }
+        };
+        for (const w of npcWalkers) considerNpc(w);
         if (window.NpcGifting?.isItemGiftable?.(getHeldGiftItem())) {
-          const hunter = window.PorakanekiCamps?.getNearbyGiftWalker?.(px, pz, closestDist); // Neutral procedural hunters reuse the existing gift action and dispatch target.
-          if (hunter) closest = hunter;
+          window.PorakanekiCamps?.getNearbyGiftWalker?.(px, pz, radius, considerNpc);
         }
         nearbyNpcWalker = closest;
         if (previousNearbyNpcWalker !== nearbyNpcWalker) refreshActionBar();
@@ -22559,6 +22586,7 @@
           drinkProgress: _heldDrinkProgress,
           heldItemActionInput: window.HeldItemActionInput?.getDebug?.() || { active: false },
           characterActionLocks: window.CharacterActionLocks?.getDebug?.() || [],
+          npcInteractionTarget: { id: nearbyNpcWalker?.rec?.id || null, latestChange: 'NPC interactions require a forgiving reticle hit within the existing interaction radius.' },
           npcDrinkInteractions: window.NpcDrinkInteraction?.getDebug?.() || [],
           actionArch,
         };

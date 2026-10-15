@@ -42,7 +42,7 @@
     "function": "runZoom",
     "reason": "Eases the preview camera's zoom toward a target percentage over the stage's authored duration and stops once t reaches 1.",
     "migrationStage": "not-planned",
-    "line": 31564
+    "line": 31650
   },
   {
     "file": "docs/game.js",
@@ -634,7 +634,7 @@
     "owner": "SelectSteppers",
     "classification": "one-shot",
     "function": "onArrow",
-    "reason": "After a ◀/▶ press, checks once on the next frame whether the owning panel rerendered away the focused arrow and, if so, hands focus to the replacement select's arrow; it never reschedules.",
+    "reason": "After a \u25c0/\u25b6 press, checks once on the next frame whether the owning panel rerendered away the focused arrow and, if so, hands focus to the replacement select's arrow; it never reschedules.",
     "migrationStage": "not-planned",
     "line": 233
   }
