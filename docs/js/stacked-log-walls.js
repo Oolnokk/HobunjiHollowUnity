@@ -29,6 +29,7 @@
   const prototypeCaches = new WeakMap(); // THREE namespace -> exact-length generated-log prototypes reused by matching wall courses.
   const PROTOTYPE_CACHE_LIMIT = 256; // Bounds retained editor/map variants while live clones retain ownership of their geometry.
   const materialCaches = new WeakMap(); // THREE namespace -> bark color -> shared PNG atlas material, avoiding one canvas texture per course length.
+  const MATERIAL_CACHE_LIMIT = 64; // Bounds atlas textures retained after repeated bark-color edits.
   const EPS = 1e-6; // Geometry tolerance shared by horizontal polygon intersection and point dedupe.
   const EDGE_SPAN_RECLAIM = 0.8; // Reclaims most of the old full-diameter gable inset so round courses visually reach sloped edges while retaining a small clipping guard.
   const HORIZONTAL_FACE_NORMAL_Y = 0.92; // Faces this close to world-up/down are filled across their plane instead of being treated as zero-height vertical walls.
@@ -271,7 +272,16 @@
     if (!wood?.makeLogAtlasMaterial) return null;
     let byColor = materialCaches.get(THREE); // Per-THREE material cache prevents cross-realm Three.js objects from mixing.
     if (!byColor) { byColor = new Map(); materialCaches.set(THREE, byColor); }
-    if (!byColor.has(meta.barkColor)) byColor.set(meta.barkColor, wood.makeLogAtlasMaterial(THREE, meta.barkColor));
+    if (byColor.has(meta.barkColor)) {
+      const cached = byColor.get(meta.barkColor); // Keep actively reused colors near the end of the bounded cache.
+      byColor.delete(meta.barkColor);
+      byColor.set(meta.barkColor, cached);
+    } else {
+      byColor.set(meta.barkColor, wood.makeLogAtlasMaterial(THREE, meta.barkColor));
+      // Visible/cached meshes keep their material alive after this reference
+      // is evicted; disposing it here would invalidate those shared textures.
+      if (byColor.size > MATERIAL_CACHE_LIMIT) byColor.delete(byColor.keys().next().value);
+    }
     return byColor.get(meta.barkColor);
   }
 
@@ -462,9 +472,11 @@
       openingCutCount: exclusionQuads.length,
       prototypeCacheSize: prototypeCaches.get(THREE)?.size || 0,
       prototypeCacheLimit: PROTOTYPE_CACHE_LIMIT,
+      materialCacheSize: materialCaches.get(THREE)?.size || 0,
+      materialCacheLimit: MATERIAL_CACHE_LIMIT,
       defaultLogColorHex: DEFAULTS.barkColor,
       gableEdgeSpanReclaim: EDGE_SPAN_RECLAIM,
-      latestChange: 'Opening cuts stay on their own wall, thin openings split logs, and the preview prototype cache retains at most 256 variants.',
+      latestChange: 'Opening cuts stay on their own wall; preview caches retain at most 256 geometry variants and 64 bark-color atlases.',
     });
     return group;
   }

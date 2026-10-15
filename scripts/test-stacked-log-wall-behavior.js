@@ -31,21 +31,22 @@ class Group {
   add(child) { this.children.push(child); }
 }
 class Mesh {
-  constructor(geometry) {
+  constructor(geometry, material) {
     this.geometry = geometry;
+    this.material = material;
     this.position = new Vector3();
     this.quaternion = new Quaternion();
     this.scale = new Vector3(1, 1, 1);
     this.userData = {};
   }
-  clone() { return new Mesh(this.geometry); }
+  clone() { return new Mesh(this.geometry, this.material); }
 }
 const THREE = { Vector3, Quaternion, Group }; // Minimal placement surface; source geometry is supplied by the foliage spy.
 let generated = 0; // Counts actual foliage calls to distinguish reuse from regeneration.
 const context = { console, FoliageGenerator: { buildLogMesh(options) {
   generated++;
-  return new Mesh({ length: options.length });
-} } }; // Isolated production wall renderer with deterministic generated geometry identities.
+  return new Mesh({ length: options.length }, options.material);
+} }, WoodCutSurfaces: { makeLogAtlasMaterial(three, color) { return { color }; } } }; // Isolated production renderer with deterministic geometry/material identities.
 vm.runInNewContext(fs.readFileSync('docs/js/stacked-log-walls.js', 'utf8'), context);
 const api = context.StackedLogWalls; // Production API under test.
 const panel = { id: 'front', corners: [[-2, 0, 0], [2, 0, 0], [2, 0.3, 0], [-2, 0.3, 0]] }; // One horizontal course in the front wall.
@@ -74,6 +75,14 @@ assert.ok(generated > beforeReuse + 300, 'old prototypes must be evicted instead
 const diagnostic = build([panel]).userData; // Mobile-visible cache diagnostics from the renderer itself.
 assert.ok(diagnostic.prototypeCacheSize <= diagnostic.prototypeCacheLimit);
 assert.ok(diagnostic.prototypeCacheLimit > 0);
+const coloredWall = build([panel], { barkColor: '#000000' }); // Keeps a live material reference while other colors leave the atlas cache.
+const firstMaterial = coloredWall.children[0].material; // Repeated use should share the existing decoded atlas.
+assert.equal(build([panel], { barkColor: '#000000' }).children[0].material, firstMaterial);
+for (let index = 1; index <= 80; index++) build([panel], { barkColor: `#${index.toString(16).padStart(6, '0')}` }); // Reproduces repeated color-picker edits.
+const colorDiagnostic = build([panel]).userData; // Exposes atlas retention limits without requiring mobile devtools.
+assert.ok(colorDiagnostic.materialCacheSize <= colorDiagnostic.materialCacheLimit);
+assert.ok(colorDiagnostic.materialCacheLimit > 0);
+assert.equal(coloredWall.children[0].material, firstMaterial, 'eviction must preserve materials used by visible walls');
 
 const writes = []; // Parser-time HTML emitted by the real FormatUtils bootstrap.
 vm.runInNewContext(fs.readFileSync('docs/js/format-utils.js', 'utf8'), {
