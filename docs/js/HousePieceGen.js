@@ -688,8 +688,9 @@
     _addShingles(group, roofFaces, faces, opts);
     for (var childIndex = roofChildStart; childIndex < group.children.length; childIndex++) group.children[childIndex].traverse(function (mesh) { if (mesh.isMesh) mesh.userData.farmMaterialRole = 'wood'; });
 
-    // WallBuilder bricks on frustum body walls + gable end triangles
-    if (opts.wallBuilder) {
+    // Brick or generated-log cladding on frustum body walls + gable ends.
+    var generatedLogStyle = ['log', 'logs', 'stackedlogs', 'stacked-logs'].includes(String(opts.wallStyle || '').toLowerCase()); // Exterior construction selector shared with authored pieces.
+    if (opts.wallBuilder || (generatedLogStyle && global.StackedLogWalls?.buildGroup)) {
       // Any opening split one or more whole-side panels into surviving
       // rectangles — build bricks only on those actual faces. Completely
       // uncut pieces keep the exact original whole-side panel path.
@@ -697,22 +698,30 @@
         ? faces.filter(function (f) { return f.tag === 'wall' && !f.gableEnd; }).map(_faceToPanel)
         : _wallPanels(minC, maxC, minR, maxR, y0, baseH, tile);
       var gablePanels = _gablePanels(faces);
-      var wbUse   = opts.wbUsePlaceholder !== false;
-      var wbExtra = opts.wbOpts || { unitMult: 0.4375, rockScale: 1.5,
-                                     preScale: [1, 1, 0.6],
-                                     brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
+      if (generatedLogStyle && global.StackedLogWalls?.buildGroup) {
+        const logSettings = Object.assign({}, opts.logWall || {}); // Generated foliage settings authored by the structure editor or caller.
+        const logGroup = global.StackedLogWalls.buildGroup(THREE, bodyPanels.concat(gablePanels), logSettings); // One real exact-length foliage mesh per course; gable/taper spans shorten naturally.
+        logGroup.userData.isWallLogs = true;
+        _markOutlineLayer(logGroup);
+        group.add(logGroup);
+      } else if (opts.wallBuilder) {
+        var wbUse   = opts.wbUsePlaceholder !== false;
+        var wbExtra = opts.wbOpts || { unitMult: 0.4375, rockScale: 1.5,
+                                       preScale: [1, 1, 0.6],
+                                       brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
 
-      var wbGroup = opts.wallBuilder.build(bodyPanels, Object.assign({ usePlaceholder: wbUse, excludeQuads: openingQuads }, wbExtra));
-      wbGroup.userData.isWallBricks = true;
-      _markOutlineLayer(wbGroup);
-      group.add(wbGroup);
+        var wbGroup = opts.wallBuilder.build(bodyPanels, Object.assign({ usePlaceholder: wbUse, excludeQuads: openingQuads }, wbExtra));
+        wbGroup.userData.isWallBricks = true;
+        _markOutlineLayer(wbGroup);
+        group.add(wbGroup);
 
-      // Gable triangles are smaller — use denser, smaller bricks so they fill properly.
-      var gableExtra = opts.wbGableOpts || Object.assign({}, wbExtra, { unitMult: 0.396, densityMult: 1.5, rockScale: 1.1 });
-      var gableGroup = opts.wallBuilder.build(gablePanels, Object.assign({ usePlaceholder: wbUse }, gableExtra));
-      gableGroup.userData.isWallBricks = true;
-      _markOutlineLayer(gableGroup);
-      group.add(gableGroup);
+        // Gable triangles are smaller — use denser, smaller bricks so they fill properly.
+        var gableExtra = opts.wbGableOpts || Object.assign({}, wbExtra, { unitMult: 0.396, densityMult: 1.5, rockScale: 1.1 });
+        var gableGroup = opts.wallBuilder.build(gablePanels, Object.assign({ usePlaceholder: wbUse }, gableExtra));
+        gableGroup.userData.isWallBricks = true;
+        _markOutlineLayer(gableGroup);
+        group.add(gableGroup);
+      }
     }
 
     if (opts.farmNaturalColors) global.FarmWorldSettings?.tintStructure(group, opts.farmNaturalColors);
@@ -883,7 +892,8 @@
   function _buildFaceMeshes(group, faces, opts) {
     var matRoof  = opts.matRoof  || new THREE.MeshLambertMaterial({ color: 0x6b3e26, side: THREE.FrontSide });
     var matFloor = opts.matFloor || new THREE.MeshLambertMaterial({ color: 0xa89878, side: THREE.FrontSide });
-    var hideWalls = !!opts.wallBuilder;
+    var logWallStyle = ['log', 'logs', 'stackedlogs', 'stacked-logs'].includes(String(opts.wallStyle || '').toLowerCase()); // Generated-log mode hides the base wall planes just like WallBuilder bricks.
+    var hideWalls = !!opts.wallBuilder || (logWallStyle && !!global.StackedLogWalls?.buildGroup);
 
     for (var i = 0; i < faces.length; i++) {
       var f   = faces[i];
@@ -1316,6 +1326,9 @@
     // once here so every caller (map editor, cutscene director, the live
     // game's spawnTownBuildings/spawnZoneBuildings) accepts either shape.
     if (piece && piece.currentPiece) piece = piece.currentPiece;
+    var authoredWallStyle = String(opts.wallStyle || piece?.wallStyle || piece?.base?.wallStyle || '').toLowerCase(); // Serialized structure wall construction selected in House Editor.
+    var authoredLogSettings = Object.assign({}, piece?.base?.logWall || {}, piece?.logWall || {}, opts.logWall || {}); // Piece-level foliage log settings with caller override support.
+    var generatedLogMode = ['log', 'logs', 'stackedlogs', 'stacked-logs'].includes(authoredWallStyle) && !!global.StackedLogWalls?.buildGroup; // True only when the real generated-log renderer is available.
     var faces   = (piece.base && piece.base.faces) ? piece.base.faces : [];
     var pcells  = (piece.footprint && piece.footprint.cells) ? piece.footprint.cells : [];
     var gc      = Math.floor((piece.gridSize || 18) / 2);
@@ -1361,7 +1374,7 @@
     var roofFaces   = [];
     var allOff      = [];  // offset copies of all faces — for peak-center detection
 
-    var hideWalls = !!opts.wallBuilder;
+    var hideWalls = !!opts.wallBuilder || generatedLogMode; // Either bricks or generated logs replace authored wall face planes.
 
     for (var i = 0; i < faces.length; i++) {
       var f   = faces[i];
@@ -1453,8 +1466,13 @@
     _addShingles(group, roofFaces, allOff, Object.assign({ matTube: matTube }, opts));
     for (var childIndex = roofChildStart; childIndex < group.children.length; childIndex++) group.children[childIndex].traverse(function (mesh) { if (mesh.isMesh) mesh.userData.farmMaterialRole = 'wood'; });
 
-    // WallBuilder bricks on body walls and gable triangles
-    if (opts.wallBuilder) {
+    // Authored body/gable walls can use exact-length generated foliage logs instead of bricks.
+    if (generatedLogMode) {
+      var authoredLogGroup = global.StackedLogWalls.buildGroup(THREE, bodyPanels.concat(gablePanels), authoredLogSettings); // Horizontal courses are regenerated to each face's actual span, including gables.
+      authoredLogGroup.userData.isWallLogs = true;
+      _markOutlineLayer(authoredLogGroup);
+      group.add(authoredLogGroup);
+    } else if (opts.wallBuilder) {
       var wbUse   = opts.wbUsePlaceholder !== false;
       var wbExtra = opts.wbOpts || { unitMult: 0.4375, rockScale: 1.5,
                                      preScale: [1, 1, 0.6],
