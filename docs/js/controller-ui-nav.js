@@ -117,6 +117,7 @@
   const lastFocusedByPanel = new WeakMap();
   const knownPanels = new Set(); // Reused by visibility reconciliation so gameplay never scans the entire DOM for panel roots.
   let currentTarget = null;
+  let focusPath = null; // Remembers the active control through in-panel DOM rebuilds.
   const navigationPerf = { targetCount: 0, rectReads: 0 }; // Used by ControllerUI.debugState() to expose the most recent spatial-navigation scan cost without browser devtools.
 
   // Reconciliation checks panel roots and their ancestors so nested menus
@@ -248,11 +249,47 @@
     }, null);
   }
 
+  function rememberFocusPath(el) {
+    const panel = activePanel(); // Limits restoration to the menu that owned this selection.
+    if (!el || !panel || !belongsToNavigation(el, panel)) { focusPath = null; return; }
+    const steps = []; // Child identities and positions recover rebuilt rows without retaining entire target lists.
+    for (let node = el; node && node !== panel; node = node.parentElement) {
+      const parent = node.parentElement; // Used to record the control's location within each container.
+      if (!parent) return;
+      const attribute = ['id', 'data-stack-id', 'data-item-key', 'data-key'].find(name => node.getAttribute(name)); // Prefer exact stack identity over item type.
+      steps.unshift({ node, index: Array.prototype.indexOf.call(parent.children, node),
+        attribute, value: attribute ? node.getAttribute(attribute) : null });
+    }
+    focusPath = { panel, steps };
+  }
+
+  function recoverFocusTarget(panel, targets) {
+    if (focusPath?.panel !== panel) return null;
+    let siblings = []; // Retains the final row for nearest-enabled-slot fallback.
+    let slot = 0; // Locates the old selection when its replacement is disabled or empty.
+    let container = panel; // Walks the old control's hierarchy inside this menu only.
+    for (const step of focusPath.steps) {
+      const children = Array.from(container.children); // Read only during stale-focus recovery, never during idle polling.
+      const replacement = children.find(child => child === step.node)
+        || (step.attribute && children.find(child => child.getAttribute(step.attribute) === step.value))
+        || children[Math.min(step.index, children.length - 1)]; // A consumed/transferred last stack selects the preceding slot.
+      if (!replacement) break;
+      siblings = children;
+      slot = children.indexOf(replacement);
+      container = replacement;
+    }
+    if (targets.includes(container)) return container;
+    return targets.find(target => container.contains(target))
+      || siblings.filter(child => targets.includes(child)).sort((a, b) => Math.abs(siblings.indexOf(a) - slot) - Math.abs(siblings.indexOf(b) - slot))[0]
+      || null;
+  }
+
   // ── focus application ───────────────────────────────────────────────
   function setFocus(el, opts = {}) {
     if (currentTarget && currentTarget !== el) currentTarget.classList.remove('ctrl-nav-focus');
     currentTarget = el || null;
-    if (!currentTarget) return;
+    if (!currentTarget) { focusPath = null; return; }
+    rememberFocusPath(currentTarget);
     currentTarget.classList.add('ctrl-nav-focus');
     if (!currentTarget.hasAttribute('tabindex') && currentTarget.tabIndex < 0) currentTarget.tabIndex = -1;
     try { currentTarget.focus({ preventScroll: true }); } catch { /* not every candidate supports real focus */ }
@@ -267,7 +304,8 @@
     if (currentTarget) {
       if (availableTargets ? availableTargets.includes(currentTarget) : (isNavTarget(currentTarget) && belongsToNavigation(currentTarget, panel))) return;
     }
-    setFocus(pickDefaultTarget(panel, availableTargets));
+    const targets = availableTargets || navigationTargets(panel); // Shares one discovery pass between recovery and default selection.
+    setFocus(recoverFocusTarget(panel, targets) || pickDefaultTarget(panel, targets));
   }
 
   // ── spatial navigation ──────────────────────────────────────────────
@@ -610,6 +648,7 @@
     if (panel && isNavTarget(event.target) && belongsToNavigation(event.target, panel)) {
       if (currentTarget && currentTarget !== event.target) currentTarget.classList.remove('ctrl-nav-focus');
       currentTarget = event.target;
+      rememberFocusPath(currentTarget);
       currentTarget.classList.add('ctrl-nav-focus');
     }
   }, true);
@@ -637,6 +676,7 @@
     queueMicrotask(() => {
       reconcileQueued = false;
       reconcileStack();
+      if (currentTarget && !currentTarget.isConnected) refreshFocusIfStale();
     });
   }
   function scheduleVisibilitySettle() {
@@ -677,7 +717,7 @@
         if (node.nodeType === 1 && (node.matches?.(PANEL_SELECTOR) || node.querySelector?.(PANEL_SELECTOR))) panelTreeChanged = true;
       }
     }
-    if (panelTreeChanged) scheduleReconcile();
+    if (panelTreeChanged || (currentTarget && !currentTarget.isConnected)) scheduleReconcile();
   });
   const attrObserver = new MutationObserver(() => {
     scheduleReconcile();
@@ -732,7 +772,7 @@
         targetId: currentTarget?.id || null,
         targetText: (currentTarget?.textContent || '').trim().slice(0, 40),
         navigationMode: 'vector-cone',
-        latestChange: 'Top menu owns focus; numeric values change only by confirming their arrows.',
+        latestChange: 'Menu rebuilds preserve controller selection by stack identity and nearby slot.',
         coneHalfAngleDeg: Math.round(CONE_HALF_ANGLE * 180 / Math.PI),
         navigationTargetCount: navigationPerf.targetCount,
         navigationRectReads: navigationPerf.rectReads,
