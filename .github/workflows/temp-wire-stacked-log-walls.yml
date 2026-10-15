@@ -16,6 +16,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Repair patch-script anchors
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/temp-wire-stacked-log-walls.py')
+          text = path.read_text()
+          text = text.replace("$('applyGridBtn').addEventListener", "$('applyGridBtn').onclick")
+          old = "interior_controls + '      </div>\\n    </div>\\n\\n    <div class=\"section\">\\n      <h2>2. Grid canvas size</h2>')"
+          if old in text:
+              text = text.replace(old, "interior_controls)", 1)
+          path.write_text(text)
+          PY
       - name: Wire generated stacked logs
         run: python scripts/temp-wire-stacked-log-walls.py
       - name: Refresh cache busts
