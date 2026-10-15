@@ -21798,6 +21798,16 @@
         setCombatSwingCone(opts.coneRangePx, opts.coneHalfConeRad, opts.coneAngle);
       }
 
+      function getWeaponAttackTimeline() {
+        if (activeTool !== 'weapon' || !combatSwingAnim || !(toolSwingT > 0)) return null;
+        const elapsedS = Math.max(0, toolSwingDur - toolSwingT); // Shared animation clock includes additive strike hold and automatic return easing.
+        return {
+          remainingS: toolSwingT,
+          windupRemainingS: Math.max(0, toolSwingDur * combatSwingWindupFrac - elapsedS),
+          held: combatSwingHeld,
+        };
+      }
+
       // Ranged actions supply separate load/fire pose sets and independently
       // authored playback sequences. Fishing uses the same pose timeline on
       // the harpoon slot, but never enters RangedWeapons' projectile state.
@@ -28025,6 +28035,7 @@
         genotypeKindFor: (c) => (c.genotype ? (window.CreatureGenetics.SPECIES_ALIAS[c.creatureKey] || c.creatureKey) : null),
         showToast,
         triggerWeaponSwingVisual,
+        getWeaponAttackTimeline,
         triggerWeaponHoldVisual,
         getWeaponSwingWindupPoseProgress,
         releaseWeaponSwingHold,

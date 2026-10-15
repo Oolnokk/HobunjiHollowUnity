@@ -1102,7 +1102,7 @@
     const chargeRenderDebug = window.AnimalVoiceIndependentPlayback?.debugSnapshot?.().chargeRendering; // On-demand mobile evidence for cooperative DSP and cache reuse.
     if (chargeRenderDebug) lines.push(`Charge audio: cached=${chargeRenderDebug.cachedVariants} hits=${chargeRenderDebug.cacheHits} yields=${chargeRenderDebug.yields} maxSlice=${Number(chargeRenderDebug.maxSliceMs || 0).toFixed(1)}ms · ${chargeRenderDebug.latestChange}`);
     const combatVoiceDebug = window.CombatVocalizations?.debugSnapshot?.(); // Reports retained winded NPCs after leaving an area.
-    if (combatVoiceDebug) lines.push(`Combat voices: tracked NPC breathers=${combatVoiceDebug.trackedNpcBreathers}`);
+    if (combatVoiceDebug) lines.push(`Combat voices: tracked NPC breathers=${combatVoiceDebug.trackedNpcBreathers}; attack delay=${Number(combatVoiceDebug.attackStartDelayS || 0).toFixed(3)}s; queued inputs=${(combatVoiceDebug.queuedAttacks || []).join(',') || 'none'}`);
     const animalVoiceDebug = window.AnimalVocalizations?.debugSnapshot?.(); // Copyable proof of semantic intent routing on mobile.
     if (animalVoiceDebug) {
       const last = animalVoiceDebug.last;

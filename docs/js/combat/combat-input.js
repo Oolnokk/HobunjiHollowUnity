@@ -27,6 +27,7 @@
     };
   }
   const slots = { 1: makeSlotState(), 2: makeSlotState() };
+  const queuedAttacks = new Map(); // At most one buffered start per weapon input; repeated taps refresh that slot instead of building a backlog.
   let lastAlignmentHandoff = { phase: 'idle', startedAtMs: 0, releasedAtMs: 0 };
 
   function now() {
@@ -111,6 +112,7 @@
       holdStarted: s.holdStarted,
       alignmentPending: !!s.alignmentRequest,
       releaseQueued: s.releaseQueued,
+      attackQueued: queuedAttacks.has(slotIndex),
       downForS: s.down ? Math.max(0, now() - s.downAt) : 0,
       holdThresholdS: HOLD_THRESHOLD_S,
     };
@@ -158,7 +160,17 @@
     return true;
   }
 
-  function runAfterAttackAlignment(callback) {
+  function runAfterAttackAlignment(callback, slotIndex) {
+    if ((window.CombatVocalizations?.attackStartDelayS?.() || 0) > 0) {
+      const request = { // Re-enters alignment only after the shared grunt/attack duration allows another start.
+        callback,
+        cancel() { if (queuedAttacks.get(slotIndex) === request) queuedAttacks.delete(slotIndex); },
+      };
+      queuedAttacks.set(slotIndex, request);
+      emitState(slotIndex, 'attack-queued');
+      return request;
+    }
+
     if (!isAutoTargetEnabled()) {
       const bypassedAtMs = performance.now(); // Diagnostic timestamp proving the attack skipped target acquisition rather than aligning invisibly.
       lastAlignmentHandoff = { phase: 'disabled-bypass', startedAtMs: bypassedAtMs, releasedAtMs: bypassedAtMs };
@@ -205,10 +217,10 @@
     const slotId = 'tap' + slotIndex;
     const ability = abilityForSlot(slotId);
     runAfterAttackAlignment(() => {
-      if (blockedByActionLock()) return;
+      if (blockedByActionLock() || blockedByStagger() || window.Combat.deps?.player?.prone) return;
       if (ability?.onTap) ability.onTap({ slotIndex, slotId });
       else legacyTapFallback(slotIndex);
-    });
+    }, slotIndex);
   }
 
   function startHold(slotIndex) {
@@ -221,7 +233,7 @@
     s.releaseQueued = false;
     const start = () => {
       s.alignmentRequest = null;
-      if (blockedByActionLock() || (!s.down && !s.releaseQueued) || !ability?.onHoldStart) return;
+      if (blockedByActionLock() || blockedByStagger() || window.Combat.deps?.player?.prone || (!s.down && !s.releaseQueued) || !ability?.onHoldStart) return;
       s.holdStarted = true;
       ability.onHoldStart({ slotIndex, slotId });
       if (s.releaseQueued) {
@@ -232,7 +244,7 @@
     };
     if (ability?.category === 'offensiveHold') {
       let resolvedSynchronously = false;
-      const handle = runAfterAttackAlignment(() => { resolvedSynchronously = true; start(); });
+      const handle = runAfterAttackAlignment(() => { resolvedSynchronously = true; start(); }, slotIndex);
       if (!resolvedSynchronously) s.alignmentRequest = handle;
     } else {
       start();
@@ -310,6 +322,7 @@
   // Ends an already-started hold, but never turns a canceled pending press
   // into a tap. Used when the browser loses ownership of the physical input.
   function abortPress(slotIndex) {
+    queuedAttacks.get(slotIndex)?.cancel();
     const s = slots[slotIndex];
     if (!s || (!s.down && !s.holdStarted && !s.alignmentRequest)) return;
     try {
@@ -337,6 +350,18 @@
   // Ticked once per frame from Combat.update(dt) (wired in combat-core.js).
   function update(dt) {
     if (blockedByActionLock()) { abortAllPresses(); return; }
+    if (window.Combat.deps?.player?.prone || window.Combat.isStaggered(window.Combat.deps?.player)) {
+      abortAllPresses();
+      return;
+    }
+    if (queuedAttacks.size && !(window.CombatVocalizations?.attackStartDelayS?.() > 0)) {
+      const [slotIndex, request] = queuedAttacks.entries().next().value; // Drain one start per frame so it can establish its own duration gate.
+      queuedAttacks.delete(slotIndex);
+      const wasPendingHold = slots[slotIndex]?.alignmentRequest === request; // Transfer cancellation ownership if the buffered hold now needs target alignment.
+      const alignment = runAfterAttackAlignment(request.callback, slotIndex);
+      if (wasPendingHold && slots[slotIndex].alignmentRequest === request) slots[slotIndex].alignmentRequest = alignment;
+      emitState(slotIndex, 'attack-dequeued');
+    }
     for (const slotIndex of [1, 2]) {
       const s = slots[slotIndex];
       if (!s.down) continue;
@@ -365,6 +390,7 @@
     abortAllPresses,
     fireTap,
     getState,
+    queueSnapshot: () => [...queuedAttacks.keys()],
     isAutoTargetEnabled,
     setAutoTargetEnabled,
     autoTargetSettingsSnapshot,

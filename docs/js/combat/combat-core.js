@@ -625,6 +625,7 @@
       strikeS: Math.max(0, opts.strikeS || 0),
       recoverS: Math.max(0, opts.recoverS || 0),
       onStrike: opts.onStrike || null,
+      onUpdate: opts.onUpdate || null, // Optional staged-phase observer; vocal timing follows the same gameplay clock.
       onComplete: opts.onComplete || null,
       onCancel: opts.onCancel || null,
       data: opts.data || null,
@@ -706,6 +707,8 @@
     const playerOwned = !action.data?.isBandit && (!action.data?.attacker || action.data.attacker === deps?.player); // Player locks must never cancel hostile attacks.
     if (playerOwned && (window.CharacterActionLocks?.isLocked?.('player', 'actions') || window.CharacterActionLocks?.isLocked?.('player', 'tools'))) { action.cancel(); return; }
     action.t += dt;
+    if (action.onUpdate) action.onUpdate(action);
+    if (action.cancelled || action.phase === 'done') return;
     const strikeAt = action.windupS;
     if (!action.strikeFired && action.t >= strikeAt) fireStagedStrike(action);
     if (action.t >= action.totalS) finishStagedAction(action);
