@@ -70,29 +70,89 @@
   }
 
   function ownsBlueprint(bp) {
-    if ((deps.inventory[bp?.key] || 0) > 0) return true;
-    return !!(bp?.masteryUnlockId && window.CraftingMasterySystem?.hasUnlock?.(bp.masteryUnlockId)); // World-scoped Mote purchases behave as permanent blueprint ownership for every member of that world.
+    if (bp?.masteryUnlockId) return !!window.CraftingMasterySystem?.hasUnlock?.(bp.masteryUnlockId);
+    return !bp?.moteOnly && (deps.inventory[bp?.key] || 0) > 0; // Mastery ownership is world-scoped; legacy shop blueprint items cannot bypass it.
   }
 
-  // Blueprints are a permanent, reusable unlock (bought once from the
-  // carpenter — see FURNITURE_BLUEPRINT_CATALOG's price, which is priced
-  // higher than the old one-build-per-copy scheme to account for that) —
-  // building from one only ever consumes Wood/Stone, never the blueprint
-  // itself.
+  // Every UI and build check reads these same authored material rows. Wood
+  // remains a shared Pine/Shadewood pool; other keys are real inventory items.
+  function furnitureIngredients(bp) {
+    if (!bp?.craftCost || typeof bp.craftCost !== 'object') return null;
+    const rows = []; // Used by affordability, consumption, labels and mobile diagnostics.
+    for (const [key, rawAmount] of Object.entries(bp.craftCost)) {
+      const amount = Number(rawAmount); // Rejects malformed costs rather than silently making a recipe free.
+      if (!Number.isSafeInteger(amount) || amount < 0) return null;
+      if (!amount) continue;
+      rows.push({
+        key, amount,
+        have: key === 'wood' ? ownedWoodCount() : Math.max(0, Number(deps.inventory[key]) || 0),
+        label: key === 'wood' ? 'Wood (Pine/Shadewood Log)' : (deps.ITEM_DEFS?.[key]?.label || key),
+      });
+    }
+    return rows.length ? rows : null;
+  }
+
+  function furnitureCostDescription(bp, includeHave = false) {
+    const ingredients = furnitureIngredients(bp); // Used by both the carpenter preview and Crafting-tab recipe details.
+    return ingredients ? ingredients.map(row => `${row.amount} ${row.label}${includeHave ? ` (have ${row.have})` : ''}`).join(' + ') : 'valid material costs';
+  }
+
+  function canBuildFurniture(bp) {
+    const ingredients = furnitureIngredients(bp); // The exact rows also used by the click-time validation.
+    return ownsBlueprint(bp) && !!ingredients && ingredients.every(row => row.have >= row.amount)
+      && (deps.inventory[bp.furnitureKey] || 0) < window.InventoryStacks.MAX_TOTAL;
+  }
+
+  // Reusable blueprints are never consumed. Validate every ingredient before
+  // spending any stock, including a stale UI click after inventory changes.
   function craftFurnitureFromBlueprint(blueprintKey) {
-    const bp = deps.FURNITURE_BLUEPRINT_CATALOG.find(b => b.key === blueprintKey);
-    if (!bp) return;
-    if (!ownsBlueprint(bp)) { deps.showToast('No blueprint to build from.', false); return; }
-    if (ownedWoodCount() < bp.craftCost.wood) { deps.showToast(`Not enough wood — need ${bp.craftCost.wood} (Pine/Shadewood Log).`, false); return; }
-    if ((deps.inventory.stone || 0) < bp.craftCost.stone) { deps.showToast(`Not enough stone — need ${bp.craftCost.stone}.`, false); return; }
-    consumeWood(bp.craftCost.wood);
-    deps.inventory.stone -= bp.craftCost.stone;
-    deps.clampInventoryStack('stone');
-    deps.inventory[bp.furnitureKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[bp.furnitureKey] || 0) + 1);
+    const bp = deps.FURNITURE_BLUEPRINT_CATALOG.find(b => b.key === blueprintKey); // Resolves only registered recipes.
+    if (!bp) return false;
+    if (!ownsBlueprint(bp)) { deps.showToast('No blueprint to build from.', false); return false; }
+    const ingredients = furnitureIngredients(bp); // Captures the same live quantities displayed in the recipe row.
+    if (!ingredients) { deps.showToast('This blueprint has invalid material costs.', false); return false; }
+    const missing = ingredients.find(row => row.have < row.amount); // Blocks the transaction before consuming wood or any other ingredient.
+    if (missing) { deps.showToast(`Not enough ${missing.label} — need ${missing.amount}.`, false); return false; }
+    if ((deps.inventory[bp.furnitureKey] || 0) >= window.InventoryStacks.MAX_TOTAL) {
+      deps.showToast('No room for more of this furniture.', false);
+      return false;
+    }
+    // Wool uses the shared quality ledger so spent units cannot reappear as
+    // phantom quality stacks. Automatic consumption protects the best stock.
+    for (const row of ingredients.filter(row => row.key === 'lightWool' || row.key === 'puktukWool')) {
+      if (window.CookingSystem?.consumeQualityByPolicy) {
+        if (!window.CookingSystem.consumeQualityByPolicy(row.key, row.amount, 'lowest')) {
+          deps.showToast(`Could not consume ${row.label}.`, false);
+          return false;
+        }
+      } else {
+        deps.inventory[row.key] -= row.amount;
+        deps.clampInventoryStack(row.key);
+      }
+    }
+    for (const row of ingredients) {
+      if (row.key === 'lightWool' || row.key === 'puktukWool') continue;
+      if (row.key === 'wood') consumeWood(row.amount);
+      else {
+        deps.inventory[row.key] -= row.amount;
+        deps.clampInventoryStack(row.key);
+      }
+    }
+    deps.inventory[bp.furnitureKey] = (deps.inventory[bp.furnitureKey] || 0) + 1;
     deps.showToast(`Built a ${bp.name}!`, true);
     renderCraftingPanel();
     deps.buildInventoryGrid();
     deps.saveMemberWorldData();
+    return true;
+  }
+
+  function debugSnapshot() {
+    return {
+      latestChange: 'Furniture uses authored wood, stone, wool and metal costs; Advanced Loom requires its 8-mote mastery unlock.',
+      recipes: (deps?.FURNITURE_BLUEPRINT_CATALOG || []).map(bp => ({
+        key: bp.key, owned: ownsBlueprint(bp), canBuild: canBuildFurniture(bp), ingredients: furnitureIngredients(bp),
+      })),
+    };
   }
 
   function renderCraftingPanel() {
@@ -133,17 +193,15 @@
       row.querySelector('[data-metal-recipe]')?.addEventListener('click', () => craftMetalBar(metalKey));
       list.appendChild(row);
     });
-    const haveWood = ownedWoodCount();
-    const haveStone = deps.inventory.stone || 0;
     owned.forEach(bp => {
-      const canBuild = haveWood >= bp.craftCost.wood && haveStone >= bp.craftCost.stone;
+      const canBuild = canBuildFurniture(bp); // Shares validation with the build action, including extra materials and full stacks.
       const row = document.createElement('div');
       row.className = 'shop-row';
       row.innerHTML = `
         <div class="sh-icon">${bp.icon}</div>
         <div class="sh-info">
           <div class="sh-name">${deps.esc(bp.name)}</div>
-          <div class="sh-desc">Needs ${bp.craftCost.wood} Wood (have ${haveWood}) + ${bp.craftCost.stone} Stone (have ${haveStone}) — blueprint known, build as many as you like</div>
+          <div class="sh-desc">Needs ${deps.esc(furnitureCostDescription(bp, true))} — blueprint known, build as many as you like</div>
         </div>
         <button class="shop-buy-btn" data-bp="${bp.key}" ${canBuild ? '' : 'disabled'}>Build</button>
       `;
@@ -152,7 +210,7 @@
     });
   }
 
-  window.CraftingPanel = { init, render: renderCraftingPanel, craftMetalBar, visibleMetalRecipes };
+  window.CraftingPanel = { init, render: renderCraftingPanel, craftMetalBar, visibleMetalRecipes, craftFurnitureFromBlueprint, furnitureCostDescription, debugSnapshot };
 })();
 
 // Crafting mastery + NPC crafting commissions live next to the CraftingPanel
@@ -166,7 +224,7 @@
     ['js/crafting-mastery-system.js?v=20261005craft2', () => Number(window.CraftingMasterySystem?.version) >= 2],
     ['js/advanced-loom-system.js?v=20261005loom1', () => Number(window.AdvancedLoomSystem?.version) >= 1],
     ['js/dye-trait-labels.js?v=20261005craft1', () => Number(window.DyeTraitLabels?.version) >= 1],
-    ['js/npc-crafting-commission-generator.js?v=20261008h8a0d52d', () => Number(window.NpcCraftingCommissionGenerator?.version) >= 2],
+    ['js/npc-crafting-commission-generator.js?v=20261015h872ebd0', () => Number(window.NpcCraftingCommissionGenerator?.version) >= 2],
     ['js/npc-crafting-commission-delivery.js?v=20261005craft2', () => Number(window.NpcCraftingCommissionDelivery?.version) >= 2],
     ['js/npc-crafting-commissions.js?v=20261005craft2', () => Number(window.NpcCraftingCommissions?.version) >= 2],
   ]; // Local progression/commission modules loaded immediately after CraftingPanel publishes its API. Cache ownership is refreshed by the repo checker.

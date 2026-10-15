@@ -145,8 +145,13 @@
     const best = ranked[0].score;
     const blueprint = pick(ranked.filter(record => record.score >= best - 2))?.entry;
     if (!blueprint) return null;
-    const materialValue = finite(blueprint.craftCost?.wood) * 3 + finite(blueprint.craftCost?.stone) * 3; // Generic gold scaling for larger pieces.
-    return { type: 'furniture', blueprintKey: blueprint.key, furnitureKey: blueprint.furnitureKey, furnitureLabel: blueprint.name, category: blueprint.category || 'furniture', rewardMotes: 2, rewardGold: 70 + Math.round(materialValue * 1.5) }; // Pays more than selling the wood/stone it consumes.
+    const materialValue = Object.entries(blueprint.craftCost).reduce((sum, [key, amount]) => { // Includes the actual value of wool and metal instead of underpaying complex recipes.
+      const definition = craftingDeps?.ITEM_DEFS?.[key]; // Reads live economy values, including bronze's lore price floor.
+      const unitValue = key === 'wood' ? Math.max(3, finite(craftingDeps?.ITEM_DEFS?.pineLog?.sellPrice), finite(craftingDeps?.ITEM_DEFS?.shadewoodLog?.sellPrice))
+        : Math.max(3, finite(definition?.sellPrice)); // Missing definitions retain the previous common-material estimate.
+      return sum + Math.max(0, finite(amount)) * unitValue;
+    }, 0);
+    return { type: 'furniture', blueprintKey: blueprint.key, furnitureKey: blueprint.furnitureKey, furnitureLabel: blueprint.name, category: blueprint.category || 'furniture', rewardMotes: 2, rewardGold: 70 + Math.round(materialValue * 1.5) }; // Pays more than selling the authored materials it consumes.
   }
 
   function generateTask(giver, tier) {

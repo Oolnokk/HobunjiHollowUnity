@@ -106,7 +106,7 @@
   // craftFurnitureFromBlueprint).
   function buyFurnitureBlueprint(blueprintKey) {
     const bp = deps.FURNITURE_BLUEPRINT_CATALOG.find(b => b.key === blueprintKey);
-    if (!bp || bp.moteOnly) return;
+    if (!bp || bp.moteOnly || bp.masteryUnlockId) return;
     if (ownsBlueprint(bp)) { deps.showToast(`You already own the ${bp.name} blueprint.`, false); return; }
     const gold = deps.inventory.gold || 0;
     if (gold < bp.price) { deps.showToast('Not enough ganang.', false); return; }
@@ -200,7 +200,7 @@
     bpHdr.textContent = '📜 Furniture Blueprints';
     list.appendChild(bpHdr);
 
-    deps.FURNITURE_BLUEPRINT_CATALOG.filter(bp => !bp.moteOnly && window.ConditionRegistry.entryEligible(bp, world)).forEach(bp => {
+    deps.FURNITURE_BLUEPRINT_CATALOG.filter(bp => !bp.moteOnly && !bp.masteryUnlockId && window.ConditionRegistry.entryEligible(bp, world)).forEach(bp => {
       const owned = ownsBlueprint(bp);
       const row = document.createElement('div');
       row.className = 'shop-row';
@@ -208,7 +208,7 @@
         <div class="sh-icon">${bp.icon}</div>
         <div class="sh-info">
           <div class="sh-name">${deps.esc(bp.name)} Blueprint</div>
-          <div class="sh-desc">Build with ${bp.craftCost.wood} Wood + ${bp.craftCost.stone} Stone in the Crafting tab.${owned ? ' Already owned — reusable.' : ''}</div>
+          <div class="sh-desc">Build with ${deps.esc(window.CraftingPanel.furnitureCostDescription(bp))} in the Crafting tab.${owned ? ' Already owned — reusable.' : ''}</div>
           <div class="sh-price">${bp.price}g</div>
         </div>
         <button class="shop-buy-btn" data-bp="${bp.key}" ${owned ? 'disabled' : ''}>${owned ? 'Owned' : 'Buy'}</button>

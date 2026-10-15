@@ -516,7 +516,7 @@
       name: BUTTER_CHURN.name,
       desc: BUTTER_CHURN.desc,
       price: Math.max(15, Math.round(BUTTER_CHURN.price * 1.5)),
-      craftCost: { wood: 5, stone: 3 },
+      craftCost: { wood: 5, stone: 0, bar_nativeCopper: 1 },
       category: 'processing',
     });
   }

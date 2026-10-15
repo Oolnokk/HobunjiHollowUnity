@@ -2531,7 +2531,8 @@
         .filter(([, def]) => !def.fixture)
         .map(([, def]) => ({
           key: def.itemKey, icon: def.icon, name: def.name, desc: def.desc,
-          price: def.price, gives: { [def.itemKey]: 1 }, category: 'furniture'
+          price: def.price, gives: { [def.itemKey]: 1 }, category: 'furniture',
+          moteOnly: !!def.moteOnly, masteryUnlockId: def.masteryUnlockId || null, // Preserve mastery gates when projecting definitions into shop/blueprint catalogs.
         }));
 
       // ── Authored furniture (docs/config/furniture-authored/*.json) ────
@@ -2572,18 +2573,58 @@
       // Every processing station (PROCESSING_FURNITURE_CATALOG) and
       // decorative piece (DECORATIVE_FURNITURE_CATALOG) is built from a
       // blueprint — bought from the carpenter's shop instead of the
-      // finished piece itself — plus wood and stone gathered with the axe
-      // and pick. See renderCarpenterShopPage (sells the blueprint) and
+      // finished piece itself — plus authored materials. The carpenter shows
+      // those costs; the Crafting tab checks and spends them. See
       // renderCraftingPanel/craftFurnitureFromBlueprint (builds the
       // finished item from an owned blueprint + materials, in the
       // Inventory's Crafting tab).
       function blueprintItemKey(furnitureItemKey) {
         return furnitureItemKey + 'Blueprint';
       }
-      // A rough-and-ready cost curve derived from the old outright price —
-      // about a sixth of it in wood, a tenth in stone, at least 1 of each.
-      function furnitureCraftCost(price) {
-        return { wood: Math.max(1, Math.round(price / 6)), stone: Math.max(1, Math.round(price / 10)) };
+      // Authored material costs: common joinery stays accessible; metal vessels
+      // and mechanisms use the existing copper/tin/bronze hierarchy, never rare
+      // weapon-tier alloys merely for decoration. Wool supplies actual textiles.
+      const FURNITURE_MATERIAL_COSTS = { // Used by the shared blueprint catalog and all Crafting-tab material checks.
+        pestleFurniture: { wood: 2, stone: 4 },
+        squeezerFurniture: { wood: 4, bar_nativeCopper: 1 },
+        handMillFurniture: { wood: 3, stone: 5, bar_lowTinBronze: 1 },
+        dryingRackFurniture: { wood: 3 },
+        smokerFurniture: { wood: 4, stone: 4, bar_nativeCopper: 1 },
+        agingBarrelFurniture: { wood: 6, bar_nativeCopper: 2 },
+        agingVaseFurniture: { stone: 6 },
+        basicBedFurniture: { wood: 6, puktukWool: 4 },
+        doubleBedFurniture: { wood: 9, puktukWool: 8 },
+        bedrollFurniture: { puktukWool: 3 },
+        benchFurniture: { wood: 3 },
+        bookshelfFurniture: { wood: 5 },
+        bucketFurniture: { bar_tin: 2 },
+        candleTableFurniture: { wood: 2, bar_nativeCopper: 1 },
+        chairSimpleFurniture: { wood: 2 },
+        chairCushionFurniture: { wood: 3, puktukWool: 2 },
+        chestFurniture: { wood: 5, bar_lowTinBronze: 1 },
+        crateStackFurniture: { wood: 3 },
+        copperBarrelFurniture: { wood: 3, bar_nativeCopper: 2 },
+        deskFurniture: { wood: 6, bar_nativeCopper: 1 },
+        dresserFurniture: { wood: 5, bar_nativeCopper: 1 },
+        hearthFurniture: { stone: 10, bar_tinBronze: 1 },
+        campfireKitFurniture: { wood: 3, stone: 3 },
+        loomFurniture: { wood: 7, bar_lowTinBronze: 1, lightWool: 2 },
+        advancedLoomFurniture: { wood: 12, bar_tinBronze: 2, lightWool: 4 },
+        nightstandFurniture: { wood: 3 },
+        hangingBannerFurniture: { wood: 2, lightWool: 4 },
+        rugFurniture: { puktukWool: 5 },
+        standingLampFurniture: { bar_tinBronze: 2 },
+        statueFurniture: { stone: 8 },
+        stoolFurniture: { wood: 2 },
+        tableLongFurniture: { wood: 8 },
+        tableRoundFurniture: { wood: 5 },
+        tableSmallFurniture: { wood: 3 },
+        wardrobeFurniture: { wood: 8, bar_lowTinBronze: 2 },
+        washTubFurniture: { bar_nativeCopper: 3 },
+        counterFurniture: { wood: 7 },
+      };
+      function furnitureCraftCost(item) {
+        return { wood: 0, stone: 0, ...(FURNITURE_MATERIAL_COSTS[item.key] || { wood: Math.max(1, Math.round(item.price / 6)) }) };
       }
       const FURNITURE_BLUEPRINT_CATALOG = [
         ...PROCESSING_FURNITURE_CATALOG.map(item => ({ item, category: 'processing' })),
@@ -2597,11 +2638,11 @@
         moteOnly: !!item.moteOnly, // Used to keep Mote-only mastery blueprints out of the gold Carpenter inventory.
         masteryUnlockId: item.masteryUnlockId || null, // Used by CraftingPanel to treat the world-scoped mastery purchase as permanent blueprint ownership.
         // A permanent, reusable unlock (see craftFurnitureFromBlueprint —
-        // building from a blueprint only ever spends Wood/Stone, never the
+        // building from a blueprint only ever spends materials, never the
         // blueprint itself), so it's priced above the finished piece's own
         // price rather than a fraction of it.
         price: Math.max(15, Math.round(item.price * 1.5)),
-        craftCost: furnitureCraftCost(item.price),
+        craftCost: furnitureCraftCost(item),
         category,
       }));
 
@@ -29132,6 +29173,7 @@
 
       window.CraftingPanel?.init({
         inventory,
+        ITEM_DEFS, // Supplies shared material labels and commission sale-value estimates.
         clampInventoryStack,
         FURNITURE_BLUEPRINT_CATALOG,
         ORE_DEFS,
