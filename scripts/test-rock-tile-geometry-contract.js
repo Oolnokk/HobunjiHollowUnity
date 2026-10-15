@@ -69,6 +69,7 @@ function geometrySnapshot(col, row) {
     'stone and grass subsets partition every triangle in the 6x6 cell mound exactly once');
 
   const maxY = Math.max(...Array.from(stonePos.array).filter((_value, index) => index % 3 === 1)); // Confirms the extraction's flat ROCK_H sheet is gone.
+  assert.equal(result.heightTiles, maxY, 'projectile cover height equals the generated mound top');
   assert.ok(maxY > 0.25, `irregular rock mound rises above the ground plane (maxY=${maxY})`);
 
   const first = [result.stoneGeo.index.getX(0), result.stoneGeo.index.getX(1), result.stoneGeo.index.getX(2)]; // First stone triangle for winding verification.
@@ -93,11 +94,11 @@ for (const [col, row] of [[0, 0], [4, 7], [19, 31]]) {
 
 assert.match(terrainSource, /const PEAK = 0\.32 \+ rng\(\) \* 0\.38/,
   'source keeps the pre-extraction loose-rock height range');
-assert.match(terrainSource, /return \{ stoneGeo: makeGeo\(stoneIdx\), grassGeo: makeGeo\(grassIdx\) \}/,
+assert.match(terrainSource, /return \{ stoneGeo: makeGeo\(stoneIdx\), grassGeo: makeGeo\(grassIdx\), heightTiles: Math\.max\(\.\.\.Y\) \}/,
   'source keeps the split object every live caller expects');
 assert.doesNotMatch(terrainSource, /const TOP = deps\.ROCK_H \/ 2 - deps\.SLAB_H \/ 2/,
   'the accidental flat single-geometry extraction implementation stays removed');
-assert.match(gameSource, /const \{ stoneGeo, grassGeo \} = window\.TerrainGeometry\.buildRockTileGeo\(c, r\)/,
+assert.match(gameSource, /const \{ stoneGeo, grassGeo, heightTiles \} = window\.TerrainGeometry\.buildRockTileGeo\(c, r\)/,
   'wilderness ROCK rendering consumes the repaired split API');
 assert.match(gameSource, /const \{ stoneGeo \} = window\.TerrainGeometry\.buildRockTileGeo\(rock\.col, rock\.row\)/,
   'cavern ore rendering consumes the repaired split API');
