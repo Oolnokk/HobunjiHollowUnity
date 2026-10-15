@@ -28714,7 +28714,7 @@
         TOOL_ITEM_DEFS,
         getGearInventory: () => gearInventory,
         saveGearInventory,
-        buildEquipmentSlots,
+        buildEquipmentSlots: () => window.EquipmentPanel?.buildEquipmentSlots?.(), // No bare buildEquipmentSlots exists in this closure (it lives in js/equipment-panel.js); the shorthand threw a ReferenceError at startup.
         refreshMetalToolWorldTexture,
         lootShopWorldState: window.LootRolling.lootShopWorldState,
         getStoreClothingPieces: () => STORE_CLOTHING_PIECES,
