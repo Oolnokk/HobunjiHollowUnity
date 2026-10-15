@@ -36,21 +36,35 @@ class PointLight {
   }
 }
 
-const registryWindow = { THREE: { PointLight } };
+class SpotLight extends PointLight {
+  constructor(...args) {
+    super(...args);
+    this.isPointLight = false;
+    this.isSpotLight = true;
+  }
+}
+
+const registryWindow = { THREE: { PointLight, SpotLight } };
 vm.runInNewContext(registrySource, { window: registryWindow }, { filename: 'furniture-light-registry.js' });
 const bridgedPoint = new registryWindow.THREE.PointLight('#ffaa22', 1.4, 3.5, 2);
 assert.strictEqual(bridgedPoint.layers.value, 31,
   'every gameplay PointLight constructor must route to the non-rendered overlay-only light layer');
-assert.strictEqual(bridgedPoint.userData.furnitureLightMask, true,
-  'legacy PointLights must automatically become fake-overlay local-light sources');
+assert.strictEqual(bridgedPoint.userData.furnitureLightMask, undefined,
+  'suppressing a legacy local light must not automatically invent a fake glow for non-light-source helpers such as the farmhouse fallback fill');
 assert.strictEqual(bridgedPoint.castShadow, false,
-  'fake-overlay PointLights must not retain Three.js shadow work');
+  'fake-overlay local-light data must not retain Three.js shadow work');
+const bridgedSpot = new registryWindow.THREE.SpotLight('#ffffff', 1, 4, 2);
+assert.strictEqual(bridgedSpot.layers.value, 31,
+  'GLTF/authored SpotLights must be barred from real WebGL lighting too');
 const pointScene = { isScene: true, parent: null };
+bridgedPoint.userData.furnitureLightMask = true;
+bridgedSpot.userData.furnitureLightMask = true;
 bridgedPoint.parent = pointScene;
-assert.deepStrictEqual(registryWindow.FurnitureLightRegistry.list(pointScene), [bridgedPoint],
-  'constructor-bridged PointLights must remain available to the 2D lighting compositor');
-assert.strictEqual(registryWindow.FurnitureLightRegistry.debugSnapshot().constructorBridgeInstalled, true,
-  'mobile diagnostics must prove the PointLight constructor bridge is installed');
+bridgedSpot.parent = pointScene;
+assert.deepStrictEqual(registryWindow.FurnitureLightRegistry.list(pointScene), [bridgedPoint, bridgedSpot],
+  'deliberately masked local-light sources must remain available to the 2D lighting compositor');
+assert.deepStrictEqual([...registryWindow.FurnitureLightRegistry.debugSnapshot().bridgedConstructors].sort(), ['PointLight', 'SpotLight'],
+  'mobile diagnostics must prove both local Three.js light constructors are intercepted');
 
 class AmbientLight {
   constructor(color = 0xffffff, intensity = 1) {
