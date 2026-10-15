@@ -61,9 +61,15 @@ bridgedPoint.userData.furnitureLightMask = true;
 bridgedSpot.userData.furnitureLightMask = true;
 bridgedPoint.parent = pointScene;
 bridgedSpot.parent = pointScene;
-assert.deepStrictEqual(registryWindow.FurnitureLightRegistry.list(pointScene), [bridgedPoint, bridgedSpot],
+const listedLights = registryWindow.FurnitureLightRegistry.list(pointScene); // Identity checks avoid cross-realm prototype noise from the VM while still verifying exact registry output order.
+assert.strictEqual(listedLights.length, 2,
   'deliberately masked local-light sources must remain available to the 2D lighting compositor');
-assert.deepStrictEqual([...registryWindow.FurnitureLightRegistry.debugSnapshot().bridgedConstructors].sort(), ['PointLight', 'SpotLight'],
+assert.strictEqual(listedLights[0], bridgedPoint,
+  'the registered PointLight must be returned unchanged to the fake-light compositor');
+assert.strictEqual(listedLights[1], bridgedSpot,
+  'the registered SpotLight must be returned unchanged to the fake-light compositor');
+const bridgedConstructors = [...registryWindow.FurnitureLightRegistry.debugSnapshot().bridgedConstructors].sort(); // Host-realm copy makes the string-list assertion independent of VM Array prototypes.
+assert.deepStrictEqual(bridgedConstructors, ['PointLight', 'SpotLight'],
   'mobile diagnostics must prove both local Three.js light constructors are intercepted');
 
 class AmbientLight {
