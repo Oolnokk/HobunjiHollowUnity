@@ -79,7 +79,7 @@
 
   const modules = [
     ['js/text-entry-keybind-guard.js?v=20260901a', () => !!window.HobunjiTextInputGuard],
-    ['js/controller-modern-flow-bridge.js?v=20260915a', () => Number(window.ControllerModernFlowBridge?.version) >= 1],
+    ['js/controller-modern-flow-bridge.js?v=20261015h04b0f9f', () => Number(window.ControllerModernFlowBridge?.version) >= 1],
     ['js/player-body-transform-composer.js?v=20261002hca73c61', () => !!window.PlayerBodyTransformComposer],
     ['js/player-body-attachment-bridge.js?v=20260918shoulderparity3', () => !!window.PlayerBodyAttachmentBridge],
     ['js/front-hat-head-facing.js?v=20260914nofacing1', () => !!window.HobunjiFrontHatHeadFacing],
@@ -118,7 +118,7 @@
     ['js/generic-hud-icons.js?v=20260915perf1', () => Number(window.HobunjiGenericHudIcons?.version) >= 1],
     ['js/hud-x-control-polish.js?v=20260915a', () => Number(window.HudXControlPolish?.version) >= 1],
     ['js/favor-popup-points-bridge.js?v=20261007h99b53f8', () => Number(window.FavorPopupPointsBridge?.version) >= 2],
-    ['js/sleep-passage-action-bridge.js?v=20261014h6b43c67', () => Number(window.HobunjiSleepPassageActionBridge?.version) >= 1],
+    ['js/sleep-passage-action-bridge.js?v=20261015hea6c84f', () => Number(window.HobunjiSleepPassageActionBridge?.version) >= 1],
     ['js/day-progress-review.js?v=20261014h628ff81', () => Number(window.DayProgressReview?.version) >= 1],
     ['js/day-progress-review-relationship-ui.js?v=20260914a', () => Number(window.DayProgressReviewRelationshipUi?.version) >= 1],
     ['js/menu-tab-icon-only.js?v=20260915perf1', () => Number(window.HobunjiMenuTabIcons?.version) >= 1],

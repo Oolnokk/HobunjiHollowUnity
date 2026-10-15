@@ -9,9 +9,9 @@
 (() => {
   'use strict';
 
-  if (window.ControllerModernFlowBridge?.version >= 2) return;
+  if (window.ControllerModernFlowBridge?.version >= 3) return;
 
-  const VERSION = 2;
+  const VERSION = 3;
   const FLOW_ROOT_SELECTOR = '#ob-overlay, #hobunjiDayProgressReview, .time-passage-backdrop, #troughPanelOverlay, #npcWardrobeOverlay'; // Used to opt legacy/new full-screen flows into ControllerUI without changing their owning modules.
   const ONBOARDING_BACK_SELECTOR = '#slBackToCharacter, #slBackToSource, #ob-back-btn'; // Used to make B follow the save/onboarding flow's existing Back buttons after every rerender.
   const DAY_REVIEW_ROOT_ID = 'hobunjiDayProgressReview'; // Used by the confirm bridge to distinguish staged reveal from the final Continue press.
@@ -131,6 +131,43 @@
     return true;
   }
 
+  function bedSleepAction() {
+    if (typeof document === 'undefined') return null;
+    for (const [buttonId, actionId] of ACTION_BUTTONS) {
+      const button = document.getElementById(buttonId); // Live rendered action slot used to map Sleep back to its remappable controller action.
+      if (!button || button.classList?.contains?.('abt-hidden') || button.classList?.contains?.('blocked')) continue;
+      if (button.dataset?.action !== 'obj_interact') continue;
+      const label = button.querySelector?.('.abt-label')?.textContent || button.textContent || ''; // Authored action label distinguishes bed Sleep from every other generic object interaction.
+      if (/\bSleep\b/i.test(String(label))) return { button, actionId };
+    }
+    return null;
+  }
+
+  function tryOpenBedSleep(frame) {
+    if (window.ControllerInput?.owner !== 'gameplay') return false;
+    if (window.ControllerUI?.isActive?.()) return false;
+    const route = bedSleepAction(); // Used to claim only the controller action currently displaying the player's bed Sleep interaction.
+    if (!route || !controllerActionPressed(frame, route.actionId)) return false;
+    const open = window.HobunjiSleepPassageActionBridge?.openSharedSleepPassage; // Parser-time bridge owns the same one-shot Well Rested token and legacy-input suppression used by keyboard/touch.
+    if (typeof open !== 'function') {
+      lastAction = 'bed Sleep unavailable: sleep passage bridge not ready';
+      log(lastAction, 'warn');
+      return false;
+    }
+
+    window.ControllerInput.setOwner('menu'); // Claims this press before gameplay dispatch can invoke game.js's legacy sleepInBed() action.
+    const opened = open.call(window.HobunjiSleepPassageActionBridge);
+    if (opened === false) {
+      if (!window.ControllerUI?.isActive?.() && window.ControllerInput.owner === 'menu') window.ControllerInput.setOwner('gameplay');
+      lastAction = 'bed Sleep failed to open';
+      log(lastAction, 'warn');
+      return false;
+    }
+    lastAction = `bed Sleep opened from ${route.actionId}`;
+    log(lastAction);
+    return true;
+  }
+
   function seatedWaitButton() {
     if (typeof document === 'undefined') return null;
     const button = document.getElementById('btnAction2'); // Action 2 is repurposed by CalendarSystem only while the player is seated in a usable chair.
@@ -198,6 +235,7 @@
   function onControllerFrame(frame) {
     if (!frame?.focused || !frame.pad || !frame.pressed?.size) return; // All compatibility routes are edge-triggered; idle gameplay now performs no DOM lookup or binding resolution here.
     if (tryFastForwardDayReview(frame)) return;
+    if (tryOpenBedSleep(frame)) return;
     if (tryOpenSeatedWait(frame)) return;
     tryRoutePointerOnlyAction(frame);
   }
@@ -223,6 +261,7 @@
       troughRecognized: typeof document !== 'undefined' && Boolean(document.getElementById('troughPanelOverlay')?.hasAttribute('data-ctrl-panel')),
       wardrobeRecognized: typeof document !== 'undefined' && Boolean(document.getElementById('npcWardrobeOverlay')?.hasAttribute('data-ctrl-panel')),
       pointerOnlyActions: [...POINTER_ONLY_ACTIONS],
+      bedSleepReady: Boolean(bedSleepAction()),
       seatedWaitReady: Boolean(seatedWaitButton()),
       lastAction,
     }),
