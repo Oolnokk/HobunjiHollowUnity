@@ -507,8 +507,20 @@
     ]);
   }
 
-  installGlobal('FoliageGenerator', wrapFoliageGenerator);
-  installGlobal('FoliageFurnitureRenderer', wrapFurnitureRenderer);
+  function installPublishedApis() {
+    if (window.FoliageGenerator) wrapFoliageGenerator(window.FoliageGenerator);
+    if (window.FoliageFurnitureRenderer) wrapFurnitureRenderer(window.FoliageFurnitureRenderer);
+    return !!(window.FoliageGenerator && window.FoliageFurnitureRenderer);
+  }
+
+  // NaturalSurfaceMaterials owns its own late-publication setter for FoliageGenerator.
+  // Poll the published APIs instead of competing for that global property; whichever
+  // loads last simply wraps the same functions in place, preserving both behaviors.
+  installPublishedApis();
+  const installPoll = setInterval(() => {
+    if (installPublishedApis()) clearInterval(installPoll);
+  }, 100);
+  setTimeout(() => clearInterval(installPoll), 15000);
 
   window.WoodCutSurfaces = {
     installed: true,
