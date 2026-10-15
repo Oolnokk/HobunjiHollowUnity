@@ -42,7 +42,9 @@ assert.match(houseSource, /generatedLogStyle[\s\S]{0,1800}StackedLogWalls\.build
 assert.match(houseSource, /excludeQuads: openingQuads/, 'generated exterior log walls inherit the same window and door cuts as brick walls');
 assert.match(houseSource, /authoredWallStyle[\s\S]{0,3000}generatedLogMode/, 'authored house pieces persist/select generated log construction');
 assert.match(interiorSource, /generatedLogStyle[\s\S]{0,1600}StackedLogWalls\.buildGroup/, 'interior base walls use the same generated log renderer');
-assert.match(ceilingsSource, /function gableLogPanels[\s\S]{0,4000}StackedLogWalls\.buildGroup/, 'interior gables feed explicit triangle spans into the same generated log renderer');
+assert.match(ceilingsSource, /function gableLogPanels\(gables, wallHeight\)/, 'interior gables are converted to explicit triangle wall polygons');
+assert.match(ceilingsSource, /gableLogPanels\(data\.gables, data\.wallHeight\)/, 'interior gable triangles feed the same exact-span generated log renderer');
+assert.match(ceilingsSource, /excludeQuads: options\.wallBuildOptions\?\.excludeQuads \|\| \[\]/, 'interior log gables inherit authored window and door cuts');
 
 assert.match(houseEditorSource, /<option value="logs">Stacked generated logs<\/option>/, 'House Editor exposes stacked generated logs as a wall construction choice');
 assert.match(houseEditorSource, /state\.piece\.wallStyle=.*wallStyle/, 'House Editor serializes the wall construction choice');
