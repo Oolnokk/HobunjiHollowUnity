@@ -218,8 +218,11 @@
     return count;
   }
 
-  function usesOverlayOnlyLighting(mapId) {
-    return !IS_INTERIOR_EDITOR && !!isOrdinaryBuildingArea(String(mapId || '').trim()); // Every ordinary authored building uses the shared fake-light compositor at runtime; the editor keeps its lighting preview controls.
+  function usesOverlayOnlyLighting(mapId, sceneRecord = null) {
+    const id = String(mapId || '').trim();
+    if (IS_INTERIOR_EDITOR || !isOrdinaryBuildingArea(id)) return false; // The editor keeps its lighting preview controls.
+    if (sceneRecord?.wallStyle === 'cavern' || sceneRecord?.wallStyle === 'mine') return false; // Dens/mines keep their own dim cave lighting (_isBuildingArea is every map_i_* id).
+    return !/^map_i_(?:den_|town_mine_)/i.test(id); // Every ordinary authored building uses the shared fake-light compositor at runtime.
   }
 
   function loadEnvironmentForMap(mapId) {
@@ -242,7 +245,7 @@
     return loadEnvironmentForMap(mapId).then(environment => {
       if (!environment) return null;
       const needsWallHeight = environment.wallHeight != null;
-      const overlayOnlyLighting = usesOverlayOnlyLighting(mapId); // Used below to leave baseline Three.js lighting untouched on maps whose darkness comes from the shared overlay.
+      const overlayOnlyLighting = usesOverlayOnlyLighting(mapId, sceneRecord); // Used below to leave baseline Three.js lighting untouched on maps whose darkness comes from the shared overlay.
       const needsLighting = !!environment.interiorLighting && !overlayOnlyLighting;
       let wallGroups = 0;
       let lights = 0;

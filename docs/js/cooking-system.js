@@ -142,7 +142,8 @@
 
   function lowestQualityOrder(key) {
     const order = [1, 2, 3, 4, 5]; // Ordinary automatic actions protect the highest tiers unless the player explicitly holds one.
-    return heldQuality?.key === key ? [heldQuality.stars, ...order.filter(stars => stars !== heldQuality.stars)] : order;
+    const held = heldQuality?.key === key && (typeof deps?.getHeldItemKey !== 'function' || deps.getHeldItemKey() === key); // A put-down item reverts to protecting its best stacks.
+    return held ? [heldQuality.stars, ...order.filter(stars => stars !== heldQuality.stars)] : order;
   }
 
   function peekLowestQuality(key) {

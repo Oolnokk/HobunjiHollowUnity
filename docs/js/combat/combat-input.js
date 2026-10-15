@@ -164,6 +164,7 @@
     if ((window.CombatVocalizations?.attackStartDelayS?.() || 0) > 0) {
       const request = { // Re-enters alignment only after the shared grunt/attack duration allows another start.
         callback,
+        queuedAtMs: now() * 1000,
         cancel() { if (queuedAttacks.get(slotIndex) === request) queuedAttacks.delete(slotIndex); },
       };
       queuedAttacks.set(slotIndex, request);
@@ -347,6 +348,24 @@
     finally { abortPress(2); }
   }
 
+  // A buffered start belongs to the swing it was queued behind: drop it once the
+  // weapon is no longer out (tool switch, held bag item) or it has waited far
+  // longer than any attack (e.g. queued at a doorway, then Combat.update paused
+  // inside an interior), so it can never land as an invisible hit later.
+  const QUEUED_ATTACK_MAX_AGE_MS = 4000;
+  function dropStaleQueuedAttacks() {
+    const deps = window.Combat.deps;
+    const tool = deps?.getActiveTool?.(); // Hosts without the dep (headless harnesses) are treated as weapon-out.
+    const weaponOut = (tool === undefined || tool === 'weapon') && deps?.getHeldMode?.() !== 'item';
+    const nowMs = now() * 1000;
+    for (const [slotIndex, request] of [...queuedAttacks]) {
+      if (weaponOut && nowMs - request.queuedAtMs <= QUEUED_ATTACK_MAX_AGE_MS) continue;
+      request.cancel();
+      if (slots[slotIndex]?.alignmentRequest === request) slots[slotIndex].alignmentRequest = null;
+      emitState(slotIndex, 'attack-queue-dropped');
+    }
+  }
+
   // Ticked once per frame from Combat.update(dt) (wired in combat-core.js).
   function update(dt) {
     if (blockedByActionLock()) { abortAllPresses(); return; }
@@ -354,6 +373,7 @@
       abortAllPresses();
       return;
     }
+    if (queuedAttacks.size) dropStaleQueuedAttacks();
     if (queuedAttacks.size && !(window.CombatVocalizations?.attackStartDelayS?.() > 0)) {
       const [slotIndex, request] = queuedAttacks.entries().next().value; // Drain one start per frame so it can establish its own duration gate.
       queuedAttacks.delete(slotIndex);

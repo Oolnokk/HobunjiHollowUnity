@@ -24,7 +24,7 @@
   <script src="js/GLTFLoader.js?v=20260712d"></script>
   <script src="js/WallBuilder.js?v=20261013hd467097"></script>
   <script src="js/HousePieceGen.js?v=20261015h7ba4ec2&window=20260926rebase1"></script>
-  <script src="js/interior-scene-builder.js?v=20261015h6bcbacd&window=20260926rebase1"></script>
+  <script src="js/interior-scene-builder.js?v=20261015hb802584&window=20260926rebase1"></script>
   <script src="js/interior-ceilings.js?v=20261015h5328b1c"></script>
   <script src="js/building-door.js?v=20260725a"></script>
   <script src="js/tile-pathfinding.js?v=20260808a"></script>
@@ -115,10 +115,10 @@
        in bandit-camps.js/porakaneki-camps-runtime.js/deadzone-billboard.js).
        Loaded early since it has no deps of its own and any of those
        creation sites may run as soon as the game world starts building. -->
-  <script src="js/furniture-light-registry.js?v=20261015hf17ba9f"></script>
+  <script src="js/furniture-light-registry.js?v=20261015haa711bb"></script>
   <script src="js/cutscene-lantern-carriers.js?v=20261010lant1"></script>
   <!-- Farmhouse interior renders flat; all its lighting comes from the 2D overlay (window.FarmhouseFlatLighting). -->
-  <script src="js/farmhouse-flat-lighting.js?v=20261015he8f6685"></script>
+  <script src="js/farmhouse-flat-lighting.js?v=20261015h654fd57"></script>
   <!-- Wilderness zone ground-visual refresh after a runtime tile edit and
        the daily felled-tree/mined-rock regrowth ticks that call back into
        it, extracted out of game.js. Must load before game.js, which calls
@@ -296,7 +296,7 @@
   <script src="js/combat/combat-attack-events.js?v=20261001quickbonus1"></script>
   <!-- Shared companion offensive-stat aggregation (Engraved Whistle × Sicced). -->
   <script src="js/combat/companion-offense.js?v=20260930ench1"></script>
-  <script src="js/combat/combat-input.js?v=20261015h24af637"></script>
+  <script src="js/combat/combat-input.js?v=20261015h2aa7476"></script>
   <script src="js/combat/combat-combo.js?v=20261005heb94de5"></script>
   <script src="js/combat/combat-quickattacks.js?v=20261014h47bad68"></script>
   <script src="js/combat/combat-counter-shield.js?v=20261005h66f4dee"></script>
@@ -356,7 +356,7 @@
   <script src="js/trinket-system.js?v=20261015h587b47e"></script>
   <script src="js/cooking-data.js?v=20260811a"></script>
   <script src="js/food-processing.js?v=20261001foodgift2"></script>
-  <script src="js/cooking-system.js?v=20261015hc64b297"></script>
+  <script src="js/cooking-system.js?v=20261015hf625da8"></script>
   <script src="js/key-item-system.js?v=20260918banubu1"></script>
   <!-- Alchemy (reagent/effect defs, potion brewing, shared timed effects) —
        window.AlchemySystem. Self-contained aside from deps injected via
@@ -2646,7 +2646,7 @@
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
-  <script src="js/controller-ui-nav.js?v=20261015hcc8183a"></script>
+  <script src="js/controller-ui-nav.js?v=20261015he7c3832"></script>
   <!-- ◀/▶ stepper buttons beside every <select> so controller players can change any dropdown. -->
   <script src="js/controller-select-steppers.js?v=20261014h3e0bf66"></script>
   <script>

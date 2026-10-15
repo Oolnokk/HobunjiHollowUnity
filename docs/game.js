@@ -13578,7 +13578,7 @@
             const windowOpenings = InteriorSceneBuilder.windowWallOpenings?.(mapData.furniture) || [];
             const wallPanels = InteriorSceneBuilder.buildWallPanels(floorSet, exitTileSet, authoredWallHeight);
             if (wallPanels.length) {
-              const wallGroup = InteriorSceneBuilder.buildWallGroup(THREE, houseWallBuilder, wallPanels, mapData.wallStyle, { usePlaceholder: false, mineTextureUrl: 'assets/textures/carved_smooth.png', farmNaturalColors, wallOpenings: windowOpenings });
+              const wallGroup = InteriorSceneBuilder.buildWallGroup(THREE, houseWallBuilder, wallPanels, mapData.wallStyle, { usePlaceholder: false, mineTextureUrl: 'assets/textures/carved_smooth.png', farmNaturalColors, wallOpenings: windowOpenings, logWall: mapData.logWall || {} });
               _markOutline(wallGroup);
               bScene.add(wallGroup);
             }
@@ -13589,6 +13589,7 @@
               wallHeight: authoredWallHeight,
               ceiling: mapData.ceiling,
               wallStyle: mapData.wallStyle,
+              logWall: mapData.logWall || {}, // Authored generated-log settings, same as the editor preview.
               texturesBasePath: 'assets/',
               roofStyle: mapId.startsWith('map_i_barn_') ? 'farm' : 'town', // A carved ceiling defaults to its building's exterior roof colour.
               wallBuilder: houseWallBuilder, // Gable ends get the same bricks as the walls below.
@@ -25339,7 +25340,7 @@
             const consumeAction = window.HobunjiDrunkGameplayBridge?.getHeldItemAction?.();
             if (consumeAction) return [consumeAction];
             if (heldItem && ITEM_DEFS[heldItem.key]?.isCookedFood) return [{ icon: '🍲', label: `Eat ${ITEM_DEFS[heldItem.key].label}`, action: 'consume_food_item', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 }];
-            if (heldItem && ITEM_DEFS[heldItem.key]?.isInstrument) return [{ icon: '🎵', label: 'Play', action: 'play_instrument', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 }];
+            if (heldItem && ITEM_DEFS[heldItem.key]?.isInstrument) return [{ icon: '🎵', label: 'Play', action: 'play_instrument', style: 'primary', allowed: !!window.MusicMinigame?.getEquippedInstrument?.() }]; // Playing requires the Instrument gear slot (bag copies must be transferred first).
           }
           return [];
         }
@@ -25489,7 +25490,7 @@
         const consumeAction = window.HobunjiDrunkGameplayBridge?.getHeldItemAction?.();
         if (!flaskActions.length && consumeAction) btns.unshift(consumeAction);
         else if (heldItem && ITEM_DEFS[heldItem.key]?.isCookedFood) btns.unshift({ icon: '🍲', label: `Eat ${ITEM_DEFS[heldItem.key].label}`, action: 'consume_food_item', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 });
-        else if (heldItem && ITEM_DEFS[heldItem.key]?.isInstrument) btns.unshift({ icon: '🎵', label: 'Play', action: 'play_instrument', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 });
+        else if (heldItem && ITEM_DEFS[heldItem.key]?.isInstrument) btns.unshift({ icon: '🎵', label: 'Play', action: 'play_instrument', style: 'primary', allowed: !!window.MusicMinigame?.getEquippedInstrument?.() });
         else if (heldItem && heldItem.key === 'campfireKitFurniture') btns.unshift({ icon: '🔥', label: 'Set Up Campfire', action: 'place_campfire_kit', style: 'primary', allowed: !!window.WildernessCampfire?.supportsArea?.(currentArea) && (inventory[heldItem.key] || 0) > 0 });
 
         // 2. Context: Plant button if selected item is a seed and tile can accept it
@@ -28499,6 +28500,7 @@
       window.CreatureGenetics?.init({ clamp: window.FormatUtils.clamp, CREATURE_DB });
 
       window.CookingSystem?.init({
+        getHeldItemKey: () => (manualHeldItem?.kind === 'bagItem' ? manualHeldItem.key : null) || (heldMode === 'item' ? getActiveInventoryItem()?.key || null : null), // Pack Hold's star tier applies only while that item is actually held.
         ITEM_DEFS,
         inventoryItems,
         inventory,

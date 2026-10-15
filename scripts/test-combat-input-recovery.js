@@ -88,4 +88,14 @@ gruntDelay=1; hold(); input.pressEnd(1); input.setAutoTargetEnabled(true,{persis
 assert(input.getState(1).alignmentPending,'buffered hold hands off to alignment');
 input.cancelPress(1); alignment.runAttack();
 assert(!holdActive,'cancellation after queue-to-alignment handoff prevents delayed windup');
+input.setAutoTargetEnabled(false,{persist:false});
+const tapsBeforeSwitch = tapCount; // A buffered swing must never land after the weapon is put away.
+let activeTool = 'weapon';
+context.window.Combat.deps.getActiveTool = () => activeTool;
+gruntDelay=1; input.fireTap(1); activeTool='hoe'; input.update(0.01); gruntDelay=0; activeTool='weapon'; input.update(0.01);
+assert.equal(tapCount,tapsBeforeSwitch,'switching tools drops a buffered weapon attack');
+gruntDelay=1; input.fireTap(1); clock += 10000; gruntDelay=0; input.update(0.01);
+assert.equal(tapCount,tapsBeforeSwitch,'a buffered attack that outlived any swing (e.g. paused indoors) is dropped');
+gruntDelay=1; input.fireTap(1); gruntDelay=0; input.update(0.01);
+assert.equal(tapCount,tapsBeforeSwitch+1,'ordinary buffered taps still fire');
 console.log('grunt-duration input queue checks passed');
