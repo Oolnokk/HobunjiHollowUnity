@@ -980,7 +980,8 @@ function beginCharge(options = {}) {
       if (action.cancelled || action.phase === 'done') attackActions.delete(action);
       else delayS = Math.max(delayS, Math.max(0, (Number(action.totalS) || 0) - (Number(action.t) || 0)));
     }
-    return Math.max(delayS, Number(window.Combat?.deps?.getWeaponAttackTimeline?.()?.remainingS) || 0);
+    const timeline = window.Combat?.deps?.getWeaponAttackTimeline?.(); // The cosmetic return tail must not extend the next attack's queue.
+    return Math.max(delayS, Number(timeline?.activeRemainingS ?? timeline?.remainingS) || 0);
   }
 
   function playStrikeGrunt(entity, category, abilityId, durationS = 0, elapsedS = 0) {
@@ -1044,11 +1045,11 @@ function beginCharge(options = {}) {
       if (!context) return originalBeginStagedAction.call(this, spec);
       trackBreather(context.entity);
 
-      const isPlayer = context.entity === player(); // Player visuals expose the complete authored hold and return tail.
+      const isPlayer = context.entity === player(); // Player visuals expose the strike hold separately from the cosmetic return tail.
       const timeline = isPlayer ? window.Combat.deps?.getWeaponAttackTimeline?.() : null; // Captured after the ability starts or releases its animation.
-      const totalS = Math.max(0, Number(timeline?.remainingS) || (Number(spec.windupS) || 0) + (Number(spec.strikeS) || 0) + (Number(spec.recoverS) || 0));
+      const totalS = Math.max(0, Number(timeline?.activeRemainingS ?? timeline?.remainingS ?? ((Number(spec.windupS) || 0) + (Number(spec.strikeS) || 0) + (Number(spec.recoverS) || 0))) || 0);
       const windupS = Math.min(totalS, Math.max(0, Number(timeline?.windupRemainingS ?? spec.windupS) || 0)); // Neutral to Windup endpoint only; excludes the Strike interpolation.
-      const releaseS = Math.max(0, totalS - windupS); // Windup to Strike to Neutral, including authored strike hold and return easing.
+      const releaseS = Math.max(0, totalS - windupS); // Windup to Strike through Hold; return easing stays purely visual.
       let charge = isPlayer ? (liveChargesByAbility.get(context.id) || null) : null; // Reuse a held charge until its release boundary.
       let release = null; // Cancellation handle for the second voice phase.
       let releaseStarted = false; // A low frame rate or strike callback must not play the second grunt twice.
@@ -1228,7 +1229,7 @@ function beginCharge(options = {}) {
 
   window.CombatVocalizations = {
     version: VERSION,
-    latestChange: 'Charge spans neutral to windup; release spans windup through strike and return. Attack starts queue until neutral.',
+    latestChange: 'Charge spans neutral to windup; release and queued attacks end at Hold, before the visual return to neutral.',
     configPromise,
     reloadConfig: loadConfig,
     forgetEntity,
