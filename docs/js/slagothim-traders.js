@@ -1112,7 +1112,7 @@
   function setTownValueForDev(value) {
     const mine = window.TownMine;
     if (!mine?.serialize || !mine?.restore) return { ok: false, error: 'TownMine unavailable.' };
-    mine.restore({ ...mine.serialize(), townValue: Math.max(0, Math.min(99, Math.floor(num(value, 0)))) });
+    mine.restore({ ...mine.serialize(), townValue: Math.max(0, Math.min(99, Math.floor(num(value, 0))) - (mine.hasImprovement?.('foundry') ? 3 : 0)) });
     deps?.save?.();
     return { ok: true, townValue: townValue() };
   }

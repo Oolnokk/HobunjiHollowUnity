@@ -1873,6 +1873,8 @@
         }
       }
 
+      window.ModularWeapons?.registerDefinitions(TOOL_ITEM_DEFS, HELD_SHAPE_DEFS, METAL_DEFS, VERDIGRIS_METAL_KEYS);
+
       // Drives the weapon-tool loadout's Combo slot (see combat-loadout.js) —
       // a sweep-style weapon (hatchet, fishing mace) plays the 3-Swing Combo,
       // a thrust-style weapon (fishing spear, pick-shovel) plays the 3-Poke
@@ -2195,7 +2197,7 @@
             ensureMetalToolIconSource(def.itemKey);
           }
         }
-        return def?.sprite || '';
+        return def?.modular ? '' : (def?.sprite || '');
       }
       // Plain sprite path for an ordinary tool, or a synthetic
       // ToolIconRender key for a smith-crafted verdigris tool — see above.
@@ -15896,7 +15898,7 @@
       Object.entries(TOOL_ITEM_DEFS).forEach(([key, def]) => {
         if (!def.metalKey || ITEM_DEFS[key]) return;
         const shape = HELD_SHAPE_DEFS[def.shapeKey];
-        const tags = [MELEE_WEAPON_SHAPE_DEFS[def.shapeKey] ? 'Weapon' : 'Tool', shape?.label || def.shapeKey];
+        const tags = [def.modular || MELEE_WEAPON_SHAPE_DEFS[def.shapeKey] ? 'Weapon' : 'Tool', shape?.label || def.shapeKey];
         if (def.slots?.includes('weapon') && tags[0] !== 'Weapon') tags.push('Weapon');
         ITEM_DEFS[key] = {
           icon: def.icon,
@@ -15904,7 +15906,7 @@
           cat: 'tool',
           sellPrice: 0,
           tags,
-          desc: `A ${METAL_DEFS[def.metalKey]?.label.toLowerCase()} ${shape?.label.toLowerCase()}, smithed by Sloomi or Kzubug. Its verdigris grows with this item's own mastery.`,
+          desc: def.modular ? `${def.label}, custom-forged at the Foundry. Its head determines damage type; its shaft supplies the grip and stance.` : `A ${METAL_DEFS[def.metalKey]?.label.toLowerCase()} ${shape?.label.toLowerCase()}, smithed by Sloomi or Kzubug. Its verdigris grows with this item's own mastery.`,
         };
       });
 
@@ -22103,12 +22105,22 @@
       const _toolTexLoader = new THREE.TextureLoader();
       const toolTextures = {};
       const loadedToolTextures = {};
+      const modularToolGeometries = new Map(); // Shared per-item quads let an asynchronous canvas expansion update both hands and every held copy.
       // One loader path for every TOOL_ITEM_DEFS entry: boot-time keys
       // below, and keys registered later at runtime (unbound Harlyao relic
       // weapons, js/harlyao-relics.js) through ensureToolTexture().
       function ensureToolTexture(key) {
         const def = TOOL_ITEM_DEFS[key];
         if (!def || toolTextures[key]) return toolTextures[key] || null;
+        if (def.modular) {
+          const canvas = document.createElement('canvas'); // Placeholder uses the donor frame until asynchronous composition finishes.
+          canvas.width = 450; canvas.height = 1204;
+          const texture = window.HobunjiSpritePngSurface.makeCanvasTexture(THREE, canvas, key); // Canonical authored PNG surface.
+          toolTextures[key] = texture;
+          def._imgW = 450; def._imgH = 1204;
+          refreshMetalToolWorldTexture(key);
+          return texture;
+        }
         const tex = _toolTexLoader.load(def.sprite, (t) => {
           const img = t.image;
           def._imgW = img.naturalWidth  || img.width  || 1;
@@ -22137,7 +22149,7 @@
         }
         return tex;
       }
-      for (const key of Object.keys(TOOL_ITEM_DEFS)) ensureToolTexture(key);
+      for (const key of Object.keys(TOOL_ITEM_DEFS)) if (!TOOL_ITEM_DEFS[key].modular) ensureToolTexture(key);
 
       // Swaps a crafted tool's in-hand mesh texture to its current metal/
       // verdigris/plating recolor — called once its base texture finishes
@@ -22156,7 +22168,8 @@
         window.ToolMetalRecolor?.getRecoloredCanvas(def.sprite, quantizedOpts).then(canvas => {
           tex.image = canvas;
           tex.needsUpdate = true;
-        });
+          if (def.modular && modularToolGeometries.has(itemKey)) window.ModularWeapons.fitPlaneGeometry(modularToolGeometries.get(itemKey), canvas, TOOL_MODEL_WIDTH);
+        }).catch(error => { window.__farmLog?.(`[Foundry/metal sprite] ${error.message}`, 'error'); });
       }
 
       // Build a PNG plane mesh sized to the sprite's pixel aspect ratio.
@@ -22167,20 +22180,22 @@
       // resource-ring layers (<1.1) while remaining below avatar planes (2+).
       const HELD_OBJECT_RENDER_ORDER = 1.5;
       function makeToolPlaneMesh(itemKey, opts = {}) {
-        if (!itemKey || !toolTextures[itemKey]) return null;
+        if (!itemKey || !ensureToolTexture(itemKey)) return null;
         const def  = TOOL_ITEM_DEFS[itemKey];
         const imgW = def?._imgW || 1;
         const imgH = def?._imgH || 1;
         const planeW = TOOL_MODEL_WIDTH;
         const planeH = planeW * (imgH / imgW);   // e.g. 450×1204 → 0.5 × 1.338
         const g   = new THREE.Group();
-        const geo = new THREE.PlaneGeometry(planeW, planeH);
-        const mat = new THREE.MeshBasicMaterial({
-          map: toolTextures[itemKey],
-          transparent: true,
-          alphaTest: 0.08,
-          side: THREE.DoubleSide,
-        });
+        let geo = def?.modular ? modularToolGeometries.get(itemKey) : null; // Reuse the same geometry object so existing dual-wield copies receive layout updates.
+        if (!geo) {
+          geo = new THREE.PlaneGeometry(planeW, planeH);
+          if (def?.modular) modularToolGeometries.set(itemKey, geo);
+        }
+        if (def?.modular) window.ModularWeapons.fitPlaneGeometry(geo, toolTextures[itemKey].image, TOOL_MODEL_WIDTH);
+        const mat = def?.modular
+          ? window.HobunjiSpritePngSurface.makeMaterial(THREE, toolTextures[itemKey], itemKey, { side: THREE.DoubleSide })
+          : new THREE.MeshBasicMaterial({ map: toolTextures[itemKey], transparent: true, alphaTest: 0.08, side: THREE.DoubleSide });
         const plane = new THREE.Mesh(geo, mat);
         // The PNG's fixed -90° X basis makes it lie in the tool's XZ plane.
         // Tool End Flip is an in-plane 180° turn on the visible sprite, so

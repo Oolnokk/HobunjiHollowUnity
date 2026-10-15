@@ -23,6 +23,7 @@
     // texture refresh even if it happens to load at the same clock hour.
     lastObservedClockKey = null;
     window.MetalArmorSystem?.init?.({ ...injectedDeps, rerenderSmith: renderMetalCraftShopPage }); // Reuses the smith's inventory/save/avatar adapters without growing another game.js dependency bundle.
+    window.FoundryShop?.init?.({ ...injectedDeps, rerender: renderMetalCraftShopPage });
     installHourlyMetalRefresh();
   }
 
@@ -259,9 +260,12 @@
     if (metalCraftActiveShape === null) metalCraftActiveShape = deps.UNLOCKED_TOOL_SHAPES[0];
     const goldEl = document.getElementById('mcGoldDisplay');
     if (goldEl) goldEl.innerHTML = `${deps.inventory.gold || 0}<span class="wallet-unit">g</span>`;
+    const title = document.querySelector('#mpMetalCraftShop .menu-section-title'); // Reflects the permanent building upgrade in the existing shop header.
+    if (title) title.textContent = window.TownMine?.hasImprovement?.('foundry') ? "Sloomi & Kzubug's Foundry" : "Sloomi & Kzubug's Smithing Counter";
     const list = document.getElementById('metalCraftShopList');
     if (!list) return;
     list.innerHTML = '';
+    window.FoundryShop?.render?.(list);
     const gearInventory = deps.getGearInventory();
 
     const craftHdr = document.createElement('div');

@@ -184,7 +184,8 @@
   }
 
   function toolKeyFor(value) {
-    const key = normalizeKey(value).replace(CRAFTED_METAL_SUFFIX, '');
+    const source = global.ModularWeapons?.sourceShape?.(value); // Custom gear inherits the live donor grip and scale rather than copying stale values.
+    const key = normalizeKey(source || value).replace(CRAFTED_METAL_SUFFIX, '');
     if (key.includes('hatchet')) return 'hatchet';
     if (key.includes('hoe')) return 'hoe';
     if (key.includes('pickshovel') || key.includes('pick-shovel')) return 'pickshovel';
