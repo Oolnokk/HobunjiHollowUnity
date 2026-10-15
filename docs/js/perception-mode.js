@@ -343,7 +343,7 @@
         mesh.material = Array.isArray(original)
           ? original.map(m => maskMaterialFor(m, target.category, skinned))
           : maskMaterialFor(original, target.category, skinned);
-        const hadLayer = mesh.layers.isEnabled(LAYER);
+        const hadLayer = (mesh.layers.mask & (1 << LAYER)) !== 0; // r128 Layers has no isEnabled().
         mesh.layers.enable(LAYER);
         swapped.push({ mesh, original, hadLayer });
       }
