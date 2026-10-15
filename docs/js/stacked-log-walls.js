@@ -129,8 +129,6 @@
     return bestLength > EPS ? { a: bestA, b: bestB, length: bestLength } : null;
   }
 
-
-
   function exclusionIntervalsAtCourse(quads, centerY, lowerY, upperY, midpoint, direction, halfSafeSpan) {
     const intervals = []; // Signed course-axis intervals occupied by windows/doors at any sampled height through this round log.
     for (const quad of quads) {
@@ -335,6 +333,8 @@
       source: 'FoliageGenerator.buildLogMesh',
       noGlbLengthScaling: true,
       openingCutCount: exclusionQuads.length,
+      defaultLogColorHex: DEFAULTS.barkColor,
+      gableEdgeSpanReclaim: EDGE_SPAN_RECLAIM,
       latestChange: 'Short gables now keep dense evenly distributed courses and reclaim conservative slope inset so logs fill near roof edges; every visible piece is still foliage-generated at its final source length.',
     });
     return group;
