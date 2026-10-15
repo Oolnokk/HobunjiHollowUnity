@@ -113,6 +113,18 @@
     return parts.join(' < ') || `mesh-${mesh.id}`;
   }
 
+  function stillOwnedByScanRoot(fp) {
+    if (!fp.mesh || !fp.scanRoot) return true;
+    let foundRoot = false; // Static scans keep the source mesh so later hide/remove/replace operations cannot leave an orphaned footprint behind.
+    for (let node = fp.mesh; node; node = node.parent) {
+      if (node.visible === false) return false;
+      if (node === fp.scanRoot) foundRoot = true;
+    }
+    if (!foundRoot) return false;
+    if (fp.scanRootHadParent && !fp.scanRoot.parent) return false;
+    return !hiddenOrGhost(fp.mesh, null);
+  }
+
   // A mutable set of footprints with a spatial hash. Static footprints come
   // from scanning roots; dynamic ones carry their own enabled() predicate.
   function createSet(options = {}) {
@@ -123,6 +135,7 @@
     // standing in them, so a door closing on the player never wedges them
     // inside collision (which would hand movement to the unstuck fallback).
     function active(fp) {
+      if (!stillOwnedByScanRoot(fp)) return false;
       if (!fp.enabled) return true;
       if (!fp.enabled()) { fp.latched = false; return false; }
       if (fp.latched) return true;
@@ -169,6 +182,9 @@
         fp.tag = tag;
         fp.source = sourceLabel(mesh, root.parent);
         fp.meshId = mesh.id;
+        fp.mesh = mesh; // Runtime liveness check prevents a hidden/removed/replaced scanned mesh from leaving an accurate-but-ghost footprint.
+        fp.scanRoot = root; // Used to prove the mesh still belongs to the root that originally authored this footprint.
+        fp.scanRootHadParent = !!root.parent; // Whole scanned roots detached from the ruin become inactive immediately even if their child hierarchy remains intact.
         if (options.enabled) fp.enabled = options.enabled;
         add(fp);
         added++;
