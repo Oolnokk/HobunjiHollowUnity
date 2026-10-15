@@ -34,8 +34,25 @@ jobs:
       - name: Run farmhouse sleep regression
         run: node scripts/test-sleep-passage-action-bridge.js
       - name: Run full regression suite
-        run: node scripts/run-tests.js
+        shell: bash
+        run: |
+          set +e
+          node scripts/run-tests.js 2>&1 | tee /tmp/farmhouse-bed-regression.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            tail -n 240 /tmp/farmhouse-bed-regression.log > regression-failure.txt
+            exit "$status"
+          fi
+      - name: Publish regression failure diagnostics
+        if: failure()
+        run: |
+          if [ -f regression-failure.txt ]; then
+            git add regression-failure.txt
+            git commit -m "Capture farmhouse sleep regression failure"
+            git push origin HEAD:fix/starting-farmhouse-bed-sleep-20261015
+          fi
       - name: Commit cache-bust chain and remove temporary workflow
+        if: success()
         run: |
           git add -A
           git commit -m "Refresh farmhouse sleep cache-bust chain"
