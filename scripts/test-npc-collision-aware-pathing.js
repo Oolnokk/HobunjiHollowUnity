@@ -132,6 +132,26 @@ seatApproachWalker.moveToward(4.5, 4.5, 1);
 assert.equal(window.NpcPathfinding.isNpcPositionWalkable('interior', seatApproachWalker.root.position.x, seatApproachWalker.root.position.z), true, 'small final-seat steps may exempt only the chair tile, never an intervening table tile');
 assert.ok(seatApproachWalker.root.position.x < 3.15 || Math.abs(seatApproachWalker.root.position.z - 4.5) > 0.25, 'blocked seat approach must stop or move around the table instead of entering it');
 
+
+// A walker pressing into a blocker its stale route/grid path never accounted
+// for must drop that path and re-plan on the live collision grid.
+const stuckWalker = {
+  area: 'interior',
+  rec: { id: 'stuck_npc' },
+  currentScheduleTarget: { c: 3, r: 1, routeId: 'stale_route' },
+  state: 'on-route',
+  routePath: [{ c: 3, r: 1 }], _routePathTargetKey: 'stale_route|3,1', routeNode: { c: 1, r: 1 },
+  root: { position: { x: 1.7, z: 1.5 } },
+  moveToward(tx, tz) { this.root.position.x = Math.min(tx, this.root.position.x + 0.3); this.root.position.z = tz; return false; },
+  _tryStartGridPath() { return false; },
+};
+window._npcWalkers.push(stuckWalker);
+for (let i = 0; i < 30 && stuckWalker.state === 'on-route'; i++) stuckWalker.moveToward(3.5, 1.5, 0.3);
+assert.equal(stuckWalker.state, 'grid-path', 'a walker stuck on a stale route re-plans onto a live grid path');
+assert.equal(stuckWalker.routePath, null, 'stale route path is dropped when stuck');
+assert.ok(stuckWalker._gridPath?.some(p => p.row >= 2), 'replanned grid path detours around the blocker');
+assert.ok(window.NpcPathfinding.debugSnapshot().stuckReplans >= 1);
+
 const wanderWalker = {
   area: 'interior',
   rec: { id: 'wander_npc' },

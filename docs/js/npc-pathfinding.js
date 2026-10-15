@@ -301,6 +301,41 @@
     return canNpcTraverse(walker.area, startX, startZ, desiredX, desiredZ, { ignoreFurnitureTile });
   }
 
+  // A walker that keeps pressing into a blocker (furniture/building placed after
+  // its route graph or grid path was computed) used to slide against it forever,
+  // because route/grid paths were only ever recomputed when the *target* changed.
+  // Track blocked-progress time; once it passes the threshold, drop the stale
+  // route/grid path and search the live collision grid for a fresh detour.
+  const STUCK_REPLAN_AFTER_S = 0.9;
+  const STUCK_REPLAN_COOLDOWN_MS = 1500;
+
+  function _noteWalkerProgress(walker, dt, blocked) {
+    const now = Date.now();
+    const s = walker._npcStuck || (walker._npcStuck = { t: 0, lastAt: 0, replanAt: 0, replans: 0 });
+    const step = Math.max(0, Math.min(dt || 0, 0.25));
+    if (now - s.lastAt > Math.max(600, (dt || 0) * 3000)) s.t = 0; // A gap in movement calls means it wasn't pressing a wall.
+    s.lastAt = now;
+    if (!blocked) { s.t = Math.max(0, s.t - step * 0.5); return; } // Decay rather than reset: a walker jittering blocked/clear against a corner is still stuck.
+    s.t += step;
+    if (s.t < STUCK_REPLAN_AFTER_S || now - s.replanAt < STUCK_REPLAN_COOLDOWN_MS) return;
+    s.t = 0;
+    s.replanAt = now;
+    _forceReplan(walker);
+  }
+
+  function _forceReplan(walker) {
+    const target = walker.currentScheduleTarget;
+    if (!target || !Number.isFinite(target.c) || !Number.isFinite(target.r) || typeof walker._tryStartGridPath !== 'function') return false;
+    walker._npcPathFailKey = null; // The cached failure was for the world before this blocker mattered.
+    walker.routePath = null; walker._routePathTargetKey = null;
+    walker.routeNode = null; walker.routeTarget = null; walker._gridPath = null;
+    walker._wanderGridPath = null;
+    debugStats.stuckReplans = (debugStats.stuckReplans || 0) + 1;
+    if (walker._tryStartGridPath(target)) { walker.state = 'grid-path'; return true; }
+    walker.state = 'idle'; // No detour exists right now; the scheduler re-evaluates (and retries) next tick.
+    return false;
+  }
+
   function decorateWalkerCollision(walker) {
     if (!walker || decoratedWalkers.has(walker) || typeof walker.moveToward !== 'function') return walker;
     decoratedWalkers.add(walker);
@@ -325,10 +360,11 @@
         this.root.position.x = startX;
         this.root.position.z = startZ;
         _recordBlockedMove(this, tx, tz);
+        _noteWalkerProgress(this, dt, true);
         return false;
       }
 
-      if (_npcStepIsClear(this, startX, startZ, desiredX, desiredZ, { ignoreFurnitureTile: seatFurnitureTile })) return arrived;
+      if (_npcStepIsClear(this, startX, startZ, desiredX, desiredZ, { ignoreFurnitureTile: seatFurnitureTile })) { _noteWalkerProgress(this, dt, false); return arrived; }
 
       const resolved = _resolveBlockedStep(this, startX, startZ, desiredX, desiredZ, { ignoreFurnitureTile: seatFurnitureTile });
       this.root.position.x = resolved.x;
@@ -336,6 +372,7 @@
       const actualDx = resolved.x - startX, actualDz = resolved.z - startZ;
       if (Math.hypot(actualDx, actualDz) > 1e-6) this.applyFacingDeadzone?.(-Math.atan2(actualDz, actualDx) + Math.PI / 2, 0.15);
       _recordBlockedMove(this, tx, tz);
+      _noteWalkerProgress(this, dt, true); // Every frame whose intended step was blocked counts, including sideways wall-slides that never get past the blocker.
       return arrived && Math.hypot(resolved.x - tx, resolved.z - tz) < 0.001;
     };
 

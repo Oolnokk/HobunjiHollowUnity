@@ -467,9 +467,17 @@
     return { area, registered, missing, authored: records.length };
   }
 
+  let lastFurnitureSyncAttemptAt = 0; // A sync that left furniture unmatched stays "dirty", so retries are spaced out instead of rescanning the scene every render.
+  let lastFurnitureSyncAttemptArea = null;
+  const FURNITURE_SYNC_RETRY_MS = 2000;
+
   function scheduleFurnitureSync(area = activeArea()) {
     if (!area || (lastFurnitureSyncArea === area && !activeFurnitureSync)) return;
     if (activeFurnitureSync) return activeFurnitureSync;
+    const now = Date.now();
+    if (lastFurnitureSyncAttemptArea === area && now - lastFurnitureSyncAttemptAt < FURNITURE_SYNC_RETRY_MS) return;
+    lastFurnitureSyncAttemptArea = area;
+    lastFurnitureSyncAttemptAt = now;
     activeFurnitureSync = Promise.resolve(syncFurnitureSupports(area))
       .finally(() => { activeFurnitureSync = null; });
     return activeFurnitureSync;
@@ -656,6 +664,7 @@
     syncFurnitureSupports,
     refreshFurniture: () => {
       lastFurnitureSyncArea = null;
+      lastFurnitureSyncAttemptAt = 0;
       authoredMapCache.clear();
       return scheduleFurnitureSync(activeArea());
     },

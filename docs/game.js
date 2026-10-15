@@ -28698,7 +28698,7 @@
         TOOL_ITEM_DEFS,
         getGearInventory: () => gearInventory,
         saveGearInventory,
-        buildEquipmentSlots,
+        buildEquipmentSlots: () => window.EquipmentPanel?.buildEquipmentSlots?.(),
         refreshMetalToolWorldTexture,
         lootShopWorldState: window.LootRolling.lootShopWorldState,
         getStoreClothingPieces: () => STORE_CLOTHING_PIECES,
