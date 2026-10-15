@@ -131,10 +131,10 @@
   // a house/interior actually asks it to build, after normal game boot.
   (function loadStackedLogWalls() {
     if (typeof document === 'undefined') return;
-    const src = 'js/stacked-log-walls.js?v=20261015stackedlogs2'; // Shared exact-span architecture renderer for exterior/interior log walls.
+    const src = 'js/stacked-log-walls.js?v=20261015hd1e63de'; // Shared exact-span architecture renderer for exterior/interior log walls.
     if (window.StackedLogWalls || document.querySelector('script[data-stacked-log-walls]')) return;
     if (document.readyState === 'loading') {
-      document.write(`<script src="${src}" data-stacked-log-walls="1"><\\/script>`);
+      document.write(`<script src="${src}" data-stacked-log-walls="1"><\/script>`);
       return;
     }
     const script = document.createElement('script'); // Late-load fallback for nested game boot paths that import FormatUtils after parsing.

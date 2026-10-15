@@ -27,6 +27,7 @@
     rowDepthJitter: 0.012,
   });
   const prototypeCaches = new WeakMap(); // THREE namespace -> exact-length generated-log prototypes reused by matching wall courses.
+  const PROTOTYPE_CACHE_LIMIT = 256; // Bounds retained editor/map variants while live clones retain ownership of their geometry.
   const materialCaches = new WeakMap(); // THREE namespace -> bark color -> shared PNG atlas material, avoiding one canvas texture per course length.
   const EPS = 1e-6; // Geometry tolerance shared by horizontal polygon intersection and point dedupe.
   const EDGE_SPAN_RECLAIM = 0.8; // Reclaims most of the old full-diameter gable inset so round courses visually reach sloped edges while retaining a small clipping guard.
@@ -135,7 +136,11 @@
     for (const quad of quads) {
       let minAlong = Infinity; // Lowest projected opening edge across center/lower/upper samples.
       let maxAlong = -Infinity; // Highest projected opening edge across center/lower/upper samples.
-      for (const sampleY of [centerY, lowerY, upperY]) {
+      const sampleHeights = [centerY, lowerY, upperY]; // Include opening vertices so thin cuts between the three course samples are not missed.
+      for (const point of quad) {
+        if (point[1] >= lowerY && point[1] <= upperY) sampleHeights.push(point[1]);
+      }
+      for (const sampleY of sampleHeights) {
         const span = horizontalSpanAtY(quad, sampleY); // Opening chord at this vertical sample; null means the opening does not overlap the course here.
         if (!span) continue;
         for (const point of [span.a, span.b]) {
@@ -277,6 +282,12 @@
     if (!cache) { cache = new Map(); prototypeCaches.set(THREE, cache); }
     const lengthKey = Math.round(length * 10000) / 10000; // 0.1 mm quantization dedupes numerically-identical spans without visibly rescaling anything.
     const key = [lengthKey, seed, meta.logDiameter, meta.trunkTaper, meta.trunkWonk, meta.trunkWonkScale, meta.trunkTwist, meta.trunkNoise, meta.trunkNoiseScale, meta.trunkNoiseOctaves, meta.radialSegments, meta.ringSegments, meta.barkColor].join('|'); // Exact generated geometry/material identity.
+    if (cache.has(key)) {
+      const cached = cache.get(key); // Refresh recency without regenerating an unchanged wall course.
+      cache.delete(key);
+      cache.set(key, cached);
+      return cached;
+    }
     if (!cache.has(key)) {
       const material = sharedMaterial(THREE, meta); // Shared one-atlas bark/cut material reused across different generated lengths.
       const mesh = foliage.buildLogMesh({ // Real foliage log generated at its final requested world length.
@@ -298,6 +309,9 @@
       });
       mesh.name = `StackedLogPrototype_${lengthKey}`;
       cache.set(key, mesh);
+      // Active clones share these buffers: evict only the cache reference,
+      // never dispose geometry/materials that a visible building still uses.
+      if (cache.size > PROTOTYPE_CACHE_LIMIT) cache.delete(cache.keys().next().value);
     }
     return cache.get(key);
   }
@@ -319,6 +333,10 @@
       const minY = Math.min(...ys); // Lowest point of this wall polygon.
       const maxY = Math.max(...ys); // Highest point of this wall polygon.
       const normal = panelNormal(THREE, corners); // Face normal used only for small deterministic depth jitter.
+      const panelOpenings = exclusionQuads.filter(quad => quad.every(point => { // Reject cuts on opposite/perpendicular walls once per panel rather than once per course.
+        const depth = (point[0] - corners[0][0]) * normal.x + (point[1] - corners[0][1]) * normal.y + (point[2] - corners[0][2]) * normal.z; // Signed distance from the actual wall plane, including tapered walls.
+        return Number.isFinite(depth) && Math.abs(depth) <= 0.001;
+      }));
       const horizontalWallFace = Math.abs(normal.y) >= HORIZONTAL_FACE_NORMAL_Y; // Outpost top/bottom wall faces need in-plane rows because their world-Y height is zero.
       if (horizontalWallFace) {
         const horizontalLayout = horizontalWallCourses(THREE, corners, meta, nominalPitch); // Side-by-side exact-span foliage rows covering this flat wall plane.
@@ -383,7 +401,7 @@
         direction.normalize();
         const baseMidpoint = new THREE.Vector3((centerSpan.a[0] + centerSpan.b[0]) * 0.5, centerY, (centerSpan.a[2] + centerSpan.b[2]) * 0.5); // Unswayed world-space center used as the projection origin for opening cuts.
         const halfSafeSpan = safeSpan * 0.5; // Symmetric safe wall extent around the center chord after gable/thickness clipping.
-        const exclusions = exclusionIntervalsAtCourse(exclusionQuads, centerY, lowerY, upperY, baseMidpoint, direction, halfSafeSpan); // Window/door intervals overlapping this round log's vertical thickness.
+        const exclusions = exclusionIntervalsAtCourse(panelOpenings, centerY, lowerY, upperY, baseMidpoint, direction, halfSafeSpan); // Only this wall's window/door intervals overlap the course.
         const visibleSegments = visibleSegmentsAroundOpenings(halfSafeSpan, exclusions); // One or more real source-log pieces remaining around those openings.
         const seedVariant = courseIndex % 4; // Four repeating shapes keep straight walls varied while allowing same-length geometry reuse.
 
@@ -442,9 +460,11 @@
       source: 'FoliageGenerator.buildLogMesh',
       noGlbLengthScaling: true,
       openingCutCount: exclusionQuads.length,
+      prototypeCacheSize: prototypeCaches.get(THREE)?.size || 0,
+      prototypeCacheLimit: PROTOTYPE_CACHE_LIMIT,
       defaultLogColorHex: DEFAULTS.barkColor,
       gableEdgeSpanReclaim: EDGE_SPAN_RECLAIM,
-      latestChange: 'Flat wall-tagged faces now fill with side-by-side exact-length foliage logs; upright walls and gables keep dense horizontal courses and slope-aware shortening.',
+      latestChange: 'Opening cuts stay on their own wall, thin openings split logs, and the preview prototype cache retains at most 256 variants.',
     });
     return group;
   }
