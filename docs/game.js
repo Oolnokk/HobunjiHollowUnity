@@ -16150,6 +16150,7 @@
 
       // ── Inventory panel state ──────────────────────────────────────
       let invSelectedKey = null;
+      let invSelectedStack = null; // Exact genotype/star variant selected in Pack; totals remain compatible with existing saves.
       let invActiveCat   = 'all';
       const INVENTORY_EMPTY_SLOT_FLOOR = 28; // Used by buildInventoryGrid() so the bag reads as open generic storage.
 
@@ -16252,6 +16253,7 @@
 
       function clearInventoryDetail(message = '← Select an item') {
         invSelectedKey = null;
+        invSelectedStack = null;
         document.querySelectorAll('.inv-item-box').forEach(b => b.classList.remove('selected'));
         const emptyEl  = document.getElementById('iiEmpty');
         const detailEl = document.getElementById('iiDetail');
@@ -16266,18 +16268,20 @@
         const keys = getInventoryStackKeys(invActiveCat);
         // A count past InventoryStacks.STACK_SIZE spills into extra boxes of
         // the same item (250 -> 99, 99, 52) rather than one oversized stack.
-        const boxStacks = keys.flatMap(key => window.InventoryStacks.stackCounts(inventory[key] || 0).map(count => ({ key, count })));
+        const boxStacks = keys.flatMap(key => window.InventoryStacks.variants(key, inventory[key] || 0, isQualityTrackedItem(ITEM_DEFS[key])));
         const visibleSlotCount = Math.max(INVENTORY_EMPTY_SLOT_FLOOR, Math.ceil(Math.max(boxStacks.length, 1) / 7) * 7);
 
         const _slotAbbr = { hoe:'H', shovel:'Sh', axe:'Ax', pick:'Pk', harpoon:'Hp', weapon:'W', ranged:'R' };
-        boxStacks.forEach(({ key, count }) => {
+        boxStacks.forEach(stack => {
+          const { key, count, stars } = stack; // One independently selectable quality/genotype box.
           const def   = ITEM_DEFS[key];
           const box   = document.createElement('button');
-          box.className = 'inv-item-box' + (key === invSelectedKey ? ' selected' : '');
+          box.className = 'inv-item-box' + (stack.stackId === invSelectedStack?.stackId ? ' selected' : '');
           box.dataset.key = key;
+          box.dataset.stackId = stack.stackId;
           box.innerHTML =
             `<span class="iib-icon">${def.icon}</span>` +
-            `<span class="iib-count">×${count}</span>`;
+            `<span class="iib-count">${stars ? stars + '★ · ' : ''}×${count}</span>`;
           // Corner badge listing every slot this item is assigned to
           const badges = Object.entries(equipmentSlots)
             .filter(([, v]) => v === key)
@@ -16288,8 +16292,9 @@
             badge.textContent = badges.join('·');
             box.appendChild(badge);
           }
-          box.addEventListener('click', () => selectInventoryItem(key));
+          box.addEventListener('click', () => selectInventoryItem(key, false, stack));
           applyItemSpriteIcon(box.querySelector('.iib-icon'), def, key);
+          window.InventoryStacks.applyHeadIcon(box.querySelector('.iib-icon'), LIVESTOCK_ITEM_KINDS[key], stack.genotype, stack.variant);
           grid.appendChild(box);
         });
 
@@ -16306,7 +16311,11 @@
         const wd = document.getElementById('invWalletAmount');
         if (wd) wd.textContent = (inventory.gold || 0);
 
-        if (invSelectedKey && keys.includes(invSelectedKey)) selectInventoryItem(invSelectedKey, true);
+        if (invSelectedKey && keys.includes(invSelectedKey)) {
+          const selected = boxStacks.find(stack => stack.stackId === invSelectedStack?.stackId); // Keep selection only if that exact stack still exists.
+          if (selected) selectInventoryItem(invSelectedKey, false, selected);
+          else clearInventoryDetail();
+        }
         else clearInventoryDetail(keys.length ? '← Select an item' : 'Bag is empty');
         window.EquipmentPanel.buildPackClothingSection();
       }
@@ -16380,15 +16389,25 @@
         return [cookingBuffText, flavorText].filter(Boolean).join(' — ');
       }
 
-      function selectInventoryItem(key, skipGridUpdate) {
+      function selectInventoryItem(key, skipGridUpdate, selectedStack = null) {
         const def   = ITEM_DEFS[key];
-        const count = inventory[key] || 0;
+        const stack = selectedStack || (invSelectedKey === key ? invSelectedStack : null); // Closure pins actions to the selected variant.
+        const count = stack ? stack.count : (inventory[key] || 0);
+        const unitPrice = stack?.stars ? Math.max(1, Math.round((def?.sellPrice || 0) * window.CookingSystem.valueMultiplierForStars(stack.stars))) : (def?.sellPrice || 0); // Same shared quality multipliers as other sales.
+        function consumeSelected(amount) {
+          if (stack?.stars) return window.CookingSystem.consumeQuality(key, stack.stars, amount);
+          if ((inventory[key] || 0) < amount) return false;
+          inventory[key] -= amount;
+          clampInventoryStack(key);
+          return true;
+        }
         if (!def || count <= 0) { clearInventoryDetail('← Select an item'); return; }
 
         if (!skipGridUpdate) {
           invSelectedKey = key;
+          invSelectedStack = stack;
           document.querySelectorAll('.inv-item-box').forEach(b =>
-            b.classList.toggle('selected', b.dataset.key === key));
+            b.classList.toggle('selected', stack ? b.dataset.stackId === stack.stackId : b.dataset.key === key));
         }
 
         const emptyEl  = document.getElementById('iiEmpty');
@@ -16400,10 +16419,12 @@
         set('iiIcon',  def.icon);
         const iiIconEl = document.getElementById('iiIcon');
         if (iiIconEl) { iiIconEl.style.backgroundImage = ''; iiIconEl.classList.remove('sprited-icon'); }
+        if (iiIconEl) delete iiIconEl.dataset.animalHeadRequest;
         applyItemSpriteIcon(iiIconEl, def, key);
+        window.InventoryStacks.applyHeadIcon(iiIconEl, LIVESTOCK_ITEM_KINDS[key], stack?.genotype, stack?.variant);
         set('iiName',  `${def.label} ×${count}`);
-        set('iiPrice', def.sellPrice > 0 ? `${def.sellPrice}g each` : '');
-        set('iiQuality', qualityDisplayForItem(key, def));
+        set('iiPrice', def.sellPrice > 0 ? `${unitPrice}g each` : '');
+        set('iiQuality', stack?.stars ? `${starGlyphs(stack.stars)} ${QUALITY_DESCRIPTORS[stack.stars]}` : qualityDisplayForItem(key, def));
         set('iiTags',  def.tags.map(t => `<span class="ii-tag">${t}</span>`).join(''));
         set('iiDesc',  itemDescriptionWithFlavor(key, def));
 
@@ -16430,6 +16451,7 @@
           // and open the item select wheel just to hold one.
           if (window.ItemProcessing.isWheelEligible(key) && count > 0) {
             mkBtn('🤲 Hold', 'equip', () => {
+              window.CookingSystem?.setHeldQuality?.(key, stack?.stars);
               const index = getInventoryStackItems().findIndex(item => item.key === key);
               if (index >= 0) activeItemIndex = index;
               heldMode = 'item';
@@ -16442,32 +16464,32 @@
             const heldNow = getManualHeldItem();
             const isHeld = heldNow?.kind === 'bagItem' && heldNow.key === key;
             mkBtn(isHeld ? '✋ Holding — Stop' : '✋ Hold', isHeld ? '' : 'equip', () => {
+              window.CookingSystem?.setHeldQuality?.(isHeld ? null : key, stack?.stars);
               setManualHeldItem(isHeld ? null : { kind: 'bagItem', key });
               selectInventoryItem(key, skipGridUpdate);
             });
           }
           if (def.isCookedFood && count > 0) {
             mkBtn('🍲 Eat', 'equip', () => {
-              const result = window.CookingSystem.eat(key);
+              const result = window.CookingSystem.eat(key, stack?.stars);
               showToast(result.message, result.ok !== false);
               if (result.ok !== false) { buildInventoryGrid(); window.HudUpdate.refreshItemScroll(); refreshActionBar(); saveMemberWorldData(); }
             });
           }
           if (def.sellPrice > 0 && count > 0) {
-            mkBtn(`Sell All  (${count} × ${def.sellPrice}g = ${count * def.sellPrice}g)`, 'sell', () => {
-              const earned = (inventory[key] || 0) * def.sellPrice;
+            mkBtn(`Sell Stack (${count} × ${unitPrice}g = ${count * unitPrice}g)`, 'sell', () => {
+              if (!consumeSelected(count)) return;
+              const earned = count * unitPrice; // Only this quality stack is sold.
               inventory.gold = (inventory.gold || 0) + earned;
-              delete inventory[key];
-              showToast(`Sold all ${def.label} for ${earned}g`, true);
+              showToast(`Sold ${count} ${def.label} for ${earned}g`, true);
               if (spGoldAmount) spGoldAmount.textContent = inventory.gold;
               buildInventoryGrid(); window.HudUpdate.refreshItemScroll(); refreshActionBar();
               saveMemberWorldData();
             });
-            mkBtn(`Sell 1  (${def.sellPrice}g)`, 'sell', () => {
-              if ((inventory[key] || 0) < 1) return;
-              inventory[key]--; inventory.gold = (inventory.gold || 0) + def.sellPrice;
-              clampInventoryStack(key);
-              showToast(`Sold 1 ${def.label} for ${def.sellPrice}g`, true);
+            mkBtn(`Sell 1 (${unitPrice}g)`, 'sell', () => {
+              if (!consumeSelected(1)) return;
+              inventory.gold = (inventory.gold || 0) + unitPrice;
+              showToast(`Sold 1 ${def.label} for ${unitPrice}g`, true);
               if (spGoldAmount) spGoldAmount.textContent = inventory.gold;
               buildInventoryGrid(); window.HudUpdate.refreshItemScroll(); refreshActionBar();
               saveMemberWorldData();
@@ -16489,7 +16511,7 @@
           // happens from the Farm tab, not here.
           if (LIVESTOCK_ITEM_KINDS[key] && count > 0) {
             mkBtn('Add to Stable', 'equip', () => {
-              const result = window.FarmAnimals.addToStable(key);
+              const result = window.FarmAnimals.addToStable(key, stack ? { inventoryVariant: stack.variant } : {});
               showToast(result.message, result.ok);
               if (result.ok) { buildInventoryGrid(); window.HudUpdate.refreshItemScroll(); refreshActionBar(); }
             });
