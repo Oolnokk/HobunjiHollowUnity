@@ -32,7 +32,6 @@
 
   const DANCE_STYLES = Object.freeze({
     'side-step': Object.freeze({ label: 'Side Step', intensity: 1.00, stepFactor: 1.00 }),
-    'gentle-twirl': Object.freeze({ label: 'Gentle Twirl', intensity: 1.18, stepFactor: 0.88 }),
     'loose-sway': Object.freeze({ label: 'Loose Sway', intensity: 0.96, stepFactor: 0.48 }),
   });
   const ARM_STYLES = Object.freeze({
@@ -41,11 +40,9 @@
   });
 
   const ACTIONS = Object.freeze([
-    { id: 'kurraya', icon: '♫', label: 'Play Kurraya', kind: 'kurraya' },
+    { id: 'instrument', icon: '♫', label: 'Play instrument', kind: 'instrument' },
     { id: 'side-step-punch', icon: '↔', label: 'Side Step · Punch', kind: 'dance', style: 'side-step', armStyle: 'overhead-punch' },
     { id: 'side-step-tpose', icon: '↔', label: 'Side Step · T-Pose', kind: 'dance', style: 'side-step', armStyle: 'tpose-jiggle' },
-    { id: 'gentle-twirl-punch', icon: '↻', label: 'Gentle Twirl · Punch', kind: 'dance', style: 'gentle-twirl', armStyle: 'overhead-punch' },
-    { id: 'gentle-twirl-tpose', icon: '↻', label: 'Gentle Twirl · T-Pose', kind: 'dance', style: 'gentle-twirl', armStyle: 'tpose-jiggle' },
     { id: 'loose-sway-punch', icon: '〰', label: 'Loose Sway · Punch', kind: 'dance', style: 'loose-sway', armStyle: 'overhead-punch' },
     { id: 'loose-sway-tpose', icon: '〰', label: 'Loose Sway · T-Pose', kind: 'dance', style: 'loose-sway', armStyle: 'tpose-jiggle' },
   ]);
@@ -64,7 +61,7 @@
     renderHookInstalled: false,
     priorGamepad: new Map(),
     debug: {
-      lastChange: 'Added centered Social Actions wheel with curated procedural dance presets.',
+      lastChange: 'Instrument gear slot; Action 2 spins; NPCs use their preferred dance.',
       lastOpenSource: null,
       lastAction: null,
       controllerOpenBinding: null,
@@ -440,6 +437,7 @@
   }
 
   function startDance(style, armStyle) {
+    if (style === 'gentle-twirl') style = 'side-step'; // Legacy callers keep the base dance without automatic turns.
     if (!DANCE_STYLES[style] || !ARM_STYLES[armStyle]) return false;
     stopDance('replace');
 
@@ -455,6 +453,7 @@
     state.dance = {
       style,
       armStyle,
+      spinStartedAt: null, // Action 2 starts a single two-beat turn.
       startedAt: now,
       lastNow: now,
       dimensions,
@@ -474,9 +473,24 @@
 
     state.debug.lastAction = `Dance: ${DANCE_STYLES[style].label} + ${ARM_STYLES[armStyle]}`;
     window.HobunjiActivityEvents?.emit('dance', { style, armStyle });
-    toast(`${DANCE_STYLES[style].label} · ${ARM_STYLES[armStyle]} — Dodge to stop`, true);
+    toast(`${DANCE_STYLES[style].label} · ${ARM_STYLES[armStyle]} — Action 2 to spin; Dodge to stop`, true);
+    window.WorldActionInputClaims?.setClaims?.('social-dance-spin', [{ actionId: 'action2', label: 'Spin', priority: 80, onPress: spin }]);
     updateDebug();
     return true;
+  }
+
+  function spin() {
+    if (!state.dance) return false;
+    const timestamp = performance.now(); // Used to reject overlapping spins without restarting dance timing.
+    if (state.dance.spinStartedAt !== null && timestamp - state.dance.spinStartedAt < 120000 / tactusBpm(cfg.danceBpm)) return false;
+    state.dance.spinStartedAt = timestamp;
+    return true;
+  }
+
+  function spinRotation(timestamp = performance.now()) {
+    if (state.dance?.spinStartedAt == null) return 0;
+    const progress = (timestamp - state.dance.spinStartedAt) / (120000 / tactusBpm(cfg.danceBpm)); // Shared by both body channel writers.
+    return progress >= 1 ? 0 : Math.PI * 2 * smootherstep01(progress);
   }
 
   function stopDance(reason = 'cancel') {
@@ -484,6 +498,7 @@
     if (!dance) return false;
     restoreHands(dance.hands);
     state.dance = null;
+    window.WorldActionInputClaims?.clearClaims?.('social-dance-spin');
     window.PlayerBodyTransformComposer?.clearChannel?.('social-dance');
     state.danceLock?.release?.();
     state.danceLock = null;
@@ -516,7 +531,7 @@
 
     window.PlayerBodyTransformComposer?.setChannel?.('social-dance', {
       priority: 60,
-      rotation: { pitch: 0, yaw: motion.twirlRotation, roll: motion.bodySway },
+      rotation: { pitch: 0, yaw: spinRotation(now), roll: motion.bodySway },
       translation: { x: motion.tangentShift * sizeScale, y: motion.bounce * sizeScale, z: 0 },
     });
 
@@ -572,10 +587,10 @@
   function performAction(action) {
     if (!action) return;
     state.debug.lastAction = action.label;
-    if (action.kind === 'kurraya') {
-      stopDance('kurraya');
+    if (action.kind === 'instrument') {
+      stopDance('instrument');
       if (!window.MusicMinigame?.beginPlayerSession) {
-        toast('Kurraya performance is not ready.', false);
+        toast('Instrument performance is not ready.', false);
         return;
       }
       window.MusicMinigame.beginPlayerSession();
@@ -939,6 +954,9 @@ ${outerRules}
     cancel: cancelWheelOrDance,
     startDance,
     stopDance,
+    spin,
+    spinRotation,
+    isDancing: () => !!state.dance,
     get actions() { return ACTIONS.slice(); },
     getDebug() {
       return {
@@ -947,7 +965,7 @@ ${outerRules}
         latched: state.latched,
         selectedIndex: state.selectedIndex,
         selectedAction: state.selectedIndex >= 0 ? ACTIONS[state.selectedIndex]?.id : null,
-        dancing: state.dance ? { style: state.dance.style, armStyle: state.dance.armStyle } : null,
+        dancing: state.dance ? { style: state.dance.style, armStyle: state.dance.armStyle, spinStartedAt: state.dance.spinStartedAt } : null,
         approvedDanceStyles: Object.keys(DANCE_STYLES),
         approvedArmStyles: Object.keys(ARM_STYLES),
       };

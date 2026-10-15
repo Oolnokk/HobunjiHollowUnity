@@ -116,6 +116,7 @@
       "npcs": [
             {
                   "id": "garanki_gabu",
+                  "preferredDance": { "style": "side-step", "armStyle": "overhead-punch" },
                   "name": "Garanki Gabu",
                   "homeId": "researchers_tent",
                   "species": "Mao-ao",
@@ -698,6 +699,7 @@
             },
             {
                   "id": "gorobi_ginju",
+                  "preferredDance": { "style": "loose-sway", "armStyle": "overhead-punch" },
                   "name": "Gorobi Ginju",
                   "homeId": "ginju_farmstead",
                   "species": "<unknown species>",
@@ -1260,6 +1262,7 @@
             },
             {
                   "id": "gikali_ginju",
+                  "preferredDance": { "style": "side-step", "armStyle": "tpose-jiggle" },
                   "name": "Gikali Ginju",
                   "homeId": "ginju_farmstead",
                   "species": "<unknown species>",
@@ -1802,6 +1805,7 @@
             },
             {
                   "id": "aliri_ginju",
+                  "preferredDance": { "style": "loose-sway", "armStyle": "tpose-jiggle" },
                   "name": "Aliri Ginju",
                   "homeId": "ginju_farmstead",
                   "species": "<unknown species>",
@@ -2319,6 +2323,7 @@
             },
             {
                   "id": "gantami_ginju",
+                  "preferredDance": { "style": "side-step", "armStyle": "overhead-punch" },
                   "name": "Gantami Ginju",
                   "homeId": "ginju_farmstead",
                   "species": "<unknown species>",
@@ -2786,6 +2791,7 @@
             },
             {
                   "id": "leaf",
+                  "preferredDance": { "style": "loose-sway", "armStyle": "overhead-punch" },
                   "name": "Leaf",
                   "homeId": "little_swamp_house",
                   "species": "Engh Sho",
@@ -3322,6 +3328,7 @@
             },
             {
                   "id": "pahu",
+                  "preferredDance": { "style": "side-step", "armStyle": "tpose-jiggle" },
                   "name": "Pahu",
                   "homeId": "little_swamp_house",
                   "species": "Kenkari",
@@ -3866,6 +3873,7 @@
             },
             {
                   "id": "furunji_funji",
+                  "preferredDance": { "style": "loose-sway", "armStyle": "tpose-jiggle" },
                   "name": "Furunji Funji",
                   "homeId": "general_store",
                   "species": "<unknown species>",
@@ -4614,6 +4622,7 @@
             },
             {
                   "id": "foroji_funji",
+                  "preferredDance": { "style": "side-step", "armStyle": "overhead-punch" },
                   "name": "Foroji Funji",
                   "homeId": "general_store",
                   "species": "<unknown species>",
@@ -5321,6 +5330,7 @@
             },
             {
                   "id": "kzubug",
+                  "preferredDance": { "style": "loose-sway", "armStyle": "overhead-punch" },
                   "name": "Kzubug",
                   "homeId": "smithy",
                   "species": "Mashtzarr",
@@ -5845,6 +5855,7 @@
             },
             {
                   "id": "sloomi",
+                  "preferredDance": { "style": "side-step", "armStyle": "tpose-jiggle" },
                   "name": "Sloomi",
                   "homeId": "smithy",
                   "species": "Tletingan",
@@ -6382,6 +6393,7 @@
             },
             {
                   "id": "hreesh",
+                  "preferredDance": { "style": "loose-sway", "armStyle": "tpose-jiggle" },
                   "name": "Hreesh Nakheez",
                   "homeId": "inn",
                   "species": "Mashtzarr",
@@ -6904,6 +6916,7 @@
             },
             {
                   "id": "jubmir",
+                  "preferredDance": { "style": "side-step", "armStyle": "overhead-punch" },
                   "name": "Jubmir",
                   "homeId": "inn",
                   "species": "<unknown species>",
@@ -7360,6 +7373,7 @@
             },
             {
                   "id": "father_hunundi_hodu",
+                  "preferredDance": { "style": "loose-sway", "armStyle": "overhead-punch" },
                   "name": "Father Hunundi Hodu",
                   "homeId": "temple",
                   "species": "Mao-ao",
@@ -7979,6 +7993,7 @@
             },
             {
                   "id": "namui_u_hakaru",
+                  "preferredDance": { "style": "side-step", "armStyle": "tpose-jiggle" },
                   "name": "Namu’i u Hakaru",
                   "homeId": "temple",
                   "species": "<unknown species>",
@@ -8544,6 +8559,7 @@
             },
             {
                   "id": "takua_ao_hakaru",
+                  "preferredDance": { "style": "loose-sway", "armStyle": "tpose-jiggle" },
                   "name": "Taku’a ao Hakaru",
                   "homeId": "temple",
                   "species": "<unknown species>",
@@ -9085,6 +9101,7 @@
             },
             {
                   "id": "kaboku_kunji",
+                  "preferredDance": { "style": "side-step", "armStyle": "overhead-punch" },
                   "name": "Kaboku Kunji",
                   "homeId": "potion_shop",
                   "species": "<unknown species>",
@@ -9714,6 +9731,7 @@
             },
             {
                   "id": "kinami_kunji",
+                  "preferredDance": { "style": "loose-sway", "armStyle": "overhead-punch" },
                   "name": "Kinami Kunji",
                   "homeId": "potion_shop",
                   "species": "<unknown species>",
@@ -10371,6 +10389,7 @@
             },
             {
                   "id": "dzibim_khibu",
+                  "preferredDance": { "style": "side-step", "armStyle": "tpose-jiggle" },
                   "name": "Dzibim Khibu",
                   "homeId": "carpenters",
                   "species": "<unknown species>",
@@ -10926,6 +10945,7 @@
             },
             {
                   "id": "dzahiri_khibu",
+                  "preferredDance": { "style": "loose-sway", "armStyle": "tpose-jiggle" },
                   "name": "Dzahiri Khibu",
                   "homeId": "carpenters",
                   "species": "<unknown species>",
@@ -11439,6 +11459,7 @@
             },
             {
                   "id": "nashka_khibu",
+                  "preferredDance": { "style": "side-step", "armStyle": "overhead-punch" },
                   "name": "Nashka Khibu",
                   "homeId": "carpenters",
                   "species": "Mashtzarr",
@@ -11918,6 +11939,7 @@
             },
             {
                   "id": "teacup_unumanuk",
+                  "preferredDance": { "style": "loose-sway", "armStyle": "overhead-punch" },
                   "name": "Eldress Teacup Unumanuk",
                   "homeId": "unumanuk_household",
                   "species": "Engh-Sho",
@@ -12454,6 +12476,7 @@
             },
             {
                   "id": "binding_hatayap",
+                  "preferredDance": { "style": "side-step", "armStyle": "tpose-jiggle" },
                   "name": "Binding Hatayap",
                   "homeId": "unumanuk_household",
                   "species": "Engh-Sho",
@@ -12981,6 +13004,7 @@
             },
             {
                   "id": "spearhead_unumanuk",
+                  "preferredDance": { "style": "loose-sway", "armStyle": "tpose-jiggle" },
                   "name": "Spearhead Unumanuk",
                   "homeId": "unumanuk_household",
                   "species": "Engh-Sho",
@@ -13560,6 +13584,7 @@
             },
             {
                   "id": "oddclaw_unumanuk",
+                  "preferredDance": { "style": "side-step", "armStyle": "overhead-punch" },
                   "name": "Oddclaw Unumanuk",
                   "homeId": "unumanuk_household",
                   "species": "Engh-Sho",
@@ -14144,6 +14169,7 @@
             },
             {
                   "id": "tooth_hatayap",
+                  "preferredDance": { "style": "loose-sway", "armStyle": "overhead-punch" },
                   "name": "Tooth Hatayap",
                   "homeId": "unumanuk_household",
                   "species": "Engh-Sho",
@@ -14721,6 +14747,7 @@
             },
             {
                   "id": "hammerhead_tuhupnuk",
+                  "preferredDance": { "style": "side-step", "armStyle": "tpose-jiggle" },
                   "name": "Hammerhead Tuhupnuk",
                   "homeId": "tuhupnuk_clan",
                   "species": "Engh-Sho",
@@ -15170,6 +15197,7 @@
             },
             {
                   "id": "talisman_hatayap",
+                  "preferredDance": { "style": "loose-sway", "armStyle": "tpose-jiggle" },
                   "name": "Talisman Hatayap",
                   "homeId": "hatayap_clan_deceased",
                   "species": "Engh-Sho",
@@ -15616,6 +15644,7 @@
             },
             {
                   "id": "bowstring_hatayap",
+                  "preferredDance": { "style": "side-step", "armStyle": "overhead-punch" },
                   "name": "Bowstring Hatayap",
                   "homeId": "hatayap_clan_deceased",
                   "species": "Engh-Sho",
@@ -16062,6 +16091,7 @@
             },
             {
                   "id": "bird_bone",
+                  "preferredDance": { "style": "loose-sway", "armStyle": "overhead-punch" },
                   "name": "Bird Bone",
                   "homeId": "<suggestion: location — needs a hunter's lodge/cabin placed near the town outskirts; no building exists for him yet>",
                   "species": "Engh-sho",
@@ -16522,6 +16552,7 @@
             },
             {
                   "id": "khazud",
+                  "preferredDance": { "style": "side-step", "armStyle": "tpose-jiggle" },
                   "name": "Khazud",
                   "homeId": "<suggestion: location — needs a woodcutter's cabin/yard placed near the Southern Forest or town; no building exists for him yet>",
                   "species": "Mashtzarr",
@@ -16969,6 +17000,7 @@
             },
             {
                   "id": "nohuknuk",
+                  "preferredDance": { "style": "loose-sway", "armStyle": "tpose-jiggle" },
                   "name": "Old Man Nohuknuk",
                   "homeId": "shrine_nohuknuk_western_incline",
                   "species": "<suggestion: species — described as 'the snow's incarnation' — a quadrupedal Nelk wearing Engh-sho-style snow clothing, walking upright with a staff; not one of the six playable rigs, needs a custom model>",
@@ -17423,6 +17455,7 @@
             },
             {
                   "id": "hiki_hiki",
+                  "preferredDance": { "style": "side-step", "armStyle": "overhead-punch" },
                   "name": "Hiki-hiki",
                   "homeId": "shrine_hikihiki_southern_forest",
                   "species": "<suggestion: species — a talking, hat-wearing Drenkiira trickster — not one of the six playable rigs, needs a custom model>",
@@ -17877,6 +17910,7 @@
             },
             {
                   "id": "banubu",
+                  "preferredDance": { "style": "loose-sway", "armStyle": "overhead-punch" },
                   "name": "Lord Banubu",
                   "homeId": "banubu_cave_northern_cliffs",
                   "species": "<suggestion: species — the 'Sleepy Grehlr' — glowing green eyes, perpetual mist; not one of the six playable rigs, needs a custom model>",
@@ -18003,6 +18037,7 @@
             },
             {
                   "id": "mother_rahayobi",
+                  "preferredDance": { "style": "side-step", "armStyle": "tpose-jiggle" },
                   "name": "Mother Rahayobi",
                   "homeId": "rahayobi_shrine_eastern_fogplains",
                   "species": "<suggestion: species — a hag who appears as an old Harlyao woman — clarify if she's truly Harlyao or just wears that appearance>",
@@ -18457,6 +18492,7 @@
             },
             {
                   "id": "baruhi_chief",
+                  "preferredDance": { "style": "loose-sway", "armStyle": "tpose-jiggle" },
                   "name": "<suggestion: name — the Baruhi war leader's name isn't given in the design doc>",
                   "homeId": "<suggestion: location — needs a Baruhi camp/longhouse placed in the contested territory>",
                   "species": "Engh-sho",
@@ -18909,6 +18945,7 @@
             },
             {
                   "id": "porakaneki_chief",
+                  "preferredDance": { "style": "side-step", "armStyle": "overhead-punch" },
                   "name": "Chief Nakaraka of the Pakapohi Porakaneki",
                   "homeId": "<suggestion: location — needs a Porakaneki camp/longhouse placed in the contested territory>",
                   "species": "<suggestion: species — not specified — could be Engh-sho like the Baruhi, or a different native people>",
@@ -19361,6 +19398,7 @@
             },
             {
                   "id": "khannibarri_agent",
+                  "preferredDance": { "style": "loose-sway", "armStyle": "overhead-punch" },
                   "name": "Surveyor Harkhanash",
                   "homeId": "khannibarri_temporary_lodging",
                   "species": "Mammakhbuur",
@@ -20148,6 +20186,7 @@
             },
             {
                   "id": "village_elder",
+                  "preferredDance": { "style": "side-step", "armStyle": "tpose-jiggle" },
                   "name": "<suggestion: name — the unnamed civic leader who tips off the Mining Company about the old mine isn't named in the design doc>",
                   "homeId": "<suggestion: location — needs a town hall / elder's house placed in town>",
                   "species": "<suggestion: species — not specified>",

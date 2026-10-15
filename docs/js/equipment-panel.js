@@ -100,6 +100,7 @@
   }
 
   function setEquipmentSlot(slot, itemKeyOrNull) {
+    if (slot === 'instrument' && deps.equipmentSlots[slot] !== itemKeyOrNull) window.MusicMinigame?.close?.();
     deps.equipmentSlots[slot] = itemKeyOrNull;
     deps.saveEquipmentSlots();
   }
@@ -977,7 +978,7 @@
 
     const toolRow = document.createElement('div');
     toolRow.className = 'inv-equip-row';
-    const TOOL_SLOTS = ['hoe', 'shovel', 'axe', 'pick', 'harpoon', 'weapon', 'ranged'];
+    const TOOL_SLOTS = ['hoe', 'shovel', 'axe', 'pick', 'harpoon', 'weapon', 'ranged', 'instrument']; // Instrument uses the permanent gear collection and saved slot assignments.
     for (const slot of TOOL_SLOTS) {
       const itemKey = deps.equipmentSlots[slot];
       const def = itemKey ? deps.TOOL_ITEM_DEFS[itemKey] : null;
@@ -1001,7 +1002,7 @@
       // one-click assign buttons in the item-info panel — you don't
       // need to separately pick an item then a slot for it, the way
       // clicking an Owned Tools item (selectGearTool) still also works.
-      cell.addEventListener('click', () => { deps.setActiveTool(slot); buildEquipmentSlots(); selectEquipSlot(slot); });
+      cell.addEventListener('click', () => { if (slot !== 'instrument') deps.setActiveTool(slot); buildEquipmentSlots(); selectEquipSlot(slot); });
       toolRow.appendChild(cell);
     }
     sec.appendChild(toolRow);
