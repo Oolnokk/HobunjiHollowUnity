@@ -1,0 +1,34 @@
+name: Temporary prayer cache fix
+
+on:
+  push:
+    branches:
+      - fix/anan-temple-pew-prayer-20261015
+
+permissions:
+  contents: write
+
+jobs:
+  fix-cache-busts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/anan-temple-pew-prayer-20261015
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Fix cache-bust chain
+        run: node scripts/check-cache-busts.js --fix HEAD^ || true
+      - name: Commit generated cache tokens
+        run: |
+          if git diff --quiet; then
+            echo "No cache-bust changes needed"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/index.html docs/js/combat/combat-config-loader.js docs/js/sleep-passage-action-bridge.js docs/js/devotion-rest-buffs.js docs/js/temple-prayer-rest-blessings.js
+          git commit -m "Apply generated cache-bust chain"
+          git push origin HEAD:fix/anan-temple-pew-prayer-20261015
