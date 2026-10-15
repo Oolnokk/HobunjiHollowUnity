@@ -23,7 +23,7 @@ assert.match(woodSource, /buildStumpMesh = function/, 'direct procedural stump g
 
 assert.match(materialSource, /remapLogAtlasUv/, 'log walls must remap bark/cap UVs into a single material atlas');
 assert.match(materialSource, /makeLogAtlasMaterial/, 'log walls must use the shared wavy_surface.png + log.png atlas material');
-assert.match(materialSource, /single GLB primitive/, 'wall log material bridge must document the cap-preserving one-primitive contract');
+assert.match(materialSource, /singlePrimitiveGlb/, 'wall log material bridge must preserve bark and cut caps inside one GLB primitive');
 assert.doesNotMatch(materialSource, /MeshStandardMaterial/, 'log walls must not fall back to the previous flat tree-colored material approximation');
 assert.match(toolSource, /LogWallMaterials\.waitForTextures/, 'GLB export must wait for the authored PNG atlas to decode before serialization');
 assert.match(toolSource, /wavy_surface\.png/, 'Wall Builder UI must surface the actual tree bark PNG being used');
