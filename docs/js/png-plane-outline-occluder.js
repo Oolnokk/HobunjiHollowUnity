@@ -39,6 +39,15 @@
 
   function init(injectedDeps) { deps = injectedDeps; }
 
+  function registerDepthMesh(mesh) {
+    if (!mesh?.isMesh) return false;
+    mesh.layers.enable(LAYER);
+    if (registered.has(mesh)) return false;
+    registered.add(mesh);
+    meshes.push(mesh);
+    return true;
+  }
+
   // Tagging the root group lets depth-only source passes hide PNG planes
   // temporarily without touching the main colour pass that actually shows
   // them. Each child mesh also joins the dedicated outline-occluder layer.
@@ -54,9 +63,7 @@
       child.userData.noOutline = true;
       child.layers.disable(1);
       child.layers.enable(LAYER);
-      if (registered.has(child)) return;
-      registered.add(child);
-      meshes.push(child);
+      registerDepthMesh(child);
     });
   }
 
@@ -151,6 +158,7 @@
     LAYER,
     init,
     markPngPlane,
+    registerDepthMesh, // Depth-only participants can retain their own 3D shell outlines.
     prune,
     renderDepth,
     snapshot: () => ({ registered: meshes.length, lastOccluderCount }),
