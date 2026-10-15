@@ -427,12 +427,20 @@ window.MODULAR_WEAPON_CONFIG = {
           "animation": "sweep"
         },
         "warhammer": {
-          "disallow": false,
-          "animation": "sweep"
+          "scaleX": 0.82,
+          "scaleY": 1.35,
+          "y": 7,
+          "rotation": 1,
+          "animation": "sweep",
+          "disallow": false
         },
         "work-hammer": {
-          "disallow": false,
-          "animation": "sweep"
+          "scaleX": 0.8,
+          "scaleY": 1.1,
+          "y": -5,
+          "rotation": 0,
+          "animation": "sweep",
+          "disallow": false
         }
       }
     },
