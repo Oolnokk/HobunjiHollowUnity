@@ -1,0 +1,285 @@
+// Shared span-driven stacked-log wall renderer.
+//
+// This is intentionally NOT a WallBuilder/GLB scaler. Every course asks the
+// real FoliageGenerator for a log whose authored spine length already matches
+// the horizontal space available at that height. Trapezoid walls and gables
+// therefore get progressively shorter generated geometry instead of a stretched
+// or squashed baked asset.
+(function (root) {
+  'use strict';
+
+  const DEFAULTS = Object.freeze({ // Fallback settings used when no serialized logWall payload exists.
+    seed: 'cabin-log-1',
+    logDiameter: 0.34,
+    trunkTaper: 0.99,
+    trunkWonk: 0.18,
+    trunkWonkScale: 1.35,
+    trunkTwist: 0.08,
+    trunkNoise: 0.35,
+    trunkNoiseScale: 2.2,
+    trunkNoiseOctaves: 3,
+    radialSegments: 8,
+    ringSegments: 12,
+    barkColor: '#6d472d',
+    overhang: 0.12,
+    courseGap: -0.03,
+    rowRollDeg: 1.5,
+    rowDepthJitter: 0.012,
+  });
+  const prototypeCaches = new WeakMap(); // THREE namespace -> exact-length generated-log prototypes reused by matching wall courses.
+  const materialCaches = new WeakMap(); // THREE namespace -> bark color -> shared PNG atlas material, avoiding one canvas texture per course length.
+  const EPS = 1e-6; // Geometry tolerance shared by horizontal polygon intersection and point dedupe.
+
+  function finite(value, fallback) {
+    const number = Number(value); // Normalized numeric setting used by every generated course.
+    return Number.isFinite(number) ? number : fallback;
+  }
+
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function normalizeHex(value, fallback) {
+    const text = String(value || '').trim(); // Serialized bark tint kept stable across editor/runtime builds.
+    return /^#[0-9a-f]{6}$/i.test(text) ? text.toLowerCase() : fallback;
+  }
+
+  function normalizeOptions(raw) {
+    const value = raw && typeof raw === 'object' ? raw : {}; // Authored logWall payload supplied by house/interior definitions.
+    return {
+      seed: String(value.seed ?? DEFAULTS.seed),
+      logDiameter: Math.max(0.04, finite(value.logDiameter ?? value.width, DEFAULTS.logDiameter)),
+      trunkTaper: clamp(finite(value.trunkTaper, DEFAULTS.trunkTaper), 0.5, 1.2),
+      trunkWonk: clamp(finite(value.trunkWonk ?? value.wonkiness, DEFAULTS.trunkWonk), 0, 3),
+      trunkWonkScale: Math.max(0.01, finite(value.trunkWonkScale ?? value.wonkScale, DEFAULTS.trunkWonkScale)),
+      trunkTwist: finite(value.trunkTwist, DEFAULTS.trunkTwist),
+      trunkNoise: clamp(finite(value.trunkNoise ?? value.surfaceNoise, DEFAULTS.trunkNoise), 0, 3),
+      trunkNoiseScale: Math.max(0.01, finite(value.trunkNoiseScale ?? value.surfaceNoiseScale, DEFAULTS.trunkNoiseScale)),
+      trunkNoiseOctaves: Math.max(1, Math.min(6, Math.round(finite(value.trunkNoiseOctaves, DEFAULTS.trunkNoiseOctaves)))),
+      radialSegments: Math.max(5, Math.min(32, Math.round(finite(value.radialSegments, DEFAULTS.radialSegments)))),
+      ringSegments: Math.max(4, Math.min(64, Math.round(finite(value.ringSegments, DEFAULTS.ringSegments)))),
+      barkColor: normalizeHex(value.barkColor || value.woodColorHex, DEFAULTS.barkColor),
+      overhang: Math.max(0, finite(value.overhang, DEFAULTS.overhang)),
+      courseGap: finite(value.courseGap, DEFAULTS.courseGap),
+      rowRollDeg: Math.max(0, finite(value.rowRollDeg, DEFAULTS.rowRollDeg)),
+      rowDepthJitter: Math.max(0, finite(value.rowDepthJitter, DEFAULTS.rowDepthJitter)),
+    };
+  }
+
+  function hashUnit(text) {
+    let hash = 2166136261 >>> 0; // FNV-1a state used only for deterministic row roll/depth variation.
+    const source = String(text ?? ''); // Stable seed text built from wall/panel/course identity.
+    for (let i = 0; i < source.length; i++) {
+      hash ^= source.charCodeAt(i);
+      hash = Math.imul(hash, 16777619) >>> 0;
+    }
+    hash ^= hash >>> 13;
+    hash = Math.imul(hash, 1274126177) >>> 0;
+    return (hash >>> 0) / 4294967296;
+  }
+
+  function dedupePoints(points) {
+    const out = []; // Unique horizontal-plane intersections used to find the longest polygon chord.
+    for (const point of points) {
+      if (!out.some(existing => Math.hypot(existing[0] - point[0], existing[1] - point[1], existing[2] - point[2]) <= EPS)) out.push(point);
+    }
+    return out;
+  }
+
+  // Pure helper exposed for regression tests. corners are cyclic [x,y,z]
+  // polygon points; the return value is the farthest XZ chord at world Y.
+  function horizontalSpanAtY(cornersInput, yInput) {
+    const corners = Array.isArray(cornersInput) ? cornersInput.filter(point => Array.isArray(point) && point.length >= 3) : []; // Cyclic wall polygon being sliced horizontally.
+    const y = Number(yInput); // Horizontal slice height used by one stacked-log course.
+    if (corners.length < 3 || !Number.isFinite(y)) return null;
+    const hits = []; // Edge/plane intersections before duplicate polygon vertices are welded.
+    for (let index = 0; index < corners.length; index++) {
+      const a = corners[index]; // Current polygon edge start.
+      const b = corners[(index + 1) % corners.length]; // Current polygon edge end.
+      const ay = Number(a[1]), by = Number(b[1]); // Vertical edge endpoints used to test the slice.
+      if (!Number.isFinite(ay) || !Number.isFinite(by)) continue;
+      const dy = by - ay; // Edge vertical delta used for interpolation.
+      if (Math.abs(dy) <= EPS) {
+        if (Math.abs(y - ay) <= EPS) { hits.push([Number(a[0]), y, Number(a[2])], [Number(b[0]), y, Number(b[2])]); }
+        continue;
+      }
+      const t = (y - ay) / dy; // Fraction along this edge where the horizontal slice lands.
+      if (t < -EPS || t > 1 + EPS) continue;
+      const clamped = Math.max(0, Math.min(1, t)); // Numeric guard keeps near-vertex hits inside the authored segment.
+      hits.push([
+        Number(a[0]) + (Number(b[0]) - Number(a[0])) * clamped,
+        y,
+        Number(a[2]) + (Number(b[2]) - Number(a[2])) * clamped,
+      ]);
+    }
+    const points = dedupePoints(hits); // Unique chord candidates after adjacent edges meet at the same vertex.
+    if (points.length < 2) return null;
+    let bestA = null; // First endpoint of the longest horizontal chord.
+    let bestB = null; // Second endpoint of the longest horizontal chord.
+    let bestLength = -1; // XZ length used to choose the wall's actual available horizontal span.
+    for (let aIndex = 0; aIndex < points.length; aIndex++) {
+      for (let bIndex = aIndex + 1; bIndex < points.length; bIndex++) {
+        const a = points[aIndex]; // Candidate chord start.
+        const b = points[bIndex]; // Candidate chord end.
+        const length = Math.hypot(b[0] - a[0], b[2] - a[2]); // Horizontal distance only; both points share the same Y.
+        if (length > bestLength) { bestLength = length; bestA = a; bestB = b; }
+      }
+    }
+    return bestLength > EPS ? { a: bestA, b: bestB, length: bestLength } : null;
+  }
+
+  function panelCorners(THREE, panel) {
+    if (Array.isArray(panel?.corners) && panel.corners.length >= 3) return panel.corners.map(point => [Number(point[0]) || 0, Number(point[1]) || 0, Number(point[2]) || 0]);
+    const width = Math.max(0.001, Number(panel?.width) || 0.001); // Canonical rectangular panel width used when no explicit polygon is supplied.
+    const height = Math.max(0.001, Number(panel?.height) || 0.001); // Canonical rectangular panel height used when no explicit polygon is supplied.
+    const position = Array.isArray(panel?.position) ? panel.position : [0, 0, 0]; // Floor-referenced panel transform shared with WallBuilder/InteriorSceneBuilder.
+    const rotation = Array.isArray(panel?.rotationDeg) ? panel.rotationDeg : [0, 0, 0]; // Authored XYZ Euler degrees for a rectangular panel.
+    const euler = new THREE.Euler(THREE.MathUtils.degToRad(rotation[0] || 0), THREE.MathUtils.degToRad(rotation[1] || 0), THREE.MathUtils.degToRad(rotation[2] || 0), 'XYZ'); // Rotation applied to local rectangle corners.
+    const origin = new THREE.Vector3(Number(position[0]) || 0, Number(position[1]) || 0, Number(position[2]) || 0); // World-space bottom-center of the panel.
+    const local = [[-width / 2, 0, 0], [width / 2, 0, 0], [width / 2, height, 0], [-width / 2, height, 0]]; // Cyclic rectangle in panel local space.
+    return local.map(point => {
+      const vector = new THREE.Vector3(point[0], point[1], point[2]).applyEuler(euler).add(origin); // Rotated/transformed wall corner used by horizontal slicing.
+      return [vector.x, vector.y, vector.z];
+    });
+  }
+
+  function panelNormal(THREE, corners) {
+    const origin = new THREE.Vector3().fromArray(corners[0]); // First polygon point used as the normal origin.
+    for (let index = 1; index < corners.length - 1; index++) {
+      const edgeA = new THREE.Vector3().fromArray(corners[index]).sub(origin); // First candidate polygon edge.
+      const edgeB = new THREE.Vector3().fromArray(corners[index + 1]).sub(origin); // Second candidate polygon edge.
+      const normal = edgeA.cross(edgeB); // Candidate face normal used for tiny row-depth variation.
+      if (normal.lengthSq() > EPS * EPS) return normal.normalize();
+    }
+    return new THREE.Vector3(0, 0, 1);
+  }
+
+  function sharedMaterial(THREE, meta) {
+    const wood = root.WoodCutSurfaces; // Shared tree PNG/cut-face material authority when loaded by game/tools.
+    if (!wood?.makeLogAtlasMaterial) return null;
+    let byColor = materialCaches.get(THREE); // Per-THREE material cache prevents cross-realm Three.js objects from mixing.
+    if (!byColor) { byColor = new Map(); materialCaches.set(THREE, byColor); }
+    if (!byColor.has(meta.barkColor)) byColor.set(meta.barkColor, wood.makeLogAtlasMaterial(THREE, meta.barkColor));
+    return byColor.get(meta.barkColor);
+  }
+
+  function prototypeFor(THREE, length, meta, seed) {
+    const foliage = root.FoliageGenerator; // Actual foliage geometry authority; no GLB scaling fallback is allowed on the stacked-log path.
+    if (typeof foliage?.buildLogMesh !== 'function') throw new Error('StackedLogWalls requires FoliageGenerator.buildLogMesh().');
+    let cache = prototypeCaches.get(THREE); // Per-THREE exact-length prototype cache shared by every structure/interior rebuild in this page.
+    if (!cache) { cache = new Map(); prototypeCaches.set(THREE, cache); }
+    const lengthKey = Math.round(length * 10000) / 10000; // 0.1 mm quantization dedupes numerically-identical spans without visibly rescaling anything.
+    const key = [lengthKey, seed, meta.logDiameter, meta.trunkTaper, meta.trunkWonk, meta.trunkWonkScale, meta.trunkTwist, meta.trunkNoise, meta.trunkNoiseScale, meta.trunkNoiseOctaves, meta.radialSegments, meta.ringSegments, meta.barkColor].join('|'); // Exact generated geometry/material identity.
+    if (!cache.has(key)) {
+      const material = sharedMaterial(THREE, meta); // Shared one-atlas bark/cut material reused across different generated lengths.
+      const mesh = foliage.buildLogMesh({ // Real foliage log generated at its final requested world length.
+        length: lengthKey,
+        seed,
+        logDiameter: meta.logDiameter,
+        trunkTaper: meta.trunkTaper,
+        trunkWonk: meta.trunkWonk,
+        trunkWonkScale: meta.trunkWonkScale,
+        trunkTwist: meta.trunkTwist,
+        trunkNoise: meta.trunkNoise,
+        trunkNoiseScale: meta.trunkNoiseScale,
+        trunkNoiseOctaves: meta.trunkNoiseOctaves,
+        radialSegments: meta.radialSegments,
+        ringSegments: meta.ringSegments,
+        barkColor: meta.barkColor,
+        material,
+        useWoodAtlas: true,
+      });
+      mesh.name = `StackedLogPrototype_${lengthKey}`;
+      cache.set(key, mesh);
+    }
+    return cache.get(key);
+  }
+
+  function buildGroup(THREE, panelsInput, rawOptions) {
+    const group = new THREE.Group(); // Final wall group containing one generated log mesh per visible course.
+    group.name = 'StackedGeneratedLogWalls';
+    const panels = Array.isArray(panelsInput) ? panelsInput.filter(Boolean) : []; // Wall polygons/rectangles supplied by house or interior renderers.
+    const meta = normalizeOptions(rawOptions); // Canonical authored log settings shared by every panel in this wall group.
+    const pitch = Math.max(meta.logDiameter * 0.35, meta.logDiameter + meta.courseGap); // Vertical center-to-center course spacing; negative gap means intentional overlap.
+    let courseCount = 0; // Diagnostic count of generated visible log courses.
+    let uniqueSpanCount = 0; // Diagnostic count of prototype keys actually requested by this build.
+    const usedKeys = new Set(); // Build-local exact-length/variant keys used only for diagnostics.
+
+    panels.forEach((panel, panelIndex) => {
+      const corners = panelCorners(THREE, panel); // Actual world-space wall polygon, including taper/gable shape when authored corners exist.
+      const ys = corners.map(point => point[1]); // Polygon heights used to bound stacked course centers.
+      const minY = Math.min(...ys); // Lowest point of this wall polygon.
+      const maxY = Math.max(...ys); // Highest point of this wall polygon.
+      const normal = panelNormal(THREE, corners); // Face normal used only for small deterministic depth jitter.
+      const firstCenter = minY + meta.logDiameter * 0.5; // Lowest course center keeps the full log radius inside the wall's vertical span.
+      const lastCenter = maxY - meta.logDiameter * 0.5; // Highest course center similarly avoids poking above the authored polygon.
+      let courseIndex = 0; // Per-panel course index used for deterministic seed variants.
+
+      for (let centerY = firstCenter; centerY <= lastCenter + EPS; centerY += pitch, courseIndex++) {
+        const centerSpan = horizontalSpanAtY(corners, centerY); // Placement chord at the actual center of this course.
+        if (!centerSpan) continue;
+        const lowerY = Math.max(minY + EPS, centerY - meta.logDiameter * 0.45); // Lower silhouette sample used to keep thick logs inside sloped polygons.
+        const upperY = Math.min(maxY - EPS, centerY + meta.logDiameter * 0.45); // Upper silhouette sample; usually the limiting width on gables/tapered walls.
+        const lowerSpan = horizontalSpanAtY(corners, lowerY); // Available horizontal width near the bottom of the circular log.
+        const upperSpan = horizontalSpanAtY(corners, upperY); // Available horizontal width near the top of the circular log.
+        const safeSpan = Math.min(centerSpan.length, lowerSpan?.length ?? centerSpan.length, upperSpan?.length ?? centerSpan.length); // Shortest sampled width prevents a fat course from clipping through a narrowing gable edge.
+        if (safeSpan < Math.max(0.04, meta.logDiameter * 0.35)) continue;
+
+        const direction = new THREE.Vector3(centerSpan.b[0] - centerSpan.a[0], 0, centerSpan.b[2] - centerSpan.a[2]); // Horizontal course direction derived from the center slice.
+        if (direction.lengthSq() <= EPS * EPS) continue;
+        direction.normalize();
+        const generatedLength = safeSpan + meta.overhang * 2; // Final requested foliage spine length; no post-generation X scaling occurs.
+        const seedVariant = courseIndex % 4; // Four repeating shapes keep straight walls varied while allowing same-length geometry reuse.
+        const courseSeed = `${meta.seed}|${panel?.id || panelIndex}|${seedVariant}`; // Stable seed shared by runtime/editor for this wall/course variant.
+        const prototype = prototypeFor(THREE, generatedLength, meta, courseSeed); // Exact-length foliage prototype, possibly reused from cache.
+        const mesh = prototype.clone(); // Cheap Object3D clone shares immutable generated geometry/material buffers.
+        const midpoint = new THREE.Vector3((centerSpan.a[0] + centerSpan.b[0]) * 0.5, centerY, (centerSpan.a[2] + centerSpan.b[2]) * 0.5); // World-space course center.
+        const depthShift = (hashUnit(`${courseSeed}|depth`) * 2 - 1) * meta.rowDepthJitter; // Tiny deterministic in/out variation preventing machine-flat rows.
+        midpoint.addScaledVector(normal, depthShift);
+        const orientation = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1, 0, 0), direction); // Rotates foliage generator's +X spine onto this wall chord.
+        const roll = (hashUnit(`${courseSeed}|roll`) * 2 - 1) * meta.rowRollDeg * Math.PI / 180; // Deterministic per-row roll around the log's own axis.
+        if (Math.abs(roll) > EPS) orientation.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), roll));
+        mesh.position.copy(midpoint);
+        mesh.quaternion.copy(orientation);
+        mesh.scale.set(1, 1, 1); // Deliberate: length already exists in generated geometry; never stretch a GLB/prototype to fit the wall.
+        mesh.name = `StackedLog_${panel?.id || panelIndex}_${courseIndex}`;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        mesh.layers?.enable?.(1);
+        mesh.userData = Object.assign({}, mesh.userData, {
+          stackedLogWall: true,
+          generatedLength,
+          safeWallSpan: safeSpan,
+          panelId: panel?.id || null,
+          courseIndex,
+          farmMaterialRole: 'wood',
+          source: 'FoliageGenerator.buildLogMesh',
+        });
+        group.add(mesh);
+        courseCount++;
+        const diagnosticKey = `${Math.round(generatedLength * 10000) / 10000}|${seedVariant}`; // Build-local prototype variety key reported to debug UI.
+        if (!usedKeys.has(diagnosticKey)) { usedKeys.add(diagnosticKey); uniqueSpanCount++; }
+      }
+    });
+
+    group.userData = Object.assign({}, group.userData, {
+      stackedLogWalls: true,
+      panelCount: panels.length,
+      courseCount,
+      uniqueSpanCount,
+      logWall: meta,
+      source: 'FoliageGenerator.buildLogMesh',
+      noGlbLengthScaling: true,
+      latestChange: 'Each course is foliage-generated at its actual horizontal span; tapered walls and gables shorten the source geometry itself.',
+    });
+    return group;
+  }
+
+  root.StackedLogWalls = Object.freeze({
+    DEFAULTS,
+    normalizeOptions,
+    horizontalSpanAtY,
+    buildGroup,
+    latestChange: 'Stacked logs now regenerate at exact per-course spans through FoliageGenerator instead of scaling a GLB.',
+  });
+})(typeof window !== 'undefined' ? window : globalThis);
