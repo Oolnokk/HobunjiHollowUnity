@@ -403,6 +403,28 @@
     });
   }
 
+
+  // Explicit triangle polygons for generated-log gable ends. StackedLogWalls
+  // slices these at each course Y, so source geometry gets shorter toward the
+  // ridge instead of scaling a rectangular GLB and clipping it afterward.
+  function gableLogPanels(gables, wallHeight) {
+    return gables.map(g => {
+      const mid = (g.from + g.to) / 2; // Horizontal ridge coordinate of this triangular gable.
+      const horizontal = g.side === 'north' || g.side === 'south'; // Selects X- or Z-running wall coordinates.
+      const a = horizontal ? [g.from, wallHeight, g.line] : [g.line, wallHeight, g.from]; // Left/base gable corner.
+      const b = horizontal ? [g.to, wallHeight, g.line] : [g.line, wallHeight, g.to]; // Right/base gable corner.
+      const peak = horizontal ? [mid, wallHeight + g.rise, g.line] : [g.line, wallHeight + g.rise, mid]; // Gable apex used by horizontal span slicing.
+      return {
+        id: `gable_log_${g.side}_${g.line}_${g.from}`,
+        width: g.to - g.from,
+        height: g.rise,
+        position: [0, 0, 0],
+        rotationDeg: [0, 0, 0],
+        corners: [a, b, peak, peak],
+      };
+    });
+  }
+
   // options: { floor (Set or [[c,r]]), wallHeight, ceiling, wallStyle,
   //            texturesBasePath, includeCeiling (default true),
   //            preview (editor: double-sided see-through ceiling),
@@ -416,12 +438,13 @@
     if (options.wallStyle === 'cavern' || options.wallStyle === 'mine') return group;
     const data = buildCeilingGeometryData(options.floor, options.wallHeight, options.ceiling);
     const preview = !!options.preview;
-    // Brick (default-style) rooms get brick gable ends to match the walls
-    // below; canvas tents keep a cloth triangle.
-    const brickGables = !!options.wallBuilder && options.wallStyle !== 'canvas' && data.gables.length > 0;
+    // Brick rooms get brick gables; generated-log rooms slice the actual triangle into progressively shorter foliage logs.
+    const generatedLogStyle = ['log', 'logs', 'stackedlogs', 'stacked-logs'].includes(String(options.wallStyle || '').toLowerCase()); // Same serialized wall construction selector used below the eave.
+    const logGables = generatedLogStyle && !!root.StackedLogWalls?.buildGroup && data.gables.length > 0; // Generated foliage gable path independent of WallBuilder.
+    const brickGables = !!options.wallBuilder && !generatedLogStyle && options.wallStyle !== 'canvas' && data.gables.length > 0;
     const kind = data.material || (options.wallStyle === 'canvas' ? 'canvas' : 'boards');
     const tint = data.tint || (kind === 'carved' ? ROOF_TINTS[options.roofStyle] || ROOF_TINTS.town : null);
-    group.userData.interiorCeiling = { enabled: data.enabled, material: kind, tint, wallHeight: data.wallHeight, maxY: data.maxY, gableCount: data.gableCount, brickGables };
+    group.userData.interiorCeiling = { enabled: data.enabled, material: kind, tint, wallHeight: data.wallHeight, maxY: data.maxY, gableCount: data.gableCount, brickGables, logGables };
     if (options.includeCeiling !== false && data.ceiling.indices.length) {
       const mesh = meshFrom(THREE, data.ceiling, surfaceMaterial(THREE, kind, options.texturesBasePath, 'ceiling', preview, tint), 'InteriorCeilingSurface');
       mesh.userData.interiorCeilingSurface = true;
@@ -429,13 +452,24 @@
       group.add(mesh);
     }
     for (const gable of data.gables) {
-      const role = brickGables ? 'gable-backing' : 'gable';
-      const mesh = meshFrom(THREE, gable, brickGables
+      const hasGeneratedCover = brickGables || logGables; // Both brick and circular-log gables retain a dark backing triangle behind tiny material gaps.
+      const role = hasGeneratedCover ? 'gable-backing' : 'gable';
+      const mesh = meshFrom(THREE, gable, hasGeneratedCover
         ? surfaceMaterial(THREE, 'backing', options.texturesBasePath, role, false, null)
         : surfaceMaterial(THREE, kind === 'carved' ? 'boards' : kind, options.texturesBasePath, role, false, null), `InteriorGable_${gable.side}_${gable.line}`);
       mesh.userData.interiorGable = { side: gable.side, line: gable.line, from: gable.from, to: gable.to, rise: gable.rise };
       mesh.userData.cameraObstacle = true; // It's wall: pull the follow camera in front of it like the brick below.
       group.add(mesh);
+    }
+    if (logGables) {
+      try {
+        const logs = root.StackedLogWalls.buildGroup(THREE, gableLogPanels(data.gables, data.wallHeight), options.logWall || {}); // Exact-length source logs shorten automatically toward every gable apex.
+        logs.name = 'InteriorGableLogs';
+        logs.userData.interiorGableLogs = true;
+        group.add(logs);
+      } catch (error) {
+        console.warn('InteriorCeilings: generated log gable build failed, keeping backing gable ends:', error);
+      }
     }
     if (brickGables) {
       const wallOptions = Object.assign({}, root.InteriorSceneBuilder?.DEFAULT_WB_OPTS || {}, options.wallBuildOptions || {});
@@ -461,6 +495,7 @@
     toggleGableAt,
     buildCeilingGeometryData,
     gableBrickPanels,
+    gableLogPanels,
     buildCeilingGroup,
   });
 })(typeof window !== 'undefined' ? window : globalThis);

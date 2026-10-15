@@ -167,7 +167,22 @@
   function createLogGeometry(THREE, raw) {
     if (!THREE) throw new Error('LogWallExtension.createLogGeometry requires THREE.');
     const meta = normalizeLogMeta(raw); // Canonical foliage-style parameters used to generate this reusable log prototype.
-    const seed = hashStringToUint32(meta.seed); // Deterministic integer seed shared with the export path.
+    const foliage = (typeof window !== 'undefined' ? window.FoliageGenerator : globalThis?.FoliageGenerator); // Real foliage generator preferred whenever the runtime/tool has published it.
+    if (typeof foliage?.buildLogMesh === 'function') {
+      const mesh = foliage.buildLogMesh({ // One-unit compatibility prototype delegates its actual shape to buildWonkyChain rather than the old wall-only duplicate.
+        length: 1, logDiameter: 1, seed: meta.seed, trunkTaper: meta.trunkTaper, trunkWonk: meta.trunkWonk,
+        trunkWonkScale: meta.trunkWonkScale, trunkTwist: meta.trunkTwist, trunkNoise: meta.trunkNoise,
+        trunkNoiseScale: meta.trunkNoiseScale, trunkNoiseOctaves: meta.trunkNoiseOctaves, radialSegments: meta.radialSegments,
+        ringSegments: meta.ringSegments, barkColor: meta.barkColor, useWoodAtlas: false,
+      });
+      if (mesh?.geometry) {
+        const geometry = mesh.geometry; // Generated foliage geometry handed to the existing WallBuilder prototype/material pipeline.
+        mesh.material?.dispose?.();
+        geometry.userData = { ...(geometry.userData || {}), logWallFoliageAuthority: true };
+        return geometry;
+      }
+    }
+    const seed = hashStringToUint32(meta.seed); // Compatibility fallback used only by isolated tools that have not loaded FoliageGenerator.
     const points = []; // Wonky log centerline points sampled along a canonical one-unit X span.
     for (let ring = 0; ring < meta.ringSegments; ring++) {
       const t = meta.ringSegments <= 1 ? 0 : ring / (meta.ringSegments - 1); // Normalized position along the log.
