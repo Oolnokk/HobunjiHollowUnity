@@ -39,7 +39,8 @@ assert.match(logExtensionSource, /FoliageGenerator[\s\S]{0,1000}buildLogMesh/, '
 assert.match(houseSource, /generatedLogStyle[\s\S]{0,1800}StackedLogWalls\.buildGroup/, 'generated Highland structure walls use stacked foliage logs');
 assert.match(houseSource, /authoredWallStyle[\s\S]{0,3000}generatedLogMode/, 'authored house pieces persist/select generated log construction');
 assert.match(interiorSource, /generatedLogStyle[\s\S]{0,1600}StackedLogWalls\.buildGroup/, 'interior base walls use the same generated log renderer');
-assert.match(ceilingsSource, /function gableLogPanels[\s\S]{0,4000}StackedLogWalls\.buildGroup/, 'interior gables feed explicit triangle spans into the same generated log renderer');
+assert.match(ceilingsSource, /function gableLogPanels\(gables, wallHeight\)/, 'interior gables are converted to explicit triangle wall polygons');
+assert.match(ceilingsSource, /StackedLogWalls\.buildGroup\(THREE, gableLogPanels\(data\.gables, data\.wallHeight\), options\.logWall \|\| \{\}\)/, 'interior gable triangles feed the same exact-span generated log renderer');
 
 assert.match(houseEditorSource, /<option value="logs">Stacked generated logs<\/option>/, 'House Editor exposes stacked generated logs as a wall construction choice');
 assert.match(houseEditorSource, /state\.piece\.wallStyle=.*wallStyle/, 'House Editor serializes the wall construction choice');
