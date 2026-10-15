@@ -26,6 +26,7 @@ jobs:
           old = "interior_controls + '      </div>\\n    </div>\\n\\n    <div class=\"section\">\\n      <h2>2. Grid canvas size</h2>')"
           if old in text:
               text = text.replace(old, "interior_controls)", 1)
+          text = text.replace("Path('scripts/test-stacked-log-walls.js').write_text(r'''\\\n", "Path('scripts/test-stacked-log-walls.js').write_text(r'''\n")
           path.write_text(text)
           PY
       - name: Wire generated stacked logs
