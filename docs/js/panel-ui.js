@@ -21,9 +21,10 @@
   const characterStudioMammakhbuurTag = isCharacterStudio ? `<script src="${characterStudioMammakhbuur}"></script>` : ''; // Parser-time hook must run before the later scratchbones-config assignment.
   const isWallBuilder = /\/tools\/wall-builder\/(?:index\.html)?$/.test(location.pathname); // Used to isolate log-cabin authoring controls to the Wall Builder page.
   const logWallExtension = new URL('./log-wall-extension.js?v=20261014logwall1', src).href; // Shared deterministic generated/baked log-wall authority used by runtime and the Wall Builder tool.
-  const logWallMaterials = new URL('./log-wall-materials.js?v=20261014logwallmat1', src).href; // Tree-style bark and fresh-cut cap material layer loaded after the base log-wall API.
-  const wallBuilderLogTool = new URL('./wall-builder-log-tool.js?v=20261014logwall2', src).href; // Wall Builder-only UI that exports the generated log GLB and paired live/baked recipes.
-  const wallBuilderLogTag = isWallBuilder ? `<script src="${logWallExtension}"></script><script src="${logWallMaterials}"></script><script src="${wallBuilderLogTool}"></script>` : ''; // Parser-time tool extension tags preserving base -> material -> UI ordering.
+  const woodCutSurfaces = new URL('./wood-cut-surfaces.js?v=20261014woodcaps1', src).href; // Shared wavy_surface.png bark + log.png cut-face repair used by walls and in-game foliage wood.
+  const logWallMaterials = new URL('./log-wall-materials.js?v=20261014logwallmat2', src).href; // One-material PNG atlas layer loaded after base geometry + shared wood helpers.
+  const wallBuilderLogTool = new URL('./wall-builder-log-tool.js?v=20261014logwall3', src).href; // Wall Builder-only UI that exports the generated log GLB and paired live/baked recipes.
+  const wallBuilderLogTag = isWallBuilder ? `<script src="${logWallExtension}"></script><script src="${woodCutSurfaces}"></script><script src="${logWallMaterials}"></script><script src="${wallBuilderLogTool}"></script>` : ''; // Parser-time tool extension tags preserving base -> wood -> atlas -> UI ordering.
   if (document.readyState === 'loading') {
     document.write(`${characterStudioMammakhbuurTag}${animationAuthorColorFillTag}<script src="${core}"></script><script src="${mapEditorTextureFix}"></script><script src="${terrainParity}"></script>${cutsceneRepoTag}${toolHubCombatVocalizationsTag}${wallBuilderLogTag}`);
     return;
@@ -32,17 +33,22 @@
   const loadWallBuilderLogTools = () => { // Late-load equivalent of wallBuilderLogTag for dynamically opened/embedded Wall Builder pages.
     if (!isWallBuilder || window.__hobunjiWallBuilderLogToolLoading) return;
     window.__hobunjiWallBuilderLogToolLoading = true;
-    const extensionScript = document.createElement('script'); // Runtime/tool-shared log geometry authority loaded before the material/UI layers.
+    const extensionScript = document.createElement('script'); // Runtime/tool-shared log geometry authority loaded before wood/material/UI layers.
     extensionScript.src = logWallExtension;
     extensionScript.addEventListener('load', () => {
-      const materialScript = document.createElement('script'); // Tree-material bridge must patch LogWallExtension before the authoring UI creates export prototypes.
-      materialScript.src = logWallMaterials;
-      materialScript.addEventListener('load', () => {
-        const toolScript = document.createElement('script'); // Wall Builder controls loaded after tree-material LogWallExtension overrides are active.
-        toolScript.src = wallBuilderLogTool;
-        (document.head || document.documentElement).appendChild(toolScript);
+      const woodScript = document.createElement('script'); // Shared PNG/cap repair must exist before the log atlas layer creates prototypes.
+      woodScript.src = woodCutSurfaces;
+      woodScript.addEventListener('load', () => {
+        const materialScript = document.createElement('script'); // Single-material PNG atlas bridge patches LogWallExtension before the authoring UI creates exports.
+        materialScript.src = logWallMaterials;
+        materialScript.addEventListener('load', () => {
+          const toolScript = document.createElement('script'); // Wall Builder controls loaded only after texture/cap prototype overrides are active.
+          toolScript.src = wallBuilderLogTool;
+          (document.head || document.documentElement).appendChild(toolScript);
+        }, { once: true });
+        (document.head || document.documentElement).appendChild(materialScript);
       }, { once: true });
-      (document.head || document.documentElement).appendChild(materialScript);
+      (document.head || document.documentElement).appendChild(woodScript);
     }, { once: true });
     (document.head || document.documentElement).appendChild(extensionScript);
   };
