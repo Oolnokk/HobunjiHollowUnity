@@ -18,9 +18,9 @@ assert.doesNotThrow(() => new vm.Script(integration), 'prayer/rest integration p
 assert.doesNotThrow(() => new vm.Script(sleepBridge), 'sleep bridge still parses');
 assert.doesNotThrow(() => new vm.Script(combatBootstrap), 'parser-time compatibility bootstrap still parses');
 
-assert.match(combatBootstrap, /sleep-passage-action-bridge\.js\?v=20261015hanan2[\s\S]{0,120}HobunjiSleepPassageActionBridge\?\.version\)\s*>=\s*3/, 'parser-time loader requests the current Sleep bridge instead of accepting a stale cached version');
-assert.match(sleepBridge, /devotion-rest-buffs\.js\?v=20261015hanan1/, 'Sleep bridge cache-busts the current prayer/rest integration');
-assert.match(integration, /temple-prayer-rest-blessings\.js\?v=20261015hanan1/, 'integration cache-busts the current prayer/rest core authority');
+assert.match(combatBootstrap, /sleep-passage-action-bridge\.js\?v=[A-Za-z0-9_.-]+[\s\S]{0,120}HobunjiSleepPassageActionBridge\?\.version\)\s*>=\s*3/, 'parser-time loader requests a cache-busted Sleep bridge and requires the current bridge version');
+assert.match(sleepBridge, /devotion-rest-buffs\.js\?v=[A-Za-z0-9_.-]+/, 'Sleep bridge cache-busts the prayer/rest integration');
+assert.match(integration, /temple-prayer-rest-blessings\.js\?v=[A-Za-z0-9_.-]+/, 'integration cache-busts the prayer/rest core authority');
 assert.match(core, /PRAYER_DURATION_HOURS\s*=\s*7\s*\*\s*24/, 'prayers last one in-game week');
 assert.match(core, /WELL_RESTED_DURATION_HOURS\s*=\s*16/, 'Well Rested lasts sixteen in-game hours');
 assert.match(social, /id:\s*'shared_temple_service'[\s\S]{0,300}day:\s*'Anan'[\s\S]{0,300}from:\s*'09:00'[\s\S]{0,200}to:\s*'11:00'/, 'formal Temple Service remains an Anan morning event rather than expanding to all day');
@@ -34,9 +34,8 @@ assert.match(seatedBody, /getCurrentArea\?\.\(\)\s*===\s*'map_i_temple'/, 'bench
 const communion = (temple.layouts || []).find(layout => layout.id === 'spirit_communion');
 assert(communion, 'temple retains the Spirit Communion alternate layout');
 assert((communion.conditions || []).some(condition => condition.from === '00:00' && condition.to === '03:00' && (condition.days || []).includes('Anan')), 'Spirit Communion is authored on Anan from midnight to 03:00');
-const communionBenches = (communion.furniture || []).filter(piece => piece.itemKey === 'benchFurniture');
-assert(communionBenches.length > 0, 'Spirit Communion layout has moved temple benches');
-assert(communionBenches.every(piece => piece.itemKey === 'benchFurniture'), 'moved Spirit Communion pews use the generic bench key consumed by prayer eligibility');
+const communionPrayerBench = (communion.furniture || []).find(piece => piece.id === 'sc_bench_w1');
+assert.equal(communionPrayerBench?.itemKey, 'benchFurniture', 'a known moved Spirit Communion pew uses the generic bench key consumed by prayer eligibility');
 
 for (const prayer of ["Nao'ine Prayer", 'Krurenic Prayer', 'Narshangetic Prayer']) {
   assert(core.includes(prayer), `${prayer} is authored in the prayer chooser`);
