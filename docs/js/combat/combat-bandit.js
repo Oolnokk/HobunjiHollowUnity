@@ -564,7 +564,7 @@
     const configuredPool = Array.isArray(cfg?.weaponShapePool) ? cfg.weaponShapePool : null; // Optional caller-scoped subset used by special humanoid enemies such as arena Harlyao Skeletons.
     if (!configuredPool?.length) return allWeaponShapes;
     const allowed = new Set(configuredPool); // Used only for this selection pass so invalid/non-weapon shape ids are ignored safely.
-    const filtered = allWeaponShapes.filter(shapeKey => allowed.has(shapeKey)); // Final validated melee pool consumed by banditWeaponFor().
+    const filtered = [...allowed].filter(shapeKey => deps.HELD_SHAPE_DEFS[shapeKey]?.slots?.includes('weapon')); // Explicit minion pools validate definitions directly, without the ordinary bandit enumeration filter. // Final validated melee pool consumed by banditWeaponFor().
     return filtered.length ? filtered : allWeaponShapes;
   }
   function banditWeaponFor(cfg, rank, tier) {

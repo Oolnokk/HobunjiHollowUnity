@@ -140,7 +140,7 @@ townValue = 0;
   assert.equal(entity.afflictions.shamblingFooting, 70);
   assert.equal(entity._immutableAfflictions.shamblingFooting, 70);
   assert.equal(entity.footing, 30);
-  assert.deepEqual(Array.from(captured.cfg.weaponShapePool), ['daggerSword', 'fishingspear', 'hatchet']);
+  assert.deepEqual(Array.from(captured.cfg.weaponShapePool), ['daggerSword', 'fishingspear', 'hatchet', 'harlyaoLongsword', 'harlyaoBroadsword', 'warhammer']);
   assert.equal(captured.cfg.rangedWeaponChanceByRank.grunt, 0);
   assert.equal(captured.cfg.rangedWeaponChanceByRank.lieutenant, 0);
   assert.equal(captured.cfg.rangedWeaponChanceByRank.captain, 0);

@@ -116,6 +116,8 @@
   }
 
   function craftMetalTool(shapeKey, metalKey) {
+    window.WeaponTrustVisits?.syncSmithingShapeUnlocks?.();
+    if (!deps.UNLOCKED_TOOL_SHAPES.includes(shapeKey) || !deps.VERDIGRIS_METAL_KEYS.includes(metalKey)) { deps.showToast('Discover this weapon shape and choose a smithing metal first.', false); return; }
     const barKey = deps.metalBarItemKey(metalKey);
     if ((deps.inventory[barKey] || 0) < CRAFT_BAR_COST) { deps.showToast(`Not enough ${deps.METAL_DEFS[metalKey].label} bars.`, false); return; }
     if ((deps.inventory.gold || 0) < CRAFT_LABOR_GOLD) { deps.showToast("Not enough gold for the smith's labor.", false); return; }
@@ -257,7 +259,8 @@
   }
 
   function renderMetalCraftShopPage() {
-    if (metalCraftActiveShape === null) metalCraftActiveShape = deps.UNLOCKED_TOOL_SHAPES[0];
+    window.WeaponTrustVisits?.syncSmithingShapeUnlocks?.();
+    if (!deps.UNLOCKED_TOOL_SHAPES.includes(metalCraftActiveShape)) metalCraftActiveShape = deps.UNLOCKED_TOOL_SHAPES[0];
     const goldEl = document.getElementById('mcGoldDisplay');
     if (goldEl) goldEl.innerHTML = `${deps.inventory.gold || 0}<span class="wallet-unit">g</span>`;
     const title = document.querySelector('#mpMetalCraftShop .menu-section-title'); // Reflects the permanent building upgrade in the existing shop header.

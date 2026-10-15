@@ -1822,6 +1822,7 @@
       // verdigris/plating/reinforcement tracking for free since all of that
       // state is already keyed by itemKey.
       const TOOL_SHAPE_DEFS = {
+        workhammer: { label: 'Work Hammer', icon: '🔨', baseSprite: 'assets/toolsprites/work_hammer.png', slots: ['pick', 'weapon'], animStyle: 'sweep', dmgType: 'blunt', weaponIdleClass: 'heavy', requiresDiscovery: true },
         hoe:          { label: 'Hoe',           icon: '🪓', baseSprite: 'assets/toolsprites/hoe_bronzehoe.png',        slots: ['hoe'],                     animStyle: 'chop'   },
         hatchet:      { label: 'Hatchet',       icon: '🪓', baseSprite: 'assets/toolsprites/axe_hatchet.png',          slots: ['axe', 'weapon'],           animStyle: 'sweep',  dmgType: 'sharp' },
         fishingmace:  { label: 'Fishing Mace',  icon: '🎣', baseSprite: 'assets/toolsprites/harpoon_fishingmace.png',  slots: ['harpoon', 'weapon'],        animStyle: 'sweep', spinning: true, dmgType: 'blunt'  },
@@ -1832,6 +1833,9 @@
       // They still enter the shared smithing/item pipeline through HELD_SHAPE_DEFS
       // below, but future weapons no longer have to masquerade as tool definitions.
       const MELEE_WEAPON_SHAPE_DEFS = {
+        warhammer: { label: 'Warhammer', icon: '🔨', baseSprite: 'assets/toolsprites/warhammer.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'blunt', weaponIdleClass: 'heavy', requiresDiscovery: true },
+        harlyaoLongsword: { label: 'Harlyao Longsword', icon: '🗡️', baseSprite: 'assets/toolsprites/harlyao_longsword.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'heavy', requiresDiscovery: true },
+        harlyaoBroadsword: { label: 'Harlyao Broadsword', icon: '🗡️', baseSprite: 'assets/toolsprites/harlyao_broadsword.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'heavy', requiresDiscovery: true },
         bshuakauitl:  { label: "B'shuakauitl", icon: '🗡️', baseSprite: "assets/toolsprites/b'shuakauitl.png",       slots: ['weapon'], animStyle: 'sweep',  dmgType: 'sharp', weaponIdleClass: 'light' },
         daggerSword:  { label: 'Dagger-Sword',  icon: '🗡️', baseSprite: 'assets/toolsprites/dagger-sword_sweep.png', slots: ['weapon'], animStyle: 'sweep',  comboStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'light' },
         plainsSword:  { label: 'Plains-Sword',  icon: '🗡️', baseSprite: 'assets/toolsprites/plains-sword.png',       slots: ['weapon'], animStyle: 'sweep',  dmgType: 'sharp', weaponIdleClass: 'heavy' },
@@ -1840,7 +1844,8 @@
         warCleaver:   { label: 'War-Cleaver',   icon: '🗡️', baseSprite: 'assets/toolsprites/war-cleaver.png',        slots: ['weapon'], animStyle: 'sweep',  dmgType: 'sharp', weaponIdleClass: 'light' },
       };
       const HELD_SHAPE_DEFS = { ...TOOL_SHAPE_DEFS, ...MELEE_WEAPON_SHAPE_DEFS }; // Shared smithing/equipment catalog used by the existing generated-item pipeline.
-      // Every shape is unlocked from the start — "you unlock all the current
+      // Full catalog; WeaponTrustVisits filters discovery/friendship gates.
+      // Legacy tool shapes are unlocked from the start — "you unlock all the current
       // ones by default" — this is just the set Sloomi/Kzubug's crafting
       // counter offers; it's never spent/consumed so it isn't gearInventory
       // state the way owned tools/mastery/plating are.
@@ -28692,6 +28697,11 @@
         buildInventoryGrid,
         saveMemberWorldData,
         getGeneralStoreCatalog: () => GENERAL_STORE_CATALOG,
+        TOOL_ITEM_DEFS,
+        getGearInventory: () => gearInventory,
+        saveGearInventory,
+        buildEquipmentSlots,
+        refreshMetalToolWorldTexture,
         lootShopWorldState: window.LootRolling.lootShopWorldState,
         getStoreClothingPieces: () => STORE_CLOTHING_PIECES,
         getGeneralStoreClothingSlots: () => GENERAL_STORE_CLOTHING_SLOTS,

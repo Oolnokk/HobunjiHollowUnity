@@ -165,6 +165,25 @@
     const gold = deps.inventory.gold || 0;
     if (gold < (Number(item.price) || 0)) { deps.showToast('Not enough ganang.', false); return; }
     if (tradeCostShortfall(item).length) { deps.showToast(`You need ${tradeCostText(item)} to trade for that.`, false); return; }
+    if (item.givesTool) {
+      const gear = deps.getGearInventory?.(); // Store weapons belong to character gear, like smith-crafted weapons.
+      const def = deps.TOOL_ITEM_DEFS?.[item.givesTool]; // Validate before charging or consuming barter goods.
+      if (!gear || !def?.slots?.length) { deps.showToast('That tool is not available.', false); return; }
+      if (gear.tools?.[item.givesTool]) { deps.showToast('You already own that tool.', false); return; }
+      deps.inventory.gold = gold - (Number(item.price) || 0);
+      for (const [key, qty] of Object.entries(item.tradeCost || {})) deps.inventory[key] = Math.max(0, (Number(deps.inventory[key]) || 0) - (Number(qty) || 0));
+      if (!gear.tools) gear.tools = {};
+      gear.tools[item.givesTool] = true;
+      window.WeaponTrustVisits?.syncSmithingShapeUnlocks?.();
+      deps.saveGearInventory?.();
+      deps.refreshMetalToolWorldTexture?.(item.givesTool);
+      deps.buildEquipmentSlots?.();
+      deps.buildInventoryGrid();
+      deps.saveMemberWorldData();
+      deps.showToast('Bought ' + item.name + ' — its shape is available at the smithy!', true);
+      renderGeneralStorePage();
+      return;
+    }
     if (item.givesTrinket) {
       // Trinkets are character gear (js/trinket-system.js), not world stacks.
       if (!window.TrinketSystem?.DEFINITIONS?.[item.givesTrinket]) { deps.showToast('That trinket is not available.', false); return; }
@@ -342,12 +361,12 @@
   function debugSnapshot() {
     const state = activeShopState();
     return {
-      mostRecentChange: 'Configured shop food can now grant an explicit 1-5 star quality; the General Store uses this for minimum-quality cooking staples.',
+      mostRecentChange: 'The General Store sells a Native Copper Work Hammer as character gear; acquiring it unlocks its smithy shape.',
       poolId: state.poolId,
       label: state.shop.label,
       mapId: currentMapId(),
       specialized: state.specialized,
-      goods: goodsForShop(state).map(item => ({ key: item.key, name: item.name, price: item.price, qualityStars: configuredQualityStars(item), alchemyRecipeId: item.alchemyRecipeId || null })),
+      goods: goodsForShop(state).map(item => ({ key: item.key, name: item.name, price: item.price, qualityStars: configuredQualityStars(item), givesTool: item.givesTool || null, alchemyRecipeId: item.alchemyRecipeId || null })),
     };
   }
 
