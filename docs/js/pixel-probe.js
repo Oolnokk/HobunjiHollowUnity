@@ -1048,7 +1048,7 @@
     const animalSleepLines = _pixelProbeAnimalSleepLines();
     if (animalSleepLines) lines.push(...animalSleepLines);
     const controllerUiDebug = window.ControllerUI?.debugState?.(); // Confirms that ordinary gameplay reads the cached closed-panel state instead of forcing layout.
-    if (controllerUiDebug) lines.push(`Controller UI cache: panels=${controllerUiDebug.knownPanels} active=${controllerUiDebug.stackDepth} top=${controllerUiDebug.panelId || 'none'}`);
+    if (controllerUiDebug) lines.push(`Controller UI cache: panels=${controllerUiDebug.knownPanels} active=${controllerUiDebug.stackDepth} top=${controllerUiDebug.panelId || 'none'} nest=${controllerUiDebug.groupDepth || 0}:${controllerUiDebug.groupId || 'root'} target=${controllerUiDebug.targetId || controllerUiDebug.targetText || 'none'}`);
     const gridDebug = window.GridTileAccessors?.debugSnapshot?.(); // Makes building-footprint cache effectiveness visible during movement without a console.
     if (gridDebug) lines.push(`Building footprint cache: builds=${gridDebug.buildingFootprintCacheBuilds} hits=${gridDebug.buildingFootprintCacheHits}`);
     const heldRenderDebug = window.HeldObjectRenderOrder?.snapshot?.(); // Exposes the retained selective-x-ray render mode and pass counters on mobile.

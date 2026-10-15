@@ -276,7 +276,7 @@
     "function": "queueRefresh",
     "reason": "Guarded single RAF reflows the Settings reset-control UI after a change; does not call itself again.",
     "migrationStage": "not-planned",
-    "line": 197
+    "line": 302
   },
   {
     "file": "docs/js/inventory-character-effects.js",

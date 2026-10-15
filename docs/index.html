@@ -19,7 +19,7 @@
   <!-- Dev Companion bridge (window.DevCompanion): session-tied channel to the
        docs/tools/dev-companion window. Loaded before every config-fetching
        module so its fetch() wrapper can log each config/JSON access. -->
-  <script src="js/dev-companion-bridge.js?v=20260930companion1"></script>
+  <script src="js/dev-companion-bridge.js?v=20261015h423643f"></script>
   <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
   <script src="js/GLTFLoader.js?v=20260712d"></script>
   <script src="js/WallBuilder.js?v=20261013hd467097"></script>
@@ -141,7 +141,7 @@
   <script src="js/item-processing.js?v=20261008h5a1190f"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <script src="debug.js?v=20261009h037305c"></script>
+  <script src="debug.js?v=20261015h78d3fe0"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20260930h1b2e2e2"></script>
   <script src="config/scratchbones-config.js?v=20261015h58783f0"></script>
@@ -153,7 +153,7 @@
   <script src="js/metal-armor-system.js?v=20261008h99621ca"></script>
   <script src="config/colors/config.js?v=20260930h1b2e2e2"></script>
   <script src="config/attachment-rig-profiles.js?v=20261002h6d814a9"></script>
-  <link rel="stylesheet" href="style.css?v=20261009mobiletarget4">
+  <link rel="stylesheet" href="style.css?v=20261015h766c523">
   <link rel="stylesheet" href="cooking-ui.css?v=20261009mobiletarget3">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
   <!-- Shared gameplay presentation: mirrors the outlined text + light translucent containers used by character/save select. -->
@@ -178,9 +178,9 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261007hfd6211c"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261014h7efc18e"></script>
+  <script src="js/held-action-animations.js?v=20261015hf121d57"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
-  <script src="js/character-action-locks.js?v=20261014hdb2a3fe"></script>
+  <script src="js/character-action-locks.js?v=20261015hc73ec7d"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
   <script src="js/npc-character-state.js?v=20260811a"></script>
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
@@ -303,9 +303,9 @@
   <script src="js/combat/combat-blink-dodge.js?v=20261002h2d08879"></script>
   <script src="js/combat/combat-charged-breaker.js?v=20261004h4413146"></script>
   <script src="js/combat/combat-flurry.js?v=20260930he6f6a0a"></script>
-  <script src="js/combat/combat-loadout-ui.js?v=20261015h8e336c6"></script>
+  <script src="js/combat/combat-loadout-ui.js?v=20261015h2c02b33"></script>
   <!-- Weapon Enchantments + Immundanity (Base/Flourish, planar cancellation, Sicced/Fury/...). -->
-  <script src="js/combat/combat-enchantments.js?v=20261008hfd476df"></script>
+  <script src="js/combat/combat-enchantments.js?v=20261015hd36e95d"></script>
   <script src="js/combat/weapon-enchantment-vfx.js?v=20261013hdec3ca0"></script>
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
        projectiles. Loads before bandits so their dual loadouts can call it. -->
@@ -343,15 +343,15 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261015h08914d5"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261015h09e5123"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
   <script src="js/effect-buff-bar.js?v=20260811a"></script>
-  <script src="js/skill-system.js?v=20261008h752f794"></script>
+  <script src="js/skill-system.js?v=20261015h31a0bda"></script>
   <script src="js/perk-system.js?v=20261005h00ffd8c"></script>
   <!-- Trinkets + shared 8-point Attunement budget; registers stat/perk/companion providers. -->
-  <script src="js/trinket-system.js?v=20261002hf79dffc"></script>
+  <script src="js/trinket-system.js?v=20261015h587b47e"></script>
   <script src="js/cooking-data.js?v=20260811a"></script>
   <script src="js/food-processing.js?v=20261001foodgift2"></script>
   <script src="js/cooking-system.js?v=20261015hc64b297"></script>
@@ -456,7 +456,7 @@
   <script src="js/jubmir-shop.js?v=20261008h176df45"></script>
   <!-- Bound Harlyao relic weapons + Garanki Gabu's unbinding/enchanting panel. -->
   <script src="js/artifact-collection.js?v=20261013h17d9d3b"></script>
-  <script src="js/harlyao-relics.js?v=20261013h18a078f"></script>
+  <script src="js/harlyao-relics.js?v=20261015h4c239a4"></script>
   <!-- Smithy / General Store / Carpenter shop-counter buttons (window.NpcShopButtons),
        initialized by game.js. -->
   <script src="js/npc-shop-buttons.js?v=20261008shopbtn1"></script>
@@ -471,7 +471,7 @@
        relative to the other systems above doesn't matter; must load before
        game.js, which calls window.CalendarSystem.init(...) during its own
        setup. -->
-  <script src="js/calendar-system.js?v=20261013h7fa739b"></script>
+  <script src="js/calendar-system.js?v=20261015hfeb87fb"></script>
   <!-- Resolves a map/interior's active alternate `layouts` entry (see
        docs/config/maps/map_i_temple.json's spirit_communion layout) against
        the current calendar time — window.MapLayoutSystem. Pure/stateless, no
@@ -708,7 +708,7 @@
        render() during its own boot sequence (unlike its sibling panels,
        this one renders once at boot rather than lazily on first tab
        open). -->
-  <script src="js/input-settings-panel.js?v=20261002hd84e634"></script>
+  <script src="js/input-settings-panel.js?v=20261015h7a91f62"></script>
   <!-- Crafting tab (Inventory panel's Crafting sub-tab, window.CraftingPanel)
        — furniture blueprints plus discovered ore-to-bar recipes; pure DOM/state,
        must load before game.js, which injects inventory and metallurgy data. -->
@@ -721,7 +721,7 @@
        window.EquipmentPanel directly (including at top-level, in
        window.__climbDebug) and calls window.EquipmentPanel.init(...)
        during its own setup. -->
-  <script src="js/equipment-panel.js?v=20261015h0cc29a0"></script>
+  <script src="js/equipment-panel.js?v=20261015h3856861"></script>
   <!-- Per-map terrain tile texture overrides (window.TerrainTileMaterials:
        resolveTileMat/resolveCliffMat/loadTerrainTileTexture) — must load
        before game.js, which calls window.TerrainTileMaterials.init(...) near
@@ -812,7 +812,7 @@
   <!-- PNG-plane avatar outline occluders: registry of sprite-plane meshes on
        outline layer 4 plus the depth-only replay game.js runs before its
        outline passes (window.PngPlaneOutlineOccluder; game.js calls init). -->
-  <script src="js/png-plane-outline-occluder.js?v=20260924perf1"></script>
+  <script src="js/png-plane-outline-occluder.js?v=20261015hb93578b"></script>
   <!-- World-space avatar blink/breathing refresh with distance-scaled rates
        (window.WorldPortraitLife; game.js calls init and ticks it). -->
   <script src="js/world-portrait-life.js?v=20260930combatface2"></script>
@@ -1147,8 +1147,8 @@
         <button class="mp-tab"        data-mpanel="relationships" role="tab">💬 Relations</button>
         <button class="mp-tab"        data-mpanel="loadout"       role="tab">⚔ Loadout</button>
         <button class="mp-tab"        data-mpanel="settings"      role="tab">⚙ Settings</button>
-        <button class="mp-tab"        data-mpanel="debug"         role="tab">🐛 Debug</button>
-        <button class="mp-tab"        data-mpanel="wildlife"      role="tab">🧬 Wildlife</button>
+        <button class="mp-tab"        data-mpanel="debug"         data-dev-only role="tab">🐛 Debug</button>
+        <button class="mp-tab"        data-mpanel="wildlife"      data-dev-only role="tab">🧬 Wildlife</button>
       </div>
       <div class="mp-ctrls">
         <button class="mp-ctrl-btn"        id="menuPauseBtn" title="Pause/Resume">⏸</button>
@@ -1660,33 +1660,33 @@
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingBillWind" checked><span class="toggle-slider"></span></span>
           </label>
-          <div class="settings-section-title" style="margin-top:10px">Weeds</div>
-          <label class="settings-row">
+          <div data-dev-only class="settings-section-title" style="margin-top:10px">Weeds</div>
+          <label data-dev-only class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Weed: 3D Foliage</div>
               <div class="settings-desc">Off: oversized grass billboards. On: procedural 3D plants with outlines</div>
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingWeed3D"><span class="toggle-slider"></span></span>
           </label>
-          <div class="settings-section-title" style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <div data-dev-only class="settings-section-title" style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;gap:8px">
             <span>Cloud Forest (perf testing)</span>
             <button id="settingCloudForestResetDefaults" type="button" style="font-size:11px;padding:3px 9px;background:rgba(106,167,255,.14);border:1px solid rgba(106,167,255,.35);border-radius:6px;color:#9bc2ff;cursor:pointer;white-space:nowrap">Set to Defaults</button>
           </div>
-          <label class="settings-row">
+          <label data-dev-only class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Cloud Forest Mist</div>
               <div class="settings-desc">Player-centered fog cylinders shown only in the Southern Cloud Forest</div>
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingCloudForestFog" checked><span class="toggle-slider"></span></span>
           </label>
-          <label class="settings-row">
+          <label data-dev-only class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Cloud Forest Wide Vegetation Cull</div>
               <div class="settings-desc">Off: falls back to the normal camera-forward cull box every other zone uses. On: a circle around the player, sized by the radius slider below</div>
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingCloudForestWideCull" checked><span class="toggle-slider"></span></span>
           </label>
-          <label class="settings-row">
+          <label data-dev-only class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Tree Cull Radius</div>
               <div class="settings-desc">How far (in tiles) around the player vegetation stays loaded while Wide Vegetation Cull is on</div>
@@ -1696,7 +1696,7 @@
               <span id="settingCloudForestCullRadiusValue" class="settings-slider-value">30</span>
             </div>
           </label>
-          <label class="settings-row">
+          <label data-dev-only class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Tree Fade-In Start</div>
               <div class="settings-desc">Percent of Tree Cull Radius where a tree reaches full opacity — beyond that (out to the radius) it fades toward transparent instead of popping in solid</div>
@@ -1706,7 +1706,7 @@
               <span id="settingCloudForestFadeStartValue" class="settings-slider-value">70%</span>
             </div>
           </label>
-          <label class="settings-row">
+          <label data-dev-only class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Tree Outline Radius</div>
               <div class="settings-desc">Percent of Tree Cull Radius within which a tree's dark shell outline is drawn — farther out than this the outline is skipped even though the tree itself is visible (the outline pass is the more expensive of the two)</div>
@@ -1716,7 +1716,7 @@
               <span id="settingCloudForestOutlineRadiusValue" class="settings-slider-value">40%</span>
             </div>
           </label>
-          <label class="settings-row">
+          <label data-dev-only class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Fog Inner Layer Radius</div>
               <div class="settings-desc">Closest, densest mist ring</div>
@@ -1726,7 +1726,7 @@
               <span id="settingCloudForestFogInnerRadiusValue" class="settings-slider-value">2.2</span>
             </div>
           </label>
-          <label class="settings-row">
+          <label data-dev-only class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Fog Inner Layer Opacity</div>
               <div class="settings-desc">Closest, densest mist ring</div>
@@ -1736,7 +1736,7 @@
               <span id="settingCloudForestFogInnerOpacityValue" class="settings-slider-value">0.14</span>
             </div>
           </label>
-          <label class="settings-row">
+          <label data-dev-only class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Fog Middle Layer Radius</div>
               <div class="settings-desc">Middle mist ring</div>
@@ -1746,7 +1746,7 @@
               <span id="settingCloudForestFogMiddleRadiusValue" class="settings-slider-value">3.7</span>
             </div>
           </label>
-          <label class="settings-row">
+          <label data-dev-only class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Fog Middle Layer Opacity</div>
               <div class="settings-desc">Middle mist ring</div>
@@ -1756,7 +1756,7 @@
               <span id="settingCloudForestFogMiddleOpacityValue" class="settings-slider-value">0.26</span>
             </div>
           </label>
-          <label class="settings-row">
+          <label data-dev-only class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Fog Outer Layer Radius</div>
               <div class="settings-desc">Farthest, faintest mist ring</div>
@@ -1766,7 +1766,7 @@
               <span id="settingCloudForestFogOuterRadiusValue" class="settings-slider-value">15</span>
             </div>
           </label>
-          <label class="settings-row">
+          <label data-dev-only class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Fog Outer Layer Opacity</div>
               <div class="settings-desc">Farthest, faintest mist ring</div>
@@ -1776,51 +1776,51 @@
               <span id="settingCloudForestFogOuterOpacityValue" class="settings-slider-value">0.46</span>
             </div>
           </label>
-          <label class="settings-row">
+          <label data-dev-only class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Cloud Forest Background Forest</div>
               <div class="settings-desc">Dense instanced tree wall along the north town-entrance edge</div>
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingCloudForestBgForest" checked><span class="toggle-slider"></span></span>
           </label>
-          <div class="settings-section-title" style="margin-top:10px">Nearby Projectile Cover (perf testing)</div>
-          <label class="settings-row">
+          <div data-dev-only class="settings-section-title" style="margin-top:10px">Nearby Projectile Cover (perf testing)</div>
+          <label data-dev-only class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Precise Projectile Cover</div>
               <div class="settings-desc">Master switch for combat-only rendered-geometry cover</div>
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingVolumeCollisionMaster" checked><span class="toggle-slider"></span></span>
           </label>
-          <label class="settings-row">
+          <label data-dev-only class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Projectile Cover</div>
               <div class="settings-desc">Nearby visible 3D geometry absorbs player and enemy projectiles during combat</div>
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingVolumeCollisionProjectiles" checked><span class="toggle-slider"></span></span>
           </label>
-          <label class="settings-row">
+          <label data-dev-only class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Transparent-Pixel Precision</div>
               <div class="settings-desc">Sample PNG alpha so invisible texture gaps do not block shots</div>
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingVolumeCollisionAlpha" checked><span class="toggle-slider"></span></span>
           </label>
-          <label class="settings-row">
+          <label data-dev-only class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Bandit Camps</div>
               <div class="settings-desc">Spawn bandit camps (tents, campfires, gangs) in wilderness zones — applies to zones you haven't entered yet, not camps already standing</div>
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingBanditCamps" checked><span class="toggle-slider"></span></span>
           </label>
-          <div class="settings-section-title" style="margin-top:10px">Audio</div>
-          <div class="settings-row settings-row--stacked">
+          <div data-dev-only class="settings-section-title" style="margin-top:10px">Audio calibration</div>
+          <div data-dev-only class="settings-row settings-row--stacked">
             <div class="settings-label">
               <div class="settings-name">Per-Song Music Gain</div>
               <div class="settings-desc">Choose a BGM track, then fine-tune its calibrated gain. Defaults are matched by measured loudness to Follow the Signs; values above 100% use real audio gain rather than stopping at the browser volume ceiling.</div>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;width:100%">
-              <select id="settingMusicTrackGainSong" class="settings-select" style="min-width:190px;flex:1 1 230px"></select>
-              <input type="range" id="settingMusicTrackGain" min="0" max="500" step="5" value="100" style="flex:1 1 220px;min-width:160px">
+              <select id="settingMusicTrackGainSong" aria-label="Music track" class="settings-select" style="min-width:190px;flex:1 1 230px"></select>
+              <input type="range" id="settingMusicTrackGain" aria-label="Track gain (%)" min="0" max="500" step="5" value="100" style="flex:1 1 220px;min-width:160px">
               <span id="settingMusicTrackGainValue" class="settings-slider-value">100%</span>
               <button type="button" id="settingMusicTrackGainReset" class="settings-small-btn">Reference</button>
             </div>
@@ -1953,7 +1953,7 @@
           <label class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Paint Filter <span style="font-size:10px;opacity:.7">(Experimental)</span></div>
-              <div class="settings-desc">Live Paint Stack filter at full world resolution. All active tiers share the radius-10 / 3-bin / .27 oil treatment and tone/finish; only watercolor radius/mix changes by tier. Palette correction now separates vivid yellow-green accents from muted tan/ochre so blue suppression no longer mustard-shifts tan surfaces. HUD, menus, reticle UI, and dialogue overlays stay crisp. Currently uses the outline composite, so Outlines must remain enabled.</div>
+              <div class="settings-desc">Adds a painted look to the world while menus and dialogue stay crisp. Higher quality costs more performance. Requires Shell Outlines.</div>
               <div class="settings-desc" id="painterlyPostprocessStatus" role="status" aria-live="polite">Medium selected — waiting for the gameplay renderer.</div>
             </div>
             <select id="settingPainterlyPostprocess" style="font-size:12px;padding:5px 8px;background:rgba(255,255,255,.06);border:1px solid var(--border-bright);border-radius:6px;color:var(--text);align-self:center">
@@ -1979,14 +1979,14 @@
             </div>
           </div>
           <div class="settings-section-title" style="margin-top:10px">Dev Tools</div>
-          <label class="settings-row">
+          <label data-dev-only class="settings-row">
             <div class="settings-label">
               <div class="settings-name">UI Edit Mode</div>
               <div class="settings-desc">Floating box (top-left) to select and restyle any on-screen UI element — font size, colors, borders, spacing, position/size, visibility, even its text</div>
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingUiEditMode"><span class="toggle-slider"></span></span>
           </label>
-          <div class="settings-row">
+          <div data-dev-only class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Export UI Settings</div>
               <div class="settings-desc">Download your UI Edit Mode changes as JSON — full config or a diff against the game's defaults</div>
@@ -1996,35 +1996,35 @@
               <button type="button" id="uiEditorExportDiffBtn" class="settings-small-btn">Export Diff</button>
             </div>
           </div>
-          <div class="settings-row">
+          <div data-dev-only class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Reset UI Edits</div>
               <div class="settings-desc">Clear every element override made in UI Edit Mode this session</div>
             </div>
             <button type="button" id="uiEditorResetAllBtn" class="settings-small-btn">Reset All</button>
           </div>
-          <div class="settings-row">
+          <div data-dev-only class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Editor Hub</div>
               <div class="settings-desc">Map Builder, Town Editor, NPC tools, Wall Builder</div>
             </div>
             <a href="tools/index.html" target="_blank" style="font-size:12px;padding:6px 10px;background:rgba(106,167,255,.14);border:1px solid rgba(106,167,255,.3);border-radius:8px;color:#6aa7ff;text-decoration:none;white-space:nowrap;align-self:center">Open Tools ↗</a>
           </div>
-          <label class="settings-row">
+          <label data-dev-only class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Show Hitboxes</div>
               <div class="settings-desc">Show elevated portrait hitboxes and active 3D melee pie-prism colliders</div>
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingShowHitboxes"><span class="toggle-slider"></span></span>
           </label>
-          <label class="settings-row">
+          <label data-dev-only class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Show Interaction Raycast</div>
               <div class="settings-desc">Show the centered camera ray, its selected target, and the player-to-hit guide</div>
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingShowInteractionRaycast"><span class="toggle-slider"></span></span>
           </label>
-          <label class="settings-row">
+          <label data-dev-only class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Show Shoulder-Pet Perch / Grip</div>
               <div class="settings-desc">Draw the active shoulder perch in cyan, the pet grip in magenta, and their live world-space error</div>
@@ -2034,51 +2034,51 @@
           <label class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Dev Mode</div>
-              <div class="settings-desc">Adds a +1 Mastery button to each tool's item-info panel, for testing</div>
+              <div class="settings-desc">Shows developer settings, diagnostics, and tools. Grants, tuning, and testing controls are also available in Dev Companion.</div>
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingDevMode"><span class="toggle-slider"></span></span>
           </label>
-          <div class="settings-row">
+          <div data-dev-only class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Dev Companion Window</div>
               <div class="settings-desc">Opens a second window tied to this play session: quick save/load with exact position, one-click recovery-backup swapping, autosave pause, Map Edit controls, and a live list of the config/JSON (including the dialogue node on screen and the conditions that chose it) the game is using</div>
             </div>
             <button type="button" id="devCompanionOpenBtn" class="settings-small-btn">Open</button>
           </div>
-          <label class="settings-row" id="settingFlipPngPortraitsRow" hidden style="display:none">
+          <label data-dev-only class="settings-row" id="settingFlipPngPortraitsRow" hidden style="display:none">
             <div class="settings-label">
               <div class="settings-name">Flip PNG Character Portraits Sideways</div>
               <div class="settings-desc">Developer comparison toggle; flipped is the default presentation for both front and back PNG-plane character portraits</div>
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingFlipPngPortraits"><span class="toggle-slider"></span></span>
           </label>
-          <div class="settings-row">
+          <div data-dev-only class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Teleport to Den</div>
               <div class="settings-desc">Warp to a random animal den on the current map (also works from inside a den's cavern — warps back out to a den on that den's own map)</div>
             </div>
             <button type="button" id="devTeleportDenBtn" class="settings-small-btn">Teleport</button>
           </div>
-          <div class="settings-row">
+          <div data-dev-only class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Teleport to Test Arena</div>
               <div class="settings-desc">Warp to an empty sandbox area with a creature-spawning menu (replaces the farm editor pencil while you're there). Press again to warp back to where you were.</div>
             </div>
             <button type="button" id="devTeleportArenaBtn" class="settings-small-btn">Teleport</button>
           </div>
-          <div class="settings-row">
+          <div data-dev-only class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Teleport to Wilderness Chunk Lab</div>
               <div class="settings-desc">Warp to a real procedurally generated wilderness zone sized down to just a few chunks, instead of a full map — for isolating terrain/foliage render cost and checking chunk unload/rebuild for anything that doesn't get released (pair with "Show Chunk Grid"/"Audit Loaded Chunks" below and the Performance Profiler's GPU counts). Press again to warp back.</div>
             </div>
-            <select id="devWildernessLabSize" class="settings-small-btn" style="cursor:pointer" title="Chunks per side">
+            <select id="devWildernessLabSize" aria-label="Wilderness lab size" class="settings-small-btn" style="cursor:pointer" title="Chunks per side">
               <option value="1">1 chunk</option>
               <option value="4">2×2 chunks</option>
               <option value="9">3×3 chunks</option>
             </select>
             <button type="button" id="devTeleportWildernessLabBtn" class="settings-small-btn">Teleport</button>
           </div>
-          <div class="settings-row">
+          <div data-dev-only class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Regenerate Wilderness Chunk Lab In Place</div>
               <div class="settings-desc">While inside the lab: disposes and rebuilds every loaded chunk with a fresh random layout, without leaving. Repeat a few times and check whether GPU geometry/texture counts and the chunk residency audit return to the same baseline each time, or creep upward.</div>
@@ -2478,7 +2478,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261015hc07a78b"></script>
+  <script src="js/pixel-probe.js?v=20261015h9629c80"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2529,7 +2529,7 @@
   <!-- Music (Lyre) performance minigame (window.MusicMinigame) — must
        load before game.js, which calls window.MusicMinigame.init(...)
        during its own setup, mirroring window.Fishing above. -->
-  <script src="js/music-minigame.js?v=20261007h822d2b9"></script>
+  <script src="js/music-minigame.js?v=20261015h0c17e84"></script>
   <!-- NPC Agenda + Activity Planner redesign (window.NpcAgenda/
        NpcActivities/NpcSocialStimuli/NpcActivityPlanner) — flexible agenda
        beats + a free-time/fallback planner that replaces "freeze if an
@@ -2613,7 +2613,7 @@
   <!-- Directional camera pitch policy is isolated from controller bindings/gameplay dispatch. -->
   <script src="js/camera-look-clamp.js?v=20260923review2"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261015h998b8d3"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261015hfedb6c2"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
@@ -2638,13 +2638,13 @@
   <script src="js/romance-wedding.js?v=20261007wedding1"></script>
   <script src="js/romance-system.js?v=20261013h23504d0"></script>
   <script src="js/npc-command-wheel.js?v=20261008h02bf686"></script>
-  <script src="game.js?v=20261015h24d363b"></script>
+  <script src="game.js?v=20261015hfc31370"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261010h8448517"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
-  <script src="js/controller-ui-nav.js?v=20261015hdf8b1c6"></script>
+  <script src="js/controller-ui-nav.js?v=20261015hcc8183a"></script>
   <!-- ◀/▶ stepper buttons beside every <select> so controller players can change any dropdown. -->
   <script src="js/controller-select-steppers.js?v=20261014h3e0bf66"></script>
   <script>

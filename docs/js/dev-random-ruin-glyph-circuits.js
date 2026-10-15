@@ -351,6 +351,7 @@
     if (!anchor) { if (attempt < 40) setTimeout(() => installSettingsRow(attempt + 1), 250); return; }
     const row = document.createElement('div');
     row.className = 'settings-row';
+    row.setAttribute('data-dev-only', '');
     row.innerHTML = '<div class="settings-label"><div class="settings-name">Debug Puzzle Markers</div><div class="settings-desc">Floating runes over glyph targets, door circuit pips and plates. Off shows only the in-world cues (glowing decals, plates, doors).</div></div><label style="display:flex;align-items:center;gap:6px"><input id="devRandomRuinDebugMarkers" type="checkbox"><span>Markers</span></label>';
     anchor.insertAdjacentElement('afterend', row);
     const box = row.querySelector('#devRandomRuinDebugMarkers');

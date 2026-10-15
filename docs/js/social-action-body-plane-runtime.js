@@ -167,7 +167,7 @@
 
     composer.setChannel(CHANNEL, {
       priority: 60,
-      rotation: { pitch: 0, yaw: motion.twirlRotation, roll: motion.bodySway },
+      rotation: { pitch: 0, yaw: global.SocialActionWheel?.spinRotation?.(t) ?? 0, roll: motion.bodySway },
       translation: { x: motion.tangentShift * sizeScale, y: motion.bounce * sizeScale, z: 0 },
     });
     state.channelUpdates++;

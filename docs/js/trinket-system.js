@@ -336,26 +336,6 @@
       sec.appendChild(warn);
     }
 
-    if (window.Combat?.deps?.isDevMode?.()) {
-      const devRow = document.createElement('div');
-      devRow.style.cssText = 'display:flex;gap:6px;align-items:center;margin:4px 0;';
-      const pick = document.createElement('select');
-      pick.className = 'settings-select';
-      for (const def of Object.values(DEFINITIONS)) {
-        const option = document.createElement('option');
-        option.value = def.id;
-        option.textContent = `${def.icon} ${def.displayName} (${def.attunementCost})`;
-        pick.appendChild(option);
-      }
-      const give = document.createElement('button');
-      give.type = 'button';
-      give.className = 'ii-btn';
-      give.textContent = '[Dev] Grant trinket';
-      give.addEventListener('click', event => { event.stopPropagation(); grant(pick.value, 'dev'); });
-      devRow.append(pick, give);
-      sec.appendChild(devRow);
-    }
-
     const owned = ownedEntries();
     if (!owned.length) {
       const empty = document.createElement('div');
@@ -439,6 +419,15 @@
   function init() {
     if (initialized) return;
     initialized = true;
+    window.DevCompanion?.registerCheatPanel?.({
+      id: 'trinket-grants', title: 'Trinkets', order: 33,
+      render: () => ({ actions: [{ id: 'grant', label: 'Grant trinket', reset: true,
+        options: [{ value: '', label: 'Choose a trinket…' }, ...Object.values(DEFINITIONS).map(def => ({ value: def.id, label: `${def.icon} ${def.displayName} (${def.attunementCost})` }))] }] }),
+      onAction: (action, { value }) => {
+        if (action !== 'grant' || !DEFINITIONS[value]) return { ok: false };
+        return { ok: !!grant(value, 'dev') };
+      },
+    });
     window.ResourceSystem?.registerStatModifierProvider?.(statMultiplier);
     window.PerkSystem?.registerBonusRankProvider?.(perkBonusRanks);
     window.CompanionOffense?.registerProvider?.('trinkets', () => companionModifiers());

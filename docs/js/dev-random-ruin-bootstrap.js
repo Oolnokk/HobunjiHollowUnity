@@ -28,7 +28,7 @@
   document.write('<script src="js/dev-random-ruin-solid-footprints.js?v=20261015ghostfootprint1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-tile-occupancy.js?v=20260928puzzles2"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-solvability.js?v=20260926lighting1"></scr' + 'ipt>');
-  document.write('<script src="js/dev-random-ruin-interior-map.js?v=20261013hca303b4"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-interior-map.js?v=20261015h134fbe9"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-wall-planes.js?v=20260927geometry1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-wall-render-proxy.js?v=20260930plaquesources1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-collision-precision.js?v=20260927geometry1"></scr' + 'ipt>');
@@ -38,6 +38,6 @@
   document.write('<script src="js/dev-random-ruin-rope-rewards.js?v=20260929ruinpieces1"></scr' + 'ipt>'); // Registers rope payoffs + lava basins as a simple-puzzle composer.
   document.write('<script src="js/dev-random-ruin-sanctum.js?v=20261003hefbd8d7"></scr' + 'ipt>'); // Braziers, Great Door, boss sanctum + vault (simple-puzzle composer).
   document.write('<script src="js/dev-random-ruin-interactions.js?v=20261013rin4"></scr' + 'ipt>');
-  document.write('<script src="js/dev-random-ruin-glyph-circuits.js?v=20260929glowdecals1"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-glyph-circuits.js?v=20261015h1fb070c"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-runtime-coverage.js?v=20260923review1"></scr' + 'ipt>');
 })();

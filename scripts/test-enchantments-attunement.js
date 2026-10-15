@@ -12,8 +12,10 @@ const vm = require('node:vm');
 let testNowMs = 1000;
 let randomQueue = []; // Deterministic GameRandom: shift queued values, else 0.99 (never procs).
 const events = [];
+const companionPanels = new Map(); // Captures the real feature registrations for companion-action regression coverage.
 const context = {
   console,
+  DevCompanion: { registerCheatPanel: panel => companionPanels.set(panel.id, panel) },
   performance: { now: () => testNowMs },
   Date,
   CustomEvent: class CustomEvent { constructor(type, init) { this.type = type; this.detail = init?.detail; } },
@@ -547,3 +549,21 @@ for (let i = 0; i < 40; i++) {
 }
 
 console.log('enchantments / immundanity / enhanced resources / attunement / Harlyao relics checks passed');
+
+
+// Companion grants/editors run the same authoritative mutation and save paths.
+reset();
+const enchanting = companionPanels.get('enchantment-editing'); // Registered by the real enchantment module.
+assert.equal(enchanting.onAction('base', { key: 'sword', index: 0, value: 'burning' }).ok, true);
+assert.equal(ES.stateFor('sword').base[0], 'burning');
+assert.equal(enchanting.onAction('base', { key: 'sword', index: 5, value: 'burning' }).ok, false);
+assert.equal(enchanting.onAction('base', { key: 'sword', index: 0, value: 'invalid' }).ok, false);
+weapon = 'axe';
+assert.equal(enchanting.onAction('base', { key: 'sword', index: 0, value: '' }).ok, false, 'stale weapon selectors cannot edit a previous weapon');
+assert.equal(ES.stateFor('sword').base[0], 'burning');
+const trinkets = companionPanels.get('trinket-grants'); // Registered by the real trinket module.
+const choice = trinkets.render().actions[0].options.find(option => option.value); // Uses authored dropdown options rather than a copied definition.
+assert.equal(trinkets.onAction('grant', { value: choice.value }).ok, true);
+assert.equal(TS.ownedEntries().length, 1);
+assert.equal(trinkets.onAction('grant', { value: 'invalid' }).ok, false);
+assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);

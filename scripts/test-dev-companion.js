@@ -237,6 +237,26 @@ function makeContext(extra = {}) {
     const partial = received.find(m => m.type === 'state');
     assert.ok(partial?.partial, 'after a command only changed providers are sent');
     assert.ok('panels' in partial.state && !('probe' in partial.state), 'unchanged providers are not resent');
+
+    const devBox = { checked: false }; // Simulates the game's existing Dev Mode checkbox.
+    ctx.document.getElementById = id => id === 'settingDevMode' ? devBox : null;
+    ctx.__hobunjiGameStarted = true;
+    let grants = 0; // Verifies unavailable/stale companion clicks cannot mutate the game.
+    bridge.registerCheatPanel({ id: 'grant', render: () => ({ actions: [] }), onAction: () => { grants++; return { ok: true }; } });
+    const grant = () => bridge.runCommand('panel-action', { panel: 'grant', action: 'give' }); // Uses the same command route as BroadcastChannel.
+    assert.ok(!panelsNow().some(panel => panel.id === 'grant'));
+    await assert.rejects(grant, /not currently available/);
+    devBox.checked = true;
+    assert.ok(panelsNow().some(panel => panel.id === 'grant'));
+    await grant();
+    assert.equal(grants, 1);
+    devBox.checked = false;
+    await assert.rejects(grant, /not currently available/);
+    assert.equal(grants, 1);
+    devBox.checked = true;
+    ctx.__hobunjiGameStarted = false;
+    await assert.rejects(grant, /not currently available/);
+
   }
 
   // ── Calendar time skips use the same time-of-day bands as conditions ─

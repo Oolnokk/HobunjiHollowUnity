@@ -19,6 +19,19 @@
 
   function init(injectedDeps) {
     deps = injectedDeps;
+    window.DevCompanion?.registerCheatPanel?.({
+      id: 'tool-mastery', title: 'Tool mastery', order: 31,
+      render: () => ({ actions: Object.keys(deps.getGearInventory()?.tools || {})
+        .filter(key => deps.getGearInventory().tools[key] && deps.TOOL_ITEM_DEFS[key] && deps.toolMasteryLevel(key) < 5)
+        .map(key => ({ id: 'mastery', label: `+1 ${deps.TOOL_ITEM_DEFS[key].label} (${deps.toolMasteryLevel(key)}/5)`, args: { key } })) }),
+      onAction: (action, { key }) => {
+        if (action !== 'mastery' || !deps.getGearInventory()?.tools?.[key] || !deps.TOOL_ITEM_DEFS[key]) return { ok: false };
+        deps.devBumpToolMasteryLevel(key);
+        buildEquipmentSlots();
+        window.CombatLoadoutUI?.render?.();
+        return { ok: true };
+      },
+    });
     installInventorySelectionBridge();
     loadInventoryUi();
   }
@@ -87,6 +100,7 @@
   }
 
   function setEquipmentSlot(slot, itemKeyOrNull) {
+    if (slot === 'instrument' && deps.equipmentSlots[slot] !== itemKeyOrNull) window.MusicMinigame?.close?.();
     deps.equipmentSlots[slot] = itemKeyOrNull;
     deps.saveEquipmentSlots();
   }
@@ -624,12 +638,6 @@
           buildEquipmentSlots(); selectGearTool(key);
         });
       }
-      if (deps.isDevMode() && deps.toolMasteryLevel(key) < 5) {
-        mkBtn('[Dev] +1 Mastery', '', () => {
-          deps.devBumpToolMasteryLevel(key);
-          selectGearTool(key);
-        });
-      }
     }
   }
 
@@ -676,16 +684,6 @@
         buildEquipmentSlots(); selectEquipSlot(slot);
       };
       actEl.appendChild(b);
-      if (deps.isDevMode() && deps.toolMasteryLevel(key) < 5) {
-        const devBtn = document.createElement('button');
-        devBtn.className = 'ii-btn';
-        devBtn.textContent = `[Dev] +1 Mastery (${def.label})`;
-        devBtn.onclick = () => {
-          deps.devBumpToolMasteryLevel(key);
-          selectEquipSlot(slot);
-        };
-        actEl.appendChild(devBtn);
-      }
     }
   }
 
@@ -980,7 +978,7 @@
 
     const toolRow = document.createElement('div');
     toolRow.className = 'inv-equip-row';
-    const TOOL_SLOTS = ['hoe', 'shovel', 'axe', 'pick', 'harpoon', 'weapon', 'ranged'];
+    const TOOL_SLOTS = ['hoe', 'shovel', 'axe', 'pick', 'harpoon', 'weapon', 'ranged', 'instrument']; // Instrument uses the permanent gear collection and saved slot assignments.
     for (const slot of TOOL_SLOTS) {
       const itemKey = deps.equipmentSlots[slot];
       const def = itemKey ? deps.TOOL_ITEM_DEFS[itemKey] : null;
@@ -1004,7 +1002,7 @@
       // one-click assign buttons in the item-info panel — you don't
       // need to separately pick an item then a slot for it, the way
       // clicking an Owned Tools item (selectGearTool) still also works.
-      cell.addEventListener('click', () => { deps.setActiveTool(slot); buildEquipmentSlots(); selectEquipSlot(slot); });
+      cell.addEventListener('click', () => { if (slot !== 'instrument') deps.setActiveTool(slot); buildEquipmentSlots(); selectEquipSlot(slot); });
       toolRow.appendChild(cell);
     }
     sec.appendChild(toolRow);
