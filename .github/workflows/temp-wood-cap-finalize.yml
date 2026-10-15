@@ -1,0 +1,49 @@
+name: Temporary wood cap finalizer
+on:
+  push:
+    branches:
+      - feature/log-cabin-wall-generator
+permissions:
+  contents: write
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/log-cabin-wall-generator
+          fetch-depth: 0
+      - name: Preserve original bark tint after natural-surface conversion
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('docs/js/wood-cut-surfaces.js')
+          text = path.read_text()
+          old = """  function sourceColorHex(material, fallback = '#6d472d') {
+    const source = Array.isArray(material) ? material[0] : material; // First source wood material carries the procedural per-tree bark tint.
+    if (!source?.color?.isColor) return fallback;
+    return `#${source.color.getHexString()}`;
+  }"""
+          new = """  function sourceColorHex(material, fallback = '#6d472d') {
+    const source = Array.isArray(material) ? material[0] : material; // First source wood material or naturalized bark material carries the source tint metadata.
+    const mappedTint = String(source?.map?.userData?.naturalSurfaceBodySpriteTintTarget || ''); // NaturalSurfaceMaterials stores the pre-white-material bark tint on its body-tinted PNG texture.
+    if (/^#[0-9a-f]{6}$/i.test(mappedTint)) return mappedTint.toLowerCase();
+    if (!source?.color?.isColor) return fallback;
+    return `#${source.color.getHexString()}`;
+  }"""
+          if old not in text:
+            raise SystemExit('sourceColorHex block not found or already updated')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Refresh cache busts
+        run: |
+          git fetch --no-tags origin main
+          node scripts/check-cache-busts.js --fix origin/main
+      - name: Commit finalized repair
+        run: |
+          if git diff --quiet; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -u
+          git commit -m "Preserve bark tint for shared wood cut surfaces"
+          git push origin HEAD:feature/log-cabin-wall-generator
