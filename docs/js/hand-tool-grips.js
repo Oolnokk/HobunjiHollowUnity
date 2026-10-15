@@ -101,6 +101,18 @@
         rangedSecondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
         rangedGripMode: null,
       },
+      warhammer: {
+        toolScale: 1.3,
+        primaryGrip: { position: { x: -0.04, y: -0.04, z: -0.18 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
+        primaryGripSpan: { enabled: true, startZ: -0.24, endZ: -0.12 },
+        secondaryGripSpan: { enabled: true, startZ: 0.02, endZ: 0.14 },
+      },
+      workhammer: {
+        toolScale: 1,
+        primaryGrip: { position: { x: -0.04, y: -0.04, z: -0.18 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
+        primaryGripSpan: { enabled: true, startZ: -0.24, endZ: -0.12 },
+        secondaryGripSpan: { enabled: true, startZ: 0.02, endZ: 0.14 },
+      },
       pickshovel: {
         primaryGrip: { position: { x: -0.04, y: -0.04, z: -0.0178 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         gripMode: null,
@@ -186,6 +198,8 @@
   function toolKeyFor(value) {
     const source = global.ModularWeapons?.sourceShape?.(value); // Custom gear inherits the live donor grip and scale rather than copying stale values.
     const key = normalizeKey(source || value).replace(CRAFTED_METAL_SUFFIX, '');
+    if (key.includes('warhammer') || key.includes('war-hammer')) return 'warhammer';
+    if (key.includes('workhammer') || key.includes('work-hammer')) return 'workhammer';
     if (key.includes('hatchet')) return 'hatchet';
     if (key.includes('hoe')) return 'hoe';
     if (key.includes('pickshovel') || key.includes('pick-shovel')) return 'pickshovel';

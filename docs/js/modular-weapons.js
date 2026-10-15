@@ -197,6 +197,7 @@
     }
     for (const record of Object.values(gear?.harlyaoRelics || {})) {
       if (record.shape === 'longsword') sources.add('harlyaoLongsword');
+      if (record.shape === 'warhammer') sources.add('warhammer');
       if (record.shape === 'broadsword') sources.add('harlyaoBroadsword');
     }
     return { heads: Object.keys(config.heads).filter(key => sources.has(config.heads[key].sourceShape)),
