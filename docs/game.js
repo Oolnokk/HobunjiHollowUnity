@@ -28382,7 +28382,7 @@
 
       window.MusicMinigame?.init({
         refreshActionBar,
-        getEquippedInstrument: () => gearInventory.tools[equipmentSlots.instrument] && ITEM_DEFS[equipmentSlots.instrument]?.isInstrument ? equipmentSlots.instrument : null,
+        getEquippedInstrument: () => gearInventory?.tools?.[equipmentSlots.instrument] && ITEM_DEFS[equipmentSlots.instrument]?.isInstrument ? equipmentSlots.instrument : null,
         getCurrentArea: () => currentArea,
         listInstrumentPerformers,
         getNpcFootstepSampleUrl: npcFootstepSampleUrl,
