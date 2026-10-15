@@ -67,6 +67,20 @@ assert(browser.NearbyVolumeCollision.segmentHit({x:0,y:0.4,z:1},{x:2,y:0.4,z:1})
 assert.equal(browser.NearbyVolumeCollision.segmentHit({x:0,y:2,z:1},{x:2,y:2,z:1}),null,'solid furniture can be cleared');
 console.log('Projectile grass, rock height, radius, elevation, wall and movement regressions passed.');
 
+// Decorative ruin furniture uses authored geometry only as a decal/plaque host; its decorated door/target owns collision.
+const visualRuinGroup = { userData:{authoredFurnitureKey:'ruinDoorSeal'}, traverse(callback){ callback(this); } };
+const ruinThree = { Color:function Color(){} }; // Module-level glow setup reads THREE directly even though this fixture never renders the authored overlay.
+const ruinBrowser = {
+  THREE:ruinThree,
+  AuthoredFurniture:{ load(){}, peek(){ return {key:'ruinDoorSeal'}; }, buildGroup(){ return visualRuinGroup; } },
+  DynamicSurfaces:{ addBeforeRenderClient(){} },
+};
+vm.runInNewContext(fs.readFileSync('docs/js/dev-random-ruin-furniture-pieces.js','utf8'), {window:ruinBrowser,THREE:ruinThree,performance});
+const builtVisualRuin = ruinBrowser.DevRandomRuinFurniturePieces.build('ruinDoorSeal');
+assert.equal(builtVisualRuin.userData.authoredFurnitureKey, null, 'visual ruin overlays cannot register authored-furniture projectile cover');
+assert.equal(builtVisualRuin.userData.devRuinFootprintIgnore, true, 'visual ruin overlays remain excluded from ruin footprint collision');
+console.log('Visual ruin overlay projectile-cover regression passed.');
+
 const strokes = []; // Canvas strokes prove the real overlay draws projectiles/cover only under Show Hitboxes.
 const labels = []; // Captures the mobile-readable infinite-cover marker.
 let showHitboxes = false; // Existing settings toggle exercised without a browser/console.
@@ -74,7 +88,7 @@ let colliderReads = 0; // Disabled hitbox drawing must not poll projectile state
 const canvas = new Proxy({ stroke(){strokes.push(this.strokeStyle);}, fillText(label){labels.push(label);}, measureText(){return {width:40};} }, {get:(target,key)=>key in target ? target[key] : ()=>{}}); // Minimal Canvas2D receiver for the production wireframe drawer.
 const overlayBrowser = {
   RangedWeapons:{debugProjectileColliders:()=>{colliderReads++;return [{x:1,y:2,z:1,radius:0.25}];}},
-  NearbyVolumeCollision:{debugVolumes:()=>[{x:1,z:1,bottomY:0,topY:0.7,shape:'circle',radius:0.5},{x:2,z:1,bottomY:0,topY:Infinity,shape:'aabb',halfX:0.5,halfZ:0.5}]},
+  NearbyVolumeCollision:{debugVolumes:()=>[{x:1,z:1,bottomY:0,topY:0.7,shape:'circle',radius:0.5,key:'stone-table',source:'explicit-metadata'},{x:2,z:1,bottomY:0,topY:Infinity,shape:'aabb',halfX:0.5,halfZ:0.5,key:'tree',source:'solid-tree-tile'}]},
 }; // Actual debug-hitboxes module receives the same public collision APIs as the game.
 vm.runInNewContext(fs.readFileSync('docs/js/debug-hitboxes.js','utf8'),{window:overlayBrowser,performance});
 overlayBrowser.DebugHitboxes.init({
@@ -89,7 +103,8 @@ showHitboxes = true;
 overlayBrowser.DebugHitboxes.draw();
 assert.equal(colliderReads,1,'enabled hitboxes use the public live-projectile colliders');
 assert(strokes.includes('#ffe45c'),'projectile collision spheres draw in yellow');
-assert(strokes.includes('#b58cff'),'projectile cover draws in purple');
+assert(strokes.some(color => String(color).startsWith('hsl(')),'semantic projectile cover gets stable per-collider colors');
+assert(labels.includes('stone-table'),'nearby semantic projectile cover is labeled by runtime key');
 assert(labels.includes('cover ↑∞'),'infinite collision heights have an honest visible label');
 showHitboxes = false;
 const beforeStrokes = strokes.length; // Turning the toggle off must stop drawing immediately.

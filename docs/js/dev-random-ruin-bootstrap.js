@@ -17,13 +17,15 @@
 (() => {
   'use strict';
   if (document.readyState !== 'loading') return;
+  document.write('<script src="js/projectile-cover-pixel-probe.js?v=20261015semanticprobe1"></scr' + 'ipt>'); // One-shot Pixel Probe adapter: ray-tests semantic projectile-cover volumes even when they have no mesh/material.
+  document.write('<script src="js/ruin-footprint-pixel-probe.js?v=20261015ruinfootprintprobe1"></scr' + 'ipt>'); // One-shot Pixel Probe adapter: ray-tests the exact oriented ruin footprints used by movement/projectile occupancy.
   document.write('<script src="js/dynamic-surfaces.js?v=20260914v50wallsinputs1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-config.js?v=20260929config1"></scr' + 'ipt>'); // docs/config/random-ruin/ruin-config.json loader, read by every ruin module below.
   if (!window.FurnitureDecalRuntime) document.write('<script src="js/furniture-decal-runtime.js?v=20261003h3fbafdb"></scr' + 'ipt>'); // Authored decals + state glow (usually already loaded by zone features).
-  document.write('<script src="js/dev-random-ruin-furniture-pieces.js?v=20260929ruinpieces1"></scr' + 'ipt>'); // Door seals, glyph plaques, Great Door as authored furniture.
+  document.write('<script src="js/dev-random-ruin-furniture-pieces.js?v=20261015h7327f5e"></scr' + 'ipt>'); // Door seals, glyph plaques, Great Door as authored furniture.
   document.write('<script src="js/dev-random-ruin-hit-puzzles.js?v=20261015h65cbbc1"></scr' + 'ipt>'); // Plain source (formerly nine base64 part files reassembled with eval).
   document.write('<script src="js/dev-random-ruin-prototype-hooks.js?v=20260927interiorparity1"></scr' + 'ipt>');
-  document.write('<script src="js/dev-random-ruin-solid-footprints.js?v=20260928puzzles2"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-solid-footprints.js?v=20261015ghostfootprint1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-tile-occupancy.js?v=20260928puzzles2"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-solvability.js?v=20260926lighting1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-interior-map.js?v=20261013hca303b4"></scr' + 'ipt>');
