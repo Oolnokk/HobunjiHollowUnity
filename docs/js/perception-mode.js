@@ -131,7 +131,15 @@
         fog: false,
         side: THREE().DoubleSide,
         skinning: !!skinned, // r128 needs this flag for SkinnedMesh.
+        toneMapped: false,
       });
+      // Flat category colour: keep only the source texture's alpha (for the
+      // sprite cutout) instead of multiplying its colours in.
+      mat.onBeforeCompile = shader => {
+        shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>',
+          '#ifdef USE_MAP\n  diffuseColor.a *= texture2D( map, vUv ).a;\n#endif');
+      };
+      mat.customProgramCacheKey = () => 'perception-mask';
       byCategory.set(key, mat);
     } else if (mat.map !== map) {
       // Sprite animations can swap the source's texture; follow it.
