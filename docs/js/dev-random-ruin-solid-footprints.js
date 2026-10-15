@@ -26,10 +26,14 @@
   const EXCLUDED_KEY = /socket|elevator|well|stair|ramp|step|rug|carpet/i; // Elevator-well rims/shafts and walkable treads.
   const EXCLUDED_NAME = /rope|lava|pressure_plate|chord_plate|projectile|ceiling|PathBrick|floor|balcony|platform|elevator|dais|bridge|stair|ladder|glyph_marker|circuit_lamp/i;
 
-  function hiddenOrGhost(object, stopAt) {
-    for (let node = object; node && node !== stopAt; node = node.parent) if (node.visible === false) return true;
+  function ghostMaterial(object) {
     const material = Array.isArray(object.material) ? object.material[0] : object.material;
     return !material || material.visible === false || material.colorWrite === false || (material.transparent && Number(material.opacity) < 0.2);
+  }
+
+  function hiddenOrGhost(object, stopAt) {
+    for (let node = object; node && node !== stopAt; node = node.parent) if (node.visible === false) return true;
+    return ghostMaterial(object);
   }
 
   function excluded(object, stopAt) {
@@ -122,7 +126,7 @@
     }
     if (!foundRoot) return false;
     if (fp.scanRootHadParent && !fp.scanRoot.parent) return false;
-    return !hiddenOrGhost(fp.mesh, null);
+    return !ghostMaterial(fp.mesh); // Ancestor visibility was already walked above; runs per occupancy query.
   }
 
   // A mutable set of footprints with a spatial hash. Static footprints come

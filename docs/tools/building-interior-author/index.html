@@ -379,7 +379,7 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
 <script src="../../js/wood-cut-surfaces.js"></script>
 <script src="../../js/stacked-log-walls.js"></script>
 <script src="../../js/terrain-preview.js"></script>
-<script src="../../js/interior-scene-builder.js?v=20261015h6bcbacd"></script>
+<script src="../../js/interior-scene-builder.js?v=20261015hb802584"></script>
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
 <script src="../../js/interior-ceilings.js?v=20261015h5328b1c"></script>
 <script src="../../js/procedural-furniture.js"></script>
@@ -1739,6 +1739,7 @@ $('updateMapEditorBtn').addEventListener('click',updateMapEditor);
 $('mapId').addEventListener('change',function(){state.interior.id=$('mapId').value.trim();});
 $('mapName').addEventListener('change',function(){state.interior.name=$('mapName').value.trim();});
 $('wallStyle').addEventListener('change',function(){pushUndo(); state.interior.wallStyle=$('wallStyle').value||undefined; rebuild3D(); refreshExport();});
+function finite(v,fallback){ const n=Number(v); return Number.isFinite(n)?n:fallback; } // Log-wall settings parsing (shared helpers elsewhere are module-private).
 ['logWallSeed','logWallDiameter','logWallWonk','logWallGap'].forEach(function(id){ $(id).addEventListener('change',function(){ pushUndo(); state.interior.logWall={seed:$('logWallSeed').value.trim()||'cabin-log-1',logDiameter:Math.max(.08,finite($('logWallDiameter').value,.34)),trunkWonk:Math.max(0,finite($('logWallWonk').value,.18)),courseGap:finite($('logWallGap').value,-.03)}; rebuild3D(); refreshExport(); }); });
 
 // ─── afterLoad ────────────────────────────────────────────────────────────────

@@ -194,23 +194,46 @@
       trimRecolors();
     }, () => { if (_recolorCache.get(key) === promise) forgetRecolor(key); });
   }
-  async function recoloredBase(url, color, mask, allowUnmasked = false, sourceReferenceHex = null, kind = '') {
-    const key = `base|${url}|${color}|ref:${sourceReferenceHex || 'auto'}|full:${allowUnmasked}`;
+  // Species without a region mask can name the authored coat color instead
+  // (SPECIES[kind].baseRecolorKeyHex): only source pixels in that hue family,
+  // with enough saturation to not be outline/highlight detail, are recolored.
+  // Classified once from the untouched base sprite, before belly/eye layers.
+  function sourceKeyPredicate(px, sourceKey) {
+    const keyRgb = hexToRgb(sourceKey.hex);
+    const colorFill = window.ColorFill; // Same HSV conventions as the shared shade-fill.
+    const matches = new Uint8Array(px.length >> 2); // One flag per pixel; shade sampling and application both read it.
+    if (typeof colorFill?.rgbToHsv !== 'function' || typeof colorFill?.hueDistance !== 'function') {
+      for (let i = 0; i < px.length; i += 4) matches[i >> 2] = px[i + 3] > 0 && px[i] === keyRgb[0] && px[i + 1] === keyRgb[1] && px[i + 2] === keyRgb[2] ? 1 : 0;
+    } else {
+      const keyHsv = colorFill.rgbToHsv(...keyRgb);
+      const tolerance = Number.isFinite(sourceKey.hueTolerance) ? sourceKey.hueTolerance : 20;
+      const minSaturation = Math.max(0.04, keyHsv.s * (Number.isFinite(sourceKey.minSaturationRatio) ? sourceKey.minSaturationRatio : 0.45));
+      for (let i = 0; i < px.length; i += 4) {
+        if (!px[i + 3]) continue;
+        const hsv = colorFill.rgbToHsv(px[i], px[i + 1], px[i + 2]);
+        matches[i >> 2] = hsv.s >= minSaturation && colorFill.hueDistance(hsv.h, keyHsv.h) <= tolerance ? 1 : 0;
+      }
+    }
+    return i => matches[i >> 2] === 1;
+  }
+
+  async function recoloredBase(url, color, mask, allowUnmasked = false, sourceReferenceHex = null, kind = '', sourceKey = null) {
+    const key = `base|${url}|${color}|ref:${sourceReferenceHex || 'auto'}|full:${allowUnmasked}|key:${sourceKey?.hex || ''}`;
     if (_recolorCache.has(key)) return cachedRecolor(key);
     const promise = (async () => {
       const img = await loadImage(url);
       await window.PixelWorkYield?.maybeYield(); // Lets a frame present between queued recolor passes (see pixel-work-yield.js).
       const maskMatches = !!mask && mask.width === img.naturalWidth && mask.height === img.naturalHeight; // Used to choose authored-region recolor versus an explicitly allowed full-sprite recolor.
-      if (!maskMatches && !allowUnmasked) return img;
+      if (!maskMatches && !allowUnmasked && !sourceKey) return img;
       const c = makeCanvas(img.naturalWidth, img.naturalHeight), ctx = c.getContext('2d', { willReadFrequently: true });
       ctx.drawImage(img, 0, 0);
       const data = ctx.getImageData(0, 0, c.width, c.height), px = data.data;
       recolorPixels(
         px,
         hexToRgb(color),
-        maskMatches ? (i) => mask.data[i / 4] : null,
+        maskMatches ? (i) => mask.data[i / 4] : sourceKey ? sourceKeyPredicate(px, sourceKey) : null,
         sourceReferenceHex,
-        kind ? `animal-base:${kind}` : 'animal-base',
+        kind ? `animal-base:${kind}${!maskMatches && sourceKey ? ':hex-target' : ''}` : 'animal-base',
       );
       ctx.putImageData(data, 0, 0);
       return c;
@@ -422,14 +445,17 @@
     const bodyStripesColorSwap = usesDrenkirraBodyStripesColorSwap(kind, genotype); // Changes rendering only; the inherited genotype stays untouched.
     const baseColor = bodyStripesColorSwap ? genotype.bodystripes.color : storedBaseColor; // Effective body fill color for this frame.
     const fullBaseRecolor = spec.fullBaseRecolor === true; // Used by species whose base sprite itself is the recolorable coat instead of requiring a separate region mask.
+    const sourceKey = !mask && !fullBaseRecolor && spec.baseRecolorKeyHex // Mask-less species whose coat is identified by its authored source color.
+      ? { hex: spec.baseRecolorKeyHex, hueTolerance: spec.baseRecolorHueTolerance, minSaturationRatio: spec.baseRecolorMinSaturationRatio }
+      : null;
     // Only worth a warning if there was actually a base color to apply —
     // uumkaoii's genotype has no `base` layer at all (its two regions are
     // the fur/plates overlays below, not a recolored base), so baseColor is
     // always undefined for it and this would otherwise fire every call for
     // no reason.
-    if (baseColor && !mask && !fullBaseRecolor) window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): no base mask found — base fur will render unrecolored`, 'wildlife');
-    const baseSource = (baseColor && (mask || fullBaseRecolor))
-      ? await recoloredBase(baseUrl, baseColor, mask, fullBaseRecolor, spec.baseShadeReferenceHex || null, kind)
+    if (baseColor && !mask && !fullBaseRecolor && !sourceKey) window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): no base mask found — base fur will render unrecolored`, 'wildlife');
+    const baseSource = (baseColor && (mask || fullBaseRecolor || sourceKey))
+      ? await recoloredBase(baseUrl, baseColor, mask, fullBaseRecolor, spec.baseShadeReferenceHex || null, kind, sourceKey)
       : await loadImage(baseUrl);
     const tBase = performance.now();
     const bw = baseSource.naturalWidth || baseSource.width, bh = baseSource.naturalHeight || baseSource.height;
@@ -484,7 +510,7 @@
     // fetch+decode (only nonzero the very first call all session), baseMs
     // covers the base sprite's network load + recolor pixel pass, patternMs
     // covers every enabled pattern layer's load+recolor combined.
-    const baseFillMode = !baseColor ? 'none' : fullBaseRecolor ? 'full-sprite' : mask ? 'mask' : 'missing-mask'; // Included in the in-game farm log so mobile builds can verify which recolor path actually ran.
+    const baseFillMode = !baseColor ? 'none' : fullBaseRecolor ? 'full-sprite' : mask ? 'mask' : sourceKey ? 'source-key' : 'missing-mask'; // Included in the in-game farm log so mobile builds can verify which recolor path actually ran.
     window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): base=${baseColor || '(none)'} baseFill=${baseFillMode} sourceRef=${spec.baseShadeReferenceHex || 'auto'} patterns=[${drawnPatterns.join(',') || 'none'}] bodystripesSwap=${bodyStripesColorSwap} timing: masksMs=${(tMasks - t0).toFixed(0)} baseMs=${(tBase - tMasks).toFixed(0)} patternMs=${(tEnd - tBase).toFixed(0)} totalMs=${(tEnd - t0).toFixed(0)}`, 'wildlife');
     return c;
   }

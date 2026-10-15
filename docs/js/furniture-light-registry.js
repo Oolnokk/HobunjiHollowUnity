@@ -69,10 +69,11 @@
     for (let i = 0; i < lights.length; i++) {
       const light = lights[i];
       let root = light;
-      while (root.parent) root = root.parent;
+      let shown = light.visible !== false; // A hidden light (or one under a hidden parent) never lit WebGL either.
+      while (root.parent) { root = root.parent; if (root.visible === false) shown = false; }
       if (!root.isScene) continue; // Despawned -- drop from the registry for good.
       lights[writeIdx++] = light;
-      if (root === activeScene && light.userData?.furnitureLightMask) alive.push(light);
+      if (root === activeScene && light.userData?.furnitureLightMask && shown && light.intensity > 0) alive.push(light); // Extinguished torches (intensity 0) cast no fake pool.
     }
     lights.length = writeIdx;
     return alive;

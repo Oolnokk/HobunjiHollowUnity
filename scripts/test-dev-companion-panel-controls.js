@@ -15,6 +15,7 @@ class Element {
     this.value = this.children.find(child => child.attrs.selected)?.attrs.value || ''; // Models a select's selected option.
   }
   contains(target) { return this === target || this.children.some(child => child.contains(target)); }
+  matches(selector) { return selector.split(',').map(part => part.trim()).includes(this.tag); }
   remove() {
     if (this.parent) this.parent.children.splice(this.parent.children.indexOf(this), 1);
     this.parent = null;
@@ -71,6 +72,13 @@ class Element {
   context.renderPanels();
   assert.notEqual(host.children[1], grantCard, 'deferred panel changes render after focus leaves');
   assert.equal(host.children.length, 2);
+  const toggleCard = host.children[1]; // A clicked toggle button keeps browser focus but must still pick up the new state.
+  context.document.activeElement = new Element('button', { label: 'Show Hitboxes' });
+  toggleCard.children.push(context.document.activeElement);
+  grants.note = 'Toggled';
+  context.renderPanels();
+  assert.notEqual(host.children[1], toggleCard, 'a focused button does not freeze its card on stale state');
+  context.document.activeElement = null;
   context.state.game.panels = [clock];
   context.renderPanels();
   assert.equal(host.children.length, 1, 'unavailable cheat panels disappear');

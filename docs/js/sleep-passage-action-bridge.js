@@ -91,6 +91,7 @@
 
   function clearArmedKey({ closeHeldArc = false } = {}) {
     if (armedHoldTimer) clearTimeout(armedHoldTimer);
+    window.removeEventListener('wheel', onWheel, true); // The non-passive wheel listener exists only while a Sleep key is armed.
     if (closeHeldArc && armedWasHeld) closeHoldArc();
     armedKeyCode = null;
     armedHoldArc = null;
@@ -113,6 +114,7 @@
     armedHoldArc = holdArcForKeyCode(code);
     armedWasHeld = false;
     if (armedHoldArc) {
+      window.addEventListener('wheel', onWheel, { capture: true, passive: false }); // Held E/Q may scroll the selector; ordinary scrolling never waits on this handler.
       armedHoldTimer = setTimeout(() => {
         if (!armedKeyCode || !armedHoldArc) return;
         armedWasHeld = true;
@@ -208,7 +210,6 @@
 
   window.addEventListener('keydown', onKeyDown, true);
   window.addEventListener('keyup', onKeyUp, true);
-  window.addEventListener('wheel', onWheel, { capture: true, passive: false });
   window.addEventListener('blur', () => clearArmedKey({ closeHeldArc: true }));
   document.addEventListener('pointerdown', onPointerCapture, true);
   document.addEventListener('pointerup', onPointerCapture, true);

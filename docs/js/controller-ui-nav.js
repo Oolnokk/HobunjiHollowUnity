@@ -279,7 +279,7 @@
   function enterGroup(group, panel) {
     const entries = enteredGroups(panel); // Nested groups unwind one level per Back press.
     rememberFocusPath(group);
-    entries.push({ node: group, path: focusPath });
+    entries.push({ node: group, path: focusPath, explicit: true }); // Entered by Confirm; focus-adopted scopes are not, so keyboard Escape/Tab keep closing/switching the menu.
     groupsByPanel.set(panel, entries);
     group.classList.add('ctrl-nav-group-active');
     updateHintBar(panel);
@@ -540,7 +540,7 @@
   }
 
   function findTabGroup(panel) {
-    const root = navigationRoot(panel); // Bumpers may switch tabs only inside the entered nest.
+    const root = enteredGroups(panel).filter(entry => entry.explicit).at(-1)?.node || panel; // Bumpers may switch tabs only inside an explicitly entered nest; a mouse-adopted scope does not confine them.
     if (root !== panel && !root.matches(TABS_SELECTOR)) return null;
     const groups = root.matches(TABS_SELECTOR) ? [root] : Array.from(root.querySelectorAll(TABS_SELECTOR));
     if (!groups.length) return null;
@@ -742,7 +742,11 @@
       case 'ArrowRight': moveOrAdjust('right'); break;
       case 'Enter': case ' ': activate(); break;
       case 'Tab': cycleTabs(event.shiftKey ? -1 : 1); break;
-      case 'Escape': if (!leaveGroup(activePanel())) return; break;
+      case 'Escape': { // Unwinds only nests entered with Confirm; otherwise Escape reaches game.js and closes the menu.
+        const panel = activePanel();
+        if (!enteredGroups(panel).at(-1)?.explicit || !leaveGroup(panel)) return;
+        break;
+      }
       default: return;
     }
     event.preventDefault();
@@ -827,7 +831,9 @@
         if (node.nodeType === 1 && (node.matches?.(PANEL_SELECTOR) || node.querySelector?.(PANEL_SELECTOR))) panelTreeChanged = true;
       }
     }
-    if (panelTreeChanged || (currentTarget && !currentTarget.isConnected) || (activePanel() && !currentTarget)) scheduleReconcile();
+    const panel = activePanel(); // A target-less panel retries only when its own content changes, not on every HUD text update.
+    const panelContentChanged = !!panel && !currentTarget && records.some(record => panel.contains(record.target));
+    if (panelTreeChanged || (currentTarget && !currentTarget.isConnected) || panelContentChanged) scheduleReconcile();
   });
   const attrObserver = new MutationObserver(() => {
     scheduleReconcile();

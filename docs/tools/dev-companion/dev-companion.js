@@ -448,7 +448,9 @@
     const nodes = panels.map(panel => { // Reconciles only changed cards so unrelated state polls cannot close an open dropdown.
       const signature = JSON.stringify({ panel, connected: state.connected }); // Compared at the existing companion poll rate, never in the game frame loop.
       const previous = panelCards.get(panel.id); // Retains controls while their card's state and connection are unchanged.
-      if (previous && (previous.signature === signature || (state.connected && previous.node.contains(document.activeElement)))) return previous.node;
+      const focused = document.activeElement; // Only an in-progress edit (open dropdown/number field) pins a stale card; a clicked button must not.
+      const editing = state.connected && previous?.node.contains(focused) && focused?.matches?.('select, input, textarea');
+      if (previous && (previous.signature === signature || editing)) return previous.node;
       const groups = new Map();
       for (const action of panel.actions || []) {
         const group = action.group || '';

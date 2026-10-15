@@ -343,10 +343,17 @@
       const minY = Math.min(...ys); // Lowest point of this wall polygon.
       const maxY = Math.max(...ys); // Highest point of this wall polygon.
       const normal = panelNormal(THREE, corners); // Face normal used only for small deterministic depth jitter.
-      const panelOpenings = exclusionQuads.filter(quad => quad.every(point => { // Reject cuts on opposite/perpendicular walls once per panel rather than once per course.
-        const depth = (point[0] - corners[0][0]) * normal.x + (point[1] - corners[0][1]) * normal.y + (point[2] - corners[0][2]) * normal.z; // Signed distance from the actual wall plane, including tapered walls.
-        return Number.isFinite(depth) && Math.abs(depth) <= 0.001;
-      }));
+      const openingDepthTolerance = Math.max(0.35, meta.logDiameter); // Interior windows snap to the rendered log/brick surface, not the panel plane (WallBuilder tolerates similar depth).
+      const panelOpenings = exclusionQuads.filter(quad => { // Reject cuts on opposite/perpendicular walls once per panel rather than once per course.
+        const [a, b, c] = quad; // Quad plane must face the same way as this wall.
+        const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+        const qx = uy * vz - uz * vy, qy = uz * vx - ux * vz, qz = ux * vy - uy * vx, ql = Math.hypot(qx, qy, qz);
+        if (!(ql > EPS) || Math.abs((qx * normal.x + qy * normal.y + qz * normal.z) / ql) < 0.8) return false;
+        return quad.every(point => {
+          const depth = (point[0] - corners[0][0]) * normal.x + (point[1] - corners[0][1]) * normal.y + (point[2] - corners[0][2]) * normal.z; // Signed distance from the actual wall plane, including tapered walls.
+          return Number.isFinite(depth) && Math.abs(depth) <= openingDepthTolerance;
+        });
+      });
       const horizontalWallFace = Math.abs(normal.y) >= HORIZONTAL_FACE_NORMAL_Y; // Outpost top/bottom wall faces need in-plane rows because their world-Y height is zero.
       if (horizontalWallFace) {
         const horizontalLayout = horizontalWallCourses(THREE, corners, meta, nominalPitch); // Side-by-side exact-span foliage rows covering this flat wall plane.

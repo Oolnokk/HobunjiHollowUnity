@@ -60,6 +60,7 @@ const windowStub = {
     scrollItem(direction) { arcCalls.scrollItem.push(direction); },
   },
   addEventListener(type, handler) { listeners.window[type] = handler; },
+  removeEventListener(type, handler) { if (listeners.window[type] === handler) delete listeners.window[type]; },
 };
 
 vm.runInNewContext(bridgeSource, {
@@ -124,6 +125,7 @@ listeners.window.keyup(eUp);
 assert.deepEqual(opened, ['sleep'], 'releasing E opens the shared Sleep duration passage');
 assert.equal(windowStub.__hobunjiOwnedBedSleepPending?.source, 'player-bed', 'E bed Sleep arms the same Well Rested token');
 
+assert.equal(listeners.window.wheel, undefined, 'page wheel scrolling never waits on Sleep input while nothing is armed');
 opened = [];
 passageOpen = false;
 windowStub.__hobunjiOwnedBedSleepPending = null;
@@ -137,6 +139,7 @@ assert.deepEqual(arcCalls.scrollTool, [-1], 'held E wheel still scrolls the tool
 const eHoldUp = inputEvent('KeyE');
 listeners.window.keyup(eHoldUp);
 assert.equal(arcCalls.close, 1, 'releasing held E closes the selection arc');
+assert.equal(listeners.window.wheel, undefined, 'the non-passive wheel listener is removed once no Sleep key is armed');
 assert.deepEqual(opened, [], 'holding E for tool selection never sleeps');
 assert.equal(windowStub.__hobunjiOwnedBedSleepPending, null, 'tool selection does not arm Well Rested');
 

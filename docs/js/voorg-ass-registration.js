@@ -59,77 +59,23 @@
     return true;
   }
 
-  function makeBaseHexPredicate(pixels, renderer, keyHex) {
-    const keyRgb = renderer.hexToRgb(keyHex); // Exact authored source color anchors hue/saturation matching for every shaded coat pixel.
-    const colorFill = window.ColorFill; // Shared color math is preferred so key classification follows the same HSV conventions as other keyed sprite recolors.
-    if (typeof colorFill?.rgbToHsv !== 'function' || typeof colorFill?.hueDistance !== 'function') {
-      return index => pixels[index] === keyRgb[0] && pixels[index + 1] === keyRgb[1] && pixels[index + 2] === keyRgb[2] && pixels[index + 3] > 0;
-    }
-    const keyHsv = colorFill.rgbToHsv(...keyRgb); // Coat-key hue and saturation are reused for every pixel predicate call.
-    const minimumSaturation = Math.max(0.04, keyHsv.s * BASE_RECOLOR_MIN_SATURATION_RATIO); // Prevents low-chroma highlights/background details from entering the keyed coat region.
-    return index => {
-      if (!pixels[index + 3]) return false;
-      const sourceHsv = colorFill.rgbToHsv(pixels[index], pixels[index + 1], pixels[index + 2]); // Current source pixel decides whether the canonical shade-fill is allowed to touch it.
-      return sourceHsv.s >= minimumSaturation && colorFill.hueDistance(sourceHsv.h, keyHsv.h) <= BASE_RECOLOR_HUE_TOLERANCE;
-    };
-  }
-
-  // Voorg-Ass used to opt into CreatureGeneticsRender's full-sprite fallback,
-  // which recolored every opaque base pixel. Wrap the canonical compositor only
-  // for this species: let it draw the untouched base + authored belly first,
-  // then run its own Grehlr-style shade-fill math through a #99BF99 source-key
-  // predicate. All other species and all pattern/eye composition stay on the
-  // original renderer path unchanged.
-  function installHexTargetedBaseRecolor(renderer = window.CreatureGeneticsRender) {
-    if (!renderer?.composeFrame || !renderer?.recolorPixels || !renderer?.hexToRgb) return false;
-    if (renderer.composeFrame.__voorgAssHexTargeted === true) return true;
-    const originalComposeFrame = renderer.composeFrame; // Canonical compositor retained for every species and for Voorg-Ass's ordinary layer assembly.
-    async function composeFrameWithVoorgHexTarget(kind, frame, genotype, blinkShut = false) {
-      const requestedBaseColor = kind === KIND ? genotype?.base?.color : null; // Only a real Voorg-Ass base allele activates the keyed post-pass.
-      if (!requestedBaseColor) return originalComposeFrame.call(renderer, kind, frame, genotype, blinkShut);
-      const neutralBaseGenotype = { ...genotype, base: { ...(genotype.base || {}), color: null } }; // Prevents the old full-sprite fallback while preserving belly/paint/genetic metadata for canonical composition.
-      const composed = await originalComposeFrame.call(renderer, kind, frame, neutralBaseGenotype, blinkShut); // Base + belly + eyes are assembled once by the shared renderer before the keyed coat pass.
-      const ctx = composed?.getContext?.('2d', { willReadFrequently: true }); // Final native-resolution canvas is recolored in place so callers/cache behavior remain unchanged.
-      if (!ctx || !composed.width || !composed.height) return composed;
-      const imageData = ctx.getImageData(0, 0, composed.width, composed.height); // Mutable final-frame pixels consumed by the shared shade-fill utility.
-      const coatPredicate = makeBaseHexPredicate(imageData.data, renderer, BASE_RECOLOR_KEY_HEX); // Restricts the shared shade-fill to the authored #99BF99 coat family.
-      let matchedPixels = 0; // Mobile debug output reports whether the source-key actually found coat pixels in the current frame.
-      const countedPredicate = index => {
-        const matched = coatPredicate(index); // Same predicate is supplied to both shade sampling and application by CreatureGeneticsRender.recolorPixels.
-        if (matched) matchedPixels++;
-        return matched;
-      };
-      renderer.recolorPixels(
-        imageData.data,
-        renderer.hexToRgb(requestedBaseColor),
-        countedPredicate,
-        BASE_RECOLOR_KEY_HEX,
-        `animal-base:${KIND}:hex-target`,
-      );
-      ctx.putImageData(imageData, 0, 0);
-      window.__farmLog?.(`[voorg-ass] hex-target coat key=${BASE_RECOLOR_KEY_HEX} matched=${matchedPixels} target=${requestedBaseColor} frame=${frame}`, matchedPixels ? 'wildlife' : 'warn');
-      return composed;
-    }
-    composeFrameWithVoorgHexTarget.__voorgAssHexTargeted = true; // Idempotence marker prevents repeated registration callers from stacking compositor wrappers.
-    composeFrameWithVoorgHexTarget.__voorgAssOriginalComposeFrame = originalComposeFrame; // Debug hook identifies the canonical renderer preserved underneath the Voorg-only pass.
-    renderer.composeFrame = composeFrameWithVoorgHexTarget;
-    return true;
-  }
-
   // Genotype compositor entry: uploaded base frames plus the mandatory belly
   // layer, with no optional patterns. Voorg-Ass deliberately does NOT opt into
-  // the full-sprite fallback; its base allele is applied by the keyed wrapper.
+  // the full-sprite fallback: CreatureGeneticsRender's cached base recolor
+  // tints only the #99BF99 coat family (baseRecolorKeyHex), before the belly
+  // and eyes are layered on.
   function ensureRendererSpecies(species = window.CreatureGeneticsRender?.SPECIES) {
     if (!species) return false;
     species[KIND] = {
       prefix: KIND,
       baseShadeReferenceHex: BASE_RECOLOR_KEY_HEX, // The same #99BF99 key is the fixed full-strength normalization anchor for canonical shade-fill math.
-      baseRecolorKeyHex: BASE_RECOLOR_KEY_HEX, // Renderer/debug metadata records the authored source key that owns Voorg-Ass coat recoloring.
-      fullBaseRecolor: false, // Non-coat opaque pixels must remain authored; installHexTargetedBaseRecolor handles the coat region instead.
+      baseRecolorKeyHex: BASE_RECOLOR_KEY_HEX, // Authored source key selecting the coat pixels the base allele recolors.
+      baseRecolorHueTolerance: BASE_RECOLOR_HUE_TOLERANCE,
+      baseRecolorMinSaturationRatio: BASE_RECOLOR_MIN_SATURATION_RATIO,
+      fullBaseRecolor: false, // Non-coat opaque pixels must remain authored.
       base: { idle: SPRITES.idle, run1: SPRITES.run1, run2: SPRITES.run2 },
       patterns: ['belly'],
     };
-    if (species === window.CreatureGeneticsRender?.SPECIES) installHexTargetedBaseRecolor(window.CreatureGeneticsRender);
     return true;
   }
 
@@ -173,6 +119,5 @@
     ensureCreatureDefs,
     ensureRendererSpecies,
     ensureNorthernCliffsHerds,
-    installHexTargetedBaseRecolor,
   });
 })();

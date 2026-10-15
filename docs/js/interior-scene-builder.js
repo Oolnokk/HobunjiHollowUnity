@@ -576,6 +576,7 @@
     if (!wallPanels || !wallPanels.length) return markInteriorWallSurfaceGroup(new THREE.Group());
     const buildOptions = Object.assign({}, DEFAULT_WB_OPTS, wbOpts); // Copy keeps house-window-only options from leaking into WallBuilder.
     const renderPanels = applyWallOpenings(wallPanels, buildOptions.wallOpenings); // Silhouette holes are resolved before any brick/canvas/fallback geometry is created.
+    const logOpeningQuads = openingExcludeQuads(buildOptions.wallOpenings); // Generated logs cut whole courses at openings instead of treating split strips as separate walls.
     delete buildOptions.wallOpenings;
     const farmColors = buildOptions.farmNaturalColors; // Farm-only finish never leaks into the WallBuilder options or other interiors.
     delete buildOptions.farmNaturalColors;
@@ -595,7 +596,7 @@
     if (wallStyle === 'mine') return markInteriorWallSurfaceGroup(buildCavernWalls(THREE, renderPanels, { textureUrl: buildOptions.mineTextureUrl || 'assets/textures/carved_smooth.png', color: 0x8a8d91, textureRepeat: .42 }));
     if (wallStyle === 'canvas') return markInteriorWallSurfaceGroup(buildCanvasWalls(THREE, renderPanels));
     if (generatedLogStyle && root.StackedLogWalls?.buildGroup) {
-      try { return finishWalls(root.StackedLogWalls.buildGroup(THREE, renderPanels, logWall)); }
+      try { return finishWalls(root.StackedLogWalls.buildGroup(THREE, wallPanels, Object.assign({}, logWall, { excludeQuads: logOpeningQuads }))); }
       catch (e) { console.warn('InteriorSceneBuilder.buildWallGroup: generated log build failed, using fallback boxes: ' + e.message); }
     }
     if (wallBuilder && !generatedLogStyle) {

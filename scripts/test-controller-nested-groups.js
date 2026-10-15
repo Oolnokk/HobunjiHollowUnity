@@ -92,9 +92,14 @@ const rebuild = async target => { for (const observer of observers) observer([{ 
 
   innerButton.focus();
   assert.equal(ui.debugState().groupDepth, 2, 'switching to mouse/native focus adopts its containing nests');
-  for (const listener of listeners.get('keydown')) listener({ key: 'Escape', preventDefault() {}, stopPropagation() {} });
-  assert.equal(ui.focusedElement(), inner, 'Escape also exits one nesting level');
-  press('cancel');
+  const escape = () => { let prevented = false; for (const listener of listeners.get('keydown')) listener({ key: 'Escape', preventDefault() { prevented = true; }, stopPropagation() {} }); return prevented; };
+  assert.equal(escape(), false, 'Escape after mouse/native focus reaches the game, which closes the menu');
+  assert.equal(ui.debugState().groupDepth, 2, 'focus-adopted scopes are not unwound by keyboard Escape');
+  press('cancel'); press('cancel');
+  assert.equal(ui.debugState().groupDepth, 0, 'controller Back still unwinds adopted scopes');
+  press('confirm'); assert.equal(ui.debugState().groupDepth, 1);
+  assert.equal(escape(), true, 'Escape exits a nest entered with Confirm');
+  assert.equal(ui.debugState().groupDepth, 0);
 
   a.focus();
   const replacementA = button('a', 10, 40); // Represents a full menu section rebuild preserving IDs.

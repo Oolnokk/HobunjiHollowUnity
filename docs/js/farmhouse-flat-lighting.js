@@ -74,8 +74,16 @@
     return true;
   }
 
+  // game.js's _isBuildingArea is every map_i_* id, which includes dens, mine
+  // floors and other cavern-walled maps whose own dim lights are the darkness.
+  function isOrdinaryBuilding(mapId, sceneRecord) {
+    if (!isBuildingArea(mapId)) return false;
+    if (sceneRecord?.wallStyle === 'cavern' || sceneRecord?.wallStyle === 'mine') return false;
+    return !/^map_i_(?:den_|town_mine_)/i.test(String(mapId || ''));
+  }
+
   function applyAuthoredBuildingFlatLighting(mapId, sceneRecord) {
-    if (!sceneRecord?.scene || !isBuildingArea(mapId)) return false;
+    if (!sceneRecord?.scene || !isOrdinaryBuilding(mapId, sceneRecord)) return false;
     const changed = install(sceneRecord.scene);
     if (changed) stats.authoredBuildingInstalls += 1;
     stats.lastMapId = mapId;
@@ -84,7 +92,7 @@
   }
 
   function queueAuthoredBuildingFlatLighting(mapId, sceneRecord) {
-    if (!sceneRecord?.scene || !isBuildingArea(mapId)) return false;
+    if (!sceneRecord?.scene || !isOrdinaryBuilding(mapId, sceneRecord)) return false;
     queueMicrotask(() => {
       try {
         // InteriorEnvironmentRuntime's Map.set wrapper queues its own environment

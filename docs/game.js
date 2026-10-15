@@ -13626,7 +13626,7 @@
             const windowOpenings = InteriorSceneBuilder.windowWallOpenings?.(mapData.furniture) || [];
             const wallPanels = InteriorSceneBuilder.buildWallPanels(floorSet, exitTileSet, authoredWallHeight);
             if (wallPanels.length) {
-              const wallGroup = InteriorSceneBuilder.buildWallGroup(THREE, houseWallBuilder, wallPanels, mapData.wallStyle, { usePlaceholder: false, mineTextureUrl: 'assets/textures/carved_smooth.png', farmNaturalColors, wallOpenings: windowOpenings });
+              const wallGroup = InteriorSceneBuilder.buildWallGroup(THREE, houseWallBuilder, wallPanels, mapData.wallStyle, { usePlaceholder: false, mineTextureUrl: 'assets/textures/carved_smooth.png', farmNaturalColors, wallOpenings: windowOpenings, logWall: mapData.logWall || {} });
               _markOutline(wallGroup);
               bScene.add(wallGroup);
             }
@@ -13637,6 +13637,7 @@
               wallHeight: authoredWallHeight,
               ceiling: mapData.ceiling,
               wallStyle: mapData.wallStyle,
+              logWall: mapData.logWall || {}, // Authored generated-log settings, same as the editor preview.
               texturesBasePath: 'assets/',
               roofStyle: mapId.startsWith('map_i_barn_') ? 'farm' : 'town', // A carved ceiling defaults to its building's exterior roof colour.
               wallBuilder: houseWallBuilder, // Gable ends get the same bricks as the walls below.
@@ -13660,6 +13661,8 @@
             ex = ex / entranceLightTileSet.size + 0.5; ez = ez / entranceLightTileSet.size + 0.5;
             const doorLight = new THREE.PointLight(0xfff2d0, 1.4, 7, 2);
             doorLight.position.set(ex, 1.6, ez + 0.6);
+            doorLight.userData.furnitureLightMask = true; // Local lights only reach the screen through the 2D fake-light overlay (js/furniture-light-registry.js).
+            window.FurnitureLightRegistry?.register(doorLight);
             bScene.add(doorLight);
             const glowMat = new THREE.MeshBasicMaterial({ color: 0xe9dcb8, transparent: true, opacity: 0.35 });
             const glow = new THREE.Mesh(new THREE.CircleGeometry(1.8, 20), glowMat);
@@ -19587,18 +19590,7 @@
       // Layered rain audio (rainLayerWeights/updateRainAudio) now lives in
       // js/music-system.js (window.Music).
 
-      function projectileTileCoverBase(tile) {
-        return Number.isFinite(Number(tile.surfaceY)) ? Number(tile.surfaceY) : NORMAL_TOP + (tile.elevTier || 0) * PLATEAU_UNIT;
-      }
-
-      function projectileTileCoverTop(tile, col, row) {
-        if (tile?.type === TileType.SHRUB) return isChoppableTreeTile(col, row) ? Infinity : null;
-        if (tile?.type !== TileType.ROCK) return null;
-        if (_isCavernBuildingArea(currentArea) && tile.rockKind !== 'diggableRockOre') return Infinity;
-        const baseY = projectileTileCoverBase(tile); // Same base used by rock renderers and debug volumes.
-        const coverHeight = Number(tile.projectileCoverHeightTiles) || (tile.rockKind === 'undiggableBoulder' ? 1.46 : ROCK_H); // Cached generated mound/shell height, with finite defaults before chunks load.
-        return baseY + coverHeight;
-      }
+      // Projectile tile-cover heights (projectileTileCoverBase/Top) now live in js/projectile-tile-cover.js.
 
       function tileSpeedAt(wx, wy, worldY = null) {
         const aC = window.GridTileAccessors.getActiveCols(), aR = window.GridTileAccessors.getActiveRows();
@@ -19616,7 +19608,7 @@
         }
         if (isSolid(type)) {
           if (!projectile) return null;
-          const coverTopY = projectileTileCoverTop(tile, col, row); // One authority shared with the visible projectile-cover overlay.
+          const coverTopY = window.ProjectileTileCover.coverTop(tile, col, row); // One authority shared with the visible projectile-cover overlay.
           if (coverTopY != null && worldY <= coverTopY + 0.01) return null;
         }
         // Auto-reserved plateau cliff-face ring — impassable except where a
@@ -20356,6 +20348,7 @@
       // the same shrub/weed slab height (one for its geometry, this one for
       // tileYCenter/tileSurfaceY's Y-placement math).
       const VEG_H = 0.18;
+      window.ProjectileTileCover.init({ TileType, NORMAL_TOP, PLATEAU_UNIT, ROCK_H, isChoppableTreeTile, isCavernBuildingArea: _isCavernBuildingArea, getCurrentArea: () => currentArea });
 
       // Camera — mode-driven, with the default preserving the original isometric follow.
       const camera = new THREE.PerspectiveCamera(cameraModeConfig('default').fovDeg ?? 42, 1, 0.1, 200);
@@ -22334,7 +22327,7 @@
               if (image) plane.scale.y = image.naturalHeight / Math.max(1, image.naturalWidth);
             }, undefined, error => window.__farmLog?.(`[held-item] ${item.key} source sprite failed: ${error.message}`, 'warn'))
           : _getItemIconTexture(item.icon);
-        const mat = window.HobunjiSpritePngSurface.makeMaterial(THREE, fallbackTexture, 'held-item-' + item.key); // Shared authored PNG appearance for held items and thrown flasks.
+        const mat = window.HobunjiSpritePngSurface.makeMaterial(THREE, fallbackTexture, 'held-item-' + item.key, { side: THREE.DoubleSide }); // Shared authored PNG appearance; double-sided because held poses lay the plane flat and thrown flasks tumble.
         plane = new THREE.Mesh(geo, mat);
         plane.renderOrder = HELD_OBJECT_RENDER_ORDER;
         plane.userData.ownsTexture = !!spritePath;
@@ -25408,7 +25401,7 @@
             const consumeAction = window.HobunjiDrunkGameplayBridge?.getHeldItemAction?.();
             if (consumeAction) return [consumeAction];
             if (heldItem && ITEM_DEFS[heldItem.key]?.isCookedFood) return [{ icon: '🍲', label: `Eat ${ITEM_DEFS[heldItem.key].label}`, action: 'consume_food_item', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 }];
-            if (heldItem && ITEM_DEFS[heldItem.key]?.isInstrument) return [{ icon: '🎵', label: 'Play', action: 'play_instrument', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 }];
+            if (heldItem && ITEM_DEFS[heldItem.key]?.isInstrument) return [{ icon: '🎵', label: 'Play', action: 'play_instrument', style: 'primary', allowed: !!window.MusicMinigame?.getEquippedInstrument?.() }]; // Playing requires the Instrument gear slot (bag copies must be transferred first).
           }
           return [];
         }
@@ -25558,7 +25551,7 @@
         const consumeAction = window.HobunjiDrunkGameplayBridge?.getHeldItemAction?.();
         if (!flaskActions.length && consumeAction) btns.unshift(consumeAction);
         else if (heldItem && ITEM_DEFS[heldItem.key]?.isCookedFood) btns.unshift({ icon: '🍲', label: `Eat ${ITEM_DEFS[heldItem.key].label}`, action: 'consume_food_item', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 });
-        else if (heldItem && ITEM_DEFS[heldItem.key]?.isInstrument) btns.unshift({ icon: '🎵', label: 'Play', action: 'play_instrument', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 });
+        else if (heldItem && ITEM_DEFS[heldItem.key]?.isInstrument) btns.unshift({ icon: '🎵', label: 'Play', action: 'play_instrument', style: 'primary', allowed: !!window.MusicMinigame?.getEquippedInstrument?.() });
         else if (heldItem && heldItem.key === 'campfireKitFurniture') btns.unshift({ icon: '🔥', label: 'Set Up Campfire', action: 'place_campfire_kit', style: 'primary', allowed: !!window.WildernessCampfire?.supportsArea?.(currentArea) && (inventory[heldItem.key] || 0) > 0 });
 
         // 2. Context: Plant button if selected item is a seed and tile can accept it
@@ -28451,7 +28444,7 @@
 
       window.MusicMinigame?.init({
         refreshActionBar,
-        getEquippedInstrument: () => gearInventory.tools[equipmentSlots.instrument] && ITEM_DEFS[equipmentSlots.instrument]?.isInstrument ? equipmentSlots.instrument : null,
+        getEquippedInstrument: () => gearInventory?.tools?.[equipmentSlots.instrument] && ITEM_DEFS[equipmentSlots.instrument]?.isInstrument ? equipmentSlots.instrument : null,
         getCurrentArea: () => currentArea,
         listInstrumentPerformers,
         getNpcFootstepSampleUrl: npcFootstepSampleUrl,
@@ -28568,6 +28561,7 @@
       window.CreatureGenetics?.init({ clamp: window.FormatUtils.clamp, CREATURE_DB });
 
       window.CookingSystem?.init({
+        getHeldItemKey: () => (manualHeldItem?.kind === 'bagItem' ? manualHeldItem.key : null) || (heldMode === 'item' ? getActiveInventoryItem()?.key || null : null), // Pack Hold's star tier applies only while that item is actually held.
         ITEM_DEFS,
         inventoryItems,
         inventory,
@@ -29795,8 +29789,8 @@
 
       window.DebugHitboxes?.init({
         getActiveGrid: window.GridTileAccessors.getActiveGrid,
-        projectileTileCoverTop,
-        projectileTileCoverBase,
+        projectileTileCoverTop: window.ProjectileTileCover.coverTop,
+        projectileTileCoverBase: window.ProjectileTileCover.coverBase,
         getActiveTileAt: window.GridTileAccessors.getActiveTileAt,
         tileSurfaceY,
         surfaceYAtWorld: activeSurfaceYAtWorld,

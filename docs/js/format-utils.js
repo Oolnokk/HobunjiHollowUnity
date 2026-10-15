@@ -65,7 +65,7 @@
   // idempotent and the bridge deliberately tolerates a repeated handoff.
   (function loadStableAnimalFeatureBridge() {
     if (typeof document === 'undefined') return;
-    const src = 'js/livestock-nursery-install-bridge.js?v=20261015h4a57d0f';
+    const src = 'js/livestock-nursery-install-bridge.js?v=20261015h072ade1';
     if (document.querySelector('script[data-stable-animal-feature-bridge]')) return;
     if (document.readyState === 'loading') {
       document.write(`<script src="${src}" data-stable-animal-feature-bridge="1"><\/script>`);
@@ -131,7 +131,7 @@
   // a house/interior actually asks it to build, after normal game boot.
   (function loadStackedLogWalls() {
     if (typeof document === 'undefined') return;
-    const src = 'js/stacked-log-walls.js?v=20261015h7b39c73'; // Shared exact-span architecture renderer for exterior/interior log walls.
+    const src = 'js/stacked-log-walls.js?v=20261015hc9982b1'; // Shared exact-span architecture renderer for exterior/interior log walls.
     if (window.StackedLogWalls || document.querySelector('script[data-stacked-log-walls]')) return;
     if (document.readyState === 'loading') {
       document.write(`<script src="${src}" data-stacked-log-walls="1"><\/script>`);
@@ -167,6 +167,7 @@
     context.arcTo(x + width, y, x + width, y + height, radius);
     context.arcTo(x + width, y + height, x, y + height, radius);
     context.arcTo(x, y + height, x, y, radius);
+    context.arcTo(x, y, x + width, y, radius);
     context.closePath();
   }
 

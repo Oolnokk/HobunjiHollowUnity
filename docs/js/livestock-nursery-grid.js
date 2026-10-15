@@ -591,7 +591,8 @@
     const title = section.querySelector('.nursery-grid-disclosure'); // Slotted light-DOM button supports touch, keyboard, and controller discovery.
     const capacityEl = shadow.getElementById('capacity');
     const collapsed = section.querySelector('.livestock-nursery-toggle')?.getAttribute('aria-expanded') === 'false'; // Mirrors the authoritative Farm inventory state into the visible shadow header.
-    section.dataset.nurseryCollapsed = collapsed ? '1' : '0';
+    const collapsedFlag = collapsed ? '1' : '0';
+    if (section.dataset.nurseryCollapsed !== collapsedFlag) section.dataset.nurseryCollapsed = collapsedFlag; // Unchanged writes still queue attribute mutations.
     if (title) {
       title.hidden = false;
       const label = `${collapsed ? '▸' : '▾'} 🍼 Nursery · ${records.length} babies`; // Deduplicates light-DOM writes while synchronizing the visible disclosure.
