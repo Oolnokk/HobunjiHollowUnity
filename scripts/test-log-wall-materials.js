@@ -5,27 +5,31 @@ const fs = require('node:fs'); // File reader used to inspect the shipped runtim
 const path = require('node:path'); // Path helper used to resolve repository-relative module locations.
 
 const repoRoot = path.resolve(__dirname, '..'); // Repository root used by every source read in this test.
-const foliageSource = fs.readFileSync(path.join(repoRoot, 'docs/js/foliage-generator.js'), 'utf8'); // Tree material authority whose bark response the log bridge must match.
-const materialSource = fs.readFileSync(path.join(repoRoot, 'docs/js/log-wall-materials.js'), 'utf8'); // New shared tree-material/cut-cap log bridge under test.
-const formatUtilsSource = fs.readFileSync(path.join(repoRoot, 'docs/js/format-utils.js'), 'utf8'); // Main-game loader checked for base -> material ordering.
-const panelUiSource = fs.readFileSync(path.join(repoRoot, 'docs/js/panel-ui.js'), 'utf8'); // Wall Builder loader checked for base -> material -> tool ordering.
+const naturalSource = fs.readFileSync(path.join(repoRoot, 'docs/js/natural-surface-materials.js'), 'utf8'); // Actual in-game tree PNG surface authority the wall path must follow.
+const woodSource = fs.readFileSync(path.join(repoRoot, 'docs/js/wood-cut-surfaces.js'), 'utf8'); // Shared stump/log/cut-face repair and texture authority.
+const materialSource = fs.readFileSync(path.join(repoRoot, 'docs/js/log-wall-materials.js'), 'utf8'); // Single-primitive tree-PNG/cut-cap log bridge under test.
+const toolSource = fs.readFileSync(path.join(repoRoot, 'docs/js/wall-builder-log-tool.js'), 'utf8'); // Export tool checked for texture readiness before GLB serialization.
+const formatUtilsSource = fs.readFileSync(path.join(repoRoot, 'docs/js/format-utils.js'), 'utf8'); // Main-game loader checked for base -> wood -> atlas ordering.
+const panelUiSource = fs.readFileSync(path.join(repoRoot, 'docs/js/panel-ui.js'), 'utf8'); // Wall Builder loader checked for base -> wood -> atlas -> tool ordering.
 
-assert.match(foliageSource, /const BARK_EMISSIVE_FLOOR = 0\.3;/, 'tree foliage bark must retain the 30% emissive floor contract');
-assert.match(foliageSource, /new T\.MeshLambertMaterial\(\{ color: col, emissive: col\.clone\(\)\.multiplyScalar\(BARK_EMISSIVE_FLOOR\) \}\)/, 'procedural trees must still define bark color + emissive from the same base color');
+assert.match(naturalSource, /trunks:\s*\{[^}]*texture:\s*'assets\/textures\/wavy_surface\.png'/, 'in-game tree trunks must still use wavy_surface.png');
+assert.match(naturalSource, /tintTreatment:\s*'body-sprite-tint'/, 'tree PNG bark must retain body-sprite tint treatment');
+assert.match(woodSource, /wavy_surface\.png/, 'shared wood repair must use the same authored PNG as in-game tree bark');
+assert.match(woodSource, /log\.png/, 'shared wood repair must use the authored log PNG for cut faces');
+assert.match(woodSource, /new THREE\.MeshBasicMaterial\(\{ map, color: 0xffffff, side: THREE\.DoubleSide \}\)/, 'cut faces must be real double-sided textured geometry rather than exposing backfaces');
+assert.match(woodSource, /boundaryLoops\(THREE, mesh\.geometry\)/, 'fallen logs/stumps must detect true open geometry boundaries for cap generation');
+assert.match(woodSource, /repairFurnitureInstance/, 'V27-authored wilderness stump/log instances must be repaired after generation');
+assert.match(woodSource, /buildStumpMesh = function/, 'direct procedural stump generation must receive the same shared cap repair');
 
-assert.match(materialSource, /const BARK_EMISSIVE_FLOOR = 0\.3;/, 'log wall bark must use the same emissive floor as trees');
-assert.match(materialSource, /new THREE\.MeshStandardMaterial\(/, 'log wood must use the export-stable material form used by baked in-game tree assets');
-assert.match(materialSource, /metalness:\s*0/, 'log wood must remain fully non-metallic like baked tree bark');
-assert.match(materialSource, /roughness:\s*1/, 'log wood must remain fully rough like baked tree bark');
-assert.match(materialSource, /geometry\.addGroup\(0, sideIndexCount, 0\)/, 'tube sides must use bark material slot 0');
-assert.match(materialSource, /geometry\.addGroup\(sideIndexCount, capIndexCount, 1\)/, 'both end caps must use cut-wood material slot 1');
-assert.match(materialSource, /'Cut Wood', 'cutWood'/, 'fresh-cut cap material must be named and tagged distinctly from bark');
-assert.match(materialSource, /cutWoodColor\(THREE, barkColor\)/, 'cut wood color must derive from the authored bark color rather than using an unrelated fixed swatch');
-assert.match(materialSource, /treeWoodMaterials:\s*true/, 'generated cache entries must identify the upgraded tree-material prototype');
-assert.match(materialSource, /prototype\.prepareLogWallRecipe = function/, 'eager generated-model preparation must be intercepted before the old single-material cache can win');
-assert.match(materialSource, /prototype\.build = function/, 'runtime builds must replace any stale generated prototype before placement/instancing');
+assert.match(materialSource, /remapLogAtlasUv/, 'log walls must remap bark/cap UVs into a single material atlas');
+assert.match(materialSource, /makeLogAtlasMaterial/, 'log walls must use the shared wavy_surface.png + log.png atlas material');
+assert.match(materialSource, /single GLB primitive/, 'wall log material bridge must document the cap-preserving one-primitive contract');
+assert.doesNotMatch(materialSource, /MeshStandardMaterial/, 'log walls must not fall back to the previous flat tree-colored material approximation');
+assert.match(toolSource, /LogWallMaterials\.waitForTextures/, 'GLB export must wait for the authored PNG atlas to decode before serialization');
+assert.match(toolSource, /wavy_surface\.png/, 'Wall Builder UI must surface the actual tree bark PNG being used');
+assert.match(toolSource, /log\.png/, 'Wall Builder UI must surface the actual cut-wood PNG being used');
 
-assert.match(formatUtilsSource, /log-wall-extension\.js\?v=[A-Za-z0-9_-]+[\s\S]*log-wall-materials\.js\?v=[A-Za-z0-9_-]+/, 'main game must load tree materials after the base log extension');
-assert.match(panelUiSource, /log-wall-extension\.js\?v=[A-Za-z0-9_-]+[\s\S]*log-wall-materials\.js\?v=[A-Za-z0-9_-]+[\s\S]*wall-builder-log-tool\.js\?v=[A-Za-z0-9_-]+/, 'Wall Builder must load base log geometry, then tree materials, then authoring UI');
+assert.match(formatUtilsSource, /log-wall-extension\.js\?v=[A-Za-z0-9_-]+[\s\S]*wood-cut-surfaces\.js\?v=[A-Za-z0-9_-]+[\s\S]*log-wall-materials\.js\?v=[A-Za-z0-9_-]+/, 'main game must load base log geometry, shared wood repair, then PNG atlas materials');
+assert.match(panelUiSource, /log-wall-extension\.js\?v=[A-Za-z0-9_-]+[\s\S]*wood-cut-surfaces\.js\?v=[A-Za-z0-9_-]+[\s\S]*log-wall-materials\.js\?v=[A-Za-z0-9_-]+[\s\S]*wall-builder-log-tool\.js\?v=[A-Za-z0-9_-]+/, 'Wall Builder must load base log geometry, shared wood repair, PNG atlas, then authoring UI');
 
-console.log('log wall tree material tests passed');
+console.log('log wall tree PNG/cap tests passed');
