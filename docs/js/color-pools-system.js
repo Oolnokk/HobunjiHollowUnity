@@ -439,6 +439,9 @@
       group.add(water);
       const light = new THREE.PointLight(new THREE.Color(pool.color || '#4f7ea5'), 0.45, 3.5, 2);
       light.position.set(water.position.x, 0.35, water.position.z);
+      light.userData.intentionalFakeLightSource = true; // Colored pools keep their authored hue as a fake 2D local-light source instead of shading Three.js materials.
+      light.userData.furnitureLightMask = true;
+      window.FurnitureLightRegistry?.register(light);
       group.add(light);
     }
     scene.add(group);

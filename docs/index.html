@@ -115,10 +115,10 @@
        in bandit-camps.js/porakaneki-camps-runtime.js/deadzone-billboard.js).
        Loaded early since it has no deps of its own and any of those
        creation sites may run as soon as the game world starts building. -->
-  <script src="js/furniture-light-registry.js?v=20260918perf1"></script>
+  <script src="js/furniture-light-registry.js?v=20261015hf17ba9f"></script>
   <script src="js/cutscene-lantern-carriers.js?v=20261010lant1"></script>
   <!-- Farmhouse interior renders flat; all its lighting comes from the 2D overlay (window.FarmhouseFlatLighting). -->
-  <script src="js/farmhouse-flat-lighting.js?v=20261001flat1"></script>
+  <script src="js/farmhouse-flat-lighting.js?v=20261015he8f6685"></script>
   <!-- Wilderness zone ground-visual refresh after a runtime tile edit and
        the daily felled-tree/mined-rock regrowth ticks that call back into
        it, extracted out of game.js. Must load before game.js, which calls
@@ -572,7 +572,7 @@
   <!-- Banubu Color Pools: max-level Stable animal paint UI + cave pool visuals.
        Uses PatternAuthoring/PatternLibrary now; the shared weaving compositor
        is resolved at interaction/render time after combat-config-loader loads it. -->
-  <script src="js/color-pools-system.js?v=20260924picker1"></script>
+  <script src="js/color-pools-system.js?v=20261015h77640b9"></script>
   <!-- Sloomi/Kzubug's smithing counter (window.MetalCraftShop) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -599,7 +599,7 @@
        game.js so its private scene state can be injected during setup. -->
   <script src="js/map-live-preview.js?v=20260909a&window=20260926rebase1"></script>
   <!-- Wall-mounted furniture loads synchronously before game.js consumers initialize. -->
-  <script src="js/wall-ornament-placement.js?v=20260926rebase1"></script>
+  <script src="js/wall-ornament-placement.js?v=20261015hd5cba5f"></script>
   <script src="js/map-live-preview-runtime.js?v=20261002hb01296f"></script>
   <!-- Dev Companion map furniture: palette + reticle placement (floor and wall) into town/building interiors via a dev overlay. -->
   <script src="js/dev-map-furniture.js?v=20261002devfurniture1"></script>
@@ -2613,7 +2613,7 @@
   <!-- Directional camera pitch policy is isolated from controller bindings/gameplay dispatch. -->
   <script src="js/camera-look-clamp.js?v=20260923review2"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261013hd84a447"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261015h4ae12b1"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
@@ -2625,7 +2625,7 @@
        fullscreen world composite after renderer creation, persists only its
        quality mode, and owns no requestAnimationFrame loop. -->
   <script src="js/painterly-postprocess.js?v=20261009h2588a9d"></script>
-  <script src="js/banubu-cave-clouds.js?v=20260923cloudring3"></script>
+  <script src="js/banubu-cave-clouds.js?v=20261015hf69d7ce"></script>
   <!-- Shoulder Cam / Character View Pointer Lock (window.ShoulderCamPointerLock); game.js calls init(...) during setup. -->
   <script src="js/shoulder-cam-pointer-lock.js?v=20260930hfc11b39"></script>
   <!-- Shared character-scoped hobunjiSaveMeta update step used by game.js's save* helpers. -->

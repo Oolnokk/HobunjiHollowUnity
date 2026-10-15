@@ -215,6 +215,9 @@
       const light = new THREE.PointLight(0xffa04a, 0.85, 5, 2); // Light is parented to the furniture so wall gizmo transforms move it automatically.
       light.name = 'WallTorchLight';
       light.position.set(0, 1.31, 0.42);
+      light.userData.intentionalFakeLightSource = true; // Wall torches illuminate through the shared 2D compositor; the PointLight itself never reaches WebGL lighting.
+      light.userData.furnitureLightMask = true;
+      window.FurnitureLightRegistry?.register(light);
       group.add(light);
     }
     group.userData.wallOrnamentKey = 'wallTorch';

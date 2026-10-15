@@ -446,6 +446,9 @@
     flame.position.set(0,0,.01);
     headAnchor.add(flame);
     const light = new THREE.PointLight(0xff8c33, 2.4, 4.2, 2);
+    light.userData.intentionalFakeLightSource = true; // Puzzle flames retain a visible fake glow while local Three.js lighting stays globally disabled.
+    light.userData.furnitureLightMask = true;
+    window.FurnitureLightRegistry?.register(light);
     headAnchor.add(light);
     group.userData.plane = plane;
     group.userData.headAnchor = headAnchor;
