@@ -86,11 +86,15 @@
     const key = prototypeKey(meta); // Geometry cache key excluding sourceMode/placement-only settings.
     if (lastPrototype?.key === key) return lastPrototype.buffer;
     const { THREE, GLTFExporter } = await modules(); // Same r128 Three/GLTFExporter pair used by the main Wall Builder module.
-    const mesh = window.LogWallExtension.createLogPrototype(THREE, meta); // Deterministic foliage-style prototype shared by live generation and exported GLB.
+    const mesh = window.LogWallExtension.createLogPrototype(THREE, meta); // Deterministic one-primitive bark/cut-atlas prototype shared by live generation and exported GLB.
     const root = new THREE.Group(); // Export root holding the single reusable log mesh and its serialized extras.
     root.name = 'HobunjiCabinLogPrototype';
     root.userData = { logWallSignature: window.LogWallExtension.signature(meta), logWall: { ...meta } };
     root.add(mesh);
+    if (window.LogWallMaterials?.waitForTextures) {
+      status('Loading tree bark + cut-wood PNGs…');
+      await window.LogWallMaterials.waitForTextures(root); // Prevent GLTFExporter from serializing the atlas before wavy_surface.png/log.png have actually decoded into it.
+    }
     const exporter = new GLTFExporter(); // Binary glTF exporter producing the reusable baked prototype asset.
     const buffer = await new Promise((resolve, reject) => {
       try {
@@ -157,7 +161,7 @@
     try {
       status('Generating deterministic log prototype…');
       const meta = authoredMeta(sourceMode); // Live/baked metadata mode selected for the recipe being previewed.
-      const buffer = await buildPrototypeBuffer(meta); // Exact GLB bytes loaded into the existing preview even for live mode to prove bake parity.
+      const buffer = await buildPrototypeBuffer(meta); // Exact textured single-primitive GLB bytes loaded into the existing preview even for live mode to prove bake parity.
       const glbFile = new File([buffer], meta.glbName, { type: 'model/gltf-binary' }); // Generated reusable prototype passed through the normal GLB picker path.
       await injectFile(byId('glbFile'), glbFile);
 
@@ -173,7 +177,7 @@
       byId('assignRecipeBtn')?.click();
       byId('buildWallsBtn')?.click();
       const signature = window.LogWallExtension.signature(meta); // Geometry signature shown in-tool for generated/baked parity checks.
-      status(`Previewed ${sourceMode === 'glb' ? 'baked-GLB' : 'generated-live'} log wall · signature ${signature}. Preview always uses the exported prototype bytes, so switching source mode must not change the wall.`);
+      status(`Previewed ${sourceMode === 'glb' ? 'baked-GLB' : 'generated-live'} log wall · signature ${signature}. Bark uses wavy_surface.png; cut ends use log.png in the same GLB primitive.`);
     } catch (error) {
       status(`Log wall preview failed: ${error.message}`, 'error');
     }
@@ -183,9 +187,9 @@
     try {
       const meta = authoredMeta('generated'); // Geometry settings are mode-independent; generated metadata is canonical for prototype export.
       status('Exporting generated log GLB…');
-      const buffer = await buildPrototypeBuffer(meta); // Same bytes injected into preview and referenced by baked recipes.
+      const buffer = await buildPrototypeBuffer(meta); // Same textured/capped bytes injected into preview and referenced by baked recipes.
       downloadBlob(meta.glbName, new Blob([buffer], { type: 'model/gltf-binary' }));
-      status(`Exported ${meta.glbName} · signature ${window.LogWallExtension.signature(meta)}. Put it at the baked recipe's GLB path to rebuild the same wall without live log generation.`);
+      status(`Exported ${meta.glbName} · signature ${window.LogWallExtension.signature(meta)}. Tree bark PNG and cut caps are embedded in one GLB primitive.`);
     } catch (error) {
       status(`Log GLB export failed: ${error.message}`, 'error');
     }
@@ -221,7 +225,7 @@
     card.style.cssText = '--sec:#a16207;--secBg:rgba(161,98,7,.12)';
     card.innerHTML = `
       <div class="sectionTitle"><b>Log cabin wall</b><span class="sectionTag">foliage logs</span></div>
-      <div class="help">One foliage-style generated log spans each horizontal course. Panel width controls log length; diameter and wonkiness are authored here. Generated-live and baked-GLB recipes share the same seeded placement.</div>
+      <div class="help">One foliage-style generated log spans each horizontal course. Panel width controls log length; diameter and wonkiness are authored here. Bark uses the same wavy_surface.png PNG as trees; exposed ends use log.png cut wood.</div>
       <div class="hr"></div>
       <div class="grid2">
         ${field('Log GLB filename','logWallGlbName',defaults.glbName)}
@@ -261,7 +265,7 @@
         <button id="logWallExportLiveRecipe" class="secondary">Download live recipe</button>
         <button id="logWallExportBakedRecipe" class="secondary">Download baked recipe</button>
       </div>
-      <div id="logWallToolStatus" class="help" style="margin-top:8px;white-space:pre-wrap">Latest change: fixed Three.js r128 binary GLB export so log previews and exported prototypes use real GLB bytes.</div>
+      <div id="logWallToolStatus" class="help" style="margin-top:8px;white-space:pre-wrap">Latest change: tree PNG bark and cut-wood caps now export together as one GLB primitive, preventing cap loss on re-import.</div>
     `;
     transformCard.parentNode.insertBefore(card, transformCard);
 
@@ -270,7 +274,7 @@
     byId('logWallExportGlb').onclick = exportPrototype;
     byId('logWallExportLiveRecipe').onclick = () => exportRecipe('generated');
     byId('logWallExportBakedRecipe').onclick = () => exportRecipe('glb');
-    status('Log cabin wall controls ready. Panel width sets log length; diameter/wonkiness are independent.');
+    status('Log cabin wall controls ready. Tree PNG bark + cut caps are shared by live and baked modes.');
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', installUi, { once: true });
