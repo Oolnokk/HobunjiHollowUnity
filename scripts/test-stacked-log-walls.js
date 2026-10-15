@@ -35,6 +35,10 @@ assert.match(foliageSource, /targetX = -length \* 0\.5 \+ length \* t01/, 'folia
 assert.match(stackedSource, /foliage\.buildLogMesh\(/, 'stacked walls ask FoliageGenerator for each source log');
 assert.match(stackedSource, /mesh\.scale\.set\(1, 1, 1\)/, 'stacked wall placement never length-scales generated source geometry');
 assert.doesNotMatch(stackedSource, /GLTFLoader|loadGlb|glbName/, 'stacked architecture has no baked-GLB dependency');
+assert.match(stackedSource, /HORIZONTAL_FACE_NORMAL_Y = 0\.92/, 'near-horizontal wall-tagged faces have an explicit flat-face rendering path');
+assert.match(stackedSource, /horizontalWallCourses\(THREE, corners, meta, nominalPitch\)/, 'flat wall faces are packed with side-by-side in-plane foliage rows');
+assert.match(stackedSource, /Math\.abs\(normal\.y\) >= HORIZONTAL_FACE_NORMAL_Y/, 'flat top and bottom faces bypass world-Y wall slicing');
+assert.match(stackedSource, /horizontalWallFace: true/, 'generated flat-face logs expose diagnostics identifying the horizontal-wall path');
 assert.match(stackedSource, /visibleSegmentsAroundOpenings/, 'stacked logs split real source geometry around wall openings');
 assert.match(stackedSource, /Math\.ceil\(panelHeight \/ nominalPitch\)/, 'short gables choose enough rows that course spacing never becomes looser than the authored pitch');
 assert.match(stackedSource, /EDGE_SPAN_RECLAIM = 0\.8/, 'gable edge fill reclaims most of the overly conservative full-diameter slope inset');
