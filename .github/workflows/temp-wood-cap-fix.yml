@@ -1,0 +1,45 @@
+name: Temporary wood cap cleanup
+on:
+  push:
+    branches:
+      - feature/log-cabin-wall-generator
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/log-cabin-wall-generator
+          fetch-depth: 0
+      - name: Fix wrapper ordering and accidental emoji edit
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          fmt = Path('docs/js/format-utils.js')
+          text = fmt.read_text()
+          old = "hoe:'🪓 Axe'"
+          assert old in text, 'expected accidental hoe emoji text not found'
+          fmt.write_text(text.replace(old, "hoe:'🪓'", 1))
+
+          wood = Path('docs/js/wood-cut-surfaces.js')
+          text = wood.read_text()
+          old = "  installGlobal('FoliageGenerator', wrapFoliageGenerator);\n  installGlobal('FoliageFurnitureRenderer', wrapFurnitureRenderer);"
+          new = """  function installPublishedApis() {\n    if (window.FoliageGenerator) wrapFoliageGenerator(window.FoliageGenerator);\n    if (window.FoliageFurnitureRenderer) wrapFurnitureRenderer(window.FoliageFurnitureRenderer);\n    return !!(window.FoliageGenerator && window.FoliageFurnitureRenderer);\n  }\n\n  // NaturalSurfaceMaterials owns its own late-publication setter for FoliageGenerator.\n  // Poll the published APIs instead of competing for that global property; whichever\n  // loads last simply wraps the same functions in place, preserving both behaviors.\n  installPublishedApis();\n  const installPoll = setInterval(() => {\n    if (installPublishedApis()) clearInterval(installPoll);\n  }, 100);\n  setTimeout(() => clearInterval(installPoll), 15000);"""
+          assert old in text, 'expected global wrapper install block not found'
+          wood.write_text(text.replace(old, new, 1))
+          PY
+      - name: Refresh changed-module cache busts
+        run: |
+          git fetch --no-tags origin main
+          node scripts/check-cache-busts.js --fix origin/main
+      - name: Commit cleanup
+        run: |
+          if git diff --quiet; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/js/format-utils.js docs/js/wood-cut-surfaces.js docs/index.html docs/js/panel-ui.js docs/js/log-wall-materials.js docs/js/wall-builder-log-tool.js
+          git commit -m "Finalize shared wood caps and cache busts"
+          git push origin HEAD:feature/log-cabin-wall-generator
