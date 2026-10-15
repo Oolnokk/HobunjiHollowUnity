@@ -16,38 +16,20 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Preserve naturalized bark tint metadata
+      - name: Finalize bark tint preservation
+        run: node scripts/temp-fix-wood-cap-tint.js
+      - name: Refresh cache busts
         run: |
-          python - <<'PY'
-          from pathlib import Path
-          path = Path('docs/js/wood-cut-surfaces.js')
-          text = path.read_text()
-          old = """  function sourceColorHex(material, fallback = '#6d472d') {
-    const source = Array.isArray(material) ? material[0] : material; // First source wood material carries the procedural per-tree bark tint.
-    if (!source?.color?.isColor) return fallback;
-    return `#${source.color.getHexString()}`;
-  }"""
-          new = """  function sourceColorHex(material, fallback = '#6d472d') {
-    const source = Array.isArray(material) ? material[0] : material; // First source wood material or naturalized bark material carries the source tint metadata.
-    const mappedTint = String(source?.map?.userData?.naturalSurfaceBodySpriteTintTarget || ''); // NaturalSurfaceMaterials stores the pre-white-material bark tint on its body-tinted PNG texture.
-    if (/^#[0-9a-f]{6}$/i.test(mappedTint)) return mappedTint.toLowerCase();
-    if (!source?.color?.isColor) return fallback;
-    return `#${source.color.getHexString()}`;
-  }"""
-          if old in text:
-            path.write_text(text.replace(old, new, 1))
-          elif new not in text:
-            raise SystemExit('sourceColorHex block changed unexpectedly')
-          PY
           git fetch --no-tags origin main
           node scripts/check-cache-busts.js --fix origin/main
-          if ! git diff --quiet; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add -u
-            git commit -m "Preserve bark tint for shared wood cut surfaces"
-            git push origin HEAD:feature/log-cabin-wall-generator
-          fi
+      - name: Commit finalized repair
+        run: |
+          if git diff --quiet; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -u
+          git commit -m "Preserve bark tint for shared wood cut surfaces"
+          git push origin HEAD:feature/log-cabin-wall-generator
       - name: Syntax check shipped scripts
         run: |
           set -e
