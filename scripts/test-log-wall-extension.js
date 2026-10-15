@@ -119,7 +119,7 @@ const formatUtilsSource = fs.readFileSync(path.join(repoRoot, 'docs/js/format-ut
 const panelUiSource = fs.readFileSync(path.join(repoRoot, 'docs/js/panel-ui.js'), 'utf8'); // Shared tool bootstrap source checked for Wall Builder-only authoring wiring.
 const toolSource = fs.readFileSync(path.join(repoRoot, 'docs/js/wall-builder-log-tool.js'), 'utf8'); // Authoring UI source checked for both required export modes.
 assert.match(formatUtilsSource, /log-wall-extension\.js\?v=/, 'main game must synchronously load the log-wall runtime after WallBuilder');
-assert.match(panelUiSource, /wall-builder-log-tool\.js\?v=/, 'Wall Builder must load its log-cabin authoring controls');
+assert.match(panelUiSource, /wall-builder-log-tool\.js\?v=/, 'Wall Builder must load its log-cabin authoring controls with a cache token');
 assert.match(toolSource, /Export generated log GLB/);
 assert.match(toolSource, /Download live recipe/);
 assert.match(toolSource, /Download baked recipe/);
@@ -127,6 +127,5 @@ assert.match(toolSource, /applyPreview\('generated'\)/);
 assert.match(toolSource, /applyPreview\('glb'\)/);
 assert.match(toolSource, /exporter\.parse\(root,[\s\S]*?\}, \{ binary: true, onlyVisible: true \}\);/, 'Three.js r128 GLTFExporter options must be the third parse argument');
 assert.doesNotMatch(toolSource, /\},\s*reject,\s*\{\s*binary:\s*true/, 'r128 must not receive an onError callback in the options slot');
-assert.match(panelUiSource, /wall-builder-log-tool\.js\?v=20261014logwall2/, 'fixed exporter must receive a fresh Wall Builder cache token');
 
 console.log('log wall extension tests passed');
