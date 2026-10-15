@@ -69,12 +69,13 @@ console.log('Projectile grass, rock height, radius, elevation, wall and movement
 
 // Decorative ruin furniture uses authored geometry only as a decal/plaque host; its decorated door/target owns collision.
 const visualRuinGroup = { userData:{authoredFurnitureKey:'ruinDoorSeal'}, traverse(callback){ callback(this); } };
+const ruinThree = { Color:function Color(){} }; // Module-level glow setup reads THREE directly even though this fixture never renders the authored overlay.
 const ruinBrowser = {
-  THREE:{ Color:function Color(){} },
+  THREE:ruinThree,
   AuthoredFurniture:{ load(){}, peek(){ return {key:'ruinDoorSeal'}; }, buildGroup(){ return visualRuinGroup; } },
   DynamicSurfaces:{ addBeforeRenderClient(){} },
 };
-vm.runInNewContext(fs.readFileSync('docs/js/dev-random-ruin-furniture-pieces.js','utf8'), {window:ruinBrowser,performance});
+vm.runInNewContext(fs.readFileSync('docs/js/dev-random-ruin-furniture-pieces.js','utf8'), {window:ruinBrowser,THREE:ruinThree,performance});
 const builtVisualRuin = ruinBrowser.DevRandomRuinFurniturePieces.build('ruinDoorSeal');
 assert.equal(builtVisualRuin.userData.authoredFurnitureKey, null, 'visual ruin overlays cannot register authored-furniture projectile cover');
 assert.equal(builtVisualRuin.userData.devRuinFootprintIgnore, true, 'visual ruin overlays remain excluded from ruin footprint collision');
