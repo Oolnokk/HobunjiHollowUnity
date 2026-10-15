@@ -393,6 +393,17 @@
     return Number.isFinite(col) && Number.isFinite(row) ? { x: col + 0.5, z: row + 0.5 } : null;
   }
 
+  // Multi-tile furniture (the inn stage is a 5x3 long table) is authored at its
+  // top-left tile but its rendered root can sit at the footprint centre, which
+  // is further than the match radius from the anchor tile alone.
+  function recordFootprintCenter(record) {
+    const position = recordPosition(record);
+    const w = finite(record?.gridW, 1), d = finite(record?.gridD, 1);
+    if (!position || (w <= 1 && d <= 1)) return null;
+    const quarterTurn = Math.abs(Math.round(finite(record?.gridRot, 0) / 90)) % 2 === 1;
+    return { x: position.x - 0.5 + (quarterTurn ? d : w) / 2, z: position.z - 0.5 + (quarterTurn ? w : d) / 2 };
+  }
+
   function rootKey(root) {
     return String(root?.userData?.authoredFurnitureKey || root?.userData?.furnitureKey || root?.name || '')
       .replace(/^procedural_furniture_/i, '')
@@ -410,7 +421,11 @@
       root.updateWorldMatrix?.(true, false);
       const p = new THREE.Vector3();
       root.getWorldPosition?.(p);
-      const distance = Math.hypot(p.x - position.x, p.z - position.z);
+      const center = recordFootprintCenter(record);
+      const distance = Math.min(
+        Math.hypot(p.x - position.x, p.z - position.z),
+        center ? Math.hypot(p.x - center.x, p.z - center.z) : Infinity,
+      );
       const key = rootKey(root);
       const keyPenalty = expectedKey && key && !key.includes(expectedKey) && !expectedKey.includes(key) ? 2 : 0;
       const score = distance + keyPenalty;
@@ -637,6 +652,7 @@
     supportAt,
     surfaceLiftAt,
     worldSurfaceTopAt,
+    hasSupports: () => supports.size > 0,
     syncFurnitureSupports,
     refreshFurniture: () => {
       lastFurnitureSyncArea = null;

@@ -234,6 +234,19 @@
     return null;
   }
 
+  // Local box first (cheap, the common case); if that finds nothing, widen the
+  // box and node budget so a detour around a long wall/fence is still found;
+  // A blocked destination tile stays unreachable on purpose (see the occupied
+  // chair case in test-npc-collision-aware-pathing.js).
+  function findNpcPathWithFallbacks(area, fromX, fromZ, target, allowOccupiedTarget) {
+    const attempt = (c, r, opts) => findNpcPath(area, fromX, fromZ, c, r, { allowOccupiedTarget, ...opts });
+    let path = attempt(target.c, target.r, { padding: 6 });
+    if (path?.length) return path;
+    path = attempt(target.c, target.r, { padding: 16, maxNodes: 4000 });
+    if (path?.length) return path;
+    return path;
+  }
+
   function _walkerAllowsFurnitureOverlap(walker, tx, tz) {
     const target = walker?.currentScheduleTarget;
     return target?.pose === 'sit'
@@ -336,10 +349,7 @@
         const failKey = this.area + '|' + target.c + ',' + target.r + '|' + Math.floor(this.root.position.x) + ',' + Math.floor(this.root.position.z) + '|' + (target.pose === 'sit');
         const now = Date.now();
         if (this._npcPathFailKey === failKey && now < this._npcPathFailUntil) { debugStats.pathFailuresSkipped++; return false; }
-        const path = findNpcPath(this.area, this.root.position.x, this.root.position.z, target.c, target.r, {
-          padding: 6,
-          allowOccupiedTarget: target.pose === 'sit',
-        });
+        const path = findNpcPathWithFallbacks(this.area, this.root.position.x, this.root.position.z, target, target.pose === 'sit');
         if (!path?.length) {
           this._npcPathFailKey = failKey;
           this._npcPathFailUntil = now + PATH_FAILURE_RETRY_MS;

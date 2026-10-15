@@ -301,6 +301,42 @@
     // extra presses until it settles into a steady state.
   }
 
+  // Off-screen, in a random-ish direction behind the player rather than always
+  // dead behind (so the rush-in doesn't look identical every time), but only
+  // on a tile that is walkable AND has a real path to the player. A fixed
+  // distance point can land inside a fence/building/cliff, where the mount
+  // pins itself, jitters against the collision reposition, and the rush-in
+  // timeout then drags the player to it. Candidates are tried far-to-near;
+  // the player's own spot is the last resort.
+  function pickMountSpawnPoint() {
+    const T = deps.TILE;
+    const marginPx = T * 1.5;
+    const maxX = deps.getActiveCols() * T - marginPx, maxY = deps.getActiveRows() * T - marginPx;
+    const playerCol = Math.floor(deps.player.x / T), playerRow = Math.floor(deps.player.y / T);
+    const walkable = deps.creatureTileWalkable;
+    const finder = window.TilePathfinding;
+    const playerTileOpen = !walkable || walkable(playerCol, playerRow);
+    const baseAngle = deps.player.angle + Math.PI + (deps.rnd() - 0.5) * (Math.PI * 0.6);
+    const angleSteps = [0, 0.35, -0.35, 0.7, -0.7, 1.05, -1.05, 1.6, -1.6, Math.PI];
+    for (const distTiles of [MOUNT_SPAWN_DIST_TILES, 7, 5, 3.5]) {
+      for (const da of angleSteps) {
+        const a = baseAngle + da;
+        const x = deps.clamp(deps.player.x + Math.cos(a) * T * distTiles, marginPx, maxX);
+        const y = deps.clamp(deps.player.y + Math.sin(a) * T * distTiles, marginPx, maxY);
+        const col = Math.floor(x / T), row = Math.floor(y / T);
+        if (walkable && !walkable(col, row)) continue;
+        if (walkable && finder && playerTileOpen) {
+          const path = finder.findPath(col, row, playerCol, playerRow, walkable, {
+            bounds: finder.boxAround(col, row, playerCol, playerRow, 8), maxNodes: 2500,
+          });
+          if (!path) continue;
+        }
+        return { x: (col + 0.5) * T, y: (row + 0.5) * T };
+      }
+    }
+    return { x: deps.player.x, y: deps.player.y };
+  }
+
   function beginSummonMount() {
     if (deps.player.climbing) {
       deps.showToast('Finish climbing before calling your mount.', false);
@@ -317,16 +353,7 @@
       deps.showToast('No mount set in your stable.', false);
       return;
     }
-    // Off-screen, in a random-ish direction behind the player rather than
-    // always dead behind, so the rush-in doesn't look identical every time
-    // — clamped well inside the active area's bounds (with a margin), since
-    // a fixed-distance point in an arbitrary direction can easily land
-    // outside a smaller map.
-    const spawnAngle = deps.player.angle + Math.PI + (deps.rnd() - 0.5) * (Math.PI * 0.6);
-    const spawnMarginPx = deps.TILE * 1.5;
-    const maxX = deps.getActiveCols() * deps.TILE - spawnMarginPx, maxY = deps.getActiveRows() * deps.TILE - spawnMarginPx;
-    const spawnX = deps.clamp(deps.player.x + Math.cos(spawnAngle) * deps.TILE * MOUNT_SPAWN_DIST_TILES, spawnMarginPx, maxX);
-    const spawnY = deps.clamp(deps.player.y + Math.sin(spawnAngle) * deps.TILE * MOUNT_SPAWN_DIST_TILES, spawnMarginPx, maxY);
+    const { x: spawnX, y: spawnY } = pickMountSpawnPoint();
     const mount = deps.makeCreatureEntity(activeStabled.kind, spawnX, spawnY, {
       isCompanion: true, name: activeStabled.name, homeX: spawnX, homeY: spawnY, state: 'idle',
       master: deps.player, genotype: activeStabled.genotype, stableRole: 'mount',
@@ -486,7 +513,8 @@
     if (mountRideState === 'rushingIn') {
       mountRushInT += dt;
       const stepStartX = m.x, stepStartY = m.y;
-      const moving = deps.moveCreatureToward(m, deps.player.x, deps.player.y, MOUNT_RUSH_SPEED_PX, dt);
+      const travel = deps.travelCreatureToward || deps.moveCreatureToward; // Pathfinds around fences/buildings if the straight run stalls.
+      const moving = travel(m, deps.player.x, deps.player.y, MOUNT_RUSH_SPEED_PX, dt);
       const movedPx = Math.hypot(m.x - stepStartX, m.y - stepStartY);
       const aim = Math.atan2(deps.player.y - m.y, deps.player.x - m.x);
       m.facing = aim;
@@ -495,7 +523,11 @@
       // which is now also the shared gait authority. Render only; do not
       // advance the same displacement a second time here.
       updateMountLocomotion(m, dt, moving, movedPx, true);
-      if (Math.hypot(deps.player.x - m.x, deps.player.y - m.y) <= deps.TILE * MOUNT_ARRIVE_PX_TILES || mountRushInT >= 6) {
+      const arrived = Math.hypot(deps.player.x - m.x, deps.player.y - m.y) <= deps.TILE * MOUNT_ARRIVE_PX_TILES;
+      if (arrived || mountRushInT >= 6) {
+        // Timed out while still stuck: bring the mount to the rider instead of
+        // letting mountingUp drag the player across the map to the mount.
+        if (!arrived) { m.x = deps.player.x; m.y = deps.player.y; m._travelPath = null; }
         mountRideState = 'mountingUp';
         mountTransitionT = 0;
         mountTransitionFromX = deps.player.x; mountTransitionFromY = deps.player.y;
