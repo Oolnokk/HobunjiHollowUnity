@@ -5,8 +5,8 @@
 // and furniture/fire light all come from the shared 2D compositor instead of
 // Three.js directional/local lighting.
 //
-// Existing PointLights stay in the scene as data for FurnitureLightRegistry and
-// the overlay (position/distance/intensity/color), but all non-baseline Three.js
+// Existing local lights stay in the scene as data for the fake-light registry
+// and overlay (position/distance/intensity/color), but all non-baseline Three.js
 // lights are moved to a layer gameplay cameras never render.
 (() => {
   'use strict';
@@ -52,7 +52,7 @@
     baseline.name = BASELINE_LIGHT_NAME;
     baseline.userData = baseline.userData || {};
     baseline.userData.overlayFlatBaseline = true;
-    protectBaselineIntensity(baseline); // Prevent legacy authored-lighting timers from turning the neutral baseline back into gameplay lighting.
+    protectBaselineIntensity(baseline); // Defensive guard: legacy light code must never turn the neutral baseline into a gameplay lighting effect.
     scene.add(baseline);
     return baseline;
   }
@@ -74,21 +74,29 @@
     return true;
   }
 
-  function installAuthoredBuilding(mapId, sceneRecord) {
-    if (!sceneRecord?.scene || !isBuildingArea(mapId)) return Promise.resolve(false);
-    const applyEnvironment = window.InteriorEnvironmentRuntime?.applyEnvironmentToScene; // Used below so legacy wall/environment metadata finishes before its lights are removed from the renderer.
-    const environmentPass = typeof applyEnvironment === 'function'
-      ? Promise.resolve(applyEnvironment(mapId, sceneRecord))
-      : Promise.resolve(null);
-    return environmentPass
-      .catch(error => { stats.lastError = `${mapId}: ${String(error?.message || error)}`; })
-      .then(() => {
-        const changed = install(sceneRecord.scene);
-        if (changed) stats.authoredBuildingInstalls += 1;
-        stats.lastMapId = mapId;
-        window.CloudForestFog?.refreshLightingOverlay?.(); // Makes the shared darkness/window/time-of-day compositor reflect the newly active flat building immediately.
-        return changed;
-      });
+  function applyAuthoredBuildingFlatLighting(mapId, sceneRecord) {
+    if (!sceneRecord?.scene || !isBuildingArea(mapId)) return false;
+    const changed = install(sceneRecord.scene);
+    if (changed) stats.authoredBuildingInstalls += 1;
+    stats.lastMapId = mapId;
+    window.CloudForestFog?.refreshLightingOverlay?.(); // Makes the shared darkness/window/time-of-day compositor reflect the newly active flat building immediately.
+    return changed;
+  }
+
+  function queueAuthoredBuildingFlatLighting(mapId, sceneRecord) {
+    if (!sceneRecord?.scene || !isBuildingArea(mapId)) return false;
+    queueMicrotask(() => {
+      try {
+        // InteriorEnvironmentRuntime's Map.set wrapper queues its own environment
+        // pass while originalSet() below is running. Queueing here *after* that
+        // call preserves wall/environment metadata exactly once, then hands all
+        // actual lighting authority to the farmhouse 2D compositor.
+        applyAuthoredBuildingFlatLighting(mapId, sceneRecord);
+      } catch (error) {
+        stats.lastError = `${mapId}: ${String(error?.message || error)}`;
+      }
+    });
+    return true;
   }
 
   function hookBuildingSceneMap(map, buildingPredicate) {
@@ -98,11 +106,11 @@
     const originalSet = map.set.bind(map); // Preserves the environment/floor-style wrappers already installed on the same Map.
     map.set = function setBuildingSceneWithFlatLighting(mapId, sceneRecord) {
       const result = originalSet(mapId, sceneRecord);
-      installAuthoredBuilding(mapId, sceneRecord);
+      queueAuthoredBuildingFlatLighting(mapId, sceneRecord);
       return result;
     };
     Object.defineProperty(map, '__hobunjiFlatBuildingLightingSetHook', { value: true, configurable: true });
-    for (const [mapId, sceneRecord] of map.entries()) installAuthoredBuilding(mapId, sceneRecord);
+    for (const [mapId, sceneRecord] of map.entries()) queueAuthoredBuildingFlatLighting(mapId, sceneRecord);
     return true;
   }
 
@@ -126,7 +134,8 @@
 
   window.FarmhouseFlatLighting = {
     install,
-    installAuthoredBuilding,
+    applyAuthoredBuildingFlatLighting,
+    queueAuthoredBuildingFlatLighting,
     makeOverlayOnly,
     OVERLAY_ONLY_LIGHT_LAYER,
     debugSnapshot: () => ({
