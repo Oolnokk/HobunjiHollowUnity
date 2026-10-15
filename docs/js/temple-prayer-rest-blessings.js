@@ -1,17 +1,17 @@
 (() => {
   'use strict';
 
-  if (Number(window.TemplePrayerRestBlessings?.version) >= 2) return;
+  if (Number(window.TemplePrayerRestBlessings?.version) >= 3) return;
 
-  const VERSION = 2;
+  const VERSION = 3;
   const SAVE_FIELD = 'templePrayerRestBlessings'; // Stored on the active character so prayer/rest timers survive reloads with that character.
   const PRAYER_DURATION_HOURS = 7 * 24; // Used by all three temple prayers: one full in-game week.
   const WELL_RESTED_DURATION_HOURS = 16; // Used after a completed farmhouse-bed Sleep passage.
-  const ACTION_ID = 'temple_pray'; // Used by Action 3 while the player is seated in a temple pew during the morning service.
+  const ACTION_ID = 'temple_pray'; // Used by Action 3 while the player is seated in a temple pew on Anan.
   const ACTION_BUTTON_ID = 'btnAction3'; // Leaves Action 1 Stand and Action 2 Wait untouched while seated.
   const OWNED_BED_SLEEP_PENDING_KEY = '__hobunjiOwnedBedSleepPending'; // One-shot token armed only by the player's real bed Sleep interaction.
   const DOT_AFFLICTIONS = new Set(['bleedingHealth', 'poisonedHealth', 'burningHealth', 'kindlingHealth', 'corrodedHealth']); // Narshangetic resistance applies only to Health DoT buildup, not every Damage-family affliction.
-  const CHANGE_SUMMARY = 'Morning Temple Service pews offer three weeklong prayers; only player-bed Sleep grants the 16-hour Well Rested buff.'; // Shown in mobile-readable diagnostics.
+  const CHANGE_SUMMARY = 'Temple benches offer three weeklong prayers at any time on Anan, including the Spirit Communion layout; only player-bed Sleep grants the 16-hour Well Rested buff.'; // Shown in mobile-readable diagnostics.
 
   const PRAYERS = Object.freeze({
     naoine: Object.freeze({ id: 'naoine', name: "Nao'ine Prayer", icon: '🌿', healingMultiplier: 1.20, skillStacks: Object.freeze({ foraging: 3, farming: 3 }), description: '+20% healing; +3 Foraging and Farming.' }),
@@ -22,8 +22,8 @@
   let state = { prayer: null, wellRested: null }; // Current character-scoped blessing state read by every runtime modifier below.
   let actionSnapshot = null; // Original Action 3 presentation restored when the Pray prompt is no longer valid.
   let actionInjected = false; // Prevents repeated snapshots while the prompt sync loop is active.
-  let lastPromptEligible = false; // Exposed in diagnostics to make mobile service/seat failures visible.
-  let lastServiceId = null; // Exposed in diagnostics to show which authored service window matched.
+  let lastPromptEligible = false; // Exposed in diagnostics to make mobile day/seat failures visible.
+  let lastPrayerWeekday = null; // Exposed in diagnostics to show the calendar weekday used for prayer eligibility.
   let lastRestSource = null; // Exposed in diagnostics to prove Well Rested came from the player-bed token.
   let lastError = null; // Captures nonfatal hook/storage errors for the in-game debug report.
   let resourceHooksInstalled = false; // Ensures ResourceSystem wrappers install once after late game boot.
@@ -110,29 +110,10 @@
     return !!state.wellRested;
   }
 
-  function parseMinutes(value) {
-    const match = String(value || '').match(/^(\d{1,2}):(\d{2})$/); // Parses the same authored service HH:MM boundaries used by NPC scheduling.
-    return match ? Number(match[1]) * 60 + Number(match[2]) : NaN;
-  }
-
-  function withinWindow(now, start, end) {
-    if (![now, start, end].every(Number.isFinite)) return false;
-    if (start === end) return true;
-    return start < end ? now >= start && now < end : now >= start || now < end;
-  }
-
-  function activeTempleService() {
+  function activeTemplePrayerDay() {
     if (window.__hobunjiFurnitureDebug?.getCurrentArea?.() !== 'map_i_temple') return null;
-    const weekday = window.CalendarSystem?.currentWeekdayName?.(); // Morning service follows the same authored weekday as NPC congregation attendance.
-    const now = Math.floor(finite(window.CalendarSystem?.getHour?.(), -1) * 60);
-    for (const schedule of window.SCRATCHBONES_CONFIG?.game?.communitySchedules || []) {
-      if ((schedule.area || '') !== 'map_i_temple') continue;
-      if (schedule.id !== 'shared_temple_service') continue; // Spirit Communion is deliberately not a prayer-menu service.
-      if (schedule.day && schedule.day !== weekday) continue;
-      if (!withinWindow(now, parseMinutes(schedule.from), parseMinutes(schedule.to))) continue;
-      return { id: schedule.id, label: schedule.label || 'Temple Service' };
-    }
-    return null;
+    const weekday = window.CalendarSystem?.currentWeekdayName?.(); // Public weekday reads use the civil-midnight bridge, matching the Anan Spirit Communion layout from 00:00 onward.
+    return weekday === 'Anan' ? { id: 'anan', label: weekday } : null;
   }
 
   function seatedInTemplePew() {
@@ -141,9 +122,9 @@
   }
 
   function promptEligible() {
-    const service = activeTempleService(); // A prayer prompt only exists while the authored morning Temple Service window is active.
-    lastServiceId = service?.id || null;
-    lastPromptEligible = !!service && seatedInTemplePew();
+    const prayerDay = activeTemplePrayerDay(); // Prayer is intentionally day-gated rather than service-window-gated so every temple bench works throughout Anan.
+    lastPrayerWeekday = prayerDay?.label || null;
+    lastPromptEligible = !!prayerDay && seatedInTemplePew();
     return lastPromptEligible;
   }
 
@@ -164,7 +145,7 @@
     const label = button.querySelector('.abt-label');
     if (label) label.textContent = 'Pray';
     else button.textContent = 'Pray';
-    button.title = 'Pray during the service';
+    button.title = 'Pray at the temple on Anan';
     return true;
   }
 
@@ -457,7 +438,7 @@
     expireState();
     return {
       installed: true, version: VERSION, latestChange: CHANGE_SUMMARY,
-      gameHour: currentGameHour(), serviceId: lastServiceId, promptEligible: lastPromptEligible,
+      gameHour: currentGameHour(), prayerWeekday: lastPrayerWeekday, promptEligible: lastPromptEligible,
       seated: seatedInTemplePew(), actionInjected,
       prayer: state.prayer ? { ...state.prayer, name: PRAYERS[state.prayer.id]?.name || state.prayer.id, remainingHours: Math.max(0, state.prayer.expiresAtGameHour - currentGameHour()) } : null,
       wellRested: state.wellRested ? { ...state.wellRested, remainingHours: Math.max(0, state.wellRested.expiresAtGameHour - currentGameHour()) } : null,
@@ -509,6 +490,6 @@
     potionEffectScale,
     debugSnapshot,
     openMenu,
-    _test: Object.freeze({ choosePrayer, grantWellRested, activeTempleService, seatedInTemplePew, promptEligible, expireState, strengthenPotionMultiplier, consumeOwnedBedSleepToken, sync }),
+    _test: Object.freeze({ choosePrayer, grantWellRested, activeTemplePrayerDay, activeTempleService: activeTemplePrayerDay, seatedInTemplePew, promptEligible, expireState, strengthenPotionMultiplier, consumeOwnedBedSleepToken, sync }),
   });
 })();
