@@ -30,12 +30,14 @@
       const [shaftImage, headImage, composed] = await Promise.all([api.loadImage(shaft.sprite, '../../'), api.loadImage(head.sprite, '../../'), api.compose(shaftKey, headKey, '../../')]); // Reuses cached bitmaps, no animation loop.
       if (request !== serial) return;
       for (const [id, image] of [['shaft-canvas', shaftImage], ['head-canvas', headImage], ['preview', composed]]) {
-        const context = byId(id).getContext('2d'); // Original sprite coordinates displayed without cropping.
-        context.clearRect(0, 0, 450, 1204); context.drawImage(image, 0, 0, 450, 1204);
+        const target = byId(id); // The assembly preview follows the expanded bitmap; pivot editors keep their original source frame.
+        if (id === 'preview') { target.width = image.width; target.height = image.height; }
+        const context = target.getContext('2d'); // Native dimensions show the complete assembly without distorting its aspect ratio.
+        context.clearRect(0, 0, target.width, target.height); context.drawImage(image, 0, 0, target.width, target.height);
         if (id === 'shaft-canvas') shaft.attachments.forEach((point, index) => marker(context, point, index === socketIndex ? '#ffd16c' : '#63e1cf'));
         if (id === 'head-canvas') marker(context, head.attach, '#ffd16c');
       }
-      byId('debug').textContent = JSON.stringify({ shaft: shaftKey, head: headKey, sourceWeapon: shaft.sourceShape, sockets: shaft.attachments, headPivot: head.attach, effective: api.settings(shaftKey, headKey), disallowed: api.isDisallowed(shaftKey, headKey), revision: api.diagnostics('').revision }, null, 2);
+      byId('debug').textContent = JSON.stringify({ shaft: shaftKey, head: headKey, sourceWeapon: shaft.sourceShape, sockets: shaft.attachments, headPivot: head.attach, effective: api.settings(shaftKey, headKey), frame: composed.modularFrame, bitmap: { width: composed.width, height: composed.height }, disallowed: api.isDisallowed(shaftKey, headKey), revision: api.diagnostics('').revision }, null, 2);
     } catch (error) { if (request === serial) message(`Preview failed: ${error.message}`); }
   }
   function render() {

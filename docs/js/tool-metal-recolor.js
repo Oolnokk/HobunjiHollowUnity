@@ -910,6 +910,7 @@
       const canvas = document.createElement('canvas');
       canvas.width = img.naturalWidth || img.width || 1;
       canvas.height = img.naturalHeight || img.height || 1;
+      if (img.modularFrame) canvas.modularFrame = { ...img.modularFrame }; // Preserve logical origin/extent through recoloring for held-plane geometry.
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
       if (!ctx) throw new Error('Unable to get 2D canvas context for tool recolor.');
       ctx.imageSmoothingEnabled = false;

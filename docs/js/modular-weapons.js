@@ -5,6 +5,7 @@
   const DRAFT_KEY = 'hobunji.modularWeapons.v2'; // New calibration/rules baseline; the old draft remains stored separately.
   const transforms = ['scaleX', 'scaleY', 'flipX', 'flipY', 'x', 'y', 'rotation']; // Inheritable head placement fields.
   const images = new Map(); // CORS image promises reused across combinations.
+  const alphaBounds = new WeakMap(); // Each source bitmap is scanned once when finding visible composition bounds.
   const canvases = new Map(); // Bounded composed sprites, created only when requested.
   let config = global.MODULAR_WEAPON_CONFIG; // Current authored attachment data.
   let revision = 0; // Discards stale preview renders after edits.
@@ -81,29 +82,92 @@
     }));
     return images.get(url);
   }
+  function headTransform(attach, values, pivot) {
+    const angle = (attach.rotation + values.rotation) * Math.PI / 180; // Combined head rotation, applied after socket-local translation.
+    const socketAngle = attach.rotation * Math.PI / 180; // Socket orientation also rotates the translation.
+    const sx = values.scaleX * (values.flipX ? -1 : 1), sy = values.scaleY * (values.flipY ? -1 : 1); // Signed scales preserve mirrored attachment geometry.
+    const a = Math.cos(angle) * sx, b = Math.sin(angle) * sx, c = -Math.sin(angle) * sy, d = Math.cos(angle) * sy; // Canvas affine matrix, including pivot displacement.
+    return { a, b, c, d,
+      e: attach.x + Math.cos(socketAngle) * values.x - Math.sin(socketAngle) * values.y - a * pivot.x - c * pivot.y,
+      f: attach.y + Math.sin(socketAngle) * values.x + Math.cos(socketAngle) * values.y - b * pivot.x - d * pivot.y };
+  }
+  function compositionFrame(shaft, head, bounds, values) {
+    let left = 0, top = 0, right = 450, bottom = 1204; // Keep the complete donor frame as the fixed grip reference.
+    for (const attach of shaft.attachments) {
+      const matrix = headTransform(attach, values, head.attach); // Bounds and drawing use exactly the same affine transform.
+      for (const x of [bounds.left, bounds.right]) for (const y of [bounds.top, bounds.bottom]) {
+        const px = matrix.a * x + matrix.c * y + matrix.e, py = matrix.b * x + matrix.d * y + matrix.f; // Transformed source-bound corner.
+        left = Math.min(left, px); top = Math.min(top, py); right = Math.max(right, px); bottom = Math.max(bottom, py);
+      }
+    }
+    left = Math.floor(left) - 4; top = Math.floor(top) - 4; // Transparent padding protects filtered edge pixels and recolor outlines.
+    return { left, top, width: Math.ceil(right) + 4 - left, height: Math.ceil(bottom) + 4 - top };
+  }
+  function visibleBounds(image) {
+    if (alphaBounds.has(image)) return alphaBounds.get(image);
+    const sample = document.createElement('canvas'); // Read original source alpha in its authored coordinate frame.
+    sample.width = 450; sample.height = 1204;
+    const context = sample.getContext('2d', { willReadFrequently: true }); // One-time scan, never part of a render frame.
+    context.drawImage(image, 0, 0, 450, 1204);
+    const pixels = context.getImageData(0, 0, 450, 1204).data; // Include even faint authored pixels to avoid silently trimming material.
+    let left = 450, top = 1204, right = 0, bottom = 0; // Nonzero-alpha source envelope.
+    for (let y = 0; y < 1204; y++) for (let x = 0; x < 450; x++) if (pixels[(y * 450 + x) * 4 + 3]) {
+      left = Math.min(left, x); top = Math.min(top, y); right = Math.max(right, x + 1); bottom = Math.max(bottom, y + 1);
+    }
+    const bounds = right ? { left, top, right, bottom } : { left: 0, top: 0, right: 0, bottom: 0 }; // Empty assets still retain the donor frame.
+    alphaBounds.set(image, bounds);
+    return bounds;
+  }
+  function planeLayout(canvas, referenceWidth = 0.5) {
+    const frame = canvas?.modularFrame || { left: 0, top: 0, width: 450, height: 1204 }; // Layout uses logical authoring pixels, independent of bitmap downsampling.
+    const unit = referenceWidth / 450; // Same world units per authored pixel as every original weapon.
+    return { width: frame.width * unit, height: frame.height * unit,
+      x: (frame.left + frame.width / 2 - 225) * unit,
+      y: -(frame.top + frame.height / 2 - 602) * unit };
+  }
+  function fitPlaneGeometry(geometry, canvas, referenceWidth = 0.5) {
+    const layout = planeLayout(canvas, referenceWidth); // Updates a shared quad, preserving its identity for dual-wield/NPC copies.
+    if (geometry.userData?.modularLayout && Object.keys(layout).every(key => geometry.userData.modularLayout[key] === layout[key])) return false;
+    const position = geometry.attributes.position; // A one-segment PlaneGeometry has these four corners and unchanged UVs.
+    position.setXYZ(0, layout.x - layout.width / 2, layout.y + layout.height / 2, 0);
+    position.setXYZ(1, layout.x + layout.width / 2, layout.y + layout.height / 2, 0);
+    position.setXYZ(2, layout.x - layout.width / 2, layout.y - layout.height / 2, 0);
+    position.setXYZ(3, layout.x + layout.width / 2, layout.y - layout.height / 2, 0);
+    position.needsUpdate = true;
+    geometry.parameters.width = layout.width; geometry.parameters.height = layout.height;
+    if (!geometry.userData) geometry.userData = {};
+    geometry.userData.modularLayout = layout;
+    geometry.computeBoundingBox(); geometry.computeBoundingSphere();
+    return true;
+  }
   async function compose(shaftKey, headKey, base = '') {
     const cacheKey = `${revision}:${base}:${shaftKey}:${headKey}`; // Metal is recolored later through the existing pipeline.
     if (canvases.has(cacheKey)) return canvases.get(cacheKey);
     const shaft = config.shafts[shaftKey], head = config.heads[headKey]; // Validated manifest entries.
     if (!shaft || !head) throw new Error('Unknown weapon parts.');
     const task = Promise.all([loadImage(shaft.sprite, base), loadImage(head.sprite, base)]).then(([shaftImage, headImage]) => {
-      const canvas = document.createElement('canvas'); // Keep the donor frame so authored grips and scale remain exact.
-      canvas.width = 450; canvas.height = 1204;
-      const ctx = canvas.getContext('2d'); // Shared editor/runtime compositor.
-      const values = settings(shaftKey, headKey); // Sparse per-head values inherit the current shaft defaults.
+      const values = settings(shaftKey, headKey); // Resolved authoring values are shared by bounds calculation and drawing.
+      const frame = compositionFrame(shaft, head, visibleBounds(headImage), values); // Expand to contain every rotated, scaled and translated head.
+      let pixelScale = Math.min(1, 2048 / Math.max(frame.width, frame.height), Math.sqrt(2097152 / (frame.width * frame.height))); // Bound mobile texture memory without cropping logical geometry.
+      if (pixelScale < 1) {
+        const padding = Math.ceil(4 / pixelScale); // Retain several bitmap pixels of outline clearance even after extreme downsampling.
+        frame.left -= padding; frame.top -= padding; frame.width += padding * 2; frame.height += padding * 2;
+        pixelScale = Math.min(1, 2048 / Math.max(frame.width, frame.height), Math.sqrt(2097152 / (frame.width * frame.height)));
+      }
+      const canvas = document.createElement('canvas'); // Bitmap resolution may shrink for extreme authoring; the donor frame and world scale never change.
+      canvas.width = Math.max(1, Math.ceil(frame.width * pixelScale)); canvas.height = Math.max(1, Math.ceil(frame.height * pixelScale));
+      canvas.modularFrame = frame;
+      const ctx = canvas.getContext('2d'); // All drawing remains in original source-pixel coordinates.
+      ctx.scale(canvas.width / frame.width, canvas.height / frame.height);
+      ctx.translate(-frame.left, -frame.top);
       if (shaft.crop) {
         ctx.save(); ctx.beginPath(); ctx.rect(shaft.crop.x, shaft.crop.y, shaft.crop.width, shaft.crop.height); ctx.clip();
         ctx.drawImage(shaftImage, 0, 0, 450, 1204); ctx.restore();
       } else ctx.drawImage(shaftImage, 0, 0, 450, 1204);
       for (const attach of shaft.attachments) {
-        ctx.save();
-        ctx.translate(attach.x, attach.y);
-        ctx.rotate(attach.rotation * Math.PI / 180);
-        ctx.translate(values.x, values.y);
-        ctx.rotate(values.rotation * Math.PI / 180);
-        ctx.scale(values.scaleX * (values.flipX ? -1 : 1), values.scaleY * (values.flipY ? -1 : 1));
-        ctx.drawImage(headImage, -head.attach.x, -head.attach.y, 450, 1204);
-        ctx.restore();
+        const matrix = headTransform(attach, values, head.attach); // Reuse the exact transform whose corners expanded the canvas.
+        ctx.save(); ctx.transform(matrix.a, matrix.b, matrix.c, matrix.d, matrix.e, matrix.f);
+        ctx.drawImage(headImage, 0, 0, 450, 1204); ctx.restore();
       }
       return canvas;
     });
@@ -139,6 +203,6 @@
       shafts: Object.keys(config.shafts).filter(key => sources.has(config.shafts[key].sourceShape)) };
   }
   try { const draft = global.localStorage?.getItem(DRAFT_KEY); if (draft) replace(JSON.parse(draft)); } catch (error) { global.__farmLog?.(`[Foundry] Ignored invalid attachment draft: ${error.message}`, 'warn'); }
-  global.ModularWeapons = { getConfig: () => config, replace, settings, isDisallowed, transforms, decode, itemKey, sourceShape, compose, loadImage, registerDefinitions, unlockedParts,
+  global.ModularWeapons = { getConfig: () => config, replace, settings, isDisallowed, transforms, decode, itemKey, sourceShape, headTransform, compositionFrame, planeLayout, fitPlaneGeometry, compose, loadImage, registerDefinitions, unlockedParts,
     diagnostics: key => ({ parts: decode(key), gripSource: sourceShape(key), cachedSprites: canvases.size, revision }) };
 })(window);

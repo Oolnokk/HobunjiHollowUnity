@@ -22105,6 +22105,7 @@
       const _toolTexLoader = new THREE.TextureLoader();
       const toolTextures = {};
       const loadedToolTextures = {};
+      const modularToolGeometries = new Map(); // Shared per-item quads let an asynchronous canvas expansion update both hands and every held copy.
       // One loader path for every TOOL_ITEM_DEFS entry: boot-time keys
       // below, and keys registered later at runtime (unbound Harlyao relic
       // weapons, js/harlyao-relics.js) through ensureToolTexture().
@@ -22167,6 +22168,7 @@
         window.ToolMetalRecolor?.getRecoloredCanvas(def.sprite, quantizedOpts).then(canvas => {
           tex.image = canvas;
           tex.needsUpdate = true;
+          if (def.modular && modularToolGeometries.has(itemKey)) window.ModularWeapons.fitPlaneGeometry(modularToolGeometries.get(itemKey), canvas, TOOL_MODEL_WIDTH);
         }).catch(error => { window.__farmLog?.(`[Foundry/metal sprite] ${error.message}`, 'error'); });
       }
 
@@ -22185,7 +22187,12 @@
         const planeW = TOOL_MODEL_WIDTH;
         const planeH = planeW * (imgH / imgW);   // e.g. 450×1204 → 0.5 × 1.338
         const g   = new THREE.Group();
-        const geo = new THREE.PlaneGeometry(planeW, planeH);
+        let geo = def?.modular ? modularToolGeometries.get(itemKey) : null; // Reuse the same geometry object so existing dual-wield copies receive layout updates.
+        if (!geo) {
+          geo = new THREE.PlaneGeometry(planeW, planeH);
+          if (def?.modular) modularToolGeometries.set(itemKey, geo);
+        }
+        if (def?.modular) window.ModularWeapons.fitPlaneGeometry(geo, toolTextures[itemKey].image, TOOL_MODEL_WIDTH);
         const mat = def?.modular
           ? window.HobunjiSpritePngSurface.makeMaterial(THREE, toolTextures[itemKey], itemKey, { side: THREE.DoubleSide })
           : new THREE.MeshBasicMaterial({ map: toolTextures[itemKey], transparent: true, alphaTest: 0.08, side: THREE.DoubleSide });
