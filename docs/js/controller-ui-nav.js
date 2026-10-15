@@ -32,6 +32,10 @@
   //                     [tabindex] are discovered automatically — most
   //                     panels in this game need this on precisely nothing,
   //                     since almost everything here is already a <button>.
+  //   data-ctrl-group   optional, makes a nested section one selectable group.
+  //                     Confirm enters; Back returns to the whole section.
+  //                     Existing menu sections, inventories, perk trees and
+  //                     tab rows are recognized without extra markup.
   //   data-ctrl-skip    optional, the opposite of data-ctrl-item — pulls an
   //                     otherwise-focusable element (or an especially risky
   //                     one, e.g. the pause menu's "reset farm" button) out
@@ -47,8 +51,16 @@
   const SEMANTIC_PANEL_SELECTOR = '[role="dialog"][aria-modal="true"]';
   const PANEL_SELECTOR = `${EXPLICIT_PANEL_SELECTOR}, ${SEMANTIC_PANEL_SELECTOR}`;
   const TABS_SELECTOR = '[data-ctrl-tabs]';
+  const GROUP_SELECTOR = [
+    '[data-ctrl-group]', '[data-ctrl-tabs]', '[role="tablist"]', 'details',
+    '.menu-section', '.farm-section', '.farm-storage-col', '.ship-pane',
+    '.inv-grid-area', '.inv-info', '.inv-equip-section', '.inv-key-section',
+    '.inv-pack-clothing', '.inv-gear-extra-section', '.perk-tree',
+    '.loadout-slot', '.loadout-options', '.cooking-layout > aside', '.cooking-slot', '.cooking-picker', '.cooking-footer',
+    '#stableList', '#desktopInputBindings', '#controllerInputBindings',
+  ].join(', '); // Reuses authored section boundaries instead of guessing nests from geometric proximity.
   const NAV_SELECTOR = [
-    'button', 'a[href]', 'input', 'select', 'textarea',
+    'button', 'a[href]', 'input', 'select', 'textarea', 'summary',
     '[role="button"]', '[tabindex]', '[data-ctrl-item]',
   ].join(', ');
   const TEXT_INPUT_TYPES = new Set(['text', 'search', 'email', 'url', 'number', 'password', 'tel', 'date', 'time', 'datetime-local', 'month', 'week']);
@@ -115,6 +127,8 @@
   // ── panel stack ─────────────────────────────────────────────────────
   let stack = [];
   const lastFocusedByPanel = new WeakMap();
+  const groupsByPanel = new WeakMap(); // Retains entered nests while a modal temporarily owns focus.
+  const lastFocusedByGroup = new WeakMap(); // Remembers the control selected when leaving an entered section.
   const knownPanels = new Set(); // Reused by visibility reconciliation so gameplay never scans the entire DOM for panel roots.
   let currentTarget = null;
   let focusPath = null; // Remembers the active control through in-panel DOM rebuilds.
@@ -159,6 +173,9 @@
     const currentSet = new Set(current);
     const prevTop = activePanel();
 
+    for (const panel of stack) {
+      if (!currentSet.has(panel)) clearGroups(panel);
+    }
     stack = stack.filter(p => currentSet.has(p));
     for (const p of current) {
       if (!stack.includes(p)) stack.push(p);
@@ -187,11 +204,12 @@
     // cancel-avoidance below, just needed here too since these two
     // fast-paths bypass it.
     const notCancel = el => el && !el.hasAttribute('data-ctrl-cancel') && el;
+    const targets = navigationTargets(panel); // Projects remembered controls onto the currently entered nest.
     const remembered = lastFocusedByPanel.get(panel);
     const startFocus =
-      notCancel(document.activeElement && belongsToNavigation(document.activeElement, panel) && isNavTarget(document.activeElement) && document.activeElement)
-      || notCancel(remembered && belongsToNavigation(remembered, panel) && isVisible(remembered) && !isDisabled(remembered) && remembered)
-      || pickDefaultTarget(panel);
+      notCancel(document.activeElement && belongsToNavigation(document.activeElement, panel) && targets.includes(document.activeElement) && document.activeElement)
+      || notCancel(remembered && belongsToNavigation(remembered, panel) && targets.includes(remembered) && remembered)
+      || pickDefaultTarget(panel, targets);
     setFocus(startFocus, { scroll: false });
   }
 
@@ -205,18 +223,97 @@
     if (!el || el.nodeType !== 1) return false;
     if (el.closest('[data-ctrl-skip]')) return false;
     if (isDisabled(el)) return false;
-    if (el.hasAttribute('tabindex') && Number(el.getAttribute('tabindex')) < 0 && !el.hasAttribute('data-ctrl-item')) return false;
+    if (el.hasAttribute('tabindex') && Number(el.getAttribute('tabindex')) < 0 && !el.hasAttribute('data-ctrl-item') && !el.matches(GROUP_SELECTOR)) return false;
     return isVisible(el);
   }
 
   function targetsInPanel(panel) {
-    return Array.from(panel.querySelectorAll(NAV_SELECTOR)).filter(isNavTarget);
+    return Array.from(panel.querySelectorAll(NAV_SELECTOR)).filter(el => isNavTarget(el) && !el.matches(GROUP_SELECTOR));
   }
 
 
+  function clearGroups(panel) {
+    for (const entry of groupsByPanel.get(panel) || []) entry.node.classList.remove('ctrl-nav-group-active');
+    groupsByPanel.delete(panel);
+  }
+
+  function enteredGroups(panel) {
+    const entries = groupsByPanel.get(panel) || []; // Validated only for menu actions/mutations, never on idle controller frames.
+    let parent = panel; // Ensures a rebuilt section still belongs to the same entered hierarchy.
+    for (let index = 0; index < entries.length; index++) {
+      const entry = entries[index]; // Stores the original DOM path so whole-section rebuilds preserve confinement.
+      const node = entry.node.isConnected ? entry.node : resolveFocusPath(entry.path, true).container; // Reuses stable ids/data-tree and sibling positions.
+      if (!node || node === parent || !parent.contains(node) || !node.matches(GROUP_SELECTOR) || !isNavTarget(node) || !belongsToNavigation(node, panel)) {
+        for (const removed of entries.splice(index)) removed.node.classList.remove('ctrl-nav-group-active');
+        break;
+      }
+      if (entry.node !== node) {
+        entry.node.classList.remove('ctrl-nav-group-active');
+        entry.node = node;
+      }
+      if (!node.classList.contains('ctrl-nav-group-active')) node.classList.add('ctrl-nav-group-active');
+      parent = node;
+    }
+    groupsByPanel.set(panel, entries);
+    return entries;
+  }
+
+  function navigationRoot(panel) {
+    return enteredGroups(panel).at(-1)?.node || panel;
+  }
+
+  function groupTarget(el, root, panel) {
+    let target = el; // Outermost unentered section becomes the single spatial candidate for its descendants.
+    for (let node = el; node && node !== root; node = node.parentElement) {
+      if (node.matches(GROUP_SELECTOR) && isNavTarget(node) && belongsToNavigation(node, panel)) target = node;
+    }
+    return target;
+  }
+
   function navigationTargets(panel) {
-    // The top menu owns controller focus until it closes, including non-modal submenus.
-    return targetsInPanel(panel).filter(el => belongsToNavigation(el, panel));
+    const root = navigationRoot(panel); // Only descendants of this nest can compete for directional focus.
+    const targets = targetsInPanel(root).filter(el => belongsToNavigation(el, panel)); // Disabled/hidden/empty sections never become traps.
+    return [...new Set(targets.map(el => groupTarget(el, root, panel)))];
+  }
+
+  function enterGroup(group, panel) {
+    const entries = enteredGroups(panel); // Nested groups unwind one level per Back press.
+    rememberFocusPath(group);
+    entries.push({ node: group, path: focusPath });
+    groupsByPanel.set(panel, entries);
+    group.classList.add('ctrl-nav-group-active');
+    updateHintBar(panel);
+    const targets = navigationTargets(panel); // Includes subgroups as whole targets, never their unentered controls.
+    const remembered = lastFocusedByGroup.get(group); // Re-entering a group returns to its last surviving control.
+    setFocus(targets.includes(remembered) ? remembered : pickDefaultTarget(panel, targets));
+  }
+
+  function leaveGroup(panel) {
+    const entries = enteredGroups(panel); // Recovers rebuilt groups before choosing the parent selection.
+    const entry = entries.pop(); // Consumes Back before the panel's close button can run.
+    if (!entry) return false;
+    lastFocusedByGroup.set(entry.node, currentTarget);
+    entry.node.classList.remove('ctrl-nav-group-active');
+    updateHintBar(panel);
+    setFocus(entry.node);
+    return true;
+  }
+
+  function adoptFocusedGroups(el, panel) {
+    if (currentTarget === el) return; // Programmatic focus already has an explicit scope; mouse/native focus may choose another section.
+    clearGroups(panel);
+    const ancestors = []; // Reconstructs nesting when switching from mouse/touch or another native focus owner.
+    for (let node = el.parentElement; node && node !== panel; node = node.parentElement) {
+      if (node.matches(GROUP_SELECTOR) && belongsToNavigation(node, panel)) ancestors.unshift(node);
+    }
+    const previousPath = focusPath; // Scope paths must not overwrite the selected control's recovery path.
+    const entries = ancestors.map(node => {
+      rememberFocusPath(node);
+      node.classList.add('ctrl-nav-group-active');
+      return { node, path: focusPath };
+    });
+    focusPath = previousPath;
+    groupsByPanel.set(panel, entries);
   }
 
   function owningRegisteredPanel(el) {
@@ -256,28 +353,34 @@
     for (let node = el; node && node !== panel; node = node.parentElement) {
       const parent = node.parentElement; // Used to record the control's location within each container.
       if (!parent) return;
-      const attribute = ['id', 'data-stack-id', 'data-item-key', 'data-key'].find(name => node.getAttribute(name)); // Prefer exact stack identity over item type.
+      const attribute = ['id', 'data-stack-id', 'data-item-key', 'data-key', 'data-tree', 'data-perk-toggle', 'data-perk', 'data-perk-action'].find(name => node.getAttribute(name)); // Prefer exact stack identity over item type.
       steps.unshift({ node, index: Array.prototype.indexOf.call(parent.children, node),
         attribute, value: attribute ? node.getAttribute(attribute) : null });
     }
     focusPath = { panel, steps };
   }
 
-  function recoverFocusTarget(panel, targets) {
-    if (focusPath?.panel !== panel) return null;
+  function resolveFocusPath(path, strict = false) {
     let siblings = []; // Retains the final row for nearest-enabled-slot fallback.
     let slot = 0; // Locates the old selection when its replacement is disabled or empty.
-    let container = panel; // Walks the old control's hierarchy inside this menu only.
-    for (const step of focusPath.steps) {
+    let container = path.panel; // Walks the old control's hierarchy inside this menu only.
+    for (const step of path.steps) {
       const children = Array.from(container.children); // Read only during stale-focus recovery, never during idle polling.
-      const replacement = children.find(child => child === step.node)
-        || (step.attribute && children.find(child => child.getAttribute(step.attribute) === step.value))
-        || children[Math.min(step.index, children.length - 1)]; // A consumed/transferred last stack selects the preceding slot.
+      const identified = children.find(child => child === step.node)
+        || (step.attribute && children.find(child => child.getAttribute(step.attribute) === step.value)); // Used to distinguish a rebuilt section from an unrelated sibling.
+      if (strict && step.attribute && !identified) return { container: null, siblings, slot };
+      const replacement = identified || children[Math.min(step.index, children.length - 1)]; // A consumed/transferred last stack selects the preceding slot.
       if (!replacement) break;
       siblings = children;
       slot = children.indexOf(replacement);
       container = replacement;
     }
+    return { container, siblings, slot };
+  }
+
+  function recoverFocusTarget(panel, targets) {
+    if (focusPath?.panel !== panel) return null;
+    const { container, siblings, slot } = resolveFocusPath(focusPath); // Shared by control and nested-section rebuild recovery.
     if (targets.includes(container)) return container;
     return targets.find(target => container.contains(target))
       || siblings.filter(child => targets.includes(child)).sort((a, b) => Math.abs(siblings.indexOf(a) - slot) - Math.abs(siblings.indexOf(b) - slot))[0]
@@ -290,7 +393,7 @@
     currentTarget = el || null;
     if (!currentTarget) { focusPath = null; return; }
     rememberFocusPath(currentTarget);
-    currentTarget.classList.add('ctrl-nav-focus');
+    if (!currentTarget.classList.contains('ctrl-nav-focus')) currentTarget.classList.add('ctrl-nav-focus');
     if (!currentTarget.hasAttribute('tabindex') && currentTarget.tabIndex < 0) currentTarget.tabIndex = -1;
     try { currentTarget.focus({ preventScroll: true }); } catch { /* not every candidate supports real focus */ }
     if (opts.scroll !== false) {
@@ -301,10 +404,11 @@
   function refreshFocusIfStale(availableTargets = null) {
     const panel = activePanel();
     if (!panel) return;
-    if (currentTarget) {
-      if (availableTargets ? availableTargets.includes(currentTarget) : (isNavTarget(currentTarget) && belongsToNavigation(currentTarget, panel))) return;
+    const targets = availableTargets || navigationTargets(panel); // Reconcile scope before accepting a stale control.
+    if (currentTarget && targets.includes(currentTarget)) {
+      if (!currentTarget.classList.contains('ctrl-nav-focus')) currentTarget.classList.add('ctrl-nav-focus');
+      return;
     }
-    const targets = availableTargets || navigationTargets(panel); // Shares one discovery pass between recovery and default selection.
     setFocus(recoverFocusTarget(panel, targets) || pickDefaultTarget(panel, targets));
   }
 
@@ -413,6 +517,7 @@
     if (!panel) return;
     refreshFocusIfStale();
     if (!currentTarget) return;
+    if (currentTarget.matches(GROUP_SELECTOR)) { enterGroup(currentTarget, panel); return; }
     if (currentTarget.tagName === 'SELECT') { currentTarget.focus(); return; }
     if (isTextEditable(currentTarget)) { currentTarget.blur(); return; }
     if (currentTarget.tagName === 'INPUT' && (currentTarget.type === 'checkbox' || currentTarget.type === 'radio')) {
@@ -425,7 +530,8 @@
   function cancel() {
     const panel = activePanel();
     if (!panel) return;
-    const btn = Array.from(panel.querySelectorAll('[data-ctrl-cancel]')).find(isNavTarget);
+    if (leaveGroup(panel)) return;
+    const btn = Array.from(panel.querySelectorAll('[data-ctrl-cancel]')).find(el => isNavTarget(el) && belongsToNavigation(el, panel));
     if (btn) { btn.click(); return; }
     // Panels added later occasionally omit data-ctrl-cancel. Give B a safe,
     // universal fallback through the same Escape path their keyboard close
@@ -434,7 +540,9 @@
   }
 
   function findTabGroup(panel) {
-    const groups = Array.from(panel.querySelectorAll(TABS_SELECTOR));
+    const root = navigationRoot(panel); // Bumpers may switch tabs only inside the entered nest.
+    if (root !== panel && !root.matches(TABS_SELECTOR)) return null;
+    const groups = root.matches(TABS_SELECTOR) ? [root] : Array.from(root.querySelectorAll(TABS_SELECTOR));
     if (!groups.length) return null;
     if (currentTarget) {
       const containing = groups.find(g => g.contains(currentTarget));
@@ -454,7 +562,7 @@
     if (idx < 0) idx = 0;
     const next = items[(idx + delta + items.length) % items.length];
     next.click();
-    setFocus(next);
+    setFocus(groupTarget(next, navigationRoot(panel), panel));
   }
 
   // ── on-screen button hint bar ───────────────────────────────────────
@@ -479,7 +587,7 @@
     if (!panel || !padEverSeen) { hideHintBar(); return; }
     const el = ensureHintEl();
     el.classList.toggle('ctrl-nav-hint-bar-visible', true);
-    const hasTabs = !!panel.querySelector(TABS_SELECTOR);
+    const hasTabs = !!findTabGroup(panel); // The hint follows the same confinement as the bumper action.
     const hasCancel = true; // B always works: explicit close button first, universal Escape fallback otherwise.
     el.querySelector('.ctrl-nav-hint-tabs').style.display = hasTabs ? '' : 'none';
     const bBtn = el.querySelectorAll('.ctrl-nav-hint')[1];
@@ -634,6 +742,7 @@
       case 'ArrowRight': moveOrAdjust('right'); break;
       case 'Enter': case ' ': activate(); break;
       case 'Tab': cycleTabs(event.shiftKey ? -1 : 1); break;
+      case 'Escape': if (!leaveGroup(activePanel())) return; break;
       default: return;
     }
     event.preventDefault();
@@ -646,10 +755,11 @@
   document.addEventListener('focusin', (event) => {
     const panel = activePanel();
     if (panel && isNavTarget(event.target) && belongsToNavigation(event.target, panel)) {
+      adoptFocusedGroups(event.target, panel);
       if (currentTarget && currentTarget !== event.target) currentTarget.classList.remove('ctrl-nav-focus');
       currentTarget = event.target;
       rememberFocusPath(currentTarget);
-      currentTarget.classList.add('ctrl-nav-focus');
+      if (!currentTarget.classList.contains('ctrl-nav-focus')) currentTarget.classList.add('ctrl-nav-focus');
     }
   }, true);
 
@@ -676,7 +786,7 @@
     queueMicrotask(() => {
       reconcileQueued = false;
       reconcileStack();
-      if (currentTarget && !currentTarget.isConnected) refreshFocusIfStale();
+      if (activePanel()) refreshFocusIfStale();
     });
   }
   function scheduleVisibilitySettle() {
@@ -717,7 +827,7 @@
         if (node.nodeType === 1 && (node.matches?.(PANEL_SELECTOR) || node.querySelector?.(PANEL_SELECTOR))) panelTreeChanged = true;
       }
     }
-    if (panelTreeChanged || (currentTarget && !currentTarget.isConnected)) scheduleReconcile();
+    if (panelTreeChanged || (currentTarget && !currentTarget.isConnected) || (activePanel() && !currentTarget)) scheduleReconcile();
   });
   const attrObserver = new MutationObserver(() => {
     scheduleReconcile();
@@ -771,8 +881,10 @@
         targetTag: currentTarget?.tagName || null,
         targetId: currentTarget?.id || null,
         targetText: (currentTarget?.textContent || '').trim().slice(0, 40),
-        navigationMode: 'vector-cone',
-        latestChange: 'Menu rebuilds preserve controller selection by stack identity and nearby slot.',
+        navigationMode: 'nested-vector-cone',
+        groupDepth: panel ? enteredGroups(panel).length : 0,
+        groupId: panel ? navigationRoot(panel).id || navigationRoot(panel).getAttribute('data-tree') || null : null,
+        latestChange: 'Confirm enters glowing menu groups; Back exits one nest. Perk focus remains visible inside clipped trees.',
         coneHalfAngleDeg: Math.round(CONE_HALF_ANGLE * 180 / Math.PI),
         navigationTargetCount: navigationPerf.targetCount,
         navigationRectReads: navigationPerf.rectReads,

@@ -3379,8 +3379,14 @@
     .ctrl-nav-focus {
       outline: 3px solid var(--accent) !important;
       outline-offset: 2px !important;
-      box-shadow: 0 0 0 4px rgba(249,226,138,0.25), 0 0 18px 3px rgba(249,226,138,0.55) !important;
+      /* Inset feedback remains visible inside clipped perk trees and scroll lists. */
+      background-image: linear-gradient(rgba(249,226,138,0.16), rgba(249,226,138,0.16)) !important;
+      box-shadow: inset 0 0 0 2px var(--accent, #f9e28a), inset 0 0 14px rgba(249,226,138,0.35), 0 0 18px 3px rgba(249,226,138,0.55) !important;
       animation: ctrlNavPulse 1.4s ease-in-out infinite;
+    }
+    .ctrl-nav-group-active {
+      outline: 1px solid rgba(249,226,138,0.65);
+      outline-offset: -2px;
     }
     @keyframes ctrlNavPulse {
       0%, 100% { box-shadow: 0 0 0 4px rgba(249,226,138,0.25), 0 0 18px 3px rgba(249,226,138,0.55); }
