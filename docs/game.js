@@ -20484,7 +20484,9 @@
       function cameraSurfaceYAtWorld(x, z) {
         const ground = activeSurfaceYAtWorld(x, z); // Gameplay ground remains the authority for movement and uncovered tiles.
         const cover = window.EnvironmentSurfaceMicroPlateau?.cameraSurfaceYAt?.(x, z); // Exact rendered snow/slush height, exclusively for camera clearance.
-        return Number.isFinite(cover) ? Math.max(ground, cover) : ground;
+        const support = window.HobunjiWalkableElevation?.worldSurfaceTopAt?.(x, z, ground, currentArea); // Porch decks and walkable furniture (inn stage) are rendered above the gameplay ground.
+        const base = Number.isFinite(support) ? Math.max(ground, support) : ground;
+        return Number.isFinite(cover) ? Math.max(base, cover) : base;
       }
       // Find the first terrain crossing along the boom, then shorten along
       // that same ray. Sampling local surfaces handles ramps and raised tiles;
@@ -20697,7 +20699,7 @@
               resultY = minCameraY;
             }
           }
-          if (window.EnvironmentSurfaceMicroPlateau?.hasCameraSurface?.()) {
+          if (window.EnvironmentSurfaceMicroPlateau?.hasCameraSurface?.() || window.HobunjiWalkableElevation?.hasSupports?.()) {
             const fraction = shoulderCameraGroundFraction(lookAtX, lookAtY, lookAtZ, resultX, resultY, resultZ, 0.01); // Seated/scripted booms also stop at raised snow/slush along their sightline.
             resultX = lookAtX + (resultX - lookAtX) * fraction;
             resultY = lookAtY + (resultY - lookAtY) * fraction;
@@ -28343,6 +28345,8 @@
         makeCreatureEntity,
         despawnCreature,
         moveCreatureToward,
+        travelCreatureToward,
+        creatureTileWalkable,
         updateCreatureMesh,
         updateCreatureAnimFrame,
         tileSurfaceYInArea,
@@ -28694,7 +28698,7 @@
         TOOL_ITEM_DEFS,
         getGearInventory: () => gearInventory,
         saveGearInventory,
-        buildEquipmentSlots,
+        buildEquipmentSlots: () => window.EquipmentPanel?.buildEquipmentSlots?.(),
         refreshMetalToolWorldTexture,
         lootShopWorldState: window.LootRolling.lootShopWorldState,
         getStoreClothingPieces: () => STORE_CLOTHING_PIECES,
