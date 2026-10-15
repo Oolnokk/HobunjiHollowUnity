@@ -182,8 +182,9 @@
       } else {
         const sidePhase = side === 'right' ? (beatT + 0.5) % 1 : beatT;
         const punch = Math.pow(Math.max(0, Math.sin(Math.PI * sidePhase)), 0.45);
+        const reach = entry.walker.avatarGroup?.userData?.proceduralHandRig?.armLengthForSide?.(side) || dimensions.height * 0.29; // Uses each species' actual wrist-to-shoulder reach instead of its padded portrait height.
         socket.position.x *= 1 - 0.32 * punch;
-        socket.position.y += dimensions.height * (0.10 + 0.48 * punch);
+        socket.position.y += reach * (1.12 + 0.88 * punch);
         socket.position.z += dimensions.height * (0.045 - 0.055 * punch);
         socket.rotateX(-0.35 * punch);
       }

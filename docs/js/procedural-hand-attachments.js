@@ -387,6 +387,9 @@
           hobunjiOutlineOccluderDepthReplay: true,
         };
         child.layers.enable(OUTLINE_OCCLUDER_DEPTH_LAYER);
+        // Joining layer 4 alone also repaints colour during its replay. Register
+        // this material for the same temporary depth-only state as the portraits.
+        global.PngPlaneOutlineOccluder?.registerDepthMesh?.(child);
       }
       child.castShadow = true;
       child.receiveShadow = true;
@@ -909,6 +912,11 @@
       avatarRoot: options.avatarRoot || null,
       speciesId,
       gender,
+      armLengthForSide(side) {
+        const anatomy = options.avatarRoot?.userData; // Cached rendered reach shared by player and NPC dance poses.
+        const reach = Number(anatomy?.armLengthBySide?.[side] ?? anatomy?.scaledArmLength); // Already in the sockets' local units; never multiply by portrait height again.
+        return Number.isFinite(reach) && reach > 0 ? reach : modelHeight * 0.29;
+      },
       placeHandWorld,
       placeCalibrationPreviewWorld,
       setSideIdle,
@@ -955,6 +963,7 @@
           })),
           rightShoulderAxisTwistDeg: RIGHT_SHOULDER_AXIS_TWIST_DEG,
           parrotBodyLayerPortraitOcclusion: 'depthWrite-disabled+pre-shell-depth-replay',
+          latestChange: 'Dance punches follow each arm reach; parrot body meshes register for colorless outline depth replay.',
           parrotBodyShellTrim: activeVisual?.userData?.parrotBodyShellTrim || null,
           bodySurfaceTexture: 'wavy_surface.png',
           paperHandGuide: {

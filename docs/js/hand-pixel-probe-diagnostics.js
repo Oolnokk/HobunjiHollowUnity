@@ -65,7 +65,7 @@
           + `fallback=${fallback.mode || '-'} speed=${fallback.speed ?? '-'} strength=${fallback.gaitStrength ?? '-'} `
           + `owners=L:${fallback.owners?.left || '-'},R:${fallback.owners?.right || '-'} `
           + `hooked=${hand.outlineHookedMeshes ?? '-'} xray=${hand.heldXrayMeshes ?? '-'} `
-          + `captures=${hand.outlineBaseMatrixCaptures ?? '-'} shell=${hand.outlineLockedShellDraws ?? '-'} `
+          + `captures=${hand.outlineBaseMatrixCaptures ?? '-'} depth=${hand.outlineLockedOccluderDepthDraws ?? '-'} shell=${hand.outlineLockedShellDraws ?? '-'} `
           + `id=${hand.outlineLockedMaterialIdDraws ?? '-'} misses=${hand.outlineMissedSnapshots ?? '-'}`
         );
       }
