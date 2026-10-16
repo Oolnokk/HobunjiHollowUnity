@@ -305,7 +305,7 @@
     entries.push({ node: group, path: focusPath, returnPath, explicit: true }); // Entered by Confirm; focus-adopted scopes are not, so keyboard Escape/Tab keep closing/switching the menu.
     groupsByPanel.set(panel, entries);
     group.classList.add('ctrl-nav-group-active');
-    const opener = Array.from(group.querySelectorAll('[data-ctrl-group-open]')).find(control => groupTarget(control, group, panel) === control); // Only this group's own toggle may open it; entering a tree list must not open its first child tree.
+    const opener = Array.from(group.querySelectorAll('[data-ctrl-group-open]')).find(control => isNavTarget(control) && groupTarget(control, group, panel) === control); // Only this group's own toggle may open it; entering a tree list must not open its first child tree.
     if (opener?.getAttribute('aria-expanded') === 'false') opener.click();
     updateHintBar(panel);
     const targets = navigationTargets(panel); // Includes subgroups as whole targets, never their unentered controls.
@@ -979,7 +979,7 @@
         navigationMode: 'nested-vector-cone',
         groupDepth: panel ? enteredGroups(panel).length : 0,
         groupId: panel ? navigationRoot(panel).id || navigationRoot(panel).getAttribute('data-tree') || null : null,
-        latestChange: 'A on inventory, tool and clothing cards enters their detail panel. B returns to the same item, including after card rebuilds.',
+        latestChange: 'A on inventory, nursery, tool and clothing cards enters their detail panel. B returns to the same item; another B exits the Nursery nest.',
         detailOriginId: panel ? enteredGroups(panel).at(-1)?.returnPath?.steps.at(-1)?.value || null : null,
         pendingScrollReanchor: scrolledSelection?.panel === panel,
         coneHalfAngleDeg: Math.round(CONE_HALF_ANGLE * 180 / Math.PI),
