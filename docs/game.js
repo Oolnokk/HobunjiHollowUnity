@@ -11963,9 +11963,10 @@
         }) || null;
         // Pants are a skinned mesh on the avatar that follows these procedural legs; attachToLegs hooks them into
         // legs.update()/dispose(), so every existing leg tick/teardown site drives them (js/pants-garment-renderer.js).
-        if (legs && (rec?.equippedCosmetics || []).includes('pants_basic')) {
+        const npcPants = window.PantsGarmentRenderer?.garmentForCosmetics(rec?.equippedCosmetics); // Resolves skirts and layered pants through the same authored rig registry.
+        if (legs && npcPants) {
           window.PantsGarmentRenderer?.attachToLegs(THREE, legs, {
-            avatarGroup, speciesId: appearance.speciesId, gender: appearance.gender, name: rec?.id || rec?.name || 'npc',
+            avatarGroup, speciesId: appearance.speciesId, gender: appearance.gender, name: rec?.id || rec?.name || 'npc', garmentId: npcPants,
             appearance: window.PantsGarmentRenderer.appearanceFromBodyColors(profile?.bodyColors),
             overlayMask: window.PantsGarmentRenderer.buildOverlayMask(frontCanvas, profile, { forceEyesOpen: true }), // Arm clothing/overwear/pauldron/hood art stays in front of the pants.
           });
@@ -16806,7 +16807,7 @@
         const wornPants = gearInventory?.clothing?.pants; // The equipped pants item carries its dye/weave (js/pants-garment-renderer.js).
         if (playerLegs && wornPants) {
           window.PantsGarmentRenderer?.attachToLegs(THREE, playerLegs, {
-            avatarGroup, speciesId: _playerData?.appearance?.speciesId, gender: _playerData?.appearance?.gender, name: 'player',
+            avatarGroup, speciesId: _playerData?.appearance?.speciesId, gender: _playerData?.appearance?.gender, name: 'player', garmentId: wornPants.cosmeticId,
             appearance: window.PantsGarmentRenderer.appearanceFromItem(wornPants),
             overlayMask: window.PantsGarmentRenderer.buildOverlayMask(frontCanvas, profile, staticRenderOptions),
           });

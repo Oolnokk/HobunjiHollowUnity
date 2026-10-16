@@ -365,11 +365,17 @@
         if (rendered?.canvas) return rendered.canvas;
       } catch (_) { /* falls through to the plain PNG */ }
     }
-    const image = await loadImage(appearance.imageUrl || garmentImageUrl(garment));
+    const layers = appearance.imageUrl ? [{ url: appearance.imageUrl }] : (garment.imageLayers || [{ url: garmentImageUrl(garment) }]); // Plain-art fallback keeps both sprites and their alignment if weaving is unavailable.
+    const images = await Promise.all(layers.map(layer => loadImage(layer.url))); // Loads once for this appearance, outside the animation tick.
     const canvas = document.createElement('canvas');
-    canvas.width = image.naturalWidth || image.width || 1;
-    canvas.height = image.naturalHeight || image.height || 1;
-    canvas.getContext('2d').drawImage(image, 0, 0);
+    canvas.width = garment.sourceSize?.width || images[0].naturalWidth || images[0].width || 1;
+    canvas.height = garment.sourceSize?.height || images[0].naturalHeight || images[0].height || 1;
+    const context = canvas.getContext('2d'); // Composites original art only when the normal dye/weave path failed.
+    images.forEach((image, index) => {
+      const layout = layers[index].layout; // Same authored placement used by the loom and inventory compositor.
+      if (layout) context.drawImage(image, layout.x || 0, layout.y || 0, layout.drawWidth, layout.drawHeight);
+      else context.drawImage(image, 0, 0);
+    });
     return canvas;
   }
 
@@ -820,10 +826,16 @@
   // Pants and their dye are AUTHORED per NPC (equippedCosmetics 'pants_basic' + appliedDyes.PANTS in the NPC database, via the
   // authoring tools), so a record from the database is never touched here. This is only the fallback for runtime-generated
   // humanoids that have no authored record (no avatarEditor): they get the free pants, dyed like their overwear (brown without).
+  function garmentForCosmetics(cosmetics) {
+    return (cosmetics || []).find(id => !!rigConfig().garments?.[id]) || null;
+  }
+
   function ensureNpcPants(rec, { garmentId = DEFAULT_GARMENT_ID, isAnimal = false } = {}) {
     if (!rec || isAnimal || rec.noPants === true || rec.kind === 'animal' || rec.avatarEditor || isPantlessSpecies(rec.speciesId || rec.species)) return false;
     if (!Array.isArray(rec.equippedCosmetics)) rec.equippedCosmetics = [];
-    if (rec.equippedCosmetics.includes(garmentId)) return false;
+    if (garmentForCosmetics(rec.equippedCosmetics)) return false;
+    if (garmentId === DEFAULT_GARMENT_ID && String(rec.appearance?.speciesId || rec.speciesId || rec.species).toLowerCase().replace(/_/g, '-') === 'mao-ao'
+        && String(rec.appearance?.gender || rec.gender).toLowerCase() === 'female') garmentId = 'layered_skirt';
     rec.equippedCosmetics = [...rec.equippedCosmetics, garmentId];
     if (!rec.appliedDyes || typeof rec.appliedDyes !== 'object') rec.appliedDyes = {};
     if (!rec.appliedDyes.PANTS) rec.appliedDyes.PANTS = rec.appliedDyes.CLOTH || NPC_DEFAULT_PANTS_DYE;
@@ -837,10 +849,11 @@
     appearanceFromItem,
     appearanceFromBodyColors,
     ensureNpcPants,
+    garmentForCosmetics,
     liveHandles: () => [...handles], // Diagnostics: every garment currently attached (headless game checks read alignmentReport() from these).
     resolveCharacter,
     posteriorPortraitYForAvatar: (THREE, avatarGroup, legGroup) => { const plane = findPortraitPlane(avatarGroup), nodes = findLegNodes({ group: legGroup }); return plane && nodes ? posteriorPortraitY(THREE, avatarGroup, plane, nodes) : null; },
     hasRigFor: (speciesId, gender, garmentId = DEFAULT_GARMENT_ID) => !!(rigConfig().garments?.[garmentId] && resolveCharacter(speciesId, gender)),
-    debugSnapshot: () => ({ live: handles.size, garments: Object.keys(rigConfig().garments || {}), characters: Object.keys(rigConfig().characters || {}) }),
+    debugSnapshot: () => ({ live: handles.size, garments: Object.keys(rigConfig().garments || {}), characters: Object.keys(rigConfig().characters || {}), lastChange: 'Added separately dyed draped pants and layered skirts with nearest-opaque simple-pants weights.' }),
   });
 })(window);

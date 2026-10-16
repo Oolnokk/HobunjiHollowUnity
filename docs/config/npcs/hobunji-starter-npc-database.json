@@ -1315,7 +1315,7 @@
                   "equippedCosmetics": [
                         "tankan_tunic",
                         "tankan_bodywrap",
-                        "pants_basic"
+                        "layered_skirt"
                   ],
                   "appliedDyes": {
                         "TORSO": "dye:CLOTH:pure_green_blue",
@@ -1364,7 +1364,7 @@
                               "equippedCosmetics": [
                                     "tankan_tunic",
                                     "tankan_bodywrap",
-                                    "pants_basic"
+                                    "layered_skirt"
                               ],
                               "appliedDyes": {
                                     "TORSO": "dye:CLOTH:pure_green_blue",
@@ -1867,7 +1867,7 @@
                   },
                   "equippedCosmetics": [
                         "tankan_tunic",
-                        "pants_basic"
+                        "layered_skirt"
                   ],
                   "appliedDyes": {
                         "TORSO": "dye:CLOTH:pale_yellow",
@@ -1913,7 +1913,7 @@
                               },
                               "equippedCosmetics": [
                                     "tankan_tunic",
-                                    "pants_basic"
+                                    "layered_skirt"
                               ],
                               "appliedDyes": {
                                     "TORSO": "dye:CLOTH:pale_yellow",
@@ -12000,7 +12000,7 @@
                   },
                   "equippedCosmetics": [
                         "rugged_poncho",
-                        "pants_basic"
+                        "layered_skirt"
                   ],
                   "appliedDyes": {
                         "TORSO": "dye:CLOTH:gray",
@@ -12050,7 +12050,7 @@
                               },
                               "equippedCosmetics": [
                                     "rugged_poncho",
-                                    "pants_basic"
+                                    "layered_skirt"
                               ],
                               "appliedDyes": {
                                     "TORSO": "dye:CLOTH:gray",
@@ -18082,7 +18082,7 @@
                               "l": 68
                         }
                   },
-                  "equippedCosmetics": ["pants_basic"],
+                  "equippedCosmetics": ["layered_skirt"],
                   "appliedDyes": {"PANTS": "dye:CLOTH:brown"},
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
@@ -18116,7 +18116,7 @@
                                           "l": 68
                                     }
                               },
-                              "equippedCosmetics": ["pants_basic"],
+                              "equippedCosmetics": ["layered_skirt"],
                               "appliedDyes": {"PANTS": "dye:CLOTH:brown"}
                         }
                   },

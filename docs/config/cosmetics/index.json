@@ -75,6 +75,14 @@
       "path": "./clothes/pants/pants_basic.json"
     },
     {
+      "id": "draped_pants",
+      "path": "./clothes/pants/draped_pants.json"
+    },
+    {
+      "id": "layered_skirt",
+      "path": "./clothes/pants/layered_skirt.json"
+    },
+    {
       "id": "appearance::Mao-ao_M::mao-ao_circled_eyes",
       "path": "./appearance/mao-ao/circled_eyes.json"
     },
