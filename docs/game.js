@@ -24839,9 +24839,6 @@
             camera.layers.enableAll();
             window.PerfProfiler?.end(rpMistPerf);
           }
-          // Perception Mode silhouettes, drawn into _mainRT so the composite
-          // (and the world-text overlay drawn with it) still lands on top.
-          window.PerceptionMode?.renderOverlay(renderer, activeScene, camera);
           renderer.autoClearColor = true;
           renderer.autoClearDepth = true;
 
@@ -24876,6 +24873,9 @@
           _postMat.uniforms.uSeamOutlinesOn.value = s_furnitureSeamOutlines ? 1 : 0;
           renderer.render(_postScene, _postCamera);
           window.PerfProfiler?.end(rpCompositePerf);
+          // Perception Mode silhouettes go on top of the finished composite so
+          // the painterly/outline post-process can't smear them.
+          window.PerceptionMode?.renderOverlay(renderer, activeScene, camera);
         } else {
           window.PngPlaneOutlineOccluder.prune(); // Outlines off skips the pass that otherwise compacts this registry every frame.
           renderer.setRenderTarget(null);

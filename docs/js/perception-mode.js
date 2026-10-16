@@ -304,19 +304,19 @@
         varying vec2 vUv;
         void main() {
           vec4 c = texture2D(tMask, vUv);
-          if (c.a > 0.5) { gl_FragColor = vec4(c.rgb, 0.20 + 0.07 * sin(uTime * 3.0)); return; }
+          if (c.a > 0.5) { gl_FragColor = vec4(c.rgb, 0.34 + 0.08 * sin(uTime * 3.0)); return; }
           float best = 0.0; vec3 col = vec3(0.0);
           for (int i = 0; i < 8; i++) {
             float ang = float(i) * 0.7853982;
             vec2 dir = vec2(cos(ang), sin(ang)) * uTexel;
-            for (int r = 1; r <= 2; r++) {
-              vec4 s = texture2D(tMask, vUv + dir * float(r) * 1.25);
-              float w = s.a * (r == 1 ? 1.0 : 0.55);
+            for (int r = 1; r <= 3; r++) {
+              vec4 s = texture2D(tMask, vUv + dir * float(r));
+              float w = s.a * (r == 1 ? 1.0 : (r == 2 ? 0.85 : 0.45));
               if (w > best) { best = w; col = s.rgb; }
             }
           }
           if (best <= 0.01) discard;
-          gl_FragColor = vec4(col, best * 0.95);
+          gl_FragColor = vec4(col, best);
         }
       `,
       transparent: true, depthTest: false, depthWrite: false,
@@ -328,9 +328,9 @@
 
   const _size = { v: null };
   const _clear = { color: null };
-  // Called by game.js's renderWorldPasses after the main scene pass, while
-  // the render target is the frame's colour target (the outline pipeline's
-  // offscreen target, or the canvas with outlines off).
+  // Called by game.js's renderWorldPasses once the frame is on the canvas
+  // (after the outline/painterly composite, or after the direct render with
+  // outlines off), so post-processing never smears the highlight.
   function renderOverlay(renderer, scene, camera) {
     lastStats.rendered = 0;
     if (!active || !targets.length || !renderer || !scene || !camera) return;
