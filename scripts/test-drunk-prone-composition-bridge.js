@@ -57,6 +57,7 @@ const player = {
   afflictions: { drunkenFooting: 30 },
 };
 
+let mockedRunLean = 0; // Supplies the canonical solver pitch for player body-composition tests.
 let lastLegUpdate = null;
 let lastAttachOptions = null;
 let composerSet = null;
@@ -80,6 +81,7 @@ const ProceduralLegAnimation = {
     lastAttachOptions = options;
     return {
       group: new MockGroup(),
+      getRunLean: () => mockedRunLean,
       update(dt, speed, suppressed, seatedPose, motion) {
         lastLegUpdate = { dt, speed, suppressed, seatedPose, motion };
       },
@@ -197,6 +199,16 @@ vm.runInContext(source, context, { filename: modulePath });
   assert.strictEqual(lastLegUpdate.motion, movementContext);
   playerLegs.update(0.016, 2.5, true, undefined);
   assert.strictEqual(lastLegUpdate.suppressed, true);
+
+  mockedRunLean = -0.15;
+  playerLegs.update(0.016, 3, false, undefined, { combat: true });
+  assert.strictEqual(composerSet.name, 'run-lean');
+  assert.strictEqual(composerSet.contribution.rotation.pitch, mockedRunLean);
+  playerLegs.update(0.016, 3, true, undefined, { combat: true });
+  assert.strictEqual(composerCleared, 'run-lean', 'mount/prone suppression removes running lean');
+  playerLegs.dispose();
+  assert.strictEqual(composerCleared, 'run-lean', 'rebuilding the rig clears its run channel');
+  mockedRunLean = 0;
 
   // Bandit body tilt is isolated from the yaw-owning avatar root. The visible
   // front/back portrait pivots move under a child visual root, while the

@@ -69,10 +69,14 @@ const walkDebug = tick(walk.legs, 2, {}), runDebug = tick(run.legs, 2, { combat:
 assert(runDebug.gait.strideLength > walkDebug.gait.strideLength * 1.4);
 assert(runDebug.gait.runBlend > 0.99);
 assert.strictEqual(runDebug.motionMode, 'run');
+assert(run.legs.getRunLean() < 0, 'running leans toward local forward');
+assert(Math.abs(run.legs.getRunLean()) <= 12 * Math.PI / 180);
+assert.strictEqual(walk.legs.getRunLean(), 0, 'walking remains upright');
 const tallDebug = tick(tall.legs, 2, { combat: true }); // Stride changes exactly with measured leg length.
 assert(Math.abs(tallDebug.gait.fullStride / runDebug.gait.fullStride - tallDebug.gait.legLength / runDebug.gait.legLength) < 1e-9);
 const falling = tick(run.legs, 9, { combat: true, airborne: true }); // High horizontal speed must not resume running in the air.
 assert.strictEqual(falling.motionMode, 'airborne');
+assert.strictEqual(run.legs.getRunLean(), 0, 'airborne pose replaces the running lean');
 assert.strictEqual(falling.gait.strideLength, 0);
 assert(falling.left.targetY > falling.left.contactY);
 assert(falling.right.targetY > falling.right.contactY);
@@ -90,6 +94,7 @@ lunge.parent.position.x += 0.03;
 lunge.parent.rotation.y = 0.5;
 lunge.legs.update(0, 2, false, undefined, { lunging: true, directionX: 1, directionZ: 0 });
 assert.strictEqual(lunge.legs.getStandingPoseDebug().motionMode, 'lunge');
+assert.strictEqual(lunge.legs.getRunLean(), 0, 'lunge body pose is independent of running');
 assert(Math.abs(lunge.legs.getStandingPoseDebug()[rear].targetY - before) < 1e-9);
 const afterPose = lunge.legs.getStandingPoseDebug()[rear]; // The support foot remains fixed even as the root translates and rotates.
 const afterWorld = lunge.legs.group.localToWorld(new Vector3(afterPose.targetX, afterPose.targetY, afterPose.targetZ));

@@ -27,6 +27,7 @@
   if (!RS || !legApi || !composer || !THREE || window.__hobunjiDrunkProneCompositionBridgeInstalled) return;
   window.__hobunjiDrunkProneCompositionBridgeInstalled = true;
 
+  const RUN_CHANNEL = 'run-lean'; // Separate additive player channel keeps running compatible with Footing sway.
   const DRUNK_CHANNEL = 'drunk';
   const DRUNK_PRIORITY = 200;
   const DEG = Math.PI / 180;
@@ -190,7 +191,17 @@
         const player = window.Combat?.deps?.player;
         const effectiveSuppressed = !!suppressed || !!player?.prone;
         const result = previousUpdate(dt, speedWorldUnitsPerSecond, effectiveSuppressed, seatedPose, motion);
+        const pitch = Number(handle.getRunLean?.()) || 0; // Reads the gait's own blend without recomputing movement state.
+        if (pitch && !effectiveSuppressed && !seatedPose) composer.setChannel(RUN_CHANNEL, {
+          priority: 100, mode: 'additive', rotation: { pitch },
+        });
+        else composer.clearChannel(RUN_CHANNEL);
         return result;
+      };
+      const previousDispose = handle.dispose.bind(handle); // Clears the previous avatar's lean when equipment/species changes rebuild the rig.
+      handle.dispose = function runLeanAwareDispose() {
+        composer.clearChannel(RUN_CHANNEL);
+        return previousDispose();
       };
       return handle;
     };
@@ -241,14 +252,16 @@
       }
 
       const loss = banditFootingLoss(entity);
-      if (!(loss > 0)) continue;
+      const runLean = Number(state.handle?.getRunLean?.()) || 0; // Same run pitch used by the player, applied only to the enemy visual pivot.
+      if (!(loss > 0) && !runLean) continue;
 
       // The sway transform moves the portrait geometry only. Do not lock a
       // pre-sway front/back choice or mutate material.side: the portrait's
       // existing THREE.FrontSide materials must keep ordinary backface culling
       // authoritative after the final transformed orientation is known.
       const previousRotation = visualRoot.rotation?.clone?.() || null;
-      visualRoot.quaternion.copy(state.driverRoot.quaternion);
+      if (loss > 0) visualRoot.quaternion.copy(state.driverRoot.quaternion);
+      visualRoot.rotation.x += runLean;
       undo.push(() => {
         if (previousRotation && visualRoot.rotation?.copy) visualRoot.rotation.copy(previousRotation);
         else visualRoot.quaternion.identity();
@@ -264,6 +277,7 @@
     // unsteady-walk channel leaves the ragdoll/recovery channel and every other
     // body contribution untouched. Stored drunkenness remains on the entity.
     if (player.prone) {
+      composer.clearChannel(RUN_CHANNEL);
       composer.clearChannel(DRUNK_CHANNEL);
       return;
     }

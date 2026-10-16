@@ -862,6 +862,7 @@
     const legBend = { left: { x: bendBase.x, z: bendBase.z }, right: { x: -bendBase.x, z: bendBase.z } };
 
     const state = {
+      runLean: 0, // Current forward body pitch consumed by player/enemy render composition.
       runBlend: 0, // Blends combat running into the existing walking gait.
       motionMode: 'idle', // Reported by the existing mobile leg diagnostics.
       lungeActive: false, // Retains planted foot anchors until the lunge finishes.
@@ -1301,6 +1302,7 @@
       dt = Number.isFinite(dt) ? Math.max(0, Math.min(0.1, dt)) : 0; // Bounds animation integration after backgrounding or invalid inputs.
       if (!motion?.lunging || motion?.airborne || suppressed || seatedPose) state.lungeActive = false;
       if (state.disposed) return;
+      state.runLean = 0; // Attack footwork, airborne, seated, and suppressed modes own their body pose.
       if (seatedPose) {
         state.motionMode = 'seated';
         state.gaitStrength = damp(state.gaitStrength, 0, 12, dt);
@@ -1376,6 +1378,7 @@
       const requestedRun = motion?.combat ? 1 : motion?.allowSpeedRun ? smoothstep01((speedRatio - 0.42) / 0.28) : 0; // Preserves full-speed player running outside combat.
       state.runBlend = damp(state.runBlend, isGaiting ? requestedRun : 0, 9, dt);
       state.motionMode = isGaiting ? (requestedRun > 0.5 ? 'run' : 'walk') : 'idle';
+      state.runLean = isGaiting ? -12 * Math.PI / 180 * state.runBlend * Math.min(1, Math.sqrt(speedRatio)) || 0 : 0; // Up to twelve degrees toward local +Z, blended with running effort.
       const stanceFraction = STANCE_FRACTION + (0.38 - STANCE_FRACTION) * state.runBlend; // Running includes a flight interval between alternating contacts.
       const strideCurve = 0.85 + 0.45 * Math.sqrt(speedRatio); // Walking reach stays proportional to leg anatomy instead of stretching the bones to sprite-height strides.
       const fullStride = gaitLegLength * strideCurve * (1 + state.runBlend * 0.5);
@@ -1436,6 +1439,7 @@
           phase: state.hoverPhase,
         },
         gait: {
+          runLeanDegrees: state.runLean * 180 / Math.PI,
           runBlend: state.runBlend,
           legLength: currentLegLength,
           legLengthFractionOfModel: currentLegLength / Math.max(0.001, modelHeight),
@@ -1477,6 +1481,7 @@
 
     return {
       group: root, update, dispose, applyRecordedLegPose, getStandingPoseDebug, beginLunge,
+      getRunLean: () => state.runLean, // Allocation-free body-composition input independent of debug mesh scans.
       // The legs' standing stance (hip and idle-foot positions, group-local), independent of whatever pose they are in right now:
       // the Pants garment binds to this so it fits the same whether the avatar is seated, mid-stride or just spawned.
       getRestStance: () => {
