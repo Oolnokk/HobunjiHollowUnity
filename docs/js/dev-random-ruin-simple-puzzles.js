@@ -42,6 +42,10 @@
   const ROPE_GRAVITY = 8.2;
   const ROPE_BODY_SAMPLE_OFFSETS = Object.freeze([.15, .75, 1.3]); // Feet, waist and head heights of a rope rider above its datum.
   const ROPE_MIN_LENGTH = 1.65;
+  const ROPE_PUMP = .45; // Pumping only adds swing in the direction of travel, so building height takes a few back-and-forth swings instead of one held push.
+  const ROPE_MAX_ANGLE = 1.28;
+  const ROPE_AIR_CATCH_RADIUS = .45; // A flying player within this of another rope's lower length catches it (rope-to-rope traversal).
+  const PLATFORM_SIDE_CLEARANCE = .2; // Flight below a rope platform's top by more than this hits its side instead of passing through it.
   const CHECKPOINT_INVULN_MS = 1200;
   const KURRAYA_NOTE_URL = 'assets/audio/music/instruments/sfx_kurraya_pluck.m4a'; // Shared authored pluck used by modular musical pressure plates until a dedicated ruin-note sample exists.
   const CHORD_PLATE_IDLE_COLOR = 0x3f7a78;
@@ -296,6 +300,7 @@
     };
     for(const canopy of state.canopies)consider(canopy.slab,'canopy',canopy);
     for(const glyph of state.ceilingGlyphs)if(!glyph.active){consider(glyph.mesh,'glyph',glyph);if(glyph.rune)consider(glyph.rune,'glyph',glyph);}
+    for(const target of state.projectileTargets)if(!target.active&&target.hittable?.()!==false)consider(target.object,'target',target); // Composer-owned targets (e.g. js/dev-random-ruin-rail-targets.js).
     return nearest;
   }
 
@@ -324,11 +329,12 @@
       const modular=modularProjectileHit(start,end,radiusWorld);
       if(!modular||(ordinary&&Number.isFinite(Number(ordinary.t))&&Number(ordinary.t)<=modular.t))return ordinary;
       if(modular.kind==='glyph')activateCeilingGlyph(modular.record);
+      if(modular.kind==='target'){try{modular.record.onHit?.(modular.record);}catch(error){console.warn('[Random Test Ruin] projectile target hit failed',error);}}
       return {
         t:modular.t,
         distanceWorld:start.distanceTo?.(end)*modular.t||0,
         object:modular.object,
-        kind:modular.kind==='glyph'?'ruinModularGlyph':'ruinStoneCanopy',
+        kind:modular.kind==='glyph'?'ruinModularGlyph':modular.kind==='target'?'ruinProjectileTarget':'ruinStoneCanopy',
         key:modular.record?.id||null,
         point:start.clone?.().lerp?start.clone().lerp(end,modular.t):null,
       };
@@ -602,7 +608,9 @@
     });
     state.surfaceIds.add(surfaceId);
     state.noClimbSurfaceIds.add(surfaceId); // Rope-traversal platforms are reached by rope, never by the generic ledge climb (it skipped the vault's plate puzzle).
-    return { mesh, x, z, width, depth, baseY, topY:baseY+height };
+    const platform = { mesh, x, z, width, depth, baseY, topY:baseY+height };
+    state.platforms.push(platform);
+    return platform;
   }
 
   function removePlatform(platform) {
@@ -610,7 +618,20 @@
     const surfaceId = platform.mesh.name + '-surface';
     DS.remove?.(surfaceId);
     state.surfaceIds.delete(surfaceId);
+    const index = state.platforms.indexOf(platform);
+    if (index >= 0) state.platforms.splice(index, 1);
     disposeObject(platform.mesh);
+  }
+
+  // A rope rider/flyer (feet at y) is inside a static rope platform's solid
+  // body: within its footprint and clearly below its top.
+  function platformBlocksAt(x, z, y, pad = 0) {
+    for (const platform of state?.platforms || []) {
+      if (platform.mesh?.visible === false) continue;
+      if (Math.abs(x-platform.x) > platform.width*.5+pad || Math.abs(z-platform.z) > platform.depth*.5+pad) continue;
+      if (y < platform.topY-PLATFORM_SIDE_CLEARANCE && y+1.3 > platform.baseY) return platform;
+    }
+    return null;
   }
 
   function pointInsidePlatform(point, platform, pad = 0) {
@@ -700,34 +721,127 @@
     const length=Math.hypot(swingHorizontal,verticalDrop),startAngle=Math.atan2(swingHorizontal,verticalDrop);
     if(length>maxSafeLength-.02)return null; // Reject impossible low-ceiling spans instead of creating a pendulum whose bottom lives below the floor.
 
+    const rope=createRopeObject({
+      room,idSuffix,anchor:{x:cx,y:anchorY,z:cz},yaw:Math.atan2(dirZ,dirX),length,maxLength:Math.max(length,Math.min(length+.55,maxSafeLength)),minBobY,angle:-startAngle,
+      startPlatform:pa,endPlatform:pb,grabPoint:{x:cx-dirX*swingHorizontal,z:cz-dirZ*swingHorizontal,y:bobRestY},
+    });
+    for(let sample=0;sample<=ROPE_ROUTE_SAMPLES;sample++){
+      const angle=-startAngle+(startAngle*2)*(sample/ROPE_ROUTE_SAMPLES),point=ropeBobAt(rope,angle);
+      if(ropeBlockedAt(point.x,point.z,ROPE_COLLISION_RADIUS,point.y)){disposeRopeObject(rope);return null;}
+    }
+    rope.hazard=options.externalHazard?null:createVisibleRopeLavaHazard(cx,cz,hazardY,hazardLength,hazardWidth,axis);
+    rope.lastSafeBob=clonePoint(updateRopeVisual(rope));state.ropes.push(rope);return rope;
+  }
+
+  // Ceiling mount, thick rope mesh and grip marker for one pendulum. Not yet
+  // in state.ropes: callers validate the route first, then push it (or call
+  // disposeRopeObject). grabPoint null = only catchable mid-air from another
+  // rope (no ground 'Grab Rope' prompt).
+  function createRopeObject({room,idSuffix='',anchor,yaw,length,maxLength=length,minBobY,angle=0,startPlatform=null,endPlatform=null,grabPoint=null}) {
+    const suffix=idSuffix?'_'+idSuffix:'';
     const mount=naturalizeStone(new THREE.Mesh(sharedCylinderGeometry(.15,.11,.10,10),makeBasic(0x808080)));
-    mount.name='dev_ruin_swing_rope_ceiling_mount_'+room.id+(idSuffix?'_'+idSuffix:'');
-    mount.position.set(cx,anchorY-.025,cz);
+    mount.name='dev_ruin_swing_rope_ceiling_mount_'+room.id+suffix;
+    mount.position.set(anchor.x,anchor.y-.025,anchor.z);
     mount.userData.devRandomRuinRopeCeilingMount=true;
     state.group.add(mount);
 
     const ropeMesh=new THREE.Mesh(sharedCylinderGeometry(ROPE_BODY_RADIUS,ROPE_BODY_RADIUS,1,8),window.ProceduralFurniture.makePartMaterial({materialTexture:'boards.png',materialLighting:'unlit',color:'#c9ad77',materialFillEnabled:true,materialFillColor:'#c9ad77',materialFillMode:'always',materialRepeatU:4,surfaceOpacity:.98}));
-    ropeMesh.name='dev_ruin_swing_rope_'+room.id+(idSuffix?'_'+idSuffix:'');
+    ropeMesh.name='dev_ruin_swing_rope_'+room.id+suffix;
     ropeMesh.frustumCulled=true;ropeMesh.userData.devRandomRuinSwingRope=true;state.group.add(ropeMesh);
     const marker=new THREE.Mesh(sharedSphereGeometry(.15,10,8),makeBasic(0xd1b682));
-    marker.name='dev_ruin_swing_rope_grip_'+room.id+(idSuffix?'_'+idSuffix:'');
+    marker.name='dev_ruin_swing_rope_grip_'+room.id+suffix;
     marker.userData.interactive3D=true;marker.userData.devRuinInteractionType='ropeSwing';state.group.add(marker);
-
-    const grabPoint={x:cx-dirX*swingHorizontal,z:cz-dirZ*swingHorizontal,y:bobRestY};
-    const rope={
+    return {
       id:'rope-'+room.id+(idSuffix?'-'+idSuffix:''),
-      roomId:room.id,mesh:ropeMesh,line:ropeMesh,marker,mount,anchor:{x:cx,y:anchorY,z:cz},ceilingY:anchorY, // line alias remains for older diagnostics, but it now references the thick cylindrical mesh.
-      yaw:Math.atan2(dirZ,dirX),length,maxLength:Math.max(length,Math.min(length+.55,maxSafeLength)),minBobY,angle:-startAngle,launchAngle:-startAngle,omega:0,
-      attached:false,braking:false,startPlatform:pa,endPlatform:pb,
-      hazard:null,
-      grabPoint,bob:null,lastSafeBob:null,collisionStops:0,autoGrabCount:0,
+      roomId:room.id,mesh:ropeMesh,line:ropeMesh,marker,mount,anchor:{x:anchor.x,y:anchor.y,z:anchor.z},ceilingY:anchor.y, // line alias remains for older diagnostics, but it now references the thick cylindrical mesh.
+      yaw,length,maxLength:Math.max(length,maxLength),minBobY,angle,launchAngle:angle,omega:0,
+      attached:false,braking:false,startPlatform,endPlatform,
+      hazard:null,airOnly:!grabPoint,
+      grabPoint,bob:null,lastSafeBob:null,collisionStops:0,autoGrabCount:0,airCatchCount:0,
     };
+  }
+
+  function disposeRopeObject(rope) {
+    for(const mesh of [rope?.mesh,rope?.marker,rope?.mount])disposeObject(mesh);
+  }
+
+  // Every bob position of a swing of amplitude `amp` stays clear of walls,
+  // props and rope platform bodies.
+  function ropeArcClear(rope,amp) {
     for(let sample=0;sample<=ROPE_ROUTE_SAMPLES;sample++){
-      const angle=-startAngle+(startAngle*2)*(sample/ROPE_ROUTE_SAMPLES),point=ropeBobAt(rope,angle);
-      if(ropeBlockedAt(point.x,point.z,ROPE_COLLISION_RADIUS,point.y)){disposeObject(ropeMesh);disposeObject(marker);disposeObject(mount);return null;}
+      const point=ropeBobAt(rope,-amp+amp*2*(sample/ROPE_ROUTE_SAMPLES));
+      if(ropeBlockedAt(point.x,point.z,ROPE_COLLISION_RADIUS,point.y)||platformBlocksAt(point.x,point.z,point.y))return false;
     }
-    rope.hazard=options.externalHazard?null:createVisibleRopeLavaHazard(cx,cz,hazardY,hazardLength,hazardWidth,axis);
-    rope.lastSafeBob=clonePoint(updateRopeVisual(rope));state.ropes.push(rope);return rope;
+    return true;
+  }
+
+  // Ballistic flight after letting go, with the same gravity, release kick,
+  // collision and landing rules as releaseRope()/updateFlight().
+  function simulateRopeFlight(start,target,floorY) {
+    const f={...start},dt=1/60;
+    for(let step=0;step<180;step++){
+      f.vy-=ROPE_GRAVITY*dt;
+      const next={x:f.x+f.vx*dt,z:f.z+f.vz*dt,y:f.y+f.vy*dt};
+      if((step%2===0&&ropeBlockedAt(next.x,next.z,ROPE_COLLISION_RADIUS,next.y))||platformBlocksAt(next.x,next.z,next.y)){f.vx=0;f.vz=0;}
+      else{f.x=next.x;f.z=next.z;}
+      f.y=next.y;
+      if(target.rope&&ropeCatchPoint(target.rope,f))return true;
+      if(target.platform){
+        const p=target.platform,top=Number(p.topY);
+        if(f.vy<=0&&f.y<=top+.08&&f.y>=top-PLATFORM_SIDE_CLEARANCE&&Math.abs(f.x-p.x)<=p.width*.5-.15&&Math.abs(f.z-p.z)<=p.depth*.5-.15)return true;
+      }
+      if(f.y<floorY-.2)return false;
+    }
+    return false;
+  }
+
+  // Smallest swing amplitude (radians, up to maxAmp) from which some release
+  // point on the forward swing reaches the target platform or catches the
+  // target rope; null when none does. rope only needs anchor/yaw/length.
+  function ropeReachAmplitude(rope,target,{maxAmp=1.2,minAmp=.6,floorY=0}={}) {
+    const dirX=Math.cos(rope.yaw),dirZ=Math.sin(rope.yaw),L=rope.length;
+    for(let amp=minAmp;amp<=maxAmp+1e-6;amp+=.05){
+      for(let i=0;i<=10;i++){
+        const theta=amp*(.15+.85*i/10);
+        const omega=Math.sqrt(Math.max(0,2*(ROPE_GRAVITY/L)*(Math.cos(theta)-Math.cos(amp))));
+        const tangent=Math.cos(theta)*L*omega;
+        const start={x:rope.anchor.x+dirX*Math.sin(theta)*L,z:rope.anchor.z+dirZ*Math.sin(theta)*L,y:rope.anchor.y-Math.cos(theta)*L,vx:dirX*tangent,vz:dirZ*tangent,vy:Math.sin(theta)*L*omega+.55};
+        if(simulateRopeFlight(start,target,floorY))return +amp.toFixed(2);
+      }
+    }
+    return null;
+  }
+
+  // Where a flying player would take hold of `rope`: anywhere on its lower
+  // hanging length, never above the shortest grip length or below its end.
+  function ropeCatchPoint(rope,point) {
+    const bob=rope.bob||ropeBobAt(rope);
+    const ax=rope.anchor.x,ay=rope.anchor.y,az=rope.anchor.z;
+    const sx=bob.x-ax,sy=bob.y-ay,sz=bob.z-az,len2=sx*sx+sy*sy+sz*sz;
+    if(len2<1e-6)return false;
+    const t=Math.max(0,Math.min(1,((point.x-ax)*sx+(point.y-ay)*sy+(point.z-az)*sz)/len2));
+    if(t*Math.sqrt(len2)<ROPE_MIN_LENGTH-.05)return false;
+    const cx=ax+sx*t,cy=ay+sy*t,cz=az+sz*t;
+    return Math.hypot(point.x-cx,point.y-cy,point.z-cz)<=ROPE_AIR_CATCH_RADIUS;
+  }
+
+  // Mid-air catch: the rope takes the flyer at the grip height they reached,
+  // with their velocity turned into swing so rope-to-rope chains keep momentum.
+  function catchRopeInFlight(rope,f) {
+    const dirX=Math.cos(rope.yaw),dirZ=Math.sin(rope.yaw);
+    const horizontal=(f.x-rope.anchor.x)*dirX+(f.z-rope.anchor.z)*dirZ,drop=Math.max(.05,rope.anchor.y-f.y);
+    rope.length=Math.max(ROPE_MIN_LENGTH,Math.min(rope.maxLength,Math.hypot(horizontal,drop)));
+    rope.angle=Math.max(-ROPE_MAX_ANGLE,Math.min(ROPE_MAX_ANGLE,Math.atan2(horizontal,drop)));
+    const along=f.vx*dirX+f.vz*dirZ;
+    rope.omega=(along*Math.cos(rope.angle)+f.vy*Math.sin(rope.angle))/rope.length;
+    rope.attached=true;rope.braking=false;rope.airCatchCount++;
+    state.flight=null;
+    state.activeRope=rope;
+    holsterRopeEquipment();
+    rope.lastSafeBob=clonePoint(updateRopeVisual(rope));
+    setPlayerWorld(rope.lastSafeBob,true,false);
+    deps?.showToast?.('Caught the next rope!',true);
+    return true;
   }
 
   function createLavaMaterial() {
@@ -1653,7 +1767,10 @@
       group:()=>state.group,
       sampleSupport, supportPoint, roomBounds, worldCellSize, doorwayWorld, roomDoorways, usableRoomCandidates,
       createPlatform, removePlatform, pointInsidePlatform,
-      createRopeTraversalBetween,
+      createRopeTraversalBetween, createRopeObject, disposeRopeObject, ropeArcClear, ropeReachAmplitude, platformBlocksAt, ropeBobAt, updateRopeVisual, clonePoint,
+      registerProjectileTarget:target=>{state.projectileTargets.push(target);return target;},
+      ropeLavaStrip:(cx,cz,y,length,width,axis)=>hazardAreaIsOpenFloor(cx,cz,y,length,width,axis)?createVisibleRopeLavaHazard(cx,cz,y,length,width,axis):null,
+      ropeConstants:{ROPE_GRAB_ABOVE_LAUNCH,ROPE_DESTINATION_RISE,ROPE_MIN_LENGTH,ROPE_COLLISION_RADIUS,ROPE_MAX_ANGLE},
       naturalizeStone, makeBasic, sharedBoxGeometry, sharedCylinderGeometry, disposeObject,
       recordModulePlacement,
       playerWorld, setPlayerWorld,
@@ -1686,11 +1803,13 @@
       controls:[],
       safeGrids:[],
       ropes:[],
+      platforms:[], // Static rope platforms (createPlatform); their bodies stop rope flight.
       trapHallways:[],
       chordPlateSets:[],
       lockDoors:[],
       canopies:[],
       ceilingGlyphs:[],
+      projectileTargets:[], // Composer-registered projectile targets ({ object, active, onHit, hittable? }).
       cyclingElevators:[],
       elevatorChests:[],
       noClimbSurfaceIds:new Set(),
@@ -1731,6 +1850,7 @@
     }
     if(options.ropeSwing!==false){
       let rope=rng()<cfg('moduleChances.balconyRopeElevator',.58)?buildBalconyRopeElevatorComposer(context,rng,usedRooms):null; // Full balcony→rope→glyph→elevator chain is one possible composition, not a dedicated puzzle type.
+      if(!rope)rope=window.DevRandomRuinRopeVariants?.buildStandalone?.(kit,context,rng,usedRooms)||null; // Pump-to-height / rope-to-rope rooms (js/dev-random-ruin-rope-variants.js); classic swing otherwise.
       if(!rope)rope=buildRopeSwing(context,rng,usedRooms);
       if(rope){
         recordModulePlacement('ropeTraverse','room',rope.roomId,{ceilingMounted:true});
@@ -1767,6 +1887,9 @@
       }
     }
     if(options.hallwayTraps!==false)buildSwappableHallwayModules(context,rng,usedHallways);
+    for(const composer of composers){ // Late composers take whatever rooms the standalone modules left free.
+      try{composer.buildLate?.(kit,context,rng,usedRooms,options);}catch(error){console.warn('[Random Test Ruin] composer buildLate failed',error);}
+    }
     window.DevRandomRuinTileOccupancy?.scanSolids?.(group,SCOPE); // Every visible solid this build placed (sarcophagi, ossuary shell, canopy posts, pedestals) collides exactly like V50 props.
     updateBadge(true);
   }
@@ -1942,11 +2065,11 @@
       rope.yaw+=intent.side*1.6*dt;
       rope.length=Math.max(ROPE_MIN_LENGTH,Math.min(rope.maxLength,rope.length-intent.forward*.9*dt));
     }else{
-      rope.omega+=intent.forward*2.45*dt;
+      if(intent.forward*rope.omega>0)rope.omega+=intent.forward*ROPE_PUMP*dt; // Pump with the swing, not against it: height builds over several back-and-forth swings.
       rope.omega+=(-ROPE_GRAVITY/Math.max(.4,rope.length))*Math.sin(rope.angle)*dt;
       rope.omega*=Math.exp(-.16*dt);
       rope.angle+=rope.omega*dt;
-      if(Math.abs(rope.angle)>1.28){rope.angle=Math.sign(rope.angle)*1.28;rope.omega*=.72;}
+      if(Math.abs(rope.angle)>ROPE_MAX_ANGLE){rope.angle=Math.sign(rope.angle)*ROPE_MAX_ANGLE;rope.omega*=.72;}
     }
     const candidate=ropeBobAt(rope),from=rope.lastSafeBob||ropeBobAt({...rope,angle:priorAngle,yaw:priorYaw,length:priorLength});
     const sweep=sweptRopePoint(from,candidate);
@@ -1982,7 +2105,13 @@
     const sweep=sweptRopePoint(f,next);
     if(sweep.blocked){
       f.x=sweep.last.x;f.z=sweep.last.z;f.y=next.y;f.vx=0;f.vz=0; // Hit the same normal-interior solid that ordinary knockback/walking sees; stop horizontal flight and fall in place instead of tunnelling through it.
+    }else if(platformBlocksAt(next.x,next.z,next.y)){
+      f.y=next.y;f.vx=0;f.vz=0; // Hit a rope platform's side below its top: drop down its face instead of passing into it.
     }else{f.x=next.x;f.z=next.z;f.y=next.y;}
+    for(const rope of state.ropes){ // Rope-to-rope: flying into an air-only rope's hanging length grabs it. Ordinary ropes idle over their launch deck, where catching one on landing would skip that deck's plate/chest.
+      if(!rope.airOnly||rope.attached||rope.id===f.ropeId)continue;
+      if(ropeCatchPoint(rope,f)){catchRopeInFlight(rope,f);return;}
+    }
     const support=sampleSupport(f.x,f.z,f.y+.25);
     if(support&&f.vy<=0&&f.y<=Number(support.y)+.08){
       f.y=Number(support.y);
@@ -1991,7 +2120,7 @@
       state.lastPlayerWorld=clonePoint(f);
       return;
     }
-    if(f.y<-2.5){
+    if(f.y<-2.5&&!DS.sampleSupport?.(f.x,f.z,{minY:-60,maxY:f.y+.25,pad:.02})){ // Only a fall out of the world returns to the checkpoint; deep pits and lava are fallen into, not teleported out of.
       respawnAtCheckpoint('rope-fall');
       return;
     }
@@ -2110,7 +2239,7 @@
     for(const control of (window.DevRandomRuinDungeonChests?.controlsFor?.(state.elevatorChests)||[]))controls.push(control);
     for(const composer of composers)for(const control of (composer.controls?.(state.kit)||[]))controls.push(control);
     for(const candidate of state.ropes){
-      if(candidate.attached||state.flight)continue;
+      if(candidate.attached||state.flight||candidate.airOnly)continue; // Air-only ropes in a rope-to-rope chain are caught mid-swing, never from the floor.
       controls.push({
         kind:'ropeGrab',
         object:candidate.marker,
@@ -2221,6 +2350,12 @@
     ownsPlayerMotion:()=>!!(state?.activeRope||state?.flight),
     releaseActiveRope:()=>state?.activeRope?releaseRope(state.activeRope):false, // Called by the canonical Dodge context action so every input device shares one release path.
     respawnAtCheckpoint,
+    // Every unsolved projectile target this runtime owns (ceiling glyphs and
+    // composer targets), for the proximity hum; [] outside the ruin.
+    listProjectileTargets:()=>!state||!inRuin()?[]:[
+      ...state.ceilingGlyphs.map(glyph=>({object:glyph.rune||glyph.mesh,active:glyph.active})),
+      ...state.projectileTargets.map(target=>({object:target.object,active:target.active||target.hittable?.()===false})),
+    ],
     snapshot,
     clear:clearState,
     registerComposer,

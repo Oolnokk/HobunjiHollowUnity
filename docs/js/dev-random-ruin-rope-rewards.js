@@ -11,8 +11,9 @@
 //  * Lava basins: a room's sunken floor region becomes a lava basin with a
 //    chain of stone pillars linked by ceiling ropes. Pillars carry pressure
 //    plates and Dungeon Chests; pressing every plate opens a vault side door
-//    on a balcony reached by its own rope. Lava burns and throws the player
-//    back to the last safe footing.
+//    on a balcony reached by its own rope. Lava burns for as long as the
+//    player wades in it; there is no teleport out — they climb the rim
+//    (lavaClimbRise lets the ruin ledge climb reach it from the lava).
 (() => {
   'use strict';
 
@@ -27,9 +28,7 @@
   const PILLAR_SIZE = 2.2; // Landing target for a rope dismount; a rope's peak swing reaches ~0.92u past the deck centre line toward its near edge, so 2.2u leaves margin.
   const PILLAR_RISE = .62; // Pillar tops sit this far above the rim so they cannot be stepped onto from it (step limit 0.42).
   const ROPE_SPACING = [5.4, 5.0, 4.7]; // Candidate centre-to-centre spans; ropes need >= 4.4 along their axis.
-  const LAVA_ESCAPE_S = .45; // Time standing in lava before being thrown back to safe footing.
   const LAVA_BURN = 16;
-  const SAFE_EDGE_MARGIN = .6; // A lava escape returns the player at least this far back from the pit edge.
   const LIFT_RISE_MAX = .95;
   const LIFT_SECONDS = 2.2;
   const BALCONY_HEADROOM = 1.7;
@@ -515,7 +514,7 @@
     const lava = lavaPlane(kit, bounds, lavaY);
     const basin = {
       id:'lava-basin-' + room.id, roomId:String(room.id), bounds, basinY, rimY, lavaY, lava, depth:+(rimY - basinY).toFixed(2),
-      ...layout, plates:[], chests:[], lastSafe:null, inLavaFor:0, lastBurnAt:-Infinity, hinted:false, completed:false, escapes:0,
+      ...layout, plates:[], chests:[], inLavaFor:0, lastBurnAt:-Infinity, hinted:false, completed:false, falls:0,
     };
     // Plates on alternating pillars, chests on the rest; the last pillar
     // always holds the best open chest.
@@ -570,16 +569,10 @@
       kit.deps?.showToast?.(`Lava basin (${basin.depth}u deep): swing between the pillars on the ropes. Pressure plates open the balcony vault.`, true);
     }
     const inLava = inBasin && !onPlatform && player.y < basin.lavaY + .3;
-    if (!inLava) {
-      basin.inLavaFor = 0;
-      // Only remember footing that is clearly up on the ledge (back from the
-      // pit edge, at rim height) or on a pillar/pad/balcony. Recording the
-      // last frame outside the basin put the return point right on the rim
-      // edge at the already-dropping height, so the escape landed the player
-      // at the foot of the pit wall.
-      const onLedge = !inside(basin.bounds, player, -cfg('lavaBasin.safeEdgeMargin', SAFE_EDGE_MARGIN)) && player.y >= basin.rimY - .12;
-      if (onPlatform || onLedge) basin.lastSafe = { x:player.x, z:player.z };
-      return;
+    if (!inLava) { basin.inLavaFor = 0; return; }
+    if (!basin.inLavaFor) {
+      basin.falls++;
+      kit.deps?.showToast?.('Into the lava! Climb back up the rim before it burns you down.', false);
     }
     basin.inLavaFor += dt;
     if (now - basin.lastBurnAt > 900) {
@@ -587,14 +580,17 @@
       window.ResourceSystem?.addAffliction?.(kit.deps?.player, 'burningHealth', cfg('lavaBasin.lavaBurn', LAVA_BURN));
       kit.playLavaSizzle?.();
     }
-    if (basin.inLavaFor >= cfg('lavaBasin.lavaEscapeSeconds', LAVA_ESCAPE_S)) {
-      basin.inLavaFor = 0;
-      basin.escapes++;
-      const spot = basin.lastSafe || { x:basin.pad.x, z:basin.pad.z };
-      const support = kit.sampleSupport(spot.x, spot.z); // Highest surface there (ledge / pillar top), never the pit floor.
-      kit.setPlayerWorld({ x:spot.x, z:spot.z, y:Number(support?.y ?? basin.pad.topY) }, true, true);
-      kit.deps?.showToast?.('You scramble out of the lava!', false);
+  }
+
+  // Extra ledge-climb height while wading in a basin's lava: enough to
+  // mantle the rim however deep the pit is. Pillars/pads stay rope-only
+  // (no-climb surfaces), so this only gets the player out, not across.
+  function lavaClimbRise(point) {
+    if (!point) return 0;
+    for (const basin of basins) {
+      if (inside(basin.bounds, point, -.3) && point.y < basin.lavaY + .3) return basin.rimY - point.y + .1;
     }
+    return 0;
   }
 
   function buildRooms(kit, context, rng, usedRooms, options) {
@@ -654,7 +650,7 @@
         ropes:basin.ropes.map(rope => rope.id), plates:basin.plates.map(plate => ({ id:plate.id, pressed:plate.pressed, x:plate.x, z:plate.z, y:plate.y })),
         chests:basin.chests.map(chest => ({ id:chest.id, tier:chest.tier, opened:chest.opened })),
         balcony:basin.balcony ? { ...point(basin.balcony), wallNormal:basin.balcony.wallNormal, doorOpen:!!basin.balcony.door?.open, doorProgress:+(basin.balcony.door?.progress || 0).toFixed(3), chestTier:basin.balcony.chest?.tier || null } : null,
-        completed:basin.completed, escapes:basin.escapes,
+        completed:basin.completed, falls:basin.falls,
       })),
       payoffs:payoffs.map(payoff => ({ plate:payoff.plate ? { x:payoff.plate.x, y:payoff.plate.y, z:payoff.plate.z } : null, sealed:payoff.sealed ?? null, kind:payoff.kind, roomId:payoff.roomId, doorId:payoff.doorId || null, platePressed:payoff.plate?.pressed ?? null, chestTier:(payoff.chest || payoff.balcony?.chest)?.tier || null, liftProgress:payoff.lift ? +payoff.lift.progress.toFixed(3) : null, balcony:payoff.balcony ? point(payoff.balcony) : null, lift:payoff.lift ? point(payoff.lift) : null })),
     };
@@ -663,6 +659,7 @@
   SimplePuzzles.registerComposer({ id:'ropeRewards', buildRooms, onStandaloneRope, update, controls, snapshot, clear });
   window.DevRandomRuinRopeRewards = Object.freeze({
     snapshot,
+    lavaClimbRise,
     setForcedPayoff:kind => { forcedPayoff = ['plateDoor', 'lift', 'chest'].includes(kind) ? kind : null; return forcedPayoff; }, // Applies on the next generate().
   });
 })();

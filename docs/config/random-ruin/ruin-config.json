@@ -15,7 +15,8 @@
     "chordPlates": 0.5,
     "standaloneCanopy": 0.35,
     "sarcophagi": 0.3,
-    "ambientLift": 0.38
+    "ambientLift": 0.38,
+    "ceilingRailTargets": 0.55
   },
   "ambientLift": {
     "size": 2.2,
@@ -27,6 +28,10 @@
     "plateDoorLiftOrChestChance": 0.34,
     "liftOrChestChance": 0.5
   },
+  "ropeVariants": {
+    "chainChance": 0.35,
+    "pumpChance": 0.4
+  },
   "lavaBasin": {
     "pillarSize": 2.2,
     "pillarRise": 0.62,
@@ -35,9 +40,7 @@
       5.0,
       4.7
     ],
-    "lavaEscapeSeconds": 0.45,
     "lavaBurn": 16,
-    "safeEdgeMargin": 0.6,
     "liftRiseMax": 0.95,
     "liftSeconds": 2.2,
     "balconyHeadroom": 1.7
