@@ -358,7 +358,7 @@
       const pointYaw = Math.atan2(dz, dx);
       const yawDelta = Math.abs(Math.atan2(Math.sin(pointYaw - solution.yaw), Math.cos(pointYaw - solution.yaw)));
       const hit = distancePx <= rangePx && yawDelta <= halfConeRad;
-      lastMelee3DResult = {
+      if (opts.debug !== false) lastMelee3DResult = { // Per-frame probes (debug:false) must not replace the last real swing's readout.
         at: Date.now(), hit, fallback2D: true, shape: 'pie-prism',
         attacker: attacker?.id || attacker?.name || (attacker === deps?.player ? 'player' : 'actor'),
         target: target?.id || target?.name || target?.def?.id || 'target',
@@ -410,7 +410,7 @@
         break;
       }
     }
-    lastMelee3DResult = {
+    if (opts.debug !== false) lastMelee3DResult = { // Same probe exclusion as the 2D fallback above.
       at: Date.now(), hit, shape: 'pie-prism',
       attacker: attacker?.id || attacker?.name || (attacker === deps?.player ? 'player' : 'actor'),
       target: target?.id || target?.name || target?.def?.id || 'target',

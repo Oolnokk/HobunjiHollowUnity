@@ -14,7 +14,12 @@ const SRC = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'perception
 
 class Vector3 { constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; } set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; } }
 class Box3 { setFromObject(o) { this.min = { x: -0.5, z: -0.5 }; this.max = { x: (o.userData?.size || 1) - 0.5, z: 0.5 }; return this; } isEmpty() { return false; } }
-const THREE = { Vector3, Box3 };
+class Vector2 { constructor(x = 0, y = 0) { this.x = x; this.y = y; } set(x, y) { this.x = x; this.y = y; return this; } }
+class Stub { constructor(...args) { this.args = args; this.texture = {}; this.width = 1; this.height = 1; this.uniforms = args[0]?.uniforms; } add() {} setSize(w, h) { this.width = w; this.height = h; } }
+const THREE = {
+  Vector3, Box3, Vector2, Color: Stub, WebGLRenderTarget: Stub, Scene: Stub, OrthographicCamera: Stub, ShaderMaterial: Stub,
+  Mesh: Stub, PlaneGeometry: Stub, MeshBasicMaterial: Stub, LinearFilter: 1, RGBAFormat: 1, DoubleSide: 2,
+}; // Enough of three.js for renderOverlay's mask + composite passes against a mock renderer.
 
 function node(name, pos, parent) {
   const n = {
@@ -30,6 +35,7 @@ function mesh(parent) {
   const m = node('m', parent.pos, parent);
   m.isMesh = true;
   m.material = { visible: true, colorWrite: true };
+  m.layers = { mask: 1, enable(layer) { this.mask |= 1 << layer; }, disable(layer) { this.mask &= ~(1 << layer); } };
   return m;
 }
 
@@ -151,5 +157,46 @@ assert.strictEqual(button.classList.contains('active'), false);
 assert.strictEqual(button.attrs['aria-pressed'], 'false');
 button.listeners.pointerdown({ preventDefault() {} });
 assert.strictEqual(PM.isActive(), true, 'and back on, no cooldown');
+
+// renderOverlay: the mask pass swaps materials/layers only for its own
+// render, and every piece of renderer state is restored afterwards — even when
+// the mask render throws (a stuck render target would black out the canvas).
+PM.update(9000);
+const targetMesh = wolf.avatarRef.group.children[0];
+const originalMaterial = targetMesh.material;
+const camera = { layers: { mask: 1, set(layer) { this.mask = 1 << layer; } } };
+const renderer = {
+  target: 'canvas-target', autoClear: true, shadowMap: { enabled: true, autoUpdate: true }, passes: [], failMask: false,
+  getDrawingBufferSize(v) { return v.set(200, 100); },
+  getRenderTarget() { return this.target; },
+  setRenderTarget(target) { this.target = target; },
+  getClearColor(c) { return c; }, getClearAlpha() { return 1; }, setClearColor() {}, clear() {},
+  render(renderScene) {
+    const mask = renderScene === scene;
+    if (mask) {
+      assert.notStrictEqual(targetMesh.material, originalMaterial, 'mask pass draws with the category material');
+      assert.strictEqual(this.autoClear, false);
+      if (this.failMask) throw new Error('mask failure');
+    }
+    this.passes.push(mask ? 'mask' : 'composite');
+  },
+};
+const assertRestored = label => {
+  assert.strictEqual(renderer.target, 'canvas-target', `${label}: render target restored`);
+  assert.strictEqual(renderer.autoClear, true, `${label}: autoClear restored`);
+  assert.strictEqual(renderer.shadowMap.autoUpdate, true, `${label}: shadow auto-update restored`);
+  assert.strictEqual(targetMesh.material, originalMaterial, `${label}: source material restored`);
+  assert.strictEqual(targetMesh.layers.mask, 1, `${label}: perception layer removed`);
+  assert.strictEqual(camera.layers.mask, 1, `${label}: camera layers restored`);
+};
+PM.renderOverlay(renderer, scene, camera);
+assert.deepStrictEqual(renderer.passes, ['mask', 'composite']);
+assert.ok(PM.debugSnapshot().rendered > 0);
+assertRestored('normal frame');
+renderer.passes.length = 0;
+renderer.failMask = true;
+assert.throws(() => PM.renderOverlay(renderer, scene, camera), /mask failure/);
+assert.deepStrictEqual(renderer.passes, [], 'no composite of an incomplete mask');
+assertRestored('failed mask pass');
 
 console.log('perception mode: ok');

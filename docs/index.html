@@ -279,7 +279,7 @@
   <!-- Burning Health presentation: reuses the authored campfire fire emitter on afflicted player/enemy avatar roots. -->
   <script src="js/combat/burning-affliction-vfx.js?v=20260923burn1"></script>
   <script src="js/combat/resource-rings.js?v=20261004h9a5a10d"></script>
-  <script src="js/combat/combat-core.js?v=20261015h61e7c0f"></script>
+  <script src="js/combat/combat-core.js?v=20261016h917d5d5"></script>
   <script src="js/combat/enemy-search-ai.js?v=20260926combatreview1"></script>
   <!-- Stagger/Footing: authored 4-directional ragdoll blend clips + runtime
        playback onto the player's procedural rig and quarter-turned body-only
@@ -298,7 +298,7 @@
   <script src="js/combat/companion-offense.js?v=20260930ench1"></script>
   <script src="js/combat/combat-input.js?v=20261015h2aa7476"></script>
   <script src="js/combat/combat-combo.js?v=20261005heb94de5"></script>
-  <script src="js/combat/combat-quickattacks.js?v=20261016hd05ad5f"></script>
+  <script src="js/combat/combat-quickattacks.js?v=20261016hf3aa758"></script>
   <script src="js/combat/combat-counter-shield.js?v=20261005h66f4dee"></script>
   <script src="js/combat/combat-blink-dodge.js?v=20261002h2d08879"></script>
   <script src="js/combat/combat-charged-breaker.js?v=20261004h4413146"></script>
@@ -827,7 +827,7 @@
   <script src="js/crop-growth.js?v=20261015hcrop001"></script>
   <!-- Perception Mode: toggleable eagle-vision highlights + crop/livestock
        info lists (window.PerceptionMode; game.js calls init/update/renderOverlay). -->
-  <script src="js/perception-mode.js?v=20261016hperc003"></script>
+  <script src="js/perception-mode.js?v=20261016h7dd69ee"></script>
   <script src="js/world-portrait-life.js?v=20260930combatface2"></script>
 </head>
 <body>
@@ -2527,7 +2527,7 @@
        helper at module evaluation time, so it belongs here rather than in the
        earlier combat-definition block. It still loads before game.js and
        registers in RuntimeFrameScheduler's pre-game phase. -->
-  <script src="js/combat/quick-attack-bonus-indicator.js?v=20261016h6a294bf"></script>
+  <script src="js/combat/quick-attack-bonus-indicator.js?v=20261016hdff772c"></script>
   <!-- Lore loading-screen overlay, shown while a wilderness zone or mine
        floor rebuilds from scratch. Content authored via
        tools/loading-screen-editor/index.html. -->
@@ -2632,7 +2632,7 @@
   <!-- Directional camera pitch policy is isolated from controller bindings/gameplay dispatch. -->
   <script src="js/camera-look-clamp.js?v=20260923review2"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261016hc6c0b94"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261016hf199838"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
@@ -2660,7 +2660,8 @@
   <!-- Tool mastery XP/level/award helpers extracted out of game.js; must
        load before game.js, which calls window.ToolMastery.init(...). -->
   <script src="js/tool-mastery.js?v=20261016a"></script>
-  <script src="game.js?v=20261016h3f4fed1"></script>
+  <script src="js/farm-access.js?v=20261016a"></script>
+  <script src="game.js?v=20261016h07d482f"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261010h8448517"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

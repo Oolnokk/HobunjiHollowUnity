@@ -119,6 +119,33 @@ assert.strictEqual(behind.Combat.quickAttackData.lastResolution.conditionalHits,
 assert.strictEqual(behind.Combat.quickAttackData.lastResolution.bonusEffectProcs, 0, 'cooling condition match does not proc the bonus package');
 assert.strictEqual(behind.Combat.quickAttackData.lastResolution.refunded, 0);
 
+// The cooldown belongs to the enemy that received the bonus, not to the
+// attack: a different enemy the player is behind still gets the full bonus
+// while the first one is cooling down.
+const second = { x: 20, y: 0, facing: 0, health: 100, maxHealth: 100, stamina: 100, maxStamina: 100, areaId: 'test', def: { label: 'Second' } };
+behind.player.stamina = 100;
+behind.Combat.deps.hostileObjects = [second];
+behind.backstab.onTap();
+assert.strictEqual(behind.damageCalls[2].creature, second);
+assert.strictEqual(behind.damageCalls[2].damage, 45, 'a fresh enemy receives the bonus while another enemy is cooling down');
+assert.strictEqual(behind.Combat.quickAttackData.lastResolution.bonusEffectProcs, 1);
+assert.strictEqual(behind.Combat.quickAttackData.bonusEffectCooldownRemaining(second), 5, 'the newly struck enemy starts its own cooldown');
+assert.strictEqual(behind.Combat.quickAttackData.bonusEffectCooldownRemaining(behind.target), 5, "the first enemy's clock is untouched");
+
+// One cleave across two ready enemies: both receive the bonus and both start
+// their own cooldowns, but the stamina refund is still granted once.
+const cleave = runBackstabScenario(0);
+const partner = { ...cleave.target, def: { label: 'Partner' } };
+cleave.player.stamina = 100;
+cleave.Combat.quickAttackData.resetBonusEffectCooldowns();
+cleave.Combat.deps.hostileObjects = [cleave.target, partner];
+cleave.backstab.onTap();
+const cleaveHits = cleave.damageCalls.slice(-2);
+assert.deepStrictEqual(cleaveHits.map(call => call.damage), [45, 45], 'each ready enemy in one cleave gets the bonus');
+assert.strictEqual(cleave.Combat.quickAttackData.lastResolution.bonusEffectProcs, 2);
+assert.strictEqual(cleave.Combat.quickAttackData.lastResolution.cooldownTargets.length, 2, 'each bonus recipient starts its own cooldown');
+assert.strictEqual(cleave.Combat.quickAttackData.lastResolution.refunded, 30, 'cleaving several bonus recipients still refunds once');
+
 const front = runBackstabScenario(Math.PI); // Target faces west toward the player: the player is in front, not behind.
 assert.strictEqual(front.damageCalls.length, 1);
 assert.strictEqual(front.damageCalls[0].damage, 6, 'non-conditional Backstab Flick should use its base damage against the actual hit target');

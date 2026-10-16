@@ -103,7 +103,7 @@
   let CONDITIONAL_REFUND_FRACTION = 0.5; // Fraction of the actual post-modifier spend restored after at least one cooldown-ready conditional proc.
   let BONUS_EFFECT_COOLDOWN_S = 5; // Global default used to gate the stronger conditional package; individual techniques may override with bonusEffectCooldownS.
   let BONUS_EFFECT_POWER_MULTIPLIER = 2; // Multiplies mastery-derived conditional affliction/debuff strength; core bonus damage/knockback stay explicitly authored per technique.
-  const bonusCooldownUntilMs = new Map(); // Runtime per-weapon/per-Quick-Attack cooldown clocks used by combat, the opportunity reticle, and mobile diagnostics.
+  const bonusCooldownUntilMs = new Map(); // Enemy -> bonus cooldown end. One clock per enemy, shared by every weapon and Quick Attack; read by combat, the opportunity reticle, and mobile diagnostics.
   let HOLD_S = 1; // post-strike pause before easing back to neutral
   // The jab's hit cone (scaled off the shared 'cut' ability's rangePx —
   // see baseAbil below) is intentionally tighter than the forward lunge.
@@ -116,33 +116,37 @@
     return Math.round((Number(value) || 0) * 10) / 10;
   }
 
-  function bonusCooldownKey(weaponKey, abilityId) {
-    return `${String(weaponKey || 'none')}:${String(abilityId || 'unknown')}`;
-  }
-
   function bonusEffectCooldownS(def) {
     const authored = Number(def?.bonusEffectCooldownS);
     return Math.max(0, Number.isFinite(authored) ? authored : Number(BONUS_EFFECT_COOLDOWN_S) || 0);
   }
 
-  function bonusEffectCooldownRemaining(weaponKey, abilityId, def = TECHNIQUES[abilityId], atMs = performance.now()) {
-    const until = Number(bonusCooldownUntilMs.get(bonusCooldownKey(weaponKey, abilityId))) || 0;
+  // The bonus cooldown belongs to the enemy that received the bonus, not to
+  // the attack: after a proc, that enemy cannot receive another Quick Attack
+  // bonus (from any weapon or technique) until its clock runs out, while every
+  // other enemy stays ready.
+  function bonusEffectCooldownRemaining(target, atMs = performance.now()) {
+    if (!target) return 0;
+    const until = Number(bonusCooldownUntilMs.get(target)) || 0;
     if (!(until > atMs)) {
-      if (until) bonusCooldownUntilMs.delete(bonusCooldownKey(weaponKey, abilityId));
+      if (until) bonusCooldownUntilMs.delete(target);
       return 0;
     }
     return Math.max(0, (until - atMs) / 1000);
   }
 
-  function isBonusEffectReady(weaponKey, abilityId, def = TECHNIQUES[abilityId], atMs = performance.now()) {
-    return bonusEffectCooldownRemaining(weaponKey, abilityId, def, atMs) <= 0;
+  function isBonusEffectReady(target, atMs = performance.now()) {
+    return bonusEffectCooldownRemaining(target, atMs) <= 0;
   }
 
-  function beginBonusEffectCooldown(weaponKey, abilityId, def = TECHNIQUES[abilityId], atMs = performance.now()) {
+  // Starts `target`'s cooldown for the technique that just procced on it
+  // (techniques may author their own bonusEffectCooldownS). Returns the length.
+  function beginBonusEffectCooldown(target, def, atMs = performance.now()) {
     const cooldownS = bonusEffectCooldownS(def);
-    const key = bonusCooldownKey(weaponKey, abilityId);
-    if (cooldownS > 0) bonusCooldownUntilMs.set(key, atMs + cooldownS * 1000);
-    else bonusCooldownUntilMs.delete(key);
+    for (const [enemy, until] of bonusCooldownUntilMs) if (!(until > atMs)) bonusCooldownUntilMs.delete(enemy); // Despawned enemies never hold an expired entry for long.
+    if (!target) return cooldownS;
+    if (cooldownS > 0) bonusCooldownUntilMs.set(target, atMs + cooldownS * 1000);
+    else bonusCooldownUntilMs.delete(target);
     return cooldownS;
   }
 
@@ -261,9 +265,9 @@
           const vegetationCleared = deps.clearVegetationInAttackCone?.(deps.player.x, deps.player.y, deps.player.angle, rangePx, halfConeRad) || 0; // Used for accurate hit feedback when the cone only cuts growth.
           let hits = 0, lastName = '', conditionalHits = 0, bonusEffectProcs = 0, conditionalText = '';
           const ordinaryHitTargets = new Set(); // Used by Living Gust after real Quick Attack hit validity has already been resolved.
-          const attackWeaponKey = attackContext.weaponKey || deps.currentWeaponKey(); // Frozen weapon identity keeps a mid-animation equipment change from moving the cooldown to another weapon.
-          const bonusReadyAtStrike = isBonusEffectReady(attackWeaponKey, id, def); // Snapshot once so one cleaving strike treats every qualifying target consistently.
-          const bonusCooldownS = bonusEffectCooldownS(def); // Used by diagnostics/toast data and the one post-strike cooldown commit.
+          const strikeAtMs = performance.now(); // One instant for every target's cooldown check and commit in this strike.
+          const procTargets = []; // Each enemy that received the bonus starts its own cooldown after the strike resolves.
+          const bonusCooldownS = bonusEffectCooldownS(def); // Used by diagnostics/toast data and each per-enemy cooldown commit.
           const quickBonusAfflictions = window.CombatAttackEvents?.scaleAfflictions?.(
             effects.quickBonusAfflictions || {},
             (attackContext.modifiers?.affliction || 1) * BONUS_EFFECT_POWER_MULTIPLIER,
@@ -285,7 +289,7 @@
             // target's pre-impact health and every other condition reads the
             // exact state/facing at contact.
             const hitConditions = window.Combat.getQuickAttackConditions(deps, c);
-            const hitTech = buildTechnique(def, hitConditions, bonusReadyAtStrike);
+            const hitTech = buildTechnique(def, hitConditions, isBonusEffectReady(c, strikeAtMs)); // Readiness is this enemy's own cooldown.
             const conditionBonusUsed = hitTech.bonusActive; // The stronger package only exists when both the authored condition and cooldown gate are satisfied.
             const damage = Math.round(baseAbil.damage * hitTech.damageMul * (1 + (effects.stats.damageMul || 0)) * (attackContext.modifiers?.damage || 1));
             const knockbackPxS = baseAbil.knockbackPxS * hitTech.knockbackMul * (attackContext.modifiers?.knockback || 1);
@@ -331,16 +335,16 @@
             hits++;
             lastName = c.def.label;
             if (hitTech.conditionMatched) conditionalHits++;
-            if (conditionBonusUsed) bonusEffectProcs++;
+            if (conditionBonusUsed) { bonusEffectProcs++; procTargets.push(c); }
             if (hitTech.conditionMatched) conditionalText ||= hitTech.sourceText;
           }
 
           window.EnchantmentSystem?.applyPeripheralGust?.(attackContext, ordinaryHitTargets);
 
-          // One successful cooldown-ready proc starts one cooldown and earns
-          // one half-cost refund; cleaving several qualifying creatures cannot
-          // multiply either reward.
-          if (bonusEffectProcs > 0) beginBonusEffectCooldown(attackWeaponKey, id, def);
+          // Every enemy that received the bonus starts its own cooldown; the
+          // strike still earns at most one half-cost refund, so cleaving
+          // several qualifying creatures cannot multiply that reward.
+          for (const target of procTargets) beginBonusEffectCooldown(target, def, strikeAtMs);
           const refundRequested = bonusEffectProcs > 0 ? actualCost * CONDITIONAL_REFUND_FRACTION : 0;
           const refunded = refundStamina(deps.player, refundRequested);
           const sourceText = conditionalHits > 0 ? conditionalText : 'no condition bonus';
@@ -373,14 +377,15 @@
             id, name: def.label, hits, conditionalHits, bonusEffectProcs,
             requestedCost: round1(requestedCost), actualCost, refunded,
             bonusEffectCooldownS: bonusCooldownS,
-            cooldownRemainingS: round1(bonusEffectCooldownRemaining(attackWeaponKey, id, def)),
+            cooldownRemainingS: round1(Math.max(0, ...procTargets.map(target => bonusEffectCooldownRemaining(target)))), // Longest clock started by this strike.
+            cooldownTargets: procTargets.map(target => ({ target: target.id || target.name || target.def?.label || 'enemy', remainingS: round1(bonusEffectCooldownRemaining(target)) })),
             bonusEffectPowerMultiplier: BONUS_EFFECT_POWER_MULTIPLIER,
             appliedDebuffs,
             appliedInstantEffects,
             lungeTiles: LUNGE_TILE_MUL,
             resolvedAt: now(),
           };
-          deps.debugLog?.(`[quick-attack] ${def.label} hits=${hits} conditions=${conditionalHits} bonusProcs=${bonusEffectProcs} cooldown=${round1(bonusEffectCooldownRemaining(attackWeaponKey, id, def))}s debuffs=${appliedDebuffs.map(entry => `${entry.id}x${entry.stacks || 1}`).join(',') || '-'} instant=${appliedInstantEffects.map(entry => `${entry.id}:${entry.consumed || entry.damage || 0}`).join(',') || '-'} cost=${actualCost} refund=${refunded} lungeTiles=${LUNGE_TILE_MUL}`, 'combat');
+          deps.debugLog?.(`[quick-attack] ${def.label} hits=${hits} conditions=${conditionalHits} bonusProcs=${bonusEffectProcs} cooldownEnemies=${procTargets.length} debuffs=${appliedDebuffs.map(entry => `${entry.id}x${entry.stacks || 1}`).join(',') || '-'} instant=${appliedInstantEffects.map(entry => `${entry.id}:${entry.consumed || entry.damage || 0}`).join(',') || '-'} cost=${actualCost} refund=${refunded} lungeTiles=${LUNGE_TILE_MUL}`, 'combat');
         },
         onComplete: () => { busyAction = null; },
         onCancel: () => { busyAction = null; },
@@ -405,7 +410,7 @@
     BONUS_EFFECT_COOLDOWN_S, BONUS_EFFECT_POWER_MULTIPLIER,
     RANGE_SCALE, LUNGE_TILE_MUL, HOLD_S, getConditions, refundStamina,
     bonusEffectCooldownS, bonusEffectCooldownRemaining, isBonusEffectReady, beginBonusEffectCooldown, resetBonusEffectCooldowns,
-    cooldownSnapshot: () => Object.fromEntries([...bonusCooldownUntilMs.entries()].map(([key, until]) => [key, Math.max(0, round1((until - performance.now()) / 1000))])),
+    cooldownSnapshot: () => Object.fromEntries([...bonusCooldownUntilMs.entries()].map(([enemy, until]) => [enemy?.id || enemy?.name || 'enemy', Math.max(0, round1((until - performance.now()) / 1000))])),
     lastResolution: null,
   };
 

@@ -1,6 +1,10 @@
 // Quick-attack bonus-ready cue — renders an affliction-colored opportunity
-// reticle over the current auto-target whenever the equipped Quick Attack
-// would receive its conditional bonus.
+// reticle over EVERY hostile in the camera's view on which the equipped Quick
+// Attack's bonus condition is currently met (and that enemy's own bonus
+// cooldown has run out).
+// It is independent of reach and aim: it announces openings across the field,
+// while the melee HUD's centered reticle (js/combat/melee-hud-reticle.js)
+// separately shows whether the aimed enemy is in Quick Attack range.
 //
 // Readiness comes from Combat.getQuickAttackConditions() — the exact evaluator
 // used by the attack itself — while affliction glow colors come from the same
@@ -24,10 +28,14 @@
     { scale: 1.23, opacity: 0.11, followRate: 20 },
     { scale: 1.32, opacity: 0.08, followRate: 15 },
   ]; // Used for additive affliction glow; lower layers are larger, dimmer, and fractionally slower.
+  const MAX_RETICLES = 12; // Nearest cued hostiles only, bounding per-frame sprite work in large fights.
   const visualRootCache = new WeakMap(); // Used to avoid re-traversing a target avatar every frame when sizing the reticle.
 
-  let reticle = null; // Used to reuse one main sprite plus its additive glow layers as the active target changes.
-  let lastTarget = null; // Used by debugging and to detach immediately when auto-target selection changes.
+  const sights = new Map(); // target -> its reticle (main sprite + glow layers), alive while that target stays cued.
+  const spareSights = []; // Released reticles reused for the next cued target instead of rebuilding materials.
+  let face = null; // One procedural (or authored) reticle texture shared by every sight.
+  let frameSerial = 0; // Marks sights touched this frame; untouched ones are released.
+  let lastTarget = null; // Nearest cued (else nearest visible) hostile, for diagnostics.
   let lastFrameMs = performance.now(); // Used to make glow-layer lag frame-rate independent.
   let debugBadge = null; // Used only when the optional mobile URL debug readout is enabled.
   let debugEnabled = debugEnabledFromUrl(); // Used to make diagnostics accessible on mobile without devtools.
@@ -35,6 +43,9 @@
   const tempRight = new THREE.Vector3(); // Used to move the reticle in camera-screen horizontal space.
   const tempUp = new THREE.Vector3(); // Used to move the reticle in camera-screen vertical space.
   const tempPosition = new THREE.Vector3(); // Used as the main reticle's current world position before glow lag is solved.
+  const viewMatrix = new THREE.Matrix4(); // Camera projection × view, rebuilt once per frame for the in-view test.
+  const viewFrustum = new THREE.Frustum(); // Camera field of view the cue is limited to.
+  const viewSphere = new THREE.Sphere(); // Target body bounds tested against the frustum.
 
   function currentQuickAttack() {
     const attackId = window.Combat.loadout?.getSlot?.('tap2') || null; // Used to resolve the currently equipped Quick Attack.
@@ -66,56 +77,72 @@
       || !!window.HOBUNJI_CHARACTER_VIEW_STATUS?.enabled;
   }
 
-  function opportunityTarget(deps, equipped) {
-    if (!deps || !equipped || cueSuppressed(deps)) return null;
-    const quick = window.Combat.quickAttackData; // Live configured reach matches the Quick Attack's pre-lunge envelope.
-    const effects = window.CombatProgression?.getEffects?.(deps.currentWeaponKey?.(), equipped.attackId);
-    const stats = effects?.stats || {}; // Weapon mastery range/lunge modifiers are shared with attack execution.
-    const base = deps.weaponAbility?.('cut') || { rangePx: deps.TILE * 1.05 };
-    const rangePx = Math.max(
-      base.rangePx * (equipped.definition.rangeMul ?? 1) * (quick.RANGE_SCALE ?? 0.6) * (1 + (stats.rangeMul || 0)),
-      deps.TILE * (quick.LUNGE_TILE_MUL ?? 4.5) * (1 + (stats.lungeMul || 0)),
-    ); // Includes the forward lunge so the cue can announce an opening before pressing attack.
-    const area = deps.getCurrentArea?.(); // Excludes unloaded-area creatures from the manual aim scan.
-    const direction = deps.getPlayerMeleeAimDirection?.(); // Uses the same camera/stick pitch and bearing as the melee HUD.
-    const eligible = target => !!target && target.health > 0 && !!targetRoot(target)
-      && (!area || target.areaId === area) && !target.isCompanion
-      && !target._denHidden && !target._grehlrBurrowProtected
-      && (!window.Combat.meleeHit || window.Combat.meleeHit(deps.player, target, {
-        rangePx,
-        halfConeRad: (equipped.definition.halfConeDeg ?? 18) * Math.PI / 180,
-        ...(direction ? { direction } : { yaw: deps.player?.angle, pitch: deps.getPlayerMeleeAimPitch?.() || 0 }),
-        debug: false,
-      })); // Canonical collider rejects out-of-range, off-axis and vertically unreachable targets.
-    const focused = deps.getMeleeReticleTarget?.(); // Manual desktop/mobile targeting works even when aim assist is off.
-    if (eligible(focused)) return focused;
-    const assisted = deps.findMeleeAttackCandidate?.() || deps.findAutoTarget?.(); // Retains existing mobile assist targeting when enabled.
-    if (eligible(assisted)) return assisted;
-    let best = null; // Closest eligible creature in the aimed Quick Attack cone.
-    let bestDistance = Infinity; // Used only to rank eligible manual-aim candidates.
-    for (const target of deps.hostileObjects || []) {
-      const distance = Math.hypot(target.x - deps.player.x, target.y - deps.player.y); // Map distance ranks hits without constructing vectors.
-      if (distance >= bestDistance || !eligible(target)) continue;
-      best = target;
-      bestDistance = distance;
+  // Live scene a target's avatar is shown in; null while it or any ancestor is hidden.
+  function shownScene(target, root) {
+    for (let node = root; node; node = node.parent) {
+      if (node.visible === false) return null;
     }
-    return best;
+    return targetScene(target, root);
+  }
+
+  function cameraFrustum(camera) {
+    if (!camera?.projectionMatrix || !camera?.matrixWorldInverse) return null; // No camera yet: every shown target counts as in view.
+    viewMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    return viewFrustum.setFromProjectionMatrix(viewMatrix);
+  }
+
+  // Every live, attackable hostile in this area whose body is inside the
+  // camera's view, nearest first. Same eligibility as Quick Attack strike
+  // resolution (deps.hostileObjects in the current area), without any reach
+  // or aim requirement.
+  function visibleCandidates(deps) {
+    const area = deps.getCurrentArea?.();
+    const frustum = cameraFrustum(deps.camera);
+    const px = Number(deps.player?.x) || 0, py = Number(deps.player?.y) || 0;
+    const out = [];
+    for (const target of deps.hostileObjects || []) {
+      if (!target || !(target.health > 0) || (area && target.areaId !== area)) continue;
+      if (target.isCompanion || target._denHidden || target._grehlrBurrowProtected) continue;
+      const root = targetRoot(target);
+      const scene = root && shownScene(target, root);
+      if (!scene) continue;
+      const anchor = window.WorldPopupText.avatarCentroidWorld(root); // Same body centroid ordinary world popups use.
+      if (!anchor) continue;
+      if (frustum) {
+        const metrics = resolveVisualMetrics(root);
+        viewSphere.center.copy(anchor);
+        viewSphere.radius = Math.max(metrics.width, metrics.height) * 0.5;
+        if (!frustum.intersectsSphere(viewSphere)) continue;
+      }
+      out.push({ target, root, scene, anchor, distance: Math.hypot((Number(target.x) || 0) - px, (Number(target.y) || 0) - py) });
+    }
+    out.sort((a, b) => a.distance - b.distance);
+    return out;
   }
 
   function getReadyState() {
     const deps = window.Combat.deps;
     const equipped = currentQuickAttack();
-    const target = opportunityTarget(deps, equipped); // Read-only targeting never enables aim assist or changes the player's facing.
-    const root = targetRoot(target); // Used to anchor readiness to the target's live avatar.
-    if (!deps || !equipped || !target || !root) {
-      return { deps, target, root, equipped, ready: false, conditions: null };
+    const state = { deps, equipped, target: null, root: null, ready: false, conditionReady: false, conditions: null, cooldownRemainingS: 0, targets: [], readyTargets: [] };
+    if (!deps || !equipped || cueSuppressed(deps)) return state;
+    const cooldownRemaining = window.Combat.quickAttackData?.bonusEffectCooldownRemaining; // Per-enemy clock started when that enemy last received the bonus.
+    const condKey = equipped.definition.condKey;
+    const candidates = visibleCandidates(deps);
+    // Farthest first, so the shared evaluator's lastConditionCheck diagnostics
+    // end the frame describing the nearest hostile.
+    for (let i = candidates.length - 1; i >= 0; i--) {
+      const entry = candidates[i];
+      entry.conditions = getConditions(deps, entry.target); // Same public evaluator used at actual strike resolution.
+      entry.conditionReady = !!entry.conditions[condKey];
+      entry.cooldownRemainingS = cooldownRemaining?.(entry.target) || 0;
+      entry.ready = entry.conditionReady && entry.cooldownRemainingS <= 0; // The cue means "a Quick Attack landing on this enemy now gets the bonus".
     }
-    const conditions = getConditions(deps, target); // Same public evaluator used at actual strike resolution.
-    const conditionReady = !!conditions[equipped.definition.condKey];
-    const weaponKey = deps.currentWeaponKey?.() || 'none';
-    const cooldownRemainingS = window.Combat.quickAttackData?.bonusEffectCooldownRemaining?.(weaponKey, equipped.attackId, equipped.definition) || 0;
-    const ready = conditionReady && cooldownRemainingS <= 0;
-    return { deps, target, root, equipped, ready, conditionReady, cooldownRemainingS, conditions };
+    state.targets = candidates;
+    for (const entry of candidates) if (entry.ready && state.readyTargets.length < MAX_RETICLES) state.readyTargets.push(entry);
+    const focus = state.readyTargets[0] || candidates.find(entry => entry.conditionReady) || candidates[0] || null;
+    if (focus) Object.assign(state, { target: focus.target, root: focus.root, conditions: focus.conditions, conditionReady: focus.conditionReady, cooldownRemainingS: focus.cooldownRemainingS });
+    state.ready = state.readyTargets.length > 0;
+    return state;
   }
 
   function resolvedAfflictions(state) {
@@ -157,9 +184,18 @@
     });
   }
 
-  function makeReticle() {
+  function ensureFace() {
+    if (face) return face;
     const procedural = makeProceduralTexture();
-    const material = makeSpriteMaterial(procedural.texture);
+    face = { canvas: procedural.canvas, ctx: procedural.ctx, texture: procedural.texture, authored: false, drawnAtMs: -1 };
+    drawProceduralReticle(performance.now());
+    tryAuthoredTexture();
+    return face;
+  }
+
+  function makeSight() {
+    const map = ensureFace().texture;
+    const material = makeSpriteMaterial(map);
     const sprite = new THREE.Sprite(material);
     sprite.name = 'quick_attack_bonus_reticle';
     sprite.renderOrder = RETICLE_RENDER_ORDER;
@@ -168,7 +204,7 @@
     sprite.userData.isBillboard = true;
 
     const glows = GLOW_LAYER_CONFIG.map((cfg, index) => {
-      const glowMaterial = makeSpriteMaterial(procedural.texture, {
+      const glowMaterial = makeSpriteMaterial(map, {
         opacity: cfg.opacity,
         blending: THREE.AdditiveBlending,
       });
@@ -181,51 +217,74 @@
       return { ...cfg, material: glowMaterial, sprite: glowSprite };
     });
 
-    const sight = {
-      ...procedural,
-      material,
-      sprite,
-      glows,
-      activeTarget: null,
+    return {
+      material, sprite, glows,
+      target: null,
       afflictionSignature: null,
-      usingAuthoredTexture: false,
+      phaseMs: Math.random() * 60000, // Each sight roams on its own phase so several cues never wobble in lockstep.
+      frame: 0,
+      fresh: true,
     };
-    drawProceduralReticle(sight, performance.now());
-    tryAuthoredTexture(sight);
-    return sight;
   }
 
-  function setReticleTexture(sight, texture, authored = false) {
-    if (!sight || !texture) return;
-    texture.minFilter = THREE.LinearFilter;
-    texture.magFilter = THREE.LinearFilter;
-    texture.generateMipmaps = false;
-    if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
+  function setSightTexture(sight, texture) {
     sight.material.map = texture;
     sight.material.needsUpdate = true;
     for (const glow of sight.glows) {
       glow.material.map = texture;
       glow.material.needsUpdate = true;
     }
-    sight.usingAuthoredTexture = authored;
   }
 
-  function tryAuthoredTexture(sight) {
+  function setFaceTexture(texture, authored = false) {
+    if (!face || !texture) return;
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.generateMipmaps = false;
+    if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
+    face.texture = texture;
+    face.authored = authored;
+    for (const sight of sights.values()) setSightTexture(sight, texture);
+    for (const sight of spareSights) setSightTexture(sight, texture);
+  }
+
+  function tryAuthoredTexture() {
     // The authored file is intentionally optional right now. Once
     // docs/assets/hud/opportunity_reticle.png exists, TextureLoader swaps every
-    // layer to it automatically; an ordinary load failure leaves the proven
+    // sight to it automatically; an ordinary load failure leaves the proven
     // procedural reticle in place without affecting readiness logic.
     new THREE.TextureLoader().load(
       OPPORTUNITY_TEXTURE_URL,
-      texture => setReticleTexture(sight, texture, true),
+      texture => setFaceTexture(texture, true),
       undefined,
-      () => { sight.usingAuthoredTexture = false; },
+      () => { if (face) face.authored = false; },
     );
   }
 
-  function ensureReticle() {
-    if (!reticle) reticle = makeReticle();
-    return reticle;
+  function acquireSight(target) {
+    let sight = sights.get(target);
+    if (sight) return sight;
+    sight = spareSights.pop() || makeSight();
+    sight.target = target;
+    sight.fresh = true; // Glow layers snap to the first position instead of trailing in from a previous target.
+    sights.set(target, sight);
+    return sight;
+  }
+
+  function hideSight(sight) {
+    sight.sprite.visible = false;
+    sight.sprite.parent?.remove?.(sight.sprite);
+    for (const glow of sight.glows) {
+      glow.sprite.visible = false;
+      glow.sprite.parent?.remove?.(glow.sprite);
+    }
+  }
+
+  function releaseSight(target, sight) {
+    hideSight(sight);
+    sight.target = null;
+    sights.delete(target);
+    spareSights.push(sight);
   }
 
   function resolveVisualMetrics(root) {
@@ -262,8 +321,12 @@
     ctx.stroke();
   }
 
-  function drawProceduralReticle(sight, nowMs) {
-    if (!sight || sight.usingAuthoredTexture) return;
+  // Redraws the shared procedural face at most once per frame, however many
+  // sights display it.
+  function drawProceduralReticle(nowMs) {
+    if (!face || face.authored || face.drawnAtMs === nowMs) return;
+    face.drawnAtMs = nowMs;
+    const sight = face; // Canvas/context/texture of the shared face.
     const t = nowMs * 0.001;
     const center = RETICLE_CANVAS_PX * 0.5;
     const gap = 22 + Math.sin(t * 6.4 + 0.2) * 2.5;
@@ -310,32 +373,26 @@
     scene.add(layerSprite);
   }
 
-  function attachReticle(state, nowMs) {
-    const sight = ensureReticle();
-    const scene = targetScene(state.target, state.root); // Used to keep every sprite layer in the same scene as its target.
-    state.root.updateWorldMatrix?.(true, true); // Refreshes moving-parent transforms before sampling the live avatar centroid.
-    const anchor = window.WorldPopupText.avatarCentroidWorld(state.root); // Used to match the target body centroid used by ordinary world popup text.
-    if (!scene || !anchor) {
-      detachReticle();
-      return;
-    }
+  function attachSight(entry, state, nowMs, dt) {
+    const sight = acquireSight(entry.target);
+    sight.frame = frameSerial;
+    attachLayerToScene(sight.sprite, entry.scene);
+    for (const glow of sight.glows) attachLayerToScene(glow.sprite, entry.scene);
 
-    attachLayerToScene(sight.sprite, scene);
-    for (const glow of sight.glows) attachLayerToScene(glow.sprite, scene);
-
-    const metrics = resolveVisualMetrics(state.root); // Used to make the enlarged sight cover the current species' body.
+    const metrics = resolveVisualMetrics(entry.root); // Used to make the enlarged sight cover the current species' body.
     const bodySpan = Math.max(metrics.width, metrics.height);
     const baseSize = Math.max(0.72, Math.min(2.85, bodySpan * RETICLE_SCALE_RATIO));
-    const t = nowMs * 0.001;
+    const localMs = nowMs + sight.phaseMs; // Per-sight phase: same motion character, desynchronised between targets.
+    const t = localMs * 0.001;
     const scalePulse = 1 + Math.sin(t * 8.2 + 0.4) * 0.035 + Math.sin(t * 19.3) * 0.015;
-    const motion = reticleMotion(nowMs);
+    const motion = reticleMotion(localMs);
 
     // Convert the irregular sight motion into camera-plane world offsets. The
-    // main sprite now actually moves instead of only redrawing corners inside
-    // a fixed billboard; that gives the lower additive layers something real
-    // to follow a fraction of a beat behind.
+    // main sprite actually moves instead of only redrawing corners inside a
+    // fixed billboard; that gives the lower additive layers something real to
+    // follow a fraction of a beat behind.
     const camera = state.deps?.camera;
-    tempPosition.copy(anchor);
+    tempPosition.copy(entry.anchor);
     if (camera?.quaternion) {
       tempRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
       tempUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
@@ -344,15 +401,14 @@
       tempPosition.addScaledVector(tempUp, -motion.y * roamScale);
     }
 
-    const newlyVisible = sight.activeTarget !== state.target || !sight.sprite.visible;
-    sight.activeTarget = state.target;
+    const newlyVisible = sight.fresh || !sight.sprite.visible;
+    sight.fresh = false;
     sight.sprite.position.copy(tempPosition);
     sight.sprite.scale.set(baseSize * scalePulse, baseSize * scalePulse, 1);
     sight.material.rotation = motion.rotation;
     sight.material.opacity = 0.9 + 0.1 * (0.5 + 0.5 * Math.sin(t * 11.5));
     sight.sprite.visible = true;
 
-    const dt = Math.min(0.08, Math.max(0, (nowMs - lastFrameMs) / 1000));
     for (const glow of sight.glows) {
       if (newlyVisible) glow.sprite.position.copy(tempPosition);
       else {
@@ -367,28 +423,20 @@
     }
 
     applyAfflictionGlow(sight, state);
-    drawProceduralReticle(sight, nowMs);
   }
 
-  function detachReticle() {
-    if (!reticle) return;
-    reticle.activeTarget = null;
-    reticle.sprite.visible = false;
-    reticle.sprite.parent?.remove?.(reticle.sprite);
-    for (const glow of reticle.glows) {
-      glow.sprite.visible = false;
-      glow.sprite.parent?.remove?.(glow.sprite);
-    }
+  function detachAllSights() {
+    for (const [target, sight] of sights) releaseSight(target, sight);
   }
 
-  function syncReadyTarget(nowMs = performance.now()) {
-    const state = getReadyState(); // Evaluated once per animation frame and shared by the reticle and debug readout.
-    if (lastTarget !== state.target && reticle) detachReticle();
+  function syncReadyTargets(nowMs = performance.now()) {
+    const state = getReadyState(); // Evaluated once per animation frame and shared by every sight and the debug readout.
     lastTarget = state.target;
-
-    if (state.ready) attachReticle(state, nowMs);
-    else detachReticle();
-
+    frameSerial++;
+    const dt = Math.min(0.08, Math.max(0, (nowMs - lastFrameMs) / 1000));
+    if (state.readyTargets.length) drawProceduralReticle(nowMs);
+    for (const entry of state.readyTargets) attachSight(entry, state, nowMs, dt);
+    for (const [target, sight] of sights) if (sight.frame !== frameSerial) releaseSight(target, sight); // Condition ended, left view, died or cooldown started.
     updateDebugBadge(state);
     return state;
   }
@@ -402,13 +450,13 @@
     // recovery (detach the visible sprite rather than leaving it frozen
     // mid-update) and its own error snapshot for the mobile debug readout,
     // so this catch stays even though the scheduler has an outer one too.
-    if (window.AuthoredCutsceneRuntime?.isActive?.()) { detachReticle(); return; } // The director suppresses combat HUD throughout dialogue and action cards.
+    if (window.AuthoredCutsceneRuntime?.isActive?.()) { detachAllSights(); return; } // The director suppresses combat HUD throughout dialogue and action cards.
     try {
-      syncReadyTarget(nowMs);
+      syncReadyTargets(nowMs);
       lastFrameError = null;
     } catch (error) {
       lastFrameError = String(error?.message || error);
-      detachReticle();
+      detachAllSights();
     }
     lastFrameMs = nowMs;
   }
@@ -446,7 +494,8 @@
     badge.style.display = 'block';
     badge.textContent = [
       `Quick: ${state.equipped?.definition?.label || 'none'} (${state.equipped?.attackId || '-'})`,
-      `Target: ${state.target?.def?.label || state.target?.name || (state.target ? 'hostile' : 'none')}`,
+      `In view: ${state.targets?.length || 0} hostile(s), cued: ${state.readyTargets?.length || 0}`,
+      `Nearest: ${state.target?.def?.label || state.target?.name || (state.target ? 'hostile' : 'none')}`,
       `Bonus ready: ${state.ready ? 'YES' : 'no'}`,
       `Condition matched: ${state.conditionReady ? 'YES' : 'no'}`,
       `Cooldown: ${Number(state.cooldownRemainingS || 0).toFixed(2)}s`,
@@ -459,8 +508,8 @@
       `Animal attack: ${state.target?._animalAttack?.id || '-'} / ${state.target?._animalAttack?.state?.stage || '-'}`,
       `Popup root: ${state.root ? 'yes' : 'no'}`,
       `Frame error: ${lastFrameError || '-'}`,
-      `Reticle texture: ${reticle?.usingAuthoredTexture ? OPPORTUNITY_TEXTURE_URL : 'procedural fallback'}`,
-      'Cue: layered affliction opportunity reticle',
+      `Reticle texture: ${face?.authored ? OPPORTUNITY_TEXTURE_URL : 'procedural fallback'}`,
+      'Cue: one opportunity reticle per cued hostile in view',
     ].join('\n');
   }
 
@@ -468,15 +517,17 @@
     getConditions,
     getReadyState,
     getAfflictions: () => resolvedAfflictions(getReadyState()),
-    refresh: () => syncReadyTarget(performance.now()),
+    refresh: () => syncReadyTargets(performance.now()),
     setDebugEnabled(enabled) {
       debugEnabled = !!enabled;
       updateDebugBadge(getReadyState());
     },
     snapshot: () => ({
-      latestChange: 'Opportunity cues now support manual desktop/mobile aim, validate Quick Attack reach, and share strike-time conditions.',
+      latestChange: 'Opportunity reticles show on every hostile in view whose Quick Attack bonus condition is met, independent of reach and aim.',
       targetId: lastTarget?.id || null,
-      visible: !!reticle?.sprite?.visible,
+      visible: sights.size > 0,
+      visibleCount: sights.size,
+      visibleTargetIds: [...sights.keys()].map(target => target?.id || target?.name || null),
       lastFrameError,
     }),
   };
@@ -484,6 +535,6 @@
   window.RuntimeFrameScheduler.register(SCHEDULER_ID, scheduledFrame, {
     phase: 'pre-game', // Historically ran before gameLoop via independent RAF registration order; pre-game preserves that same ordering explicitly.
     owner: 'QuickAttackBonusIndicator',
-    description: 'Shows/hides the Quick Attack bonus-ready reticle over the current auto-target.',
+    description: 'Shows/hides a Quick Attack bonus-ready reticle over every cued hostile in view.',
   });
 })();
