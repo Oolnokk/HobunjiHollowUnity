@@ -1871,7 +1871,7 @@
                   ],
                   "appliedDyes": {
                         "TORSO": "dye:CLOTH:pale_yellow",
-                        "PANTS": "dye:CLOTH:brown"
+                        "PANTS": "dye:CLOTH:pale_yellow"
                   },
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
@@ -4032,7 +4032,7 @@
                         "CLOTH_B": "dye:CLOTH:smoky_orange",
                         "TORSO": "dye:CLOTH:smoky_red_orange",
                         "TORSO_B": "dye:CLOTH:smoky_red_orange",
-                        "PANTS": "dye:CLOTH:smoky_orange"
+                        "PANTS": "dye:CLOTH:smoky_red_orange"
                   },
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
@@ -9158,7 +9158,7 @@
                   ],
                   "appliedDyes": {
                         "TORSO": "dye:CLOTH:smoky_yellow_green",
-                        "PANTS": "dye:CLOTH:brown"
+                        "PANTS": "dye:CLOTH:smoky_yellow_green"
                   },
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
