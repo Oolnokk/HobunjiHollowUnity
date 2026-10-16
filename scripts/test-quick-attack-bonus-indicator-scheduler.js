@@ -164,6 +164,12 @@ assert.equal(snap.visibleCount, 12, 'reticles are capped');
 assert.ok(snap.visibleTargetIds.includes('crowd0') && !snap.visibleTargetIds.includes('crowd19'), 'the cap keeps the nearest hostiles');
 deps.hostileObjects = [near];
 
+const neighbour = hostile('neighbour', 64);
+deps.hostileObjects = [near, neighbour];
+context.Combat.quickAttackData.bonusEffectCooldownRemaining = target => (target === near ? 2 : 0);
+scheduledFrame({ timestamp: 1090 });
+assert.deepEqual([...context.QuickAttackBonusIndicator.snapshot().visibleTargetIds], ['neighbour'], 'an enemy cooling down hides only its own reticle');
+deps.hostileObjects = [near];
 context.Combat.quickAttackData.bonusEffectCooldownRemaining = () => 2;
 assert.equal(context.QuickAttackBonusIndicator.getReadyState().conditionReady, true, 'condition remains visible in diagnostics during cooldown');
 scheduledFrame({ timestamp: 1096 });

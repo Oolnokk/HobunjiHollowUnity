@@ -1,6 +1,7 @@
 // Quick-attack bonus-ready cue — renders an affliction-colored opportunity
 // reticle over EVERY hostile in the camera's view on which the equipped Quick
-// Attack's bonus condition is currently met (and its bonus cooldown is ready).
+// Attack's bonus condition is currently met (and that enemy's own bonus
+// cooldown has run out).
 // It is independent of reach and aim: it announces openings across the field,
 // while the melee HUD's centered reticle (js/combat/melee-hud-reticle.js)
 // separately shows whether the aimed enemy is in Quick Attack range.
@@ -124,8 +125,7 @@
     const equipped = currentQuickAttack();
     const state = { deps, equipped, target: null, root: null, ready: false, conditionReady: false, conditions: null, cooldownRemainingS: 0, targets: [], readyTargets: [] };
     if (!deps || !equipped || cueSuppressed(deps)) return state;
-    const weaponKey = deps.currentWeaponKey?.() || 'none';
-    state.cooldownRemainingS = window.Combat.quickAttackData?.bonusEffectCooldownRemaining?.(weaponKey, equipped.attackId, equipped.definition) || 0;
+    const cooldownRemaining = window.Combat.quickAttackData?.bonusEffectCooldownRemaining; // Per-enemy clock started when that enemy last received the bonus.
     const condKey = equipped.definition.condKey;
     const candidates = visibleCandidates(deps);
     // Farthest first, so the shared evaluator's lastConditionCheck diagnostics
@@ -134,12 +134,13 @@
       const entry = candidates[i];
       entry.conditions = getConditions(deps, entry.target); // Same public evaluator used at actual strike resolution.
       entry.conditionReady = !!entry.conditions[condKey];
-      entry.ready = entry.conditionReady && state.cooldownRemainingS <= 0; // The cue means "a Quick Attack landing on this enemy now gets the bonus".
+      entry.cooldownRemainingS = cooldownRemaining?.(entry.target) || 0;
+      entry.ready = entry.conditionReady && entry.cooldownRemainingS <= 0; // The cue means "a Quick Attack landing on this enemy now gets the bonus".
     }
     state.targets = candidates;
     for (const entry of candidates) if (entry.ready && state.readyTargets.length < MAX_RETICLES) state.readyTargets.push(entry);
     const focus = state.readyTargets[0] || candidates.find(entry => entry.conditionReady) || candidates[0] || null;
-    if (focus) Object.assign(state, { target: focus.target, root: focus.root, conditions: focus.conditions, conditionReady: focus.conditionReady });
+    if (focus) Object.assign(state, { target: focus.target, root: focus.root, conditions: focus.conditions, conditionReady: focus.conditionReady, cooldownRemainingS: focus.cooldownRemainingS });
     state.ready = state.readyTargets.length > 0;
     return state;
   }
