@@ -324,14 +324,24 @@
   }
 
   function _forceReplan(walker) {
-    const target = walker.currentScheduleTarget;
+    const wandering = walker.state === 'station-wander' && walker._wanderTarget; // Recovery must preserve the active wander destination, not return to its station.
+    const target = walker._exitSpot ? { ...walker._exitSpot, routeId: 'exit:' + walker._exitToArea } : wandering || walker.currentScheduleTarget; // Exit coordinates belong to the current map.
     if (!target || !Number.isFinite(target.c) || !Number.isFinite(target.r) || typeof walker._tryStartGridPath !== 'function') return false;
     walker._npcPathFailKey = null; // The cached failure was for the world before this blocker mattered.
     walker.routePath = null; walker._routePathTargetKey = null;
     walker.routeNode = null; walker.routeTarget = null; walker._gridPath = null;
     walker._wanderGridPath = null;
     debugStats.stuckReplans = (debugStats.stuckReplans || 0) + 1;
-    if (walker._tryStartGridPath(target)) { walker.state = 'grid-path'; return true; }
+    if (walker._tryStartGridPath(target)) {
+      if (wandering && !walker._exitSpot) {
+        walker._wanderGridPath = walker._gridPath;
+        walker._npcCollisionWanderPathKey = target.c + ',' + target.r;
+        walker._gridPath = null;
+        walker.state = 'station-wander';
+      } else walker.state = 'grid-path';
+      return true;
+    }
+    if (wandering) walker._wanderTarget = null;
     walker.state = 'idle'; // No detour exists right now; the scheduler re-evaluates (and retries) next tick.
     return false;
   }
@@ -501,7 +511,7 @@
     return {
       ...debugStats,
       collisionRadiusTiles: npcCollisionRadiusTiles(),
-      latestChange: 'NPC gameplay and authored-cutscene movement now share footprint-aware swept collision, edge-aware detours, and default cutscene navigation.',
+      latestChange: 'Blocked NPCs recalculate toward the current map exit or wander goal, follow exit detours, and safely replace active paths during recovery.',
     };
   }
 

@@ -152,6 +152,60 @@ assert.equal(stuckWalker.routePath, null, 'stale route path is dropped when stuc
 assert.ok(stuckWalker._gridPath?.some(p => p.row >= 2), 'replanned grid path detours around the blocker');
 assert.ok(window.NpcPathfinding.debugSnapshot().stuckReplans >= 1);
 
+// Execute the production path-step and cross-map exit branches, including
+// many small movement frames; a successful search alone does not prove arrival.
+const stepGridPathSource = gameSource.slice(gameSource.indexOf('          _stepGridPath(target, dt) {'), gameSource.indexOf('          // Station wander —')); // Extracts the real walker method without booting rendering/audio.
+const stepGridPath = vm.runInContext('({' + stepGridPathSource + '})._stepGridPath', context); // Shared production stepping method used by the simulated walkers.
+const exitBranchSource = gameSource.slice(gameSource.indexOf('            if (targetArea !== this.area) {'), gameSource.indexOf('\n            this._exitSpot = null;', gameSource.indexOf('            if (targetArea !== this.area) {'))); // Production map-transition navigation, before same-area scheduling.
+function makeMovingWalker(id, x, z, target) {
+  const moving = { // Uses continuous small steps, matching live walker movement.
+    area: 'interior', rec: { id }, currentScheduleTarget: target,
+    root: { position: { x, z } }, state: 'on-route',
+    _stepGridPath: stepGridPath, _tryStartGridPath() { return false; },
+    moveToward(tx, tz, dt) {
+      const dx = tx - this.root.position.x, dz = tz - this.root.position.z; // Direction to this frame's waypoint.
+      const distance = Math.hypot(dx, dz), travel = Math.min(distance, dt * 1.25); // Same speed-limited movement as production.
+      if (distance > 0) { this.root.position.x += dx / distance * travel; this.root.position.z += dz / distance * travel; }
+      return distance <= travel;
+    },
+    transferToArea(area) { this.area = area; },
+  };
+  return window.NpcPathfinding.decorateWalkerCollision(moving);
+}
+const exitWalker = makeMovingWalker('exit_detour', 1.5, 1.5, { area: 'upstairs', c: 4, r: 4 }); // Final goal is the occupied chair on another map, so planning toward it here would fail.
+const exitTick = vm.runInNewContext('(function(dt) {' + exitBranchSource + '})', { // Executes exactly the exit branch run by update().
+  root: exitWalker.root, targetArea: 'upstairs', target: exitWalker.currentScheduleTarget,
+  findNpcAreaLink: () => ({ exit: { c: 3, r: 1 }, spawn: { c: 0, r: 0 }, toArea: 'upstairs' }),
+  npcMovementConfig: deps.npcMovementConfig, canNpcBeeline: window.NpcPathfinding.canNpcBeeline,
+  rec: exitWalker.rec, window, currentArea: 'interior', Math,
+});
+for (let frame = 0; frame < 900 && exitWalker.area === 'interior'; frame++) {
+  exitTick.call(exitWalker, 1 / 60);
+  if (exitWalker.area === 'interior') assert.ok(window.NpcPathfinding.isNpcPositionWalkable('interior', exitWalker.root.position.x, exitWalker.root.position.z), 'exit detour stays collision-free');
+}
+assert.equal(exitWalker.area, 'upstairs', 'cross-map NPC follows the detour and reaches the exit instead of pressing into the wall');
+
+const recoveryWalker = makeMovingWalker('path_replacement', 1.7, 1.5, { c: 3, r: 1, routeId: 'test' }); // Starts with a stale path whose next hop crosses the thin wall.
+recoveryWalker._gridPath = [{ col: 2, row: 1 }, { col: 3, row: 1 }];
+recoveryWalker._gridPathTargetKey = 'test|3,1';
+recoveryWalker.state = 'grid-path';
+for (let frame = 0; frame < 900 && Math.hypot(recoveryWalker.root.position.x - 3.5, recoveryWalker.root.position.z - 1.5) > 0.01; frame++) recoveryWalker._stepGridPath(recoveryWalker.currentScheduleTarget, 1 / 60);
+assert.ok(Math.hypot(recoveryWalker.root.position.x - 3.5, recoveryWalker.root.position.z - 1.5) < 0.01, 'stale path is replaced during stepping and followed all the way to its goal');
+
+const failedRecoveryWalker = makeMovingWalker('failed_replan', 1.7, 1.5, { c: 4, r: 4, routeId: 'unreachable' }); // An occupied destination must fail safely while a path is being stepped.
+failedRecoveryWalker._gridPath = [{ col: 2, row: 1 }];
+failedRecoveryWalker._gridPathTargetKey = 'unreachable|4,4';
+failedRecoveryWalker.state = 'grid-path';
+for (let frame = 0; frame < 180 && failedRecoveryWalker.state === 'grid-path'; frame++) failedRecoveryWalker._stepGridPath(failedRecoveryWalker.currentScheduleTarget, 1 / 60);
+assert.equal(failedRecoveryWalker.state, 'idle', 'failed replanning during a path step does not dereference a cleared path');
+
+const wanderingRecovery = makeMovingWalker('wander_recovery', 1.7, 1.5, { c: 4, r: 4 }); // The occupied station is deliberately different from the reachable wander goal.
+wanderingRecovery.state = 'station-wander';
+wanderingRecovery._wanderTarget = { c: 3, r: 1 };
+for (let frame = 0; frame < 180 && !wanderingRecovery._wanderGridPath; frame++) wanderingRecovery.moveToward(3.5, 1.5, 1 / 60);
+assert.equal(wanderingRecovery.state, 'station-wander', 'blocked wander recovery preserves station wandering');
+assert.ok(wanderingRecovery._wanderGridPath?.some(hop => hop.row >= 2), 'wander recovery searches toward its local wander goal instead of the station');
+
 const wanderWalker = {
   area: 'interior',
   rec: { id: 'wander_npc' },
