@@ -18,7 +18,7 @@
   const activeRigs = new Set(); // Rigs whose newly loaded/replaced hand meshes may need hooks.
   const MAX_SNAPSHOT_AGE_MS = 160;
   const OUTLINE_THICKNESS_MULTIPLIER = 2; // Shared shell uniform is restored after each hand draw.
-  const OUTLINE_REFERENCE_DEPTH = 5; // Preserves the familiar hand width at five world units; distant outlines shrink in perspective.
+  const OUTLINE_REFERENCE_DEPTH = 5; // Distant outlines shrink beyond this depth; closer hands keep the feet's baseline thickness.
   let baseMatrixCaptures = 0; // Diagnostic count of visible hand matrices captured by this adapter.
   let lockedOccluderDepthDraws = 0; // Diagnostic count of pre-shell depth replays forced to the captured visible hand matrix.
   let lockedShellDraws = 0; // Diagnostic count of shell draws forced to the captured visible matrix.
@@ -152,7 +152,7 @@
         const world = matrix.elements; // World-space hand origin used to measure view depth without allocating a vector.
         const view = camera?.matrixWorldInverse?.elements; // Camera view matrix is current before Three invokes mesh hooks.
         const depth = view ? -(view[2] * world[12] + view[6] * world[13] + view[10] * world[14] + view[14]) : OUTLINE_REFERENCE_DEPTH; // Perspective depth, not radial distance, matches projection.
-        const distanceScale = camera?.isPerspectiveCamera && Number.isFinite(depth) ? OUTLINE_REFERENCE_DEPTH / Math.max(0.1, depth) : 1; // Orthographic views retain their distance-independent size.
+        const distanceScale = camera?.isPerspectiveCamera && Number.isFinite(depth) ? Math.min(1, OUTLINE_REFERENCE_DEPTH / Math.max(0.1, depth)) : 1; // Match feet at close/default distances; perspective may thin the shell but never inflate it.
         thicknessUniform.value = previousThickness * OUTLINE_THICKNESS_MULTIPLIER * distanceScale;
         material.uniformsNeedUpdate = true;
       } else {
@@ -303,7 +303,7 @@
           outlineInitialGlbReady: rigState.initialGlbReady,
           outlineInitialGlbWaitTimedOut: rigState.initialGlbWaitTimedOut,
           outlineThicknessMultiplier: OUTLINE_THICKNESS_MULTIPLIER,
-          outlineDistanceScaling: 'inverse-view-depth',
+          outlineDistanceScaling: 'inverse-view-depth-capped-at-foot-thickness',
           outlineReferenceDepth: OUTLINE_REFERENCE_DEPTH,
         };
       };
@@ -335,7 +335,8 @@
         heldXrayTaggedMeshes,
         maxSnapshotAgeMs: MAX_SNAPSHOT_AGE_MS,
         outlineThicknessMultiplier: OUTLINE_THICKNESS_MULTIPLIER,
-        outlineDistanceScaling: 'inverse-view-depth',
+        outlineDistanceScaling: 'inverse-view-depth-capped-at-foot-thickness',
+        latestChange: 'Hand outlines match foot thickness nearby and shrink farther away without close-camera inflation.',
         outlineReferenceDepth: OUTLINE_REFERENCE_DEPTH,
         heldXray: global.HeldObjectRenderOrder?.snapshot?.() || null,
       };

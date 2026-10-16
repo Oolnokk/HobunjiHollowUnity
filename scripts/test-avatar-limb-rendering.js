@@ -49,7 +49,9 @@ function handThickness(depth) {
 assert.equal(handThickness(5), 0.012, 'reference distance preserves existing hand thickness');
 assert.equal(handThickness(10), 0.006, 'doubling distance halves hand outline width');
 assert.equal(handThickness(20), 0.003, 'farther hands continue shrinking');
-assert(Number.isFinite(handThickness(0)), 'near-camera draws stay finite');
+for (const depth of [0, 0.1, 1, 2.5, 4]) {
+  assert.equal(handThickness(depth), 0.012, 'near-camera hands never inflate beyond the foot baseline');
+}
 camera.isPerspectiveCamera = false;
 assert.equal(handThickness(20), 0.012, 'orthographic size is independent of distance');
 
@@ -60,6 +62,14 @@ const root = group([fallback]); // Stable leg root survives async foot replaceme
 const rig = { group: root, dispose() {} }; // The owner's returned handle.
 const feet = loadParity('feet', rig); // Enrolls the fallback immediately.
 assert(feet.registered.has(fallback));
+draw(fallback, {}, camera, { colorWrite: true })();
+const finishFootShell = draw(fallback, { overrideMaterial: shell }, camera, shell); // Compare against the actual foot hook, including shared-uniform restoration.
+const footThickness = shell.uniforms.uThickness.value; // Baseline produced by the shipped foot renderer.
+finishFootShell();
+assert.equal(shell.uniforms.uThickness.value, 0.006, 'foot draw restores the shared shell thickness');
+camera.isPerspectiveCamera = true;
+assert.equal(handThickness(2.5), footThickness, 'default/near hand shells match actual foot shell thickness');
+assert(handThickness(10) < footThickness, 'distant hand shells retain perspective thinning');
 feet.setTime(30000);
 const finalFoot = mesh('left_foot'); // Simulates a model that finishes loading after 30 seconds.
 root.children.splice(0, 1, finalFoot);
