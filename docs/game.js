@@ -4773,6 +4773,7 @@
       // loaders make (see loadBanditGangConfig). Moved into
       // docs/js/loot-rolling.js; game.js just wires it up and kicks it off.
       window.LootRolling.init({
+        weaponDamageTypeForTool,
         getCurrentArea: () => currentArea,
         getPlayerData: () => _playerData,
         calendar,
@@ -4799,7 +4800,7 @@
           },
           onAction(action) {
             if (action !== 'obj_loot_corpse') return { ok: false, message: 'Unknown action.' };
-            const gained = window.LootRolling.rollLootPool(c.def.lootPool);
+            const gained = window.LootRolling.rollLootPool(c.def.lootPool, { entity: c });
             const parts = [];
             Object.entries(gained).forEach(([key, qty]) => {
               inventory[key] = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory[key] || 0) + qty);

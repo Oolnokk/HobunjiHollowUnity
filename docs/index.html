@@ -59,7 +59,7 @@
        window.LootRolling.init(...) and .loadLootShopConfig() during its
        own setup, and before every other module whose init(deps) is handed
        window.LootRolling.rollItemStars/starRatingText/etc. -->
-  <script src="js/loot-rolling.js?v=20261013h0b0a184"></script>
+  <script src="js/loot-rolling.js?v=20261016h74e3b4c"></script>
   <!-- Seed planting/crop harvesting, extracted out of game.js. Must load
        before game.js, which calls window.CropPlanting.init(...). -->
   <script src="js/crop-planting.js?v=20261008hc238a6f"></script>
@@ -141,7 +141,7 @@
   <script src="js/item-processing.js?v=20261008h5a1190f"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <script src="debug.js?v=20261015h78d3fe0"></script>
+  <script src="debug.js?v=20261016hbfaf2c3"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20260930h1b2e2e2"></script>
   <script src="config/scratchbones-config.js?v=20261016h5fbd77a"></script>
@@ -290,7 +290,7 @@
   <script src="js/combat/combat-enemy-telegraph.js?v=20261009he463e76"></script>
   <script src="js/combat/combat-animal-attacks.js?v=20261001quickdebuff2"></script>
   <script src="js/combat/combat-loadout.js?v=20261014h530376d"></script>
-  <script src="js/combat/combat-progression.js?v=20261001quickdebuff2"></script>
+  <script src="js/combat/combat-progression.js?v=20261016h8734814"></script>
   <!-- Shared player-attack event context (prepare/hit/defensive) published by every
        ability module; Enchantments and future cross-cutting systems observe it. -->
   <script src="js/combat/combat-attack-events.js?v=20261001quickbonus1"></script>
@@ -303,7 +303,7 @@
   <script src="js/combat/combat-blink-dodge.js?v=20261002h2d08879"></script>
   <script src="js/combat/combat-charged-breaker.js?v=20261004h4413146"></script>
   <script src="js/combat/combat-flurry.js?v=20260930he6f6a0a"></script>
-  <script src="js/combat/combat-loadout-ui.js?v=20261015h2c02b33"></script>
+  <script src="js/combat/combat-loadout-ui.js?v=20261016hcad46bf"></script>
   <!-- Weapon Enchantments + Immundanity (Base/Flourish, planar cancellation, Sicced/Fury/...). -->
   <script src="js/combat/combat-enchantments.js?v=20261015hd36e95d"></script>
   <script src="js/combat/weapon-enchantment-vfx.js?v=20261013hdec3ca0"></script>
@@ -337,7 +337,7 @@
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
        must load after combat-bandit.js above, and before game.js, which
        calls window.BanditCamps.init(...) during its own setup. -->
-  <script src="js/bandit-camps.js?v=20261014h210c733"></script>
+  <script src="js/bandit-camps.js?v=20261016h64ad85c"></script>
   <!-- Bounty board (hunt a named bandit captain, destroy his camp) —
        window.BountyBoard. Reads window.BanditCamps/window.BanditCombat
        directly, so must load after both above, and before game.js, which
@@ -345,7 +345,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261016h229870b"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261016hd6ab0ad"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -798,7 +798,7 @@
        synchronously during initial boot. -->
   <script src="js/locale-cave-runtime.js?v=20261010h40fea5e"></script>
   <!-- Promotes wilderness den anchors into generic cave sites; wraps WildlifeSpawn/CavernGenerator/DevSpawner, all loaded above. -->
-  <script src="js/cave-site-system.js?v=20261013h2b93be6"></script>
+  <script src="js/cave-site-system.js?v=20261016h16a390e"></script>
   <script src="js/ruin-site-locales.js?v=20261002hb4d3f2d"></script>
   <script src="js/stampable-locale-defs.js?v=20261010h93ea9d8"></script>
   <script src="js/ruin-sites.js?v=20261003h12be717"></script>
@@ -2471,7 +2471,7 @@
     <button class="fcv-continue" id="fcvContinueBtn">Continue</button>
   </div>
 
-  <script src="js/tool-icon-render.js?v=20261009he7f6171"></script>
+  <script src="js/tool-icon-render.js?v=20261016h722fdd4"></script>
   <script src="js/sprite-recolor.js?v=20261014ha6a3081"></script>
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
        calls window.Mounts.init(...) during its own setup. -->
@@ -2512,7 +2512,7 @@
   <script src="js/character-voice-owner.js?v=20261013voiceowner1"></script>
   <script src="js/dialogue-content.js?v=20261013h8377e46"></script>
   <script src="js/combat/combat-tutorial-content.js?v=20261014ha823029"></script>
-  <script src="js/combat/combat-tutorial-mastery.js?v=20260929mastery1-goals1"></script>
+  <script src="js/combat/combat-tutorial-mastery.js?v=20261016h85f4532"></script>
   <script src="js/combat/combat-tutorial-partner.js?v=20261014h03ab150"></script>
   <script src="js/combat/combat-tutorial.js?v=20261009hd195c4f"></script>
   <script src="js/festival-props.js?v=20261008festivals1"></script>
@@ -2632,7 +2632,7 @@
   <!-- Directional camera pitch policy is isolated from controller bindings/gameplay dispatch. -->
   <script src="js/camera-look-clamp.js?v=20260923review2"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261016hf199838"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261016hf7502f8"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
@@ -2661,7 +2661,7 @@
        load before game.js, which calls window.ToolMastery.init(...). -->
   <script src="js/tool-mastery.js?v=20261016a"></script>
   <script src="js/farm-access.js?v=20261016a"></script>
-  <script src="game.js?v=20261016hca7f795"></script>
+  <script src="game.js?v=20261016hf274ff5"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261010h8448517"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

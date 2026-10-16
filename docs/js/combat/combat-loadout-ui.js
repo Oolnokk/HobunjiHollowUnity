@@ -16,8 +16,8 @@
   window.DevCompanion?.registerCheatPanel?.({
     id: 'combat-grants', title: 'Combat grants', order: 30,
     render: () => ({
-      summary: `${window.Combat.deps?.getMotesOfProwess?.() || 0} Motes of Prowess`,
-      note: 'Developer grants moved here so player menus show the normal gameplay controls.',
+      summary: `${window.Combat.deps?.getMotesOfProwess?.() || 0} Motes of Prowess · ${window.CombatProgression?.getDebug?.().unlocked.length || 0} learned mastery bonuses`,
+      note: 'Latest change: reusable Mastery Tablets / Scrolls unlock individual damage-type and rank bonuses; matching bonuses stack across five ranks. Last mastery loot: ' + JSON.stringify(window.LootRolling?.getMasteryDebug?.().lastRoll || null) + '. Last learned: ' + JSON.stringify(window.CombatProgression?.getDebug?.().lastEvent || null),
       actions: [
         { id: 'mote', label: '+1 Mote of Prowess' },
         ...[1, 2, 3].map(tier => ({ id: 'scroll', label: `+T${tier} Technique Scroll`, args: { tier } })),
@@ -222,20 +222,10 @@
         box.className = 'loadout-level chosen';
         labelSpan.textContent = window.CombatProgression.getChosenOption(toolKey, abilityId, level)?.label || '';
         box.title = `Click to change (${cost} mote${cost === 1 ? '' : 's'})`;
-        box.addEventListener('click', () => {
-          expandedFor = (expandedFor?.abilityId === abilityId && expandedFor?.level === level) ? null : { abilityId, level };
-          render();
-        });
       } else if (state === 'available') {
         const affordable = motes >= cost;
         box.className = 'loadout-level ' + (affordable ? 'available' : 'insufficient');
         labelSpan.textContent = affordable ? `Choose · ${cost}◆` : `Need ${cost}◆ (have ${motes})`;
-        if (affordable) {
-          box.addEventListener('click', () => {
-            expandedFor = (expandedFor?.abilityId === abilityId && expandedFor?.level === level) ? null : { abilityId, level };
-            render();
-          });
-        }
       } else if (state === 'mastery-locked') {
         box.className = 'loadout-level locked';
         labelSpan.textContent = 'Needs Mastery ' + level;
@@ -243,6 +233,10 @@
         box.className = 'loadout-level locked';
         labelSpan.textContent = 'Locked';
       }
+      box.addEventListener('click', () => {
+        expandedFor = (expandedFor?.abilityId === abilityId && expandedFor?.level === level) ? null : { abilityId, level };
+        render();
+      }); // All ranks can be inspected before earning the mastery, motes or literature needed to select them.
       box.appendChild(labelSpan);
       levels.appendChild(box);
     }
@@ -251,18 +245,22 @@
     if (expandedFor && expandedFor.abilityId === abilityId) {
       const options = tree[expandedFor.level - 1];
       const cost = window.CombatProgression.moteCostForLevel(expandedFor.level);
+      const state = window.CombatProgression.getLevelState(toolKey, abilityId, expandedFor.level); // Inspection does not bypass mastery or sequential-rank prerequisites.
       const panel = document.createElement('div');
       panel.className = 'loadout-options';
       options.forEach((option, idx) => {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'loadout-option-btn';
+        const learned = window.CombatProgression.isOptionUnlocked(toolKey, abilityId, expandedFor.level, idx); // Locked discoveries stay visible and cannot spend motes.
+        btn.disabled = !learned || motes < cost || !['chosen', 'available'].includes(state);
+        if (!learned) { btn.style.filter = 'grayscale(1)'; btn.style.opacity = '0.45'; }
         const name = document.createElement('div');
         name.className = 'loadout-option-name';
         name.textContent = `${option.label} · ${cost}◆`;
         const desc = document.createElement('div');
         desc.className = 'loadout-option-desc';
-        desc.textContent = option.desc;
+        desc.textContent = option.desc + (learned ? '' : ` Find a ${weaponType} Mastery ${expandedFor.level} Tablet or Scroll to unlock.`);
         btn.appendChild(name);
         btn.appendChild(desc);
         btn.addEventListener('click', () => {
@@ -426,6 +424,7 @@
     const tab = document.querySelector('.mp-tab[data-mpanel="loadout"]');
     if (tab) tab.addEventListener('click', () => { expandedFor = null; render(); });
     document.addEventListener('hobunji-ranged-ammo-change', render);
+    window.addEventListener('hobunji-mastery-unlocks-change', render);
   });
 })();
 
