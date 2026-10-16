@@ -9,6 +9,7 @@
     exclamation: `${ICON_BASE}icon_exclamation.png`,
     question: `${ICON_BASE}icon_question.png`,
     x: `${ICON_BASE}icon_x.png`,
+    coin: 'assets/hud/coin_pile.png',
   });
   const HEART_COLORS = Object.freeze({ // Used to preserve the old relationship-heart color semantics while swapping the glyph art.
     '❤️': '#ff718f',
@@ -21,7 +22,7 @@
     '🩶': '#9e9a96',
     '🤍': '#f4eee8',
   });
-  const TOKEN_PATTERN = /(❤️|❤|♥️?|💜|💛|🖤|🩶|🤍|❗|❓|❌|✖️?|✕)/gu; // Used to split visible runtime text into text and icon fragments.
+  const TOKEN_PATTERN = /(❤️|❤|♥️?|💜|💛|🖤|🩶|🤍|❗|❓|❌|✖️?|✕|💰)/gu; // Used to split visible runtime text into text and icon fragments.
   const TEXT_SKIP_SELECTOR = 'script,style,textarea,input,select,option,[data-generic-hud-icon]'; // Used to keep icon substitution out of editable/source-like DOM.
   const X_CONTROL_HINT = /(close|cancel|delete|remove|unequip|unassign|dismiss|clear)/i; // Used to distinguish a semantic × close/remove control from multiplication text.
   const RELATIONSHIPS_TAB_SELECTOR = '[data-mpanel="relationships"]'; // Used to make the Relationships tab a heart-only affordance.
@@ -70,6 +71,10 @@
         object-fit: contain;
         object-position: center;
       }
+      img.generic-hud-icon-coin {
+        width: auto;
+        min-width: 0;
+      }
       .generic-hud-icon-heart {
         background-color: var(--generic-heart-color, #ff718f);
         -webkit-mask: url('${ICONS.heart}') center / contain no-repeat;
@@ -114,6 +119,7 @@
     if (Object.prototype.hasOwnProperty.call(HEART_COLORS, token)) return 'heart';
     if (token === '❗') return 'exclamation';
     if (token === '❓') return 'question';
+    if (token === '💰') return 'coin';
     return 'x';
   }
 
@@ -598,6 +604,7 @@
     return {
       version: 1,
       icons: { ...ICONS },
+      mostRecentChange: 'Money bag UI glyphs use the coin pile sprite at the surrounding text height.',
       relationshipColors: {
         rapportHeart: RAPPORT_HEART_COLOR,
         favorHeart: FAVOR_HEART_COLOR,
