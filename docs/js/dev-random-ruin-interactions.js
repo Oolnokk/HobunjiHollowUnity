@@ -377,20 +377,21 @@
     if (!player || deps?.player?.climbing) return null;
     const baseY = Number(window.DevRandomRuin?.getPlayerSupportY?.());
     const floorY = Number.isFinite(baseY) ? baseY : player.y;
+    const maxRise = Math.max(cfg('climb.ledgeMaxRise', LEDGE_MAX_RISE), Number(window.DevRandomRuinRopeRewards?.lavaClimbRise?.(player)) || 0); // Wading in basin lava: the rim is always climbable (no teleport out).
     let best = null;
     for (let i = 0; i < 16; i++) {
       const angle = i * Math.PI / 8, dx = Math.cos(angle), dz = Math.sin(angle);
       if (options.facingOnly && Number.isFinite(facing) && Math.abs(Math.atan2(Math.sin(angle - facing), Math.cos(angle - facing))) > cfg('climb.facingToleranceDeg', 50) * Math.PI / 180) continue;
       for (let t = .25; t <= cfg('climb.ledgeReach', LEDGE_REACH); t += .1) {
         const x = player.x + dx * t, z = player.z + dz * t;
-        const support = DS.sampleSupport?.(x, z, { minY:floorY - 8, maxY:floorY + cfg('climb.ledgeMaxRise', LEDGE_MAX_RISE) + .05, pad:.02 });
+        const support = DS.sampleSupport?.(x, z, { minY:floorY - 8, maxY:floorY + maxRise + .05, pad:.02 });
         const rise = Number(support?.y) - floorY;
         if (!(rise > .2)) { if (!openAt(x, z, .05) && t > .3) break; continue; } // Solid wall before any ledge: nothing to climb here.
-        if (rise < cfg('climb.ledgeMinRise', LEDGE_MIN_RISE) || rise > cfg('climb.ledgeMaxRise', LEDGE_MAX_RISE)) break; // A step (walkable) or a wall too tall to climb.
+        if (rise < cfg('climb.ledgeMinRise', LEDGE_MIN_RISE) || rise > maxRise) break; // A step (walkable) or a wall too tall to climb.
         if (window.DevRandomRuinSimplePuzzles?.isNoClimbSurface?.(support.id)) break; // Rope platforms/balconies/vaults: reached only by rope.
         if (/^devruin-mech-/.test(String(support.id || ''))) break; // Puzzle machinery (a raised dais the glyphs bring down, bridges, stairs) moves only through its puzzle.
         const land = { x:x + dx * .45, z:z + dz * .45 };
-        const landSupport = DS.sampleSupport?.(land.x, land.z, { minY:floorY - 8, maxY:floorY + cfg('climb.ledgeMaxRise', LEDGE_MAX_RISE) + .05, pad:.02 });
+        const landSupport = DS.sampleSupport?.(land.x, land.z, { minY:floorY - 8, maxY:floorY + maxRise + .05, pad:.02 });
         if (!landSupport || Math.abs(Number(landSupport.y) - Number(support.y)) > .2 || !openAt(land.x, land.z)) break;
         if (!best || t < best.t) best = { t, x, z, land, topY:Number(support.y), floorY, dx, dz, angle };
         break;

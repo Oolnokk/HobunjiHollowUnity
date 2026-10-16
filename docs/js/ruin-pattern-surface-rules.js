@@ -170,7 +170,6 @@
       classes: [...new Set(regions.map(region => region.cls))],
       enabled: sideRegions.length + topRegions.length > 0,
       sideRegions, topRegions,
-      patternGroup: housing ? housing.uuid : null, // A false pillar's walls share one motif, like a real pillar's single shaft.
       scale: Number(rule.scale) > 0 ? Number(rule.scale) : null,
       partScale,
       defaultScale: setting('defaultScale'),

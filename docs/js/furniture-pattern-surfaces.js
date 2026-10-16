@@ -335,6 +335,17 @@
     return result >>> 0;
   }
 
+  // One motif per surface type per ruin: every wall shares one pattern, every
+  // pillar (false pillars included, so they still pass for real ones)
+  // another, and so on. The mesh's own type name decides first, then its
+  // ancestors' names/roles; anything else is its own repeated piece type.
+  const SURFACE_CATEGORIES = [['pillar', /pillar|column/i], ['wall', /wall/i], ['pedestal', /pedestal|plinth/i], ['platform', /platform|dais|balcony/i]];
+  function surfaceCategory(key, role) {
+    for (const [name, pattern] of SURFACE_CATEGORIES) if (pattern.test(key)) return name;
+    for (const [name, pattern] of SURFACE_CATEGORIES) if (pattern.test(role)) return name;
+    return key || 'other';
+  }
+
   function decorateRuin(root, seed) {
     if (!root) return [];
     const catalog = [...(window.PatternLibrary?.getCatalog?.() || []), ...(window.RepoPatternLibrary?.listCached?.() || []).filter(entry=>entry.collectible)]; // Engravings grant exactly the reusable catalog motif rendered on the ruin.
@@ -343,7 +354,6 @@
     const types = new Map(), overlays = []; // Per repeated piece type, for the Dev Companion's live surface list.
     root.userData.ruinPatternSeed = seed; // Rule edits re-run decoration with the same deterministic choices.
     root.updateMatrixWorld?.(true); // Rules measure faces in world space (a sideways pillar's faces are short, not tall).
-    const groupIndex = new Map(); // Pattern group (e.g. one false pillar's housing walls) -> index of its first mesh, so the group shares one motif.
     root.traverse(node => { if (node.isMesh && !node.userData?.furniturePattern) meshes.push(node); });
     for (let index = 0; index < meshes.length; index++) {
       const mesh = meshes[index];
@@ -368,11 +378,10 @@
         templates = slots.map(slot => ({slot,selector:slot,mode:'engraving',random:true})); // No mutation of shared part recipes.
       }
       if (!templates.length) continue;
-      if (rule?.patternGroup && !groupIndex.has(rule.patternGroup)) groupIndex.set(rule.patternGroup, index);
-      const choiceIndex = rule?.patternGroup ? groupIndex.get(rule.patternGroup) : index; // Grouped meshes (a false pillar's walls) share one motif like a real pillar's single shaft.
+      const category = surfaceCategory(rule?.key || String(mesh.name || ''), role);
       const records = templates.map(template => {
-        const slot = template.slot; // Independent deterministic choice for each authored surface slot.
-        const entry = catalog[hash(`${seed}|${choiceIndex}|${slot}`) % catalog.length]; // Stable per-element/per-slot selection.
+        const slot = template.slot; // Sides and tops of one surface type roll separately.
+        const entry = catalog[hash(`${seed}|${category}|${slot}`) % catalog.length]; // Stable per-ruin, per-surface-type selection.
         const patternId = template.random === false && template.patternId ? template.patternId : entry.id; // Completion grants the actual displayed motif.
         return { ...template, pattern: template.random === false ? template.pattern : null, patternId, palette: template.palette || ['#b7a185', '#625447'], scale: template.scale || rule?.defaultScale || 1.5,
           ...(rule?.scale > 0 ? { scaleOverride: rule.scale } : {}), ...(rule ? { maxAtlasPx: rule.maxAtlasPx, minSurfaceTiles: template.allowRegions ? 0 : rule.minSurfaceTiles, tilePx: rule.tilePx } : {}) }; // Region-picked faces were size-checked in world space already.
@@ -452,5 +461,5 @@
     return records;
   }
 
-  window.FurniturePatternSurfaces = { regionKey, normalize, resolvePattern, editablePattern, renderTile, surfaceGeometry, applyPart, decorateRuin, unlockRuin, applyOverrides, editInstance, debug, hash };
+  window.FurniturePatternSurfaces = { surfaceCategory, regionKey, normalize, resolvePattern, editablePattern, renderTile, surfaceGeometry, applyPart, decorateRuin, unlockRuin, applyOverrides, editInstance, debug, hash };
 })();

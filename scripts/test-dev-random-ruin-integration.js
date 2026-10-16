@@ -455,3 +455,25 @@ console.log('Random Test Ruin integration static audit passed.');
 const interactionsSource = read('docs/js/dev-random-ruin-interactions.js');
 assert(interactionsSource.includes('function freeLandingNear') && interactionsSource.includes('if (top.blocked) top = freeLandingNear(ladder, top) || top;'), 'a prop filling the ladder head must not make the ladder unclimbable');
 assert(read('docs/js/locale-terrain-placement.js').includes('compiled.requiredPregate'), 'terrain-aware placement pre-gates required probes before the full-footprint floor scan');
+
+// Rope variants, ceiling-rail targets and the target hum load through the
+// bootstrap and register as simple-puzzle composers; executed in a stub host.
+{
+  const bootstrap = read('docs/js/dev-random-ruin-bootstrap.js');
+  for (const name of ['dev-random-ruin-rope-variants', 'dev-random-ruin-rail-targets', 'dev-random-ruin-target-hum']) {
+    assert(new RegExp(`js/${name}\\.js\\?v=[A-Za-z0-9_-]+`).test(bootstrap), `${name}.js must load from the ruin bootstrap`);
+  }
+  const composers = [];
+  const host = { THREE:{ Vector3:class { constructor(){ this.x=0; this.y=0; this.z=0; } }, Box3:class {} }, DevRandomRuinSimplePuzzles:{ registerComposer:composer => { composers.push(composer); return true; } } };
+  host.window = host;
+  vm.createContext(host);
+  for (const name of ['dev-random-ruin-rope-variants', 'dev-random-ruin-rail-targets', 'dev-random-ruin-target-hum']) vm.runInContext(read(`docs/js/${name}.js`), host, { filename:`${name}.js` });
+  assert.deepEqual(composers.map(composer => composer.id), ['ropeVariants', 'ceilingRailTargets', 'targetHum']);
+  assert.equal(typeof host.DevRandomRuinRopeVariants.buildStandalone, 'function');
+  assert.equal(typeof composers[1].buildLate, 'function', 'rail targets build after the standalone modules take their rooms');
+  const hum = host.DevRandomRuinTargetHum;
+  const level = d => Math.pow(Math.max(0, 1 - d / hum.HUM_RADIUS), hum.FALLOFF_POWER);
+  assert(level(1) > 4 * level(3) && level(5) < .01, 'target hum volume must rise and fall sharply with distance');
+  // No basin teleport: lava burns, the ledge climb gets the player out.
+  assert(!ropeRewards.includes('You scramble out of the lava') && ropeRewards.includes('lavaClimbRise'), 'falling into basin lava must not teleport the player out');
+}
