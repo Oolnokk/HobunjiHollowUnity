@@ -31,7 +31,7 @@
         `Outline parity: rigs=${parity.activeRigs ?? '-'} captures=${parity.baseMatrixCaptures ?? '-'} `
         + `shellLocks=${parity.lockedShellDraws ?? '-'} idLocks=${parity.lockedMaterialIdDraws ?? '-'} `
         + `misses=${parity.missedOutlineSnapshots ?? '-'} xrayTagged=${parity.heldXrayTaggedMeshes ?? '-'} `
-        + `distance=${parity.outlineDistanceScaling ?? '-'} reference=${parity.outlineReferenceDepth ?? '-'}`
+        + `distance=${parity.outlineDistanceScaling ?? '-'} reference=${parity.outlineReferenceDepth ?? '-'} latest="${parity.latestChange ?? '-'}"`
       );
     } else {
       lines.push('Outline parity: module missing');
