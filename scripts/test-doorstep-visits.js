@@ -382,3 +382,24 @@ function talkThrough(ctx, world, { naturalEnd }) {
 }
 
 console.log('doorstep visits: ok');
+
+// Spawn diagnostics report the actual failed attempt and clear it on success.
+{
+  const ctx = makeContext(); // Isolates diagnostic failures from the ordinary provider/queue tests above.
+  ctx.run('docs/js/doorstep-visits.js');
+  installWorld(ctx, { npcIds: ['jubmir'] }); // Installs the real spawn adapters with one available NPC.
+  const api = ctx.window.DoorstepVisits; // Shipping runtime records attempt outcomes rather than guessing in the companion.
+  const visit = { key: 'story', npcId: 'missing', tree: { nodes: [] } }; // A valid visit with an unavailable source NPC.
+  assert.equal(api.spawnVisit(visit), false);
+  assert.equal(api.debugSnapshot().lastSpawnAttempt.reason, 'Source NPC is unavailable.');
+  visit.npcId = 'jubmir';
+  ctx.window.NpcPathfinding.isNpcTileWalkable = () => false;
+  assert.equal(api.spawnVisit(visit), false);
+  assert.match(api.debugSnapshot().lastSpawnAttempt.reason, /walkable tile/);
+  ctx.window.NpcPathfinding.isNpcTileWalkable = () => true;
+  assert.equal(api.spawnVisit(visit), true);
+  assert.equal(api.debugSnapshot().lastSpawnAttempt.reason, 'Spawned successfully.');
+  const snapshot = api.debugSnapshot(); // External readers cannot mutate the stored last attempt through a snapshot.
+  snapshot.lastSpawnAttempt.reason = 'changed';
+  assert.equal(api.debugSnapshot().lastSpawnAttempt.reason, 'Spawned successfully.');
+}
