@@ -23,7 +23,7 @@
   <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
   <script src="js/GLTFLoader.js?v=20260712d"></script>
   <script src="js/WallBuilder.js?v=20261013hd467097"></script>
-  <script src="js/HousePieceGen.js?v=20261015h7ba4ec2&window=20260926rebase1"></script>
+  <script src="js/HousePieceGen.js?v=20261016h9be784e&window=20260926rebase1"></script>
   <script src="js/interior-scene-builder.js?v=20261015h6bcbacd&window=20260926rebase1"></script>
   <script src="js/interior-ceilings.js?v=20261015h5328b1c"></script>
   <script src="js/building-door.js?v=20260725a"></script>
@@ -220,7 +220,7 @@
   <!-- Procedural foliage / crop geometry -->
   <script src="js/foliage-generator.js?v=20261015h9d88421"></script>
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
-  <script src="js/procedural-furniture.js?v=20261007h7a9c53f"></script>
+  <script src="js/procedural-furniture.js?v=20261016h83b78a0"></script>
   <script src="js/furniture-puzzle-properties.js?v=20260922perpiece1"></script>
   <script src="js/furniture-puzzle-runtime.js?v=20260929glowdecals1"></script>
   <!-- Loads the richer per-piece data authored by furniture-avatar-author (seat
@@ -269,7 +269,7 @@
   <script src="js/local-save-folder.js?v=20261013hc69d3aa"></script>
   <!-- Onboarding overlay -->
   <link rel="stylesheet" href="onboarding.css?v=20261005h64e87e5">
-  <script src="config/farm-specializations.js?v=20261008h817d2c1"></script>
+  <script src="config/farm-specializations.js?v=20261016h2f34a58"></script>
   <script src="config/crop-economy.js?v=20261008crop1"></script>
   <script src="js/farm-world-settings.js?v=20261013h4299425"></script>
   <script src="onboarding.js?v=20261010h06df65a"></script>
@@ -399,7 +399,8 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmAnimals.init(...) during its own setup. -->
-  <script src="js/farm-production.js?v=20261008h34e9cde"></script>
+  <script src="js/farm-production.js?v=20261016h3134d1a"></script>
+  <script src="js/farm-layout-editor.js?v=20261016a"></script>
   <script src="js/world-meta-store.js?v=20261013h27ea706"></script>
   <script src="js/farm-animals.js?v=20261016h4180cd9"></script>
   <!-- Farm buildings: barn placement/construction/demolition
@@ -408,7 +409,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmBuildings.init(...) during its own setup. -->
-  <script src="js/farm-buildings.js?v=20261004h68f94a3"></script>
+  <script src="js/farm-buildings.js?v=20261016h5e4b15e"></script>
   <!-- Barn trough system: barn-interior map synthesis, the live fill-level
        mesh registry, and the open-trough bag/slot panel (window.FarmTroughs)
        — self-contained aside from deps injected via init(), and reads
@@ -436,7 +437,7 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.FarmCrates.init(...) during its
        own setup. -->
-  <script src="js/farm-crates.js?v=20261008hb6070ad"></script>
+  <script src="js/farm-crates.js?v=20261016h7271004"></script>
   <!-- Procedural tasks: bulletin board + trusted-NPC favors
        (window.ProceduralTasks) — self-contained aside from deps injected
        via init(), so load order relative to the other systems above
@@ -621,6 +622,7 @@
        moveCreatureToward (window.EnemyCollisionReposition); must load before
        game.js, which calls window.EnemyCollisionReposition.init(...). -->
   <script src="js/enemy-collision-reposition.js?v=20260927reviewfix1"></script>
+  <script src="js/farm-surface-sample.js?v=20261016a"></script>
   <script src="js/farm-furniture-surface-elevation.js?v=20261002hwinlift1"></script>
   <script src="js/dev-spawner.js?v=20261014h1eb17d9"></script>
   <!-- Furniture Placer panel (window.FurniturePlacer) — the discoverable,
@@ -686,7 +688,7 @@
        so load order relative to the other systems above doesn't matter;
        must load before game.js, which calls window.FarmPanel.init(...)
        during its own setup. -->
-  <script src="js/farm-panel.js?v=20261015h39d9368"></script>
+  <script src="js/farm-panel.js?v=20261016h99e972d"></script>
   <!-- Tasks tab (window.TasksPanel), Supplies tab (window.SupplyPage),
        whistle-equip row (window.WhistleEquip), and the Wildlife/genotype
        debug panel (window.WildlifeDebugPanel) — all read
@@ -2655,7 +2657,7 @@
   <script src="js/romance-wedding.js?v=20261007wedding1"></script>
   <script src="js/romance-system.js?v=20261013h23504d0"></script>
   <script src="js/npc-command-wheel.js?v=20261008h02bf686"></script>
-  <script src="game.js?v=20261016h5061c24"></script>
+  <script src="game.js?v=20261016he0d30cf"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261010h8448517"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

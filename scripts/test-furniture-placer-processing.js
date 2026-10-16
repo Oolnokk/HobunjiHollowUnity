@@ -115,7 +115,7 @@ const indexSource = fs.readFileSync('docs/index.html', 'utf8');
 assert.match(gameSource,
   /processingKey\s*\? placeProcessingFurniture\(col, row, processingKey\)/,
   'placement clicks route processing items through the existing processor placement function');
-assert.match(gameSource,
+assert.match(fs.readFileSync('docs/js/farm-surface-sample.js', 'utf8'),
   /function farmSurfaceYAtWorld\(worldX, worldZ\)[\s\S]{0,2200}tileSurface \+ exactLift - centerLift/,
   'farm surface resolver replaces the baked tile-center house sample with the exact rendered X/Z sample');
 assert.match(gameSource,

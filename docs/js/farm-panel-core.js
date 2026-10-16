@@ -311,6 +311,8 @@
       list.appendChild(row);
     };
 
+    window.FarmLayoutEditor?.renderLauncher?.(list); // Whole-farm structure layout (house, barns, production buildings, shipping box).
+
     const pieces = deps.getHousePieces();
     if (pieces.length) {
       const built = pieces.filter(p => p.stage === 'built').length;
@@ -379,6 +381,8 @@
     _houseLayoutSelectedId = adapter?.selectedId || null;
     const title = adapter?.title || 'House Layout'; // Shared header reflects the currently edited building.
     modal.querySelector('.house-layout-title').textContent = title;
+    const listTitle = modal.querySelector('.house-layout-side > .house-layout-section-title'); // Adapters name their own piece list (rooms, structures).
+    if (listTitle) listTitle.textContent = adapter?.listTitle || 'Rooms';
     modal.setAttribute('aria-label', title);
     modal.classList.add('open');
     modal.setAttribute('aria-hidden', 'false');
@@ -387,7 +391,7 @@
       const debugBtn = document.createElement('button'); // Shared mobile-accessible diagnostics for either editor.
       debugBtn.id = 'houseLayoutDebug'; debugBtn.className = 'settings-small-btn'; debugBtn.textContent = 'Copy Layout Debug';
       debugBtn.addEventListener('click', async () => {
-        const report = JSON.stringify({ layout: window.FarmPanel.layoutEditorDebug(), farmColors: window.FarmWorldSettings?.current?.(), barn: _layoutAdapter ? window.BarnIncubator?.debugSnapshot?.() : null }, null, 2); // Full report is produced only on demand.
+        const report = JSON.stringify({ layout: window.FarmPanel.layoutEditorDebug(), farmColors: window.FarmWorldSettings?.current?.(), barn: _layoutAdapter ? (_layoutAdapter.debugSnapshot ? _layoutAdapter.debugSnapshot() : window.BarnIncubator?.debugSnapshot?.()) : null }, null, 2); // Full report is produced only on demand.
         try { await navigator.clipboard.writeText(report); deps.showToast('Layout debug copied.', true); }
         catch (_) { window.prompt?.('Copy layout debug:', report); }
       });
@@ -597,7 +601,7 @@
     // tint (stay gold) since there's no cheap non-mutating moveHouse check.
     if (!drag.isWholeHouse) {
       const valid = _layoutAdapter ? _layoutAdapter.canMove(drag.entry, drag.candidateCol, drag.candidateRow) : deps.canMovePieceTo(drag.entry.id, drag.candidateCol, drag.candidateRow);
-      ghostMesh.material.color.set(valid ? 0x8ef98a : 0xf95a5a);
+      ghostMesh.material.color.set(valid == null ? 0xf9e28a : valid ? 0x8ef98a : 0xf95a5a); // null: the adapter can only validate on release.
     } else {
       ghostMesh.material.color.set(0xf9e28a);
     }
@@ -756,7 +760,7 @@
     const hint = document.getElementById('houseLayoutHint');
     if (!hint) return;
     if (_layoutAdapter) {
-      hint.textContent = !deps.hasFarmPermission('alterFarm') ? "Only the farm's owner (or a granted farmhand) can edit the barn." : _layoutAdapter.getHint(_houseLayoutPlacementMode);
+      hint.textContent = !deps.hasFarmPermission('alterFarm') ? (_layoutAdapter.noPermissionHint || "Only the farm's owner (or a granted farmhand) can edit the barn.") : _layoutAdapter.getHint(_houseLayoutPlacementMode);
       return;
     }
     const HOUSE_PIECE_CATALOG = deps.getHousePieceCatalog();
@@ -779,7 +783,7 @@
       const row = document.createElement('div');
       row.className = 'house-layout-piece-row' + (p.id === _houseLayoutSelectedId ? ' selected' : '');
       const nameText = (_layoutAdapter ? _layoutAdapter.label(p) : deps.housePieceLabel(p)) + (p.stage === 'foundation' ? ' (foundation)' : '');
-      row.innerHTML = `<span class="name">${_layoutAdapter ? '🪺' : '🏠'} ${deps.esc(nameText)}</span><span class="size">${p.w}×${p.h}</span>`;
+      row.innerHTML = `<span class="name">${_layoutAdapter ? (_layoutAdapter.icon?.(p) || '🪺') : '🏠'} ${deps.esc(nameText)}</span><span class="size">${p.w}×${p.h}</span>`;
       row.addEventListener('click', () => { _houseLayoutSelectedId = p.id; renderHouseLayoutModal(); });
       list.appendChild(row);
     });

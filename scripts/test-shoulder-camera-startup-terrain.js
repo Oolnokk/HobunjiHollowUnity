@@ -48,6 +48,8 @@ const context = vm.createContext({
   THREE: { MathUtils: { degToRad: n => n * Math.PI / 180 } },
   window: { FormatUtils: { clamp: (n, lo, hi) => Math.max(lo, Math.min(hi, n)) } },
 }); // Stubs rendering/input only; all terrain math and initialization remain production code.
+vm.runInContext(fs.readFileSync('docs/js/farm-surface-sample.js', 'utf8'), context, { filename: 'docs/js/farm-surface-sample.js' }); // farmSurfaceYAtWorld delegates here.
+context.window.FarmSurfaceSample.init({ getGrid: () => grid, tileSurfaceYInArea: (...args) => context.tileSurfaceYInArea(...args), TileType }); // Mirrors game.js's init beside TileType.
 assert.doesNotThrow(() => vm.runInContext(segments.map(segment => segment.source).join('\n'), context),
   'initial shoulder camera must read real farm terrain without uninitialized constants');
 assert.ok(Number.isFinite(camera.position.y), 'boot positions the camera successfully');

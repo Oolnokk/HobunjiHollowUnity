@@ -622,6 +622,7 @@
     loadShingleGlb: loadShingleGlb, shingleReady: shingleReady, tintShingleMaterial: tintShingleMaterial,
     shingleSurfaceSnapshot: function () { return Object.assign({}, _shingleSurfaceDebug, { variants: Object.keys(_shingleVariants), tints: Object.keys(_shingleVariants).reduce(function (out, name) { out[name] = _shingleVariants[name].appliedTintKey; return out; }, {}) }); },
     shingleVariantScene: function (name) { var v = _shingleVariant(name); return v ? v.scene : null; }, // Diagnostics/tests: the material-owning template clone behind 'farm' or 'town' roofs.
+    makeShingleModel: makeShingleModel,
     cutDoorPortal: cutDoorPortal, buildEntryTunnelGroup: buildEntryTunnelGroup,
     buildChimneyGroup: buildChimneyGroup,
   };
@@ -1151,6 +1152,24 @@
       clone.matrix.copy(_tpl.boneFrameInverse);
       clone.matrixAutoUpdate = false;
     }
+    wrapper.add(clone);
+    return wrapper;
+  }
+
+  // One roof shingle outside a roof (e.g. windmill blades, procedural-furniture.js):
+  // the same bone-aligned, surface-mapped geometry and shared tinted material as
+  // _makeShingle, with no roof placement. The shingle's length runs along local X.
+  // Its meshes are flagged userData.sharedShingle so owners skip disposing them.
+  function makeShingleModel(variantName) {
+    if (!_tpl) return null;
+    if (!_tpl.surfacesReady && (_tpl.surfacesReady = _mapShingleSurfaces(_tpl.scene))) _syncShingleVariantGeometry();
+    var clone = _shingleVariant(variantName).scene.clone(true);
+    clone.traverse(function (o) {
+      if (String(o.name || '').toLowerCase() === 'shinglebone') o.visible = false;
+      if (o.isMesh) o.userData.sharedShingle = true;
+    });
+    if (_tpl.boneFrameInverse) { clone.matrix.copy(_tpl.boneFrameInverse); clone.matrixAutoUpdate = false; }
+    var wrapper = new THREE.Group();
     wrapper.add(clone);
     return wrapper;
   }

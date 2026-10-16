@@ -205,7 +205,7 @@
     buildings.canPlaceAt = function shippingAwareCanPlaceAt(col, row, w, h, excludeId) {
       if (!originalCanPlaceAt(col, row, w, h, excludeId)) return false;
       const box = shippingBoxInstance;
-      if (!box || excludeId === box.id) return true;
+      if (!box || (excludeId instanceof Set ? excludeId.has(box.id) : excludeId === box.id)) return true;
       const fp = footprintSize();
       return !rectsOverlap(col, row, w, h, box.col, box.row, fp.width, fp.height);
     };
@@ -583,5 +583,7 @@
     settlePendingShippingSale,
     getPendingShippingTotal: pendingSaleTotal,
     getShippingConfig: config,
+    getShippingBox: () => shippingBoxInstance,
+    moveShippingBox: moveShippingBoxFromFarmPanel,
   };
 })();

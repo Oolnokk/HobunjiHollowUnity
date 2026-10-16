@@ -121,8 +121,10 @@
     return aCol < bCol + bW && aCol + aW > bCol && aRow < bRow + bH && aRow + aH > bRow;
   }
 
+  // excludeId may be one id or a Set of ids (a structure moving as one rigid group).
   function canPlaceAt(col, row, w, h, excludeId) {
     if (!Number.isFinite(col) || !Number.isFinite(row)) return false;
+    const excluded = id => excludeId instanceof Set ? excludeId.has(id) : id === excludeId;
     if (col < 0 || row < 0 || col + w > deps.COLS || row + h > deps.ROWS) return false;
     const grid = deps.getGrid();
     for (let r = row; r < row + h; r++) {
@@ -130,14 +132,14 @@
         const tile = grid[r]?.[c];
         if (!tile || blockedTileTypes.has(tile.type) || tile.crop) return false;
         const obj = deps.worldObjects.get(c + ',' + r);
-        if (obj && obj.id !== excludeId) return false;
+        if (obj && !excluded(obj.id)) return false;
       }
     }
     for (const h2 of deps.getHousePieceRects()) {
       if (rectsOverlap(col, row, w, h, h2.col, h2.row, h2.w, h2.h)) return false;
     }
     for (const b of deps.getFarmBuildings()) {
-      if (b.id === excludeId) continue;
+      if (excluded(b.id)) continue;
       if (rectsOverlap(col, row, w, h, b.col, b.row, b.w, b.h)) return false;
     }
     return true;
@@ -617,6 +619,33 @@
     return { ok: true, message: `Moved the ${label(entry)}.` };
   }
 
+  // Moves several barn rooms (a connected barn) by one rigid delta. excludeIds names
+  // everything travelling with them (e.g. attached incubators) so the group never
+  // collides with its own current tiles; callers rebuild attachments afterwards.
+  function moveGroup(ids, dCol, dRow, excludeIds = ids) {
+    if (!deps.hasFarmPermission('alterFarm')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can move buildings." };
+    const entries = ids.map(id => deps.getFarmBuildings().find(b => b.id === id));
+    if (!entries.length || entries.some(entry => !entry)) return { ok: false, message: 'Building not found.' };
+    if (!Number.isInteger(dCol) || !Number.isInteger(dRow)) return { ok: false, message: 'Invalid move.' };
+    if (!dCol && !dRow) return { ok: false, message: 'Already there.' };
+    const excluded = new Set(excludeIds);
+    if (!entries.every(entry => window.FarmBuildings.canPlaceAt(entry.col + dCol, entry.row + dRow, entry.w, entry.h, excluded))) {
+      return { ok: false, message: 'Cannot move there — needs clear, untilled, un-trenched ground.' };
+    }
+    entries.forEach(_unregisterFootprint);
+    for (const entry of entries) {
+      entry.col += dCol; entry.row += dRow;
+      _registerFootprint(entry);
+      if (entry.stage === 'foundation' && entry._mesh) entry._mesh.position.set(entry.col + entry.w / 2, 0.07, entry.row + entry.h / 2);
+      else if (entry.stage === 'built') { _disposeMesh(entry._mesh); entry._mesh = null; }
+      clearFootprint(entry.col, entry.row, entry.w, entry.h);
+    }
+    window.FarmBuildings.refreshConnections();
+    deps.saveFarmLayout();
+    deps.saveMemberWorldData();
+    return { ok: true, message: entries.length > 1 ? 'Moved the barn.' : `Moved the ${label(entries[0])}.` };
+  }
+
   function clearAll() {
     window.FarmProduction?.clear?.();
     const farmBuildings = deps.getFarmBuildings();
@@ -661,6 +690,7 @@
     ensureStarterBarn,
     demolish,
     move,
+    moveGroup,
     clearAll,
     findOpenTileNear,
     debugFarmMenuDemolish,

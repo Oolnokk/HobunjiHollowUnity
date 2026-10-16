@@ -6,7 +6,7 @@
   };
   const families = { // Each family supplies the same recipe authority as its furniture counterpart.
     waterSilo: { label: 'Water Silo', icon: '💧', method: null },
-    compostBin: { label: 'Compost Bin', icon: '♻️', method: 'composting' },
+    compostBin: { label: 'Compost Bin', icon: '♻️', method: 'composting', depthScale: .5 }, // Low shipping-box-like crate: width × ⌈width/2⌉ tiles.
     windmill: { label: 'Windmill', icon: '⚙️', method: 'grinding', base: 'handMill' },
     fodderMill: { label: 'Fodder Mill', icon: '🌿', method: 'grindingFeed', base: 'feedGrinder' },
     smokehouse: { label: 'Smokehouse', icon: '♨️', method: 'smoking', base: 'smoker' },
@@ -17,7 +17,7 @@
     ['small', 'medium', 'large'].forEach((tier, index) => {
       const key = family + tier[0].toUpperCase() + tier.slice(1); // Shared asset key and plan prefix.
       buildings[key] = { ...definition, key, family, tier, label: tier[0].toUpperCase() + tier.slice(1) + ' ' + definition.label,
-        w: 2 + index, h: 2 + index, planItem: key + 'Plan', price: [240, 650, 1400][index],
+        w: 2 + index, h: Math.max(1, Math.ceil((2 + index) * (definition.depthScale || 1))), planItem: key + 'Plan', price: [240, 650, 1400][index],
         yield: [3, 4, 5][index], daysPerInput: [.5, .4, .3][index], waterCapacity: [12000, 24000, 48000][index],
         minTownValue: [0, 1, 2][index] }; // Carpenter sale gate only (see FarmProduction.renderShop); farm presets still grant any tier.
     });

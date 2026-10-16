@@ -588,6 +588,7 @@
         ROCK: 'rock', SHRUB: 'shrub', PATH: 'path',
         RIVER: 'river', STREAM: 'stream', RAMP: 'ramp', WATERFALL: 'waterfall'
       });
+      window.FarmSurfaceSample.init({ getGrid: () => grid, tileSurfaceYInArea, TileType }); // Hoisted tileSurfaceYInArea; grid is read lazily.
       // Tile types whose own heightfield (buildTerrainTileGeo) carves a depression
       // or rise into the ground — a plateau mesa's flat lid/skin must never also
       // render a quad over one of these, or the carved bed renders buried under it.
@@ -21379,26 +21380,10 @@
         }
       }
 
-      // The farmhouse/barn heightfield is also baked into farm tile elevTier
-      // at each tile CENTER so legacy grounding keeps working. Consumers that
-      // render between centers must replace that baked center sample with the
-      // exact continuous sample, not add the exact sample on top a second time.
+      // farmSurfaceYAtWorld's continuous house/barn ground sample now lives in
+      // js/farm-surface-sample.js (initialized beside TileType above).
       function farmSurfaceYAtWorld(worldX, worldZ) {
-        const x = Number(worldX); // Exact world X used by furniture, seats, and other smooth farm-surface followers.
-        const z = Number(worldZ); // Exact world Z paired with x for the continuous building-height sample.
-        if (!Number.isFinite(x) || !Number.isFinite(z)) return 0;
-        const col = Math.floor(x); // Tile column used to recover the ordinary gameplay surface beneath the subtle hill.
-        const row = Math.floor(z); // Tile row paired with col for the same base-surface lookup.
-        const tile = grid?.[row]?.[col];
-        if (!tile) return 0;
-        const tileSurface = tileSurfaceYInArea(tile, 'farm'); // Includes real plateau/ramp state plus any center-sampled house lift already baked into elevTier.
-        const sampler = window.HobunjiFarmSubtleElevation?.sampleHeightAt; // Existing shared house+barn continuous sampler; no parallel heightfield is created here.
-        if (typeof sampler !== 'function') return tileSurface;
-        const exactLift = Number(sampler(x, z)) || 0; // Replaces the tile-center approximation at this rendered X/Z.
-        const centerLift = tile.type === TileType.RAMP
-          ? 0
-          : (Number(sampler(col + 0.5, row + 0.5)) || 0); // Non-ramp elevTier already contains this exact center contribution.
-        return tileSurface + exactLift - centerLift;
+        return window.FarmSurfaceSample.farmSurfaceYAtWorld(worldX, worldZ);
       }
 
       function furnitureSurfaceYAtWorld(area, worldX, worldZ) {
@@ -30396,6 +30381,8 @@
         loadStorage: _loadWorldStorage, saveStorage: _saveWorldStorage, consumeInput: consumeProcessingInput,
         surfaceY: farmSurfaceYAtWorld, markOutline: _markOutline,
         saveFarmLayout: window.FarmEditor.saveFarmLayout, saveMemberWorldData });
+      // Whole-farm structure layout editor now lives in js/farm-layout-editor.js.
+      window.FarmLayoutEditor?.init({ getHousePieces: () => housePieces, getFarmBuildings: () => farmBuildings, hasFarmPermission, showToast, COLS, ROWS });
       try { initWorldObjects(); } catch(e) { console.error('initWorldObjects:', e); }
       // Apply saved object positions and furniture after world objects are created
       try { window.FarmEditor.applyFarmLayoutObjects(window.FarmEditor.loadFarmLayout()); window.FarmProduction.load(window.FarmEditor.loadFarmLayout()?.productionBuildings || []); } catch(e) { console.error('applyFarmLayoutObjects:', e); }

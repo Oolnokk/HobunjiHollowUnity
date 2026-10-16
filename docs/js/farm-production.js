@@ -10,6 +10,7 @@
   let loaded = false; // Prevents pre-restore farm saves from erasing an existing world's production buildings.
   let lastError = ''; // Mobile diagnostics expose the latest load/save/asset failure.
   const copy = value => JSON.parse(JSON.stringify(value)); // Snapshots contain data only, never Three.js meshes.
+  const footprint = (key, rot = 0) => { const definition = catalog[key]; return rot % 2 ? { w: definition.h, h: definition.w } : { w: definition.w, h: definition.h }; }; // Quarter turns swap the tile footprint of non-square buildings.
   const now = () => (Number(deps?.calendar.day) || 1) + (Number(deps?.calendar.time01) || 0); // World time, including sleeping/time-passage transitions.
   function init(injectedDeps) {
     deps = injectedDeps;
@@ -22,7 +23,7 @@
   }
   function serialize() {
     if (!loaded) return null;
-    return buildings.map(entry => ({ id: entry.id, key: entry.key, col: entry.col, row: entry.row,
+    return buildings.map(entry => ({ id: entry.id, key: entry.key, col: entry.col, row: entry.row, rot: entry.rot || 0,
       queue: copy(entry.queue), ready: copy(entry.ready), nextAt: entry.nextAt, water: entry.water }));
   }
   function clear() {
@@ -30,12 +31,13 @@
     buildings = []; placement = null; loaded = false;
   }
   function removeVisual(entry) {
-    for (let row = entry.row; row < entry.row + catalog[entry.key].h; row++) for (let col = entry.col; col < entry.col + catalog[entry.key].w; col++) {
+    const size = footprint(entry.key, entry.rot); // Occupied tiles follow the building's current rotation.
+    for (let row = entry.row; row < entry.row + size.h; row++) for (let col = entry.col; col < entry.col + size.w; col++) {
       if (deps.worldObjects.get(col + ',' + row) === entry.object) deps.worldObjects.delete(col + ',' + row);
     }
     if (entry.mesh) {
       deps.scene.remove(entry.mesh);
-      entry.mesh.traverse(child => { child.userData.glbDisposed = true; child.geometry?.dispose?.(); if (Array.isArray(child.material)) child.material.forEach(material => material.dispose()); else child.material?.dispose?.(); });
+      entry.mesh.traverse(child => { child.userData.glbDisposed = true; if (child.userData.sharedShingle) return; child.geometry?.dispose?.(); if (Array.isArray(child.material)) child.material.forEach(material => material.dispose()); else child.material?.dispose?.(); }); // Shingle blades borrow the roofs' shared geometry/materials.
       entry.mesh = null;
     }
     entry.visualGeneration = (entry.visualGeneration || 0) + 1;
@@ -47,17 +49,19 @@
     return result;
   }
   function spawn(entry) {
-    const definition = catalog[entry.key]; // Supplies footprint and live interaction label.
+    const definition = catalog[entry.key]; // Supplies the live interaction label.
+    const size = footprint(entry.key, entry.rot); // Rotated tile footprint.
     const generation = entry.visualGeneration = (entry.visualGeneration || 0) + 1; // Invalidates stale async builds after moving/resetting worlds.
     entry.object = { id: entry.id, type: 'farm_production', col: entry.col, row: entry.row, label: definition.icon + ' ' + definition.label,
       getButtons: () => [{ icon: definition.icon, label: 'Manage ' + definition.label, action: 'obj_farmproduction_' + entry.id, style: 'primary', allowed: deps.hasFarmPermission('storage') }],
       onAction: action => { if (action !== 'obj_farmproduction_' + entry.id) return { ok: false, message: 'Unknown action.' }; open(entry.id); return { ok: true, message: 'Opened building.' }; } };
-    for (let row = entry.row; row < entry.row + definition.h; row++) for (let col = entry.col; col < entry.col + definition.w; col++) deps.worldObjects.set(col + ',' + row, entry.object);
+    for (let row = entry.row; row < entry.row + size.h; row++) for (let col = entry.col; col < entry.col + size.w; col++) deps.worldObjects.set(col + ',' + row, entry.object);
     window.AuthoredFurniture.load(entry.key).then(data => {
       if (generation !== entry.visualGeneration || !buildings.includes(entry)) return;
       if (!data) { lastError = 'Missing authored building: ' + entry.key; deps.debugLog(lastError, 'warn'); return; }
       entry.mesh = window.AuthoredFurniture.buildGroup(tintData(data), 0x8b6540);
-      entry.mesh.position.set(entry.col + definition.w / 2, deps.surfaceY(entry.col + definition.w / 2, entry.row + definition.h / 2), entry.row + definition.h / 2);
+      entry.mesh.position.set(entry.col + size.w / 2, deps.surfaceY(entry.col + size.w / 2, entry.row + size.h / 2), entry.row + size.h / 2);
+      if (entry.mesh.rotation) entry.mesh.rotation.y = -(entry.rot || 0) * Math.PI / 2; // Clockwise quarter turns seen from above.
       entry.object.mesh = entry.mesh;
       deps.markOutline?.(entry.mesh);
       // AuthoredFurniture installs the existing rigid-piece animation controllers during buildGroup.
@@ -69,8 +73,10 @@
     for (const record of records) {
       if (!catalog[record.key] || !Number.isInteger(record.col) || !Number.isInteger(record.row)) continue;
       const definition = catalog[record.key]; // Reject malformed footprints before touching occupancy.
-      if (record.col < 0 || record.row < 0 || record.col + definition.w > deps.COLS || record.row + definition.h > deps.ROWS) continue;
-      const entry = { id: String(record.id || 'production_' + record.key + '_' + record.col + '_' + record.row), key: record.key, col: record.col, row: record.row,
+      const rot = Number.isInteger(record.rot) ? ((record.rot % 4) + 4) % 4 : 0; // Older saves have no rotation.
+      const size = footprint(record.key, rot);
+      if (record.col < 0 || record.row < 0 || record.col + size.w > deps.COLS || record.row + size.h > deps.ROWS) continue;
+      const entry = { id: String(record.id || 'production_' + record.key + '_' + record.col + '_' + record.row), key: record.key, col: record.col, row: record.row, rot,
         queue: (record.queue || []).filter(batch => Number.isSafeInteger(batch.count) && batch.count > 0 && Array.isArray(batch.outputs)).map(copy),
         ready: (record.ready || []).filter(batch => Number.isSafeInteger(batch.count) && batch.count > 0).map(copy),
         nextAt: Number.isFinite(record.nextAt) ? record.nextAt : null, water: Math.min(definition.waterCapacity, Math.max(0, Number(record.water) || 0)) }; // World-scoped durable queue and tank state.
@@ -113,16 +119,40 @@
       const definition = catalog[key]; // Authored starter building chosen at world creation.
       const location = findStarterLocation(definition.w, definition.h); // Scan from beside the entrance toward the west edge, never across the entrance road/camera lane.
       if (!location) { pending.push(key); continue; }
-      const entry = { id: 'starter_' + key, key, ...location, queue: [], ready: [], nextAt: null, water: 0 }; // Supplied completed structure, with an empty rainwater tank.
+      const entry = { id: 'starter_' + key, key, ...location, rot: 0, queue: [], ready: [], nextAt: null, water: 0 }; // Supplied completed structure, with an empty rainwater tank.
       buildings.push(entry); window.FarmBuildings.clearFootprint(entry.col, entry.row, definition.w, definition.h); spawn(entry);
     }
     if (!deps.saveFarmLayout()) { lastError = 'Starter building save failed.'; return; }
     world.farmStarterBuildings = pending;
     try { localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta)); } catch (error) { lastError = String(error); }
   }
-  function canPlace(key, col, row, excludeId) {
-    const definition = catalog[key]; // All occupied tiles share the established farm collision/placement authority.
-    return !!definition && Number.isInteger(col) && Number.isInteger(row) && window.FarmBuildings.canPlaceAt(col, row, definition.w, definition.h, excludeId);
+  function canPlace(key, col, row, excludeId, rot = 0) {
+    if (!catalog[key]) return false;
+    const size = footprint(key, rot); // All occupied tiles share the established farm collision/placement authority.
+    return Number.isInteger(col) && Number.isInteger(row) && window.FarmBuildings.canPlaceAt(col, row, size.w, size.h, excludeId);
+  }
+  function relocate(id, col, row, rot) {
+    if (!deps.hasFarmPermission('alterFarm')) return { ok: false, message: 'Building permission required.' };
+    const entry = buildings.find(candidate => candidate.id === id); // Moving/rotating preserves every queued input/output and tank water.
+    if (!entry) return { ok: false, message: 'Building no longer exists.' };
+    rot = rot == null ? (entry.rot || 0) : ((rot % 4) + 4) % 4;
+    if (!canPlace(entry.key, col, row, id, rot)) return { ok: false, message: 'Needs clear ground over the entire building footprint.' };
+    removeVisual(entry); entry.col = col; entry.row = row; entry.rot = rot; spawn(entry);
+    const size = footprint(entry.key, rot);
+    window.FarmBuildings.clearFootprint(col, row, size.w, size.h);
+    deps.saveFarmLayout(); deps.saveMemberWorldData();
+    return { ok: true, message: catalog[entry.key].label + ' moved.' };
+  }
+  function move(id, col, row) { return relocate(id, col, row, null); }
+  function rotate(id) {
+    const entry = buildings.find(candidate => candidate.id === id);
+    if (!entry) return { ok: false, message: 'Building no longer exists.' };
+    const rot = ((entry.rot || 0) + 1) % 4, from = footprint(entry.key, entry.rot), to = footprint(entry.key, rot); // Turns about the footprint centre when that ground is clear.
+    const centered = { col: entry.col + Math.floor((from.w - to.w) / 2), row: entry.row + Math.floor((from.h - to.h) / 2) };
+    const spot = [centered, { col: entry.col, row: entry.row }].find(candidate => canPlace(entry.key, candidate.col, candidate.row, id, rot));
+    if (!spot) return { ok: false, message: 'Not enough clear ground to rotate it here.' };
+    const result = relocate(id, spot.col, spot.row, rot);
+    return result.ok ? { ok: true, message: catalog[entry.key].label + ' rotated.' } : result;
   }
   function arm(key, id = null) { window.FarmPanel?.cancelBarnPlacement?.(); placement = { key, id }; window.FarmPanel?.render?.(); deps.showToast('Tap the Farm map to ' + (id ? 'move' : 'place') + ' ' + catalog[key].label + '.'); }
   function placeAt(col, row) {
@@ -130,17 +160,16 @@
     if (!deps.hasFarmPermission('alterFarm')) return { ok: false, message: 'Building permission required.' };
     const { key, id } = placement; // Request captured before clearing successful placement.
     const definition = catalog[key]; // Full multi-tile footprint and inventory plan.
-    if (!canPlace(key, col, row, id)) return { ok: false, message: 'Needs clear ground over the entire building footprint.' };
     if (id) {
-      const entry = buildings.find(candidate => candidate.id === id); // Moving preserves every queued input/output and tank water.
-      if (!entry) return { ok: false, message: 'Building no longer exists.' };
-      removeVisual(entry); entry.col = col; entry.row = row; spawn(entry);
-    } else {
-      if ((deps.inventory[definition.planItem] || 0) < 1) return { ok: false, message: 'Withdraw the plan from storage first.' };
-      deps.inventory[definition.planItem]--;
-      const entry = { id: 'production_' + Math.random().toString(36).slice(2), key, col, row, queue: [], ready: [], nextAt: null, water: 0 }; // Completed production building purchased via its plan.
-      buildings.push(entry); spawn(entry);
+      const result = move(id, col, row); // Map-tap moves share the layout editor's relocation path.
+      if (result.ok) placement = null;
+      return result;
     }
+    if (!canPlace(key, col, row, null)) return { ok: false, message: 'Needs clear ground over the entire building footprint.' };
+    if ((deps.inventory[definition.planItem] || 0) < 1) return { ok: false, message: 'Withdraw the plan from storage first.' };
+    deps.inventory[definition.planItem]--;
+    const entry = { id: 'production_' + Math.random().toString(36).slice(2), key, col, row, rot: 0, queue: [], ready: [], nextAt: null, water: 0 }; // Completed production building purchased via its plan.
+    buildings.push(entry); spawn(entry);
     window.FarmBuildings.clearFootprint(col, row, definition.w, definition.h);
     placement = null; deps.saveFarmLayout(); deps.saveMemberWorldData();
     return { ok: true, message: definition.label + ' placed.' };
@@ -258,7 +287,7 @@
     modal.append(panel); document.body.append(modal);
   }
   function connectedCrops(entry, grid) {
-    const definition = catalog[entry.key]; // Tank perimeter provides all possible trench inlets.
+    const definition = footprint(entry.key, entry.rot); // Tank perimeter provides all possible trench inlets.
     const queue = [], seen = new Set(), crops = new Map(); // Flood-fill only the live adjacent trench network; topology is never stale.
     const add = (col, row) => { const key = col + ',' + row; if (!seen.has(key) && grid[row]?.[col]?.type === deps.TileType.TRENCH) { seen.add(key); queue.push({ col, row }); } }; // Traverses cardinal trench connections only.
     for (let col = entry.col; col < entry.col + definition.w; col++) { add(col, entry.row - 1); add(col, entry.row + definition.h); }
@@ -351,6 +380,6 @@
     }
   }
   function refreshColors() { for (const entry of buildings) { removeVisual(entry); spawn(entry); } }
-  window.FarmProduction = { init, serialize, load, clear, arm, placeAt, enqueue, collect, tick, open, renderRows, renderShop, refreshColors,
+  window.FarmProduction = { init, serialize, load, clear, arm, placeAt, move, rotate, footprint: entry => footprint(entry.key, entry.rot), enqueue, collect, tick, open, renderRows, renderShop, refreshColors,
     hasPlacement: () => !!placement, cancelPlacement: () => { placement = null; }, outputsFor, canPlace, irrigate, connectedCrops, fertilize, entries: () => buildings, now };
 })();
