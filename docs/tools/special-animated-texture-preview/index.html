@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Hobunji Hollow — Special Animated Texture Preview</title>
+<style>
+  :root{color-scheme:dark;--bg:#0e1218;--panel:#171d26;--panel2:#10151d;--line:#313b4b;--text:#e9eef6;--muted:#9eabbc;--accent:#8fc8ad;--warn:#e1ba7b}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+  header{padding:16px 18px 10px;border-bottom:1px solid var(--line);background:#111720;position:sticky;top:0;z-index:20}
+  h1{font-size:18px;margin:0 0 4px}.sub{color:var(--muted);font-size:12px}
+  main{max-width:1180px;margin:0 auto;padding:16px;display:grid;gap:16px}
+  .previews{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 8px 28px rgba(0,0,0,.22)}
+  .cardHead{padding:12px 14px 10px;border-bottom:1px solid var(--line)}
+  .cardHead strong{display:block}.cardHead small{color:var(--muted)}
+  .stageWrap{position:relative;aspect-ratio:1/1;background:#090d12}
+  canvas{display:block;width:100%;height:100%;touch-action:none}
+  .badge{position:absolute;left:10px;bottom:10px;background:rgba(7,10,14,.78);border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:5px 8px;font:11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;pointer-events:none}
+  .controls{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:12px}
+  .control{display:grid;gap:5px;min-width:0}.control label{font-size:11px;color:var(--muted)}
+  button,input{font:inherit}button{min-height:38px;border:1px solid var(--line);border-radius:9px;background:#202938;color:var(--text);padding:8px 10px}button:active{transform:translateY(1px)}
+  input[type="range"]{width:100%}.value{font:11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--accent)}
+  .debug{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:12px;display:grid;gap:8px}
+  .debugTitle{display:flex;gap:10px;align-items:center;justify-content:space-between}.debugTitle strong{font-size:13px}.status{color:var(--accent);font-size:12px}
+  pre{margin:0;max-height:220px;overflow:auto;white-space:pre-wrap;word-break:break-word;background:#0b0f15;border:1px solid #242d3a;border-radius:9px;padding:10px;color:#cbd6e4;font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .change{color:var(--muted);font-size:12px}.change b{color:var(--text)}
+  @media(max-width:760px){.previews{grid-template-columns:1fr}.controls{grid-template-columns:repeat(2,minmax(0,1fr))}header{position:static}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Special Animated Texture Effects</h1>
+  <div class="sub">Uses the same <code>HobunjiSurfaceStretchUV</code> mapper as farm / wilderness cliff surfaces, then animates the already-stretched mesh without replacing its UVs.</div>
+</header>
+<main>
+  <section class="previews">
+    <article class="card">
+      <div class="cardHead"><strong>Oil ooze</strong><small><code>dark_oil.png.png</code> over <code>carved_smooth.png</code></small></div>
+      <div class="stageWrap"><canvas id="oilCanvas"></canvas><div class="badge" id="oilBadge">loading…</div></div>
+    </article>
+    <article class="card">
+      <div class="cardHead"><strong>Soft river ribbon</strong><small><code>wibbly_surface.png</code> stretched over a rounded, gently wiggling river shape on the grass surface texture.</small></div>
+      <div class="stageWrap"><canvas id="riverCanvas"></canvas><div class="badge" id="riverBadge">loading…</div></div>
+    </article>
+  </section>
+
+  <section class="controls" aria-label="Preview controls">
+    <div class="control"><label for="speed">Animation speed</label><input id="speed" type="range" min="0" max="2" value="1" step="0.05"><div class="value" id="speedValue">1.00×</div></div>
+    <div class="control"><label for="riverWiggle">River wiggle</label><input id="riverWiggle" type="range" min="0" max="1" value="0.42" step="0.01"><div class="value" id="riverWiggleValue">0.42</div></div>
+    <div class="control"><label for="oilViscosity">Oil viscosity</label><input id="oilViscosity" type="range" min="0.25" max="1.5" value="0.82" step="0.01"><div class="value" id="oilViscosityValue">0.82</div></div>
+    <div class="control"><label>Animation</label><button id="pauseButton" type="button">Pause</button></div>
+    <div class="control"><label>Oil test</label><button id="restartOilButton" type="button">Restart ooze</button></div>
+    <div class="control"><label>Texture flow</label><button id="flowButton" type="button">Flow: on</button></div>
+    <div class="control"><label>Geometry inspection</label><button id="wireButton" type="button">Wireframe: off</button></div>
+    <div class="control"><label>Debug</label><button id="refreshDebugButton" type="button">Refresh report</button></div>
+  </section>
+
+  <section class="debug">
+    <div class="debugTitle"><strong>Mobile-visible diagnostics</strong><span class="status" id="status">booting</span></div>
+    <pre id="debugOutput">Waiting for renderer…</pre>
+    <div class="change"><b>Most recent change:</b> standalone preview for animated stretch-to-fit texture effects; oil uses a gravity/progression front and river uses a deforming curved ribbon while keeping the central cliff UV solution attached.</div>
+  </section>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="../../js/surface-stretch-uv-furniture.js"></script>
+<script>
+(() => {
+  'use strict';
+
+  const WORLD_SIZE = 6; // Used by both previews so the central mapper's default 6-world-unit reference scale matches the displayed square.
+  const HALF_WORLD = WORLD_SIZE * 0.5; // Used by the orthographic cameras and square background planes.
+  const OIL_TEXTURE_URL = '../../assets/textures/dark_oil.png.png'; // Used by the animated oil overlay.
+  const ROCK_TEXTURE_URL = '../../assets/textures/carved_smooth.png'; // Used as the oil preview's carved square background.
+  const WATER_TEXTURE_URL = '../../assets/textures/wibbly_surface.png'; // Used by the animated river overlay and scrolled like game water.
+  const GRASS_TEXTURE_URL = '../../assets/textures/wavy_surface.png'; // Used as the repo-authored grass/surface texture beneath the river.
+  const STRETCH_OPTIONS = Object.freeze({ angleToleranceDeg: 24, edgeSourceFraction: 0.32, edgeReferenceWorldSize: 6, avoidCollapsedUvs: true }); // Used for both animated overlays so they exercise the farm-cliff mapper's central edge-preserving policy.
+
+  const state = {
+    paused: false,
+    flowEnabled: true,
+    wireframe: false,
+    speed: 1,
+    riverWiggle: 0.42,
+    oilViscosity: 0.82,
+    oilStartSeconds: 0,
+    animationSeconds: 0,
+    lastFrameMs: performance.now(),
+    fps: 0,
+    frameCounter: 0,
+    fpsWindowStart: performance.now(),
+    assets: Object.create(null),
+    errors: [],
+  }; // Used by the controls, animation loop, and on-page debug report.
+
+  const previewByName = new Map(); // Used by resize, animation, wireframe toggling, and diagnostics for both WebGL previews.
+  const textureLoader = new THREE.TextureLoader(); // Used to share texture-loading behavior and asset status reporting across both previews.
+
+  function markAsset(url, status, error = null) {
+    state.assets[url] = status; // Used by the mobile-visible diagnostics panel.
+    if (error) state.errors.push(`${url}: ${error?.message || error}`);
+  }
+
+  function loadTexture(url, options = {}) {
+    return new Promise((resolve, reject) => {
+      textureLoader.load(url, texture => {
+        texture.wrapS = options.repeat ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
+        texture.wrapT = options.repeat ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
+        texture.magFilter = THREE.LinearFilter;
+        texture.minFilter = THREE.LinearMipmapLinearFilter || THREE.LinearMipMapLinearFilter;
+        texture.encoding = THREE.sRGBEncoding;
+        texture.needsUpdate = true;
+        markAsset(url, 'ready');
+        resolve(texture);
+      }, undefined, error => {
+        markAsset(url, 'error', error);
+        reject(error);
+      });
+    });
+  }
+
+  function makeRenderer(canvas) {
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'high-performance' }); // Used by one square preview canvas.
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    renderer.setClearColor(0x090d12, 1);
+    return renderer;
+  }
+
+  function makeCamera() {
+    const camera = new THREE.OrthographicCamera(-HALF_WORLD, HALF_WORLD, HALF_WORLD, -HALF_WORLD, 0.01, 20); // Used to present each effect as a flat 6×6 authoring square.
+    camera.position.set(0, 0, 6);
+    camera.lookAt(0, 0, 0);
+    return camera;
+  }
+
+  function makeBackground(texture) {
+    const material = new THREE.MeshBasicMaterial({ map: texture, color: 0xffffff, depthWrite: true }); // Used by the fixed square under each animated effect.
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE), material); // Used as the carved-stone or grass preview substrate.
+    mesh.position.z = 0;
+    return mesh;
+  }
+
+  function makeParamGridGeometry(columns, rows, positionForParam) {
+    const vertexCount = columns * rows; // Used to allocate position and animation-parameter buffers for the deformable surface.
+    const positions = new Float32Array(vertexCount * 3); // Used by Three.js as the deforming XY surface positions.
+    const params = new Float32Array(vertexCount * 2); // Used after stretch mapping so animation still knows each vertex's stable U/V logical position.
+    const indices = []; // Used to connect the grid into one topologically continuous irregular surface before the shared mapper expands its UV seams.
+
+    for (let row = 0; row < rows; row++) {
+      const v = row / (rows - 1); // Used as this row's normalized flow/length coordinate.
+      for (let column = 0; column < columns; column++) {
+        const u = column / (columns - 1); // Used as this column's normalized cross-surface coordinate.
+        const index = row * columns + column; // Used to address this logical grid vertex in both buffers.
+        const point = positionForParam(u, v); // Used as the initial fully-open shape supplied to the stretch mapper.
+        positions[index * 3] = point.x;
+        positions[index * 3 + 1] = point.y;
+        positions[index * 3 + 2] = 0;
+        params[index * 2] = u;
+        params[index * 2 + 1] = v;
+      }
+    }
+    for (let row = 0; row < rows - 1; row++) {
+      for (let column = 0; column < columns - 1; column++) {
+        const a = row * columns + column; // Used as the grid cell's upper-left vertex.
+        const b = a + 1; // Used as the grid cell's upper-right vertex.
+        const c = a + columns; // Used as the grid cell's lower-left vertex.
+        const d = c + 1; // Used as the grid cell's lower-right vertex.
+        indices.push(a, c, d, a, d, b);
+      }
+    }
+    const geometry = new THREE.BufferGeometry(); // Used as the source topology consumed by HobunjiSurfaceStretchUV.
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('hobunjiParam', new THREE.BufferAttribute(params, 2));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    return geometry;
+  }
+
+  function applySharedStretch(mesh, label) {
+    const mapper = window.HobunjiSurfaceStretchUV; // Used as the same authoritative mapper farm cliffs call at runtime.
+    if (!mapper?.installed || typeof mapper.mapMesh !== 'function') throw new Error('HobunjiSurfaceStretchUV did not load.');
+    mapper.mapMesh(mesh, Object.assign({ label }, STRETCH_OPTIONS));
+    const params = mesh.geometry.getAttribute('hobunjiParam'); // Used by the animation functions after mapMesh expands indexed topology into independently UV-able corners.
+    if (!params) throw new Error(`${label}: stretch mapping dropped hobunjiParam; animation cannot preserve logical vertex identity.`);
+    return mesh.geometry.userData?.hobunjiSurfaceStretch || null;
+  }
+
+  function oilBasePoint(u, v) {
+    const lateral = u * 2 - 1; // Used to place this oil vertex across the source ribbon.
+    const centerX = 0.13 * Math.sin(v * 5.3) - 0.07 * Math.sin(v * 9.4); // Used to prevent the fully-open oil sheet from being mechanically straight.
+    const width = 2.25 - 0.44 * v + 0.10 * Math.sin(v * 8.1); // Used as the initial oil breadth before animated front collapse.
+    return { x: centerX + lateral * width, y: 2.92 - v * 5.55 };
+  }
+
+  function riverBasePoint(u, v) {
+    const lateral = u * 2 - 1; // Used to place this vertex from left bank through right bank.
+    const centerX = 0.35 * Math.sin(v * Math.PI * 2.2 + 0.4) + 0.13 * Math.sin(v * Math.PI * 5.1); // Used as the river's authored gentle S-curve.
+    const endRound = Math.pow(Math.max(0.018, Math.sin(Math.PI * v)), 0.34); // Used to narrow both endpoints into softly rounded caps instead of square ends.
+    const width = (0.74 + 0.12 * Math.sin(v * Math.PI * 3.4 + 0.8)) * endRound; // Used as the non-blocky variable river half-width.
+    return { x: centerX + lateral * width, y: 2.82 - v * 5.64 };
+  }
+
+  function createEffectPreview(name, canvas, backgroundTexture, overlayTexture, geometry, materialOptions = {}) {
+    const renderer = makeRenderer(canvas); // Used to render this named effect independently so mobile stacking remains simple.
+    const scene = new THREE.Scene(); // Used to hold this preview's substrate and animated overlay.
+    const camera = makeCamera(); // Used as the fixed orthographic authoring view for this preview.
+    const background = makeBackground(backgroundTexture); // Used as the square material underneath the effect.
+    scene.add(background);
+
+    const material = new THREE.MeshBasicMaterial({
+      map: overlayTexture,
+      transparent: materialOptions.transparent !== false,
+      opacity: Number.isFinite(materialOptions.opacity) ? materialOptions.opacity : 1,
+      alphaTest: Number.isFinite(materialOptions.alphaTest) ? materialOptions.alphaTest : 0,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+    }); // Used by the irregular animated overlay while its UVs stay fixed to the mapper's solution.
+    const mesh = new THREE.Mesh(geometry, material); // Used as the deformable oil or river surface.
+    mesh.position.z = 0.03;
+    scene.add(mesh);
+
+    const stretchReport = applySharedStretch(mesh, `special-animated-texture-preview:${name}`); // Used to prove the effect actually passed through the shared cliff stretch logic.
+    const preview = { name, canvas, renderer, scene, camera, background, mesh, material, overlayTexture, stretchReport }; // Used by animation, resize, debug, and controls.
+    previewByName.set(name, preview);
+    return preview;
+  }
+
+  function hashWave(u, seed) {
+    const value = Math.sin((u * 91.73 + seed * 17.11) * 12.9898) * 43758.5453; // Used to give the oil front stable, deterministic small-scale unevenness without per-frame randomness.
+    return (value - Math.floor(value)) * 2 - 1;
+  }
+
+  function smooth01(value) {
+    const x = Math.max(0, Math.min(1, value)); // Used to keep oil progression inside a stable interpolation range.
+    return x * x * (3 - 2 * x);
+  }
+
+  function oilFrontFor(u, age, viscosity) {
+    const progress = smooth01(Math.min(1, age * (0.035 / Math.max(0.2, viscosity)))); // Used as the gravity-driven overall descent after each restart.
+    const tendrilA = 0.18 * Math.exp(-Math.pow((u - 0.25) / 0.10, 2)); // Used to make a persistent left-side faster drip.
+    const tendrilB = 0.25 * Math.exp(-Math.pow((u - 0.55) / 0.085, 2)); // Used to make the deepest central oil finger.
+    const tendrilC = 0.14 * Math.exp(-Math.pow((u - 0.80) / 0.12, 2)); // Used to make a smaller right-side drip.
+    const wobble = 0.022 * Math.sin(age * 1.35 + u * 15.0) + 0.018 * hashWave(u, 3.2); // Used to roughen the advancing lower edge without flickering.
+    return Math.max(0.14, Math.min(0.99, 0.14 + progress * 0.69 + tendrilA + tendrilB + tendrilC + wobble));
+  }
+
+  function animateOil(preview, timeSeconds) {
+    const position = preview.mesh.geometry.getAttribute('position'); // Used to deform the already-mapped oil surface in place.
+    const param = preview.mesh.geometry.getAttribute('hobunjiParam'); // Used as stable logical coordinates after the mapper duplicated triangle corners.
+    const age = Math.max(0, timeSeconds - state.oilStartSeconds); // Used to advance the ooze from the top after restart without resetting global animation time.
+    for (let i = 0; i < position.count; i++) {
+      const u = param.getX(i); // Used to choose this vertex's oil channel / lateral position.
+      const v = param.getY(i); // Used as this vertex's requested depth before the moving front clamps it.
+      const front = oilFrontFor(u, age, state.oilViscosity); // Used as the local downward limit that produces several uneven tendrils.
+      const effectiveV = Math.min(v, front); // Used to collapse not-yet-reached rows onto the current liquid front rather than rendering hidden geometry below it.
+      const lateral = u * 2 - 1; // Used to reconstruct the oil sheet's horizontal coordinate after front collapse.
+      const channelShear = 0.11 * Math.sin(effectiveV * 8.2 + timeSeconds * 0.33) + 0.05 * Math.sin(effectiveV * 17.0 - timeSeconds * 0.21); // Used to keep the descending body slowly meandering.
+      const widthPulse = 1 + 0.035 * Math.sin(timeSeconds * 0.9 + effectiveV * 11.0 + u * 2.8); // Used to make viscous side edges breathe subtly instead of moving like rigid cloth.
+      const point = oilBasePoint(u, effectiveV); // Used as the main gravity-descended location of this vertex.
+      const frontCompression = v > front ? Math.max(0.05, 1 - (v - front) * 6) : 1; // Used to gather collapsed lower rows near each local drip tip and reduce wide invisible fans.
+      const baseCenter = oilBasePoint(0.5, effectiveV).x; // Used as the center around which the not-yet-flowed rows are pinched toward the active front.
+      const x = baseCenter + (point.x - baseCenter) * widthPulse * frontCompression + channelShear * (0.35 + Math.abs(lateral) * 0.2); // Used as the final viscous horizontal deformation.
+      const y = point.y - 0.055 * Math.sin(timeSeconds * 0.8 + u * 10.0) * Math.pow(effectiveV, 1.4); // Used as a small gravity-direction sag modulation over the main descent.
+      position.setXYZ(i, x, y, 0);
+    }
+    position.needsUpdate = true;
+  }
+
+  function animateRiver(preview, timeSeconds) {
+    const position = preview.mesh.geometry.getAttribute('position'); // Used to deform the already-mapped water ribbon while its texture UVs remain attached.
+    const param = preview.mesh.geometry.getAttribute('hobunjiParam'); // Used as stable across-river / along-river coordinates.
+    const wiggle = state.riverWiggle; // Used to scale the authored centerline's live lateral movement from the UI.
+    for (let i = 0; i < position.count; i++) {
+      const u = param.getX(i); // Used as this vertex's cross-river location.
+      const v = param.getY(i); // Used as this vertex's along-river location.
+      const lateral = u * 2 - 1; // Used to reconstruct bank-relative width.
+      const endRound = Math.pow(Math.max(0.018, Math.sin(Math.PI * v)), 0.34); // Used to preserve rounded/tapered endcaps during animation.
+      const centerBase = 0.35 * Math.sin(v * Math.PI * 2.2 + 0.4) + 0.13 * Math.sin(v * Math.PI * 5.1); // Used as the same stable S-curve the UV mapper saw initially.
+      const liveBend = wiggle * (0.24 * Math.sin(v * Math.PI * 3.2 + timeSeconds * 0.55) + 0.08 * Math.sin(v * Math.PI * 7.4 - timeSeconds * 0.31)); // Used as low-frequency river-bank motion rather than block/tile wobble.
+      const width = (0.74 + 0.12 * Math.sin(v * Math.PI * 3.4 + 0.8) + wiggle * 0.055 * Math.sin(timeSeconds * 0.7 + v * 13.0)) * endRound; // Used as a slowly breathing, irregular round-edged half-width.
+      const x = centerBase + liveBend + lateral * width; // Used as the final curved horizontal position.
+      const y = 2.82 - v * 5.64 + wiggle * 0.035 * Math.sin(timeSeconds * 0.45 + v * 12.0) * (1 - lateral * lateral); // Used as a very small longitudinal wiggle concentrated near the river center.
+      position.setXYZ(i, x, y, 0);
+    }
+    position.needsUpdate = true;
+    if (state.flowEnabled) {
+      preview.overlayTexture.offset.x = (timeSeconds * 0.012) % 1; // Used to echo the game's shared water shader sideways drift rate.
+      preview.overlayTexture.offset.y = (timeSeconds * -0.035) % 1; // Used to echo the game's stronger along-flow water texture drift rate.
+    }
+  }
+
+  function resizePreview(preview) {
+    const rect = preview.canvas.getBoundingClientRect(); // Used to resize the backing WebGL buffer to the canvas's current responsive CSS size.
+    const width = Math.max(2, Math.round(rect.width)); // Used as the renderer's CSS-pixel width.
+    const height = Math.max(2, Math.round(rect.height)); // Used as the renderer's CSS-pixel height.
+    preview.renderer.setSize(width, height, false);
+  }
+
+  function resizeAll() {
+    for (const preview of previewByName.values()) resizePreview(preview);
+  }
+
+  function renderAll() {
+    for (const preview of previewByName.values()) preview.renderer.render(preview.scene, preview.camera);
+  }
+
+  function updateBadges() {
+    const oil = previewByName.get('oil'); // Used to report oil geometry/UV counts directly over its canvas.
+    const river = previewByName.get('river'); // Used to report river geometry/UV counts directly over its canvas.
+    if (oil) document.getElementById('oilBadge').textContent = `${oil.mesh.geometry.getAttribute('position')?.count || 0} verts · mapped UV`;
+    if (river) document.getElementById('riverBadge').textContent = `${river.mesh.geometry.getAttribute('position')?.count || 0} verts · mapped UV`;
+  }
+
+  function updateDebug() {
+    const mapperSnapshot = window.HobunjiSurfaceStretchUV?.snapshot?.() || null; // Used to expose the central mapper's own runtime counters without DevTools.
+    const previews = Array.from(previewByName.values()).map(preview => ({
+      name: preview.name,
+      vertices: preview.mesh.geometry.getAttribute('position')?.count || 0,
+      triangles: Math.floor((preview.mesh.geometry.getAttribute('position')?.count || 0) / 3),
+      hasUv: !!preview.mesh.geometry.getAttribute('uv'),
+      mapping: preview.mesh.geometry.userData?.hobunjiSurfaceStretch?.mapping || null,
+      patches: preview.mesh.geometry.userData?.hobunjiSurfaceStretch?.patchCount ?? null,
+      edgeFallbacks: preview.mesh.geometry.userData?.hobunjiSurfaceStretch?.fallbackCount ?? null,
+    })); // Used as compact per-effect proof that the shared stretch mapper owns the final UVs.
+    const report = {
+      fps: state.fps,
+      paused: state.paused,
+      speed: state.speed,
+      flowEnabled: state.flowEnabled,
+      wireframe: state.wireframe,
+      assets: state.assets,
+      previews,
+      mapper: mapperSnapshot,
+      errors: state.errors.slice(-8),
+    }; // Used by the visible debug panel for mobile testing and bug reports.
+    document.getElementById('debugOutput').textContent = JSON.stringify(report, null, 2);
+    document.getElementById('status').textContent = state.errors.length ? `${state.errors.length} error(s)` : 'running';
+  }
+
+  function wireControls() {
+    const bindRange = (id, valueId, key, digits, suffix = '') => {
+      const input = document.getElementById(id); // Used to read this named tuning range.
+      const output = document.getElementById(valueId); // Used to mirror its numeric value for mobile precision.
+      const apply = () => {
+        state[key] = Number(input.value);
+        output.textContent = `${state[key].toFixed(digits)}${suffix}`;
+      };
+      input.addEventListener('input', apply);
+      apply();
+    };
+    bindRange('speed', 'speedValue', 'speed', 2, '×');
+    bindRange('riverWiggle', 'riverWiggleValue', 'riverWiggle', 2);
+    bindRange('oilViscosity', 'oilViscosityValue', 'oilViscosity', 2);
+
+    document.getElementById('pauseButton').addEventListener('click', event => {
+      state.paused = !state.paused;
+      event.currentTarget.textContent = state.paused ? 'Resume' : 'Pause';
+      state.lastFrameMs = performance.now();
+      updateDebug();
+    });
+    document.getElementById('restartOilButton').addEventListener('click', () => {
+      state.oilStartSeconds = state.animationSeconds;
+      updateDebug();
+    });
+    document.getElementById('flowButton').addEventListener('click', event => {
+      state.flowEnabled = !state.flowEnabled;
+      event.currentTarget.textContent = `Flow: ${state.flowEnabled ? 'on' : 'off'}`;
+      updateDebug();
+    });
+    document.getElementById('wireButton').addEventListener('click', event => {
+      state.wireframe = !state.wireframe;
+      for (const preview of previewByName.values()) preview.material.wireframe = state.wireframe;
+      event.currentTarget.textContent = `Wireframe: ${state.wireframe ? 'on' : 'off'}`;
+      updateDebug();
+    });
+    document.getElementById('refreshDebugButton').addEventListener('click', updateDebug);
+  }
+
+  function animationFrame(nowMs) {
+    const deltaSeconds = Math.min(0.05, Math.max(0, (nowMs - state.lastFrameMs) / 1000)); // Used to keep animation stable across tab switches and mobile frame stalls.
+    state.lastFrameMs = nowMs;
+    if (!state.paused) state.animationSeconds += deltaSeconds * state.speed;
+
+    const oil = previewByName.get('oil'); // Used as the gravity-driven deforming liquid preview.
+    const river = previewByName.get('river'); // Used as the curved deforming water preview.
+    if (oil) animateOil(oil, state.animationSeconds);
+    if (river) animateRiver(river, state.animationSeconds);
+    renderAll();
+
+    state.frameCounter++;
+    if (nowMs - state.fpsWindowStart >= 1000) {
+      state.fps = Math.round(state.frameCounter * 1000 / (nowMs - state.fpsWindowStart));
+      state.frameCounter = 0;
+      state.fpsWindowStart = nowMs;
+      updateDebug();
+    }
+    requestAnimationFrame(animationFrame);
+  }
+
+  async function boot() {
+    wireControls();
+    if (!window.THREE) throw new Error('Three.js r128 failed to load.');
+    if (!window.HobunjiSurfaceStretchUV?.installed) throw new Error('Shared surface stretch mapper failed to load.');
+
+    const [rockTexture, oilTexture, grassTexture, waterTexture] = await Promise.all([
+      loadTexture(ROCK_TEXTURE_URL),
+      loadTexture(OIL_TEXTURE_URL),
+      loadTexture(GRASS_TEXTURE_URL),
+      loadTexture(WATER_TEXTURE_URL, { repeat: true }),
+    ]); // Used as the four real repository textures shown by the two previews.
+
+    const oilGeometry = makeParamGridGeometry(15, 23, oilBasePoint); // Used as a dense deformable sheet so the oil front can form multiple smooth tendrils without topology rebuilds.
+    const riverGeometry = makeParamGridGeometry(7, 73, riverBasePoint); // Used as a long dense ribbon so bank curves stay round-edged and continuous while wiggling.
+    createEffectPreview('oil', document.getElementById('oilCanvas'), rockTexture, oilTexture, oilGeometry, { opacity: 0.96 });
+    createEffectPreview('river', document.getElementById('riverCanvas'), grassTexture, waterTexture, riverGeometry, { opacity: 0.76 });
+
+    state.oilStartSeconds = state.animationSeconds;
+    resizeAll();
+    updateBadges();
+    updateDebug();
+    window.addEventListener('resize', resizeAll, { passive: true });
+    if ('ResizeObserver' in window) {
+      const observer = new ResizeObserver(resizeAll); // Used to keep both square canvases sharp when mobile orientation/layout changes without a classic window resize event.
+      for (const preview of previewByName.values()) observer.observe(preview.canvas);
+    }
+    requestAnimationFrame(animationFrame);
+  }
+
+  boot().catch(error => {
+    state.errors.push(error?.stack || error?.message || String(error));
+    document.getElementById('status').textContent = 'failed';
+    document.getElementById('debugOutput').textContent = state.errors.join('\n\n');
+    console.error('[special-animated-texture-preview]', error);
+  });
+})();
+</script>
+</body>
+</html>
