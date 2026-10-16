@@ -207,7 +207,9 @@ const rebuild = async target => { for (const observer of observers) observer([{ 
 
   const treeToggle = button('tree-toggle', 10, 40, { 'data-ctrl-group-open': '', 'aria-expanded': 'false' }); // The authored toggle opens just its own collapsible tree.
   const perkRow = new Element('div', { class: 'perk-row', 'data-perk': 'health' }, [button('perk-plus', 10, 100)], 10, 90);
-  const tree = new Element('div', { class: 'perk-tree', 'data-tree': 'combat' }, [treeToggle, perkRow], 10, 40);
+  const hiddenToggle = button('legacy-tree-toggle', 10, 40, { 'data-ctrl-group-open': '', 'aria-expanded': 'false' }); // Enhanced Nursery retains a hidden legacy toggle before its visible disclosure.
+  hiddenToggle.hidden = true;
+  const tree = new Element('div', { class: 'perk-tree', 'data-tree': 'combat' }, [hiddenToggle, treeToggle, perkRow], 10, 40);
   const treeList = new Element('div', { class: 'perk-trees', id: 'perkTrees' }, [tree], 10, 40);
   const perkPanel = new Element('div', { 'data-ctrl-panel': '', id: 'perk-panel' }, [treeList]);
   treeToggle.onclick = () => treeToggle.setAttribute('aria-expanded', 'true');
@@ -218,6 +220,7 @@ const rebuild = async target => { for (const observer of observers) observer([{ 
   press('confirm'); assert.equal(ui.focusedElement(), tree);
   assert.equal(treeToggle.clicks, 0, 'entering the Perks section does not open a child tree');
   press('confirm'); assert.equal(treeToggle.clicks, 1, 'entering an individual tree opens its existing toggle');
+  assert.equal(hiddenToggle.clicks, 0, 'entering a nest ignores its hidden legacy disclosure');
   assert.equal(ui.focusedElement(), perkRow, 'opening a tree starts on its contents');
   press('confirm'); assert.equal(ui.focusedElement().id, 'perk-plus');
   press('confirm'); assert.equal(perkRow.children[0].clicks, 1);
@@ -254,6 +257,118 @@ const rebuild = async target => { for (const observer of observers) observer([{ 
   press('confirm'); assert.equal(choices, 0, 'inspecting a locked mastery effect cannot buy it');
   press('left'); press('confirm'); assert.equal(choices, 1, 'Confirm chooses the available effect through the normal progression API');
   masteryPanel.hidden = true; await rebuild(masteryPanel);
+  const detailAction = button('detail-use', 320, 80); // Item actions live in a sibling panel rather than inside the grid's DOM.
+  const detailNest = new Element('div', { id: 'detail-nest', 'data-ctrl-group': '' }, [button('detail-nested-action', 320, 120)], 320, 120);
+  const detailPanel = new Element('div', { id: 'item-detail', 'data-ctrl-detail-panel': '' }, [detailAction, detailNest], 320, 40);
+  const itemCard = button('item-a', 10, 40, { 'data-stack-id': 'stack-a', 'data-ctrl-detail': 'item-detail' }); // Exact stack identity is retained through list rebuilds.
+  const itemOther = button('item-b', 110, 40, { 'data-stack-id': 'stack-b', 'data-ctrl-detail': 'item-detail' });
+  const itemGrid = new Element('div', { id: 'item-grid', 'data-ctrl-group': '' }, [itemCard, itemOther], 10, 40);
+  const itemClose = button('item-close', 500, 0, { 'data-ctrl-cancel': '' });
+  const itemPanel = new Element('div', { id: 'item-panel', 'data-ctrl-panel': '' }, [itemGrid, detailPanel, itemClose]);
+  body.append(itemPanel);
+  for (const observer of observers) observer([{ target: body, addedNodes: [itemPanel], removedNodes: [] }]);
+  await Promise.resolve();
+  assert.equal(ui.focusedElement(), itemGrid);
+  press('right'); assert.notEqual(ui.focusedElement(), detailPanel, 'associated detail is not a free-standing sibling target');
+  itemGrid.focus(); press('confirm');
+  assert.equal(ui.focusedElement(), itemCard);
+  press('right'); assert.equal(ui.focusedElement(), itemOther);
+  press('confirm'); assert.equal(itemOther.clicks, 1, 'Confirm populates the selected item before entering its detail');
+  assert.equal(ui.focusedElement(), detailAction);
+  assert.equal(detailAction.clicks, 0, 'opening detail never immediately uses an item');
+  assert.equal(ui.debugState().groupDepth, 2, 'detail is logically nested within the item grid');
+  press('left'); assert.equal(ui.focusedElement(), detailAction, 'directional navigation cannot escape detail to the grid');
+  press('down'); assert.equal(ui.focusedElement(), detailNest);
+  press('confirm'); assert.equal(ui.debugState().groupDepth, 3);
+  press('cancel'); assert.equal(ui.focusedElement(), detailNest, 'nested detail sections unwind before returning to the item');
+  press('cancel'); assert.equal(ui.focusedElement(), itemOther);
+  assert.equal(ui.debugState().groupDepth, 1);
+  assert.equal(itemClose.clicks, 0);
+  press('confirm');
+  const rebuiltItem = button('item-b', 110, 40, { 'data-stack-id': 'stack-b', 'data-ctrl-detail': 'item-detail' }); // Equip/use actions can replace their source cards while detail stays open.
+  itemGrid.children[1] = rebuiltItem; rebuiltItem.parentElement = itemGrid; itemOther.parentElement = null;
+  await rebuild(itemGrid);
+  press('cancel'); assert.equal(ui.focusedElement(), rebuiltItem, 'Back restores the same rebuilt stack');
+  press('confirm');
+  itemGrid.children.pop(); rebuiltItem.parentElement = null;
+  await rebuild(itemGrid);
+  press('cancel'); assert.equal(ui.focusedElement(), itemCard, 'consuming the source stack returns to its surviving neighbor');
+  press('confirm');
+  detailAction.parentElement = null; detailNest.parentElement = null; detailPanel.children = [];
+  await rebuild(detailPanel);
+  assert.equal(ui.focusedElement(), detailPanel, 'read-only descriptions stay focused even without any actions');
+  press('confirm'); assert.equal(ui.debugState().groupDepth, 2, 'read-only Confirm cannot nest the description again');
+  press('cancel'); assert.equal(ui.focusedElement(), itemCard);
+  press('confirm');
+  itemGrid.children = []; itemCard.parentElement = null;
+  await rebuild(itemGrid);
+  press('cancel'); assert.equal(ui.focusedElement(), itemGrid, 'consuming the final item returns to the empty inventory grid');
+  itemGrid.append(itemCard);
+  press('right');
+  itemCard.focus();
+  itemCard.setAttribute('data-ctrl-detail', 'missing-detail');
+  press('confirm'); assert.equal(ui.focusedElement(), itemCard, 'missing associated panes safely preserve normal item selection');
+  itemCard.setAttribute('data-ctrl-detail', 'item-detail');
+  itemCard.onclick = () => { itemPanel.hidden = true; }; // A click which closes or replaces the menu must not enter its old detail afterward.
+  press('confirm'); await rebuild(itemPanel);
+  assert.notEqual(ui.activePanel(), itemPanel);
+  // Run the authored compact Nursery renderer through the same navigator as the enhanced inventory.
+  const nurserySource = fs.readFileSync('docs/js/livestock-nursery.js', 'utf8'); // Nursery markup and click handlers must opt in at their real source.
+  const nurseryFunction = name => {
+    const start = nurserySource.indexOf(`  function ${name}(`); // Bounds the real owner function without copying its implementation.
+    const end = nurserySource.indexOf('\n  function ', start + 1);
+    return nurserySource.slice(start, end);
+  };
+  const nurseryRecords = [{ id: 'baby-one', kind: 'grehlr', name: 'Pebble' }, { id: 'baby-two', kind: 'grehlr', name: 'Stripe' }]; // Two saved identities expose wrong-baby returns after a rebuilt list.
+  const makeNurseryElement = tag => {
+    const element = new Element(tag); // Only HTML parsing is simulated; rendering and navigation execute shipped code.
+    element.style.setProperty = (name, value) => { element.style[name] = value; };
+    element.dataset = new Proxy({}, { get: (_object, key) => element.getAttribute('data-' + key.replace(/[A-Z]/g, letter => '-' + letter.toLowerCase())),
+      set: (_object, key, value) => { element.setAttribute('data-' + key.replace(/[A-Z]/g, letter => '-' + letter.toLowerCase()), value); return true; } });
+    Object.defineProperty(element, 'innerHTML', { set(html) {
+      if (!html.includes('livestock-nursery-toggle')) return;
+      const toggle = new Element('button', { class: 'livestock-nursery-toggle', 'data-ctrl-group-open': '', 'aria-expanded': html.includes('aria-expanded="false"') ? 'false' : 'true' }); // Parses the renderer's disclosure boundary only.
+      element.append(new Element('div', {}, [toggle]));
+      element.append(makeNurseryElement('div'));
+    } });
+    return element;
+  };
+  document.createElement = makeNurseryElement;
+  const nurseryList = new Element('div', { id: 'farmLivestockList' }); // Mimics the existing Farm container that owns successive Nursery sections.
+  nurseryList.prepend = child => { child.parentElement = nurseryList; nurseryList.children.unshift(child); };
+  const nurseryOutside = button('nursery-outside', 300, 40); // A nearby Farm action must be unreachable while Nursery owns focus.
+  const nurseryPanel = new Element('div', { id: 'nursery-controller-panel', 'data-ctrl-panel': '' }, [nurseryList, nurseryOutside]);
+  let nurseryContext; // Initialized before queued disclosure rerenders execute.
+  const renderNursery = () => {
+    for (const child of nurseryList.children) child.parentElement = null;
+    nurseryList.children = [];
+    nurseryContext.renderBabyCompactList(nurseryList);
+  };
+  nurseryContext = vm.createContext({ document, window: {}, babies: () => nurseryRecords, adultCount: () => 0, adultCapacity: () => 1,
+    NURSERY_VISIBLE_LIMIT: 16, SPECIES_ICONS: {}, escapeHtml: value => String(value), babySummary: () => ({ size: 'Small', colors: [], special: [] }),
+    animalDeps: { hasFarmPermission: () => true }, queuePanelDecoration: () => queueMicrotask(() => { renderNursery(); rebuild(nurseryList); }) });
+  vm.runInContext(`let selectedBabyId = null; let farmBabyInventoryCollapsed = true; ${nurseryFunction('toggleFarmInventory')} ${nurseryFunction('renderBabyCompactList')}`, nurseryContext);
+  renderNursery();
+  body.append(nurseryPanel);
+  for (const observer of observers) observer([{ target: body, addedNodes: [nurseryPanel], removedNodes: [] }]);
+  await Promise.resolve();
+  assert.equal(ui.focusedElement().id, 'livestockNurserySection', 'Nursery itself is a selectable nest');
+  // Real DOM click listeners receive an event; supply one on this HTML-parser stand-in.
+  nurseryList.querySelector('.livestock-nursery-toggle').click = function () { for (const callback of this.events.get('click') || []) callback({ stopPropagation() {} }); };
+  press('confirm');
+  await Promise.resolve(); await Promise.resolve();
+  assert.equal(ui.debugState().groupId, 'livestockNurserySection', 'entering opens the collapsed Nursery and survives its asynchronous rebuild');
+  const nurseryCard = nurseryList.querySelector('[data-key="baby-two"]'); // Select a non-first baby so Back cannot pass by defaulting to the first.
+  nurseryCard.focus(); press('confirm');
+  await Promise.resolve(); await Promise.resolve();
+  assert.equal(ui.debugState().groupId, 'livestockNurseryDetail');
+  assert.equal(ui.debugState().groupDepth, 2);
+  press('right'); assert.ok(nurseryList.querySelector('#livestockNurseryDetail').contains(ui.focusedElement()), 'baby detail navigation stays within its actions');
+  press('cancel');
+  assert.equal(ui.focusedElement().getAttribute('data-key'), 'baby-two', 'Back returns to the same baby after the actual Nursery renderer replaces every row');
+  press('cancel'); assert.equal(ui.focusedElement().id, 'livestockNurserySection', 'second Back exits the Nursery as one nest');
+  assert.equal(ui.debugState().groupDepth, 0);
+  nurseryPanel.hidden = true; await rebuild(nurseryPanel);
   const handled = []; // Opt-in readers own A/B/bumpers without taking over controller polling.
   panel.setAttribute('data-ctrl-actions', '');
   panel.dispatchEvent = event => { handled.push(event.detail.action); return false; };

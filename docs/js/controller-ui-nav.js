@@ -43,6 +43,10 @@
   //                     Confirm enters; Back returns to the whole section.
   //                     Existing menu sections, inventories, perk trees and
   //                     tab rows are recognized without extra markup.
+  //   data-ctrl-detail  id of an associated detail group. Confirm selects the
+  //                     item, enters that sibling, and Back returns to the item.
+  //   data-ctrl-detail-panel on the associated group; excludes it from unrelated
+  //                     spatial navigation until its item opens it.
   //   data-ctrl-group-open on a group's own toggle with aria-expanded;
   //                     entering a closed group uses that toggle first.
   //   data-ctrl-skip    optional, the opposite of data-ctrl-item — pulls an
@@ -61,7 +65,7 @@
   const PANEL_SELECTOR = `${EXPLICIT_PANEL_SELECTOR}, ${SEMANTIC_PANEL_SELECTOR}`;
   const TABS_SELECTOR = '[data-ctrl-tabs]';
   const GROUP_SELECTOR = [
-    '[data-ctrl-group]', '[data-ctrl-tabs]', '[role="tablist"]', 'details',
+    '[data-ctrl-group]', '[data-ctrl-detail-panel]', '[data-ctrl-tabs]', '[role="tablist"]', 'details',
     '.menu-section', '.progress-skills', '.perk-trees', '.perk-row', '.skill-row', '.farm-section', '.farm-storage-col', '.ship-pane',
     '.inv-grid-area', '.inv-info', '.inv-equip-section', '.inv-key-section',
     '.inv-pack-clothing', '.inv-gear-extra-section', '.perk-tree',
@@ -260,7 +264,9 @@
     for (let index = 0; index < entries.length; index++) {
       const entry = entries[index]; // Stores the original DOM path so whole-section rebuilds preserve confinement.
       const node = entry.node.isConnected ? entry.node : resolveFocusPath(entry.path, true).container; // Reuses stable ids/data-tree and sibling positions.
-      if (!node || node === parent || !parent.contains(node) || !isGroup(node) || !isNavTarget(node) || !belongsToNavigation(node, panel)) {
+      const origin = entry.returnPath ? resolveFocusPath(entry.returnPath).container : null; // Associated siblings belong logically to the source item's current nest.
+      const associated = origin && parent.contains(origin) && panel.contains(node) && node?.hasAttribute('data-ctrl-detail-panel');
+      if (!node || node === parent || (!parent.contains(node) && !associated) || !isGroup(node) || !isNavTarget(node) || !belongsToNavigation(node, panel)) {
         for (const removed of entries.splice(index)) removed.node.classList.remove('ctrl-nav-group-active');
         break;
       }
@@ -290,16 +296,16 @@
   function navigationTargets(panel) {
     const root = navigationRoot(panel); // Only descendants of this nest can compete for directional focus.
     const targets = targetsInPanel(root).filter(el => belongsToNavigation(el, panel)); // Readable sections remain inspectable even without an enabled action.
-    return [...new Set(targets.map(el => groupTarget(el, root, panel)))];
+    return [...new Set(targets.map(el => groupTarget(el, root, panel)))].filter(target => !target.hasAttribute('data-ctrl-detail-panel')); // Detail panes are reached through their owning item, never as unrelated sibling sections.
   }
 
-  function enterGroup(group, panel) {
+  function enterGroup(group, panel, returnPath = null) {
     const entries = enteredGroups(panel); // Nested groups unwind one level per Back press.
     rememberFocusPath(group);
-    entries.push({ node: group, path: focusPath, explicit: true }); // Entered by Confirm; focus-adopted scopes are not, so keyboard Escape/Tab keep closing/switching the menu.
+    entries.push({ node: group, path: focusPath, returnPath, explicit: true }); // Entered by Confirm; focus-adopted scopes are not, so keyboard Escape/Tab keep closing/switching the menu.
     groupsByPanel.set(panel, entries);
     group.classList.add('ctrl-nav-group-active');
-    const opener = Array.from(group.querySelectorAll('[data-ctrl-group-open]')).find(control => groupTarget(control, group, panel) === control); // Only this group's own toggle may open it; entering a tree list must not open its first child tree.
+    const opener = Array.from(group.querySelectorAll('[data-ctrl-group-open]')).find(control => isNavTarget(control) && groupTarget(control, group, panel) === control); // Only this group's own toggle may open it; entering a tree list must not open its first child tree.
     if (opener?.getAttribute('aria-expanded') === 'false') opener.click();
     updateHintBar(panel);
     const targets = navigationTargets(panel); // Includes subgroups as whole targets, never their unentered controls.
@@ -315,7 +321,9 @@
     lastFocusedByGroup.set(entry.node, currentTarget);
     entry.node.classList.remove('ctrl-nav-group-active');
     updateHintBar(panel);
-    setFocus(entry.node);
+    const targets = navigationTargets(panel); // Return to the original item or its nearest surviving neighbor after a consume/equip rebuild.
+    const origin = entry.returnPath ? recoverFocusTarget(panel, targets, entry.returnPath) : entry.node;
+    setFocus(origin || pickDefaultTarget(panel, targets) || navigationRoot(panel));
     return true;
   }
 
@@ -398,9 +406,9 @@
     return { container, siblings, slot };
   }
 
-  function recoverFocusTarget(panel, targets) {
-    if (focusPath?.panel !== panel) return null;
-    const { container, siblings, slot } = resolveFocusPath(focusPath); // Shared by control and nested-section rebuild recovery.
+  function recoverFocusTarget(panel, targets, path = focusPath) {
+    if (path?.panel !== panel) return null;
+    const { container, siblings, slot } = resolveFocusPath(path); // Shared by control and nested-section rebuild recovery.
     if (targets.includes(container)) return container;
     return targets.find(target => container.contains(target))
       || siblings.filter(child => targets.includes(child)).sort((a, b) => Math.abs(siblings.indexOf(a) - slot) - Math.abs(siblings.indexOf(b) - slot))[0]
@@ -429,7 +437,7 @@
       if (!currentTarget.classList.contains('ctrl-nav-focus')) currentTarget.classList.add('ctrl-nav-focus');
       return;
     }
-    setFocus(recoverFocusTarget(panel, targets) || pickDefaultTarget(panel, targets), { scroll: !scrolledSelection });
+    setFocus(recoverFocusTarget(panel, targets) || pickDefaultTarget(panel, targets) || navigationRoot(panel), { scroll: !scrolledSelection });
   }
 
   function visibleNavigationRect(el) {
@@ -597,7 +605,12 @@
       currentTarget.click();
       return;
     }
+    const detailId = currentTarget.getAttribute('data-ctrl-detail'); // Optional association is captured before the item's click can replace its card.
+    const returnPath = focusPath; // Preserves exact stack/clothing identity for Back and whole-grid rebuilds.
     currentTarget.click();
+    if (!detailId || activePanel() !== panel) return;
+    const detail = Array.from(panel.querySelectorAll('[data-ctrl-detail-panel]')).find(node => node.id === detailId); // No CSS selector interpolation; ids are compared literally within this panel.
+    if (detail && isGroup(detail) && isNavTarget(detail) && belongsToNavigation(detail, panel)) enterGroup(detail, panel, returnPath);
   }
 
   function cancel() {
@@ -966,7 +979,8 @@
         navigationMode: 'nested-vector-cone',
         groupDepth: panel ? enteredGroups(panel).length : 0,
         groupId: panel ? navigationRoot(panel).id || navigationRoot(panel).getAttribute('data-tree') || null : null,
-        latestChange: 'Mastery and gear cards are reachable; readable sections can be inspected. After right-stick scrolling, directional focus starts on screen.',
+        latestChange: 'A on inventory, nursery, tool and clothing cards enters their detail panel. B returns to the same item; another B exits the Nursery nest.',
+        detailOriginId: panel ? enteredGroups(panel).at(-1)?.returnPath?.steps.at(-1)?.value || null : null,
         pendingScrollReanchor: scrolledSelection?.panel === panel,
         coneHalfAngleDeg: Math.round(CONE_HALF_ANGLE * 180 / Math.PI),
         navigationTargetCount: navigationPerf.targetCount,

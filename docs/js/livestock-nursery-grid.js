@@ -49,7 +49,7 @@
   let selectedBabyId = null; // Used by mouse/controller focus so the right-side detail rail follows the active grid square without rebuilding the Farm panel.
   let decorateQueued = false; // Coalesces render/observer requests into one Nursery enhancement microtask.
   let installed = false; // Makes repeated parser/runtime bridge installs idempotent.
-  let mostRecentChange = 'Restored the Nursery inventory disclosure in the grid header.'; // Included in mobile-visible diagnostics after every state-changing action.
+  let mostRecentChange = 'Nursery portraits enter baby details with A; B returns to the baby, then exits the Nursery focus nest.'; // Included in mobile-visible diagnostics after every state-changing action.
 
   const roundTo = (value, step) => Math.max(step, Math.round(Number(value || 0) / step) * step);
   const currentDeps = () => panelDeps || animalDeps;
@@ -390,6 +390,8 @@
       const traits = traitInfo(entry);
       card.classList.add('nursery-grid-card');
       card.dataset.nurseryBabyId = String(entry.id);
+      if (card.getAttribute('data-key') !== String(entry.id)) card.setAttribute('data-key', String(entry.id));
+      if (card.getAttribute('data-ctrl-detail') !== 'livestockNurseryDetail') card.setAttribute('data-ctrl-detail', 'livestockNurseryDetail');
       card.dataset.nurseryBadges = traits.badges.join('');
       card.dataset.fallbackIcon = SPECIES_FALLBACK_ICONS[entry.kind] || '🐾';
       card.setAttribute('aria-label', `${entry.name || speciesLabel(entry.kind)}, ${speciesLabel(entry.kind)}${traits.specials.length ? `, ${traits.specials.join(', ')}` : ''}`);

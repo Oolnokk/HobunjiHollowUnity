@@ -740,9 +740,10 @@
 
     const section = document.createElement('div');
     section.id = 'livestockNurserySection';
+    section.setAttribute('data-ctrl-group', '');
     section.style.cssText = 'border:1px solid var(--border,#4b443a);border-radius:8px;padding:7px 8px;margin:0 0 8px;background:rgba(255,220,160,.055);';
     section.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px;">
-      <strong><button type="button" class="livestock-nursery-toggle" aria-expanded="${farmBabyInventoryCollapsed ? 'false' : 'true'}" style="border:0;background:transparent;color:inherit;padding:0;text-align:left;font:inherit;font-weight:800;cursor:pointer;">${farmBabyInventoryCollapsed ? '▸' : '▾'} 🍼 Nursery · ${babyList.length} babies</button></strong>
+      <strong><button type="button" class="livestock-nursery-toggle" data-ctrl-group-open aria-expanded="${farmBabyInventoryCollapsed ? 'false' : 'true'}" style="border:0;background:transparent;color:inherit;padding:0;text-align:left;font:inherit;font-weight:800;cursor:pointer;">${farmBabyInventoryCollapsed ? '▸' : '▾'} 🍼 Nursery · ${babyList.length} babies</button></strong>
       <span style="font-size:11px;${warning ? 'color:#ff9b80;font-weight:700;' : 'color:var(--muted,#999);'}">Adults ${count}/${capacity} barn spaces</span>
     </div>
     <div style="font-size:10px;color:var(--muted,#999);line-height:1.25;margin-bottom:5px;">Babies stay babies indefinitely. Grow Up is one-way. Up to ${NURSERY_VISIBLE_LIMIT} are visible inside at once.</div>`;
@@ -754,6 +755,8 @@
       const selected = entry.id === selectedBabyId;
       const row = document.createElement('button');
       row.type = 'button';
+      row.setAttribute('data-key', String(entry.id));
+      row.setAttribute('data-ctrl-detail', 'livestockNurseryDetail');
       row.style.cssText = `width:100%;text-align:left;border:1px solid ${selected ? 'var(--accent,#d9ad65)' : 'var(--border,#444)'};border-radius:6px;background:${selected ? 'rgba(217,173,101,.12)' : 'rgba(0,0,0,.12)'};color:inherit;padding:4px 6px;cursor:pointer;`;
       const colorsHtml = summary.colors.map(color => `<span title="${escapeHtml(color.label)}: ${escapeHtml(color.colorName || color.color || '')}" style="display:inline-block;width:9px;height:9px;border-radius:50%;border:1px solid rgba(255,255,255,.35);background:${escapeHtml(color.color || '#777')};margin-right:2px;vertical-align:-1px;"></span>`).join('');
       row.innerHTML = `<div style="display:flex;gap:5px;align-items:center;"><span>${SPECIES_ICONS[entry.kind] || '🐾'}</span><strong style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(entry.name)}</strong><span style="font-size:10px;color:var(--muted,#999);">${escapeHtml(summary.size)}</span></div>
@@ -772,6 +775,9 @@
     const selected = babyList.find(entry => entry.id === selectedBabyId);
     if (selected) {
       const actions = document.createElement('div');
+      actions.id = 'livestockNurseryDetail';
+      actions.setAttribute('data-ctrl-detail-panel', '');
+      actions.setAttribute('aria-label', 'Selected Nursery baby details and actions');
       actions.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;padding-top:6px;border-top:1px solid var(--border,#444);';
       const rename = document.createElement('button');
       rename.className = 'settings-small-btn';
@@ -825,6 +831,8 @@
     const gridToggle = document.createElement('button'); // Light-DOM disclosure stays discoverable by the shared controller navigation after grid enhancement.
     gridToggle.type = 'button';
     gridToggle.className = 'nursery-grid-disclosure';
+    gridToggle.setAttribute('data-ctrl-group-open', '');
+    gridToggle.setAttribute('aria-expanded', String(!farmBabyInventoryCollapsed));
     gridToggle.slot = 'disclosure';
     gridToggle.textContent = `${farmBabyInventoryCollapsed ? '▸' : '▾'} 🍼 Nursery · ${babyList.length} babies`;
     gridToggle.hidden = true;
@@ -979,7 +987,7 @@
     const babyRecords = records.filter(isBaby); // Reused for the snapshot's baby list/count.
     const adultRecords = records.filter(entry => !isBaby(entry)); // Reused for the snapshot's adult count.
     return {
-      mostRecentChange: 'Farm Nursery babies collapse by default; Farm breeding choices contain only accessible adult Stable animals.',
+      mostRecentChange: 'Nursery is a controller focus nest: A enters baby details; B returns to that baby, then exits the Nursery.',
       nursery: nursery && { id: nursery.id, col: nursery.col, row: nursery.row, w: nursery.w, h: nursery.h, tier: nursery.tier },
       currentArea: currentArea(),
       babies: babyRecords.map(entry => ({ id: entry.id, name: entry.name, kind: entry.kind, size: entry.genotype?.sizeClass })),

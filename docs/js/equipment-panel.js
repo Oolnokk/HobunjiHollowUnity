@@ -89,7 +89,7 @@
     inventoryUiLoadStarted = true;
     // Versioned source is loaded here so Pack presentation can be decoupled without editing game.js or index.html.
     const script = document.createElement('script');
-    script.src = 'js/inventory-ui.js?v=20261015hdcc0d6a';
+    script.src = 'js/inventory-ui.js?v=20261016h45ed908';
     script.async = false;
     script.onload = () => window.InventoryUI?.init?.(inventoryUiDeps());
     script.onerror = () => {
@@ -951,6 +951,8 @@
     packClothing.forEach(item => {
       const btn = document.createElement('button');
       btn.className = 'inv-pcloth-item';
+      btn.setAttribute('data-ctrl-detail', 'invInfo');
+      btn.setAttribute('data-key', item.uid);
       renderClothingIcon(btn, item, 'ipc-sprite');
       const name = document.createElement('span');
       name.className = 'ipc-name';
@@ -986,6 +988,7 @@
       cell.className = 'inv-equip-slot' + (activeTool === slot ? ' active-slot' : '') + (def ? ' occupied' : '');
       cell.setAttribute('title', slot + (def ? ': ' + def.label : ' (empty)'));
       cell.setAttribute('role', 'button');
+      cell.setAttribute('data-ctrl-detail', 'invInfo');
       cell.tabIndex = 0;
       cell.setAttribute('data-key', slot); // Restores the same tool slot after its card rebuilds.
       if (def) {
@@ -1026,6 +1029,7 @@
         cell.className = 'inv-equip-slot';
         cell.setAttribute('title', def.label + ' (Mastery ' + deps.toolMasteryLevel(key) + '/5) — click to assign');
         cell.setAttribute('role', 'button');
+        cell.setAttribute('data-ctrl-detail', 'invInfo');
         cell.tabIndex = 0;
         cell.setAttribute('data-item-key', key);
         const img = document.createElement('img');
@@ -1076,6 +1080,7 @@
       if (item) cell.addEventListener('click', () => selectGearClothing(slot, item));
       if (item) {
         cell.setAttribute('role', 'button');
+        cell.setAttribute('data-ctrl-detail', 'invInfo');
         cell.tabIndex = 0;
         cell.setAttribute('data-key', item.uid);
       }
@@ -1098,6 +1103,7 @@
         cell.className = 'inv-equip-slot clothing-owned-slot occupied' + (worn ? ' active-slot' : '');
         cell.setAttribute('title', articleLabel + (worn ? ' — currently worn' : ' — click to equip'));
         cell.setAttribute('role', 'button');
+        cell.setAttribute('data-ctrl-detail', 'invInfo');
         cell.tabIndex = 0;
         cell.setAttribute('data-key', item.uid);
         const ownedIcon = renderClothingIcon(cell, item);
