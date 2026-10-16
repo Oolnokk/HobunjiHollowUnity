@@ -254,6 +254,61 @@ const rebuild = async target => { for (const observer of observers) observer([{ 
   press('confirm'); assert.equal(choices, 0, 'inspecting a locked mastery effect cannot buy it');
   press('left'); press('confirm'); assert.equal(choices, 1, 'Confirm chooses the available effect through the normal progression API');
   masteryPanel.hidden = true; await rebuild(masteryPanel);
+  const detailAction = button('detail-use', 320, 80); // Item actions live in a sibling panel rather than inside the grid's DOM.
+  const detailNest = new Element('div', { id: 'detail-nest', 'data-ctrl-group': '' }, [button('detail-nested-action', 320, 120)], 320, 120);
+  const detailPanel = new Element('div', { id: 'item-detail', 'data-ctrl-detail-panel': '' }, [detailAction, detailNest], 320, 40);
+  const itemCard = button('item-a', 10, 40, { 'data-stack-id': 'stack-a', 'data-ctrl-detail': 'item-detail' }); // Exact stack identity is retained through list rebuilds.
+  const itemOther = button('item-b', 110, 40, { 'data-stack-id': 'stack-b', 'data-ctrl-detail': 'item-detail' });
+  const itemGrid = new Element('div', { id: 'item-grid', 'data-ctrl-group': '' }, [itemCard, itemOther], 10, 40);
+  const itemClose = button('item-close', 500, 0, { 'data-ctrl-cancel': '' });
+  const itemPanel = new Element('div', { id: 'item-panel', 'data-ctrl-panel': '' }, [itemGrid, detailPanel, itemClose]);
+  body.append(itemPanel);
+  for (const observer of observers) observer([{ target: body, addedNodes: [itemPanel], removedNodes: [] }]);
+  await Promise.resolve();
+  assert.equal(ui.focusedElement(), itemGrid);
+  press('right'); assert.notEqual(ui.focusedElement(), detailPanel, 'associated detail is not a free-standing sibling target');
+  itemGrid.focus(); press('confirm');
+  assert.equal(ui.focusedElement(), itemCard);
+  press('right'); assert.equal(ui.focusedElement(), itemOther);
+  press('confirm'); assert.equal(itemOther.clicks, 1, 'Confirm populates the selected item before entering its detail');
+  assert.equal(ui.focusedElement(), detailAction);
+  assert.equal(detailAction.clicks, 0, 'opening detail never immediately uses an item');
+  assert.equal(ui.debugState().groupDepth, 2, 'detail is logically nested within the item grid');
+  press('left'); assert.equal(ui.focusedElement(), detailAction, 'directional navigation cannot escape detail to the grid');
+  press('down'); assert.equal(ui.focusedElement(), detailNest);
+  press('confirm'); assert.equal(ui.debugState().groupDepth, 3);
+  press('cancel'); assert.equal(ui.focusedElement(), detailNest, 'nested detail sections unwind before returning to the item');
+  press('cancel'); assert.equal(ui.focusedElement(), itemOther);
+  assert.equal(ui.debugState().groupDepth, 1);
+  assert.equal(itemClose.clicks, 0);
+  press('confirm');
+  const rebuiltItem = button('item-b', 110, 40, { 'data-stack-id': 'stack-b', 'data-ctrl-detail': 'item-detail' }); // Equip/use actions can replace their source cards while detail stays open.
+  itemGrid.children[1] = rebuiltItem; rebuiltItem.parentElement = itemGrid; itemOther.parentElement = null;
+  await rebuild(itemGrid);
+  press('cancel'); assert.equal(ui.focusedElement(), rebuiltItem, 'Back restores the same rebuilt stack');
+  press('confirm');
+  itemGrid.children.pop(); rebuiltItem.parentElement = null;
+  await rebuild(itemGrid);
+  press('cancel'); assert.equal(ui.focusedElement(), itemCard, 'consuming the source stack returns to its surviving neighbor');
+  press('confirm');
+  detailAction.parentElement = null; detailNest.parentElement = null; detailPanel.children = [];
+  await rebuild(detailPanel);
+  assert.equal(ui.focusedElement(), detailPanel, 'read-only descriptions stay focused even without any actions');
+  press('confirm'); assert.equal(ui.debugState().groupDepth, 2, 'read-only Confirm cannot nest the description again');
+  press('cancel'); assert.equal(ui.focusedElement(), itemCard);
+  press('confirm');
+  itemGrid.children = []; itemCard.parentElement = null;
+  await rebuild(itemGrid);
+  press('cancel'); assert.equal(ui.focusedElement(), itemGrid, 'consuming the final item returns to the empty inventory grid');
+  itemGrid.append(itemCard);
+  press('right');
+  itemCard.focus();
+  itemCard.setAttribute('data-ctrl-detail', 'missing-detail');
+  press('confirm'); assert.equal(ui.focusedElement(), itemCard, 'missing associated panes safely preserve normal item selection');
+  itemCard.setAttribute('data-ctrl-detail', 'item-detail');
+  itemCard.onclick = () => { itemPanel.hidden = true; }; // A click which closes or replaces the menu must not enter its old detail afterward.
+  press('confirm'); await rebuild(itemPanel);
+  assert.notEqual(ui.activePanel(), itemPanel);
   const handled = []; // Opt-in readers own A/B/bumpers without taking over controller polling.
   panel.setAttribute('data-ctrl-actions', '');
   panel.dispatchEvent = event => { handled.push(event.detail.action); return false; };

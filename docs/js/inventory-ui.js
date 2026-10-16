@@ -359,6 +359,8 @@
         tile.type = 'button';
         tile.className = 'inv-item-box pack-clothing-tile';
         tile.dataset.packClothingIndex = String(index);
+        tile.setAttribute('data-ctrl-detail', 'invInfo');
+        tile.setAttribute('data-key', sourceButton.getAttribute('data-key') || String(index));
         tile.title = sourceButton.textContent.trim() || 'Clothing';
         [...sourceButton.children].forEach((child) => tile.appendChild(child.cloneNode(true)));
         tile.addEventListener('click', () => {

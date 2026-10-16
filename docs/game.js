@@ -16187,6 +16187,7 @@
           box.className = 'inv-item-box' + (stack.stackId === invSelectedStack?.stackId ? ' selected' : '');
           box.dataset.key = key;
           box.dataset.stackId = stack.stackId;
+          box.setAttribute('data-ctrl-detail', 'invInfo');
           box.innerHTML =
             `<span class="iib-icon">${def.icon}</span>` +
             `<span class="iib-count">${stars ? stars + '★ · ' : ''}×${count}</span>`;

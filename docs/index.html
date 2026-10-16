@@ -729,7 +729,7 @@
        window.EquipmentPanel directly (including at top-level, in
        window.__climbDebug) and calls window.EquipmentPanel.init(...)
        during its own setup. -->
-  <script src="js/equipment-panel.js?v=20261016h142565d"></script>
+  <script src="js/equipment-panel.js?v=20261016h4bb7124"></script>
   <!-- Per-map terrain tile texture overrides (window.TerrainTileMaterials:
        resolveTileMat/resolveCliffMat/loadTerrainTileTexture) — must load
        before game.js, which calls window.TerrainTileMaterials.init(...) near
@@ -1242,7 +1242,7 @@
         </div>
 
         <!-- Item info box: x:37/54 y:0 w:17 h:full -->
-        <div class="inv-info" id="invInfo">
+        <div class="inv-info" id="invInfo" data-ctrl-detail-panel>
           <div class="ii-empty" id="iiEmpty">← Select an item</div>
           <div class="ii-detail" id="iiDetail">
             <div class="ii-icon-wrap"><span class="ii-icon" id="iiIcon"></span></div>
@@ -2662,13 +2662,13 @@
        load before game.js, which calls window.ToolMastery.init(...). -->
   <script src="js/tool-mastery.js?v=20261016a"></script>
   <script src="js/farm-access.js?v=20261016a"></script>
-  <script src="game.js?v=20261016hc15fa05"></script>
+  <script src="game.js?v=20261016hab6e43a"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261016h1d320bd"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
-  <script src="js/controller-ui-nav.js?v=20261016hb7d6a0c"></script>
+  <script src="js/controller-ui-nav.js?v=20261016hb6d8363"></script>
   <!-- ◀/▶ stepper buttons beside every <select> so controller players can change any dropdown. -->
   <script src="js/controller-select-steppers.js?v=20261014h3e0bf66"></script>
   <script>
