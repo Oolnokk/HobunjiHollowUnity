@@ -63,7 +63,7 @@
     if (cross == null) { rejects.push(`${room.id}: doorways in both end walls`); return null; }
     const ceilY = (Number(context.meta?.floorSurfaceY) || 0) + (Number(context.meta?.wallHeight) || 3);
     const railY = ceilY - RAIL_DROP;
-    const at = (s, y) => frame.axis === 'x' ? new THREE.Vector3(frame.start + s, y, cross) : new THREE.Vector3(cross, y, frame.start + s);
+    const at = (s, y, out = new THREE.Vector3()) => frame.axis === 'x' ? out.set(frame.start + s, y, cross) : out.set(cross, y, frame.start + s); // Callers in the per-frame path pass their own output vector.
     const group = new THREE.Group();
     group.name = 'dev_ruin_ceiling_rail_' + room.id;
     kit.group().add(group);
@@ -115,7 +115,7 @@
   }
 
   function placeTarget(record, target) {
-    target.object.position.copy(record.at(target.s, record.railY - .05));
+    record.at(target.s, record.railY - .05, target.object.position); // Writes in place: called every frame for each moving target.
   }
 
   function moveTo(target, s, speed, mode) {

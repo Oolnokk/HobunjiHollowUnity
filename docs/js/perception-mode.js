@@ -370,6 +370,7 @@
     const previousOverride = scene.overrideMaterial;
     const shadowMap = renderer.shadowMap;
     const previousShadowAuto = !!shadowMap?.autoUpdate;
+    let maskRendered = false; // The composite pass runs only after a complete mask.
     try {
       scene.background = null;
       scene.overrideMaterial = null;
@@ -380,7 +381,11 @@
       renderer.autoClear = false;
       camera.layers.set(LAYER);
       renderer.render(scene, camera);
+      maskRendered = true;
     } finally {
+      // Scene/material state is restored before the composite; renderer state
+      // (target, autoClear, shadows) is restored below even if the mask pass
+      // threw, so a failure can never leave the main canvas drawing into maskRT.
       camera.layers.mask = previousMask;
       for (const entry of swapped) {
         entry.mesh.material = entry.original;
@@ -389,16 +394,18 @@
       scene.background = previousBackground;
       scene.overrideMaterial = previousOverride;
       renderer.setClearColor(_clear.color, previousClearAlpha);
-    }
-    try {
-      renderer.setRenderTarget(previousTarget);
-      postMaterial.uniforms.tMask.value = maskRT.texture;
-      renderer.render(postScene, postCamera);
-      lastStats.rendered = swapped.length;
-    } finally {
-      renderer.autoClear = previousAutoClear;
-      if (shadowMap?.enabled) shadowMap.autoUpdate = previousShadowAuto;
-      renderer.setRenderTarget(previousTarget);
+      try {
+        renderer.setRenderTarget(previousTarget);
+        if (maskRendered) {
+          postMaterial.uniforms.tMask.value = maskRT.texture;
+          renderer.render(postScene, postCamera);
+          lastStats.rendered = swapped.length;
+        }
+      } finally {
+        renderer.autoClear = previousAutoClear;
+        if (shadowMap?.enabled) shadowMap.autoUpdate = previousShadowAuto;
+        renderer.setRenderTarget(previousTarget);
+      }
     }
   }
 

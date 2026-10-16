@@ -158,6 +158,13 @@
     return { targets:targets.length, voices:[...voices.values()].map(voice => +voice.level.toFixed(4)), radius:HUM_RADIUS };
   }
 
+  // update() runs from a before-render client, which stops with the tab
+  // hidden; without this the voices would keep droning at their last gain.
+  // ensureContext() resumes the context on the next audible update.
+  globalThis.document?.addEventListener?.('visibilitychange', () => {
+    if (document.hidden && ctx?.state === 'running') ctx.suspend?.().catch(() => {});
+  });
+
   SimplePuzzles.registerComposer({ id:'targetHum', update, snapshot, clear });
   window.DevRandomRuinTargetHum = Object.freeze({ snapshot, HUM_RADIUS, FALLOFF_POWER });
 })();

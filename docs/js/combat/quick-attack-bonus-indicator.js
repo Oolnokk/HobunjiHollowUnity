@@ -95,7 +95,8 @@
     let bestDistance = Infinity; // Used only to rank eligible manual-aim candidates.
     for (const target of deps.hostileObjects || []) {
       const distance = Math.hypot(target.x - deps.player.x, target.y - deps.player.y); // Map distance ranks hits without constructing vectors.
-      if (distance >= bestDistance || !eligible(target)) continue;
+      const bodyMarginPx = deps.TILE * Math.max(2, Number(target.def?.modelWidth) || 0); // Generous allowance for a large hitbox's near face before the full 3D collider test.
+      if (distance >= bestDistance || distance > rangePx + bodyMarginPx || !eligible(target)) continue;
       best = target;
       bestDistance = distance;
     }
