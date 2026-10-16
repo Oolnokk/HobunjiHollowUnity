@@ -1401,7 +1401,8 @@
     }
   }
   function refreshGoldHud() {
-    if (deps.spGold) deps.spGold.textContent = '💰 ' + deps.inventory.gold + 'g';
+    const amount = deps.spGold?.querySelector('#spGoldAmount'); // Update the live amount without detaching the wallet icon or currency suffix.
+    if (amount) amount.textContent = deps.inventory.gold;
   }
   function _stableEntryFromLivestock(entry) {
     return {

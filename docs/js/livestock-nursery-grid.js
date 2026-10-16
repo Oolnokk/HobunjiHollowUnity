@@ -671,7 +671,8 @@
     animalDeps?.saveWorldLivestock?.(list);
     inventory.gold = Math.max(0, Number(inventory.gold) || 0) + value.amount;
     deps?.saveMemberWorldData?.();
-    if (panelDeps?.spGold) panelDeps.spGold.textContent = `💰 ${inventory.gold}g`;
+    const amount = panelDeps?.spGold?.querySelector('#spGoldAmount'); // Preserve the HUD icon and suffix when selling a Nursery baby.
+    if (amount) amount.textContent = inventory.gold;
     window.LivestockNursery?.rerollSwarm?.();
     mostRecentChange = `Sold Nursery baby ${entry.id} (${entry.name || entry.kind}) for ${value.amount}g; adult value ${value.adultAmount}g.`;
     return { ok: true, entry, amount: value.amount, adultAmount: value.adultAmount, message: `Sold ${entry.name || speciesLabel(entry.kind)} for ${value.amount}g.` };

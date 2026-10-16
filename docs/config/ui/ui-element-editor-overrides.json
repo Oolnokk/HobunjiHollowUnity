@@ -53,11 +53,11 @@
     },
     "#mpInventory .inv-wallet-icon": {
       "color": "#6fae9b",
-      "opacity": "1; filter: brightness(0) saturate(100%) invert(81%) sepia(24%) saturate(1092%) hue-rotate(111deg) brightness(117%) contrast(25%)"
+      "opacity": "1"
     },
     "#spGold .sb-gold-icon": {
       "color": "#6fae9b",
-      "opacity": "1; filter: brightness(0) saturate(100%) invert(81%) sepia(24%) saturate(1092%) hue-rotate(111deg) brightness(117%) contrast(25%)"
+      "opacity": "1"
     }
   }
 }

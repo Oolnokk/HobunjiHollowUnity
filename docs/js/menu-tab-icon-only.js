@@ -138,12 +138,9 @@
           0 0 8px rgba(112, 235, 198, .72);
       }
       .wallet-icon {
-        width: 28px; height: 28px; flex: 0 0 28px;
-        font-size: 0;
-        background: ${CURRENCY_VERDIGRIS_COLOR};
-        -webkit-mask: url('${iconUrl('generic', CURRENCY_ICON_FILE)}') center / contain no-repeat;
-        mask: url('${iconUrl('generic', CURRENCY_ICON_FILE)}') center / contain no-repeat;
-        filter: drop-shadow(0 0 3px ${CURRENCY_VERDIGRIS_GLOW});
+        font-size: 28px;
+        line-height: 1;
+        flex: 0 0 auto;
       }
       ${HUD_GOLD_SELECTOR} {
         display: inline-flex;
