@@ -8,6 +8,24 @@
   const selectedShaft = () => data.shafts[byId('shaft').value]; // Current shaft authoring record.
   const selectedHead = () => data.heads[byId('head').value]; // Current head pivot record.
   function message(text) { byId('status').textContent = text; }
+  function randomCombination() {
+    const pairs = []; // Allowed pairs are rebuilt on demand to honor the latest draft restrictions.
+    const currentShaft = byId('shaft').value, currentHead = byId('head').value; // Avoid repeating the displayed pair when alternatives exist.
+    for (const shaft of Object.keys(data.shafts)) {
+      for (const head of Object.keys(data.heads)) {
+        if (!api.isDisallowed(shaft, head) && (shaft !== currentShaft || head !== currentHead)) pairs.push({ shaft, head });
+      }
+    }
+    if (!pairs.length) {
+      message(api.isDisallowed(currentShaft, currentHead) ? 'No valid combinations remain. Allow a head/shaft pair to try again.' : 'This is the only valid combination.');
+      return;
+    }
+    const pair = pairs[Math.floor(Math.random() * pairs.length)]; // Every other allowed pair has the same chance of selection.
+    byId('shaft').value = pair.shaft; byId('head').value = pair.head;
+    socketIndex = 0;
+    render();
+    message(`Random valid combination: ${data.shafts[pair.shaft].label} + ${data.heads[pair.head].label}.`);
+  }
   function options(id, entries) {
     for (const [key, value] of Object.entries(entries)) {
       const option = document.createElement('option'); // Stable manifest keys are also exported game keys.
@@ -104,6 +122,7 @@
     });
   }
   options('shaft', data.shafts); options('head', data.heads);
+  byId('random').onclick = randomCombination;
   byId('shaft').onchange = () => { socketIndex = 0; render(); };
   byId('head').onchange = render; byId('mode').onchange = render;
   byId('socket').onchange = () => { socketIndex = Number(byId('socket').value); render(); };

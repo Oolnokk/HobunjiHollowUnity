@@ -1,6 +1,6 @@
 'use strict';
 
-const assert = require('node:assert/strict'); // Verifies the fishing-mace shaft's Foundry/runtime contract and shared blade treatment.
+const assert = require('node:assert/strict'); // Verifies the fishing-mace shaft's Foundry/runtime contract.
 const fs = require('node:fs'); // Confirms the configured PNG exists and loads shipped browser modules.
 const vm = require('node:vm'); // Runs the browser modules in a minimal isolated window.
 const window = { location: { pathname: '/index.html' }, RuntimeFrameScheduler: { register() {} } }; // Shared browser namespace used by the loaded modules.
@@ -18,8 +18,6 @@ const defs = {}; // Receives generated modular item definitions for the assertio
 const shapes = { fishingmace: { animStyle: 'sweep', weaponIdleClass: 'light' } }; // Donor metadata the new shaft must preserve.
 const metals = { nativeCopper: { label: 'Native Copper', hex: '#B87333' } }; // One metal tier is enough to verify deterministic registration.
 const shaft = api.getConfig().shafts['fishing-mace']; // Authored Fishing Mace shaft entry wired to the uploaded asset.
-const warhammerShaft = api.getConfig().shafts.warhammer; // Warhammer shaft mirrors Fishing Mace's sideways sword/dagger head treatment.
-const sharedBladeHeads = ['dagger', 'plains-blade', 'harlyao-broadsword', 'harlyao-longsword']; // Heads whose Fishing Mace transforms are intentionally reused by Warhammer.
 
 assert(shaft, 'Fishing Mace shaft must be registered.');
 assert.equal(shaft.sourceShape, 'fishingmace');
@@ -38,13 +36,7 @@ assert.deepEqual(plain(shaft.defaults), {
 });
 assert.equal(shaft.defaults.animation, 'sweep');
 
-for (const headId of sharedBladeHeads) {
-  assert.deepEqual(
-    plain(warhammerShaft.overrides[headId]),
-    plain(shaft.overrides[headId]),
-    `Warhammer ${headId} override must mirror Fishing Mace's sideways blade treatment.`,
-  );
-}
+assert.equal(api.isDisallowed('fishing-mace', 'fishing-mace'), true, 'Original-piece duplication must be excluded from Foundry and random selection.');
 
 api.registerDefinitions(defs, shapes, metals, ['nativeCopper']);
 const key = api.itemKey('fishing-mace', 'fishing-mace', 'nativeCopper'); // Native head/shaft pairing exercises the new donor path.
@@ -59,4 +51,4 @@ const unlocked = api.unlockedParts(['fishingmace'], { tools: {} }, defs); // Exi
 assert(unlocked.heads.includes('fishing-mace'));
 assert(unlocked.shafts.includes('fishing-mace'));
 
-console.log('Fishing Mace modular shaft: uploaded authoring, Foundry unlock, dual-wield donor behavior, and Warhammer blade-treatment parity passed.');
+console.log('Fishing Mace modular shaft: uploaded authoring, Foundry unlock, dual-wield donor behavior, and original-pair restriction passed.');

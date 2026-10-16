@@ -31,7 +31,11 @@ assert.equal(api.getConfig().shafts.bshuakauitl.attachments.length, 2);
 assert.equal(api.getConfig().shafts.bshuakauitl.attachments[1].rotation, 180);
 for (const shaft of ['dagger']) for (const head of ['hatchet', 'war-cleaver', 'warhammer', 'work-hammer']) assert.equal(api.isDisallowed(shaft, head), true);
 assert.equal(api.isDisallowed('bshuakauitl', 'warhammer'), false);
-assert.equal(api.isDisallowed('dagger', 'dagger'), false);
+for (const [shaftKey, shaft] of Object.entries(api.getConfig().shafts)) {
+  for (const [headKey, head] of Object.entries(api.getConfig().heads)) {
+    if (shaft.sourceShape === head.sourceShape) assert.equal(api.isDisallowed(shaftKey, headKey), true, `${shaftKey}/${headKey} must not duplicate its original weapon`);
+  }
+}
 for (const head of ['hatchet', 'war-cleaver', 'warhammer', 'work-hammer']) {
   assert.equal(api.isDisallowed('fishing-spear', head), false);
   assert.equal(api.settings('fishing-spear', head).animation, 'sweep');
