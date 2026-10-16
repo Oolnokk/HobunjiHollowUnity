@@ -8447,139 +8447,20 @@
       // js/jubmir-shop.js (window.JubmirShop) — see its init(deps) call
       // below for the shared game.js state it's threaded.
 
-      // ── Farm name (reuses world.label, the same field set at world
-      // creation in onboarding.js) ────────────────────────────────────────
-      function getFarmName() {
-        const worldId = _tothalWorldId();
-        if (!worldId) return _playerData?.worldLabel || 'Hobunji Hollow';
-        try {
-          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
-          return (meta?.worlds || []).find(w => w.id === worldId)?.label || 'Hobunji Hollow';
-        } catch { return 'Hobunji Hollow'; }
-      }
-
-      function setFarmName(label) {
-        const worldId = _tothalWorldId();
-        const trimmed = String(label || '').trim();
-        if (!worldId || !trimmed) return;
-        try {
-          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
-          const world = (meta?.worlds || []).find(w => w.id === worldId);
-          if (!world) return;
-          world.label = trimmed.slice(0, 40);
-          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
-          if (_playerData) _playerData.worldLabel = world.label;
-        } catch {}
-      }
-
-      // Owning character's nickname, for the Farm tab header — looked up by
-      // ownerCharacterId since livestock/world records only hold ids, not
-      // display names (mirrors how char.nickname is read at save-select).
-      function getFarmOwnerName() {
-        const worldId = _tothalWorldId();
-        try {
-          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
-          const world = (meta?.worlds || []).find(w => w.id === worldId);
-          const owner = (meta?.characters || []).find(c => c.id === world?.ownerCharacterId);
-          return owner?.nickname || 'Unknown';
-        } catch { return 'Unknown'; }
-      }
-
-      // ── Farm ownership / farmhand permissions ─────────────────────────
-      // World data (non-gear inventory, NPC relationships, quest progress)
-      // stays behind in the world's per-character member record rather than
-      // following the character between worlds — the opposite of gear,
-      // skills, and stats, which live on the character record and always
-      // travel with them. isWorldOwner/farmhandPermissions are decided once
-      // at save-select time (onboarding.js) and carried on _playerData for
-      // the session; a real farmhand's grants only change between sessions
-      // until networking exists to push a live update.
-      // Single source of truth for the permission-key set within this file
-      // (onboarding.js keeps its own copy — the two closures share no module).
-      function defaultFarmhandPermissions() {
-        return { storage: false, plant: false, harvest: false, placeFurniture: false, alterFarm: false, livestock: false };
-      }
-
-      function defaultWorldMemberState() {
-        return {
-          nonGearInventory: {}, packClothing: [], npcRelationships: {}, questProgress: {},
-          alcoholBottleSwigs: {}, npcAlcoholState: {}, npcWardrobeState: {}, npcDiscoveredGiftTraits: {},
-          alchemyKnownEffects: {}, alchemyKnownRecipes: [], alchemyActiveEffects: [], alchemyReagentState: {}, wildBerryState: {}, cookingState: {},
-          // A brand-new member has no legacy favor to fix, so it starts
-          // already "migrated" — see DialogueContent's loadNpcRelationships/
-          // _applyLegacyFavorRescale. A member saved before this field
-          // existed loads it as undefined/falsy, which is what triggers the
-          // one-time reset.
-          npcFavorRescaleApplied: true,
-          joinedAt: Date.now(),
-        };
-      }
-
-      function isFarmOwner() {
-        if (_debugFarmRoleOverride) return _debugFarmRoleOverride.isOwner;
-        return _playerData ? !!_playerData.isWorldOwner : true; // no world context yet — don't lock out solo play
-      }
-
-      function hasFarmPermission(action) {
-        if (isFarmOwner()) return true;
-        const perms = _debugFarmRoleOverride ? _debugFarmRoleOverride.permissions : _playerData?.farmhandPermissions;
-        return !!(perms && perms[action]);
-      }
-
-      // Devtools-only role simulator so farmhand gating can be verified without
-      // real multiplayer: window.__hobunjiSetFarmRole('farmhand', {plant:true})
-      // or window.__hobunjiSetFarmRole('owner') to restore normal behavior.
-      let _debugFarmRoleOverride = null;
-      window.__hobunjiSetFarmRole = function (role, permissions) {
-        if (role === 'owner') { _debugFarmRoleOverride = null; showToast('Debug: acting as farm owner.', true); return; }
-        if (role === 'farmhand') {
-          _debugFarmRoleOverride = {
-            isOwner: false,
-            permissions: { ...defaultFarmhandPermissions(), ...permissions },
-          };
-          showToast('Debug: acting as farmhand ' + JSON.stringify(_debugFarmRoleOverride.permissions), true);
-          return;
-        }
-        console.warn('__hobunjiSetFarmRole: role must be "owner" or "farmhand"');
-      };
-
-      // Adds/updates a farmhand grant on the current world's save-meta record.
-      // Exposed for the (future) invite/matchmaking UI and for devtools testing:
-      // window.__hobunjiAddFarmhand(characterId, { storage: true }).
-      window.__hobunjiAddFarmhand = function (characterId, permissions) {
-        const worldId = _tothalWorldId();
-        if (!worldId || !characterId) return;
-        try {
-          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
-          const world = (meta?.worlds || []).find(w => w.id === worldId);
-          if (!world) return;
-          if (world.ownerCharacterId === characterId) return; // owner already has full access
-          if (!world.farmhands) world.farmhands = [];
-          let entry = world.farmhands.find(f => f.characterId === characterId);
-          if (!entry) {
-            entry = { characterId, permissions: defaultFarmhandPermissions() };
-            world.farmhands.push(entry);
-          }
-          if (permissions) Object.assign(entry.permissions, permissions);
-          if (!world.members) world.members = {};
-          if (!world.members[characterId]) {
-            world.members[characterId] = defaultWorldMemberState();
-          }
-          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
-        } catch {}
-      };
-
-      window.__hobunjiRemoveFarmhand = function (characterId) {
-        const worldId = _tothalWorldId();
-        if (!worldId || !characterId) return;
-        try {
-          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
-          const world = (meta?.worlds || []).find(w => w.id === worldId);
-          if (!world) return;
-          world.farmhands = (world.farmhands || []).filter(f => f.characterId !== characterId);
-          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
-        } catch {}
-      };
+      // Farm name, ownership and farmhand permissions (getFarmName,
+      // setFarmName, getFarmOwnerName, defaultFarmhandPermissions,
+      // defaultWorldMemberState, isFarmOwner, hasFarmPermission, and the
+      // __hobunjiSetFarmRole/__hobunjiAddFarmhand/__hobunjiRemoveFarmhand
+      // devtools hooks) now live in js/farm-access.js
+      window.FarmAccess.init({
+        getWorldId: () => _tothalWorldId(),
+        getPlayerData: () => _playerData,
+        showToast: (...args) => showToast(...args),
+      });
+      const {
+        getFarmName, setFarmName, getFarmOwnerName, defaultFarmhandPermissions,
+        defaultWorldMemberState, isFarmOwner, hasFarmPermission,
+      } = window.FarmAccess;
 
       // ── Per-world-per-character data (non-gear inventory, pack, NPC/quest) ──
       // Mirrors saveGearInventory()'s pattern of touching hobunjiSaveMeta
