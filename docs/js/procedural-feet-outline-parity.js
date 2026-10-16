@@ -19,11 +19,10 @@
   if (!THREE || !legs?.attach || legs.attach.__hobunjiFeetOutlineParityWrapped) return;
 
   const activeRigs = new Set(); // Rigs whose newly loaded/replaced foot meshes may need hooks.
+  const rigStates = new WeakMap(); // Maps leg roots to their parity state for explicit async foot-replacement notifications.
   const MAX_SNAPSHOT_AGE_MS = 160;
   const FOOT_WATER_MASK_LAYER = 26; // Mirrors HeldObjectRenderOrder's private foot-only stencil layer used during water recomposition.
   const OUTLINE_THICKNESS_MULTIPLIER = 2; // Hands/feet only; shared shell uniform is restored after each limb mesh draw. // Allows the adjacent base->held-overlay->outline sequence without accepting old frames.
-  const RESCAN_INTERVAL_MS = 150; // Catches the async fallback->GLB foot swap without needing a dedicated signal.
-  const RESCAN_ATTEMPTS = 20; // ~3s — generous relative to typical GLB load time.
   let baseMatrixCaptures = 0; // Diagnostic count of visible foot matrices captured by this adapter.
   let lockedWaterMaskDraws = 0; // Diagnostic count of foot-water stencil draws forced to the captured visible matrix.
   let lockedShellDraws = 0; // Diagnostic count of shell draws forced to the captured visible matrix.
@@ -184,11 +183,11 @@
     if (right) right.traverse(child => installMeshHook(child, rigState, 'right'));
   }
 
-  function rescanUntilStable(handle, rigState, attempt = 0) {
-    if (!activeRigs.has(handle)) return;
-    scanRig(handle, rigState);
-    if (attempt >= RESCAN_ATTEMPTS) return;
-    global.setTimeout?.(() => rescanUntilStable(handle, rigState, attempt + 1), RESCAN_INTERVAL_MS);
+  function refreshRig(group) {
+    const rigState = rigStates.get(group); // Only live registered rigs may install hooks on replacement meshes.
+    if (!rigState) return false;
+    scanRig({ group }, rigState);
+    return true;
   }
 
   const originalAttach = legs.attach;
@@ -206,15 +205,16 @@
       missedOutlineSnapshots: 0, // Outline/water-mask draws without a recent visible matrix to reuse.
     };
     activeRigs.add(handle);
-    // The fallback foot is installed synchronously (hooked by the first scan below);
-    // a configured species' GLB foot replaces it asynchronously a little later, so
-    // rescanUntilStable keeps re-hooking whatever mesh is actually attached.
-    rescanUntilStable(handle, rigState);
+    rigStates.set(handle.group, rigState);
+    // The owner notifies refreshRig after every GLB replacement, even if the
+    // model/texture request takes longer than the old three-second polling window.
+    refreshRig(handle.group);
 
     const originalDispose = typeof handle.dispose === 'function' ? handle.dispose.bind(handle) : null;
     if (originalDispose) {
       handle.dispose = function feetOutlineParityDispose(...disposeArgs) {
         activeRigs.delete(handle);
+        rigStates.delete(handle.group);
         return originalDispose(...disposeArgs);
       };
     }
@@ -227,6 +227,7 @@
   legs.attach = wrappedAttach;
 
   global.HobunjiFeetOutlineParity = Object.freeze({
+    refreshRig, // Called by the leg owner immediately after async foot installation.
     getDebug() {
       return {
         activeRigs: activeRigs.size,
@@ -237,6 +238,7 @@
         lockedMaterialIdDraws,
         missedOutlineSnapshots,
         maxSnapshotAgeMs: MAX_SNAPSHOT_AGE_MS,
+        latestChange: 'Foot replacements register water occlusion immediately, without a load-time limit.',
         outlineThicknessMultiplier: OUTLINE_THICKNESS_MULTIPLIER,
       };
     },

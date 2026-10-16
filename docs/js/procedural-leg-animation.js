@@ -1085,6 +1085,7 @@
         state.rightContactY = rightMesh.userData.contactRadiusY;
         placeIdleTarget('left', state.leftContactY);
         placeIdleTarget('right', state.rightContactY);
+        window.HobunjiFeetOutlineParity?.refreshRig?.(root); // Register the final visible meshes for water/outline passes regardless of load duration.
       }).catch(error => {
         console.warn(`[ProceduralLegAnimation] foot GLB load failed for "${speciesId}" (${footConfig.glb}):`, error);
       });

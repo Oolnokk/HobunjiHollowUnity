@@ -17,7 +17,8 @@
 
   const activeRigs = new Set(); // Rigs whose newly loaded/replaced hand meshes may need hooks.
   const MAX_SNAPSHOT_AGE_MS = 160;
-  const OUTLINE_THICKNESS_MULTIPLIER = 2; // Hands/feet only; shared shell uniform is restored after each limb mesh draw. // Allows the adjacent base->held-overlay->outline sequence without accepting old frames.
+  const OUTLINE_THICKNESS_MULTIPLIER = 2; // Shared shell uniform is restored after each hand draw.
+  const OUTLINE_REFERENCE_DEPTH = 5; // Preserves the familiar hand width at five world units; distant outlines shrink in perspective.
   let baseMatrixCaptures = 0; // Diagnostic count of visible hand matrices captured by this adapter.
   let lockedOccluderDepthDraws = 0; // Diagnostic count of pre-shell depth replays forced to the captured visible hand matrix.
   let lockedShellDraws = 0; // Diagnostic count of shell draws forced to the captured visible matrix.
@@ -145,7 +146,14 @@
       const previousThickness = Number(thicknessUniform?.value);
       if (thicknessUniform && Number.isFinite(previousThickness)) {
         state.thicknessRestoreStack.push({ uniform: thicknessUniform, value: previousThickness });
-        thicknessUniform.value = previousThickness * OUTLINE_THICKNESS_MULTIPLIER;
+        // The shared shell shader cancels perspective with clip.w. Undo that
+        // cancellation for hands using the final visible pose's camera depth.
+        const matrix = now - state.visibleCapturedAt <= MAX_SNAPSHOT_AGE_MS ? state.visibleMatrixWorld : this.matrixWorld; // Uses the same pose as the shell below.
+        const world = matrix.elements; // World-space hand origin used to measure view depth without allocating a vector.
+        const view = camera?.matrixWorldInverse?.elements; // Camera view matrix is current before Three invokes mesh hooks.
+        const depth = view ? -(view[2] * world[12] + view[6] * world[13] + view[10] * world[14] + view[14]) : OUTLINE_REFERENCE_DEPTH; // Perspective depth, not radial distance, matches projection.
+        const distanceScale = camera?.isPerspectiveCamera && Number.isFinite(depth) ? OUTLINE_REFERENCE_DEPTH / Math.max(0.1, depth) : 1; // Orthographic views retain their distance-independent size.
+        thicknessUniform.value = previousThickness * OUTLINE_THICKNESS_MULTIPLIER * distanceScale;
         material.uniformsNeedUpdate = true;
       } else {
         state.thicknessRestoreStack.push(null);
@@ -295,6 +303,8 @@
           outlineInitialGlbReady: rigState.initialGlbReady,
           outlineInitialGlbWaitTimedOut: rigState.initialGlbWaitTimedOut,
           outlineThicknessMultiplier: OUTLINE_THICKNESS_MULTIPLIER,
+          outlineDistanceScaling: 'inverse-view-depth',
+          outlineReferenceDepth: OUTLINE_REFERENCE_DEPTH,
         };
       };
     }
@@ -325,6 +335,8 @@
         heldXrayTaggedMeshes,
         maxSnapshotAgeMs: MAX_SNAPSHOT_AGE_MS,
         outlineThicknessMultiplier: OUTLINE_THICKNESS_MULTIPLIER,
+        outlineDistanceScaling: 'inverse-view-depth',
+        outlineReferenceDepth: OUTLINE_REFERENCE_DEPTH,
         heldXray: global.HeldObjectRenderOrder?.snapshot?.() || null,
       };
     },

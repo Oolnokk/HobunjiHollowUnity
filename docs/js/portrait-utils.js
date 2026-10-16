@@ -1410,8 +1410,9 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   };
 
   if (renderHeadCosmetics && hairFront !== undefined) {
-    // Pre-arm back layers: back hairstyle then hat back sprite
-    for (const group of [hairBack, hat]) {
+    // Front canvas: hat rear art covers back hair. Rear canvas reverses
+    // that overlap so the hairstyle covers the hat's rear silhouette.
+    for (const group of (renderBehindView ? [hat, hairBack] : [hairBack, hat])) {
       if (!group) continue;
       const groupLayers = resolveOptionLayers(group, resolvedFighter);
       for (const layer of groupLayers) {

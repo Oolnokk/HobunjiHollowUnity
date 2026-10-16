@@ -30,11 +30,15 @@
       lines.push(
         `Outline parity: rigs=${parity.activeRigs ?? '-'} captures=${parity.baseMatrixCaptures ?? '-'} `
         + `shellLocks=${parity.lockedShellDraws ?? '-'} idLocks=${parity.lockedMaterialIdDraws ?? '-'} `
-        + `misses=${parity.missedOutlineSnapshots ?? '-'} xrayTagged=${parity.heldXrayTaggedMeshes ?? '-'}`
+        + `misses=${parity.missedOutlineSnapshots ?? '-'} xrayTagged=${parity.heldXrayTaggedMeshes ?? '-'} `
+        + `distance=${parity.outlineDistanceScaling ?? '-'} reference=${parity.outlineReferenceDepth ?? '-'}`
       );
     } else {
       lines.push('Outline parity: module missing');
     }
+
+    const feet = window.HobunjiFeetOutlineParity?.getDebug?.(); // Mobile report includes late-loaded foot registration and water compositing counts.
+    if (feet) lines.push(`Feet: waterMeshes=${feet.waterOccludedTaggedMeshes} waterMaskDraws=${feet.lockedWaterMaskDraws} waterReplays=${xray?.waterReplays ?? '-'} latest="${feet.latestChange}"`);
 
     if (xray) {
       lines.push(
