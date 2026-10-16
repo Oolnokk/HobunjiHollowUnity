@@ -7,7 +7,7 @@ const vm = require('node:vm'); // Executes the browser IIFE against a determinis
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'combat', 'combat-quickattacks.js'), 'utf8'); // Exact runtime source under test.
 
-function runBackstabScenario(targetFacing) {
+function runBackstabScenario(targetFacing, conditionOverride = null) {
   const registered = new Map(); // Ability registrations captured so the test can fire Backstab Flick exactly as gameplay does.
   const damageCalls = []; // Damage payloads used to prove the struck creature's conditional controls damage/vulnerability.
   const lungeCalls = []; // Lunge distances used to pin the authored 4.5-tile reach.
@@ -86,6 +86,7 @@ function runBackstabScenario(targetFacing) {
   });
   vm.runInContext(source, context, { filename: 'combat-quickattacks.js' });
 
+  if (conditionOverride) Combat.getQuickAttackConditions = conditionOverride; // Simulates the shared evaluator installed by the later-loaded condition contract.
   const backstab = registered.get('backstabFlick');
   assert(backstab, 'Backstab Flick should register');
   backstab.onTap();
@@ -138,3 +139,7 @@ assert.strictEqual(debtEntity.exhaustion.blackStamina, 100);
 assert.strictEqual(debtEntity.stamina, 0, 'clearing black Stamina never spills the same refund into normal Stamina');
 
 console.log('quick attack conditional/refund regression tests passed');
+
+const sharedCondition = runBackstabScenario(0, () => ({ behind: false })); // Shared verdict deliberately differs from the private legacy geometry.
+assert.strictEqual(sharedCondition.damageCalls[0].options.conditionBonusUsed, false, 'strike honors the same public condition verdict as the floating cue');
+assert.strictEqual(sharedCondition.Combat.quickAttackData.lastResolution.bonusEffectProcs, 0, 'shared false verdict cannot consume the bonus cooldown');

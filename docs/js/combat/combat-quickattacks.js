@@ -284,7 +284,7 @@
             // This is deliberately before damage so Mercy Spike reads the
             // target's pre-impact health and every other condition reads the
             // exact state/facing at contact.
-            const hitConditions = getConditions(deps, c);
+            const hitConditions = window.Combat.getQuickAttackConditions(deps, c);
             const hitTech = buildTechnique(def, hitConditions, bonusReadyAtStrike);
             const conditionBonusUsed = hitTech.bonusActive; // The stronger package only exists when both the authored condition and cooldown gate are satisfied.
             const damage = Math.round(baseAbil.damage * hitTech.damageMul * (1 + (effects.stats.damageMul || 0)) * (attackContext.modifiers?.damage || 1));

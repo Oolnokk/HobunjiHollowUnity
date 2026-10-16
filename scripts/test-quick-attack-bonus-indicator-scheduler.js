@@ -90,6 +90,69 @@ const scheduledFrame = entry.fn;
 assert.doesNotThrow(() => scheduledFrame({ timestamp: 1016 }), 'the scheduled callback runs the same readiness/reticle logic the old frame() loop did');
 assert.equal(context.QuickAttackBonusIndicator.snapshot().visible, true, 'a ready condition still shows the reticle when driven by the scheduler');
 
+// Production's auto-target helpers return null on desktop and with mobile assist off.
+const deps = context.Combat.deps; // Mutated dependency fixture covers both manual input modes.
+const manualTarget = deps.findMeleeAttackCandidate(); // Keeps one stable scene/root while exercising show/hide transitions.
+manualTarget.id = 'manual';
+manualTarget.areaId = 'test';
+manualTarget.x = 32; manualTarget.y = 0;
+deps.player = { x: 0, y: 0, angle: 0 };
+deps.TILE = 32;
+deps.getCurrentArea = () => 'test';
+deps.getHeldMode = () => 'tool';
+deps.getActiveTool = () => 'weapon';
+deps.findMeleeAttackCandidate = () => null;
+deps.findAutoTarget = () => null;
+deps.getMeleeReticleTarget = () => manualTarget;
+let hitEligible = true; // Deterministic collider verdict covers range, direction and height rejection.
+let checkedRange = 0; // Captures the live reach envelope used by the cue.
+context.Combat.meleeHit = (attacker, target, options) => {
+  checkedRange = options.rangePx;
+  assert.equal(options.debug, false, 'cue never draws attack hitbox debug history');
+  return hitEligible;
+};
+scheduledFrame({ timestamp: 1048 });
+assert.equal(context.QuickAttackBonusIndicator.snapshot().visible, true, 'manual reticle focus works without an auto-target');
+assert.equal(checkedRange, 32 * 4.5, 'cue includes the configured Quick Attack lunge');
+
+deps.getMeleeReticleTarget = () => null;
+deps.hostileObjects = [manualTarget];
+scheduledFrame({ timestamp: 1064 });
+assert.equal(context.QuickAttackBonusIndicator.snapshot().visible, true, 'aimed cone scan supports targets outside the exact center ray');
+hitEligible = false;
+scheduledFrame({ timestamp: 1080 });
+assert.equal(context.QuickAttackBonusIndicator.snapshot().visible, false, 'out-of-range/off-axis/height-rejected targets hide the cue');
+hitEligible = true;
+for (const flag of ['_denHidden', '_grehlrBurrowProtected', 'isCompanion']) {
+  manualTarget[flag] = true;
+  assert.equal(context.QuickAttackBonusIndicator.getReadyState().ready, false, flag + ' targets are ineligible');
+  delete manualTarget[flag];
+}
+manualTarget.areaId = 'elsewhere';
+assert.equal(context.QuickAttackBonusIndicator.getReadyState().ready, false, 'unloaded-area targets cannot show an opening');
+manualTarget.areaId = 'test';
+context.Combat.quickAttackData.bonusEffectCooldownRemaining = () => 2;
+assert.equal(context.QuickAttackBonusIndicator.getReadyState().conditionReady, true, 'condition remains visible in diagnostics during cooldown');
+scheduledFrame({ timestamp: 1096 });
+assert.equal(context.QuickAttackBonusIndicator.snapshot().visible, false, 'cooldown suppresses the visible bonus notification');
+context.Combat.quickAttackData.bonusEffectCooldownRemaining = () => 0;
+scheduledFrame({ timestamp: 1112 });
+assert.equal(context.QuickAttackBonusIndicator.snapshot().visible, true, 'cue returns when cooldown expires');
+context.Combat.getQuickAttackConditions = () => ({ behind: false });
+scheduledFrame({ timestamp: 1128 });
+assert.equal(context.QuickAttackBonusIndicator.snapshot().visible, false, 'condition ending immediately hides every reticle layer');
+context.Combat.getQuickAttackConditions = () => ({ behind: true });
+for (const tool of ['ranged', 'pick']) {
+  deps.getActiveTool = () => tool;
+  assert.equal(context.QuickAttackBonusIndicator.getReadyState().ready, false, 'cue is hidden with ' + tool + ' drawn');
+}
+deps.getActiveTool = () => 'weapon';
+deps.isDialogueOpen = () => true;
+assert.equal(context.QuickAttackBonusIndicator.getReadyState().ready, false, 'dialogue suppresses combat opportunities');
+deps.isDialogueOpen = () => false;
+scheduledFrame({ timestamp: 1144 });
+assert.equal(context.QuickAttackBonusIndicator.snapshot().visible, true, 'cue recovers after suppression ends');
+
 // A throwing readiness/render pass must still detach the reticle and record
 // its own error snapshot, exactly like the old try/catch inside frame().
 context.Combat.getQuickAttackConditions = () => { throw new Error('boom'); };
