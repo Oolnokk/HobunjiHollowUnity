@@ -37,10 +37,14 @@
   //                     [tabindex] are discovered automatically — most
   //                     panels in this game need this on precisely nothing,
   //                     since almost everything here is already a <button>.
+  //   data-ctrl-inspect allows a disabled control to be highlighted/read;
+  //                     Confirm still cannot activate it.
   //   data-ctrl-group   optional, makes a nested section one selectable group.
   //                     Confirm enters; Back returns to the whole section.
   //                     Existing menu sections, inventories, perk trees and
   //                     tab rows are recognized without extra markup.
+  //   data-ctrl-group-open on a group's own toggle with aria-expanded;
+  //                     entering a closed group uses that toggle first.
   //   data-ctrl-skip    optional, the opposite of data-ctrl-item — pulls an
   //                     otherwise-focusable element (or an especially risky
   //                     one, e.g. the pause menu's "reset farm" button) out
@@ -58,7 +62,7 @@
   const TABS_SELECTOR = '[data-ctrl-tabs]';
   const GROUP_SELECTOR = [
     '[data-ctrl-group]', '[data-ctrl-tabs]', '[role="tablist"]', 'details',
-    '.menu-section', '.farm-section', '.farm-storage-col', '.ship-pane',
+    '.menu-section', '.progress-skills', '.perk-trees', '.perk-row', '.skill-row', '.farm-section', '.farm-storage-col', '.ship-pane',
     '.inv-grid-area', '.inv-info', '.inv-equip-section', '.inv-key-section',
     '.inv-pack-clothing', '.inv-gear-extra-section', '.perk-tree',
     '.loadout-slot', '.loadout-options', '.cooking-layout > aside', '.cooking-slot', '.cooking-picker', '.cooking-footer',
@@ -137,6 +141,7 @@
   const knownPanels = new Set(); // Reused by visibility reconciliation so gameplay never scans the entire DOM for panel roots.
   let currentTarget = null;
   let focusPath = null; // Remembers the active control through in-panel DOM rebuilds.
+  let scrolledSelection = null; // Reanchors the next directional input to the right-stick scroll host's visible controls.
   const navigationPerf = { targetCount: 0, rectReads: 0 }; // Used by ControllerUI.debugState() to expose the most recent spatial-navigation scan cost without browser devtools.
 
   // Reconciliation checks panel roots and their ancestors so nested menus
@@ -199,6 +204,7 @@
   }
 
   function activatePanel(panel) {
+    scrolledSelection = null;
     updateHintBar(panel);
     // A real mouse click leaves its target as document.activeElement even
     // after the panel closes around it (nothing blurs it), so a panel
@@ -227,13 +233,19 @@
   function isNavTarget(el) {
     if (!el || el.nodeType !== 1) return false;
     if (el.closest('[data-ctrl-skip]')) return false;
-    if (isDisabled(el)) return false;
+    if (isDisabled(el) && !el.hasAttribute('data-ctrl-inspect')) return false;
     if (el.hasAttribute('tabindex') && Number(el.getAttribute('tabindex')) < 0 && !el.hasAttribute('data-ctrl-item') && !el.matches(GROUP_SELECTOR)) return false;
     return isVisible(el);
   }
 
   function targetsInPanel(panel) {
-    return Array.from(panel.querySelectorAll(NAV_SELECTOR)).filter(el => isNavTarget(el) && !el.matches(GROUP_SELECTOR));
+    return Array.from(panel.querySelectorAll(`${NAV_SELECTOR}, ${GROUP_SELECTOR}`)).filter(el => isNavTarget(el)
+      && (!isGroup(el) || el.textContent?.trim() || el.querySelector(NAV_SELECTOR) || el.querySelector('canvas, img')));
+  }
+
+  function isGroup(el) {
+    // An actionable card remains an action even when it also uses a section's styling class.
+    return el.matches(GROUP_SELECTOR) && !el.matches('button, a[href], input, select, textarea, summary, [role="button"], [data-ctrl-item]');
   }
 
 
@@ -248,7 +260,7 @@
     for (let index = 0; index < entries.length; index++) {
       const entry = entries[index]; // Stores the original DOM path so whole-section rebuilds preserve confinement.
       const node = entry.node.isConnected ? entry.node : resolveFocusPath(entry.path, true).container; // Reuses stable ids/data-tree and sibling positions.
-      if (!node || node === parent || !parent.contains(node) || !node.matches(GROUP_SELECTOR) || !isNavTarget(node) || !belongsToNavigation(node, panel)) {
+      if (!node || node === parent || !parent.contains(node) || !isGroup(node) || !isNavTarget(node) || !belongsToNavigation(node, panel)) {
         for (const removed of entries.splice(index)) removed.node.classList.remove('ctrl-nav-group-active');
         break;
       }
@@ -270,14 +282,14 @@
   function groupTarget(el, root, panel) {
     let target = el; // Outermost unentered section becomes the single spatial candidate for its descendants.
     for (let node = el; node && node !== root; node = node.parentElement) {
-      if (node.matches(GROUP_SELECTOR) && isNavTarget(node) && belongsToNavigation(node, panel)) target = node;
+      if (isGroup(node) && isNavTarget(node) && belongsToNavigation(node, panel)) target = node;
     }
     return target;
   }
 
   function navigationTargets(panel) {
     const root = navigationRoot(panel); // Only descendants of this nest can compete for directional focus.
-    const targets = targetsInPanel(root).filter(el => belongsToNavigation(el, panel)); // Disabled/hidden/empty sections never become traps.
+    const targets = targetsInPanel(root).filter(el => belongsToNavigation(el, panel)); // Readable sections remain inspectable even without an enabled action.
     return [...new Set(targets.map(el => groupTarget(el, root, panel)))];
   }
 
@@ -287,10 +299,13 @@
     entries.push({ node: group, path: focusPath, explicit: true }); // Entered by Confirm; focus-adopted scopes are not, so keyboard Escape/Tab keep closing/switching the menu.
     groupsByPanel.set(panel, entries);
     group.classList.add('ctrl-nav-group-active');
+    const opener = Array.from(group.querySelectorAll('[data-ctrl-group-open]')).find(control => groupTarget(control, group, panel) === control); // Only this group's own toggle may open it; entering a tree list must not open its first child tree.
+    if (opener?.getAttribute('aria-expanded') === 'false') opener.click();
     updateHintBar(panel);
     const targets = navigationTargets(panel); // Includes subgroups as whole targets, never their unentered controls.
     const remembered = lastFocusedByGroup.get(group); // Re-entering a group returns to its last surviving control.
-    setFocus(targets.includes(remembered) ? remembered : pickDefaultTarget(panel, targets));
+    const contents = targets.filter(target => !target.hasAttribute('data-ctrl-group-open')); // Once opened, start on the contents rather than immediately offering to close the tree again.
+    setFocus(targets.includes(remembered) ? remembered : pickDefaultTarget(panel, contents.length ? contents : targets) || navigationRoot(panel), { scroll: false });
   }
 
   function leaveGroup(panel) {
@@ -309,7 +324,7 @@
     clearGroups(panel);
     const ancestors = []; // Reconstructs nesting when switching from mouse/touch or another native focus owner.
     for (let node = el.parentElement; node && node !== panel; node = node.parentElement) {
-      if (node.matches(GROUP_SELECTOR) && belongsToNavigation(node, panel)) ancestors.unshift(node);
+      if (isGroup(node) && belongsToNavigation(node, panel)) ancestors.unshift(node);
     }
     const previousPath = focusPath; // Scope paths must not overwrite the selected control's recovery path.
     const entries = ancestors.map(node => {
@@ -410,11 +425,51 @@
     const panel = activePanel();
     if (!panel) return;
     const targets = availableTargets || navigationTargets(panel); // Reconcile scope before accepting a stale control.
-    if (currentTarget && targets.includes(currentTarget)) {
+    if (currentTarget && (targets.includes(currentTarget) || (!targets.length && currentTarget === navigationRoot(panel)))) {
       if (!currentTarget.classList.contains('ctrl-nav-focus')) currentTarget.classList.add('ctrl-nav-focus');
       return;
     }
-    setFocus(recoverFocusTarget(panel, targets) || pickDefaultTarget(panel, targets));
+    setFocus(recoverFocusTarget(panel, targets) || pickDefaultTarget(panel, targets), { scroll: !scrolledSelection });
+  }
+
+  function visibleNavigationRect(el) {
+    const rect = el.getBoundingClientRect(); // Clips against both the screen and every overflow ancestor, including nested scroll panes.
+    let left = Math.max(0, rect.left), top = Math.max(0, rect.top); // Visible bounds are also used to score partially visible groups.
+    let right = Math.min(window.innerWidth, rect.left + rect.width), bottom = Math.min(window.innerHeight, rect.top + rect.height);
+    for (let node = el.parentElement; node; node = node.parentElement) {
+      const style = getComputedStyle(node); // Only evaluated on the first directional gesture after manual scrolling.
+      const clipX = /auto|scroll|hidden|clip/.test(style.overflowX || style.overflow); // CSS overflow clips candidates even when they are still laid out.
+      const clipY = /auto|scroll|hidden|clip/.test(style.overflowY || style.overflow);
+      if (!clipX && !clipY) continue;
+      const bounds = node.getBoundingClientRect(); // One ancestor rectangle supplies both clipping axes.
+      if (clipX) { left = Math.max(left, bounds.left); right = Math.min(right, bounds.left + bounds.width); }
+      if (clipY) { top = Math.max(top, bounds.top); bottom = Math.min(bottom, bounds.top + bounds.height); }
+    }
+    return right > left && bottom > top ? { left, top, width: right - left, height: bottom - top } : null;
+  }
+
+  function reanchorAfterScroll(panel, dir) {
+    if (scrolledSelection?.panel !== panel) return false;
+    let candidates = []; // Start inside the entered scope; unwind only scopes completely outside the current viewport.
+    while (true) {
+      candidates = navigationTargets(panel).map(el => ({ el, rect: visibleNavigationRect(el) })).filter(candidate => candidate.rect);
+      if (candidates.length || !enteredGroups(panel).length) break;
+      const entry = enteredGroups(panel).pop(); // Leaving an invisible scope must not focus/scroll its old container.
+      lastFocusedByGroup.set(entry.node, currentTarget);
+      entry.node.classList.remove('ctrl-nav-group-active');
+    }
+    if (!candidates.length) return true; // Keep the pending reanchor until more controls become visible; never jump offscreen.
+    const current = candidates.find(candidate => candidate.el === currentTarget); // A still-visible selection keeps normal directional intent within visible candidates.
+    const hostRect = visibleNavigationRect(scrolledSelection.host) || panel.getBoundingClientRect(); // Anchors a lost selection in the region the player just scrolled.
+    const origin = current?.rect || { left: hostRect.left + hostRect.width / 2, top: hostRect.top + hostRect.height / 2, width: 0, height: 0 };
+    const best = bestVectorCandidate(candidates, origin, dir, CONE_HALF_ANGLE)
+      || bestVectorCandidate(candidates, origin, dir, WIDE_CONE_HALF_ANGLE)
+      || bestVectorCandidate(candidates, origin, dir)
+      || current?.el || pickDefaultTarget(panel, candidates.map(candidate => candidate.el));
+    scrolledSelection = null;
+    setFocus(best, { scroll: false });
+    updateHintBar(panel);
+    return true;
   }
 
   // ── spatial navigation ──────────────────────────────────────────────
@@ -474,6 +529,9 @@
   function moveVector(x, y) {
     const panel = activePanel();
     if (!panel) return false;
+    const direction = normalizedDirection(x, y); // Reanchor before stale-focus recovery can scroll to a rebuilt/offscreen control.
+    if (!direction) return false;
+    if (reanchorAfterScroll(panel, direction)) return true;
     const targets = navigationTargets(panel); // Built once for this gesture/repeat and shared by focus validation plus candidate scoring.
     navigationPerf.targetCount = targets.length;
     navigationPerf.rectReads = 0;
@@ -528,7 +586,11 @@
     if (!panel || panelOwnsAction(panel, 'confirm')) return;
     refreshFocusIfStale();
     if (!currentTarget) return;
-    if (currentTarget.matches(GROUP_SELECTOR)) { enterGroup(currentTarget, panel); return; }
+    if (isGroup(currentTarget)) {
+      if (currentTarget !== navigationRoot(panel)) enterGroup(currentTarget, panel);
+      return;
+    }
+    if (isDisabled(currentTarget)) return; // Inspectable locked effects can glow without bypassing purchase prerequisites.
     if (currentTarget.tagName === 'SELECT') { currentTarget.focus(); return; }
     if (isTextEditable(currentTarget)) { currentTarget.blur(); return; }
     if (currentTarget.tagName === 'INPUT' && (currentTarget.type === 'checkbox' || currentTarget.type === 'radio')) {
@@ -551,9 +613,7 @@
   }
 
   function findTabGroup(panel) {
-    const root = enteredGroups(panel).filter(entry => entry.explicit).at(-1)?.node || panel; // Bumpers may switch tabs only inside an explicitly entered nest; a mouse-adopted scope does not confine them.
-    if (root !== panel && !root.matches(TABS_SELECTOR)) return null;
-    const groups = root.matches(TABS_SELECTOR) ? [root] : Array.from(root.querySelectorAll(TABS_SELECTOR));
+    const groups = Array.from(panel.querySelectorAll(TABS_SELECTOR)).filter(group => isVisible(group) && belongsToNavigation(group, panel)); // Bumpers remain available from every entered section; the outer menu's tab bar is the fallback.
     if (!groups.length) return null;
     if (currentTarget) {
       const containing = groups.find(g => g.contains(currentTarget));
@@ -572,6 +632,7 @@
     let idx = items.findIndex(el => el === currentTarget || el.classList.contains('active'));
     if (idx < 0) idx = 0;
     const next = items[(idx + delta + items.length) % items.length];
+    if (!navigationRoot(panel).contains(next)) clearGroups(panel); // Switching outside an entered section must release its old confinement.
     next.click();
     setFocus(groupTarget(next, navigationRoot(panel), panel));
   }
@@ -598,7 +659,7 @@
     if (!panel || !padEverSeen) { hideHintBar(); return; }
     const el = ensureHintEl();
     el.classList.toggle('ctrl-nav-hint-bar-visible', true);
-    const hasTabs = !!findTabGroup(panel); // The hint follows the same confinement as the bumper action.
+    const hasTabs = !!findTabGroup(panel); // The hint advertises bumpers wherever the menu has a visible tab bar.
     const hasCancel = true; // B always works: explicit close button first, universal Escape fallback otherwise.
     el.querySelector('.ctrl-nav-hint-tabs').style.display = hasTabs ? '' : 'none';
     const bBtn = el.querySelectorAll('.ctrl-nav-hint')[1];
@@ -721,7 +782,11 @@
         scrollHost = panel ? Array.from(panel.querySelectorAll('[data-ctrl-scroll], .mp-pane, .settings-pane, .cooking-body')).find(element => element.scrollHeight > element.clientHeight) : null;
       }
       scrollHost ||= panel; // Used to scroll the nearest useful menu region with the right stick without scanning every descendant each frame.
-      if (scrollHost) scrollHost.scrollTop += scrollStick.y * 720 * scrollDt;
+      if (scrollHost) {
+        const previousTop = scrollHost.scrollTop; // Only an actual manual scroll invalidates directional focus's old anchor.
+        scrollHost.scrollTop += scrollStick.y * 720 * scrollDt;
+        if (scrollHost.scrollTop !== previousTop) scrolledSelection = { panel, host: scrollHost };
+      }
     }
 
     const confirmDown = controllerActionDown(frame, UI_ACTIONS.confirm, currentBindings);
@@ -901,7 +966,8 @@
         navigationMode: 'nested-vector-cone',
         groupDepth: panel ? enteredGroups(panel).length : 0,
         groupId: panel ? navigationRoot(panel).id || navigationRoot(panel).getAttribute('data-tree') || null : null,
-        latestChange: 'Confirm enters glowing menu groups; Back exits one nest. Perk focus remains visible inside clipped trees.',
+        latestChange: 'Mastery and gear cards are reachable; readable sections can be inspected. After right-stick scrolling, directional focus starts on screen.',
+        pendingScrollReanchor: scrolledSelection?.panel === panel,
         coneHalfAngleDeg: Math.round(CONE_HALF_ANGLE * 180 / Math.PI),
         navigationTargetCount: navigationPerf.targetCount,
         navigationRectReads: navigationPerf.rectReads,

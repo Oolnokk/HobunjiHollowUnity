@@ -9,19 +9,22 @@ class Element {
   constructor(tag = 'div', attrs = {}, children = [], x = 0, y = 0) {
     this.tagName = tag.toUpperCase(); this.nodeType = 1; this.attrs = { ...attrs };
     this.children = []; this.parentElement = null; this.disabled = false; this.hidden = false;
-    this.style = {}; this.tabIndex = tag === 'button' ? 0 : -1; this.clicks = 0;
+    this.style = {}; this.tabIndex = tag === 'button' ? 0 : -1; this.clicks = 0; this.events = new Map();
     this.x = x; this.y = y; this.textContent = attrs.id || tag;
     this.classes = new Set((attrs.class || '').split(' ').filter(Boolean));
-    this.classList = { contains: value => this.classes.has(value), add: value => this.classes.add(value), remove: value => this.classes.delete(value) };
+    this.classList = { contains: value => this.classes.has(value), add: value => this.classes.add(value), remove: value => this.classes.delete(value), toggle: (value, enabled) => enabled ? this.classes.add(value) : this.classes.delete(value) };
     children.forEach(child => this.append(child));
   }
   get id() { return this.attrs.id || ''; }
+  set id(value) { this.attrs.id = value; }
   get className() { return [...this.classes].join(' '); }
+  set className(value) { this.classes = new Set(value.split(' ').filter(Boolean)); }
   get isConnected() { return this === body || Boolean(this.parentElement?.isConnected); }
   hasAttribute(name) { return name === 'tabindex' ? this.tabIndex >= 0 || name in this.attrs : name in this.attrs; }
   getAttribute(name) { return this.attrs[name] ?? null; }
   setAttribute(name, value) { this.attrs[name] = String(value); }
   append(child) { child.parentElement = this; this.children.push(child); }
+  appendChild(child) { this.append(child); return child; }
   contains(other) { return other === this || this.children.some(child => child.contains(other)); }
   matches(selector) {
     return selector.split(',').some(raw => {
@@ -43,9 +46,9 @@ class Element {
   getBoundingClientRect() { return { left: this.x, top: this.y, width: 80, height: 24 }; }
   focus() { document.activeElement = this; for (const callback of listeners.get('focusin') || []) callback({ target: this }); }
   blur() { document.activeElement = body; }
-  scrollIntoView() {}
-  click() { this.clicks++; this.onclick?.(); }
-  addEventListener() {}
+  scrollIntoView() { this.scrollCalls = (this.scrollCalls || 0) + 1; }
+  click() { this.clicks++; this.onclick?.(); for (const callback of this.events.get('click') || []) callback(); }
+  addEventListener(type, callback) { this.events.set(type, [...(this.events.get(type) || []), callback]); }
 }
 const button = (id, x, y, attrs = {}) => new Element('button', { id, ...attrs }, [], x, y); // Positions give the real cone scorer meaningful competitors.
 const a = button('a', 10, 40); // First control inside the outer group.
@@ -60,10 +63,11 @@ const tabs = new Element('div', { 'data-ctrl-tabs': '' }, [tabA, tabB], 250, 100
 const close = button('close', 400, 0, { 'data-ctrl-cancel': '' }); // Only root-level Back should activate the panel close action.
 const panel = new Element('div', { id: 'panel', 'data-ctrl-panel': '' }, [group, outside, tabs, close]);
 const body = new Element('body', {}, [panel]); // Sole connected document root.
-document = { body, activeElement: body, addEventListener(type, callback) { listeners.set(type, [...(listeners.get(type) || []), callback]); } };
+document = { body, activeElement: body, createElement: tag => new Element(tag, {}, [new Element('span', { class: 'ctrl-nav-hint ctrl-nav-hint-tabs' }), new Element('span', { class: 'ctrl-nav-hint' })]), addEventListener(type, callback) { listeners.set(type, [...(listeners.get(type) || []), callback]); } };
 const context = {
-  document, console, getComputedStyle: el => ({ display: el.hidden ? 'none' : el.style.display || 'block', visibility: 'visible', opacity: '1' }),
-  window: { addEventListener(type, callback) { listeners.set(type, [...(listeners.get(type) || []), callback]); }, dispatchEvent() {} },
+  document, console, getComputedStyle: el => ({ display: el.hidden ? 'none' : el.style.display || 'block', visibility: 'visible', opacity: '1', overflowY: el.style.overflowY || 'visible' }),
+  window: { innerWidth: 600, innerHeight: 400, addEventListener(type, callback) { listeners.set(type, [...(listeners.get(type) || []), callback]); }, dispatchEvent() {},
+    ControllerInput: { PRIORITY: { menuNav: 10 }, subscribe(_id, callback) { this.poll = callback; }, normalizeStick: (x, y) => ({ x, y }) } },
   MutationObserver: class { constructor(callback) { observers.push(callback); } observe() {} },
   queueMicrotask, setTimeout: () => 1, clearTimeout() {}, KeyboardEvent: class {},
   CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } },
@@ -80,7 +84,9 @@ const rebuild = async target => { for (const observer of observers) observer([{ 
   assert.equal(a.clicks, 0, 'entering does not accidentally activate the first item');
   press('right'); assert.equal(ui.focusedElement(), b);
   press('right'); assert.equal(ui.focusedElement(), b, 'Right cannot escape to a nearby outside item');
-  press('tabNext'); assert.equal(tabB.clicks, 0, 'bumper cannot switch tabs outside the nest');
+  press('tabNext'); assert.equal(tabB.clicks, 1, 'bumper switches tabs without first focusing their bar');
+  assert.equal(ui.debugState().groupDepth, 0, 'switching tabs releases the old nested section');
+  b.focus();
   press('cancel'); assert.equal(ui.focusedElement(), group);
   assert.equal(close.clicks, 0);
   press('confirm'); assert.equal(ui.focusedElement(), b, 're-enter remembers selection');
@@ -126,7 +132,12 @@ const rebuild = async target => { for (const observer of observers) observer([{ 
   assert.equal(ui.focusedElement(), replacementA, 'modal handoff returns to the same nested control');
   press('cancel'); assert.equal(ui.focusedElement(), replacementGroup);
   replacementA.disabled = true; await rebuild(replacementGroup);
-  assert.equal(ui.focusedElement(), outside, 'now-empty section is skipped even after it acquired tabindex');
+  assert.equal(ui.focusedElement(), replacementGroup, 'a section remains reachable for reading when all its actions are disabled');
+  press('confirm');
+  assert.equal(ui.focusedElement(), replacementGroup, 'read-only group keeps its highlight when entered');
+  press('confirm');
+  assert.equal(ui.debugState().groupDepth, 1, 'repeated Confirm cannot recursively enter a read-only group');
+  press('cancel');
   press('cancel'); assert.equal(close.clicks, 1, 'root Back uses the existing close action');
   assert.equal(panel.querySelectorAll('.ctrl-nav-focus').length, 1, 'exactly one control glows after all handoffs');
   const perk = (tree, x) => new Element('div', { class: 'perk-tree', 'data-tree': tree }, [new Element('div', { 'data-perk': 'health' }, [
@@ -147,6 +158,102 @@ const rebuild = async target => { for (const observer of observers) observer([{ 
   panel.children.splice(panel.children.indexOf(nextTree), 1); nextTree.parentElement = null;
   await rebuild(panel);
   assert.equal(ui.debugState().groupDepth, 0, 'removing a nest unwinds instead of entering a different sibling section');
+  const actionCard = button('action-card', 10, 260, { class: 'menu-section' }); // Section styling must not swallow an actual action.
+  panel.append(actionCard); actionCard.focus(); press('confirm');
+  assert.equal(actionCard.clicks, 1);
+  assert.equal(ui.debugState().groupDepth, 0);
+  const lockedEffect = button('locked-effect', 10, 290, { 'data-ctrl-inspect': '' }); // Locked literature remains inspectable without spending anything.
+  lockedEffect.disabled = true; panel.append(lockedEffect);
+  actionCard.focus(); press('down'); assert.equal(ui.focusedElement(), lockedEffect);
+  press('confirm'); assert.equal(lockedEffect.clicks, 0);
+
+  const scrollTopButton = button('scroll-top', 10, 10); // Offscreen old focus after scrolling must not drag the viewport back.
+  const scrollVisible = button('scroll-visible', 10, 50);
+  const scrollOther = button('scroll-other', 10, 100);
+  const scrollGroup = new Element('div', { id: 'scroll-group', 'data-ctrl-group': '' }, [scrollTopButton, scrollVisible, scrollOther], 10, 10);
+  const scrollPanel = new Element('div', { id: 'scroll-panel', 'data-ctrl-panel': '' }, [scrollGroup]);
+  scrollPanel.scrollHeight = 1000; scrollPanel.clientHeight = 200; scrollPanel.scrollTop = 0;
+  scrollPanel.style.overflowY = 'auto';
+  scrollPanel.getBoundingClientRect = () => ({ left: 0, top: 0, width: 300, height: 200 });
+  scrollGroup.getBoundingClientRect = () => ({ left: 10, top: -scrollPanel.scrollTop, width: 200, height: 300 });
+  for (const element of scrollGroup.children) element.getBoundingClientRect = () => ({ left: element.x, top: element.y - scrollPanel.scrollTop, width: 80, height: 24 });
+  body.append(scrollPanel);
+  for (const observer of observers) observer([{ target: body, addedNodes: [scrollPanel], removedNodes: [] }]);
+  await Promise.resolve();
+  press('confirm'); assert.equal(ui.focusedElement(), scrollTopButton);
+  let frameTime = 1000; // Replays the same shared-controller callback used by actual right-stick scrolling.
+  const scrollFrame = y => context.window.ControllerInput.poll({ now: frameTime += 50, focused: true, pad: { axes: [0, 0, 0, y] }, isDown: () => false });
+  scrollFrame(1); scrollFrame(1);
+  assert.equal(ui.debugState().pendingScrollReanchor, true);
+  const topBefore = scrollPanel.scrollTop;
+  press('down');
+  assert.equal(ui.focusedElement(), scrollVisible, 'first direction selects a visible control after manual scrolling');
+  assert.equal(scrollVisible.scrollCalls || 0, 0, 'first direction does not scroll even a partially visible control');
+  assert.equal(scrollPanel.scrollTop, topBefore);
+  assert.equal(ui.debugState().pendingScrollReanchor, false);
+  scrollPanel.scrollTop = 300;
+  scrollTopButton.y = 10; scrollVisible.y = 350; scrollOther.y = 450;
+  scrollFrame(-1);
+  press('up');
+  assert.equal(ui.focusedElement(), scrollVisible, 'scrolling back up also reanchors inside the clipped viewport');
+  const outsideVisible = button('outside-visible', 10, 350); // Manual scroll can reveal a sibling beyond the explicitly entered group.
+  scrollPanel.append(outsideVisible);
+  outsideVisible.getBoundingClientRect = () => ({ left: 10, top: 80, width: 80, height: 24 });
+  for (const element of scrollGroup.children) element.y = 0;
+  scrollFrame(1); press('down');
+  assert.equal(ui.focusedElement(), outsideVisible, 'an entirely offscreen nest unwinds to visible siblings');
+  assert.equal(ui.debugState().groupDepth, 0);
+  scrollPanel.hidden = true; await rebuild(scrollPanel);
+
+  const treeToggle = button('tree-toggle', 10, 40, { 'data-ctrl-group-open': '', 'aria-expanded': 'false' }); // The authored toggle opens just its own collapsible tree.
+  const perkRow = new Element('div', { class: 'perk-row', 'data-perk': 'health' }, [button('perk-plus', 10, 100)], 10, 90);
+  const tree = new Element('div', { class: 'perk-tree', 'data-tree': 'combat' }, [treeToggle, perkRow], 10, 40);
+  const treeList = new Element('div', { class: 'perk-trees', id: 'perkTrees' }, [tree], 10, 40);
+  const perkPanel = new Element('div', { 'data-ctrl-panel': '', id: 'perk-panel' }, [treeList]);
+  treeToggle.onclick = () => treeToggle.setAttribute('aria-expanded', 'true');
+  body.append(perkPanel);
+  for (const observer of observers) observer([{ target: body, addedNodes: [perkPanel], removedNodes: [] }]);
+  await Promise.resolve();
+  assert.equal(ui.focusedElement(), treeList, 'Perks is a selectable section');
+  press('confirm'); assert.equal(ui.focusedElement(), tree);
+  assert.equal(treeToggle.clicks, 0, 'entering the Perks section does not open a child tree');
+  press('confirm'); assert.equal(treeToggle.clicks, 1, 'entering an individual tree opens its existing toggle');
+  assert.equal(ui.focusedElement(), perkRow, 'opening a tree starts on its contents');
+  press('confirm'); assert.equal(ui.focusedElement().id, 'perk-plus');
+  press('confirm'); assert.equal(perkRow.children[0].clicks, 1);
+  press('cancel'); assert.equal(ui.focusedElement(), perkRow);
+  press('cancel'); assert.equal(ui.focusedElement(), tree);
+  press('cancel'); assert.equal(ui.focusedElement(), treeList);
+  perkPanel.hidden = true; await rebuild(perkPanel);
+
+  // Execute the actual mastery picker builder against the navigator, including rank rebuilds and locked-effect inspection.
+  const masteryPanel = new Element('div', { 'data-ctrl-panel': '', id: 'mastery-panel' });
+  context.rankCard = new Element('div', { class: 'loadout-slot', id: 'rank-card' });
+  masteryPanel.append(context.rankCard);
+  let choices = 0; // Counts only purchases routed through the progression API.
+  context.window.Combat = { deps: { weaponDamageTypeForTool: () => 'sharp', getMotesOfProwess: () => 10 } };
+  context.window.CombatProgression = { getTree: () => Array.from({ length: 5 }, () => [{ label: 'Available', desc: 'Choose me' }, { label: 'Locked', desc: 'Discover me' }]),
+    getLevelState: () => 'available', moteCostForLevel: () => 1, isOptionUnlocked: (_key, _ability, _level, index) => index === 0, choose: () => { choices++; } };
+  const loadoutSource = fs.readFileSync('docs/js/combat/combat-loadout-ui.js', 'utf8'); // Uses the real authored rank buttons and handlers.
+  const pickerSource = loadoutSource.slice(loadoutSource.indexOf('  function renderLevelPicker'), loadoutSource.indexOf('  function render(preferredFocusId'));
+  document.createElement = tag => new Element(tag);
+  vm.runInNewContext(`let expandedFor = null; ${pickerSource}\nfunction render() { for (const child of rankCard.children) child.parentElement = null; rankCard.children = []; renderLevelPicker(rankCard, 'axe', 'swing'); }\nrender();`, context);
+  body.append(masteryPanel);
+  for (const observer of observers) observer([{ target: body, addedNodes: [masteryPanel], removedNodes: [] }]);
+  await Promise.resolve();
+  press('confirm'); assert.equal(ui.focusedElement().id, 'mastery-axe-swing-1');
+  press('confirm'); await rebuild(context.rankCard);
+  assert.equal(ui.focusedElement().id, 'mastery-axe-swing-1', 'opening a rank preserves its controller focus through rebuilding');
+  const optionsGroup = context.rankCard.querySelector('.loadout-options'); // Position the expanded option region below the rank strip.
+  optionsGroup.y = 100;
+  press('down'); assert.equal(ui.focusedElement(), optionsGroup);
+  press('confirm'); assert.equal(ui.focusedElement().id, 'mastery-axe-swing-1-option-0');
+  const lockedOption = optionsGroup.children[1];
+  lockedOption.x = 100;
+  press('right'); assert.equal(ui.focusedElement(), lockedOption, 'locked mastery descriptions are reachable');
+  press('confirm'); assert.equal(choices, 0, 'inspecting a locked mastery effect cannot buy it');
+  press('left'); press('confirm'); assert.equal(choices, 1, 'Confirm chooses the available effect through the normal progression API');
+  masteryPanel.hidden = true; await rebuild(masteryPanel);
   const handled = []; // Opt-in readers own A/B/bumpers without taking over controller polling.
   panel.setAttribute('data-ctrl-actions', '');
   panel.dispatchEvent = event => { handled.push(event.detail.action); return false; };

@@ -782,6 +782,9 @@
     _layoutPieces().forEach(p => {
       const row = document.createElement('div');
       row.className = 'house-layout-piece-row' + (p.id === _houseLayoutSelectedId ? ' selected' : '');
+      row.setAttribute('role', 'button');
+      row.tabIndex = 0;
+      row.setAttribute('data-key', p.id);
       const nameText = (_layoutAdapter ? _layoutAdapter.label(p) : deps.housePieceLabel(p)) + (p.stage === 'foundation' ? ' (foundation)' : '');
       row.innerHTML = `<span class="name">${_layoutAdapter ? (_layoutAdapter.icon?.(p) || '🪺') : '🏠'} ${deps.esc(nameText)}</span><span class="size">${p.w}×${p.h}</span>`;
       row.addEventListener('click', () => { _houseLayoutSelectedId = p.id; renderHouseLayoutModal(); });

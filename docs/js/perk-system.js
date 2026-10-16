@@ -292,7 +292,7 @@
         return `<div class="perk-tier${locked ? ' locked' : ''}"><div class="perk-tier-label">${tierLabel}</div>${perkRows}</div>`;
       }).join('');
       return `<div class="perk-tree${isOpen ? ' open' : ''}" data-tree="${skillKey}">
-        <button type="button" class="perk-tree-head" data-perk-toggle="${skillKey}">
+        <button type="button" class="perk-tree-head" data-perk-toggle="${skillKey}" data-ctrl-group-open aria-expanded="${isOpen}">
           <span class="skill-icon">${meta.icon}</span>
           <span class="perk-tree-title">${meta.label} Perks</span>
           <span class="perk-tree-points">${available} pt${available === 1 ? '' : 's'} available (${spent}/${earned} spent)</span>
