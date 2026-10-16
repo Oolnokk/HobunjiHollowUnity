@@ -926,8 +926,9 @@
         const contactY = side === 'left' ? state.leftContactY : state.rightContactY; // Retains the authored sole height.
         motionScratch.copy(foot.anchor);
         root.worldToLocal(motionScratch);
-        const otherFoot = state.lungeFeet[foot === state.lungeFeet[0] ? 1 : 0]; // Ensures one supporting foot stays planted during a grounded lunge.
-        if (!foot.stepping && !otherFoot.stepping && (foot === state.lungeLead || Math.hypot(motionScratch.x - idleX, motionScratch.z) > length * 0.65)) {
+        const maxReach = Math.max(0.001, posteriorY - contactY) * 0.65; // Caps horizontal lunge reach using this leg's anatomy, in root-local units.
+        const otherFoot = state.lungeFeet[foot === state.lungeFeet[0] ? 1 : 0]; // Keeps one supporting foot grounded while the other swings.
+        if (!foot.stepping && !otherFoot.stepping && (foot === state.lungeLead || Math.hypot(motionScratch.x - idleX, motionScratch.z) > maxReach)) {
           foot.start.copy(foot.anchor);
           foot.end.set(idleX, contactY, 0);
           root.localToWorld(foot.end).addScaledVector(motionDirection, length * 0.55);
@@ -949,7 +950,19 @@
         }
         motionScratch.copy(foot.anchor);
         root.worldToLocal(motionScratch);
-        state[`${side}Target`].copy(motionScratch);
+        const reach = Math.hypot(motionScratch.x - idleX, motionScratch.z); // Measures support and swing targets after all step interpolation.
+        if (reach > maxReach) {
+          motionScratch.x = idleX + (motionScratch.x - idleX) * maxReach / reach;
+          motionScratch.z *= maxReach / reach;
+          state[`${side}Target`].copy(motionScratch);
+          root.localToWorld(motionScratch);
+          const slideX = motionScratch.x - foot.anchor.x, slideY = motionScratch.y - foot.anchor.y, slideZ = motionScratch.z - foot.anchor.z; // Carries the retained trajectory with the bounded contact, including rotated/scaled roots.
+          foot.anchor.copy(motionScratch);
+          foot.start.x += slideX; foot.start.y += slideY; foot.start.z += slideZ;
+          foot.end.x += slideX; foot.end.y += slideY; foot.end.z += slideZ;
+        } else {
+          state[`${side}Target`].copy(motionScratch);
+        }
         state[`${side}Roll`] = foot.stepping ? -Math.sin(foot.progress * Math.PI) * 0.22 : 0;
         applyLegChain(side);
       }
@@ -1428,9 +1441,15 @@
       const rightBounds = footBoundsInRoot(state.right);
       const currentLegLength = standingLegLength(); // Shown in mobile-facing diagnostics so stride scaling can be verified without a console.
       return {
-        lastChange: 'Combat run, planted lunge steps, and airborne dangling',
+        lastChange: 'Lunge feet slide with the root at their leg-length reach limit',
         motionMode: state.motionMode,
         lungeLead: state.lungeLead?.side || null,
+        lungeReach: {
+          leftMax: Math.max(0.001, posteriorY - state.leftContactY) * 0.65,
+          rightMax: Math.max(0.001, posteriorY - state.rightContactY) * 0.65,
+          left: Math.hypot(state.leftTarget.x - state.idleLeftX, state.leftTarget.z),
+          right: Math.hypot(state.rightTarget.x - state.idleRightX, state.rightTarget.z),
+        }, // Existing mobile diagnostics expose the applied reach and its anatomical limits.
         coordinateSpace: 'avatar-floor-relative',
         floorY: 0,
         posteriorY,

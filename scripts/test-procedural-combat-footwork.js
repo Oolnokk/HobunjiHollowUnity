@@ -106,6 +106,31 @@ for (let i = 0; i < 90; i++) {
   lunge.legs.update(1 / 60, 2, false, undefined, { lunging: true, directionX: 1, directionZ: 0 });
   assert(Number.isFinite(lunge.legs.getStandingPoseDebug().left.targetY));
 }
+for (const height of [0.5, 1, 2]) {
+  for (const direction of [{ x: 1, z: 0 }, { x: 0, z: -1 }, { x: -0.6, z: 0.8 }]) {
+    const bounded = rig(height); // Exercises short/long anatomy and attacks along multiple world headings.
+    const stance = bounded.legs.getRestStance(); // Supplies each foot's own hip and contact coordinates.
+    bounded.legs.beginLunge(direction.x, direction.z);
+    const support = bounded.legs.getStandingPoseDebug().lungeLead === 'left' ? 'right' : 'left'; // Identifies the grounded rear foot while the lead is swinging.
+    for (const dt of [0, 1 / 60, 0.1]) {
+      for (let frame = 0; frame < 24; frame++) {
+        bounded.parent.position.x += direction.x * height * 0.3;
+        bounded.parent.position.z += direction.z * height * 0.3;
+        bounded.parent.rotation.y += 0.07;
+        bounded.legs.update(dt, 12, false, undefined, { lunging: true });
+        const pose = bounded.legs.getStandingPoseDebug(); // Checks the final targets used by both the leg bones and bound pant legs.
+        for (const side of ['left', 'right']) {
+          const reach = Math.hypot(pose[side].targetX - stance[side].hip.x, pose[side].targetZ); // Root-local horizontal reach must be bounded even while the other foot swings.
+          const limit = (stance[side].hip.y - stance[side].ankle.y) * 0.65; // Matches the anatomy-derived recovery threshold.
+          assert(reach <= limit + 1e-9, `${side} exceeded lunge reach at height ${height}, dt ${dt}`);
+        }
+        if (dt === 0) assert(Math.abs(pose[support].targetY - pose[support].contactY) < 1e-9, 'sliding rear foot stays grounded');
+      }
+    }
+    bounded.legs.update(1 / 60, 12, false, undefined, { lunging: true, airborne: true });
+    assert.strictEqual(bounded.legs.getStandingPoseDebug().motionMode, 'airborne', 'airborne lunges still use dangling legs');
+  }
+}
 lunge.legs.update(NaN, Infinity, false);
 assert.strictEqual(lunge.legs.getStandingPoseDebug().motionMode, 'idle');
 assert.strictEqual(lunge.legs.getStandingPoseDebug().gait.strideLength, 0);
