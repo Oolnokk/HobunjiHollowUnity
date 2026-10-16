@@ -4261,6 +4261,7 @@
       // own bodyYaw flourish; this local neck residual counters both. Seated
       // free-look treats the orbited camera direction as the aim target.
       function updatePlayerHeadAim() {
+        window.PlayerBodyTransformComposer?.setHeadAimTarget?.(null);
         if (!playerNeckJoint) return;
         playerNeckJoint.userData.hobunjiPerspectiveAimLocked = (
           activeCameraMode === SHOULDER_SURF_MODE
@@ -4269,11 +4270,9 @@
           && !characterViewMode.enabled
         ); // Tells the render-time physical limiter that the shared point must remain the final head authority this frame.
         if (cutscenePreviewActive) return;
-        // During dialogue, faceNpcDialogueParticipants owns the player's
-        // neck bone exclusively (a continuous eye-contact aim at the NPC —
-        // see its own comment) — step aside entirely rather than fighting
-        // it with a second, different rotation write on the same bone.
+        // Dialogue owns continuous eye contact through faceNpcDialogueParticipants.
         if (dialogueOpen) return;
+        if (player.prone || window.ImpactRagdollPlayback?.isActive?.()) return;
         if (characterViewMode.enabled) {
           playerNeckJoint.rotation.x = characterViewMode.lockedNeckX;
           playerNeckJoint.rotation.y = characterViewMode.lockedNeckY;
@@ -4314,6 +4313,9 @@
               Math.max(1e-8, Math.hypot(Number(shoulderHeadDirection?.x) || 0, Number(shoulderHeadDirection?.z) || 0)),
             )
           : 0;
+        const fishingTarget = window.Fishing?.state?.active ? window.Fishing.state.anchorWorld : null; // Keeps the gaze on the cast water tile throughout cast/wait/bite/reel phases.
+        const headTarget = fishingTarget || (sitInteraction?.phase === 'active' ? null : currentPlayerPerspectiveTarget()?.point); // Ordinary gaze shares the interaction/combat convergence point.
+        window.PlayerBodyTransformComposer?.setHeadAimTarget?.(headTarget, fishingTarget ? 'fishing-water' : 'interaction-ray');
       }
 
       // Interactable used by both getInteriorInteractableAt (interior scene)
@@ -5873,7 +5875,12 @@
         // dead-zone behavior currently governs the sprite instead of the
         // prism's own free-tracking groupRot.
         if (c.avatarRef.legsPivot) c.avatarRef.legsPivot.rotation.y = planeDelta;
-        if (c.avatarRef.legs) c.avatarRef.legs.update(dt, Math.hypot(c.vx || 0, c.vy || 0) / TILE, false);
+        if (c.avatarRef.legs) c.avatarRef.legs.update(dt, Math.hypot(c.vx || 0, c.vy || 0) / TILE, false, undefined, {
+          combat: c.state === 'chase' || c.state === 'searching' || !!c._banditAction,
+          lunging: !!c._banditLunging,
+          airborne: (c._banditLungeHopCurrent || 0) > 0.03 || !!c._knockbackLedgeAir || !!c._knockbackLedgeFall,
+          directionX: c._banditLungeDirX, directionZ: c._banditLungeDirY,
+        });
         window.ImpactRagdollPlayback?.updateCreature?.(c, dt);
 
         if (c.hitFlashT > 0) c.hitFlashT = Math.max(0, c.hitFlashT - dt);
@@ -9595,6 +9602,7 @@
         ) || { distancePx, hopUnits, pitch: aimPitch, verticalTravelUnits: 0, directFlightStrength: 0 };
         player.lungeDirX = Math.cos(aimYaw);
         player.lungeDirY = Math.sin(aimYaw);
+        playerLegs?.beginLunge?.(player.lungeDirX, player.lungeDirY);
         player.lungeDistancePx = lungeProfile.distancePx;
         player.lungeHopUnits = lungeProfile.hopUnits;
         player.lungeAimPitch = lungeProfile.pitch;
@@ -23626,7 +23634,16 @@
         // (see that module's own update()), which would fight the recorded
         // ragdoll pose instead of stepping aside for it.
         if (window.ImpactRagdollPlayback?.isActive()) window.ImpactRagdollPlayback.update(dt);
-        else playerLegs?.update(dt, speed / TILE, legsSuppressed, seatedPose);
+        else playerLegs?.update(dt, speed / TILE, legsSuppressed, seatedPose, {
+          combat: isPlayerInCombat() || player.lunging,
+          allowSpeedRun: true,
+          lunging: !!player.lunging,
+          airborne: ordinaryLungeHopY > 0.03 || (Number.isFinite(player.lungeFlightWorldY) && player.lungeFlightWorldY > groundedTargetY + 0.03)
+            || !!player._knockbackLedgeAir || !!player._knockbackLedgeFall
+            || (player.climbing && player.climbSurfaceEndY < player.climbSurfaceStartY)
+            || (!player.climbing && !player.onBranch && playerMesh.position.y > groundedTargetY + 0.12),
+          directionX: player.lungeDirX, directionZ: player.lungeDirY,
+        });
       }
 
       // ── Update reticle ────────────────────────────────────────────

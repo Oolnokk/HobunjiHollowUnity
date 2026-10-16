@@ -306,13 +306,13 @@
       publishOrApplyBodyTilt();
     }
 
-    handle.update = function footingDrunkWalkUpdate(dt, speedWorldUnitsPerSecond, suppressed, seatedPose) {
+    handle.update = function footingDrunkWalkUpdate(dt, speedWorldUnitsPerSecond, suppressed, seatedPose, motion) {
       // Remove only the delta we added last frame. The normal procedural,
       // ragdoll, seat, and future foot-pose writers then resolve a clean base
       // quaternion before the current drunk twist is composed exactly once.
       clearPreviousFootTwist();
       clearPreviousBodyTilt();
-      originalUpdate(dt, speedWorldUnitsPerSecond, suppressed, seatedPose);
+      originalUpdate(dt, speedWorldUnitsPerSecond, suppressed, seatedPose, motion);
       applyDrunkenLayer(dt, speedWorldUnitsPerSecond, suppressed, seatedPose);
     };
 

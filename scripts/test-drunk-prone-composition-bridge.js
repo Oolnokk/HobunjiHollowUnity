@@ -16,6 +16,11 @@ class MockRotation {
 
 class MockQuaternion {
   constructor(x = 0, y = 0, z = 0, w = 1) { this.x = x; this.y = y; this.z = z; this.w = w; }
+  set(x, y, z, w) { Object.assign(this, { x, y, z, w }); return this; }
+  multiply(q) {
+    const { x, y, z, w } = this; // Standard quaternion product used to verify the enemy render composition.
+    return this.set(w*q.x+x*q.w+y*q.z-z*q.y, w*q.y-x*q.z+y*q.w+z*q.x, w*q.z+x*q.y-y*q.x+z*q.w, w*q.w-x*q.x-y*q.y-z*q.z);
+  }
   clone() { return new MockQuaternion(this.x, this.y, this.z, this.w); }
   copy(other) { this.x = other.x; this.y = other.y; this.z = other.z; this.w = other.w; return this; }
   identity() { this.x = this.y = this.z = 0; this.w = 1; return this; }
@@ -57,10 +62,12 @@ const player = {
   afflictions: { drunkenFooting: 30 },
 };
 
+let mockedRunLean = 0; // Supplies the canonical solver pitch for player body-composition tests.
 let lastLegUpdate = null;
 let lastAttachOptions = null;
 let composerSet = null;
 let composerCleared = null;
+let renderObserver = null; // Inspects temporary enemy transforms inside the real render hook.
 let baseRenderCount = 0;
 let pendingBanditEntity = null;
 let baseBanditAiCalls = 0;
@@ -80,8 +87,9 @@ const ProceduralLegAnimation = {
     lastAttachOptions = options;
     return {
       group: new MockGroup(),
-      update(dt, speed, suppressed, seatedPose) {
-        lastLegUpdate = { dt, speed, suppressed, seatedPose };
+      getRunLean: () => mockedRunLean,
+      update(dt, speed, suppressed, seatedPose, motion) {
+        lastLegUpdate = { dt, speed, suppressed, seatedPose, motion };
       },
       dispose() {},
     };
@@ -101,6 +109,7 @@ const BanditCombat = {
 function WebGLRenderer() {}
 WebGLRenderer.prototype.render = function baseRender() {
   baseRenderCount++;
+  renderObserver?.();
   return 'rendered';
 };
 
@@ -153,17 +162,8 @@ vm.runInContext(source, context, { filename: modulePath });
   assert.ok(source.includes("portraitFaceCulling: 'material-frontside'"), 'bridge diagnostics expose normal FrontSide culling');
   assert.ok(source.includes('forcedPortraitDoubleSide: false'), 'bridge diagnostics expose that two-sided portrait forcing is disabled');
 
-  // Separate run-gait contract: player speed blends into running, humanoid
-  // hostiles run only while the shared hostile pipeline says they are in the
-  // active chase/combat state, and the run cycle is materially distinct from
-  // the ordinary walk (stance < 0.5 gives a brief flight overlap).
-  assert.match(source, /const RUN_STANCE_FRACTION = 0\.44/, 'run gait keeps a distinct airborne-overlap stance fraction');
-  assert.match(source, /function playerRunBlend\(speedWorldUnitsPerSecond\)/, 'player locomotion has an explicit walk-to-run blend');
-  assert.match(source, /banditState\.entity\?\.state === 'chase'/, 'non-animal hostiles enter run gait only during active chase/combat');
-assert.match(source, /const hoverMode = !!handle\.isHoverMode\?\.\(\)/, 'bandit gait wrapper must detect procedural hover ownership');
-assert.match(source, /effectiveSuppressed \|\| hoverMode/, 'run gait must yield while procedural hover is active');
-  assert.match(source, /legLength \* \(1\.30 \+ 0\.60 \* Math\.sqrt\(speedRatio\)\)/, 'run stride scales directly from measured leg length');
-  assert.match(source, /bendDegX = -\(5 \+ 23 \* pose\.swingWave\)/, 'run gait adds swing-phase knee flex instead of only stretching walk reach');
+  // The bridge must forward motion ownership rather than overwriting solved legs.
+  assert.doesNotMatch(source, /makeRunGaitController/, 'one leg solver owns all movement modes');
   assert.match(source, /debugLegBonesCheckbox/, 'Debug tab exposes the requested Leg Bone Debug checkbox');
   assert.match(source, /Leg Bone Debug/, 'debug checkbox has a player-readable label');
 
@@ -201,8 +201,32 @@ assert.match(source, /effectiveSuppressed \|\| hoverMode/, 'run gait must yield 
   player.prone = false;
   playerLegs.update(0.016, 2.5, false, undefined);
   assert.strictEqual(lastLegUpdate.suppressed, false);
+  const movementContext = { combat: true, airborne: true }; // Must survive the prone bridge unchanged.
+  playerLegs.update(0.016, 2.5, false, undefined, movementContext);
+  assert.strictEqual(lastLegUpdate.motion, movementContext);
   playerLegs.update(0.016, 2.5, true, undefined);
   assert.strictEqual(lastLegUpdate.suppressed, true);
+
+  mockedRunLean = 0.15;
+  playerLegs.update(0.016, 3, false, undefined, { combat: true });
+  assert.strictEqual(composerSet.name, 'run-lean');
+  assert(Math.abs(composerSet.contribution.quaternion.x - Math.sin(mockedRunLean / 2)) < 1e-12);
+  for (let i = 0; i < 8; i++) {
+    const yaw = i * Math.PI / 4; // Covers cardinal and diagonal logical headings relative to a held billboard.
+    playerLegs.group.rotation.y = yaw;
+    mockedRunLean = Math.PI / 6;
+    playerLegs.update(0.016, 4.3, false, undefined, { combat: true });
+    const q = composerSet.contribution.quaternion; // Exact rotated-up vector reveals whether the body leans forward or backward.
+    const upX = -2 * q.w * q.z, upZ = 2 * q.w * q.x, upY = 1 - 2 * (q.x*q.x + q.z*q.z);
+    assert(Math.abs(upX - Math.sin(yaw) * 0.5) < 1e-12);
+    assert(Math.abs(upZ - Math.cos(yaw) * 0.5) < 1e-12);
+    assert(Math.abs(upY - Math.cos(Math.PI / 6)) < 1e-12);
+  }
+  playerLegs.update(0.016, 3, true, undefined, { combat: true });
+  assert.strictEqual(composerCleared, 'run-lean', 'mount/prone suppression removes running lean');
+  playerLegs.dispose();
+  assert.strictEqual(composerCleared, 'run-lean', 'rebuilding the rig clears its run channel');
+  mockedRunLean = 0;
 
   // Bandit body tilt is isolated from the yaw-owning avatar root. The visible
   // front/back portrait pivots move under a child visual root, while the
@@ -253,6 +277,28 @@ assert.match(source, /effectiveSuppressed \|\| hoverMode/, 'run gait must yield 
   assert.strictEqual(banditLossProvider(), 1);
   pendingBanditEntity.footing = 100;
   assert.strictEqual(banditLossProvider(), 0);
+
+  // Enemy lean follows logical facing even when its smoothed body yaw differs.
+  const leanRenderer = new WebGLRenderer(); // Drives the production enemy render hook for all eight headings.
+  const beforeLeanRenderCount = baseRenderCount; // Existing render-count checks below retain their own baseline.
+  mockedRunLean = Math.PI / 6;
+  for (let i = 0; i < 8; i++) {
+    pendingBanditEntity.facing = i * Math.PI / 4;
+    banditBodyRoot.rotation.y = 0.37;
+    renderObserver = () => {
+      const q = visualRoot.quaternion; // Transform tilted local up through the avatar's independent world yaw.
+      const x = -2*q.w*q.z, z = 2*q.w*q.x, yaw = banditBodyRoot.rotation.y;
+      const worldX = Math.cos(yaw)*x + Math.sin(yaw)*z;
+      const worldZ = -Math.sin(yaw)*x + Math.cos(yaw)*z;
+      assert(Math.abs(worldX - Math.cos(pendingBanditEntity.facing)*0.5) < 1e-12);
+      assert(Math.abs(worldZ - Math.sin(pendingBanditEntity.facing)*0.5) < 1e-12);
+    };
+    leanRenderer.render();
+  }
+  renderObserver = null;
+  mockedRunLean = 0;
+  baseRenderCount = beforeLeanRenderCount;
+  pendingBanditEntity.facing = 0.4;
 
   // Prone is a hard motion-ownership boundary. Both leg updates and a direct
   // AI call suppress motion and discard stale knockback/lunge/action state.

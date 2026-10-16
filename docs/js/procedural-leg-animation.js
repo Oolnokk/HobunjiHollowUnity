@@ -749,7 +749,7 @@
   }
 
   const STANCE_FRACTION = 0.62;
-  const STRIDE_REFERENCE_LEG_FRACTION = 0.30; // Converts the old height-tuned stride curve to a leg-length basis while preserving an average authored character's gait.
+  const STRIDE_REFERENCE_LEG_FRACTION = 0.30; // Legacy reference retained in diagnostics; live gait uses measured anatomical leg length directly.
 
   // ── Debug leg-bone visualization ────────────────────────────────────
   // Same colored capsule-and-joint guides the furniture-avatar-author tool
@@ -862,6 +862,11 @@
     const legBend = { left: { x: bendBase.x, z: bendBase.z }, right: { x: -bendBase.x, z: bendBase.z } };
 
     const state = {
+      runLean: 0, // Current forward body pitch consumed by player/enemy render composition.
+      runBlend: 0, // Blends combat running into the existing walking gait.
+      motionMode: 'idle', // Reported by the existing mobile leg diagnostics.
+      lungeActive: false, // Retains planted foot anchors until the lunge finishes.
+      lungeFeet: null, // Allocated once below, reused by grounded lunge footwork.
       phase: 0,
       gaitStrength: 0,
       left: null,
@@ -888,6 +893,67 @@
       hoverStrength: 0, // Damped 0→1 blend prevents feet snapping between planted gait and the airborne pose.
       disposed: false,
     };
+
+    const motionScratch = new THREE.Vector3(); // Reused for world/local foot placement during lunges.
+    const motionDirection = new THREE.Vector3(); // World-space lunge heading, independent of billboard rotation.
+    state.lungeFeet = ['left', 'right'].map(side => ({
+      side, anchor: new THREE.Vector3(), start: new THREE.Vector3(), end: new THREE.Vector3(),
+      stepping: false, progress: 0,
+    })); // Each foot retains its own ground contact and swing trajectory.
+
+    function beginLunge(directionX, directionZ) {
+      root.updateWorldMatrix(true, true);
+      motionDirection.set(Number(directionX) || 0, 0, Number(directionZ) || 0);
+      if (motionDirection.lengthSq() < 0.000001) motionDirection.set(0, 0, 1).transformDirection(root.matrixWorld);
+      motionDirection.normalize();
+      for (const foot of state.lungeFeet) {
+        if (state[foot.side]?.getWorldPosition) state[foot.side].getWorldPosition(foot.anchor);
+        else root.localToWorld(foot.anchor.copy(state[`${foot.side}Target`]));
+        foot.stepping = false;
+        foot.progress = 0;
+      }
+      // The foot already farther along the travel direction becomes the lead foot.
+      const left = state.lungeFeet[0], right = state.lungeFeet[1]; // Compared in world space even while strafing or turning.
+      state.lungeLead = left.anchor.dot(motionDirection) >= right.anchor.dot(motionDirection) ? left : right;
+      state.lungeActive = true;
+    }
+
+    function applyLungeFootwork(dt) {
+      root.updateWorldMatrix(true, false);
+      const length = standingLegLength(); // Sets reach, step height, and recovery thresholds from anatomy.
+      for (const foot of state.lungeFeet) {
+        const side = foot.side, idleX = side === 'left' ? state.idleLeftX : state.idleRightX; // Keeps each foot on its own side.
+        const contactY = side === 'left' ? state.leftContactY : state.rightContactY; // Retains the authored sole height.
+        motionScratch.copy(foot.anchor);
+        root.worldToLocal(motionScratch);
+        const otherFoot = state.lungeFeet[foot === state.lungeFeet[0] ? 1 : 0]; // Ensures one supporting foot stays planted during a grounded lunge.
+        if (!foot.stepping && !otherFoot.stepping && (foot === state.lungeLead || Math.hypot(motionScratch.x - idleX, motionScratch.z) > length * 0.65)) {
+          foot.start.copy(foot.anchor);
+          foot.end.set(idleX, contactY, 0);
+          root.localToWorld(foot.end).addScaledVector(motionDirection, length * 0.55);
+          foot.stepping = true;
+          foot.progress = 0;
+          if (foot === state.lungeLead) state.lungeLead = null;
+        }
+        if (!foot.stepping) {
+          motionScratch.set(idleX, contactY, 0);
+          root.localToWorld(motionScratch);
+          foot.anchor.y = damp(foot.anchor.y, motionScratch.y, 18, dt); // Plants an initially swinging support foot instead of leaving it hovering throughout the lunge.
+        }
+        if (foot.stepping) {
+          foot.progress = Math.min(1, foot.progress + dt / 0.16);
+          const t = foot.progress, eased = t * t * (3 - 2 * t); // Smooth toe-off and landing without teleporting the starting foot.
+          foot.anchor.copy(foot.start).lerp(foot.end, eased);
+          foot.anchor.y += Math.sin(t * Math.PI) * length * 0.22;
+          if (t >= 1) foot.stepping = false;
+        }
+        motionScratch.copy(foot.anchor);
+        root.worldToLocal(motionScratch);
+        state[`${side}Target`].copy(motionScratch);
+        state[`${side}Roll`] = foot.stepping ? -Math.sin(foot.progress * Math.PI) * 0.22 : 0;
+        applyLegChain(side);
+      }
+    }
 
     // Keeps a leg's hip anchor's X pinned to its own idle stance X (the torso
     // scan below can correct idleLeftX/idleRightX after this leg's hip was
@@ -929,7 +995,7 @@
       const bend = legBend[side];
       const solved = window.LegBones.solveTwoBoneLeg(THREE, {
         hip: chain.hip.position, foot: target, bendDegX: bend.x, bendDegZ: bend.z,
-        foldMaxLength: state.gaitStrideLength > 0.001 ? (standingLegLength() + Math.hypot(standingLegLength(), state.gaitStrideLength * 0.5)) * 0.5 : 0, // Legs just straighten (and slightly extend) at the extremes of a stride; the knees fold forward in between.
+        foldMaxLength: state.lungeActive ? standingLegLength() : state.gaitStrideLength > 0.001 ? (standingLegLength() + Math.hypot(standingLegLength(), state.gaitStrideLength * 0.5)) * 0.5 : 0, // Legs just straighten (and slightly extend) at the extremes of a stride; the knees fold forward in between.
       });
       chain.thigh.quaternion.copy(solved.thighQuaternion);
       chain.calf.position.set(0, -solved.thighLength, 0);
@@ -1211,13 +1277,14 @@
       const bendDegX = -31 - Math.sin(sidePhase * 0.82) * 7; // Forward knee flex makes the lower legs visibly dangle instead of telescoping upward.
       const bendDegZ = (side === 'left' ? -1 : 1) * (6 + Math.sin(sidePhase * 0.67) * 3); // Mild mirrored outward splay reads naturally while airborne.
       const solved = window.LegBones.solveTwoBoneLeg(THREE, {
-        hip: chain.hip.position, foot: target, bendDegX, bendDegZ,
+        hip: chain.hip.position, foot: target, bendDegX, bendDegZ, foldMaxLength: legLength,
       });
       const blend = Math.max(0, Math.min(1, state.hoverStrength)); // Smoothly mixes into the solved hover pose after mode changes.
       chain.thigh.quaternion.slerp(solved.thighQuaternion, blend);
       chain.calf.position.y = damp(chain.calf.position.y, -solved.thighLength, 12, dt);
       chain.calf.quaternion.slerp(solved.calfLocalQuaternion, blend);
       mesh.position.y = damp(mesh.position.y, -solved.calfLength, 12, dt);
+      chain.calf.userData.hobunjiCalfLength = solved.calfLength; // Keeps rigged pants attached during falls and hovering.
       state[`${side}Roll`] = damp(state[`${side}Roll`], (side === 'left' ? -1 : 1) * Math.sin(sidePhase) * 0.12, 6, dt);
       mesh.rotation.x = state[`${side}Roll`];
       applyBoneGuideTransforms(chain, solved.thighLength, solved.calfLength);
@@ -1231,9 +1298,13 @@
       return !!state.hoverEnabled;
     }
 
-    function update(dt, speedWorldUnitsPerSecond, suppressed, seatedPose) {
+    function update(dt, speedWorldUnitsPerSecond, suppressed, seatedPose, motion) {
+      dt = Number.isFinite(dt) ? Math.max(0, Math.min(0.1, dt)) : 0; // Bounds animation integration after backgrounding or invalid inputs.
+      if (!motion?.lunging || motion?.airborne || suppressed || seatedPose) state.lungeActive = false;
       if (state.disposed) return;
+      state.runLean = 0; // Attack footwork, airborne, seated, and suppressed modes own their body pose.
       if (seatedPose) {
+        state.motionMode = 'seated';
         state.gaitStrength = damp(state.gaitStrength, 0, 12, dt);
         state.gaitStrideLength = 0;
         state.gaitCadenceHz = 0;
@@ -1254,6 +1325,7 @@
       legChains.left.thigh.position.set(0, 0, 0);
       legChains.right.thigh.position.set(0, 0, 0);
       if (suppressed) {
+        state.motionMode = 'suppressed';
         // Explicit suppression (prone/death/mount/harvest) outranks hover, so airborne actors can still be physically brought down.
         state.gaitStrength = damp(state.gaitStrength, 0, 12, dt);
         state.gaitStrideLength = 0;
@@ -1265,7 +1337,8 @@
         applyPose('right', state.rightContactY, state.idleRightX, neutralPose, 11, dt);
         return;
       }
-      if (state.hoverEnabled) {
+      if (state.hoverEnabled || motion?.airborne) {
+        state.motionMode = state.hoverEnabled ? 'hover' : 'airborne';
         state.gaitStrength = damp(state.gaitStrength, 0, 12, dt); // Walking stride yields completely while airborne.
         state.gaitStrideLength = 0;
         state.gaitCadenceHz = 0;
@@ -1276,8 +1349,17 @@
         applyHoverPose('right', dt);
         return;
       }
+      if (motion?.lunging) {
+        if (!state.lungeActive) beginLunge(motion.directionX, motion.directionZ);
+        state.motionMode = 'lunge';
+        state.gaitStrideLength = 0;
+        state.gaitCadenceHz = 0;
+        state.wasGaiting = false;
+        applyLungeFootwork(dt);
+        return;
+      }
       state.hoverStrength = damp(state.hoverStrength, 0, 10, dt); // Normal locomotion regains ownership smoothly after hover ends.
-      const speed = Math.max(0, Number(speedWorldUnitsPerSecond) || 0);
+      const speed = Number.isFinite(speedWorldUnitsPerSecond) ? Math.max(0, speedWorldUnitsPerSecond) : 0;
       const isGaiting = speed > 0.02; // Used here to detect the exact moving-to-stopped edge and clear the final stride pose without a multi-second damping tail.
       if (!isGaiting && state.wasGaiting) {
         state.gaitStrength = 0;
@@ -1285,6 +1367,7 @@
         placeIdleTarget('left', state.leftContactY);
         placeIdleTarget('right', state.rightContactY);
       }
+      if (!isGaiting) state.gaitStrength = 0; // Clears residual lunge/airborne effort even if the last ordinary gait frame was moving.
       state.wasGaiting = isGaiting;
       const referenceSpeed = Number(c.referenceSpeedWorldUnitsPerSecond) || 4.3;
       const speedRatio = Math.max(0, Math.min(1.25, speed / Math.max(0.1, referenceSpeed)));
@@ -1292,21 +1375,26 @@
       state.gaitStrength = damp(state.gaitStrength, gaitTarget, gaitTarget > state.gaitStrength ? 8 : 12, dt);
 
       const gaitLegLength = standingLegLength(); // Used as the stride reach basis so species proportions, not total sprite height, determine step length.
-      const strideCurve = 0.32 + 0.44 * Math.sqrt(speedRatio); // Long, confident steps (about 1.3x the original curve); cadence drops to keep ground speed.
-      const fullStride = (gaitLegLength / STRIDE_REFERENCE_LEG_FRACTION) * strideCurve;
+      const requestedRun = motion?.combat ? 1 : motion?.allowSpeedRun ? smoothstep01((speedRatio - 0.42) / 0.28) : 0; // Preserves full-speed player running outside combat.
+      state.runBlend = damp(state.runBlend, isGaiting ? requestedRun : 0, 9, dt);
+      state.motionMode = isGaiting ? (requestedRun > 0.5 ? 'run' : 'walk') : 'idle';
+      state.runLean = isGaiting ? 30 * Math.PI / 180 * state.runBlend * Math.min(1, Math.sqrt(speedRatio)) || 0 : 0; // Up to thirty degrees toward local +Z, blended with running effort.
+      const stanceFraction = STANCE_FRACTION + (0.38 - STANCE_FRACTION) * state.runBlend; // Running includes a flight interval between alternating contacts.
+      const strideCurve = 0.85 + 0.45 * Math.sqrt(speedRatio); // Walking reach stays proportional to leg anatomy instead of stretching the bones to sprite-height strides.
+      const fullStride = gaitLegLength * strideCurve * (1 + state.runBlend * 0.5);
       const strideLength = fullStride * state.gaitStrength;
       const cadenceHz = isGaiting && fullStride > 0.001
-        ? Math.max(0.55, Math.min(3.2, (speed * STANCE_FRACTION) / fullStride))
+        ? Math.max(0.55, Math.min(3.2, (speed * stanceFraction) / Math.max(0.001, strideLength)))
         : 0;
       state.gaitLegLength = gaitLegLength;
       state.gaitFullStride = fullStride;
       state.gaitStrideLength = strideLength;
       state.gaitCadenceHz = cadenceHz;
-      const liftHeight = (radius * (0.35 + 1.35 * Math.sqrt(speedRatio)) + modelHeight * 0.012 * speedRatio) * state.gaitStrength;
+      const liftHeight = (radius * (0.35 + 1.35 * Math.sqrt(speedRatio)) + modelHeight * 0.012 * speedRatio) * state.gaitStrength + gaitLegLength * 0.38 * state.runBlend * state.gaitStrength;
       if (cadenceHz > 0.001) state.phase = (state.phase + dt * cadenceHz) % 1;
 
-      const leftPose = stridePoseAtPhase(state.phase, strideLength, liftHeight, STANCE_FRACTION);
-      const rightPose = stridePoseAtPhase(state.phase + 0.5, strideLength, liftHeight, STANCE_FRACTION);
+      const leftPose = stridePoseAtPhase(state.phase, strideLength, liftHeight, stanceFraction);
+      const rightPose = stridePoseAtPhase(state.phase + 0.5, strideLength, liftHeight, stanceFraction);
       const response = isGaiting ? 18 + cadenceHz * 3 : 11;
       applyPose('left', state.leftContactY, state.idleLeftX, leftPose, response, dt);
       applyPose('right', state.rightContactY, state.idleRightX, rightPose, response, dt);
@@ -1339,6 +1427,9 @@
       const rightBounds = footBoundsInRoot(state.right);
       const currentLegLength = standingLegLength(); // Shown in mobile-facing diagnostics so stride scaling can be verified without a console.
       return {
+        lastChange: 'Combat run, planted lunge steps, and airborne dangling',
+        motionMode: state.motionMode,
+        lungeLead: state.lungeLead?.side || null,
         coordinateSpace: 'avatar-floor-relative',
         floorY: 0,
         posteriorY,
@@ -1348,6 +1439,8 @@
           phase: state.hoverPhase,
         },
         gait: {
+          runLeanDegrees: state.runLean * 180 / Math.PI,
+          runBlend: state.runBlend,
           legLength: currentLegLength,
           legLengthFractionOfModel: currentLegLength / Math.max(0.001, modelHeight),
           fullStride: state.gaitFullStride,
@@ -1355,8 +1448,8 @@
           cadenceHz: state.gaitCadenceHz,
           referenceLegFraction: STRIDE_REFERENCE_LEG_FRACTION,
         },
-        left: { targetY: state.leftTarget.y, contactY: state.leftContactY, bottomY: leftBounds?.min.y ?? null },
-        right: { targetY: state.rightTarget.y, contactY: state.rightContactY, bottomY: rightBounds?.min.y ?? null },
+        left: { targetX: state.leftTarget.x, targetZ: state.leftTarget.z, targetY: state.leftTarget.y, contactY: state.leftContactY, bottomY: leftBounds?.min.y ?? null },
+        right: { targetX: state.rightTarget.x, targetZ: state.rightTarget.z, targetY: state.rightTarget.y, contactY: state.rightContactY, bottomY: rightBounds?.min.y ?? null },
       }; // Gives mobile-facing author diagnostics the rendered geometry bottoms instead of asking the user to infer the floor from camera perspective.
     }
 
@@ -1387,7 +1480,8 @@
     }
 
     return {
-      group: root, update, dispose, applyRecordedLegPose, getStandingPoseDebug,
+      group: root, update, dispose, applyRecordedLegPose, getStandingPoseDebug, beginLunge,
+      getRunLean: () => state.runLean, // Allocation-free body-composition input independent of debug mesh scans.
       // The legs' standing stance (hip and idle-foot positions, group-local), independent of whatever pose they are in right now:
       // the Pants garment binds to this so it fits the same whether the avatar is seated, mid-stride or just spawned.
       getRestStance: () => {

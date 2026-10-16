@@ -950,6 +950,7 @@
     c._banditLungeStartY = c.y;
     c._banditLungeDirX = Math.cos(c.facing || 0);
     c._banditLungeDirY = Math.sin(c.facing || 0);
+    c.avatarRef?.legs?.beginLunge?.(c._banditLungeDirX, c._banditLungeDirY);
     c._banditLungeDistancePx = distancePx;
     c._banditLungeHopUnits = lungeProfile.hopUnits;
     c._banditLungeHopCurrent = 0;
