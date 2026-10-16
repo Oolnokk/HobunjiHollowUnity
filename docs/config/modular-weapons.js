@@ -217,7 +217,9 @@ window.MODULAR_WEAPON_CONFIG = {
           "x": 7,
           "y": 15
         },
-        "pickshovel-scoop": {},
+        "pickshovel-scoop": {
+          "disallow": true
+        },
         "work-hammer": {
           "scaleX": 0.435,
           "scaleY": 2.2,
@@ -238,8 +240,9 @@ window.MODULAR_WEAPON_CONFIG = {
         "porakaneki-greatclub": {
           "scaleX": 0.8,
           "scaleY": 0.45,
-          "y": -67,
-          "rotation": -2
+          "x": 5,
+          "y": -20,
+          "rotation": 0
         },
         "dagger": {
           "disallow": true
@@ -251,6 +254,18 @@ window.MODULAR_WEAPON_CONFIG = {
           "disallow": true
         },
         "harlyao-longsword": {
+          "disallow": true
+        },
+        "pick-shovel-pick": {
+          "disallow": true
+        },
+        "kylie": {
+          "disallow": true
+        },
+        "hoe": {
+          "disallow": true
+        },
+        "fishing-spear": {
           "disallow": true
         }
       }
@@ -278,36 +293,70 @@ window.MODULAR_WEAPON_CONFIG = {
       },
       "overrides": {
         "dagger-sword": {
-          "scaleY": 0.464
+          "scaleY": 0.464,
+          "animation": "thrust",
+          "disallow": true
         },
         "dagger": {
-          "scaleY": 0.625
+          "scaleY": 0.625,
+          "animation": "thrust"
         },
         "fishing-spear": {
           "scaleX": 0.85,
           "scaleY": 1.7,
-          "y": 65
+          "y": -10
         },
         "harlyao-broadsword": {
-          "scaleY": 0.595
+          "scaleX": 1.25,
+          "scaleY": 1.05,
+          "y": -15
         },
         "harlyao-longsword": {
-          "scaleY": 0.6
+          "scaleX": 1.1,
+          "scaleY": 1.15,
+          "y": 15,
+          "rotation": 1
         },
         "hatchet": {
-          "scaleY": 0.866
+          "scaleY": 0.866,
+          "disallow": true
         },
         "pickshovel-scoop": {
-          "scaleY": 0.927
+          "scaleX": 0.5,
+          "scaleY": 2,
+          "y": -30
         },
         "plains-blade": {
           "scaleY": 0.7
         },
         "porakaneki-greatclub": {
-          "scaleY": 0.523
+          "scaleY": 0.523,
+          "disallow": true
         },
         "war-cleaver": {
-          "scaleY": 0.669
+          "scaleX": 1,
+          "scaleY": 1,
+          "x": 20
+        },
+        "fishing-mace": {
+          "disallow": true
+        },
+        "pick-shovel-pick": {
+          "scaleX": 0.9,
+          "scaleY": 1.5,
+          "flipY": true,
+          "x": 5,
+          "y": -15,
+          "rotation": 3
+        },
+        "warhammer": {
+          "disallow": true
+        },
+        "hoe": {
+          "disallow": true
+        },
+        "work-hammer": {
+          "disallow": true
         }
       },
       "maxAttachments": 1
@@ -335,14 +384,19 @@ window.MODULAR_WEAPON_CONFIG = {
       },
       "overrides": {
         "dagger-sword": {
-          "scaleY": 0.841
+          "scaleX": 1,
+          "scaleY": 1,
+          "x": -5,
+          "y": 30
         },
         "plains-blade": {
           "scaleY": 0.55,
-          "y": 0
+          "y": 0,
+          "animation": "sweep"
         },
         "porakaneki-greatclub": {
-          "scaleY": 0.947
+          "scaleY": 0.947,
+          "disallow": true
         },
         "pick-shovel-pick": {
           "scaleX": 1.1,
@@ -385,6 +439,19 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "work-hammer": {
           "disallow": true
+        },
+        "fishing-mace": {
+          "disallow": true
+        },
+        "hoe": {
+          "disallow": true
+        },
+        "fishing-spear": {
+          "scaleY": 1.25,
+          "y": 0
+        },
+        "dagger": {
+          "disallow": true
         }
       }
     },
@@ -419,7 +486,7 @@ window.MODULAR_WEAPON_CONFIG = {
           "rotation": -90
         },
         "fishing-spear": {
-          "scaleX": 1.5
+          "scaleX": 1.25
         },
         "harlyao-broadsword": {
           "scaleX": 1.05,
@@ -456,6 +523,9 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "work-hammer": {
           "y": 30
+        },
+        "fishing-mace": {
+          "disallow": true
         }
       }
     },
@@ -485,8 +555,8 @@ window.MODULAR_WEAPON_CONFIG = {
           "scaleY": 0.5
         },
         "harlyao-longsword": {
-          "scaleX": 0.9,
-          "scaleY": 0.85
+          "scaleX": 1.1,
+          "scaleY": 1
         },
         "hatchet": {
           "scaleX": 0.85,
@@ -514,6 +584,43 @@ window.MODULAR_WEAPON_CONFIG = {
           "rotation": 0,
           "animation": "sweep",
           "disallow": false
+        },
+        "porakaneki-greatclub": {
+          "scaleX": 0.9,
+          "scaleY": 0.75,
+          "x": 3,
+          "y": 220,
+          "animation": "sweep"
+        },
+        "pick-shovel-pick": {
+          "scaleX": 1,
+          "scaleY": 1.2,
+          "flipY": true,
+          "x": 10
+        },
+        "pickshovel-scoop": {
+          "scaleX": 0.8,
+          "animation": "sweep"
+        },
+        "hoe": {
+          "animation": "sweep",
+          "disallow": true
+        },
+        "kylie": {
+          "scaleX": 1,
+          "x": 1,
+          "y": 50,
+          "animation": "sweep"
+        },
+        "fishing-mace": {
+          "scaleX": 0.95,
+          "scaleY": 1.55,
+          "x": 0,
+          "y": 170,
+          "animation": "sweep"
+        },
+        "fishing-spear": {
+          "disallow": true
         }
       }
     },
@@ -543,15 +650,60 @@ window.MODULAR_WEAPON_CONFIG = {
           "scaleY": 0.787
         },
         "plains-blade": {
-          "scaleY": 0.678
+          "scaleY": 0.65,
+          "x": -3,
+          "y": 0
         },
         "porakaneki-greatclub": {
-          "scaleY": 0.886
+          "scaleX": 1.15,
+          "scaleY": 0.875,
+          "x": -5,
+          "y": 270
         },
         "fishing-spear": {
           "scaleX": 0.9,
           "scaleY": 1.5,
           "y": 0
+        },
+        "pickshovel-scoop": {
+          "disallow": true
+        },
+        "war-cleaver": {
+          "scaleX": 1,
+          "scaleY": 2,
+          "x": 30,
+          "y": 45
+        },
+        "hatchet": {
+          "disallow": true
+        },
+        "warhammer": {
+          "disallow": true
+        },
+        "pick-shovel-pick": {
+          "scaleX": 1,
+          "scaleY": 2,
+          "flipY": true,
+          "x": 5,
+          "y": 10
+        },
+        "hoe": {
+          "disallow": true
+        },
+        "work-hammer": {
+          "disallow": true
+        },
+        "kylie": {
+          "scaleX": 0.75,
+          "scaleY": 1.5,
+          "x": -5,
+          "y": 40
+        },
+        "fishing-mace": {
+          "disallow": true
+        },
+        "harlyao-broadsword": {
+          "disallow": true
         }
       }
     },
@@ -581,14 +733,57 @@ window.MODULAR_WEAPON_CONFIG = {
           "scaleY": 0.8657
         },
         "plains-blade": {
-          "scaleY": 0.7458
+          "scaleY": 0.75,
+          "x": -6,
+          "y": 20
         },
         "porakaneki-greatclub": {
-          "scaleY": 0.9746
+          "scaleX": 0.8,
+          "scaleY": 1,
+          "x": -7,
+          "y": 330
         },
         "fishing-spear": {
-          "scaleY": 1.5,
-          "y": 15
+          "scaleY": 2,
+          "y": 10
+        },
+        "fishing-mace": {
+          "disallow": true
+        },
+        "pickshovel-scoop": {
+          "disallow": true
+        },
+        "hoe": {
+          "disallow": true
+        },
+        "warhammer": {
+          "disallow": true
+        },
+        "kylie": {
+          "scaleX": 0.8,
+          "scaleY": 1.6,
+          "x": -7,
+          "y": 55
+        },
+        "war-cleaver": {
+          "scaleX": 1,
+          "scaleY": 2.5,
+          "x": 20,
+          "y": 70
+        },
+        "pick-shovel-pick": {
+          "scaleY": 2.2,
+          "flipY": true,
+          "y": 20
+        },
+        "work-hammer": {
+          "disallow": true
+        },
+        "hatchet": {
+          "disallow": true
+        },
+        "harlyao-longsword": {
+          "disallow": true
         }
       }
     },
@@ -615,11 +810,54 @@ window.MODULAR_WEAPON_CONFIG = {
       },
       "overrides": {
         "plains-blade": {
-          "scaleY": 0.456
+          "scaleY": 0.456,
+          "disallow": true
         },
         "hatchet": {
           "scaleY": 1.2,
           "x": 15
+        },
+        "harlyao-broadsword": {
+          "disallow": true
+        },
+        "fishing-spear": {
+          "disallow": true
+        },
+        "fishing-mace": {
+          "disallow": true
+        },
+        "dagger": {
+          "disallow": true
+        },
+        "pick-shovel-pick": {
+          "disallow": true
+        },
+        "hoe": {
+          "disallow": true
+        },
+        "harlyao-longsword": {
+          "disallow": true
+        },
+        "pickshovel-scoop": {
+          "disallow": true
+        },
+        "dagger-sword": {
+          "disallow": true
+        },
+        "work-hammer": {
+          "disallow": true
+        },
+        "porakaneki-greatclub": {
+          "disallow": true
+        },
+        "kylie": {
+          "disallow": true
+        },
+        "warhammer": {
+          "disallow": true
+        },
+        "war-cleaver": {
+          "disallow": true
         }
       }
     },
@@ -651,11 +889,8 @@ window.MODULAR_WEAPON_CONFIG = {
           "y": 5
         },
         "plains-blade": {
-          "scaleX": 1.1,
-          "scaleY": 0.35,
-          "x": -65,
-          "y": -30,
-          "rotation": -90
+          "scaleX": 1.2,
+          "scaleY": 0.75
         },
         "porakaneki-greatclub": {
           "scaleX": 1.5,
@@ -668,10 +903,10 @@ window.MODULAR_WEAPON_CONFIG = {
           "x": 20
         },
         "dagger": {
-          "scaleX": 0.7,
-          "scaleY": 0.6,
-          "x": 35,
-          "y": -15,
+          "scaleX": 0.9,
+          "scaleY": 0.75,
+          "x": 40,
+          "y": -90,
           "rotation": -90
         },
         "pickshovel-scoop": {
@@ -697,17 +932,10 @@ window.MODULAR_WEAPON_CONFIG = {
           "rotation": -90
         },
         "harlyao-broadsword": {
-          "scaleX": 1.05,
-          "scaleY": 0.5,
-          "x": 35,
-          "y": -40,
-          "rotation": -90
-        },
-        "harlyao-longsword": {
-          "scaleX": 1.05,
-          "scaleY": 0.5,
-          "x": 40,
-          "y": -35,
+          "scaleX": 1.35,
+          "scaleY": 0.8,
+          "x": 25,
+          "y": -100,
           "rotation": -90
         },
         "hoe": {
@@ -722,6 +950,9 @@ window.MODULAR_WEAPON_CONFIG = {
           "x": 40,
           "y": -75,
           "rotation": -90
+        },
+        "warhammer": {
+          "disallow": true
         }
       }
     }

@@ -2,7 +2,7 @@
 (function (global) {
   'use strict';
   const SCHEMA = 'hobunji_modular_weapons.v1'; // Validated editor import format.
-  const DRAFT_KEY = 'hobunji.modularWeapons.v2'; // New calibration/rules baseline; the old draft remains stored separately.
+  const DRAFT_KEY = 'hobunji.modularWeapons.v3'; // Uploaded calibration and original-pair restrictions; older drafts remain stored separately.
   const transforms = ['scaleX', 'scaleY', 'flipX', 'flipY', 'x', 'y', 'rotation']; // Inheritable head placement fields.
   const images = new Map(); // CORS image promises reused across combinations.
   const alphaBounds = new WeakMap(); // Each source bitmap is scanned once when finding visible composition bounds.
