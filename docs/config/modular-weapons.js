@@ -386,6 +386,29 @@ window.MODULAR_WEAPON_CONFIG = {
         }
       }
     },
+    "fishing-mace": {
+      "label": "Fishing Mace",
+      "sourceShape": "fishingmace",
+      "sprite": "assets/toolsprites/modular_pieces/weaponshaft_fishing_mace.png",
+      "attachments": [
+        {
+          "x": 185,
+          "y": 974,
+          "rotation": 0
+        }
+      ],
+      "defaults": {
+        "scaleX": 1,
+        "scaleY": 1,
+        "flipX": false,
+        "flipY": false,
+        "x": 0,
+        "y": 0,
+        "rotation": 0,
+        "animation": "sweep"
+      },
+      "overrides": {}
+    },
     "fishing-spear": {
       "label": "Fishing Spear",
       "sourceShape": "fishingspear",
