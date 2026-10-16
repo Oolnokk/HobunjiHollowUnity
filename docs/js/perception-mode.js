@@ -472,10 +472,13 @@
       const w = maskRT.width, h = maskRT.height;
       const px = new Uint8Array(w * h * 4);
       lastRenderer.readRenderTargetPixels(maskRT, 0, 0, w, h, px);
-      const out = { width: w, height: h, covered: 0, byColor: {} };
+      const out = { width: w, height: h, covered: 0, byColor: {}, bbox: null };
       for (let i = 0; i < px.length; i += 4) {
         if (px[i + 3] < 128) continue;
         out.covered++;
+        const x = (i / 4) % w, y = h - 1 - Math.floor(i / 4 / w); // Top-left origin, mask texels (half the canvas resolution).
+        const bb = out.bbox || (out.bbox = { x0: x, y0: y, x1: x, y1: y });
+        bb.x0 = Math.min(bb.x0, x); bb.y0 = Math.min(bb.y0, y); bb.x1 = Math.max(bb.x1, x); bb.y1 = Math.max(bb.y1, y);
         const key = `${px[i]},${px[i + 1]},${px[i + 2]}`;
         out.byColor[key] = (out.byColor[key] || 0) + 1;
       }
