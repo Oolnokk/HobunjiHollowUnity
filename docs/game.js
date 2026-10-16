@@ -22896,7 +22896,10 @@
           const pitchRad   = THREE.MathUtils.degToRad(chan('pitch'));
           const yawRad     = THREE.MathUtils.degToRad(chan('yaw', true));
           const rollRad    = THREE.MathUtils.degToRad(chan('roll', true));
-          const bodyYawRad = THREE.MathUtils.degToRad(chan('bodyYaw', true));
+          // Fishing holds this throw's windup indefinitely; its authored -152°
+          // body twist would leave the player facing away from the cast tile.
+          const bodyYawRad = activeTool === 'harpoon' && fishingThrowSpinVisual
+            ? 0 : THREE.MathUtils.degToRad(chan('bodyYaw', true)); // Combat throws retain their authored body turn.
 
           // Ranged throws/fire author motion relative to the reticle frame,
           // not the player's stale ground-facing frame. BodyYaw remains an
@@ -23430,6 +23433,15 @@
         // the camera, and this recompute runs every frame regardless of fishing state, so
         // without the guard it fought that and spun the character back around immediately.
         if (window.Fishing?.state?.phase === 'caught') {
+          playerMesh.rotation.y = playerFacing;
+          if (playerLegs?.group) playerLegs.group.rotation.y = 0;
+        } else if (window.Fishing?.state?.active && window.Fishing.state.anchorWorld) {
+          const castTarget = window.Fishing.state.anchorWorld; // Keeps the body aimed at the same tile as the fishing weapon and head, including between throws.
+          const castDx = castTarget.x - playerMesh.position.x; // World X direction for fishing's exact body yaw.
+          const castDz = castTarget.z - playerMesh.position.z; // World Z direction for fishing's exact body yaw.
+          if (Number.isFinite(castDx) && Number.isFinite(castDz) && Math.hypot(castDx, castDz) > 1e-8) {
+            playerFacing = Math.atan2(castDx, castDz);
+          }
           playerMesh.rotation.y = playerFacing;
           if (playerLegs?.group) playerLegs.group.rotation.y = 0;
         } else if (characterViewMode.enabled) {
