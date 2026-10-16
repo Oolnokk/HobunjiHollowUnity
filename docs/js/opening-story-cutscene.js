@@ -613,5 +613,54 @@
     stateKey,
     tourKey, needsTempleArrival, canEnterWilderness, onFarmEntered, buildFarmTourScene,
   });
-  window.DevCompanion?.registerStateProvider('openingStory', () => window.OpeningStoryCutscene.debugSnapshot()); // Mobile companion exposes visit countdown, progress, latest change and setup errors without a console.
+  function storyVisitPanel() {
+    const profile = window.__hobunjiPlayerProfile; // Supplies owner eligibility for the companion's read-only story panel.
+    const story = window.OpeningStoryCutscene.debugSnapshot(); // Reuses the same progress and countdown sent to companion diagnostics.
+    const doorstep = window.DoorstepVisits?.debugSnapshot?.(); // Adds visitor runtime readiness and the most recent spawn failure.
+    const fey = story.jubmirFey; // Shared persisted countdown/completion, with no timer writes from rendering.
+    const registered = doorstep?.providers?.includes(FEY_VISIT_KEY); // Detects a missed provider registration without changing the queue.
+    let reason = 'Ready — exit the farmhouse to request the visit.'; // Human-readable eligibility summary shown above the raw progress rows.
+    if (!profile) reason = 'Waiting for a player profile.';
+    else if (profile.isWorldOwner !== true) reason = 'Only the world owner receives this story visit.';
+    else if (!story.farmTourComplete) reason = 'Spearhead’s farm tour is not marked complete.';
+    else if (fey.completed) reason = 'Jubmir’s inn conversation is complete.';
+    else if (story.running) reason = 'An opening-story cutscene is running.';
+    else if (!window.CalendarSystem?.isInitialized?.()) reason = 'Waiting for the game clock.';
+    else if (fey.hoursUntilVisit === null) reason = 'The farm-tour timestamp is missing or invalid; waiting for visit synchronization.';
+    else if (fey.hoursUntilVisit > 0) reason = 'Waiting for the 12-hour delay.';
+    else if (!doorstep) reason = 'Doorstep runtime is unavailable.';
+    else if (!registered) reason = 'Jubmir’s story visit provider is not registered.';
+    else if (doorstep.activeVisitKey === FEY_VISIT_KEY) reason = 'Jubmir’s story visitor is active at the farmhouse.';
+    else if (doorstep.activeVisitKey) reason = 'Another doorstep visitor is active: ' + doorstep.activeVisitKey;
+    else if (!window.DoorstepVisits.sourceWalker('jubmir')) reason = 'Jubmir’s source NPC is unavailable; the visitor cannot be cloned.';
+    return {
+      summary: reason,
+      rows: [
+        ['World owner', profile?.isWorldOwner === true ? 'Yes' : 'No'],
+        ['farmTourComplete', story.farmTourComplete ? 'Yes' : 'No'],
+        ['Jubmir conversation complete', fey.completed ? 'Yes' : 'No'],
+        ['Hours until visit', fey.hoursUntilVisit === null ? 'Unavailable' : Math.ceil(fey.hoursUntilVisit * 100) / 100],
+        ['Farm tour completed at (world hours)', fey.farmTourCompletedAtHours ?? 'Unavailable'],
+        ['Story phase', story.phase],
+        ['Story running', story.running ? 'Yes' : 'No'],
+        ['Story visit provider registered', registered ? 'Yes' : 'No'],
+        ['Current area', doorstep?.currentArea || 'Unavailable'],
+        ['Active visit', doorstep?.activeVisitKey || 'None'],
+        ['Registered visit providers', doorstep?.providers?.join(', ') || 'None'],
+        ['Jubmir source NPC available', window.DoorstepVisits?.sourceWalker?.('jubmir') ? 'Yes' : 'No'],
+        ['Farmhouse entrances', doorstep ? window.DoorstepVisits.exitDoorCandidates().length : 'Unavailable'],
+        ['Last spawn attempt', doorstep?.lastSpawnAttempt ? `${doorstep.lastSpawnAttempt.key || 'Unknown'}: ${doorstep.lastSpawnAttempt.reason}` : 'None this session'],
+        ['Last story error', story.lastError || 'None'],
+        ['Latest change', 'Added visible opening-story progress, Jubmir countdown and doorstep spawn diagnostics.'],
+      ],
+      note: 'Read-only diagnostics. After the countdown reaches zero, enter and exit the farmhouse. The visit stays pending until the inn conversation finishes. Last spawn attempt describes a past attempt, not necessarily the current blocker.',
+    };
+  }
+
+  window.DevCompanion?.registerStateProvider('openingStory', () => window.OpeningStoryCutscene.debugSnapshot());
+  window.DevCompanion?.registerPanel({
+    id: 'opening-story-doorstep', title: 'Opening Story / Doorstep Visits', order: 21,
+    when: () => window.__hobunjiGameStarted === true,
+    render: storyVisitPanel,
+  });
 })();

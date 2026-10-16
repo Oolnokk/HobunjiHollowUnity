@@ -43,6 +43,7 @@
   let scheduleDeps = null; // NpcScheduling adapters; authoritative live npcWalkers array.
   let runtimeDeps = null; // BanditCombat adapters; active scene/grid/player-face helpers already supplied by game.js.
   let gameDeps = null; // DoorstepVisits.init({ save, getPlayerTile }) from game.js.
+  let lastSpawnAttempt = null; // Companion diagnostics retain the last attempted visit and any concrete spawn blocker.
   let activeVisit = null; // One visitor at a time.
   let lastArea = null;
   let lastSyncAt = 0;
@@ -326,16 +327,24 @@
     };
   }
 
+  function rejectSpawn(visit, reason) {
+    lastSpawnAttempt = { key: visit?.key || null, npcId: visit?.npcId || null, reason };
+    return false;
+  }
+
   function spawnVisit(visit) {
-    if (!visit?.key || !visit?.npcId || !scheduleDeps?.npcWalkers) return false;
+    if (!visit?.key || !visit?.npcId) return rejectSpawn(visit, 'Visit key or NPC id is missing.');
+    if (!scheduleDeps?.npcWalkers) return rejectSpawn(visit, 'NPC scheduling is not initialized.');
     const source = sourceWalker(visit.npcId);
     const door = doorJustExited();
     const spot = nearestWalkableSpawn(door);
-    if (!source || !door || !spot) return false;
-    if (!visit.tree && !(visit.treeId && source.rec?.dialogueTrees?.some(tree => tree?.id === visit.treeId))) return false;
+    if (!source) return rejectSpawn(visit, 'Source NPC is unavailable.');
+    if (!door) return rejectSpawn(visit, 'No valid farmhouse entrance was found.');
+    if (!spot) return rejectSpawn(visit, 'No unoccupied walkable tile was found near the farmhouse door.');
+    if (!visit.tree && !(visit.treeId && source.rec?.dialogueTrees?.some(tree => tree?.id === visit.treeId))) return rejectSpawn(visit, 'Visit dialogue is missing.');
     removeActiveVisitor('replace');
     const visual = cloneVisitorRoot(source, visit, spot, door);
-    if (!visual?.root) return false;
+    if (!visual?.root) return rejectSpawn(visit, 'Could not clone the NPC into the active farm scene.');
     const rec = visitorRecord(source, visit);
     const proxy = {
       root: visual.root,
@@ -365,6 +374,7 @@
       dispose() { visual.root.parent?.remove?.(visual.root); },
     };
     scheduleDeps.npcWalkers.push(proxy);
+    lastSpawnAttempt = { key: visit.key, npcId: visit.npcId, reason: 'Spawned successfully.' };
     activeVisit = {
       visit, source, proxy, root: visual.root, door, spot,
       dialogueStarted: false,
@@ -531,6 +541,7 @@
     activeVisitKey: () => activeVisit?.visit?.key || null,
     debugSnapshot() {
       return {
+        lastSpawnAttempt: lastSpawnAttempt ? { ...lastSpawnAttempt } : null,
         mode: IS_DIALOGUE_EDITOR ? 'dialogue-editor' : 'game',
         currentArea: currentArea(),
         providers: providers.map(provider => provider.id),

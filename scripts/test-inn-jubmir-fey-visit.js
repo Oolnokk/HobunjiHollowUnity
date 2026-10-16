@@ -49,6 +49,7 @@ const source = fs.readFileSync('docs/js/opening-story-cutscene.js', 'utf8'); // 
 const profile = { characterId: 'farmer', worldId: 'world', isWorldOwner: true }; // Owner story state.
 const storage = new Map(); // Persists between VM reloads to test interruption/reload behavior.
 let hour = 10; // Absolute world hour advances across a day boundary below.
+let panel; // Captures the visible companion panel registered by the shipping story module.
 let provider; // Captures the actual registered DoorstepVisits provider.
 let playback = 'complete'; // Controls the shared runner's final-line/skip/failure outcomes.
 let lastScene; // Records the live scene passed to the runner.
@@ -56,6 +57,7 @@ let dismissed = 0; // Confirms invitation alone never dismisses the story visito
 const context = {
   window: {
     __hobunjiPlayerProfile: profile, __hobunjiGameStarted: true,
+    DevCompanion: { registerStateProvider() {}, registerPanel: value => { panel = value; } },
     CalendarSystem: { isInitialized: () => true, previewAfterHours: () => ({ day: Math.floor(hour / 24) + 1, time01: hour % 24 }), getHour: value => value },
     DoorstepVisits: { registerProvider: value => { provider = value; }, markDone() {}, dismissVisit() { dismissed++; } },
     LocalDBOverrides: { loadDatabase: async () => db },
@@ -73,16 +75,31 @@ let api = context.window.OpeningStoryCutscene; // Rebound after reload to verify
 storage.set(api.stateKey(profile), 'complete');
 
 (async () => {
+  assert.equal(panel.title, 'Opening Story / Doorstep Visits');
+  assert.equal(panel.when(), true);
+  assert.match(panel.render().summary, /farm tour is not marked complete/);
+  const beforeRender = storage.size; // Rendering must never initialize the legacy migration timer.
+  panel.render();
+  assert.equal(storage.size, beforeRender);
   assert.equal(provider.next(), null, 'visit cannot precede farm tour');
   assert(await api.onFarmEntered(profile));
   assert.equal(storage.get(api.tourKey(profile) + ':completed-hours'), '10');
+  assert.match(panel.render().summary, /12-hour delay/);
   hour = 21.99;
   assert.equal(provider.next(), null, 'not eligible before twelve hours');
   vm.runInNewContext(source, context);
   api = context.window.OpeningStoryCutscene;
   hour = 22;
   assert.equal(provider.next().npcId, 'jubmir', 'eligible exactly twelve hours after completion, including reload');
+  context.window.DoorstepVisits.debugSnapshot = () => ({ providers: ['jubmir_great_fey'], currentArea: 'farm', lastSpawnAttempt: { key: 'jubmir_great_fey', reason: 'Source NPC is unavailable.' } });
+  context.window.DoorstepVisits.sourceWalker = () => null;
+  context.window.DoorstepVisits.exitDoorCandidates = () => [];
+  assert.match(panel.render().summary, /source NPC is unavailable/);
+  assert.match(panel.render().rows.find(row => row[0] === 'Last spawn attempt')[1], /Source NPC is unavailable/);
+  context.window.DoorstepVisits.sourceWalker = () => ({});
+  assert.match(panel.render().summary, /Ready/);
   profile.isWorldOwner = false;
+  assert.match(panel.render().summary, /world owner/);
   assert.equal(provider.next(), null, 'joining characters do not repeat owner story');
   profile.isWorldOwner = true;
   playback = 'interrupted';
@@ -101,6 +118,7 @@ storage.set(api.stateKey(profile), 'complete');
   assert(lastScene.actors.find(actor => actor.npcId === 'jubmir').npcRecord.id === 'jubmir');
   assert.equal(provider.next(), null, 'completed scene never queues another visit');
   assert.equal(dismissed, 1);
+  assert.match(panel.render().summary, /conversation is complete/);
   const byId = new Map(lastScene.stages.map(stage => [stage.id, stage])); // Walks both actual choice branches through the final dialogue.
   for (const option of byId.get('fey_question').options) {
     let id = option.next; // Current branch stage.
