@@ -985,6 +985,9 @@
       const cell = document.createElement('div');
       cell.className = 'inv-equip-slot' + (activeTool === slot ? ' active-slot' : '') + (def ? ' occupied' : '');
       cell.setAttribute('title', slot + (def ? ': ' + def.label : ' (empty)'));
+      cell.setAttribute('role', 'button');
+      cell.tabIndex = 0;
+      cell.setAttribute('data-key', slot); // Restores the same tool slot after its card rebuilds.
       if (def) {
         const img = document.createElement('img');
         img.src = deps.metalToolImgSrc(def); img.className = 'ies-sprite'; img.alt = def.label;
@@ -1022,6 +1025,9 @@
         const cell = document.createElement('div');
         cell.className = 'inv-equip-slot';
         cell.setAttribute('title', def.label + ' (Mastery ' + deps.toolMasteryLevel(key) + '/5) — click to assign');
+        cell.setAttribute('role', 'button');
+        cell.tabIndex = 0;
+        cell.setAttribute('data-item-key', key);
         const img = document.createElement('img');
         img.src = deps.metalToolImgSrc(def); img.className = 'ies-sprite'; img.alt = def.label;
         cell.appendChild(img);
@@ -1068,6 +1074,11 @@
       lbl.textContent = slot.charAt(0).toUpperCase() + slot.slice(1);
       cell.appendChild(lbl);
       if (item) cell.addEventListener('click', () => selectGearClothing(slot, item));
+      if (item) {
+        cell.setAttribute('role', 'button');
+        cell.tabIndex = 0;
+        cell.setAttribute('data-key', item.uid);
+      }
       clothRow.appendChild(cell);
     }
     sec.appendChild(clothRow);
@@ -1086,6 +1097,9 @@
         const cell = document.createElement('div');
         cell.className = 'inv-equip-slot clothing-owned-slot occupied' + (worn ? ' active-slot' : '');
         cell.setAttribute('title', articleLabel + (worn ? ' — currently worn' : ' — click to equip'));
+        cell.setAttribute('role', 'button');
+        cell.tabIndex = 0;
+        cell.setAttribute('data-key', item.uid);
         const ownedIcon = renderClothingIcon(cell, item);
         // Owned clothing art should dominate the tile; the normal clothing sprite is too conservative here.
         ownedIcon.style.width = 'calc(2.3 * var(--inv-row))';

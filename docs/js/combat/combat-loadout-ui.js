@@ -210,7 +210,9 @@
     for (let level = 1; level <= 5; level++) {
       const state = window.CombatProgression.getLevelState(toolKey, abilityId, level);
       const cost = window.CombatProgression.moteCostForLevel(level);
-      const box = document.createElement('div');
+      const box = document.createElement('button');
+      box.type = 'button';
+      box.id = `mastery-${toolKey}-${abilityId}-${level}`;
       const num = document.createElement('span');
       num.className = 'lv-num';
       num.textContent = 'Lv' + level;
@@ -252,6 +254,8 @@
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'loadout-option-btn';
+        btn.id = `mastery-${toolKey}-${abilityId}-${expandedFor.level}-option-${idx}`;
+        btn.setAttribute('data-ctrl-inspect', '');
         const learned = window.CombatProgression.isOptionUnlocked(toolKey, abilityId, expandedFor.level, idx); // Locked discoveries stay visible and cannot spend motes.
         btn.disabled = !learned || motes < cost || !['chosen', 'available'].includes(state);
         if (!learned) { btn.style.filter = 'grayscale(1)'; btn.style.opacity = '0.45'; }

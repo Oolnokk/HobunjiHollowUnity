@@ -36,6 +36,9 @@
       const equipped = deps.equipmentSlots.whistle === whistle.id;
       const cell = document.createElement('div');
       cell.className = 'inv-equip-slot occupied' + (equipped ? ' active-slot' : '');
+      cell.setAttribute('role', 'button');
+      cell.tabIndex = 0;
+      cell.setAttribute('data-key', whistle.id);
       cell.setAttribute('title', `${whistle.name} (${def?.label || whistle.creatureKey})` + (equipped ? ' — equipped' : ' — click to equip'));
       if (def?.sprites?.idle) {
         const img = document.createElement('img');
