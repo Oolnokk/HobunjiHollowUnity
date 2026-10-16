@@ -9,7 +9,7 @@ const vm = require('node:vm');
 const root = path.resolve(__dirname, '..');
 const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
 const socialSource = read('docs/js/npc-social-relationship-bridge-v2.js');
-const wardrobeSource = read('docs/js/npc-furniture-wardrobe-bridge-v4.js'); // v4 is the version combat-config-loader.js actually boots; v2 is unused dead code.
+const wardrobeSource = read('docs/js/npc-furniture-wardrobe-bridge-v4.js'); // v4 is the version combat-config-loader.js actually boots.
 const wardrobeEditorSource = read('docs/js/building-interior-npc-wardrobe-editor.js');
 const dialogueSource = read('docs/js/dialogue-content.js');
 const dialogueEditorState = read('docs/tools/dialogue-editor/dialogue-editor-state.js');
