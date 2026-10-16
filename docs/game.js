@@ -12110,9 +12110,11 @@
             if (!this._gridPath || this._gridPathTargetKey !== targetKey) {
               if (!this._tryStartGridPath(target)) { this.state = 'idle'; return; }
             }
-            const nextHop = this._gridPath[0];
-            if (this.moveToward(nextHop.col + 0.5, nextHop.row + 0.5, dt)) this._gridPath.shift();
-            if (!this._gridPath.length) this.state = 'idle'; // arrived — next tick re-evaluates the real target
+            const activePath = this._gridPath; // Replanning inside moveToward may replace or clear this path.
+            const nextHop = activePath[0];
+            if (!nextHop) { this.state = 'idle'; return; }
+            if (this.moveToward(nextHop.col + 0.5, nextHop.row + 0.5, dt) && this._gridPath === activePath) activePath.shift();
+            if (this._gridPath === activePath && !activePath.length) this.state = 'idle'; // arrived — next tick re-evaluates the real target
           },
           // Station wander — active once state === 'station-wander' (entered
           // in update() the first time this NPC reaches a station whose
@@ -12325,7 +12327,16 @@
                   this._exitSpot = null; this._entrySpot = null; this._exitToArea = null;
                   this.transferToArea(hopArea, spawn);
                 } else {
-                  this.moveToward(ex, ez, dt);
+                  const exitTarget = { ...this._exitSpot, routeId: 'exit:' + this._exitToArea }; // Routes to the next local door rather than the destination map's coordinates.
+                  if (this._gridPath?.length && this._gridPathTargetKey === exitTarget.routeId + '|' + exitTarget.c + ',' + exitTarget.r) {
+                    this._stepGridPath(exitTarget, dt);
+                  } else if (canNpcBeeline(this.area, root.position.x, root.position.z, exitTarget.c, exitTarget.r)) {
+                    this._gridPath = null;
+                    this.moveToward(ex, ez, dt);
+                  } else {
+                    this.state = 'grid-path';
+                    this._stepGridPath(exitTarget, dt);
+                  }
                 }
                 return;
               }
