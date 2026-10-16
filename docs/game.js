@@ -25402,6 +25402,8 @@
             label: tile.cropReady ? '✓ Harvest' : `${tile.crop} (${Math.floor(tile.cropAge)}d)`,
             action: 'harvest', style: tile.cropReady ? 'harvest' : 'secondary',
             allowed: tile.cropReady,
+            worldInteraction: !!tile.cropReady,
+            promptRoot: _worldInteractionPromptAnchor, // Keeps the floating harvest cue on the aimed crop tile.
           });
         }
 
@@ -25443,6 +25445,8 @@
           btns.push({
             icon: item.icon, label: count > 0 ? `Plant (${count})` : 'No seeds',
             action: plantAct, style: 'plant', allowed: canPlant,
+            worldInteraction: canPlant,
+            promptRoot: _worldInteractionPromptAnchor, // Shares the aimed-soil anchor with the ripe-crop cue.
           });
         }
 
