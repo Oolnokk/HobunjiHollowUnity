@@ -65,12 +65,7 @@
     list.appendChild(section);
     section.appendChild(element('h3', status.built ? '⚒️ Foundry — Custom Weapons' : 'Town Improvement — Foundry'));
     if (!status.built) {
-      section.appendChild(element('p', 'Upgrade the smithy: +3 Town Value and mix unlocked weapon heads and shafts.'));
-      section.appendChild(element('p', `${status.cost.gold.toLocaleString()} bronze · ${status.cost.stone} stone · ${status.cost.wood} wood · ${status.cost.bar_tinBronze} Tin Bronze bars`));
-      const button = element('button', status.affordable ? 'Build Foundry' : 'Materials needed', 'shop-buy-btn'); // Affordability still rechecked on activation.
-      button.type = 'button'; button.disabled = !status.affordable;
-      button.onclick = () => { const result = global.TownMine.buildImprovement('foundry'); deps.showToast(result.message, result.ok); deps.rerender(); };
-      section.appendChild(button);
+      section.appendChild(element('p', "Read Kzubug's foundry proposal in the pile of letters on Father Hunundi's desk."));
       return;
     }
     const config = global.ModularWeapons.getConfig(), available = choices(); // Current manifest plus live smith unlocks.
