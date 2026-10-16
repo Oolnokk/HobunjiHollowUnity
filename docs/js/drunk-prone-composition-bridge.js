@@ -96,6 +96,11 @@
     entity.telegraphState = null;
   }
 
+  function setForwardLeanQuaternion(target, pitch, yaw) {
+    const halfSin = Math.sin(pitch * 0.5); // Rotates local up toward the actor's logical forward, independent of billboard yaw.
+    return target.set(Math.cos(yaw) * halfSin, 0, -Math.sin(yaw) * halfSin, Math.cos(pitch * 0.5));
+  }
+
   function makeBanditSwayState(THREEArg, legsPivot) {
     const avatarRoot = legsPivot?.parent;
     if (!avatarRoot?.isObject3D || typeof THREEArg?.Group !== 'function') return null;
@@ -117,7 +122,9 @@
     // render composition and prevents pitch/roll from feeding back into yaw.
     const driverRoot = new THREEArg.Group();
     driverRoot.name = 'bandit_sway_driver';
-    return { entity: null, avatarRoot, visualRoot, driverRoot, handle: null };
+    return { entity: null, avatarRoot, visualRoot, driverRoot, handle: null,
+      runLeanQuaternion: new THREEArg.Quaternion(), // Reused for heading-correct enemy lean during rendering.
+    };
   }
 
   // Temporary Drunken Footing must not make a prone actor permanently unable
@@ -187,13 +194,14 @@
 
       if (String(options.name || '').toLowerCase() !== 'player' || typeof handle.update !== 'function') return handle;
       const previousUpdate = handle.update.bind(handle);
+      const runLeanQuaternion = new THREEArg.Quaternion(); // Reused to lean along the leg rig's logical facing rather than the billboard direction.
       handle.update = function proneAwarePlayerLegUpdate(dt, speedWorldUnitsPerSecond, suppressed, seatedPose, motion) {
         const player = window.Combat?.deps?.player;
         const effectiveSuppressed = !!suppressed || !!player?.prone;
         const result = previousUpdate(dt, speedWorldUnitsPerSecond, effectiveSuppressed, seatedPose, motion);
         const pitch = Number(handle.getRunLean?.()) || 0; // Reads the gait's own blend without recomputing movement state.
         if (pitch && !effectiveSuppressed && !seatedPose) composer.setChannel(RUN_CHANNEL, {
-          priority: 100, mode: 'additive', rotation: { pitch },
+          priority: 100, mode: 'additive', quaternion: setForwardLeanQuaternion(runLeanQuaternion, pitch, Number(handle.group?.rotation?.y) || 0),
         });
         else composer.clearChannel(RUN_CHANNEL);
         return result;
@@ -261,7 +269,11 @@
       // authoritative after the final transformed orientation is known.
       const previousRotation = visualRoot.rotation?.clone?.() || null;
       if (loss > 0) visualRoot.quaternion.copy(state.driverRoot.quaternion);
-      visualRoot.rotation.x += runLean;
+      if (runLean) {
+        const headingYaw = Math.PI / 2 - (Number(entity.facing) || 0) - (Number(entity.def?.aimAngleOffset) || 0); // Same world heading convention as game.js's creature facing resolver.
+        setForwardLeanQuaternion(state.runLeanQuaternion, runLean, headingYaw - (Number(state.avatarRoot.rotation.y) || 0));
+        visualRoot.quaternion.multiply(state.runLeanQuaternion);
+      }
       undo.push(() => {
         if (previousRotation && visualRoot.rotation?.copy) visualRoot.rotation.copy(previousRotation);
         else visualRoot.quaternion.identity();

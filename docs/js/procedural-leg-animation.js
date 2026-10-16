@@ -1378,7 +1378,7 @@
       const requestedRun = motion?.combat ? 1 : motion?.allowSpeedRun ? smoothstep01((speedRatio - 0.42) / 0.28) : 0; // Preserves full-speed player running outside combat.
       state.runBlend = damp(state.runBlend, isGaiting ? requestedRun : 0, 9, dt);
       state.motionMode = isGaiting ? (requestedRun > 0.5 ? 'run' : 'walk') : 'idle';
-      state.runLean = isGaiting ? -12 * Math.PI / 180 * state.runBlend * Math.min(1, Math.sqrt(speedRatio)) || 0 : 0; // Up to twelve degrees toward local +Z, blended with running effort.
+      state.runLean = isGaiting ? 30 * Math.PI / 180 * state.runBlend * Math.min(1, Math.sqrt(speedRatio)) || 0 : 0; // Up to thirty degrees toward local +Z, blended with running effort.
       const stanceFraction = STANCE_FRACTION + (0.38 - STANCE_FRACTION) * state.runBlend; // Running includes a flight interval between alternating contacts.
       const strideCurve = 0.85 + 0.45 * Math.sqrt(speedRatio); // Walking reach stays proportional to leg anatomy instead of stretching the bones to sprite-height strides.
       const fullStride = gaitLegLength * strideCurve * (1 + state.runBlend * 0.5);

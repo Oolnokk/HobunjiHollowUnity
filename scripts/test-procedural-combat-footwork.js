@@ -69,9 +69,11 @@ const walkDebug = tick(walk.legs, 2, {}), runDebug = tick(run.legs, 2, { combat:
 assert(runDebug.gait.strideLength > walkDebug.gait.strideLength * 1.4);
 assert(runDebug.gait.runBlend > 0.99);
 assert.strictEqual(runDebug.motionMode, 'run');
-assert(run.legs.getRunLean() < 0, 'running leans toward local forward');
-assert(Math.abs(run.legs.getRunLean()) <= 12 * Math.PI / 180);
+assert(run.legs.getRunLean() > 0, 'running leans toward local forward');
+assert(Math.abs(run.legs.getRunLean()) <= 30 * Math.PI / 180);
 assert.strictEqual(walk.legs.getRunLean(), 0, 'walking remains upright');
+tick(run.legs, 4.3, { combat: true });
+assert(Math.abs(run.legs.getRunLean() - Math.PI / 6) < 1e-9, 'full-speed running reaches thirty degrees');
 const tallDebug = tick(tall.legs, 2, { combat: true }); // Stride changes exactly with measured leg length.
 assert(Math.abs(tallDebug.gait.fullStride / runDebug.gait.fullStride - tallDebug.gait.legLength / runDebug.gait.legLength) < 1e-9);
 const falling = tick(run.legs, 9, { combat: true, airborne: true }); // High horizontal speed must not resume running in the air.

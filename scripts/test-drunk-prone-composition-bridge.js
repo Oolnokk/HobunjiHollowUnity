@@ -16,6 +16,11 @@ class MockRotation {
 
 class MockQuaternion {
   constructor(x = 0, y = 0, z = 0, w = 1) { this.x = x; this.y = y; this.z = z; this.w = w; }
+  set(x, y, z, w) { Object.assign(this, { x, y, z, w }); return this; }
+  multiply(q) {
+    const { x, y, z, w } = this; // Standard quaternion product used to verify the enemy render composition.
+    return this.set(w*q.x+x*q.w+y*q.z-z*q.y, w*q.y-x*q.z+y*q.w+z*q.x, w*q.z+x*q.y-y*q.x+z*q.w, w*q.w-x*q.x-y*q.y-z*q.z);
+  }
   clone() { return new MockQuaternion(this.x, this.y, this.z, this.w); }
   copy(other) { this.x = other.x; this.y = other.y; this.z = other.z; this.w = other.w; return this; }
   identity() { this.x = this.y = this.z = 0; this.w = 1; return this; }
@@ -62,6 +67,7 @@ let lastLegUpdate = null;
 let lastAttachOptions = null;
 let composerSet = null;
 let composerCleared = null;
+let renderObserver = null; // Inspects temporary enemy transforms inside the real render hook.
 let baseRenderCount = 0;
 let pendingBanditEntity = null;
 let baseBanditAiCalls = 0;
@@ -103,6 +109,7 @@ const BanditCombat = {
 function WebGLRenderer() {}
 WebGLRenderer.prototype.render = function baseRender() {
   baseRenderCount++;
+  renderObserver?.();
   return 'rendered';
 };
 
@@ -200,10 +207,21 @@ vm.runInContext(source, context, { filename: modulePath });
   playerLegs.update(0.016, 2.5, true, undefined);
   assert.strictEqual(lastLegUpdate.suppressed, true);
 
-  mockedRunLean = -0.15;
+  mockedRunLean = 0.15;
   playerLegs.update(0.016, 3, false, undefined, { combat: true });
   assert.strictEqual(composerSet.name, 'run-lean');
-  assert.strictEqual(composerSet.contribution.rotation.pitch, mockedRunLean);
+  assert(Math.abs(composerSet.contribution.quaternion.x - Math.sin(mockedRunLean / 2)) < 1e-12);
+  for (let i = 0; i < 8; i++) {
+    const yaw = i * Math.PI / 4; // Covers cardinal and diagonal logical headings relative to a held billboard.
+    playerLegs.group.rotation.y = yaw;
+    mockedRunLean = Math.PI / 6;
+    playerLegs.update(0.016, 4.3, false, undefined, { combat: true });
+    const q = composerSet.contribution.quaternion; // Exact rotated-up vector reveals whether the body leans forward or backward.
+    const upX = -2 * q.w * q.z, upZ = 2 * q.w * q.x, upY = 1 - 2 * (q.x*q.x + q.z*q.z);
+    assert(Math.abs(upX - Math.sin(yaw) * 0.5) < 1e-12);
+    assert(Math.abs(upZ - Math.cos(yaw) * 0.5) < 1e-12);
+    assert(Math.abs(upY - Math.cos(Math.PI / 6)) < 1e-12);
+  }
   playerLegs.update(0.016, 3, true, undefined, { combat: true });
   assert.strictEqual(composerCleared, 'run-lean', 'mount/prone suppression removes running lean');
   playerLegs.dispose();
@@ -259,6 +277,28 @@ vm.runInContext(source, context, { filename: modulePath });
   assert.strictEqual(banditLossProvider(), 1);
   pendingBanditEntity.footing = 100;
   assert.strictEqual(banditLossProvider(), 0);
+
+  // Enemy lean follows logical facing even when its smoothed body yaw differs.
+  const leanRenderer = new WebGLRenderer(); // Drives the production enemy render hook for all eight headings.
+  const beforeLeanRenderCount = baseRenderCount; // Existing render-count checks below retain their own baseline.
+  mockedRunLean = Math.PI / 6;
+  for (let i = 0; i < 8; i++) {
+    pendingBanditEntity.facing = i * Math.PI / 4;
+    banditBodyRoot.rotation.y = 0.37;
+    renderObserver = () => {
+      const q = visualRoot.quaternion; // Transform tilted local up through the avatar's independent world yaw.
+      const x = -2*q.w*q.z, z = 2*q.w*q.x, yaw = banditBodyRoot.rotation.y;
+      const worldX = Math.cos(yaw)*x + Math.sin(yaw)*z;
+      const worldZ = -Math.sin(yaw)*x + Math.cos(yaw)*z;
+      assert(Math.abs(worldX - Math.cos(pendingBanditEntity.facing)*0.5) < 1e-12);
+      assert(Math.abs(worldZ - Math.sin(pendingBanditEntity.facing)*0.5) < 1e-12);
+    };
+    leanRenderer.render();
+  }
+  renderObserver = null;
+  mockedRunLean = 0;
+  baseRenderCount = beforeLeanRenderCount;
+  pendingBanditEntity.facing = 0.4;
 
   // Prone is a hard motion-ownership boundary. Both leg updates and a direct
   // AI call suppress motion and discard stale knockback/lunge/action state.
