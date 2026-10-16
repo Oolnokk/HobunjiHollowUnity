@@ -31,8 +31,8 @@ const selectorBrowser = {
 vm.runInNewContext(selectorSource, selectorBrowser);
 const selectorApi = selectorBrowser.window.CutsceneDirectorRepoScenes;
 assert(selectorApi, 'Repo selector must expose its debug/inspection API.');
-assert.deepStrictEqual(Array.from(selectorApi.catalog, scene => scene.id), ['opening-rescue', 'opening-hunundi-room', 'opening-farm-tour', 'banubu-intro', 'banubu-key', 'wedding']);
-assert.deepStrictEqual(Array.from(selectorApi.catalog, scene => scene.builder).filter(Boolean), ['buildRescueScene', 'buildHunundiMeetingScene', 'buildFarmTourScene']);
+assert.deepStrictEqual(Array.from(selectorApi.catalog, scene => scene.id), ['opening-rescue', 'opening-hunundi-room', 'opening-farm-tour', 'jubmir-great-fey', 'banubu-intro', 'banubu-key', 'wedding']);
+assert.deepStrictEqual(Array.from(selectorApi.catalog, scene => scene.builder).filter(Boolean), ['buildRescueScene', 'buildHunundiMeetingScene', 'buildFarmTourScene', 'buildJubmirFeyScene']);
 
 const farmPoints = selectorApi.authoringFarmTourPoints();
 assert.deepStrictEqual(JSON.parse(JSON.stringify(farmPoints.entry)), { c: 2, r: 3 });
@@ -54,6 +54,7 @@ const scenes = [
   storyApi.buildRescueScene(records, profile),
   storyApi.buildHunundiMeetingScene(records, profile),
   storyApi.buildFarmTourScene(records, profile, farmPoints),
+  storyApi.buildJubmirFeyScene(records, profile),
 ];
 
 function assertSceneReferences(scene) {
@@ -105,7 +106,7 @@ const wallCamera = hunundiRoom.cinematicCameras.find(camera => camera.id === 'hu
 assert(wallCamera, 'Father Hunundi room must retain the hunundi_office_wall camera.');
 assert.deepStrictEqual(wallCamera.position, { x: 8.5, y: 1.4, z: 6.6 }, 'Hunundi wall camera must retain the latest authored transform.');
 
-console.log('Cutscene Director repo selector: three live scene builders, graph references, farm cameras and Hunundi camera height passed.');
+console.log('Cutscene Director repo selector: four live scene builders, graph references, farm cameras and Hunundi camera height passed.');
 
 // The Banubu entries use shipping dialogue, camera records and entry-node branching.
 const banubu={window:{},console};

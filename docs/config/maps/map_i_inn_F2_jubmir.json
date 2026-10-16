@@ -161,7 +161,7 @@
     ],
     [
       9,
-      5
+      10
     ]
   ],
   "exits": [
@@ -171,12 +171,12 @@
       "tiles": [
         [
           9,
-          5
+          10
         ]
       ],
       "targetMap": "map_i_inn_F2",
-      "spawnCol": 10,
-      "spawnRow": 5
+      "spawnCol": 5,
+      "spawnRow": 7
     }
   ],
   "colliders": [],

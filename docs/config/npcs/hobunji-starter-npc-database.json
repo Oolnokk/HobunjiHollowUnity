@@ -6600,12 +6600,12 @@
                               {
                                     "from": "22:00",
                                     "to": "06:00",
-                                    "mapId": "map_i_inn_F2",
-                                    "stationId": "station_inn_dorm_bed",
+                                    "mapId": "map_i_inn_F2_hreesh",
+                                    "stationId": "station_inn_hreesh_bed",
                                     "activity": "resting"
                               }
                         ],
-                        "defaultStationId": "station_inn_dorm_bed"
+                        "defaultStationId": "station_inn_hreesh_bed"
                   },
                   "agenda": [
                         {
@@ -7124,12 +7124,12 @@
                               {
                                     "from": "17:00",
                                     "to": "09:00",
-                                    "mapId": "map_i_inn_F2",
-                                    "stationId": "station_inn_dorm_bed",
+                                    "mapId": "map_i_inn_F2_jubmir",
+                                    "stationId": "station_inn_jubmir_bed",
                                     "activity": "sleeping"
                               }
                         ],
-                        "defaultStationId": "station_inn_dorm_bed"
+                        "defaultStationId": "station_inn_jubmir_bed"
                   },
                   "agenda": [
                         {
@@ -7146,8 +7146,8 @@
                               "activity": "sleep",
                               "obligation": "plan",
                               "window": ["17:00", "09:00"],
-                              "destinationStationId": "station_inn_dorm_bed",
-                              "destinationArea": "map_i_inn_F2",
+                              "destinationStationId": "station_inn_jubmir_bed",
+                              "destinationArea": "map_i_inn_F2_jubmir",
                               "activityLabel": "sleeping"
                         }
                   ],

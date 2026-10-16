@@ -175,8 +175,8 @@
         ]
       ],
       "targetMap": "map_i_inn_F2",
-      "spawnCol": 8,
-      "spawnRow": 5
+      "spawnCol": 5,
+      "spawnRow": 9
     }
   ],
   "colliders": [],
