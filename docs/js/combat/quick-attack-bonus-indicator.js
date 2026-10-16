@@ -58,19 +58,63 @@
     return node?.isScene ? node : null;
   }
 
+  function cueSuppressed(deps) {
+    return (deps?.getHeldMode && deps.getHeldMode() !== 'tool')
+      || (deps?.getActiveTool && deps.getActiveTool() !== 'weapon')
+      || !!deps?.isDialogueOpen?.()
+      || !!window.AuthoredCutsceneRuntime?.isActive?.()
+      || !!window.HOBUNJI_CHARACTER_VIEW_STATUS?.enabled;
+  }
+
+  function opportunityTarget(deps, equipped) {
+    if (!deps || !equipped || cueSuppressed(deps)) return null;
+    const quick = window.Combat.quickAttackData; // Live configured reach matches the Quick Attack's pre-lunge envelope.
+    const effects = window.CombatProgression?.getEffects?.(deps.currentWeaponKey?.(), equipped.attackId);
+    const stats = effects?.stats || {}; // Weapon mastery range/lunge modifiers are shared with attack execution.
+    const base = deps.weaponAbility?.('cut') || { rangePx: deps.TILE * 1.05 };
+    const rangePx = Math.max(
+      base.rangePx * (equipped.definition.rangeMul ?? 1) * (quick.RANGE_SCALE ?? 0.6) * (1 + (stats.rangeMul || 0)),
+      deps.TILE * (quick.LUNGE_TILE_MUL ?? 4.5) * (1 + (stats.lungeMul || 0)),
+    ); // Includes the forward lunge so the cue can announce an opening before pressing attack.
+    const area = deps.getCurrentArea?.(); // Excludes unloaded-area creatures from the manual aim scan.
+    const direction = deps.getPlayerMeleeAimDirection?.(); // Uses the same camera/stick pitch and bearing as the melee HUD.
+    const eligible = target => !!target && target.health > 0 && !!targetRoot(target)
+      && (!area || target.areaId === area) && !target.isCompanion
+      && !target._denHidden && !target._grehlrBurrowProtected
+      && (!window.Combat.meleeHit || window.Combat.meleeHit(deps.player, target, {
+        rangePx,
+        halfConeRad: (equipped.definition.halfConeDeg ?? 18) * Math.PI / 180,
+        ...(direction ? { direction } : { yaw: deps.player?.angle, pitch: deps.getPlayerMeleeAimPitch?.() || 0 }),
+        debug: false,
+      })); // Canonical collider rejects out-of-range, off-axis and vertically unreachable targets.
+    const focused = deps.getMeleeReticleTarget?.(); // Manual desktop/mobile targeting works even when aim assist is off.
+    if (eligible(focused)) return focused;
+    const assisted = deps.findMeleeAttackCandidate?.() || deps.findAutoTarget?.(); // Retains existing mobile assist targeting when enabled.
+    if (eligible(assisted)) return assisted;
+    let best = null; // Closest eligible creature in the aimed Quick Attack cone.
+    let bestDistance = Infinity; // Used only to rank eligible manual-aim candidates.
+    for (const target of deps.hostileObjects || []) {
+      const distance = Math.hypot(target.x - deps.player.x, target.y - deps.player.y); // Map distance ranks hits without constructing vectors.
+      if (distance >= bestDistance || !eligible(target)) continue;
+      best = target;
+      bestDistance = distance;
+    }
+    return best;
+  }
+
   function getReadyState() {
     const deps = window.Combat.deps;
     const equipped = currentQuickAttack();
-    const target = deps?.findMeleeAttackCandidate?.() || deps?.findAutoTarget?.() || null; // Tracks the eligible pre-windup cone even though melee no longer keeps a persistent lock.
+    const target = opportunityTarget(deps, equipped); // Read-only targeting never enables aim assist or changes the player's facing.
     const root = targetRoot(target); // Used to anchor readiness to the target's live avatar.
-    if (!deps || !equipped || !target || target.health <= 0 || !root) {
+    if (!deps || !equipped || !target || !root) {
       return { deps, target, root, equipped, ready: false, conditions: null };
     }
-    const conditions = getConditions(deps, target); // Exact combat evaluator, including modular animal strike stages such as Pounce's leap.
-    const conditionReady = !!conditions[equipped.definition.condKey]; // Raw opportunity state remains useful in mobile diagnostics even while the burst is cooling down.
-    const weaponKey = deps.currentWeaponKey?.() || 'none'; // Used to query the same per-weapon cooldown key combat-quickattacks.js commits after a successful proc.
+    const conditions = getConditions(deps, target); // Same public evaluator used at actual strike resolution.
+    const conditionReady = !!conditions[equipped.definition.condKey];
+    const weaponKey = deps.currentWeaponKey?.() || 'none';
     const cooldownRemainingS = window.Combat.quickAttackData?.bonusEffectCooldownRemaining?.(weaponKey, equipped.attackId, equipped.definition) || 0;
-    const ready = conditionReady && cooldownRemainingS <= 0; // The reticle now means "the stronger bonus package will actually fire," not merely "the condition happens to match."
+    const ready = conditionReady && cooldownRemainingS <= 0;
     return { deps, target, root, equipped, ready, conditionReady, cooldownRemainingS, conditions };
   }
 
@@ -143,7 +187,7 @@
       sprite,
       glows,
       activeTarget: null,
-      afflictionSignature: '',
+      afflictionSignature: null,
       usingAuthoredTexture: false,
     };
     drawProceduralReticle(sight, performance.now());
@@ -414,6 +458,7 @@
       `Generic telegraph: ${state.target?.telegraphState || '-'}`,
       `Animal attack: ${state.target?._animalAttack?.id || '-'} / ${state.target?._animalAttack?.state?.stage || '-'}`,
       `Popup root: ${state.root ? 'yes' : 'no'}`,
+      `Frame error: ${lastFrameError || '-'}`,
       `Reticle texture: ${reticle?.usingAuthoredTexture ? OPPORTUNITY_TEXTURE_URL : 'procedural fallback'}`,
       'Cue: layered affliction opportunity reticle',
     ].join('\n');
@@ -429,7 +474,7 @@
       updateDebugBadge(getReadyState());
     },
     snapshot: () => ({
-      latestChange: 'Quick Attack timed debuffs now stack additively and the mobile badge shows live stacks plus instantaneous Bleedout results.',
+      latestChange: 'Opportunity cues now support manual desktop/mobile aim, validate Quick Attack reach, and share strike-time conditions.',
       targetId: lastTarget?.id || null,
       visible: !!reticle?.sprite?.visible,
       lastFrameError,
