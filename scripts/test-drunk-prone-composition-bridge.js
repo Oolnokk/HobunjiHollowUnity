@@ -80,8 +80,8 @@ const ProceduralLegAnimation = {
     lastAttachOptions = options;
     return {
       group: new MockGroup(),
-      update(dt, speed, suppressed, seatedPose) {
-        lastLegUpdate = { dt, speed, suppressed, seatedPose };
+      update(dt, speed, suppressed, seatedPose, motion) {
+        lastLegUpdate = { dt, speed, suppressed, seatedPose, motion };
       },
       dispose() {},
     };
@@ -153,17 +153,8 @@ vm.runInContext(source, context, { filename: modulePath });
   assert.ok(source.includes("portraitFaceCulling: 'material-frontside'"), 'bridge diagnostics expose normal FrontSide culling');
   assert.ok(source.includes('forcedPortraitDoubleSide: false'), 'bridge diagnostics expose that two-sided portrait forcing is disabled');
 
-  // Separate run-gait contract: player speed blends into running, humanoid
-  // hostiles run only while the shared hostile pipeline says they are in the
-  // active chase/combat state, and the run cycle is materially distinct from
-  // the ordinary walk (stance < 0.5 gives a brief flight overlap).
-  assert.match(source, /const RUN_STANCE_FRACTION = 0\.44/, 'run gait keeps a distinct airborne-overlap stance fraction');
-  assert.match(source, /function playerRunBlend\(speedWorldUnitsPerSecond\)/, 'player locomotion has an explicit walk-to-run blend');
-  assert.match(source, /banditState\.entity\?\.state === 'chase'/, 'non-animal hostiles enter run gait only during active chase/combat');
-assert.match(source, /const hoverMode = !!handle\.isHoverMode\?\.\(\)/, 'bandit gait wrapper must detect procedural hover ownership');
-assert.match(source, /effectiveSuppressed \|\| hoverMode/, 'run gait must yield while procedural hover is active');
-  assert.match(source, /legLength \* \(1\.30 \+ 0\.60 \* Math\.sqrt\(speedRatio\)\)/, 'run stride scales directly from measured leg length');
-  assert.match(source, /bendDegX = -\(5 \+ 23 \* pose\.swingWave\)/, 'run gait adds swing-phase knee flex instead of only stretching walk reach');
+  // The bridge must forward motion ownership rather than overwriting solved legs.
+  assert.doesNotMatch(source, /makeRunGaitController/, 'one leg solver owns all movement modes');
   assert.match(source, /debugLegBonesCheckbox/, 'Debug tab exposes the requested Leg Bone Debug checkbox');
   assert.match(source, /Leg Bone Debug/, 'debug checkbox has a player-readable label');
 
@@ -201,6 +192,9 @@ assert.match(source, /effectiveSuppressed \|\| hoverMode/, 'run gait must yield 
   player.prone = false;
   playerLegs.update(0.016, 2.5, false, undefined);
   assert.strictEqual(lastLegUpdate.suppressed, false);
+  const movementContext = { combat: true, airborne: true }; // Must survive the prone bridge unchanged.
+  playerLegs.update(0.016, 2.5, false, undefined, movementContext);
+  assert.strictEqual(lastLegUpdate.motion, movementContext);
   playerLegs.update(0.016, 2.5, true, undefined);
   assert.strictEqual(lastLegUpdate.suppressed, true);
 

@@ -5873,7 +5873,12 @@
         // dead-zone behavior currently governs the sprite instead of the
         // prism's own free-tracking groupRot.
         if (c.avatarRef.legsPivot) c.avatarRef.legsPivot.rotation.y = planeDelta;
-        if (c.avatarRef.legs) c.avatarRef.legs.update(dt, Math.hypot(c.vx || 0, c.vy || 0) / TILE, false);
+        if (c.avatarRef.legs) c.avatarRef.legs.update(dt, Math.hypot(c.vx || 0, c.vy || 0) / TILE, false, undefined, {
+          combat: c.state === 'chase' || c.state === 'searching' || !!c._banditAction,
+          lunging: !!c._banditLunging,
+          airborne: (c._banditLungeHopCurrent || 0) > 0.03 || !!c._knockbackLedgeAir || !!c._knockbackLedgeFall,
+          directionX: c._banditLungeDirX, directionZ: c._banditLungeDirY,
+        });
         window.ImpactRagdollPlayback?.updateCreature?.(c, dt);
 
         if (c.hitFlashT > 0) c.hitFlashT = Math.max(0, c.hitFlashT - dt);
@@ -9595,6 +9600,7 @@
         ) || { distancePx, hopUnits, pitch: aimPitch, verticalTravelUnits: 0, directFlightStrength: 0 };
         player.lungeDirX = Math.cos(aimYaw);
         player.lungeDirY = Math.sin(aimYaw);
+        playerLegs?.beginLunge?.(player.lungeDirX, player.lungeDirY);
         player.lungeDistancePx = lungeProfile.distancePx;
         player.lungeHopUnits = lungeProfile.hopUnits;
         player.lungeAimPitch = lungeProfile.pitch;
@@ -23626,7 +23632,16 @@
         // (see that module's own update()), which would fight the recorded
         // ragdoll pose instead of stepping aside for it.
         if (window.ImpactRagdollPlayback?.isActive()) window.ImpactRagdollPlayback.update(dt);
-        else playerLegs?.update(dt, speed / TILE, legsSuppressed, seatedPose);
+        else playerLegs?.update(dt, speed / TILE, legsSuppressed, seatedPose, {
+          combat: isPlayerInCombat() || player.lunging,
+          allowSpeedRun: true,
+          lunging: !!player.lunging,
+          airborne: ordinaryLungeHopY > 0.03 || (Number.isFinite(player.lungeFlightWorldY) && player.lungeFlightWorldY > groundedTargetY + 0.03)
+            || !!player._knockbackLedgeAir || !!player._knockbackLedgeFall
+            || (player.climbing && player.climbSurfaceEndY < player.climbSurfaceStartY)
+            || (!player.climbing && !player.onBranch && playerMesh.position.y > groundedTargetY + 0.12),
+          directionX: player.lungeDirX, directionZ: player.lungeDirY,
+        });
       }
 
       // ── Update reticle ────────────────────────────────────────────

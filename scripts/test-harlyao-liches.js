@@ -448,9 +448,8 @@ assert.match(proceduralLegSource, /function applyHoverPose\(side, dt\)/, 'proced
 assert.match(proceduralLegSource, /bendDegX = -31[\s\S]*solveTwoBoneLeg/, 'hover pose must keep visibly flexed dangling knees through the shared leg solver');
 assert.match(proceduralLegSource, /function setHoverMode\(enabled\)[\s\S]*function isHoverMode\(\)/, 'procedural leg handles must expose explicit hover ownership');
 const suppressedIndex = proceduralLegSource.indexOf('if (suppressed) {', proceduralLegSource.indexOf('function update(dt, speedWorldUnitsPerSecond'));
-const hoverIndex = proceduralLegSource.indexOf('if (state.hoverEnabled) {', suppressedIndex);
+const hoverIndex = proceduralLegSource.indexOf('if (state.hoverEnabled || motion?.airborne) {', suppressedIndex);
 assert(suppressedIndex >= 0 && hoverIndex > suppressedIndex, 'explicit prone/death suppression must outrank active hover pose');
-assert.match(drunkProneSource, /const hoverMode = !!handle\.isHoverMode\?\.\(\)[\s\S]*effectiveSuppressed \|\| hoverMode/, 'bandit run gait must not overwrite dangling hover legs');
 assert.match(lichSource, /HOVER_HEIGHT_MODEL_FRACTION = 0\.58/, 'lich hover height must scale from rendered model height');
 assert.match(lichSource, /lich\.groundLift = baseGroundLift \+ lich\._lichHoverOffsetWorld/, 'hover must use existing render baseline without changing ground-plane AI coordinates');
 assert.match(lichSource, /!lich\.prone/, 'active hover must drop while a lich is prone');
