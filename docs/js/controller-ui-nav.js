@@ -22,6 +22,11 @@
   //   data-ctrl-tabs    optional, on a row of sibling tab/category buttons
   //                     (e.g. the pause menu's own top tab bar). Gamepad
   //                     LB/RB (and Tab/Shift+Tab) step through its children.
+  //   data-ctrl-actions optional, receives cancelable hobunji-controller-panel-action
+  //                     events (confirm/cancel/previous/next). Prevent default to
+  //                     give a letter reader fixed A/B/LB/RB semantics.
+  //   data-ctrl-scroll optional, identifies an overflow region for right-stick
+  //                     scrolling when focus is in the panel's fixed toolbar.
   //   data-ctrl-default optional, on the element that should receive focus
   //                     first. Unset panels just focus the topmost-leftmost
   //                     focusable thing instead (or whatever already has
@@ -512,9 +517,15 @@
   }
 
   // ── activate / cancel / tabs ────────────────────────────────────────
+  // Opt-in panels can give Confirm/Back/bumpers a fixed meaning without polling a second controller path.
+  function panelOwnsAction(panel, action) {
+    if (!panel.hasAttribute('data-ctrl-actions')) return false;
+    return !panel.dispatchEvent(new CustomEvent('hobunji-controller-panel-action', { detail: { action }, cancelable: true }));
+  }
+
   function activate() {
     const panel = activePanel();
-    if (!panel) return;
+    if (!panel || panelOwnsAction(panel, 'confirm')) return;
     refreshFocusIfStale();
     if (!currentTarget) return;
     if (currentTarget.matches(GROUP_SELECTOR)) { enterGroup(currentTarget, panel); return; }
@@ -529,7 +540,7 @@
 
   function cancel() {
     const panel = activePanel();
-    if (!panel) return;
+    if (!panel || panelOwnsAction(panel, 'cancel')) return;
     if (leaveGroup(panel)) return;
     const btn = Array.from(panel.querySelectorAll('[data-ctrl-cancel]')).find(el => isNavTarget(el) && belongsToNavigation(el, panel));
     if (btn) { btn.click(); return; }
@@ -553,7 +564,7 @@
 
   function cycleTabs(delta) {
     const panel = activePanel();
-    if (!panel) return;
+    if (!panel || panelOwnsAction(panel, delta < 0 ? 'previous' : 'next')) return;
     const group = findTabGroup(panel);
     if (!group) return;
     const items = Array.from(group.children).filter(el => isNavTarget(el) || (el.matches?.(NAV_SELECTOR) && isVisible(el) && !isDisabled(el)));
@@ -707,7 +718,7 @@
       let scrollHost = currentTarget;
       while (scrollHost && scrollHost !== panel && scrollHost.scrollHeight <= scrollHost.clientHeight) scrollHost = scrollHost.parentElement;
       if (!scrollHost || !panel?.contains(scrollHost) || scrollHost.scrollHeight <= scrollHost.clientHeight) {
-        scrollHost = panel ? Array.from(panel.querySelectorAll('.mp-pane, .settings-pane, .cooking-body')).find(element => element.scrollHeight > element.clientHeight) : null;
+        scrollHost = panel ? Array.from(panel.querySelectorAll('[data-ctrl-scroll], .mp-pane, .settings-pane, .cooking-body')).find(element => element.scrollHeight > element.clientHeight) : null;
       }
       scrollHost ||= panel; // Used to scroll the nearest useful menu region with the right stick without scanning every descendant each frame.
       if (scrollHost) scrollHost.scrollTop += scrollStick.y * 720 * scrollDt;

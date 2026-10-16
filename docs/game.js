@@ -13680,7 +13680,9 @@
             // a custom interaction registered at this instance's actual
             // placed tile — so moving/duplicating it in the Interior Editor
             // just works, unlike the old hardcoded-per-mapId spawn it replaced.
-            const interactableFactory = BUILDING_FIXTURE_INTERACTABLES[f.itemKey];
+            const proposalDesk = mapId === 'map_i_temple_basement_hunundi' && f.id === 'f_tbhunundi_desk'; // Only Hunundi's authored desk owns the town's proposal letters.
+            if (proposalDesk) window.TownProposals?.attachLetters(renderedFurniture, THREE);
+            const interactableFactory = proposalDesk ? () => window.TownProposals.makeInteractable() : BUILDING_FIXTURE_INTERACTABLES[f.itemKey];
             if (interactableFactory) {
               const footprint = decorativeFurnitureSize(furnitureKey, f.rotY || 0); // Used so every occupied tile of a multi-cell fixture shares its interaction.
               for (let rowOffset = 0; rowOffset < footprint.fd; rowOffset++) {
@@ -29454,6 +29456,18 @@
         TileType,
         markOutline: _markOutline,
         zoneMineableRockMeshes: _zoneMineableRockMeshes,
+      });
+
+      window.TownProposals?.init({
+        inventory, ITEM_DEFS, showToast, isDevMode: () => s_devMode,
+        setInteractionBlocked(blocked) {
+          menuOpen = blocked; paused = blocked; // Reuses the existing world movement/action and time gates for this modal.
+          if (blocked) {
+            player.vx = 0; player.vy = 0; input.x = 0; input.y = 0;
+            releaseShoulderSurfPointerLock();
+            window.WorldPopupText?.clearInteractionPrompts?.();
+          }
+        },
       });
 
       window.TownMine?.init({

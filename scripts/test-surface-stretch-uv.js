@@ -242,3 +242,13 @@ for (let i = 0; i < shellUv.count; i += 3) {
 
 if (!logs.some(entry => entry[2] === 'render')) throw new Error('Expected mobile-visible render diagnostics');
 console.log(JSON.stringify({ texas: texasReport, nativeScale: edgeBand, bent: bentReport, gradual: gradualReport, legacyScaleAlias: formerlyBoundedReport, multi: multiReport, debug: mapper.snapshot() }, null, 2));
+
+const canvasSlices = []; // Verify the UI uses the same protected source border while letter height grows.
+const drawContext = { drawImage(...args) { canvasSlices.push(args); } }; // Canvas boundary records the nine real draw calls.
+const canvasImage = { width: 256, height: 256 }; // Source PNG dimensions are independent of UI aspect ratio.
+if (!mapper.drawCanvasSurface(drawContext, canvasImage, 360, 1800)) throw new Error('2D surface drawing failed');
+if (canvasSlices.length !== 9) throw new Error('Expected nine connected texture slices');
+const firstSlice = canvasSlices[0]; // Native-scale source/destination borders must remain equal on both UI axes.
+if (Math.abs(firstSlice[3] - 256 * .32) > 1e-8 || Math.abs(firstSlice[7] - 128 * .32) > 1e-8 || Math.abs(firstSlice[8] - 128 * .32) > 1e-8) throw new Error('2D mapper failed to preserve border scale');
+if (mapper.drawCanvasSurface(drawContext, {}, 360, 1800)) throw new Error('Invalid image must reject safely');
+console.log('2D letter surface shares the cliff protected-border mapping');

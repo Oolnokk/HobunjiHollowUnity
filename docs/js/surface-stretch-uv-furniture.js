@@ -680,9 +680,25 @@
     }
   }
 
+  function drawCanvasSurface(ctx, image, width, height, referencePixels = 128) {
+    if (!ctx || !(image?.width > 0) || !(image?.height > 0) || !(width > 0) || !(height > 0)) return false;
+    const edge = DEFAULT_EDGE_SOURCE_FRACTION; // Same protected PNG border as cliff geometry.
+    const u = protectedSurfaceEdgeFraction(width, edge, referencePixels); // Destination horizontal border in CSS pixels.
+    const v = protectedSurfaceEdgeFraction(height, edge, referencePixels); // Destination vertical border in CSS pixels.
+    const xs = [0, u, 1 - u, 1], ys = [0, v, 1 - v, 1]; // Nine destination slices share exact boundaries.
+    const sx = xs.map(value => remapProtectedEdgeCoordinate(value, edge, u) * image.width); // Shared cliff UV mapping supplies source coordinates.
+    const sy = ys.map(value => remapProtectedEdgeCoordinate(value, edge, v) * image.height); // Retains the PNG's top/bottom borders independently of letter length.
+    for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) {
+      ctx.drawImage(image, sx[col], sy[row], sx[col + 1] - sx[col], sy[row + 1] - sy[row],
+        xs[col] * width, ys[row] * height, (xs[col + 1] - xs[col]) * width, (ys[row + 1] - ys[row]) * height);
+    }
+    return true;
+  }
+
   const mapperApi = {
     installed: true,
     mapGeometry,
+    drawCanvasSurface,
     mapMesh,
     remapNaturalTerrainMesh,
     settings: {

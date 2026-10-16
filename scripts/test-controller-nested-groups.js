@@ -66,6 +66,7 @@ const context = {
   window: { addEventListener(type, callback) { listeners.set(type, [...(listeners.get(type) || []), callback]); }, dispatchEvent() {} },
   MutationObserver: class { constructor(callback) { observers.push(callback); } observe() {} },
   queueMicrotask, setTimeout: () => 1, clearTimeout() {}, KeyboardEvent: class {},
+  CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } },
 }; // No custom navigation helpers: boot, press, focus recovery and cancel execute the entire shipped module.
 vm.runInNewContext(fs.readFileSync('docs/js/controller-ui-nav.js', 'utf8'), context);
 const ui = context.window.ControllerUI; // Same public diagnostic/press API used in-game.
@@ -146,5 +147,10 @@ const rebuild = async target => { for (const observer of observers) observer([{ 
   panel.children.splice(panel.children.indexOf(nextTree), 1); nextTree.parentElement = null;
   await rebuild(panel);
   assert.equal(ui.debugState().groupDepth, 0, 'removing a nest unwinds instead of entering a different sibling section');
+  const handled = []; // Opt-in readers own A/B/bumpers without taking over controller polling.
+  panel.setAttribute('data-ctrl-actions', '');
+  panel.dispatchEvent = event => { handled.push(event.detail.action); return false; };
+  for (const action of ['confirm', 'cancel', 'tabPrev', 'tabNext']) press(action);
+  assert.deepEqual(handled, ['confirm', 'cancel', 'previous', 'next']);
   console.log('Controller nested group confinement, Back, rebuild and modal handoffs passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });
