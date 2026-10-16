@@ -374,6 +374,7 @@
   }
 
   function _farmAnimalFaceLook(animal, dt) {
+    animal._facingPlayer = false; // Set true below only while actually turned toward the player; wander/hop movement pauses on it.
     const target = deps.getPlayerFaceTarget?.();
     if (!target) return null;
     const targetZ = Number.isFinite(Number(target.z)) ? Number(target.z) : Number(target.y);
@@ -388,6 +389,7 @@
     const headWorld = { x: Number(animal.wx) || 0, y: _farmAnimalHeadWorldY(animal), z: Number(animal.wz) || 0 };
     const focused = !!deps.isPlayerFocusedOnHead?.(headWorld);
     if (!focused && (!Number.isFinite(distance) || distance > LIVESTOCK_LOOK_RANGE_TILES)) return null;
+    animal._facingPlayer = true;
 
     const targetWorldY = Number(target.worldY);
     if (typeof animal.avatarRef?.updateHeadRotation === 'function' && Number.isFinite(targetWorldY)) {
@@ -458,6 +460,7 @@
   }
 
   function _farmAnimalWanderTick(animal, dt, onStep) {
+    if (animal._facingPlayer) return; // Stopped to look at the player: no new hops and the rest timer holds until they look away.
     if (animal.wanderWaitT > 0) {
       animal.wanderPhase = 'rest';
       animal.wanderWaitT = Math.max(0, animal.wanderWaitT - dt);
@@ -707,7 +710,7 @@
         const tile = grid[this.targetRow]?.[this.targetCol];
         const ty = tile ? deps.tileSurfaceY(tile.type) + (this.groundLift ?? this.halfHeight) : this.wy;
         const sp = Math.min(1, dt * 4);
-        _farmAnimalMoveTowardTarget(this, dt);
+        if (!this._facingPlayer) _farmAnimalMoveTowardTarget(this, dt); // Holds still mid-hop too while turned toward the player.
         this.wy += (ty - this.wy) * sp;
         this.wy += Math.sin(performance.now() / 420 + this.targetCol * 1.3) * 0.006;
         this.avatarRef.group.position.set(this.wx, this.wy, this.wz);
@@ -816,7 +819,7 @@
         const tile = grid[this.targetRow]?.[this.targetCol];
         const ty = tile ? deps.tileSurfaceY(tile.type) + (this.groundLift ?? this.halfHeight) : this.wy;
         const sp = Math.min(1, dt * 4);
-        _farmAnimalMoveTowardTarget(this, dt);
+        if (!this._facingPlayer) _farmAnimalMoveTowardTarget(this, dt); // Holds still mid-hop too while turned toward the player.
         this.wy += (ty - this.wy) * sp;
         this.wy += Math.sin(performance.now() / 420 + this.targetCol * 1.3) * 0.006;
         this.avatarRef.group.position.set(this.wx, this.wy, this.wz);
