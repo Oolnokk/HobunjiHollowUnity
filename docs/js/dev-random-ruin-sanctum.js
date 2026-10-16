@@ -795,7 +795,7 @@
     window.DevRandomRuinTileOccupancy?.scanSolids?.(root, kit.SCOPE); // Chests, braziers and ladder collide like every other ruin prop.
     const occlusion = window.DevRandomRuin?.getOcclusionMeshes?.();
     if (occlusion) for (const mesh of s.occluders) occlusion.push(mesh); // Camera boom pulls in against sanctum walls exactly like V50 walls.
-    s.bossType = pickBossType(rng);
+    s.bossType = context.theme || window.DevRandomRuin?.getState?.()?.theme || pickBossType(rng); // The ruin owns the tradition; the boss never rerolls it independently.
   }
 
   function buildCoffin(kit, root, x, z, y0, facing, index) {
@@ -929,7 +929,7 @@
     const { arena, zc } = s.layout;
     const x = (arena.minX + arena.maxX) / 2 + 2.5, z = zc;
     const tile = deps.TILE || 64;
-    const creature = await combat.makeEntity({ type:s.bossType, tier:cfg('sanctum.boss.tier', BOSS_TIER), x:x * tile, y:z * tile });
+    const creature = await combat.makeEntity({ type:s.bossType, tier:cfg('sanctum.boss.tier', BOSS_TIER), x:x * tile, y:z * tile, extra:{ ruinTheme:s.bossType } });
     s.bossPending = false;
     if (!creature || !s || deps?.getCurrentArea?.() !== MAP_ID) { creature?.avatarRef?.dispose?.(); return; }
     const max = Math.round((Number(creature.maxHealth) || Number(creature.health) || 100) * cfg('sanctum.boss.healthMult', BOSS_HEALTH_MULT));

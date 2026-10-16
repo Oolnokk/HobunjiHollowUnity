@@ -658,7 +658,7 @@
     for (const line of lines) {
       if (line.includes('js/performance-debug.js')) continue; // Skip this module's own frames.
       // Script URLs here carry a cache-busting query string (e.g.
-      // ".../item-arch-category-colors.js?v=20260910review1:453:23"), so the
+      // ".../item-arch-category-colors.js?v=20261016h1d08a00:453:23"), so the
       // line:column numbers sit after "?...", not immediately after ".js".
       const match = line.match(/([\w-]+\.js)(?:\?[^:()\s]*)?:(\d+):(\d+)/);
       if (match) return `${match[1]}:${match[2]}`;

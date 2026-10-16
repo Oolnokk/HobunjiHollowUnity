@@ -95,7 +95,7 @@
     const descriptor = descriptorFor(key, definition); // Used only as a final compatibility fallback for old/static definitions.
     const authored = authoredCategory(definition); // Broad Inventory cat remains the last-resort structural hint.
 
-    if (definition.techniqueScrollTier || hasTag(tags, 'technique scroll')) return 'technique';
+    if (definition.masteryUnlock || definition.techniqueScrollTier || hasTag(tags, 'technique scroll')) return 'technique';
     if (definition.alchemyRecipeScrollId || hasTag(tags, 'recipe', 'blueprint') || RECIPE_RE.test(descriptor)) return 'recipe';
 
     if (definition.alchemyRecipeId || hasTag(tags, 'potion', 'flask', 'alchemy')) {

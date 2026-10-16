@@ -179,6 +179,7 @@
 
   function registerItems(deps) {
     if (!deps?.ITEM_DEFS || !Array.isArray(deps.inventoryItems)) return;
+    window.CombatProgression?.registerItems?.(deps);
     Object.entries(SCROLLS).forEach(([tierText, scroll]) => {
       const tier = Number(tierText); // Used to identify held scrolls directly from canonical item metadata.
       const old = deps.ITEM_DEFS[scroll.key] || {}; // Used to preserve future authored art/economy overrides.
@@ -306,14 +307,21 @@
     const begin = api.beginHeldItemAction.bind(api); // Used by legacy/programmatic callers that still enter through the press-start route.
     const consumeImmediate = api.consumeHeldItemImmediate.bind(api); // Used by the current action-arch dispatcher for non-hold Read actions.
     api.getHeldItemAction = () => {
+      const mastery = heldMasteryItem(); // Reusable mastery literature shares the existing Read input path.
+      if (mastery) return { icon: mastery.icon, label: `Read ${mastery.label}`, action: 'consume_held_item', style: 'primary', allowed: !window.CombatProgression.hasEffectUnlock(mastery.masteryUnlock.type, mastery.masteryUnlock.rank, mastery.masteryUnlock.effectId) };
       const manual = heldManual(); // Used to expose exact manual reading through the configurable Item Action 1 path.
       if (manual) return { icon: manual.def.icon || '📕', label: isUnlocked(manual.abilityId) ? `${ability(manual.abilityId)?.label || manual.abilityId} already learned` : `Read ${manual.label}`, action: 'consume_held_item', style: 'primary', allowed: !isUnlocked(manual.abilityId) };
       const held = heldScroll(); // Used to expose scroll reading through the already-configurable Item Action 1 path.
       return held ? { icon: held.def.icon || '📜', label: `Read ${held.def.label}`, action: 'consume_held_item', style: 'primary', allowed: true } : getAction();
     };
-    api.beginHeldItemAction = () => heldManual() ? consumeManual() : heldScroll() ? consumeScroll() : begin();
-    api.consumeHeldItemImmediate = () => heldManual() ? consumeManual() : heldScroll() ? consumeScroll() : consumeImmediate();
+    api.beginHeldItemAction = () => heldMasteryItem() ? window.CombatProgression.readMasteryItem(heldMasteryItem().key) : heldManual() ? consumeManual() : heldScroll() ? consumeScroll() : begin();
+    api.consumeHeldItemImmediate = () => heldMasteryItem() ? window.CombatProgression.readMasteryItem(heldMasteryItem().key) : heldManual() ? consumeManual() : heldScroll() ? consumeScroll() : consumeImmediate();
     api.__techniqueScrollsPatched = true;
+  }
+
+  function heldMasteryItem() {
+    const active = selectedHeldBagItem(); // Honor Inventory Hold before the item arch, as for technique manuals.
+    return active?.key && Number(itemDeps?.inventory?.[active.key]) > 0 && itemDeps?.ITEM_DEFS?.[active.key]?.masteryUnlock ? { ...itemDeps.ITEM_DEFS[active.key], key: active.key } : null;
   }
 
   function patchCaptains(api) {

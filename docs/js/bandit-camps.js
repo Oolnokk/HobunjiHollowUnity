@@ -1131,7 +1131,7 @@
   }
 
   function lootBanditTent(zoneId, obj) {
-    const gained = deps.rollLootPool('banditTent');
+    const gained = deps.rollLootPool('banditTent', { zoneId });
     const parts = grantBanditLoot(gained);
     if (obj.interactable) obj.interactable.lootable = false;
     deps.refreshItemScroll(); deps.buildInventoryGrid(); deps.refreshActionBar();
@@ -1293,7 +1293,7 @@
       },
       onAction(action) {
         if (action !== 'obj_loot_corpse') return { ok: false, message: 'Unknown action.' };
-        const parts = grantBanditLoot(deps.rollLootPool(c.def.lootPool));
+        const parts = grantBanditLoot(deps.rollLootPool(c.def.lootPool, { entity: c }));
         const specialAmmo = window.RangedWeapons?.rollSpecialAmmoLoot?.() || 0;
         if (specialAmmo) parts.push(`🏹 Special Ammo×${specialAmmo}`);
         grantFlaskerLoadoutLoot(c, parts); // Flaskers always surrender several of both infinite combat loadout types on death.

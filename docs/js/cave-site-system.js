@@ -843,7 +843,7 @@
   function grantCacheLoot(profile, plan, state) {
     if (!plan.cache || state.cacheOpened || caveDistanceTiles(plan.cache) > CACHE_OPEN_RADIUS_TILES) return;
     state.cacheOpened = true;
-    const gained = window.LootRolling?.rollLootPool?.('dungeonChest_tier2') || {}; // Existing dungeon chest pool supplies ordinary treasure/trinket entries.
+    const gained = window.LootRolling?.rollLootPool?.('dungeonChest_tier2', { masterySource: 'caveCache', zoneId: profile.zoneId }) || {}; // Cache mastery uses the wilderness pool rather than the inherited ruin chest pool.
     const parts = [];
     const trinkets = window.TrinketSystem?.claimLoot?.(gained, 'caveCache') || []; // Existing trinket claim path converts trinket_* loot entries into gear correctly.
     parts.push(...trinkets);

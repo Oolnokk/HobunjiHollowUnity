@@ -236,6 +236,86 @@
     ],
   };
 
+  function effectId(option) {
+    // Ordinary and condition-bonus afflictions teach the same weapon bonus.
+    const payload = option.afflictions || option.quickBonusAfflictions || option.stat || option.quickBonusDebuff || option.quickBonusInstantEffect; // Stable payload identity keeps existing numeric option indexes intact.
+    const kind = option.afflictions || option.quickBonusAfflictions ? 'aff' : option.stat ? 'stat' : option.quickBonusDebuff ? 'debuff' : 'instant'; // Used to distinguish identically named payload fields.
+    return kind + '_' + Object.keys(payload).sort().map(key => `${key}_${payload[key]}`).join('_').replace(/[^a-zA-Z0-9_]/g, 'p');
+  }
+
+  function effectTheme(option) {
+    const keys = Object.keys(option.afflictions || option.quickBonusAfflictions || option.stat || {}).join(' ') + ' ' + (option.quickBonusDebuff?.id || option.quickBonusInstantEffect?.id || ''); // Existing gameplay payload determines the thematic family, independently of cosmetic labels.
+    if (/range|lunge|zip|walkSpeed|cooldown|invuln|winded|shattered|unsteady|reeling|sluggish/i.test(keys)) return 'tothal';
+    if (/bleeding|wounded|poisoned|infected|sapped|taxed|enfeebled|inhibited|heavy|bleedout/i.test(keys)) return 'kanthic';
+    return 'hronal';
+  }
+
+  const effectCatalog = new Map(); // Shared damage-type bonus catalog used by item registration, unlocks, loot authoring and diagnostics.
+  for (const tree of Object.values(TREES)) {
+    for (const type of ['sharp', 'blunt']) {
+      const rows = Array.isArray(tree) ? tree : tree[type]; // Blink bonuses can be learned for either melee damage type.
+      for (const row of rows) for (const option of row) option.effectId = effectId(option);
+      const options = [...new Map(rows.flat().map(option => [effectId(option), option])).values()]; // One copy of every supported bonus is appended to every rank.
+      for (const option of options) {
+        const id = effectId(option); // Used as the persistent identity across abilities that share this exact bonus.
+        option.effectId = id;
+        if (!effectCatalog.has(id)) effectCatalog.set(id, { id, label: option.label, desc: option.desc, theme: effectTheme(option), types: [] });
+        if (!effectCatalog.get(id).types.includes(type)) effectCatalog.get(id).types.push(type);
+      }
+      for (const row of rows) {
+        const seen = new Set(row.map(effectId)); // Preserve all legacy indexes, then append previously unavailable bonuses.
+        for (const option of options) if (!seen.has(option.effectId)) { row.push(option); seen.add(option.effectId); }
+      }
+    }
+  }
+
+  for (const effect of effectCatalog.values()) {
+    effect.unlockRanks = {}; // Loot omits combinations already offered among the two initial choices everywhere this bonus is supported.
+    for (const type of effect.types) effect.unlockRanks[type] = [1, 2, 3, 4, 5].filter(rank => Object.values(TREES).some(tree => {
+      const row = (Array.isArray(tree) ? tree : tree[type])[rank - 1]; // Availability belongs to a rank and damage type, independently of the weapon instance.
+      return row.some((option, index) => index >= 2 && option.effectId === effect.id) && !row.slice(0, 2).some(option => option.effectId === effect.id);
+    }));
+  }
+
+  let effectUnlocks = new Set(); // Character-wide learned damage-type/rank/effect combinations; never consumed when assigning a weapon.
+  let itemDeps = null; // Existing item initialization supplies inventory metadata and the canonical save/refresh callbacks.
+  let lastUnlockEvent = null; // Mobile-readable mastery diagnostics retain the most recent successful read or loot roll.
+
+  function unlockKey(type, rank, id) { return `${type}:${rank}:${id}`; }
+  function validUnlock(type, rank, id) { return ['sharp', 'blunt'].includes(type) && Number.isInteger(rank) && rank >= 1 && rank <= 5 && !!effectCatalog.get(id)?.types.includes(type); }
+  function hasEffectUnlock(type, rank, id) { return effectUnlocks.has(unlockKey(type, rank, id)); }
+  function isOptionUnlocked(toolKey, abilityId, rank, index) {
+    const option = getTree(abilityId, weaponTypeForTool(toolKey))?.[rank - 1]?.[index]; // Validation is shared by the UI, tutorials and the spend boundary.
+    return Number.isInteger(index) && !!option && (index < 2 || hasEffectUnlock(weaponTypeForTool(toolKey), rank, option.effectId));
+  }
+
+  function itemKey(type, rank, id, form = 'tablet') { return `mastery${form === 'scroll' ? 'Scroll' : 'Tablet'}:${unlockKey(type, rank, id)}`; }
+  function registerItems(deps) {
+    if (!deps?.ITEM_DEFS || !Array.isArray(deps.inventoryItems)) return;
+    itemDeps = { ...itemDeps, ...deps };
+    const known = new Set(deps.inventoryItems.map(item => item.key)); // Registration runs through several existing init calls without duplicating inventory rows.
+    for (const effect of effectCatalog.values()) for (const type of effect.types) for (let rank = 1; rank <= 5; rank++) for (const form of ['tablet', 'scroll']) {
+      const key = itemKey(type, rank, effect.id, form); // Deterministic item key lets ordinary inventory/world saves retain the precise lesson.
+      const label = `${effect.label} — ${type === 'blunt' ? 'Blunt' : 'Sharp'} Mastery ${rank} ${form === 'scroll' ? 'Scroll' : 'Tablet'}`; // Used by loot toasts and inventory details.
+      deps.ITEM_DEFS[key] = { ...deps.ITEM_DEFS[key], icon: form === 'scroll' ? '📜' : '🪨', label, cat: 'material', sellPrice: 25 * rank, tags: ['Mastery', 'Combat', 'Reusable'], masteryUnlock: { type, rank, effectId: effect.id }, desc: `${effect.desc} Read to permanently unlock this bonus at Mastery ${rank} for all ${type} melee weapons. Reusable; applying it to weapons does not consume this item or the unlock.` };
+      if (!known.has(key)) deps.inventoryItems.push({ key, icon: deps.ITEM_DEFS[key].icon, label: label.toUpperCase(), max: 99 });
+    }
+  }
+
+  function readMasteryItem(key) {
+    const lesson = itemDeps?.ITEM_DEFS?.[key]?.masteryUnlock; // Only an actual owned registered item can teach an unlock.
+    if (!lesson || !(Number(itemDeps?.inventory?.[key]) > 0) || !validUnlock(lesson.type, lesson.rank, lesson.effectId) || hasEffectUnlock(lesson.type, lesson.rank, lesson.effectId)) return false;
+    effectUnlocks.add(unlockKey(lesson.type, lesson.rank, lesson.effectId));
+    lastUnlockEvent = { kind: 'learned', ...lesson, key };
+    persist();
+    itemDeps.showToast?.(`Learned ${itemDeps.ITEM_DEFS[key].label}. Available on all ${lesson.type} melee weapons.`, true);
+    itemDeps.saveMemberWorldData?.();
+    itemDeps.refreshActionBar?.();
+    window.InventoryHeldOverride?.refreshInventoryUseButton?.();
+    window.dispatchEvent?.(new CustomEvent('hobunji-mastery-unlocks-change', { detail: { ...lesson } }));
+    return true;
+  }
+
   function isWeaponTyped(abilityId) {
     const t = TREES[abilityId];
     return !!(t && !Array.isArray(t));
@@ -318,7 +398,7 @@
     if (state !== 'chosen' && state !== 'available') return false;
     const weaponType = isWeaponTyped(abilityId) ? weaponTypeForTool(toolKey) : null;
     const options = getTree(abilityId, weaponType)?.[level - 1];
-    if (!options || optionIndex < 0 || optionIndex >= options.length) return false;
+    if (!Number.isInteger(level) || !options || !isOptionUnlocked(toolKey, abilityId, level, optionIndex)) return false;
     if (!window.Combat.deps?.spendMotesOfProwess?.(moteCostForLevel(level))) return false;
     if (!meta[toolKey]) meta[toolKey] = {};
     if (!meta[toolKey][abilityId]) meta[toolKey][abilityId] = {};
@@ -368,6 +448,11 @@
     for (const debuff of quickBonusDebuffs) debuff.power = masteryPower;
     for (const effect of quickBonusInstantEffects) effect.power = masteryPower;
     for (const key of Object.keys(stats)) stats[key] *= masteryPower;
+    // Five stacked cost/cooldown reductions may reach zero, but cannot turn
+    // stamina expenditure into healing or schedule cooldowns in the past.
+    for (const key of ['staminaCostMul', 'drainMul', 'absorbMul', 'cooldownMul', 'idleDrainMul', 'zipCostMul', 'zipCooldownMul']) {
+      if (stats[key] < -1) stats[key] = -1;
+    }
 
     // Increase AoE / Increase Lunge Distance perks apply here so every
     // ability (which already reads stats.rangeMul/lungeMul off this same
@@ -423,19 +508,35 @@
   }
 
   function persist() {
+    const profile = window.__hobunjiPlayerProfile; // Keep normal world/profile saves and the direct character save in agreement.
+    if (profile) { profile.abilityProgression = serialize(); profile.masteryEffectUnlocks = [...effectUnlocks].sort(); }
     try {
       const saveMeta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
       if (!saveMeta || !window.__hobunjiPlayerProfile?.characterId) return;
       const ch = (saveMeta.characters || []).find(c => c.id === window.__hobunjiPlayerProfile.characterId);
       if (ch) {
         ch.abilityProgression = serialize();
+        ch.masteryEffectUnlocks = [...effectUnlocks].sort();
         localStorage.setItem('hobunjiSaveMeta', JSON.stringify(saveMeta));
       }
     } catch {}
   }
 
   function loadFromProfile(playerData) {
+    lastUnlockEvent = null; // Switching characters also clears the previous character's diagnostic event.
+    effectUnlocks = new Set((Array.isArray(playerData?.masteryEffectUnlocks) ? playerData.masteryEffectUnlocks : []).filter(key => {
+      if (typeof key !== 'string') return false;
+      const [type, rank, id] = key.split(':'); // Reject malformed imported unlock records.
+      return validUnlock(type, Number(rank), id) && key === unlockKey(type, Number(rank), id);
+    }));
     load(playerData?.abilityProgression);
+    // Old saved builds remain usable and teach their already chosen special bonuses.
+    if (!Array.isArray(playerData?.masteryEffectUnlocks)) {
+      for (const [tool, abilities] of Object.entries(meta)) for (const [ability, ranks] of Object.entries(abilities)) for (const [rank, index] of Object.entries(ranks)) {
+        if (index >= 2) effectUnlocks.add(unlockKey(weaponTypeForTool(tool), Number(rank), getChosenOption(tool, ability, Number(rank)).effectId));
+      }
+      if (playerData) playerData.masteryEffectUnlocks = [...effectUnlocks].sort();
+    }
   }
 
   document.addEventListener('hobunjiPlayerReady', (e) => loadFromProfile(e.detail));
@@ -453,5 +554,8 @@
     getEffects,
     beginPreview,
     endPreview,
+    isOptionUnlocked, hasEffectUnlock, registerItems, readMasteryItem, itemKey,
+    getEffectCatalog: () => [...effectCatalog.values()].map(effect => ({ ...effect, types: [...effect.types], unlockRanks: Object.fromEntries(Object.entries(effect.unlockRanks).map(([type, ranks]) => [type, [...ranks]])) })),
+    getDebug: () => ({ unlocked: [...effectUnlocks].sort(), effects: effectCatalog.size, registered: !!itemDeps, lastEvent: lastUnlockEvent && { ...lastUnlockEvent } }),
   };
 })();

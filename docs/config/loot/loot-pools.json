@@ -195,6 +195,1008 @@
         { "id": "gold", "itemKey": "gold", "min": 4, "max": 12, "chance": 1, "conditions": {} },
         { "id": "scrapMetal", "itemKey": "banditScrapMetal", "min": 0, "max": 2, "chance": 1, "conditions": {} }
       ]
+    },
+    "mastery_cave_map_northern_cliffs": {
+      "label": "Northern Cliffs Cave Caches / Catacombs",
+      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "entries": [],
+      "mastery": {
+        "chance": 0.2,
+        "rankWeights": {
+          "1": 45,
+          "2": 35,
+          "3": 20
+        },
+        "form": "tablet",
+        "effects": {
+          "1": {
+            "sharp": [
+              "aff_bleedingHealth_0p325",
+              "aff_woundedStamina_0p39",
+              "debuff_durationS_12_id_unsteady",
+              "stat_invulnMul_0p25"
+            ],
+            "blunt": [
+              "aff_bruisedHealth_0p48750000000000004",
+              "debuff_durationS_12_id_inhibited",
+              "stat_damageMul_0p13",
+              "stat_zipDistanceMul_0p15"
+            ]
+          },
+          "2": {
+            "sharp": [
+              "aff_bleedingHealth_0p325",
+              "debuff_durationS_12_id_enfeebled",
+              "stat_invulnMul_0p25"
+            ],
+            "blunt": [
+              "aff_bruisedHealth_0p48750000000000004",
+              "debuff_durationS_12_id_sapped",
+              "stat_zipCooldownMul_p0p2"
+            ]
+          },
+          "3": {
+            "sharp": [
+              "aff_bleedingHealth_0p325",
+              "aff_woundedStamina_0p39",
+              "debuff_durationS_12_id_taxed",
+              "stat_idleDrainMul_p0p25"
+            ],
+            "blunt": [
+              "aff_bruisedHealth_0p48750000000000004",
+              "debuff_durationS_12_id_inhibited",
+              "stat_damageMul_0p13",
+              "stat_walkSpeedMul_0p1"
+            ]
+          }
+        }
+      }
+    },
+    "mastery_den_map_northern_cliffs": {
+      "label": "Northern Cliffs Den Mothers",
+      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "entries": [],
+      "mastery": {
+        "chance": 1,
+        "rankWeights": {
+          "1": 50,
+          "2": 50
+        },
+        "form": "tablet",
+        "effects": {
+          "1": {
+            "sharp": [
+              "aff_poisonedHealth_0p252",
+              "debuff_durationS_12_id_exposed",
+              "stat_damageMul_0p12",
+              "stat_walkSpeedMul_0p1"
+            ],
+            "blunt": [
+              "aff_shatteredStamina_0p55",
+              "debuff_durationS_12_id_taxed",
+              "stat_idleDrainMul_p0p25"
+            ]
+          },
+          "2": {
+            "sharp": [
+              "aff_poisonedHealth_0p252",
+              "debuff_durationS_12_id_reeling",
+              "stat_zipCooldownMul_p0p2"
+            ],
+            "blunt": [
+              "aff_shatteredStamina_0p33",
+              "instant_amount_6_id_bleedout",
+              "stat_zipDistanceMul_0p2"
+            ]
+          }
+        }
+      }
+    },
+    "mastery_cave_map_southern_cloud_forest": {
+      "label": "Southern Cloud Forest Cave Caches / Catacombs",
+      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "entries": [],
+      "mastery": {
+        "chance": 0.2,
+        "rankWeights": {
+          "1": 45,
+          "2": 35,
+          "3": 20
+        },
+        "form": "tablet",
+        "effects": {
+          "1": {
+            "sharp": [
+              "aff_infectedStamina_0p36",
+              "aff_woundedStamina_0p45499999999999996",
+              "instant_amount_6_id_bleedout",
+              "stat_lungeMul_0p2"
+            ],
+            "blunt": [
+              "aff_congealedHealth_0p8",
+              "debuff_durationS_12_id_reeling",
+              "stat_damageMul_0p15",
+              "stat_zipDistanceMul_0p2"
+            ]
+          },
+          "2": {
+            "sharp": [
+              "aff_bleedingHealth_0p5",
+              "debuff_durationS_12_id_exposed",
+              "stat_lungeMul_0p2"
+            ],
+            "blunt": [
+              "aff_bruisedHealth_0p75",
+              "debuff_durationS_12_id_sluggish",
+              "stat_zipCostMul_p0p15"
+            ]
+          },
+          "3": {
+            "sharp": [
+              "aff_bleedingHealth_0p5",
+              "aff_woundedStamina_0p65",
+              "debuff_durationS_12_id_unsteady",
+              "stat_invulnMul_0p25"
+            ],
+            "blunt": [
+              "aff_bruisedHealth_0p75",
+              "debuff_durationS_12_id_reeling",
+              "stat_damageMul_0p15",
+              "stat_zipCostMul_p0p15"
+            ]
+          }
+        }
+      }
+    },
+    "mastery_den_map_southern_cloud_forest": {
+      "label": "Southern Cloud Forest Den Mothers",
+      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "entries": [],
+      "mastery": {
+        "chance": 1,
+        "rankWeights": {
+          "1": 50,
+          "2": 50
+        },
+        "form": "tablet",
+        "effects": {
+          "1": {
+            "sharp": [
+              "aff_poisonedHealth_0p315",
+              "debuff_durationS_12_id_heavy",
+              "stat_damageMul_0p13",
+              "stat_zipCooldownMul_p0p2"
+            ],
+            "blunt": [
+              "aff_windedStamina_0p54",
+              "debuff_durationS_12_id_unsteady",
+              "stat_invulnMul_0p2"
+            ]
+          },
+          "2": {
+            "sharp": [
+              "aff_poisonedHealth_0p315",
+              "debuff_durationS_12_id_sapped",
+              "stat_zipCostMul_p0p15"
+            ],
+            "blunt": [
+              "aff_shatteredStamina_0p55",
+              "stat_absorbMul_p0p15"
+            ]
+          }
+        }
+      }
+    },
+    "mastery_cave_map_western_slope": {
+      "label": "Western Slope Cave Caches / Catacombs",
+      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "entries": [],
+      "mastery": {
+        "chance": 0.2,
+        "rankWeights": {
+          "1": 45,
+          "2": 35,
+          "3": 20
+        },
+        "form": "tablet",
+        "effects": {
+          "1": {
+            "sharp": [
+              "aff_infectedStamina_0p48",
+              "debuff_durationS_12_id_brittle",
+              "stat_absorbMul_p0p15",
+              "stat_rangeMul_0p12"
+            ],
+            "blunt": [
+              "aff_congealedHealth_1",
+              "debuff_durationS_12_id_sapped",
+              "stat_drainMul_p0p2"
+            ]
+          },
+          "2": {
+            "sharp": [
+              "aff_infectedStamina_0p36",
+              "debuff_durationS_12_id_heavy",
+              "stat_staminaCostMul_p0p15"
+            ],
+            "blunt": [
+              "aff_congealedHealth_0p8",
+              "debuff_durationS_12_id_taxed",
+              "stat_zipDistanceMul_0p15"
+            ]
+          },
+          "3": {
+            "sharp": [
+              "aff_infectedStamina_0p36",
+              "debuff_durationS_12_id_enfeebled",
+              "instant_amount_6_id_bleedout",
+              "stat_lungeMul_0p2"
+            ],
+            "blunt": [
+              "aff_shatteredStamina_0p33",
+              "debuff_durationS_12_id_sapped",
+              "stat_drainMul_p0p2",
+              "stat_zipDistanceMul_0p18"
+            ]
+          }
+        }
+      }
+    },
+    "mastery_den_map_western_slope": {
+      "label": "Western Slope Den Mothers",
+      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "entries": [],
+      "mastery": {
+        "chance": 1,
+        "rankWeights": {
+          "1": 50,
+          "2": 50
+        },
+        "form": "tablet",
+        "effects": {
+          "1": {
+            "sharp": [
+              "aff_poisonedHealth_0p336",
+              "debuff_durationS_12_id_inhibited",
+              "stat_damageMul_0p15",
+              "stat_zipDistanceMul_0p15"
+            ],
+            "blunt": [
+              "aff_windedStamina_0p63",
+              "instant_amount_6_id_bleedout",
+              "stat_invulnMul_0p25"
+            ]
+          },
+          "2": {
+            "sharp": [
+              "aff_poisonedHealth_0p336",
+              "debuff_durationS_12_id_sluggish",
+              "stat_zipDistanceMul_0p15"
+            ],
+            "blunt": [
+              "aff_windedStamina_0p54",
+              "stat_cooldownMul_p0p25"
+            ]
+          }
+        }
+      }
+    },
+    "mastery_cave_map_eastern_mire": {
+      "label": "Eastern Mire Cave Caches / Catacombs",
+      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "entries": [],
+      "mastery": {
+        "chance": 0.2,
+        "rankWeights": {
+          "1": 45,
+          "2": 35,
+          "3": 20
+        },
+        "form": "tablet",
+        "effects": {
+          "1": {
+            "sharp": [
+              "aff_bleedingHealth_0p3",
+              "aff_shatteredStamina_0p4675",
+              "debuff_durationS_12_id_taxed",
+              "stat_invulnMul_0p2"
+            ],
+            "blunt": [
+              "aff_bruisedHealth_0p44999999999999996",
+              "debuff_durationS_12_id_heavy",
+              "stat_damageMul_0p12",
+              "stat_zipCooldownMul_p0p2"
+            ]
+          },
+          "2": {
+            "sharp": [
+              "aff_bleedingHealth_0p3",
+              "aff_woundedStamina_0p65",
+              "stat_idleDrainMul_p0p2"
+            ],
+            "blunt": [
+              "aff_bruisedHealth_0p44999999999999996",
+              "debuff_durationS_12_id_reeling",
+              "stat_walkSpeedMul_0p1"
+            ]
+          },
+          "3": {
+            "sharp": [
+              "aff_bleedingHealth_0p3",
+              "aff_poisonedHealth_0p378",
+              "debuff_durationS_12_id_sluggish",
+              "stat_idleDrainMul_p0p2",
+              "stat_zipDistanceMul_0p2"
+            ],
+            "blunt": [
+              "aff_bruisedHealth_0p44999999999999996",
+              "debuff_durationS_12_id_heavy",
+              "stat_damageMul_0p12",
+              "stat_staminaCostMul_p0p15"
+            ]
+          }
+        }
+      }
+    },
+    "mastery_den_map_eastern_mire": {
+      "label": "Eastern Mire Den Mothers",
+      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "entries": [],
+      "mastery": {
+        "chance": 1,
+        "rankWeights": {
+          "1": 50,
+          "2": 50
+        },
+        "form": "tablet",
+        "effects": {
+          "1": {
+            "sharp": [
+              "aff_infectedStamina_0p6",
+              "debuff_durationS_12_id_enfeebled",
+              "stat_cooldownMul_p0p25",
+              "stat_staminaCostMul_p0p15"
+            ],
+            "blunt": [
+              "aff_shatteredStamina_0p33",
+              "debuff_durationS_12_id_sluggish",
+              "stat_idleDrainMul_p0p2"
+            ]
+          },
+          "2": {
+            "sharp": [
+              "aff_infectedStamina_0p6",
+              "debuff_durationS_12_id_inhibited",
+              "stat_walkSpeedMul_0p1"
+            ],
+            "blunt": [
+              "aff_congealedHealth_1",
+              "debuff_durationS_12_id_unsteady",
+              "stat_zipDistanceMul_0p18"
+            ]
+          }
+        }
+      }
+    },
+    "mastery_ruin_hronal": {
+      "label": "hronal Non-boss Ruin Chests",
+      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "entries": [],
+      "mastery": {
+        "chance": 1,
+        "rankWeights": {
+          "2": 50,
+          "3": 50
+        },
+        "form": "tablet",
+        "theme": "hronal",
+        "effects": {
+          "2": {
+            "sharp": [
+              "debuff_durationS_12_id_brittle",
+              "stat_absorbMul_p0p15"
+            ],
+            "blunt": [
+              "debuff_durationS_12_id_brittle",
+              "stat_damageMul_0p13"
+            ]
+          },
+          "3": {
+            "sharp": [
+              "debuff_durationS_12_id_brittle",
+              "stat_absorbMul_p0p15",
+              "stat_damageMul_0p13",
+              "stat_staminaCostMul_p0p15"
+            ],
+            "blunt": [
+              "debuff_durationS_12_id_brittle",
+              "stat_absorbMul_p0p15",
+              "stat_idleDrainMul_p0p25"
+            ]
+          }
+        }
+      }
+    },
+    "mastery_final_hronal": {
+      "label": "hronal Final Ruin Chests",
+      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "entries": [],
+      "mastery": {
+        "chance": 1,
+        "rankWeights": {
+          "4": 75,
+          "5": 25
+        },
+        "form": "tablet",
+        "theme": "hronal",
+        "effects": {
+          "4": {
+            "sharp": [
+              "debuff_durationS_12_id_brittle",
+              "debuff_durationS_12_id_exposed",
+              "stat_absorbMul_p0p15",
+              "stat_damageMul_0p12",
+              "stat_damageMul_0p13",
+              "stat_damageMul_0p15",
+              "stat_idleDrainMul_p0p2",
+              "stat_idleDrainMul_p0p25"
+            ],
+            "blunt": [
+              "aff_bruisedHealth_0p44999999999999996",
+              "aff_bruisedHealth_0p75",
+              "aff_congealedHealth_1",
+              "debuff_durationS_12_id_brittle",
+              "stat_absorbMul_p0p15",
+              "stat_damageMul_0p1",
+              "stat_damageMul_0p13",
+              "stat_idleDrainMul_p0p2",
+              "stat_knockbackMul_0p15"
+            ]
+          },
+          "5": {
+            "sharp": [
+              "debuff_durationS_12_id_brittle",
+              "stat_absorbMul_p0p15",
+              "stat_damageMul_0p13",
+              "stat_drainMul_p0p2",
+              "stat_idleDrainMul_p0p25"
+            ],
+            "blunt": [
+              "aff_bruisedHealth_0p375",
+              "aff_bruisedHealth_0p75",
+              "aff_congealedHealth_1",
+              "debuff_durationS_12_id_exposed",
+              "stat_damageMul_0p1",
+              "stat_damageMul_0p13",
+              "stat_drainMul_p0p2",
+              "stat_idleDrainMul_p0p25",
+              "stat_staminaCostMul_p0p15"
+            ]
+          }
+        }
+      }
+    },
+    "mastery_lich_hronal": {
+      "label": "hronal Lich",
+      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "entries": [],
+      "mastery": {
+        "chance": 1,
+        "rankWeights": {
+          "5": 1
+        },
+        "form": "tablet",
+        "theme": "hronal",
+        "effects": {
+          "5": {
+            "sharp": [
+              "debuff_durationS_12_id_exposed",
+              "stat_damageMul_0p12",
+              "stat_damageMul_0p15",
+              "stat_idleDrainMul_p0p2",
+              "stat_staminaCostMul_p0p15"
+            ],
+            "blunt": [
+              "aff_bruisedHealth_0p44999999999999996",
+              "aff_congealedHealth_0p8",
+              "debuff_durationS_12_id_brittle",
+              "stat_absorbMul_p0p15",
+              "stat_damageMul_0p12",
+              "stat_damageMul_0p15",
+              "stat_idleDrainMul_p0p2",
+              "stat_knockbackMul_0p15"
+            ]
+          }
+        }
+      }
+    },
+    "mastery_ruin_tothal": {
+      "label": "tothal Non-boss Ruin Chests",
+      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "entries": [],
+      "mastery": {
+        "chance": 1,
+        "rankWeights": {
+          "2": 50,
+          "3": 50
+        },
+        "form": "tablet",
+        "theme": "tothal",
+        "effects": {
+          "2": {
+            "sharp": [
+              "aff_shatteredStamina_0p385",
+              "debuff_durationS_12_id_unsteady",
+              "stat_zipDistanceMul_0p2"
+            ],
+            "blunt": [
+              "aff_windedStamina_0p9",
+              "stat_invulnMul_0p25"
+            ]
+          },
+          "3": {
+            "sharp": [
+              "aff_shatteredStamina_0p385",
+              "debuff_durationS_12_id_reeling",
+              "stat_invulnMul_0p2",
+              "stat_walkSpeedMul_0p1"
+            ],
+            "blunt": [
+              "aff_windedStamina_0p54",
+              "debuff_durationS_12_id_unsteady",
+              "stat_invulnMul_0p2"
+            ]
+          }
+        }
+      }
+    },
+    "mastery_final_tothal": {
+      "label": "tothal Final Ruin Chests",
+      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "entries": [],
+      "mastery": {
+        "chance": 1,
+        "rankWeights": {
+          "4": 75,
+          "5": 25
+        },
+        "form": "tablet",
+        "theme": "tothal",
+        "effects": {
+          "4": {
+            "sharp": [
+              "aff_shatteredStamina_0p385",
+              "aff_shatteredStamina_0p4675",
+              "debuff_durationS_12_id_reeling",
+              "debuff_durationS_12_id_sluggish",
+              "debuff_durationS_12_id_unsteady",
+              "stat_cooldownMul_p0p25",
+              "stat_invulnMul_0p25",
+              "stat_lungeMul_0p2",
+              "stat_rangeMul_0p12",
+              "stat_walkSpeedMul_0p1",
+              "stat_zipDistanceMul_0p15",
+              "stat_zipDistanceMul_0p2"
+            ],
+            "blunt": [
+              "aff_shatteredStamina_0p33",
+              "aff_windedStamina_0p54",
+              "aff_windedStamina_0p63",
+              "debuff_durationS_12_id_reeling",
+              "debuff_durationS_12_id_sluggish",
+              "stat_cooldownMul_p0p25",
+              "stat_invulnMul_0p25",
+              "stat_walkSpeedMul_0p1",
+              "stat_zipCooldownMul_p0p2",
+              "stat_zipDistanceMul_0p18"
+            ]
+          },
+          "5": {
+            "sharp": [
+              "aff_shatteredStamina_0p4675",
+              "debuff_durationS_12_id_sluggish",
+              "stat_cooldownMul_p0p25",
+              "stat_invulnMul_0p25",
+              "stat_rangeMul_0p12",
+              "stat_zipCostMul_p0p15",
+              "stat_zipDistanceMul_0p18"
+            ],
+            "blunt": [
+              "aff_shatteredStamina_0p55",
+              "aff_windedStamina_0p9",
+              "debuff_durationS_12_id_sluggish",
+              "stat_cooldownMul_p0p25",
+              "stat_invulnMul_0p25",
+              "stat_zipCostMul_p0p15",
+              "stat_zipDistanceMul_0p18"
+            ]
+          }
+        }
+      }
+    },
+    "mastery_lich_tothal": {
+      "label": "tothal Lich",
+      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "entries": [],
+      "mastery": {
+        "chance": 1,
+        "rankWeights": {
+          "5": 1
+        },
+        "form": "tablet",
+        "theme": "tothal",
+        "effects": {
+          "5": {
+            "sharp": [
+              "debuff_durationS_12_id_reeling",
+              "debuff_durationS_12_id_unsteady",
+              "stat_invulnMul_0p2",
+              "stat_lungeMul_0p2",
+              "stat_walkSpeedMul_0p1",
+              "stat_zipDistanceMul_0p15"
+            ],
+            "blunt": [
+              "aff_windedStamina_0p63",
+              "debuff_durationS_12_id_reeling",
+              "debuff_durationS_12_id_unsteady",
+              "stat_invulnMul_0p2",
+              "stat_walkSpeedMul_0p1",
+              "stat_zipDistanceMul_0p15"
+            ]
+          }
+        }
+      }
+    },
+    "mastery_ruin_kanthic": {
+      "label": "kanthic Non-boss Ruin Chests",
+      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "entries": [],
+      "mastery": {
+        "chance": 1,
+        "rankWeights": {
+          "2": 50,
+          "3": 50
+        },
+        "form": "tablet",
+        "theme": "kanthic",
+        "effects": {
+          "2": {
+            "sharp": [
+              "aff_poisonedHealth_0p42",
+              "instant_amount_6_id_bleedout"
+            ],
+            "blunt": [
+              "debuff_durationS_12_id_enfeebled"
+            ]
+          },
+          "3": {
+            "sharp": [
+              "aff_infectedStamina_0p6",
+              "debuff_durationS_12_id_heavy"
+            ],
+            "blunt": [
+              "debuff_durationS_12_id_enfeebled",
+              "debuff_durationS_12_id_taxed"
+            ]
+          }
+        }
+      }
+    },
+    "mastery_final_kanthic": {
+      "label": "kanthic Final Ruin Chests",
+      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "entries": [],
+      "mastery": {
+        "chance": 1,
+        "rankWeights": {
+          "4": 75,
+          "5": 25
+        },
+        "form": "tablet",
+        "theme": "kanthic",
+        "effects": {
+          "4": {
+            "sharp": [
+              "aff_bleedingHealth_0p3",
+              "aff_bleedingHealth_0p5",
+              "aff_poisonedHealth_0p252",
+              "aff_poisonedHealth_0p336",
+              "aff_poisonedHealth_0p42",
+              "aff_woundedStamina_0p45499999999999996",
+              "debuff_durationS_12_id_enfeebled",
+              "debuff_durationS_12_id_inhibited",
+              "debuff_durationS_12_id_taxed"
+            ],
+            "blunt": [
+              "debuff_durationS_12_id_enfeebled",
+              "debuff_durationS_12_id_heavy",
+              "debuff_durationS_12_id_inhibited",
+              "debuff_durationS_12_id_sapped",
+              "debuff_durationS_12_id_taxed",
+              "instant_amount_6_id_bleedout"
+            ]
+          },
+          "5": {
+            "sharp": [
+              "aff_bleedingHealth_0p25",
+              "aff_bleedingHealth_0p5",
+              "aff_infectedStamina_0p48",
+              "aff_poisonedHealth_0p315",
+              "aff_poisonedHealth_0p42",
+              "aff_woundedStamina_0p65",
+              "debuff_durationS_12_id_heavy",
+              "debuff_durationS_12_id_sapped",
+              "instant_amount_6_id_bleedout"
+            ],
+            "blunt": [
+              "debuff_durationS_12_id_enfeebled",
+              "debuff_durationS_12_id_inhibited",
+              "debuff_durationS_12_id_taxed"
+            ]
+          }
+        }
+      }
+    },
+    "mastery_lich_kanthic": {
+      "label": "kanthic Lich",
+      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "entries": [],
+      "mastery": {
+        "chance": 1,
+        "rankWeights": {
+          "5": 1
+        },
+        "form": "tablet",
+        "theme": "kanthic",
+        "effects": {
+          "5": {
+            "sharp": [
+              "aff_bleedingHealth_0p3",
+              "aff_infectedStamina_0p36",
+              "aff_infectedStamina_0p6",
+              "aff_poisonedHealth_0p336",
+              "aff_woundedStamina_0p45499999999999996",
+              "debuff_durationS_12_id_enfeebled",
+              "debuff_durationS_12_id_inhibited",
+              "debuff_durationS_12_id_taxed"
+            ],
+            "blunt": [
+              "debuff_durationS_12_id_heavy",
+              "debuff_durationS_12_id_sapped",
+              "instant_amount_6_id_bleedout"
+            ]
+          }
+        }
+      }
+    },
+    "mastery_skeleton": {
+      "label": "Skeletons",
+      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "entries": [],
+      "mastery": {
+        "chance": 0.15,
+        "rankWeights": {
+          "1": 50,
+          "2": 50
+        },
+        "form": "tablet",
+        "effects": {
+          "1": {
+            "sharp": [
+              "aff_poisonedHealth_0p42",
+              "debuff_durationS_12_id_sapped",
+              "stat_idleDrainMul_p0p2"
+            ],
+            "blunt": [
+              "debuff_durationS_12_id_enfeebled",
+              "stat_cooldownMul_p0p25",
+              "stat_staminaCostMul_p0p15"
+            ]
+          },
+          "2": {
+            "sharp": [
+              "aff_shatteredStamina_0p4675",
+              "stat_cooldownMul_p0p25"
+            ],
+            "blunt": [
+              "debuff_durationS_12_id_exposed",
+              "stat_damageMul_0p15"
+            ]
+          }
+        }
+      }
+    },
+    "mastery_bandit": {
+      "label": "Bandits",
+      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "entries": [],
+      "mastery": {
+        "chance": 0.05,
+        "rankWeights": {
+          "1": 50,
+          "2": 50
+        },
+        "form": "scroll",
+        "effects": {
+          "1": {
+            "sharp": [
+              "aff_bleedingHealth_0p25",
+              "aff_shatteredStamina_0p385",
+              "debuff_durationS_12_id_sluggish",
+              "stat_idleDrainMul_p0p25"
+            ],
+            "blunt": [
+              "aff_bruisedHealth_0p375",
+              "debuff_durationS_12_id_exposed",
+              "stat_damageMul_0p1",
+              "stat_walkSpeedMul_0p1"
+            ]
+          },
+          "2": {
+            "sharp": [
+              "aff_bleedingHealth_0p25",
+              "aff_woundedStamina_0p45499999999999996",
+              "stat_damageMul_0p15"
+            ],
+            "blunt": [
+              "aff_bruisedHealth_0p375",
+              "debuff_durationS_12_id_inhibited",
+              "stat_staminaCostMul_p0p15"
+            ]
+          }
+        }
+      }
+    },
+    "mastery_captain": {
+      "label": "Bandit Captains",
+      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "entries": [],
+      "mastery": {
+        "chance": 1,
+        "rankWeights": {
+          "3": 66,
+          "4": 33
+        },
+        "form": "scroll",
+        "effects": {
+          "3": {
+            "sharp": [
+              "aff_bleedingHealth_0p25",
+              "aff_poisonedHealth_0p315",
+              "debuff_durationS_12_id_sapped",
+              "stat_drainMul_p0p2",
+              "stat_zipDistanceMul_0p18"
+            ],
+            "blunt": [
+              "aff_bruisedHealth_0p375",
+              "debuff_durationS_12_id_exposed",
+              "stat_damageMul_0p1",
+              "stat_knockbackMul_0p15"
+            ]
+          },
+          "4": {
+            "sharp": [
+              "aff_bleedingHealth_0p25",
+              "aff_bleedingHealth_0p325",
+              "aff_infectedStamina_0p48",
+              "aff_poisonedHealth_0p315",
+              "aff_poisonedHealth_0p378",
+              "aff_woundedStamina_0p39",
+              "aff_woundedStamina_0p65",
+              "debuff_durationS_12_id_heavy",
+              "debuff_durationS_12_id_sapped",
+              "instant_amount_6_id_bleedout",
+              "stat_zipCooldownMul_p0p2",
+              "stat_zipDistanceMul_0p18"
+            ],
+            "blunt": [
+              "aff_bruisedHealth_0p375",
+              "aff_bruisedHealth_0p48750000000000004",
+              "aff_congealedHealth_0p8",
+              "aff_windedStamina_0p9",
+              "debuff_durationS_12_id_exposed",
+              "debuff_durationS_12_id_unsteady",
+              "stat_damageMul_0p12",
+              "stat_damageMul_0p15",
+              "stat_idleDrainMul_p0p25",
+              "stat_zipDistanceMul_0p15",
+              "stat_zipDistanceMul_0p2"
+            ]
+          }
+        }
+      }
+    },
+    "mastery_tent": {
+      "label": "Bandit Tents",
+      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "entries": [],
+      "mastery": {
+        "chance": 0.5,
+        "rankWeights": {
+          "2": 50,
+          "3": 50
+        },
+        "form": "scroll",
+        "effects": {
+          "2": {
+            "sharp": [
+              "aff_woundedStamina_0p39",
+              "stat_damageMul_0p13"
+            ],
+            "blunt": [
+              "debuff_durationS_12_id_heavy",
+              "stat_idleDrainMul_p0p2"
+            ]
+          },
+          "3": {
+            "sharp": [
+              "aff_poisonedHealth_0p252",
+              "debuff_durationS_12_id_inhibited",
+              "stat_damageMul_0p15",
+              "stat_zipCostMul_p0p15"
+            ],
+            "blunt": [
+              "aff_windedStamina_0p9",
+              "instant_amount_6_id_bleedout",
+              "stat_invulnMul_0p25"
+            ]
+          }
+        }
+      }
+    },
+    "mastery_ghoul": {
+      "label": "Ghouls",
+      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "entries": [],
+      "mastery": {
+        "chance": 0.15,
+        "rankWeights": {
+          "1": 45,
+          "2": 35,
+          "3": 20
+        },
+        "form": "tablet",
+        "effects": {
+          "1": {
+            "sharp": [
+              "aff_poisonedHealth_0p378",
+              "debuff_durationS_12_id_reeling",
+              "stat_drainMul_p0p2",
+              "stat_zipDistanceMul_0p2"
+            ],
+            "blunt": [
+              "debuff_durationS_12_id_brittle",
+              "stat_absorbMul_p0p15",
+              "stat_knockbackMul_0p15"
+            ]
+          },
+          "2": {
+            "sharp": [
+              "aff_poisonedHealth_0p378",
+              "debuff_durationS_12_id_taxed",
+              "stat_zipDistanceMul_0p18"
+            ],
+            "blunt": [
+              "aff_windedStamina_0p63",
+              "stat_damageMul_0p1"
+            ]
+          },
+          "3": {
+            "sharp": [
+              "aff_infectedStamina_0p48",
+              "debuff_durationS_12_id_exposed",
+              "stat_damageMul_0p12",
+              "stat_rangeMul_0p12"
+            ],
+            "blunt": [
+              "aff_shatteredStamina_0p55",
+              "debuff_durationS_12_id_sluggish",
+              "stat_idleDrainMul_p0p2",
+              "stat_zipDistanceMul_0p2"
+            ]
+          }
+        }
+      }
     }
   }
 }

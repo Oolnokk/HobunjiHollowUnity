@@ -176,6 +176,11 @@
     const def = canonicalDef(key);
     if (!def) return null;
 
+    if (def.masteryUnlock) {
+      const lesson = def.masteryUnlock; // Use the same unlock owner as the mastery spend boundary.
+      const learned = !!window.CombatProgression?.hasEffectUnlock?.(lesson.type, lesson.rank, lesson.effectId); // Reading is permanent and retains the item.
+      return { key, kind: 'masteryUnlock', verb: learned ? 'Already learned' : 'Read', icon: def.icon, itemLabel: def.label || key, allowed: !learned };
+    }
     if (def.combatManualAbilityId) {
       const learned = !!window.TechniqueScrolls?.isUnlocked?.(def.combatManualAbilityId); // Used to disable a manual whose exact technique is already known.
       return { key, kind: 'combatManual', verb: learned ? 'Already learned' : 'Read', icon: def.icon || '📕', itemLabel: def.label || key, allowed: !learned };
@@ -243,7 +248,10 @@
 
     let result = null; // Used to normalize the various existing item-owner return shapes into one Inventory action result.
     let ownerHandlesFeedback = false; // TechniqueScrolls already owns its read toast/refresh path, so do not duplicate it here.
-    if (action.kind === 'combatManual') {
+    if (action.kind === 'masteryUnlock') {
+      ownerHandlesFeedback = true;
+      result = { ok: !!window.CombatProgression?.readMasteryItem?.(key), message: '' };
+    } else if (action.kind === 'combatManual') {
       ownerHandlesFeedback = true;
       result = { ok: !!withTemporaryManualBagItem(key, () => window.TechniqueScrolls?.consumeManual?.()), message: '' };
     } else if (action.kind === 'techniqueScroll') {
